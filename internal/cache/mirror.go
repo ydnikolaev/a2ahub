@@ -276,6 +276,19 @@ type foldedArtifact struct {
 	// activation naming a DIFFERENT published version never clears this
 	// one.
 	OperationalDebtOwed bool
+
+	// OperationalItems is spec 05 AC4's per-item x_operational[]
+	// projection (DeriveOperationalItems/operationalItemsFromRaw, above) —
+	// populated only for a contract; nil for every other kind, since
+	// x_operational is a contract-only schema field and a non-contract
+	// artifact has no operational vocabulary to be undeclared FROM.
+	//
+	// Deliberately independent of OperationalDebtOwed just above: that
+	// bool derives from registration/publication ALONE and never reads
+	// this field's own source data (P-1, that field's own doc comment).
+	// This is the OTHER half of AC4 — what a producer actually declared,
+	// distinct from whether anyone is owed activation over it.
+	OperationalItems []OperationalItem
 }
 
 func (f foldedArtifact) kind() fold.Kind { return fold.Kind(f.Env.Type) }
@@ -560,6 +573,16 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 			operationalDebtOwed = contractOperationalDebtOwed(dir, manifest, a.Env.ID, latestPublishVersion)
 		}
 
+		// AC4's per-item projection (spec 05-declared-nature.md), gated on
+		// kind the same way operationalDebtOwed just above is: only a
+		// contract carries x_operational at all, so every other kind's
+		// OperationalItems stays nil rather than paying for a raw-bytes
+		// decode that can never find the field.
+		var operationalItems []OperationalItem
+		if env.Kind == fold.KindContract {
+			operationalItems = DeriveOperationalItems(operationalItemsFromRaw(a.Raw))
+		}
+
 		out = append(out, foldedArtifact{
 			SpaceID: spaceID, RelPath: a.RelPath, Raw: a.Raw, Digest: a.Digest,
 			Env: a.Env, Result: result, Events: evs, EventEvidence: eventEvidence,
@@ -578,6 +601,7 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 			BlockedByOwner:         blockedByOwner,
 			DeliveryUnresolvable:   deliveryUnresolvable(a.Env.ID, deliveredResponseTo, handoffFulfills, packageResolver),
 			OperationalDebtOwed:    operationalDebtOwed,
+			OperationalItems:       operationalItems,
 		})
 	}
 
@@ -1162,6 +1186,180 @@ func canonicalVersionsContain(versions []string, target string) bool {
 		}
 	}
 	return false
+}
+
+// OperationalItem is one x_operational[] entry's DERIVED per-item
+// projection (spec 05-declared-nature.md's AC4, agent-exchange-2026-08
+// P5): the wire only ever carries `ready`/`absent` per entry — the
+// schema's own state enum (schemas/envelope/v2/contract.schema.json) —
+// never `undeclared`. `undeclared` never appears on a committed document;
+// it is computed HERE, once, whenever a named item is missing from the
+// array or the whole field is absent, so every reader downstream renders
+// the SAME third value instead of each guessing at "the key isn't there"
+// on its own — the same "derive once, consume everywhere" discipline
+// wave 21 already applied to the attachment claim.
+type OperationalItem struct {
+	Name  string `json:"name"`
+	State string `json:"state"`
+}
+
+// The three operational-state literals a reader may see. Ready/Absent are
+// the schema's own wire values; Undeclared never is (see OperationalItem's
+// own doc comment) — a reader trusting a literal `state: "undeclared"` off
+// a committed document would be trusting a value the schema cannot
+// produce (P-1's own words: "the declaration must change what those facts
+// MEAN, not whether they exist").
+const (
+	OperationalStateReady      = "ready"
+	OperationalStateAbsent     = "absent"
+	OperationalStateUndeclared = "undeclared"
+)
+
+// operationalWellKnownNames are the operational item names spec 05 §7
+// itself names: "endpoint, credential-channel, registration ... a fourth
+// kind is DATA (a new array entry), not a schema change." x_operational's
+// own `name` property is free text, not a closed enum (the schema's own
+// description), so this is not a refusal list — it is the fixed
+// vocabulary every one of AC4's five surfaces asks about whether or not a
+// producer ever mentions it. `undeclared` has to be rendered FOR
+// something; a reader has no way to ask "is X undeclared" for an X nobody
+// has ever named anywhere in this corpus.
+var operationalWellKnownNames = []string{"endpoint", "credential-channel", "registration"}
+
+// DeriveOperationalItems computes AC4's full per-item projection from
+// declared — whatever the caller's own decode of one contract's
+// x_operational[] produced (operationalItemsFromRaw below, for a raw
+// artifact; OperationalItemsFromEnvelope, for the generic envelope map
+// `a2a show`/the dashboard already build) — applying the ONE rule both
+// must agree on: every well-known name (above) not present in declared
+// reads `undeclared`; every declared name — well-known or not, the
+// schema's own "fourth kind is data" — keeps its own wire state, in
+// first-declared order, appended after the well-known set.
+//
+// nil/empty declared (the whole field absent) still returns all three
+// well-known names at `undeclared` — that IS the P-1 reading: silence is
+// a live state, not an absence of information, so this never returns an
+// empty slice for a contract that simply never mentioned the field.
+func DeriveOperationalItems(declared []OperationalItem) []OperationalItem {
+	byName := make(map[string]string, len(declared))
+	var order []string
+	for _, it := range declared {
+		if it.Name == "" {
+			continue
+		}
+		if _, exists := byName[it.Name]; !exists {
+			order = append(order, it.Name)
+		}
+		byName[it.Name] = it.State
+	}
+
+	seen := make(map[string]bool, len(operationalWellKnownNames))
+	out := make([]OperationalItem, 0, len(operationalWellKnownNames)+len(order))
+	for _, name := range operationalWellKnownNames {
+		state, ok := byName[name]
+		if !ok {
+			state = OperationalStateUndeclared
+		}
+		out = append(out, OperationalItem{Name: name, State: state})
+		seen[name] = true
+	}
+	for _, name := range order {
+		if seen[name] {
+			continue
+		}
+		out = append(out, OperationalItem{Name: name, State: byName[name]})
+	}
+	return out
+}
+
+// operationalItemProbe/operationalArrayProbe decode x_operational[]
+// directly off an artifact's own raw frontmatter bytes — this package's
+// own minimal decode (ISP idiom; see activationEventProbe above for the
+// identical pattern and its own reasoning): the shared envelopeProbe
+// (decode.go, outside this wave's allowlist) carries no x_operational
+// field at all.
+type operationalItemProbe struct {
+	Name  string `yaml:"name"`
+	State string `yaml:"state"`
+}
+
+type operationalArrayProbe struct {
+	XOperational []operationalItemProbe `yaml:"x_operational"`
+}
+
+// operationalItemsFromRaw best-effort decodes raw's own x_operational[]
+// declarations (envelope/v2/contract.schema.json). An undecodable
+// document degrades to nil declared items — the same direction every
+// other raw-bytes probe in this file fails toward — which
+// DeriveOperationalItems then reads as every well-known name undeclared,
+// never as a fabricated ready/absent.
+func operationalItemsFromRaw(raw []byte) []OperationalItem {
+	fm, err := artifact.ParseFrontmatter(raw)
+	if err != nil {
+		return nil
+	}
+	var probe operationalArrayProbe
+	if yaml.Unmarshal(fm.YAML, &probe) != nil {
+		return nil
+	}
+	out := make([]OperationalItem, 0, len(probe.XOperational))
+	for _, it := range probe.XOperational {
+		if it.Name == "" {
+			continue
+		}
+		// A conversion, not a field-by-field literal: the two types differ
+		// only in struct TAGS, which Go's conversion rules ignore, so
+		// staticcheck is right that the literal is noise. They stay two
+		// types on purpose even so — `operationalItemProbe` carries the
+		// yaml tags for the wire coming IN, `OperationalItem` the json tags
+		// for the read model going OUT, and collapsing them would put one
+		// direction's tags on the other's type. The conversion is what makes
+		// that separation cost nothing today; if either shape gains a field
+		// the other lacks, the compiler says so here.
+		out = append(out, OperationalItem(it))
+	}
+	return out
+}
+
+// OperationalItemsFromEnvelope is AC4's second decode path: the SAME
+// x_operational[] declarations, read off ShowResult.Envelope's generic
+// map[string]any projection rather than an artifact's raw bytes.
+// `a2a show`/MCP/the dashboard detail panel already build that map once
+// (store.go's buildShowResult); neither internal/cli nor internal/html
+// may re-parse an artifact's frontmatter a second time to reach the typed
+// probe above (ADR-001: internal/cache is the one place that decodes a
+// committed document). Composed over the SAME DeriveOperationalItems rule
+// buildIndex's own pass uses below, so a contract's per-item projection
+// never depends on which surface asked for it.
+//
+// Gating on artifact type ("only a contract carries x_operational") is
+// deliberately the CALLER's job here, the same way buildIndex below gates
+// before calling operationalItemsFromRaw — a non-contract envelope simply
+// has no `x_operational` key, so this degrades to every well-known name
+// undeclared, harmlessly, whether or not the caller bothers to gate first.
+func OperationalItemsFromEnvelope(envelope map[string]any) []OperationalItem {
+	raw, ok := envelope["x_operational"]
+	if !ok {
+		return DeriveOperationalItems(nil)
+	}
+	list, ok := raw.([]any)
+	if !ok {
+		return DeriveOperationalItems(nil)
+	}
+	declared := make([]OperationalItem, 0, len(list))
+	for _, entry := range list {
+		m, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := m["name"].(string)
+		state, _ := m["state"].(string)
+		if name == "" {
+			continue
+		}
+		declared = append(declared, OperationalItem{Name: name, State: state})
+	}
+	return DeriveOperationalItems(declared)
 }
 
 // reportPath best-effort relativizes path against dir for a SkippedFile

@@ -217,6 +217,19 @@ func (e *Engine) runCommonEnvelope(d Draft) (violations []Violation, artifactID 
 	// runCommonEnvelope).
 	violations = append(violations, checkPossession(fm.Body, instance)...)
 
+	// P5 declared-nature (POL-018, declaration_block.go): a hand-rolled
+	// `key = value` body declaration whose key matches a field this
+	// artifact's OWN (version, typ) schema already declares. Runs here for
+	// the same reason checkPossession does — both ValidateDraft (V1) and
+	// ValidateForSubmit (V2) reach this single success path with fm.Body
+	// and the already-parsed (n, env.Type) in scope, so `a2a validate`
+	// (no --ci) catches it locally too.
+	declBlockViolations, dberr := checkDeclarationBlock(fm.Body, n, env.Type)
+	if dberr != nil {
+		return violations, artifactID, env, instance, false, dberr
+	}
+	violations = append(violations, declBlockViolations...)
+
 	return violations, artifactID, env, instance, true, nil
 }
 

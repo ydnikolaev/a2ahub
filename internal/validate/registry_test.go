@@ -346,6 +346,27 @@ func TestRegistryClosure(t *testing.T) {
 		}}},
 		&criteriaResolver{criteria: map[string]int{"XW-axon-20260808-clos": 1}},
 	))
+	// POL-018 (P5 AC3): the hand-rolled declaration block. Unlike the three
+	// above this one is NOT dormant — engine.go's runCommonEnvelope reaches
+	// it on both ValidateDraft and ValidateForSubmit, so both surfaces get
+	// it through the one Engine. The stub is here for the same reason as
+	// its neighbours: this gate proves the code is PRODUCIBLE from inputs
+	// this package controls, so it cannot go quiet on the day a caller
+	// changes. The forbidden key is derived, never listed — `category` is a
+	// real field on the type being checked.
+	if violations, err := checkDeclarationBlock(
+		[]byte("```\ncategory = data\n```\n"), 2, "work_request",
+	); err == nil {
+		record(violations)
+	}
+	// POL-019 and POL-020 (P5 AC5): the two halves of the capability check,
+	// and they are two codes rather than one with two severities precisely
+	// because their consequences differ. A DECLARED set that excludes the
+	// required mode is a checkable fact and refuses; an ABSENT set is
+	// silence, which warns — P-1's rule that undeclared reads as neither
+	// yes nor no, and POL-017's that only checkable facts refuse.
+	record(CheckCapabilityMismatch("http_push", []string{"file"}))
+	record(CheckCapabilityMismatch("http_push", nil))
 	record(checkResidue(
 		envelope{Type: "response", Parent: "XW-axon-20260808-clos"},
 		map[string]any{"unmet": []any{int64(0)}},

@@ -28,12 +28,33 @@ type Manifest struct {
 // Participant is one space.yaml participant entry: a system's section,
 // its human owners (GitHub logins), and membership status.
 type Participant struct {
-	System  string   `yaml:"system"`
-	Org     string   `yaml:"org"`
-	Section string   `yaml:"section"`
-	Owners  []string `yaml:"owners"`
-	Status  string   `yaml:"status"` // "active" | "left"
-	Joined  string   `yaml:"joined"` // date, format per schema
+	System       string        `yaml:"system"`
+	Org          string        `yaml:"org"`
+	Section      string        `yaml:"section"`
+	Owners       []string      `yaml:"owners"`
+	Status       string        `yaml:"status"` // "active" | "left"
+	Joined       string        `yaml:"joined"` // date, format per schema
+	Capabilities *Capabilities `yaml:"capabilities,omitempty"`
+}
+
+// Capabilities is P5 AC5/US-3: what this participant can receive, read by a
+// counterparty without asking (schemas/manifest/v1/space.schema.json's
+// `participants[].capabilities`). CONFIG, not derived — a mutable
+// declaration, TOOL-stamped with DeclaredBy/DeclaredAt, the same shape
+// Consumes/Dependency already uses for a mutable per-system registry (spec
+// 05 §5). A nil *Capabilities on Participant (the field is `omitempty` and
+// absent from most manifests today) is the live UNDECLARED state P-1
+// demands, distinct from a declared, non-matching Delivery set —
+// internal/validate's capability-mismatch policy check treats the two
+// differently (warn vs. reject), never collapsing "unknown" into "denied"
+// or "allowed".
+type Capabilities struct {
+	// Delivery is set membership over the delivery modes this system can
+	// receive — the schema's own wording ("file delivery only, HTTP push,
+	// both") is membership in this set, never a third literal.
+	Delivery   []string `yaml:"delivery"`
+	DeclaredBy string   `yaml:"declared_by,omitempty"`
+	DeclaredAt string   `yaml:"declared_at,omitempty"`
 }
 
 // ParseManifest structurally parses raw space.yaml bytes. Malformed YAML

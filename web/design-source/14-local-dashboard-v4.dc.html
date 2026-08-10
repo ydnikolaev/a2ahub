@@ -3365,6 +3365,12 @@ class Component extends DCLogic {
       // layer adds is invisible here until it is named — which is exactly how
       // AC4's dashboard half was built and dormant for one wave.
       attachments: a.attachments || [],
+      // spec 05-declared-nature.md AC4 (agent-exchange-2026-08 P5): the
+      // per-item x_operational[] projection (ArtifactDetail.OperationalItems
+      // -> a.operational_items), undeclared/absent already resolved on the
+      // Go side (cache.DeriveOperationalItems) — passed through for the
+      // same "name it or it's invisible" reason as attachments above.
+      operationalItems: a.operational_items || [],
       // The handover, on our own move only. The gate is the canonical whose-move
       // projection rather than the narrower human-attention queue: a routine
       // move an agent would normally have taken unprompted is exactly the case

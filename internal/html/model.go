@@ -711,6 +711,13 @@ type ThreadOpenItem struct {
 	Why                string `json:"why"`
 	HumanGate          string `json:"human_gate,omitempty"`
 
+	// OperationalItems carries cache.OpenItem.OperationalItems straight
+	// through (spec 05 AC4, agent-exchange-2026-08 P5) — the same "reuse
+	// the cache type directly" idiom Verdicts above already draws for
+	// cache.TranscriptVerdict, never a html-local re-declaration of the
+	// same {name, state} shape. Nil for every non-contract item.
+	OperationalItems []cache.OperationalItem `json:"operational_items,omitempty"`
+
 	// Outcome, Terminal and the three State* fields are the domain's own
 	// answer, carried rather than recomputed. Every one of them existed in
 	// the browser before this, as three kind-agnostic literal sets and a
@@ -791,6 +798,16 @@ type ArtifactDetail struct {
 	// in its own name lists, which is the defect the whole phase removes.
 	Outcome  fold.Outcome `json:"outcome,omitempty"`
 	Terminal bool         `json:"terminal"`
+	// OperationalItems is spec 05 AC4's per-item x_operational[]
+	// projection (cache.OperationalItemsFromEnvelope, composed over the
+	// SAME DeriveOperationalItems rule internal/cache/mirror.go applies
+	// for thread/html's ThreadOpenItem) — set only for a contract; nil for
+	// every other type. Named here so the dashboard detail panel's own
+	// hand-picked prop literal (web/design-source's `detailFor`) has
+	// something to name — a field the Go layer adds is otherwise invisible
+	// there until it is (see that file's own comment on the attachments
+	// prop for the trap this avoids).
+	OperationalItems []cache.OperationalItem `json:"operational_items,omitempty"`
 }
 
 // ArtifactDetailEvent carries one lifecycle event in the artifact detail panel.

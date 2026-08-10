@@ -151,6 +151,10 @@ type csOpenItem struct {
 	ExpectedTransition string   `json:"expected_transition"`
 	Why                string   `json:"why"`
 	HumanGate          string   `json:"human_gate"`
+	// OperationalItems narrows cache.OpenItem.OperationalItems (spec 05
+	// AC4) — see TestCrossSurfaceOperationalItems below, the one place
+	// this file reads it.
+	OperationalItems []csOperationalItem `json:"operational_items"`
 }
 
 // csHTMLData narrows html.Data to ThreadViews. html.Item (the `a2a html
@@ -177,6 +181,46 @@ type csHTMLOpenItem struct {
 	ExpectedTransition string   `json:"expected_transition"`
 	Why                string   `json:"why"`
 	HumanGate          string   `json:"human_gate"`
+	// OperationalItems narrows html.ThreadOpenItem.OperationalItems (spec
+	// 05 AC4) — see TestCrossSurfaceOperationalItems below.
+	OperationalItems []csOperationalItem `json:"operational_items"`
+}
+
+// csOperationalItem narrows cache.OperationalItem/html.ThreadOpenItem's
+// `operational_items[]` entry (spec 05-declared-nature.md AC4,
+// agent-exchange-2026-08 P5) to the two fields every surface carries.
+type csOperationalItem struct {
+	Name  string `json:"name"`
+	State string `json:"state"`
+}
+
+func csFindOperationalItem(items []csOperationalItem, name string) (csOperationalItem, bool) {
+	for _, it := range items {
+		if it.Name == name {
+			return it, true
+		}
+	}
+	return csOperationalItem{}, false
+}
+
+// csShowResult narrows internal/cli's showOutput (`a2a show --json`) to
+// the one field TestCrossSurfaceOperationalItems reads.
+type csShowResult struct {
+	ID               string              `json:"id"`
+	OperationalItems []csOperationalItem `json:"operational_items"`
+}
+
+func csRunShow(t *testing.T, mirrorDir, id string) csShowResult {
+	t.Helper()
+	stdout, stderr, code := runReadVerbAs(t, mirrorDir, crossSurfaceSpaceID, "axon", "show", id, "--json")
+	if code != 0 {
+		t.Fatalf("show %s: code = %d, want 0; stdout=%s stderr=%s", id, code, stdout, stderr)
+	}
+	var result csShowResult
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatalf("show %s: decode: %v\nstdout=%s", id, err, stdout)
+	}
+	return result
 }
 
 // --- verdict comparison -----------------------------------------------------
@@ -413,19 +457,26 @@ func csFindHTMLOpenItem(data csHTMLData, id string) (csHTMLOpenItem, bool) {
 // (cache.Item carries no HumanGate; html.Item carries no pendency fields at
 // all).
 // crossSurfaceReaders enumerates the surfaces this epic must reconcile, so
-// the set is a value the test can assert over rather than four call sites a
+// the set is a value the test can assert over rather than five call sites a
 // reader has to count by eye.
 //
-// The value is a marker, not the reader itself: the four readers have four
-// different return types (\[\]csItem, csThreadResult, csHTMLData), and forcing
-// them behind one signature would cost more than it buys. What has to be
-// enumerable is WHICH surfaces are in scope — that is the claim P2's
-// future-proofing row makes, and the one a fifth surface has to join.
+// The value is a marker, not the reader itself: the five readers have
+// different return types (\[\]csItem, csThreadResult, csHTMLData,
+// csShowResult), and forcing them behind one signature would cost more than
+// it buys. What has to be enumerable is WHICH surfaces are in scope — that
+// is the claim P2's future-proofing row makes.
+//
+// `show` joined this map in spec 05-declared-nature.md's AC4 wave (P5,
+// agent-exchange-2026-08): this file's own doc comment above named it as
+// "the fifth surface" a later phase would have to add, and it was absent
+// until AC4 needed it — see TestCrossSurfaceOperationalItems below for the
+// undeclared-vs-absent proof that reader exists to carry.
 var crossSurfaceReaders = map[string]func(){
 	"inbox":  func() {},
 	"outbox": func() {},
 	"thread": func() {},
 	"html":   func() {},
+	"show":   func() {},
 }
 
 func TestCrossSurface(t *testing.T) {
@@ -479,7 +530,7 @@ func TestCrossSurface(t *testing.T) {
 	// this file without adding it to `crossSurfaceReaders` is refused with the
 	// name of the one that was left out.
 	t.Run("every_surface_is_enumerated", func(t *testing.T) {
-		want := []string{"html", "inbox", "outbox", "thread"}
+		want := []string{"html", "inbox", "outbox", "show", "thread"}
 		got := make([]string, 0, len(crossSurfaceReaders))
 		for name := range crossSurfaceReaders {
 			got = append(got, name)
@@ -544,4 +595,173 @@ func TestCrossSurface(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- AC4: undeclared reads distinctly from absent --------------------------
+//
+// Spec 05-declared-nature.md AC4 (agent-exchange-2026-08 P5): an
+// x_operational[] item's declared `state: absent` must read DIFFERENTLY
+// from a name that was never declared at all — checked here on the three
+// surfaces this wave's own allowlist can carry it on: thread, html, show.
+// crossSurfaceReaders (above) is the full five-surface enumeration this
+// file keeps; TestCrossSurfaceOperationalItems is the one that actually
+// walks the operational-item projection.
+//
+// inbox/outbox cannot carry this projection within this wave's allowlist:
+// cache.Item (the wire shape) and toItem (its own populating function) both
+// live in internal/cache/types.go and store.go, neither granted to this
+// wave — see this phase's own deviations report. They stay named in
+// crossSurfaceReaders because AC4's own stated verification is that map
+// gaining `show`, not that every member of it is exercised by this
+// particular subtest.
+
+// writeCrossSurfaceOperationalContract is a schema-faithful, envelope/v2
+// contract writer local to this file — helpers_test.go's own
+// writeContractDescriptorFor writes envelope/v1, which carries no
+// x_operational field at all (v2-only,
+// schemas/envelope/v2/contract.schema.json), and that file is off this
+// wave's allowlist. xOperationalRaw is inserted as-is (mirroring
+// internal/cli/cmd_contract_test.go's own
+// writeContractDescriptorWithXOperational), so a caller may declare any
+// items, or none — the same "schema-faithful local variant" precedent
+// writeDecisionArtifactWithThread (above) already sets for this file. No
+// consumes.yaml is ever written for either fixture this test builds:
+// OperationalDebtOwed (a wholly separate P5 derivation, never conditioned
+// on x_operational — mirror.go's own doc comment) must stay out of this
+// proof entirely.
+func writeCrossSurfaceOperationalContract(t *testing.T, mirrorDir, slug, xOperationalRaw string) string {
+	t.Helper()
+	id := "XC-axon-" + slug
+	content := "---\n" +
+		"schema: envelope/v2\n" +
+		"id: " + id + "\n" +
+		"type: contract\n" +
+		"title: t\n" +
+		"space: " + crossSurfaceSpaceID + "\n" +
+		"from: axon\n" +
+		"to: [beta]\n" +
+		"thread: " + e2eFixtureThread + "\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"category: api\n" +
+		"priority: p3\n" +
+		"blocking: false\n" +
+		"classification: internal\n" +
+		"version: \"1.0.0\"\n" +
+		"compat_policy: strict-semver\n" +
+		"schema_format: json-schema-2020-12\n" +
+		xOperationalRaw +
+		"---\nbody\n"
+	writeMirrorFile(t, mirrorDir, "axon/provides/"+slug+"/contract.md", content)
+	return id
+}
+
+func TestCrossSurfaceOperationalItems(t *testing.T) {
+	mirrorDir := t.TempDir()
+	writeMirrorFile(t, mirrorDir, "space.yaml", crossSurfaceManifestYAML(crossSurfaceSpaceID, []crossSurfaceParticipant{
+		{"axon", "active"},
+		{"beta", "active"},
+	}))
+
+	// declared: endpoint is explicitly `state: absent` — a producer who
+	// SAID "not yet".
+	declaredID := writeCrossSurfaceOperationalContract(t, mirrorDir, "cs-declared",
+		"x_operational:\n  - name: endpoint\n    state: absent\n")
+	// undeclared: no x_operational field at all — a producer who said
+	// nothing. Both must be readable, and they must not read the same.
+	undeclaredID := writeCrossSurfaceOperationalContract(t, mirrorDir, "cs-undeclared", "")
+
+	threadResult := csRunThread(t, mirrorDir)
+	htmlData := csRunHTML(t, mirrorDir)
+
+	cases := []struct {
+		name string
+		id   string
+		want string // endpoint's own state on this fixture
+	}{
+		{"declared-absent", declaredID, "absent"},
+		{"never-declared", undeclaredID, "undeclared"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			threadItem, ok := csFindOpenItem(threadResult.OpenItems, c.id)
+			if !ok {
+				t.Fatalf("thread: no open_items entry %q", c.id)
+			}
+			endpoint, ok := csFindOperationalItem(threadItem.OperationalItems, "endpoint")
+			if !ok {
+				t.Fatalf("thread: %q carries no operational_items entry named endpoint (items = %+v)", c.id, threadItem.OperationalItems)
+			}
+			if endpoint.State != c.want {
+				t.Errorf("thread: %q endpoint state = %q, want %q", c.id, endpoint.State, c.want)
+			}
+			// A well-known name NEITHER fixture ever mentions must read
+			// undeclared on both — the union rule's other half: silence on
+			// a name is undeclared regardless of what a DIFFERENT name on
+			// the same contract declared.
+			for _, other := range []string{"credential-channel", "registration"} {
+				item, ok := csFindOperationalItem(threadItem.OperationalItems, other)
+				if !ok {
+					t.Fatalf("thread: %q carries no operational_items entry named %s (items = %+v)", c.id, other, threadItem.OperationalItems)
+				}
+				if item.State != "undeclared" {
+					t.Errorf("thread: %q %s state = %q, want undeclared (neither fixture ever declares it)", c.id, other, item.State)
+				}
+			}
+
+			htmlItem, ok := csFindHTMLOpenItem(htmlData, c.id)
+			if !ok {
+				t.Fatalf("html: no threadViews[].open_items entry %q", c.id)
+			}
+			htmlEndpoint, ok := csFindOperationalItem(htmlItem.OperationalItems, "endpoint")
+			if !ok {
+				t.Fatalf("html: %q carries no operational_items entry named endpoint", c.id)
+			}
+			if htmlEndpoint.State != c.want {
+				t.Errorf("html: %q endpoint state = %q, want %q", c.id, htmlEndpoint.State, c.want)
+			}
+
+			show := csRunShow(t, mirrorDir, c.id)
+			showEndpoint, ok := csFindOperationalItem(show.OperationalItems, "endpoint")
+			if !ok {
+				t.Fatalf("show: %q carries no operational_items entry named endpoint", c.id)
+			}
+			if showEndpoint.State != c.want {
+				t.Errorf("show: %q endpoint state = %q, want %q", c.id, showEndpoint.State, c.want)
+			}
+		})
+	}
+
+	// Cross-fixture proof, stated directly rather than only implied by the
+	// two cases above: the SAME well-known name reads two DIFFERENT values
+	// depending on what its own contract actually declared — AC4's literal
+	// claim ("reads distinctly"), not two independently-true facts that
+	// merely happen not to collide. This is the assertion the plan's own
+	// "make the derivation unconditional" mutation is aimed at: collapsing
+	// declared/undeclared to one rendering makes this red and nothing else
+	// in this file catches it (the per-case checks above would both still
+	// pass against a single WRONG constant value).
+	t.Run("same_name_reads_distinctly_across_fixtures", func(t *testing.T) {
+		declaredItem, ok := csFindOpenItem(threadResult.OpenItems, declaredID)
+		if !ok {
+			t.Fatalf("thread: no open_items entry %q", declaredID)
+		}
+		undeclaredItem, ok := csFindOpenItem(threadResult.OpenItems, undeclaredID)
+		if !ok {
+			t.Fatalf("thread: no open_items entry %q", undeclaredID)
+		}
+		declaredEndpoint, ok := csFindOperationalItem(declaredItem.OperationalItems, "endpoint")
+		if !ok {
+			t.Fatalf("thread: %q carries no operational_items entry named endpoint", declaredID)
+		}
+		undeclaredEndpoint, ok := csFindOperationalItem(undeclaredItem.OperationalItems, "endpoint")
+		if !ok {
+			t.Fatalf("thread: %q carries no operational_items entry named endpoint", undeclaredID)
+		}
+		if declaredEndpoint.State == undeclaredEndpoint.State {
+			t.Fatalf("endpoint state collapsed to one rendering: declared=%q undeclared=%q, want them distinct",
+				declaredEndpoint.State, undeclaredEndpoint.State)
+		}
+	})
 }

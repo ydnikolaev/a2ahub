@@ -965,6 +965,9 @@ func toThreadView(result cache.ThreadResult, self string) ThreadView {
 			// same discipline the pendency verdict above already follows.
 			Outcome: item.Outcome, Terminal: item.Terminal,
 			StateSince: item.StateSince, StateBy: item.StateBy, StateEvent: item.StateEvent,
+			// AC4's per-item projection, carried whole — see
+			// ThreadOpenItem.OperationalItems' own doc comment.
+			OperationalItems: item.OperationalItems,
 		})
 		if len(waiting) > 0 {
 			view.Settled = false
@@ -1243,6 +1246,14 @@ func toArtifactDetail(show cache.ShowResult) (ArtifactDetail, error) {
 	if err != nil {
 		return ArtifactDetail{}, err
 	}
+	// AC4's per-item projection (spec 05-declared-nature.md), gated on
+	// type the same way internal/cli/cmd_show.go's own showOutput is —
+	// only a contract carries x_operational, so every other type's
+	// ArtifactDetail carries none.
+	var operationalItems []cache.OperationalItem
+	if show.Type == "contract" {
+		operationalItems = cache.OperationalItemsFromEnvelope(envelope)
+	}
 	return ArtifactDetail{
 		SourceClass: "canonical", Space: show.Space, Path: show.Path, ID: show.ID, Type: show.Type,
 		Title: show.Title, From: show.From, To: append([]string(nil), show.To...),
@@ -1260,8 +1271,9 @@ func toArtifactDetail(show cache.ShowResult) (ArtifactDetail, error) {
 		// Asked here rather than carried from cache.ShowResult: that type has
 		// no outcome field, and the two arguments the domain needs — the kind
 		// and the state — are both already on the ShowResult being projected.
-		Outcome:  fold.OutcomeOf(fold.Kind(show.Type), fold.State(show.State)),
-		Terminal: fold.Terminal(fold.Kind(show.Type), fold.State(show.State)),
+		Outcome:          fold.OutcomeOf(fold.Kind(show.Type), fold.State(show.State)),
+		Terminal:         fold.Terminal(fold.Kind(show.Type), fold.State(show.State)),
+		OperationalItems: operationalItems,
 	}, nil
 }
 

@@ -28,6 +28,16 @@ import (
 type showOutput struct {
 	cache.ShowResult
 	Warnings []validate.Violation `json:"warnings,omitempty"`
+	// OperationalItems is spec 05 AC4's per-item x_operational[]
+	// projection (agent-exchange-2026-08 P5), derived here from the SAME
+	// rule internal/cache/mirror.go's buildIndex pass applies for
+	// thread/html (cache.OperationalItemsFromEnvelope composes over
+	// cache.DeriveOperationalItems, never a second rule) — "show" is one
+	// of AC4's five enumerated surfaces and cache.ShowResult carries no
+	// derived field of its own to reuse, only the generic Envelope map
+	// this decodes. Set only for a contract; nil for every other type,
+	// since x_operational is a contract-only schema field.
+	OperationalItems []cache.OperationalItem `json:"operational_items,omitempty"`
 }
 
 // ShowCommand implements `a2a show <ref>` (OP-209): artifact body +
@@ -80,6 +90,9 @@ func (c *ShowCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 
 	out := showOutput{ShowResult: result, Warnings: showV5Warnings(result)}
+	if result.Type == "contract" {
+		out.OperationalItems = cache.OperationalItemsFromEnvelope(result.Envelope)
+	}
 	if *jsonOut {
 		enc := json.NewEncoder(stdio.Stdout)
 		enc.SetIndent("", "  ")

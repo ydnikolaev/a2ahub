@@ -302,6 +302,15 @@ type OpenItem struct {
 	StateSince time.Time    `json:"state_since,omitzero"`
 	StateBy    string       `json:"state_by,omitempty"`
 	StateEvent string       `json:"state_event,omitempty"`
+
+	// OperationalItems is spec 05 AC4's per-item x_operational[]
+	// projection (mirror.go's foldedArtifact.OperationalItems, itself
+	// DeriveOperationalItems' own output) — carried whole, never
+	// re-derived here: nil for every non-contract member, and for a
+	// contract carrying no declaration at all this is still non-empty —
+	// every well-known name reads `undeclared`, never omitted (P-1:
+	// silence is a live state, not an absence of information).
+	OperationalItems []OperationalItem `json:"operational_items,omitempty"`
 }
 
 // ThreadFlag is one fold.Flag attributable to a thread member, rendered
@@ -1163,6 +1172,7 @@ func buildOpenItems(sorted []foldedArtifact, byID map[string]foldedArtifact, man
 			StateSince:         fa.StateSince,
 			StateBy:            fa.StateBy,
 			StateEvent:         fa.StateEventID,
+			OperationalItems:   fa.OperationalItems,
 		})
 	}
 	return out

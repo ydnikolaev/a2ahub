@@ -50,6 +50,62 @@ func TestParseManifestValid(t *testing.T) {
 	}
 }
 
+// TestParseManifestCapabilitiesReadableWithoutAsking is P5 AC5/US-3: a
+// counterparty reads a participant's declared capabilities straight off the
+// parsed manifest — no separate request, no second document. axon declares
+// its capabilities; seomatrix declares none, which must decode as a nil
+// *Capabilities (the live UNDECLARED state), not a zero-value struct that
+// would read as "declared, empty".
+func TestParseManifestCapabilitiesReadableWithoutAsking(t *testing.T) {
+	t.Parallel()
+
+	const manifestYAML = `
+schema: space/v1
+space: getvisa
+min_binary_version: 0.1.0
+participants:
+  - system: axon
+    org: yura
+    section: axon/
+    owners: [ydnikolaev]
+    status: active
+    joined: 2026-07-28
+    capabilities:
+      delivery: [file]
+      declared_by: axon
+      declared_at: 2026-08-10T00:00:00Z
+  - system: seomatrix
+    org: seomatrix
+    section: seomatrix/
+    owners: [misha-gh]
+    status: active
+    joined: 2026-07-28
+`
+	m, err := ParseManifest([]byte(manifestYAML))
+	if err != nil {
+		t.Fatalf("ParseManifest: %v", err)
+	}
+	if len(m.Participants) != 2 {
+		t.Fatalf("len(Participants) = %d, want 2", len(m.Participants))
+	}
+
+	axon := m.Participants[0]
+	if axon.Capabilities == nil {
+		t.Fatal("axon.Capabilities = nil, want a declared value")
+	}
+	if len(axon.Capabilities.Delivery) != 1 || axon.Capabilities.Delivery[0] != "file" {
+		t.Fatalf("axon.Capabilities.Delivery = %v, want [file]", axon.Capabilities.Delivery)
+	}
+	if axon.Capabilities.DeclaredBy != "axon" || axon.Capabilities.DeclaredAt != "2026-08-10T00:00:00Z" {
+		t.Fatalf("axon.Capabilities stamps = %+v, want declared_by=axon declared_at=2026-08-10T00:00:00Z", axon.Capabilities)
+	}
+
+	seomatrix := m.Participants[1]
+	if seomatrix.Capabilities != nil {
+		t.Fatalf("seomatrix.Capabilities = %+v, want nil (undeclared, not a zero-value struct)", seomatrix.Capabilities)
+	}
+}
+
 func TestParseManifestInvalidYAML(t *testing.T) {
 	t.Parallel()
 

@@ -272,3 +272,22 @@ entries:
     class: policy
     title: Body enumerates what looks like a file tree while no attachment is declared
     applies_to: a heuristic WARNING, never a refusal — only checkable facts refuse, and "this looks like a file tree" is not one (agent-exchange-2026-08/P4, AC7)
+
+  - code: POL-018
+    class: policy
+    title: Body hand-rolls a `key = value` block naming a field declared on this envelope's own type
+    applies_to: internal/validate.checkDeclarationBlock — reject. The forbidden key set is DERIVED per call from schema.EnvelopeFieldPaths(version, typ), never a hardcoded list, so a field added tomorrow is policed the day it ships (agent-exchange-2026-08/P5, AC3/US-4)
+
+  - code: POL-019
+    class: policy
+    title: The recipient's declared capabilities exclude a delivery mode this submission requires
+    applies_to: internal/validate.CheckCapabilityMismatch — reject. Fires only when the recipient's manifest/v1 participants[].capabilities.delivery is DECLARED and does not contain the required mode; a declared set is a checkable fact, which is what separates this from POL-020 (agent-exchange-2026-08/P5, AC5/US-3)
+
+  - code: POL-020
+    class: policy
+    title: The recipient's capabilities are undeclared, so a required delivery mode cannot be confirmed
+    applies_to: >-
+      internal/validate.CheckCapabilityMismatch — a WARNING, never a refusal, on
+      POL-017's own rule that only checkable facts refuse. Silence is a live
+      state, and must read as neither "can receive anything" nor "can receive
+      nothing" (agent-exchange-2026-08/P5, AC5/US-3)
