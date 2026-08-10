@@ -15,6 +15,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
+	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/notes"
 	"github.com/ydnikolaev/a2ahub/internal/operational"
@@ -1251,7 +1252,10 @@ func toArtifactDetail(show cache.ShowResult) (ArtifactDetail, error) {
 		// dashboard should never see nanosecond precision, so the projection
 		// re-humanises it into the same compact vocabulary every other age on
 		// this page uses.
-		Refs: refs, SyncStale: show.SyncStale, SyncAge: humanizeDuration(show.SyncAge),
+		// Straight passthrough, no second decode: show.Attachments is
+		// already the fully-derived claim internal/cache/store.go computed.
+		Attachments: append([]datapackage.AttachmentClaim(nil), show.Attachments...),
+		Refs:        refs, SyncStale: show.SyncStale, SyncAge: humanizeDuration(show.SyncAge),
 		// Asked here rather than carried from cache.ShowResult: that type has
 		// no outcome field, and the two arguments the domain needs — the kind
 		// and the state — are both already on the ShowResult being projected.

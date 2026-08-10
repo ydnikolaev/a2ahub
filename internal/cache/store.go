@@ -11,6 +11,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/avatar"
+	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/release"
@@ -737,12 +738,67 @@ func (s *Store) buildShowResult(fa foldedArtifact, spaceID string, all []foldedA
 	age, synced := mirrorSyncAge(s.now(), s.mirrorDirFor(spaceID))
 	syncStale := !synced || age > s.ttl
 
+	var attachments []datapackage.AttachmentClaim
+	for _, entry := range attachmentEntriesFromEnvelope(envelope) {
+		attachments = append(attachments, datapackage.ProjectAttachmentClaim(entry, s.now()))
+	}
+
 	return ShowResult{
 		Space: spaceID, Path: fa.RelPath, ID: fa.Env.ID, Type: fa.Env.Type, Title: fa.Env.Title,
 		From: fa.Env.From, To: normalizeTo(fa.Env.To), State: string(fa.Result.State),
 		Body: string(fm.Body), Thread: fa.Env.Thread, Digest: fa.Digest, Events: events, Flags: flags, Refs: refs,
-		SyncStale: syncStale, SyncAge: age.String(), Envelope: envelope,
+		SyncStale: syncStale, SyncAge: age.String(), Envelope: envelope, Attachments: attachments,
 	}
+}
+
+// attachmentEntriesFromEnvelope reads envelope's `attachments` array — the
+// same key schemas/envelope/v2/work_request.schema.json declares — off the
+// artifact's own generic frontmatter projection (envelope, built above from
+// fm.YAML). This is the ONE place a committed artifact's attachments[] is
+// decoded into datapackage.AttachmentManifestEntry: `a2a show`'s CLI
+// rendering, `a2a show --json`, MCP's a2a_show and the dashboard detail
+// panel all read the result (ShowResult.Attachments, populated by
+// buildShowResult's caller above) instead of decoding the envelope map a
+// second time each — spec 04 §11's "one decode, one place".
+//
+// Unlike the decode this superseded (internal/cli/cmd_show.go's former
+// decodeShowAttachments), this reads expires_at too: the schema requires it
+// whenever retention is not "pinned", and `a2a attach`
+// (internal/cli/cmd_attach.go's attachAppendEntry) writes it onto the
+// draft's frontmatter at attach time, so a committed artifact carries it.
+func attachmentEntriesFromEnvelope(envelope map[string]any) []datapackage.AttachmentManifestEntry {
+	raw, ok := envelope["attachments"]
+	if !ok {
+		return nil
+	}
+	list, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]datapackage.AttachmentManifestEntry, 0, len(list))
+	for _, item := range list {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		out = append(out, datapackage.AttachmentManifestEntry{
+			Attachment: datapackage.Attachment{
+				Ref:          attachmentStringField(m, "ref"),
+				Digest:       attachmentStringField(m, "digest"),
+				Role:         attachmentStringField(m, "role"),
+				ConformsTo:   attachmentStringField(m, "conforms_to"),
+				Verification: attachmentStringField(m, "verification"),
+				Retention:    attachmentStringField(m, "retention"),
+			},
+			ExpiresAt: attachmentStringField(m, "expires_at"),
+		})
+	}
+	return out
+}
+
+func attachmentStringField(m map[string]any, key string) string {
+	v, _ := m[key].(string)
+	return v
 }
 
 func yourMoveByArtifact(artifacts []foldedArtifact, manifest space.Manifest, ownSystem string) map[string]bool {

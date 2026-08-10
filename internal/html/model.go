@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/operational"
 	"github.com/ydnikolaev/a2ahub/internal/provenance"
@@ -765,8 +766,17 @@ type ArtifactDetail struct {
 	Events      []ArtifactDetailEvent `json:"events"`
 	Flags       []string              `json:"flags"`
 	Refs        []ArtifactDetailRef   `json:"refs"`
-	SyncStale   bool                  `json:"sync_stale"`
-	SyncAge     string                `json:"sync_age"`
+	// Attachments carries cache.ShowResult.Attachments straight through —
+	// spec 04's (agent-exchange-2026-08) §11 amendment ("the attachment
+	// claim is structured, not rendered-only"): one
+	// datapackage.AttachmentClaim per committed attachments[] entry,
+	// already fully derived (VerificationClaim, Lapsed/LapsedOn/
+	// LapseClaim) by internal/cache/store.go. toArtifactDetail performs no
+	// second decode and no second derivation — reusing the type directly
+	// is what "one decode, one place" means at this layer.
+	Attachments []datapackage.AttachmentClaim `json:"attachments"`
+	SyncStale   bool                          `json:"sync_stale"`
+	SyncAge     string                        `json:"sync_age"`
 	// Outcome and Terminal are the domain's reading of State, carried here
 	// too because the detail panel renders from THIS type and may have no
 	// matching exchange row to borrow them from — an artifact can be shown

@@ -17,11 +17,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/datapackage"
-	"github.com/ydnikolaev/a2ahub/internal/html"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
 )
 
@@ -110,84 +108,32 @@ func (c *ShowCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 	// Guard (top-level brief's D4): an artifact carrying no attachments[]
 	// prints exactly what it printed before this wave — nothing is added
-	// when the envelope has none, so an ordinary delivery's rendering is
+	// when there are none, so an ordinary delivery's rendering is
 	// unchanged.
-	for _, line := range ShowAttachmentLines(decodeShowAttachments(result.Envelope), time.Now()) {
+	for _, line := range ShowAttachmentLines(result.Attachments) {
 		_, _ = fmt.Fprintln(stdio.Stdout, line)
 	}
 	return 0
 }
 
-// decodeShowAttachments reads envelope's `attachments` array — the same
-// key schemas/envelope/v2/work_request.schema.json:78-114 declares — off
-// result.Envelope (cache.ShowResult's own untyped frontmatter projection,
-// populated on both the CLI and dashboard `Show`/`ShowMany` paths so this
-// reads the SAME data the dashboard will project once a later,
-// template-allowlisted wave wires it in).
-//
-// entry.ExpiresAt is always "" here: a committed artifact's frontmatter
-// never carries attachments[].expires_at (cmd_attach.go's own doc
-// comment — the schema declares no such property, additionalProperties:
-// false), so this decode alone cannot answer AC5's "has this lapsed"
-// question for a real, on-disk attachment. See this wave's own deviations
-// report: html.ProjectAttachmentClaim's Lapsed branch is proven by
-// cmd_show_attachment_test.go directly, against a resolved
-// AttachmentManifestEntry, not through this decode path — closing that
-// gap end-to-end needs a schema property or a side-car manifest, both
-// outside this file's allowlist.
-func decodeShowAttachments(envelope map[string]any) []datapackage.AttachmentManifestEntry {
-	raw, ok := envelope["attachments"]
-	if !ok {
-		return nil
-	}
-	list, ok := raw.([]any)
-	if !ok {
-		return nil
-	}
-	out := make([]datapackage.AttachmentManifestEntry, 0, len(list))
-	for _, item := range list {
-		m, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		out = append(out, datapackage.AttachmentManifestEntry{
-			Attachment: datapackage.Attachment{
-				Ref:          showAttachmentStringField(m, "ref"),
-				Digest:       showAttachmentStringField(m, "digest"),
-				Role:         showAttachmentStringField(m, "role"),
-				ConformsTo:   showAttachmentStringField(m, "conforms_to"),
-				Verification: showAttachmentStringField(m, "verification"),
-				Retention:    showAttachmentStringField(m, "retention"),
-			},
-		})
-	}
-	return out
-}
-
-func showAttachmentStringField(m map[string]any, key string) string {
-	v, _ := m[key].(string)
-	return v
-}
-
-// ShowAttachmentLines renders each attachment's claim via
-// html.ProjectAttachmentClaim — the SAME projection the dashboard surface
-// uses (internal/html/delivery.go) — so `a2a show` and the dashboard say
-// the SAME thing about the same attachment (top-level brief: "one
-// artifact, one answer"). This file invents no second vocabulary for
-// verification:none or a lapsed retention.
+// ShowAttachmentLines renders each attachment's ALREADY-DERIVED claim
+// (cache.ShowResult.Attachments — one datapackage.AttachmentClaim per
+// committed attachments[] entry, computed once by
+// internal/cache/store.go's buildShowResult using the Store's own injected
+// Clock) into `a2a show`'s human-text lines. It performs no decode and no
+// derivation of its own: spec 04 §11's amendment moved BOTH out of this
+// file and into the structured read path, so `a2a show`, `a2a show
+// --json`, MCP's a2a_show and the dashboard detail panel all print/render
+// the SAME claim instead of each computing it independently.
 //
 // Exported (rather than kept file-private like this file's other helpers)
-// specifically so cmd_show_attachment_test.go can assert AC5's lapse
-// rendering directly against a resolved AttachmentManifestEntry: Run's own
-// only caller (decodeShowAttachments) can never construct one with a
-// non-empty ExpiresAt from a committed artifact today (see that function's
-// own doc comment), so a black-box, Run()-only test could never reach the
-// Lapsed branch this function also has to render correctly.
-func ShowAttachmentLines(entries []datapackage.AttachmentManifestEntry, now time.Time) []string {
-	lines := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		claim := html.ProjectAttachmentClaim(entry, now)
-		line := fmt.Sprintf("attachment %s: %s", entry.Ref, claim.VerificationClaim)
+// so cmd_show_attachment_test.go can assert this formatting directly
+// against a hand-built AttachmentClaim, without needing a full store/Run()
+// round trip for every wording check.
+func ShowAttachmentLines(claims []datapackage.AttachmentClaim) []string {
+	lines := make([]string, 0, len(claims))
+	for _, claim := range claims {
+		line := fmt.Sprintf("attachment %s: %s", claim.Ref, claim.VerificationClaim)
 		if claim.Lapsed {
 			line += "; " + claim.LapseClaim
 		}

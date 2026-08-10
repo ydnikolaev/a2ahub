@@ -156,6 +156,26 @@
       </div>
     </sc-if>
 
+    <sc-if value="{{ hasAttachments }}" hint-placeholder-val="{{ false }}">
+      <div data-artifact-section="attachments" style="border-top:1px solid var(--hairline); padding-top:var(--space-section); margin:0 0 var(--space-section);">
+        <dc-import name="SectionHeading" title="{{ attachmentsLabel }}" hint="" hint-size="100%,32px"></dc-import>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <sc-for list="{{ attachments }}" as="att" hint-placeholder-count="2">
+            <div style="background:var(--surface-section); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); display:flex; flex-direction:column; gap:4px;">
+              <span style="display:flex; align-items:flex-start; gap:12px; flex-wrap:nowrap;">
+                <span style="flex:1 1 auto; min-width:0; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:16px; font-weight:600; overflow-wrap:anywhere;">{{ att.ref }}</span>
+                <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="{{ att.pillText }}" tone="{{ att.pillTone }}" hint-size="120px,26px"></dc-import></span>
+              </span>
+              <span style="font-size:15px; color:var(--muted); overflow-wrap:anywhere;">{{ att.verificationClaim }}</span>
+              <sc-if value="{{ att.lapsed }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size:15px; color:var(--attention-ink); overflow-wrap:anywhere;">{{ att.lapseClaim }}</span>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
     <sc-if value="{{ hasEvents }}" hint-placeholder-val="{{ false }}">
       <div data-artifact-section="events" style="border-top:1px solid var(--hairline); padding-top:var(--space-section); margin-bottom:var(--space-section);">
         <dc-import name="SectionHeading" title="{{ eventsLabel }}" hint="{{ newestFirstLabel }}" hint-size="100%,32px"></dc-import>
@@ -325,6 +345,7 @@ class Component extends DCLogic {
       missingText: d.missingText || "",
       missingHint: d.missingHint || "",
       refsLabel: ru ? "Закреплённые ссылки" : "Pinned references",
+      attachmentsLabel: ru ? "Вложения" : "Attachments",
       eventsLabel: ru ? "История событий" : "Event history",
       newestFirstLabel: ru ? "новое сверху" : "newest first",
       flagLabel: ru ? "флаг протокола" : "protocol flag",
@@ -424,6 +445,24 @@ class Component extends DCLogic {
       })),
       hasRefs: !!(d.refs && d.refs.length),
       refs: d.refs || [],
+      hasAttachments: !!(d.attachments && d.attachments.length),
+      // Verification and lapse are orthogonal (spec 04 §7's axis table): an
+      // attachment can be verification:none AND lapsed, so the pill reads
+      // the lapse state FIRST (it is the more urgent fact), then falls back
+      // to the verification claim's own tone. Neither claim is re-derived
+      // here — pillText/pillTone are presentation-only labels layered on
+      // top of the already-computed verification_claim/lapsed/lapse_claim
+      // fields cache.ShowResult.Attachments carries.
+      attachments: (d.attachments || []).map(att => ({
+        ref: att.ref,
+        verificationClaim: att.verification_claim || "",
+        lapsed: !!att.lapsed,
+        lapseClaim: att.lapse_claim || "",
+        pillText: att.lapsed
+          ? (ru ? "истекло" : "lapsed")
+          : (att.verification === "none" ? (ru ? "без вердикта" : "no verdict") : (ru ? "заявлено" : "claimed")),
+        pillTone: att.lapsed ? "blocking" : (att.verification === "none" ? "neutral" : "healthy")
+      })),
       hasEvents: !!(d.events && d.events.length),
       events: (d.events || []).map((e, i, all) => Object.assign({}, e, {
         hasSignal: true,

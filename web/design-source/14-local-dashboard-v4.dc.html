@@ -3345,6 +3345,12 @@ class Component extends DCLogic {
         pillTone: r.resolved === false || r.digest_mismatch ? "blocking" : "healthy"
       })),
       events, flags: flagMessages,
+      // The attachment claims the Go side derives (cache.ShowResult.Attachments
+      // -> ArtifactDetail.Attachments), passed through rather than re-derived.
+      // This literal is hand-picked, not a spread of `a`, so a field the Go
+      // layer adds is invisible here until it is named — which is exactly how
+      // AC4's dashboard half was built and dormant for one wave.
+      attachments: a.attachments || [],
       // The handover, on our own move only. The gate is the canonical whose-move
       // projection rather than the narrower human-attention queue: a routine
       // move an agent would normally have taken unprompted is exactly the case

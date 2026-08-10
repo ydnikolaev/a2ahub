@@ -3,6 +3,7 @@ package cache
 import (
 	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/provenance"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -269,6 +270,22 @@ type ShowResult struct {
 	Refs      []RefFact      `json:"refs,omitempty"`
 	SyncStale bool           `json:"sync_stale"`
 	SyncAge   string         `json:"sync_age,omitempty"`
+	// Attachments is the typed projection of the artifact's own committed
+	// attachments[] (schemas/envelope/v2/work_request.schema.json), one
+	// datapackage.AttachmentClaim per entry — ref/digest/role/conforms_to/
+	// verification/retention/expires_at PLUS the two derived reader-facing
+	// claims (VerificationClaim, Lapsed/LapsedOn/LapseClaim). Populated in
+	// Store.buildShowResult using the Store's own injected Clock, never
+	// time.Now(), so the lapse verdict is deterministic. Spec 04 §11's
+	// 2026-08-09 amendment ("the attachment claim is structured, not
+	// rendered-only"): this field is what makes `a2a show --json`, MCP and
+	// the dashboard all carry the SAME derivation `a2a show`'s human-text
+	// branch used to compute and print, and only print.
+	//
+	// `omitempty`, like Refs/Flags above: an artifact with no attachments[]
+	// produces byte-identical `a2a show --json` output to before this field
+	// existed.
+	Attachments []datapackage.AttachmentClaim `json:"attachments,omitempty"`
 	// Envelope is the heterogeneous, schema-owned frontmatter projection the
 	// HTML detail panel needs. It remains outside `a2a show --json` so that
 	// command's established output contract stays byte-compatible. Values are

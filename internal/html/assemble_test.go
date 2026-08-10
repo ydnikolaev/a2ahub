@@ -18,6 +18,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
+	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
@@ -528,4 +529,58 @@ func runHTMLContractGit(t *testing.T, repo string, extraEnv []string, args ...st
 		t.Fatalf("git %v: %v\n%s", args, err, output.String())
 	}
 	return output.String()
+}
+
+// TestToArtifactDetail_AttachmentsPassThroughWithNoSecondDecode is spec 04's
+// (agent-exchange-2026-08) §11 amendment: ArtifactDetail.Attachments must
+// carry cache.ShowResult.Attachments straight through — the SAME
+// datapackage.AttachmentClaim values, already fully derived by
+// internal/cache/store.go, not re-decoded or re-derived here. A defensive
+// copy is still taken (matching Flags/To's own convention), so the two
+// slices are equal by value but distinct in memory.
+func TestToArtifactDetail_AttachmentsPassThroughWithNoSecondDecode(t *testing.T) {
+	t.Parallel()
+	claims := []datapackage.AttachmentClaim{
+		{
+			AttachmentManifestEntry: datapackage.AttachmentManifestEntry{
+				Attachment: datapackage.Attachment{
+					Ref: "sha256:aaaa", Digest: "sha256:aaaa",
+					Verification: datapackage.VerificationRequired, Retention: "1h",
+				},
+				ExpiresAt: "2026-08-01T00:00:00Z",
+			},
+			VerificationClaim: "a verdict is required for these bytes",
+			Lapsed:            true,
+			LapsedOn:          "2026-08-01",
+			LapseClaim:        "references bytes whose retention lapsed on 2026-08-01",
+		},
+	}
+
+	detail, err := toArtifactDetail(cache.ShowResult{
+		ID: "XW-test", Type: "work_request", Title: "carries bytes", Body: "body",
+		Attachments: claims,
+	})
+	if err != nil {
+		t.Fatalf("toArtifactDetail: %v", err)
+	}
+	if !reflect.DeepEqual(detail.Attachments, claims) {
+		t.Fatalf("detail.Attachments = %+v, want %+v (byte-identical passthrough)", detail.Attachments, claims)
+	}
+	if len(detail.Attachments) > 0 && &detail.Attachments[0] == &claims[0] {
+		t.Fatalf("detail.Attachments shares backing memory with the ShowResult's own slice, want a defensive copy")
+	}
+}
+
+// TestToArtifactDetail_NoAttachmentsStaysEmpty guards the D4-style
+// invariant at this layer: an artifact carrying none produces an empty
+// (never nil-vs-non-nil-surprise) Attachments slice.
+func TestToArtifactDetail_NoAttachmentsStaysEmpty(t *testing.T) {
+	t.Parallel()
+	detail, err := toArtifactDetail(cache.ShowResult{ID: "XR-test", Type: "requirement", Title: "t", Body: "b"})
+	if err != nil {
+		t.Fatalf("toArtifactDetail: %v", err)
+	}
+	if len(detail.Attachments) != 0 {
+		t.Fatalf("detail.Attachments = %+v, want empty", detail.Attachments)
+	}
 }
