@@ -710,7 +710,13 @@ changes:
       dashboard all read this from the same place, so they cannot disagree
       about it.
       The correlation runs through the handoff that carries the package, since
-      that is the only artifact which structurally names one.
+      that is the only artifact which structurally names one — and that is also
+      the limit, stated here rather than discovered: this catches the case
+      where the handoff arrived and its package did not. It does NOT catch the
+      case where neither arrived, because `result: delivered` on its own claims
+      no bytes — it is the ordinary result word for a work_request — so a space
+      cannot tell "delivered, bytes pending" from "delivered, no bytes were
+      ever involved" until a response can name its own package.
     affects: ["a2a inbox", "a2a thread", "the dashboard", "whose-move-is-it"]
     action:
       scope: none
