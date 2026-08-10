@@ -70,16 +70,16 @@ func (r TriageReport) Clean() bool { return len(r.Entries) == 0 }
 type FreshnessStatus int
 
 const (
-	// FreshnessRefused: hubRoot is a git work tree and the hub-of-record
+	// FreshnessRefused means hubRoot is a git work tree and the hub-of-record
 	// check either found drift, could not be completed, or found no hub
 	// configured (AC3 cases (a)/(b)/(c)) — Triage must refuse, and must
 	// never report "inbox clean".
 	FreshnessRefused FreshnessStatus = iota
-	// FreshnessCurrent: the hub of record was checked and hubRoot agrees
+	// FreshnessCurrent means the hub of record was checked and hubRoot agrees
 	// with it — "inbox clean" is reachable if the local listing is also
 	// empty.
 	FreshnessCurrent
-	// FreshnessNotApplicable: hubRoot is not a git work tree, so there is
+	// FreshnessNotApplicable means hubRoot is not a git work tree, so there is
 	// no hub of record to diverge from — "inbox clean" is reachable (AC3:
 	// "Only a hubRoot that is NOT a git work tree yields not-applicable").
 	FreshnessNotApplicable
