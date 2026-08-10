@@ -52,6 +52,21 @@ type PublishableInput struct {
 	ValidFixtures int
 	// InvalidFixtures is how many fixtures/invalid/** files it publishes.
 	InvalidFixtures int
+	// DeclaresNoCompatibilityClaim reports whether the descriptor's
+	// caller-resolved `x_binding` declares no compatibility claim at all —
+	// the bare `none` sentinel, or the long form with
+	// `compatibility_status: "none"` (which the schema's own T2 asymmetry
+	// already forces to carry `adoptable: false` and
+	// `runtime_pinnable: false`). This is a NARROWER fact than "declares
+	// itself non-adoptable": a long form with `adoptable: false` but a
+	// real `compatibility_status` (e.g. strict-semver) is still claiming a
+	// checkable compatibility contract, and relaxing §5.3 for it would
+	// widen T2's escape hatch rather than police it — the contracts spec
+	// 05 names as wanting this relaxation are the ones making NO
+	// machine-checkable claim whatsoever (specs/05-declared-nature.md,
+	// 2026-08-10 amendment). The caller resolves this from the
+	// descriptor; this package reads no schema and no descriptor.
+	DeclaresNoCompatibilityClaim bool
 }
 
 // CheckContractPublishable enforces plan §5.3: every contract must actually
@@ -71,8 +86,21 @@ type PublishableInput struct {
 // binary can still enforce §5.3's format-neutral directory contract.
 //
 // Returns nil when the contract may be published.
+//
+// P5 US-1's relaxation (specs/05-declared-nature.md, 2026-08-10 amendment):
+// a descriptor declaring NO compatibility claim at all
+// (DeclaresNoCompatibilityClaim) and publishing NONE of the three roles
+// also returns nil — the contracts this exists for (a non-binding review
+// bundle, an agreed definition with no machine-checkable grammar) cannot
+// publish a schema or fixtures to check, because there is nothing to
+// check. A descriptor that is PARTIALLY populated (some but not all three
+// roles present) still refuses below: declaring no claim does not excuse
+// an inconsistent one.
 func CheckContractPublishable(in PublishableInput) *Violation {
 	if in.Schemas > 0 && in.ValidFixtures > 0 && in.InvalidFixtures > 0 {
+		return nil
+	}
+	if in.DeclaresNoCompatibilityClaim && in.Schemas == 0 && in.ValidFixtures == 0 && in.InvalidFixtures == 0 {
 		return nil
 	}
 

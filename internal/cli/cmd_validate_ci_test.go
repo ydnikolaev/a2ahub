@@ -2388,3 +2388,175 @@ func TestValidateCI_ContractV1DescriptorBelowFloorClean(t *testing.T) {
 		t.Fatalf("exit = %d, want 0 (below the floor the v1 tree is still the publishable shape); stderr=%s; report=%+v", code, errOut, rep)
 	}
 }
+
+// nonBindingV2Contract is a schema-valid declared-v2 descriptor that
+// publishes NO schema/valid-fixture/invalid-fixture roles — only a single
+// "other"-role artifact, which is what satisfies contract.schema.json's
+// unconditional `artifacts` minItems:1 requirement without contradicting
+// "carries no [schema/fixture] artifacts" (specs/05-declared-nature.md,
+// 2026-08-10 amendment). xBindingBlock is inserted as-is, so a caller may
+// pass the `x_binding: none` sentinel line, a long-form mapping, or "" for
+// undeclared.
+func nonBindingV2Contract(from, slug, xBindingBlock string) string {
+	return "---\n" +
+		"schema: envelope/v2\n" +
+		"id: XC-" + from + "-" + slug + "\n" +
+		"type: contract\n" +
+		"title: Test contract\n" +
+		"space: getvisa\n" +
+		"from: " + from + "\n" +
+		"to: [seomatrix]\n" +
+		"thread: " + cliFixtureThread + "\n" +
+		"actor: {kind: agent, name: claude, model: claude-fable-5}\n" +
+		"created: 2026-07-30T14:02:00Z\n" +
+		"category: data-feed\n" +
+		"priority: p2\n" +
+		"blocking: false\n" +
+		"classification: internal\n" +
+		"version: \"0.0.0\"\n" +
+		"schema_format: other\n" +
+		"compat_policy: default\n" +
+		xBindingBlock +
+		"artifacts:\n" +
+		"  - {path: artifacts/review.md, role: other, normative: false, media_type: text/markdown}\n" +
+		"---\nBody.\n"
+}
+
+// TestValidateCI_ContractNonBindingSentinelRelaxesPublishability is P5
+// US-1's own reachable half (specs/05-declared-nature.md, 2026-08-10
+// amendment, §8 AC2): a contract declaring itself non-binding, and
+// publishing no schema/fixture roles, merges clean — the exact shape a
+// non-binding review bundle or an agreed definition with no
+// machine-checkable grammar needs.
+func TestValidateCI_ContractNonBindingSentinelRelaxesPublishability(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	rel := "axon/provides/content-feed/contract.md"
+	root := ciRepo(t, ciManifestWithFloor("0.19.3"), map[string]string{
+		rel: nonBindingV2Contract("axon", "content-feed", "x_binding: none\n"),
+	})
+	contractGitRun(t, root, "init", "-q", "-b", "main")
+	contractGitRun(t, root, "add", "-A")
+	contractGitRun(t, root, "commit", "-q", "-m", "author non-binding content-feed")
+	base := contractGitRevParse(t, root, "HEAD")
+
+	code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", base, "ydnikolaev")
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0; stderr=%s; report=%+v", code, errOut, rep)
+	}
+	for _, a := range rep.Artifacts {
+		if a.Result == nil {
+			continue
+		}
+		for _, v := range a.Result.Violations {
+			if v.Code == "POL-009" || v.Code == "POL-013" {
+				t.Fatalf("a non-binding contract with no artifacts to check must not be refused for lacking them: %s", v.Message)
+			}
+		}
+	}
+}
+
+// TestValidateCI_ContractNonBindingLongFormNoClaimRelaxesPublishability is
+// the long-form half of the same fact: `compatibility_status: none`
+// relaxes identically to the bare sentinel, per the schema's own T2
+// asymmetry.
+func TestValidateCI_ContractNonBindingLongFormNoClaimRelaxesPublishability(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	rel := "axon/provides/content-feed/contract.md"
+	root := ciRepo(t, ciManifestWithFloor("0.19.3"), map[string]string{
+		rel: nonBindingV2Contract("axon", "content-feed",
+			"x_binding:\n  artifact_class: non_binding_review\n  compatibility_status: none\n  adoptable: false\n  runtime_pinnable: false\n"),
+	})
+	contractGitRun(t, root, "init", "-q", "-b", "main")
+	contractGitRun(t, root, "add", "-A")
+	contractGitRun(t, root, "commit", "-q", "-m", "author non-binding content-feed")
+	base := contractGitRevParse(t, root, "HEAD")
+
+	code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", base, "ydnikolaev")
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0; stderr=%s; report=%+v", code, errOut, rep)
+	}
+	for _, a := range rep.Artifacts {
+		if a.Result == nil {
+			continue
+		}
+		for _, v := range a.Result.Violations {
+			if v.Code == "POL-009" || v.Code == "POL-013" {
+				t.Fatalf("a long-form compatibility_status: none must relax identically to the sentinel: %s", v.Message)
+			}
+		}
+	}
+}
+
+// TestValidateCI_ContractDeclaringAdoptableFalseWithARealClaimStillNeedsTheBaseline
+// is the merge-gate half of the relaxation's Direction 2: `adoptable:
+// false` alone does not relax §5.3 — only declaring NO compatibility claim
+// does. A long form naming a real compatibility_status while publishing
+// nothing is still an unverified claim, and POL-009 must still catch it,
+// or the relaxation degrades into "any x_binding disables POL-009".
+func TestValidateCI_ContractDeclaringAdoptableFalseWithARealClaimStillNeedsTheBaseline(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	rel := "axon/provides/content-feed/contract.md"
+	root := ciRepo(t, ciManifestWithFloor("0.19.3"), map[string]string{
+		rel: nonBindingV2Contract("axon", "content-feed",
+			"x_binding:\n  artifact_class: reference_impl\n  compatibility_status: strict-semver\n  adoptable: false\n  runtime_pinnable: false\n"),
+	})
+	contractGitRun(t, root, "init", "-q", "-b", "main")
+	contractGitRun(t, root, "add", "-A")
+	contractGitRun(t, root, "commit", "-q", "-m", "author content-feed")
+	base := contractGitRevParse(t, root, "HEAD")
+
+	code, rep, _ := runCI(t, engine, root, fakeGit(rel), "v3-pr", base, "ydnikolaev")
+	if code == 0 {
+		t.Fatalf("expected a POL-009 refusal (a real compatibility claim with nothing to check it against), got exit 0; report=%+v", rep)
+	}
+	var sawPOL009 bool
+	for _, a := range rep.Artifacts {
+		if a.Result == nil {
+			continue
+		}
+		for _, v := range a.Result.Violations {
+			if v.Code == "POL-009" {
+				sawPOL009 = true
+			}
+		}
+	}
+	if !sawPOL009 {
+		t.Fatalf("expected POL-009 among the violations, got %+v", rep.Artifacts)
+	}
+}
+
+// TestValidateCI_ContractXBindingUntypedValueIsSchemaInvalid proves the
+// justification for declaring `x_binding` in contract.schema.json's own
+// `properties` (rather than relying solely on the `^x_` patternProperties
+// escape): without it, `x_binding: garbage` would pass unchecked. With it,
+// a scalar that is not the literal `none` satisfies neither half of the
+// field's own oneOf and the envelope-validation report entry must be red.
+func TestValidateCI_ContractXBindingUntypedValueIsSchemaInvalid(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	rel := "axon/provides/content-feed/contract.md"
+	root := ciRepo(t, ciManifestWithFloor("0.19.3"), map[string]string{
+		rel: nonBindingV2Contract("axon", "content-feed", "x_binding: garbage\n"),
+	})
+	contractGitRun(t, root, "init", "-q", "-b", "main")
+	contractGitRun(t, root, "add", "-A")
+	contractGitRun(t, root, "commit", "-q", "-m", "author content-feed")
+	base := contractGitRevParse(t, root, "HEAD")
+
+	code, rep, _ := runCI(t, engine, root, fakeGit(rel), "v3-pr", base, "ydnikolaev")
+	if code == 0 {
+		t.Fatalf("x_binding: garbage must be schema-invalid, got exit 0; report=%+v", rep)
+	}
+	var sawInvalidResult bool
+	for _, a := range rep.Artifacts {
+		if a.Result != nil && !a.Result.Valid {
+			sawInvalidResult = true
+		}
+	}
+	if !sawInvalidResult {
+		t.Fatalf("expected at least one report entry with a decoded invalid Result, got %+v", rep.Artifacts)
+	}
+}

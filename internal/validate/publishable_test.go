@@ -82,6 +82,29 @@ func TestCheckContractPublishable(t *testing.T) {
 			wantRefusal: true,
 			wantMention: "no schema/** files and no fixtures/valid/** files and no fixtures/invalid/** files",
 		},
+		// P5 US-1's relaxation (specs/05-declared-nature.md, 2026-08-10
+		// amendment). Direction 1 (relaxation removed → still red) is the
+		// "no schema and no fixtures is refused" case above, which carries
+		// DeclaresNoCompatibilityClaim: false and stays refused — proving
+		// the flag, not the empty counts alone, is what relaxes.
+		{
+			name: "a descriptor declaring no compatibility claim and publishing nothing is publishable",
+			in:   PublishableInput{SchemaFormat: "other", ContractID: "XC-axon-review", DeclaresNoCompatibilityClaim: true},
+		},
+		{
+			name: "the sentinel relaxation reaches json-schema-2020-12 too, not only non-JSON formats",
+			in:   PublishableInput{SchemaFormat: "json-schema-2020-12", ContractID: "XC-axon-review", DeclaresNoCompatibilityClaim: true},
+		},
+		// Direction 2: the relaxation must not become unconditional — a
+		// PARTIALLY populated contract still refuses even when it declares
+		// no compatibility claim, because declaring no claim does not
+		// excuse an inconsistent one.
+		{
+			name:        "declaring no compatibility claim does not excuse a partially published contract",
+			in:          PublishableInput{SchemaFormat: "json-schema-2020-12", ContractID: "XC-axon-review", DeclaresNoCompatibilityClaim: true, Schemas: 1},
+			wantRefusal: true,
+			wantMention: "no fixtures/valid/** files",
+		},
 	}
 
 	for _, tc := range cases {
@@ -261,5 +284,50 @@ func TestCheckContractDescriptorShapeNonJSONSchemaNamesTheLimit(t *testing.T) {
 		DescriptorSchema: "envelope/v1", DeclaresArtifacts: false, SchemaFormat: "openapi-3.1",
 	}); got != nil {
 		t.Fatalf("below the floor an openapi contract must stay publishable, got %+v", *got)
+	}
+}
+
+// TestCheckContractDescriptorShapeAlreadySilentForANonBindingDescriptor is
+// the negative finding specs/05-declared-nature.md's 2026-08-10 amendment
+// asked to be verified empirically, not assumed: does
+// CheckContractDescriptorShape (POL-013) ALSO refuse the shape a
+// non-binding, no-artifacts-published contract takes, the way
+// CheckContractPublishable (POL-009) does before its own relaxation?
+//
+// It does not, and DescriptorShapeInput therefore gains NO new field. The
+// whole question is decided by DeclaresArtifacts alone
+// (`probe.Artifacts != nil` at the caller) — role-agnostic and
+// schema_format-agnostic — the moment DescriptorSchema is "envelope/v2":
+// `if in.DescriptorSchema == "envelope/v2" && in.DeclaresArtifacts { return
+// nil }` returns before schema_format is even read. And DeclaresArtifacts
+// can never be false for a schema-valid v2 descriptor in the first place:
+// envelope/v2/contract.schema.json requires `artifacts` (minItems: 1)
+// UNCONDITIONALLY, x_binding or not — a non-binding contract still needs
+// at least one non-schema/non-fixture entry (role "other", say) to be a
+// legal document at all, and that alone satisfies DeclaresArtifacts. The
+// 2026-08-08 finding that measured POL-013 firing alongside POL-009 used a
+// descriptor that was envelope/v1 (no `artifacts` key exists on that
+// schema at all), which is a different, unrelated refusal — the space's
+// profile refusing the WRONG GENERATION, not this field's absence — and
+// does not transfer to the v2-plus-x_binding shape this phase targets.
+func TestCheckContractDescriptorShapeAlreadySilentForANonBindingDescriptor(t *testing.T) {
+	t.Parallel()
+
+	for _, format := range []string{"json-schema-2020-12", "other", "openapi-3.1", "proto3"} {
+		t.Run(format, func(t *testing.T) {
+			t.Parallel()
+			// DeclaresArtifacts: true models the real shape — the descriptor
+			// carries a top-level `artifacts:` key with at least one entry
+			// to satisfy the schema's unconditional `minItems: 1`, even
+			// though none of those entries is a schema/valid-fixture/
+			// invalid-fixture role (that fact lives in PublishableInput's
+			// Schemas/ValidFixtures/InvalidFixtures counts, not here).
+			if got := CheckContractDescriptorShape(DescriptorShapeInput{
+				SpaceMinBinaryVersion: "0.19.3", ContractID: "XC-axon-review",
+				DescriptorSchema: "envelope/v2", DeclaresArtifacts: true, SchemaFormat: format,
+			}); got != nil {
+				t.Fatalf("a v2 descriptor declaring an artifacts inventory must not be refused for its SHAPE regardless of schema_format, got %+v", *got)
+			}
+		})
 	}
 }

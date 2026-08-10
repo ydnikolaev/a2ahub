@@ -880,6 +880,11 @@ func validateCIContract(ctx context.Context, root, base, id, descriptorPath, spa
 		Schemas:         len(schemasNew),
 		ValidFixtures:   len(fixturesValidNew),
 		InvalidFixtures: len(fixturesInvalidNew),
+		// P5 US-1's relaxation (specs/05-declared-nature.md, 2026-08-10
+		// amendment): resolved from the descriptor's own `x_binding` here,
+		// at the caller — validate.CheckContractPublishable reads no
+		// schema and no descriptor itself.
+		DeclaresNoCompatibilityClaim: probe.XBinding.declaresNoCompatibilityClaim(),
 	}); v != nil {
 		violations = append(violations, *v)
 	}
@@ -1143,4 +1148,21 @@ func decodeLinkage(raw []byte) (linkageProbe, bool) {
 		return linkageProbe{}, false
 	}
 	return probe, true
+}
+
+// declaresNoCompatibilityClaim reports whether x makes NO compatibility
+// claim at all — the bare `none` sentinel, or the long form with
+// `compatibility_status: "none"`. This is the caller-resolved fact
+// validate.PublishableInput's DeclaresNoCompatibilityClaim wants: NARROWER
+// than nonAdoptable, deliberately — a long form declaring
+// `adoptable: false` while still naming a real compatibility_status (e.g.
+// strict-semver) IS making a checkable claim, and relaxing §5.3's
+// schema-plus-fixtures requirement for it would let an unverified claim
+// through, widening T2's escape hatch rather than policing it (spec 05,
+// 2026-08-10 amendment).
+func (x *xBindingProbe) declaresNoCompatibilityClaim() bool {
+	if x == nil {
+		return false
+	}
+	return x.Sentinel || x.CompatibilityStatus == "none"
 }

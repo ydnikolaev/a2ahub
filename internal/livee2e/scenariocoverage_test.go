@@ -672,18 +672,32 @@ func undrivenScenarios() []undrivenScenario {
 		},
 		{
 			ID: "contract-binding-none-refused-at-adopt-and-pin",
-			Reason: "UNREACHABLE BY CONSTRUCTION, and the reason changed on " +
-				"2026-08-09. This entry used to say the POL-009/POL-013 " +
-				"relaxation had not shipped. That framing is retired: P5's AC2 " +
-				"was rewritten because it was WRONG, not merely undone — it " +
-				"names an interaction between two things that cannot meet. " +
-				"`binding` lives on schemas/envelope/v2/work_request.schema.json " +
-				"(P5's own D1 moved it there); it is not a property of " +
-				"contract.schema.json, and `a2a contract adopt` accepts only an " +
-				"XC id. So no contract can declare `binding: none` and no adopt " +
-				"or pin can refuse on it. The scenario cannot be driven until a " +
-				"contract-level binding field exists, which no phase has " +
-				"committed to creating. See specs/05-declared-nature.md AC2.",
+			Reason: "STILL UNDRIVEN, and the reason is REPLACED for the second " +
+				"time — the previous one is now FALSE and is worth stating so " +
+				"nobody restores it. On 2026-08-09 this said the scenario was " +
+				"unreachable by construction because `binding` lives only on " +
+				"schemas/envelope/v2/work_request.schema.json, so no contract " +
+				"could declare it and no adopt could refuse on it. Both halves " +
+				"shipped on 2026-08-10: contract.schema.json carries " +
+				"`x_binding` (the `x_` prefix because that schema is deployed), " +
+				"and runAdopt refuses a descriptor whose x_binding is the `none` " +
+				"sentinel or carries `adoptable: false` — before --major " +
+				"resolution, so the flag cannot route around it. " +
+				"The remaining blocker is THIS TIER's grammar, not the product: " +
+				"`a2a contract adopt` writes the consumer's own consumes.yaml " +
+				"dependency, which is not an artifact state change, so it " +
+				"corresponds to no transition triple — exactly the entry above " +
+				"this one, and exactly why P4's AC3 moved its evidence to " +
+				"internal/e2e. The refusal IS proven, through the built " +
+				"command, by internal/cli/cmd_contract_test.go's TestContractAdopt " +
+				"subtests (both refusing shapes, both adopting shapes, and one " +
+				"proving --major cannot bypass it). " +
+				"Note the id's own wording is looser than the product: there is " +
+				"no separate `pin` verb, because `adopt --major` IS the pin — it " +
+				"writes space.Dependency{Contract, Major}. So \"adopt and pin\" " +
+				"is one refusable act, not two. " +
+				"Needs: PredicateKind widening plus a registry-act driver. " +
+				"See specs/05-declared-nature.md's 2026-08-10 amendments.",
 		},
 		{
 			ID: "contract-published-registered-consumer-yields-named-owner-with-no-new-field-set",
