@@ -924,3 +924,37 @@ changes:
         Nothing to do. The field is optional and absent from every existing
         contract; a contract that does not declare it behaves exactly as
         before.
+  - id: RN-01910-32
+    kind: feat
+    impact: normal
+    roadmap:
+      visibility: shipped
+      why: >
+        A verification that says "looks good" tells the next reader nothing
+        about which promises were actually checked. Per-criterion is the
+        difference between a record and an impression.
+    subject: "`a2a verify` records a verdict per acceptance criterion"
+    detail: >
+      Verifying a response was an all-or-nothing act: the judgement of each
+      individual acceptance criterion lived in prose, if anywhere, so a reader
+      could not tell which promises were met, which were not warranted, and
+      which were simply never exercised.
+      `a2a verify` now takes `--verdict <index>:<verdict>:<cause_owner>`,
+      repeatable — one entry per criterion, indexed into the parent's own
+      `acceptance_criteria` list, with `met`, `unmet`, `not_warranted` or
+      `not_exercised` and the party the shortfall belongs to. The verdicts are
+      written onto the verification event itself and shown per criterion in the
+      thread and on the dashboard.
+      An index that does not exist on the parent is refused at merge, so a
+      verdict cannot quietly point at nothing.
+      This applies once your space's `min_binary_version` has reached the
+      contract-publication floor; below it, verification records exactly as it
+      did before and the flag is refused rather than silently dropped.
+      Known limit: the standalone `a2a close` verb does not yet carry verdicts —
+      only verification does, including the same-PR close it performs for you.
+    affects: ["a2a verify", "a2a verify --verdict", "a2a thread", "the dashboard"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. The flag is optional; a verification without it records
+        an empty verdict list and behaves as before.
