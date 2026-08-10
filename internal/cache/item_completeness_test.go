@@ -49,9 +49,11 @@ var foldedFieldsItemDeliberatelyDrops = map[string]string{
 	// The two overlay booleans below are computed per-artifact during the
 	// mirror walk and consumed by callers that build their own views from
 	// foldedArtifact directly.
-	"DeprecatesMyDependency": "a dependency-drift overlay consumed by the contract/drift views, not a per-row inbox fact",
-	"FulfillingResponse":     "a thread-shaped overlay: whether this response fulfils its parent, which the thread view resolves against the parent it already has",
-	"BlockedByOwner":         "the system a fulfilling response names as who a `blocked` wait is actually on, legality-checked in mirror.go before it reaches the relation. Item already carries the ANSWER — pendency's Verdict.Owners names this system when it applies — so projecting the INPUT beside its own output would put two copies of one fact on the wire, free to disagree",
+	"DeprecatesMyDependency":    "a dependency-drift overlay consumed by the contract/drift views, not a per-row inbox fact",
+	"FulfillingResponse":        "a thread-shaped overlay: whether this response fulfils its parent, which the thread view resolves against the parent it already has",
+	"BlockedByOwner":            "the system a fulfilling response names as who a `blocked` wait is actually on, legality-checked in mirror.go before it reaches the relation. Item already carries the ANSWER — pendency's Verdict.Owners names this system when it applies — so projecting the INPUT beside its own output would put two copies of one fact on the wire, free to disagree",
+	"ParentDisputeReopenFailed": "whether THIS response's own dispute event failed to reopen its parent (fold.go's D-024 comment), read off the PARENT's Result.Flags for pendency's (response, disputed) row. Item already carries the ANSWER — the row's Why names the refusal by its own words (\"this dispute's own attempt to reopen the parent... was itself refused\") when the flag is set — so projecting the INPUT beside its own derived Why would put two copies of one fact on the wire, free to disagree, the same reason BlockedByOwner is exempt above",
+	"DeliveryUnresolvable":      "AC9's read half (spec 06 §8): whether a fulfilling response's `delivered` claim points at bytes absent from this space's mirror, resolved by correlating handoff fulfills[]/deliverables[] against the package resolver. Item already carries the ANSWER — pendency's (question|work_request, responded) row names the responder and `respond` when this is true, and its Why quotes AC9 directly — so projecting the INPUT beside its own output would put two copies of one fact on the wire, free to disagree, the same reason BlockedByOwner and ParentDisputeReopenFailed are exempt above",
 }
 
 // TestItemCarriesEveryFoldedArtifactField is the third projection gate.

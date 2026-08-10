@@ -128,6 +128,39 @@ type Input struct {
 	// gets today's ordinary behaviour, never a synthesized refusal.
 	ParentDisputeReopenFailed bool
 
+	// DeliveryUnresolvable says a response fulfilling THIS question or
+	// work_request claimed `result: delivered` while the bytes it names
+	// are absent from the space's own mirror — a caller-resolved FACT for
+	// the same reason ParentFrom and BlockedByOwner are (this package
+	// reads no registry, no filesystem, and no fold.Result.Flags; it
+	// starts nothing on its own): internal/cache resolves it by
+	// correlating the response back to the handoff that names the
+	// package it claims (a response carries no package reference of its
+	// own — spec 04's 2026-08-09 restatement), then asking the SAME
+	// presence check `a2a data fetch` already runs
+	// (internal/cache/packageresolver.go's mirrorPackageResolver).
+	//
+	// AC9 (spec 06 §8, from the live incident fb-20260808-d5740f): a
+	// delivery reaches a space as two independent pull requests — the
+	// payload and the response that announces it — and nothing couples
+	// their outcomes. The response can merge while the payload stays open
+	// and red, and the computed next move must not then tell the sender
+	// it owes verification/close over an obligation nobody actually
+	// discharged. The (question|work_request, responded) row is the one
+	// that splits on it: ordinarily the SENDER owes close; when this is
+	// true, the RESPONDER owes a fresh respond instead — fold.CheckLegality
+	// admits `respond` from `responded` (table.go's own StateResponded row,
+	// RoleTarget), so unlike blockedRow/the orphaned-counterparty branch
+	// this is a real, legal transition of THIS artifact, not the "owners,
+	// no Expected" third shape.
+	//
+	// EMPTY (false) MEANS "the delivery resolved, OR the caller cannot see
+	// the fact, OR this response never claimed delivered at all" — the
+	// same fail-open discipline every other caller-resolved fact in this
+	// struct documents: a caller with no visibility gets today's ordinary
+	// behaviour (the sender owes close), never a synthesized refusal.
+	DeliveryUnresolvable bool
+
 	// BlockedByOwner is the system this artifact's own facts say is
 	// actually being waited on while it sits at `blocked` — a
 	// caller-resolved FACT for the same reason ExtraAddressees and
@@ -558,6 +591,51 @@ func blockedRow() row {
 	}
 }
 
+// respondedRow is the question/work_request `responded` row (AC9, spec 06
+// §8's 2026-08-09 amendment). Absent a caller-resolved DeliveryUnresolvable
+// it is byte-identical to the old unconditional senderRow(fold.TClose,
+// ...): the sender (envelope `from`) owes verification then close.
+//
+// When DeliveryUnresolvable IS true, Owners names the TARGET instead and
+// Expected is fold.TRespond, not "" — unlike blockedRow's own conditional
+// branch, this is a REAL, legal transition of THIS artifact for the named
+// owner (table.go's StateResponded row admits TRespond, Role: RoleTarget),
+// so naming it does not repeat the "surface names a move the tool refuses"
+// defect the third verdict shape exists to avoid. Telling the sender it
+// owes close over a delivery nobody can retrieve would be the lie AC9
+// exists to remove; naming nobody would hide that the responder still owes
+// bytes it never actually produced.
+func respondedRow() row {
+	return row{
+		who: func(in Input) []string {
+			if in.DeliveryUnresolvable {
+				return target(in)
+			}
+			return owner(in)
+		},
+		expectedFor: func(in Input) string {
+			if in.DeliveryUnresolvable {
+				return fold.TRespond
+			}
+			return fold.TClose
+		},
+		whyFor: func(in Input) string {
+			if in.DeliveryUnresolvable {
+				return "AC9 (spec 06 §8): the fulfilling response claims `delivered`, but the bytes it names " +
+					"are absent from this space's mirror (fb-20260808-d5740f) — the RESPONDER owes a fresh " +
+					"respond, not the sender a close over a delivery nobody can retrieve"
+			}
+			return "the answer landed; the sender owes verification then close, or a dispute"
+		},
+		onEmpty: func(in Input) string {
+			if in.DeliveryUnresolvable {
+				return "no target (`to`) was recorded on this envelope, so the " + fold.TRespond + " it would owe cannot be attributed"
+			}
+			return "no owner (`from`) was recorded on this envelope, so the " + fold.TClose + " it would owe cannot be attributed"
+		},
+	}
+}
+
 func parentOwnerRow(expected, why string) row {
 	return row{
 		who:      parentOwner,
@@ -671,8 +749,7 @@ func buildTable() map[key]row {
 		m[key{k, fold.StateInProgress}] = targetRow(fold.TRespond,
 			"same, in flight")
 		m[key{k, fold.StateBlocked}] = blockedRow()
-		m[key{k, fold.StateResponded}] = senderRow(fold.TClose,
-			"the answer landed; the sender owes verification then close, or a dispute")
+		m[key{k, fold.StateResponded}] = respondedRow()
 	}
 
 	// 3.4.4 decision

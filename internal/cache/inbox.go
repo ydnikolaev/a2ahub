@@ -157,9 +157,11 @@ func resolveVerdict(fa foldedArtifact, me string, manifest space.Manifest, paren
 		ExtraAddressees:       extraAddressees(fa, me),
 		HasFulfillingResponse: hasFulfillingResponse(fa),
 		BlockedByOwner:        blockedByOwner(fa),
+		DeliveryUnresolvable:  fa.DeliveryUnresolvable,
 	}
 	if fa.kind() == fold.KindResponse {
 		in.ParentFrom = parentFrom
+		in.ParentDisputeReopenFailed = fa.ParentDisputeReopenFailed
 	}
 	verdict, err := pendency.Resolve(in)
 	if err != nil {

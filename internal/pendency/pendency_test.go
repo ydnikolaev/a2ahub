@@ -385,6 +385,54 @@ func TestBlockedNamesTheOwnerInsteadOfTheTarget(t *testing.T) {
 	}
 }
 
+// TestDeliveryUnresolvableNamesTheResponderInsteadOfTheSender is AC9's own
+// unit test (spec 06 §8, row 9): "pendency.Resolve with
+// DeliveryUnresolvable: true returns the responder and respond; with it
+// false returns the requester and close, unchanged."
+func TestDeliveryUnresolvableNamesTheResponderInsteadOfTheSender(t *testing.T) {
+	t.Parallel()
+
+	for _, k := range []fold.Kind{fold.KindQuestion, fold.KindWorkRequest} {
+		t.Run(string(k)+"/responded, DeliveryUnresolvable=false: the SENDER owes close (unchanged)", func(t *testing.T) {
+			t.Parallel()
+			v, err := Resolve(Input{Kind: k, State: fold.StateResponded, From: "sys-a", To: []string{"sys-b"}})
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			if !reflect.DeepEqual(v.Owners, []string{"sys-a"}) {
+				t.Errorf("Owners = %v, want [sys-a] (the sender/requester)", v.Owners)
+			}
+			if v.Expected != fold.TClose {
+				t.Errorf("Expected = %q, want %q", v.Expected, fold.TClose)
+			}
+		})
+
+		t.Run(string(k)+"/responded, DeliveryUnresolvable=true: the RESPONDER owes a fresh respond", func(t *testing.T) {
+			t.Parallel()
+			v, err := Resolve(Input{
+				Kind: k, State: fold.StateResponded, From: "sys-a", To: []string{"sys-b"},
+				DeliveryUnresolvable: true,
+			})
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			// The mutation this guards: falling back to owner() would
+			// produce [sys-a] here, not [sys-b] — asserting the exact
+			// owner string catches a resolver mutated to ignore
+			// DeliveryUnresolvable.
+			if !reflect.DeepEqual(v.Owners, []string{"sys-b"}) {
+				t.Errorf("Owners = %v, want [sys-b] (the responder/target)", v.Owners)
+			}
+			if v.Expected != fold.TRespond {
+				t.Errorf("Expected = %q, want %q — respond is legal from `responded` (table.go's own StateResponded row)", v.Expected, fold.TRespond)
+			}
+			if !strings.Contains(v.Why, "AC9") {
+				t.Errorf("Why = %q, want it to name AC9", v.Why)
+			}
+		})
+	}
+}
+
 // TestResolveDegradesOnMissingFacts asserts a resolver that would
 // otherwise be productive, but is missing the envelope fact it needs,
 // answers "nobody" with a Why that says the fact was missing — never a

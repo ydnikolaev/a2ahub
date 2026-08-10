@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/provenance"
@@ -180,6 +182,55 @@ type foldedArtifact struct {
 	// field stays empty — the caller-side narrowing pendency's own
 	// BlockedByOwner doc comment describes.
 	BlockedByOwner string
+
+	// ParentDisputeReopenFailed is true, for a RESPONSE artifact only, when
+	// the dispute event that put this response into `disputed` also
+	// attempted, and failed, to reopen its parent to `in_progress` (fold.go's
+	// D-024 comment: illegal when the parent was not `responded` at the
+	// time — already closed, or already reopened by an earlier dispute).
+	// internal/pendency's (response, disputed) row reads it
+	// (Input.ParentDisputeReopenFailed) so its Why never claims a discharge
+	// that never happened (spec 06's 2026-08-09 amendment).
+	//
+	// Resolved in the SAME closure-state overlay pass that already copies
+	// the parent's Responses sub-state onto the response's own Result.State,
+	// because the fact lives on the PARENT's own Result.Flags, not the
+	// response's: applyResponseScoped (internal/fold/fold.go) appends the
+	// failed-reopen Flag{Kind: FlagIllegalTransition, Subject: env.ID} to
+	// the running Result it is called with, which is the PARENT's — the
+	// response's own independent fold call never sees it, and cannot: its
+	// own gatherEvents deliberately excludes verify/dispute from its own
+	// stream (gatherEvents' own doc comment), so nothing in the response's
+	// own Events/Result carries the dispute event at all.
+	ParentDisputeReopenFailed bool
+
+	// DeliveryUnresolvable is AC9's read half (spec 06 §8's 2026-08-09
+	// amendment, from fb-20260808-d5740f): true when a response fulfilling
+	// THIS question or work_request claims `result: delivered` while the
+	// data package it names cannot be resolved in this space's own
+	// mirror. internal/pendency's (question|work_request, responded) row
+	// reads it (Input.DeliveryUnresolvable) so the computed next move
+	// never hands the sender a close over an obligation nobody actually
+	// discharged.
+	//
+	// A response carries no package reference of its own (spec 04's own
+	// 2026-08-09 restatement — `response.schema.json` has no such field),
+	// so this is resolved by correlating THIS artifact's id against every
+	// handoff's own `fulfills[]` (cmd/a2a's dataHandoffEnvelope — the
+	// artifact `a2a data deliver` actually writes the package reference
+	// onto), then asking the SAME presence check `a2a data fetch` already
+	// runs for each of that handoff's data-kind deliverables
+	// (packageresolver.go's mirrorPackageResolver, composed via
+	// delivery.go's already-shipped ResolveDeliveries/PackageResolver
+	// rather than re-implemented here).
+	//
+	// False means either "no response here claims delivered" (the
+	// overwhelmingly common case — this field is meaningless outside AC9's
+	// one scenario) OR "at least one fulfilling handoff's data deliverable
+	// resolved" — the two are not distinguished, the same fail-open
+	// discipline every other caller-resolved fact in this struct
+	// documents.
+	DeliveryUnresolvable bool
 }
 
 func (f foldedArtifact) kind() fold.Kind { return fold.Kind(f.Env.Type) }
@@ -254,10 +305,18 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 	// is only a candidate, resolved once membership and the parent's own
 	// envelope are both in scope, below.
 	blockedOwnerCandidate := map[string]string{}
+	// deliveredResponseTo: parent artifact ID -> true when SOME response
+	// naming it as `parent` claims `result: delivered` — AC9's read half
+	// (spec 06 §8) own trigger condition. foldedArtifact.DeliveryUnresolvable
+	// is meaningless (and stays false) for every parent not in this set.
+	deliveredResponseTo := map[string]bool{}
 	for _, a := range artifacts {
 		if fold.Kind(a.Env.Type) == fold.KindResponse && a.Env.Parent != "" {
 			parentOf[a.Env.ID] = a.Env.Parent
 			hasParentedResponse[a.Env.Parent] = true
+			if a.Env.Result == "delivered" {
+				deliveredResponseTo[a.Env.Parent] = true
+			}
 			s := seq[a.RelPath]
 			if responsesBySeqAndParent[s] == nil {
 				responsesBySeqAndParent[s] = map[string][]string{}
@@ -275,6 +334,31 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 			sort.Strings(byParent[k])
 		}
 	}
+
+	// handoffFulfills: fulfilled artifact ID -> every handoff artifact's own
+	// raw bytes naming it in `fulfills[]` (cmd/a2a's dataHandoffEnvelope,
+	// the artifact `a2a data deliver` writes the package reference onto —
+	// AC9's read half correlates a `delivered` response back to bytes
+	// through THIS field, because a response cannot itself name a package,
+	// spec 04's own 2026-08-09 restatement).
+	handoffFulfills := map[string][][]byte{}
+	for _, a := range artifacts {
+		if fold.Kind(a.Env.Type) != fold.KindHandoff {
+			continue
+		}
+		for _, parentID := range decodeHandoffFulfills(a.Raw) {
+			if parentID == "" {
+				continue
+			}
+			handoffFulfills[parentID] = append(handoffFulfills[parentID], a.Raw)
+		}
+	}
+	// packageResolver's participant set is never read by ResolvePackage
+	// (the producing system is parsed out of the ref itself,
+	// datapackage.ParsePackageID) — only ResolveReport uses it, and this
+	// presence check never calls ResolveReport, so nil is exactly as
+	// correct as the full manifest participant list would be.
+	packageResolver := newMirrorPackageResolver(dir, nil)
 
 	eventsBySubject := map[string][]fold.Event{}
 	eventEvidence := make(map[string]provenance.EventEvidence, len(events))
@@ -391,6 +475,7 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 			DeprecatesMyDependency: myDependencies[a.Env.deprecatedContractID()],
 			FulfillingResponse:     hasParentedResponse[a.Env.ID],
 			BlockedByOwner:         blockedByOwner,
+			DeliveryUnresolvable:   deliveryUnresolvable(a.Env.ID, deliveredResponseTo, handoffFulfills, packageResolver),
 		})
 	}
 
@@ -422,10 +507,45 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 		}
 		if state, ok := out[pIdx].Result.Responses[respID]; ok {
 			out[rIdx].Result.State = state
+			if state == fold.StateDisputed {
+				out[rIdx].ParentDisputeReopenFailed = parentReopenFailed(out[pIdx].Result.Flags, parentID, respID, eventsBySubject)
+			}
 		}
 	}
 
 	return out, skips, nil
+}
+
+// parentReopenFailed reports whether parentFlags (the PARENT's own
+// Result.Flags) carries the failed-reopen flag applyResponseScoped raises
+// for ONE OF respID's own dispute events — see foldedArtifact's own
+// ParentDisputeReopenFailed doc comment for why the fact must be read off
+// the parent's Flags rather than the response's own Result.
+//
+// Matched on (Kind, Subject, EventULID) together, never on Kind alone:
+// applyResponseScoped raises FlagIllegalTransition on TWO distinct
+// occasions with two distinct Subjects (fold.go) — Subject: event.Subject
+// (the response id, a table miss on the response's OWN sub-state) and
+// Subject: env.ID (the parent id, a failed reopen). Requiring
+// Subject==parentID excludes the first; requiring EventULID to be one of
+// respID's own dispute events excludes a different response's unrelated
+// failed reopen on the SAME parent from being misattributed to this one.
+func parentReopenFailed(parentFlags []fold.Flag, parentID, respID string, eventsBySubject map[string][]fold.Event) bool {
+	disputeULIDs := make(map[string]bool)
+	for _, ev := range eventsBySubject[respID] {
+		if ev.Transition == fold.TDispute {
+			disputeULIDs[ev.ULID] = true
+		}
+	}
+	if len(disputeULIDs) == 0 {
+		return false
+	}
+	for _, flag := range parentFlags {
+		if flag.Kind == fold.FlagIllegalTransition && flag.Subject == parentID && disputeULIDs[flag.EventULID] {
+			return true
+		}
+	}
+	return false
 }
 
 // foldWithReceiptEvidence performs the same canonical (CommitSeq, ULID) replay
@@ -626,6 +746,70 @@ func resolveBlockedByOwner(candidate string, env fold.Envelope, state fold.State
 		return ""
 	}
 	return candidate
+}
+
+// handoffFulfillsProbe decodes a handoff artifact's own `fulfills[]` field —
+// a package-local, single-consumer decode (delivery.go's own
+// DecodeDeliverables draws the identical idiom, "repeated here rather than
+// added to decode.go", for a file outside a DIFFERENT wave's allowlist;
+// `fulfills[]` is outside THIS wave's for the same reason: envelopeProbe
+// has no field for it and decode.go is not in this brief's allowlist).
+type handoffFulfillsProbe struct {
+	Fulfills []string `yaml:"fulfills"`
+}
+
+// decodeHandoffFulfills best-effort decodes raw (a handoff artifact's own
+// committed bytes, the same bytes foldedArtifact.Raw/rawArtifact.Raw
+// carries) into its `fulfills[]` array — cmd/a2a's
+// dataHandoffEnvelope.Fulfills, the one field this package needs from a
+// handoff to correlate it back to the exchange it answers (AC9, spec 06
+// §8's 2026-08-09 amendment). A document that fails to parse, or simply
+// carries no `fulfills[]`, decodes to nil — the same best-effort, no
+// second error path convention walkArtifacts itself already uses.
+func decodeHandoffFulfills(raw []byte) []string {
+	fm, err := artifact.ParseFrontmatter(raw)
+	if err != nil {
+		return nil
+	}
+	var probe handoffFulfillsProbe
+	if err := yaml.Unmarshal(fm.YAML, &probe); err != nil {
+		return nil
+	}
+	return probe.Fulfills
+}
+
+// deliveryUnresolvable is foldedArtifact.DeliveryUnresolvable's own
+// resolver (AC9, spec 06 §8): false whenever no response fulfilling
+// parentID claims `result: delivered` (delivered[parentID] is false) —
+// this fact is meaningless outside that one scenario. Otherwise it walks
+// every handoff naming parentID in its own `fulfills[]`
+// (handoffFulfills[parentID]) and every data-kind deliverable each one
+// carries (delivery.go's own DecodeDeliverables/DeliverableKindData,
+// composed rather than re-decoded here); the FIRST deliverable ref that
+// resolver.ResolvePackage finds present clears the flag. No handoff at
+// all, or every deliverable ref absent, leaves it true — "a reference an
+// agent cannot resolve is worse than no reference" (spec 04's own words),
+// and a payload PR that never merged is exactly a handoff this space never
+// received.
+func deliveryUnresolvable(parentID string, delivered map[string]bool, handoffFulfills map[string][][]byte, resolver PackageResolver) bool {
+	if !delivered[parentID] {
+		return false
+	}
+	for _, raw := range handoffFulfills[parentID] {
+		deliverables, err := DecodeDeliverables(raw)
+		if err != nil {
+			continue
+		}
+		for _, d := range deliverables {
+			if d.Kind != DeliverableKindData {
+				continue
+			}
+			if _, ok := resolver.ResolvePackage(d.Ref); ok {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // membershipView adapts a space.Manifest's participant list into a
