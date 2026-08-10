@@ -999,3 +999,29 @@ changes:
       why: >
         Nothing to do. Existing contracts gain no obligation until they have a
         registered consumer, and the declaration is optional.
+  - id: RN-01910-34
+    kind: fix
+    impact: normal
+    roadmap:
+      visibility: shipped
+      why: >
+        A refusal that holds on one interface and not the other is not a
+        refusal — it is a suggestion with a workaround.
+    subject: "MCP now refuses to adopt a contract that declares itself non-adoptable"
+    detail: >
+      A contract can declare that it must not be adopted, and adopting one is
+      what pins a dependency against it. `a2a contract adopt` refused such a
+      contract from the moment the declaration shipped. The MCP tool did not:
+      the same action wrote the same dependency entry and never looked at the
+      declaration, so an agent working over MCP could pin what an agent at the
+      command line could not.
+      Both surfaces refuse now, with the same message. The check also runs
+      before the version is resolved, so supplying an explicit major no longer
+      skips reading the contract's own declaration.
+    affects: ["a2a_contract (MCP)"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. If an MCP-driven adoption starts being refused, the
+        contract was always declaring itself non-adoptable and the refusal was
+        missing.
