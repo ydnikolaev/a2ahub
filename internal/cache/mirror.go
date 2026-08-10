@@ -779,22 +779,43 @@ func decodeHandoffFulfills(raw []byte) []string {
 }
 
 // deliveryUnresolvable is foldedArtifact.DeliveryUnresolvable's own
-// resolver (AC9, spec 06 §8): false whenever no response fulfilling
-// parentID claims `result: delivered` (delivered[parentID] is false) —
-// this fact is meaningless outside that one scenario. Otherwise it walks
-// every handoff naming parentID in its own `fulfills[]`
-// (handoffFulfills[parentID]) and every data-kind deliverable each one
-// carries (delivery.go's own DecodeDeliverables/DeliverableKindData,
-// composed rather than re-decoded here); the FIRST deliverable ref that
-// resolver.ResolvePackage finds present clears the flag. No handoff at
-// all, or every deliverable ref absent, leaves it true — "a reference an
-// agent cannot resolve is worse than no reference" (spec 04's own words),
-// and a payload PR that never merged is exactly a handoff this space never
-// received.
+// resolver (AC9, spec 06 §8). It is true for exactly one situation: a
+// fulfilling handoff EXISTS in this space, names a data-kind deliverable,
+// and that deliverable's package does not resolve. A dangling reference —
+// which is worse than no reference, in spec 04's own words.
+//
+// NARROWED 2026-08-10, and the reason is a real semantic error the
+// conformance matrix caught that every unit test in its wave agreed with.
+// The first version also returned true when NO handoff fulfilled parentID,
+// on the reasoning that "a payload PR that never merged is exactly a
+// handoff this space never received". That reasoning rests on
+// `result: delivered` meaning "bytes were promised" — and it does not.
+// `delivered` is simply the natural result word for a work_request, driven
+// by SIX call sites in the conformance catalogue on ordinary exchanges with
+// no data package anywhere near them. So the first version flipped the
+// next move on every plain answered work_request, and five declared paths
+// went red saying so: `waiting_on=[bravo] want [alpha]`,
+// `expected_transition "respond" want "close"`.
+//
+// What this costs, stated rather than glossed: the incident AC9 was written
+// from (fb-20260808-d5740f) is the case where the response merged and the
+// deliver PR carrying BOTH the handoff and the package stayed open. No
+// handoff, so this returns false, so that exact incident is NOT covered by
+// this half. It cannot be — nothing in the space distinguishes "delivered,
+// bytes pending" from "delivered, no bytes were ever involved" until a
+// response can name its package, which is the same wire decision spec 04's
+// §11 already defers AC9's submit half on. Both halves wait on it; this
+// half ships the subset that is decidable today, which is the partial-write
+// shape: the handoff landed and its payload did not.
 func deliveryUnresolvable(parentID string, delivered map[string]bool, handoffFulfills map[string][][]byte, resolver PackageResolver) bool {
 	if !delivered[parentID] {
 		return false
 	}
+	// A data-kind deliverable must EXIST before its absence can mean
+	// anything. `sawDataDeliverable` is what makes "no handoff at all" and
+	// "a handoff whose package is missing" different answers instead of the
+	// same one.
+	sawDataDeliverable := false
 	for _, raw := range handoffFulfills[parentID] {
 		deliverables, err := DecodeDeliverables(raw)
 		if err != nil {
@@ -804,12 +825,13 @@ func deliveryUnresolvable(parentID string, delivered map[string]bool, handoffFul
 			if d.Kind != DeliverableKindData {
 				continue
 			}
+			sawDataDeliverable = true
 			if _, ok := resolver.ResolvePackage(d.Ref); ok {
 				return false
 			}
 		}
 	}
-	return true
+	return sawDataDeliverable
 }
 
 // membershipView adapts a space.Manifest's participant list into a

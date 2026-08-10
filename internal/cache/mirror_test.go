@@ -198,7 +198,24 @@ func TestBuildIndex_ParentDisputeReopenFailedIsCarriedToTheResponse(t *testing.T
 // work_request, with NO handoff in the mirror naming that work_request in
 // its own `fulfills[]` at all — the "payload PR stayed open and red" shape
 // — must leave the work_request's own DeliveryUnresolvable true.
-func TestBuildIndex_DeliveryUnresolvableWhenNoHandoffFulfillsTheDelivery(t *testing.T) {
+// TestBuildIndex_NoHandoffMeansNoDeliveryClaimToJudge pins the boundary the
+// conformance matrix taught this package on 2026-08-10, and it is the
+// INVERSE of what this test asserted when it was written.
+//
+// It used to require DeliveryUnresolvable == true here, on the reasoning that
+// a payload PR which never merged is a handoff the space never received. That
+// reasoning assumes `result: delivered` claims bytes. It does not — `delivered`
+// is the ordinary result word for a work_request, driven by six call sites in
+// the conformance catalogue on exchanges with no data package anywhere near
+// them, and five declared paths went red naming the sender's `close` replaced
+// by the responder's `respond`.
+//
+// So the answer here is false, and the cost is named rather than hidden: the
+// incident AC9 came from is exactly this shape, and this half does not cover
+// it. Nothing in the space can tell "delivered, bytes pending" from
+// "delivered, no bytes were ever involved" until a response can name its
+// package — the same wire decision spec 04 §11 defers AC9's submit half on.
+func TestBuildIndex_NoHandoffMeansNoDeliveryClaimToJudge(t *testing.T) {
 	t.Parallel()
 	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"})
 
@@ -248,8 +265,8 @@ func TestBuildIndex_DeliveryUnresolvableWhenNoHandoffFulfillsTheDelivery(t *test
 	if wr.Result.State != fold.StateResponded {
 		t.Fatalf("work_request state = %q, want responded", wr.Result.State)
 	}
-	if !wr.DeliveryUnresolvable {
-		t.Fatal("DeliveryUnresolvable = false, want true: the response claims `delivered` but no handoff in the mirror names this work_request's own id in fulfills[]")
+	if wr.DeliveryUnresolvable {
+		t.Fatal("DeliveryUnresolvable = true, want false: no handoff names this work_request in fulfills[], so there is no data deliverable whose absence could mean anything — `result: delivered` alone claims no bytes")
 	}
 }
 
@@ -258,6 +275,81 @@ func TestBuildIndex_DeliveryUnresolvableWhenNoHandoffFulfillsTheDelivery(t *test
 // data package committed and resolvable — DeliveryUnresolvable must read
 // false, and (without this test) a resolver mutated to always return true
 // would still pass the red test above.
+// TestBuildIndex_DeliveryUnresolvableWhenTheHandoffLandedAndItsPackageDidNot
+// is the predicate's ONLY positive case, and until 2026-08-10 nothing asserted
+// it. Both sibling tests below and above assert `false`, so neutering the
+// `sawDataDeliverable` flag changed no test's verdict — the flag that makes
+// "no handoff" and "a handoff whose package is missing" different answers was
+// load-bearing and unwatched. Found by mutating it and seeing nothing red.
+//
+// This is the partial-write shape AC9's read half actually covers: the handoff
+// merged, naming a data deliverable, and the package it points at is not in
+// the space. A dangling reference, which is worse than no reference.
+func TestBuildIndex_DeliveryUnresolvableWhenTheHandoffLandedAndItsPackageDidNot(t *testing.T) {
+	t.Parallel()
+	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"})
+
+	base := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
+	fx.commitArtifact("axon/exchanges/XW-axon-20260701-kkkk.md", map[string]any{
+		"schema": "envelope/v1", "id": "XW-axon-20260701-kkkk", "type": "work_request",
+		"title": "wr", "space": "fixture-space", "from": "axon", "to": []string{"seomatrix"},
+		"actor": map[string]any{"kind": "agent", "name": "axon-bot"}, "created": fxAt(base),
+		"priority": "p2", "blocking": false, "classification": "internal",
+	}, "body")
+	fx.commitEvent("axon", fxULID(50), map[string]any{
+		"subject": "XW-axon-20260701-kkkk", "transition": "submit",
+		"actor": map[string]any{"kind": "agent", "name": "axon-bot", "system": "axon"}, "at": fxAt(base),
+	})
+	fx.commitEvent("seomatrix", fxULID(51), map[string]any{
+		"subject": "XW-axon-20260701-kkkk", "transition": "acknowledge",
+		"actor": map[string]any{"kind": "agent", "name": "seo-bot", "system": "seomatrix"}, "at": fxAt(base.Add(time.Hour)),
+	})
+	fx.commitArtifactAndEvent(
+		"seomatrix/exchanges/XS-seomatrix-20260701-llll.md",
+		map[string]any{
+			"schema": "envelope/v1", "id": "XS-seomatrix-20260701-llll", "type": "response",
+			"title": "resp", "space": "fixture-space", "from": "seomatrix", "to": []string{"axon"},
+			"parent": "XW-axon-20260701-kkkk", "result": "delivered",
+			"actor": map[string]any{"kind": "agent", "name": "seo-bot"}, "created": fxAt(base.Add(2 * time.Hour)),
+			"priority": "p2", "blocking": false, "classification": "internal",
+		},
+		"resp body",
+		"seomatrix", fxULID(52),
+		map[string]any{
+			"subject": "XW-axon-20260701-kkkk", "transition": "respond",
+			"actor": map[string]any{"kind": "agent", "name": "seo-bot", "system": "seomatrix"}, "at": fxAt(base.Add(2 * time.Hour)),
+		},
+	)
+
+	// The handoff landed and names a data deliverable. Its package did NOT —
+	// no manifest.json is written anywhere, which is the whole point.
+	fx.commitArtifact("seomatrix/exchanges/XH-seomatrix-20260701-mmmm.md", map[string]any{
+		"schema": "envelope/v1", "id": "XH-seomatrix-20260701-mmmm", "type": "handoff",
+		"title": "delivery", "space": "fixture-space", "from": "seomatrix", "to": []string{"axon"},
+		"actor": map[string]any{"kind": "agent", "name": "seo-bot"}, "created": fxAt(base.Add(2 * time.Hour)),
+		"priority": "p3", "blocking": false, "classification": "internal",
+		"fulfills": []string{"XW-axon-20260701-kkkk"},
+		"deliverables": []map[string]any{
+			{"name": "seomatrix-pack", "ref": "DP-seomatrix-20260701-c9h4", "kind": "data"},
+		},
+		"verification":        "Run `a2a data verify DP-seomatrix-20260701-c9h4`.",
+		"acceptance_criteria": []string{"conforms"},
+	}, "handoff body")
+
+	idx, _, err := buildIndex(context.Background(), "sp1", fx.dir, "acme", mustManifest(t, fx))
+	if err != nil {
+		t.Fatalf("buildIndex: %v", err)
+	}
+
+	wr := findArtifact(t, idx, "XW-axon-20260701-kkkk")
+	if wr.Result.State != fold.StateResponded {
+		t.Fatalf("work_request state = %q, want responded", wr.Result.State)
+	}
+	if !wr.DeliveryUnresolvable {
+		t.Fatal("DeliveryUnresolvable = false, want true: the handoff names DP-seomatrix-20260701-c9h4 as a data deliverable and no manifest for it exists in this space")
+	}
+}
+
 func TestBuildIndex_DeliveryUnresolvableIsClearedWhenThePackageResolves(t *testing.T) {
 	t.Parallel()
 	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"})
