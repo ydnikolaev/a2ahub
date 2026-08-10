@@ -530,13 +530,6 @@ func ownerRow(expected, why string) row {
 	}
 }
 
-// senderRow is ownerRow under the table's "sender" name — the resolver
-// is the same envelope `from`; only the table's own prose distinguishes
-// "owner" from "sender" by which lifecycle role is talking.
-func senderRow(expected, why string) row {
-	return ownerRow(expected, why)
-}
-
 func targetRow(expected, why string) row {
 	return row{
 		who:      target,
@@ -593,8 +586,10 @@ func blockedRow() row {
 
 // respondedRow is the question/work_request `responded` row (AC9, spec 06
 // §8's 2026-08-09 amendment). Absent a caller-resolved DeliveryUnresolvable
-// it is byte-identical to the old unconditional senderRow(fold.TClose,
-// ...): the sender (envelope `from`) owes verification then close.
+// it is byte-identical to what the table used to say unconditionally —
+// ownerRow(fold.TClose, ...), then spelled `senderRow`, a one-line alias
+// this row's arrival left with no other caller and which is now gone: the
+// sender (envelope `from`) owes verification then close.
 //
 // When DeliveryUnresolvable IS true, Owners names the TARGET instead and
 // Expected is fold.TRespond, not "" — unlike blockedRow's own conditional
