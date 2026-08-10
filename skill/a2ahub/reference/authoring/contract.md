@@ -18,6 +18,18 @@ compat_policy: default
 # generated_from:                    # include only for a code-generated contract
 #   tool: "<generator name and version>"
 #   source_digest: "sha256:<export-source-v1 digest>"
+# x_binding:                          # OPTIONAL — what this contract IS and whether it may be adopted or pinned
+#   artifact_class: <author's own vocabulary, e.g. non_binding_review>
+#   compatibility_status: <the claim being made, or "none" to make no claim at all>
+#   adoptable: <true|false — may `a2a contract adopt` target this>
+#   runtime_pinnable: <true|false — may a consumer pin a runtime dependency against this>
+#   Or the literal `x_binding: none` to declare non-binding in one line. Commented,
+#   like generated_from above, and deliberately: ABSENCE IS `undeclared` AND IS
+#   DISTINCT FROM A DECLARED `none` (P-1, and the schema's own words). A live
+#   block here would make every fresh contract author a declaration nobody
+#   made, and a live block with placeholder booleans would additionally render
+#   a draft that cannot validate (spec 05, the same reversal work_request's
+#   `binding` measured).
 thread: <thread:system-YYYYMMDD-rand4 — a2a new mints this>
 # refs:
 #   - {ref: "<XC-id>@<version>", note: "<why>"}

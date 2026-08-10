@@ -75,6 +75,66 @@ func contractReceiptState(evaluation fold.CandidateEvaluation) string {
 	return string(evaluation.Outcome)
 }
 
+// xBindingProbe decodes envelope/v2/contract's `x_binding` field
+// (specs/05-declared-nature.md, 2026-08-10 amendment): either the bare
+// sentinel `none`, or the long form object requiring `artifact_class`,
+// `compatibility_status`, `adoptable` and `runtime_pinnable` — the SAME
+// value grammar as envelope/v2/work_request's `binding`. A *xBindingProbe
+// that is nil means the field is absent entirely: undeclared, distinct
+// from a declared `none` (P-1) — callers must check for nil before asking
+// anything of the value.
+type xBindingProbe struct {
+	// Sentinel is set when the field was written as the literal scalar
+	// `none` rather than the long-form object.
+	Sentinel            bool
+	ArtifactClass       string `yaml:"artifact_class"`
+	CompatibilityStatus string `yaml:"compatibility_status"`
+	Adoptable           *bool  `yaml:"adoptable"`
+	RuntimePinnable     *bool  `yaml:"runtime_pinnable"`
+}
+
+// UnmarshalYAML distinguishes the two legal shapes x_binding's own schema
+// oneOf's: a bare scalar (only "none" is schema-valid, but any other
+// scalar is decoded harmlessly rather than erroring here — schema
+// validation, not this probe, is what refuses it) or the long-form
+// mapping.
+func (x *xBindingProbe) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode {
+		var s string
+		if err := node.Decode(&s); err != nil {
+			return err
+		}
+		if s == "none" {
+			x.Sentinel = true
+		}
+		return nil
+	}
+	type alias xBindingProbe
+	var a alias
+	if err := node.Decode(&a); err != nil {
+		return err
+	}
+	*x = xBindingProbe(a)
+	return nil
+}
+
+// nonAdoptable reports whether x declares this contract unable to be
+// adopted — the bare `none` sentinel, or the long form with
+// `adoptable: false`. Both are refused identically by `a2a contract
+// adopt`: the schema's own T2 asymmetry already forces a
+// `compatibility_status: none` long form to carry `adoptable: false`, so
+// the sentinel and the long form never disagree on this fact. A nil x (the
+// field is absent — undeclared) is adoptable, per P-1.
+func (x *xBindingProbe) nonAdoptable() bool {
+	if x == nil {
+		return false
+	}
+	if x.Sentinel {
+		return true
+	}
+	return x.Adoptable != nil && !*x.Adoptable
+}
+
 // contractDescriptorProbe is this file's own minimal decode of a
 // contract's descriptor (contract.md) fields (§5.2.1's contract-only
 // extensions) — a richer sibling of lifecycleEnvelopeProbe (which only
@@ -90,13 +150,19 @@ type contractDescriptorProbe struct {
 	// contract.BuildCandidateIntent makes when it selects declared-v2 versus
 	// legacy-fixed-v1. A plain slice would collapse both to len 0 and make
 	// the two refusals indistinguishable.
-	Artifacts     *[]yaml.Node `yaml:"artifacts"`
-	Space         string       `yaml:"space"`
-	From          string       `yaml:"from"`
-	To            []string     `yaml:"to"`
-	Version       string       `yaml:"version"`
-	CompatPolicy  string       `yaml:"compat_policy"`
-	SchemaFormat  string       `yaml:"schema_format"`
+	Artifacts    *[]yaml.Node `yaml:"artifacts"`
+	Space        string       `yaml:"space"`
+	From         string       `yaml:"from"`
+	To           []string     `yaml:"to"`
+	Version      string       `yaml:"version"`
+	CompatPolicy string       `yaml:"compat_policy"`
+	SchemaFormat string       `yaml:"schema_format"`
+	// XBinding is P5's declared-nature field (specs/05-declared-nature.md,
+	// 2026-08-10 amendment): what this contract IS and whether it may be
+	// adopted or pinned. A nil pointer means the field is absent —
+	// `undeclared`, distinct from a declared `none` (P-1) — so this, too,
+	// is a pointer rather than a value type.
+	XBinding      *xBindingProbe `yaml:"x_binding"`
 	GeneratedFrom struct {
 		Tool         string `yaml:"tool"`
 		SourceDigest string `yaml:"source_digest"`
@@ -1209,6 +1275,24 @@ func (c *ContractCommand) runAdopt(ctx context.Context, args []string, stdio IO)
 	if parsed.System == c.deps.ownSystem {
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract adopt: %s is this system's OWN contract — the registry records what you consume from OTHERS (§5.2.3)\n", id)
 		return 1
+	}
+
+	// P5 US-1's counterweight (specs/05-declared-nature.md, 2026-08-10
+	// amendment): a contract whose descriptor declares itself non-adoptable
+	// — the `x_binding: none` sentinel, or the long form with
+	// `adoptable: false` — refuses `a2a contract adopt` outright, so
+	// nobody pins it. This runs BEFORE --major resolution and regardless
+	// of whether --major was passed explicitly, so passing --major cannot
+	// route around the refusal. A read failure here (contract not yet
+	// synced) is NOT this check's error to report — that is
+	// contractPublishedMajor's existing, actionable "run `a2a sync`
+	// first" message below, so a read failure simply skips this check
+	// rather than shadowing it with a different one.
+	if _, adoptProbe, _, _, rerr := contractReadDescriptor(c.deps.mirrorDir, id); rerr == nil {
+		if adoptProbe.XBinding.nonAdoptable() {
+			_, _ = fmt.Fprintf(stdio.Stderr, "contract adopt: %s declares itself non-adoptable (x_binding) — nobody may pin it\n", id)
+			return 1
+		}
 	}
 
 	pinned := *major

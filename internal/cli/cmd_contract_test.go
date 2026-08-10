@@ -1058,6 +1058,35 @@ func writeForeignContractDescriptor(t *testing.T, mirrorDir, system, slug, versi
 	writeMirrorFile(t, mirrorDir, system+"/provides/"+slug+"/contract.md", content)
 }
 
+// writeForeignContractDescriptorWithXBinding is writeForeignContractDescriptor
+// plus a raw x_binding block (spec 05, 2026-08-10 amendment) — xBindingRaw is
+// inserted as-is, so a caller may pass either the `x_binding: none` sentinel
+// line or a full long-form mapping.
+func writeForeignContractDescriptorWithXBinding(t *testing.T, mirrorDir, system, slug, version, xBindingRaw string) {
+	t.Helper()
+	content := "---\n" +
+		"schema: envelope/v1\n" +
+		"id: XC-" + system + "-" + slug + "\n" +
+		"type: contract\n" +
+		"title: t\n" +
+		"space: fixture-space\n" +
+		"from: " + system + "\n" +
+		"to: [axon]\n" +
+		"thread: " + cliFixtureThread + "\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"category: api\n" +
+		"priority: p3\n" +
+		"blocking: false\n" +
+		"classification: internal\n" +
+		"version: \"" + version + "\"\n" +
+		"compat_policy: strict-semver\n" +
+		"schema_format: json-schema-2020-12\n" +
+		xBindingRaw +
+		"---\nbody\n"
+	writeMirrorFile(t, mirrorDir, system+"/provides/"+slug+"/contract.md", content)
+}
+
 // TestContractAdopt covers the D-022 consumer registry writer: the verb
 // that makes a system a REGISTERED consumer (§5.2.3). Before it existed
 // there was no tool path to that file at all.
@@ -1230,6 +1259,97 @@ func TestContractAdopt(t *testing.T) {
 		}
 		if !strings.Contains(errOut.String(), "--major") {
 			t.Fatalf("expected the error to name the --major escape hatch, got %q", errOut.String())
+		}
+	})
+
+	// P5 US-1's counterweight (specs/05-declared-nature.md, 2026-08-10
+	// amendment): a contract that declares itself non-adoptable via
+	// x_binding refuses adopt outright, in both the sentinel and the
+	// long-form shape, and regardless of whether --major is passed
+	// explicitly — the flag must not be an escape hatch around the
+	// refusal.
+	t.Run("refuses a contract declaring x_binding: none", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		writeForeignContractDescriptorWithXBinding(t, mirrorDir, "beta", "content-feed", "1.0.0", "x_binding: none\n")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+		io, _, errOut := newIO()
+		if code := cmd.Run(context.Background(), []string{"adopt", "XC-beta-content-feed"}, io); code != 1 {
+			t.Fatalf("code = %d, want 1; stderr=%s", code, errOut.String())
+		}
+		if !strings.Contains(errOut.String(), "non-adoptable") {
+			t.Fatalf("expected a non-adoptable refusal, got %q", errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatalf("refusal must happen before any funnel call, got %+v", fake.calls)
+		}
+	})
+
+	t.Run("refuses a contract declaring the long form with adoptable: false", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		writeForeignContractDescriptorWithXBinding(t, mirrorDir, "beta", "content-feed", "1.0.0",
+			"x_binding:\n  artifact_class: non_binding_review\n  compatibility_status: none\n  adoptable: false\n  runtime_pinnable: false\n")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+		io, _, errOut := newIO()
+		if code := cmd.Run(context.Background(), []string{"adopt", "XC-beta-content-feed"}, io); code != 1 {
+			t.Fatalf("code = %d, want 1; stderr=%s", code, errOut.String())
+		}
+		if !strings.Contains(errOut.String(), "non-adoptable") {
+			t.Fatalf("expected a non-adoptable refusal, got %q", errOut.String())
+		}
+	})
+
+	t.Run("refuses a non-adoptable contract even when --major is passed explicitly", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		writeForeignContractDescriptorWithXBinding(t, mirrorDir, "beta", "content-feed", "1.0.0", "x_binding: none\n")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+		io, _, errOut := newIO()
+		if code := cmd.Run(context.Background(), []string{"adopt", "XC-beta-content-feed", "--major", "1"}, io); code != 1 {
+			t.Fatalf("code = %d, want 1 (an explicit --major must not be an escape hatch); stderr=%s", code, errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatalf("refusal must happen before any funnel call, got %+v", fake.calls)
+		}
+	})
+
+	t.Run("adopts a contract declaring the long form with adoptable: true", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		writeForeignContractDescriptorWithXBinding(t, mirrorDir, "beta", "content-feed", "1.0.0",
+			"x_binding:\n  artifact_class: reference_impl\n  compatibility_status: strict-semver\n  adoptable: true\n  runtime_pinnable: true\n")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+		io, _, errOut := newIO()
+		if code := cmd.Run(context.Background(), []string{"adopt", "XC-beta-content-feed"}, io); code != 0 {
+			t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+		}
+		if len(fake.calls) != 1 {
+			t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+		}
+	})
+
+	t.Run("adopts a contract with no x_binding declared at all (undeclared, distinct from none)", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		writeForeignContractDescriptor(t, mirrorDir, "beta", "content-feed", "1.0.0")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+		io, _, errOut := newIO()
+		if code := cmd.Run(context.Background(), []string{"adopt", "XC-beta-content-feed"}, io); code != 0 {
+			t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+		}
+		if len(fake.calls) != 1 {
+			t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
 		}
 	})
 }

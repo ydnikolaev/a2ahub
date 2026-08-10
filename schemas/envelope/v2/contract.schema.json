@@ -24,6 +24,52 @@
       "minItems": 1,
       "maxItems": 256,
       "items": { "$ref": "#/$defs/artifactEntry" }
+    },
+    "x_binding": {
+      "description": "P5 2026-08-10: what this contract IS and whether it can be adopted or pinned. Carried under the sanctioned `x_` prefix (patternProperties below) rather than as a bare `binding`, because unlike envelope/v2/work_request this schema is already deployed (a live contract carries `schema: envelope/v2`) and closes with unevaluatedProperties: false — an older binary reading a legal document must still accept it. Same value grammar as work_request's `binding`: either the literal `none`, or the four declarations. Absence is `undeclared`, distinct from a declared `none` (P-1) — this field is optional, not required.",
+      "properties": {
+        "artifact_class": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What kind of thing this is, author's own vocabulary — e.g. non_binding_review."
+        },
+        "compatibility_status": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The compatibility claim being made, or \"none\" to make no claim at all."
+        },
+        "adoptable": {
+          "type": "boolean",
+          "description": "Whether `a2a contract adopt` may target this contract."
+        },
+        "runtime_pinnable": {
+          "type": "boolean",
+          "description": "Whether a consumer may pin a runtime dependency against it."
+        }
+      },
+      "additionalProperties": false,
+      "oneOf": [
+        { "const": "none" },
+        {
+          "type": "object",
+          "required": ["artifact_class", "compatibility_status", "adoptable", "runtime_pinnable"]
+        }
+      ],
+      "allOf": [
+        {
+          "description": "T2's asymmetry: a `compatibility_status: none` claim inside the long form must be as unadoptable and unpinnable as the bare `none` sentinel, or the long form reopens the escape hatch T2 names — the sentinel and the long form must not disagree.",
+          "if": {
+            "properties": { "compatibility_status": { "const": "none" } },
+            "required": ["compatibility_status"]
+          },
+          "then": {
+            "properties": {
+              "adoptable": { "const": false },
+              "runtime_pinnable": { "const": false }
+            }
+          }
+        }
+      ]
     }
   },
   "required": ["category", "version", "compat_policy", "schema_format", "artifacts"],

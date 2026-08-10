@@ -94,7 +94,22 @@
 # the field from looking reachable on the strength of a bug and put it
 # here instead.
 #
-# It has SEVENTEEN now, after `schemas/templates/v2/work_request.md` shipped
+# It has TWENTY-ONE now, after `schemas/envelope/v2/contract.schema.json`
+# gained `x_binding` (specs/05-declared-nature.md, 2026-08-10 amendment):
+# four more of `x_binding`'s own leaves, same family and same reasoning as
+# `binding`'s four below — the parent field itself carries no row, because
+# `x_binding` is oneOf(the literal `none`, an object of four required
+# leaves) and the append pass reaches the sentinel branch: `a2a new contract
+# --field x_binding=none` is a real, valid authoring act. Only the long form
+# needs a hand-edit, and templates/v2/contract.md carries that block only as
+# commented-out (`#`) guidance, in the same register as `generated_from`
+# above it — COMMENTED BY DESIGN, for the identical reason this file's
+# header already records for `binding`: a live block with placeholder
+# booleans (`adoptable`, `runtime_pinnable`) cannot be schema-valid, and a
+# live block with real `false` literals would still make every fresh
+# contract author a declaration nobody made (P-1).
+#
+# It was SEVENTEEN before that, after `schemas/templates/v2/work_request.md` shipped
 # (specs/04-possession.md §11, 2026-08-10 amendment): three rows fell OUT —
 # `envelope/v2/base.acceptance_criteria`, `.expected_response` and
 # `.expected_response.shape` were exactly the "contingent, not permanent" row
@@ -253,6 +268,32 @@ unreachable:
     EnvelopeFieldType now resolves local `#/$defs/` refs, the refusal fires,
     and the field takes its honest place here. Without that fix this table
     would have recorded it as reachable on the strength of the bug.
+  envelope/v2/contract/x_binding.artifact_class: >-
+    The LONG FORM is not reachable, though the field itself is: `x_binding`
+    is oneOf(the literal `none`, an object of four required leaves), and the
+    append pass reaches the sentinel branch — `a2a new contract --field
+    x_binding=none` is a real, valid authoring act, so `x_binding` carries no
+    row here. The object branch is a different matter: templates/v2/contract.md
+    carries the block only as commented-out (`#`) guidance, in the same
+    register `generated_from` uses one property above it, so --field's
+    dotted-path pass (map-only, no key creation — internal/template's
+    resolveDottedPath) has no live mapping to descend into and the parent
+    cannot be appended to create one. Uncommenting the block reaches all four
+    leaves; that is a hand-edit, which is not one of AC5's two mechanisms.
+    COMMENTED BY DESIGN — see this file's header for why a live block was
+    tried, measured and reversed for `binding`, the sibling field this one
+    mirrors.
+  envelope/v2/contract/x_binding.compatibility_status: >-
+    Same cause as x_binding.artifact_class: the parent `x_binding:` block is
+    commented out, so there is no live mapping to descend into.
+  envelope/v2/contract/x_binding.adoptable: >-
+    Same cause as x_binding.artifact_class: the parent `x_binding:` block is
+    commented out. Boolean-typed, so a placeholder literal for it could never
+    have been schema-valid either, exactly as `binding.adoptable` proved for
+    work_request.
+  envelope/v2/contract/x_binding.runtime_pinnable: >-
+    Same cause as x_binding.adoptable: the parent `x_binding:` block is
+    commented out, and the field is boolean-typed.
 #
 # ## Out of scope, deliberately
 #
@@ -408,6 +449,14 @@ fields:
     generated_from: AUTHOR
     schema_format: AUTHOR
     artifacts: AUTHOR
+    # P5 2026-08-10: x_binding. Same reasoning as work_request's binding
+    # family below — intent only the producer holds, nothing mints it.
+    # AUTHOR by this table's stated default.
+    x_binding: AUTHOR
+    x_binding.artifact_class: AUTHOR
+    x_binding.compatibility_status: AUTHOR
+    x_binding.adoptable: AUTHOR
+    x_binding.runtime_pinnable: AUTHOR
   envelope/v2/announcement:
     type: TOOL
     id: TOOL
