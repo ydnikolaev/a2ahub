@@ -489,6 +489,20 @@ func TestProductionServeStalledRootWriteHitsDeadlineAndReleasesBudget(t *testing
 	// product hang fails in seconds, naming what it was waiting for, instead
 	// of presenting as an unrelated package-wide timeout in a log nobody
 	// associates with this test.
+	//
+	// The paragraph above used to end "and never once in ~20 local runs
+	// including under deliberate CPU contention". **That claim was falsified on
+	// 2026-08-10**: this test failed at the 15s budget inside a full
+	// `make check`, then passed 3/3 in isolation immediately after — the same
+	// signature as the 2026-08-05 incident, one layer in.
+	//
+	// The budget was not the defect, and raising it would have hidden one. Both
+	// loops spun on `runtime.Gosched()`, which yields the goroutine but KEEPS
+	// THE P. When `make check` has every P saturated by parallel packages, that
+	// spin can starve the very goroutine it waits for: the waiter stays
+	// runnable and is rescheduled onto the P the writer needs. A short sleep
+	// releases the P outright. The budget is unchanged, so a real hang still
+	// fails in seconds with its own name on it.
 	const spinBudget = 15 * time.Second
 
 	acquired := time.NewTimer(spinBudget)
@@ -500,7 +514,8 @@ func TestProductionServeStalledRootWriteHitsDeadlineAndReleasesBudget(t *testing
 		case <-t.Context().Done():
 			t.Fatal("stalled writer never acquired a bounded slot")
 		default:
-			runtime.Gosched()
+			// sleep, not Gosched — see the budget comment above.
+			time.Sleep(time.Millisecond)
 		}
 	}
 	deadline := time.NewTimer(spinBudget)
@@ -512,7 +527,8 @@ func TestProductionServeStalledRootWriteHitsDeadlineAndReleasesBudget(t *testing
 		case <-t.Context().Done():
 			t.Fatalf("stalled writer did not hit its deadline: slots=%d error=%v", len(server.writerSlots), server.LastError())
 		default:
-			runtime.Gosched()
+			// sleep, not Gosched — see the budget comment above.
+			time.Sleep(time.Millisecond)
 		}
 	}
 	cancel()
