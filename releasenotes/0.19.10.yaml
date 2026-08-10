@@ -691,3 +691,52 @@ changes:
       why: >
         Nothing to do. The wait is unchanged at two seconds; what changed is
         that it can no longer drift silently.
+  - id: RN-01910-25
+    kind: fix
+    impact: high
+    subject: "You are no longer told to close a delivery whose bytes are not in the space"
+    detail: >
+      Once a question or work_request reached `responded`, the sender was told
+      they owed a `close` — unconditionally, whether or not the delivery that
+      response claims actually resolves. That produced the worst kind of wrong
+      answer: a delivery's response merged while its payload pull request stayed
+      open and red, the thread advanced to `verify:<consumer>` for a package
+      `a2a data fetch` correctly refuses as absent, and both ends reported
+      success.
+      The next move is now conditional on the bytes existing. When the package a
+      delivery names cannot be resolved in the space, the move is named against
+      the responder — who can still act — rather than the sender, who cannot
+      verify what is not there. `a2a inbox --json`, `a2a thread --json` and the
+      dashboard all read this from the same place, so they cannot disagree
+      about it.
+      The correlation runs through the handoff that carries the package, since
+      that is the only artifact which structurally names one.
+    affects: ["a2a inbox", "a2a thread", "the dashboard", "whose-move-is-it"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. Existing threads re-read with the corrected next move; no
+        stored state changes.
+  - id: RN-01910-26
+    kind: schema
+    impact: normal
+    subject: "An event that verifies or closes can record a verdict per acceptance criterion"
+    detail: >
+      `event/v2` gains `verdicts[]` — for each of the parent's acceptance
+      criteria, by index, what the verdict was and who caused it. It uses the
+      same index grammar an incomplete response already uses for `unmet[]`, and
+      the same range check, so the two cannot drift apart. An index that does
+      not resolve in the parent is refused as `REF-019`.
+      Read the limits before relying on it, because they are real: the two
+      transitions this is required on — verify and close — are still written as
+      `event/v1` by the current binary, so nothing it writes today carries the
+      field; the range check has no wired call site yet; and while the field is
+      decoded, no surface renders it. It is a wire contract you can author
+      against and a validator that is proven reachable — not yet a working
+      feature end to end.
+    affects: ["event/v2", "a2a verify", "a2a close"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. The field is optional on every event the binary
+        currently produces.
