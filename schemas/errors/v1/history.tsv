@@ -20,6 +20,6 @@ POL-017	live	agent-exchange-2026-08/P4	body enumerates a file tree while no atta
 REF-018	live	agent-exchange-2026-08/P6	an unmet[] index does not resolve to an entry in the parent's acceptance_criteria	3c256c4f	-
 REF-019	live	agent-exchange-2026-08/P6	a verdicts[] index does not resolve to an entry in the parent's acceptance_criteria	PENDING	-
 LFC-004	live	agent-exchange-2026-08/P6	a terminal transition closes a parent carrying an unmet criterion with no residue	3c256c4f	-
-POL-018	live	agent-exchange-2026-08/P5	body hand-rolls a key = value block naming a field declared on this envelope's own type	PENDING	-
-POL-019	live	agent-exchange-2026-08/P5	recipient's declared manifest capabilities.delivery excludes a delivery mode the submission requires	PENDING	-
-POL-020	live	agent-exchange-2026-08/P5	recipient's manifest capabilities are undeclared; a required delivery mode cannot be confirmed	PENDING	-
+POL-018	live	agent-exchange-2026-08/P5	body hand-rolls a key = value block naming a field declared on this envelope's own type	81115401	-
+POL-019	live	agent-exchange-2026-08/P5	recipient's declared manifest capabilities.delivery excludes a delivery mode the submission requires	81115401	-
+POL-020	live	agent-exchange-2026-08/P5	recipient's manifest capabilities are undeclared; a required delivery mode cannot be confirmed	81115401	-

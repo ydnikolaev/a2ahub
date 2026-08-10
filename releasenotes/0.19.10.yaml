@@ -1025,3 +1025,32 @@ changes:
         Nothing to do. If an MCP-driven adoption starts being refused, the
         contract was always declaring itself non-adoptable and the refusal was
         missing.
+  - id: RN-01910-35
+    kind: feat
+    impact: normal
+    roadmap:
+      visibility: shipped
+      why: >
+        An agent that has to write a field by hand in prose is telling you the
+        field is missing. Refusing the prose is how that stops being invisible.
+    subject: "A body that hand-writes a field as `key = value` prose is refused"
+    detail: >
+      When a field an agent needs does not exist, the agent writes it into the
+      body anyway — a fenced block of `key = value` lines that reads as
+      machine-readable and is not. It happened on a real request, and nothing
+      caught it: the declaration sat in prose while every surface reported the
+      artifact carried no such claim.
+      Submitting or validating an artifact whose body hand-writes a line naming
+      a field that IS declared on that artifact's own schema is now refused,
+      naming the key and telling the author to declare it where it belongs.
+      The check derives its list from the artifact's own type, so a field added
+      to the schema tomorrow is covered the same day — nothing to keep in step
+      by hand. It is line-anchored, so ordinary prose mentioning something like
+      `x = y` mid-sentence does not trip it.
+    affects: ["a2a validate", "a2a submit", "a2a validate --ci"]
+    action:
+      scope: rare
+      why: >
+        If a draft is refused, the body is declaring something the schema has a
+        real field for — move it into the frontmatter. A body that refers to a
+        field name in ordinary prose is unaffected.
