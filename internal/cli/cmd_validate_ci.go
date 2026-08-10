@@ -273,7 +273,7 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 	}
 	var lifecycleCandidates []ciLifecycleCandidate
 	for _, relPath := range events {
-		rep, ok := validateCIEvent(engine, root, relPath, manifest.MinBinaryVersion)
+		rep, ok := validateCIEvent(engine, resolver, root, relPath, manifest.MinBinaryVersion)
 		if rep == nil {
 			continue // deleted in this PR
 		}
@@ -678,9 +678,18 @@ func isEventDocument(p string) bool {
 // validateCIEvent validates one changed event: its event/v1 schema, and — once
 // the space's floor has reached the release that introduced the field — that it
 // names the producer that wrote it. The verdict comes from the engine
-// (validate.ValidateEvent); this file adds ZERO validation rules of its own, the
-// same discipline the compat and publishability checks follow.
-func validateCIEvent(engine *validate.Engine, root, relPath, spaceFloor string) (*validateReport, bool) {
+// (validate.ValidateEventWithContext); this file adds ZERO validation rules of
+// its own, the same discipline the compat and publishability checks follow.
+//
+// The resolver is passed rather than omitted, and that is the whole reason this
+// signature changed. REF-019 (an out-of-range `verdicts[].index` on a verify or
+// close event) lives in the engine and can only fire when a Resolver is offered:
+// without one it degrades to "cannot check", silently. Wave 25B wired the rule
+// and reached no production caller, which is this epic's own recurring defect —
+// a rule that is true and inert. `validate --ci` is the merge-time path a space
+// actually pins, exactly as P6 already recorded for REF-018, so it is the caller
+// that has to offer it.
+func validateCIEvent(engine *validate.Engine, resolver validate.Resolver, root, relPath, spaceFloor string) (*validateReport, bool) {
 	raw, err := os.ReadFile(filepath.Join(root, relPath))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -688,7 +697,7 @@ func validateCIEvent(engine *validate.Engine, root, relPath, spaceFloor string) 
 		}
 		return &validateReport{Path: relPath, Error: err.Error()}, false
 	}
-	result, err := engine.ValidateEvent(raw, spaceFloor)
+	result, err := engine.ValidateEventWithContext(raw, spaceFloor, validate.EventContext{Resolver: resolver})
 	if err != nil {
 		return &validateReport{Path: relPath, Error: err.Error()}, false
 	}

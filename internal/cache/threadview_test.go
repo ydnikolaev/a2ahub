@@ -124,6 +124,76 @@ func TestThreadAndShowPreserveEventNote(t *testing.T) {
 	}
 }
 
+// TestThreadViewCarriesCommittedVerdicts is gap #4's own proof (P6 wave C,
+// threat-model.md T5's "the read model stops at decode"): decode.go already
+// decoded a committed event's `verdicts[]` into eventProbe (TestDecodeEvent_
+// VerdictsDecoded, decode_test.go), but nothing downstream promoted it onto
+// the transcript — this proves it now reaches TranscriptEvent.Verdicts, the
+// same entry-hop TestThreadAndShowPreserveEventNote proves for `note`
+// (immediately above), mirrored for verdicts[].
+func TestThreadViewCarriesCommittedVerdicts(t *testing.T) {
+	t.Parallel()
+	fx, threadID, _, responseID := buildExchangeThread(t)
+	fields := evt(responseID, "verify", "axon", time.Date(2026, 7, 1, 10, 40, 0, 0, time.UTC))
+	fields["verdicts"] = []map[string]any{
+		{"index": 0, "verdict": "met", "cause_owner": "axon"},
+		{"index": 1, "verdict": "unmet", "cause_owner": "seomatrix"},
+	}
+	fx.commitEvent("axon", fxULID(6), fields)
+
+	store := newThreadStore(t, fx, "sp1")
+	thread, err := store.ThreadView(context.Background(), threadID, "")
+	if err != nil {
+		t.Fatalf("ThreadView: %v", err)
+	}
+	var found *TranscriptEvent
+	for _, entry := range thread.Transcript {
+		if entry.Event != nil && entry.Event.Transition == "verify" {
+			found = entry.Event
+		}
+	}
+	if found == nil {
+		t.Fatalf("thread transcript lost the verify event entirely: %+v", thread.Transcript)
+	}
+	if len(found.Verdicts) != 2 {
+		t.Fatalf("Verdicts = %+v, want 2 entries", found.Verdicts)
+	}
+	if found.Verdicts[0] != (TranscriptVerdict{Index: 0, Verdict: "met", CauseOwner: "axon"}) {
+		t.Errorf("Verdicts[0] = %+v, want {0 met axon}", found.Verdicts[0])
+	}
+	if found.Verdicts[1] != (TranscriptVerdict{Index: 1, Verdict: "unmet", CauseOwner: "seomatrix"}) {
+		t.Errorf("Verdicts[1] = %+v, want {1 unmet seomatrix}", found.Verdicts[1])
+	}
+}
+
+// TestThreadViewOmitsVerdictsWhenEventCarriesNone pins the other direction:
+// an ordinary event with no `verdicts:` at all must render Verdicts as nil
+// (`omitempty`), never a synthesized empty (non-nil) slice — the same
+// distinction decode.go's own TestDecodeEvent_AbsentVerdictsIsEmpty pins one
+// layer down.
+func TestThreadViewOmitsVerdictsWhenEventCarriesNone(t *testing.T) {
+	t.Parallel()
+	fx, threadID, parentID, _ := buildExchangeThread(t)
+
+	store := newThreadStore(t, fx, "sp1")
+	thread, err := store.ThreadView(context.Background(), threadID, "")
+	if err != nil {
+		t.Fatalf("ThreadView: %v", err)
+	}
+	found := false
+	for _, entry := range thread.Transcript {
+		if entry.Event != nil && entry.Event.Subject == parentID && entry.Event.Transition == "submit" {
+			found = true
+			if entry.Event.Verdicts != nil {
+				t.Errorf("Verdicts = %+v, want nil for an event carrying no verdicts[]", entry.Event.Verdicts)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("thread transcript lost the submit event entirely: %+v", thread.Transcript)
+	}
+}
+
 func TestThreadViewCarriesCommittedWorkReportOnStatusAnnouncement(t *testing.T) {
 	t.Parallel()
 	fx, threadID, parentID, _ := buildExchangeThread(t)

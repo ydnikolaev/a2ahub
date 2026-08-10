@@ -41,6 +41,7 @@ var foldedFieldsItemDeliberatelyDrops = map[string]string{
 	"EventAt":              "the ULID -> timestamp side table. Item carries the two instants that matter — CreatedAt and LatestEventAt — plus, since P0, StateSince",
 	"EventNotes":           "per-event note bodies, rendered by the transcript",
 	"EventReasonCodes":     "per-event machine-readable reason codes, rendered by the transcript beside the note they used to be substituted for. An inbox row shows the artifact's current state, not why one particular event was refused",
+	"EventVerdicts":        "per-event verify/close verdicts[] (P6 wave C), rendered by the transcript the same way EventNotes/EventReasonCodes are. An inbox row shows the artifact's current state, not a per-criterion judgement from one particular verify/close event",
 	"LatestPublishVersion": "a contract-only projection consumed by the contract views, not by a generic item row",
 	"SpaceID":              "renamed to Space by toItem",
 	"StateEventID":         "renamed to StateEvent by toItem — the ULID of the event that produced State",

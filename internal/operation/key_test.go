@@ -192,6 +192,80 @@ func TestRespondRefsAreOrderedAndDistinguishing(t *testing.T) {
 	}
 }
 
+// TestVerifyDifferentVerdictsProduceDifferentKeys is the determinism
+// requirement P6 wave C's implementor brief names explicitly: two `a2a
+// verify` invocations naming the SAME targets with DIFFERENT per-criterion
+// judgements must NOT collide onto one operation key, or the second write is
+// silently treated as a retry of the first and its distinct verdicts never
+// commit.
+func TestVerifyDifferentVerdictsProduceDifferentKeys(t *testing.T) {
+	t.Parallel()
+
+	a := Verify("axon", "agent", "bot", []string{"XS-axon-1"},
+		[]VerdictEntry{{Index: 0, Verdict: "met", CauseOwner: "axon"}})
+	b := Verify("axon", "agent", "bot", []string{"XS-axon-1"},
+		[]VerdictEntry{{Index: 0, Verdict: "unmet", CauseOwner: "axon"}})
+	if a == b {
+		t.Fatal("differing verdict on the same index produced the same key")
+	}
+	if !Valid(a) || !Valid(b) {
+		t.Fatalf("keys are not canonical: %q %q", a, b)
+	}
+
+	c := Verify("axon", "agent", "bot", []string{"XS-axon-1"},
+		[]VerdictEntry{{Index: 0, Verdict: "met", CauseOwner: "beta"}})
+	if a == c {
+		t.Fatal("differing cause_owner on the same index/verdict produced the same key")
+	}
+
+	noVerdicts := Verify("axon", "agent", "bot", []string{"XS-axon-1"}, nil)
+	if noVerdicts == a {
+		t.Fatal("an empty verdict set collided with a populated one")
+	}
+}
+
+// TestVerifyVerdictsCanonicalByIndexNotArgumentOrder pins the
+// ordered-vs-sorted decision Verify's own doc comment makes: verdicts carry
+// their own position via `index`, so two invocations naming the SAME
+// judgement set in a DIFFERENT --verdict flag order must mint the IDENTICAL
+// key (an identical retry, or a caller assembling flags from an unordered
+// map, must not mint a second branch for one judgement set) — the opposite
+// of Respond's own refs[], which stays order-sensitive because array order
+// is itself part of that document.
+func TestVerifyVerdictsCanonicalByIndexNotArgumentOrder(t *testing.T) {
+	t.Parallel()
+
+	given := Verify("axon", "agent", "bot", []string{"XS-axon-1"}, []VerdictEntry{
+		{Index: 0, Verdict: "met", CauseOwner: "axon"},
+		{Index: 1, Verdict: "unmet", CauseOwner: "beta"},
+	})
+	reordered := Verify("axon", "agent", "bot", []string{"XS-axon-1"}, []VerdictEntry{
+		{Index: 1, Verdict: "unmet", CauseOwner: "beta"},
+		{Index: 0, Verdict: "met", CauseOwner: "axon"},
+	})
+	if given != reordered {
+		t.Fatalf("reordering --verdict flags (same judgement set) changed the key: %q vs %q", given, reordered)
+	}
+}
+
+// TestVerifyTargetsAreSetSemantics pins that Verify's targets, like Respond's
+// parents, carry no wire order — batching the same response ids in a
+// different CLI argument order must mint the same key.
+func TestVerifyTargetsAreSetSemantics(t *testing.T) {
+	t.Parallel()
+
+	a := Verify("axon", "agent", "bot", []string{"XS-axon-1", "XS-axon-2"}, nil)
+	b := Verify("axon", "agent", "bot", []string{"XS-axon-2", "XS-axon-1"}, nil)
+	if a != b {
+		t.Fatalf("reordering targets changed the key: %q vs %q", a, b)
+	}
+
+	c := Verify("axon", "agent", "bot", []string{"XS-axon-1", "XS-axon-3"}, nil)
+	if a == c {
+		t.Fatal("changing one target produced the same key")
+	}
+}
+
 func TestContractDeprecateIncludesSuccessor(t *testing.T) {
 	t.Parallel()
 
@@ -202,5 +276,34 @@ func TestContractDeprecateIncludesSuccessor(t *testing.T) {
 	}
 	if !Valid(a) || Valid("op-v1-nope") {
 		t.Fatalf("Valid accepted/rejected the wrong key: %q", a)
+	}
+}
+
+// TestVerifyDistinctIndicesDoNotCollide asserts what the index encoding
+// actually has to guarantee: two judgements differing only in which criterion
+// they name mint different keys, so the second is not silently deduped onto
+// the first. Negative values are included not because they are legal — a
+// criterion index is non-negative by convention — but because nothing in
+// Verify's signature refuses one, and a key function must stay injective over
+// the inputs it can actually receive.
+//
+// It deliberately does NOT assert that a negative index cannot alias a
+// positive one through uint64. That claim was written first, and mutation
+// refuted it: uint64(-1) is 2^64-1, which no int can hold, so the conversion
+// gosec flagged was injective all along. See Verify's own comment.
+func TestVerifyDistinctIndicesDoNotCollide(t *testing.T) {
+	t.Parallel()
+
+	key := func(index int) string {
+		return Verify("axon", "agent", "bot", []string{"XS-axon-1"},
+			[]VerdictEntry{{Index: index, Verdict: "met", CauseOwner: "axon"}})
+	}
+	seen := map[string]int{}
+	for _, index := range []int{-1, 0, 1, 2, 11, 1 << 20, 1<<63 - 1} {
+		k := key(index)
+		if prior, dup := seen[k]; dup {
+			t.Fatalf("criterion indices %d and %d minted one operation key", prior, index)
+		}
+		seen[k] = index
 	}
 }

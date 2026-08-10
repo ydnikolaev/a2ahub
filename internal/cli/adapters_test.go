@@ -425,6 +425,72 @@ func TestMirrorResolverAcceptanceCriteriaCount(t *testing.T) {
 	})
 }
 
+// mirrorResolverResponseParentResolver is ParentCriteriaCounter's own
+// compile-time-gate pattern above, applied to the second optional upgrade
+// P6 wave C's REF-019 gap-#2 fix adds (internal/validate/verdicts.go's
+// ResponseParentResolver): every cli.NewMirrorResolver construction site
+// gets ParentOf by construction, and a future edit that removed it or
+// narrowed its signature fails to COMPILE here.
+var _ validate.ResponseParentResolver = (*cli.MirrorResolver)(nil)
+
+// writeResponseArtifact seeds a committed artifact directly under
+// mirrorDir/id.md with a `parent:` field — ParentOf's own read target. Same
+// minimal-frontmatter shape TestMirrorResolverSkippedNamesTheBadFileAndGoodRefStillResolves
+// already uses above (id + type is enough for the index to carry it; ParentOf
+// only re-reads `parent`, never validates against the full response schema).
+func writeResponseArtifact(t *testing.T, mirrorDir, id, parentID string) {
+	t.Helper()
+	raw := "---\nid: " + id + "\ntype: response\nparent: " + parentID + "\n---\nbody\n"
+	if err := os.WriteFile(filepath.Join(mirrorDir, id+".md"), []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestMirrorResolverParentOf is ParentOf's own behavioural proof — the
+// verify-side hop internal/validate/verdicts.go's checkVerdictIndexRange
+// takes when a response's own parent is not directly criteria-bearing.
+func TestMirrorResolverParentOf(t *testing.T) {
+	t.Parallel()
+
+	t.Run("resolves the response's own parent", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeResponseArtifact(t, dir, "XS-seomatrix-20260808-r1", "XW-axon-20260808-p9d3")
+		r := cli.NewMirrorResolver(dir, space.Manifest{})
+
+		parentID, ok := r.ParentOf("XS-seomatrix-20260808-r1")
+		if !ok {
+			t.Fatalf("ParentOf: expected ok=true")
+		}
+		if parentID != "XW-axon-20260808-p9d3" {
+			t.Errorf("ParentOf = %q, want XW-axon-20260808-p9d3", parentID)
+		}
+	})
+
+	t.Run("unknown response degrades to not-ok", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		r := cli.NewMirrorResolver(dir, space.Manifest{})
+
+		parentID, ok := r.ParentOf("XS-does-not-exist")
+		if ok {
+			t.Fatalf("ParentOf: expected ok=false for an unresolvable response, got parent=%q", parentID)
+		}
+	})
+
+	t.Run("artifact with no parent degrades to not-ok, never an empty string treated as found", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeParentArtifact(t, dir, "XW-axon-20260808-p9d3", "acceptance_criteria: [\"a\"]") // a work_request carries no `parent`
+		r := cli.NewMirrorResolver(dir, space.Manifest{})
+
+		parentID, ok := r.ParentOf("XW-axon-20260808-p9d3")
+		if ok {
+			t.Fatalf("ParentOf: expected ok=false for an artifact with no parent, got parent=%q", parentID)
+		}
+	})
+}
+
 // --- SubmitValidatorAdapter ------------------------------------------------
 
 func TestSubmitValidatorAdapterValid(t *testing.T) {

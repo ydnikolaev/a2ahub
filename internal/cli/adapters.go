@@ -663,6 +663,54 @@ func (r *MirrorResolver) AcceptanceCriteriaCount(parentID string) (count int, ok
 // files, can substitute for this.
 var _ validate.ParentCriteriaCounter = (*MirrorResolver)(nil)
 
+// ParentOf implements validate.ResponseParentResolver (P6 wave C's REF-019,
+// internal/validate/verdicts.go): it reports a RESPONSE artifact's own
+// `parent` field, so checkVerdictIndexRange can hop from a `verify` event's
+// subject (the response id) to the criteria-bearing artifact
+// AcceptanceCriteriaCount actually knows how to count.
+//
+// Same shape as AcceptanceCriteriaCount just above: resolve responseID's
+// on-disk path from this resolver's own index (no second walk —
+// TestMirrorResolverAdapterCarriesNoWalk's own guard applies here too), then
+// re-read and parse for `parent` specifically — walkArtifacts' own decode
+// discards it (ArtifactIndexEntry carries only Path/Thread/Digest).
+//
+// ok=false covers every "cannot resolve" case alike: responseID absent from
+// the index, the file failing to re-read/parse/decode, or `parent` empty or
+// absent (a non-response artifact, or a malformed response) — never a
+// synthesized parent id.
+func (r *MirrorResolver) ParentOf(responseID string) (parentID string, ok bool) {
+	r.ensureIndex()
+	entry, found := r.index[responseID]
+	if !found {
+		return "", false
+	}
+	raw, err := os.ReadFile(filepath.Join(r.mirrorDir, filepath.FromSlash(entry.Path)))
+	if err != nil {
+		return "", false
+	}
+	fm, err := artifact.ParseFrontmatter(raw)
+	if err != nil {
+		return "", false
+	}
+	var probe struct {
+		Parent string `yaml:"parent"`
+	}
+	if err := yaml.Unmarshal(fm.YAML, &probe); err != nil {
+		return "", false
+	}
+	if probe.Parent == "" {
+		return "", false
+	}
+	return probe.Parent, true
+}
+
+// var _ validate.ResponseParentResolver = (*MirrorResolver)(nil) is
+// ParentCriteriaCounter's own type-level-gate pattern, applied to this
+// second optional upgrade: every cli.NewMirrorResolver construction site
+// gets ParentOf by construction, with nothing to remember per call site.
+var _ validate.ResponseParentResolver = (*MirrorResolver)(nil)
+
 // splitRefGrammar parses a §5.7 ref (`id`, `id@version`, `id#digest`,
 // `id@version#digest`) into its id/version/digest components — this
 // package's own minimal copy of the same small parse internal/validate's

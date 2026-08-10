@@ -656,6 +656,11 @@ type TranscriptEvent struct {
 	// such gate until transcriptevent_projection_test.go.
 	ReasonCode     string `json:"reason_code,omitempty"`
 	TransitionFree bool   `json:"transition_free,omitempty"`
+	// Verdicts carries cache.TranscriptEvent.Verdicts straight through — no
+	// second decode, no html-local re-declaration of the same three-field
+	// shape (P6 wave C, threat-model.md T5). Nil on every event that
+	// carries none, the same as at cache's own layer.
+	Verdicts []cache.TranscriptVerdict `json:"verdicts,omitempty"`
 }
 
 // ThreadOpenItem describes one unresolved item and its legal next actions.

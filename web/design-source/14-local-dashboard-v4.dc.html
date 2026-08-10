@@ -866,6 +866,20 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                       <div id="{{ e.anchor }}" style="{{ e.contentStyle }}">
                         <dc-import name="ActorEventLine" row="{{ e }}" size="regular" layout="rail" hint-size="100%,44px"></dc-import>
                         <sc-if value="{{ e.hasAttachment }}" hint-placeholder-val="{{ false }}"><div style="margin-top:14px;"><dc-import name="TimelineArtifactCard" card="{{ e.attachment }}" hint-size="100%,190px"></dc-import></div></sc-if>
+                        <!-- verify/close's own per-criterion judgement (P6 wave C,
+                             event/v2 `verdicts[]`, threat-model.md T5). Rendered
+                             only when the event actually carries entries — no
+                             empty heading for every other transition. -->
+                        <sc-if value="{{ e.hasVerdicts }}" hint-placeholder-val="{{ false }}">
+                          <div style="margin-top:14px;">
+                            <div style="font-size:14px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:8px;">{{ e.verdictsTitle }}</div>
+                            <div style="display:flex; flex-direction:column; gap:6px;">
+                              <sc-for list="{{ e.verdicts }}" as="v" hint-placeholder-count="1">
+                                <div><dc-import name="StatusPill" text="{{ v.text }}" tone="{{ v.tone }}" size="small" hint-size="240px,24px"></dc-import></div>
+                              </sc-for>
+                            </div>
+                          </div>
+                        </sc-if>
                       </div>
                     </sc-if>
                     <!-- A DERIVED row: `a2a contract adopt` emits no event, so this is
@@ -4672,6 +4686,20 @@ class Component extends DCLogic {
           const actionText = ev.transition === "note" ? (ru ? "добавил" : "added") : (TRANSITION_PAST(ru)[ev.transition] || ev.transition);
           const signal = EVENT_SIGNAL(ev.transition, ru);
           const consistency = ev.consistency;
+          // verify/close's own per-criterion judgement (P6 wave C, event/v2's
+          // `verdicts[]`) — decoded on the Go side (internal/cache/decode.go),
+          // carried onto the transcript event (internal/cache/threadview.go,
+          // internal/html/model.go) and, until this row named the field, never
+          // read here: the entry hop from Go field to rendered occurrence is
+          // its own place to lose data (this file's own wave-21 lesson, about
+          // `detailFor`'s hand-picked object literal — this row is the same
+          // shape, one function up).
+          const VERDICT_LABEL = { met: ru ? "выполнено" : "met", unmet: ru ? "не выполнено" : "unmet", not_warranted: ru ? "не требовалось" : "not warranted", not_exercised: ru ? "не проверялось" : "not exercised" };
+          const VERDICT_TONE = { met: "positive", unmet: "negative", not_warranted: "neutral", not_exercised: "caution" };
+          const verdicts = (ev.verdicts || []).map(v => ({
+            text: (ru ? "критерий " : "criterion ") + v.index + " · " + (VERDICT_LABEL[v.verdict] || v.verdict) + " · " + v.cause_owner,
+            tone: VERDICT_TONE[v.verdict] || "neutral"
+          }));
           const noteDetail = note ? {
             present: true,
             type: "",
@@ -4725,6 +4753,9 @@ class Component extends DCLogic {
             attachment: {},
             signalTone: signal.tone,
             signalLabel: signal.label,
+            verdicts,
+            hasVerdicts: verdicts.length > 0,
+            verdictsTitle: ru ? "Вердикты по критериям" : "Criteria verdicts",
             cardStyle: "",
             title: "", route: "", when: "", hasParent: false, relations: [], opensChain: false, hasState: false, state: "", stateTone: "neutral", openDoc: () => {}
           }, avatarFields(identity, 2, dim, actor.system));

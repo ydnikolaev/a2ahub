@@ -67,6 +67,42 @@ func TestReceiptEvidenceProjectsToArtifactAndThreadModels(t *testing.T) {
 	}
 }
 
+// TestThreadViewCarriesVerdicts is gap #4's own html-layer proof (P6 wave C,
+// threat-model.md T5): cache.TranscriptEvent.Verdicts must reach
+// html.TranscriptEvent.Verdicts through toThreadView's hand-built
+// projection — the same boundary TestTranscriptEventCarriesEveryCacheField
+// (transcriptevent_projection_test.go) guards by field NAME; this proves
+// the VALUE actually crosses it, not just that the field exists.
+func TestThreadViewCarriesVerdicts(t *testing.T) {
+	t.Parallel()
+	thread := toThreadView(cache.ThreadResult{
+		Thread: "thread:verdicts", Space: "sp1", Order: cache.ThreadOrderCommitted,
+		Opener: cache.ThreadOpener{ID: "XW-verdicts"},
+		Transcript: []cache.TranscriptEntry{{
+			Seq: 1, Kind: "event", At: time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC),
+			Event: &cache.TranscriptEvent{
+				ULID: "01", Subject: "XW-verdicts", Transition: "close",
+				Actor: cache.TranscriptEventActor{Kind: "agent", Name: "axon-bot", System: "axon"},
+				Verdicts: []cache.TranscriptVerdict{
+					{Index: 0, Verdict: "met", CauseOwner: "axon"},
+					{Index: 1, Verdict: "unmet", CauseOwner: "seomatrix"},
+				},
+			},
+		}},
+	}, "axon")
+	threadEvent := thread.Transcript[0].Event
+	if threadEvent == nil {
+		t.Fatal("toThreadView dropped the event row entirely")
+	}
+	want := []cache.TranscriptVerdict{
+		{Index: 0, Verdict: "met", CauseOwner: "axon"},
+		{Index: 1, Verdict: "unmet", CauseOwner: "seomatrix"},
+	}
+	if len(threadEvent.Verdicts) != len(want) || threadEvent.Verdicts[0] != want[0] || threadEvent.Verdicts[1] != want[1] {
+		t.Fatalf("threadEvent.Verdicts = %+v, want %+v", threadEvent.Verdicts, want)
+	}
+}
+
 func TestReceiptEvidenceHTMLJSONOmitsAbsentOptionalFields(t *testing.T) {
 	t.Parallel()
 	detail, err := toArtifactDetail(cache.ShowResult{

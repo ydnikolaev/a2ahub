@@ -150,8 +150,17 @@ func malformedEventViolation() Violation {
 //
 // ONE Result for both halves, so a reader gets one verdict per event rather than
 // two entries for the same file disagreeing about how bad it is.
+//
+// Carries no Resolver, so REF-019 (verdicts.go's checkVerdictIndexRange)
+// never runs through this entry point — the same "cannot check is not check
+// passed" degrade every ParentCriteriaCounter/ResponseParentResolver miss
+// already uses. Callers that have a Resolver to offer use
+// ValidateEventWithContext instead; this signature is kept byte-identical
+// because three production callers construct off this wave's allowlist
+// still call it with exactly these two arguments (see verdicts.go's package
+// doc, wave 25B section, point 1).
 func (e *Engine) ValidateEvent(raw []byte, spaceFloor string) (Result, error) {
-	return e.validateEvent(raw, spaceFloor, nil)
+	return e.validateEvent(raw, spaceFloor, nil, nil)
 }
 
 // ValidateEventWithEvaluation is the contextual V2/V3 event-validation path.
@@ -159,11 +168,39 @@ func (e *Engine) ValidateEvent(raw []byte, spaceFloor string) (Result, error) {
 // legality, so receipt applicability and outcome cannot grow a second state
 // machine in validation. ValidateEvent remains the raw/full-history path for
 // callers that do not have candidate context.
+//
+// Also kept byte-identical for the same reason ValidateEvent is (see its own
+// doc comment) — its production callers are off this wave's allowlist too.
 func (e *Engine) ValidateEventWithEvaluation(raw []byte, spaceFloor string, evaluation fold.CandidateEvaluation) (Result, error) {
-	return e.validateEvent(raw, spaceFloor, &evaluation)
+	return e.validateEvent(raw, spaceFloor, &evaluation, nil)
 }
 
-func (e *Engine) validateEvent(raw []byte, spaceFloor string, evaluation *fold.CandidateEvaluation) (Result, error) {
+// EventContext carries ValidateEventWithContext's per-call optional inputs —
+// the same small-carrier shape seam.go's LocalContext already establishes
+// for ValidateForSubmit, rather than growing a fourth
+// ValidateEventWith<Foo>And<Bar> method name for every combination.
+type EventContext struct {
+	// Resolver, when non-nil and it implements ParentCriteriaCounter and/or
+	// ResponseParentResolver, lets checkVerdictIndexRange (REF-019) run.
+	// Nil is a legal, common value: it degrades to "cannot check", never a
+	// synthesized violation (verdicts.go's own rail).
+	Resolver Resolver
+	// Evaluation is the same optional fold.CandidateEvaluation
+	// ValidateEventWithEvaluation takes — nil here is equivalent to calling
+	// ValidateEvent rather than ValidateEventWithEvaluation.
+	Evaluation *fold.CandidateEvaluation
+}
+
+// ValidateEventWithContext is ValidateEvent/ValidateEventWithEvaluation's
+// sibling for a caller that also has a Resolver to offer — the entry point
+// REF-019 (verdicts.go) actually reaches. See verdicts.go's package doc,
+// wave 25B section, point 1, for which production callers do and do not use
+// this yet.
+func (e *Engine) ValidateEventWithContext(raw []byte, spaceFloor string, ctx EventContext) (Result, error) {
+	return e.validateEvent(raw, spaceFloor, ctx.Evaluation, ctx.Resolver)
+}
+
+func (e *Engine) validateEvent(raw []byte, spaceFloor string, evaluation *fold.CandidateEvaluation, resolver Resolver) (Result, error) {
 	const op = "ValidateEvent"
 
 	instance, probe, parseable := decodeEvent(raw)
@@ -204,6 +241,11 @@ func (e *Engine) validateEvent(raw []byte, spaceFloor string, evaluation *fold.C
 	if firstPartyAtFloor {
 		violations = append(violations, checkFirstPartyActor(probe)...)
 	}
+
+	// REF-019 (verdicts.go): verdicts[]' own index-range guard. subjectID is
+	// this event's own `subject` — degrades to nothing when resolver is nil
+	// or cannot resolve the count (checkVerdictIndexRange's own rail).
+	violations = append(violations, checkVerdictIndexRange(probe.Subject, instance, resolver)...)
 
 	var consistency []ConsistencyFlag
 	if evaluation != nil {

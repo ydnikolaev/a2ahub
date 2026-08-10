@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 )
 
 const prefix = "op-v1-"
@@ -134,6 +135,82 @@ func Respond(system, actorKind, actorName string, parentIDs []string, result str
 	// exactly the key it derived before this parameter existed.
 	for _, ref := range refs {
 		encoder.add(ref)
+	}
+	return encoder.key()
+}
+
+// VerdictEntry is one verify/close event's per-criterion judgment — this
+// package's own copy of the wire shape `{index, verdict, cause_owner}`
+// (schemas/event/v2/event.schema.json's `verdicts[]`, P6 wave C, threat-model
+// T5). A plain value type, not internal/cli's own wire-encoding struct: this
+// package stays stdlib-only and importable from any layer (this file's own
+// doc comment), so it never imports internal/cli, and internal/cli maps its
+// own yaml-tagged type onto this one at the one call site that needs both.
+// VerdictEntry is part of the public package API.
+type VerdictEntry struct {
+	Index      int
+	Verdict    string
+	CauseOwner string
+}
+
+// Verify derives the operation key for one `a2a verify` invocation, covering
+// every response id it batches (and, when D-024's same-PR convenience close
+// fires, the paired close event — both ride the ONE branch this key names,
+// since they commit together).
+//
+// targets are sorted (batch order carries no wire meaning, the same
+// reasoning Respond's own parents parameter documents). verdicts are
+// canonicalised by INDEX, not by --verdict argument order: unlike Respond's
+// `refs[]` (a genuinely ordered envelope array whose written sequence is
+// part of the document), a verdict entry names its own position via `index`,
+// so two invocations naming the SAME judgement set in a different flag order
+// describe one identical judgement and must mint the SAME key — sorting by
+// argument order instead would let a caller that assembles flags from an
+// unordered map (a map range, a shell glob) mint two different branches for
+// one retried write. Two invocations that judge the SAME targets
+// DIFFERENTLY, however, must NOT collide onto one branch — that silent
+// collision (the second write treated as a retry of the first, its distinct
+// verdicts never committed) is this function's whole reason to exist; before
+// it, verify/close had no operation key at all and fell back to the
+// artifact-id-only branch every OP-211 verb without one still uses, which
+// cannot distinguish two batches naming identical targets with different
+// content.
+// Verify is part of the public package API.
+func Verify(system, actorKind, actorName string, targets []string, verdicts []VerdictEntry) string {
+	sortedTargets := append([]string(nil), targets...)
+	sort.Strings(sortedTargets)
+	sortedVerdicts := append([]VerdictEntry(nil), verdicts...)
+	sort.Slice(sortedVerdicts, func(i, j int) bool { return sortedVerdicts[i].Index < sortedVerdicts[j].Index })
+
+	encoder := newEncoder("verify")
+	encoder.add(system)
+	encoder.add(actorKind)
+	encoder.add(actorName)
+	for _, target := range sortedTargets {
+		encoder.add(target)
+	}
+	for _, v := range sortedVerdicts {
+		// Decimal, not the fixed-width uint64 Work() uses above, and the
+		// reason is narrower than it first looks — recorded because the first
+		// version of this comment claimed more and was wrong.
+		//
+		// gosec G115 flags `uint64(v.Index)`: `Index` is an `int` and nothing
+		// in this signature refuses a negative one. The tempting story is that
+		// the wrap makes -1 collide with a huge positive index. It CANNOT:
+		// uint64(-1) is 2^64-1, which no `int` can hold, so int -> uint64 is
+		// injective and no two distinct indices ever encode alike. That was
+		// checked by mutation — restoring the wrap left the collision test
+		// green, which is how the claim was found to be false.
+		//
+		// What remains is the honest reason: the conversion is safe by an
+		// argument the linter cannot see, and the choice is between a
+		// suppression carrying that argument and an encoding that does not
+		// need one. Decimal costs nothing here (the encoder length-frames
+		// every entry, so "1" and "11" cannot run together) and leaves no
+		// standing exception for someone to widen later.
+		encoder.add(strconv.Itoa(v.Index))
+		encoder.add(v.Verdict)
+		encoder.add(v.CauseOwner)
 	}
 	return encoder.key()
 }

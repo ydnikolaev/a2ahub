@@ -120,6 +120,17 @@ type foldedArtifact struct {
 	// `reason_code` — the field schemas/event/v1 defines and the MCP decline
 	// tool REQUIRES, which this package decoded nowhere until P0.
 	EventReasonCodes map[string]string
+	// EventVerdicts maps a committed event's ULID to its `verdicts[]` —
+	// event/v2's verify/close-only field (P6 wave C, threat-model.md T5).
+	// The same side-table shape as EventNotes/EventReasonCodes just above,
+	// for the same reason: fold.Event carries none of these (fold is a
+	// pure, protocol-legality package, §T1 — decorative/read-model-only
+	// fields never enter it), so this package recovers them here without
+	// widening fold's own input shape. decode.go's eventProbe already
+	// decodes the field (P6 wave C); this is that decode's promotion into
+	// the read model, closing the "decoded, never carried" gap spec 06 §11's
+	// amendment names.
+	EventVerdicts map[string][]eventVerdictEntry
 	// LatestPublishVersion is the most recent `publish` event's `version`
 	// field for this artifact (D-023: contract versions resolve through
 	// publish events) — empty when none recorded (never published, or a
@@ -393,6 +404,7 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 	eventAt := make(map[string]time.Time, len(events))
 	eventNotes := make(map[string]string, len(events))
 	eventReasonCodes := make(map[string]string, len(events))
+	eventVerdicts := make(map[string][]eventVerdictEntry, len(events))
 	for _, re := range events {
 		if t, terr := time.Parse(time.RFC3339, re.Ev.At); terr == nil {
 			eventAt[re.Ev.Event] = t
@@ -402,6 +414,9 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 		}
 		if re.Ev.ReasonCode != "" {
 			eventReasonCodes[re.Ev.Event] = re.Ev.ReasonCode
+		}
+		if len(re.Ev.Verdicts) > 0 {
+			eventVerdicts[re.Ev.Event] = append([]eventVerdictEntry(nil), re.Ev.Verdicts...)
 		}
 	}
 
@@ -466,7 +481,7 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 			ReceiptMismatches: receiptMismatches, LatestEventAt: latest,
 			LatestEventSeq: latestEventSeq, LatestEventID: latestEventID,
 			StateEventID: origin.EventULID, StateBy: origin.By, StateSince: eventAt[origin.EventULID],
-			EventAt: eventAt, EventNotes: eventNotes, EventReasonCodes: eventReasonCodes, EventRefs: eventRefs, LatestPublishVersion: latestPublishVersion,
+			EventAt: eventAt, EventNotes: eventNotes, EventReasonCodes: eventReasonCodes, EventVerdicts: eventVerdicts, EventRefs: eventRefs, LatestPublishVersion: latestPublishVersion,
 			Seq: seq[a.RelPath], OrderKnown: orderKnown,
 			// Edge 3, evaluated once — see foldedArtifact's own comment.
 			// The lookup is on the contract id alone; myDependencies is

@@ -913,6 +913,7 @@ func toThreadView(result cache.ThreadResult, self string) ThreadView {
 				Note:    entry.Event.Note, Actor: actor, ProducedBy: entry.Event.ProducedBy,
 				Consistency: entry.Event.Consistency,
 				ReasonCode:  entry.Event.ReasonCode, TransitionFree: entry.Event.TransitionFree,
+				Verdicts: entry.Event.Verdicts,
 			}
 		}
 		if entry.Derived != nil {

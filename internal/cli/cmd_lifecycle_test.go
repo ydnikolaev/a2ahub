@@ -1723,3 +1723,411 @@ func TestRespondRefOrderChangesResponseID(t *testing.T) {
 		t.Fatalf("expected a different refs[] ORDER to mint a different response id (refs[] order is on the wire), got the same id %q", forward)
 	}
 }
+
+// --- verify --verdict / event/v2 authoring (P6 wave C, T5's discharge) -----
+
+// lifecycleVerdictProbe/lifecycleEventProbe decode the wire shape these
+// tests assert on — DECODED values, never strings.Contains over rendered
+// bytes (this epic's own paid-for trap).
+type lifecycleVerdictProbe struct {
+	Index      int    `yaml:"index"`
+	Verdict    string `yaml:"verdict"`
+	CauseOwner string `yaml:"cause_owner"`
+}
+
+type lifecycleEventProbe struct {
+	Schema     string `yaml:"schema"`
+	Transition string `yaml:"transition"`
+	Subject    string `yaml:"subject"`
+	// Verdicts is a POINTER so these tests can distinguish "the verdicts key
+	// is absent" (nil) from "the verdicts key is present and empty" (non-nil,
+	// len 0) — the exact distinction the schema's own conditional makes and
+	// the exact distinction cmd_lifecycle.go's own lifecycleEventDoc.Verdicts
+	// field exists to preserve.
+	Verdicts *[]lifecycleVerdictProbe `yaml:"verdicts"`
+}
+
+// findEventByTransition decodes every file in files and returns the first
+// whose transition matches want, failing the test if none matches.
+func findEventByTransition(t *testing.T, files []space.FileWrite, want string) lifecycleEventProbe {
+	t.Helper()
+	for _, fw := range files {
+		var probe lifecycleEventProbe
+		if err := yaml.Unmarshal(fw.Content, &probe); err != nil {
+			t.Fatalf("decode event %s: %v", fw.Path, err)
+		}
+		if probe.Transition == want {
+			return probe
+		}
+	}
+	t.Fatalf("no %s event found among %d files", want, len(files))
+	return lifecycleEventProbe{}
+}
+
+// lifecycleManifestAtFloor returns lifecycleManifest() with min_binary_version
+// set to floor — the CC-085 field cmd_lifecycle.go's lifecycleEventSchema
+// reads to decide event/v1 vs event/v2, mirroring internal/contract/
+// publication_plan.go's own authoring-floor split.
+func lifecycleManifestAtFloor(floor string) space.Manifest {
+	m := lifecycleManifest()
+	m.MinBinaryVersion = floor
+	return m
+}
+
+// TestVerifyBelowFloorStaysEventV1AndOmitsVerdicts is this wave's own
+// regression pin: a space that has never set (or has set below the release
+// floor) min_binary_version keeps authoring event/v1 verify/close events —
+// T5's conditional requirement never applies to them, and no `verdicts` key
+// is written at all (event/v1's own schema has no such property).
+func TestVerifyBelowFloorStaysEventV1AndOmitsVerdicts(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-vf01"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+	responseID := respondFlow(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	// lifecycleManifest() sets no min_binary_version at all — the common,
+	// pre-this-wave case.
+	cmd := cli.NewVerifyCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{responseID}, io); code != 0 {
+		t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	files := fake.calls[0].Files
+	verify := findEventByTransition(t, files, "verify")
+	close_ := findEventByTransition(t, files, "close")
+	if verify.Schema != "event/v1" || close_.Schema != "event/v1" {
+		t.Fatalf("expected event/v1 below the floor, got verify=%q close=%q", verify.Schema, close_.Schema)
+	}
+	if verify.Verdicts != nil || close_.Verdicts != nil {
+		t.Fatalf("expected NO verdicts key on event/v1, got verify=%v close=%v", verify.Verdicts, close_.Verdicts)
+	}
+	if fake.calls[0].OperationKey != "" {
+		t.Fatalf("expected no operation key when --verdict was never used, got %q", fake.calls[0].OperationKey)
+	}
+}
+
+// TestVerifyAtFloorAuthorsEventV2WithVerdicts is Part 1 + Part 2's positive
+// case: at/above contract.ContractPublicationFloor, `a2a verify --verdict
+// 0:met:axon` authors event/v2 on BOTH the verify event and the D-024
+// convenience close riding in the same PR, both carrying the SAME
+// per-criterion judgement.
+func TestVerifyAtFloorAuthorsEventV2WithVerdicts(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-vf02"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+	responseID := respondFlow(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewVerifyCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--verdict", "0:met:axon", responseID}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	files := fake.calls[0].Files
+	verify := findEventByTransition(t, files, "verify")
+	close_ := findEventByTransition(t, files, "close")
+	if verify.Schema != "event/v2" || close_.Schema != "event/v2" {
+		t.Fatalf("expected event/v2 at/above the floor, got verify=%q close=%q", verify.Schema, close_.Schema)
+	}
+	for name, probe := range map[string]lifecycleEventProbe{"verify": verify, "close": close_} {
+		if probe.Verdicts == nil {
+			t.Fatalf("%s: expected a verdicts key, got none", name)
+		}
+		got := *probe.Verdicts
+		if len(got) != 1 || got[0].Index != 0 || got[0].Verdict != "met" || got[0].CauseOwner != "axon" {
+			t.Fatalf("%s: verdicts = %+v, want [{0 met axon}]", name, got)
+		}
+	}
+	if fake.calls[0].OperationKey == "" {
+		t.Fatal("expected a non-empty operation key once --verdict carried content")
+	}
+}
+
+// TestVerifyEmptyVerdictsArrayWhenNoneSupplied is the AC the schema's own
+// description protects: at/above the floor, a plain `a2a verify` with NO
+// --verdict flags still authors `verdicts: []` (present, empty) on both the
+// verify and the D-024 close — never an absent key, which the schema's own
+// conditional requirement would refuse — proving a parent carrying no
+// judged criteria stays closable.
+func TestVerifyEmptyVerdictsArrayWhenNoneSupplied(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-vf03"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+	responseID := respondFlow(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewVerifyCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{responseID}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	files := fake.calls[0].Files
+	verify := findEventByTransition(t, files, "verify")
+	close_ := findEventByTransition(t, files, "close")
+	if verify.Verdicts == nil || len(*verify.Verdicts) != 0 {
+		t.Fatalf("verify: expected verdicts: [] (present, empty), got %v", verify.Verdicts)
+	}
+	if close_.Verdicts == nil || len(*close_.Verdicts) != 0 {
+		t.Fatalf("close: expected verdicts: [] (present, empty), got %v", close_.Verdicts)
+	}
+	if fake.calls[0].OperationKey != "" {
+		t.Fatalf("expected no operation key when --verdict was never used, got %q", fake.calls[0].OperationKey)
+	}
+}
+
+// TestVerifyRejectsMalformedVerdictFlag exercises every locally-refused
+// --verdict shape (exit 2, funnel never called): the flag is refused before
+// any legality check or write, the same discipline decline's --reason and
+// block's --refs already carry.
+func TestVerifyRejectsMalformedVerdictFlag(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		values []string
+	}{
+		{"missing colons", []string{"0met"}},
+		{"only one colon", []string{"0:met"}},
+		{"non-integer index", []string{"x:met:axon"}},
+		{"negative index", []string{"-1:met:axon"}},
+		{"unknown verdict enum", []string{"0:maybe:axon"}},
+		{"empty cause_owner", []string{"0:met:"}},
+		{"whitespace-only cause_owner", []string{"0:met:  "}},
+		// Two --verdict entries naming the SAME index: not "last one wins" —
+		// see lifecycleParseVerdicts's own doc comment on why an ambiguous
+		// judgement would also break the sort-by-index canonicalisation
+		// operation.Verify's determinism relies on.
+		{"duplicate index", []string{"0:met:axon", "0:unmet:beta"}},
+	}
+	for i, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			mirrorDir := t.TempDir()
+			parentID := fmt.Sprintf("XQ-axon-20260721-mvf%d", i)
+			seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+			responseID := respondFlow(t, mirrorDir, parentID, "beta")
+
+			fake := &fakeLifecycleFunnel{}
+			cmd := cli.NewVerifyCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+			io, _, _ := newIO()
+			var args []string
+			for _, v := range test.values {
+				args = append(args, "--verdict", v)
+			}
+			args = append(args, responseID)
+			code := cmd.Run(context.Background(), args, io)
+			if code != 2 {
+				t.Fatalf("code = %d, want 2 for --verdict %v", code, test.values)
+			}
+			if len(fake.calls) != 0 {
+				t.Fatalf("funnel called for a locally-refused --verdict %v", test.values)
+			}
+		})
+	}
+}
+
+// TestVerifyVerdictBelowFloorRefusedLocally: --verdict is meaningless below
+// the floor (event/v1 carries no such field) — this must be a NAMED local
+// refusal, never a silent drop of the caller's judgements.
+func TestVerifyVerdictBelowFloorRefusedLocally(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-vf05"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+	responseID := respondFlow(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewVerifyCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--verdict", "0:met:axon", responseID}, io)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1; stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatal("funnel called for a --verdict refused below the floor")
+	}
+	if !strings.Contains(errOut.String(), "min_binary_version") {
+		t.Fatalf("refusal does not name the real condition: %s", errOut.String())
+	}
+}
+
+// TestVerifyDifferentVerdictsMintDifferentOperationKeys is the determinism
+// requirement, driven end to end through the CLI (not just operation.Verify
+// in isolation): two `a2a verify` invocations against the SAME response with
+// DIFFERENT --verdict content must NOT collide onto one operation key, or
+// the second invocation's judgement is silently treated as a retry of the
+// first and never committed.
+func TestVerifyDifferentVerdictsMintDifferentOperationKeys(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-vf06"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+	responseID := respondFlow(t, mirrorDir, parentID, "beta")
+
+	run := func(verdictFlag string) string {
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewVerifyCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"--verdict", verdictFlag, responseID}, io)
+		if code != 0 {
+			t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+		}
+		return fake.calls[0].OperationKey
+	}
+
+	met := run("0:met:axon")
+	unmet := run("0:unmet:axon")
+	if met == unmet {
+		t.Fatalf("differing verdicts minted the same operation key %q", met)
+	}
+}
+
+// TestVerifyReorderedVerdictFlagsMintTheSameOperationKey pins the
+// canonical-by-index decision: the SAME judgement set, given via --verdict
+// in a DIFFERENT flag order, mints the IDENTICAL operation key — an
+// identical retry (or a caller assembling flags from an unordered source)
+// must not mint a second branch for one already-recorded judgement set.
+func TestVerifyReorderedVerdictFlagsMintTheSameOperationKey(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-vf07"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+	responseID := respondFlow(t, mirrorDir, parentID, "beta")
+
+	run := func(verdictFlags ...string) (string, []lifecycleVerdictProbe) {
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewVerifyCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		var args []string
+		for _, v := range verdictFlags {
+			args = append(args, "--verdict", v)
+		}
+		args = append(args, responseID)
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), args, io)
+		if code != 0 {
+			t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+		}
+		verify := findEventByTransition(t, fake.calls[0].Files, "verify")
+		if verify.Verdicts == nil {
+			t.Fatal("expected a verdicts key")
+		}
+		return fake.calls[0].OperationKey, *verify.Verdicts
+	}
+
+	givenKey, givenVerdicts := run("0:met:axon", "1:unmet:beta")
+	reorderedKey, reorderedVerdicts := run("1:unmet:beta", "0:met:axon")
+	if givenKey != reorderedKey {
+		t.Fatalf("reordering --verdict flags (same judgement set) changed the operation key: %q vs %q", givenKey, reorderedKey)
+	}
+	// The WRITTEN array itself must also be canonical (by index), not just
+	// the derived operation key — a caller reading the committed event
+	// should never see two different orderings for one identical judgement
+	// set.
+	want := []lifecycleVerdictProbe{{Index: 0, Verdict: "met", CauseOwner: "axon"}, {Index: 1, Verdict: "unmet", CauseOwner: "beta"}}
+	for name, got := range map[string][]lifecycleVerdictProbe{"given order": givenVerdicts, "reordered": reorderedVerdicts} {
+		if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+			t.Fatalf("%s: written verdicts = %+v, want %+v (canonical by index)", name, got, want)
+		}
+	}
+}
+
+// TestVerifyEndToEndAuthorsEventV2ThatPassesSubmitValidation is item 2 of
+// this wave's advisor pass: every OTHER --verdict test above drives
+// fakeLifecycleFunnel, which stops at recording req.Files and never proves
+// the v2 event survives the REAL funnel's own stamp/SubmitValidator (V2)
+// pipeline (space/funnel.go's own doc comment: both run BEFORE the commit,
+// funnel.go:400-403) — the exact "shipped a field nothing decodes/reaches"
+// failure class this epic keeps finding in itself (spec 06 §11's own C7
+// amendment). This test uses the real space.WriteFunnel, a real
+// SubmitValidatorAdapter wired the same way
+// TestRespondSetsToAsParentAuthorAndPassesSubmitValidation (above) proves
+// respond's own v2-adjacent write, and reads the ACTUALLY PUSHED git blob —
+// not the fake funnel's in-memory req.Files — for both the verify event and
+// the D-024 close riding the same PR.
+func TestVerifyEndToEndAuthorsEventV2ThatPassesSubmitValidation(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "axon", "beta")
+	mirrorDir := fx.Clone("axon")
+
+	parentID := "XQ-axon-20260721-vfe2"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+	responseID := respondFlow(t, mirrorDir, parentID, "beta")
+
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	engine := validate.New(corpus)
+	manifest := lifecycleManifestAtFloor("0.19.0")
+	legality := cli.NewLegalityAdapter(mirrorDir, "axon", manifest)
+	resolver := cli.NewMirrorResolver(mirrorDir, manifest)
+	validator := cli.NewSubmitValidatorAdapter(engine, "axon", resolver, legality)
+
+	fakeHost := host.NewFakeHost()
+	// The funnel's own CC-085 guard compares ITS OWN binary version against
+	// the space's min_binary_version (req.MinBinaryVersion, set from
+	// manifest.MinBinaryVersion by lifecycleDeps.buildRequest) — a binary
+	// older than the floor it is about to author against is refused before
+	// any write, so this must be at/above "0.19.0" too, not the "0.1.0"
+	// every OTHER end-to-end test in this file uses (they stay below the
+	// floor on purpose).
+	funnel := space.NewWriteFunnel(fakeHost, validator, "0.19.0")
+	hostCfg := lifecycleHostConfig()
+	hostCfg.RemoteURL = fx.RemoteURL()
+
+	cmd := cli.NewVerifyCommand(funnel, mirrorDir, "fixture-space", "axon", manifest, hostCfg, lifecycleActorResolver("agent", "bot"))
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--verdict", "0:met:axon", responseID}, io)
+	if code != 0 {
+		t.Fatalf("verify: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if len(fakeHost.Pushes) != 1 {
+		t.Fatalf("expected exactly one PushBranch call (real funnel stamped/validated/committed), got %d", len(fakeHost.Pushes))
+	}
+
+	branch := fakeHost.Pushes[0].Branch
+	changed := gitDiffNames(t, mirrorDir, "main", branch)
+	var verifyPath, closePath string
+	for _, p := range changed {
+		if !strings.HasSuffix(p, ".yaml") {
+			continue
+		}
+		content := runGitOutputForTest(t, mirrorDir, "show", branch+":"+p)
+		var probe lifecycleEventProbe
+		if err := yaml.Unmarshal([]byte(content), &probe); err != nil {
+			t.Fatalf("decode pushed event %s: %v", p, err)
+		}
+		switch probe.Transition {
+		case "verify":
+			verifyPath = p
+		case "close":
+			closePath = p
+		}
+	}
+	if verifyPath == "" || closePath == "" {
+		t.Fatalf("expected both a verify and a close event among the pushed files, got %v", changed)
+	}
+
+	for _, p := range []string{verifyPath, closePath} {
+		content := runGitOutputForTest(t, mirrorDir, "show", branch+":"+p)
+		if !strings.Contains(content, "schema: event/v2") {
+			t.Fatalf("pushed event %s is not event/v2:\n%s", p, content)
+		}
+		var probe lifecycleEventProbe
+		if err := yaml.Unmarshal([]byte(content), &probe); err != nil {
+			t.Fatalf("decode pushed event %s: %v", p, err)
+		}
+		if probe.Verdicts == nil || len(*probe.Verdicts) != 1 {
+			t.Fatalf("pushed event %s: verdicts = %v, want one entry (survived the real funnel's own stamp/validate pipeline):\n%s", p, probe.Verdicts, content)
+		}
+		got := (*probe.Verdicts)[0]
+		if got.Index != 0 || got.Verdict != "met" || got.CauseOwner != "axon" {
+			t.Fatalf("pushed event %s: verdicts[0] = %+v, want {0 met axon}", p, got)
+		}
+	}
+}

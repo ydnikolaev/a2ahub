@@ -2560,3 +2560,78 @@ func TestValidateCI_ContractXBindingUntypedValueIsSchemaInvalid(t *testing.T) {
 		t.Fatalf("expected at least one report entry with a decoded invalid Result, got %+v", rep.Artifacts)
 	}
 }
+
+// TestValidateCI_REF019FiresOnAnOutOfRangeVerdictIndex is the production-path
+// half of P6 wave 25B, and it exists because the wave that WIRED REF-019
+// reached no caller that offers a Resolver — so the rule was reachable from a
+// unit test and inert everywhere else, which is the exact defect ("a rule that
+// is true and inert") threat-model T5 names and this epic has now found four
+// times. `validate --ci` is the merge-time path a space actually pins, the same
+// reasoning P6 already recorded for REF-018.
+//
+// Both directions are asserted. Without them the test would pass against an
+// engine that refuses every verdict, or against one that refuses none.
+func TestValidateCI_REF019FiresOnAnOutOfRangeVerdictIndex(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+
+	const parentRel = "axon/exchange/XW-axon-20260730-cr01.md"
+	const eventRel = "axon/events/2026/01J40A7M9P1S3V5W7Y9A1C3E5H.yaml"
+
+	// A parent declaring exactly TWO acceptance criteria: indices 0 and 1 are
+	// in range, 2 is not.
+	parent := "---\nschema: envelope/v1\nid: XW-axon-20260730-cr01\ntype: work_request\n" +
+		"title: two criteria\nspace: getvisa\nfrom: axon\nto: [peer]\n" +
+		"actor: {kind: agent, name: bot, model: m}\ncreated: 2026-07-30T09:00:00Z\n" +
+		"category: data\npriority: p3\nblocking: false\n" +
+		"interim_behavior: \"we wait\"\nneeded_by: 2026-08-01\n" +
+		"acceptance_criteria:\n  - \"first\"\n  - \"second\"\n" +
+		"thread: thread:axon-20260730-cr01\nclassification: internal\n---\nbody\n"
+
+	closeEvent := func(index int) string {
+		return "schema: event/v2\n" +
+			"event: 01J40A7M9P1S3V5W7Y9A1C3E5H\n" +
+			"space: getvisa\n" +
+			"subject: XW-axon-20260730-cr01\n" +
+			"transition: close\n" +
+			"actor: {kind: agent, name: bot, system: axon}\n" +
+			"at: 2026-07-30T10:00:00Z\n" +
+			"produced_by:\n  tool: a2a\n  version: \"0.10.0\"\n" +
+			"verdicts:\n" +
+			"  - index: " + strconv.Itoa(index) + "\n" +
+			"    verdict: met\n" +
+			"    cause_owner: axon\n"
+	}
+
+	t.Run("an index past the parent's criteria count is refused", func(t *testing.T) {
+		t.Parallel()
+		root := ciRepo(t, ciManifestWithFloor("0.10.0"), map[string]string{
+			parentRel: parent,
+			eventRel:  closeEvent(2), // the parent declares 2 criteria: 0 and 1
+		})
+		code, rep, _ := runCI(t, engine, root, fakeGit(eventRel), "v3-pr", "deadbeef", "ydnikolaev")
+		if code == 0 || rep.Valid {
+			t.Fatalf("a close naming criterion 2 of a 2-criterion parent merged clean: code=%d valid=%v\n"+
+				"REF-019 is wired in the engine but `validate --ci` is not offering it a Resolver, so it "+
+				"degraded to \"cannot check\" — the rule is inert on the only path that gates a merge.",
+				code, rep.Valid)
+		}
+		if !ciReportHasViolation(rep, eventRel, "REF-019") {
+			t.Fatalf("refused, but not by REF-019 — some other rule reddened this and the verdict check "+
+				"may still be inert:\n%+v", rep.Artifacts)
+		}
+	})
+
+	t.Run("an index inside the parent's criteria count is accepted", func(t *testing.T) {
+		t.Parallel()
+		root := ciRepo(t, ciManifestWithFloor("0.10.0"), map[string]string{
+			parentRel: parent,
+			eventRel:  closeEvent(1), // in range
+		})
+		code, rep, errOut := runCI(t, engine, root, fakeGit(eventRel), "v3-pr", "deadbeef", "ydnikolaev")
+		if ciReportHasViolation(rep, eventRel, "REF-019") {
+			t.Fatalf("a legal verdict index was refused by REF-019 — the bounds check is off by one, or it "+
+				"is counting the wrong array: code=%d stderr=%s\n%+v", code, errOut, rep.Artifacts)
+		}
+	})
+}

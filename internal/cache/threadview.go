@@ -127,6 +127,34 @@ type TranscriptEventActor struct {
 	Session string `json:"session,omitempty"`
 }
 
+// TranscriptVerdict is one entry of a `verify`/`close` event's `verdicts[]`
+// (P6 wave C, threat-model.md T5) — event/v2's own `{index, verdict,
+// cause_owner}` shape, carried through this read model's JSON-facing types
+// rather than the yaml.v3-decoded int64 eventVerdictEntry (decode.go) uses
+// internally, the same "decode type stays internal, read-model type is
+// exported" split TranscriptWorkReport already draws for workreport.Mode.
+type TranscriptVerdict struct {
+	Index      int    `json:"index"`
+	Verdict    string `json:"verdict"`
+	CauseOwner string `json:"cause_owner"`
+}
+
+// transcriptVerdicts projects mirror.go's decode-shaped []eventVerdictEntry
+// (int64 Index, yaml.v3's own decode type) into this package's exported
+// []TranscriptVerdict (int Index) — nil in, nil out, so an event carrying no
+// verdicts[] renders `"verdicts"` absent (omitempty) rather than `[]`,
+// matching every other optional field on this struct.
+func transcriptVerdicts(entries []eventVerdictEntry) []TranscriptVerdict {
+	if len(entries) == 0 {
+		return nil
+	}
+	out := make([]TranscriptVerdict, len(entries))
+	for i, e := range entries {
+		out[i] = TranscriptVerdict{Index: int(e.Index), Verdict: e.Verdict, CauseOwner: e.CauseOwner}
+	}
+	return out
+}
+
 // TranscriptEvent is a transcript entry's event-kind payload.
 type TranscriptEvent struct {
 	ULID         string               `json:"ulid"`
@@ -176,6 +204,12 @@ type TranscriptEvent struct {
 	// protocol event — which is how a comment rendered as the latest
 	// protocol move on the home card.
 	TransitionFree bool `json:"transition_free,omitempty"`
+	// Verdicts is event/v2's `verdicts[]` (verify/close only, P6 wave C) —
+	// nil on every event carrying none, which is every event/v1 document
+	// and every event/v2 one whose transition isn't verify/close. Until this
+	// field, decode.go decoded it and nothing downstream ever read the
+	// decode: threat-model.md T5's own "the read model stops at decode" gap.
+	Verdicts []TranscriptVerdict `json:"verdicts,omitempty"`
 }
 
 // TranscriptDerivedAdoption is a transcript entry's derived-kind payload: one
@@ -865,6 +899,7 @@ func buildTranscript(sorted []foldedArtifact, order string, adoptions map[string
 						Note:           fa.EventNotes[ev.ULID],
 						ReasonCode:     fa.EventReasonCodes[ev.ULID],
 						TransitionFree: fold.TransitionFree(fa.kind(), ev.Transition),
+						Verdicts:       transcriptVerdicts(fa.EventVerdicts[ev.ULID]),
 					},
 				},
 				seq: ev.CommitSeq, at: at, isEvent: true, tieID: ev.ULID,

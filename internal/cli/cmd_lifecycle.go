@@ -29,14 +29,17 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/operation"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
+	"github.com/ydnikolaev/a2ahub/internal/version"
 	"gopkg.in/yaml.v3"
 )
 
@@ -185,6 +188,122 @@ type lifecycleEventDoc struct {
 	// second commit.
 	Commit string `yaml:"commit,omitempty"`
 	Digest string `yaml:"digest,omitempty"`
+	// Verdicts is P6 wave C's own field (docs/features/active/
+	// agent-exchange-2026-08/specs/06-incompleteness.md §7/§11's 2026-08-10
+	// "wave C" amendment, threat-model.md T5): the verifier's per-criterion
+	// mirror of a response's `unmet[]`, conditionally required by
+	// schemas/event/v2/event.schema.json on `verify`/`close` — WITH a
+	// pointer, not a bare slice: yaml.v3's `omitempty` drops an empty slice
+	// exactly the same as a nil one (a bare `[]lifecycleVerdictEntry` field
+	// with `omitempty` cannot express "the key is present and empty" versus
+	// "the key is absent", and the schema's own description is explicit that
+	// a close over a parent with no acceptance_criteria[] at all must stay
+	// expressible with an empty array, not an absent key). Non-lifecycle
+	// event authoring sites in this file (respond/dispute/note/the generic
+	// table) leave this nil, which `omitempty` on the POINTER still omits —
+	// so v1 writers are unaffected and the v1 schema's additionalProperties:
+	// false is never violated.
+	Verdicts *[]lifecycleVerdictEntry `yaml:"verdicts,omitempty"`
+}
+
+// lifecycleVerdictEntry is one entry of `a2a verify`'s `--verdict` flag and
+// of the `verdicts[]` it authors — schemas/event/v2/event.schema.json's own
+// shape, `{index, verdict, cause_owner}`. `cause_owner` is required on EVERY
+// entry there, including `met` ones ("so the array cannot mix attributed and
+// unattributed judgements", that schema's own description) — spec 06 §7's
+// prose calls it optional, but the shipped schema (this phase's ground
+// truth) does not, so this type and lifecycleParseVerdicts follow the
+// schema.
+type lifecycleVerdictEntry struct {
+	Index      int    `yaml:"index"`
+	Verdict    string `yaml:"verdict"`
+	CauseOwner string `yaml:"cause_owner"`
+}
+
+// lifecycleVerdictEnum is the closed vocabulary schemas/event/v2/
+// event.schema.json's `verdicts[].verdict` enum carries — checked here so a
+// malformed --verdict is refused locally (exit 2) rather than shipped to a
+// PR the schema then rejects.
+var lifecycleVerdictEnum = map[string]bool{
+	"met": true, "unmet": true, "not_warranted": true, "not_exercised": true,
+}
+
+// lifecycleParseVerdicts parses each `--verdict <index>:<verdict>:
+// <cause_owner>` entry (repeatable; newStringList — the same DI/flag shape
+// `--ref` uses, cmd_new.go) and returns them CANONICALISED BY INDEX, not by
+// argument order.
+//
+// This is the opposite choice from `--ref`/refs[]: a ref array has no
+// identity field of its own, so its WRITTEN ORDER is the only thing that
+// distinguishes two refs and lifecycleRespondSeed's own doc comment
+// preserves it deliberately. A verdict entry names its own position via
+// `index`, so two invocations naming the SAME judgement set in a different
+// --verdict order describe the IDENTICAL content; sorting by index (not by
+// the order flags were given) is what makes both the written array and
+// operation.Verify's key canonical, so a caller assembling flags from an
+// unordered source (a map range, a generated script) does not mint a second
+// branch for one already-recorded judgement.
+func lifecycleParseVerdicts(raw []string) ([]lifecycleVerdictEntry, error) {
+	out := make([]lifecycleVerdictEntry, 0, len(raw))
+	seenIndex := map[int]bool{}
+	for _, v := range raw {
+		parts := strings.SplitN(v, ":", 3)
+		if len(parts) != 3 {
+			return nil, fmt.Errorf("--verdict %q: want <index>:<met|unmet|not_warranted|not_exercised>:<cause_owner>", v)
+		}
+		index, err := strconv.Atoi(parts[0])
+		if err != nil || index < 0 {
+			return nil, fmt.Errorf("--verdict %q: index must be a non-negative integer", v)
+		}
+		// One verdict per judged criterion (index) — a duplicate is a caller
+		// error, not a "last one wins" ambiguity, and rejecting it here is
+		// also what keeps this function's own sort-by-index canonicalisation
+		// TOTAL: sort.Slice is not stable, and a comparator that only
+		// compares Index cannot order two entries sharing one index — the
+		// SAME judgement set given via --verdict in two different flag
+		// orders could then sort to two different permutations and mint two
+		// different operation.Verify keys, which is exactly the
+		// nondeterminism this flag exists to prevent (see
+		// lifecycleRespondSeed's own doc comment for the identical class of
+		// trap).
+		if seenIndex[index] {
+			return nil, fmt.Errorf("--verdict %q: index %d already has a verdict — one verdict per judged criterion", v, index)
+		}
+		seenIndex[index] = true
+		verdict := parts[1]
+		if !lifecycleVerdictEnum[verdict] {
+			return nil, fmt.Errorf("--verdict %q: verdict must be one of met|unmet|not_warranted|not_exercised", v)
+		}
+		causeOwner := strings.TrimSpace(parts[2])
+		if causeOwner == "" {
+			return nil, fmt.Errorf("--verdict %q: cause_owner is required (schemas/event/v2/event.schema.json requires it on every entry, including met)", v)
+		}
+		out = append(out, lifecycleVerdictEntry{Index: index, Verdict: verdict, CauseOwner: causeOwner})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Index < out[j].Index })
+	return out, nil
+}
+
+// lifecycleEventSchema mirrors internal/contract/publication_plan.go's own
+// authoring-floor split (PlanPublication, lines 396-403): a space whose
+// `min_binary_version` (floor) is at or above contract.ContractPublicationFloor
+// authors event/v2; below it, event/v1 — the SAME floor and the SAME
+// direction, so a space that has already crossed the line for contract
+// publication does not separately have to cross a second, unrelated one for
+// verify/close to gain `verdicts[]`.
+//
+// An unparseable or absent floor (a space that has never set
+// min_binary_version) fails CLOSED to event/v1 — version.OlderThan's own doc
+// comment names this direction ("an unparseable version is treated as
+// 'cannot verify', never as 'not older'"), and it is the conservative choice
+// here too: event/v1 is always legal, while a floor this binary cannot
+// verify has no business being trusted to author the newer, stricter shape.
+func lifecycleEventSchema(floor string) string {
+	belowFloor, err := version.OlderThan(floor, contract.ContractPublicationFloor)
+	if err != nil || belowFloor {
+		return "event/v1"
+	}
+	return "event/v2"
 }
 
 type lifecycleEventActor struct {
@@ -1356,7 +1475,7 @@ func (c *VerifyCommand) Name() string { return "verify" }
 
 // Synopsis implements cli.Command.
 func (c *VerifyCommand) Synopsis() string {
-	return "verify one or more responses: verify <response-id|parent-id...> [--refs <response-id>]"
+	return "verify one or more responses: verify <response-id|parent-id...> [--refs <response-id>] [--verdict <index>:<met|unmet|not_warranted|not_exercised>:<cause_owner>]..."
 }
 
 // Run implements cli.Command.
@@ -1364,6 +1483,15 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
 	refs := fs.String("refs", "", "response id (disambiguates a multi-response parent)")
+	// --verdict (P6 wave C, agent-exchange-2026-08 spec 06 §11's 2026-08-10
+	// "wave C" amendment, threat-model.md T5): `verdicts[]` is an ARRAY the
+	// generic `--field k=v` scalar-append pass structurally cannot express —
+	// the same limitation `--ref` (this file's respond, above) and `a2a
+	// attach` both already carry a dedicated flag for, rather than smuggling
+	// it through `--field`. Repeatable (newStringList, cmd_new.go): one
+	// judged criterion per occurrence.
+	var verdictFlags newStringList
+	fs.Var(&verdictFlags, "verdict", "index:verdict:cause_owner verdict entry (repeatable; verdict is met|unmet|not_warranted|not_exercised)")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
 	// Wave K fix (see LifecycleCommand.Run's own comment above): any-order
 	// parsing, not a bare fs.Parse(args).
@@ -1372,8 +1500,39 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return 2
 	}
 	if len(targets) == 0 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a verify <response-id|parent-id...> [--refs <response-id>]")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a verify <response-id|parent-id...> [--refs <response-id>] [--verdict <index>:<verdict>:<cause_owner>]...")
 		return 2
+	}
+	verdicts, verr := lifecycleParseVerdicts(verdictFlags)
+	if verr != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "verify: %v\n", verr)
+		return 2
+	}
+
+	// eventSchema is floor-gated the SAME way internal/contract/
+	// publication_plan.go gates envelope/v2 contract publication — see
+	// lifecycleEventSchema's own doc comment. `verdicts[]` only exists on
+	// event/v2, so a space below the floor cannot honour --verdict at all;
+	// refusing here (rather than silently dropping the caller's judgements)
+	// names the real condition, the same discipline this file's other
+	// floor-gated refusal (publication_plan.go's own message) already
+	// follows.
+	eventSchema := lifecycleEventSchema(c.deps.manifest.MinBinaryVersion)
+	if len(verdicts) > 0 && eventSchema != "event/v2" {
+		_, _ = fmt.Fprintf(stdio.Stderr,
+			"verify: --verdict requires this space's min_binary_version to be at or above %s (event/v2); this space's floor is %q\n",
+			contract.ContractPublicationFloor, c.deps.manifest.MinBinaryVersion)
+		return 1
+	}
+	// verdictsPtr is nil (omitted) below the floor and non-nil (present, even
+	// when empty) at/above it — schemas/event/v2/event.schema.json's own
+	// conditional REQUIRES the key on verify/close regardless of whether the
+	// caller supplied any --verdict entries, and its description is explicit
+	// that a parent with no acceptance_criteria[] at all "must stay
+	// expressible with an empty array" rather than an absent key.
+	var verdictsPtr *[]lifecycleVerdictEntry
+	if eventSchema == "event/v2" {
+		verdictsPtr = &verdicts
 	}
 
 	resolved, actorErr := c.deps.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
@@ -1382,6 +1541,25 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return 1
 	}
 	actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: c.deps.ownSystem}
+
+	// operationKey (P6 wave C determinism requirement): only derived when
+	// --verdict actually carries content. Below the floor, or above it with
+	// no --verdict at all, verify/close keep their EXISTING dedup mechanism
+	// (branchID falls back to the batch's own ArtifactID, funnel.go) —
+	// unchanged for every caller that does not use this new flag, so this
+	// wave does not silently rename the branch every prior verify/close
+	// invocation already relies on. Once verdicts are supplied, though, two
+	// invocations naming the SAME targets with DIFFERENT judgements must NOT
+	// collide onto that same content-independent branch (operation.Verify's
+	// own doc comment).
+	var operationKey string
+	if len(verdicts) > 0 {
+		opVerdicts := make([]operation.VerdictEntry, len(verdicts))
+		for i, v := range verdicts {
+			opVerdicts[i] = operation.VerdictEntry{Index: v.Index, Verdict: v.Verdict, CauseOwner: v.CauseOwner}
+		}
+		operationKey = operation.Verify(c.deps.ownSystem, actor.Kind, actor.Name, targets, opVerdicts)
+	}
 
 	now := c.deps.now()
 	layout, err := space.NewLayout(c.deps.ownSystem)
@@ -1422,10 +1600,15 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			return 1
 		}
 		verifyEvent := lifecycleEventDoc{
-			Schema: "event/v1", Event: verifyEventID.String(), Space: parentProbe.Space,
+			Schema: eventSchema, Event: verifyEventID.String(), Space: parentProbe.Space,
 			Subject: responseID, Transition: fold.TVerify, State: lifecycleReceiptState(evaluation),
 			Actor: eventActorFrom(resolved, actor.System),
 			At:    now.UTC().Format(time.RFC3339),
+			// Verdicts (P6 wave C, T5's discharge): present, even empty, on
+			// EVERY event/v2 verify — schemas/event/v2/event.schema.json's
+			// conditional requires the key regardless of whether this
+			// invocation named any --verdict entries.
+			Verdicts: verdictsPtr,
 		}
 		verifyRaw, merr := yaml.Marshal(verifyEvent)
 		if merr != nil {
@@ -1454,10 +1637,16 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 				return 1
 			}
 			closeEvent := lifecycleEventDoc{
-				Schema: "event/v1", Event: closeEventID.String(), Space: parentProbe.Space,
+				Schema: eventSchema, Event: closeEventID.String(), Space: parentProbe.Space,
 				Subject: parentID, Transition: fold.TClose, State: lifecycleReceiptState(closeEvaluation),
 				Actor: eventActorFrom(resolved, actor.System),
 				At:    now.UTC().Format(time.RFC3339),
+				// Same verdicts as the paired verify above (this file's own
+				// D-024 comment: it is the SAME verification act) — the
+				// verifier's judgement of the parent's acceptance criteria
+				// does not change because the convenience close rides in the
+				// same PR.
+				Verdicts: verdictsPtr,
 			}
 			closeRaw, merr := yaml.Marshal(closeEvent)
 			if merr != nil {
@@ -1470,6 +1659,7 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 
 	req := c.deps.buildRequest(ids, files, "verify", false)
+	req.OperationKey = operationKey
 	return c.deps.submit(ctx, req, "verify", ids, stdio)
 }
 
