@@ -775,3 +775,28 @@ changes:
         copy) when you need the queue without reaching the hub.
       run:
         - "make feedback-sync"
+  - id: RN-01910-28
+    kind: feat
+    impact: normal
+    subject: "The dashboard shows what a work request attached, and `a2a show` stops deriving it separately"
+    detail: >
+      A work request can declare attachments — bytes it references by digest,
+      with a role, a verification claim and a retention window. Until now only
+      `a2a show` rendered them, from its own decode of the raw frontmatter, and
+      the dashboard showed nothing at all.
+      The claim is now derived once, where the artifact is read, and every
+      surface reads the same value: `a2a show`, `a2a show --json` (a new
+      `attachments` key, present only when there are any), the MCP show tool,
+      and the dashboard's artifact page.
+      That also fixes a rendering that could not happen. A lapsed retention was
+      supposed to name its date instead of leaking an internal error — the code
+      for it existed, but the field it needs, `expires_at`, was never read back
+      off a committed artifact, so the case was unreachable outside a
+      hand-built test. It reaches a real draft now, and the lapse is judged
+      against the reader's own clock.
+    affects: ["a2a show", "a2a show --json", "the dashboard", "a2a_show (MCP)"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. The JSON key is additive and omitted when an artifact
+        has no attachments, so an existing consumer sees no change.
