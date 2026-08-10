@@ -222,8 +222,12 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 		if in.BodyOverride != "" {
 			bodyOverride = []byte(in.BodyOverride)
 		}
+		// nil refs: this surface has no `--ref` equivalent yet — the CLI
+		// gained one with AC9's submit half and MCP did not (epic-backlog
+		// B22). A nil slice encodes as nothing, so an MCP respond keeps the
+		// exact key it had before that flag existed.
 		operationKey := operation.Respond(
-			deps.OwnSystem, actor.Kind, actor.Name, in.ParentIDs, in.Result, in.Fields, bodyOverride,
+			deps.OwnSystem, actor.Kind, actor.Name, in.ParentIDs, in.Result, in.Fields, nil, bodyOverride,
 		)
 
 		var files []space.FileWrite

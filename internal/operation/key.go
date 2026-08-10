@@ -80,8 +80,22 @@ func validWorkAction(action string) bool {
 // Respond derives the operation key for one respond invocation. Parent order
 // and field map iteration cannot affect the result; body bytes are represented
 // only by their digest.
+//
+// refs are the envelope `refs[]` entries the response carries (`a2a respond
+// --ref`), and they are encoded IN GIVEN ORDER, unlike parents and field keys.
+// That asymmetry is deliberate: parents and fields are sets whose order is not
+// on the wire, while `refs[]` is an ordered array in the envelope, so two calls
+// differing only in ref order produce two different artifacts and must not
+// dedup onto one key.
+//
+// They are an explicit parameter rather than a synthetic entry in `fields`.
+// The first implementation smuggled them through as `fields["__respond_refs"]`
+// to avoid widening this signature, and that is the wrong shape twice over: it
+// hides part of what the operation IS inside a map documented as the caller's
+// schema-field overrides, and it makes the magic key's uniqueness a thing
+// somebody has to keep being right about.
 // Respond is part of the public package API.
-func Respond(system, actorKind, actorName string, parentIDs []string, result string, fields map[string]string, body []byte) string {
+func Respond(system, actorKind, actorName string, parentIDs []string, result string, fields map[string]string, refs []string, body []byte) string {
 	parents := append([]string(nil), parentIDs...)
 	sort.Strings(parents)
 	fieldKeys := make([]string, 0, len(fields))
@@ -104,6 +118,23 @@ func Respond(system, actorKind, actorName string, parentIDs []string, result str
 		encoder.add(fields[key])
 	}
 	encoder.addBytes(bodyDigest[:])
+	// refs go AFTER the body digest, and the position is the disambiguation
+	// rather than a stylistic choice. Every entry is length-prefixed, which
+	// stops two strings from running together, but it does NOT separate two
+	// variable-length SECTIONS: with refs written inside the fields region,
+	// `fields{"X": "Y"}` and `refs["X", "Y"]` produce byte-identical input
+	// and therefore one key. The first version of this did exactly that, and
+	// the assertion below caught it. Nothing can follow the fields loop into
+	// this position except refs, because the digest is a fixed 32 bytes that
+	// always separates them.
+	//
+	// It also keeps every pre-existing key BYTE-IDENTICAL: an empty refs
+	// writes nothing at all, so every caller that has no refs to give — MCP's
+	// respond, the conformance driver, every historical operation — derives
+	// exactly the key it derived before this parameter existed.
+	for _, ref := range refs {
+		encoder.add(ref)
+	}
 	return encoder.key()
 }
 

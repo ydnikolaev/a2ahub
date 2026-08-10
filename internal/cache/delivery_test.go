@@ -52,30 +52,6 @@ func mustCheck(id, path string, status datapackage.CheckStatus, violations []dat
 	return datapackage.NewCheck(id, path, status, violations)
 }
 
-func TestDecodeDeliverables_FiltersByFrontmatter(t *testing.T) {
-	t.Parallel()
-	got, err := DecodeDeliverables([]byte(handoffRaw))
-	if err != nil {
-		t.Fatalf("DecodeDeliverables: %v", err)
-	}
-	if len(got) != 2 {
-		t.Fatalf("want 2 deliverables, got %d: %+v", len(got), got)
-	}
-	if got[0].Ref != "DP-alpha-20260101-aaaa" || got[0].Kind != "data" {
-		t.Fatalf("unexpected first deliverable: %+v", got[0])
-	}
-	if got[1].Kind != "code" {
-		t.Fatalf("unexpected second deliverable: %+v", got[1])
-	}
-}
-
-func TestDecodeDeliverables_NotFrontmatterShaped(t *testing.T) {
-	t.Parallel()
-	if _, err := DecodeDeliverables([]byte("no frontmatter here")); err == nil {
-		t.Fatal("want an error for non-frontmatter-shaped input")
-	}
-}
-
 func TestResolveDeliveries_OnlyDataKind(t *testing.T) {
 	t.Parallel()
 	resolver := fakeResolver{
@@ -99,7 +75,7 @@ func TestResolveDeliveries_OnlyDataKind(t *testing.T) {
 func TestResolveDelivery_Unavailable_NeverVanishes(t *testing.T) {
 	t.Parallel()
 	resolver := fakeResolver{docs: map[string]datapackage.Document{}, reports: map[string]datapackage.Report{}}
-	d := Deliverable{Name: "missing", Ref: "DP-ghost-20260101-zzzz", Kind: DeliverableKindData}
+	d := datapackage.Deliverable{Name: "missing", Ref: "DP-ghost-20260101-zzzz", Kind: datapackage.DeliverableKindData}
 
 	got := ResolveDelivery("XH-1", d, resolver)
 
@@ -124,7 +100,7 @@ func TestResolveDelivery_NoReport_IsUnverified_NotPass(t *testing.T) {
 		docs:    map[string]datapackage.Document{"DP-a-20260101-aaaa": doc},
 		reports: map[string]datapackage.Report{},
 	}
-	d := Deliverable{Name: "x", Ref: "DP-a-20260101-aaaa", Kind: DeliverableKindData}
+	d := datapackage.Deliverable{Name: "x", Ref: "DP-a-20260101-aaaa", Kind: datapackage.DeliverableKindData}
 
 	got := ResolveDelivery("XH-1", d, resolver)
 
@@ -160,7 +136,7 @@ func TestResolveDelivery_Pass(t *testing.T) {
 		docs:    map[string]datapackage.Document{doc.ID: doc},
 		reports: map[string]datapackage.Report{doc.ID: report},
 	}
-	got := ResolveDelivery("XH-1", Deliverable{Name: "x", Ref: doc.ID, Kind: DeliverableKindData}, resolver)
+	got := ResolveDelivery("XH-1", datapackage.Deliverable{Name: "x", Ref: doc.ID, Kind: datapackage.DeliverableKindData}, resolver)
 
 	if got.Verdict != DeliveryVerdictPass {
 		t.Fatalf("want Verdict=pass, got %q", got.Verdict)
@@ -197,7 +173,7 @@ func TestResolveDelivery_Fail_NamesEntryRuleAndRecord(t *testing.T) {
 		docs:    map[string]datapackage.Document{doc.ID: doc},
 		reports: map[string]datapackage.Report{doc.ID: report},
 	}
-	got := ResolveDelivery("XH-1", Deliverable{Name: "x", Ref: doc.ID, Kind: DeliverableKindData}, resolver)
+	got := ResolveDelivery("XH-1", datapackage.Deliverable{Name: "x", Ref: doc.ID, Kind: datapackage.DeliverableKindData}, resolver)
 
 	if got.Verdict != DeliveryVerdictFail {
 		t.Fatalf("want Verdict=fail, got %q", got.Verdict)
@@ -248,7 +224,7 @@ func TestResolveDelivery_SupersedeChain_OldestFirst(t *testing.T) {
 		},
 	}
 
-	got := ResolveDelivery("XH-2", Deliverable{Name: "x", Ref: attempt2.ID, Kind: DeliverableKindData}, resolver)
+	got := ResolveDelivery("XH-2", datapackage.Deliverable{Name: "x", Ref: attempt2.ID, Kind: datapackage.DeliverableKindData}, resolver)
 
 	if got.Verdict != DeliveryVerdictPass {
 		t.Fatalf("want the current attempt's verdict=pass, got %q", got.Verdict)
@@ -272,7 +248,7 @@ func TestResolveDelivery_ChainDanglingSupersedesIsUnavailable(t *testing.T) {
 		reports: map[string]datapackage.Report{},
 	}
 
-	got := ResolveDelivery("XH-2", Deliverable{Name: "x", Ref: doc.ID, Kind: DeliverableKindData}, resolver)
+	got := ResolveDelivery("XH-2", datapackage.Deliverable{Name: "x", Ref: doc.ID, Kind: datapackage.DeliverableKindData}, resolver)
 
 	if len(got.Chain) != 2 {
 		t.Fatalf("want a 2-entry chain (the current attempt plus the dangling link), got %+v", got.Chain)
@@ -295,7 +271,7 @@ func TestResolveDelivery_ChainCycleDoesNotHang(t *testing.T) {
 		reports: map[string]datapackage.Report{},
 	}
 
-	got := ResolveDelivery("XH-2", Deliverable{Name: "x", Ref: b.ID, Kind: DeliverableKindData}, resolver)
+	got := ResolveDelivery("XH-2", datapackage.Deliverable{Name: "x", Ref: b.ID, Kind: datapackage.DeliverableKindData}, resolver)
 
 	if len(got.Chain) != 2 {
 		t.Fatalf("want the cycle to stop after visiting each package once, got %d entries: %+v", len(got.Chain), got.Chain)

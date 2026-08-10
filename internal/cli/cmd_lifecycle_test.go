@@ -19,6 +19,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/template"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
+	"gopkg.in/yaml.v3"
 )
 
 // fakeLifecycleFunnel is a hand-written test double for cmd_lifecycle.go's
@@ -1457,5 +1458,268 @@ func TestRespondThreadlessParentWithExplicitThreadNamesTheRealCondition(t *testi
 	}
 	if strings.Contains(msg, "conflicts with parent's thread") {
 		t.Fatalf("took the conflict branch and printed an empty parent value: %s", msg)
+	}
+}
+
+// --- --ref (wave 23, agent-exchange-2026-08 spec 06 §11's 2026-08-10
+// "AC9 wire decision"): a repeatable flag writing refs[] onto the
+// committed response — the array-typed field --field cannot reach. -------
+
+// extractResponseContent returns the raw bytes of the committed XS- response
+// file in files — extractResponseID's own sibling, needed by any test that
+// must inspect the response's OWN frontmatter rather than merely its
+// minted id.
+func extractResponseContent(files []space.FileWrite) string {
+	for _, fw := range files {
+		if strings.HasPrefix(filepath.Base(fw.Path), "XS-") {
+			return string(fw.Content)
+		}
+	}
+	return ""
+}
+
+// respondRefsProbe decodes only `refs[].ref` — response.md's template
+// carries a COMMENTED-OUT `# refs:` placeholder line (this epic's own
+// documented trap: a raw strings.Contains over a rendered artifact once
+// matched a comment and stayed green with the feature removed), so every
+// assertion below decodes through this probe rather than grepping raw
+// bytes.
+type respondRefsProbe struct {
+	Refs []struct {
+		Ref string `yaml:"ref"`
+	} `yaml:"refs"`
+}
+
+func decodeResponseRefs(t *testing.T, content string) []string {
+	t.Helper()
+	fm, err := artifact.ParseFrontmatter([]byte(content))
+	if err != nil {
+		t.Fatalf("ParseFrontmatter: %v", err)
+	}
+	var probe respondRefsProbe
+	if err := yaml.Unmarshal(fm.YAML, &probe); err != nil {
+		t.Fatalf("decode refs: %v", err)
+	}
+	out := make([]string, len(probe.Refs))
+	for i, r := range probe.Refs {
+		out[i] = r.Ref
+	}
+	return out
+}
+
+func TestRespondWritesRefsFromRepeatableRefFlag(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-ref1"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--result", "delivered", "--ref", "XH-beta-20260721-h001", parentID}, io)
+	if code != 0 {
+		t.Fatalf("respond --ref: code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+	content := extractResponseContent(fake.calls[0].Files)
+	if content == "" {
+		t.Fatalf("no committed XS- response file found among %+v", fake.calls[0].Files)
+	}
+	refs := decodeResponseRefs(t, content)
+	if len(refs) != 1 || refs[0] != "XH-beta-20260721-h001" {
+		t.Fatalf("decoded refs = %v, want exactly [XH-beta-20260721-h001]", refs)
+	}
+}
+
+// TestRespondNoRefFlagOmitsRefsKey is the "made unconditional" mutation
+// guard for the WRITE side: a respond call with no --ref must decode to
+// ZERO refs — not one, which would be the case if the template's own
+// commented-out `# refs:` placeholder ever leaked through, or if this
+// command wrote an empty refs[] block regardless of --ref.
+func TestRespondNoRefFlagOmitsRefsKey(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-ref2"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--result", "answered", parentID}, io)
+	if code != 0 {
+		t.Fatalf("respond: code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	content := extractResponseContent(fake.calls[0].Files)
+	refs := decodeResponseRefs(t, content)
+	if len(refs) != 0 {
+		t.Fatalf("decoded refs = %v, want none when --ref was never given", refs)
+	}
+}
+
+func TestRespondEmptyRefIsRefused(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-ref3"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--result", "delivered", "--ref", "", parentID}, io)
+	if code != 2 {
+		t.Fatalf("respond --ref '': code = %d, want 2; stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the funnel never to be called on a usage refusal, got %d calls", len(fake.calls))
+	}
+}
+
+// TestRespondWritesRefsInGivenOrder pins the ordering decision recorded in
+// lifecycleRespondSeed's own doc comment: `refs[]` is a sequence and its
+// written order is part of the document's own bytes, so --ref values are
+// written in the order given, never sorted.
+func TestRespondWritesRefsInGivenOrder(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-ref7"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{
+		"--result", "delivered",
+		"--ref", "XH-beta-20260721-h002",
+		"--ref", "XH-beta-20260721-h001",
+		parentID,
+	}, io)
+	if code != 0 {
+		t.Fatalf("respond: code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	content := extractResponseContent(fake.calls[0].Files)
+	refs := decodeResponseRefs(t, content)
+	want := []string{"XH-beta-20260721-h002", "XH-beta-20260721-h001"}
+	if len(refs) != 2 || refs[0] != want[0] || refs[1] != want[1] {
+		t.Fatalf("decoded refs = %v, want %v (GIVEN order preserved)", refs, want)
+	}
+}
+
+// TestRespondRefsParticipateInResponseIDSeed is the brief's own
+// requirement, made concrete: "the new flag's values MUST participate in
+// [lifecycleRespondSeed], in a deterministic order, or two different
+// responses collide on one id." Two calls, identical in every other way,
+// differing ONLY in whether --ref was given, must mint DISTINCT response
+// ids AND distinct operation keys (operation.Respond's own dedup key,
+// carried via a synthetic field this command adds — see Run's own
+// comment).
+func TestRespondRefsParticipateInResponseIDSeed(t *testing.T) {
+	t.Parallel()
+	fixedNow := func() time.Time { return time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC) }
+	parentID := "XQ-axon-20260721-ref4"
+
+	run := func(t *testing.T, refs ...string) (string, string) {
+		t.Helper()
+		mirrorDir := t.TempDir()
+		seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		cmd.SetClockForTest(fixedNow)
+		args := []string{"--result", "delivered"}
+		for _, r := range refs {
+			args = append(args, "--ref", r)
+		}
+		args = append(args, parentID)
+		io, _, errOut := newIO()
+		if code := cmd.Run(context.Background(), args, io); code != 0 {
+			t.Fatalf("respond: code=%d stderr=%s", code, errOut.String())
+		}
+		return extractResponseID(fake.calls[0].Files), fake.calls[0].OperationKey
+	}
+
+	idNoRefs, keyNoRefs := run(t)
+	idWithRef, keyWithRef := run(t, "XH-beta-20260721-h001")
+	if idNoRefs == idWithRef {
+		t.Fatalf("expected DIFFERENT response ids for no-refs vs one ref, got the same id %q", idNoRefs)
+	}
+	if keyNoRefs == keyWithRef {
+		t.Fatalf("expected DIFFERENT operation keys for no-refs vs one ref, got the same key %q", keyNoRefs)
+	}
+}
+
+// TestRespondIdenticalRefsRepeatMintsIdenticalID is the OTHER half of the
+// same requirement: an identical retry (same refs, same order) must land
+// on the SAME id/key so the funnel's dedup branch finds it — refs
+// participating in the seed must not defeat retry-safety.
+func TestRespondIdenticalRefsRepeatMintsIdenticalID(t *testing.T) {
+	t.Parallel()
+	fixedNow := func() time.Time { return time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC) }
+	parentID := "XQ-axon-20260721-ref5"
+
+	run := func(t *testing.T) (string, string) {
+		t.Helper()
+		mirrorDir := t.TempDir()
+		seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		cmd.SetClockForTest(fixedNow)
+		io, _, errOut := newIO()
+		args := []string{
+			"--result", "delivered",
+			"--ref", "XH-beta-20260721-h001",
+			"--ref", "XH-beta-20260721-h002",
+			parentID,
+		}
+		if code := cmd.Run(context.Background(), args, io); code != 0 {
+			t.Fatalf("respond: code=%d stderr=%s", code, errOut.String())
+		}
+		return extractResponseID(fake.calls[0].Files), fake.calls[0].OperationKey
+	}
+
+	id1, key1 := run(t)
+	id2, key2 := run(t)
+	if id1 != id2 {
+		t.Fatalf("expected an IDENTICAL retry (same refs, same order) to mint the SAME response id, got %q vs %q", id1, id2)
+	}
+	if key1 != key2 {
+		t.Fatalf("expected an IDENTICAL retry to reproduce the SAME operation key, got %q vs %q", key1, key2)
+	}
+}
+
+// TestRespondRefOrderChangesResponseID pins the ordering decision: --ref
+// values are folded into the seed in GIVEN order, not sorted, because
+// refs[]'s written order is part of the document's own bytes.
+func TestRespondRefOrderChangesResponseID(t *testing.T) {
+	t.Parallel()
+	fixedNow := func() time.Time { return time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC) }
+	parentID := "XQ-axon-20260721-ref6"
+
+	run := func(t *testing.T, refs ...string) string {
+		t.Helper()
+		mirrorDir := t.TempDir()
+		seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		cmd.SetClockForTest(fixedNow)
+		args := []string{"--result", "delivered"}
+		for _, r := range refs {
+			args = append(args, "--ref", r)
+		}
+		args = append(args, parentID)
+		io, _, errOut := newIO()
+		if code := cmd.Run(context.Background(), args, io); code != 0 {
+			t.Fatalf("respond: code=%d stderr=%s", code, errOut.String())
+		}
+		return extractResponseID(fake.calls[0].Files)
+	}
+
+	forward := run(t, "XH-beta-20260721-h001", "XH-beta-20260721-h002")
+	backward := run(t, "XH-beta-20260721-h002", "XH-beta-20260721-h001")
+	if forward == backward {
+		t.Fatalf("expected a different refs[] ORDER to mint a different response id (refs[] order is on the wire), got the same id %q", forward)
 	}
 }

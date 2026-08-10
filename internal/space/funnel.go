@@ -575,7 +575,18 @@ func (f *WriteFunnel) submitPreparedRequest(ctx context.Context, req SubmitReque
 	if err != nil {
 		return failWriteResult(op, branch, result, err)
 	}
-	if err := checkSubmitAttachmentPossession(ctx, req.RepoDir, mutationWrites(mutationsForPossession)); err != nil {
+	possessionFiles := mutationWrites(mutationsForPossession)
+	if err := checkSubmitAttachmentPossession(ctx, req.RepoDir, possessionFiles); err != nil {
+		return failWriteResult(op, branch, result, err)
+	}
+	// P6 (agent-exchange-2026-08) spec 06 §11's 2026-08-10 "AC9 wire
+	// decision", submit-side half: a response about to be committed with
+	// `result: delivered` that references (refs[]) a handoff carrying an
+	// unresolvable `kind: data` deliverable is refused here, in the SAME
+	// seat and for the SAME reason as the attachment check immediately
+	// above — before any commit/push git action, reading only mirrorDir's
+	// own origin/main (delivery_possession.go's own doc comment).
+	if err := checkSubmitResponseDeliveryPossession(ctx, req.RepoDir, possessionFiles); err != nil {
 		return failWriteResult(op, branch, result, err)
 	}
 

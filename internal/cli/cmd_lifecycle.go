@@ -934,7 +934,19 @@ var _ Command = (*LifecycleCommand)(nil)
 // this fix targets — the body override, and the actor's kind/name/system.
 // Deliberately EXCLUDES `now` (see this file's own respond Run comment)
 // and any random id.
-func lifecycleRespondSeed(parentID, result string, respFields map[string]string, bodyOverride []byte, actor fold.Actor) []byte {
+//
+// refs is P6/P4's `--ref` flag (wave 23, agent-exchange-2026-08 spec 06
+// §11's 2026-08-10 "AC9 wire decision"), included in GIVEN order — never
+// sorted, unlike respFields above. `refs[]` is a SEQUENCE on the wire and
+// its written order is part of the document's own bytes (respDoc["refs"]
+// below preserves the same order), so two invocations that name the same
+// refs in a DIFFERENT order write two different documents and must mint
+// two different ids; sorting would silently collapse them onto one. An
+// identical retry (same refs, same order) still reproduces the identical
+// seed, which is the only determinism this function's callers actually
+// need (a retry with identical inputs must reproduce the identical
+// response id, so the funnel's dedup branch finds it).
+func lifecycleRespondSeed(parentID, result string, respFields map[string]string, bodyOverride []byte, actor fold.Actor, refs []string) []byte {
 	keys := make([]string, 0, len(respFields))
 	for k := range respFields {
 		keys = append(keys, k)
@@ -946,6 +958,9 @@ func lifecycleRespondSeed(parentID, result string, respFields map[string]string,
 	buf.WriteString("result=" + result + "\n")
 	for _, k := range keys {
 		buf.WriteString(k + "=" + respFields[k] + "\n")
+	}
+	for _, ref := range refs {
+		buf.WriteString("ref=" + ref + "\n")
 	}
 	buf.WriteString("body=")
 	buf.Write(bodyOverride)
@@ -993,7 +1008,7 @@ func (c *RespondCommand) Name() string { return "respond" }
 
 // Synopsis implements cli.Command.
 func (c *RespondCommand) Synopsis() string {
-	return "respond to one or more parents: respond --result <answered|delivered|partial|cannot> <parent-id...>"
+	return "respond to one or more parents: respond --result <answered|delivered|partial|cannot> [--ref <artifact-id>]... <parent-id...>"
 }
 
 // Run implements cli.Command.
@@ -1002,6 +1017,19 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	fs.SetOutput(stdio.Stderr)
 	var fieldFlags newStringList
 	fs.Var(&fieldFlags, "field", "k=v field override (repeatable)")
+	// --ref (wave 23, agent-exchange-2026-08 spec 06 §11's 2026-08-10 "AC9
+	// wire decision"): `refs` is the schema's own envelope-base field and it
+	// was unreachable from `respond` entirely — `--field` goes through the
+	// append pass, which writes ONE scalar node and is refused for an
+	// array-typed key (fill-classes.yaml's envelope/v1/base/origin row has
+	// recorded this exact limitation all along). A general flag closes the
+	// real gap; the submit-time refusal that reads it (internal/space's
+	// checkSubmitResponseDeliveryPossession) keys on WHAT a ref resolves to,
+	// not on which flag wrote it, so this is not a single-purpose
+	// `--fulfilled-by` flag. Follows `a2a attach`'s own precedent for a
+	// value `--field` structurally cannot express.
+	var refFlags newStringList
+	fs.Var(&refFlags, "ref", "artifact id to record in refs[] (repeatable; e.g. the fulfilling handoff)")
 	bodyFile := fs.String("body-file", "", "path to a file whose contents replace the response body")
 	result := fs.String("result", "", "answered|delivered|partial|cannot (required)")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
@@ -1026,6 +1054,13 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		_, _ = fmt.Fprintf(stdio.Stderr, "respond: %v\n", ferr)
 		return 2
 	}
+	refs := []string(refFlags)
+	for _, r := range refs {
+		if strings.TrimSpace(r) == "" {
+			_, _ = fmt.Fprintln(stdio.Stderr, "respond: --ref must not be empty")
+			return 2
+		}
+	}
 	var bodyOverride []byte
 	if *bodyFile != "" {
 		b, err := c.deps.readFile(*bodyFile)
@@ -1042,8 +1077,15 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return 1
 	}
 	actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: c.deps.ownSystem}
+	// refs are part of what this operation IS, so they go to operation.Respond
+	// as their own argument. A retry with an IDENTICAL --ref set must land on
+	// the SAME key (dedup), and two calls differing ONLY in --ref must NOT
+	// collide — otherwise the second write reads as a repeat of the first and
+	// its different refs[] is never committed. They must also not be smuggled
+	// through `fields`: template.Render's applyFills walks that map and
+	// refuses any key it cannot place (ErrUnappliableField).
 	operationKey := operation.Respond(
-		c.deps.ownSystem, actor.Kind, actor.Name, parents, *result, fields, bodyOverride,
+		c.deps.ownSystem, actor.Kind, actor.Name, parents, *result, fields, refs, bodyOverride,
 	)
 
 	now := c.deps.now()
@@ -1087,7 +1129,7 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		// MintExchangeIDAt still embeds today's UTC date from `now`; a retry
 		// crossing midnight still mints a different id (spec 08 §11
 		// amendment — accepted, out of scope here).
-		seed := lifecycleRespondSeed(parentID, *result, respFields, bodyOverride, actor)
+		seed := lifecycleRespondSeed(parentID, *result, respFields, bodyOverride, actor, refs)
 		responseID, err := artifact.MintExchangeIDAt("XS", c.deps.ownSystem, now, bytes.NewReader(seed))
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "respond: cannot mint response id: %v\n", err)
@@ -1220,6 +1262,21 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			return 1
 		}
 		respDoc["to"] = []string{parentEnv.From}
+		if len(refs) > 0 {
+			// Same array-typed-key shape as `to` above, and for the same
+			// reason: `refs` (envelope base, §5.2.2) is a SEQUENCE the
+			// append pass cannot write, so it is set here by decode/assign/
+			// re-encode rather than by respFields/applyFills. Written in
+			// GIVEN order (lifecycleRespondSeed's own doc comment explains
+			// why order is not sorted). response.md's template carries `refs`
+			// only as a commented-out placeholder, so this is always a fresh
+			// key, never an overwrite of something the template rendered.
+			refEntries := make([]map[string]string, 0, len(refs))
+			for _, ref := range refs {
+				refEntries = append(refEntries, map[string]string{"ref": ref})
+			}
+			respDoc["refs"] = refEntries
+		}
 		respYAML, err := yaml.Marshal(respDoc)
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "respond: encode rendered response for %s: %v\n", parentID, err)

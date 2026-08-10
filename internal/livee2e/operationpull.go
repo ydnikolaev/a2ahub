@@ -49,6 +49,7 @@ func respondOperationWithFields(system, parentID, result string, fields map[stri
 		[]string{parentID},
 		result,
 		fields,
+		nil, // refs: no declared path drives `respond --ref` yet
 		nil,
 	)
 	return key, space.BranchName(system, "respond", key)

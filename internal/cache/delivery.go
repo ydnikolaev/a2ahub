@@ -3,9 +3,7 @@ package cache
 import (
 	"fmt"
 
-	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/datapackage"
-	"gopkg.in/yaml.v3"
 )
 
 // This file projects one handoff's data-kind deliverables (spec 05a AC-7,
@@ -24,50 +22,15 @@ import (
 // place a verdict is derived from checks[]; this file only ever READS that
 // derivation, never recomputes it from Checks itself.
 
-// DeliverableKindData is handoff.schema.json's deliverables[].kind value
-// this package resolves. The other four kind values (code, contract,
-// config, doc) carry no data-package/verification-report chain and are
-// left to their own renderer — DecodeDeliverables returns all of them,
-// and it is ResolveDeliveries' job, not the decoder's, to filter.
-const DeliverableKindData = "data"
-
-// Deliverable is one handoff.schema.json deliverables[] entry
-// ({name, ref, kind}), decoded directly from the raw envelope bytes. This
-// package's own minimal decode (decode.go's own documented ISP idiom,
-// repeated here rather than added to decode.go, which this wave's
-// allowlist does not include): deliverables[] has exactly one consumer,
-// this file.
-type Deliverable struct {
-	Name string `yaml:"name" json:"name"`
-	Ref  string `yaml:"ref" json:"ref"`
-	Kind string `yaml:"kind" json:"kind"`
-}
-
-// deliverablesProbe is DecodeDeliverables' own frontmatter decode target —
-// the handoff envelope carries other fields (verification,
-// acceptance_criteria, fulfills, ...) that this file has no use for, so
-// only deliverables[] is named.
-type deliverablesProbe struct {
-	Deliverables []Deliverable `yaml:"deliverables"`
-}
-
-// DecodeDeliverables decodes a handoff artifact's raw `.md` bytes (the same
-// bytes foldedArtifact.Raw / rawArtifact.Raw carries) into its
-// deliverables[] array. raw must be frontmatter-shaped
-// (artifact.ParseFrontmatter's own contract); a non-handoff document
-// simply decodes to an empty slice, since deliverables is not a field it
-// carries.
-func DecodeDeliverables(raw []byte) ([]Deliverable, error) {
-	fm, err := artifact.ParseFrontmatter(raw)
-	if err != nil {
-		return nil, fmt.Errorf("cache: DecodeDeliverables: %w", err)
-	}
-	var probe deliverablesProbe
-	if err := yaml.Unmarshal(fm.YAML, &probe); err != nil {
-		return nil, fmt.Errorf("cache: DecodeDeliverables: %w", err)
-	}
-	return probe.Deliverables, nil
-}
+// DeliverableKindData, Deliverable and DecodeDeliverables MOVED to
+// internal/datapackage (agent-exchange-2026-08 wave 23, part 2): internal/
+// space needs the identical decode for its own submit-time refusal
+// (delivery_possession.go) and cannot import internal/cache (cache/
+// mirror.go imports space — a cycle), but internal/cache already imports
+// internal/datapackage, so that is the cycle-free common ground. No
+// compatibility alias is kept here — every call site in this package now
+// reads datapackage.DeliverableKindData / datapackage.Deliverable /
+// datapackage.DecodeDeliverables directly.
 
 // DeliveryStatus says whether a deliverable's data-package/v1 manifest
 // could be resolved at all — mirrors ContractVersionDetailStatus's own
@@ -209,13 +172,13 @@ const maxDeliveryChainLength = 1000
 // "doc" deliverable has no manifest to resolve and belongs to a different
 // renderer.
 func ResolveDeliveries(handoffID string, raw []byte, resolver PackageResolver) ([]Delivery, error) {
-	deliverables, err := DecodeDeliverables(raw)
+	deliverables, err := datapackage.DecodeDeliverables(raw)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]Delivery, 0, len(deliverables))
 	for _, d := range deliverables {
-		if d.Kind != DeliverableKindData {
+		if d.Kind != datapackage.DeliverableKindData {
 			continue
 		}
 		out = append(out, ResolveDelivery(handoffID, d, resolver))
@@ -232,7 +195,7 @@ func ResolveDeliveries(handoffID string, raw []byte, resolver PackageResolver) (
 // payload — this function's unavailable branch fills in every field it
 // legitimately can (HandoffID, Name, Ref, the reason) instead of
 // following that precedent.
-func ResolveDelivery(handoffID string, d Deliverable, resolver PackageResolver) Delivery {
+func ResolveDelivery(handoffID string, d datapackage.Deliverable, resolver PackageResolver) Delivery {
 	del := Delivery{HandoffID: handoffID, Name: d.Name, Ref: d.Ref, Chain: []DeliveryChainEntry{}}
 
 	doc, ok := resolver.ResolvePackage(d.Ref)

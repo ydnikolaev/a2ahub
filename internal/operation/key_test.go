@@ -142,15 +142,53 @@ func TestRespondCanonicalAndSemantic(t *testing.T) {
 	t.Parallel()
 
 	a := Respond("axon", "agent", "bot", []string{"B", "A"}, "answered",
-		map[string]string{"title": "done", "priority": "p1"}, []byte("body"))
+		map[string]string{"title": "done", "priority": "p1"}, nil, []byte("body"))
 	b := Respond("axon", "agent", "bot", []string{"A", "B"}, "answered",
-		map[string]string{"priority": "p1", "title": "done"}, []byte("body"))
+		map[string]string{"priority": "p1", "title": "done"}, nil, []byte("body"))
 	if a != b || !Valid(a) {
 		t.Fatalf("canonical keys differ or are invalid: %q %q", a, b)
 	}
 	if changed := Respond("axon", "agent", "bot", []string{"A", "B"}, "answered",
-		map[string]string{"priority": "p1", "title": "done"}, []byte("different")); changed == a {
+		map[string]string{"priority": "p1", "title": "done"}, nil, []byte("different")); changed == a {
 		t.Fatal("changed body produced the same operation key")
+	}
+}
+
+// TestRespondRefsAreOrderedAndDistinguishing pins the ONE asymmetry in
+// Respond's encoding: parents and field keys are sorted because their order is
+// not on the wire, but `refs[]` is an ordered envelope array, so two responses
+// carrying the same refs in a different order are two different artifacts and
+// must not dedup onto one operation key.
+func TestRespondRefsAreOrderedAndDistinguishing(t *testing.T) {
+	t.Parallel()
+
+	base := Respond("axon", "agent", "bot", []string{"XW-peer-p"}, "delivered", nil, nil, []byte("b"))
+
+	withRefs := Respond("axon", "agent", "bot", []string{"XW-peer-p"}, "delivered",
+		nil, []string{"XH-axon-1", "XH-axon-2"}, []byte("b"))
+	if withRefs == base {
+		t.Fatal("adding refs did not change the operation key — a response naming a handoff would dedup onto one that names nothing, and its refs[] would never be committed")
+	}
+
+	swapped := Respond("axon", "agent", "bot", []string{"XW-peer-p"}, "delivered",
+		nil, []string{"XH-axon-2", "XH-axon-1"}, []byte("b"))
+	if swapped == withRefs {
+		t.Fatal("reordering refs produced the same key — refs[] order IS on the wire, unlike parents and field keys")
+	}
+
+	repeat := Respond("axon", "agent", "bot", []string{"XW-peer-p"}, "delivered",
+		nil, []string{"XH-axon-1", "XH-axon-2"}, []byte("b"))
+	if repeat != withRefs {
+		t.Fatal("an identical retry minted a different key — dedup is what makes a retried submit idempotent")
+	}
+
+	// A ref set must not be confusable with a field carrying the same text:
+	// the encoder writes both, and a length-blind concatenation would let
+	// them collide.
+	viaField := Respond("axon", "agent", "bot", []string{"XW-peer-p"}, "delivered",
+		map[string]string{"XH-axon-1": "XH-axon-2"}, nil, []byte("b"))
+	if viaField == withRefs {
+		t.Fatal("a field pair and a ref pair with the same strings produced one key — the encoding is ambiguous")
 	}
 }
 

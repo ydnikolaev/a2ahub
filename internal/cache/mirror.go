@@ -17,6 +17,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/provenance"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -749,11 +750,11 @@ func resolveBlockedByOwner(candidate string, env fold.Envelope, state fold.State
 }
 
 // handoffFulfillsProbe decodes a handoff artifact's own `fulfills[]` field —
-// a package-local, single-consumer decode (delivery.go's own
-// DecodeDeliverables draws the identical idiom, "repeated here rather than
-// added to decode.go", for a file outside a DIFFERENT wave's allowlist;
-// `fulfills[]` is outside THIS wave's for the same reason: envelopeProbe
-// has no field for it and decode.go is not in this brief's allowlist).
+// a package-local, single-consumer decode (internal/datapackage's own
+// DecodeDeliverables, deliverable.go, draws the identical probe-a-single-
+// field idiom one package over, for the same reason: `fulfills[]` is
+// outside this wave's allowlist — envelopeProbe has no field for it and
+// decode.go is not in this brief's allowlist).
 type handoffFulfillsProbe struct {
 	Fulfills []string `yaml:"fulfills"`
 }
@@ -817,12 +818,12 @@ func deliveryUnresolvable(parentID string, delivered map[string]bool, handoffFul
 	// same one.
 	sawDataDeliverable := false
 	for _, raw := range handoffFulfills[parentID] {
-		deliverables, err := DecodeDeliverables(raw)
+		deliverables, err := datapackage.DecodeDeliverables(raw)
 		if err != nil {
 			continue
 		}
 		for _, d := range deliverables {
-			if d.Kind != DeliverableKindData {
+			if d.Kind != datapackage.DeliverableKindData {
 				continue
 			}
 			sawDataDeliverable = true
