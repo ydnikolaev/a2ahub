@@ -22,6 +22,13 @@ type Vocabulary struct {
 	// transition-free ones, sorted. `note` carries no row and must still
 	// be in the vocabulary a surface may name.
 	Transitions []string `json:"transitions"`
+	// HumanGates maps every always-human-gated transition to the §3.7 gate
+	// it sits behind — a copy of HumanGate's own registry, never a second
+	// one. It exists so a gate policing which transitions a loop step may
+	// route an agent to self-serve can ask the binary instead of carrying
+	// its own roster, the same defect this type already exists to remove
+	// for outcomes/states/transitions.
+	HumanGates map[string]string `json:"human_gates"`
 }
 
 // Outcomes returns the five outcome values, sorted. A caller enumerating
@@ -36,7 +43,10 @@ func Outcomes() []Outcome {
 // allocated and sorted, so a caller mutating one cannot corrupt the next
 // call, the same discipline RestingStates and TransitionRows already keep.
 func BuildVocabulary() Vocabulary {
-	v := Vocabulary{States: map[string][]string{}}
+	v := Vocabulary{States: map[string][]string{}, HumanGates: map[string]string{}}
+	for transition, gate := range humanGates {
+		v.HumanGates[transition] = gate
+	}
 
 	for _, o := range Outcomes() {
 		v.Outcomes = append(v.Outcomes, string(o))

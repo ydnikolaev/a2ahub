@@ -119,6 +119,9 @@ func TestVocabularyIsFreshEachCall(t *testing.T) {
 	for k := range first.States {
 		first.States[k] = []string{"corrupted"}
 	}
+	for k := range first.HumanGates {
+		first.HumanGates[k] = "corrupted"
+	}
 
 	second := BuildVocabulary()
 	if second.Outcomes[0] == "corrupted" || second.Transitions[0] == "corrupted" {
@@ -127,6 +130,52 @@ func TestVocabularyIsFreshEachCall(t *testing.T) {
 	for kind, states := range second.States {
 		if len(states) == 1 && states[0] == "corrupted" {
 			t.Fatalf("BuildVocabulary shares the %s state slice across calls", kind)
+		}
+	}
+	for transition, gate := range second.HumanGates {
+		if gate == "corrupted" {
+			t.Fatalf("BuildVocabulary shares the HumanGates map across calls (transition %q)", transition)
+		}
+	}
+}
+
+// TestVocabularyHumanGatesMatchesTheRegistry pins HumanGates to HumanGate's
+// own map so a caller reading the vocabulary sees exactly what a direct call
+// to HumanGate would answer — a second, silently divergent copy is the
+// defect this field exists to prevent.
+func TestVocabularyHumanGatesMatchesTheRegistry(t *testing.T) {
+	t.Parallel()
+
+	v := BuildVocabulary()
+	if len(v.HumanGates) == 0 {
+		t.Fatal("BuildVocabulary returned no human gates — a gate deriving from this would police nothing")
+	}
+	for transition, gate := range v.HumanGates {
+		if got := HumanGate(transition); got != gate {
+			t.Errorf("vocabulary reports HumanGates[%q] = %q, but HumanGate(%q) = %q", transition, gate, transition, got)
+		}
+	}
+	for _, transition := range []string{TApprove, TReject} {
+		if _, ok := v.HumanGates[transition]; !ok {
+			t.Errorf("vocabulary.HumanGates omits %q, which HumanGate() gates", transition)
+		}
+	}
+}
+
+// TestVocabularyHumanGatesAreRealTransitions catches a typo in the registry
+// that nothing else would: a gated verb spelled wrong would never match any
+// row in the table and would silently gate nothing.
+func TestVocabularyHumanGatesAreRealTransitions(t *testing.T) {
+	t.Parallel()
+
+	v := BuildVocabulary()
+	known := map[string]bool{}
+	for _, name := range v.Transitions {
+		known[name] = true
+	}
+	for transition := range v.HumanGates {
+		if !known[transition] {
+			t.Errorf("vocabulary.HumanGates names %q, which is not in Transitions — a typo here would gate nothing", transition)
 		}
 	}
 }

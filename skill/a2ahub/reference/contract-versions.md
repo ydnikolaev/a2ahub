@@ -171,6 +171,17 @@ where the version FLIPS — is what makes that version resolvable ever after.
 `a2a contract materialize` reads it, and so does every later version, which
 resolves the earlier one as its compatibility baseline.
 
+**No git tag is minted for a publish, on purpose: a tag is movable, a commit
+is not.** `id@version` resolves through the publish event's own commit —
+never through a ref anyone could later repoint — so treating a published
+version like a tagged release and writing an acceptance criterion around `git
+tag`/`git checkout <tag>` is unsatisfiable; nothing in this protocol ever
+creates one. The verifiable substitute is
+`a2a contract materialize <XC-id>@<version> --to <dir>`, which re-resolves
+that exact historical commit and writes it out — this is the operation to
+name in a criterion that needs to pin or re-fetch a specific published
+version, not a tag.
+
 Author the draft at the version you intend to publish and there is nothing
 left to flip: publish writes byte-identical bytes, its commit carries only the
 publish event, and no commit establishes the version. `publish` refuses that

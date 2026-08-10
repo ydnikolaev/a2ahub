@@ -97,7 +97,7 @@ the requested work.
 
 | File | What it carries |
 |------|-----------------|
-| [loops.md](loops.md) | The canonical one editable home: condensed §0/§3 semantics + the 8.1–8.6 agent loops (session-start checklist, send/receive/contract-owner loops, escalation ladder, watch loop). Start here. |
+| [loops.md](loops.md) | The canonical one editable home: condensed §0/§3 semantics + the 8.1–8.7 agent loops (session-start checklist, send/receive/contract-owner loops, first-integration loop for a brand-new contract through go-live, escalation ladder, watch loop, feedback loop). Start here. |
 | [onboarding.md](onboarding.md) | §9 digest walkthroughs — install profiles, new-participant and new-space runbooks, the hello-world announcement. |
 | [troubleshooting.md](troubleshooting.md) | How to read `a2a doctor` output — the sixteen checks, what a FAIL means, what to do next. Defers to the binary's actual checks. |
 | [notifications.md](notifications.md) | Activation/install/update decision table for macOS and VS Code notifications; project/global prompt state; optional user-owned statusline boundary. |

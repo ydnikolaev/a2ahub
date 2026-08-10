@@ -1049,7 +1049,7 @@ changes:
       `x = y` mid-sentence does not trip it.
     affects: ["a2a validate", "a2a submit", "a2a validate --ci"]
     action:
-      scope: rare
+      scope: local
       why: >
         If a draft is refused, the body is declaring something the schema has a
         real field for — move it into the frontmatter. A body that refers to a

@@ -62,6 +62,8 @@ scripts/*
 !scripts/check-lane-declarations.sh
 !scripts/check-pendency-uniqueness.sh
 !scripts/check-loop-coverage.sh
+!scripts/check-human-gates.sh
+!scripts/check-loop-reachability.sh
 # The lane deriver's ungated list (P12). Public for the same reason internal/lane
 # is: a public checkout that has the derivation but not the file recording which
 # paths are deliberately outside it would refuse on every one of them. Same
@@ -79,6 +81,8 @@ scripts/tests/*
 !scripts/tests/check_localserver_readonly_routes_test.sh
 !scripts/tests/check_operational_projection_single_source_test.sh
 !scripts/tests/check_work_checkpoint_schema_test.sh
+!scripts/tests/check_human_gates_test.sh
+!scripts/tests/check_loop_reachability_test.sh
 !scripts/releasebody/
 # install.sh's regression net (P40 AC-1002.*). A directory, not a file: `scripts/*`
 # excludes the DIRECTORY `scripts/installsh`, and git cannot re-include a file whose
