@@ -845,3 +845,41 @@ changes:
       why: >
         Nothing to do. Existing v1 work requests stay valid and are still
         accepted everywhere; only what a FRESH draft declares has changed.
+  - id: RN-01910-30
+    kind: feat
+    impact: normal
+    roadmap:
+      visibility: shipped
+      why: >
+        Two systems each reported success while the bytes one of them promised
+        were not there to fetch. The protocol's job is to make that
+        unsayable, not to detect it afterwards.
+    subject: "A response cannot claim a delivery whose bytes the space does not have"
+    detail: >
+      When a work request is completed by a body of work rather than an
+      answer, the response points at the handoff, and the handoff lists what
+      was delivered. Until now nothing checked that the listed data packages
+      actually resolve — so a response could merge saying `delivered` while
+      the package it stood for was still an open pull request, and both ends
+      reported success.
+      Submitting such a response is now refused, naming the handoff and the
+      deliverable that does not resolve. The check reads the space's own
+      committed history, never the author's working copy, so "it resolves on
+      my machine" cannot pass it.
+      It is narrow on purpose. `delivered` is the ordinary word for finishing
+      a request, and most responses that use it involve no data package at
+      all — those are untouched. The refusal applies only to a response that
+      references a handoff which itself declares a data deliverable.
+      `a2a respond` gained `--ref <artifact-id>` (repeatable) to carry that
+      reference: the envelope always had a `refs` field, and no lifecycle verb
+      could write it, because `--field` cannot fill a list.
+      Known gap, deliberate: the MCP respond tool has no equivalent input yet,
+      so an MCP-authored response cannot carry refs. The refusal itself is in
+      the shared write path, so nothing is left unchecked.
+    affects: ["a2a respond", "a2a respond --ref", "submitting a response"]
+    action:
+      scope: none
+      why: >
+        Nothing to do unless you author a response that references a handoff
+        with a data deliverable. If you do and it is refused, the package has
+        not landed yet — merge it first, then resubmit.
