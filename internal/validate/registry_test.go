@@ -308,29 +308,37 @@ func TestRegistryClosure(t *testing.T) {
 			"- one.csv\n- two.csv\n- three.csv\n- four.csv\n"),
 		map[string]any{"type": "work_request"}))
 
-	// REF-018 and LFC-004: P6's incompleteness rules. Both are DORMANT
-	// under every Resolver that ships today — REF-018 needs a parent's
-	// criteria count that no production Resolver can supply, and LFC-004
-	// needs a closing event alongside the response. That is exactly why
-	// they belong here: this gate asks whether a code can be PRODUCED at
-	// all, and a rule that cannot is the "gate watching nothing" this
-	// corpus keeps calling worse than a red one. The stubs below supply
-	// what production does not, so the codes are proven reachable while
-	// the wiring that makes them fire is still owed.
+	// REF-018 and LFC-004: P6's incompleteness rules. This comment used to
+	// say both were DORMANT under every shipped Resolver, and that is no
+	// longer true — kept as history because the STUBS' reason for existing
+	// did not change with the wiring. REF-018 and LFC-004 have had
+	// production call sites since 2026-08-09: cli.MirrorResolver satisfies
+	// ParentCriteriaCounter by a compile-time assertion, which closed four
+	// construction sites at once (see incompleteness.go's own doc comment).
+	//
+	// The stubs stay because this gate asks a different question from
+	// "is it wired": whether the code can be PRODUCED at all, from inputs
+	// this package controls. A gate that depended on a caller wiring
+	// something would go quiet the day that caller changed, which is the
+	// "gate watching nothing" this corpus keeps calling worse than a red.
 	record(checkUnmetIndexRange(
 		envelope{Type: "response", Parent: "XW-axon-20260808-clos"},
 		map[string]any{"unmet": []any{int64(9)}},
 		&criteriaResolver{criteria: map[string]int{"XW-axon-20260808-clos": 1}},
 	))
-	// REF-019: P6 wave C's verdicts[] index-range mirror. It is dormant for
-	// a THIRD reason on top of the two above, and the reason is worth stating
-	// because it is not "nobody wired it yet": `ValidateEvent` takes no
-	// Resolver at all, and the two transitions the schema makes verdicts[]
-	// conditionally required on — verify and close — are still authored as
-	// `event/v1` by cmd_lifecycle.go, so no event the shipped binary writes
-	// can carry the field. Both are recorded in threat-model.md's T5 and in
-	// specs/06 §11. The stub keeps the code PRODUCIBLE while that is true, so
-	// this gate is not watching nothing.
+	// REF-019: P6 wave C's verdicts[] index-range mirror. This comment used
+	// to give three reasons it was dormant — no Resolver on ValidateEvent,
+	// and verify/close authored as event/v1 so nothing could carry the field.
+	// BOTH were closed on 2026-08-10 (wave 25): `ValidateEventWithContext`
+	// carries a Resolver and cmd_validate_ci.go offers one, and
+	// VerifyCommand.Run authors event/v2 above the space floor.
+	//
+	// What remains true, and is narrower than "dormant": the standalone
+	// `a2a close <parent-id>` verb still authors event/v1 (epic-backlog B24),
+	// and internal/mcp's verify/close hardcode event/v1 unconditionally
+	// (B22), so REF-019 fires on the CLI verify path and not on those two.
+	// The stub's job is unchanged either way — it proves the code is
+	// producible from this package's own inputs, independent of who calls.
 	record(checkVerdictIndexRange(
 		"XW-axon-20260808-clos",
 		map[string]any{"verdicts": []any{map[string]any{
