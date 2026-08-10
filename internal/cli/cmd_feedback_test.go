@@ -273,6 +273,9 @@ func TestFeedbackTriage_EmptyInboxIsClean(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 	cmd := cli.NewFeedbackCommand(nil, nil, "", hubRoot, nil)
+	cmd.SetFreshnessResolver(func() feedback.Freshness {
+		return feedback.Freshness{Status: feedback.FreshnessNotApplicable}
+	})
 	io, out, _ := newIO()
 	code := cmd.Run(context.Background(), []string{"triage"}, io)
 	if code != 0 {
@@ -280,6 +283,65 @@ func TestFeedbackTriage_EmptyInboxIsClean(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "inbox clean") {
 		t.Fatalf("expected 'inbox clean', got %q", out.String())
+	}
+}
+
+// TestFeedbackTriage_RefusedFreshnessNamesReasonAndHub is AC3's refusal
+// wiring proven at the CLI seam: runTriage must refuse — naming the reason
+// AND the hub of record, and never printing "inbox clean" — when the
+// injected freshness resolver reports FreshnessRefused, even though the
+// inbox itself is empty and would otherwise be clean (own-loop 09 §8 AC3,
+// §11 wave D2).
+func TestFeedbackTriage_RefusedFreshnessNamesReasonAndHub(t *testing.T) {
+	t.Parallel()
+	hubRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(hubRoot, "feedback", "inbox"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	cmd := cli.NewFeedbackCommand(nil, nil, "", hubRoot, nil)
+	cmd.SetFreshnessResolver(func() feedback.Freshness {
+		return feedback.Freshness{
+			Status:      feedback.FreshnessRefused,
+			Reason:      "hub's default branch carries fb-20260808-999999, which this tree lacks",
+			HubOfRecord: "https://github.com/ydnikolaev/a2ahub",
+		}
+	})
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"triage"}, io)
+	if code == 0 {
+		t.Fatalf("code = %d, want non-zero on a refused freshness verdict", code)
+	}
+	if strings.Contains(out.String(), "inbox clean") {
+		t.Fatalf("stdout = %q, must never print 'inbox clean' on a refused verdict", out.String())
+	}
+	if !strings.Contains(errOut.String(), "fb-20260808-999999") {
+		t.Errorf("stderr = %q, want it to name the drift reason", errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "https://github.com/ydnikolaev/a2ahub") {
+		t.Errorf("stderr = %q, want it to name the hub of record", errOut.String())
+	}
+}
+
+// TestFeedbackTriage_NilResolverRefuses is the "nobody wired a resolver"
+// case: a nil resolveFreshness must fail closed (refuse), never read as
+// "confirmed current" by omission.
+func TestFeedbackTriage_NilResolverRefuses(t *testing.T) {
+	t.Parallel()
+	hubRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(hubRoot, "feedback", "inbox"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	cmd := cli.NewFeedbackCommand(nil, nil, "", hubRoot, nil)
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"triage"}, io)
+	if code == 0 {
+		t.Fatalf("code = %d, want non-zero for a nil freshness resolver", code)
+	}
+	if strings.Contains(out.String(), "inbox clean") {
+		t.Fatalf("stdout = %q, must never print 'inbox clean' with no resolver wired", out.String())
+	}
+	if !strings.Contains(errOut.String(), "no freshness resolver was configured") {
+		t.Errorf("stderr = %q, want it to say no freshness resolver was configured", errOut.String())
 	}
 }
 

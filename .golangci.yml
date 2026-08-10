@@ -82,6 +82,30 @@ linters:
       - path: ^(cmd/a2a/notifications_platform\.go|internal/cache/mirror\.go|internal/cli/(cmd_contract|cmd_html|cmd_statusline|cmd_update|cmd_validate_ci|contract_git)\.go|internal/ghauth/ghauth\.go|internal/host/github\.go|internal/mcp/tools_contract\.go|internal/release/selfcheck\.go|internal/space/(credential|mirror)\.go)$
         text: "G204:"
         linters: [gosec]
+      # cmd/a2a/feedback_freshness.go: AC3's hub-of-record freshness probe
+      # (agent-exchange P9 wave D2). Three fixed git argvs — rev-parse
+      # --is-inside-work-tree, fetch --no-tags --depth=1 <hub> main, ls-tree
+      # -r --name-only FETCH_HEAD — never a shell, mirroring the argv
+      # docs/runbooks/feedback-sync.sh already runs rather than deriving a
+      # second answer to "has the hub moved".
+      #
+      # G702 (taint) is listed as well as G204 because hubURL arrives from
+      # A2A_FEEDBACK_HUB_URL, and `git fetch` reads `<helper>::<arg>` as a
+      # transport helper. feedbackHubURLIsFetchable refuses `::` outright and
+      # admits only https/http/git@ URLs and absolute paths, BEFORE the value
+      # reaches an argv; gosec's taint pass cannot see that guard, which is
+      # what this entry is for.
+      #
+      # Sized honestly, because it was measured rather than assumed: with the
+      # guard disabled, git itself still refuses (`transport 'ext' not
+      # allowed`, since protocol.ext.allow defaults to none). The guard is a
+      # second line whose value is that it does not depend on a git default an
+      # environment can change, and that its refusal names what the operator
+      # actually typed. TestResolveFeedbackFreshness_RefusesATransportHelperHub
+      # is what keeps it honest.
+      - path: ^cmd/a2a/feedback_freshness\.go$
+        text: "G(204|702):"
+        linters: [gosec]
       # Test support binaries shell only to the fixture's own git repositories.
       - path: ^testkit/(fakegithub/fakegithub|spacefixture/spacefixture)\.go$
         text: "G204:"

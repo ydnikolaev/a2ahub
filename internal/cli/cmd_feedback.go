@@ -32,6 +32,15 @@ type FeedbackCommand struct {
 	hubRoot    string
 	hubReader  feedback.HubReader
 
+	// resolveFreshness resolves AC3's three-valued freshness verdict on
+	// demand. It is a LAZY closure (never called by `new`/`validate`/
+	// `submit`/`status`, and never by `triage --apply`) so those verbs pay
+	// no network cost — only runTriage's plain-listing branch invokes it
+	// (own-loop 09 §8 AC3, §11 wave D2). nil is treated as an unresolved
+	// (fail-closed refused) verdict, mirroring feedback.Freshness's own
+	// zero value.
+	resolveFreshness func() feedback.Freshness
+
 	now      func() time.Time
 	readFile func(path string) ([]byte, error)
 }
@@ -43,7 +52,13 @@ type FeedbackCommand struct {
 // `.a2a/feedback/ledger.yaml`'s path; hubRoot is the cwd `triage` runs
 // from (§T1: "run from the hub repo root"); hubReader resolves `status`'s
 // hub-side reads (production: feedback.DefaultHubReader; tests: a
-// local-fixture func).
+// local-fixture func). AC3's freshness resolver is deliberately NOT a
+// constructor parameter — cmd/a2a/catalog.go constructs a Name()/Synopsis()
+// -only catalog entry with this constructor's original arity and is outside
+// this wave's allowlist — so it is wired post-construction via
+// SetFreshnessResolver instead; leaving it unset is a valid, fail-closed
+// state (resolvedFreshness treats a nil resolver as an unresolved, refused
+// verdict).
 func NewFeedbackCommand(drafter *feedback.Drafter, submitter *feedback.Submitter, ledgerPath, hubRoot string, hubReader feedback.HubReader) *FeedbackCommand {
 	return &FeedbackCommand{
 		drafter: drafter, submitter: submitter, ledgerPath: ledgerPath, hubRoot: hubRoot, hubReader: hubReader,
@@ -60,6 +75,17 @@ func (c *FeedbackCommand) SetReadFileForTest(f func(path string) ([]byte, error)
 // SetClockForTest overrides the injected clock (triage --apply's digest
 // date / backlog date).
 func (c *FeedbackCommand) SetClockForTest(now func() time.Time) { c.now = now }
+
+// SetFreshnessResolver wires AC3's freshness-verdict resolver (production:
+// cmd/a2a's git-backed resolveFeedbackFreshness, invoked lazily only by
+// runTriage's listing branch; tests: a closure returning an already-decided
+// feedback.Freshness). Unlike SetReadFileForTest/SetClockForTest this is
+// not test-only — cmd/a2a's runFeedback calls it too, because
+// NewFeedbackCommand's arity is shared with cmd/a2a/catalog.go's
+// dependency-free catalog stub (own-loop 09 §8 AC3, §11 wave D2).
+func (c *FeedbackCommand) SetFreshnessResolver(resolve func() feedback.Freshness) {
+	c.resolveFreshness = resolve
+}
 
 // Name implements cli.Command.
 func (c *FeedbackCommand) Name() string { return "feedback" }
@@ -344,12 +370,31 @@ func (c *FeedbackCommand) runStatus(args []string, stdio IO) int {
 	return 0
 }
 
+// resolvedFreshness calls c.resolveFreshness if one was wired, else reports
+// an unresolved (fail-closed refused) verdict — a nil resolver must never
+// read as "hub confirmed current" (own-loop 09 §8 AC3, §11 wave D2).
+func (c *FeedbackCommand) resolvedFreshness() feedback.Freshness {
+	if c.resolveFreshness == nil {
+		return feedback.Freshness{Reason: "no freshness resolver was configured"}
+	}
+	return c.resolveFreshness()
+}
+
 // runTriage implements `a2a feedback triage [--json] [--apply <file>]`.
 // The mechanical verb both lists dedupe candidates (default) and, given
 // `--apply <verdicts.yaml>`, lands the operator-agent's already-written
 // judgment (mutate/backlog/digest) — spec §T1's flag column only names
 // `--json`; `--apply` is this wave's own addition to carry verdict input
 // into the mechanical verb (see this phase's Deviations report).
+//
+// The listing form (no `--apply`) resolves AC3's freshness verdict via
+// resolvedFreshness and passes it into feedback.Triage, which refuses —
+// naming the drift/failure and the hub of record — before it lists
+// anything, whenever the verdict is not FreshnessCurrent or
+// FreshnessNotApplicable; `inbox clean` is therefore never printed on a
+// refused verdict (own-loop 09 §8 AC3, §11 wave D2). `--apply` never
+// resolves or checks freshness — it mutates records this tree already has,
+// not a claim about the hub's state.
 func (c *FeedbackCommand) runTriage(args []string, stdio IO) int {
 	fs := flag.NewFlagSet("feedback triage", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
@@ -383,7 +428,7 @@ func (c *FeedbackCommand) runTriage(args []string, stdio IO) int {
 		return 0
 	}
 
-	report, err := feedback.Triage(c.hubRoot)
+	report, err := feedback.Triage(c.hubRoot, c.resolvedFreshness())
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "feedback triage: %v\n", err)
 		return 1

@@ -1389,7 +1389,26 @@ func runFeedback(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 
+	// AC3 (own-loop 09 §8, §11 wave D2): the freshness verdict `triage`'s
+	// listing form needs before it may print "inbox clean". Built as a LAZY
+	// closure — resolveFeedbackFreshness (the only place this concern
+	// fetches/shells out) is invoked only by runTriage's listing branch, so
+	// every other verb (new/validate/submit/status, and triage --apply)
+	// pays no network cost. The hub URL is A2A_FEEDBACK_HUB_URL, falling
+	// back to canonicalFeedbackRepo — feedback-sync.sh's own override,
+	// deliberately not A2A_FEEDBACK_REPO (mis-sliced by parseGitHubRepo for
+	// a local path, and the wrong seam anyway: the reader above resolves
+	// status over raw.githubusercontent.com, never git).
+	freshnessHubURL := os.Getenv(feedbackHubURLEnv)
+	if freshnessHubURL == "" {
+		freshnessHubURL = canonicalFeedbackRepo
+	}
+	resolveFreshness := func() feedback.Freshness {
+		return resolveFeedbackFreshness(ctx, hubRoot, freshnessHubURL)
+	}
+
 	cmd := cli.NewFeedbackCommand(drafter, submitter, ledgerPath, hubRoot, hubReader)
+	cmd.SetFreshnessResolver(resolveFreshness)
 	return cmd.Run(ctx, args, stdio(stdout, stderr))
 }
 

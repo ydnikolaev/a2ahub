@@ -61,12 +61,80 @@ type TriageReport struct {
 // "nothing new -> inbox clean").
 func (r TriageReport) Clean() bool { return len(r.Entries) == 0 }
 
+// FreshnessStatus is AC3's three-valued verdict about whether hubRoot's
+// feedback/inbox/** agrees with the hub of record (own-loop 09 §8 AC3).
+// FreshnessRefused is deliberately iota 0: a Freshness value nobody
+// resolved (a zero value, a nil resolver) must fail CLOSED into a refusal
+// rather than silently reading as "confirmed current" — the same
+// fail-closed shape AC3 itself asks Triage to enforce (§11 2026-08-10).
+type FreshnessStatus int
+
+const (
+	// FreshnessRefused: hubRoot is a git work tree and the hub-of-record
+	// check either found drift, could not be completed, or found no hub
+	// configured (AC3 cases (a)/(b)/(c)) — Triage must refuse, and must
+	// never report "inbox clean".
+	FreshnessRefused FreshnessStatus = iota
+	// FreshnessCurrent: the hub of record was checked and hubRoot agrees
+	// with it — "inbox clean" is reachable if the local listing is also
+	// empty.
+	FreshnessCurrent
+	// FreshnessNotApplicable: hubRoot is not a git work tree, so there is
+	// no hub of record to diverge from — "inbox clean" is reachable (AC3:
+	// "Only a hubRoot that is NOT a git work tree yields not-applicable").
+	FreshnessNotApplicable
+)
+
+// Freshness is the ALREADY-RESOLVED freshness verdict Triage takes as an
+// input. It is computed at the CLI (cmd/a2a's runFeedback, the only place
+// that may fetch, shell out, or reach a remote for this purpose) and passed
+// in — Triage itself never reaches a remote (own-loop 09 §8 AC3, §11 wave D:
+// "the judgment stays out of the domain and only the already-computed
+// verdict crosses the seam").
+type Freshness struct {
+	// Status is the three-valued verdict.
+	Status FreshnessStatus
+	// Reason names the drift, the failure, or the missing configuration
+	// when Status == FreshnessRefused. Empty means the verdict was never
+	// resolved (a nil resolver, a forgotten wire-up) rather than an actual
+	// checked-and-refused outcome; Triage's error names that explicitly
+	// rather than printing a blank reason.
+	Reason string
+	// HubOfRecord names the hub Triage's refusal error should cite. Empty
+	// means no hub was configured to check against (AC3 case (c)).
+	HubOfRecord string
+}
+
+// freshnessRefusalError renders f's refusal as an error naming both the
+// reason and the hub of record (AC3: triage "refuses — naming the drift and
+// the hub of record").
+func freshnessRefusalError(f Freshness) error {
+	hub := f.HubOfRecord
+	if hub == "" {
+		hub = "(no hub of record configured)"
+	}
+	reason := f.Reason
+	if reason == "" {
+		reason = "freshness verdict was never resolved"
+	}
+	return fmt.Errorf("feedback: Triage: refusing — hub of record %s is not confirmed current: %s", hub, reason)
+}
+
 // Triage lists every status:new feedback/inbox/*.yaml item under hubRoot,
 // with dedupe candidates drawn from the rest of the inbox (any status)
 // and from feedback/backlog.yaml. It is read-only — verdict judgment and
 // write-back is ApplyVerdicts (§T1: "mechanical part is the verb; the
 // judgment... is the triage procedure in AGENTS.md").
-func Triage(hubRoot string) (TriageReport, error) {
+//
+// freshness is AC3's already-resolved hub-of-record verdict. Triage refuses
+// — before reading a single feedback/inbox/*.yaml file — unless freshness is
+// FreshnessCurrent or FreshnessNotApplicable; it never fetches or shells out
+// itself (§8 AC3, §11 wave D: "resolved at the CLI... and passed in, never
+// inside Triage").
+func Triage(hubRoot string, freshness Freshness) (TriageReport, error) {
+	if freshness.Status != FreshnessCurrent && freshness.Status != FreshnessNotApplicable {
+		return TriageReport{}, freshnessRefusalError(freshness)
+	}
 	all, err := readInboxItems(hubRoot)
 	if err != nil {
 		return TriageReport{}, err

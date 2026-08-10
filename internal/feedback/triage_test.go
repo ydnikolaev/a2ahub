@@ -40,12 +40,19 @@ func seedBacklog(t *testing.T, hubRoot string, wipLimit int, items ...BacklogIte
 	}
 }
 
+// TestTriage_EmptyInboxIsClean keeps passing under the AC3 freshness
+// parameter because hubRoot (t.TempDir()) is not a git work tree in
+// production terms — the CLI-level resolver would report
+// FreshnessNotApplicable for it, so the test states that assumption
+// explicitly rather than leaning on a zero value (own-loop 09 §8 AC3,
+// §11 wave D2: "TestTriage_EmptyInboxIsClean keeps passing because its
+// hubRoot is not a work tree").
 func TestTriage_EmptyInboxIsClean(t *testing.T) {
 	t.Parallel()
 	hubRoot := t.TempDir()
 	seedBacklog(t, hubRoot, 16)
 
-	report, err := Triage(hubRoot)
+	report, err := Triage(hubRoot, Freshness{Status: FreshnessNotApplicable})
 	if err != nil {
 		t.Fatalf("Triage: %v", err)
 	}
@@ -61,7 +68,7 @@ func TestTriage_ListsNewItemsAndSkipsAlreadyTriaged(t *testing.T) {
 	writeInboxItem(t, hubRoot, "fb-20260701-aaaaaa", "bug", "sync reports clean but stale", "new")
 	writeInboxItem(t, hubRoot, "fb-20260702-bbbbbb", "docs", "already handled", "accepted")
 
-	report, err := Triage(hubRoot)
+	report, err := Triage(hubRoot, Freshness{Status: FreshnessNotApplicable})
 	if err != nil {
 		t.Fatalf("Triage: %v", err)
 	}
@@ -84,7 +91,7 @@ func TestTriage_DedupeCandidatesAgainstInboxAndBacklog(t *testing.T) {
 	writeInboxItem(t, hubRoot, "fb-20260701-aaaaaa", "bug", "sync reports clean mirror stale", "new")
 	writeInboxItem(t, hubRoot, "fb-20260702-dddddd", "bug", "sync reports clean mirror stale too", "new")
 
-	report, err := Triage(hubRoot)
+	report, err := Triage(hubRoot, Freshness{Status: FreshnessNotApplicable})
 	if err != nil {
 		t.Fatalf("Triage: %v", err)
 	}
@@ -107,6 +114,78 @@ func TestTriage_DedupeCandidatesAgainstInboxAndBacklog(t *testing.T) {
 		if !sawBacklog {
 			t.Errorf("%s: expected a backlog dedupe candidate, got %+v", e.Item.ID, e.Candidates)
 		}
+	}
+}
+
+// TestTriage_RefusedFreshnessRefusesBeforeListing is AC3's own text made a
+// unit test: a refused freshness verdict must make Triage refuse — naming
+// the reason and the hub of record — BEFORE it reads a single
+// feedback/inbox/*.yaml file, never manufacturing a "clean" (or any other)
+// report (own-loop 09 §8 AC3, §11 wave D2). The inbox here is seeded with a
+// status:new item specifically so a report that silently came back clean
+// (rather than erroring) would be caught: an empty TriageReport plus a nil
+// error would look identical to "genuinely nothing to review."
+func TestTriage_RefusedFreshnessRefusesBeforeListing(t *testing.T) {
+	t.Parallel()
+	hubRoot := t.TempDir()
+	seedBacklog(t, hubRoot, 16)
+	writeInboxItem(t, hubRoot, "fb-20260701-aaaaaa", "bug", "must not be listed on a refused verdict", "new")
+
+	freshness := Freshness{
+		Status:      FreshnessRefused,
+		Reason:      "hub's default branch carries fb-20260808-999999, which this tree lacks",
+		HubOfRecord: "https://github.com/ydnikolaev/a2ahub",
+	}
+	report, err := Triage(hubRoot, freshness)
+	if err == nil {
+		t.Fatalf("Triage returned nil error for a refused freshness verdict, report = %+v", report)
+	}
+	if !strings.Contains(err.Error(), freshness.Reason) {
+		t.Errorf("error = %q, want it to name the reason %q", err.Error(), freshness.Reason)
+	}
+	if !strings.Contains(err.Error(), freshness.HubOfRecord) {
+		t.Errorf("error = %q, want it to name the hub of record %q", err.Error(), freshness.HubOfRecord)
+	}
+	if len(report.Entries) != 0 {
+		t.Fatalf("report.Entries = %+v, want empty on a refused verdict (never a listing)", report.Entries)
+	}
+}
+
+// TestTriage_RefusedFreshnessWithNoReasonNamesUnresolved is the zero-value
+// case: a Freshness nobody resolved (Reason and HubOfRecord both blank,
+// Status defaulting to FreshnessRefused because that is iota 0) must still
+// refuse, and its error must say so rather than printing a blank reason —
+// proving the fail-closed zero value actually reads as a real refusal, not
+// a silently empty one (§11 wave D2: "a Freshness value nobody resolved...
+// must fail CLOSED").
+func TestTriage_RefusedFreshnessWithNoReasonNamesUnresolved(t *testing.T) {
+	t.Parallel()
+	hubRoot := t.TempDir()
+	seedBacklog(t, hubRoot, 16)
+
+	report, err := Triage(hubRoot, Freshness{})
+	if err == nil {
+		t.Fatalf("Triage returned nil error for a zero-value (unresolved) freshness verdict, report = %+v", report)
+	}
+	if !strings.Contains(err.Error(), "never resolved") {
+		t.Errorf("error = %q, want it to name the verdict as never resolved", err.Error())
+	}
+}
+
+// TestTriage_CurrentFreshnessAllowsClean proves the OTHER admitted status
+// (FreshnessCurrent, not just FreshnessNotApplicable) reaches the ordinary
+// listing path rather than refusing.
+func TestTriage_CurrentFreshnessAllowsClean(t *testing.T) {
+	t.Parallel()
+	hubRoot := t.TempDir()
+	seedBacklog(t, hubRoot, 16)
+
+	report, err := Triage(hubRoot, Freshness{Status: FreshnessCurrent})
+	if err != nil {
+		t.Fatalf("Triage: %v", err)
+	}
+	if !report.Clean() {
+		t.Fatalf("expected a clean report for an empty inbox under FreshnessCurrent, got %+v", report.Entries)
 	}
 }
 
@@ -196,7 +275,7 @@ func TestApplyVerdicts_MutatesRoutesDigestsAndIsIdempotent(t *testing.T) {
 	// Idempotent: after applying verdicts, both items are no longer
 	// status:new, so triage is clean and a re-apply of the SAME verdicts
 	// is a no-op (skipped, not re-applied/re-digested).
-	report, err := Triage(hubRoot)
+	report, err := Triage(hubRoot, Freshness{Status: FreshnessNotApplicable})
 	if err != nil {
 		t.Fatalf("Triage: %v", err)
 	}
