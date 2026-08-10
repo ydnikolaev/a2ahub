@@ -168,6 +168,11 @@ entries:
     title: An unmet[] index does not resolve to an entry in the parent's acceptance_criteria
     applies_to: envelope/v2 response `unmet[]` validated against the parent's declared acceptance_criteria — an index naming a criterion that does not exist is worse than prose, because it reads as precise (agent-exchange-2026-08/P6, AC1)
 
+  - code: REF-019
+    class: referential
+    title: A verdicts[] index does not resolve to an entry in the parent's acceptance_criteria
+    applies_to: event/v2 verify/close `verdicts[].index`, validated against the event's subject's declared acceptance_criteria — REF-018's own rule extended from a response's `unmet[]` to a verifier's `verdicts[]` (agent-exchange-2026-08/P6 wave C, AC7, threat-model.md T5)
+
   - code: LFC-001
     class: lifecycle
     title: Event encodes an illegal transition for the subject's current folded state

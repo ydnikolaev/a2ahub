@@ -453,6 +453,10 @@ fields:
     produced_by: TOOL
     produced_by.tool: TOOL
     produced_by.version: TOOL
+    verdicts: AUTHOR
+    verdicts[].index: AUTHOR
+    verdicts[].verdict: AUTHOR
+    verdicts[].cause_owner: AUTHOR
   manifest/v1/space:
     schema: TOOL
     space: CONFIG

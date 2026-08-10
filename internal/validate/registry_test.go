@@ -322,6 +322,22 @@ func TestRegistryClosure(t *testing.T) {
 		map[string]any{"unmet": []any{int64(9)}},
 		&criteriaResolver{criteria: map[string]int{"XW-axon-20260808-clos": 1}},
 	))
+	// REF-019: P6 wave C's verdicts[] index-range mirror. It is dormant for
+	// a THIRD reason on top of the two above, and the reason is worth stating
+	// because it is not "nobody wired it yet": `ValidateEvent` takes no
+	// Resolver at all, and the two transitions the schema makes verdicts[]
+	// conditionally required on — verify and close — are still authored as
+	// `event/v1` by cmd_lifecycle.go, so no event the shipped binary writes
+	// can carry the field. Both are recorded in threat-model.md's T5 and in
+	// specs/06 §11. The stub keeps the code PRODUCIBLE while that is true, so
+	// this gate is not watching nothing.
+	record(checkVerdictIndexRange(
+		"XW-axon-20260808-clos",
+		map[string]any{"verdicts": []any{map[string]any{
+			"index": int64(9), "verdict": "met", "cause_owner": "axon",
+		}}},
+		&criteriaResolver{criteria: map[string]int{"XW-axon-20260808-clos": 1}},
+	))
 	record(checkResidue(
 		envelope{Type: "response", Parent: "XW-axon-20260808-clos"},
 		map[string]any{"unmet": []any{int64(0)}},

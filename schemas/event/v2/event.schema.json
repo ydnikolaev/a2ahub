@@ -102,6 +102,31 @@
       },
       "required": ["tool", "version"],
       "additionalProperties": false
+    },
+    "verdicts": {
+      "type": "array",
+      "description": "P6 wave C (docs/features/active/agent-exchange-2026-08/specs/06-incompleteness.md §7/§11, threat-model.md T5, readiness audit row 25): the verifier's own mirror of a response's `unmet[]` (envelope/v2/response.schema.json) — one entry per judged criterion, indexed into the SAME parent `acceptance_criteria[]` by the same grammar (never restated in prose), so a false verdict has a named author (`cause_owner`) rather than living only in a transition-free note. Conditionally required on `verify`/`close` below. Index-range validation against the parent is internal/validate's job (REF-019), not this schema's — mirroring how `unmet[]`'s own range check (REF-018) lives off envelope/v2/response.schema.json too.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Index into the parent's acceptance_criteria[] this verdict judges — the same by-index grammar unmet[] uses, checked for range by REF-019."
+          },
+          "verdict": {
+            "type": "string",
+            "enum": ["met", "unmet", "not_warranted", "not_exercised"]
+          },
+          "cause_owner": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Who the verifier holds responsible for a non-met verdict — the attributability T5 names as its only discharge. Present on every entry, including `met` ones, so the array cannot mix attributed and unattributed judgements."
+          }
+        },
+        "required": ["index", "verdict", "cause_owner"],
+        "additionalProperties": false
+      }
     }
   },
   "required": ["schema", "event", "space", "subject", "transition", "actor", "at"],
@@ -116,6 +141,18 @@
       },
       "then": {
         "required": ["version", "digest", "digest_profile", "publication"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "transition": { "enum": ["verify", "close"] }
+        },
+        "required": ["transition"]
+      },
+      "then": {
+        "description": "T5's discharge: a verify or close over a parent's acceptance criteria must name a per-criterion verdict, not leave the judgement in prose. No minItems floor — a close over a parent that declares no acceptance_criteria[] at all must stay expressible with an empty array.",
+        "required": ["verdicts"]
       }
     }
   ],

@@ -18,4 +18,5 @@ POL-016	live	operational-confidence/P1	first-party actor model or session is uns
 REF-017	live	agent-exchange-2026-08/P4	body names a digest no declared attachment carries	19f66c57	-
 POL-017	live	agent-exchange-2026-08/P4	body enumerates a file tree while no attachment is declared	19f66c57	-
 REF-018	live	agent-exchange-2026-08/P6	an unmet[] index does not resolve to an entry in the parent's acceptance_criteria	3c256c4f	-
+REF-019	live	agent-exchange-2026-08/P6	a verdicts[] index does not resolve to an entry in the parent's acceptance_criteria	PENDING	-
 LFC-004	live	agent-exchange-2026-08/P6	a terminal transition closes a parent carrying an unmet criterion with no residue	3c256c4f	-

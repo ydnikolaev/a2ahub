@@ -143,7 +143,22 @@ func normalizeTo(v any) []string {
 	}
 }
 
-// eventProbe is cache's own minimal event/v1 decode.
+// eventVerdictEntry mirrors one entry of an event's `verdicts[]` field
+// (event/v2/event.schema.json, P6 wave C, threat-model.md T5): the
+// verifier's own per-criterion judgement, indexed into the parent's
+// `acceptance_criteria[]` the same way a response's `unmet[]` is
+// (internal/validate's REF-018/REF-019 share the range rule). Index is
+// int64, not int — the same yaml.v3 `!!int` decode this package's other
+// integer-shaped probes already assume, never re-parsed through a second
+// decoder.
+type eventVerdictEntry struct {
+	Index      int64  `yaml:"index"`
+	Verdict    string `yaml:"verdict"`
+	CauseOwner string `yaml:"cause_owner"`
+}
+
+// eventProbe is cache's own minimal event/v1 (and, for the fields it
+// shares, event/v2) decode.
 type eventProbe struct {
 	Schema     string `yaml:"schema"`
 	Event      string `yaml:"event"`
@@ -167,6 +182,14 @@ type eventProbe struct {
 	Note       string     `yaml:"note"`
 	Refs       []refEntry `yaml:"refs"`
 	Version    string     `yaml:"version"`
+	// Verdicts is event/v2's own `verdicts[]` field: the C7 "entry hop"
+	// this package's decode boundary owes it — decoded here, not yet
+	// promoted into mirror.go's read model (an off-this-wave's-allowlist
+	// change; see internal/validate/verdicts.go's package doc for the
+	// rest of what remains dormant). Empty on every event that carries
+	// none, which is every event/v1 document and every event/v2 one whose
+	// transition isn't verify/close.
+	Verdicts []eventVerdictEntry `yaml:"verdicts"`
 }
 
 // decodeEnvelope decodes raw's YAML frontmatter block into an
