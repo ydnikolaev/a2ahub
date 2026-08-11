@@ -32,10 +32,14 @@ notification components: PASS · notifications not enabled for this project
 statusline wiring: PASS
 skill discoverable: PASS · no a2ahub skill installed
 skill manual current: PASS · no skill installed
+repository visibility [getvisa]: PASS: no observed mismatch
 ```
 
-All sixteen lines, in the order the binary prints them. **A `PASS` carrying a
-note is a pass** — do not report it as a problem.
+All sixteen fixed checks, in the order the binary prints them, followed by
+one `repository visibility` row per connected space (this project has one,
+`getvisa`) — that row is not one of the fixed sixteen and always prints
+LAST, after every one of them. **A `PASS` carrying a note is a pass** — do
+not report it as a problem.
 
 Twelve rows can print `PASS · <note>`:
 
@@ -82,9 +86,26 @@ violated).
 
 ## The sixteen checks
 
-Each check runs once per connected space (a project with no connected spaces
-passes every check trivially). They print in this order — if you are reading
-`doctor`'s output top to bottom, this is the same order.
+`doctor` prints a fixed set of exactly sixteen checks — that fixed count is
+what this heading names, and it is why the count and the heading are kept in
+lockstep by the test guarding this file. **Each of the sixteen runs once per
+PROJECT, not once per connected space**: when a check must reason about
+several connected spaces, it folds any per-space detail into a single line
+(`space access` and `credentials`, for example, join per-space failures with
+`; `). They print in the order below, top to bottom, matching `doctor`'s own
+output.
+
+The table carries a seventeenth row, `repository visibility`, because it is
+real output you will see — but it is NOT one of the fixed sixteen and shares
+neither their order nor their cardinality. It prints ONE row PER CONNECTED
+SPACE, after every fixed check, so it is always LAST in the output and absent
+entirely from a project with no connected spaces. Its printed name carries
+the space id (`repository visibility [getvisa]`), which no other row does.
+
+**So the table below is in output order, all seventeen rows** — read it top to
+bottom and you are reading `doctor`'s own sequence. That is worth stating
+because it was not true until 2026-08-12: this row sat eighth in the table
+under a sentence promising output order, while the binary printed it last.
 
 | Check | What it verifies | A FAIL means |
 |-------|------------------|--------------|
@@ -95,7 +116,6 @@ passes every check trivially). They print in this order — if you are reading
 | **versions** | This build is not older than each space's `min_binary_version` pin in `space.yaml`. The literal local build stamp `dev` reports an unreleased-build advisory and skips the comparison; any other malformed version still fails. | Your released `a2a` binary is older than the space requires (or the space's `space.yaml` could not be read/parsed). Upgrade the binary; the write funnel will otherwise refuse your writes. |
 | **CI presence** | The space's mirror carries `.github/workflows/a2a-validate.yml`. | The validation workflow file is missing from the space's mirror. |
 | **space scaffolding current** | Whether the SPACE is behind what THIS binary's embedded template would write — the pinned reusable-workflow ref, `min_binary_version`, and the template-managed files. This is the REVERSE of `versions`, which only asks whether your binary is too old for the space. | **Advisory only — this row never FAILs**, because a behind space still accepts writes; what it costs is a weaker gate. A note means the space's CI may be running an older validator than you think, so a rule your binary enforces locally might not be enforced at merge. The note names who can act: if your credential has push/admin on the space repo it tells you to run `a2a space update` (which opens a PR — a2a changes no repo setting); if it does not, it gives you one sentence to hand the space admin. A note saying it could not be checked means no mirror, an unreadable manifest, or a dev build with no release version to compare against. |
-| **repository visibility** | Whether the space repo's GitHub visibility matches what the material inside it is classified as. Visibility is read from the host; classification comes from the artifacts themselves. | **This row never FAILs — it PASSes or reports UNVERIFIED**, because visibility is evidence, never write authority. A **WARN** on a PUBLIC repo means it carries higher-classified material than `public`: that is the one reading to act on, and the fix is the repository's visibility or the material's classification, not this row. On a **private or internal** repo carrying nothing `restricted`, it PASSes as "no observed mismatch". On a private repo that DOES carry `restricted` material it PASSes only when a bilateral proof source is named; otherwise it reports UNVERIFIED with "repository privacy alone does not prove intended pairwise audience" — which is **not a problem to fix**. It says the honest thing: a private repo proves the audience is small, never that it is the specific pair the material was restricted to. An UNVERIFIED reading "visibility could not be verified" means the credential could not read repo metadata (a fine-grained token needs `Repository metadata: read`), so the answer is unknown rather than bad. |
 | **auto-merge enabled** | The space repo's GitHub `allow_auto_merge` setting is ON. It is OFF by default on a freshly created repository. | Every write stalls: `a2a submit` opens a PR and arms auto-merge, so with the setting off the PR sits there and the counterparty never sees the artifact. Enable Settings → General → "Allow auto-merge". **A PASS carrying `· auto-merge unverified` is not a failure** — it means your credential cannot read repo settings (a fine-grained token needs `Repository metadata: read`), so the answer is unknown rather than bad. |
 | **stuck green PRs** | Every historical open PR whose required check is explicitly green has auto-merge armed. | A named PR is green and unmerged but no automatic merge is armed. Doctor prints the exact safe `gh pr merge <n> --auto --repo <owner>/<repo>` remedy and never merges it itself. A PASS carrying `· stuck-green state unverified` means host state or credentials were unavailable, not that no stuck PR exists. |
 | **codeowners resolvable** | Every owner named in the space's `CODEOWNERS` actually resolves — read from GitHub's own `repos/{owner}/{repo}/codeowners/errors`, with the line number. | GitHub **ignores** an owner it cannot resolve rather than rejecting it, so a `CODEOWNERS` naming a team nobody created looks like it gates `/space.yaml` and gates nothing — and code-owner review is the only thing standing behind the file that decides who may write where. A FAIL quotes GitHub's own suggestion, which names all three conditions an owner must meet: the team exists, is publicly visible, and has write access to the repo. Individual logins avoid all three. **A PASS carrying `· CODEOWNERS unverified` is not a failure** — your credential cannot read that endpoint (a fine-grained token needs `Repository metadata: read`), so the answer is unknown rather than bad. |
@@ -105,6 +125,7 @@ passes every check trivially). They print in this order — if you are reading
 | **statusline wiring** | The `git` binary is on `PATH` (the prerequisite for §7.5's hub-less statusline-refresh fallback). | `git` is not on `PATH`, so the statusline's git-fetch fallback refresh cannot run. |
 | **skill discoverable** | The `a2ahub` skill tree is installed and reachable by your agent harness. | Advisory only — this row never FAILs. It reports whether a skill is installed at all. |
 | **skill manual current** | The installed skill's generated reference matches this binary's own command catalog. | Advisory only — this row never FAILs. A note here means the installed manual describes a different binary version; `a2a skill install` refreshes it. |
+| **repository visibility** | Whether the space repo's GitHub visibility matches what the material inside it is classified as. Visibility is read from the host; classification comes from the artifacts themselves. | **This row never FAILs — it PASSes or reports UNVERIFIED**, because visibility is evidence, never write authority. A **WARN** on a PUBLIC repo means it carries higher-classified material than `public`: that is the one reading to act on, and the fix is the repository's visibility or the material's classification, not this row. On a **private or internal** repo carrying nothing `restricted`, it PASSes as "no observed mismatch". On a private repo that DOES carry `restricted` material it PASSes only when a bilateral proof source is named; otherwise it reports UNVERIFIED with "repository privacy alone does not prove intended pairwise audience" — which is **not a problem to fix**. It says the honest thing: a private repo proves the audience is small, never that it is the specific pair the material was restricted to. An UNVERIFIED reading "visibility could not be verified" means the credential could not read repo metadata (a fine-grained token needs `Repository metadata: read`), so the answer is unknown rather than bad. |
 
 ## Known limits — do NOT over-read a PASS
 
