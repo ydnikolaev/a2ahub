@@ -63,6 +63,15 @@ func TestStatus_UnreachableHubDegradesToUnknown(t *testing.T) {
 	if len(rows) != 1 || rows[0].HubStatus != "unknown" {
 		t.Fatalf("rows = %+v, want a single row with HubStatus unknown", rows)
 	}
+	// P9 AC4's third clause, in full: `unknown` AND a BLANK resolution. The
+	// status alone was asserted here and the resolution was not, which left
+	// the half that actually matters unpinned — a verdict manufactured from
+	// ledger data would still read `unknown` and would carry a resolution
+	// the hub never said, which is the shape AC4 exists to refuse. Nothing
+	// populates Resolution on this path today; this is what keeps it so.
+	if rows[0].Resolution != "" {
+		t.Fatalf("Resolution = %q, want blank — an unreachable hub must not manufacture a verdict from ledger data (AC4)", rows[0].Resolution)
+	}
 }
 
 func TestDefaultHubReader_HappyAndNotFound(t *testing.T) {
