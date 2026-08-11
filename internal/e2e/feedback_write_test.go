@@ -52,9 +52,12 @@ func writeFeedbackDraft(t *testing.T, dir string) string {
 }
 
 // TestFeedbackSubmitWrite is spec 25 §11 A5's mandated direct-construction
-// e2e for `a2a feedback submit`: the t3 exec harness cannot reach a host
-// (cmd/a2a/wire.go hardcodes githubAPIBaseURL, no env override), so this is
-// the TestT3Submit idiom's own copy — real feedback.Submitter + real
+// e2e for `a2a feedback submit`: this is the TestSubmitDirectConstruction
+// idiom's own copy — chosen because the assertions below read a
+// host.FakeHost Go value's recorded calls, which an exec'd binary cannot be
+// handed (P11 wave C: the binary CAN reach a throwaway HTTP host via
+// cmd/a2a/wire.go's `A2A_GITHUB_API` — the older "no env override" reason
+// stated here was false). Real feedback.Submitter + real
 // space.WriteFunnel + host.NewFakeHost() + a testkit/spacefixture bare
 // origin standing in for the feedback repo's remote (§11 A8: a local
 // mirror clone under the project's own .a2a/cache/feedback-repo/<slug>/,

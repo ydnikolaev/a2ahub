@@ -29,19 +29,31 @@ import (
 // template list, validate, sync, inbox, outbox, show, thread, search,
 // contracts, statusline, doctor, plus submit's CC-002 local refusal (which
 // runs — and must run — BEFORE any network call, per cmd/a2a/wire.go's
-// runSubmit ordering). The write-path verbs that mutate a space (submit's
-// success path, every lifecycle verb, every contract sub-verb) are NOT
-// exec-able against this fixture: cmd/a2a/wire.go hard-codes
-// `githubAPIBaseURL = "https://api.github.com"` (no env/flag override) and
-// `parseGitHubRepo` requires a github.com-shaped remote URL, so an exec'd
-// `a2a submit`/`ack`/`contract publish` against a local-path fixture cannot
-// reach a real OpenPR call without editing cmd/a2a (off-limits — see this
-// phase's reported deviation). Those verbs are covered instead by
-// TestT3LifecycleVerbs / TestT3ContractVerbs / TestT3Submit in this same
-// package, using the plan's OWN binding mechanism for the write path (real
-// space.WriteFunnel + host.NewFakeHost + testkit/spacefixture, direct
-// construction — the cmd_submit_test.go/cmd_lifecycle_test.go idiom), which
-// is the only way to inject a FakeHost at all.
+// runSubmit ordering).
+//
+// CORRECTED (agent-exchange-2026-08 P11 wave C, spec 11 AC9): the write path
+// CAN be exec'd, and IS —
+// cmd/a2a/wire.go defines an `A2A_GITHUB_API` env override (githubAPIEnv,
+// resolved by githubAPIBase) precisely so a throwaway fake host can stand in
+// for api.github.com, and host_loop_test.go's own hostRig (newHostRig)
+// already execs the built binary against exactly that fake host —
+// data_loop_test.go's TestDataLoopFailSupersedePassCloseInboxNeverAccumulates
+// and event_v2_binary_test.go's TestT3ContractActivateThroughRealBinary /
+// TestT3CloseAndVerifyVerdictThroughRealBinary /
+// TestT3VerifyVerdictRefusedBelowContractPublicationFloor all drive real
+// writes through it. This file's own scenarios simply don't need a fake
+// host: every scenario here is read-only or a local-only refusal.
+//
+// What remains true is narrower than the old claim: every lifecycle verb
+// and every contract sub-verb ALSO has a cheaper, direct-construction
+// in-process test in this same package (real space.WriteFunnel +
+// host.NewFakeHost + testkit/spacefixture, skipping cmd/a2a/wire.go
+// entirely — the cmd_submit_test.go/cmd_lifecycle_test.go idiom) —
+// TestLifecycleVerbsThroughWriteFunnel (lifecycle_write_test.go),
+// TestContractNewPublishDeprecateDirectConstruction (contract_write_test.go),
+// TestSubmitDirectConstruction (submit_write_test.go), and their sibling
+// direct-construction tests across this package. Those are named for what
+// they actually drive, not for a tier they don't reach.
 func TestT3Scripts(t *testing.T) {
 	fx := spacefixture.New(t, "axon", "beta", "gamma")
 	origin := fx.RemoteURL()

@@ -9,9 +9,11 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
-// TestT3Await is the direct-construction evidence for the network-backed
-// await verb: it observes a recorded PR become merged, refreshes, and clears.
-func TestT3Await(t *testing.T) {
+// TestAwaitThroughStubbedAwaitTarget is the direct-construction evidence
+// for the network-backed await verb: it observes a recorded PR become
+// merged, refreshes, and clears, by injecting a stub cli.AwaitTarget
+// function — in-process, never the exec'd binary tier.
+func TestAwaitThroughStubbedAwaitTarget(t *testing.T) {
 	t.Parallel()
 	refreshed, cleared := false, false
 	cmd := cli.NewAwaitCommand(func(context.Context, string) (cli.AwaitTarget, error) {

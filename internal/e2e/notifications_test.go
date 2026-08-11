@@ -38,7 +38,10 @@ func (b notificationBackend) Open(context.Context, notification.OpenRequest) (no
 	return notification.OpenResult{}, nil
 }
 
-func TestT3Notifications(t *testing.T) {
+// TestNotificationsStatusThroughStubbedBackend drives `a2a notifications
+// status --json` against the hand-written notificationBackend stub above —
+// in-process, never the exec'd binary tier.
+func TestNotificationsStatusThroughStubbedBackend(t *testing.T) {
 	t.Parallel()
 
 	var stdout, stderr bytes.Buffer

@@ -59,7 +59,8 @@ func newTestSubmitter(t *testing.T, fx *spacefixture.Fixture, fakeHost *host.Fak
 	// The fixture clone is already a real git working directory with an
 	// initial commit (spacefixture.New's own seed commit) — reuse it
 	// directly rather than re-cloning through space.CloneOrFetch, mirroring
-	// internal/e2e's own TestT3Submit idiom (mirrorDir = fx.Clone(...)).
+	// internal/e2e's own TestSubmitDirectConstruction idiom
+	// (mirrorDir = fx.Clone(...)).
 	mirrorDir := fx.Clone("feedback")
 	sub.SetMirrorDirForTest(func(string, string) string { return mirrorDir })
 	sub.SetCloneOrFetchForTest(func(context.Context, string, string, host.Credential) error { return nil })

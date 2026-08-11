@@ -1,11 +1,13 @@
 // contract_cov_test.go extends P26 wave 14c's Contract ops family (spec 26
-// §2): the sub-verb paths TestT3ContractNewPublishDeprecate/
-// TestT3ContractRetireCleanUngated/TestT3ContractDiff/
-// TestT3ContractVerifyExportLocal (contract_write_test.go) don't already
-// cover — retire BLOCKED on missing consumer acks + its --override escape
-// hatch, `diff --json`, and verify-export's tampered-digest refusal path.
-// Same direct-construction idiom (real space.WriteFunnel + host.NewFakeHost
-// + spacefixture clone), same helpers (never redeclared — see
+// §2): the sub-verb paths TestContractNewPublishDeprecateDirectConstruction/
+// TestContractRetireCleanUngatedDirectConstruction/
+// TestContractDiffDirectConstruction/
+// TestContractVerifyExportLocalDirectConstruction (contract_write_test.go)
+// don't already cover — retire BLOCKED on missing consumer acks + its
+// --override escape hatch, `diff --json`, and verify-export's
+// tampered-digest refusal path. Same direct-construction idiom (real
+// space.WriteFunnel + host.NewFakeHost + spacefixture clone, in-process —
+// never the exec'd binary tier), same helpers (never redeclared — see
 // contract_write_test.go/helpers_test.go, this file only ADDS scenarios).
 package e2e
 
@@ -22,13 +24,14 @@ import (
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
 
-// TestT3ContractRetireBlockedUnackedConsumer is spec 26 §2's "retire
-// blocked on missing consumer acks" clause (§5.4/D-022/POL-006, internal/
-// cli's own TestContractRetireUnackedNoOverrideBlocked precedent, ported to
-// the real funnel + FakeHost): a registered consumer (consumes.yaml) that
-// has not acked the linked deprecation announcement blocks retire locally,
-// before the funnel is ever called.
-func TestT3ContractRetireBlockedUnackedConsumer(t *testing.T) {
+// TestContractRetireBlockedUnackedConsumerDirectConstruction is spec 26
+// §2's "retire blocked on missing consumer acks" clause (§5.4/D-022/POL-006,
+// internal/cli's own TestContractRetireUnackedNoOverrideBlocked precedent,
+// ported to the real funnel + FakeHost, driven in-process — never the
+// exec'd binary tier): a registered consumer (consumes.yaml) that has not
+// acked the linked deprecation announcement blocks retire locally, before
+// the funnel is ever called.
+func TestContractRetireBlockedUnackedConsumerDirectConstruction(t *testing.T) {
 	t.Parallel()
 	fx := spacefixture.New(t, "axon", "beta", "gamma")
 	mirrorDir := fx.Clone("axon")
@@ -55,15 +58,16 @@ func TestT3ContractRetireBlockedUnackedConsumer(t *testing.T) {
 	}
 }
 
-// TestT3ContractRetireOverrideUnackedConsumer is spec 26 §2's "then
-// --override" clause: sunset passed + a reminder + a human actor +
-// --override succeeds despite beta's un-acked consumption, and the retire
+// TestContractRetireOverrideUnackedConsumerDirectConstruction is spec 26
+// §2's "then --override" clause: sunset passed + a reminder + a human actor
+// + --override succeeds despite beta's un-acked consumption, and the retire
 // event flags the overridden consumer. Mirrors internal/cli's own
 // TestContractRetireOverrideFullPreconditionSucceeds fixed-clock idiom
 // EXACTLY (SetClockForTest + sunset one day before the fixed "now") — every
 // piece of the full precondition must be present or the override path
-// itself refuses for the wrong reason.
-func TestT3ContractRetireOverrideUnackedConsumer(t *testing.T) {
+// itself refuses for the wrong reason. In-process, never the exec'd binary
+// tier.
+func TestContractRetireOverrideUnackedConsumerDirectConstruction(t *testing.T) {
 	t.Parallel()
 	fixedNow := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
 	sunset := fixedNow.AddDate(0, 0, -1).Format("2006-01-02") // one day before the fixed clock: passed
@@ -92,11 +96,12 @@ func TestT3ContractRetireOverrideUnackedConsumer(t *testing.T) {
 	}
 }
 
-// TestT3ContractDiffJSON is spec 26 §2's `diff --json` clause. It asserts
-// the SPEC'd contract — machine-parseable JSON (contractDiffTree's own
-// `json:"..."` struct tags are the intended wire format, and `--json` is
-// the flag's whole point) — not whatever cmd_contract.go's runDiff happens
-// to emit today.
+// TestContractDiffJSONDirectConstruction is spec 26 §2's `diff --json`
+// clause. It asserts the SPEC'd contract — machine-parseable JSON
+// (contractDiffTree's own `json:"..."` struct tags are the intended wire
+// format, and `--json` is the flag's whole point) — not whatever
+// cmd_contract.go's runDiff happens to emit today. Direct-construction,
+// in-process; never the exec'd binary tier.
 //
 // REGRESSION GUARD (P26 wave 14c found the defect; fixed by the lead in the
 // same phase): runDiff's --json branch (internal/cli/cmd_contract.go) used to
@@ -105,7 +110,7 @@ func TestT3ContractRetireOverrideUnackedConsumer(t *testing.T) {
 // json.Unmarshal — an isolated one-file defect (every other CLI --json uses
 // encoding/json). Fixed to `json.NewEncoder(...).SetIndent(...)`; this test
 // asserts the output is valid JSON so the regression can't reappear.
-func TestT3ContractDiffJSON(t *testing.T) {
+func TestContractDiffJSONDirectConstruction(t *testing.T) {
 	t.Parallel()
 	fx := spacefixture.New(t, "axon", "beta", "gamma")
 	mirrorDir := fx.Clone("axon")
@@ -153,12 +158,13 @@ func TestT3ContractDiffJSON(t *testing.T) {
 	}
 }
 
-// TestT3ContractVerifyExportTamperedDigest is spec 26 §2's "tampered-digest
-// red" transport clause: the P6 inspection fixture compares a drifted local
-// export with the recorded digest and the CLI emits the mismatch refusal. The
-// production repository/history implementation is covered by the P6 space
-// integration suite.
-func TestT3ContractVerifyExportTamperedDigest(t *testing.T) {
+// TestContractVerifyExportTamperedDigestDirectConstruction is spec 26 §2's
+// "tampered-digest red" transport clause: the P6 inspection fixture compares
+// a drifted local export with the recorded digest and the CLI emits the
+// mismatch refusal. The production repository/history implementation is
+// covered by the P6 space integration suite. Direct-construction, in-process
+// — never the exec'd binary tier.
+func TestContractVerifyExportTamperedDigestDirectConstruction(t *testing.T) {
 	t.Parallel()
 	fx := spacefixture.New(t, "axon", "beta", "gamma")
 	mirrorDir := fx.Clone("axon")

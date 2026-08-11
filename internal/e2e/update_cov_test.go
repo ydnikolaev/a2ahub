@@ -91,15 +91,18 @@ func matchingUpdateRunner(version string) release.Runner {
 	}
 }
 
-// TestT3UpdateResolveVerifyRefuseChecksum drives the real
-// GitHubSource.Latest -> release.Resolve -> release.Apply pipeline
+// TestUpdateResolveVerifyRefuseChecksumThroughReleasePipeline drives the
+// real GitHubSource.Latest -> release.Resolve -> release.Apply pipeline
 // (cmd_update.go's own orchestration) against a LOCAL fake release-asset
 // fixture: a happy resolve+verify+swap onto a throwaway exec path, and a
 // refusal when the published SHA256SUMS does not match the asset —
 // ErrChecksumMismatch, never gateable by --allow-unsigned (T2/D-013), so the
 // running "binary" (a throwaway temp file, never the real test binary) is
-// provably untouched.
-func TestT3UpdateResolveVerifyRefuseChecksum(t *testing.T) {
+// provably untouched. This calls internal/release's own pipeline functions
+// directly, in-process — never the exec'd `a2a update` binary tier (see this
+// file's own DEVIATION doc comment above for why the verb itself is
+// unreachable from this package).
+func TestUpdateResolveVerifyRefuseChecksumThroughReleasePipeline(t *testing.T) {
 	t.Parallel()
 	assetBytes := []byte("FAKE-RELEASE-ASSET-v0.3.0")
 

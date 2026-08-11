@@ -10,7 +10,14 @@
 #     `go test -list ^<TestFuncName>$ ./<package-path>` and fails if the
 #     name does not come back.
 #   - tier     one of T1|T2|T3|E2E-1|E2E-4 (the tiers this phase and its
-#     predecessors actually ship — spec 10 §T5).
+#     predecessors actually ship — spec 10 §T5), or `in-process`, which
+#     names the ABSENCE of a binary-tier claim rather than a new tier
+#     (agent-exchange-2026-08 P11 wave C; same word as
+#     internal/e2e/coverage.go's tierInProcess).
+#     ENFORCED since that wave: the token must be in this set, and a `T3`
+#     row must name an internal/e2e test whose body actually reaches an
+#     exec seam. Before then this column was parsed and never read, and a
+#     row carried a `T3` no test backed.
 #   - status   "covered" (the only value this phase's gate checks for).
 #
 # Scope (spec 10 §T5, binding): this is a SUBSET of §12's full catalog —
@@ -47,14 +54,22 @@ rows:
   # Light extension per spec 26 §5 (the full §12 matrix stays v2); coverage.go's
   # TestE2ECoverageParity is now the primary verb-level coverage SSOT.
   - cc_id: CC-020
-    test_ref: internal/e2e.TestT3LifecycleTransitionCoverage
-    tier: T3
+    test_ref: internal/e2e.TestLifecycleTransitionCoverageDirectConstruction
+    tier: T2
     status: covered
   - cc_id: CC-023
-    test_ref: internal/e2e.TestT3LifecycleTransitionCoverage
-    tier: T3
+    test_ref: internal/e2e.TestLifecycleTransitionCoverageDirectConstruction
+    tier: T2
     status: covered
+  # RESOLVED by the lead (P11 wave C). The implementer reported, correctly,
+  # that TestContractVerifyExportTamperedDigestDirectConstruction is
+  # in-process — it never execs the built binary, so `tier: T3` was false —
+  # and that it is not fold determinism either, so T2 would be equally
+  # false. The decision is NOT to bend either token: this row declares
+  # `in-process`, the same word internal/e2e/coverage.go's tierInProcess
+  # already uses, which states the ABSENCE of a binary-tier claim rather
+  # than inventing a T-number the plan does not have.
   - cc_id: CC-084
-    test_ref: internal/e2e.TestT3ContractVerifyExportTamperedDigest
-    tier: T3
+    test_ref: internal/e2e.TestContractVerifyExportTamperedDigestDirectConstruction
+    tier: in-process
     status: covered

@@ -12,19 +12,21 @@ import (
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
 
-// TestT3LifecycleVerbs is AC-1's direct-construction half (see
-// txtar_test.go's doc comment for why the write path cannot be exec'd):
-// every OP-211 lifecycle verb, driven against a REAL space.WriteFunnel +
-// host.NewFakeHost + testkit/spacefixture clone — the plan's binding
-// mechanism for the write path (cmd_submit_test.go:200-245 /
+// TestLifecycleVerbsThroughWriteFunnel is AC-1's direct-construction half
+// (see txtar_test.go's doc comment for what the write path can and cannot
+// be exec'd against): every OP-211 lifecycle verb, driven against a REAL
+// space.WriteFunnel + host.NewFakeHost + testkit/spacefixture clone — the
+// plan's binding mechanism for the write path (cmd_submit_test.go:200-245 /
 // cmd_lifecycle_test.go:496-522 idiom). Each subtest seeds the minimal
 // legal prior state the verb's own transition requires (mirroring
 // internal/cli's own P8 test fixtures), then asserts: exit 0, exactly one
 // real PushBranch + one real OpenPR call recorded on the FakeHost (proving
 // the commit actually landed via git, not just that a fake funnel recorded
 // a call), and no leaked state onto another subtest's fixture (each
-// subtest builds its own spacefixture.New + t.Parallel()).
-func TestT3LifecycleVerbs(t *testing.T) {
+// subtest builds its own spacefixture.New + t.Parallel()). In-process —
+// never the exec'd binary tier — by construction: it calls cli.Command.Run
+// directly, no exec.Command anywhere in this file.
+func TestLifecycleVerbsThroughWriteFunnel(t *testing.T) {
 	t.Parallel()
 
 	type tc struct {
@@ -233,10 +235,11 @@ func TestT3LifecycleVerbs(t *testing.T) {
 	}
 }
 
-// TestT3BlockUnblock is the block/unblock pair (block leaves a "recover
-// prior state" marker that unblock reads back — a genuine two-step
-// round-trip against the SAME mirror).
-func TestT3BlockUnblock(t *testing.T) {
+// TestBlockUnblockDirectConstruction is the block/unblock pair (block
+// leaves a "recover prior state" marker that unblock reads back — a genuine
+// two-step round-trip against the SAME mirror). In-process, never the
+// exec'd binary tier.
+func TestBlockUnblockDirectConstruction(t *testing.T) {
 	t.Parallel()
 	fx := spacefixture.New(t, "axon", "beta", "gamma")
 	mirrorDir := fx.Clone("beta")
@@ -284,13 +287,14 @@ func TestT3BlockUnblock(t *testing.T) {
 	}
 }
 
-// TestT3RespondVerifyDispute chains respond -> verify (auto-closes a
-// single-response parent) and, on a second parent, respond -> dispute —
-// real funnel + FakeHost throughout, proving state committed by one verb
-// is legible to the NEXT verb against the same real git mirror (no fake
-// funnel materialization step needed, unlike internal/cli's own unit
-// tests: a REAL commit is really on disk).
-func TestT3RespondVerifyDispute(t *testing.T) {
+// TestRespondVerifyDisputeDirectConstruction chains respond -> verify
+// (auto-closes a single-response parent) and, on a second parent, respond ->
+// dispute — real funnel + FakeHost throughout, proving state committed by
+// one verb is legible to the NEXT verb against the same real git mirror (no
+// fake funnel materialization step needed, unlike internal/cli's own unit
+// tests: a REAL commit is really on disk). In-process, never the exec'd
+// binary tier.
+func TestRespondVerifyDisputeDirectConstruction(t *testing.T) {
 	t.Parallel()
 
 	t.Run("verify_auto_closes", func(t *testing.T) {
@@ -344,8 +348,9 @@ func TestT3RespondVerifyDispute(t *testing.T) {
 	})
 }
 
-// TestT3CloseFromResponded is the close-after-respond chain.
-func TestT3CloseFromResponded(t *testing.T) {
+// TestCloseFromRespondedDirectConstruction is the close-after-respond
+// chain. In-process, never the exec'd binary tier.
+func TestCloseFromRespondedDirectConstruction(t *testing.T) {
 	t.Parallel()
 	fx := spacefixture.New(t, "axon", "beta", "gamma")
 	mirrorDir := fx.Clone("beta")
@@ -370,13 +375,14 @@ func TestT3CloseFromResponded(t *testing.T) {
 	}
 }
 
-// TestT3RespondIdempotentRetryReturnsAlreadyOpen is AC-301.1's idempotent-
-// retry proof against the REAL funnel + FakeHost (cmd_lifecycle_test.go's
-// own TestRespondIdempotentRetryReturnsAlreadyOpen idiom, this package's
-// copy): a retried `respond` with IDENTICAL content and a FIXED clock lands
-// on the SAME deterministic branch, short-circuiting to
-// space.WriteStateAlreadyOpen — no second PR.
-func TestT3RespondIdempotentRetryReturnsAlreadyOpen(t *testing.T) {
+// TestRespondIdempotentRetryReturnsAlreadyOpenDirectConstruction is
+// AC-301.1's idempotent-retry proof against the REAL funnel + FakeHost
+// (cmd_lifecycle_test.go's own TestRespondIdempotentRetryReturnsAlreadyOpen
+// idiom, this package's copy): a retried `respond` with IDENTICAL content
+// and a FIXED clock lands on the SAME deterministic branch,
+// short-circuiting to space.WriteStateAlreadyOpen — no second PR.
+// In-process, never the exec'd binary tier.
+func TestRespondIdempotentRetryReturnsAlreadyOpenDirectConstruction(t *testing.T) {
 	t.Parallel()
 	fx := spacefixture.New(t, "axon", "beta", "gamma")
 	mirrorDir := fx.Clone("beta")

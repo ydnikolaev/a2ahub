@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -23,10 +24,32 @@ type ccCoverageFile struct {
 	Rows []ccCoverageRow `yaml:"rows"`
 }
 
+// ccTierVocabulary is the set cc-coverage.yaml's own header declares, plus
+// `in-process` — which names the ABSENCE of a binary-tier claim rather than
+// a new tier, exactly as internal/e2e/coverage.go's tierInProcess does one
+// file away. It was added by P11 wave C for CC-084, whose evidence is a
+// direct-construction command test: neither fold determinism (T2) nor an
+// exec'd binary (T3), and the row had been carrying a false `T3` because
+// nothing checked it.
+var ccTierVocabulary = map[string]struct{}{
+	"T1": {}, "T2": {}, "T3": {},
+	"E2E-1": {}, "E2E-4": {},
+	"in-process": {},
+}
+
 // TestCCCoverageGate is spec 10 §8 AC-5: parses the repo-root
 // cc-coverage.yaml and FAILS if any row's test_ref does not resolve to a
 // real, listable Go test (`go test -list`, the documented resolution
 // mechanism this phase's own plan brief names).
+//
+// P11 wave C (spec 11 AC9) added the SECOND half. The `tier` column was
+// parsed and never read — the file's header declared a vocabulary that
+// nothing enforced, which is how CC-084 came to carry `tier: T3` beside a
+// test that never execs the binary. A rule that is true and inert is the
+// defect class this whole phase exists to remove, so the tier is now
+// checked the same way internal/e2e/coverage.go's is: the token must be in
+// the declared vocabulary, and a row CLAIMING the binary tier must name an
+// internal/e2e test whose body actually reaches an exec seam.
 func TestCCCoverageGate(t *testing.T) {
 	root := repoRootForTest(t)
 	rows := loadCCCoverage(t, filepath.Join(root, "cc-coverage.yaml"))
@@ -36,6 +59,63 @@ func TestCCCoverageGate(t *testing.T) {
 	for _, row := range rows {
 		if err := resolveTestRef(root, row.TestRef); err != nil {
 			t.Errorf("cc-coverage.yaml: %s: test_ref %q does not resolve: %v", row.CCID, row.TestRef, err)
+		}
+		if err := checkCCTier(root, row); err != nil {
+			t.Errorf("cc-coverage.yaml: %s: %v", row.CCID, err)
+		}
+	}
+}
+
+// checkCCTier validates one row's tier claim. An empty tier is rejected
+// rather than defaulted: an undeclared tier must stay distinguishable from
+// a declared one.
+func checkCCTier(root string, row ccCoverageRow) error {
+	if _, ok := ccTierVocabulary[row.Tier]; !ok {
+		return &ccTierError{row.Tier, "not in cc-coverage.yaml's declared tier vocabulary (T1|T2|T3|E2E-1|E2E-4|in-process); an empty tier is undeclared, never a default"}
+	}
+	if row.Tier != tierT3 {
+		return nil
+	}
+	// A T3 claim is checkable only for this package's own tests; a ref into
+	// another package is refused rather than waved through, the same way
+	// resolveGoTestExecSeam refuses one.
+	return resolveGoTestExecSeam(root, row.TestRef)
+}
+
+type ccTierError struct {
+	tier   string
+	reason string
+}
+
+func (e *ccTierError) Error() string { return "tier " + strconv.Quote(e.tier) + ": " + e.reason }
+
+// TestCCCoverageGateCatchesFalseTierClaim is the tier half's teeth: both an
+// unrecognized token and a `T3` claim over an in-process test must fail.
+// Without this, the check could silently become a no-op again.
+func TestCCCoverageGateCatchesFalseTierClaim(t *testing.T) {
+	root := repoRootForTest(t)
+
+	for _, bad := range []string{"", "T7", "t3", "binary"} {
+		row := ccCoverageRow{CCID: "CC-000", TestRef: "internal/e2e.TestT3Scripts", Tier: bad}
+		if err := checkCCTier(root, row); err == nil {
+			t.Errorf("tier %q: expected rejection, got none", bad)
+		}
+	}
+
+	// A T3 claim over a test that provably never execs the binary.
+	false3 := ccCoverageRow{CCID: "CC-000", TestRef: "internal/e2e.TestNotificationsStatusThroughStubbedBackend", Tier: "T3"}
+	if err := checkCCTier(root, false3); err == nil {
+		t.Fatal("expected a T3 claim over an in-process test to FAIL, but it passed")
+	}
+
+	// And the gate is not broken in the other direction: a genuine T3 row
+	// and a genuine in-process row both pass.
+	for _, good := range []ccCoverageRow{
+		{CCID: "CC-000", TestRef: "internal/e2e.TestT3Scripts", Tier: "T3"},
+		{CCID: "CC-000", TestRef: "internal/e2e.TestNotificationsStatusThroughStubbedBackend", Tier: "in-process"},
+	} {
+		if err := checkCCTier(root, good); err != nil {
+			t.Errorf("expected %s/%s to pass, got: %v", good.TestRef, good.Tier, err)
 		}
 	}
 }

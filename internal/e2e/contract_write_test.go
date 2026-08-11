@@ -18,13 +18,16 @@ import (
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
 
-// TestT3ContractNewPublishDeprecate is AC-1's contract-lifecycle half
-// (OP-212): `contract new` (delegates to the real P6 NewCommand), then
-// `contract publish` (first-ever publish, G1-gated), then `contract
-// deprecate` — all against a REAL space.WriteFunnel + host.NewFakeHost +
-// spacefixture clone, each step's commit legible to the next (no fake-
-// funnel materialization step).
-func TestT3ContractNewPublishDeprecate(t *testing.T) {
+// TestContractNewPublishDeprecateDirectConstruction is AC-1's
+// contract-lifecycle half (OP-212): `contract new` (delegates to the real P6
+// NewCommand), then `contract publish` (first-ever publish, G1-gated), then
+// `contract deprecate` — all against a REAL space.WriteFunnel +
+// host.NewFakeHost + spacefixture clone, each step's commit legible to the
+// next (no fake-funnel materialization step). Direct-construction,
+// in-process; never the exec'd binary tier (see txtar_test.go's own doc
+// comment for why the write path is covered here rather than by a txtar
+// script).
+func TestContractNewPublishDeprecateDirectConstruction(t *testing.T) {
 	t.Parallel()
 	fx := spacefixture.New(t, "axon", "beta", "gamma")
 	mirrorDir := fx.Clone("axon")
@@ -83,9 +86,11 @@ func TestT3ContractNewPublishDeprecate(t *testing.T) {
 	}
 }
 
-// TestT3ContractRetireCleanUngated is OP-212's retire verb, general path
-// (no registered consumers -> succeeds ungated), real funnel + FakeHost.
-func TestT3ContractRetireCleanUngated(t *testing.T) {
+// TestContractRetireCleanUngatedDirectConstruction is OP-212's retire verb,
+// general path (no registered consumers -> succeeds ungated), real funnel +
+// FakeHost, direct-construction and in-process — never the exec'd binary
+// tier.
+func TestContractRetireCleanUngatedDirectConstruction(t *testing.T) {
 	t.Parallel()
 	fx := spacefixture.New(t, "axon", "beta", "gamma")
 	mirrorDir := fx.Clone("axon")
@@ -106,11 +111,12 @@ func TestT3ContractRetireCleanUngated(t *testing.T) {
 	}
 }
 
-// TestT3ContractDiff is OP-221's contract-diff transport clause: the required
-// P6 inspection service reports a changed schema path and the CLI renders it.
-// Exact Git-history selection and tree comparison belong to the P6 space
-// integration suite; this older direct-construction test owns CLI composition.
-func TestT3ContractDiff(t *testing.T) {
+// TestContractDiffDirectConstruction is OP-221's contract-diff transport
+// clause: the required P6 inspection service reports a changed schema path
+// and the CLI renders it. Exact Git-history selection and tree comparison
+// belong to the P6 space integration suite; this older direct-construction
+// test owns CLI composition. In-process, never the exec'd binary tier.
+func TestContractDiffDirectConstruction(t *testing.T) {
 	t.Parallel()
 	fx := spacefixture.New(t, "axon", "beta", "gamma")
 	mirrorDir := fx.Clone("axon")
@@ -143,11 +149,12 @@ func TestT3ContractDiff(t *testing.T) {
 	}
 }
 
-// TestT3ContractVerifyExportLocal is OP-213's transport result: the injected
-// P6 inspection service compares the local export with the recorded expected
-// digest and the CLI exits 0 for a match. Production repository lookup and
-// immutable-tree reconstruction are covered by the P6 space integration suite.
-func TestT3ContractVerifyExportLocal(t *testing.T) {
+// TestContractVerifyExportLocalDirectConstruction is OP-213's transport
+// result: the injected P6 inspection service compares the local export with
+// the recorded expected digest and the CLI exits 0 for a match. Production
+// repository lookup and immutable-tree reconstruction are covered by the P6
+// space integration suite. In-process, never the exec'd binary tier.
+func TestContractVerifyExportLocalDirectConstruction(t *testing.T) {
 	t.Parallel()
 	fx := spacefixture.New(t, "axon", "beta", "gamma")
 	mirrorDir := fx.Clone("axon")
@@ -222,12 +229,13 @@ func appendGeneratedFromDigest(t *testing.T, mirrorDir, slug, digest string) {
 	}
 }
 
-// TestT3ContractAdopt is the D-022 consumer-registry round trip
-// (`a2a contract adopt`): a REAL funnel + REAL V2 validation writing
+// TestContractAdoptDirectConstruction is the D-022 consumer-registry round
+// trip (`a2a contract adopt`): a REAL funnel + REAL V2 validation writing
 // <own-system>/consumes.yaml. The V2 pass matters here — a consumes.yaml
 // carries no envelope, so the submit validator has to route it to the
-// consumes/v1 schema check instead of demanding frontmatter.
-func TestT3ContractAdopt(t *testing.T) {
+// consumes/v1 schema check instead of demanding frontmatter. In-process,
+// never the exec'd binary tier.
+func TestContractAdoptDirectConstruction(t *testing.T) {
 	t.Parallel()
 	fx := spacefixture.New(t, "axon", "beta", "gamma")
 	mirrorDir := fx.Clone("axon")

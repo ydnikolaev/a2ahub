@@ -84,11 +84,17 @@ func assertIllegalRetry(t *testing.T, verb string, cmd cli.Command, args []strin
 	}
 }
 
-// TestT3LifecycleTransitionCoverage is wave 14c's own coverage test: one
-// subtest per OP-211 verb (+ approve/reject), each asserting the legal
-// transition's folded state (via assertShow) and the illegal transition's
-// LFC-### refusal (transition-matrix teeth, fold/legality.go).
-func TestT3LifecycleTransitionCoverage(t *testing.T) {
+// TestLifecycleTransitionCoverageDirectConstruction is wave 14c's own
+// coverage test: one subtest per OP-211 verb (+ approve/reject), each
+// asserting the legal transition's folded state (via assertShow) and the
+// illegal transition's LFC-### refusal (transition-matrix teeth,
+// fold/legality.go). The VERB under test — every mutation — is driven by
+// DIRECT construction against a real space.WriteFunnel + host.NewFakeHost,
+// never exec'd; assertShow's own read-verification call DOES exec the built
+// binary (`a2a show`), but only to observe the folded state after the
+// direct-construction write already landed, so this test still declares
+// tierInProcess in coverage.go, not tierT3.
+func TestLifecycleTransitionCoverageDirectConstruction(t *testing.T) {
 	t.Parallel()
 
 	t.Run("ack", func(t *testing.T) {
@@ -388,7 +394,8 @@ func TestT3LifecycleTransitionCoverage(t *testing.T) {
 		mirrorDir, remote, fakeHost, funnel := newVerbFixture(t, "beta", true)
 		// block and unblock share the SAME deterministic branch
 		// `a2a/beta/<id>` (WriteFunnel keys idempotency off artifact id,
-		// not verb — TestT3BlockUnblock's own documented finding). The
+		// not verb — TestBlockUnblockDirectConstruction's own documented
+		// finding). The
 		// default FakeHost.FindPRByHeadBranch (state=all, matching the
 		// real GitHubHost) would find block's still-"open" PR and
 		// short-circuit unblock's OWN Submit call before it ever commits
@@ -484,12 +491,15 @@ func TestT3LifecycleTransitionCoverage(t *testing.T) {
 	})
 }
 
-// TestT3LifecycleMultiIDBatch is spec §2's "multi-id forms" callout (P8-1:
-// N artifact IDs on one lifecycle verb produce exactly one commit/one PR)
-// exercised at the e2e level (real WriteFunnel + FakeHost, not the fake
-// funnel internal/cli's own unit test uses) with folded-state proof for
-// every one of the N ids, not just the commit/PR count.
-func TestT3LifecycleMultiIDBatch(t *testing.T) {
+// TestLifecycleMultiIDBatchDirectConstruction is spec §2's "multi-id forms"
+// callout (P8-1: N artifact IDs on one lifecycle verb produce exactly one
+// commit/one PR) exercised at the e2e level (real WriteFunnel + FakeHost,
+// not the fake funnel internal/cli's own unit test uses) with folded-state
+// proof for every one of the N ids, not just the commit/PR count.
+// Direct-construction, in-process — never the exec'd binary tier (see
+// TestLifecycleTransitionCoverageDirectConstruction's own doc comment for
+// why the assertShow read-verification call doesn't change that).
+func TestLifecycleMultiIDBatchDirectConstruction(t *testing.T) {
 	t.Parallel()
 	mirrorDir, remote, fakeHost, funnel := newVerbFixture(t, "beta", true)
 	ids := []string{"XQ-axon-20260721-c001", "XQ-axon-20260721-c002", "XQ-axon-20260721-c003"}

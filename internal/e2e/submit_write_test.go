@@ -45,11 +45,12 @@ func writeQuestionDraft(t *testing.T, dir, id, from, to string) string {
 	return path
 }
 
-// TestT3Submit is OP-205 `a2a submit`'s end-to-end round trip: real V2
-// validation (internal/validate's real Engine, not a stub) + real
-// space.WriteFunnel + host.NewFakeHost + a spacefixture clone — the
-// cmd_submit_test.go:200-245 idiom, this package's own copy.
-func TestT3Submit(t *testing.T) {
+// TestSubmitDirectConstruction is OP-205 `a2a submit`'s end-to-end round
+// trip: real V2 validation (internal/validate's real Engine, not a stub) +
+// real space.WriteFunnel + host.NewFakeHost + a spacefixture clone — the
+// cmd_submit_test.go:200-245 idiom, this package's own copy. In-process,
+// never the exec'd binary tier.
+func TestSubmitDirectConstruction(t *testing.T) {
 	t.Parallel()
 	fx := spacefixture.New(t, "axon", "beta", "gamma")
 	mirrorDir := fx.Clone("axon")
@@ -113,9 +114,10 @@ func writeStagedDraft(t *testing.T, dir, id, content string) string {
 	return path
 }
 
-// newSubmitRig builds the full real-funnel submit rig TestT3Submit uses
-// (real V2 engine + real WriteFunnel + FakeHost + a fixture clone), so the
-// per-type round-trip tests below differ only in the draft they submit.
+// newSubmitRig builds the full real-funnel submit rig
+// TestSubmitDirectConstruction uses (real V2 engine + real WriteFunnel +
+// FakeHost + a fixture clone), so the per-type round-trip tests below differ
+// only in the draft they submit.
 func newSubmitRig(t *testing.T) (*cli.SubmitCommand, *host.FakeHost, string, string) {
 	t.Helper()
 	fx := spacefixture.New(t, "axon", "beta", "gamma")
@@ -137,14 +139,15 @@ func newSubmitRig(t *testing.T) (*cli.SubmitCommand, *host.FakeHost, string, str
 	return cmd, fakeHost, mirrorDir, stagingDir
 }
 
-// TestT3SubmitContract is the contract family's missing round trip: `a2a
-// submit` of a staged XC draft, through the SAME real funnel + real V2
-// engine TestT3Submit uses. The committed path is §4.2's fixed
-// <system>/provides/<slug>/contract.md, whose filename stem can never
-// equal the XC id — the placement rule V2 checks must know that, or every
-// contract submission reds with REF-001 (external-agent feedback
-// fb-20260723-9ae145, filed against v0.2.0).
-func TestT3SubmitContract(t *testing.T) {
+// TestSubmitContractDirectConstruction is the contract family's missing
+// round trip: `a2a submit` of a staged XC draft, through the SAME real
+// funnel + real V2 engine TestSubmitDirectConstruction uses. The committed
+// path is §4.2's fixed <system>/provides/<slug>/contract.md, whose filename
+// stem can never equal the XC id — the placement rule V2 checks must know
+// that, or every contract submission reds with REF-001 (external-agent
+// feedback fb-20260723-9ae145, filed against v0.2.0). In-process, never the
+// exec'd binary tier.
+func TestSubmitContractDirectConstruction(t *testing.T) {
 	t.Parallel()
 	cmd, fakeHost, _, stagingDir := newSubmitRig(t)
 
@@ -178,12 +181,12 @@ func TestT3SubmitContract(t *testing.T) {
 	}
 }
 
-// TestT3SubmitDecision is the decision family's round trip: decisions
-// commit to the SPACE-LEVEL decisions/<id>.md (§4.2's multi-party
+// TestSubmitDecisionDirectConstruction is the decision family's round trip:
+// decisions commit to the SPACE-LEVEL decisions/<id>.md (§4.2's multi-party
 // exception), so the id's <system> token never equals the owning path
 // segment — the placement rule must know that too, or every proposal reds
-// with REF-002.
-func TestT3SubmitDecision(t *testing.T) {
+// with REF-002. In-process, never the exec'd binary tier.
+func TestSubmitDecisionDirectConstruction(t *testing.T) {
 	t.Parallel()
 	cmd, fakeHost, _, stagingDir := newSubmitRig(t)
 

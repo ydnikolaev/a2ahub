@@ -24,6 +24,9 @@ package e2e
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,14 +35,29 @@ import (
 	"strings"
 )
 
+// Tier vocabulary (spec 11 §AC9, the plan's own T1-T6 tiers): a coverage
+// row's evidence either execs the BUILT `a2a` binary (tierT3) or drives its
+// command directly, in-process (tierInProcess). tierInProcess is a real,
+// explicit value — not the empty string — precisely so an evidence row that
+// forgot to declare its tier (Tier == "") is distinguishable from one that
+// correctly declared it does NOT reach the binary. No third tier token: a
+// row either reaches T3 or it plainly says it doesn't.
+const (
+	tierT3        = "T3"
+	tierInProcess = "in-process"
+)
+
 // coverageEntry is one manifest/skip-set row. Exactly one of Txtar, GoTest,
-// Skip must be non-empty — see (coverageEntry).evidenceKind.
+// Skip must be non-empty — see (coverageEntry).evidenceKind. An evidence row
+// (Txtar or GoTest) must also declare Tier explicitly — see
+// (coverageEntry).declaredTier.
 type coverageEntry struct {
 	Verb   string
 	Action string // optional sub-action when the binary catalog exposes only the family
 	Txtar  string // testdata/t3/<file>.txtar
 	GoTest string // "internal/e2e.TestXxx"
 	Skip   string // one-line justification
+	Tier   string // tierT3 or tierInProcess; empty ONLY on a Skip row
 }
 
 // target is the exact command spelling the evidence must exercise. Most
@@ -75,24 +93,54 @@ func (e coverageEntry) evidenceKind() (string, error) {
 	panic("unreachable")
 }
 
+// declaredTier validates e's Tier claim for the already-resolved evidence
+// kind: a "skip" row carries no evidence, so it must NOT declare a tier
+// (Tier == ""); a "txtar" row must declare exactly tierT3 — a txtar scenario
+// always execs the built binary via TestT3Scripts's testscript.Run, so
+// tierT3 is the only truthful value and anything else (including "") is
+// rejected; a "goTest" row must declare exactly one of tierT3/tierInProcess
+// — an empty Tier here is the undeclared-tier bug this check exists to
+// catch, so it is rejected the same as any other unrecognized value, never
+// silently defaulted to either.
+func (e coverageEntry) declaredTier(kind string) error {
+	switch kind {
+	case "skip":
+		if e.Tier != "" {
+			return fmt.Errorf("skip row for %q must not declare a Tier (no evidence to tier), got %q", e.Verb, e.Tier)
+		}
+		return nil
+	case "txtar":
+		if e.Tier != tierT3 {
+			return fmt.Errorf("txtar row for %q must declare Tier: %q (a txtar scenario always execs the built binary by construction), got %q", e.target(), tierT3, e.Tier)
+		}
+		return nil
+	case "goTest":
+		if e.Tier != tierT3 && e.Tier != tierInProcess {
+			return fmt.Errorf("goTest row for %q has no recognized Tier declaration (want %q or %q), got %q", e.target(), tierT3, tierInProcess, e.Tier)
+		}
+		return nil
+	}
+	panic("unreachable")
+}
+
 // coverageManifest is the P26 SSOT (spec 26 §1/§2/§11): every catalog CLI
 // verb this wave (14a) resolved, mapped-or-skipped. Later waves (14c) flip
 // skip rows to real evidence rows as families land — this wave's own
 // mandate is GREEN via a fully justified skip-set (plan 26 wave 14a).
 var coverageManifest = []coverageEntry{
 	// --- Setup & health ------------------------------------------------
-	{Verb: "connect", Txtar: "connect.txtar"},
-	{Verb: "disconnect", Txtar: "setup_disconnect.txtar"},
-	{Verb: "doctor", Txtar: "doctor.txtar"},
-	{Verb: "init", Txtar: "init.txtar"},
+	{Verb: "connect", Txtar: "connect.txtar", Tier: tierT3},
+	{Verb: "disconnect", Txtar: "setup_disconnect.txtar", Tier: tierT3},
+	{Verb: "doctor", Txtar: "doctor.txtar", Tier: tierT3},
+	{Verb: "init", Txtar: "init.txtar", Tier: tierT3},
 
 	// --- Authoring -------------------------------------------------------
-	{Verb: "new", Txtar: "new_validate.txtar"},
-	{Verb: "space", Txtar: "space_init.txtar"},
+	{Verb: "new", Txtar: "new_validate.txtar", Tier: tierT3},
+	{Verb: "space", Txtar: "space_init.txtar", Tier: tierT3},
 	// `space update` needs a host (it opens a PR through the write funnel),
 	// so it cannot be a txtar against the local fixture — it is covered at
 	// the host-rig tier instead, the same way `submit` is (spec 35 AC-950.5).
-	{Verb: "attach", GoTest: "internal/e2e.TestAttachVerbReachesTheBuiltBinary"},
+	{Verb: "attach", GoTest: "internal/e2e.TestAttachVerbReachesTheBuiltBinary", Tier: tierT3},
 	// `fetch` (P10, agent-exchange-2026-08 spec 10 §3 seam 6): a designated
 	// top-level verb resolving ANY blob-shaped attachment, not a `data`
 	// sub-action — carried no manifest row at all until this wave (spec 10
@@ -100,67 +148,86 @@ var coverageManifest = []coverageEntry{
 	// automatically, that silence is itself a finding to file" —
 	// TestE2ECoverageParity was observed red for exactly this reason before
 	// this row was added).
-	{Verb: "fetch", GoTest: "internal/e2e.TestFetchRoundTripsUnpinnedAttachment"},
-	{Verb: "space", GoTest: "internal/e2e.TestHostLoopSpaceUpdate"},
-	{Verb: "template", Txtar: "template_list.txtar"},
-	{Verb: "validate", Txtar: "new_validate.txtar"},
+	{Verb: "fetch", GoTest: "internal/e2e.TestFetchRoundTripsUnpinnedAttachment", Tier: tierT3},
+	{Verb: "space", GoTest: "internal/e2e.TestHostLoopSpaceUpdate", Tier: tierT3},
+	{Verb: "template", Txtar: "template_list.txtar", Tier: tierT3},
+	{Verb: "validate", Txtar: "new_validate.txtar", Tier: tierT3},
 
 	// --- Write funnel ------------------------------------------------
 	// submit: direct-construction write-path Go test (spec 26 §11 amendment
 	// — exec-unreachable), PLUS the exec-txtar covering the CC-002 local
 	// refusal path (which runs before any network call, so it IS exec'able).
-	{Verb: "submit", GoTest: "internal/e2e.TestT3Submit"},
-	{Verb: "submit", Txtar: "submit_refusal.txtar"},
-	{Verb: "sync", Txtar: "sync.txtar"},
-	{Verb: "await", GoTest: "internal/e2e.TestT3Await"},
+	{Verb: "submit", GoTest: "internal/e2e.TestSubmitDirectConstruction", Tier: tierInProcess},
+	{Verb: "submit", Txtar: "submit_refusal.txtar", Tier: tierT3},
+	{Verb: "sync", Txtar: "sync.txtar", Tier: tierT3},
+	{Verb: "await", GoTest: "internal/e2e.TestAwaitThroughStubbedAwaitTarget", Tier: tierInProcess},
 
 	// --- Read surface --------------------------------------------------
-	{Verb: "contracts", Txtar: "search_contracts.txtar"},
-	{Verb: "inbox", Txtar: "inbox_outbox.txtar"},
-	{Verb: "outbox", Txtar: "inbox_outbox.txtar"},
-	{Verb: "search", Txtar: "search_contracts.txtar"},
-	{Verb: "show", Txtar: "show_thread.txtar"},
-	{Verb: "statusline", Txtar: "statusline.txtar"},
-	{Verb: "thread", Txtar: "show_thread.txtar"},
+	{Verb: "contracts", Txtar: "search_contracts.txtar", Tier: tierT3},
+	{Verb: "inbox", Txtar: "inbox_outbox.txtar", Tier: tierT3},
+	{Verb: "outbox", Txtar: "inbox_outbox.txtar", Tier: tierT3},
+	{Verb: "search", Txtar: "search_contracts.txtar", Tier: tierT3},
+	{Verb: "show", Txtar: "show_thread.txtar", Tier: tierT3},
+	{Verb: "statusline", Txtar: "statusline.txtar", Tier: tierT3},
+	{Verb: "thread", Txtar: "show_thread.txtar", Tier: tierT3},
 
 	// --- Lifecycle (all 19 OP-211 verbs — direct-construction, exec-
 	// unreachable per spec 26 §11 amendment) ---------------------------
-	{Verb: "accept", GoTest: "internal/e2e.TestT3LifecycleVerbs"},
-	{Verb: "ack", GoTest: "internal/e2e.TestT3LifecycleVerbs"},
-	{Verb: "approve", GoTest: "internal/e2e.TestT3LifecycleVerbs"},
-	{Verb: "block", GoTest: "internal/e2e.TestT3BlockUnblock"},
-	{Verb: "cancel", GoTest: "internal/e2e.TestT3LifecycleVerbs"},
-	{Verb: "close", GoTest: "internal/e2e.TestT3CloseFromResponded"},
-	{Verb: "decline", GoTest: "internal/e2e.TestT3LifecycleVerbs"},
-	{Verb: "dispute", GoTest: "internal/e2e.TestT3RespondVerifyDispute"},
-	{Verb: "note", GoTest: "internal/e2e.TestT3LifecycleVerbs"},
-	{Verb: "reject", GoTest: "internal/e2e.TestT3LifecycleVerbs"},
-	{Verb: "respond", GoTest: "internal/e2e.TestT3RespondVerifyDispute"},
-	{Verb: "satisfy", GoTest: "internal/e2e.TestT3LifecycleVerbs"},
-	{Verb: "start", GoTest: "internal/e2e.TestT3LifecycleVerbs"},
-	{Verb: "supersede", GoTest: "internal/e2e.TestT3LifecycleVerbs"},
-	{Verb: "unblock", GoTest: "internal/e2e.TestT3BlockUnblock"},
-	{Verb: "verify", GoTest: "internal/e2e.TestT3RespondVerifyDispute"},
-	{Verb: "verify-fail", GoTest: "internal/e2e.TestT3LifecycleVerbs"},
-	{Verb: "verify-pass", GoTest: "internal/e2e.TestT3LifecycleVerbs"},
-	{Verb: "withdraw", GoTest: "internal/e2e.TestT3LifecycleVerbs"},
+	{Verb: "accept", GoTest: "internal/e2e.TestLifecycleVerbsThroughWriteFunnel", Tier: tierInProcess},
+	{Verb: "ack", GoTest: "internal/e2e.TestLifecycleVerbsThroughWriteFunnel", Tier: tierInProcess},
+	{Verb: "approve", GoTest: "internal/e2e.TestLifecycleVerbsThroughWriteFunnel", Tier: tierInProcess},
+	{Verb: "block", GoTest: "internal/e2e.TestBlockUnblockDirectConstruction", Tier: tierInProcess},
+	{Verb: "cancel", GoTest: "internal/e2e.TestLifecycleVerbsThroughWriteFunnel", Tier: tierInProcess},
+	{Verb: "close", GoTest: "internal/e2e.TestCloseFromRespondedDirectConstruction", Tier: tierInProcess},
+	{Verb: "decline", GoTest: "internal/e2e.TestLifecycleVerbsThroughWriteFunnel", Tier: tierInProcess},
+	{Verb: "dispute", GoTest: "internal/e2e.TestRespondVerifyDisputeDirectConstruction", Tier: tierInProcess},
+	{Verb: "note", GoTest: "internal/e2e.TestLifecycleVerbsThroughWriteFunnel", Tier: tierInProcess},
+	{Verb: "reject", GoTest: "internal/e2e.TestLifecycleVerbsThroughWriteFunnel", Tier: tierInProcess},
+	{Verb: "respond", GoTest: "internal/e2e.TestRespondVerifyDisputeDirectConstruction", Tier: tierInProcess},
+	{Verb: "satisfy", GoTest: "internal/e2e.TestLifecycleVerbsThroughWriteFunnel", Tier: tierInProcess},
+	{Verb: "start", GoTest: "internal/e2e.TestLifecycleVerbsThroughWriteFunnel", Tier: tierInProcess},
+	{Verb: "supersede", GoTest: "internal/e2e.TestLifecycleVerbsThroughWriteFunnel", Tier: tierInProcess},
+	{Verb: "unblock", GoTest: "internal/e2e.TestBlockUnblockDirectConstruction", Tier: tierInProcess},
+	{Verb: "verify", GoTest: "internal/e2e.TestRespondVerifyDisputeDirectConstruction", Tier: tierInProcess},
+	{Verb: "verify-fail", GoTest: "internal/e2e.TestLifecycleVerbsThroughWriteFunnel", Tier: tierInProcess},
+	{Verb: "verify-pass", GoTest: "internal/e2e.TestLifecycleVerbsThroughWriteFunnel", Tier: tierInProcess},
+	{Verb: "withdraw", GoTest: "internal/e2e.TestLifecycleVerbsThroughWriteFunnel", Tier: tierInProcess},
 
-	// --- Contract ops (direct-construction, exec-unreachable) -----------
-	// P5 AC1's discharge. Its evidence is in internal/cli rather than here
-	// because the verb's whole subject is a set of REFUSALS resolved from a
-	// descriptor and the space floor — a txtar scenario would prove the happy
-	// path and none of the four rules that make it correct.
-	{Verb: "contract activate", GoTest: "internal/cli.TestContractActivate"},
-	{Verb: "contract adopt", GoTest: "internal/e2e.TestT3ContractAdopt"},
-	{Verb: "contract check", GoTest: "internal/e2e.TestHostLoopContractFamily"},
-	{Verb: "contract deprecate", GoTest: "internal/e2e.TestT3ContractNewPublishDeprecate"},
-	{Verb: "contract diff", GoTest: "internal/e2e.TestT3ContractDiff"},
-	{Verb: "contract materialize", GoTest: "internal/e2e.TestHostLoopContractFamily"},
-	{Verb: "contract new", GoTest: "internal/e2e.TestT3ContractNewPublishDeprecate"},
-	{Verb: "contract preflight", GoTest: "internal/e2e.TestHostLoopContractFamily"},
-	{Verb: "contract publish", GoTest: "internal/e2e.TestT3ContractNewPublishDeprecate"},
-	{Verb: "contract retire", GoTest: "internal/e2e.TestT3ContractRetireCleanUngated"},
-	{Verb: "contract verify-export", GoTest: "internal/e2e.TestT3ContractVerifyExportLocal"},
+	// --- Contract ops ----------------------------------------------------
+	// Two tiers, declared row by row rather than assumed by the section.
+	// This header used to read "direct-construction, exec-unreachable", and
+	// P11 wave C measured that as false: `check`, `materialize`, `preflight`,
+	// `publish` and `retire` are all driven through the BUILT binary by
+	// TestHostLoopContractFamily, and `activate`/`adopt`/`deprecate` gained
+	// binary-tier REFUSALS in the same wave (spec 11 AC4). What remains
+	// in-process is in-process because the evidence chosen for that row is,
+	// not because the verb cannot be reached.
+	//
+	// P5 AC1's discharge. `contract activate`'s in-process evidence is in
+	// internal/cli rather than here because the verb's whole subject is a set
+	// of REFUSALS resolved from a descriptor and the space floor — a txtar
+	// scenario would prove the happy path and none of the four rules that
+	// make it correct.
+	{Verb: "contract activate", GoTest: "internal/cli.TestContractActivate", Tier: tierInProcess},
+	{Verb: "contract activate", GoTest: "internal/e2e.TestContractBinaryRefusalActivateBeforePublish", Tier: tierT3},
+	{Verb: "contract adopt", GoTest: "internal/e2e.TestContractAdoptDirectConstruction", Tier: tierInProcess},
+	{Verb: "contract adopt", GoTest: "internal/e2e.TestContractBinaryRefusalAdoptNonAdoptable", Tier: tierT3},
+	{Verb: "contract check", GoTest: "internal/e2e.TestHostLoopContractFamily", Tier: tierT3},
+	{Verb: "contract deprecate", GoTest: "internal/e2e.TestContractNewPublishDeprecateDirectConstruction", Tier: tierInProcess},
+	{Verb: "contract deprecate", GoTest: "internal/e2e.TestContractBinaryRefusalDeprecateUnpublishedVersion", Tier: tierT3},
+	{Verb: "contract diff", GoTest: "internal/e2e.TestContractDiffDirectConstruction", Tier: tierInProcess},
+	{Verb: "contract materialize", GoTest: "internal/e2e.TestHostLoopContractFamily", Tier: tierT3},
+	{Verb: "contract new", GoTest: "internal/e2e.TestContractNewPublishDeprecateDirectConstruction", Tier: tierInProcess},
+	{Verb: "contract preflight", GoTest: "internal/e2e.TestHostLoopContractFamily", Tier: tierT3},
+	{Verb: "contract publish", GoTest: "internal/e2e.TestContractNewPublishDeprecateDirectConstruction", Tier: tierInProcess},
+	{Verb: "contract publish", GoTest: "internal/e2e.TestHostLoopContractFamily", Tier: tierT3},
+	{Verb: "contract retire", GoTest: "internal/e2e.TestContractRetireCleanUngatedDirectConstruction", Tier: tierInProcess},
+	// The binary-tier REFUSAL for `retire` (a registered consumer that has
+	// not acked) is step 6 of the same scenario. Wave A's refusal audit
+	// missed it because the test's name carries no tier token at all — the
+	// mirror image of the tier-lying names AC9 removes.
+	{Verb: "contract retire", GoTest: "internal/e2e.TestHostLoopContractFamily", Tier: tierT3},
+	{Verb: "contract verify-export", GoTest: "internal/e2e.TestContractVerifyExportLocalDirectConstruction", Tier: tierInProcess},
 
 	// --- Data (spec 05a T1): pack|deliver|fetch|verify fold into ONE
 	// catalog verb, "data" — unlike `contract`, DataCommand's sub-verbs are
@@ -173,58 +240,65 @@ var coverageManifest = []coverageEntry{
 	// <XC-id>@<version> this space never published refuses LOCALLY
 	// (internal/space.ErrContractNotPublished), exec-able against the local
 	// fixture before any GitHub host is ever reached. `deliver` and
-	// `verify --pass` can each drive a write and so are exec-unreachable for
-	// the same reason every contract sub-verb is (txtar_test.go's own doc
-	// comment: no github.com-shaped remote in this fixture) — covered
-	// instead by cmd/a2a's own direct-construction dataCore tests
-	// (data_wiring_test.go).
-	{Verb: "data", Txtar: "data_pack_refusal.txtar"},
-	{Verb: "data", GoTest: "cmd/a2a.TestDataCorePackEndToEnd"},
+	// `verify --pass` can each drive a write and so are unreachable from
+	// TestT3Scripts's own fixture specifically (its Setup points
+	// A2A_GITHUB_API at a 403-only denial stub, not a working fake host —
+	// see txtar_test.go's own doc comment, corrected this wave, for the
+	// general write-path picture) — covered instead by cmd/a2a's own
+	// direct-construction dataCore tests (data_wiring_test.go).
+	{Verb: "data", Txtar: "data_pack_refusal.txtar", Tier: tierT3},
+	{Verb: "data", GoTest: "cmd/a2a.TestDataCorePackEndToEnd", Tier: tierInProcess},
 	// The two-party host-rig loop (spec 05a §6.3): pack, deliver (one
 	// commit, idempotent re-run), fetch (clean + divergent destination),
 	// verify (judge-only and --record, both directions), and the
 	// fail->supersede->pass->close loop against a real fake-host merge —
 	// exercise no earlier row here reaches, since data_wiring_test.go's
-	// own rows are direct-construction, never through the funnel.
-	{Verb: "data", GoTest: "internal/e2e.TestDataLoopFailSupersedePassCloseInboxNeverAccumulates"},
+	// own rows are direct-construction, never through the funnel. Its own
+	// body never spells the exec seam directly — it drives every step
+	// through setupDataLoop's *hostRig, whose newHostRig call lives in this
+	// SAME file (data_loop_test.go), which is exactly the one-hop case
+	// resolveGoTestExecSeam's same-file helper resolution exists for.
+	{Verb: "data", GoTest: "internal/e2e.TestDataLoopFailSupersedePassCloseInboxNeverAccumulates", Tier: tierT3},
 
 	// --- Ops & delivery --------------------------------------------------
-	{Verb: "completion", Txtar: "ops_completion.txtar"},
-	{Verb: "dashboard", Txtar: "ops_html.txtar"},
-	{Verb: "html", Txtar: "ops_html.txtar"},
-	{Verb: "notifications", GoTest: "internal/e2e.TestT3Notifications"},
-	{Verb: "serve", Txtar: "operational_commands.txtar"},
-	{Verb: "skill", Txtar: "ops_skill.txtar"},
-	{Verb: "version", Txtar: "ops_version.txtar"},
-	{Verb: "whatsnew", Txtar: "whatsnew.txtar"},
+	{Verb: "completion", Txtar: "ops_completion.txtar", Tier: tierT3},
+	{Verb: "dashboard", Txtar: "ops_html.txtar", Tier: tierT3},
+	{Verb: "html", Txtar: "ops_html.txtar", Tier: tierT3},
+	{Verb: "notifications", GoTest: "internal/e2e.TestNotificationsStatusThroughStubbedBackend", Tier: tierInProcess},
+	{Verb: "serve", Txtar: "operational_commands.txtar", Tier: tierT3},
+	{Verb: "skill", Txtar: "ops_skill.txtar", Tier: tierT3},
+	{Verb: "version", Txtar: "ops_version.txtar", Tier: tierT3},
+	{Verb: "whatsnew", Txtar: "whatsnew.txtar", Tier: tierT3},
 
 	// --- Operational work family (OP-224) ------------------------------
 	// The binary catalog exposes `work` as one family. Action-qualified rows
 	// make every closed subcommand carry behavior-level evidence. The six
 	// mutations resolve to the exact production-wiring host integration test;
 	// a direct fake backend or missing-argument usage line is deliberately not
-	// executable evidence for buildCommands/buildWorkCommand.
+	// executable evidence for buildCommands/buildWorkCommand. That evidence
+	// calls run() in-process (never exec.Command), so it declares
+	// tierInProcess despite driving a real fake host + real git space.
 	// Status remains a real successful built-binary offline path.
-	{Verb: "work", Action: "start", GoTest: "cmd/a2a.TestWorkProductionWiringMutations"},
-	{Verb: "work", Action: "heartbeat", GoTest: "cmd/a2a.TestWorkProductionWiringMutations"},
-	{Verb: "work", Action: "resume", GoTest: "cmd/a2a.TestWorkProductionWiringMutations"},
-	{Verb: "work", Action: "checkpoint", GoTest: "cmd/a2a.TestWorkProductionWiringMutations"},
-	{Verb: "work", Action: "wait", GoTest: "cmd/a2a.TestWorkProductionWiringMutations"},
-	{Verb: "work", Action: "stop", GoTest: "cmd/a2a.TestWorkProductionWiringMutations"},
-	{Verb: "work", Action: "status", Txtar: "operational_commands.txtar"},
+	{Verb: "work", Action: "start", GoTest: "cmd/a2a.TestWorkProductionWiringMutations", Tier: tierInProcess},
+	{Verb: "work", Action: "heartbeat", GoTest: "cmd/a2a.TestWorkProductionWiringMutations", Tier: tierInProcess},
+	{Verb: "work", Action: "resume", GoTest: "cmd/a2a.TestWorkProductionWiringMutations", Tier: tierInProcess},
+	{Verb: "work", Action: "checkpoint", GoTest: "cmd/a2a.TestWorkProductionWiringMutations", Tier: tierInProcess},
+	{Verb: "work", Action: "wait", GoTest: "cmd/a2a.TestWorkProductionWiringMutations", Tier: tierInProcess},
+	{Verb: "work", Action: "stop", GoTest: "cmd/a2a.TestWorkProductionWiringMutations", Tier: tierInProcess},
+	{Verb: "work", Action: "status", Txtar: "operational_commands.txtar", Tier: tierT3},
 
 	// --- Feedback (P25) — spec 26 §2 Feedback row: this phase only
 	// registers P25's own evidence, 4 exec-txtar + 1 Go-test ref. --------
-	{Verb: "feedback", Txtar: "feedback_new_validate.txtar"},
-	{Verb: "feedback", Txtar: "feedback_intake_guards.txtar"},
-	{Verb: "feedback", Txtar: "feedback_status.txtar"},
-	{Verb: "feedback", Txtar: "feedback_triage.txtar"},
-	{Verb: "feedback", GoTest: "internal/e2e.TestFeedbackSubmitWrite"},
-	{Verb: "feedback", GoTest: "internal/e2e.TestFeedbackSubmitFromANonCollaborator"},
+	{Verb: "feedback", Txtar: "feedback_new_validate.txtar", Tier: tierT3},
+	{Verb: "feedback", Txtar: "feedback_intake_guards.txtar", Tier: tierT3},
+	{Verb: "feedback", Txtar: "feedback_status.txtar", Tier: tierT3},
+	{Verb: "feedback", Txtar: "feedback_triage.txtar", Tier: tierT3},
+	{Verb: "feedback", GoTest: "internal/e2e.TestFeedbackSubmitWrite", Tier: tierInProcess},
+	{Verb: "feedback", GoTest: "internal/e2e.TestFeedbackSubmitFromANonCollaborator", Tier: tierInProcess},
 
 	// --- Permanent skip-set (spec 26 §1, exhaustive) --------------------
 	{Verb: "mcp", Skip: "serve-loop; CLI/MCP behavior equivalence is owned by the P14/P15 parity suite"},
-	{Verb: "update", Skip: "network self-swap — the exec'd `a2a update` verb replaces the running binary, so the VERB can't run headlessly (permanent skip, spec §1/§11). The resolve→verify→refuse-on-bad-checksum MECHANISM is exercised by internal/e2e.TestT3UpdateResolveVerifyRefuseChecksum (against a local fake release fixture), and the verb's own dispatch by internal/cli/cmd_update_test.go."},
+	{Verb: "update", Skip: "network self-swap — the exec'd `a2a update` verb replaces the running binary, so the VERB can't run headlessly (permanent skip, spec §1/§11). The resolve→verify→refuse-on-bad-checksum MECHANISM is exercised by internal/e2e.TestUpdateResolveVerifyRefuseChecksumThroughReleasePipeline (against a local fake release fixture), and the verb's own dispatch by internal/cli/cmd_update_test.go."},
 }
 
 // manifestVerbSet returns the set of every Verb named by ANY row of
@@ -357,4 +431,163 @@ func resolveTxtarEntry(t3Dir, file, verb string) error {
 		return fmt.Errorf("txtar %q does not appear to invoke `a2a %s` (no `a2a %s` line found)", file, verb, verb)
 	}
 	return nil
+}
+
+// execSeamIdents are the identifiers that mark a Go test as reaching the
+// BUILT `a2a` binary rather than driving its command directly, in-process:
+// newHostRig (host_loop_test.go's hostRig, execs via os/exec against a fake
+// host) and binDir (the built-binary directory main_test.go's TestMain
+// populates, used directly by e2e1_test.go's runReadVerbAs and
+// coverage_test.go's own runCatalogBinary). execSeamPackage is the third
+// seam, matched as a selector (testscript.Run, testscript.Params, ...) —
+// AC9's gate reuses this exact list from the manual measurement that
+// produced this wave's rename set; adding a new exec seam here is a normal
+// commit, silently losing one from this list is not.
+var execSeamIdents = map[string]bool{
+	"newHostRig": true,
+	"binDir":     true,
+}
+
+const execSeamPackage = "testscript"
+
+// bodyReachesExecSeam reports whether body's AST directly references one of
+// execSeamIdents or a execSeamPackage-qualified selector. AST identifier
+// matching (never a raw substring/grep over the source text) is deliberate:
+// it cannot be fooled by a doc comment or a string literal that merely
+// MENTIONS "binDir", because comments and literals are not
+// *ast.Ident/*ast.SelectorExpr nodes.
+func bodyReachesExecSeam(body *ast.BlockStmt) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		switch expr := n.(type) {
+		case *ast.SelectorExpr:
+			if pkg, ok := expr.X.(*ast.Ident); ok && pkg.Name == execSeamPackage {
+				found = true
+			}
+		case *ast.Ident:
+			if execSeamIdents[expr.Name] {
+				found = true
+			}
+		}
+		return true
+	})
+	return found
+}
+
+// funcReachesExecSeam reports whether funcName (a top-level, non-method
+// func declared in file) reaches an exec seam: directly in its own body, or
+// through a helper function it calls that is declared IN THE SAME FILE —
+// followed transitively, with cycle protection. located is false when
+// funcName has no such declaration in file at all (the "cannot be located"
+// case AC9 requires to FAIL, never silently pass).
+//
+// The same-file bound is deliberate, not an accident of convenience: a
+// package-wide, cross-file helper like e2e1_test.go's assertShow execs `a2a
+// show` purely to verify a DIRECT-CONSTRUCTION write's folded state — it is
+// verification scaffolding, not the verb under test. Following calls across
+// files would credit every lifecycle test that merely calls assertShow with
+// reaching the binary tier, which is exactly the false claim this rename
+// wave exists to correct (lifecycle_cov_test.go's own
+// TestLifecycleTransitionCoverageDirectConstruction is the concrete case
+// that decided this). A same-file helper, by contrast, is this test's own
+// driving machinery (data_loop_test.go's setupDataLoop calling newHostRig in
+// the SAME file for
+// TestDataLoopFailSupersedePassCloseInboxNeverAccumulates is the concrete
+// case that requires the one-hop extension at all — that test's own body
+// never spells "newHostRig", only its same-file setup helper does).
+//
+// This bound is FILE-PLACEMENT-SENSITIVE, and that cuts both ways
+// differently: moving setupDataLoop out of data_loop_test.go into a shared
+// helpers file would silently RED a currently-true tierT3 row (loud,
+// self-correcting — someone has to explain the new failure). Moving
+// assertShow INTO a same-file position with a caller that declares
+// tierT3 would silently let a false claim PASS (quiet — nothing here
+// would catch it). The second failure mode is the one to watch for in
+// review, not the first.
+func funcReachesExecSeam(file *ast.File, funcName string) (found, located bool) {
+	decls := map[string]*ast.FuncDecl{}
+	for _, d := range file.Decls {
+		if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv == nil {
+			decls[fd.Name.Name] = fd
+		}
+	}
+	target, ok := decls[funcName]
+	if !ok || target.Body == nil {
+		return false, false
+	}
+
+	visited := map[string]bool{}
+	var walk func(fd *ast.FuncDecl) bool
+	walk = func(fd *ast.FuncDecl) bool {
+		if fd.Body == nil || visited[fd.Name.Name] {
+			return false
+		}
+		visited[fd.Name.Name] = true
+		if bodyReachesExecSeam(fd.Body) {
+			return true
+		}
+		var callees []string
+		ast.Inspect(fd.Body, func(n ast.Node) bool {
+			if call, ok := n.(*ast.CallExpr); ok {
+				if id, ok := call.Fun.(*ast.Ident); ok {
+					callees = append(callees, id.Name)
+				}
+			}
+			return true
+		})
+		for _, name := range callees {
+			if callee, ok := decls[name]; ok && walk(callee) {
+				return true
+			}
+		}
+		return false
+	}
+	return walk(target), true
+}
+
+// resolveGoTestExecSeam is the goTest half of AC9's per-row tier gate: a row
+// declaring Tier: tierT3 must name a function whose body — in
+// internal/e2e/*_test.go, directly or through a same-file helper
+// (funcReachesExecSeam) — actually reaches execSeamIdents/execSeamPackage.
+//
+// Only "internal/e2e.TestXxx" refs are searched here, by design: this
+// repo's binary tier means "execs the a2a binary via os/exec", and every
+// current cross-package GoTest row (cmd/a2a.TestWorkProductionWiringMutations
+// calling run() in-process, cmd/a2a.TestDataCorePackEndToEnd calling
+// dataCore.pack directly, internal/cli.TestContractActivate against a fake
+// funnel) is already a same-process Go call, never exec.Command — so a
+// cross-package ref can never truthfully declare tierT3, and this function
+// fails it exactly the way a genuinely-unlocatable function fails: absence
+// of evidence is not evidence.
+func resolveGoTestExecSeam(root, goTestRef string) error {
+	const pkgPrefix = "internal/e2e."
+	if !strings.HasPrefix(goTestRef, pkgPrefix) {
+		return fmt.Errorf("GoTest ref %q declares Tier: %q but is not an internal/e2e test — its body cannot be searched for an exec seam here", goTestRef, tierT3)
+	}
+	funcName := strings.TrimPrefix(goTestRef, pkgPrefix)
+	dir := filepath.Join(root, "internal", "e2e")
+	matches, err := filepath.Glob(filepath.Join(dir, "*_test.go"))
+	if err != nil {
+		return fmt.Errorf("glob %s: %w", dir, err)
+	}
+
+	fset := token.NewFileSet()
+	for _, m := range matches {
+		f, err := parser.ParseFile(fset, m, nil, 0)
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", m, err)
+		}
+		found, located := funcReachesExecSeam(f, funcName)
+		if !located {
+			continue
+		}
+		if !found {
+			return fmt.Errorf("GoTest ref %q declares Tier: %q but %s's body (in %s) never reaches an exec seam (newHostRig/binDir/testscript.), directly or through a same-file helper", goTestRef, tierT3, funcName, filepath.Base(m))
+		}
+		return nil
+	}
+	return fmt.Errorf("GoTest ref %q declares Tier: %q but no function named %s was found anywhere in internal/e2e/*_test.go — absence of evidence is not evidence", goTestRef, tierT3, funcName)
 }

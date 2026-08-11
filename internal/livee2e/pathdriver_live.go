@@ -633,7 +633,8 @@ func driveContractRetire(ctx context.Context, t *testing.T, h *harness, actor *c
 //
 // Unlike driveContractRetire, this never calls h.pullForBranch or
 // happyLandAndSync — a refused act opens no PR to pull (the funnel/host is
-// never reached, same fact TestT3ContractRetireBlockedUnackedConsumer proves
+// never reached, same fact
+// TestContractRetireBlockedUnackedConsumerDirectConstruction proves
 // at the internal/e2e layer via fakeHost.Opens). stepIdx's own Predicates are
 // checked immediately after the refusal is confirmed, against whatever state
 // the refusal LEFT UNCHANGED (pathgrammar.go's own walkSteps non-advance).

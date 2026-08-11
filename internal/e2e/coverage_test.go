@@ -49,14 +49,24 @@ func TestE2ECoverageParity(t *testing.T) {
 	}
 
 	// (b)+(c) every row resolves. GoTest refs are deduped across rows —
-	// several verbs (e.g. every OP-211 lifecycle verb TestT3LifecycleVerbs
-	// covers) share one Go test func; resolving it once per distinct ref
-	// keeps subprocess fan-out (`go test -list`) sane under -count=2.
+	// several verbs (e.g. every OP-211 lifecycle verb
+	// TestLifecycleVerbsThroughWriteFunnel covers) share one Go test func;
+	// resolving it once per distinct ref keeps subprocess fan-out (`go test
+	// -list`) sane under -count=2. Tier-seam resolution is deduped the same
+	// way (AC9): every row also declares its Tier EXPLICITLY, and a row
+	// declaring tierT3 must actually reach an exec seam (resolveGoTestExecSeam)
+	// — never a zero-value default distinguishing "declared in-process" from
+	// "forgot to declare".
 	t3Dir := filepath.Join(root, "internal", "e2e", "testdata", "t3")
 	goTestCache := map[string]error{}
+	tierSeamCache := map[string]error{}
 	for _, e := range coverageManifest {
 		kind, err := e.evidenceKind()
 		if err != nil {
+			t.Errorf("command %q: %v", e.target(), err)
+			continue
+		}
+		if err := e.declaredTier(kind); err != nil {
 			t.Errorf("command %q: %v", e.target(), err)
 			continue
 		}
@@ -71,9 +81,19 @@ func TestE2ECoverageParity(t *testing.T) {
 			}
 			if err := goTestCache[e.GoTest]; err != nil {
 				t.Errorf("verb %q: GoTest ref %q does not resolve: %v", e.Verb, e.GoTest, err)
+				continue
+			}
+			if e.Tier == tierT3 {
+				if _, ok := tierSeamCache[e.GoTest]; !ok {
+					tierSeamCache[e.GoTest] = resolveGoTestExecSeam(root, e.GoTest)
+				}
+				if err := tierSeamCache[e.GoTest]; err != nil {
+					t.Errorf("verb %q: %v", e.Verb, err)
+				}
 			}
 		case "skip":
-			// evidenceKind already proved Skip is non-empty.
+			// evidenceKind already proved Skip is non-empty; declaredTier
+			// already proved no Tier is set.
 		}
 	}
 }
@@ -249,8 +269,74 @@ func TestE2ECoverageGateCatchesBrokenGoTestRef(t *testing.T) {
 	if err := resolveTestRef(root, "internal/e2e.TestDoesNotExistNoReally"); err == nil {
 		t.Fatal("expected a deliberately-broken GoTest ref to FAIL resolution, but it resolved")
 	}
-	if err := resolveTestRef(root, "internal/e2e.TestT3Submit"); err != nil {
+	if err := resolveTestRef(root, "internal/e2e.TestSubmitDirectConstruction"); err != nil {
 		t.Fatalf("expected a genuine GoTest ref to resolve, got: %v", err)
+	}
+}
+
+// TestE2ECoverageGateCatchesUndeclaredTier proves declaredTier rejects a
+// row that forgot to declare its Tier (AC9's own "no zero-value default")
+// and, symmetrically, that a Skip row declaring one anyway is rejected too
+// (no evidence to tier) — while a genuinely valid declaration in each
+// evidence kind passes.
+func TestE2ECoverageGateCatchesUndeclaredTier(t *testing.T) {
+	txtarNoTier := coverageEntry{Verb: "x", Txtar: "y.txtar"}
+	if err := txtarNoTier.declaredTier("txtar"); err == nil {
+		t.Fatal("expected an undeclared (empty) Tier on a txtar row to fail, but it passed")
+	}
+	goTestNoTier := coverageEntry{Verb: "x", GoTest: "internal/e2e.TestY"}
+	if err := goTestNoTier.declaredTier("goTest"); err == nil {
+		t.Fatal("expected an undeclared (empty) Tier on a goTest row to fail, but it passed")
+	}
+	skipWithTier := coverageEntry{Verb: "x", Skip: "reason", Tier: tierT3}
+	if err := skipWithTier.declaredTier("skip"); err == nil {
+		t.Fatal("expected a skip row that DOES declare a tier to fail (no evidence to tier), but it passed")
+	}
+	txtarWrongTier := coverageEntry{Verb: "x", Txtar: "y.txtar", Tier: tierInProcess}
+	if err := txtarWrongTier.declaredTier("txtar"); err == nil {
+		t.Fatal("expected a txtar row declaring tierInProcess to fail (a txtar always execs the binary by construction), but it passed")
+	}
+
+	validGoTest := coverageEntry{Verb: "x", GoTest: "internal/e2e.TestY", Tier: tierInProcess}
+	if err := validGoTest.declaredTier("goTest"); err != nil {
+		t.Fatalf("expected a validly declared in-process tier to pass, got: %v", err)
+	}
+	validTxtar := coverageEntry{Verb: "x", Txtar: "y.txtar", Tier: tierT3}
+	if err := validTxtar.declaredTier("txtar"); err != nil {
+		t.Fatalf("expected a validly declared T3 txtar tier to pass, got: %v", err)
+	}
+	validSkip := coverageEntry{Verb: "x", Skip: "reason"}
+	if err := validSkip.declaredTier("skip"); err != nil {
+		t.Fatalf("expected a skip row declaring no tier to pass, got: %v", err)
+	}
+}
+
+// TestE2ECoverageGateCatchesFalseT3TierClaim proves resolveGoTestExecSeam
+// FAILS when a GoTest ref names a function that never reaches an exec seam
+// — this wave's own renamed, in-process direct-construction evidence is the
+// concrete case AC9 exists to catch — and that it PASSES for a function that
+// genuinely does, including through a same-file helper (never a bare
+// substring match on the test function's own body alone). A nonexistent
+// function name must fail too: absence of evidence is not evidence.
+func TestE2ECoverageGateCatchesFalseT3TierClaim(t *testing.T) {
+	root := repoRootForTest(t)
+
+	if err := resolveGoTestExecSeam(root, "internal/e2e.TestLifecycleVerbsThroughWriteFunnel"); err == nil {
+		t.Fatal("expected a direct-construction test's body to FAIL the exec-seam check, but it passed")
+	}
+	if err := resolveGoTestExecSeam(root, "internal/e2e.TestAttachVerbReachesTheBuiltBinary"); err != nil {
+		t.Fatalf("expected a genuinely binary-tier test to resolve, got: %v", err)
+	}
+	// Same-file helper resolution: this test's own body never spells
+	// "newHostRig" — only its same-file setupDataLoop helper does.
+	if err := resolveGoTestExecSeam(root, "internal/e2e.TestDataLoopFailSupersedePassCloseInboxNeverAccumulates"); err != nil {
+		t.Fatalf("expected a same-file helper's exec seam to be reachable, got: %v", err)
+	}
+	if err := resolveGoTestExecSeam(root, "internal/e2e.TestDoesNotExistNoReally"); err == nil {
+		t.Fatal("expected a nonexistent function name to FAIL (absence of evidence is not evidence), but it passed")
+	}
+	if err := resolveGoTestExecSeam(root, "cmd/a2a.TestWorkProductionWiringMutations"); err == nil {
+		t.Fatal("expected a cross-package GoTest ref to FAIL the T3 seam check (its body cannot be searched here), but it passed")
 	}
 }
 
@@ -362,8 +448,12 @@ func writeTempTxtar(t *testing.T, dir, name, content string) {
 // inferable, and makes it a ratchet instead of a fact somebody rediscovers.
 const refusalScenarioFloor = 9
 
-// TestT3ScenariosAssertRefusalsNotOnlySuccess pins refusalScenarioFloor.
-func TestT3ScenariosAssertRefusalsNotOnlySuccess(t *testing.T) {
+// TestScenariosAssertRefusalsNotOnlySuccess pins refusalScenarioFloor. It
+// drives no command at all — it reads the testdata/t3/*.txtar corpus as
+// plain text and counts refusal-shaped scenarios, so it carries no tier
+// claim of its own (the T3 binary tier belongs to the scenarios it counts,
+// exercised by TestT3Scripts, not to this static analysis over them).
+func TestScenariosAssertRefusalsNotOnlySuccess(t *testing.T) {
 	t.Parallel()
 
 	dir := filepath.Join(repoRootForTest(t), "internal", "e2e", "testdata", "t3")

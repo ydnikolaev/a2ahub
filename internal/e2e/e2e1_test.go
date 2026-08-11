@@ -25,9 +25,13 @@ import (
 // are v2 — spec §11 amendment; every OTHER step runs for real).
 //
 // WRITE steps use the plan's binding mechanism (real space.WriteFunnel +
-// host.NewFakeHost + testkit/spacefixture, direct construction —
-// FakeHost cannot be injected into the exec'd binary, see txtar_test.go's
-// doc comment). Because FakeHost's PushBranch/OpenPR are no-ops (they
+// host.NewFakeHost + testkit/spacefixture, direct construction). The reason
+// is narrower than this comment used to claim, and P11 wave C corrected it:
+// the exec'd binary CAN reach a throwaway host (cmd/a2a/wire.go's
+// `A2A_GITHUB_API`, which hostRig uses) — what it cannot take is a
+// host.FakeHost Go value, and this scenario asserts against that value's
+// recorded PushBranch/OpenPR calls. See txtar_test.go's doc comment for the
+// full correction. Because FakeHost's PushBranch/OpenPR are no-ops (they
 // never actually push/merge), each step's commit is made observable to
 // the OTHER systems' clones via mergeBranchToMain (this package's own
 // "simulate the PR got auto-merged" step, spec 10 §11: "the G2 required-
@@ -85,7 +89,8 @@ func TestE2E1Cascade(t *testing.T) {
 	// FakeHost's own default FindPRByHeadBranch has no such expiry (byBranch
 	// never forgets), so this override keeps it consistent with the
 	// merge-then-delete reality this test already simulates. Retry/dedup
-	// itself is proven elsewhere (TestT3RespondIdempotentRetryReturnsAlreadyOpen),
+	// itself is proven elsewhere
+	// (TestRespondIdempotentRetryReturnsAlreadyOpenDirectConstruction),
 	// with its OWN, unmodified FakeHost.
 	fakeHost.FindPRFunc = func(_ context.Context, _ host.FindPRRequest) (*host.PRInfo, error) { return nil, nil }
 	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0") // lifecycle verbs: nil validator (local legality gate precedes the funnel)

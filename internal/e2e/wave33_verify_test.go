@@ -318,7 +318,8 @@ func TestWave33ContractActivationDebtSurfacesToProducerOnlyUnderActionable(t *te
 	gitRun(t, arrange, "commit", "-m", "publish: XC-axon-opdebt@1.0.0")
 	gitRun(t, arrange, "push", "origin", "main")
 
-	// beta adopts it for real: a REAL V2 submit validator (TestT3ContractAdopt's
+	// beta adopts it for real: a REAL V2 submit validator
+	// (TestContractAdoptDirectConstruction's
 	// own precedent — consumes.yaml has no envelope, so the funnel must
 	// route it to the consumes/v1 schema check, not demand frontmatter).
 	betaMirror := fx.Clone("beta")
