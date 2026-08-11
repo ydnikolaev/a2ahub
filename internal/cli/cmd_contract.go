@@ -711,7 +711,8 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 	// contract carries any recorded version.
 	_, probe, _, _, err := contractReadDescriptor(c.deps.mirrorDir, id)
 	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "contract deprecate: %v\n", err)
+		_, _ = fmt.Fprintf(stdio.Stderr,
+			"contract deprecate: cannot read %s from the local mirror — run `a2a sync` first, or check the contract has been published: %v\n", id, err)
 		return 1
 	}
 	allEvents, err := lifecycleReadAllEvents(c.deps.mirrorDir)
@@ -970,7 +971,8 @@ func (c *ContractCommand) runRetire(ctx context.Context, args []string, stdio IO
 	// published while one line retires).
 	_, probe, _, _, err := contractReadDescriptor(c.deps.mirrorDir, id)
 	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "contract retire: %v\n", err)
+		_, _ = fmt.Fprintf(stdio.Stderr,
+			"contract retire: cannot read %s from the local mirror — run `a2a sync` first, or check the contract has been published: %v\n", id, err)
 		return 1
 	}
 	allEvents, err := lifecycleReadAllEvents(c.deps.mirrorDir)

@@ -395,7 +395,7 @@ func newContractDeprecateHandler(deps ContractDeps) HandlerFunc {
 		// order matters once a contract carries any recorded version.
 		_, probe, _, _, err := contractReadDescriptor(deps.MirrorDir, in.ID)
 		if err != nil {
-			return nil, "", fmt.Errorf("contract deprecate: %w", err)
+			return nil, "", fmt.Errorf("contract deprecate: cannot read %s from the local mirror — run `a2a sync` first, or check the contract has been published: %w", in.ID, err)
 		}
 		allEvents, err := readAllEvents(deps.MirrorDir)
 		if err != nil {
@@ -585,7 +585,7 @@ func newContractRetireHandler(deps ContractDeps) HandlerFunc {
 		// order matters once a contract carries any recorded version.
 		_, probe, _, _, err := contractReadDescriptor(deps.MirrorDir, in.ID)
 		if err != nil {
-			return nil, "", fmt.Errorf("contract retire: %w", err)
+			return nil, "", fmt.Errorf("contract retire: cannot read %s from the local mirror — run `a2a sync` first, or check the contract has been published: %w", in.ID, err)
 		}
 		allEvents, err := readAllEvents(deps.MirrorDir)
 		if err != nil {
@@ -1112,9 +1112,16 @@ func newContractActivateHandler(deps ContractDeps) HandlerFunc {
 				contract.ContractPublicationFloor, deps.Manifest.MinBinaryVersion)
 		}
 
+		// Name the CONDITION, not the file that happened to be missing —
+		// contractReadDescriptor's own error is a raw open() failure carrying
+		// an absolute cache path, which tells an operator nothing they can
+		// act on. Mirrors internal/cli's runActivate fix for the identical
+		// gap (epic-backlog B31; ADR-001's duplication had left this surface
+		// behind).
 		_, probe, _, _, err := contractReadDescriptor(deps.MirrorDir, in.ID)
 		if err != nil {
-			return nil, "", fmt.Errorf("contract activate: %w", err)
+			return nil, "", fmt.Errorf(
+				"contract activate: cannot read %s from the local mirror — run `a2a sync` first, or check the contract has been published: %w", in.ID, err)
 		}
 
 		allEvents, err := readAllEvents(deps.MirrorDir)

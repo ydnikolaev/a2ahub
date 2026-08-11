@@ -659,6 +659,36 @@ func TestContractActivateRequiresSatisfies(t *testing.T) {
 	}
 }
 
+// TestContractActivateOnUnsyncedMirrorNamesTheCondition is epic-backlog
+// B31's own MCP instance: internal/cli's runActivate was fixed to name "run
+// `a2a sync` first" instead of surfacing contractReadDescriptor's raw open()
+// failure (an absolute cache path) verbatim — but the fix never reached this
+// package's own mirror of that verb, ADR-001's duplication notwithstanding.
+// The contract is owned by this system and the floor is satisfied (both
+// refusals ahead of the descriptor read), so the ONLY thing wrong is that the
+// descriptor was never synced into the mirror.
+func TestContractActivateOnUnsyncedMirrorNamesTheCondition(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	// Deliberately no seedActivatablePublished/writeContractDescriptor call:
+	// "XC-axon-act-unsynced" is owned by "axon" (contractTestDeps' OwnSystem)
+	// but its descriptor was never written into mirrorDir.
+
+	fake := &fakeFunnel{}
+	handler := newContractActivateHandler(contractTestDepsAtFloor(mirrorDir, fake, "0.19.0"))
+	args, _ := json.Marshal(ContractActivateInput{ID: "XC-axon-act-unsynced", Version: "1.0.0", Satisfies: []string{"endpoint"}})
+	_, _, err := handler(context.Background(), args)
+	if err == nil {
+		t.Fatal("expected an unsynced-mirror refusal")
+	}
+	if !strings.Contains(err.Error(), "run `a2a sync` first") {
+		t.Fatalf("refusal must name the condition and the remedy (\"run `a2a sync` first\"), got %q", err.Error())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("refusal must happen before any funnel call, got %+v", fake.calls)
+	}
+}
+
 // TestContractAdoptRefusesANonAdoptableContract closes a hole the 2026-08-10
 // coherence audit found HOURS after the CLI half shipped, and the gap is the
 // point of the test rather than a footnote.
