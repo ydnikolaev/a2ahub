@@ -13,10 +13,24 @@
 // runner, and the two schemas/ paths by the contract-template and compat-fixture
 // assertions.
 //
+// skill/a2ahub/** was MISSING from this list until 2026-08-12, and it is the
+// same defect the paragraph above describes, one tree over. Three tests here
+// judge that tree and nothing else does: skilldrift_test.go byte-diffs
+// reference/commands.md and reference/authoring/*.md against a fresh
+// regeneration, and skillverbatim_test.go pins the exact bytes of the plan
+// quotations loops.md carries. A prose edit is a docs-only commit, so the
+// derived lane selected no Go phase at all — measured, not supposed:
+// `make lane LANE_FILES="skill/a2ahub/loops.md"` returned eleven phases and
+// not one of them was go-test. Every one of those three gates was unreachable
+// from precisely the commit that would break it, and only `make check` — the
+// ceiling, which an ordinary commit does not run — would have caught a lossy
+// page split.
+//
 // lane-inputs:
 //
 //	cc-coverage.yaml
 //	internal/e2e/testdata/**
 //	schemas/templates/v1/**
 //	schemas/fixtures/compat/**
+//	skill/a2ahub/**
 package e2e

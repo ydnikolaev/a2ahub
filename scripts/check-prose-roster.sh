@@ -68,6 +68,15 @@
 # Usage: bash scripts/check-prose-roster.sh            # check the real tree
 #        bash scripts/check-prose-roster.sh --teeth    # self-test on fixtures
 
+# lane-reads-opaque: nine reads here are built from variables and none of them
+# widens what this gate judges. Three are structural — the shared `gate-lib.sh`
+# sourced through "${BASH_SOURCE[0]}", the `find "$skill_dir" -name '*.md'` walk
+# that IS the `skill/a2ahub/**` glob declared above, and a helper reading its
+# own "$1" argument. The other six are `sed -i.bak` mutations the `--teeth`
+# fixtures apply to a SYNTHETIC tree under "$tmp", never to the repository:
+# building the corpus the teeth judge is the point, and the real tree is read
+# only through the two globs declared below.
+#
 # lane-inputs:
 #   skill/a2ahub/**
 #   skill/RELEASE-CHECKLIST.md
