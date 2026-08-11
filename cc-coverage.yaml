@@ -73,3 +73,1090 @@ rows:
     test_ref: internal/e2e.TestContractVerifyExportTamperedDigestDirectConstruction
     tier: in-process
     status: covered
+
+# ---------------------------------------------------------------------------
+# uncovered: the OTHER 54 — agent-exchange-2026-08 P11 AC7
+#
+# The plan defers the full §12 matrix to v2/L4 (15-rollout.md), and this phase
+# does not pretend to close it. What AC7 refuses to accept is NOT KNOWING THE
+# NUMBER. Measured 2026-08-11: docs/the-plan/plan/12-corner-cases.md declares
+# 63 distinct CC-###; `rows:` above records 9; these are the 54 that do not,
+# each named, each with a verdict and the evidence behind it.
+#
+# ENFORCED (internal/e2e.TestCCCoverageGate): rows ∪ uncovered must equal §12's
+# own set exactly, with no overlap. A corner case added to the plan tomorrow
+# reds the build until somebody classifies it — which is the whole point. A
+# published number that nothing maintains rots exactly the way this file's own
+# `tier` column rotted while nothing read it (see the header above).
+#
+# The verdicts, and what each one costs the reader:
+#
+#   evidence-exists-unrecorded (18) — a REAL test exercises this corner case;
+#     it is simply not recorded here. These are the cheap ones, and they are
+#     deliberately NOT promoted to `rows:` in this commit: a row in this file
+#     is CI-enforced traceability, and promoting one demands the same bar wave
+#     C set for tier claims — read the test, confirm it asserts THIS corner
+#     case and not an adjacent one. Filed as B43. The evidence field names the
+#     test so that work is a verification, not a re-derivation.
+#   uncovered-in-scope (19) — genuinely untested, and about behaviour this
+#     epic shipped or touched. The honest debt.
+#   not-this-epic (14) — genuinely untested, belonging to a capability this
+#     epic did not build (the hub, federation, offboarding, the dashboard).
+#     Cites what the corpus itself says defers it.
+#   not-testable-here (3) — the corner case describes a human or process
+#     judgment, not product behaviour a test can drive. Says what would have
+#     to exist.
+#
+# A verdict reading "NOT DETERMINED" inside `reason` is a probe declining to
+# guess, and is recorded verbatim rather than rounded to a cleaner answer.
+uncovered:
+  - cc_id: CC-001
+    verdict: evidence-exists-unrecorded
+    summary: >-
+      Malformed frontmatter (broken YAML) must be refused at
+      write/merge/flag time.
+    evidence: >-
+      internal/artifact/frontmatter_test.go:91
+      TestParseFrontmatter_malformedYAML asserts ParseFrontmatter returns
+      errors.Is(err, ErrMalformedFrontmatter) for unparseable YAML in the
+      frontmatter block; internal/validate/engine.go:169-177 wires that
+      exact error into malformedFrontmatterViolation() (POL-002,
+      CCRef:"CC-001" in policy.go:110). No test drives broken YAML through
+      Engine.ValidateDraft end-to-end (only through the artifact-layer parse
+      seam directly) — the wiring itself is read, not exercised by a test at
+      that outer layer, but the parsing behavior the CC actually turns on
+      is.
+    reason: >-
+      A real, purpose-named Go test exercises exactly the malformed-YAML
+      parse failure the CC describes, and the production code that consumes
+      it (engine.go) calls the identical function; the only gap is the outer
+      ValidateDraft integration test, which is a tier note, not an absence
+      of coverage.
+  - cc_id: CC-003
+    verdict: evidence-exists-unrecorded
+    summary: >-
+      An artifact's ID must match its filename/placement (or its type
+      prefix); mismatch is rejected.
+    evidence: >-
+      internal/cli/cmd_validate_ci_test.go
+      TestValidateCI_PRContractUnderWrongSlugRed (~line 617-661): commits a
+      contract at axon/provides/other-feed/contract.md whose id names
+      content-feed, runs it through the real runCI git-backed V3-PR flow,
+      and asserts REF-001 fires (sawREF001) alongside POL-009 for the
+      wrong-slug placement. This is a single-purpose, pinned assertion (not
+      the ambiguous multi-emitter registry-closure test in
+      internal/validate/registry_test.go, which I initially cited but
+      reject: two different checkIDForm branches both record REF-001 there,
+      so neither is individually pinned).
+    reason: >-
+      Direct, git-backed CI test whose sole point is ID/placement mismatch →
+      REF-001; I opened it and traced the exact assertion.
+  - cc_id: CC-004
+    verdict: not-this-epic
+    summary: >-
+      Duplicate artifact ID (collision within a space) must be rejected by a
+      full-repo scan; cross-space collision is legal.
+    evidence: >-
+      docs/features/archive/v1-min-2026-07/specs/03-validation-engine.md:95-96
+      explicitly defers CC-004 out of that phase's tests: "CC-004 requires a
+      full-repo scan (V3, P9)". docs/the-plan/plan/15-rollout.md §Phase L4
+      names "every CC mapped to a green test" as L4's own exit criterion,
+      not an earlier phase's. I grepped internal/cli/cmd_validate_ci.go,
+      internal/validate/*.go, and the whole repo for "duplicate ID"/"second
+      occurrence"/"collision" logic and found none — the full-repo
+      duplicate-ID check was never built, in any epic, matching the corpus's
+      own deferral.
+    reason: >-
+      The capability (V3 full-repo duplicate-ID scan) was explicitly
+      deferred to a different phase (P9/L4) by the corpus's own words and
+      was never built by agent-exchange-2026-08 or any epic since; it is not
+      a regression this epic introduced or a feature it shipped.
+  - cc_id: CC-005
+    verdict: evidence-exists-unrecorded
+    summary: >-
+      An envelope declaring an unknown/newer schema version must be refused
+      for authoring (read-only+warn).
+    evidence: >-
+      internal/schema/corpus_test.go:211 TestVersionSeam_CC005Fixture, named
+      explicitly for this CC: calls
+      ValidateEnvelope("work_request","v3",...) and asserts errors.Is(err,
+      ErrUnsupportedVersion).
+    reason: >-
+      Dedicated, CC-id-named unit test that directly drives the exact
+      refuse-unknown-newer-version behavior the CC describes.
+  - cc_id: CC-006
+    verdict: evidence-exists-unrecorded
+    summary: >-
+      An oversized artifact body must be rejected with guidance to use refs.
+    evidence: >-
+      internal/validate/policy.go:81-90 checkAdmission is the sole emitter
+      of POL-003 (grepped internal/validate/*.go non-test, one hit).
+      internal/validate/registry_test.go:183 calls
+      checkAdmission(make([]byte, DefaultMaxArtifactBytes+1)) and record()
+      asserts the resulting code is a valid registry code; since
+      checkAdmission is POL-003's only source, this call is what makes
+      TestRegistryClosure's final loop require POL-003 to be produced — a
+      regression here (checkAdmission stops firing) reds the test.
+    reason: >-
+      Single-emitter function, single test call recording it, closure loop
+      requires the code — unlike CC-008 below, this one IS pinned because
+      there's no second call site to mask a break.
+  - cc_id: CC-007
+    verdict: evidence-exists-unrecorded
+    summary: >-
+      Non-UTF-8 / encoding-garbage content must be rejected.
+    evidence: >-
+      Same checkAdmission (policy.go:81-90), sole emitter of POL-004.
+      internal/validate/registry_test.go:185 calls
+      checkAdmission([]byte{0xff,0xfe,0x00}) — the only call recording
+      POL-004, so TestRegistryClosure's closure requirement pins this branch
+      specifically.
+    reason: >-
+      Same single-emitter/single-caller reasoning as CC-006; a break here
+      would red the closure test with no other path to mask it.
+  - cc_id: CC-008
+    verdict: uncovered-in-scope
+    summary: >-
+      An envelope's `to` naming an unknown system, or a system marked
+      `left`, must be rejected.
+    evidence: >-
+      internal/validate/authz.go's checkAddressees emits REF-006 for both
+      branches (unknown system, left system).
+      internal/validate/registry_test.go:114 and :116 call it once for each,
+      but the closure test's final loop only requires REF-006 to be produced
+      by SOME recorded call — since the unknown-system call (:114) already
+      satisfies that, a broken `left`-branch specifically would NOT fail
+      this test. I searched internal/e2e/testdata/t3/*.txtar
+      (submit_refusal.txtar has no left/REF-006 fixture),
+      internal/cli/cmd_validate_ci_test.go, and
+      internal/e2e/crosssurface_test.go (which covers the
+      adjacent-but-distinct CC-062 post-hoc-departure scenario, not this
+      submit-time check) — no dedicated test found.
+      internal/livee2e/pathcatalogue_paths.go:2720-2743 documents "REF-006
+      refuses SUBMITTING an envelope addressed to an already-left system...
+      verified directly against the binary" but this was an observation from
+      wave 30B's GENESIS-departure attempt, which the same comment says was
+      REVERTED 2026-08-11 in favor of a mid-path approach specifically
+      because it hit this refusal — it is a historical finding in a comment,
+      not a currently-running assertion.
+    reason: >-
+      NOT DETERMINED as covered: the only test that touches the
+      `left`-system branch does not actually pin it (a regression there
+      would not be caught), and the one place the refusal was empirically
+      confirmed live is from abandoned code. Genuinely untested with a real
+      assertion, and squarely this epic's own write-funnel/thread-addressing
+      concern.
+  - cc_id: CC-009
+    verdict: not-testable-here
+    summary: >-
+      A single artifact smuggling multiple intents in its prose body cannot
+      be schema-caught; recipient declines citing split-required.
+    evidence: >-
+      docs/features/archive/v1-min-2026-07/specs/03-validation-engine.md:95-96
+      states this outright: "CC-009 is process/template guidance, not a
+      validator code (§3.2, §12)". schemas/event/v2/event.schema.json and
+      event/v1/event.schema.json do carry `split-required` in the
+      reason_code enum (mechanically schema-testable, trivially), but I
+      found no test — internal/validate, internal/e2e, internal/livee2e —
+      that drives a decline-with-split-required scenario or asserts the
+      sender-side re-submission guidance (OP-220 batch loop).
+    reason: >-
+      The corner case's actual content (recognizing that prose smuggles a
+      second intent) is a judgment call the schema "can't fully see" by the
+      corpus's own words; what a test COULD assert — the enum accepting the
+      value, or a scripted decline+resubmit — would test the mechanics, not
+      the detection, and no such scripted scenario exists. What would have
+      to exist: a scenario where an agent is scripted to make the
+      multi-intent judgment call and decline citing this code, which
+      requires simulating agent reasoning rather than driving product
+      behavior.
+  - cc_id: CC-011
+    verdict: evidence-exists-unrecorded
+    summary: >-
+      `blocking: false` without `interim_behavior` on
+      requirement/work_request must be schema-rejected.
+    evidence: >-
+      internal/validate/golden_test.go TestGoldenFixtures_Envelope globs
+      envelope/v1/fixtures/invalid/*.md and runs each through the real
+      Engine.ValidateDraft, asserting EXACTLY its sidecar's code. Two
+      fixtures exist for this:
+      schemas/envelope/v1/fixtures/invalid/XR-axon-invalid-blocking-no-interim.md
+      and XW-axon-invalid-blocking-no-interim.md, both with .expect.yaml
+      naming SCH-008 (internal/validate/schema_class.go's CC-011-tagged
+      branch).
+    reason: >-
+      Golden-fixture pair specifically authored for this CC, run end-to-end
+      through the real validation engine, asserting the exact code.
+  - cc_id: CC-012
+    verdict: uncovered-in-scope
+    summary: >-
+      An event with a future `created`/`at` timestamp must be warned by V3;
+      fold order stays commit-order, unaffected.
+    evidence: >-
+      Grepped internal/validate, internal/fold, internal/e2e,
+      internal/schema, and schemas/errors/v1/registry.yaml for
+      "skew"/"tolerance" — zero hits of any V3-warn implementation.
+      docs/the-plan/audit-2026-07-21/minors.md flags "clock-skew tolerance
+      window" among "several load-bearing constants [that] are unvalued" —
+      i.e. this was never given a concrete value or implementation, in any
+      epic. The other half of the CC (fold order unaffected by timestamps,
+      D-017 commit-order authority) IS heavily tested
+      (internal/fold/fold_test.go, property_test.go) but that is a distinct
+      claim from the V3-warn half.
+    reason: >-
+      NOT DETERMINED which epic owns this — it is a genuine total gap (never
+      implemented, not just untested) called out by the corpus's own audit
+      as an unvalued constant; reporting uncovered-in-scope per the honesty
+      rule rather than guessing an epic assignment I could not confirm.
+  - cc_id: CC-021
+    verdict: evidence-exists-unrecorded
+    summary: >-
+      A lifecycle event from an actor outside the class authorized for that
+      transition must be ignored and flagged.
+    evidence: >-
+      internal/fold/illegal_test.go TestIllegalAndUnauthorized, subtests
+      CC-021_wrong_system_entirely (:43), CC-021_right_system_wrong_role
+      (:57), CC-021_left_system_per_manifest_as_of_commit (:73) — each
+      applies an unauthorized-actor event and asserts state unchanged +
+      FlagUnauthorizedActor recorded with the event's ULID.
+    reason: >-
+      CC-id-named subtests directly driving all three flavors of the
+      scenario (wrong system, right system/wrong role,
+      left-per-manifest-as-of-commit).
+  - cc_id: CC-022
+    verdict: evidence-exists-unrecorded
+    summary: >-
+      Two contradictory events landing near-simultaneously resolve by merge
+      (commit) order; the loser is flagged illegal, not silently dropped.
+    evidence: >-
+      Same file, subtests CC-022_same_commit_ulid_tiebreak (:93) and
+      CC-022_cross_commit_ordering (:121) — construct a decline+start pair,
+      feed them out of order, and assert the deterministic winner by
+      (CommitSeq, ULID) plus FlagIllegalTransition on the loser; the
+      cross-commit test specifically proves commit order beats a
+      lexically-larger same-commit ULID (D-017).
+    reason: >-
+      Direct, CC-id-named subtests exercising exactly the
+      conflict-resolution rule the CC states.
+  - cc_id: CC-024
+    verdict: uncovered-in-scope
+    summary: >-
+      A supersession fork (two successors claiming one predecessor) must be
+      rejected.
+    evidence: >-
+      Grepped internal/fold/*.go and internal/validate/*.go for
+      supersede-graph/fork/linearity logic — zero hits of any fork-detection
+      code. Corroborated independently by the corpus's own design review:
+      docs/inbox/agent-exchange-review/02-ground.md states "fold never reads
+      refs or the supersedes graph shape at all" and that
+      "Supersession-graph invariants (linearity, no forks, no cycles...) are
+      explicitly a V3/validator responsibility, not fold's" — and my own
+      grep of internal/validate confirms no such V3 logic exists either.
+    reason: >-
+      Genuinely unimplemented (not merely untested) anywhere in the current
+      codebase, and this is a live, named gap the corpus's own review
+      already found by direct grep — squarely the
+      artifact-lifecycle/thread-supersession machinery this epic works in.
+  - cc_id: CC-025
+    verdict: uncovered-in-scope
+    summary: >-
+      A supersession cycle must be rejected by a graph check.
+    evidence: >-
+      Same grep sweep and same corpus finding as CC-024
+      (docs/inbox/agent-exchange-review/02-ground.md names CC-024 and CC-025
+      together: "both list 'V3 rejects' as the expected behavior, with no
+      fold-level mechanism named"). No cycle-detection code found anywhere.
+    reason: >-
+      Same as CC-024 — genuinely unimplemented, confirmed by direct grep and
+      corroborated by the corpus's own prior finding.
+  - cc_id: CC-026
+    verdict: evidence-exists-unrecorded
+    summary: >-
+      A past-due `needed_by` with no target response does not
+      auto-transition state; it surfaces as staleness in the
+      statusline/outbox.
+    evidence: >-
+      internal/cache/outbox.go:46-49 computes the "needed-by-passed" reason
+      from Env.NeededBy without touching fold state.
+      internal/cache/store_outbox_test.go
+      TestOutboxAttention_FourConditionsPlusControl sets up "Condition 4b:
+      needed_by passed" (an item whose needed_by is in the past relative to
+      the fixture's `now`) and asserts it appears in the --attention result
+      set; the same file's TestOutbox_NeededByBoundary asserts the reason
+      does NOT fire exactly at the boundary (negative case).
+      internal/cache/statusline_test.go TestSeverityOf's "a passed needed_by
+      is pending, not urgent" case additionally pins that this never
+      escalates to Urgent severity (no auto-transition to a higher-severity
+      state).
+    reason: >-
+      Positive case (genuinely-passed date surfaces the reason in a real
+      fixture-space outbox read), negative case (exact boundary does not),
+      and the no-auto-escalation claim are all independently asserted by
+      real, passing tests.
+  - cc_id: CC-027
+    verdict: uncovered-in-scope
+    summary: >-
+      A dispute loop (verify-fail twice) must stop for human escalation; a
+      validator warns on the 3rd dispute event.
+    evidence: >-
+      Grepped internal/validate/*.go and schemas/errors/v1/registry.yaml for
+      any dispute-count/dispute-limit logic — zero hits (no POL-code or
+      check keyed on repeated TDispute events). The underlying `dispute`
+      transition and its D-024 parent-reopen mechanics ARE implemented and
+      tested (internal/fold/closure_test.go, fold.go:290-296), but the
+      specific "3rd dispute → validator warn, protocol stop" escalation rule
+      has no code path anywhere I could find.
+    reason: >-
+      Genuinely unimplemented escalation rule on top of an otherwise-shipped
+      mechanism (dispute/verify family is explicitly this epic's own
+      "verdicts" scope).
+  - cc_id: CC-028
+    verdict: uncovered-in-scope
+    summary: >-
+      Declining a `blocking: true` item must flag the sender's statusline at
+      p1-equivalent severity.
+    evidence: >-
+      internal/cache/statusline.go:198-204 urgencyLabel treats any
+      Blocking:true item as urgent regardless of state (tested generically
+      at statusline_test.go:270 "blocking is urgent", with no decline
+      involved). internal/cache/outbox.go separately appends a "declined"
+      reason when state==StateDeclined. I found no test that constructs a
+      declined AND blocking item together and asserts the combined
+      p1-equivalent statusline flag this CC specifically describes.
+    reason: >-
+      The two halves of the mechanism are each tested in isolation, but the
+      CC's own combined claim (decline of a blocking item flags urgent) has
+      no test asserting it as a unit — reporting uncovered rather than
+      inferring coverage from two separate facts.
+  - cc_id: CC-029
+    verdict: evidence-exists-unrecorded
+    summary: >-
+      Multiple partial responses can each be verified independently; the
+      parent stays `responded` until the sender's explicit close event.
+    evidence: >-
+      internal/fold/closure_test.go TestClosureModel (explicitly cited as
+      spec 04 §8 AC 6, D-024, "the exact scenario named in spec §6: 2
+      responses, verify one, dispute the other, then close"): two responds
+      land independently at submitted, verifying XS-one leaves XS-two
+      untouched and the parent state unaffected, disputing XS-two reopens
+      the parent to in_progress without touching XS-one, and close from
+      in_progress is asserted illegal (only legal from `responded`, subtest
+      close_only_from_responded).
+    reason: >-
+      A dedicated, purpose-built test whose own doc comment names this exact
+      scenario and asserts every clause of the CC (independence,
+      parent-state gating, explicit-close-only).
+  - cc_id: CC-030
+    verdict: uncovered-in-scope
+    summary: >-
+      A requirement satisfied by a contract version later deprecated stays
+      satisfied (historical truth); a dashboard flags the
+      consumer-on-deprecated state.
+    evidence: >-
+      Grepped internal/ for "consumer-on-deprecated"/similar dashboard flag
+      logic — zero hits anywhere.
+      docs/the-plan/audit-2026-07-21/confirmed.md independently confirms a
+      structural gap: "CC-030 and the §11 dashboard 'sunset countdowns' both
+      presuppose per-version deprecation tracking that the storage layout
+      can't materialize as specified" (no versions/ directory, no
+      per-version state in the fold model).
+      internal/validate/legality.go:102/legality_test.go:172 handle a
+      related-but-different case (satisfying against an ALREADY-deprecated
+      contract requiring override), not "satisfied-then-later-deprecated
+      stays satisfied."
+    reason: >-
+      Not just untested — the corpus's own audit found the feature
+      structurally unbuildable as currently specified; the dashboard flag
+      has no implementation anywhere. Squarely this epic's
+      contract-lifecycle scope (activation/adoption/deprecation).
+  - cc_id: CC-031
+    verdict: uncovered-in-scope
+    summary: >-
+      Withdrawing after the target has already responded is legal (sender's
+      right); the response is preserved and the withdrawal is flagged for
+      visibility.
+    evidence: >-
+      internal/fold/table.go shows TWithdraw exists only for Requirement
+      (from Draft/Published/Acknowledged, NOT from Satisfied) and Decision
+      (from Proposed only). Table-completeness tests
+      (transitionrows_test.go, restingstates_test.go, legalnext_test.go)
+      prove these rows are structurally present and land at a resting state,
+      but grepped internal/fold/*_test.go for "withdraw"/TWithdraw and found
+      no test asserting the CC's actual behavioral claim (that a prior
+      response/approval is preserved, not cleared, after withdraw).
+      fold.go's Apply has no TWithdraw-specific handling that touches
+      Result.Approvals, so preservation is a plausible inference from
+      absence of code, not a verified fact.
+    reason: >-
+      The transition's mere legality is covered by generic structural tests,
+      but the specific claim this CC makes (preserved response + visibility
+      flag) has no test asserting it.
+  - cc_id: CC-032
+    verdict: uncovered-in-scope
+    summary: >-
+      A required decision approver leaving mid-vote does not permanently
+      block quorum; remaining approvers govern and quorum is recomputed from
+      current membership.
+    evidence: >-
+      internal/fold/fold.go:247-256 quorumReached iterates the STATIC
+      env.RequiredApprovers list read from the artifact's own envelope;
+      there is no code anywhere that drops a departed approver from that
+      list or recomputes quorum against current manifest membership —
+      confirmed by direct read, and independently corroborated by the
+      corpus's own design review
+      (docs/inbox/agent-exchange-review/02-ground.md: "fold's own
+      quorumReached... never removes a departed approver from the
+      requirement... A repo-wide grep for 'quorum' outside
+      internal/fold/pendency/livee2e/e2e found no recompute logic in
+      internal/validate"; 07-verdicts.md separately marks the proposed
+      recompute design FATAL for a different reason). A design fix (decision
+      proposed→cancel/supersede exits) is under active review in that same
+      inbox but not yet landed in fold.go as of this read.
+    reason: >-
+      Genuinely unimplemented — confirmed by my own direct code read of
+      fold.go, matching an already-vetted finding in the corpus's own review
+      material. This is a live, open design question for this epic's
+      decision/quorum lifecycle, not a deferred v2/hub capability.
+  - cc_id: CC-040
+    verdict: not-this-epic
+    summary: >-
+      a webhook delivery to the hub is missed
+    evidence: >-
+      docs/the-plan/plan/06-hub-service.md:102 defines F-1 inside §6 Hub
+      Service; docs/the-plan/plan/15-rollout.md:14 moves "hub service (§6
+      entirely)" out of v1-min to v2. No hub-service Go package exists in
+      this repo (grep for a hub ingest/webhook package returned nothing
+      outside docs).
+    reason: >-
+      The remedy ("reconcile ≤5 min") is a hub ingest-pipeline behavior; the
+      hub does not exist yet in code. Compare CC-042 (F-3, hub-down-a-day),
+      which IS in cc-coverage.yaml — but only because its remedy half
+      ("direct git flows keep working") is provable without a hub; F-1 has
+      no such git-only half.
+  - cc_id: CC-041
+    verdict: not-this-epic
+    summary: >-
+      duplicate/out-of-order webhook deliveries reach the hub
+    evidence: >-
+      docs/the-plan/plan/06-hub-service.md:103 (F-2) is inside §6; §6
+      entirely deferred to v2 (15-rollout.md:14).
+    reason: >-
+      Idempotent-by-SHA webhook dedup is hub ingest logic; no hub ingest
+      code exists to test.
+  - cc_id: CC-043
+    verdict: not-this-epic
+    summary: >-
+      the hub's database is lost or corrupted
+    evidence: >-
+      docs/the-plan/plan/06-hub-service.md:105 (F-4, "hub rebuild from git
+      mirrors") is inside §6; 15-rollout.md:14 defers §6 to v2;
+      docs/the-plan/plan/09-human-ops.md:56 ("Hub loss: hub rebuild (6.4)")
+      reconfirms this is a hub runbook item.
+    reason: >-
+      `hub rebuild` is a hub-side operation; grep for a hub package/binary
+      in this repo returns nothing.
+  - cc_id: CC-044
+    verdict: not-this-epic
+    summary: >-
+      the hub can't reach a space's git repo
+    evidence: >-
+      docs/the-plan/plan/06-hub-service.md:106 (F-5) inside §6; deferred per
+      15-rollout.md:14.
+    reason: >-
+      "Space marked stale on dashboard" needs both the hub and the dashboard
+      (11.1), both explicitly moved to v2.
+  - cc_id: CC-045
+    verdict: not-this-epic
+    summary: >-
+      a force-push/history rewrite hits a space repo
+    evidence: >-
+      docs/the-plan/plan/06-hub-service.md:108 (F-7, "full re-index +
+      operator alert") inside §6, deferred per 15-rollout.md:14. The CC's
+      own second clause ("spaces are append-only... sole exception is a
+      pre-announced sanctioned redaction, 10.7, CC-098") is the
+      sanctioned-redaction/hostile-rewrite distinction, which is CC-098's
+      remedy (out of my assigned set) and is itself an operator-runbook
+      process per docs/the-plan/plan/09-human-ops.md:62-64, not product code
+      either.
+    reason: >-
+      The primary remedy (re-index + alert) is hub-side and unbuilt; the
+      append-only guarantee itself is enforced by GitHub branch protection
+      (config, not this repo's Go code), and its one exception is a
+      human-gated runbook step, not tested here.
+  - cc_id: CC-046
+    verdict: uncovered-in-scope
+    summary: >-
+      two agents of one system push non-conflicting files concurrently and
+      git merges naturally
+    evidence: >-
+      internal/livee2e/scenarios_failure_recovery_live.go:350-403, scenario
+      "concurrent-writes-no-lost-write" (layer3ConcurrentWrites), drives TWO
+      DIFFERENT SYSTEMS (h.A, h.B) each writing in their own section
+      concurrently — read the full function body.
+    reason: >-
+      CC-046 is specifically about two agents of the SAME system (its own
+      text: "two agents of one system push concurrently"), which CC-091's
+      own row equates to "same as CC-046" — confirming CC-046 IS the
+      one-system case. In this repo sections are the authz boundary
+      (diff-authz/branch-protection), so two DIFFERENT systems writing to
+      different sections never share a directory and can't test
+      "file-per-artifact/event makes conflicts rare by construction" — there
+      was no path collision to survive. No scenario drives two
+      actors/harnesses of one system writing distinct artifact files into
+      the SAME section concurrently. NOT DETERMINED beyond this: searched
+      internal/livee2e and internal/space for "concurrent" + same-system
+      framing; found none.
+  - cc_id: CC-047
+    verdict: not-testable-here
+    summary: >-
+      a true git conflict (same artifact edited twice) requires normal human
+      git resolution
+    evidence: >-
+      grep for "git conflict", "merge conflict", "CONFLICT" across internal/
+      returned zero hits.
+    reason: >-
+      The CC's own remedy says "normal git resolution by the owning team...
+      no a2ahub-specific machinery" — it explicitly describes a human
+      resolving a real git merge conflict through GitHub's native UI, not
+      product code. To test this here would require driving a real
+      two-author conflicting edit through an actual GitHub PR and a human
+      (or human-simulating) conflict resolution step, which no harness in
+      this repo does; the "validator re-runs post-merge" half is generic CI
+      re-trigger-on-push behavior, also not a2ahub-specific.
+  - cc_id: CC-048
+    verdict: uncovered-in-scope
+    summary: >-
+      an agent drafts offline and its submit must fail loudly rather than
+      silently pend
+    evidence: >-
+      Searched cmd/a2a/doctor_visibility_test.go (only
+      TestDoctorClassificationReaderNamesMissingSpace),
+      internal/e2e/contract_compat_offline_test.go (a different "offline" —
+      compat-checking without network, not agent-submit-while-disconnected),
+      internal/e2e/testdata/t3/connect.txtar and sync.txtar (their
+      "offline/no-hub" comments mean the git-fallback path needs no HUB, not
+      that the agent's own network is down). No hit for "CC-048", "queues
+      fail loudly", or "nothing silently pends" anywhere in internal/ or
+      docs/features.
+    reason: >-
+      This is core write-funnel/CLI behavior this epic shipped (submit, `a2a
+      doctor`), squarely in scope, but I found no test that drives an actual
+      network-unreachable submit and asserts the
+      explicit-error/no-silent-pend guarantee. NOT DETERMINED further: would
+      need internal/e2e or a txtar scenario that points the config at an
+      unreachable remote and asserts `a2a submit`/`a2a doctor` produce an
+      explicit, non-swallowed error.
+  - cc_id: CC-049
+    verdict: evidence-exists-unrecorded
+    summary: >-
+      a stale local cache renders old state until a mutating command forces
+      a re-fetch
+    evidence: >-
+      internal/cache/refresh_test.go:425
+      TestSyncIfStale_UnreachableOriginErrorsButMirrorStaysReadable — breaks
+      the mirror's real git remote, ages the mirror past TTL, calls
+      SyncIfStale, asserts exactly one named error ("a refresh failure is
+      never fatal to a read") and that Inbox() still returns the
+      pre-existing locally-cached artifact.
+    reason: >-
+      This exercises the CC-049 clause "cache-first reads show sync age... a
+      refresh failure is never fatal to a read" directly (test's own doc
+      comment ties it to AC-1050.3). Scoping the claim: it proves the
+      read-stays-readable-on-refresh-failure half; the "mutating commands
+      always re-fetch first" half rests on the SyncIfStale call site at
+      cmd/a2a/wire.go:356, which I read but is production wiring, not a test
+      assertion. TestMirrorSyncAge_FetchHeadWins
+      (internal/cache/staleness_test.go) is the nearest evidence for the
+      sync-age-display half if that's wanted too — not opened in full, only
+      grep-matched.
+  - cc_id: CC-060
+    verdict: evidence-exists-unrecorded
+    summary: >-
+      a PR that writes into a foreign section must fail the required check
+      and stay unmergeable
+    evidence: >-
+      internal/livee2e/scenarios_boundary_live.go:473 const
+      scenarioCrossSectionRetriggerStaysRed =
+      "cross-section-retrigger-stays-red"; catalogue.go:195 registers it
+      (AC-961.3); scenarios_boundary_live.go:563 fails the row if the PR's
+      conclusion isn't a failure, with message "...diff-authz did not refuse
+      B writing into A's section".
+    reason: >-
+      This is a live GitHub-driven scenario where SystemB (non-admin) pushes
+      into alpha's section and the test asserts the required check stays red
+      — it directly exercises CC-060's PR-into-foreign-section/diff-authz
+      clause. The direct-push-to-main-rejected-by-branch-protection clause
+      is GitHub branch-protection config, not tested by this repo's own code
+      (not claimed here).
+  - cc_id: CC-061
+    verdict: uncovered-in-scope
+    summary: >-
+      a credential revoked mid-session must fail the push explicitly with no
+      partial state
+    evidence: >-
+      internal/space/work_publisher_test.go:201-224
+      TestWorkPublisherFailuresRemainStructuredAndDoNotSubmit, subtest
+      "runtime unavailable" (fakeWorkRuntimeProvider{err:
+      errors.New("credential unavailable")}) asserts SubmitPrepared returns
+      a structured, resumable refusal and submitter.calls == 0.
+    reason: >-
+      Read closely, this is a near-miss, not a match: submitter.calls==0
+      proves the submit never STARTED — it is a pre-flight refusal when the
+      runtime-facts provider (WorkSubmissionRuntimeProvider — mirror
+      path/remote/credentials refresh) errors before any push is attempted.
+      CC-061's load-bearing clause is "no partial state... never partially
+      pushed" for a credential revoked MID-SESSION (i.e., mid-push or
+      between artifacts in a batch) — that requires a test where the failure
+      lands DURING the push/PR sequence, not before it opens. "credential
+      unavailable" is an arbitrary string on a generic
+      runtime-provider-error path; I initially misattributed this test to
+      CC-048 during search, which is itself evidence it's testing a generic
+      error class rather than this specific corner case. Searched for a
+      mid-push/mid-batch-atomicity test and found none. NOT DETERMINED
+      beyond this: would need a fake host/submitter that fails partway
+      through an already-in-flight push or a multi-artifact batch, asserting
+      the batch is all-or-nothing.
+  - cc_id: CC-062
+    verdict: evidence-exists-unrecorded
+    summary: >-
+      an offboarded participant with open exchanges gets flagged orphaned
+      and pendency moves to the sender
+    evidence: >-
+      internal/pendency/pendency_test.go:695
+      TestALeftCounterpartyTransfersPendencyToTheSender: builds an exchange
+      addressed to a `LeftParticipants`-marked system, asserts Owners
+      transfers to the sender, Expected is cleared (no invented transition),
+      and explicitly asserts `strings.Contains(orphaned.Why, "CC-062")` —
+      the test's own Why-string literally cites this CC id.
+    reason: >-
+      Directly named and exercised — the strongest match in this batch.
+      AC-102.2 (cited in the test's doc comment) is the governing AC for the
+      `orphaned-counterparty` flag this CC's remedy names.
+  - cc_id: CC-063
+    verdict: uncovered-in-scope
+    summary: >-
+      a machine read-only token attempts a write and the host rejects it on
+      scope
+    evidence: >-
+      grep for "RO token", "machine-RO", "blast radius", "CC-063" across
+      internal/ found no matching implementation or test (the only "blast
+      radius" hits, internal/fold/legality_test.go:170 and
+      internal/e2e/wave33_verify_test.go:95, are unrelated to token scope).
+      internal/host has no ReadOnly/scope-tier concept;
+      TestGitHubHostRequestFailedOnNon2xx
+      (internal/host/github_status_test.go:417) tests a generic 403 with
+      body text "revoked credential" wrapped as ErrRequestFailed, but is a
+      generic non-2xx test, not scope/RO-token-specific.
+    reason: >-
+      docs/the-plan/plan/10-security.md's T-1 row (fine-grained, read-only,
+      per-actor, expiring credential) is the SSOT for this CC; the actual
+      rejection is GitHub's own token-scope enforcement (host-side, external
+      system), and no test in this repo names a RO-token write-attempt
+      scenario or asserts the "logged" half. This is in-scope work
+      (write-funnel/host push path) that is simply untested here, not a
+      capability the epic didn't build.
+  - cc_id: CC-064
+    verdict: uncovered-in-scope
+    summary: >-
+      an agent forges actor.kind:human to fake a human-gated approval
+    evidence: >-
+      internal/validate/authz.go:5-7 and internal/validate/policy.go:36-38
+      both state, in comments, that the G3/G5 PR-identity check against
+      space.yaml owners is "host-side, out of this pure engine's reach" —
+      i.e. this repo's Go validator deliberately does NOT implement the
+      identity check itself. internal/livee2e/scenarios_boundary_live.go:259
+      scenarioProtectionBindsParticipant tests merge-ordering
+      (not-merged-while-pending, merged-only-after-green), not
+      actor-identity forgery. No scenario in the livee2e catalogue drives a
+      non-owner human login attempting a G3/G5 approval.
+    reason: >-
+      In-scope (decision-approval/G3 is core lifecycle machinery this epic
+      ships), genuinely untested by any Go test or livee2e scenario I found.
+      What would have to exist: a live scenario analogous to
+      cross-section-retrigger-stays-red, but for a PR carrying `actor.kind:
+      human` from a GitHub login NOT in space.yaml's owners list on a
+      decision, asserting CODEOWNERS/required-reviewers blocks it. NOT
+      DETERMINED further beyond the two greps above and reading the two
+      cited comments plus the boundary-scenario file's scenario list.
+  - cc_id: CC-070
+    verdict: not-this-epic
+    summary: >-
+      a cross-space ref that a reader lacks access to resolves as a warning,
+      not a reject
+    evidence: >-
+      docs/the-plan/plan/13-testing.md:45 names E2E-10 as "federation: one
+      system in two spaces; aggregated inbox; cross-space ref with access
+      asymmetry (CC-070/073)" — the plan's own traceability groups this CC
+      under a scenario that only appears at the L4 rollout-exit criterion
+      ("full §13 matrix including E2E-3…10", 15-rollout.md:95,98), not L1
+      ("T1–T3 green") or L3 ("T4 + E2E-1/2/7"). I also read
+      internal/validate/referential.go:130-160 and registry_test.go:101-107,
+      which DO test a generic "digest-pinned ref target unresolvable"
+      warning (REF-008), but against a same-space fake resolver, not a
+      cross-space/space-scoped access-asymmetry scenario.
+    reason: >-
+      The CC's own name in the plan (E2E-10) is explicitly a federation-tier
+      scenario not reached until L4/v2; a generic unresolvable-ref warning
+      exists in code but doesn't exercise the cross-space/access-asymmetry
+      shape this CC actually describes.
+  - cc_id: CC-071
+    verdict: not-this-epic
+    summary: >-
+      the same system ID gets claimed independently in two unrelated spaces
+    evidence: >-
+      docs/the-plan/plan/04-topology.md:108 (§4.3): "Space IDs are globally
+      unique within an operator's fleet (registry kept in the hub config;
+      collision is an onboarding-time check, §9.2)." — the registry this
+      CC's remedy depends on is explicitly hub config.
+    reason: >-
+      §6 hub (which owns hub config / the fleet registry) is deferred to v2
+      (15-rollout.md:14); grep for "fleet registry" / "fleet-registry" in
+      internal/ found zero implementation, only the plan doc and
+      docs/the-plan/audit-2026-07-21/rejected.md (found via grep, not
+      opened).
+  - cc_id: CC-072
+    verdict: not-this-epic
+    summary: >-
+      a space's repo is renamed or moved and configs/hub need updating
+    evidence: >-
+      The CC's own remedy text names "hub config updated" as one of its
+      clauses (12-corner-cases.md:74), and §6 hub is deferred to v2
+      (15-rollout.md:14).
+    reason: >-
+      Disclosed finding: the CC also cites "runbook note (9.4)", but I read
+      docs/the-plan/plan/09-human-ops.md §9.4 in full (lines 45-68) and it
+      has no repo-rename/move bullet — that pointer is dangling in the plan
+      corpus itself, independent of this epic's scope. The remaining
+      testable-in-principle clause ("space.yaml is in-repo, stable") has no
+      dedicated test either, but the primary, most actionable clause is
+      hub-dependent.
+  - cc_id: CC-073
+    verdict: not-this-epic
+    summary: >-
+      one system in N spaces must not have same-thread traffic bleed across
+      spaces
+    evidence: >-
+      docs/the-plan/plan/13-testing.md:45 groups CC-073 with CC-070 under
+      E2E-10 (federation, one system in two spaces), which per 15-rollout.md
+      is an L4/v2-exit item (not reached at L1's "T1-T3" or L3's "T4 +
+      E2E-1/2/7").
+    reason: >-
+      Same evidence chain as CC-070: the plan's own traceability places this
+      at the federation tier not yet shipped. I did not find a
+      multi-space-per-system connect/thread test in internal/cache or
+      internal/space to contradict this (grep for "multi-space"/"federation"
+      in internal/ returned no product code, only doc-comment mentions of
+      the term "cross-space").
+  - cc_id: CC-074
+    verdict: not-this-epic
+    summary: >-
+      a vendored mirror of an external vendor's spec drifts stale and must
+      surface that, informationally
+    evidence: >-
+      docs/the-plan/plan/04-topology.md:121 (§4.4): "Staleness of mirrors is
+      surfaced on the dashboard like any other staleness." 15-rollout.md:15
+      explicitly moves "dashboard (11.1)" out of v1-min to v2. Code-side:
+      internal/space/layout.go:192-195 and internal/cache/mirror.go:53,1014
+      only EXCLUDE vendored/ from artifact walking/write-funnel scope — no
+      staleness computation or surfacing exists for it.
+    reason: >-
+      The remedy's delivery surface (dashboard) is itself v2-deferred, and
+      the code that does exist for `vendored/` treats it purely as an
+      excluded directory, not a monitored one — there is nothing in this
+      repo that computes or surfaces vendor-mirror staleness for a test to
+      exercise.
+  - cc_id: CC-083
+    verdict: uncovered-in-scope
+    summary: >-
+      fixtures in a contract dir contradict their schema (e.g. an invalid/
+      fixture actually validates)
+    evidence: >-
+      internal/validate.TestValidateContractConformanceEmitsPOL014OnlyForSuiteContradiction
+      (internal/validate/contract_conformance_test.go:9-26) proves the
+      POL-014 policy-mapping unit: a constructed ConformanceResult with
+      fixtures/invalid/b.json expected-nonconformant-but-actual-conformant
+      yields exactly one POL-014 reject.
+      internal/contract/conformance.go:431 confirms the mirror-image
+      direction (expected-conformant-but-actual-not) also flips the outcome
+      to ConformanceSuiteInconsistent, so the policy covers both directions
+      structurally. BUT: contract.CheckConformance /
+      validate.ValidateContractConformance are wired into exactly one call
+      site in the whole repo — cmd/a2a/contract_p6_wiring.go:686-717, the
+      manual `a2a contract check`/MCP ContractCheckRequest verb. I found no
+      call to either function in internal/space/contract_publication.go (the
+      actual Publish() path) or internal/cli/cmd_validate_ci.go (the
+      automatic V3 CI gate).
+    reason: >-
+      Genuinely untested at the level the CC actually claims ("V3 rejects
+      publish" — automatic, not opt-in). What exists is a unit-level
+      policy-code test plus a manual on-demand check command the author must
+      remember to run; publish itself does not appear gated by
+      fixture/schema conformance. This is squarely this epic's own
+      contract-activation/publication surface, so uncovered-in-scope, not
+      deferred.
+  - cc_id: CC-085
+    verdict: evidence-exists-unrecorded
+    summary: >-
+      a binary older than the space's min_binary_version tries to write
+    evidence: >-
+      internal/space.TestMinBinaryVersionGuard
+      (internal/space/funnel_test.go:275-301) — doc comment explicitly cites
+      CC-085; sets req.MinBinaryVersion="2.0.0", constructs the funnel with
+      binary "1.0.0", asserts errors.Is(err, ErrStaleBinaryVersion), an
+      actionable message ("current binary 1.0.0", "min_binary_version
+      2.0.0", "update a2a"), and zero FakeHost push/open calls. Corroborated
+      defensively at the E2E tier: internal/livee2e/scaffold.go:201-208 and
+      scenarios_refusal_live.go:170 guard other refusal scenarios against
+      false CC-085 contamination.
+    reason: >-
+      Direct, exact-scenario match; the test constructs precisely the corner
+      case and asserts precisely the stated remedy (refuse, read-only,
+      warn). Tier is T2/in-process (FakeHost), not T3 — worth noting for
+      cc-coverage.yaml's tier vocabulary.
+  - cc_id: CC-086
+    verdict: evidence-exists-unrecorded
+    summary: >-
+      an agent (or otherwise precondition-incomplete) retire override is
+      attempted before sunset/without a reminder
+    evidence: >-
+      internal/validate.TestCheckRetirePrecondition, subtests
+      override_before_sunset_still_blocked,
+      override_no_reminder_still_blocked, override_agent_actor_still_blocked
+      (internal/validate/policy_retire_test.go:88-128) — each asserts
+      POL-006 is still returned when exactly one of {SunsetPassed,
+      HasReminder, ActorIsHuman} is false; the function doc comment at line
+      9-15 explicitly cites CC-081/CC-082/CC-086.
+    reason: >-
+      All three named failure modes in CC-086's scenario (before sunset / no
+      reminder / agent actor) are each their own subtest with an explicit
+      assertion; a fourth subtest
+      (override_full_precondition_set_succeeds_and_flags_overridden) proves
+      the positive case too.
+  - cc_id: CC-090
+    verdict: uncovered-in-scope
+    summary: >-
+      a project forks/edits a shipped template; the resulting unknown
+      envelope key must fail fast via the x_-prefix allowlist
+    evidence: >-
+      Mechanism confirmed real:
+      schemas/envelope/v1/contract.schema.json:31-32 closes with
+      `patternProperties: {"^x_": true}` + `unevaluatedProperties: false`
+      (the correct 2020-12 idiom for allOf-composed schemas, not
+      additionalProperties, which I initially checked at the wrong level);
+      internal/schema/violation.go has dedicated classification code for
+      unevaluatedProperties violations. No fixture or test frames the CC-090
+      narrative itself (grepped schemas/envelope/{v1,v2}/fixtures/invalid
+      for extra/unknown keys — only schemas/feedback/v1's
+      extra-property.yaml and envelope/v2's unknown-role/extra-conforms
+      fixtures exist, both different concepts).
+    reason: >-
+      Genuinely untested as this specific scenario. Scope is ambiguous: the
+      x_-allowlist/template mechanism is v1-min infrastructure (R-015 §5.6),
+      not on this epic's own delta list (attachments/blobs, data packages,
+      contract activation, event v2, verdicts, thread/possession), but I
+      found no explicit v2/L4 deferral citation for it either — defaulting
+      to uncovered-in-scope per the audit's own tiebreak rather than force a
+      not-this-epic claim I can't back with a corpus citation.
+  - cc_id: CC-091
+    verdict: uncovered-in-scope
+    summary: >-
+      two harnesses (e.g. Claude + Codex) act for the same system
+      concurrently, with no locking, distinguished only by attribution
+    evidence: >-
+      No test found: swept internal/space, internal/fold, internal/e2e for
+      "harness", "codex"/"Claude", actor-attribution-under-concurrency
+      framing, and for CC-046 (the CC-091 row's own "same as" reference) —
+      zero hits anywhere outside the plan doc itself.
+    reason: >-
+      Concerns actor attribution and the absence of a write-funnel lock
+      across same-system actors — squarely the write funnel/possession
+      territory this epic's own delta list names. Genuinely untested; no
+      ambiguity about scope here.
+  - cc_id: CC-092
+    verdict: evidence-exists-unrecorded
+    summary: >-
+      statusline invoked with no config or no connected space must exit
+      silently (0), never break a prompt
+    evidence: >-
+      internal/cache.TestStatusline_ZeroNoiseSilence, subtest "no space
+      connected" (internal/cache/statusline_test.go:17-30) — constructs a
+      Store with no SpaceMirror, asserts result.Line=="" and result.Exit==0.
+      Doc comment at line 14-16 cites CC-092 by name.
+    reason: >-
+      Exact match, including the same subtest also proving the "connected
+      but nothing actionable" adjacent case. NOTE for the lead:
+      statusline.go:45-46 documents that spec 19 T4 explicitly AMENDS CC-092
+      (an available update IS now treated as actionable content, an
+      exception to the blanket silence rule) — the published §12 row is
+      stale relative to shipped behavior; that's a spec-vs-code drift worth
+      its own line, not just a coverage gap.
+  - cc_id: CC-093
+    verdict: evidence-exists-unrecorded
+    summary: >-
+      the MCP server and the CLI used in the same session must be safe by
+      construction (same core, same cache, idempotent)
+    evidence: >-
+      cmd/a2a.TestCC093InterleavedCLIThenMCPSubmitIdempotent
+      (cmd/a2a/mcp_equivalence_test.go:1876-1920) — literally named for this
+      CC; runs `a2a submit <id>` via the CLI command against a shared mirror
+      + shared FakeHost, then `a2a_submit` via the MCP handler on the SAME
+      id in the SAME session, and asserts exactly one OpenPR call both
+      before and after the second (interleaved) call — no duplicate PR,
+      idempotent per the doc comment's spec 14 §8 AC #5.
+    reason: >-
+      Named test, named scenario, exact assertion of the stated remedy.
+  - cc_id: CC-094
+    verdict: uncovered-in-scope
+    summary: >-
+      `a2a update` interrupted mid-flight leaves the local cache in a broken
+      format; cache must be disposable and rebuild on next sync
+    evidence: >-
+      internal/cli/cmd_update_test.go has 23 test functions
+      (TestUpdateCommand_*) — none simulate a cache-format break caused by
+      an interrupted update. internal/cache/cursor_test.go's
+      TestCursor_CorruptFileTreatedAsEmpty (lines 37-54) shows a corrupt
+      cursor.json is treated as empty and effectively rebuilds — the closest
+      existing evidence, but it is generic JSON-corruption handling, not
+      framed around (or triggered by) a mid-flight `a2a update`, so I am not
+      calling it covered for this CC.
+    reason: >-
+      Genuinely untested as this scenario. `a2a update` self-update was
+      pulled into v1-min as P19 per 15-rollout.md's re-cut note — not on
+      this epic's own delta list, but not explicitly v2-deferred either;
+      defaulting to uncovered-in-scope rather than force a scope-bucket
+      claim I can't cite.
+  - cc_id: CC-095
+    verdict: not-this-epic
+    summary: >-
+      two concurrent green PRs each look clean alone but jointly create a
+      full-repo violation (duplicate ID, supersession fork) invisible to
+      either PR's own check
+    evidence: >-
+      The remedy has two halves and I checked both. Half 1 (post-merge
+      full-repo audit on push to main, flag-only) IS shipped:
+      space-template/.github/workflows/a2a-validate.yml's
+      `a2a-postmerge-audit` job (comment block above it) explicitly names
+      CC-095 and states it never blocks (already merged); its origin is
+      docs/features/archive/v1-min-2026-07/specs/09-space-template-ci.md
+      §5.5/P33 — a prior, archived epic, not agent-exchange-2026-08. Half 2
+      ("V4 flag it") is the hub's flag-only ingest validator
+      (docs/the-plan/plan/06-hub-service.md:107 F-6, :170 "V4 hub ingest"),
+      and docs/the-plan/plan/15-rollout.md's v1-min re-cut explicitly moves
+      "hub service (§6 entirely...)" OUT to v2.
+      internal/cli/cmd_doctor_test.go:1522 only checks the workflow FILE has
+      a push-triggered job, not its runtime flag-only behavior.
+    reason: >-
+      Both halves of the remedy trace outside agent-exchange-2026-08's own
+      delta: the working half was built by v1-min/P33, the missing half (V4)
+      is wholesale v2-deferred per the corpus's own rollout doc.
+  - cc_id: CC-096
+    verdict: not-testable-here
+    summary: >-
+      a V3 (required-check) CI pipeline outage freezes all space writes;
+      operator may temporarily lift the required check per a runbook
+    evidence: >-
+      docs/the-plan/plan/09-human-ops.md §9.4 (lines ~58-60) narrates this
+      abstractly ("the runbook covers temporarily lifting the required
+      check... with a mandatory post-incident announcement") but no such
+      document exists in docs/runbooks/ (contents: space-bootstrap.md,
+      release.md, feedback-hub.md, feedback-sync.sh, publish-to-public.sh,
+      live-e2e/ — none address a V3 outage or required-check lift). The
+      diagnostic half doctor would need is explicitly unimplemented:
+      internal/cli/cmd_doctor.go:94-104/655-668 states the
+      required-check-CONFIG half of doctorCheckCIPresence is "out of this
+      phase's footprint... itself v2/deferred per D-030".
+    reason: >-
+      The mechanism is GitHub's own branch-protection required-status-check
+      gate plus a manual operator action via GitHub's admin UI/API — no
+      product code in this repo drives or observes it. What would have to
+      exist to test it: a live-GitHub integration scenario that arms a
+      required check, fails the underlying workflow, asserts merges block,
+      then exercises an operator-driven branch-protection API call to lift
+      the check and asserts merges resume — a human-gated, live-host
+      scenario, not a unit/T3-testable behavior today.
+  - cc_id: CC-097
+    verdict: evidence-exists-unrecorded
+    summary: >-
+      a PR author's GitHub identity is not mapped to any system in
+      space.yaml; V3 must fail with an actionable, named error
+    evidence: >-
+      internal/cli.TestValidateCI_DiffAuthzUnmappedAuthor
+      (internal/cli/cmd_validate_ci_test.go:509-524) — submits a PR authored
+      by "stranger" (not in ciSpaceYAML's participant map), asserts exit
+      code 1 and rep.DiffAuthz[0].CCRef=="CC-097". Production code carries
+      the same literal id: internal/cli/cmd_validate_ci.go:588-601's
+      diffAuthz function sets Code:"AUTHZ-001", CCRef:"CC-097", Message: PR
+      author %q is not mapped to any system in space.yaml, when
+      manifest.SystemForLogin(author) fails.
+    reason: >-
+      Both the production violation struct and the test assert the exact CC
+      id and the exact scenario; the strongest possible evidence.
+  - cc_id: CC-098
+    verdict: not-this-epic
+    summary: >-
+      a force-push on a space repo must be distinguished as a sanctioned,
+      pre-announced redaction versus a hostile, unannounced history rewrite
+    evidence: >-
+      The detection+alert path is F-7
+      (docs/the-plan/plan/06-hub-service.md:107, "force-push on space → full
+      re-index + operator alert"), part of the hub's webhook-driven
+      monitoring (§6.7). docs/the-plan/plan/15-rollout.md's v1-min re-cut
+      moves "hub service (§6 entirely...)" OUT to v2. Searched internal/ for
+      "force-push"/"hostile rewrite"/"F-7" outside plan docs: the only hit
+      is docs/features/active/agent-exchange-2026-08/specs/09-own-loop.md's
+      force-push, which is a DIFFERENT concept — a2ahub's own
+      public-feedback-mirror publish script rewriting ITS OWN repo, not
+      detection of a force-push on a CUSTOMER space.
+    reason: >-
+      No code in this repo watches customer-space git history for
+      force-pushes or distinguishes announced-vs-unannounced rewrites; that
+      watching capability is hub-owned and explicitly v2-deferred by the
+      corpus's own rollout plan.
+  - cc_id: CC-099
+    verdict: uncovered-in-scope
+    summary: >-
+      a backdated event (wrong clock or deliberate) must not be able to
+      reorder already-settled fold history
+    evidence: >-
+      Structural half is well-supported: internal/fold.Event
+      (internal/fold/types.go:205-224) carries no wall-clock field at all —
+      only ULID and CommitSeq. internal/fold's TestFoldIllegalTransitions
+      subtest "CC-022_cross_commit_ordering"
+      (internal/fold/illegal_test.go:121-141) shows an event with a
+      lexically-later (time-like-later) ULID landing in an EARLIER commit
+      still wins over a lexically-earlier-ULID event in a LATER commit — the
+      same commit-order-supremacy mechanism CC-099 needs — but that test is
+      written and cited for CC-022's own distinct scenario
+      (near-simultaneous contradictory events), not framed as a backdating
+      attempt. The second remedy clause — "a timestamp wildly inconsistent
+      with merge time is V3-warned" — appears UNIMPLEMENTED: grepped
+      internal/validate/*.go for SeverityWarning sites (capabilities.go,
+      possession.go, thread.go, referential.go) and none compare an event's
+      declared timestamp against commit/merge time.
+    reason: >-
+      I'm leading with the missing warn clause because it's the larger, more
+      actionable gap (a plan-claimed check with no implementation found),
+      and declining to call the structural half "covered" because its only
+      existing test is titled and reasoned for a different CC (CC-022) with
+      a materially different scenario (simultaneity, not backdating) — the
+      honesty bar in this audit is exactly to not borrow adjacent evidence.
+  - cc_id: CC-100
+    verdict: not-this-epic
+    summary: >-
+      space.yaml manifest drifts from actual host config (left participant's
+      team/PAT not revoked, missing CODEOWNERS entry, disabled protection
+      rule)
+    evidence: >-
+      Doubly confirmed deferral. (a) docs/the-plan/plan/15-rollout.md's
+      v1-min re-cut explicitly lists "`doctor --space` host-drift audit"
+      among the items moved OUT to v2. (b)
+      internal/cli/cmd_doctor.go:655-668's own doc comment on
+      doctorCheckCIPresence states the required-check-config/host-drift-diff
+      half needs a new Host primitive that is "out of this phase's footprint
+      (arguably `--space`'s own host-drift diff territory, itself
+      v2/deferred per D-030)". No `--space` flag or host-drift-diff
+      implementation exists in the doctor command today.
+    reason: >-
+      Two independent, explicit corpus citations name this exact feature
+      (OP-218's `--space` half) as v2-deferred; this is the cleanest
+      not-this-epic call of the set.
