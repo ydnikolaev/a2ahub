@@ -162,7 +162,7 @@ func TestLiveMatrix(t *testing.T) {
 	}
 }
 
-// driveFamilies runs the twelve scenario families and records what they return.
+// driveFamilies runs the thirteen scenario families and records what they return.
 //
 // SERIALLY, and that is a correctness requirement rather than a simplification:
 // the families are file-disjoint but they all drive ONE real space, and two of
@@ -226,6 +226,24 @@ func driveFamilies(ctx context.Context, t *testing.T, run *Run, h *harness) {
 		// boundary/refusal/space, which deliberately bend protection and
 		// the write floor.
 		{"data-loop", runDataLoopScenarios},
+		// P11 (agent-exchange-2026-08, spec 11) AC5 — the two-agent
+		// byte/document round trip plus its corruption twin. Same "no
+		// shared-state mutation" property as every family above (both
+		// rows author their own fresh work_request, blob, contract and
+		// data package, scoped by their own liveRunSlug tag so the two
+		// rows cannot even collide with EACH OTHER), so placed right
+		// after them, still ahead of boundary/refusal/space, which
+		// deliberately bend protection and the write floor. The ONE
+		// property this family adds beyond its neighbours — a raw git
+		// commit straight to origin/main, bypassing the funnel, to tamper
+		// already-landed bytes for the corruption twin — does not break
+		// that placement rule: every tampered path is keyed by an id THIS
+		// family alone minted (`<system>/blobs/<its-own-BL-id>/…`,
+		// `<system>/data/<its-own-DP-id>/…`), so it cannot collide with
+		// anything another family's own artifacts touch, and it never
+		// advances space-wide state (space.yaml, branch protection, the
+		// write floor) the way space/boundary/refusal deliberately do.
+		{"bytes", runBytesScenarios},
 		{"boundary", runBoundaryScenarios},
 		{"refusal", runRefusalScenarios},
 		{"space", runSpaceScenarios},

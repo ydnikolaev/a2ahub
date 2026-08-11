@@ -6,7 +6,7 @@ import (
 )
 
 // CanonicalFamilies is the hand-written twin of driveFamilies' own dispatch
-// table (runner_live_test.go, `//go:build livee2e`) — the twelve family names,
+// table (runner_live_test.go, `//go:build livee2e`) — the thirteen family names,
 // in the EXACT order that function's `families` slice declares them.
 //
 // Written out by hand rather than computed FROM driveFamilies' table on
@@ -36,6 +36,7 @@ func CanonicalFamilies() []string {
 		"failure-recovery",
 		"thread-chain",
 		"data-loop",
+		"bytes",
 		"boundary",
 		"refusal",
 		"space",
@@ -50,7 +51,7 @@ func CanonicalFamilies() []string {
 // driveFamilies returns, deliberately — that row asks what else went red in
 // the space while every other family was running, so it has to observe the
 // run's WHOLE window and therefore has to run last, outside the loop that
-// runs the other twelve families serially. Giving it a canonical-list entry
+// runs the other thirteen families serially. Giving it a canonical-list entry
 // instead would make driveFamiliesMatchCanonical's equality check fail on
 // every single healthy run (the table legitimately never dispatches a
 // 13th family), which is exactly the kind of gate-asserts-a-lie outcome

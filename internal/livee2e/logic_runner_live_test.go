@@ -38,9 +38,9 @@ import (
 // never entered; a mixed family's provider cells are overridden before
 // Record sees them; a completion sweep backfills anything still not-run,
 // including FamilySpaceCIHealth's one row, which — like the live tier — this
-// function never dispatches directly). The 30 TierLogic rows are judged for
-// real, against the fake, exactly as the live tier judges them against
-// GitHub.
+// function never dispatches directly). The 32 TierLogic rows this function
+// dispatches are judged for real, against the fake, exactly as the live tier
+// judges them against GitHub.
 func TestLogicMatrix(t *testing.T) {
 	start := time.Now()
 	ctx := t.Context()
@@ -91,7 +91,8 @@ func TestLogicMatrix(t *testing.T) {
 	// observed empirically, not assumed; see this wave's own report for the
 	// exact failure text. Run first, the space still matches the stamped
 	// binary. Wrapping driveFamilies itself in its own t.Run (so `-run
-	// '^TestLogicMatrix$/<path-id>'` could skip the family matrix too) was
+	// '^TestLogicMatrix$/^group-[0-9]+$/^<path-id>$'` could skip the family
+	// matrix too) was
 	// considered and rejected regardless of ordering:
 	// TestLogicTierWritesNothingOutsideItsOwnTempDirs and logicTierMarkerLine
 	// below both read state driveFamilies populates directly off run/report
@@ -244,8 +245,9 @@ func TestLogicMatrix(t *testing.T) {
 	run.Tier = TierLogic
 	run.Preflight = h.Pre
 
-	// Wrapped in its own subtest so `-run '^TestLogicMatrix$/<path-id>'`
-	// prunes the 30-cell family matrix too. Without this the filter pruned
+	// Wrapped in its own subtest so
+	// `-run '^TestLogicMatrix$/^group-[0-9]+$/^<path-id>$'` prunes the
+	// family matrix too. Without this the filter pruned
 	// only the path subtests and a "single path" run still paid the whole
 	// matrix's wall clock — which fails the operator's own requirement that
 	// every path be checkable independently.

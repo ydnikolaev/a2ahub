@@ -166,8 +166,8 @@ func TestFilterJudgeableByKeepsDeclarationOrder(t *testing.T) {
 }
 
 // TestRealCatalogueDeclaresEveryTierCoherently is the real-catalogue half of
-// this gate (spec 09 §5, wave W5 brief §3): every one of the 47 declared
-// rows must pass all four D-3 rules, and the 30 logic / 17 provider split
+// this gate (spec 09 §5, wave W5 brief §3): every one of the 49 declared
+// rows must pass all four D-3 rules, and the 35 logic / 14 provider split
 // the wave brief transcribes must hold exactly — so a row added later
 // without a Tier, or with an incoherent ProviderAssertions carve-out, cannot
 // slip in behind a green suite.
@@ -175,8 +175,8 @@ func TestRealCatalogueDeclaresEveryTierCoherently(t *testing.T) {
 	t.Parallel()
 	catalogue := Catalogue()
 
-	if got := len(catalogue); got != 47 {
-		t.Fatalf("Catalogue() has %d rows, want 47", got)
+	if got := len(catalogue); got != 49 {
+		t.Fatalf("Catalogue() has %d rows, want 49", got)
 	}
 	if offenders := undeclaredTierRows(catalogue); len(offenders) > 0 {
 		t.Errorf("rows with no declared tier: %s", strings.Join(offenders, ", "))
@@ -201,6 +201,7 @@ func TestRealCatalogueDeclaresEveryTierCoherently(t *testing.T) {
 		}
 	}
 	t.Logf("tier split: logic=%d provider=%d total=%d", logic, provider, len(catalogue))
+	// 35/14 as of agent-exchange P11 wave D (the two `bytes` rows), from
 	// 33/14 as of P9 W7, from 29/18.
 	//
 	// The earlier note is kept because its lesson outlived its number: 29/18
@@ -228,8 +229,8 @@ func TestRealCatalogueDeclaresEveryTierCoherently(t *testing.T) {
 	// the fake's own behaviour rather than its documentation — fakegithub
 	// carries NO branch-protection route (its router's default arm 404s), and
 	// it seeds CheckConclusion: "success" as a constant.
-	if logic != 33 {
-		t.Errorf("logic rows = %d, want 33", logic)
+	if logic != 35 {
+		t.Errorf("logic rows = %d, want 35", logic)
 	}
 	if provider != 14 {
 		t.Errorf("provider rows = %d, want 14", provider)
@@ -240,13 +241,13 @@ func TestRealCatalogueDeclaresEveryTierCoherently(t *testing.T) {
 
 	// Belt and suspenders: FilterJudgeableBy is the function W4 will
 	// actually dispatch the logic runner on, so it must agree with the
-	// tally above against the REAL 47 rows, not just the synthetic slices
+	// tally above against the REAL 49 rows, not just the synthetic slices
 	// TestFilterJudgeableByKeepsDeclarationOrder already covers.
-	if got := len(FilterJudgeableBy(catalogue, TierLogic)); got != 33 {
-		t.Errorf("FilterJudgeableBy(catalogue, TierLogic) = %d rows, want 33", got)
+	if got := len(FilterJudgeableBy(catalogue, TierLogic)); got != 35 {
+		t.Errorf("FilterJudgeableBy(catalogue, TierLogic) = %d rows, want 35", got)
 	}
-	if got := len(FilterJudgeableBy(catalogue, TierProvider)); got != 47 {
-		t.Errorf("FilterJudgeableBy(catalogue, TierProvider) = %d rows, want 47 (the provider tier may judge every row)", got)
+	if got := len(FilterJudgeableBy(catalogue, TierProvider)); got != 49 {
+		t.Errorf("FilterJudgeableBy(catalogue, TierProvider) = %d rows, want 49 (the provider tier may judge every row)", got)
 	}
 }
 

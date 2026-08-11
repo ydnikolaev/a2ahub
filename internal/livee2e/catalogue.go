@@ -268,6 +268,38 @@ func Catalogue() []Scenario {
 		// exchange from the producer's own end.
 		{Name: "data-loop-fail-supersede-pass", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"work_request", "handoff"}, Family: "data-loop", Tier: TierLogic},
 
+		// P11 (agent-exchange-2026-08, spec 11) AC5 -- a two-agent
+		// exchange in a FRESH space delivers a document AND bytes end
+		// to end, both directions, one thread: A attaches real bytes
+		// to a work_request and submits it; B syncs, fetches and
+		// digest-verifies the bytes; B packs and delivers a data
+		// package back fulfilling that SAME work_request; A syncs,
+		// verifies and fetches it -- byte-for-byte at both ends. A
+		// byte fetch drives no fold transition of its own (it is a
+		// read, not a lifecycle event), so this is a scenario FAMILY,
+		// not a conformance Path -- pathcatalogue_paths.go's own
+		// header already sets that precedent for acts with no fold
+		// row. Filed under SystemA, matching contract-integrity/
+		// data-loop's own convention above: the row inherently
+		// drives both systems, and a second declaration under
+		// SystemB would double the Actions spend to re-observe the
+		// same exchange from the other end.
+		{Name: "bytes-round-trip", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"work_request", "handoff"}, Family: "bytes", Tier: TierLogic},
+		// AC5's corruption twin: the SAME two legs, with the stored
+		// bytes tampered by a direct commit to origin/main (bypassing
+		// the write funnel entirely, exactly internal/e2e/blob_loop_
+		// test.go's own TestFetchRefusesCorruptedBlob idiom),
+		// asserting the product's own refusal on EACH leg that has
+		// one -- `a2a fetch` (ErrBlobDigestMismatch, internal/space/
+		// blob_resolve.go) and `a2a data fetch` (ErrDigestMismatch,
+		// internal/datapackage/fetch.go) both hard-refuse a digest
+		// mismatch. `a2a data verify`'s own corruption path (already
+		// covered by data-loop-fail-supersede-pass) is a JUDGED FAIL
+		// VERDICT, not a refusal -- a different mechanism from this
+		// row's tamper of bytes already LANDED on main -- so it is not
+		// repeated here.
+		{Name: "bytes-round-trip-corrupted-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"work_request", "handoff"}, Family: "bytes", Tier: TierLogic},
+
 		// AC-980.1 (spec 38 wave F) — Layer-1 rows for the five envelope
 		// kinds nothing else in this matrix drives: the whole legal
 		// lifecycle to a terminal state, against real GitHub, both
