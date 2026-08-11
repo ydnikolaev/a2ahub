@@ -494,29 +494,29 @@ uncovered:
   - cc_id: CC-032
     verdict: uncovered-in-scope
     summary: >-
-      A required decision approver leaving mid-vote does not permanently
-      block quorum; remaining approvers govern and quorum is recomputed from
-      current membership.
+      A required decision approver leaves the space mid-vote.
     evidence: >-
-      internal/fold/fold.go:247-256 quorumReached iterates the STATIC
-      env.RequiredApprovers list read from the artifact's own envelope;
-      there is no code anywhere that drops a departed approver from that
-      list or recomputes quorum against current manifest membership —
-      confirmed by direct read, and independently corroborated by the
-      corpus's own design review
-      (docs/inbox/agent-exchange-review/02-ground.md: "fold's own
-      quorumReached... never removes a departed approver from the
-      requirement... A repo-wide grep for 'quorum' outside
-      internal/fold/pendency/livee2e/e2e found no recompute logic in
-      internal/validate"; 07-verdicts.md separately marks the proposed
-      recompute design FATAL for a different reason). A design fix (decision
-      proposed→cancel/supersede exits) is under active review in that same
-      inbox but not yet landed in fold.go as of this read.
+      RECLASSIFIED BY THE LEAD 2026-08-11, and the probe's original verdict
+      ("genuinely unimplemented, a live open design question") was WRONG in
+      the part that mattered. The situation is not a deadlock and the remedy
+      shipped: specs/01-resting-totality.md §CC-032 refuses recomputing quorum
+      PERMANENTLY (recomputing would silently lower the bar a decision was
+      authored with), and P1 shipped `{decision, proposed, withdraw|supersede,
+      RoleOwner}` instead, with pendency's CC-062 transfer routing the proposer
+      to them. Both are DRIVEN conformance paths at the binary tier —
+      decision-proposed-withdrawn-by-author-after-approvers-left and
+      decision-proposed-superseded-by-author-after-approvers-left, both listed
+      in internal/livee2e/pathdrivability.go's drivenPathIDs().
+      docs/the-plan/plan/12-corner-cases.md's CC-032 row was amended the same
+      day to strike the recompute clause it had kept promising.
     reason: >-
-      Genuinely unimplemented — confirmed by my own direct code read of
-      fold.go, matching an already-vetted finding in the corpus's own review
-      material. This is a live, open design question for this epic's
-      decision/quorum lifecycle, not a deferred v2/hub capability.
+      What is left uncovered is NARROW and is not the quorum question: the
+      row's remaining clause, "validator flags the change on the thread", has
+      no test naming it. Kept as uncovered-in-scope for that clause alone.
+      Recorded at length because this entry is the clearest case for B43's
+      bar: a probe reported a HIGH-sounding structural gap, the corpus had
+      already answered it, and the counter-evidence was sitting in this same
+      phase's own terminal-state census.
   - cc_id: CC-040
     verdict: not-this-epic
     summary: >-
