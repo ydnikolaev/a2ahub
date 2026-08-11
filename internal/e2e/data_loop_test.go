@@ -48,6 +48,7 @@
 //     PayloadNamesEntryAndRule, TestDataLoopFailSupersedePassCloseInbox
 //     NeverAccumulates, TestDataLoopStaleContractDoesNotChangeVerdict) —
 //     all three are left in place, failing, rather than rewritten.
+//
 //  1. `cmd/a2a`'s dataCore.pack (data_wiring.go) never populates
 //     datapackage.Document.Provenance. Every manifest a real `a2a data
 //     pack` produces therefore carries `provenance.origin_system: ""`,
@@ -58,6 +59,7 @@
 //     below compensates inside this test's own staging root (never
 //     touching cmd/a2a or internal/datapackage) so `pack`/`deliver`/`fetch`
 //     could be exercised and proven despite it; see its own doc comment.
+//
 //  3. `internal/space`'s ResolveDataContractSchemas (data_resolve.go)
 //     filters a resolved contract's carried set by
 //     `entry.Role == contract.RoleSchema`. For the "contract-tree-v1"
@@ -80,13 +82,29 @@
 //     Compounding: internal/contract's ContractPublicationFloor is
 //     "0.19.0", so a real `a2a contract publish` can only reach the
 //     contract-set-v2 profile when the space's own min_binary_version is
-//     at or above it — but raising that floor also trips CC-085 ("local
+//     at or above it — but raising that floor also tripped CC-085 ("local
 //     binary version older than space.yaml min_binary_version") against
-//     internal/e2e's own pinned exec binary ("0.1.0", main_test.go's
-//     ldflags, off this brief's allowlist too), refusing every OTHER
-//     write in the rig. There is no floor value that satisfies both
-//     constraints in this harness — verified empirically here, exactly as
-//     the sibling records having verified it independently.
+//     internal/e2e's own exec binary AS PINNED WHEN THIS WAS WRITTEN
+//     ("0.1.0", main_test.go's ldflags, off this brief's allowlist too),
+//     refusing every OTHER write in the rig. There was no floor value that
+//     satisfied both constraints in this harness AT THAT PIN — verified
+//     empirically here, exactly as the sibling records having verified it
+//     independently.
+//
+//     PARTIALLY STALE AS OF epic-backlog.md B33 (wave 37a): main_test.go
+//     now stamps the exec'd binary to contract.ContractPublicationFloor
+//     itself (main_test.go's harnessStampedVersion,
+//     data_adversarial_test.go's own matching note). That resolves ONLY
+//     the BINARY-SIDE half above — a hostRig raised to exactly that floor
+//     no longer trips CC-085. It does NOT establish that a real `a2a
+//     contract publish` now reaches contract-set-v2 through this harness:
+//     the funnel's own further gates at the floor (a real V2 submit
+//     validator, POL-009's schema/fixture baseline, the declared profile's
+//     `artifacts:` requirement — data_adversarial_test.go's own matching
+//     note lists them) were never driven through the binary either.
+//     Whether publish itself now succeeds end to end is UNVERIFIED. This
+//     file still seeds by direct commit regardless, for the independent
+//     §6.4-framing reason the sibling file states.
 //     publishDataLoopContract below (this file's own generalization, by
 //     version, of the sibling's fixed-1.0.0 helper — scenario 7/L-2 needs
 //     a second version mid-loop) seeds a real, resolvable contract-set-v2
@@ -95,6 +113,7 @@
 //     itself calls, never hand-computed) — the same arrangement technique
 //     helpers_test.go's own fixOriginManifest/seedOriginExtras already use
 //     in this package.
+//
 //  4. RESOLVED, and left here because the shape of the finding is worth
 //     more than its absence: `testkit/fakegithub`'s handleFindPR once
 //     omitted `body` from its listing, which real GitHub's
@@ -110,6 +129,7 @@
 //     that test asserts the repair. The lesson it cost: a gap in a test
 //     double does not read as a gap — it reads as a product behaviour, and
 //     the test written against it makes the wrong behaviour permanent.
+//
 //  2. `cmd/a2a`'s dataCore.verify never computes or sets
 //     ContractSupersededBy on its datapackage.VerifyRequest, so
 //     `Observed.ContractSupersededBy` would never be populated even if

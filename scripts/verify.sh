@@ -224,12 +224,42 @@ run_repo_gates() {
   echo "check-validators: repo gates green ($gates). No tests ran."
 }
 
+harness_stamp() {
+  # The version this shared binary claims to be, read from the product rather
+  # than repeated here.
+  #
+  # It used to be the literal 0.1.0, and that number silently disabled a whole
+  # generation of tests. internal/e2e execs THIS binary whenever
+  # A2A_VERIFY_BINARY is exported — which is every verify.sh mode except
+  # MODE=test — and every verb authoring event/v2 (`contract activate`,
+  # `verify --verdict`, `close --verdict`) is refused when the binary is older
+  # than the space's floor (CC-085). A binary stamped 0.1.0 against a floor of
+  # 0.19.0 cannot run any of them, so the tier stayed green by never reaching
+  # them: agent-exchange-2026-08 B33, and the reason three defects that tier
+  # was built to catch survived a green ceiling.
+  #
+  # internal/e2e/main_test.go's own fallback build derives its stamp from
+  # contract.ContractPublicationFloor, which is a plain alias of
+  # version.OperationalConfidenceFloor (publication_plan.go:34). Reading the
+  # aliased constant here is reading the SAME value, so the two builds cannot
+  # drift into stamping different binaries for the same test run.
+  local stamp
+  stamp="$(go doc github.com/ydnikolaev/a2ahub/internal/version OperationalConfidenceFloor 2>/dev/null |
+    sed -n 's/^const OperationalConfidenceFloor = "\(.*\)"$/\1/p' | head -1)"
+  if [ -z "$stamp" ]; then
+    echo "verify.sh: cannot read version.OperationalConfidenceFloor — refusing to guess the harness stamp." >&2
+    echo "           A wrong stamp does not fail loudly; it makes event/v2 verbs unreachable and the tier green (B33)." >&2
+    exit 1
+  fi
+  printf '%s' "$stamp"
+}
+
 build_cli() {
   # This is a synthetic test artifact with an explicit version. VCS stamping
   # adds no information, and Go 1.26's stamp resolver writes a revision stat
   # entry to the shared GOMODCACHE. Disabling it at the owning build command
   # keeps that shared input read-only inside agent sandboxes.
-  go build -buildvcs=false -ldflags "-X main.version=0.1.0" -o "$A2A_VERIFY_BINARY" ./cmd/a2a
+  go build -buildvcs=false -ldflags "-X main.version=$(harness_stamp)" -o "$A2A_VERIFY_BINARY" ./cmd/a2a
 }
 
 run_go_tests() {

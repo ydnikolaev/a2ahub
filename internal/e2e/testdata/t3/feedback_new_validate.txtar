@@ -16,7 +16,7 @@
 exec sh -c 'p=$(a2a feedback new bug --title "no way to list only my systems own contracts") && cat "$p"'
 stdout 'id: fb-[0-9]{8}-[0-9a-f]{6}'
 stdout 'kind: bug'
-stdout 'a2a_version: 0\.1\.0'
+stdout 'a2a_version: '$A2A_STAMPED_VERSION_RE
 stdout 'os_arch: \S+/\S+'
 stdout 'docs_consulted: false'
 stdout 'duplicates_checked: false'

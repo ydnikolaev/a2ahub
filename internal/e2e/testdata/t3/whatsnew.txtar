@@ -1,10 +1,17 @@
 # `a2a whatsnew`: renders the embedded release-notes corpus — no space, no
 # config needed. This shared t3 test binary is built with -X
-# main.version=0.1.0 (main_test.go), which predates every versioned entry in
-# the real corpus. The selected release range is therefore empty, while the
-# independently loaded current known-issues list must still be present in text
-# and JSON. Rich rendering (digest text, impact ordering, action-scope
-# directives, JSON shape) is covered by
+# main.version=$A2A_STAMPED_VERSION (main_test.go's harnessStampedVersion,
+# pinned to contract.ContractPublicationFloor for B33 — see main_test.go).
+# Whatever the selected release range turns out to be for that stamp, the
+# independently loaded current known-issues list must still be present in
+# text and JSON (AttachCurrentKnownIssues always attaches it to the newest
+# selected release, or to a bare carrier release if the range is empty).
+# "0.1.0" below is a LITERAL, not the harness's stamp: it is an arbitrary
+# --since value chosen to sit below every entry in the corpus (the lowest
+# shipped release is 0.2.0), so it exercises `--since` picking up the WHOLE
+# corpus range, deliberately independent of whatever version this harness
+# stamps into the binary. Rich rendering (digest text, impact ordering,
+# action-scope directives, JSON shape) is covered by
 # internal/cli/cmd_whatsnew_test.go and internal/mcp/tools_whatsnew_test.go
 # against a fixed, injected corpus.
 exec a2a whatsnew

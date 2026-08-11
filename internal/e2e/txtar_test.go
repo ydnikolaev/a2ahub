@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -91,6 +92,17 @@ func TestT3Scripts(t *testing.T) {
 			env.Setenv("HOME", home)
 			env.Setenv("FIXTURE_TOKEN", "dummy-token")
 			env.Setenv("ORIGIN", origin)
+			// The version this package stamps into the exec'd `a2a` binary
+			// (main_test.go's harnessStampedVersion, the SINGLE home for the
+			// value) — a plain form for `exec` args and a regexp.QuoteMeta'd
+			// form for `stdout`/`grep` patterns, which need the dots escaped
+			// literally. A .txtar assertion concatenates a quoted (literal,
+			// unexpanded) chunk with an unquoted (expanded) $VAR chunk —
+			// go-internal/testscript's own parse(): single quotes disable
+			// expansion, so the two must be separate, adjacent tokens (the
+			// same idiom cmd/go's own script tests use for $GOVERSION).
+			env.Setenv("A2A_STAMPED_VERSION", harnessStampedVersion)
+			env.Setenv("A2A_STAMPED_VERSION_RE", regexp.QuoteMeta(harnessStampedVersion))
 			// Pin the API root to the local denial fixture so NO script can
 			// reach api.github.com or leak FIXTURE_TOKEN to a third party.
 			env.Setenv("A2A_GITHUB_API", deniedAPI.URL)

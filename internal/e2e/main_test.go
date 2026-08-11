@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 )
 
@@ -17,6 +18,24 @@ import (
 // Placement decision: "testscript drives the BUILT binary via exec, not
 // in-process" — cmd/a2a is package main, not importable).
 var binDir string
+
+// harnessStampedVersion is the ONE source for the version this package
+// stamps into the built `a2a` binary (below) — never a repeated literal.
+// It is pinned to contract.ContractPublicationFloor itself, not merely
+// "some real dotted version": every event/v2-authoring verb this epic
+// shipped (`contract activate`, `close --verdict`, `verify --verdict`)
+// requires the space's own min_binary_version to be at or above that
+// floor (lifecycleEventSchema, internal/cli/cmd_lifecycle.go), and
+// space.WriteFunnel's CC-085 guard separately requires the EXEC'D
+// BINARY's own version to be at or above the space's floor
+// (space/funnel.go) — so a binary stamped below the floor can never
+// reach those verbs through this package's real-binary tier at all
+// (epic-backlog.md B33). Tying this to the floor constant itself, rather
+// than to a new number this file would own alone, keeps both guards
+// satisfiable by construction and gives every consumer (this file's own
+// -ldflags below, txtar_test.go's Setup, any .txtar assertion) one place
+// to read the value instead of five copies of a literal to keep in step.
+const harnessStampedVersion = contract.ContractPublicationFloor
 
 // TestMain builds `a2a` exactly once (the scripts/e2e-authoring-smoke.sh
 // idiom: `go build -o $bin ./cmd/a2a`) into a package-level temp directory,
@@ -81,13 +100,12 @@ func runTestMain(m *testing.M) int {
 	bin := filepath.Join(dir, "a2a")
 	// -ldflags stamps a real dotted version (cmd/a2a/main.go's own default
 	// is the literal string "dev", which doctorCheckVersions cannot parse
-	// as a semver — this phase's own read-surface tests need a real
-	// min_binary_version comparison to succeed, matching the "0.1.0" this
-	// package's direct-construction tests already use for binaryVersion).
+	// as a semver) — harnessStampedVersion (above), so this file and every
+	// .txtar assertion that names the stamp read the identical value.
 	// This is a synthetic test artifact with an explicit version; VCS stamps
 	// add no assertion and Go 1.26 resolves them through a writable module
 	// stat cache. Keep the shared GOMODCACHE a read-only input in sandboxes.
-	cmd := exec.Command("go", "build", "-buildvcs=false", "-ldflags", "-X main.version=0.1.0", "-o", bin, "./cmd/a2a")
+	cmd := exec.Command("go", "build", "-buildvcs=false", "-ldflags", "-X main.version="+harnessStampedVersion, "-o", bin, "./cmd/a2a")
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "GOWORK=off")
 	if out, err := cmd.CombinedOutput(); err != nil {

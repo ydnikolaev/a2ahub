@@ -4,7 +4,8 @@
 #     silently drops it, scaffolding a space with no CI at all);
 #   - the caller's reusable-workflow ref must pin THIS binary's version, never
 #     the version baked into the template (the e2e harness builds with
-#     -X main.version=0.1.0, so the pin must come out @v0.1.0).
+#     -X main.version=$A2A_STAMPED_VERSION, main_test.go's own
+#     harnessStampedVersion, so the pin must come out @v<that version>).
 exec a2a space init acme-space
 stdout 'wrote 8 files'
 
@@ -27,11 +28,11 @@ exists acme-space/space.yaml
 exists acme-space/CODEOWNERS
 
 # The ref pins the RUNNING binary's version, not the template's baked one.
-grep '@v0.1.0' acme-space/.github/workflows/a2a-validate.yml
+grep '@v'$A2A_STAMPED_VERSION_RE acme-space/.github/workflows/a2a-validate.yml
 
 # Space id + write floor were substituted.
 grep 'space: acme-space' acme-space/space.yaml
-grep 'min_binary_version: 0.1.0' acme-space/space.yaml
+grep 'min_binary_version: '$A2A_STAMPED_VERSION_RE acme-space/space.yaml
 
 # A dev build must NOT scaffold (it would pin a tag that does not exist) —
 # covered by the unit tests; here we assert the happy path stays green.

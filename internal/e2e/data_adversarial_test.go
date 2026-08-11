@@ -70,21 +70,41 @@ const dataAdversarialSchema = `{"$schema":"https://json-schema.org/draft/2020-12
 //
 // DEVIATION, recorded because it departs from "drive every step through
 // hostRig.mustRun": the real `a2a contract publish` cannot reach a
-// contract-set-v2 publication in THIS harness at all.
+// contract-set-v2 publication in THIS harness at all, AS OF WHEN THIS WAS
+// WRITTEN (main_test.go pinned the exec'd binary to "0.1.0").
 // internal/contract/publication_plan.go's own ContractPublicationFloor is
 // "0.19.0" — a space's min_binary_version must be at or above it before
 // publish will even ATTEMPT the v2 profile (belowFloor forces
 // contract-tree-v1 otherwise) — but internal/e2e's own TestMain
-// (main_test.go, off this brief's allowlist) hard-codes the exec'd binary's
+// (main_test.go, off this brief's allowlist) hard-coded the exec'd binary's
 // self-reported version to "0.1.0" via `-ldflags -X main.version=0.1.0", and
 // the SAME min_binary_version field also gates the write funnel's own
 // CC-085 guard ("local binary version older than space.yaml
 // min_binary_version"). Raising the floor to unlock contract-set-v2 publish
-// necessarily raises it past what the harness's own pinned binary version
-// can ever write through — verified empirically: a first attempt at
+// necessarily raised it past what the harness's own pinned binary version
+// could ever write through — verified empirically: a first attempt at
 // min_binary_version "1.0.0" refused EVERY `a2a submit` in the rig with
-// exactly that CC-085 message. There is no floor value that satisfies both
-// constraints in this harness. Publishing the contract is arrangement, not
+// exactly that CC-085 message. There was no floor value that satisfied both
+// constraints in this harness AT THAT PIN.
+//
+// PARTIALLY STALE AS OF epic-backlog.md B33 (wave 37a): main_test.go's
+// exec'd binary is no longer pinned below the floor — it now stamps
+// contract.ContractPublicationFloor itself (main_test.go's
+// harnessStampedVersion). That resolves ONLY the BINARY-SIDE half of the
+// dead-end above: a hostRig raised to exactly that floor no longer trips
+// CC-085 (equal never reads as "older"). It does NOT establish that a real
+// `a2a contract publish` now reaches contract-set-v2 through this
+// harness — publishDataAdversarialContract's own fixture below still needs
+// a real V2 submit validator at the floor (wave33SubmitValidator,
+// wave33_verify_test.go: ErrSubmitValidatorRequired, "final submission
+// validator is required at the operational-confidence floor"), and
+// publish's own POL-009 schema/fixture baseline and the declared profile's
+// `artifacts:` requirement are further gates this file never drove through
+// the binary either. Whether publish itself now succeeds end to end is
+// UNVERIFIED, not assumed to now pass.
+//
+// This file still seeds by direct commit regardless — the OTHER reason
+// stands on its own: publishing the contract is arrangement, not
 // the thing §6.4 tests — `a2a data pack|deliver|fetch|verify` refusing is —
 // and seeding it by a direct commit is the same technique
 // helpers_test.go's own fixOriginManifest/seedOriginExtras already use for
