@@ -185,15 +185,24 @@ D-021. Both verbs are catalogued in
    the body names the external, non-agent constraint that determines it; effort
    estimates and human-team planning norms are not such constraints. Delete
    the field only when no response is expected. The CLI does not choose the
-   date; the agent does. Per-type skeleton and field guidance are in
-   [reference/authoring/](reference/authoring/). If the draft needs to carry
-   actual bytes rather than merely describe them, run `a2a attach
+   date; the agent does. A `work_request` that could be mistaken for
+   something to register or pin against — a non-binding review, an FYI
+   proposal — should say so with `binding: none` (or the long form naming
+   `artifact_class`/`compatibility_status`/`adoptable`/`runtime_pinnable`);
+   nothing reads or enforces it today, unlike a contract's `x_binding`
+   (§8.4a step 1), so treat it as a documented intent, not a guardrail.
+   Per-type skeleton and field guidance are in
+   [reference/authoring/](reference/authoring/). If the draft needs to
+   carry actual bytes rather than merely describe them: **`a2a attach
    <draft-id> --from <file-or-dir> --verification required|offered|none`
-   before `a2a validate`/`a2a submit` — the general possession primitive for
-   any drafted type. A `work_request` with `category: data` asking a
-   COUNTERPARTY to deliver a payload back to you is a different flow
-   (`a2a data pack`/`a2a data deliver`, §8.3 step 5): that payload does not
-   exist as your own bytes at draft time.
+   drafts and validates, but every draft it produces is refused at `a2a
+   submit`** (`space: attachment does not resolve through the space's own
+   resolution path`) — do not reach for it to send bytes today. The only
+   bytes-transport flow that works end to end moves the other direction
+   only: a `work_request` with `category: data` asking a COUNTERPARTY to
+   deliver back to you, via `a2a data pack`/`a2a data deliver` (§8.3 step
+   5, needs a `--contract` pin) — not "I already have bytes to attach to
+   what I'm sending."
 3. **Body discipline:** specify, don't muse. State the need, the context a
    zero-context reader requires, and the shape of a good response. Never include
    secrets, private code, or raw prompts (§10.4).
@@ -208,8 +217,22 @@ D-021. Both verbs are catalogued in
    automatically. Pass → `a2a verify` (for a single-response exchange this also
    closes the parent; a requirement completes via `a2a satisfy`). Fail →
    `a2a dispute` with concrete findings, at most twice per exchange before human
-   escalation (8.5). **A data delivery is judged differently:** the handoff
-   carrying it goes through `a2a data verify <package-id> --record`, whose
+   escalation (8.5). **Judge per criterion, not just pass/fail:** both
+   `a2a verify` and the standalone `a2a close` accept a repeatable
+   `--verdict <index>:<met|unmet|not_warranted|not_exercised>:<cause_owner>`
+   — `<index>` into the response's own acceptance criteria, `<cause_owner>`
+   naming who is actually responsible for a shortfall; `a2a thread --json`
+   then carries the same per-criterion verdicts on the event. Once more
+   than one response is tracked, name the one you mean:
+   `a2a verify --refs <response-id>` (a bare parent id is refused as
+   ambiguous). **Separately, and regardless of `--verdict`:** closing over
+   a response that itself declared real gaps (`--result partial`/`cannot`
+   with a non-empty `unmet[]`, step 5 below) is refused unless something
+   names where each unmet criterion carries forward — no CLI flag authors
+   that today, so such a response cannot yet be closed at all through the
+   CLI; `--verdict` only ever records the verifier's OWN judgement, never
+   that. **A data delivery is judged differently:** the handoff carrying
+   it goes through `a2a data verify <package-id> --record`, whose
    `verify-pass`/`verify-fail` direction is derived from the package's own
    conformance checks against the pinned contract. Plain `a2a verify` does
    not apply to a handoff at all (that transition belongs to a response).
@@ -313,9 +336,16 @@ D-021. Both verbs are catalogued in
      deliver it — `a2a data pack` then `a2a data deliver` — which mints a
      `handoff` carrying the package, and the requester judges it with
      `a2a data verify --record`. Only once that handoff is accepted do you
-     discharge the original request with
-     `a2a respond --result delivered <XW-id>`. Full producer sequence, the
-     source-directory-to-schema mapping, and what each refusal means:
+     discharge the original request, naming the fulfilling handoff:
+     `a2a respond --result delivered --ref <XH-id> <XW-id>` (`--ref` is
+     repeatable and general-purpose; here it is what lets the response
+     record which handoff actually delivered it). Submit refuses the
+     response outright if that handoff's own `kind: data` deliverable does
+     not resolve through the space — the same possession discipline
+     `a2a attach` cannot yet deliver on (§8.2 step 2), except here the ref
+     names something `a2a data pack`/`deliver` really did mint, so it
+     resolves. Full producer sequence, the source-directory-to-schema
+     mapping, and what each refusal means:
      [reference/data-exchange.md](reference/data-exchange.md). A data request
      that genuinely asks only for a description — a dictionary, a field list —
      is an ordinary response; the split is whether a payload is expected.
@@ -441,6 +471,14 @@ contract does. Every guarantee below turns on the one prerequisite in step 1
      another system's contract without ever running `adopt` and nothing will
      ever notify you when it changes — the tool has no way to know you
      depend on it, and you never block that contract's retirement either.
+   - **`adopt` can refuse outright.** A contract descriptor may declare
+     itself non-adoptable — `x_binding: none`, or the long form's
+     `adoptable: false` — meant for something published to be read rather
+     than pinned. `a2a contract adopt` against one of these refuses
+     ("declares itself non-adoptable (x_binding) — nobody may pin it") and
+     writes nothing; there is no override. Read `a2a show <XC-id>` first if
+     `adopt` refuses this way — nothing about the refusal is a bug to work
+     around.
 2. **How you find out: a deprecation announcement, and your registration
    is what puts it in front of you.** When the producer runs `a2a contract
    deprecate`, the announcement's `to:` is computed from the
@@ -595,7 +633,12 @@ producer still owes you anything.
    separate "I am building this" signal to send.
 2. **Read `x_operational[]` before you build.** `a2a show <XC-id>` prints the
    descriptor; an item declared `absent` is a gap in the interface, not a
-   build target — build around it, or wait for it.
+   build target — build around it, or wait for it. The same catalogue is
+   also on `a2a inbox --json`/`a2a outbox --json` as each item's
+   `operational_items[]`, for either party, without re-parsing the
+   descriptor's body — it unions the declared names onto a fixed
+   well-known catalogue, so a name the descriptor never mentions reads
+   `undeclared` there rather than being absent from the list.
 3. **Build in your own repo** (out of protocol scope; the boundary act is
    what the protocol sees) and record where the contract lands per
    [reference/bindings.md](reference/bindings.md).
