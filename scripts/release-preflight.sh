@@ -8,7 +8,7 @@
 # The root cause was reading release state from LOCAL `git tag` (stale) instead
 # of the release remote. This gate makes that class impossible to ship blind.
 #
-# Two assertions, both keyed off the RELEASE REMOTE (never local-only state):
+# Assertions, all keyed off the RELEASE REMOTE (never local-only state):
 #   (a) the version you are about to cut is FREE on the remote;
 #   (b) every reusable-workflow ref the space-template pins resolves to a tag
 #       whose TREE ACTUALLY CONTAINS that workflow file.
@@ -18,6 +18,21 @@
 #       write from an older binary (CC-085). A floor ahead of the newest
 #       release refuses EVERYONE — including the person trying to fix it —
 #       so a one-character typo here is a fleet-wide outage.
+#   (d) the reverse of (c), one release LATE by construction: if the PREVIOUS
+#       release (prev) added a new (family, version, type) corpus row that the
+#       one before it (prev2) did not have — a schema no binary released
+#       before prev can decode — the write floor must already equal prev's
+#       version by the time you preflight the NEXT release. Pre-tag, the floor
+#       cannot name the version being cut (runbook Phase 1 step 4: it still
+#       names the previous release); it is only raised, to the version JUST
+#       published, by `make space-template-baseline` AFTER the tag (runbook
+#       Phase 4 step 15). So `floor == version-being-cut` is structurally
+#       impossible to demand pre-tag, and the earliest moment this can be
+#       judged is the NEXT preflight — this assertion catches a skipped or
+#       wrong Phase 4 step 15 one release late, not the release that made the
+#       miss. (c) forbids the floor overshooting; (d) forbids it undershooting
+#       the one time undershooting is dangerous. Both hold; neither implies
+#       the other.
 #
 # Determinism note (validation doctrine §5): the only non-deterministic step is
 # the `git fetch` of the release remote. Everything after it is a pure local git
@@ -110,6 +125,187 @@ assert_floor_not_ahead() { # $1 = repo, $2 = version (vX.Y.Z or X.Y.Z)
   ok "release-preflight: template write floor $floor is not ahead of ${2}"
 }
 
+# _CORPUS_ROW_ANCHOR is the anchor for every corpusDefinitions row in
+# internal/schema/corpus.go: `{key: corpusKey{...}, path: "..."}`, one per
+# line. `_corpus_triples` and its self-check both key off this exact prefix so
+# they read the same set of lines.
+_CORPUS_FILE="internal/schema/corpus.go"
+_CORPUS_ROW_ANCHOR='^[[:space:]]*\{key: corpusKey\{'
+
+# _corpus_triples reads a corpus.go source (on stdin) and emits the sorted,
+# de-duplicated set of "family version typ" triples it declares — one per
+# corpusDefinitions row. `family` and `typ` are resolved through that same
+# revision's own `family*`/`type*` const block, so a bare identifier
+# (`typeBase`) and an equivalent quoted literal (`"contract"`) compare equal
+# and a const rename does not manufacture a spurious triple.
+#
+# Self-check: the number of triples extracted must equal the number of lines
+# matching `_CORPUS_ROW_ANCHOR`. If a future row shape breaks the regex (e.g.
+# a row wrapped across lines), this must be caught loudly rather than let the
+# gate quietly stop seeing new rows.
+_corpus_triples() {
+  local src rows mapfile triples n_rows n_triples
+  src="$(cat)"
+  rows="$(printf '%s\n' "$src" | grep -cE "$_CORPUS_ROW_ANCHOR" || true)"
+
+  mapfile="$(mktemp)"
+  printf '%s\n' "$src" \
+    | grep -E '^[[:space:]]*(family|type)[A-Za-z]+[[:space:]]*=[[:space:]]*"[^"]*"' \
+    | sed -E 's/^[[:space:]]*([A-Za-z0-9_]+)[[:space:]]*=[[:space:]]*"([^"]*)".*/\1 \2/' \
+    > "$mapfile" || true
+
+  triples="$(printf '%s\n' "$src" \
+    | grep -E "$_CORPUS_ROW_ANCHOR" \
+    | grep -oE 'corpusKey\{family: *[A-Za-z0-9_"]+, *version: *[0-9]+, *typ: *[A-Za-z0-9_"]+\}' \
+    | sed -E 's/corpusKey\{family: *([A-Za-z0-9_"]+), *version: *([0-9]+), *typ: *([A-Za-z0-9_"]+)\}/\1 \2 \3/' \
+    | tr -d '"' \
+    | while read -r fam ver typ; do
+        rfam="$(awk -v k="$fam" '$1==k{print $2; f=1} END{if(!f) print k}' "$mapfile")"
+        rtyp="$(awk -v k="$typ" '$1==k{print $2; f=1} END{if(!f) print k}' "$mapfile")"
+        printf '%s %s %s\n' "$rfam" "$ver" "$rtyp"
+      done \
+    | sort -u || true)"
+  rm -f "$mapfile"
+
+  n_rows="$rows"
+  n_triples="$(printf '%s\n' "$triples" | grep -c . || true)"
+  if [ "$n_rows" != "$n_triples" ]; then
+    fail "release-preflight: corpus.go row shape changed — this extractor can no longer
+    read it ($n_rows row(s) matched $_CORPUS_ROW_ANCHOR but $n_triples triple(s) were
+    extracted). assert_floor_moves_with_schema would silently stop seeing new rows."
+    return 1
+  fi
+  printf '%s\n' "$triples"
+}
+
+# _release_preflight_baseline_tag prints the highest vX.Y.Z-shaped tag in
+# $repo that sorts below $version per `sort -V`, or nothing if none does
+# (there is no released state below the version being cut, e.g. the very
+# first tag ever).
+_release_preflight_baseline_tag() { # $1 = repo, $2 = version (vX.Y.Z)
+  local repo="$1" version="$2"
+  { git -C "$repo" tag -l | grep -E '^v?[0-9]+(\.[0-9]+){1,2}$' || true; printf '%s\n' "$version"; } \
+    | sort -V -u \
+    | awk -v v="$version" '$0==v{exit} {print}' \
+    | tail -1
+}
+
+# (d) one release LATE, by construction — see the header comment's (d) for
+#     why this cannot be asked any earlier. Let prev = the highest published
+#     tag below the version being cut, and prev2 = the highest published tag
+#     below prev.
+#
+#     If prev is the FIRST tag in the repository, prev2 is empty and prev2's
+#     triple set is empty, so every row prev declares counts as new and the
+#     floor is required to name prev. That is intended — a first release ships
+#     the whole corpus, and its floor should say so — and it is stated here
+#     rather than tested, because a2ahub is forty tags past the case and a
+#     tooth for an unreachable path is a tooth nobody maintains.
+#
+#     Not provable against this repository today, and said plainly: every
+#     published tag from v0.19.6 to v0.19.9 carries the SAME 28 corpus rows,
+#     so no (prev, prev2) pair on the real tree reaches the floor comparison
+#     at all. HEAD carries 30 — the two rows this epic added — so the branch
+#     goes live at the preflight AFTER the release that publishes them. Until
+#     then the floor-mismatch path is proven by teeth 13/14 alone, which drive
+#     this exact function against real fixture repositories. If prev added a (family, version, type) corpus row that
+#     prev2 did not have, the write floor — read from the CURRENT (working
+#     tree) state of $TEMPLATE_MANIFEST, i.e. "as of right now, about to cut
+#     the NEXT release" — must equal prev's version. This is the earliest
+#     point every existing invariant can hold at once: it is what runbook
+#     Phase 1 step 4 asserts (the floor still names the previous release);
+#     it is what keeps the floor pointing at a tag assert_pins_resolve above
+#     could actually verify — `bump-space-template.sh` / `make
+#     space-template-baseline` moves the floor and the workflow pins as ONE
+#     PAIR and REFUSES to write a tag that is not published (the 2026-07-26
+#     outage this guards), so forcing the floor to name $VERSION pre-tag
+#     would drag the paired pin to a ref assert_pins_resolve cannot resolve
+#     either, not just the floor to an unpublished tag; and it is what
+#     `space-template-baseline-check` (Phase 4 step 15's own gate) already
+#     guards from the other side — it asserts floor and pins move together as
+#     a pair and never sit ahead of the newest authored note, but it cannot
+#     see whether Phase 4 step 15 was skipped for the PREVIOUS release, because
+#     a lagging floor is exactly its steady state. This assertion is what
+#     catches that miss — one ceremony late, not the one that made it.
+#
+#     Composition with (c) above: assert_floor_not_ahead requires floor <=
+#     version, ALWAYS — overshooting the floor locks out every existing
+#     binary. This assertion requires floor == prev's version, ONLY when prev
+#     added a corpus row prev2 did not have — undershooting is only dangerous
+#     the moment a schema a released binary cannot decode ships, because
+#     `a2a space update` would then propagate a row no old binary can
+#     validate. Both hold together; neither implies the other, and collapsing
+#     them loses the "only when a row is added" half.
+#
+#     The trigger is a corpus ROW, not a file: schemas/envelope/v2/fixtures/
+#     and schemas/event/v2/schema_test.go both live under schemas/**, so a
+#     file-based trigger would RED on a fixture or test-only commit that adds
+#     no new decodable type — and a gate that reds on innocent commits gets
+#     switched off within a week. `corpusDefinitions` in
+#     internal/schema/corpus.go is the one place a new supported
+#     (family, version, type) is declared, one explicit literal struct per
+#     row, so a shell can read it deterministically.
+assert_floor_moves_with_schema() { # $1 = repo, $2 = version (vX.Y.Z or X.Y.Z) about to be cut
+  local repo="$1" version="$2"
+  local prev prev2 want prev_triples prev2_triples new_triples floor formatted
+
+  prev="$(_release_preflight_baseline_tag "$repo" "$version")"
+  if [ -z "$prev" ]; then
+    ok "release-preflight: no released tag below $version — nothing to check the floor against"
+    return 0
+  fi
+  want="${prev#v}"
+
+  # prev2 may be empty (prev is the very first tag ever) — every triple prev
+  # declares then counts as new against an empty baseline, same as
+  # corpus.go's own absence below.
+  prev2="$(_release_preflight_baseline_tag "$repo" "$prev")"
+
+  # $_CORPUS_FILE may not have existed yet at $prev or $prev2 (e.g. it was
+  # added after that release) — that is an empty corpus, not a failure, so
+  # it is checked explicitly rather than folded into a swallowed `git show`
+  # error that would otherwise surface as an unexplained RED.
+  if git -C "$repo" cat-file -e "$prev:$_CORPUS_FILE" 2>/dev/null; then
+    prev_triples="$(git -C "$repo" show "$prev:$_CORPUS_FILE" | _corpus_triples)" || return 1
+  else
+    prev_triples=""
+  fi
+
+  if [ -n "$prev2" ] && git -C "$repo" cat-file -e "$prev2:$_CORPUS_FILE" 2>/dev/null; then
+    prev2_triples="$(git -C "$repo" show "$prev2:$_CORPUS_FILE" | _corpus_triples)" || return 1
+  else
+    prev2_triples=""
+  fi
+
+  new_triples="$(awk 'NR==FNR{seen[$0]; next} !($0 in seen) && NF' \
+    <(printf '%s\n' "$prev2_triples") <(printf '%s\n' "$prev_triples"))"
+
+  if [ -z "$new_triples" ]; then
+    ok "release-preflight: $prev added no new corpus row since ${prev2:-the beginning} — the write floor is not required to name $prev"
+    return 0
+  fi
+
+  floor="$(sed -n 's/^min_binary_version:[[:space:]]*"\{0,1\}\([0-9][0-9.]*\)"\{0,1\}.*/\1/p' "$repo/$TEMPLATE_MANIFEST" 2>/dev/null | head -1)"
+  formatted="$(printf '%s\n' "$new_triples" | awk '{printf "      - %s v%s %s\n", $1, $2, $3}')"
+
+  if [ "$floor" != "$want" ]; then
+    fail "release-preflight: $prev added a new schema corpus row not present at ${prev2:-<none — prev is the first release>} —
+$formatted
+    — but $TEMPLATE_MANIFEST's min_binary_version is ${floor:-<unset>}, not $want. $prev shipped
+    a schema no binary released before it can decode, so ITS release should have raised the
+    write floor to $want (runbook Phase 4 step 15, \`make space-template-baseline\`) — or
+    \`a2a space update\` propagates a row no older binary can validate. Fix: set
+    min_binary_version: \"$want\" in $TEMPLATE_MANIFEST before cutting $version.
+    (This check runs one release late, by design: pre-tag the floor cannot yet name $version
+    itself — runbook Phase 1 step 4 — so the earliest moment this miss is checkable is
+    preflight for the release AFTER the one that added the row.)"
+    return 1
+  fi
+
+  ok "release-preflight: $prev's new corpus row(s) since ${prev2:-the beginning} are accompanied by a write floor already at $want —
+$formatted"
+}
+
 assert_ref_default_matches() { # $1 = repo, $2 = version (vX.Y.Z)
   local repo="$1" want="$2" got
   # The `a2a-ref` input's own default inside the reusable workflow: the module
@@ -200,7 +396,7 @@ assert_site_publishes() { # $1 = repo (for gh --repo), unused when gh is absent
 # ── teeth: the gate must go RED on a violating fixture (offline) ──────────────
 
 teeth() {
-  local tmp rc out
+  local tmp rc out case1 case2 case3 case4
   tmp="$(mktemp -d)" || { echo "release-preflight --teeth: mktemp failed" >&2; exit 1; }
   trap 'rm -rf "$tmp"' RETURN
 
@@ -327,6 +523,102 @@ teeth() {
   fi
   ok "teeth 12: a2a-ref input with no default at all → RED"
 
+  # --- teeth 13-16: assert_floor_moves_with_schema, four cases, each its own
+  #     throwaway repo under $tmp (cleaned up by the trap set above; no second
+  #     trap is installed here, which would replace rather than compose it).
+  #
+  #     Each case now needs THREE points in history, because the assertion is
+  #     one release late by design: prev2 (tagged v1.0.0, the base), prev
+  #     (tagged v1.1.0, the release under scrutiny), and the working-tree
+  #     state — which stands in for "about to cut v1.2.0, the NEXT release" —
+  #     whose min_binary_version is what the assertion actually reads. ---
+  _teeth_corpus_base() { # $1 = target path
+    printf 'package schema\n\nvar corpusDefinitions = []corpusDefinition{\n\t{key: corpusKey{family: "envelope", version: 1, typ: "contract"}, path: "envelope/v1/contract.schema.json"},\n\t{key: corpusKey{family: "envelope", version: 2, typ: "contract"}, path: "envelope/v2/contract.schema.json"},\n}\n' > "$1"
+  }
+  _teeth_corpus_plus_row() { # $1 = target path — base + one NEW corpus row
+    printf 'package schema\n\nvar corpusDefinitions = []corpusDefinition{\n\t{key: corpusKey{family: "envelope", version: 1, typ: "contract"}, path: "envelope/v1/contract.schema.json"},\n\t{key: corpusKey{family: "envelope", version: 2, typ: "contract"}, path: "envelope/v2/contract.schema.json"},\n\t{key: corpusKey{family: "envelope", version: 2, typ: "response"}, path: "envelope/v2/response.schema.json"},\n}\n' > "$1"
+  }
+  _teeth_new_case_repo() { # $1 = case dir — inits a repo, commits+tags prev2 (v1.0.0)
+    local dir="$1"
+    mkdir -p "$dir/internal/schema" "$dir/space-template"
+    git -C "$dir" init -q -b main
+    git -C "$dir" config user.email teeth@example.com
+    git -C "$dir" config user.name teeth
+    _teeth_corpus_base "$dir/internal/schema/corpus.go"
+    printf 'schema: space/v1\nmin_binary_version: 1.0.0\n' > "$dir/space-template/space.yaml"
+    git -C "$dir" add -A && git -C "$dir" commit -qm "baseline v1.0.0"
+    git -C "$dir" tag v1.0.0
+  }
+
+  # case 1: prev (v1.1.0) added a corpus row vs prev2 (v1.0.0), and the
+  # write floor already names prev → GREEN when preflighting v1.2.0.
+  case1="$tmp/case1"
+  _teeth_new_case_repo "$case1"
+  _teeth_corpus_plus_row "$case1/internal/schema/corpus.go"
+  printf 'schema: space/v1\nmin_binary_version: 1.1.0\n' > "$case1/space-template/space.yaml"
+  git -C "$case1" add -A && git -C "$case1" commit -qm "add envelope/v2/response, raise floor"
+  git -C "$case1" tag v1.1.0
+  if ! out="$(assert_floor_moves_with_schema "$case1" v1.2.0 2>&1)"; then
+    echo "release-preflight --teeth: FAILED — case 1 (prev added a row, floor == prev) went RED" >&2
+    echo "$out" >&2; exit 1
+  fi
+  ok "teeth 13: prev added a corpus row vs prev2, floor already == prev → GREEN"
+
+  # case 2: prev (v1.1.0) added a corpus row vs prev2 (v1.0.0), but the
+  # write floor still names prev2, not prev → RED. This is Phase 4 step 15
+  # having been skipped for prev's own release, caught one ceremony late.
+  case2="$tmp/case2"
+  _teeth_new_case_repo "$case2"
+  _teeth_corpus_plus_row "$case2/internal/schema/corpus.go"
+  # space.yaml untouched — floor stays 1.0.0 (prev2) while prev is tagged 1.1.0.
+  git -C "$case2" add -A && git -C "$case2" commit -qm "add envelope/v2/response, floor NOT raised"
+  git -C "$case2" tag v1.1.0
+  if out="$(assert_floor_moves_with_schema "$case2" v1.2.0 2>&1)"; then
+    echo "release-preflight --teeth: FAILED — case 2 (prev added a row, floor still at prev2) stayed GREEN" >&2
+    echo "$out" >&2; exit 1
+  fi
+  printf '%s\n' "$out" | grep -q "envelope v2 response" || {
+    echo "release-preflight --teeth: FAILED — case 2 red, but the message does not name the triple" >&2
+    echo "$out" >&2; exit 1; }
+  printf '%s\n' "$out" | grep -q "1\.0\.0" || {
+    echo "release-preflight --teeth: FAILED — case 2 red, but the message does not name the current (wrong) floor 1.0.0" >&2
+    echo "$out" >&2; exit 1; }
+  printf '%s\n' "$out" | grep -q "1\.1\.0" || {
+    echo "release-preflight --teeth: FAILED — case 2 red, but the message does not name the required floor 1.1.0 (prev)" >&2
+    echo "$out" >&2; exit 1; }
+  ok "teeth 14: prev added a corpus row vs prev2, floor still at prev2 → RED (names the triple and both versions)"
+
+  # case 3: prev (v1.1.0) added NO corpus row vs prev2 → GREEN, regardless of
+  # where the floor sits (no constraint is imposed either way).
+  case3="$tmp/case3"
+  _teeth_new_case_repo "$case3"
+  git -C "$case3" commit -q --allow-empty -m "no schema change"
+  git -C "$case3" tag v1.1.0
+  # floor left lagging at prev2's value (1.0.0) — must still be GREEN.
+  if ! out="$(assert_floor_moves_with_schema "$case3" v1.2.0 2>&1)"; then
+    echo "release-preflight --teeth: FAILED — case 3 (prev added no row) went RED" >&2
+    echo "$out" >&2; exit 1
+  fi
+  ok "teeth 15: prev added no corpus row vs prev2, floor lagging → GREEN (no constraint)"
+
+  # case 4 — THE deliverable case: prev adds only a fixture / _test.go under
+  # schemas/** (not a corpus row) with the floor still lagging at prev2 →
+  # GREEN. If a file-based trigger were used instead of a corpus-row-based
+  # one, this would falsely RED and the gate would get switched off.
+  case4="$tmp/case4"
+  _teeth_new_case_repo "$case4"
+  mkdir -p "$case4/schemas/envelope/v2/fixtures" "$case4/schemas/event/v2"
+  echo '{"ok": true}' > "$case4/schemas/envelope/v2/fixtures/valid.json"
+  echo 'package schema_test' > "$case4/schemas/event/v2/schema_test.go"
+  git -C "$case4" add -A && git -C "$case4" commit -qm "add a fixture and a _test.go under schemas/**, no corpus row"
+  git -C "$case4" tag v1.1.0
+  # floor untouched — still 1.0.0 (prev2) — must still be GREEN.
+  if ! out="$(assert_floor_moves_with_schema "$case4" v1.2.0 2>&1)"; then
+    echo "release-preflight --teeth: FAILED — case 4 (fixture/test-only file in prev, no corpus row, floor lagging) went RED" >&2
+    echo "$out" >&2; exit 1
+  fi
+  ok "teeth 16: fixture/test-only file in prev (no new corpus row), floor lagging → GREEN"
+
   # The site-deploy decision, exercised offline through judge_pages_conclusion.
   # Every non-success conclusion must refuse — including the empty one. "The
   # workflow's status could not be read" is not evidence that the site is fine,
@@ -375,6 +667,7 @@ rc=0
 assert_version_free "$ROOT" "$VERSION" || rc=1
 assert_pins_resolve "$ROOT" || rc=1
 assert_floor_not_ahead "$ROOT" "$VERSION" || rc=1
+assert_floor_moves_with_schema "$ROOT" "$VERSION" || rc=1
 assert_ref_default_matches "$ROOT" "$VERSION" || rc=1
 if [ "${A2A_SKIP_PAGES_CHECK:-}" = "1" ]; then
   echo "release-preflight: SKIPPING the site-deploy check (A2A_SKIP_PAGES_CHECK=1) — the site may not announce $VERSION."
