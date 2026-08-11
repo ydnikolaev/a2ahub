@@ -555,47 +555,125 @@ func TestScenarioDeclaredParsesRealSpecs(t *testing.T) {
 //     (decision-proposed-withdrawn-by-author-after-approvers-left,
 //     decision-proposed-superseded-by-author-after-approvers-left,
 //     handoff-submitted-superseded-by-producer-after-receiver-left) remain
-//     uncovered. Each names a SCENARIO — "after X left" — that needs a
-//     participant to leave the space mid-path. pathgrammar.go's
-//     Step/Path grammar has no such Step form (walkSteps resolves only
-//     fold.TransitionRows() triples against a running per-Kind state
-//     machine; nothing in this package ever mutates fold.MembershipView or
-//     a manifest's ACTIVE participant set mid-walk) and pathdriver_live.go
-//     has no ResetSpace-adjacent operation that removes a live participant
-//     either — this wave checked both files (neither is on this wave's
-//     allowlist) and found no such capability, live or declared-only. The
-//     UNDERLYING TRANSITIONS all three ids need (decision proposed-
-//     withdraw, decision proposed-supersede, handoff submitted/acknowledged-
-//     supersede) are themselves drivable without a departure — they carry
-//     Role RoleOwner UNCONDITIONALLY, table.go — and this wave DID drive
-//     one of the three (decision proposed-withdraw, via
-//     decision-proposed-withdrawn, pathcatalogue_paths.go), but a scenario
+//     uncovered — but the earlier finding here asked for the wrong
+//     capability, and is corrected rather than left standing (2026-08-11,
+//     same discipline item 2's own correction below uses). It named the
+//     gap "manifest/membership mutation mid-path" and framed it as a
+//     pathgrammar.go Step. It is neither.
+//
+//     DECISION (the wave's own brief: STEP or path-level precondition),
+//     settled by the product's own rule, not by inference: D-017
+//     (fold/types.go, MembershipView's own doc comment — "authorization is
+//     evaluated against the manifest as of the event's commit") makes
+//     membership a per-COMMIT view. Sharper still, read directly rather
+//     than assumed: fold.go's authorized()/legalRole() resolve as
+//     `legalRole(role, env, actorSystem, membership(actorSystem))` —
+//     ONLY the ACTING system's own status is ever consulted; the
+//     counterparty is never queried. All three ids' own final transitions
+//     — decision `withdraw` from `proposed`, decision `supersede` from
+//     `proposed`, handoff `supersede` from `submitted`/`acknowledged` — are
+//     Role Owner UNCONDITIONALLY (table.go), and RoleOwner means
+//     `actorSystem == env.From` (fold.go roleAuthorizes) — the author or
+//     producer, never the departed approver/receiver. So a participant
+//     already "left" at space genesis and one that flips to "left"
+//     mid-path are PROVABLY IDENTICAL to every check these three
+//     transitions execute; a mid-path Step would be strictly more
+//     mechanism for the identical fact. DECISION: a path-level
+//     PRECONDITION (a genesis-time manifest fact) — and not even
+//     pathgrammar.go's own Path.Precondition field (that chains onto
+//     ANOTHER declared conformance Path's own end state; a
+//     departed-from-genesis participant is a harness PROVISIONING fact, a
+//     different axis). pathgrammar.go needs no new type for this at all.
+//
+//     STILL UNDRIVEN THIS WAVE, verified against the harness (pathgrammar.go
+//     and pathdriver_live.go both ARE on this wave's allowlist, unlike the
+//     earlier claim here): the one place this rig ever writes a
+//     participant's status is scaffold.go's PatchSpaceParticipants, and it
+//     hardcodes `status: active` for every entry it renders
+//     ("... owners: [%s], status: active, joined: %s ..."); there is no
+//     parameter to render "left". provision_live.go's own ResetSpace is
+//     its only caller, and it is a full-history reset (git init -b main,
+//     one commit, force-push — gitCommitScaffold/gitForcePush) run ONCE
+//     before a path starts; running it mid-path would erase the path's own
+//     already-committed artifacts, so it cannot be reused there either. No
+//     `a2a` CLI verb writes `status: left` — the only two readers,
+//     internal/cli/adapters.go:423 and internal/cli/cmd_lifecycle.go:426,
+//     both only READ the field. So the missing capability is a
+//     space-GENESIS provisioning primitive (scaffoldParticipants/
+//     PatchSpaceParticipants widened to accept an initial per-participant
+//     status, scaffold.go/provision_live.go) — NOT a pathgrammar.go
+//     widening, and both files that would carry it are off this wave's
+//     allowlist. The UNDERLYING TRANSITIONS all three ids need are
+//     themselves drivable without any departure at all — this wave DID
+//     drive one of the three (decision proposed-withdraw, via
+//     decision-proposed-withdrawn, pathcatalogue_paths.go) — but a scenario
 //     id that names the departure specifically is not satisfied by driving
 //     the transition alone under a different path id: that path answers no
 //     spec-01 scenario id, only fold.RestingStates()'s own {decision,
 //     withdrawn} member (restingcoverage_test.go) — a different gate, over
 //     a different universe. See uncoveredTransitions()'s own corrected
 //     class (pathcoverage_test.go) for the transition-level half of this
-//     same finding. The missing capability, named precisely: manifest/
-//     membership mutation mid-path.
+//     same finding.
 //
 //  2. 04-possession.md's work-request-attaches-bytes-without-contract-pin-
-//     or-fulfillment. The underlying CLI capability HAS shipped and is
-//     offline-drivable (`a2a attach`, internal/cli/cmd_attach.go — no space
-//     credential, no mirror sync, the same local-only shape `a2a new`
-//     uses) — this is not a product gap. It is a GRAMMAR gap: Step/
-//     Predicate (pathgrammar.go) asserts only fold-derived facts (folded
-//     state, pendency, actionable — PredicateKind's own closed set, I9) and
-//     `attach` is not a fold.TransitionRows() member at all (it writes an
-//     `attachments[]` frontmatter entry on a still-staged draft, before
-//     `submit`). No PredicateKind exists for "this artifact carries an
-//     attachment with no contract pin and no fulfillment", and I9's own
-//     rule (pathgrammar.go: "a predicate with no shipped surface is not a
-//     weaker assertion — it is a wave: build the surface, or drop the
-//     assertion") forbids inventing a weaker stand-in. Missing capability:
-//     a PredicateKind for envelope-body content (pathgrammar.go) plus the
-//     driver leg that performs `a2a attach` (pathdriver_live.go) — neither
-//     file is on this wave's allowlist.
+//     or-fulfillment. The earlier finding here said the gap was purely
+//     grammar-shaped and closed with "neither file is on this wave's
+//     allowlist" — that clause is now FALSE (pathgrammar.go and
+//     pathdriver_live.go both ARE on this wave's allowlist) and the rest is
+//     corrected too (2026-08-11): this wave traced the actual product path
+//     rather than stopping at the grammar, and the gap survives for a
+//     reason the earlier text never checked.
+//
+//     `a2a attach` (internal/cli/cmd_attach.go) is confirmed offline-
+//     drivable and still a genuine "domain act with no fold transition"
+//     (pathgrammar.go's own doc comment — the same shape as `contract
+//     adopt`; no Step needed for the act itself). The body-content surface
+//     the scenario needs is `a2a show <id> --json` -> `.attachments[]`
+//     (cache.ShowResult.Attachments, cache/types.go) — it exists and DOES
+//     carry `conforms_to` (datapackage.Attachment, attach.go) — but it only
+//     reads a COMMITTED artifact; `a2a show` cannot see a still-staged
+//     draft (the SAME I9 gap checkFoldedState's own doc comment already
+//     names for `folded_state == draft`, pathdriver_live.go). Reaching that
+//     surface needs the attach-carrying draft to be SUBMITTED first.
+//
+//     Submitting it is refused. `a2a attach` mints Ref as the SAME value as
+//     Digest (attach.go: "content-addressed ... no second, independent
+//     id-minting scheme"), a bare `sha256:...` string. Every funnel
+//     Submit() runs checkSubmitAttachmentPossession
+//     (internal/space/funnel.go, wired into submitPreparedRequest before
+//     any commit/push), which resolves every declared attachments[].ref
+//     through ResolveDataPackage (internal/space/data_resolve.go) — whose
+//     FIRST step, dataPackagePrefixParsed, requires a `DP-`-prefixed
+//     package id; a bare `sha256:` ref fails it immediately
+//     (ErrDataPackageInvalidReference), which possession.go turns into
+//     ErrAttachmentUnresolvable. The only way to mint a `DP-` id the space
+//     can resolve is `a2a data pack --contract <XC-id>@<version> --from
+//     <dir>` (cmd_data.go: `--contract` is required, no default) — the
+//     EXACT contract pin this scenario asserts the ABSENCE of. So the only
+//     route to the body-content surface would introduce the one fact the
+//     scenario says must be absent; there is no path to a committed,
+//     `a2a show`-readable, unpinned attachment through the real binary
+//     today.
+//
+//     The other candidate, `a2a validate <path>` (cmd_submit.go), IS
+//     reachable pre-commit and DOES emit JSON unconditionally
+//     ("JSON output is always written to stdout, even on a non-zero exit")
+//     — but its wire shape, validate.Result (internal/validate/result.go),
+//     carries only Valid/ArtifactID/Violations/ConsistencyFlags, never an
+//     `attachments[]` echo. It answers "did this draft pass V1", not "what
+//     does the attachment say" — it cannot tell an unpinned attachment from
+//     a pinned one or from none at all, so it is the wrong-shaped surface
+//     for THIS scenario's own claim, not a substitute for the missing one.
+//
+//     So: still needs a body-content PredicateKind (pathgrammar.go) reading
+//     `.attachments[].conforms_to`, exactly as the earlier text said — but
+//     landing it needs either a shipped surface that reads a STILL-STAGED
+//     draft (none exists in internal/cli today) or a
+//     internal/space/possession.go policy change letting an unpinned
+//     attach-only submit land — a product decision, not a catalogue or
+//     grammar one, and out of pathgrammar.go/pathdriver_live.go's own reach
+//     either way. I9's own rule stands: build the surface, or drop the
+//     assertion; this wave drops it, with the reason it actually checked.
 //
 //  3. 05-declared-nature.md's both ids (contract-published-registered-
 //     consumer-yields-named-owner-with-no-new-field-set, contract-binding-
@@ -637,38 +715,89 @@ func undrivenScenarios() []undrivenScenario {
 	return []undrivenScenario{
 		{
 			ID: "decision-proposed-withdrawn-by-author-after-approvers-left",
-			Reason: "the TRANSITION is driven (decision-proposed-withdrawn) — the " +
-				"SCENARIO is not, and the difference is the whole point of keeping " +
-				"these two universes apart. `withdraw` from `proposed` is RoleOwner " +
-				"unconditionally, so a path drives it without anyone leaving; what " +
-				"this id additionally claims is that it works AFTER every approver " +
-				"has left, and the harness cannot make a participant leave " +
-				"mid-scenario. Membership is manifest state, not an event a path " +
-				"can drive. Needs: a manifest-mutation step in the path grammar.",
+			Reason: "REASON REPLACED 2026-08-11 — the previous one asked for the " +
+				"wrong capability (\"a manifest-mutation step in the path " +
+				"grammar\"). The TRANSITION is driven (decision-proposed-withdrawn) " +
+				"— the SCENARIO's own departure precondition is not, and the " +
+				"difference is the whole point of keeping these two universes " +
+				"apart. DECISION (this wave's own brief: step or precondition): a " +
+				"path-level PRECONDITION, not a mid-path Step — D-017 " +
+				"(fold/types.go) makes MembershipView a per-commit view, and " +
+				"fold.go's authorized()/legalRole() consult ONLY " +
+				"membership(actorSystem), the AUTHOR's own status, never the " +
+				"departed approver's (withdraw is Role Owner unconditionally, " +
+				"actorSystem == env.From) — verified by reading authorized/ " +
+				"legalRole/roleAuthorizes directly, not inferred. A genesis-" +
+				"departed approver and a mid-path-departed one are therefore " +
+				"provably identical to this check; a mid-path Step would be " +
+				"strictly more mechanism for the identical fact. STILL UNDRIVEN " +
+				"because no allowlisted file can produce even the genesis fact: " +
+				"scaffold.go's PatchSpaceParticipants hardcodes `status: active` " +
+				"for every participant it renders, provision_live.go's ResetSpace " +
+				"is a full-history force-push reset that cannot run mid-path (it " +
+				"would erase the path's own already-committed artifacts), and no " +
+				"`a2a` CLI verb writes the field (internal/cli/adapters.go:423, " +
+				"cmd_lifecycle.go:426 both only READ it). Needs: a space-genesis " +
+				"provisioning primitive in scaffold.go/provision_live.go — NOT a " +
+				"pathgrammar.go widening; Path/Step needs no new type for this at " +
+				"all.",
 		},
 		{
 			ID: "decision-proposed-superseded-by-author-after-approvers-left",
-			Reason: "same missing capability as the withdraw id above — manifest " +
-				"mutation mid-scenario. The transition itself is reachable and its " +
-				"resting state {decision, superseded} is already entered by " +
-				"decision-approved-superseded, so no coverage gate is short; only " +
-				"this scenario's departure precondition is undrivable.",
+			Reason: "REASON REPLACED 2026-08-11, same corrected finding as the " +
+				"withdraw id above — decision `supersede` from `proposed` is ALSO " +
+				"Role Owner unconditionally (table.go), so the identical D-017 + " +
+				"authorized()-only-checks-the-actor argument applies verbatim: a " +
+				"path-level precondition, not a Step, still undriven for the same " +
+				"provisioning-primitive gap (scaffold.go/provision_live.go, off " +
+				"this wave's allowlist). {decision, superseded} is already entered " +
+				"by decision-approved-superseded, so no coverage gate is short; " +
+				"only this scenario's departure precondition is undrivable.",
 		},
 		{
 			ID: "handoff-submitted-superseded-by-producer-after-receiver-left",
-			Reason: "same missing capability, third instance. P1 shipped the row " +
-				"precisely for the departed-receiver case, and that case is the one " +
-				"the harness cannot construct.",
+			Reason: "REASON REPLACED 2026-08-11, same corrected finding, third " +
+				"instance — handoff `supersede` from `submitted`/`acknowledged` is " +
+				"Role Owner (the producer) unconditionally too, so authorized() " +
+				"never consults the receiver's own membership either. P1 shipped " +
+				"this row precisely for the departed-receiver case; D-017 makes " +
+				"that case a genesis-time manifest fact, not a mid-path event, and " +
+				"it is still undriven for the identical provisioning-primitive gap " +
+				"named on the withdraw id above.",
 		},
 		{
 			ID: "work-request-attaches-bytes-without-contract-pin-or-fulfillment",
-			Reason: "needs two things the path grammar does not have: a predicate " +
-				"that can assert on an envelope's BODY content (to see the " +
-				"attachments[] entry), and a driver leg for `a2a attach`, which is " +
-				"a pre-commit draft mutation and therefore corresponds to no " +
-				"transition triple at all — the same reason P4's own AC3 moved its " +
-				"evidence to internal/e2e. Needs: PredicateKind widening plus an " +
-				"authoring-act driver.",
+			Reason: "REASON REPLACED 2026-08-11 — pathgrammar.go and " +
+				"pathdriver_live.go are now BOTH on this wave's allowlist (the " +
+				"previous reason's closing clause naming them off-limits is false " +
+				"and is corrected here). Verified against the product, not just " +
+				"the grammar: `a2a show --json` -> .attachments[] " +
+				"(cache.ShowResult, cache/types.go) is the real body-content " +
+				"surface and it DOES carry conforms_to, but it only reads a " +
+				"COMMITTED artifact, and submitting an attach-only draft is " +
+				"refused — `a2a attach` mints Ref as the bytes' own sha256 digest " +
+				"(attach.go), and internal/space/funnel.go's " +
+				"checkSubmitAttachmentPossession resolves every " +
+				"attachments[].ref through ResolveDataPackage " +
+				"(internal/space/data_resolve.go), whose first step requires a " +
+				"`DP-`-prefixed package id — a bare sha256 ref fails it " +
+				"immediately (ErrAttachmentUnresolvable). The only way to mint a " +
+				"resolvable `DP-` id is `a2a data pack --contract " +
+				"<XC-id>@<version>` (cmd_data.go: --contract is required, no " +
+				"default) — the exact contract pin this scenario asserts the " +
+				"ABSENCE of, so making the body-content surface reachable would " +
+				"require introducing the one fact the scenario says must be " +
+				"absent. The other pre-commit surface, `a2a validate --json` " +
+				"(always emitted, cmd_submit.go), cannot substitute: " +
+				"validate.Result (internal/validate/result.go) carries only " +
+				"Valid/ArtifactID/Violations/ConsistencyFlags, never an " +
+				"attachments[] echo, so it cannot tell an unpinned attachment " +
+				"from a pinned one or from none at all. Needs: PredicateKind " +
+				"widening for envelope body content PLUS either a shipped " +
+				"surface that reads a still-staged draft (none exists) or a " +
+				"possession.go policy change letting an unpinned attach-only " +
+				"submit land — the second is a product change, not a catalogue " +
+				"or grammar one, and out of this wave's allowlist either way.",
 		},
 		{
 			ID: "contract-binding-none-refused-at-adopt-and-pin",
