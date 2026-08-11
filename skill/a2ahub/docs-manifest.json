@@ -1,6 +1,7 @@
 {
   "schema": "a2a-docs-manifest/v1",
   "groups": ["Start", "Concepts", "Reference", "Authoring", "Help"],
+  "loop_corpus": ["a2ahub/loops.md"],
   "sections": [
     {"id":"getting-started","group":"Start","title":"Getting started","file":"a2ahub/onboarding.md"},
     {"id":"overview","group":"Concepts","title":"Overview","file":"a2ahub/SKILL.md"},

@@ -16,11 +16,18 @@
 #         enumerator and prices the 88-vs-84-cell gap against Matrix C.
 #
 # Every cell in that universe must appear in loop-phases.yaml's `covered:`
-# map (naming a skill/a2ahub/loops.md section id this gate confirms
-# actually exists) or its `empty:` map (a non-blank, structural reason). A
-# cell in neither is a real, undeclared gap and the gate reds NAMING it —
-# that is the deliverable this gate exists to produce: an empty cell VISIBLE
-# rather than discovered by a stalled integration (US-4).
+# map (naming a section id this gate confirms actually exists, in one of
+# the pages skill/a2ahub/docs-manifest.json's `loop_corpus` array lists) or
+# its `empty:` map (a non-blank, structural reason). A cell in neither is a
+# real, undeclared gap and the gate reds NAMING it — that is the
+# deliverable this gate exists to produce: an empty cell VISIBLE rather
+# than discovered by a stalled integration (US-4).
+#
+# `loop_corpus` — not a hardcoded loops.md path — is the reachable set of
+# pages that carry `## §X` loop sections. loops.md is a single 778-line
+# page today; a later split moves sections across several pages, and this
+# gate must keep asking the manifest which pages those are rather than one
+# fixed filename that a split would silently orphan.
 #
 # This gate also refuses drift the other direction: a `covered`/`empty` key
 # naming a type, role or phase outside the derived/declared universe (a
@@ -33,7 +40,7 @@
 
 # lane-inputs:
 #   schemas/loop-phases.yaml
-#   skill/a2ahub/loops.md
+#   skill/a2ahub/**
 #   **/*.go
 #   go.mod
 #   go.sum
@@ -60,6 +67,30 @@ vocabulary_json() {
     return
   fi
   ( cd "$GATE_ROOT" && GOWORK=off go run ./cmd/a2a __catalog --vocabulary --json )
+}
+
+# loop_corpus_files prints the skill-relative paths in the manifest's
+# "loop_corpus" array, one per line, in declared order — the pages that
+# carry `## §X` loop sections. docs-manifest.json is one JSON object per
+# physical line (the check-loop-reachability.sh convention: no jq
+# dependency), so "loop_corpus" is written on its own single line and
+# parsed the same grep/sed way declared_gated_verbs parses a roster line.
+# Returns failure (empty stdout, non-zero status) if the key is missing or
+# its array is empty — the distinct "not declared" signal a caller must
+# fail CLOSED on, never silently falling back to a hardcoded loops.md path.
+loop_corpus_files() { # $1 = manifest path
+  local line tokens
+  line="$(grep -E '^[[:space:]]*"loop_corpus"[[:space:]]*:' "$1" | head -1)"
+  if [ -z "$line" ]; then
+    return 1
+  fi
+  # The first quoted token on the line is the key itself; drop it and keep
+  # only the array's string elements.
+  tokens="$(printf '%s\n' "$line" | grep -oE '"[^"]+"' | tr -d '"' | tail -n +2)"
+  if [ -z "$tokens" ]; then
+    return 1
+  fi
+  printf '%s\n' "$tokens"
 }
 
 # derived_types prints every envelope type name the binary's vocabulary
@@ -98,10 +129,47 @@ role_phases() { # $1 = loop-phases.yaml path, $2 = role
   ' "$1"
 }
 
-# loop_section_ids prints every `## §X` heading id loops.md actually
-# carries, one per line — what a `covered:` entry is checked against.
-loop_section_ids() { # $1 = loops.md path
+# loop_section_ids_for_file prints every `## §X` heading id one loop_corpus
+# file actually carries, one per line.
+loop_section_ids_for_file() { # $1 = md file path
   grep -oE '^## §[^[:space:]]+' "$1" | sed -E 's/^## //'
+}
+
+# corpus_section_ids prints the UNION of `## §X` heading ids across every
+# file in the corpus, one per line — what a `covered:` entry is checked
+# against. A section id defined in more than one corpus file is ambiguity,
+# not coverage, and reds naming every file that carries it: a split that
+# duplicates a heading instead of moving it must not pass silently.
+corpus_section_ids() { # $1 = newline-separated list of existing corpus file abs paths
+  local files="$1" f id
+  local pairs=""
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    while IFS= read -r id; do
+      [ -z "$id" ] && continue
+      pairs="$pairs$id"$'\t'"$f"$'\n'
+    done < <(loop_section_ids_for_file "$f")
+  done <<<"$files"
+  pairs="$(printf '%s' "$pairs" | sed '/^$/d')"
+  [ -z "$pairs" ] && return 0
+
+  # De-duplicate (id, file) pairs first — the same file listing the same
+  # heading twice is not an error, only a heading shared by DISTINCT files
+  # is.
+  local uniq_pairs
+  uniq_pairs="$(printf '%s\n' "$pairs" | sort -u)"
+
+  local dup_ids
+  dup_ids="$(printf '%s\n' "$uniq_pairs" | cut -f1 | sort | uniq -d)"
+
+  local dupid dupfiles
+  while IFS= read -r dupid; do
+    [ -z "$dupid" ] && continue
+    dupfiles="$(printf '%s\n' "$uniq_pairs" | awk -F'\t' -v i="$dupid" '$1==i{print $2}' | paste -sd, -)"
+    gate_fail "loop-coverage: section id \"$dupid\" is defined in more than one loop_corpus file ($dupfiles) — a duplicated section id across the corpus is ambiguous"
+  done <<<"$dup_ids"
+
+  printf '%s\n' "$uniq_pairs" | cut -f1 | sort -u
 }
 
 # ledger_value prints the (quoted-stripped) value of one key inside one
@@ -216,20 +284,44 @@ check_declared_keys() { # $1=yaml $2=types(nl) $3=originator-phases(nl) $4=count
 run_check() { # $1 = root
   local root="$1"
   local yaml="$root/schemas/loop-phases.yaml"
-  local loops="$root/skill/a2ahub/loops.md"
+  local manifest="$root/skill/a2ahub/docs-manifest.json"
 
   if [ ! -f "$yaml" ]; then
     gate_fail "loop-coverage: $yaml does not exist"
     gate_summary "loop-coverage"
     return $?
   fi
-  if [ ! -f "$loops" ]; then
-    gate_fail "loop-coverage: $loops does not exist"
+  if [ ! -f "$manifest" ]; then
+    gate_fail "loop-coverage: $manifest does not exist"
     gate_summary "loop-coverage"
     return $?
   fi
   if ! grep -qx 'schema: loop-phases/v1' "$yaml"; then
     gate_fail "loop-coverage: $yaml is missing the \"schema: loop-phases/v1\" line"
+  fi
+
+  local corpus_rel
+  if ! corpus_rel="$(loop_corpus_files "$manifest")"; then
+    gate_fail "loop-coverage: $manifest has no non-empty \"loop_corpus\" array — declare the skill-relative pages that carry loop sections, e.g. \"loop_corpus\": [\"a2ahub/loops.md\"]"
+    gate_summary "loop-coverage"
+    return $?
+  fi
+
+  local corpus_abs="" rel abs
+  while IFS= read -r rel; do
+    [ -z "$rel" ] && continue
+    abs="$root/skill/$rel"
+    if [ ! -f "$abs" ]; then
+      gate_fail "loop-coverage: $manifest's loop_corpus names \"$rel\", which does not exist at $abs"
+      continue
+    fi
+    corpus_abs="$corpus_abs$abs"$'\n'
+  done <<<"$corpus_rel"
+  corpus_abs="$(printf '%s' "$corpus_abs" | sed '/^$/d')"
+  if [ -z "$corpus_abs" ]; then
+    gate_fail "loop-coverage: none of $manifest's loop_corpus files exist — failing closed rather than policing nothing"
+    gate_summary "loop-coverage"
+    return $?
   fi
 
   local vocab types
@@ -255,7 +347,7 @@ run_check() { # $1 = root
   fi
 
   local section_ids
-  section_ids="$(loop_section_ids "$loops")"
+  section_ids="$(corpus_section_ids "$corpus_abs")"
 
   local type role phase phaselist cell cov emp has_cov has_emp type_has_row
   for type in $types; do
@@ -273,7 +365,7 @@ run_check() { # $1 = root
           type_has_row=1
           cov="$(ledger_value "$yaml" "covered:" "$cell")"
           if ! printf '%s\n' "$section_ids" | grep -qx "$cov"; then
-            gate_fail "loop-coverage: $cell declares covered: \"$cov\", which is not a section heading $loops actually has"
+            gate_fail "loop-coverage: $cell declares covered: \"$cov\", which is not a section heading any of $manifest's loop_corpus files has"
           fi
         elif [ "$has_emp" -eq 1 ]; then
           type_has_row=1
@@ -318,8 +410,9 @@ run_teeth() {
   # write_good_fixture writes a small but FULLY declared, self-consistent
   # ledger against the REAL derived type universe: one originator phase
   # (author, covered) and one counterparty phase (receive, declared empty)
-  # per type, plus a loops.md carrying the one section id it cites. Every
-  # mutation below starts from this baseline and breaks exactly one thing.
+  # per type, a manifest declaring a single-file loop_corpus, and a loops.md
+  # carrying the one section id it cites. Every mutation below starts from
+  # this baseline and breaks exactly one thing.
   write_good_fixture() {
     {
       echo "schema: loop-phases/v1"
@@ -336,7 +429,15 @@ run_teeth() {
         echo "  $t/counterparty/receive: \"deliberately empty in this fixture\""
       done
     } >"$tmp/schemas/loop-phases.yaml"
+    {
+      echo '{'
+      echo '  "schema": "a2a-docs-manifest/v1",'
+      echo '  "loop_corpus": ["a2ahub/loops.md"],'
+      echo '  "sections": []'
+      echo '}'
+    } >"$tmp/skill/a2ahub/docs-manifest.json"
     printf '# fixture\n\n## §8.1 Test Heading\n' >"$tmp/skill/a2ahub/loops.md"
+    rm -f "$tmp/skill/a2ahub/loops-extra.md"
   }
 
   write_good_fixture
@@ -436,6 +537,46 @@ run_teeth() {
   out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
   if ! printf '%s\n' "$out" | grep -q "is declared BOTH covered and empty"; then
     echo "loop-coverage --teeth: FAILED — a cell declared both covered and empty did not red with that message" >&2
+    return 1
+  fi
+
+  # 9. a missing "loop_corpus" key in the manifest must red naming the
+  # manifest and telling the reader what to add — never silently fall back
+  # to a hardcoded loops.md path.
+  write_good_fixture
+  {
+    echo '{'
+    echo '  "schema": "a2a-docs-manifest/v1",'
+    echo '  "sections": []'
+    echo '}'
+  } >"$tmp/skill/a2ahub/docs-manifest.json"
+  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  if ! printf '%s\n' "$out" | grep -qF 'has no non-empty "loop_corpus" array'; then
+    echo "loop-coverage --teeth: FAILED — a manifest with no loop_corpus array did not red naming the missing key" >&2
+    return 1
+  fi
+
+  # 10. a loop_corpus entry naming a file that does not exist must red
+  # naming that file.
+  write_good_fixture
+  sed -i.bak 's#"loop_corpus": \["a2ahub/loops.md"\]#"loop_corpus": ["a2ahub/nonexistent.md"]#' "$tmp/skill/a2ahub/docs-manifest.json"
+  rm -f "$tmp/skill/a2ahub/docs-manifest.json.bak"
+  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  if ! printf '%s\n' "$out" | grep -qF 'names "a2ahub/nonexistent.md", which does not exist'; then
+    echo "loop-coverage --teeth: FAILED — a loop_corpus entry naming a nonexistent file did not red naming it" >&2
+    return 1
+  fi
+
+  # 11. the same section id defined in two loop_corpus files is ambiguous
+  # and must red — a split that duplicates a heading instead of moving it
+  # must not pass silently.
+  write_good_fixture
+  sed -i.bak 's#"loop_corpus": \["a2ahub/loops.md"\]#"loop_corpus": ["a2ahub/loops.md", "a2ahub/loops-extra.md"]#' "$tmp/skill/a2ahub/docs-manifest.json"
+  rm -f "$tmp/skill/a2ahub/docs-manifest.json.bak"
+  printf '# fixture extra\n\n## §8.1 Duplicate Heading\n' >"$tmp/skill/a2ahub/loops-extra.md"
+  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  if ! printf '%s\n' "$out" | grep -qF 'section id "§8.1" is defined in more than one loop_corpus file'; then
+    echo "loop-coverage --teeth: FAILED — a section id defined in two corpus files did not red naming the ambiguity" >&2
     return 1
   fi
 
