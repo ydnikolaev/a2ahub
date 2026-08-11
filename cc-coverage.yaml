@@ -74,6 +74,33 @@ rows:
     tier: in-process
     status: covered
 
+  # --- agent-exchange-2026-08 P11 wave F (2026-08-11) ------------------------
+  # Promoted out of `uncovered:` by the work that closed them, not by a
+  # bookkeeping pass — each was watched failing first, and the lead re-ran the
+  # decisive mutation itself rather than reading the implementer's.
+  #
+  # CC-008 was the ONE corner case this epic's own specs cite with no real
+  # test. Both REF-006 branches share a code and differ only in message, so
+  # the test asserts the `left` text AND the absence of the unknown-system
+  # text; pointed at the other branch it reds.
+  - cc_id: CC-008
+    test_ref: internal/e2e.TestCC008DepartedAddresseeIsRefused
+    tier: T3
+    status: covered
+  # CC-024/CC-025 were UNIMPLEMENTED, not merely untested. The graph check is
+  # a pure function in internal/validate; V3 full-repo collects the links and
+  # calls it once (never v3-pr, where a partial graph would report a fork that
+  # does not exist). Tier is `in-process` and not T3 on purpose: the driving
+  # tests live in internal/cli, and coverage.go's exec-seam resolver refuses a
+  # T3 claim it cannot check.
+  - cc_id: CC-024
+    test_ref: internal/cli.TestValidateCI_FullRepoSupersessionForkRed
+    tier: in-process
+    status: covered
+  - cc_id: CC-025
+    test_ref: internal/cli.TestValidateCI_FullRepoSupersessionCycleRed
+    tier: in-process
+    status: covered
 # ---------------------------------------------------------------------------
 # uncovered: the OTHER 54 — agent-exchange-2026-08 P11 AC7
 #
@@ -98,7 +125,7 @@ rows:
 #     C set for tier claims — read the test, confirm it asserts THIS corner
 #     case and not an adjacent one. Filed as B43. The evidence field names the
 #     test so that work is a verification, not a re-derivation.
-#   uncovered-in-scope (19) — genuinely untested, and about behaviour this
+#   uncovered-in-scope (16) — genuinely untested, and about behaviour this
 #     epic shipped or touched. The honest debt.
 #   not-this-epic (14) — genuinely untested, belonging to a capability this
 #     epic did not build (the hub, federation, offboarding, the dashboard).
@@ -214,38 +241,6 @@ uncovered:
     reason: >-
       Same single-emitter/single-caller reasoning as CC-006; a break here
       would red the closure test with no other path to mask it.
-  - cc_id: CC-008
-    verdict: uncovered-in-scope
-    summary: >-
-      An envelope's `to` naming an unknown system, or a system marked
-      `left`, must be rejected.
-    evidence: >-
-      internal/validate/authz.go's checkAddressees emits REF-006 for both
-      branches (unknown system, left system).
-      internal/validate/registry_test.go:114 and :116 call it once for each,
-      but the closure test's final loop only requires REF-006 to be produced
-      by SOME recorded call — since the unknown-system call (:114) already
-      satisfies that, a broken `left`-branch specifically would NOT fail
-      this test. I searched internal/e2e/testdata/t3/*.txtar
-      (submit_refusal.txtar has no left/REF-006 fixture),
-      internal/cli/cmd_validate_ci_test.go, and
-      internal/e2e/crosssurface_test.go (which covers the
-      adjacent-but-distinct CC-062 post-hoc-departure scenario, not this
-      submit-time check) — no dedicated test found.
-      internal/livee2e/pathcatalogue_paths.go:2720-2743 documents "REF-006
-      refuses SUBMITTING an envelope addressed to an already-left system...
-      verified directly against the binary" but this was an observation from
-      wave 30B's GENESIS-departure attempt, which the same comment says was
-      REVERTED 2026-08-11 in favor of a mid-path approach specifically
-      because it hit this refusal — it is a historical finding in a comment,
-      not a currently-running assertion.
-    reason: >-
-      NOT DETERMINED as covered: the only test that touches the
-      `left`-system branch does not actually pin it (a regression there
-      would not be caught), and the one place the refusal was empirically
-      confirmed live is from abandoned code. Genuinely untested with a real
-      assertion, and squarely this epic's own write-funnel/thread-addressing
-      concern.
   - cc_id: CC-009
     verdict: not-testable-here
     summary: >-
@@ -338,37 +333,6 @@ uncovered:
     reason: >-
       Direct, CC-id-named subtests exercising exactly the
       conflict-resolution rule the CC states.
-  - cc_id: CC-024
-    verdict: uncovered-in-scope
-    summary: >-
-      A supersession fork (two successors claiming one predecessor) must be
-      rejected.
-    evidence: >-
-      Grepped internal/fold/*.go and internal/validate/*.go for
-      supersede-graph/fork/linearity logic — zero hits of any fork-detection
-      code. Corroborated independently by the corpus's own design review:
-      docs/inbox/agent-exchange-review/02-ground.md states "fold never reads
-      refs or the supersedes graph shape at all" and that
-      "Supersession-graph invariants (linearity, no forks, no cycles...) are
-      explicitly a V3/validator responsibility, not fold's" — and my own
-      grep of internal/validate confirms no such V3 logic exists either.
-    reason: >-
-      Genuinely unimplemented (not merely untested) anywhere in the current
-      codebase, and this is a live, named gap the corpus's own review
-      already found by direct grep — squarely the
-      artifact-lifecycle/thread-supersession machinery this epic works in.
-  - cc_id: CC-025
-    verdict: uncovered-in-scope
-    summary: >-
-      A supersession cycle must be rejected by a graph check.
-    evidence: >-
-      Same grep sweep and same corpus finding as CC-024
-      (docs/inbox/agent-exchange-review/02-ground.md names CC-024 and CC-025
-      together: "both list 'V3 rejects' as the expected behavior, with no
-      fold-level mechanism named"). No cycle-detection code found anywhere.
-    reason: >-
-      Same as CC-024 — genuinely unimplemented, confirmed by direct grep and
-      corroborated by the corpus's own prior finding.
   - cc_id: CC-026
     verdict: evidence-exists-unrecorded
     summary: >-
