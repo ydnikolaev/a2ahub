@@ -40,8 +40,10 @@ thread: <thread:system-YYYYMMDD-rand4 — the conversation this belongs to; a2a 
 #     expires_at: <RFC-3339 UTC>       # written by the tool at attach time, absent under retention: pinned
 #   ref/digest/expires_at are written by `a2a attach` from real bytes at attach
 #   time — do not hand-write an entry here; run `a2a attach` against the file
-#   you want carried, which fills role/conforms_to/verification/retention from
-#   you and mints the rest.
+#   you want carried, which WRITES the bytes into the space as their own
+#   commit (a network write, needs a connected space + credential, not a
+#   local edit) and mints ref/digest/expires_at, filling
+#   role/conforms_to/verification/retention from you.
 expected_response:
   shape: "<what a good answer looks like>"
 classification: internal

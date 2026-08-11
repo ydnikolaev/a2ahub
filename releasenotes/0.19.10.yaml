@@ -1175,3 +1175,39 @@ changes:
       why: >
         Nothing to do. Open the dashboard; the new sections appear wherever the
         underlying artifact carries them.
+  - id: RN-01910-40
+    kind: feat
+    impact: normal
+    roadmap:
+      visibility: shipped
+      why: >
+        Attaching bytes to a request no longer requires pinning a contract the
+        bytes do not conform to — which was the one thing the whole attachment
+        design set out to make unnecessary.
+    subject: "`a2a attach` can actually send, and `a2a fetch` reads any attachment back"
+    detail: >
+      An attachment's `ref` was documented as a content-addressed blob id and
+      there was no blob. `a2a attach` wrote a bare digest, the space resolved
+      references only as data-package ids, and so every draft the verb produced
+      was refused at submit — the only way to make a reference resolvable was
+      `a2a data pack --contract`, pinning a contract that an ad hoc bundle does
+      not conform to.
+      There is a blob now. `a2a attach` mints a `BL-` id, writes the bytes into
+      the space, and records the id in the draft; the draft submits. `a2a fetch
+      <BL-id> --to <dir>` reads any attachment back, digest-verified, whether or
+      not it was ever contract-pinned. `a2a data pack`/`deliver` are unchanged
+      and remain the contract-pinned specialisation for a counterparty
+      delivering a conforming payload back to you.
+      Three ceilings bound what a blob may weigh, and each refusal names which
+      ceiling it hit and its value — a git-backed space should not carry large
+      blobs, and now it says so rather than trying.
+    affects: ["a2a attach", "a2a fetch", "a2a submit"]
+    action:
+      scope: behavior-change
+      why: >
+        `a2a attach` is now a NETWORK WRITE. It needs `a2a init`, a connected
+        space and a credential, exactly like `a2a data deliver` — it is no
+        longer a local edit to a draft file, and it will fail differently when
+        you are offline. That ordering is what makes the submit-time check
+        meaningful: the bytes are proven fetchable from the space's
+        perspective, not from the author's laptop.

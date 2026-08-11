@@ -134,7 +134,14 @@ var combineDigestCallCeiling = map[string]int{
 	"internal/contract/publication_plan.go": 1,
 	// BuildEntrySet composes the aggregate for a fresh pack; VerifyEntrySet
 	// recomputes it from entries already verified one by one (L-3's ordering).
-	"internal/datapackage/entryset.go": 2,
+	// digestForPayload (P10, agent-exchange-2026-08) is the third: a blob's
+	// aggregate, which needs a single-entry special case the other two do not
+	// have, because internal/space's own possession check computes it that way
+	// and ADR-001 forbids the two packages sharing one implementation. It was
+	// written in attach.go and moved HERE when this gate refused it — the
+	// point of the allowlist is that one file per package owns aggregate
+	// composition, so the fix is to move the call, never to add a file.
+	"internal/datapackage/entryset.go": 3,
 }
 
 var legacySubtreeAllowlist = map[string]bool{}

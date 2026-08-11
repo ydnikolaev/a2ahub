@@ -94,6 +94,24 @@ func (ta toolAction) verb() string {
 		if ta.action == "attach" {
 			return "attach"
 		}
+		// "fetch-blob" is a2a_data's OWN second top-level exception, mirroring
+		// "attach" immediately above for the identical reason — P10
+		// (agent-exchange-2026-08) spec 10 §3 seam 6: `a2a fetch <BL-id>
+		// --to <dir>` is a designated top-level CLI verb (it resolves ANY
+		// blob-shaped attachment, not only a `DP-` package — `data fetch`'s
+		// own territory, untouched), while MCP keeps it grouped under
+		// a2a_data beside `fetch`, which it generalises. It cannot be named
+		// the bare "fetch" action (a2a_data already has one, for `DP-`
+		// packages), so it is "fetch-blob" here and projects to the bare
+		// "fetch" verb through this case. Without it, this action would fall
+		// to the default below and project to "data-fetch-blob", which no
+		// designated verb answers (seeded-red receipt: remove this case and
+		// TestMCPParityBijection fails naming BOTH "fetch" as an unreachable
+		// designated verb AND (a2a_data, action="fetch-blob") as a decoy
+		// capability — proven empirically before this case was added).
+		if ta.action == "fetch-blob" {
+			return "fetch"
+		}
 		// Without this case a2a_data's "verify" would fall to default and
 		// project to the same bare "verify" key a2a_exchange's own verify
 		// action already claims, and checkBijection's map-keyed-by-verb()
@@ -187,7 +205,7 @@ func TestDataSubcommandsMatchMCPDataActions(t *testing.T) {
 	// designated top-level verb instead of a `data` sub-verb. Adding an
 	// entry here is a decision about the CLI's shape; a typo just moves the
 	// failure to TestMCPParityBijection, which resolves the bare verb name.
-	topLevelDataActions := map[string]bool{"attach": true}
+	topLevelDataActions := map[string]bool{"attach": true, "fetch-blob": true}
 	var wantSubs []string
 	for _, action := range mcp.DataActions {
 		if topLevelDataActions[action] {
@@ -199,10 +217,17 @@ func TestDataSubcommandsMatchMCPDataActions(t *testing.T) {
 		t.Fatalf("cli.DataSubcommands() names must be byte-identical, in order, to mcp.DataActions minus the top-level ones %v: got %v, want %v", topLevelDataActions, names, wantSubs)
 	}
 	// And the exclusion must not be a way to hide a missing verb: every
-	// top-level exception has to actually BE a designated verb.
+	// top-level exception has to actually BE a designated verb. Resolved
+	// through toolAction.verb() — NOT the bare action name — because that
+	// projection is not always the identity: "attach" happens to name both
+	// its own action and its own verb, but "fetch-blob" (P10
+	// agent-exchange-2026-08 spec 10 §3 seam 6) does not — it projects to
+	// the bare "fetch" verb (verb()'s own case), so buildCommands()["fetch-
+	// blob"] would never exist even though the capability IS reachable.
 	for action := range topLevelDataActions {
-		if _, ok := buildCommands()[action]; !ok {
-			t.Errorf("a2a_data action %q is excused from the sub-verb list as top-level, but no designated verb %q is registered — the exclusion is hiding an unreachable capability", action, action)
+		verb := (toolAction{tool: "a2a_data", action: action}).verb()
+		if _, ok := buildCommands()[verb]; !ok {
+			t.Errorf("a2a_data action %q is excused from the sub-verb list as top-level, but its own designated verb %q is not registered — the exclusion is hiding an unreachable capability", action, verb)
 		}
 	}
 }

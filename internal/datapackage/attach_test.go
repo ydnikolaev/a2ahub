@@ -259,6 +259,129 @@ func TestNewAttachmentManifestEntry_DurationCarriesExpiry(t *testing.T) {
 	}
 }
 
+// TestDigestForPayload_MatchesSpacePossessionAlgorithm pins digestForPayload
+// against an INDEPENDENT reimplementation of internal/space's own
+// recomputeAttachmentDigest (possession.go) — not a call into
+// digestForPayload itself, so this is a real cross-check of the algorithm,
+// not a tautology. internal/space/blob_delivery_test.go carries the sibling
+// assertion the other direction (the same vectors, checked against
+// recomputeAttachmentDigest directly) — ADR-001 forbids a shared helper
+// across that package boundary, so the two files each reimplement the
+// comparison independently.
+func TestDigestForPayload_MatchesSpacePossessionAlgorithm(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		payload map[string][]byte
+	}{
+		{"single entry", map[string][]byte{"file.txt": []byte("solo bytes")}},
+		{"single entry, nested path", map[string][]byte{"sub/dir/file.txt": []byte("solo bytes in a nested path")}},
+		{"two entries", map[string][]byte{
+			"a.txt": []byte("alpha"),
+			"b.txt": []byte("bravo"),
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := digestForPayload(tc.payload)
+
+			var want string
+			if len(tc.payload) == 1 {
+				for _, raw := range tc.payload {
+					want = artifact.Digest(raw)
+				}
+			} else {
+				perFile := make(map[string]string, len(tc.payload))
+				for p, raw := range tc.payload {
+					perFile[p] = artifact.Digest(raw)
+				}
+				want = artifact.CombineDigestPairs(perFile)
+			}
+			if got != want {
+				t.Fatalf("digestForPayload(%v) = %q, want %q (recomputeAttachmentDigest's own algorithm)", tc.payload, got, want)
+			}
+		})
+	}
+}
+
+// TestNewAttachmentFromDirectoryWithPayload_OneFileDirectoryDigestMatchesSinglePayloadBranch
+// is the regression pin for digestForPayload's own doc comment: a directory
+// holding exactly one file must produce the SAME digest a single-file
+// attach (NewAttachmentFromBytes) would for that file's own bytes — the
+// single-entry branch recomputeAttachmentDigest (internal/space,
+// possession.go) takes — never entrySet.AggregateDigest's always-multi-
+// entry CombineDigestPairs branch. Mutate digestForPayload's `len(payload)
+// == 1` guard (e.g. to `== 0`) and this test reds.
+func TestNewAttachmentFromDirectoryWithPayload_OneFileDirectoryDigestMatchesSinglePayloadBranch(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	data := []byte("the only file in this directory")
+	if err := os.WriteFile(filepath.Join(dir, "only.txt"), data, 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	att, payload, err := NewAttachmentFromDirectoryWithPayload(context.Background(), dir, "", "", VerificationOffered, "24h", DefaultBounds())
+	if err != nil {
+		t.Fatalf("NewAttachmentFromDirectoryWithPayload: %v", err)
+	}
+	if len(payload) != 1 {
+		t.Fatalf("payload has %d entries, want 1: %v", len(payload), payload)
+	}
+
+	wantDigest := artifact.Digest(data) // the single-entry branch, NOT CombineDigestPairs
+	if att.Digest != wantDigest {
+		t.Fatalf("Digest = %q, want %q (single-entry artifact.Digest, matching recomputeAttachmentDigest's own one-file branch)", att.Digest, wantDigest)
+	}
+	if att.Ref != att.Digest {
+		t.Fatalf("Ref = %q, want it to equal Digest %q (content-addressed)", att.Ref, att.Digest)
+	}
+
+	// The control: BuildEntrySet's own AggregateDigest — what this function
+	// deliberately does NOT return — is a DIFFERENT value for this same
+	// one-file input, proving the two branches really do diverge and this
+	// test is not vacuously true.
+	entrySet, err := BuildEntrySet([]LocalFile{{RelPath: "only.txt", Bytes: data}})
+	if err != nil {
+		t.Fatalf("BuildEntrySet: %v", err)
+	}
+	if entrySet.AggregateDigest == wantDigest {
+		t.Fatalf("test fixture invalid: CombineDigestPairs and artifact.Digest coincide for this input, so this test cannot distinguish the two branches")
+	}
+}
+
+// TestNewAttachmentFromDirectoryWithPayload_MultiFileDigestMatchesAggregate
+// proves the multi-file case is unaffected: with 2+ files,
+// digestForPayload's multi-entry branch and BuildEntrySet's own
+// AggregateDigest are the exact same computation, so this function's Digest
+// still equals what NewAttachmentFromDirectory would have returned.
+func TestNewAttachmentFromDirectoryWithPayload_MultiFileDigestMatchesAggregate(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("alpha"), 0o644); err != nil {
+		t.Fatalf("write a.txt: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("bravo"), 0o644); err != nil {
+		t.Fatalf("write b.txt: %v", err)
+	}
+
+	att, payload, err := NewAttachmentFromDirectoryWithPayload(context.Background(), dir, "", "", VerificationOffered, "24h", DefaultBounds())
+	if err != nil {
+		t.Fatalf("NewAttachmentFromDirectoryWithPayload: %v", err)
+	}
+	if len(payload) != 2 {
+		t.Fatalf("payload has %d entries, want 2: %v", len(payload), payload)
+	}
+
+	legacy, err := NewAttachmentFromDirectory(context.Background(), dir, "", "", VerificationOffered, "24h", DefaultBounds())
+	if err != nil {
+		t.Fatalf("NewAttachmentFromDirectory: %v", err)
+	}
+	if att.Digest != legacy.Digest {
+		t.Fatalf("Digest = %q, want it to match NewAttachmentFromDirectory's own %q for a multi-file source", att.Digest, legacy.Digest)
+	}
+}
+
 func TestVerificationEnum_ClosedSet(t *testing.T) {
 	t.Parallel()
 	valid := []string{VerificationRequired, VerificationOffered, VerificationNone}

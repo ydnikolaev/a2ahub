@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"strings"
 )
 
 // P10 (agent-exchange-2026-08) spec 10 §3's third instance of the shape
@@ -45,6 +46,39 @@ func blobDir(system, blobID string) string {
 // shape, and no caller should ever have to disambiguate the two by content.
 func blobDigestPath(system, blobID string) string {
 	return path.Join(blobDir(system, blobID), "blob.json")
+}
+
+// BlobForPath mirrors DataPackageForPath's own structural (not manifest-
+// reading) predicate (data_delivery.go), applied to blobDir's own
+// "<system>/blobs/<BL-id>/..." grammar instead of a data package's
+// "<system>/data/<DP-id>/...". P10 (agent-exchange-2026-08) spec 10 wave
+// A's own handoff, closed by wave B: `a2a validate --ci` carves a data
+// package's payload out of artifact discovery (spec 04 §11 AC8) but had no
+// blob equivalent, so a blob payload's own frontmatter-bearing .md file
+// would be walked as an envelope draft. internal/cli's isBlobPayloadPath
+// (cmd_validate_ci.go, off this package) is the one caller.
+//
+// It returns the BL- id and the blob's own digest sidecar path
+// (blobDigestPath, this file) so a caller that separately wants that path
+// has it without recomputing it; this function itself never reads a file.
+func BlobForPath(p string) (blobID, sidecarPath string, ok bool) {
+	parts := strings.Split(p, "/")
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			return "", "", false
+		}
+	}
+	// system, "blobs", <BL-id>, <at least one path segment beneath it> —
+	// mirroring DataPackageForPath's own len(parts) < 4 floor.
+	if len(parts) < 4 || parts[1] != "blobs" {
+		return "", "", false
+	}
+
+	system, candidate := parts[0], parts[2]
+	if _, idOK := blobPrefixParsed(candidate); !idOK {
+		return "", "", false
+	}
+	return candidate, blobDigestPath(system, candidate), true
 }
 
 // blobDigestSidecar is blobDigestPath's own on-disk shape: the id (so a

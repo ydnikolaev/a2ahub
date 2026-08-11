@@ -93,6 +93,14 @@ var coverageManifest = []coverageEntry{
 	// so it cannot be a txtar against the local fixture — it is covered at
 	// the host-rig tier instead, the same way `submit` is (spec 35 AC-950.5).
 	{Verb: "attach", GoTest: "internal/e2e.TestAttachVerbReachesTheBuiltBinary"},
+	// `fetch` (P10, agent-exchange-2026-08 spec 10 §3 seam 6): a designated
+	// top-level verb resolving ANY blob-shaped attachment, not a `data`
+	// sub-action — carried no manifest row at all until this wave (spec 10
+	// AC6's own instruction: "if the bijection gate does NOT demand it
+	// automatically, that silence is itself a finding to file" —
+	// TestE2ECoverageParity was observed red for exactly this reason before
+	// this row was added).
+	{Verb: "fetch", GoTest: "internal/e2e.TestFetchRoundTripsUnpinnedAttachment"},
 	{Verb: "space", GoTest: "internal/e2e.TestHostLoopSpaceUpdate"},
 	{Verb: "template", Txtar: "template_list.txtar"},
 	{Verb: "validate", Txtar: "new_validate.txtar"},

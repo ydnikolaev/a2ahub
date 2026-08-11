@@ -13,13 +13,15 @@ import (
 )
 
 type fakeMCPDataBackend struct {
-	calls      []string
-	packReq    DataPackRequest
-	deliverReq DataDeliverRequest
-	fetchReq   DataFetchRequest
-	verifyReq  DataVerifyRequest
-	result     DataResult
-	err        error
+	calls        []string
+	packReq      DataPackRequest
+	deliverReq   DataDeliverRequest
+	fetchReq     DataFetchRequest
+	verifyReq    DataVerifyRequest
+	fetchBlobReq DataFetchBlobRequest
+	result       DataResult
+	fetchBlobRes DataFetchBlobResult
+	err          error
 }
 
 func (f *fakeMCPDataBackend) Pack(_ context.Context, req DataPackRequest) (DataResult, error) {
@@ -46,7 +48,45 @@ func (f *fakeMCPDataBackend) Verify(_ context.Context, req DataVerifyRequest) (D
 	return f.result, f.err
 }
 
+// FetchBlob implements DataFetchBlobOperations — fakeMCPDataBackend
+// satisfies this optional capability too, so tests exercising action=
+// fetch-blob's happy path can reuse the same fake every other action does.
+func (f *fakeMCPDataBackend) FetchBlob(_ context.Context, req DataFetchBlobRequest) (DataFetchBlobResult, error) {
+	f.calls = append(f.calls, "fetch-blob")
+	f.fetchBlobReq = req
+	if f.err != nil {
+		return DataFetchBlobResult{}, f.err
+	}
+	return f.fetchBlobRes, nil
+}
+
 var _ DataOperations = (*fakeMCPDataBackend)(nil)
+var _ DataFetchBlobOperations = (*fakeMCPDataBackend)(nil)
+
+// fakeMCPDataBackendNoFetchBlob implements ONLY DataOperations, with NO
+// FetchBlob method at the type level at all — used to prove action=
+// fetch-blob degrades to "not configured" when the concrete ops value has
+// not (yet) grown that capability, mirroring DataAttachOperations' own
+// optional-capability discipline (tools_data.go's doc comment). A type
+// embedding fakeMCPDataBackend would inherit ITS FetchBlob method and
+// satisfy DataFetchBlobOperations anyway, defeating the point — so this is
+// a deliberately separate, minimal type instead.
+type fakeMCPDataBackendNoFetchBlob struct{ result DataResult }
+
+func (f *fakeMCPDataBackendNoFetchBlob) Pack(context.Context, DataPackRequest) (DataResult, error) {
+	return f.result, nil
+}
+func (f *fakeMCPDataBackendNoFetchBlob) Deliver(context.Context, DataDeliverRequest) (DataResult, error) {
+	return f.result, nil
+}
+func (f *fakeMCPDataBackendNoFetchBlob) Fetch(context.Context, DataFetchRequest) (DataResult, error) {
+	return f.result, nil
+}
+func (f *fakeMCPDataBackendNoFetchBlob) Verify(context.Context, DataVerifyRequest) (DataResult, error) {
+	return f.result, nil
+}
+
+var _ DataOperations = (*fakeMCPDataBackendNoFetchBlob)(nil)
 
 func testDataTool(t *testing.T, backend *fakeMCPDataBackend) ToolSpec {
 	t.Helper()
@@ -94,6 +134,7 @@ func TestDataToolRoutesEveryClosedAction(t *testing.T) {
 		{"deliver", DataInput{Action: "deliver", StagingRoot: "staging/attempt-1", Fulfills: "XW-axon-20260804-ef56"}, "deliver"},
 		{"fetch", DataInput{Action: "fetch", PackageID: "DP-axon-20260804-ab12", To: "vendor/orders"}, "fetch"},
 		{"verify", DataInput{Action: "verify", PackageID: "DP-axon-20260804-ab12"}, "verify"},
+		{"fetch-blob", DataInput{Action: "fetch-blob", Ref: "BL-axon-20260811-ab12", To: "vendor/blob"}, "fetch-blob"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -156,6 +197,7 @@ func TestDataToolClosedActionsRejectOtherActionsFields(t *testing.T) {
 		{Action: "deliver", StagingRoot: "s", Fulfills: "XW-a-20260804-aaaa", To: "d"},
 		{Action: "fetch", PackageID: "DP-a-20260804-aaaa", To: "d", Record: true},
 		{Action: "verify", PackageID: "DP-a-20260804-aaaa", To: "d"},
+		{Action: "fetch-blob", Ref: "BL-a-20260811-aaaa", To: "d", Record: true},
 	} {
 		backend := &fakeMCPDataBackend{}
 		if _, _, err := callDataTool(t, testDataTool(t, backend), input); err == nil || len(backend.calls) != 0 {
@@ -174,6 +216,8 @@ func TestDataToolRequiredFieldsPerAction(t *testing.T) {
 		{Action: "fetch"},
 		{Action: "fetch", PackageID: "DP-a-20260804-aaaa"},
 		{Action: "verify"},
+		{Action: "fetch-blob"},
+		{Action: "fetch-blob", Ref: "BL-a-20260811-aaaa"},
 	} {
 		backend := &fakeMCPDataBackend{}
 		if _, _, err := callDataTool(t, testDataTool(t, backend), input); err == nil || len(backend.calls) != 0 {
@@ -303,5 +347,65 @@ func TestDataToolVerifyHasNoPassField(t *testing.T) {
 	raw := json.RawMessage(`{"action":"verify","package_id":"DP-axon-20260804-ab12","pass":true}`)
 	if _, _, err := spec.Handler(context.Background(), raw); err == nil || len(backend.calls) != 0 {
 		t.Fatalf("a raw \"pass\" field must be rejected (unknown field), got err=%v calls=%v", err, backend.calls)
+	}
+}
+
+// TestDataToolFetchBlobForwardsRequestAndSummarizesOutcome is P10
+// (agent-exchange-2026-08) spec 10 wave B's own MCP-twin proof: action=
+// fetch-blob forwards space/ref/to to the backend unmodified and the
+// summary names the outcome, ref and destination — mirroring
+// TestDataToolDeliverAndFetchCarryWriteAndOutcome's own shape for the
+// existing `fetch` action.
+func TestDataToolFetchBlobForwardsRequestAndSummarizesOutcome(t *testing.T) {
+	t.Parallel()
+	backend := &fakeMCPDataBackend{fetchBlobRes: DataFetchBlobResult{
+		Ref: "BL-axon-20260811-ab12", Destination: "vendor/blob", Outcome: "installed",
+	}}
+	spec := testDataTool(t, backend)
+	result, body, err := callDataTool(t, spec, DataInput{
+		Action: "fetch-blob", Space: "fixture-space", Ref: "BL-axon-20260811-ab12", To: "vendor/blob",
+	})
+	if err != nil {
+		t.Fatalf("fetch-blob: %v", err)
+	}
+	if backend.fetchBlobReq.Space != "fixture-space" || backend.fetchBlobReq.Ref != "BL-axon-20260811-ab12" || backend.fetchBlobReq.Destination != "vendor/blob" {
+		t.Fatalf("fetch-blob request not forwarded: %+v", backend.fetchBlobReq)
+	}
+	got, ok := result.(DataFetchBlobResult)
+	if !ok || got.Outcome != "installed" {
+		t.Fatalf("fetch-blob result mismatch: %#v", result)
+	}
+	if !strings.Contains(body, "installed") || !strings.Contains(body, "BL-axon-20260811-ab12") || !strings.Contains(body, "vendor/blob") {
+		t.Fatalf("fetch-blob summary missing outcome/ref/destination: %q", body)
+	}
+}
+
+// TestDataToolFetchBlobDegradesWhenBackendDoesNotImplementIt proves the
+// optional-capability discipline DataFetchBlobOperations documents
+// (tools_data.go): a DataOperations implementation that has not (yet) grown
+// FetchBlob refuses with "not configured" rather than a type-assertion
+// panic.
+func TestDataToolFetchBlobDegradesWhenBackendDoesNotImplementIt(t *testing.T) {
+	t.Parallel()
+	spec, err := NewDataTool(DataToolDeps{Operations: &fakeMCPDataBackendNoFetchBlob{}})
+	if err != nil {
+		t.Fatalf("NewDataTool: %v", err)
+	}
+	_, _, callErr := callDataTool(t, spec, DataInput{Action: "fetch-blob", Ref: "BL-axon-20260811-ab12", To: "vendor/blob"})
+	if callErr == nil || !strings.Contains(callErr.Error(), "not configured") {
+		t.Fatalf("got err=%v, want a 'service is not configured' refusal", callErr)
+	}
+}
+
+// TestDataToolFetchBlobRefusalIsForwarded proves a backend error surfaces
+// through the handler unmodified, mirroring
+// TestDataToolRefusalNamesValueAndPathInBothModes' own shape.
+func TestDataToolFetchBlobRefusalIsForwarded(t *testing.T) {
+	t.Parallel()
+	backend := &fakeMCPDataBackend{err: fmt.Errorf("space: blob resolves to bytes that do not match its own committed digest sidecar")}
+	spec := testDataTool(t, backend)
+	_, _, callErr := callDataTool(t, spec, DataInput{Action: "fetch-blob", Ref: "BL-axon-20260811-ab12", To: "vendor/blob"})
+	if callErr == nil || !strings.Contains(callErr.Error(), "digest sidecar") {
+		t.Fatalf("fetch-blob refusal not forwarded: %v", callErr)
 	}
 }

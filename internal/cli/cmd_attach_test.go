@@ -3,6 +3,7 @@ package cli_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,8 +12,50 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/datapackage"
+	"github.com/ydnikolaev/a2ahub/internal/space"
 	"gopkg.in/yaml.v3"
 )
+
+// fakeAttachOps is the test double for cli.AttachOperations: it records the
+// payload DeliverBlob was called with and returns a fixed blob id, so tests
+// can assert on both the "network write happened" side effect and the
+// draft's own resulting attachments[].ref without a real space.WriteFunnel.
+type fakeAttachOps struct {
+	blobID  string
+	write   space.WriteResult
+	err     error
+	calls   int
+	payload map[string][]byte
+}
+
+func (f *fakeAttachOps) DeliverBlob(_ context.Context, req cli.AttachBlobRequest) (cli.AttachBlobResult, error) {
+	f.calls++
+	f.payload = req.Payload
+	if f.err != nil {
+		return cli.AttachBlobResult{}, f.err
+	}
+	return cli.AttachBlobResult{BlobID: f.blobID, Write: f.write}, nil
+}
+
+func newFakeAttachOps(blobID string) *fakeAttachOps {
+	return &fakeAttachOps{
+		blobID: blobID,
+		write:  space.WriteResult{State: space.WriteStatePendingMerge, Branch: "a2a/axon/attach/" + blobID, PRURL: "https://example.invalid/pr/1"},
+	}
+}
+
+// poisonAttachOps fails the test the moment DeliverBlob is called — used by
+// every test asserting a LOCAL refusal (a missing source, bounds exceeded,
+// a non-possession draft, a missing --verification): none of those must
+// ever reach the network write (advisor's "every local refusal precedes the
+// network write" — this command's own Run doc comment).
+type poisonAttachOps struct{ t *testing.T }
+
+func (p poisonAttachOps) DeliverBlob(context.Context, cli.AttachBlobRequest) (cli.AttachBlobResult, error) {
+	p.t.Helper()
+	p.t.Fatal("DeliverBlob must not be called: this refusal must be entirely local, before any network write")
+	return cli.AttachBlobResult{}, fmt.Errorf("unreachable")
+}
 
 // attachTestDraft is a minimal, syntactically-valid envelope/v2 work_request
 // draft — real enough for cmd_attach.go's own type/schema guard (it reads
@@ -69,14 +112,32 @@ func TestAttachSuccessWritesEntryWithRightDigest(t *testing.T) {
 		t.Fatalf("write source: %v", err)
 	}
 	wantDigest := artifact.Digest(payload)
+	ops := newFakeAttachOps("BL-axon-20260811-ab12")
 
-	cmd := cli.NewAttachCommand(stagingDir, datapackage.DefaultBounds())
+	cmd := cli.NewAttachCommand(stagingDir, datapackage.DefaultBounds(), ops)
 	io, out, errOut := newIO()
 	code := cmd.Run(context.Background(), []string{
 		"XW-axon-20260808-0001", "--from", sourcePath, "--verification", "offered",
 	}, io)
 	if code != 0 {
 		t.Fatalf("attach: code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if ops.calls != 1 {
+		t.Fatalf("DeliverBlob calls = %d, want 1", ops.calls)
+	}
+	if len(ops.payload) != 1 {
+		t.Fatalf("DeliverBlob payload = %v, want exactly 1 entry", ops.payload)
+	}
+	for _, raw := range ops.payload {
+		if string(raw) != string(payload) {
+			t.Fatalf("DeliverBlob payload bytes = %q, want %q", raw, payload)
+		}
+	}
+	// stdout must say the write happened and name the blob id — attach
+	// stopped being a local-only draft edit (this command's own doc
+	// comment).
+	if !strings.Contains(out.String(), ops.blobID) || !strings.Contains(out.String(), "written to the space") {
+		t.Fatalf("stdout must name the blob id and that it was written to the space, got %q", out.String())
 	}
 
 	raw, err := os.ReadFile(draftPath)
@@ -98,8 +159,11 @@ func TestAttachSuccessWritesEntryWithRightDigest(t *testing.T) {
 	if got.Digest != wantDigest {
 		t.Fatalf("attachments[0].digest = %q, want %q", got.Digest, wantDigest)
 	}
-	if got.Ref != wantDigest {
-		t.Fatalf("attachments[0].ref = %q, want %q (content-addressed: ref IS the digest)", got.Ref, wantDigest)
+	if got.Ref != ops.blobID {
+		t.Fatalf("attachments[0].ref = %q, want %q (the minted blob id — spec 10 §2, no longer the digest)", got.Ref, ops.blobID)
+	}
+	if got.Ref == got.Digest {
+		t.Fatalf("ref and digest must no longer coincide now that ref is a minted BL- id: both are %q", got.Ref)
 	}
 	if got.Verification != "offered" {
 		t.Fatalf("attachments[0].verification = %q, want %q", got.Verification, "offered")
@@ -124,7 +188,7 @@ func TestAttachMissingSourceIsCleanRefusal(t *testing.T) {
 	stagingDir := t.TempDir()
 	writeAttachDraft(t, stagingDir, "XW-axon-20260808-0002.md", attachTestDraft)
 
-	cmd := cli.NewAttachCommand(stagingDir, datapackage.DefaultBounds())
+	cmd := cli.NewAttachCommand(stagingDir, datapackage.DefaultBounds(), poisonAttachOps{t: t})
 	io, _, errOut := newIO()
 
 	defer func() {
@@ -161,7 +225,7 @@ func TestAttachBoundsRefusalIsUsableMessage(t *testing.T) {
 
 	tinyBounds := datapackage.DefaultBounds()
 	tinyBounds.MaxEntryBytes = 4
-	cmd := cli.NewAttachCommand(stagingDir, tinyBounds)
+	cmd := cli.NewAttachCommand(stagingDir, tinyBounds, poisonAttachOps{t: t})
 	io, _, errOut := newIO()
 	code := cmd.Run(context.Background(), []string{
 		"XW-axon-20260808-0003", "--from", sourcePath, "--verification", "required",
@@ -209,7 +273,7 @@ Body text.
 		t.Fatalf("write source: %v", err)
 	}
 
-	cmd := cli.NewAttachCommand(stagingDir, datapackage.DefaultBounds())
+	cmd := cli.NewAttachCommand(stagingDir, datapackage.DefaultBounds(), poisonAttachOps{t: t})
 	io, _, errOut := newIO()
 	code := cmd.Run(context.Background(), []string{
 		"XW-axon-20260808-0004", "--from", sourcePath, "--verification", "none",
@@ -236,7 +300,7 @@ func TestAttachMissingVerificationIsUsageError(t *testing.T) {
 		t.Fatalf("write source: %v", err)
 	}
 
-	cmd := cli.NewAttachCommand(stagingDir, datapackage.DefaultBounds())
+	cmd := cli.NewAttachCommand(stagingDir, datapackage.DefaultBounds(), poisonAttachOps{t: t})
 	io, _, _ := newIO()
 	code := cmd.Run(context.Background(), []string{"XW-axon-20260808-0005", "--from", sourcePath}, io)
 	if code != 2 {
@@ -258,8 +322,9 @@ func TestAttachJSONOutputCarriesDigestAndDraft(t *testing.T) {
 		t.Fatalf("write source: %v", err)
 	}
 	wantDigest := artifact.Digest(payload)
+	ops := newFakeAttachOps("BL-axon-20260811-cd34")
 
-	cmd := cli.NewAttachCommand(stagingDir, datapackage.DefaultBounds())
+	cmd := cli.NewAttachCommand(stagingDir, datapackage.DefaultBounds(), ops)
 	io, out, errOut := newIO()
 	code := cmd.Run(context.Background(), []string{
 		"XW-axon-20260808-0006", "--from", sourcePath, "--verification", "none", "--json",
@@ -271,6 +336,7 @@ func TestAttachJSONOutputCarriesDigestAndDraft(t *testing.T) {
 	var result struct {
 		Draft      string `json:"draft"`
 		Attachment struct {
+			Ref    string `json:"ref"`
 			Digest string `json:"digest"`
 		} `json:"attachment"`
 	}
@@ -282,5 +348,77 @@ func TestAttachJSONOutputCarriesDigestAndDraft(t *testing.T) {
 	}
 	if result.Attachment.Digest != wantDigest {
 		t.Fatalf("attachment.digest = %q, want %q", result.Attachment.Digest, wantDigest)
+	}
+	if result.Attachment.Ref != ops.blobID {
+		t.Fatalf("attachment.ref = %q, want %q (the minted blob id)", result.Attachment.Ref, ops.blobID)
+	}
+}
+
+// TestAttachDeliverBlobFailureIsRefused proves the network write's own
+// error is surfaced as a refusal (never a panic, never a silently-written
+// draft) and that the draft is left untouched on that failure — the network
+// write is the LAST thing that can fail before anything is written locally,
+// so a failure there must roll back nothing (there is nothing to roll back:
+// the draft was never touched).
+func TestAttachDeliverBlobFailureIsRefused(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	writeAttachDraft(t, stagingDir, "XW-axon-20260808-0007.md", attachTestDraft)
+
+	sourceDir := t.TempDir()
+	sourcePath := filepath.Join(sourceDir, "payload.bin")
+	if err := os.WriteFile(sourcePath, []byte("bytes that never make it to the space"), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	ops := newFakeAttachOps("BL-axon-20260811-ef56")
+	ops.err = fmt.Errorf("simulated offline transport failure")
+
+	cmd := cli.NewAttachCommand(stagingDir, datapackage.DefaultBounds(), ops)
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{
+		"XW-axon-20260808-0007", "--from", sourcePath, "--verification", "required",
+	}, io)
+	if code == 0 {
+		t.Fatalf("want non-zero exit when the space write fails, got 0")
+	}
+	if !strings.Contains(errOut.String(), "simulated offline transport failure") {
+		t.Fatalf("refusal must carry the underlying transport error, got stderr=%q", errOut.String())
+	}
+
+	raw, err := os.ReadFile(filepath.Join(stagingDir, "XW-axon-20260808-0007.md"))
+	if err != nil {
+		t.Fatalf("read draft back: %v", err)
+	}
+	if string(raw) != attachTestDraft {
+		t.Fatalf("draft was modified even though the network write failed:\n%s", raw)
+	}
+}
+
+// TestAttachServiceUnavailableWhenOpsNil mirrors DataCommand's own nil-ops
+// degraded-registration precedent (cmd_data.go): a nil AttachOperations
+// must not panic, and must refuse with a clear message once every local
+// check has already passed.
+func TestAttachServiceUnavailableWhenOpsNil(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	writeAttachDraft(t, stagingDir, "XW-axon-20260808-0008.md", attachTestDraft)
+
+	sourceDir := t.TempDir()
+	sourcePath := filepath.Join(sourceDir, "payload.bin")
+	if err := os.WriteFile(sourcePath, []byte("bytes"), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	cmd := cli.NewAttachCommand(stagingDir, datapackage.DefaultBounds(), nil)
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{
+		"XW-axon-20260808-0008", "--from", sourcePath, "--verification", "required",
+	}, io)
+	if code == 0 {
+		t.Fatalf("want non-zero exit for a nil ops, got 0")
+	}
+	if !strings.Contains(errOut.String(), "not configured") {
+		t.Fatalf("refusal must say the service is not configured, got stderr=%q", errOut.String())
 	}
 }

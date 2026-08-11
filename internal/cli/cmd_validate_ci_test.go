@@ -1103,6 +1103,161 @@ func TestValidateCI_FullRepoDataPackagePayloadExemptionIsNotBlanket(t *testing.T
 	assertControlArtifactRefused(t, rep, controlRel)
 }
 
+// --- P10 (agent-exchange-2026-08) spec 10 wave B: the blob equivalent of
+// the AC8 carve-out above. Wave A's own handoff (plans/10-blob-primitive.
+// plan.md's wave log): `a2a attach` now lands its payload in the space the
+// same structural way `a2a data pack`/`deliver` already do
+// (space.DeliverBlob, "<system>/blobs/<BL-id>/..."), and had no equivalent
+// carve-out — so a blob payload's own frontmatter-bearing .md file would be
+// walked as an envelope draft. These tests are the red-first receipt: run
+// them against isBlobPayloadPath removed from cmd_validate_ci.go's two call
+// sites and TestWalkArtifactsExcludesBlobPayload /
+// TestValidateCI_PRBlobPayloadPassesByConstruction both fail on the packed
+// README.md itself (a missing-required-fields V2 refusal) ---
+
+// realBlobFixture builds a blob's own directory (space.BlobForPath's
+// "<system>/blobs/<BL-id>/..." grammar), including the digest sidecar
+// (blob.json — its CONTENT is irrelevant to this carve-out, which asks only
+// about PATH shape, never sidecar content) and a payload file carrying real
+// envelope frontmatter (type/schema set, everything else missing) — the
+// exact hazard wave A named: a blob payload's own .md file must never be
+// walked as an envelope draft. Returns the minted BL- id and a
+// relPath->content map ready to drop into ciRepo under
+// "<system>/blobs/<id>/".
+func realBlobFixture(t *testing.T, system string) (blobID string, files map[string]string) {
+	t.Helper()
+	blobID = "BL-" + system + "-20260811-aaaa"
+	const readme = "---\nschema: envelope/v2\ntype: work_request\ntitle: not an envelope draft\n---\n\n" +
+		"A blob's own payload file, sealed by blob.json's digest sidecar — never an envelope draft.\n"
+	return blobID, map[string]string{
+		"blob.json": `{"id":"` + blobID + `","digest":"sha256:` + strings.Repeat("a", 64) + `"}`,
+		"README.md": readme,
+	}
+}
+
+// assertBlobPayloadExempt mirrors assertDataPackagePayloadExempt's own
+// shape for a blob's own directory.
+func assertBlobPayloadExempt(t *testing.T, rep ciReport, blobDir string) {
+	t.Helper()
+	for _, a := range rep.Artifacts {
+		if strings.HasPrefix(a.Path, blobDir) {
+			t.Fatalf("a blob payload path was validated as an artifact and must not have been: %+v", a)
+		}
+	}
+}
+
+// TestWalkArtifactsExcludesBlobPayload is a direct, unit-level red receipt
+// for walkArtifacts' own exclusion, mirroring
+// TestWalkArtifactsExcludesDataPackagePayload: a blob's own README.md must
+// never appear in walkArtifacts' own returned slice, and a genuine artifact
+// under the same system still does.
+func TestWalkArtifactsExcludesBlobPayload(t *testing.T) {
+	t.Parallel()
+
+	blobID, blobFiles := realBlobFixture(t, "seomatrix")
+	blobDir := "seomatrix/blobs/" + blobID + "/"
+	const genuineRel = "seomatrix/exchanges/XQ-seomatrix-20260808-h2k8.md"
+
+	files := map[string]string{
+		genuineRel: validQuestion("XQ-seomatrix-20260808-h2k8", "seomatrix", "axon"),
+	}
+	for rel, content := range blobFiles {
+		files[blobDir+rel] = content
+	}
+	root := ciRepo(t, ciSpaceYAML, files)
+
+	manifest, err := space.ParseManifest([]byte(ciSpaceYAML))
+	if err != nil {
+		t.Fatalf("ParseManifest: %v", err)
+	}
+	out, err := walkArtifacts(root, manifest)
+	if err != nil {
+		t.Fatalf("walkArtifacts: %v", err)
+	}
+
+	got := map[string]bool{}
+	for _, p := range out {
+		got[filepath.ToSlash(p)] = true
+	}
+	if got[blobDir+"README.md"] {
+		t.Fatalf("walkArtifacts returned the blob's own README.md, want it excluded: %v", out)
+	}
+	if !got[genuineRel] {
+		t.Fatalf("walkArtifacts must still return a genuine artifact under the same system, got %v", out)
+	}
+}
+
+// TestValidateCI_PRBlobPayloadPassesByConstruction is the v3-pr GREEN half,
+// mirroring TestValidateCI_PRDataPackagePayloadPassesByConstruction: a PR
+// carrying exactly what `a2a attach` commits — the payload plus its own
+// digest sidecar, including a packed README.md with real but incomplete
+// envelope frontmatter — is green, with no other changed file to make that
+// verdict ambiguous. Remove isBlobPayloadPath from the changed-file loop's
+// call site and this test reds on the README.md itself (missing required
+// V2 fields).
+func TestValidateCI_PRBlobPayloadPassesByConstruction(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+
+	blobID, blobFiles := realBlobFixture(t, "seomatrix")
+	blobDir := "seomatrix/blobs/" + blobID + "/"
+
+	files := map[string]string{}
+	var changed []string
+	for rel, content := range blobFiles {
+		p := blobDir + rel
+		files[p] = content
+		changed = append(changed, p)
+	}
+
+	root := ciRepo(t, ciSpaceYAML, files)
+	code, rep, errOut := runCI(t, engine, root, fakeGit(changed...), "v3-pr", "deadbeef", "misha-gh")
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0; stderr=%s; report=%+v", code, errOut, rep)
+	}
+	if !rep.Valid {
+		t.Fatalf("expected a valid report, got %+v", rep)
+	}
+	assertBlobPayloadExempt(t, rep, blobDir)
+}
+
+// TestValidateCI_PRBlobPayloadExemptionIsNotBlanket is the control,
+// mirroring TestValidateCI_PRDataPackagePayloadExemptionIsNotBlanket: the
+// SAME blob payload alongside a genuinely malformed artifact filed
+// elsewhere under the SAME system still reds on the control, proving the
+// exemption is the blob's own directory grammar, not "stop validating
+// seomatrix".
+func TestValidateCI_PRBlobPayloadExemptionIsNotBlanket(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+
+	blobID, blobFiles := realBlobFixture(t, "seomatrix")
+	blobDir := "seomatrix/blobs/" + blobID + "/"
+
+	const controlRel = "seomatrix/exchanges/XQ-seomatrix-20260808-ffff.md"
+	files := map[string]string{
+		controlRel: "this is not frontmatter\n",
+	}
+	var changed []string
+	for rel, content := range blobFiles {
+		p := blobDir + rel
+		files[p] = content
+		changed = append(changed, p)
+	}
+	changed = append(changed, controlRel)
+
+	root := ciRepo(t, ciSpaceYAML, files)
+	code, rep, errOut := runCI(t, engine, root, fakeGit(changed...), "v3-pr", "deadbeef", "misha-gh")
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1 (the control artifact must still red); stderr=%s; report=%+v", code, errOut, rep)
+	}
+	if rep.Valid {
+		t.Fatalf("expected an invalid report (the control artifact), got %+v", rep)
+	}
+	assertBlobPayloadExempt(t, rep, blobDir)
+	assertControlArtifactRefused(t, rep, controlRel)
+}
+
 func TestValidateCI_UsageErrors(t *testing.T) {
 	t.Parallel()
 	engine := ciEngine(t)

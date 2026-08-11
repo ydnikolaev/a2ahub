@@ -24,10 +24,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/datapackage"
+	"github.com/ydnikolaev/a2ahub/internal/space"
 	"gopkg.in/yaml.v3"
 )
 
@@ -44,10 +46,44 @@ import (
 // invented for the default alone.
 const AttachDefaultRetention = "168h"
 
+// AttachBlobRequest is what AttachCommand asks the ops layer to land in the
+// space BEFORE it writes the local attachments: entry — spec 10
+// (agent-exchange-2026-08) §1's decided ordering: "it writes them into the
+// space ... before anything references them". Payload is blob-root-
+// relative paths to bytes this command already read/walked locally
+// (datapackage.NewAttachmentFromBytes/NewAttachmentFromDirectoryWithPayload,
+// below) — the ops layer never re-reads the source, avoiding a second,
+// independently-timed read of it.
+type AttachBlobRequest struct {
+	Payload map[string][]byte
+}
+
+// AttachBlobResult is what the ops layer reports back: the minted BL- id —
+// this command's own attachments[].ref (spec 10 §2) — and the funnel write
+// outcome, mirroring DataResult's own Write field (cmd_data.go) so a caller
+// reads this write exactly the way it already reads `data deliver`'s.
+type AttachBlobResult struct {
+	BlobID string
+	Write  space.WriteResult
+}
+
+// AttachOperations is the one seam `a2a attach` needs beyond the pure local
+// core it already calls directly (internal/datapackage's attach.go):
+// landing the payload bytes in the space. Mirrors DataOperations' shape
+// (cmd_data.go) — a thin, single-method interface cmd/a2a wires to a real
+// space.DeliverBlob call, and a test can fake trivially.
+type AttachOperations interface {
+	DeliverBlob(ctx context.Context, req AttachBlobRequest) (AttachBlobResult, error)
+}
+
 // AttachCommand implements `a2a attach`: it reads the draft named on the
 // command line, reads the source bytes (a file or a directory) named by
-// --from, mints an Attachment via internal/datapackage's pure core, and
-// writes the attachments[] entry onto the draft's frontmatter.
+// --from, mints an Attachment via internal/datapackage's pure core, LANDS
+// those bytes in the space via ops.DeliverBlob (spec 10 §1's decided
+// ordering — P10, agent-exchange-2026-08, wave B: this is a NETWORK WRITE
+// now, not a local-only draft edit), and only then writes the
+// attachments[] entry — carrying the minted BL- id as its ref — onto the
+// draft's frontmatter.
 //
 // verification carries NO default (Run's own flag parsing below): the
 // brief's own constraint is that a default silently claiming
@@ -59,6 +95,7 @@ const AttachDefaultRetention = "168h"
 type AttachCommand struct {
 	stagingDir string
 	bounds     datapackage.Bounds
+	ops        AttachOperations
 
 	now       func() time.Time
 	readFile  func(path string) ([]byte, error)
@@ -73,11 +110,16 @@ type AttachCommand struct {
 // the source bytes — production wiring passes datapackage.DefaultBounds();
 // exposed as a constructor argument (not hardcoded) so a caller can inject
 // a narrower bound, the same DI discipline every other core dependency in
-// this package already follows (rails anti-pattern #10).
-func NewAttachCommand(stagingDir string, bounds datapackage.Bounds) *AttachCommand {
+// this package already follows (rails anti-pattern #10). ops may be nil
+// (e.g. a degraded/offline registration or the catalog's own nil-dep
+// construction, cmd/a2a/catalog.go) — Run reports "service is not
+// configured" rather than dereferencing it, matching DataCommand's own
+// nil-ops precedent (cmd_data.go).
+func NewAttachCommand(stagingDir string, bounds datapackage.Bounds, ops AttachOperations) *AttachCommand {
 	return &AttachCommand{
 		stagingDir: stagingDir,
 		bounds:     bounds,
+		ops:        ops,
 		now:        time.Now,
 		readFile:   os.ReadFile,
 		writeFile:  os.WriteFile,
@@ -159,9 +201,19 @@ func (c *AttachCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return attachRefuse(stdio, fmt.Errorf("cannot access source %s: %w", *from, serr), *asJSON)
 	}
 
+	// attachment/payload are both built LOCALLY, no network access — the
+	// digest datapackage's own core computes here (attachment.Digest) is
+	// authoritative; space.DeliverBlob (called below) writes a sidecar that
+	// reproduces the identical two-branch algorithm over the SAME payload
+	// (internal/datapackage's digestForPayload / internal/space's
+	// recomputeAttachmentDigest, proven to agree by
+	// TestDigestForPayload_MatchesSpacePossessionAlgorithm and its space-side
+	// sibling), so submit's possession check can never disagree with what
+	// this command declares.
 	var attachment datapackage.Attachment
+	var payload map[string][]byte
 	if info.IsDir() {
-		attachment, err = datapackage.NewAttachmentFromDirectory(ctx, *from, *role, *conformsTo, *verification, *retention, c.bounds)
+		attachment, payload, err = datapackage.NewAttachmentFromDirectoryWithPayload(ctx, *from, *role, *conformsTo, *verification, *retention, c.bounds)
 	} else {
 		var data []byte
 		data, err = c.readFile(*from)
@@ -169,21 +221,44 @@ func (c *AttachCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			return attachRefuse(stdio, fmt.Errorf("cannot read source %s: %w", *from, err), *asJSON)
 		}
 		attachment, err = datapackage.NewAttachmentFromBytes(data, *role, *conformsTo, *verification, *retention, c.bounds)
+		payload = map[string][]byte{attachSinglePayloadKey(*from): data}
 	}
 	if err != nil {
 		return attachRefuse(stdio, err, *asJSON)
 	}
 
-	// Resolved BEFORE the write, not after: expires_at is part of the entry
-	// the draft carries now, so a retention this command cannot resolve must
-	// refuse before anything is written rather than leave a draft on disk
-	// carrying an entry whose lapse date nobody could compute.
+	// Resolved BEFORE the network write, not after: expires_at is part of
+	// the entry the draft carries now, so a retention this command cannot
+	// resolve must refuse before any bytes reach the space, rather than land
+	// a blob nothing will ever reference.
 	entry, eerr := datapackage.NewAttachmentManifestEntry(attachment, c.now())
 	if eerr != nil {
 		return attachRefuse(stdio, fmt.Errorf("draft %s: cannot resolve retention: %w", draftPath, eerr), *asJSON)
 	}
 
-	updated, uerr := attachAppendEntry(fm, attachment, entry.ExpiresAt)
+	// Every local refusal above ran before this point. From here on, `a2a
+	// attach` is a NETWORK WRITE (spec 10 §1's decided ordering: the bytes
+	// land in the space BEFORE anything references them) — an agent that
+	// expects a purely local draft edit will be surprised by the first
+	// failure here, so the refusal and the success message both say so
+	// explicitly (this command's own doc comment; epic-backlog B29: the
+	// funnel's step-0 idempotency check can call GitHub before any
+	// possession check, so an offline author may see a raw transport error
+	// here rather than a possession-shaped one — not fixed by this command,
+	// not hidden by it either).
+	if c.ops == nil {
+		return attachServiceUnavailable(stdio)
+	}
+	delivered, derr := c.ops.DeliverBlob(ctx, AttachBlobRequest{Payload: payload})
+	if derr != nil {
+		return attachRefuse(stdio, fmt.Errorf("write %s to the space: %w", draftPath, derr), *asJSON)
+	}
+	// The declared ref becomes the minted blob id (spec 10 §2) — everything
+	// else about entry (Digest, Role, ConformsTo, Verification, Retention,
+	// ExpiresAt) was already resolved above and is untouched by this write.
+	entry.Ref = delivered.BlobID
+
+	updated, uerr := attachAppendEntry(fm, entry.Attachment, entry.ExpiresAt)
 	if uerr != nil {
 		return attachRefuse(stdio, fmt.Errorf("draft %s: %w", draftPath, uerr), *asJSON)
 	}
@@ -194,11 +269,41 @@ func (c *AttachCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if *asJSON {
 		return attachEncodeJSON(stdio, draftPath, entry)
 	}
-	_, _ = fmt.Fprintf(stdio.Stdout, "attach: %s -> %s\n", attachment.Digest, draftPath)
+	_, _ = fmt.Fprintf(stdio.Stdout, "attach: %s written to the space\n", delivered.BlobID)
+	_, _ = fmt.Fprintf(stdio.Stdout, "%s %s (%s)\n", delivered.Write.State, delivered.Write.PRURL, delivered.Write.Branch)
+	_, _ = fmt.Fprintf(stdio.Stdout, "attach: digest %s -> %s\n", entry.Digest, draftPath)
 	if entry.ExpiresAt != "" {
 		_, _ = fmt.Fprintf(stdio.Stdout, "expires %s\n", entry.ExpiresAt)
 	}
 	return 0
+}
+
+// attachSinglePayloadKey names the ONE entry a single-file --from source
+// becomes in the blob's own payload map. The name never affects the digest
+// a single-file attach carries — digestForPayload's own single-entry branch
+// (internal/datapackage's attach.go) ignores payload KEYS entirely — it only
+// has to be a clean, blob-root-relative path (space.DeliverBlob's own
+// isCleanRelativePath check). filepath.Base(from) is that path for an
+// ordinary file; the handful of bases isCleanRelativePath would refuse
+// ("..", ".", "", the OS separator — e.g. from == "/" or from == "..") fall
+// back to a fixed literal name instead of surfacing a confusing path-shaped
+// refusal for what is, from the caller's point of view, an ordinary --from
+// argument.
+func attachSinglePayloadKey(from string) string {
+	switch base := filepath.Base(from); base {
+	case "", ".", "..", string(filepath.Separator):
+		return "payload"
+	default:
+		return base
+	}
+}
+
+// attachServiceUnavailable mirrors dataServiceUnavailable's own message
+// shape (cmd_data.go) for the same "not configured" degraded-registration
+// case.
+func attachServiceUnavailable(stdio IO) int {
+	_, _ = fmt.Fprintln(stdio.Stderr, "attach: service is not configured")
+	return 1
 }
 
 var _ Command = (*AttachCommand)(nil)

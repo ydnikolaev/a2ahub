@@ -396,22 +396,21 @@ func buildCommands() map[string]command {
 	m["data"] = runData
 
 	// Attach verb (P4 possession, plan 04-possession wave D, Option A):
-	// `a2a attach` is meant to be a designated TOP-LEVEL verb, deliberately
-	// NOT a `data` sub-verb (the plan's own "MCP surface" section decides
-	// this so attachment reads as a first-class act). runAttach below is
-	// ready — NOT registered here yet, on purpose: buildCommands() is the
-	// SSOT catalog.go's own catalogCommandRows() enumerates
-	// (cmd/a2a/catalog.go), and every key it does not special-case must
-	// resolve through catalogCLICommand's own switch or that function
-	// PANICS ("no cli.Command construction for dispatch verb %q") — which
-	// kills the whole `cmd/a2a` test binary, not just one test. catalog.go
-	// and catalog_test.go (its own independent
-	// expectedCatalogCommandNames() derivation) are both off this wave's
-	// allowlist. Registering this line is a one-line change the moment a
-	// case for "attach" lands in catalogCLICommand (cli.NewAttachCommand("",
-	// datapackage.Bounds{}), nil-dep style, mirroring the "data" case right
-	// below it) and in catalog_test.go's own list.
+	// `a2a attach` is a designated TOP-LEVEL verb, deliberately NOT a `data`
+	// sub-verb (the plan's own "MCP surface" section decides this so
+	// attachment reads as a first-class act). buildCommands() is the SSOT
+	// catalog.go's own catalogCommandRows() enumerates (cmd/a2a/catalog.go)
+	// and catalog_test.go's own independent expectedCatalogCommandNames()
+	// derivation reads — both carry their own "attach"/"fetch" cases (P10
+	// agent-exchange-2026-08 wave B).
 	m["attach"] = runAttach
+
+	// Fetch verb (P10 agent-exchange-2026-08 spec 10 §3 seam 6): `a2a fetch
+	// <BL-id> --to <dir>`, a designated TOP-LEVEL verb like attach above —
+	// it resolves ANY blob-shaped attachment, not only a contract-pinned
+	// `DP-` package (`a2a data fetch`'s own territory, unchanged by this
+	// wave).
+	m["fetch"] = runFetch
 
 	// MCP façade (P14, OP-216): serve the §7.7 tool set over stdio JSON-RPC
 	// for the life of the session. internal/mcp re-wires the same core (never
@@ -902,20 +901,55 @@ func runData(args []string, stdout, stderr io.Writer) int {
 	return cmd.Run(ctx, args, stdio(stdout, stderr))
 }
 
-// runAttach is `a2a attach`'s dispatch closure (P4 possession wave D). It
-// needs none of runData/runLifecycle's per-space resolution (no space
-// config is even loaded): attach reads and writes only p.staging and a
-// caller-named local source, exactly the ground m["init"]/m["new"] already
-// stand on. datapackage.DefaultBounds() is the same shipped ceiling
-// pack/fetch already enforce (Q2's re-anchor: "the ceiling already exists;
-// reuse it and add no constant").
+// runAttach is `a2a attach`'s dispatch closure. UNLIKE its P4-era shape
+// (attach used to read/write only p.staging and a caller-named local
+// source, no space config loaded at all), P10 (agent-exchange-2026-08) spec
+// 10 §1's decided ordering makes attach a NETWORK WRITE: it resolves the
+// target space exactly like runData/runLifecycle do (resolveLifecycleDeps
+// WithPolicy, syncMirror+needsCredential both true — the same policy
+// `data deliver` already uses) and builds the same production *dataCore
+// runData wires, wrapped in cliAttachAdapter. datapackage.DefaultBounds()
+// is the same shipped ceiling pack/fetch already enforce (Q2's re-anchor:
+// "the ceiling already exists; reuse it and add no constant").
 func runAttach(args []string, stdout, stderr io.Writer) int {
+	ctx := context.Background()
 	p, err := resolvePaths()
 	if err != nil {
 		return fail(stderr, err)
 	}
-	cmd := cli.NewAttachCommand(p.staging, datapackage.DefaultBounds())
-	return cmd.Run(context.Background(), args, stdio(stdout, stderr))
+	deps, code := resolveLifecycleDepsWithPolicy(ctx, p, args, stderr, true, true)
+	if code >= 0 {
+		return code
+	}
+	core, err := newCLIDataCore(p, deps)
+	if err != nil {
+		return failf(stderr, "a2a attach: build attach services: %v", err)
+	}
+	cmd := cli.NewAttachCommand(p.staging, datapackage.DefaultBounds(), cliAttachAdapter{core: core})
+	return cmd.Run(ctx, args, stdio(stdout, stderr))
+}
+
+// runFetch is `a2a fetch <BL-id> --to <dir>`'s dispatch closure (P10 spec
+// 10 §3 seam 6). Read-only but wants a fresh mirror (a blob attached
+// moments ago must be visible) — the same policy `a2a data fetch` already
+// uses (resolveDataDeps's own doc comment: "fetch is read-only but wants a
+// fresh mirror, so it syncs without needing a credential").
+func runFetch(args []string, stdout, stderr io.Writer) int {
+	ctx := context.Background()
+	p, err := resolvePaths()
+	if err != nil {
+		return fail(stderr, err)
+	}
+	deps, code := resolveLifecycleDepsWithPolicy(ctx, p, args, stderr, true, false)
+	if code >= 0 {
+		return code
+	}
+	core, err := newCLIDataCore(p, deps)
+	if err != nil {
+		return failf(stderr, "a2a fetch: build fetch services: %v", err)
+	}
+	cmd := cli.NewFetchCommand(cliFetchAdapter{core: core})
+	return cmd.Run(ctx, args, stdio(stdout, stderr))
 }
 
 // resolveDataDeps resolves `a2a data`'s per-space deps, routing on

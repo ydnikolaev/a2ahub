@@ -195,14 +195,21 @@ D-021. Both verbs are catalogued in
    [reference/authoring/](reference/authoring/). If the draft needs to
    carry actual bytes rather than merely describe them: **`a2a attach
    <draft-id> --from <file-or-dir> --verification required|offered|none`
-   drafts and validates, but every draft it produces is refused at `a2a
-   submit`** (`space: attachment does not resolve through the space's own
-   resolution path`) — do not reach for it to send bytes today. The only
-   bytes-transport flow that works end to end moves the other direction
-   only: a `work_request` with `category: data` asking a COUNTERPARTY to
-   deliver back to you, via `a2a data pack`/`a2a data deliver` (§8.3 step
-   5, needs a `--contract` pin) — not "I already have bytes to attach to
-   what I'm sending."
+   mints a `BL-` blob id and WRITES those bytes into the space, as its own
+   commit, before it writes the local `attachments:` entry** (`ref` = that
+   blob id, `digest` = the content digest). **This makes `attach` a NETWORK
+   WRITE, not a local draft edit** — it needs `a2a init`, a connected space,
+   and a credential, exactly like `a2a data deliver`, and it is slower than
+   any other drafting step and fails differently while offline (see
+   [troubleshooting.md](troubleshooting.md)). Once attached, `a2a submit`
+   on the draft lands normally: possession resolves the `BL-` ref against
+   origin/main like any other reference. Either side reads the bytes back
+   with `a2a fetch <BL-id> --to <dir>`, digest-verified, contract-pinned or
+   not. This is the general "I already have bytes to send with this" path;
+   the other direction — a `work_request` with `category: data` asking a
+   COUNTERPARTY to deliver back to you, contract-pinned — is still
+   `a2a data pack`/`a2a data deliver` (§8.3 step 5, needs a `--contract`
+   pin), not this verb.
 3. **Body discipline:** specify, don't muse. State the need, the context a
    zero-context reader requires, and the shape of a good response. Never include
    secrets, private code, or raw prompts (§10.4).
@@ -341,8 +348,8 @@ D-021. Both verbs are catalogued in
      repeatable and general-purpose; here it is what lets the response
      record which handoff actually delivered it). Submit refuses the
      response outright if that handoff's own `kind: data` deliverable does
-     not resolve through the space — the same possession discipline
-     `a2a attach` cannot yet deliver on (§8.2 step 2), except here the ref
+     not resolve through the space — the same possession discipline a
+     `BL-` ref now resolves through too (§8.2 step 2), except here the ref
      names something `a2a data pack`/`deliver` really did mint, so it
      resolves. Full producer sequence, the source-directory-to-schema
      mapping, and what each refusal means:

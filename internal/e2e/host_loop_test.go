@@ -206,6 +206,18 @@ func mustMkdirAll(t *testing.T, dir string) {
 	}
 }
 
+// mustReadFile reads path and fails the test on error — mustWrite's own
+// read-back counterpart, used by every test in this package that re-reads a
+// file a verb just wrote.
+func mustReadFile(t *testing.T, path string) string {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(raw)
+}
+
 // TestHostLoopSubmit drives `a2a submit` through the REAL binary: real
 // config load, real credential resolution, real mirror clone, real `git
 // push` into a real bare repo, real PR open — then reads the artifact back

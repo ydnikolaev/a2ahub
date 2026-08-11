@@ -199,6 +199,52 @@ func NewAttachmentFromDirectory(ctx context.Context, source, role, conformsTo, v
 	}, nil
 }
 
+// NewAttachmentFromDirectoryWithPayload builds an Attachment for a whole
+// local directory AND returns the walked payload (blob-root-relative paths
+// to bytes) alongside it, so a caller that must ALSO write those same bytes
+// somewhere else — P10 (agent-exchange-2026-08) spec 10 wave B's `a2a
+// attach`, landing them via space.DeliverBlob before the draft references
+// them (spec 10 §1's decided ordering) — does not re-walk source a second
+// time: WalkLocalDirectory's own safe-walk (safefs.go) already closes the
+// TOCTOU window once, and a second, independently-timed walk would reopen
+// it.
+//
+// UNLIKE NewAttachmentFromDirectory, this function's returned Digest is
+// digestForPayload(payload), not entrySet.AggregateDigest — see
+// digestForPayload's own doc comment for exactly why (the one-file-
+// directory divergence) and TestNewAttachmentFromDirectoryWithPayload_
+// OneFileDirectoryDigestMatchesSinglePayloadBranch (attach_test.go) for the
+// regression pin. This is a NEW function: NewAttachmentFromDirectory keeps
+// its existing documented behaviour unchanged for its existing callers.
+func NewAttachmentFromDirectoryWithPayload(ctx context.Context, source, role, conformsTo, verification, retention string, bounds Bounds) (Attachment, map[string][]byte, error) {
+	if err := validateVerification(verification); err != nil {
+		return Attachment{}, nil, fmt.Errorf("datapackage: NewAttachmentFromDirectoryWithPayload: %w", err)
+	}
+	if err := validateRetention(retention); err != nil {
+		return Attachment{}, nil, fmt.Errorf("datapackage: NewAttachmentFromDirectoryWithPayload: %w", err)
+	}
+
+	files, err := WalkLocalDirectory(ctx, source, bounds)
+	if err != nil {
+		return Attachment{}, nil, fmt.Errorf("datapackage: NewAttachmentFromDirectoryWithPayload: %w", err)
+	}
+
+	payload := make(map[string][]byte, len(files))
+	for _, f := range files {
+		payload[f.RelPath] = f.Bytes
+	}
+	digest := digestForPayload(payload)
+
+	return Attachment{
+		Ref:          digest,
+		Digest:       digest,
+		Role:         role,
+		ConformsTo:   conformsTo,
+		Verification: verification,
+		Retention:    retention,
+	}, payload, nil
+}
+
 // VerifyAttachment checks data against attachment's declared Digest — the
 // same hard-refusal-on-mismatch rule the package already enforces at pack
 // and fetch (entryset.go's VerifyEntrySet; ErrDigestMismatch's own doc

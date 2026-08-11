@@ -979,6 +979,66 @@ func (c *dataCore) deliver(ctx context.Context, req cli.DataDeliverRequest) (cli
 	return result, nil
 }
 
+// --- attach / fetch-blob (P10 agent-exchange-2026-08 spec 10, wave B) -------
+
+// deliverBlob is `a2a attach`'s own network write: land payload's bytes in
+// the space BEFORE any local draft references them (spec 10 §1's decided
+// ordering). Reuses c.funnel exactly as deliver() does above — built with
+// dataNoopSubmitValidator, because a blob's payload is no more envelope-
+// shaped than a data package's own manifest+payload are (that type's own
+// doc comment): a blob attach carries no schema-governed wire document for
+// the real V2 validator to parse, so the SAME no-op reasoning applies
+// verbatim, not a second copy of it.
+func (c *dataCore) deliverBlob(ctx context.Context, payload map[string][]byte) (string, space.WriteResult, error) {
+	blobID, err := datapackage.MintBlobID(c.ownSystem)
+	if err != nil {
+		return "", space.WriteResult{}, fmt.Errorf("attach: mint blob id: %w", err)
+	}
+	credential, err := c.resolveCredential(ctx)
+	if err != nil {
+		return "", space.WriteResult{}, err
+	}
+	manifest, err := c.loadManifest()
+	if err != nil {
+		return "", space.WriteResult{}, fmt.Errorf("attach: load space manifest: %w", err)
+	}
+
+	write, err := space.DeliverBlob(ctx, space.BlobWriteRequest{
+		System: c.ownSystem, BlobID: blobID, Payload: payload,
+		SubmitTemplate: space.SubmitRequest{
+			RepoDir: c.mirrorDir, RemoteURL: c.remoteURL, Repo: c.repository,
+			CommitAuthorName: c.authorName, CommitAuthorEmail: c.authorEmail, BaseBranch: "main",
+			CommitMessage: "a2a(attach): " + blobID,
+			PRTitle:       "Attach " + blobID,
+			PRBody:        "Attach a content-addressed blob.",
+			Credential:    credential, MinBinaryVersion: manifest.MinBinaryVersion,
+		},
+	}, c.funnel)
+	return blobID, write, err
+}
+
+// fetchBlob is `a2a fetch <BL-id> --to <dir>`'s own core: resolve ref
+// through the space (space.ResolveBlob, already digest-verified —
+// blob_resolve.go's own doc comment) and install the result at destination
+// via the SAME atomic, no-replace install path `a2a data fetch` uses
+// (datapackage.InstallLocalFiles) — never a second, hand-rolled "does --to
+// already have something" check.
+func (c *dataCore) fetchBlob(ctx context.Context, ref, destination string) (string, error) {
+	resolved, err := space.ResolveBlob(ctx, c.mirrorDir, ref)
+	if err != nil {
+		return "", err
+	}
+	files := make([]datapackage.LocalFile, 0, len(resolved.Payload))
+	for relPath, raw := range resolved.Payload {
+		files = append(files, datapackage.LocalFile{RelPath: relPath, Bytes: raw})
+	}
+	outcome, err := datapackage.InstallLocalFiles(ctx, destination, files, datapackage.DefaultBounds())
+	if err != nil {
+		return "", err
+	}
+	return string(outcome), nil
+}
+
 // --- fetch ------------------------------------------------------------------
 
 func (c *dataCore) fetch(ctx context.Context, req cli.DataFetchRequest) (cli.DataResult, error) {
@@ -1246,6 +1306,35 @@ func (a cliDataAdapter) Verify(ctx context.Context, req cli.DataVerifyRequest) (
 
 var _ cli.DataOperations = cliDataAdapter{}
 
+// --- cli.AttachOperations / cli.FetchOperations adapters (P10 wave B) -----
+
+// cliAttachAdapter implements cli.AttachOperations over the SAME *dataCore
+// every other data-shaped CLI verb already shares — a blob attach is a
+// write into the connected space exactly like a data package delivery is,
+// so it reuses that core's own funnel/credential/manifest wiring rather
+// than a second, parallel construction.
+type cliAttachAdapter struct{ core *dataCore }
+
+func (a cliAttachAdapter) DeliverBlob(ctx context.Context, req cli.AttachBlobRequest) (cli.AttachBlobResult, error) {
+	blobID, write, err := a.core.deliverBlob(ctx, req.Payload)
+	return cli.AttachBlobResult{BlobID: blobID, Write: write}, err
+}
+
+var _ cli.AttachOperations = cliAttachAdapter{}
+
+// cliFetchAdapter implements cli.FetchOperations over the same *dataCore.
+type cliFetchAdapter struct{ core *dataCore }
+
+func (a cliFetchAdapter) Fetch(ctx context.Context, req cli.FetchRequest) (cli.FetchResult, error) {
+	outcome, err := a.core.fetchBlob(ctx, req.Ref, req.Destination)
+	if err != nil {
+		return cli.FetchResult{}, err
+	}
+	return cli.FetchResult{Ref: req.Ref, Destination: req.Destination, Outcome: outcome}, nil
+}
+
+var _ cli.FetchOperations = cliFetchAdapter{}
+
 // --- mcp.DataOperations adapter -------------------------------------------
 
 type mcpDataAdapter struct{ core *dataCore }
@@ -1291,7 +1380,23 @@ func mcpDataResultOf(result cli.DataResult) mcp.DataResult {
 	}
 }
 
+// FetchBlob implements mcp.DataFetchBlobOperations — P10 wave B's real MCP
+// twin for `a2a fetch <BL-id> --to <dir>` (mcp_parity_test.go's
+// toolAction.verb() maps a2a_data action=fetch-blob to the bare "fetch"
+// verb). Unlike DataAttachOperations' own action=attach (a KNOWN,
+// previously-reported gap — no production adapter implements it yet), this
+// one is wired for real: mcpDataRouter (below) asserts it too, so
+// deps.Operations.(DataFetchBlobOperations) succeeds in production.
+func (a mcpDataAdapter) FetchBlob(ctx context.Context, req mcp.DataFetchBlobRequest) (mcp.DataFetchBlobResult, error) {
+	outcome, err := a.core.fetchBlob(ctx, req.Ref, req.Destination)
+	if err != nil {
+		return mcp.DataFetchBlobResult{}, err
+	}
+	return mcp.DataFetchBlobResult{Ref: req.Ref, Destination: req.Destination, Outcome: outcome}, nil
+}
+
 var _ mcp.DataOperations = mcpDataAdapter{}
+var _ mcp.DataFetchBlobOperations = mcpDataAdapter{}
 
 // mcpDataRouter dispatches a2a_data by request.Space across one *dataCore
 // per configured space — mirrors mcpContractP6Router's own fail-closed
@@ -1359,7 +1464,18 @@ func (r mcpDataRouter) Verify(ctx context.Context, req mcp.DataVerifyRequest) (m
 	return adapter.Verify(ctx, req)
 }
 
+// FetchBlob implements mcp.DataFetchBlobOperations, routing by
+// req.Space exactly like every other verb above.
+func (r mcpDataRouter) FetchBlob(ctx context.Context, req mcp.DataFetchBlobRequest) (mcp.DataFetchBlobResult, error) {
+	adapter, err := r.adapter(req.Space)
+	if err != nil {
+		return mcp.DataFetchBlobResult{}, err
+	}
+	return adapter.FetchBlob(ctx, req)
+}
+
 var _ mcp.DataOperations = mcpDataRouter{}
+var _ mcp.DataFetchBlobOperations = mcpDataRouter{}
 
 // newMCPDataOperationsFactory builds mcp.DataOperationsFactory — cmd/a2a's
 // production composition seam for a2a_data, mirroring

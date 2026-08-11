@@ -138,7 +138,15 @@ func catalogCLICommand(name string) (cli.Command, bool) {
 		// than a `data` sub-action deliberately — P4's plan argues
 		// attachment is a first-class act, and the parity gate is a reason
 		// to ship both halves together, not to hide it inside a subsystem.
-		return cli.NewAttachCommand("", datapackage.Bounds{}), true
+		return cli.NewAttachCommand("", datapackage.Bounds{}, nil), true
+	case "fetch":
+		// Nil ops: like "attach" above, the catalog path reads only
+		// Name()+Synopsis(). P10 (agent-exchange-2026-08) spec 10 §3 seam
+		// 6: a designated TOP-LEVEL verb (`a2a fetch <BL-id> --to <dir>`),
+		// not a `data` sub-verb — it resolves ANY blob-shaped attachment,
+		// not only a contract-pinned `DP-` package (that is `a2a data
+		// fetch`, unchanged by this wave).
+		return cli.NewFetchCommand(nil), true
 	case "data":
 		// Nil operations: the catalog/help path only reads Name()+Synopsis()
 		// (DataCommand.Run tolerates nil ops for every sub-verb it never

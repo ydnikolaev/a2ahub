@@ -188,10 +188,14 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 			// manifest.json's per-entry sha256 and was never an envelope
 			// draft, a consumes.yaml registry, or an event document — so it
 			// is excluded from EVERY classification below, not merely the
-			// ".md" one (spec 04 §11, amendment 2026-08-09, AC8). authzPaths
-			// still carries it: it is a sectioned write and diff-authz must
-			// still see it, even though nothing here validates its content.
-			if isDataPackagePayloadPath(p) {
+			// ".md" one (spec 04 §11, amendment 2026-08-09, AC8). A blob's
+			// own payload (space.BlobForPath's "<system>/blobs/<BL-id>/..."
+			// grammar) is the same carve-out for the same reason (P10 spec
+			// 10 wave B): sealed by its own digest sidecar, never an
+			// envelope draft either. authzPaths still carries both: each is
+			// a sectioned write and diff-authz must still see it, even
+			// though nothing here validates its content.
+			if isDataPackagePayloadPath(p) || isBlobPayloadPath(p) {
 				continue
 			}
 			switch {
@@ -768,6 +772,24 @@ func isDataPackagePayloadPath(p string) bool {
 	return ok
 }
 
+// isBlobPayloadPath is isDataPackagePayloadPath's own sibling for a blob's
+// own directory (space.BlobForPath's "<system>/blobs/<BL-id>/..." grammar) —
+// P10 (agent-exchange-2026-08) spec 10 wave A's own handoff, closed here:
+// `a2a attach` (wave B) now lands its payload bytes in the space the same
+// structural way `a2a data pack`/`deliver` already do, and a blob payload's
+// own frontmatter-bearing .md file must not be walked as an envelope draft
+// any more than a data package's own README.md is — the exact defect spec
+// 04 §11's AC8 amendment already fixed once for `DP-` packages. Both
+// artifact-discovery sites in this file (the changed-file loop above and
+// walkArtifacts below) ask it exactly beside isDataPackagePayloadPath, and
+// it is deliberately narrower than "skip this whole system section": a
+// genuinely malformed artifact filed anywhere else under the same system
+// still reaches artifact discovery and still reds.
+func isBlobPayloadPath(p string) bool {
+	_, _, ok := space.BlobForPath(p)
+	return ok
+}
+
 // contractWorkingTreeFiles reads every file under
 // root/descriptorDir/sub (sub e.g. "schema" or "fixtures/valid"), keyed
 // the SAME way contractPriorVersionFiles/contractReadTreeAtSHA
@@ -1023,8 +1045,9 @@ func walkArtifacts(root string, manifest space.Manifest) ([]string, error) {
 		// it is excluded from every classification in the changed-file loop
 		// above, not merely the ".md" one (spec 04 §11, AC8): none of *.md,
 		// consumes.yaml or an event document means what it normally means
-		// once it is a package's own sealed entry.
-		if isDataPackagePayloadPath(filepath.ToSlash(rel)) {
+		// once it is a package's own sealed entry. A blob's own payload
+		// (P10 spec 10 wave B) is the same carve-out for the same reason.
+		if isDataPackagePayloadPath(filepath.ToSlash(rel)) || isBlobPayloadPath(filepath.ToSlash(rel)) {
 			return nil
 		}
 		if _, ok := systemForPath(manifest, rel); ok || isSpaceLevelArtifact(rel) {

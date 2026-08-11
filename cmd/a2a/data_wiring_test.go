@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/host"
@@ -650,5 +651,174 @@ func TestReadStagedPackageRefusesAManifestNamingAPathOutsideTheRoot(t *testing.T
 	// digest proof sit behind it as the second and third guards.
 	if !strings.Contains(err.Error(), "entries.0.path") {
 		t.Fatalf("refusal did not name the offending entry path: %v", err)
+	}
+}
+
+// --- attach / fetch-blob (P10 agent-exchange-2026-08 spec 10, wave B) -----
+
+// blobPayloadDigestForTest reimplements — never calls — the exact two-
+// branch algorithm internal/datapackage's own digestForPayload (attach.go)
+// and internal/space's own recomputeAttachmentDigest (possession.go) both
+// already implement independently (neither is exported nor importable
+// across the ADR-001 boundary this test lives on the far side of). A THIRD
+// independent copy, agreeing with both, is this wave's own cross-check that
+// dataCore.deliverBlob's real, end-to-end write commits a payload whose
+// declared digest is the value every OTHER layer of this system would also
+// compute for the same bytes.
+func blobPayloadDigestForTest(payload map[string][]byte) string {
+	if len(payload) == 1 {
+		for _, raw := range payload {
+			return artifact.Digest(raw)
+		}
+	}
+	perFile := make(map[string]string, len(payload))
+	for path, raw := range payload {
+		perFile[path] = artifact.Digest(raw)
+	}
+	return artifact.CombineDigestPairs(perFile)
+}
+
+// corruptBlobDigestSidecarForTest checks out main, mutates the committed
+// blob.json sidecar's own digest field so it no longer matches the payload
+// it declares, and commits the change LOCALLY (the caller pushes it) — the
+// AC7 read-side fixture: "a corrupted blob on fetch" (spec 10 AC7).
+func corruptBlobDigestSidecarForTest(t *testing.T, mirrorDir, system, blobID string) {
+	t.Helper()
+	runGitFixture(t, mirrorDir, "checkout", "-B", "main", "origin/main")
+	relPath := filepath.Join(system, "blobs", blobID, "blob.json")
+	raw, err := os.ReadFile(filepath.Join(mirrorDir, relPath))
+	if err != nil {
+		t.Fatalf("read digest sidecar: %v", err)
+	}
+	corrupted := strings.Replace(string(raw), `"digest":"sha256:`, `"digest":"sha256:deadbeef`, 1)
+	if corrupted == string(raw) {
+		t.Fatalf("sidecar did not contain a digest field to corrupt: %s", raw)
+	}
+	if err := os.WriteFile(filepath.Join(mirrorDir, relPath), []byte(corrupted), 0o644); err != nil {
+		t.Fatalf("write corrupted sidecar: %v", err)
+	}
+	runGitFixture(t, mirrorDir, "add", filepath.ToSlash(relPath))
+	runGitFixture(t, mirrorDir, "commit", "-m", "test: corrupt blob digest sidecar")
+}
+
+// TestDataCoreDeliverBlobAndFetchBlobEndToEnd is P10 (agent-exchange-2026-08)
+// spec 10 wave B's own composed proof: dataCore.deliverBlob and
+// dataCore.fetchBlob — the exact methods cliAttachAdapter/cliFetchAdapter
+// (cmd_attach.go/cmd_fetch.go's own seams) and mcpDataAdapter/mcpDataRouter
+// all delegate to — driven through a REAL git fixture and a fake (offline,
+// in-memory) GitHub host, NEVER real GitHub (the PR "landing" below is
+// simulated by pushing straight to the fixture's own bare origin, mirroring
+// work_wiring_integration_test.go's own precedent for the identical need).
+//
+// It closes the one gap unit tests on either side of this seam cannot see:
+// whether a payload's KEYS — not just its bytes — survive
+// CLI-built-payload -> DeliverBlob's commit -> git -> ResolveBlob's read
+// back. digestForPayload's multi-entry branch hashes (path, digest) PAIRS
+// (blobPayloadDigestForTest above, reproducing it independently a third
+// time), so a key silently reshaped anywhere in that round trip would
+// produce a digest mismatch nothing else in this wave's test suite would
+// catch. It also drives AC3 (fetch reproduces exact bytes, digest-verified,
+// re-fetch is idempotent) and AC7's read-side half (a corrupted blob on
+// fetch refuses) through the real wiring rather than only through
+// internal/space's own direct-construction tests.
+func TestDataCoreDeliverBlobAndFetchBlobEndToEnd(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	mirrorDir := fx.Clone("axon")
+	fake := host.NewFakeHost()
+	core := &dataCore{
+		ownSystem: "axon", mirrorDir: mirrorDir,
+		remoteURL: fx.RemoteURL(), repository: host.Repo{Owner: "acme", Name: "getvisa"},
+		authorName: "a2a-axon", authorEmail: "a2a-axon@a2ahub.invalid",
+		now: time.Now, entropy: rand.Reader,
+		resolveCredential: func(context.Context) (host.Credential, error) { return host.Credential{}, nil },
+		loadManifest:      func() (space.Manifest, error) { return space.Manifest{}, nil },
+		funnel:            space.NewWriteFunnel(fake, dataNoopSubmitValidator{}, "0.1.0"),
+	}
+
+	// A nested, multi-file payload deliberately exercises the key-sensitive
+	// multi-entry branch (CombineDigestPairs over (path, digest) pairs) —
+	// the branch a single-file payload could never distinguish from a bug
+	// that silently reshaped or dropped a key.
+	payload := map[string][]byte{
+		"sub/dir/a.txt": []byte("alpha bytes"),
+		"b.txt":         []byte("bravo bytes"),
+	}
+	wantDigest := blobPayloadDigestForTest(payload)
+
+	ctx := context.Background()
+	blobID, write, err := core.deliverBlob(ctx, payload)
+	if err != nil {
+		t.Fatalf("deliverBlob: %v", err)
+	}
+	if len(fake.Pushes) != 1 || len(fake.Opens) != 1 {
+		t.Fatalf("deliverBlob did not push+open exactly once: pushes=%d opens=%d", len(fake.Pushes), len(fake.Opens))
+	}
+
+	// Simulate the PR landing (never real GitHub): fast-forward the
+	// fixture's own bare origin's main to the pushed branch.
+	runGitFixture(t, mirrorDir, "push", "origin", write.Branch+":main")
+	runGitFixture(t, mirrorDir, "fetch", "origin", "main")
+
+	resolved, err := space.ResolveBlob(ctx, mirrorDir, blobID)
+	if err != nil {
+		t.Fatalf("ResolveBlob: %v", err)
+	}
+	if resolved.Digest != wantDigest {
+		t.Fatalf("resolved digest = %q, want %q (the digest datapackage's own attach core would have declared for this payload)", resolved.Digest, wantDigest)
+	}
+	if len(resolved.Payload) != len(payload) {
+		t.Fatalf("resolved payload has %d entries, want %d: %v", len(resolved.Payload), len(payload), resolved.Payload)
+	}
+	for relPath, want := range payload {
+		got, ok := resolved.Payload[relPath]
+		if !ok {
+			t.Fatalf("resolved payload missing key %q (payload keys did not survive the round trip): %v", relPath, resolved.Payload)
+		}
+		if string(got) != string(want) {
+			t.Fatalf("resolved payload[%q] = %q, want %q", relPath, got, want)
+		}
+	}
+
+	// fetchBlob: bytes land byte-identical, "installed" the first time.
+	dest := filepath.Join(t.TempDir(), "landed")
+	outcome, err := core.fetchBlob(ctx, blobID, dest)
+	if err != nil {
+		t.Fatalf("fetchBlob: %v", err)
+	}
+	if outcome != string(datapackage.Installed) {
+		t.Fatalf("fetchBlob outcome = %q, want %q", outcome, datapackage.Installed)
+	}
+	for relPath, want := range payload {
+		got, rerr := os.ReadFile(filepath.Join(dest, filepath.FromSlash(relPath)))
+		if rerr != nil {
+			t.Fatalf("read fetched %s: %v", relPath, rerr)
+		}
+		if string(got) != string(want) {
+			t.Fatalf("fetched %s = %q, want %q", relPath, got, want)
+		}
+	}
+
+	// Re-fetch to the SAME destination: byte-identical content is accepted
+	// as "already-present", never refused (InstallLocalFiles' own no-replace
+	// semantics — the precedent cmd_fetch.go's own doc comment names rather
+	// than inventing a second "--to must be empty" rule).
+	outcome, err = core.fetchBlob(ctx, blobID, dest)
+	if err != nil {
+		t.Fatalf("re-fetchBlob: %v", err)
+	}
+	if outcome != string(datapackage.AlreadyPresent) {
+		t.Fatalf("re-fetchBlob outcome = %q, want %q", outcome, datapackage.AlreadyPresent)
+	}
+
+	// Corrupt the blob's own committed digest sidecar and prove fetch
+	// refuses rather than silently installing bytes that no longer match
+	// what the space itself declared (AC7's read-side half).
+	corruptBlobDigestSidecarForTest(t, mirrorDir, "axon", blobID)
+	runGitFixture(t, mirrorDir, "push", "origin", "main:main")
+	runGitFixture(t, mirrorDir, "fetch", "origin", "main")
+	if _, err := core.fetchBlob(ctx, blobID, filepath.Join(t.TempDir(), "corrupt")); err == nil {
+		t.Fatal("fetchBlob over a corrupted digest sidecar = nil error, want a digest-mismatch refusal")
 	}
 }

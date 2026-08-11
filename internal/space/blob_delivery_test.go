@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
@@ -255,5 +256,90 @@ func TestDefaultBlobCeilingBoundsMatchTheNamedConstants(t *testing.T) {
 	}
 	if defaultBlobCeilingBounds != want {
 		t.Fatalf("defaultBlobCeilingBounds = %+v, want %+v", defaultBlobCeilingBounds, want)
+	}
+}
+
+// TestRecomputeAttachmentDigestMatchesDatapackageDigestForPayload is the
+// space-side half of P10 wave B's own digest-agreement proof. The sibling
+// assertion (internal/datapackage/attach_test.go's
+// TestDigestForPayload_MatchesSpacePossessionAlgorithm) checks the SAME
+// vectors against datapackage's own digestForPayload; ADR-001 forbids this
+// package from importing internal/datapackage, so this file cannot call
+// that function directly and instead reimplements the comparison the other
+// direction — mutating EITHER recomputeAttachmentDigest's branch (here) or
+// digestForPayload's own (the sibling file) reds exactly one of the two
+// tests, never both silently agreeing on a shared drift.
+func TestRecomputeAttachmentDigestMatchesDatapackageDigestForPayload(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		payload map[string][]byte
+	}{
+		{"single entry", map[string][]byte{"file.txt": []byte("solo bytes")}},
+		{"single entry, nested path", map[string][]byte{"sub/dir/file.txt": []byte("solo bytes in a nested path")}},
+		{"two entries", map[string][]byte{
+			"a.txt": []byte("alpha"),
+			"b.txt": []byte("bravo"),
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := recomputeAttachmentDigest(tc.payload)
+
+			// Independently reimplemented — NOT calling
+			// recomputeAttachmentDigest — the exact two branches
+			// internal/datapackage's own digestForPayload (attach.go) uses,
+			// so this test pins agreement against a description of that
+			// algorithm, not against itself.
+			var want string
+			if len(tc.payload) == 1 {
+				for _, raw := range tc.payload {
+					want = artifact.Digest(raw)
+				}
+			} else {
+				perFile := make(map[string]string, len(tc.payload))
+				for p, raw := range tc.payload {
+					perFile[p] = artifact.Digest(raw)
+				}
+				want = artifact.CombineDigestPairs(perFile)
+			}
+			if got != want {
+				t.Fatalf("recomputeAttachmentDigest(%v) = %q, want %q (digestForPayload's own algorithm)", tc.payload, got, want)
+			}
+		})
+	}
+}
+
+// TestBlobForPath is spec 10 wave B's own CI-carve-out seam: the structural
+// predicate isBlobPayloadPath (internal/cli/cmd_validate_ci.go) is built on,
+// mirroring TestDataPackageForPath's own table shape (data_delivery_test.go)
+// against blobDir's "<system>/blobs/<BL-id>/..." grammar instead.
+func TestBlobForPath(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name        string
+		path        string
+		wantID      string
+		wantSidecar string
+		wantOK      bool
+	}{
+		{"blob payload file", "axon/blobs/BL-axon-20260811-ab12/review.md", "BL-axon-20260811-ab12", "axon/blobs/BL-axon-20260811-ab12/blob.json", true},
+		{"blob sidecar itself", "axon/blobs/BL-axon-20260811-ab12/blob.json", "BL-axon-20260811-ab12", "axon/blobs/BL-axon-20260811-ab12/blob.json", true},
+		{"nested payload file", "axon/blobs/BL-axon-20260811-ab12/sub/dir/file.txt", "BL-axon-20260811-ab12", "axon/blobs/BL-axon-20260811-ab12/blob.json", true},
+		{"not a blob dir", "axon/exchanges/XQ-axon-20260811-ab12.md", "", "", false},
+		{"data package, not a blob", "axon/data/DP-axon-20260811-ab12/manifest.json", "", "", false},
+		{"blob dir with no file beneath it", "axon/blobs/BL-axon-20260811-ab12", "", "", false},
+		{"malformed blob id", "axon/blobs/not-a-blob-id/review.md", "", "", false},
+		{"path traversal segment", "axon/blobs/../BL-axon-20260811-ab12/review.md", "", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			id, sidecar, ok := BlobForPath(tc.path)
+			if ok != tc.wantOK || id != tc.wantID || sidecar != tc.wantSidecar {
+				t.Fatalf("BlobForPath(%q) = (%q, %q, %v), want (%q, %q, %v)", tc.path, id, sidecar, ok, tc.wantID, tc.wantSidecar, tc.wantOK)
+			}
+		})
 	}
 }

@@ -48,7 +48,7 @@ const (
 // (a2a_data, attach), and TestDataSubcommandsMatchMCPDataActions needs to
 // stop asserting a bare DeepEqual against the full list) — reported to the
 // lead rather than worked around here.
-var DataActions = []string{"pack", "deliver", "fetch", "verify", "attach"}
+var DataActions = []string{"pack", "deliver", "fetch", "verify", "attach", "fetch-blob"}
 
 // DataPackRequest is a2a_data action=pack's resolved input.
 type DataPackRequest struct {
@@ -135,6 +135,40 @@ type DataAttachOperations interface {
 	Attach(context.Context, DataAttachRequest) (DataAttachResult, error)
 }
 
+// DataFetchBlobRequest is a2a_data action=fetch-blob's resolved input — MCP's
+// own copy of cli.FetchRequest-shaped input (ADR-001: no shared Go type).
+// P10 (agent-exchange-2026-08) spec 10 §3 seam 6: the MCP twin of the
+// designated top-level CLI verb `a2a fetch <BL-id> --to <dir>`. It cannot be
+// named plain "fetch" — a2a_data already has a `fetch` action (a DP-
+// package's own manifest-bound fetch, spec 05a) — so it is
+// "fetch-blob" here and projects to the bare "fetch" verb via a dedicated
+// case in cmd/a2a/mcp_parity_test.go's toolAction.verb(), mirroring how
+// "attach" already projects to its own bare verb name for the identical
+// reason (that function's own doc comment).
+type DataFetchBlobRequest struct {
+	Space       string
+	Ref         string
+	Destination string
+}
+
+// DataFetchBlobResult is action=fetch-blob's own result shape, mirroring
+// cli.FetchResult's own three fields (ADR-001: no shared Go type).
+type DataFetchBlobResult struct {
+	Ref         string `json:"ref,omitempty"`
+	Destination string `json:"destination,omitempty"`
+	Outcome     string `json:"outcome,omitempty"`
+}
+
+// DataFetchBlobOperations mirrors DataAttachOperations' own optional-
+// capability shape (this file's doc comment above) for the same reason:
+// added here rather than widening DataOperations, so an existing
+// DataOperations implementation that has not yet grown FetchBlob keeps
+// compiling, and newDataHandler below reports "not configured" instead of
+// failing to build.
+type DataFetchBlobOperations interface {
+	FetchBlob(context.Context, DataFetchBlobRequest) (DataFetchBlobResult, error)
+}
+
 // DataResult mirrors cli.DataResult's own wire shape field-for-field —
 // internal/datapackage.Document/Report reused verbatim, never re-typed.
 type DataResult struct {
@@ -173,8 +207,15 @@ type DataToolDeps struct {
 // NewWorkTool's own doc comment says of a2a_work.
 func NewDataTool(deps DataToolDeps) (ToolSpec, error) {
 	return ToolSpec{
-		Name:        DataToolName,
-		Description: "contract data exchange loop: action=pack|deliver|fetch|verify",
+		Name: DataToolName,
+		// Derived from DataActions, never repeated. The literal it replaced
+		// said "action=pack|deliver|fetch|verify" while DataActions carried
+		// six — `attach` had been invisible for a wave and `fetch-blob` would
+		// have joined it. This string is the ONLY thing an MCP client reads to
+		// learn which actions exist, so a stale copy is not cosmetic: it is an
+		// action that ships and cannot be found. Derivation removes the copy
+		// rather than correcting it.
+		Description: "contract data exchange loop: action=" + strings.Join(DataActions, "|"),
 		InputSchema: dataToolSchema(),
 		Handler:     newDataHandler(deps),
 	}, nil
@@ -208,6 +249,12 @@ type DataInput struct {
 	ConformsTo   string `json:"conforms_to,omitempty"`
 	Verification string `json:"verification,omitempty"`
 	Retention    string `json:"retention,omitempty"`
+	// Ref is action=fetch-blob's own field (mirrors cli.FetchRequest.Ref):
+	// the BL- id to resolve. Destination is shared with action=fetch's own
+	// `to` field — both name "where the bytes land on disk", and giving
+	// fetch-blob a second field for the identical concept would be a second
+	// name for the same thing, not a distinct one.
+	Ref string `json:"ref,omitempty"`
 }
 
 func newDataHandler(deps DataToolDeps) HandlerFunc {
@@ -225,7 +272,7 @@ func newDataHandler(deps DataToolDeps) HandlerFunc {
 
 		switch in.Action {
 		case "pack":
-			if err := dataForbidInput(in, "staging_root", "expect_pack", "package_id", "to", "record", "draft", "role", "conforms_to", "verification", "retention"); err != nil {
+			if err := dataForbidInput(in, "staging_root", "expect_pack", "package_id", "to", "record", "draft", "role", "conforms_to", "verification", "retention", "ref"); err != nil {
 				return nil, "", err
 			}
 			if in.Contract == "" || in.From == "" || in.Profile == "" || in.Format == "" {
@@ -241,7 +288,7 @@ func newDataHandler(deps DataToolDeps) HandlerFunc {
 			})
 			return result, dataSummary("pack", result), callErr
 		case "deliver":
-			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "max_attempts", "package_id", "to", "record", "draft", "role", "conforms_to", "verification", "retention"); err != nil {
+			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "max_attempts", "package_id", "to", "record", "draft", "role", "conforms_to", "verification", "retention", "ref"); err != nil {
 				return nil, "", err
 			}
 			if in.StagingRoot == "" || in.Fulfills == "" {
@@ -253,7 +300,7 @@ func newDataHandler(deps DataToolDeps) HandlerFunc {
 			})
 			return result, dataSummary("deliver", result), callErr
 		case "fetch":
-			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "record", "actor", "draft", "role", "conforms_to", "verification", "retention"); err != nil {
+			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "record", "actor", "draft", "role", "conforms_to", "verification", "retention", "ref"); err != nil {
 				return nil, "", err
 			}
 			if in.PackageID == "" || in.To == "" {
@@ -262,7 +309,7 @@ func newDataHandler(deps DataToolDeps) HandlerFunc {
 			result, callErr := deps.Operations.Fetch(ctx, DataFetchRequest{Space: in.Space, PackageID: in.PackageID, Destination: in.To})
 			return result, dataSummary("fetch", result), callErr
 		case "verify":
-			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "to", "draft", "role", "conforms_to", "verification", "retention"); err != nil {
+			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "to", "draft", "role", "conforms_to", "verification", "retention", "ref"); err != nil {
 				return nil, "", err
 			}
 			if in.PackageID == "" {
@@ -271,7 +318,7 @@ func newDataHandler(deps DataToolDeps) HandlerFunc {
 			result, callErr := deps.Operations.Verify(ctx, DataVerifyRequest{Space: in.Space, PackageID: in.PackageID, Record: in.Record, Actor: in.Actor})
 			return result, dataSummary("verify", result), callErr
 		case "attach":
-			if err := dataForbidInput(in, "contract", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "package_id", "to", "record", "actor"); err != nil {
+			if err := dataForbidInput(in, "contract", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "package_id", "to", "record", "actor", "ref"); err != nil {
 				return nil, "", err
 			}
 			if in.Draft == "" || in.From == "" || in.Verification == "" {
@@ -286,6 +333,19 @@ func newDataHandler(deps DataToolDeps) HandlerFunc {
 				ConformsTo: in.ConformsTo, Verification: in.Verification, Retention: in.Retention,
 			})
 			return result, dataAttachSummary(result), callErr
+		case "fetch-blob":
+			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "package_id", "record", "actor", "draft", "role", "conforms_to", "verification", "retention"); err != nil {
+				return nil, "", err
+			}
+			if in.Ref == "" || in.To == "" {
+				return nil, "", fmt.Errorf("a2a_data fetch-blob: ref and to are required")
+			}
+			fetcher, ok := deps.Operations.(DataFetchBlobOperations)
+			if !ok {
+				return nil, "", fmt.Errorf("a2a_data fetch-blob: service is not configured")
+			}
+			result, callErr := fetcher.FetchBlob(ctx, DataFetchBlobRequest{Space: in.Space, Ref: in.Ref, Destination: in.To})
+			return result, dataFetchBlobSummary(result), callErr
 		default:
 			panic("unreachable closed a2a_data action")
 		}
@@ -338,6 +398,8 @@ func dataForbidInput(in DataInput, fields ...string) error {
 			present = in.Verification != ""
 		case "retention":
 			present = in.Retention != ""
+		case "ref":
+			present = in.Ref != ""
 		default:
 			panic("unknown a2a_data forbidden field " + field)
 		}
@@ -425,6 +487,17 @@ func dataAttachSummary(result DataAttachResult) string {
 	return fmt.Sprintf("attached %s -> %s", result.Attachment.Digest, result.Draft)
 }
 
+// dataFetchBlobSummary is dataSummary's own sibling for action=fetch-blob's
+// distinct result type (DataFetchBlobResult, not DataResult) — mirrors
+// cli.FetchCommand's own text-mode line ("<outcome> <ref> -> <destination>",
+// cmd_fetch.go).
+func dataFetchBlobSummary(result DataFetchBlobResult) string {
+	if result.Outcome == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s %s -> %s", result.Outcome, result.Ref, result.Destination)
+}
+
 func dataToolSchema() json.RawMessage {
 	return groupedSchema("action", DataActions, map[string]string{
 		"space": "string", "contract": "string", "from": "string", "profile": "string",
@@ -432,6 +505,6 @@ func dataToolSchema() json.RawMessage {
 		"max_attempts": "integer", "staging_root": "string", "expect_pack": "string",
 		"package_id": "string", "to": "string", "record": "boolean", "actor": "object",
 		"draft": "string", "role": "string", "conforms_to": "string",
-		"verification": "string", "retention": "string",
+		"verification": "string", "retention": "string", "ref": "string",
 	})
 }

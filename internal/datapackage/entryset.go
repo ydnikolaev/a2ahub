@@ -129,3 +129,49 @@ func VerifyEntrySet(declared []Entry, files []LocalFile) (EntrySet, error) {
 		AggregateDigest: artifact.CombineDigestPairs(perFile),
 	}, nil
 }
+
+// digestForPayload lives HERE, beside BuildEntrySet/VerifyEntrySet, rather
+// than in attach.go where it is used, because this file is the one place in
+// this package that composes an aggregate digest — check_contract_carried_set.sh
+// holds CombineDigestPairs to a closed per-file allowlist for exactly that
+// reason, and the honest way past that gate is to put the third composition
+// where the other two already are, not to widen the allowlist by a file.
+//
+// digestForPayload computes the SAME digest internal/space's own possession
+// check (recomputeAttachmentDigest, possession.go) computes over an
+// identical payload — reproduced here, never called, because ADR-001
+// forbids internal/space from importing internal/datapackage (the same
+// mirror-not-import idiom possession.go's own doc comment already states
+// for blobPrefix/dataPackagePrefix). Two branches, matching exactly: a
+// single-entry payload's digest is that ONE file's own artifact.Digest
+// (mirroring NewAttachmentFromBytes' own shape); a multi-entry payload's
+// digest is artifact.CombineDigestPairs over each entry's own
+// artifact.Digest (mirroring NewAttachmentFromDirectory/BuildEntrySet's
+// shape, entryset.go).
+//
+// P10 (agent-exchange-2026-08) spec 10 wave B's own hazard, found by that
+// wave's advisor before it was shipped: BuildEntrySet's own AggregateDigest
+// ALWAYS takes the multi-entry CombineDigestPairs branch, even when the
+// walked directory holds exactly one file — so NewAttachmentFromDirectory's
+// existing Digest (entrySet.AggregateDigest) disagrees with
+// recomputeAttachmentDigest's single-entry branch for that one case, and a
+// blob attach sourced from a one-file directory would submit with a digest
+// that CheckAttachmentPossession (space, on origin/main) can never match —
+// B32 again, with a different message. NewAttachmentFromDirectoryWithPayload
+// (below) computes its Digest via THIS function, over the same payload it
+// returns, specifically to close that hole; NewAttachmentFromDirectory
+// itself is UNCHANGED (its own doc comment's entrySet.AggregateDigest shape
+// stays as documented — no existing caller of that function is touched by
+// this wave).
+func digestForPayload(payload map[string][]byte) string {
+	if len(payload) == 1 {
+		for _, raw := range payload {
+			return artifact.Digest(raw)
+		}
+	}
+	perFile := make(map[string]string, len(payload))
+	for path, raw := range payload {
+		perFile[path] = artifact.Digest(raw)
+	}
+	return artifact.CombineDigestPairs(perFile)
+}
