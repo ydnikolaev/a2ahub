@@ -17,6 +17,7 @@
 #   skill/**
 #   !internal/livee2e/**
 #   !internal/lane/**
+#   !internal/e2e/**
 #   !**/*_test.go
 set -uo pipefail
 
@@ -94,13 +95,24 @@ run_check() {
     # The exclusion holds ONLY ALONE, exactly like livee2e's: a commit that
     # also touches real product code still reds.
     #
+    # internal/e2e is the offline integration tier and belongs to the same
+    # class, by the same checkable test: nothing outside the package imports
+    # it, so it is never linked into cmd/a2a. Most of it IS `_test.go` and was
+    # already covered; what was not is coverage.go, the coverage manifest the
+    # tier's own parity gate reads. Added 2026-08-11 (P11 wave C), where a
+    # commit that only made that manifest declare its evidence tier demanded a
+    # release note for a change no user can observe — the exact reflex the
+    # first paragraph above warns against.
+    #
     # The teeth below pin every half: a test-only commit stays green, a
-    # livee2e-only commit stays green, a lane-only commit stays green, and a
-    # commit that ALSO touches real product code still reds in every case.
+    # livee2e-only commit stays green, a lane-only commit stays green, an
+    # e2e-only commit stays green, and a commit that ALSO touches real product
+    # code still reds in every case.
     git -C "$ROOT" log "$anchor..HEAD" --format='%H%x09%s' -- \
       internal/ cmd/ schemas/ space-template/ skill/ \
       ':(exclude)internal/livee2e/' \
       ':(exclude)internal/lane/' \
+      ':(exclude)internal/e2e/' \
       ':(exclude,glob)**/*_test.go'
   )
 
@@ -208,6 +220,32 @@ run_teeth() {
     exit 1
   fi
 
+  mkdir -p "$tmp/internal/e2e"
+  printf '%s\n' 'package e2e' >"$tmp/internal/e2e/coverage.go"
+  git -C "$tmp" add internal/e2e/coverage.go
+  git -C "$tmp" commit -q -m 'fix(agent-exchange): declare the coverage manifest tier'
+  if ! ROOT="$tmp" bash "$SCRIPT_ABS" _internal-check >/dev/null; then
+    echo "release-notes-freshness --teeth: FAILED — an e2e-only fix demanded release notes." >&2
+    exit 1
+  fi
+
+  # And the e2e exclusion holds ONLY ALONE, like the two above it.
+  printf '%s\n' 'package e2e' 'const Touched = true' >"$tmp/internal/e2e/coverage.go"
+  mkdir -p "$tmp/internal/widget"
+  printf '%s\n' 'package widget' 'const Fixed = true' >"$tmp/internal/widget/widget.go"
+  git -C "$tmp" add internal/e2e/coverage.go internal/widget/widget.go
+  git -C "$tmp" commit -q -m 'fix(cli): repair a widget, and touch e2e alongside it'
+  if ROOT="$tmp" bash "$SCRIPT_ABS" _internal-check >/dev/null 2>&1; then
+    echo "release-notes-freshness --teeth: FAILED — an e2e commit that ALSO touched product code stayed green." >&2
+    exit 1
+  fi
+  # Re-anchor with a version of its own, not 0.4.0 — the assertions further
+  # down author 0.4.0 themselves, and a duplicate here leaves them with
+  # nothing to commit and therefore no anchor move.
+  printf '%s\n' 'version: "0.3.5"' >"$tmp/releasenotes/0.3.5.yaml"
+  git -C "$tmp" add releasenotes/0.3.5.yaml
+  git -C "$tmp" commit -q -m 'docs: author 0.3.5 release notes'
+
   printf '%s\n' 'package lane' 'const Touched = true' >"$tmp/internal/lane/derive.go"
   mkdir -p "$tmp/internal/gadget"
   printf '%s\n' 'package gadget' 'const Fixed = true' >"$tmp/internal/gadget/gadget.go"
@@ -267,7 +305,7 @@ run_teeth() {
     exit 1
   fi
 
-  echo "release-notes-freshness --teeth: uncovered fix reds with id; notes touch greens; docs/chore stay green; breaking commit reds; livee2e-only greens; livee2e+product reds; lane-only greens; lane+product reds; test-only greens; test+product reds."
+  echo "release-notes-freshness --teeth: uncovered fix reds with id; notes touch greens; docs/chore stay green; breaking commit reds; livee2e-only greens; livee2e+product reds; lane-only greens; lane+product reds; e2e-only greens; e2e+product reds; test-only greens; test+product reds."
 }
 
 case "${1:-check}" in
