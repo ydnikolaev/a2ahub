@@ -49,7 +49,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check test check-validators lane lane-run lane-declarations web-quality _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus feedback-sync view-vocabulary pendency-uniqueness loop-coverage human-gates loop-reachability release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
+.PHONY: check test check-validators lane lane-run lane-declarations web-quality _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness loop-coverage human-gates loop-reachability release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -60,7 +60,7 @@
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus view-vocabulary pendency-uniqueness loop-coverage human-gates loop-reachability release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline-check
+REPO_GATES := spec-verify-refs lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus view-vocabulary pendency-uniqueness loop-coverage human-gates loop-reachability release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline-check
 
 _print-repo-gates:
 	@echo "$(REPO_GATES)"
@@ -206,6 +206,13 @@ feedback-corpus: ## A feedback record cannot be corrupted into the corpus, and a
 	  echo "feedback-corpus: skip — scripts/check-feedback-corpus.sh absent (public checkout)."; \
 	fi
 
+spec-verify-refs: ## Every spec's §8 "How to verify" citation must resolve to a real path or test function (P11 wave B AC1; private harness gate, presence-gated). IN REPO_GATES since 2026-08-11, once wave B's own two findings were resolved — a gate joining the ceiling while its findings are live reds the tree for work nobody did.
+	@if [ -f scripts/check-spec-verify-refs.sh ]; then \
+	  bash scripts/check-spec-verify-refs.sh; \
+	else \
+	  echo "spec-verify-refs: skip — scripts/check-spec-verify-refs.sh absent (public checkout)."; \
+	fi
+
 feedback-sync: ## Pull the hub of record's feedback/inbox/** into this tree (P9 wave B; git-level, stages only).
 	@if [ -f docs/runbooks/feedback-sync.sh ]; then \
 	  bash docs/runbooks/feedback-sync.sh; \
@@ -282,6 +289,11 @@ _harness-check:
 	  bash scripts/check-feedback-corpus.sh --teeth; \
 	else \
 	  echo "harness-check: skip — scripts/check-feedback-corpus.sh absent (public checkout)."; \
+	fi
+	@if [ -f scripts/check-spec-verify-refs.sh ]; then \
+	  bash scripts/check-spec-verify-refs.sh --teeth; \
+	else \
+	  echo "harness-check: skip — scripts/check-spec-verify-refs.sh absent (public checkout)."; \
 	fi
 	@if [ -f scripts/check-feature-lint.sh ]; then \
 	  bash scripts/check-feature-lint.sh --teeth; \
