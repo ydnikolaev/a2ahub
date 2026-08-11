@@ -320,3 +320,4 @@ _harness-check:
 	@bash scripts/tests/check_live_e2e_evidence_test.sh
 	@bash scripts/tests/check_human_gates_test.sh
 	@bash scripts/tests/check_loop_reachability_test.sh
+	@bash scripts/tests/check_loop_coverage_test.sh
