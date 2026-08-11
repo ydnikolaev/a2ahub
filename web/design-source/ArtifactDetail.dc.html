@@ -139,6 +139,29 @@
       </div>
     </sc-if>
 
+    <!-- A contract's operational half, and the third state that is the whole
+         reason this section exists. `undeclared` is NOT `absent`: absent is a
+         provider saying "not yet", undeclared is nobody ever having said
+         anything. They get different colours, different words and different
+         sentences, because a reader who has never opened the spec has to be
+         able to tell them apart at a glance. -->
+    <sc-if value="{{ hasOperational }}" hint-placeholder-val="{{ false }}">
+      <div data-artifact-section="operational" style="border-top:1px solid var(--hairline); padding-top:var(--space-section); margin:0 0 var(--space-section);">
+        <dc-import name="SectionHeading" title="{{ operationalLabel }}" hint="{{ operationalHint }}" hint-size="100%,32px"></dc-import>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <sc-for list="{{ operationalItems }}" as="op" hint-placeholder-count="3">
+            <div style="{{ op.rowStyle }}">
+              <span style="display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap; row-gap:6px;">
+                <span style="flex:1 1 auto; min-width:0; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:16px; font-weight:600; overflow-wrap:anywhere;">{{ op.name }}</span>
+                <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="{{ op.label }}" tone="{{ op.tone }}" size="small" hint-size="150px,26px"></dc-import></span>
+              </span>
+              <span style="display:block; margin-top:5px; font-size:15px; line-height:1.5; color:var(--muted); overflow-wrap:anywhere;">{{ op.hint }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
     <sc-if value="{{ hasRefs }}" hint-placeholder-val="{{ false }}">
       <div data-artifact-section="references" style="border-top:1px solid var(--hairline); padding-top:var(--space-section); margin:0 0 var(--space-section);">
         <dc-import name="SectionHeading" title="{{ refsLabel }}" hint="" hint-size="100%,32px"></dc-import>
@@ -166,6 +189,20 @@
                 <span style="flex:1 1 auto; min-width:0; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:16px; font-weight:600; overflow-wrap:anywhere;">{{ att.ref }}</span>
                 <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="{{ att.pillText }}" tone="{{ att.pillTone }}" hint-size="120px,26px"></dc-import></span>
               </span>
+              <!-- The row's own facts, `digest` first: it is a SEPARATE field
+                   from `ref` (spec 04 §7) and it is what a person comparing
+                   bytes by hand actually needs. Everything here is text —
+                   deliberately nothing is a link, and nothing offers to
+                   fetch: an `a2a attach` ref resolves to no retrievable blob
+                   today (epic-backlog B32), and a download affordance would
+                   promise bytes this tool cannot hand over. -->
+              <sc-if value="{{ att.hasFacts }}" hint-placeholder-val="{{ true }}">
+                <span style="display:grid; grid-template-columns:minmax(90px,auto) minmax(0,1fr); gap:3px 14px; margin-top:3px; font-size:14px; line-height:1.5;">
+                  <sc-for list="{{ att.facts }}" as="fact" hint-placeholder-count="3">
+                    <span style="color:var(--muted);">{{ fact.label }}</span><span style="font-family:{{ fact.font }}; color:var(--body); overflow-wrap:anywhere;">{{ fact.value }}</span>
+                  </sc-for>
+                </span>
+              </sc-if>
               <span style="font-size:15px; color:var(--muted); overflow-wrap:anywhere;">{{ att.verificationClaim }}</span>
               <sc-if value="{{ att.lapsed }}" hint-placeholder-val="{{ false }}">
                 <span style="font-size:15px; color:var(--attention-ink); overflow-wrap:anywhere;">{{ att.lapseClaim }}</span>
@@ -453,15 +490,64 @@ class Component extends DCLogic {
       // here — pillText/pillTone are presentation-only labels layered on
       // top of the already-computed verification_claim/lapsed/lapse_claim
       // fields cache.ShowResult.Attachments carries.
-      attachments: (d.attachments || []).map(att => ({
-        ref: att.ref,
-        verificationClaim: att.verification_claim || "",
-        lapsed: !!att.lapsed,
-        lapseClaim: att.lapse_claim || "",
-        pillText: att.lapsed
-          ? (ru ? "истекло" : "lapsed")
-          : (att.verification === "none" ? (ru ? "без вердикта" : "no verdict") : (ru ? "заявлено" : "claimed")),
-        pillTone: att.lapsed ? "blocking" : (att.verification === "none" ? "neutral" : "healthy")
+      attachments: (d.attachments || []).map(att => {
+        // `digest` is not `ref` restated. The schema requires both, and the
+        // row showed only `ref` — so the one value a human uses to check the
+        // bytes against their own copy never reached the page (wave 36 F6).
+        // The rest of the claim rides with it rather than being dropped a
+        // second time: what the blob IS (role), which schema it says it
+        // conforms to, and how long it is meant to stay readable.
+        const facts = [
+          // `digest` stays untranslated: it is the field's own name and the
+          // token a reader will grep their own copy for.
+          { label: "digest", value: att.digest || "", mono: true },
+          { label: ru ? "роль" : "role", value: att.role || "", mono: false },
+          { label: ru ? "по схеме" : "conforms to", value: att.conforms_to || "", mono: true },
+          { label: ru ? "хранение" : "retention", value: att.retention || "", mono: false },
+          { label: ru ? "истекает" : "expires", value: att.expires_at || "", mono: false },
+          { label: ru ? "истекло" : "lapsed on", value: att.lapsed_on || "", mono: false }
+        ].filter(f => f.value).map(f => ({
+          label: f.label,
+          value: f.value,
+          font: f.mono ? "'IBM Plex Mono',ui-monospace,monospace" : "'Onest',sans-serif"
+        }));
+        return {
+          ref: att.ref,
+          facts,
+          hasFacts: facts.length > 0,
+          verificationClaim: att.verification_claim || "",
+          lapsed: !!att.lapsed,
+          lapseClaim: att.lapse_claim || "",
+          pillText: att.lapsed
+            ? (ru ? "истекло" : "lapsed")
+            : (att.verification === "none" ? (ru ? "без вердикта" : "no verdict") : (ru ? "заявлено" : "claimed")),
+          pillTone: att.lapsed ? "blocking" : (att.verification === "none" ? "neutral" : "healthy")
+        };
+      }),
+      // Already projected by the caller (web/design-source's own
+      // operationalRows), so the two surfaces that show these three states
+      // cannot drift into two vocabularies for one idea. This component adds
+      // only the row's visual weight, and it varies with the state on
+      // purpose: `undeclared` must not look like `absent`.
+      hasOperational: !!(d.operationalItems && d.operationalItems.length),
+      operationalLabel: ru ? "Операционная готовность" : "Operational readiness",
+      operationalHint: ru ? "заявлено поставщиком" : "as declared by the provider",
+      operationalItems: (d.operationalItems || []).map(op => ({
+        name: op.name,
+        label: op.label,
+        tone: op.tone,
+        hint: op.hint,
+        // Three treatments, not two-plus-a-fallback: a filled green block for
+        // a declared-ready item, a filled amber block for a declared gap, and
+        // — for `undeclared` — no fill at all behind a DASHED outline, which
+        // reads as "there is nothing here to fill in" rather than as a
+        // quieter kind of missing.
+        rowStyle: "border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); "
+          + (op.tone === "healthy"
+            ? "background:var(--healthy-tint); border:1px solid transparent;"
+            : op.tone === "attention"
+              ? "background:var(--attention-tint); border:1px solid transparent;"
+              : "background:transparent; border:1px dashed var(--border-strong);")
       })),
       hasEvents: !!(d.events && d.events.length),
       events: (d.events || []).map((e, i, all) => Object.assign({}, e, {

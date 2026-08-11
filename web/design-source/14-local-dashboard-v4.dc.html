@@ -761,6 +761,37 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                         <span style="flex:1 1 auto; min-width:0; text-align:right; font-size:15px; color:var(--muted);">{{ o.needed }}</span>
                       </div>
                       <div style="margin-top:var(--space-inline); font-size:var(--font-card-title-sm); line-height:var(--line-card-title-sm); font-weight:600; color:var(--text); overflow-wrap:anywhere;">{{ o.title }}</div>
+                      <!-- The verdict, not just its conclusion: which move is
+                           owed, why it is owed, and — loudest of the three —
+                           whether a person rather than an agent has to make
+                           it. All three came off internal/pendency and were
+                           dropped here for a full wave. -->
+                      <sc-if value="{{ o.hasMove }}" hint-placeholder-val="{{ false }}">
+                        <div style="margin-top:var(--space-inline); font-size:15px; line-height:1.5; color:var(--muted); overflow-wrap:anywhere;"><span style="text-transform:uppercase; letter-spacing:.03em; font-size:13px; font-weight:600;">{{ o.moveLabel }}</span><span> · </span><span style="color:var(--text); font-weight:600;">{{ o.move }}</span></div>
+                      </sc-if>
+                      <sc-if value="{{ o.hasWhy }}" hint-placeholder-val="{{ false }}">
+                        <div style="margin-top:6px; font-size:15px; line-height:1.5; color:var(--muted); overflow-wrap:anywhere;">{{ o.why }}</div>
+                      </sc-if>
+                      <sc-if value="{{ o.hasHumanGate }}" hint-placeholder-val="{{ false }}">
+                        <div style="margin-top:9px; display:flex; align-items:flex-start; gap:9px; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--attention-tint); font-size:15px; line-height:1.5; color:var(--attention-ink); overflow-wrap:anywhere;">
+                          <span style="display:inline-flex; flex:0 0 auto; pointer-events:none;"><dc-import name="EventSignal" tone="caution" label="" hint-size="20px,20px"></dc-import></span>
+                          <span>{{ o.humanGate }}</span>
+                        </div>
+                      </sc-if>
+                      <!-- Operational readiness is a contract's own third
+                           state made visible: `undeclared` is not `absent`,
+                           and this row is where a consumer sees which of the
+                           two they are actually looking at. -->
+                      <sc-if value="{{ o.hasOperational }}" hint-placeholder-val="{{ false }}">
+                        <div style="margin-top:10px;">
+                          <div style="font-size:13px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:6px;">{{ o.operationalLabel }}</div>
+                          <span style="display:flex; gap:7px; flex-wrap:wrap;">
+                            <sc-for list="{{ o.operationalItems }}" as="op" hint-placeholder-count="3">
+                              <span style="display:inline-flex; pointer-events:none;"><dc-import name="StatusPill" text="{{ op.chip }}" tone="{{ op.tone }}" why="{{ op.hint }}" size="small" hint-size="180px,24px"></dc-import></span>
+                            </sc-for>
+                          </span>
+                        </div>
+                      </sc-if>
                     </button>
                   </sc-for>
                 </div>
@@ -992,6 +1023,13 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                   <dc-import name="StatusPill" text="{{ cdState }}" tone="{{ cdStateTone }}" size="small" hint-size="100px,24px"></dc-import>
                   <sc-if value="{{ cdCodeBacked }}" hint-placeholder-val="{{ true }}">
                     <dc-import name="StatusPill" text="{{ codeBackedLabel }}" tone="outline" size="small" hint-size="110px,24px"></dc-import>
+                  </sc-if>
+                  <!-- Read this BEFORE running `a2a contract adopt`, which is
+                       the whole point: the refusal is a property of the
+                       descriptor, knowable now, not a surprise at the
+                       command line. -->
+                  <sc-if value="{{ cdNonAdoptable }}" hint-placeholder-val="{{ false }}">
+                    <dc-import name="StatusPill" text="{{ cdNonAdoptableLabel }}" tone="attention" why="{{ cdNonAdoptableWhy }}" size="small" hint-size="130px,24px"></dc-import>
                   </sc-if>
                 </div>
                 <div style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; line-height:1.55; color:var(--muted); overflow-wrap:anywhere;">{{ cdSpaceLine }}</div>
@@ -1974,8 +2012,14 @@ const GUIDE_FEATURES_RU = [
   ["draft → merge", "Ограниченная автоматизация через репозиторий", "Явно запущенные validate, submit и CI проверяют и объединяют допустимые изменения в рамках политики спейса. Входящие обновляются при следующем вызове команды или интеграции; фоновый наблюдатель не подразумевается."],
   ["a2a feedback", "Агенты улучшают инструменты", "Структурированная обратная связь проверяется и разбирается как данные, поэтому случайный входящий текст не становится инструкцией."],
   ["a2a thread", "Одна задача, один тред", "Запрос, ответ, доказательства и решение лежат в одном треде и читаются всеми системами в одном и том же порядке."],
+  ["verdicts[]", "Вердикт выносится по каждому критерию", "Событие verify или close несёт отдельное суждение по каждому критерию приёмки — выполнено, не выполнено, не требовалось, не проверялось — и называет, за кем причина. Частичный результат больше не округляется до «принято» или «отклонено»."],
+  ["respond --ref", "Ответ называет то, что действительно доставило результат", "--ref фиксирует handoff, который перенёс данные, а submit откажет, если этот deliverable не разрешается через спейс. Заявление о доставке обязано указывать на то, что спейс реально видит."],
+  ["pack → deliver → verify", "Данные едут пакетом, а вердикт выводится", "a2a data pack собирает неизменяемый пакет по закреплённому контракту, a2a data deliver создаёт несущий его handoff, а a2a data verify --record выводит verify-pass или verify-fail из самого отчёта. Вердикт никто не вписывает руками."],
   ["1.x · 2.x", "Контракт живёт в нескольких версиях", "Старая линия может уходить, пока новая уже работает. Ничего не удаляется, а каждый потребитель явно закрепляет используемую основную версию."],
   ["deprecate → ack", "Устаревание доходит до каждого", "Объявление доставляется всем зарегистрированным участникам, а окончательное снятие версии ждёт подтверждений. Поэтому поздно подключившийся потребитель не выпадает из процесса."],
+  ["x_operational", "«Нет» и «никто не говорил» — разные состояния", "Контракт перечисляет операционные предпосылки — endpoint, канал доступа, регистрацию — и каждая заявлена как готовая или отсутствующая. То, что дескриптор не назвал вовсе, читается как undeclared: это не то же самое, что «отсутствует». Одно — известный пробел, другое — молчание."],
+  ["contract activate", "Опубликовать интерфейс и запустить его — не одно и то же", "Как только кто-то закрепил вашу опубликованную мажорную версию, вы обязаны подтвердить готовность, и a2a inbox --actionable называет этот долг (activation-owed). a2a contract activate заявляет по конкретной версии, какие операционные пункты стали настоящими."],
+  ["adopt refuses", "Контракт может объявить себя незакрепляемым", "Некоторые интерфейсы публикуют, чтобы их читали, а не садились на них. Такой дескриптор говорит об этом прямо, a2a contract adopt отказывает и ничего не записывает, а дашборд показывает отказ ещё до запуска команды."],
   ["work report", "Работа не смешивается с протоколом", "Зафиксированные отчёты показывают, кто работает и чего ждёт. Завершение протокола считается отдельно; отсутствие актуального отчёта означает «неизвестно», а не «простой»."],
   ["id@version", "Точная версия контракта воспроизводима", "Каждая версия публикует неизменяемый набор файлов. preflight, materialize и check разрешают одни и те же точные байты, чтобы их можно было проверить офлайн."]
 ];
@@ -1990,8 +2034,14 @@ const GUIDE_FEATURES_EN = [
   ["draft → merge", "Bounded repository automation", "Explicitly invoked validate, submit, and CI steps check and merge eligible changes within space policy. Inbox state advances on a later command or integration invocation; no background watcher is implied."],
   ["a2a feedback", "Agents improve the tools", "Structured feedback is validated and triaged as data, without treating inbound text as instructions."],
   ["a2a thread", "One intent, one thread", "The request, response, evidence, and decision stay in one causal thread and fold in the same order for every system."],
+  ["verdicts[]", "A verdict names each criterion, not the whole job", "A verify or close event carries one judgement per acceptance criterion — met, unmet, not warranted, not exercised — and names who owns the cause. A partial result stops rounding up to accepted or down to rejected."],
+  ["respond --ref", "A response names what actually delivered it", "--ref records the handoff that carried the payload, and submit refuses the response outright when that deliverable does not resolve through the space. A claim of delivery has to point at something the space can see."],
+  ["pack → deliver → verify", "Data moves as a package, and the verdict is derived", "a2a data pack builds an immutable package against the pinned contract, a2a data deliver mints the handoff that carries it, and a2a data verify --record folds verify-pass or verify-fail out of the report itself. Nobody types the verdict."],
   ["1.x · 2.x", "A contract spans versions", "An older line may be leaving while the new one is active. Nothing is erased, and every consumer pins its major explicitly."],
   ["deprecate → ack", "Deprecation reaches every consumer", "The announcement follows registrations and retirement waits for acknowledgements, so late consumers remain visible."],
+  ["x_operational", "Missing and never mentioned are different states", "A contract declares its operational preconditions — an endpoint, a credential channel, a registration — each one ready or absent. Anything the descriptor never named reads undeclared, which is a different claim: one is a known gap you can plan around, the other is silence."],
+  ["contract activate", "Publishing an interface is not the same as it working", "The moment anyone adopts your published major you owe an activation, and a2a inbox --actionable names the debt (activation-owed). a2a contract activate attests, per published version, which operational items are now real."],
+  ["adopt refuses", "A contract can declare itself non-adoptable", "Some interfaces are published to be read, never pinned. Such a descriptor says so outright, a2a contract adopt refuses it and writes nothing, and the dashboard shows the refusal before the command is ever run."],
   ["work report", "Work stays distinct from protocol", "Durable reports show who is working and what they await. Protocol completion remains separate; no current report means unknown, never idle."],
   ["id@version", "Exact contract versions are reproducible", "Each version publishes an immutable carried set. preflight, materialize, and check resolve the same exact bytes for offline verification."]
 ];
@@ -2088,6 +2138,7 @@ const TRANSITION_TONE = {
   accept: "var(--teal-solid)", start: "var(--teal-solid)", unblock: "var(--teal-solid)",
   respond: "var(--plum)", supersede: "var(--plum)", propose: "var(--plum)",
   verify: "var(--green)", "verify-pass": "var(--green)", close: "var(--green)", approve: "var(--green)", satisfy: "var(--green)",
+  activate: "var(--green)",
   dispute: "var(--ochre)", note: "var(--border-strong)",
   block: "var(--red)", decline: "var(--red)", reject: "var(--red)", "verify-fail": "var(--red)",
   cancel: "var(--blocking-line)", withdraw: "var(--blocking-line)", retire: "var(--muted)", deprecate: "var(--ochre)"
@@ -2107,7 +2158,12 @@ const TYPE_LINK_ACCENT = {
   contract: "var(--type-contract-accent)"
 };
 function EVENT_SIGNAL(transition, ru) {
-  const positive = ["acknowledge","accept","start","respond","verify","verify-pass","close","approve","satisfy","unblock","publish"];
+  // `activate` is positive, not neutral: it is the producer's owner-only
+  // attestation that a published version's OPERATIONAL half now exists
+  // (spec 05-declared-nature.md, `a2a contract activate`), and it is what
+  // discharges the `activation-owed` debt. Left to the default it read
+  // "Informational event", which is exactly the understatement P-1 refuses.
+  const positive = ["acknowledge","accept","start","respond","verify","verify-pass","close","approve","satisfy","unblock","publish","activate"];
   const negative = ["block","decline","reject","verify-fail","dispute"];
   const caution = ["deprecate"];
   const tone = positive.indexOf(transition) > -1 ? "positive" : (negative.indexOf(transition) > -1 ? "negative" : (caution.indexOf(transition) > -1 ? "caution" : "neutral"));
@@ -2121,9 +2177,30 @@ function EVENT_SIGNAL(transition, ru) {
 // protocol enum, verbatim, in the middle of a Russian sentence. Two forms are
 // needed because the two surfaces ask different questions: the transcript says
 // what someone DID (past tense), the open-items panel offers what MAY BE DONE
-// next (infinitive). Both maps carry every key the fold engine can emit
-// (internal/fold/table.go) and fall back to the raw enum, because a coloured
+// next (infinitive). Both maps aim to carry every key the fold engine can
+// emit — internal/fold/table.go's own transition constants, INCLUDING the
+// transition-free ones (`note`, `activate`), which carry no table row and are
+// emittable all the same — and fall back to the raw enum, because a coloured
 // dot with a blank label beside it is worse than an English word.
+//
+// Two things this comment used to assert were false, and both are worth the
+// space because they are the same class of defect the C7 gate exists for:
+//
+//   - It said "both maps", and the infinitive one DID NOT EXIST. The
+//     open-items panel that was supposed to use it never named an owed move
+//     at all (ThreadOpenItem.ExpectedTransition arrived here and was dropped
+//     on the floor — wave 36 F3). TRANSITION_NEXT below is that second map,
+//     written at last.
+//   - It said the maps carry every emittable key, and `activate` was missing,
+//     so an owner-only, pendency-discharging attestation rendered as the bare
+//     English word inside a Russian sentence, tagged "Informational event".
+//
+// The second claim is now ENFORCED: internal/html/template_render_test.go's
+// TestTemplateCarriesEveryFoldTransitionLiteral reflects over fold's own
+// constants and reds when a literal appears as a display-map key NOWHERE in
+// the shipped template. Read its limit honestly — it cannot tell WHICH of
+// these maps carries the key, so a verb added to TRANSITION_PAST and
+// forgotten in TRANSITION_NEXT still passes. Keep the two in step by hand.
 //
 // Verbs stay at two words at most: the event row is one nowrap line with the
 // timestamp right-aligned, and a longer phrase re-ragged the column.
@@ -2134,7 +2211,8 @@ function TRANSITION_PAST(ru) {
     approve: "approved", satisfy: "satisfied", dispute: "disputed", note: "added a note to",
     block: "blocked", unblock: "unblocked", decline: "declined", reject: "rejected",
     cancel: "cancelled", withdraw: "withdrew", supersede: "superseded", propose: "proposed",
-    deprecate: "deprecated", retire: "retired", "verify-pass": "accepted", "verify-fail": "rejected"
+    deprecate: "deprecated", retire: "retired", "verify-pass": "accepted", "verify-fail": "rejected",
+    activate: "brought live"
   };
   return {
     create: "создал", submit: "отправил", publish: "опубликовал", acknowledge: "подтвердил получение",
@@ -2142,8 +2220,95 @@ function TRANSITION_PAST(ru) {
     approve: "согласовал", satisfy: "закрыл требование", dispute: "оспорил", note: "добавил заметку",
     block: "заблокировал", unblock: "разблокировал", decline: "отказался", reject: "отклонил",
     cancel: "отменил", withdraw: "отозвал", supersede: "заменил", propose: "предложил",
-    deprecate: "объявил устаревшей", retire: "снял версию", "verify-pass": "принял", "verify-fail": "отклонил"
+    deprecate: "объявил устаревшей", retire: "снял версию", "verify-pass": "принял", "verify-fail": "отклонил",
+    activate: "включил в работу"
   };
+}
+// The infinitive half the comment above promised for eight months. A whose-move
+// panel says what MAY BE DONE, so `approve` has to read "согласовать", not
+// "согласовал" — the past form there names a move nobody has made yet.
+function TRANSITION_NEXT(ru) {
+  if (!ru) return {
+    create: "create", submit: "submit", publish: "publish", acknowledge: "acknowledge",
+    accept: "accept", start: "start", respond: "answer", verify: "verify", close: "close",
+    approve: "approve", satisfy: "satisfy", dispute: "dispute", note: "add a note",
+    block: "block", unblock: "unblock", decline: "decline", reject: "reject",
+    cancel: "cancel", withdraw: "withdraw", supersede: "supersede", propose: "propose",
+    deprecate: "deprecate", retire: "retire", "verify-pass": "accept", "verify-fail": "reject",
+    activate: "bring live"
+  };
+  return {
+    create: "создать", submit: "отправить", publish: "опубликовать", acknowledge: "подтвердить получение",
+    accept: "принять", start: "начать работу", respond: "ответить", verify: "проверить", close: "закрыть",
+    approve: "согласовать", satisfy: "закрыть требование", dispute: "оспорить", note: "добавить заметку",
+    block: "заблокировать", unblock: "разблокировать", decline: "отказаться", reject: "отклонить",
+    cancel: "отменить", withdraw: "отозвать", supersede: "заменить", propose: "предложить",
+    deprecate: "объявить устаревшей", retire: "снять версию", "verify-pass": "принять", "verify-fail": "отклонить",
+    activate: "включить в работу"
+  };
+}
+// A human gate is not decoration. fold.HumanGate (internal/fold/humangate.go)
+// answers, for ONE owed transition, which §3.7 gate it sits behind — "G3" for
+// approve/reject, empty for everything an agent does unaccompanied. Without it
+// a dashboard says `your_move: true` with `expected_transition: approve` and no
+// signal that the fold IGNORES AND FLAGS that event when an agent emits it
+// (CC-021) — a surface naming a move the tool would then refuse, which
+// skill/a2ahub/reference/threads.md promises can never happen.
+//
+// The gate id itself is carried verbatim rather than translated: it is a
+// reference into §3.7, and a reader who needs the exact rule needs the exact
+// name. Only the sentence around it is localised.
+function HUMAN_GATE_TEXT(gate, ru) {
+  if (!gate) return "";
+  return ru
+    ? "Ход за человеком (гейт " + gate + "). Ваш агент не может его сделать: событие, отправленное агентом, fold отметит как нарушение."
+    : "This move belongs to a person (gate " + gate + "). Your agent may not make it: the fold flags the event when an agent emits one.";
+}
+// The three operational states, in one place, because TWO surfaces render them
+// and a UI that collapses `undeclared` into `absent` destroys the idea the
+// whole declared-nature phase is built on (spec 05-declared-nature.md, P-1:
+// silence is a live state).
+//
+//   ready       the interface says this part exists.
+//   absent      the interface says, out loud, that it does NOT exist yet. A
+//               KNOWN gap: you can plan around it and ask for an eta.
+//   undeclared  nobody ever said either way. There is no claim here at all,
+//               and reading it as "absent" invents one. `undeclared` never
+//               travels on the wire — internal/cache/mirror.go's
+//               DeriveOperationalItems computes it once, for every
+//               well-known item a descriptor never mentioned, so every
+//               reader shows the same third value instead of each guessing.
+//
+// Three tones, three words, three sentences — deliberately no shared prefix
+// between the `absent` and `undeclared` labels, because a reader skimming a
+// column of pills is the reader this distinction exists for.
+function OPERATIONAL_STATE(state, ru) {
+  const key = String(state || "") || "undeclared";
+  const words = ru ? {
+    ready: { label: "заявлено готовым", tone: "healthy", hint: "Поставщик подтвердил: эта часть интерфейса существует и работает." },
+    absent: { label: "заявлено отсутствующим", tone: "attention", hint: "Поставщик прямо сказал, что этого пока нет. Это известный пробел: на него можно планировать и спрашивать срок." },
+    undeclared: { label: "никто не заявлял", tone: "outline", hint: "Об этом не сказано ничего — ни «есть», ни «нет». Это не то же самое, что «заявлено отсутствующим»: заявления здесь просто нет." }
+  } : {
+    ready: { label: "declared ready", tone: "healthy", hint: "The provider has stated that this part of the interface exists and works." },
+    absent: { label: "declared missing", tone: "attention", hint: "The provider said out loud that this does not exist yet. A known gap: you can plan around it and ask for an eta." },
+    undeclared: { label: "never declared", tone: "outline", hint: "Nobody has said anything either way — not “yes”, not “no”. This is NOT the same as declared missing: there is no claim here at all." }
+  };
+  return words[key] || {
+    label: key,
+    tone: "neutral",
+    hint: ru ? "Состояние, которого этот интерфейс не знает." : "A state this surface does not know."
+  };
+}
+// One projection of ArtifactDetail.OperationalItems / ThreadOpenItem.
+// OperationalItems for both surfaces that render it, so the detail panel and
+// the whose-move panel cannot drift into two vocabularies for one idea.
+function operationalReadinessRows(items, ru) {
+  return (items || []).map(it => {
+    const word = OPERATIONAL_STATE(it.state, ru);
+    // `chip` is the one-line form for a pill; `name`/`label` stay separate so
+    // the detail panel can lay them out as a two-column row instead.
+    return { name: it.name, state: it.state, label: word.label, tone: word.tone, hint: word.hint, chip: it.name + " · " + word.label };
+  });
 }
 function WORK_MODE_TEXT(value, ru) {
   const words = ru ? {
@@ -2213,6 +2378,14 @@ function monoCodes(names) {
   return out;
 }
 function overdue(it) { return (it.reasons || []).some(r => r === "overdue-on-me" || r === "needed-by-passed"); }
+// `activation-owed` is the SECOND reason code this file reads, and until now
+// it read none of it: internal/cache/inbox.go emits it on a contract you own
+// once somebody has adopted your published major, and every surface rendered
+// that item with a bare priority as if nothing were owed. The debt is derived
+// from registration and publication alone — never from what `x_operational`
+// says — so it is owed whether the descriptor declared every item `absent` or
+// declared nothing at all (spec 05-declared-nature.md §8.4b step 3).
+function activationOwed(it) { return (it.reasons || []).some(r => r === "activation-owed"); }
 // A version package is a set of paths, not a set of rows: group by directory
 // so a 20-file manifest reads as a shape instead of a list. `files` already
 // carries { key, path, role, media, size, digest, open } from the flat
@@ -3006,6 +3179,12 @@ class Component extends DCLogic {
     };
     if (it.gatePending) return { status: ru ? "ждёт вашего согласования" : "your approval pending", tone: "attention" };
     if (overdue(it)) return { status: (ru ? "просрочено" : "overdue") + " · " + it.priority, tone: "blocking" };
+    if (activationOwed(it)) return {
+      status: ru ? "нужно включить в работу" : "activation owed", tone: "attention",
+      why: ru
+        ? "Кто-то уже закрепил опубликованную мажорную версию этого контракта, а вы ещё не подтвердили, что операционная половина существует. Обязательство выведено из регистрации и публикации, а не из того, что записано в x_operational. Закрывается командой a2a contract activate."
+        : "Someone has pinned this contract's published major, and you have not yet attested that its operational half exists. The debt is derived from registration and publication, not from what x_operational says. a2a contract activate discharges it."
+    };
     if (!settled && it.severity === "attention") return { status: (ru ? "стоит посмотреть" : "needs a look") + " · " + it.priority, tone: "attention" };
     return { status: it.priority, tone: "neutral" };
   }
@@ -3330,6 +3509,22 @@ class Component extends DCLogic {
               : (ru ? "Жёлтый блок: документ активен, следующий ход протокола ожидается от другой стороны." : "Yellow block: the document is active; the other side owns the next protocol move."))
             : (ru ? "Серый блок: это записанный автором контекст; активное протокольное ожидание не указано." : "Grey block: this is author-recorded context; no active protocol wait is recorded.");
 
+    // The attachment claim the Go side already derived
+    // (datapackage.AttachmentClaim -> cache.ShowResult.Attachments ->
+    // ArtifactDetail.Attachments), named KEY BY KEY rather than handed over
+    // as an opaque object. `attachments: a.attachments || []` used to be the
+    // whole of it, and the row below it was never painted at all — the
+    // panel showed `ref` and nothing else, so `digest` (a SEPARATE field
+    // from `ref`, spec 04 §7) had no way to reach a human comparing bytes.
+    // Nothing is re-derived here; the display wording stays in
+    // ArtifactDetail.dc.html, which owns its own two languages.
+    const attachments = (a.attachments || []).map(att => ({
+      ref: att.ref, digest: att.digest, role: att.role,
+      conforms_to: att.conforms_to, retention: att.retention, expires_at: att.expires_at,
+      verification: att.verification, verification_claim: att.verification_claim,
+      lapsed: !!att.lapsed, lapsed_on: att.lapsed_on, lapse_claim: att.lapse_claim
+    }));
+
     return {
       present: true, type: a.type, pills,
       sourceClass: a.sourceClass,
@@ -3359,18 +3554,21 @@ class Component extends DCLogic {
         pillTone: r.resolved === false || r.digest_mismatch ? "blocking" : "healthy"
       })),
       events, flags: flagMessages,
-      // The attachment claims the Go side derives (cache.ShowResult.Attachments
-      // -> ArtifactDetail.Attachments), passed through rather than re-derived.
       // This literal is hand-picked, not a spread of `a`, so a field the Go
       // layer adds is invisible here until it is named — which is exactly how
-      // AC4's dashboard half was built and dormant for one wave.
-      attachments: a.attachments || [],
+      // AC4's dashboard half was built and dormant for one wave. The rows
+      // themselves are picked the same way, above.
+      attachments,
       // spec 05-declared-nature.md AC4 (agent-exchange-2026-08 P5): the
       // per-item x_operational[] projection (ArtifactDetail.OperationalItems
       // -> a.operational_items), undeclared/absent already resolved on the
       // Go side (cache.DeriveOperationalItems) — passed through for the
-      // same "name it or it's invisible" reason as attachments above.
-      operationalItems: a.operational_items || [],
+      // same "name it or it's invisible" reason as attachments above. It was
+      // named there and read NOWHERE for a full wave (F1) — the epic's own
+      // founding distinction, carried end to end through two Go projections
+      // and painted on no screen. operationalReadinessRows is shared with the thread
+      // panel so the two cannot drift.
+      operationalItems: operationalReadinessRows(a.operational_items, ru),
       // The handover, on our own move only. The gate is the canonical whose-move
       // projection rather than the narrower human-attention queue: a routine
       // move an agent would normally have taken unprompted is exactly the case
@@ -4794,11 +4992,35 @@ class Component extends DCLogic {
       tvOpen: tvPend.map(o => {
         const artifact = (tv && tv.artifacts || []).find(a => a.id === o.id) || {};
         const title = artifact.title || o.id;
+        // internal/pendency's own verdict, carried here instead of dropped.
+        // This panel used to print WHO owes a move and stop. But pendency's
+        // contract is that "somebody owes this" is a CLAIM that must be
+        // justified, never a fall-through — showing the conclusion and
+        // withholding the justification republishes exactly the ambiguity
+        // the relation was built to remove (internal/html/model.go's
+        // ThreadOpenItem doc comment; wave 36 F3).
         return {
           id: o.id, type: o.type, title,
           who: o.your_move ? (ru ? "ваш ход" : "your move") : (ru ? "ход за " : "waiting on ") + listNames((o.waiting_on || []).filter(w => w !== d.self), ru),
           whoTone: o.your_move ? "attention" : "neutral",
           needed: o.needed_by ? (ru ? "дедлайн " : "due ") + isoDay(o.needed_by) : (o.blocking ? (ru ? "блокирующее ожидание" : "blocking protocol wait") : ""),
+          // The owed move, in words rather than as a protocol enum, and the
+          // reason it is owed. `why` is pendency's justification sentence —
+          // it is already a full sentence, so nothing is built around it.
+          hasMove: !!o.expected_transition,
+          moveLabel: ru ? "следующий ход" : "next move",
+          move: o.expected_transition ? (TRANSITION_NEXT(ru)[o.expected_transition] || o.expected_transition) : "",
+          hasWhy: !!o.why,
+          why: o.why || "",
+          // A human gate outranks everything else on this card: it says the
+          // move named directly above it is one your agent must NOT make.
+          hasHumanGate: !!o.human_gate,
+          humanGate: HUMAN_GATE_TEXT(o.human_gate, ru),
+          // Only a contract carries these; every other kind gets an empty
+          // list and the section disappears.
+          operationalItems: operationalReadinessRows(o.operational_items, ru),
+          hasOperational: !!(o.operational_items && o.operational_items.length),
+          operationalLabel: ru ? "операционная готовность" : "operational readiness",
           openLabel: (ru ? "Открыть документ: " : "Open document: ") + title,
           openDocument: () => this.setState({ mapDocument: { id:o.id, space:tv && tv.space || "" } })
         };
@@ -4851,6 +5073,14 @@ class Component extends DCLogic {
         const pills = bad.length
           ? bad.slice(0, 2).map(e => ({ text: e.from + ": " + driftWord(e), tone: DRIFT_TONE[e.drift] || "neutral" }))
           : [{ text: ru ? "все линии актуальны" : "all lines current", tone: "healthy" }];
+        // A descriptor may declare itself non-adoptable (`x_binding: none`, or
+        // the long form's `adoptable: false`) — published to be READ, never
+        // pinned. `a2a contract adopt` refuses one outright and writes
+        // nothing, with no override. Until this pill the refusal existed only
+        // inside the CLI, so the first a consumer heard of it was the command
+        // failing (wave 36 F4). It leads the row because it changes whether
+        // the card is worth opening at all.
+        if (c.nonAdoptable) pills.unshift({ text: ru ? "закреплять нельзя" : "not adoptable", tone: "attention" });
         return {
           id: c.id, version: c.version, meta: (ru ? "поставщик: " : "provider: ") + c.provider + " · " + c.category + " · " + c.space,
           pills, style: this.cardButton(conSel === c.id), select: () => this.setState({ conSel: c.id, conVersion: "", conFacts:false, contractFile: null })
@@ -4896,6 +5126,16 @@ class Component extends DCLogic {
       cdStateTone: selectedConVersion
         ? (selectedConVersion.version === (con && con.version) && selectedConVersion.state === "published" ? "healthy" : selectedConVersion.state === "published" ? "agent" : (STATE_TONE[selectedConVersion.state] || "neutral"))
         : (con ? (STATE_TONE[con.state] || "neutral") : "neutral"),
+      // Shown ONLY when the descriptor says so. There is deliberately no
+      // affirmative "adoptable" badge beside it: `false` is also what an
+      // undeclared descriptor carries, and a green pill would assert a
+      // declaration the data cannot back (internal/html/model.go's own
+      // NonAdoptable comment — P-1's default reading, again).
+      cdNonAdoptable: !!(con && con.nonAdoptable),
+      cdNonAdoptableLabel: ru ? "закреплять нельзя" : "not adoptable",
+      cdNonAdoptableWhy: ru
+        ? "Дескриптор объявил себя непригодным для закрепления (x_binding). Этот контракт опубликован, чтобы его читали, а не чтобы на него садились: a2a contract adopt откажет и ничего не запишет, обойти это нельзя."
+        : "The descriptor declares itself non-adoptable (x_binding). This contract is published to be read, not pinned: a2a contract adopt refuses it and writes nothing, and there is no override.",
       cdCodeBacked: selectedConDetail
         ? !!(selectedConDetail.provenance && selectedConDetail.provenance.generatedTool && selectedConDetail.provenance.sourceDigest)
         : !!(con && con.codeBacked),

@@ -34,13 +34,20 @@ var itemFieldsThisPackageDeliberatelyDrops = map[string]string{
 	"LatestEventID":      "renamed to ActivityEventID by toItem — the current transition identity",
 	"WaitingOn":          "consumed by the exchange overlay's edge aggregation (exchangeEdges -> ExchangeEdge.OwedCount), not by the per-row Item — see ExchangeEdge's own doc comment",
 	"ExpectedTransition": "same as WaitingOn: an edge-level pendency fact today, not a per-row one",
-	"OperationalItems": "P5 AC4's operational projection reaches this SURFACE through " +
-		"ArtifactDetail and ThreadOpenItem, which both carry it — not through this list " +
-		"row. The criterion asks that `undeclared` read distinctly from `absent` on the " +
-		"html surface, and the artifact page is where a reader asks that question; a " +
-		"contract's row in a list answers `what is this and who owes a move`, and three " +
-		"per-item readiness rows on every contract in the list is noise, not fidelity. " +
-		"Carry it here the day a list view has a reason to show it.",
+	"OperationalItems": "P5 AC4's operational projection reaches this LIST ROW deliberately " +
+		"not at all — a contract's row here answers `what is this and who owes a move`, and " +
+		"three per-item readiness rows on every contract in the list would be noise, not " +
+		"fidelity. Whether it reaches the RENDERED PAGE at all (ArtifactDetail and " +
+		"ThreadOpenItem both carry the Go field) is a different question this excuse used to " +
+		"answer wrongly: it claimed the field 'reaches this SURFACE' through those two types, " +
+		"which is true of the Go structs and was false of the shipped page (wave 36 phase A, " +
+		"agent-exchange-2026-08, F1 — confirmed by direct grep of the shipped template.html: " +
+		"exactly two occurrences, one of them the field's own code comment). " +
+		"template_render_test.go now covers that question directly, reflecting over " +
+		"ArtifactDetail/ThreadOpenItem's own JSON tags against the shipped template — and as " +
+		"of this excuse it is RED for both types' OperationalItems field, honestly, not " +
+		"excused there. This entry stays a decision about THIS list row only; it is not — " +
+		"and must never again be read as — a claim that the field is painted somewhere else.",
 	"Why": "same again. P2 put the relation's justification on inbox/outbox --json, where a reader has no other way to ask why; the dashboard shows it on the THREAD item (ThreadOpenItem.Why), which is where a reader who wants the reasoning already is",
 }
 

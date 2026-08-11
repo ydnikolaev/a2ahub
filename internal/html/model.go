@@ -343,6 +343,15 @@ type Contract struct {
 	// SURFACE, not per field, and one exception is how the next one gets
 	// made.
 	Versions []ContractVersion `json:"versions,omitempty"`
+	// NonAdoptable carries cache.ContractInfo.NonAdoptable straight through
+	// (F4, agent-exchange-2026-08 wave 36): the descriptor's own
+	// `x_binding` refusal `a2a contract adopt` computes today only AFTER an
+	// operator tries the command. False (the zero value) reads as
+	// "adoptable" whether the field is genuinely declared adoptable or
+	// simply undeclared — P-1's own default, and also today's transitional
+	// reading until cache.Store.Contracts (store.go) is wired to populate
+	// its source; see that field's own doc comment.
+	NonAdoptable bool `json:"nonAdoptable,omitempty"`
 }
 
 // ContractVersion is one version of a contract and the state it holds — the
@@ -517,17 +526,19 @@ type ThreadView struct {
 	Settled bool `json:"settled"`
 
 	// Deliveries carries the thread's handoff deliverables of kind "data"
-	// (spec 05a AC-7), projected via ProjectDeliveries(cache.ResolveDeliveries(...))
-	// and rendered under the handoff artifact that names them
+	// (spec 05a AC-7), rendered under the handoff artifact that names them
 	// (Delivery.HandoffID joins against a ThreadViewArtifact/artifact id
 	// above — spec 05a's own "thread-side, under the handoff that carries
-	// it" scope). `omitempty` deliberately: nothing in this codebase's
-	// production assembly path (internal/html/assemble.go's toThreadView,
-	// internal/cache/threadview.go's Store.ThreadView) constructs this
-	// field yet — see this wave's own deviations report — and an
-	// un-populated ThreadView must keep emitting byte-identical JSON
-	// (no stray `"deliveries":null`) rather than silently changing every
-	// existing snapshot's shape.
+	// it" scope). IS wired into the production assembly path: toThreadView
+	// (assemble.go) sets this field via ProjectDeliveries(delivery.go) over
+	// cache.ThreadResult.Deliveries — resolved by
+	// internal/cache/packageresolver.go's filesystem-backed resolver, wired
+	// into Store.ThreadView at mirror.go:419 — and the client renders it
+	// (corrected 2026-08-11, wave 36 phase A S1: this comment and
+	// delivery.go's own previously both claimed the opposite — "deliberately
+	// NOT wired" — which had gone stale). `omitempty` stays: a thread with
+	// no data deliverables emits no `"deliveries"` key at all, never a
+	// stray `"deliveries":null`.
 	Deliveries []Delivery `json:"deliveries,omitempty"`
 }
 

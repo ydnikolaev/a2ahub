@@ -218,6 +218,7 @@ func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache
 			CompatPolicy: c.CompatPolicy, GeneratedTool: c.GeneratedTool,
 			SourceDigest: c.SourceDigest,
 			CodeBacked:   c.GeneratedTool != "" && c.SourceDigest != "",
+			NonAdoptable: c.NonAdoptable,
 		})
 	}
 	limitContractVersionDetails(d.Contracts)

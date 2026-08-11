@@ -62,6 +62,24 @@ Structured feedback is validated and triaged as data, without treating inbound t
 
 The request, response, evidence, and decision stay in one causal thread and fold in the same order for every system.
 
+## A verdict names each criterion, not the whole job
+
+**verdicts[]**
+
+A verify or close event carries one judgement per acceptance criterion — met, unmet, not warranted, not exercised — and names who owns the cause. A partial result stops rounding up to accepted or down to rejected.
+
+## A response names what actually delivered it
+
+**respond --ref**
+
+--ref records the handoff that carried the payload, and submit refuses the response outright when that deliverable does not resolve through the space. A claim of delivery has to point at something the space can see.
+
+## Data moves as a package, and the verdict is derived
+
+**pack → deliver → verify**
+
+a2a data pack builds an immutable package against the pinned contract, a2a data deliver mints the handoff that carries it, and a2a data verify --record folds verify-pass or verify-fail out of the report itself. Nobody types the verdict.
+
 ## A contract spans versions
 
 **1.x · 2.x**
@@ -73,6 +91,24 @@ An older line may be leaving while the new one is active. Nothing is erased, and
 **deprecate → ack**
 
 The announcement follows registrations and retirement waits for acknowledgements, so late consumers remain visible.
+
+## Missing and never mentioned are different states
+
+**x_operational**
+
+A contract declares its operational preconditions — an endpoint, a credential channel, a registration — each one ready or absent. Anything the descriptor never named reads undeclared, which is a different claim: one is a known gap you can plan around, the other is silence.
+
+## Publishing an interface is not the same as it working
+
+**contract activate**
+
+The moment anyone adopts your published major you owe an activation, and a2a inbox --actionable names the debt (activation-owed). a2a contract activate attests, per published version, which operational items are now real.
+
+## A contract can declare itself non-adoptable
+
+**adopt refuses**
+
+Some interfaces are published to be read, never pinned. Such a descriptor says so outright, a2a contract adopt refuses it and writes nothing, and the dashboard shows the refusal before the command is ever run.
 
 ## Work stays distinct from protocol
 

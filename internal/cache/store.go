@@ -721,6 +721,7 @@ func (s *Store) buildShowResult(fa foldedArtifact, spaceID string, all []foldedA
 			ActorModel: evidence.Actor.Model, ActorSession: evidence.Actor.Session,
 			ProducedBy: evidence.Producer, Consistency: receiptMismatchFor(fa, e.ULID), At: fa.EventAt[e.ULID],
 			Note: fa.EventNotes[e.ULID], ReasonCode: fa.EventReasonCodes[e.ULID],
+			Verdicts:       transcriptVerdicts(fa.EventVerdicts[e.ULID]),
 			TransitionFree: fold.TransitionFree(fa.kind(), e.Transition),
 		})
 	}
@@ -971,6 +972,7 @@ func (s *Store) Contracts(ctx context.Context, provider string) ([]ContractInfo,
 				CompatPolicy:  fa.Env.CompatPolicy,
 				GeneratedTool: fa.Env.GeneratedFrom.Tool,
 				SourceDigest:  fa.Env.GeneratedFrom.SourceDigest,
+				NonAdoptable:  fa.ContractNonAdoptable,
 			})
 		}
 	}

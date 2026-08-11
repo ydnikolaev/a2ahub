@@ -136,6 +136,14 @@ type foldedArtifact struct {
 	// publish events) — empty when none recorded (never published, or a
 	// non-contract kind).
 	LatestPublishVersion string
+	// ContractNonAdoptable is F4's own pre-`a2a contract adopt` visibility
+	// fact (agent-exchange-2026-08 wave 36): the SAME x_binding refusal
+	// cmd_contract.go's own xBindingProbe.nonAdoptable computes, decoded
+	// here off the same a.Raw the operationalItems pass below already
+	// reads, so a reader can see BEFORE running the command that it will
+	// refuse. Always false (adoptable) for a non-contract kind — the field
+	// does not exist outside envelope/v2/contract.
+	ContractNonAdoptable bool
 	// Seq is this artifact's own file's per-space first-parent commit
 	// sequence (commitOrder's own return value, keyed by RelPath) —
 	// spec 46 §T3's primary thread-transcript ordering key, alongside
@@ -579,8 +587,14 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 		// OperationalItems stays nil rather than paying for a raw-bytes
 		// decode that can never find the field.
 		var operationalItems []OperationalItem
+		var contractNonAdoptable bool
 		if env.Kind == fold.KindContract {
 			operationalItems = DeriveOperationalItems(operationalItemsFromRaw(a.Raw))
+			// F4 (agent-exchange-2026-08 wave 36): x_binding's adoptability,
+			// decoded off the SAME a.Raw bytes the line above already reads —
+			// no second fetch, no second file read, gated on the identical
+			// kind check.
+			contractNonAdoptable = contractNonAdoptableFromRaw(a.Raw)
 		}
 
 		out = append(out, foldedArtifact{
@@ -602,6 +616,7 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 			DeliveryUnresolvable:   deliveryUnresolvable(a.Env.ID, deliveredResponseTo, handoffFulfills, packageResolver),
 			OperationalDebtOwed:    operationalDebtOwed,
 			OperationalItems:       operationalItems,
+			ContractNonAdoptable:   contractNonAdoptable,
 		})
 	}
 
@@ -1360,6 +1375,104 @@ func OperationalItemsFromEnvelope(envelope map[string]any) []OperationalItem {
 		declared = append(declared, OperationalItem{Name: name, State: state})
 	}
 	return DeriveOperationalItems(declared)
+}
+
+// xBindingProbe decodes envelope/v2/contract's own `x_binding` field
+// (specs/05-declared-nature.md, 2026-08-10 amendment) directly off a
+// contract's raw frontmatter bytes — the same two-shape grammar (the bare
+// `none` sentinel, or the long form requiring `artifact_class`,
+// `compatibility_status`, `adoptable`, `runtime_pinnable`) and the same
+// nonAdoptable() rule internal/cli/cmd_contract.go's own xBindingProbe
+// already implements for `a2a contract adopt`'s pre-pin refusal
+// (cmd_contract.go:79-136). Duplicated rather than shared: ADR-001's
+// import-boundary table (docs/decisions.md) states plainly "core packages
+// never import cli/mcp", internal/cache IS a core package by that table's
+// own `internal/cache/` row, and cli's own xBindingProbe is unexported
+// inside internal/cli besides — there is no shared home ADR-001 permits
+// today without a new ADR moving the type somewhere both sides may import,
+// which is a decision beyond this wave's scope. This is the SAME "cache
+// keeps its own minimal decode of a document another layer also decodes"
+// idiom decode.go's own package comment names for envelopeProbe/eventProbe,
+// and operationalItemProbe/operationalArrayProbe just above already draw
+// for x_operational — a second reader of the same descriptor field, not a
+// second source of truth for its meaning.
+type xBindingProbe struct {
+	// Sentinel is set when the field was written as the bare scalar `none`
+	// rather than the long-form mapping.
+	Sentinel            bool
+	ArtifactClass       string `yaml:"artifact_class"`
+	CompatibilityStatus string `yaml:"compatibility_status"`
+	Adoptable           *bool  `yaml:"adoptable"`
+	RuntimePinnable     *bool  `yaml:"runtime_pinnable"`
+}
+
+// UnmarshalYAML distinguishes x_binding's two legal shapes exactly the way
+// cmd_contract.go's own xBindingProbe does: a bare scalar (only "none" is
+// schema-valid; any other scalar decodes harmlessly rather than erroring
+// here, since schema validation — not this probe — is what refuses it) or
+// the long-form mapping.
+func (x *xBindingProbe) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode {
+		var s string
+		if err := node.Decode(&s); err != nil {
+			return err
+		}
+		if s == "none" {
+			x.Sentinel = true
+		}
+		return nil
+	}
+	type xBindingProbeAlias xBindingProbe
+	var a xBindingProbeAlias
+	if err := node.Decode(&a); err != nil {
+		return err
+	}
+	*x = xBindingProbe(a)
+	return nil
+}
+
+// nonAdoptable mirrors cmd_contract.go's own xBindingProbe.nonAdoptable
+// exactly: the bare `none` sentinel or the long form's `adoptable: false`
+// both refuse `a2a contract adopt` identically (the schema's own T2
+// asymmetry already forces a `compatibility_status: none` long form to
+// carry `adoptable: false`, so the two never disagree). A nil x — the field
+// never declared at all — is adoptable, per P-1: undeclared is a live
+// state, never a fabricated refusal.
+func (x *xBindingProbe) nonAdoptable() bool {
+	if x == nil {
+		return false
+	}
+	if x.Sentinel {
+		return true
+	}
+	return x.Adoptable != nil && !*x.Adoptable
+}
+
+// xBindingArrayProbe is this file's own minimal decode target for
+// `x_binding` off a contract's raw frontmatter — the same one-field-only
+// probe shape operationalArrayProbe uses for x_operational just above.
+type xBindingArrayProbe struct {
+	XBinding *xBindingProbe `yaml:"x_binding"`
+}
+
+// contractNonAdoptableFromRaw best-effort decodes raw's own `x_binding`
+// declaration and reports whether it refuses `a2a contract adopt` — the
+// SAME derivation that command performs before pinning, now reachable
+// BEFORE an operator ever runs it (F4, agent-exchange-2026-08 wave 36: "an
+// operator cannot see, before running `a2a contract adopt`, that it will
+// refuse"). An undecodable document degrades to false (adoptable) — the
+// same "fail toward permissive, never fabricate a refusal" direction
+// operationalItemsFromRaw already takes for its own best-effort decode.
+func contractNonAdoptableFromRaw(raw []byte) bool {
+	fm, err := artifact.ParseFrontmatter(raw)
+	if err != nil {
+		return false
+	}
+	var probe xBindingArrayProbe
+	if yaml.Unmarshal(fm.YAML, &probe) != nil {
+		return false
+	}
+	return probe.XBinding.nonAdoptable()
 }
 
 // reportPath best-effort relativizes path against dir for a SkippedFile

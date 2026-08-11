@@ -218,6 +218,31 @@ type EventSummary struct {
 	// moves a requirement and moves nothing on a broadcast, and a name-only
 	// guess is wrong for one of the two.
 	TransitionFree bool `json:"transition_free,omitempty"`
+	// Verdicts is F2's own gap (agent-exchange-2026-08 wave 36): event/v2's
+	// `verdicts[]` DOES already reach cache.TranscriptEvent (threadview.go)
+	// for the thread transcript, via decode.go's eventVerdictEntry and
+	// mirror.go's own EventVerdicts side table (foldedArtifact) — but never
+	// reached THIS type, so the artifact-detail event list (`a2a show`,
+	// the dashboard detail panel) has no per-criterion verdict at all.
+	// TranscriptVerdict (threadview.go, exported) is reused rather than a
+	// second {index, verdict, cause_owner} type, the same "one exported
+	// read-model shape" idiom that struct's own doc comment states.
+	//
+	// Populated in Store.buildShowResult (store.go), the one place that
+	// builds an EventSummary literal, off the SAME
+	// foldedArtifact.EventVerdicts that loop already reads for Note/
+	// ReasonCode, through the SAME transcriptVerdicts conversion
+	// threadview.go uses for its own TranscriptEvent.
+	//
+	// It does NOT yet reach html.ArtifactDetailEvent, and that ordering is
+	// deliberate rather than forgotten: a field wired to the html surface
+	// before its source existed would have been an always-nil slice,
+	// indistinguishable from "no verdicts on this event" — the dead-prop
+	// defect this wave's own C7 gate (internal/html/template_render_test.go)
+	// exists to make unmergeable. The source exists now, so the html half
+	// and its rendering are a normal follow-up, tracked as F2 in the epic's
+	// wave log.
+	Verdicts []TranscriptVerdict `json:"verdicts,omitempty"`
 }
 
 // ReceiptScope names the one scalar fold result compared with a producer's
@@ -322,6 +347,24 @@ type ContractInfo struct {
 	CompatPolicy  string `json:"-"`
 	GeneratedTool string `json:"-"`
 	SourceDigest  string `json:"-"`
+	// NonAdoptable is F4's own pre-`a2a contract adopt` visibility fact
+	// (agent-exchange-2026-08 wave 36): mirror.go's own xBindingProbe
+	// decode of the descriptor's `x_binding` field, off the same raw bytes
+	// Description above already reads — the SAME refusal
+	// internal/cli/cmd_contract.go's `contract adopt` computes before
+	// pinning, surfaced here so a reader can see it will refuse before
+	// running the command. json:"-" for the same reason as the fields
+	// above: `a2a contracts --json` stays byte-stable, the HTML assembler
+	// reads this as a Go field.
+	//
+	// Populated in Store.Contracts (store.go), the one place that builds a
+	// ContractInfo literal, off the same foldedArtifact that loop already
+	// has in scope. False is the correct reading of a descriptor that never
+	// declared `x_binding` at all — P-1's own undeclared-is-not-a-refusal
+	// default — so the surface never invents a refusal, and the dashboard
+	// deliberately shows no affirmative "adoptable" badge for the same
+	// reason: false is silence, not a claim.
+	NonAdoptable bool `json:"-"`
 	// Description is a short human-readable summary from the contract's body,
 	// for the dashboard's dependency map. json:"-" keeps `a2a contracts --json`
 	// byte-stable for its existing consumers (read as a Go field only).

@@ -7,13 +7,17 @@ import (
 // This file projects internal/cache's Delivery read model (spec 05a AC-7:
 // package id, attempt number, verdict, failing entry/rule, supersede
 // chain — thread-side, under the handoff that carries it, plan decision
-// 2) into the dashboard's own render vocabulary. It is deliberately NOT
-// wired into Data/Thread/ThreadView here: model.go, assemble.go and
-// dashboard_renderer.go are not in this wave's allowlist, so a later wave
-// composes ProjectDeliveries' output into the page. This file's own test
-// is fixture-driven for exactly that reason — it proves the projection
-// end to end without needing the composition it will eventually sit
-// inside.
+// 2) into the dashboard's own render vocabulary. IS wired into
+// Data/Thread/ThreadView: assemble.go's toThreadView calls
+// ProjectDeliveries over cache.ThreadResult.Deliveries and assigns the
+// result to ThreadView.Deliveries (model.go) whenever the thread carries
+// at least one, and the client renders it. (Corrected 2026-08-11, wave 36
+// phase A S1 — this comment previously said "deliberately NOT wired ...
+// model.go, assemble.go and dashboard_renderer.go are not in this wave's
+// allowlist", which described an EARLIER wave's own scope and had gone
+// stale once that composition actually landed.) This file's own test stays
+// fixture-driven regardless: it proves the projection end to end without
+// depending on the rest of Store.ThreadView's own resolution machinery.
 //
 // JSON keys are camelCase, matching model.go's own documented convention
 // ("consumed by the page's client JS"), unlike internal/cache's
