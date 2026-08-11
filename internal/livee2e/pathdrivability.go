@@ -27,9 +27,11 @@ type undrivablePath struct {
 
 // drivenPathIDs is every ConformancePaths() id runConformancePaths
 // (pathdriver_live.go) actually drives through the real binary, one t.Run
-// subtest per id — so `-run '^TestLogicMatrix$/<path-id>'` runs exactly
-// that path and nothing else (plus TestLogicMatrix's own family matrix —
-// see runConformancePaths' own doc comment for that residual).
+// subtest per id, nested under a `group-N` subtest — so
+// `-run '^TestLogicMatrix$/^group-[0-9]+$/^<path-id>$'` runs exactly that
+// path and nothing else (plus TestLogicMatrix's own family matrix — see
+// runConformancePaths' own doc comment for that residual). Omitting the
+// group segment matches nothing and still exits 0.
 func drivenPathIDs() []string {
 	out := []string{
 		"contract-baseline-published-settled",

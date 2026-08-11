@@ -22,14 +22,23 @@ import (
 // already stand up — no second harness, no fifth mechanism (plan D1).
 //
 // One t.Run subtest per drivenPathIDs() entry (pathdrivability.go), named
-// by the path's own ID, so:
+// by the path's own ID, but nested one level BELOW a "group-N" subtest
+// (runConformancePaths splits the ids across harness groups), so:
 //
 //	go test ./internal/livee2e/... -tags=livee2e -race -count=1 \
-//	  -run '^TestLogicMatrix$/contract-baseline-published-settled'
+//	  -run '^TestLogicMatrix$/^group-[0-9]+$/^contract-baseline-published-settled$'
 //
 // runs exactly that one path (plus TestLogicMatrix's own family matrix —
 // see runConformancePaths' doc comment for why that residual exists and is
 // reported, not hidden).
+//
+// THE MIDDLE SEGMENT IS NOT OPTIONAL, and leaving it out is a green run that
+// drove nothing. This comment carried the two-segment form until P11 wave D
+// ran it: `-run '^TestLogicMatrix$/contract-baseline-published-settled'`
+// matches no subtest at level 1, so Go prunes the whole subtree, prints
+// `--- PASS: TestLogicMatrix` and exits 0. The only signal is a `[no tests
+// to run]` suffix on the `ok` line, which is easy to skim past — measured,
+// not reasoned: 10.6s green with zero path subtests entered.
 //
 // D4 (plan): a path whose Precondition names an earlier path REPLAYS that
 // path's own Steps first, by calling that earlier path's own driver
@@ -118,6 +127,8 @@ func checkPredicate(ctx context.Context, t *testing.T, h *harness, actor *checko
 		checkThreadSettled(ctx, t, actor, label, p, ids)
 	case PredicateActionable:
 		checkActionable(ctx, t, h, actor, label, p, ids)
+	case PredicateTerminal:
+		checkTerminal(ctx, t, actor, label, p, ids)
 	default:
 		t.Fatalf("%s: predicate kind %q has no checker in pathdriver_live.go", label, p.kind)
 	}
@@ -169,6 +180,92 @@ func checkFoldedState(ctx context.Context, t *testing.T, actor *checkout, label 
 	}
 	if doc.State != string(p.state) {
 		t.Errorf("%s: predicate folded_state(%s): got state %q, want %q (id=%s)", label, p.artifact, doc.State, p.state, id)
+	}
+}
+
+// terminalStatesFor returns the FULL terminal-state set fold.Terminal
+// declares for kind, sourced from fold.RestingStates() (the same
+// enumerator restingcoverage_test.go already trusts as the domain's own
+// state universe, never an independently maintained list here) filtered
+// down to the pairs fold.Terminal itself says have no legal transition
+// out — used only to make a terminal-predicate FAILURE message name what
+// terminal WOULD have looked like, not to decide pass/fail (fold.Terminal
+// alone decides that, in checkTerminal below).
+func terminalStatesFor(kind fold.Kind) []string {
+	var out []string
+	for _, pair := range fold.RestingStates() {
+		if pair.Kind != kind {
+			continue
+		}
+		if fold.Terminal(pair.Kind, pair.State) {
+			out = append(out, string(pair.State))
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// isKnownRestingPair reports whether (kind, state) is a pair
+// fold.RestingStates() actually enumerates — the domain's own universe of
+// facts a subject can genuinely be found at rest in. checkTerminal's own
+// guard (below) exists because fold.Terminal itself is written
+// fail-CLOSED-on-a-real-row-but-open-on-an-UNKNOWN-one: it walks fold's
+// transition rows for (kind, state) and returns true (terminal) the moment
+// none matches — the SAME shape that is correct for a genuinely resting,
+// no-legal-move-left pair and WRONG for a garbled or empty `.type`/`.state`
+// this predicate never anticipated (an unrecognized kind matches zero rows
+// for ANY state, so fold.Terminal would report "terminal" vacuously).
+// driveRefusedContractRetire (this file) already refuses an analogous
+// silent-pass shape for an empty Refused.Code ("would make the check
+// vacuously true for ANY non-zero exit") — this is the same discipline
+// applied to fold.Terminal's own open side.
+func isKnownRestingPair(kind fold.Kind, state fold.State) bool {
+	for _, pair := range fold.RestingStates() {
+		if pair.Kind == kind && pair.State == state {
+			return true
+		}
+	}
+	return false
+}
+
+// checkTerminal asserts artifact's folded (kind, state) satisfies
+// fold.Terminal (AC6) — reading BOTH facts off the SAME `a2a show --json`
+// call checkFoldedState already uses (doc.Type resolves the kind exactly
+// the way cache.buildShowResult populates it, from the committed
+// envelope's own `type:` field — the same string fold.Kind's own consts
+// are spelled in; doc.State resolves the state), rather than threading a
+// second Kind parameter through the grammar (Terminal's own doc comment,
+// pathgrammar.go). isKnownRestingPair is checked FIRST and Fatalf's by
+// name if it fails, before fold.Terminal is ever asked — an unrecognized
+// (kind, state) pair is a driver/decode bug, never a "pass" (fold.Terminal
+// itself would otherwise report one vacuously; see isKnownRestingPair's
+// own doc comment). Failure names the artifact, the observed (kind,
+// state), and the FULL terminal-state set fold declares for that kind
+// (terminalStatesFor), so a reader sees not just "not terminal" but what
+// terminal would have looked like.
+func checkTerminal(ctx context.Context, t *testing.T, actor *checkout, label string, p Predicate, ids pathIDs) {
+	t.Helper()
+	id, ok := ids[p.artifact]
+	if !ok {
+		t.Fatalf("%s: predicate terminal(%s): no known committed id for symbolic name %q", label, p.artifact, p.artifact)
+	}
+	stdout, stderr, err := actor.Run(ctx, "show", id, "--json")
+	if err != nil {
+		t.Fatalf("%s: predicate terminal(%s): a2a show %s (%s): %v: %s", label, p.artifact, id, actor.System, err, strings.TrimSpace(stderr))
+	}
+	var doc cache.ShowResult
+	if jerr := json.Unmarshal([]byte(stdout), &doc); jerr != nil {
+		t.Fatalf("%s: predicate terminal(%s): decode a2a show %s --json: %v", label, p.artifact, id, jerr)
+	}
+	kind := fold.Kind(doc.Type)
+	state := fold.State(doc.State)
+	if !isKnownRestingPair(kind, state) {
+		t.Fatalf("%s: predicate terminal(%s): (kind=%s, state=%q) is not a pair fold.RestingStates() recognizes at all — refusing to ask fold.Terminal, which would otherwise report an unrecognized pair as vacuously terminal (id=%s)",
+			label, p.artifact, kind, doc.State, id)
+	}
+	if !fold.Terminal(kind, state) {
+		t.Errorf("%s: predicate terminal(%s): kind=%s is resting in %q, which fold.Terminal does NOT consider terminal (its terminal set for %s is %v) (id=%s)",
+			label, p.artifact, kind, doc.State, kind, terminalStatesFor(kind), id)
 	}
 }
 
@@ -2331,9 +2428,12 @@ var driverForPath = map[string]func(ctx context.Context, t *testing.T, h *harnes
 // subtest, named by the path's id — DELIVERABLE 1's own requirement:
 //
 //	go test ./internal/livee2e/... -tags=livee2e -race -count=1 \
-//	  -run '^TestLogicMatrix$/<path-id>'
+//	  -run '^TestLogicMatrix$/^group-[0-9]+$/^<path-id>$'
 //
-// isolates exactly that one path's OWN assertions. The residual this
+// isolates exactly that one path's OWN assertions. The `group-[0-9]+`
+// segment is required — the ids are nested under this function's own group
+// subtests, and a two-segment pattern silently matches nothing and passes
+// (P11 wave D; see this file's header for the measurement). The residual this
 // command does NOT eliminate: `-run` prunes t.Run subtests, never
 // TestLogicMatrix's own body — driveFamilies' 30-row family matrix (called
 // immediately before this function, in TestLogicMatrix's own body) still

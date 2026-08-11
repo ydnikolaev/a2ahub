@@ -240,6 +240,20 @@ const (
 	// positive/negative control spec §11.4 requires.
 	// Surface: `a2a inbox --actionable --json`
 	PredicateActionable PredicateKind = "actionable"
+	// PredicateTerminal asserts an artifact's folded (kind, state) has NO
+	// legal transition out of it for ANY role — internal/fold's own
+	// fold.Terminal question, never a literal state name (AC6, plan
+	// docs/features/active/agent-exchange-2026-08/plans/11-verification.plan.md,
+	// "Wave D": "the terminal state the DOMAIN declares is the one
+	// observed"). Attached BESIDE a FoldedState predicate on a path's
+	// terminal step, never instead of it — FoldedState pins the SPECIFIC
+	// state the path's own narrative claims to reach; Terminal pins that
+	// the state really is one fold declares terminal for that kind.
+	// Terminal alone would pass on ANY terminal state, including a WRONG
+	// one, so dropping FoldedState beside it would weaken the path rather
+	// than strengthen it.
+	// Surface: `a2a show <artifact> --json` -> .type, .state
+	PredicateTerminal PredicateKind = "terminal"
 )
 
 // Predicate is one assertion a Step's runner (next stage) checks against
@@ -313,6 +327,21 @@ func Actionable(system, artifact string) Predicate {
 // Surface: `a2a inbox --actionable --json` (run with --system system)
 func NotActionable(system, artifact string) Predicate {
 	return Predicate{kind: PredicateActionable, system: system, artifact: artifact, want: false}
+}
+
+// Terminal asserts artifact's folded (kind, state) satisfies fold.Terminal
+// — no legal transition leaves it, for any role (AC6). The kind is
+// resolved from the SAME `a2a show <artifact> --json` surface FoldedState
+// already reads (.type), never threaded through the grammar as a second
+// parameter: the driver (pathdriver_live.go's checkTerminal) already has
+// it on hand from that identical read, and pathgrammar.go's own Predicate
+// carries no Kind field for any OTHER predicate constructor either — every
+// one of them resolves its own real-world fact from the shipped surface,
+// never from a second, independently-declared parameter that could drift
+// from what the surface actually reports.
+// Surface: `a2a show <artifact> --json` -> .type, .state
+func Terminal(artifact string) Predicate {
+	return Predicate{kind: PredicateTerminal, artifact: artifact}
 }
 
 // ResolveStep resolves a Step's expected resulting fold.State from

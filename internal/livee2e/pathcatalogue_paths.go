@@ -256,6 +256,9 @@ func questionPaths() []Path {
 				Actor: SystemA, Kind: fold.KindResponse, Transition: fold.TVerify,
 				Predicates: []Predicate{
 					FoldedState("response", fold.StateVerified),
+					// AC6: response's terminal set is {verified, disputed} —
+					// this path exercises the verified member.
+					Terminal("response"),
 					AbsentFromOpenItems("response"),
 				},
 			},
@@ -263,6 +266,9 @@ func questionPaths() []Path {
 				Actor: SystemA, Kind: fold.KindQuestion, Transition: fold.TClose,
 				Predicates: []Predicate{
 					FoldedState("question", fold.StateClosed),
+					// AC6: question's terminal set is {declined, superseded,
+					// closed, cancelled} — this path exercises `closed`.
+					Terminal("question"),
 					AbsentFromOpenItems("question"),
 					NotActionable(SystemA, "question"),
 				},
@@ -383,6 +389,10 @@ func workRequestPaths() []Path {
 					Actor: SystemA, Kind: fold.KindWorkRequest, Transition: fold.TClose,
 					Predicates: []Predicate{
 						FoldedState("work-request", fold.StateClosed),
+						// AC6: work_request's terminal set is {declined,
+						// superseded, closed, cancelled} — this path
+						// exercises `closed`.
+						Terminal("work-request"),
 						AbsentFromOpenItems("work-request"),
 					},
 				},
@@ -586,6 +596,9 @@ func dataLoopPaths() []Path {
 				Actor: SystemA, Kind: fold.KindHandoff, Transition: fold.TVerifyPass,
 				Predicates: []Predicate{
 					FoldedState("delivery-2", fold.StateAccepted),
+					// AC6: handoff's terminal set is {superseded, accepted}
+					// — this path exercises `accepted`.
+					Terminal("delivery-2"),
 					AbsentFromOpenItems("delivery-2"),
 					NotActionable(SystemA, "delivery-2"),
 				},
@@ -746,6 +759,10 @@ func retirementPaths() []Path {
 					Actor: SystemA, Kind: fold.KindContract, Transition: fold.TRetire,
 					Predicates: []Predicate{
 						FoldedState("contract", fold.StateRetired),
+						// AC6: fold.Terminal's own question, beside the
+						// literal state above rather than instead of it —
+						// contract's ONLY terminal path (plan "Wave D").
+						Terminal("contract"),
 						AbsentFromOpenItems("contract"),
 						NotActionable(SystemA, "contract"),
 					},
@@ -1260,6 +1277,11 @@ func decisionPaths() []Path {
 				Actor: SystemA, Kind: fold.KindDecision, Transition: fold.TWithdraw,
 				Predicates: []Predicate{
 					FoldedState("decision", fold.StateWithdrawn),
+					// AC6: decision's terminal set is {withdrawn, superseded}
+					// — `approved` is NOT terminal (supersede's own escape
+					// hatch from it, approvedSuperseded above) — this path
+					// exercises `withdrawn`.
+					Terminal("decision"),
 					AbsentFromOpenItems("decision"),
 				},
 			},
@@ -1626,6 +1648,9 @@ func supersedePaths() []Path {
 				Actor: SystemA, Kind: fold.KindAnnouncement, Transition: fold.TSupersede,
 				Predicates: []Predicate{
 					FoldedState("announcement", fold.StateSuperseded),
+					// AC6: announcement's terminal set is {superseded} —
+					// its ONLY terminal path.
+					Terminal("announcement"),
 					AbsentFromOpenItems("announcement"),
 				},
 			},
@@ -1653,6 +1678,9 @@ func supersedePaths() []Path {
 				Actor: SystemA, Kind: fold.KindRequirement, Transition: fold.TSupersede,
 				Predicates: []Predicate{
 					FoldedState("requirement", fold.StateSuperseded),
+					// AC6: requirement's terminal set is {superseded} — its
+					// ONLY terminal path.
+					Terminal("requirement"),
 					AbsentFromOpenItems("requirement"),
 				},
 			},
