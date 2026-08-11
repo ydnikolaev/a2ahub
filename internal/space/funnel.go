@@ -453,6 +453,30 @@ func (f *WriteFunnel) submitPreparedRequest(ctx context.Context, req SubmitReque
 		Repo: req.Repo, Branch: branch, Credential: req.Credential,
 	})
 	if err != nil {
+		// B29: this call cannot say whether the branch already has a PR, so
+		// it cannot say fresh-vs-replay either — and running possession
+		// UNCONDITIONALLY ahead of every step 0 call (regardless of that
+		// answer) was verified wrong, not merely assumed sound: it refuses
+		// an already-merged write's replay the moment its now-irrelevant
+		// attachment stops resolving, which is exactly the guarantee step 0
+		// exists to protect
+		// (TestFunnelSubmitReplayOfAlreadyMergedWriteIsNotBlockedByPossession
+		// reds against that ordering). What CAN be improved here, safely:
+		// when the network call that would have told us which case this is
+		// has ITSELF failed, a possession refusal is a strictly more
+		// actionable diagnostic than the raw transport error the caller
+		// cannot act on (B29's own observed symptom) — and checking it costs
+		// nothing extra, since the call is already failing regardless.
+		// normalizeMutations' own refusals are NOT surfaced from here: on
+		// its own failure this diagnostic is silently skipped and the
+		// ORIGINAL transport error returns unchanged, exactly as before
+		// B29 — ErrMutationInvalid/ErrMutationDuplicatePath keep the single
+		// place they have always surfaced from, below.
+		if mutations, normErr := normalizeMutations(req.Files, req.Mutations); normErr == nil {
+			if possessionErr := checkSubmitAttachmentPossession(ctx, req.RepoDir, mutationWrites(mutations)); possessionErr != nil {
+				return failWriteResult(op, branch, result, possessionErr)
+			}
+		}
 		return result, &Error{Op: op, Input: branch, Err: err}
 	}
 	if existing != nil && (existing.State != "merged" || req.OperationKey != "") {
@@ -571,6 +595,15 @@ func (f *WriteFunnel) submitPreparedRequest(ctx context.Context, req SubmitReque
 	// req.Files alone would silently never run on the real Submit() path).
 	// An artifact declaring no attachments costs one no-op scan, exactly as
 	// today.
+	//
+	// This is the FRESH leg of B29's ordering split: reached only once
+	// FindPRByHeadBranch has POSITIVELY confirmed no existing PR for this
+	// branch (existing == nil, no error) — the branch above this one
+	// handles the case where that call itself failed (possession runs
+	// there instead, as a diagnostic ahead of the transport error), and the
+	// short-circuit at line ~491 returns before ever reaching here when a
+	// PR IS found (a replay, whose completion this check must not gate —
+	// TestFunnelSubmitReplayOfAlreadyMergedWriteIsNotBlockedByPossession).
 	mutationsForPossession, err := normalizeMutations(req.Files, req.Mutations)
 	if err != nil {
 		return failWriteResult(op, branch, result, err)

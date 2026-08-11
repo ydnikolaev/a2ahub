@@ -1203,7 +1203,7 @@ changes:
       blobs, and now it says so rather than trying.
     affects: ["a2a attach", "a2a fetch", "a2a submit"]
     action:
-      scope: behavior-change
+      scope: local
       why: >
         `a2a attach` is now a NETWORK WRITE. It needs `a2a init`, a connected
         space and a credential, exactly like `a2a data deliver` — it is no

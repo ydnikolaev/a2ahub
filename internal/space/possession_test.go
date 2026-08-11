@@ -1,13 +1,16 @@
 package space
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/operation"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
 
@@ -353,6 +356,135 @@ func TestFunnelSubmitWithNoAttachmentsIsUnaffected(t *testing.T) {
 	}
 	if len(fake.Pushes) != 1 || len(fake.Opens) != 1 {
 		t.Fatalf("expected exactly 1 push + 1 open, got %d/%d", len(fake.Pushes), len(fake.Opens))
+	}
+}
+
+// TestFunnelSubmitPossessionRefusesBeforeUnreachableHostIsConsulted is
+// B29's own reported symptom: an unresolvable attachment must refuse with
+// ErrAttachmentUnresolvable even when the host cannot be reached at all —
+// not surface FindPRByHeadBranch's own raw transport error. FindPRByHeadBranch
+// IS still called once (fresh-vs-replay cannot be decided without asking,
+// and unconditionally skipping the call was verified to break replay
+// idempotency — see
+// TestFunnelSubmitReplayOfAlreadyMergedWriteIsNotBlockedByPossession); what
+// changes is that ITS failure no longer wins over a possession refusal the
+// draft itself already has.
+func TestFunnelSubmitPossessionRefusesBeforeUnreachableHostIsConsulted(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := newTestSubmitRequest(fx, "axon", l)
+	// Nothing was ever delivered to the space under this id — exactly the
+	// bare, unresolvable ref `a2a attach` mints (B29).
+	packageID := "DP-axon-20260811-off1"
+	digest := "sha256:" + strings.Repeat("a", 64)
+	req.Files = []FileWrite{
+		{Path: l.Exchange(req.ArtifactID), Content: []byte(possessionWorkRequestBody(packageID, digest))},
+		{Path: l.EventFile("2026", "01J8QYK2Z3ABCDEFGHJKMNPQRT"), Content: []byte("event: submit\n")},
+	}
+
+	transportErr := errors.New("host: FindPRByHeadBranch: github is failing transiently: dial tcp: connect: connection refused")
+	findCalls := 0
+	fake := host.NewFakeHost()
+	fake.FindPRFunc = func(context.Context, host.FindPRRequest) (*host.PRInfo, error) {
+		findCalls++
+		return nil, transportErr
+	}
+	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+
+	_, err = funnel.Submit(t.Context(), req)
+	if !errors.Is(err, ErrAttachmentUnresolvable) {
+		t.Fatalf("Submit error = %v, want ErrAttachmentUnresolvable (not the host's transport error)", err)
+	}
+	if errors.Is(err, transportErr) {
+		t.Fatalf("Submit error = %v, leaked the host transport error instead of refusing on possession", err)
+	}
+	if findCalls != 1 {
+		t.Fatalf("FindPRByHeadBranch was called %d times, want exactly 1 — possession runs as a diagnostic on ITS failure, not by skipping the call outright", findCalls)
+	}
+}
+
+// TestFunnelSubmitReplayOfAlreadyMergedWriteIsNotBlockedByPossession is
+// B29's own posed edge case, decided explicitly rather than assumed: a
+// draft that ALREADY merged, whose attachment has since become unresolvable
+// (the space's origin/main history moved past it — e.g. a retention sweep
+// removed the delivered package after the artifact referencing it landed),
+// must still report WriteStateAlreadyMerged on replay.
+//
+// The write already durably completed — GitHub's own PR state says
+// "merged" — and step 0's short-circuit exists exactly so that fact is not
+// re-litigated. Possession's job is to keep an UNRESOLVABLE draft from
+// reaching a NEW commit/push/open cycle; it is not a re-audit of a
+// completed one run every time the caller asks "is this done yet?". Making
+// an idempotent replay depend on the CURRENT resolvability of bytes the
+// replay is not about to write would regress exactly the guarantee step 0
+// exists for. checkSubmitAttachmentPossession therefore only gates the
+// FRESH-write path (funnel.go's hoisted call runs unconditionally ahead of
+// step 0, but step 0's own short-circuit — reached once existing is known —
+// still returns before any second possession check, and this test proves
+// that reaching WriteStateAlreadyMerged never required the removed package
+// to resolve).
+func TestFunnelSubmitReplayOfAlreadyMergedWriteIsNotBlockedByPossession(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+
+	repo := fx.Clone("axon")
+	packageID := "DP-axon-20260811-mrg1"
+	payload := map[string][]byte{"orders.json": []byte(`[{"id":1}]`)}
+	digest := possessionRecomputedDigest(t, payload)
+	files := map[string]string{"manifest.json": `{"schema":"data-package/v1"}`}
+	for name, raw := range payload {
+		files[name] = string(raw)
+	}
+	commitDataPackageFixture(t, repo, "axon", packageID, files)
+
+	req := newTestSubmitRequest(fx, "axon", l)
+	req.ArtifactIDs = []string{req.ArtifactID}
+	req.OperationKey = operation.Respond("axon", "agent", "bot", []string{req.ArtifactID}, "answered", nil, nil, nil)
+	req.Files = []FileWrite{
+		{Path: l.Exchange(req.ArtifactID), Content: []byte(possessionWorkRequestBody(packageID, digest))},
+		{Path: l.EventFile("2026", "01J8QYK2Z3ABCDEFGHJKMNPQRU"), Content: []byte("event: submit\n")},
+	}
+
+	fake := host.NewFakeHost()
+	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+
+	first, err := funnel.Submit(t.Context(), req)
+	if err != nil {
+		t.Fatalf("first Submit: %v", err)
+	}
+	if _, err := fake.MergePR(t.Context(), host.MergePRRequest{Repo: req.Repo, PRNumber: first.PRNumber}); err != nil {
+		t.Fatalf("MergePR: %v", err)
+	}
+
+	// The space's own history moves on, from a SEPARATE clone (a retention
+	// sweep, not this test's Submit path): the delivered package is removed
+	// from origin/main by a later commit, and req.RepoDir fetches that new
+	// state — exactly what an author's mirror would see after `a2a sync`.
+	parent := t.TempDir()
+	removalClone := filepath.Join(parent, "removal")
+	contractTestGit(t, parent, "clone", "-q", fx.RemoteURL(), removalClone)
+	contractTestGit(t, removalClone, "rm", "-r", "-q", "--", dataPackageDir("axon", packageID))
+	contractTestGit(t, removalClone, "commit", "-q", "-m", "retention: remove "+packageID)
+	contractTestGit(t, removalClone, "push", "-q", "origin", "main")
+	contractTestGit(t, req.RepoDir, "fetch", "-q", "origin", "main")
+
+	retry := req
+	result, err := funnel.Submit(t.Context(), retry)
+	if err != nil {
+		t.Fatalf("replay Submit: %v", err)
+	}
+	if result.State != WriteStateAlreadyMerged {
+		t.Fatalf("replay State = %v, want %v (idempotent report of a completed write must not depend on the CURRENT resolvability of possession bytes)", result.State, WriteStateAlreadyMerged)
 	}
 }
 

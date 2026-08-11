@@ -139,6 +139,28 @@ var (
 // contract-pinned data package's — both are the same git-backed storage
 // this phase's own §7 keeps un-pluggable, and the ceiling exists to bound
 // THAT, not to distinguish the two callers' typical sizes.
+//
+// # maxBlobEntries CANNOT FIRE through `a2a attach`, and that is deliberate
+//
+// Said here because the constant otherwise reads like a live guard, and this
+// package's own tests cannot tell the difference (epic-backlog B36, found while
+// proving P10's AC4 end to end rather than by inspection).
+//
+// `datapackage.DefaultBounds().MaxEntries` is 2048 — the same number as
+// maxBlobEntries-1 — and `a2a attach` walks its source through
+// `datapackage.WalkLocalDirectory`, which enforces that bound LOCALLY, before
+// `DeliverBlob` is ever called. So the refusal an operator actually meets for an
+// oversized directory is the datapackage-layer one, and this check is defence in
+// depth for a caller that does not exist today.
+//
+// It stays for the reason ResolveBlob's own pre-read listing check stays: this
+// package is the sole writer AND the sole reader of a blob's committed shape,
+// and a directory that grew past the bound by any route other than the CLI —
+// a hand-edited commit, a future caller, a restored backup — must still be
+// refused rather than read. What would make it reachable is the two bounds
+// deliberately differing; if that ever becomes the intent, change the number
+// AND this comment together, because a silent divergence would make the
+// datapackage bound look like the only one that matters.
 const (
 	maxBlobEntries      = 2049 // 2048 payload files + the blob.json sidecar
 	maxBlobEntryBytes   = 128 << 20
