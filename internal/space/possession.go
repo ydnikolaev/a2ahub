@@ -29,6 +29,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"gopkg.in/yaml.v3"
@@ -159,26 +160,46 @@ func recomputeAttachmentDigest(payload map[string][]byte) string {
 }
 
 // CheckAttachmentPossession resolves every attachment THROUGH THE SPACE's
-// own resolution path — ResolveDataPackage, reading origin/main out of
-// mirrorDir exactly as data delivery/fetch/verify already do — and refuses
-// the whole set at the first one that either does not resolve there
-// (ErrAttachmentUnresolvable) or resolves to bytes that do not match its
-// declared digest (ErrAttachmentDigestMismatch). It performs no local
-// filesystem read outside mirrorDir's own Git object store: there is no
-// path here that could ever answer "yes" because a file happens to exist on
-// the author's working tree or in some other local directory, which is the
-// AC2/by-construction property this whole file exists for.
+// own resolution path and refuses the whole set at the first one that
+// either does not resolve there (ErrAttachmentUnresolvable) or resolves to
+// bytes that do not match its declared digest (ErrAttachmentDigestMismatch).
+// It performs no local filesystem read outside mirrorDir's own Git object
+// store: there is no path here that could ever answer "yes" because a file
+// happens to exist on the author's working tree or in some other local
+// directory, which is the AC2/by-construction property this whole file
+// exists for.
+//
+// Two resolution paths, dispatched on the ref's own prefix (spec 10 §3 seam
+// 5): a `DP-` ref resolves through ResolveDataPackage, reading origin/main
+// out of mirrorDir exactly as data delivery/fetch/verify already do — this
+// branch is UNCHANGED from before spec 10 (spec 10 AC5: the existing
+// data-loop tests stay green untouched). A `BL-` ref resolves through
+// ResolveBlob (blob_resolve.go) the identical way. Neither branch is
+// reached by inspecting the id's own class/shape beyond its two-character
+// prefix: a ref that is neither is refused as ErrAttachmentUnresolvable by
+// falling through to ResolveDataPackage's own ErrDataPackageInvalidReference
+// — there is no third, silently-accepting branch.
 //
 // An empty attachments has nothing to check and returns nil immediately,
 // so an artifact declaring none behaves exactly as it does today.
 // CheckAttachmentPossession is part of the public package API.
 func CheckAttachmentPossession(ctx context.Context, mirrorDir string, attachments []Attachment) error {
 	for _, a := range attachments {
-		pkg, err := ResolveDataPackage(ctx, mirrorDir, a.Ref)
-		if err != nil {
-			return fmt.Errorf("%w: %q: %w", ErrAttachmentUnresolvable, a.Ref, err)
+		var payload map[string][]byte
+		if strings.HasPrefix(a.Ref, blobPrefix+"-") {
+			blob, err := ResolveBlob(ctx, mirrorDir, a.Ref)
+			if err != nil {
+				return fmt.Errorf("%w: %q: %w", ErrAttachmentUnresolvable, a.Ref, err)
+			}
+			payload = blob.Payload
+		} else {
+			pkg, err := ResolveDataPackage(ctx, mirrorDir, a.Ref)
+			if err != nil {
+				return fmt.Errorf("%w: %q: %w", ErrAttachmentUnresolvable, a.Ref, err)
+			}
+			payload = pkg.Payload
 		}
-		if got := recomputeAttachmentDigest(pkg.Payload); got != a.Digest {
+		if got := recomputeAttachmentDigest(payload); got != a.Digest {
 			return fmt.Errorf("%w: attachment %q declared %s, the space resolves it to %s",
 				ErrAttachmentDigestMismatch, a.Ref, a.Digest, got)
 		}

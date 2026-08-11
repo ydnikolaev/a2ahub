@@ -1,6 +1,7 @@
 package space
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -102,6 +103,76 @@ func TestCheckAttachmentPossessionRefusesDigestMismatch(t *testing.T) {
 	wrongDigest := "sha256:" + strings.Repeat("0", 64)
 
 	err := CheckAttachmentPossession(t.Context(), repo, []Attachment{{Ref: packageID, Digest: wrongDigest}})
+	if !errors.Is(err, ErrAttachmentDigestMismatch) {
+		t.Fatalf("CheckAttachmentPossession = %v, want ErrAttachmentDigestMismatch", err)
+	}
+}
+
+// TestCheckAttachmentPossessionAcceptsBlobAttachmentCommittedToTheSpace is
+// spec 10 §3 seam 5's own positive case: a `BL-` ref committed to the space
+// (via DeliverBlob's own shape, commitBlobFixture — blob_resolve_test.go)
+// resolves through ResolveBlob and possesses exactly like a `DP-` ref does.
+func TestCheckAttachmentPossessionAcceptsBlobAttachmentCommittedToTheSpace(t *testing.T) {
+	t.Parallel()
+
+	repo := newContractHistoryRepo(t)
+	blobID := "BL-axon-20260811-psb1"
+	payload := map[string][]byte{"review.md": []byte("bundle body\n")}
+	commitBlobFixture(t, repo, "axon", blobID, payload)
+
+	digest := possessionRecomputedDigest(t, payload)
+	if err := CheckAttachmentPossession(t.Context(), repo, []Attachment{{Ref: blobID, Digest: digest}}); err != nil {
+		t.Fatalf("CheckAttachmentPossession = %v, want nil", err)
+	}
+}
+
+// TestCheckAttachmentPossessionRefusesLocalOnlyBlobAttachment is the `BL-`
+// counterpart to TestCheckAttachmentPossessionRefusesLocalOnlyAttachment
+// above: a COMPLETE, resolvable-looking blob (payload + its own digest
+// sidecar) that exists only on the author's working tree, never committed
+// to origin/main, must still refuse — proving the `BL-` dispatch branch
+// reads through the space's own resolution path exactly like the `DP-`
+// branch does, not the filesystem.
+func TestCheckAttachmentPossessionRefusesLocalOnlyBlobAttachment(t *testing.T) {
+	t.Parallel()
+
+	repo := newContractHistoryRepo(t)
+	blobID := "BL-axon-20260811-psb2"
+	payload := map[string][]byte{"review.md": []byte("local only\n")}
+	digest := possessionRecomputedDigest(t, payload)
+
+	root := blobDir("axon", blobID)
+	writeContractCandidateFile(t, repo, root+"/review.md", string(payload["review.md"]))
+	sidecar, err := json.Marshal(blobDigestSidecar{ID: blobID, Digest: digest})
+	if err != nil {
+		t.Fatalf("marshal sidecar: %v", err)
+	}
+	writeContractCandidateFile(t, repo, blobDigestPath("axon", blobID), string(sidecar))
+
+	err = CheckAttachmentPossession(t.Context(), repo, []Attachment{{Ref: blobID, Digest: digest}})
+	if !errors.Is(err, ErrAttachmentUnresolvable) {
+		t.Fatalf("CheckAttachmentPossession = %v, want ErrAttachmentUnresolvable", err)
+	}
+}
+
+// TestCheckAttachmentPossessionRefusesBlobDigestMismatch is the `BL-`
+// counterpart to TestCheckAttachmentPossessionRefusesDigestMismatch: the
+// blob resolves (its own sidecar agrees with its own bytes), but the
+// ARTIFACT's declared attachments[].digest names something else — the
+// question this check answers is different from ResolveBlob's own
+// self-verification (blob_resolve_test.go's
+// TestResolveBlobRefusesDigestMismatch), and neither substitutes for the
+// other.
+func TestCheckAttachmentPossessionRefusesBlobDigestMismatch(t *testing.T) {
+	t.Parallel()
+
+	repo := newContractHistoryRepo(t)
+	blobID := "BL-axon-20260811-psb3"
+	payload := map[string][]byte{"review.md": []byte("bundle body\n")}
+	commitBlobFixture(t, repo, "axon", blobID, payload)
+
+	wrongDigest := "sha256:" + strings.Repeat("0", 64)
+	err := CheckAttachmentPossession(t.Context(), repo, []Attachment{{Ref: blobID, Digest: wrongDigest}})
 	if !errors.Is(err, ErrAttachmentDigestMismatch) {
 		t.Fatalf("CheckAttachmentPossession = %v, want ErrAttachmentDigestMismatch", err)
 	}

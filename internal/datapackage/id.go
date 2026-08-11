@@ -35,6 +35,29 @@ const (
 	// non-X, non-DP prefix, the same exchange-broadcast shape. W2's
 	// `verify` command mints against this constant.
 	ReportPrefix = "VR"
+
+	// BlobPrefix is P10 (agent-exchange-2026-08)'s blob-attachment id
+	// prefix — the third closed, non-X prefix in this file, the same
+	// exchange-broadcast shape as PackagePrefix/ReportPrefix (spec
+	// 10-blob-primitive.md §3 seam 1). "BL" was verified free before being
+	// chosen, against every prefix/mint/dispatch table the tree actually
+	// has, not assumed: the envelope id patterns
+	// (schemas/envelope/v2/base.schema.json's closed
+	// `^(XC|XR)-...$|^(XQ|XW|XD|XH|XA|XS)-...$`) admit only the eight X-
+	// prefixes and would refuse "BL-..." outright rather than silently
+	// mis-route it; DP/VR's own schema patterns
+	// (schemas/data-package/v1, schemas/verification-report/v1) name only
+	// themselves; internal/cli's and internal/mcp's `switch parsed.Prefix`
+	// dispatch tables (cmd_lifecycle.go, eventdoc.go) list only the eight
+	// X- prefixes and have no default arm a "BL" could fall into; and the
+	// dashboard's TypeBadge prefix map (web/src/components/TypeBadge.astro)
+	// enumerates only the eight envelope types, not DP/VR either — so a
+	// blob following their precedent introduces no third-registry
+	// collision. A data-package/v1 or verification-report/v1 document
+	// minted with "BL-" would not error at mint or parse time either — it
+	// would silently be treated as the other kind — which is exactly why
+	// this is a distinct constant rather than a shared one.
+	BlobPrefix = "BL"
 )
 
 // MintPackageID mints a new data-package/v1 id for system.
@@ -72,6 +95,25 @@ func MintReportIDAt(system string, at time.Time, entropy io.Reader) (string, err
 // broadcast shape.
 func ParseReportID(id string) (artifact.ID, error) {
 	return parsePrefixedExchangeID("ParseReportID", ReportPrefix, id)
+}
+
+// MintBlobID mints a new blob-attachment id for system (spec
+// 10-blob-primitive.md §3 seam 1).
+func MintBlobID(system string) (string, error) {
+	return artifact.MintExchangeID(BlobPrefix, system)
+}
+
+// MintBlobIDAt is MintBlobID's testable variant: the caller supplies the
+// timestamp (converted to UTC) and the entropy source.
+func MintBlobIDAt(system string, at time.Time, entropy io.Reader) (string, error) {
+	return artifact.MintExchangeIDAt(BlobPrefix, system, at, entropy)
+}
+
+// ParseBlobID parses id and confirms it is exactly the BL- exchange-
+// broadcast shape — never merely artifact-well-formed, mirroring
+// ParsePackageID/ParseReportID's own discipline above.
+func ParseBlobID(id string) (artifact.ID, error) {
+	return parsePrefixedExchangeID("ParseBlobID", BlobPrefix, id)
 }
 
 func parsePrefixedExchangeID(op, prefix, id string) (artifact.ID, error) {

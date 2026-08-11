@@ -121,3 +121,53 @@ func TestMintReportID_RoundTripsThroughSchemaPattern(t *testing.T) {
 		t.Fatalf("MintReportID produced %q, which does not match the verification-report/v1 schema's id pattern", id)
 	}
 }
+
+func TestMintAndParseBlobID(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, 8, 4, 15, 4, 5, 0, time.UTC)
+	entropy := bytes.NewReader([]byte{0, 0, 0, 0})
+
+	id, err := MintBlobIDAt("axon", at, entropy)
+	if err != nil {
+		t.Fatalf("MintBlobIDAt: %v", err)
+	}
+	if want := "BL-axon-20260804-0000"; id != want {
+		t.Fatalf("MintBlobIDAt = %q, want %q", id, want)
+	}
+
+	parsed, err := ParseBlobID(id)
+	if err != nil {
+		t.Fatalf("ParseBlobID(%q): %v", id, err)
+	}
+	if parsed.Prefix != BlobPrefix || parsed.Class != artifact.ClassExchangeBroadcast || parsed.System != "axon" || parsed.Date != "20260804" {
+		t.Fatalf("ParseBlobID(%q) = %+v, unexpected shape", id, parsed)
+	}
+}
+
+func TestParseBlobID_RefusesWrongPrefix(t *testing.T) {
+	t.Parallel()
+	cases := []string{
+		"DP-axon-20260804-k3f9", // a package id, not a blob id
+		"VR-axon-20260804-k3f9", // a report id, not a blob id
+		"XD-axon-20260804-k3f9", // the exact collision D-1/BL both close
+		"XC-axon-order-api",
+		"not-an-id-at-all",
+	}
+	for _, id := range cases {
+		t.Run(id, func(t *testing.T) {
+			t.Parallel()
+			if _, err := ParseBlobID(id); !errors.Is(err, artifact.ErrMalformedID) {
+				t.Fatalf("ParseBlobID(%q) = %v, want errors.Is ErrMalformedID", id, err)
+			}
+		})
+	}
+}
+
+// MintBlobID has no schema-owned id pattern to round-trip through, unlike
+// MintPackageID/MintReportID above: data-package/v1 and verification-
+// report/v1 both declare their own `$defs.packageId`/`$defs.reportId`
+// patterns, but attachments[].ref (schemas/envelope/v2/work_request.schema.
+// json) declares only `{"type": "string", "minLength": 1}` — the schema was
+// never wrong (spec 10 §2: "the description becomes TRUE"), it simply never
+// fixed a shape for the reference it names. There is therefore no second
+// pattern for this mint to drift against.
