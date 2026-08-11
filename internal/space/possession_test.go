@@ -369,6 +369,70 @@ func TestFunnelSubmitWithNoAttachmentsIsUnaffected(t *testing.T) {
 // TestFunnelSubmitReplayOfAlreadyMergedWriteIsNotBlockedByPossession); what
 // changes is that ITS failure no longer wins over a possession refusal the
 // draft itself already has.
+// TestFunnelSubmitDeliveryPossessionRefusesBeforeUnreachableHostIsConsulted is
+// the SECOND half of B29, and it exists because the first fix was incomplete in
+// a way only a reader comparing two call sites would notice.
+//
+// B29's subject was checkSubmitAttachmentPossession sitting behind step 0's
+// FindPRByHeadBranch call, so an offline author met a transport error instead of
+// the refusal that names what is wrong with their draft. That was fixed by
+// running possession as a diagnostic on the network call's OWN failure.
+//
+// checkSubmitResponseDeliveryPossession is the identical shape one artifact
+// type over: a `respond --result delivered` whose handoff deliverable the space
+// cannot resolve. Leaving it behind would have made the quality of the
+// diagnostic depend on WHICH kind of unresolvable reference an author happened
+// to write — an attachment gets a real refusal offline, a delivery ref gets a
+// dial-tcp error — which is not a distinction any author could predict.
+//
+// It asserts the transport error is NOT leaked, for the same reason its sibling
+// does: a test that only checked for the possession sentinel would pass on a
+// wrapped error carrying both.
+func TestFunnelSubmitDeliveryPossessionRefusesBeforeUnreachableHostIsConsulted(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := newTestSubmitRequest(fx, "axon", l)
+
+	// A handoff committed to origin/main whose data deliverable names a
+	// package that was never delivered — so the handoff itself RESOLVES and
+	// its deliverable does not, which is the one shape this check refuses.
+	repo := req.RepoDir
+	handoffID := "XH-axon-20260811-hf22"
+	commitHandoffFixture(t, repo, "axon", handoffID,
+		deliveryPossessionHandoffBody(handoffID, "DP-axon-20260811-gn04", "data"))
+
+	responseID := "XS-axon-20260808-resp1"
+	req.Files = []FileWrite{
+		{Path: l.Exchange(responseID), Content: []byte(deliveryPossessionResponseBody("delivered", handoffID))},
+		{Path: l.EventFile("2026", "01J8QYK2Z3ABCDEFGHJKMNPQRU"), Content: []byte("event: submit\n")},
+	}
+
+	transportErr := errors.New("host: FindPRByHeadBranch: github is failing transiently: dial tcp: connect: connection refused")
+	findCalls := 0
+	fake := host.NewFakeHost()
+	fake.FindPRFunc = func(context.Context, host.FindPRRequest) (*host.PRInfo, error) {
+		findCalls++
+		return nil, transportErr
+	}
+	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+
+	_, err = funnel.Submit(t.Context(), req)
+	if !errors.Is(err, ErrHandoffDeliverableUnresolvable) {
+		t.Fatalf("Submit error = %v, want ErrHandoffDeliverableUnresolvable (not the host's transport error)", err)
+	}
+	if errors.Is(err, transportErr) {
+		t.Fatalf("Submit error = %v, leaked the host transport error instead of refusing on possession", err)
+	}
+	if findCalls != 1 {
+		t.Fatalf("FindPRByHeadBranch was called %d times, want exactly 1 — possession runs as a diagnostic on ITS failure, not by skipping the call outright", findCalls)
+	}
+}
+
 func TestFunnelSubmitPossessionRefusesBeforeUnreachableHostIsConsulted(t *testing.T) {
 	t.Parallel()
 

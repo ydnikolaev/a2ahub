@@ -472,8 +472,20 @@ func (f *WriteFunnel) submitPreparedRequest(ctx context.Context, req SubmitReque
 		// ORIGINAL transport error returns unchanged, exactly as before
 		// B29 — ErrMutationInvalid/ErrMutationDuplicatePath keep the single
 		// place they have always surfaced from, below.
+		//
+		// BOTH draft-local possession checks run here, in the same order they
+		// run on the fresh-write path below. The attachment one was B29's own
+		// subject; the delivery one is the identical shape — a `respond
+		// --result delivered` whose handoff deliverable the space cannot
+		// resolve is just as unactionable behind a transport error, and
+		// leaving it behind would have made the diagnostic depend on WHICH
+		// kind of unresolvable reference an author happened to write.
 		if mutations, normErr := normalizeMutations(req.Files, req.Mutations); normErr == nil {
-			if possessionErr := checkSubmitAttachmentPossession(ctx, req.RepoDir, mutationWrites(mutations)); possessionErr != nil {
+			writes := mutationWrites(mutations)
+			if possessionErr := checkSubmitAttachmentPossession(ctx, req.RepoDir, writes); possessionErr != nil {
+				return failWriteResult(op, branch, result, possessionErr)
+			}
+			if possessionErr := checkSubmitResponseDeliveryPossession(ctx, req.RepoDir, writes); possessionErr != nil {
 				return failWriteResult(op, branch, result, possessionErr)
 			}
 		}

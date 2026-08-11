@@ -1922,3 +1922,108 @@ func TestCC093InterleavedCLIThenMCPSubmitIdempotent(t *testing.T) {
 		t.Fatalf("expected the second call to report an already-done state, got: %s", rendered)
 	}
 }
+
+// TestEquivContractDescriptorRefusalText is B38, and it exists because the
+// suite around it compares what the two surfaces DO and not what they SAY.
+//
+// ADR-001 forbids internal/mcp importing internal/cli, so every contract verb
+// is hand-mirrored twice. TestMCPParityBijection catches the structural half of
+// that — a verb on one surface and not the other reds loudly. Nothing caught
+// the textual half, and on 2026-08-11 a sweep found the consequence: `contract
+// activate`'s refusal for an unreadable descriptor had been improved on the CLI
+// during a hands-on run and left raw on the MCP twin, so the same condition
+// produced a named remedy for a human and an absolute cache path for an agent.
+// The same fix had also never reached `deprecate` or `retire` on either side.
+//
+// The condition chosen is the one that drifted: a descriptor the local mirror
+// does not carry. All four verbs reach it through one helper per package, so a
+// fix applied to one package and not the other is exactly what reds here.
+//
+// It compares the SHARED core of the message rather than the whole string,
+// because the two surfaces legitimately differ in framing (the CLI prints to
+// stderr and exits 1; MCP returns an error a client renders). What must not
+// differ is the condition named and the remedy offered — which is the entire
+// content of the defect this pins.
+//
+// It deliberately does NOT assert an exact sentence. A test demanding byte
+// equality would red on a rewording that improved BOTH surfaces together, which
+// is the change this gate should welcome rather than punish.
+func TestEquivContractDescriptorRefusalText(t *testing.T) {
+	t.Parallel()
+
+	// The id parses and its descriptor was never committed — so both surfaces
+	// reach their own descriptor read and fail there, before any funnel call.
+	const missingID = "XC-axon-nosuchcontract"
+
+	cases := []struct {
+		action   string
+		cliArgs  []string
+		mcpInput any
+	}{
+		{"deprecate", []string{"deprecate", "--successor", "XC-axon-widget@2.0.0", "--sunset", "2027-01-01", missingID},
+			mcp.ContractDeprecateInput{ID: missingID, Successor: "XC-axon-widget@2.0.0", Sunset: "2027-01-01"}},
+		{"retire", []string{"retire", missingID},
+			mcp.ContractRetireInput{ID: missingID}},
+		// `activate` is the verb the defect was FOUND on and is deliberately
+		// absent from this table: it reaches its floor check (event/v2 needs
+		// min_binary_version >= 0.19.0) before it ever reads a descriptor, and
+		// this fixture's space carries no floor, so both surfaces refuse for a
+		// DIFFERENT reason here and would pin nothing. Its own descriptor-read
+		// refusal is covered where it is reachable —
+		// internal/mcp's TestContractActivateOnUnsyncedMirrorNamesTheCondition.
+		// Naming the gap beats a row that passes without exercising anything.
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.action, func(t *testing.T) {
+			t.Parallel()
+
+			cliDir, cliFunnel, _ := newEquivMirror(t, "axon")
+			cmd := cli.NewContractCommand(nil, cliFunnel, cliDir, "fixture-space", "axon",
+				equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
+			io, _, cliErr := equivIO()
+			if code := cmd.Run(context.Background(), tc.cliArgs, io); code == 0 {
+				t.Fatalf("%s: CLI accepted a contract the mirror does not carry", tc.action)
+			}
+
+			mcpDir, mcpFunnel, _ := newEquivMirror(t, "axon")
+			writeDeps := mcp.WriteDeps{
+				Funnel: mcpFunnel, MirrorDir: mcpDir, SpaceID: "fixture-space", OwnSystem: "axon",
+				Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""),
+				ResolveActor: equivMCPActorResolver("agent", "bot"),
+				Now:          time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
+			}
+			registry := mcp.BuildRegistry(nil, writeDeps, "", nil, mcp.NewDeps{})
+			spec, ok := registry.Get("a2a_contract")
+			if !ok {
+				t.Fatal("a2a_contract is not registered")
+			}
+			raw, err := marshalWithAction(tc.action, tc.mcpInput)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _, mcpErr := spec.Handler(context.Background(), raw)
+			if mcpErr == nil {
+				t.Fatalf("%s: MCP accepted a contract the mirror does not carry", tc.action)
+			}
+
+			// The condition and the remedy, which is what an operator acts on
+			// and what drifted. Asserted against BOTH surfaces from one list,
+			// so a fix that reaches only one of them cannot pass.
+			for _, want := range []string{"from the local mirror", "a2a sync"} {
+				if !strings.Contains(cliErr.String(), want) {
+					t.Fatalf("%s: CLI refusal does not name %q — it must say what is wrong and what to do, not print a path:\n%s",
+						tc.action, want, cliErr.String())
+				}
+				if !strings.Contains(mcpErr.Error(), want) {
+					t.Fatalf("%s: MCP refusal does not name %q while the CLI does — the twins have drifted, which is what B38 exists to catch:\n%s",
+						tc.action, want, mcpErr.Error())
+				}
+			}
+			if len(cliFunnel.calls) != 0 || len(mcpFunnel.calls) != 0 {
+				t.Fatalf("%s: a local refusal must precede both funnels: CLI=%d MCP=%d",
+					tc.action, len(cliFunnel.calls), len(mcpFunnel.calls))
+			}
+		})
+	}
+}

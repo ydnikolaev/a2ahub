@@ -1211,3 +1211,32 @@ changes:
         you are offline. That ordering is what makes the submit-time check
         meaningful: the bytes are proven fetchable from the space's
         perspective, not from the author's laptop.
+  - id: RN-01910-41
+    kind: fix
+    impact: normal
+    roadmap:
+      visibility: shipped
+      why: >
+        A refusal that prints a cache path tells an operator nothing they can
+        act on, and an agent driving the tool through MCP was getting worse
+        messages than a person driving the CLI for the same condition.
+    subject: "Contract refusals name what is wrong and what to do, on both surfaces"
+    detail: >
+      `a2a contract activate`, `deprecate` and `retire` refused a contract the
+      local mirror does not carry by printing the raw file-open failure with an
+      absolute cache path. They now say what happened and what to do — run
+      `a2a sync`, or check the contract has been published.
+      The same messages had already been fixed on one surface and not the
+      other, so the identical condition produced a clear refusal for a person
+      and a raw path for an agent. Both surfaces now say the same thing, and a
+      test compares them, so the two cannot drift apart again silently.
+      Separately, a submit that cannot reach the host no longer hides a local
+      problem behind a network one: a response naming a delivery the space
+      cannot resolve now says so, instead of surfacing a connection error the
+      author cannot act on. An attachment already behaved this way; the two
+      kinds of unresolvable reference now behave alike.
+    affects: ["a2a contract activate", "a2a contract deprecate", "a2a contract retire", "a2a submit"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. Same conditions refuse, with messages you can act on.
