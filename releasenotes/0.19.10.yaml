@@ -1240,3 +1240,74 @@ changes:
       scope: none
       why: >
         Nothing to do. Same conditions refuse, with messages you can act on.
+  - id: RN-01910-42
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: "Supersession is how an artifact is replaced rather than abandoned, and the plan has required those chains to be linear since §3.8. Nothing enforced it, so a fork or a cycle merged clean and left an artifact with no stable folded state."
+    impact: normal
+    subject: "A supersession fork or cycle is now refused instead of merging clean"
+    detail: >
+      Two successors claiming one predecessor, or a chain that loops back on
+      itself, used to pass validation. Both are now refused by the full-repo
+      pass with their own codes — REF-020 for a fork, REF-021 for a cycle,
+      self-supersede included.
+      A cycle is the one that matters most: an artifact reachable from itself
+      through a supersedes chain has no state a reader can settle on, so the
+      same history could fold differently depending on where you started. The
+      refusal names both claimants rather than "the second one", because in a
+      whole-repository walk there is no stable notion of which arrived second.
+      The check runs only in the full-repository mode, and deliberately: a pull
+      request carries a slice of the graph, and a partial graph would report a
+      fork that does not exist.
+    affects: ["a2a validate --ci --mode=v3-full-repo"]
+    action:
+      scope: space
+      why: >
+        Nothing to do for a healthy space. A space whose history already
+        carries a fork or a cycle will see its full-repo validation red with
+        the offending ids named; that history was already ambiguous and the
+        refusal is what makes it visible.
+  - id: RN-01910-43
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: "Every sibling data verb tells a machine caller where its write landed. Attach did not, so an automated caller had to scrape plain text or guess."
+    impact: normal
+    subject: "`a2a attach --json` now reports the branch and pull request it opened"
+    detail: >
+      The JSON result carried the draft and the attachment and dropped the
+      write result its own internal value already held. The branch and pull
+      request appeared only in the plain-text output, so a script or an MCP
+      client could not follow the write it had just made.
+      It now carries the same write result the `data` verbs expose, in the same
+      shape, so one spelling of the fact serves both.
+    affects: ["a2a attach --json"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. The field is added; nothing that existed changed shape.
+  - id: RN-01910-44
+    kind: fix
+    roadmap:
+      visibility: shipped
+      why: "An error that points at the wrong system is worse than a vague one, because it sends the reader somewhere there is nothing to find."
+    impact: normal
+    subject: "`a2a data pack` no longer calls an unsynced mirror an unpublished contract"
+    detail: >
+      Packing against a contract version your checkout had not synced yet
+      failed with "contract version is not published" — a sentence that blames
+      the contract's author for the reader's own stale copy. The two states are
+      different and only one of them is anybody's fault.
+      The resolver now says which it is. It claims "never published" only on
+      positive evidence — the mirror's own descriptor already at or past the
+      requested version with no publish event naming it — and otherwise tells
+      you the version is not in your local mirror and to run `a2a sync`.
+      Defaulting to the actionable answer is deliberate: absence in a local
+      copy is not evidence of absence in the space.
+    affects: ["a2a data pack"]
+    action:
+      scope: local
+      why: >
+        If you have scripted against the old sentence, the unsynced case now
+        emits a different one. Run `a2a sync` when you see it.

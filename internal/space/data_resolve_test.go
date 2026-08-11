@@ -3,6 +3,7 @@ package space
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -185,6 +186,89 @@ func TestResolveDataContractSchemasResolvesALegacyContract(t *testing.T) {
 	if string(schemas["schema/main.schema.json"]) != "legacy schema\n" {
 		t.Fatalf("schema bytes = %q", schemas["schema/main.schema.json"])
 	}
+}
+
+// TestResolveDataContractSchemasNamesSyncForAStaleMirror is B42's tooth for
+// the "absent local copy" branch: the exact shape the wave lost a run to —
+// a contract version that WAS published and merged upstream, while the
+// packing checkout's own local mirror simply had not synced past the
+// commit that published it. That must read as "run a2a sync", never as
+// "was never published" (ErrContractNotPublished is a different sentinel
+// this test explicitly refuses).
+func TestResolveDataContractSchemasNamesSyncForAStaleMirror(t *testing.T) {
+	t.Parallel()
+
+	publisher, mirror := newContractHistoryRepoPair(t)
+
+	descriptor, files, digest := contractV2Publication(t, "1.0.0", "schema bytes v1\n")
+	commitContractPublication(t, publisher, descriptor, files, contractEventV2("1.0.0", digest))
+	contractTestGit(t, mirror, "fetch", "-q", "origin", "main")
+
+	// Published to origin AFTER the mirror last synced — the mirror never
+	// sees this commit unless it fetches again, which this test
+	// deliberately never does.
+	descriptor2, files2, digest2 := contractV2Publication(t, "2.0.0", "schema bytes v2\n")
+	const secondEventID = "01K1A2B3C4D5E6F7G8H9J0K1M8"
+	commitContractPublicationAtPath(t, publisher, "axon/events/2026/"+secondEventID+".yaml", descriptor2, files2, contractEventV2WithID(secondEventID, "2.0.0", digest2))
+
+	_, _, err := ResolveDataContractSchemas(t.Context(), mirror, contractTestID+"@2.0.0", contractHistoryValidator(t))
+	if !errors.Is(err, ErrDataContractMirrorStale) {
+		t.Fatalf("error = %v, want ErrDataContractMirrorStale", err)
+	}
+	if errors.Is(err, ErrContractNotPublished) {
+		t.Fatalf("error = %v must NOT also satisfy errors.Is(ErrContractNotPublished) — the two diagnoses must diverge", err)
+	}
+	if !strings.Contains(err.Error(), "a2a sync") {
+		t.Fatalf("error = %q, want it to name a2a sync", err.Error())
+	}
+}
+
+// TestResolveDataContractSchemasReportsAGenuinelyUnpublishedVersion is
+// B42's other branch: the mirror's own current descriptor already reaches
+// PAST the requested version (2.0.0 was skipped straight to 3.0.0), so the
+// mirror has positive evidence the version was never published — it is not
+// merely behind. This must keep the original ErrContractNotPublished
+// sentence, and must NOT also read as ErrDataContractMirrorStale.
+func TestResolveDataContractSchemasReportsAGenuinelyUnpublishedVersion(t *testing.T) {
+	t.Parallel()
+
+	repo := newContractHistoryRepo(t)
+	descriptor, files, digest := contractV2Publication(t, "1.0.0", "schema bytes v1\n")
+	commitContractPublication(t, repo, descriptor, files, contractEventV2("1.0.0", digest))
+
+	// 2.0.0 is skipped entirely; the mirror jumps straight to 3.0.0, so
+	// its own current descriptor already proves it has synced past the
+	// point where 2.0.0 would have appeared.
+	descriptor2, files2, digest2 := contractV2Publication(t, "3.0.0", "schema bytes v3\n")
+	const secondEventID = "01K1A2B3C4D5E6F7G8H9J0K1M8"
+	commitContractPublicationAtPath(t, repo, "axon/events/2026/"+secondEventID+".yaml", descriptor2, files2, contractEventV2WithID(secondEventID, "3.0.0", digest2))
+
+	_, _, err := ResolveDataContractSchemas(t.Context(), repo, contractTestID+"@2.0.0", contractHistoryValidator(t))
+	if !errors.Is(err, ErrContractNotPublished) {
+		t.Fatalf("error = %v, want ErrContractNotPublished", err)
+	}
+	if errors.Is(err, ErrDataContractMirrorStale) {
+		t.Fatalf("error = %v must NOT also satisfy errors.Is(ErrDataContractMirrorStale) — the two diagnoses must diverge", err)
+	}
+}
+
+// newContractHistoryRepoPair is newContractHistoryRepo's two-clone variant:
+// a bare origin plus two independent working clones of it ("publisher" and
+// "mirror"), so a test can push from one and prove the other's own
+// refs/remotes/origin/main only advances on an explicit fetch — the exact
+// "local mirror has not synced" shape B42 names, which a single shared
+// clone (push updates its own remote-tracking ref immediately) cannot
+// reproduce.
+func newContractHistoryRepoPair(t *testing.T) (publisher, mirror string) {
+	t.Helper()
+	root := t.TempDir()
+	origin := filepath.Join(root, "origin.git")
+	contractTestGit(t, root, "init", "-q", "--bare", "-b", "main", origin)
+	publisher = filepath.Join(root, "publisher")
+	contractTestGit(t, root, "clone", "-q", origin, publisher)
+	mirror = filepath.Join(root, "mirror")
+	contractTestGit(t, root, "clone", "-q", origin, mirror)
+	return publisher, mirror
 }
 
 func TestSplitDataContractReferenceRefusesNonCanonicalForms(t *testing.T) {

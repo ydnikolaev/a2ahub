@@ -33,6 +33,17 @@ var (
 	// ErrDataPackageNotFound refuses a package id with nothing committed
 	// under the exact directory DeliverDataPackage would have written it to.
 	ErrDataPackageNotFound = errors.New("space: data package is not present in the local mirror")
+
+	// ErrDataContractMirrorStale refuses a pinned contract version this
+	// packing checkout's own local mirror has not synced far enough to
+	// see — distinct from ErrContractNotPublished, which means the
+	// resolver's authoritative anchor already reaches PAST the requested
+	// version and still finds no publish event for it (B42). Collapsing
+	// the two into one sentence cost a real wave a run: `a2a data pack`
+	// failed with "contract version is not published" for a contract
+	// that WAS published and merged — the local mirror simply had not
+	// synced.
+	ErrDataContractMirrorStale = errors.New("space: contract version is not in the local mirror; run a2a sync")
 )
 
 // dataPackagePrefix mirrors datapackage.PackagePrefix ("DP") — internal/space
@@ -100,6 +111,9 @@ func ResolveDataContractSchemas(ctx context.Context, mirrorDir, ref string, vali
 	}
 	snapshot, err := ResolveContractVersion(ctx, mirrorDir, id, canonicalVersion, validator)
 	if err != nil {
+		if errors.Is(err, ErrContractNotPublished) {
+			return nil, "", diagnoseUnpublishedContract(ctx, mirrorDir, id, canonicalVersion)
+		}
 		return nil, "", err
 	}
 	if pinnedDigest != "" && pinnedDigest != snapshot.PublishedDigest {
@@ -125,6 +139,62 @@ func ResolveDataContractSchemas(ctx context.Context, mirrorDir, ref string, vali
 		return nil, "", fmt.Errorf("%w: %s@%s", ErrDataContractNoSchemas, id, canonicalVersion)
 	}
 	return schemas, fmt.Sprintf("%s@%s#%s", id, canonicalVersion, snapshot.PublishedDigest), nil
+}
+
+// diagnoseUnpublishedContract distinguishes "this version is not in your
+// local mirror; run a2a sync" from "this version was never published" once
+// ResolveContractVersion has already reported ErrContractNotPublished
+// (backlog B42, spec 12-closeout.md AC3). `a2a data pack` resolves the
+// pinned contract out of the packing checkout's own local mirror and never
+// over the network — correct for an offline-first tool — but that means an
+// absent local copy and a genuinely unpublished version produced the exact
+// same sentence, and only one of them was the user's fault: a run was lost
+// to "contract version is not published" for a contract that WAS published
+// and merged, because the mirror simply had not synced.
+//
+// It re-reads only the one file ResolveContractVersion would have read
+// anyway — the contract's CURRENT descriptor at the same authoritative
+// anchor (contractAuthoritativeMainRef) — on the error path only, and hands
+// back ErrContractNotPublished ONLY with positive evidence the mirror has
+// synced past the point where the requested version would appear: the
+// descriptor exists, parses, names this exact contract, and its own
+// version is not older than the one requested. Every other outcome —
+// descriptor missing, unparseable, wrong id, or genuinely older than
+// requested — means the mirror cannot prove the negative, so it must not
+// claim "never published"; it names `a2a sync` instead. That also means a
+// mirror still behind an upstream that skipped straight to a much later
+// version (an honest "not synced" case) never gets misdiagnosed as having
+// witnessed the requested version's absence.
+func diagnoseUnpublishedContract(ctx context.Context, mirrorDir, id, canonicalVersion string) error {
+	stale := fmt.Errorf("%w: %s@%s", ErrDataContractMirrorStale, id, canonicalVersion)
+
+	parsedID, err := artifact.ParseID(id)
+	if err != nil {
+		return stale
+	}
+	layout, err := NewLayout(parsedID.System)
+	if err != nil {
+		return stale
+	}
+	commit, err := contractGitResolveCommit(ctx, mirrorDir, contractAuthoritativeMainRef)
+	if err != nil {
+		return stale
+	}
+	descriptorFile, err := contractGitReadPath(ctx, mirrorDir, commit, layout.ProvidesContract(parsedID.Slug), contract.MaxFileBytes)
+	if err != nil {
+		return stale
+	}
+	descriptor, err := parseHistoricalDescriptor(descriptorFile.Raw)
+	if err != nil || descriptor.ID != id {
+		return stale
+	}
+	older, err := version.OlderThan(descriptor.Version, canonicalVersion)
+	if err != nil || older {
+		return stale
+	}
+	// Positive evidence: the mirror's own current descriptor is already at
+	// or past the requested version, and still no publish event named it.
+	return fmt.Errorf("%w: %s@%s", ErrContractNotPublished, id, canonicalVersion)
 }
 
 // dataContractSchemaEntry reports whether one carried-set entry is a schema,

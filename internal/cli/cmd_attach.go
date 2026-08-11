@@ -267,7 +267,7 @@ func (c *AttachCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 
 	if *asJSON {
-		return attachEncodeJSON(stdio, draftPath, entry)
+		return attachEncodeJSON(stdio, draftPath, entry, delivered.Write)
 	}
 	_, _ = fmt.Fprintf(stdio.Stdout, "attach: %s written to the space\n", delivered.BlobID)
 	_, _ = fmt.Fprintf(stdio.Stdout, "%s %s (%s)\n", delivered.Write.State, delivered.Write.PRURL, delivered.Write.Branch)
@@ -366,14 +366,20 @@ func attachAppendEntry(fm artifact.Frontmatter, attachment datapackage.Attachmen
 	return artifact.SerializeFrontmatter(artifact.Frontmatter{YAML: newYAML, Body: fm.Body}), nil
 }
 
-// attachJSONResult is `a2a attach --json`'s wire shape.
+// attachJSONResult is `a2a attach --json`'s wire shape. Write mirrors
+// DataResult's own field (cmd_data.go: `Write *space.WriteResult
+// json:"write,omitempty"`) rather than inventing a second spelling of the
+// same fact — attach is a network write exactly like `data deliver`, and a
+// machine caller must be able to follow it the same way: decode Write.Branch
+// and Write.PRURL rather than scraping the plain-text stdout lines below.
 type attachJSONResult struct {
 	Draft      string                              `json:"draft"`
 	Attachment datapackage.AttachmentManifestEntry `json:"attachment"`
+	Write      *space.WriteResult                  `json:"write,omitempty"`
 }
 
-func attachEncodeJSON(stdio IO, draftPath string, entry datapackage.AttachmentManifestEntry) int {
-	if err := json.NewEncoder(stdio.Stdout).Encode(attachJSONResult{Draft: draftPath, Attachment: entry}); err != nil {
+func attachEncodeJSON(stdio IO, draftPath string, entry datapackage.AttachmentManifestEntry, write space.WriteResult) int {
+	if err := json.NewEncoder(stdio.Stdout).Encode(attachJSONResult{Draft: draftPath, Attachment: entry, Write: &write}); err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "attach: encode result: %v\n", err)
 		return 1
 	}

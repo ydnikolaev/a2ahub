@@ -339,6 +339,7 @@ func TestAttachJSONOutputCarriesDigestAndDraft(t *testing.T) {
 			Ref    string `json:"ref"`
 			Digest string `json:"digest"`
 		} `json:"attachment"`
+		Write *space.WriteResult `json:"write"`
 	}
 	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
 		t.Fatalf("decode --json output: %v (stdout=%s)", err, out.String())
@@ -351,6 +352,21 @@ func TestAttachJSONOutputCarriesDigestAndDraft(t *testing.T) {
 	}
 	if result.Attachment.Ref != ops.blobID {
 		t.Fatalf("attachment.ref = %q, want %q (the minted blob id)", result.Attachment.Ref, ops.blobID)
+	}
+	// B41: a machine caller must be able to follow its own write the same
+	// way `data deliver`'s --json already lets it — decoding Write.Branch and
+	// Write.PRURL, not scraping the plain-text stdout lines or matching the
+	// funnel's branch prefix and guessing the highest PR number (the
+	// workaround the wave that found this used, sound only because
+	// fakegithub numbers PRs from one monotonic counter).
+	if result.Write == nil {
+		t.Fatalf("--json output missing write: %s", out.String())
+	}
+	if result.Write.Branch != ops.write.Branch {
+		t.Fatalf("write.branch = %q, want %q", result.Write.Branch, ops.write.Branch)
+	}
+	if result.Write.PRURL != ops.write.PRURL {
+		t.Fatalf("write.pr_url = %q, want %q", result.Write.PRURL, ops.write.PRURL)
 	}
 }
 
