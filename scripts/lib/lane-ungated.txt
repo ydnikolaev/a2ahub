@@ -96,6 +96,14 @@ docs/the-plan/inbox/**
 # it — that is the day it earns a claim, and this entry gets narrowed.
 docs/the-plan/conformance-*.md
 
+# Internal HTML presentations — one-off decks written to be looked at once,
+# not published and not read by anything. No gate can hold them to an
+# invariant beyond "the file parses", which proves nothing about whether the
+# deck says anything true. The day one of these becomes PUBLISHED material it
+# stops being this class: web/public/** is claimed, and a deck that ships to
+# readers belongs there, under the gates that judge published pages.
+docs/presentations/**
+
 # Operator prose. publish-to-public.sh is the exception, claimed by
 # harness-teeth, because it carries its own --teeth self-test.
 docs/runbooks/**
