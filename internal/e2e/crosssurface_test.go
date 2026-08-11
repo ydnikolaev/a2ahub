@@ -136,6 +136,12 @@ type csItem struct {
 	WaitingOn          []string `json:"waiting_on"`
 	ExpectedTransition string   `json:"expected_transition"`
 	Why                string   `json:"why"`
+	// OperationalItems narrows cache.Item.OperationalItems (spec 05 AC4,
+	// epic-backlog B25 — `inbox`/`outbox` are the two surfaces that could
+	// not carry this projection until now) — see
+	// TestCrossSurfaceOperationalItems below, the one place this file reads
+	// it.
+	OperationalItems []csOperationalItem `json:"operational_items"`
 }
 
 // csThreadResult narrows cache.ThreadResult to its OpenItems.
@@ -601,19 +607,20 @@ func TestCrossSurface(t *testing.T) {
 //
 // Spec 05-declared-nature.md AC4 (agent-exchange-2026-08 P5): an
 // x_operational[] item's declared `state: absent` must read DIFFERENTLY
-// from a name that was never declared at all — checked here on the three
-// surfaces this wave's own allowlist can carry it on: thread, html, show.
-// crossSurfaceReaders (above) is the full five-surface enumeration this
-// file keeps; TestCrossSurfaceOperationalItems is the one that actually
-// walks the operational-item projection.
+// from a name that was never declared at all — checked here on all five
+// surfaces crossSurfaceReaders (above) enumerates: inbox, outbox, thread,
+// html, show. TestCrossSurfaceOperationalItems is the one subtest that
+// actually walks the operational-item projection; every OTHER TestCrossSurface
+// subtest exercises the pendency verdict, a separate relation.
 //
-// inbox/outbox cannot carry this projection within this wave's allowlist:
-// cache.Item (the wire shape) and toItem (its own populating function) both
-// live in internal/cache/types.go and store.go, neither granted to this
-// wave — see this phase's own deviations report. They stay named in
-// crossSurfaceReaders because AC4's own stated verification is that map
-// gaining `show`, not that every member of it is exercised by this
-// particular subtest.
+// inbox/outbox could not carry this projection until epic-backlog B25 closed:
+// cache.Item (the wire shape) and toItem (its own populating function) live
+// in internal/cache/types.go and store.go — the wave that shipped `thread`/
+// `html`/`show` was not granted either file. Both now carry
+// `operational_items` (cache.Item.OperationalItems), populated by toItem from
+// the SAME foldedArtifact.OperationalItems (mirror.go's DeriveOperationalItems
+// output) the other three surfaces already share — one rule, one
+// implementation, five readers.
 
 // writeCrossSurfaceOperationalContract is a schema-faithful, envelope/v2
 // contract writer local to this file — helpers_test.go's own
@@ -670,9 +677,18 @@ func TestCrossSurfaceOperationalItems(t *testing.T) {
 	// undeclared: no x_operational field at all — a producer who said
 	// nothing. Both must be readable, and they must not read the same.
 	undeclaredID := writeCrossSurfaceOperationalContract(t, mirrorDir, "cs-undeclared", "")
+	// nonContract: a decision, addressed axon -> beta, same fixture. Proves
+	// mirror.go's KindContract gate (buildIndex, "computing operational rows
+	// for a question or a decision is noise, not fidelity") reaches inbox/
+	// outbox too, not only thread/html/show — see
+	// non_contract_carries_no_operational_rows below.
+	nonContractID := "XD-axon-cs-nc"
+	writeDecisionArtifactWithThread(t, mirrorDir, nonContractID, e2eFixtureThread, []string{"beta"})
 
 	threadResult := csRunThread(t, mirrorDir)
 	htmlData := csRunHTML(t, mirrorDir)
+	inboxItems := csRunInbox(t, mirrorDir, "beta")
+	outboxItems := csRunOutbox(t, mirrorDir)
 
 	cases := []struct {
 		name string
@@ -730,6 +746,34 @@ func TestCrossSurfaceOperationalItems(t *testing.T) {
 			if showEndpoint.State != c.want {
 				t.Errorf("show: %q endpoint state = %q, want %q", c.id, showEndpoint.State, c.want)
 			}
+
+			// inbox (as beta, the addressee of both fixture contracts) —
+			// epic-backlog B25's own gap: cache.Item carried no field for
+			// this projection until now.
+			inItem, ok := csFindItem(inboxItems, c.id)
+			if !ok {
+				t.Fatalf("inbox (as beta): no item %q", c.id)
+			}
+			inEndpoint, ok := csFindOperationalItem(inItem.OperationalItems, "endpoint")
+			if !ok {
+				t.Fatalf("inbox: %q carries no operational_items entry named endpoint (items = %+v)", c.id, inItem.OperationalItems)
+			}
+			if inEndpoint.State != c.want {
+				t.Errorf("inbox: %q endpoint state = %q, want %q", c.id, inEndpoint.State, c.want)
+			}
+
+			// outbox (as axon, the sender of both fixture contracts).
+			outItem, ok := csFindItem(outboxItems, c.id)
+			if !ok {
+				t.Fatalf("outbox: no item %q", c.id)
+			}
+			outEndpoint, ok := csFindOperationalItem(outItem.OperationalItems, "endpoint")
+			if !ok {
+				t.Fatalf("outbox: %q carries no operational_items entry named endpoint (items = %+v)", c.id, outItem.OperationalItems)
+			}
+			if outEndpoint.State != c.want {
+				t.Errorf("outbox: %q endpoint state = %q, want %q", c.id, outEndpoint.State, c.want)
+			}
 		})
 	}
 
@@ -762,6 +806,95 @@ func TestCrossSurfaceOperationalItems(t *testing.T) {
 		if declaredEndpoint.State == undeclaredEndpoint.State {
 			t.Fatalf("endpoint state collapsed to one rendering: declared=%q undeclared=%q, want them distinct",
 				declaredEndpoint.State, undeclaredEndpoint.State)
+		}
+
+		// The same proof, on the two surfaces this wave (epic-backlog B25)
+		// closes: a reader that only ever saw ONE of the two contracts could
+		// not tell whether it had built a real projection or a hardcoded
+		// constant. inbox/outbox must not collapse the two either.
+		declaredInItem, ok := csFindItem(inboxItems, declaredID)
+		if !ok {
+			t.Fatalf("inbox (as beta): no item %q", declaredID)
+		}
+		undeclaredInItem, ok := csFindItem(inboxItems, undeclaredID)
+		if !ok {
+			t.Fatalf("inbox (as beta): no item %q", undeclaredID)
+		}
+		declaredInEndpoint, ok := csFindOperationalItem(declaredInItem.OperationalItems, "endpoint")
+		if !ok {
+			t.Fatalf("inbox: %q carries no operational_items entry named endpoint", declaredID)
+		}
+		undeclaredInEndpoint, ok := csFindOperationalItem(undeclaredInItem.OperationalItems, "endpoint")
+		if !ok {
+			t.Fatalf("inbox: %q carries no operational_items entry named endpoint", undeclaredID)
+		}
+		if declaredInEndpoint.State == undeclaredInEndpoint.State {
+			t.Fatalf("inbox: endpoint state collapsed to one rendering: declared=%q undeclared=%q, want them distinct",
+				declaredInEndpoint.State, undeclaredInEndpoint.State)
+		}
+
+		declaredOutItem, ok := csFindItem(outboxItems, declaredID)
+		if !ok {
+			t.Fatalf("outbox: no item %q", declaredID)
+		}
+		undeclaredOutItem, ok := csFindItem(outboxItems, undeclaredID)
+		if !ok {
+			t.Fatalf("outbox: no item %q", undeclaredID)
+		}
+		declaredOutEndpoint, ok := csFindOperationalItem(declaredOutItem.OperationalItems, "endpoint")
+		if !ok {
+			t.Fatalf("outbox: %q carries no operational_items entry named endpoint", declaredID)
+		}
+		undeclaredOutEndpoint, ok := csFindOperationalItem(undeclaredOutItem.OperationalItems, "endpoint")
+		if !ok {
+			t.Fatalf("outbox: %q carries no operational_items entry named endpoint", undeclaredID)
+		}
+		if declaredOutEndpoint.State == undeclaredOutEndpoint.State {
+			t.Fatalf("outbox: endpoint state collapsed to one rendering: declared=%q undeclared=%q, want them distinct",
+				declaredOutEndpoint.State, undeclaredOutEndpoint.State)
+		}
+	})
+
+	// mirror.go gates the whole projection on fold.KindContract ("computing
+	// operational rows for a question or a decision is noise, not
+	// fidelity") — proven on thread/html/show already; this closes the same
+	// proof on inbox/outbox, the two surfaces this wave adds.
+	t.Run("non_contract_carries_no_operational_rows", func(t *testing.T) {
+		threadItem, ok := csFindOpenItem(threadResult.OpenItems, nonContractID)
+		if !ok {
+			t.Fatalf("thread: no open_items entry %q", nonContractID)
+		}
+		if len(threadItem.OperationalItems) != 0 {
+			t.Errorf("thread: non-contract %q operational_items = %+v, want none", nonContractID, threadItem.OperationalItems)
+		}
+
+		htmlItem, ok := csFindHTMLOpenItem(htmlData, nonContractID)
+		if !ok {
+			t.Fatalf("html: no threadViews[].open_items entry %q", nonContractID)
+		}
+		if len(htmlItem.OperationalItems) != 0 {
+			t.Errorf("html: non-contract %q operational_items = %+v, want none", nonContractID, htmlItem.OperationalItems)
+		}
+
+		show := csRunShow(t, mirrorDir, nonContractID)
+		if len(show.OperationalItems) != 0 {
+			t.Errorf("show: non-contract %q operational_items = %+v, want none", nonContractID, show.OperationalItems)
+		}
+
+		inItem, ok := csFindItem(inboxItems, nonContractID)
+		if !ok {
+			t.Fatalf("inbox (as beta): no item %q", nonContractID)
+		}
+		if len(inItem.OperationalItems) != 0 {
+			t.Errorf("inbox: non-contract %q operational_items = %+v, want none", nonContractID, inItem.OperationalItems)
+		}
+
+		outItem, ok := csFindItem(outboxItems, nonContractID)
+		if !ok {
+			t.Fatalf("outbox: no item %q", nonContractID)
+		}
+		if len(outItem.OperationalItems) != 0 {
+			t.Errorf("outbox: non-contract %q operational_items = %+v, want none", nonContractID, outItem.OperationalItems)
 		}
 	})
 }

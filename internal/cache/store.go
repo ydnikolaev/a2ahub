@@ -320,6 +320,13 @@ func toItem(fa foldedArtifact, syncStale, pendingMerge bool) Item {
 		Outcome:     fold.OutcomeOf(fa.kind(), fa.Result.State),
 		Terminal:    fold.Terminal(fa.kind(), fa.Result.State),
 		StateSince:  fa.StateSince, StateBy: fa.StateBy, StateEvent: fa.StateEventID,
+		// OperationalItems is spec 05 AC4's per-item x_operational[]
+		// projection (epic-backlog B25) — carried whole from
+		// foldedArtifact.OperationalItems, itself mirror.go's
+		// DeriveOperationalItems output, never re-derived here: nil for
+		// every non-contract artifact, same as cache.OpenItem/
+		// html.ThreadOpenItem already carry it.
+		OperationalItems: fa.OperationalItems,
 	}
 }
 

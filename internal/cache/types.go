@@ -149,6 +149,18 @@ type Item struct {
 	// reasoning, which republishes the ambiguity the relation was built to
 	// remove.
 	Why string `json:"why,omitempty"`
+	// OperationalItems is spec 05 AC4's per-item x_operational[] projection
+	// (mirror.go's foldedArtifact.OperationalItems, itself
+	// DeriveOperationalItems' own output) — carried whole, never re-derived
+	// here, exactly like cache.OpenItem's identically-named field. nil for
+	// every non-contract artifact (mirror.go gates the derivation on
+	// fold.KindContract); for a contract carrying no declaration at all this
+	// is still non-empty — every well-known name reads `undeclared`, never
+	// omitted (P-1: silence is a live state, not an absence of information).
+	// AC4 names `inbox`/`outbox` among the five surfaces that must read
+	// `undeclared` distinctly from `absent`; this field is what closes the
+	// two of the five that could not carry it before (epic-backlog B25).
+	OperationalItems []OperationalItem `json:"operational_items,omitempty"`
 }
 
 // SpaceSyncInfo is the mirror snapshot fact the dashboard needs per connected
