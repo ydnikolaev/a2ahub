@@ -83,6 +83,19 @@ integrations/**
 docs/the-plan/audit-*/**
 docs/the-plan/inbox/**
 
+# Dated conformance measurements sitting beside the plan rather than inside
+# it — `docs/the-plan/conformance-<date>.md`. Same class as the audit records
+# above and ungated for the same reason: the file is a RECORD of what was true
+# on a day, so the only invariant a gate could hold it to is "it still parses",
+# which proves nothing about whether the measurement was honest. What IS gated
+# is everything it cites — the tests it names are resolved by the ordinary Go
+# gates, and the corner-case half of the same question lives in
+# cc-coverage.yaml, where TestCCCoverageAccountsForEveryDeclaredCornerCase does
+# hold it to the plan. If a later measurement becomes an INPUT — a release
+# checklist reading its verdict column, a gate diffing today's answer against
+# it — that is the day it earns a claim, and this entry gets narrowed.
+docs/the-plan/conformance-*.md
+
 # Operator prose. publish-to-public.sh is the exception, claimed by
 # harness-teeth, because it carries its own --teeth self-test.
 docs/runbooks/**
