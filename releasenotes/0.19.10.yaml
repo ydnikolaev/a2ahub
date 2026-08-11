@@ -1108,3 +1108,32 @@ changes:
       why: >
         Nothing to do. The key is additive and omitted for artifacts that are
         not contracts.
+  - id: RN-01910-38
+    kind: fix
+    impact: normal
+    roadmap:
+      visibility: shipped
+      why: >
+        Two refusals that told an operator nothing they could act on, both met
+        within the first hour of using the new authoring flows by hand.
+    subject: "`a2a new --field` reaches a field that only the newer envelope has"
+    detail: >
+      Drafting an artifact and setting one of the newer envelope fields in the
+      same command did not work: `a2a new work_request --field binding=none`
+      and `a2a new contract --field x_binding=none` were both refused with "the
+      envelope/v1 schema has no such key" — even though those fields exist on
+      exactly the generation those types are drafted at. Drafting the artifact
+      and then editing the file by hand was the only route.
+      Both work now. The refusal came from an internal first pass that reads
+      the draft to decide which generation to render; it was applying your
+      overrides to that pass, and judging them against the wrong generation.
+      An override the renderer genuinely cannot apply is still refused, and
+      still refused at the point you gave it.
+      Separately: a binary built from source without a release version stamp
+      could not submit at all, and said only `prepared-floor-stale`. It now
+      names what it saw and how to build a binary that can write.
+    affects: ["a2a new --field", "a2a submit"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. Both were refusals of things that should have worked.
