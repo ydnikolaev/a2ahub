@@ -1137,3 +1137,41 @@ changes:
       scope: none
       why: >
         Nothing to do. Both were refusals of things that should have worked.
+  - id: RN-01910-39
+    kind: feat
+    impact: normal
+    roadmap:
+      visibility: shipped
+      why: >
+        The release's own headline idea was invisible on the surface a person
+        actually looks at. A distinction that only exists in JSON is not a
+        distinction a reader can act on.
+    subject: "The dashboard shows the operational catalogue, per-criterion verdicts, and what a contract refuses"
+    detail: >
+      `a2a html` and `a2a serve` carried several of this release's new facts in
+      their data and painted none of them. The sharpest case was the one this
+      release is named for: a contract's operational catalogue distinguishes an
+      item declared MISSING from one nobody ever mentioned, and on the page
+      those two read identically — which is to say the distinction was not
+      there at all for anyone reading it.
+      Three states now read distinctly, and the page says outright that never
+      mentioned is not the same claim as declared missing: one is a gap you can
+      plan around and ask about, the other is silence.
+      Four more facts arrived with it. The whose-move panel shows why a move is
+      owed, which move it expects, and — where one applies — that the move
+      belongs to a person, so a surface can no longer name a move the tool would
+      then refuse. An `activate` event finally has a name in the timeline
+      instead of falling through as a neutral informational row, in both
+      languages. Verify and close events show their per-criterion verdicts on
+      the artifact page, not only in the thread. Attachments show their content
+      digest. And a contract that declares itself non-adoptable says so on its
+      own card, before `a2a contract adopt` refuses.
+      A test now requires each of these fields to reach the shipped page, so the
+      class of defect behind all of them — a field that is computed, typed,
+      passed along, and read by nothing — cannot merge again unnoticed.
+    affects: ["a2a html", "a2a serve"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. Open the dashboard; the new sections appear wherever the
+        underlying artifact carries them.

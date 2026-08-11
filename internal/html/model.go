@@ -836,6 +836,13 @@ type ArtifactDetailEvent struct {
 	Consistency  *cache.ReceiptMismatch `json:"consistency,omitempty"`
 	At           string                 `json:"at"`
 	Note         string                 `json:"note,omitempty"`
+	// Verdicts carries cache.EventSummary.Verdicts straight through — no
+	// second decode, no html-local re-declaration of the same
+	// {index, verdict, cause_owner} shape (B34, agent-exchange-2026-08),
+	// the same "reuse the cache type directly" idiom TranscriptEvent.Verdicts
+	// above already draws for the thread transcript. Nil on every event that
+	// carries none, the same as at cache's own layer.
+	Verdicts []cache.TranscriptVerdict `json:"verdicts,omitempty"`
 }
 
 // ArtifactDetailRef carries the resolution and digest evidence for one reference.

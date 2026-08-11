@@ -236,6 +236,22 @@
                   </sc-if>
                 </div>
               </sc-if>
+              <!-- verify/close's own per-criterion judgement (event/v2
+                   `verdicts[]`, P6 wave C, threat-model.md T5) — same
+                   VERDICT_LABEL/VERDICT_TONE vocabulary the thread
+                   transcript already renders with (B34,
+                   agent-exchange-2026-08). Rendered only when this event
+                   actually carries entries. -->
+              <sc-if value="{{ e.hasVerdicts }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:var(--space-inline);">
+                  <div style="font-size:14px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:8px;">{{ e.verdictsTitle }}</div>
+                  <div style="display:flex; flex-direction:column; gap:6px;">
+                    <sc-for list="{{ e.verdicts }}" as="v" hint-placeholder-count="1">
+                      <div><dc-import name="StatusPill" text="{{ v.text }}" tone="{{ v.tone }}" size="small" hint-size="240px,24px"></dc-import></div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-if>
             </div>
           </sc-for>
         </div>

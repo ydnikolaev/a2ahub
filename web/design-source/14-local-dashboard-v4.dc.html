@@ -2343,6 +2343,18 @@ function deliveryVerdictText(value, ru) {
   };
   return words[value] || (ru ? "неизвестный вердикт: " + value : "unknown verdict: " + value);
 }
+// verify/close's own per-criterion judgement (P6 wave C, event/v2's
+// `verdicts[]`) — ONE vocabulary, shared by the thread transcript (this
+// file's own `rows` mapping, below) and the artifact-detail event list
+// (`detailFor`'s own `lifecycleEvents`, below), so a criterion does not get
+// two spellings on two surfaces — the drift B34 (agent-exchange-2026-08)
+// exists to close.
+const VERDICT_TONE = { met: "positive", unmet: "negative", not_warranted: "neutral", not_exercised: "caution" };
+function VERDICT_LABEL(ru) {
+  return ru
+    ? { met: "выполнено", unmet: "не выполнено", not_warranted: "не требовалось", not_exercised: "не проверялось" }
+    : { met: "met", unmet: "unmet", not_warranted: "not warranted", not_exercised: "not exercised" };
+}
 const DRIFT_TONE = { current: "healthy", behind: "attention", deprecated: "attention", retired: "neutral", missing: "blockingStrong", dangling: "outline" };
 // What a state MEANS is the domain's answer, carried on every row as
 // `outcome` (open | settled | refused | withdrawn | superseded) and
@@ -3348,6 +3360,17 @@ class Component extends DCLogic {
       const transition = String(ev.transition || "");
       const signal = EVENT_SIGNAL(transition, ru);
       const subjectLabel = transition === "respond" ? "" : (transition === "note" ? (ru ? "заметку" : "a note") : artifactWord);
+      // verify/close's own per-criterion judgement (event/v2 `verdicts[]`,
+      // P6 wave C) — same VERDICT_LABEL/VERDICT_TONE vocabulary the thread
+      // transcript's own `rows` mapping uses (B34, agent-exchange-2026-08):
+      // one spelling of `not_warranted`, not two. cause_owner is always
+      // present on every entry (internal/cli/cmd_lifecycle.go requires it,
+      // including on `met`), so the row can rely on it without a fallback.
+      const verdictLabel = VERDICT_LABEL(ru);
+      const verdicts = (ev.verdicts || []).map(v => ({
+        text: (ru ? "критерий " : "criterion ") + v.index + " · " + (verdictLabel[v.verdict] || v.verdict) + " · " + v.cause_owner,
+        tone: VERDICT_TONE[v.verdict] || "neutral"
+      }));
       return {
         isLifecycle: true,
         isWorkReport: false,
@@ -3358,6 +3381,9 @@ class Component extends DCLogic {
         systemSelf: system === d.self,
         signalTone: signal.tone,
         signalLabel: signal.label,
+        verdicts,
+        hasVerdicts: verdicts.length > 0,
+        verdictsTitle: ru ? "Вердикты по критериям" : "Criteria verdicts",
         sortAt: ev.at || "",
         sortKey: ev.ulid || ""
         // `claimed_state` remains protocol diagnostics. The computed fold
@@ -4898,10 +4924,9 @@ class Component extends DCLogic {
           // its own place to lose data (this file's own wave-21 lesson, about
           // `detailFor`'s hand-picked object literal — this row is the same
           // shape, one function up).
-          const VERDICT_LABEL = { met: ru ? "выполнено" : "met", unmet: ru ? "не выполнено" : "unmet", not_warranted: ru ? "не требовалось" : "not warranted", not_exercised: ru ? "не проверялось" : "not exercised" };
-          const VERDICT_TONE = { met: "positive", unmet: "negative", not_warranted: "neutral", not_exercised: "caution" };
+          const verdictLabel = VERDICT_LABEL(ru);
           const verdicts = (ev.verdicts || []).map(v => ({
-            text: (ru ? "критерий " : "criterion ") + v.index + " · " + (VERDICT_LABEL[v.verdict] || v.verdict) + " · " + v.cause_owner,
+            text: (ru ? "критерий " : "criterion ") + v.index + " · " + (verdictLabel[v.verdict] || v.verdict) + " · " + v.cause_owner,
             tone: VERDICT_TONE[v.verdict] || "neutral"
           }));
           const noteDetail = note ? {

@@ -1229,6 +1229,7 @@ func toArtifactDetail(show cache.ShowResult) (ArtifactDetail, error) {
 			ClaimedState: event.ClaimedState, ActorKind: event.ActorKind, Actor: event.Actor,
 			ActorSystem: event.ActorSystem, ActorModel: event.ActorModel, ActorSession: event.ActorSession,
 			ProducedBy: event.ProducedBy, Consistency: event.Consistency, At: at, Note: event.Note,
+			Verdicts: event.Verdicts,
 		})
 	}
 	refs := make([]ArtifactDetailRef, 0, len(show.Refs))

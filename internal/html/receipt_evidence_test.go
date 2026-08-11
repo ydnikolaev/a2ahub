@@ -103,6 +103,36 @@ func TestThreadViewCarriesVerdicts(t *testing.T) {
 	}
 }
 
+// TestArtifactDetailCarriesVerdicts is B34's own html-layer proof
+// (agent-exchange-2026-08 wave 37b): cache.EventSummary.Verdicts must reach
+// html.ArtifactDetailEvent.Verdicts through toArtifactDetail — the same
+// cache-type-straight-through idiom TestThreadViewCarriesVerdicts already
+// proves for the thread transcript half, now proven for the artifact-detail
+// panel that wave 36 left with a source but no field.
+func TestArtifactDetailCarriesVerdicts(t *testing.T) {
+	t.Parallel()
+	detail, err := toArtifactDetail(cache.ShowResult{
+		ID: "XW-verdicts", Type: "work_request", Events: []cache.EventSummary{{
+			ULID: "01", Subject: "XW-verdicts", Transition: "close", Actor: "axon-bot", ActorSystem: "axon",
+			Verdicts: []cache.TranscriptVerdict{
+				{Index: 0, Verdict: "met", CauseOwner: "axon"},
+				{Index: 1, Verdict: "unmet", CauseOwner: "seomatrix"},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("toArtifactDetail: %v", err)
+	}
+	want := []cache.TranscriptVerdict{
+		{Index: 0, Verdict: "met", CauseOwner: "axon"},
+		{Index: 1, Verdict: "unmet", CauseOwner: "seomatrix"},
+	}
+	got := detail.Events[0].Verdicts
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("detail.Events[0].Verdicts = %+v, want %+v", got, want)
+	}
+}
+
 func TestReceiptEvidenceHTMLJSONOmitsAbsentOptionalFields(t *testing.T) {
 	t.Parallel()
 	detail, err := toArtifactDetail(cache.ShowResult{
@@ -118,7 +148,7 @@ func TestReceiptEvidenceHTMLJSONOmitsAbsentOptionalFields(t *testing.T) {
 		t.Fatalf("Marshal: %v", err)
 	}
 	got := string(raw)
-	for _, absent := range []string{"claimed_state", "actor_kind", "actor_model", "actor_session", "produced_by", "consistency"} {
+	for _, absent := range []string{"claimed_state", "actor_kind", "actor_model", "actor_session", "produced_by", "consistency", "verdicts"} {
 		if strings.Contains(got, `"`+absent+`"`) {
 			t.Fatalf("absent field %q emitted in %s", absent, got)
 		}
