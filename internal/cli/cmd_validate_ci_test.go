@@ -831,6 +831,124 @@ func TestValidateCI_FullRepoEmpty(t *testing.T) {
 	ciManifestChecked(t, rep)
 }
 
+// --- CC-024/CC-025 (supersession graph, §3.8): the two corner cases the
+// full-repo scan collects from every committed `supersede` event and
+// checks exactly once against validate.CheckSupersessionGraph ---
+
+// TestValidateCI_FullRepoSupersessionForkRed is CC-024: two successors
+// (two separately-committed supersede events) both claim the same
+// predecessor. v3-full-repo must red, naming REF-020.
+func TestValidateCI_FullRepoSupersessionForkRed(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	const (
+		predecessor = "XW-axon-20260731-aaaa"
+		successor1  = "XW-axon-20260801-bbbb"
+		successor2  = "XW-axon-20260801-cccc"
+	)
+	root := ciRepo(t, ciSpaceYAML, map[string]string{
+		"axon/events/2026/01J40A7M9P1S3V5W7Y9A1C3E60.yaml": ciLifecycleEvent(
+			"01J40A7M9P1S3V5W7Y9A1C3E60", predecessor, "supersede", "axon", "", successor1),
+		"axon/events/2026/01J40A7M9P1S3V5W7Y9A1C3E61.yaml": ciLifecycleEvent(
+			"01J40A7M9P1S3V5W7Y9A1C3E61", predecessor, "supersede", "axon", "", successor2),
+	})
+
+	code, rep, errOut := runCI(t, engine, root, nil, "v3-full-repo", "", "")
+	if code == 0 || rep.Valid {
+		t.Fatalf("a supersession fork merged clean: code=%d report=%+v stderr=%s", code, rep, errOut)
+	}
+	if !ciReportHasViolation(rep, "<supersession-graph>", "REF-020") {
+		t.Fatalf("fork did not produce REF-020: %+v", rep)
+	}
+}
+
+// TestValidateCI_FullRepoSupersessionCycleRed is CC-025: two supersede
+// events whose predecessor/successor pairs close a loop. v3-full-repo must
+// red, naming REF-021.
+func TestValidateCI_FullRepoSupersessionCycleRed(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	const (
+		nodeA = "XW-axon-20260731-aaaa"
+		nodeB = "XW-axon-20260801-bbbb"
+	)
+	root := ciRepo(t, ciSpaceYAML, map[string]string{
+		"axon/events/2026/01J40A7M9P1S3V5W7Y9A1C3E62.yaml": ciLifecycleEvent(
+			"01J40A7M9P1S3V5W7Y9A1C3E62", nodeA, "supersede", "axon", "", nodeB),
+		"axon/events/2026/01J40A7M9P1S3V5W7Y9A1C3E63.yaml": ciLifecycleEvent(
+			"01J40A7M9P1S3V5W7Y9A1C3E63", nodeB, "supersede", "axon", "", nodeA),
+	})
+
+	code, rep, errOut := runCI(t, engine, root, nil, "v3-full-repo", "", "")
+	if code == 0 || rep.Valid {
+		t.Fatalf("a supersession cycle merged clean: code=%d report=%+v stderr=%s", code, rep, errOut)
+	}
+	if !ciReportHasViolation(rep, "<supersession-graph>", "REF-021") {
+		t.Fatalf("cycle did not produce REF-021: %+v", rep)
+	}
+}
+
+// TestValidateCI_FullRepoSupersessionLinearChainClean is the corresponding
+// green: a genuine chain of supersede events (never forking, never
+// cycling) must never trip either code.
+func TestValidateCI_FullRepoSupersessionLinearChainClean(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	const (
+		oldest = "XW-axon-20260701-aaaa"
+		middle = "XW-axon-20260731-bbbb"
+		newest = "XW-axon-20260801-cccc"
+	)
+	root := ciRepo(t, ciSpaceYAML, map[string]string{
+		"axon/events/2026/01J40A7M9P1S3V5W7Y9A1C3E70.yaml": ciLifecycleEvent(
+			"01J40A7M9P1S3V5W7Y9A1C3E70", oldest, "supersede", "axon", "", middle),
+		"axon/events/2026/01J40A7M9P1S3V5W7Y9A1C3E71.yaml": ciLifecycleEvent(
+			"01J40A7M9P1S3V5W7Y9A1C3E71", middle, "supersede", "axon", "", newest),
+	})
+
+	code, rep, errOut := runCI(t, engine, root, nil, "v3-full-repo", "", "")
+	if code != 0 || !rep.Valid {
+		t.Fatalf("a clean linear supersession chain was reddened: code=%d report=%+v stderr=%s", code, rep, errOut)
+	}
+	if ciReportHasViolation(rep, "<supersession-graph>", "REF-020") || ciReportHasViolation(rep, "<supersession-graph>", "REF-021") {
+		t.Fatalf("a linear chain must never trip the fork or cycle code: %+v", rep)
+	}
+}
+
+// TestValidateCI_PRDoesNotRunSupersessionGraph proves v3-pr never builds or
+// checks the supersession graph: a PR diff carries only a partial slice of
+// the repo's supersede events, so running this check there could report a
+// fork that does not exist repo-wide. The fixture shapes a REAL fork
+// (base commits one supersede event, the PR candidate adds a second
+// successor claiming the same predecessor) and asserts REF-020 never
+// appears — regardless of what the lifecycle-legality check itself does
+// with a second supersede over an already-superseded subject, which is not
+// this test's concern.
+func TestValidateCI_PRDoesNotRunSupersessionGraph(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	const (
+		predecessor = "XW-axon-20260731-aaaa"
+		successor1  = "XW-axon-20260801-bbbb"
+		successor2  = "XW-axon-20260801-cccc"
+		rel1        = "axon/events/2026/01J40A7M9P1S3V5W7Y9A1C3E64.yaml"
+		rel2        = "axon/events/2026/01J40A7M9P1S3V5W7Y9A1C3E65.yaml"
+	)
+	root, base := ciLifecycleCandidateRepo(t, map[string]string{
+		rel1: ciLifecycleEvent("01J40A7M9P1S3V5W7Y9A1C3E64", predecessor, "supersede", "axon", "", successor1),
+	}, rel2, ciLifecycleEvent("01J40A7M9P1S3V5W7Y9A1C3E65", predecessor, "supersede", "axon", "", successor2))
+
+	_, rep, _ := runCI(t, engine, root, fakeGit(rel2), "v3-pr", base, "ydnikolaev")
+	if ciReportHasViolation(rep, "<supersession-graph>", "REF-020") {
+		t.Fatalf("v3-pr ran the supersession graph check, which it must never do: %+v", rep)
+	}
+	for _, a := range rep.Artifacts {
+		if a.Path == "<supersession-graph>" {
+			t.Fatalf("v3-pr must never emit a supersession-graph report entry at all: %+v", rep)
+		}
+	}
+}
+
 // TestWalkArtifactsExcludesDataPackagePayload is a direct, unit-level red
 // receipt for walkArtifacts' own exclusion (AC8, spec 04 §11): a package's
 // README.md must never appear in walkArtifacts' own returned slice, and a

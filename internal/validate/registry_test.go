@@ -125,6 +125,19 @@ func TestRegistryClosure(t *testing.T) {
 	}))
 	// REF-012: supersession crosses threads (warning).
 	record(checkSupersedeThreadContinuity("thread:axon-20260731-aaaa", "thread:axon-20260731-bbbb"))
+	// REF-020/REF-021 (CC-024/CC-025): the supersession graph check, exercised
+	// directly against its own pure input rather than through a caller — see
+	// CheckSupersessionGraph's doc comment for why this is a V3-only,
+	// full-repo-collected check with no per-artifact call site in this
+	// package. One fork and one cycle input, each producing its own code.
+	record(CheckSupersessionGraph([]SupersedeLink{
+		{Successor: "XW-axon-20260801-bbbb", Predecessor: "XW-axon-20260731-aaaa"},
+		{Successor: "XW-axon-20260801-zzzz", Predecessor: "XW-axon-20260731-aaaa"},
+	}))
+	record(CheckSupersessionGraph([]SupersedeLink{
+		{Successor: "XW-axon-20260801-cccc", Predecessor: "XW-axon-20260731-dddd"},
+		{Successor: "XW-axon-20260731-dddd", Predecessor: "XW-axon-20260801-cccc"},
+	}))
 	// REF-011 is emitted by the V3 base-to-head adapter in internal/cli. The
 	// repository-wide error-history gate verifies that literal emitter against
 	// this registry; mark the cross-package owner here without importing cli.

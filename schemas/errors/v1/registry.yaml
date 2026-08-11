@@ -173,6 +173,16 @@ entries:
     title: A verdicts[] index does not resolve to an entry in the parent's acceptance_criteria
     applies_to: event/v2 verify/close `verdicts[].index`, validated against the event's subject's declared acceptance_criteria — REF-018's own rule extended from a response's `unmet[]` to a verifier's `verdicts[]` (agent-exchange-2026-08/P6 wave C, AC7, threat-model.md T5)
 
+  - code: REF-020
+    class: referential
+    title: A supersession predecessor is claimed by more than one successor
+    applies_to: internal/validate.CheckSupersessionGraph — the full-repo supersede-event graph (§3.8 "supersession chains MUST be linear", CC-024); V3 full-repo scan only, never V3-pr (a PR diff cannot see the whole graph)
+
+  - code: REF-021
+    class: referential
+    title: A supersession chain closes back on itself
+    applies_to: internal/validate.CheckSupersessionGraph — the full-repo supersede-event graph, including the degenerate self-supersede 1-node case (§3.8, CC-025); V3 full-repo scan only, never V3-pr
+
   - code: LFC-001
     class: lifecycle
     title: Event encodes an illegal transition for the subject's current folded state

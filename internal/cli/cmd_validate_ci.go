@@ -34,6 +34,7 @@ import (
 	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
 	"github.com/ydnikolaev/a2ahub/internal/workcheckpoint"
@@ -276,6 +277,13 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 		changedEventPaths[filepath.ToSlash(relPath)] = true
 	}
 	var lifecycleCandidates []ciLifecycleCandidate
+	// supersedeLinks collects CC-024/CC-025's own graph input — every
+	// supersede event's {successor, predecessor} pair — but ONLY in
+	// v3-full-repo mode. See the CheckSupersessionGraph call below (after
+	// this loop) for why v3-pr must never build or check this graph: a PR
+	// diff carries a partial event set, and a partial supersession graph
+	// would report a fork or cycle that does not exist repo-wide.
+	var supersedeLinks []validate.SupersedeLink
 	for _, relPath := range events {
 		rep, ok := validateCIEvent(engine, resolver, root, relPath, manifest.MinBinaryVersion)
 		if rep == nil {
@@ -285,6 +293,37 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 		if !ok {
 			report.Valid = false
 			continue
+		}
+		if mode == "v3-full-repo" {
+			raw, err := readBoundedFile(filepath.Join(root, relPath), maxMirrorEventBytes)
+			if err != nil {
+				report.Artifacts[len(report.Artifacts)-1] = validateReport{Path: relPath, Error: err.Error()}
+				report.Valid = false
+				continue
+			}
+			var event lifecycleEventDoc
+			if err := yaml.Unmarshal(raw, &event); err != nil {
+				report.Artifacts[len(report.Artifacts)-1] = validateReport{Path: relPath, Error: err.Error()}
+				report.Valid = false
+				continue
+			}
+			// Only a `supersede` transition carries a supersession link.
+			// event.Event is the event's OWN ULID (schemas/event/v1's
+			// `event` field), not the verb — the verb is `transition`
+			// (fold.TSupersede) — so matching on Event would match
+			// nothing and silently produce an empty graph forever.
+			if event.Transition == fold.TSupersede {
+				for _, ref := range event.Refs {
+					successor := supersedeBareID(ref.Ref)
+					if successor == "" {
+						continue
+					}
+					supersedeLinks = append(supersedeLinks, validate.SupersedeLink{
+						Successor:   successor,
+						Predecessor: supersedeBareID(event.Subject),
+					})
+				}
+			}
 		}
 		if mode == "v3-pr" {
 			raw, err := readBoundedFile(filepath.Join(root, relPath), maxMirrorEventBytes)
@@ -302,6 +341,28 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 			lifecycleCandidates = append(lifecycleCandidates, ciLifecycleCandidate{
 				path: relPath, event: event, report: len(report.Artifacts) - 1,
 			})
+		}
+	}
+	// CC-024/CC-025 (spec 03 §3.8, plan 12): the supersession graph check
+	// runs ONCE, over the whole repo's supersede-event links, and ONLY in
+	// v3-full-repo. Deliberately not run in v3-pr: a PR's changed-event set
+	// is a partial slice of the repo's supersede events, so evaluating the
+	// graph from it could report a fork or a cycle neither of which exists
+	// once the whole graph is considered — worse than not checking at all,
+	// because it would refuse a legal PR. The full-repo scan is exactly
+	// this check's own scope, same as validateCIManifest's own
+	// mode=="v3-full-repo" gate a few lines below.
+	if mode == "v3-full-repo" {
+		if violations := validate.CheckSupersessionGraph(supersedeLinks); len(violations) > 0 {
+			report.Artifacts = append(report.Artifacts, validateReport{
+				Path: "<supersession-graph>",
+				Result: &validate.Result{
+					Valid:           false,
+					InvocationPoint: validate.V3,
+					Violations:      violations,
+				},
+			})
+			report.Valid = false
 		}
 	}
 	if len(lifecycleCandidates) > 0 {
@@ -677,6 +738,28 @@ func validateCIConsumes(engine *validate.Engine, root, relPath string) (*validat
 // consumes.yaml, a docs/ file) is not an event.
 func isEventDocument(p string) bool {
 	return strings.Contains(p, "/events/") && strings.HasSuffix(p, ".yaml")
+}
+
+// supersedeBareID strips a ref's optional `@version` and/or `#digest` pin
+// (envelope/v1 §5.7's own ref grammar; internal/validate's parseRef is the
+// package-private twin of this logic) down to the bare artifact id.
+// validate.CheckSupersessionGraph compares SupersedeLink ids by exact
+// string equality, so a supersede event's `subject` (always bare in
+// practice — see cmd_lifecycle.go's supersede row, which writes `id`
+// straight from the batch's own positional argument) and its `refs[].ref`
+// (free text, since supersede's own --refs flag applies no grammar of its
+// own beyond RequireRefs) must both be normalized here before either one
+// becomes a graph node — an unpinned subject and a pinned ref naming the
+// same artifact must land on the same node, or a real fork/cycle silently
+// splits into two disconnected, clean-looking edges.
+func supersedeBareID(ref string) string {
+	if i := strings.IndexByte(ref, '#'); i >= 0 {
+		ref = ref[:i]
+	}
+	if i := strings.IndexByte(ref, '@'); i >= 0 {
+		ref = ref[:i]
+	}
+	return ref
 }
 
 // validateCIEvent validates one changed event: its event/v1 schema, and — once
