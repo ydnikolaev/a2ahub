@@ -127,3 +127,83 @@ func TestBlockedOwnerFallsBackWithoutABlockedByFact(t *testing.T) {
 		t.Fatalf("verdict.Expected = %q, want %q", verdict.Expected, fold.TUnblock)
 	}
 }
+
+// TestBlockedOwnerRefusesABystanderCandidate is README AC3's own gate:
+// resolveBlockedByOwner (mirror.go) must check the candidate against
+// fold.CheckLegality before naming it, and a blocked artifact must never
+// surface an owner who has no legal move on the PARENT envelope.
+// "thirdwheel" is a real space member — MembershipMember, so a nil/absent
+// membership status could not explain a refusal on its own — but is
+// neither the parent's `from` (axon) nor any of its `to` (seomatrix), so
+// RoleEitherParty's floor (notePermitted's own predicate, fold.go) refuses
+// it exactly the way a genuine bystander's `note` is refused (fold.go
+// :369-375's own worked example). resolveVerdict's fallback then behaves
+// exactly as TestBlockedOwnerFallsBackWithoutABlockedByFact's no-fact case
+// — the target is still owed the unblock, because the named blocker was
+// never a legally-possible one.
+func TestBlockedOwnerRefusesABystanderCandidate(t *testing.T) {
+	t.Parallel()
+	fx := newFixtureSpace(t,
+		fixtureParticipant{System: "axon"},
+		fixtureParticipant{System: "seomatrix"},
+		fixtureParticipant{System: "thirdwheel"},
+	)
+
+	base := time.Date(2026, 8, 1, 9, 0, 0, 0, time.UTC)
+	fx.commitArtifact("axon/exchanges/XW-axon-20260801-blk3.md", map[string]any{
+		"schema": "envelope/v1", "id": "XW-axon-20260801-blk3", "type": "work_request",
+		"title": "seo matrix rework 3", "space": "fixture-space", "from": "axon",
+		"to": []string{"seomatrix"}, "actor": map[string]any{"kind": "agent", "name": "axon-bot"},
+		"created": fxAt(base), "priority": "p2", "blocking": false, "classification": "internal",
+	}, "body")
+	fx.commitEvent("axon", fxULID(40), map[string]any{
+		"subject": "XW-axon-20260801-blk3", "transition": "submit",
+		"actor": map[string]any{"kind": "agent", "name": "axon-bot", "system": "axon"}, "at": fxAt(base),
+	})
+	fx.commitEvent("seomatrix", fxULID(41), map[string]any{
+		"subject": "XW-axon-20260801-blk3", "transition": "acknowledge",
+		"actor": map[string]any{"kind": "agent", "name": "seo-bot", "system": "seomatrix"}, "at": fxAt(base.Add(time.Hour)),
+	})
+	fx.commitEvent("seomatrix", fxULID(42), map[string]any{
+		"subject": "XW-axon-20260801-blk3", "transition": "block",
+		"actor": map[string]any{"kind": "agent", "name": "seo-bot", "system": "seomatrix"}, "at": fxAt(base.Add(2 * time.Hour)),
+	})
+
+	// seomatrix's own facts name "thirdwheel" as the blocker, but
+	// thirdwheel is neither party to XW-axon-20260801-blk3 — a bystander
+	// CheckLegality's RoleEitherParty floor refuses.
+	fx.commitArtifact("seomatrix/exchanges/XS-seomatrix-20260801-blk3.md", map[string]any{
+		"schema": "envelope/v2", "id": "XS-seomatrix-20260801-blk3", "type": "response",
+		"title": "why this is blocked", "space": "fixture-space", "from": "seomatrix",
+		"to": []string{"axon"}, "parent": "XW-axon-20260801-blk3", "result": "partial",
+		"blocked_by": map[string]any{"reason_code": "other", "owner": "thirdwheel", "needs": "decision"},
+		"actor":      map[string]any{"kind": "agent", "name": "seo-bot"}, "created": fxAt(base.Add(3 * time.Hour)),
+		"priority": "p2", "blocking": false, "classification": "internal",
+	}, "resp body")
+
+	idx, _, err := buildIndex(context.Background(), "sp1", fx.dir, "seomatrix", mustManifest(t, fx))
+	if err != nil {
+		t.Fatalf("buildIndex: %v", err)
+	}
+
+	fa := findArtifact(t, idx, "XW-axon-20260801-blk3")
+	if fa.Result.State != fold.StateBlocked {
+		t.Fatalf("state = %q, want blocked", fa.Result.State)
+	}
+	if fa.BlockedByOwner != "" {
+		t.Errorf("BlockedByOwner = %q, want \"\" — thirdwheel has no legal move on XW-axon-20260801-blk3 (neither from nor to), so CheckLegality must refuse it", fa.BlockedByOwner)
+	}
+
+	verdict := resolveVerdict(fa, "seomatrix", mustManifest(t, fx), "")
+	if len(verdict.Owners) != 1 || verdict.Owners[0] != "seomatrix" {
+		t.Errorf("verdict.Owners = %v, want [seomatrix] — falls back to the target-owed unblock exactly as the no-fact case does, since the named owner was never legally possible", verdict.Owners)
+	}
+	if verdict.Expected != fold.TUnblock {
+		t.Errorf("verdict.Expected = %q, want %q", verdict.Expected, fold.TUnblock)
+	}
+	for _, owner := range verdict.Owners {
+		if owner == "thirdwheel" {
+			t.Errorf("verdict.Owners leaks the refused bystander candidate: %v", verdict.Owners)
+		}
+	}
+}
