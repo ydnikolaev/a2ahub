@@ -1081,3 +1081,30 @@ changes:
       why: >
         Nothing to do. The flag is optional and a close without it records an
         empty verdict list.
+  - id: RN-01910-37
+    kind: feat
+    impact: normal
+    roadmap:
+      visibility: shipped
+      why: >
+        "Nobody has said whether this works" and "somebody said it does not
+        work" are different situations for a consumer, and until now only some
+        surfaces could tell them apart.
+    subject: "`a2a inbox` and `a2a outbox` show a contract's operational readiness"
+    detail: >
+      A contract can declare the operational items an integration needs — an
+      endpoint, a credential channel, a registration — each marked ready or
+      absent. Leaving an item out is meaningful too: it means nobody has said
+      anything about it, which is not the same as saying it is missing.
+      `a2a inbox --json` and `a2a outbox --json` now carry that per-item
+      readiness for contracts, as `operational_items`, alongside the artifact
+      page and thread view that already showed it. All five read the same
+      derived answer, so no surface can disagree with another about what a
+      contract has declared.
+      Only contracts carry these rows; other artifact kinds are unaffected.
+    affects: ["a2a inbox --json", "a2a outbox --json"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. The key is additive and omitted for artifacts that are
+        not contracts.
