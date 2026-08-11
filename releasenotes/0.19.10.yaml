@@ -1054,3 +1054,30 @@ changes:
         If a draft is refused, the body is declaring something the schema has a
         real field for — move it into the frontmatter. A body that refers to a
         field name in ordinary prose is unaffected.
+  - id: RN-01910-36
+    kind: feat
+    impact: normal
+    roadmap:
+      visibility: shipped
+      why: >
+        Closing an artifact one way and closing it another way produced
+        different records of the same act. A protocol whose answer depends on
+        which command you reached for is not yet a protocol.
+    subject: "`a2a close` records per-criterion verdicts, like the close inside `a2a verify`"
+    detail: >
+      Verifying a response can close its parent in the same pull request, and
+      that close records a verdict for each acceptance criterion. Closing the
+      same artifact directly with `a2a close` did not — it wrote the older
+      event shape with no verdicts at all. One act, two records, depending on
+      the route.
+      `a2a close` now takes the same repeatable
+      `--verdict <index>:<verdict>:<cause_owner>` flag and writes the same
+      event shape, once your space's floor allows it; below that floor it
+      records exactly as before. No other lifecycle verb gained the flag —
+      passing it to one is refused.
+    affects: ["a2a close", "a2a close --verdict"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. The flag is optional and a close without it records an
+        empty verdict list.
