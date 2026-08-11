@@ -1480,7 +1480,14 @@ func (c *ContractCommand) runActivate(ctx context.Context, args []string, stdio 
 
 	_, probe, _, _, err := contractReadDescriptor(c.deps.mirrorDir, id)
 	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "contract activate: %v\n", err)
+		// Name the CONDITION, not the file that happened to be missing.
+		// contractReadDescriptor's own error is a raw open() failure carrying
+		// an absolute cache path, which tells an operator nothing they can
+		// act on — and `runAdopt` two hundred lines up already says this
+		// well for the identical condition ("run `a2a sync` first"). Found
+		// 2026-08-11 by running the verb against an unsynced mirror.
+		_, _ = fmt.Fprintf(stdio.Stderr,
+			"contract activate: cannot read %s from the local mirror — run `a2a sync` first, or check the contract has been published: %v\n", id, err)
 		return 1
 	}
 
