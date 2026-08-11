@@ -20,6 +20,18 @@ import (
 
 const preparedVersion = 1
 
+// devBuildVersion is the version stamp `go build` leaves when the release
+// ldflags are absent (.goreleaser.yaml stamps -X main.version at release; a
+// plain build does not). Named rather than inlined because the refusal below
+// branches on it to offer a remedy.
+//
+// It is a FOURTH copy of this literal, not a shared definition, and that is
+// worth saying rather than hiding: `cmd/a2a/notifications_platform.go` already
+// compares against "dev" in three places, and ADR-001 forbids internal/space
+// importing cmd/a2a, so there is no home both can read today. If a fifth
+// appears, that is the moment to give the version package a `IsDevBuild`.
+const devBuildVersion = "dev"
+
 var (
 	// ErrPreparedInvalid is part of the public package API.
 	ErrPreparedInvalid = errors.New("space: prepared submission is invalid")
@@ -444,7 +456,8 @@ func validatePreparedRequest(candidate SubmitRequest, preparation PreparationCon
 	}
 	if candidate.MinBinaryVersion != "" && preparation.ObservedSpaceFloor != "" &&
 		candidate.MinBinaryVersion != preparation.ObservedSpaceFloor {
-		return "", ErrPreparedFloorStale
+		return "", fmt.Errorf("%w: this write was prepared against space floor %s and the space now declares %s; re-run the command to prepare against the current floor",
+			ErrPreparedFloorStale, preparation.ObservedSpaceFloor, candidate.MinBinaryVersion)
 	}
 	for _, mutation := range mutations {
 		if !sectionOK(candidate.System, mutation.Path) &&
@@ -471,16 +484,31 @@ func validatePreparedRequest(candidate SubmitRequest, preparation PreparationCon
 }
 
 func validatePreparationFloors(binaryVersion string, preparation PreparationContext) error {
-	for _, floor := range []string{
-		preparation.ObservedSpaceFloor, preparation.FeatureFloor, preparation.SchemaFloor,
-		preparation.ProfileFloor, preparation.ProducerCompatibility,
+	for name, floor := range map[string]string{
+		"the space's own min_binary_version": preparation.ObservedSpaceFloor,
+		"a feature floor":                    preparation.FeatureFloor,
+		"a schema floor":                     preparation.SchemaFloor,
+		"a publication-profile floor":        preparation.ProfileFloor,
+		"a producer-compatibility floor":     preparation.ProducerCompatibility,
 	} {
 		if floor == "" {
 			continue
 		}
 		canonical, err := version.Canonical(floor)
 		if err != nil || canonical != floor {
-			return ErrPreparedFloorStale
+			// The remedy is named here rather than in a separate
+			// binary-version guard, because a DEVELOPMENT BUILD reaches this
+			// loop through the producer-compatibility floor — observed, not
+			// assumed: `go build ./cmd/a2a` stamps "dev", that string becomes
+			// the producer compatibility, and this branch fires first. A
+			// separate guard on binaryVersion would be unreachable in the case
+			// it was written for, which is the defect this epic is about.
+			hint := ""
+			if floor == devBuildVersion {
+				hint = "; this is a DEVELOPMENT BUILD — stamp it to write from source: go build -ldflags \"-X main.version=<version>\" ./cmd/a2a"
+			}
+			return fmt.Errorf("%w: %s is %q, which is not a canonical MAJOR.MINOR.PATCH version, so a floor comparison against it cannot be trusted and the write is refused rather than guessed%s",
+				ErrPreparedFloorStale, name, floor, hint)
 		}
 	}
 	if preparation.ObservedSpaceFloor != "" {
@@ -504,25 +532,36 @@ func verifyPreparedFloor(current string, data preparedSubmissionData) error {
 		if data.observedSpaceFloor == "" && data.featureFloor == "" && data.schemaFloor == "" && data.profileFloor == "" {
 			return nil
 		}
-		return ErrPreparedFloorStale
+		return fmt.Errorf("%w: the prepared write records floors (space %q, feature %q, schema %q, profile %q) but observed no current floor to compare them against; the space manifest was unreadable when this ran",
+			ErrPreparedFloorStale, data.observedSpaceFloor, data.featureFloor, data.schemaFloor, data.profileFloor)
 	}
 	canonical, err := version.Canonical(current)
 	if err != nil || canonical != current {
-		return ErrPreparedFloorStale
+		return fmt.Errorf("%w: the current floor is %q, which is not a canonical MAJOR.MINOR.PATCH version", ErrPreparedFloorStale, current)
 	}
-	for _, required := range []string{data.featureFloor, data.schemaFloor, data.profileFloor} {
+	for name, required := range map[string]string{
+		"feature": data.featureFloor, "schema": data.schemaFloor, "publication-profile": data.profileFloor,
+	} {
 		if required == "" {
 			continue
 		}
 		older, err := versionOlderThan(current, required)
-		if err != nil || older {
-			return ErrPreparedFloorStale
+		if err != nil {
+			return fmt.Errorf("%w: the %s floor %q cannot be compared against the current floor %q", ErrPreparedFloorStale, name, required, current)
+		}
+		if older {
+			return fmt.Errorf("%w: this write needs %s floor %s and the space is at %s; raise the space's min_binary_version before writing",
+				ErrPreparedFloorStale, name, required, current)
 		}
 	}
 	if data.producerCompatibility != "" {
 		compatibilityOlder, err := versionOlderThan(data.producerCompatibility, current)
-		if err != nil || compatibilityOlder {
-			return ErrPreparedFloorStale
+		if err != nil {
+			return fmt.Errorf("%w: the producer-compatibility floor %q cannot be compared against the current floor %q", ErrPreparedFloorStale, data.producerCompatibility, current)
+		}
+		if compatibilityOlder {
+			return fmt.Errorf("%w: the producer declares compatibility %s, which is older than the space's floor %s",
+				ErrPreparedFloorStale, data.producerCompatibility, current)
 		}
 	}
 	return nil

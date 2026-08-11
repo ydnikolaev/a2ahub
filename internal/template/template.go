@@ -1,6 +1,7 @@
 package template
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -318,9 +319,47 @@ func Render(in Input) ([]byte, error) {
 // still make one identical decision.
 func RenderNew(in Input, isJSONSchema func(string) bool) ([]byte, error) {
 	in.EnvelopeSchema = ""
+	var unappliableAtV1 error
 	draft, err := Render(in)
 	if err != nil {
-		return draft, err
+		// The first pass exists ONLY to read the draft's own schema_format so
+		// selectGeneration can sniff it. A caller field that cannot be applied
+		// at v1 must not fail the whole render here, because the generation
+		// this is about to choose may be exactly the one that HAS the field —
+		// and for `work_request` it always is.
+		//
+		// Found 2026-08-11 by driving the verb by hand, and it had made two
+		// shipped claims false. `--field binding=none` on a work_request and
+		// `--field x_binding=none` on a contract BOTH failed with "the
+		// envelope/v1 schema for <type> has no <field> key", although both
+		// fields exist on the v2 schema those types render. fill-classes.yaml
+		// and specs/04 §11 each state that `--field <field>=none` "is a real,
+		// valid authoring act" — measured through the reachability gate, which
+		// calls Render with the generation ALREADY set and therefore never
+		// walks this path. A gate proving something the product does not do is
+		// the defect this epic exists to remove, and it was in the epic's own
+		// evidence.
+		//
+		// Re-sniff from the template's own default instead. Overrides still
+		// decide the generation whenever they CAN be applied at v1, which is
+		// every pre-existing case; only the previously-fatal case changes.
+		if !errors.Is(err, ErrUnappliableField) {
+			return draft, err
+		}
+		// Remember the refusal. If the generation selected below turns out to
+		// be v1 after all, the field was genuinely unappliable to what this
+		// type authors and this error is the answer — returning the
+		// fieldless sniff draft instead would DROP the override silently,
+		// which is the defect testdata/t3/new_validate.txtar exists to
+		// forbid: "a --field override the renderer cannot apply is refused
+		// where it is GIVEN, never dropped." That test caught this exact
+		// regression on the first attempt at this fix.
+		unappliableAtV1 = err
+		sniff := in
+		sniff.Fields = nil
+		if draft, err = Render(sniff); err != nil {
+			return draft, err
+		}
 	}
 	generation, gerr := selectGeneration(in.Type, func() (string, error) {
 		return ContractDraftSchemaFormat(draft)
@@ -329,6 +368,9 @@ func RenderNew(in Input, isJSONSchema func(string) bool) ([]byte, error) {
 		return nil, gerr
 	}
 	if generation == "envelope/v1" {
+		if unappliableAtV1 != nil {
+			return nil, unappliableAtV1
+		}
 		return draft, nil
 	}
 	in.EnvelopeSchema = generation

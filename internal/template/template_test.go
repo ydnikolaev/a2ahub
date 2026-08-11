@@ -946,3 +946,83 @@ func idFor(typ string) string {
 	}
 	return ""
 }
+
+// TestRenderNewAcceptsAFieldOnlyTheSelectedGenerationHas is the gate the
+// reachability suite could not be: it drives RenderNew — the function
+// `a2a new` actually calls — rather than Render with a generation already
+// chosen.
+//
+// The distinction is not academic. RenderNew's FIRST pass renders v1 in order
+// to sniff `schema_format`, and it used to apply the caller's --field
+// overrides to that pass. A field that exists only on the v2 schema therefore
+// failed with "the envelope/v1 schema for <type> has no <field> key" — before
+// the generation was even decided, and even for `work_request`, which is
+// unconditionally v2.
+//
+// Two shipped documents asserted the opposite. fill-classes.yaml's header and
+// specs/04 §11 both state that `--field binding=none` "is a real, valid
+// authoring act", measured against
+// internal/schema/fillclasses_reachability_test.go — which calls Render with
+// EnvelopeSchema already set and so never walks the path the product walks.
+// A gate proving something the product does not do is the defect this epic
+// exists to remove, and it was sitting in the epic's own evidence. Found by
+// running the verb by hand on 2026-08-11.
+func TestRenderNewAcceptsAFieldOnlyTheSelectedGenerationHas(t *testing.T) {
+	t.Parallel()
+
+	isJSONSchema := func(format string) bool { return format == "json-schema-2020-12" }
+
+	for _, tc := range []struct {
+		typ, field, want string
+	}{
+		// Unconditionally v2, so the sniff pass is pure overhead — and it was
+		// the thing failing.
+		{typ: "work_request", field: "binding", want: "envelope/v2"},
+		// Sniffed to v2 off the template's own schema_format, and the field
+		// lives only there.
+		{typ: "contract", field: "x_binding", want: "envelope/v2"},
+	} {
+		t.Run(tc.typ+"/"+tc.field, func(t *testing.T) {
+			t.Parallel()
+
+			in := fixedInput(tc.typ, renderNewProbeID(tc.typ))
+			in.Fields = map[string]string{tc.field: "none"}
+			raw, err := template.RenderNew(in, isJSONSchema)
+			if err != nil {
+				t.Fatalf("RenderNew refused --field %s=none: %v\n"+
+					"The field exists on %s's %s schema. If the sniff pass is applying caller fields again, "+
+					"every v2-only field is unreachable from `a2a new` while the reachability gate stays green.",
+					tc.field, tc.typ, tc.want, err)
+			}
+			fm, perr := artifact.ParseFrontmatter(raw)
+			if perr != nil {
+				t.Fatalf("ParseFrontmatter: %v", perr)
+			}
+			instance, derr := schema.DecodeYAMLInstance(fm.YAML)
+			if derr != nil {
+				t.Fatalf("DecodeYAMLInstance: %v", derr)
+			}
+			obj, ok := instance.(map[string]any)
+			if !ok {
+				t.Fatalf("decoded %s draft is %T, not a mapping", tc.typ, instance)
+			}
+			if got := obj["schema"]; got != tc.want {
+				t.Fatalf("%s rendered %v, want %s — the generation decision changed", tc.typ, got, tc.want)
+			}
+			if got := obj[tc.field]; got != "none" {
+				t.Fatalf("%s: %s = %#v, want \"none\" — the override reached neither pass", tc.typ, tc.field, got)
+			}
+		})
+	}
+}
+
+// renderNewProbeID returns an id whose prefix the given type's own schema
+// accepts — a contract is a STANDING id (XC-<system>-<slug>), an exchange is
+// date-bearing, and a mismatched prefix would red the probe above for the
+// wrong reason.
+func renderNewProbeID(typ string) string {
+	if typ == "contract" {
+		return "XC-axon-renderprobe"
+	}
+	return "XW-axon-20260721-k3f9"
+}
