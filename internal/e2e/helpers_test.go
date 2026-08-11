@@ -514,4 +514,11 @@ func seedOriginExtras(t *testing.T, originDir string) {
 	gitRun(t, dir, "push", "origin", "main")
 
 	seedThreadChainFixture(t, originDir)
+
+	// README criterion 8 (agent-exchange-2026-08 P12 G4, blockedowner_thread_
+	// test.go's own doc comment): a real `blocked` work_request whose
+	// fulfilling response names the actual blocker via `blocked_by.owner`,
+	// so blocked_by_owner.txtar can assert `a2a thread`'s OpenItem derives
+	// waiting_on from those fields alone, at the exec'd-binary tier.
+	seedBlockedByOwnerFixture(t, originDir)
 }

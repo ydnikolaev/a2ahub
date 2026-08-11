@@ -1,0 +1,23 @@
+# README criterion 8 (agent-exchange-2026-08 P12 G4): "A response with
+# `result: partial` carries what is blocked and what would unblock it, and
+# pendency derives the resulting obligation from those fields alone." The
+# readiness audit found no binary-tier or livee2e conformance path exercised
+# the blocked_by-derived pendency verdict — internal/livee2e's own
+# "silent-partial-names-blocker" entry is archaeology (git-show against
+# pre-fix commits), never a driven scenario. This is that scenario.
+#
+# Fixture (internal/e2e/blockedowner_thread_test.go's own
+# seedBlockedByOwnerFixture, pushed by helpers_test.go's seedOriginExtras
+# before this script's mirror is cloned): beta asks gamma a work_request;
+# gamma acknowledges then BLOCKS it (a real `block` event, fold's own TBlock
+# row); gamma's fulfilling response carries `result: partial`, `unmet: [0]`
+# and `blocked_by: {owner: beta, ...}` — beta is the work_request's OWN
+# `from`, the canonical "the requester is what blocks me" case
+# (blockedRow's own doc comment, internal/pendency/pendency.go).
+#
+# Absent this field, the target (gamma) would own `unblock` and the open
+# item would read `waiting_on=gamma` — the pre-P1 behaviour. With it, the
+# wait is on the NAMED blocker instead: this line is exactly what the
+# readiness audit found unproven at this tier.
+exec a2a thread thread:beta-20260723-blk1
+stdout 'XW-beta-20260723-blk1\tblocked\twaiting_on=beta\t'

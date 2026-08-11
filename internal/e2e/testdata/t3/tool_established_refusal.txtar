@@ -1,0 +1,17 @@
+# README criterion 9/AC9 (agent-exchange-2026-08 P12 G4): "No field
+# classified as tool-established can be set by an agent, asserted by a gate
+# reading a declared fill-class table." schemas/fill-classes.yaml classifies
+# `migrated_from` TOOL on envelope/v1/base ("minted or stamped, never
+# typed") — the exact field a post-phase audit found typeable onto a v2
+# contract draft before internal/template.schemaAllowsField's fill-class
+# check landed (template.go's own doc comment). This is the CLI half of
+# "both surfaces refuse" driven against the built binary — the audit found
+# no txtar/e2e scenario had ever exec'd this refusal at the transport
+# boundary. The MCP half shares the identical internal/template code path
+# (internal/mcp/tools_new.go calls the same schemaAllowsField), but
+# internal/e2e structurally never imports internal/mcp (this package's own
+# doc comment: "parity is P14, blocked_by: [P10]") and internal/mcp/cmd/a2a
+# sit off this wave's allowlist — so the MCP half stays recorded, not
+# raised here; see this wave's report and the README's own AC9 line.
+! exec a2a new question --field migrated_from=x
+stderr 'migrated_from'

@@ -1,0 +1,84 @@
+# README criterion 5 (agent-exchange-2026-08 P12 G4): "An artifact that
+# names a digest it does not carry is refused at `a2a validate`, locally,
+# before any pull request." The readiness audit found the wiring from
+# `a2a validate` to internal/validate's REF-017 check (checkPossession,
+# possession.go) real by reading source, but no exec'd-binary run had ever
+# asserted the refusal — this scenario is that run.
+#
+# Two artifacts, byte-identical except for one line, so the refusal is
+# provably caused by the undeclared `sha256:` token and not by anything else
+# in the fixture (e.g. a coincidentally-invalid needed_by or a stray schema
+# violation): digest-not-carried.md names a digest with no matching
+# attachments[].digest and is refused; digest-absent.md drops that one line
+# and is valid. Both frontmatter blocks are the internal/validate package's
+# own possession_test.go incident reconstruction
+# (docs/inbox/agent-exchange-review/03-bytes-note.md), adapted to this
+# harness's fixture-space/axon/beta participants.
+mkdir .a2a/staging
+cp digest-not-carried.md .a2a/staging/digest-not-carried.md
+! exec a2a validate --all
+stdout 'REF-017'
+rm .a2a/staging/digest-not-carried.md
+
+cp digest-absent.md .a2a/staging/digest-absent.md
+exec a2a validate --all
+stdout '"valid": true'
+
+-- digest-not-carried.md --
+---
+schema: envelope/v1
+id: XW-axon-20260801-rcn1
+type: work_request
+title: Replay the C0 ingest transport protocol fixture and report divergences
+space: fixture-space
+from: axon
+to: [beta]
+actor: {kind: agent, name: codex}
+created: 2026-08-01T09:15:00Z
+category: investigation
+priority: p3
+blocking: false
+interim_behavior: "Reviewer waits; no interim workaround exists."
+needed_by: 2026-08-30
+acceptance_criteria:
+  - "Divergences and ambiguities against the C0 transport spec are reported, not silent."
+expected_response: {shape: "XS naming replayed-count/total and any divergence found."}
+thread: thread:axon-20260801-p3f8
+classification: internal
+---
+Replay our offline fixture transcript of the C0 ingest transport protocol and
+report divergences and ambiguities.
+
+review_id     c0-review-20260731-d9ad8acd
+review_digest sha256:d9ad8acd6752454e1f5a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7
+
+The bundle is referenced by the digest above, but no attachment carries it.
+
+-- digest-absent.md --
+---
+schema: envelope/v1
+id: XW-axon-20260801-rcn2
+type: work_request
+title: Replay the C0 ingest transport protocol fixture and report divergences
+space: fixture-space
+from: axon
+to: [beta]
+actor: {kind: agent, name: codex}
+created: 2026-08-01T09:15:00Z
+category: investigation
+priority: p3
+blocking: false
+interim_behavior: "Reviewer waits; no interim workaround exists."
+needed_by: 2026-08-30
+acceptance_criteria:
+  - "Divergences and ambiguities against the C0 transport spec are reported, not silent."
+expected_response: {shape: "XS naming replayed-count/total and any divergence found."}
+thread: thread:axon-20260801-p3f8
+classification: internal
+---
+Replay our offline fixture transcript of the C0 ingest transport protocol and
+report divergences and ambiguities.
+
+review_id     c0-review-20260731-d9ad8acd
+
+The bundle is referenced by review id above, but no attachment carries it.
