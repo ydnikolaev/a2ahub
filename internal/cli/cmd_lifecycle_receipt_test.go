@@ -109,6 +109,50 @@ func TestLifecycleReceiptVerifyAndAutoClose(t *testing.T) {
 	}
 }
 
+// TestLifecycleReceiptStandaloneCloseMatchesVerifysAutoClose is B24's own
+// headline claim ("the same record") proven on the ONE field the rest of
+// this wave's tests never touch: the evaluator receipt's `state:`. Driven
+// with the SAME parentID against two independent fakeLifecycleFunnel
+// instances (neither persists its write — see
+// TestCloseOperationKeyDiffersFromVerifysDrivenClose's own doc comment for
+// why that keeps both paths evaluating against identical committed state),
+// so `a2a verify`'s D-024 convenience close and a standalone `a2a close`
+// fold from the SAME prior history and must land the SAME `state:` value —
+// decoded via lifecycleEventProbe.State, never a strings.Contains guess.
+func TestLifecycleReceiptStandaloneCloseMatchesVerifysAutoClose(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-ra06"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+	_ = respondFlow(t, mirrorDir, parentID, "beta")
+
+	verifyFake := &fakeLifecycleFunnel{}
+	verifyCmd := cli.NewVerifyCommand(verifyFake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io1, _, errOut1 := newIO()
+	if code := verifyCmd.Run(context.Background(), []string{"--verdict", "0:met:axon", parentID}, io1); code != 0 {
+		t.Fatalf("verify: code = %d; stderr=%s", code, errOut1.String())
+	}
+	verifyDrivenClose := findEventByTransition(t, verifyFake.calls[0].Files, "close")
+	if verifyDrivenClose.State != "closed" {
+		t.Fatalf("verify's D-024 close: state = %q, want %q", verifyDrivenClose.State, "closed")
+	}
+
+	closeFake := &fakeLifecycleFunnel{}
+	closeCmd := cli.NewCloseCommand(closeFake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io2, _, errOut2 := newIO()
+	if code := closeCmd.Run(context.Background(), []string{"--verdict", "0:met:axon", parentID}, io2); code != 0 {
+		t.Fatalf("close: code = %d; stderr=%s", code, errOut2.String())
+	}
+	standaloneClose := findEventByTransition(t, closeFake.calls[0].Files, "close")
+	if standaloneClose.State != "closed" {
+		t.Fatalf("standalone close: state = %q, want %q", standaloneClose.State, "closed")
+	}
+
+	if verifyDrivenClose.State != standaloneClose.State {
+		t.Fatalf("the two close paths disagree on state: verify-driven=%q standalone=%q", verifyDrivenClose.State, standaloneClose.State)
+	}
+}
+
 func TestLifecycleReceiptDisputeOmitted(t *testing.T) {
 	t.Parallel()
 	mirrorDir := t.TempDir()

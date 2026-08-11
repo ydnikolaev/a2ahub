@@ -350,3 +350,95 @@ func TestVerifyDistinctIndicesDoNotCollide(t *testing.T) {
 		seen[k] = index
 	}
 }
+
+// --- Close (B24: the standalone `a2a close` verb's own operation key) ------
+//
+// Close mirrors Verify's canonicalisation (targets sorted, verdicts
+// canonical-by-index) but is its OWN function rather than a call-through to
+// Verify — see Close's own doc comment for why reusing Verify's key here
+// would be wrong even though the funnel's BranchName already folds `verb`
+// into the branch path (verify and close never actually collide there).
+
+// TestCloseDifferentVerdictsProduceDifferentKeys mirrors
+// TestVerifyDifferentVerdictsProduceDifferentKeys for Close's own domain.
+func TestCloseDifferentVerdictsProduceDifferentKeys(t *testing.T) {
+	t.Parallel()
+
+	a := Close("axon", "agent", "bot", []string{"XQ-axon-1"},
+		[]VerdictEntry{{Index: 0, Verdict: "met", CauseOwner: "axon"}})
+	b := Close("axon", "agent", "bot", []string{"XQ-axon-1"},
+		[]VerdictEntry{{Index: 0, Verdict: "unmet", CauseOwner: "axon"}})
+	if a == b {
+		t.Fatal("differing verdict on the same index produced the same key")
+	}
+	if !Valid(a) || !Valid(b) {
+		t.Fatalf("keys are not canonical: %q %q", a, b)
+	}
+
+	c := Close("axon", "agent", "bot", []string{"XQ-axon-1"},
+		[]VerdictEntry{{Index: 0, Verdict: "met", CauseOwner: "beta"}})
+	if a == c {
+		t.Fatal("differing cause_owner on the same index/verdict produced the same key")
+	}
+
+	noVerdicts := Close("axon", "agent", "bot", []string{"XQ-axon-1"}, nil)
+	if noVerdicts == a {
+		t.Fatal("an empty verdict set collided with a populated one")
+	}
+}
+
+// TestCloseVerdictsCanonicalByIndexNotArgumentOrder mirrors
+// TestVerifyVerdictsCanonicalByIndexNotArgumentOrder for Close's own domain.
+func TestCloseVerdictsCanonicalByIndexNotArgumentOrder(t *testing.T) {
+	t.Parallel()
+
+	given := Close("axon", "agent", "bot", []string{"XQ-axon-1"}, []VerdictEntry{
+		{Index: 0, Verdict: "met", CauseOwner: "axon"},
+		{Index: 1, Verdict: "unmet", CauseOwner: "beta"},
+	})
+	reordered := Close("axon", "agent", "bot", []string{"XQ-axon-1"}, []VerdictEntry{
+		{Index: 1, Verdict: "unmet", CauseOwner: "beta"},
+		{Index: 0, Verdict: "met", CauseOwner: "axon"},
+	})
+	if given != reordered {
+		t.Fatalf("reordering --verdict flags (same judgement set) changed the key: %q vs %q", given, reordered)
+	}
+}
+
+// TestCloseTargetsAreSetSemantics mirrors TestVerifyTargetsAreSetSemantics
+// for Close's own domain — a batch close's ids carry no wire order.
+func TestCloseTargetsAreSetSemantics(t *testing.T) {
+	t.Parallel()
+
+	a := Close("axon", "agent", "bot", []string{"XQ-axon-1", "XQ-axon-2"}, nil)
+	b := Close("axon", "agent", "bot", []string{"XQ-axon-2", "XQ-axon-1"}, nil)
+	if a != b {
+		t.Fatalf("reordering targets changed the key: %q vs %q", a, b)
+	}
+
+	c := Close("axon", "agent", "bot", []string{"XQ-axon-1", "XQ-axon-3"}, nil)
+	if a == c {
+		t.Fatal("changing one target produced the same key")
+	}
+}
+
+// TestCloseKeyDiffersFromVerifyKeyForIdenticalInput proves Close occupies
+// its OWN key domain: given the byte-identical (system, actorKind,
+// actorName, ids/targets, verdicts) tuple, Close and Verify must NOT mint
+// the same key. Not a collision-safety claim about the funnel (BranchName
+// already folds `verb` into the branch, so the two never actually collide
+// on a real write) — a domain-separation claim about the key itself, which
+// is what makes Close's own doc comment about "not a call-through to
+// Verify" true rather than aspirational.
+func TestCloseKeyDiffersFromVerifyKeyForIdenticalInput(t *testing.T) {
+	t.Parallel()
+
+	targets := []string{"XQ-axon-1"}
+	verdicts := []VerdictEntry{{Index: 0, Verdict: "met", CauseOwner: "axon"}}
+
+	closeKey := Close("axon", "agent", "bot", targets, verdicts)
+	verifyKey := Verify("axon", "agent", "bot", targets, verdicts)
+	if closeKey == verifyKey {
+		t.Fatal("Close and Verify minted the same key for identical input — the two verbs no longer occupy distinct key domains")
+	}
+}

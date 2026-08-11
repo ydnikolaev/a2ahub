@@ -215,6 +215,56 @@ func Verify(system, actorKind, actorName string, targets []string, verdicts []Ve
 	return encoder.key()
 }
 
+// Close derives the operation key for one standalone `a2a close`
+// invocation (B24, agent-exchange-2026-08 epic-backlog.md): a batch of N
+// parent ids, with an optional per-criterion `verdicts[]` set (the same
+// `--verdict` flag machinery Verify's own caller parses) judging EVERY id
+// in the batch alike.
+//
+// This is a SEPARATE function from Verify, not a call-through to it, even
+// though the two derivations are structurally identical (sorted ids,
+// verdicts canonical by index) and even though the funnel's own BranchName
+// already folds `req.Verb` into the branch path — so a verify branch and a
+// close branch never actually collide on one write regardless of what this
+// function does. The reason to keep them apart is what Verify's own doc
+// comment SAYS, not what the branch does: it describes verify's semantics
+// (a target names a response id; D-024's paired convenience close rides
+// verify's OWN key) that do not hold for a standalone close invocation (a
+// target IS the parent id directly, and there is no paired write to
+// describe). Reusing Verify's key for close would leave that doc comment
+// false the moment anyone reads it next to this call site — the same class
+// of drift this package's own Respond/Verify split (this file, above)
+// exists to avoid.
+//
+// ids and verdicts follow Verify's own canonicalisation exactly: ids carry
+// no wire-meaningful order (sorted), verdicts are canonicalised by their own
+// `index` field rather than `--verdict` argument order (sorted by index) —
+// see Verify's doc comment for the full reasoning, which applies here
+// unchanged.
+// Close is part of the public package API.
+func Close(system, actorKind, actorName string, ids []string, verdicts []VerdictEntry) string {
+	sortedIDs := append([]string(nil), ids...)
+	sort.Strings(sortedIDs)
+	sortedVerdicts := append([]VerdictEntry(nil), verdicts...)
+	sort.Slice(sortedVerdicts, func(i, j int) bool { return sortedVerdicts[i].Index < sortedVerdicts[j].Index })
+
+	encoder := newEncoder("close")
+	encoder.add(system)
+	encoder.add(actorKind)
+	encoder.add(actorName)
+	for _, id := range sortedIDs {
+		encoder.add(id)
+	}
+	for _, v := range sortedVerdicts {
+		// Decimal — see Verify's own comment on why the int->string
+		// conversion here is deliberate rather than a fixed-width encoding.
+		encoder.add(strconv.Itoa(v.Index))
+		encoder.add(v.Verdict)
+		encoder.add(v.CauseOwner)
+	}
+	return encoder.key()
+}
+
 // ContractDeprecate derives the operation key for deprecating one resolved
 // contract version. Successor is intentionally included: changing the
 // migration target is a different semantic write even though the legacy

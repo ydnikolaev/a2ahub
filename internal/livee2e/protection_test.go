@@ -85,6 +85,10 @@ func TestChecklistDoesNotClaimAdminsAreBoundWhileTheyAreNot(t *testing.T) {
 		t.Fatal("enforce_admins is not a bool in ProtectionBody() — this gate cannot reason about it")
 	}
 	if enforceAdmins {
+		// Declared, with the reason, in skipDeclarations() (skipdeclarations.go)
+		// — P8 AC5's own registry. TestSkipDeclarationsCoverEverySkip
+		// (skipdeclarations_test.go) reds if this call ever drifts from that
+		// entry.
 		t.Skip("enforce_admins is true, so admins ARE bound and the document may say so")
 	}
 

@@ -527,16 +527,14 @@ func TestScenarioDeclaredParsesRealSpecs(t *testing.T) {
 // pathcatalogue_paths.go IS on this wave's own allowlist (2026-08-09,
 // unlike the earlier claim this comment used to carry — that claim is now
 // false and is corrected here rather than left standing, same discipline
-// 05-declared-nature.md's own append-only amendments use). All SIX ids the
-// gate named red are STILL red — the grant did not close any of them, and
-// this comment must not blur that with a different, true claim this wave
-// CAN make: it drove one of the UNDERLYING TRANSITIONS these ids depend on
-// (decision-proposed-withdrawn, pathcatalogue_paths.go), under a path id
-// that answers no declared scenario id at all — {decision, withdrawn} is a
-// restingcoverage_test.go gate, not a spec-01 scenario claim, and driving a
-// transition without the departure/manifest-mutation a scenario id names is
-// not the same as satisfying that id (the exact conflation the brief named
-// and this file's own reasons below keep separate).
+// 05-declared-nature.md's own append-only amendments use). Of the SIX ids
+// the gate once named red, THREE are now CLOSED (2026-08-11, P8 wave 31 —
+// item 1 below, correcting wave 30B's own genesis-timed attempt at the
+// same three) and three remain red (items 2-3). This comment must not
+// blur the two: closing an id means a declared Path answers THAT id
+// directly (missingScenarioPaths finds it, not merely the underlying
+// transition under some other id's name) — the exact conflation the brief
+// named and this file's own reasons below keep separate.
 //
 // A second such path, response-disputed-superseded, existed alongside it
 // from 2026-08-08 until 2026-08-09, when it was deleted along with its
@@ -551,69 +549,83 @@ func TestScenarioDeclaredParsesRealSpecs(t *testing.T) {
 // Re-derived per-id reasons, in code, for all six, rather than leaving the
 // bare missingScenarioPaths() failure to speak for itself:
 //
-//  1. 01-resting-totality.md's all THREE declared ids
-//     (decision-proposed-withdrawn-by-author-after-approvers-left,
-//     decision-proposed-superseded-by-author-after-approvers-left,
-//     handoff-submitted-superseded-by-producer-after-receiver-left) remain
-//     uncovered — but the earlier finding here asked for the wrong
-//     capability, and is corrected rather than left standing (2026-08-11,
-//     same discipline item 2's own correction below uses). It named the
-//     gap "manifest/membership mutation mid-path" and framed it as a
-//     pathgrammar.go Step. It is neither.
+//  1. CLOSED 2026-08-11 (P8 wave 31, correcting wave 30B's own genesis-timed
+//     attempt at the same three ids). 01-resting-totality.md's all THREE
+//     declared ids (decision-proposed-withdrawn-by-author-after-approvers-
+//     left, decision-proposed-superseded-by-author-after-approvers-left,
+//     handoff-submitted-superseded-by-producer-after-receiver-left) now
+//     each have their own declared Path (Family 15, pathcatalogue_paths.go)
+//     and driver (pathdriver_live.go's runDepartedCounterpartyPaths).
+//
+//     WAVE 30B TRIED GENESIS DEPARTURE AND WAS WRONG, and this is worth
+//     stating plainly rather than quietly overwriting: it reasoned from
+//     D-017 (fold/types.go, MembershipView's own doc comment —
+//     "authorization is evaluated against the manifest as of the event's
+//     commit") and fold.go's authorized()/legalRole() (which resolve as
+//     `legalRole(role, env, actorSystem, membership(actorSystem))` — ONLY
+//     the ACTING system's own status is ever consulted) that a participant
+//     already "left" at space genesis and one that flips to "left"
+//     mid-path are "provably identical to every check these three
+//     transitions execute." That is CORRECT about the TRANSITION's own
+//     authorization and WRONG about the PATH as a whole: running the real
+//     tagged conformance matrix (not merely reasoning about the table)
+//     showed `a2a submit` refuses, with REF-006/CC-008
+//     (internal/validate/authz.go's checkAddressees), an envelope whose
+//     `to`/`required_approvers` names an already-`left` system — so a
+//     genesis-departed counterparty made the FIRST submission (`propose`/
+//     `submit`) itself unreachable, before the transition this class is
+//     about was ever attempted. Genesis departure does not construct the
+//     scenario; it makes it unconstructible. Two waves (29's correction,
+//     then 30B's) reasoned about this; only running the matrix settled it.
 //
 //     DECISION (the wave's own brief: STEP or path-level precondition),
-//     settled by the product's own rule, not by inference: D-017
-//     (fold/types.go, MembershipView's own doc comment — "authorization is
-//     evaluated against the manifest as of the event's commit") makes
-//     membership a per-COMMIT view. Sharper still, read directly rather
-//     than assumed: fold.go's authorized()/legalRole() resolve as
-//     `legalRole(role, env, actorSystem, membership(actorSystem))` —
-//     ONLY the ACTING system's own status is ever consulted; the
-//     counterparty is never queried. All three ids' own final transitions
-//     — decision `withdraw` from `proposed`, decision `supersede` from
-//     `proposed`, handoff `supersede` from `submitted`/`acknowledged` — are
-//     Role Owner UNCONDITIONALLY (table.go), and RoleOwner means
-//     `actorSystem == env.From` (fold.go roleAuthorizes) — the author or
-//     producer, never the departed approver/receiver. So a participant
-//     already "left" at space genesis and one that flips to "left"
-//     mid-path are PROVABLY IDENTICAL to every check these three
-//     transitions execute; a mid-path Step would be strictly more
-//     mechanism for the identical fact. DECISION: a path-level
-//     PRECONDITION (a genesis-time manifest fact) — and not even
-//     pathgrammar.go's own Path.Precondition field (that chains onto
-//     ANOTHER declared conformance Path's own end state; a
-//     departed-from-genesis participant is a harness PROVISIONING fact, a
-//     different axis). pathgrammar.go needs no new type for this at all.
+//     now settled correctly: the departure is a MID-PATH manifest
+//     mutation, landing AFTER the create+first-transition step that
+//     addresses the counterparty (while it is still active — REF-006 has
+//     nothing to refuse) and BEFORE the final transition (so the
+//     scenario's own "already gone" claim is true when that transition
+//     runs). Still not a pathgrammar.go Step: the manifest edit itself has
+//     no fold transition (pathgrammar.go's own Step doc comment — an act
+//     with no fold transition is never expressible as one), so the driver
+//     performs and asserts it directly, around the declared Steps, exactly
+//     as that doc comment already describes for every other transition-
+//     free domain act.
 //
-//     STILL UNDRIVEN THIS WAVE, verified against the harness (pathgrammar.go
-//     and pathdriver_live.go both ARE on this wave's allowlist, unlike the
-//     earlier claim here): the one place this rig ever writes a
-//     participant's status is scaffold.go's PatchSpaceParticipants, and it
-//     hardcodes `status: active` for every entry it renders
-//     ("... owners: [%s], status: active, joined: %s ..."); there is no
-//     parameter to render "left". provision_live.go's own ResetSpace is
-//     its only caller, and it is a full-history reset (git init -b main,
-//     one commit, force-push — gitCommitScaffold/gitForcePush) run ONCE
-//     before a path starts; running it mid-path would erase the path's own
-//     already-committed artifacts, so it cannot be reused there either. No
-//     `a2a` CLI verb writes `status: left` — the only two readers,
-//     internal/cli/adapters.go:423 and internal/cli/cmd_lifecycle.go:426,
-//     both only READ the field. So the missing capability is a
-//     space-GENESIS provisioning primitive (scaffoldParticipants/
-//     PatchSpaceParticipants widened to accept an initial per-participant
-//     status, scaffold.go/provision_live.go) — NOT a pathgrammar.go
-//     widening, and both files that would carry it are off this wave's
-//     allowlist. The UNDERLYING TRANSITIONS all three ids need are
-//     themselves drivable without any departure at all — this wave DID
-//     drive one of the three (decision proposed-withdraw, via
-//     decision-proposed-withdrawn, pathcatalogue_paths.go) — but a scenario
-//     id that names the departure specifically is not satisfied by driving
-//     the transition alone under a different path id: that path answers no
-//     spec-01 scenario id, only fold.RestingStates()'s own {decision,
-//     withdrawn} member (restingcoverage_test.go) — a different gate, over
-//     a different universe. See uncoveredTransitions()'s own corrected
-//     class (pathcoverage_test.go) for the transition-level half of this
-//     same finding.
+//     THE PRIMITIVE THAT CLOSED IT: scaffold.go's SetParticipantStatus
+//     rewrites ONE already-committed participant row's own status field in
+//     place (PatchSpaceParticipants, by contrast, can only ever render a
+//     status ONCE, at genesis, against the `participants: []` placeholder
+//     `a2a space init` emits — it has no way to rewrite a row it or an
+//     earlier path already committed). provision_live.go's
+//     SetParticipantStatusMidPath applies it against the space's CURRENT
+//     history: clone, edit, commit, push straight back — no PR, no `a2a`
+//     CLI verb (none writes this field, in either direction). A DEDICATED
+//     harness (pathdriver_live.go's runDepartedCounterpartyPaths) is what
+//     actually drives all three, never one of the ordinary round-robin
+//     path-space harnesses runConformancePaths splits drivenPathIDs()
+//     across — pathdrivability.go's own departedCounterpartyPathIDs() doc
+//     comment says why sharing a space would be wrong (every OTHER path in
+//     that space still assumes an active counterparty) — but, UNLIKE wave
+//     30B, the three DO share that one dedicated harness with EACH OTHER:
+//     each driver calls ensureFamily15CounterpartyActive
+//     (pathdriver_live.go) before its own first step, restoring the
+//     counterparty if an earlier Family 15 path already departed it, so
+//     all three stay independent of run order.
+//
+//     WHAT "closed" verifies: the tagged conformance matrix was run for
+//     real this wave, scoped to exactly these three paths — `go test
+//     -tags=livee2e ./internal/livee2e/ -run
+//     'TestLogicMatrix/departed-counterparty' -count=1` — and is GREEN,
+//     including CC-062's own orphaned-counterparty transfer
+//     (pending_on/expected_transition) observed against the real,
+//     offline-binary-driven cache/threadview surface, not merely derived
+//     from fold's own table. Mutation discipline was also checked: with
+//     the mid-path SetParticipantStatusMidPath call disabled (the
+//     assertion left in place), all three RED on the CC-062 assertion
+//     itself (`got waiting_on=[bravo], want [alpha]` /
+//     `got expected_transition="approve"/"acknowledge", want ""`) — never
+//     on REF-006, confirming the departure is what the assertion actually
+//     depends on, not an artifact of step ordering.
 //
 //  2. 04-possession.md's work-request-attaches-bytes-without-contract-pin-
 //     or-fulfillment. The earlier finding here said the gap was purely
@@ -713,58 +725,6 @@ type undrivenScenario struct {
 
 func undrivenScenarios() []undrivenScenario {
 	return []undrivenScenario{
-		{
-			ID: "decision-proposed-withdrawn-by-author-after-approvers-left",
-			Reason: "REASON REPLACED 2026-08-11 — the previous one asked for the " +
-				"wrong capability (\"a manifest-mutation step in the path " +
-				"grammar\"). The TRANSITION is driven (decision-proposed-withdrawn) " +
-				"— the SCENARIO's own departure precondition is not, and the " +
-				"difference is the whole point of keeping these two universes " +
-				"apart. DECISION (this wave's own brief: step or precondition): a " +
-				"path-level PRECONDITION, not a mid-path Step — D-017 " +
-				"(fold/types.go) makes MembershipView a per-commit view, and " +
-				"fold.go's authorized()/legalRole() consult ONLY " +
-				"membership(actorSystem), the AUTHOR's own status, never the " +
-				"departed approver's (withdraw is Role Owner unconditionally, " +
-				"actorSystem == env.From) — verified by reading authorized/ " +
-				"legalRole/roleAuthorizes directly, not inferred. A genesis-" +
-				"departed approver and a mid-path-departed one are therefore " +
-				"provably identical to this check; a mid-path Step would be " +
-				"strictly more mechanism for the identical fact. STILL UNDRIVEN " +
-				"because no allowlisted file can produce even the genesis fact: " +
-				"scaffold.go's PatchSpaceParticipants hardcodes `status: active` " +
-				"for every participant it renders, provision_live.go's ResetSpace " +
-				"is a full-history force-push reset that cannot run mid-path (it " +
-				"would erase the path's own already-committed artifacts), and no " +
-				"`a2a` CLI verb writes the field (internal/cli/adapters.go:423, " +
-				"cmd_lifecycle.go:426 both only READ it). Needs: a space-genesis " +
-				"provisioning primitive in scaffold.go/provision_live.go — NOT a " +
-				"pathgrammar.go widening; Path/Step needs no new type for this at " +
-				"all.",
-		},
-		{
-			ID: "decision-proposed-superseded-by-author-after-approvers-left",
-			Reason: "REASON REPLACED 2026-08-11, same corrected finding as the " +
-				"withdraw id above — decision `supersede` from `proposed` is ALSO " +
-				"Role Owner unconditionally (table.go), so the identical D-017 + " +
-				"authorized()-only-checks-the-actor argument applies verbatim: a " +
-				"path-level precondition, not a Step, still undriven for the same " +
-				"provisioning-primitive gap (scaffold.go/provision_live.go, off " +
-				"this wave's allowlist). {decision, superseded} is already entered " +
-				"by decision-approved-superseded, so no coverage gate is short; " +
-				"only this scenario's departure precondition is undrivable.",
-		},
-		{
-			ID: "handoff-submitted-superseded-by-producer-after-receiver-left",
-			Reason: "REASON REPLACED 2026-08-11, same corrected finding, third " +
-				"instance — handoff `supersede` from `submitted`/`acknowledged` is " +
-				"Role Owner (the producer) unconditionally too, so authorized() " +
-				"never consults the receiver's own membership either. P1 shipped " +
-				"this row precisely for the departed-receiver case; D-017 makes " +
-				"that case a genesis-time manifest fact, not a mid-path event, and " +
-				"it is still undriven for the identical provisioning-primitive gap " +
-				"named on the withdraw id above.",
-		},
 		{
 			ID: "work-request-attaches-bytes-without-contract-pin-or-fulfillment",
 			Reason: "REASON REPLACED 2026-08-11 — pathgrammar.go and " +

@@ -803,6 +803,19 @@ type lifecycleVerbSpec struct {
 	RequireRefs       bool
 	RequireFindings   bool
 	GateMarker        bool // ALWAYS advisory-gated (approve/reject, G3)
+	// SupportsVerdicts is B24's own per-row switch (docs/features/active/
+	// agent-exchange-2026-08/epic-backlog.md): true on EXACTLY the `close`
+	// row. LifecycleCommand.Run reads it to decide, ONCE per invocation
+	// (never per-id inside the batch loop — "transition-scoped, not applied
+	// to the loop", B24's own framing), whether to register `--verdict`,
+	// floor-gate the authored schema to event/v2, and derive an
+	// operation.Close key — the SAME machinery VerifyCommand.Run already
+	// carries for its own `verify`/D-024-close pair, reached here through
+	// the shared parser (lifecycleParseVerdicts) rather than a second one.
+	// Every other row leaves this false, which is what keeps their own Run
+	// path byte-identical to before this field existed: no flag registered,
+	// eventSchema fixed at "event/v1", verdictsPtr always nil.
+	SupportsVerdicts bool
 }
 
 var lifecycleVerbTable = []lifecycleVerbSpec{
@@ -813,7 +826,7 @@ var lifecycleVerbTable = []lifecycleVerbSpec{
 	{Verb: "block", Transition: fold.TBlock, Synopsis: "block one or more artifacts on a blocker", RequireRefs: true},
 	{Verb: "unblock", Transition: fold.TUnblock, Synopsis: "unblock one or more artifacts (recovers pre-block state)"},
 	{Verb: "cancel", Transition: fold.TCancel, Synopsis: "cancel one or more artifacts"},
-	{Verb: "close", Transition: fold.TClose, Synopsis: "close one or more responded parents"},
+	{Verb: "close", Transition: fold.TClose, Synopsis: "close one or more responded parents: close <parent-id...> [--verdict <index>:<met|unmet|not_warranted|not_exercised>:<cause_owner>]...", SupportsVerdicts: true},
 	{Verb: "withdraw", Transition: fold.TWithdraw, Synopsis: "withdraw one or more requirements or proposed decisions"},
 	{Verb: "supersede", Transition: fold.TSupersede, Synopsis: "supersede an artifact with its successor", RequireRefs: true},
 	{Verb: "satisfy", Transition: fold.TSatisfy, Synopsis: "satisfy a requirement", RequireRefs: true},
@@ -936,6 +949,18 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 	reasonCode := fs.String("reason-code", "", "machine-readable reason code")
 	refs := fs.String("refs", "", "comma-separated refs (blocker/successor/contract+response ids)")
 	findings := fs.String("findings", "", "verification findings text")
+	// --verdict (B24): registered ONLY when c.spec.SupportsVerdicts (the
+	// close row) — NOT unconditionally like reason/refs/findings above.
+	// Registering it on every row would let the other 14 verbs accept a
+	// flag they cannot legally act on; leaving it off their FlagSet means
+	// Go's own flag.ContinueOnError refuses it as an undefined flag
+	// (parseArgsAnyOrder below returns that error verbatim), which is what
+	// "must not grow the flag" is actually testing
+	// (TestOtherVerbRefusesVerdictFlagUnregistered).
+	var verdictFlags newStringList
+	if c.spec.SupportsVerdicts {
+		fs.Var(&verdictFlags, "verdict", "index:verdict:cause_owner verdict entry (repeatable; verdict is met|unmet|not_warranted|not_exercised)")
+	}
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
 	// Wave K fix (live run 6, "thirteen verbs refuse a flag written after
 	// their positional argument"): parseArgsAnyOrder, not a bare
@@ -965,12 +990,66 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 		return 2
 	}
 
+	// verdicts/eventSchema (B24): parsed and floor-gated with the SAME
+	// lifecycleParseVerdicts/lifecycleEventSchema machinery
+	// VerifyCommand.Run uses — one guarantee, one implementation, reached
+	// here rather than re-derived. Every other row leaves c.spec.SupportsVerdicts
+	// false, so verdicts stays nil, eventSchema stays fixed at "event/v1",
+	// and this whole block is a no-op for them (the schema CHOICE is decided
+	// ONCE here, transition-scoped by the row rather than per-id inside the
+	// batch loop below, which just applies the one decided value uniformly
+	// — the same shape VerifyCommand.Run already uses across its own batch).
+	eventSchema := "event/v1"
+	var verdicts []lifecycleVerdictEntry
+	if c.spec.SupportsVerdicts {
+		var verr error
+		verdicts, verr = lifecycleParseVerdicts(verdictFlags)
+		if verr != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "%s: %v\n", c.spec.Verb, verr)
+			return 2
+		}
+		eventSchema = lifecycleEventSchema(c.deps.manifest.MinBinaryVersion)
+		if len(verdicts) > 0 && eventSchema != "event/v2" {
+			_, _ = fmt.Fprintf(stdio.Stderr,
+				"%s: --verdict requires this space's min_binary_version to be at or above %s (event/v2); this space's floor is %q\n",
+				c.spec.Verb, contract.ContractPublicationFloor, c.deps.manifest.MinBinaryVersion)
+			return 1
+		}
+	}
+	// verdictsPtr: nil (omitted) below the floor or on a row that does not
+	// support verdicts at all; non-nil (present, even when empty) at/above
+	// the floor on the close row — see VerifyCommand.Run's own identical
+	// comment on why an EMPTY array, not an absent key, is what the
+	// schema's conditional requires.
+	var verdictsPtr *[]lifecycleVerdictEntry
+	if eventSchema == "event/v2" {
+		verdictsPtr = &verdicts
+	}
+
 	resolved, actorErr := c.deps.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
 	if actorErr != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "%s: %v\n", c.spec.Verb, actorErr)
 		return 1
 	}
 	actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: c.deps.ownSystem}
+
+	// operationKey (B24, mirroring VerifyCommand.Run's own identical
+	// comment): derived only when verdicts actually carry content. Below
+	// the floor, on a row that does not support verdicts, or above the
+	// floor with no --verdict at all, this verb keeps its EXISTING dedup
+	// mechanism (branchID falls back to the batch's own ArtifactID,
+	// funnel.go) — unchanged for every caller that never uses this flag.
+	// operation.Close, not operation.Verify: see operation.Close's own doc
+	// comment for why a standalone close mints its own key domain rather
+	// than reusing verify's.
+	var operationKey string
+	if len(verdicts) > 0 {
+		opVerdicts := make([]operation.VerdictEntry, len(verdicts))
+		for i, v := range verdicts {
+			opVerdicts[i] = operation.VerdictEntry{Index: v.Index, Verdict: v.Verdict, CauseOwner: v.CauseOwner}
+		}
+		operationKey = operation.Close(c.deps.ownSystem, actor.Kind, actor.Name, ids, opVerdicts)
+	}
 
 	now := c.deps.now()
 	layout, err := space.NewLayout(c.deps.ownSystem)
@@ -1013,10 +1092,14 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 			return 1
 		}
 		ev := lifecycleEventDoc{
-			Schema: "event/v1", Event: eventID.String(), Space: probe.Space,
+			Schema: eventSchema, Event: eventID.String(), Space: probe.Space,
 			Subject: id, Transition: c.spec.Transition, State: lifecycleReceiptState(evaluation),
 			Actor: eventActorFrom(resolved, actor.System),
 			At:    now.UTC().Format(time.RFC3339),
+			// Verdicts: nil (omitted) on every row except close, and nil
+			// below the floor even on close — see this Run's own comment
+			// above verdictsPtr's assignment.
+			Verdicts: verdictsPtr,
 		}
 		if *reason != "" {
 			ev.Note = *reason
@@ -1039,6 +1122,7 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 	}
 
 	req := c.deps.buildRequest(ids, files, c.spec.Verb, c.spec.GateMarker)
+	req.OperationKey = operationKey
 	return c.deps.submit(ctx, req, c.spec.Verb, ids, stdio)
 }
 

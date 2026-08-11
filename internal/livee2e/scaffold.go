@@ -50,7 +50,12 @@ var spaceParticipantsPlaceholder = regexp.MustCompile(`(?m)^participants: \[\][^
 //	  - {system: alpha, org: ORG, section: alpha/, owners: [login], status: active, joined: 2026-07-24}
 //
 // status is always "active": a reset scaffold seeds active participants — a
-// non-active row is a scenario's own job to create, not the scaffold's.
+// non-active row is a scenario's own job to create, not the scaffold's (P8
+// wave 31: that job is SetParticipantStatus below, applied mid-path, on a
+// space.yaml that has already been through one render — never a genesis-time
+// literal here; see that function's own doc comment for why a
+// genesis-departed row cannot answer a scenario that must first ADDRESS the
+// counterparty before it leaves).
 //
 // Returns ErrParticipantsPlaceholderNotFound if the placeholder is absent —
 // see that error's doc comment for why this must be a hard failure, not a
@@ -70,6 +75,68 @@ func PatchSpaceParticipants(spaceYAML string, ps []Participant) (string, error) 
 	}
 
 	return spaceYAML[:loc[0]] + rendered + spaceYAML[loc[1]:], nil
+}
+
+// ErrParticipantRowNotFound is returned by SetParticipantStatus when
+// spaceYAML carries no participant row naming system.
+var ErrParticipantRowNotFound = errors.New("livee2e: no participant row for that system")
+
+// participantStatusPattern matches ONE participant row's own status field —
+// "status: active" or "status: left", capturing the value — the exact token
+// PatchSpaceParticipants renders. Applied line-by-line by SetParticipantStatus
+// (never against the whole document at once), so only the row already
+// matched by its own `system: <id>,` marker can ever be rewritten.
+var participantStatusPattern = regexp.MustCompile(`status: (active|left)`)
+
+// SetParticipantStatus rewrites the status field of the participant row
+// naming system — matched by its own "system: <id>," token, the exact shape
+// PatchSpaceParticipants renders — to status ("active" or "left"), leaving
+// every other row, field and byte untouched.
+//
+// This is PatchSpaceParticipants' MID-PATH counterpart: that function only
+// ever matches the pre-render `participants: []` placeholder `a2a space
+// init` emits, so it can render a status ONCE, at genesis, never rewrite a
+// row it (or a prior scenario) already committed. SetParticipantStatus is
+// what a scenario reaches for AFTER genesis, on a space.yaml some earlier
+// path step has already extended — the primitive P8 wave 31's own Family 15
+// drivers need (pathcatalogue_paths.go), after wave 30B's genesis-time
+// departure (2026-08-11, since reverted) was proven wrong by the real
+// conformance matrix: REF-006 refuses SUBMITTING an envelope addressed to an
+// already-departed system, so a scenario that must first ADDRESS the
+// counterparty (name it in `to`/`required_approvers`) and only THEN watch it
+// leave can never be answered by seeding "left" before that submission ever
+// exists. See pathcatalogue_paths.go's own Family 15 doc comment for the
+// full finding.
+//
+// alreadyAtStatus reports true (with spaceYAML returned UNCHANGED) when
+// system's row already carries status — provision_live.go's
+// SetParticipantStatusMidPath uses this to skip an empty commit rather than
+// authoring a no-op one.
+//
+// Returns ErrParticipantRowNotFound if no row names system.
+func SetParticipantStatus(spaceYAML, system, status string) (patched string, alreadyAtStatus bool, err error) {
+	lines := strings.Split(spaceYAML, "\n")
+	marker := "system: " + system + ","
+	found := false
+	for i, line := range lines {
+		if !strings.Contains(line, marker) {
+			continue
+		}
+		found = true
+		loc := participantStatusPattern.FindStringSubmatchIndex(line)
+		if loc == nil {
+			return "", false, fmt.Errorf("livee2e: SetParticipantStatus: participant row for %q has no recognizable status field: %q", system, line)
+		}
+		if line[loc[2]:loc[3]] == status {
+			return spaceYAML, true, nil
+		}
+		lines[i] = line[:loc[2]] + status + line[loc[3]:]
+		break
+	}
+	if !found {
+		return "", false, fmt.Errorf("%w: %q", ErrParticipantRowNotFound, system)
+	}
+	return strings.Join(lines, "\n"), false, nil
 }
 
 // RenderCODEOWNERS renders the trust-root-only CODEOWNERS file reset.sh

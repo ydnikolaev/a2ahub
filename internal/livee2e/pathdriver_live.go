@@ -1388,6 +1388,187 @@ func runPathDecisionProposedWithdrawn(ctx context.Context, t *testing.T, h *harn
 	return ids
 }
 
+// --- Family 15 — the departed counterparty (P8 wave 31, correcting wave
+// 30B's genesis-timed attempt) ---------------------------------------------
+//
+// Every driver below runs against a dedicated harness (runDepartedCounter-
+// partyPaths' own caller, logic_runner_live_test.go) — never one of the
+// ordinary round-robin path-space harnesses — but, unlike wave 30B, that
+// harness starts with the ORDINARY two-active-participant scaffold: `h.B`
+// DOES issue CLI-observable state (it is addressed by `required_approvers`/
+// `to` while still active) before ensureFamily15CounterpartyActive/
+// departFamily15Counterparty below flip it mid-path. See
+// pathcatalogue_paths.go's own Family 15 doc comment for the product-level
+// reasoning (D-017, REF-006, CC-062) these three drivers exercise, and for
+// why genesis departure could never reach past the first submission.
+
+// ensureFamily15CounterpartyActive restores h.B to "active" before a Family
+// 15 driver's own first step, unconditionally. The three drivers below
+// share ONE dedicated harness (runDepartedCounterpartyPaths runs them
+// sequentially against the SAME h, never t.Parallel()'d against each
+// other), and departFamily15Counterparty's own mid-path mutation is exactly
+// as irreversible as wave 30B's genesis one was — no `a2a` CLI verb ever
+// rejoins a departed participant either. Without this call, the SECOND and
+// THIRD drivers to run would try to address an already-`left` h.B at their
+// own create+first-transition step and hit the identical REF-006 refusal
+// this family exists to route around. SetParticipantStatusMidPath's own
+// alreadyAtStatus contract makes this a true no-op (no clone, no commit, no
+// push) on a harness where h.B is already active — the harness's own
+// starting state, and every path's own state once this call has run — so
+// calling it unconditionally, rather than only from the second/third
+// driver, is what keeps all three independent of run order.
+func ensureFamily15CounterpartyActive(ctx context.Context, t *testing.T, h *harness) {
+	t.Helper()
+	if err := SetParticipantStatusMidPath(ctx, h.Seam.CloneURL(), t.TempDir(), h.B.System, "active"); err != nil {
+		t.Fatalf("Family 15: ensure %s active before path: %v", h.B.System, err)
+	}
+}
+
+// departFamily15Counterparty is the MID-PATH manifest mutation itself: it
+// flips h.B (the sole required approver / handoff receiver a Family 15
+// driver's own create+first-transition step has JUST addressed, while
+// active) to "left" on the harness's own origin
+// (SetParticipantStatusMidPath, provision_live.go), syncs A's own local
+// mirror so it can see the change (`a2a thread` reads the mirror, not the
+// remote directly), then asserts CC-062's own orphaned-counterparty
+// transfer — PendingOn(A) and ExpectedTransition("") on artifactLocalName —
+// through the SAME checker functions every declared Predicate uses
+// (checkPendingOn/checkExpectedTransition), so this assertion can never
+// silently drift from what a real Step's own Predicate would check. It is
+// deliberately NOT a declared Step's own Predicates: the manifest edit
+// itself has no fold transition (pathgrammar.go's own Step doc comment —
+// an act with no fold transition is never expressible as one), so there is
+// no Step for pathgrammar to attach it to; the driver performs and asserts
+// the real act around the declared Steps instead, exactly as that doc
+// comment says a transition-free domain act always must.
+func departFamily15Counterparty(ctx context.Context, t *testing.T, h *harness, pathID, artifactLocalName, id string) {
+	t.Helper()
+	if err := SetParticipantStatusMidPath(ctx, h.Seam.CloneURL(), t.TempDir(), h.B.System, "left"); err != nil {
+		t.Fatalf("path %s: depart %s mid-path: %v", pathID, h.B.System, err)
+	}
+	if _, stderr, err := h.A.Run(ctx, "sync"); err != nil {
+		t.Fatalf("path %s: a2a sync (A) after departing %s: %v: %s", pathID, h.B.System, err, strings.TrimSpace(stderr))
+	}
+
+	ids := pathIDs{artifactLocalName: id}
+	label := fmt.Sprintf("path %s mid-path departure (system=%s)", pathID, h.B.System)
+	checkPendingOn(ctx, t, h, h.A, label, PendingOn(artifactLocalName, SystemA), ids)
+	checkExpectedTransition(ctx, t, h.A, label, ExpectedTransition(artifactLocalName, ""), ids)
+}
+
+// runPathDecisionProposedWithdrawnDeparted drives
+// decision-proposed-withdrawn-by-author-after-approvers-left: A proposes a
+// decision whose SOLE required approver is B (fully active, and addressed
+// by `required_approvers`), B then leaves (departFamily15Counterparty), and
+// A withdraws — Role Owner, unconditional. The `--field
+// required_approvers=[<bravo>]` override is applied HERE, not in
+// pathcatalogue_paths.go (untagged, and it may not reference a real system
+// id — catalogue.go's own SystemA/SystemB row-labels are the only system
+// vocabulary that file may use): draftFieldArgs' own decision default
+// names BOTH systems as required approvers, which would leave A (still
+// active) owing `approve` too, and CC-062's owners-empties-to-orphan
+// transfer never fires.
+func runPathDecisionProposedWithdrawnDeparted(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "decision-proposed-withdrawn-by-author-after-approvers-left")
+	ids := pathIDs{}
+	a := h.A
+
+	ensureFamily15CounterpartyActive(ctx, t, h)
+
+	if _, stderr, err := a.Run(ctx, "sync"); err != nil {
+		t.Fatalf("path %s: a2a sync (A) before draft: %v: %s", path.ID, err, strings.TrimSpace(stderr))
+	}
+	sub := driveCreateAndFirstTransition(ctx, t, h, a, path, 0, 1, "decision", "decision", ids,
+		"--field", "required_approvers=["+h.B.System+"]")
+
+	departFamily15Counterparty(ctx, t, h, path.ID, "decision", sub.ID)
+
+	driveSimpleVerb(ctx, t, h, a, path, 2, fold.TWithdraw, sub.ID, ids)
+	return ids
+}
+
+// runPathDecisionProposedSupersededDeparted drives
+// decision-proposed-superseded-by-author-after-approvers-left: the same
+// active-then-departed-sole-approver setup as the withdraw driver above,
+// ending in decisionRows()' own direct `proposed -> superseded` escape
+// hatch instead (Role Owner) — a fresh decision instance, same reasoning
+// runPathDecisionApprovedSuperseded's own doc comment gives for `--refs`.
+func runPathDecisionProposedSupersededDeparted(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "decision-proposed-superseded-by-author-after-approvers-left")
+	ids := pathIDs{}
+	a := h.A
+
+	ensureFamily15CounterpartyActive(ctx, t, h)
+
+	if _, stderr, err := a.Run(ctx, "sync"); err != nil {
+		t.Fatalf("path %s: a2a sync (A) before draft: %v: %s", path.ID, err, strings.TrimSpace(stderr))
+	}
+	sub := driveCreateAndFirstTransition(ctx, t, h, a, path, 0, 1, "decision", "decision", ids,
+		"--field", "required_approvers=["+h.B.System+"]")
+
+	departFamily15Counterparty(ctx, t, h, path.ID, "decision", sub.ID)
+
+	driveSupersedeWithPlaceholderRef(ctx, t, h, a, path, 2, "decision", sub.ID, ids)
+	return ids
+}
+
+// runPathHandoffSubmittedSupersededDeparted drives
+// handoff-submitted-superseded-by-producer-after-receiver-left: A (the
+// producer) submits a handoff whose sole `to:` target is B (fully active,
+// and addressed by the default `to=[peer]`), B then leaves
+// (departFamily15Counterparty), A never sees an acknowledge land, and
+// supersedes straight from `submitted`. No draft-field override is
+// needed: draftFieldArgs' own handoff default already names `to=[peer]`
+// (the single target), and `peer` here is B.
+func runPathHandoffSubmittedSupersededDeparted(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "handoff-submitted-superseded-by-producer-after-receiver-left")
+	ids := pathIDs{}
+	a := h.A
+
+	ensureFamily15CounterpartyActive(ctx, t, h)
+
+	if _, stderr, err := a.Run(ctx, "sync"); err != nil {
+		t.Fatalf("path %s: a2a sync (A) before draft: %v: %s", path.ID, err, strings.TrimSpace(stderr))
+	}
+	sub := driveCreateAndFirstTransition(ctx, t, h, a, path, 0, 1, "handoff", "handoff", ids)
+
+	departFamily15Counterparty(ctx, t, h, path.ID, "handoff", sub.ID)
+
+	driveSupersedeWithPlaceholderRef(ctx, t, h, a, path, 2, "handoff", sub.ID, ids)
+	return ids
+}
+
+// runDepartedCounterpartyPaths drives pathdrivability.go's own
+// departedCounterpartyPathIDs, one t.Run subtest per id, against h — a
+// harness whose OWN space (never one of the ordinary round-robin
+// path-space harnesses runConformancePaths splits drivenPathIDs() across)
+// seeds systemBravo `left` at genesis (newLogicHarness(ctx, t, systemBravo),
+// logic_runner_live_test.go). Deliberately its own small dispatch loop, not
+// folded into runPathGroup: these three ids are EXCLUDED from
+// runConformancePaths' own split (pathdrivability.go's own doc comment
+// explains why sharing a space would be wrong), so the two loops must never
+// silently reconverge into driving the same id twice or, worse, driving
+// these three against the wrong harness.
+func runDepartedCounterpartyPaths(ctx context.Context, t *testing.T, h *harness) {
+	t.Helper()
+	for _, id := range departedCounterpartyPathIDs() {
+		id := id
+		t.Run(id, func(t *testing.T) {
+			defer func() {
+				_, _, _ = h.A.Run(ctx, "sync")
+			}()
+			driver, ok := driverForPath[id]
+			if !ok {
+				t.Fatalf("pathdriver: %q is in departedCounterpartyPathIDs() but has no entry in driverForPath", id)
+			}
+			driver(ctx, t, h, id)
+		})
+	}
+}
+
 // --- Family 10 — supersede (P11 W3e Deliverable 1) -----------------------
 
 // driveSupersedeWithPlaceholderRef drives `a2a supersede --refs <placeholder> <targetID>`
@@ -2133,6 +2314,16 @@ var driverForPath = map[string]func(ctx context.Context, t *testing.T, h *harnes
 	"work-request-lifecycle-disputed-sender-owes":              runPathWorkRequestDisputedSenderOwes,
 	"question-multi-response-reconciliation":                   runPathQuestionMultiResponseReconciliation,
 	"work-request-multi-response-reconciliation":               runPathWorkRequestMultiResponseReconciliation,
+
+	// Family 15 — the departed counterparty (P8 wave 30B). Present in this
+	// map for the SAME reason every other entry is (mustPath/runPathGroup's
+	// own fatal-on-miss guard), but never reached through runPathGroup: the
+	// three ids are excluded from runConformancePaths' own split
+	// (drivenPathIDs() minus departedCounterpartyPathIDs()) and driven only
+	// by runDepartedCounterpartyPaths, against its own dedicated harness.
+	"decision-proposed-withdrawn-by-author-after-approvers-left":   runPathDecisionProposedWithdrawnDeparted,
+	"decision-proposed-superseded-by-author-after-approvers-left":  runPathDecisionProposedSupersededDeparted,
+	"handoff-submitted-superseded-by-producer-after-receiver-left": runPathHandoffSubmittedSupersededDeparted,
 }
 
 // runConformancePaths drives every drivenPathIDs() entry as its own t.Run
@@ -2177,7 +2368,27 @@ func runConformancePaths(ctx context.Context, t *testing.T, harnesses []*harness
 	// serialisation costs. Contiguous blocks rather than round-robin, so a
 	// group's contents stay predictable from the declaration order when
 	// reading a failure.
-	groups := splitPathIDs(drivenPathIDs(), len(harnesses))
+	//
+	// departedCounterpartyPathIDs() (pathdrivability.go) is SUBTRACTED
+	// before splitting — those three ids are driven separately, by
+	// runDepartedCounterpartyPaths against its own dedicated
+	// genesis-departed harness, never one of THESE ordinary ones (that
+	// function's own doc comment says why sharing a space would silently
+	// depart a counterparty every other path here still assumes is
+	// active). They stay IN drivenPathIDs() itself (the union gate,
+	// pathdrivability_test.go, is honest that they ARE driven) — only this
+	// split excludes them.
+	departed := map[string]bool{}
+	for _, id := range departedCounterpartyPathIDs() {
+		departed[id] = true
+	}
+	var regular []string
+	for _, id := range drivenPathIDs() {
+		if !departed[id] {
+			regular = append(regular, id)
+		}
+	}
+	groups := splitPathIDs(regular, len(harnesses))
 	for i, ids := range groups {
 		if len(ids) == 0 {
 			continue

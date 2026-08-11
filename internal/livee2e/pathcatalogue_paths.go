@@ -37,6 +37,7 @@ func ConformancePaths() []Path {
 	out = append(out, remainingDeclinePaths()...)
 	out = append(out, remainingBlockUnblockPaths()...)
 	out = append(out, granularityPaths()...)
+	out = append(out, departedCounterpartyPaths()...)
 	return out
 }
 
@@ -2657,5 +2658,198 @@ func granularityPaths() []Path {
 		questionAcceptStartRespond, questionAcceptedRespondDirect,
 		workRequestAcceptedRespondDirect, workRequestDisputedSenderOwes,
 		questionMultiResponseReconciliation, workRequestMultiResponseReconciliation,
+	}
+}
+
+// --- Family 15 — the departed counterparty (P8, 01-resting-totality.md's
+// own AC2 scenario ids): a required approver / a handoff's own receiver has
+// LEFT the space BEFORE the author/producer's own FINAL act, having been
+// fully active and correctly ADDRESSED by the act just before that.
+//
+// Wave 29 traced why decision-proposed-withdrawn (Family 9) and every
+// supersede/cancel/decline row elsewhere in this catalogue could NOT answer
+// these three declared scenario ids even though their own TRANSITIONS are
+// already driven: `withdraw`/`supersede` off `proposed`, and `supersede`
+// off a handoff's `submitted`, are all Role Owner UNCONDITIONALLY
+// (table.go) — fold.go's authorized()/legalRole() consult only the ACTING
+// system's own membership, never the counterparty's — so the transition
+// LANDS identically whether the counterparty ever existed or is fully
+// active. What was missing was never a Step; it was a way to make the
+// counterparty ACTUALLY gone before the author's FINAL act, so the
+// scenario's own claim (the departure, not merely the transition) is what
+// gets asserted.
+//
+// WAVE 30B GOT THE TIMING WRONG, and the real conformance matrix — not
+// argument — is what proved it (2026-08-11): it departed the counterparty
+// at space GENESIS, reasoning (from D-017, fold/types.go: "authorization is
+// evaluated against the manifest as of the event's commit") that a
+// genesis-departed participant and a mid-path-departed one are "provably
+// identical to every check these transitions run". That is TRUE of the
+// transition's own AUTHORIZATION — fold.go never consults the
+// counterparty's membership — and FALSE of the path as a whole: before any
+// of these three transitions can run at all, A must first CREATE and
+// ADDRESS an artifact to the counterparty (`required_approvers`/`to`), and
+// internal/validate/authz.go's checkAddressees (REF-006, CC-008) refuses
+// SUBMITTING an envelope whose `to` names an already-`left` system —
+// verified directly against the binary: `a2a submit` on the genesis-
+// departed harness reds every one of these three ids at the FIRST
+// submission with "REF-006 `to` includes a system marked `left`", before
+// the transition this family exists to prove is ever reached. Genesis
+// departure does not construct the scenario; it makes it unconstructible.
+// Wave 29's own original finding ("the harness cannot make a participant
+// leave mid-scenario ... needs a manifest-mutation step") was RIGHT, and
+// wave 30B's own "provably identical" correction of it was wrong about the
+// PATH even though it was right about the TRANSITION.
+//
+// The fix: depart the counterparty MID-PATH — AFTER the create+first-
+// transition step that addresses it (while it is still active, so REF-006
+// has nothing to refuse), and BEFORE the final transition (so the
+// scenario's own "already gone" claim is true when that transition runs).
+// scaffold.go's SetParticipantStatus / provision_live.go's
+// SetParticipantStatusMidPath are the primitive that makes this possible —
+// a direct clone+edit+commit+push against the space's CURRENT history
+// (never through `a2a`, which has no verb for this field either way),
+// mirroring the SAME "someone edited space.yaml directly" shape genesis
+// scaffolding already uses, just run after real steps exist instead of
+// before any do. See that function's own doc comment for the full
+// REF-006 finding.
+//
+// These three paths still run over a DEDICATED space
+// (pathdriver_live.go's runDepartedCounterpartyPaths), never one of the
+// ordinary round-robin path-space harnesses runConformancePaths splits
+// drivenPathIDs() across: SetParticipantStatusMidPath is exactly as
+// irreversible as genesis departure was (no `a2a` CLI verb ever writes this
+// field, in either direction), so isolating these three onto their own
+// space is still what keeps every OTHER declared path's own
+// active-counterparty assumption true. Unlike wave 30B, the three DO share
+// that one dedicated space with EACH OTHER across driver calls — each
+// driver restores the counterparty to active before its own first step
+// (pathdriver_live.go's ensureFamily15CounterpartyActive), so the three
+// stay independent of run order despite the shared, irreversible-per-call
+// manifest fact.
+//
+// The load-bearing assertion in every one of the three is CC-062's own
+// orphaned-counterparty transfer (internal/pendency's own Resolve, wired
+// through cache/threadview.go's leftParticipants): with the sole required
+// approver / the handoff's sole target now gone, pending_on transfers from
+// that counterparty to the AUTHOR/PRODUCER (the sender), and
+// expected_transition clears to "" — a real, observable difference from
+// this catalogue's OTHER decision/handoff paths (whose own counterparty is
+// active throughout), not a restated assumption about a departure nothing
+// downstream can see. Each path's own Step declared right after
+// create+first-transition asserts the PRE-departure truth (pending on the
+// still-active counterparty, the ordinarily-owed transition) — the
+// departure and its CC-062 transfer are asserted by the DRIVER, directly
+// (pathdriver_live.go's departFamily15Counterparty), never as a declared
+// Step: the manifest edit itself has no fold transition at all, and
+// pathgrammar.go's own Step doc comment is explicit that an act with no
+// fold transition is never expressible as one (adoption, a broadcast ack —
+// the same rule, a new instance of it). The before/after pair is strictly
+// stronger evidence of the departure than asserting only the post-departure
+// state would be.
+func departedCounterpartyPaths() []Path {
+	decisionProposedWithdrawnByAuthorAfterApproversLeft := Path{
+		ID: "decision-proposed-withdrawn-by-author-after-approvers-left",
+		Intent: "the SOLE required approver is fully active when A proposes (addressed by " +
+			"`required_approvers`, pending on it as ordinary), THEN leaves before A acts again — " +
+			"CC-062 transfers `proposed`'s own pending_on from the (now gone) approver to A " +
+			"itself, expected_transition clearing to \"\" (internal/pendency's own " +
+			"orphaned-counterparty branch: owners empties, so Owners becomes owner(in) = " +
+			"[From]). A then withdraws — Role Owner, unconditional (decisionRows()) — " +
+			"regardless of that pendency state, exactly as decision-proposed-withdrawn's own " +
+			"(never-departed) run already proves the TRANSITION does; what this path adds is " +
+			"the departure itself, asserted through the ONE surface that can see it, at the " +
+			"ONE point in the path where it is true (mid-path — see this family's own doc " +
+			"comment for why genesis departure cannot even reach `propose`).",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindDecision, Transition: fold.TCreate,
+				Predicates: []Predicate{FoldedState("decision", fold.StateDraft)},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindDecision, Transition: fold.TPropose,
+				Predicates: []Predicate{
+					PendingOn("decision", SystemB),
+					ExpectedTransition("decision", fold.TApprove),
+				},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindDecision, Transition: fold.TWithdraw,
+				Predicates: []Predicate{
+					FoldedState("decision", fold.StateWithdrawn),
+					AbsentFromOpenItems("decision"),
+				},
+			},
+		},
+	}
+
+	decisionProposedSupersededByAuthorAfterApproversLeft := Path{
+		ID: "decision-proposed-superseded-by-author-after-approvers-left",
+		Intent: "the same active-then-departed-sole-approver setup as the withdraw sibling " +
+			"above, ending in decisionRows()'s own direct `proposed -> superseded` escape " +
+			"hatch (Role Owner) instead of withdraw — a fresh standalone decision instance, " +
+			"since propose/withdraw and propose/supersede are both third branches off the " +
+			"SAME `proposed` state, mutually exclusive with approve/reject.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindDecision, Transition: fold.TCreate,
+				Predicates: []Predicate{FoldedState("decision", fold.StateDraft)},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindDecision, Transition: fold.TPropose,
+				Predicates: []Predicate{
+					PendingOn("decision", SystemB),
+					ExpectedTransition("decision", fold.TApprove),
+				},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindDecision, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("decision", fold.StateSuperseded),
+					AbsentFromOpenItems("decision"),
+				},
+			},
+		},
+	}
+
+	handoffSubmittedSupersededByProducerAfterReceiverLeft := Path{
+		ID: "handoff-submitted-superseded-by-producer-after-receiver-left",
+		Intent: "the receiver (the handoff's sole `to:` target) is fully active when A (the " +
+			"producer) submits — addressed by `to`, pending on it as ordinary — THEN leaves " +
+			"before A acts again. CC-062 transfers `submitted`'s own pending_on (ordinarily " +
+			"the target's own owed `acknowledge`) from the now-gone receiver to A itself, " +
+			"expected_transition clearing to \"\". A never sees an acknowledge land (the " +
+			"receiver cannot write), so A supersedes straight from `submitted` — " +
+			"handoffRows()'s own Role Owner row for exactly this branch, the same row " +
+			"data-loop-attempt-one-fails' own retry-after-verify-fail drives, here reached " +
+			"with no acknowledge at all rather than a verify-fail. P1 shipped this row " +
+			"precisely for this departed-receiver case (P-2/CC-062); this is the first path " +
+			"that actually drives it with the receiver gone.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindHandoff, Transition: fold.TCreate,
+				Predicates: []Predicate{FoldedState("handoff", fold.StateDraft)},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindHandoff, Transition: fold.TSubmit,
+				Predicates: []Predicate{
+					PendingOn("handoff", SystemB),
+					ExpectedTransition("handoff", fold.TAcknowledge),
+				},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindHandoff, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("handoff", fold.StateSuperseded),
+					AbsentFromOpenItems("handoff"),
+				},
+			},
+		},
+	}
+
+	return []Path{
+		decisionProposedWithdrawnByAuthorAfterApproversLeft,
+		decisionProposedSupersededByAuthorAfterApproversLeft,
+		handoffSubmittedSupersededByProducerAfterReceiverLeft,
 	}
 }

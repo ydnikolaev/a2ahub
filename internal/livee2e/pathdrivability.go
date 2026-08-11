@@ -31,7 +31,7 @@ type undrivablePath struct {
 // that path and nothing else (plus TestLogicMatrix's own family matrix —
 // see runConformancePaths' own doc comment for that residual).
 func drivenPathIDs() []string {
-	return []string{
+	out := []string{
 		"contract-baseline-published-settled",
 		"contract-successor-compatible-publish",
 		"question-lifecycle-acknowledged",
@@ -116,6 +116,33 @@ func drivenPathIDs() []string {
 		"work-request-lifecycle-disputed-sender-owes",
 		"question-multi-response-reconciliation",
 		"work-request-multi-response-reconciliation",
+	}
+	out = append(out, departedCounterpartyPathIDs()...)
+	return out
+}
+
+// departedCounterpartyPathIDs is Family 15's own three ids
+// (pathcatalogue_paths.go) — genuinely driven, one t.Run subtest per id
+// exactly like every other drivenPathIDs() entry (pathdriver_live.go's
+// runDepartedCounterpartyPaths, driverForPath), but NEVER through
+// runConformancePaths' own round-robin split across the ordinary path-space
+// harnesses: each driver departs h.B MID-PATH (provision_live.go's
+// SetParticipantStatusMidPath — P8 wave 31, correcting wave 30B's own
+// genesis-timed attempt, see pathcatalogue_paths.go's own Family 15 doc
+// comment), and that mutation is just as irreversible per call as a
+// genesis one would have been (no `a2a` CLI verb writes this field, in
+// either direction, and re-provisioning mid-group would erase every other
+// path's own already-committed artifacts), so mixing these three into the
+// ordinary split would still silently depart a counterparty every OTHER
+// path in that harness's group assumes is active. Kept as its own named
+// function, not inlined into drivenPathIDs()'s own literal, so
+// runConformancePaths (pathdriver_live.go) can subtract exactly this set
+// before splitting, without the two lists drifting apart.
+func departedCounterpartyPathIDs() []string {
+	return []string{
+		"decision-proposed-withdrawn-by-author-after-approvers-left",
+		"decision-proposed-superseded-by-author-after-approvers-left",
+		"handoff-submitted-superseded-by-producer-after-receiver-left",
 	}
 }
 

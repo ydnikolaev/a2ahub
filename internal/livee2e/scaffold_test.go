@@ -84,6 +84,92 @@ func TestPatchSpaceParticipantsRoundTrip(t *testing.T) {
 	}
 }
 
+// TestSetParticipantStatusFlipsOnlyNamedRow proves the mid-path primitive
+// P8 wave 31's own Family 15 drivers need: SetParticipantStatus flips
+// bravo's own row from "active" to "left" while alpha's row (and every
+// other byte — org/section/owners/joined) is untouched.
+func TestSetParticipantStatusFlipsOnlyNamedRow(t *testing.T) {
+	t.Parallel()
+
+	ps := []Participant{
+		{System: "alpha", Org: "a2ahub-live-e2e", Section: "alpha/", Owner: "some-login-a", Joined: "2026-07-24"},
+		{System: "bravo", Org: "a2ahub-live-e2e", Section: "bravo/", Owner: "some-login-b", Joined: "2026-07-24"},
+	}
+	seeded, err := PatchSpaceParticipants(realSpaceYAMLFragment, ps)
+	if err != nil {
+		t.Fatalf("PatchSpaceParticipants: %v", err)
+	}
+
+	got, already, err := SetParticipantStatus(seeded, "bravo", "left")
+	if err != nil {
+		t.Fatalf("SetParticipantStatus: %v", err)
+	}
+	if already {
+		t.Fatalf("SetParticipantStatus reported alreadyAtStatus=true for a row that started active")
+	}
+
+	wantLines := []string{
+		"  - {system: alpha, org: a2ahub-live-e2e, section: alpha/, owners: [some-login-a], status: active, joined: 2026-07-24}",
+		"  - {system: bravo, org: a2ahub-live-e2e, section: bravo/, owners: [some-login-b], status: left, joined: 2026-07-24}",
+	}
+	for _, ln := range wantLines {
+		if !strings.Contains(got, ln) {
+			t.Fatalf("expected line %q in output:\n%s", ln, got)
+		}
+	}
+	if strings.Contains(got, "owners: [some-login-b], status: active") {
+		t.Fatalf("bravo's status was NOT flipped — still rendered active:\n%s", got)
+	}
+}
+
+// TestSetParticipantStatusIsIdempotent proves SetParticipantStatus's own
+// alreadyAtStatus contract (its doc comment): asking for the status a row
+// already carries returns the input UNCHANGED, with alreadyAtStatus=true —
+// SetParticipantStatusMidPath (provision_live.go) relies on this to skip an
+// empty commit rather than authoring a no-op one.
+func TestSetParticipantStatusIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	ps := []Participant{
+		{System: "alpha", Org: "a2ahub-live-e2e", Section: "alpha/", Owner: "some-login-a", Joined: "2026-07-24"},
+	}
+	seeded, err := PatchSpaceParticipants(realSpaceYAMLFragment, ps)
+	if err != nil {
+		t.Fatalf("PatchSpaceParticipants: %v", err)
+	}
+
+	got, already, err := SetParticipantStatus(seeded, "alpha", "active")
+	if err != nil {
+		t.Fatalf("SetParticipantStatus: %v", err)
+	}
+	if !already {
+		t.Fatalf("SetParticipantStatus reported alreadyAtStatus=false for a row already at the requested status")
+	}
+	if got != seeded {
+		t.Fatalf("SetParticipantStatus returned a MODIFIED document for a no-op call:\ngot:  %s\nwant: %s", got, seeded)
+	}
+}
+
+// TestSetParticipantStatusNotFound proves SetParticipantStatus fails loudly
+// (ErrParticipantRowNotFound), never silently, when asked to flip a system
+// that has no participant row at all.
+func TestSetParticipantStatusNotFound(t *testing.T) {
+	t.Parallel()
+
+	ps := []Participant{
+		{System: "alpha", Org: "a2ahub-live-e2e", Section: "alpha/", Owner: "some-login-a", Joined: "2026-07-24"},
+	}
+	seeded, err := PatchSpaceParticipants(realSpaceYAMLFragment, ps)
+	if err != nil {
+		t.Fatalf("PatchSpaceParticipants: %v", err)
+	}
+
+	_, _, err = SetParticipantStatus(seeded, "charlie", "left")
+	if !errors.Is(err, ErrParticipantRowNotFound) {
+		t.Fatalf("err = %v, want ErrParticipantRowNotFound", err)
+	}
+}
+
 func TestPatchSpaceParticipantsNotFound(t *testing.T) {
 	t.Parallel()
 

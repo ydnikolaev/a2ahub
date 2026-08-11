@@ -192,6 +192,54 @@ func TestLogicMatrix(t *testing.T) {
 	t.Logf("conformance paths: %d space(s)", len(pathHarnesses))
 	runConformancePaths(ctx, t, pathHarnesses)
 
+	// P8 wave 31 (correcting wave 30B) — a FIFTH, dedicated space for
+	// Family 15's own three departed-counterparty paths
+	// (pathdriver_live.go's runDepartedCounterpartyPaths). Started with
+	// the ORDINARY two-active-participant scaffold, unlike wave 30B's own
+	// genesis-departed attempt: that attempt reds every one of these three
+	// paths on REF-006 ("`to` includes a system marked `left`") the moment
+	// the FIRST step tries to address the already-departed counterparty —
+	// a scenario that must first ADDRESS a counterparty and only THEN
+	// watch it leave can never be answered by seeding "left" before that
+	// submission exists at all. Each driver now departs systemBravo
+	// MID-PATH instead (SetParticipantStatusMidPath, provision_live.go),
+	// after its own create+first-transition has already landed and before
+	// its own final transition — see pathcatalogue_paths.go's own Family
+	// 15 doc comment for the full finding.
+	//
+	// Still never one of the pathHarnesses above, and still its own
+	// dedicated space: SetParticipantStatusMidPath is exactly as
+	// irreversible as genesis departure was (no `a2a` CLI verb ever
+	// writes this field, in either direction), so mixing
+	// pathdrivability.go's own departedCounterpartyPathIDs() into the
+	// ordinary round-robin split would still silently depart a
+	// counterparty every OTHER path in that harness's group assumes is
+	// active — runConformancePaths already excludes them from its own
+	// split for exactly this reason; this harness is where they actually
+	// run (runDepartedCounterpartyPaths itself, sequentially, restoring
+	// systemBravo to active at the top of each driver so the three paths
+	// stay independent of run order — ensureFamily15CounterpartyActive's
+	// own doc comment).
+	departedHarness, departedCleanup, departedErr := newLogicHarness(ctx, t)
+	t.Cleanup(func() {
+		if cleanupErr := departedCleanup(); cleanupErr != nil {
+			t.Errorf("departed-counterparty harness cleanup failed: %v", cleanupErr)
+		}
+	})
+	if departedErr != nil {
+		t.Fatalf("newLogicHarness (departed counterparty, systemBravo): %v", departedErr)
+	}
+	if err := departedHarness.Seam.Validate(); err != nil {
+		t.Fatalf("departed-counterparty harness seam did not validate: %v", err)
+	}
+	if departedHarness.Seam.IsRealGitHub() {
+		t.Fatalf("departed-counterparty harness seam reports real GitHub — refusing to drive a write against it: %+v", departedHarness.Seam)
+	}
+	t.Run("departed-counterparty", func(t *testing.T) {
+		t.Parallel()
+		runDepartedCounterpartyPaths(ctx, t, departedHarness)
+	})
+
 	run := NewRunFor(logicOrg, logicRepo, Catalogue())
 	run.Tier = TierLogic
 	run.Preflight = h.Pre

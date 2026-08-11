@@ -222,6 +222,68 @@ func scaffoldParticipants(spaceDir, org string, pre Preflight) error {
 	return nil
 }
 
+// SetParticipantStatusMidPath is scaffold.go's SetParticipantStatus,
+// applied to the ALREADY-PROVISIONED space at remoteURL: clone its CURRENT
+// history, flip system's own participant row, commit on top of it, and push
+// straight back to main — no PR, no `a2a` CLI verb (none writes this field
+// — scaffold.go's own doc comment), the SAME "someone edited space.yaml
+// directly" shape scaffoldParticipants/gitCommitScaffold already establish
+// at genesis, run here AFTER real path steps have already landed instead of
+// before any exist. P8 wave 31's own Family 15 drivers
+// (pathdriver_live.go's departFamily15Counterparty/
+// ensureFamily15CounterpartyActive) are its only callers today.
+//
+// A no-op (nothing written, nothing committed, nothing pushed) when the row
+// already carries status (SetParticipantStatus's own alreadyAtStatus) —
+// idempotent so a caller can call this unconditionally without first
+// checking whether an earlier call in the same run already applied it.
+//
+// work is a scratch directory this call owns exclusively for its own
+// throwaway clone — callers must give it a fresh one (t.TempDir()), never
+// reuse a checkout's own working directory.
+func SetParticipantStatusMidPath(ctx context.Context, remoteURL, work, system, status string) error {
+	dir := filepath.Join(work, "midpath-status")
+	if err := runCmd(ctx, "git", "clone", "-q", remoteURL, dir); err != nil {
+		return fmt.Errorf("livee2e: SetParticipantStatusMidPath: clone %s: %w", remoteURL, err)
+	}
+	manifestPath := filepath.Join(dir, "space.yaml")
+	raw, err := os.ReadFile(manifestPath) //nolint:gosec // reason: manifestPath is rooted beneath this call's own scratch clone.
+	if err != nil {
+		return fmt.Errorf("livee2e: SetParticipantStatusMidPath: read space.yaml: %w", err)
+	}
+	patched, already, err := SetParticipantStatus(string(raw), system, status)
+	if err != nil {
+		return fmt.Errorf("livee2e: SetParticipantStatusMidPath: %w", err)
+	}
+	if already {
+		return nil
+	}
+	if err := os.WriteFile(manifestPath, []byte(patched), 0o644); err != nil { //nolint:gosec // reason: manifestPath is rooted beneath this call's own scratch clone.
+		return fmt.Errorf("livee2e: SetParticipantStatusMidPath: write space.yaml: %w", err)
+	}
+
+	steps := [][]string{
+		{"-C", dir, "config", "user.name", "a2a live-e2e"},
+		{"-C", dir, "config", "user.email", "live-e2e@a2ahub.invalid"},
+		{"-C", dir, "add", "space.yaml"},
+		{"-C", dir, "commit", "-q", "-m", "chore: " + system + " " + status + " (test-only mid-path membership edit)"},
+	}
+	for _, args := range steps {
+		if err := runCmd(ctx, "git", args...); err != nil {
+			return fmt.Errorf("livee2e: SetParticipantStatusMidPath: git %s: %w", strings.Join(args, " "), err)
+		}
+	}
+	// Plain, non-force push: this clone was just made from remoteURL's own
+	// current HEAD, so a fast-forward is always possible — a force push here
+	// would hide a genuine race instead of failing loudly on it, the same
+	// reasoning gitForcePush's own doc comment gives for why THAT function
+	// must never be reused for an ordinary write.
+	if err := runCmd(ctx, "git", "-C", dir, "push", "-q", "origin", "HEAD:main"); err != nil {
+		return fmt.Errorf("livee2e: SetParticipantStatusMidPath: push: %w", err)
+	}
+	return nil
+}
+
 // gitCommitScaffold init/adds/commits the freshly scaffolded tree, mirroring
 // reset.sh's own git invocation (a bare `git init -b main` + one commit —
 // this is a throwaway working tree, never a real history).

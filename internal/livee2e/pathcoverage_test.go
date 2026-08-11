@@ -178,18 +178,34 @@ func uncoveredTransitions() []uncoveredTransition {
 			"the error. Moved to decision-proposed-withdrawn (pathcatalogue_paths.go), which "+
 			"drives (decision, proposed, withdraw) without simulating a departure and closes "+
 			"P8's own {decision, withdrawn} resting-state gap (restingcoverage_test.go). "+
-			"The remaining three carry the SAME table-level fact (RoleOwner, unconditional) "+
-			"and are NOT structurally blocked either — but authoring their own paths is a "+
-			"separate catalogue decision this wave did not make (each enters a resting state "+
-			"{decision, superseded} / {handoff, superseded} some OTHER already-declared path "+
-			"already reaches — decision-rejected-superseded, decision-approved-superseded — "+
-			"so no resting-state gap forces the same one-driven-transition-per-wave scrutiny "+
-			"the two above got). Left listed, with the corrected reasoning, rather than driven "+
-			"speculatively: the catalogue has no way to make a participant LEAVE mid-scenario "+
-			"either way, so a path proving these three would need the same honest caveat "+
-			"decision-proposed-withdrawn's own Intent carries.",
-		tk(fold.KindDecision, fold.StateProposed, fold.TSupersede),
-		tk(fold.KindHandoff, fold.StateSubmitted, fold.TSupersede),
+			"TWO MORE MOVED OUT 2026-08-11, once the class's own missing primitive shipped — "+
+			"but not on the first attempt. P8 wave 30B first tried a GENESIS-time "+
+			"departed-participant provisioning primitive; running it against the real "+
+			"conformance matrix (not merely reasoning about fold.go's table) proved that "+
+			"WRONG: `a2a submit` refuses (REF-006, CC-008) an envelope whose `to`/"+
+			"`required_approvers` names an already-`left` system, so a genesis-departed "+
+			"counterparty made `propose`/`submit` itself unreachable — the scenario was never "+
+			"even entered, let alone the transition this class is about. Wave 31 replaced it "+
+			"with a MID-PATH primitive (scaffold.go's SetParticipantStatus, "+
+			"provision_live.go's SetParticipantStatusMidPath) and a dedicated departed-space "+
+			"driver (pathdriver_live.go's runDepartedCounterpartyPaths) that departs the "+
+			"counterparty AFTER it has been addressed and BEFORE the final transition — so "+
+			"(decision, proposed, supersede) and (handoff, submitted, supersede) are now BOTH "+
+			"covered, WITH the departure itself, by decision-proposed-superseded-by-author-"+
+			"after-approvers-left and handoff-submitted-superseded-by-producer-after-"+
+			"receiver-left (pathcatalogue_paths.go, Family 15). The SAME wave also carries a "+
+			"THIRD Family-15 path, decision-proposed-withdrawn-by-author-after-approvers-left, "+
+			"which drives (decision, proposed, withdraw) A SECOND time — this triple was "+
+			"already covered (decision-proposed-withdrawn, no departure, above) so it never "+
+			"appeared in this list, but its own scenario id had NOT been closed until now: "+
+			"decision-proposed-withdrawn only ever re-derived the bare TRANSITION, never the "+
+			"departure the id itself names. All three of 01-resting-totality.md's own declared "+
+			"ids (scenariocoverage_test.go's undrivenScenarios()) are closed by wave 31, not "+
+			"two, and not by wave 30B's own genesis attempt. The ONE remaining member of THIS "+
+			"class, (handoff, acknowledged, supersede), carries the SAME table-level fact "+
+			"(RoleOwner, unconditional) and is NOT structurally blocked either — no declared "+
+			"scenario id names it, so authoring a path for it is ordinary catalogue growth, "+
+			"not blocked on the departure primitive this wave shipped.",
 		tk(fold.KindHandoff, fold.StateAcknowledged, fold.TSupersede),
 	)...)
 
