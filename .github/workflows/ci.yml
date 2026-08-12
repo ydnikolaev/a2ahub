@@ -38,6 +38,26 @@ permissions:
 
 jobs:
   check:
+    # On the PUBLIC repository, `main` moves by exactly one route: promoting a
+    # candidate. The publisher only ever promotes a SHA whose own
+    # `a2a-candidate/**` branch already ran this workflow — the run is waited on
+    # before promotion, because that is the last moment its verdict can stop a
+    # release. So a push to public main re-runs the ceiling (~10 min) on a
+    # commit this workflow passed minutes earlier, every single release.
+    #
+    # Measured on v0.19.11: 81fd1114a96f passed as a candidate branch, then
+    # started again on main for the same SHA.
+    #
+    # The condition is scoped as narrowly as the fact is: only a PUSH, only to
+    # main, only where the repository is not the private source. Candidate
+    # branches and every pull request are untouched, and the private repo —
+    # where main moves for ordinary work and this IS the gate — is untouched.
+    # The `github.repository ==` idiom is the one codeql.yml already uses to
+    # tell the two repositories apart.
+    if: >-
+      github.event_name != 'push'
+      || github.ref != 'refs/heads/main'
+      || github.repository == 'ydnikolaev/a2ahub-private'
     runs-on: ubuntu-latest
     env:
       # setup-go restores this exact build cache; verify.sh accepts an external
