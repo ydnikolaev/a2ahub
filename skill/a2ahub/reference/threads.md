@@ -192,7 +192,13 @@ because it covers four unlike situations and only one is a check that passed:
 - the event carried no receipt — most do not;
 - the transition has nothing scalar to have claimed, so nothing is compared: a
   `note`, an `acknowledge` on an announcement, a `respond`, a `dispute`, a
-  `deprecate`/`retire` naming no version;
+  `deprecate`/`retire` naming no version. **`scope` is the field that decides
+  this**, and it is why that list is what it is: it names the ONE scalar fold
+  result the receipt is measured against — `kind` is `primary`, `response` or
+  `contract-version`, with `version` filled only for the last. A transition
+  that moves nothing scalar gets no scope, and a move with no scope can never
+  carry `consistency`. So an absent `scope` is not a gap in the record; it is
+  the record saying there was nothing here to check;
 - the event was ILLEGAL or made by an unauthorized actor. The fold ignored it
   and flagged it separately, and an ignored event's claim is never checked —
   the most wrong claim in a thread is the one least likely to carry this

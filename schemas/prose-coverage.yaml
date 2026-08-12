@@ -318,6 +318,8 @@ covered:
   field:cli-show:claimed_state: "reference/threads.md#What the record claims versus what the space resolves to"
   field:cli-show:consistency: "reference/threads.md#What the record claims versus what the space resolves to"
   field:cli-show:digest_mismatch: "reference/threads.md#What the record claims versus what the space resolves to"
+  field:cli-show:pinned_digest: "reference/threads.md#What the record claims versus what the space resolves to"
+  field:cli-show:resolved: "reference/threads.md#What the record claims versus what the space resolves to"
   field:cli-show:resolved_digest: "reference/threads.md#What the record claims versus what the space resolves to"
   field:cli-show:scope: "reference/threads.md#What the record claims versus what the space resolves to"
   field:cli-show:verification_claim: "reference/threads.md#What the record claims versus what the space resolves to"
@@ -366,7 +368,6 @@ declared_classes:
       - field:cli-show:lapsed
       - field:cli-show:lapsed_on
       - field:cli-show:note
-      - field:cli-show:resolved
       - field:cli-show:subject
       - field:cli-show:ulid
       - field:cli-thread:at
@@ -397,7 +398,6 @@ declared_classes:
       - field:cli-show:kind
       - field:cli-show:model
       - field:cli-show:name
-      - field:cli-show:pinned_digest
       - field:cli-show:produced_by
       - field:cli-show:producer
       - field:cli-show:ref
