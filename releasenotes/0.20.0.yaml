@@ -1,0 +1,195 @@
+schema: release-notes/v1
+version: "0.20.0"
+released: "2026-08-12"
+headline: "A rule that could redden a branch nobody may edit, and the command that never looked"
+changes:
+  - id: RN-02000-0
+    kind: fix
+    roadmap:
+      visibility: shipped
+      why: >
+        A validator that turns committed, unfixable history red has no repair
+        path, and the operator's only exit is to stop trusting the audit.
+    impact: high
+    subject: "REF-017 no longer refuses a digest quoted in ordinary prose"
+    detail: >
+      v0.19.11 added REF-017 at severity `reject`: an artifact body naming a
+      `sha256:` token that no declared attachment carries. The rule read a
+      digest appearing in ordinary PROSE as a claim to carry bytes. A
+      `work_request` merged four days before the rule existed — green at submit,
+      quoting a contract-set digest in a sentence explaining which version the
+      counterparty had adopted — turned a space's post-merge audit permanently
+      red. Committed artifacts are immutable and no verb retracts a closed
+      exchange, so there was no in-protocol repair.
+      Reported as fb-20260812-e6d189.
+
+      Two candidate fixes were considered and both are unimplementable as
+      stated. A contract-set digest and an attachment digest are the SAME SHAPE
+      (`sha256:` + hex), so nothing discriminates them; and no envelope schema
+      records the version that created an artifact, so "do not apply
+      retroactively" has nothing to key on.
+
+      REF-017 now refuses on a CONJUNCTION instead: the body names an
+      undeclared digest AND enumerates what looks like a file tree AND the
+      envelope declares no attachment at all. That is the exact shape of the
+      incident the rule was written for — a request that named a bundle by
+      digest and listed its eight files while the bytes sat in a gitignored
+      directory. Either signal alone now WARNS as POL-017. A bare digest
+      creates no expectation of bytes: a receiver cannot fetch from a digest it
+      was merely told about.
+
+      A second false positive was found and closed while pinning the first: the
+      file-tree heuristic accepted an all-digit "extension", so three lines of
+      prose opening with version strings (`v0.19.11 shipped the rule.`) counted
+      as a file listing. An extension must now contain a letter.
+    affects: ["a2a validate", "a2a validate --ci", "the space post-merge audit"]
+    action:
+      scope: space
+      why: >
+        If your space's default branch went red on REF-017 against an
+        already-merged artifact, bump the space's workflow pin to this release
+        and re-run the audit; the branch goes green with no edit to any
+        artifact. Nothing to do if you never saw the code.
+
+  - id: RN-02000-1
+    kind: policy
+    roadmap:
+      visibility: shipped
+      why: >
+        A rule that can only be satisfied by editing an immutable artifact must
+        not judge immutable history. It outlives the rule that taught it.
+    impact: normal
+    subject: "REF-017 is enforced at the write gate and returns no verdict in the post-merge audit"
+    detail: >
+      Narrowing the rule fixed the reported case. It did not fix the class: any
+      future reject-severity code could redden a branch whose content nobody is
+      permitted to change.
+
+      So REF-017 is now scoped by mode. At `--mode=v3-pr` — the pull-request
+      gate, where refusing still PREVENTS the merge — it is unchanged, and
+      still `reject`. At `--mode=v3-full-repo` — the post-merge audit, where the
+      artifact is already committed and refusing can only punish — it returns no
+      verdict at all. POL-017 is deliberately NOT suppressed there: it is a
+      warning, so the audit still surfaces the smell without refusing anything
+      immutable.
+
+      A permanently red audit is a broken instrument, not a strict one.
+    affects: ["a2a validate --ci --mode=v3-full-repo"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. The write gate is unchanged, so nothing that was refused
+        before is accepted now at the point where it can still be fixed.
+
+  - id: RN-02000-2
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: >
+        A validator whose own verdict nothing surfaces has stopped being a gate
+        and become a log entry.
+    impact: high
+    subject: "a2a doctor reports when a space's default branch is failing its own audit"
+    detail: >
+      `doctor` answered fourteen PASS on a space whose default branch had been
+      failing its post-merge audit for four hours. It has checks that look
+      adjacent — `CI presence`, `stuck green PRs` — and neither notices that the
+      last push to main FAILED. The one command an operator runs to ask "is my
+      space healthy" answered yes, and the red branch was found only because an
+      unrelated task had someone reading workflow logs by hand.
+
+      Reported as fb-20260812-ee6dcd.
+
+      There is now a `default branch healthy` check. It reads the required check
+      run on the space's default branch — the same selection the pull-request
+      gate itself uses, so the two cannot drift — and FAILs when it concluded
+      `failure`, `timed_out`, `cancelled` or `action_required`, naming the
+      space, the branch, the run and its conclusion. `doctor` exits 1.
+
+      Every uncertain state is a PASS carrying an advisory, never a red: this
+      build wiring no ref-status reader, no credential resolving, an unreadable
+      host, no matching check run, or a run still in flight. A check that cried
+      wolf on a network blip would be ignored inside a week, and this row's
+      whole purpose is being believed.
+
+      `doctor` now prints seventeen fixed checks rather than sixteen.
+    affects: ["a2a doctor"]
+    action:
+      scope: local
+      why: >
+        Run `a2a doctor`. If the new row FAILs, the branch every participant
+        pulls from and merges onto is red — fix it before merging onto it,
+        because every subsequent merge stacks onto an already-failing main.
+
+  - id: RN-02000-3
+    kind: fix
+    roadmap:
+      visibility: shipped
+      why: >
+        A fix that reaches one reader and not the others is how one defect
+        arrives twice under two severities.
+    impact: normal
+    subject: "a data package's own README no longer reads as an undecodable artifact"
+    detail: >
+      `a2a data pack` writes a `README.md` into `<system>/data/<DP-id>/` with no
+      frontmatter — the only shape it may write it in, since its bytes are
+      covered by the package digest and adding frontmatter would break
+      verification for everyone who fetches it. The validator learned to exempt
+      that path. Two other readers did not.
+
+      `inbox` and `outbox` listed it on every run as `not-frontmatter-shaped`,
+      and `doctor`'s repository-visibility check returned
+      `UNVERIFIED: classification scan incomplete` — no verdict at all, on a
+      check whose job is deciding whether a space's contents suit its
+      repository's visibility — while its remediation line named an owner who
+      could not act.
+
+      The path grammar is now stated once, in `internal/artifact`, and every
+      reader consults it. The file is classified, not excused.
+
+      Reported as fb-20260812-d31acb and escalated as fb-20260812-f9cfac, which
+      was right to escalate: the first record called it listing noise and set
+      `minor`; the second showed the same file stopping a verdict from being
+      reached at all. One cause, two surfaces, and the surface looked at first
+      set the severity.
+    affects: ["a2a inbox", "a2a outbox", "a2a doctor", "a2a sync"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. The next `a2a sync`/`a2a doctor` stops reporting the
+        file, and the visibility check reaches a verdict again.
+
+  - id: RN-02000-4
+    kind: fix
+    roadmap:
+      visibility: shipped
+      why: >
+        A test suite that reds at random on something unrelated to the change
+        under test teaches everyone to re-run rather than to read.
+    impact: normal
+    subject: "the random `directory not empty` test failure is fixed at its cause"
+    detail: >
+      `make check` reddened at random with
+      `TempDir RemoveAll cleanup: unlinkat …/origin.git: directory not empty` —
+      no assertion failing, just teardown. It red the public repository's own CI
+      on a pull request whose entire diff was one YAML file, and blocked it from
+      merging.
+
+      `git-receive-pack` runs `git maintenance run --auto --quiet --detach`
+      inside the receiving repository after every push. The `--detach` is the
+      whole problem: that process outlives the push, keeps the repository
+      directory open, and races the test's own cleanup.
+
+      The fixture layer already disabled `gc.auto` and `maintenance.auto` for
+      exactly this class of flake. Measured against git 2.55.0, those do not
+      prevent the spawn — they only make the already-forked process decide to do
+      nothing once it starts. The setting that prevents it is `receive.autogc`,
+      it belongs to the repository being pushed INTO, and a pushing client's
+      config cannot set it. It is now set on every bare fixture repository, with
+      a structural gate over the tree so a new one cannot be added without it.
+    affects: ["the test suite"]
+    action:
+      scope: none
+      why: >
+        Nothing to do; no shipped behaviour changes. Named because a
+        non-deterministic red is a thing people work around rather than report.
