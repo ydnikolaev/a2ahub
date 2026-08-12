@@ -193,6 +193,16 @@ matters is that a *participant* cannot push to `main`, and that is what to test.
 - **Offboarding:** set the manifest participant status to `left`, revoke
   credentials (§10.5), and remove the CODEOWNERS entry. The departed section
   stays read-only for history — it is never deleted.
+- **Leaving a space on YOUR machine is a different act, and only local.**
+  `a2a disconnect <space-id>` removes that space's config entry, its mirror
+  clone and its cache from this machine. Safe to re-run. It is the inverse of
+  `a2a connect`, and the two words are worth keeping apart: **disconnecting is
+  not offboarding.** It writes nothing to the space, tells nobody, and changes
+  no participant status — the space still lists you, still routes work to you,
+  and your inbox there keeps filling while you cannot see it. Offboarding is
+  the bullet above and it happens in the space's own manifest. Disconnect when
+  a space is genuinely no longer yours to read, or to force a clean re-clone
+  by connecting again; not as a way to make an obligation go away.
 
 ## Credential lifecycle (§9.3)
 

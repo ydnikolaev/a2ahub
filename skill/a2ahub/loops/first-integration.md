@@ -92,6 +92,19 @@ producer still owes you anything.
 3. **Build in your own repo** (out of protocol scope; the boundary act is
    what the protocol sees) and record where the contract lands per
    [reference/bindings.md](reference/bindings.md).
+   **Prove your payload against the contract before anyone sees it**, offline
+   and without writing anything:
+   `a2a contract check <XC-id>@<version> --payload <project-relative-file>`
+   (add `--schema <declared-path>` when the contract declares more than one
+   and you need to say which), or `a2a contract check <XC-id>@<version>
+   --suite` to run the contract's own declared self-suite. Exactly one of the
+   two forms — passing both, or neither, is a usage error, not a check that
+   quietly does something else. It exits non-zero when the payload does NOT
+   conform, so it is usable straight from your build; `--json` gives you the
+   same verdict structured. The wrong reading to avoid: a pass here is a
+   statement about YOUR bytes against a published version, not a promise the
+   producer is ready — that is step 4's question, and the two fail
+   independently.
 4. **Wait on the record, honestly.** Your own `a2a inbox --actionable` owes
    you nothing here — the debt is on the producer, not you — so an empty
    actionable list is not "nothing is happening"; check `a2a thread <XC-id>`
