@@ -285,12 +285,38 @@ test('Guide keeps the new operational and exact-contract cards in EN/RU parity',
   const russian = controller.renderVals().guideFeatures;
 
   assert.equal(english.length, russian.length);
-  assert.deepEqual(Array.from(english.slice(-2), card => card.tag), ['work report', 'id@version']);
-  assert.deepEqual(Array.from(russian.slice(-2), card => card.tag), ['work report', 'id@version']);
-  assert.match(english.at(-2).body, /unknown, never idle/);
-  assert.match(russian.at(-2).body, /«неизвестно».*«простой»/);
-  assert.match(english.at(-1).body, /immutable carried set.*preflight, materialize, and check/);
-  assert.match(russian.at(-1).body, /неизменяемый набор файлов.*preflight, materialize и check/);
+
+  // Cards are found BY TAG, not by position. They used to be pinned as
+  // slice(-2), which made the assertion fail the moment a card was inserted
+  // ahead of them — a true statement about the catalogue reported as a
+  // regression in cards that had not changed. The tag is the identity; where
+  // it sits in the list is not what this test is about.
+  const cardsByTag = (cards) => new Map(cards.map((card) => [card.tag, card]));
+  const en = cardsByTag(english);
+  const ru = cardsByTag(russian);
+  for (const tag of ['work report', 'id@version', 'outcome · terminal']) {
+    assert.ok(en.has(tag), `EN Guide is missing the ${tag} card`);
+    assert.ok(ru.has(tag), `RU Guide is missing the ${tag} card`);
+  }
+
+  // Parity is ORDER parity too, which the positional version could not see:
+  // a card appended in one language and inserted in the other left both
+  // slice(-2) assertions passing while the two Guides listed different things
+  // in different places. That happened while this card was being added.
+  assert.deepEqual(
+    Array.from(english, (card) => card.tag),
+    Array.from(russian, (card) => card.tag),
+    'EN and RU Guides must list the same cards in the same order'
+  );
+
+  assert.match(en.get('work report').body, /unknown, never idle/);
+  assert.match(ru.get('work report').body, /«неизвестно».*«простой»/);
+  assert.match(en.get('id@version').body, /immutable carried set.*preflight, materialize, and check/);
+  assert.match(ru.get('id@version').body, /неизменяемый набор файлов.*preflight, materialize и check/);
+  // The release headline: outcome and terminal are DIFFERENT questions, and
+  // the card has to say so rather than treating them as one flag.
+  assert.match(en.get('outcome · terminal').body, /refused AND non-terminal/);
+  assert.match(ru.get('outcome · terminal').body, /отклонено и при этом не терминально/);
 });
 
 test('bounded contract-version packages disclose omitted files in EN/RU', () => {

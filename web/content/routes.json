@@ -61,7 +61,7 @@
       "indexable": false,
       "markdown": "/dashboard.md",
       "structured_data": "none",
-      "change_sources": ["web/src/pages/dashboard.astro", "internal/html/testdata/demo.json"]
+      "change_sources": ["web/src/pages/dashboard.astro", "internal/html/demo-data.json", "internal/html/demo.go"]
     },
     {
       "id": "changelog",

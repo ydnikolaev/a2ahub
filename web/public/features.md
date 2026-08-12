@@ -116,6 +116,12 @@ Some interfaces are published to be read, never pinned. Such a descriptor says s
 
 Durable reports show who is working and what they await. Protocol completion remains separate; no current report means unknown, never idle.
 
+## The domain says what a state means, not each reader
+
+**outcome · terminal**
+
+Every artifact reports what its state MEANS alongside the state itself: outcome — open, settled, refused, withdrawn or superseded — and terminal, whether any move can still follow. They are different questions. A rejected decision is refused AND non-terminal, because it can still be superseded. Beside them, state_since, state_by and state_event name the event that produced the current state, which is not the artifact's latest event: a note changes nothing. Every surface used to decide this from its own list of state names, which is how a retired contract rendered as cancelled, though retiring is how a contract's life is supposed to end.
+
 ## Exact contract versions are reproducible
 
 **id@version**
