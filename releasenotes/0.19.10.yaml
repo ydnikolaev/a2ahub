@@ -1412,3 +1412,8 @@ changes:
       read-surface field to being taught in the skill or structurally declared.
       That gate is why the documentation above exists rather than being noticed
       a release later.
+    action:
+      scope: none
+      why: >
+        Nothing to do. `__catalog` is hidden and machine-consumed; no agent or
+        operator is meant to call it directly.
