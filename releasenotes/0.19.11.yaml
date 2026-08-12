@@ -39,6 +39,39 @@ changes:
         Nothing to do. If you read a2ahub.dev between 2026-08-07 and this
         release, the changelog you saw ended at v0.19.8; v0.19.9 and v0.19.10
         are both in it now.
+  - id: RN-01911-2
+    kind: policy
+    roadmap:
+      visibility: shipped
+      why: >
+        A reader deciding whether to trust a release is entitled to know which
+        verification it ran and which it did not.
+    impact: normal
+    subject: "This release was verified as presentation-only, and no live GitHub run was made for it"
+    detail: >
+      The release tier is chosen from the exact public diff, not from the
+      version number. This one changes no executable or protocol behaviour:
+      release notes, one Go test's corpus tripwire, the repository's own CI
+      triggers, a repository gate script, the website build, and version pins
+      whose workflow logic is unchanged. No file under `internal/`, `cmd/` or
+      `schemas/` changed outside a test.
+      So the real-GitHub matrix was NOT run for v0.19.11, and that is the tier's
+      normal answer rather than a deferral: there is no provider behaviour in
+      this diff for it to observe. What WAS run: the full `make check` ceiling
+      including the offline logic tier, the website's own build and budget
+      checks, the release preflight, and the publisher's leak assertion over
+      the filtered candidate.
+      The last full live GitHub matrix ran on 2026-08-05. Every release since —
+      v0.19.6 through v0.19.10 — deferred the provider tier by explicit operator
+      authorization, which `KI-01900-PROVIDER-TIER-DEFERRED` describes in full
+      and which remains the honest measure of what is unproven. v0.19.11 adds
+      nothing to that list, because it adds no behaviour.
+    affects: []
+    action:
+      scope: none
+      why: >
+        Nothing to do. If you are auditing what this version proved, the two
+        artefacts are this note and the standing known issue it points at.
   - id: RN-01911-1
     kind: fix
     roadmap:

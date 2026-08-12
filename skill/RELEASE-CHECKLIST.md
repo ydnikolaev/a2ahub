@@ -51,9 +51,15 @@ not drifted from the plan wording it quotes.
 
 ## Sign-off
 
-- **Release tag:** `v0.19.10`
+- **Release tag:** `v0.19.11`
 - **Reviewer:** `Claude Code`
 - **Date:** `2026-08-12`
+
+> **v0.19.11 changed no prose file**, so the v0.19.10 review below stands
+> unmodified rather than being re-ticked. Checked against the exact public
+> diff, not assumed: `git diff --name-status public/main..public/<candidate>`
+> lists no path under `skill/`. The review that matters for both tags is the
+> one recorded underneath, which was P13's.
 - [x] Every prose row above is ticked, or an un-ticked row has a written reason
       and a follow-up filed.
 - [ ] The `skill-drift` CI job is green on the exact release candidate tree
