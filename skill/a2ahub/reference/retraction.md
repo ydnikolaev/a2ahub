@@ -1,5 +1,17 @@
 # retraction.md — withdrawing a datum that is already live
 
+> **Answers:** how to withdraw a datum that is already live in front of end
+> users, using a `work_request` carrying an `x_retraction` block —
+> schema-valid today, no release needed.
+>
+> **Read it when:** a value your system published onto a rendered surface is
+> wrong, and cancelling the exchange that produced it would change nothing
+> downstream.
+>
+> **Not here:** no longer wanting the EXCHANGE itself — `a2a cancel` / `a2a
+> withdraw` in [loops/send.md](../loops/send.md); retiring an INTERFACE
+> ([contract-versions.md](contract-versions.md)).
+
 > **The rule this demonstrates**: `retire` is for an INTERFACE — it waits
 > for every registered consumer to acknowledge, because a contract version
 > going away is (by design) not urgent enough to skip that wait. A

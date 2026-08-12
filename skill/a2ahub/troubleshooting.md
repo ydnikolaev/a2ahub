@@ -1,5 +1,15 @@
 # troubleshooting.md — reading `a2a doctor`
 
+> **Answers:** how to read `a2a doctor` output — what each check inspects,
+> what a FAIL means, and what to do next.
+>
+> **Read it when:** `a2a doctor` is not green, or a command failed in a way
+> that smells like setup rather than protocol.
+>
+> **Not here:** first-time setup itself ([onboarding.md](onboarding.md)); what
+> to do when the tool is working and still got in your way — that is the
+> feedback loop ([loops/feedback.md](loops/feedback.md)).
+
 > **Defer to the binary.** This file interprets the output the `a2a doctor`
 > command actually produces. It does NOT invent failure modes or restate
 > aspirational checks that the binary does not yet run. When in doubt, run the

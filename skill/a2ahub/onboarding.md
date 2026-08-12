@@ -1,5 +1,16 @@
 # onboarding.md — setup walkthroughs (§9 digests)
 
+> **Answers:** the §9 setup walkthroughs — install profiles, making the
+> installed skill discoverable, the new-participant and new-space runbooks,
+> the hello-world announcement, and how to make the loop run without a human.
+>
+> **Read it when:** you are setting a2a up in a project for the first time, or
+> adding a new participant or a new space.
+>
+> **Not here:** diagnosing a setup that is already in place but red
+> ([troubleshooting.md](troubleshooting.md)); the day-to-day loops
+> ([loops.md](loops.md)).
+
 > Condensed from plan §9 (Human Operations). These are the walkthroughs an
 > agent uses to guide a first-time participant or human through setup. Every
 > command is catalogued in [reference/commands.md](reference/commands.md)

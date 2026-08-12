@@ -1,5 +1,18 @@
 # status-announcements.md — feed liveness, without a new type
 
+> **Answers:** the convention for feed liveness on the shipped mechanism —
+> `announcement` with `category: status` and an optional `period` — and how a
+> consumer turns one into "is this producer overdue".
+>
+> **Read it when:** you produce a periodic feed and its silence would
+> otherwise read as "nothing changed", or you consume one and need to judge
+> its freshness.
+>
+> **Not here:** the announcement type's own template and fields
+> ([authoring/announcement.md](authoring/announcement.md)); one-way notices
+> that are not periodic — an ordinary announcement through
+> [loops/send.md](../loops/send.md).
+
 > **The rule this demonstrates**: a data-feed producer's silence reads
 > identical to "nothing changed" unless something says otherwise. a2ahub does
 > not need a new envelope type to say it — `announcement` with `category:

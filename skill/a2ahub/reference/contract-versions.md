@@ -1,5 +1,19 @@
 # Contract versions — the rolling window, and how an interface retires
 
+> **Answers:** the rolling window — several versions of one contract alive at
+> once — what each state means to each side, how one line retires without
+> touching the others, and why a maintenance release needs an explicit
+> `--version`.
+>
+> **Read it when:** you are planning a version, a deprecation or a retirement,
+> or you are reading a contract whose `state` column disagrees with one of its
+> lines.
+>
+> **Not here:** the step-by-step producer and consumer loops
+> ([loops/contract-change.md](../loops/contract-change.md)); standing a
+> brand-new contract up
+> ([loops/first-integration.md](../loops/first-integration.md)).
+
 An interface between two systems is never one thing for long. The steady state
 of a maintained contract is several versions alive at once: `1.0` retired,
 `1.6` deprecated with a sunset date but still read, `1.6.1` published for the

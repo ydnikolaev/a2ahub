@@ -1,5 +1,17 @@
 # Reporting current work
 
+> **Answers:** the provider-neutral start/heartbeat/checkpoint/wait/stop
+> sequence, the split between a durable checkpoint and a machine-local lease,
+> and the rule that missing evidence is unknown rather than idle.
+>
+> **Read it when:** you are about to begin, pause or finish meaningful work
+> and the operational view should say so.
+>
+> **Not here:** the LIFECYCLE `a2a start` on an artifact you accepted — a
+> different verb with the same name, in
+> [loops/receive.md](../loops/receive.md); which flags each subcommand takes
+> ([commands.md](commands.md)).
+
 This is the provider-neutral bridge between an agent's execution loop and the
 operational view. It reports what an actor says it is doing; it does not infer
 work from an open thread, a lifecycle state, process existence, or elapsed

@@ -1,5 +1,17 @@
 # Who gets recorded as the actor
 
+> **Answers:** what lands in `actor` on every artifact and event — why the
+> environment decides which agent acted rather than what you type,
+> `A2A_ACTOR_AGENT` for a vendor with no detector, and the immutable reporter
+> identity a work id pins.
+>
+> **Read it when:** a write recorded the wrong actor, `a2a` refused one you
+> supplied, or you are wiring a harness that has no detector yet.
+>
+> **Not here:** which SYSTEM a write is attributed to — that is your project's
+> configuration, not this page; who owns a system (the space manifest's
+> `owners`, never copied onto a record).
+
 Every artifact and every event carries an `actor`, and it is written into a
 shared append-only log. Nobody can rewrite it later. This page is about what
 lands in that field, because until v0.19.9 the answer was "whatever the caller

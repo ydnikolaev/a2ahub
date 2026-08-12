@@ -1,5 +1,17 @@
 # Threads — one intent, one chain, both sides
 
+> **Answers:** what a thread IS, why it is the unit you read rather than the
+> individual artifact, how it is ordered, and how "whose move is it" is
+> computed.
+>
+> **Read it when:** you are trying to establish the state of one piece of
+> work, or you need to know which side owes the next act.
+>
+> **Not here:** the loop that acts on the answer
+> ([loops/receive.md](../loops/receive.md),
+> [loops/send.md](../loops/send.md)); how a thread is folded from events —
+> state-as-a-fold is condensed in [loops.md](../loops.md).
+
 A **thread** is every artifact belonging to one intent, in the order it
 actually happened, across both systems and both repositories. It is the unit
 you read when you want the answer to "what is the state of this piece of work",
@@ -88,6 +100,28 @@ open item's own `waiting_on` and `expected_transition` for who owes what; read
 page called them one computation, and that sentence was the model defect in one
 line.
 
+## What a state means, and which event produced it
+
+`a2a thread --json` carries the derived-state fields on every artifact —
+`outcome`, `terminal`, `state_since`, `state_by`, `state_event` — and
+`transition_free` on every event. [loops.md](../loops.md) §8.1 step 7 is where
+they are taught, including the three wrong readings they invite; the two that
+bite hardest when you are reading a THREAD specifically are worth repeating
+here, because this is the page you are on when you make the mistake:
+
+- **The transcript's last entry is not what moved the artifact.** A `note` is
+  `transition_free` — it appears in the transcript, it is real activity, and
+  it changed nothing. `state_since`/`state_by`/`state_event` name the event
+  that produced the state you are reading; scanning back to the newest entry
+  and calling that "when this last moved" is the exact bug the fields exist to
+  end. Read the fields, not the tail of the list.
+- **`outcome: refused` is not the end of the thread, and it is not "no open
+  items" either.** They are separate answers to separate questions: a rejected
+  handoff is `refused` and still carries an open item on its producer, who
+  owes the superseding attempt. Whose move it is comes from the open-item
+  list, always; `outcome` tells you how the artifact ITSELF ended up, and
+  `terminal` tells you whether any move can still follow at all.
+
 ## Where it shows up
 
 - `a2a thread <id>` — the transcript and open items.
@@ -121,3 +155,35 @@ artifact, submit it with the complete corrected text, then run
 `a2a supersede --refs <new-id> <old-id>`. The thread preserves both the audit
 trail and one unambiguous current document; readers never have to treat an old
 body plus a note as a silently edited contract.
+
+### One predecessor, one successor — a fork or a cycle is refused
+
+A supersession chain must be LINEAR, and as of `0.19.10` that is enforced
+rather than assumed. `a2a validate --ci --mode=v3-full-repo` refuses two
+distinct successors claiming the same predecessor (**REF-020**, a fork) and
+any chain that loops back on itself, self-supersede included (**REF-021**, a
+cycle). Both refusals name the ids involved — for a fork, BOTH claimants,
+because a whole-repository walk has no stable notion of which one arrived
+second and blaming "the later one" would be an invention.
+
+The reason to care is the cycle: an artifact reachable from itself through
+`supersedes` has no state a reader can settle on, so the same history folds
+differently depending on where the reader started. A fork is the milder
+version of the same defect — two documents both presenting as the current one.
+
+What this changes for an author, concretely:
+
+- **Correcting a correction is a chain, not a second branch.** If successor B
+  already supersedes A and B turns out wrong too, author C with
+  `supersedes: <B-id>` and run `a2a supersede <B-id> --refs <C-id>`. Pointing
+  C back at A instead gives A two claimants and reds the space's full-repo
+  validation.
+- **The refusal is not on your machine.** The check runs only in full-repo
+  mode, deliberately: a pull request carries a slice of the graph, and a
+  partial graph would report a fork that does not exist. So a local
+  `a2a validate` will not catch this — you meet it at merge, on a red the
+  whole space sees. Check what already supersedes the artifact (`a2a thread
+  <id>`) before authoring a successor, not after.
+- **A space whose history already carries one goes red at the next full-repo
+  run.** That history was ambiguous before the check existed; the refusal is
+  what makes it visible, not what made it wrong.

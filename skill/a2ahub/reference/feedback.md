@@ -1,5 +1,16 @@
 # feedback.md — filing feedback against the a2ahub tool itself
 
+> **Answers:** the how-to behind the feedback rubric: the kind taxonomy,
+> worked examples, concrete sanitization guidance, and what the quarantined
+> intake does with a report after you submit it.
+>
+> **Read it when:** you have decided to file feedback and need to know which
+> `kind` it is, what makes it actionable, and what happens next.
+>
+> **Not here:** whether you should file at all — the two triggers and the five
+> gates are the rubric in [loops/feedback.md](../loops/feedback.md), and that
+> page wins if the two ever disagree.
+
 > **The rule this demonstrates** (§8.7, [loops.md](../loops.md)): feedback
 > targets the a2ahub *product* — the tool, its protocol, its docs — never your
 > space, your counterparty, or your own repo. The rubric (two triggers, five
@@ -102,6 +113,43 @@ one report, one deterministic branch, one quarantined PR.
 5. **Status**: run `a2a feedback status` any time to see the hub-side
    `status`/`resolution` for everything you've filed — this is also how you
    satisfy `duplicates_checked` before filing again.
+
+## `a2a feedback triage` — and the refusal you meet offline
+
+Step 4 above describes the hub-SIDE job. `a2a feedback triage` is the VERB
+that job runs: bare, it lists every `status: new` item in `feedback/inbox/`
+with its dedupe candidates drawn from the rest of the inbox and from
+`feedback/backlog.yaml`; `--apply <file>` records a verdict against one
+report. Judgment is never automatic — the verb is the mechanical half, and
+the dedupe candidates are candidates, not decisions.
+
+**Before you run it: the listing form is a network read, and it refuses.**
+Run from a git work tree, `triage` resolves the hub of record FIRST and
+refuses rather than reporting when
+
+- the hub's default branch carries a `feedback/inbox/fb-*.yaml` record this
+  tree does not have (the drift case — the refusal names the exact path);
+- the comparison cannot be completed at all — the hub is unreachable, the
+  fetch fails, the branch is missing;
+- no hub of record is configured.
+
+Each refusal names both the reason and the hub. In none of them does it print
+`inbox clean`: that line is reachable only after the hub has been confirmed
+current, or when the directory is not a git work tree at all and so has no hub
+to diverge from.
+
+**Why an offline refusal is the correct behaviour, not a regression.** Triage
+used to read only the local tree. It printed `inbox clean` while three real
+reports sat unread on the hub the tool itself submits to — for up to three
+days, one of them blocking a live delivery. An unchecked "clean" is worse than
+no answer, because a clean inbox is something you act on by stopping. So the
+cost is stated plainly and accepted: **bare `triage` from a work tree needs the
+network.** Sync the hub (the repo's own `make feedback-sync`, or work from a
+copy that is not a git work tree) and re-run.
+
+`--apply` and every other feedback verb — `new`, `validate`, `submit`,
+`status` — are unaffected by this and remain usable offline. Only the listing
+checks, because only the listing makes a claim about what the hub holds.
 
 ## Residual risk — read before you file
 

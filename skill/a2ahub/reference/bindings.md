@@ -1,5 +1,16 @@
 # bindings.md — where a contract lands in YOUR code
 
+> **Answers:** a tracked, local `.a2a/bindings.yaml` mapping a contract you
+> consume to where it actually lands in your own code — the missing
+> consumer-side half of `consumes.yaml`.
+>
+> **Read it when:** you have adopted someone else's contract and want a rename
+> in your repo and its binding to travel in one reviewable commit.
+>
+> **Not here:** the space-visible registration itself (`a2a contract adopt`,
+> [loops/contract-change.md](../loops/contract-change.md) §8.4a step 1); the
+> producer-side export proof (`a2a contract verify-export`).
+
 > **The rule this demonstrates**: a producer can already prove their
 > published export matches their code (`generated_from` +
 > `a2a contract verify-export`, §5.3). A consumer has no equivalent — it can

@@ -1,5 +1,16 @@
 # Notifications
 
+> **Answers:** the activation, install and update decision table for macOS and
+> VS Code notifications, the project/global prompt state a2a keeps, and the
+> boundary around the user's own statusline.
+>
+> **Read it when:** `a2a notifications status --json` reported an offer state
+> you have to act on, or a human asked to be notified outside the terminal.
+>
+> **Not here:** the pull-based channels an agent watches for itself — that is
+> the watch loop ([loops/watch.md](loops/watch.md)); what a failing
+> notifications check means ([troubleshooting.md](troubleshooting.md)).
+
 Use the binary as the source of truth.
 [reference/commands.md](reference/commands.md) catalogues which verbs exist —
 synopsis only, no flags.

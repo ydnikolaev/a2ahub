@@ -1,5 +1,16 @@
 # decompose-example.md — one composite need, three single-intent artifacts
 
+> **Answers:** one worked decomposition: a single composite need split into
+> three single-intent artifacts on one shared thread, submitted as one batch.
+>
+> **Read it when:** you have a need that wants to be several things at once
+> and the single-intent rule is refusing it.
+>
+> **Not here:** the rule itself (§3.2, condensed in [loops.md](../loops.md))
+> and the send loop that classifies each part
+> ([loops/send.md](../loops/send.md)); per-type skeletons
+> ([authoring/](authoring/)).
+
 > **The rule this demonstrates** (§3.2, [loops.md](../loops.md)): an artifact
 > MUST carry exactly one intent of exactly one type. A composite need — "here's
 > a notice, and a question, and some work I need" — is the NORMAL case, not an
