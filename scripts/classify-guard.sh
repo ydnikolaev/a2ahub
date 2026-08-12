@@ -24,6 +24,7 @@
 
 # lane-inputs: ALWAYS
 # lane-reason: check 1 reads `git ls-files` over the whole tracked set (line 114) and check 2 globs every top-level working-tree entry with `for e in *` (line 123) — any newly tracked or newly appearing top-level path can flip the verdict
+# lane-reads-opaque: check 5 greps each PUBLIC gate script in turn — `grep -E ... "$public_file"` — where $public_file is bound by iterating ALLOW_FILES, this file's own literal list. The set is declared here and nowhere else, so the read is bounded by this script's own contents rather than by any caller input; the classifier resolves literals, not a loop variable.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
