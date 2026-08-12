@@ -1383,6 +1383,16 @@ changes:
       response. That transition does not exist — it was removed before this
       release — and the real remedy was in the same sentence all along: a
       dispute reopens the parent, where a fresh response is owed.
+      Two routing repairs, both found by handing an agent the installed tree
+      and ten real tasks. "I owe them the export" used to route only to the
+      contract-pinned `a2a data` path, while `a2a attach` — the answer when the
+      bytes simply belong with the artifact you are drafting — appeared in no
+      index at all; both paths are now named with the test that separates them
+      (if no contract version pins the shape of the bytes, you want `attach`).
+      And `attach`'s three optional flags now say what each DECIDES: `--role`
+      is a free-text label, `--conforms-to` writes a CLAIM and checks nothing,
+      and `--retention` defaults to one week rather than forever, so an
+      attachment nobody thought about lapses after a review round.
     affects: ["a2a skill install", "the published documentation"]
     action:
       scope: local
