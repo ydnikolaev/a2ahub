@@ -5,12 +5,21 @@
 # possession.go) real by reading source, but no exec'd-binary run had ever
 # asserted the refusal — this scenario is that run.
 #
-# Two artifacts, byte-identical except for one line, so the refusal is
-# provably caused by the undeclared `sha256:` token and not by anything else
-# in the fixture (e.g. a coincidentally-invalid needed_by or a stray schema
-# violation): digest-not-carried.md names a digest with no matching
-# attachments[].digest and is refused; digest-absent.md drops that one line
-# and is valid. Both frontmatter blocks are the internal/validate package's
+# AMENDED 2026-08-12 for ADR-011. REF-017 now refuses on a CONJUNCTION —
+# an undeclared `sha256:` token AND a body that enumerates a file tree AND an
+# envelope declaring no attachment at all — because a digest named in ordinary
+# prose is a pin, not a claim to carry bytes, and refusing on it reddened a
+# space's post-merge audit with no in-protocol repair (fb-20260812-e6d189).
+# Both bodies therefore now carry the incident's own eight-file enumeration,
+# which they had been simplified away from; the fixture is CLOSER to
+# 03-bytes-note.md than it was, not further.
+#
+# The one-line-difference property survives and gets sharper: both artifacts
+# now enumerate files and declare no attachment, so the file-tree leg and the
+# no-attachment leg are held constant and the single differing line proves the
+# DIGEST leg specifically. digest-not-carried.md is refused REF-017;
+# digest-absent.md drops that one line and is valid (it warns POL-017, which is
+# a warning and does not fail validation). Both frontmatter blocks are the internal/validate package's
 # own possession_test.go incident reconstruction
 # (docs/inbox/agent-exchange-review/03-bytes-note.md), adapted to this
 # harness's fixture-space/axon/beta participants.
@@ -52,6 +61,17 @@ report divergences and ambiguities.
 review_id     c0-review-20260731-d9ad8acd
 review_digest sha256:d9ad8acd6752454e1f5a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7
 
+The bundle enumerates:
+
+- transport/c0-ingest.schema.json
+- transport/c0-ingest.example.json
+- transport/envelope.md
+- fixtures/replay-001.json
+- fixtures/replay-002.json
+- fixtures/replay-003.json
+- transcripts/session-a.log
+- transcripts/session-b.log
+
 The bundle is referenced by the digest above, but no attachment carries it.
 
 -- digest-absent.md --
@@ -80,5 +100,16 @@ Replay our offline fixture transcript of the C0 ingest transport protocol and
 report divergences and ambiguities.
 
 review_id     c0-review-20260731-d9ad8acd
+
+The bundle enumerates:
+
+- transport/c0-ingest.schema.json
+- transport/c0-ingest.example.json
+- transport/envelope.md
+- fixtures/replay-001.json
+- fixtures/replay-002.json
+- fixtures/replay-003.json
+- transcripts/session-a.log
+- transcripts/session-b.log
 
 The bundle is referenced by review id above, but no attachment carries it.

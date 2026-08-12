@@ -153,6 +153,99 @@ func TestValidateCI_PRHappyPath(t *testing.T) {
 	}
 }
 
+// possessionREF017ConjunctionArtifact returns an envelope whose body trips
+// checkPossession's REF-017 conjunction (internal/validate/possession.go):
+// an undeclared sha256: digest, a >=3-line file-tree enumeration, and no
+// declared attachment at all — the founding-incident shape.
+func possessionREF017ConjunctionArtifact(id, from, to string) string {
+	return "---\n" +
+		"schema: envelope/v1\n" +
+		"id: " + id + "\n" +
+		"type: question\n" +
+		"title: Test question\n" +
+		"space: getvisa\n" +
+		"from: " + from + "\n" +
+		"to: [" + to + "]\n" +
+		"thread: " + cliFixtureThread + "\n" +
+		"actor: {kind: agent, name: claude, model: claude-fable-5}\n" +
+		"created: 2026-07-30T14:02:00Z\n" +
+		"category: defect\n" +
+		"priority: p2\n" +
+		"blocking: true\n" +
+		"expected_response: {shape: \"an answer\"}\n" +
+		"classification: internal\n" +
+		"---\n" +
+		"review_digest sha256:" + strings.Repeat("a", 64) + "\n\n" +
+		"The bundle contains:\n" +
+		"- c0.schema.json\n" +
+		"- protocol.json\n" +
+		"- errors.json\n"
+}
+
+// TestValidateCI_REF017ScopedToPRModeNotFullRepo is ADR-011 decision 3
+// (fb-20260812-e6d189): the SAME artifact — the REF-017 conjunction shape
+// (undeclared digest + file-tree enumeration + zero declared attachments)
+// — is refused under v3-pr (the write gate, where refusing still prevents
+// a merge) and passes clean under v3-full-repo (the post-merge audit,
+// which can only punish immutable history). One artifact, two modes: that
+// is what proves the scoping rather than proving two different fixtures.
+func TestValidateCI_REF017ScopedToPRModeNotFullRepo(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	rel := "axon/exchanges/XQ-axon-20260730-r017.md"
+	root := ciRepo(t, ciSpaceYAML, map[string]string{
+		rel: possessionREF017ConjunctionArtifact("XQ-axon-20260730-r017", "axon", "seomatrix"),
+	})
+
+	code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "ydnikolaev")
+	if code == 0 || rep.Valid {
+		t.Fatalf("expected v3-pr to refuse the REF-017 conjunction, got code=%d valid=%v report=%+v stderr=%s", code, rep.Valid, rep, errOut)
+	}
+	if len(rep.Artifacts) != 1 || rep.Artifacts[0].Result == nil {
+		t.Fatalf("expected one artifact result, got %+v", rep.Artifacts)
+	}
+	if v := violationWithCodeCI(rep.Artifacts[0].Result.Violations, "REF-017"); v == nil {
+		t.Fatalf("expected REF-017 in the v3-pr result, got %+v", rep.Artifacts[0].Result.Violations)
+	} else if v.Severity != "reject" {
+		t.Fatalf("expected REF-017 SeverityReject in v3-pr, got %q", v.Severity)
+	}
+
+	code, rep, errOut = runCI(t, engine, root, nil, "v3-full-repo", "", "")
+	if code != 0 || !rep.Valid {
+		t.Fatalf("expected v3-full-repo to suppress REF-017 and pass, got code=%d valid=%v report=%+v stderr=%s", code, rep.Valid, rep, errOut)
+	}
+	// v3-full-repo unconditionally validates space.yaml too (this file's own
+	// "v3-full-repo validates it UNCONDITIONALLY" comment above), so the
+	// report carries a second artifact besides rel — find rel by path
+	// rather than assuming a fixed length.
+	var artifactResult *validate.Result
+	for _, a := range rep.Artifacts {
+		if a.Path == rel {
+			artifactResult = a.Result
+		}
+	}
+	if artifactResult == nil {
+		t.Fatalf("expected a result for %s, got %+v", rel, rep.Artifacts)
+	}
+	if v := violationWithCodeCI(artifactResult.Violations, "REF-017"); v != nil {
+		t.Fatalf("expected REF-017 suppressed in v3-full-repo, got %+v", artifactResult.Violations)
+	}
+	if v := violationWithCodeCI(artifactResult.Violations, "POL-017"); v == nil {
+		t.Fatalf("expected POL-017 to still surface in v3-full-repo (never suppressed), got %+v", artifactResult.Violations)
+	}
+}
+
+// violationWithCodeCI mirrors internal/validate's own package-private
+// violationWithCode helper — separate packages, cannot share it.
+func violationWithCodeCI(vs []validate.Violation, code string) *validate.Violation {
+	for i := range vs {
+		if vs[i].Code == code {
+			return &vs[i]
+		}
+	}
+	return nil
+}
+
 func TestValidateCIWorkCheckpointMountsV3AgainstBaseAndHead(t *testing.T) {
 	t.Parallel()
 	pair := newCIWorkPair(t, nil, false)

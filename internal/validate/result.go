@@ -163,6 +163,47 @@ type Result struct {
 	ConsistencyFlags []ConsistencyFlag `json:"consistency_flags,omitempty"`
 }
 
+// SuppressingCode returns a copy of r with every violation carrying code
+// removed, and Valid RECOMPUTED from the remaining violations through
+// isReject — never assumed. ADR-011 decision 3 (fb-20260812-e6d189): the
+// v3-full-repo post-merge audit must not judge REF-017 against immutable
+// history (a work_request merged before the rule existed cannot be edited
+// to satisfy it, and no verb retracts a closed exchange), while the v3-pr
+// write gate — where refusing still prevents the merge — keeps enforcing
+// it unchanged. Recomputing Valid through the package's own isReject,
+// rather than leaving it as the receiver's, is what keeps the
+// severity->valid arithmetic stated in exactly one place (isReject) even
+// as callers filter the violation set after the fact; a caller that
+// forgot this would risk a Result claiming Valid=true while still
+// carrying a reject-severity violation of some OTHER code, or Valid=false
+// after removing the only reject-severity violation it had.
+//
+// r's own Violations slice is never mutated — the returned Result holds a
+// new slice, so a caller retaining the original r observes no change.
+func (r Result) SuppressingCode(code string) Result {
+	out := r
+	var kept []Violation
+	for _, v := range r.Violations {
+		if v.Code == code {
+			continue
+		}
+		kept = append(kept, v)
+	}
+	if kept == nil {
+		kept = []Violation{}
+	}
+	out.Violations = kept
+	valid := true
+	for _, v := range kept {
+		if v.isReject() {
+			valid = false
+			break
+		}
+	}
+	out.Valid = valid
+	return out
+}
+
 // newResult builds a Result from an accumulated violation list, computing
 // Valid from Severity per Violation.isReject.
 func newResult(point InvocationPoint, artifactID string, violations []Violation) Result {

@@ -160,8 +160,18 @@ entries:
 
   - code: REF-017
     class: referential
-    title: Body names a digest no declared attachment carries
-    applies_to: an envelope body whose prose names a `sha256:` token that appears in no attachments[].digest — the reference cannot be resolved by the reader it was written for (agent-exchange-2026-08/P4, AC1)
+    title: Body promises bytes it does not carry — an undeclared digest beside a file listing, with nothing attached
+    applies_to: >-
+      an envelope body that names a `sha256:` token appearing in no
+      attachments[].digest, AND enumerates what reads as a file tree, AND whose
+      envelope declares no attachment at all. All three, because only the
+      conjunction is a checkable claim to carry bytes; a digest named in prose
+      alone is a pin and warns as POL-017 (agent-exchange-2026-08/P4 AC1, as
+      amended by ADR-011 2026-08-12 after fb-20260812-e6d189). Scope: refuses at
+      the write gate (validate / submit / validate --ci on a pull request) and
+      returns no verdict in the post-merge full-repo audit, because a rule
+      satisfiable only by editing an immutable artifact must not judge history
+      that cannot be repaired.
 
   - code: REF-018
     class: referential

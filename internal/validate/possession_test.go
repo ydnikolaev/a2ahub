@@ -202,11 +202,16 @@ func TestCheckPossession_DeclaredDigestProducesNoViolation(t *testing.T) {
 	}
 }
 
-// TestCheckPossession_UndeclaredDigestRefuses is the unit-level mirror of
-// AC1: a body digest with NO matching declared attachment is REF-017,
-// even when other attachments exist (proves the check is per-token, not
-// "any attachment present ⇒ pass").
-func TestCheckPossession_UndeclaredDigestRefuses(t *testing.T) {
+// TestCheckPossession_UndeclaredDigestAloneWarns is ADR-011's own reversal
+// of this package's pre-ADR behavior (fb-20260812-e6d189): a body digest
+// with no matching declared attachment, but with NO accompanying file-tree
+// shape, is no longer REF-017 — a bare digest mention alone is not a
+// checkable fact about missing bytes (a receiver cannot fetch from a
+// digest it was merely told about), so it downgrades to POL-017,
+// SeverityWarning, and produces zero rejects. This body, unchanged from
+// before ADR-011, used to assert REF-017/SeverityReject here; that
+// assertion is now the exact bug fb-20260812-e6d189 filed against.
+func TestCheckPossession_UndeclaredDigestAloneWarns(t *testing.T) {
 	t.Parallel()
 	instance := map[string]any{
 		"attachments": []any{
@@ -224,11 +229,62 @@ func TestCheckPossession_UndeclaredDigestRefuses(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("expected exactly one violation, got %+v", got)
 	}
-	if got[0].Code != "REF-017" {
-		t.Fatalf("expected REF-017, got %q", got[0].Code)
+	if got[0].Code != "POL-017" {
+		t.Fatalf("expected POL-017, got %q", got[0].Code)
 	}
-	if got[0].Severity != SeverityReject {
-		t.Fatalf("expected SeverityReject, got %q", got[0].Severity)
+	if got[0].Severity != SeverityWarning {
+		t.Fatalf("expected SeverityWarning, got %q", got[0].Severity)
+	}
+	for _, v := range got {
+		if v.Severity == SeverityReject {
+			t.Fatalf("expected no reject for a bare undeclared digest mention, got %+v", got)
+		}
+	}
+}
+
+// TestCheckPossession_FoundingIncidentDigestConjunctionRefuses is the
+// unit-level mirror of AC1, isolating checkPossession from the engine: a
+// body naming an undeclared digest AND enumerating a file tree, on an
+// envelope declaring no attachment at all, is REF-017/SeverityReject — the
+// exact conjunction ADR-011 requires (fb-20260812-e6d189's own contrast
+// case: this is the founding-incident shape the fix must still refuse).
+func TestCheckPossession_FoundingIncidentDigestConjunctionRefuses(t *testing.T) {
+	t.Parallel()
+	digest := "sha256:" + strings.Repeat("2", 64)
+	body := []byte("The bundle is at " + digest + ".\n\n" + string(possessionAC7Body))
+
+	got := checkPossession(body, nil)
+
+	var reject *Violation
+	for i := range got {
+		if got[i].Code == "REF-017" {
+			reject = &got[i]
+		}
+	}
+	if reject == nil {
+		t.Fatalf("expected a REF-017 violation, got %+v", got)
+	}
+	if reject.Severity != SeverityReject {
+		t.Fatalf("expected REF-017 to be SeverityReject, got %q", reject.Severity)
+	}
+}
+
+// TestCheckPossession_BareDigestInOrdinarySentenceProducesNoReject is
+// fb-20260812-e6d189's own reported shape, verbatim from ADR-011's
+// acceptance criteria: a contract-set digest named in an ordinary
+// sentence, with no file-tree enumeration and no attachment declared,
+// must never be refused — REF-017 firing on exactly this shape is the bug
+// this phase exists to fix.
+func TestCheckPossession_BareDigestInOrdinarySentenceProducesNoReject(t *testing.T) {
+	t.Parallel()
+	body := []byte("we adopted contract-set sha256:" + strings.Repeat("abcdef0123456789", 4))
+
+	got := checkPossession(body, nil)
+
+	for _, v := range got {
+		if v.Severity == SeverityReject {
+			t.Fatalf("expected no reject for a bare contract-set digest mention, got %+v", got)
+		}
 	}
 }
 
@@ -252,6 +308,31 @@ func TestCheckPossession_FileTreeWithDeclaredAttachmentDoesNotWarn(t *testing.T)
 	got := checkPossession([]byte(possessionAC7Body), instance)
 	if len(got) != 0 {
 		t.Fatalf("expected no violation once an attachment is declared, got %+v", got)
+	}
+}
+
+// TestCheckPossession_VersionStringProseDoesNotFalselyTripFileTree is the
+// neighbouring false positive to fb-20260812-e6d189: fileTreeLinePattern
+// requires only a dotted "extension" of 1-8 alnum chars, and a version
+// string like "v0.19.11" satisfies that just as well as a real filename —
+// the trailing "11" is all digits, same as any short extension. A body
+// whose prose happens to open >=3 lines with version strings, plus a bare
+// digest and no declared attachments, must NOT be REF-017: none of those
+// lines names a file, so looksLikeFileTree's own heuristic ("the prose
+// READS like an inventory") is not actually true here.
+func TestCheckPossession_VersionStringProseDoesNotFalselyTripFileTree(t *testing.T) {
+	t.Parallel()
+	body := []byte("v0.19.11 shipped the rule.\n" +
+		"0.19.10 did not.\n" +
+		"v1.2.3 is the floor.\n" +
+		"See sha256:" + strings.Repeat("3", 64) + " for context.\n")
+
+	got := checkPossession(body, nil)
+
+	for _, v := range got {
+		if v.Code == "REF-017" {
+			t.Fatalf("expected no REF-017 for version-string prose (no real file tree), got %+v", got)
+		}
 	}
 }
 

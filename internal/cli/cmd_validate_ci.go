@@ -513,6 +513,28 @@ func validateCIArtifact(ctx context.Context, engine *validate.Engine, root, relP
 	if err != nil {
 		return &validateReport{Path: relPath, Error: err.Error()}, false
 	}
+	// ADR-011 decision 3 (fb-20260812-e6d189): REF-017 stays a reject in
+	// v3-pr (the write gate, where refusing still prevents a merge) but
+	// must return NO VERDICT in v3-full-repo (the post-merge audit),
+	// because a work_request merged before REF-017 existed has no
+	// in-protocol repair — committed history is immutable and no verb
+	// retracts a closed exchange. POL-017 is DELIBERATELY NOT suppressed:
+	// it is a warning (never flips Valid), so the full-repo audit still
+	// surfaces the smell without refusing anything immutable. See
+	// internal/validate/possession.go's own doc comment for the other
+	// half of this cross-reference.
+	//
+	// This MUST run before InvocationPoint is stamped and before the
+	// result.Valid check that gates the contextual work-checkpoint call
+	// below: a suppressed REF-017 must not go on suppressing that
+	// contextual check too — without recomputing Valid here first, a
+	// REF-017-only violation set would leave Valid false and the
+	// contextual check would never run, silently hiding an unrelated
+	// contextual defect behind a verdict this mode no longer stands
+	// behind.
+	if mode == "v3-full-repo" {
+		result = result.SuppressingCode("REF-017")
+	}
 	result.InvocationPoint = validate.V3
 	// V3 preserves V2's fail-closed order: the existing generic submit policy
 	// owns the outer envelope first; contextual work rules only see a generic-

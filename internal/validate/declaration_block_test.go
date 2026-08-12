@@ -90,10 +90,18 @@ func TestDeclarationBlock_AC3_LiveBodyRefusedWithNoDigestToken(t *testing.T) {
 }
 
 // TestDeclarationBlock_DigestPresenceIsIndependentOfPOL018 is the
-// "mutate REF-017 back on" half: adding a `sha256:` token to the same
-// declaration block makes REF-017 ALSO fire, proving the two codes are
-// independent checks over the same body rather than POL-018 silently
-// riding on REF-017's own scan (or vice versa).
+// "mutate the possession scan back on" half: adding a `sha256:` token to the
+// same declaration block makes the possession scan ALSO fire, proving the two
+// codes are independent checks over the same body rather than POL-018 silently
+// riding on the possession scan (or vice versa).
+//
+// It expects POL-017, not REF-017, and that is ADR-011 rather than a weakened
+// test. This body is four `key = value` lines plus prose: it carries no
+// file-tree-shaped line, so the conjunction REF-017 now requires — an
+// undeclared digest AND a file-tree enumeration AND zero declared attachments —
+// cannot hold. A bare digest named in prose warns; it does not refuse. The
+// independence this test exists to prove is unaffected: POL-018 and the
+// possession scan still fire from separate rules over the same bytes.
 func TestDeclarationBlock_DigestPresenceIsIndependentOfPOL018(t *testing.T) {
 	t.Parallel()
 	engine := mustEngine(t)
@@ -111,8 +119,11 @@ func TestDeclarationBlock_DigestPresenceIsIndependentOfPOL018(t *testing.T) {
 	if violationWithCode(result.Violations, "POL-018") == nil {
 		t.Fatalf("expected POL-018 to still fire once a digest token is added, got %+v", result.Violations)
 	}
-	if violationWithCode(result.Violations, "REF-017") == nil {
-		t.Fatalf("expected REF-017 to fire once the body names an undeclared digest, got %+v", result.Violations)
+	if violationWithCode(result.Violations, "POL-017") == nil {
+		t.Fatalf("expected POL-017 to fire once the body names an undeclared digest, got %+v", result.Violations)
+	}
+	if got := violationWithCode(result.Violations, "REF-017"); got != nil {
+		t.Fatalf("expected NO REF-017: this body has no file-tree-shaped line, so ADR-011's conjunction cannot hold, got %+v", got)
 	}
 }
 

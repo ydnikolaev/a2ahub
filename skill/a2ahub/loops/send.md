@@ -104,6 +104,19 @@
 3. **Body discipline:** specify, don't muse. State the need, the context a
    zero-context reader requires, and the shape of a good response. Never include
    secrets, private code, or raw prompts (§10.4).
+   - **Naming a digest in prose is fine; naming one while listing the files
+     it covers, with nothing attached, is REFUSED (REF-017).** Quote a
+     `sha256:` in a sentence as freely as you like — a contract-set digest, a
+     counterparty's verdict, an entry from a manifest — it is a pin, not a
+     claim to carry bytes, and nothing refuses it. What refuses is the shape
+     of the incident this rule exists for: a body that names an undeclared
+     digest **and** enumerates a file tree **and** declares no attachment at
+     all. That is the artifact that says "here are the eight files" while the
+     bytes sit in a gitignored directory on one laptop, and the counterparty
+     finds out six days later. Either half alone is a warning (POL-017), never
+     a refusal. **The fix is not to reword the body** — it is `a2a attach`, so
+     the bytes actually travel. If you genuinely mean to reference something
+     published elsewhere, say so without the file list.
    - **A field goes in the frontmatter; hand-writing one into the body is
      REFUSED.** A line whose whole point is declaring a key —
      `artifact_class = interface` at the start of a line, inside a fenced
