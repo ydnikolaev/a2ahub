@@ -1,0 +1,65 @@
+feedback: v1
+id: fb-20260812-e6d189
+kind: bug
+severity: major
+title: REF-017 retroactively rejects merged artifacts and reddens the default branch
+summary: >-
+  A release published today added REF-017 ("artifact body names sha256:<digest>,
+  which no attachment declared on this envelope carries") at severity=reject. The
+  rule reads a sha256 appearing in ordinary PROSE as an attachment reference. A
+  work_request merged four days earlier — validated green at submit, when no such
+  rule existed — mentions a contract-set digest in a sentence explaining which
+  version the counterparty adopted. It declares no attachments, and does not mean
+  to: it is describing a contract pin, not carrying bytes.
+
+  The post-merge audit on the space's default branch now fails on it, with no
+  in-protocol repair: committed artifacts are immutable, so the body cannot be
+  edited, and no verb retracts an artifact whose exchange is already closed.
+
+  Two things compound it. The rule is undocumented — REF-017 and "attachment"
+  occur zero times in the installed skill tree, which `a2a doctor` reports current
+  for this binary. And it has no digest-shape discrimination: the value quoted is a
+  CONTRACT-SET digest of a published contract, which the protocol's own contract-pin
+  vocabulary makes it normal to name in prose.
+context:
+    a2a_version: 0.19.11
+    os_arch: darwin/arm64
+    surface: space-ci
+    command: a2a-validate reusable workflow, push-to-main (post-merge audit)
+    error_code: REF-017
+evidence:
+    steps:
+        - "On a space running an a2a version before REF-017 existed, submit a work_request whose BODY quotes a contract-set digest in prose (e.g. a sentence naming which version the counterparty adopted). It declares no attachments."
+        - "It validates green and merges. Its exchange runs to completion and closes."
+        - "Upgrade the space's pinned a2a to the release that adds REF-017."
+        - "Merge any unrelated PR, so the post-merge audit runs against main."
+        - "The audit fails: [REF-017] severity=reject artifact_id=<the old work_request> — 'artifact body names sha256:<digest>, which no attachment declared on this envelope carries'."
+    expected: >-
+      Either the rule does not fire on a bare digest in prose (only on a
+      declared/structured attachment reference), or a rule that can retroactively
+      invalidate committed history lands at a warn severity for pre-existing
+      artifacts, so a released rule change cannot strand a space's default branch
+      on content nobody is permitted to edit.
+    actual: >-
+      severity=reject on an immutable, already-merged artifact. The default branch
+      is red and stays red: the artifact cannot be edited, its exchange is closed,
+      and nothing in the protocol repairs it. The rule is also absent from the
+      installed skill manual for the same release.
+proposal: >-
+  Three separable pieces, smallest first. (1) Do not treat a digest in prose as an
+  attachment reference — match the structured reference shape, not any 64-hex
+  string that appears in a body. A contract pin is a thing the protocol's own
+  vocabulary encourages quoting. (2) If the rule must be broad, make it
+  grandfather-aware: reject at submit time, warn in the post-merge audit for an
+  artifact whose commit predates the rule. A validator that can turn committed,
+  unfixable history red has no repair path, and the operator's only exit is to
+  stop trusting the audit. (3) Document it. REF-017 and the attachment/blob
+  reference grammar it enforces appear nowhere in the skill tree the same release
+  installs, so the first time an operator meets the rule is a red default branch.
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
