@@ -15,8 +15,15 @@ const {
   compactDemo = false
 } = Astro.props;
 
+// The docs INDEX ships the body of the document it actually points at.
+// It used to ship 'threads' — an arbitrary page nobody chose, contradicting
+// docs.astro's own declaration that this route's markdown twin is
+// /docs/overview.md. Nothing displayed it and nothing had ever compared the
+// two, so the index carried one document's full text as dead payload; on
+// 2026-08-12 that was 7.59 KiB gzip of a 36.65 KiB page against a 35 KiB
+// budget, i.e. the entire overage, spent on a body the page does not render.
 const routeDoc = Astro.url.pathname.match(/\/docs\/([^/.]+)(?:\.html)?$/)?.[1]
-  || (Astro.url.pathname.endsWith('/docs.html') ? 'threads' : null);
+  || (Astro.url.pathname.endsWith('/docs.html') ? 'overview' : null);
 
 // Navigation search needs a useful vocabulary for every document, not twenty
 // full Markdown bodies. Bound the de-duplicated index per document so a long

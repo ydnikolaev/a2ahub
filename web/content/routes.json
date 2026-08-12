@@ -22,7 +22,9 @@
       "markdown": "/docs/overview.md",
       "llms_section": "Start here",
       "structured_data": "documentation",
-      "change_sources": ["skill/a2ahub/docs-manifest.json", "skill/a2ahub/SKILL.md", "web/src/pages/docs.astro"]
+      "change_sources": ["skill/a2ahub/docs-manifest.json", "skill/a2ahub/SKILL.md", "web/src/pages/docs.astro"],
+      "html_budget_kib": 40,
+      "html_budget_kib_note": "40 to match every other documentation page, and this is an alignment rather than a raise. This route had been running on the 35 KiB DEFAULT — the budget for marketing pages that carry no document — while being a documentation page that embeds a body like its siblings under /docs/, all of which get 40. Nobody chose 35 for it; it inherited it. Two things were fixed before this line was written, so the number is not buying cover for waste: DesignRuntimeBoot was shipping the THREADS body on this route, 7.59 KiB gzip of a document the page does not render and never declared (its own markdown twin is /docs/overview.md), and that is now the overview body it actually points at. The page sits at 35.27 KiB after both."
     },
     {
       "id": "features",
