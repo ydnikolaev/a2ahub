@@ -1341,3 +1341,74 @@ changes:
         Nothing to do. If you parse `a2a doctor`'s output, note that the
         `repository visibility` rows come last and there is one per connected
         space.
+  - id: RN-01910-46
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: "The manual an agent reads is the product surface for an agent, and it had fallen a release behind the binary in one whole class — the fields a reader uses to decide whether to trust what it just read."
+    impact: normal
+    subject: "The operating skill teaches this release, and is reorganised around finding one thing"
+    detail: >
+      The skill shipped inside the binary describes what this release actually
+      does. Everything below was missing, and each is written with the reading
+      an agent would otherwise get wrong, not merely named.
+      The derived state fields on every read surface — `outcome`, `terminal`,
+      `state_since`, `state_by`, `state_event`, and `transition_free` on events.
+      `refused` does not mean nobody owes anything: a rejected handoff is
+      refused AND non-terminal, and the producer owes the resubmission.
+      `terminal` is a third question, not the negation of the first. The state
+      clock is not the activity clock. And a missing field is not a default —
+      an artifact whose state no event produced carries none of them.
+      A cluster nothing had ever documented: how far you may trust the copy in
+      front of you. `sync_stale` is a fail-safe, not a measurement — it is also
+      true when the mirror was never fetched. `sync_age: 0s` means never synced,
+      not just synced. `pending_merge` is a statement about your machine, and
+      its absence is weaker than it looks. `new` is a shared cursor that an MCP
+      read consumes for the CLI. Beside them, the receipt fields that say where
+      a record's CLAIM and the space's own answer disagree.
+      Then the capabilities that had shipped with no page: `a2a feedback triage`
+      refusing offline, a response that cannot claim a delivery whose bytes the
+      space lacks, multi-addressee action, a handoff superseded after its
+      receiver left, `attempted`/`residue`, the fork-and-cycle refusal on
+      supersession, `a2a contract check`, `a2a await`, `a2a serve`,
+      `a2a whatsnew`, and `a2a disconnect` — which is local only, and does not
+      offboard you from anything.
+      The corpus is also reorganised. `loops.md` was one 64 KB page holding
+      thirteen jobs; it is now a short root with a table that routes you by the
+      SITUATION you are in rather than by the loop's name, and seven loop pages
+      behind it. The data-exchange reference splits into its flags and its
+      refusals. Every page opens with the same three lines: what it answers,
+      when you need it, what it does not cover.
+      One correction: the receive loop told agents to supersede a disputed
+      response. That transition does not exist — it was removed before this
+      release — and the real remedy was in the same sentence all along: a
+      dispute reopens the parent, where a fresh response is owed.
+    affects: ["a2a skill install", "the published documentation"]
+    action:
+      scope: local
+      why: >
+        Run `a2a skill install` to refresh the copy in your repo. Page
+        filenames under the skill changed, so a bookmark or a hard-coded path
+        into `loops.md` needs updating; `loops.md` itself still exists and
+        routes to everything.
+  - id: RN-01910-47
+    kind: feat
+    roadmap:
+      visibility: omit
+      why: "A hidden machine-consumed surface whose only consumer is a repo gate, the same as its --vocabulary sibling."
+    impact: low
+    subject: "`a2a __catalog --surfaces --json` publishes what each read surface emits"
+    detail: >
+      The hidden `__catalog` verb gained a second machine-readable mode: every
+      JSON key each agent-facing read surface emits, per surface, derived by
+      reflecting over the types the binary serialises.
+      It exists because the obvious alternative is provably blind. Most of these
+      fields are `omitempty` and one is `omitzero`, and they populate only from
+      the event that produced a state — so a fixture whose artifacts have no
+      such event emits none of them, and a gate that learned its universe by
+      running the binary would have declared that universe empty and gone green.
+      Asking the types instead makes it complete by construction.
+      Its consumer is a new gate that holds every command, MCP tool and derived
+      read-surface field to being taught in the skill or structurally declared.
+      That gate is why the documentation above exists rather than being noticed
+      a release later.
