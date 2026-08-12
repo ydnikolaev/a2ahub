@@ -1,7 +1,9 @@
 package e2e
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -198,6 +200,23 @@ func declaredCornerCases(t *testing.T, root string) map[string]struct{} {
 	t.Helper()
 	path := filepath.Join(root, "docs", "the-plan", "plan", "12-corner-cases.md")
 	raw, err := os.ReadFile(path)
+	// `docs/` is STRIPPED from the public projection, so this gate has no
+	// corpus to judge in a release candidate — it compares a SHIPPED artifact
+	// (cc-coverage.yaml) against a PRIVATE one, and only half of that pair
+	// exists there. Skipping is the same answer the Makefile already gives for
+	// five presence-gated private gates ("skip — absent (public checkout)"),
+	// and it is the honest one: a tree that does not carry the corpus cannot
+	// have drifted from it.
+	//
+	// Introduced 2026-08-11 (8272f590) and never executed in a filtered tree
+	// until 2026-08-12, because no candidate was cut in between. It would have
+	// failed the candidate's own `make check` in the Go tier.
+	//
+	// The skip is narrow: ONLY a missing file, never a parse failure or an
+	// empty extraction, both of which stay fatal below.
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("skip — %s absent (public checkout): this gate judges a corpus that is stripped from the candidate", path)
+	}
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}

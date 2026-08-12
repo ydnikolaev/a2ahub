@@ -115,6 +115,7 @@ func TestIncidentReplayCount(t *testing.T) {
 // CorpusEvidence at a nonexistent path and re-running this test reds it,
 // naming the entry and the path.
 func TestIncidentReplayCorpusEvidenceExists(t *testing.T) {
+	skipWithoutPrivateCorpus(t, incidentReplayRepoRoot+"/docs")
 	for _, r := range incidentReplays() {
 		full := filepath.Join(incidentReplayRepoRoot, r.CorpusEvidence)
 		if _, err := os.Stat(full); err != nil {

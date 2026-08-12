@@ -468,6 +468,7 @@ func TestScenarioUndeclaredConformancePathSpecs(t *testing.T) {
 // single file dropping to zero while the corpus-wide total stays
 // positive).
 func TestScenarioClaimingSpecsAllDeclare(t *testing.T) {
+	skipWithoutPrivateCorpus(t, conformanceEpicSpecsDir)
 	claiming, err := specsClaimingConformancePath(conformanceEpicSpecsDir)
 	if err != nil {
 		t.Fatalf("specsClaimingConformancePath(%s): %v", conformanceEpicSpecsDir, err)
@@ -498,6 +499,7 @@ func TestScenarioClaimingSpecsAllDeclare(t *testing.T) {
 // declaration found ... this parser needs to change with it, not silently
 // report zero kinds").
 func TestScenarioDeclaredParsesRealSpecs(t *testing.T) {
+	skipWithoutPrivateCorpus(t, conformanceEpicSpecsDir)
 	declared, err := declaredScenarios(conformanceEpicSpecsDir)
 	if err != nil {
 		t.Fatalf("declaredScenarios(%s): %v", conformanceEpicSpecsDir, err)
@@ -815,6 +817,7 @@ func undrivenScenarios() []undrivenScenario {
 // does for the transition universe. An exemption that outlives its reason is
 // worse than none, because it reads as a decision somebody made on purpose.
 func TestUndrivenScenariosNameOnlyDeclaredIdsWithReasons(t *testing.T) {
+	skipWithoutPrivateCorpus(t, conformanceEpicSpecsDir)
 	declared, err := declaredScenarios(conformanceEpicSpecsDir)
 	if err != nil {
 		t.Fatalf("declaredScenarios(%s): %v", conformanceEpicSpecsDir, err)
@@ -849,6 +852,7 @@ func TestUndrivenScenariosNameOnlyDeclaredIdsWithReasons(t *testing.T) {
 }
 
 func TestScenarioIDsAreCoveredByTheCatalogue(t *testing.T) {
+	skipWithoutPrivateCorpus(t, conformanceEpicSpecsDir)
 	declared, err := declaredScenarios(conformanceEpicSpecsDir)
 	if err != nil {
 		t.Fatalf("declaredScenarios(%s): %v", conformanceEpicSpecsDir, err)
