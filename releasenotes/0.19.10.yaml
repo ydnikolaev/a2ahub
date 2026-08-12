@@ -1422,6 +1422,13 @@ changes:
       read-surface field to being taught in the skill or structurally declared.
       That gate is why the documentation above exists rather than being noticed
       a release later.
+      What the key list means, for anyone parsing it: the walker unwraps
+      pointers, slices, arrays and maps to the element type and inlines
+      embedded structs, so a key appears once per SURFACE regardless of how
+      deeply the shape nests it, and `json:"-"` fields never appear at all. It
+      is the set of names that can reach the wire, not a per-response
+      inventory — a field that is `omitempty` and unset on every artifact you
+      happen to hold is still in this list, which is the entire point.
     action:
       scope: none
       why: >
