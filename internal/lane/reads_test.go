@@ -498,3 +498,86 @@ func TestScanLineForReadsPrunedFindIsUnresolvedNotARootRead(t *testing.T) {
 		t.Fatalf("a pruned find must be flagged unresolved; got %d: %+v", len(unresolved), unresolved)
 	}
 }
+
+// TestHonestyCheckSkipsAnAbsentPresenceGatedScript covers the case that made
+// the private CI red on `main` from 2026-08-09 and would have failed the
+// v0.19.10 release candidate's own `make check` at its first phase.
+//
+// Several harness gates are untracked BY DESIGN — they read paths the
+// publisher strips, so they cannot function in a public tree — and their
+// recipes guard on `[ -f <script> ]`. When the declaration sits on the tracked
+// recipe (so the CLAIM survives, which is the whole point), the honesty pass
+// then tries to read a script that is legitimately not there. A gate that does
+// not run cannot read anything it failed to declare.
+func TestHonestyCheckSkipsAnAbsentPresenceGatedScript(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, "Makefile",
+		"REPO_GATES := private-gate\n\n"+
+			"# lane-inputs:\n#   README.md\n"+
+			"private-gate:\n"+
+			"\t@if [ -f scripts/check-private.sh ]; then \\\n"+
+			"\t  bash scripts/check-private.sh; \\\n"+
+			"\telse \\\n"+
+			"\t  echo \"private-gate: skip — absent (public checkout).\"; \\\n"+
+			"\tfi\n")
+	writeFixture(t, dir, "scripts/verify.sh", minimalVerifySh)
+	// scripts/check-private.sh is deliberately NOT written.
+
+	decls, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	refusals, _, err := HonestyCheck(dir, decls)
+	if err != nil {
+		t.Fatalf("an absent PRESENCE-GATED script must not error the honesty pass: %v", err)
+	}
+	if len(refusals) != 0 {
+		t.Fatalf("an absent presence-gated script must produce no refusal, got %+v", refusals)
+	}
+
+	// The claim must SURVIVE the script's absence — that is why the
+	// declaration was moved onto the recipe in the first place. Without this
+	// half the test would pass while Coverage reported README.md unclaimed,
+	// which is the original defect wearing a different hat.
+	if cov := Coverage(decls, []string{"README.md"}, nil); len(cov) != 0 {
+		t.Fatalf("a presence-gated gate's recipe declaration must still claim its paths, got %+v", cov)
+	}
+}
+
+// TestHonestyCheckStillErrorsOnAnUnguardedMissingScript is the other half, and
+// it is what keeps the guard above narrow. A recipe that names a script and
+// does NOT guard on its presence is broken when the script is missing: the
+// gate silently does nothing and nobody is told. That must stay loud.
+func TestHonestyCheckStillErrorsOnAnUnguardedMissingScript(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, "Makefile",
+		"REPO_GATES := unguarded-gate\n\n"+
+			"# lane-inputs:\n#   README.md\n"+
+			"unguarded-gate:\n\t@bash scripts/check-unguarded.sh\n")
+	writeFixture(t, dir, "scripts/verify.sh", minimalVerifySh)
+
+	decls, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if _, _, err := HonestyCheck(dir, decls); err == nil {
+		t.Fatal("an UNGUARDED recipe naming a missing script must still error — a gate that quietly does nothing is the defect the presence-gate branch must not widen into")
+	}
+}
+
+// TestRecipeGuardsPresenceMatchesTheSpecificScript pins the narrowness of the
+// match itself: guarding on one file and then unconditionally running another
+// is not presence-gating for the second.
+func TestRecipeGuardsPresenceMatchesTheSpecificScript(t *testing.T) {
+	recipe := []string{
+		"\t@if [ -f scripts/a.sh ]; then \\",
+		"\t  bash scripts/b.sh; \\",
+		"\tfi",
+	}
+	if !recipeGuardsPresence(recipe, "scripts/a.sh") {
+		t.Error("the guarded script must be recognised")
+	}
+	if recipeGuardsPresence(recipe, "scripts/b.sh") {
+		t.Error("a script the recipe runs but does not guard must NOT count as presence-gated")
+	}
+}

@@ -1,7 +1,9 @@
 package lane
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -687,6 +689,29 @@ func honestyForMakePhase(root string, doc *makefileDoc, d Declaration) (refusals
 	if script, sok := scriptForRecipe(t.Recipe); sok {
 		raw, rerr := readRepoFile(root, filepath.FromSlash(script))
 		if rerr != nil {
+			// A PRESENCE-GATED recipe may name a script that is absent here,
+			// and that is not a defect: several private harness gates are
+			// untracked by design (they read paths the publisher STRIPS), and
+			// their recipes guard on `[ -f <script> ]` so `make check` skips
+			// them cleanly in CI, in a public checkout, and in the filtered
+			// release candidate. A gate that does not run cannot read anything
+			// it failed to declare, so the honesty question has no subject.
+			//
+			// The declaration itself must still exist and is still checked by
+			// Coverage — that is the WHOLE point of putting such a gate's
+			// lane-inputs on its tracked Makefile recipe rather than in the
+			// untracked script. Before that move, the claim vanished with the
+			// script and `lane-declarations` reported the paths as unclaimed
+			// everywhere the harness was absent: private CI on `main` was red
+			// on exactly this from 2026-08-09, and the v0.19.10 candidate would
+			// have failed its own `make check` at the first phase.
+			//
+			// The guard is deliberately narrow. An UNGUARDED recipe naming a
+			// missing script still errors, because that one is a real defect —
+			// the gate silently does nothing and nobody is told.
+			if isNotExist(rerr) && recipeGuardsPresence(t.Recipe, script) {
+				return nil, false, nil
+			}
 			return nil, false, fmt.Errorf("honesty check for %q: read %s: %w", d.Phase, script, rerr)
 		}
 		lines := strings.Split(string(raw), "\n")
@@ -974,4 +999,35 @@ var (
 // exclusion arms are reached. Same rule, a source the tokenizer cannot hide.
 func unmodellableFindLine(line string) bool {
 	return unmodellableFindRe.MatchString(line)
+}
+
+// isNotExist reports whether err is a "file does not exist" error, wrapped or
+// not. Split out so honestyForMakePhase's presence-gate branch cannot widen
+// into "any read error is fine" — a permission error or an I/O failure on a
+// script that IS there must still be loud.
+func isNotExist(err error) bool { return errors.Is(err, fs.ErrNotExist) }
+
+// recipeGuardsPresence reports whether recipe protects its invocation of
+// script behind a `[ -f <script> ]` test — the shape every presence-gated
+// private harness gate in this repo's Makefile uses:
+//
+//	@if [ -f scripts/check-feedback-corpus.sh ]; then \
+//	  bash scripts/check-feedback-corpus.sh; \
+//	else \
+//	  echo "feedback-corpus: skip — ... absent (public checkout)."; \
+//	fi
+//
+// It matches the SPECIFIC script the recipe would run, not merely "some -f
+// test appears somewhere in this recipe": a recipe that guards on one file and
+// then unconditionally runs another is not presence-gated for the second, and
+// treating it as such would restore the silent-skip this function exists to
+// keep narrow.
+func recipeGuardsPresence(recipe []string, script string) bool {
+	needle := "[ -f " + script + " ]"
+	for _, line := range recipe {
+		if strings.Contains(line, needle) {
+			return true
+		}
+	}
+	return false
 }

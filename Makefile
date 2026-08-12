@@ -210,6 +210,51 @@ skill-citations: ## Every `a2a <verb>` and error code the shipped skill PROSE ci
 	  echo "skill-citations: skip — scripts/check-skill-citations.sh absent (public checkout)."; \
 	fi
 
+# The claim lives HERE, on the tracked recipe, and not in the gate script's own
+# header — because that script is UNTRACKED (`scripts/*` is ignored behind a
+# per-file negation list) and it must stay that way: it greps `docs/features`
+# and `docs/backlog.md`, both of which the publisher STRIPS, so it cannot
+# function in a public tree. Its recipe is presence-gated for exactly that
+# reason.
+#
+# A claim written in an absent file is not a claim. Declaring these paths in
+# the script meant they were claimed on the machine that has the harness and
+# unclaimed everywhere else, so `lane-declarations` reds in CI, in a public
+# checkout, and in the filtered release candidate while being green locally.
+# It has been reding private CI on `main` since a562c5a6 (2026-08-09) moved
+# them out of scripts/lib/lane-ungated.txt, and nothing in the release flow
+# looked: release-preflight checks only pages.yml. Measured: move the script
+# aside, `make lane-declarations` exits 2 with 23 unclaimed paths; move it
+# back, exit 0.
+#
+# This is the `web-quality` shape directly above — a presence-gated recipe
+# whose declaration lives on the recipe, where it survives whatever the guard
+# is guarding against. The paths declared are the gate's own inputs that
+# OUTLIVE the publish filter; the ones it also reads under `docs/` are claimed
+# by feature-lint and are stripped from any tree where this file is absent.
+#
+# The FULL input set moves, not just the paths that survive the filter. Keeping
+# only the surviving two here would leave the gate under-declared: it shells out
+# to the built `a2a feedback validate`, so a Go change must select it, and
+# declaring less than it reads is a false green in the other direction.
+# lane-reason: the Go tree and module files are declared because half 1 and
+#   half 2 shell out to the built `a2a feedback validate` — a change to the
+#   validator changes this gate's verdict. `docs/features/**` and
+#   `docs/backlog.md` are declared because check 3's tracker-row branch
+#   resolves a referent by `git grep` over them: deleting the row a
+#   resolution names flips this gate red, which is the whole point of the
+#   referent rule. That branch can only ADD a way to resolve, so the
+#   imprecision runs toward selecting the gate too often, never toward a
+#   false green.
+# lane-inputs:
+#   feedback/inbox/**
+#   feedback/backlog.yaml
+#   releasenotes/**
+#   docs/features/**
+#   docs/backlog.md
+#   **/*.go
+#   go.mod
+#   go.sum
 feedback-corpus: ## A feedback record cannot be corrupted into the corpus, and a release cannot claim to close a report the corpus calls unread (P9; private harness gate, presence-gated).
 	@if [ -f scripts/check-feedback-corpus.sh ]; then \
 	  bash scripts/check-feedback-corpus.sh; \
