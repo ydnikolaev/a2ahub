@@ -74,6 +74,15 @@ lane: ## PRINT the lane this working tree's changes can actually reach, with eac
 lane-run: ## RUN that derived lane. NOT the ceiling — a release still runs `make check` (spec 12 J5). Optional: LANE_FILES="a b c".
 	@bash scripts/verify.sh lane-run
 
+# The strict form, for CI. `lane-run` on an EMPTY changed set prints a friendly
+# note and exits 0 — correct at a terminal, a false green in a job: a clean
+# `actions/checkout` tree derives nothing, so the run reports success having
+# executed zero gates, and nothing downstream can tell that apart from a real
+# pass because the job appears in the run list, succeeded. This target refuses
+# instead. Local use stays on `lane-run`; a workflow calls THIS one.
+lane-run-strict: ## RUN the derived lane, refusing an empty or unresolvable input set. The CI form of `lane-run`.
+	@bash scripts/verify.sh lane-run --require-nonempty
+
 # The cost line is the point, not decoration. This is the SHIP/RELEASE gate;
 # ordinary commits run the derived `make lane-run`, which refuses an unclaimed
 # path instead of silently skipping it. The ceiling was once made the gate for

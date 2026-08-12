@@ -492,7 +492,56 @@ run_teeth() {
     return 1
   fi
 
-  echo "verify --teeth: owned root accepted by construction; symlink and foreign residue refused; scoped tests reject stale binaries; target preserved; red status recorded and returned."
+  # Lane strict mode: an empty input set under --require-nonempty is a
+  # refusal (exit 1, named), never the silent exit 0 that let a CI job
+  # report green having run zero gates. `lane` (print), not `lane-run`, for
+  # both cases here — a non-empty `lane-run` would actually execute the
+  # derived phases (repo gates, harness-teeth, the matrix), which this
+  # self-test must not do. Runs the real, on-disk script against the real
+  # project ROOT (not a fixture): the empty-set branch returns before
+  # touching anything beyond the owned cache root it already prepares for
+  # every mode, and the non-empty branch is exactly what `make lane` does.
+  set +e
+  out="$(LANE_FILES=" " bash "$ROOT/scripts/verify.sh" lane --require-nonempty 2>&1)"
+  rc=$?
+  set -e
+  if [ "$rc" -eq 0 ] || ! grep -q "REFUSED" <<<"$out"; then
+    echo "verify --teeth: FAIL — empty lane input under --require-nonempty was not refused:" >&2
+    echo "$out" >&2
+    return 1
+  fi
+
+  set +e
+  out="$(LANE_FILES="internal/lane/lanecheck.go" bash "$ROOT/scripts/verify.sh" lane --require-nonempty 2>&1)"
+  rc=$?
+  set -e
+  if [ "$rc" -ne 0 ]; then
+    echo "verify --teeth: FAIL — a non-empty lane input under --require-nonempty was refused:" >&2
+    echo "$out" >&2
+    return 1
+  fi
+
+  set +e
+  out="$(bash "$ROOT/scripts/verify.sh" lane --require-nonempy 2>&1)"
+  rc=$?
+  set -e
+  if [ "$rc" -ne 2 ] || ! grep -q "^usage:" <<<"$out"; then
+    echo "verify --teeth: FAIL — a misspelled lane flag was not refused by usage:" >&2
+    echo "$out" >&2
+    return 1
+  fi
+
+  set +e
+  out="$(LANE_FILES=" " bash "$ROOT/scripts/verify.sh" lane 2>&1)"
+  rc=$?
+  set -e
+  if [ "$rc" -ne 0 ] || ! grep -q "nothing changed against HEAD" <<<"$out"; then
+    echo "verify --teeth: FAIL — the interactive default (no strict flag) stopped exiting 0 on an empty set:" >&2
+    echo "$out" >&2
+    return 1
+  fi
+
+  echo "verify --teeth: owned root accepted by construction; symlink and foreign residue refused; scoped tests reject stale binaries; target preserved; red status recorded and returned; lane strict mode refuses an empty or misspelled input and stays out of the way of a clean-tree default."
 }
 
 if [ "$MODE" = "--teeth" ]; then
@@ -587,8 +636,35 @@ run_derived_phase() {
 }
 
 if [ "$MODE" = lane ] || [ "$MODE" = lane-run ]; then
+  # Strict mode: an empty (or unresolvable) input set is a REFUSAL, never a
+  # silent green. The interactive default — a developer at a keyboard on a
+  # clean tree — stays the friendly message and exit 0; CI opts into strict
+  # by the flag or the env var. Both are supported because Makefile:75 passes
+  # `make lane-run` through with no extra args and the Makefile is not this
+  # brief's to touch — the env var is the only way a CI recipe can reach this
+  # today, while the flag is the explicit form for a direct `bash
+  # scripts/verify.sh lane[-run] --require-nonempty` call. Follows the file's
+  # own boolean convention (`GITHUB_ACTIONS` above): exact string "true", not
+  # bare `-n`, so an accidentally-set empty var does not silently arm it.
+  require_nonempty=0
+  case "${2:-}" in
+    "") ;;
+    --require-nonempty) require_nonempty=1 ;;
+    *)
+      echo "usage: $0 $MODE [--require-nonempty]" >&2
+      exit 2
+      ;;
+  esac
+  if [ "${A2A_VERIFY_REQUIRE_NONEMPTY:-}" = "true" ]; then
+    require_nonempty=1
+  fi
   paths="$(changed_paths)"
   if [ -z "$paths" ]; then
+    if [ "$require_nonempty" = 1 ]; then
+      echo "lane: REFUSED — nothing changed against HEAD and --require-nonempty (or A2A_VERIFY_REQUIRE_NONEMPTY=true) demands a non-empty input; a lane that ran zero gates must not report green." >&2
+      echo '      Pass LANE_FILES="a b c" to derive for an explicit set.' >&2
+      exit 1
+    fi
     echo "lane: nothing changed against HEAD — no lane to derive." >&2
     echo '      Pass LANE_FILES="a b c" to derive for an explicit set.' >&2
     exit 0
