@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -76,29 +75,40 @@ func TestVerifyShStampsWhatThisPackageStamps(t *testing.T) {
 	}
 
 	// (2) The derivation verify.sh contains must actually produce our stamp.
-	const goDocCmd = `go doc github.com/ydnikolaev/a2ahub/internal/version OperationalConfidenceFloor`
+	//
+	// It used to be `go doc`, and that is why this text is pinned: rewriting the
+	// derivation has to come past this test. It WAS rewritten, on 2026-08-12,
+	// and the reason is worth keeping. `go doc` asks the TOOLCHAIN, which needs
+	// a resolvable module graph — and a cold CI checkout does not reliably have
+	// one. It returned nothing on GitHub Actions for both the private repo and
+	// the v0.19.10 candidate, on a tree where the same query succeeds locally.
+	// verify.sh then built the shared binary with an EMPTY stamp and the run
+	// died ten minutes later in TestT3Scripts with `no match for a2a 0.19.0`,
+	// which reads like a version bug and is not one.
+	//
+	// The constant is a plain literal in one file. Reading the file needs no
+	// module graph, no cache and no network, and it cannot disagree with what
+	// the compiler will see.
+	const floorFile = "internal/version/operationalconfidence.go"
 	const sedExpr = `s/^const OperationalConfidenceFloor = "\(.*\)"$/\1/p`
-	if !strings.Contains(script, goDocCmd) || !strings.Contains(script, sedExpr) {
+	if !strings.Contains(script, floorFile) || !strings.Contains(script, sedExpr) {
 		t.Fatalf("scripts/verify.sh no longer contains the stamp derivation this test knows how to run.\n"+
 			"Expected both:\n  %s\n  sed -n '%s'\n"+
 			"If the derivation moved or changed shape, update this test to run the NEW one — do not delete\n"+
-			"the check: an underived stamp is what B33 was.", goDocCmd, sedExpr)
+			"the check: an underived stamp is what B33 was.", floorFile, sedExpr)
 	}
 
-	// The `go doc` half runs for real. The `sed` half is reproduced in Go
-	// rather than shelled out — same anchored pattern, no shell interpreter in
-	// a test — so what this proves is that the SOURCE verify.sh reads still
-	// says what verify.sh expects it to say. The textual check just above is
-	// what ties that back to the script's own text.
-	cmd := exec.Command("go", "doc",
-		"github.com/ydnikolaev/a2ahub/internal/version", "OperationalConfidenceFloor")
-	cmd.Dir = root
-	out, err := cmd.Output()
+	// The read half runs for real, against the same file verify.sh reads. The
+	// `sed` half is reproduced in Go rather than shelled out — same anchored
+	// pattern, no shell interpreter in a test — so what this proves is that the
+	// SOURCE verify.sh reads still says what verify.sh expects it to say. The
+	// textual check just above is what ties that back to the script's own text.
+	raw, err = os.ReadFile(filepath.Join(root, filepath.FromSlash(floorFile)))
 	if err != nil {
 		t.Fatalf("running verify.sh's own stamp derivation: %v", err)
 	}
 	var got string
-	for _, line := range strings.Split(string(out), "\n") {
+	for _, line := range strings.Split(string(raw), "\n") {
 		const prefix = `const OperationalConfidenceFloor = "`
 		if strings.HasPrefix(line, prefix) && strings.HasSuffix(line, `"`) {
 			got = line[len(prefix) : len(line)-1]
@@ -106,9 +116,9 @@ func TestVerifyShStampsWhatThisPackageStamps(t *testing.T) {
 		}
 	}
 	if got == "" {
-		t.Fatalf("`go doc` no longer prints OperationalConfidenceFloor in the single-line form verify.sh's\n"+
+		t.Fatalf("%s no longer declares OperationalConfidenceFloor in the single-line form verify.sh's\n"+
 			"sed anchors on. verify.sh would refuse to build rather than guess — which is correct, but it\n"+
-			"would do so at gate time with no hint. Output was:\n%s", out)
+			"would do so at gate time with no hint.", floorFile)
 	}
 	if got != harnessStampedVersion {
 		t.Fatalf("verify.sh's derivation yields %q; this package stamps %q.\n"+

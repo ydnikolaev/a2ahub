@@ -243,13 +243,24 @@ harness_stamp() {
   # version.OperationalConfidenceFloor (publication_plan.go:34). Reading the
   # aliased constant here is reading the SAME value, so the two builds cannot
   # drift into stamping different binaries for the same test run.
+  # Read from the SOURCE FILE, not from `go doc`.
+  #
+  # `go doc` asks the toolchain, and the toolchain needs a resolvable module
+  # graph — which is exactly what a fresh CI checkout does not reliably have
+  # before anything has been built. It returned nothing on GitHub Actions for
+  # both the private repo and the v0.19.10 candidate branch, on a tree where
+  # the identical query succeeds locally, and the whole downstream failure
+  # (`no match for a2a 0.19.0` in TestT3Scripts) was that empty answer wearing
+  # a disguise. The constant is a plain literal in one file; reading the file
+  # needs no module graph, no cache, and no network, and it cannot disagree
+  # with what the compiler will see.
+  local floor_file="$ROOT/internal/version/operationalconfidence.go"
   local stamp
-  stamp="$(go doc github.com/ydnikolaev/a2ahub/internal/version OperationalConfidenceFloor 2>/dev/null |
-    sed -n 's/^const OperationalConfidenceFloor = "\(.*\)"$/\1/p' | head -1)"
+  stamp="$(sed -n 's/^const OperationalConfidenceFloor = "\(.*\)"$/\1/p' "$floor_file" 2>/dev/null | head -1)"
   if [ -z "$stamp" ]; then
-    echo "verify.sh: cannot read version.OperationalConfidenceFloor — refusing to guess the harness stamp." >&2
+    echo "verify.sh: cannot read OperationalConfidenceFloor from $floor_file — refusing to guess the harness stamp." >&2
     echo "           A wrong stamp does not fail loudly; it makes event/v2 verbs unreachable and the tier green (B33)." >&2
-    exit 1
+    return 1
   fi
   printf '%s' "$stamp"
 }
@@ -259,7 +270,18 @@ build_cli() {
   # adds no information, and Go 1.26's stamp resolver writes a revision stat
   # entry to the shared GOMODCACHE. Disabling it at the owning build command
   # keeps that shared input read-only inside agent sandboxes.
-  go build -buildvcs=false -ldflags "-X main.version=$(harness_stamp)" -o "$A2A_VERIFY_BINARY" ./cmd/a2a
+  # The stamp is resolved into a VARIABLE first, and checked, because
+  # harness_stamp's own refusal used to be unreachable: called inside
+  # `$(...)`, its `exit 1` killed only the subshell and the build carried on
+  # with an EMPTY version stamp. The guard printed its warning and the run
+  # continued, failing ten minutes later in tests that never mention versions.
+  # A guard that cannot stop the thing it guards is decoration.
+  local stamp
+  if ! stamp="$(harness_stamp)"; then
+    echo "verify.sh: refusing to build the shared CLI without a harness stamp." >&2
+    exit 1
+  fi
+  go build -buildvcs=false -ldflags "-X main.version=$stamp" -o "$A2A_VERIFY_BINARY" ./cmd/a2a
 }
 
 run_go_tests() {
