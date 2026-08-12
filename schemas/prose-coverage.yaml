@@ -1,0 +1,403 @@
+# prose-coverage.yaml — the prose-coverage ledger (agent-exchange-2026-08
+# spec 13, §3.1/§4 AC5).
+#
+# Nothing in this repository used to watch for a capability shipping with no
+# prose page. A verb could be added, released, and documented nowhere, and
+# every gate stayed green — 0.19.10 put six derived-state fields on every
+# read surface and no prose page mentioned any of them (spec 13 §1, the
+# audit's headline finding). This file plus scripts/check-prose-coverage.sh
+# close that hole the same way schemas/loop-phases.yaml closes the loop-step
+# one: DECLARE the universe member, GATE the declaration, never let a member
+# with no row pass silently.
+#
+# ## The universe is ASKED OF THE BINARY, not observed or hand-listed
+#
+# Three kinds of member, all derived by `scripts/check-prose-coverage.sh`
+# from the built binary — never typed here:
+#
+#   cmd:<name>          every `a2a __catalog`  "## Commands" row's own name
+#                        (e.g. `cmd:inbox`, `cmd:contract publish` — a
+#                        sub-verb's name is "parent sub", matching the
+#                        catalog's own space-joined row, per
+#                        cmd/a2a/catalog.go's own "a hyphen used to render
+#                        seven undispatchable names" history).
+#   tool:<name>          every `a2a __catalog` "## MCP tools" row's own name
+#                        (e.g. `tool:a2a_read`).
+#   field:<surface>:<key> every (surface, key) pair from
+#                        `a2a __catalog --surfaces --json` (e.g.
+#                        `field:cli-thread:state_since`). See
+#                        cmd/a2a/catalog.go's catalogSurfaces() doc comment
+#                        for exactly which five surfaces and why.
+#
+# Why reflection over an observed run (spec 13 §3.1's own evidence, restated
+# here because it is why THIS file's shape is what it is): the six
+# derived-state fields are `omitempty`/`omitzero` and populate only from the
+# event that produced the state (internal/cache/types.go:93,
+# internal/cache/mirror.go:605) — the one binary-tier fixture that reads
+# inbox asserts an EMPTY array
+# (internal/e2e/testdata/t3/inbox_outbox.txtar:7), and a purpose-built
+# in-process test recorded its own first run hitting exactly that empty
+# result before it had to switch surfaces to see anything
+# (internal/e2e/wave33_verify_test.go:353). A fixture-derived universe would
+# be green and blind — the exact defect this ledger exists to end.
+#
+# ## `surfaces:` — closing half of the residual hole
+#
+# `--surfaces --json` cannot see a newly added SURFACE (a new command
+# serializing a new type not yet in cmd/a2a/catalog.go's catalogSurfaces())
+# — that function's own doc comment states this. This file's `surfaces:`
+# list is the OTHER half of that guard: the gate compares it against the
+# binary's own `--surfaces --json` top-level key set, in BOTH directions. A
+# surface catalogSurfaces() adds without a matching entry here reds (a
+# capability shipping with no ledger row, silently); a stale entry here
+# naming a surface the binary no longer emits reds too (so this list cannot
+# just accumulate). Between the two — this file's `surfaces:` list and
+# cmd/a2a/catalog.go's own doc comment — the hole is STATED, not silently
+# open on either side.
+surfaces:
+  - cli-inbox
+  - cli-outbox
+  - cli-show
+  - cli-thread
+  - mcp-item
+#
+# ## FLAT key set, not a path set — a real blindness, stated rather than
+# hidden (the loop-phases.yaml precedent for naming a file's own gap in its
+# own header)
+#
+# internal/skillcoverage.SurfaceKeys (cmd/a2a/catalog.go's own reflection
+# helper) returns a per-surface SET of JSON key names, not a set of paths.
+# A generic key name reachable at more than one place in a surface's type
+# graph — `name` (OperationalItem.Name, TranscriptEventActor.Name,
+# TranscriptWorkReport's own Actor.Name), `kind` (TranscriptEventActor.Kind,
+# TranscriptArtifact-adjacent Actor.Kind, TranscriptEntry.Kind), `index`
+# (TranscriptVerdict.Index), `version` (Envelope's own version field vs.
+# TranscriptEvent's event-version) — collapses several DISTINCT meanings
+# into ONE universe member. A `covered:`/`declared:` row against one of
+# those keys is a claim about the KEY NAME across the whole surface, not
+# about one specific occurrence, and this file's own classification below
+# treats the ones it touches accordingly (declaring or covering only where
+# the same page genuinely addresses every occurrence the key name reaches,
+# and leaving the rest of a collapsed name's occurrences uncovered rather
+# than claiming more than was checked). Widening this to a path-keyed
+# universe would remove the collapse at the cost of a universe roughly an
+# order of magnitude larger — a trade for whoever owns this file next, not
+# something this wave reaches for unilaterally, matching loop-phases.yaml's
+# own "a decision for whoever owns this file next" precedent for its
+# 88-vs-84-cell gap.
+#
+# ## Reading a member's verdict
+#
+# Every derived universe member MUST appear in exactly one of the two lists
+# below, or the gate reds naming it:
+#
+#   covered:  -> "<skill-relative page>#<anchor text>" — page and anchor
+#               BOTH must exist. The anchor is a literal markdown heading
+#               (any level, `#` through `######`) whose text, after the
+#               leading `#`s and one space are stripped, equals the anchor
+#               text byte-for-byte (matched fixed-string, never a regex —
+#               `§`, backticks and parens are exactly what this corpus's
+#               headings use). The gate does NOT judge whether the heading's
+#               CONTENT actually teaches the field — that is this file's own
+#               claim, the same limit loop-phases.yaml's header states for
+#               its own `covered:` map ("it cannot itself judge whether a
+#               covered/empty call was RIGHT").
+#   declared: -> a non-blank reason that is STRUCTURAL: the verb is hidden
+#               from the user-facing catalogue, the surface is not
+#               agent-facing, the field is machine-only/debug-only (backed
+#               by the TYPE'S OWN doc comment, not this file's opinion), or
+#               the member is a pure alias of an already-covered one. A
+#               reason that READS AS A DEFERRAL — "not documented yet",
+#               "later", "soon", "pending", "backlog", "TODO", a bare phase
+#               or wave id — is REFUSED by the gate, never merely
+#               discouraged: see check-prose-coverage.sh's own header for
+#               the exact detection rule. This is the class of "exemption"
+#               this ledger exists to make impossible to fake.
+#
+# A member in NEITHER list is a real, undeclared gap, and the gate reds
+# naming it by its full `cmd:`/`tool:`/`field:` key.
+#
+# ## This ledger is authored against the tree as of 2026-08-12, MID-WAVE
+#
+# A parallel wave (H5, same epic) is writing the missing prose concurrently
+# with this file. Several members below are `covered:` because H5's content
+# had already landed in the working tree at the moment this file was
+# written (the six derived-state fields' own trap sentences, RN-01910-27's
+# offline-triage refusal, RN-01910-6/7/25/30/42/44 — all found ALREADY
+# PRESENT during this file's own authoring, contrary to this wave's own
+# starting assumption that they would still be red). Most `field:` members
+# are left with NO entry at all — genuinely uncovered today, not merely
+# unchecked — because the prose corpus teaches CONCEPTS in prose, not
+# individual wire-field names as headings, and inventing an anchor for a
+# claim this file's author could not actually verify would be exactly the
+# fabricated-`declared:` failure mode spec 13 §4 AC5 forbids. The lead
+# reconciles this file at the wave boundary once H5's remaining pages land;
+# see this epic's wave log for the reds this wave reported at hand-off.
+
+schema: prose-coverage/v1
+
+covered:
+  # -- commands: the verb families a page actually walks -------------------
+  cmd:accept: "loops/receive.md#§8.3 Receive loop — \"something arrived for my system\""
+  cmd:ack: "loops/receive.md#§8.3 Receive loop — \"something arrived for my system\""
+  cmd:approve: "loops.md#Condensed §0/§3 semantics"
+  cmd:attach: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  cmd:block: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  cmd:cancel: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  cmd:close: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  cmd:connect: "onboarding.md#Onboarding a new system into an existing space (§9.2)"
+  cmd:await: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  cmd:contract activate: "loops/first-integration.md#§8.4b First-integration loop — producer half (a NEW contract, through go-live)"
+  cmd:contract adopt: "loops/contract-change.md#§8.4a Consumer loop — \"a contract I depend on changed\""
+  cmd:contract deprecate: "reference/contract-versions.md#Retiring a line, both sides"
+  cmd:contract diff: "loops/contract-change.md#§8.4a Consumer loop — \"a contract I depend on changed\""
+  cmd:contract materialize: "reference/contract-versions.md#The descriptor's `version:` is not yours to set"
+  cmd:contract new: "loops/contract-change.md#§8.4 Contract-owner loop — \"my interface changed\""
+  cmd:contract preflight: "reference/contract-versions.md#The descriptor declares every file it carries"
+  cmd:contract publish: "reference/contract-versions.md#Publishing on an older line"
+  cmd:contract retire: "reference/contract-versions.md#Retiring a line, both sides"
+  cmd:contract verify-export: "reference/contract-versions.md#Proving a generated contract came from your code"
+  cmd:contracts: "loops/contract-change.md#§8.4 Contract-owner loop — \"my interface changed\""
+  cmd:data: "reference/data-exchange.md#Data exchange — packing, delivering, fetching and verifying a payload"
+  cmd:decline: "loops/receive.md#§8.3 Receive loop — \"something arrived for my system\""
+  cmd:dispute: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  cmd:doctor: "troubleshooting.md#What `a2a doctor` does"
+  cmd:feedback: "loops/feedback.md#§8.7 Feedback loop — \"the tool itself got in my way\""
+  cmd:fetch: "reference/data-exchange.md#Consumer sequence"
+  cmd:html: "loops/watch.md#§8.6 Watch loop — how you notice things"
+  cmd:inbox: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  cmd:init: "onboarding.md#Install profiles (§9.1)"
+  cmd:mcp: "SKILL.md#Which surface to work through — read this before your first command"
+  cmd:new: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  cmd:note: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  cmd:notifications: "notifications.md#Activation preflight"
+  cmd:outbox: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  cmd:reject: "loops.md#Condensed §0/§3 semantics"
+  cmd:respond: "loops/receive.md#§8.3 Receive loop — \"something arrived for my system\""
+  cmd:satisfy: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  cmd:search: "reference/status-announcements.md#When an agent writes one — the anchored moments"
+  cmd:serve: "loops/watch.md#§8.6 Watch loop — how you notice things"
+  cmd:show: "reference/threads.md#Reading one"
+  cmd:skill: "onboarding.md#Install profiles (§9.1)"
+  cmd:space: "onboarding.md#Onboarding a new space, org, or offboarding (§9.2)"
+  cmd:start: "loops/receive.md#§8.3 Receive loop — \"something arrived for my system\""
+  cmd:statusline: "notifications.md#Statusline boundary"
+  cmd:submit: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  cmd:supersede: "reference/threads.md#Correcting a sent document"
+  cmd:sync: "onboarding.md#Making the loop run without a human (§8.6 automation)"
+  cmd:template: "reference/contract-versions.md#The descriptor declares every file it carries"
+  cmd:thread: "reference/threads.md#Reading one"
+  cmd:unblock: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  cmd:update: "loops/contract-change.md#§8.4a Consumer loop — \"a contract I depend on changed\""
+  cmd:validate: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  cmd:verify: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  cmd:verify-fail: "reference/data-exchange.md#Consumer sequence"
+  cmd:verify-pass: "reference/data-exchange.md#Consumer sequence"
+  cmd:whatsnew: "loops/contract-change.md#§8.4a Consumer loop — \"a contract I depend on changed\""
+  cmd:withdraw: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  cmd:work: "reference/work-reporting.md#Two observations, two authorities"
+
+  # -- MCP tools: family wrappers over the already-covered CLI verbs -------
+  tool:a2a_contract: "loops/contract-change.md#§8.4 Contract-owner loop — \"my interface changed\""
+  tool:a2a_data: "reference/data-exchange.md#Data exchange — packing, delivering, fetching and verifying a payload"
+  tool:a2a_exchange: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  tool:a2a_lifecycle: "loops/receive.md#§8.3 Receive loop — \"something arrived for my system\""
+  tool:a2a_new: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  # Partial credit, named rather than hidden (the loop-phases.yaml
+  # precedent, §"category- or variant-scoped" cells): a2a_read's own
+  # `view=` enum includes `search`, and `cmd:search` is NOT covered below
+  # (no page teaches the bare search verb today) — this row credits the
+  # tool for its four other, genuinely-taught views (inbox/outbox/show/
+  # thread) rather than either withholding credit from all five or
+  # inventing search coverage that does not exist.
+  tool:a2a_read: "reference/threads.md#Reading one"
+  tool:a2a_submit: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  tool:a2a_whatsnew: "loops/contract-change.md#§8.4a Consumer loop — \"a contract I depend on changed\""
+  tool:a2a_work: "reference/work-reporting.md#Two observations, two authorities"
+
+  # -- fields: cli-inbox / cli-outbox / mcp-item (cache.Item, one row per
+  #    surface — mechanical repetition of the SAME classification, since
+  #    all three reflect the identical struct; see catalogSurfaces()'s own
+  #    doc comment for why mcp-item is not the MCP wrapper's outer keys) --
+  #    `blocking`/`needed_by`/`priority` are NOT rows here any more: they
+  #    are schema-declared envelope properties (base.schema.json) and the
+  #    derived-universe filter (schema_declared_fields, this gate's own
+  #    header) drops them before this file is even consulted — see
+  #    reference/authoring/*.md for those.
+  field:cli-inbox:expected_transition: "reference/threads.md#Reading one"
+  field:cli-outbox:expected_transition: "reference/threads.md#Reading one"
+  field:mcp-item:expected_transition: "reference/threads.md#Reading one"
+  field:cli-inbox:operational_items: "loops/first-integration.md#§8.4c First-integration loop — consumer half (through go-live)"
+  field:cli-outbox:operational_items: "loops/first-integration.md#§8.4c First-integration loop — consumer half (through go-live)"
+  field:mcp-item:operational_items: "loops/first-integration.md#§8.4c First-integration loop — consumer half (through go-live)"
+  field:cli-inbox:outcome: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  field:cli-outbox:outcome: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  field:mcp-item:outcome: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  field:cli-inbox:state_by: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  field:cli-outbox:state_by: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  field:mcp-item:state_by: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  field:cli-inbox:state_event: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  field:cli-outbox:state_event: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  field:mcp-item:state_event: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  field:cli-inbox:state_since: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  field:cli-outbox:state_since: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  field:mcp-item:state_since: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  field:cli-inbox:terminal: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  field:cli-outbox:terminal: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  field:mcp-item:terminal: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  field:cli-inbox:waiting_on: "reference/threads.md#Reading one"
+  field:cli-outbox:waiting_on: "reference/threads.md#Reading one"
+  field:mcp-item:waiting_on: "reference/threads.md#Reading one"
+  field:cli-inbox:why: "loops/first-integration.md#§8.4b First-integration loop — producer half (a NEW contract, through go-live)"
+  field:cli-outbox:why: "loops/first-integration.md#§8.4b First-integration loop — producer half (a NEW contract, through go-live)"
+  field:mcp-item:why: "loops/first-integration.md#§8.4b First-integration loop — producer half (a NEW contract, through go-live)"
+
+  # -- fields: cli-show (cache.ShowResult) ---------------------------------
+  #    `attachments`/`verification` are NOT rows here any more: both are
+  #    schema-declared envelope properties (work_request.schema.json /
+  #    handoff.schema.json) — see the field:cli-inbox comment above.
+  field:cli-show:actor_kind: "reference/actor-identity.md#Two identities, and only one of them is written"
+  field:cli-show:actor_system: "reference/actor-identity.md#Two identities, and only one of them is written"
+  field:cli-show:cause_owner: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  field:cli-show:expires_at: "reference/data-exchange-refusals.md#What each refusal means, and what to do"
+  field:cli-show:reason_code: "loops.md#Condensed §0/§3 semantics"
+  field:cli-show:transition_free: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  field:cli-show:verdict: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  field:cli-show:verdicts: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+
+  # -- fields: cli-thread (cache.ThreadResult) -----------------------------
+  #    `blocking`/`needed_by` are NOT rows here any more — see the
+  #    field:cli-inbox comment above.
+  field:cli-thread:cause_owner: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  field:cli-thread:expected_transition: "reference/threads.md#Reading one"
+  field:cli-thread:human_gate: "loops.md#Condensed §0/§3 semantics"
+  field:cli-thread:operational_items: "loops/first-integration.md#§8.4c First-integration loop — consumer half (through go-live)"
+  field:cli-thread:outcome: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  field:cli-thread:reason_code: "loops.md#Condensed §0/§3 semantics"
+  field:cli-thread:state_by: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  field:cli-thread:state_event: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  field:cli-thread:state_since: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  field:cli-thread:terminal: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  field:cli-thread:transition_free: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  field:cli-thread:verdict: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  field:cli-thread:verdicts: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  field:cli-thread:waiting_on: "reference/threads.md#Reading one"
+  field:cli-thread:why: "loops/first-integration.md#§8.4b First-integration loop — producer half (a NEW contract, through go-live)"
+
+declared:
+  # -- commands: structural exemptions, each backed by a code fact --------
+  cmd:__catalog: "hidden, machine-consumed verb — its own hand-typed synopsis in cmd/a2a/catalog.go says so, and it is deliberately absent from main.go's printUsage; an agent never types it"
+  cmd:completion: "prints a shell completion script (bash|zsh|fish) — shell integration mechanics, not a2a exchange semantics an agent needs prose for"
+  cmd:dashboard: "a pure alias of `html` — cmd/a2a/wire.go registers both names against the identical synopsis (\"render a self-contained local dashboard ... from the cache\"); covered under `html`, cmd:html above"
+  cmd:version: "prints the binary version stamp only — no exchange semantics, no flags, nothing an agent could act on wrongly"
+
+  # -- fields: machine/debug-only, backed by the TYPE's own doc comment ---
+  field:cli-inbox:reasons: "internal/cache/types.go's own doc comment: \"debuggability, not part of the guaranteed-stable core fields\" — never a claim an agent should read prose for"
+  field:cli-outbox:reasons: "internal/cache/types.go's own doc comment: \"debuggability, not part of the guaranteed-stable core fields\" — never a claim an agent should read prose for"
+  field:mcp-item:reasons: "internal/cache/types.go's own doc comment: \"debuggability, not part of the guaranteed-stable core fields\" — never a claim an agent should read prose for"
+declared_classes:
+  cli-thread-transcript-union:
+    reason: "TranscriptEntry's own discriminated-union payload keys (`artifact`/`event`/`derived`) and the ThreadResult/OpenItem wrapper keys that carry them (`open_items`, `transcript`, `opener`, `participants`, `deliveries`, `next_actions`) are JSON STRUCTURE — which array holds which entry kind — not a fact about an exchange a reader needs prose to interpret; loops.md and reference/threads.md teach the CONCEPTS these wrap (the transcript, the open-items list, deliveries) without needing a field-by-field key gloss."
+    members:
+      - field:cli-thread:artifact
+      - field:cli-thread:event
+      - field:cli-thread:derived
+      - field:cli-thread:open_items
+      - field:cli-thread:transcript
+      - field:cli-thread:opener
+      - field:cli-thread:participants
+      - field:cli-thread:deliveries
+      - field:cli-thread:next_actions
+  self-describing-scalar:
+    reason: "a bare identifier, timestamp, free-text value, or boolean whose field name states its own meaning in full — an id, an `at` timestamp, a `note`, a `new` flag — carrying no derived interpretation the way `outcome`/`state_since` do; reading the key name IS reading the field, so a prose gloss would only restate the name."
+    members:
+      - field:cli-inbox:name
+      - field:cli-inbox:new
+      - field:cli-outbox:name
+      - field:cli-outbox:new
+      - field:mcp-item:name
+      - field:mcp-item:new
+      - field:cli-show:at
+      - field:cli-show:body
+      - field:cli-show:conforms_to
+      - field:cli-show:digest
+      - field:cli-show:event_ulid
+      - field:cli-show:lapse_claim
+      - field:cli-show:lapsed
+      - field:cli-show:lapsed_on
+      - field:cli-show:note
+      - field:cli-show:resolved
+      - field:cli-show:subject
+      - field:cli-show:ulid
+      - field:cli-thread:at
+      - field:cli-thread:note
+      - field:cli-thread:subject
+      - field:cli-thread:ulid
+      - field:cli-thread:since
+      - field:cli-thread:reported_at
+      - field:cli-thread:summary
+      - field:cli-thread:unavailable_reason
+      - field:cli-thread:response_id
+      - field:cli-thread:package_id
+      - field:cli-thread:handoff_id
+      - field:cli-thread:contract_id
+      - field:cli-thread:work_id
+      - field:cli-thread:artifact_id
+      - field:cli-thread:report_id
+      - field:cli-thread:resolved_from
+      - field:cli-thread:rule
+  structural-reference-and-vocabulary:
+    reason: "a cross-reference id, positional index, enum/vocabulary value, or nested identity sub-object (an actor's or producer's own kind/name/system/model/session/tool, a receipt-mismatch's own scope) whose correct reading depends on WHICH other field or object it is attached to — that relational fact is the surface's own JSON shape (which event an id names, whose session a field belongs to), not a derived domain judgment the way outcome/state_since/terminal are; the vocabulary values themselves (transition names, work modes) are taught as the CLI verbs and checkpoint modes the loop pages and reference/work-reporting.md already carry."
+    members:
+      - field:cli-show:actor_model
+      - field:cli-show:actor_session
+      - field:cli-show:actual
+      - field:cli-show:cause
+      - field:cli-show:events
+      - field:cli-show:flags
+      - field:cli-show:index
+      - field:cli-show:kind
+      - field:cli-show:model
+      - field:cli-show:name
+      - field:cli-show:pinned_digest
+      - field:cli-show:produced_by
+      - field:cli-show:producer
+      - field:cli-show:ref
+      - field:cli-show:retention
+      - field:cli-show:role
+      - field:cli-show:scope
+      - field:cli-show:session
+      - field:cli-show:system
+      - field:cli-show:tool
+      - field:cli-show:transition
+      - field:cli-thread:actual
+      - field:cli-thread:attempt
+      - field:cli-thread:by
+      - field:cli-thread:cause
+      - field:cli-thread:chain
+      - field:cli-thread:commit_sequence
+      - field:cli-thread:entry_path
+      - field:cli-thread:event_ulid
+      - field:cli-thread:failures
+      - field:cli-thread:flags
+      - field:cli-thread:index
+      - field:cli-thread:kind
+      - field:cli-thread:major
+      - field:cli-thread:mode
+      - field:cli-thread:model
+      - field:cli-thread:name
+      - field:cli-thread:order
+      - field:cli-thread:produced_by
+      - field:cli-thread:producer
+      - field:cli-thread:record
+      - field:cli-thread:ref
+      - field:cli-thread:scope
+      - field:cli-thread:seq
+      - field:cli-thread:session
+      - field:cli-thread:status
+      - field:cli-thread:subject_ref
+      - field:cli-thread:system
+      - field:cli-thread:tool
+      - field:cli-thread:transition
+      - field:cli-thread:unresolved
+      - field:cli-thread:your_move

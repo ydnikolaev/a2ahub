@@ -51,6 +51,7 @@ scripts/*
 !scripts/dashboard-template-drift.sh
 !scripts/check-view-vocabulary.sh
 !scripts/check-prose-roster.sh
+!scripts/check-prose-coverage.sh
 !scripts/check-operational-confidence.sh
 !scripts/verify.sh
 !scripts/build-release-cohort.sh
