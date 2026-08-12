@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
@@ -126,6 +127,42 @@ func doctorDecideVisibility(facts doctorVisibilityFacts) doctorVisibilityDecisio
 	}
 }
 
+// doctorFilterDataPackageReadmeSkips removes a data package's own README.md
+// skip entries from paths (and the parallel count) before
+// doctorDecideVisibility ever sees them. Such a file is not an unverified
+// classification gap — it IS classifiable: `a2a data pack` writes it WITHOUT
+// frontmatter BY DESIGN (spec 04 §11's 2026-08-09 AC8 amendment), and its
+// bytes are sealed by the package's own manifest.json digest
+// (datapackage.BuildEntrySet) — no owner can make it frontmatter-shaped
+// without breaking that seal, so naming it in the "classification scan
+// incomplete" remediation line (fb-20260812-f9cfac) points at an action
+// nobody can take. artifact.IsDataPackageReadmePath is the SAME predicate
+// internal/cache's walkArtifacts uses to silently skip this exact file in
+// the first place (internal/artifact/paths.go, fb-20260812-d31acb's own
+// fix) — one rule, both readers, rather than a second copy that could drift.
+//
+// count may legitimately exceed len(paths) (doctorDecideVisibility's own
+// "count := max(SkippedCount, len(SkippedPaths))" defends against a
+// truncated path list upstream), so this only ever subtracts the number of
+// PATHS it actually recognised and removed, never more, and never below
+// zero.
+func doctorFilterDataPackageReadmeSkips(paths []string, count int) ([]string, int) {
+	filtered := make([]string, 0, len(paths))
+	removed := 0
+	for _, p := range paths {
+		if artifact.IsDataPackageReadmePath(p) {
+			removed++
+			continue
+		}
+		filtered = append(filtered, p)
+	}
+	count -= removed
+	if count < 0 {
+		count = 0
+	}
+	return filtered, count
+}
+
 func doctorSafeVisibilityPaths(paths []string) []string {
 	seen := make(map[string]bool, len(paths))
 	out := make([]string, 0, len(paths))
@@ -167,6 +204,7 @@ func (c *DoctorCommand) doctorVisibilityRows(ctx context.Context, cfg space.Proj
 				facts.ClassificationVerified = true
 				facts.SkippedCount = summary.SkippedCount
 				facts.SkippedPaths = append([]string(nil), summary.SkippedPaths...)
+				facts.SkippedPaths, facts.SkippedCount = doctorFilterDataPackageReadmeSkips(facts.SkippedPaths, facts.SkippedCount)
 			}
 		}
 

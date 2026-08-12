@@ -68,6 +68,80 @@ func TestCleanRelativePathNFCAndNFDBothRejectedIdentically(t *testing.T) {
 	}
 }
 
+func TestIsDataPackageReadmePath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{
+			name: "the packed README — the exact incident shape",
+			path: "seomatrix/data/DP-seomatrix-20260808-7xaa/README.md",
+			want: true,
+		},
+		{
+			name: "case-insensitive basename — classifyPackEntries's own EqualFold match",
+			path: "seomatrix/data/DP-seomatrix-20260808-7xaa/readme.md",
+			want: true,
+		},
+		{
+			name: "a DP- id whose OWN embedded system disagrees with the directory it sits under — the real verify-report shape",
+			path: "peer/data/DP-axon-20260804-ab12/README.md",
+			want: true,
+		},
+		{
+			name: "the manifest itself — not the readme",
+			path: "seomatrix/data/DP-seomatrix-20260808-7xaa/manifest.json",
+			want: false,
+		},
+		{
+			name: "a nested payload file, not the root-level readme",
+			path: "seomatrix/data/DP-seomatrix-20260808-7xaa/rows/README.md",
+			want: false,
+		},
+		{
+			name: "a genuine artifact elsewhere under the same system — must NOT match",
+			path: "seomatrix/exchanges/XW-seomatrix-20260808-ab12.md",
+			want: false,
+		},
+		{
+			name: "no data segment",
+			path: "seomatrix/README.md",
+			want: false,
+		},
+		{
+			name: "a DP- id shaped path under a directory that is not literally \"data\"",
+			path: "seomatrix/notdata/DP-seomatrix-20260808-7xaa/README.md",
+			want: false,
+		},
+		{
+			name: "not a DP- id at all",
+			path: "seomatrix/data/XH-seomatrix-20260808-7xaa/README.md",
+			want: false,
+		},
+		{
+			name: "path traversal",
+			path: "seomatrix/data/../DP-seomatrix-20260808-7xaa/README.md",
+			want: false,
+		},
+		{
+			name: "the package directory has no trailing file",
+			path: "seomatrix/data/DP-seomatrix-20260808-7xaa",
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := IsDataPackageReadmePath(tt.path); got != tt.want {
+				t.Fatalf("IsDataPackageReadmePath(%q) = %v, want %v", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCaseCollisions(t *testing.T) {
 	t.Parallel()
 

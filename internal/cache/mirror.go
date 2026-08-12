@@ -1030,6 +1030,34 @@ func walkArtifacts(dir string) ([]rawArtifact, []SkippedFile, error) {
 		if relErr == nil && space.IsInfrastructurePath(filepath.ToSlash(rel)) {
 			return nil
 		}
+		// A data package's own README.md ("<system>/data/<DP-id>/README.md")
+		// is not an exchange artifact either, and was never "missing from
+		// this output" in any meaningful sense: `a2a data pack` writes it
+		// WITHOUT frontmatter by design, and its bytes are sealed by the
+		// package's own manifest.json digest (datapackage.BuildEntrySet),
+		// so it can never gain frontmatter without breaking that seal.
+		// Reported as SkipReasonNotFrontmatterShaped every real `a2a inbox`/
+		// `outbox` call falsely named it as "could not be decoded"
+		// (fb-20260812-d31acb) and left the doctor visibility scan stuck at
+		// UNVERIFIED (fb-20260812-f9cfac) — silently skipping it here,
+		// exactly like the infrastructure check just above, is the fix, not
+		// a new skip reason that would still print.
+		// artifact.IsDataPackageReadmePath (internal/artifact/paths.go) is
+		// the predicate BOTH remaining readers here consult — this walk and
+		// the doctor visibility scan — so the defect that produced the two
+		// reports (a fix that reached the validator and no one else) cannot
+		// recur between them.
+		//
+		// It is NOT repository-wide, and saying so would be a lie the next
+		// reader would act on. internal/space's DataPackageForPath states
+		// the same grammar a second time, and the duplication is forced:
+		// internal/artifact sits at the bottom of the import graph (ADR-001
+		// — stdlib only) and cannot import internal/space. paths.go's own
+		// doc comment records the deviation and the collapse that would end
+		// it; docs/backlog.md carries the row.
+		if relErr == nil && artifact.IsDataPackageReadmePath(filepath.ToSlash(rel)) {
+			return nil
+		}
 		a, skip := decodeArtifactFile(dir, path)
 		if skip != nil {
 			skips = append(skips, *skip)

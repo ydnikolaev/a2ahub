@@ -2,6 +2,8 @@ package cache
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -420,6 +422,46 @@ func TestBuildIndex_DeliveryUnresolvableIsClearedWhenThePackageResolves(t *testi
 	}
 	if wr.DeliveryUnresolvable {
 		t.Fatal("DeliveryUnresolvable = true, want false: the handoff fulfilling this work_request names a package that resolves in the mirror")
+	}
+}
+
+// TestWalkArtifacts_DataPackageReadmeIsNotASkippedFile is the regression for
+// fb-20260812-d31acb: `a2a data pack` writes a data package's own readme at
+// "<system>/data/<DP-id>/README.md" WITHOUT frontmatter by design (spec 04
+// §11's AC8 amendment), and its bytes are sealed by the package's own
+// manifest.json digest — so it can never gain frontmatter without breaking
+// that seal. Before this fix walkArtifacts tried to decode it as an
+// envelope, failed artifact.ParseFrontmatter, and reported
+// SkipReasonNotFrontmatterShaped for it on every real `a2a inbox`/`outbox`
+// call — mirroring TestWalkArtifacts_InfrastructureIsNotASkippedArtifact
+// (skipped_test.go)'s own shape for the sibling infrastructure exclusion.
+func TestWalkArtifacts_DataPackageReadmeIsNotASkippedFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	write := func(rel, body string) {
+		t.Helper()
+		path := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("seomatrix/data/DP-seomatrix-20260808-7xaa/README.md", "# Order export\n\nNo frontmatter here.\n")
+	write("seomatrix/data/DP-seomatrix-20260808-7xaa/manifest.json", `{"schema":"data-package/v1"}`)
+	write("axon/README.md", "# Participant prose\n")
+
+	artifacts, skips, err := walkArtifacts(dir)
+	if err != nil {
+		t.Fatalf("walkArtifacts: %v", err)
+	}
+	if len(artifacts) != 0 {
+		t.Fatalf("artifacts = %+v, want none", artifacts)
+	}
+	if len(skips) != 1 || skips[0].Path != "axon/README.md" || skips[0].Reason != SkipReasonNotFrontmatterShaped {
+		t.Fatalf("skips = %+v, want only the genuine participant prose reported, and the packed data-package README skipped SILENTLY", skips)
 	}
 }
 
