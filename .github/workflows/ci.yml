@@ -38,6 +38,8 @@ permissions:
 
 jobs:
   check:
+    # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
+    timeout-minutes: 28
     # On the PUBLIC repository, `main` moves by exactly one route: promoting a
     # candidate. The publisher only ever promotes a SHA whose own
     # `a2a-candidate/**` branch already ran this workflow — the run is waited on
@@ -54,10 +56,25 @@ jobs:
     # where main moves for ordinary work and this IS the gate — is untouched.
     # The `github.repository ==` idiom is the one codeql.yml already uses to
     # tell the two repositories apart.
+    #
+    # It names the PUBLIC repo, and that is load-bearing rather than stylistic.
+    # This clause used to read `== 'ydnikolaev/a2ahub-private'`, and ADR-014
+    # moves that repository into the r22d222 org — at which point the literal
+    # stops matching, the condition becomes true on a private push to main, and
+    # the private repo SKIPS its own gate. A green tick with nothing behind it,
+    # arriving on the exact day of the transfer, on the repo where this IS the
+    # gate.
+    #
+    # Naming the public repo inverts the failure. The public repo is the one
+    # that does not move, and every other repo-discriminating condition in this
+    # tree (classify-guard.yml, codeql.yml) already names it. If it were ever
+    # renamed anyway, this condition goes TRUE and the job RUNS — minutes spent
+    # re-verifying an already-verified SHA, which is waste. The old form failed
+    # the other way, and a false green is not the same kind of mistake.
     if: >-
       github.event_name != 'push'
       || github.ref != 'refs/heads/main'
-      || github.repository == 'ydnikolaev/a2ahub-private'
+      || github.repository != 'ydnikolaev/a2ahub'
     runs-on: ubuntu-latest
     env:
       # setup-go restores this exact build cache; verify.sh accepts an external
@@ -102,6 +119,8 @@ jobs:
   # path-scoped trigger is intentionally widened to always-run (like `check`):
   # the regenerate is cheap and an always-green gate cannot silently skip.
   skill-drift:
+    # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
+    timeout-minutes: 5
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -141,6 +160,8 @@ jobs:
           done
 
   macos-notifier:
+    # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
+    timeout-minutes: 5
     runs-on: macos-15
     steps:
       - name: Checkout

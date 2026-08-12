@@ -37,6 +37,7 @@ ALLOW_DIRS=( .github cmd integrations internal schemas skill space-template test
 PUBLIC_VALIDATOR_FILES=(
   scripts/check-lane-declarations.sh
   scripts/lib/lane-ungated.txt
+  scripts/lib/job-timeouts.tsv
   scripts/lib/gate-lib.sh
   scripts/check_contract_carried_set.sh
   scripts/check_event_writer_receipts.sh

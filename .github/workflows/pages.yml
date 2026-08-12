@@ -32,6 +32,8 @@ concurrency:
 
 jobs:
   deploy:
+    # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
+    timeout-minutes: 32
     runs-on: ubuntu-latest
     environment:
       name: github-pages

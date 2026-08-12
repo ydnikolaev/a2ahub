@@ -68,6 +68,8 @@ on:
 
 jobs:
   validate:
+    # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
+    timeout-minutes: 10
     # This job name is the second half of the branch-protection context
     # `<caller-job> / validate`. It is a load-bearing literal — see header.
     name: validate

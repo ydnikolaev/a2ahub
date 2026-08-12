@@ -18,6 +18,8 @@ permissions:
 
 jobs:
   analyze:
+    # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
+    timeout-minutes: 5
     runs-on: ubuntu-latest
     env:
       GOWORK: "off" # analyze the fresh-checkout build, never a workspace's replacements

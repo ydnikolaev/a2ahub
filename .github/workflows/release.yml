@@ -24,6 +24,8 @@ permissions:
 
 jobs:
   goreleaser:
+    # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
+    timeout-minutes: 11
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -93,6 +95,8 @@ jobs:
                 --verify-stdin
 
   macos-notifier:
+    # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
+    timeout-minutes: 5
     needs: goreleaser
     runs-on: macos-15
     steps:
@@ -116,6 +120,8 @@ jobs:
             --repo "$GITHUB_REPOSITORY" --clobber
 
   vscode-notifier:
+    # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
+    timeout-minutes: 5
     needs: goreleaser
     runs-on: ubuntu-latest
     steps:
@@ -144,6 +150,8 @@ jobs:
             --repo "$GITHUB_REPOSITORY" --clobber
 
   cohort:
+    # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
+    timeout-minutes: 5
     needs: [goreleaser, macos-notifier, vscode-notifier]
     runs-on: ubuntu-latest
     steps:

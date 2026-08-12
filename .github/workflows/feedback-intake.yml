@@ -35,6 +35,8 @@ env:
 
 jobs:
   policy:
+    # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
+    timeout-minutes: 5
     name: validate-feedback-policy
     runs-on: ubuntu-latest
     outputs:
@@ -132,6 +134,8 @@ jobs:
           echo "kind=$kind" >> "$GITHUB_OUTPUT"
 
   arm-feedback:
+    # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
+    timeout-minutes: 5
     name: arm-feedback
     needs: policy
     if: needs.policy.outputs.is-feedback == 'true'
@@ -188,6 +192,8 @@ jobs:
   # Ordinary code PRs skip arm-feedback and still receive this universal,
   # read-only verdict without ever acquiring write privilege.
   merge-policy:
+    # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
+    timeout-minutes: 5
     name: merge-policy
     needs: [policy, arm-feedback]
     if: always()

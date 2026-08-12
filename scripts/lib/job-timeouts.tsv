@@ -1,0 +1,63 @@
+# job-timeouts.tsv — the measured basis for every workflow's `timeout-minutes`.
+#
+# agent-ops-2026-07 P13 §3.6 / AC3 (B1). The first draft of that spec printed
+# four p99s in prose and then said they were explicitly not the basis, so AC3
+# had no source at all — the same "a print cannot red" defect the review had
+# just caught one level up. This file IS the source: the gate reads it, so a
+# stale timeout is a red line rather than a stale paragraph.
+#
+# Window: 2026-08-01..2026-08-12, both repositories (ydnikolaev/a2ahub and
+# ydnikolaev/a2ahub-private), 1367 jobs. Durations are wall clock
+# (completed_at - started_at) from GET /repos/{o}/{r}/actions/runs/{id}/jobs.
+# `/actions/runs/{id}/timing` reports "total_ms": 0 for every job in this
+# account and is unusable — do not regenerate from it.
+#
+# Identities with fewer than three samples are omitted rather than guessed,
+# matching `make lane`'s own "no estimate (n=k)" discipline.
+#
+# THE SIZING RULE, and it is deliberately not just 1.5x p99:
+#
+#   timeout_min = min(60, max(5, ceil(1.5 * p99 / 60), ceil(max / 60) + 2))
+#
+# The `max` term is load-bearing and was added after this table was first
+# computed. `Pages/deploy` has p99 1024 s but a MAX of 1768 s, and every one of
+# those long runs concluded success — 1.5x p99 alone would have sized it at 26
+# minutes and cancelled an observed green run. That is exactly the error the
+# review caught in this spec's first draft (a 20-minute `check` timeout below
+# two successful 1313 s and 1239 s runs), reproduced one level deeper by a rule
+# that looked principled. A percentile describes the body; a timeout must clear
+# the tail.
+#
+# The 60-minute CAP is a bound on the failure, not a performance target: at the
+# macOS x10 multiplier a capped job bills 600 equivalent minutes, survivable
+# inside the 1500-minute monthly budget (ADR-012), where the 360-minute GitHub
+# default bills 3600 — more than the whole month. An identity that genuinely
+# needs more than the cap is a finding, not a configuration.
+#
+# REGENERATION IS OWED. This table was computed by hand from the API for the
+# window above; `ci-usage-report.sh --p99` (P13 K8) does not exist yet and is
+# the follow-up that makes this file reproducible rather than archaeological.
+# Until it lands, treat the numbers as measured-once: they are real, and they
+# are not self-refreshing. docs/backlog.md carries the row.
+#
+# RE-DERIVE AFTER THE CEILING MOVES. All four `CI/check` runs over 1000 s are
+# private pushes to `main` — exactly the traffic P13's cadence change relocates.
+# Sizing against today's tail and never re-measuring leaves every timeout
+# permanently over-generous (P13 §3.6).
+#
+# identity	p50_s	p99_s	max_s	n	timeout_min
+Pages/deploy	24	1024	1768	64	32
+CI/check	92	1095	1313	238	28
+Release/goreleaser	273	414	426	15	11
+Dependabot	58	340	381	14	9
+CodeQL	9	140	142	166	5
+CI/skill-drift	21	73	85	238	5
+CI/macos-notifier	51	74	76	238	5
+classify-guard	6	9	14	162	5
+a2a-validate-dogfood	18	78	78	31	5
+gitleaks	10	16	23	162	5
+govulncheck	32	52	53	27	5
+feedback-intake	4	8	9	86	5
+Release/macos-notifier	38	58	59	15	5
+Release/vscode-notifier	14	21	21	15	5
+Release/cohort	24	78	81	15	5

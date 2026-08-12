@@ -75,6 +75,7 @@ scripts/*
 !scripts/lib/
 scripts/lib/*
 !scripts/lib/lane-ungated.txt
+!scripts/lib/job-timeouts.tsv
 !scripts/lib/gate-lib.sh
 !scripts/tests/
 scripts/tests/*

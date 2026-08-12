@@ -31,6 +31,13 @@ permissions:
 
 jobs:
   a2a-validate:
+    # NO timeout-minutes here, and it is not an omission: actionlint refuses it —
+    # "when a reusable workflow is called with \"uses\", \"timeout-minutes\" is not
+    # available. only following keys are allowed: name, uses, with, secrets, needs,
+    # if, permissions". Verified empirically 2026-08-12, not recalled. The bound for
+    # this work lives on the reusable workflow's OWN job
+    # (a2a-validate-reusable.yml, `validate`), which is where it can be declared and
+    # where it actually applies (P13 AC3).
     uses: ./.github/workflows/a2a-validate-reusable.yml
     with:
       mode: v3-full-repo
