@@ -36,6 +36,7 @@ ALLOW_DIRS=( .github cmd integrations internal schemas skill space-template test
 PUBLIC_VALIDATOR_FILES=(
   scripts/check-lane-declarations.sh
   scripts/lib/lane-ungated.txt
+  scripts/lib/gate-lib.sh
   scripts/check_contract_carried_set.sh
   scripts/check_event_writer_receipts.sh
   scripts/check_live_e2e_evidence.sh
@@ -232,6 +233,49 @@ if [ -f "$PUBLISHER" ]; then
     done <<< "$strip_paths"
   done
 fi
+
+# ── 5. A PUBLIC gate must not `source` a file that is not itself public. ──────
+#
+# Check 4 above catches a public file the publisher strips BY NAME. It cannot
+# see the shape that actually shipped: a public script whose DEPENDENCY is
+# private. On 2026-08-12, seven tracked gates in REPO_GATES sourced
+# `scripts/lib/gate-lib.sh`, which STRIP deleted as part of `scripts/lib/`. Each
+# of them dies in the filtered candidate with "No such file or directory" and
+# then "GATE_ROOT: unbound variable", and `make check` refuses on the first —
+# while the private tree is green by construction, because the file is right
+# there.
+#
+# It is the same defect check 4 was written for after the 2026-08-06
+# lane-ungated.txt incident ("it cost a full release cycle to find"), one edge
+# further out in the graph: that time the missing thing WAS the public file,
+# this time it was what the public file reads. Seven gates instead of one, and
+# four of them shipped during P13.
+#
+# The extractor is deliberately literal — a `source "$(dirname ...)/lib/x.sh"`
+# line resolves to `scripts/lib/x.sh` and nothing cleverer. A sourced path this
+# cannot resolve is NOT silently passed: it is flagged, the same refuse-loudly
+# rule the lane declaration parser uses for a construct it cannot read.
+for public_file in "${ALLOW_FILES[@]}"; do
+  case "$public_file" in scripts/*.sh) ;; *) continue ;; esac
+  [ -f "$public_file" ] || continue
+  while IFS= read -r line; do
+    # Only the self-locating form this repo actually writes:
+    #   source "$(dirname "${BASH_SOURCE[0]}")/lib/gate-lib.sh"
+    dep="$(printf '%s' "$line" |
+      sed -n 's|.*\$(dirname "\${BASH_SOURCE\[0\]}")/\([^"]*\)".*|\1|p')"
+    if [ -z "$dep" ]; then
+      # A sourced path this cannot resolve is flagged, never passed silently —
+      # the same refuse-loudly rule the lane parser applies to a construct it
+      # cannot read. If a new form appears, teach the extractor; do not widen
+      # the skip.
+      flag "$public_file has a \`source\` line this check cannot resolve to a literal path, so the boundary cannot be vouched for: $line"
+      continue
+    fi
+    dep="scripts/$dep"
+    in_list "$dep" "${ALLOW_FILES[@]}" ||
+      flag "$public_file sources $dep, which is NOT classified PUBLIC — the gate ships without the file it reads and dies on the candidate's first \`make check\`"
+  done < <(grep -E '^[[:space:]]*(source|\.)[[:space:]]' "$public_file")
+done
 
 if [ "$fail" -ne 0 ]; then
   printf '\nclassify-guard: \033[31mFAIL\033[0m — public/private boundary violated (fixes above).\n' >&2
