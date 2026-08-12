@@ -51,30 +51,69 @@ not drifted from the plan wording it quotes.
 
 ## Sign-off
 
-- **Release tag:** `v0.19.0`
-- **Reviewer:** `Codex`
-- **Date:** `2026-08-04`
+- **Release tag:** `v0.19.10`
+- **Reviewer:** `Claude Code`
+- **Date:** `2026-08-12`
 - [x] Every prose row above is ticked, or an un-ticked row has a written reason
       and a follow-up filed.
-- [x] The `skill-drift` CI job is green on the exact release candidate tree
+- [ ] The `skill-drift` CI job is green on the exact release candidate tree
       under `make check` (confirms the generated
       `reference/**` tree matches the binary/schemas — separate from this
       prose review).
 
-Ticked on 2026-08-05 for candidate `610680b8f481`, whose retained transcript
-carries `WEB_DEPS_READY=true` and `EXIT=0` exactly once each
-(`docs/features/active/operational-confidence-2026-08/audits/`).
+**The second box is deliberately OPEN, and cannot honestly be anything else
+yet: no candidate for `v0.19.10` exists.** It is ticked AFTER the tag, and
+structurally has to be — `skill/` ships in the public projection, so ticking it
+inside a candidate would change the candidate it describes. The box can never
+be true in its own release.
 
-It is ticked AFTER the tag, and structurally has to be: `skill/` ships in the
-public projection, so ticking it inside a candidate would change the candidate
-it describes. The box can never be true in its own release.
+Why that matters rather than being a formality: the private-tree review and
+local gates do not prove the filtered public SHA, and on `v0.19.9` they
+demonstrably did not. The FIRST candidate reddened its own `make check` while
+the private tree was green, over `scripts/lib/` being stripped as a directory.
 
-Why it stays open by default: the private-tree review and local gates do not
-prove the filtered public SHA — and on this release they demonstrably did not.
-The FIRST candidate reddened its own `make check` while the private tree was
-green.
+**What this review was, exactly (v0.19.10).** Not a delta read. It was a whole
+phase — **P13 of `agent-exchange-2026-08`**, whose spec, plan and audit are in
+`docs/features/active/agent-exchange-2026-08/`, and whose subject was that no
+gate in this repository reads a sentence for truth.
 
-**What this review was, exactly.** A delta review against `v0.18.2`, then a
+What it found, in the order it hurts:
+
+- The release's largest user-visible change — `outcome`, `terminal`,
+  `state_since`, `state_by`, `state_event` on every read surface, plus
+  `transition_free` on events — appeared in **no prose page at all**, and
+  twelve further capabilities had fallen through the same hole.
+- The one gate aimed at a prose claim,
+  `TestTroubleshootingEnumeratesEveryDoctorCheck`, was **green while the claim
+  it guards was wrong**: its fixture ran `doctor` with no connected space, so
+  the seventeenth output row never appeared and the documented count of sixteen
+  stayed true inside the fixture.
+- `loops.md` §8.3 step 6 routed agents to `a2a supersede <disputed-XS-id>`, a
+  transition deleted from the table on 2026-08-09 and refused with LFC-001
+  regardless of the row. No grep finds it: every noun in the clause is real.
+- A reader trial of ten agents completed nine unaided; the tenth found
+  `SKILL.md` routing "I owe them the export" to the wrong page while
+  `a2a attach` appeared in no index at all. **Six gates were green on both
+  sides of that fix.** None of them can see a reader sent somewhere
+  right-looking and wrong, which is the standing limit of everything mechanical
+  in this file.
+
+What it built so the next release does not need the same read: a coverage
+ledger (`schemas/prose-coverage.yaml`) whose field universe is **asked of the
+binary** — `a2a __catalog --surfaces --json`, by reflection over the read-surface
+types — so a verb, MCP tool or derived field can no longer ship untaught; a
+roster gate holding this table, `SKILL.md`'s D-015 list, `docs-manifest.json`
+and reachability to one another; and `loops.md` split from 64 KB to 16 KB
+behind a situation-keyed selector, with its three verbatim plan quotations
+byte-pinned before the move.
+
+`P14` then did the same for the rendered surfaces: the demo fixture asserted
+`terminal:false` on all 31 of its artifacts, and the site build read the raw
+fixture while `a2a html --demo` read the derived model.
+
+### What the v0.19.0 review was (kept, because its findings shaped this table)
+
+A delta review against `v0.18.2`, then a
 second, deeper pass on 2026-08-04 after the first one was found to have
 under-read the release's own new surface.
 
