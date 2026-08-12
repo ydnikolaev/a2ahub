@@ -125,7 +125,30 @@ check_provider_tier_deferral() {
     # owner does not hold is a gate that gets deleted the first time it fires —
     # the same failure mode as prose, with more ceremony. Overridable-but-
     # recorded is the version that survives contact with the person it binds.
-    local newest="${uncleared_paths[${#uncleared_paths[@]}-1]}"
+    # The newest record is the one most recently ADDED TO GIT, not the last
+    # element of a filename sort. find_deferral_records() sorts lexically, and
+    # that silently stopped meaning "newest" at v0.19.10: as strings,
+    # "v0.19.9-..." sorts AFTER "v0.19.10-...", so the gate asked the v0.19.9
+    # record to sign for a streak of nine — a signature its author could not
+    # have made and its file has no business carrying. Found on 2026-08-12,
+    # cutting the first release whose patch number has two digits.
+    #
+    # An UNCOMMITTED record is newest by construction: the block above already
+    # counts it as outstanding the moment it exists on disk, precisely so a
+    # release flow can run this gate before committing the record it is about
+    # to ship on. added_at returns empty for it, so it wins outright.
+    local newest="" newest_ts=-1 rec_ts
+    for rec in "${uncleared_paths[@]}"; do
+      rec_ts="$(added_at "$rec")"
+      if [ -z "$rec_ts" ]; then
+        newest="$rec"
+        break
+      fi
+      if [ "$rec_ts" -gt "$newest_ts" ]; then
+        newest_ts="$rec_ts"
+        newest="$rec"
+      fi
+    done
     local signed
     # `|| true` is load-bearing under `set -e`: an unsigned record makes both
     # greps exit non-zero, and a failing command substitution in an assignment
