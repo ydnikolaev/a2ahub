@@ -27,8 +27,8 @@ func TestLoad_CorpusIntegrity(t *testing.T) {
 	// Deliberately hardcoded: this is the tripwire that catches a corpus
 	// file accidentally dropped or mis-ordered. Bump it when you cut a
 	// release — that edit IS the check.
-	if len(all) != 40 {
-		t.Fatalf("Load returned %d entries, want 40: %+v", len(all), all)
+	if len(all) != 41 {
+		t.Fatalf("Load returned %d entries, want 41: %+v", len(all), all)
 	}
 
 	// 0.11.0 is present BEFORE its tag, deliberately: its entries were
@@ -36,7 +36,7 @@ func TestLoad_CorpusIntegrity(t *testing.T) {
 	// actually accurate. Its `released:` date is provisional and is corrected
 	// when the tag is cut — and this tripwire is what forces whoever cuts it
 	// to open the file, so the correction cannot be forgotten.
-	wantVersions := []string{"0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.6.3", "0.6.4", "0.7.0", "0.8.0", "0.9.0", "0.9.1", "0.10.0", "0.11.0", "0.12.0", "0.13.0", "0.15.0", "0.15.1", "0.15.2", "0.16.0", "0.16.1", "0.16.2", "0.16.3", "0.17.0", "0.17.1", "0.18.0", "0.18.1", "0.18.2", "0.19.0", "0.19.1", "0.19.2", "0.19.3", "0.19.4", "0.19.5", "0.19.6", "0.19.7", "0.19.8", "0.19.9", "0.19.10"}
+	wantVersions := []string{"0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.6.3", "0.6.4", "0.7.0", "0.8.0", "0.9.0", "0.9.1", "0.10.0", "0.11.0", "0.12.0", "0.13.0", "0.15.0", "0.15.1", "0.15.2", "0.16.0", "0.16.1", "0.16.2", "0.16.3", "0.17.0", "0.17.1", "0.18.0", "0.18.1", "0.18.2", "0.19.0", "0.19.1", "0.19.2", "0.19.3", "0.19.4", "0.19.5", "0.19.6", "0.19.7", "0.19.8", "0.19.9", "0.19.10", "0.19.11"}
 	standingListEra := false
 	for i, rn := range all {
 		if rn.Version != wantVersions[i] {

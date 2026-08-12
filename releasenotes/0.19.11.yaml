@@ -1,0 +1,68 @@
+schema: release-notes/v1
+version: "0.19.11"
+released: "2026-08-12"
+headline: "The site can publish a release again, and every page got lighter doing it"
+changes:
+  - id: RN-01911-0
+    kind: fix
+    roadmap:
+      visibility: shipped
+      why: >
+        A published release the website never announces is a release most
+        readers never learn about, and it had happened five times.
+    impact: normal
+    subject: "a2ahub.dev publishes the current release again"
+    detail: >
+      v0.19.10 was tagged and its GitHub Release published, and the site build
+      failed with forty-two pages over their size budgets — so a2ahub.dev kept
+      serving v0.19.8. That tag push is the ONLY trigger that deploys the site
+      on a release: the promotion commit touches the space template, which the
+      deploy workflow's path filter excludes. The release shipped and the site
+      did not hear about it, for the fifth time.
+      The release being large was the trigger, not the cause. Two payloads no
+      reader consumes were riding on every page and only crossed a line when a
+      49-note release arrived. The newest release's entire change list was
+      injected into every page that shows a version number — 24 KiB gzipped —
+      while all five consumers read only the version string. The demo payload
+      carried three releases of full prose, 32 KiB gzipped, twice the weight of
+      the whole rest of the demo; it now carries a bounded five entries per
+      release, which is what a panel demonstrating its own shape needs, and
+      says so in its own scope line.
+      Both were deleted rather than budgeted for. Every page is now lighter
+      than it was BEFORE v0.19.10: the front page 48 to 23 KiB, the docs index
+      54 to 30, features 57 to 33, the guided dashboard example 87 to 39, the
+      changelog 65 to 41. No page budget was raised.
+    affects: ["a2ahub.dev"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. If you read a2ahub.dev between 2026-08-07 and this
+        release, the changelog you saw ended at v0.19.8; v0.19.9 and v0.19.10
+        are both in it now.
+  - id: RN-01911-1
+    kind: fix
+    roadmap:
+      visibility: omit
+      why: >
+        Repository CI economics and a publish-boundary backstop — neither is a
+        product surface.
+    impact: low
+    subject: "Cutting a release stops running the same CI three times"
+    detail: >
+      The product CI workflow listened to every push with no branch or tag
+      filter. A release pushes the candidate branch, then main, then the tag —
+      three pushes of one commit — so the full gate suite ran three times on
+      the same code, twice repeating a verdict already given. Tags no longer
+      trigger it; the release workflow owns the tag and has its own trigger.
+      Candidate branches still do, deliberately: that run happens before
+      promotion, which is the only moment its verdict can still stop a release.
+      Separately, the public repository's publish-boundary backstop still
+      listed a shared gate helper as private after it was published, and
+      reddened the default branch a minute after the v0.19.10 tag. It was the
+      fifth restatement of one list, and the fifth to go stale.
+    affects: ["repository CI"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. No product behaviour changes; this is the repository's
+        own automation.
