@@ -1434,3 +1434,77 @@ changes:
       why: >
         Nothing to do. `__catalog` is hidden and machine-consumed; no agent or
         operator is meant to call it directly.
+  - id: RN-01910-48
+    kind: fix
+    roadmap:
+      visibility: shipped
+      why: >
+        The demo is how most people first see what a2ahub does, and it was
+        showing the pre-0.19.10 reading of every artifact in the release that
+        changed it.
+    impact: normal
+    subject: "The demo dashboard reports what the domain says a state means"
+    detail: >
+      `a2a html --demo` renders a hand-maintained fixture whose job is to cover
+      every type and state the dashboard can draw. It predates this release's
+      own headline fields, and `terminal` has no `omitempty` — so the demo
+      asserted `terminal: false` on all 31 of its artifacts, including a
+      `closed` question and a `cancelled` work request, both of which the
+      domain calls terminal. Absent would have been a gap; `false` was a wrong
+      answer, in the showcase for the release that added the right one.
+      The fixture now derives them. Outcome and terminality are asked of the
+      same `fold` functions the live dashboard calls for a real artifact, so a
+      demo row cannot disagree with the product about its own state. The three
+      state-provenance fields — since when, by whom, which event — are read off
+      the fixture's own events, skipping any event the fixture flags, because
+      an illegal or unauthorized transition changes nothing and must not claim
+      authorship of a state it never moved. Where the fixture states no
+      state-moving event, all three stay absent rather than being invented,
+      which is the same answer the real read model gives.
+      Visibly, one artifact detail changes its verdict: a cancelled work
+      request read "Document final · no protocol move is owed" and now reads
+      "Document cancelled". Finished and abandoned are different facts, and
+      telling them apart is what this release is for.
+      The public dashboard example on a2ahub.dev had a second copy of the same
+      problem, from the other direction: the site build read the RAW fixture
+      while the local dashboard rendered the derived model, so one fixture
+      produced two answers and the site knew less than the binary did. The site
+      now consumes the derived model directly rather than re-deriving anything
+      in the browser — a browser deciding what a state means is the defect this
+      release removes.
+    affects: ["a2a html --demo", "a2a dashboard --demo", "a2ahub.dev dashboard example"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. The demo fixture is synthetic and no connected space is
+        involved; a real space was always read through the live path, which has
+        carried these fields since they shipped.
+  - id: RN-01910-49
+    kind: fix
+    roadmap:
+      visibility: shipped
+      why: >
+        A published roadmap that calls a released capability ungated is a
+        factual error about the product, not a cosmetic lag.
+    impact: low
+    subject: "The roadmap's text projection stops contradicting the roadmap"
+    detail: >
+      a2ahub.dev serves a Markdown projection of each page for agents and other
+      machine readers. The roadmap's projection carried a hand-typed heading —
+      "Proposal — verified data transfer between agents and systems … it has no
+      release target" — while the page it projects had already moved that
+      capability into Shipped and renamed the open proposal to the autonomous
+      delivery loop. So one page said, in two places, that verified data
+      transfer both shipped and had no release target, and the machine-readable
+      half was the wrong one.
+      The heading and its summary are now read from the same source the page
+      renders, and a stale needle fails the build instead of silently keeping
+      yesterday's wording.
+    affects: ["a2ahub.dev/roadmap.md"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. If you consumed `roadmap.md` and recorded that verified
+        data transfer had no release target, that reading was wrong from
+        v0.19.10's own content onward — the delivery-and-verdict loop ships in
+        this release line.
