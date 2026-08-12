@@ -49,7 +49,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check test check-validators lane lane-run lane-declarations web-quality _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness loop-coverage human-gates loop-reachability prose-roster release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
+.PHONY: check test check-validators lane lane-run lane-declarations web-quality _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -60,7 +60,7 @@
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := spec-verify-refs lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus view-vocabulary pendency-uniqueness loop-coverage human-gates loop-reachability prose-roster release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline-check
+REPO_GATES := spec-verify-refs lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus view-vocabulary pendency-uniqueness loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline-check
 
 _print-repo-gates:
 	@echo "$(REPO_GATES)"
@@ -155,6 +155,14 @@ human-gates: ## loops.md's human-gated verb roster equals the binary's human_gat
 
 prose-roster: ## Every hand-maintained skill page is registered in all five rosters, and no generated page is (P13 AC6).
 	@bash scripts/check-prose-roster.sh
+
+# In REPO_GATES since the ledger went green. It was held out for exactly as long
+# as it reded: a gate in the ceiling that cannot pass breaks every commit, and a
+# gate with no recipe is what `check-lane-declarations` refuses — and did refuse,
+# on this very script, which is the repo asserting this phase's own thesis
+# against the phase.
+prose-coverage: ## Every command, MCP tool and derived read-surface field the binary reports is taught or structurally declared (P13 AC5).
+	@bash scripts/check-prose-coverage.sh
 
 loop-reachability: ## Every Concepts/Reference/Authoring manifest page is reachable from loops.md alone, transitively (P7 AC5).
 	@bash scripts/check-loop-reachability.sh
