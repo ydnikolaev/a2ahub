@@ -29,13 +29,31 @@ func TestPromptDocsResolveInTheShippedSkill(t *testing.T) {
 			t.Errorf("%s points at %q, which is not in the shipped skill: %v", kind, doc, err)
 		}
 	}
-	if _, err := fs.Stat(skill.Files, "a2ahub/loops.md"); err != nil {
-		t.Fatalf("every prompt cites loops.md, which is not in the shipped skill: %v", err)
-	}
+	// Each pointer must resolve: the page it names has to EXIST in the shipped
+	// skill and actually carry the § it cites.
+	//
+	// This used to assert `strings.HasPrefix(…, "loops.md §")` and nothing
+	// else. On 2026-08-12 P13 split loops.md into eight pages; all four
+	// pointers went on naming a file the sections had left, and this test
+	// stayed green — a prefix check cannot tell a live pointer from a dead
+	// one, which is the whole defect class this epic is named for, sitting
+	// inside the guard against it.
 	for _, kind := range []fold.Kind{fold.KindContract, fold.KindQuestion} {
 		for _, outgoing := range []bool{true, false} {
-			if !strings.HasPrefix(promptLoop(kind, outgoing), "loops.md §") {
-				t.Errorf("promptLoop(%s, outgoing=%v) does not name a loops.md section", kind, outgoing)
+			pointer := promptLoop(kind, outgoing)
+			page, rest, ok := strings.Cut(pointer, " §")
+			if !ok {
+				t.Errorf("promptLoop(%s, outgoing=%v) = %q, which names no § section", kind, outgoing, pointer)
+				continue
+			}
+			body, err := fs.ReadFile(skill.Files, "a2ahub/"+page)
+			if err != nil {
+				t.Errorf("promptLoop(%s, outgoing=%v) points at %q, which is not in the shipped skill: %v", kind, outgoing, page, err)
+				continue
+			}
+			section, _, _ := strings.Cut(rest, " ")
+			if !strings.Contains(string(body), "## §"+section) {
+				t.Errorf("promptLoop(%s, outgoing=%v) = %q, but %s carries no `## §%s` heading", kind, outgoing, pointer, page, section)
 			}
 		}
 	}

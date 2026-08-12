@@ -111,11 +111,6 @@ func TestDocs_GFMTablesRender(t *testing.T) {
 // autonomous and AI-speed rather than silently borrowing human review SLAs.
 func TestSkillDeadlinePolicy(t *testing.T) {
 	t.Parallel()
-	source, err := fs.ReadFile(skill.Files, "a2ahub/loops.md")
-	if err != nil {
-		t.Fatalf("read loops.md: %v", err)
-	}
-	policy := string(source)
 	for _, required := range []string{
 		"`created` calendar date +1 day",
 		"`priority: p1`",
@@ -123,19 +118,54 @@ func TestSkillDeadlinePolicy(t *testing.T) {
 		"human to choose a routine deadline",
 		"external, non-agent constraint",
 	} {
-		if !strings.Contains(policy, required) {
-			t.Errorf("deadline policy is missing %q", required)
+		requireSomewhereInSkillTree(t, "deadline policy", required)
+	}
+}
+
+// requireSomewhereInSkillTree asserts that `want` appears in at least one
+// markdown file of the embedded skill tree, and names every file it searched
+// when it does not.
+//
+// It searches the TREE rather than a named page on purpose. Both callers below
+// used to read "a2ahub/loops.md" by fixed path, and on 2026-08-12 P13 split
+// that 64 KB page into eight — every asserted string survived byte-for-byte in
+// skill/a2ahub/loops/send.md, and both tests went red anyway. A test that
+// pins WHERE a rule is written, when what it means to guard is THAT the rule is
+// written, breaks on every reorganisation and teaches its next reader to
+// weaken it. The same reasoning is written out at length in
+// internal/e2e/skillverbatim_test.go, which pins the verbatim plan quotations
+// the same way and survived the same split untouched.
+func requireSomewhereInSkillTree(t *testing.T, policy, want string) {
+	t.Helper()
+	var searched []string
+	found := false
+	err := fs.WalkDir(skill.Files, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".md") {
+			return err
 		}
+		searched = append(searched, path)
+		body, readErr := fs.ReadFile(skill.Files, path)
+		if readErr != nil {
+			return readErr
+		}
+		if strings.Contains(string(body), want) {
+			found = true
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk embedded skill tree: %v", err)
+	}
+	if len(searched) == 0 {
+		t.Fatal("embedded skill tree holds no markdown files — the walk found nothing to search")
+	}
+	if !found {
+		t.Errorf("%s is missing %q — not found in any of the %d markdown files in the embedded skill tree", policy, want, len(searched))
 	}
 }
 
 func TestSkillCorrectionPolicy(t *testing.T) {
 	t.Parallel()
-	source, err := fs.ReadFile(skill.Files, "a2ahub/loops.md")
-	if err != nil {
-		t.Fatalf("read loops.md: %v", err)
-	}
-	policy := string(source)
 	for _, required := range []string{
 		"A submitted artifact is immutable",
 		"a2a note --note <clarification> <id>",
@@ -151,9 +181,7 @@ func TestSkillCorrectionPolicy(t *testing.T) {
 		// where it can least afford to.
 		"a2a supersede <old-id> --refs <new-id>",
 	} {
-		if !strings.Contains(policy, required) {
-			t.Errorf("correction policy is missing %q", required)
-		}
+		requireSomewhereInSkillTree(t, "correction policy", required)
 	}
 }
 

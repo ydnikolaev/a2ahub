@@ -68,17 +68,24 @@ var promptAskFirst = map[string]bool{
 // two loops depending on which end of it you stand at; everything else splits
 // on direction, because "something arrived for me" and "I need something" are
 // different jobs regardless of type.
+// The page names below are the pages those sections actually live on since
+// P13 split loops.md on 2026-08-12. The `§` is what makes the pointer usable
+// either way — every loop page keeps its section number, and loops.md's own
+// selector table maps `§` to page — but naming the file the reader must open
+// is the difference between a pointer and a riddle. `prompt_test.go` asserts
+// only the `§` prefix, so nothing here was red: the strings were true-looking,
+// inert, and pointed at a page the sections had left.
 func promptLoop(kind fold.Kind, outgoing bool) string {
 	if kind == fold.KindContract {
 		if outgoing {
-			return "loops.md §8.4 (contract-owner loop)"
+			return "loops/contract-change.md §8.4 (contract-owner loop)"
 		}
-		return "loops.md §8.4a (consumer loop)"
+		return "loops/contract-change.md §8.4a (consumer loop)"
 	}
 	if outgoing {
-		return "loops.md §8.2 (send loop)"
+		return "loops/send.md §8.2 (send loop)"
 	}
-	return "loops.md §8.3 (receive loop)"
+	return "loops/receive.md §8.3 (receive loop)"
 }
 
 // agentPromptOf selects self's own moves out of one open item's legal next
