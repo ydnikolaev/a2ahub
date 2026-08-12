@@ -502,39 +502,6 @@ check_declared_keys() { # $1 = yaml, $2 = universe(nl, sorted)
   done
 }
 
-# check_classes walks EVERY class named in $yaml's own `classes:` map (never
-# only the ones a member happened to reference) and reds:
-#   - a class whose reason is blank (same "an exemption without a reason
-#     reads as a decision" rule declared: applies per-member, applied once
-#     per class here rather than N times per member that cites it);
-#   - a class whose reason READS AS A DEFERRAL, through the SAME
-#     is_deferral_reason detector declared: reasons are checked against —
-#     never a second, forked rule for the same question;
-#   - a class defined here but cited by no member's declared: row (a dead
-#     exemption is the same defect as a stale rule: nothing gates it, and
-#     nothing would notice if its own reason quietly rotted).
-# $2 is the newline list of class names the per-member walk in run_check
-# actually resolved a `declared: "class: <name>"` row against — the ONLY
-# record of "used", since a class carries no back-reference of its own.
-check_classes() { # $1 = yaml, $2 = used class names(nl)
-  local yaml="$1" used="$2" name reason
-  while IFS= read -r name; do
-    [ -z "$name" ] && continue
-    reason="$(ledger_value "$yaml" "classes:" "$name")"
-    if [ -z "$(printf '%s' "$reason" | tr -d '[:space:]')" ]; then
-      gate_fail "prose-coverage: class \"$name\" in $yaml has a blank reason — an exemption without a reason reads as a decision"
-      continue
-    fi
-    if is_deferral_reason "$reason"; then
-      gate_fail "prose-coverage: class \"$name\"'s reason reads as a DEFERRAL, not a structural reason: \"$reason\" — a capability with no prose is a gap, not something to schedule"
-      continue
-    fi
-    if ! printf '%s\n' "$used" | grep -qxF "$name"; then
-      gate_fail "prose-coverage: class \"$name\" is defined in $yaml's classes: but is used by no member's declared: row — a dead exemption is the same defect as a stale rule"
-    fi
-  done < <(ledger_keys "$yaml" "classes:")
-}
-
 # run_check walks the whole derived universe against
 # schemas/prose-coverage.yaml and reports. $1 is the root to read the yaml
 # and skill/a2ahub pages from (GATE_ROOT for a real run; a fixture directory

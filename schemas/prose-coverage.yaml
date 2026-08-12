@@ -146,8 +146,10 @@ covered:
   cmd:cancel: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
   cmd:close: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
   cmd:connect: "onboarding.md#Onboarding a new system into an existing space (§9.2)"
+  cmd:disconnect: "onboarding.md#Onboarding a new space, org, or offboarding (§9.2)"
   cmd:await: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
   cmd:contract activate: "loops/first-integration.md#§8.4b First-integration loop — producer half (a NEW contract, through go-live)"
+  cmd:contract check: "loops/first-integration.md#§8.4c First-integration loop — consumer half (through go-live)"
   cmd:contract adopt: "loops/contract-change.md#§8.4a Consumer loop — \"a contract I depend on changed\""
   cmd:contract deprecate: "reference/contract-versions.md#Retiring a line, both sides"
   cmd:contract diff: "loops/contract-change.md#§8.4a Consumer loop — \"a contract I depend on changed\""
@@ -233,6 +235,16 @@ covered:
   field:cli-inbox:outcome: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
   field:cli-outbox:outcome: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
   field:mcp-item:outcome: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
+  # `state` (bare, not the state_by/state_event/state_since trio above) is
+  # the fold's OWN current-state string — loops.md's "Condensed §0/§3
+  # semantics" heading carries the §3.4 sentence this row rests on: "State
+  # is a fold, not a field ... the current state is a deterministic fold of
+  # those events" — every occurrence of bare `state` across every surface
+  # this ledger derives from means exactly that fold result, so one heading
+  # covers all five rows below without over-claiming.
+  field:cli-inbox:state: "loops.md#Condensed §0/§3 semantics"
+  field:cli-outbox:state: "loops.md#Condensed §0/§3 semantics"
+  field:mcp-item:state: "loops.md#Condensed §0/§3 semantics"
   field:cli-inbox:state_by: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
   field:cli-outbox:state_by: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
   field:mcp-item:state_by: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
@@ -261,6 +273,7 @@ covered:
   field:cli-show:cause_owner: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
   field:cli-show:expires_at: "reference/data-exchange-refusals.md#What each refusal means, and what to do"
   field:cli-show:reason_code: "loops.md#Condensed §0/§3 semantics"
+  field:cli-show:state: "loops.md#Condensed §0/§3 semantics"
   field:cli-show:transition_free: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
   field:cli-show:verdict: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
   field:cli-show:verdicts: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
@@ -274,6 +287,7 @@ covered:
   field:cli-thread:operational_items: "loops/first-integration.md#§8.4c First-integration loop — consumer half (through go-live)"
   field:cli-thread:outcome: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
   field:cli-thread:reason_code: "loops.md#Condensed §0/§3 semantics"
+  field:cli-thread:state: "loops.md#Condensed §0/§3 semantics"
   field:cli-thread:state_by: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
   field:cli-thread:state_event: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
   field:cli-thread:state_since: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
@@ -309,14 +323,11 @@ declared_classes:
       - field:cli-thread:deliveries
       - field:cli-thread:next_actions
   self-describing-scalar:
-    reason: "a bare identifier, timestamp, free-text value, or boolean whose field name states its own meaning in full — an id, an `at` timestamp, a `note`, a `new` flag — carrying no derived interpretation the way `outcome`/`state_since` do; reading the key name IS reading the field, so a prose gloss would only restate the name."
+    reason: "a bare identifier, timestamp, or free-text value whose field name states its own meaning in full — an id, an `at` timestamp, a `note` — carrying no derived interpretation the way `outcome`/`state_since` do; reading the key name IS reading the field, so a prose gloss would only restate the name. `new` is deliberately NOT a member here despite fitting this shape: it is a fold-adjacent boolean (Store.toItem's `!seen`) this ledger's own owner named as one that must stay individually resolved rather than classed — see field:cli-inbox:new's own absence below."
     members:
       - field:cli-inbox:name
-      - field:cli-inbox:new
       - field:cli-outbox:name
-      - field:cli-outbox:new
       - field:mcp-item:name
-      - field:mcp-item:new
       - field:cli-show:at
       - field:cli-show:body
       - field:cli-show:conforms_to
@@ -347,12 +358,10 @@ declared_classes:
       - field:cli-thread:resolved_from
       - field:cli-thread:rule
   structural-reference-and-vocabulary:
-    reason: "a cross-reference id, positional index, enum/vocabulary value, or nested identity sub-object (an actor's or producer's own kind/name/system/model/session/tool, a receipt-mismatch's own scope) whose correct reading depends on WHICH other field or object it is attached to — that relational fact is the surface's own JSON shape (which event an id names, whose session a field belongs to), not a derived domain judgment the way outcome/state_since/terminal are; the vocabulary values themselves (transition names, work modes) are taught as the CLI verbs and checkpoint modes the loop pages and reference/work-reporting.md already carry."
+    reason: "a cross-reference id, positional index, or nested identity sub-object (an actor's or producer's own kind/name/system/model/session/tool) whose correct reading depends on WHICH other field or object it is attached to — that relational fact is the surface's own JSON shape (which event an id names, whose session a field belongs to), not a derived domain judgment the way outcome/state_since/terminal are; the vocabulary values themselves (transition names, work modes) are taught as the CLI verbs and checkpoint modes the loop pages and reference/work-reporting.md already carry. `actual`, `cause` and `scope` are deliberately NOT members despite living in the same struct as several of these: they are internal/cache.ReceiptMismatch's own comparison fields — the same 'does the claim match reality' judgment as `claimed`/`consistency`/`digest_mismatch`, none of which this ledger classes away — so they stay individually resolved, and today unresolved, below."
     members:
       - field:cli-show:actor_model
       - field:cli-show:actor_session
-      - field:cli-show:actual
-      - field:cli-show:cause
       - field:cli-show:events
       - field:cli-show:flags
       - field:cli-show:index
@@ -365,15 +374,12 @@ declared_classes:
       - field:cli-show:ref
       - field:cli-show:retention
       - field:cli-show:role
-      - field:cli-show:scope
       - field:cli-show:session
       - field:cli-show:system
       - field:cli-show:tool
       - field:cli-show:transition
-      - field:cli-thread:actual
       - field:cli-thread:attempt
       - field:cli-thread:by
-      - field:cli-thread:cause
       - field:cli-thread:chain
       - field:cli-thread:commit_sequence
       - field:cli-thread:entry_path
@@ -391,7 +397,6 @@ declared_classes:
       - field:cli-thread:producer
       - field:cli-thread:record
       - field:cli-thread:ref
-      - field:cli-thread:scope
       - field:cli-thread:seq
       - field:cli-thread:session
       - field:cli-thread:status
