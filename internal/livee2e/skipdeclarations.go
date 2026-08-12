@@ -72,5 +72,24 @@ func skipDeclarations() []skipDeclaration {
 				"is never a silent hole: TestSkipDeclarationsCoverEverySkip pins that this exact " +
 				"skip, and no other, is the one this reason covers.",
 		},
+		{
+			File:       "privatecorpus_test.go",
+			Func:       "skipWithoutPrivateCorpus",
+			Occurrence: 1,
+			Reason: "NOT a live-provider skip either, and it fires in exactly one kind of tree: " +
+				"the FILTERED release candidate. Five tests in this package hold the shipped " +
+				"conformance catalogue against the corpus that declares it — spec files under " +
+				"docs/features/**, incident evidence under docs/inbox/** — and `docs/` is " +
+				"STRIPPED from the public projection. A tree that carries the catalogue but " +
+				"not the corpus cannot have drifted from that corpus, so the honest verdict " +
+				"there is \"not judged here\", the same answer the Makefile gives for five " +
+				"presence-gated private gates. In the PRIVATE tree every path is present and " +
+				"every one of those tests runs, which `make check` re-proves on each run. " +
+				"Added 2026-08-12 after reconstructing the candidate and discovering the six " +
+				"reads would fail its own `make check` in the Go tier — introduced 2026-08-09 " +
+				"to 08-11, with no candidate cut in between to execute them. The helper stats " +
+				"the exact path its caller is about to read and skips ONLY on absence; every " +
+				"other read error stays fatal.",
+		},
 	}
 }
