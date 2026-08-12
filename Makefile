@@ -179,7 +179,17 @@ loop-reachability: ## Every Concepts/Reference/Authoring manifest page is reacha
 coverage: ## Same one-artifact race/coverage path as `check`, without static/vet/lint phases.
 	@bash scripts/verify.sh coverage
 
-release-preflight: ## MUST pass before cutting a release tag: version free on the release remote + every space-template reusable pin resolves to a tag that carries the workflow. Needs network — NOT in `check`. Usage: make release-preflight VERSION=v0.6.0
+# vulncheck is a PREREQUISITE, not a copy of its logic: the allowlist gating
+# lives in that recipe and stays stated once. It is here because nothing else
+# reached a release. govulncheck.yml fires on schedule, on pull_request over Go
+# paths, and on dispatch — never on push to main, and private main has no PR
+# flow, so release work never triggers it. Measured on 2026-08-12: v0.20.0 was
+# cut with the check run only because a human noticed a Dependabot banner on an
+# unrelated push. It was green, so nothing shipped broken; the process was the
+# defect. This is the same seam as the site-deploy assertion below it — both
+# need network, both answer "is it safe to cut", and this target is where that
+# question already lives.
+release-preflight: vulncheck ## MUST pass before cutting a release tag: no NEW called vulnerabilities + version free on the release remote + every space-template reusable pin resolves to a tag that carries the workflow. Needs network — NOT in `check`. Usage: make release-preflight VERSION=v0.6.0
 	@test -n "$(VERSION)" || { echo "release-preflight: set VERSION, e.g. make release-preflight VERSION=v0.6.0"; exit 2; }
 	@bash scripts/check-roadmap-release-decisions.sh "$(VERSION)"
 	@bash scripts/release-preflight.sh "$(VERSION)"
