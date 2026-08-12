@@ -195,6 +195,35 @@ type CheckStatusResult struct {
 	HeadSHA string
 }
 
+// RefStatusRequest identifies a branch/ref whose required-check state is
+// queried directly — as opposed to StatusRequest, which is always scoped to
+// a PR number.
+type RefStatusRequest struct {
+	Repo Repo
+	// Ref is a branch name (e.g. a space's default branch) or any git ref
+	// GitHub's check-runs endpoint accepts wherever it accepts a commit SHA.
+	Ref        string
+	Credential Credential
+}
+
+// RefStatusReader is an OPTIONAL read capability — deliberately not folded
+// into Host.CheckStatus and not promoted to a 6th Host primitive (ADR-003's
+// shape, spec 05 §T1's 5-primitive core stays fixed). It exists because
+// doctor's default-branch health check (R4c, fb-20260812-ee6dcd; ADR-011
+// Consequences: "a validator whose own verdict nothing surfaces has stopped
+// being a gate and become a log entry") has no PR to scope a StatusRequest
+// to — the verdict it must surface is the post-merge required check run on
+// the branch itself, not on any open pull request.
+//
+// GitHub's check-runs route accepts a branch name wherever it accepts a
+// commit SHA, so this is the SAME required-check read CheckStatus performs
+// (see GitHubHost.checkStatusForRef), merely selected by ref instead of by
+// PR head — hence CheckStatusResult is reused unchanged rather than this
+// interface growing its own result type.
+type RefStatusReader interface {
+	RefCheckStatus(ctx context.Context, req RefStatusRequest) (CheckStatusResult, error)
+}
+
 // ReviewStatusResult reports the CODEOWNERS-required review approval state
 // for a PR touching a gated path (spec 05 §T1, §4.2 CODEOWNERS rule).
 type ReviewStatusResult struct {

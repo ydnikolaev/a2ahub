@@ -15,7 +15,7 @@ func TestTroubleshootingEnumeratesEveryDoctorCheck(t *testing.T) {
 	t.Parallel()
 	cmd := NewDoctorCommand(host.NewFakeHost(), "0.16.0", "/unused/project.yaml", "/unused/machine.yaml", t.TempDir())
 	// A connected space is REQUIRED here, not incidental: with zero spaces
-	// doctorVisibilityRows returns nothing and the seventeenth printed row
+	// doctorVisibilityRows returns nothing and the eighteenth printed row
 	// (`repository visibility`) never appears, which is exactly how this
 	// gate went blind to a wrong per-space cardinality claim in the doc.
 	cmd.loadProjectConfig = func(string) (space.ProjectConfig, error) {
@@ -30,7 +30,7 @@ func TestTroubleshootingEnumeratesEveryDoctorCheck(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	// Do NOT gate on the exit code. With a connected space configured
-	// against a fake host and no real credential, several of the sixteen
+	// against a fake host and no real credential, several of the seventeen
 	// checks legitimately FAIL (credentials, CI presence, ...) and doctor
 	// returns 1 — that is expected, not a test failure. This test is about
 	// the roster the binary prints, not about a clean bill of health.
@@ -51,7 +51,7 @@ func TestTroubleshootingEnumeratesEveryDoctorCheck(t *testing.T) {
 		}
 		// Every check line carries one of these four statuses (repository
 		// visibility never FAILs but can read PASS/WARN/UNVERIFIED; the
-		// fixed sixteen only ever read PASS/FAIL). Filtering on the status
+		// fixed seventeen only ever read PASS/FAIL). Filtering on the status
 		// prefix, rather than reusing the old "PASS only" cut, is what lets
 		// this test see checks that fail against the fake host instead of
 		// silently dropping them from the roster.
@@ -80,17 +80,17 @@ func TestTroubleshootingEnumeratesEveryDoctorCheck(t *testing.T) {
 		}
 		fixedNames[rosterName] = true
 	}
-	if len(fixedNames) != 16 {
-		t.Fatalf("doctor emitted %d fixed checks (%v), want 16; update the documented count and this tripwire together", len(fixedNames), fixedNames)
+	if len(fixedNames) != 17 {
+		t.Fatalf("doctor emitted %d fixed checks (%v), want 17; update the documented count and this tripwire together", len(fixedNames), fixedNames)
 	}
 	// One connected space was configured above, so exactly one visibility
 	// row must have been printed (and checked against the doc) — a count of
 	// zero would mean the fixture regressed back to proving nothing about
-	// the seventeenth row.
+	// the eighteenth row.
 	if visibilityRows != 1 {
 		t.Fatalf("doctor emitted %d repository-visibility rows, want 1 (one connected space was configured)", visibilityRows)
 	}
-	if !strings.Contains(doc, "## The sixteen checks") {
+	if !strings.Contains(doc, "## The seventeen checks") {
 		t.Fatal("troubleshooting doctor-count heading does not match the executable list")
 	}
 }

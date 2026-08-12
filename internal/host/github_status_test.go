@@ -293,6 +293,61 @@ func TestCheckStatusSingleMatchIsNotAmbiguous(t *testing.T) {
 	}
 }
 
+// TestRefCheckStatusUsesTheRefDirectlyAndSharesSelection proves two things
+// at once: RefCheckStatus queries check-runs for the REF it was given (no PR
+// lookup — unlike CheckStatus, which resolves a head SHA first), and it
+// resolves the required run through the exact same selection logic
+// (compound-over-flat) as CheckStatus, by hitting the same P33 compound/flat
+// ambiguity this file's other tests already exercise for CheckStatus.
+func TestRefCheckStatusUsesTheRefDirectlyAndSharesSelection(t *testing.T) {
+	t.Parallel()
+
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/repos/acme/space/commits/main/check-runs":
+			gotPath = r.URL.Path
+			_ = json.NewEncoder(w).Encode(map[string]any{"check_runs": []map[string]any{
+				{"name": "a2a-validate", "status": "completed", "conclusion": "failure"},
+				{"name": "a2a-validate / validate", "status": "completed", "conclusion": "success"},
+			}})
+		default:
+			t.Errorf("unexpected path %s — RefCheckStatus must query the ref directly, never a PR", r.URL.Path)
+			http.Error(w, "unexpected path", http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewGitHubHost(srv.Client(), srv.URL)
+	got, err := h.RefCheckStatus(context.Background(), RefStatusRequest{
+		Repo: Repo{Owner: "acme", Name: "space"}, Ref: "main",
+	})
+	if err != nil {
+		t.Fatalf("RefCheckStatus: %v", err)
+	}
+	if gotPath != "/repos/acme/space/commits/main/check-runs" {
+		t.Fatalf("queried path = %q, want the ref (\"main\") in the commits/{ref}/check-runs path", gotPath)
+	}
+	if got.Name != "a2a-validate / validate" || got.Conclusion != "success" {
+		t.Fatalf("RefCheckStatus = %+v, want the compound run to win — same selection as CheckStatus", got)
+	}
+}
+
+func TestRefCheckStatusRejectsAnIncompleteRequest(t *testing.T) {
+	t.Parallel()
+	h := NewGitHubHost(nil, "http://unused.invalid")
+	for name, req := range map[string]RefStatusRequest{
+		"no owner": {Repo: Repo{Name: "r"}, Ref: "main"},
+		"no name":  {Repo: Repo{Owner: "o"}, Ref: "main"},
+		"no ref":   {Repo: Repo{Owner: "o", Name: "r"}},
+	} {
+		if _, err := h.RefCheckStatus(context.Background(), req); !errors.Is(err, ErrInvalidRequest) {
+			t.Errorf("%s: want ErrInvalidRequest, got %v", name, err)
+		}
+	}
+}
+
 func TestReviewStatusFoldsLatestPerReviewer(t *testing.T) {
 	t.Parallel()
 

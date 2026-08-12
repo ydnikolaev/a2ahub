@@ -186,6 +186,7 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		{"space scaffolding current", func() (bool, string) { return c.doctorCheckScaffoldingCurrent(ctx, cfg, machine) }},
 		{"auto-merge enabled", func() (bool, string) { return c.doctorCheckAutoMerge(ctx, cfg, machine) }},
 		{"stuck green PRs", func() (bool, string) { return c.doctorCheckStuckGreenPRs(ctx, cfg, machine) }},
+		{"default branch healthy", func() (bool, string) { return c.doctorCheckDefaultBranchHealthy(ctx, cfg, machine) }},
 		{"codeowners resolvable", func() (bool, string) { return c.doctorCheckCodeownersResolvable(ctx, cfg, machine) }},
 		{"threads intact", func() (bool, string) { return c.doctorCheckThreadsIntact(cfg, machine) }},
 		{"skipped mirror files", func() (bool, string) { return c.doctorCheckSkippedFiles(ctx, cfg, machine) }},
@@ -918,6 +919,25 @@ func (c *DoctorCommand) doctorCheckAutoMerge(ctx context.Context, cfg space.Proj
 	return true, ""
 }
 
+// doctorResolveSpaceCredential resolves ref's write credential the way every
+// network-backed doctor check needs it: an optional machine-config credential
+// reference is parsed (a malformed one is treated as absent rather than a
+// hard error — the read this feeds is advisory-on-failure everywhere it is
+// used, see doctorCheckStuckGreenPRs/doctorCheckDefaultBranchHealthy) and
+// handed to c.resolveCredential. This is the byte-identical block those two
+// checks shared before this extraction; doctorCheckAutoMerge and
+// doctorCheckCodeownersResolvable keep their own copies untouched — folding
+// them in is out of this change's scope.
+func (c *DoctorCommand) doctorResolveSpaceCredential(ctx context.Context, ref space.Ref, machine space.MachineConfig) (host.Credential, error) {
+	var parsedRef space.CredentialReference
+	if raw, present := machine.Credentials[ref.ID]; present {
+		if parsed, err := space.ParseCredentialReference(raw); err == nil {
+			parsedRef = parsed
+		}
+	}
+	return c.resolveCredential(ctx, space.CredentialEnvVar(ref.ID), parsedRef)
+}
+
 func (c *DoctorCommand) doctorCheckStuckGreenPRs(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
 	if len(cfg.Spaces) == 0 {
 		return true, ""
@@ -934,13 +954,7 @@ func (c *DoctorCommand) doctorCheckStuckGreenPRs(ctx context.Context, cfg space.
 			unverifiable = append(unverifiable, ref.ID)
 			continue
 		}
-		var parsedRef space.CredentialReference
-		if raw, present := machine.Credentials[ref.ID]; present {
-			if parsed, parseErr := space.ParseCredentialReference(raw); parseErr == nil {
-				parsedRef = parsed
-			}
-		}
-		credential, err := c.resolveCredential(ctx, space.CredentialEnvVar(ref.ID), parsedRef)
+		credential, err := c.doctorResolveSpaceCredential(ctx, ref, machine)
 		if err != nil {
 			unverifiable = append(unverifiable, ref.ID)
 			continue
@@ -982,6 +996,126 @@ func (c *DoctorCommand) doctorCheckStuckGreenPRs(ctx context.Context, cfg space.
 	}
 	if len(unverifiable) > 0 {
 		return true, " · stuck-green state unverified for " + strings.Join(unverifiable, ", ")
+	}
+	return true, ""
+}
+
+// doctorDefaultBaseBranch is the space base branch this check reads when
+// nothing more specific is configured. space.Ref (ProjectConfig's connected-
+// space entry) carries no per-space base-branch override — see this check's
+// reported product finding — so there is no dynamic source to read here.
+// This literal mirrors the existing fallback this package already uses at
+// cmd_lifecycle.go, cmd_space.go and cmd_submit.go (each defaults to "main"
+// when SubmitHostConfig.BaseBranch is unset) and cmd/a2a/wire.go's own
+// defaultBaseBranch constant, all of which encode spec §4.2's normative
+// default — this is not a new literal, it is that same convention named
+// once more, in the one file of this package that had not yet needed it.
+const doctorDefaultBaseBranch = "main"
+
+// doctorCheckDefaultBranchHealthy is R4c (fb-20260812-ee6dcd; ADR-011
+// Consequences: "a validator whose own verdict nothing surfaces has stopped
+// being a gate and become a log entry"). `a2a doctor` used to answer
+// fourteen PASS on a space whose default branch had been red for four
+// hours: the post-merge required-check verdict existed (GitHub computed it)
+// but nothing doctor read ever looked at it, because every other check is
+// scoped to an open PR and a red default branch has none. This check reads
+// that verdict directly, over host.RefStatusReader — the same required-check
+// read doctorCheckStuckGreenPRs performs, merely scoped to a branch instead
+// of a PR (see RefStatusReader's doc comment in internal/host/host.go).
+//
+// Outcomes, matching doctorCheckAutoMerge/doctorCheckStuckGreenPRs' shape:
+//   - zero connected spaces -> PASS, empty detail (vacuously nothing to check).
+//   - host wires no RefStatusReader -> PASS with an advisory: a missing
+//     capability is not a red (doctorCheckAutoMerge's own doc comment states
+//     the same reasoning; a gate that reds on something that is not broken
+//     teaches people to stop reading it).
+//   - per space: an unparsable repo URL, a credential-resolution failure, or
+//     the READ itself failing -> UNVERIFIABLE, never FAIL. An unanswerable
+//     question is not evidence the branch is broken.
+//   - no required check run matched the ref at all -> UNVERIFIABLE — there is
+//     no verdict to compare against, the same "no check" case CheckStatus
+//     already reports for a PR with none.
+//   - the matched run's State != "completed" (queued/in_progress) -> PASS
+//     with an advisory: a run in flight has reached no verdict yet, and must
+//     never redden doctor while it is still running.
+//   - State == "completed": Conclusion success/neutral/skipped is healthy;
+//     failure/timed_out/cancelled/action_required is FAIL, naming the space,
+//     the branch, and the conclusion. CheckStatusResult carries no run URL to
+//     name (see this phase's reported deviation) — Name (which check-run
+//     shape answered) is reported instead, the closest evidence this result
+//     type carries.
+//   - any other completed Conclusion (GitHub's check-run vocabulary is not
+//     closed) -> UNVERIFIABLE rather than guessed either way.
+func (c *DoctorCommand) doctorCheckDefaultBranchHealthy(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
+	if len(cfg.Spaces) == 0 {
+		return true, ""
+	}
+	reader, isReader := c.h.(host.RefStatusReader)
+	if !isReader {
+		return true, " · default-branch health unverified: this build wires no ref status reader"
+	}
+
+	var unhealthy, pending, unverifiable []string
+	for _, ref := range cfg.Spaces {
+		owner, name, err := doctorRepoOwnerName(ref.RepoURL)
+		if err != nil {
+			unverifiable = append(unverifiable, ref.ID)
+			continue
+		}
+		credential, err := c.doctorResolveSpaceCredential(ctx, ref, machine)
+		if err != nil {
+			unverifiable = append(unverifiable, ref.ID)
+			continue
+		}
+		status, err := reader.RefCheckStatus(ctx, host.RefStatusRequest{
+			Repo: host.Repo{Owner: owner, Name: name}, Ref: doctorDefaultBaseBranch, Credential: credential,
+		})
+		if err != nil {
+			unverifiable = append(unverifiable, ref.ID)
+			continue
+		}
+		if status.Name == "" {
+			// No required check run matched this ref — nothing to judge,
+			// which is distinct from a run that judged and concluded.
+			unverifiable = append(unverifiable, ref.ID)
+			continue
+		}
+		if status.State != "completed" {
+			pending = append(pending, ref.ID)
+			continue
+		}
+		switch status.Conclusion {
+		case "success", "neutral", "skipped":
+			// healthy — no entry in any list.
+		case "failure", "timed_out", "cancelled", "action_required":
+			unhealthy = append(unhealthy, fmt.Sprintf(
+				"%s: default branch %q's required check (%s) concluded %q",
+				ref.ID, doctorDefaultBaseBranch, status.Name, status.Conclusion,
+			))
+		default:
+			// An unrecognised completed conclusion is not evidence of
+			// brokenness — GitHub's check-run vocabulary is not closed.
+			unverifiable = append(unverifiable, ref.ID)
+		}
+	}
+	sort.Strings(unhealthy)
+	sort.Strings(pending)
+	sort.Strings(unverifiable)
+	if len(unhealthy) > 0 {
+		// A space whose default branch is genuinely red is the failure, even
+		// if a sibling space could not be read — the actionable half wins,
+		// same precedence doctorCheckAutoMerge/doctorCheckStuckGreenPRs use.
+		return false, strings.Join(unhealthy, "; ")
+	}
+	var advisories []string
+	if len(pending) > 0 {
+		advisories = append(advisories, "default-branch check still running for "+strings.Join(pending, ", "))
+	}
+	if len(unverifiable) > 0 {
+		advisories = append(advisories, "default-branch health unverified for "+strings.Join(unverifiable, ", "))
+	}
+	if len(advisories) > 0 {
+		return true, " · " + strings.Join(advisories, "; ")
 	}
 	return true, ""
 }

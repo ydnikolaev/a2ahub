@@ -436,6 +436,30 @@ func (h *GitHubHost) CheckStatus(ctx context.Context, req StatusRequest) (CheckS
 		return CheckStatusResult{}, err
 	}
 
+	return h.checkStatusForRef(ctx, op, req.Repo, headSHA, req.Credential)
+}
+
+// RefCheckStatus implements the OPTIONAL RefStatusReader capability: the same
+// required-check read CheckStatus performs, selected by a caller-supplied ref
+// (e.g. a space's default branch) instead of a PR's head SHA — see
+// RefStatusReader's doc comment for why this exists as a separate optional
+// capability rather than a StatusRequest variant.
+func (h *GitHubHost) RefCheckStatus(ctx context.Context, req RefStatusRequest) (CheckStatusResult, error) {
+	const op = "RefCheckStatus"
+	if req.Repo.Owner == "" || req.Repo.Name == "" || req.Ref == "" {
+		return CheckStatusResult{}, &Error{Op: op, Err: ErrInvalidRequest}
+	}
+	return h.checkStatusForRef(ctx, op, req.Repo, req.Ref, req.Credential)
+}
+
+// checkStatusForRef pages a repo's required-check-run listing for ref (a
+// commit SHA or, equally, a branch name — GitHub's check-runs route accepts
+// either) and selects the required run (selectRequiredCheckRun). Shared by
+// CheckStatus (ref = the PR's head SHA, resolved by the caller) and
+// RefCheckStatus (ref = the caller-supplied ref directly) so the pagination
+// and selection logic — including the page-2 required-check bug this repo
+// already fixed once — cannot drift between the two callers.
+func (h *GitHubHost) checkStatusForRef(ctx context.Context, op string, repo Repo, ref string, credential Credential) (CheckStatusResult, error) {
 	// filter=latest is GitHub's own default (one run per name, the most
 	// recent) — stated explicitly because the selection below depends on it.
 	// The name filter cannot be used (compound P33 names), so page through the
@@ -449,12 +473,12 @@ func (h *GitHubHost) CheckStatus(ctx context.Context, req StatusRequest) (CheckS
 	for page := 1; page <= maxCheckRunPages; page++ {
 		path := fmt.Sprintf(
 			"/repos/%s/%s/commits/%s/check-runs?filter=latest&per_page=%d&page=%d",
-			req.Repo.Owner, req.Repo.Name, headSHA, checkRunsPerPage, page,
+			repo.Owner, repo.Name, ref, checkRunsPerPage, page,
 		)
 		var resp struct {
 			CheckRuns []checkRun `json:"check_runs"`
 		}
-		if err := h.restCall(ctx, op, http.MethodGet, path, req.Credential, nil, &resp); err != nil {
+		if err := h.restCall(ctx, op, http.MethodGet, path, credential, nil, &resp); err != nil {
 			return CheckStatusResult{}, err
 		}
 		runs = append(runs, resp.CheckRuns...)
@@ -463,7 +487,7 @@ func (h *GitHubHost) CheckStatus(ctx context.Context, req StatusRequest) (CheckS
 		}
 		if page == maxCheckRunPages {
 			return CheckStatusResult{}, &Error{
-				Op: op, Input: headSHA,
+				Op: op, Input: ref,
 				Err: fmt.Errorf("%w: check-runs listing exceeded %d pages", ErrRequestFailed, maxCheckRunPages),
 			}
 		}

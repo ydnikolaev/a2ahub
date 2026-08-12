@@ -35,6 +35,7 @@ CI presence: PASS
 space scaffolding current: PASS · the space is behind this binary's template (workflow ref, write floor): ask the space admin to run `a2a space update`
 auto-merge enabled: PASS · auto-merge unverified for <space>: the credential cannot read this repo's settings (a fine-grained token needs "Repository metadata: read")
 stuck green PRs: PASS
+default branch healthy: PASS
 codeowners resolvable: PASS
 threads intact: PASS
 skipped mirror files: PASS
@@ -45,9 +46,9 @@ skill manual current: PASS · no skill installed
 repository visibility [getvisa]: PASS: no observed mismatch
 ```
 
-All sixteen fixed checks, in the order the binary prints them, followed by
+All seventeen fixed checks, in the order the binary prints them, followed by
 one `repository visibility` row per connected space (this project has one,
-`getvisa`) — that row is not one of the fixed sixteen and always prints
+`getvisa`) — that row is not one of the fixed seventeen and always prints
 LAST, after every one of them. **A `PASS` carrying a note is a pass** — do
 not report it as a problem.
 
@@ -94,25 +95,25 @@ violated).
 | `1` | One or more checks failed, OR the local project/machine config could not be loaded (in which case doctor prints a `doctor: cannot load … config` line to stderr before exiting). |
 | `2` | Usage error — including the `--space` flag, which is the v2 admin host-drift diff and is explicitly rejected in v1-min (doctor prints `doctor: --space: v1-min: not available`). |
 
-## The sixteen checks
+## The seventeen checks
 
-`doctor` prints a fixed set of exactly sixteen checks — that fixed count is
+`doctor` prints a fixed set of exactly seventeen checks — that fixed count is
 what this heading names, and it is why the count and the heading are kept in
-lockstep by the test guarding this file. **Each of the sixteen runs once per
+lockstep by the test guarding this file. **Each of the seventeen runs once per
 PROJECT, not once per connected space**: when a check must reason about
 several connected spaces, it folds any per-space detail into a single line
 (`space access` and `credentials`, for example, join per-space failures with
 `; `). They print in the order below, top to bottom, matching `doctor`'s own
 output.
 
-The table carries a seventeenth row, `repository visibility`, because it is
-real output you will see — but it is NOT one of the fixed sixteen and shares
+The table carries an eighteenth row, `repository visibility`, because it is
+real output you will see — but it is NOT one of the fixed seventeen and shares
 neither their order nor their cardinality. It prints ONE row PER CONNECTED
 SPACE, after every fixed check, so it is always LAST in the output and absent
 entirely from a project with no connected spaces. Its printed name carries
 the space id (`repository visibility [getvisa]`), which no other row does.
 
-**So the table below is in output order, all seventeen rows** — read it top to
+**So the table below is in output order, all eighteen rows** — read it top to
 bottom and you are reading `doctor`'s own sequence. That is worth stating
 because it was not true until 2026-08-12: this row sat eighth in the table
 under a sentence promising output order, while the binary printed it last.
@@ -128,6 +129,7 @@ under a sentence promising output order, while the binary printed it last.
 | **space scaffolding current** | Whether the SPACE is behind what THIS binary's embedded template would write — the pinned reusable-workflow ref, `min_binary_version`, and the template-managed files. This is the REVERSE of `versions`, which only asks whether your binary is too old for the space. | **Advisory only — this row never FAILs**, because a behind space still accepts writes; what it costs is a weaker gate. A note means the space's CI may be running an older validator than you think, so a rule your binary enforces locally might not be enforced at merge. The note names who can act: if your credential has push/admin on the space repo it tells you to run `a2a space update` (which opens a PR — a2a changes no repo setting); if it does not, it gives you one sentence to hand the space admin. A note saying it could not be checked means no mirror, an unreadable manifest, or a dev build with no release version to compare against. |
 | **auto-merge enabled** | The space repo's GitHub `allow_auto_merge` setting is ON. It is OFF by default on a freshly created repository. | Every write stalls: `a2a submit` opens a PR and arms auto-merge, so with the setting off the PR sits there and the counterparty never sees the artifact. Enable Settings → General → "Allow auto-merge". **A PASS carrying `· auto-merge unverified` is not a failure** — it means your credential cannot read repo settings (a fine-grained token needs `Repository metadata: read`), so the answer is unknown rather than bad. |
 | **stuck green PRs** | Every historical open PR whose required check is explicitly green has auto-merge armed. | A named PR is green and unmerged but no automatic merge is armed. Doctor prints the exact safe `gh pr merge <n> --auto --repo <owner>/<repo>` remedy and never merges it itself. A PASS carrying `· stuck-green state unverified` means host state or credentials were unavailable, not that no stuck PR exists. |
+| **default branch healthy** | The space's default branch (`main`) is not failing its own post-merge audit — the conclusion of the required check run on that branch, read through the same selection the PR gate uses. | The branch every participant pulls from and merges onto is red, and the detail names the space, the check run that answered, and its conclusion. Fix the branch before merging onto it: every subsequent merge stacks onto an already-failing main. **A PASS carrying `· unverified` or `· still running` is not a failure** — the credential could not read the host, no required check run matched, or a run is still in flight, so the answer is unknown rather than bad. This row exists because it did not: on 2026-08-12 `doctor` answered PASS on every row while a space's default branch had been red for four hours (`fb-20260812-ee6dcd`). |
 | **codeowners resolvable** | Every owner named in the space's `CODEOWNERS` actually resolves — read from GitHub's own `repos/{owner}/{repo}/codeowners/errors`, with the line number. | GitHub **ignores** an owner it cannot resolve rather than rejecting it, so a `CODEOWNERS` naming a team nobody created looks like it gates `/space.yaml` and gates nothing — and code-owner review is the only thing standing behind the file that decides who may write where. A FAIL quotes GitHub's own suggestion, which names all three conditions an owner must meet: the team exists, is publicly visible, and has write access to the repo. Individual logins avoid all three. **A PASS carrying `· CODEOWNERS unverified` is not a failure** — your credential cannot read that endpoint (a fine-grained token needs `Repository metadata: read`), so the answer is unknown rather than bad. |
 | **threads intact** | Every artifact in the space carries a `thread:`, so `a2a thread` can place it in a conversation. | Advisory only — this row never FAILs. A note counts the artifacts written before threads existed and names their spaces. Those predate thread propagation: `a2a respond` refuses to reply to one, and they cannot appear in any thread view. Nothing repairs them in place; a new exchange that references them starts a fresh thread. |
 | **skipped mirror files** | Every `.md` artifact and every event file in each mirror actually decodes, so the read model holds the whole space. | Advisory only — this row never FAILs. A note names each undecodable file and why (`unreadable`, `not-frontmatter-shaped`, `undecodable-yaml`, `no-id`, `unrelativizable-path`). **This is the row to read when a document you know exists does not show up.** A skipped file is missing from `search`, `inbox`, `outbox`, `thread` and `statusline` — `show` still prints it, because that path parses the file itself. Fixable only by whoever owns that file's section, which under diff-authz may not be you. |

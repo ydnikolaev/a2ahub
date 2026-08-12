@@ -30,6 +30,10 @@ type FakeHost struct {
 	// CheckStatusFunc/ReviewStatusFunc override the corresponding method;
 	// unset returns a zero-value success result.
 	CheckStatusFunc func(ctx context.Context, req StatusRequest) (CheckStatusResult, error)
+	// RefCheckStatusFunc overrides the optional RefStatusReader capability
+	// (RefCheckStatus); unset returns the same default green check
+	// CheckStatus reports when no PR-specific state is recorded.
+	RefCheckStatusFunc func(ctx context.Context, req RefStatusRequest) (CheckStatusResult, error)
 	// TokenScopesFunc overrides TokenScopes; nil reports a workflow-capable
 	// classic token (see the method).
 	TokenScopesFunc  func(ctx context.Context, cred Credential) ([]string, bool, error)
@@ -146,6 +150,18 @@ func (f *FakeHost) CheckStatus(ctx context.Context, req StatusRequest) (CheckSta
 	return CheckStatusResult{State: "completed", Conclusion: "success", HeadSHA: "fake-checked-head"}, nil
 }
 
+// RefCheckStatus implements the optional RefStatusReader capability: it
+// delegates to RefCheckStatusFunc, or (default) reports the same green
+// check CheckStatus's own default reports — a fixed head so a fake-backed
+// test is not accidentally gated on a capability probe it never meant to
+// exercise.
+func (f *FakeHost) RefCheckStatus(ctx context.Context, req RefStatusRequest) (CheckStatusResult, error) {
+	if f.RefCheckStatusFunc != nil {
+		return f.RefCheckStatusFunc(ctx, req)
+	}
+	return CheckStatusResult{State: "completed", Conclusion: "success", HeadSHA: "fake-checked-head"}, nil
+}
+
 // ReviewStatus delegates to ReviewStatusFunc, or reports "approved" by
 // default.
 func (f *FakeHost) ReviewStatus(ctx context.Context, req StatusRequest) (ReviewStatusResult, error) {
@@ -221,6 +237,8 @@ var (
 	_ OpenPRLister         = (*FakeHost)(nil)
 	_ OpenPRLister         = (*GitHubHost)(nil)
 	_ RepoVisibilityReader = (*GitHubHost)(nil)
+	_ RefStatusReader      = (*FakeHost)(nil)
+	_ RefStatusReader      = (*GitHubHost)(nil)
 )
 
 // EnableAutoMerge implements the optional AutoMerger capability: it records
