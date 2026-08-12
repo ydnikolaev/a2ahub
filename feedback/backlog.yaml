@@ -68,3 +68,13 @@ items:
         - docs/features/active/agent-exchange-2026-08/specs/04-possession.md
         - docs/backlog.md
       date: "2026-08-12"
+    - id: fb-20260812-755a23
+      kind: friction
+      severity: minor
+      title: a one-file feedback record costs eleven CI jobs, including a macOS build
+      verdict: accepted
+      route: phase
+      refs:
+        - docs/features/active/agent-ops-2026-07/specs/13-ci-economics.md
+        - docs/features/active/agent-ops-2026-07/plans/13-ci-economics.plan.md
+      date: "2026-08-12"

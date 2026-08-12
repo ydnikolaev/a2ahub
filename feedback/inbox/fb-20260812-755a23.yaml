@@ -1,0 +1,84 @@
+feedback: v1
+id: fb-20260812-755a23
+kind: friction
+severity: minor
+title: a one-file feedback record costs eleven CI jobs, including a macOS build
+summary: >-
+  Submitting a feedback record adds exactly one YAML file under feedback/inbox/.
+  On the resulting pull request, ELEVEN check jobs run: check (the full Go
+  ceiling, roughly fifteen minutes), macos-notifier (a Swift build on a macOS
+  runner, billed at ten times the Linux rate), CodeQL and analyze, skill-drift,
+  a2a-validate, no-private-paths, validate-feedback-policy, gitleaks,
+  arm-feedback and merge-policy.
+
+  Only about five of those can reach a verdict about a YAML file under
+  feedback/. The Go ceiling cannot: the diff contains no Go. The macOS build
+  cannot: it compiles integrations/macos-notifier, which the diff does not
+  touch. CodeQL and skill-drift are in the same position.
+
+  The cause is not a wrong filter, it is the absence of one. Of ten workflow
+  files in the tree, only two declare `paths:` at all — govulncheck.yml and
+  pages.yml. macos-notifier in particular carries neither a path filter nor an
+  `if:` guard, so it runs on every push and every pull request in both
+  repositories.
+
+  This is submitted through the loop it describes, so the record is also the
+  measurement: whatever this PR runs is the number.
+context:
+    a2a_version: dev
+    os_arch: darwin/arm64
+    surface: space-ci
+    command: a2a feedback submit
+proposal: >-
+  Gate the expensive jobs on what the diff actually touches. The project's own
+  agent-ops-2026-07 P13 already specifies this as wave K1 — a `changes` job
+  computing booleans, with macos-notifier behind it, plus tags and one weekly
+  schedule in the public repository as the safety net against a filter that
+  silently never fires. That spec's AC13 measured `CI / macos-notifier` at 55.6%
+  of equivalent minutes. The design exists; only the timeout wave shipped.
+
+  Worth stating as its own point: a contribution surface that costs a macOS
+  runner per submitted paragraph teaches contributors to batch or to skip. The
+  intake workflow itself is not the problem — it completes in about thirty
+  seconds.
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+resolution: >-
+    Accepted, and the record is its own measurement — it was submitted through
+    the loop it describes, and the loop answered sharper than the report did.
+
+    PR #27 was created at 23:45:27 and MERGED at 23:45:50. Twenty-three
+    seconds. `merge-policy` — the only required context on public `main` —
+    passed in 3 s and auto-merge fired. `macos-notifier` took 53 s and finished
+    AFTER the merge. `check` and `analyze` were still pending on an
+    already-merged pull request.
+
+    So the finding is stronger than "eleven jobs, five of which cannot judge a
+    YAML file". Those jobs **do not gate anything on this path**. The compute is
+    bought and no verdict is ever consumed: at 53 s on a macOS runner billed
+    x10, `macos-notifier` alone is roughly ten equivalent minutes per submitted
+    feedback record, answering a question nobody waited for.
+
+    ACCEPTED AS THE FIX SHAPE, and it is already specified: agent-ops-2026-07
+    P13 wave K1 — a `changes` job computing booleans, `macos-notifier` behind
+    it, plus tags and one weekly schedule in the PUBLIC repository as the safety
+    net against a filter that silently never fires (P13 AC1/AC2/AC16). That
+    spec's AC13 independently measured `CI / macos-notifier` at 55.6% of
+    equivalent minutes. Confirmed against billing on 2026-08-12: the public
+    repository's macOS line is 315 minutes for August at $0.062/min, netting
+    $0.87 — which also corrects this epic's own earlier conclusion that the
+    public repository nets $0.00.
+
+    NOT fixed by this record's own merge. P13 is still `pending`; only its
+    timeout wave (K2) has shipped, and timeouts bound a failure rather than the
+    ordinary cost. The design exists, the measurement now exists twice, and the
+    wave is next.
+
+    One thing the report got wrong and is corrected here: it says eleven jobs.
+    Ten ran on this PR. The eleventh (`CodeQL` as a separate context) appears on
+    some feedback PRs and not others.
+status: accepted
