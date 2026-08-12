@@ -1,0 +1,57 @@
+feedback: v1
+id: fb-20260812-ee6dcd
+kind: bug
+severity: major
+title: doctor reports a healthy space while its default branch is failing CI
+summary: >-
+  Follow-up to fb-20260812-e6d189, which reports the rule that reddened the branch.
+  This is the separate finding that nothing told us: `a2a doctor` answers fourteen
+  PASS on a space whose default branch has been failing its own post-merge audit
+  for four hours.
+
+  Doctor is the "is my space healthy" command, and it has checks that look adjacent
+  to this — "CI presence: PASS" and "stuck green PRs: PASS". Neither notices that
+  the last push to main FAILED. So the one command an operator runs to ask exactly
+  this question answers yes.
+
+  The failing run is the post-merge audit itself — the validator's own check on the
+  branch it protects. It is not a third-party workflow doctor could reasonably be
+  ignorant of.
+
+  The consequence is not academic: we only found the red branch because a wholly
+  unrelated task had us reading workflow logs by hand. Every subsequent merge stacks
+  onto an already-failing main, which is precisely the signal the audit exists to
+  carry. A validator whose own verdict nothing surfaces has stopped being a gate and
+  become a log entry.
+context:
+    a2a_version: 0.19.11
+    os_arch: darwin/arm64
+    surface: cli
+    command: a2a doctor
+evidence:
+    steps:
+        - "Have a space whose default branch fails its post-merge audit — e.g. because a newly released reject-severity rule fires on an already-merged immutable artifact (fb-20260812-e6d189)."
+        - "Confirm on the host that the most recent push-to-main run of the a2a validate workflow concluded `failure`."
+        - "Run `a2a doctor` against that space."
+    expected: >-
+      A check that fails, or at minimum reports a warning, when the space's default
+      branch is failing its own validation workflow — the branch every participant
+      pulls from and merges onto.
+    actual: >-
+      Fourteen PASS lines, including "CI presence: PASS" and "stuck green PRs: PASS".
+      No check mentions the branch state at all. The only non-PASS line is unrelated
+      (a repository-visibility scan skipped over a different issue).
+proposal: >-
+  Add a default-branch health check: the conclusion of the most recent completed run
+  of the space's own validate workflow on the default branch. It is one API read
+  against a workflow whose identity doctor already knows, since "CI presence" locates
+  it. Reporting it as a FAIL (not a warning) matches what it means — the shared branch
+  is not in the state the protocol assumes. If a red main is ever expected and
+  tolerable, that is an argument for a distinct status word, not for silence.
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new

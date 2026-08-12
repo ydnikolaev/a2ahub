@@ -1,0 +1,57 @@
+feedback: v1
+id: fb-20260812-d31acb
+kind: bug
+severity: minor
+title: inbox still calls a data package's own README undecodable after the POL-002 fix
+summary: >-
+  The release that fixed POL-002 taught artifact discovery to recognise a data
+  package's path shape, so `a2a validate --ci` no longer rejects the README.md
+  that `a2a data pack` writes without frontmatter. The mirror decoder used by
+  `a2a inbox` and `a2a outbox` did not learn the same thing.
+
+  Every inbox and outbox call now ends with a note that one file in the space
+  "could not be decoded, so it is missing from this output", naming
+  <system>/data/<DP-id>/README.md as not-frontmatter-shaped. The file is exactly
+  where the tool put it, in exactly the shape the tool must write it in, and it is
+  not an exchange artifact at all — so it was never missing from that output in
+  any meaningful sense.
+
+  It is cosmetic but it is the wrong kind of cosmetic: a standing "something in
+  your space is malformed" line trains the reader to ignore the one channel that
+  would report a genuinely undecodable artifact. It also survives a re-sync, so
+  the obvious first remedy does nothing. One accepted data delivery leaves it
+  permanently on every listing.
+context:
+    a2a_version: 0.19.11
+    os_arch: darwin/arm64
+    surface: cli
+    command: a2a inbox / a2a outbox
+evidence:
+    steps:
+        - "Receive a data package delivery from a counterparty (`a2a data deliver` on their side) and merge it, so <system>/data/<DP-id>/ is on the space's main branch."
+        - "Run `a2a sync`."
+        - "Run `a2a inbox` (or `a2a outbox`)."
+    expected: >-
+      No decode warning. The packed README.md is a data-package payload, recognised
+      by the same path shape the validator was taught to recognise, and it is not an
+      exchange artifact — so it should be skipped silently rather than reported as
+      an artifact that failed to decode.
+    actual: >-
+      Both listings append: "note: 1 file(s) are in this space but could not be
+      decoded, so they are missing from this output: <system>/data/<DP-id>/README.md
+      (not-frontmatter-shaped)". It persists across `a2a sync` and appears on every
+      subsequent call.
+proposal: >-
+  Apply the same data-package path-shape recognition the validator gained to the
+  mirror decoder that feeds inbox/outbox, so one exemption covers both readers
+  rather than one. If the note is meant to be conservative about unknown files,
+  it should at least distinguish "a file the tool itself wrote, in the shape it
+  must be written in" from "an artifact that failed to parse" — the second is
+  worth a line on every listing, the first is not.
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
