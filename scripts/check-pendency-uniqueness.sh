@@ -134,7 +134,18 @@ run_check() { # $1 = scan root (repo root, or a --teeth fixture tree)
         gate_fail "$rel:$lineno imports internal/pendency from outside the sanctioned homes (\`$trimmed\`) — read the verdict internal/cache already computed instead of resolving your own (see IMPORT_ALLOWLIST in scripts/check-pendency-uniqueness.sh)"
       fi
     done < <(grep -nE '"[^"]*/internal/pendency"' "$file" 2>/dev/null || true)
-  done < <(find "$root" -type f -name '*.go' ! -name '*_test.go')
+  # PRUNE the trees that are not this repository's source. `.a2a/` is the
+  # project's own gitignored working directory, and `a2a`'s feedback reader
+  # clones the PUBLIC repo into `.a2a/cache/feedback-repo/<slug>/` — a full
+  # copy of this codebase, whose `internal/cache/inbox.go` then trips this
+  # gate against itself. Found 2026-08-12 by running the feedback loop
+  # end-to-end: `make check-validators` went red on any machine that had ever
+  # read feedback, naming a file nobody had edited. The walk is by filesystem,
+  # not by `git ls-files`, so being gitignored was no protection at all.
+  #
+  # Same prune idiom as check-provider-tier-deferral.sh, plus `.a2a`.
+  done < <(find "$root" \( -path '*/.git' -o -path '*/.a2a' -o -name node_modules \) -prune -o \
+    -type f -name '*.go' ! -name '*_test.go' -print)
 
   gate_summary "pendency-uniqueness"
 }
