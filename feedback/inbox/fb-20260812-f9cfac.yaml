@@ -1,0 +1,59 @@
+feedback: v1
+id: fb-20260812-f9cfac
+kind: bug
+severity: major
+title: an undecodable packed README leaves repository-visibility UNVERIFIED
+summary: >-
+  Escalation of fb-20260812-d31acb, which reported the same root cause as listing
+  noise. It is not only noise, and the severity was wrong: the file that inbox and
+  outbox merely complain about also stops `a2a doctor`'s repository-visibility check
+  from completing.
+
+  Doctor answers: "repository visibility [<space>]: UNVERIFIED: classification scan
+  incomplete · 1 skipped: <system>/data/<DP-id>/README.md". That check exists to
+  decide whether a space's CONTENTS are appropriate for its repository's visibility.
+  One file it cannot classify leaves the whole verdict UNVERIFIED — not a partial
+  answer with a named exception, but no answer.
+
+  Two things make this worse than a skipped row. The file is one `a2a data pack`
+  wrote itself, in the only shape it may write it in — its bytes are covered by the
+  package digest — so an ordinary accepted delivery reaches this state and it
+  persists. And doctor's own remediation line points at an owner who cannot act:
+  "fixable only by whoever owns that file's section". Nobody can; the bytes are
+  digest-bound.
+context:
+    a2a_version: 0.19.11
+    os_arch: darwin/arm64
+    surface: cli
+    command: a2a doctor
+evidence:
+    steps:
+        - "Receive and merge a data-package delivery from a counterparty, so <system>/data/<DP-id>/ with its packed README.md is on the space's default branch."
+        - "Run `a2a sync`, then `a2a doctor`."
+    expected: >-
+      The repository-visibility check completes. A data package's own README is a
+      packed payload, recognised by the same path shape the validator already learned
+      for POL-002, and should be classified as payload rather than skipped — or, if it
+      genuinely cannot be classified, the check should say what it decided about
+      everything else rather than returning UNVERIFIED overall.
+    actual: >-
+      "repository visibility [<space>]: UNVERIFIED: classification scan incomplete ·
+      1 skipped: <system>/data/<DP-id>/README.md". The check reaches no verdict, and
+      the accompanying remediation names an owner who cannot act, because the file's
+      bytes are covered by the package digest and adding frontmatter would break
+      verification for everyone who fetches it.
+proposal: >-
+  Teach the classification scan the data-package path shape the POL-002 fix already
+  taught artifact discovery, so one exemption serves every reader — validator,
+  inbox/outbox decoder (fb-20260812-d31acb), and this check. Separately, and worth
+  deciding on its own merits: a classification scan that cannot classify something
+  should probably fail rather than return UNVERIFIED, or at least distinguish "a file
+  the tool itself wrote" from "a file whose contents nobody could determine". Those
+  two deserve different words.
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
