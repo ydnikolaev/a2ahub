@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/contract"
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 )
 
 // contractEventV2WithID is contractEventV2's own format
@@ -264,6 +265,7 @@ func newContractHistoryRepoPair(t *testing.T) (publisher, mirror string) {
 	root := t.TempDir()
 	origin := filepath.Join(root, "origin.git")
 	contractTestGit(t, root, "init", "-q", "--bare", "-b", "main", origin)
+	gitfixture.HardenRepo(t, origin)
 	publisher = filepath.Join(root, "publisher")
 	contractTestGit(t, root, "clone", "-q", origin, publisher)
 	mirror = filepath.Join(root, "mirror")

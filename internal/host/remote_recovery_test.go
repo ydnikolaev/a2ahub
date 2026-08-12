@@ -258,6 +258,7 @@ func TestReadRemoteRecoveryCommitNeverLeaksCredential(t *testing.T) {
 	encoded := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + token))
 	probe := filepath.Join(t.TempDir(), "probe.git")
 	runGit(t, "", nil, "init", "--bare", probe)
+	gitfixture.HardenRepo(t, probe)
 	_, _, _, _, _, _, _, _, _, err := NewGitHubHost(nil, "").ReadRemoteRecoveryCommit(
 		context.Background(), probe, filepath.Join(t.TempDir(), "missing.git"),
 		Repo{Owner: "acme", Name: "space"}, "recovery", Credential{Token: token},
@@ -287,6 +288,9 @@ func newRemoteRecoveryFixture(t *testing.T) remoteRecoveryFixture {
 	runGit(t, "", nil, "init", "--bare", fixture.remote)
 	runGit(t, "", nil, "init", "-b", "main", fixture.source)
 	runGit(t, "", nil, "init", "--bare", fixture.probe)
+	// The receiving side of every push below — see gitfixture.HardenRepo.
+	gitfixture.HardenRepo(t, fixture.remote)
+	gitfixture.HardenRepo(t, fixture.probe)
 	return fixture
 }
 

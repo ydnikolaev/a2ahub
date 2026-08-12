@@ -53,6 +53,7 @@ func newSeededOrigin(t *testing.T) string {
 	root := t.TempDir()
 	origin := filepath.Join(root, "origin.git")
 	runGit(t, "", "init", "-q", "--bare", "-b", "main", origin)
+	gitfixture.HardenRepo(t, origin)
 
 	work := filepath.Join(root, "seed")
 	runGit(t, "", "init", "-q", "-b", "main", work)

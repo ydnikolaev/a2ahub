@@ -50,6 +50,13 @@ func New(t testing.TB, systems ...string) *Fixture {
 	dir := t.TempDir()
 	originDir := filepath.Join(dir, "origin.git")
 	runGit(t, dir, "init", "--bare", "-b", "main", originDir)
+	// Every push below lands HERE, and git-receive-pack's post-push
+	// `git maintenance run --auto --detach` would then outlive the test and
+	// race t.TempDir()'s RemoveAll on this very directory — the
+	// "unlinkat …/origin.git: directory not empty" flake. gitfixture.Args
+	// cannot reach it (a client's config does not steer the receiving side),
+	// so the receiving repo is hardened directly.
+	gitfixture.HardenRepo(t, originDir)
 
 	seedDir := filepath.Join(dir, "seed")
 	runGit(t, dir, "init", "-b", "main", seedDir)

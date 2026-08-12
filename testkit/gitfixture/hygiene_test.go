@@ -1,6 +1,8 @@
 // hygiene_test.go is the structural gate that keeps every git-spawning
 // test site routed through this package (see gitfixture.go's package doc
-// for the flake it exists to prevent). Two rules:
+// for the flake it exists to prevent). Three rules — R1 and R2 below, and
+// R3 (every bare repo a fixture pushes into is hardened) documented at its
+// own section further down, next to the code that implements it:
 //
 //   - R1: every *_test.go anywhere in the module, and every .go under
 //     testkit/, that contains a git exec site must route THAT SITE'S OWN
@@ -644,5 +646,176 @@ func TestR2Applies_ExcludesTestFilesAndTestkit(t *testing.T) {
 	}
 	if !r2Applies("internal/space/mirror.go") {
 		t.Fatal("r2Applies should cover a production .go file outside testkit/")
+	}
+}
+
+// --- R3: every bare repo a fixture pushes into is hardened ------------------
+//
+// R1 and R2 cover the two spawn paths a client-side setting can reach. The
+// third — git-receive-pack's post-push `git maintenance run --auto --detach`
+// inside the RECEIVING repo — is reachable only from that repo's own config
+// (gitfixture.go's package doc, mechanism 3). It was closed by hand at four
+// sites on 2026-08-12, which is precisely the state that needs a gate: a
+// fifth `git init --bare` reintroduces the flake with nothing objecting.
+//
+// The rule is function-scoped rather than line-scoped on purpose. A fixture
+// typically creates several repos and hardens them a few lines later, past
+// intervening setup; requiring adjacency would force a cosmetic ordering the
+// rule does not actually care about.
+
+// bareInitFunctions returns the name and line of every function in source
+// that creates a bare git repository — detected as a call carrying the
+// literal "--bare" among its arguments, which covers both a direct
+// exec.Command("git", ...) and the runGit/fxRunGit helper wrappers every
+// fixture in this repo actually uses.
+func bareInitFunctions(path, source string) ([]gitSite, error) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, source, 0)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	var out []gitSite
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Body == nil {
+			continue
+		}
+		bareLine := 0
+		hardened := false
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			if isGitfixtureCall(call, "HardenRepo") || isGitfixtureCall(call, "HardenRepoDir") {
+				hardened = true
+				return true
+			}
+			for _, arg := range call.Args {
+				lit, ok := arg.(*ast.BasicLit)
+				if !ok || lit.Kind != token.STRING {
+					continue
+				}
+				val, err := strconv.Unquote(lit.Value)
+				if err != nil || val != "--bare" {
+					continue
+				}
+				if bareLine == 0 {
+					bareLine = fset.Position(call.Pos()).Line
+				}
+			}
+			return true
+		})
+		if bareLine != 0 {
+			out = append(out, gitSite{Line: bareLine, Guarded: hardened})
+		}
+	}
+	return out, nil
+}
+
+// r3Violations returns one message per function that creates a bare repo
+// without hardening it (path must satisfy r1Applies; callers filter).
+func r3Violations(path, source string) ([]string, error) {
+	sites, err := bareInitFunctions(path, source)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, s := range sites {
+		if !s.Guarded {
+			out = append(out, fmt.Sprintf(
+				"%s:%d: creates a bare git repo but never calls gitfixture.HardenRepo on it "+
+					"(receive-pack will spawn detached maintenance into it after every push)", path, s.Line))
+		}
+	}
+	return out, nil
+}
+
+func TestHygiene_R3_EveryBareRepoIsHardened(t *testing.T) {
+	t.Parallel()
+	root := repoRoot(t)
+
+	var violations []string
+	found := 0
+	walkGoFiles(t, root, func(rel, source string) {
+		if !r1Applies(rel) {
+			return
+		}
+		sites, err := bareInitFunctions(rel, source)
+		if err != nil {
+			t.Fatalf("hygiene R3: %v", err)
+		}
+		found += len(sites)
+		v, err := r3Violations(rel, source)
+		if err != nil {
+			t.Fatalf("hygiene R3: %v", err)
+		}
+		violations = append(violations, v...)
+	})
+
+	// Same reason R1 counts what it scanned: "no violations" and "found no
+	// bare-repo sites at all" print identically, and this rule selects its
+	// inputs by a string literal that a refactor could rename away.
+	if found == 0 {
+		t.Fatal("R3 found no bare-repo creation sites — the detection literal no longer matches anything, " +
+			"so this gate would pass vacuously")
+	}
+
+	if len(violations) > 0 {
+		t.Fatalf("R3: bare repo(s) created without gitfixture.HardenRepo (%d site(s) found):\n%s",
+			found, strings.Join(violations, "\n"))
+	}
+}
+
+// TestR3Violations_Table is R3's teeth, both directions.
+func TestR3Violations_Table(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		source string
+		want   int
+	}{
+		{
+			name:   "bare init with no HardenRepo IS reported",
+			source: "package p\nfunc f(t *testing.T) {\n\trunGit(t, d, \"init\", \"--bare\", origin)\n}\n",
+			want:   1,
+		},
+		{
+			name:   "bare init followed by HardenRepo is NOT a violation",
+			source: "package p\nfunc f(t *testing.T) {\n\trunGit(t, d, \"init\", \"--bare\", origin)\n\tgitfixture.HardenRepo(t, origin)\n}\n",
+			want:   0,
+		},
+		{
+			name:   "HardenRepo in a DIFFERENT function does not cover this one",
+			source: "package p\nfunc g(t *testing.T) { gitfixture.HardenRepo(t, x) }\nfunc f(t *testing.T) {\n\trunGit(t, d, \"init\", \"--bare\", origin)\n}\n",
+			want:   1,
+		},
+		{
+			name:   "a non-bare init is out of scope",
+			source: "package p\nfunc f(t *testing.T) {\n\trunGit(t, d, \"init\", \"-b\", \"main\", work)\n}\n",
+			want:   0,
+		},
+		{
+			name:   "clone --bare counts too — it also makes a pushable bare repo",
+			source: "package p\nfunc f(t *testing.T) {\n\trunGit(t, d, \"clone\", \"--bare\", src, origin)\n}\n",
+			want:   1,
+		},
+		{
+			name:   "the error-returning HardenRepoDir satisfies the rule as well",
+			source: "package p\nfunc f() error {\n\trunCmd(\"git\", \"clone\", \"--bare\", src, origin)\n\treturn gitfixture.HardenRepoDir(origin)\n}\n",
+			want:   0,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := r3Violations("x_test.go", tc.source)
+			if err != nil {
+				t.Fatalf("r3Violations: %v", err)
+			}
+			if len(got) != tc.want {
+				t.Fatalf("r3Violations = %d violation(s) %v, want %d", len(got), got, tc.want)
+			}
+		})
 	}
 }

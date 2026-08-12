@@ -75,6 +75,7 @@ func newContractHistoryRepo(t *testing.T) string {
 	root := t.TempDir()
 	origin := filepath.Join(root, "origin.git")
 	contractTestGit(t, root, "init", "-q", "--bare", "-b", "main", origin)
+	gitfixture.HardenRepo(t, origin)
 	repo := filepath.Join(root, "work")
 	contractTestGit(t, root, "clone", "-q", origin, repo)
 	return repo

@@ -182,3 +182,94 @@ func TestHardenEnv_EndToEnd_GitConfigGet(t *testing.T) {
 		t.Fatalf("commit identity = %q, want %q", got, want)
 	}
 }
+
+// TestHardenRepo_StopsDetachedMaintenanceAfterPush is the guard for the gap
+// that gc.auto=0 and maintenance.auto=false did NOT close, and that red the
+// public repo's `check` on 2026-08-12 with
+// "unlinkat …/origin.git: directory not empty".
+//
+// It is an isolating PAIR — an unhardened control and a hardened repo,
+// pushing the same commit — and it has to be. A one-sided version of this
+// test is what produced the wrong fix first: a push into an already
+// up-to-date repo never runs receive-pack at all, so "zero maintenance
+// spawns" was measured from a push that did nothing. The control is what
+// makes the hardened side mean something.
+//
+// It asserts the MECHANISM rather than a flag list, also deliberately: the
+// two flags in gitCoreFlags were present the whole time, and a test that
+// only compared Args's contents to an expected slice went on passing while
+// receive-pack forked `git maintenance run --auto --quiet --detach` after
+// every push.
+//
+// reason: mutates process env (GIT_CONFIG_*) — not safe to run in parallel
+// (see TestHardenEnv_ComposesOverPresetCount's reason comment).
+func TestHardenRepo_StopsDetachedMaintenanceAfterPush(t *testing.T) {
+	resetGitConfigEnv(t)
+	HardenEnv()
+
+	root := t.TempDir()
+	work := filepath.Join(root, "work")
+	control := filepath.Join(root, "control.git")
+	hardened := filepath.Join(root, "hardened.git")
+
+	for _, args := range [][]string{
+		{"init", "--bare", "-q", "-b", "main", control},
+		{"init", "--bare", "-q", "-b", "main", hardened},
+		{"init", "-q", "-b", "main", work},
+	} {
+		if out, err := exec.Command("git", Args(args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	HardenRepo(t, hardened)
+
+	if err := os.WriteFile(filepath.Join(work, "f.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"-C", work, "add", "-A"},
+		{"-C", work, "commit", "-q", "-m", "seed"},
+		{"-C", work, "remote", "add", "control", control},
+		{"-C", work, "remote", "add", "hardened", hardened},
+	} {
+		if out, err := exec.Command("git", Args(args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	// The control proves receive-pack actually ran and that this git build
+	// does spawn detached maintenance by default. Without it, the hardened
+	// assertion below is satisfied just as well by a push that did nothing.
+	if got := maintenanceLines(pushTrace(t, work, "control")); got == "" {
+		t.Fatal("control push spawned NO background maintenance — this test can no longer " +
+			"detect the regression it exists for (git default changed, or the push was a no-op)")
+	}
+	if got := maintenanceLines(pushTrace(t, work, "hardened")); got != "" {
+		t.Fatalf("push into a HardenRepo'd repo still spawned background maintenance:\n%s", got)
+	}
+}
+
+// pushTrace pushes work's main to the named remote with GIT_TRACE on and
+// returns everything git said.
+func pushTrace(t *testing.T, work, remote string) string {
+	t.Helper()
+	push := exec.Command("git", Args("-C", work, "push", "-q", remote, "main")...)
+	push.Env = append(os.Environ(), "GIT_TRACE=1")
+	out, err := push.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git push %s: %v\n%s", remote, err, out)
+	}
+	return string(out)
+}
+
+// maintenanceLines extracts just the offending trace lines, so a failure
+// names the evidence instead of dumping the whole GIT_TRACE.
+func maintenanceLines(trace string) string {
+	var hits []string
+	for _, line := range strings.Split(trace, "\n") {
+		if strings.Contains(line, "maintenance run") {
+			hits = append(hits, line)
+		}
+	}
+	return strings.Join(hits, "\n")
+}

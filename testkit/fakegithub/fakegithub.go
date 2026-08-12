@@ -570,6 +570,10 @@ func (s *Server) handleFork(w http.ResponseWriter, _ *http.Request, name string)
 			http.Error(w, "fakegithub: cannot create fork: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		if err := gitfixture.HardenRepoDir(dir); err != nil {
+			http.Error(w, "fakegithub: cannot harden fork: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		// A fork inherits no hooks — this is the whole point: the
 		// submitter can push here even when the origin refuses them.
 		s.forks[ForkLogin] = dir

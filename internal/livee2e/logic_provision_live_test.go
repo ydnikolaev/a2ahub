@@ -86,6 +86,11 @@ func provisionLocalSpace(ctx context.Context, bin, work string, pre Preflight) (
 	if err := runCmd(ctx, "git", "clone", "--bare", "-q", spaceDir, origin); err != nil {
 		return "", fmt.Errorf("livee2e: provisionLocalSpace: clone bare origin: %w", err)
 	}
+	// Every push in this tier lands here; receive-pack's detached
+	// post-push maintenance would otherwise outlive the test.
+	if err := gitfixture.HardenRepoDir(origin); err != nil {
+		return "", fmt.Errorf("livee2e: provisionLocalSpace: %w", err)
+	}
 
 	return origin, nil
 }

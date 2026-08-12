@@ -71,6 +71,8 @@ func newFixtureSpaceIn(t *testing.T, dir string, participants ...fixtureParticip
 	t.Helper()
 	origin := filepath.Join(dir, "origin.git")
 	fxRunGit(t, dir, "init", "--bare", "-b", "main", origin)
+	// The receiving side of every push below — see gitfixture.HardenRepo.
+	gitfixture.HardenRepo(t, origin)
 	work := filepath.Join(dir, "work")
 	fxRunGit(t, dir, "clone", origin, work)
 
