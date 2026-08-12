@@ -20,7 +20,7 @@ type fixtureInner struct {
 }
 
 type fixtureUntaggedEmbed struct {
-	fixtureInner // no json tag: inlined, contributes its OWN keys, no "fixtureinner" key
+	fixtureInner        // no json tag: inlined, contributes its OWN keys, no "fixtureinner" key
 	Own          string `json:"own"`
 }
 

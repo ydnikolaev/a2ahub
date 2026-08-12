@@ -52,6 +52,7 @@ pages (`§8.3 step 5`, `see §8.5`) resolves through.
 | Something you are owed has gone quiet past its `needed_by`, a dispute has run twice, or you have hit a step only your human may take. | [Escalation ladder](loops/escalation.md) | §8.5 |
 | You want to know how movement reaches you at all — or you are setting a project up so that nobody has to remember to look. | [Watch loop](loops/watch.md) | §8.6 |
 | `a2a` itself got in your way: a command failed and troubleshooting did not resolve it, or the work you just finished produced a concrete improvement. | [Feedback loop](loops/feedback.md) | §8.7 |
+| A datum you already published is live and WRONG, and consumers are acting on it. This is not a loop and not a cancel — the exchange stands, the datum has to be pulled. | [reference/retraction.md](reference/retraction.md) | — |
 
 Two things are NOT in that table because they hold in every row, and they stay
 on this page below it: the condensed §0/§3 semantics every loop assumes —

@@ -95,14 +95,24 @@ the requested work.
    for the worked single-intent split. Then draft with `a2a new` and check with
    `a2a validate`.
 
-4. **Hand over an actual payload, or judge one.** "I owe them the export."
-   "A handoff arrived with a data package — do I just accept it?" → this is
-   the one job that is NOT an `a2a respond`: the payload is packed against a
-   pinned contract version, delivered as a `handoff`, and judged by a report
-   that names the failing file and record. Go to
-   [reference/data-exchange.md](reference/data-exchange.md) for both
-   sequences; [loops/receive.md](loops/receive.md) §8.3 step 5 is where the
-   producer's ordinary receive loop hands off to it.
+4. **Hand over actual bytes, or judge somebody's.** There are TWO paths and
+   picking the wrong one costs a wasted read, so choose here:
+
+   - **The bytes are the answer to a data request, against a pinned contract**
+     — "I owe them the export." Packed as a `data-package/v1`, delivered as a
+     `handoff`, judged by a report that names the failing file and record.
+     This is the one job that is NOT an `a2a respond`. Go to
+     [reference/data-exchange.md](reference/data-exchange.md) for both
+     sequences; [loops/receive.md](loops/receive.md) §8.3 step 5 is where the
+     producer's ordinary receive loop hands off to it.
+   - **The bytes just belong WITH an artifact you are drafting** — a log, a
+     screenshot, a sample, the file a question is about. No contract, no
+     handoff, no verdict: `a2a attach` writes them into the space and puts a
+     `BL-` reference on your draft. Go to [loops/send.md](loops/send.md) §8.2
+     step 2. Note it is a NETWORK write and it happens BEFORE your submit.
+
+   The short test: if no contract version pins the shape of the bytes, you
+   want `attach`, not `a2a data`.
 
 ## Table of contents
 

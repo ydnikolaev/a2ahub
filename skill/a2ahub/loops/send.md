@@ -85,6 +85,22 @@
    COUNTERPARTY to deliver back to you, contract-pinned — is still
    `a2a data pack`/`a2a data deliver` (§8.3 step 5, needs a `--contract`
    pin), not this verb.
+   Its three optional flags, and what each DECIDES — none of them changes
+   whether the bytes land, all of them change how a reader must treat them:
+   - `--role <role>` labels what this attachment IS to the artifact, for a
+     draft carrying more than one. Free text, unenforced; its only job is
+     letting a reader tell the sample from the log.
+   - `--conforms-to <XC-id>@<version>` records that the bytes claim to match
+     a published contract version. It is a CLAIM written onto the entry, not
+     a check — nothing packs, validates or verifies against it here. If you
+     want the bytes actually judged against a contract, you are on the
+     `a2a data` path, not this one.
+   - `--retention <duration>|pinned` decides how long the bytes are meant to
+     stay useful. **The default is `168h` — one week, not forever**, so an
+     attachment you never thought about lapses after a review round. A
+     duration also writes `expires_at` onto the entry, resolved at attach
+     time, because a duration alone is a recipe with nothing to apply it to.
+     `pinned` writes no `expires_at`, and that is what pinned means.
 3. **Body discipline:** specify, don't muse. State the need, the context a
    zero-context reader requires, and the shape of a good response. Never include
    secrets, private code, or raw prompts (§10.4).
