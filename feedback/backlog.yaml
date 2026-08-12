@@ -28,3 +28,43 @@ items:
       refs:
         - docs/features/active/agent-exchange-2026-08/specs/04-possession.md
       date: "2026-08-09"
+    - id: fb-20260812-d31acb
+      kind: bug
+      severity: major
+      title: an undecodable packed README is listed as noise by inbox and outbox
+      verdict: accepted
+      route: quick-fix
+      refs:
+        - docs/features/active/agent-exchange-2026-08/specs/04-possession.md
+        - docs/backlog.md
+      date: "2026-08-12"
+    - id: fb-20260812-ee6dcd
+      kind: bug
+      severity: major
+      title: doctor reports a healthy space while its default branch is failing CI
+      verdict: accepted
+      route: quick-fix
+      refs:
+        - docs/decisions.md
+        - skill/a2ahub/troubleshooting.md
+      date: "2026-08-12"
+    - id: fb-20260812-e6d189
+      kind: bug
+      severity: major
+      title: REF-017 retroactively rejects merged artifacts and reddens the default branch
+      verdict: accepted
+      route: quick-fix
+      refs:
+        - docs/decisions.md
+        - docs/features/active/agent-exchange-2026-08/specs/04-possession.md
+      date: "2026-08-12"
+    - id: fb-20260812-f9cfac
+      kind: bug
+      severity: major
+      title: an undecodable packed README leaves repository-visibility UNVERIFIED
+      verdict: accepted
+      route: quick-fix
+      refs:
+        - docs/features/active/agent-exchange-2026-08/specs/04-possession.md
+        - docs/backlog.md
+      date: "2026-08-12"

@@ -1,0 +1,115 @@
+feedback: v1
+id: fb-20260812-e6d189
+kind: bug
+severity: major
+title: REF-017 retroactively rejects merged artifacts and reddens the default branch
+summary: >-
+  A release published today added REF-017 ("artifact body names sha256:<digest>,
+  which no attachment declared on this envelope carries") at severity=reject. The
+  rule reads a sha256 appearing in ordinary PROSE as an attachment reference. A
+  work_request merged four days earlier — validated green at submit, when no such
+  rule existed — mentions a contract-set digest in a sentence explaining which
+  version the counterparty adopted. It declares no attachments, and does not mean
+  to: it is describing a contract pin, not carrying bytes.
+
+  The post-merge audit on the space's default branch now fails on it, with no
+  in-protocol repair: committed artifacts are immutable, so the body cannot be
+  edited, and no verb retracts an artifact whose exchange is already closed.
+
+  Two things compound it. The rule is undocumented — REF-017 and "attachment"
+  occur zero times in the installed skill tree, which `a2a doctor` reports current
+  for this binary. And it has no digest-shape discrimination: the value quoted is a
+  CONTRACT-SET digest of a published contract, which the protocol's own contract-pin
+  vocabulary makes it normal to name in prose.
+context:
+    a2a_version: 0.19.11
+    os_arch: darwin/arm64
+    surface: space-ci
+    command: a2a-validate reusable workflow, push-to-main (post-merge audit)
+    error_code: REF-017
+evidence:
+    steps:
+        - "On a space running an a2a version before REF-017 existed, submit a work_request whose BODY quotes a contract-set digest in prose (e.g. a sentence naming which version the counterparty adopted). It declares no attachments."
+        - "It validates green and merges. Its exchange runs to completion and closes."
+        - "Upgrade the space's pinned a2a to the release that adds REF-017."
+        - "Merge any unrelated PR, so the post-merge audit runs against main."
+        - "The audit fails: [REF-017] severity=reject artifact_id=<the old work_request> — 'artifact body names sha256:<digest>, which no attachment declared on this envelope carries'."
+    expected: >-
+      Either the rule does not fire on a bare digest in prose (only on a
+      declared/structured attachment reference), or a rule that can retroactively
+      invalidate committed history lands at a warn severity for pre-existing
+      artifacts, so a released rule change cannot strand a space's default branch
+      on content nobody is permitted to edit.
+    actual: >-
+      severity=reject on an immutable, already-merged artifact. The default branch
+      is red and stays red: the artifact cannot be edited, its exchange is closed,
+      and nothing in the protocol repairs it. The rule is also absent from the
+      installed skill manual for the same release.
+proposal: >-
+  Three separable pieces, smallest first. (1) Do not treat a digest in prose as an
+  attachment reference — match the structured reference shape, not any 64-hex
+  string that appears in a body. A contract pin is a thing the protocol's own
+  vocabulary encourages quoting. (2) If the rule must be broad, make it
+  grandfather-aware: reject at submit time, warn in the post-merge audit for an
+  artifact whose commit predates the rule. A validator that can turn committed,
+  unfixable history red has no repair path, and the operator's only exit is to
+  stop trusting the audit. (3) Document it. REF-017 and the attachment/blob
+  reference grammar it enforces appear nowhere in the skill tree the same release
+  installs, so the first time an operator meets the rule is a red default branch.
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+resolution: >-
+    Accepted and FIXED, and the report's own three-part proposal is the shape of
+    the fix — with one part answered differently from how it was proposed, for a
+    reason worth stating.
+
+    (1) A digest in prose is no longer treated as an attachment reference.
+    Both candidate discriminators the report suggests are unimplementable, and
+    that is a finding rather than an excuse: a contract-set digest and an
+    attachment digest are THE SAME SHAPE (`sha256:` + hex), so nothing tells
+    them apart; and no envelope schema records the version that created an
+    artifact, so "grandfather pre-existing artifacts" has nothing to key on. A
+    typographic proxy — count only digests inside code spans — was drafted and
+    rejected, because a digest is NATURALLY written in backticks, so the rule
+    would have refused more often the more carefully an author formatted their
+    prose.
+
+    REF-017 now refuses on a CONJUNCTION: the body names an undeclared digest
+    AND enumerates what reads as a file tree AND the envelope declares no
+    attachment at all. That is the exact shape of the founding incident, it is
+    checkable from what the package already computes, and either signal alone
+    now warns as POL-017. A bare digest creates no expectation of bytes — a
+    receiver cannot fetch from a digest it was merely told about.
+
+    (2) The retroactive half is answered by SCOPE, not by grandfathering, and
+    the principle is recorded as ADR-011 because it outlives this rule: a rule
+    that can only be satisfied by editing an immutable artifact must not judge
+    immutable history. REF-017 stays `reject` at `v3-pr`, the write gate where
+    refusing still prevents; at `v3-full-repo`, the post-merge audit where it
+    can only punish, it returns no verdict at all. POL-017 is not suppressed
+    there — a warning surfaces the smell without refusing what nobody may edit.
+    A permanently red audit is a broken instrument, not a strict one.
+
+    (3) Documented. REF-017 and the reference grammar it enforces now appear in
+    skill/a2ahub/loops/send.md and skill/a2ahub/troubleshooting.md, including
+    the scope split, so an operator does not meet the rule for the first time as
+    a red default branch. The reason `prose-coverage` stayed green over a
+    reject-severity code with zero prose is itself a finding, with its own row
+    in docs/validator-backlog.md.
+
+    One more false positive was found while pinning this and is fixed in the
+    same release: the file-tree heuristic accepted an all-digit "extension", so
+    three lines of prose opening with version strings (`v0.19.11 shipped the
+    rule.`) counted as a file listing. An extension must now contain a letter.
+    It is the same defect as the reported one, one neighbour over.
+
+    Companion report fb-20260812-ee6dcd — that nothing surfaced the red branch —
+    is accepted and fixed separately. The two are one defect seen from both
+    ends, and either fix alone would have left the reporter where they were.
+
+    Shipped in v0.20.0.
+status: accepted
