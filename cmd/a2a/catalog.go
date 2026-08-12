@@ -4,13 +4,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"reflect"
 	"sort"
 	"strings"
 
+	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
+	"github.com/ydnikolaev/a2ahub/internal/skillcoverage"
 )
 
 // catalog.go implements the hidden `a2a __catalog` verb (spec 13 §11
@@ -204,6 +207,52 @@ func catalogMCPRows() []catalogMCPRow {
 	return rows
 }
 
+// catalogSurfaces is `--surfaces --json`'s per-surface JSON key universe
+// (spec 13, agent-exchange-2026-08, §3.1): the CLI's `--json` read verbs
+// plus the MCP read tool's own item shape, each derived by
+// internal/skillcoverage.SurfaceKeys over the SAME type the surface
+// actually marshals — never a second, hand-maintained field list. §3.1's
+// own evidence for why this must be reflection, not an observed run: the
+// six derived-state fields are `omitempty`/`omitzero` and populate only
+// from the event that produced the state, so the one binary-tier fixture
+// that reads inbox emits an empty array (internal/e2e/testdata/t3/
+// inbox_outbox.txtar:7) — a fixture-derived universe would be green and
+// blind, the exact defect this phase exists to remove.
+//
+// "at minimum" (§3.1's own words) is the operative constraint: this is not
+// every JSON-emitting verb in the binary, only the five the spec names.
+// THE RESIDUAL HOLE, stated rather than hidden: reflection over a LISTED
+// set of types cannot see a newly added SURFACE — a new command
+// serializing a new type ships with no ledger row and this flag says
+// nothing about it. Closing that needs BOTH a new entry here AND a new row
+// in schemas/prose-coverage.yaml's own `surfaces:` declaration (that
+// file's header states the other half of this same gap, and the gate it
+// feeds reds if the two ever disagree); adding the type here alone is
+// silent unless that file is updated in the same change.
+//
+// mcp-item reflects cache.Item directly rather than internal/mcp's own
+// wire wrapper (`{"items": [...], "skipped": [...]}`, tools_read.go's
+// unexported itemsWithSkipped) — a2a_inbox/a2a_outbox wrap the IDENTICAL
+// cache.Item this function already reflects for cli-inbox/cli-outbox.
+// internal/mcp is outside this wave's edit allowlist and itemsWithSkipped
+// is unexported, so this package cannot reach that exact type; hand-typing
+// a second copy of its two-field shape here would be precisely the
+// second, hand-maintained list this whole mechanism exists to avoid — for
+// the item's OWN fields, which is where every P13 finding actually lives.
+// Only the wrapper's two outer keys ("items", "skipped") are therefore not
+// derived here; neither carries prose-relevant per-field content of its
+// own (skipped is cache.SkippedFile's {path, reason} advisory, not
+// exchange state).
+func catalogSurfaces() map[string][]string {
+	return map[string][]string{
+		"cli-inbox":  skillcoverage.SurfaceKeys(reflect.TypeOf(cache.Item{})),
+		"cli-outbox": skillcoverage.SurfaceKeys(reflect.TypeOf(cache.Item{})),
+		"cli-thread": skillcoverage.SurfaceKeys(reflect.TypeOf(cache.ThreadResult{})),
+		"cli-show":   skillcoverage.SurfaceKeys(reflect.TypeOf(cache.ShowResult{})),
+		"mcp-item":   skillcoverage.SurfaceKeys(reflect.TypeOf(cache.Item{})),
+	}
+}
+
 // renderCatalog renders the full deterministic markdown document: a
 // title/preamble, "## Commands" (sorted by name), "## MCP tools" (sorted
 // by name). No timestamp, no absolute path, no version/sha — every line is
@@ -241,24 +290,40 @@ func renderCatalog() string {
 // the list — correct the day it is written and silently wrong the day a
 // state is added, which is the defect this epic exists to remove.
 //
+// `--surfaces --json` (spec 13, agent-exchange-2026-08, §3.1) switches it
+// to catalogSurfaces()'s per-surface JSON key universe — see that
+// function's own doc comment for what it derives, why reflection rather
+// than an observed run, and the residual hole (a newly added SURFACE is
+// not caught; only a newly added FIELD on an already-listed one is).
+//
 // The bare `a2a __catalog` output is UNCHANGED, byte for byte:
 // skill/a2ahub/reference/commands.md is its committed projection and the
 // skill-drift job regenerates and diffs it.
 func runCatalog(args []string, stdout, stderr io.Writer) int {
-	vocabulary, asJSON := false, false
+	vocabulary, surfaces, asJSON := false, false, false
 	for _, arg := range args {
 		switch arg {
 		case "--vocabulary":
 			vocabulary = true
+		case "--surfaces":
+			surfaces = true
 		case "--json":
 			asJSON = true
 		default:
-			_, _ = fmt.Fprintf(stderr, "a2a __catalog: unknown flag %q (accepts --vocabulary --json)\n", arg)
+			_, _ = fmt.Fprintf(stderr, "a2a __catalog: unknown flag %q (accepts --vocabulary --surfaces --json)\n", arg)
 			return 2
 		}
 	}
 
 	switch {
+	case vocabulary && surfaces:
+		// Refused rather than picking one silently: the two are different
+		// projections of different questions ("what may a component
+		// spell" vs. "what does a read surface emit"), and a caller asking
+		// for both at once has a bug worth surfacing, not a default worth
+		// guessing.
+		_, _ = fmt.Fprintln(stderr, "a2a __catalog: --vocabulary and --surfaces are different projections — pass one")
+		return 2
 	case vocabulary && !asJSON:
 		// Refused rather than defaulted to markdown. The vocabulary exists
 		// to be PARSED; rendering it would invite a gate to read prose,
@@ -266,14 +331,25 @@ func runCatalog(args []string, stdout, stderr io.Writer) int {
 		// a different route.
 		_, _ = fmt.Fprintln(stderr, "a2a __catalog: --vocabulary requires --json (the vocabulary exists to be parsed, never rendered)")
 		return 2
-	case asJSON && !vocabulary:
-		_, _ = fmt.Fprintln(stderr, "a2a __catalog: --json is only defined with --vocabulary (the command catalog itself is markdown by contract)")
+	case surfaces && !asJSON:
+		_, _ = fmt.Fprintln(stderr, "a2a __catalog: --surfaces requires --json (the surface catalogue exists to be parsed, never rendered)")
+		return 2
+	case asJSON && !vocabulary && !surfaces:
+		_, _ = fmt.Fprintln(stderr, "a2a __catalog: --json is only defined with --vocabulary or --surfaces (the command catalog itself is markdown by contract)")
 		return 2
 	case vocabulary:
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(fold.BuildVocabulary()); err != nil {
 			_, _ = fmt.Fprintf(stderr, "a2a __catalog: encode vocabulary: %v\n", err)
+			return 1
+		}
+		return 0
+	case surfaces:
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(catalogSurfaces()); err != nil {
+			_, _ = fmt.Fprintf(stderr, "a2a __catalog: encode surfaces: %v\n", err)
 			return 1
 		}
 		return 0
