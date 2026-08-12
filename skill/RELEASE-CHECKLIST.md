@@ -51,15 +51,34 @@ not drifted from the plan wording it quotes.
 
 ## Sign-off
 
-- **Release tag:** `v0.19.11`
+- **Release tag:** `v0.20.0`
 - **Reviewer:** `Claude Code`
 - **Date:** `2026-08-12`
 
-> **v0.19.11 changed no prose file**, so the v0.19.10 review below stands
-> unmodified rather than being re-ticked. Checked against the exact public
-> diff, not assumed: `git diff --name-status public/main..public/<candidate>`
-> lists no path under `skill/`. The review that matters for both tags is the
-> one recorded underneath, which was P13's.
+> **v0.20.0 DOES change prose**, so this is a fresh review rather than an
+> inherited one. Two files moved, and both were checked by enumerating the
+> shipped surface, not by reading the page:
+>
+> - `skill/a2ahub/loops/send.md` — the REF-017/POL-017 rows are new; the code
+>   had ZERO occurrences in the skill tree when it shipped as a reject in
+>   v0.19.11, which is a third of what `fb-20260812-e6d189` reported. The
+>   conjunction is stated in full (undeclared digest AND file-tree enumeration
+>   AND no declared attachment), either half is named as POL-017, and the
+>   remedy given is `a2a attach` rather than rewording. The v3-pr/v3-full-repo
+>   scoping is deliberately NOT here: at the write gate, which is the only
+>   place a sender meets the rule, it changes nothing.
+> - `skill/a2ahub/troubleshooting.md` — carries that scoping instead, where an
+>   operator diagnosing a red default branch actually needs it, plus the new
+>   `default branch healthy` row. Its name was compared against the binary's
+>   own registration string, not transcribed from the brief. The roster count
+>   moved 16 → 17 and the eighteenth per-space row renumbered with it; the
+>   tripwire in `cmd_doctor_docs_test.go` that holds the doc and the binary
+>   equal was moved in the same commit and is green.
+>
+> Nothing else in this release is agent-facing: the data-package README fix
+> REMOVES a spurious line from `inbox`/`outbox`/`doctor`, and the fixture
+> teardown fix changes no shipped behaviour at all.
+
 - [x] Every prose row above is ticked, or an un-ticked row has a written reason
       and a follow-up filed.
 - [ ] The `skill-drift` CI job is green on the exact release candidate tree
@@ -68,7 +87,7 @@ not drifted from the plan wording it quotes.
       prose review).
 
 **The second box is deliberately OPEN, and cannot honestly be anything else
-yet: no candidate for `v0.19.10` exists.** It is ticked AFTER the tag, and
+yet: no candidate for `v0.20.0` exists.** It is ticked AFTER the tag, and
 structurally has to be — `skill/` ships in the public projection, so ticking it
 inside a candidate would change the candidate it describes. The box can never
 be true in its own release.
