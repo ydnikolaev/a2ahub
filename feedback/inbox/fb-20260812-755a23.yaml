@@ -1,0 +1,50 @@
+feedback: v1
+id: fb-20260812-755a23
+kind: friction
+severity: minor
+title: a one-file feedback record costs eleven CI jobs, including a macOS build
+summary: >-
+  Submitting a feedback record adds exactly one YAML file under feedback/inbox/.
+  On the resulting pull request, ELEVEN check jobs run: check (the full Go
+  ceiling, roughly fifteen minutes), macos-notifier (a Swift build on a macOS
+  runner, billed at ten times the Linux rate), CodeQL and analyze, skill-drift,
+  a2a-validate, no-private-paths, validate-feedback-policy, gitleaks,
+  arm-feedback and merge-policy.
+
+  Only about five of those can reach a verdict about a YAML file under
+  feedback/. The Go ceiling cannot: the diff contains no Go. The macOS build
+  cannot: it compiles integrations/macos-notifier, which the diff does not
+  touch. CodeQL and skill-drift are in the same position.
+
+  The cause is not a wrong filter, it is the absence of one. Of ten workflow
+  files in the tree, only two declare `paths:` at all — govulncheck.yml and
+  pages.yml. macos-notifier in particular carries neither a path filter nor an
+  `if:` guard, so it runs on every push and every pull request in both
+  repositories.
+
+  This is submitted through the loop it describes, so the record is also the
+  measurement: whatever this PR runs is the number.
+context:
+    a2a_version: dev
+    os_arch: darwin/arm64
+    surface: space-ci
+    command: a2a feedback submit
+proposal: >-
+  Gate the expensive jobs on what the diff actually touches. The project's own
+  agent-ops-2026-07 P13 already specifies this as wave K1 — a `changes` job
+  computing booleans, with macos-notifier behind it, plus tags and one weekly
+  schedule in the public repository as the safety net against a filter that
+  silently never fires. That spec's AC13 measured `CI / macos-notifier` at 55.6%
+  of equivalent minutes. The design exists; only the timeout wave shipped.
+
+  Worth stating as its own point: a contribution surface that costs a macOS
+  runner per submitted paragraph teaches contributors to batch or to skip. The
+  intake workflow itself is not the problem — it completes in about thirty
+  seconds.
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
