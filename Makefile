@@ -335,6 +335,22 @@ operational-projection-single-source: ## Static HTML and the local server consum
 localserver-readonly-routes: ## Local HTTP exposes only the frozen read-only route inventory.
 	@bash scripts/check_localserver_readonly_routes.sh
 
+# The gates' own teeth are reachable from a diff, and until 2026-08-12 they
+# were not. check-convention.md said "`make lane` selects it for you"; it did
+# not, because this recipe carried no declaration at all — and `make check` does
+# not run them either (the ceiling is `verify.sh full`; this is `verify.sh
+# harness`, a different mode). So a change to a gate's OWN logic selected
+# nothing that would exercise it, and the only thing standing between a broken
+# gate and a green tree was somebody remembering. Found by editing
+# feedback-sync.sh and noticing the derived lane did not name this target.
+#
+# Same shape as web-quality's block above, and the same fix. The declaration is
+# the SCRIPTS, because what this target reads is their --teeth entrypoints —
+# not the corpora they judge, which each gate declares for itself.
+# lane-inputs:
+#   scripts/**/*.sh
+#   docs/runbooks/*.sh
+#   .agents/scripts/*.sh
 harness-check: ## Run the gates' --teeth self-tests (harness gates are private/presence-gated; release-preflight is public).
 	@bash scripts/verify.sh harness
 
