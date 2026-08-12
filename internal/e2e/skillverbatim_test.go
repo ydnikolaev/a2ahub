@@ -263,10 +263,10 @@ func countOccurrencesInSkillTree(t *testing.T, root, block string) (total int, h
 func assertBlockAppearsExactlyOnce(t *testing.T, root, label, block string) {
 	t.Helper()
 	n, hitFiles := countOccurrencesInSkillTree(t, root, block)
-	switch {
-	case n == 1:
+	switch n {
+	case 1:
 		return
-	case n == 0:
+	case 0:
 		t.Errorf("verbatim block %q was not found anywhere under %s (expected exactly once).\n%s",
 			label, root, nearestCandidateDiff(t, root, block))
 	default:

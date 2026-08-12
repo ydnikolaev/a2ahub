@@ -67,7 +67,7 @@ func SurfaceKeys(t reflect.Type) []string {
 // the SAME call is walked only once, since its own key set cannot change
 // between visits.
 func walk(t reflect.Type, seen map[string]bool, visiting map[reflect.Type]bool) {
-	for t.Kind() == reflect.Ptr || t.Kind() == reflect.Slice || t.Kind() == reflect.Array || t.Kind() == reflect.Map {
+	for t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice || t.Kind() == reflect.Array || t.Kind() == reflect.Map {
 		t = t.Elem()
 	}
 	if t.Kind() != reflect.Struct {
