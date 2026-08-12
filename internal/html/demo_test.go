@@ -3,6 +3,7 @@ package html
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"os"
 	"reflect"
 	"sort"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	contractcore "github.com/ydnikolaev/a2ahub/internal/contract"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/operational"
 	"github.com/ydnikolaev/a2ahub/internal/workreport"
 )
@@ -160,19 +162,69 @@ func TestDemoFixtureParses(t *testing.T) {
 	}
 }
 
-func TestDemoPublishedCopyMatchesCanonicalFixture(t *testing.T) {
-	t.Parallel()
-	canonical, err := os.ReadFile("testdata/demo.json")
+// updateDemoCopy rewrites the published demo projection instead of asserting
+// it, the same `-update` idiom internal/livee2e/report_test.go uses for its
+// golden reports.
+var updateDemoCopy = flag.Bool("update-demo", false, "rewrite internal/html/demo-data.json from the derived demo model")
+
+// TestDemoPublishedCopyMatchesTheDerivedModel guards internal/html/demo-data.json,
+// which is the payload the SITE serves: web/scripts/generate-content.mjs reads
+// it, adds the three newest releases, and writes web/public/demo-data.json,
+// which the dashboard page fetches when it has no embedded snapshot.
+//
+// It used to be a byte copy of testdata/demo.json, and that made it the one
+// place the two dashboard surfaces could disagree. `a2a html --demo` renders
+// DemoData() — the fixture with deriveDemoOwnership, deriveDemoRowFacts and
+// deriveDemoDerivedState applied — while the site rendered the raw fixture,
+// which authors none of those. The local dashboard therefore knew a `closed`
+// question was terminal and the public one did not, from the same fixture, in
+// the release that added the field.
+//
+// So the published copy is now the DERIVED model, and the site consumes the
+// domain's answer without re-deriving it in JavaScript — which SKILL.md's
+// first rule forbids and which is how the browser got `retired` wrong before
+// 0.19.10. ReleaseNotes are stripped: DemoData() attaches the whole embedded
+// corpus (~380 KB of it), both consumers attach their own, and shipping a
+// third copy to the site would be dead weight on every page load.
+//
+// Regenerate with: go test ./internal/html/ -run PublishedCopy -update-demo
+func TestDemoPublishedCopyMatchesTheDerivedModel(t *testing.T) {
+	want, err := publishedDemoCopy()
 	if err != nil {
-		t.Fatalf("read canonical demo fixture: %v", err)
+		t.Fatalf("build published demo copy: %v", err)
+	}
+	if *updateDemoCopy {
+		if err := os.WriteFile("demo-data.json", want, 0o644); err != nil {
+			t.Fatalf("write published demo copy: %v", err)
+		}
+		t.Log("rewrote internal/html/demo-data.json")
+		return
 	}
 	published, err := os.ReadFile("demo-data.json")
 	if err != nil {
 		t.Fatalf("read published demo copy: %v", err)
 	}
-	if !bytes.Equal(canonical, published) {
-		t.Fatal("internal/html/demo-data.json drifted from testdata/demo.json")
+	if !bytes.Equal(want, published) {
+		t.Fatalf("internal/html/demo-data.json drifted from the derived demo model (%d bytes published, %d derived).\n"+
+			"This file is what the SITE serves — regenerate it:\n"+
+			"  go test ./internal/html/ -run PublishedCopy -update-demo", len(published), len(want))
 	}
+}
+
+// publishedDemoCopy is the derived demo model as the site consumes it: every
+// field DemoData() derives, minus the embedded release-note corpus that both
+// consumers replace with their own selection.
+func publishedDemoCopy() ([]byte, error) {
+	d, err := DemoData()
+	if err != nil {
+		return nil, err
+	}
+	d.ReleaseNotes = nil
+	b, err := MarshalData(d)
+	if err != nil {
+		return nil, err
+	}
+	return append(b, '\n'), nil
 }
 
 func TestDemoOperationalSnapshotUsesSharedProjection(t *testing.T) {
@@ -814,5 +866,190 @@ func TestDemoRowFactsAreDerivedNotAuthored(t *testing.T) {
 	}
 	if ours == 0 {
 		t.Fatal("no exchange row in the demo is ours to move on; the prompt button would never appear")
+	}
+}
+
+// TestDemoDerivedStateIsDerivedNotAuthored is the same guard as the two above,
+// one release further on, and it is the one that caught a WRONG claim rather
+// than a missing one.
+//
+// 0.19.10 put Outcome, Terminal and the three State* fields on every read
+// surface. Terminal carries no `omitempty`, so a fixture that predates it
+// serialises `terminal:false` on all 31 carriers — including a `closed`
+// question and a `cancelled` work_request, both terminal by the domain's own
+// answer. `a2a html --demo` and the site's dashboard-example page both render
+// this fixture, so the release whose headline is "the domain says what a state
+// means, and every surface reads the same answer" shipped a showcase saying
+// the opposite.
+//
+// Two halves, asserted separately because they fail differently: the fixture
+// must AUTHOR none of the five, and the derivation must agree with fold for
+// every carrier.
+func TestDemoDerivedStateIsDerivedNotAuthored(t *testing.T) {
+	t.Parallel()
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(demoJSON, &raw); err != nil {
+		t.Fatalf("demo fixture: %v", err)
+	}
+	for _, authored := range []string{`"outcome"`, `"terminal"`, `"stateSince"`, `"stateBy"`, `"stateEvent"`} {
+		if bytes.Contains(demoJSON, []byte(authored)) {
+			t.Errorf("testdata/demo.json authors %s — these five are derived by deriveDemoDerivedState "+
+				"from (type, state) and the fixture's own events. An authored copy is a second answer "+
+				"that can disagree with the domain, which is exactly the defect 0.19.10 removed.", authored)
+		}
+	}
+
+	d, err := DemoData()
+	if err != nil {
+		t.Fatalf("DemoData: %v", err)
+	}
+
+	carriers, terminal, outcomes := 0, 0, map[fold.Outcome]int{}
+	check := func(what, typ, state string, gotOutcome fold.Outcome, gotTerminal bool) {
+		carriers++
+		wantOutcome := fold.OutcomeOf(fold.Kind(typ), fold.State(state))
+		wantTerminal := fold.Terminal(fold.Kind(typ), fold.State(state))
+		if gotOutcome != wantOutcome {
+			t.Errorf("%s: %s/%s outcome=%q, domain says %q", what, typ, state, gotOutcome, wantOutcome)
+		}
+		if gotTerminal != wantTerminal {
+			t.Errorf("%s: %s/%s terminal=%v, domain says %v", what, typ, state, gotTerminal, wantTerminal)
+		}
+		if gotTerminal {
+			terminal++
+		}
+		outcomes[gotOutcome]++
+	}
+	for _, list := range [][]Item{d.Inbox, d.Outbox, d.Archive} {
+		for _, it := range list {
+			check("exchange row "+it.ID, it.Type, it.State, it.Outcome, it.Terminal)
+		}
+	}
+	for _, tv := range d.ThreadViews {
+		for _, oi := range tv.OpenItems {
+			check("open item "+oi.ID, oi.Type, oi.State, oi.Outcome, oi.Terminal)
+		}
+	}
+	for _, ad := range d.ArtifactDetails {
+		check("artifact detail "+ad.ID, ad.Type, ad.State, ad.Outcome, ad.Terminal)
+	}
+
+	if carriers == 0 {
+		t.Fatal("no carrier of the five fields in the demo — this test would pass vacuously")
+	}
+	// The fixture's job is to render every branch the dashboard has. A demo
+	// where nothing is terminal, or where every artifact has the same outcome,
+	// leaves the component's own `outcome === "settled"` / `"refused"`
+	// branches unexercised while still looking rich on screen.
+	if terminal == 0 {
+		t.Errorf("%d carriers and not one is terminal — the dashboard's terminal branch renders nowhere in the demo", carriers)
+	}
+	if len(outcomes) < 2 {
+		t.Errorf("every carrier has the same outcome (%v) — the demo cannot show what the field is FOR", outcomes)
+	}
+}
+
+// TestDemoStateOriginsAgreeAcrossBothEventSources holds the assumption
+// demoStateOrigins is built on: the fixture keeps events in two places — a
+// thread's transcript rows and an artifact detail's own list — and an artifact
+// present in both must be described identically by both. Without this the
+// index would silently prefer whichever source sorted last, and the demo would
+// name an event that contradicts the panel next to it.
+func TestDemoStateOriginsAgreeAcrossBothEventSources(t *testing.T) {
+	t.Parallel()
+	d, err := DemoData()
+	if err != nil {
+		t.Fatalf("DemoData: %v", err)
+	}
+
+	type seen struct{ at, by, claimed string }
+	fromTranscript := map[string]seen{}
+	for _, tv := range d.ThreadViews {
+		for _, row := range tv.Transcript {
+			if row.Kind != "event" || row.Event == nil {
+				continue
+			}
+			fromTranscript[tv.Space+"/"+row.Event.ULID] = seen{
+				at: row.At, by: demoActorSystem(row.Event.Actor), claimed: row.Event.ClaimedState,
+			}
+		}
+	}
+	overlap := 0
+	for _, ad := range d.ArtifactDetails {
+		for _, e := range ad.Events {
+			other, ok := fromTranscript[ad.Space+"/"+e.ULID]
+			if !ok {
+				continue
+			}
+			overlap++
+			if other.at != e.At || other.by != e.ActorSystem || other.claimed != e.ClaimedState {
+				t.Errorf("event %s is described twice and differently: transcript %+v, detail {at:%s by:%s claimed:%s}",
+					e.ULID, other, e.At, e.ActorSystem, e.ClaimedState)
+			}
+		}
+	}
+	if overlap == 0 {
+		t.Log("no event appears in both sources; this test is currently vacuous but guards the merge as the fixture grows")
+	}
+}
+
+// TestDemoStateOriginNamesAnEventThatProducedThatState checks the derivation
+// against the fixture rather than against itself: whatever event
+// demoStateOrigins credits with a row's current state must be an event the
+// fixture actually states, and must claim exactly that state. A row whose
+// origin claims a DIFFERENT state means the fixture disagrees with itself, and
+// the dashboard would print a confident "since / by" under the wrong state.
+func TestDemoStateOriginNamesAnEventThatProducedThatState(t *testing.T) {
+	t.Parallel()
+	d, err := DemoData()
+	if err != nil {
+		t.Fatalf("DemoData: %v", err)
+	}
+
+	claimed := map[string]string{} // space/ULID -> claimed_state
+	for _, tv := range d.ThreadViews {
+		for _, row := range tv.Transcript {
+			if row.Kind == "event" && row.Event != nil {
+				claimed[tv.Space+"/"+row.Event.ULID] = row.Event.ClaimedState
+			}
+		}
+	}
+	for _, ad := range d.ArtifactDetails {
+		for _, e := range ad.Events {
+			claimed[ad.Space+"/"+e.ULID] = e.ClaimedState
+		}
+	}
+
+	withOrigin := 0
+	for _, list := range [][]Item{d.Inbox, d.Outbox, d.Archive} {
+		for _, it := range list {
+			if it.StateEvent == "" {
+				// Honest absence: the fixture states no state-moving event for
+				// this artifact, the same answer internal/cache/mirror.go gives
+				// for an artifact with no events. StateSince and StateBy must be
+				// absent with it, never one without the others.
+				if !it.StateSince.IsZero() || it.StateBy != "" {
+					t.Errorf("%s: no StateEvent but StateSince=%v StateBy=%q — a partial origin is not a state the product can produce",
+						it.ID, it.StateSince, it.StateBy)
+				}
+				continue
+			}
+			withOrigin++
+			got, ok := claimed[it.Space+"/"+it.StateEvent]
+			if !ok {
+				t.Errorf("%s: StateEvent %q names an event the fixture does not state", it.ID, it.StateEvent)
+				continue
+			}
+			if got != it.State {
+				t.Errorf("%s is %q but its StateEvent %q claims %q", it.ID, it.State, it.StateEvent, got)
+			}
+			if it.StateBy == "" {
+				t.Errorf("%s: StateEvent %q names no system — StateBy is the participant that moved it", it.ID, it.StateEvent)
+			}
+		}
+	}
+	if withOrigin == 0 {
+		t.Fatal("no exchange row in the demo carries a state origin — the since/by panel renders empty everywhere")
 	}
 }

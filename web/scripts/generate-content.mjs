@@ -23,6 +23,29 @@ function designArray(file, name) {
   return JSON.parse(match[1]);
 }
 
+// The .md routes are a projection of the SAME design source the .html page
+// renders, and prose that is retyped here instead of read from there forks
+// silently. It did: this generator hard-coded the roadmap's proposal as
+// "verified data transfer between agents and systems … no release target"
+// while the design source had long since moved that capability into SHIPPED
+// ("Delivery and verdict close the data loop") and renamed the proposal to the
+// autonomous loop. roadmap.md therefore told every agent reading the text
+// projection that a released capability had no release target, on the same
+// page whose Shipped list said it had — and roadmap.html, reading the source,
+// was right the whole time.
+//
+// designProse throws on a stale needle for the same reason build-local-dashboard.mjs's
+// `must` does: String.match returning null must be a build failure, never a
+// quiet fallback to yesterday's copy.
+function designProse(file, section, tag, what) {
+  const source = read(join(webRoot, 'design-source', file));
+  const start = source.indexOf(section);
+  if (start < 0) throw new Error(`missing design-source section ${section} in ${file}`);
+  const match = source.slice(start).match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`));
+  if (!match) throw new Error(`missing <${tag}> for ${what} after ${section} in ${file}`);
+  return match[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+}
+
 const manifest = JSON.parse(read(join(repoRoot, 'skill/a2ahub/docs-manifest.json')));
 const site = JSON.parse(read(join(webRoot, 'content/site.json')));
 const routeConfig = JSON.parse(read(join(webRoot, 'content/routes.json')));
@@ -85,6 +108,8 @@ const guideFeatures = designArray('14-local-dashboard-v4.dc.html', 'GUIDE_FEATUR
 const roadmapShipped = designArray('19-roadmap-v4.dc.html', 'SHIPPED');
 const roadmapGates = designArray('19-roadmap-v4.dc.html', 'GATES');
 const roadmapExploring = designArray('19-roadmap-v4.dc.html', 'EXPLORING');
+const roadmapProposalTitle = designProse('19-roadmap-v4.dc.html', '{{ showProposal }}', 'h2', 'the proposal heading');
+const roadmapProposalLede = designProse('19-roadmap-v4.dc.html', '{{ showProposal }}', 'p', 'the proposal summary');
 
 const currentIssuesPath = join(repoRoot, 'releasenotes/current/known-issues.yaml');
 let currentIssues = [];
@@ -97,7 +122,17 @@ try {
 
 const securitySource = read(join(repoRoot, 'SECURITY.md'));
 const seedExport = read(join(webRoot, 'content/a2a-seed-export.md'));
-const demo = JSON.parse(read(join(repoRoot, 'internal/html/testdata/demo.json')));
+// The DERIVED demo model, not the raw fixture. testdata/demo.json states the
+// facts; internal/html/demo-data.json is what DemoData() makes of them, with
+// ownership, row clocks and — since 0.19.10 — outcome/terminal/state-provenance
+// filled in from the domain (internal/html/demo.go). Reading the raw fixture
+// here is what made the public dashboard and `a2a html --demo` disagree about
+// the same artifact: the local one knew a `closed` question was terminal and
+// this one did not. Deriving it a second time in JavaScript is not the
+// alternative — a browser deciding what a state means is the defect 0.19.10
+// removed. TestDemoPublishedCopyMatchesTheDerivedModel keeps this file honest;
+// regenerate with `go test ./internal/html/ -run PublishedCopy -update-demo`.
+const demo = JSON.parse(read(join(repoRoot, 'internal/html/demo-data.json')));
 const publicDemo = JSON.parse(JSON.stringify(demo));
 publicDemo.releaseNotes = releases.slice(0, 3).map((release, index) => ({
   ...release,
@@ -192,7 +227,7 @@ const featuresMD = `# How a2ahub fits together\n\nThis page is the public projec
 const changelogMD = `# Changelog\n\nPublished releases, newest first.\n\n${releases.map((release) => `## v${release.version} — ${release.released}\n\n${release.headline}\n\n${release.changes.map((change) => `### ${change.subject}\n\n**${change.kind} · ${change.impact}**\n\n${change.detail.trim()}${change.action?.scope && change.action.scope !== 'none' ? `\n\nAction scope: ${change.action.scope}. ${change.action.why ?? ''}` : ''}`).join('\n\n')}`).join('\n\n')}\n`;
 const reliabilityMD = `# Reliability\n\nReliability is a chain of bounded evidence, not a blanket badge.\n\n- Schemas validate document shape.\n- The fold validates lifecycle and authority.\n- Reference resolution validates causal links.\n- Git and pull requests preserve the inspectable record.\n- Release verification checks the binary and published evidence.\n- Missing scope is reported as unavailable, never green.\n\n## Latest release evidence\n\n${releases[0]?.headline ?? 'No published release was available at build time.'}\n\n${releases[0]?.changes?.map((change) => `- **${change.subject}:** ${change.detail.trim()}`).join('\n') ?? ''}\n`;
 const installMD = `# Install a2a\n\nThe installer resolves the current GitHub Releases \`latest\` channel and verifies the downloaded binary.\n\n\`\`\`sh\n${site.product.install}\n\`\`\`\n\nThen run:\n\n\`\`\`sh\na2a version\na2a init --system <system-id> --space <space-repo-url>\na2a connect <space-repo-url>\na2a doctor\n\`\`\`\n\nFor an agent-led setup, [download the Sporo seed](${canonical}/setup/a2a.md).\n`;
-const roadmapMD = `# Roadmap\n\n## Shipped\n\n${roadmapShipped.map(([title, body]) => `### ${title}\n\n${body}`).join('\n\n')}\n\n## Proposal — verified data transfer between agents and systems\n\nThis proposal remains gated; it has no release target.\n\n${roadmapGates.map(([title, body]) => `- **${title}:** ${body}`).join('\n')}\n\n## Exploring\n\n${roadmapExploring.map(([title, body]) => `### ${title}\n\n${body}`).join('\n\n')}\n`;
+const roadmapMD = `# Roadmap\n\n## Shipped\n\n${roadmapShipped.map(([title, body]) => `### ${title}\n\n${body}`).join('\n\n')}\n\n## ${roadmapProposalTitle}\n\n${roadmapProposalLede}\n\nThis proposal remains gated; it has no release target.\n\n${roadmapGates.map(([title, body]) => `- **${title}:** ${body}`).join('\n')}\n\n## Exploring\n\n${roadmapExploring.map(([title, body]) => `### ${title}\n\n${body}`).join('\n\n')}\n`;
 const dashboardMD = `# Dashboard example\n\nSynthetic demo data — no live services. This public page is a read-only projection of the same canonical fixture used by \`a2a html --demo\`.\n\n[Open the interactive dashboard](${canonical}/dashboard.html).\n`;
 const dashboardExampleMD = `# How to read the a2ahub dashboard\n\nThe guided public example explains the same read-only components that a local \`a2a html\` build uses. Its data is synthetic: it demonstrates spaces, typed work, threads, contracts, versions and bounded freshness without connecting to a live service.\n\nThe dashboard is an explanation surface, not a control room. Agents continue the protocol through the CLI or MCP; people use the dashboard to understand current evidence, exceptions and history.\n\n- [Open the guided example](${canonical}/dashboard-example.html)\n- [Open the full synthetic demo](${canonical}/dashboard.html)\n- [Read the protocol overview](${canonical}/docs/overview.md)\n`;
 const notFoundMD = `# Not found\n\nThe requested route does not exist. Continue with the [product overview](${canonical}/), [documentation](${canonical}/docs.html), or the [dashboard demo](${canonical}/dashboard.html).\n`;

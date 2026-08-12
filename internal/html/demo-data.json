@@ -441,6 +441,7 @@
         "title": "Prevent duplicate payment capture after a worker retry"
       },
       "yourMove": true,
+      "waitingOthers": [],
       "members": [
         {
           "id": "XW-checkout-20260728-c3d4",
@@ -487,7 +488,8 @@
           "to": "XW-checkout-20260728-c3d4",
           "kind": "ref"
         }
-      ]
+      ],
+      "settled": false
     },
     {
       "id": "thread:atlas-20260727-r7s8",
@@ -504,6 +506,9 @@
         "title": "Catalog must provide a product-feed v4 migration path"
       },
       "yourMove": true,
+      "waitingOthers": [
+        "catalog"
+      ],
       "members": [
         {
           "id": "XR-atlas-catalog-v4",
@@ -550,7 +555,8 @@
           "to": "XW-atlas-20260727-r7s8",
           "kind": "parent"
         }
-      ]
+      ],
+      "settled": false
     },
     {
       "id": "thread:support-20260729-q5n6",
@@ -567,6 +573,7 @@
         "title": "Redact message bodies before case events leave Support"
       },
       "yourMove": true,
+      "waitingOthers": [],
       "members": [
         {
           "id": "XD-support-20260725-s3t4",
@@ -629,7 +636,8 @@
           "to": "XD-support-20260725-s3t4",
           "kind": "ref"
         }
-      ]
+      ],
+      "settled": false
     },
     {
       "id": "thread:legacycrm-20260709-x3y4",
@@ -643,14 +651,15 @@
       "lastActivity": "2w",
       "opener": {
         "id": "XH-legacycrm-20260709-x3y4",
-        "title": "</script><img src=x onerror=alert('rendering-test')>"
+        "title": "\u003c/script\u003e\u003cimg src=x onerror=alert('rendering-test')\u003e"
       },
       "yourMove": true,
+      "waitingOthers": [],
       "members": [
         {
           "id": "XH-legacycrm-20260709-x3y4",
           "type": "handoff",
-          "title": "</script><img src=x onerror=alert('rendering-test')>",
+          "title": "\u003c/script\u003e\u003cimg src=x onerror=alert('rendering-test')\u003e",
           "from": "legacycrm",
           "to": [
             "atlas"
@@ -676,7 +685,8 @@
           "to": "XH-legacycrm-20260709-x3y4",
           "kind": "ref"
         }
-      ]
+      ],
+      "settled": false
     },
     {
       "id": "thread:redaction-fixture-closed",
@@ -693,7 +703,7 @@
         "title": "Which fixture proves attachment names are redacted?"
       },
       "yourMove": false,
-      "settled": true,
+      "waitingOthers": [],
       "members": [
         {
           "id": "XQ-atlas-20260726-t5v6",
@@ -707,7 +717,8 @@
           "seq": 701
         }
       ],
-      "links": []
+      "links": [],
+      "settled": true
     }
   ],
   "inbox": [
@@ -727,14 +738,31 @@
       "thread": "thread:checkout-20260728-c3d4",
       "age": "5h",
       "neededBy": "2026-07-31",
+      "createdAt": "2026-07-30T12:05:00Z",
+      "movedAt": "2026-07-30T12:05:00Z",
       "new": true,
       "severity": "normal",
       "reasons": [
         "addressed-no-ack"
       ],
-      "pendingMerge": false,
-      "syncStale": false,
-      "description": "Checkout needs one stable retry rule before it can finish the duplicate-capture fix."
+      "yourMove": true,
+      "description": "Checkout needs one stable retry rule before it can finish the duplicate-capture fix.",
+      "prompt": {
+        "moves": [
+          "acknowledge",
+          "decline"
+        ],
+        "askFirst": [
+          "decline"
+        ],
+        "doc": "reference/authoring/question.md",
+        "loop": "loops/receive.md §8.3 (receive loop)"
+      },
+      "outcome": "open",
+      "terminal": false,
+      "stateSince": "2026-07-30T11:57:00Z",
+      "stateBy": "checkout",
+      "stateEvent": "01K1A2B3C4D5E6F7G8H9J0K1M9"
     },
     {
       "space": "checkout-core",
@@ -752,15 +780,37 @@
       "thread": "thread:checkout-20260728-c3d4",
       "age": "1d",
       "neededBy": "2026-07-29",
+      "createdAt": "2026-07-29T17:05:00Z",
+      "movedAt": "2026-07-29T17:05:00Z",
       "new": false,
       "severity": "blocking",
       "reasons": [
         "p1-or-blocking-open",
         "overdue-on-me"
       ],
-      "pendingMerge": false,
-      "syncStale": false,
-      "description": "A worker retry can issue a second capture after the first provider call succeeds but the acknowledgement is lost."
+      "yourMove": true,
+      "description": "A worker retry can issue a second capture after the first provider call succeeds but the acknowledgement is lost.",
+      "prompt": {
+        "moves": [
+          "decline",
+          "block",
+          "respond"
+        ],
+        "askFirst": [
+          "decline",
+          "block"
+        ],
+        "doc": "reference/authoring/work_request.md",
+        "loop": "loops/receive.md §8.3 (receive loop)",
+        "drafts": [
+          "reference/authoring/response.md"
+        ]
+      },
+      "outcome": "open",
+      "terminal": false,
+      "stateSince": "2026-07-28T09:22:00Z",
+      "stateBy": "atlas",
+      "stateEvent": "01K1A2B3C4D5E6F7G8H9J0K1M5"
     },
     {
       "space": "customer-ops",
@@ -777,14 +827,29 @@
       "gatePending": false,
       "thread": "thread:support-20260729-q5n6",
       "age": "1d",
+      "createdAt": "2026-07-29T17:05:00Z",
+      "movedAt": "2026-07-29T17:05:00Z",
       "new": false,
       "severity": "blocking",
       "reasons": [
         "p1-or-blocking-open"
       ],
-      "pendingMerge": false,
       "syncStale": true,
-      "description": "Support has delivered the v2 schema, fixtures and redaction proof; Atlas must verify the handoff."
+      "yourMove": true,
+      "description": "Support has delivered the v2 schema, fixtures and redaction proof; Atlas must verify the handoff.",
+      "prompt": {
+        "moves": [
+          "verify-pass",
+          "verify-fail"
+        ],
+        "doc": "reference/authoring/handoff.md",
+        "loop": "loops/receive.md §8.3 (receive loop)"
+      },
+      "outcome": "open",
+      "terminal": false,
+      "stateSince": "2026-07-29T05:45:00Z",
+      "stateBy": "atlas",
+      "stateEvent": "01K4A2B3C4D5E6F7G8H9J0K1MG"
     },
     {
       "space": "checkout-core",
@@ -802,14 +867,20 @@
       "gatePending": false,
       "thread": "thread:catalog-20260728-f6g7",
       "age": "2d",
+      "createdAt": "2026-07-28T17:05:00Z",
+      "movedAt": "2026-07-28T17:05:00Z",
       "new": true,
       "severity": "normal",
       "reasons": [
         "addressed-no-ack"
       ],
-      "pendingMerge": false,
-      "syncStale": false,
-      "description": "Registered v3 consumers must move to XC-catalog-product-feed@4.0.0 before the sunset date."
+      "yourMove": false,
+      "description": "Registered v3 consumers must move to XC-catalog-product-feed@4.0.0 before the sunset date.",
+      "outcome": "open",
+      "terminal": false,
+      "stateSince": "2026-07-28T07:01:00Z",
+      "stateBy": "catalog",
+      "stateEvent": "01K9A2B3C4D5E6F7G8H9J0K1M2"
     },
     {
       "space": "customer-ops",
@@ -827,14 +898,18 @@
       "gatePending": false,
       "thread": "thread:comms-20260730-r7t8",
       "age": "5h",
+      "createdAt": "2026-07-30T12:05:00Z",
+      "movedAt": "2026-07-30T12:05:00Z",
       "new": true,
       "severity": "attention",
       "reasons": [
         "addressed-no-ack"
       ],
-      "pendingMerge": false,
       "syncStale": true,
-      "description": "A routine liveness announcement with multilingual content for layout and escaping coverage."
+      "yourMove": false,
+      "description": "A routine liveness announcement with multilingual content for layout and escaping coverage.",
+      "outcome": "open",
+      "terminal": false
     },
     {
       "space": "customer-ops",
@@ -851,18 +926,21 @@
       "gatePending": false,
       "thread": "thread:support-20260718-b3c4",
       "age": "2d",
+      "createdAt": "2026-07-28T17:05:00Z",
+      "movedAt": "2026-07-28T17:05:00Z",
       "new": false,
       "severity": "attention",
-      "reasons": [],
-      "pendingMerge": false,
       "syncStale": true,
-      "description": "Customer case updates and redacted conversation references."
+      "yourMove": false,
+      "description": "Customer case updates and redacted conversation references.",
+      "outcome": "open",
+      "terminal": false
     },
     {
       "space": "customer-ops",
       "id": "XH-legacycrm-20260709-x3y4",
       "type": "handoff",
-      "title": "</script><img src=x onerror=alert('rendering-test')>",
+      "title": "\u003c/script\u003e\u003cimg src=x onerror=alert('rendering-test')\u003e",
       "from": "legacycrm",
       "to": [
         "atlas"
@@ -873,14 +951,28 @@
       "gatePending": false,
       "thread": "thread:legacycrm-20260709-x3y4",
       "age": "3w",
+      "createdAt": "2026-07-09T17:05:00Z",
+      "movedAt": "2026-07-09T17:05:00Z",
       "new": false,
       "severity": "attention",
       "reasons": [
         "addressed-no-ack"
       ],
-      "pendingMerge": false,
       "syncStale": true,
-      "description": "This literal hostile-looking title is data. It must render as text and never execute."
+      "yourMove": true,
+      "description": "This literal hostile-looking title is data. It must render as text and never execute.",
+      "prompt": {
+        "moves": [
+          "acknowledge"
+        ],
+        "doc": "reference/authoring/handoff.md",
+        "loop": "loops/receive.md §8.3 (receive loop)"
+      },
+      "outcome": "open",
+      "terminal": false,
+      "stateSince": "2026-07-09T10:01:00Z",
+      "stateBy": "legacycrm",
+      "stateEvent": "01K6A2B3C4D5E6F7G8H9J0K1M2"
     }
   ],
   "outbox": [
@@ -900,14 +992,32 @@
       "thread": "thread:atlas-20260727-r7s8",
       "age": "9h",
       "neededBy": "2026-08-15",
+      "createdAt": "2026-07-30T08:05:00Z",
+      "movedAt": "2026-07-30T08:05:00Z",
       "new": true,
       "severity": "normal",
       "reasons": [
         "state-changed-since-cursor"
       ],
-      "pendingMerge": false,
-      "syncStale": false,
-      "description": "Catalog delivered a migration plan; Atlas must verify the attached response and close or dispute."
+      "yourMove": true,
+      "description": "Catalog delivered a migration plan; Atlas must verify the attached response and close or dispute.",
+      "prompt": {
+        "moves": [
+          "close",
+          "supersede"
+        ],
+        "askFirst": [
+          "close",
+          "supersede"
+        ],
+        "doc": "reference/authoring/work_request.md",
+        "loop": "loops/send.md §8.2 (send loop)"
+      },
+      "outcome": "open",
+      "terminal": false,
+      "stateSince": "2026-07-30T07:56:00Z",
+      "stateBy": "catalog",
+      "stateEvent": "01K3A2B3C4D5E6F7G8H9J0K1MC"
     },
     {
       "space": "checkout-core",
@@ -925,14 +1035,17 @@
       "gatePending": false,
       "thread": "thread:atlas-20260720-w3x4",
       "age": "1w",
+      "createdAt": "2026-07-23T17:05:00Z",
+      "movedAt": "2026-07-23T17:05:00Z",
       "new": false,
       "severity": "normal",
       "reasons": [
         "state-changed-since-cursor"
       ],
-      "pendingMerge": false,
-      "syncStale": false,
-      "description": "Checkout approved; Atlas is waiting for Fulfillment to complete the decision quorum."
+      "yourMove": false,
+      "description": "Checkout approved; Atlas is waiting for Fulfillment to complete the decision quorum.",
+      "outcome": "open",
+      "terminal": false
     },
     {
       "space": "checkout-core",
@@ -949,14 +1062,17 @@
       "gatePending": false,
       "thread": "thread:atlas-20260722-y5z6",
       "age": "1w",
+      "createdAt": "2026-07-23T17:05:00Z",
+      "movedAt": "2026-07-23T17:05:00Z",
       "new": false,
       "severity": "normal",
       "reasons": [
         "stale-sla"
       ],
-      "pendingMerge": false,
-      "syncStale": false,
-      "description": "Comms acknowledged the requirement; Atlas is waiting for contract evidence before marking it satisfied."
+      "yourMove": false,
+      "description": "Comms acknowledged the requirement; Atlas is waiting for contract evidence before marking it satisfied.",
+      "outcome": "open",
+      "terminal": false
     },
     {
       "space": "checkout-core",
@@ -976,14 +1092,20 @@
       "gatePending": false,
       "thread": "thread:atlas-20260730-d9e2",
       "age": "4h",
+      "createdAt": "2026-07-30T13:05:00Z",
+      "movedAt": "2026-07-30T13:05:00Z",
       "new": true,
       "severity": "normal",
       "reasons": [
         "state-changed-since-cursor"
       ],
-      "pendingMerge": false,
-      "syncStale": false,
-      "description": "The v2 payload is now default; participating systems should report regressions in the linked thread."
+      "yourMove": false,
+      "description": "The v2 payload is now default; participating systems should report regressions in the linked thread.",
+      "outcome": "open",
+      "terminal": false,
+      "stateSince": "2026-07-30T13:05:00Z",
+      "stateBy": "atlas",
+      "stateEvent": "01K9D9E2F0A1B2C3D4E5F60718"
     },
     {
       "space": "customer-ops",
@@ -1001,15 +1123,19 @@
       "thread": "thread:atlas-20260717-h5j6",
       "age": "1w",
       "neededBy": "2026-07-24",
+      "createdAt": "2026-07-23T17:05:00Z",
+      "movedAt": "2026-07-23T17:05:00Z",
       "new": false,
       "severity": "attention",
       "reasons": [
         "stale-sla",
         "needed-by-passed"
       ],
-      "pendingMerge": false,
       "syncStale": true,
-      "description": "Support acknowledged the question but has not attached an answer; the requested date has passed."
+      "yourMove": false,
+      "description": "Support acknowledged the question but has not attached an answer; the requested date has passed.",
+      "outcome": "open",
+      "terminal": false
     }
   ],
   "archive": [
@@ -1029,13 +1155,19 @@
       "thread": "thread:redaction-fixture-closed",
       "age": "4d",
       "neededBy": "2026-07-27",
+      "createdAt": "2026-07-26T17:05:00Z",
+      "movedAt": "2026-07-26T17:05:00Z",
       "new": false,
       "severity": "normal",
-      "reasons": [],
-      "pendingMerge": false,
       "syncStale": true,
       "archived": true,
-      "description": "Support supplied the requested fixture and Atlas closed the question."
+      "yourMove": false,
+      "description": "Support supplied the requested fixture and Atlas closed the question.",
+      "outcome": "settled",
+      "terminal": true,
+      "stateSince": "2026-07-27T11:30:00Z",
+      "stateBy": "atlas",
+      "stateEvent": "01K4A2B3C4D5E6F7G8H9J0K1MN"
     },
     {
       "space": "customer-ops",
@@ -1053,13 +1185,19 @@
       "thread": "thread:legacycrm-20260709-x3y4",
       "age": "2w",
       "neededBy": "2026-07-18",
+      "createdAt": "2026-07-16T17:05:00Z",
+      "movedAt": "2026-07-16T17:05:00Z",
       "new": false,
       "severity": "normal",
-      "reasons": [],
-      "pendingMerge": false,
       "syncStale": true,
       "archived": true,
-      "description": "The bridge was cancelled after the archive path replaced the temporary replay plan."
+      "yourMove": false,
+      "description": "The bridge was cancelled after the archive path replaced the temporary replay plan.",
+      "outcome": "withdrawn",
+      "terminal": true,
+      "stateSince": "2026-07-16T14:00:00Z",
+      "stateBy": "atlas",
+      "stateEvent": "01K6A2B3C4D5E6F7G8H9J0K1P2"
     }
   ],
   "contracts": [
@@ -1104,6 +1242,7 @@
                 "drift": "retired"
               }
             ],
+            "totalDocumentCount": 0,
             "documents": [
               {
                 "path": "contracts/XC-atlas-order-envelope/1.5.0/order-envelope.schema.json",
@@ -1176,6 +1315,7 @@
             "publishedAt": "2026-01-20T11:15:00Z",
             "publishedBy": "atlas",
             "changeSummary": "Introduced the canonical order object and removed the legacy provider note.",
+            "totalDocumentCount": 0,
             "documents": [
               {
                 "path": "contracts/XC-atlas-order-envelope/2.0.0/order-envelope.schema.json",
@@ -1235,6 +1375,7 @@
             "publishedAt": "2026-05-14T08:40:00Z",
             "publishedBy": "atlas",
             "changeSummary": "Added optional fulfillment routing and documented its fallback behavior.",
+            "totalDocumentCount": 0,
             "documents": [
               {
                 "path": "contracts/XC-atlas-order-envelope/2.1.0/order-envelope.schema.json",
@@ -1304,6 +1445,7 @@
                 "drift": "current"
               }
             ],
+            "totalDocumentCount": 0,
             "documents": [
               {
                 "path": "contracts/XC-atlas-order-envelope/2.2.0/order-envelope.schema.json",
@@ -1436,7 +1578,8 @@
           "state": "published",
           "detail": {
             "status": "unavailable",
-            "unavailableReason": "This version was published before carried-set history was enabled; the contract summary is available, but its immutable file package cannot be reconstructed from this snapshot."
+            "unavailableReason": "This version was published before carried-set history was enabled; the contract summary is available, but its immutable file package cannot be reconstructed from this snapshot.",
+            "totalDocumentCount": 0
           }
         },
         {
@@ -1577,231 +1720,7 @@
       "source": "cache-index"
     }
   ],
-  "releaseNotes": [
-    {
-      "version": "0.16.3",
-      "released": "2026-07-30",
-      "headline": "Statusline refresh now survives the one-shot command, while the merge gate becomes deterministic and cache-aware",
-      "changes": [
-        {
-          "id": "RN-01603-1",
-          "kind": "fix",
-          "impact": "normal",
-          "subject": "A stale statusline launches one durable refresh for the next render",
-          "detail": "The prompt-facing statusline still reads local cache only and keeps its existing text, JSON, and exit-code contract. When that cache is stale, it now atomically claims a short-lived local lease and starts the canonical `a2a sync` command as a detached process. The refresh can finish after the one-shot statusline process exits, concurrent prompt renders do not start a herd of duplicate syncs even while recovering an expired lease, and the next render sees the refreshed mirror. The previous in-process goroutine could be terminated by normal CLI exit or race a test fixture's cleanup.",
-          "affects": [
-            "statusline",
-            "local cache",
-            "sync"
-          ],
-          "action": {
-            "scope": "local",
-            "why": "Update if statusline is embedded in a shell or agent prompt; no config change is required.",
-            "detect": [
-              "a2a version"
-            ],
-            "run": [
-              "a2a update --yes"
-            ]
-          }
-        },
-        {
-          "id": "RN-01603-2",
-          "kind": "fix",
-          "impact": "low",
-          "subject": "The ordinary CI gate no longer depends on ambient Git identity or a cold duplicate Go cache",
-          "detail": "Git-backed tests now receive a process-local fixture identity, the checkout-owned validation runner has a documented scoped-test entrypoint, GitHub's setup-go cache feeds the exact build cache consumed by `make check`, and workflow syntax validation fails closed with pinned actionlint. The public-only classification backstop no longer rejects the private source repository, and CodeQL has the read scope its analyze step needs under restrictive workflow permissions. CodeQL execution is scoped to the public repository where code scanning is enabled; private CI keeps its gosec, govulncheck, and gitleaks gates without spending minutes on an upload GitHub will refuse. Lifecycle wire parity retains every case while reusing one immutable repository fixture.",
-          "affects": [
-            "contributors",
-            "GitHub Actions",
-            "make check"
-          ],
-          "action": {
-            "scope": "none",
-            "why": "No user action is required; maintainers get faster and more trustworthy merge evidence."
-          }
-        },
-        {
-          "id": "RN-01603-3",
-          "kind": "fix",
-          "impact": "normal",
-          "subject": "Standing known issues no longer disappear on the next update",
-          "detail": "Current limitations now live once in a schema-validated standing list instead of being copied into every version file. `a2a whatsnew`, its MCP twin, the HTML release view, and the authored GitHub Release body append that list independently of the selected version range, including when there are no newer change entries. The existing release-array machine shape remains unchanged, and a resolved issue is removed in one place.",
-          "affects": [
-            "a2a whatsnew",
-            "a2a_whatsnew",
-            "release notes",
-            "release workflow"
-          ],
-          "action": {
-            "scope": "none",
-            "why": "No user action is required; current limitations now remain visible until their fixes actually ship."
-          }
-        },
-        {
-          "id": "RN-01603-4",
-          "kind": "policy",
-          "impact": "low",
-          "subject": "The v0.16.3 runtime candidate passed all 50 declared live cells",
-          "detail": "The immutable public runtime candidate d6418b926ec5363416ef8b42a572788e7e7e009a completed the full protected GitHub matrix with two independent identities: 50 pass, zero fail, zero timed-out, and zero not-run cells across CLI, MCP, lifecycle, contracts, authorization boundaries, failure recovery, thread reconstruction, and space migration. The audit observed 179 workflow runs; its two red runs were the expected and explicitly claimed cross-section boundary probes. The final tagged tree differs from that runtime candidate only by this evidence statement and the matching README baseline; local gates, release preflight, renderer checks, and the filtered-public leak proof are repeated on the exact tag candidate.",
-          "affects": [
-            "release confidence",
-            "GitHub live E2E"
-          ],
-          "action": {
-            "scope": "none",
-            "why": "No user action is required; this states the bounded evidence actually collected and does not claim every possible state was tested."
-          }
-        },
-        {
-          "id": "KI-MACOS-ADHOC-SIGNING",
-          "kind": "known-issue",
-          "impact": "normal",
-          "subject": "The macOS companion remains ad-hoc signed and may require manual approval",
-          "detail": "The release cohort authenticates the exact macOS app and ad-hoc signing protects its bundle integrity, but the app is not identified or notarized through a paid Apple Developer account. A quarantined download may require one explicit System Settings → Privacy & Security → Open Anyway decision. Interactive Notification Center, Focus, Login Items, VS Code trust/profile, and remote-window checks remain release-environment evidence rather than claims inferred from hermetic tests.",
-          "affects": [
-            "macOS notifications",
-            "VS Code notifications"
-          ],
-          "action": {
-            "scope": "none",
-            "why": "Keep Gatekeeper enabled and approve only the A2A Notifier version obtained through the verified a2a release cohort."
-          }
-        }
-      ]
-    },
-    {
-      "version": "0.16.2",
-      "released": "2026-07-30",
-      "headline": "The authored GitHub Release body now completes the coordinated release instead of stopping it on provider newline normalization",
-      "changes": [
-        {
-          "id": "RN-01602-1",
-          "kind": "fix",
-          "impact": "normal",
-          "subject": "Release-body verification accepts only GitHub's terminal newline normalization",
-          "detail": "v0.16.1 successfully published the 38 Go release assets and the complete authored release body, then its new post-publish assertion rejected one extra terminal newline added by GoReleaser. The intentional fail-closed dependency stopped the macOS, VS Code, and coordinated-cohort jobs before they could upload their eight remaining assets. The verifier now compares every content byte while normalizing only trailing CR/LF bytes, reads the published body through a one-megabyte bounded stdin, and still rejects any changed heading, sentence, command, or link. v0.16.2 reruns the complete release cohort from the same product behavior.",
-          "affects": [
-            "GitHub Releases",
-            "release workflow",
-            "macOS notifications",
-            "VS Code notifications"
-          ],
-          "action": {
-            "scope": "local",
-            "why": "Use v0.16.2 rather than the incomplete v0.16.1 cohort, especially when installing the macOS or VS Code notification companion.",
-            "detect": [
-              "a2a version"
-            ],
-            "run": [
-              "a2a update --yes"
-            ]
-          }
-        },
-        {
-          "id": "RN-01602-2",
-          "kind": "known-issue",
-          "impact": "normal",
-          "subject": "The macOS companion remains ad-hoc signed and may require manual approval",
-          "detail": "The release cohort authenticates the exact macOS app and ad-hoc signing protects its bundle integrity, but the app is not identified or notarized through a paid Apple Developer account. A quarantined download may require one explicit System Settings → Privacy & Security → Open Anyway decision. Interactive Notification Center, Focus, Login Items, VS Code trust/profile, and remote-window checks remain release-environment evidence rather than claims inferred from hermetic tests.",
-          "affects": [
-            "macOS notifications",
-            "VS Code notifications"
-          ],
-          "action": {
-            "scope": "none",
-            "why": "Keep Gatekeeper enabled and approve only the A2A Notifier version obtained through the verified a2a release cohort."
-          }
-        }
-      ]
-    },
-    {
-      "version": "0.16.1",
-      "released": "2026-07-30",
-      "headline": "Contract history documentation now matches the shipped Git-backed behavior",
-      "changes": [
-        {
-          "id": "RN-01601-1",
-          "kind": "fix",
-          "impact": "normal",
-          "subject": "Contract digests and version history no longer require unstable paths or a future commit SHA",
-          "detail": "The normative contract now states the behavior the product already implements: a contract digest is computed from contract-root-relative paths plus file-byte hashes, so identical contract trees have the same identity in different checkouts. An `id@version` lookup walks committed descriptor history and derives the introducing commit from Git rather than expecting a publish event to predict the SHA of its own future commit. The optional event `commit` field remains readable for legacy and reserved data, but current writers do not populate it and current version resolution does not depend on it. Existing spaces and artifacts require no migration.",
-          "affects": [
-            "contract digest",
-            "contract version history",
-            "event/v1 schema metadata"
-          ],
-          "action": {
-            "scope": "none",
-            "why": "This release corrects the public protocol description and schema metadata to match existing runtime behavior; commands, stored data, and compatibility are unchanged."
-          }
-        },
-        {
-          "id": "RN-01601-2",
-          "kind": "fix",
-          "impact": "normal",
-          "subject": "The project front door now explains the work a2ahub makes possible",
-          "detail": "The README no longer opens with implementation vocabulary, copies a command catalogue, or carries two MCP limitations that the product already fixed. It now starts from the coordination failure a2ahub solves, then names the concrete capabilities: readable work chains, computed next moves, versioned consumer-aware contracts, the validated Git write funnel, the local dashboard, notifications, CLI, and MCP. A deterministic release gate keeps the file below its compact size ceiling, requires exits to the canonical documentation, and rejects the known retired guidance; release review still owns the human judgement about clarity and tone.",
-          "affects": [
-            "README",
-            "first-time evaluation",
-            "release gate"
-          ],
-          "action": {
-            "scope": "none",
-            "why": "Existing users need no action. New readers can evaluate the project without learning its command surface first."
-          }
-        },
-        {
-          "id": "RN-01601-3",
-          "kind": "fix",
-          "impact": "normal",
-          "subject": "GitHub Releases now show the authored release notes instead of commit noise",
-          "detail": "The release workflow now renders the same versioned YAML corpus used by `a2a whatsnew` into a concise GitHub Release page with changes, known issues, actions, install guidance, and verification links. GoReleaser receives that file through its canonical custom-release-notes option and replaces stale bodies on retry. A post-publish assertion byte-compares the visible GitHub body with the rendered SSOT. This removes the generic platform table, raw commit list, and unsafe quarantine-removal advice that previously obscured why a release mattered.",
-          "affects": [
-            "GitHub Releases",
-            "a2a whatsnew",
-            "release workflow"
-          ],
-          "action": {
-            "scope": "none",
-            "why": "Release readers and updating agents now receive two projections of one authored source rather than unrelated summaries."
-          }
-        },
-        {
-          "id": "RN-01601-4",
-          "kind": "policy",
-          "impact": "normal",
-          "subject": "Release verification is selected by behavioral impact, not by the size of the version number",
-          "detail": "Full GitHub live verification remains mandatory when an exact public candidate changes runtime, funnel, validator, lifecycle, contract constraints, or space behavior. A targeted cell remains a diagnostic rerun, not proof for a shared-core change. Presentation-only candidates may now omit GitHub live when the exact public diff proves that no executable or protocol behavior moved; they still require the full hermetic gate, release preflight, immutable candidate, and a written reason. v0.16.1 uses that presentation-only tier. The latest full baseline, v0.16.0, passed 50 of 50 declared live cells; that is complete coverage of the declared matrix, not every theoretically possible state.",
-          "affects": [
-            "release runbook",
-            "GitHub Actions usage",
-            "release lead time"
-          ],
-          "action": {
-            "scope": "none",
-            "why": "This patch changes public explanation, release rendering, comments, schema annotations, and version pins, but no a2a runtime or space policy behavior exercised by the live matrix."
-          }
-        },
-        {
-          "id": "RN-01601-5",
-          "kind": "known-issue",
-          "impact": "normal",
-          "subject": "The macOS companion remains ad-hoc signed and may require manual approval",
-          "detail": "The release cohort authenticates the exact macOS app and ad-hoc signing protects its bundle integrity, but the app is not identified or notarized through a paid Apple Developer account. A quarantined download may require one explicit System Settings → Privacy & Security → Open Anyway decision. Interactive Notification Center, Focus, Login Items, VS Code trust/profile, and remote-window checks remain release-environment evidence rather than claims inferred from hermetic tests.",
-          "affects": [
-            "macOS notifications",
-            "VS Code notifications"
-          ],
-          "action": {
-            "scope": "none",
-            "why": "Keep Gatekeeper enabled and approve only the A2A Notifier version obtained through the verified a2a release cohort."
-          }
-        }
-      ]
-    }
-  ],
+  "releaseNotes": null,
   "updateDetail": {
     "status": "verified",
     "version": "0.16.3",
@@ -1839,7 +1758,6 @@
   "focus": {
     "space": "checkout-core",
     "artifactID": "XW-checkout-20260728-c3d4",
-    "update": false,
     "found": true
   },
   "threadViews": [
@@ -1921,10 +1839,10 @@
             "claimed_state": "submitted",
             "actor": {
               "kind": "agent",
-              "name": "checkout-agent",
-              "system": "checkout",
               "model": "gpt-5",
-              "session": "session:demo-checkout"
+              "name": "checkout-agent",
+              "session": "session:demo-checkout",
+              "system": "checkout"
             },
             "produced_by": {
               "tool": "a2a",
@@ -1943,10 +1861,10 @@
             "claimed_state": "acknowledged",
             "actor": {
               "kind": "agent",
-              "name": "atlas-agent",
-              "system": "atlas",
               "model": "gpt-5",
-              "session": "session:demo-atlas"
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
             },
             "produced_by": {
               "tool": "a2a",
@@ -1965,10 +1883,10 @@
             "claimed_state": "accepted",
             "actor": {
               "kind": "agent",
-              "name": "atlas-agent",
-              "system": "atlas",
               "model": "gpt-5",
-              "session": "session:demo-atlas"
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
             },
             "produced_by": {
               "tool": "a2a",
@@ -1987,10 +1905,10 @@
             "claimed_state": "in_progress",
             "actor": {
               "kind": "agent",
-              "name": "atlas-agent",
-              "system": "atlas",
               "model": "gpt-5",
-              "session": "session:demo-atlas"
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
             },
             "produced_by": {
               "tool": "a2a",
@@ -2023,12 +1941,11 @@
             "claimed_state": "in_progress",
             "actor": {
               "kind": "agent",
-              "name": "atlas-agent",
-              "system": "atlas",
               "model": "gpt-5",
-              "session": "session:demo-atlas"
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
             },
-            "response_id": "XS-atlas-20260729-j7k8",
             "produced_by": {
               "tool": "a2a",
               "version": "0.19.0"
@@ -2055,7 +1972,8 @@
                 "version": "0.19.0"
               },
               "cause": "The producer receipt disagrees with the authoritative fold outcome"
-            }
+            },
+            "response_id": "XS-atlas-20260729-j7k8"
           }
         },
         {
@@ -2069,10 +1987,10 @@
             "claimed_state": "disputed",
             "actor": {
               "kind": "agent",
-              "name": "checkout-agent",
-              "system": "checkout",
               "model": "gpt-5",
-              "session": "session:demo-checkout"
+              "name": "checkout-agent",
+              "session": "session:demo-checkout",
+              "system": "checkout"
             },
             "produced_by": {
               "tool": "a2a",
@@ -2105,10 +2023,10 @@
             "claimed_state": "submitted",
             "actor": {
               "kind": "agent",
-              "name": "checkout-agent",
-              "system": "checkout",
               "model": "gpt-5",
-              "session": "session:demo-checkout"
+              "name": "checkout-agent",
+              "session": "session:demo-checkout",
+              "system": "checkout"
             },
             "produced_by": {
               "tool": "a2a",
@@ -2159,7 +2077,30 @@
           "waiting_on": [
             "atlas"
           ],
-          "your_move": true
+          "your_move": true,
+          "prompt": {
+            "moves": [
+              "decline",
+              "block",
+              "respond"
+            ],
+            "askFirst": [
+              "decline",
+              "block"
+            ],
+            "doc": "reference/authoring/work_request.md",
+            "loop": "loops/receive.md §8.3 (receive loop)",
+            "drafts": [
+              "reference/authoring/response.md"
+            ]
+          },
+          "pending": true,
+          "why": "",
+          "outcome": "open",
+          "terminal": false,
+          "stateSince": "2026-07-28T09:22:00Z",
+          "stateBy": "atlas",
+          "stateEvent": "01K1A2B3C4D5E6F7G8H9J0K1M5"
         },
         {
           "id": "XQ-checkout-20260730-a1b2",
@@ -2196,7 +2137,25 @@
           "waiting_on": [
             "atlas"
           ],
-          "your_move": true
+          "your_move": true,
+          "prompt": {
+            "moves": [
+              "acknowledge",
+              "decline"
+            ],
+            "askFirst": [
+              "decline"
+            ],
+            "doc": "reference/authoring/question.md",
+            "loop": "loops/receive.md §8.3 (receive loop)"
+          },
+          "pending": true,
+          "why": "",
+          "outcome": "open",
+          "terminal": false,
+          "stateSince": "2026-07-30T11:57:00Z",
+          "stateBy": "checkout",
+          "stateEvent": "01K1A2B3C4D5E6F7G8H9J0K1M9"
         }
       ],
       "flags": [
@@ -2206,7 +2165,8 @@
           "event_ulid": "01K1A2B3C4D5E6F7G8H9J0K1M7"
         }
       ],
-      "unresolved": []
+      "unresolved": [],
+      "settled": false
     },
     {
       "thread": "thread:atlas-20260727-r7s8",
@@ -2294,10 +2254,10 @@
             "claimed_state": "published",
             "actor": {
               "kind": "agent",
-              "name": "atlas-agent",
-              "system": "atlas",
               "model": "gpt-5",
-              "session": "session:demo-atlas"
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
             },
             "produced_by": {
               "tool": "a2a",
@@ -2316,10 +2276,10 @@
             "claimed_state": "acknowledged",
             "actor": {
               "kind": "agent",
-              "name": "catalog-agent",
-              "system": "catalog",
               "model": "gpt-5",
-              "session": "session:demo-catalog"
+              "name": "catalog-agent",
+              "session": "session:demo-catalog",
+              "system": "catalog"
             },
             "produced_by": {
               "tool": "a2a",
@@ -2352,10 +2312,10 @@
             "claimed_state": "submitted",
             "actor": {
               "kind": "agent",
-              "name": "atlas-agent",
-              "system": "atlas",
               "model": "gpt-5",
-              "session": "session:demo-atlas"
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
             },
             "produced_by": {
               "tool": "a2a",
@@ -2374,10 +2334,10 @@
             "claimed_state": "acknowledged",
             "actor": {
               "kind": "agent",
-              "name": "catalog-agent",
-              "system": "catalog",
               "model": "gpt-5",
-              "session": "session:demo-catalog"
+              "name": "catalog-agent",
+              "session": "session:demo-catalog",
+              "system": "catalog"
             },
             "produced_by": {
               "tool": "a2a",
@@ -2396,10 +2356,10 @@
             "claimed_state": "accepted",
             "actor": {
               "kind": "agent",
-              "name": "catalog-agent",
-              "system": "catalog",
               "model": "gpt-5",
-              "session": "session:demo-catalog"
+              "name": "catalog-agent",
+              "session": "session:demo-catalog",
+              "system": "catalog"
             },
             "produced_by": {
               "tool": "a2a",
@@ -2418,10 +2378,10 @@
             "claimed_state": "in_progress",
             "actor": {
               "kind": "agent",
-              "name": "catalog-agent",
-              "system": "catalog",
               "model": "gpt-5",
-              "session": "session:demo-catalog"
+              "name": "catalog-agent",
+              "session": "session:demo-catalog",
+              "system": "catalog"
             },
             "produced_by": {
               "tool": "a2a",
@@ -2454,16 +2414,16 @@
             "claimed_state": "responded",
             "actor": {
               "kind": "agent",
-              "name": "catalog-agent",
-              "system": "catalog",
               "model": "gpt-5",
-              "session": "session:demo-catalog"
+              "name": "catalog-agent",
+              "session": "session:demo-catalog",
+              "system": "catalog"
             },
-            "response_id": "XS-catalog-20260730-m9n2",
             "produced_by": {
               "tool": "a2a",
               "version": "0.19.0"
-            }
+            },
+            "response_id": "XS-catalog-20260730-m9n2"
           }
         }
       ],
@@ -2503,7 +2463,27 @@
             "atlas",
             "catalog"
           ],
-          "your_move": true
+          "your_move": true,
+          "prompt": {
+            "moves": [
+              "satisfy",
+              "withdraw",
+              "supersede"
+            ],
+            "askFirst": [
+              "withdraw",
+              "supersede"
+            ],
+            "doc": "reference/authoring/requirement.md",
+            "loop": "loops/send.md §8.2 (send loop)"
+          },
+          "pending": true,
+          "why": "",
+          "outcome": "open",
+          "terminal": false,
+          "stateSince": "2026-07-27T08:20:00Z",
+          "stateBy": "catalog",
+          "stateEvent": "01K3A2B3C4D5E6F7G8H9J0K1M3"
         },
         {
           "id": "XW-atlas-20260727-r7s8",
@@ -2535,7 +2515,26 @@
             "atlas",
             "catalog"
           ],
-          "your_move": true
+          "your_move": true,
+          "prompt": {
+            "moves": [
+              "close",
+              "supersede"
+            ],
+            "askFirst": [
+              "close",
+              "supersede"
+            ],
+            "doc": "reference/authoring/work_request.md",
+            "loop": "loops/send.md §8.2 (send loop)"
+          },
+          "pending": true,
+          "why": "",
+          "outcome": "open",
+          "terminal": false,
+          "stateSince": "2026-07-30T07:56:00Z",
+          "stateBy": "catalog",
+          "stateEvent": "01K3A2B3C4D5E6F7G8H9J0K1MC"
         },
         {
           "id": "XS-catalog-20260730-m9n2",
@@ -2559,11 +2558,27 @@
           "waiting_on": [
             "atlas"
           ],
-          "your_move": true
+          "your_move": true,
+          "prompt": {
+            "moves": [
+              "verify",
+              "dispute"
+            ],
+            "askFirst": [
+              "dispute"
+            ],
+            "doc": "reference/authoring/response.md",
+            "loop": "loops/receive.md §8.3 (receive loop)"
+          },
+          "pending": true,
+          "why": "",
+          "outcome": "open",
+          "terminal": false
         }
       ],
       "flags": [],
-      "unresolved": []
+      "unresolved": [],
+      "settled": false
     },
     {
       "thread": "thread:support-20260729-q5n6",
@@ -2661,10 +2676,10 @@
             "claimed_state": "proposed",
             "actor": {
               "kind": "agent",
-              "name": "support-agent",
-              "system": "support",
               "model": "gpt-5",
-              "session": "session:demo-support"
+              "name": "support-agent",
+              "session": "session:demo-support",
+              "system": "support"
             },
             "produced_by": {
               "tool": "a2a",
@@ -2683,10 +2698,10 @@
             "claimed_state": "approved",
             "actor": {
               "kind": "human",
-              "name": "atlas-owner",
-              "system": "atlas",
               "model": "gpt-5",
-              "session": "session:demo-atlas"
+              "name": "atlas-owner",
+              "session": "session:demo-atlas",
+              "system": "atlas"
             },
             "produced_by": {
               "tool": "a2a",
@@ -2719,10 +2734,10 @@
             "claimed_state": "submitted",
             "actor": {
               "kind": "agent",
-              "name": "atlas-agent",
-              "system": "atlas",
               "model": "gpt-5",
-              "session": "session:demo-atlas"
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
             },
             "produced_by": {
               "tool": "a2a",
@@ -2741,10 +2756,10 @@
             "claimed_state": "acknowledged",
             "actor": {
               "kind": "agent",
-              "name": "support-agent",
-              "system": "support",
               "model": "gpt-5",
-              "session": "session:demo-support"
+              "name": "support-agent",
+              "session": "session:demo-support",
+              "system": "support"
             },
             "produced_by": {
               "tool": "a2a",
@@ -2777,16 +2792,16 @@
             "claimed_state": "responded",
             "actor": {
               "kind": "agent",
-              "name": "support-agent",
-              "system": "support",
               "model": "gpt-5",
-              "session": "session:demo-support"
+              "name": "support-agent",
+              "session": "session:demo-support",
+              "system": "support"
             },
-            "response_id": "XS-support-20260727-w7x8",
             "produced_by": {
               "tool": "a2a",
               "version": "0.19.0"
-            }
+            },
+            "response_id": "XS-support-20260727-w7x8"
           }
         },
         {
@@ -2800,10 +2815,10 @@
             "claimed_state": "verified",
             "actor": {
               "kind": "agent",
-              "name": "atlas-agent",
-              "system": "atlas",
               "model": "gpt-5",
-              "session": "session:demo-atlas"
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
             },
             "produced_by": {
               "tool": "a2a",
@@ -2822,10 +2837,10 @@
             "claimed_state": "closed",
             "actor": {
               "kind": "agent",
-              "name": "atlas-agent",
-              "system": "atlas",
               "model": "gpt-5",
-              "session": "session:demo-atlas"
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
             },
             "produced_by": {
               "tool": "a2a",
@@ -2858,10 +2873,10 @@
             "claimed_state": "submitted",
             "actor": {
               "kind": "agent",
-              "name": "support-agent",
-              "system": "support",
               "model": "gpt-5",
-              "session": "session:demo-support"
+              "name": "support-agent",
+              "session": "session:demo-support",
+              "system": "support"
             },
             "produced_by": {
               "tool": "a2a",
@@ -2880,10 +2895,10 @@
             "claimed_state": "acknowledged",
             "actor": {
               "kind": "agent",
-              "name": "atlas-agent",
-              "system": "atlas",
               "model": "gpt-5",
-              "session": "session:demo-atlas"
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
             },
             "produced_by": {
               "tool": "a2a",
@@ -2915,11 +2930,27 @@
           "waiting_on": [
             "atlas"
           ],
-          "your_move": true
+          "your_move": true,
+          "prompt": {
+            "moves": [
+              "verify-pass",
+              "verify-fail"
+            ],
+            "doc": "reference/authoring/handoff.md",
+            "loop": "loops/receive.md §8.3 (receive loop)"
+          },
+          "pending": true,
+          "why": "",
+          "outcome": "open",
+          "terminal": false,
+          "stateSince": "2026-07-29T05:45:00Z",
+          "stateBy": "atlas",
+          "stateEvent": "01K4A2B3C4D5E6F7G8H9J0K1MG"
         }
       ],
       "flags": [],
       "unresolved": [],
+      "settled": false,
       "deliveries": [
         {
           "handoffId": "XH-support-20260729-q5n6",
@@ -2991,7 +3022,7 @@
       "order": "declared",
       "opener": {
         "id": "XH-legacycrm-20260709-x3y4",
-        "title": "</script><img src=x onerror=alert('rendering-test')>",
+        "title": "\u003c/script\u003e\u003cimg src=x onerror=alert('rendering-test')\u003e",
         "from": "legacycrm"
       },
       "participants": [
@@ -3007,7 +3038,7 @@
           "to": [
             "atlas"
           ],
-          "title": "</script><img src=x onerror=alert('rendering-test')>",
+          "title": "\u003c/script\u003e\u003cimg src=x onerror=alert('rendering-test')\u003e",
           "state": "submitted"
         },
         {
@@ -3038,7 +3069,7 @@
             "to": [
               "atlas"
             ],
-            "title": "</script><img src=x onerror=alert('rendering-test')>"
+            "title": "\u003c/script\u003e\u003cimg src=x onerror=alert('rendering-test')\u003e"
           }
         },
         {
@@ -3052,10 +3083,10 @@
             "claimed_state": "submitted",
             "actor": {
               "kind": "agent",
-              "name": "legacy-agent",
-              "system": "legacycrm",
               "model": "gpt-5",
-              "session": "session:demo-legacycrm"
+              "name": "legacy-agent",
+              "session": "session:demo-legacycrm",
+              "system": "legacycrm"
             },
             "produced_by": {
               "tool": "a2a",
@@ -3074,10 +3105,10 @@
             "claimed_state": "acknowledged",
             "actor": {
               "kind": "agent",
-              "name": "unrelated-agent",
-              "system": "comms",
               "model": "gpt-5",
-              "session": "session:demo-comms"
+              "name": "unrelated-agent",
+              "session": "session:demo-comms",
+              "system": "comms"
             },
             "produced_by": {
               "tool": "a2a",
@@ -3095,10 +3126,10 @@
             "transition": "verify",
             "actor": {
               "kind": "agent",
-              "name": "atlas-agent",
-              "system": "atlas",
               "model": "gpt-5",
-              "session": "session:demo-atlas"
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
             },
             "produced_by": {
               "tool": "a2a",
@@ -3131,10 +3162,10 @@
             "claimed_state": "proposed",
             "actor": {
               "kind": "agent",
-              "name": "atlas-agent",
-              "system": "atlas",
               "model": "gpt-5",
-              "session": "session:demo-atlas"
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
             },
             "produced_by": {
               "tool": "a2a",
@@ -3153,10 +3184,10 @@
             "claimed_state": "rejected",
             "actor": {
               "kind": "human",
-              "name": "legacy-owner",
-              "system": "legacycrm",
               "model": "gpt-5",
-              "session": "session:demo-legacycrm"
+              "name": "legacy-owner",
+              "session": "session:demo-legacycrm",
+              "system": "legacycrm"
             },
             "produced_by": {
               "tool": "a2a",
@@ -3175,10 +3206,10 @@
             "claimed_state": "superseded",
             "actor": {
               "kind": "agent",
-              "name": "atlas-agent",
-              "system": "atlas",
               "model": "gpt-5",
-              "session": "session:demo-atlas"
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
             },
             "produced_by": {
               "tool": "a2a",
@@ -3204,7 +3235,21 @@
           "waiting_on": [
             "atlas"
           ],
-          "your_move": true
+          "your_move": true,
+          "prompt": {
+            "moves": [
+              "acknowledge"
+            ],
+            "doc": "reference/authoring/handoff.md",
+            "loop": "loops/receive.md §8.3 (receive loop)"
+          },
+          "pending": true,
+          "why": "",
+          "outcome": "open",
+          "terminal": false,
+          "stateSince": "2026-07-09T10:01:00Z",
+          "stateBy": "legacycrm",
+          "stateEvent": "01K6A2B3C4D5E6F7G8H9J0K1M2"
         }
       ],
       "flags": [
@@ -3216,10 +3261,11 @@
       ],
       "unresolved": [
         {
-          "kind": "event-subject",
-          "id": "XS-legacycrm-20260709-c5d6"
+          "id": "XS-legacycrm-20260709-c5d6",
+          "kind": "event-subject"
         }
       ],
+      "settled": false,
       "deliveries": [
         {
           "handoffId": "XH-legacycrm-20260709-x3y4",
@@ -3262,7 +3308,6 @@
         "support"
       ],
       "sync_stale": true,
-      "settled": true,
       "artifacts": [
         {
           "id": "XQ-atlas-20260726-t5v6",
@@ -3301,10 +3346,10 @@
             "claimed_state": "submitted",
             "actor": {
               "kind": "agent",
-              "name": "atlas-agent",
-              "system": "atlas",
               "model": "gpt-5",
-              "session": "session:demo-atlas"
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
             },
             "produced_by": {
               "tool": "a2a",
@@ -3323,10 +3368,10 @@
             "claimed_state": "closed",
             "actor": {
               "kind": "agent",
-              "name": "atlas-agent",
-              "system": "atlas",
               "model": "gpt-5",
-              "session": "session:demo-atlas"
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
             },
             "produced_by": {
               "tool": "a2a",
@@ -3337,947 +3382,8 @@
       ],
       "open_items": [],
       "flags": [],
-      "unresolved": []
-    }
-  ],
-  "artifactDetails": [
-    {
-      "sourceClass": "canonical",
-      "space": "checkout-core",
-      "id": "XC-catalog-product-feed",
-      "type": "contract",
-      "title": "Catalog product feed",
-      "from": "catalog",
-      "to": [
-        "atlas",
-        "checkout"
-      ],
-      "state": "published",
-      "thread": "thread:catalog-20260725-p3q4",
-      "envelope": {
-        "schema": "envelope/v1",
-        "id": "XC-catalog-product-feed",
-        "type": "contract",
-        "title": "Catalog product feed",
-        "space": "checkout-core",
-        "from": "catalog",
-        "to": [
-          "atlas",
-          "checkout"
-        ],
-        "actor": {
-          "kind": "agent",
-          "name": "catalog-agent",
-          "model": "demo-agent-model",
-          "session": "demo-catalog-17"
-        },
-        "created": "2026-07-25T08:00:00Z",
-        "priority": "p3",
-        "blocking": false,
-        "thread": "thread:catalog-20260725-p3q4",
-        "classification": "internal",
-        "category": "data-feed",
-        "version": "4.0.0",
-        "compat_policy": "additive changes within a major",
-        "schema_format": "json-schema-2020-12",
-        "generated_from": {
-          "tool": "demo-schema-exporter",
-          "source_digest": "2b5e1d3cf9a70e2419be1dddf6c7e88f1dc50d765fa4ba171e62f8b048e9d202"
-        }
-      },
-      "body": "Incremental product and availability feed consumed by ordering systems.\n\nThe v4 line removes the legacy flattened availability fields and carries explicit regional inventory entries.",
-      "digest": "91b2c3d4e5f60718293a4b5c6d7e8f9012a3b4c5d6e7f8091a2b3c4d5e6f7081",
-      "events": [
-        {
-          "ulid": "01K7A2B3C4D5E6F7G8H9J0K1M2",
-          "subject": "XC-catalog-product-feed",
-          "transition": "publish",
-          "claimed_state": "published",
-          "actor": "catalog-agent",
-          "actor_system": "catalog",
-          "at": "2026-07-25T08:01:00Z",
-          "actor_kind": "agent",
-          "actor_model": "gpt-5",
-          "actor_session": "session:demo-catalog",
-          "produced_by": {
-            "tool": "a2a",
-            "version": "0.19.0"
-          }
-        }
-      ],
-      "flags": [],
-      "refs": [],
-      "sync_stale": false,
-      "sync_age": "2m"
-    },
-    {
-      "sourceClass": "canonical",
-      "space": "checkout-core",
-      "id": "XQ-checkout-20260730-a1b2",
-      "type": "question",
-      "title": "Should a retry reuse the original capture idempotency key?",
-      "from": "checkout",
-      "to": [
-        "atlas"
-      ],
-      "state": "submitted",
-      "thread": "thread:checkout-20260728-c3d4",
-      "envelope": {
-        "schema": "envelope/v1",
-        "id": "XQ-checkout-20260730-a1b2",
-        "type": "question",
-        "title": "Should a retry reuse the original capture idempotency key?",
-        "space": "checkout-core",
-        "from": "checkout",
-        "to": [
-          "atlas"
-        ],
-        "actor": {
-          "kind": "agent",
-          "name": "checkout-agent",
-          "model": "demo-agent-model"
-        },
-        "created": "2026-07-30T11:50:00Z",
-        "priority": "p2",
-        "blocking": false,
-        "needed_by": "2026-07-31",
-        "expected_response": {
-          "shape": "One rule plus the retry cases it covers",
-          "by": "2026-07-31"
-        },
-        "thread": "thread:checkout-20260728-c3d4",
-        "refs": [
-          {
-            "ref": "XW-checkout-20260728-c3d4",
-            "note": "The disputed implementation"
-          },
-          {
-            "ref": "XC-billing-payment-events@2.4.0",
-            "note": "Capture event semantics"
-          }
-        ],
-        "classification": "internal",
-        "category": "clarification"
-      },
-      "body": "The first capture can succeed while the worker loses the provider acknowledgement. Should the retry keep the first idempotency key or derive a new key from the retry attempt?",
-      "digest": "73b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708193",
-      "events": [
-        {
-          "ulid": "01K1A2B3C4D5E6F7G8H9J0K1M9",
-          "subject": "XQ-checkout-20260730-a1b2",
-          "transition": "submit",
-          "claimed_state": "submitted",
-          "actor": "checkout-agent",
-          "actor_system": "checkout",
-          "at": "2026-07-30T11:57:00Z",
-          "actor_kind": "agent",
-          "actor_model": "gpt-5",
-          "actor_session": "session:demo-checkout",
-          "produced_by": {
-            "tool": "a2a",
-            "version": "0.19.0"
-          }
-        }
-      ],
-      "flags": [],
-      "refs": [
-        {
-          "ref": "XW-checkout-20260728-c3d4",
-          "id": "XW-checkout-20260728-c3d4",
-          "resolved": true,
-          "digest_mismatch": false
-        },
-        {
-          "ref": "XC-billing-payment-events@2.4.0",
-          "id": "XC-billing-payment-events",
-          "version": "2.4.0",
-          "pinned_digest": "ab68a7ba1830d95e6c8d7d61a4c4eaf088f51d3e0f352f961c6745fb684f21ae",
-          "resolved_digest": "ab68a7ba1830d95e6c8d7d61a4c4eaf088f51d3e0f352f961c6745fb684f21ae",
-          "resolved": true,
-          "digest_mismatch": false
-        }
-      ],
-      "sync_stale": false,
-      "sync_age": "2m"
-    },
-    {
-      "sourceClass": "canonical",
-      "space": "checkout-core",
-      "id": "XW-checkout-20260728-c3d4",
-      "type": "work_request",
-      "title": "Prevent duplicate payment capture after a worker retry",
-      "from": "checkout",
-      "to": [
-        "atlas"
-      ],
-      "state": "in_progress",
-      "thread": "thread:checkout-20260728-c3d4",
-      "envelope": {
-        "schema": "envelope/v1",
-        "id": "XW-checkout-20260728-c3d4",
-        "type": "work_request",
-        "title": "Prevent duplicate payment capture after a worker retry",
-        "space": "checkout-core",
-        "from": "checkout",
-        "to": [
-          "atlas"
-        ],
-        "actor": {
-          "kind": "agent",
-          "name": "checkout-agent",
-          "model": "demo-agent-model",
-          "session": "demo-checkout-42"
-        },
-        "created": "2026-07-28T09:00:00Z",
-        "priority": "p1",
-        "blocking": true,
-        "needed_by": "2026-07-29",
-        "effort_estimate": "m",
-        "expected_response": {
-          "shape": "Patch, replay fixture and failure-mode note",
-          "by": "2026-07-29"
-        },
-        "acceptance_criteria": [
-          "A retry cannot create a second provider capture",
-          "The replay fixture covers acknowledgement loss",
-          "A second run returns the existing semantic result"
-        ],
-        "thread": "thread:checkout-20260728-c3d4",
-        "refs": [
-          {
-            "ref": "XC-billing-payment-events@2.4.0",
-            "note": "The event line used after capture"
-          }
-        ],
-        "origin": "demo-incident:payment-retry",
-        "interim_behavior": "Pause automatic retry after an ambiguous capture result and send the item to manual review.",
-        "classification": "internal",
-        "category": "fix"
-      },
-      "body": "A worker retry can issue a second capture after the first provider call succeeds but the acknowledgement is lost. The fix must preserve one semantic operation across retries.",
-      "digest": "64c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70819400",
-      "events": [
-        {
-          "ulid": "01K1A2B3C4D5E6F7G8H9J0K1M2",
-          "subject": "XW-checkout-20260728-c3d4",
-          "transition": "submit",
-          "claimed_state": "submitted",
-          "actor": "checkout-agent",
-          "actor_system": "checkout",
-          "at": "2026-07-28T09:01:00Z",
-          "actor_kind": "agent",
-          "actor_model": "gpt-5",
-          "actor_session": "session:demo-checkout",
-          "produced_by": {
-            "tool": "a2a",
-            "version": "0.19.0"
-          }
-        },
-        {
-          "ulid": "01K1A2B3C4D5E6F7G8H9J0K1M5",
-          "subject": "XW-checkout-20260728-c3d4",
-          "transition": "start",
-          "claimed_state": "in_progress",
-          "actor": "atlas-agent",
-          "actor_system": "atlas",
-          "at": "2026-07-28T09:22:00Z",
-          "actor_kind": "agent",
-          "actor_model": "gpt-5",
-          "actor_session": "session:demo-atlas",
-          "produced_by": {
-            "tool": "a2a",
-            "version": "0.19.0"
-          }
-        },
-        {
-          "ulid": "01K1A2B3C4D5E6F7G8H9J0K1M7",
-          "subject": "XW-checkout-20260728-c3d4",
-          "transition": "respond",
-          "claimed_state": "in_progress",
-          "actor": "atlas-agent",
-          "actor_system": "atlas",
-          "at": "2026-07-29T14:01:00Z",
-          "actor_kind": "agent",
-          "actor_model": "gpt-5",
-          "actor_session": "session:demo-atlas",
-          "produced_by": {
-            "tool": "a2a",
-            "version": "0.19.0"
-          },
-          "consistency": {
-            "kind": "state-claim-mismatch",
-            "event_ulid": "01K1A2B3C4D5E6F7G8H9J0K1M7",
-            "subject": "XW-checkout-20260728-c3d4",
-            "scope": {
-              "kind": "artifact",
-              "subject": "XW-checkout-20260728-c3d4"
-            },
-            "actual": "responded",
-            "claimed": "in_progress",
-            "actor": {
-              "kind": "agent",
-              "name": "atlas-agent",
-              "system": "atlas",
-              "model": "gpt-5",
-              "session": "session:demo-atlas"
-            },
-            "producer": {
-              "tool": "a2a",
-              "version": "0.19.0"
-            },
-            "cause": "The producer receipt disagrees with the authoritative fold outcome"
-          }
-        }
-      ],
-      "flags": [
-        "state-claim-mismatch"
-      ],
-      "refs": [
-        {
-          "ref": "XC-billing-payment-events@2.4.0",
-          "id": "XC-billing-payment-events",
-          "version": "2.4.0",
-          "pinned_digest": "ab68a7ba1830d95e6c8d7d61a4c4eaf088f51d3e0f352f961c6745fb684f21ae",
-          "resolved_digest": "ab68a7ba1830d95e6c8d7d61a4c4eaf088f51d3e0f352f961c6745fb684f21ae",
-          "resolved": true,
-          "digest_mismatch": false
-        }
-      ],
-      "sync_stale": false,
-      "sync_age": "2m"
-    },
-    {
-      "sourceClass": "canonical",
-      "space": "customer-ops",
-      "id": "XH-support-20260729-q5n6",
-      "type": "handoff",
-      "title": "PII-redacted support case stream v2",
-      "from": "support",
-      "to": [
-        "atlas"
-      ],
-      "state": "acknowledged",
-      "thread": "thread:support-20260729-q5n6",
-      "envelope": {
-        "schema": "envelope/v1",
-        "id": "XH-support-20260729-q5n6",
-        "type": "handoff",
-        "title": "PII-redacted support case stream v2",
-        "space": "customer-ops",
-        "from": "support",
-        "to": [
-          "atlas"
-        ],
-        "actor": {
-          "kind": "agent",
-          "name": "support-agent",
-          "model": "demo-agent-model"
-        },
-        "created": "2026-07-29T05:30:00Z",
-        "priority": "p2",
-        "blocking": true,
-        "acceptance_criteria": [
-          "Message bodies are absent from emitted events",
-          "Attachment names are redacted in the supplied fixture",
-          "Atlas can validate the v2 contract and replay the sample"
-        ],
-        "thread": "thread:support-20260729-q5n6",
-        "refs": [
-          {
-            "ref": "XD-support-20260725-s3t4",
-            "note": "Approved redaction boundary"
-          },
-          {
-            "ref": "XC-support-case-stream@2.0.0",
-            "note": "Delivered contract"
-          }
-        ],
-        "classification": "restricted",
-        "deliverables": [
-          {
-            "name": "Support case stream contract",
-            "ref": "XC-support-case-stream@2.0.0",
-            "kind": "contract"
-          },
-          {
-            "name": "Redaction replay fixture",
-            "ref": "DP-support-20260729-h4k2",
-            "kind": "data"
-          },
-          {
-            "name": "Support case index",
-            "ref": "DP-support-20260729-m3q7",
-            "kind": "data"
-          },
-          {
-            "name": "Verification notes",
-            "ref": "docs/redaction-verification.md",
-            "kind": "doc"
-          }
-        ],
-        "verification": "Run the contract valid/invalid fixtures and compare the replay output with the supplied redacted sample.",
-        "limitations": [
-          "Historical v1 events are not rewritten",
-          "The demo fixture proves shape, not production data retention"
-        ],
-        "fulfills": [
-          "XD-support-20260725-s3t4"
-        ],
-        "env_requirements": "a2a 0.16.0 or newer"
-      },
-      "body": "Support delivers the v2 schema, fixtures and a replay sample. Atlas has acknowledged receipt and must verify or reject the handoff.",
-      "digest": "46e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708196b6c600",
-      "events": [
-        {
-          "ulid": "01K4A2B3C4D5E6F7G8H9J0K1MF",
-          "subject": "XH-support-20260729-q5n6",
-          "transition": "submit",
-          "claimed_state": "submitted",
-          "actor": "support-agent",
-          "actor_system": "support",
-          "at": "2026-07-29T05:31:00Z",
-          "actor_kind": "agent",
-          "actor_model": "gpt-5",
-          "actor_session": "session:demo-support",
-          "produced_by": {
-            "tool": "a2a",
-            "version": "0.19.0"
-          }
-        },
-        {
-          "ulid": "01K4A2B3C4D5E6F7G8H9J0K1MG",
-          "subject": "XH-support-20260729-q5n6",
-          "transition": "acknowledge",
-          "claimed_state": "acknowledged",
-          "actor": "atlas-agent",
-          "actor_system": "atlas",
-          "at": "2026-07-29T05:45:00Z",
-          "actor_kind": "agent",
-          "actor_model": "gpt-5",
-          "actor_session": "session:demo-atlas",
-          "produced_by": {
-            "tool": "a2a",
-            "version": "0.19.0"
-          }
-        }
-      ],
-      "flags": [],
-      "refs": [
-        {
-          "ref": "XD-support-20260725-s3t4",
-          "id": "XD-support-20260725-s3t4",
-          "resolved": true,
-          "digest_mismatch": false
-        },
-        {
-          "ref": "XC-support-case-stream@2.0.0",
-          "id": "XC-support-case-stream",
-          "version": "2.0.0",
-          "pinned_digest": "dbf022044668712449e8a31c85f158fe8e2c46f858213f3094a3d69daf2af1d9",
-          "resolved_digest": "dbf022044668712449e8a31c85f158fe8e2c46f858213f3094a3d69daf2af1d9",
-          "resolved": true,
-          "digest_mismatch": false
-        }
-      ],
-      "sync_stale": true,
-      "sync_age": "4h"
-    },
-    {
-      "sourceClass": "canonical",
-      "space": "checkout-core",
-      "id": "XS-catalog-20260730-m9n2",
-      "type": "response",
-      "title": "Migration plan and compatibility fixtures",
-      "from": "catalog",
-      "to": [
-        "atlas"
-      ],
-      "state": "submitted",
-      "thread": "thread:atlas-20260727-r7s8",
-      "envelope": {
-        "schema": "envelope/v1",
-        "id": "XS-catalog-20260730-m9n2",
-        "type": "response",
-        "title": "Migration plan and compatibility fixtures",
-        "space": "checkout-core",
-        "from": "catalog",
-        "to": [
-          "atlas"
-        ],
-        "actor": {
-          "kind": "agent",
-          "name": "catalog-agent",
-          "model": "demo-agent-model"
-        },
-        "created": "2026-07-30T07:55:00Z",
-        "priority": "p2",
-        "blocking": false,
-        "thread": "thread:atlas-20260727-r7s8",
-        "refs": [
-          {
-            "ref": "XC-catalog-product-feed@4.0.0",
-            "note": "Target contract line"
-          }
-        ],
-        "classification": "internal",
-        "parent": "XW-atlas-20260727-r7s8",
-        "result": "delivered"
-      },
-      "body": "Catalog attached the field mapping, a v3-to-v4 compatibility fixture, and the date after which v3 samples stop updating.",
-      "digest": "37f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708197c7d7e700",
-      "events": [
-        {
-          "ulid": "01K3A2B3C4D5E6F7G8H9J0K1MC",
-          "subject": "XW-atlas-20260727-r7s8",
-          "transition": "respond",
-          "claimed_state": "responded",
-          "actor": "catalog-agent",
-          "actor_system": "catalog",
-          "at": "2026-07-30T07:56:00Z",
-          "actor_kind": "agent",
-          "actor_model": "gpt-5",
-          "actor_session": "session:demo-catalog",
-          "produced_by": {
-            "tool": "a2a",
-            "version": "0.19.0"
-          }
-        }
-      ],
-      "flags": [],
-      "refs": [
-        {
-          "ref": "XC-catalog-product-feed@4.0.0",
-          "id": "XC-catalog-product-feed",
-          "version": "4.0.0",
-          "pinned_digest": "91b2c3d4e5f60718293a4b5c6d7e8f9012a3b4c5d6e7f8091a2b3c4d5e6f7081",
-          "resolved_digest": "91b2c3d4e5f60718293a4b5c6d7e8f9012a3b4c5d6e7f8091a2b3c4d5e6f7081",
-          "resolved": true,
-          "digest_mismatch": false
-        }
-      ],
-      "sync_stale": false,
-      "sync_age": "2m"
-    },
-    {
-      "sourceClass": "canonical",
-      "space": "checkout-core",
-      "id": "XA-catalog-20260728-f6g7",
-      "type": "announcement",
-      "title": "Product feed v3 sunsets on 2026-09-01",
-      "from": "catalog",
-      "to": [
-        "atlas",
-        "checkout"
-      ],
-      "state": "published",
-      "thread": "thread:catalog-20260728-f6g7",
-      "envelope": {
-        "schema": "envelope/v1",
-        "id": "XA-catalog-20260728-f6g7",
-        "type": "announcement",
-        "title": "Product feed v3 sunsets on 2026-09-01",
-        "space": "checkout-core",
-        "from": "catalog",
-        "to": [
-          "atlas",
-          "checkout"
-        ],
-        "actor": {
-          "kind": "agent",
-          "name": "catalog-agent",
-          "model": "demo-agent-model"
-        },
-        "created": "2026-07-28T07:00:00Z",
-        "priority": "p2",
-        "blocking": false,
-        "thread": "thread:catalog-20260728-f6g7",
-        "refs": [
-          {
-            "ref": "XC-catalog-product-feed@4.0.0",
-            "note": "Successor contract version"
-          }
-        ],
-        "classification": "internal",
-        "valid_until": "2026-09-01",
-        "category": "deprecation",
-        "ack_requested": true,
-        "deprecates": "XC-catalog-product-feed@3.4.0"
-      },
-      "body": "Registered v3 consumers must move to product-feed v4 before the sunset date. v3 remains readable after retirement; it stops accepting new consumers.",
-      "digest": "28a91b2c3d4e5f60718293a4b5c6d7e8f9012a3b4c5d6e7f8091a2b3c4d5e6f0",
-      "events": [
-        {
-          "ulid": "01K9A2B3C4D5E6F7G8H9J0K1M2",
-          "subject": "XA-catalog-20260728-f6g7",
-          "transition": "publish",
-          "claimed_state": "published",
-          "actor": "catalog-agent",
-          "actor_system": "catalog",
-          "at": "2026-07-28T07:01:00Z",
-          "actor_kind": "agent",
-          "actor_model": "gpt-5",
-          "actor_session": "session:demo-catalog",
-          "produced_by": {
-            "tool": "a2a",
-            "version": "0.19.0"
-          }
-        }
-      ],
-      "flags": [],
-      "refs": [
-        {
-          "ref": "XC-catalog-product-feed@4.0.0",
-          "id": "XC-catalog-product-feed",
-          "version": "4.0.0",
-          "pinned_digest": "91b2c3d4e5f60718293a4b5c6d7e8f9012a3b4c5d6e7f8091a2b3c4d5e6f7081",
-          "resolved_digest": "91b2c3d4e5f60718293a4b5c6d7e8f9012a3b4c5d6e7f8091a2b3c4d5e6f7081",
-          "resolved": true,
-          "digest_mismatch": false
-        }
-      ],
-      "sync_stale": false,
-      "sync_age": "2m"
-    },
-    {
-      "sourceClass": "canonical",
-      "space": "customer-ops",
-      "id": "XH-legacycrm-20260709-x3y4",
-      "type": "handoff",
-      "title": "</script><img src=x onerror=alert('rendering-test')>",
-      "from": "legacycrm",
-      "to": [
-        "atlas"
-      ],
-      "state": "submitted",
-      "thread": "thread:legacycrm-20260709-x3y4",
-      "envelope": {
-        "schema": "envelope/v1",
-        "id": "XH-legacycrm-20260709-x3y4",
-        "type": "handoff",
-        "title": "</script><img src=x onerror=alert('rendering-test')>",
-        "space": "customer-ops",
-        "from": "legacycrm",
-        "to": [
-          "atlas"
-        ],
-        "actor": {
-          "kind": "agent",
-          "name": "legacy-agent",
-          "model": "demo-agent-model"
-        },
-        "created": "2026-07-09T10:00:00Z",
-        "priority": "p2",
-        "blocking": false,
-        "thread": "thread:legacycrm-20260709-x3y4",
-        "classification": "internal",
-        "category": "migration",
-        "context": "The hostile-looking title is deliberate rendering-test data and must never execute as markup.",
-        "deliverables": [
-          {
-            "name": "Final export snapshot",
-            "ref": "DP-legacycrm-20260709-w5z1",
-            "kind": "data"
-          },
-          {
-            "name": "Attachment index",
-            "ref": "DP-legacycrm-20260709-q8v3",
-            "kind": "data"
-          }
-        ]
-      },
-      "body": "Legacy CRM handed off its final export snapshot before leaving the shared space. Atlas still needs to decide whether to accept or decline it.",
-      "events": [
-        {
-          "ulid": "01K6A2B3C4D5E6F7G8H9J0K1M2",
-          "subject": "XH-legacycrm-20260709-x3y4",
-          "transition": "submit",
-          "claimed_state": "submitted",
-          "actor": "legacy-agent",
-          "actor_system": "legacycrm",
-          "at": "2026-07-09T10:01:00Z",
-          "actor_kind": "agent",
-          "actor_model": "gpt-5",
-          "actor_session": "session:demo-legacycrm",
-          "produced_by": {
-            "tool": "a2a",
-            "version": "0.19.0"
-          }
-        },
-        {
-          "ulid": "01K6A2B3C4D5E6F7G8H9J0K1M3",
-          "subject": "XH-legacycrm-20260709-x3y4",
-          "transition": "acknowledge",
-          "claimed_state": "acknowledged",
-          "actor": "unrelated-agent",
-          "actor_system": "comms",
-          "at": "2026-07-09T10:05:00Z",
-          "actor_kind": "agent",
-          "actor_model": "gpt-5",
-          "actor_session": "session:demo-comms",
-          "produced_by": {
-            "tool": "a2a",
-            "version": "0.19.0"
-          }
-        }
-      ],
-      "flags": [
-        "unauthorized-actor"
-      ],
-      "refs": [],
-      "sync_stale": true,
-      "sync_age": "4h"
-    },
-    {
-      "sourceClass": "canonical",
-      "space": "checkout-core",
-      "id": "XA-atlas-20260730-d9e2",
-      "type": "announcement",
-      "title": "Order envelope v2 rollout enters the observation window",
-      "from": "atlas",
-      "to": [
-        "catalog",
-        "checkout",
-        "comms",
-        "fulfillment"
-      ],
-      "state": "published",
-      "thread": "thread:atlas-20260730-d9e2",
-      "envelope": {
-        "schema": "envelope/v1",
-        "id": "XA-atlas-20260730-d9e2",
-        "type": "announcement",
-        "title": "Order envelope v2 rollout enters the observation window",
-        "space": "checkout-core",
-        "from": "atlas",
-        "to": [
-          "catalog",
-          "checkout",
-          "comms",
-          "fulfillment"
-        ],
-        "actor": {
-          "kind": "agent",
-          "name": "atlas-agent",
-          "model": "demo-agent-model"
-        },
-        "created": "2026-07-30T13:00:00Z",
-        "priority": "p3",
-        "blocking": false,
-        "thread": "thread:atlas-20260730-d9e2",
-        "classification": "internal",
-        "category": "rollout",
-        "ack_requested": false,
-        "context": "Two weeks of observation before atlas stops writing the v1 payload alongside v2."
-      },
-      "body": "The v2 payload is now the default on every order atlas emits. v1 is still written beside it for two weeks. Report a regression in this thread rather than opening a new one.",
-      "digest": "d9e2f0a1b2c3d4e5f60718293a4b5c6d7e8f9012a3b4c5d6e7f8091a2b3c4d5e",
-      "events": [
-        {
-          "ulid": "01K9D9E2F0A1B2C3D4E5F60718",
-          "subject": "XA-atlas-20260730-d9e2",
-          "transition": "publish",
-          "claimed_state": "published",
-          "actor": "atlas-agent",
-          "actor_system": "atlas",
-          "at": "2026-07-30T13:05:00Z",
-          "actor_kind": "agent",
-          "actor_model": "gpt-5",
-          "actor_session": "session:demo-atlas",
-          "produced_by": {
-            "tool": "a2a",
-            "version": "0.19.0"
-          }
-        }
-      ],
-      "flags": [],
-      "refs": [],
-      "sync_stale": false,
-      "sync_age": "2m"
-    },
-    {
-      "sourceClass": "canonical",
-      "space": "customer-ops",
-      "id": "XQ-atlas-20260726-t5v6",
-      "type": "question",
-      "title": "Which fixture proves attachment names are redacted?",
-      "from": "atlas",
-      "to": [
-        "support"
-      ],
-      "state": "closed",
-      "thread": "thread:redaction-fixture-closed",
-      "envelope": {
-        "schema": "envelope/v1",
-        "id": "XQ-atlas-20260726-t5v6",
-        "type": "question",
-        "title": "Which fixture proves attachment names are redacted?",
-        "space": "customer-ops",
-        "from": "atlas",
-        "to": [
-          "support"
-        ],
-        "actor": {
-          "kind": "agent",
-          "name": "atlas-agent",
-          "model": "demo-agent-model"
-        },
-        "created": "2026-07-26T09:00:00Z",
-        "priority": "p2",
-        "blocking": false,
-        "needed_by": "2026-07-27",
-        "expected_response": {
-          "shape": "A redacted replay fixture and its expected digest",
-          "by": "2026-07-27"
-        },
-        "thread": "thread:redaction-fixture-closed",
-        "classification": "restricted"
-      },
-      "body": "Support supplied the fixture, Atlas verified the digest and the question is now closed.",
-      "events": [
-        {
-          "ulid": "01K4A2B3C4D5E6F7G8H9J0K1M7",
-          "subject": "XQ-atlas-20260726-t5v6",
-          "transition": "submit",
-          "claimed_state": "submitted",
-          "actor": "atlas-agent",
-          "actor_system": "atlas",
-          "at": "2026-07-26T09:01:00Z",
-          "actor_kind": "agent",
-          "actor_model": "gpt-5",
-          "actor_session": "session:demo-atlas",
-          "produced_by": {
-            "tool": "a2a",
-            "version": "0.19.0"
-          }
-        },
-        {
-          "ulid": "01K4A2B3C4D5E6F7G8H9J0K1MN",
-          "subject": "XQ-atlas-20260726-t5v6",
-          "transition": "close",
-          "claimed_state": "closed",
-          "actor": "atlas-agent",
-          "actor_system": "atlas",
-          "at": "2026-07-27T11:30:00Z",
-          "actor_kind": "agent",
-          "actor_model": "gpt-5",
-          "actor_session": "session:demo-atlas",
-          "produced_by": {
-            "tool": "a2a",
-            "version": "0.19.0"
-          }
-        }
-      ],
-      "flags": [],
-      "refs": [],
-      "sync_stale": true,
-      "sync_age": "4h"
-    },
-    {
-      "sourceClass": "canonical",
-      "space": "customer-ops",
-      "id": "XW-atlas-20260712-cancelled",
-      "type": "work_request",
-      "title": "Prepare a temporary CRM replay bridge",
-      "from": "atlas",
-      "to": [
-        "legacycrm"
-      ],
-      "state": "cancelled",
-      "thread": "thread:legacycrm-20260709-x3y4",
-      "envelope": {
-        "schema": "envelope/v1",
-        "id": "XW-atlas-20260712-cancelled",
-        "type": "work_request",
-        "title": "Prepare a temporary CRM replay bridge",
-        "space": "customer-ops",
-        "from": "atlas",
-        "to": [
-          "legacycrm"
-        ],
-        "actor": {
-          "kind": "human",
-          "name": "platform-owner"
-        },
-        "created": "2026-07-12T10:00:00Z",
-        "priority": "p3",
-        "blocking": false,
-        "needed_by": "2026-07-18",
-        "expected_response": {
-          "shape": "A replayable bridge and a removal plan",
-          "by": "2026-07-18"
-        },
-        "thread": "thread:legacycrm-20260709-x3y4",
-        "classification": "internal"
-      },
-      "body": "The temporary bridge was cancelled after the archive path replaced the replay plan.",
-      "events": [
-        {
-          "ulid": "01K6A2B3C4D5E6F7G8H9J0K1P1",
-          "subject": "XW-atlas-20260712-cancelled",
-          "transition": "submit",
-          "claimed_state": "submitted",
-          "actor": "platform-owner",
-          "actor_system": "atlas",
-          "at": "2026-07-12T10:01:00Z",
-          "actor_kind": "agent",
-          "actor_model": "gpt-5",
-          "actor_session": "session:demo-atlas",
-          "produced_by": {
-            "tool": "a2a",
-            "version": "0.19.0"
-          }
-        },
-        {
-          "ulid": "01K6A2B3C4D5E6F7G8H9J0K1P2",
-          "subject": "XW-atlas-20260712-cancelled",
-          "transition": "cancel",
-          "claimed_state": "cancelled",
-          "actor": "platform-owner",
-          "actor_system": "atlas",
-          "at": "2026-07-16T14:00:00Z",
-          "actor_kind": "agent",
-          "actor_model": "gpt-5",
-          "actor_session": "session:demo-atlas",
-          "produced_by": {
-            "tool": "a2a",
-            "version": "0.19.0"
-          }
-        }
-      ],
-      "flags": [],
-      "refs": [],
-      "sync_stale": true,
-      "sync_age": "4h"
-    }
-  ],
-  "unavailable": [
-    {
-      "id": "snapshot-v3-verdict",
-      "scope": "all-spaces",
-      "title": "Whole-snapshot V3 verdict",
-      "reason": "No persisted validation run with timestamp, scope, inputs and codes is mounted in this static HTML read.",
-      "sourceClass": "unavailable"
-    },
-    {
-      "id": "binding-byte-match",
-      "scope": "contracts",
-      "title": "Current generated bytes match source digest",
-      "reason": "generatedTool and sourceDigest are binding metadata, not a current verification result.",
-      "sourceClass": "unavailable"
-    },
-    {
-      "id": "archive-migration-contents",
-      "scope": "archive-migration",
-      "title": "Archive migration contents",
-      "reason": "The mirror or manifest is unreadable. Zero participants or work must not be inferred.",
-      "sourceClass": "unavailable"
-    },
-    {
-      "id": "hosted-hub-state",
-      "scope": "product",
-      "title": "Hosted Hub state",
-      "reason": "The hosted Hub is a future architecture, not a shipped read surface.",
-      "sourceClass": "unavailable"
+      "unresolved": [],
+      "settled": true
     }
   ],
   "workReports": [
@@ -4289,7 +3395,13 @@
       "subject_ref": "XW-checkout-20260728-c3d4",
       "mode": "implementing",
       "summary": "Implementing the idempotent capture fix and replay fixture",
-      "actor": {"kind": "agent", "name": "codex", "system": "atlas", "model": "gpt-5", "session": "session:demo-atlas"},
+      "actor": {
+        "kind": "agent",
+        "name": "codex",
+        "system": "atlas",
+        "model": "gpt-5",
+        "session": "session:demo-atlas"
+      },
       "waiting_on": [],
       "reported_at": "2026-07-30T16:57:00Z",
       "valid_until": "2026-07-30T17:25:00Z",
@@ -4303,7 +3415,13 @@
       "subject_ref": "XQ-checkout-20260730-a1b2",
       "mode": "testing",
       "summary": "Running provider replay and acknowledgement-loss fixtures",
-      "actor": {"kind": "agent", "name": "maya", "system": "checkout", "model": "gpt-5", "session": "session:demo-checkout"},
+      "actor": {
+        "kind": "agent",
+        "name": "maya",
+        "system": "checkout",
+        "model": "gpt-5",
+        "session": "session:demo-checkout"
+      },
       "waiting_on": [],
       "reported_at": "2026-07-30T16:54:00Z",
       "valid_until": "2026-07-30T17:29:00Z",
@@ -4317,7 +3435,13 @@
       "subject_ref": "XC-catalog-product-feed@4.0.0",
       "mode": "planning",
       "summary": "Planning the product-feed v4 migration and compatibility window",
-      "actor": {"kind": "agent", "name": "catalog-agent", "system": "catalog", "model": "gpt-5", "session": "session:demo-catalog-plan"},
+      "actor": {
+        "kind": "agent",
+        "name": "catalog-agent",
+        "system": "catalog",
+        "model": "gpt-5",
+        "session": "session:demo-catalog-plan"
+      },
       "waiting_on": [],
       "reported_at": "2026-07-30T16:47:00Z",
       "valid_until": "2026-07-30T17:17:00Z",
@@ -4331,7 +3455,13 @@
       "subject_ref": "XS-catalog-20260730-m9n2",
       "mode": "reviewing",
       "summary": "Reviewing the migration response against the declared contract",
-      "actor": {"kind": "agent", "name": "review-bot", "system": "atlas", "model": "gpt-5", "session": "session:demo-review"},
+      "actor": {
+        "kind": "agent",
+        "name": "review-bot",
+        "system": "atlas",
+        "model": "gpt-5",
+        "session": "session:demo-review"
+      },
       "waiting_on": [],
       "reported_at": "2026-07-30T17:10:00Z",
       "valid_until": "2026-07-30T17:40:00Z",
@@ -4345,7 +3475,13 @@
       "subject_ref": "XH-legacycrm-20260709-x3y4",
       "mode": "implementing",
       "summary": "Replacing the legacy export adapter and preparing migration fixtures",
-      "actor": {"kind": "agent", "name": "codex", "system": "atlas", "model": "gpt-5", "session": "session:demo-legacy-atlas"},
+      "actor": {
+        "kind": "agent",
+        "name": "codex",
+        "system": "atlas",
+        "model": "gpt-5",
+        "session": "session:demo-legacy-atlas"
+      },
       "waiting_on": [],
       "reported_at": "2026-07-30T16:56:00Z",
       "valid_until": "2026-07-30T17:26:00Z",
@@ -4359,13 +3495,39 @@
       "subject_ref": "XC-legacycrm-export@1.0.0",
       "mode": "waiting",
       "summary": "Preparing the provider-side export after the replacement contract is ready",
-      "actor": {"kind": "agent", "name": "xpressmike", "system": "legacycrm", "model": "gpt-5", "session": "session:demo-mike"},
+      "actor": {
+        "kind": "agent",
+        "name": "xpressmike",
+        "system": "legacycrm",
+        "model": "gpt-5",
+        "session": "session:demo-mike"
+      },
       "waiting_on": [
-        {"kind": "system", "id": "atlas", "summary": "Replacement contract and final fixture bytes"},
-        {"kind": "human", "id": "product-owner", "summary": "Approve the legacy field-removal window"},
-        {"kind": "tool", "id": "github-actions", "summary": "Cross-repository fixture matrix"},
-        {"kind": "timer", "id": "migration-window", "summary": "Scheduled production cutover"},
-        {"kind": "external", "id": "crm-provider", "summary": "Export checksum from the vendor"}
+        {
+          "kind": "system",
+          "id": "atlas",
+          "summary": "Replacement contract and final fixture bytes"
+        },
+        {
+          "kind": "human",
+          "id": "product-owner",
+          "summary": "Approve the legacy field-removal window"
+        },
+        {
+          "kind": "tool",
+          "id": "github-actions",
+          "summary": "Cross-repository fixture matrix"
+        },
+        {
+          "kind": "timer",
+          "id": "migration-window",
+          "summary": "Scheduled production cutover"
+        },
+        {
+          "kind": "external",
+          "id": "crm-provider",
+          "summary": "Export checksum from the vendor"
+        }
       ],
       "reported_at": "2026-07-30T16:58:00Z",
       "valid_until": "2026-07-30T17:28:00Z",
@@ -4379,7 +3541,13 @@
       "subject_ref": "XH-support-20260729-q5n6",
       "mode": "paused",
       "summary": "Paused the redaction rollout while legal reviews the attachment policy",
-      "actor": {"kind": "agent", "name": "support-agent", "system": "support", "model": "gpt-5", "session": "session:demo-support"},
+      "actor": {
+        "kind": "agent",
+        "name": "support-agent",
+        "system": "support",
+        "model": "gpt-5",
+        "session": "session:demo-support"
+      },
       "waiting_on": [],
       "reported_at": "2026-07-30T14:05:00Z",
       "valid_until": "2026-07-30T15:05:00Z",
@@ -4393,7 +3561,13 @@
       "subject_ref": "XQ-atlas-20260726-t5v6",
       "mode": "finished",
       "summary": "Published the redaction fixture and recorded verification evidence",
-      "actor": {"kind": "agent", "name": "maya", "system": "atlas", "model": "gpt-5", "session": "session:demo-redaction"},
+      "actor": {
+        "kind": "agent",
+        "name": "maya",
+        "system": "atlas",
+        "model": "gpt-5",
+        "session": "session:demo-redaction"
+      },
       "waiting_on": [],
       "reported_at": "2026-07-30T16:35:00Z",
       "commit_sequence": 21
@@ -4534,7 +3708,7 @@
       {
         "space": "customer-ops",
         "thread": "thread:legacycrm-20260709-x3y4",
-        "title": "</script><img src=x onerror=alert('rendering-test')>",
+        "title": "\u003c/script\u003e\u003cimg src=x onerror=alert('rendering-test')\u003e",
         "participants": [
           "atlas",
           "legacycrm"
@@ -4897,5 +4071,981 @@
         "summary": "Committed operational evidence is unavailable for this space"
       }
     ]
-  }
+  },
+  "artifactDetails": [
+    {
+      "sourceClass": "canonical",
+      "space": "checkout-core",
+      "id": "XC-catalog-product-feed",
+      "type": "contract",
+      "title": "Catalog product feed",
+      "from": "catalog",
+      "to": [
+        "atlas",
+        "checkout"
+      ],
+      "state": "published",
+      "thread": "thread:catalog-20260725-p3q4",
+      "envelope": {
+        "actor": {
+          "kind": "agent",
+          "model": "demo-agent-model",
+          "name": "catalog-agent",
+          "session": "demo-catalog-17"
+        },
+        "blocking": false,
+        "category": "data-feed",
+        "classification": "internal",
+        "compat_policy": "additive changes within a major",
+        "created": "2026-07-25T08:00:00Z",
+        "from": "catalog",
+        "generated_from": {
+          "source_digest": "2b5e1d3cf9a70e2419be1dddf6c7e88f1dc50d765fa4ba171e62f8b048e9d202",
+          "tool": "demo-schema-exporter"
+        },
+        "id": "XC-catalog-product-feed",
+        "priority": "p3",
+        "schema": "envelope/v1",
+        "schema_format": "json-schema-2020-12",
+        "space": "checkout-core",
+        "thread": "thread:catalog-20260725-p3q4",
+        "title": "Catalog product feed",
+        "to": [
+          "atlas",
+          "checkout"
+        ],
+        "type": "contract",
+        "version": "4.0.0"
+      },
+      "body": "Incremental product and availability feed consumed by ordering systems.\n\nThe v4 line removes the legacy flattened availability fields and carries explicit regional inventory entries.",
+      "bodyHTML": "\u003cp\u003eIncremental product and availability feed consumed by ordering systems.\u003c/p\u003e\n\u003cp\u003eThe v4 line removes the legacy flattened availability fields and carries explicit regional inventory entries.\u003c/p\u003e\n",
+      "digest": "91b2c3d4e5f60718293a4b5c6d7e8f9012a3b4c5d6e7f8091a2b3c4d5e6f7081",
+      "events": [
+        {
+          "ulid": "01K7A2B3C4D5E6F7G8H9J0K1M2",
+          "subject": "XC-catalog-product-feed",
+          "transition": "publish",
+          "claimed_state": "published",
+          "actor_kind": "agent",
+          "actor": "catalog-agent",
+          "actor_system": "catalog",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-catalog",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          },
+          "at": "2026-07-25T08:01:00Z"
+        }
+      ],
+      "flags": [],
+      "refs": [],
+      "attachments": null,
+      "sync_stale": false,
+      "sync_age": "2m",
+      "outcome": "open",
+      "terminal": false
+    },
+    {
+      "sourceClass": "canonical",
+      "space": "checkout-core",
+      "id": "XQ-checkout-20260730-a1b2",
+      "type": "question",
+      "title": "Should a retry reuse the original capture idempotency key?",
+      "from": "checkout",
+      "to": [
+        "atlas"
+      ],
+      "state": "submitted",
+      "thread": "thread:checkout-20260728-c3d4",
+      "envelope": {
+        "actor": {
+          "kind": "agent",
+          "model": "demo-agent-model",
+          "name": "checkout-agent"
+        },
+        "blocking": false,
+        "category": "clarification",
+        "classification": "internal",
+        "created": "2026-07-30T11:50:00Z",
+        "expected_response": {
+          "by": "2026-07-31",
+          "shape": "One rule plus the retry cases it covers"
+        },
+        "from": "checkout",
+        "id": "XQ-checkout-20260730-a1b2",
+        "needed_by": "2026-07-31",
+        "priority": "p2",
+        "refs": [
+          {
+            "note": "The disputed implementation",
+            "ref": "XW-checkout-20260728-c3d4"
+          },
+          {
+            "note": "Capture event semantics",
+            "ref": "XC-billing-payment-events@2.4.0"
+          }
+        ],
+        "schema": "envelope/v1",
+        "space": "checkout-core",
+        "thread": "thread:checkout-20260728-c3d4",
+        "title": "Should a retry reuse the original capture idempotency key?",
+        "to": [
+          "atlas"
+        ],
+        "type": "question"
+      },
+      "body": "The first capture can succeed while the worker loses the provider acknowledgement. Should the retry keep the first idempotency key or derive a new key from the retry attempt?",
+      "bodyHTML": "\u003cp\u003eThe first capture can succeed while the worker loses the provider acknowledgement. Should the retry keep the first idempotency key or derive a new key from the retry attempt?\u003c/p\u003e\n",
+      "digest": "73b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708193",
+      "events": [
+        {
+          "ulid": "01K1A2B3C4D5E6F7G8H9J0K1M9",
+          "subject": "XQ-checkout-20260730-a1b2",
+          "transition": "submit",
+          "claimed_state": "submitted",
+          "actor_kind": "agent",
+          "actor": "checkout-agent",
+          "actor_system": "checkout",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-checkout",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          },
+          "at": "2026-07-30T11:57:00Z"
+        }
+      ],
+      "flags": [],
+      "refs": [
+        {
+          "ref": "XW-checkout-20260728-c3d4",
+          "id": "XW-checkout-20260728-c3d4",
+          "resolved": true
+        },
+        {
+          "ref": "XC-billing-payment-events@2.4.0",
+          "id": "XC-billing-payment-events",
+          "version": "2.4.0",
+          "pinned_digest": "ab68a7ba1830d95e6c8d7d61a4c4eaf088f51d3e0f352f961c6745fb684f21ae",
+          "resolved": true,
+          "resolved_digest": "ab68a7ba1830d95e6c8d7d61a4c4eaf088f51d3e0f352f961c6745fb684f21ae"
+        }
+      ],
+      "attachments": null,
+      "sync_stale": false,
+      "sync_age": "2m",
+      "outcome": "open",
+      "terminal": false
+    },
+    {
+      "sourceClass": "canonical",
+      "space": "checkout-core",
+      "id": "XW-checkout-20260728-c3d4",
+      "type": "work_request",
+      "title": "Prevent duplicate payment capture after a worker retry",
+      "from": "checkout",
+      "to": [
+        "atlas"
+      ],
+      "state": "in_progress",
+      "thread": "thread:checkout-20260728-c3d4",
+      "envelope": {
+        "acceptance_criteria": [
+          "A retry cannot create a second provider capture",
+          "The replay fixture covers acknowledgement loss",
+          "A second run returns the existing semantic result"
+        ],
+        "actor": {
+          "kind": "agent",
+          "model": "demo-agent-model",
+          "name": "checkout-agent",
+          "session": "demo-checkout-42"
+        },
+        "blocking": true,
+        "category": "fix",
+        "classification": "internal",
+        "created": "2026-07-28T09:00:00Z",
+        "effort_estimate": "m",
+        "expected_response": {
+          "by": "2026-07-29",
+          "shape": "Patch, replay fixture and failure-mode note"
+        },
+        "from": "checkout",
+        "id": "XW-checkout-20260728-c3d4",
+        "interim_behavior": "Pause automatic retry after an ambiguous capture result and send the item to manual review.",
+        "needed_by": "2026-07-29",
+        "origin": "demo-incident:payment-retry",
+        "priority": "p1",
+        "refs": [
+          {
+            "note": "The event line used after capture",
+            "ref": "XC-billing-payment-events@2.4.0"
+          }
+        ],
+        "schema": "envelope/v1",
+        "space": "checkout-core",
+        "thread": "thread:checkout-20260728-c3d4",
+        "title": "Prevent duplicate payment capture after a worker retry",
+        "to": [
+          "atlas"
+        ],
+        "type": "work_request"
+      },
+      "body": "A worker retry can issue a second capture after the first provider call succeeds but the acknowledgement is lost. The fix must preserve one semantic operation across retries.",
+      "bodyHTML": "\u003cp\u003eA worker retry can issue a second capture after the first provider call succeeds but the acknowledgement is lost. The fix must preserve one semantic operation across retries.\u003c/p\u003e\n",
+      "digest": "64c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70819400",
+      "events": [
+        {
+          "ulid": "01K1A2B3C4D5E6F7G8H9J0K1M2",
+          "subject": "XW-checkout-20260728-c3d4",
+          "transition": "submit",
+          "claimed_state": "submitted",
+          "actor_kind": "agent",
+          "actor": "checkout-agent",
+          "actor_system": "checkout",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-checkout",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          },
+          "at": "2026-07-28T09:01:00Z"
+        },
+        {
+          "ulid": "01K1A2B3C4D5E6F7G8H9J0K1M5",
+          "subject": "XW-checkout-20260728-c3d4",
+          "transition": "start",
+          "claimed_state": "in_progress",
+          "actor_kind": "agent",
+          "actor": "atlas-agent",
+          "actor_system": "atlas",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-atlas",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          },
+          "at": "2026-07-28T09:22:00Z"
+        },
+        {
+          "ulid": "01K1A2B3C4D5E6F7G8H9J0K1M7",
+          "subject": "XW-checkout-20260728-c3d4",
+          "transition": "respond",
+          "claimed_state": "in_progress",
+          "actor_kind": "agent",
+          "actor": "atlas-agent",
+          "actor_system": "atlas",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-atlas",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          },
+          "consistency": {
+            "kind": "state-claim-mismatch",
+            "event_ulid": "01K1A2B3C4D5E6F7G8H9J0K1M7",
+            "subject": "XW-checkout-20260728-c3d4",
+            "scope": {
+              "kind": "artifact",
+              "subject": "XW-checkout-20260728-c3d4"
+            },
+            "actual": "responded",
+            "claimed": "in_progress",
+            "actor": {
+              "kind": "agent",
+              "name": "atlas-agent",
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "producer": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            },
+            "cause": "The producer receipt disagrees with the authoritative fold outcome"
+          },
+          "at": "2026-07-29T14:01:00Z"
+        }
+      ],
+      "flags": [
+        "state-claim-mismatch"
+      ],
+      "refs": [
+        {
+          "ref": "XC-billing-payment-events@2.4.0",
+          "id": "XC-billing-payment-events",
+          "version": "2.4.0",
+          "pinned_digest": "ab68a7ba1830d95e6c8d7d61a4c4eaf088f51d3e0f352f961c6745fb684f21ae",
+          "resolved": true,
+          "resolved_digest": "ab68a7ba1830d95e6c8d7d61a4c4eaf088f51d3e0f352f961c6745fb684f21ae"
+        }
+      ],
+      "attachments": null,
+      "sync_stale": false,
+      "sync_age": "2m",
+      "outcome": "open",
+      "terminal": false
+    },
+    {
+      "sourceClass": "canonical",
+      "space": "customer-ops",
+      "id": "XH-support-20260729-q5n6",
+      "type": "handoff",
+      "title": "PII-redacted support case stream v2",
+      "from": "support",
+      "to": [
+        "atlas"
+      ],
+      "state": "acknowledged",
+      "thread": "thread:support-20260729-q5n6",
+      "envelope": {
+        "acceptance_criteria": [
+          "Message bodies are absent from emitted events",
+          "Attachment names are redacted in the supplied fixture",
+          "Atlas can validate the v2 contract and replay the sample"
+        ],
+        "actor": {
+          "kind": "agent",
+          "model": "demo-agent-model",
+          "name": "support-agent"
+        },
+        "blocking": true,
+        "classification": "restricted",
+        "created": "2026-07-29T05:30:00Z",
+        "deliverables": [
+          {
+            "kind": "contract",
+            "name": "Support case stream contract",
+            "ref": "XC-support-case-stream@2.0.0"
+          },
+          {
+            "kind": "data",
+            "name": "Redaction replay fixture",
+            "ref": "DP-support-20260729-h4k2"
+          },
+          {
+            "kind": "data",
+            "name": "Support case index",
+            "ref": "DP-support-20260729-m3q7"
+          },
+          {
+            "kind": "doc",
+            "name": "Verification notes",
+            "ref": "docs/redaction-verification.md"
+          }
+        ],
+        "env_requirements": "a2a 0.16.0 or newer",
+        "from": "support",
+        "fulfills": [
+          "XD-support-20260725-s3t4"
+        ],
+        "id": "XH-support-20260729-q5n6",
+        "limitations": [
+          "Historical v1 events are not rewritten",
+          "The demo fixture proves shape, not production data retention"
+        ],
+        "priority": "p2",
+        "refs": [
+          {
+            "note": "Approved redaction boundary",
+            "ref": "XD-support-20260725-s3t4"
+          },
+          {
+            "note": "Delivered contract",
+            "ref": "XC-support-case-stream@2.0.0"
+          }
+        ],
+        "schema": "envelope/v1",
+        "space": "customer-ops",
+        "thread": "thread:support-20260729-q5n6",
+        "title": "PII-redacted support case stream v2",
+        "to": [
+          "atlas"
+        ],
+        "type": "handoff",
+        "verification": "Run the contract valid/invalid fixtures and compare the replay output with the supplied redacted sample."
+      },
+      "body": "Support delivers the v2 schema, fixtures and a replay sample. Atlas has acknowledged receipt and must verify or reject the handoff.",
+      "bodyHTML": "\u003cp\u003eSupport delivers the v2 schema, fixtures and a replay sample. Atlas has acknowledged receipt and must verify or reject the handoff.\u003c/p\u003e\n",
+      "digest": "46e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708196b6c600",
+      "events": [
+        {
+          "ulid": "01K4A2B3C4D5E6F7G8H9J0K1MF",
+          "subject": "XH-support-20260729-q5n6",
+          "transition": "submit",
+          "claimed_state": "submitted",
+          "actor_kind": "agent",
+          "actor": "support-agent",
+          "actor_system": "support",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-support",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          },
+          "at": "2026-07-29T05:31:00Z"
+        },
+        {
+          "ulid": "01K4A2B3C4D5E6F7G8H9J0K1MG",
+          "subject": "XH-support-20260729-q5n6",
+          "transition": "acknowledge",
+          "claimed_state": "acknowledged",
+          "actor_kind": "agent",
+          "actor": "atlas-agent",
+          "actor_system": "atlas",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-atlas",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          },
+          "at": "2026-07-29T05:45:00Z"
+        }
+      ],
+      "flags": [],
+      "refs": [
+        {
+          "ref": "XD-support-20260725-s3t4",
+          "id": "XD-support-20260725-s3t4",
+          "resolved": true
+        },
+        {
+          "ref": "XC-support-case-stream@2.0.0",
+          "id": "XC-support-case-stream",
+          "version": "2.0.0",
+          "pinned_digest": "dbf022044668712449e8a31c85f158fe8e2c46f858213f3094a3d69daf2af1d9",
+          "resolved": true,
+          "resolved_digest": "dbf022044668712449e8a31c85f158fe8e2c46f858213f3094a3d69daf2af1d9"
+        }
+      ],
+      "attachments": null,
+      "sync_stale": true,
+      "sync_age": "4h",
+      "outcome": "open",
+      "terminal": false
+    },
+    {
+      "sourceClass": "canonical",
+      "space": "checkout-core",
+      "id": "XS-catalog-20260730-m9n2",
+      "type": "response",
+      "title": "Migration plan and compatibility fixtures",
+      "from": "catalog",
+      "to": [
+        "atlas"
+      ],
+      "state": "submitted",
+      "thread": "thread:atlas-20260727-r7s8",
+      "envelope": {
+        "actor": {
+          "kind": "agent",
+          "model": "demo-agent-model",
+          "name": "catalog-agent"
+        },
+        "blocking": false,
+        "classification": "internal",
+        "created": "2026-07-30T07:55:00Z",
+        "from": "catalog",
+        "id": "XS-catalog-20260730-m9n2",
+        "parent": "XW-atlas-20260727-r7s8",
+        "priority": "p2",
+        "refs": [
+          {
+            "note": "Target contract line",
+            "ref": "XC-catalog-product-feed@4.0.0"
+          }
+        ],
+        "result": "delivered",
+        "schema": "envelope/v1",
+        "space": "checkout-core",
+        "thread": "thread:atlas-20260727-r7s8",
+        "title": "Migration plan and compatibility fixtures",
+        "to": [
+          "atlas"
+        ],
+        "type": "response"
+      },
+      "body": "Catalog attached the field mapping, a v3-to-v4 compatibility fixture, and the date after which v3 samples stop updating.",
+      "bodyHTML": "\u003cp\u003eCatalog attached the field mapping, a v3-to-v4 compatibility fixture, and the date after which v3 samples stop updating.\u003c/p\u003e\n",
+      "digest": "37f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708197c7d7e700",
+      "events": [
+        {
+          "ulid": "01K3A2B3C4D5E6F7G8H9J0K1MC",
+          "subject": "XW-atlas-20260727-r7s8",
+          "transition": "respond",
+          "claimed_state": "responded",
+          "actor_kind": "agent",
+          "actor": "catalog-agent",
+          "actor_system": "catalog",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-catalog",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          },
+          "at": "2026-07-30T07:56:00Z"
+        }
+      ],
+      "flags": [],
+      "refs": [
+        {
+          "ref": "XC-catalog-product-feed@4.0.0",
+          "id": "XC-catalog-product-feed",
+          "version": "4.0.0",
+          "pinned_digest": "91b2c3d4e5f60718293a4b5c6d7e8f9012a3b4c5d6e7f8091a2b3c4d5e6f7081",
+          "resolved": true,
+          "resolved_digest": "91b2c3d4e5f60718293a4b5c6d7e8f9012a3b4c5d6e7f8091a2b3c4d5e6f7081"
+        }
+      ],
+      "attachments": null,
+      "sync_stale": false,
+      "sync_age": "2m",
+      "outcome": "open",
+      "terminal": false
+    },
+    {
+      "sourceClass": "canonical",
+      "space": "checkout-core",
+      "id": "XA-catalog-20260728-f6g7",
+      "type": "announcement",
+      "title": "Product feed v3 sunsets on 2026-09-01",
+      "from": "catalog",
+      "to": [
+        "atlas",
+        "checkout"
+      ],
+      "state": "published",
+      "thread": "thread:catalog-20260728-f6g7",
+      "envelope": {
+        "ack_requested": true,
+        "actor": {
+          "kind": "agent",
+          "model": "demo-agent-model",
+          "name": "catalog-agent"
+        },
+        "blocking": false,
+        "category": "deprecation",
+        "classification": "internal",
+        "created": "2026-07-28T07:00:00Z",
+        "deprecates": "XC-catalog-product-feed@3.4.0",
+        "from": "catalog",
+        "id": "XA-catalog-20260728-f6g7",
+        "priority": "p2",
+        "refs": [
+          {
+            "note": "Successor contract version",
+            "ref": "XC-catalog-product-feed@4.0.0"
+          }
+        ],
+        "schema": "envelope/v1",
+        "space": "checkout-core",
+        "thread": "thread:catalog-20260728-f6g7",
+        "title": "Product feed v3 sunsets on 2026-09-01",
+        "to": [
+          "atlas",
+          "checkout"
+        ],
+        "type": "announcement",
+        "valid_until": "2026-09-01"
+      },
+      "body": "Registered v3 consumers must move to product-feed v4 before the sunset date. v3 remains readable after retirement; it stops accepting new consumers.",
+      "bodyHTML": "\u003cp\u003eRegistered v3 consumers must move to product-feed v4 before the sunset date. v3 remains readable after retirement; it stops accepting new consumers.\u003c/p\u003e\n",
+      "digest": "28a91b2c3d4e5f60718293a4b5c6d7e8f9012a3b4c5d6e7f8091a2b3c4d5e6f0",
+      "events": [
+        {
+          "ulid": "01K9A2B3C4D5E6F7G8H9J0K1M2",
+          "subject": "XA-catalog-20260728-f6g7",
+          "transition": "publish",
+          "claimed_state": "published",
+          "actor_kind": "agent",
+          "actor": "catalog-agent",
+          "actor_system": "catalog",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-catalog",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          },
+          "at": "2026-07-28T07:01:00Z"
+        }
+      ],
+      "flags": [],
+      "refs": [
+        {
+          "ref": "XC-catalog-product-feed@4.0.0",
+          "id": "XC-catalog-product-feed",
+          "version": "4.0.0",
+          "pinned_digest": "91b2c3d4e5f60718293a4b5c6d7e8f9012a3b4c5d6e7f8091a2b3c4d5e6f7081",
+          "resolved": true,
+          "resolved_digest": "91b2c3d4e5f60718293a4b5c6d7e8f9012a3b4c5d6e7f8091a2b3c4d5e6f7081"
+        }
+      ],
+      "attachments": null,
+      "sync_stale": false,
+      "sync_age": "2m",
+      "outcome": "open",
+      "terminal": false
+    },
+    {
+      "sourceClass": "canonical",
+      "space": "customer-ops",
+      "id": "XH-legacycrm-20260709-x3y4",
+      "type": "handoff",
+      "title": "\u003c/script\u003e\u003cimg src=x onerror=alert('rendering-test')\u003e",
+      "from": "legacycrm",
+      "to": [
+        "atlas"
+      ],
+      "state": "submitted",
+      "thread": "thread:legacycrm-20260709-x3y4",
+      "envelope": {
+        "actor": {
+          "kind": "agent",
+          "model": "demo-agent-model",
+          "name": "legacy-agent"
+        },
+        "blocking": false,
+        "category": "migration",
+        "classification": "internal",
+        "context": "The hostile-looking title is deliberate rendering-test data and must never execute as markup.",
+        "created": "2026-07-09T10:00:00Z",
+        "deliverables": [
+          {
+            "kind": "data",
+            "name": "Final export snapshot",
+            "ref": "DP-legacycrm-20260709-w5z1"
+          },
+          {
+            "kind": "data",
+            "name": "Attachment index",
+            "ref": "DP-legacycrm-20260709-q8v3"
+          }
+        ],
+        "from": "legacycrm",
+        "id": "XH-legacycrm-20260709-x3y4",
+        "priority": "p2",
+        "schema": "envelope/v1",
+        "space": "customer-ops",
+        "thread": "thread:legacycrm-20260709-x3y4",
+        "title": "\u003c/script\u003e\u003cimg src=x onerror=alert('rendering-test')\u003e",
+        "to": [
+          "atlas"
+        ],
+        "type": "handoff"
+      },
+      "body": "Legacy CRM handed off its final export snapshot before leaving the shared space. Atlas still needs to decide whether to accept or decline it.",
+      "bodyHTML": "\u003cp\u003eLegacy CRM handed off its final export snapshot before leaving the shared space. Atlas still needs to decide whether to accept or decline it.\u003c/p\u003e\n",
+      "digest": "",
+      "events": [
+        {
+          "ulid": "01K6A2B3C4D5E6F7G8H9J0K1M2",
+          "subject": "XH-legacycrm-20260709-x3y4",
+          "transition": "submit",
+          "claimed_state": "submitted",
+          "actor_kind": "agent",
+          "actor": "legacy-agent",
+          "actor_system": "legacycrm",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-legacycrm",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          },
+          "at": "2026-07-09T10:01:00Z"
+        },
+        {
+          "ulid": "01K6A2B3C4D5E6F7G8H9J0K1M3",
+          "subject": "XH-legacycrm-20260709-x3y4",
+          "transition": "acknowledge",
+          "claimed_state": "acknowledged",
+          "actor_kind": "agent",
+          "actor": "unrelated-agent",
+          "actor_system": "comms",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-comms",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          },
+          "at": "2026-07-09T10:05:00Z"
+        }
+      ],
+      "flags": [
+        "unauthorized-actor"
+      ],
+      "refs": [],
+      "attachments": null,
+      "sync_stale": true,
+      "sync_age": "4h",
+      "outcome": "open",
+      "terminal": false
+    },
+    {
+      "sourceClass": "canonical",
+      "space": "checkout-core",
+      "id": "XA-atlas-20260730-d9e2",
+      "type": "announcement",
+      "title": "Order envelope v2 rollout enters the observation window",
+      "from": "atlas",
+      "to": [
+        "catalog",
+        "checkout",
+        "comms",
+        "fulfillment"
+      ],
+      "state": "published",
+      "thread": "thread:atlas-20260730-d9e2",
+      "envelope": {
+        "ack_requested": false,
+        "actor": {
+          "kind": "agent",
+          "model": "demo-agent-model",
+          "name": "atlas-agent"
+        },
+        "blocking": false,
+        "category": "rollout",
+        "classification": "internal",
+        "context": "Two weeks of observation before atlas stops writing the v1 payload alongside v2.",
+        "created": "2026-07-30T13:00:00Z",
+        "from": "atlas",
+        "id": "XA-atlas-20260730-d9e2",
+        "priority": "p3",
+        "schema": "envelope/v1",
+        "space": "checkout-core",
+        "thread": "thread:atlas-20260730-d9e2",
+        "title": "Order envelope v2 rollout enters the observation window",
+        "to": [
+          "catalog",
+          "checkout",
+          "comms",
+          "fulfillment"
+        ],
+        "type": "announcement"
+      },
+      "body": "The v2 payload is now the default on every order atlas emits. v1 is still written beside it for two weeks. Report a regression in this thread rather than opening a new one.",
+      "bodyHTML": "\u003cp\u003eThe v2 payload is now the default on every order atlas emits. v1 is still written beside it for two weeks. Report a regression in this thread rather than opening a new one.\u003c/p\u003e\n",
+      "digest": "d9e2f0a1b2c3d4e5f60718293a4b5c6d7e8f9012a3b4c5d6e7f8091a2b3c4d5e",
+      "events": [
+        {
+          "ulid": "01K9D9E2F0A1B2C3D4E5F60718",
+          "subject": "XA-atlas-20260730-d9e2",
+          "transition": "publish",
+          "claimed_state": "published",
+          "actor_kind": "agent",
+          "actor": "atlas-agent",
+          "actor_system": "atlas",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-atlas",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          },
+          "at": "2026-07-30T13:05:00Z"
+        }
+      ],
+      "flags": [],
+      "refs": [],
+      "attachments": null,
+      "sync_stale": false,
+      "sync_age": "2m",
+      "outcome": "open",
+      "terminal": false
+    },
+    {
+      "sourceClass": "canonical",
+      "space": "customer-ops",
+      "id": "XQ-atlas-20260726-t5v6",
+      "type": "question",
+      "title": "Which fixture proves attachment names are redacted?",
+      "from": "atlas",
+      "to": [
+        "support"
+      ],
+      "state": "closed",
+      "thread": "thread:redaction-fixture-closed",
+      "envelope": {
+        "actor": {
+          "kind": "agent",
+          "model": "demo-agent-model",
+          "name": "atlas-agent"
+        },
+        "blocking": false,
+        "classification": "restricted",
+        "created": "2026-07-26T09:00:00Z",
+        "expected_response": {
+          "by": "2026-07-27",
+          "shape": "A redacted replay fixture and its expected digest"
+        },
+        "from": "atlas",
+        "id": "XQ-atlas-20260726-t5v6",
+        "needed_by": "2026-07-27",
+        "priority": "p2",
+        "schema": "envelope/v1",
+        "space": "customer-ops",
+        "thread": "thread:redaction-fixture-closed",
+        "title": "Which fixture proves attachment names are redacted?",
+        "to": [
+          "support"
+        ],
+        "type": "question"
+      },
+      "body": "Support supplied the fixture, Atlas verified the digest and the question is now closed.",
+      "bodyHTML": "\u003cp\u003eSupport supplied the fixture, Atlas verified the digest and the question is now closed.\u003c/p\u003e\n",
+      "digest": "",
+      "events": [
+        {
+          "ulid": "01K4A2B3C4D5E6F7G8H9J0K1M7",
+          "subject": "XQ-atlas-20260726-t5v6",
+          "transition": "submit",
+          "claimed_state": "submitted",
+          "actor_kind": "agent",
+          "actor": "atlas-agent",
+          "actor_system": "atlas",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-atlas",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          },
+          "at": "2026-07-26T09:01:00Z"
+        },
+        {
+          "ulid": "01K4A2B3C4D5E6F7G8H9J0K1MN",
+          "subject": "XQ-atlas-20260726-t5v6",
+          "transition": "close",
+          "claimed_state": "closed",
+          "actor_kind": "agent",
+          "actor": "atlas-agent",
+          "actor_system": "atlas",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-atlas",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          },
+          "at": "2026-07-27T11:30:00Z"
+        }
+      ],
+      "flags": [],
+      "refs": [],
+      "attachments": null,
+      "sync_stale": true,
+      "sync_age": "4h",
+      "outcome": "settled",
+      "terminal": true
+    },
+    {
+      "sourceClass": "canonical",
+      "space": "customer-ops",
+      "id": "XW-atlas-20260712-cancelled",
+      "type": "work_request",
+      "title": "Prepare a temporary CRM replay bridge",
+      "from": "atlas",
+      "to": [
+        "legacycrm"
+      ],
+      "state": "cancelled",
+      "thread": "thread:legacycrm-20260709-x3y4",
+      "envelope": {
+        "actor": {
+          "kind": "human",
+          "name": "platform-owner"
+        },
+        "blocking": false,
+        "classification": "internal",
+        "created": "2026-07-12T10:00:00Z",
+        "expected_response": {
+          "by": "2026-07-18",
+          "shape": "A replayable bridge and a removal plan"
+        },
+        "from": "atlas",
+        "id": "XW-atlas-20260712-cancelled",
+        "needed_by": "2026-07-18",
+        "priority": "p3",
+        "schema": "envelope/v1",
+        "space": "customer-ops",
+        "thread": "thread:legacycrm-20260709-x3y4",
+        "title": "Prepare a temporary CRM replay bridge",
+        "to": [
+          "legacycrm"
+        ],
+        "type": "work_request"
+      },
+      "body": "The temporary bridge was cancelled after the archive path replaced the replay plan.",
+      "bodyHTML": "\u003cp\u003eThe temporary bridge was cancelled after the archive path replaced the replay plan.\u003c/p\u003e\n",
+      "digest": "",
+      "events": [
+        {
+          "ulid": "01K6A2B3C4D5E6F7G8H9J0K1P1",
+          "subject": "XW-atlas-20260712-cancelled",
+          "transition": "submit",
+          "claimed_state": "submitted",
+          "actor_kind": "agent",
+          "actor": "platform-owner",
+          "actor_system": "atlas",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-atlas",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          },
+          "at": "2026-07-12T10:01:00Z"
+        },
+        {
+          "ulid": "01K6A2B3C4D5E6F7G8H9J0K1P2",
+          "subject": "XW-atlas-20260712-cancelled",
+          "transition": "cancel",
+          "claimed_state": "cancelled",
+          "actor_kind": "agent",
+          "actor": "platform-owner",
+          "actor_system": "atlas",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-atlas",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          },
+          "at": "2026-07-16T14:00:00Z"
+        }
+      ],
+      "flags": [],
+      "refs": [],
+      "attachments": null,
+      "sync_stale": true,
+      "sync_age": "4h",
+      "outcome": "withdrawn",
+      "terminal": true
+    }
+  ],
+  "unavailable": [
+    {
+      "id": "snapshot-v3-verdict",
+      "scope": "all-spaces",
+      "title": "Whole-snapshot V3 verdict",
+      "reason": "No persisted validation run with timestamp, scope, inputs and codes is mounted in this static HTML read.",
+      "sourceClass": "unavailable"
+    },
+    {
+      "id": "binding-byte-match",
+      "scope": "contracts",
+      "title": "Current generated bytes match source digest",
+      "reason": "generatedTool and sourceDigest are binding metadata, not a current verification result.",
+      "sourceClass": "unavailable"
+    },
+    {
+      "id": "archive-migration-contents",
+      "scope": "archive-migration",
+      "title": "Archive migration contents",
+      "reason": "The mirror or manifest is unreadable. Zero participants or work must not be inferred.",
+      "sourceClass": "unavailable"
+    },
+    {
+      "id": "hosted-hub-state",
+      "scope": "product",
+      "title": "Hosted Hub state",
+      "reason": "The hosted Hub is a future architecture, not a shipped read surface.",
+      "sourceClass": "unavailable"
+    }
+  ]
 }

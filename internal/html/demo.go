@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/notes"
 	"github.com/ydnikolaev/a2ahub/internal/operational"
 	"github.com/ydnikolaev/a2ahub/internal/workreport"
@@ -47,6 +48,7 @@ func DemoData() (Data, error) {
 	d.ReleaseNotes = toReleaseNotes(releases)
 	deriveDemoOwnership(&d)
 	deriveDemoRowFacts(&d)
+	deriveDemoDerivedState(&d)
 	authoredOperational := d.Operational
 	d.Operational, err = demoOperationalSnapshot(d)
 	if err != nil {
@@ -360,4 +362,210 @@ func deriveDemoOwnership(d *Data) {
 		}
 		d.Threads[i].WaitingOthers = others
 	}
+}
+
+// deriveDemoDerivedState fills the five fields 0.19.10 put on every read
+// surface — Outcome, Terminal, StateSince, StateBy, StateEvent — from the
+// facts the fixture already states, for the third time in this file and for
+// the third time for the same reason deriveDemoRowFacts states above: the
+// fixture is hand-maintained, a field it predates decodes to its zero value
+// without failing any gate, and the zero value looks plausible on screen.
+//
+// Here the zero value is not merely plausible, it is FALSE. `Terminal` has no
+// `omitempty`, so a fixture that never mentions it serialises `terminal:false`
+// on all 31 carriers — including a `closed` question and a `cancelled`
+// work_request, which are terminal by the domain's own answer. The demo is
+// what `a2a html --demo` renders and what web/public/demo-data.json ships to
+// the site, so the release whose headline is "the domain says what a state
+// means" had its own showcase asserting the opposite. Absence would have been
+// a gap; `false` is a wrong claim.
+//
+// The two halves are derived differently, and deliberately:
+//
+//   - Outcome and Terminal are ASKED OF THE DOMAIN — fold.OutcomeOf and
+//     fold.Terminal over (type, state), the same call internal/html/assemble.go
+//     makes for a real artifact detail. Nothing here re-implements the answer,
+//     so a fixture row can never disagree with the product about what its own
+//     state means.
+//
+//   - StateSince, StateBy and StateEvent are READ OFF THE FIXTURE'S OWN
+//     EVENTS. They are not a function of (type, state) — they name a specific
+//     event — so there is nothing to ask the domain for. The rule mirrors the
+//     question internal/cache/mirror.go asks (`next.State != result.State` →
+//     that event authored the state, By = the actor's SYSTEM): walk an
+//     artifact's events in fixture order and keep the last one whose claimed
+//     state DIFFERS from the claimed state before it. A contract's three
+//     `publish` rows therefore credit the first, not the third — the later two
+//     moved nothing. The difference from mirror.go is the input, not the rule:
+//     there a real fold runs over envelopes and events, here the fixture
+//     asserts claimed_state directly and is the only thing there is to read.
+//
+// A FLAGGED event is skipped, and it is the half that a claim-sequence rule
+// gets wrong on its own. mirror.go says why, at the line this derivation
+// mirrors: "a state-moving transition that was illegal or unauthorized is
+// flagged and changes nothing, and it must not claim authorship of a state it
+// never moved." The fixture contains exactly that case on purpose —
+// XH-legacycrm-20260709-x3y4 is `submitted` with an `acknowledge` event after
+// it, by `unrelated-agent` of a system that is not the recipient, carrying the
+// thread flag `unauthorized-actor`. Reading claims alone credits the
+// acknowledgement with a state it never produced; the first run of
+// TestDemoStateOriginNamesAnEventThatProducedThatState caught precisely that.
+//
+// Where the fixture states no state-moving event for a row, all three stay
+// zero. They are omitempty/omitzero, so that renders as absence — which is
+// what internal/cache/mirror.go itself returns for an artifact with no events
+// ("an empty origin is the honest answer, and the read model renders it as
+// absence rather than inventing a timestamp").
+func deriveDemoDerivedState(d *Data) {
+	origins := demoStateOrigins(d)
+
+	for _, list := range [][]Item{d.Inbox, d.Outbox, d.Archive} {
+		for i := range list {
+			it := &list[i]
+			it.Outcome = fold.OutcomeOf(fold.Kind(it.Type), fold.State(it.State))
+			it.Terminal = fold.Terminal(fold.Kind(it.Type), fold.State(it.State))
+			if origin, ok := origins[demoArtifactKey{it.Space, it.ID}]; ok {
+				it.StateSince, it.StateBy, it.StateEvent = origin.at, origin.by, origin.event
+			}
+		}
+	}
+	for i := range d.ThreadViews {
+		tv := &d.ThreadViews[i]
+		for j := range tv.OpenItems {
+			oi := &tv.OpenItems[j]
+			oi.Outcome = fold.OutcomeOf(fold.Kind(oi.Type), fold.State(oi.State))
+			oi.Terminal = fold.Terminal(fold.Kind(oi.Type), fold.State(oi.State))
+			if origin, ok := origins[demoArtifactKey{tv.Space, oi.ID}]; ok {
+				oi.StateSince, oi.StateBy, oi.StateEvent = origin.at, origin.by, origin.event
+			}
+		}
+	}
+	for i := range d.ArtifactDetails {
+		ad := &d.ArtifactDetails[i]
+		ad.Outcome = fold.OutcomeOf(fold.Kind(ad.Type), fold.State(ad.State))
+		ad.Terminal = fold.Terminal(fold.Kind(ad.Type), fold.State(ad.State))
+	}
+}
+
+// demoArtifactKey qualifies an artifact id by its space, because the fixture
+// is deliberately two full spaces plus one unavailable one
+// (TestDemoIsTwoFullSpacesPlusOneHonestUnavailableSpace) and an id is only
+// unique inside its own.
+type demoArtifactKey struct{ space, id string }
+
+// demoStateOrigin is what one artifact's event history says about the event
+// that produced its current state.
+type demoStateOrigin struct {
+	at    time.Time
+	by    string
+	event string
+}
+
+// demoStateOrigins indexes both places the fixture keeps events — a thread's
+// transcript rows and an artifact detail's own list — under one key. They
+// overlap: an artifact can appear in both, and when it does the two must not
+// disagree, which TestDemoStateOriginsAgreeAcrossBothEventSources asserts
+// rather than this function silently preferring one.
+//
+// An event whose `at` does not parse, or which claims no state at all, is
+// skipped rather than guessed at: it cannot name an instant, and naming a
+// wrong one is the failure mode this whole function exists to remove.
+func demoStateOrigins(d *Data) map[demoArtifactKey]demoStateOrigin {
+	type dated struct {
+		at           time.Time
+		by           string
+		event        string
+		claimedState string
+		seq          int64
+	}
+	// Every event the fixture flags changed nothing — see this function's
+	// caller for the case that proves it matters. Collected first, because a
+	// flag lives on the thread while the event it names also appears in an
+	// artifact detail's own list.
+	flagged := map[string]bool{}
+	for i := range d.ThreadViews {
+		for _, f := range d.ThreadViews[i].Flags {
+			if f.EventULID != "" {
+				flagged[f.EventULID] = true
+			}
+		}
+	}
+
+	byArtifact := map[demoArtifactKey][]dated{}
+	add := func(key demoArtifactKey, e dated) {
+		if e.claimedState == "" || e.at.IsZero() || flagged[e.event] {
+			return
+		}
+		byArtifact[key] = append(byArtifact[key], e)
+	}
+
+	for i := range d.ThreadViews {
+		tv := &d.ThreadViews[i]
+		for _, row := range tv.Transcript {
+			if row.Kind != "event" || row.Event == nil {
+				continue
+			}
+			at, err := time.Parse(time.RFC3339, row.At)
+			if err != nil {
+				continue
+			}
+			add(demoArtifactKey{tv.Space, row.Event.Subject}, dated{
+				at: at, by: demoActorSystem(row.Event.Actor), event: row.Event.ULID,
+				claimedState: row.Event.ClaimedState, seq: row.Seq,
+			})
+		}
+	}
+	for i := range d.ArtifactDetails {
+		ad := &d.ArtifactDetails[i]
+		for _, e := range ad.Events {
+			at, err := time.Parse(time.RFC3339, e.At)
+			if err != nil {
+				continue
+			}
+			add(demoArtifactKey{ad.Space, e.Subject}, dated{
+				at: at, by: e.ActorSystem, event: e.ULID, claimedState: e.ClaimedState,
+			})
+		}
+	}
+
+	origins := map[demoArtifactKey]demoStateOrigin{}
+	for key, events := range byArtifact {
+		// Fixture order is the commit order the fixture asserts; seq is
+		// authoritative where a transcript row carries one, and the instant
+		// breaks the tie for detail events, which carry no seq. The ULID is
+		// the final tiebreak, exactly as internal/cache/mirror.go sorts.
+		sort.SliceStable(events, func(i, j int) bool {
+			if events[i].seq != events[j].seq {
+				return events[i].seq < events[j].seq
+			}
+			if !events[i].at.Equal(events[j].at) {
+				return events[i].at.Before(events[j].at)
+			}
+			return events[i].event < events[j].event
+		})
+		previous := ""
+		var origin demoStateOrigin
+		found := false
+		for _, e := range events {
+			if e.claimedState == previous {
+				continue // moved nothing; it does not author the state
+			}
+			previous = e.claimedState
+			origin, found = demoStateOrigin{at: e.at, by: e.by, event: e.event}, true
+		}
+		if found {
+			origins[key] = origin
+		}
+	}
+	return origins
+}
+
+// demoActorSystem pulls the actor's system out of a transcript event's
+// untyped actor map. StateBy is the SYSTEM, not the agent name — mirroring
+// internal/cache/mirror.go's `By: event.Actor.System` — because the question
+// the field answers is which participant moved the artifact, and one system
+// can drive several named agents.
+func demoActorSystem(actor map[string]any) string {
+	system, _ := actor["system"].(string)
+	return system
 }
