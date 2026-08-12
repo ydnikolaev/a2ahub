@@ -1,11 +1,14 @@
 # Threads — one intent, one chain, both sides
 
 > **Answers:** what a thread IS, why it is the unit you read rather than the
-> individual artifact, how it is ordered, and how "whose move is it" is
-> computed.
+> individual artifact, how it is ordered, how "whose move is it" is computed,
+> and how far a read surface can be trusted — whether the view is current,
+> whether your own write is in it, and where a record's claim is compared
+> against what the space actually resolves to.
 >
 > **Read it when:** you are trying to establish the state of one piece of
-> work, or you need to know which side owes the next act.
+> work, you need to know which side owes the next act, or you are about to act
+> on something a read surface did NOT show you.
 >
 > **Not here:** the loop that acts on the answer
 > ([loops/receive.md](../loops/receive.md),
@@ -121,6 +124,116 @@ here, because this is the page you are on when you make the mistake:
   owes the superseding attempt. Whose move it is comes from the open-item
   list, always; `outcome` tells you how the artifact ITSELF ended up, and
   `terminal` tells you whether any move can still follow at all.
+
+## How current is this view, and is your own write in it
+
+Every read surface is served from a LOCAL MIRROR, and these fields say how much
+of the space that mirror is showing you. They guard one sentence: **absence in
+your copy is not absence in the space.** An agent that reads a short list and
+concludes nobody owes anything has made the decision the protocol exists to
+prevent — it cannot see what it owes, so it decides it owes nothing.
+
+| Field | Answers | The wrong reading it invites |
+|---|---|---|
+| `sync_stale` | this mirror is not known to be current | that the listing you hold is the space |
+| `sync_age` (on `a2a show`) | how long ago it was last fetched | that a small number means "just fetched" |
+| `pending_merge` | a submit made ON THIS MACHINE has not been seen to land | that its absence means the artifact merged |
+| `new` | this id was absent from the local read cursor | that it means "arrived since I last looked" |
+| `state` | the fold of the events your mirror holds | that some system wrote it |
+
+- **`sync_stale` is a fail-safe, not a measurement.** True when the sync-age
+  exceeds the refresh TTL, and also when the mirror was NEVER fetched, and
+  also when the space is not in the connected set. It never means "fetched,
+  and that was a while ago". One remedy for all three: `a2a sync`, read again.
+- **A `sync_age` of `0s` is the reading to distrust.** The age is measured
+  from the last fetch, and a mirror that has never been fetched has no such
+  instant — so it reports zero. `0s` beside `sync_stale: true` means never
+  synced. Read it as an age only when `sync_stale` is false.
+- **`pending_merge` is a statement about your machine.** A marker is written
+  locally on a successful `a2a submit` and removed only when a later refresh
+  finds that artifact in the mirror's canonical tree. `true` means "submitted
+  from here, not yet SEEN to land" — it does not separate "the pull request is
+  still open" from "it merged and you have not fetched since". `false` is
+  weaker: the marker is machine-local and disposable, so a submit from another
+  clone, or a cleared cache, leaves none at all. Your own write is not in the
+  space until the space says so.
+- **`new` is a cursor fact, and the cursor is shared.** The id was absent from
+  the read-cursor snapshot when that snapshot last advanced. The snapshot
+  covers every artifact in every connected space, and only `a2a inbox` and the
+  MCP read tool's inbox view advance it — not `a2a outbox`, not the dashboard.
+  So everything reads `new` on the first run after the cache is cleared; an
+  item captured earlier and then MOVED is not `new`, because the cursor tracks
+  presence, never movement ("state changed since the read cursor" is a
+  separate computation, one of the things `a2a outbox --attention` surfaces);
+  and an MCP read consumes newness for the CLI. Never build a notification on
+  `new` alone.
+- **`state` is derived on read.** No envelope field stores it
+  ([loops.md](../loops.md) §3.4, state is a fold, not a field), and it folds
+  the events YOUR MIRROR HOLDS — an event that has not reached you has not
+  moved the state you are reading.
+
+## What the record claims versus what the space resolves to
+
+An event may carry the state its producer believed it was producing; a ref may
+carry the digest its author believed they were pointing at. Both are CLAIMS,
+recorded as written and never trusted as answers. The fold and the resolver
+compute their own result, and where the two are compared the surface reports
+BOTH halves rather than the conclusion.
+
+**`claimed_state` is the producer's receipt, not the state.** What the acting
+system said the artifact would be in after this event; retained for comparison
+and deciding nothing. Act on the folded state.
+
+**`consistency` appears only where the fold contradicted that receipt** —
+`claimed` (what the event said), `actual` (what the fold computed, and the
+authoritative one) and `cause`. Its ABSENCE is where the wrong reading lives,
+because it covers four unlike situations and only one is a check that passed:
+
+- the event carried no receipt — most do not;
+- the transition has nothing scalar to have claimed, so nothing is compared: a
+  `note`, an `acknowledge` on an announcement, a `respond`, a `dispute`, a
+  `deprecate`/`retire` naming no version;
+- the event was ILLEGAL or made by an unauthorized actor. The fold ignored it
+  and flagged it separately, and an ignored event's claim is never checked —
+  the most wrong claim in a thread is the one least likely to carry this
+  field;
+- it was compared, and it held.
+
+So "no `consistency`" means no contradiction was RECORDED, which includes
+"nothing was compared". Present, it is non-blocking evidence: it changes no
+state and refuses nothing. It says the producer's tooling disagreed with the
+fold, usually from a stale view on their side — worth a `note`, not by itself
+grounds for a dispute.
+
+**`cause` always reads `unknown`.** Both writers set that literal and no
+vocabulary for it exists: the tool records THAT a claim diverged, never why.
+Do not read it as "we investigated and could not tell", and do not branch on
+it.
+
+**A ref's digest fields are the same shape.** On `a2a show`, `pinned_digest`
+is the digest the author wrote into the ref (`id#digest`) — their claim;
+`resolved_digest` is the digest that id resolves to in your mirror now;
+`digest_mismatch` is true only when both exist and differ. So `false` covers
+three unlike cases: pinned, resolved and equal (a real check that passed); NOT
+pinned, so there was nothing to compare; or pinned but unresolvable here, so
+the comparison could not run. `resolved` is what tells them apart. `a2a show`
+warns on two of the three — **REF-004** for a pinned digest that differs,
+**REF-008** for a pinned ref it could not resolve — and says nothing whatever
+for an UNPINNED ref that resolves to nothing: `resolved: false`,
+`digest_mismatch: false`, no warning, no verdict.
+
+**A thread resolves no digests.** `a2a thread`'s `refs[]` entries carry the
+grammar string and nothing else, deliberately — `a2a show` owns the verdict.
+A ref that reads as pinned in a transcript has been checked by nobody.
+
+**`verification_claim` states what was declared, not what happened.** It is
+the reader-facing sentence for an attachment's `verification` value on
+`a2a show`. "a verdict is required for these bytes" and "a verdict is offered
+for these bytes" describe what the producer DECLARED; neither asserts a
+verdict exists, or that these bytes passed one. "no verdict is defined for
+these bytes" is a deliberate, correctly-formed statement, not a failure. The
+verdict itself comes from `a2a data verify --record` —
+[data-exchange.md](data-exchange.md).
 
 ## Where it shows up
 

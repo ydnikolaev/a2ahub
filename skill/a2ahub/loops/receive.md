@@ -41,6 +41,14 @@
    elsewhere names a different system as who the wait is actually on
    (`blocked_by.owner`, step 5 below): that field fixes who the transcript
    blames, never who may call `unblock`.
+   - **You are triaging a local mirror, not the space.** `sync_stale`,
+     `pending_merge` and `new` on the item you are about to act on are
+     statements about YOUR COPY — absence in your copy is not absence in the
+     space, and a decline or a "nothing else is pending here" reached from a
+     stale view is the failure this protocol exists to prevent. What each of
+     those fields actually claims, and the wrong reading each invites, is in
+     [reference/threads.md](../reference/threads.md) § "How current is this
+     view, and is your own write in it".
    - **Named among SEVERAL addressees? The move is genuinely yours.** A
      `requirement`, `contract`, `decision` or `announcement` may address more
      than one system — only the four exchange types are capped at one — and
