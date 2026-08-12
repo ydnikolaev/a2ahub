@@ -179,6 +179,23 @@ loop-reachability: ## Every Concepts/Reference/Authoring manifest page is reacha
 coverage: ## Same one-artifact race/coverage path as `check`, without static/vet/lint phases.
 	@bash scripts/verify.sh coverage
 
+npm-audit: ## `npm audit` over every npm tree, failing on high/critical. Needs network — NOT in `check`, same reason as vulncheck.
+	@for tree in web integrations/vscode; do \
+	  if [ -f "$$tree/package.json" ]; then \
+	    printf 'npm-audit: %s … ' "$$tree"; \
+	    if npm --prefix "$$tree" audit --audit-level=high >/tmp/a2a-npm-audit.$$$$ 2>&1; then \
+	      echo "OK"; \
+	    else \
+	      echo "FAIL"; cat /tmp/a2a-npm-audit.$$$$; rm -f /tmp/a2a-npm-audit.$$$$; \
+	      echo "npm-audit: FAIL — $$tree has high or critical advisories. Fix with: npm --prefix $$tree audit fix --package-lock-only"; \
+	      exit 1; \
+	    fi; \
+	    rm -f /tmp/a2a-npm-audit.$$$$; \
+	  else \
+	    echo "npm-audit: skip — $$tree/package.json absent."; \
+	  fi; \
+	done
+
 # vulncheck is a PREREQUISITE, not a copy of its logic: the allowlist gating
 # lives in that recipe and stays stated once. It is here because nothing else
 # reached a release. govulncheck.yml fires on schedule, on pull_request over Go
@@ -189,7 +206,7 @@ coverage: ## Same one-artifact race/coverage path as `check`, without static/vet
 # defect. This is the same seam as the site-deploy assertion below it — both
 # need network, both answer "is it safe to cut", and this target is where that
 # question already lives.
-release-preflight: vulncheck ## MUST pass before cutting a release tag: no NEW called vulnerabilities + version free on the release remote + every space-template reusable pin resolves to a tag that carries the workflow. Needs network — NOT in `check`. Usage: make release-preflight VERSION=v0.6.0
+release-preflight: vulncheck npm-audit ## MUST pass before cutting a release tag: no NEW called vulnerabilities + version free on the release remote + every space-template reusable pin resolves to a tag that carries the workflow. Needs network — NOT in `check`. Usage: make release-preflight VERSION=v0.6.0
 	@test -n "$(VERSION)" || { echo "release-preflight: set VERSION, e.g. make release-preflight VERSION=v0.6.0"; exit 2; }
 	@bash scripts/check-roadmap-release-decisions.sh "$(VERSION)"
 	@bash scripts/release-preflight.sh "$(VERSION)"
