@@ -59,11 +59,26 @@ const payload = {
   demo: needsDemo ? compactHomepageDemo : null,
   docs: needsDocs ? (allDocs ? design.docs : compactDocs) : null,
   docBodies: needsDocs ? (allDocs ? design.docBodies : routeDocBodies) : null,
+  // `changes` is NOT shipped, and that is the whole of it: every consumer of
+  // A2A_LATEST_RELEASE reads `version` (the footer also reads `released`), and
+  // not one of the five iterates the change list — checked across
+  // 16-docs, 17-security-reliability, 18-install, 19-roadmap and SiteFooter.
+  // It was 24 KiB gzip of dead payload on every page carrying needsLatest.
+  //
+  // Dead weight that only became visible when it broke something: v0.19.9 had
+  // 8 change entries, v0.19.10 has 49, and the moment the tag existed the
+  // corpus grew and FORTY-TWO pages went over their gzip budgets at once —
+  // index.html by 13 KiB, dashboard-example by 39. The site build then failed
+  // on the tag, which is the only trigger that deploys a release (the main
+  // push touches space-template/, which pages.yml's path filter excludes).
+  // So one unread field was standing between a tag and the site ever seeing it.
+  //
+  // The changelog page does not lose anything: it reads the release corpus
+  // from content.json server-side, not from this runtime payload.
   latestRelease: needsLatest ? {
     version: design.latestRelease.version,
     released: design.latestRelease.released,
-    headline: design.latestRelease.headline,
-    changes: design.latestRelease.changes
+    headline: design.latestRelease.headline
   } : null,
   releaseIndex: needsReleases ? design.releaseIndex : null
 };

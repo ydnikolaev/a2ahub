@@ -51,15 +51,17 @@ jobs:
           # (public main is force-pushed, so a merged bump is destroyed and
           # reopened forever). Dependabot runs on the private repo instead. If
           # this file reappears here, the publish filter regressed.
-          # `scripts/lib/` is NOT a private directory. `scripts/lib/gate-lib.sh`
-          # is; `scripts/lib/lane-ungated.txt` is a PUBLIC validator file —
+          # `scripts/lib/` is NOT a private directory, and as of 2026-08-12
+          # NOTHING under it is: `gate-lib.sh` was published because SEVEN
+          # tracked gates in REPO_GATES source it and died without it in the
+          # filtered candidate. `lane-ungated.txt` is a PUBLIC validator file —
           # scripts/classify-guard.sh lists it in PUBLIC_VALIDATOR_FILES, and
           # scripts/check-lane-declarations.sh (which ships) cannot run without
           # it. This pattern said `lib/` and went red on the v0.19.9 tag for a
           # file that is supposed to be here. It was the FOURTH restatement of
           # one list — the publisher's STRIP set, its two leak assertions, and
           # this — and the fourth to go stale when that set was narrowed.
-          priv=$(git ls-files | grep -E '^(\.agents|\.claude|\.codex|\.mate)/|^(AGENTS\.md|CLAUDE\.md)$|^\.github/dependabot\.yml$|^scripts/(check-feature-lint\.sh|lib/gate-lib\.sh)$' || true)
+          priv=$(git ls-files | grep -E '^(\.agents|\.claude|\.codex|\.mate)/|^(AGENTS\.md|CLAUDE\.md)$|^\.github/dependabot\.yml$|^scripts/check-feature-lint\.sh$' || true)
           if [ -n "$priv" ]; then
             echo "::error::private (harness) paths tracked in the public repo:"
             echo "$priv"

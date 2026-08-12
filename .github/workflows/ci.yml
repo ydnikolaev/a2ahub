@@ -12,8 +12,25 @@
 # reds once this phase lands.
 name: CI
 
+# A bare `push:` fires on EVERY branch and EVERY tag. Cutting a release pushes
+# the candidate branch, then main, then the tag — three pushes of ONE commit —
+# so the full ceiling ran three times on the same SHA, twice for nothing. On
+# 2026-08-12 that was seven concurrent runs against one commit across the two
+# repos, and the compute is not free.
+#
+# Tags are excluded because a tag points at a commit main already carries: the
+# tag run can only repeat main's verdict. `release.yml` is the workflow that
+# needs the tag, and it has its own trigger.
+#
+# The candidate branches stay IN, deliberately. That run happens BEFORE
+# promotion, which is the only moment its verdict can still stop a release —
+# and it earned its keep the same day, catching a stamp defect that every local
+# gate had passed.
 on:
   push:
+    branches:
+      - main
+      - 'a2a-candidate/**'
   pull_request:
 
 permissions:

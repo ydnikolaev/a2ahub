@@ -134,11 +134,23 @@ const seedExport = read(join(webRoot, 'content/a2a-seed-export.md'));
 // regenerate with `go test ./internal/html/ -run PublishedCopy -update-demo`.
 const demo = JSON.parse(read(join(repoRoot, 'internal/html/demo-data.json')));
 const publicDemo = JSON.parse(JSON.stringify(demo));
+// The site's demo payload carries a BOUNDED sample of each release's changes,
+// not the whole thing. It exists to show the shape of the release panel; the
+// real dashboard reads the notes embedded in the reader's own binary.
+//
+// Unbounded, this was the single heaviest thing on the guided example: 32 KiB
+// gzip of release prose against 16 KiB for the entire rest of the demo. v0.19.9
+// carried 8 change entries and v0.19.10 carries 49, so the page went 39 KiB
+// over its budget the moment the tag existed — and since the tag push is the
+// only trigger that deploys the site on a release, that is a release the site
+// never receives.
+const DEMO_CHANGES_PER_RELEASE = 5;
 publicDemo.releaseNotes = releases.slice(0, 3).map((release, index) => ({
   ...release,
-  changes: index === 0 ? [...release.changes, ...currentIssues] : release.changes
+  changes: (index === 0 ? [...release.changes, ...currentIssues] : release.changes)
+    .slice(0, DEMO_CHANGES_PER_RELEASE)
 }));
-publicDemo.meta.releaseNotesScope = `v${publicDemo.releaseNotes.map((release) => release.version).join(', v')} expanded; the complete published version index is projected below`;
+publicDemo.meta.releaseNotesScope = `v${publicDemo.releaseNotes.map((release) => release.version).join(', v')} expanded to ${DEMO_CHANGES_PER_RELEASE} entries each; the complete published version index is projected below`;
 
 // The shared Design Components (PascalCase files in design-source/, as opposed
 // to the numbered pages) are the registry BOTH surfaces load. Deriving it from

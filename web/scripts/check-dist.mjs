@@ -208,7 +208,23 @@ const llmsFull = readFileSync(join(dist, 'llms-full.txt'), 'utf8');
 // make growth VISIBLE is the correct outcome of it having done its job, as
 // long as the new number is deliberate: 600 KB is ~20% headroom on today's
 // corpus. What would NOT be correct is raising it again without reading this.
-if (Buffer.byteLength(llmsFull) > 600_000) failures.push('llms-full.txt: raw corpus exceeds 600 KB');
+//
+// 700 KB since 2026-08-12, and this is the SECOND raise in one day — which is
+// the thing to notice, not the number. v0.19.10 published 49 release notes,
+// six times v0.19.9's eight, and the corpus landed at 607 KB.
+//
+// This file is a deliberately COMPLETE text projection: docs plus every
+// published release. It grows monotonically and forever, so a fixed byte cap
+// on it is a TRIPWIRE against accidental duplication, never a budget on the
+// content. Read it that way when it fires: the question is not "trim the
+// corpus", it is "did something get embedded twice".
+//
+// It was asked that question here, and the answer was no — the overage is 49
+// genuine release notes. The same audit found 24 KiB gzip of a DIFFERENT
+// payload shipped into every page of the site (the newest release's change
+// list, which no consumer reads) and 32 KiB more inside the demo. Those were
+// deleted, not budgeted for. That is what this tripwire is for, and it worked.
+if (Buffer.byteLength(llmsFull) > 700_000) failures.push('llms-full.txt: raw corpus exceeds 700 KB');
 for (const marker of ['## Bundle provenance', 'Source revision:', 'Source snapshot timestamp:', '## Table of contents', 'Roadmap — non-committed work is labelled']) {
   if (!llmsFull.includes(marker)) failures.push(`llms-full.txt: missing provenance marker ${marker}`);
 }
