@@ -291,6 +291,16 @@ space-template-baseline-check: ## The space template's write floor and its workf
 space-template-baseline: ## Move the space template's floor AND workflow pins to the release just tagged, from one derived version. Refuses an unpublished tag.
 	@bash scripts/bump-space-template.sh
 
+# The claim lives HERE, on the tracked recipe, for the same reason the
+# feedback-corpus block above gives at length: this gate is untracked AND
+# stripped, so a claim written inside it is invisible to CI, to a public
+# checkout and to the release candidate. Only the opaque-read note stays
+# with the script, since the constructs it describes are there.
+# lane-inputs: ALWAYS
+# lane-reason: check A runs `git log --no-merges --format=...` with NO pathspec and judges commit SUBJECT LINES, not the files a commit touched — any commit anywhere in history can flip the verdict regardless of which paths it changed
+# lane-claims:
+#   docs/status.md
+#   docs/features/**/tracker.yaml
 epic-drift: ## An epic's committed docs (status.md stamp, receipts) must match its tracker (private harness gate, presence-gated).
 	@if [ -f .agents/scripts/epic_docs_drift.sh ]; then \
 	  bash .agents/scripts/epic_docs_drift.sh; \
