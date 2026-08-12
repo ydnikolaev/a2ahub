@@ -382,24 +382,25 @@ changes:
       why: >
         Nothing to do. Existing blocked artifacts are unaffected until a
         response names a blocker.
-  - id: RN-01910-14
-    kind: fix
-    impact: normal
-    subject: "A disputed response can be replaced by its author"
-    detail: >
-      A rejected decision and a failed handoff can both be superseded — the
-      producer replaces them and the exchange goes on. A DISPUTED response
-      could not. It was the only refused state with no exit at all, so the
-      author of disputed work could not resubmit it, could not replace it, and
-      could not contest the dispute. The exchange simply stopped, in the one
-      state whose entire purpose is disagreement.
-      `a2a supersede` now works on a disputed response, matching how the other
-      two refusals already end.
-    action:
-      scope: none
-      why: >
-        Nothing to do. If a response of yours was disputed and you had no way
-        forward, you can supersede it now.
+  # RN-01910-14 was REMOVED on 2026-08-12, before this release was cut. It
+  # announced "`a2a supersede` now works on a disputed response". It does not.
+  # The {StateDisputed, TSupersede} row shipped on 2026-08-08 and was DELETED
+  # on 2026-08-09 (internal/fold/table.go, spec 06 amendment, epic-backlog B8)
+  # — inside this same unreleased window, so the net change to a disputed
+  # response is nothing at all. The same comment records that
+  # `a2a supersede <XS-id>` was refused with LFC-001 REGARDLESS of the row, and
+  # internal/fold/outcome.go says `disputed` is refused and terminal.
+  #
+  # RN-01910-22 already carries the true story in its tail: the transition was
+  # removed, and the real remedy exists one level up — a dispute reopens the
+  # parent, where a fresh response is owed. Two notes in one file disagreeing
+  # about the same transition is the release-note version of the defect this
+  # epic is named for, and the transition table is the tiebreaker.
+  #
+  # Found by P13's prose wave: the skill's §8.3 step 6 was routing agents to
+  # the impossible act, the implementer read the transition table while writing
+  # the neighbouring paragraph, and the note fell with it. No other file cites
+  # this id.
   - id: RN-01910-15
     kind: feat
     roadmap:
@@ -1311,3 +1312,32 @@ changes:
       why: >
         If you have scripted against the old sentence, the unsynced case now
         emits a different one. Run `a2a sync` when you see it.
+  - id: RN-01910-45
+    kind: fix
+    impact: normal
+    subject: "`a2a doctor`'s documented check list matches what it prints"
+    detail: >
+      The troubleshooting page said `doctor` runs sixteen checks and listed
+      seventeen rows, promised they appear "in the order the binary prints
+      them" while placing `repository visibility` eighth when it is printed
+      last, and said each check runs once per connected space — which is
+      backwards for sixteen of the seventeen. Only `repository visibility`
+      repeats per space; the rest fold their per-space detail into one line.
+      An agent counting or parsing doctor's output was off by at least one row,
+      and by one MORE for every additional connected space.
+      The page now states the fixed sixteen and the seventeenth separately,
+      says which repeats and which does not, and lists the table in output
+      order.
+      What let it drift is the part worth reporting: a test already asserted
+      every printed check has a documented row, and it passed, because it ran
+      doctor with no connected space configured — so the seventeenth line was
+      never emitted and the documented count was true inside the fixture. The
+      fixture now configures a space, and asserts the visibility row was
+      actually seen rather than counting whatever appeared.
+    affects: ["a2a doctor"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. If you parse `a2a doctor`'s output, note that the
+        `repository visibility` rows come last and there is one per connected
+        space.
