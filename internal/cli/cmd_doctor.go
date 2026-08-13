@@ -1040,10 +1040,10 @@ const doctorDefaultBaseBranch = "main"
 //     never redden doctor while it is still running.
 //   - State == "completed": Conclusion success/neutral/skipped is healthy;
 //     failure/timed_out/cancelled/action_required is FAIL, naming the space,
-//     the branch, and the conclusion. CheckStatusResult carries no run URL to
-//     name (see this phase's reported deviation) — Name (which check-run
-//     shape answered) is reported instead, the closest evidence this result
-//     type carries.
+//     the branch, the conclusion, and — when GitHub reported one —
+//     status.URL, so the ONE row whose entire job is "go look at the failing
+//     run" ends in a link, not a description of one. Absent URL degrades to
+//     the message this check has always printed, never a bare/empty link.
 //   - any other completed Conclusion (GitHub's check-run vocabulary is not
 //     closed) -> UNVERIFIABLE rather than guessed either way.
 func (c *DoctorCommand) doctorCheckDefaultBranchHealthy(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
@@ -1088,10 +1088,18 @@ func (c *DoctorCommand) doctorCheckDefaultBranchHealthy(ctx context.Context, cfg
 		case "success", "neutral", "skipped":
 			// healthy — no entry in any list.
 		case "failure", "timed_out", "cancelled", "action_required":
-			unhealthy = append(unhealthy, fmt.Sprintf(
+			line := fmt.Sprintf(
 				"%s: default branch %q's required check (%s) concluded %q",
 				ref.ID, doctorDefaultBaseBranch, status.Name, status.Conclusion,
-			))
+			)
+			// status.URL is empty whenever GitHub's check-runs response
+			// carried none (or the run predates html_url in the fixture) —
+			// the message stays exactly what it was before URL existed
+			// rather than appending a bare/empty link.
+			if status.URL != "" {
+				line += " — " + status.URL
+			}
+			unhealthy = append(unhealthy, line)
 		default:
 			// An unrecognised completed conclusion is not evidence of
 			// brokenness — GitHub's check-run vocabulary is not closed.

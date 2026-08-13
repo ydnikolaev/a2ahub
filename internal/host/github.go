@@ -348,6 +348,10 @@ type checkRun struct {
 	// CheckStatusResult because a conclusion read without it can be a stale
 	// merge commit's verdict — see CheckStatusResult.HeadSHA.
 	HeadSHA string `json:"head_sha"`
+	// HTMLURL is the run's own web page. Surfaced through
+	// CheckStatusResult.URL so a caller reporting a conclusion can also hand
+	// the operator a link to it — see that field's doc comment.
+	HTMLURL string `json:"html_url"`
 }
 
 // selectRequiredCheckRun picks the V3 required check run out of a head SHA's
@@ -496,7 +500,7 @@ func (h *GitHubHost) checkStatusForRef(ctx context.Context, op string, repo Repo
 	if !ok {
 		return CheckStatusResult{State: "queued"}, nil
 	}
-	return CheckStatusResult{State: run.Status, Conclusion: run.Conclusion, Name: run.Name, Ambiguous: ambiguous, HeadSHA: run.HeadSHA}, nil
+	return CheckStatusResult{State: run.Status, Conclusion: run.Conclusion, Name: run.Name, Ambiguous: ambiguous, HeadSHA: run.HeadSHA, URL: run.HTMLURL}, nil
 }
 
 // ReviewStatus implements Host.ReviewStatus: reads the PR's reviews and

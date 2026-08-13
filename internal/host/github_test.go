@@ -549,3 +549,71 @@ func TestMergePRInvalidRequest(t *testing.T) {
 		t.Fatalf("expected errors.Is(err, ErrInvalidRequest), got %v", err)
 	}
 }
+
+// TestCheckStatusRoundTripsRunURL proves GitHub's check-runs `html_url`
+// survives PR-scoped CheckStatus into CheckStatusResult.URL — the field
+// doctor's "default branch healthy" FAIL message links out through (see
+// CheckStatusResult.URL's own doc comment). Before this phase, checkRun
+// never decoded html_url at all, so this field was always empty regardless
+// of what the API returned.
+func TestCheckStatusRoundTripsRunURL(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/repos/acme/space/pulls/7":
+			_ = json.NewEncoder(w).Encode(map[string]any{"head": map[string]any{"sha": "deadbeef"}})
+		case "/repos/acme/space/commits/deadbeef/check-runs":
+			_ = json.NewEncoder(w).Encode(map[string]any{"check_runs": []map[string]any{
+				{"name": "a2a-validate", "status": "completed", "conclusion": "failure",
+					"html_url": "https://github.com/acme/space/runs/12345"},
+			}})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewGitHubHost(srv.Client(), srv.URL)
+	got, err := h.CheckStatus(context.Background(), StatusRequest{
+		Repo: Repo{Owner: "acme", Name: "space"}, PRNumber: 7,
+	})
+	if err != nil {
+		t.Fatalf("CheckStatus: %v", err)
+	}
+	if got.URL != "https://github.com/acme/space/runs/12345" {
+		t.Fatalf("CheckStatus.URL = %q, want the selected run's html_url", got.URL)
+	}
+}
+
+// TestRefCheckStatusRoundTripsRunURL is TestCheckStatusRoundTripsRunURL's
+// RefStatusReader sibling: the same html_url decode must survive the
+// ref-scoped read (doctor's default-branch-health row) that never resolves
+// a PR at all.
+func TestRefCheckStatusRoundTripsRunURL(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/repos/acme/space/commits/main/check-runs" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"check_runs": []map[string]any{
+			{"name": "a2a-validate", "status": "completed", "conclusion": "failure",
+				"html_url": "https://github.com/acme/space/runs/67890"},
+		}})
+	}))
+	defer srv.Close()
+
+	h := NewGitHubHost(srv.Client(), srv.URL)
+	got, err := h.RefCheckStatus(context.Background(), RefStatusRequest{
+		Repo: Repo{Owner: "acme", Name: "space"}, Ref: "main",
+	})
+	if err != nil {
+		t.Fatalf("RefCheckStatus: %v", err)
+	}
+	if got.URL != "https://github.com/acme/space/runs/67890" {
+		t.Fatalf("RefCheckStatus.URL = %q, want the selected run's html_url", got.URL)
+	}
+}

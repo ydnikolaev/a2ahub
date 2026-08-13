@@ -193,6 +193,16 @@ type CheckStatusResult struct {
 	// P36's live tier today — needs it to be right rather than merely
 	// plausible. Empty when no run matched.
 	HeadSHA string
+	// URL is the selected check run's own `html_url` — the page a human can
+	// click straight to the run GitHub is reporting on.
+	//
+	// It exists because a caller that names a check run by NAME and
+	// CONCLUSION alone (doctor's default-branch-health row, R4c) gives an
+	// operator every fact except the one that gets them to the evidence: a
+	// space, a branch, "a2a-validate", "failure" — and then nothing to
+	// click through to. Empty when no run matched, the same as Name and
+	// HeadSHA.
+	URL string
 }
 
 // RefStatusRequest identifies a branch/ref whose required-check state is

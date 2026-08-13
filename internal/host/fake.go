@@ -144,11 +144,19 @@ func (f *FakeHost) CheckStatus(ctx context.Context, req StatusRequest) (CheckSta
 	defer f.mu.Unlock()
 	for _, info := range f.byBranch {
 		if info.Number == req.PRNumber && info.HeadSHA != "" {
-			return CheckStatusResult{State: "completed", Conclusion: "success", HeadSHA: info.HeadSHA}, nil
+			return CheckStatusResult{State: "completed", Conclusion: "success", HeadSHA: info.HeadSHA, URL: fakeCheckRunURL}, nil
 		}
 	}
-	return CheckStatusResult{State: "completed", Conclusion: "success", HeadSHA: "fake-checked-head"}, nil
+	return CheckStatusResult{State: "completed", Conclusion: "success", HeadSHA: "fake-checked-head", URL: fakeCheckRunURL}, nil
 }
+
+// fakeCheckRunURL is the default CheckStatusResult.URL every unconfigured
+// CheckStatus/RefCheckStatus default returns, so a test exercising the
+// "healthy" path (rather than overriding CheckStatusFunc/RefCheckStatusFunc
+// to construct its own CheckStatusResult) is not accidentally testing an
+// empty URL — the same reasoning HeadSHA's own "fake-checked-head" default
+// already applies to this struct.
+const fakeCheckRunURL = "https://example.invalid/runs/fake-check-run"
 
 // RefCheckStatus implements the optional RefStatusReader capability: it
 // delegates to RefCheckStatusFunc, or (default) reports the same green
@@ -159,7 +167,7 @@ func (f *FakeHost) RefCheckStatus(ctx context.Context, req RefStatusRequest) (Ch
 	if f.RefCheckStatusFunc != nil {
 		return f.RefCheckStatusFunc(ctx, req)
 	}
-	return CheckStatusResult{State: "completed", Conclusion: "success", HeadSHA: "fake-checked-head"}, nil
+	return CheckStatusResult{State: "completed", Conclusion: "success", HeadSHA: "fake-checked-head", URL: fakeCheckRunURL}, nil
 }
 
 // ReviewStatus delegates to ReviewStatusFunc, or reports "approved" by

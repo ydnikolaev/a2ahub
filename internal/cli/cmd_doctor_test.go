@@ -1976,3 +1976,74 @@ func TestDoctorCheckSkippedFiles(t *testing.T) {
 		}
 	})
 }
+
+// TestDoctorCheckDefaultBranchHealthyFAILIncludesRunURL is this phase's own
+// acceptance: `default branch healthy`'s FAIL message used to name the
+// space, the branch, and the selected check run's NAME and CONCLUSION —
+// good evidence, but not a link the operator can click, on the one row
+// whose entire job is to send them to a failing run
+// (docs/backlog.md § "CheckStatusResult carries no run URL"). Once
+// host.CheckStatusResult carries a URL, the FAIL line must carry it too.
+func TestDoctorCheckDefaultBranchHealthyFAILIncludesRunURL(t *testing.T) {
+	t.Parallel()
+	cfg := space.ProjectConfig{Spaces: []space.Ref{{
+		ID: "getvisa", RepoURL: "https://github.com/acme/getvisa.git",
+	}}}
+	const runURL = "https://github.com/acme/getvisa/runs/999888777"
+
+	fake := host.NewFakeHost()
+	fake.RefCheckStatusFunc = func(context.Context, host.RefStatusRequest) (host.CheckStatusResult, error) {
+		return host.CheckStatusResult{State: "completed", Conclusion: "failure", Name: "a2a-validate", URL: runURL}, nil
+	}
+	cmd := newTestDoctorCommand()
+	cmd.h = fake
+	cmd.resolveCredential = func(context.Context, string, space.CredentialReference) (host.Credential, error) {
+		return host.Credential{Token: "tok"}, nil
+	}
+
+	ok, detail := cmd.doctorCheckDefaultBranchHealthy(context.Background(), cfg, space.MachineConfig{})
+	if ok {
+		t.Fatalf("want FAIL, got PASS: %s", detail)
+	}
+	if !strings.Contains(detail, runURL) {
+		t.Fatalf("detail = %q, want the failing check run's URL (%s) so the operator has something to click", detail, runURL)
+	}
+	// The pre-existing evidence (space, conclusion) must still be present —
+	// the URL is an addition, not a replacement.
+	if !strings.Contains(detail, "getvisa") || !strings.Contains(detail, "failure") {
+		t.Fatalf("detail = %q, want the space and conclusion still named alongside the URL", detail)
+	}
+}
+
+// TestDoctorCheckDefaultBranchHealthyFAILDegradesWithoutRunURL proves the
+// row degrades the same way it already did before URL existed: when GitHub
+// reports no html_url for the selected run, the FAIL message stays the
+// useful sentence it always was — never an empty link, never a bare
+// "unknown" in its place.
+func TestDoctorCheckDefaultBranchHealthyFAILDegradesWithoutRunURL(t *testing.T) {
+	t.Parallel()
+	cfg := space.ProjectConfig{Spaces: []space.Ref{{
+		ID: "getvisa", RepoURL: "https://github.com/acme/getvisa.git",
+	}}}
+
+	fake := host.NewFakeHost()
+	fake.RefCheckStatusFunc = func(context.Context, host.RefStatusRequest) (host.CheckStatusResult, error) {
+		return host.CheckStatusResult{State: "completed", Conclusion: "failure", Name: "a2a-validate"}, nil // URL deliberately absent
+	}
+	cmd := newTestDoctorCommand()
+	cmd.h = fake
+	cmd.resolveCredential = func(context.Context, string, space.CredentialReference) (host.Credential, error) {
+		return host.Credential{Token: "tok"}, nil
+	}
+
+	ok, detail := cmd.doctorCheckDefaultBranchHealthy(context.Background(), cfg, space.MachineConfig{})
+	if ok {
+		t.Fatalf("want FAIL, got PASS: %s", detail)
+	}
+	if !strings.Contains(detail, "getvisa") || !strings.Contains(detail, "failure") {
+		t.Fatalf("detail = %q, want the space and conclusion named even with no run URL", detail)
+	}
+	if strings.Contains(detail, " — ") {
+		t.Fatalf("detail = %q, want no dangling link separator when URL is absent", detail)
+	}
+}
