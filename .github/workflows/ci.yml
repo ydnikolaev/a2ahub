@@ -34,14 +34,29 @@ name: CI
 # scopes it to the PUBLIC repository alone (spec 13 AC2): two repositories
 # would re-add roughly 104 macOS runs a year to learn one repository's worth
 # of information.
+#
+# TAGS ARE BACK, and the reason is the cadence change below rather than a
+# reversal. They were dropped because "a tag names a commit main already
+# carries", which was true while a push to main ran the ceiling. It no longer
+# does: a push runs the DERIVED LANE and the ceiling runs at the ship
+# boundary. The tag IS that boundary.
 on:
   push:
     branches:
       - main
       - 'a2a-candidate/**'
+    tags:
+      - 'v*.*.*'
   pull_request:
   schedule:
+    # The macOS path-gate's weekly safety net (K1, AC2).
     - cron: '17 6 * * 1'
+    # The ceiling's new home (K4, AC8). Push no longer buys it, so this is
+    # what keeps `main` from going a week unproven. §3.3 accepts up to 24
+    # hours of latency on that verdict and records the acceptance as the
+    # operator's, not the implementer's.
+    - cron: '23 2 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -67,65 +82,46 @@ jobs:
       macos: ${{ steps.resolve.outputs.macos }}
       resolved: ${{ steps.resolve.outputs.resolved }}
       files: ${{ steps.resolve.outputs.files }}
+      tier: ${{ steps.resolve.outputs.tier }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Resolve the changed-file set
+      - name: Resolve the changed-file set and the tier it justifies
         id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
           CI_REPOSITORY: ${{ github.repository }}
           CI_EVENT_NAME: ${{ github.event_name }}
+          CI_REF: ${{ github.ref }}
+          CI_SCHEDULE: ${{ github.event.schedule }}
           CI_PR_NUMBER: ${{ github.event.pull_request.number }}
           CI_BEFORE_SHA: ${{ github.event.before }}
           CI_AFTER_SHA: ${{ github.sha }}
         run: bash scripts/ci-changes.sh
 
+  # THE CEILING, now at the ship boundary instead of on every push.
+  #
+  # `.claude/rules/check-convention.md` has carried the cadence since P12 —
+  # the derived lane is the COMMIT gate, the ceiling is the SHIP gate — and
+  # CI obeyed none of it: `make check` ran on every push, on every branch, in
+  # two repositories, while the derivation that prices it existed, was gated,
+  # was measured, and was invoked by hand at a terminal.
+  #
+  # Which tier a run buys is resolved ONCE in scripts/ci-changes.sh, so this
+  # condition is a single comparison against one output rather than a policy
+  # spelled out in `${{ }}` (AC16). What it resolves to, and why, is
+  # documented beside the code that decides it.
+  #
+  # The old condition this replaces skipped `check` on a push to public main
+  # because a promotion re-ran the ceiling on a SHA the candidate had already
+  # proven. That case is subsumed: a push to main now buys the lane in EITHER
+  # repository, and the candidate ref still buys the ceiling.
   check:
     # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
     timeout-minutes: 28
-    # On the PUBLIC repository, `main` moves by exactly one route: promoting a
-    # candidate. The publisher only ever promotes a SHA whose own
-    # `a2a-candidate/**` branch already ran this workflow — the run is waited on
-    # before promotion, because that is the last moment its verdict can stop a
-    # release. So a push to public main re-runs the ceiling (~10 min) on a
-    # commit this workflow passed minutes earlier, every single release.
-    #
-    # Measured on v0.19.11: 81fd1114a96f passed as a candidate branch, then
-    # started again on main for the same SHA.
-    #
-    # The condition is scoped as narrowly as the fact is: only a PUSH, only to
-    # main, only where the repository is not the private source. Candidate
-    # branches and every pull request are untouched, and the private repo —
-    # where main moves for ordinary work and this IS the gate — is untouched.
-    # The `github.repository ==` idiom is the one codeql.yml already uses to
-    # tell the two repositories apart.
-    #
-    # It names the PUBLIC repo, and that is load-bearing rather than stylistic.
-    # This clause used to read `== 'ydnikolaev/a2ahub-private'`, and ADR-014
-    # moves that repository into the r22d222 org — at which point the literal
-    # stops matching, the condition becomes true on a private push to main, and
-    # the private repo SKIPS its own gate. A green tick with nothing behind it,
-    # arriving on the exact day of the transfer, on the repo where this IS the
-    # gate.
-    #
-    # Naming the public repo inverts the failure. The public repo is the one
-    # that does not move, and every other repo-discriminating condition in this
-    # tree (classify-guard.yml, codeql.yml) already names it. If it were ever
-    # renamed anyway, this condition goes TRUE and the job RUNS — minutes spent
-    # re-verifying an already-verified SHA, which is waste. The old form failed
-    # the other way, and a false green is not the same kind of mistake.
-    #
-    # The `schedule` clause is K1's: the weekly cron exists ONLY as the macOS
-    # gate's safety net, and the ceiling has no business running from it. K4
-    # is what gives the ceiling its own scheduled home; until then a weekly
-    # `make check` would be a cost this wave did not ask for.
-    if: >-
-      github.event_name != 'schedule'
-      && (github.event_name != 'push'
-      || github.ref != 'refs/heads/main'
-      || github.repository != 'ydnikolaev/a2ahub')
+    needs: changes
+    if: needs.changes.outputs.tier == 'ceiling'
     runs-on: ubuntu-latest
     env:
       # setup-go restores this exact build cache; verify.sh accepts an external
@@ -163,6 +159,61 @@ jobs:
       - name: make check
         run: make check
 
+  # THE DERIVED LANE — the commit gate, and the half of P12 that CI never
+  # learned (AC8, AC9).
+  #
+  # `make lane` intersects each validation phase's own `lane-inputs:`
+  # declaration with the changed-file set, so a docs-only commit stops buying
+  # evidence that cannot judge it. The set comes from the `changes` job rather
+  # than being recomputed here: ONE derivation, two consumers, which is P12's
+  # own rule applied to P12's blind spot.
+  #
+  # It calls lane-run-STRICT, and that is AC9. `scripts/verify.sh
+  # --require-nonempty` refuses an empty or unresolvable input set instead of
+  # exiting zero having run nothing — a green tick with no gate behind it. The
+  # target and the refusal shipped in v0.20.0 and NO workflow called them,
+  # which is a fix that exists while the exposure stays open. This is the
+  # caller.
+  #
+  # Note what a Go edit still costs: `logic-e2e` declares `**/*.go`, so any Go
+  # change selects the whole conformance matrix. This does not make code
+  # cheaper; it stops a docs commit from paying for the Go tiers.
+  lane:
+    # timeout-minutes: the lane's ceiling is the ceiling's own budget — it can
+    # select every phase `check` runs, minus what the diff cannot reach.
+    timeout-minutes: 28
+    needs: changes
+    if: needs.changes.outputs.tier == 'lane'
+    runs-on: ubuntu-latest
+    env:
+      GOCACHE: ${{ github.workspace }}/.a2a/cache/ci-go-build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install validation tools
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/v2.12.2/install.sh \
+            | sh -s -- -b "$(go env GOPATH)/bin" v2.12.2
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
+          rg --version | head -1
+
+      - name: Resolve module inputs
+        run: go mod download
+
+      - name: make lane-run-strict
+        env:
+          LANE_FILES: ${{ needs.changes.outputs.files }}
+        run: make lane-run-strict
+
   # skill-drift (spec 13 T4/T5, AC-602.1 machine clause): the generated half
   # of the a2ahub skill must stay byte-identical to a fresh regeneration from
   # the built binary. Prose paths (SKILL.md/loops.md/…) are OUT of this job —
@@ -172,9 +223,12 @@ jobs:
   skill-drift:
     # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
     timeout-minutes: 5
-    # The weekly cron is the macOS net (see `on:` above); regenerating the
-    # skill reference on a schedule proves nothing about a tree nobody pushed.
-    if: github.event_name != 'schedule'
+    # Runs wherever a tier is bought — a push, a pull request, a tag, the
+    # nightly ceiling. `none` is the weekly macOS net alone (see `on:` above),
+    # and regenerating the skill reference from a tree nobody pushed proves
+    # nothing.
+    needs: changes
+    if: needs.changes.outputs.tier != 'none'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

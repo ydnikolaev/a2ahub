@@ -61,6 +61,12 @@ MACOS_PREFIX="integrations/macos-notifier/"
 # macOS job is built or gated must be able to exercise it.
 MACOS_WORKFLOW=".github/workflows/ci.yml"
 
+# The nightly ceiling's cron, stated ONCE. `ci.yml` declares two schedules and
+# `github.event.schedule` is the only thing that tells a scheduled run which
+# one fired it, so this literal and the workflow's must agree. They are pinned
+# together by --teeth case (k) below, which reads the workflow.
+NIGHTLY_CRON='23 2 * * *'
+
 macos_relevant() {
   local f
   for f in "$@"; do
@@ -164,7 +170,62 @@ run_report() {
   emit resolved "$resolved"
   emit macos "$macos"
   emit files "${set[*]+${set[*]}}"
+  emit tier "$(resolve_tier "$resolved")"
   printf 'ci-changes: macos=%s (%s)\n' "$macos" "$reason" >&2
+}
+
+# THE CADENCE, decided here so every workflow `if:` stays a single comparison
+# against one output (AC16). `.claude/rules/check-convention.md` has carried
+# this table since P12 and CI has never obeyed it: **the derived lane is the
+# COMMIT gate, the ceiling is the SHIP gate.** P13 §3.3 is the decision to
+# make the runner obey it too.
+#
+#   ceiling  — `make check`, the ~15-minute ship gate
+#   lane     — `make lane-run-strict`, priced off the diff
+#   none     — nothing to verify (the weekly macOS net; see AC2)
+#
+# WHY A PULL REQUEST STILL BUYS THE CEILING, which looks like the obvious
+# saving and is deliberately not taken: moving PRs to the lane is AC11b, and
+# AC11b is BLOCKED. Spec 13 §4.5 (= spec 14 §5) refuses to remove validating
+# proof from a branch that accepts external writes until that branch carries a
+# real merge gate — public `main`'s sole required context today returns green
+# for any non-feedback PR without validating it. Gating the macOS job is a
+# different thing entirely: that job could never judge the diff in the first
+# place.
+#
+# WHY A CANDIDATE REF STILL BUYS IT: spec 13 §2.1 measured that bucket as the
+# one that must stay. It is the only execution the FILTERED tree ever gets,
+# and it is what caught the `scripts/lib/` strip defect at v0.19.9 while every
+# local gate was green.
+resolve_tier() {
+  local resolved="$1"
+  local event="${CI_EVENT_NAME:-${GITHUB_EVENT_NAME:-}}"
+  local ref="${CI_REF:-${GITHUB_REF:-}}"
+  local cron="${CI_SCHEDULE:-}"
+
+  case "$event" in
+    schedule)
+      # Two crons share this workflow and they buy different things. The
+      # nightly one is the ceiling's new home now that push no longer runs it
+      # (§3.3 accepts up to 24h of latency on that verdict, and the acceptance
+      # is the operator's). The weekly one is the macOS path-gate's safety net
+      # and must buy NOTHING else, or the net costs a ceiling a week.
+      if [ "$cron" = "$NIGHTLY_CRON" ]; then echo ceiling; else echo none; fi
+      return
+      ;;
+    workflow_dispatch) echo ceiling; return ;;
+    pull_request | pull_request_target) echo ceiling; return ;;
+  esac
+
+  case "$ref" in
+    refs/tags/*) echo ceiling; return ;;
+    refs/heads/a2a-candidate/*) echo ceiling; return ;;
+  esac
+
+  # An ordinary push. The lane is the gate — unless we could not work out what
+  # changed, in which case the lane has nothing to price and the honest answer
+  # is the expensive one.
+  if [ "$resolved" = true ]; then echo lane; else echo ceiling; fi
 }
 
 # --- --teeth ---------------------------------------------------------------
@@ -189,6 +250,20 @@ expect() {
     return
   fi
   echo "ci-changes --teeth: $label — macos=$got_macos resolved=$got_resolved"
+}
+
+expect_tier() {
+  local label="$1" want="$2"
+  shift 2
+  local out got
+  out="$(env "$@" bash "$ROOT/scripts/ci-changes.sh" 2>/dev/null)"
+  got="$(sed -n 's/^tier=//p' <<< "$out")"
+  if [ "$got" != "$want" ]; then
+    echo "ci-changes --teeth: FAIL — $label: got tier=$got, want tier=$want" >&2
+    teeth_fail=1
+    return
+  fi
+  echo "ci-changes --teeth: $label — tier=$got"
 }
 
 run_teeth() {
@@ -231,11 +306,72 @@ run_teeth() {
   expect "the weekly schedule stays out of every other repository" false false \
     CI_CHANGES_FILES= CI_EVENT_NAME=schedule CI_REPOSITORY=ydnikolaev/a2ahub-private GITHUB_OUTPUT=
 
+  # --- the cadence (AC8, AC9) ------------------------------------------------
+
+  # (j) An ordinary push runs the LANE, not the ceiling. This is the whole of
+  # AC8: `check` ran on every push, on every branch, in two repositories,
+  # while the derivation that prices it existed and was invoked by hand.
+  expect_tier "an ordinary push runs the derived lane" lane \
+    CI_CHANGES_FILES="docs/backlog.md" CI_EVENT_NAME=push CI_REF=refs/heads/main GITHUB_OUTPUT=
+
+  # (k) A CANDIDATE ref keeps the ceiling. Spec 13 §2.1: the only execution the
+  # filtered tree ever gets, and what caught the scripts/lib/ strip defect at
+  # v0.19.9 while every local gate was green. Losing this is the one loss in
+  # this phase that would not be noticed until a public release was broken.
+  expect_tier "a candidate ref still buys the ceiling" ceiling \
+    CI_CHANGES_FILES="docs/backlog.md" CI_EVENT_NAME=push CI_REF=refs/heads/a2a-candidate/deadbeef GITHUB_OUTPUT=
+
+  # (l) A TAG is the ship boundary and buys the ceiling.
+  expect_tier "a tag buys the ceiling" ceiling \
+    CI_CHANGES_FILES="docs/backlog.md" CI_EVENT_NAME=push CI_REF=refs/tags/v9.9.9 GITHUB_OUTPUT=
+
+  # (m) A PULL REQUEST keeps the ceiling, and this case is a FENCE rather than
+  # an optimisation. Moving PRs to the lane is AC11b, which spec 13 §4.5
+  # blocks until an externally-written branch carries a real merge gate. If
+  # someone "also fixes" that here, this case reds.
+  expect_tier "a pull request still buys the ceiling (AC11b is blocked)" ceiling \
+    CI_CHANGES_FILES="feedback/inbox/fb-20260812-755a23.yaml" CI_EVENT_NAME=pull_request CI_REF=refs/pull/27/merge GITHUB_OUTPUT=
+
+  # (n) workflow_dispatch is the on-demand ceiling (§5 rung 5's own vehicle).
+  expect_tier "workflow_dispatch buys the ceiling" ceiling \
+    CI_EVENT_NAME=workflow_dispatch CI_REF=refs/heads/main GITHUB_OUTPUT=
+
+  # (o) The NIGHTLY cron is the ceiling's new home.
+  expect_tier "the nightly cron buys the ceiling" ceiling \
+    CI_EVENT_NAME=schedule CI_SCHEDULE="$NIGHTLY_CRON" CI_REPOSITORY=ydnikolaev/a2ahub GITHUB_OUTPUT=
+
+  # (p) The WEEKLY cron buys the macOS net and NOTHING else. Getting this
+  # wrong costs a full ceiling every week for a job that takes 52 seconds.
+  expect_tier "the weekly macOS net buys no tier at all" none \
+    CI_EVENT_NAME=schedule CI_SCHEDULE='17 6 * * 1' CI_REPOSITORY=ydnikolaev/a2ahub GITHUB_OUTPUT=
+
+  # (q) AC9's own case: an unresolvable push falls to the CEILING, never to
+  # the lane. `make lane-run-strict` would refuse an empty input set — which
+  # is correct and loud — but the honest tier for "I do not know what changed"
+  # is the one that checks everything.
+  expect_tier "an unresolvable push falls to the ceiling, not the lane" ceiling \
+    CI_CHANGES_FILES= CI_EVENT_NAME=push CI_REF=refs/heads/main CI_REPOSITORY=ydnikolaev/a2ahub \
+    CI_BEFORE_SHA=0000000000000000000000000000000000000000 CI_AFTER_SHA=deadbeef GITHUB_OUTPUT=
+
+  # (r) The two crons live in TWO files — this script's literal and the
+  # workflow's `on.schedule`. A rename in one is silent in the other, and the
+  # failure it produces is a nightly ceiling that never runs while the run
+  # list looks healthy. Pin them.
+  local wf="$ROOT/.github/workflows/ci.yml"
+  if [ -f "$wf" ]; then
+    if ! grep -qF "cron: '$NIGHTLY_CRON'" "$wf"; then
+      echo "ci-changes --teeth: FAIL — the nightly cron '$NIGHTLY_CRON' is not declared in ci.yml; a scheduled run would resolve to tier=none and the ceiling would silently never run" >&2
+      teeth_fail=1
+    else
+      echo "ci-changes --teeth: the nightly cron matches ci.yml's own schedule"
+    fi
+  fi
+
   if [ "$teeth_fail" -ne 0 ]; then
     echo "ci-changes --teeth: FAIL" >&2
     exit 1
   fi
-  echo "ci-changes --teeth: 9 case(s) green."
+  echo "ci-changes --teeth: 18 case(s) green."
 }
 
 case "${1:-}" in
