@@ -212,6 +212,25 @@ jobs:
       - name: make check
         run: make check
 
+      # THE CEILING JUDGES THE CORPUS; THIS JUDGES THE JUDGES — and until now
+      # nothing ran it before a publish.
+      #
+      # `make check` is `verify.sh full`; the gates' own `--teeth` are
+      # `verify.sh harness`, a DIFFERENT mode the ceiling does not reach. So a
+      # teeth fixture that only builds in the private tree stayed green
+      # everywhere that mattered and reddened only after promotion, on public
+      # `main`, where the derived lane selects `harness-check` and the corpus
+      # it copies from is gone.
+      #
+      # That is exactly what happened at f2a0b54e (run 31682736134): the
+      # candidate ref was GREEN on the identical tree and `main` was RED. This
+      # job is the right place to close it because a CANDIDATE REF CARRIES THE
+      # PUBLIC TREE — it is the last moment a public-projection defect can be
+      # caught before it is the published repository's problem, and the same
+      # moment the strip defect at v0.19.9 was caught. ~51 s, ceiling runs only.
+      - name: make harness-check (the teeth, which `make check` does not reach)
+        run: make harness-check
+
       - name: skill-drift (folded in — P13 K5/AC5, it billed a whole minute for 24s of work)
         run: bash scripts/ci-skill-drift.sh
 

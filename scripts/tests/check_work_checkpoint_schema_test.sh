@@ -13,6 +13,16 @@ fail() {
   exit 1
 }
 
+# The gate ITSELF handles the private spec's absence — `checkDocsIfPresent`
+# stats it and reports a reduced comparison surface. The fixture builder did
+# not, and under `set -e` an absent source made `cp` abort the whole teeth run.
+# In a public checkout that is not a hypothetical: `docs/**` is stripped at
+# publish, so this line reddened `_harness-check` on public `main` while the
+# candidate ref carrying the identical tree was green.
+DOCS_SPEC="docs/features/active/operational-confidence-2026-08/specs/02-reported-work-checkpoints.md"
+docs_present=false
+[ -f "$ROOT/$DOCS_SPEC" ] && docs_present=true
+
 copy_tree() {
   local destination="$1"
   mkdir -p "$destination/schemas/envelope/v2" "$destination/schemas/templates/v2" \
@@ -22,8 +32,9 @@ copy_tree() {
   cp "$ROOT/schemas/templates/v2/announcement.md" "$destination/schemas/templates/v2/announcement.md"
   cp "$ROOT/internal/workreport/types.go" "$destination/internal/workreport/types.go"
   cp "$ROOT/internal/validate/work_checkpoint.go" "$destination/internal/validate/work_checkpoint.go"
-  cp "$ROOT/docs/features/active/operational-confidence-2026-08/specs/02-reported-work-checkpoints.md" \
-    "$destination/docs/features/active/operational-confidence-2026-08/specs/02-reported-work-checkpoints.md"
+  if [ "$docs_present" = true ]; then
+    cp "$ROOT/$DOCS_SPEC" "$destination/$DOCS_SPEC"
+  fi
 }
 
 expect_red() {
@@ -94,11 +105,17 @@ target="$validator_mode/internal/validate/work_checkpoint.go"
 perl -0pi -e 's/WorkModePlanning\s+WorkMode = "planning"/WorkModePlanning     WorkMode = "designing"/' "$target"
 expect_red "$validator_mode" "validator WorkMode constants" "validator mode drift"
 
-docs_wait="$WORK/docs-wait"
-copy_tree "$docs_wait"
-target="$docs_wait/docs/features/active/operational-confidence-2026-08/specs/02-reported-work-checkpoints.md"
-perl -0pi -e 's/enum `system`, `human`/enum `service`, `human`/' "$target"
-expect_red "$docs_wait" "02-reported-work-checkpoints.md wait-kind vocabulary" "documentation wait-kind drift"
+if [ "$docs_present" = true ]; then
+  docs_wait="$WORK/docs-wait"
+  copy_tree "$docs_wait"
+  target="$docs_wait/$DOCS_SPEC"
+  perl -0pi -e 's/enum `system`, `human`/enum `service`, `human`/' "$target"
+  expect_red "$docs_wait" "02-reported-work-checkpoints.md wait-kind vocabulary" "documentation wait-kind drift"
+fi
 
 bash "$GATE" >/dev/null || fail "the real tree did not return to green after mutation probes"
-echo "work-checkpoint-schema-test: ok — schema/template/workreport/validator/docs mutations all red; production tree greens"
+if [ "$docs_present" = true ]; then
+  echo "work-checkpoint-schema-test: ok — schema/template/workreport/validator/docs mutations all red; production tree greens"
+else
+  echo "work-checkpoint-schema-test: ok — schema/template/workreport/validator mutations all red; production tree greens. SKIPPED the docs mutation — $DOCS_SPEC absent (public checkout), which is the same surface the gate itself reports reduced"
+fi

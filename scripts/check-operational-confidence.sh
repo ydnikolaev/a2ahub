@@ -210,14 +210,46 @@ expect_red() {
   [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "$needle" || { echo "operational-confidence-guard --teeth: $label did not red on '$needle'"; echo "$out"; exit 1; }
 }
 
+# A fixture built by COPYING a corpus is only buildable where that corpus
+# exists, and two of the four below copy PRIVATE trees — `docs/the-plan/plan`
+# and `docs/features/**` are both stripped at publish. `run_all` above already
+# presence-gates each of them at its call site; `run_teeth` did not, so in a
+# public checkout the `cp -R` copied nothing, `check_ids` reported all 27
+# normative ids "found 0", and `_harness-check` exited 1.
+#
+# That is not hypothetical. Public `main` was RED on it at f2a0b54e (run
+# 31682736134) while the candidate ref carrying the identical tree was GREEN —
+# because the ceiling is `verify.sh full` and the teeth are `verify.sh
+# harness`, so only the derived lane reaches them, and only the lane runs on a
+# push to main.
+#
+# It is also the SIXTH instance of one class: a check whose claim silently
+# changes meaning when the private half of the tree is absent. The fix each
+# time is the same — the presence gate belongs at the fixture, named, so a
+# reader sees which teeth did not run instead of assuming all of them did.
+teeth_skipped=""
+
+# corpus_present <path> <label> — true when the fixture's source tree is here.
+# Records the label when it is not, so the summary line cannot claim a
+# fixture that never ran.
+corpus_present() {
+  local path="$1" label="$2"
+  if [ -e "$ROOT/$path" ]; then return 0; fi
+  teeth_skipped="${teeth_skipped:+$teeth_skipped, }$label"
+  echo "operational-confidence-guard --teeth: skip $label — $path absent (public checkout); the fixture is a copy of it"
+  return 1
+}
+
 run_teeth() {
   local tmp path
   tmp="$(mktemp -d)" || exit 1
   trap "rm -rf '$tmp'" EXIT
 
-  mkdir -p "$tmp/ids"; cp -R "$ROOT/docs/the-plan/plan/." "$tmp/ids/"
-  printf '\n| R-023 | duplicate | x |\n' >> "$tmp/ids/01-vision.md"
-  expect_red duplicate-id 'duplicate normative' check_ids "$tmp/ids"
+  if corpus_present docs/the-plan/plan duplicate-id; then
+    mkdir -p "$tmp/ids"; cp -R "$ROOT/docs/the-plan/plan/." "$tmp/ids/"
+    printf '\n| R-023 | duplicate | x |\n' >> "$tmp/ids/01-vision.md"
+    expect_red duplicate-id 'duplicate normative' check_ids "$tmp/ids"
+  fi
 
   mkdir -p "$tmp/history/internal/validate" "$tmp/history/internal/cli"
   cp "$ROOT/schemas/errors/v1/history.tsv" "$tmp/history/history.tsv"
@@ -231,12 +263,21 @@ run_teeth() {
   printf '\nseeded mutation\n' >> "$tmp/hash/schemas/envelope/v1/base.schema.json"
   expect_red v1-immutability 'published v1 bytes changed' check_hashes "$tmp/hash" "$tmp/hash/manifest"
 
-  mkdir -p "$tmp/dispatch/docs/features/active"
-  cp -R "$ROOT/docs/features/active/operational-confidence-2026-08" "$tmp/dispatch/docs/features/active/"
-  sed -i.bak '/- id: P1/,/- id: P2/ s/blocked_by: \[P0\]/blocked_by: []/' "$tmp/dispatch/docs/features/active/operational-confidence-2026-08/tracker.yaml"
-  expect_red mandatory-dag 'P1 must be blocked_by P0' check_dispatch "$tmp/dispatch"
+  if corpus_present docs/features/active/operational-confidence-2026-08 mandatory-dag; then
+    mkdir -p "$tmp/dispatch/docs/features/active"
+    cp -R "$ROOT/docs/features/active/operational-confidence-2026-08" "$tmp/dispatch/docs/features/active/"
+    sed -i.bak '/- id: P1/,/- id: P2/ s/blocked_by: \[P0\]/blocked_by: []/' "$tmp/dispatch/docs/features/active/operational-confidence-2026-08/tracker.yaml"
+    expect_red mandatory-dag 'P1 must be blocked_by P0' check_dispatch "$tmp/dispatch"
+  fi
 
-  echo "✓ operational-confidence-guard --teeth: duplicate ID, unknown live code, v1 mutation and missing P0 edge all red"
+  # The two fixtures that always build — their corpora are product, not
+  # planning — are named separately from the two that may not, so a green line
+  # here says what was actually proven rather than what the file contains.
+  if [ -n "$teeth_skipped" ]; then
+    echo "✓ operational-confidence-guard --teeth: unknown live code and v1 mutation red; SKIPPED (source corpus absent): $teeth_skipped"
+  else
+    echo "✓ operational-confidence-guard --teeth: duplicate ID, unknown live code, v1 mutation and missing P0 edge all red"
+  fi
 }
 
 case "${1:-check}" in
