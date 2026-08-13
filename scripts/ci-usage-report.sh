@@ -533,6 +533,96 @@ mode_establish() {
   render_report "$report_json" "$since" "$until" "${repos[@]}"
 }
 
+# mode_acceptance: §5.1 check 11 as a COMMAND.
+#
+# That row names three bounded criteria — AC13, AC14 and AC14b — and until
+# now they were three numbers a reader had to derive from the default
+# report and compare against thresholds held in prose. A criterion whose
+# evaluation lives in someone's head is not machine-refusable, which is the
+# same defect this whole phase exists to remove one layer up ("a print
+# cannot red").
+#
+# It cannot pass TODAY and is not supposed to: AC13 measures the window
+# AFTER the gating wave lands, which is a fortnight by construction. What
+# this gives the next reader is a single command whose output IS the
+# verdict, rather than an invitation to re-derive the arithmetic and get it
+# subtly wrong — which is exactly how this epic ended up with a retracted
+# billing claim.
+#
+# AC14b's "newly added" is derived, not listed: the identity set of the
+# PINNED baseline window is what "already existed" means, so anything in the
+# measured window and absent from the pin is new. `CI/changes` and `CI/lane`
+# are new by that definition, which is correct — they are this phase's own
+# additions and are exactly what the criterion is watching for.
+mode_acceptance() {
+  local since="$1" until="$2"; shift 2
+  local -a repos=("$@")
+  local files jobs_ndjson report baseline rc=0
+
+  files="$(fetch_window "$since" "$until" "${repos[@]}")" || die "fetch_window failed for ${since}..${until}"
+  jobs_ndjson="$(echo "$files" | sed -n '1p')"
+  report="$(jq -s "$JQ_REPORT" "$jobs_ndjson")"
+
+  [ -f "$WINDOW_JSON" ] || die "--acceptance needs the pinned baseline at $WINDOW_JSON to know which identities are NEW (AC14b)"
+  baseline="$(jq -r '[.jobs[] | "\(.workflow_name)/\(.job_name)"] | unique | join("\n")' "$WINDOW_JSON")"
+
+  echo "P13 §5.1 check 11 — the acceptance run, over ${since}..${until}"
+  echo
+
+  # ── AC13 ──────────────────────────────────────────────────────────────────
+  local macos_share
+  macos_share="$(jq -r '[.per_identity[] | select(.identity == "CI/macos-notifier") | .share_pct] | (.[0] // 0)' <<<"$report")"
+  if awk -v v="$macos_share" 'BEGIN { exit !(v <= 2.0) }'; then
+    printf 'AC13  PASS  CI/macos-notifier is %.1f%% of equivalent minutes (bound: <= 2%%, was 55.6%%)\n' "$macos_share"
+  else
+    printf 'AC13  FAIL  CI/macos-notifier is %.1f%% of equivalent minutes; the bound is 2%%\n' "$macos_share"
+    echo "      A SHARE, not a total, on purpose: a total can fail because the fortnight was busy, and that is not a defect."
+    rc=1
+  fi
+
+  # ── AC14 ──────────────────────────────────────────────────────────────────
+  local waste
+  waste="$(jq -r '.rounding_waste_minutes' <<<"$report")"
+  if awk -v v="$waste" 'BEGIN { exit !(v < 500) }'; then
+    printf 'AC14  PASS  per-job rounding waste is %.0f absolute minutes (bound: < 500, was 1605)\n' "$waste"
+  else
+    printf 'AC14  FAIL  per-job rounding waste is %.0f absolute minutes; the bound is 500\n' "$waste"
+    echo "      ABSOLUTE, not a share: removing a long efficient job RAISES the waste share while the bill falls,"
+    echo "      so a ratio would fail on a successful fix."
+    rc=1
+  fi
+
+  # ── AC14b ─────────────────────────────────────────────────────────────────
+  local offenders
+  offenders="$(jq -r --arg base "$baseline" '
+      ($base | split("\n")) as $known
+      | [ .per_identity[]
+          | select(.identity as $i | ($known | index($i)) | not)
+          | select(.n > 0)
+          | select((.work_minutes / .n * 60) < 60)
+          | select(.equiv_minutes > 20)
+          | "\(.identity): mean \((.work_minutes / .n * 60) | floor)s, \(.equiv_minutes) equiv-min" ]
+      | join("\n")' <<<"$report")"
+  if [ -z "$offenders" ]; then
+    echo "AC14b PASS  no NEWLY ADDED sub-minute job identity bills more than 20 equivalent minutes"
+  else
+    echo "AC14b FAIL  a newly added sub-minute identity bills more than 20 equivalent minutes:"
+    printf '%s\n' "$offenders" | sed 's/^/        - /'
+    echo "      The identities knowingly KEPT — CodeQL, Release/macos-notifier, feedback-intake's three jobs,"
+    echo "      govulncheck, the dogfood — are out of this bound by decision (spec 13 AC14b, A8), and are"
+    echo "      excluded here by being present in the pinned baseline rather than by a hand-written list."
+    rc=1
+  fi
+
+  echo
+  if [ "$rc" -eq 0 ]; then
+    echo "ci-usage-report --acceptance: PASS — all three bounded criteria hold over ${since}..${until}."
+  else
+    echo "ci-usage-report --acceptance: FAIL — see above. Note that this is EXPECTED to fail until a full window has elapsed since the gating wave landed (2026-08-13); AC13 measures the window AFTER it, by construction." >&2
+  fi
+  return "$rc"
+}
+
 mode_verify() {
   [ -f "$WINDOW_JSON" ] || die "$WINDOW_JSON does not exist — run --establish first"
 
@@ -611,6 +701,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --p99) MODE="p99"; shift ;;
     --verify) MODE="verify"; shift ;;
+    --acceptance) MODE="acceptance"; shift ;;
     --establish) MODE="establish"; shift ;;
     --billing)
       MODE="billing"; shift
@@ -639,6 +730,7 @@ case "$MODE" in
   p99)       mode_p99 "$SINCE" "$UNTIL" "${REPOS[@]}" ;;
   establish) mode_establish "$SINCE" "$UNTIL" "${REPOS[@]}" ;;
   verify)    mode_verify ;;
+  acceptance) mode_acceptance "$SINCE" "$UNTIL" "${REPOS[@]}" ;;
   billing)
     [ -n "$BILLING_MONTH" ] || BILLING_MONTH="$(date -u +%Y-%m)"
     [[ "$BILLING_MONTH" =~ ^[0-9]{4}-[0-9]{2}$ ]] || die "not a YYYY-MM month: $BILLING_MONTH"
