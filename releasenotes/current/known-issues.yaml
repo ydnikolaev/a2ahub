@@ -5,7 +5,7 @@ issues:
     impact: normal
     subject: "The current releases shipped with their provider-tier verification deferred, by explicit operator authorization"
     detail: >
-      Every release from v0.19.0 through v0.21.0 shipped this way — FOURTEEN of
+      Every release from v0.19.0 through v0.22.0 shipped this way — FIFTEEN of
       them, each authorized separately for its own candidate, and the count is
       machine-refused unless the newest record signs for its own position in the
       streak.
