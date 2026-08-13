@@ -3,6 +3,7 @@ package space
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/fold"
@@ -90,6 +91,59 @@ func TestDeliverDataPackageSingleCommit(t *testing.T) {
 	for path := range want {
 		if !got[path] {
 			t.Fatalf("changed files %v missing %q", got, path)
+		}
+	}
+}
+
+// TestDeliverDataPackageCommittedContentMatchesRequestBytes is the
+// content-level half of "the committed file set is unchanged": it exercises
+// a MULTI-entry payload (TestDeliverDataPackageSingleCommit's own fixture
+// carries only one) so the refactor's actual risk surface — reassembling
+// spaceGitDriver.Put's returned map[string][]byte back into FileWrite
+// entries — is exercised on more than a single key, and asserts every
+// committed blob's bytes are byte-identical to what the request carried,
+// not merely that its path appeared.
+func TestDeliverDataPackageCommittedContentMatchesRequestBytes(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	req := newTestDataDeliveryRequest(fx, "axon")
+	req.Payload = map[string][]byte{
+		"orders.json":       []byte(`[{"id":1}]`),
+		"customers.json":    []byte(`[{"id":2}]`),
+		"nested/index.json": []byte(`{"count":2}`),
+	}
+
+	fake := host.NewFakeHost()
+	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+
+	result, err := DeliverDataPackage(context.Background(), req, funnel)
+	if err != nil {
+		t.Fatalf("DeliverDataPackage: %v", err)
+	}
+
+	root := "axon/data/DP-axon-20260804-ab12/"
+	wantBlobs := map[string][]byte{
+		root + "manifest.json":                             req.ManifestRaw,
+		root + "orders.json":                               req.Payload["orders.json"],
+		root + "customers.json":                            req.Payload["customers.json"],
+		root + "nested/index.json":                         req.Payload["nested/index.json"],
+		"axon/exchanges/XH-axon-20260804-cd34.md":          req.HandoffRaw,
+		"axon/events/2026/01K1A2B3C4D5E6F7G8H9J0K1M9.yaml": req.EventRaw,
+	}
+	for blobPath, want := range wantBlobs {
+		got, err := runGitOutput(context.Background(), req.SubmitTemplate.RepoDir, nil, "show", result.Branch+":"+blobPath)
+		if err != nil {
+			t.Fatalf("show %s: %v", blobPath, err)
+		}
+		// runGitOutput trims surrounding whitespace off git's own stdout, so
+		// a single trailing newline in the committed blob (several of this
+		// test's own fixture values end in one) is trimmed on both sides
+		// rather than tripping this assertion on something runGitOutput
+		// itself already does uniformly, not something DeliverDataPackage
+		// changed.
+		if strings.TrimSpace(got) != strings.TrimSpace(string(want)) {
+			t.Fatalf("committed %s = %q, want %q", blobPath, got, string(want))
 		}
 	}
 }
@@ -238,6 +292,37 @@ func TestDeliverDataPackageRefusesUnsafePayloadPath(t *testing.T) {
 	}
 	if len(fake.Pushes) != 0 {
 		t.Fatalf("unsafe payload path reached the funnel: pushes=%d", len(fake.Pushes))
+	}
+}
+
+// TestDeliverDataPackageRefusesPayloadNamedManifest is the seeded-red
+// receipt for the collision DeliverDataPackage's own doc comment names:
+// merging payload entries and the manifest into ONE map, keyed by relative
+// name, means a payload entry literally called "manifest.json" would
+// otherwise silently overwrite (or be overwritten by) the real manifest
+// instead of being caught the way two duplicate-path FileWrite entries used
+// to be caught deep inside funnel.Submit's own normalizeMutations
+// (ErrMutationDuplicatePath). Removing this function's own guard reproduces
+// that silent loss: the test would then pass a corrupted delivery (either
+// the manifest bytes or the payload entry's own bytes silently discarded)
+// rather than failing loudly, so it is verified to fail with the guard
+// removed before being trusted here — recorded in this file's own report,
+// not left to be re-discovered.
+func TestDeliverDataPackageRefusesPayloadNamedManifest(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	req := newTestDataDeliveryRequest(fx, "axon")
+	req.Payload = map[string][]byte{"manifest.json": []byte(`{"attacker":true}`)}
+
+	fake := host.NewFakeHost()
+	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+
+	if _, err := DeliverDataPackage(context.Background(), req, funnel); !errors.Is(err, ErrDataDeliveryInvalid) {
+		t.Fatalf("error = %v, want ErrDataDeliveryInvalid", err)
+	}
+	if len(fake.Pushes) != 0 {
+		t.Fatalf("a payload entry colliding with the manifest name reached the funnel: pushes=%d", len(fake.Pushes))
 	}
 }
 

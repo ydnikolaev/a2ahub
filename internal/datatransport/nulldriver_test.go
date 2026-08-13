@@ -47,12 +47,16 @@ func (d *nullDriver) AcceptsLocator(locator string) bool {
 	return artifact.CleanRelativePath(locator)
 }
 
-func (d *nullDriver) Put(ctx context.Context, locator string, files map[string][]byte) error {
+// Put performs its own I/O (an in-memory store never leaves this process),
+// so it returns a nil inSpace map — nothing needs to be committed into a
+// space on its behalf, mirroring the Driver doc comment's "a transport that
+// lives elsewhere performs its own I/O and returns nothing."
+func (d *nullDriver) Put(ctx context.Context, locator string, files map[string][]byte) (map[string][]byte, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return nil, err
 	}
 	if !d.AcceptsLocator(locator) {
-		return fmt.Errorf("datatransport: nullDriver: Put: %w: %q", datapackage.ErrUnsafeLocator, locator)
+		return nil, fmt.Errorf("datatransport: nullDriver: Put: %w: %q", datapackage.ErrUnsafeLocator, locator)
 	}
 	copied := make(map[string][]byte, len(files))
 	for path, raw := range files {
@@ -64,7 +68,7 @@ func (d *nullDriver) Put(ctx context.Context, locator string, files map[string][
 	// exactly the latest file set afterward, not a union of every Put ever
 	// made to that locator.
 	d.store[locator] = copied
-	return nil
+	return nil, nil
 }
 
 func (d *nullDriver) Get(ctx context.Context, locator string) (map[string][]byte, error) {

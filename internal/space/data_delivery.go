@@ -43,12 +43,19 @@ func dataPackageDir(system, packageID string) string {
 	return path.Join(system, "data", packageID)
 }
 
+// dataPackageManifestName is dataPackageManifestPath's own file name,
+// spelled once so spaceGitDriver (data_transport.go) — which keys its Put
+// input map and Get output map by this same relative name — and
+// DeliverDataPackage — which special-cases it when assembling that input
+// map — cannot drift apart on what the manifest is called.
+const dataPackageManifestName = "manifest.json"
+
 // dataPackageManifestPath is dataPackageDir's own manifest.json — the one
 // file both DeliverDataPackage and ResolveDataPackage look for by this exact
 // name, so a resolve can never be pointed at a directory whose manifest
 // landed under a different name than the writer used.
 func dataPackageManifestPath(system, packageID string) string {
-	return path.Join(dataPackageDir(system, packageID), "manifest.json")
+	return path.Join(dataPackageDir(system, packageID), dataPackageManifestName)
 }
 
 // dataPackageReportPath is dataPackageDir's own report.json — where
@@ -196,6 +203,14 @@ type DataDeliveryRequest struct {
 // one funnel.Submit call: file assembly and the expect-pack refusal both run
 // first, entirely locally.
 //
+// The payload+manifest half of that assembly is delegated to spaceGitDriver
+// (data_transport.go)'s Put — spec 05a AC-8's Go seam — rather than built
+// inline: Put is pure (no I/O; §0's "not a second write mechanism"), so this
+// function still performs the ONE commit itself, through funnel.Submit,
+// exactly as before. CONFIRM-3 (§9.1) is why the handoff and its own first
+// lifecycle event are NOT part of that delegation: they are protocol, not
+// transport, and this function keeps building and committing them directly.
+//
 // OperationKey is minted from PackageID alone (dataDeliverOperationKey,
 // below) — never from the handoff or event bytes. A re-run of `a2a data
 // deliver` against the same staging root therefore collides on the exact
@@ -217,21 +232,44 @@ func DeliverDataPackage(ctx context.Context, req DataDeliveryRequest, funnel *Wr
 	if req.ExpectPack != "" && req.ExpectPack != req.AggregateDigest {
 		return WriteResult{}, ErrDataDeliveryExpectPackChanged
 	}
+	// A payload entry literally named "manifest.json" would otherwise be
+	// silently dropped when it is merged into the single map Put takes: Go
+	// map construction has no way to hold two values under one key, unlike
+	// the two separate FileWrite entries this function used to build (which
+	// the funnel's own normalizeMutations would have refused as
+	// ErrMutationDuplicatePath, deep inside funnel.Submit, well after this
+	// point). Refusing here, before Put is ever called, keeps that same
+	// "duplicate path is refused, never silently resolved" property visible
+	// at this function's own boundary instead of moving it to a place that
+	// can no longer detect it.
+	if _, collides := req.Payload[dataPackageManifestName]; collides {
+		return WriteResult{}, fmt.Errorf("%w: payload entry %q collides with the package's own manifest name", ErrDataDeliveryInvalid, dataPackageManifestName)
+	}
 
 	layout, err := NewLayout(req.System)
 	if err != nil {
 		return WriteResult{}, fmt.Errorf("%w: %w", ErrDataDeliveryInvalid, err)
 	}
 
-	root := dataPackageDir(req.System, req.PackageID)
-	files := make([]FileWrite, 0, len(req.Payload)+3)
-	for relative, raw := range req.Payload {
-		if !isCleanRelativePath(relative) {
-			return WriteResult{}, fmt.Errorf("%w: payload entry %q is not a clean relative path", ErrDataDeliveryInvalid, relative)
-		}
-		files = append(files, FileWrite{Path: path.Join(root, relative), Content: raw})
+	driver := newSpaceGitDriver("")
+	locator, err := driver.Locate(req.System, req.PackageID)
+	if err != nil {
+		return WriteResult{}, fmt.Errorf("%w: %w", ErrDataDeliveryInvalid, err)
 	}
-	files = append(files, FileWrite{Path: dataPackageManifestPath(req.System, req.PackageID), Content: req.ManifestRaw})
+	putFiles := make(map[string][]byte, len(req.Payload)+1)
+	for relative, raw := range req.Payload {
+		putFiles[relative] = raw
+	}
+	putFiles[dataPackageManifestName] = req.ManifestRaw
+	inSpace, err := driver.Put(ctx, locator, putFiles)
+	if err != nil {
+		return WriteResult{}, fmt.Errorf("%w: %w", ErrDataDeliveryInvalid, err)
+	}
+
+	files := make([]FileWrite, 0, len(inSpace)+2)
+	for filePath, raw := range inSpace {
+		files = append(files, FileWrite{Path: filePath, Content: raw})
+	}
 	files = append(files, FileWrite{Path: layout.Exchange(req.HandoffID), Content: req.HandoffRaw})
 	files = append(files, FileWrite{Path: layout.EventFile(req.EventYear, req.EventID), Content: req.EventRaw})
 

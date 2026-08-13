@@ -58,6 +58,8 @@ package datatransport
 import (
 	"context"
 	"errors"
+
+	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 )
 
 // Driver is the seam a transport implementation fills — deliberately
@@ -95,12 +97,15 @@ type Driver interface {
 	// every driver rather than restated per-driver).
 	AcceptsLocator(locator string) bool
 
-	// Put moves a package's payload bytes to locator, replacing whatever
-	// was previously there under the same locator — a repeated Put of the
-	// same or a changed file set is idempotent, never a second copy next
-	// to the first. Put refuses with an error wrapping
-	// datapackage.ErrUnsafeLocator when !AcceptsLocator(locator).
-	Put(ctx context.Context, locator string, files map[string][]byte) error
+	// Put moves the bytes wherever this transport keeps them, and returns
+	// any files that must be committed INTO THE SPACE as part of the same
+	// write, keyed by space-relative path.
+	//
+	// A transport that lives in the space performs no I/O and returns them
+	// all. A transport that lives elsewhere performs its own I/O and
+	// returns nothing, or a single pointer file. Put refuses with an error
+	// wrapping datapackage.ErrUnsafeLocator when !AcceptsLocator(locator).
+	Put(ctx context.Context, locator string, files map[string][]byte) (inSpace map[string][]byte, err error)
 
 	// Get retrieves the bytes a prior Put placed at locator, byte-identical
 	// to what was put — ONCE THOSE BYTES ARE VISIBLE ON THIS TRANSPORT.
@@ -120,4 +125,15 @@ var (
 	// ErrUnknownDriver refuses looking up a name nothing was registered
 	// under.
 	ErrUnknownDriver = errors.New("datatransport: no driver is registered under this name")
+
+	// ErrUnsafeLocator re-exports datapackage.ErrUnsafeLocator so a Driver
+	// living in a package ADR-001 (docs/decisions.md) forbids from importing
+	// internal/datapackage directly — internal/space, see its own
+	// data_transport.go — can still wrap the EXACT sentinel this package's
+	// own conformance suite checks with errors.Is. A locally duplicated
+	// `errors.New` with the same text would fail that check: errors.Is
+	// compares by value identity, never by message. This package already
+	// imports internal/datapackage (see the package doc comment above), so
+	// re-exporting the value here costs nothing a duplicate would still owe.
+	ErrUnsafeLocator = datapackage.ErrUnsafeLocator
 )

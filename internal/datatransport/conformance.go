@@ -9,14 +9,6 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 )
 
-// RunConformance is the driver conformance suite AC-8 asks for (spec 05a
-// AC-8, as narrowed by the 2026-08-13 amendment): every driver — the null
-// driver this package ships in test scope, and any later real driver's own
-// package — proves the same minimum through this one shared suite, so
-// adding a driver is "a driver plus its conformance tests" and nothing
-// else. Exported (rather than a _test.go helper) precisely so a driver's
-// own package can call it from its own test file without importing this
-// package's internals.
 // Harness is a Driver plus the one thing the suite cannot know: how bytes
 // become READABLE on this transport.
 //
@@ -37,15 +29,27 @@ type Harness struct {
 	Driver Driver
 
 	// MakeVisible advances the transport until a prior Put at locator is
-	// readable by Get. Nil means "readable immediately", which is the
-	// honest answer for an in-memory driver and a lie for space-git.
-	MakeVisible func(ctx context.Context, locator string) error
+	// readable by Get. It receives the exact inSpace map that Put returned,
+	// because a driver that lives IN the space performs no I/O of its own —
+	// committing inSpace (and, for a driver with a publish boundary,
+	// publishing that commit) is entirely this hook's job for such a
+	// driver. Nil means "readable immediately", which is the honest answer
+	// for an in-memory driver and a lie for space-git.
+	MakeVisible func(ctx context.Context, locator string, inSpace map[string][]byte) error
 }
 
 // DriverHarness is the trivial harness for a transport with no publish
 // boundary.
 func DriverHarness(d Driver) Harness { return Harness{Driver: d} }
 
+// RunConformance is the driver conformance suite AC-8 asks for (spec 05a
+// AC-8, as narrowed by the 2026-08-13 amendments): every driver — the null
+// driver this package ships in test scope, and any later real driver's own
+// package — proves the same minimum through this one shared suite, so adding
+// a driver is "a driver plus its conformance tests" and nothing else.
+// Exported (rather than a _test.go helper) precisely so a driver's own
+// package can call it from its own test file without importing this
+// package's internals.
 func RunConformance(t *testing.T, h Harness) {
 	t.Helper()
 	runConformance(t, h)
@@ -74,7 +78,7 @@ func runConformance(t conformanceT, h Harness) {
 	}
 	makeVisible := h.MakeVisible
 	if makeVisible == nil {
-		makeVisible = func(context.Context, string) error { return nil }
+		makeVisible = func(context.Context, string, map[string][]byte) error { return nil }
 	}
 	ctx := context.Background()
 
@@ -110,7 +114,7 @@ func runConformance(t conformanceT, h Harness) {
 		if d.AcceptsLocator(bad) {
 			t.Fatalf("driver %q accepts unsafe locator %q, want refused", name, bad)
 		}
-		putErr := d.Put(ctx, bad, map[string][]byte{"manifest.json": []byte("{}")})
+		_, putErr := d.Put(ctx, bad, map[string][]byte{"manifest.json": []byte("{}")})
 		if putErr == nil {
 			t.Fatalf("Put(%q) = nil error, want a refusal", bad)
 		}
@@ -124,10 +128,11 @@ func runConformance(t conformanceT, h Harness) {
 		"manifest.json":       []byte(`{"schema":"data-package/v1"}`),
 		"payload/orders.json": []byte(`{"id":1}`),
 	}
-	if err := d.Put(ctx, locator, files); err != nil {
+	inSpace, err := d.Put(ctx, locator, files)
+	if err != nil {
 		t.Fatalf("Put(%q) = %v, want no error", locator, err)
 	}
-	if err := makeVisible(ctx, locator); err != nil {
+	if err := makeVisible(ctx, locator, inSpace); err != nil {
 		t.Fatalf("MakeVisible(%q) = %v, want no error", locator, err)
 	}
 	got, err := d.Get(ctx, locator)
@@ -145,10 +150,11 @@ func runConformance(t conformanceT, h Harness) {
 	replacement := map[string][]byte{
 		"manifest.json": []byte(`{"schema":"data-package/v1","attempt":2}`),
 	}
-	if err := d.Put(ctx, locator, replacement); err != nil {
+	replacementInSpace, err := d.Put(ctx, locator, replacement)
+	if err != nil {
 		t.Fatalf("repeated Put(%q) = %v, want no error", locator, err)
 	}
-	if err := makeVisible(ctx, locator); err != nil {
+	if err := makeVisible(ctx, locator, replacementInSpace); err != nil {
 		t.Fatalf("MakeVisible(%q) after repeated Put = %v, want no error", locator, err)
 	}
 	got2, err := d.Get(ctx, locator)

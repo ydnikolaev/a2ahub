@@ -94,7 +94,7 @@ func TestConformanceUsesMakeVisible(t *testing.T) {
 	withHook := &publishingDriver{nullDriver: NewNullDriver().(*nullDriver)}
 	h := Harness{
 		Driver: withHook,
-		MakeVisible: func(_ context.Context, _ string) error {
+		MakeVisible: func(_ context.Context, _ string, _ map[string][]byte) error {
 			withHook.published = true
 			return nil
 		},
@@ -166,9 +166,9 @@ func (b *brokenDriver) AcceptsLocator(locator string) bool {
 	return b.nullDriver.AcceptsLocator(locator)
 }
 
-func (b *brokenDriver) Put(ctx context.Context, locator string, files map[string][]byte) error {
+func (b *brokenDriver) Put(ctx context.Context, locator string, files map[string][]byte) (map[string][]byte, error) {
 	if b.putAcceptsUnsafe && !b.nullDriver.AcceptsLocator(locator) {
-		return nil
+		return nil, nil
 	}
 	if b.mergeOnPut {
 		existing, err := b.nullDriver.Get(ctx, locator)
