@@ -122,13 +122,20 @@ not drifted from the plan wording it quotes.
 
 - [x] Every prose row above is ticked, or an un-ticked row has a written reason
       and a follow-up filed.
-- [ ] The `skill-drift` CI job is green on the exact release candidate tree
+- [x] The `skill-drift` CI job is green on the exact release candidate tree
       under `make check` (confirms the generated
       `reference/**` tree matches the binary/schemas — separate from this
       prose review).
+      **v0.21.0**: run 31681211419 on `a2a-candidate/f2a0b54e57ca`, job `check`
+      → `success`, and within it the step `skill-drift (folded in — P13
+      K5/AC5…)` → `success`. It is a STEP rather than a job as of this release:
+      K5 folded that identity into whichever single ubuntu job the run already
+      pays for, because it billed a whole runner minute for twenty-four seconds
+      of work. The box means the same thing; the run list no longer shows a job
+      by that name, so look for the step.
 
-**The second box is deliberately OPEN, and cannot honestly be anything else
-yet: no candidate for `v0.21.0` exists.** It is ticked AFTER the tag, and
+**The second box was open until the candidate existed, and is now ticked with
+its run id.** It cannot be true in its own release before that point: It is ticked AFTER the tag, and
 structurally has to be — `skill/` ships in the public projection, so ticking it
 inside a candidate would change the candidate it describes. The box can never
 be true in its own release.
