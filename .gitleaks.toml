@@ -22,3 +22,63 @@ paths = [
   # validator's own tests assert it blocks (FB-006). Not live credentials.
   '''schemas/feedback/v1/fixtures/invalid/planted-secret.*\.yaml''',
 ]
+
+# ── The three findings a working scanner surfaces, each inert and each here
+# with its reason rather than a blanket exclusion ──────────────────────────
+#
+# WHY THESE APPEAR ONLY NOW. `gitleaks/gitleaks-action` is free for
+# USER-owned repositories and licensed for ORGANIZATION-owned ones. ADR-014
+# moved a2ahub-private into the `r22d222` org and the job died on the licence
+# check from that day on — before scanning anything. So this file's own header
+# note ("NOT verified against whatever binary the action bundles — confirm on
+# first CI run") was never discharged, and the first real scan was 2026-08-13,
+# against the binary directly. Three shapes came back. All three are inert;
+# none is a live credential; and each is listed separately so a future one
+# cannot hide behind a broad rule.
+
+[[allowlists]]
+description = "the publisher's own redaction pattern — the string that exists to be removed"
+paths = ['''docs/runbooks/publish-to-public\.sh''']
+# publish-to-public.sh carries LEGACY_PUBLIC_CREDENTIAL_FIXTURE, the exact
+# credential-shaped literal it rewrites out of every filtered public history.
+# The scanner is finding the pattern inside the tool whose job is deleting it.
+# Narrowed to this one file: a genuine secret pasted into any OTHER runbook
+# still reds.
+
+[[allowlists]]
+description = "a pre-v0.19 provenance fixture, already redacted from published history"
+paths = ['''internal/provenance/evidence_test\.go''']
+# The credential-shaped literal a pre-v0.19 provenance test used. It is inert
+# fixture data, GitHub's push protection rejects the historical blob, and
+# publish-to-public.sh's redaction exists precisely so the filtered public
+# history never carries it. This entry covers the private history, where it
+# remains and cannot be rewritten without breaking every SHA in the epic.
+
+[[allowlists]]
+description = "git TRAILER NAMES, matched on the word Key rather than on a secret"
+regexes = ['''^A2A-[A-Za-z]+(-[A-Za-z0-9]+)*$''']
+# internal/space/remote_recovery.go lists the canonical A2A-* trailer names a
+# recovery commit must carry. `generic-api-key` fires on the line because it
+# contains "A2A-Operation-Key", and then reports the NEXT quoted value —
+# `A2A-Plan-Digest` — as the secret. So the allowlist has to match what the
+# rule EXTRACTS, not what triggered it; targeting the trigger left the finding
+# in place and the first attempt here did exactly that.
+#
+# Scoped to the trailer-name grammar rather than to the file, so the rest of
+# remote_recovery.go stays scanned and a real credential pasted beside these
+# constants still reds. Nothing that is actually secret looks like
+# `A2A-Word-Word`.
+
+[[allowlists]]
+description = ".a2a is a live cache, not source — the fifth site caught judging it"
+paths = ['''^\.a2a/''']
+# `a2a`'s feedback reader clones the PUBLIC repository into
+# .a2a/cache/feedback-repo/<slug>/, and the verify harness writes a Go build
+# cache under .a2a/cache/verify/. A filesystem-walking scanner therefore finds
+# a second copy of this repository plus compiler artefacts, and reports both.
+#
+# This is the FIFTH place in this repo caught judging that directory as if it
+# were source: check-pendency-uniqueness.sh, internal/e2e's write-floor scan,
+# testkit/gitfixture's R1 hygiene rule, gitleaks here — and the rule is always
+# the same. A check that walks the FILESYSTEM asks a different question from
+# one that walks the TRACKED SET, and only the second is about this repository.
