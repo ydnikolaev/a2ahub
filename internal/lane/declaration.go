@@ -204,8 +204,24 @@ func loadDocGoDeclarations(root string) ([]Declaration, []error) {
 			return err
 		}
 		if d.IsDir() {
+			// `.a2a` is the LOCAL CACHE, not source, and pruning it is what
+			// keeps this walk asking about the repository rather than about
+			// the machine. `a2a`'s own feedback reader clones the public
+			// repository into .a2a/cache/feedback-repo/<slug>/ — a complete
+			// second copy of this tree, doc.go files and all. Unpruned, this
+			// walk derived a real declaration for
+			// `go-test-scoped:./.a2a/cache/feedback-repo/ydnikolaev-a2ahub/internal/e2e/...`
+			// and the lane then ran `go test` inside a clone, which fails to
+			// set up and reds a tree whose own packages are green.
+			//
+			// This is the SEVENTH instance of one class in this repository —
+			// a check that walks the FILESYSTEM answering a different
+			// question from one that walks the TRACKED SET — and the first
+			// one in Go rather than in a shell gate. The same prune, with
+			// the same reason, is already in internal/e2e/writefloor_test.go
+			// and testkit/gitfixture/hygiene_test.go.
 			switch d.Name() {
-			case ".git", "node_modules":
+			case ".git", ".a2a", "node_modules":
 				return filepath.SkipDir
 			}
 			return nil

@@ -98,3 +98,47 @@ func writeFixture(t *testing.T, root, relPath, content string) {
 		t.Fatal(err)
 	}
 }
+
+// TestDocGoWalkPrunesTheLocalCache pins the prune that keeps this walk asking
+// about the REPOSITORY rather than about the machine it runs on.
+//
+// `a2a`'s feedback reader clones the public repository into
+// .a2a/cache/feedback-repo/<slug>/ — a complete second copy of this tree,
+// doc.go files included. Without the prune the walk derives a real
+// `go-test-scoped:` phase pointing INSIDE that clone, and `make lane-run`
+// then executes `go test` there: "[setup failed]", on a tree whose own
+// packages are green. Observed exactly that way on 2026-08-13.
+func TestDocGoWalkPrunesTheLocalCache(t *testing.T) {
+	root := t.TempDir()
+
+	// A real package, with a real declaration — the control.
+	real := filepath.Join(root, "internal", "notes")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	docGo := "// lane-inputs:\n//\n//\treleasenotes/**\npackage notes\n"
+	if err := os.WriteFile(filepath.Join(real, "doc.go"), []byte(docGo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The same package, inside the local cache's clone of this repository.
+	cached := filepath.Join(root, ".a2a", "cache", "feedback-repo", "owner-repo", "internal", "notes")
+	if err := os.MkdirAll(cached, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cached, "doc.go"), []byte(docGo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	decls, errs := loadDocGoDeclarations(root)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	var phases []string
+	for _, d := range decls {
+		phases = append(phases, d.Phase)
+	}
+	if len(phases) != 1 || phases[0] != "go-test-scoped:./internal/notes/..." {
+		t.Fatalf("phases = %v, want exactly [go-test-scoped:./internal/notes/...] — a phase naming .a2a would send `go test` into a clone", phases)
+	}
+}
