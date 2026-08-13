@@ -81,6 +81,16 @@ vocabulary_states() { # $1 = vocabulary json
     grep -oE '"[a-z_]+"' | tr -d '"' | sort -u
 }
 
+# vocabulary_outcomes prints the domain meanings a server may carry. Several
+# outcome names intentionally overlap state names (`withdrawn`, `superseded`);
+# comparing the carried outcome is presentation, not state classification, so
+# the inline-chain check below excludes a chain made entirely of outcomes.
+vocabulary_outcomes() { # $1 = vocabulary json
+  printf '%s\n' "$1" |
+    awk '/"outcomes"/{f=1} f{print} f&&/\]/{exit}' |
+    grep -oE '"[a-z_]+"' | tail -n +2 | tr -d '"' | sort -u
+}
+
 # state_lists finds ARRAY literals of two or more bare lowercase strings on
 # one line. Prints "file:line:content". Whether one is a classification is
 # decided by its CONTENT, below — this only narrows the search.
@@ -105,13 +115,58 @@ state_lists() { # $1 = scan root
     --include='*.dc.html' "$1" 2>/dev/null
 }
 
+# state_equality_chains finds a one-line assignment or return whose `||`
+# branches contain equality comparisons. This is the inlined form of the state
+# arrays above. Requiring comparisons on at least two distinct branches avoids
+# treating an unrelated fallback (`lookup[key] || "neutral"`) as a chain.
+state_equality_chains() { # $1 = scan root
+  find "$1" -type f -name '*.dc.html' -exec awk '
+    function comparison(part) {
+      return part ~ /={2,3}[[:space:]]*"[a-z_]+"/ || part ~ /"[a-z_]+"[[:space:]]*={2,3}/
+    }
+    {
+      text=$0
+	  # Strip block comments, including a block spanning input lines. A
+	  # commented example documents a forbidden shape; it does not execute
+	  # one and must not make the component fail the gate.
+	  while (1) {
+	    if (in_block) {
+	      block_end=index(text, "*/")
+	      if (!block_end) { text=""; break }
+	      text=substr(text, block_end+2)
+	      in_block=0
+	    }
+	    block_start=index(text, "/*")
+	    if (!block_start) break
+	    after_start=substr(text, block_start+2)
+	    block_end=index(after_start, "*/")
+	    if (!block_end) {
+	      text=substr(text, 1, block_start-1)
+	      in_block=1
+	      break
+	    }
+	    text=substr(text, 1, block_start-1) substr(after_start, block_end+2)
+	  }
+      sub(/[[:space:]]*\/\/.*/, "", text)
+      if (text !~ /\|\|/) next
+      if (text !~ /(^|[;{}[:space:]])(const|let|var)[[:space:]][A-Za-z_$][A-Za-z0-9_$]*[[:space:]]*=/ &&
+          text !~ /(^|[;{}[:space:]])return[[:space:]]/) next
+      count=split(text, branches, /\|\|/)
+      compared=0
+      for (i=1; i<=count; i++) if (comparison(branches[i])) compared++
+      if (compared >= 2) print FILENAME ":" FNR ":" $0
+    }
+  ' {} + 2>/dev/null
+}
+
 run_check() { # $1 = scan root
-  local root="$1" json states
+  local root="$1" json states outcomes
   if ! json="$(vocabulary_json)"; then
     gate_fail "view-vocabulary: could not read the vocabulary from the binary — failing closed rather than policing nothing"
     return 1
   fi
   states="$(vocabulary_states "$json")"
+  outcomes="$(vocabulary_outcomes "$json")"
   if [ -z "$states" ]; then
     gate_fail "view-vocabulary: the binary returned no states — failing closed rather than policing nothing"
     return 1
@@ -155,6 +210,38 @@ run_check() { # $1 = scan root
     done
   done <<< "$(state_lists "$root")"
 
+  local outcome_known
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    file="${line%%:*}"
+    content="${line#*:}"
+    lineno="${content%%:*}"
+    content="${content#*:}"
+
+    words="$(printf '%s\n' "$content" | grep -oE '"[a-z_]+"' | tr -d '"')"
+    known=0
+    outcome_known=0
+    unknown=""
+    for word in $words; do
+      if printf '%s\n' "$states" | grep -qx "$word"; then
+        known=$((known + 1))
+        if printf '%s\n' "$outcomes" | grep -qx "$word"; then
+          outcome_known=$((outcome_known + 1))
+        fi
+      else
+        unknown="$unknown $word"
+      fi
+    done
+
+    if [ "$known" -lt 2 ] || [ "$known" -eq "$outcome_known" ]; then
+      continue
+    fi
+    gate_fail "$(basename "$file"):$lineno classifies by an inline equality chain over $known state names — a component must read the server-carried outcome/terminal verdict instead of spelling the state set branch by branch"
+    for word in $unknown; do
+      gate_fail "$(basename "$file"):$lineno compares against \"$word\" inside a state classification, but the binary vocabulary has no such state"
+    done
+  done <<< "$(state_equality_chains "$root")"
+
   gate_summary "view-vocabulary"
 }
 
@@ -193,10 +280,46 @@ FIXTURE
   fi
   rm -f "$tmp/Typo.dc.html"
 
-  # A component that only reads the payload must stay green.
+  # An assigned inline equality chain is the same classification with the
+  # array inlined, and must red on its own.
+  cat > "$tmp/AssignedInlineChain.dc.html" <<'FIXTURE'
+<script>
+function settled(state) {
+  const result = state === "closed" || state === "verified";
+  return result;
+}
+</script>
+FIXTURE
+  if ( run_check "$tmp" ) >/dev/null 2>&1; then
+    echo "view-vocabulary --teeth: FAILED — an assigned inline state classification stayed green" >&2
+    return 1
+  fi
+  rm -f "$tmp/AssignedInlineChain.dc.html"
+
+  # A returned chain is a separate grammar branch; proving assignment red does
+  # not prove return red, so it gets an isolated run too.
+  cat > "$tmp/ReturnedInlineChain.dc.html" <<'FIXTURE'
+<script>
+function refused(state) {
+  return state === "declined" || state === "closed";
+}
+</script>
+FIXTURE
+  if ( run_check "$tmp" ) >/dev/null 2>&1; then
+    echo "view-vocabulary --teeth: FAILED — a returned inline state classification stayed green" >&2
+    return 1
+  fi
+  rm -f "$tmp/ReturnedInlineChain.dc.html"
+
+  # A component that only reads the payload must stay green. So must a single
+  # equality, an unrelated non-vocabulary chain, and a forbidden chain shown
+  # only inside a comment.
   cat > "$tmp/Good.dc.html" <<'FIXTURE'
 <script>
 const tone = it.outcome === "settled" ? "healthy" : "neutral";
+const selected = state === "closed";
+const theme = mode === "dark" || mode === "light";
+/* const oldGuess = state === "closed" || state === "verified"; */
 </script>
 FIXTURE
   if ! ( run_check "$tmp" ) >/dev/null 2>&1; then

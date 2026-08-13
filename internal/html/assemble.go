@@ -1164,7 +1164,7 @@ func containsString(in []string, want string) bool {
 
 // toItem maps a cache.Item to the model Item with derived age + severity.
 func toItem(it cache.Item, now time.Time, self string, open openItemIndex) Item {
-	gate := hasReason(it.Reasons, "gate-pending-on-me")
+	gate := it.HumanGate != ""
 	createdAt := it.CreatedAt
 	if createdAt.IsZero() {
 		// Legacy callers constructed cache.Item before the immutable creation
@@ -1192,7 +1192,10 @@ func toItem(it cache.Item, now time.Time, self string, open openItemIndex) Item 
 		MovedAt: moved, ActivitySeq: it.LatestEventSeq, ActivityEventID: it.LatestEventID, New: it.New,
 		Severity: severityOf(it, gate), Reasons: it.Reasons, PendingMerge: it.PendingMerge,
 		SyncStale: it.SyncStale, YourMove: it.YourMove, Description: it.Description,
-		Prompt: prompt,
+		WaitingOn: it.WaitingOn, ExpectedTransition: it.ExpectedTransition,
+		Why: it.Why, HumanGate: it.HumanGate, OperationalItems: it.OperationalItems,
+		ReasonSentence: attentionSentence(it),
+		Prompt:         prompt,
 		// Carried, never recomputed. The whole point of the domain having
 		// answered is that this layer stops deciding.
 		Outcome: it.Outcome, Terminal: it.Terminal,
@@ -1425,15 +1428,6 @@ func exchangeEdges(items []cache.Item, now time.Time) []ExchangeEdge {
 		return out[i].To < out[j].To
 	})
 	return out
-}
-
-func hasReason(reasons []string, want string) bool {
-	for _, r := range reasons {
-		if r == want {
-			return true
-		}
-	}
-	return false
 }
 
 // providerOf extracts the provider system from a contract id (XC-<provider>-<slug>).

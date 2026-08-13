@@ -96,6 +96,9 @@ func TestOutboxAttention_FourConditionsPlusControl(t *testing.T) {
 	snapshotByID := map[string]Item{}
 	for _, item := range snapshot {
 		snapshotByID[item.ID] = item
+		if !item.RuleIdentity.Known() {
+			t.Errorf("outbox projection for %s carries unknown RuleIdentity %q", item.ID, item.RuleIdentity)
+		}
 	}
 	if _, ok := snapshotByID["XW-axon-20260701-octrl"]; !ok {
 		t.Fatal("passive outbox snapshot must retain open rows with no attention reason")

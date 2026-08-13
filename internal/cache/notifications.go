@@ -40,7 +40,7 @@ func (s *Store) NotificationItems(ctx context.Context) ([]Item, error) {
 				for _, reason := range attentionReasons(fa, cursorSnapshot{Items: map[string]string{
 					fa.Env.ID: string(fa.Result.State),
 				}}, s.now(), sla) {
-					if reason != "state-changed-since-cursor" {
+					if ReasonCode(reason) != ReasonStateChangedSinceCursor {
 						reasons = appendUnique(reasons, reason)
 					}
 				}
@@ -84,7 +84,7 @@ func (s *Store) NotificationSnapshot(ctx context.Context) (NotificationSnapshot,
 			result.New++
 		}
 		for _, reason := range item.Reasons {
-			if reason == "stale-sla" || reason == "needed-by-passed" {
+			if ReasonCode(reason) == ReasonStaleSLA || ReasonCode(reason) == ReasonNeededByPassed {
 				result.Stale++
 				break
 			}

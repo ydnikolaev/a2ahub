@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -97,6 +98,55 @@ func TestInboxActionable_FiveConditionsPlusControl(t *testing.T) {
 	}
 	if gate.ID == "" || !gate.YourMove || !containsString(gate.Reasons, "gate-pending-on-me") {
 		t.Fatalf("passive snapshot lost canonical gate/move annotations: %+v", gate)
+	}
+	if gate.HumanGate != "G3" {
+		t.Fatalf("passive snapshot HumanGate = %q, want G3 from the same pendency verdict", gate.HumanGate)
+	}
+	if gate.RuleIdentity != "decision/proposed" {
+		t.Fatalf("passive snapshot RuleIdentity = %q, want decision/proposed from the same pendency verdict", gate.RuleIdentity)
+	}
+}
+
+func TestItemHumanGateJSONIsAdditiveAndOmittedWhenEmpty(t *testing.T) {
+	t.Parallel()
+
+	baseline := Item{
+		Space: "sp1", ID: "XD-axon-20260701-c5", Type: "decision", Title: "review",
+		From: "seomatrix", To: []string{"axon"}, State: "proposed", Priority: "p2",
+		New: true, Reasons: []string{string(ReasonGatePendingOnMe)},
+		WaitingOn: []string{"axon"}, ExpectedTransition: "approve", Why: "quorum rule",
+		RuleIdentity: "decision/proposed",
+	}
+	withoutGate, err := json.Marshal(baseline)
+	if err != nil {
+		t.Fatalf("marshal empty gate: %v", err)
+	}
+	var before map[string]any
+	if err := json.Unmarshal(withoutGate, &before); err != nil {
+		t.Fatalf("decode empty gate JSON: %v", err)
+	}
+	if _, exists := before["human_gate"]; exists {
+		t.Fatalf("empty HumanGate emitted human_gate: %s", withoutGate)
+	}
+	if _, exists := before["rule_identity"]; exists {
+		t.Fatalf("dashboard-only RuleIdentity leaked into stable Item JSON: %s", withoutGate)
+	}
+
+	baseline.HumanGate = "G3"
+	withGate, err := json.Marshal(baseline)
+	if err != nil {
+		t.Fatalf("marshal populated gate: %v", err)
+	}
+	var after map[string]any
+	if err := json.Unmarshal(withGate, &after); err != nil {
+		t.Fatalf("decode populated gate JSON: %v", err)
+	}
+	if got := after["human_gate"]; got != "G3" {
+		t.Fatalf("human_gate = %#v, want G3", got)
+	}
+	delete(after, "human_gate")
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("adding HumanGate changed pre-existing JSON keys/values:\nbefore=%v\nafter=%v", before, after)
 	}
 }
 

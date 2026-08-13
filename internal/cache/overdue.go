@@ -66,7 +66,7 @@ func (s *Store) Overdue(ctx context.Context) ([]Item, error) {
 				continue
 			}
 			item := toItem(fa, stale, pending[fa.Env.ID])
-			item.Reasons = []string{"overdue-on-me"}
+			item.Reasons = []string{string(ReasonOverdueOnMe)}
 			out = append(out, item)
 		}
 	}

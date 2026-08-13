@@ -72,6 +72,11 @@ test('the local dashboard projection retains both supported locales', () => {
 });
 
 test('overview attention teasers route to Exchange and disappear when empty', () => {
+  const { template } = runtimeDesignPage('14-local-dashboard-v4.dc.html');
+  assert.match(template, /data-overview-attention="true"[\s\S]*\{\{ r\.reasonSentence \}\}[\s\S]*\{\{ r\.waitingOn \}\}[\s\S]*\{\{ r\.expectedMove \}\}/);
+  assert.match(template, /<details[\s\S]*\{\{ r\.technicalWhyLabel \}\}[\s\S]*\{\{ r\.technicalWhy \}\}[\s\S]*<\/details>/);
+  assert.doesNotMatch(template, /title="\{\{ r\.reasonSentence \}\}"/);
+
   const controller = dashboardController({ fetch: async () => ({ ok: false }), EventSource: null });
   controller.state.data = JSON.parse(readFileSync(new URL('../../internal/html/testdata/demo.json', import.meta.url), 'utf8'));
   controller.state.view = 'overview';
@@ -79,6 +84,22 @@ test('overview attention teasers route to Exchange and disappear when empty', ()
   let values = controller.renderVals();
   assert.equal(values.hasOvRows, true);
   assert.ok(values.ovRows.length > 0);
+  const verdictItem = controller.state.data.inbox.find(item => values.ovRows.some(row => row.id === item.id));
+  verdictItem.waitingOn = ['atlas'];
+  verdictItem.expectedTransition = 'approve';
+  verdictItem.why = 'specs/03-domain.md: diagnostic rule citation';
+  verdictItem.reasonSentence = { en: 'Atlas must approve this decision.', ru: 'Atlas должен согласовать это решение.' };
+  values = controller.renderVals();
+  const verdictRow = values.ovRows.find(row => row.id === verdictItem.id);
+  assert.equal(verdictRow.reasonSentence, 'Atlas must approve this decision.');
+  assert.equal(verdictRow.waitingOn, 'atlas');
+  assert.equal(verdictRow.expectedMove, 'approve');
+  assert.equal(verdictRow.hasTechnicalWhy, true);
+  assert.equal(verdictRow.technicalWhy, verdictItem.why);
+  assert.notEqual(verdictRow.reasonSentence, verdictRow.technicalWhy);
+  controller.state.locale = 'ru';
+  assert.equal(controller.renderVals().ovRows.find(row => row.id === verdictItem.id).reasonSentence, 'Atlas должен согласовать это решение.');
+  controller.state.locale = 'en';
   const target = values.ovRows[0];
   target.select();
   assert.equal(controller.state.view, 'work');

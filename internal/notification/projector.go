@@ -194,18 +194,18 @@ func levelSeverity(value int) string {
 
 func signalKind(item cache.Item) string {
 	for _, reason := range item.Reasons {
-		switch reason {
-		case "gate-pending-on-me":
+		switch cache.ReasonCode(reason) {
+		case cache.ReasonGatePendingOnMe:
 			return "gate_pending"
-		case "declined":
-			return "declined"
-		case "disputed", "disputed-toward-me":
-			return "disputed"
-		case "stale-sla":
+		case cache.ReasonDeclined:
+			return string(cache.ReasonDeclined)
+		case cache.ReasonDisputed, cache.ReasonDisputedTowardMe:
+			return string(cache.ReasonDisputed)
+		case cache.ReasonStaleSLA:
 			return "stale"
-		case "needed-by-passed":
+		case cache.ReasonNeededByPassed:
 			return "needed_by_passed"
-		case "responded-awaiting-verify-close":
+		case cache.ReasonRespondedAwaitingVerifyClose:
 			return "response_pending"
 		}
 	}

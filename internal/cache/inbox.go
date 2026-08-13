@@ -273,14 +273,14 @@ func actionableReasonsForResponse(fa foldedArtifact, me string, manifest space.M
 	// acknowledge" stays the relation's own single RULE.
 	// TestInboxDeprecationReachesALateAdopter keeps the teeth on it.
 	if verdict.Expected == fold.TAcknowledge && iOwe {
-		reasons = append(reasons, "addressed-no-ack")
+		reasons = append(reasons, string(ReasonAddressedNoAck))
 	}
 
 	// 2: {responded awaiting my verify/close} — the relation's
 	// question/work_request `responded` row names the SENDER (envelope
 	// `from`) as owing `close`; I match it when I'm that sender.
 	if verdict.Expected == fold.TClose && iOwe {
-		reasons = append(reasons, "responded-awaiting-verify-close")
+		reasons = append(reasons, string(ReasonRespondedAwaitingVerifyClose))
 	}
 
 	// 3: {disputed toward me} — the relation names me as the target
@@ -296,7 +296,7 @@ func actionableReasonsForResponse(fa foldedArtifact, me string, manifest space.M
 		verdict.Expected == fold.TRespond && iOwe {
 		for _, rs := range fa.Result.Responses {
 			if rs == fold.StateDisputed {
-				reasons = append(reasons, "disputed-toward-me")
+				reasons = append(reasons, string(ReasonDisputedTowardMe))
 				break
 			}
 		}
@@ -320,7 +320,7 @@ func actionableReasonsForResponse(fa foldedArtifact, me string, manifest space.M
 	// wave.
 	if (env.Priority == "p1" || env.Blocking) && isOpen(kind, state) &&
 		(env.From == me || addressedToMe(fa, me)) {
-		reasons = append(reasons, "p1-or-blocking-open")
+		reasons = append(reasons, string(ReasonP1OrBlockingOpen))
 	}
 
 	// 5: {gate pending on me} — the relation's decision/proposed row
@@ -328,7 +328,7 @@ func actionableReasonsForResponse(fa foldedArtifact, me string, manifest space.M
 	// gate internal/fold models (G1/G2/G4/G5 are GitHub PR-review gates
 	// this read-only mirror composition cannot see, v1-min spec 07 §11).
 	if verdict.Expected == fold.TApprove && iOwe {
-		reasons = append(reasons, "gate-pending-on-me")
+		reasons = append(reasons, string(ReasonGatePendingOnMe))
 	}
 
 	// 6: {operational activation owed on my own published contract} — P5
@@ -346,7 +346,7 @@ func actionableReasonsForResponse(fa foldedArtifact, me string, manifest space.M
 	// version's operational readiness, never a contract lifecycle
 	// transition.
 	if verdict.Expected == "activate" && iOwe {
-		reasons = append(reasons, "activation-owed")
+		reasons = append(reasons, string(ReasonActivationOwed))
 	}
 
 	return reasons, verdict

@@ -507,6 +507,8 @@ func (s *Store) inbox(ctx context.Context, actionableOnly, advance, annotate, ex
 			item.WaitingOn = verdict.Owners
 			item.ExpectedTransition = verdict.Expected
 			item.Why = verdict.Why
+			item.HumanGate = verdict.HumanGate
+			item.RuleIdentity = verdict.RuleIdentity
 			if annotate {
 				item.YourMove = yourMove[fa.Env.ID]
 			}
@@ -618,6 +620,8 @@ func (s *Store) outbox(ctx context.Context, attentionOnly, annotate, exchangeAct
 			item.WaitingOn = verdict.Owners
 			item.ExpectedTransition = verdict.Expected
 			item.Why = verdict.Why
+			item.HumanGate = verdict.HumanGate
+			item.RuleIdentity = verdict.RuleIdentity
 			if annotate {
 				item.YourMove = yourMove[fa.Env.ID]
 			}

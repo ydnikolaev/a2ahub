@@ -1,0 +1,67 @@
+[
+  {
+    "reason": "addressed-no-ack",
+    "ru": "atlas и checkout должны подтвердить получение; ожидаемый ход — respond.",
+    "en": "atlas and checkout must acknowledge receipt; the expected move is respond."
+  },
+  {
+    "reason": "responded-awaiting-verify-close",
+    "ru": "Ответ уже получен; atlas и checkout должны проверить его и выполнить respond.",
+    "en": "A response has arrived; atlas and checkout must verify it and perform respond."
+  },
+  {
+    "reason": "disputed-toward-me",
+    "ru": "Ответ оспорен; atlas и checkout должны дать новый ответ ходом respond.",
+    "en": "The response was disputed; atlas and checkout must answer again with respond."
+  },
+  {
+    "reason": "p1-or-blocking-open",
+    "ru": "Открытый документ помечен p1 или блокирующим; ход respond ждут от atlas и checkout.",
+    "en": "This open item is p1 or blocking; atlas and checkout are expected to perform respond."
+  },
+  {
+    "reason": "gate-pending-on-me",
+    "ru": "Ход respond ждут от atlas и checkout; он требует участия человека через G3.",
+    "en": "atlas and checkout are expected to perform respond; it requires a human through G3."
+  },
+  {
+    "reason": "activation-owed",
+    "ru": "Опубликованную версию уже использует потребитель; atlas и checkout должны подтвердить её готовность ходом respond.",
+    "en": "A consumer already uses the published version; atlas and checkout must attest readiness with respond."
+  },
+  {
+    "reason": "state-changed-since-cursor",
+    "ru": "Документ изменился после последнего чтения входящих; следующий ход respond ждут от atlas и checkout.",
+    "en": "This item changed since the last inbox read; atlas and checkout are expected to perform respond."
+  },
+  {
+    "reason": "declined",
+    "ru": "Получатель отклонил документ; следующий ход протокола за ним не записан.",
+    "en": "The recipient declined this item; no next protocol move is recorded for it."
+  },
+  {
+    "reason": "disputed",
+    "ru": "Результат оспорен; следующий ход respond ждут от atlas и checkout.",
+    "en": "The result is disputed; atlas and checkout are expected to perform respond."
+  },
+  {
+    "reason": "stale-sla",
+    "ru": "В пределах SLA спейса новых событий не было; ход respond всё ещё ждут от atlas и checkout.",
+    "en": "No new event arrived within the space SLA; atlas and checkout are still expected to perform respond."
+  },
+  {
+    "reason": "needed-by-passed",
+    "ru": "Срок 2026-08-20 прошёл; ход respond всё ещё ждут от atlas и checkout.",
+    "en": "The 2026-08-20 deadline has passed; atlas and checkout are still expected to perform respond."
+  },
+  {
+    "reason": "overdue-on-me",
+    "ru": "Работа с вашим сроком 2026-08-20 просрочена; ход respond всё ещё за atlas и checkout.",
+    "en": "Work due to you on 2026-08-20 is overdue; atlas and checkout still own respond."
+  },
+  {
+    "reason": "unknown",
+    "ru": "Для этого документа записано внимание, но его человеческое объяснение пока неизвестно; следующий ход — respond, ждём от atlas и checkout.",
+    "en": "This item is marked for attention, but its human explanation is not known yet; the next move is respond by atlas and checkout."
+  }
+]

@@ -5,6 +5,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/pendency"
 	"github.com/ydnikolaev/a2ahub/internal/provenance"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
@@ -122,24 +123,13 @@ type Item struct {
 	// two is the defect these fields exist to end (internal/pendency
 	// stays the one place that computes the verdict; I7).
 	//
-	// Neither is populated by this package's own Store methods today —
-	// internal/cache.toItem does not carry pendency, and doing so cheaply
-	// here would need a second per-artifact pendency.Resolve call at every
-	// inbox/outbox call site, which I7 forbids. The dashboard assembler
-	// (internal/html) already computes the SAME verdict once, for
-	// buildOpenItems' cache.OpenItem, and fills these in on its own copies
-	// of Item from that result before aggregating edges — never a second
-	// pendency computation, just a second field on an already-computed
-	// answer. A caller reading cache.Item straight from Store (the CLI's
-	// Go-typed callers) sees the zero value here, same as before these
-	// fields existed; `json:"-"` keeps that off `a2a inbox`/`outbox --json`
-	// exactly like YourMove.
-	// They go ON THE WIRE as of P2. The doc above described them as
-	// dashboard-only because nothing computed them on the inbox path — the
-	// verdict was derived by actionableReasons and discarded at the door.
-	// It is returned now, so every Item carries the same answer the other
-	// three surfaces show, which is the whole of what "four surfaces, one
-	// answer" means.
+	// Store.Inbox and Store.Outbox populate both fields unconditionally from
+	// the same pendency.Resolve verdict their reason filters consume. The
+	// verdict is computed once from the folded facts already in hand, then
+	// projected onto Item at the two construction sites; internal/html only
+	// copies that answer and never resolves pendency again. The JSON tags below
+	// put the populated fields on inbox/outbox's wire shape, so Go-typed and
+	// JSON consumers receive the same answer.
 	WaitingOn          []string `json:"waiting_on,omitempty"`
 	ExpectedTransition string   `json:"expected_transition,omitempty"`
 	// Why is the pendency relation's own justification, ALWAYS populated —
@@ -149,6 +139,15 @@ type Item struct {
 	// reasoning, which republishes the ambiguity the relation was built to
 	// remove.
 	Why string `json:"why,omitempty"`
+	// HumanGate is the pendency verdict's typed gate identity, carried from
+	// the same Resolve call as WaitingOn/ExpectedTransition/Why. Empty means
+	// the owed move is not human-gated.
+	HumanGate string `json:"human_gate,omitempty"`
+	// RuleIdentity is the typed pendency-table row that produced WaitingOn,
+	// ExpectedTransition, Why, and HumanGate. The dashboard composer consumes
+	// it to reject unknown rule/reason pairs; it is deliberately not another
+	// stable inbox/outbox JSON field.
+	RuleIdentity pendency.RuleIdentity `json:"-"`
 	// OperationalItems is spec 05 AC4's per-item x_operational[] projection
 	// (mirror.go's foldedArtifact.OperationalItems, itself
 	// DeriveOperationalItems' own output) — carried whole, never re-derived

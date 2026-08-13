@@ -90,7 +90,7 @@ func (s *Store) Statusline(ctx context.Context) (StatuslineResult, error) {
 				continue
 			}
 			for _, r := range attentionReasons(fa, prior, s.now(), sla) {
-				if r == "stale-sla" {
+				if ReasonCode(r) == ReasonStaleSLA {
 					staleCount++
 					break
 				}
@@ -203,7 +203,7 @@ func urgencyLabel(priority string, blocking bool, reasons []string) string {
 		return "blocking"
 	}
 	for _, r := range reasons {
-		if r == "gate-pending-on-me" {
+		if ReasonCode(r) == ReasonGatePendingOnMe {
 			return "gate"
 		}
 	}

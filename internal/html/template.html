@@ -334,7 +334,8 @@
           </div>
           <div style="min-width:0; display:flex; flex-direction:column; gap:var(--space-grid);">
             <sc-for list="{{ ovRows }}" as="r" hint-placeholder-count="3">
-              <button type="button" onClick="{{ r.select }}" aria-label="{{ r.openLabel }}" style="width:100%; min-width:0; display:block; border:1px solid var(--border); border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); background:var(--surface); color:var(--text); font-family:'Onest',sans-serif; text-align:left; cursor:pointer; box-shadow:var(--shadow-card);" style-hover="border-color:var(--border-strong); box-shadow:0 5px 16px -8px rgba(33,30,23,.28); transform:translateY(-1px);">
+              <article style="width:100%; min-width:0; display:block; border:1px solid var(--border); border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); background:var(--surface); color:var(--text); font-family:'Onest',sans-serif; text-align:left; box-shadow:var(--shadow-card);">
+                <button type="button" onClick="{{ r.select }}" aria-label="{{ r.openLabel }}" style="width:100%; min-width:0; display:block; border:0; padding:0; background:transparent; color:inherit; font:inherit; text-align:left; cursor:pointer;">
                 <span style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:8px;">
                   <span style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; min-width:0;">
                     <dc-import name="TypeBadge" type="{{ r.type }}" size="small" hint-size="130px,24px"></dc-import>
@@ -343,8 +344,20 @@
                   <span style="flex:0 0 auto; font-size:15px; line-height:1.4; color:var(--muted); white-space:nowrap;">{{ r.time }}</span>
                 </span>
                 <span style="display:block; margin-bottom:8px; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; overflow-wrap:anywhere;">{{ r.title }}</span>
+                <span style="display:block; margin-bottom:10px; font-size:15px; line-height:1.55; color:var(--body); overflow-wrap:anywhere;">{{ r.reasonSentence }}</span>
+                <span style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; margin-bottom:9px;">
+                  <span style="min-width:0; padding:8px 9px; border-radius:var(--radius-inner); background:var(--canvas);"><span style="display:block; color:var(--faint); font-size:12px; line-height:1.35; font-weight:500;">{{ r.waitingOnLabel }}</span><span style="display:block; margin-top:2px; color:var(--body); font-size:13px; overflow-wrap:anywhere;">{{ r.waitingOn }}</span></span>
+                  <span style="min-width:0; padding:8px 9px; border-radius:var(--radius-inner); background:var(--canvas);"><span style="display:block; color:var(--faint); font-size:12px; line-height:1.35; font-weight:500;">{{ r.expectedMoveLabel }}</span><span style="display:block; margin-top:2px; color:var(--body); font-size:13px; overflow-wrap:anywhere;">{{ r.expectedMove }}</span></span>
+                </span>
                 <span style="display:block; font-size:15px; line-height:1.4; color:var(--muted); overflow-wrap:anywhere;">{{ r.from }} → {{ r.to }} · {{ r.meta }}</span>
-              </button>
+                </button>
+                <sc-if value="{{ r.hasTechnicalWhy }}" hint-placeholder-val="{{ true }}">
+                  <details style="margin-top:10px; border-top:1px solid var(--hairline); padding-top:8px;">
+                    <summary style="cursor:pointer; color:var(--muted); font-size:13px; font-weight:600;">{{ r.technicalWhyLabel }}</summary>
+                    <div style="margin-top:6px; color:var(--muted); font-size:13px; line-height:1.5; overflow-wrap:anywhere;">{{ r.technicalWhy }}</div>
+                  </details>
+                </sc-if>
+              </article>
             </sc-for>
           </div>
         </section>
@@ -2930,11 +2943,10 @@ class Component extends DCLogic {
 
   statusOf(it) {
     const ru = this.state.locale === "ru";
-    const state = String(it.state || "").toLowerCase();
     // Protocol state and Exchange completion are deliberately different for
     // announcements: a delivered announcement remains `published`, but once
     // every recipient acknowledged it the read model moves it to Archive.
-    const settled = state === "closed" || state === "verified" || !!it.archived;
+    const settled = isSettled(it) || !!it.archived;
     if (it.blocking) return {
       status: this.blockedOn(it.from, it.to) + " · " + it.priority, tone: "blocking",
       why: this.blockedWhy({ from: it.from, to: it.to, neededBy: it.neededBy, priority: it.priority })
@@ -2960,6 +2972,9 @@ class Component extends DCLogic {
     const toText = (it.to || []).join(", ");
     const toCode = toSelf ? codes[d.self] : codes[(it.to || [])[0]];
     const space = d.spaces.find(s => s.id === it.space);
+    const sentence = it.reasonSentence || {};
+    const waitingOn = listNames(it.waitingOn || [], ru) || (ru ? "не указано" : "none recorded");
+    const expectedMove = it.expectedTransition || (ru ? "не указан" : "not recorded");
     return {
       id: it.id, type: it.type, title: it.title, status: st.status, tone: st.tone,
       // A label that raises a question carries its answer on itself, so the
@@ -2976,6 +2991,14 @@ class Component extends DCLogic {
       syncStale: !!(space && space.stale),
       fromCode: codes[it.from] || "", toCode: toCode || "",
       fromSelf: it.from === d.self, toSelf: toSelf,
+      reasonSentence: sentence[ru ? "ru" : "en"] || (ru ? "Объяснение пока не записано." : "No human explanation is recorded yet."),
+      waitingOnLabel: ru ? "Чей ход" : "Whose turn",
+      waitingOn,
+      expectedMoveLabel: ru ? "Ожидаемый ход" : "Expected move",
+      expectedMove,
+      hasTechnicalWhy: !!it.why,
+      technicalWhyLabel: ru ? "Техническое основание" : "Technical detail",
+      technicalWhy: it.why || "",
       selected: selValue === it.id,
       select: onSel || (() => this.setState({ [selKey]: it.id })),
       openLabel: (ru ? "Открыть в Обмене: " : "Open in Exchange: ") + (it.title || it.id)

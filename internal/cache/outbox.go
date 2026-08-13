@@ -24,29 +24,29 @@ func attentionReasons(fa foldedArtifact, prior cursorSnapshot, now time.Time, sl
 	// counts as changed — there is no earlier baseline to call
 	// "unchanged".
 	if prev, ok := prior.Items[fa.Env.ID]; !ok || prev != string(state) {
-		reasons = append(reasons, "state-changed-since-cursor")
+		reasons = append(reasons, string(ReasonStateChangedSinceCursor))
 	}
 
 	// 2: {declined}.
 	if state == fold.StateDeclined {
-		reasons = append(reasons, "declined")
+		reasons = append(reasons, string(ReasonDeclined))
 	}
 
 	// 3: {disputed}.
 	for _, rs := range fa.Result.Responses {
 		if rs == fold.StateDisputed {
-			reasons = append(reasons, "disputed")
+			reasons = append(reasons, string(ReasonDisputed))
 			break
 		}
 	}
 
 	// 4: {stale: no event for the SLA, or needed_by passed}.
 	if !fa.LatestEventAt.IsZero() && now.Sub(fa.LatestEventAt) > sla {
-		reasons = append(reasons, "stale-sla")
+		reasons = append(reasons, string(ReasonStaleSLA))
 	}
 	if fa.Env.NeededBy != "" {
 		if nb, err := time.Parse("2006-01-02", fa.Env.NeededBy); err == nil && now.After(nb) {
-			reasons = append(reasons, "needed-by-passed")
+			reasons = append(reasons, string(ReasonNeededByPassed))
 		}
 	}
 

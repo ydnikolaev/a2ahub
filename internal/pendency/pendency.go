@@ -239,9 +239,10 @@ type Input struct {
 // the tool refuses. Saying "you, but the act is not a move on this artifact"
 // is the only honest third answer.
 type Verdict struct {
-	Owners   []string // systems the next move is owed by; nil/empty means nobody
-	Expected string   // the transition owed; "" when Owners is empty
-	Why      string   // the rule this verdict came from, always populated
+	Owners       []string     // systems the next move is owed by; nil/empty means nobody
+	Expected     string       // the transition owed; "" when Owners is empty
+	Why          string       // the rule this verdict came from, always populated
+	RuleIdentity RuleIdentity // stable identity of the (kind, state) row that answered
 
 	// HumanGate names the §3.7 gate the owed transition sits behind ("G3"),
 	// or "" when the owed move is one an agent makes on its own. Read from
@@ -262,6 +263,35 @@ type Verdict struct {
 	// the act must be produced (a PR under a human's own account), not that
 	// nobody owes it — dropping the owner would hide a real, blocking debt.
 	HumanGate string
+}
+
+// RuleIdentity names the exact pendency table row that produced a verdict.
+// Why is diagnostic prose and may become more precise as scars are found; this
+// value is the stable, typed lookup key a composer or catalogue can branch on.
+type RuleIdentity string
+
+// Known reports whether identity names a row in the current pendency table.
+// The table remains the only registry: composers can reject an unknown typed
+// identity without maintaining a second kind/state list.
+func (identity RuleIdentity) Known() bool {
+	for _, r := range table {
+		if identity == r.identity {
+			return true
+		}
+	}
+	return false
+}
+
+// RuleIdentities returns the complete current row-identity set, sorted and
+// freshly allocated. The table remains the source: adding a row cannot require
+// a second hand-maintained identity list.
+func RuleIdentities() []RuleIdentity {
+	identities := make([]RuleIdentity, 0, len(table))
+	for _, r := range table {
+		identities = append(identities, r.identity)
+	}
+	sort.Slice(identities, func(i, j int) bool { return identities[i] < identities[j] })
+	return identities
 }
 
 // ErrNoRow is returned by Resolve when no row exists for the given
@@ -298,8 +328,9 @@ func Resolve(in Input) (Verdict, error) {
 		owners = without(owners, orphans)
 		if len(owners) == 0 {
 			return Verdict{
-				Owners:   owner(in),
-				Expected: "",
+				Owners:       owner(in),
+				Expected:     "",
+				RuleIdentity: r.identity,
 				Why: "orphaned counterparty (CC-062): " + joinSystems(orphans) +
 					" left the space and can no longer write, so the " + r.expected +
 					" this row names can never land; the sender owes a cancel or re-route decision instead",
@@ -312,7 +343,7 @@ func Resolve(in Input) (Verdict, error) {
 		if r.onEmpty != nil {
 			why = r.onEmpty(in)
 		}
-		return Verdict{Owners: nil, Expected: "", Why: why}, nil
+		return Verdict{Owners: nil, Expected: "", Why: why, RuleIdentity: r.identity}, nil
 	}
 	expected, why := r.expected, r.why
 	if r.expectedFor != nil {
@@ -322,9 +353,10 @@ func Resolve(in Input) (Verdict, error) {
 		why = r.whyFor(in)
 	}
 	return Verdict{
-		Owners:   owners,
-		Expected: expected,
-		Why:      why,
+		Owners:       owners,
+		Expected:     expected,
+		Why:          why,
+		RuleIdentity: r.identity,
 		// Asked of fold, never listed here — the whole reason
 		// fold.HumanGate exists is that this fact already had two
 		// hand-maintained homes.
@@ -348,6 +380,7 @@ type row struct {
 	who      resolver
 	expected string
 	why      string
+	identity RuleIdentity
 	onEmpty  func(Input) string // nil for rows that are unconditionally "nobody"
 
 	// expectedFor/whyFor override expected/why for a row whose answer
@@ -957,6 +990,11 @@ func buildTable() map[key]row {
 	// about a state no response can rest in.
 	m[key{fold.KindResponse, fold.StateVerified}] = nobodyRow(
 		"settled; the requester accepted the response as delivered — nothing further is owed")
+
+	for k, r := range m {
+		r.identity = RuleIdentity(string(k.Kind) + "/" + string(k.State))
+		m[k] = r
+	}
 
 	return m
 }
