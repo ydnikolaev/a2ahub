@@ -1,0 +1,69 @@
+schema: release-notes/v1
+version: "0.22.0"
+headline: "A second data transport becomes a driver rather than a rewrite, and a lane stops running tests inside a clone of this repository"
+changes:
+  - id: RN-02200-0
+    kind: feat
+    roadmap:
+      visibility: internal
+      why: >
+        Spec 05a accepted one irreversible choice — a delivered payload lives
+        in the exchange space's history forever — on the explicit grounds that
+        a later transport would be "a registry entry plus conformance tests".
+        That seam did not exist: `transport_driver` was a string constant
+        written at one site and read by nobody, so the acceptance rested on a
+        promise rather than on a mechanism.
+    impact: normal
+    subject: "the transport-driver seam exists, with a conformance suite every driver proves itself through"
+    detail: >
+      `internal/datatransport` ships the Go half of AC-8: a narrow `Driver`
+      interface (its name, its locator grammar, moving bytes), a constructible
+      registry that refuses a duplicate name and an unknown lookup, and an
+      EXPORTED conformance suite so a driver's own package proves itself
+      through the same one rather than writing its own.
+
+      The suite takes a harness rather than a bare driver, and that is the
+      part worth knowing. It used to assert that a read immediately after a
+      write returns the same bytes — a property of an in-memory store, not of
+      a transport. The shipped transport writes through a pull request and
+      reads the merged branch; every plausible second one (object storage,
+      deletable release assets) has some publish boundary too. So each driver
+      supplies how its bytes become readable, and byte-identity keeps its full
+      strength instead of being weakened to the weakest transport.
+
+      Nothing imports the package yet, and the wire half is deliberately not
+      here: `data-package/v1`'s `transport_driver` is a closed enum in a schema
+      frozen by the published-v1 ratchet, so the enum opens in a v2 minted
+      together with a real second driver's requirements rather than ahead of
+      them.
+    affects: [contracts]
+    action:
+      scope: none
+      why: "No action. No command, schema or lifecycle changed; this is a seam for a transport that does not exist yet."
+
+  - id: RN-02200-1
+    kind: fix
+    roadmap:
+      visibility: internal
+      why: >
+        `a2a`'s feedback reader clones the public repository into
+        `.a2a/cache/feedback-repo/`, and a gate that walks the filesystem
+        answers a different question from one that walks the tracked set.
+    impact: normal
+    subject: "the derived lane stopped selecting Go tests inside a cached clone of this repository"
+    detail: >
+      The lane's `doc.go` walk pruned `.git` and `node_modules` and nothing
+      else, so it found the cached clone's own package documentation and
+      derived a real scoped-test phase pointing inside it. `make lane-run`
+      then ran `go test` in a clone and reported a setup failure against a
+      tree whose own packages were green.
+
+      The trigger was incidental and the exposure was broad: the bogus phase
+      carried the cached package's globs unprefixed, so any local lane whose
+      diff touched one of them selected it. CI never saw it — the phase set is
+      derived once, before the run, and the cache is created during it — which
+      means local and CI were answering slightly different questions.
+    affects: [cli]
+    action:
+      scope: none
+      why: "No action — a local gate stopped producing a false red."

@@ -33,7 +33,9 @@ func (r *recorderT) Fatalf(format string, args ...any) {
 
 // runBroken drives the suite against d and returns the first failure it
 // reported, or "" if the suite passed.
-func runBroken(d Driver) (msg string) {
+func runBroken(d Driver) (msg string) { return runBrokenHarness(DriverHarness(d)) }
+
+func runBrokenHarness(h Harness) (msg string) {
 	rec := &recorderT{}
 	defer func() {
 		// The recover variable must NOT shadow `rec`: a panicking Fatalf
@@ -48,7 +50,7 @@ func runBroken(d Driver) (msg string) {
 		}
 		msg = rec.msg
 	}()
-	runConformance(rec, d)
+	runConformance(rec, h)
 	return rec.msg
 }
 
@@ -79,6 +81,50 @@ func TestConformanceSuiteRedsOnEachBrokenDriver(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestConformanceUsesMakeVisible proves the harness hook is not decoration.
+//
+// A driver with a PUBLISH BOUNDARY — Get refuses until the write is
+// published, which is space-git's actual shape — must pass the suite when
+// its own package supplies MakeVisible, and must FAIL it when nobody does.
+// Both directions, because a hook that is never called would look identical
+// to a hook that works.
+func TestConformanceUsesMakeVisible(t *testing.T) {
+	withHook := &publishingDriver{nullDriver: NewNullDriver().(*nullDriver)}
+	h := Harness{
+		Driver: withHook,
+		MakeVisible: func(_ context.Context, _ string) error {
+			withHook.published = true
+			return nil
+		},
+	}
+	if got := runBrokenHarness(h); got != "" {
+		t.Fatalf("a driver with a publish boundary reported %q with MakeVisible supplied, want no failure", got)
+	}
+
+	noHook := &publishingDriver{nullDriver: NewNullDriver().(*nullDriver)}
+	got := runBroken(noHook)
+	if got == "" {
+		t.Fatal("the suite PASSED a driver whose Get refuses before publication, with no MakeVisible — the hook is never called")
+	}
+	if !strings.Contains(got, "not published") {
+		t.Fatalf("suite red = %q, want it to name the unpublished read", got)
+	}
+}
+
+// publishingDriver refuses Get until published, the way space-git refuses a
+// read before the delivery pull request merges.
+type publishingDriver struct {
+	*nullDriver
+	published bool
+}
+
+func (p *publishingDriver) Get(ctx context.Context, locator string) (map[string][]byte, error) {
+	if !p.published {
+		return nil, fmt.Errorf("publishingDriver: %q is not published yet", locator)
+	}
+	return p.nullDriver.Get(ctx, locator)
 }
 
 // TestConformanceSuitePassesACorrectDriver is the other direction: the cases

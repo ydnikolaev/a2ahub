@@ -29,45 +29,30 @@
 // This package does NOT import internal/space: that would invert the
 // dependency (space would need to depend on this seam, not vice versa).
 //
-// # READ THIS BEFORE TREATING THIS PACKAGE AS THE ANSWER
+// # THE RESPONSIBILITY SPLIT, WHICH THE SPEC ALREADY DECIDED
 //
-// **AC-8 IS NOT SATISFIED BY THIS PACKAGE, AND THE INTERFACE BELOW CANNOT
-// EXPRESS space-git — THE ONLY TRANSPORT THAT EXISTS.** The seam is written,
-// tested and mutation-checked; it is also, as drafted, a model of an
-// in-memory store rather than of a transport with a publish boundary. Spec
-// 05a §9.3 accepts an irreversible choice on the grounds that "the seam is
-// not decoration", so a seam the real driver cannot fill is exactly the
-// outcome that must not be quietly shipped as done.
+// A Driver moves a package's BYTES to a locator and back. That is all. The
+// spec settled the rest before this package existed, and reading §9.1 is what
+// corrected a first draft of this file that had tried to model the whole
+// delivery:
 //
-// Three gaps, each verified against internal/space before this was written
-// and re-verified by the lead:
+//   - §9.1 CONFIRM-3: "Delivery is a `handoff` carrying a package; the fold
+//     table is untouched." The handoff, its lifecycle event and the
+//     one-commit atomicity are PROTOCOL. `internal/space`'s
+//     DeliverDataPackage owns them and CALLS a driver for the payload half —
+//     it is not itself a driver, and an adapter that tried to wrap it would
+//     be modelling the wrong seam.
+//   - AC-3 puts "payload, manifest and handoff in exactly one commit" and
+//     idempotent re-runs on the COMMAND. Space-git's idempotency comes from
+//     dataDeliverOperationKey and the write funnel's already-open-PR
+//     short-circuit, one layer above any driver.
+//   - §0's loop sequences VISIBILITY: B delivers, a handoff appears on the
+//     thread, A fetches. A driver therefore owes byte-identity, never
+//     read-immediately-after-write. Harness.MakeVisible is where each
+//     transport says how its bytes become readable; see conformance.go.
 //
-//  1. Put(ctx, locator, files) cannot carry what a space-git write needs.
-//     DeliverDataPackage requires a *WriteFunnel AND mandatory HandoffID /
-//     HandoffRaw / EventID / EventRaw — the payload, the handoff envelope
-//     and its first lifecycle event land in ONE commit, and that atomicity
-//     is the point of the design, not an implementation detail.
-//  2. Space-git's idempotency is not Put's. It comes from
-//     dataDeliverOperationKey plus the funnel's own already-open-PR
-//     short-circuit; a re-run mints fresh handoff bytes and the funnel
-//     repairs the same pull request. Driver has no operation-key concept.
-//  3. Put and Get are ASYMMETRIC by nature. DeliverDataPackage writes
-//     through the funnel (a pull request); ResolveDataPackage reads
-//     contractAuthoritativeMainRef — origin/main, AFTER merge. The
-//     immediate round-trip RunConformance asserts is true for an in-memory
-//     driver and false for space-git until the PR merges.
-//
-// Gap 3 is the one that shapes the redesign rather than the adapter: a
-// publish boundary is a property every plausible second driver has (object
-// storage with eventual consistency, deletable release assets), so
-// visibility probably belongs IN the interface — Put returning a receipt,
-// with visibility a separate question — instead of being assumed away.
-// Gap 1 asks a real question too: is co-committing the handoff a TRANSPORT
-// concern or the space's protocol concern? Deciding that decides whether
-// Driver stays this narrow.
-//
-// The fork is the operator's and is recorded in spec 05a's Amendments.
-// Until it is taken, nothing imports this package and AC-8 stays open.
+// What is left for a Driver is genuinely transport-specific and nothing else:
+// its name, its locator grammar, and moving bytes.
 package datatransport
 
 import (
@@ -118,7 +103,12 @@ type Driver interface {
 	Put(ctx context.Context, locator string, files map[string][]byte) error
 
 	// Get retrieves the bytes a prior Put placed at locator, byte-identical
-	// to what was put.
+	// to what was put — ONCE THOSE BYTES ARE VISIBLE ON THIS TRANSPORT.
+	// Visibility is not this method's contract: space-git writes through a
+	// pull request and reads origin/main after merge, and the protocol
+	// already sequences that (§0's loop). A driver with a publish boundary
+	// returns an error until its write is published; Harness.MakeVisible is
+	// how a driver's own package advances it in a test.
 	Get(ctx context.Context, locator string) (map[string][]byte, error)
 }
 

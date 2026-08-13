@@ -13,7 +13,7 @@ import (
 // the way a real driver's own package would call it, not just from inside
 // datatransport itself.
 func TestNullDriverConformance(t *testing.T) {
-	datatransport.RunConformance(t, datatransport.NewNullDriver())
+	datatransport.RunConformance(t, datatransport.DriverHarness(datatransport.NewNullDriver()))
 }
 
 func TestRegistryRegisterDuplicateRefused(t *testing.T) {
