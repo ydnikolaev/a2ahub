@@ -1,11 +1,12 @@
 schema: release-notes/v1
 version: "0.22.0"
+released: "2026-08-13"
 headline: "A second data transport becomes a driver rather than a rewrite, and a lane stops running tests inside a clone of this repository"
 changes:
   - id: RN-02200-0
     kind: feat
     roadmap:
-      visibility: internal
+      visibility: shipped
       why: >
         Spec 05a accepted one irreversible choice — a delivered payload lives
         in the exchange space's history forever — on the explicit grounds that
@@ -44,7 +45,7 @@ changes:
   - id: RN-02200-1
     kind: fix
     roadmap:
-      visibility: internal
+      visibility: shipped
       why: >
         `a2a`'s feedback reader clones the public repository into
         `.a2a/cache/feedback-repo/`, and a gate that walks the filesystem
@@ -67,3 +68,34 @@ changes:
     action:
       scope: none
       why: "No action — a local gate stopped producing a false red."
+
+  - id: RN-02200-2
+    kind: fix
+    roadmap:
+      visibility: shipped
+      why: >
+        A space's required merge check compiled the validator from source on
+        every pull request, so one transient read from the Go checksum DB
+        reddened a gate on content that was fine.
+    impact: high
+    subject: "a flaky module read no longer reddens a space's required merge check"
+    detail: >
+      `a2a-validate-reusable.yml` ran `go run <module>@<ver>`, which fused two
+      failures under one exit code: "the supply chain could not be read" and
+      "this space is invalid". Observed 2026-08-13 in a real space — a
+      `sum.golang.org` tile read failed mid-graph and the required check went
+      red; the same module downloaded cleanly on a retry.
+
+      Build and run are now separate, and only the build is retried, three
+      times with a growing pause. A genuinely invalid space still reds once,
+      never three times, because the validator runs outside the loop. When all
+      three attempts fail the error says plainly that this is the module
+      supply chain and not the space's content.
+
+      The integrity mechanism is unchanged: `go install` verifies through the
+      Go checksum DB exactly as `go run` did, so this still costs no fetch
+      token and no cosign step.
+    affects: [space]
+    action:
+      scope: local
+      why: "Run `a2a space update` to pick it up. A space inherits this by pinning the workflow tag; no hand-edit."
