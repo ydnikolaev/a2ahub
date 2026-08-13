@@ -1,0 +1,81 @@
+schema: release-notes/v1
+version: "0.21.0"
+released: "2026-08-13"
+headline: "The letterbox comes off the door that gets replaced, and CI stops buying evidence it cannot read"
+changes:
+  - id: RN-02100-0
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: >
+        A report filed by an outside reporter lived on the one branch every
+        release overwrites wholesale. Everything downstream — a per-path merge
+        rule, a divergence refusal, a 643-line sync, a release-aborting import
+        assertion and a preserve pass inside the publisher — existed to stop a
+        release from deleting a stranger's bug report.
+    impact: high
+    subject: "feedback lands on a dedicated branch the publisher never touches"
+    detail: >
+      Public `main` was two things at once. It was the feedback hub of record —
+      the default `a2a feedback submit` target for every shipped binary, with
+      status read back over raw.githubusercontent.com against that branch. It
+      was also the branch the publisher force-pushes wholesale on every
+      release.
+
+      Measured on 2026-08-12, not reasoned about: two open feedback pull
+      requests were both MERGEABLE and BEHIND after a publish, both with
+      auto-merge armed and neither firing; merging the first put the second
+      back into BEHIND. A record submitted after that same publish merged in
+      twenty-three seconds. The difference was entirely whether a release
+      happened while the record was open.
+
+      Inbound reports now land on `feedback-hub`, an orphan branch of the same
+      public repository carrying the corpus and nothing else. The publisher
+      touches exactly three refs and has no reason to touch a fourth; branch
+      protection makes sure it cannot by accident, and that protection was
+      verified by attempting a real force-push and watching it refused.
+
+      The repository does not change, so no binary in the field breaks: only
+      the branch moves. The corpus was migrated by COPY, so `main` keeps its
+      records for the length of the rollover window, and rollback is repointing
+      a constant.
+  - id: RN-02100-1
+    kind: fix
+    roadmap:
+      visibility: shipped
+      why: >
+        A blob payload's own frontmatter-bearing file was walked as an envelope
+        draft, producing a false "could not be decoded" note and an UNVERIFIED
+        visibility verdict — the identical defect that was closed one path over
+        for data packages, left open for its twin.
+    impact: medium
+    subject: "a blob payload is no longer mistaken for a malformed artifact"
+    detail: >
+      `a2a validate --ci` already carved `<system>/blobs/<BL-id>/…` out of
+      artifact discovery. The mirror walk did not, so the same bytes read as a
+      broken envelope on the read path while validating cleanly on the write
+      path.
+
+      Both readers now ask ONE predicate, `space.BlobForPath`, rather than
+      carrying a copy each. The exemption stays scoped to the blob's own
+      directory grammar: a genuinely malformed artifact filed elsewhere under
+      the same system still reaches discovery and still reds, and a negative
+      control test pins that.
+  - id: RN-02100-2
+    kind: fix
+    roadmap:
+      visibility: shipped
+      why: >
+        The one diagnostic whose entire job is sending an operator to a failing
+        run could not link to it.
+    impact: low
+    subject: "`a2a doctor` links the failing check run it names"
+    detail: >
+      GitHub's check-runs API returns `html_url`; the host adapter never
+      decoded it, so a `default branch healthy` failure could name the space,
+      the branch, the selected check run and its conclusion — good evidence,
+      and no link to click.
+
+      The result type now carries the run URL and the doctor row prints it.
+      When the provider omits the field the message degrades to exactly what it
+      said before, never to an empty link.
