@@ -3,25 +3,33 @@
 # against unchanged code).
 name: CodeQL
 
+# AC11b. CodeQL analyses Go; an inbound feedback record is a YAML file under
+# `feedback/`, and no analysis result can turn on it. This is the second-largest
+# item a feedback pull request buys after CI's own tier.
+#
+# A TRIGGER-LEVEL FILTER IS SAFE HERE AND IS NOT SAFE IN ci.yml, and the
+# difference is worth stating because §3.1 argues the opposite case at length.
+# There it skips the WHOLE workflow, `check` included, so a change to
+# `internal/` would merge ungated. This workflow has ONE job with ONE subject.
+# `pages.yml` already uses the same shape for the same reason.
+#
+# It is also checked against branch protection rather than assumed: public
+# `main` and `feedback-hub` both require exactly one context, `merge-policy`,
+# so a skipped CodeQL cannot leave a pull request waiting on a check that will
+# never report.
+#
+# BOTH TRIGGERS CARRY IT, and the push half is not redundant: a feedback
+# record reaches `main` as an auto-merged SQUASH COMMIT whose diff is also
+# feedback-only, so filtering the pull request alone would have left every
+# record still buying one CodeQL run on the way in. A promote push touches Go
+# and is unaffected. The weekly cron is the safety net for both halves.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'feedback/**'
   pull_request:
     branches: [main]
-    # AC11b. CodeQL analyses Go; an inbound feedback record is a YAML file
-    # under `feedback/`, and no analysis result can turn on it. This is the
-    # second-largest item a feedback pull request buys after CI's own tier.
-    #
-    # A TRIGGER-LEVEL FILTER IS SAFE HERE AND IS NOT SAFE IN ci.yml, and the
-    # difference is worth stating because §3.1 argues the opposite case at
-    # length. There it skips the WHOLE workflow, `check` included, so a change
-    # to `internal/` would merge ungated. This workflow has ONE job with ONE
-    # subject. `pages.yml` already uses the same shape for the same reason.
-    #
-    # It is also checked against branch protection rather than assumed: public
-    # `main` and `feedback-hub` both require exactly one context,
-    # `merge-policy`, so a skipped CodeQL cannot leave a pull request waiting
-    # on a check that will never report.
     paths-ignore:
       - 'feedback/**'
   schedule:
