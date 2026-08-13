@@ -63,6 +63,7 @@ scripts/*
 !scripts/check_work_checkpoint_schema.sh
 !scripts/check-lane-declarations.sh
 !scripts/ci-changes.sh
+!scripts/ci-skill-drift.sh
 !scripts/check-pendency-uniqueness.sh
 !scripts/check-loop-coverage.sh
 !scripts/check-human-gates.sh

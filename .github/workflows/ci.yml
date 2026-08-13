@@ -18,9 +18,10 @@ name: CI
 # 2026-08-12 that was seven concurrent runs against one commit across the two
 # repos, and the compute is not free.
 #
-# Tags are excluded because a tag points at a commit main already carries: the
-# tag run can only repeat main's verdict. `release.yml` is the workflow that
-# needs the tag, and it has its own trigger.
+# Tags were excluded on that reasoning too — a tag points at a commit main
+# already carries, so the tag run could only repeat main's verdict. THAT
+# PREMISE NO LONGER HOLDS and the tags are back; see "TAGS ARE BACK" below,
+# which is the same fact read after K4 moved the ceiling off push.
 #
 # The candidate branches stay IN, deliberately. That run happens BEFORE
 # promotion, which is the only moment its verdict can still stop a release —
@@ -57,6 +58,23 @@ on:
     # operator's, not the implementer's.
     - cron: '23 2 * * *'
   workflow_dispatch:
+
+# Superseded runs stop (P13 K6, AC6). 689 commits in twelve days, pushed in
+# bursts, and every intermediate push held a runner to completion while the
+# tip was already being pushed on top of it.
+#
+# The trade is real and is stated rather than hidden: intermediate commits
+# stop being proven, only the tip is. That is the intent at this commit rate,
+# but it changes what the history guarantees, so it is written down where the
+# setting lives.
+#
+# The group is scoped by `github.workflow`, which is what keeps `Release` out
+# of it: cancelling a half-finished goreleaser or Sigstore run is worse than
+# paying for it. A tag or candidate ref is unique, so nothing cancels there
+# either.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -159,6 +177,9 @@ jobs:
       - name: make check
         run: make check
 
+      - name: skill-drift (folded in — P13 K5/AC5, it billed a whole minute for 24s of work)
+        run: bash scripts/ci-skill-drift.sh
+
   # THE DERIVED LANE — the commit gate, and the half of P12 that CI never
   # learned (AC8, AC9).
   #
@@ -214,58 +235,8 @@ jobs:
           LANE_FILES: ${{ needs.changes.outputs.files }}
         run: make lane-run-strict
 
-  # skill-drift (spec 13 T4/T5, AC-602.1 machine clause): the generated half
-  # of the a2ahub skill must stay byte-identical to a fresh regeneration from
-  # the built binary. Prose paths (SKILL.md/loops.md/…) are OUT of this job —
-  # they are release-checklist-gated (D-015), never machine-gated. The spec's
-  # path-scoped trigger is intentionally widened to always-run (like `check`):
-  # the regenerate is cheap and an always-green gate cannot silently skip.
-  skill-drift:
-    # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
-    timeout-minutes: 5
-    # Runs wherever a tier is bought — a push, a pull request, a tag, the
-    # nightly ceiling. `none` is the weekly macOS net alone (see `on:` above),
-    # and regenerating the skill reference from a tree nobody pushed proves
-    # nothing.
-    needs: changes
-    if: needs.changes.outputs.tier != 'none'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-
-      - name: Regenerate skill reference from the binary and byte-diff
-        run: |
-          set -euo pipefail
-          tmp="$(mktemp -d)"
-          mkdir -p "$tmp/authoring"
-          # commands.md == `a2a __catalog` (command + MCP-tool catalog).
-          go run ./cmd/a2a __catalog > "$tmp/commands.md"
-          diff -u skill/a2ahub/reference/commands.md "$tmp/commands.md"
-          # authoring/<type>.md == `a2a template show <type>` (OP-219), one per type.
-          for t in $(go run ./cmd/a2a template list); do
-            go run ./cmd/a2a template show "$t" > "$tmp/authoring/$t.md"
-          done
-          for f in "$tmp"/authoring/*.md; do
-            committed="skill/a2ahub/reference/authoring/$(basename "$f")"
-            if [ ! -f "$committed" ]; then
-              echo "skill-drift: new template type with no committed authoring file: $(basename "$f")" >&2
-              exit 1
-            fi
-            diff -u "$committed" "$f"
-          done
-          # a committed authoring file whose type no longer exists is also drift.
-          for f in skill/a2ahub/reference/authoring/*.md; do
-            test -f "$tmp/authoring/$(basename "$f")" || {
-              echo "skill-drift: committed authoring file with no live template type: $(basename "$f")" >&2
-              exit 1
-            }
-          done
+      - name: skill-drift (folded in — P13 K5/AC5, it billed a whole minute for 24s of work)
+        run: bash scripts/ci-skill-drift.sh
 
   # THE 2650-EQUIVALENT-MINUTE JOB (spec 13 F1/F2), now reachable only from a
   # diff that can change its verdict.

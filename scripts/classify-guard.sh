@@ -41,6 +41,7 @@ PUBLIC_VALIDATOR_FILES=(
   # v0.19.9 defect this list exists to prevent (see publish-to-public.sh's own
   # header): the private tree stayed green while the candidate refused.
   scripts/ci-changes.sh
+  scripts/ci-skill-drift.sh
   scripts/lib/lane-ungated.txt
   scripts/lib/job-timeouts.tsv
   scripts/lib/gate-lib.sh
