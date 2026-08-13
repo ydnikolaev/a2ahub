@@ -158,3 +158,13 @@ feedback/digest.md
 # macOS Finder droppings. Not repo content; appears only in the private
 # harness roots the universe walks because they are untracked by design.
 **/.DS_Store
+
+# Resolved backlog rows, moved out of docs/backlog.md on 2026-08-12 because
+# that file's own header asks for it (102 of its 138 rows were already `[x]`).
+# Nothing reads this file: `feedback-corpus` claims docs/backlog.md because it
+# resolves the `refs:` a feedback record points at, and a CLOSED row is not a
+# referent — every accepted record's row lives in the live file. The archive is
+# a reading surface for humans and a place where a measurement can be found
+# again, not an input to any verdict. If a gate ever learns to check that a
+# closed row's claim is still true, this entry gets deleted rather than kept.
+docs/backlog-archive.md
