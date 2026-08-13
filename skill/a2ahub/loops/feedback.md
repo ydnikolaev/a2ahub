@@ -40,7 +40,7 @@ feedback new/validate/submit`, not `a2a new`.
 | `grounded_in_real_work` | the report cites work you actually did this session — no "wouldn't it be nice" |
 | `not_space_specific` | it's about the a2a tool/protocol/docs — NOT about your counterparty, your space's content, or your own repo |
 | `no_sensitive_content` | body sanitized: no space payloads, secrets, tokens, real system/actor IDs, private URLs |
-| `duplicates_checked` | you checked your ledger (`a2a feedback status`) and searched `feedback/inbox/` + `feedback/backlog.yaml` on the hub repo for the same report |
+| `duplicates_checked` | you checked your ledger (`a2a feedback status`) and searched `feedback/inbox/` + `feedback/backlog.yaml` on the hub repo's feedback branch for the same report |
 
 **Batch policy:** file every independent item that passes all five gates.
 `a2a feedback submit <file...>` and `--all` remove needless operator
@@ -62,8 +62,16 @@ docs` may be filed autonomously.
 4. Export a GitHub token as `A2A_FEEDBACK_TOKEN` (fallbacks:
    `GITHUB_TOKEN`, then `GH_TOKEN`), then run
    `a2a feedback submit <file...>` (or `--all`) — opens one PR per report
-   against the hub repo; ledger rows are appended locally; a resubmit of an
-   already-submitted id is an idempotent no-op.
+   against the hub repo's **feedback branch**; ledger rows are appended
+   locally; a resubmit of an already-submitted id is an idempotent no-op.
+
+   **The branch is not the repository's default branch, and that is
+   deliberate.** The default branch is a publication: every release rewrites
+   it wholesale, so a report filed there could be overwritten by a release and
+   an open report went stale the moment one landed. Reports now land on a
+   dedicated branch the publisher never touches. You do not have to name it —
+   `submit` targets it and `status` reads it — but if you go looking for your
+   report by hand, look there rather than on the default branch.
 5. Later, check what happened: `a2a feedback status` reports the hub-side
    `status`/`resolution` for everything you've filed — this is also how
    `duplicates_checked` gets fed honestly next time (see §8.1 step 4).
@@ -74,7 +82,7 @@ docs` may be filed autonomously.
 **The refusal `a2a feedback triage` will meet you with, and why it is not a
 bug.** The LISTING form is a network read. Run from a git work tree it
 resolves the hub of record FIRST and **refuses rather than reporting** in
-three cases: the hub's default branch carries a report this tree does not
+three cases: the hub's FEEDBACK BRANCH carries a report this tree does not
 have; the comparison could not be completed at all (hub unreachable, fetch
 failed, no such branch); or no hub of record is configured. The refusal names
 the reason and names the hub, and in none of those cases will it print

@@ -55,26 +55,41 @@ not drifted from the plan wording it quotes.
 - **Reviewer:** `Claude Code`
 - **Date:** `2026-08-13`
 
-> **v0.21.0 CHANGES NO PROSE, so this review is INHERITED from v0.20.0** — and
-> that claim is the thing worth checking, not the tick beside it. Verified by
-> enumerating the diff rather than by recalling what the work touched:
-> `git diff --name-only <v0.20.0 release commit>..HEAD -- 'skill/'` returns
-> ZERO files.
+> **v0.21.0 DOES change prose — one file — and the first version of this
+> sign-off said it did not.** That error is worth more than the correction,
+> because it is the exact failure step 7 of the release runbook exists to
+> catch, made by the person performing step 7.
 >
-> That is consistent with what the release is: the feedback hub moves to a
-> different BRANCH of the same repository, and the CI cadence changes. Neither
-> is agent-facing. `a2a feedback submit` and `a2a feedback status` behave
-> identically from a caller's side — the address they use changed, not the
-> contract they expose — so no loop, no troubleshooting row and no reference
-> page has anything new to say.
+> The check I ran was `git diff --name-only … -- 'skill/'`, which returned zero
+> files, and I read that as "no prose review needed". **The question is not
+> whether prose CHANGED. It is whether prose BECAME WRONG.** This release moves
+> the feedback hub off the repository's default branch, and
+> `loops/feedback.md` said, in the sentence describing when `a2a feedback
+> triage` refuses:
 >
-> **One thing a later reader should NOT infer from that**: "no prose changed"
-> is not "nothing user-visible changed". A report filed by a binary older than
-> this release still lands on the legacy branch, and the rollover window that
-> covers it is documented in `docs/runbooks/feedback-hub.md`, which is a
-> maintainer document and deliberately not part of the shipped skill. If that
-> window is ever mishandled, the failure will be visible to reporters and
-> invisible to this checklist.
+> > *"the hub's **default branch** carries a report this tree does not have"*
+>
+> After P15 the hub is a dedicated branch and the default branch is not it. An
+> agent reading that page would look for its report in the wrong place, and
+> `skill-drift` cannot see it — that gate byte-compares the GENERATED tree, and
+> this is hand-written prose.
+>
+> Three statements corrected, all in `loops/feedback.md`: the submit target now
+> names the feedback branch and says why it is not the default branch (a
+> release rewrites that one wholesale); the triage refusal names the feedback
+> branch; and the `duplicates_checked` gate points at the right place to search.
+>
+> Nothing else in this release is agent-facing: the CI economics work changes
+> no verb, no flag, no exit code and no refusal an agent can reach.
+>
+> **Still true and worth keeping**: `a2a feedback submit` and `a2a feedback
+> status` behave identically from a caller's side — the address changed, not
+> the contract — which is why the correction is three sentences rather than a
+> rewrite. And a report filed by a binary older than this release still lands
+> on the legacy branch; the rollover window covering it lives in
+> `docs/runbooks/feedback-hub.md`, a maintainer document deliberately outside
+> the shipped skill. If that window is mishandled the failure is visible to
+> reporters and invisible to this checklist.
 >
 > The v0.20.0 review below stands unchanged and is reproduced as the inherited
 > basis.
