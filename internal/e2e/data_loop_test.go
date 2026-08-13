@@ -10,26 +10,32 @@
 // are covered by the seven Go tests below (the loop test also carries the
 // L-5 inbox-across-the-loop proof, since both are the same timeline).
 //
-// THREE of the seven tests below FAIL, and are left failing rather than
-// rewritten to assert broken behaviour — the difference from the
-// ContractSupersededBy case (a genuinely optional, missing observation) is
-// that these three fail on a CORE path: `a2a data verify` cannot resolve
-// the contract of a package `a2a data pack` produced, full stop (finding
-// 5 below). A test asserting "verify always errors" would not be coverage
-// of anything this feature claims to do. Three tests DO pass —
-// TestDataLoopPackDeliverOneCommit, TestDataLoopFetchIntoCleanDirectory,
-// TestDataLoopFetchIntoDivergentDirectoryRefused — and they matter for
-// exactly the same reason: they prove `pack`, `deliver` and `fetch` work
-// end to end through the real binary against a real merged write, which
-// is what makes the other failures credible defects rather than a
-// misconfigured test harness.
+// ALL SEVEN TESTS BELOW PASS. This header said three of them FAIL, on a
+// core path, and that has not been true since 2026-08-04 — the same commit
+// (9f02f261) that ADDED this file also fixed the headline defect it
+// describes, and the paragraph was never rewritten. Corrected 2026-08-13
+// after watching the whole set green: 7/7, 78 s, `go test ./internal/e2e/
+// -run TestDataLoop -count=1 -v`.
 //
-// Five product defects were found proving this, none fixed here (outside
-// this file's allowlist — cmd/a2a, internal/space and
-// testkit/fakegithub are lead- or other-wave-owned), in the order that
-// matters most to the lead:
+// It is worth naming the failure mode rather than just deleting the
+// sentence. A stale "this is broken" note is more expensive than a stale
+// "this is done" one: it was read, this week, as evidence that P5a's core
+// verify path does not work, and a phase that is nearly finished looked
+// blocked. Prose does not have to change to become false.
 //
-//  5. HEADLINE: `a2a data verify` cannot resolve the contract of ANY
+// The five product defects below were found by this proof and are kept as
+// the record of what it caught. Their CURRENT state is stated per item;
+// none is still open on a core path.
+//
+//  5. FIXED 2026-08-04 by this finding's own commit (9f02f261), verified
+//     again 2026-08-13 by watching all three named tests pass.
+//     `internal/space`'s splitDataContractReference now cuts on "#" FIRST
+//     and CHECKS the digest against the resolved snapshot instead of
+//     discarding it (data_resolve.go, whose own comment records the same
+//     history). The description below is the DEFECT AS FOUND, kept because
+//     it is the clearest statement of what the two-party proof caught.
+//
+//     AS FOUND: `a2a data verify` cannot resolve the contract of ANY
 //     package `a2a data pack` produced. dataCore.pack (cmd/a2a/data_wiring.go)
 //     sets the manifest's `contract` field from ResolveDataContractSchemas'
 //     own pinnedRef return value — `<XC-id>@<version>#<digest>`
@@ -43,13 +49,16 @@
 //     refuse every time: "contract reference must be an exact XC id and
 //     canonical version: \"XC-axon-export@1.0.0#sha256:...\"", observed
 //     verbatim running TestDataLoopVerifyFailingPayloadNamesEntryAndRule.
-//     No other caller of ResolveDataContractSchemas strips the digest
-//     first. This blocks scenarios 5, 6 and 7 (TestDataLoopVerifyFailing
-//     PayloadNamesEntryAndRule, TestDataLoopFailSupersedePassCloseInbox
-//     NeverAccumulates, TestDataLoopStaleContractDoesNotChangeVerdict) —
-//     all three are left in place, failing, rather than rewritten.
+//     No other caller of ResolveDataContractSchemas stripped the digest
+//     first. It blocked scenarios 5, 6 and 7 —
+//     TestDataLoopVerifyFailingPayloadNamesEntryAndRule,
+//     TestDataLoopFailSupersedePassCloseInboxNeverAccumulates,
+//     TestDataLoopStaleContractDoesNotChangeVerdict — until the fix above.
+//     All three pass today.
 //
-//  1. `cmd/a2a`'s dataCore.pack (data_wiring.go) never populates
+//  1. FIXED — cmd/a2a/data_wiring.go now sets
+//     `Provenance: datapackage.Provenance{OriginSystem: c.ownSystem}`.
+//     AS FOUND: `cmd/a2a`'s dataCore.pack (data_wiring.go) never populates
 //     datapackage.Document.Provenance. Every manifest a real `a2a data
 //     pack` produces therefore carries `provenance.origin_system: ""`,
 //     which violates data-package/v1's own `minLength: 1`
@@ -60,8 +69,15 @@
 //     touching cmd/a2a or internal/datapackage) so `pack`/`deliver`/`fetch`
 //     could be exercised and proven despite it; see its own doc comment.
 //
-//  3. `internal/space`'s ResolveDataContractSchemas (data_resolve.go)
-//     filters a resolved contract's carried set by
+//  3. FIXED at the resolver — dataContractSchemaEntry now classifies a
+//     non-contract-set-v2 profile by path prefix ("schema/"), the same
+//     rule internal/contract's own conformance core already used for a
+//     legacy carried set. The HARNESS-side half below (whether a real
+//     `a2a contract publish` reaches contract-set-v2 through this rig)
+//     remains UNVERIFIED and is still the reason this file seeds by
+//     direct commit.
+//     AS FOUND: `internal/space`'s ResolveDataContractSchemas
+//     (data_resolve.go) filters a resolved contract's carried set by
 //     `entry.Role == contract.RoleSchema`. For the "contract-tree-v1"
 //     (legacy) digest profile — the shape EVERY existing fixture and
 //     helper in this tree produces, including host_loop_test.go's own

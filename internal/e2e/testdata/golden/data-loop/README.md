@@ -28,8 +28,18 @@ renumbered 01/02/03 — `03-report-fail.json` and `05-report-pass.json` are
 the exact names the two missing documents will take once they can be
 produced, so adding them later is additive, not a rename.
 
-**They are missing because `a2a data verify` cannot resolve any real
-package's contract today — a confirmed product defect, not a gap in this
+**Resolved 2026-08-04; the two fixtures are simply not written yet.** The
+paragraph below is the defect AS FOUND and is kept because it is the record
+of what the two-party proof caught, but its present tense stopped being true
+on the day it was written: commit `9f02f261` — the same commit that added
+this directory — taught `splitDataContractReference` to cut on `#` first and
+CHECK the digest instead of refusing it. Re-verified 2026-08-13: all seven
+`TestDataLoop*` tests pass, including the three this once blocked. Producing
+`03-report-fail.json` and `05-report-pass.json` is now ordinary work with
+nothing in front of it.
+
+AS FOUND: **they are missing because `a2a data verify` cannot resolve any
+real package's contract — a confirmed product defect, not a gap in this
 test.** `cmd/a2a/data_wiring.go`'s `dataCore.verify` calls
 `resolveContractSchemas(ctx, document.Contract)`, passing the manifest's
 own `contract` field — which data-package/v1's schema REQUIRES to carry a
