@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/datatransport"
@@ -17,24 +18,12 @@ import (
 // payload+manifest half of one delivery commit, and ResolveDataPackage
 // (data_resolve.go) is reused, never reimplemented, for Get.
 //
-// DEVIATION, reported rather than silently widened: this file imports
-// internal/datatransport, which ADR-001's table (docs/decisions.md) does not
-// yet list a row for, and internal/space's own row there does not (yet) name
-// it among what internal/space may import. The brief that authored this file
-// names the import directly — "internal/space/data_transport.go (NEW FILE)
-// — spaceGitDriver implementing datatransport.Driver" — and docs/decisions.md
-// is outside this wave's allowlist to edit. Adding a `datatransport` row
-// (and widening internal/space's own May-import column) is a lead-level
-// follow-up this file cannot make for itself.
-//
-// A Driver moves bytes; nothing about manifest shape, digest verification or
-// entry conformance belongs here (internal/datapackage owns all of that, and
-// internal/space may not import it — ADR-001 — so this file never does,
-// including for its own refusal sentinel: it wraps
-// datatransport.ErrUnsafeLocator, which IS datapackage.ErrUnsafeLocator,
-// re-exported by internal/datatransport's own driver.go specifically so a
-// package on this side of the ADR-001 boundary can still satisfy
-// errors.Is against the value the driver conformance suite checks).
+// The import of internal/datatransport is GRANTED, by ADR-015 in
+// docs/decisions.md — written in the same commit as this file after the
+// phase audit asked for it by name. ADR-001's own Consequences say crossing
+// these boundaries takes a new ADR rather than a widened cell, so that is
+// what it got. The grant is narrow: internal/space may import the SEAM, and
+// still may not import internal/datapackage.
 type spaceGitDriver struct {
 	// mirrorDir is the local git checkout Get reads from — the exact
 	// argument ResolveDataPackage already takes. Put needs none: it is
@@ -45,6 +34,23 @@ type spaceGitDriver struct {
 }
 
 // newSpaceGitDriver returns the space-git Driver reading from mirrorDir.
+// registerSpaceGit is the registry entry AC-8's own words promise. §9.3 says
+// a later driver is "a registry entry plus conformance tests, with no schema,
+// lifecycle or command change" — and until this existed the registry had NO
+// production caller at all: DeliverDataPackage constructed the space-git
+// driver directly, so adding a second one still meant editing the delivery
+// path. Found by this phase's own audit, which was right to call the promise
+// overstated.
+//
+// It is a sync.OnceValue and not an `init`, deliberately: `.golangci.yml`
+// bans init functions (gochecknoinits), and the ban is right — implicit
+// ordering with invisible side effects is exactly what a registry populated
+// at import time would be. Lazy registration keeps the same one-line
+// "a driver registers itself" property while the error stays returnable.
+var registerSpaceGit = sync.OnceValue(func() error {
+	return datatransport.Default.Register(newSpaceGitDriver(""))
+})
+
 func newSpaceGitDriver(mirrorDir string) *spaceGitDriver {
 	return &spaceGitDriver{mirrorDir: mirrorDir}
 }

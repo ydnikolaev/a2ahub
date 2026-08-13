@@ -1,0 +1,39 @@
+{
+  "schema": "verification-report/v1",
+  "id": "VR-axon-REDACTED-0001",
+  "thread": "thread:axon-20260804-g001",
+  "package": {
+    "id": "DP-axon-REDACTED-0001",
+    "aggregate_digest": "sha256:2631bfd7c6e40e97fe088fba2c64ac77600e16bc955ff3172111e92f3778029a"
+  },
+  "contract": "XC-axon-goldenexport@1.0.0#sha256:f5678dc75bcd99f7236e0aa8a139359f8df2b9242b6870c075ef0bb6799d7da4",
+  "consumer": "axon",
+  "checks": [
+    {
+      "id": "conformance:orders.json",
+      "path": "orders.json",
+      "status": "pass",
+      "violations": []
+    },
+    {
+      "id": "record-count:orders.json",
+      "path": "orders.json",
+      "status": "fail",
+      "violations": [
+        {
+          "instance_pointer": "",
+          "schema_pointer": "",
+          "message": "declared record_count 2 disagrees with the consumer's own recount 1"
+        }
+      ]
+    }
+  ],
+  "observed": {
+    "record_count": 1,
+    "size_bytes": 23,
+    "duration_ms": 0
+  },
+  "started_at": "REDACTED-TIMESTAMP",
+  "finished_at": "REDACTED-TIMESTAMP",
+  "result": "fail"
+}

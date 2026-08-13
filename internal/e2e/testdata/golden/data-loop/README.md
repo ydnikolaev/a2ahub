@@ -18,25 +18,30 @@ a reordered one, a changed digest algorithm, a changed id format — shows up
 as a diff in code review, rather than as a surprise the first time someone
 runs the loop for real.
 
-## Why only three files, not five
+## All five files, now present
 
 Spec §6.6 names five documents: the request, the first package, its
 failing report, the superseding package, and the passing report. This
-directory has three: `01-request.json`, `02-package-attempt-1.json`,
-`04-package-attempt-2.json`. The numbering is deliberately NOT
-renumbered 01/02/03 — `03-report-fail.json` and `05-report-pass.json` are
-the exact names the two missing documents will take once they can be
-produced, so adding them later is additive, not a rename.
+directory now has all five: `01-request.json`, `02-package-attempt-1.json`,
+`03-report-fail.json`, `04-package-attempt-2.json`, `05-report-pass.json`.
+The numbering was never renumbered 01/02/03 — `03-report-fail.json` and
+`05-report-pass.json` are exactly the names the two once-missing documents
+were reserved for, so landing them on 2026-08-13 was additive, not a rename.
+Both are produced the same way the other three always were: a real `a2a
+data verify --record` exec, read back from the committed
+`<system>/data/<DP-id>/report.json` the write actually landed — never a
+report assembled in memory.
 
-**Resolved 2026-08-04; the two fixtures are simply not written yet.** The
-paragraph below is the defect AS FOUND and is kept because it is the record
-of what the two-party proof caught, but its present tense stopped being true
-on the day it was written: commit `9f02f261` — the same commit that added
-this directory — taught `splitDataContractReference` to cut on `#` first and
-CHECK the digest instead of refusing it. Re-verified 2026-08-13: all seven
-`TestDataLoop*` tests pass, including the three this once blocked. Producing
-`03-report-fail.json` and `05-report-pass.json` is now ordinary work with
-nothing in front of it.
+**Resolved 2026-08-04; the two fixtures were simply not written yet until
+2026-08-13.** The paragraph below is the defect AS FOUND and is kept because
+it is the record of what the two-party proof caught, but its present tense
+stopped being true on the day it was written: commit `9f02f261` — the same
+commit that added this directory — taught `splitDataContractReference` to
+cut on `#` first and CHECK the digest instead of refusing it. Re-verified
+2026-08-13: all seven `TestDataLoop*` tests pass, including the three this
+once blocked, and `TestDataGoldenSequence` now drives its own fail →
+supersede → pass sequence through the real `a2a data verify --record`
+exactly as an operator would.
 
 AS FOUND: **they are missing because `a2a data verify` cannot resolve any
 real package's contract — a confirmed product defect, not a gap in this
@@ -74,7 +79,7 @@ parser's digest-suffix rejection is never exercised end to end.
 UPDATE_GOLDEN=1 go test ./internal/e2e/... -run TestDataGoldenSequence -count=1
 ```
 
-This overwrites all three files in this directory with the current run's
+This overwrites all five files in this directory with the current run's
 own masked output. **Always review the diff before committing** — that
 review IS the point of this fixture existing. Do not hand-edit these files
 directly; if a value needs to change, change it by running the loop and
@@ -99,15 +104,41 @@ for either), so they are masked rather than left to vary:
   parser — so a regression in the ID FORMAT ITSELF (not just its random
   suffix) fails the test loudly instead of silently vanishing into a
   placeholder.
-- **Timestamps** (`created_at`, `expires_at`, and the request envelope's
-  own `created`) that are wall-clock-derived are replaced with the literal
-  string `REDACTED-TIMESTAMP` via a generic RFC 3339 pattern match. Spec
-  §T2.1 itself says a producer timestamp is "never a protocol ordering
-  key", so nothing about its exact value is a wire property this golden
-  should assert. (The request envelope's `created` field happens to be
-  fully pinned by this test's OWN literal draft content rather than
-  produced by the binary — it is masked anyway, defensively, in case a
-  future change makes `a2a submit` stamp or rewrite it.)
+- **Report ids** (`VR-axon-<YYYYMMDD>-<rand4>`) — verification-report/v1's
+  own id, `datapackage.MintReportIDAt`, mirroring the package-id treatment
+  exactly: exact-string substitution to `VR-axon-REDACTED-0001` /
+  `VR-axon-REDACTED-0002`, round-tripped through `datapackage.ParseReportID`
+  first. (Its random suffix is itself derived deterministically from the
+  package id and pinned contract ref — see `dataReportEntropy`,
+  `cmd/a2a/data_wiring.go` — but the date component is still the wall
+  clock's, so it still needs masking the same way.)
+- **Timestamps** (`created_at`, `expires_at`, the request envelope's own
+  `created`, and `started_at`/`finished_at` on both report fixtures) that
+  are wall-clock-derived are replaced with the literal string
+  `REDACTED-TIMESTAMP` via a generic RFC 3339 pattern match. Spec §T2.1
+  itself says a producer timestamp is "never a protocol ordering key", so
+  nothing about its exact value is a wire property this golden should
+  assert. (The request envelope's `created` field happens to be fully
+  pinned by this test's OWN literal draft content rather than produced by
+  the binary — it is masked anyway, defensively, in case a future change
+  makes `a2a submit` stamp or rewrite it.)
+- **`observed.duration_ms`** on both report fixtures — the consumer's own
+  measured elapsed time between `datapackage.Verify`'s two clock reads. Not
+  a protocol property either (verify.go's own doc comment: it is one of
+  only three values a re-run over the same package and contract may
+  legitimately differ on), and not reliably zero, so it is replaced with
+  the literal `"duration_ms":0` via a pattern match on the field itself —
+  a numeric field's mask must itself be a valid JSON number, unlike the
+  string-interior timestamp mask above.
+
+  The asymmetry is deliberate and worth one sentence, because the phase audit
+  read it as a contradiction: a masked STRING stays a string and the document
+  stays decodable, while a masked NUMBER replaced by a string would change the
+  field's type. What the timestamp mask does give up is schema VALIDITY —
+  `REDACTED-TIMESTAMP` is not a `format: date-time` — and nothing currently
+  validates these fixtures against verification-report/v1 after masking, so
+  that is unobserved rather than accepted. If a future gate does validate
+  them, the timestamp mask is what it will trip on first.
 
 ## What is deliberately NOT masked
 

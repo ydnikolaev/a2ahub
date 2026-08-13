@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path"
 	"strings"
 
+	"github.com/ydnikolaev/a2ahub/internal/datatransport"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 )
 
@@ -251,7 +253,31 @@ func DeliverDataPackage(ctx context.Context, req DataDeliveryRequest, funnel *Wr
 		return WriteResult{}, fmt.Errorf("%w: %w", ErrDataDeliveryInvalid, err)
 	}
 
-	driver := newSpaceGitDriver("")
+	// THE MANIFEST NAMES ITS OWN TRANSPORT, AND THAT FIELD IS NOW READ.
+	//
+	// `transport_driver` was written at exactly one site and read by nobody —
+	// spec 05a §9.3 leaned on a seam that did not exist. Looking the driver up
+	// by the value the manifest declares is what makes "a second driver is a
+	// registry entry" true rather than promised: the delivery path stops
+	// naming a transport and starts asking which one this package uses.
+	//
+	// Only the one field is decoded, deliberately. ADR-015 does not grant
+	// internal/space an import of internal/datapackage, and it does not need
+	// one: a driver name is a string, and manifest SEMANTICS stay where they
+	// live.
+	var declared struct {
+		TransportDriver string `json:"transport_driver"`
+	}
+	if err := json.Unmarshal(req.ManifestRaw, &declared); err != nil {
+		return WriteResult{}, fmt.Errorf("%w: manifest is not readable JSON: %w", ErrDataDeliveryInvalid, err)
+	}
+	if err := registerSpaceGit(); err != nil {
+		return WriteResult{}, fmt.Errorf("space: registering the space-git transport driver: %w", err)
+	}
+	driver, err := datatransport.Default.Lookup(declared.TransportDriver)
+	if err != nil {
+		return WriteResult{}, fmt.Errorf("%w: %w", ErrDataDeliveryInvalid, err)
+	}
 	locator, err := driver.Locate(req.System, req.PackageID)
 	if err != nil {
 		return WriteResult{}, fmt.Errorf("%w: %w", ErrDataDeliveryInvalid, err)

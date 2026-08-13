@@ -13,9 +13,13 @@ import (
 
 func newTestDataDeliveryRequest(fx *spacefixture.Fixture, system string) DataDeliveryRequest {
 	return DataDeliveryRequest{
-		System:          system,
-		PackageID:       "DP-" + system + "-20260804-ab12",
-		ManifestRaw:     []byte(`{"schema":"data-package/v1","id":"DP-` + system + `-20260804-ab12"}`),
+		System:    system,
+		PackageID: "DP-" + system + "-20260804-ab12",
+		// `transport_driver` is present because data-package/v1's schema
+		// REQUIRES it and every real manifest carries it — this fixture
+		// omitted it, and DeliverDataPackage now reads the field to look up
+		// which driver moves the bytes, so the omission became visible.
+		ManifestRaw:     []byte(`{"schema":"data-package/v1","id":"DP-` + system + `-20260804-ab12","transport_driver":"space-git"}`),
 		AggregateDigest: "sha256:" + "aa11" + "0000000000000000000000000000000000000000000000000000000000",
 		Payload:         map[string][]byte{"orders.json": []byte(`[{"id":1}]`)},
 		HandoffID:       "XH-" + system + "-20260804-cd34",
@@ -700,4 +704,32 @@ func operationKeyValid(key string) bool {
 		}
 	}
 	return true
+}
+
+// TestDeliverDataPackageRefusesAnUnregisteredTransport is the other half of
+// the registry wiring: a manifest naming a driver nothing registered must be
+// REFUSED, not silently delivered by whatever driver happens to be first.
+//
+// Without this, `Lookup` could be replaced by a hardcoded construction again
+// and every existing test would still pass — which is exactly the state the
+// phase audit found: a registry with no production caller, and an AC-8
+// promise ("a second driver is a registry entry") that was not true as wired.
+func TestDeliverDataPackageRefusesAnUnregisteredTransport(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	req := newTestDataDeliveryRequest(fx, "axon")
+	req.ManifestRaw = []byte(`{"schema":"data-package/v1","id":"DP-axon-20260804-ab12","transport_driver":"no-such-driver"}`)
+
+	funnel := NewWriteFunnel(host.NewFakeHost(), nil, "0.1.0")
+	_, err := DeliverDataPackage(context.Background(), req, funnel)
+	if err == nil {
+		t.Fatal("DeliverDataPackage with an unregistered transport_driver = nil error, want a refusal")
+	}
+	if !errors.Is(err, ErrDataDeliveryInvalid) {
+		t.Fatalf("error = %v, want it to wrap ErrDataDeliveryInvalid", err)
+	}
+	if !strings.Contains(err.Error(), "no-such-driver") {
+		t.Fatalf("error = %v, want it to name the unregistered driver", err)
+	}
 }
