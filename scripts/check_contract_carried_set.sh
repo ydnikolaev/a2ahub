@@ -4,29 +4,93 @@
 # published v1 bytes stay immutable; no second carried-set/digest builder may
 # grow in a transport or adapter.
 #
+# The role/root vocabulary — canonicalRoles and canonicalRoleRoots below — is
+# NOT hand-declared. It is DERIVED, once, from the envelope/v2 descriptor
+# schema via testkit/contractroots.Declared, the same extractor
+# internal/contract's own roots_gate_test.go and internal/e2e's space-layout
+# gate already consume. Before this fix the two arrays were literals asserted
+# against the schema, internal/contract and the v2 template — the reverse of
+# the extractor's direction, and exactly the defect class P11 §3 I4 names:
+# "any hand-maintained copy of that list is a defect of the same class it
+# guards" (docs/backlog.md, "check_contract_carried_set.sh hand-declares the
+# role/root map"). One schema change now reaches every consumer of the map —
+# this gate included — or none of them.
+#
+# contractroots.Declared takes a *testing.T: it was written as a testkit
+# helper for Go tests, not a standalone library call, because every OTHER
+# consumer already is one. This gate is the first NON-test consumer, so it is
+# itself now a `go test` of one synthesized Test function rather than a
+# `go run` of a bare main package — that is the only reason this file changed
+# from *_test.go-less to *_test.go.
+#
+# The canonical side and the checked side deliberately read from two
+# different places, and that asymmetry is load-bearing, not an oversight:
+# contractroots.Declared reads the schema through go:embed — compiled into
+# the test binary from THIS repository's real, pristine schemas/ tree,
+# regardless of $ROOT — while checkContractSchema below still reads
+# schemas/envelope/v2/contract.schema.json off *disk* at $ROOT, which
+# scripts/tests/check_contract_carried_set_test.sh points at a mutated COPY
+# of the corpus for its --teeth-equivalent drift fixtures. Losing that split
+# (e.g. by making contractroots itself read from $ROOT one day) would
+# silently zero the "role enum drift" and "schema role/root drift" fixtures:
+# both would compare the mutated copy against itself and always agree.
+#
+# One residue of the split above is worth naming rather than hiding: run
+# against the real repository (the default, ROOT unset), $ROOT IS the
+# pristine tree, so checkContractSchema's own comparison degenerates into
+# schemaRoleRoots (this file's own parser) agreeing with contractroots.declare
+# (the extractor's parser) on the same bytes — a cross-parser agreement check,
+# not a drift check. That is not a regression: a role added to the schema
+# alone still reds, just from checkCoreVocabulary and checkTemplateVocabulary
+# (internal/contract and the v2 template no longer match the now-larger
+# derived set), which is P11 I4's direction working as designed. The ideal
+# fix collapses schemaRoleRoots into a single call to the extractor's own
+# unexported `declare([]byte)` on $ROOT's bytes; `declare` isn't exported and
+# testkit/contractroots is outside this script's allowlist, so the parser
+# stays duplicated here for now (tracked, not silently accepted).
+#
 # lane-inputs:
-#   schemas/envelope/v2/contract.schema.json
-#   schemas/templates/v2/contract.md
-#   schemas/event/v2/event.schema.json
-#   schemas/published-v1.sha256
-#   schemas/**/v1/**
+#   schemas/**
+#   testkit/contractroots/contractroots.go
 #   internal/**/*.go
 #   !internal/**/*_test.go
 # lane-reads-opaque: this gate writes a complete Go analyzer into
-#   "$ANALYZER_DIR/main.go" (a mktemp -d, so the path exists only at run time)
-#   and `go run`s it. The classifier cannot follow that, and the heredoc body is
-#   excluded from shell scanning by design — so what the analyzer reads is
-#   declared above from having READ the body: it walks internal/ for a second
-#   digest builder, and reads schemas/published-v1.sha256 plus every v1 path the
-#   manifest lists.
+#   "$ANALYZER_DIR/carried_set_test.go" (a mktemp -d, so the path exists only
+#   at run time) and `go test`s it. The classifier cannot follow that, and the
+#   heredoc body is excluded from shell scanning by design — so what the
+#   analyzer reads is declared above from having READ the body: it walks
+#   internal/ for a second digest builder, reads schemas/published-v1.sha256
+#   plus every v1 path the manifest lists, and — new in this revision —
+#   imports testkit/contractroots and, transitively, package schemas. That
+#   package's go:embed directives (schemas/embed.go) make nearly the whole
+#   schemas/ tree (every file group they name; fixtures/ is the one directory
+#   go:embed itself excludes) a BUILD-time dependency of the test binary, so
+#   `schemas/**` replaces the narrower file-by-file list that was accurate
+#   only while this analyzer read paths directly off disk and imported
+#   nothing outside the standard library.
 set -euo pipefail
 
-ROOT="${CONTRACT_CARRIED_SET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}"
+# MODULE_ROOT is always the real checkout containing go.mod — derived from
+# this script's own path, never from $ROOT/CONTRACT_CARRIED_SET_ROOT. `go
+# test` resolves its module from the process's CURRENT WORKING DIRECTORY, not
+# from the analyzer file's location, and scripts/tests/check_contract_carried_
+# set_test.sh points $ROOT at a corpus-only copy tree (schemas/ + internal/,
+# no go.mod of its own) for its drift fixtures — `go test -C "$MODULE_ROOT"`
+# below pins module resolution there regardless of where $ROOT points or
+# where this script itself was invoked from.
+MODULE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+
+# Resolved to an absolute path HERE, before export: `go test -C
+# "$MODULE_ROOT"` changes the test process's own working directory, so a
+# relative $ROOT would resolve against MODULE_ROOT instead of against
+# whatever directory the caller meant when they set it.
+ROOT="${CONTRACT_CARRIED_SET_ROOT:-$MODULE_ROOT}"
+ROOT="$(cd "$ROOT" && pwd -P)"
 ANALYZER_DIR="$(mktemp -d)"
 trap 'rm -rf "$ANALYZER_DIR"' EXIT
 
-cat >"$ANALYZER_DIR/main.go" <<'GO'
-package main
+cat >"$ANALYZER_DIR/carried_set_test.go" <<'GO'
+package carriedset
 
 import (
 	"bufio"
@@ -43,31 +107,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"testing"
+
+	"github.com/ydnikolaev/a2ahub/testkit/contractroots"
 )
-
-var canonicalRoles = []string{
-	"schema",
-	"valid-fixture",
-	"invalid-fixture",
-	"errors",
-	"vocabulary",
-	"limits",
-	"changelog",
-	"example",
-	"other",
-}
-
-var canonicalRoleRoots = map[string]string{
-	"schema":          "schema/",
-	"valid-fixture":   "fixtures/valid/",
-	"invalid-fixture": "fixtures/invalid/",
-	"errors":          "artifacts/",
-	"vocabulary":      "artifacts/",
-	"limits":          "artifacts/",
-	"changelog":       "artifacts/",
-	"example":         "artifacts/",
-	"other":           "artifacts/",
-}
 
 var publicationProfiles = []string{
 	"contract-tree-v1",
@@ -149,19 +192,42 @@ var legacySubtreeAllowlist = map[string]bool{}
 type checker struct {
 	root   string
 	errors []string
+
+	// canonicalRoles and canonicalRoleRoots are no longer literals: they are
+	// set once per run, in TestContractCarriedSet, from
+	// contractroots.Declared — the extractor every other consumer of this map
+	// already reads from. Carrying them as fields rather than package vars
+	// keeps every check below reading through `c`, so nothing can quietly
+	// fall back to a hand-maintained copy.
+	canonicalRoles     []string
+	canonicalRoleRoots map[string]string
 }
 
-func main() {
-	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: contract-carried-set-analyzer <repository-root>")
-		os.Exit(2)
+// TestContractCarriedSet is this gate's entire body, run as a single Go test
+// rather than a bare main() — see the header comment for why go run stopped
+// being able to serve once the golden role/root map moved into
+// testkit/contractroots.Declared, which is itself testkit (it takes a
+// *testing.T).
+func TestContractCarriedSet(t *testing.T) {
+	root := os.Getenv("CONTRACT_CARRIED_SET_ROOT")
+	if root == "" {
+		t.Fatal("CONTRACT_CARRIED_SET_ROOT is unset: the shell wrapper must export the corpus root before running this test")
 	}
-	root, err := filepath.Abs(os.Args[1])
+	root, err := filepath.Abs(root)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "contract-carried-set: resolve root: %v\n", err)
-		os.Exit(2)
+		t.Fatalf("resolve root %q: %v", root, err)
 	}
-	c := &checker{root: root}
+
+	roots, declaredRoles := contractroots.Declared(t)
+	canonicalRoles := append([]string(nil), declaredRoles...)
+	canonicalRoleRoots := make(map[string]string, len(canonicalRoles))
+	for _, r := range roots {
+		for _, role := range r.Roles {
+			canonicalRoleRoots[role] = r.Root + "/"
+		}
+	}
+
+	c := &checker{root: root, canonicalRoles: canonicalRoles, canonicalRoleRoots: canonicalRoleRoots}
 	c.checkContractSchema()
 	c.checkCoreVocabulary()
 	c.checkTemplateVocabulary()
@@ -171,22 +237,23 @@ func main() {
 	if len(c.errors) != 0 {
 		sort.Strings(c.errors)
 		for _, message := range c.errors {
-			fmt.Fprintf(os.Stderr, "contract-carried-set: FAIL — %s\n", message)
+			t.Errorf("contract-carried-set: FAIL — %s", message)
 		}
-		os.Exit(1)
+		return
 	}
-	fmt.Println("contract-carried-set: ok — 9 roles, 2 publication profiles, 1 provenance profile, immutable v1 and one canonical builder")
+	fmt.Printf("contract-carried-set: ok — %d roles, %d publication profiles, %d provenance profile, immutable v1 and one canonical builder\n",
+		len(canonicalRoles), len(publicationProfiles), len(allProfiles)-len(publicationProfiles))
 }
 
 func (c *checker) checkContractSchema() {
 	doc := c.readJSON("schemas/envelope/v2/contract.schema.json")
 	roles := stringArrayAt(doc, "$defs", "artifactEntry", "properties", "role", "enum")
-	if !reflect.DeepEqual(roles, canonicalRoles) {
-		c.add("contract schema role enum = %v, want canonical 9-role vocabulary %v", roles, canonicalRoles)
+	if !reflect.DeepEqual(roles, c.canonicalRoles) {
+		c.add("contract schema role enum = %v, want canonical %d-role vocabulary %v", roles, len(c.canonicalRoles), c.canonicalRoles)
 	}
 	roleRoots := schemaRoleRoots(doc)
-	if !reflect.DeepEqual(roleRoots, canonicalRoleRoots) {
-		c.add("contract schema role/root matrix = %v, want %v", roleRoots, canonicalRoleRoots)
+	if !reflect.DeepEqual(roleRoots, c.canonicalRoleRoots) {
+		c.add("contract schema role/root matrix = %v, want %v", roleRoots, c.canonicalRoleRoots)
 	}
 }
 
@@ -199,8 +266,8 @@ func (c *checker) checkCoreVocabulary() {
 		return
 	}
 	roles := typedStringConstants(typesFile, "Role")
-	if !reflect.DeepEqual(roles, canonicalRoles) {
-		c.add("internal/contract Role constants = %v, want %v", roles, canonicalRoles)
+	if !reflect.DeepEqual(roles, c.canonicalRoles) {
+		c.add("internal/contract Role constants = %v, want %v", roles, c.canonicalRoles)
 	}
 	profiles := typedStringConstants(typesFile, "DigestProfile")
 	if !reflect.DeepEqual(profiles, allProfiles) {
@@ -214,8 +281,8 @@ func (c *checker) checkCoreVocabulary() {
 		return
 	}
 	roleRoots := coreRoleRoots(setFile, typedStringConstantMap(typesFile, "Role"))
-	if !reflect.DeepEqual(roleRoots, canonicalRoleRoots) {
-		c.add("internal/contract role/root matrix = %v, want %v", roleRoots, canonicalRoleRoots)
+	if !reflect.DeepEqual(roleRoots, c.canonicalRoleRoots) {
+		c.add("internal/contract role/root matrix = %v, want %v", roleRoots, c.canonicalRoleRoots)
 	}
 	routedProfiles := switchCaseValues(setFile, "BuildCarriedSet", typedStringConstantMap(typesFile, "DigestProfile"))
 	if !reflect.DeepEqual(routedProfiles, sortedStrings(publicationProfiles)) {
@@ -239,8 +306,8 @@ func (c *checker) checkTemplateVocabulary() {
 		c.add("v2 contract template omits export-source-v1 provenance profile")
 	}
 
-	allowed := stringSet(canonicalRoles)
-	seen := make(map[string]bool, len(canonicalRoles))
+	allowed := stringSet(c.canonicalRoles)
+	seen := make(map[string]bool, len(c.canonicalRoles))
 	var roles []string
 	addRole := func(role string, line int) {
 		if !allowed[role] {
@@ -276,8 +343,8 @@ func (c *checker) checkTemplateVocabulary() {
 	if err := scanner.Err(); err != nil {
 		c.add("scan %s: %v", rel, err)
 	}
-	if !reflect.DeepEqual(roles, canonicalRoles) {
-		c.add("v2 contract template role vocabulary = %v, want %v", roles, canonicalRoles)
+	if !reflect.DeepEqual(roles, c.canonicalRoles) {
+		c.add("v2 contract template role vocabulary = %v, want %v", roles, c.canonicalRoles)
 	}
 }
 
@@ -418,7 +485,7 @@ func (c *checker) checkDuplicateImplementations() {
 								continue
 							}
 							decoded, err := strconv.Unquote(literal.Value)
-							if err == nil && stringSet(canonicalRoles)[decoded] {
+							if err == nil && stringSet(c.canonicalRoles)[decoded] {
 								localRoles = append(localRoles, decoded)
 							}
 							if err == nil && stringSet(allProfiles)[decoded] {
@@ -741,4 +808,31 @@ func (c *checker) add(format string, args ...any) {
 }
 GO
 
-go run "$ANALYZER_DIR/main.go" "$ROOT"
+# CONTRACT_CARRIED_SET_ROOT is exported so TestContractCarriedSet can read
+# which corpus tree to walk without a CLI arg — `go test` owns argv for its
+# own flags, unlike the `go run "$ANALYZER_DIR/main.go" "$ROOT"` shape this
+# replaced.
+#
+# -count=1 forces a fresh run rather than trusting the test result cache.
+# Empirically, `go test`'s cache DOES invalidate on a changed CONTRACT_
+# CARRIED_SET_ROOT value and on changed file bytes under it (verified by
+# probing a same-package ad hoc test against a getenv-gated failure both
+# cached and mutated) — but this gate's whole job is drift detection, and the
+# real check_contract_carried_set_test.sh calls it 19 times against 19
+# different fixture trees with a green start and end around them. A false
+# "(cached) ok" here is exactly the failure mode this repo names explicitly
+# ("a suite that silently stopped testing anything passes green"), so the
+# guarantee is made explicit rather than left to inference about cache
+# internals.
+#
+# -v is needed for a reason beyond human-readability: without it, `go test`
+# swallows a passing test's own stdout (fmt.Println/Printf included, not only
+# t.Log) and prints only "ok". The "contract-carried-set: ok — N roles, ..."
+# summary is written with a plain fmt.Printf specifically so a human running
+# `make contract-carried-set` sees the derived counts confirmed, not just a
+# bare "ok" — verified empirically: identical run without -v produced no
+# summary line at all. A FAILING test's t.Errorf output is unaffected by -v
+# either way (go test always shows FAIL output), so this flag changes
+# nothing about what --teeth's expect_red greps for.
+export CONTRACT_CARRIED_SET_ROOT="$ROOT"
+go test -C "$MODULE_ROOT" -count=1 -v "$ANALYZER_DIR/carried_set_test.go"
