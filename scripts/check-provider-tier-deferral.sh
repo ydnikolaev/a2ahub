@@ -183,6 +183,33 @@ check_provider_tier_deferral() {
     return 0
   fi
 
+  # A SHALLOW CLONE CANNOT ANSWER THIS QUESTION EITHER, and it used to answer
+  # it anyway — confidently, and wrong.
+  #
+  # This gate orders artifacts by when git first saw them (added_at, below),
+  # because filenames carry a VERSION for one kind and a DATE for the other
+  # and are not comparable. With `actions/checkout`'s default fetch-depth of
+  # 1 there is exactly one commit and no parent, so `git log --diff-filter=A`
+  # reports EVERY tracked path as added in it, at the same timestamp. Every
+  # release then reads as "not newer than the last live-e2e evidence" and is
+  # skipped, and the gate prints "ok — 0 release(s) outstanding".
+  #
+  # Observed live on 2026-08-13, in the first CI run of the lane job P13 K4
+  # had just wired: this gate reported 0 outstanding in a repository whose
+  #real answer was 14. That is the same false-affirmative shape as the stripped
+  # public checkout above, reached by a different missing input, and it is
+  # worse than the red it replaced because nobody investigates a green.
+  # `--is-shallow-repository` is the WRONG test and was tried first: this
+  # project's own working tree answers "true" while carrying 1409 commits, so
+  # keying on it disabled the gate exactly where it is supposed to refuse. The
+  # discriminator is whether there is any history to order BY.
+  local depth
+  depth="$(git rev-list --count HEAD 2>/dev/null || echo 0)"
+  if [ "${depth:-0}" -le 1 ]; then
+    echo "provider-tier-deferral: skip — single-commit history (actions/checkout's default depth); this gate orders evidence by git add-date, and with no parent commit EVERY path reads as added at the same moment, which silently reports zero outstanding. Use fetch-depth: 0 to judge the streak here."
+    return 0
+  fi
+
   # Find the most recently ADDED live-e2e evidence artifact. An untracked
   # artifact (no git add-date) is treated as though it does not exist yet
   # (timestamp 0): this gate follows committed git history, not the working
@@ -418,6 +445,19 @@ teeth() {
       git init -q
       git config user.email test@example.invalid
       git config user.name teeth
+      # A ROOT COMMIT, so every fixture has real history to order by.
+      #
+      # Without it a fixture that makes exactly one commit is
+      # indistinguishable from `actions/checkout`'s depth-1 clone, and the
+      # single-commit guard above correctly declines — which made case 7 read
+      # as "a recordless release stayed green" when the gate had in fact
+      # refused to judge at all. The fixture was the unrealistic one: a real
+      # repository does not have one commit, and the guard exists precisely
+      # because a one-commit history cannot date anything.
+      : >.teeth-root
+      git add .teeth-root
+      GIT_AUTHOR_DATE="@1 +0000" GIT_COMMITTER_DATE="@1 +0000" \
+        git commit -q -m "root"
     )
   }
 
