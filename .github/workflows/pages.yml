@@ -34,6 +34,19 @@ jobs:
   deploy:
     # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
     timeout-minutes: 32
+    # Pages is enabled on the PUBLIC repository and nowhere else, so this job
+    # ran 31 times in the private one and failed 30 of them (P13 F10, ~40
+    # equivalent minutes). A job that cannot succeed where it runs is not a
+    # flaky gate — it is a job with no verdict to give, billing for the
+    # attempt and adding a red line to a run list people then learn to ignore.
+    #
+    # The literal names the PUBLIC repo deliberately, which is the same
+    # direction codeql.yml and classify-guard.yml already use and the same
+    # inversion wave R8 applied to ci.yml: the public repo is the one ADR-014
+    # does not move. If it were ever renamed, this goes FALSE and the deploy
+    # simply stops — visible, and cheap. The other direction would have it go
+    # TRUE in a repository with no Pages site, which is where it started.
+    if: github.repository == 'ydnikolaev/a2ahub'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
