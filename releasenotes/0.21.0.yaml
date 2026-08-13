@@ -79,3 +79,77 @@ changes:
       The result type now carries the run URL and the doctor row prints it.
       When the provider omits the field the message degrades to exactly what it
       said before, never to an empty link.
+  - id: RN-02100-3
+    kind: perf
+    roadmap:
+      visibility: shipped
+      why: >
+        CI ran the ship gate on every push, on every branch, in two
+        repositories, while the derivation that prices validation off the
+        changed-file set existed, was gated, was measured, and was invoked by
+        hand at a terminal. One question, two answers, one of them hard-coded
+        in YAML.
+    impact: high
+    subject: "CI charges what the diff can justify"
+    detail: >
+      A ten-times-priced macOS runner ran on every push and every pull request
+      in both repositories, for about fifty-two seconds of Swift work — 55.3%
+      of the measured bill over a twelve-day window, against ZERO commits
+      touching the companion it compiles. It is now reachable only from a diff
+      that can change its verdict, from a tag, or from one weekly run that
+      exists so a filter which silently never fires cannot look like a filter
+      that correctly never fires.
+
+      A push now buys the derived lane; the ceiling runs at the ship boundary
+      — candidate refs, tags, a nightly schedule and manual dispatch. Pull
+      requests keep the ceiling deliberately: moving them would remove
+      validating proof from branches that accept external writes, and that is
+      gated behind a merge-gate precondition this release does not claim.
+
+      Superseded runs now cancel. A sub-minute gate that billed a whole runner
+      minute folds into the job the run already pays for. Pages stops running
+      in the repository where Pages is not enabled, where it had failed thirty
+      times out of thirty-one.
+
+      Every decision lives in a script with its own self-tests, not in a
+      workflow expression: the linter already in the pipeline was measured
+      saying nothing at all about a job with no path condition and nothing
+      about a missing timeout.
+  - id: RN-02100-4
+    kind: fix
+    roadmap:
+      visibility: shipped
+      why: >
+        Two gates were counting the wrong noun and reporting green while the
+        thing they exist to catch went past them.
+    impact: medium
+    subject: "the release-evidence gate counts releases, and the spend is a command"
+    detail: >
+      The provider-tier gate counted deferral RECORDS, so a release that
+      simply omitted the file was invisible to the mechanism built to make
+      the streak refusable — and omitting it was easier than writing it.
+      Re-keyed to releases, it found three releases that had shipped with
+      neither a deferral record nor live-e2e evidence where one was known.
+
+      The CI spend is now re-derivable by one command, replayed offline
+      against a persisted raw join rather than re-fetched. Its first act was
+      to falsify two claims this project had written down about its own
+      billing the day before.
+  - id: RN-02100-5
+    kind: fix
+    roadmap:
+      visibility: shipped
+      why: >
+        A gate that walks the tree must not be able to run a job unbounded or
+        under-scoped, and a hand-verified invariant is a gate nobody has
+        written yet.
+    impact: medium
+    subject: "a new gate refuses the next ungated expensive runner"
+    detail: >
+      Every job in every workflow must declare a timeout, sized at or above
+      1.5x its measured p99 from a committed artefact and under a
+      sixty-minute cap, and a job on a non-ubuntu runner must be reachable
+      only through a condition on what the diff touched.
+
+      It caught a real under-scoped timeout on its first run against the
+      tree it was written for.
