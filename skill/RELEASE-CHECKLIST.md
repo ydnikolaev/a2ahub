@@ -51,11 +51,37 @@ not drifted from the plan wording it quotes.
 
 ## Sign-off
 
-- **Release tag:** `v0.20.0`
+- **Release tag:** `v0.21.0`
 - **Reviewer:** `Claude Code`
-- **Date:** `2026-08-12`
+- **Date:** `2026-08-13`
 
-> **v0.20.0 DOES change prose**, so this is a fresh review rather than an
+> **v0.21.0 CHANGES NO PROSE, so this review is INHERITED from v0.20.0** — and
+> that claim is the thing worth checking, not the tick beside it. Verified by
+> enumerating the diff rather than by recalling what the work touched:
+> `git diff --name-only <v0.20.0 release commit>..HEAD -- 'skill/'` returns
+> ZERO files.
+>
+> That is consistent with what the release is: the feedback hub moves to a
+> different BRANCH of the same repository, and the CI cadence changes. Neither
+> is agent-facing. `a2a feedback submit` and `a2a feedback status` behave
+> identically from a caller's side — the address they use changed, not the
+> contract they expose — so no loop, no troubleshooting row and no reference
+> page has anything new to say.
+>
+> **One thing a later reader should NOT infer from that**: "no prose changed"
+> is not "nothing user-visible changed". A report filed by a binary older than
+> this release still lands on the legacy branch, and the rollover window that
+> covers it is documented in `docs/runbooks/feedback-hub.md`, which is a
+> maintainer document and deliberately not part of the shipped skill. If that
+> window is ever mishandled, the failure will be visible to reporters and
+> invisible to this checklist.
+>
+> The v0.20.0 review below stands unchanged and is reproduced as the inherited
+> basis.
+>
+> ---
+>
+> **v0.20.0 DOES change prose**, so that was a fresh review rather than an
 > inherited one. Two files moved, and both were checked by enumerating the
 > shipped surface, not by reading the page:
 >
@@ -87,7 +113,7 @@ not drifted from the plan wording it quotes.
       prose review).
 
 **The second box is deliberately OPEN, and cannot honestly be anything else
-yet: no candidate for `v0.20.0` exists.** It is ticked AFTER the tag, and
+yet: no candidate for `v0.21.0` exists.** It is ticked AFTER the tag, and
 structurally has to be — `skill/` ships in the public projection, so ticking it
 inside a candidate would change the candidate it describes. The box can never
 be true in its own release.

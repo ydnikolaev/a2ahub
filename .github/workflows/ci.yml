@@ -57,7 +57,23 @@ on:
     # hours of latency on that verdict and records the acceptance as the
     # operator's, not the implementer's.
     - cron: '23 2 * * *'
+  # The input exists because the spec asked for two contradictory things from
+  # this one trigger, and shipping either alone makes the other unexecutable.
+  # AC8 puts the CEILING on workflow_dispatch; §5 rung 5 and §5.1 check 10 say
+  # a per-wave dispatch must run the DERIVED LANE, "never the ceiling", and
+  # price it at single-digit minutes rather than fifteen. Both are reasonable
+  # and they are about different occasions: proving a tree, versus observing
+  # what a wave changed about selection. So the occasion is an input, and the
+  # default is the expensive, safe one.
   workflow_dispatch:
+    inputs:
+      tier:
+        description: 'Which tier this dispatch buys'
+        type: choice
+        default: ceiling
+        options:
+          - ceiling
+          - lane
 
 # Superseded runs stop (P13 K6, AC6). 689 commits in twelve days, pushed in
 # bursts, and every intermediate push held a runner to completion while the
@@ -113,6 +129,7 @@ jobs:
           CI_EVENT_NAME: ${{ github.event_name }}
           CI_REF: ${{ github.ref }}
           CI_SCHEDULE: ${{ github.event.schedule }}
+          CI_DISPATCH_TIER: ${{ inputs.tier }}
           CI_PR_NUMBER: ${{ github.event.pull_request.number }}
           CI_BEFORE_SHA: ${{ github.event.before }}
           CI_AFTER_SHA: ${{ github.sha }}

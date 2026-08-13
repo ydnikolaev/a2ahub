@@ -5,12 +5,21 @@ issues:
     impact: normal
     subject: "The current releases shipped with their provider-tier verification deferred, by explicit operator authorization"
     detail: >
-      v0.19.0 through v0.19.3, v0.19.6 through v0.19.10, and now v0.20.0 shipped this
-      way — TEN records, each authorized separately for its own candidate, and the
-      count is machine-refused unless the newest record signs for its own position
-      in the streak. The true number of releases is at least one higher: v0.19.11
-      shipped with no deferral record at all, and the gate can only count records
-      that exist, so a release that writes none is invisible to it. Their scenario LOGIC is fully verified: the whole
+      Every release from v0.19.0 through v0.21.0 shipped this way — FOURTEEN of
+      them, each authorized separately for its own candidate, and the count is
+      machine-refused unless the newest record signs for its own position in the
+      streak.
+
+      The number was TEN until 2026-08-13, and the correction is worth stating
+      plainly rather than quietly applying: the gate counted deferral RECORDS,
+      not releases, so a release that simply omitted the file was invisible to
+      the mechanism built to make the streak refusable — and omitting it was
+      easier than writing it. Re-keying the gate to releases found three that
+      had shipped with no record at all (v0.19.4, v0.19.5, v0.19.11) where one
+      was known. Each now carries a retrospective record stating what it is: a
+      record of an ABSENCE, carrying no signature, asserting only that no
+      decision was written down — never that the tier did not run, which is
+      exactly the state no evidence points either way about. Their scenario LOGIC is fully verified: the whole
       catalogue runs locally against a faithful host stand-in over real git
       repositories, and every row that tier may judge passed on the exact
       published candidate. What neither carries is a full live GitHub matrix.

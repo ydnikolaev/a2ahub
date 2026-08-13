@@ -158,6 +158,31 @@ check_provider_tier_deferral() {
   local -a uncleared_records=()
   local -a recordless=()
 
+  # THE EVIDENCE CORPUS MUST BE PRESENT, OR THIS GATE HAS NOTHING TO JUDGE.
+  #
+  # This script is PUBLIC and ships to the published candidate; the deferral
+  # records and live-e2e artifacts it reads live under docs/, which
+  # publish-to-public.sh STRIPS from every published commit. So in a public
+  # checkout the gate sees release notes and no evidence of any kind.
+  #
+  # That asymmetry used to be harmless in the worst possible way: while this
+  # gate counted RECORDS, zero records meant zero outstanding and it printed
+  # "ok — 0 outstanding" — a confident green about a streak it could not see,
+  # which the v0.20.0 audit had already called out as misleading. Re-keying it
+  # to RELEASES turned the same blindness into a candidate-breaking RED:
+  # releasenotes/ survives the publish, so every published release would read
+  # as "shipped with no evidence" and `make check` on the candidate would fail
+  # for a reason that exists only in the checkout.
+  #
+  # Neither answer is honest. A gate whose inputs are absent must say so and
+  # decline — the same shape as the presence-gated private harness gates in
+  # the Makefile, moved inside the script because here it is the DATA that is
+  # stripped, not the script.
+  if [ ! -d docs/features ]; then
+    echo "provider-tier-deferral: skip — docs/features absent (public checkout); the deferral records and live-e2e evidence this gate judges are stripped at publish, so this checkout cannot see the streak and will not guess at it."
+    return 0
+  fi
+
   # Find the most recently ADDED live-e2e evidence artifact. An untracked
   # artifact (no git add-date) is treated as though it does not exist yet
   # (timestamp 0): this gate follows committed git history, not the working
@@ -728,7 +753,30 @@ teeth() {
     exit 1
   }
 
-  echo "provider-tier-deferral --teeth: 3 uncleared releases red and names them; 2 uncleared greens; a live-e2e run after the oldest of 3 clears it to 2 and greens by git history, not mtime or filename; an untracked 3rd release reds too; an acknowledged 3rd ships; a 4th does NOT inherit the 3rd's signature; a recordless release reds unconditionally, even a lone one; a backfill of older records leaves the signature in the NEWEST RELEASE's record; a <placeholder> example is not a signature."
+  # Case 10: THE PUBLISHED CANDIDATE. Release notes survive the publish; the
+  # deferral records and live-e2e evidence under docs/ do not. A checkout in
+  # that state must DECLINE, not answer — it used to answer "ok — 0
+  # outstanding" while blind, and re-keying to releases would have turned the
+  # same blindness into a red that fails every candidate.
+  tmp9="$(mktemp -d)"
+  init_repo "$tmp9"
+  echo 'version: "0.1.0"' >"$tmp9/releasenotes/0.1.0.yaml"
+  echo 'version: "0.2.0"' >"$tmp9/releasenotes/0.2.0.yaml"
+  rm -rf "$tmp9/docs"
+  commit_at "$tmp9" 100 "a published candidate: notes present, docs stripped"
+
+  if ! out="$(cd "$tmp9" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — a stripped (public) checkout RED; the candidate would fail on evidence it cannot see:" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -q 'skip — docs/features absent' || {
+    echo "provider-tier-deferral --teeth: FAILED — a stripped checkout must DECLINE by name, not answer green silently:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+
+  echo "provider-tier-deferral --teeth: 3 uncleared releases red and names them; 2 uncleared greens; a live-e2e run after the oldest of 3 clears it to 2 and greens by git history, not mtime or filename; an untracked 3rd release reds too; an acknowledged 3rd ships; a 4th does NOT inherit the 3rd's signature; a recordless release reds unconditionally, even a lone one; a backfill of older records leaves the signature in the NEWEST RELEASE's record; a <placeholder> example is not a signature; a stripped public checkout declines instead of answering."
 }
 
 if [ "${1:-}" = "--teeth" ]; then teeth; exit 0; fi

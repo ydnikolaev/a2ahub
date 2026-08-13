@@ -213,7 +213,20 @@ resolve_tier() {
       if [ "$cron" = "$NIGHTLY_CRON" ]; then echo ceiling; else echo none; fi
       return
       ;;
-    workflow_dispatch) echo ceiling; return ;;
+    workflow_dispatch)
+      # A dispatch names its own occasion (ci.yml's `inputs.tier`). The
+      # DEFAULT is the ceiling — an operator reaching for a manual run
+      # usually wants a tree proven — but §5 rung 5's per-wave verification
+      # explicitly wants the derived lane instead, at single-digit minutes,
+      # so that it can be run nine times inside the 200-minute verification
+      # allowance without buying nine ceilings. An unrecognised value falls
+      # to the expensive answer rather than the cheap one.
+      case "${CI_DISPATCH_TIER:-}" in
+        lane) echo lane ;;
+        *) echo ceiling ;;
+      esac
+      return
+      ;;
     pull_request | pull_request_target) echo ceiling; return ;;
   esac
 
@@ -332,9 +345,20 @@ run_teeth() {
   expect_tier "a pull request still buys the ceiling (AC11b is blocked)" ceiling \
     CI_CHANGES_FILES="feedback/inbox/fb-20260812-755a23.yaml" CI_EVENT_NAME=pull_request CI_REF=refs/pull/27/merge GITHUB_OUTPUT=
 
-  # (n) workflow_dispatch is the on-demand ceiling (§5 rung 5's own vehicle).
-  expect_tier "workflow_dispatch buys the ceiling" ceiling \
+  # (n) workflow_dispatch defaults to the ceiling…
+  expect_tier "workflow_dispatch defaults to the ceiling" ceiling \
     CI_EVENT_NAME=workflow_dispatch CI_REF=refs/heads/main GITHUB_OUTPUT=
+
+  # (n2) …and can be asked for the LANE instead, which is what makes §5 rung
+  # 5's "one dispatch per wave, of the derived lane, never the ceiling"
+  # executable at all rather than a step nobody can perform.
+  expect_tier "workflow_dispatch can buy the lane on request" lane \
+    CI_EVENT_NAME=workflow_dispatch CI_REF=refs/heads/main CI_DISPATCH_TIER=lane CI_CHANGES_FILES="docs/backlog.md" GITHUB_OUTPUT=
+
+  # (n3) An unrecognised input falls to the EXPENSIVE answer. A typo must not
+  # silently buy less verification than the operator asked for.
+  expect_tier "an unrecognised dispatch tier falls to the ceiling" ceiling \
+    CI_EVENT_NAME=workflow_dispatch CI_REF=refs/heads/main CI_DISPATCH_TIER=lanee GITHUB_OUTPUT=
 
   # (o) The NIGHTLY cron is the ceiling's new home.
   expect_tier "the nightly cron buys the ceiling" ceiling \
@@ -371,7 +395,7 @@ run_teeth() {
     echo "ci-changes --teeth: FAIL" >&2
     exit 1
   fi
-  echo "ci-changes --teeth: 18 case(s) green."
+  echo "ci-changes --teeth: 20 case(s) green."
 }
 
 case "${1:-}" in
