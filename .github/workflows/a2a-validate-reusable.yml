@@ -59,7 +59,7 @@ on:
         # is opt-in and out-of-band, and an opt-in gate is one somebody skips.
         # releasenotes/refdefault_test.go holds this value equal to the newest
         # authored release-notes version on every `make check`, offline.
-        default: "v0.21.0"
+        default: "v0.22.0"
       space-path:
         description: "Working directory of the space content to validate (default: repo root)."
         required: false
@@ -160,19 +160,56 @@ jobs:
               args+=(--author "$A2A_AUTHOR")
             fi
           fi
+          # BUILD AND RUN ARE SEPARATE STEPS, AND ONLY THE BUILD IS RETRIED.
+          #
+          # `go run <module>@<ver>` fused two failures with the same exit code:
+          # "the supply chain could not be read" and "this space is invalid".
+          # A single transient GOSUMDB tile read therefore reddened a space's
+          # REQUIRED merge gate. Observed 2026-08-13 in r22d222/a2a's own
+          # `space update` run (job 94482003298):
+          #
+          #   in-toto-golang@v0.11.0/in_toto/runlib.go:15:2:
+          #   github.com/shibumi/go-pathspec@v1.3.0: verifying module: reading
+          #   https://sum.golang.org/tile/8/0/x028/581: stream error;
+          #   INTERNAL_ERROR; received from peer
+          #
+          # The same module downloads cleanly on a retry — the failure was the
+          # network, and the space was fine. Every space PR resolves a2ahub's
+          # whole module graph through the proxy and verifies each module
+          # against sum.golang.org, so this was one flaky read away from a red
+          # gate on every space, on every pull request, forever.
+          #
+          # The INTEGRITY MECHANISM IS UNCHANGED and that is deliberate: this
+          # file's header states GOSUMDB verification is what buys "no
+          # A2A_BINARY_FETCH_TOKEN, no cosign step" (spec 33 §2, mechanism #1).
+          # `go install` verifies exactly what `go run` did. Only the retry is
+          # new, and it wraps the NETWORK half alone — a genuinely invalid
+          # space still reds once, never three times, because the validator
+          # runs outside the loop.
+          bin="$RUNNER_TEMP/a2a-validate-bin"
           if [ -n "$A2A_REF" ]; then
             # Spaces: pinned module from the Go checksum DB (no local source).
-            set +e
-            go run "github.com/ydnikolaev/a2ahub/cmd/a2a@$A2A_REF" "${args[@]}" >"$report"
-            status=$?
-            set -e
+            installed=0
+            for attempt in 1 2 3; do
+              if GOBIN="$bin" go install "github.com/ydnikolaev/a2ahub/cmd/a2a@$A2A_REF"; then
+                installed=1
+                break
+              fi
+              echo "::warning::a2a install attempt $attempt/3 failed (module proxy or checksum DB); retrying" >&2
+              sleep $((attempt * 5))
+            done
+            if [ "$installed" -ne 1 ]; then
+              echo "::error::could not install a2a@$A2A_REF after 3 attempts — this is the module supply chain, not this space's content" >&2
+              exit 1
+            fi
           else
             # a2ahub dogfood: the caller checkout IS a2ahub — build current code.
-            set +e
-            go run "$GITHUB_WORKSPACE/cmd/a2a" "${args[@]}" >"$report"
-            status=$?
-            set -e
+            GOBIN="$bin" go install "$GITHUB_WORKSPACE/cmd/a2a"
           fi
+          set +e
+          "$bin/a2a" "${args[@]}" >"$report"
+          status=$?
+          set -e
           cat "$report"
 
           # Preserve the canonical JSON as structured evidence and project each
