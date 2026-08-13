@@ -164,6 +164,14 @@ type ExchangeEdge struct {
 	MaxStale    string `json:"maxStale,omitempty"` // pre-formatted age of the oldest
 }
 
+// LocalizedText carries one server-authored sentence in both permanently
+// supported dashboard locales. The browser may select a locale; it must not
+// assemble protocol-shaped prose from domain fields.
+type LocalizedText struct {
+	RU string `json:"ru"`
+	EN string `json:"en"`
+}
+
 // Item is one open inbox/outbox row (mapped from cache.Item + derived age/severity).
 type Item struct {
 	Space       string   `json:"space"`
@@ -202,6 +210,16 @@ type Item struct {
 	// `published` even after every intended recipient has acknowledged them.
 	Archived bool `json:"archived,omitempty"`
 	YourMove bool `json:"yourMove"`
+	// WaitingOn, ExpectedTransition, Why, HumanGate and OperationalItems are
+	// the domain's already-computed verdict, carried whole. Why remains
+	// technical evidence; ReasonSentence is the human explanation composed by
+	// the server from typed reason/rule identity plus these structured facts.
+	WaitingOn          []string                `json:"waitingOn,omitempty"`
+	ExpectedTransition string                  `json:"expectedTransition,omitempty"`
+	Why                string                  `json:"why,omitempty"`
+	HumanGate          string                  `json:"humanGate,omitempty"`
+	OperationalItems   []cache.OperationalItem `json:"operationalItems,omitempty"`
+	ReasonSentence     LocalizedText           `json:"reasonSentence,omitzero"`
 	// Description is a short human-readable summary (from the artifact body) —
 	// UNTRUSTED, rendered via textContent (D-001). Omitted when the body is empty.
 	Description string `json:"description,omitempty"`
