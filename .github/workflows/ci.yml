@@ -154,6 +154,24 @@ jobs:
   # repository, and the candidate ref still buys the ceiling.
   check:
     # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
+    #
+    # 28 is ABOVE what the artefact's sizing rule currently derives (17, from
+    # a p99 of 642 s), and that is deliberate rather than stale.
+    #
+    # The artefact's window is the PINNED, closed one AC12 replays —
+    # 2026-08-01..2026-08-11 — and the four longest `check` runs ever observed
+    # (1313 / 1239 / 1114 / 1064 s) fall on 08-12, outside it. All four
+    # concluded SUCCESS. Sizing this at 17 would cancel a run this project has
+    # watched pass, which is exactly the error review A5 caught in the first
+    # draft of the spec.
+    #
+    # So the two windows want different things and both are right: AC12 needs
+    # a closed window to replay, AC3 needs the worst tail ever seen. The gate
+    # (check-runner-economics.sh, RULE 3) asserts a FLOOR — at or above 1.5x
+    # p99 — so it cannot catch an over-provisioned value, and AC3's "a stale
+    # timeout is a red line" guarantee is therefore ONE-DIRECTIONAL. Named
+    # here because a later reader comparing this number to the artefact will
+    # otherwise assume drift.
     timeout-minutes: 28
     needs: changes
     if: needs.changes.outputs.tier == 'ceiling'
