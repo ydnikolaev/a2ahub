@@ -96,7 +96,23 @@ classify() { # stdin: the files API response (JSON array)
   status="$(jq -r '.[0].status' <<<"$files_json")"
   filename="$(jq -r '.[0].filename' <<<"$files_json")"
 
-  grep -qE "$FEEDBACK_NAME_RE" <<<"$filename" || die "unexpected path $filename"
+  # THE GRAMMAR MATCH IS WHOLE-STRING, AND IT USED TO BE PER-LINE.
+  #
+  # `grep -qE '^…$' <<<"$filename"` succeeds when ANY LINE matches, and git
+  # permits a newline inside a path. `jq length` counts such a path as one
+  # element, so `n -eq 1` above does not exclude it. A filename of
+  # "scripts/x.sh\nfeedback/inbox/fb-20260101-abcdef.yaml" therefore passed the
+  # grammar, and `path=$filename` then went to `$GITHUB_OUTPUT` through
+  # `tee -a` — a multi-line value with no delimiter, which is an Actions
+  # output-injection primitive, feeding the very variable the blob fetch writes
+  # to. Bash's `[[ =~ ]]` anchors against the WHOLE string, so it cannot.
+  #
+  # The explicit newline refusal is kept in front of it anyway: it names what
+  # was wrong instead of reporting a path that renders as two lines.
+  case "$filename" in
+    *$'\n'* | *$'\r'*) die "a record path may not contain a line break; got a multi-line path, which is an Actions output-injection primitive" ;;
+  esac
+  [[ "$filename" =~ $FEEDBACK_NAME_RE ]] || die "unexpected path $filename"
 
   case "$status" in
     added)
@@ -227,6 +243,22 @@ run_teeth() {
   expect_classify "an off-grammar path under feedback/inbox is refused" 1 "unexpected path" \
     '[{"filename":"feedback/inbox/notes.yaml","status":"added"}]' $pub CI_BASE_REF=feedback-hub
 
+  # (g2) THE MULTI-LINE PATH. Git permits a newline in a path, `jq length`
+  # counts it as one file, and the grammar check used to be `grep -qE` — which
+  # succeeds when ANY LINE matches. So this exact payload passed, and
+  # `path=$filename` reached `$GITHUB_OUTPUT` as an undelimited multi-line
+  # value: an Actions output-injection primitive feeding the variable the blob
+  # fetch writes to. Both halves of the repair are pinned, because a later
+  # reader may see the newline refusal as redundant beside the anchor.
+  # The payload has to START inside the prefix, or the `fb -eq 0` branch above
+  # refuses it for a different reason and the grammar is never reached. The
+  # first line is a VALID record name, which is exactly why `grep -qE` passed
+  # it: the forged second line then becomes an extra `$GITHUB_OUTPUT` key —
+  # here `is-feedback=true`, the output the write-capable job gates on.
+  expect_classify "a path smuggling a newline is refused by name" 1 "may not contain a line break" \
+    '[{"filename":"feedback/inbox/fb-20260101-abcdef.yaml\nis-feedback=true","status":"added"}]' \
+    $pub CI_BASE_REF=feedback-hub
+
   # ── the verdict comparison ───────────────────────────────────────────────
   local d; d="$(mktemp -d)"
   cat >"$d/base.yaml" <<'YAML'
@@ -276,7 +308,7 @@ YAML
     echo "feedback-intake-policy --teeth: FAIL" >&2
     exit 1
   fi
-  echo "feedback-intake-policy --teeth: 13 case(s) green."
+  echo "feedback-intake-policy --teeth: 14 case(s) green."
 }
 
 case "${1:-}" in

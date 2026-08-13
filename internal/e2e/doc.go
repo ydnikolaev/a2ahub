@@ -26,6 +26,19 @@
 // ceiling, which an ordinary commit does not run — would have caught a lossy
 // page split.
 //
+// .github/workflows/** was MISSING until 2026-08-13, in the THIRD instance of
+// the same defect — and this one cost three consecutive green `make lane-run`
+// verdicts over a red ceiling. feedback_intake_workflow_test.go reads
+// .github/workflows/feedback-intake.yml and asserts three structural
+// invariants over it, one of them a security boundary: a `pull_request_target`
+// workflow must never checkout PR-head content. A commit that ADDED an
+// `actions/checkout` to that workflow selected `workflow-lint` and
+// `runner-economics` — neither of which knows the rule — and no Go phase at
+// all, because the diff touched no `.go` file. The ceiling caught it; the
+// commit gate could not have. `make check` is not a substitute for a
+// declaration, and this is the exact hole check-convention.md names when it
+// says "a non-Go edit that changes path meaning does NOT select it today".
+//
 // lane-inputs:
 //
 //	cc-coverage.yaml
@@ -33,4 +46,5 @@
 //	schemas/templates/v1/**
 //	schemas/fixtures/compat/**
 //	skill/a2ahub/**
+//	.github/workflows/**
 package e2e

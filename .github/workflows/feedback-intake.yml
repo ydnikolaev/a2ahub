@@ -44,14 +44,45 @@ jobs:
       change: ${{ steps.guard.outputs.change }}
       kind: ${{ steps.kind.outputs.kind }}
     steps:
-      # BASE repository only. `pull_request_target` resolves `actions/checkout`
-      # with no `ref:` to the base repo's default branch, which is what brings
-      # in scripts/feedback-intake-policy.sh. The PR's head is NEVER checked
-      # out and never executed — this job's whole security property, stated at
-      # the top of this file, is unchanged: PR content reaches it only as DATA,
-      # through the API, and is read rather than run.
-      - name: Checkout the base repository (never the PR head)
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # THIS WORKFLOW CHECKS NOTHING OUT, ANYWHERE, AND THAT ABSOLUTE IS THE
+      # SECURITY PROPERTY — not "it checks out only safe things".
+      #
+      # `internal/e2e`'s TestFeedbackIntakeHasAUniversalReadOnlyMergePolicy
+      # enforces it as a flat string ban on the checkout action's name, which
+      # is why no comment here can spell that name either. It is right to be
+      # blunt, and an earlier draft of this gate was wrong to work around it.
+      #
+      # That draft added a base-only checkout to obtain the policy script,
+      # reasoning that the base tree is trusted. It is. What is NOT trusted is
+      # the WORKING DIRECTORY once a checkout has populated it: a step below
+      # writes a PR-controlled blob to a PR-derived path inside that same
+      # directory, and two steps later the job runs the policy script from it.
+      # A path that escaped the record grammar would have been arbitrary code
+      # execution from a fork — and the grammar check was per-LINE at the time,
+      # which a path containing a newline passes.
+      #
+      # So the script arrives the same way every other input does — as DATA,
+      # through the API — and lands in RUNNER_TEMP, which is outside the
+      # workspace the PR blob is written into. Nothing PR-controlled can reach
+      # it by any path.
+      #
+      # THE REF IS THE DEFAULT BRANCH, DELIBERATELY, AND NOT THE PR's BASE.
+      # Verified against GitHub's current event reference on 2026-08-13: under
+      # `pull_request_target`, GITHUB_SHA is "last commit on default branch"
+      # and GITHUB_REF is "Default branch" — NOT the pull request's base. That
+      # distinction is load-bearing after P15's rollover, when feedback pull
+      # requests target `feedback-hub`: the hub is an ORPHAN branch carrying 26
+      # records and a README, with no `scripts/` directory at all. A fetch
+      # pinned to the PR's base would 404 on every record the moment the
+      # rollover completes, and would do it thirty days after this commit.
+      - name: Fetch the policy script from the base repository (no checkout, ever)
+        env:
+          POLICY_REF: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${REPO}/contents/scripts/feedback-intake-policy.sh?ref=${POLICY_REF}" \
+            --jq '.content' | base64 -d > "$RUNNER_TEMP/policy.sh"
+          test -s "$RUNNER_TEMP/policy.sh"
 
       - name: Classify change and guard the quarantine boundary
         id: guard
@@ -62,7 +93,7 @@ jobs:
           set -euo pipefail
           gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --paginate --slurp \
             | jq 'add' \
-            | bash scripts/feedback-intake-policy.sh classify \
+            | bash "$RUNNER_TEMP/policy.sh" classify \
             | tee -a "$GITHUB_OUTPUT"
 
       - name: Fetch pinned a2a release binary
@@ -100,7 +131,7 @@ jobs:
           set -euo pipefail
           gh api "repos/${REPO}/contents/${FILE_PATH}?ref=${BASE_SHA}" \
             --jq '.content' | base64 -d > /tmp/record-base.yaml
-          bash scripts/feedback-intake-policy.sh verdict-diff \
+          bash "$RUNNER_TEMP/policy.sh" verdict-diff \
             /tmp/record-base.yaml "$FILE_PATH"
 
       - name: Validate quarantined feedback data
