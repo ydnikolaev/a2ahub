@@ -296,7 +296,7 @@ EOF
   write_good_fixture
   sed -i.bak 's#\[index.md\](index.md), ##' "$tmp/skill/a2ahub/loops.md"
   rm -f "$tmp/skill/a2ahub/loops.md.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "index.md is not reachable"; then
     echo "loop-reachability --teeth: FAILED — dropping the direct link to index.md did not red naming it" >&2
     return 1
@@ -307,7 +307,7 @@ EOF
   # actually walked rather than only checking loops.md's own links.
   write_good_fixture
   printf '# alpha fixture, no outbound link\n' >"$tmp/skill/a2ahub/ref/alpha.md"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "ref/beta.md is not reachable"; then
     echo "loop-reachability --teeth: FAILED — dropping the alpha->beta hop did not red naming ref/beta.md" >&2
     return 1
@@ -325,7 +325,7 @@ EOF
   write_good_fixture
   sed -i.bak 's#, \[auth/\](auth/)##' "$tmp/skill/a2ahub/loops.md"
   rm -f "$tmp/skill/a2ahub/loops.md.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "auth/gamma.md is not reachable"; then
     echo "loop-reachability --teeth: FAILED — dropping the directory link did not red naming auth/gamma.md" >&2
     return 1
@@ -349,7 +349,7 @@ EOF
   write_good_fixture
   printf '# index fixture\n\n[ref/beta.md](ref/beta.md)\n' >"$tmp/skill/a2ahub/index.md"
   printf '# alpha fixture, no outbound link\n' >"$tmp/skill/a2ahub/ref/alpha.md"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "ref/beta.md is not reachable"; then
     echo "loop-reachability --teeth: FAILED — a page reachable only via index.md's own link stayed green; the TOC loophole is open" >&2
     return 1
@@ -361,7 +361,7 @@ EOF
   cat >"$tmp/skill/a2ahub/docs-manifest.json" <<'EOF'
 {"id":"helppage","group":"Help","title":"Help","file":"a2ahub/help.md"}
 EOF
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "lists no page in Concepts, Reference, or Authoring"; then
     echo "loop-reachability --teeth: FAILED — an empty derived universe did not fail closed with that message" >&2
     return 1
@@ -370,7 +370,7 @@ EOF
   # 6. Missing loops.md must red naming it.
   write_good_fixture
   rm -f "$tmp/skill/a2ahub/loops.md"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "$tmp/skill/a2ahub/loops.md does not exist"; then
     echo "loop-reachability --teeth: FAILED — a missing loops.md did not red naming it" >&2
     return 1

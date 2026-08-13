@@ -340,7 +340,7 @@ EOF
   write_good_fixture
   sed -i.bak '/\[alpha.md\](alpha.md)/d' "$tmp/skill/a2ahub/SKILL.md"
   rm -f "$tmp/skill/a2ahub/SKILL.md.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "alpha.md is a hand-maintained file on disk but is missing from the TOC"; then
     echo "prose-roster --teeth: FAILED — dropping alpha.md from the TOC did not red naming it against the TOC" >&2
     return 1
@@ -350,7 +350,7 @@ EOF
   write_good_fixture
   sed -i.bak 's/`SKILL.md`, `alpha.md`, /`SKILL.md`, /' "$tmp/skill/a2ahub/SKILL.md"
   rm -f "$tmp/skill/a2ahub/SKILL.md.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "alpha.md is a hand-maintained file on disk but is missing from the D-015 list"; then
     echo "prose-roster --teeth: FAILED — dropping alpha.md from D-015 did not red naming it against the D-015 list" >&2
     return 1
@@ -360,7 +360,7 @@ EOF
   write_good_fixture
   sed -i.bak '/`skill\/a2ahub\/alpha.md`/d' "$tmp/skill/RELEASE-CHECKLIST.md"
   rm -f "$tmp/skill/RELEASE-CHECKLIST.md.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "alpha.md is a hand-maintained file on disk but is missing from RELEASE-CHECKLIST.md's review table"; then
     echo "prose-roster --teeth: FAILED — dropping alpha.md from the checklist did not red naming it against RELEASE-CHECKLIST.md" >&2
     return 1
@@ -370,7 +370,7 @@ EOF
   write_good_fixture
   sed -i.bak '/"file":"a2ahub\/alpha.md"/d' "$tmp/skill/a2ahub/docs-manifest.json"
   rm -f "$tmp/skill/a2ahub/docs-manifest.json.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "alpha.md is a hand-maintained file on disk but is missing from docs-manifest.json"; then
     echo "prose-roster --teeth: FAILED — dropping alpha.md from docs-manifest.json did not red naming it against docs-manifest.json" >&2
     return 1
@@ -382,7 +382,7 @@ EOF
   write_good_fixture
   sed -i.bak 's/`reference\/beta.md` — are/`reference\/beta.md`, `reference\/commands.md` — are/' "$tmp/skill/a2ahub/SKILL.md"
   rm -f "$tmp/skill/a2ahub/SKILL.md.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "the D-015 list (SKILL.md § Sourcing & drift) lists reference/commands.md, which is a GENERATED page"; then
     echo "prose-roster --teeth: FAILED — adding reference/commands.md to D-015 did not red naming it as generated" >&2
     return 1
@@ -393,7 +393,7 @@ EOF
   write_good_fixture
   sed -i.bak 's/| `skill\/a2ahub\/alpha.md` | ☑ |/| `skill\/a2ahub\/alpha.md` | ☑ |\n| `skill\/a2ahub\/reference\/commands.md` | ☑ |/' "$tmp/skill/RELEASE-CHECKLIST.md"
   rm -f "$tmp/skill/RELEASE-CHECKLIST.md.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "RELEASE-CHECKLIST.md's review table lists reference/commands.md, which is a GENERATED page"; then
     echo "prose-roster --teeth: FAILED — adding reference/commands.md to the checklist did not red naming it as generated" >&2
     return 1
@@ -404,7 +404,7 @@ EOF
   write_good_fixture
   sed -i.bak 's#| \[reference/beta.md\](reference/beta.md) | Beta fixture. |#| [reference/beta.md](reference/beta.md) | Beta fixture. |\n| [nowhere.md](nowhere.md) | Ghost fixture. |#' "$tmp/skill/a2ahub/SKILL.md"
   rm -f "$tmp/skill/a2ahub/SKILL.md.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "the TOC (SKILL.md § Table of contents) lists nowhere.md, which is not a hand-maintained file on disk"; then
     echo "prose-roster --teeth: FAILED — a TOC row naming a nonexistent page did not red naming it as absent from disk" >&2
     return 1

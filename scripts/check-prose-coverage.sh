@@ -753,7 +753,7 @@ run_teeth() {
   write_good_fixture
   grep -v "^  $victim_cmd: " "$tmp/schemas/prose-coverage.yaml" >"$tmp/schemas/prose-coverage.yaml.new"
   mv "$tmp/schemas/prose-coverage.yaml.new" "$tmp/schemas/prose-coverage.yaml"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "$victim_cmd has no ledger entry"; then
     echo "prose-coverage --teeth: FAILED (a) — a verb with no ledger row did not red naming it" >&2
     return 1
@@ -763,7 +763,7 @@ run_teeth() {
   write_good_fixture
   grep -v "^  $victim_field: " "$tmp/schemas/prose-coverage.yaml" >"$tmp/schemas/prose-coverage.yaml.new"
   mv "$tmp/schemas/prose-coverage.yaml.new" "$tmp/schemas/prose-coverage.yaml"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "$victim_field has no ledger entry"; then
     echo "prose-coverage --teeth: FAILED (b) — a field with no ledger row did not red naming it" >&2
     return 1
@@ -773,7 +773,7 @@ run_teeth() {
   write_good_fixture
   sed -i.bak "s#^  $victim_tool: \".*\"#  $victim_tool: \"\"#" "$tmp/schemas/prose-coverage.yaml"
   rm -f "$tmp/schemas/prose-coverage.yaml.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "$victim_tool is declared in" || ! printf '%s\n' "$out" | grep -q "blank reason"; then
     echo "prose-coverage --teeth: FAILED (c) — a blank declared: reason did not red naming the member and 'blank reason'" >&2
     return 1
@@ -784,7 +784,7 @@ run_teeth() {
   write_good_fixture
   sed -i.bak "s#^  $victim_field2: \".*\"#  $victim_field2: \"not documented yet\"#" "$tmp/schemas/prose-coverage.yaml"
   rm -f "$tmp/schemas/prose-coverage.yaml.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "$victim_field2" || ! printf '%s\n' "$out" | grep -q "reads as a DEFERRAL"; then
     echo "prose-coverage --teeth: FAILED (d) — a deferral-shaped declared: reason did not red naming the member and 'reads as a DEFERRAL'" >&2
     return 1
@@ -795,7 +795,7 @@ run_teeth() {
   write_good_fixture
   sed -i.bak "s|^  $victim_cmd: \"fixture.md#Fixture Heading\"|  $victim_cmd: \"fixture.md#Nonexistent Heading\"|" "$tmp/schemas/prose-coverage.yaml"
   rm -f "$tmp/schemas/prose-coverage.yaml.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF '"Nonexistent Heading" is not a heading on fixture.md'; then
     echo "prose-coverage --teeth: FAILED (e) — a covered: anchor absent from the page did not red naming it" >&2
     return 1
@@ -804,7 +804,7 @@ run_teeth() {
   # (f) a ledger key outside the derived universe must red naming it.
   write_good_fixture
   printf '  cmd:not-a-real-command-xyz: "bogus fixture row"\n' >>"$tmp/schemas/prose-coverage.yaml"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF 'declared key "cmd:not-a-real-command-xyz" in declared: is not part of the derived universe'; then
     echo "prose-coverage --teeth: FAILED (f) — a ledger key outside the derived universe did not red naming it" >&2
     return 1
@@ -814,7 +814,7 @@ run_teeth() {
   # declared must red (the loop-coverage.sh precedent for the same shape).
   write_good_fixture
   printf '  %s: "duplicated on purpose"\n' "$victim_cmd" >>"$tmp/schemas/prose-coverage.yaml"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "$victim_cmd is declared in more than one place"; then
     echo "prose-coverage --teeth: FAILED (bonus) — a member declared both covered and declared did not red naming it" >&2
     return 1
@@ -827,7 +827,7 @@ run_teeth() {
   first_surface="$(printf '%s\n' "$snames" | head -1)"
   grep -v "^  - $first_surface\$" "$tmp/schemas/prose-coverage.yaml" >"$tmp/schemas/prose-coverage.yaml.new"
   mv "$tmp/schemas/prose-coverage.yaml.new" "$tmp/schemas/prose-coverage.yaml"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "names surface \"$first_surface\", which"; then
     echo "prose-coverage --teeth: FAILED (bonus) — a surfaces: list missing a real surface did not red naming it" >&2
     return 1
@@ -877,7 +877,7 @@ run_teeth() {
   write_class_fixture
   sed -i.bak 's#^    reason: ".*"$#    reason: ""#' "$tmp/schemas/prose-coverage.yaml"
   rm -f "$tmp/schemas/prose-coverage.yaml.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF 'declared class "fixture-class" has a blank reason'; then
     echo "prose-coverage --teeth: FAILED (g) — a declared class with a blank reason did not red naming the class" >&2
     return 1
@@ -888,7 +888,7 @@ run_teeth() {
   write_class_fixture
   sed -i.bak 's#^    reason: ".*"$#    reason: "not documented yet"#' "$tmp/schemas/prose-coverage.yaml"
   rm -f "$tmp/schemas/prose-coverage.yaml.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF 'declared class "fixture-class"' || ! printf '%s\n' "$out" | grep -q "reads as a DEFERRAL"; then
     echo "prose-coverage --teeth: FAILED (h) — a deferral-shaped class reason did not red naming the class and 'reads as a DEFERRAL'" >&2
     return 1
@@ -897,7 +897,7 @@ run_teeth() {
   # (i) a class member outside the derived universe must red naming it.
   write_class_fixture
   printf '      - field:not-a-real-surface:not-a-real-key\n' >>"$tmp/schemas/prose-coverage.yaml"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF 'declared class "fixture-class" lists "field:not-a-real-surface:not-a-real-key", which is not part of the derived universe'; then
     echo "prose-coverage --teeth: FAILED (i) — a class member outside the derived universe did not red naming it" >&2
     return 1
@@ -915,7 +915,7 @@ run_teeth() {
   $victim_field: \"also given a bare declared row on purpose\"
 " "$tmp/schemas/prose-coverage.yaml"
   rm -f "$tmp/schemas/prose-coverage.yaml.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "$victim_field is declared in more than one place"; then
     echo "prose-coverage --teeth: FAILED (j) — a member in both a declared class and a bare declared: row did not red naming it" >&2
     return 1
@@ -926,7 +926,7 @@ run_teeth() {
   write_class_fixture
   sed -i.bak "s#^declared_classes:#declared_classes:\n  fixture-class-2:\n    reason: \"a second structural fixture-class reason\"\n    members:\n      - $victim_field#" "$tmp/schemas/prose-coverage.yaml"
   rm -f "$tmp/schemas/prose-coverage.yaml.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "$victim_field is listed in more than one declared class"; then
     echo "prose-coverage --teeth: FAILED (k) — a member listed in two declared classes did not red naming it" >&2
     return 1

@@ -135,12 +135,20 @@ loop_section_ids_for_file() { # $1 = md file path
   grep -oE '^## §[^[:space:]]+' "$1" | sed -E 's/^## //'
 }
 
-# corpus_section_ids prints the UNION of `## §X` heading ids across every
-# file in the corpus, one per line — what a `covered:` entry is checked
-# against. A section id defined in more than one corpus file is ambiguity,
-# not coverage, and reds naming every file that carries it: a split that
-# duplicates a heading instead of moving it must not pass silently.
-corpus_section_ids() { # $1 = newline-separated list of existing corpus file abs paths
+# corpus_section_pairs prints "<id>\t<file>" for every `## §X` heading across
+# the corpus, de-duplicated — the same file listing the same heading twice is
+# not an error, only a heading shared by DISTINCT files is.
+#
+# THIS FUNCTION DOES NOT CALL gate_fail, AND THAT IS THE POINT. It used to,
+# and the failure was swallowed twice over. A caller reads it through
+# `$( )`, so anything it writes to stdout lands in the CALLER'S VARIABLE
+# instead of the log — and under GitHub Actions `gate_fail` writes to stdout
+# (`::error::`, which the runner only reads there). So in CI the duplicate-id
+# failure was captured into the section-id list, corrupting the value AND
+# hiding the message; the gate still reddened, by exit status, naming nothing.
+# Its own `--teeth` case 11 could not see the message either, which is how it
+# was found. The adjudication belongs to the caller, outside the substitution.
+corpus_section_pairs() { # $1 = newline-separated list of existing corpus file abs paths
   local files="$1" f id
   local pairs=""
   while IFS= read -r f; do
@@ -152,24 +160,7 @@ corpus_section_ids() { # $1 = newline-separated list of existing corpus file abs
   done <<<"$files"
   pairs="$(printf '%s' "$pairs" | sed '/^$/d')"
   [ -z "$pairs" ] && return 0
-
-  # De-duplicate (id, file) pairs first — the same file listing the same
-  # heading twice is not an error, only a heading shared by DISTINCT files
-  # is.
-  local uniq_pairs
-  uniq_pairs="$(printf '%s\n' "$pairs" | sort -u)"
-
-  local dup_ids
-  dup_ids="$(printf '%s\n' "$uniq_pairs" | cut -f1 | sort | uniq -d)"
-
-  local dupid dupfiles
-  while IFS= read -r dupid; do
-    [ -z "$dupid" ] && continue
-    dupfiles="$(printf '%s\n' "$uniq_pairs" | awk -F'\t' -v i="$dupid" '$1==i{print $2}' | paste -sd, -)"
-    gate_fail "loop-coverage: section id \"$dupid\" is defined in more than one loop_corpus file ($dupfiles) — a duplicated section id across the corpus is ambiguous"
-  done <<<"$dup_ids"
-
-  printf '%s\n' "$uniq_pairs" | cut -f1 | sort -u
+  printf '%s\n' "$pairs" | sort -u
 }
 
 # ledger_value prints the (quoted-stripped) value of one key inside one
@@ -346,8 +337,19 @@ run_check() { # $1 = root
     return $?
   fi
 
-  local section_ids
-  section_ids="$(corpus_section_ids "$corpus_abs")"
+  # A section id defined in more than one corpus file is ambiguity, not
+  # coverage, and reds naming every file that carries it: a split that
+  # duplicates a heading instead of moving it must not pass silently. The
+  # adjudication is HERE rather than inside corpus_section_pairs — see the
+  # comment there for what calling gate_fail inside a `$( )` costs.
+  local section_pairs section_ids dupid dupfiles
+  section_pairs="$(corpus_section_pairs "$corpus_abs")"
+  while IFS= read -r dupid; do
+    [ -z "$dupid" ] && continue
+    dupfiles="$(printf '%s\n' "$section_pairs" | awk -F'\t' -v i="$dupid" '$1==i{print $2}' | paste -sd, -)"
+    gate_fail "loop-coverage: section id \"$dupid\" is defined in more than one loop_corpus file ($dupfiles) — a duplicated section id across the corpus is ambiguous"
+  done < <(printf '%s\n' "$section_pairs" | cut -f1 | sed '/^$/d' | sort | uniq -d)
+  section_ids="$(printf '%s\n' "$section_pairs" | cut -f1 | sed '/^$/d' | sort -u)"
 
   local type role phase phaselist cell cov emp has_cov has_emp type_has_row
   for type in $types; do
@@ -452,7 +454,7 @@ run_teeth() {
   write_good_fixture
   grep -v "^  $victim/originator/author:" "$tmp/schemas/loop-phases.yaml" >"$tmp/schemas/loop-phases.yaml.new"
   mv "$tmp/schemas/loop-phases.yaml.new" "$tmp/schemas/loop-phases.yaml"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -q "has no ledger entry"; then
     echo "loop-coverage --teeth: FAILED — a cell with no ledger entry did not red with the 'no ledger entry' message" >&2
     return 1
@@ -466,7 +468,7 @@ run_teeth() {
   write_good_fixture
   sed -i.bak "s#^  $victim/counterparty/receive: \".*\"#  $victim/counterparty/receive: \"\"#" "$tmp/schemas/loop-phases.yaml"
   rm -f "$tmp/schemas/loop-phases.yaml.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -q "blank reason"; then
     echo "loop-coverage --teeth: FAILED — an empty: entry with a blank reason did not red with the 'blank reason' message" >&2
     return 1
@@ -476,7 +478,7 @@ run_teeth() {
   # with THAT reason, not merely "no ledger entry" for some other cell.
   write_good_fixture
   echo "  $victim/originator/nonexistent-phase: \"§8.1\"" >>"$tmp/schemas/loop-phases.yaml"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -q "names phase \"nonexistent-phase\", which is not in originator's declared phase list"; then
     echo "loop-coverage --teeth: FAILED — a ledger key naming an undeclared phase did not red with that message" >&2
     return 1
@@ -486,7 +488,7 @@ run_teeth() {
   # naming that type.
   write_good_fixture
   echo "  not-a-real-type/originator/author: \"§8.1\"" >>"$tmp/schemas/loop-phases.yaml"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -q 'names type "not-a-real-type", which is not one of the derived envelope types'; then
     echo "loop-coverage --teeth: FAILED — a ledger key naming an undeclared type did not red with that message" >&2
     return 1
@@ -497,7 +499,7 @@ run_teeth() {
   write_good_fixture
   grep -v "^  $victim/" "$tmp/schemas/loop-phases.yaml" >"$tmp/schemas/loop-phases.yaml.new"
   mv "$tmp/schemas/loop-phases.yaml.new" "$tmp/schemas/loop-phases.yaml"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -q "\"$victim\" has ZERO ledger rows"; then
     echo "loop-coverage --teeth: FAILED — a type with zero ledger rows did not red with the ZERO-rows message naming it" >&2
     return 1
@@ -508,7 +510,7 @@ run_teeth() {
   write_good_fixture
   sed -i.bak "s#^  $victim/originator/author: \"§8.1\"#  $victim/originator/author: \"§9.9\"#" "$tmp/schemas/loop-phases.yaml"
   rm -f "$tmp/schemas/loop-phases.yaml.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -q 'declares covered: "§9.9", which is not a section heading'; then
     echo "loop-coverage --teeth: FAILED — a covered: section id absent from loops.md did not red with that message" >&2
     return 1
@@ -519,7 +521,7 @@ run_teeth() {
   write_good_fixture
   sed -i.bak "s#^  originator: \[author\]#  originator: []#" "$tmp/schemas/loop-phases.yaml"
   rm -f "$tmp/schemas/loop-phases.yaml.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -q "declares an empty phase list for one or both roles"; then
     echo "loop-coverage --teeth: FAILED — an empty declared phase list did not fail closed with that message" >&2
     return 1
@@ -534,7 +536,7 @@ run_teeth() {
   $victim/originator/author: \"deliberately duplicated\"
 " "$tmp/schemas/loop-phases.yaml"
   rm -f "$tmp/schemas/loop-phases.yaml.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -q "is declared BOTH covered and empty"; then
     echo "loop-coverage --teeth: FAILED — a cell declared both covered and empty did not red with that message" >&2
     return 1
@@ -550,7 +552,7 @@ run_teeth() {
     echo '  "sections": []'
     echo '}'
   } >"$tmp/skill/a2ahub/docs-manifest.json"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF 'has no non-empty "loop_corpus" array'; then
     echo "loop-coverage --teeth: FAILED — a manifest with no loop_corpus array did not red naming the missing key" >&2
     return 1
@@ -561,7 +563,7 @@ run_teeth() {
   write_good_fixture
   sed -i.bak 's#"loop_corpus": \["a2ahub/loops.md"\]#"loop_corpus": ["a2ahub/nonexistent.md"]#' "$tmp/skill/a2ahub/docs-manifest.json"
   rm -f "$tmp/skill/a2ahub/docs-manifest.json.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF 'names "a2ahub/nonexistent.md", which does not exist'; then
     echo "loop-coverage --teeth: FAILED — a loop_corpus entry naming a nonexistent file did not red naming it" >&2
     return 1
@@ -574,7 +576,7 @@ run_teeth() {
   sed -i.bak 's#"loop_corpus": \["a2ahub/loops.md"\]#"loop_corpus": ["a2ahub/loops.md", "a2ahub/loops-extra.md"]#' "$tmp/skill/a2ahub/docs-manifest.json"
   rm -f "$tmp/skill/a2ahub/docs-manifest.json.bak"
   printf '# fixture extra\n\n## §8.1 Duplicate Heading\n' >"$tmp/skill/a2ahub/loops-extra.md"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF 'section id "§8.1" is defined in more than one loop_corpus file'; then
     echo "loop-coverage --teeth: FAILED — a section id defined in two corpus files did not red naming the ambiguity" >&2
     return 1

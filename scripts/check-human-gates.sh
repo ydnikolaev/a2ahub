@@ -286,7 +286,7 @@ run_teeth() {
   # 1. A missing machine-roster line must red naming the missing marker.
   write_good_fixture
   printf '# fixture\n\nNo roster line here.\n' >"$tmp/skill/a2ahub/loops.md"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "has a \"$MARKER_PREFIX\" line"; then
     echo "human-gates --teeth: FAILED — a loops.md with no machine-roster line did not red naming the missing marker" >&2
     return 1
@@ -299,7 +299,7 @@ run_teeth() {
   sed -i.bak "s/(machine roster):\*\* $backticked\./(machine roster):** $backticked, \`withdraw\`./" "$tmp/skill/a2ahub/loops.md"
   rm -f "$tmp/skill/a2ahub/loops.md.bak"
   grep -Fq '`withdraw`' "$tmp/skill/a2ahub/loops.md" || { echo "human-gates --teeth: could not seed a third-verb fixture" >&2; return 1; }
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF 'names "withdraw", which the binary'"'"'s human_gates object does not gate'; then
     echo "human-gates --teeth: FAILED — a roster naming an ungated third verb did not red naming it" >&2
     return 1
@@ -316,7 +316,7 @@ run_teeth() {
     sed -i.bak "s/(machine roster):\*\* $backticked\./(machine roster):** ./" "$tmp/skill/a2ahub/loops.md"
   fi
   rm -f "$tmp/skill/a2ahub/loops.md.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "omits \"$victim\""; then
     echo "human-gates --teeth: FAILED — a roster omitting a real gated verb ($victim) did not red naming it" >&2
     return 1
@@ -327,7 +327,7 @@ run_teeth() {
   # even though the roster line itself stays perfectly correct.
   write_good_fixture
   printf '\n1. Run `a2a %s` yourself, no human needed.\n' "$victim" >>"$tmp/skill/a2ahub/loops.md"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "spells the command form of gated verb \"$victim\""; then
     echo "human-gates --teeth: FAILED — a loop step self-serving \"a2a $victim\" did not red naming it" >&2
     return 1
@@ -343,7 +343,7 @@ run_teeth() {
     echo '  "sections": []'
     echo '}'
   } >"$tmp/skill/a2ahub/docs-manifest.json"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF 'has no non-empty "loop_corpus" array'; then
     echo "human-gates --teeth: FAILED — a manifest with no loop_corpus array did not red naming the missing key" >&2
     return 1
@@ -354,7 +354,7 @@ run_teeth() {
   write_good_fixture
   sed -i.bak 's#"loop_corpus": \["a2ahub/loops.md"\]#"loop_corpus": ["a2ahub/nonexistent.md"]#' "$tmp/skill/a2ahub/docs-manifest.json"
   rm -f "$tmp/skill/a2ahub/docs-manifest.json.bak"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF 'names "a2ahub/nonexistent.md", which does not exist'; then
     echo "human-gates --teeth: FAILED — a loop_corpus entry naming a nonexistent file did not red naming it" >&2
     return 1
@@ -371,7 +371,7 @@ run_teeth() {
     echo ""
     echo "**Human-gated verbs (machine roster):** $backticked."
   } >"$tmp/skill/a2ahub/loops-extra.md"
-  out="$(run_check "$tmp" 2>&1 >/dev/null || true)"
+  out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "the \"$MARKER_PREFIX\" line appears in more than one loop_corpus file"; then
     echo "human-gates --teeth: FAILED — a roster marker duplicated across two corpus files did not red naming the duplication" >&2
     return 1
