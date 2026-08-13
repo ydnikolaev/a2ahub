@@ -393,6 +393,110 @@ assert_site_publishes() { # $1 = repo (for gh --repo), unused when gh is absent
   return 1
 }
 
+# ── the feedback hub's protection contract (agent-ops-2026-07 P15 AC5) ───────
+
+# judge_hub_protection: does this protection blob satisfy the contract the hub
+# branch exists to provide? Split out from the network read for the same
+# reason judge_pages_conclusion is — so --teeth exercises the DECISION offline,
+# against blobs it constructs, rather than asserting that a network call
+# happened.
+#
+# WHY THIS IS A CHECK AND NOT A PARAGRAPH. P15 AC5 asks for exactly this:
+# "branch protection asserted by a check, the same way the publisher already
+# asserts main's". The protection was set on 2026-08-13 and verified by
+# attempting a real force-push and watching it refused — once, by hand. A
+# hand-verification is a gate nobody has written yet: it says the rule held at
+# one instant, and says nothing about the next time somebody edits a
+# repository setting. The publisher already treats main's force-push toggle
+# this way (assert_public_force_pushes, publish-to-public.sh) and the hub
+# deserves the same, because the whole of P15 is the claim that a release
+# cannot destroy a stranger's bug report.
+#
+# Each clause is here for a stated reason, not for completeness:
+#
+#   allow_force_pushes=false  — AC5 itself. The letterbox must not be
+#                               replaceable.
+#   allow_deletions=false     — a deleted branch destroys the corpus exactly
+#                               as thoroughly as a force-push over it, and
+#                               AC5's wording would not have caught it.
+#   enforce_admins=true       — §3.2 asks for a rule "so it cannot by
+#                               accident", and the publisher runs with an
+#                               admin token. Without this clause the rule
+#                               binds everyone EXCEPT the one identity the
+#                               phase is defending against.
+#   merge-policy required     — the hub takes external writes, and this is
+#                               what `a2a feedback submit`'s auto-merge arms
+#                               against. Dropping it does not merely weaken
+#                               review; it breaks intake, because GitHub's
+#                               auto-merge needs something to wait for.
+judge_hub_protection() { # $1 = protection JSON
+  local blob="$1" problems=""
+
+  _flag() { problems="${problems:+$problems$'\n'}    - $1"; }
+
+  # Direct `== false` / `== true` comparisons, NOT `.x // "missing"`.
+  #
+  # jq's alternative operator treats `false` as EMPTY, so
+  # `.allow_force_pushes.enabled // "missing"` yields "missing" for a branch
+  # that correctly refuses force-pushes — the first draft of this function did
+  # exactly that and rejected the correct contract. Caught by the very first
+  # teeth case, which is the whole argument for writing the green case as well
+  # as the red ones: a gate that only ever refuses looks identical to a gate
+  # that always refuses.
+  #
+  # `== false` is also stricter than the `//` form was trying to be: an ABSENT
+  # key compares as null, so an unprotected branch fails every clause instead
+  # of accidentally matching a default.
+  jq -e '.allow_force_pushes.enabled == false' <<<"$blob" >/dev/null 2>&1 \
+    || _flag "force-pushes are NOT refused — a release could overwrite the corpus, which is the entire defect P15 removed"
+  jq -e '.allow_deletions.enabled == false' <<<"$blob" >/dev/null 2>&1 \
+    || _flag "branch deletion is NOT refused — deleting the branch destroys the corpus as completely as force-pushing over it"
+  jq -e '.enforce_admins.enabled == true' <<<"$blob" >/dev/null 2>&1 \
+    || _flag "enforce_admins is off — the rule binds everyone EXCEPT an admin token, and the publisher runs with one"
+  jq -e '.required_status_checks.contexts // [] | index("merge-policy")' <<<"$blob" >/dev/null 2>&1 \
+    || _flag "merge-policy is not a required context — inbound feedback auto-merge has nothing to wait for, so intake breaks"
+
+  if [ -n "$problems" ]; then
+    printf '%s\n' "$problems"
+    return 1
+  fi
+  return 0
+}
+
+assert_feedback_hub_protected() {
+  local slug branch blob problems
+  slug="${A2A_PUBLIC_SLUG:-ydnikolaev/a2ahub}"
+  branch="${A2A_FEEDBACK_HUB_BRANCH:-feedback-hub}"
+
+  if ! command -v gh >/dev/null 2>&1; then
+    fail "release-preflight: gh is not installed, so the feedback hub's protection cannot be read.
+    The hub branch is where every shipped binary files a report; unprotected, a release can
+    destroy one. Install gh, or set A2A_SKIP_HUB_PROTECTION_CHECK=1 to state deliberately
+    that you are cutting without that assurance."
+    return 1
+  fi
+
+  if ! blob="$(gh api "repos/$slug/branches/$branch/protection" 2>/dev/null)"; then
+    fail "release-preflight: could not read protection for $slug@$branch.
+    Either the branch does not exist, or it carries no protection at all — and an
+    unreadable answer is treated as a failing one on purpose: 'I could not check' is not
+    'it is fine'."
+    return 1
+  fi
+
+  if problems="$(judge_hub_protection "$blob")"; then
+    ok "release-preflight: $slug@$branch refuses force-pushes and deletions, binds admins, and requires merge-policy"
+    return 0
+  fi
+
+  fail "release-preflight: $slug@$branch does not satisfy the hub protection contract (P15 AC5):
+$problems
+    This branch is the feedback hub of record — the default submit target of every shipped
+    binary. Restore the contract before cutting, or set A2A_SKIP_HUB_PROTECTION_CHECK=1 to
+    record that you are cutting without it."
+  return 1
+}
+
 # ── teeth: the gate must go RED on a violating fixture (offline) ──────────────
 
 teeth() {
@@ -636,6 +740,59 @@ teeth() {
     fi
   done
 
+  # ── P15 AC5: the feedback hub's protection contract ────────────────────────
+  #
+  # Exercised against constructed blobs, never the network: these must be able
+  # to fail on a laptop with no credentials, and the network half is one
+  # `gh api` call whose only job is to fetch what this judges.
+  _hub_blob() { # $1=force $2=deletions $3=admins $4=contexts-json
+    printf '{"allow_force_pushes":{"enabled":%s},"allow_deletions":{"enabled":%s},"enforce_admins":{"enabled":%s},"required_status_checks":{"contexts":%s}}' \
+      "$1" "$2" "$3" "$4"
+  }
+
+  if ! judge_hub_protection "$(_hub_blob false false true '["merge-policy"]')" >/dev/null; then
+    echo "release-preflight --teeth: FAILED — the correct hub protection contract was refused" >&2
+    exit 1
+  fi
+  echo "  ✓ teeth 17: hub protection correct → GREEN"
+
+  hub_out="$(judge_hub_protection "$(_hub_blob true false true '["merge-policy"]')" || true)"
+  case "$hub_out" in
+    *"force-pushes are NOT refused"*) echo "  ✓ teeth 18: hub allows force-push → RED (names it)" ;;
+    *) echo "release-preflight --teeth: FAILED — a hub allowing force-push was not refused by name: $hub_out" >&2; exit 1 ;;
+  esac
+
+  # Deletion is the clause AC5's own wording would have missed. A deleted
+  # branch destroys the corpus exactly as thoroughly as overwriting it.
+  hub_out="$(judge_hub_protection "$(_hub_blob false true true '["merge-policy"]')" || true)"
+  case "$hub_out" in
+    *"branch deletion is NOT refused"*) echo "  ✓ teeth 19: hub allows deletion → RED (the clause AC5 did not name)" ;;
+    *) echo "release-preflight --teeth: FAILED — a deletable hub was not refused by name: $hub_out" >&2; exit 1 ;;
+  esac
+
+  # Without enforce_admins the rule binds everyone EXCEPT the identity the
+  # phase defends against: the publisher runs with an admin token.
+  hub_out="$(judge_hub_protection "$(_hub_blob false false false '["merge-policy"]')" || true)"
+  case "$hub_out" in
+    *"enforce_admins is off"*) echo "  ✓ teeth 20: hub exempts admins → RED (the publisher IS an admin)" ;;
+    *) echo "release-preflight --teeth: FAILED — an admin-exempt hub was not refused by name: $hub_out" >&2; exit 1 ;;
+  esac
+
+  hub_out="$(judge_hub_protection "$(_hub_blob false false true '[]')" || true)"
+  case "$hub_out" in
+    *"merge-policy is not a required context"*) echo "  ✓ teeth 21: hub drops merge-policy → RED (intake auto-merge breaks)" ;;
+    *) echo "release-preflight --teeth: FAILED — a hub with no required context was not refused by name: $hub_out" >&2; exit 1 ;;
+  esac
+
+  # An EMPTY protection blob is the shape an unprotected branch returns, and
+  # it must fail on every clause rather than throw.
+  hub_out="$(judge_hub_protection '{}' || true)"
+  case "$hub_out" in
+    *"force-pushes are NOT refused"*"merge-policy is not a required context"*)
+      echo "  ✓ teeth 22: an unprotected hub reds on every clause at once" ;;
+    *) echo "release-preflight --teeth: FAILED — an empty protection blob did not red on every clause: $hub_out" >&2; exit 1 ;;
+  esac
+
   echo "release-preflight --teeth: all teeth bite."
 }
 
@@ -673,6 +830,11 @@ if [ "${A2A_SKIP_PAGES_CHECK:-}" = "1" ]; then
   echo "release-preflight: SKIPPING the site-deploy check (A2A_SKIP_PAGES_CHECK=1) — the site may not announce $VERSION."
 else
   assert_site_publishes "$ROOT" || rc=1
+fi
+if [ "${A2A_SKIP_HUB_PROTECTION_CHECK:-}" = "1" ]; then
+  echo "release-preflight: SKIPPING the feedback-hub protection check (A2A_SKIP_HUB_PROTECTION_CHECK=1) — a release cut now could destroy an inbound report."
+else
+  assert_feedback_hub_protected || rc=1
 fi
 
 if [ "$rc" -ne 0 ]; then
