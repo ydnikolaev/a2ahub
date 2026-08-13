@@ -246,7 +246,15 @@ jobs:
       # job is the right place to close it because a CANDIDATE REF CARRIES THE
       # PUBLIC TREE — it is the last moment a public-projection defect can be
       # caught before it is the published repository's problem, and the same
-      # moment the strip defect at v0.19.9 was caught. ~51 s, ceiling runs only.
+      # moment the strip defect at v0.19.9 was caught.
+      #
+      # COST: ~136 s, ceiling runs only — `make lane`'s own measured median for
+      # the `harness-teeth` phase, which is this exact recipe (`verify.sh:621`
+      # and `:773` both map it to `_harness-check`), n=17. An earlier draft of
+      # this comment said 51 s, which came from a prose note rather than from
+      # the instrument; a locally timed run gave 152 s. In a job budgeted at 28
+      # minutes the difference changes nothing, but a stated number that the
+      # repo's own measurement contradicts is the thing AC3 exists to refuse.
       - name: make harness-check (the teeth, which `make check` does not reach)
         run: make harness-check
 
