@@ -112,11 +112,22 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      # AC11's lookup reads this repository's own run list to ask whether the
+      # pushed SHA already has a successful CI run on an `a2a-candidate/**`
+      # ref. Spec 13 AC11 names this grant as part of the change; the
+      # workflow-level `permissions:` above is `contents: read` alone, and an
+      # unreadable run list would answer `false` and buy everything — safe,
+      # but it would buy everything forever and look like the gate working.
+      actions: read
     outputs:
       macos: ${{ steps.resolve.outputs.macos }}
       resolved: ${{ steps.resolve.outputs.resolved }}
       files: ${{ steps.resolve.outputs.files }}
       tier: ${{ steps.resolve.outputs.tier }}
+      # Reported for the run list to be readable, not gated on: the three
+      # `if:` conditions below stay single comparisons against `tier`/`macos`
+      # (AC16), because `resolve_tier` has already folded this answer in.
+      proven: ${{ steps.resolve.outputs.proven }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -152,6 +163,14 @@ jobs:
   # because a promotion re-ran the ceiling on a SHA the candidate had already
   # proven. That case is subsumed: a push to main now buys the lane in EITHER
   # repository, and the candidate ref still buys the ceiling.
+  #
+  # AC11 then subsumes the SUBSUMPTION, per-SHA instead of per-branch: when the
+  # pushed SHA already carries a successful candidate run, `tier` resolves to
+  # `none` and this condition is false without needing a second clause. A push
+  # to main that has NO such run — a feedback squash-merge, a direct admin
+  # push, eight of 23 head SHAs in the measured window — is untouched and still
+  # buys its lane. `changes` itself still bills, which is the irreducible price
+  # of asking the question.
   check:
     # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
     #

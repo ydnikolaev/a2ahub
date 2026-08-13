@@ -67,6 +67,13 @@ MACOS_WORKFLOW=".github/workflows/ci.yml"
 # together by --teeth case (k) below, which reads the workflow.
 NIGHTLY_CRON='23 2 * * *'
 
+# AC11's lookup, and the three literals it turns on. A promotion pushes a SHA
+# that a candidate ref has ALREADY proven at the ceiling, on a byte-identical
+# tree, minutes earlier. That second execution can change no verdict.
+CANDIDATE_PREFIX='a2a-candidate/'
+CI_WORKFLOW_PATH='.github/workflows/ci.yml'
+PROOF_BRANCH='refs/heads/main'
+
 macos_relevant() {
   local f
   for f in "$@"; do
@@ -116,6 +123,54 @@ resolve_changed_files() {
   esac
 }
 
+# resolve_candidate_proof prints `true` when the SHA being pushed to public
+# `main` already carries a SUCCESSFUL CI run on an `a2a-candidate/**` ref, and
+# `false` in every other circumstance including every failure to find out.
+# Spec 13 AC11.
+#
+# THE "ONLY WHEN" IS THE WHOLE CRITERION, and it is a correction of an earlier
+# draft rather than caution. §2.2 measured that eight of 23 head SHAs pushed to
+# public `main` in the window have NO candidate run at all — seven are
+# squash-merges of feedback pull requests, one is a direct admin push (that
+# branch carries `enforce_admins: false`). A blanket "skip on main" would
+# delete the only proof those commits ever get. So the answer is per-SHA, asked
+# of the API, and the failure direction is to run everything.
+#
+# EVENT AND BRANCH ARE BOTH PART OF THE QUESTION. `event=push` excludes a
+# `workflow_dispatch` on a candidate ref, which `resolve_tier` below is free to
+# answer `lane` for — a dispatched lane run is not a ceiling and must never
+# count as one. `refs/heads/main` excludes the candidate ref itself: re-pushing
+# a SHA to a candidate branch must still buy the ceiling, or the one execution
+# the filtered tree ever gets could skip itself.
+#
+# THE --teeth SEAM IS THE API ANSWER, NOT THE VERDICT. `CI_CANDIDATE_RUNS`
+# substitutes the run COUNT the API would have returned, so the event and
+# branch guards above it stay under test. Stubbing the verdict instead would
+# have left the two conditions most likely to be got wrong — "only a push" and
+# "only main" — proved by nothing.
+resolve_candidate_proof() {
+  local event="${CI_EVENT_NAME:-${GITHUB_EVENT_NAME:-}}"
+  local ref="${CI_REF:-${GITHUB_REF:-}}"
+  local repo="${CI_REPOSITORY:-${GITHUB_REPOSITORY:-}}"
+  local sha="${CI_AFTER_SHA:-${GITHUB_SHA:-}}"
+
+  if [ "$event" != push ] || [ "$ref" != "$PROOF_BRANCH" ]; then echo false; return; fi
+  if [ -z "$repo" ] || [ -z "$sha" ]; then echo false; return; fi
+
+  local n
+  if [ -n "${CI_CANDIDATE_RUNS:-}" ]; then
+    n="${CI_CANDIDATE_RUNS}"
+  else
+    n="$(gh api "repos/$repo/actions/runs?head_sha=$sha&status=success&event=push" \
+      --jq "[.workflow_runs[] | select(.path == \"$CI_WORKFLOW_PATH\" and (.head_branch | startswith(\"$CANDIDATE_PREFIX\")))] | length" \
+      2>/dev/null)" || { echo false; return; }
+  fi
+  case "$n" in
+    '' | 0) echo false ;;
+    *) echo true ;;
+  esac
+}
+
 emit() {
   local key="$1" value="$2"
   if [ -n "${GITHUB_OUTPUT:-}" ]; then
@@ -125,7 +180,9 @@ emit() {
 }
 
 run_report() {
-  local files resolved macos reason
+  local files resolved macos reason proven
+
+  proven="$(resolve_candidate_proof)"
 
   if files="$(resolve_changed_files)"; then
     resolved=true
@@ -142,7 +199,14 @@ run_report() {
     done <<< "$files"
   fi
 
-  if [ "$resolved" != true ]; then
+  if [ "$proven" = true ]; then
+    # AC11, and note WHERE the answer is applied: here, so that every `if:` in
+    # ci.yml stays the single comparison it already was (AC16). Adding
+    # `&& outputs.proven != 'true'` to three conditions would have put the
+    # decision back into `${{ }}`, which is the one thing rung 0 forbids.
+    macos=false
+    reason="the SHA already has a successful CI run on an ${CANDIDATE_PREFIX}** ref — the promotion cannot change its verdict (AC11)"
+  elif [ "$resolved" != true ]; then
     # The unresolvable case, and the WEEKLY SAFETY NET, land in the same
     # branch by construction. Spec 13 AC2 asks for one weekly schedule in the
     # PUBLIC repository only, as the guard against a path filter that
@@ -170,7 +234,8 @@ run_report() {
   emit resolved "$resolved"
   emit macos "$macos"
   emit files "${set[*]+${set[*]}}"
-  emit tier "$(resolve_tier "$resolved")"
+  emit proven "$proven"
+  emit tier "$(resolve_tier "$resolved" "$proven")"
   printf 'ci-changes: macos=%s (%s)\n' "$macos" "$reason" >&2
 }
 
@@ -198,10 +263,27 @@ run_report() {
 # and it is what caught the `scripts/lib/` strip defect at v0.19.9 while every
 # local gate was green.
 resolve_tier() {
-  local resolved="$1"
+  local resolved="$1" proven="${2:-false}"
   local event="${CI_EVENT_NAME:-${GITHUB_EVENT_NAME:-}}"
   local ref="${CI_REF:-${GITHUB_REF:-}}"
   local cron="${CI_SCHEDULE:-}"
+
+  # AC11. `resolve_candidate_proof` has already established that this is a push
+  # to public `main` of a SHA a candidate ref proved at the ceiling; nothing
+  # below can be a better answer than "that has been done".
+  #
+  # WHAT THIS DELIBERATELY DOES NOT COVER, because the API said so rather than
+  # because it was overlooked: a candidate ref runs `CI` ONLY. Checked on
+  # 2026-08-13 for a2a-candidate/f2a0b54e57ca — one run, `CI`, nothing else,
+  # while the promoted SHA on `main` additionally ran CodeQL, gitleaks,
+  # classify-guard and Pages. So there is no candidate proof for those four to
+  # trust, and "skip them because the candidate passed" would DELETE four gates
+  # rather than deduplicate them. They already run exactly once per promoted
+  # SHA; moving them onto candidate refs would be net zero, and strictly worse
+  # for a candidate that never promotes. Pages is a third thing again — it is
+  # the DEPLOY, and a deploy the candidate never performed cannot be skipped
+  # because the candidate succeeded.
+  if [ "$proven" = true ]; then echo none; return; fi
 
   case "$event" in
     schedule)
@@ -277,6 +359,20 @@ expect_tier() {
     return
   fi
   echo "ci-changes --teeth: $label — tier=$got"
+}
+
+expect_proven() {
+  local label="$1" want="$2"
+  shift 2
+  local out got
+  out="$(env "$@" bash "$ROOT/scripts/ci-changes.sh" 2>/dev/null)"
+  got="$(sed -n 's/^proven=//p' <<< "$out")"
+  if [ "$got" != "$want" ]; then
+    echo "ci-changes --teeth: FAIL — $label: got proven=$got, want proven=$want" >&2
+    teeth_fail=1
+    return
+  fi
+  echo "ci-changes --teeth: $label — proven=$got"
 }
 
 run_teeth() {
@@ -377,6 +473,63 @@ run_teeth() {
     CI_CHANGES_FILES= CI_EVENT_NAME=push CI_REF=refs/heads/main CI_REPOSITORY=ydnikolaev/a2ahub \
     CI_BEFORE_SHA=0000000000000000000000000000000000000000 CI_AFTER_SHA=deadbeef GITHUB_OUTPUT=
 
+  # --- the candidate proof (AC11) --------------------------------------------
+  #
+  # Every case below names a REAL SHA class from §2.2's window, because the
+  # criterion's whole difficulty is that a push to `main` is not one thing.
+
+  # (s) THE PROMOTE. f2a0b54e57ca: the candidate ref ran the ceiling at
+  # 08:12, the promotion pushed the identical tree to `main` at 08:36, and the
+  # second run could change no verdict. This is the case AC11 exists for.
+  local promote_env=(CI_EVENT_NAME=push CI_REF=refs/heads/main
+    CI_REPOSITORY=ydnikolaev/a2ahub CI_AFTER_SHA=f2a0b54e57cad83528fc675c7cd92dace28911fa
+    CI_CANDIDATE_RUNS=1 CI_CHANGES_FILES="internal/fold/fold.go" GITHUB_OUTPUT=)
+  expect_proven "a promote to main whose SHA a candidate already proved" true "${promote_env[@]}"
+  expect_tier "…buys no tier at all" none "${promote_env[@]}"
+
+  # (s2) …and the ×10 runner goes with it. Without this the promotion still
+  # pays 10 equivalent minutes to rebuild a companion the candidate built.
+  # `integrations/` is in the diff on purpose: the path predicate would say
+  # `true`, and the proof must outrank it.
+  expect "…and the macOS runner is not bought either" false true \
+    CI_EVENT_NAME=push CI_REF=refs/heads/main CI_REPOSITORY=ydnikolaev/a2ahub \
+    CI_AFTER_SHA=f2a0b54e57cad83528fc675c7cd92dace28911fa CI_CANDIDATE_RUNS=1 \
+    CI_CHANGES_FILES="integrations/macos-notifier/Package.swift" GITHUB_OUTPUT=
+
+  # (t) A FEEDBACK SQUASH-MERGE. Eight of 23 head SHAs in the window have NO
+  # candidate run — seven auto-merged feedback pull requests and one direct
+  # admin push. These are the commits for which the push-side run is the ONLY
+  # proof, and the blanket "skip on main" form of AC11 would have deleted it.
+  expect_tier "a main push with no candidate run keeps its lane" lane \
+    CI_EVENT_NAME=push CI_REF=refs/heads/main CI_REPOSITORY=ydnikolaev/a2ahub \
+    CI_AFTER_SHA=69b91e603baf CI_CANDIDATE_RUNS=0 \
+    CI_CHANGES_FILES="feedback/inbox/fb-20260812-755a23.yaml" GITHUB_OUTPUT=
+
+  # (u) A CANDIDATE REF MUST NOT PROOF-GATE ITSELF. Re-pushing a SHA to a
+  # candidate branch while a successful candidate run for it exists would,
+  # without the branch guard, skip the one execution the FILTERED tree ever
+  # gets — the run that caught the scripts/lib/ strip defect at v0.19.9.
+  expect_tier "a candidate ref is never silenced by its own proof" ceiling \
+    CI_EVENT_NAME=push CI_REF=refs/heads/a2a-candidate/deadbeef CI_REPOSITORY=ydnikolaev/a2ahub \
+    CI_AFTER_SHA=deadbeef CI_CANDIDATE_RUNS=1 CI_CHANGES_FILES="docs/backlog.md" GITHUB_OUTPUT=
+
+  # (v) A DISPATCH IS NOT A PUSH. An operator asking for a manual run has asked
+  # for an execution, not for a report that one already happened — and the
+  # event guard is also what stops a dispatched LANE run on a candidate ref
+  # from ever being counted as a ceiling.
+  expect_tier "a workflow_dispatch is not silenced by a candidate run" ceiling \
+    CI_EVENT_NAME=workflow_dispatch CI_REF=refs/heads/main CI_REPOSITORY=ydnikolaev/a2ahub \
+    CI_AFTER_SHA=f2a0b54e57ca CI_CANDIDATE_RUNS=1 GITHUB_OUTPUT=
+
+  # (w) THE TAG KEEPS ITS CEILING, deliberately and at a stated price. AC11
+  # names "a push to public main" and this is the reason not to widen it: once
+  # the promotion trusts the lookup, the tag is the one ship-boundary proof
+  # that does NOT depend on the lookup being right. ~17 equivalent minutes per
+  # release, bought as insurance against this file.
+  expect_tier "a tag keeps the ceiling even when the candidate proved the SHA" ceiling \
+    CI_EVENT_NAME=push CI_REF=refs/tags/v9.9.9 CI_REPOSITORY=ydnikolaev/a2ahub \
+    CI_AFTER_SHA=f2a0b54e57ca CI_CANDIDATE_RUNS=1 CI_CHANGES_FILES="docs/backlog.md" GITHUB_OUTPUT=
+
   # (r) The two crons live in TWO files — this script's literal and the
   # workflow's `on.schedule`. A rename in one is silent in the other, and the
   # failure it produces is a nightly ceiling that never runs while the run
@@ -395,7 +548,7 @@ run_teeth() {
     echo "ci-changes --teeth: FAIL" >&2
     exit 1
   fi
-  echo "ci-changes --teeth: 20 case(s) green."
+  echo "ci-changes --teeth: 27 case(s) green."
 }
 
 case "${1:-}" in
