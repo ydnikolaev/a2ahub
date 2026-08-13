@@ -36,6 +36,11 @@ cd "$(git rev-parse --show-toplevel)"
 ALLOW_DIRS=( .github cmd integrations internal schemas skill space-template testkit seeds feedback web ui releasenotes )
 PUBLIC_VALIDATOR_FILES=(
   scripts/check-lane-declarations.sh
+  # ci-changes.sh is PUBLIC because `.github/workflows/ci.yml` calls it, and a
+  # workflow that is published without the script it invokes is exactly the
+  # v0.19.9 defect this list exists to prevent (see publish-to-public.sh's own
+  # header): the private tree stayed green while the candidate refused.
+  scripts/ci-changes.sh
   scripts/lib/lane-ungated.txt
   scripts/lib/job-timeouts.tsv
   scripts/lib/gate-lib.sh

@@ -62,6 +62,7 @@ scripts/*
 !scripts/check_operational_projection_single_source.sh
 !scripts/check_work_checkpoint_schema.sh
 !scripts/check-lane-declarations.sh
+!scripts/ci-changes.sh
 !scripts/check-pendency-uniqueness.sh
 !scripts/check-loop-coverage.sh
 !scripts/check-human-gates.sh

@@ -26,17 +26,62 @@ name: CI
 # promotion, which is the only moment its verdict can still stop a release —
 # and it earned its keep the same day, catching a stamp defect that every local
 # gate had passed.
+#
+# The weekly `schedule` is the SAFETY NET for the path gate below, and it is
+# deliberately singular. A filter that silently never fires looks exactly like
+# a filter that correctly never fires, and the only thing that tells them
+# apart is an execution that does not depend on the filter. `scripts/ci-changes.sh`
+# scopes it to the PUBLIC repository alone (spec 13 AC2): two repositories
+# would re-add roughly 104 macOS runs a year to learn one repository's worth
+# of information.
 on:
   push:
     branches:
       - main
       - 'a2a-candidate/**'
   pull_request:
+  schedule:
+    - cron: '17 6 * * 1'
 
 permissions:
   contents: read
 
 jobs:
+  # The changed-file set is resolved ONCE, here, and every expensive job
+  # downstream gates on an output of this job rather than on a decision of its
+  # own (spec 13 §3.2, rung 0, AC16). The decision itself lives in
+  # scripts/ci-changes.sh, which has its own --teeth and runs at a terminal;
+  # a `${{ }}` expression has neither property, and actionlint was MEASURED
+  # on 2026-08-12 saying nothing at all about a job with no path condition.
+  changes:
+    # timeout-minutes: a new job identity, so scripts/lib/job-timeouts.tsv has
+    # no measured p99 for it yet and this is the artefact's stated floor. It
+    # is one API read and a shell script; the next --p99 regeneration replaces
+    # this with a measurement.
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      macos: ${{ steps.resolve.outputs.macos }}
+      resolved: ${{ steps.resolve.outputs.resolved }}
+      files: ${{ steps.resolve.outputs.files }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Resolve the changed-file set
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_REPOSITORY: ${{ github.repository }}
+          CI_EVENT_NAME: ${{ github.event_name }}
+          CI_PR_NUMBER: ${{ github.event.pull_request.number }}
+          CI_BEFORE_SHA: ${{ github.event.before }}
+          CI_AFTER_SHA: ${{ github.sha }}
+        run: bash scripts/ci-changes.sh
+
   check:
     # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
     timeout-minutes: 28
@@ -71,10 +116,16 @@ jobs:
     # renamed anyway, this condition goes TRUE and the job RUNS — minutes spent
     # re-verifying an already-verified SHA, which is waste. The old form failed
     # the other way, and a false green is not the same kind of mistake.
+    #
+    # The `schedule` clause is K1's: the weekly cron exists ONLY as the macOS
+    # gate's safety net, and the ceiling has no business running from it. K4
+    # is what gives the ceiling its own scheduled home; until then a weekly
+    # `make check` would be a cost this wave did not ask for.
     if: >-
-      github.event_name != 'push'
+      github.event_name != 'schedule'
+      && (github.event_name != 'push'
       || github.ref != 'refs/heads/main'
-      || github.repository != 'ydnikolaev/a2ahub'
+      || github.repository != 'ydnikolaev/a2ahub')
     runs-on: ubuntu-latest
     env:
       # setup-go restores this exact build cache; verify.sh accepts an external
@@ -121,6 +172,9 @@ jobs:
   skill-drift:
     # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
     timeout-minutes: 5
+    # The weekly cron is the macOS net (see `on:` above); regenerating the
+    # skill reference on a schedule proves nothing about a tree nobody pushed.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -159,9 +213,29 @@ jobs:
             }
           done
 
+  # THE 2650-EQUIVALENT-MINUTE JOB (spec 13 F1/F2), now reachable only from a
+  # diff that can change its verdict.
+  #
+  # It ran on every push and every pull request in both repositories, at a ×10
+  # runner multiplier, for ~52 s of Swift work — 55.6% of a twelve-day bill.
+  # Over the same window, ZERO commits touched integrations/macos-notifier/,
+  # against 689 commits total. Every one of those minutes proved something
+  # that had not changed.
+  #
+  # The gate is a JOB, never `on.push.paths:` — spec 13 §3.1 states why, and
+  # it is the obvious wrong fix somebody will reach for again: a trigger-level
+  # filter skips the WHOLE workflow, `check` included, so a change to
+  # internal/ would merge ungated.
+  #
+  # Its other two triggers are already covered and are NOT re-added here:
+  # tags are `release.yml`'s own `macos-notifier` job (which builds the
+  # shipped artifact), and the weekly net is the `schedule` above, resolved
+  # inside ci-changes.sh so this `if:` stays a single reference (AC16).
   macos-notifier:
     # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
     timeout-minutes: 5
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
     runs-on: macos-15
     steps:
       - name: Checkout

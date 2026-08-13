@@ -383,6 +383,7 @@ harness-check: ## Run the gates' --teeth self-tests (harness gates are private/p
 
 _harness-check:
 	@bash scripts/verify.sh --teeth
+	@bash scripts/ci-changes.sh --teeth
 	@bash scripts/check-gosec-scope.sh --teeth
 	@bash scripts/release-preflight.sh --teeth
 	@bash scripts/check-view-vocabulary.sh --teeth
