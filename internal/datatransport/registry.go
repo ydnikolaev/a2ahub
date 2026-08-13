@@ -52,9 +52,14 @@ func (r *Registry) Lookup(name string) (Driver, error) {
 
 // Default is a package-level, constructible Registry — exactly what
 // NewRegistry() returns, never a hidden singleton with state a test cannot
-// reset. It has no consumer in this brief (no driver is registered into it
-// anywhere in this codebase yet); it exists so a future caller wiring a
-// real driver at cmd/a2a's DI boundary has a shared registry to reach for
-// without inventing one. A test that wants isolation should call
-// NewRegistry() instead of using this var.
+// reset.
+//
+// Its production consumer is internal/space, which registers the space-git
+// driver into it lazily (data_transport.go's registerSpaceGit) and looks a
+// driver up by the value the MANIFEST declares. It had no consumer at all
+// until 2026-08-13, and that is precisely what made AC-8's "a second driver
+// is a registry entry" untrue as wired — the delivery path constructed its
+// driver directly. Found by this phase's own audit.
+//
+// A test that wants isolation should call NewRegistry() instead of this var.
 var Default = NewRegistry()

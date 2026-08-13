@@ -1,0 +1,36 @@
+schema: release-notes/v1
+version: "0.23.0"
+released: "2026-08-13"
+headline: "The transport registry gets a real caller, and a manifest field that nothing read starts deciding something"
+changes:
+  - id: RN-02300-0
+    kind: fix
+    roadmap:
+      visibility: shipped
+      why: >
+        Spec 05a's AC-8 promises that a second transport driver costs "a
+        registry entry plus conformance tests". The registry existed and was
+        tested, and had zero production callers — the delivery path built its
+        driver directly, so the promise was false as wired.
+    impact: normal
+    subject: "a data package's declared transport_driver now selects the driver that moves its bytes"
+    detail: >
+      `transport_driver` was written at exactly one site and read by nobody.
+      `DeliverDataPackage` now decodes that one field and looks the driver up
+      in the registry, and `internal/space` registers its own space-git driver
+      lazily. A manifest naming an unregistered driver is refused by name.
+
+      Registration is a `sync.OnceValue` rather than an `init`: this repository
+      bans init functions, and the ban is right — a registry populated at
+      import time is precisely the implicit ordering with invisible side
+      effects that rule exists to prevent.
+
+      Found by the phase's own audit, which was right to call the promise
+      overstated. The read half stays unwired and is stated rather than
+      claimed: `a2a data fetch` still resolves directly, and a second driver
+      would need a read hook that lands with `data-package/v2` — the wire enum
+      is frozen in v1 regardless.
+    affects: [contracts]
+    action:
+      scope: none
+      why: "No action. No command, flag or lifecycle changed; a manifest that was already valid still delivers exactly as before."
