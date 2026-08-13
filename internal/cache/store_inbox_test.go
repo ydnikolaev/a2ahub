@@ -116,6 +116,7 @@ func TestItemHumanGateJSONIsAdditiveAndOmittedWhenEmpty(t *testing.T) {
 		New: true, Reasons: []string{string(ReasonGatePendingOnMe)},
 		WaitingOn: []string{"axon"}, ExpectedTransition: "approve", Why: "quorum rule",
 		RuleIdentity: "decision/proposed",
+		Overdue:      true, ActivationOwed: true,
 	}
 	withoutGate, err := json.Marshal(baseline)
 	if err != nil {
@@ -130,6 +131,11 @@ func TestItemHumanGateJSONIsAdditiveAndOmittedWhenEmpty(t *testing.T) {
 	}
 	if _, exists := before["rule_identity"]; exists {
 		t.Fatalf("dashboard-only RuleIdentity leaked into stable Item JSON: %s", withoutGate)
+	}
+	for _, key := range []string{"overdue", "activation_owed"} {
+		if _, exists := before[key]; exists {
+			t.Fatalf("dashboard-only semantic %q leaked into stable Item JSON: %s", key, withoutGate)
+		}
 	}
 
 	baseline.HumanGate = "G3"

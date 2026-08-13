@@ -73,6 +73,9 @@ func TestOutboxAttention_FourConditionsPlusControl(t *testing.T) {
 	got := map[string][]string{}
 	for _, it := range items {
 		got[it.ID] = it.Reasons
+		if want := hasOverdueReason(it.Reasons); it.Overdue != want {
+			t.Errorf("%s Overdue = %v, want %v from typed overdue reasons %v", it.ID, it.Overdue, want, it.Reasons)
+		}
 	}
 	wantIDs := []string{
 		"XW-axon-20260701-o2", "XW-axon-20260701-o3", "XW-axon-20260701-o4a", "XW-axon-20260701-o4b",

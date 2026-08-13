@@ -1,6 +1,9 @@
 package html
 
 import (
+	"bufio"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -22,6 +25,7 @@ func TestToItemCarriesCompleteVerdict(t *testing.T) {
 		Reasons: []string{"gate-pending-on-me"}, WaitingOn: []string{"atlas"},
 		ExpectedTransition: "approve", Why: "specs/03-domain.md: a diagnostic rule citation",
 		HumanGate: "G3", RuleIdentity: "decision/proposed", OperationalItems: operational,
+		Overdue: true, ActivationOwed: true,
 	}
 
 	got := toItem(source, time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC), "atlas", openItemIndex{})
@@ -40,6 +44,9 @@ func TestToItemCarriesCompleteVerdict(t *testing.T) {
 	if !reflect.DeepEqual(got.OperationalItems, operational) {
 		t.Errorf("OperationalItems = %v, want %v", got.OperationalItems, operational)
 	}
+	if !got.Overdue || !got.ActivationOwed {
+		t.Errorf("attention semantics were not carried mechanically: Overdue=%v ActivationOwed=%v", got.Overdue, got.ActivationOwed)
+	}
 	if !got.GatePending {
 		t.Error("GatePending = false, want true when the typed verdict carries HumanGate")
 	}
@@ -48,6 +55,81 @@ func TestToItemCarriesCompleteVerdict(t *testing.T) {
 	}
 	if strings.Contains(got.ReasonSentence.RU, "specs/") || strings.Contains(got.ReasonSentence.EN, "specs/") {
 		t.Fatalf("ReasonSentence leaked diagnostic Why: %+v", got.ReasonSentence)
+	}
+}
+
+// TestDashboardConsumersDoNotClassifyRawAttentionReasons guards both authored
+// and generated production consumers. Reasons remain diagnostic wire data; a
+// browser branching on their raw codes would recreate server policy in the
+// presentation layer. The vocabulary is derived from cache.ReasonCodes rather
+// than copied into this test.
+func TestDashboardConsumersDoNotClassifyRawAttentionReasons(t *testing.T) {
+	t.Parallel()
+
+	paths := []string{
+		filepath.Join("..", "..", "web", "design-source", "14-local-dashboard-v4.dc.html"),
+		"template.html",
+	}
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+			file, err := os.Open(path)
+			if err != nil {
+				t.Fatalf("open production consumer: %v", err)
+			}
+			t.Cleanup(func() {
+				if closeErr := file.Close(); closeErr != nil {
+					t.Errorf("close production consumer: %v", closeErr)
+				}
+			})
+
+			lineNumber := 0
+			scanner := bufio.NewScanner(file)
+			scanner.Buffer(make([]byte, 64*1024), 2*1024*1024)
+			for scanner.Scan() {
+				lineNumber++
+				line := scanner.Text()
+				if !strings.Contains(line, ".reasons") {
+					continue
+				}
+				for _, code := range cache.ReasonCodes() {
+					if strings.Contains(line, `"`+string(code)+`"`) || strings.Contains(line, `'`+string(code)+`'`) {
+						t.Errorf("%s:%d classifies raw attention reason %q; consume server-carried semantic fields instead: %s",
+							path, lineNumber, code, strings.TrimSpace(line))
+					}
+				}
+			}
+			if err := scanner.Err(); err != nil {
+				t.Fatalf("scan production consumer: %v", err)
+			}
+		})
+	}
+}
+
+// TestAssembleConsumesOneDashboardSnapshot keeps the production assembler on
+// the resistance-tested cache API. Reintroducing the older independent reads
+// would evaluate pendency again while projecting threads and prompts even if
+// DashboardSnapshot itself remained perfectly single-pass.
+func TestAssembleConsumesOneDashboardSnapshot(t *testing.T) {
+	t.Parallel()
+
+	raw, err := os.ReadFile("assemble.go")
+	if err != nil {
+		t.Fatalf("read assemble.go: %v", err)
+	}
+	source := string(raw)
+	if got := strings.Count(source, "store.DashboardSnapshot(ctx)"); got != 1 {
+		t.Fatalf("DashboardSnapshot production calls = %d, want exactly 1", got)
+	}
+	for _, forbidden := range []string{
+		"store.OpenInboxSnapshot(ctx)",
+		"store.OutboxSnapshot(ctx)",
+		"store.ExchangeArchiveSnapshot(ctx)",
+		"store.ThreadView(ctx",
+	} {
+		if strings.Contains(source, forbidden) {
+			t.Errorf("assemble.go still independently consumes %s; use the carried DashboardSnapshot verdict", forbidden)
+		}
 	}
 }
 

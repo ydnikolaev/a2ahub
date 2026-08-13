@@ -37,6 +37,12 @@ type Item struct {
 	Thread   string   `json:"thread,omitempty"`
 	New      bool     `json:"new"`
 	Reasons  []string `json:"reasons,omitempty"`
+	// Overdue and ActivationOwed are dashboard-only semantic projections of
+	// typed attention facts. Presentation branches on these booleans rather
+	// than classifying raw reason-code strings; the stable inbox/outbox JSON
+	// contract remains unchanged.
+	Overdue        bool `json:"-"`
+	ActivationOwed bool `json:"-"`
 
 	// PendingMerge is true when a submitted-but-not-yet-visible-as-merged
 	// marker exists for this artifact (the pending-merge overlay, §7.2
@@ -495,6 +501,19 @@ func exchangeActive(fa foldedArtifact, me string, manifest space.Manifest) bool 
 		return true
 	}
 	verdict := resolveVerdict(fa, me, manifest, "")
+	return exchangeActiveFromVerdict(fa, me, verdict)
+}
+
+// exchangeActiveFromVerdict is exchangeActive's carried-answer form. It is
+// used when a caller already resolved the artifact's verdict and must not pay a
+// second relation evaluation merely to classify a published announcement.
+func exchangeActiveFromVerdict(fa foldedArtifact, me string, verdict pendency.Verdict) bool {
+	if !isOpen(fa.kind(), fa.Result.State) {
+		return false
+	}
+	if fa.kind() != fold.KindAnnouncement || fa.Result.State != fold.StatePublished {
+		return true
+	}
 	// The author asks about the artifact — "is anyone still to acknowledge
 	// this" — while a recipient asks about itself. Both were already the
 	// two branches this function had; only the rule behind them changed.

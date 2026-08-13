@@ -88,6 +88,10 @@ test('overview attention teasers route to Exchange and disappear when empty', ()
   verdictItem.waitingOn = ['atlas'];
   verdictItem.expectedTransition = 'approve';
   verdictItem.why = 'specs/03-domain.md: diagnostic rule citation';
+  verdictItem.blocking = false;
+  verdictItem.gatePending = false;
+  verdictItem.overdue = true;
+  verdictItem.activationOwed = false;
   verdictItem.reasonSentence = { en: 'Atlas must approve this decision.', ru: 'Atlas должен согласовать это решение.' };
   values = controller.renderVals();
   const verdictRow = values.ovRows.find(row => row.id === verdictItem.id);
@@ -97,9 +101,13 @@ test('overview attention teasers route to Exchange and disappear when empty', ()
   assert.equal(verdictRow.hasTechnicalWhy, true);
   assert.equal(verdictRow.technicalWhy, verdictItem.why);
   assert.notEqual(verdictRow.reasonSentence, verdictRow.technicalWhy);
+  assert.match(verdictRow.status, /overdue/);
   controller.state.locale = 'ru';
   assert.equal(controller.renderVals().ovRows.find(row => row.id === verdictItem.id).reasonSentence, 'Atlas должен согласовать это решение.');
   controller.state.locale = 'en';
+  verdictItem.overdue = false;
+  verdictItem.activationOwed = true;
+  assert.match(controller.statusOf(verdictItem).status, /activation owed/);
   const target = values.ovRows[0];
   target.select();
   assert.equal(controller.state.view, 'work');

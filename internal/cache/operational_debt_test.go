@@ -373,6 +373,9 @@ func TestStoreInbox_OperationalDebtSurfacesUnderActionable(t *testing.T) {
 		if !found {
 			t.Errorf("Reasons = %v, want it to contain %q", it.Reasons, "activation-owed")
 		}
+		if !it.ActivationOwed {
+			t.Error("activation reason was not projected into the dashboard-only ActivationOwed semantic fact")
+		}
 	}
 
 	// Outbox (OP-208) is the other, unconditional surface: every open own

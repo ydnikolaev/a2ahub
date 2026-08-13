@@ -83,8 +83,9 @@ vocabulary_states() { # $1 = vocabulary json
 
 # vocabulary_outcomes prints the domain meanings a server may carry. Several
 # outcome names intentionally overlap state names (`withdrawn`, `superseded`);
-# comparing the carried outcome is presentation, not state classification, so
-# the inline-chain check below excludes a chain made entirely of outcomes.
+# comparing the carried outcome is presentation, not state classification. The
+# inline-chain check therefore exempts each comparison only when ITS operand is
+# a carried/derived outcome — the words alone cannot grant an exemption.
 vocabulary_outcomes() { # $1 = vocabulary json
   printf '%s\n' "$1" |
     awk '/"outcomes"/{f=1} f{print} f&&/\]/{exit}' |
@@ -159,6 +160,50 @@ state_equality_chains() { # $1 = scan root
   ' {} + 2>/dev/null
 }
 
+# equality_pairs emits `operand|literal` for the simple equality comparisons
+# state_equality_chains admits. Literal-left and literal-right forms normalize
+# to the same record. Keeping the operand is essential: `withdrawn` and
+# `superseded` are both state and outcome vocabulary, so the quoted word cannot
+# tell whether a component is presenting `item.outcome` or classifying `state`.
+equality_pairs() { # $1 = one source line
+  printf '%s\n' "$1" |
+    grep -oE '([A-Za-z_$][A-Za-z0-9_$.]*|"[a-z_]+")([[:space:]]*)={2,3}([[:space:]])*([A-Za-z_$][A-Za-z0-9_$.]*|"[a-z_]+")' 2>/dev/null |
+    while IFS= read -r pair; do
+      local left right literal operand
+      left="${pair%%=*}"
+      right="${pair##*=}"
+      left="$(printf '%s' "$left" | tr -d '[:space:]')"
+      right="$(printf '%s' "$right" | tr -d '[:space:]')"
+      if [[ "$left" == \"*\" ]]; then
+        literal="${left#\"}"
+        literal="${literal%\"}"
+        operand="$right"
+      else
+        literal="${right#\"}"
+        literal="${literal%\"}"
+        operand="$left"
+      fi
+      printf '%s|%s\n' "$operand" "$literal"
+    done
+}
+
+outcome_operand() { # $1 = operand, $2 = source line
+  local operand="$1" content="$2" outcome_var
+  case "$operand" in
+    outcome|*.outcome) return 0 ;;
+  esac
+  # The authored dashboard's canonical helper form is
+  # `const o = outcomeOf(x); return o === ...`. Recognize only the identifier
+  # actually bound to outcomeOf on this line; another operand on the same line
+  # receives no exemption.
+  while IFS= read -r outcome_var; do
+    [ "$operand" = "$outcome_var" ] && return 0
+  done < <(printf '%s\n' "$content" |
+    grep -oE '(const|let|var)[[:space:]]+[A-Za-z_$][A-Za-z0-9_$]*[[:space:]]*=[[:space:]]*outcomeOf[[:space:]]*\(' 2>/dev/null |
+    sed -E 's/^(const|let|var)[[:space:]]+([A-Za-z_$][A-Za-z0-9_$]*).*/\2/')
+  return 1
+}
+
 run_check() { # $1 = scan root
   local root="$1" json states outcomes
   if ! json="$(vocabulary_json)"; then
@@ -210,7 +255,7 @@ run_check() { # $1 = scan root
     done
   done <<< "$(state_lists "$root")"
 
-  local outcome_known
+  local pairs pair operand word records operands operand_records
   while IFS= read -r line; do
     [ -z "$line" ] && continue
     file="${line%%:*}"
@@ -218,28 +263,55 @@ run_check() { # $1 = scan root
     lineno="${content%%:*}"
     content="${content#*:}"
 
-    words="$(printf '%s\n' "$content" | grep -oE '"[a-z_]+"' | tr -d '"')"
-    known=0
-    outcome_known=0
-    unknown=""
-    for word in $words; do
-      if printf '%s\n' "$states" | grep -qx "$word"; then
-        known=$((known + 1))
-        if printf '%s\n' "$outcomes" | grep -qx "$word"; then
-          outcome_known=$((outcome_known + 1))
-        fi
-      else
-        unknown="$unknown $word"
+    pairs="$(equality_pairs "$content")"
+    records=""
+    while IFS= read -r pair; do
+      [ -z "$pair" ] && continue
+      operand="${pair%%|*}"
+      word="${pair#*|}"
+      if outcome_operand "$operand" "$content"; then
+        continue
       fi
-    done
+      records="${records}${operand}|${word}"$'\n'
+    done <<< "$pairs"
 
-    if [ "$known" -lt 2 ] || [ "$known" -eq "$outcome_known" ]; then
-      continue
-    fi
-    gate_fail "$(basename "$file"):$lineno classifies by an inline equality chain over $known state names — a component must read the server-carried outcome/terminal verdict instead of spelling the state set branch by branch"
-    for word in $unknown; do
-      gate_fail "$(basename "$file"):$lineno compares against \"$word\" inside a state classification, but the binary vocabulary has no such state"
-    done
+    operands="$(printf '%s' "$records" | cut -d'|' -f1 | sed '/^$/d' | sort -u)"
+    while IFS= read -r operand; do
+      [ -z "$operand" ] && continue
+      operand_records="$(printf '%s' "$records" | awk -F'|' -v wanted="$operand" '$1 == wanted { print $2 }')"
+      known=0
+      unknown=""
+      for word in $operand_records; do
+        if printf '%s\n' "$states" | grep -qx "$word"; then
+          known=$((known + 1))
+        else
+          unknown="$unknown $word"
+        fi
+      done
+
+      if [ "$known" -ge 2 ]; then
+        gate_fail "$(basename "$file"):$lineno classifies operand \`$operand\` by an inline equality chain over $known state names — a component must read the server-carried outcome/terminal verdict instead of spelling the state set branch by branch"
+        for word in $unknown; do
+          gate_fail "$(basename "$file"):$lineno compares \`$operand\` against \"$word\" inside a state classification, but the binary vocabulary has no such state"
+        done
+        continue
+      fi
+
+      # One known value normally cannot prove classification (a filter may
+      # compare `value === "all" || value === "closed"`). An operand explicitly
+      # named `state`, however, supplies that missing semantic fact: any sibling
+      # literal outside the vocabulary is an unknown state comparison and must
+      # fail even though the known-value count is below two.
+      case "$operand" in
+        state|*.state)
+          if [ "$known" -ge 1 ]; then
+            for word in $unknown; do
+              gate_fail "$(basename "$file"):$lineno compares state operand \`$operand\` against \"$word\", but the binary vocabulary has no such state"
+            done
+          fi
+          ;;
+      esac
+    done <<< "$operands"
   done <<< "$(state_equality_chains "$root")"
 
   gate_summary "view-vocabulary"
@@ -310,6 +382,39 @@ FIXTURE
     return 1
   fi
   rm -f "$tmp/ReturnedInlineChain.dc.html"
+
+  # These two fixtures pin the audit escapes independently. Accumulate their
+  # results so one false green cannot hide the other during the gate's own red
+  # proof.
+  local escape_failed=0
+  cat > "$tmp/OutcomeOperandEscape.dc.html" <<'FIXTURE'
+<script>
+function abandoned(state) {
+  return state === "withdrawn" || state === "superseded";
+}
+</script>
+FIXTURE
+  if ( run_check "$tmp" ) >/dev/null 2>&1; then
+    echo "view-vocabulary --teeth: FAILED — outcome names compared on a state operand stayed green" >&2
+    escape_failed=1
+  fi
+  rm -f "$tmp/OutcomeOperandEscape.dc.html"
+
+  cat > "$tmp/UnknownStateEscape.dc.html" <<'FIXTURE'
+<script>
+function closed(state) {
+  return state === "closed" || state === "clsoed";
+}
+</script>
+FIXTURE
+  if ( run_check "$tmp" ) >/dev/null 2>&1; then
+    echo "view-vocabulary --teeth: FAILED — an unknown state comparison beside only one known state stayed green" >&2
+    escape_failed=1
+  fi
+  rm -f "$tmp/UnknownStateEscape.dc.html"
+  if [ "$escape_failed" -ne 0 ]; then
+    return 1
+  fi
 
   # A component that only reads the payload must stay green. So must a single
   # equality, an unrelated non-vocabulary chain, and a forbidden chain shown

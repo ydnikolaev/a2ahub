@@ -2404,15 +2404,6 @@ function monoCodes(names) {
   });
   return out;
 }
-function overdue(it) { return (it.reasons || []).some(r => r === "overdue-on-me" || r === "needed-by-passed"); }
-// `activation-owed` is the SECOND reason code this file reads, and until now
-// it read none of it: internal/cache/inbox.go emits it on a contract you own
-// once somebody has adopted your published major, and every surface rendered
-// that item with a bare priority as if nothing were owed. The debt is derived
-// from registration and publication alone — never from what `x_operational`
-// says — so it is owed whether the descriptor declared every item `absent` or
-// declared nothing at all (spec 05-declared-nature.md §8.4b step 3).
-function activationOwed(it) { return (it.reasons || []).some(r => r === "activation-owed"); }
 // A version package is a set of paths, not a set of rows: group by directory
 // so a 20-file manifest reads as a shape instead of a list. `files` already
 // carries { key, path, role, media, size, digest, open } from the flat
@@ -3204,8 +3195,8 @@ class Component extends DCLogic {
       why: this.blockedWhy({ from: it.from, to: it.to, neededBy: it.neededBy, priority: it.priority })
     };
     if (it.gatePending) return { status: ru ? "ждёт вашего согласования" : "your approval pending", tone: "attention" };
-    if (overdue(it)) return { status: (ru ? "просрочено" : "overdue") + " · " + it.priority, tone: "blocking" };
-    if (activationOwed(it)) return {
+    if (it.overdue) return { status: (ru ? "просрочено" : "overdue") + " · " + it.priority, tone: "blocking" };
+    if (it.activationOwed) return {
       status: ru ? "нужно включить в работу" : "activation owed", tone: "attention",
       why: ru
         ? "Кто-то уже закрепил опубликованную мажорную версию этого контракта, а вы ещё не подтвердили, что операционная половина существует. Обязательство выведено из регистрации и публикации, а не из того, что записано в x_operational. Закрывается командой a2a contract activate."
@@ -3792,7 +3783,7 @@ class Component extends DCLogic {
     const scopedArchive = d.archive.filter(i => this.inScope(i.space));
     // Human-attention scope is intentionally narrower than the agent/system's
     // canonical `yourMove`: routine protocol moves continue automatically.
-    const needsYou = scopedInbox.filter(i => i.blocking || i.gatePending || overdue(i));
+    const needsYou = scopedInbox.filter(i => i.blocking || i.gatePending || i.overdue);
     const restCount = scopedInbox.length - needsYou.length;
 
     // Exchange has one durable history. Inbox/outbox are active projections

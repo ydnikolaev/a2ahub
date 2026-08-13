@@ -223,27 +223,22 @@ func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache
 	}
 	limitContractVersionDetails(d.Contracts)
 
-	// Exchange is an active-work surface. The ordinary inbox query also
-	// contains terminal history by protocol design, so use the explicitly open
-	// passive projection here; completed documents remain fully available in
-	// Threads and never masquerade as work "in flight".
-	inItems, err := store.OpenInboxSnapshot(ctx)
+	// Cache composes exchange items and thread open-items together so each
+	// artifact's pendency verdict is evaluated once. HTML only maps the carried
+	// facts; constructing these surfaces independently would ask the relation a
+	// second time and can choose a different degraded-parent fallback.
+	exchangeSnapshot, err := store.DashboardSnapshot(ctx)
 	if err != nil {
-		return Data{}, fmt.Errorf("html: inbox: %w", err)
+		return Data{}, fmt.Errorf("html: dashboard snapshot: %w", err)
 	}
-	outItems, err := store.OutboxSnapshot(ctx)
-	if err != nil {
-		return Data{}, fmt.Errorf("html: outbox: %w", err)
-	}
-	archiveItems, err := store.ExchangeArchiveSnapshot(ctx)
-	if err != nil {
-		return Data{}, fmt.Errorf("html: exchange archive: %w", err)
-	}
+	inItems := exchangeSnapshot.Inbox
+	outItems := exchangeSnapshot.Outbox
+	archiveItems := exchangeSnapshot.Archive
 	// Conversations, including their first turn, with their members and the
 	// document-to-document links inside them (spec 46 §T6.1). Built before the
 	// rows because it also returns every artifact's open item, and an inbox row
 	// carries the legal-move facts its agent prompt is assembled from.
-	threads, threadViews, openItems, err := buildThreads(ctx, store, self, now)
+	threads, threadViews, openItems, err := buildThreads(exchangeSnapshot.Threads, self, now)
 	if err != nil {
 		return Data{}, fmt.Errorf("html: threads: %w", err)
 	}
@@ -293,13 +288,9 @@ func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache
 		}
 	}
 
-	// Exchange overlay: aggregate open items (inbox ∪ outbox) per from→to→space.
-	// withOpenItemPendency carries the SAME verdict buildThreads already
-	// resolved (openItems, via buildOpenItems' single pendency.Resolve call)
-	// onto these copies' WaitingOn/ExpectedTransition, so exchangeEdges can
-	// tell a merely-live item from one somebody actually owes a move on
-	// without this package computing pendency a second time (I7).
-	d.ExchangeEdges = exchangeEdges(withOpenItemPendency(append(append([]cache.Item{}, inItems...), outItems...), openItems), now)
+	// Exchange overlay reads the same carried verdict fields as the row and
+	// thread projections; no presentation-side join or relation call remains.
+	d.ExchangeEdges = exchangeEdges(append(append([]cache.Item{}, inItems...), outItems...), now)
 
 	// Read-health facts: committed fold violations plus any mirror files the
 	// best-effort index could not decode. Both already exist in cache; the old
@@ -790,37 +781,13 @@ func contractVersionConsumerPins(edges []ContractEdge, spaceID, contractID, vers
 	return pins
 }
 
-// buildThreads discovers every non-empty thread by grouping
-// Store.Search's full (open + closed) item listing per (space, thread), then
-// renders each qualifying group through Store.ThreadView — the SAME reader
-// `a2a thread` itself uses, never a second traversal of the fold. spaceID is
-// ALWAYS passed explicitly (never ""): every group is already scoped to one
-// space, so this never triggers ThreadView's cross-space
-// *cache.ThreadAmbiguityError path (CC-073 — a thread present in two spaces
-// is two separate Data.Thread rows here, one per space, matching
-// Thread.Space). A ThreadView error for one group degrades that group away
-// (skip, continue) rather than failing the whole dashboard — same "degrade,
-// never fail the view" convention as this file's own consumes.yaml read.
-func buildThreads(ctx context.Context, store *cache.Store, self string, now time.Time) ([]Thread, []ThreadView, openItemIndex, error) {
-	items, err := store.Search(ctx, "", cache.SearchFilters{})
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("search: %w", err)
-	}
-
-	type groupKey struct{ space, thread string }
-	counts := map[groupKey]int{}
-	var order []groupKey
-	for _, it := range items {
-		if it.Thread == "" {
-			continue // threadless (pre-P46 / non-conforming) artifacts never group into a pseudo-thread
-		}
-		k := groupKey{it.Space, it.Thread}
-		if counts[k] == 0 {
-			order = append(order, k)
-		}
-		counts[k]++
-	}
-
+// buildThreads maps cache's already-rendered per-space thread results. Cache's
+// DashboardSnapshot grouped the same full (open + closed) index that powers
+// the exchange rows and reused those artifacts' carried pendency verdicts;
+// asking Store.Search/ThreadView again here would recreate both a second index
+// traversal and a second relation evaluation. A thread present in two spaces
+// remains two results because cache groups by space before thread identity.
+func buildThreads(results []cache.ThreadResult, self string, now time.Time) ([]Thread, []ThreadView, openItemIndex, error) {
 	type row struct {
 		t  Thread
 		v  ThreadView
@@ -833,12 +800,8 @@ func buildThreads(ctx context.Context, store *cache.Store, self string, now time
 	// ThreadView remains the one computation for both the list and open-item
 	// prompts; the browser does not grow a second grouping rule.
 	openItems := openItemIndex{}
-	for _, k := range order {
-		result, tErr := store.ThreadView(ctx, k.thread, k.space)
-		if tErr != nil {
-			continue
-		}
-		openItems.put(k.space, result.OpenItems)
+	for _, result := range results {
+		openItems.put(result.Space, result.OpenItems)
 		if len(result.Artifacts) == 0 {
 			continue // ThreadView's own rendered member set is authoritative
 		}
@@ -1190,7 +1153,8 @@ func toItem(it cache.Item, now time.Time, self string, open openItemIndex) Item 
 		Thread: it.Thread, Age: humanizeAge(now, createdAt), NeededBy: it.NeededBy,
 		CreatedAt: created, CreatedSeq: it.CreatedSeq, CreatedOrderKnown: it.CreatedOrderKnown,
 		MovedAt: moved, ActivitySeq: it.LatestEventSeq, ActivityEventID: it.LatestEventID, New: it.New,
-		Severity: severityOf(it, gate), Reasons: it.Reasons, PendingMerge: it.PendingMerge,
+		Severity: severityOf(it, gate), Reasons: it.Reasons, Overdue: it.Overdue,
+		ActivationOwed: it.ActivationOwed, PendingMerge: it.PendingMerge,
 		SyncStale: it.SyncStale, YourMove: it.YourMove, Description: it.Description,
 		WaitingOn: it.WaitingOn, ExpectedTransition: it.ExpectedTransition,
 		Why: it.Why, HumanGate: it.HumanGate, OperationalItems: it.OperationalItems,
@@ -1355,28 +1319,6 @@ func severityOf(it cache.Item, gate bool) string {
 		return "attention"
 	}
 	return "normal"
-}
-
-// withOpenItemPendency returns a copy of items with WaitingOn/
-// ExpectedTransition filled in from open — the SAME pendency verdict
-// buildThreads already resolved once per artifact via buildOpenItems,
-// never a second pendency.Resolve call (I7). open is keyed only by
-// threaded artifacts (assemble.go's own "threadless (pre-P46 /
-// non-conforming) artifacts never group into a pseudo-thread" comment on
-// buildThreads), so a miss here — a threadless item, or one whose thread's
-// store.ThreadView call errored — leaves WaitingOn empty: NOT owed rather
-// than an unknown treated as owed, which is the direction this whole
-// change exists to enforce (liveness must never over-assert pendency).
-func withOpenItemPendency(items []cache.Item, open openItemIndex) []cache.Item {
-	out := make([]cache.Item, len(items))
-	for i, it := range items {
-		if oi, ok := open.get(it.Space, it.ID); ok {
-			it.WaitingOn = oi.WaitingOn
-			it.ExpectedTransition = oi.ExpectedTransition
-		}
-		out[i] = it
-	}
-	return out
 }
 
 // exchangeEdges aggregates open items into directed per-space edges. Count

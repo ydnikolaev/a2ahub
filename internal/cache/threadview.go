@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/pendency"
 	"github.com/ydnikolaev/a2ahub/internal/provenance"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/workreport"
@@ -491,6 +492,10 @@ func (s *Store) ThreadView(ctx context.Context, ref string, spaceID string) (Thr
 }
 
 func (s *Store) renderThread(threadID, resolvedFrom, spaceID string, members []foldedArtifact) (ThreadResult, error) {
+	return s.renderThreadWithVerdicts(threadID, resolvedFrom, spaceID, members, nil)
+}
+
+func (s *Store) renderThreadWithVerdicts(threadID, resolvedFrom, spaceID string, members []foldedArtifact, verdicts verdictIndex) (ThreadResult, error) {
 	sorted, order := sortMembers(members)
 
 	byID := make(map[string]foldedArtifact, len(sorted))
@@ -552,7 +557,7 @@ func (s *Store) renderThread(threadID, resolvedFrom, spaceID string, members []f
 	// open_items' best-effort fallback (see buildOpenItems' own doc
 	// comment), never silently patched over by reaching outside the
 	// thread for a "correct" answer a reader has no way to see.
-	openItems := buildOpenItems(sorted, byID, s.manifestFor(spaceID), s.ownSystem)
+	openItems := buildOpenItemsWithVerdicts(sorted, byID, s.manifestFor(spaceID), s.ownSystem, verdicts)
 
 	var flags []ThreadFlag
 	seenFlag := map[string]bool{}
@@ -1091,7 +1096,13 @@ func envelopeFrom(fa foldedArtifact) fold.Envelope {
 // for this same item rather than a second, locally re-derived scan of
 // Result.Acks — pendency's unackedTargets resolver IS that scan now, in
 // its one home.
+type verdictIndex map[string]pendency.Verdict
+
 func buildOpenItems(sorted []foldedArtifact, byID map[string]foldedArtifact, manifest space.Manifest, ownSystem string) []OpenItem {
+	return buildOpenItemsWithVerdicts(sorted, byID, manifest, ownSystem, nil)
+}
+
+func buildOpenItemsWithVerdicts(sorted []foldedArtifact, byID map[string]foldedArtifact, manifest space.Manifest, ownSystem string, verdicts verdictIndex) []OpenItem {
 	var out []OpenItem
 	for _, fa := range sorted {
 		if !isOpen(fa.kind(), fa.Result.State) {
@@ -1135,7 +1146,10 @@ func buildOpenItems(sorted []foldedArtifact, byID map[string]foldedArtifact, man
 		if fa.kind() == fold.KindResponse {
 			parentFrom = authEnv.From
 		}
-		verdict := resolveVerdict(fa, ownSystem, manifest, parentFrom)
+		verdict, carried := verdicts[fa.Env.ID]
+		if !carried {
+			verdict = resolveVerdict(fa, ownSystem, manifest, parentFrom)
+		}
 
 		// D-025's transition-free broadcast-acknowledge: no table row
 		// exists in fold (legalnext.go's own doc comment), so NextActions

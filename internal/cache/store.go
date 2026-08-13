@@ -14,6 +14,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/pendency"
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"gopkg.in/yaml.v3"
@@ -89,6 +90,11 @@ type Store struct {
 	updateRepo          string
 	updateTTL           time.Duration
 	updateChecker       func(context.Context)
+
+	// resolvePendency is the one relation evaluator injected only so the
+	// dashboard resistance test can count evaluations. NewStore always wires
+	// the canonical resolveVerdict; production callers have no setter.
+	resolvePendency func(foldedArtifact, string, space.Manifest, string) pendency.Verdict
 }
 
 // NewStore constructs a Store. ownSystem is this project's configured
@@ -104,7 +110,7 @@ func NewStore(ownSystem, cacheDir string, spaces []SpaceMirror, now Clock, ttl t
 	}
 	return &Store{
 		ownSystem: ownSystem, cacheDir: cacheDir, spaces: spaces, now: now, ttl: ttl,
-		cloneOrFetch: space.CloneOrFetch,
+		cloneOrFetch: space.CloneOrFetch, resolvePendency: resolveVerdict,
 	}
 }
 
@@ -465,9 +471,10 @@ func (s *Store) inbox(ctx context.Context, actionableOnly, advance, annotate, ex
 		stale := s.spaceSyncStale(spaceID)
 		markers, _ := ReadMarkers(s.cacheDir, spaceID)
 		pending := markerSet(markers)
-		// byID is keyed on the WHOLE space's artifacts, not a thread
-		// subset, so a response's parent is found even when the response
-		// and its parent landed in different threads.
+		// byID is keyed on the whole space so responseParentFrom can
+		// distinguish a missing parent from one that exists in a different
+		// thread. Only a same-thread parent is resolvable; both anomalous
+		// shapes take the thread surface's response-author fallback.
 		byID := byArtifactID(artifacts)
 		var yourMove map[string]bool
 		if annotate {
@@ -513,6 +520,7 @@ func (s *Store) inbox(ctx context.Context, actionableOnly, advance, annotate, ex
 				item.YourMove = yourMove[fa.Env.ID]
 			}
 			item.Reasons = reasons
+			item.ActivationOwed = HasReason(reasons, ReasonActivationOwed)
 			_, seen := prior.Items[fa.Env.ID]
 			item.New = !seen
 			out = append(out, item)
@@ -583,9 +591,9 @@ func (s *Store) outbox(ctx context.Context, attentionOnly, annotate, exchangeAct
 		markers, _ := ReadMarkers(s.cacheDir, spaceID)
 		pending := markerSet(markers)
 		sla := s.slaFor(spaceID)
-		// byID is keyed on the WHOLE space's artifacts, not a thread
-		// subset, so a response's parent is found even when the response
-		// and its parent landed in different threads — same as Store.inbox.
+		// Whole-space byID lets responseParentFrom distinguish missing and
+		// cross-thread parents while resolving only same-thread membership —
+		// the same fallback choice as Store.inbox and the thread surface.
 		byID := byArtifactID(artifacts)
 		var yourMove map[string]bool
 		if annotate {
@@ -626,6 +634,7 @@ func (s *Store) outbox(ctx context.Context, attentionOnly, annotate, exchangeAct
 				item.YourMove = yourMove[fa.Env.ID]
 			}
 			item.Reasons = reasons
+			item.Overdue = hasOverdueReason(reasons)
 			out = append(out, item)
 		}
 	}

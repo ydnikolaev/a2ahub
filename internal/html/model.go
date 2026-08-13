@@ -203,8 +203,12 @@ type Item struct {
 	New             bool     `json:"new"`
 	Severity        string   `json:"severity"` // blocking | attention | normal
 	Reasons         []string `json:"reasons,omitempty"`
-	PendingMerge    bool     `json:"pendingMerge,omitempty"`
-	SyncStale       bool     `json:"syncStale,omitempty"`
+	// Overdue and ActivationOwed are cache-computed attention semantics. The
+	// browser presents them but never classifies Reasons to recover them.
+	Overdue        bool `json:"overdue,omitempty"`
+	ActivationOwed bool `json:"activationOwed,omitempty"`
+	PendingMerge   bool `json:"pendingMerge,omitempty"`
+	SyncStale      bool `json:"syncStale,omitempty"`
 	// Archived means the exchange is operationally complete for this system.
 	// It is intentionally separate from State: announcements remain formally
 	// `published` even after every intended recipient has acknowledged them.

@@ -50,6 +50,8 @@ func (s *Store) NotificationItems(ctx context.Context) ([]Item, error) {
 			}
 			item := toItem(fa, stale, pending[fa.Env.ID])
 			item.Reasons = reasons
+			item.Overdue = hasOverdueReason(reasons)
+			item.ActivationOwed = HasReason(reasons, ReasonActivationOwed)
 			qualified[spaceID+"\x00"+fa.Env.ID] = item
 		}
 	}

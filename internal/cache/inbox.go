@@ -138,7 +138,7 @@ func blockedByOwner(fa foldedArtifact) string {
 // responseParentFrom before calling in here — the SAME resolution
 // buildOpenItems (threadview.go) already performs for the thread surface,
 // including its degrade-to-the-response's-own-`from` fallback when the
-// parent cannot be found in that space's index. This was the one remaining
+// parent is absent or belongs to another thread. This was the one remaining
 // asymmetry between the inbox/outbox surfaces and the thread surface (a
 // response's pendency verdict differed depending on which one was asked);
 // it is closed now, not merely recorded. Every OTHER caller passes ""
@@ -243,12 +243,20 @@ func actionableReasons(fa foldedArtifact, me string, manifest space.Manifest) ([
 // verdict for a response artifact that the thread surface does, rather than
 // the degraded "nobody owes anything" answer a bare "" produces.
 func actionableReasonsForResponse(fa foldedArtifact, me string, manifest space.Manifest, parentFrom string) ([]string, pendency.Verdict) {
+	verdict := resolveVerdict(fa, me, manifest, parentFrom)
+	return actionableReasonsFromVerdict(fa, me, verdict), verdict
+}
+
+// actionableReasonsFromVerdict applies the inbox attention filters to the
+// already-resolved relation answer. DashboardSnapshot uses this form so the
+// item, thread, and prompt projections consume one verdict evaluation rather
+// than asking the relation again while constructing each surface.
+func actionableReasonsFromVerdict(fa foldedArtifact, me string, verdict pendency.Verdict) []string {
 	var reasons []string
 	kind := fa.kind()
 	env := fa.Env
 	state := fa.Result.State
 
-	verdict := resolveVerdict(fa, me, manifest, parentFrom)
 	iOwe := containsString(verdict.Owners, me)
 
 	// 1: {addressed to me with no ack by me} — a pure filter, for every
@@ -349,7 +357,7 @@ func actionableReasonsForResponse(fa foldedArtifact, me string, manifest space.M
 		reasons = append(reasons, string(ReasonActivationOwed))
 	}
 
-	return reasons, verdict
+	return reasons
 }
 
 func containsString(list []string, s string) bool {
@@ -383,29 +391,20 @@ func byArtifactID(artifacts []foldedArtifact) map[string]foldedArtifact {
 // meaningless for anything else, and resolveVerdict itself only reads
 // parentFrom for fold.KindResponse.
 //
-// When the parent cannot be found in byID, this degrades to the response's
-// OWN `from` rather than "" — the SAME fallback buildOpenItems
-// (threadview.go) already applies for the thread surface's authEnv. That
-// keeps the DEGRADED ANSWER the same shape on both surfaces (a real, if
-// weaker, from-id — never a silent "nobody owes anything").
-//
-// It does not, by itself, keep the two surfaces choosing the SAME branch on
-// every input, because the two byID indexes have different domains by
-// design: this one is the WHOLE SPACE (this function's own caller, per the
-// brief that introduced it), while buildOpenItems' byID is deliberately the
-// RENDERED THREAD MEMBER SET only (threadview.go's own doc comment on
-// renderThread's byID). So a response whose parent lives in the same space
-// but a DIFFERENT thread — already a REF-009/CC-073 violation, "a fork or a
-// broken propagation" per that same comment — resolves its real parent here
-// and degrades to its own `from` on the thread surface: a residual
-// divergence on that one already-anomalous shape, not on the normal case
-// (parent absent from the space entirely, or parent present in the thread),
-// where both surfaces agree. See this phase's own Deviations report.
+// The parent is resolvable only when it exists in byID AND belongs to the
+// response's own thread. buildOpenItems deliberately indexes the rendered
+// thread-member set, so accepting a whole-space parent from another thread
+// here would make inbox/outbox name a different owner than the thread surface
+// and could produce a WaitingOn owner absent from matching NextActions.By.
+// A missing or cross-thread parent degrades to the response's OWN `from`
+// rather than "" — the SAME fallback buildOpenItems applies for authEnv. That
+// keeps the degraded answer a real, if weaker, system id instead of silently
+// claiming nobody owes anything.
 func responseParentFrom(fa foldedArtifact, byID map[string]foldedArtifact) string {
 	if fa.kind() != fold.KindResponse {
 		return ""
 	}
-	if parent, ok := byID[fa.Env.Parent]; ok {
+	if parent, ok := byID[fa.Env.Parent]; ok && parent.Env.Thread == fa.Env.Thread {
 		return parent.Env.From
 	}
 	return fa.Env.From

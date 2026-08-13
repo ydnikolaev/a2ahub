@@ -68,3 +68,30 @@ changes:
     action:
       scope: none
       why: "No action. Regenerate a dashboard with the current binary to see the clearer attention cards; existing JSON consumers may ignore the additive human_gate key."
+
+  - id: RN-02300-2
+    kind: fix
+    roadmap:
+      visibility: shipped
+      why: >
+        The attention-card audit found that the browser could still classify
+        two raw reason strings and that dashboard thread construction could
+        evaluate the same pendency relation a second time. Both violated the
+        single-answer contract behind the first coherence slice.
+    impact: normal
+    subject: "dashboard rows, threads and prompts now share one attention verdict"
+    detail: >
+      Cache now builds the dashboard exchange and thread projections from one
+      folded snapshot and evaluates each artifact's pendency verdict once.
+      Missing or cross-thread response parents take one explicit degraded
+      fallback, so the carried owner agrees with the matching legal action.
+
+      Overdue and activation-needed status are carried as semantic booleans;
+      the browser no longer recovers them by matching raw reason-code strings.
+      The vocabulary gate also distinguishes a carried outcome operand from a
+      state operand and refuses unknown state comparisons even when only one
+      known state appears beside the typo.
+    affects: [dashboard]
+    action:
+      scope: none
+      why: "No action. Existing inbox/outbox JSON remains compatible; regenerate the dashboard to consume the corrected projection."

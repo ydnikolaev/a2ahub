@@ -61,6 +61,7 @@
 #   **/*.go
 #   !**/*_test.go
 #   internal/cache/pendency_callsite_test.go
+#   docs/decisions.md
 #
 # The last line re-admits ONE test file the exclusion above would drop. This
 # gate does not scan it — it names it, as the within-package half of the same
@@ -112,6 +113,15 @@ import_allowed() { # $1 = repo-relative directory
 run_check() { # $1 = scan root (repo root, or a --teeth fixture tree)
   local root="$1" file rel lineno content dir trimmed
   root="$(cd "$root" && pwd -P)"
+
+  # ADR-001's original cache row does not list pendency. ADR-016 is the
+  # explicit narrow grant which makes the allowlist below architecture, not a
+  # gate-local exception. Teeth fixtures normally omit decisions.md; when a
+  # repository supplies the record, refuse if that exact grant disappears.
+  if [ -f "$root/docs/decisions.md" ] &&
+      ! grep -Fq 'Boundary grant: `internal/cache` may import `internal/pendency`.' "$root/docs/decisions.md"; then
+    gate_fail "docs/decisions.md does not record ADR-016's cache → pendency boundary grant — IMPORT_ALLOWLIST would otherwise contradict ADR-001"
+  fi
 
   while IFS= read -r file; do
     rel="${file#"$root"/}"
@@ -206,7 +216,22 @@ FIXTURE
   fi
   rm -rf "$tmp/internal"
 
-  # Fixture 3 — the real, sanctioned shape (internal/pendency defines
+  # Fixture 3 — the import allowlist must remain tied to an architecture
+  # decision rather than becoming a gate-local boundary exception.
+  mkdir -p "$tmp/docs"
+  printf '%s\n' '# decisions without the cache-to-pendency grant' > "$tmp/docs/decisions.md"
+  if ( run_check "$tmp" ) >/dev/null 2>&1; then
+    echo "pendency-uniqueness --teeth: FAILED — a repository missing ADR-016's cache → pendency grant stayed green" >&2
+    return 1
+  fi
+  printf '%s\n' 'Boundary grant: `internal/cache` may import `internal/pendency`.' > "$tmp/docs/decisions.md"
+  if ! ( run_check "$tmp" ) >/dev/null 2>&1; then
+    echo "pendency-uniqueness --teeth: FAILED — the recorded cache → pendency grant was refused" >&2
+    return 1
+  fi
+  rm -rf "$tmp/docs"
+
+  # Fixture 4 — the real, sanctioned shape (internal/pendency defines
   # Resolve, internal/cache/inbox.go's resolveVerdict is the one caller)
   # must stay green.
   mkdir -p "$tmp/internal/pendency" "$tmp/internal/cache"

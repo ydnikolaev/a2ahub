@@ -5,8 +5,11 @@
 // query sets §4.2/§7.2 defines, plus per-system read cursors, the
 // pending-merge overlay, and mirror staleness/sync-age.
 //
-// ADR-001 import row: internal/artifact, internal/fold, internal/space
-// ONLY. This package never imports internal/validate (the V5
+// ADR-001 import row plus ADR-016's narrow pendency grant:
+// internal/artifact, internal/fold, internal/space and internal/pendency.
+// Pendency is imported solely to resolve and carry its complete typed verdict;
+// scripts/check-pendency-uniqueness.sh keeps inbox.go as the one production
+// Resolve call site. This package never imports internal/validate (the V5
 // registry-code lookup is internal/cli/cmd_show.go's job — it maps the
 // digest/staleness FACTS this package returns to a registry code) and
 // never imports internal/cli (P6's PendingMarker/CacheRemover interfaces
