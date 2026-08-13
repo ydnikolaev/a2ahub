@@ -60,7 +60,7 @@
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := spec-verify-refs lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus view-vocabulary pendency-uniqueness loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline-check
+REPO_GATES := spec-verify-refs lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus view-vocabulary pendency-uniqueness loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness roadmap-release-decisions provider-tier-deferral runner-economics space-template-baseline-check
 
 _print-repo-gates:
 	@echo "$(REPO_GATES)"
@@ -128,6 +128,9 @@ lane-declarations: ## Every validation phase declares the inputs that can change
 
 classify-guard: ## Publish-boundary gate: no private (harness) path is tracked, DENY↔.gitignore agree.
 	@bash scripts/classify-guard.sh
+
+runner-economics: ## No job runs an expensive runner ungated, and no job's timeout-minutes is missing, under 1.5x its measured p99, or over the 60-minute cap (P13 AC4).
+	@bash scripts/check-runner-economics.sh
 
 # lane-inputs:
 #   .github/workflows/**
@@ -384,6 +387,7 @@ harness-check: ## Run the gates' --teeth self-tests (harness gates are private/p
 _harness-check:
 	@bash scripts/verify.sh --teeth
 	@bash scripts/ci-changes.sh --teeth
+	@bash scripts/check-runner-economics.sh --teeth
 	@bash scripts/check-gosec-scope.sh --teeth
 	@bash scripts/release-preflight.sh --teeth
 	@bash scripts/check-view-vocabulary.sh --teeth

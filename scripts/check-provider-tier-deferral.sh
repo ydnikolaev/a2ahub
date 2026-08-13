@@ -36,7 +36,7 @@
 #   docs/features/**/audits/**/*-provider-tier-deferral.md
 #   **/audits/live-e2e-*
 #   **/audits/live-e2e-*/**
-#   releasenotes/*.yaml
+#   releasenotes/**/*.yaml
 # lane-reads-opaque: find_live_e2e_artifacts() (line ~84) walks the repo root
 #   with `\( -path './.git' -o -name node_modules \) -prune -o -path '*/audits/*'
 #   … -name 'live-e2e-*'`. That expression MIXES exclusion with selection, and

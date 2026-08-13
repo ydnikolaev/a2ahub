@@ -42,8 +42,11 @@ PUBLIC_VALIDATOR_FILES=(
   # header): the private tree stayed green while the candidate refused.
   scripts/ci-changes.sh
   scripts/ci-skill-drift.sh
+  scripts/ci-usage-report.sh
+  scripts/check-runner-economics.sh
   scripts/lib/lane-ungated.txt
   scripts/lib/job-timeouts.tsv
+  scripts/lib/ci-usage-window.json
   scripts/lib/gate-lib.sh
   scripts/check_contract_carried_set.sh
   scripts/check_event_writer_receipts.sh

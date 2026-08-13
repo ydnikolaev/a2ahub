@@ -33,7 +33,16 @@ concurrency:
 jobs:
   deploy:
     # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
-    timeout-minutes: 32
+    #
+    # 32 -> 45, and the correction is the new gate's first real catch. This
+    # identity's p99 is 1768 s; the sizing rule is
+    # min(60, max(5, ceil(1.5*p99/60), ceil(max/60)+2)), and 1.5x1768/60 = 45.
+    # 32 came from the `ceil(max/60)+2` term alone, which clears the observed
+    # tail but not the rule the artefact states. check-runner-economics.sh
+    # (RULE 3) refuses it, which is exactly why the gate and this value land in
+    # the same commit: a gate joining the ceiling with one unadjudicated red
+    # would red every checkout.
+    timeout-minutes: 45
     # Pages is enabled on the PUBLIC repository and nowhere else, so this job
     # ran 31 times in the private one and failed 30 of them (P13 F10, ~40
     # equivalent minutes). A job that cannot succeed where it runs is not a

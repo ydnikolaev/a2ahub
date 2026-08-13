@@ -64,6 +64,8 @@ scripts/*
 !scripts/check-lane-declarations.sh
 !scripts/ci-changes.sh
 !scripts/ci-skill-drift.sh
+!scripts/ci-usage-report.sh
+!scripts/check-runner-economics.sh
 !scripts/check-pendency-uniqueness.sh
 !scripts/check-loop-coverage.sh
 !scripts/check-human-gates.sh
@@ -78,6 +80,7 @@ scripts/*
 scripts/lib/*
 !scripts/lib/lane-ungated.txt
 !scripts/lib/job-timeouts.tsv
+!scripts/lib/ci-usage-window.json
 !scripts/lib/gate-lib.sh
 !scripts/tests/
 scripts/tests/*
