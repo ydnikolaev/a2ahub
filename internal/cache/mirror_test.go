@@ -465,6 +465,87 @@ func TestWalkArtifacts_DataPackageReadmeIsNotASkippedFile(t *testing.T) {
 	}
 }
 
+// TestWalkArtifacts_BlobPayloadIsNotASkippedFile is the regression for
+// docs/backlog.md "`walkArtifacts` has the same hole for blob payloads
+// (2026-08-12)": `a2a attach` lands a blob's payload bytes at
+// "<system>/blobs/<BL-id>/..." (space.BlobForPath's own grammar), and
+// nothing about that directory's contents is an envelope draft — a
+// frontmatter-bearing .md file filed there is the blob's own payload, sealed
+// by the blob's digest sidecar, never the artifact this walk is looking for.
+// Before this fix walkArtifacts tried to decode it as an envelope, failed
+// artifact.ParseFrontmatter (or worse, succeeded on an accidental frontmatter
+// shape and folded garbage into the index), and reported
+// SkipReasonNotFrontmatterShaped for it on every real `a2a inbox`/`outbox`
+// call — the identical defect
+// TestWalkArtifacts_DataPackageReadmeIsNotASkippedFile fixed for its own
+// twin, closed here the same way: silently skip it, don't report it.
+func TestWalkArtifacts_BlobPayloadIsNotASkippedFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	write := func(rel, body string) {
+		t.Helper()
+		path := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("axon/blobs/BL-axon-20260811-ab12/notes.md", "# Attached notes\n\nNo frontmatter here — this is the blob's own payload, not a draft.\n")
+	write("axon/blobs/BL-axon-20260811-ab12/notes.md.sha256", "deadbeef  notes.md\n")
+
+	artifacts, skips, err := walkArtifacts(dir)
+	if err != nil {
+		t.Fatalf("walkArtifacts: %v", err)
+	}
+	if len(artifacts) != 0 {
+		t.Fatalf("artifacts = %+v, want none: a blob payload file must not be folded in as an envelope draft", artifacts)
+	}
+	if len(skips) != 0 {
+		t.Fatalf("skips = %+v, want none: a blob payload file must be skipped SILENTLY, not reported as a malformed artifact", skips)
+	}
+}
+
+// TestWalkArtifacts_MalformedArtifactBesideBlobsStillReported is
+// TestWalkArtifacts_BlobPayloadIsNotASkippedFile's own negative control: the
+// blob exemption is narrow to the blob's own directory grammar
+// ("<system>/blobs/<BL-id>/..."), never "skip this whole system section" —
+// cmd_validate_ci.go's isBlobPayloadPath doc comment says so explicitly, and
+// this test proves walkArtifacts honours the same narrowness. A genuinely
+// malformed artifact filed elsewhere under the SAME system (axon, here
+// outside any blobs/ subtree) must still reach artifact discovery and still
+// be reported as a skip.
+func TestWalkArtifacts_MalformedArtifactBesideBlobsStillReported(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	write := func(rel, body string) {
+		t.Helper()
+		path := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("axon/blobs/BL-axon-20260811-ab12/notes.md", "blob payload prose, not an artifact\n")
+	write("axon/malformed-draft.md", "not frontmatter shaped at all\n")
+
+	artifacts, skips, err := walkArtifacts(dir)
+	if err != nil {
+		t.Fatalf("walkArtifacts: %v", err)
+	}
+	if len(artifacts) != 0 {
+		t.Fatalf("artifacts = %+v, want none", artifacts)
+	}
+	if len(skips) != 1 || skips[0].Path != "axon/malformed-draft.md" || skips[0].Reason != SkipReasonNotFrontmatterShaped {
+		t.Fatalf("skips = %+v, want only the genuinely malformed artifact outside blobs/ reported, and the blob payload skipped silently", skips)
+	}
+}
+
 func findArtifact(t *testing.T, idx []foldedArtifact, id string) foldedArtifact {
 	t.Helper()
 	for _, a := range idx {

@@ -1058,6 +1058,38 @@ func walkArtifacts(dir string) ([]rawArtifact, []SkippedFile, error) {
 		if relErr == nil && artifact.IsDataPackageReadmePath(filepath.ToSlash(rel)) {
 			return nil
 		}
+		// A blob payload's own frontmatter-bearing .md file
+		// ("<system>/blobs/<BL-id>/...", space.BlobForPath's own grammar)
+		// is `isBlobPayloadPath`'s sibling exemption (internal/cli/
+		// cmd_validate_ci.go, P10 agent-exchange-2026-08 spec 10 wave A/B)
+		// applied here — the exact defect the data-package README check
+		// just above was fixed for, left open at the time by design
+		// (docs/backlog.md "`walkArtifacts` has the same hole for blob
+		// payloads (2026-08-12)") rather than fixed silently in that
+		// brief's own scope. `a2a attach` lands payload bytes under a
+		// blob's own directory the same structural way `a2a data pack`
+		// does, and that directory's contents were never an envelope
+		// draft, so decoding one as such produces the identical false
+		// "could not be decoded" skip note and UNVERIFIED doctor
+		// visibility verdict.
+		//
+		// space.BlobForPath is consulted directly rather than restated as
+		// a second predicate — internal/cache already imports
+		// internal/space (see this file's own import block; the direction
+		// is sanctioned and documented at internal/space/data_delivery.go
+		// "internal/cache imports internal/space — never the other way"),
+		// so unlike artifact.IsDataPackageReadmePath's forced duplication
+		// (internal/artifact sits below internal/space in the import
+		// graph and cannot reach it) there is no reason to fork this
+		// grammar a second time. This is the blob's own directory shape,
+		// not "skip this whole system section": a genuinely malformed
+		// artifact filed elsewhere under the same system still reaches
+		// artifact discovery and still reds.
+		if relErr == nil {
+			if _, _, ok := space.BlobForPath(filepath.ToSlash(rel)); ok {
+				return nil
+			}
+		}
 		a, skip := decodeArtifactFile(dir, path)
 		if skip != nil {
 			skips = append(skips, *skip)
