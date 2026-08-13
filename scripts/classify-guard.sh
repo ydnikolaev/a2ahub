@@ -75,7 +75,7 @@ PENDING_DIRS=( docs )   # deferred to P6 — tracked today, tolerated by check 1
 # ALLOW_DIRS tree, so without this list they would classify as "public" and the
 # guard would be lying about the boundary. Must stay in sync with the STRIP set
 # in docs/runbooks/publish-to-public.sh.
-PRIVATE_ONLY_FILES=( .github/dependabot.yml )
+PRIVATE_ONLY_FILES=( .github/dependabot.yml scripts/check-feature-lint.sh scripts/check-feedback-corpus.sh scripts/check-skill-citations.sh scripts/check-spec-verify-refs.sh )
 # .history is the editor's own local-history tree (VS Code writes timestamped
 # snapshots of edited files there). Ephemeral and machine-local like .DS_Store:
 # never tracked, never published, and it reappears the moment anyone edits a

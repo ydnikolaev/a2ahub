@@ -67,6 +67,16 @@ scripts/*
 !scripts/ci-usage-report.sh
 !scripts/check-runner-economics.sh
 !scripts/feedback-intake-policy.sh
+# The four PRIVATE harness gates. They are REPO_GATES members that run in
+# `make check`, and until 2026-08-13 none of them was tracked ANYWHERE —
+# they existed only on one laptop. A fresh clone of the PRIVATE repo
+# therefore skipped four ceiling gates and printed ok, with a message
+# blaming a "public checkout". Tracked here, stripped at publish, the same
+# way .github/dependabot.yml is.
+!scripts/check-feature-lint.sh
+!scripts/check-feedback-corpus.sh
+!scripts/check-skill-citations.sh
+!scripts/check-spec-verify-refs.sh
 !scripts/check-pendency-uniqueness.sh
 !scripts/check-loop-coverage.sh
 !scripts/check-human-gates.sh
