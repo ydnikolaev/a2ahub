@@ -66,6 +66,7 @@ scripts/*
 !scripts/ci-skill-drift.sh
 !scripts/ci-usage-report.sh
 !scripts/check-runner-economics.sh
+!scripts/feedback-intake-policy.sh
 !scripts/check-pendency-uniqueness.sh
 !scripts/check-loop-coverage.sh
 !scripts/check-human-gates.sh

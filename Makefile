@@ -388,6 +388,7 @@ _harness-check:
 	@bash scripts/verify.sh --teeth
 	@bash scripts/ci-changes.sh --teeth
 	@bash scripts/check-runner-economics.sh --teeth
+	@bash scripts/feedback-intake-policy.sh --teeth
 	@bash scripts/check-gosec-scope.sh --teeth
 	@bash scripts/release-preflight.sh --teeth
 	@bash scripts/check-view-vocabulary.sh --teeth

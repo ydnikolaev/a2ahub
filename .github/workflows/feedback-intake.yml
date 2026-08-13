@@ -41,43 +41,29 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       is-feedback: ${{ steps.guard.outputs.is-feedback }}
+      change: ${{ steps.guard.outputs.change }}
       kind: ${{ steps.kind.outputs.kind }}
     steps:
+      # BASE repository only. `pull_request_target` resolves `actions/checkout`
+      # with no `ref:` to the base repo's default branch, which is what brings
+      # in scripts/feedback-intake-policy.sh. The PR's head is NEVER checked
+      # out and never executed — this job's whole security property, stated at
+      # the top of this file, is unchanged: PR content reaches it only as DATA,
+      # through the API, and is read rather than run.
+      - name: Checkout the base repository (never the PR head)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
       - name: Classify change and guard the quarantine boundary
         id: guard
+        env:
+          CI_REPOSITORY: ${{ github.repository }}
+          CI_BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           set -euo pipefail
-          files_json=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" \
-            --paginate --slurp | jq 'add')
-          count=$(jq 'length' <<<"$files_json")
-          feedback_count=$(jq \
-            '[.[] | select(.filename | startswith("feedback/inbox/"))] | length' \
-            <<<"$files_json")
-
-          if [ "$feedback_count" -eq 0 ]; then
-            echo "is-feedback=false" >> "$GITHUB_OUTPUT"
-            echo "merge-policy: ordinary code/documentation PR; no intake privilege granted."
-            exit 0
-          fi
-
-          if [ "$count" -ne 1 ] || [ "$feedback_count" -ne 1 ]; then
-            echo "::error::merge-policy: a PR touching feedback/inbox must contain exactly one changed file" >&2
-            exit 1
-          fi
-
-          status=$(jq -r '.[0].status' <<<"$files_json")
-          filename=$(jq -r '.[0].filename' <<<"$files_json")
-          if [ "$status" != "added" ]; then
-            echo "::error::merge-policy: feedback file must be added (got status=$status) for $filename" >&2
-            exit 1
-          fi
-          if ! grep -qE '^feedback/inbox/fb-[0-9]{8}-[0-9a-f]{6}\.yaml$' <<<"$filename"; then
-            echo "::error::merge-policy: unexpected path $filename" >&2
-            exit 1
-          fi
-
-          echo "is-feedback=true" >> "$GITHUB_OUTPUT"
-          echo "path=$filename" >> "$GITHUB_OUTPUT"
+          gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --paginate --slurp \
+            | jq 'add' \
+            | bash scripts/feedback-intake-policy.sh classify \
+            | tee -a "$GITHUB_OUTPUT"
 
       - name: Fetch pinned a2a release binary
         if: steps.guard.outputs.is-feedback == 'true'
@@ -99,6 +85,23 @@ jobs:
           gh api "repos/${REPO}/contents/${FILE_PATH}?ref=${PR_HEAD_SHA}" \
             --jq '.content' \
             | base64 -d > "$FILE_PATH"
+
+      # P15 AC11's other half. A triage verdict MODIFIES an existing record, and
+      # the base version is fetched so the diff can be judged: only `status`
+      # and `resolution` may move. That is the per-path merge rule the feedback
+      # runbook has always stated — the reporter owns the body, triage owns the
+      # verdict — enforced here instead of trusted.
+      - name: Fetch the base version of a modified record and judge the diff
+        if: steps.guard.outputs.change == 'modified'
+        env:
+          FILE_PATH: ${{ steps.guard.outputs.path }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${REPO}/contents/${FILE_PATH}?ref=${BASE_SHA}" \
+            --jq '.content' | base64 -d > /tmp/record-base.yaml
+          bash scripts/feedback-intake-policy.sh verdict-diff \
+            /tmp/record-base.yaml "$FILE_PATH"
 
       - name: Validate quarantined feedback data
         if: steps.guard.outputs.is-feedback == 'true'
