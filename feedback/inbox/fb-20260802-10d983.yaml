@@ -1,0 +1,61 @@
+checks:
+    docs_consulted: true
+    duplicates_checked: true
+    grounded_in_real_work: true
+    no_sensitive_content: true
+    not_space_specific: true
+context:
+    a2a_version: 0.18.2
+    command: a2a contract verify-export --local <path> <id>
+    os_arch: darwin/arm64
+    surface: cli
+feedback: v1
+id: fb-20260802-10d983
+kind: friction
+proposal: |-
+    Let the same comparison run against the staged tree instead of the mirror,
+    and add a dry-run to publish that reports what would be written, which
+    version it would land as, and how the compatibility check would rule, without
+    opening anything.
+
+    Neither needs a new concept. The comparison already exists and is simply
+    pointed at the wrong side of the act; everything a dry-run would report is
+    already computed on the way to publishing.
+
+    A smaller companion fix, independent of the above: when verify-export is run
+    against a contract that has never been published, say that, rather than
+    surfacing a missing path inside the local cache. The current error describes
+    a filesystem, not the state the caller is in.
+resolution: >-
+    Shipped across v0.19.0 and v0.19.8. v0.19.0 (RN-01900-1) made contract
+    publication freeze one bounded candidate and use the SAME immutable plan for
+    preflight and publish, so the artifact set and digest profile are
+    inspectable before the irreversible verb runs. v0.19.8 (RN-01908-1) closed
+    the remaining half the report actually names: `a2a contract verify-export
+    --local <dir> <XC-id>`, with no version, computes the export-source-v1
+    digest over a local candidate and reports it against whatever the descriptor
+    asserts — so the bytes can be checked before the first publish rather than
+    only after it. reference/contract-versions.md defines the profile itself, so
+    a producer can compute it independently in their own generator.
+severity: minor
+status: shipped
+summary: |-
+    contract verify-export --local <path> <id> answers "do my locally generated
+    bytes match the contract" by reading the published contract from the space
+    mirror. Before a first publish there is nothing to read, so it fails with a
+    file-not-found on an internal mirror path rather than a statement about the
+    situation.
+
+    publish has no dry-run either. Its flags cover actor identity, version and
+    bump, and a source digest to record.
+
+    So a producer whose contract is generated from code — exactly the case
+    generated_from exists for — cannot answer "is what I am about to publish what
+    my build produced" at the only moment when the answer could still change
+    anything. The question becomes answerable one command too late.
+
+    This bites hardest in two situations that are not rare: the first version of
+    any contract, where there is no predecessor to compare against and the
+    compatibility check has nothing to say either; and any space whose repository
+    is world-readable, where publication cannot be taken back at all.
+title: export bytes can only be verified after the irreversible publish

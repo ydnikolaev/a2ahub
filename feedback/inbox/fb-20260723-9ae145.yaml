@@ -1,0 +1,31 @@
+checks:
+    docs_consulted: true
+    duplicates_checked: true
+    grounded_in_real_work: true
+    no_sensitive_content: true
+    not_space_specific: true
+context:
+    a2a_version: 0.2.0
+    agent: claude (opus-4-8), acting for system seomatrix
+    command: a2a submit .a2a/staging/XC-seomatrix-content-feed.md
+    error_code: REF-001
+    os_arch: darwin/arm64
+    surface: cli
+evidence:
+    actual: 'submit fails: ''submit validation failed: [REF-001 id: artifact id does not match its filename]''. No PR is opened. Deterministic for any slug/system, since stemOf(''<sys>/provides/<slug>/contract.md'') == ''contract'' can never equal the XC- id.'
+    expected: The contract is validated at its committed path and a PR is opened against the space, placing the artifact at <system>/provides/<slug>/contract.md.
+    steps:
+        - a2a init -system <sys> -space <space-repo-url>, then align the space id and credential so `a2a doctor` is 5/5 PASS.
+        - 'a2a new contract --slug content-feed   # drafts .a2a/staging/XC-<sys>-content-feed.md'
+        - Fill the frontmatter per skill/reference/authoring/contract.md (category, version, schema_format, compat_policy, generated_from).
+        - 'a2a validate .a2a/staging/XC-<sys>-content-feed.md   # V1: valid=true, violations=[]'
+        - a2a submit .a2a/staging/XC-<sys>-content-feed.md
+feedback: v1
+id: fb-20260723-9ae145
+kind: bug
+proposal: 'Exempt type=contract from the stem guard the way the decisions/ section is already exempted from the section guard, since the contract''s identity is carried by the provides/<slug>/ directory rather than the filename. Options, cheapest first: (a) in validate, skip the ErrIDMismatch guard when envType==contract and the path matches <system>/provides/<slug>/contract.md with slug == ParseID(id).Slug — this keeps a real check (slug must still match the id) while dropping the impossible one; (b) make artifact.Validate take the envelope type and encode the per-type filename rule there, so the guard stays total; (c) change the layout to <system>/provides/<slug>/<id>.md, which restores the invariant but breaks the documented tree in skill/reference/authoring/contract.md. (a) or (b) look right; (c) contradicts the authoring guide.'
+resolution: 'Confirmed and fixed under P27. The report''s option (b) was taken: internal/artifact gained ValidateAt(id, path, Placement) — the mechanics of the three §4.2 path shapes — and internal/validate owns the envelope-type → placement table, so a contract is identified by its provides/<slug>/ directory (a wrong slug still reds REF-001) and a decision by its stem alone. The same one-shape guard also blocked every decision (REF-002), and the V3 CI scan skipped decisions/ entirely; both are fixed. Standing gates added: real-funnel submit round trips for contract and decision, and a cross-check that every space.Layout path passes its own placement guard. Commits 6538c6b, 741766b.'
+severity: blocker
+status: shipped
+summary: '`a2a submit` cannot publish any contract artifact. submitSectionPath() resolves type=contract to layout.ProvidesContract(slug) = <system>/provides/<slug>/contract.md, then V2 runs artifact.Validate(id, path), whose first guard requires stemOf(path) == id.Raw. The stem of that path is always the literal ''contract'', so it can never equal an XC-<system>-<slug> id, and REF-001 fires for every contract regardless of content. The draft itself is fine — the same file passes V1 `a2a validate` with zero violations. cmd_submit.go:594-597 already names this: ''Contract''s provides/<slug>/contract.md fixed filename is a known layout quirk this phase does not attempt to work around''. Consistent with the symptom, both participants'' provides/ trees in our space are still empty. This makes the whole documented contract family (new/publish/diff/verify-export) unreachable through submit, with no workaround: a hand-opened PR lands the file at the same canonical path and the space''s own a2a-validate CI would reject it identically.'
+title: 'submit blocks every contract: REF-001 from fixed contract.md filename'

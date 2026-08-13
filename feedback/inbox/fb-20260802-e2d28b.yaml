@@ -1,0 +1,62 @@
+checks:
+    docs_consulted: true
+    duplicates_checked: true
+    grounded_in_real_work: true
+    no_sensitive_content: true
+    not_space_specific: true
+context:
+    a2a_version: 0.18.2
+    command: a2a doctor
+    os_arch: darwin/arm64
+    surface: cli
+feedback: v1
+id: fb-20260802-e2d28b
+kind: feature
+proposal: |-
+    Not enforcement — a doctor row. Report the space repository's visibility
+    alongside the highest classification present among that space's artifacts,
+    and warn when the transport is weaker than the label: anything above public
+    sitting in a world-readable space.
+
+    Classification stays a human gate, as designed. It simply stops being a
+    silent one.
+
+    A stronger variant exists and is deliberately not what this asks for: refuse
+    at submit when classification is restricted and the space is public. That
+    converts a label into a rule, which is a protocol change and should be
+    decided as one. The doctor row only reports what is already true, so it can
+    ship without settling that question.
+resolution: >-
+    Shipped in v0.19.0 as the advisory diagnostic its own triage note promised,
+    not as enforcement: `a2a doctor` now compares an artifact's declared
+    classification against the repository's actual visibility and reports the
+    mismatch as a fact. The seam is consumer-owned by design —
+    internal/cli/visibility.go defines what doctor needs,
+    cmd/a2a/doctor_visibility.go adapts the cache's policy-free scan to it, and
+    the reader never decides PASS/WARN/UNVERIFIED. An unreadable visibility
+    stays silent rather than guessing. The transport still does not ENFORCE
+    classification, which is the deliberate half: a label the space cannot
+    honour is now visible instead of silently ignored.
+severity: minor
+status: shipped
+summary: |-
+    Every artifact carries classification: public, internal or restricted.
+    Nothing in the tool relates that value to the actual confidentiality of the
+    space it lands in. The only thing providing confidentiality is the visibility
+    of the space repository.
+
+    The result is a contradiction that is easy to reach and hard to notice: a
+    space whose repository is world-readable, holding artifacts every one of
+    which declares itself internal. Nothing in doctor, validate or submit
+    mentions it. Both sides keep writing the label in good faith, and the label
+    describes an intention the transport is not implementing.
+
+    Discovering this by accident is the normal path, because nothing in
+    day-to-day use puts the repository's visibility next to the classification of
+    what is being written into it.
+
+    This is adjacent to contract work rather than part of it, but it lands on the
+    same act: publishing a contract is the largest single body of material most
+    participants will ever put into a space, and the first one they would regret
+    exposing.
+title: classification is a label the space transport never honours

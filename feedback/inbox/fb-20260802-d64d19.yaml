@@ -1,0 +1,91 @@
+checks:
+    docs_consulted: true
+    duplicates_checked: true
+    grounded_in_real_work: true
+    no_sensitive_content: true
+    not_space_specific: true
+context:
+    a2a_version: 0.18.2
+    command: a2a feedback submit <file...>
+    os_arch: darwin/arm64
+    surface: cli
+evidence:
+    actual: |-
+        The command exits non-zero with a GraphQL error stating that merge
+        commits are not allowed on this repository, and prints no PR URL. The
+        pull request has in fact been created and the branch pushed. Nothing in
+        the output distinguishes this from a submission that never left the
+        machine.
+    expected: |-
+        Either the PR is opened and auto-merge is armed with a method the
+        repository accepts, or the command reports that the PR was opened and
+        auto-merge could not be armed, prints the PR URL, and exits in a state
+        the operator can act on.
+    steps:
+        - Use a repository whose merge settings allow squash only (allow_merge_commit false, allow_rebase_merge false, allow_squash_merge true) — the feedback intake repository is configured this way today.
+        - Author a feedback item and confirm `a2a feedback validate <file>` reports valid.
+        - Run `a2a feedback submit <file>` with a credential in the environment.
+        - When the command errors, list the target repository's pull requests.
+feedback: v1
+id: fb-20260802-d64d19
+kind: bug
+proposal: |-
+    Ask the host which merge methods the repository allows and arm auto-merge
+    with one of them, preferring the repository's own configured default. The
+    mutation already accepts mergeMethod; the fix is to stop relying on GitHub's
+    default, which is the one method a repository is most likely to have turned
+    off deliberately.
+
+    Independently of that: a failure in the second call should not be reported as
+    a failed submission. The PR exists at that point. Report what was
+    accomplished, name what could not be armed, print the URL, and let the
+    operator finish it by hand. Right now a partial success is indistinguishable
+    from a total failure, which is the part that actually costs time.
+
+    For the batch case, the honest minimum is to say what happened rather than to
+    build a queue: when more than one item is submitted and the base requires
+    up-to-date branches, only the first can land unattended. Reporting that at
+    submit time is cheap; discovering it by finding stalled PRs is not.
+
+    For credentials, resolving through the gh CLI the way space writes already do
+    removes an inconsistency rather than adding a feature.
+resolution: >-
+    Shipped in v0.19.0 (RN-01900-2), and the date is what makes this verdict
+    safe rather than generous: the report was correct when filed against 0.18.2
+    on 2026-08-02, and the repair landed the following day. Every post-push
+    outcome now retains the remote stage, branch, tree and pull request
+    reference that actually exist; a failed auto-merge arm after a PR has
+    already been created returns a typed partial-write outcome carrying the PR
+    number, URL and state, which `a2a feedback submit` prints with the next
+    action, and retry proves that evidence and repairs the same PR instead of
+    tempting a duplicate. The merge method is resolved from the repository's own
+    settings and sent explicitly, so a squash-only repository is armed with
+    squash rather than refused. Its own triage note accepted it as "an
+    independent first repair slice" that was never cut as such — the slice was
+    absorbed into the v0.19.0 work, which is why no commit was ever filed
+    against this id.
+severity: major
+status: shipped
+summary: |-
+    OpenPR sends enablePullRequestAutoMerge without a mergeMethod, so GitHub
+    applies its default, MERGE. Any repository configured squash-only or
+    rebase-only refuses it: "Merge method merge commits are not allowed on this
+    repository". That configuration is extremely common.
+
+    The damage is in the ordering, which the code comment above the call already
+    predicts: arming auto-merge is a SECOND call, made after the PR exists. So
+    the command exits non-zero, prints a GraphQL error and no PR URL, while the
+    branch is pushed and the PR is open. The operator is told the submission
+    failed when it half-succeeded, and the only way to learn otherwise is to go
+    look at the host.
+
+    Two related findings from the same run, both about this write path:
+
+    - submit does not fall back to `gh auth token` and demands a token in the
+      environment, although space credentials already resolve through the gh CLI.
+      One write path in the binary accepts an authenticated gh session and the
+      other does not.
+    - submitting several items at once strands all but the first when the base
+      requires up-to-date branches. The first merges, moves the base, and every
+      sibling goes behind at that instant with nothing to update it.
+title: submit reports failure on squash-only repos after the PR already exists
