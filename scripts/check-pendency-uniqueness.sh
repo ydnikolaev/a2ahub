@@ -12,7 +12,7 @@
 #
 # It refuses two distinct things:
 #
-#   1. A pendency.Resolve call outside the sanctioned call site(s) named in
+#   1. A pendency.Resolve reference outside the sanctioned call site(s) named in
 #      CALL_SITE_ALLOWLIST below. Constructing pendency.Input is a decision
 #      — which carried facts (ExtraAddressees, ActiveParticipants,
 #      LeftParticipants — see pendency_callsite_test.go's own comment on
@@ -22,14 +22,23 @@
 #      inbox.go and threadview.go disagreed about ExtraAddressees for one
 #      commit before pendency_callsite_test.go started catching it.
 #
-#   2. Any package OTHER than internal/pendency (the relation's home) and
-#      internal/cache (the sanctioned caller) importing internal/pendency
-#      in NON-test code. internal/html in particular must read cache's
+#      References rather than only direct calls are refused so assigning the
+#      function to a variable cannot hide a second call from this check.
+#
+#   2. Any package OTHER than internal/pendency (the relation's home),
+#      internal/cache (the sanctioned caller), and the exact DI-root catalogue
+#      file importing internal/pendency in NON-test code. The catalogue may
+#      enumerate RuleIdentities, while Rule 1 still forbids Resolve there.
+#      internal/html in particular must read cache's
 #      already-computed verdict rather than resolving its own —
 #      internal/html/assemble.go's own comments at :296 and :1341 already
 #      claim exactly that ("never a second pendency.Resolve call"); this
 #      gate is what turns the claim into something checkable instead of
 #      prose.
+#
+# Allowed imports must use the package's canonical unaliased name. An alias or
+# dot import could spell the forbidden call as `p.Resolve` or bare `Resolve`
+# and evade Rule 1, so the import shape itself is part of this gate.
 #
 # Scope note: BOTH rules scan only non-test .go files. A _test.go calling
 # pendency.Resolve directly to test the relation's own table — as
@@ -92,6 +101,13 @@ IMPORT_ALLOWLIST=(
   "internal/cache|houses resolveVerdict, the one sanctioned pendency.Resolve call site (see CALL_SITE_ALLOWLIST above) — every other package must read cache's already-computed verdict instead of resolving its own"
 )
 
+# Exact composition-root files allowed to enumerate pendency metadata. This is
+# intentionally file-specific: granting cmd/a2a as a directory would let an
+# unrelated command implementation grow a relation dependency silently.
+IMPORT_FILE_ALLOWLIST=(
+  "cmd/a2a/catalog.go|the DI root unions RuleIdentities into the binary vocabulary; CALL_SITE_ALLOWLIST still forbids Resolve here"
+)
+
 call_site_allowed() { # $1 = repo-relative file path
   local f="$1" entry path
   for entry in "${CALL_SITE_ALLOWLIST[@]}"; do
@@ -101,8 +117,12 @@ call_site_allowed() { # $1 = repo-relative file path
   return 1
 }
 
-import_allowed() { # $1 = repo-relative directory
-  local d="$1" entry path
+import_allowed() { # $1 = repo-relative file path, $2 = directory
+  local f="$1" d="$2" entry path
+  for entry in "${IMPORT_FILE_ALLOWLIST[@]}"; do
+    path="${entry%%|*}"
+    [ "$f" = "$path" ] && return 0
+  done
   for entry in "${IMPORT_ALLOWLIST[@]}"; do
     path="${entry%%|*}"
     [ "$d" = "$path" ] && return 0
@@ -111,7 +131,7 @@ import_allowed() { # $1 = repo-relative directory
 }
 
 run_check() { # $1 = scan root (repo root, or a --teeth fixture tree)
-  local root="$1" file rel lineno content dir trimmed
+  local root="$1" file rel lineno content dir trimmed formatted
   root="$(cd "$root" && pwd -P)"
 
   # ADR-001's original cache row does not list pendency. ADR-016 is the
@@ -125,25 +145,43 @@ run_check() { # $1 = scan root (repo root, or a --teeth fixture tree)
 
   while IFS= read -r file; do
     rel="${file#"$root"/}"
+    # Parse through gofmt's canonical printer before applying the syntactic
+    # rules. Go permits escaped interpreted import paths such as
+    # `internal/pendenc\x79`; gofmt decodes them to the ordinary quoted path,
+    # so aliases/dot imports cannot hide behind an equivalent string spelling.
+    # This is read-only (no -w) and also makes raw-string imports comparable.
+    if ! formatted="$(gofmt "$file" 2>/dev/null)"; then
+      gate_fail "$rel cannot be parsed by gofmt — pendency uniqueness cannot inspect it safely"
+      continue
+    fi
 
-    # Rule 1 — pendency.Resolve call sites.
+    # Rule 1 — pendency.Resolve references. A reference is enough to call the
+    # relation later through a local variable, so restricting this to the
+    # literal call shape would leave an avoidable syntactic bypass.
     while IFS=: read -r lineno content; do
       [ -z "$lineno" ] && continue
       trimmed="$(printf '%s' "$content" | sed -E 's/^[[:space:]]+//')"
+      case "$trimmed" in
+        '//'*) continue ;;
+        '/*'*) continue ;;
+        '*'*) continue ;;
+      esac
       if ! call_site_allowed "$rel"; then
-        gate_fail "$rel:$lineno calls pendency.Resolve directly (\`$trimmed\`) — this is a second computation of the pendency relation; read the sanctioned call site's already-computed verdict instead (see CALL_SITE_ALLOWLIST in scripts/check-pendency-uniqueness.sh for where that is and why)"
+        gate_fail "$rel:$lineno references pendency.Resolve directly (\`$trimmed\`) — this can create a second computation of the pendency relation; read the sanctioned call site's already-computed verdict instead (see CALL_SITE_ALLOWLIST in scripts/check-pendency-uniqueness.sh for where that is and why)"
       fi
-    done < <(grep -nE 'pendency\.Resolve[[:space:]]*\(' "$file" 2>/dev/null || true)
+    done < <(printf '%s\n' "$formatted" | grep -nE 'pendency\.Resolve([^[:alnum:]_]|$)' || true)
 
     # Rule 2 — internal/pendency imports.
     while IFS=: read -r lineno content; do
       [ -z "$lineno" ] && continue
       trimmed="$(printf '%s' "$content" | sed -E 's/^[[:space:]]+//')"
       dir="$(dirname "$rel")"
-      if ! import_allowed "$dir"; then
+      if ! import_allowed "$rel" "$dir"; then
         gate_fail "$rel:$lineno imports internal/pendency from outside the sanctioned homes (\`$trimmed\`) — read the verdict internal/cache already computed instead of resolving your own (see IMPORT_ALLOWLIST in scripts/check-pendency-uniqueness.sh)"
+      elif ! printf '%s\n' "$trimmed" | grep -Eq '^(import[[:space:]]+)?"[^"]*/internal/pendency"([[:space:]]*(//.*)?)?$'; then
+        gate_fail "$rel:$lineno aliases or dot-imports internal/pendency (\`$trimmed\`) — use the canonical unaliased package name so Rule 1 cannot be bypassed with p.Resolve or bare Resolve"
       fi
-    done < <(grep -nE '"[^"]*/internal/pendency"' "$file" 2>/dev/null || true)
+    done < <(printf '%s\n' "$formatted" | grep -nE '"[^"]*/internal/pendency"' || true)
   # PRUNE the trees that are not this repository's source. `.a2a/` is the
   # project's own gitignored working directory, and `a2a`'s feedback reader
   # clones the PUBLIC repo into `.a2a/cache/feedback-repo/<slug>/` — a full
@@ -215,6 +253,84 @@ FIXTURE
     return 1
   fi
   rm -rf "$tmp/internal"
+
+  # Fixture 2b — only the exact DI-root catalogue file may enumerate relation
+  # metadata. A sibling command file must not inherit that boundary grant.
+  mkdir -p "$tmp/cmd/a2a"
+  cat > "$tmp/cmd/a2a/catalog.go" <<'FIXTURE'
+package main
+
+import "github.com/ydnikolaev/a2ahub/internal/pendency"
+
+var _ = pendency.RuleIdentities
+FIXTURE
+  if ! ( run_check "$tmp" ) >/dev/null 2>&1; then
+    echo "pendency-uniqueness --teeth: FAILED — the exact DI-root catalogue enumeration import was refused" >&2
+    return 1
+  fi
+  cat > "$tmp/cmd/a2a/catalog.go" <<'FIXTURE'
+package main
+
+import "github.com/ydnikolaev/a2ahub/internal/pendency"
+
+var _ = pendency.Resolve
+FIXTURE
+  if ( run_check "$tmp" ) >/dev/null 2>&1; then
+    echo "pendency-uniqueness --teeth: FAILED — the catalogue exception admitted pendency.Resolve through a function reference" >&2
+    return 1
+  fi
+  cat > "$tmp/cmd/a2a/catalog.go" <<'FIXTURE'
+package main
+
+import p "github.com/ydnikolaev/a2ahub/internal/pendency"
+
+var _ = p.Resolve
+FIXTURE
+  if ( run_check "$tmp" ) >/dev/null 2>&1; then
+    echo "pendency-uniqueness --teeth: FAILED — an aliased catalogue import hid p.Resolve from the call-site rule" >&2
+    return 1
+  fi
+  cat > "$tmp/cmd/a2a/catalog.go" <<'FIXTURE'
+package main
+
+import p `github.com/ydnikolaev/a2ahub/internal/pendency`
+
+var _ = p.Resolve
+FIXTURE
+  if ( run_check "$tmp" ) >/dev/null 2>&1; then
+    echo "pendency-uniqueness --teeth: FAILED — a raw-string aliased catalogue import hid p.Resolve from both rules" >&2
+    return 1
+  fi
+  cat > "$tmp/cmd/a2a/catalog.go" <<'FIXTURE'
+package main
+
+import p "github.com/ydnikolaev/a2ahub/internal/pendenc\x79"
+
+var _ = p.Resolve
+FIXTURE
+  if ( run_check "$tmp" ) >/dev/null 2>&1; then
+    echo "pendency-uniqueness --teeth: FAILED — an escaped aliased catalogue import hid p.Resolve from both rules" >&2
+    return 1
+  fi
+  cat > "$tmp/cmd/a2a/catalog.go" <<'FIXTURE'
+package main
+
+import "github.com/ydnikolaev/a2ahub/internal/pendency"
+
+var _ = pendency.RuleIdentities
+FIXTURE
+  cat > "$tmp/cmd/a2a/other.go" <<'FIXTURE'
+package main
+
+import "github.com/ydnikolaev/a2ahub/internal/pendency"
+
+var _ = pendency.RuleIdentities
+FIXTURE
+  if ( run_check "$tmp" ) >/dev/null 2>&1; then
+    echo "pendency-uniqueness --teeth: FAILED — a sibling command file inherited the catalogue import grant" >&2
+    return 1
+  fi
+  rm -rf "$tmp/cmd"
 
   # Fixture 3 — the import allowlist must remain tied to an architecture
   # decision rather than becoming a gate-local boundary exception.

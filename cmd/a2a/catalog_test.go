@@ -8,8 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/pendency"
 )
 
 // catalog_test.go is the P13 catalog seam's own guard (spec 13 §8 AC #3 +
@@ -183,11 +185,12 @@ func TestEveryCatalogNameIsDispatchable(t *testing.T) {
 	}
 }
 
-// TestCatalogVocabularyIsTheDomainsOwn proves the flag emits what fold
-// derives, not a projection this file re-states. The whole point of the
-// mode is that a gate can stop carrying its own copy of the vocabulary;
-// a CLI that filtered or reordered on the way out would reintroduce the
-// second source it exists to remove.
+// TestCatalogVocabularyIsTheDomainsOwn proves that the composite document has
+// exactly the four established fold-owned fields plus the three P2 families,
+// and that every value comes directly from its owning domain enumerator. It
+// deliberately inspects raw keys before decoding individual fields: decoding
+// the extended document into fold.Vocabulary would silently ignore the new
+// families and let an absent family pass.
 func TestCatalogVocabularyIsTheDomainsOwn(t *testing.T) {
 	t.Parallel()
 	var stdout, stderr bytes.Buffer
@@ -201,12 +204,50 @@ func TestCatalogVocabularyIsTheDomainsOwn(t *testing.T) {
 		t.Fatalf("wrote to stderr: %q", stderr.String())
 	}
 
-	var got fold.Vocabulary
-	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(stdout.Bytes(), &raw); err != nil {
 		t.Fatalf("output is not valid JSON: %v\n%s", err, stdout.String())
 	}
-	if !reflect.DeepEqual(got, fold.BuildVocabulary()) {
-		t.Fatalf("emitted vocabulary differs from fold.BuildVocabulary()\ngot:  %+v\nwant: %+v", got, fold.BuildVocabulary())
+	gotKeys := make([]string, 0, len(raw))
+	for key := range raw {
+		gotKeys = append(gotKeys, key)
+	}
+	sort.Strings(gotKeys)
+	wantKeys := []string{"gate", "human_gates", "outcomes", "reason", "rule_identity", "states", "transitions"}
+	if !reflect.DeepEqual(gotKeys, wantKeys) {
+		t.Fatalf("vocabulary keys = %v, want exactly %v", gotKeys, wantKeys)
+	}
+
+	base := fold.BuildVocabulary()
+	if got := decodeCatalogField[[]string](t, raw, "outcomes"); !reflect.DeepEqual(got, base.Outcomes) {
+		t.Errorf("outcomes = %v, want fold-owned %v", got, base.Outcomes)
+	}
+	if got := decodeCatalogField[map[string][]string](t, raw, "states"); !reflect.DeepEqual(got, base.States) {
+		t.Errorf("states = %v, want fold-owned %v", got, base.States)
+	}
+	if got := decodeCatalogField[[]string](t, raw, "transitions"); !reflect.DeepEqual(got, base.Transitions) {
+		t.Errorf("transitions = %v, want fold-owned %v", got, base.Transitions)
+	}
+	if got := decodeCatalogField[map[string]string](t, raw, "human_gates"); !reflect.DeepEqual(got, base.HumanGates) {
+		t.Errorf("human_gates = %v, want fold-owned %v", got, base.HumanGates)
+	}
+	if got, want := decodeCatalogField[[]cache.ReasonCode](t, raw, "reason"), cache.ReasonCodes(); !reflect.DeepEqual(got, want) {
+		t.Errorf("reason = %v, want cache-owned %v", got, want)
+	}
+	if got, want := decodeCatalogField[[]pendency.RuleIdentity](t, raw, "rule_identity"), pendency.RuleIdentities(); !reflect.DeepEqual(got, want) {
+		t.Errorf("rule_identity = %v, want pendency-owned %v", got, want)
+	}
+	wantGates := make([]string, 0, len(base.HumanGates))
+	seenGates := map[string]bool{}
+	for _, gate := range base.HumanGates {
+		if gate != "" && !seenGates[gate] {
+			seenGates[gate] = true
+			wantGates = append(wantGates, gate)
+		}
+	}
+	sort.Strings(wantGates)
+	if got := decodeCatalogField[[]string](t, raw, "gate"); !reflect.DeepEqual(got, wantGates) {
+		t.Errorf("gate = %v, want derived unique non-empty values %v", got, wantGates)
 	}
 }
 
@@ -222,14 +263,17 @@ func TestCatalogVocabularyCoversEveryRestingPair(t *testing.T) {
 		t.Fatalf("exit code = %d (stderr: %q)", code, stderr.String())
 	}
 
-	var v fold.Vocabulary
-	if err := json.Unmarshal(stdout.Bytes(), &v); err != nil {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(stdout.Bytes(), &raw); err != nil {
 		t.Fatalf("output is not valid JSON: %v", err)
 	}
+	states := decodeCatalogField[map[string][]string](t, raw, "states")
+	outcomes := decodeCatalogField[[]string](t, raw, "outcomes")
+	transitions := decodeCatalogField[[]string](t, raw, "transitions")
 
 	for _, krs := range fold.RestingStates() {
 		found := false
-		for _, s := range v.States[string(krs.Kind)] {
+		for _, s := range states[string(krs.Kind)] {
 			if s == string(krs.State) {
 				found = true
 				break
@@ -239,9 +283,22 @@ func TestCatalogVocabularyCoversEveryRestingPair(t *testing.T) {
 			t.Errorf("vocabulary omits (%s, %s), a pair RestingStates() yields — a gate reading this would not police it", krs.Kind, krs.State)
 		}
 	}
-	if len(v.Outcomes) == 0 || len(v.Transitions) == 0 {
+	if len(outcomes) == 0 || len(transitions) == 0 {
 		t.Fatal("vocabulary has no outcomes or no transitions — a gate deriving from it would forbid nothing and pass silently")
 	}
+}
+
+func decodeCatalogField[T any](t *testing.T, raw map[string]json.RawMessage, key string) T {
+	t.Helper()
+	var value T
+	field, ok := raw[key]
+	if !ok {
+		t.Fatalf("vocabulary omits %q", key)
+	}
+	if err := json.Unmarshal(field, &value); err != nil {
+		t.Fatalf("vocabulary field %q is invalid: %v", key, err)
+	}
+	return value
 }
 
 // TestCatalogFlagRefusals pins the two refusals as refusals. Defaulting

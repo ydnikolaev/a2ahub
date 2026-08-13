@@ -95,3 +95,32 @@ changes:
     action:
       scope: none
       why: "No action. Existing inbox/outbox JSON remains compatible; regenerate the dashboard to consume the corrected projection."
+
+  - id: RN-02300-3
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: >
+        Dashboard ordering and Overview counts are product semantics, not
+        browser formatting. Publishing the new domain answers and their
+        catalogue now records the contract before the view-model phase wires
+        them into the visible screen.
+    impact: normal
+    subject: "dashboard attention order and Overview KPI membership now have one domain owner"
+    detail: >
+      Cache now returns the complete six-tier attention order and the exact
+      object sets behind Need you, No human move, You await and Lines off
+      current. Counts are the lengths of those sets, so a tile and the list it
+      opens cannot describe different objects. Dependency reads are bounded,
+      strict and degradation-aware instead of silently treating a partial scan
+      as a complete total.
+
+      The hidden binary vocabulary catalogue also adds the typed reason,
+      pendency-rule and human-gate families without changing its existing
+      outcome, state, transition or human-gate fields. The dashboard mapping
+      phase consumes these answers next; this release entry does not claim the
+      old browser formulas have already been removed.
+    affects: [dashboard]
+    action:
+      scope: none
+      why: "No action. These are additive read-model and catalogue contracts; existing command output remains compatible."

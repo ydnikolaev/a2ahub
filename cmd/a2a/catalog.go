@@ -13,6 +13,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
+	"github.com/ydnikolaev/a2ahub/internal/pendency"
 	"github.com/ydnikolaev/a2ahub/internal/skillcoverage"
 )
 
@@ -253,6 +254,38 @@ func catalogSurfaces() map[string][]string {
 	}
 }
 
+// catalogVocabulary is the DI-root union of the independently owned domain
+// vocabularies. Embedding preserves fold.Vocabulary's established four JSON
+// fields and values exactly; the additive families remain typed by their
+// owners. Gate is derived from fold's HumanGates values rather than becoming a
+// second gate registry.
+type catalogVocabulary struct {
+	fold.Vocabulary
+	Reason       []cache.ReasonCode      `json:"reason"`
+	RuleIdentity []pendency.RuleIdentity `json:"rule_identity"`
+	Gate         []string                `json:"gate"`
+}
+
+func buildCatalogVocabulary() catalogVocabulary {
+	base := fold.BuildVocabulary()
+	gates := []string{}
+	seen := make(map[string]bool, len(base.HumanGates))
+	for _, gate := range base.HumanGates {
+		if gate == "" || seen[gate] {
+			continue
+		}
+		seen[gate] = true
+		gates = append(gates, gate)
+	}
+	sort.Strings(gates)
+	return catalogVocabulary{
+		Vocabulary:   base,
+		Reason:       cache.ReasonCodes(),
+		RuleIdentity: pendency.RuleIdentities(),
+		Gate:         gates,
+	}
+}
+
 // renderCatalog renders the full deterministic markdown document: a
 // title/preamble, "## Commands" (sorted by name), "## MCP tools" (sorted
 // by name). No timestamp, no absolute path, no version/sha — every line is
@@ -285,10 +318,12 @@ func renderCatalog() string {
 //
 // `--vocabulary --json` switches it to the machine-readable vocabulary a
 // GATE reads: every outcome, every state per kind, every transition name,
-// all derived from the transition table rather than listed. Without it, a
-// gate policing what a component may spell has to carry its own copy of
-// the list — correct the day it is written and silently wrong the day a
-// state is added, which is the defect this epic exists to remove.
+// every human gate, and the cache-owned reason and pendency-owned rule
+// identity families. Each comes from its domain enumerator rather than a list
+// at this composition point. Without it, a gate policing what a component may
+// spell has to carry its own copy of the list — correct the day it is written
+// and silently wrong the day a value is added, which is the defect this epic
+// exists to remove.
 //
 // `--surfaces --json` (spec 13, agent-exchange-2026-08, §3.1) switches it
 // to catalogSurfaces()'s per-surface JSON key universe — see that
@@ -340,7 +375,7 @@ func runCatalog(args []string, stdout, stderr io.Writer) int {
 	case vocabulary:
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
-		if err := enc.Encode(fold.BuildVocabulary()); err != nil {
+		if err := enc.Encode(buildCatalogVocabulary()); err != nil {
 			_, _ = fmt.Fprintf(stderr, "a2a __catalog: encode vocabulary: %v\n", err)
 			return 1
 		}
