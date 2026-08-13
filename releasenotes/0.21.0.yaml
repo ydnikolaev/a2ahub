@@ -155,6 +155,14 @@ changes:
       against a persisted raw join rather than re-fetched. Its first act was
       to falsify two claims this project had written down about its own
       billing the day before.
+
+      Re-keying that gate also exposed a defect in the direction nobody was
+      watching. It ships to the published projection, but the evidence it
+      judges is stripped there — so while it counted records it reported a
+      confident "0 outstanding" about a streak it could not see, and counting
+      releases would have turned that same blindness into a failure on every
+      published candidate. It now declines when its inputs are absent, and
+      says which ones.
     affects: [ci]
     action:
       scope: none
