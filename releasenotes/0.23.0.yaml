@@ -1,7 +1,7 @@
 schema: release-notes/v1
 version: "0.23.0"
 released: "2026-08-13"
-headline: "The transport registry gets a real caller, and a manifest field that nothing read starts deciding something"
+headline: "The transport registry gets a real caller, and the dashboard starts explaining whose move it is"
 changes:
   - id: RN-02300-0
     kind: fix
@@ -34,3 +34,37 @@ changes:
     action:
       scope: none
       why: "No action. No command, flag or lifecycle changed; a manifest that was already valid still delivers exactly as before."
+
+  - id: RN-02300-1
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: >
+        The first dashboard-coherence slice is user-visible and additive: it
+        proves the complete domain-to-card path before the remaining views are
+        rebuilt on the same contract. Hiding it would leave the current
+        binary's changed dashboard and JSON surface undocumented.
+    impact: normal
+    subject: "Overview attention cards say whose turn it is, what move is expected, and why"
+    detail: >
+      Attention cards now carry the pendency verdict the domain already
+      computed: waiting systems, expected transition and any human gate. A
+      bilingual sentence explains the active reason in the card body; the
+      rule citation remains available under Technical detail instead of being
+      presented as the explanation.
+
+      The reason codes and pendency-row identity are typed and enumerated from
+      their domain homes. Inbox and outbox JSON gain `human_gate` only when a
+      gate exists; existing fields keep their values and empty rows keep the
+      key omitted. The browser no longer infers this gate from a coincidental
+      reason string, and the vocabulary gate now refuses the equivalent
+      inline state-classification chain as well as a hand-built list.
+
+      This is the first slice of the dashboard-coherence work, not a claim
+      that every dashboard family has already been rebuilt. The existing 4
+      MiB shell ceiling remains in force; measured headroom requires the next
+      mapping phase to add honest item-family admission bounds.
+    affects: [dashboard, "a2a inbox", "a2a outbox", MCP]
+    action:
+      scope: none
+      why: "No action. Regenerate a dashboard with the current binary to see the clearer attention cards; existing JSON consumers may ignore the additive human_gate key."
