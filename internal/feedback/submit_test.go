@@ -226,7 +226,7 @@ func TestSubmit_PreservesPartialPRAndRecordsLedger(t *testing.T) {
 	ledgerPath := filepath.Join(t.TempDir(), "ledger.yaml")
 	sub := NewSubmitter(submitFunnelFunc(func(context.Context, space.SubmitRequest) (space.WriteResult, error) {
 		return partial, wantErr
-	}), ledgerPath, t.TempDir(), "test-repo", SubmitConfig{RemoteURL: t.TempDir()})
+	}), ledgerPath, t.TempDir(), "test-repo", SubmitConfig{RemoteURL: t.TempDir(), BaseBranch: "feedback-hub"})
 	sub.SetCloneOrFetchForTest(func(context.Context, string, string, host.Credential) error { return nil })
 	path := filepath.Join(t.TempDir(), "fb-20260723-abc123.yaml")
 	if err := os.WriteFile(path, []byte(validFeedbackYAML), 0o644); err != nil {
@@ -257,7 +257,7 @@ func TestSubmit_DoesNotLedgerUnconfirmedOutcome(t *testing.T) {
 			Branch: "a2a/feedback/submit/fb-20260723-abc123", Stage: space.WriteStagePushed,
 			State: space.WriteStateOutcomeUnknown, RemainingAction: space.RemainingActionObserveProviderOutcome,
 		}, wantErr
-	}), ledgerPath, t.TempDir(), "test-repo", SubmitConfig{RemoteURL: t.TempDir()})
+	}), ledgerPath, t.TempDir(), "test-repo", SubmitConfig{RemoteURL: t.TempDir(), BaseBranch: "feedback-hub"})
 	sub.SetCloneOrFetchForTest(func(context.Context, string, string, host.Credential) error { return nil })
 	path := filepath.Join(t.TempDir(), "fb-20260723-abc123.yaml")
 	if err := os.WriteFile(path, []byte(validFeedbackYAML), 0o644); err != nil {
@@ -286,7 +286,7 @@ func TestSubmit_LedgerFailureReturnsConfirmedPROutcome(t *testing.T) {
 	}
 	sub := NewSubmitter(submitFunnelFunc(func(context.Context, space.SubmitRequest) (space.WriteResult, error) {
 		return confirmed, nil
-	}), filepath.Join(t.TempDir(), "ledger.yaml"), t.TempDir(), "test-repo", SubmitConfig{RemoteURL: t.TempDir()})
+	}), filepath.Join(t.TempDir(), "ledger.yaml"), t.TempDir(), "test-repo", SubmitConfig{RemoteURL: t.TempDir(), BaseBranch: "feedback-hub"})
 	sub.SetCloneOrFetchForTest(func(context.Context, string, string, host.Credential) error { return nil })
 	sub.SetAppendLedgerForTest(func(string, LedgerItem) error { return ledgerErr })
 	path := filepath.Join(t.TempDir(), "fb-20260723-abc123.yaml")

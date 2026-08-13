@@ -17,7 +17,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/feedback"
 )
 
-// seedFeedbackFixtureRepo git-inits dir on branch "main" with
+// seedFeedbackFixtureRepo git-inits dir on the HUB branch with
 // feedback/inbox/.gitkeep plus one committed feedback/inbox/<id>.yaml per
 // id in ids (content is irrelevant to presence/absence — deliberately
 // minimal), and returns dir.
@@ -26,7 +26,12 @@ func seedFeedbackFixtureRepo(t *testing.T, dir string, ids ...string) string {
 	if err := os.MkdirAll(filepath.Join(dir, "feedback", "inbox"), 0o755); err != nil {
 		t.Fatalf("mkdir feedback/inbox: %v", err)
 	}
-	runGitFixture(t, dir, "init", "-q", "-b", "main")
+	// The fixture is seeded on feedbackBaseBranch, not "main", because that is
+	// the branch production fetches. Seeding "main" while the code fetches the
+	// hub branch is a fixture that agrees with the test's author rather than
+	// with the system: these three tests went red on exactly that when P15 M2
+	// repointed the fetch, which is the fixture doing its job.
+	runGitFixture(t, dir, "init", "-q", "-b", feedbackBaseBranch)
 	if err := os.WriteFile(filepath.Join(dir, "feedback", "inbox", ".gitkeep"), nil, 0o644); err != nil {
 		t.Fatalf("write .gitkeep: %v", err)
 	}

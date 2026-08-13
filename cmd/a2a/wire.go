@@ -1329,6 +1329,30 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 // neither --repo nor A2A_FEEDBACK_REPO is set: the product repo itself.
 const canonicalFeedbackRepo = "https://github.com/ydnikolaev/a2ahub"
 
+// feedbackBaseBranch is where inbound reports LAND, and it is deliberately a
+// second constant rather than a new value for defaultBaseBranch
+// (agent-ops-2026-07 P15 §3.1, ADR-010 decision 3).
+//
+// THE DEFECT IT CLOSES. Public `main` was two things at once: the feedback hub
+// of record — the default submit target for every shipped binary, with status
+// read back over raw.githubusercontent.com against it — and the branch
+// `publish-to-public.sh` force-pushes wholesale on every release. Measured on
+// 2026-08-12: two open feedback pull requests both went BEHIND after a publish
+// with auto-merge armed and neither fired, and merging the first put the
+// second back. A record submitted after that publish merged in 23 seconds. The
+// difference was entirely whether a release happened while it was open.
+//
+// WHY NOT REPOINT THE SHARED CONSTANT. `defaultBaseBranch` is declared twice
+// (here and internal/mcp/wire.go) and read six times, and three of those reads
+// are SPACE operations — `lifecycle`, `submit`, `space update`. Repointing it
+// would move where every space pull request targets, which is a different
+// change with a different blast radius. The review's "~5-line change" priced
+// one constant where there are two distinct concerns.
+//
+// The REPOSITORY does not move, only the branch: a repository move would break
+// every binary in the field and is what the rejected options required.
+const feedbackBaseBranch = "feedback-hub"
+
 // resolveFeedbackCredential keeps feedback on the canonical credential seam:
 // its explicit override wins, then the machine-local `credentials.feedback`
 // reference, then the two compatibility env names used by earlier releases,
@@ -1408,7 +1432,7 @@ func runFeedback(args []string, stdout, stderr io.Writer) int {
 	submitCfg := feedback.SubmitConfig{
 		RemoteURL:         repoURL,
 		Repo:              host.Repo{Owner: owner, Name: name},
-		BaseBranch:        defaultBaseBranch,
+		BaseBranch:        feedbackBaseBranch,
 		Credential:        credential,
 		CommitAuthorName:  "a2a-feedback",
 		CommitAuthorEmail: "a2a-feedback@a2a.local",
@@ -1416,7 +1440,7 @@ func runFeedback(args []string, stdout, stderr io.Writer) int {
 	submitter := feedback.NewSubmitter(funnel, ledgerPath, p.projectRoot, owner+"-"+name, submitCfg)
 
 	hubReader := feedback.DefaultHubReader(http.DefaultClient,
-		"https://raw.githubusercontent.com/"+owner+"/"+name+"/"+defaultBaseBranch)
+		"https://raw.githubusercontent.com/"+owner+"/"+name+"/"+feedbackBaseBranch)
 
 	hubRoot, err := os.Getwd()
 	if err != nil {

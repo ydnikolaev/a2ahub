@@ -171,8 +171,16 @@ func feedbackHubIsGitWorkTree(ctx context.Context, hubRoot string) (bool, error)
 // feedbackFetchHubInbox runs the exact `git fetch` docs/runbooks/
 // feedback-sync.sh's sync_feedback uses, so the two consumers of "can this
 // hub be reached" share one proven argv rather than drifting (§11 wave D2).
+// The branch is feedbackBaseBranch (wire.go), NOT the literal "main" it was
+// until P15 M2. This site is worth a sentence because the spec's own
+// enumeration missed it: G3 counted READS OF THE CONSTANT `defaultBaseBranch`
+// and found six, and this one hard-coded the string instead — so a
+// constant-only repoint would have left `a2a feedback triage` computing its
+// freshness verdict against a branch that no longer receives reports, and
+// printing "inbox clean" on the strength of it. A hand-maintained enumeration
+// of call sites has the same failure mode as any other hand-maintained list.
 func feedbackFetchHubInbox(ctx context.Context, hubRoot, hubURL string) error {
-	cmd := exec.CommandContext(ctx, "git", "-C", hubRoot, "fetch", "--no-tags", "--depth=1", hubURL, "main")
+	cmd := exec.CommandContext(ctx, "git", "-C", hubRoot, "fetch", "--no-tags", "--depth=1", hubURL, feedbackBaseBranch)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

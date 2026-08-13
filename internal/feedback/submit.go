@@ -38,7 +38,7 @@ type Funnel interface {
 type SubmitConfig struct {
 	RemoteURL         string
 	Repo              host.Repo
-	BaseBranch        string // defaults to "main" at Submit time
+	BaseBranch        string // REQUIRED — Submit refuses an empty value (see below)
 	Credential        host.Credential
 	CommitAuthorName  string
 	CommitAuthorEmail string
@@ -186,9 +186,17 @@ func (s *Submitter) Submit(ctx context.Context, path string) (SubmitResult, erro
 		return SubmitResult{}, fmt.Errorf("feedback: %s: %w", op, err)
 	}
 
+	// No default. This package does not get to GUESS where a report lands.
+	//
+	// It defaulted to "main" until agent-ops-2026-07 P15, which is the branch
+	// a release force-pushes wholesale — so a caller that simply forgot to set
+	// this filed the reporter's record onto the one ref that could destroy it,
+	// silently and successfully. The wiring (cmd/a2a's feedbackBaseBranch) is
+	// the single place that knows the hub branch; a second copy here would be
+	// a second source of truth for exactly the fact this phase moved.
 	baseBranch := s.cfg.BaseBranch
 	if baseBranch == "" {
-		baseBranch = "main"
+		return SubmitResult{}, fmt.Errorf("feedback: %s: SubmitConfig.BaseBranch is empty; the caller must name the hub branch", op)
 	}
 
 	title := fmt.Sprintf("feedback(%s): %s", probe.Kind, probe.Title)
