@@ -305,7 +305,23 @@ func walkGoFiles(t *testing.T, root string, fn func(relPath, source string)) {
 		}
 		if d.IsDir() {
 			switch d.Name() {
-			case ".git", "testdata", "vendor":
+			// `.a2a` is a LIVE CACHE, and the THIRD site in this repo to be
+			// caught judging it as if it were source. `a2a`'s feedback
+			// reader clones the public repository into
+			// .a2a/cache/feedback-repo/<slug>/, so an unpruned walk finds a
+			// full second copy of this repository — including this very
+			// file's own fixtures — and reports its exec sites as
+			// violations. The other two were
+			// scripts/check-pendency-uniqueness.sh (fixed 2026-08-12) and
+			// internal/e2e's write-floor scan (fixed 2026-08-13, same hour
+			// as this one).
+			//
+			// The generalisable rule, worth carrying because it will recur:
+			// a check that walks the FILESYSTEM asks a different question
+			// from one that walks the TRACKED SET, and only the second is
+			// about this repository. Every new tree-walking gate inherits
+			// this bug until it prunes.
+			case ".git", ".a2a", "testdata", "vendor":
 				return filepath.SkipDir
 			}
 			return nil

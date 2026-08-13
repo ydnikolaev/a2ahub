@@ -288,6 +288,7 @@ func TestHostLoopFeedbackFromANonCollaborator(t *testing.T) {
 
 	r := newHostRig(t, "axon", "axon")
 	r.gh.DenyPushes("seomatrix")
+	r.seedFeedbackHubBranch()
 
 	draft := writeFeedbackDraft(t, filepath.Join(r.projectDir, "drafts"))
 	stdout, stderr, code := r.runFeedback("submit", draft)
@@ -307,6 +308,33 @@ func TestHostLoopFeedbackFromANonCollaborator(t *testing.T) {
 		t.Error("no fork was created")
 	}
 }
+
+// seedFeedbackHubBranch creates the branch inbound reports land on, in the
+// fixture standing in for the product repo.
+//
+// It exists because P15 moved the feedback hub of record OFF the branch a
+// release force-pushes: `a2a feedback submit` now bases its pull request on
+// `feedbackBaseBranch`, and the space fixture only carries `main`. Without
+// this the submit fails at `rev-parse origin/<hub>` with "Needed a single
+// revision" — which is the fixture disagreeing with production, not a
+// product defect, and is exactly how this test surfaced the move.
+//
+// Deliberately a branch OFF main rather than an orphan: this fixture stands
+// in for "a repository that has the hub branch", and what the submit path
+// needs is a resolvable base commit. The real hub's orphan shape is a
+// property of the real repository, not of this contract.
+func (r *hostRig) seedFeedbackHubBranch() {
+	r.t.Helper()
+	gitRun(r.t, r.fx.RemoteURL(), "branch", "--force", feedbackHubBranchForFixtures, "main")
+}
+
+// The branch name production uses (cmd/a2a's feedbackBaseBranch). Restated
+// here rather than imported because `internal/e2e` drives the BUILT BINARY
+// through its command line and shares no symbol with `package main` — so
+// this is a fixture's copy of an external contract, the same way the fake
+// host restates GitHub's wire shapes. If the two ever diverge, this test is
+// what says so, by failing to resolve the base.
+const feedbackHubBranchForFixtures = "feedback-hub"
 
 // runFeedback execs the feedback family, which targets its own repo rather
 // than a connected space (A2A_FEEDBACK_REPO overrides the product repo).

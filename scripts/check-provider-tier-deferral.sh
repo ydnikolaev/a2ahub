@@ -304,6 +304,27 @@ check_provider_tier_deferral() {
       # forever, silently, which is the exact failure mode the per-record
       # count exists to prevent. Ambiguity about which signature is in force
       # must be loud.
+      # A PLACEHOLDER IS NOT A SIGNATURE. The marker's own documented shape
+      # is `consecutive-deferral-acknowledged: <N> — <who authorized ...>`,
+      # and a record that quotes that shape as an EXAMPLE — in a fenced block,
+      # in an instruction to the operator, anywhere — used to satisfy this
+      # gate outright if the author wrote a literal count into the example.
+      #
+      # Found by stepping in it: v0.21.0's record was written deliberately
+      # UNSIGNED, with a fenced example telling the operator what to add, and
+      # the gate reported "acknowledges the streak of 14" and went green. An
+      # unsigned record read as signed, by the gate whose entire purpose is
+      # refusing exactly that. Any angle-bracket placeholder left in the line
+      # now disqualifies it.
+      if grep -E "$OVERRIDE_MARKER_RE" "$newest" 2>/dev/null | grep -q '<[^>]*>'; then
+        echo "provider-tier-deferral: FAIL — $newest carries a marker line that still contains a <placeholder>:" >&2
+        grep -E "$OVERRIDE_MARKER_RE" "$newest" | grep '<[^>]*>' | sed 's/^/    /' >&2
+        echo "" >&2
+        echo "That is the documented EXAMPLE shape, not a signature. Replace the placeholders with who authorized" >&2
+        echo "shipping the Nth in a row and why waiting was judged the larger risk — a record that merely quotes" >&2
+        echo "the instruction has made no decision." >&2
+        return 1
+      fi
       if [ "$marker_count" -gt 1 ]; then
         echo "provider-tier-deferral: FAIL — $newest carries $marker_count streak signatures; exactly one must be in force." >&2
         echo "Correcting a signature means EDITING the line, not adding a second one: with two present, a reader" >&2
@@ -691,7 +712,23 @@ teeth() {
     exit 1
   fi
 
-  echo "provider-tier-deferral --teeth: 3 uncleared releases red and names them; 2 uncleared greens; a live-e2e run after the oldest of 3 clears it to 2 and greens by git history, not mtime or filename; an untracked 3rd release reds too; an acknowledged 3rd ships; a 4th does NOT inherit the 3rd's signature; a recordless release reds unconditionally, even a lone one; a backfill of older records leaves the signature in the NEWEST RELEASE's record."
+  # Case 9: an UNSIGNED record that quotes the signature's own shape as an
+  # example, literal count and all. This is not hypothetical — it is how
+  # v0.21.0's record was first written, and the gate greened on it.
+  printf 'consecutive-deferral-acknowledged: 5 — <who authorized shipping the 5th in a row>\n' \
+    >>"$tmp8/docs/features/x/audits/v0.3.0-provider-tier-deferral.md"
+  if out="$(cd "$tmp8" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — a <placeholder> example counted as a signature" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -q 'still contains a <placeholder>' || {
+    echo "provider-tier-deferral --teeth: FAILED — red did not name the placeholder:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+
+  echo "provider-tier-deferral --teeth: 3 uncleared releases red and names them; 2 uncleared greens; a live-e2e run after the oldest of 3 clears it to 2 and greens by git history, not mtime or filename; an untracked 3rd release reds too; an acknowledged 3rd ships; a 4th does NOT inherit the 3rd's signature; a recordless release reds unconditionally, even a lone one; a backfill of older records leaves the signature in the NEWEST RELEASE's record; a <placeholder> example is not a signature."
 }
 
 if [ "${1:-}" = "--teeth" ]; then teeth; exit 0; fi

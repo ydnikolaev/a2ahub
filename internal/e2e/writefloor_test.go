@@ -118,7 +118,17 @@ func TestEverySubmitRequestCarriesTheWriteFloor(t *testing.T) {
 		}
 		if d.IsDir() {
 			switch d.Name() {
-			case ".git", "testdata", "node_modules":
+			// `.a2a` is a LIVE CACHE, not source. `a2a`'s feedback reader
+			// clones the public repository into
+			// .a2a/cache/feedback-repo/<slug>/, so an unpruned walk finds a
+			// SECOND, OLDER copy of this very package and judges it — this
+			// scan reported internal/feedback/submit.go as an offender when
+			// the tracked copy was fine, because the flagged file was the
+			// clone. Same defect check-pendency-uniqueness.sh was fixed for
+			// on 2026-08-12; the generalisable rule is that a check walking
+			// the FILESYSTEM asks a different question from one walking the
+			// TRACKED SET, and only the second one is about this repository.
+			case ".git", ".a2a", "testdata", "node_modules":
 				return fs.SkipDir
 			}
 			return nil
