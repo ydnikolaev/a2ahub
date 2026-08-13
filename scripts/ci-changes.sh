@@ -67,6 +67,13 @@ MACOS_WORKFLOW=".github/workflows/ci.yml"
 # together by --teeth case (k) below, which reads the workflow.
 NIGHTLY_CRON='23 2 * * *'
 
+# AC11b. The inbound corpus every shipped binary writes to. A pull request
+# whose diff is entirely inside it cannot change a Go verdict, a Swift build,
+# or a schema — the lane derivation says so out loud: `LANE_FILES=` one inbox
+# record selects `feedback-corpus` plus the four universal phases, and NOT
+# `logic-e2e`, `go-test` or the conformance matrix.
+FEEDBACK_PREFIX='feedback/'
+
 # AC11's lookup, and the three literals it turns on. A promotion pushes a SHA
 # that a candidate ref has ALREADY proven at the ceiling, on a byte-identical
 # tree, minutes earlier. That second execution can change no verdict.
@@ -83,6 +90,24 @@ macos_relevant() {
     esac
   done
   return 1
+}
+
+# feedback_only is true when EVERY changed path is inside the inbound corpus,
+# and false for an empty set. The "every" is the direction that matters: one
+# path outside `feedback/` is enough to make this an ordinary pull request
+# again, so a record smuggled alongside a source edit buys the full ceiling.
+# The empty case is false because an empty resolved set is indistinguishable
+# from a question nobody asked.
+feedback_only() {
+  [ "$#" -gt 0 ] || return 1
+  local f
+  for f in "$@"; do
+    case "$f" in
+      "$FEEDBACK_PREFIX"*) ;;
+      *) return 1 ;;
+    esac
+  done
+  return 0
 }
 
 # resolve_changed_files prints one changed path per line, or fails (non-zero)
@@ -235,7 +260,7 @@ run_report() {
   emit macos "$macos"
   emit files "${set[*]+${set[*]}}"
   emit proven "$proven"
-  emit tier "$(resolve_tier "$resolved" "$proven")"
+  emit tier "$(resolve_tier "$resolved" "$proven" "${set[@]+"${set[@]}"}")"
   printf 'ci-changes: macos=%s (%s)\n' "$macos" "$reason" >&2
 }
 
@@ -249,14 +274,21 @@ run_report() {
 #   lane     — `make lane-run-strict`, priced off the diff
 #   none     — nothing to verify (the weekly macOS net; see AC2)
 #
-# WHY A PULL REQUEST STILL BUYS THE CEILING, which looks like the obvious
-# saving and is deliberately not taken: moving PRs to the lane is AC11b, and
-# AC11b is BLOCKED. Spec 13 §4.5 (= spec 14 §5) refuses to remove validating
-# proof from a branch that accepts external writes until that branch carries a
-# real merge gate — public `main`'s sole required context today returns green
-# for any non-feedback PR without validating it. Gating the macOS job is a
-# different thing entirely: that job could never judge the diff in the first
-# place.
+# WHAT A PULL REQUEST BUYS, and why it stopped being one answer (AC11b).
+#
+# It used to be "the ceiling, always", and that was a FENCE rather than a
+# measurement: spec 13 §4.5 (= spec 14 §5) refused to remove validating proof
+# from a branch that accepts external writes while public `main`'s sole
+# required context returned green for any non-feedback pull request without
+# validating it. `scripts/feedback-intake-policy.sh` closed that on 2026-08-13
+# — an ordinary pull request to `main` or `feedback-hub` in the public
+# repository is now REFUSED — so the fence has been replaced rather than
+# removed: a `feedback/**`-only diff buys the LANE, and a diff touching
+# anything else still buys the ceiling. Both directions are pinned below.
+#
+# The saving is the largest single bucket left on the public side: 426
+# equivalent minutes over 100 runs in the measured window, against a lane that
+# selects `feedback-corpus` and four universal phases — seconds, not minutes.
 #
 # WHY A CANDIDATE REF STILL BUYS IT: spec 13 §2.1 measured that bucket as the
 # one that must stay. It is the only execution the FILTERED tree ever gets,
@@ -264,6 +296,8 @@ run_report() {
 # local gate was green.
 resolve_tier() {
   local resolved="$1" proven="${2:-false}"
+  shift 2 2>/dev/null || shift $#
+  local -a set=("$@")
   local event="${CI_EVENT_NAME:-${GITHUB_EVENT_NAME:-}}"
   local ref="${CI_REF:-${GITHUB_REF:-}}"
   local cron="${CI_SCHEDULE:-}"
@@ -309,7 +343,23 @@ resolve_tier() {
       esac
       return
       ;;
-    pull_request | pull_request_target) echo ceiling; return ;;
+    pull_request | pull_request_target)
+      # An UNRESOLVED pull request falls to the ceiling with everything else:
+      # "I could not read the diff" is not "the diff is only feedback".
+      #
+      # The `resolved` clause is belt-and-braces TODAY and is kept knowingly:
+      # `run_report` blanks `files` whenever the set is unresolved, so
+      # `feedback_only`'s empty-set rule already refuses that case, and
+      # removing this clause reds no --teeth case. It is stated because the
+      # two facts that make it redundant live in a different function, and a
+      # later partial-read path would make it load-bearing again.
+      if [ "$resolved" = true ] && feedback_only "${set[@]+"${set[@]}"}"; then
+        echo lane
+      else
+        echo ceiling
+      fi
+      return
+      ;;
   esac
 
   case "$ref" in
@@ -434,12 +484,27 @@ run_teeth() {
   expect_tier "a tag buys the ceiling" ceiling \
     CI_CHANGES_FILES="docs/backlog.md" CI_EVENT_NAME=push CI_REF=refs/tags/v9.9.9 GITHUB_OUTPUT=
 
-  # (m) A PULL REQUEST keeps the ceiling, and this case is a FENCE rather than
-  # an optimisation. Moving PRs to the lane is AC11b, which spec 13 §4.5
-  # blocks until an externally-written branch carries a real merge gate. If
-  # someone "also fixes" that here, this case reds.
-  expect_tier "a pull request still buys the ceiling (AC11b is blocked)" ceiling \
+  # (m) AC11b, THE SAVING. This case used to assert the opposite — a fence, so
+  # that nobody could take the saving before public `main` carried a merge gate
+  # that inspected anything. The precondition was satisfied on 2026-08-13 by
+  # scripts/feedback-intake-policy.sh, so the fence is INVERTED rather than
+  # deleted: what was guarded is now the thing with teeth.
+  expect_tier "a feedback-only pull request buys the lane, not the ceiling" lane \
     CI_CHANGES_FILES="feedback/inbox/fb-20260812-755a23.yaml" CI_EVENT_NAME=pull_request CI_REF=refs/pull/27/merge GITHUB_OUTPUT=
+
+  # (m2) …and the fence is what remains of it. One path outside `feedback/` is
+  # enough: a record smuggled alongside a source edit is an ordinary pull
+  # request and buys the full ceiling. Without this case, "feedback-only"
+  # degrades to "mentions feedback" and the saving becomes a hole.
+  expect_tier "a pull request touching anything else still buys the ceiling" ceiling \
+    CI_CHANGES_FILES="feedback/inbox/fb-20260812-755a23.yaml internal/fold/fold.go" \
+    CI_EVENT_NAME=pull_request CI_REF=refs/pull/27/merge GITHUB_OUTPUT=
+
+  # (m3) An UNRESOLVED pull request is not a feedback pull request. The
+  # fail-safe direction has to hold on this path too, or a diff nobody could
+  # read would buy the cheapest tier.
+  expect_tier "an unresolvable pull request falls to the ceiling" ceiling \
+    CI_CHANGES_FILES= CI_EVENT_NAME=pull_request CI_REPOSITORY=ydnikolaev/a2ahub GITHUB_OUTPUT=
 
   # (n) workflow_dispatch defaults to the ceiling…
   expect_tier "workflow_dispatch defaults to the ceiling" ceiling \
@@ -548,7 +613,7 @@ run_teeth() {
     echo "ci-changes --teeth: FAIL" >&2
     exit 1
   fi
-  echo "ci-changes --teeth: 27 case(s) green."
+  echo "ci-changes --teeth: 29 case(s) green."
 }
 
 case "${1:-}" in
