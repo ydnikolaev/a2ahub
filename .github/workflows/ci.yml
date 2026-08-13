@@ -200,8 +200,24 @@ jobs:
       # cache only on GitHub and only at this checkout-owned CI path.
       GOCACHE: ${{ github.workspace }}/.a2a/cache/ci-go-build
     steps:
+      # fetch-depth: 0 — `check-feedback-corpus` RESOLVES COMMIT REFERENTS.
+      # A record whose status is `shipped` may only name a commit or a version,
+      # and the commit half is `git cat-file -e`, which answers "no such
+      # object" in a depth-1 clone for a commit that exists perfectly well.
+      # The gate then reports the RECORD as dishonest, which is a wrong verdict
+      # rather than a missing one — and it reached CI the moment this gate
+      # started being tracked (`ec614ffb`), on its first real run there.
+      #
+      # Shallowness is not usable as a discriminator here and that was measured,
+      # not assumed: this repository answers `--is-shallow-repository` = true
+      # while carrying 1431 commits, because it was cloned shallow once and
+      # deepened. The same trap cost the provider-tier gate a false green a day
+      # earlier. So the gate is given what it needs instead of being taught to
+      # guess. `.git` is 29 MB and four workflows here already pay this.
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -290,8 +306,24 @@ jobs:
     env:
       GOCACHE: ${{ github.workspace }}/.a2a/cache/ci-go-build
     steps:
+      # fetch-depth: 0 — `check-feedback-corpus` RESOLVES COMMIT REFERENTS.
+      # A record whose status is `shipped` may only name a commit or a version,
+      # and the commit half is `git cat-file -e`, which answers "no such
+      # object" in a depth-1 clone for a commit that exists perfectly well.
+      # The gate then reports the RECORD as dishonest, which is a wrong verdict
+      # rather than a missing one — and it reached CI the moment this gate
+      # started being tracked (`ec614ffb`), on its first real run there.
+      #
+      # Shallowness is not usable as a discriminator here and that was measured,
+      # not assumed: this repository answers `--is-shallow-repository` = true
+      # while carrying 1431 commits, because it was cloned shallow once and
+      # deepened. The same trap cost the provider-tier gate a false green a day
+      # earlier. So the gate is given what it needs instead of being taught to
+      # guess. `.git` is 29 MB and four workflows here already pay this.
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
