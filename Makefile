@@ -49,7 +49,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check test check-validators lane lane-run lane-declarations web-quality _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
+.PHONY: check test check-validators lane lane-run lane-declarations web-quality _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -60,7 +60,7 @@
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := spec-verify-refs lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus view-vocabulary pendency-uniqueness loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness roadmap-release-decisions provider-tier-deferral runner-economics space-template-baseline-check
+REPO_GATES := spec-verify-refs lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus view-vocabulary pendency-uniqueness loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness roadmap-release-decisions provider-tier-deferral runner-economics space-template-baseline-check
 
 _print-repo-gates:
 	@echo "$(REPO_GATES)"
@@ -101,7 +101,8 @@ test: ## Scoped race test through the owned environment. Optional: A2A_VERIFY_TE
 # lane the repo already HAS gets one declared home the derivation can find —
 # without it, deleting check-convention.md's hand-maintained table would make this
 # lane vanish silently on the repo's second-largest tracked tree.
-# Presence-gated on web/node_modules exactly as dashboard-template-drift is.
+# Presence-gated locally on web/node_modules. The drift check runs inside this
+# same web lane; CI invokes both only after its filtered job has installed Node.
 # skill/** is declared because the SITE IS GENERATED FROM IT, and leaving it out
 # was a false green that lasted a day. web/scripts/generate-content.mjs reads
 # skill/a2ahub/docs-manifest.json and every doc body it names, so a skill edit
@@ -116,9 +117,11 @@ test: ## Scoped race test through the owned environment. Optional: A2A_VERIFY_TE
 #   web/**
 #   ui/**
 #   skill/**
+#   internal/html/template.html
+#   scripts/dashboard-template-drift.sh
 web-quality: ## The web stack's own quality gate (npm). NOT part of `make check` — run when web/**, ui/** or skill/** changed.
 	@if [ -d web/node_modules ]; then \
-	  npm --prefix web run check:quality; \
+	  npm --prefix web run check:quality && bash scripts/dashboard-template-drift.sh; \
 	else \
 	  echo "web-quality: skip — web/node_modules absent (run 'npm --prefix web ci' first)."; \
 	fi
@@ -150,8 +153,14 @@ gosec-scope: ## G204/G304 stay live outside the exact reviewed path allowlist.
 readme-lint: ## README stays compact, current, and exits to the canonical docs.
 	@bash scripts/check-readme.sh
 
-dashboard-template-drift: ## internal/html/template.html must equal a fresh build of web/design-source (skips without web/node_modules).
+dashboard-template-drift: ## template.html equals design source; missing Node skips locally and refuses under CI.
 	@bash scripts/dashboard-template-drift.sh
+
+dashboard-cards: ## Exactly seven registered card kinds use openCard and the one Modal engine.
+	@bash scripts/check-dashboard-cards.sh
+
+dashboard-derivation: ## Dashboard components preserve carried order/facts and keep network in DashboardLive.
+	@bash scripts/check-dashboard-derivation.sh
 
 view-vocabulary: ## No component may classify by its own list of state names, or spell one the domain does not have.
 	@bash scripts/check-view-vocabulary.sh
@@ -391,6 +400,8 @@ _harness-check:
 	@bash scripts/feedback-intake-policy.sh --teeth
 	@bash scripts/check-gosec-scope.sh --teeth
 	@bash scripts/release-preflight.sh --teeth
+	@bash scripts/check-dashboard-cards.sh --teeth
+	@bash scripts/check-dashboard-derivation.sh --teeth
 	@bash scripts/check-view-vocabulary.sh --teeth
 	@bash scripts/check-pendency-uniqueness.sh --teeth
 	@bash scripts/check-release-notes-freshness.sh --teeth

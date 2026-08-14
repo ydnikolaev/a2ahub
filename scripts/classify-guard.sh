@@ -35,6 +35,8 @@ cd "$(git rev-parse --show-toplevel)"
 # gitignored (see docs/ above) until they graduate to DENY.
 ALLOW_DIRS=( .github cmd integrations internal schemas skill space-template testkit seeds feedback web ui releasenotes )
 PUBLIC_VALIDATOR_FILES=(
+  scripts/check-dashboard-cards.sh
+  scripts/check-dashboard-derivation.sh
   scripts/check-lane-declarations.sh
   # ci-changes.sh is PUBLIC because `.github/workflows/ci.yml` calls it, and a
   # workflow that is published without the script it invokes is exactly the

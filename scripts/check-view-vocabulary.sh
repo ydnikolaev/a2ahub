@@ -96,11 +96,15 @@ vocabulary_outcomes() { # $1 = vocabulary json
 # one line. Prints "file:line:content". Whether one is a classification is
 # decided by its CONTENT, below — this only narrows the search.
 #
-# Four evasions are knowingly NOT covered, measured rather than assumed, and
-# recorded in the epic's own epic-backlog.md: an object literal
+# Four evasions are knowingly NOT covered GENERICALLY, measured rather than
+# assumed, and recorded in the epic's own epic-backlog.md: an object literal
 # (`{"closed": true, …}`), a list split one string per line, a Set built by
 # chained .add() calls, and a list assembled from named constants. None
 # exists in the components today.
+#
+# P16 adds one deliberately narrow exception below: a named browser-local
+# transition label/classification object. It is not generic object-literal
+# recognition and derives its permitted transition keys from the binary.
 #
 # The object-literal form was TRIED and reverted, and the reason is worth
 # keeping: widening the pattern to `{` made the gate red on
@@ -158,6 +162,144 @@ state_equality_chains() { # $1 = scan root
       if (compared >= 2) print FILENAME ":" FNR ":" $0
     }
   ' {} + 2>/dev/null
+
+  # Preserve the shipped one-line grammar above exactly, then add only the
+  # missing multiline assignment/return form. A candidate begins at its
+  # declaration or return and ends at the first semicolon; its branches are
+  # joined with spaces so equality_pairs and outcome_operand consume the same
+  # normalized statement they already understand. Diagnostics retain the
+  # statement's source filename and starting line.
+  find "$1" -type f -name '*.dc.html' -exec awk '
+    function comparison(part) {
+      return part ~ /={2,3}[[:space:]]*"[a-z_]+"/ || part ~ /"[a-z_]+"[[:space:]]*={2,3}/
+    }
+    function inspect(statement, start_line, span, count, branches, compared, i) {
+      if (span < 2 || statement !~ /\|\|/) return
+      count=split(statement, branches, /\|\|/)
+      compared=0
+      for (i=1; i<=count; i++) if (comparison(branches[i])) compared++
+      if (compared >= 2) print FILENAME ":" start_line ":" statement
+    }
+    function strip_comments(value, block_start, block_end, after_start) {
+      while (1) {
+        if (in_block) {
+          block_end=index(value, "*/")
+          if (!block_end) return ""
+          value=substr(value, block_end+2)
+          in_block=0
+        }
+        block_start=index(value, "/*")
+        if (!block_start) break
+        after_start=substr(value, block_start+2)
+        block_end=index(after_start, "*/")
+        if (!block_end) {
+          value=substr(value, 1, block_start-1)
+          in_block=1
+          break
+        }
+        value=substr(value, 1, block_start-1) substr(after_start, block_end+2)
+      }
+      sub(/[[:space:]]*\/\/.*/, "", value)
+      return value
+    }
+    {
+      text=strip_comments($0)
+      if (!collecting) {
+        if (text !~ /(^|[}{;[:space:]])(const|let|var)[[:space:]][A-Za-z_$][A-Za-z0-9_$]*[[:space:]]*=/ &&
+            text !~ /(^|[}{;[:space:]])return[[:space:]]/) next
+        collecting=1
+        start_line=FNR
+        span=0
+        statement=""
+      }
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", text)
+      if (text != "") {
+        statement=statement (statement == "" ? "" : " ") text
+        span++
+      }
+      if (text ~ /;/) {
+        inspect(statement, start_line, span)
+        collecting=0
+        statement=""
+        span=0
+      }
+    }
+  ' {} \; 2>/dev/null
+}
+
+# vocabulary_transitions reads the same binary payload as the state/outcome
+# checks. It intentionally carries no transition roster of its own.
+vocabulary_transitions() { # $1 = vocabulary json
+  printf '%s\n' "$1" |
+    awk '/"transitions"/{f=1} f{print} f&&/\]/{exit}' |
+    grep -oE '"[a-z_-]+"' | tail -n +2 | tr -d '"' | sort -u
+}
+
+# transition_policy_maps is the one named exception to the generic DC-B2
+# object-literal backlog. Only an assigned object whose identifier names both
+# TRANSITION and LABEL/TONE/CLASSIFICATION is admitted for further checking.
+# Ordinary translation/object tables remain outside this candidate grammar.
+transition_policy_maps() { # $1 = scan root
+  find "$1" -type f -name '*.dc.html' -exec awk '
+    function strip_comments(value, block_start, block_end, after_start) {
+      while (1) {
+        if (in_block) {
+          block_end=index(value, "*/")
+          if (!block_end) return ""
+          value=substr(value, block_end+2)
+          in_block=0
+        }
+        block_start=index(value, "/*")
+        if (!block_start) break
+        after_start=substr(value, block_start+2)
+        block_end=index(after_start, "*/")
+        if (!block_end) {
+          value=substr(value, 1, block_start-1)
+          in_block=1
+          break
+        }
+        value=substr(value, 1, block_start-1) substr(after_start, block_end+2)
+      }
+      sub(/[[:space:]]*\/\/.*/, "", value)
+      return value
+    }
+    function emit() {
+      if (span > 0) print FILENAME ":" start_line ":" statement
+      collecting=0
+      statement=""
+      span=0
+    }
+    {
+      text=strip_comments($0)
+      upper=toupper(text)
+      if (!collecting) {
+        if (upper !~ /(CONST|LET|VAR)[[:space:]]+[A-Z0-9_$]*TRANSITION[A-Z0-9_$]*(LABEL|TONE|CLASSIFICATION)[A-Z0-9_$]*[[:space:]]*=/ &&
+            upper !~ /(CONST|LET|VAR)[[:space:]]+[A-Z0-9_$]*(LABEL|TONE|CLASSIFICATION)[A-Z0-9_$]*TRANSITION[A-Z0-9_$]*[[:space:]]*=/) next
+        collecting=1
+        start_line=FNR
+        statement=""
+        span=0
+      }
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", text)
+      statement=statement (statement == "" ? "" : " ") text
+      span++
+      if (text ~ /}[[:space:]]*\)?[[:space:]]*;[[:space:]]*$/) emit()
+    }
+    END { if (collecting) emit() }
+  ' {} \; 2>/dev/null
+}
+
+transition_map_pairs() { # $1 = normalized object statement
+  printf '%s\n' "$1" |
+    grep -oE '("[a-z_-]+"|[a-z_][a-z0-9_]*)([[:space:]]*):[[:space:]]*"[^"]+"' 2>/dev/null |
+    while IFS= read -r pair; do
+      local key value
+      key="${pair%%:*}"
+      value="${pair#*:}"
+      key="$(printf '%s' "$key" | tr -d '[:space:]\"')"
+      value="$(printf '%s' "$value" | sed -E 's/^[[:space:]]*"//; s/"$//')"
+      printf '%s|%s\n' "$key" "$value"
+    done
 }
 
 # equality_pairs emits `operand|literal` for the simple equality comparisons
@@ -230,15 +372,20 @@ check_resolver_monopoly() { # $1 = scan root
 }
 
 run_check() { # $1 = scan root
-  local root="$1" json states outcomes
+  local root="$1" json states outcomes transitions
   if ! json="$(vocabulary_json)"; then
     gate_fail "view-vocabulary: could not read the vocabulary from the binary — failing closed rather than policing nothing"
     return 1
   fi
   states="$(vocabulary_states "$json")"
   outcomes="$(vocabulary_outcomes "$json")"
+  transitions="$(vocabulary_transitions "$json")"
   if [ -z "$states" ]; then
     gate_fail "view-vocabulary: the binary returned no states — failing closed rather than policing nothing"
+    return 1
+  fi
+  if [ -z "$transitions" ]; then
+    gate_fail "view-vocabulary: the binary returned no transitions — failing closed rather than allowing a local transition policy unchecked"
     return 1
   fi
 
@@ -340,6 +487,39 @@ run_check() { # $1 = scan root
       esac
     done <<< "$operands"
   done <<< "$(state_equality_chains "$root")"
+
+  local map_pairs transition_count classification_count value upper_content
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    file="${line%%:*}"
+    content="${line#*:}"
+    lineno="${content%%:*}"
+    content="${content#*:}"
+    upper_content="$(printf '%s' "$content" | tr '[:lower:]' '[:upper:]')"
+    map_pairs="$(transition_map_pairs "$content")"
+    transition_count=0
+    classification_count=0
+    while IFS= read -r pair; do
+      [ -z "$pair" ] && continue
+      word="${pair%%|*}"
+      value="${pair#*|}"
+      if printf '%s\n' "$transitions" | grep -qx "$word"; then
+        transition_count=$((transition_count + 1))
+        case "$value" in
+          positive|negative|caution) classification_count=$((classification_count + 1)) ;;
+        esac
+      fi
+    done <<< "$map_pairs"
+
+    if [ "$transition_count" -ge 1 ]; then
+      if [[ "$upper_content" == *TRANSITION*LABEL* || "$upper_content" == *LABEL*TRANSITION* ]]; then
+        gate_fail "$(basename "$file"):$lineno defines a browser-local label map for $transition_count binary-known transitions — use VocabularyResolver family \`transition\` instead"
+      fi
+      if [ "$classification_count" -ge 1 ]; then
+        gate_fail "$(basename "$file"):$lineno classifies binary-known transitions as positive/negative/caution in the browser — use VocabularyResolver family \`transition\` instead"
+      fi
+    fi
+  done <<< "$(transition_policy_maps "$root")"
 
   gate_summary "view-vocabulary"
 }
@@ -448,6 +628,89 @@ FIXTURE
   fi
   rm -f "$tmp/ReturnedInlineChain.dc.html"
 
+  # Assignment and return each have their own multiline grammar. They must be
+  # normalized into one statement before the existing equality-pair analysis.
+  local new_shape_failed=0
+  cat > "$tmp/AssignedMultilineChain.dc.html" <<'FIXTURE'
+<script>
+function settled(state) {
+  const result =
+    state === "closed" ||
+    state === "verified";
+  return result;
+}
+</script>
+FIXTURE
+  local multiline_output
+  if multiline_output="$( ( run_check "$tmp" ) 2>&1 )"; then
+    echo "view-vocabulary --teeth: FAILED — a multiline assigned state classification stayed green" >&2
+    new_shape_failed=1
+  elif [[ "$multiline_output" != *"AssignedMultilineChain.dc.html:3"* ]]; then
+    echo "view-vocabulary --teeth: FAILED — multiline assignment diagnostic omitted its filename/starting line" >&2
+    new_shape_failed=1
+  fi
+  rm -f "$tmp/AssignedMultilineChain.dc.html"
+
+  cat > "$tmp/ReturnedMultilineChain.dc.html" <<'FIXTURE'
+<script>
+function refused(state) {
+  return (
+    state === "declined" ||
+    state === "closed"
+  );
+}
+</script>
+FIXTURE
+  if multiline_output="$( ( run_check "$tmp" ) 2>&1 )"; then
+    echo "view-vocabulary --teeth: FAILED — a multiline returned state classification stayed green" >&2
+    new_shape_failed=1
+  elif [[ "$multiline_output" != *"ReturnedMultilineChain.dc.html:3"* ]]; then
+    echo "view-vocabulary --teeth: FAILED — multiline return diagnostic omitted its filename/starting line" >&2
+    new_shape_failed=1
+  fi
+  rm -f "$tmp/ReturnedMultilineChain.dc.html"
+
+  # Generic object-literal detection remains outside this gate. These two
+  # named transition policy surfaces are the deliberately narrow exception.
+  cat > "$tmp/TransitionLabels.dc.html" <<'FIXTURE'
+<script>
+const TRANSITION_LABELS = Object.freeze({
+  "accept": "Accept",
+  "reject": "Reject"
+});
+</script>
+FIXTURE
+  local transition_output
+  if transition_output="$( ( run_check "$tmp" ) 2>&1 )"; then
+    echo "view-vocabulary --teeth: FAILED — a browser-local transition label map stayed green" >&2
+    new_shape_failed=1
+  elif [[ "$transition_output" != *"TransitionLabels.dc.html:2"* ]]; then
+    echo "view-vocabulary --teeth: FAILED — transition-label diagnostic omitted its filename/starting line" >&2
+    new_shape_failed=1
+  fi
+  rm -f "$tmp/TransitionLabels.dc.html"
+
+  cat > "$tmp/TransitionClassification.dc.html" <<'FIXTURE'
+<script>
+const TRANSITION_TONES = Object.freeze({
+  "accept": "positive",
+  "reject": "negative",
+  "block": "caution"
+});
+</script>
+FIXTURE
+  if transition_output="$( ( run_check "$tmp" ) 2>&1 )"; then
+    echo "view-vocabulary --teeth: FAILED — a browser-local transition classification stayed green" >&2
+    new_shape_failed=1
+  elif [[ "$transition_output" != *"TransitionClassification.dc.html:2"* ]]; then
+    echo "view-vocabulary --teeth: FAILED — transition-classification diagnostic omitted its filename/starting line" >&2
+    new_shape_failed=1
+  fi
+  rm -f "$tmp/TransitionClassification.dc.html"
+  if [ "$new_shape_failed" -ne 0 ]; then
+    return 1
+  fi
+
   # These two fixtures pin the audit escapes independently. Accumulate their
   # results so one false green cannot hide the other during the gate's own red
   # proof.
@@ -490,6 +753,32 @@ const tone = it.outcome === "settled" ? "healthy" : "neutral";
 const selected = state === "closed";
 const theme = mode === "dark" || mode === "light";
 /* const oldGuess = state === "closed" || state === "verified"; */
+/*
+const oldMultilineGuess =
+  state === "closed" ||
+  state === "verified";
+*/
+
+const abandoned =
+  it.outcome === "withdrawn" ||
+  it.outcome === "superseded";
+
+const translatedActions = {
+  save_form: { en: "Save", ru: "Сохранить" },
+  dismiss_dialog: { en: "Dismiss", ru: "Закрыть" }
+};
+/*
+const TRANSITION_LABELS = Object.freeze({
+  "accept": "Accept",
+  "reject": "Reject"
+});
+*/
+const transitionPresentation = A2A_VOCABULARY_RESOLVER.lookup(
+  data,
+  "transition",
+  event.transition,
+  locale
+);
 </script>
 FIXTURE
   if ! ( run_check "$tmp" ) >/dev/null 2>&1; then

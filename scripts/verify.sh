@@ -803,6 +803,9 @@ fi
 #   **/*.go
 #   go.mod
 #   go.sum
+#   schemas/dashboard-view-objects.schema.json
+#   schemas/fixtures/dashboard-view-objects/**
+#   web/design-source/cards.manifest.json
 run_phase go-test run_go_tests
 # Reads the coverage.out this run just produced plus its own policy source; the
 # aggregate floor is a function of the whole Go tree, so it is declared as such

@@ -50,6 +50,8 @@ scripts/*
 !scripts/check-readme.sh
 !scripts/dashboard-template-drift.sh
 !scripts/check-view-vocabulary.sh
+!scripts/check-dashboard-cards.sh
+!scripts/check-dashboard-derivation.sh
 !scripts/check-prose-roster.sh
 !scripts/check-prose-coverage.sh
 !scripts/check-operational-confidence.sh
