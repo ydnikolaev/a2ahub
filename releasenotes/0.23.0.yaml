@@ -235,3 +235,31 @@ changes:
     action:
       scope: none
       why: "No action. The table and catalogue keys are additive; regenerated dashboards carry the vocabulary automatically."
+
+  - id: RN-02300-8
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: >
+        The bundled dashboard is the executable showroom and the offline
+        browser fixture. Missing declared states made green UI tests weaker
+        than the vocabulary contract they claimed to demonstrate.
+    impact: normal
+    subject: "the bundled dashboard demo now exercises every renderable vocabulary value and every bounded collection"
+    detail: >
+      The demo now carries all 91 fixture-instantiable family/value pairs,
+      including every one of the 25 lifecycle transitions, while the five
+      browser-local transport states remain covered by their live-client
+      scenarios. Work, consistency and document previews deliberately cross
+      their server limits, so the visible sample proves shown, total and
+      truncated facts instead of presenting a prefix as complete.
+
+      Fixture coverage is derived from the binary catalogue rather than a
+      copied list. The committed compact dashboard data, indented CLI JSON and
+      embedded template are regenerated projections of that same model, and
+      the gate fails by the exact missing family/value when a future catalogue
+      addition lacks a visible fixture carrier.
+    affects: [dashboard, "a2a html --demo", "a2a html --json"]
+    action:
+      scope: none
+      why: "No action. Regenerate a demo dashboard with the current binary to inspect the expanded state and bounds coverage."
