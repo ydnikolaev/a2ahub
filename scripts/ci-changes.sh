@@ -61,6 +61,12 @@ MACOS_PREFIX="integrations/macos-notifier/"
 # macOS job is built or gated must be able to exercise it.
 MACOS_WORKFLOW=".github/workflows/ci.yml"
 
+# Dashboard-coherence P16. One shared path predicate feeds both the ordinary
+# Node unit job and the rare browser-truth workflow. Occasion policy is folded
+# separately below; no workflow YAML owns a competing `paths` decision.
+WEB_PREFIX='web/'
+DASHBOARD_TEMPLATE='internal/html/template.html'
+
 # The nightly ceiling's cron, stated ONCE. `ci.yml` declares two schedules and
 # `github.event.schedule` is the only thing that tells a scheduled run which
 # one fired it, so this literal and the workflow's must agree. They are pinned
@@ -90,6 +96,44 @@ macos_relevant() {
     esac
   done
   return 1
+}
+
+web_relevant() {
+  local f
+  for f in "$@"; do
+    case "$f" in
+      "$WEB_PREFIX"* | "$DASHBOARD_TEMPLATE") return 0 ;;
+    esac
+  done
+  return 1
+}
+
+resolve_web() {
+  local resolved="$1"
+  shift
+  local event="${CI_EVENT_NAME:-${GITHUB_EVENT_NAME:-}}"
+  if [ "$resolved" = true ]; then
+    if web_relevant "$@"; then echo true; else echo false; fi
+    return
+  fi
+  case "$event" in
+    push | pull_request | pull_request_target) echo true ;;
+    *) echo false ;;
+  esac
+}
+
+resolve_rare_web() {
+  local resolved="$1"
+  shift
+  local event="${CI_EVENT_NAME:-${GITHUB_EVENT_NAME:-}}"
+  local ref="${CI_REF:-${GITHUB_REF:-}}"
+  if [ "$event" = workflow_dispatch ]; then echo true; return; fi
+  if [ "$event" != push ] || [ "$ref" != refs/heads/main ]; then
+    echo false
+    return
+  fi
+  if [ "$resolved" != true ]; then echo true; return; fi
+  if web_relevant "$@"; then echo true; else echo false; fi
 }
 
 # feedback_only is true when EVERY changed path is inside the inbound corpus,
@@ -258,6 +302,8 @@ run_report() {
 
   emit resolved "$resolved"
   emit macos "$macos"
+  emit web "$(resolve_web "$resolved" "${set[@]+"${set[@]}"}")"
+  emit rare_web "$(resolve_rare_web "$resolved" "${set[@]+"${set[@]}"}")"
   emit files "${set[*]+${set[*]}}"
   emit proven "$proven"
   emit tier "$(resolve_tier "$resolved" "$proven" "${set[@]+"${set[@]}"}")"
@@ -425,7 +471,72 @@ expect_proven() {
   echo "ci-changes --teeth: $label — proven=$got"
 }
 
+expect_web_outputs() {
+  local label="$1" want_web="$2" want_rare="$3"
+  shift 3
+  local out got_web got_rare
+  out="$(env "$@" bash "$ROOT/scripts/ci-changes.sh" 2>/dev/null)"
+  got_web="$(sed -n 's/^web=//p' <<< "$out")"
+  got_rare="$(sed -n 's/^rare_web=//p' <<< "$out")"
+  if [ "$got_web" != "$want_web" ] || [ "$got_rare" != "$want_rare" ]; then
+    echo "ci-changes --teeth: FAIL — $label: got web=$got_web rare_web=$got_rare, want web=$want_web rare_web=$want_rare" >&2
+    teeth_fail=1
+    return
+  fi
+  echo "ci-changes --teeth: $label — web=$got_web rare_web=$got_rare"
+}
+
 run_teeth() {
+  local ci_workflow="$ROOT/.github/workflows/ci.yml"
+  local rare_workflow="$ROOT/.github/workflows/dashboard-rare-truth.yml"
+  if [ ! -f "$rare_workflow" ] ||
+     ! grep -q '^  push:$' "$rare_workflow" ||
+     ! grep -q '^    branches: \[main\]$' "$rare_workflow" ||
+     ! grep -q '^  workflow_dispatch:$' "$rare_workflow" ||
+     grep -Eq '^  schedule:|^[[:space:]]+paths:' "$rare_workflow" ||
+     ! grep -Fq 'rare_web: ${{ steps.resolve.outputs.rare_web }}' "$rare_workflow" ||
+     ! grep -Fq 'needs: changes' "$rare_workflow" ||
+     [ "$(grep -Fc "if: needs.changes.outputs.rare_web == 'true'" "$rare_workflow")" -ne 1 ] ||
+     grep -Fq 'web/**' "$rare_workflow" ||
+     grep -Fq 'internal/html/template.html' "$rare_workflow"; then
+    echo "ci-changes --teeth: FAIL — rare workflow must use main+dispatch, no paths/schedule, exported rare_web and one output-only browser condition" >&2
+    teeth_fail=1
+  else
+    echo "ci-changes --teeth: rare workflow has one resolver-owned path authority and one rare_web browser condition"
+  fi
+  if ! grep -Fq 'web: ${{ steps.resolve.outputs.web }}' "$ci_workflow" ||
+     ! grep -Fq 'needs: changes' "$ci_workflow" ||
+     [ "$(grep -Fc "if: needs.changes.outputs.web == 'true'" "$ci_workflow")" -ne 1 ]; then
+    echo "ci-changes --teeth: FAIL — ordinary CI web job must consume the exported web output through one comparison" >&2
+    teeth_fail=1
+  else
+    echo "ci-changes --teeth: ordinary CI web job consumes only the resolver-owned web output"
+  fi
+
+  # P16: the shared web predicate and its two distinct occasion folds. These
+  # answers are independent of candidate proof, which only deduplicates the
+  # Go/Swift tier after a byte-identical candidate run.
+  expect_web_outputs "a main web change buys unit and rare truth" true true \
+    CI_CHANGES_FILES="web/design-source/Overview.dc.html" CI_EVENT_NAME=push CI_REF=refs/heads/main GITHUB_OUTPUT=
+  expect_web_outputs "a generated template change buys unit and rare truth" true true \
+    CI_CHANGES_FILES="internal/html/template.html" CI_EVENT_NAME=push CI_REF=refs/heads/main GITHUB_OUTPUT=
+  expect_web_outputs "a resolved main Go-only change buys neither web job" false false \
+    CI_CHANGES_FILES="internal/fold/fold.go" CI_EVENT_NAME=push CI_REF=refs/heads/main GITHUB_OUTPUT=
+  expect_web_outputs "an unresolved main push fails expensive" true true \
+    CI_CHANGES_FILES= CI_EVENT_NAME=push CI_REF=refs/heads/main CI_REPOSITORY=ydnikolaev/a2ahub \
+    CI_BEFORE_SHA=0000000000000000000000000000000000000000 CI_AFTER_SHA=deadbeef GITHUB_OUTPUT=
+  expect_web_outputs "manual dispatch buys rare truth but no diff-scoped unit job" false true \
+    CI_CHANGES_FILES= CI_EVENT_NAME=workflow_dispatch CI_REF=refs/heads/main GITHUB_OUTPUT=
+  expect_web_outputs "a schedule buys neither dashboard web job" false false \
+    CI_CHANGES_FILES= CI_EVENT_NAME=schedule CI_REF=refs/heads/main GITHUB_OUTPUT=
+  expect_web_outputs "candidate proof cannot suppress dashboard path truth" true true \
+    CI_CHANGES_FILES="web/design-source/Overview.dc.html" CI_EVENT_NAME=push CI_REF=refs/heads/main \
+    CI_REPOSITORY=ydnikolaev/a2ahub CI_AFTER_SHA=deadbeef CI_CANDIDATE_RUNS=1 GITHUB_OUTPUT=
+  expect_web_outputs "a web pull request buys unit but not main-only rare truth" true false \
+    CI_CHANGES_FILES="web/tests/ui-contract.test.mjs" CI_EVENT_NAME=pull_request CI_REF=refs/pull/27/merge GITHUB_OUTPUT=
+  expect_web_outputs "a web push to a non-main ref cannot buy rare truth" true false \
+    CI_CHANGES_FILES="web/tests/ui-contract.test.mjs" CI_EVENT_NAME=push CI_REF=refs/heads/a2a-candidate/deadbeef GITHUB_OUTPUT=
+
   # (a) The founding measurement: 494 of 689 commits touched only docs.
   expect "docs-only diff does not buy the macOS runner" false true \
     CI_CHANGES_FILES="docs/backlog.md README.md" GITHUB_OUTPUT=

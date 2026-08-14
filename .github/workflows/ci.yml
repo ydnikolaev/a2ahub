@@ -121,6 +121,8 @@ jobs:
       actions: read
     outputs:
       macos: ${{ steps.resolve.outputs.macos }}
+      web: ${{ steps.resolve.outputs.web }}
+      rare_web: ${{ steps.resolve.outputs.rare_web }}
       resolved: ${{ steps.resolve.outputs.resolved }}
       files: ${{ steps.resolve.outputs.files }}
       tier: ${{ steps.resolve.outputs.tier }}
@@ -145,6 +147,36 @@ jobs:
           CI_BEFORE_SHA: ${{ github.event.before }}
           CI_AFTER_SHA: ${{ github.sha }}
         run: bash scripts/ci-changes.sh
+
+  # Dashboard-coherence P16. The path decision is terminal-testable in
+  # scripts/ci-changes.sh; this condition is deliberately only one output
+  # comparison. A Go/docs-only diff therefore buys no Node setup.
+  web:
+    timeout-minutes: 10
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Prove generated dashboard drift
+        run: bash scripts/dashboard-template-drift.sh
+
+      - name: Run Node built-in unit suites
+        run: npm run check:unit
+        working-directory: web
 
   # THE CEILING, now at the ship boundary instead of on every push.
   #

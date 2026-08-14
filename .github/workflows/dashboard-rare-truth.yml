@@ -1,0 +1,78 @@
+# Dashboard coherence's browser truth. The cheap resolver runs on every main
+# push and on dispatch; scripts/ci-changes.sh alone decides whether the browser
+# bill is justified. There is intentionally no paths filter and no schedule.
+name: dashboard-rare-truth
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    outputs:
+      rare_web: ${{ steps.resolve.outputs.rare_web }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Resolve rare dashboard truth
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_REPOSITORY: ${{ github.repository }}
+          CI_EVENT_NAME: ${{ github.event_name }}
+          CI_REF: ${{ github.ref }}
+          CI_BEFORE_SHA: ${{ github.event.before }}
+          CI_AFTER_SHA: ${{ github.sha }}
+        run: bash scripts/ci-changes.sh
+
+  browser:
+    timeout-minutes: 15
+    needs: changes
+    if: needs.changes.outputs.rare_web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Build the public site
+        run: npm run build
+        working-directory: web
+
+      - name: Install pinned Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: web
+
+      # This one file contains the viewport/pixel contract, the axe check,
+      # card DOM equality across entry points, and refresh selection retention.
+      - name: Run rare dashboard browser truth
+        run: npx playwright test tests/dashboard-visual-contract.spec.mjs
+        working-directory: web
