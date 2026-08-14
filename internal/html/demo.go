@@ -8,8 +8,10 @@ import (
 	"io"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/notes"
 	"github.com/ydnikolaev/a2ahub/internal/operational"
@@ -17,10 +19,12 @@ import (
 	"github.com/ydnikolaev/a2ahub/releasenotes"
 )
 
-// demoJSON is the committed demo fixture (testdata/demo.json) — a
-// deterministic model covering every type, state, drift, severity, and corner
-// case the dashboard renders. Embedded so `a2a html --demo` renders a rich page
-// with NO connected space, for design iteration + screenshots.
+// demoJSON is the committed synthetic breadth fixture (testdata/demo.json).
+// TestDemoFixtureCoversBinaryVocabulary keeps every fixture-backed catalogue
+// value present, while TestDemoFixtureExercisesHonestBounds proves the work,
+// consistency, and preview limits with real overflow. Embedded so
+// `a2a html --demo` renders a rich page with NO connected space, for design
+// iteration and screenshots; it is not a substitute for an axon truth render.
 //
 //go:embed testdata/demo.json
 var demoJSON []byte
@@ -50,6 +54,9 @@ func DemoData() (Data, error) {
 	deriveDemoOwnership(&d)
 	deriveDemoRowFacts(&d)
 	deriveDemoDerivedState(&d)
+	if err := deriveDemoPreviewBound(&d); err != nil {
+		return Data{}, fmt.Errorf("html: demo preview bound: %w", err)
+	}
 	authoredOperational := d.Operational
 	d.Operational, err = demoOperationalSnapshot(d)
 	if err != nil {
@@ -101,22 +108,114 @@ func demoOperationalSnapshot(d Data) (operational.Snapshot, error) {
 		WorkID: "work:01K20ABCDEFHJKMNPQRSTVWXYZ", Actor: actor("codex", "atlas", "session:demo-atlas"),
 	}, "XW-checkout-20260728-c3d4", workreport.ModeImplementing,
 		"Implementing the idempotent capture fix and replay fixture", nil)
+	closingLease, closingPending, err := demoClosingLocalLease(now, actor("recovery-bot", "atlas", "session:demo-recovery"))
+	if err != nil {
+		return operational.Snapshot{}, fmt.Errorf("closing local lease: %w", err)
+	}
+	boundedLeases := demoBoundedLocalLeases(now)
+	localLeases := make([]operational.LocalLeaseEvidence, 0, len(boundedLeases)+2)
+	localLeases = append(localLeases,
+		operational.LocalLeaseEvidence{Lease: localLease, ObservedAt: now.Add(-20 * time.Second)},
+		operational.LocalLeaseEvidence{Lease: closingLease, ObservedAt: now.Add(-15 * time.Second), Pending: closingPending},
+	)
+	localLeases = append(localLeases, boundedLeases...)
 	input := operational.Input{
 		Sources: []operational.SourceEvidence{
 			{Kind: operational.SourceSpace, Space: "archive-migration", Revision: "unavailable", SyncedAt: timePointer(now.Add(-24 * time.Hour)), ObservedAt: now, Freshness: operational.SourceUnavailable},
 			{Kind: operational.SourceSpace, Space: "checkout-core", Revision: "demo-checkout-revision", SyncedAt: &syncedAt, ObservedAt: now, Freshness: operational.SourceCurrent},
 			{Kind: operational.SourceSpace, Space: "customer-ops", Revision: "demo-customer-ops-revision", SyncedAt: timePointer(now.Add(-45 * time.Minute)), ObservedAt: now, Freshness: operational.SourceStale},
-			{Kind: operational.SourceLocalWork, Revision: "sha256:demo-local-work", ObservedAt: now, Freshness: operational.SourceCurrent},
+			{Kind: operational.SourceLocalWork, Revision: "sha256:demo-local-work", ObservedAt: now, Freshness: operational.SourceDegraded},
 		},
 		Threads:       threads,
 		CommittedWork: committedWork,
-		LocalLeases:   []operational.LocalLeaseEvidence{{Lease: localLease, ObservedAt: now.Add(-20 * time.Second)}},
+		LocalLeases:   localLeases,
 		Unavailable: []operational.Unavailable{{
 			SourceKind: operational.SourceSpace, Space: "archive-migration", Code: "space-index-unavailable",
 			Summary: "Committed operational evidence is unavailable for this space",
+		}, {
+			SourceKind: operational.SourceLocalWork, Code: "local-work-scan-degraded",
+			Summary: "One malformed local lease was omitted while the remaining work evidence stayed readable",
 		}},
 	}
 	return operational.Build(input, demoOperationalClock{now: now}, operational.DefaultLimits())
+}
+
+func demoBoundedLocalLeases(now time.Time) []operational.LocalLeaseEvidence {
+	limits := operational.DefaultLimits()
+	evidence := make([]operational.LocalLeaseEvidence, 0, limits.ConsistencyPerRow+1)
+	const alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+	for index := 0; index <= limits.ConsistencyPerRow; index++ {
+		workID := "work:01K20ABCDEFHJKMNPQRSTVWX" + string(alphabet[index/len(alphabet)]) + string(alphabet[index%len(alphabet)])
+		lease := demoLocalLease(now, workreport.Identity{
+			LeaseKey:  fmt.Sprintf("sha256:%064x", index+10),
+			ProjectID: "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+			Space:     "checkout-core", Thread: "thread:checkout-20260728-c3d4", WorkID: workID,
+			Actor: workreport.Actor{
+				Kind: "agent", Name: fmt.Sprintf("replay-shard-%02d", index+1), System: "checkout",
+				Model: "gpt-5", Session: fmt.Sprintf("session:demo-replay-%02d", index+1),
+			},
+		}, "XW-checkout-20260728-c3d4", workreport.ModeTesting,
+			fmt.Sprintf("Replaying capture shard %02d against the idempotency fixture", index+1), nil)
+		lease.StartedAt = now.Add(-2 * time.Hour)
+		lease.RenewedAt = now.Add(-90 * time.Minute)
+		lease.ExpiresAt = now.Add(-75 * time.Minute)
+		evidence = append(evidence, operational.LocalLeaseEvidence{Lease: lease, ObservedAt: now.Add(-10 * time.Second)})
+	}
+	return evidence
+}
+
+func demoClosingLocalLease(now time.Time, actor workreport.Actor) (workreport.Lease, *operational.SharedPending, error) {
+	const (
+		workID      = "work:01K20ABCDEFHJKMNPQRSTVWXYH"
+		operationID = "op-v1-40366a4f27dd08fc05488fc8f4b2a613cfed0b8a0cd3134da7d005241a9ab6b6"
+	)
+	prepared, err := workreport.NewPreparedJournal([]byte(`{"demo":"closing-local-lease"}`))
+	if err != nil {
+		return workreport.Lease{}, nil, err
+	}
+	lease := demoLocalLease(now, workreport.Identity{
+		LeaseKey:  "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+		ProjectID: "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+		Space:     "checkout-core", Thread: "thread:checkout-20260728-c3d4", WorkID: workID, Actor: actor,
+	}, "XW-checkout-20260728-c3d4", workreport.ModePaused,
+		"Pausing replay publication until the interrupted stop operation is recovered", nil)
+	lease.Closing = true
+	lease.SemanticSequence = 2
+	lease.Pending = &workreport.PendingOperation{
+		OperationKey: operationID, Action: workreport.ActionStop,
+		ArtifactID: "XA-atlas-20260803-recovery", EventID: "01K1A2B3C4D5E6F7G8H9J0K1M3",
+		SemanticSequence: 2, Prepared: prepared, LocalTarget: workreport.TargetClosing,
+	}
+	pending := &operational.SharedPending{
+		OperationID: operationID, Action: "stop", Stage: "committed", RemainingAction: "retry-push",
+	}
+	return lease, pending, nil
+}
+
+func deriveDemoPreviewBound(d *Data) error {
+	full := []byte(strings.Repeat("{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n", 48))
+	for contractIndex := range d.Contracts {
+		for versionIndex := range d.Contracts[contractIndex].Versions {
+			version := &d.Contracts[contractIndex].Versions[versionIndex]
+			if version.Detail == nil || version.Detail.Status != ContractVersionDetailAvailable {
+				continue
+			}
+			for documentIndex := range version.Detail.Documents {
+				document := &version.Detail.Documents[documentIndex]
+				if document.PreviewLanguage != "json" {
+					continue
+				}
+				document.Digest = artifact.Digest(full)
+				document.SizeBytes = int64(len(full))
+				document.Preview = contractVersionPreview(full)
+				document.ShownBytes = int64(len(document.Preview))
+				document.TotalBytes = document.SizeBytes
+				document.Truncated = document.ShownBytes < document.TotalBytes
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("no available JSON contract document")
 }
 
 // demoCommittedWork converts the fixture's durable history into the shared

@@ -1717,6 +1717,20 @@
       "severity": "attention",
       "syncStale": true,
       "yourMove": false,
+      "operationalItems": [
+        {
+          "name": "case-event-stream",
+          "state": "ready"
+        },
+        {
+          "name": "historical-attachment-replay",
+          "state": "absent"
+        },
+        {
+          "name": "regional-residency-routing",
+          "state": "undeclared"
+        }
+      ],
       "description": "Customer case updates and redacted conversation references.",
       "outcome": "open",
       "terminal": false
@@ -1758,6 +1772,88 @@
       "stateSince": "2026-07-09T10:01:00Z",
       "stateBy": "legacycrm",
       "stateEvent": "01K6A2B3C4D5E6F7G8H9J0K1M2"
+    },
+    {
+      "space": "checkout-core",
+      "id": "XW-catalog-20260731-accepted",
+      "type": "work_request",
+      "title": "Prepare the product-feed v4 cutover checklist",
+      "from": "catalog",
+      "to": [
+        "atlas"
+      ],
+      "state": "accepted",
+      "priority": "p2",
+      "blocking": false,
+      "gatePending": false,
+      "age": "6h",
+      "neededBy": "2026-08-15",
+      "createdAt": "2026-07-30T11:05:00Z",
+      "movedAt": "2026-07-30T11:05:00Z",
+      "new": true,
+      "severity": "attention",
+      "reasons": [
+        "activation-owed"
+      ],
+      "yourMove": false,
+      "description": "Atlas accepted ownership of the cutover checklist and must explicitly start the work.",
+      "outcome": "open",
+      "terminal": false
+    },
+    {
+      "space": "customer-ops",
+      "id": "XW-support-20260730-blocked",
+      "type": "work_request",
+      "title": "Backfill redacted attachment metadata",
+      "from": "support",
+      "to": [
+        "atlas"
+      ],
+      "state": "blocked",
+      "priority": "p1",
+      "blocking": true,
+      "gatePending": false,
+      "age": "8h",
+      "neededBy": "2026-08-02",
+      "createdAt": "2026-07-30T09:05:00Z",
+      "movedAt": "2026-07-30T09:05:00Z",
+      "new": true,
+      "severity": "blocking",
+      "reasons": [
+        "p1-or-blocking-open"
+      ],
+      "syncStale": true,
+      "yourMove": false,
+      "description": "The backfill cannot proceed until the archive mirror is readable again.",
+      "outcome": "open",
+      "terminal": false
+    },
+    {
+      "space": "checkout-core",
+      "id": "XS-checkout-20260730-disputed",
+      "type": "response",
+      "title": "Retry evidence disputed after a duplicate authorization",
+      "from": "checkout",
+      "to": [
+        "atlas"
+      ],
+      "state": "disputed",
+      "priority": "p1",
+      "blocking": true,
+      "gatePending": false,
+      "age": "2h",
+      "createdAt": "2026-07-30T15:05:00Z",
+      "movedAt": "2026-07-30T15:05:00Z",
+      "new": true,
+      "severity": "blocking",
+      "reasons": [
+        "disputed-toward-me",
+        "disputed"
+      ],
+      "yourMove": false,
+      "description": "Checkout disputes the first replay result and asks Atlas to reconcile the provider receipt.",
+      "outcome": "refused",
+      "terminal": true
     }
   ],
   "outbox": [
@@ -1782,7 +1878,8 @@
       "new": true,
       "severity": "normal",
       "reasons": [
-        "state-changed-since-cursor"
+        "state-changed-since-cursor",
+        "responded-awaiting-verify-close"
       ],
       "yourMove": true,
       "description": "Catalog delivered a migration plan; Atlas must verify the attached response and close or dispute.",
@@ -1817,7 +1914,7 @@
       "state": "proposed",
       "priority": "p3",
       "blocking": false,
-      "gatePending": false,
+      "gatePending": true,
       "thread": "thread:atlas-20260720-w3x4",
       "age": "1w",
       "createdAt": "2026-07-23T17:05:00Z",
@@ -1825,9 +1922,11 @@
       "new": false,
       "severity": "normal",
       "reasons": [
-        "state-changed-since-cursor"
+        "state-changed-since-cursor",
+        "gate-pending-on-me"
       ],
       "yourMove": false,
+      "humanGate": "G3",
       "description": "Checkout approved; Atlas is waiting for Fulfillment to complete the decision quorum.",
       "outcome": "open",
       "terminal": false
@@ -1921,6 +2020,55 @@
       "description": "Support acknowledged the question but has not attached an answer; the requested date has passed.",
       "outcome": "open",
       "terminal": false
+    },
+    {
+      "space": "customer-ops",
+      "id": "XH-atlas-20260724-declined",
+      "type": "handoff",
+      "title": "Transfer the legacy export replay runbook",
+      "from": "atlas",
+      "to": [
+        "legacycrm"
+      ],
+      "state": "declined",
+      "priority": "p2",
+      "blocking": false,
+      "gatePending": false,
+      "age": "6d",
+      "createdAt": "2026-07-24T17:05:00Z",
+      "movedAt": "2026-07-24T17:05:00Z",
+      "new": false,
+      "severity": "attention",
+      "reasons": [
+        "declined"
+      ],
+      "syncStale": true,
+      "yourMove": false,
+      "description": "Legacy CRM declined the runbook because the archive migration superseded that transfer.",
+      "terminal": true
+    },
+    {
+      "space": "checkout-core",
+      "id": "XD-atlas-20260723-rejected",
+      "type": "decision",
+      "title": "Route every retry through a shared global lock",
+      "from": "atlas",
+      "to": [
+        "checkout"
+      ],
+      "state": "rejected",
+      "priority": "p3",
+      "blocking": false,
+      "gatePending": false,
+      "age": "1w",
+      "createdAt": "2026-07-23T17:05:00Z",
+      "movedAt": "2026-07-23T17:05:00Z",
+      "new": false,
+      "severity": "normal",
+      "yourMove": false,
+      "description": "The owner rejected a global lock in favor of provider-scoped idempotency keys.",
+      "outcome": "refused",
+      "terminal": false
     }
   ],
   "archive": [
@@ -1983,6 +2131,105 @@
       "stateSince": "2026-07-16T14:00:00Z",
       "stateBy": "atlas",
       "stateEvent": "01K6A2B3C4D5E6F7G8H9J0K1P2"
+    },
+    {
+      "space": "checkout-core",
+      "id": "XD-atlas-20260718-draft",
+      "type": "decision",
+      "title": "Draft rollout order for the order-envelope migration",
+      "from": "atlas",
+      "to": [
+        "checkout",
+        "fulfillment"
+      ],
+      "state": "draft",
+      "priority": "p4",
+      "blocking": false,
+      "gatePending": false,
+      "age": "2w",
+      "createdAt": "2026-07-16T17:05:00Z",
+      "movedAt": "2026-07-16T17:05:00Z",
+      "new": false,
+      "severity": "normal",
+      "archived": true,
+      "yourMove": false,
+      "description": "An early rollout order kept for design-history breadth after the final proposal was published.",
+      "outcome": "open",
+      "terminal": false
+    },
+    {
+      "space": "checkout-core",
+      "id": "XR-atlas-20260719-satisfied",
+      "type": "requirement",
+      "title": "Capture retries must reuse one provider key",
+      "from": "atlas",
+      "to": [
+        "checkout"
+      ],
+      "state": "satisfied",
+      "priority": "p2",
+      "blocking": false,
+      "gatePending": false,
+      "age": "1w",
+      "createdAt": "2026-07-23T17:05:00Z",
+      "movedAt": "2026-07-23T17:05:00Z",
+      "new": false,
+      "severity": "normal",
+      "archived": true,
+      "yourMove": false,
+      "description": "Replay verification confirmed that every retry reused the original provider key.",
+      "outcome": "settled",
+      "terminal": false
+    },
+    {
+      "space": "customer-ops",
+      "id": "XR-atlas-20260716-withdrawn",
+      "type": "requirement",
+      "title": "Keep the temporary CRM bridge for six months",
+      "from": "atlas",
+      "to": [
+        "legacycrm"
+      ],
+      "state": "withdrawn",
+      "priority": "p4",
+      "blocking": false,
+      "gatePending": false,
+      "age": "2w",
+      "createdAt": "2026-07-16T17:05:00Z",
+      "movedAt": "2026-07-16T17:05:00Z",
+      "new": false,
+      "severity": "normal",
+      "syncStale": true,
+      "archived": true,
+      "yourMove": false,
+      "description": "Atlas withdrew the temporary bridge requirement once the archive path became the durable plan.",
+      "outcome": "withdrawn",
+      "terminal": false
+    },
+    {
+      "space": "customer-ops",
+      "id": "XD-atlas-20260715-superseded",
+      "type": "decision",
+      "title": "Replay legacy exports through the temporary bridge",
+      "from": "atlas",
+      "to": [
+        "legacycrm"
+      ],
+      "state": "superseded",
+      "priority": "p3",
+      "blocking": false,
+      "gatePending": false,
+      "age": "2w",
+      "createdAt": "2026-07-16T17:05:00Z",
+      "movedAt": "2026-07-16T17:05:00Z",
+      "new": false,
+      "severity": "normal",
+      "syncStale": true,
+      "archived": true,
+      "yourMove": false,
+      "description": "The archive migration decision replaced this temporary replay approach.",
+      "outcome": "superseded",
+      "terminal": true
     }
   ],
   "contracts": [
@@ -2035,13 +2282,13 @@
                 "normative": true,
                 "mediaType": "application/schema+json",
                 "conformsTo": "https://json-schema.org/draft-07/schema",
-                "digest": "15a00000000000000000000000000000000000000000000000000000000000a1",
-                "sizeBytes": 428,
-                "preview": "{\n  \"$schema\": \"http://json-schema.org/draft-07/schema#\",\n  \"title\": \"LegacyOrderEnvelope\",\n  \"required\": [\"order_id\", \"confirmed_at\"]\n}",
+                "digest": "sha256:d0e8f6269adf635a0d3332269afc31a0504d10c51f9da53fe6d6fb847b830567",
+                "sizeBytes": 3264,
+                "preview": "{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\":\"capture-replayed\",\"idempotency_key\":\"provider-order-key\"}\n{\"event\"",
                 "previewLanguage": "json",
-                "shownBytes": 0,
-                "totalBytes": 0,
-                "truncated": false
+                "shownBytes": 2048,
+                "totalBytes": 3264,
+                "truncated": true
               },
               {
                 "path": "contracts/XC-atlas-order-envelope/1.5.0/retirement-guide.md",
@@ -4545,13 +4792,13 @@
   "operational": {
     "schema_version": 1,
     "generated_at": "2026-07-30T17:05:00Z",
-    "revision": "sha256:f23a292135383f998efbd070810637211291025617551f31368c2f509b42fbb6",
+    "revision": "sha256:fe1c9257c385b3197b0b989e0d5153c5cd6ab96776ff0b12ea78fb6c48d1fc3d",
     "sources": [
       {
         "kind": "local-work",
         "revision": "sha256:demo-local-work",
         "observed_at": "2026-07-30T17:05:00Z",
-        "freshness": "current"
+        "freshness": "degraded"
       },
       {
         "kind": "space",
@@ -4638,6 +4885,33 @@
             "waiting_on": []
           },
           {
+            "work_id": "work:01K20ABCDEFHJKMNPQRSTVWXYH",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "mode": "paused",
+            "summary": "Pausing replay publication until the interrupted stop operation is recovered",
+            "actor": {
+              "kind": "agent",
+              "name": "recovery-bot",
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-recovery"
+            },
+            "freshness": "pending-recovery",
+            "current": false,
+            "reported_at": "2026-07-30T17:04:20Z",
+            "observed_at": "2026-07-30T17:04:45Z",
+            "valid_until": "2026-07-30T17:19:20Z",
+            "source": "local-lease",
+            "shared_pending": {
+              "operation_id": "op-v1-40366a4f27dd08fc05488fc8f4b2a613cfed0b8a0cd3134da7d005241a9ab6b6",
+              "action": "stop",
+              "stage": "committed",
+              "state": "",
+              "remaining_action": "retry-push"
+            },
+            "waiting_on": []
+          },
+          {
             "work_id": "work:01K20ABCDEFHJKMNPQRSTVWXYA",
             "subject_ref": "XQ-checkout-20260730-a1b2",
             "mode": "testing",
@@ -4660,18 +4934,471 @@
               "valid_until": "2026-07-30T17:29:00Z"
             },
             "waiting_on": []
+          },
+          {
+            "work_id": "work:01K20ABCDEFHJKMNPQRSTVWX00",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "mode": "testing",
+            "summary": "Replaying capture shard 01 against the idempotency fixture",
+            "actor": {
+              "kind": "agent",
+              "name": "replay-shard-01",
+              "system": "checkout",
+              "model": "gpt-5",
+              "session": "session:demo-replay-01"
+            },
+            "freshness": "stale",
+            "current": false,
+            "reported_at": "2026-07-30T15:35:00Z",
+            "observed_at": "2026-07-30T17:04:50Z",
+            "valid_until": "2026-07-30T15:50:00Z",
+            "source": "local-lease",
+            "waiting_on": []
+          },
+          {
+            "work_id": "work:01K20ABCDEFHJKMNPQRSTVWX01",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "mode": "testing",
+            "summary": "Replaying capture shard 02 against the idempotency fixture",
+            "actor": {
+              "kind": "agent",
+              "name": "replay-shard-02",
+              "system": "checkout",
+              "model": "gpt-5",
+              "session": "session:demo-replay-02"
+            },
+            "freshness": "stale",
+            "current": false,
+            "reported_at": "2026-07-30T15:35:00Z",
+            "observed_at": "2026-07-30T17:04:50Z",
+            "valid_until": "2026-07-30T15:50:00Z",
+            "source": "local-lease",
+            "waiting_on": []
+          },
+          {
+            "work_id": "work:01K20ABCDEFHJKMNPQRSTVWX02",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "mode": "testing",
+            "summary": "Replaying capture shard 03 against the idempotency fixture",
+            "actor": {
+              "kind": "agent",
+              "name": "replay-shard-03",
+              "system": "checkout",
+              "model": "gpt-5",
+              "session": "session:demo-replay-03"
+            },
+            "freshness": "stale",
+            "current": false,
+            "reported_at": "2026-07-30T15:35:00Z",
+            "observed_at": "2026-07-30T17:04:50Z",
+            "valid_until": "2026-07-30T15:50:00Z",
+            "source": "local-lease",
+            "waiting_on": []
+          },
+          {
+            "work_id": "work:01K20ABCDEFHJKMNPQRSTVWX03",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "mode": "testing",
+            "summary": "Replaying capture shard 04 against the idempotency fixture",
+            "actor": {
+              "kind": "agent",
+              "name": "replay-shard-04",
+              "system": "checkout",
+              "model": "gpt-5",
+              "session": "session:demo-replay-04"
+            },
+            "freshness": "stale",
+            "current": false,
+            "reported_at": "2026-07-30T15:35:00Z",
+            "observed_at": "2026-07-30T17:04:50Z",
+            "valid_until": "2026-07-30T15:50:00Z",
+            "source": "local-lease",
+            "waiting_on": []
+          },
+          {
+            "work_id": "work:01K20ABCDEFHJKMNPQRSTVWX04",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "mode": "testing",
+            "summary": "Replaying capture shard 05 against the idempotency fixture",
+            "actor": {
+              "kind": "agent",
+              "name": "replay-shard-05",
+              "system": "checkout",
+              "model": "gpt-5",
+              "session": "session:demo-replay-05"
+            },
+            "freshness": "stale",
+            "current": false,
+            "reported_at": "2026-07-30T15:35:00Z",
+            "observed_at": "2026-07-30T17:04:50Z",
+            "valid_until": "2026-07-30T15:50:00Z",
+            "source": "local-lease",
+            "waiting_on": []
+          },
+          {
+            "work_id": "work:01K20ABCDEFHJKMNPQRSTVWX05",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "mode": "testing",
+            "summary": "Replaying capture shard 06 against the idempotency fixture",
+            "actor": {
+              "kind": "agent",
+              "name": "replay-shard-06",
+              "system": "checkout",
+              "model": "gpt-5",
+              "session": "session:demo-replay-06"
+            },
+            "freshness": "stale",
+            "current": false,
+            "reported_at": "2026-07-30T15:35:00Z",
+            "observed_at": "2026-07-30T17:04:50Z",
+            "valid_until": "2026-07-30T15:50:00Z",
+            "source": "local-lease",
+            "waiting_on": []
+          },
+          {
+            "work_id": "work:01K20ABCDEFHJKMNPQRSTVWX06",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "mode": "testing",
+            "summary": "Replaying capture shard 07 against the idempotency fixture",
+            "actor": {
+              "kind": "agent",
+              "name": "replay-shard-07",
+              "system": "checkout",
+              "model": "gpt-5",
+              "session": "session:demo-replay-07"
+            },
+            "freshness": "stale",
+            "current": false,
+            "reported_at": "2026-07-30T15:35:00Z",
+            "observed_at": "2026-07-30T17:04:50Z",
+            "valid_until": "2026-07-30T15:50:00Z",
+            "source": "local-lease",
+            "waiting_on": []
+          },
+          {
+            "work_id": "work:01K20ABCDEFHJKMNPQRSTVWX07",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "mode": "testing",
+            "summary": "Replaying capture shard 08 against the idempotency fixture",
+            "actor": {
+              "kind": "agent",
+              "name": "replay-shard-08",
+              "system": "checkout",
+              "model": "gpt-5",
+              "session": "session:demo-replay-08"
+            },
+            "freshness": "stale",
+            "current": false,
+            "reported_at": "2026-07-30T15:35:00Z",
+            "observed_at": "2026-07-30T17:04:50Z",
+            "valid_until": "2026-07-30T15:50:00Z",
+            "source": "local-lease",
+            "waiting_on": []
+          },
+          {
+            "work_id": "work:01K20ABCDEFHJKMNPQRSTVWX08",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "mode": "testing",
+            "summary": "Replaying capture shard 09 against the idempotency fixture",
+            "actor": {
+              "kind": "agent",
+              "name": "replay-shard-09",
+              "system": "checkout",
+              "model": "gpt-5",
+              "session": "session:demo-replay-09"
+            },
+            "freshness": "stale",
+            "current": false,
+            "reported_at": "2026-07-30T15:35:00Z",
+            "observed_at": "2026-07-30T17:04:50Z",
+            "valid_until": "2026-07-30T15:50:00Z",
+            "source": "local-lease",
+            "waiting_on": []
+          },
+          {
+            "work_id": "work:01K20ABCDEFHJKMNPQRSTVWX09",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "mode": "testing",
+            "summary": "Replaying capture shard 10 against the idempotency fixture",
+            "actor": {
+              "kind": "agent",
+              "name": "replay-shard-10",
+              "system": "checkout",
+              "model": "gpt-5",
+              "session": "session:demo-replay-10"
+            },
+            "freshness": "stale",
+            "current": false,
+            "reported_at": "2026-07-30T15:35:00Z",
+            "observed_at": "2026-07-30T17:04:50Z",
+            "valid_until": "2026-07-30T15:50:00Z",
+            "source": "local-lease",
+            "waiting_on": []
+          },
+          {
+            "work_id": "work:01K20ABCDEFHJKMNPQRSTVWX0A",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "mode": "testing",
+            "summary": "Replaying capture shard 11 against the idempotency fixture",
+            "actor": {
+              "kind": "agent",
+              "name": "replay-shard-11",
+              "system": "checkout",
+              "model": "gpt-5",
+              "session": "session:demo-replay-11"
+            },
+            "freshness": "stale",
+            "current": false,
+            "reported_at": "2026-07-30T15:35:00Z",
+            "observed_at": "2026-07-30T17:04:50Z",
+            "valid_until": "2026-07-30T15:50:00Z",
+            "source": "local-lease",
+            "waiting_on": []
+          },
+          {
+            "work_id": "work:01K20ABCDEFHJKMNPQRSTVWX0B",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "mode": "testing",
+            "summary": "Replaying capture shard 12 against the idempotency fixture",
+            "actor": {
+              "kind": "agent",
+              "name": "replay-shard-12",
+              "system": "checkout",
+              "model": "gpt-5",
+              "session": "session:demo-replay-12"
+            },
+            "freshness": "stale",
+            "current": false,
+            "reported_at": "2026-07-30T15:35:00Z",
+            "observed_at": "2026-07-30T17:04:50Z",
+            "valid_until": "2026-07-30T15:50:00Z",
+            "source": "local-lease",
+            "waiting_on": []
+          },
+          {
+            "work_id": "work:01K20ABCDEFHJKMNPQRSTVWX0C",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "mode": "testing",
+            "summary": "Replaying capture shard 13 against the idempotency fixture",
+            "actor": {
+              "kind": "agent",
+              "name": "replay-shard-13",
+              "system": "checkout",
+              "model": "gpt-5",
+              "session": "session:demo-replay-13"
+            },
+            "freshness": "stale",
+            "current": false,
+            "reported_at": "2026-07-30T15:35:00Z",
+            "observed_at": "2026-07-30T17:04:50Z",
+            "valid_until": "2026-07-30T15:50:00Z",
+            "source": "local-lease",
+            "waiting_on": []
           }
         ],
         "work_window": {
-          "truncated": false,
-          "total": 2,
-          "shown": 2
+          "truncated": true,
+          "total": 36,
+          "shown": 16
         },
-        "consistency": [],
+        "consistency": [
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          },
+          {
+            "code": "expired-local-lease",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "severity": "warning",
+            "summary": "The latest local work lease expired; current status is unknown"
+          }
+        ],
         "consistency_window": {
-          "truncated": false,
-          "total": 0,
-          "shown": 0
+          "truncated": true,
+          "total": 33,
+          "shown": 32
         }
       },
       {
@@ -5033,6 +5760,11 @@
       "shown": 5
     },
     "unavailable": [
+      {
+        "source_kind": "local-work",
+        "code": "local-work-scan-degraded",
+        "summary": "One malformed local lease was omitted while the remaining work evidence stayed readable"
+      },
       {
         "source_kind": "space",
         "space": "archive-migration",

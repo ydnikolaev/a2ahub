@@ -3,11 +3,14 @@ package cli
 import (
 	"bytes"
 	"context"
+	"flag"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+var updateHTMLDemoJSONGolden = flag.Bool("update-html-demo-json-golden", false, "rewrite the indented a2a html --demo --json compatibility golden")
 
 func TestBrowserCommand_PerOS(t *testing.T) {
 	t.Parallel()
@@ -66,14 +69,25 @@ func TestHtmlCommand_DemoNoOpen(t *testing.T) {
 }
 
 func TestHtmlCommandDemoJSONMatchesIndentedCompatibilityGolden(t *testing.T) {
-	t.Parallel()
+	// reason: update mode rewrites the one committed compatibility projection.
+	if !*updateHTMLDemoJSONGolden {
+		t.Parallel()
+	}
 
 	var stdout, stderr bytes.Buffer
 	code := NewHtmlCommand(nil).Run(context.Background(), []string{"--demo", "--json"}, IO{Stdout: &stdout, Stderr: &stderr})
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr=%q", code, stderr.String())
 	}
-	want, err := os.ReadFile("testdata/html-demo-json.golden")
+	const goldenPath = "testdata/html-demo-json.golden"
+	if *updateHTMLDemoJSONGolden {
+		if err := os.WriteFile(goldenPath, stdout.Bytes(), 0o644); err != nil {
+			t.Fatalf("rewrite HTML demo JSON golden: %v", err)
+		}
+		t.Logf("rewrote %s (%d bytes)", goldenPath, stdout.Len())
+		return
+	}
+	want, err := os.ReadFile(goldenPath)
 	if err != nil {
 		t.Fatalf("read HTML demo JSON golden: %v", err)
 	}

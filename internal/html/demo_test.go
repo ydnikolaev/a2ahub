@@ -50,8 +50,8 @@ func TestDemoFixtureParses(t *testing.T) {
 	wantCounts := map[string][2]int{
 		"spaces": {len(data.Spaces), 3}, "nodes": {len(data.Nodes), 7},
 		"contracts": {len(data.Contracts), 8}, "contractEdges": {len(data.ContractEdges), 10},
-		"exchangeEdges": {len(data.ExchangeEdges), 12}, "inbox": {len(data.Inbox), 7},
-		"outbox": {len(data.Outbox), 5}, "threadViews": {len(data.ThreadViews), 5}, "workReports": {len(data.WorkReports), 8},
+		"exchangeEdges": {len(data.ExchangeEdges), 12}, "inbox": {len(data.Inbox), 10},
+		"outbox": {len(data.Outbox), 7}, "threadViews": {len(data.ThreadViews), 5}, "workReports": {len(data.WorkReports), 8},
 		"artifactDetails": {len(data.ArtifactDetails), 10}, "unavailable": {len(data.Unavailable), 4},
 	}
 
@@ -243,7 +243,7 @@ func TestDemoOperationalSnapshotUsesSharedProjection(t *testing.T) {
 	}
 	wantFreshness := map[string]bool{
 		"local-current": false, "committed-current": false, "stale": false,
-		"finished": false, "unknown": false,
+		"finished": false, "pending-recovery": false, "unknown": false,
 	}
 	foundExplainedWait := false
 	for _, row := range d.Operational.Timeline {
