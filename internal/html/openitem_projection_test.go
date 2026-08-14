@@ -9,15 +9,6 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 )
 
-// openItemFieldsThisPackageDeliberatelyDrops names the cache.OpenItem fields
-// ThreadOpenItem is allowed NOT to carry, each with the reason it is a
-// decision rather than an oversight.
-//
-// It is empty today, and that is the point: every field of the read model's
-// own open item reaches the dashboard, so an omission has to be argued into
-// this map rather than achieved by forgetting.
-var openItemFieldsThisPackageDeliberatelyDrops = map[string]string{}
-
 // TestThreadOpenItemCarriesEveryOpenItemField is the drift gate for the
 // projection that produced the P11 W2 defect.
 //

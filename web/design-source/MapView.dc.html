@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<section aria-label="{{ networkAria }}" data-screen-label="Network">
+        <div style="margin-bottom:20px;">
+          <dc-import name="NetworkMap" data="{{ data }}" space="{{ space }}" locale="{{ locale }}" on-space-change="{{ setSpace }}" on-open-contract="{{ openContract }}" on-open-item="{{ openItem }}" on-open-document="{{ openDocument }}" show-space-tabs="{{ false }}" heading="{{ networkMapHeading }}" hint-size="100%,1000px"></dc-import>
+        </div>
+              </section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1240,&quot;height&quot;:900},&quot;ctx&quot;:{&quot;editor&quot;:&quot;object&quot;,&quot;default&quot;:{},&quot;tsType&quot;:&quot;object&quot;}}">
+const DASHBOARD_EN = {
+    views:["Overview","Exchange","Threads","Contracts","Map","Spaces","Versions","Docs","Guide"],
+    backOverview:"Back to Overview", viewsLabel:"Views", more:"More", localeGroup:"Interface language", space:"Space",
+    errorTitle:"Could not read demo data", errorPrefix:"The dashboard is a read-only projection of", errorSuffix:". Missing facts are never inferred.",
+    openWork:"Open Exchange", direction:"Show", typeFilter:"Type",
+    spaceHealth:"Space health", spaceHealthTitle:"How current this page is",
+    spaceHealthSub:"Everything on these screens is read from a local copy of each space, taken once when this file was written. This is when that copy was last refreshed, and what each space expects of your binary.",
+    spaceHealthFlagsTitle:"Worth a look", spaceHealthFlagsText:"Recorded by committed events, or a problem reading the local copy. A flag is a reason to look, not a verdict.",
+    spaceHealthFooter:"Nothing here is inferred: an unreadable space is reported as unreadable, never as empty.",
+    spaceHealthMore:"Open Spaces", spaceHealthClose:"Close",
+    work:"Exchange", threads:"Threads", threadMissingTitle:"No full reconstruction is available for this thread", threadMissingText:"This row comes from the summary; only some demo threads include a complete causal transcript.",
+    whoseMove:"Whose move", whoseMoveText:"State and allowed transitions are derived from the events below.", causalTimeline:"Thread history", newestFirst:"newest first", opensChain:"opens the chain", subjectPrefix:"on", threadFlags:"Consistency, protocol and read evidence",
+    contracts:"Contracts and their versions", codeBacked:"code-backed", consumerLines:"Registered consumer lines", versionWindow:"Live version window", provenance:"Provenance and schema", codeBindingPrefix:"A code binding records the generator and source digest. Whether the current bytes still match is", notEvaluated:"not evaluated", codeBindingSuffix:" in this static read.",
+    network:"Who depends on whom", networkSub:"A solid line means one system depends on a contract another one publishes. A dashed line means an exchange between two systems is still open. Click any line or system to see the versions, the pinned lines and the open documents behind it.", exchangeMap:"Exchange map",
+    spaces:"Spaces", spacesSub:"A space is the shared repository systems exchange documents through. This is how fresh your copy of each one is, and which a2a version it wants before it accepts what you write.", freshness:"Freshness", participants:"Participants", writerFloor:"Writer floor", pinnedWorkflow:"Pinned workflow", revision:"Revision",
+    limitsTitle:"What this snapshot did not check", limitsSub:"This file was written once, from the local cache. Anything it could not read, or deliberately did not evaluate, is named here, so an empty space never passes for a clean result.",
+    emptyLimitsTitle:"Nothing to qualify", emptyLimitsText:"Every connected space was readable when this snapshot was written, and no flag was raised. The numbers above are the whole picture.",
+    emptySpacesTitle:"No spaces connected", emptySpacesText:"A space is the shared repository two systems exchange documents through. Connect one and this table fills in.",
+    integrityFlags:"Protocol and read flags", integrityFlagsText:"Facts recorded by committed events, or problems reading the local cache index. A flag is evidence, not a verdict.",
+    degradedReads:"Degraded reads", degradedReadsText:"These spaces answered from an older mirror revision, or not at all. Their counts are floors, never totals.",
+    notEvaluatedTitle:"What this read deliberately did not check", notEvaluatedText:"Not failures. Questions a static file honestly cannot answer, said out loud instead of shown as a zero or a green tick.",
+    versions:"Versions", localBinary:"Local binary", installed:"installed", latest:"latest", updateCandidate:"Update candidate", impact:"impact", publishedReleases:"Published releases in this snapshot", expandedNotes:"Expanded notes cover",
+    guide:"How a2ahub fits together", guideSub:"Document types, statuses, the dashboard's reading order, and a direct way to improve the product. Everything on this page is written for people first.",
+    lifecycleTitle:"Lifecycle is events, not an editable status", lifecycleText:"Every transition is validated before it is recorded. Both sides fold the same history into the same state.", lifecycleFoot:"This is a document status, not a release marker. Responses, blocks, disputes, cancellations, and supersessions remain separate immutable events with a validated actor.",
+    artifactTypesTitle:"Eight document types", artifactTypesText:"One file carries one intent. The protocol code remains a quick visual anchor and a human name is always shown beside it.", readingGuide:"How to read the dashboard",
+    docs:"Documentation", docsSub:"The same manual the agent reads is available here without a network connection. Sections and search are on the left; the exact source text is on the right.",
+    docSearch:"Search the docs", docSearchPlaceholder:"thread, contract, retire…", docNoMatch:"No section title, group or source path matches that search.",
+    docEmbedded:"available offline", emptyDocsTitle:"No documentation embedded", emptyDocsText:"This snapshot was written without the doc corpus. Reinstall the skill and render the dashboard again.",
+    loadingDoc:"Loading the embedded document…",
+    feedbackTitle:"Have an idea? Let’s make a2ahub better", feedbackText:"Bugs, rough edges and feature ideas are welcome. Give the context to your agent: it knows the feedback format, checks for duplicates and files a safe, actionable report.", githubRepo:"GitHub repository", publicHome:"Public home", designSystem:"Design system v4",
+    readingRows:[["Overview and Work","Human actions ordered by consequence and next owner. Priority, literal blocking, a pending approval, a deadline, and a stale snapshot remain five distinct signals."],["Threads","One intent per chain, in committed order where Git history exists and explicitly labelled declared order where it does not."],["Contracts and Map","Drift belongs to a consumer's pinned major line. A provider may be healthy while a consumer resolves nothing."],["Integrity and Versions","The limits of this snapshot and the independent compatibility axes that must not be inferred from one another."]]
+};
+
+const DASHBOARD_RU = {
+    views:["Обзор","Обмен","Треды","Контракты","Карта","Спейсы","Версии","Доки","Справка"],
+    backOverview:"Вернуться к обзору", viewsLabel:"Разделы", more:"Ещё", localeGroup:"Язык интерфейса", space:"Спейс",
+    errorTitle:"Не удалось прочитать данные", errorPrefix:"Дашборд только читает и показывает", errorSuffix:". Чего в файле нет, того он не придумывает.",
+    openWork:"Открыть обмен", direction:"Показать", typeFilter:"Тип",
+    spaceHealth:"Состояние спейсов", spaceHealthTitle:"Насколько свежее то, что вы читаете",
+    spaceHealthSub:"Всё на этих экранах взято из локальной копии спейса, снятой один раз, когда собирался этот файл. Здесь видно, когда копию последний раз обновляли и чего каждый спейс ждёт от вашего бинарника.",
+    spaceHealthFlagsTitle:"На что стоит посмотреть", spaceHealthFlagsText:"Сигналы из событий и локального снимка, которые стоит проверить. Они не обязательно означают ошибку.",
+    spaceHealthFooter:"Ничего не додумывается: если спейс не прочитался, так и написано, а не «ноль».",
+    spaceHealthMore:"Открыть спейсы", spaceHealthClose:"Закрыть",
+    work:"Обмен", threads:"Треды", threadMissingTitle:"Этот тред не удалось восстановить целиком", threadMissingText:"Есть только краткая сводка. В снимок не попала полная история: кто что сделал и в каком порядке.",
+    whoseMove:"Чей сейчас ход", whoseMoveText:"Посчитано по событиям ниже: что уже произошло и что после этого разрешено сделать.", causalTimeline:"История треда", newestFirst:"новое сверху", opensChain:"с этого всё началось", subjectPrefix:"для", threadFlags:"Что пошло не так в этом треде",
+    contracts:"Контракты и их версии", codeBacked:"собран из кода", consumerLines:"Кто на нём сидит", versionWindow:"Какие версии живы", provenance:"Откуда взялась схема", codeBindingPrefix:"Записано, чем и из какого исходника собран дескриптор. А вот совпадает ли он с кодом прямо сейчас,", notEvaluated:"не проверялось", codeBindingSuffix:": этот файл собран один раз и в код не заглядывает.",
+    network:"Кто от кого зависит", networkSub:"Сплошная линия значит, что одна система зависит от контракта, который публикует другая. Пунктир значит, что между двумя системами есть незакрытый обмен. Нажмите на линию или на систему, чтобы увидеть версии, закреплённые линии и открытые документы.", exchangeMap:"Карта обмена",
+    spaces:"Спейсы", spacesSub:"Системы обмениваются документами через общий репозиторий, он и называется спейсом. Здесь видно, насколько свежая у вас копия каждого и какую версию a2a он ждёт, чтобы принять вашу запись.", freshness:"Свежесть", participants:"Участники", writerFloor:"Минимум для записи", pinnedWorkflow:"Версия проверки в CI", revision:"Ревизия",
+    limitsTitle:"Что этот снимок не проверял", limitsSub:"Файл собран один раз из локального кэша. Всё, что не удалось прочитать или что мы намеренно не проверяли, названо здесь, чтобы пустое место не сошло за «всё в порядке».",
+    emptyLimitsTitle:"Уточнять нечего", emptyLimitsText:"Когда собирался снимок, все подключённые спейсы читались, замечаний не было. Цифры выше и есть вся картина.",
+    emptySpacesTitle:"Спейсы не подключены", emptySpacesText:"Спейс работает как общий репозиторий, через который две системы обмениваются документами. Подключите спейс, и таблица заполнится.",
+    integrityFlags:"Замечания", integrityFlagsText:"Сигналы из событий и локального снимка, которые стоит проверить. Они не обязательно означают ошибку.",
+    degradedReads:"Прочитано не полностью", degradedReadsText:"Эти спейсы ответили из устаревшей копии или не ответили вовсе. Их цифры значат «не меньше чем», а не точное число.",
+    notEvaluatedTitle:"Что мы намеренно не проверяли", notEvaluatedText:"Это не сбои. Это вопросы, на которые статический файл честно не отвечает и говорит об этом прямо, вместо того чтобы показать ноль или зелёную галочку.",
+    versions:"Версии", localBinary:"Ваш бинарник", installed:"стоит сейчас", latest:"последняя", updateCandidate:"Есть обновление", impact:"влияние", publishedReleases:"Выпуски", expandedNotes:"Подробности по",
+    guide:"Как устроен a2ahub", guideSub:"Типы документов, статусы, порядок чтения дашборда и прямой способ сделать продукт лучше. Эта страница сначала говорит с человеком, а уже потом — о протоколе.",
+    lifecycleTitle:"Статус не редактируется, он складывается из событий", lifecycleText:"Каждый переход проверяется до того, как попадёт в репозиторий. Обе стороны собирают из одной и той же истории одно и то же состояние.", lifecycleFoot:"Это статус документа, а не отметка о релизе. Ответы, блокировки, споры, отмены и замены не затираются: каждое остаётся отдельным событием с проверенным автором.",
+    artifactTypesTitle:"Восемь типов документов", artifactTypesText:"Один файл, одна мысль. Двухбуквенный код удобен глазу, но рядом всегда стоит нормальное название.", readingGuide:"Как читать дашборд",
+    docs:"Документация", docsSub:"То же руководство, что читает агент, доступно здесь без подключения к сети. Слева разделы и поиск, справа исходный текст.",
+    docSearch:"Поиск по докам", docSearchPlaceholder:"тред, контракт, вывод версии…", docNoMatch:"Ни одно название раздела, группа или путь к файлу не совпали с запросом.",
+    docEmbedded:"доступно без интернета", emptyDocsTitle:"Документация не вшита", emptyDocsText:"Этот снимок собран без корпуса документации. Переустановите навык и соберите дашборд заново.",
+    loadingDoc:"Загружается встроенный документ…",
+    feedbackTitle:"Есть идея? Давайте сделаем a2ahub лучше", feedbackText:"Баги, шероховатости и фичер-реквесты здесь действительно ждут. Передайте контекст своему агенту: он знает формат, проверит дубликаты и отправит безопасный, полезный отчёт.", githubRepo:"Репозиторий на GitHub", publicHome:"Главная сайта", designSystem:"Дизайн-система",
+    readingRows:[["Обзор и работа","Сверху то, где цена ошибки выше. Приоритет, блокировка, ожидание вашего согласования, срок и устаревшие данные остаются пятью разными сигналами, и они намеренно не слиты в один."],["Треды","Одна задача, один тред. Порядок берётся из коммитов Git; если истории нет, используется время, указанное автором, и это честно помечается."],["Контракты и карта","Расхождение считается для конкретного потребителя и той версии, которую он закрепил. У поставщика может быть всё хорошо ровно тогда, когда у потребителя не работает ничего."],["Спейсы и версии","Пределы этого снимка и три версии, которые нельзя выводить одну из другой."]]
+};
+
+const DASHBOARD_I18N = { en: DASHBOARD_EN, ru: DASHBOARD_RU };
+
+class Component extends DCLogic {
+  syncContext() {
+    const ctx = this.props && this.props.ctx || {};
+    this.state = Object.assign({ data: ctx.data || null, locale: ctx.locale === "ru" ? "ru" : "en" }, ctx.ui || {});
+    return ctx;
+  }
+
+  setState(update) {
+    const ctx = this.props && this.props.ctx || {};
+    const current = Object.assign({}, this.state || {}, { data: ctx.data || null, locale: ctx.locale === "ru" ? "ru" : "en" }, ctx.ui || {});
+    const patch = typeof update === "function" ? update(current) : update;
+    this.state = Object.assign({}, current, patch || {});
+    if (ctx.actions && ctx.actions.patch) ctx.actions.patch(patch || {});
+  }
+
+  go(view, extra) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.navigate) actions.navigate(view, extra); }
+  closeContractFile() { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.closeContractFile) actions.closeContractFile(); }
+  applyTheme(theme) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setTheme) actions.setTheme(theme); }
+  applyLocale(locale) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setLocale) actions.setLocale(locale); }
+  copy(text) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.copy) actions.copy(text); }
+
+
+
+  renderVals() {
+    const ctx = this.syncContext();
+    let d = ctx.data;
+    const s = this.state;
+    const ui = ctx.ui || {};
+    const ru = ctx.locale === "ru";
+    const c = DASHBOARD_I18N[ru ? "ru" : "en"];
+    if (!d && "MapView" !== "GuideView") {
+      if ("MapView" !== "DashboardShell") return {};
+      d = { spaces:[], nodes:[], inbox:[], outbox:[], archive:[], contracts:[], contractEdges:[], flags:[], meta:{}, tooling:{}, generatedAt:"", self:"" };
+    }
+
+    const values = {
+      locale:s.locale,
+      networkMapHeading:c.exchangeMap,
+      networkAria:c.views[4],
+      data: d,
+      space: s.space,
+      setSpace: (id) => this.setState({ space: id, ovSel: "", workSel: "", threadSel: "", threadSpace: "", conSel: "", conVersion: "", contractFile: null }),
+      openItem: (id, space, outgoing) => this.go("work", { workSel:id, workTab:outgoing ? "outgoing" : "incoming", workState:"all", workType:"all", workDue:false, space:this.state.space === "all" ? "all" : space }),
+      openDocument: (id, space) => this.setState({ mapDocument: { id, space:space || "" } }),
+      openContract: (contractId, space) => this.go("contracts", { conSel: contractId, conVersion: "", contractFile: null, conRole: "all", conRisk: false, space: this.state.space === "all" ? "all" : space })
+    };
+    return values;
+  }
+}
+</script>
+</body>
+</html>

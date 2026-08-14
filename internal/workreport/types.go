@@ -59,14 +59,28 @@ const (
 	ModeFinished Mode = "finished"
 )
 
+// Modes returns every work mode in stable normative order. The returned slice
+// is fresh so callers cannot mutate the vocabulary.
+func Modes() []Mode {
+	return []Mode{
+		ModePlanning,
+		ModeImplementing,
+		ModeTesting,
+		ModeReviewing,
+		ModeWaiting,
+		ModePaused,
+		ModeFinished,
+	}
+}
+
 // Valid is part of the public package API.
 func (m Mode) Valid() bool {
-	switch m {
-	case ModePlanning, ModeImplementing, ModeTesting, ModeReviewing, ModeWaiting, ModePaused, ModeFinished:
-		return true
-	default:
-		return false
+	for _, mode := range Modes() {
+		if m == mode {
+			return true
+		}
 	}
+	return false
 }
 
 // WaitKind is part of the public package API.

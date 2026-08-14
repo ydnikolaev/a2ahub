@@ -85,7 +85,7 @@ import (
 func TestTemplateRendersDeclaredFields(t *testing.T) {
 	t.Parallel()
 
-	raw := string(placeholderTemplate)
+	raw := dashboardTemplateCorpus(t)
 	if len(raw) < 1000 {
 		t.Fatal("placeholderTemplate (template.html via go:embed) is suspiciously small — the embed did not pick up the shipped file")
 	}
@@ -144,7 +144,7 @@ func TestTemplateRendersDeclaredFields(t *testing.T) {
 func TestTemplateCarriesEveryFoldTransitionLiteral(t *testing.T) {
 	t.Parallel()
 
-	raw := string(placeholderTemplate)
+	raw := dashboardTemplateCorpus(t)
 	transitions := map[string]string{
 		fold.TCreate:      "TCreate",
 		fold.TPublish:     "TPublish",
@@ -224,6 +224,8 @@ func TestTemplateCarriesEveryFoldTransitionLiteral(t *testing.T) {
 // papered over here.
 const templateResidueReason = "wave 36 phase A (agent-exchange-2026-08) scoped this gate to F1/F3/F5/F6; this field was never audited against the rendered page and is neither confirmed painted nor a named finding — residue for a future pass, not a decision."
 
+const dashboardCoherenceW2CarryReason = "dashboard-coherence-2026-08 P7 carries this typed technical fact before the P9 item/thread family renders it; P16 removes this migration entry when it performs the final view-model consumption freeze."
+
 var templateExcusedFields = map[string]map[string]string{
 	"ArtifactDetail": {
 		"ArtifactDetail.Attachments[].ConformsTo":        templateResidueReason,
@@ -246,10 +248,11 @@ var templateExcusedFields = map[string]map[string]string{
 		"ArtifactDetailEvent.ProducedBy":   templateResidueReason,
 	},
 	"ThreadOpenItem": {
-		"ThreadOpenItem.NextActions": templateResidueReason,
-		"ThreadOpenItem.StateBy":     templateResidueReason,
-		"ThreadOpenItem.StateEvent":  templateResidueReason,
-		"ThreadOpenItem.StateSince":  templateResidueReason,
+		"ThreadOpenItem.NextActions":  templateResidueReason,
+		"ThreadOpenItem.RuleIdentity": dashboardCoherenceW2CarryReason,
+		"ThreadOpenItem.StateBy":      templateResidueReason,
+		"ThreadOpenItem.StateEvent":   templateResidueReason,
+		"ThreadOpenItem.StateSince":   templateResidueReason,
 	},
 	"Contract": {
 		"Contract.Category": templateResidueReason,

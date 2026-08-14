@@ -65,30 +65,86 @@ export function runtimeDesignPage(file: string, variant?: 'guide') {
   template = preserveDynamicTables(productionLinks(template));
   let logic = productionLinks(source.slice(scriptBody, scriptClose));
   if (file === '14-local-dashboard-v4.dc.html') {
+    const componentTemplate = (name: string) => {
+      const componentSource = readFileSync(resolve(sourceRoot, `${name}.dc.html`), 'utf8');
+      const componentOpen = componentSource.indexOf('<x-dc>');
+      const componentClose = componentSource.lastIndexOf('</x-dc>');
+      if (componentOpen < 0 || componentClose < 0) throw new Error(`approved dashboard ${name} component is incomplete`);
+      return preserveDynamicTables(productionLinks(
+        componentSource.slice(componentOpen + '<x-dc>'.length, componentClose)
+      ));
+    };
+    const componentLogic = (name: string) => {
+      const componentSource = readFileSync(resolve(sourceRoot, `${name}.dc.html`), 'utf8');
+      const componentClose = componentSource.lastIndexOf('</x-dc>');
+      const componentScriptOpen = componentSource.indexOf('<script type="text/x-dc" data-dc-script', componentClose);
+      const componentScriptBody = componentSource.indexOf('>', componentScriptOpen) + 1;
+      const componentScriptClose = componentSource.indexOf('</script>', componentScriptBody);
+      if (componentClose < 0 || componentScriptOpen < 0 || componentScriptClose < 0) throw new Error(`approved dashboard ${name} component logic is incomplete`);
+      return productionLinks(componentSource.slice(componentScriptBody, componentScriptClose));
+    };
+    // The root literal imports are the projection graph. Keep each declaration
+    // and its ctx binding together so markup expansion and logic composition
+    // cannot drift into separate component registries.
+    const rootContextImports = [...template.matchAll(/<dc-import name="([A-Z][A-Za-z0-9]*)" ctx="\{\{ ([A-Za-z][A-Za-z0-9]*) \}\}"[^>]*><\/dc-import>/g)]
+      .map((match) => ({ declaration: match[0], name: match[1], ctx: match[2] }));
+    const shellTemplate = componentTemplate('DashboardShell');
+    const shellTopOpen = '<sc-if value="{{ isTop }}" hint-placeholder-val="{{ true }}">';
+    const shellPageOpen = '<sc-if value="{{ isPage }}" hint-placeholder-val="{{ false }}">';
+    const shellFooterOpen = '<sc-if value="{{ isFooter }}" hint-placeholder-val="{{ false }}">';
+    const shellTopStart = shellTemplate.indexOf(shellTopOpen) + shellTopOpen.length;
+    const shellPageMarker = `\n</sc-if>\n${shellPageOpen}`;
+    const shellTopEnd = shellTemplate.indexOf(shellPageMarker, shellTopStart);
+    const shellPageStart = shellTopEnd + shellPageMarker.length;
+    const shellFooterMarker = `\n</sc-if>\n${shellFooterOpen}`;
+    const shellPageEnd = shellTemplate.indexOf(shellFooterMarker, shellPageStart);
+    const shellFooterStart = shellPageEnd + shellFooterMarker.length;
+    const shellFooterEnd = shellTemplate.lastIndexOf('\n</sc-if>');
+    if (shellTopStart < shellTopOpen.length || shellTopEnd < 0 || shellPageStart < shellPageMarker.length || shellPageEnd < shellPageStart || shellFooterStart < shellFooterMarker.length || shellFooterEnd < shellFooterStart) {
+      throw new Error('approved dashboard shell component is incomplete');
+    }
+    template = must(
+      template,
+      '<dc-import name="DashboardShell" ctx="{{ shellTopCtx }}" hint-size="100%,84px"></dc-import>',
+      shellTemplate.slice(shellTopStart, shellTopEnd),
+    );
+    template = must(
+      template,
+      '<dc-import name="DashboardShell" ctx="{{ shellPageCtx }}" hint-size="100%,160px"></dc-import>',
+      shellTemplate.slice(shellPageStart, shellPageEnd),
+    );
+    template = must(
+      template,
+      '<dc-import name="DashboardShell" ctx="{{ shellFooterCtx }}" hint-size="100%,104px"></dc-import>',
+      shellTemplate.slice(shellFooterStart, shellFooterEnd),
+    );
+    // Keep the source-facing projection useful to tests and tooling that audit
+    // complete screens. The browser still composes literal dc-imports from the
+    // root; this expansion is read-only and does not create a second runtime.
+    const rootViewImports = rootContextImports.filter(({ name }) => name !== 'DashboardShell' && name !== 'Modal');
+    if (!rootViewImports.length) throw new Error('approved dashboard root has no literal view imports');
+    for (const { declaration, name } of rootViewImports) {
+      template = must(
+        template,
+        declaration,
+        componentTemplate(name),
+      );
+    }
     template = must(
       template,
       '<button type="button" onClick="{{ goBanner }}" style="flex:0 0 auto; font-family:\'Onest\',sans-serif; font-size:16px; font-weight:600; color:var(--teal-ink); background:transparent; border:0; cursor:pointer; white-space:nowrap;">{{ bannerAction }}</button>',
       '<a href="/" data-public-home-link style="flex:0 0 auto; font-family:\'Onest\',sans-serif; font-size:16px; font-weight:600; color:var(--teal-ink); white-space:nowrap; text-decoration:none;">{{ bannerAction }}</a>'
     );
-    logic = must(
-      logic,
-      'bannerAction: d.meta.synthetic ? (ru ? "Про демо →" : "About the demo →") : (ru ? "Версии →" : "Versions →"),',
-      'bannerAction: d.meta.synthetic ? (ru ? "На главную →" : "Back to home →") : (ru ? "Версии →" : "Versions →"),'
-    );
     if (variant === 'guide') {
-      const guideOpen = '<sc-if value="{{ isGuide }}" hint-placeholder-val="{{ false }}">';
-      // `isGuide` also controls the compass in the dashboard navigation. The
-      // public Features page needs the Guide screen itself, not every screen
-      // between that icon and the Guide's closing tag. Anchor the extraction
-      // on the screen's unique marker, then walk back to its owning condition.
+      // The public Features projection owns the same Guide markup as the
+      // dashboard, now through the extracted component instead of a second
+      // slice of the root template. The vocabulary and authored Guide data
+      // remain in the root logic below, so the content generator keeps one
+      // source for those constants.
+      const guideTemplate = componentTemplate('GuideView');
       const guideScreen = '<section aria-label="{{ guideAria }}" data-screen-label="Guide">';
-      const guideScreenStart = template.indexOf(guideScreen);
-      const guideStart = template.lastIndexOf(guideOpen, guideScreenStart);
-      const guideEndMarker = '\n    </sc-if>\n\n  </main>';
-      const guideEnd = template.indexOf(guideEndMarker, guideStart);
-      if (guideScreenStart < 0 || guideStart < 0 || guideEnd < 0) throw new Error('approved dashboard Guide surface is incomplete');
-      const guide = template
-        .slice(guideStart, guideEnd + '\n    </sc-if>'.length)
+      if (!guideTemplate.includes(guideScreen)) throw new Error('approved dashboard Guide surface is incomplete');
+      const guide = guideTemplate
         // The public page header already names this region with the same
         // visible title. Keep the shared section and screen marker, but avoid
         // exposing two identically named region landmarks to assistive tech.
@@ -137,6 +193,29 @@ class Component extends DCLogic {
   }
 }
 `;
+    } else {
+      // The site projection expands the extracted view markup so source-facing
+      // tooling can inspect complete screens. Compose the corresponding
+      // presentation classes into one projection controller as well; the
+      // directly opened design source still uses the literal dc-import seams.
+      const inlinedRootImports = rootContextImports.filter(({ declaration }) => !template.includes(declaration));
+      const inlinedComponentNames = [...new Set(inlinedRootImports.map(({ name }) => name))];
+      const projectionClasses = inlinedComponentNames.map((name) => {
+        let childLogic = componentLogic(name);
+        if (name === 'DashboardShell') {
+          childLogic = must(
+            childLogic,
+            'bannerAction: d.meta.synthetic ? (ru ? "Про демо →" : "About the demo →") : (ru ? "Версии →" : "Versions →"),',
+            'bannerAction: d.meta.synthetic ? (ru ? "На главную →" : "Back to home →") : (ru ? "Версии →" : "Versions →"),'
+          );
+        }
+        return `const ${name}Projection = (() => {\n${childLogic}\nreturn Component;\n})();`;
+      }).join('\n');
+      const projectionRenders = inlinedRootImports
+        .map(({ name, ctx }) => `    Object.assign(values, renderPart(${name}Projection, values.${ctx}));`)
+        .join('\n');
+      logic = logic.replace('class Component extends DCLogic {', 'class DashboardRootComponent extends DCLogic {');
+      logic += `\n${projectionClasses}\nclass Component extends DashboardRootComponent {\n  renderVals() {\n    const values = super.renderVals();\n    const renderPart = (Part, ctx) => { const part = new Part(); part.props = { ctx }; return part.renderVals(); };\n${projectionRenders}\n    return values;\n  }\n}\n`;
     }
   }
   if (file === '15-changelog-v4.dc.html') logic = must(logic, 'const INDEX = [', 'const INDEX = window.A2A_RELEASE_INDEX || [');

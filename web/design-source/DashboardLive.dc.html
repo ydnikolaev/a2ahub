@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1,&quot;height&quot;:1},&quot;initialRevision&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;onSnapshot&quot;:{&quot;editor&quot;:&quot;event&quot;,&quot;tsType&quot;:&quot;function&quot;}}">
+class Component extends DCLogic {
+  componentDidMount() {
+    this.startOperationalStream(this.props.initialRevision);
+  }
+
+  componentDidUpdate() {
+    if (!this.liveRevision && this.props.initialRevision) this.liveRevision = String(this.props.initialRevision);
+  }
+
+  startOperationalStream(initialRevision) {
+    if (window.location.protocol !== "http:" || !window.EventSource) return;
+    const host = String(window.location.hostname || "").toLowerCase();
+    if (host !== "localhost" && host !== "127.0.0.1" && host !== "::1" && host !== "[::1]") return;
+    this.liveRevision = String(initialRevision || "");
+    this.operationalStopped = false;
+    this.retryTimers = this.retryTimers || new Set();
+    const pull = (revision, attempt) => {
+      const pullSequence = (this.operationalPullSequence || 0) + 1;
+      this.operationalPullSequence = pullSequence;
+      const headers = {};
+      if (this.liveRevision) headers["If-None-Match"] = 'W/"' + this.liveRevision + '"';
+      return fetch("/api/v1/snapshot", { method:"GET", headers, cache:"no-store", credentials:"same-origin" }).then(response => {
+        if (response.status === 304) return null;
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        return response.json();
+      }).then(snapshot => {
+        if (!snapshot || pullSequence <= (this.operationalAppliedSequence || 0)) return;
+        this.operationalAppliedSequence = pullSequence;
+        this.liveRevision = String(snapshot.revision || revision || "");
+        if (typeof this.props.onSnapshot === "function") this.props.onSnapshot(snapshot);
+      });
+    };
+    fetch("/api/v1/snapshot", { method:"HEAD", cache:"no-store", credentials:"same-origin" }).then(response => {
+      if (!response.ok || this.operationalEvents) return;
+      this.operationalEvents = new EventSource("/api/v1/events");
+      this.operationalEvents.addEventListener("revision", event => {
+        let revision = "";
+        try { revision = String(JSON.parse(event.data || "{}").revision || event.lastEventId || ""); } catch (e) { revision = String(event.lastEventId || ""); }
+        if (!revision || revision === this.liveRevision) return;
+        pull(revision, 0).catch(() => {
+          if (this.operationalStopped) return;
+          const timer = setTimeout(() => {
+            this.retryTimers.delete(timer);
+            if (!this.operationalStopped && revision !== this.liveRevision) pull(revision, 1).catch(() => {});
+          }, 250);
+          this.retryTimers.add(timer);
+        });
+      });
+    }).catch(() => {});
+  }
+
+  componentWillUnmount() {
+    this.operationalStopped = true;
+    if (this.operationalEvents) this.operationalEvents.close();
+    for (const timer of this.retryTimers || []) clearTimeout(timer);
+    if (this.retryTimers) this.retryTimers.clear();
+  }
+
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

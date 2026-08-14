@@ -204,6 +204,31 @@ outcome_operand() { # $1 = operand, $2 = source line
   return 1
 }
 
+# resolver_tone_literals finds the chroma class namespace. The resolver is the
+# sole owner: a view may consume its returned class but may not spell a class
+# and thereby recreate presentation policy. No tone roster lives here; the
+# namespace itself is the invariant.
+resolver_tone_literals() { # $1 = scan root
+  grep -rnE 'tone-[a-z][a-z0-9-]*' --include='*.dc.html' "$1" 2>/dev/null
+}
+
+check_resolver_monopoly() { # $1 = scan root
+  local root="$1" owner line file content lineno
+  owner="$root/VocabularyResolver.dc.html"
+  if [ ! -f "$owner" ]; then
+    gate_fail "view-vocabulary: missing exact resolver owner VocabularyResolver.dc.html — failing closed rather than allowing tone classes without an owner"
+  fi
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    file="${line%%:*}"
+    content="${line#*:}"
+    lineno="${content%%:*}"
+    if [ "$file" != "$owner" ]; then
+      gate_fail "$(basename "$file"):$lineno spells a tone- class outside VocabularyResolver.dc.html — every chroma treatment must come from the one resolver"
+    fi
+  done <<< "$(resolver_tone_literals "$root")"
+}
+
 run_check() { # $1 = scan root
   local root="$1" json states outcomes
   if ! json="$(vocabulary_json)"; then
@@ -216,6 +241,8 @@ run_check() { # $1 = scan root
     gate_fail "view-vocabulary: the binary returned no states — failing closed rather than policing nothing"
     return 1
   fi
+
+  check_resolver_monopoly "$root"
 
   local line file lineno content words word known unknown
   while IFS= read -r line; do
@@ -321,6 +348,44 @@ run_teeth() {
   local tmp
   tmp="$(mktemp -d)" || { echo "view-vocabulary --teeth: mktemp failed" >&2; return 1; }
   trap 'rm -rf "$tmp"' RETURN
+
+  # The exact owner must exist and may spell the whole tone-class namespace.
+  # Copying the production owner proves the exemption follows its exact name,
+  # not a reduced fixture that could drift from the real resolver.
+  cp "$GATE_ROOT/web/design-source/VocabularyResolver.dc.html" "$tmp/VocabularyResolver.dc.html"
+  if ! ( run_check "$tmp" ) >/dev/null 2>&1; then
+    echo "view-vocabulary --teeth: FAILED — the exact resolver owner was refused" >&2
+    return 1
+  fi
+
+  # A non-owner literal must red and name its exact source location.
+  cat > "$tmp/Offender.dc.html" <<'FIXTURE'
+<span class="tone-invented">bad</span>
+FIXTURE
+  local offender_output
+  if offender_output="$( ( run_check "$tmp" ) 2>&1 )"; then
+    echo "view-vocabulary --teeth: FAILED — a non-owner tone class stayed green" >&2
+    return 1
+  fi
+  if [[ "$offender_output" != *"Offender.dc.html:1"* ]]; then
+    echo "view-vocabulary --teeth: FAILED — the tone-class diagnostic omitted filename/line" >&2
+    return 1
+  fi
+  rm -f "$tmp/Offender.dc.html"
+
+  # The filename is part of the monopoly. Renaming the owner must fail closed
+  # even though all of its literal classes still exist in the scan tree.
+  mv "$tmp/VocabularyResolver.dc.html" "$tmp/RenamedResolver.dc.html"
+  local renamed_output
+  if renamed_output="$( ( run_check "$tmp" ) 2>&1 )"; then
+    echo "view-vocabulary --teeth: FAILED — a renamed resolver owner stayed green" >&2
+    return 1
+  fi
+  if [[ "$renamed_output" != *"missing exact resolver owner VocabularyResolver.dc.html"* ]]; then
+    echo "view-vocabulary --teeth: FAILED — a missing resolver owner did not fail closed by name" >&2
+    return 1
+  fi
+  mv "$tmp/RenamedResolver.dc.html" "$tmp/VocabularyResolver.dc.html"
 
   # A component that classifies by its own list must red.
   cat > "$tmp/Bad.dc.html" <<'FIXTURE'

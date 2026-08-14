@@ -40,9 +40,12 @@ func TestIT03StaticRendererAndHTTPExposeTheSameCanonicalSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("static Snapshot() error = %v", err)
 	}
-	staticPage, err := renderer.Render(t.Context(), staticSource)
+	staticPage, staticViewModel, fingerprint, err := renderer.Render(t.Context(), staticSource)
 	if err != nil {
 		t.Fatalf("static Render() error = %v", err)
+	}
+	if fingerprint == "" || !bytes.Equal(dashboardDataBytes(t, staticPage), staticViewModel) {
+		t.Fatal("static renderer did not produce one coherent shell/view-model generation")
 	}
 	staticSnapshot := operationalFromDashboardPage(t, staticPage)
 
@@ -72,6 +75,11 @@ func TestIT03StaticRendererAndHTTPExposeTheSameCanonicalSnapshot(t *testing.T) {
 	if !bytes.Equal(staticJSON, servedJSON) || staticSnapshot.Revision != servedSnapshot.Revision {
 		t.Fatalf("static/server snapshot mismatch\nstatic: %s\nserved: %s", staticJSON, servedJSON)
 	}
+	dashboardResponse := request(t, server, http.MethodGet, "/api/v1/dashboard", false)
+	if dashboardResponse.status != http.StatusOK || !bytes.Equal(dashboardResponse.body, staticViewModel) ||
+		dashboardResponse.header.Get("ETag") != weakETag(sha256Digest(staticViewModel)) {
+		t.Fatalf("static/server dashboard mismatch: status=%d etag=%q body_bytes=%d want_bytes=%d", dashboardResponse.status, dashboardResponse.header.Get("ETag"), len(dashboardResponse.body), len(staticViewModel))
+	}
 }
 
 func TestIT04RapidRevisionsBoundSlowWritersAndSSEReconnectGetsCurrent(t *testing.T) {
@@ -85,6 +93,7 @@ func TestIT04RapidRevisionsBoundSlowWritersAndSSEReconnectGetsCurrent(t *testing
 	if err := server.publish(t.Context(), initial); err != nil {
 		t.Fatalf("initial publish error = %v", err)
 	}
+	initialDashboardDigest := server.store.dashboard().viewModelDigest
 
 	clientCancels := make([]context.CancelFunc, 0, 2)
 	clientDone := make([]<-chan struct{}, 0, 2)
@@ -96,7 +105,7 @@ func TestIT04RapidRevisionsBoundSlowWritersAndSSEReconnectGetsCurrent(t *testing
 		if requestErr != nil {
 			t.Fatalf("NewRequest(SSE) error = %v", requestErr)
 		}
-		request.Header.Set("Last-Event-ID", initial.Revision)
+		request.Header.Set("Last-Event-ID", initialDashboardDigest)
 		go func() {
 			defer close(done)
 			server.Handler().ServeHTTP(writer, request)
@@ -133,8 +142,10 @@ func TestIT04RapidRevisionsBoundSlowWritersAndSSEReconnectGetsCurrent(t *testing
 	if got := len(server.writerSlots); got != config.SnapshotWriters {
 		t.Fatalf("active writers = %d, want %d", got, config.SnapshotWriters)
 	}
-	if cap(server.writerSlots) != DefaultSnapshotWriters || MaximumRetainedBodies*config.MaxSnapshotBytes > 80<<20 {
-		t.Fatalf("retained snapshot cap drift: writers=%d retained=%d", cap(server.writerSlots), MaximumRetainedBodies*config.MaxSnapshotBytes)
+	largest := max(config.MaxSnapshotBytes, config.MaxShellBytes, MaximumDashboardBytes)
+	retained := config.MaxSnapshotBytes + config.MaxShellBytes + MaximumDashboardBytes + cap(server.writerSlots)*largest
+	if cap(server.writerSlots) != DefaultSnapshotWriters || retained != MaximumRetainedBytes || retained > 88<<20 {
+		t.Fatalf("retained response cap drift: writers=%d retained=%d", cap(server.writerSlots), retained)
 	}
 	for index, generation := range superseded {
 		select {
@@ -157,6 +168,7 @@ func TestIT04RapidRevisionsBoundSlowWritersAndSSEReconnectGetsCurrent(t *testing
 	awaitBrokerClients(t, server, 0)
 
 	current := server.store.get().revision
+	currentDashboardDigest := server.store.dashboard().viewModelDigest
 	laterCtx, laterCancel := context.WithCancel(t.Context())
 	laterWriter := newStreamWriter()
 	laterDone := make(chan struct{})
@@ -164,14 +176,15 @@ func TestIT04RapidRevisionsBoundSlowWritersAndSSEReconnectGetsCurrent(t *testing
 	if err != nil {
 		t.Fatalf("NewRequest(later SSE) error = %v", err)
 	}
-	laterRequest.Header.Set("Last-Event-ID", initial.Revision)
+	laterRequest.Header.Set("Last-Event-ID", initialDashboardDigest)
 	go func() {
 		defer close(laterDone)
 		server.Handler().ServeHTTP(laterWriter, laterRequest)
 	}()
 	flush := awaitFlush(t, laterWriter)
-	if !strings.Contains(flush, `data: {"revision":"`+current+`"}`) || strings.Contains(flush, "timeline") {
-		t.Fatalf("later SSE did not receive revision-only current token: %q", flush)
+	id, payload := parseLastRevisionEvent(t, flush)
+	if payload.Revision != current || payload.ViewModel != currentDashboardDigest || id != currentDashboardDigest || strings.Contains(flush, "timeline") {
+		t.Fatalf("later SSE did not receive the current dashboard identity pair: %q", flush)
 	}
 	laterCancel()
 	awaitSignal(t, laterDone, "later SSE handler did not stop")
@@ -243,6 +256,18 @@ func (w *staggeredSnapshotWriter) SetWriteDeadline(time.Time) error {
 
 func operationalFromDashboardPage(t *testing.T, page []byte) operational.Snapshot {
 	t.Helper()
+	viewModel := dashboardDataBytes(t, page)
+	var payload struct {
+		Operational operational.Snapshot `json:"operational"`
+	}
+	if err := json.Unmarshal(viewModel, &payload); err != nil {
+		t.Fatalf("decode dashboard DATA: %v", err)
+	}
+	return payload.Operational
+}
+
+func dashboardDataBytes(t *testing.T, page []byte) []byte {
+	t.Helper()
 	const prefix = "window.A2A_DEMO="
 	start := bytes.Index(page, []byte(prefix))
 	if start < 0 {
@@ -253,13 +278,7 @@ func operationalFromDashboardPage(t *testing.T, page []byte) operational.Snapsho
 	if end < 0 {
 		t.Fatal("dashboard page has no DATA terminator")
 	}
-	var payload struct {
-		Operational operational.Snapshot `json:"operational"`
-	}
-	if err := json.Unmarshal(page[start:start+end], &payload); err != nil {
-		t.Fatalf("decode dashboard DATA: %v", err)
-	}
-	return payload.Operational
+	return page[start : start+end]
 }
 
 func largeIntegrationSnapshot(t *testing.T, label string) operational.Snapshot {

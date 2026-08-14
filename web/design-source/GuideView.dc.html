@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<section aria-label="{{ guideAria }}" data-screen-label="Guide">
+
+        <!-- The first section answers the two questions a newcomer arrives
+             with: what can travel through a2a, and how to tell us when the
+             product itself should change. -->
+        <div data-guide-primary style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(350px,100%),1fr)); gap:var(--space-grid); margin-bottom:var(--space-grid); align-items:stretch;">
+          <section style="min-width:0; background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:var(--shadow-card);">
+            <h2 style="margin:0 0 8px; font-size:var(--font-section-title); line-height:var(--line-section-title); font-weight:600;">{{ artifactTypesTitle }}</h2>
+            <p style="margin:0 0 16px; font-size:16px; line-height:1.6; color:var(--muted);">{{ artifactTypesText }}</p>
+            <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px;">
+              <sc-for list="{{ artifactTypes }}" as="t" hint-placeholder-count="8">
+                <div style="min-width:0; display:flex; flex-direction:column; align-items:flex-start; gap:8px; background:var(--page); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline);">
+                  <dc-import name="TypeBadge" type="{{ t.key }}" size="small" hint-size="130px,24px"></dc-import>
+                  <span style="font-size:14px; line-height:1.45; color:var(--muted);">{{ t.description }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </section>
+          <section data-guide-feedback style="position:relative; isolation:isolate; overflow:hidden; min-width:0; background:var(--surface); border-radius:var(--radius-panel); padding:var(--space-grid); box-shadow:var(--shadow-card);">
+            <!-- Decorative Lucide Bot. It deliberately slips beyond the card
+                 edge: the quiet cropped silhouette fills the collapsed state,
+                 while the opaque prompt surface can grow over it unchanged. -->
+            <svg data-guide-feedback-robot aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" style="position:absolute; z-index:0; right:-64px; bottom:-82px; width:min(380px,68%); height:auto; color:var(--teal-solid); opacity:.18; pointer-events:none;">
+              <path d="M12 8V4H8"></path>
+              <rect width="16" height="12" x="4" y="8" rx="2"></rect>
+              <path d="M2 14h2"></path>
+              <path d="M20 14h2"></path>
+              <path d="M15 13v2"></path>
+              <path d="M9 13v2"></path>
+            </svg>
+            <div style="position:relative; z-index:1; min-height:100%; display:flex; flex-direction:column;">
+              <dc-import name="EmptyState" title="{{ feedbackTitle }}" text="{{ feedbackText }}" size="panel" hint-size="100%,230px"></dc-import>
+              <div style="margin-top:auto; padding:16px 4px 4px;">
+                <dc-import name="AgentPrompt" det="{{ feedbackPrompt }}" hint-size="100%,44px"></dc-import>
+                <div style="display:flex; align-items:center; gap:9px 14px; flex-wrap:wrap; margin-top:15px; padding-top:14px; border-top:1px solid var(--hairline); font-size:14px;">
+                  <a href="https://ydnikolaev.github.io/a2ahub/" style="text-decoration:none;">a2ahub.dev</a>
+                  <a href="https://github.com/ydnikolaev/a2ahub" style="text-decoration:none;">{{ githubRepoLabel }}</a>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(270px,1fr)); gap:var(--space-grid); margin-bottom:var(--space-grid);">
+          <sc-for list="{{ guideFeatures }}" as="f" hint-placeholder-count="10">
+            <article style="background:var(--surface); border-radius:var(--radius-card); padding:var(--padding-card-block) var(--padding-card-inline); box-shadow:var(--shadow-card);">
+              <span style="display:inline-flex; font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:600; color:var(--teal-ink); background:var(--teal-tint); border-radius:7px; padding:5px 9px; margin-bottom:14px;">{{ f.tag }}</span>
+              <h2 style="margin:0 0 8px; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600;">{{ f.title }}</h2>
+              <p style="margin:0; font-size:16px; line-height:1.6; color:var(--muted);">{{ f.body }}</p>
+            </article>
+          </sc-for>
+        </div>
+
+        <!-- Status reference and reading guide are peers: the left column
+             names the vocabulary, the right explains where it appears. -->
+        <div data-guide-reference style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(430px,100%),1fr)); gap:var(--space-grid); align-items:start;">
+          <section style="min-width:0; background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:var(--shadow-card);">
+            <h2 style="margin:0 0 8px; font-size:var(--font-section-title); line-height:var(--line-section-title); font-weight:600;">{{ lifecycleTitle }}</h2>
+            <p style="margin:0 0 16px; font-size:16px; line-height:1.6; color:var(--muted);">{{ lifecycleText }}</p>
+            <div style="display:grid; gap:8px;">
+              <sc-for list="{{ statusGuide }}" as="s" hint-placeholder-count="14">
+                <div data-guide-status-card="true" style="display:flex; flex-direction:column; align-items:flex-start; gap:8px; background:var(--page); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline);">
+                  <dc-import name="StatusPill" text="{{ s.key }}" tone="{{ s.tone }}" size="small" hint-size="118px,24px"></dc-import>
+                  <span style="display:block; width:100%; min-width:0; font-size:14px; line-height:1.5; color:var(--muted);">{{ s.description }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <p style="margin:16px 0 0; padding-top:14px; border-top:1px solid var(--hairline); font-size:15px; line-height:1.6; color:var(--muted);">{{ lifecycleFoot }}</p>
+          </section>
+          <section style="min-width:0; background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
+              <h2 style="margin:0 0 12px; font-size:var(--font-section-title); line-height:var(--line-section-title); font-weight:600;">{{ readingGuideTitle }}</h2>
+              <div style="display:grid; gap:8px;">
+                <sc-for list="{{ guideReadingRows }}" as="r" hint-placeholder-count="4">
+                  <div data-guide-reading-card="true" style="background:var(--page); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline);">
+                    <div style="margin:0 0 6px; font-size:var(--font-subheading); line-height:var(--line-subheading); font-weight:600;">{{ r.label }}</div>
+                    <div style="width:100%; font-size:15px; line-height:1.6; color:var(--body);">{{ r.text }}</div>
+                  </div>
+                </sc-for>
+              </div>
+          </section>
+        </div>
+      </section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1240,&quot;height&quot;:900},&quot;ctx&quot;:{&quot;editor&quot;:&quot;object&quot;,&quot;default&quot;:{},&quot;tsType&quot;:&quot;object&quot;}}">
+const DASHBOARD_EN = {
+    views:["Overview","Exchange","Threads","Contracts","Map","Spaces","Versions","Docs","Guide"],
+    backOverview:"Back to Overview", viewsLabel:"Views", more:"More", localeGroup:"Interface language", space:"Space",
+    errorTitle:"Could not read demo data", errorPrefix:"The dashboard is a read-only projection of", errorSuffix:". Missing facts are never inferred.",
+    openWork:"Open Exchange", direction:"Show", typeFilter:"Type",
+    spaceHealth:"Space health", spaceHealthTitle:"How current this page is",
+    spaceHealthSub:"Everything on these screens is read from a local copy of each space, taken once when this file was written. This is when that copy was last refreshed, and what each space expects of your binary.",
+    spaceHealthFlagsTitle:"Worth a look", spaceHealthFlagsText:"Recorded by committed events, or a problem reading the local copy. A flag is a reason to look, not a verdict.",
+    spaceHealthFooter:"Nothing here is inferred: an unreadable space is reported as unreadable, never as empty.",
+    spaceHealthMore:"Open Spaces", spaceHealthClose:"Close",
+    work:"Exchange", threads:"Threads", threadMissingTitle:"No full reconstruction is available for this thread", threadMissingText:"This row comes from the summary; only some demo threads include a complete causal transcript.",
+    whoseMove:"Whose move", whoseMoveText:"State and allowed transitions are derived from the events below.", causalTimeline:"Thread history", newestFirst:"newest first", opensChain:"opens the chain", subjectPrefix:"on", threadFlags:"Consistency, protocol and read evidence",
+    contracts:"Contracts and their versions", codeBacked:"code-backed", consumerLines:"Registered consumer lines", versionWindow:"Live version window", provenance:"Provenance and schema", codeBindingPrefix:"A code binding records the generator and source digest. Whether the current bytes still match is", notEvaluated:"not evaluated", codeBindingSuffix:" in this static read.",
+    network:"Who depends on whom", networkSub:"A solid line means one system depends on a contract another one publishes. A dashed line means an exchange between two systems is still open. Click any line or system to see the versions, the pinned lines and the open documents behind it.", exchangeMap:"Exchange map",
+    spaces:"Spaces", spacesSub:"A space is the shared repository systems exchange documents through. This is how fresh your copy of each one is, and which a2a version it wants before it accepts what you write.", freshness:"Freshness", participants:"Participants", writerFloor:"Writer floor", pinnedWorkflow:"Pinned workflow", revision:"Revision",
+    limitsTitle:"What this snapshot did not check", limitsSub:"This file was written once, from the local cache. Anything it could not read, or deliberately did not evaluate, is named here, so an empty space never passes for a clean result.",
+    emptyLimitsTitle:"Nothing to qualify", emptyLimitsText:"Every connected space was readable when this snapshot was written, and no flag was raised. The numbers above are the whole picture.",
+    emptySpacesTitle:"No spaces connected", emptySpacesText:"A space is the shared repository two systems exchange documents through. Connect one and this table fills in.",
+    integrityFlags:"Protocol and read flags", integrityFlagsText:"Facts recorded by committed events, or problems reading the local cache index. A flag is evidence, not a verdict.",
+    degradedReads:"Degraded reads", degradedReadsText:"These spaces answered from an older mirror revision, or not at all. Their counts are floors, never totals.",
+    notEvaluatedTitle:"What this read deliberately did not check", notEvaluatedText:"Not failures. Questions a static file honestly cannot answer, said out loud instead of shown as a zero or a green tick.",
+    versions:"Versions", localBinary:"Local binary", installed:"installed", latest:"latest", updateCandidate:"Update candidate", impact:"impact", publishedReleases:"Published releases in this snapshot", expandedNotes:"Expanded notes cover",
+    guide:"How a2ahub fits together", guideSub:"Document types, statuses, the dashboard's reading order, and a direct way to improve the product. Everything on this page is written for people first.",
+    lifecycleTitle:"Lifecycle is events, not an editable status", lifecycleText:"Every transition is validated before it is recorded. Both sides fold the same history into the same state.", lifecycleFoot:"This is a document status, not a release marker. Responses, blocks, disputes, cancellations, and supersessions remain separate immutable events with a validated actor.",
+    artifactTypesTitle:"Eight document types", artifactTypesText:"One file carries one intent. The protocol code remains a quick visual anchor and a human name is always shown beside it.", readingGuide:"How to read the dashboard",
+    docs:"Documentation", docsSub:"The same manual the agent reads is available here without a network connection. Sections and search are on the left; the exact source text is on the right.",
+    docSearch:"Search the docs", docSearchPlaceholder:"thread, contract, retire…", docNoMatch:"No section title, group or source path matches that search.",
+    docEmbedded:"available offline", emptyDocsTitle:"No documentation embedded", emptyDocsText:"This snapshot was written without the doc corpus. Reinstall the skill and render the dashboard again.",
+    loadingDoc:"Loading the embedded document…",
+    feedbackTitle:"Have an idea? Let’s make a2ahub better", feedbackText:"Bugs, rough edges and feature ideas are welcome. Give the context to your agent: it knows the feedback format, checks for duplicates and files a safe, actionable report.", githubRepo:"GitHub repository", publicHome:"Public home", designSystem:"Design system v4",
+    readingRows:[["Overview and Work","Human actions ordered by consequence and next owner. Priority, literal blocking, a pending approval, a deadline, and a stale snapshot remain five distinct signals."],["Threads","One intent per chain, in committed order where Git history exists and explicitly labelled declared order where it does not."],["Contracts and Map","Drift belongs to a consumer's pinned major line. A provider may be healthy while a consumer resolves nothing."],["Integrity and Versions","The limits of this snapshot and the independent compatibility axes that must not be inferred from one another."]]
+};
+
+const DASHBOARD_RU = {
+    views:["Обзор","Обмен","Треды","Контракты","Карта","Спейсы","Версии","Доки","Справка"],
+    backOverview:"Вернуться к обзору", viewsLabel:"Разделы", more:"Ещё", localeGroup:"Язык интерфейса", space:"Спейс",
+    errorTitle:"Не удалось прочитать данные", errorPrefix:"Дашборд только читает и показывает", errorSuffix:". Чего в файле нет, того он не придумывает.",
+    openWork:"Открыть обмен", direction:"Показать", typeFilter:"Тип",
+    spaceHealth:"Состояние спейсов", spaceHealthTitle:"Насколько свежее то, что вы читаете",
+    spaceHealthSub:"Всё на этих экранах взято из локальной копии спейса, снятой один раз, когда собирался этот файл. Здесь видно, когда копию последний раз обновляли и чего каждый спейс ждёт от вашего бинарника.",
+    spaceHealthFlagsTitle:"На что стоит посмотреть", spaceHealthFlagsText:"Сигналы из событий и локального снимка, которые стоит проверить. Они не обязательно означают ошибку.",
+    spaceHealthFooter:"Ничего не додумывается: если спейс не прочитался, так и написано, а не «ноль».",
+    spaceHealthMore:"Открыть спейсы", spaceHealthClose:"Закрыть",
+    work:"Обмен", threads:"Треды", threadMissingTitle:"Этот тред не удалось восстановить целиком", threadMissingText:"Есть только краткая сводка. В снимок не попала полная история: кто что сделал и в каком порядке.",
+    whoseMove:"Чей сейчас ход", whoseMoveText:"Посчитано по событиям ниже: что уже произошло и что после этого разрешено сделать.", causalTimeline:"История треда", newestFirst:"новое сверху", opensChain:"с этого всё началось", subjectPrefix:"для", threadFlags:"Что пошло не так в этом треде",
+    contracts:"Контракты и их версии", codeBacked:"собран из кода", consumerLines:"Кто на нём сидит", versionWindow:"Какие версии живы", provenance:"Откуда взялась схема", codeBindingPrefix:"Записано, чем и из какого исходника собран дескриптор. А вот совпадает ли он с кодом прямо сейчас,", notEvaluated:"не проверялось", codeBindingSuffix:": этот файл собран один раз и в код не заглядывает.",
+    network:"Кто от кого зависит", networkSub:"Сплошная линия значит, что одна система зависит от контракта, который публикует другая. Пунктир значит, что между двумя системами есть незакрытый обмен. Нажмите на линию или на систему, чтобы увидеть версии, закреплённые линии и открытые документы.", exchangeMap:"Карта обмена",
+    spaces:"Спейсы", spacesSub:"Системы обмениваются документами через общий репозиторий, он и называется спейсом. Здесь видно, насколько свежая у вас копия каждого и какую версию a2a он ждёт, чтобы принять вашу запись.", freshness:"Свежесть", participants:"Участники", writerFloor:"Минимум для записи", pinnedWorkflow:"Версия проверки в CI", revision:"Ревизия",
+    limitsTitle:"Что этот снимок не проверял", limitsSub:"Файл собран один раз из локального кэша. Всё, что не удалось прочитать или что мы намеренно не проверяли, названо здесь, чтобы пустое место не сошло за «всё в порядке».",
+    emptyLimitsTitle:"Уточнять нечего", emptyLimitsText:"Когда собирался снимок, все подключённые спейсы читались, замечаний не было. Цифры выше и есть вся картина.",
+    emptySpacesTitle:"Спейсы не подключены", emptySpacesText:"Спейс работает как общий репозиторий, через который две системы обмениваются документами. Подключите спейс, и таблица заполнится.",
+    integrityFlags:"Замечания", integrityFlagsText:"Сигналы из событий и локального снимка, которые стоит проверить. Они не обязательно означают ошибку.",
+    degradedReads:"Прочитано не полностью", degradedReadsText:"Эти спейсы ответили из устаревшей копии или не ответили вовсе. Их цифры значат «не меньше чем», а не точное число.",
+    notEvaluatedTitle:"Что мы намеренно не проверяли", notEvaluatedText:"Это не сбои. Это вопросы, на которые статический файл честно не отвечает и говорит об этом прямо, вместо того чтобы показать ноль или зелёную галочку.",
+    versions:"Версии", localBinary:"Ваш бинарник", installed:"стоит сейчас", latest:"последняя", updateCandidate:"Есть обновление", impact:"влияние", publishedReleases:"Выпуски", expandedNotes:"Подробности по",
+    guide:"Как устроен a2ahub", guideSub:"Типы документов, статусы, порядок чтения дашборда и прямой способ сделать продукт лучше. Эта страница сначала говорит с человеком, а уже потом — о протоколе.",
+    lifecycleTitle:"Статус не редактируется, он складывается из событий", lifecycleText:"Каждый переход проверяется до того, как попадёт в репозиторий. Обе стороны собирают из одной и той же истории одно и то же состояние.", lifecycleFoot:"Это статус документа, а не отметка о релизе. Ответы, блокировки, споры, отмены и замены не затираются: каждое остаётся отдельным событием с проверенным автором.",
+    artifactTypesTitle:"Восемь типов документов", artifactTypesText:"Один файл, одна мысль. Двухбуквенный код удобен глазу, но рядом всегда стоит нормальное название.", readingGuide:"Как читать дашборд",
+    docs:"Документация", docsSub:"То же руководство, что читает агент, доступно здесь без подключения к сети. Слева разделы и поиск, справа исходный текст.",
+    docSearch:"Поиск по докам", docSearchPlaceholder:"тред, контракт, вывод версии…", docNoMatch:"Ни одно название раздела, группа или путь к файлу не совпали с запросом.",
+    docEmbedded:"доступно без интернета", emptyDocsTitle:"Документация не вшита", emptyDocsText:"Этот снимок собран без корпуса документации. Переустановите навык и соберите дашборд заново.",
+    loadingDoc:"Загружается встроенный документ…",
+    feedbackTitle:"Есть идея? Давайте сделаем a2ahub лучше", feedbackText:"Баги, шероховатости и фичер-реквесты здесь действительно ждут. Передайте контекст своему агенту: он знает формат, проверит дубликаты и отправит безопасный, полезный отчёт.", githubRepo:"Репозиторий на GitHub", publicHome:"Главная сайта", designSystem:"Дизайн-система",
+    readingRows:[["Обзор и работа","Сверху то, где цена ошибки выше. Приоритет, блокировка, ожидание вашего согласования, срок и устаревшие данные остаются пятью разными сигналами, и они намеренно не слиты в один."],["Треды","Одна задача, один тред. Порядок берётся из коммитов Git; если истории нет, используется время, указанное автором, и это честно помечается."],["Контракты и карта","Расхождение считается для конкретного потребителя и той версии, которую он закрепил. У поставщика может быть всё хорошо ровно тогда, когда у потребителя не работает ничего."],["Спейсы и версии","Пределы этого снимка и три версии, которые нельзя выводить одну из другой."]]
+};
+
+const DASHBOARD_I18N = { en: DASHBOARD_EN, ru: DASHBOARD_RU };
+
+const A2A_GLOSSARY_EN = {
+    types: {
+      contract:{ code:"XC", label:"Contract", description:"A versioned interface one system publishes and another can depend on." },
+      requirement:{ code:"XR", label:"Requirement", description:"A durable condition the result must satisfy, without prescribing the implementation." },
+      question:{ code:"XQ", label:"Question", description:"A focused request for information that expects a typed response." },
+      work_request:{ code:"XW", label:"Work request", description:"A request for another system to deliver a concrete result, with acceptance criteria and an owner." },
+      decision:{ code:"XD", label:"Decision", description:"A recorded choice and its rationale, so other systems can act without reopening the discussion." },
+      handoff:{ code:"XH", label:"Handoff", description:"A transfer of responsibility or a ready result to the next system." },
+      response:{ code:"XS", label:"Response", description:"A direct answer linked to the request or question it addresses; the requester still verifies or disputes it." },
+      announcement:{ code:"XA", label:"Announcement", description:"Information others should know. It stays published; the dashboard archives it once every requested recipient acknowledges receipt." }
+    },
+    statuses: {
+      draft:{ label:"draft", description:"The document is still local and has not entered the shared exchange." },
+      submitted:{ label:"submitted", description:"The document entered the shared exchange and awaits the receiving side's next allowed move." },
+      acknowledged:{ label:"received", description:"The receiving side confirmed receipt. This says nothing yet about acceptance, verification or completion." },
+      accepted:{ label:"accepted", description:"The receiving side accepted the current step. This records agreement to proceed; it does not by itself close the document." },
+      in_progress:{ label:"in progress", description:"Work has started and the request has not reached a final state yet." },
+      published:{ label:"published", description:"The document is part of the shared record and visible to its participants." },
+      proposed:{ label:"proposed", description:"A change or choice was offered and still awaits the next protocol move." },
+      responded:{ label:"responded", description:"At least one linked response was recorded. The original document's author may now verify it or dispute the result." },
+      verified:{ label:"verified", description:"The author of the original document checked this response and confirmed the result. The response is final; no further move is expected." },
+      closed:{ label:"closed", description:"This request or question is complete and no further action is expected for it. Other documents in the thread may remain open." },
+      satisfied:{ label:"satisfied", description:"The requirement's owner confirmed that the recorded result satisfies it." },
+      declined:{ label:"declined", description:"The receiving side declined the requested step. The document stays in history; any follow-up requires a new valid move." },
+      superseded:{ label:"superseded", description:"A newer document replaced this one. This record remains visible as history." },
+      approved:{ label:"approved", description:"The required approvers accepted this decision. It is final unless a later decision supersedes it." },
+      rejected:{ label:"rejected", description:"The receiving side rejected the current check or approval. The matching event records the reason and the next allowed move." },
+      blocked:{ label:"blocked", description:"The record names a blocker that must be cleared before the next protocol move." },
+      blocking:{ label:"blocking", description:"This item records a blocking protocol obligation and deserves prompt attention." },
+      disputed:{ label:"disputed", description:"A participant challenged the result or interpretation; the disagreement remains open." },
+      cancelled:{ label:"cancelled", description:"The requester ended the work before completion; the history stays visible." },
+      withdrawn:{ label:"withdrawn", description:"The author retracted the document from active consideration; the record is preserved." },
+      expired:{ label:"expired", description:"The announcement's validity window ended. The published record remains visible as history." },
+      current:{ label:"on latest", description:"This consumer is pinned to the latest live contract major." },
+      behind:{ label:"behind", description:"This consumer is still pinned to an older live contract major." },
+      deprecated:{ label:"being retired", description:"This version still works, but consumers are expected to move away before its sunset." },
+      retired:{ label:"retired", description:"This version is no longer live for new use; its history remains visible." },
+      missing:{ label:"not found", description:"The pinned version is absent at the provider, so this dependency cannot resolve." },
+      dangling:{ label:"provider left", description:"The dependency points to a provider that is no longer present in this space." },
+      stale:{ label:"stale", description:"The local evidence is older than the freshness window, so the repository may already differ." },
+      fresh:{ label:"fresh", description:"The local evidence was refreshed within the expected freshness window." },
+      unreadable:{ label:"unreadable", description:"The local copy could not be read. Unknown values must not be treated as zero." },
+      unresolved:{ label:"unresolved", description:"The dashboard cannot connect this reference to a readable record." },
+      "space stale":{ label:"space stale", description:"The local space copy is older than usual. Data remains available, but the repository may have changed. Run a2a sync; the warning disappears after a successful refresh." },
+      settled:{ label:"settled", description:"Every document in this thread is final and no next protocol move is owed." },
+      "your move":{ label:"your move", description:"The next allowed protocol action belongs to your system." },
+      "waiting on others":{ label:"waiting on others", description:"The next allowed protocol move belongs to another participant." },
+      "your approval pending":{ label:"awaiting your approval", description:"The next protocol move requires an explicit approval from your side." },
+      "up to date":{ label:"latest version", description:"Your installed binary matches the newest release known to this snapshot." },
+      "no action needed":{ label:"no action needed", description:"This change does not require local configuration, migration, or manual follow-up." },
+      overdue:{ label:"overdue", description:"The recorded deadline passed before this document reached a terminal state." },
+      "needs a look":{ label:"needs a look", description:"This document carries an extra signal worth checking. It does not necessarily mean anything is wrong." },
+      resolved:{ label:"resolved · digest matches", description:"The reference was found and its recorded content digest matches." },
+      "digest mismatch":{ label:"digest mismatch", description:"The reference exists, but its content no longer matches the digest recorded by this document." }
+    }
+};
+
+const A2A_GLOSSARY_RU = {
+    types: {
+      contract:{ code:"XC", label:"Контракт", description:"Версионируемый интерфейс, который одна система публикует, а другая может использовать как зависимость." },
+      requirement:{ code:"XR", label:"Требование", description:"Устойчивое условие, которому должен соответствовать результат, без навязывания способа реализации." },
+      question:{ code:"XQ", label:"Вопрос", description:"Точный запрос информации, на который ожидается связанный типизированный ответ." },
+      work_request:{ code:"XW", label:"Запрос работы", description:"Просьба другой системе выдать конкретный результат с критериями готовности и ответственным." },
+      decision:{ code:"XD", label:"Решение", description:"Зафиксированный выбор и его причины, чтобы другие системы могли действовать, не открывая обсуждение заново." },
+      handoff:{ code:"XH", label:"Передача", description:"Передача ответственности или готового результата следующей системе." },
+      response:{ code:"XS", label:"Ответ", description:"Прямой ответ со ссылкой на запрос или вопрос. После этого автор исходного документа проверяет результат или оспаривает его." },
+      announcement:{ code:"XA", label:"Объявление", description:"Информация, которую участникам важно знать. Она остаётся опубликованной, а дашборд переносит её в архив после подтверждения всех запрошенных получателей." }
+    },
+    statuses: {
+      draft:{ label:"черновик", description:"Документ пока локальный и ещё не вошёл в общий обмен." },
+      submitted:{ label:"отправлено", description:"Документ вошёл в общий обмен и ждёт следующего допустимого шага принимающей стороны." },
+      acknowledged:{ label:"получили", description:"Принимающая сторона подтвердила получение. Это ещё ничего не говорит о принятии, проверке или завершении." },
+      accepted:{ label:"принято", description:"Принимающая сторона приняла текущий шаг. Это фиксирует согласие продолжить, но само по себе не закрывает документ." },
+      in_progress:{ label:"в работе", description:"Работа началась, но запрос ещё не дошёл до финального состояния." },
+      published:{ label:"опубликовано", description:"Документ вошёл в общий журнал и виден участникам обмена." },
+      proposed:{ label:"предложено", description:"Изменение или выбор предложены и ждут следующего допустимого шага." },
+      responded:{ label:"ответили", description:"Записан хотя бы один связанный ответ. Автор исходного документа может подтвердить его или оспорить результат." },
+      verified:{ label:"проверено", description:"Автор исходного документа проверил ответ и подтвердил результат. Ответ завершён; дальнейших шагов не ждут." },
+      closed:{ label:"закрыто", description:"Этот запрос или вопрос завершён; по нему больше не ждут действий. Другие документы треда могут оставаться открытыми." },
+      satisfied:{ label:"выполнено", description:"Автор требования подтвердил, что записанный результат ему соответствует." },
+      declined:{ label:"отклонено", description:"Принимающая сторона отказалась от запрошенного шага. Документ остаётся в истории; продолжение требует нового допустимого хода." },
+      superseded:{ label:"заменено", description:"Этот документ заменён более новым. Старая запись остаётся видимой как история." },
+      approved:{ label:"согласовано", description:"Все требуемые согласующие приняли это решение. Оно финально, пока его не заменит более новое." },
+      rejected:{ label:"отклонено", description:"Принимающая сторона отклонила текущую проверку или согласование. Причина и следующий допустимый ход записаны в соответствующем событии." },
+      blocked:{ label:"заблокировано", description:"В записи названа блокировка, которую нужно снять до следующего хода протокола." },
+      blocking:{ label:"блокирует", description:"Документ фиксирует блокирующее протокольное обязательство и требует быстрого внимания." },
+      disputed:{ label:"спорят", description:"Участник оспорил результат или трактовку; разногласие ещё не закрыто." },
+      cancelled:{ label:"отменено", description:"Заказчик остановил работу до завершения; история при этом сохраняется." },
+      withdrawn:{ label:"отозвано", description:"Автор снял документ с активного рассмотрения; запись остаётся в истории." },
+      expired:{ label:"срок истёк", description:"Срок действия объявления закончился. Опубликованная запись остаётся видимой в истории." },
+      current:{ label:"на последней", description:"Потребитель закреплён на последней живой мажорной версии контракта." },
+      behind:{ label:"отстаёт", description:"Потребитель всё ещё закреплён на более старой живой мажорной версии." },
+      deprecated:{ label:"выводится", description:"Версия пока работает, но до даты вывода потребителям нужно с неё уйти." },
+      retired:{ label:"снято", description:"Версия больше не доступна для нового использования; её история остаётся видимой." },
+      missing:{ label:"не нашли", description:"Закреплённой версии нет у поставщика, поэтому зависимость не разрешается." },
+      dangling:{ label:"поставщик ушёл", description:"Зависимость указывает на поставщика, которого больше нет в этом спейсе." },
+      stale:{ label:"устарел", description:"Локальные данные старше допустимого окна и уже могут отличаться от репозитория." },
+      fresh:{ label:"свежий", description:"Локальные данные обновлены в пределах ожидаемого окна свежести." },
+      unreadable:{ label:"не читается", description:"Локальную копию не удалось прочитать. Неизвестные значения нельзя считать нулём." },
+      unresolved:{ label:"не нашли", description:"Ссылку не удалось связать с доступной для чтения записью." },
+      "space stale":{ label:"спейс устарел", description:"Локальная копия спейса старше обычного. Данные доступны, но в репозитории уже могли появиться изменения. Запустите a2a sync: после успешного обновления предупреждение исчезнет." },
+      settled:{ label:"всё закрыто", description:"Все документы треда завершены, и следующего хода протокола ни за кем нет." },
+      "your move":{ label:"ваш ход", description:"Следующее допустимое действие протокола должна выполнить ваша система." },
+      "waiting on others":{ label:"ход за другими", description:"Следующий допустимый ход протокола принадлежит другому участнику." },
+      "your approval pending":{ label:"ждёт вашего согласования", description:"Следующий шаг протокола требует явного согласования с вашей стороны." },
+      "up to date":{ label:"последняя версия", description:"Установленный бинарник совпадает с последним выпуском, известным этому снимку." },
+      "no action needed":{ label:"действий не нужно", description:"Это изменение не требует настройки, миграции или ручного шага у вас." },
+      overdue:{ label:"просрочено", description:"Указанный дедлайн прошёл, а документ ещё не дошёл до конечного состояния." },
+      "needs a look":{ label:"стоит посмотреть", description:"У документа есть дополнительный сигнал для проверки. Это не обязательно означает ошибку." },
+      resolved:{ label:"нашли, сумма сошлась", description:"Ссылку нашли, и записанная контрольная сумма содержимого совпала." },
+      "digest mismatch":{ label:"сумма не сошлась", description:"Ссылка существует, но её содержимое уже не совпадает с контрольной суммой в документе." }
+    }
+};
+
+const A2A_GLOSSARY = { en: A2A_GLOSSARY_EN, ru: A2A_GLOSSARY_RU };
+
+const A2A_TYPE_GUIDE = ["contract","requirement","question","work_request","decision","handoff","response","announcement"];
+
+const A2A_STATUS_GUIDE = ["draft","submitted","acknowledged","accepted","in_progress","published","proposed","responded","verified","closed","satisfied","declined","superseded","approved","rejected","blocked","blocking","your approval pending","overdue","disputed","cancelled","withdrawn","expired","deprecated","retired","space stale"];
+
+const STATE_TONE = {
+  published:"healthy", verified:"healthy", satisfied:"healthy", approved:"healthy", closed:"healthy",
+  blocked:"blockingStrong", blocking:"blockingStrong", missing:"blockingStrong", unreadable:"blockingStrong", rejected:"blockingStrong", declined:"blockingStrong", disputed:"blockingStrong",
+  deprecated:"attention", expired:"attention", overdue:"attention",
+  cancelled:"neutral", canceled:"neutral",
+  retired:"neutral", withdrawn:"neutral", superseded:"neutral", submitted:"neutral", in_progress:"neutral", responded:"neutral", accepted:"neutral", acknowledged:"neutral", proposed:"attention"
+};
+
+function stateTone(value) {
+  const key = String(value || "");
+  if (key === "your approval pending" || key === "space stale") return "attention";
+  return STATE_TONE[key] || "neutral";
+}
+
+const GUIDE_FEATURES_RU = [
+  ["a2a skill", "Навык обучает агента", "Команда a2a skill install добавляет навык в репозиторий. Агент сразу знает протокол, типы документов, жизненные циклы и команды, и человеку не приходится конструировать для него отдельные подсказки."],
+  ["a2a", "Один CLI охватывает весь цикл", "Черновики, проверка, отправка, входящие, контракты и диагностика доступны через один бинарник с командами, удобными для вызова агентом."],
+  ["MCP", "Типизированные инструменты MCP", "Те же действия доступны как типизированные инструменты MCP. Агенту не нужно разбирать текстовый вывод или изобретать второй протокол."],
+  ["XQ → XS", "Агенты общаются с агентами", "Системы координируются типизированными артефактами напрямую. Человек подключается только к решениям с реальным риском."],
+  ["auto-merge", "Проверенные запросы на слияние объединяются автоматически", "Схемы и проверка спейсы в CI подтверждают корректность документа. Ручное согласование остаётся только там, где его требует CODEOWNERS или политика проекта."],
+  ["macOS · VS Code", "Нативные уведомления по желанию", "В macOS 13+ можно установить дополнение для Центра уведомлений. Расширение VS Code показывает уведомления о переходах и строку состояния. Команда a2a notifications install устанавливает или восстанавливает их для текущего пользователя; эта возможность остаётся необязательной."],
+  ["a2a statusline", "Строка состояния для Claude и терминала", "Отдельная необязательная пользовательская поверхность показывает ожидающую работу в строке состояния Claude или терминала. Установка уведомлений её не редактирует."],
+  ["draft → merge", "Ограниченная автоматизация через репозиторий", "Явно запущенные validate, submit и CI проверяют и объединяют допустимые изменения в рамках политики спейса. Входящие обновляются при следующем вызове команды или интеграции; фоновый наблюдатель не подразумевается."],
+  ["a2a feedback", "Агенты улучшают инструменты", "Структурированная обратная связь проверяется и разбирается как данные, поэтому случайный входящий текст не становится инструкцией."],
+  ["a2a thread", "Одна задача, один тред", "Запрос, ответ, доказательства и решение лежат в одном треде и читаются всеми системами в одном и том же порядке."],
+  ["verdicts[]", "Вердикт выносится по каждому критерию", "Событие verify или close несёт отдельное суждение по каждому критерию приёмки — выполнено, не выполнено, не требовалось, не проверялось — и называет, за кем причина. Частичный результат больше не округляется до «принято» или «отклонено»."],
+  ["respond --ref", "Ответ называет то, что действительно доставило результат", "--ref фиксирует handoff, который перенёс данные, а submit откажет, если этот deliverable не разрешается через спейс. Заявление о доставке обязано указывать на то, что спейс реально видит."],
+  ["pack → deliver → verify", "Данные едут пакетом, а вердикт выводится", "a2a data pack собирает неизменяемый пакет по закреплённому контракту, a2a data deliver создаёт несущий его handoff, а a2a data verify --record выводит verify-pass или verify-fail из самого отчёта. Вердикт никто не вписывает руками."],
+  ["1.x · 2.x", "Контракт живёт в нескольких версиях", "Старая линия может уходить, пока новая уже работает. Ничего не удаляется, а каждый потребитель явно закрепляет используемую основную версию."],
+  ["deprecate → ack", "Устаревание доходит до каждого", "Объявление доставляется всем зарегистрированным участникам, а окончательное снятие версии ждёт подтверждений. Поэтому поздно подключившийся потребитель не выпадает из процесса."],
+  ["x_operational", "«Нет» и «никто не говорил» — разные состояния", "Контракт перечисляет операционные предпосылки — endpoint, канал доступа, регистрацию — и каждая заявлена как готовая или отсутствующая. То, что дескриптор не назвал вовсе, читается как undeclared: это не то же самое, что «отсутствует». Одно — известный пробел, другое — молчание."],
+  ["contract activate", "Опубликовать интерфейс и запустить его — не одно и то же", "Как только кто-то закрепил вашу опубликованную мажорную версию, вы обязаны подтвердить готовность, и a2a inbox --actionable называет этот долг (activation-owed). a2a contract activate заявляет по конкретной версии, какие операционные пункты стали настоящими."],
+  ["adopt refuses", "Контракт может объявить себя незакрепляемым", "Некоторые интерфейсы публикуют, чтобы их читали, а не садились на них. Такой дескриптор говорит об этом прямо, a2a contract adopt отказывает и ничего не записывает, а дашборд показывает отказ ещё до запуска команды."],
+  ["work report", "Работа не смешивается с протоколом", "Зафиксированные отчёты показывают, кто работает и чего ждёт. Завершение протокола считается отдельно; отсутствие актуального отчёта означает «неизвестно», а не «простой»."],
+  ["outcome · terminal", "Что значит состояние, решает домен", "Каждый артефакт сообщает не только своё состояние, но и что оно значит: outcome — открыт, урегулирован, отклонён, отозван или замещён — и terminal, возможен ли ещё хоть один ход. Это разные вопросы: отклонённое решение отклонено и при этом не терминально, потому что его ещё можно заместить. Рядом идут «с какого момента и кто»: state_since, state_by и state_event называют событие, которое привело к текущему состоянию, а не последнее событие вообще — заметка ничего не двигает. Раньше каждая поверхность решала это сама по списку имён состояний, и retired у контракта показывался как отмена, хотя для контракта это нормальный конец жизни."],
+  ["id@version", "Точная версия контракта воспроизводима", "Каждая версия публикует неизменяемый набор файлов. preflight, materialize и check разрешают одни и те же точные байты, чтобы их можно было проверить офлайн."]
+];
+
+const GUIDE_FEATURES_EN = [
+  ["a2a skill", "The skill teaches the agent", "a2a skill install places the skill in the repository. The agent learns the protocol, document types, lifecycles, and commands without human prompt engineering."],
+  ["a2a", "One CLI covers the workflow", "Drafting, validation, submission, inbox, contracts, and diagnosis use one binary with agent-friendly commands."],
+  ["MCP", "Native MCP tools", "The same actions are exposed as typed MCP tools, so an agent does not parse prose output or invent a second protocol."],
+  ["XQ → XS", "Agents coordinate with agents", "Systems coordinate directly through typed artifacts. A person joins only for decisions with real risk."],
+  ["auto-merge", "Valid PRs can merge automatically", "Schemas and space CI validate each document; a manual gate remains only where CODEOWNERS or policy requires it."],
+  ["macOS · VS Code", "Optional native notifications", "On macOS 13+, an optional companion can post to Notification Center. The VS Code extension provides transition notifications and a status bar. a2a notifications install installs or repairs them per user."],
+  ["a2a statusline", "A status line for Claude and terminals", "A separate optional user-owned surface can show pending work in Claude or a terminal status line. Installing notifications never edits it."],
+  ["draft → merge", "Bounded repository automation", "Explicitly invoked validate, submit, and CI steps check and merge eligible changes within space policy. Inbox state advances on a later command or integration invocation; no background watcher is implied."],
+  ["a2a feedback", "Agents improve the tools", "Structured feedback is validated and triaged as data, without treating inbound text as instructions."],
+  ["a2a thread", "One intent, one thread", "The request, response, evidence, and decision stay in one causal thread and fold in the same order for every system."],
+  ["verdicts[]", "A verdict names each criterion, not the whole job", "A verify or close event carries one judgement per acceptance criterion — met, unmet, not warranted, not exercised — and names who owns the cause. A partial result stops rounding up to accepted or down to rejected."],
+  ["respond --ref", "A response names what actually delivered it", "--ref records the handoff that carried the payload, and submit refuses the response outright when that deliverable does not resolve through the space. A claim of delivery has to point at something the space can see."],
+  ["pack → deliver → verify", "Data moves as a package, and the verdict is derived", "a2a data pack builds an immutable package against the pinned contract, a2a data deliver mints the handoff that carries it, and a2a data verify --record folds verify-pass or verify-fail out of the report itself. Nobody types the verdict."],
+  ["1.x · 2.x", "A contract spans versions", "An older line may be leaving while the new one is active. Nothing is erased, and every consumer pins its major explicitly."],
+  ["deprecate → ack", "Deprecation reaches every consumer", "The announcement follows registrations and retirement waits for acknowledgements, so late consumers remain visible."],
+  ["x_operational", "Missing and never mentioned are different states", "A contract declares its operational preconditions — an endpoint, a credential channel, a registration — each one ready or absent. Anything the descriptor never named reads undeclared, which is a different claim: one is a known gap you can plan around, the other is silence."],
+  ["contract activate", "Publishing an interface is not the same as it working", "The moment anyone adopts your published major you owe an activation, and a2a inbox --actionable names the debt (activation-owed). a2a contract activate attests, per published version, which operational items are now real."],
+  ["adopt refuses", "A contract can declare itself non-adoptable", "Some interfaces are published to be read, never pinned. Such a descriptor says so outright, a2a contract adopt refuses it and writes nothing, and the dashboard shows the refusal before the command is ever run."],
+  ["work report", "Work stays distinct from protocol", "Durable reports show who is working and what they await. Protocol completion remains separate; no current report means unknown, never idle."],
+  ["outcome · terminal", "The domain says what a state means, not each reader", "Every artifact reports what its state MEANS alongside the state itself: outcome — open, settled, refused, withdrawn or superseded — and terminal, whether any move can still follow. They are different questions. A rejected decision is refused AND non-terminal, because it can still be superseded. Beside them, state_since, state_by and state_event name the event that produced the current state, which is not the artifact's latest event: a note changes nothing. Every surface used to decide this from its own list of state names, which is how a retired contract rendered as cancelled, though retiring is how a contract's life is supposed to end."],
+  ["id@version", "Exact contract versions are reproducible","Each version publishes an immutable carried set. preflight, materialize, and check resolve the same exact bytes for offline verification."]
+];
+
+class Component extends DCLogic {
+  syncContext() {
+    const ctx = this.props && this.props.ctx || {};
+    this.state = Object.assign({ data: ctx.data || null, locale: ctx.locale === "ru" ? "ru" : "en" }, ctx.ui || {});
+    return ctx;
+  }
+
+  setState(update) {
+    const ctx = this.props && this.props.ctx || {};
+    const current = Object.assign({}, this.state || {}, { data: ctx.data || null, locale: ctx.locale === "ru" ? "ru" : "en" }, ctx.ui || {});
+    const patch = typeof update === "function" ? update(current) : update;
+    this.state = Object.assign({}, current, patch || {});
+    if (ctx.actions && ctx.actions.patch) ctx.actions.patch(patch || {});
+  }
+
+  go(view, extra) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.navigate) actions.navigate(view, extra); }
+  closeContractFile() { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.closeContractFile) actions.closeContractFile(); }
+  applyTheme(theme) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setTheme) actions.setTheme(theme); }
+  applyLocale(locale) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setLocale) actions.setLocale(locale); }
+  copy(text) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.copy) actions.copy(text); }
+
+
+
+  renderVals() {
+    const ctx = this.syncContext();
+    let d = ctx.data;
+    const s = this.state;
+    const ui = ctx.ui || {};
+    const ru = ctx.locale === "ru";
+    const c = DASHBOARD_I18N[ru ? "ru" : "en"];
+    if (!d && "GuideView" !== "GuideView") {
+      if ("GuideView" !== "DashboardShell") return {};
+      d = { spaces:[], nodes:[], inbox:[], outbox:[], archive:[], contracts:[], contractEdges:[], flags:[], meta:{}, tooling:{}, generatedAt:"", self:"" };
+    }
+
+    const values = {
+      lifecycleTitle:c.lifecycleTitle,
+      lifecycleText:c.lifecycleText,
+      lifecycleFoot:c.lifecycleFoot,
+      artifactTypesTitle:c.artifactTypesTitle,
+      artifactTypesText:c.artifactTypesText,
+      readingGuideTitle:c.readingGuide,
+      feedbackTitle:c.feedbackTitle,
+      feedbackText:c.feedbackText,
+      feedbackPrompt:{ text:"Use the a2ahub skill to file grounded feedback about a2ahub itself. Decide whether this is a bug, feature, docs, friction, or protocol report; inspect the current screen and reproduce or ground the request in real work; check `a2a feedback status` and the hub inbox/backlog for duplicates; create the draft with `a2a feedback new <kind> --title <clear title>`; complete its evidence and safety checks; run `a2a feedback validate <file>`; then submit it with `a2a feedback submit <file>`. Never include secrets or space-private data. If essential context is missing, ask me one focused question first." },
+      githubRepoLabel:c.githubRepo,
+      guideReadingRows:c.readingRows.map((r) => ({ label:r[0], text:r[1] })),
+      guideFeatures: (ru ? GUIDE_FEATURES_RU : GUIDE_FEATURES_EN).map(([tag, title, body]) => ({ tag, title, body })),
+      statusGuide: A2A_STATUS_GUIDE.map(key => ({ key, description:A2A_GLOSSARY[ru ? "ru" : "en"].statuses[key].description, tone:stateTone(key) })),
+      artifactTypes: A2A_TYPE_GUIDE.map(key => ({ key, description:A2A_GLOSSARY[ru ? "ru" : "en"].types[key].description })),
+      guideAria:c.views[8]
+    };
+    return values;
+  }
+}
+</script>
+</body>
+</html>

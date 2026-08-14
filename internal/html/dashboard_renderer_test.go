@@ -35,9 +35,12 @@ func TestDashboardRendererInjectsExactOperationalSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewDashboardRenderer: %v", err)
 	}
-	page, err := renderer.Render(context.Background(), snapshot)
+	page, viewModel, fingerprint, err := renderer.Render(context.Background(), snapshot)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
+	}
+	if fingerprint == "" {
+		t.Fatal("Render returned an empty content fingerprint")
 	}
 	const prefix = "window.A2A_DEMO="
 	start := bytes.Index(page, []byte(prefix))
@@ -64,6 +67,9 @@ func TestDashboardRendererInjectsExactOperationalSnapshot(t *testing.T) {
 	if !bytes.Equal(gotJSON, wantJSON) {
 		t.Fatal("rendered shell does not contain the exact operational snapshot JSON")
 	}
+	if !bytes.Equal(page[start:start+end], viewModel) {
+		t.Fatal("renderer shell DATA and returned view model differ")
+	}
 }
 
 func TestDashboardRendererRejectsUnversionedSnapshot(t *testing.T) {
@@ -73,7 +79,7 @@ func TestDashboardRendererRejectsUnversionedSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewDashboardRenderer: %v", err)
 	}
-	if _, err := renderer.Render(context.Background(), operational.Snapshot{}); !errors.Is(err, ErrInvalidDashboardRenderer) {
+	if _, _, _, err := renderer.Render(context.Background(), operational.Snapshot{}); !errors.Is(err, ErrInvalidDashboardRenderer) {
 		t.Fatalf("Render error = %v, want ErrInvalidDashboardRenderer", err)
 	}
 }

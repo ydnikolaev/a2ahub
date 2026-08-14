@@ -18,6 +18,9 @@ copy_tree() {
   cp "$ROOT/internal/cli/cmd_html.go" "$destination/internal/cli/cmd_html.go"
   mkdir -p "$destination/web/design-source"
   cp "$ROOT/web/design-source/14-local-dashboard-v4.dc.html" "$destination/web/design-source/14-local-dashboard-v4.dc.html"
+  while IFS= read -r component; do
+    cp "$ROOT/web/design-source/$component.dc.html" "$destination/web/design-source/$component.dc.html"
+  done < <(grep -oE '<dc-import[[:space:]]+name="[^"]+"' "$ROOT/web/design-source/14-local-dashboard-v4.dc.html" | sed -E 's/.*name="([^"]+)"/\1/' | sort -u)
 }
 expect_red() {
   local tree="$1" needle="$2" label="$3" output
@@ -44,8 +47,18 @@ expect_red "$missing_injection" "server shell renderer" "server-side re-derivati
 
 browser_derivation="$WORK/browser-derivation"
 copy_tree "$browser_derivation"
-perl -0pi -e 's/w && w\.current === true/\["local-current", "committed-current"\].indexOf(w.freshness) > -1/' "$browser_derivation/web/design-source/14-local-dashboard-v4.dc.html"
-expect_red "$browser_derivation" "core-owned work.current" "browser freshness derivation"
+printf '\nconst rogueCurrent = w => ["local-current", "committed-current"].indexOf(w.freshness) > -1;\n' >>"$browser_derivation/web/design-source/Overview.dc.html"
+expect_red "$browser_derivation" "browser-owned freshness vocabulary" "browser freshness derivation"
+
+missing_consumer="$WORK/missing-consumer"
+copy_tree "$missing_consumer"
+perl -0pi -e 's/w && w\.current === true/false/' "$missing_consumer/web/design-source/Overview.dc.html"
+expect_red "$missing_consumer" "core-owned work.current" "extracted current-work consumer"
+
+missing_import="$WORK/missing-import"
+copy_tree "$missing_import"
+rm "$missing_import/web/design-source/Overview.dc.html"
+expect_red "$missing_import" "dashboard import Overview" "missing extracted component"
 
 rogue_core="$WORK/rogue-core"
 copy_tree "$rogue_core"

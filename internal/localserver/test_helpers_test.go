@@ -70,32 +70,60 @@ func (f *fakeSyncer) callCount() int {
 }
 
 type fakeRenderer struct {
-	shell []byte
-	err   error
+	shell       []byte
+	viewModel   []byte
+	fingerprint string
+	err         error
 }
 
-func (f fakeRenderer) Render(context.Context, operational.Snapshot) ([]byte, error) {
-	return append([]byte(nil), f.shell...), f.err
+func (f fakeRenderer) Render(_ context.Context, snapshot operational.Snapshot) ([]byte, []byte, string, error) {
+	viewModel := f.viewModel
+	if viewModel == nil {
+		viewModel = []byte(fmt.Sprintf(`{"revision":%q}`, snapshot.Revision))
+	}
+	fingerprint := f.fingerprint
+	if fingerprint == "" {
+		fingerprint = sha256Digest(f.shell)
+	}
+	return append([]byte(nil), f.shell...), append([]byte(nil), viewModel...), fingerprint, f.err
 }
 
 type countingRenderer struct {
-	mu    sync.Mutex
-	shell []byte
-	err   error
-	calls int
+	mu          sync.Mutex
+	shell       []byte
+	viewModel   []byte
+	fingerprint string
+	err         error
+	calls       int
 }
 
-func (r *countingRenderer) Render(context.Context, operational.Snapshot) ([]byte, error) {
+func (r *countingRenderer) Render(_ context.Context, snapshot operational.Snapshot) ([]byte, []byte, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.calls++
-	return append([]byte(nil), r.shell...), r.err
+	viewModel := r.viewModel
+	if viewModel == nil {
+		viewModel = []byte(fmt.Sprintf(`{"revision":%q}`, snapshot.Revision))
+	}
+	fingerprint := r.fingerprint
+	if fingerprint == "" {
+		fingerprint = sha256Digest(r.shell)
+	}
+	return append([]byte(nil), r.shell...), append([]byte(nil), viewModel...), fingerprint, r.err
 }
 
 func (r *countingRenderer) callCount() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.calls
+}
+
+func (r *countingRenderer) set(shell, viewModel []byte, fingerprint string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.shell = append([]byte(nil), shell...)
+	r.viewModel = append([]byte(nil), viewModel...)
+	r.fingerprint = fingerprint
 }
 
 type fakeTicker struct{ channel chan time.Time }

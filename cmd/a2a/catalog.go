@@ -12,9 +12,12 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/html"
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
+	"github.com/ydnikolaev/a2ahub/internal/operational"
 	"github.com/ydnikolaev/a2ahub/internal/pendency"
 	"github.com/ydnikolaev/a2ahub/internal/skillcoverage"
+	"github.com/ydnikolaev/a2ahub/internal/workreport"
 )
 
 // catalog.go implements the hidden `a2a __catalog` verb (spec 13 §11
@@ -261,9 +264,16 @@ func catalogSurfaces() map[string][]string {
 // second gate registry.
 type catalogVocabulary struct {
 	fold.Vocabulary
-	Reason       []cache.ReasonCode      `json:"reason"`
-	RuleIdentity []pendency.RuleIdentity `json:"rule_identity"`
-	Gate         []string                `json:"gate"`
+	Reason              []cache.ReasonCode                `json:"reason"`
+	RuleIdentity        []pendency.RuleIdentity           `json:"rule_identity"`
+	Gate                []string                          `json:"gate"`
+	Freshness           []operational.Freshness           `json:"freshness"`
+	SourceFreshness     []operational.SourceFreshness     `json:"source_freshness"`
+	WorkMode            []workreport.Mode                 `json:"work_mode"`
+	DependencyDrift     []string                          `json:"dependency_drift"`
+	ConsistencySeverity []operational.ConsistencySeverity `json:"consistency_severity"`
+	OperationalState    []string                          `json:"operational_state"`
+	LiveTransport       []string                          `json:"live_transport"`
 }
 
 func buildCatalogVocabulary() catalogVocabulary {
@@ -279,10 +289,17 @@ func buildCatalogVocabulary() catalogVocabulary {
 	}
 	sort.Strings(gates)
 	return catalogVocabulary{
-		Vocabulary:   base,
-		Reason:       cache.ReasonCodes(),
-		RuleIdentity: pendency.RuleIdentities(),
-		Gate:         gates,
+		Vocabulary:          base,
+		Reason:              cache.ReasonCodes(),
+		RuleIdentity:        pendency.RuleIdentities(),
+		Gate:                gates,
+		Freshness:           operational.FreshnessValues(),
+		SourceFreshness:     operational.SourceFreshnessValues(),
+		WorkMode:            workreport.Modes(),
+		DependencyDrift:     cache.DependencyDrifts(),
+		ConsistencySeverity: operational.ConsistencySeverities(),
+		OperationalState:    cache.OperationalStates(),
+		LiveTransport:       html.LiveTransportStates(),
 	}
 }
 

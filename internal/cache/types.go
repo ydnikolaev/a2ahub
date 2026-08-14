@@ -10,6 +10,11 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
+// RuleIdentity is the cache-carried identity of the pendency row that produced
+// an Item verdict. The alias keeps consumers on cache's read-model boundary;
+// they do not need a direct import of the rule-owning pendency package.
+type RuleIdentity = pendency.RuleIdentity
+
 // DefaultStatuslineTTL is §7.5's default cache-age TTL (5 minutes) that
 // triggers a detached background refresh.
 const DefaultStatuslineTTL = 5 * time.Minute

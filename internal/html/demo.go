@@ -36,6 +36,7 @@ func DemoData() (Data, error) {
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return Data{}, fmt.Errorf("html: demo data: trailing content")
 	}
+	d.Vocabulary = DashboardVocabulary()
 	releases, err := notes.Load(releasenotes.FS)
 	if err != nil {
 		return Data{}, fmt.Errorf("html: demo release notes: %w", err)

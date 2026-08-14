@@ -3,6 +3,7 @@ package localserver
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"runtime"
@@ -77,7 +78,8 @@ func TestSSEImmediateRevisionChangeOnlyAndNoSnapshotBody(t *testing.T) {
 		server.Handler().ServeHTTP(writer, request)
 	}()
 	initial := awaitFlush(t, writer)
-	if !strings.Contains(initial, "event: revision\nid: "+testRevision("sha256:one")) || strings.Contains(initial, "timeline") {
+	initialID, initialPayload := parseLastRevisionEvent(t, initial)
+	if initialPayload.Revision != testRevision("sha256:one") || initialID != initialPayload.ViewModel || strings.Contains(initial, "timeline") {
 		t.Fatalf("initial SSE = %q", initial)
 	}
 	if err := server.publish(t.Context(), testSnapshot("sha256:one")); err != nil {
@@ -87,7 +89,8 @@ func TestSSEImmediateRevisionChangeOnlyAndNoSnapshotBody(t *testing.T) {
 		t.Fatalf("changed publish error = %v", err)
 	}
 	changed := awaitFlush(t, writer)
-	if strings.Count(changed, "event: revision") != 2 || !strings.Contains(changed, `data: {"revision":"`+testRevision("sha256:two")+`"}`) {
+	changedID, changedPayload := parseLastRevisionEvent(t, changed)
+	if strings.Count(changed, "event: revision") != 2 || changedPayload.Revision != testRevision("sha256:two") || changedID != changedPayload.ViewModel {
 		t.Fatalf("changed SSE = %q", changed)
 	}
 	cancel()
@@ -105,7 +108,7 @@ func TestSSEMatchingLastEventIDWaitsForNextRevision(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRequest() error = %v", err)
 	}
-	request.Header.Set("Last-Event-ID", testRevision("sha256:one"))
+	request.Header.Set("Last-Event-ID", server.store.dashboard().viewModelDigest)
 	writer := newStreamWriter()
 	done := make(chan struct{})
 	go func() {
@@ -124,7 +127,8 @@ func TestSSEMatchingLastEventIDWaitsForNextRevision(t *testing.T) {
 		t.Fatalf("publish error = %v", err)
 	}
 	flush := awaitFlush(t, writer)
-	if strings.Contains(flush, testRevision("sha256:one")) || !strings.Contains(flush, testRevision("sha256:two")) {
+	_, payload := parseLastRevisionEvent(t, flush)
+	if payload.Revision != testRevision("sha256:two") {
 		t.Fatalf("Last-Event-ID behavior = %q", flush)
 	}
 	cancel()
@@ -189,10 +193,10 @@ func TestBrokerReplacesBackpressuredRevisionAndClosesClients(t *testing.T) {
 	if _, _, err := broker.register(); !errors.Is(err, ErrClientLimit) {
 		t.Fatalf("excess register error = %v", err)
 	}
-	broker.publish("r1")
-	broker.publish("r2")
-	if got := <-revisions; got != "r2" {
-		t.Fatalf("backpressured token = %q", got)
+	broker.publish(dashboardVersion{revision: "r1", viewModelDigest: "d1"})
+	broker.publish(dashboardVersion{revision: "r2", viewModelDigest: "d2"})
+	if got := <-revisions; got != (dashboardVersion{revision: "r2", viewModelDigest: "d2"}) {
+		t.Fatalf("backpressured token = %#v", got)
 	}
 	broker.deregister(id)
 	if broker.count() != 0 {
@@ -207,6 +211,81 @@ func TestBrokerReplacesBackpressuredRevisionAndClosesClients(t *testing.T) {
 	if _, open := <-revisions; open {
 		t.Fatal("shutdown did not close stream")
 	}
+}
+
+func TestSSESameRevisionChangedDashboardDigestPublishesAndReplaysByDigest(t *testing.T) {
+	t.Parallel()
+	renderer := &countingRenderer{shell: []byte("first"), viewModel: []byte(`{"version":1}`), fingerprint: "content:first"}
+	server, err := New(DefaultConfig(), &fakeReader{}, nil, renderer, newFakeTickerFactory())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	snapshot := testSnapshot("same-revision")
+	if err := server.publish(t.Context(), snapshot); err != nil {
+		t.Fatalf("first publish: %v", err)
+	}
+	previousDigest := server.store.dashboard().viewModelDigest
+
+	ctx, cancel := context.WithCancel(t.Context())
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost/api/v1/events", nil)
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	request.Header.Set("Last-Event-ID", previousDigest)
+	writer := newStreamWriter()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		server.Handler().ServeHTTP(writer, request)
+	}()
+	for server.broker.count() == 0 {
+		select {
+		case <-t.Context().Done():
+			t.Fatal("SSE client did not register")
+		default:
+			runtime.Gosched()
+		}
+	}
+	renderer.set([]byte("second"), []byte(`{"version":2}`), "content:second")
+	if err := server.publish(t.Context(), snapshot); err != nil {
+		t.Fatalf("second publish: %v", err)
+	}
+	flush := awaitFlush(t, writer)
+	id, payload := parseLastRevisionEvent(t, flush)
+	if payload.Revision != snapshot.Revision || payload.ViewModel == previousDigest || id != payload.ViewModel {
+		t.Fatalf("same-revision dashboard invalidation = id %q payload %#v", id, payload)
+	}
+	cancel()
+	awaitDone(t, done)
+}
+
+type revisionEventPayload struct {
+	Revision  string `json:"revision"`
+	ViewModel string `json:"viewModel"`
+}
+
+func parseLastRevisionEvent(t *testing.T, stream string) (string, revisionEventPayload) {
+	t.Helper()
+	var id, data string
+	for _, line := range strings.Split(stream, "\n") {
+		if value, ok := strings.CutPrefix(line, "id: "); ok {
+			id = value
+		}
+		if value, ok := strings.CutPrefix(line, "data: "); ok {
+			data = value
+		}
+	}
+	if id == "" || data == "" {
+		t.Fatalf("SSE event missing id/data: %q", stream)
+	}
+	var payload revisionEventPayload
+	if err := json.Unmarshal([]byte(data), &payload); err != nil {
+		t.Fatalf("decode SSE payload: %v", err)
+	}
+	if payload.Revision == "" || payload.ViewModel == "" {
+		t.Fatalf("SSE payload missing fields: %#v", payload)
+	}
+	return id, payload
 }
 
 func TestSSEClientLimitReturns503(t *testing.T) {
@@ -235,9 +314,17 @@ func TestSSEClientLimitReturns503(t *testing.T) {
 
 func awaitFlush(t *testing.T, writer *streamWriter) string {
 	t.Helper()
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
 	select {
 	case value := <-writer.flushes:
 		return value
+	case <-timer.C:
+		writer.mu.Lock()
+		body := writer.body.String()
+		writer.mu.Unlock()
+		t.Fatalf("SSE did not flush within 5s; body=%q", body)
+		return ""
 	case <-t.Context().Done():
 		t.Fatal("SSE did not flush")
 		return ""

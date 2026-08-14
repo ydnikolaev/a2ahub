@@ -124,3 +124,114 @@ changes:
     action:
       scope: none
       why: "No action. These are additive read-model and catalogue contracts; existing command output remains compatible."
+
+  - id: RN-02300-4
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: >
+        The local dashboard was one monolithic source file, so independent
+        view work could not be reviewed or delivered without overlapping the
+        whole screen. The extraction is intentionally behavior-preserving but
+        materially changes the product's implementation boundary.
+    impact: normal
+    subject: "dashboard views now have independent component and lifecycle boundaries"
+    detail: >
+      The local dashboard now composes one shell, nine view components, one
+      root modal engine and one live-transport component. The root keeps
+      normalized data, shared UI state, hydration and navigation; each view
+      owns its own presentation mapping. Component discovery and the public
+      Guide projection derive from the root import graph instead of a second
+      registry.
+
+      Rendered behavior is unchanged: the generated embedded template matches
+      the reviewed sources, the public site builds, and the existing browser
+      contract passes across desktop/mobile, light/dark and Russian/English.
+    affects: [dashboard]
+    action:
+      scope: none
+      why: "No action. Regenerate the dashboard with the current binary; routes, data and visible behavior remain compatible."
+
+  - id: RN-02300-5
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: >
+        The served dashboard previously had no exact JSON twin and its live
+        invalidation identity covered only the operational revision. A
+        non-operational dashboard change could therefore be missed or require a
+        second encoding path.
+    impact: normal
+    subject: "served dashboards expose one exact digest-coherent JSON view"
+    detail: >
+      The loopback server now serves the exact compact JSON bytes embedded in
+      the dashboard shell at /api/v1/dashboard. Conditional requests, SSE
+      invalidations and retained generations share the exact view-model digest,
+      while the semantic generation key also observes non-operational content.
+      Root, snapshot and dashboard responses share one bounded writer pool and
+      retain the last good generation when rendering or size validation fails.
+
+      The separate `a2a html --json` command remains byte-compatible: its
+      existing two-space-indented output and trailing newline are unchanged.
+    affects: [dashboard, serve]
+    action:
+      scope: none
+      why: "No action. Existing dashboard URLs and CLI JSON output remain compatible; live clients may adopt the additive dashboard route."
+
+  - id: RN-02300-6
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: >
+        The dashboard already computed more domain truth than its JSON model
+        admitted, and its repeated collections had no honest cardinality
+        contract. P7 is the additive transport contract the rebuilt views use.
+    impact: normal
+    subject: "dashboard payloads carry one bounded copy of every domain answer"
+    detail: >
+      Dashboard assembly now reads one folded snapshot and one dependency
+      projection, maps each active item once, and reuses those objects for
+      attention sets, thread open items and detail admission. Rule identity,
+      the server-composed reason sentence, operational readiness, source
+      synchronization, dependency degradations and document byte facts no
+      longer fall through mapper gaps.
+
+      Every repeated root and nested collection now carries shown, total and
+      truncated facts from the same stable prefix that produced it. Need-you
+      objects win scarce detail slots, and the largest saturated fixture stays
+      below the existing 2 MiB DATA and 4 MiB shell ceilings. The later view
+      phases consume these additive fields; this entry does not claim those
+      screen rewrites are already complete.
+    affects: [dashboard, "a2a html --json", serve]
+    action:
+      scope: none
+      why: "No action. Existing JSON fields keep their values; consumers may ignore the additive facts and windows until they adopt the rebuilt views."
+
+  - id: RN-02300-7
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: >
+        Eleven status families were interpreted by scattered browser tables or
+        had no complete human wording at all. The payload now carries one
+        authoritative bilingual presentation dictionary before the view
+        families migrate to it.
+    impact: normal
+    subject: "dashboard status words now come from one complete RU/EN vocabulary"
+    detail: >
+      The binary catalogue preserves its established fields and adds
+      owner-derived freshness, reason, rule, work-mode, dependency,
+      consistency, operational and live-transport sets. One 71-entry dashboard
+      dictionary covers the exact eleven-family universe, with complete RU and
+      EN labels and explanations, six closed tones, six non-colour cues and a
+      separate fallback that never echoes unknown input.
+
+      The browser has one resolver and one calm-policy seam. Calm treatment
+      changes only chroma while words and cues remain intact; policy never
+      travels in the payload. Existing per-view lookup tables are removed by
+      their P9-P14 owners, and P16 freezes the final monopoly rather than this
+      foundation claiming that migration early.
+    affects: [dashboard]
+    action:
+      scope: none
+      why: "No action. The table and catalogue keys are additive; regenerated dashboards carry the vocabulary automatically."

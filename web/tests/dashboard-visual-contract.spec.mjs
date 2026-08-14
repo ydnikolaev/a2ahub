@@ -144,6 +144,14 @@ test('dashboard card titles keep the deliberate detail > normal > teaser hierarc
   expect(mediumPx).toBeGreaterThan(smallPx);
 });
 
+test('desktop navigation measures its available width before folding views', async ({ page }) => {
+  await openDashboard(page, { theme: 'light', locale: 'en', viewport: DESKTOP });
+
+  await expect(page.getByRole('button', { name: 'Threads', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Exchange', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Guide', exact: true })).toBeVisible();
+});
+
 test('type and status badges share one small-badge geometry contract', async ({ page }) => {
   await openDashboard(page, { theme: 'dark', locale: 'ru', viewport: DESKTOP });
 
@@ -168,6 +176,51 @@ test('type and status badges share one small-badge geometry contract', async ({ 
   });
 
   expect(await geometry(typeBadge)).toEqual(await geometry(statusBadge));
+});
+
+test('neutral vocabulary treatment keeps six distinct non-colour cues and all words', async ({ page }) => {
+  await openDashboard(page, { theme: 'light', locale: 'en', viewport: DESKTOP });
+
+  const report = await page.evaluate(() => {
+    const resolver = globalThis.A2A_VOCABULARY_RESOLVER;
+    const data = window.A2A_DEMO;
+    if (!resolver || typeof resolver.lookup !== 'function') throw new Error('vocabulary resolver is unavailable');
+    const byTone = new Map();
+    for (const entry of data?.vocabulary?.entries || []) {
+      if (!byTone.has(entry.tone)) byTone.set(entry.tone, entry);
+    }
+    const host = document.createElement('div');
+    host.setAttribute('data-vocabulary-calm-proof', 'true');
+    const unchanged = [];
+    for (const entry of byTone.values()) {
+      const emphatic = resolver.lookup(data, entry.family, entry.value, 'en');
+      const neutral = resolver.lookup(data, entry.family, entry.value, 'en', { ALL:'neutral' });
+      const rendered = document.createElement('span');
+      rendered.className = neutral.toneClass;
+      rendered.setAttribute('data-vocabulary-cue', neutral.cueAttribute);
+      rendered.textContent = neutral.cue + ' ' + neutral.label;
+      host.append(rendered);
+      unchanged.push(
+        neutral.label === emphatic.label &&
+        neutral.explanation === emphatic.explanation &&
+        neutral.cue === emphatic.cue &&
+        neutral.cueAttribute === emphatic.cueAttribute
+      );
+    }
+    document.body.append(host);
+    const rendered = [...host.children];
+    return {
+      tones: byTone.size,
+      classes: rendered.map(element => element.className),
+      cues: rendered.map(element => element.getAttribute('data-vocabulary-cue')),
+      unchanged,
+    };
+  });
+
+  expect(report.tones).toBe(6);
+  expect(new Set(report.classes)).toEqual(new Set(['tone-neutral']));
+  expect(new Set(report.cues).size).toBe(6);
+  expect(report.unchanged).toEqual(Array(6).fill(true));
 });
 
 for (const theme of ['light', 'dark']) {

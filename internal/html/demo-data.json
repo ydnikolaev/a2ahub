@@ -10,6 +10,728 @@
       "unavailable"
     ]
   },
+  "vocabulary": {
+    "entries": [
+      {
+        "value": "local-current",
+        "family": "freshness",
+        "labelRU": "наблюдается локально",
+        "labelEN": "observed locally",
+        "explanationRU": "Есть действующая локальная запись о работе, которая ещё не опубликована в общий репозиторий.",
+        "explanationEN": "A valid local work record exists and has not yet been published to the shared repository.",
+        "tone": "progressing",
+        "cue": "→"
+      },
+      {
+        "value": "committed-current",
+        "family": "freshness",
+        "labelRU": "зафиксировано в Git",
+        "labelEN": "committed in Git",
+        "explanationRU": "Последний отчёт о работе сохранён в общей истории и ещё актуален.",
+        "explanationEN": "The latest work report is stored in shared history and is still current.",
+        "tone": "progressing",
+        "cue": "→"
+      },
+      {
+        "value": "stale",
+        "family": "freshness",
+        "labelRU": "отчёт устарел",
+        "labelEN": "report expired",
+        "explanationRU": "Срок актуальности последнего отчёта истёк, поэтому текущую работу нужно перепроверить.",
+        "explanationEN": "The latest report has expired, so the current work needs to be checked again.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "finished",
+        "family": "freshness",
+        "labelRU": "автор сообщил о завершении",
+        "labelEN": "reported finished",
+        "explanationRU": "Автор отметил работу завершённой; продолжение по этому отчёту не ожидается.",
+        "explanationEN": "The author marked the work complete; no continuation is expected from this report.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "pending-recovery",
+        "family": "freshness",
+        "labelRU": "публикация требует восстановления",
+        "labelEN": "publication needs recovery",
+        "explanationRU": "Локальная работа закрывается, но её публикация не завершена и требует восстановления.",
+        "explanationEN": "Local work is closing, but its publication is incomplete and needs recovery.",
+        "tone": "needs-you",
+        "cue": "!"
+      },
+      {
+        "value": "unknown",
+        "family": "freshness",
+        "labelRU": "актуальность неизвестна",
+        "labelEN": "freshness unknown",
+        "explanationRU": "Данных недостаточно, чтобы определить, действует ли последний отчёт о работе.",
+        "explanationEN": "There is not enough evidence to tell whether the latest work report is current.",
+        "tone": "unknown",
+        "cue": "?"
+      },
+      {
+        "value": "current",
+        "family": "source-freshness",
+        "labelRU": "Источник актуален",
+        "labelEN": "Source is current",
+        "explanationRU": "Локальная копия источника успешно обновлена и соответствует последнему наблюдению.",
+        "explanationEN": "The local source copy refreshed successfully and matches the latest observation.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "stale",
+        "family": "source-freshness",
+        "labelRU": "Источник устарел",
+        "labelEN": "Source is stale",
+        "explanationRU": "Источник прочитан из старой копии, поэтому его данные могут отставать.",
+        "explanationEN": "The source was read from an old copy, so its data may lag behind.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "unavailable",
+        "family": "source-freshness",
+        "labelRU": "Источник недоступен",
+        "labelEN": "Source unavailable",
+        "explanationRU": "Источник не удалось прочитать; его факты не входят в текущую картину.",
+        "explanationEN": "The source could not be read, so its facts are absent from the current picture.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "degraded",
+        "family": "source-freshness",
+        "labelRU": "Источник прочитан не полностью",
+        "labelEN": "Source degraded",
+        "explanationRU": "Обновление завершилось с явной проблемой, поэтому часть фактов может быть неполной.",
+        "explanationEN": "The refresh completed with an explicit problem, so some facts may be incomplete.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "open",
+        "family": "outcome",
+        "labelRU": "Ещё открыт",
+        "labelEN": "Still open",
+        "explanationRU": "Обмен продолжается, и следующий допустимый шаг ещё ожидается.",
+        "explanationEN": "The exchange is ongoing and another permitted step is still expected.",
+        "tone": "progressing",
+        "cue": "→"
+      },
+      {
+        "value": "refused",
+        "family": "outcome",
+        "labelRU": "Получен отказ",
+        "labelEN": "Refused",
+        "explanationRU": "Запрошенный результат отклонён и не считается выполненным.",
+        "explanationEN": "The requested result was declined and is not considered fulfilled.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "settled",
+        "family": "outcome",
+        "labelRU": "Вопрос закрыт",
+        "labelEN": "Resolved",
+        "explanationRU": "Обязательство завершено успешно, дальнейший шаг не ожидается.",
+        "explanationEN": "The obligation concluded successfully and no further step is expected.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "superseded",
+        "family": "outcome",
+        "labelRU": "Заменён новым",
+        "labelEN": "Replaced",
+        "explanationRU": "Этот документ больше не действует, потому что его заменил другой.",
+        "explanationEN": "This document no longer governs because another one replaced it.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "withdrawn",
+        "family": "outcome",
+        "labelRU": "Отозван автором",
+        "labelEN": "Withdrawn by author",
+        "explanationRU": "Автор прекратил этот обмен до завершения запрошенного результата.",
+        "explanationEN": "The author ended this exchange before the requested result was completed.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "accepted",
+        "family": "lifecycle-state",
+        "labelRU": "Принято к работе",
+        "labelEN": "Accepted for work",
+        "explanationRU": "Получатель принял передачу или запрос и может продолжать выполнение.",
+        "explanationEN": "The recipient accepted the handoff or request and can continue the work.",
+        "tone": "progressing",
+        "cue": "→"
+      },
+      {
+        "value": "acknowledged",
+        "family": "lifecycle-state",
+        "labelRU": "Получение подтверждено",
+        "labelEN": "Receipt acknowledged",
+        "explanationRU": "Адресат подтвердил, что увидел документ; само обязательство может оставаться открытым.",
+        "explanationEN": "The recipient confirmed seeing the document; the obligation may still remain open.",
+        "tone": "progressing",
+        "cue": "→"
+      },
+      {
+        "value": "approved",
+        "family": "lifecycle-state",
+        "labelRU": "Согласовано человеком",
+        "labelEN": "Human approved",
+        "explanationRU": "Решение прошло обязательное согласование и считается принятым.",
+        "explanationEN": "The decision passed its required human approval and is accepted.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "blocked",
+        "family": "lifecycle-state",
+        "labelRU": "Работа заблокирована",
+        "labelEN": "Work blocked",
+        "explanationRU": "Продолжение невозможно, пока не будет снята указанная блокировка.",
+        "explanationEN": "Progress cannot continue until the recorded blocker is removed.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "cancelled",
+        "family": "lifecycle-state",
+        "labelRU": "Отменено",
+        "labelEN": "Cancelled",
+        "explanationRU": "Работа остановлена до завершения и больше не ожидает продолжения.",
+        "explanationEN": "The work stopped before completion and no longer awaits continuation.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "closed",
+        "family": "lifecycle-state",
+        "labelRU": "Закрыто",
+        "labelEN": "Closed out",
+        "explanationRU": "Цепочка завершена и не ожидает следующего перехода.",
+        "explanationEN": "The thread is complete and no next transition is expected.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "declined",
+        "family": "lifecycle-state",
+        "labelRU": "Отклонено получателем",
+        "labelEN": "Declined by recipient",
+        "explanationRU": "Получатель отказался принять запрос или передачу, поэтому ожидаемый результат не достигнут.",
+        "explanationEN": "The recipient declined the request or handoff, so the expected result was not achieved.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "deprecated",
+        "family": "lifecycle-state",
+        "labelRU": "Устаревает",
+        "labelEN": "Being phased out",
+        "explanationRU": "Версия ещё существует, но для новой работы следует выбрать её преемника.",
+        "explanationEN": "The version still exists, but new work should use its successor.",
+        "tone": "needs-you",
+        "cue": "!"
+      },
+      {
+        "value": "disputed",
+        "family": "lifecycle-state",
+        "labelRU": "Оспорено",
+        "labelEN": "Under dispute",
+        "explanationRU": "Участник не согласен с результатом; разногласие нужно разрешить явно.",
+        "explanationEN": "A participant contests the result; the disagreement must be resolved explicitly.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "draft",
+        "family": "lifecycle-state",
+        "labelRU": "Черновик",
+        "labelEN": "Working draft",
+        "explanationRU": "Документ готовится и ещё не опубликован как действующее утверждение.",
+        "explanationEN": "The document is being prepared and is not yet published as an active statement.",
+        "tone": "progressing",
+        "cue": "→"
+      },
+      {
+        "value": "in_progress",
+        "family": "lifecycle-state",
+        "labelRU": "Выполняется",
+        "labelEN": "In progress now",
+        "explanationRU": "Запрос принят, и работа над результатом продолжается.",
+        "explanationEN": "The request was accepted and work on the result is continuing.",
+        "tone": "progressing",
+        "cue": "→"
+      },
+      {
+        "value": "proposed",
+        "family": "lifecycle-state",
+        "labelRU": "Предложено",
+        "labelEN": "Proposed for review",
+        "explanationRU": "Предложение опубликовано и ждёт решения адресата.",
+        "explanationEN": "The proposal is published and awaits the recipient's decision.",
+        "tone": "waiting-them",
+        "cue": "↗"
+      },
+      {
+        "value": "published",
+        "family": "lifecycle-state",
+        "labelRU": "Опубликовано",
+        "labelEN": "Published for use",
+        "explanationRU": "Документ доступен участникам как действующая версия.",
+        "explanationEN": "The document is available to participants as an active version.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "rejected",
+        "family": "lifecycle-state",
+        "labelRU": "Не согласовано",
+        "labelEN": "Approval rejected",
+        "explanationRU": "Обязательное согласование завершилось отказом, поэтому решение не принято.",
+        "explanationEN": "The required approval ended in rejection, so the decision is not accepted.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "responded",
+        "family": "lifecycle-state",
+        "labelRU": "Ответ дан",
+        "labelEN": "Response recorded",
+        "explanationRU": "Ответ опубликован; исходный запрос может ждать проверки или закрытия.",
+        "explanationEN": "A response is published; the original request may still await verification or closure.",
+        "tone": "progressing",
+        "cue": "→"
+      },
+      {
+        "value": "retired",
+        "family": "lifecycle-state",
+        "labelRU": "Выведено из использования",
+        "labelEN": "Retired from use",
+        "explanationRU": "Версия окончательно закрыта для использования и должна быть заменена поддерживаемой.",
+        "explanationEN": "The version is permanently closed for use and must be replaced by a supported one.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "satisfied",
+        "family": "lifecycle-state",
+        "labelRU": "Требование выполнено",
+        "labelEN": "Requirement met",
+        "explanationRU": "Участники подтвердили, что требуемое условие выполнено.",
+        "explanationEN": "The participants confirmed that the required condition has been met.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "submitted",
+        "family": "lifecycle-state",
+        "labelRU": "Передано на рассмотрение",
+        "labelEN": "Submitted for review",
+        "explanationRU": "Документ передан адресату и ждёт его следующего шага.",
+        "explanationEN": "The document was sent to its recipient and awaits their next step.",
+        "tone": "waiting-them",
+        "cue": "↗"
+      },
+      {
+        "value": "superseded",
+        "family": "lifecycle-state",
+        "labelRU": "Заменено следующим",
+        "labelEN": "Superseded by another",
+        "explanationRU": "Этот документ сохранён в истории, но его роль теперь выполняет более новый.",
+        "explanationEN": "This document remains in history, but a newer one now serves its role.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "verified",
+        "family": "lifecycle-state",
+        "labelRU": "Результат проверен",
+        "labelEN": "Result verified",
+        "explanationRU": "Получатель проверил результат и подтвердил его соответствие запросу.",
+        "explanationEN": "The recipient checked the result and confirmed that it satisfies the request.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "withdrawn",
+        "family": "lifecycle-state",
+        "labelRU": "Снято автором",
+        "labelEN": "Taken back by author",
+        "explanationRU": "Автор отозвал документ, поэтому дальнейшая работа по нему не ожидается.",
+        "explanationEN": "The author withdrew the document, so no further work on it is expected.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "addressed-no-ack",
+        "family": "reason",
+        "labelRU": "Нужно подтвердить получение",
+        "labelEN": "Acknowledge receipt",
+        "explanationRU": "Документ адресован вам, но подтверждение получения ещё не записано.",
+        "explanationEN": "A document is addressed to you, but your acknowledgement has not been recorded.",
+        "tone": "needs-you",
+        "cue": "!"
+      },
+      {
+        "value": "responded-awaiting-verify-close",
+        "family": "reason",
+        "labelRU": "Проверьте ответ",
+        "labelEN": "Verify the response",
+        "explanationRU": "На ваш запрос ответили; теперь результат нужно проверить или закрыть цепочку.",
+        "explanationEN": "Your request has a response; verify the result or close the thread.",
+        "tone": "needs-you",
+        "cue": "!"
+      },
+      {
+        "value": "disputed-toward-me",
+        "family": "reason",
+        "labelRU": "Ответьте на спор",
+        "labelEN": "Resolve the dispute",
+        "explanationRU": "Результат оспорен в вашу сторону и ждёт вашего решения.",
+        "explanationEN": "The result is disputed toward you and awaits your decision.",
+        "tone": "needs-you",
+        "cue": "!"
+      },
+      {
+        "value": "p1-or-blocking-open",
+        "family": "reason",
+        "labelRU": "Критичное дело открыто",
+        "labelEN": "Critical item open",
+        "explanationRU": "Открытый документ помечен как срочный или буквально блокирует продолжение.",
+        "explanationEN": "An open document is urgent or is literally blocking progress.",
+        "tone": "needs-you",
+        "cue": "!"
+      },
+      {
+        "value": "gate-pending-on-me",
+        "family": "reason",
+        "labelRU": "Нужно ваше согласование",
+        "labelEN": "Your approval is needed",
+        "explanationRU": "Следующий переход требует подтверждённого действия человека и назначен вам.",
+        "explanationEN": "The next transition requires authenticated human action assigned to you.",
+        "tone": "needs-you",
+        "cue": "!"
+      },
+      {
+        "value": "activation-owed",
+        "family": "reason",
+        "labelRU": "Активируйте обязательство",
+        "labelEN": "Activate the obligation",
+        "explanationRU": "После принятия документа требуется явно начать обещанную работу.",
+        "explanationEN": "After accepting the document, the promised work must be started explicitly.",
+        "tone": "needs-you",
+        "cue": "!"
+      },
+      {
+        "value": "state-changed-since-cursor",
+        "family": "reason",
+        "labelRU": "Появилось новое состояние",
+        "labelEN": "State changed since last read",
+        "explanationRU": "После вашей последней отметки в цепочке произошло значимое изменение.",
+        "explanationEN": "A meaningful change occurred in the thread after your last recorded position.",
+        "tone": "needs-you",
+        "cue": "!"
+      },
+      {
+        "value": "declined",
+        "family": "reason",
+        "labelRU": "Получатель отказал",
+        "labelEN": "Recipient declined",
+        "explanationRU": "Адресат отказался принять документ, поэтому результат нужно пересмотреть.",
+        "explanationEN": "The recipient declined the document, so the intended result needs reconsideration.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "disputed",
+        "family": "reason",
+        "labelRU": "Результат оспорен",
+        "labelEN": "Result disputed",
+        "explanationRU": "Участник заявил о разногласии, которое ещё не разрешено.",
+        "explanationEN": "A participant recorded a disagreement that remains unresolved.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "stale-sla",
+        "family": "reason",
+        "labelRU": "Срок реакции истёк",
+        "labelEN": "Response window expired",
+        "explanationRU": "Ожидаемая реакция не появилась в установленное окно времени.",
+        "explanationEN": "The expected response did not arrive within its defined time window.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "needed-by-passed",
+        "family": "reason",
+        "labelRU": "Нужный срок прошёл",
+        "labelEN": "Needed-by date passed",
+        "explanationRU": "Указанная дата потребности уже прошла, а работа не завершена.",
+        "explanationEN": "The recorded needed-by date has passed while the work remains unfinished.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "overdue-on-me",
+        "family": "reason",
+        "labelRU": "Просрочено на вас",
+        "labelEN": "Overdue on your side",
+        "explanationRU": "Следующий шаг назначен вам и уже вышел за ожидаемый срок.",
+        "explanationEN": "The next move belongs to you and is past its expected time.",
+        "tone": "needs-you",
+        "cue": "!"
+      },
+      {
+        "value": "G3",
+        "family": "gate",
+        "labelRU": "Подтверждение владельца",
+        "labelEN": "Owner approval gate",
+        "explanationRU": "Согласовать или отклонить решение может только подтверждённый человек из списка владельцев.",
+        "explanationEN": "Only an authenticated human in the owner list may approve or reject the decision.",
+        "tone": "needs-you",
+        "cue": "!"
+      },
+      {
+        "value": "planning",
+        "family": "work-mode",
+        "labelRU": "Планирует работу",
+        "labelEN": "Planning the work",
+        "explanationRU": "Исполнитель уточняет подход и последовательность действий.",
+        "explanationEN": "The worker is defining the approach and sequence of actions.",
+        "tone": "progressing",
+        "cue": "→"
+      },
+      {
+        "value": "implementing",
+        "family": "work-mode",
+        "labelRU": "Реализует",
+        "labelEN": "Implementing now",
+        "explanationRU": "Исполнитель вносит изменения, которые должны дать запрошенный результат.",
+        "explanationEN": "The worker is making the changes needed for the requested result.",
+        "tone": "progressing",
+        "cue": "→"
+      },
+      {
+        "value": "testing",
+        "family": "work-mode",
+        "labelRU": "Проверяет результат",
+        "labelEN": "Testing the result",
+        "explanationRU": "Исполнитель проверяет, что изменения работают и не нарушают договорённости.",
+        "explanationEN": "The worker is checking that the changes work and preserve the contract.",
+        "tone": "progressing",
+        "cue": "→"
+      },
+      {
+        "value": "reviewing",
+        "family": "work-mode",
+        "labelRU": "Проводит ревью",
+        "labelEN": "Reviewing changes",
+        "explanationRU": "Исполнитель оценивает готовый результат перед завершением или передачей.",
+        "explanationEN": "The worker is evaluating the completed result before closure or handoff.",
+        "tone": "progressing",
+        "cue": "→"
+      },
+      {
+        "value": "waiting",
+        "family": "work-mode",
+        "labelRU": "Ждёт внешнего шага",
+        "labelEN": "Waiting on another party",
+        "explanationRU": "Работа не продолжается, пока другой участник или система не сделает следующий шаг.",
+        "explanationEN": "Work cannot continue until another participant or system takes the next step.",
+        "tone": "waiting-them",
+        "cue": "↗"
+      },
+      {
+        "value": "paused",
+        "family": "work-mode",
+        "labelRU": "Поставил на паузу",
+        "labelEN": "Work paused",
+        "explanationRU": "Исполнитель временно остановил работу и не сообщает о текущем продвижении.",
+        "explanationEN": "The worker temporarily stopped and is not reporting active progress.",
+        "tone": "waiting-them",
+        "cue": "↗"
+      },
+      {
+        "value": "finished",
+        "family": "work-mode",
+        "labelRU": "Завершил работу",
+        "labelEN": "Work completed",
+        "explanationRU": "Исполнитель сообщил, что его часть работы закончена.",
+        "explanationEN": "The worker reported that their part of the work is complete.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "current",
+        "family": "dependency-drift",
+        "labelRU": "Версия совпадает",
+        "labelEN": "Version aligned",
+        "explanationRU": "Потребитель закреплён на доступной актуальной линии контракта.",
+        "explanationEN": "The consumer is pinned to an available current contract line.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "behind",
+        "family": "dependency-drift",
+        "labelRU": "Потребитель отстаёт",
+        "labelEN": "Consumer is behind",
+        "explanationRU": "У поставщика есть более новая основная линия, чем закреплена у потребителя.",
+        "explanationEN": "The provider has a newer major line than the consumer has pinned.",
+        "tone": "needs-you",
+        "cue": "!"
+      },
+      {
+        "value": "deprecated",
+        "family": "dependency-drift",
+        "labelRU": "Линия устаревает",
+        "labelEN": "Line is deprecated",
+        "explanationRU": "Закреплённая линия ещё доступна, но поставщик готовит её к выводу.",
+        "explanationEN": "The pinned line remains available, but the provider is phasing it out.",
+        "tone": "needs-you",
+        "cue": "!"
+      },
+      {
+        "value": "retired",
+        "family": "dependency-drift",
+        "labelRU": "Линия уже выведена",
+        "labelEN": "Line already retired",
+        "explanationRU": "Потребитель закреплён на линии, которую поставщик больше не поддерживает.",
+        "explanationEN": "The consumer is pinned to a line the provider no longer supports.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "missing",
+        "family": "dependency-drift",
+        "labelRU": "Закреплённая версия не найдена",
+        "labelEN": "Pinned version missing",
+        "explanationRU": "В доступном реестре нет версии, которую указал потребитель.",
+        "explanationEN": "The available registry does not contain the version requested by the consumer.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "dangling",
+        "family": "dependency-drift",
+        "labelRU": "Поставщик не найден",
+        "labelEN": "Provider not found",
+        "explanationRU": "Зависимость указывает на контракт, которого нет среди прочитанных поставщиков.",
+        "explanationEN": "The dependency points to a contract absent from the readable providers.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "warning",
+        "family": "consistency-severity",
+        "labelRU": "Нужно сверить источники",
+        "labelEN": "Sources need review",
+        "explanationRU": "Несколько источников описывают одну работу несовместимым образом; факт показан, но требует проверки.",
+        "explanationEN": "Multiple sources describe the same work incompatibly; the fact is shown but needs review.",
+        "tone": "needs-you",
+        "cue": "!"
+      },
+      {
+        "value": "ready",
+        "family": "operational-state",
+        "labelRU": "Готово к использованию",
+        "labelEN": "Ready for use",
+        "explanationRU": "Заявленная операционная возможность присутствует и доступна.",
+        "explanationEN": "The declared operational capability is present and available.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "absent",
+        "family": "operational-state",
+        "labelRU": "Заявлено как отсутствующее",
+        "labelEN": "Declared absent",
+        "explanationRU": "Производитель явно сообщил, что этой операционной возможности сейчас нет.",
+        "explanationEN": "The producer explicitly reported that this operational capability is unavailable.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "undeclared",
+        "family": "operational-state",
+        "labelRU": "Не заявлено",
+        "labelEN": "Not declared",
+        "explanationRU": "Документ ничего не говорит об этой возможности, поэтому её состояние нельзя предполагать.",
+        "explanationEN": "The document says nothing about this capability, so its state cannot be inferred.",
+        "tone": "unknown",
+        "cue": "?"
+      },
+      {
+        "value": "updated",
+        "family": "live-transport",
+        "labelRU": "Показана новая версия",
+        "labelEN": "New version applied",
+        "explanationRU": "Клиент успешно принял свежий снимок и уже показывает его.",
+        "explanationEN": "The client accepted a fresh snapshot and is displaying it now.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "newer-available",
+        "family": "live-transport",
+        "labelRU": "Доступны новые данные",
+        "labelEN": "Newer data available",
+        "explanationRU": "Сервер сообщил о более новой ревизии; вы сами решаете, когда заменить текущий снимок.",
+        "explanationEN": "The server announced a newer revision; you choose when to replace the current snapshot.",
+        "tone": "needs-you",
+        "cue": "!"
+      },
+      {
+        "value": "refreshing",
+        "family": "live-transport",
+        "labelRU": "Обновляется",
+        "labelEN": "Refresh in progress",
+        "explanationRU": "Клиент запрашивает выбранную новую ревизию и пока сохраняет текущий экран.",
+        "explanationEN": "The client is requesting the selected newer revision while keeping the current screen.",
+        "tone": "progressing",
+        "cue": "→"
+      },
+      {
+        "value": "stale",
+        "family": "live-transport",
+        "labelRU": "Связь устарела",
+        "labelEN": "Connection is stale",
+        "explanationRU": "Последнее живое обновление не удалось; показанный снимок остаётся последним успешно принятым.",
+        "explanationEN": "The latest live refresh failed; the displayed snapshot remains the last successfully accepted one.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "unavailable",
+        "family": "live-transport",
+        "labelRU": "Живое обновление недоступно",
+        "labelEN": "Live updates unavailable",
+        "explanationRU": "Клиент не может получить обновления и продолжает показывать последний принятый снимок.",
+        "explanationEN": "The client cannot receive updates and continues to show the last accepted snapshot.",
+        "tone": "broken",
+        "cue": "×"
+      }
+    ],
+    "unknown": {
+      "labelRU": "Неизвестное значение",
+      "labelEN": "Unknown value",
+      "explanationRU": "Система не знает, что означает это значение, и не подменяет его догадкой.",
+      "explanationEN": "The system does not know what this value means and will not replace it with a guess.",
+      "tone": "unknown",
+      "cue": "?"
+    }
+  },
   "generatedAt": "2026-07-30T17:05:00Z",
   "self": "atlas",
   "tooling": {
@@ -29,6 +751,7 @@
     {
       "id": "checkout-core",
       "repoURL": "https://example.invalid/northstar/checkout-core-space",
+      "synced": false,
       "syncAge": "2m",
       "stale": false,
       "revision": "7f3a4c82b91d0e68f457c1a6d31fb2ea8e44c901",
@@ -42,6 +765,7 @@
     {
       "id": "customer-ops",
       "repoURL": "https://example.invalid/northstar/customer-ops-space",
+      "synced": false,
       "syncAge": "4h",
       "stale": true,
       "revision": "f0c7d9416a8e3bc02443a1bfb55472d8b9fa61e2",
@@ -55,6 +779,7 @@
     {
       "id": "archive-migration",
       "repoURL": "https://example.invalid/northstar/archive-migration-space",
+      "synced": false,
       "syncAge": "",
       "stale": false,
       "participantCount": 0,
@@ -489,6 +1214,18 @@
           "kind": "ref"
         }
       ],
+      "windows": {
+        "members": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "links": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        }
+      },
       "settled": false
     },
     {
@@ -556,6 +1293,18 @@
           "kind": "parent"
         }
       ],
+      "windows": {
+        "members": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "links": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        }
+      },
       "settled": false
     },
     {
@@ -637,6 +1386,18 @@
           "kind": "ref"
         }
       ],
+      "windows": {
+        "members": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "links": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        }
+      },
       "settled": false
     },
     {
@@ -686,6 +1447,18 @@
           "kind": "ref"
         }
       ],
+      "windows": {
+        "members": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "links": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        }
+      },
       "settled": false
     },
     {
@@ -718,6 +1491,18 @@
         }
       ],
       "links": [],
+      "windows": {
+        "members": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "links": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        }
+      },
       "settled": true
     }
   ],
@@ -1253,7 +2038,10 @@
                 "digest": "15a00000000000000000000000000000000000000000000000000000000000a1",
                 "sizeBytes": 428,
                 "preview": "{\n  \"$schema\": \"http://json-schema.org/draft-07/schema#\",\n  \"title\": \"LegacyOrderEnvelope\",\n  \"required\": [\"order_id\", \"confirmed_at\"]\n}",
-                "previewLanguage": "json"
+                "previewLanguage": "json",
+                "shownBytes": 0,
+                "totalBytes": 0,
+                "truncated": false
               },
               {
                 "path": "contracts/XC-atlas-order-envelope/1.5.0/retirement-guide.md",
@@ -1263,7 +2051,10 @@
                 "digest": "15b00000000000000000000000000000000000000000000000000000000000b2",
                 "sizeBytes": 311,
                 "preview": "# Leaving 1.5\n\nMap `order_id` to `order.id` and stop reading `provider_note`. Replay remains available for audit only.",
-                "previewLanguage": "markdown"
+                "previewLanguage": "markdown",
+                "shownBytes": 0,
+                "totalBytes": 0,
+                "truncated": false
               }
             ],
             "history": [
@@ -1326,7 +2117,10 @@
                 "digest": "20a00000000000000000000000000000000000000000000000000000000000a1",
                 "sizeBytes": 612,
                 "preview": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"OrderEnvelope\",\n  \"required\": [\"order\", \"producer\"]\n}",
-                "previewLanguage": "json"
+                "previewLanguage": "json",
+                "shownBytes": 0,
+                "totalBytes": 0,
+                "truncated": false
               },
               {
                 "path": "contracts/XC-atlas-order-envelope/2.0.0/channel.yaml",
@@ -1336,7 +2130,10 @@
                 "digest": "20b00000000000000000000000000000000000000000000000000000000000b2",
                 "sizeBytes": 226,
                 "preview": "channel: orders.confirmed.v2\ndelivery: at-least-once\nkey: order.id\ncontentType: application/json\n",
-                "previewLanguage": "yaml"
+                "previewLanguage": "yaml",
+                "shownBytes": 0,
+                "totalBytes": 0,
+                "truncated": false
               }
             ],
             "history": [
@@ -1386,7 +2183,10 @@
                 "digest": "21a00000000000000000000000000000000000000000000000000000000000a1",
                 "sizeBytes": 744,
                 "preview": "{\n  \"title\": \"OrderEnvelope\",\n  \"properties\": {\n    \"fulfillment_route\": {\"type\": \"string\"}\n  }\n}",
-                "previewLanguage": "json"
+                "previewLanguage": "json",
+                "shownBytes": 0,
+                "totalBytes": 0,
+                "truncated": false
               },
               {
                 "path": "contracts/XC-atlas-order-envelope/2.1.0/routing-examples.yaml",
@@ -1396,7 +2196,10 @@
                 "digest": "21b00000000000000000000000000000000000000000000000000000000000b2",
                 "sizeBytes": 318,
                 "preview": "examples:\n  - market: eu\n    fulfillment_route: eu-central\n  - market: us\n    fulfillment_route: us-east\n",
-                "previewLanguage": "yaml"
+                "previewLanguage": "yaml",
+                "shownBytes": 0,
+                "totalBytes": 0,
+                "truncated": false
               }
             ],
             "history": [
@@ -1456,7 +2259,10 @@
                 "digest": "22a00000000000000000000000000000000000000000000000000000000000a1",
                 "sizeBytes": 936,
                 "preview": "{\n  \"title\": \"OrderEnvelope\",\n  \"required\": [\"event_id\", \"order\", \"producer\"],\n  \"properties\": {\"event_id\": {\"type\": \"string\"}}\n}",
-                "previewLanguage": "json"
+                "previewLanguage": "json",
+                "shownBytes": 0,
+                "totalBytes": 0,
+                "truncated": false
               },
               {
                 "path": "contracts/XC-atlas-order-envelope/2.2.0/replay-runbook.md",
@@ -1466,7 +2272,10 @@
                 "digest": "22b00000000000000000000000000000000000000000000000000000000000b2",
                 "sizeBytes": 402,
                 "preview": "# Replay safety\n\nPersist `event_id` before acknowledging delivery. A retry with the same identity returns the existing semantic result.",
-                "previewLanguage": "markdown"
+                "previewLanguage": "markdown",
+                "shownBytes": 0,
+                "totalBytes": 0,
+                "truncated": false
               }
             ],
             "history": [
@@ -2166,6 +2975,38 @@
         }
       ],
       "unresolved": [],
+      "windows": {
+        "artifacts": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "transcript": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "openItems": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "flags": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "unresolved": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "deliveries": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        }
+      },
       "settled": false
     },
     {
@@ -2578,6 +3419,38 @@
       ],
       "flags": [],
       "unresolved": [],
+      "windows": {
+        "artifacts": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "transcript": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "openItems": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "flags": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "unresolved": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "deliveries": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        }
+      },
       "settled": false
     },
     {
@@ -2950,6 +3823,38 @@
       ],
       "flags": [],
       "unresolved": [],
+      "windows": {
+        "artifacts": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "transcript": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "openItems": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "flags": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "unresolved": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "deliveries": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        }
+      },
       "settled": false,
       "deliveries": [
         {
@@ -3265,6 +4170,38 @@
           "kind": "event-subject"
         }
       ],
+      "windows": {
+        "artifacts": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "transcript": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "openItems": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "flags": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "unresolved": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "deliveries": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        }
+      },
       "settled": false,
       "deliveries": [
         {
@@ -3383,6 +4320,38 @@
       "open_items": [],
       "flags": [],
       "unresolved": [],
+      "windows": {
+        "artifacts": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "transcript": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "openItems": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "flags": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "unresolved": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        },
+        "deliveries": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        }
+      },
       "settled": true
     }
   ],
@@ -5047,5 +6016,88 @@
       "reason": "The hosted Hub is a future architecture, not a shipped read surface.",
       "sourceClass": "unavailable"
     }
-  ]
+  ],
+  "aggregates": {
+    "needYou": {
+      "items": null,
+      "window": {
+        "truncated": false,
+        "total": 0,
+        "shown": 0
+      }
+    },
+    "noHumanMove": {
+      "items": null,
+      "window": {
+        "truncated": false,
+        "total": 0,
+        "shown": 0
+      }
+    },
+    "youAwait": {
+      "items": null,
+      "window": {
+        "truncated": false,
+        "total": 0,
+        "shown": 0
+      }
+    },
+    "linesOffCurrent": {
+      "items": null,
+      "window": {
+        "truncated": false,
+        "total": 0,
+        "shown": 0
+      },
+      "complete": false,
+      "degradations": null
+    }
+  },
+  "windows": {
+    "inbox": {
+      "truncated": false,
+      "total": 0,
+      "shown": 0
+    },
+    "outbox": {
+      "truncated": false,
+      "total": 0,
+      "shown": 0
+    },
+    "archive": {
+      "truncated": false,
+      "total": 0,
+      "shown": 0
+    },
+    "threads": {
+      "truncated": false,
+      "total": 0,
+      "shown": 0
+    },
+    "contractEdges": {
+      "truncated": false,
+      "total": 0,
+      "shown": 0
+    },
+    "exchangeEdges": {
+      "truncated": false,
+      "total": 0,
+      "shown": 0
+    },
+    "flags": {
+      "truncated": false,
+      "total": 0,
+      "shown": 0
+    },
+    "workReports": {
+      "truncated": false,
+      "total": 0,
+      "shown": 0
+    },
+    "artifactDetails": {
+      "truncated": false,
+      "total": 0,
+      "shown": 0
+    }
+  }
 }

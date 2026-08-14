@@ -26,6 +26,11 @@ copy_tree "$mutation_route"
 perl -0pi -e 's/case "\/api\/v1\/events":/case "\/api\/v1\/report":\n\t\t\ts.handleEvents(writer, request)\n\t\tcase "\/api\/v1\/events":/' "$mutation_route/internal/localserver/router.go"
 expect_red "$mutation_route" "route inventory" "mutation route"
 
+missing_dashboard="$WORK/missing-dashboard"
+copy_tree "$missing_dashboard"
+perl -0pi -e 's/\n\t\tcase "\/api\/v1\/dashboard":\n\t\t\ts\.handleDashboard\(writer, request\)//' "$missing_dashboard/internal/localserver/router.go"
+expect_red "$missing_dashboard" "route inventory" "missing dashboard route"
+
 write_method="$WORK/write-method"
 copy_tree "$write_method"
 perl -0pi -e 's/request\.Method != http\.MethodGet/request.Method != http.MethodGet \&\& request.Method != http.MethodPost/' "$write_method/internal/localserver/router.go"

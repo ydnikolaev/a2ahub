@@ -1290,6 +1290,17 @@ const (
 	OperationalStateUndeclared = "undeclared"
 )
 
+// OperationalStates returns every derived operational-state value in stable
+// normative order. The returned slice is fresh so callers cannot mutate the
+// vocabulary.
+func OperationalStates() []string {
+	return []string{
+		OperationalStateReady,
+		OperationalStateAbsent,
+		OperationalStateUndeclared,
+	}
+}
+
 // operationalWellKnownNames are the operational item names spec 05 §7
 // itself names: "endpoint, credential-channel, registration ... a fourth
 // kind is DATA (a new array entry), not a schema change." x_operational's

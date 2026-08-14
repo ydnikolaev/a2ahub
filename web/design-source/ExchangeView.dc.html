@@ -1,0 +1,1144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<section aria-label="{{ workAria }}" data-screen-label="Work">
+        <!-- Direction and lifecycle state are independent dimensions. A closed
+             incoming document must remain findable as incoming, rather than
+             disappearing into a separate archive-shaped destination. Type and
+             deadline then refine that same complete exchange history. -->
+        <sc-if value="{{ showWorkFilters }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; row-gap:10px; margin-bottom:18px;">
+          <span role="group" aria-label="{{ workDirectionAria }}"><dc-import name="SegmentedFilter" items="{{ workTabs }}" hint-size="420px,38px"></dc-import></span>
+          <span role="group" aria-label="{{ workStateAria }}"><dc-import name="SegmentedFilter" items="{{ workStates }}" hint-size="350px,38px"></dc-import></span>
+          <span data-type-menu style="position:relative; display:inline-flex;">
+            <button type="button" onClick="{{ toggleTypeMenu }}" aria-expanded="{{ typeMenuExpanded }}" style="{{ typeButtonStyle }}">
+              <span>{{ workTypeCurrent }}</span>
+              <span style="display:inline-flex; align-items:center; transform:translateY(1px); color:var(--muted);"><dc-import name="DisclosureIcon" expanded="{{ typeMenuOpen }}" hint-size="18px,18px"></dc-import></span>
+            </button>
+            <sc-if value="{{ typeMenuOpen }}" hint-placeholder-val="{{ false }}">
+              <span style="position:absolute; z-index:120; top:calc(100% + 8px); left:0; min-width:250px; background:var(--surface); border-radius:14px; padding:8px; box-shadow:0 16px 40px -12px rgba(33,30,23,.42), 0 0 0 1px var(--border); display:flex; flex-direction:column; gap:2px;">
+                <sc-for list="{{ workTypeFilters }}" as="f" hint-placeholder-count="5">
+                  <button type="button" onClick="{{ f.go }}" aria-current="{{ f.current }}" style="{{ f.style }}">
+                    <!-- The badge IS the label for a type: it already carries
+                         the human word, the protocol code and the colour the
+                         cards use, so a plain-text row here would teach a
+                         second vocabulary for the same eight things. -->
+                    <span style="flex:1 1 auto; min-width:0; text-align:left; display:flex; pointer-events:none;">
+                      <sc-if value="{{ f.isType }}" hint-placeholder-val="{{ true }}">
+                        <dc-import name="TypeBadge" type="{{ f.type }}" size="small" hint-size="130px,24px"></dc-import>
+                      </sc-if>
+                      <sc-if value="{{ f.isAll }}" hint-placeholder-val="{{ false }}">
+                        <span>{{ f.label }}</span>
+                      </sc-if>
+                    </span>
+                    <span style="flex:0 0 auto; font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--muted);">{{ f.count }}</span>
+                    <sc-if value="{{ f.selected }}" hint-placeholder-val="{{ false }}">
+                      <span aria-hidden="true" style="flex:0 0 auto; color:var(--teal-ink);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
+                    </sc-if>
+                  </button>
+                </sc-for>
+              </span>
+            </sc-if>
+          </span>
+          <!-- One toggle, not a third dropdown: a deadline is a property a
+               document either has or does not, and the question behind it is
+               "what has a clock on it", which has one answer. Offered only when
+               something in scope actually carries one. -->
+          <sc-if value="{{ hasDueFilter }}" hint-placeholder-val="{{ true }}">
+            <!-- One binding, not "{{ label }} · {{ count }}": the button is a
+                 flex container so it can centre its own height, and flex drops
+                 a whitespace-only text node between two elements. -->
+            <button type="button" onClick="{{ toggleDue }}" aria-pressed="{{ duePressed }}" style="{{ dueStyle }}"><span>{{ dueText }}</span><span style="min-width:1.25em; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:12px; line-height:1; font-weight:500; color:var(--body);">{{ dueCountText }}</span></button>
+          </sc-if>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ workWholeEmpty }}" hint-placeholder-val="{{ false }}">
+          <dc-import name="EmptyState" title="{{ emptyWorkTitle }}" text="{{ emptyWorkText }}" size="page" hint-size="100%,380px"></dc-import>
+        </sc-if>
+        <sc-if value="{{ workHasColumns }}" hint-placeholder-val="{{ true }}">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(430px,100%),1fr)); gap:18px; align-items:start;">
+          <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
+            <sc-for list="{{ workRows }}" as="r" hint-placeholder-count="6">
+              <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" status="{{ r.status }}" tone="{{ r.tone }}" status-why="{{ r.statusWhy }}" state="{{ r.state }}" state-tone="{{ r.stateTone }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" sync-age="{{ r.syncAge }}" sync-stale="{{ r.syncStale }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,150px"></dc-import>
+            </sc-for>
+          </div>
+          <dc-import name="ArtifactDetail" det="{{ workDetail }}" hint-size="100%,600px"></dc-import>
+        </div>
+        </sc-if>
+      </section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1240,&quot;height&quot;:900},&quot;ctx&quot;:{&quot;editor&quot;:&quot;object&quot;,&quot;default&quot;:{},&quot;tsType&quot;:&quot;object&quot;}}">
+const DASHBOARD_EN = {
+    views:["Overview","Exchange","Threads","Contracts","Map","Spaces","Versions","Docs","Guide"],
+    backOverview:"Back to Overview", viewsLabel:"Views", more:"More", localeGroup:"Interface language", space:"Space",
+    errorTitle:"Could not read demo data", errorPrefix:"The dashboard is a read-only projection of", errorSuffix:". Missing facts are never inferred.",
+    openWork:"Open Exchange", direction:"Show", typeFilter:"Type",
+    spaceHealth:"Space health", spaceHealthTitle:"How current this page is",
+    spaceHealthSub:"Everything on these screens is read from a local copy of each space, taken once when this file was written. This is when that copy was last refreshed, and what each space expects of your binary.",
+    spaceHealthFlagsTitle:"Worth a look", spaceHealthFlagsText:"Recorded by committed events, or a problem reading the local copy. A flag is a reason to look, not a verdict.",
+    spaceHealthFooter:"Nothing here is inferred: an unreadable space is reported as unreadable, never as empty.",
+    spaceHealthMore:"Open Spaces", spaceHealthClose:"Close",
+    work:"Exchange", threads:"Threads", threadMissingTitle:"No full reconstruction is available for this thread", threadMissingText:"This row comes from the summary; only some demo threads include a complete causal transcript.",
+    whoseMove:"Whose move", whoseMoveText:"State and allowed transitions are derived from the events below.", causalTimeline:"Thread history", newestFirst:"newest first", opensChain:"opens the chain", subjectPrefix:"on", threadFlags:"Consistency, protocol and read evidence",
+    contracts:"Contracts and their versions", codeBacked:"code-backed", consumerLines:"Registered consumer lines", versionWindow:"Live version window", provenance:"Provenance and schema", codeBindingPrefix:"A code binding records the generator and source digest. Whether the current bytes still match is", notEvaluated:"not evaluated", codeBindingSuffix:" in this static read.",
+    network:"Who depends on whom", networkSub:"A solid line means one system depends on a contract another one publishes. A dashed line means an exchange between two systems is still open. Click any line or system to see the versions, the pinned lines and the open documents behind it.", exchangeMap:"Exchange map",
+    spaces:"Spaces", spacesSub:"A space is the shared repository systems exchange documents through. This is how fresh your copy of each one is, and which a2a version it wants before it accepts what you write.", freshness:"Freshness", participants:"Participants", writerFloor:"Writer floor", pinnedWorkflow:"Pinned workflow", revision:"Revision",
+    limitsTitle:"What this snapshot did not check", limitsSub:"This file was written once, from the local cache. Anything it could not read, or deliberately did not evaluate, is named here, so an empty space never passes for a clean result.",
+    emptyLimitsTitle:"Nothing to qualify", emptyLimitsText:"Every connected space was readable when this snapshot was written, and no flag was raised. The numbers above are the whole picture.",
+    emptySpacesTitle:"No spaces connected", emptySpacesText:"A space is the shared repository two systems exchange documents through. Connect one and this table fills in.",
+    integrityFlags:"Protocol and read flags", integrityFlagsText:"Facts recorded by committed events, or problems reading the local cache index. A flag is evidence, not a verdict.",
+    degradedReads:"Degraded reads", degradedReadsText:"These spaces answered from an older mirror revision, or not at all. Their counts are floors, never totals.",
+    notEvaluatedTitle:"What this read deliberately did not check", notEvaluatedText:"Not failures. Questions a static file honestly cannot answer, said out loud instead of shown as a zero or a green tick.",
+    versions:"Versions", localBinary:"Local binary", installed:"installed", latest:"latest", updateCandidate:"Update candidate", impact:"impact", publishedReleases:"Published releases in this snapshot", expandedNotes:"Expanded notes cover",
+    guide:"How a2ahub fits together", guideSub:"Document types, statuses, the dashboard's reading order, and a direct way to improve the product. Everything on this page is written for people first.",
+    lifecycleTitle:"Lifecycle is events, not an editable status", lifecycleText:"Every transition is validated before it is recorded. Both sides fold the same history into the same state.", lifecycleFoot:"This is a document status, not a release marker. Responses, blocks, disputes, cancellations, and supersessions remain separate immutable events with a validated actor.",
+    artifactTypesTitle:"Eight document types", artifactTypesText:"One file carries one intent. The protocol code remains a quick visual anchor and a human name is always shown beside it.", readingGuide:"How to read the dashboard",
+    docs:"Documentation", docsSub:"The same manual the agent reads is available here without a network connection. Sections and search are on the left; the exact source text is on the right.",
+    docSearch:"Search the docs", docSearchPlaceholder:"thread, contract, retire…", docNoMatch:"No section title, group or source path matches that search.",
+    docEmbedded:"available offline", emptyDocsTitle:"No documentation embedded", emptyDocsText:"This snapshot was written without the doc corpus. Reinstall the skill and render the dashboard again.",
+    loadingDoc:"Loading the embedded document…",
+    feedbackTitle:"Have an idea? Let’s make a2ahub better", feedbackText:"Bugs, rough edges and feature ideas are welcome. Give the context to your agent: it knows the feedback format, checks for duplicates and files a safe, actionable report.", githubRepo:"GitHub repository", publicHome:"Public home", designSystem:"Design system v4",
+    readingRows:[["Overview and Work","Human actions ordered by consequence and next owner. Priority, literal blocking, a pending approval, a deadline, and a stale snapshot remain five distinct signals."],["Threads","One intent per chain, in committed order where Git history exists and explicitly labelled declared order where it does not."],["Contracts and Map","Drift belongs to a consumer's pinned major line. A provider may be healthy while a consumer resolves nothing."],["Integrity and Versions","The limits of this snapshot and the independent compatibility axes that must not be inferred from one another."]]
+};
+
+const DASHBOARD_RU = {
+    views:["Обзор","Обмен","Треды","Контракты","Карта","Спейсы","Версии","Доки","Справка"],
+    backOverview:"Вернуться к обзору", viewsLabel:"Разделы", more:"Ещё", localeGroup:"Язык интерфейса", space:"Спейс",
+    errorTitle:"Не удалось прочитать данные", errorPrefix:"Дашборд только читает и показывает", errorSuffix:". Чего в файле нет, того он не придумывает.",
+    openWork:"Открыть обмен", direction:"Показать", typeFilter:"Тип",
+    spaceHealth:"Состояние спейсов", spaceHealthTitle:"Насколько свежее то, что вы читаете",
+    spaceHealthSub:"Всё на этих экранах взято из локальной копии спейса, снятой один раз, когда собирался этот файл. Здесь видно, когда копию последний раз обновляли и чего каждый спейс ждёт от вашего бинарника.",
+    spaceHealthFlagsTitle:"На что стоит посмотреть", spaceHealthFlagsText:"Сигналы из событий и локального снимка, которые стоит проверить. Они не обязательно означают ошибку.",
+    spaceHealthFooter:"Ничего не додумывается: если спейс не прочитался, так и написано, а не «ноль».",
+    spaceHealthMore:"Открыть спейсы", spaceHealthClose:"Закрыть",
+    work:"Обмен", threads:"Треды", threadMissingTitle:"Этот тред не удалось восстановить целиком", threadMissingText:"Есть только краткая сводка. В снимок не попала полная история: кто что сделал и в каком порядке.",
+    whoseMove:"Чей сейчас ход", whoseMoveText:"Посчитано по событиям ниже: что уже произошло и что после этого разрешено сделать.", causalTimeline:"История треда", newestFirst:"новое сверху", opensChain:"с этого всё началось", subjectPrefix:"для", threadFlags:"Что пошло не так в этом треде",
+    contracts:"Контракты и их версии", codeBacked:"собран из кода", consumerLines:"Кто на нём сидит", versionWindow:"Какие версии живы", provenance:"Откуда взялась схема", codeBindingPrefix:"Записано, чем и из какого исходника собран дескриптор. А вот совпадает ли он с кодом прямо сейчас,", notEvaluated:"не проверялось", codeBindingSuffix:": этот файл собран один раз и в код не заглядывает.",
+    network:"Кто от кого зависит", networkSub:"Сплошная линия значит, что одна система зависит от контракта, который публикует другая. Пунктир значит, что между двумя системами есть незакрытый обмен. Нажмите на линию или на систему, чтобы увидеть версии, закреплённые линии и открытые документы.", exchangeMap:"Карта обмена",
+    spaces:"Спейсы", spacesSub:"Системы обмениваются документами через общий репозиторий, он и называется спейсом. Здесь видно, насколько свежая у вас копия каждого и какую версию a2a он ждёт, чтобы принять вашу запись.", freshness:"Свежесть", participants:"Участники", writerFloor:"Минимум для записи", pinnedWorkflow:"Версия проверки в CI", revision:"Ревизия",
+    limitsTitle:"Что этот снимок не проверял", limitsSub:"Файл собран один раз из локального кэша. Всё, что не удалось прочитать или что мы намеренно не проверяли, названо здесь, чтобы пустое место не сошло за «всё в порядке».",
+    emptyLimitsTitle:"Уточнять нечего", emptyLimitsText:"Когда собирался снимок, все подключённые спейсы читались, замечаний не было. Цифры выше и есть вся картина.",
+    emptySpacesTitle:"Спейсы не подключены", emptySpacesText:"Спейс работает как общий репозиторий, через который две системы обмениваются документами. Подключите спейс, и таблица заполнится.",
+    integrityFlags:"Замечания", integrityFlagsText:"Сигналы из событий и локального снимка, которые стоит проверить. Они не обязательно означают ошибку.",
+    degradedReads:"Прочитано не полностью", degradedReadsText:"Эти спейсы ответили из устаревшей копии или не ответили вовсе. Их цифры значат «не меньше чем», а не точное число.",
+    notEvaluatedTitle:"Что мы намеренно не проверяли", notEvaluatedText:"Это не сбои. Это вопросы, на которые статический файл честно не отвечает и говорит об этом прямо, вместо того чтобы показать ноль или зелёную галочку.",
+    versions:"Версии", localBinary:"Ваш бинарник", installed:"стоит сейчас", latest:"последняя", updateCandidate:"Есть обновление", impact:"влияние", publishedReleases:"Выпуски", expandedNotes:"Подробности по",
+    guide:"Как устроен a2ahub", guideSub:"Типы документов, статусы, порядок чтения дашборда и прямой способ сделать продукт лучше. Эта страница сначала говорит с человеком, а уже потом — о протоколе.",
+    lifecycleTitle:"Статус не редактируется, он складывается из событий", lifecycleText:"Каждый переход проверяется до того, как попадёт в репозиторий. Обе стороны собирают из одной и той же истории одно и то же состояние.", lifecycleFoot:"Это статус документа, а не отметка о релизе. Ответы, блокировки, споры, отмены и замены не затираются: каждое остаётся отдельным событием с проверенным автором.",
+    artifactTypesTitle:"Восемь типов документов", artifactTypesText:"Один файл, одна мысль. Двухбуквенный код удобен глазу, но рядом всегда стоит нормальное название.", readingGuide:"Как читать дашборд",
+    docs:"Документация", docsSub:"То же руководство, что читает агент, доступно здесь без подключения к сети. Слева разделы и поиск, справа исходный текст.",
+    docSearch:"Поиск по докам", docSearchPlaceholder:"тред, контракт, вывод версии…", docNoMatch:"Ни одно название раздела, группа или путь к файлу не совпали с запросом.",
+    docEmbedded:"доступно без интернета", emptyDocsTitle:"Документация не вшита", emptyDocsText:"Этот снимок собран без корпуса документации. Переустановите навык и соберите дашборд заново.",
+    loadingDoc:"Загружается встроенный документ…",
+    feedbackTitle:"Есть идея? Давайте сделаем a2ahub лучше", feedbackText:"Баги, шероховатости и фичер-реквесты здесь действительно ждут. Передайте контекст своему агенту: он знает формат, проверит дубликаты и отправит безопасный, полезный отчёт.", githubRepo:"Репозиторий на GitHub", publicHome:"Главная сайта", designSystem:"Дизайн-система",
+    readingRows:[["Обзор и работа","Сверху то, где цена ошибки выше. Приоритет, блокировка, ожидание вашего согласования, срок и устаревшие данные остаются пятью разными сигналами, и они намеренно не слиты в один."],["Треды","Одна задача, один тред. Порядок берётся из коммитов Git; если истории нет, используется время, указанное автором, и это честно помечается."],["Контракты и карта","Расхождение считается для конкретного потребителя и той версии, которую он закрепил. У поставщика может быть всё хорошо ровно тогда, когда у потребителя не работает ничего."],["Спейсы и версии","Пределы этого снимка и три версии, которые нельзя выводить одну из другой."]]
+};
+
+const DASHBOARD_I18N = { en: DASHBOARD_EN, ru: DASHBOARD_RU };
+
+const A2A_GLOSSARY_EN = {
+    types: {
+      contract:{ code:"XC", label:"Contract", description:"A versioned interface one system publishes and another can depend on." },
+      requirement:{ code:"XR", label:"Requirement", description:"A durable condition the result must satisfy, without prescribing the implementation." },
+      question:{ code:"XQ", label:"Question", description:"A focused request for information that expects a typed response." },
+      work_request:{ code:"XW", label:"Work request", description:"A request for another system to deliver a concrete result, with acceptance criteria and an owner." },
+      decision:{ code:"XD", label:"Decision", description:"A recorded choice and its rationale, so other systems can act without reopening the discussion." },
+      handoff:{ code:"XH", label:"Handoff", description:"A transfer of responsibility or a ready result to the next system." },
+      response:{ code:"XS", label:"Response", description:"A direct answer linked to the request or question it addresses; the requester still verifies or disputes it." },
+      announcement:{ code:"XA", label:"Announcement", description:"Information others should know. It stays published; the dashboard archives it once every requested recipient acknowledges receipt." }
+    },
+    statuses: {
+      draft:{ label:"draft", description:"The document is still local and has not entered the shared exchange." },
+      submitted:{ label:"submitted", description:"The document entered the shared exchange and awaits the receiving side's next allowed move." },
+      acknowledged:{ label:"received", description:"The receiving side confirmed receipt. This says nothing yet about acceptance, verification or completion." },
+      accepted:{ label:"accepted", description:"The receiving side accepted the current step. This records agreement to proceed; it does not by itself close the document." },
+      in_progress:{ label:"in progress", description:"Work has started and the request has not reached a final state yet." },
+      published:{ label:"published", description:"The document is part of the shared record and visible to its participants." },
+      proposed:{ label:"proposed", description:"A change or choice was offered and still awaits the next protocol move." },
+      responded:{ label:"responded", description:"At least one linked response was recorded. The original document's author may now verify it or dispute the result." },
+      verified:{ label:"verified", description:"The author of the original document checked this response and confirmed the result. The response is final; no further move is expected." },
+      closed:{ label:"closed", description:"This request or question is complete and no further action is expected for it. Other documents in the thread may remain open." },
+      satisfied:{ label:"satisfied", description:"The requirement's owner confirmed that the recorded result satisfies it." },
+      declined:{ label:"declined", description:"The receiving side declined the requested step. The document stays in history; any follow-up requires a new valid move." },
+      superseded:{ label:"superseded", description:"A newer document replaced this one. This record remains visible as history." },
+      approved:{ label:"approved", description:"The required approvers accepted this decision. It is final unless a later decision supersedes it." },
+      rejected:{ label:"rejected", description:"The receiving side rejected the current check or approval. The matching event records the reason and the next allowed move." },
+      blocked:{ label:"blocked", description:"The record names a blocker that must be cleared before the next protocol move." },
+      blocking:{ label:"blocking", description:"This item records a blocking protocol obligation and deserves prompt attention." },
+      disputed:{ label:"disputed", description:"A participant challenged the result or interpretation; the disagreement remains open." },
+      cancelled:{ label:"cancelled", description:"The requester ended the work before completion; the history stays visible." },
+      withdrawn:{ label:"withdrawn", description:"The author retracted the document from active consideration; the record is preserved." },
+      expired:{ label:"expired", description:"The announcement's validity window ended. The published record remains visible as history." },
+      current:{ label:"on latest", description:"This consumer is pinned to the latest live contract major." },
+      behind:{ label:"behind", description:"This consumer is still pinned to an older live contract major." },
+      deprecated:{ label:"being retired", description:"This version still works, but consumers are expected to move away before its sunset." },
+      retired:{ label:"retired", description:"This version is no longer live for new use; its history remains visible." },
+      missing:{ label:"not found", description:"The pinned version is absent at the provider, so this dependency cannot resolve." },
+      dangling:{ label:"provider left", description:"The dependency points to a provider that is no longer present in this space." },
+      stale:{ label:"stale", description:"The local evidence is older than the freshness window, so the repository may already differ." },
+      fresh:{ label:"fresh", description:"The local evidence was refreshed within the expected freshness window." },
+      unreadable:{ label:"unreadable", description:"The local copy could not be read. Unknown values must not be treated as zero." },
+      unresolved:{ label:"unresolved", description:"The dashboard cannot connect this reference to a readable record." },
+      "space stale":{ label:"space stale", description:"The local space copy is older than usual. Data remains available, but the repository may have changed. Run a2a sync; the warning disappears after a successful refresh." },
+      settled:{ label:"settled", description:"Every document in this thread is final and no next protocol move is owed." },
+      "your move":{ label:"your move", description:"The next allowed protocol action belongs to your system." },
+      "waiting on others":{ label:"waiting on others", description:"The next allowed protocol move belongs to another participant." },
+      "your approval pending":{ label:"awaiting your approval", description:"The next protocol move requires an explicit approval from your side." },
+      "up to date":{ label:"latest version", description:"Your installed binary matches the newest release known to this snapshot." },
+      "no action needed":{ label:"no action needed", description:"This change does not require local configuration, migration, or manual follow-up." },
+      overdue:{ label:"overdue", description:"The recorded deadline passed before this document reached a terminal state." },
+      "needs a look":{ label:"needs a look", description:"This document carries an extra signal worth checking. It does not necessarily mean anything is wrong." },
+      resolved:{ label:"resolved · digest matches", description:"The reference was found and its recorded content digest matches." },
+      "digest mismatch":{ label:"digest mismatch", description:"The reference exists, but its content no longer matches the digest recorded by this document." }
+    }
+};
+
+const A2A_GLOSSARY_RU = {
+    types: {
+      contract:{ code:"XC", label:"Контракт", description:"Версионируемый интерфейс, который одна система публикует, а другая может использовать как зависимость." },
+      requirement:{ code:"XR", label:"Требование", description:"Устойчивое условие, которому должен соответствовать результат, без навязывания способа реализации." },
+      question:{ code:"XQ", label:"Вопрос", description:"Точный запрос информации, на который ожидается связанный типизированный ответ." },
+      work_request:{ code:"XW", label:"Запрос работы", description:"Просьба другой системе выдать конкретный результат с критериями готовности и ответственным." },
+      decision:{ code:"XD", label:"Решение", description:"Зафиксированный выбор и его причины, чтобы другие системы могли действовать, не открывая обсуждение заново." },
+      handoff:{ code:"XH", label:"Передача", description:"Передача ответственности или готового результата следующей системе." },
+      response:{ code:"XS", label:"Ответ", description:"Прямой ответ со ссылкой на запрос или вопрос. После этого автор исходного документа проверяет результат или оспаривает его." },
+      announcement:{ code:"XA", label:"Объявление", description:"Информация, которую участникам важно знать. Она остаётся опубликованной, а дашборд переносит её в архив после подтверждения всех запрошенных получателей." }
+    },
+    statuses: {
+      draft:{ label:"черновик", description:"Документ пока локальный и ещё не вошёл в общий обмен." },
+      submitted:{ label:"отправлено", description:"Документ вошёл в общий обмен и ждёт следующего допустимого шага принимающей стороны." },
+      acknowledged:{ label:"получили", description:"Принимающая сторона подтвердила получение. Это ещё ничего не говорит о принятии, проверке или завершении." },
+      accepted:{ label:"принято", description:"Принимающая сторона приняла текущий шаг. Это фиксирует согласие продолжить, но само по себе не закрывает документ." },
+      in_progress:{ label:"в работе", description:"Работа началась, но запрос ещё не дошёл до финального состояния." },
+      published:{ label:"опубликовано", description:"Документ вошёл в общий журнал и виден участникам обмена." },
+      proposed:{ label:"предложено", description:"Изменение или выбор предложены и ждут следующего допустимого шага." },
+      responded:{ label:"ответили", description:"Записан хотя бы один связанный ответ. Автор исходного документа может подтвердить его или оспорить результат." },
+      verified:{ label:"проверено", description:"Автор исходного документа проверил ответ и подтвердил результат. Ответ завершён; дальнейших шагов не ждут." },
+      closed:{ label:"закрыто", description:"Этот запрос или вопрос завершён; по нему больше не ждут действий. Другие документы треда могут оставаться открытыми." },
+      satisfied:{ label:"выполнено", description:"Автор требования подтвердил, что записанный результат ему соответствует." },
+      declined:{ label:"отклонено", description:"Принимающая сторона отказалась от запрошенного шага. Документ остаётся в истории; продолжение требует нового допустимого хода." },
+      superseded:{ label:"заменено", description:"Этот документ заменён более новым. Старая запись остаётся видимой как история." },
+      approved:{ label:"согласовано", description:"Все требуемые согласующие приняли это решение. Оно финально, пока его не заменит более новое." },
+      rejected:{ label:"отклонено", description:"Принимающая сторона отклонила текущую проверку или согласование. Причина и следующий допустимый ход записаны в соответствующем событии." },
+      blocked:{ label:"заблокировано", description:"В записи названа блокировка, которую нужно снять до следующего хода протокола." },
+      blocking:{ label:"блокирует", description:"Документ фиксирует блокирующее протокольное обязательство и требует быстрого внимания." },
+      disputed:{ label:"спорят", description:"Участник оспорил результат или трактовку; разногласие ещё не закрыто." },
+      cancelled:{ label:"отменено", description:"Заказчик остановил работу до завершения; история при этом сохраняется." },
+      withdrawn:{ label:"отозвано", description:"Автор снял документ с активного рассмотрения; запись остаётся в истории." },
+      expired:{ label:"срок истёк", description:"Срок действия объявления закончился. Опубликованная запись остаётся видимой в истории." },
+      current:{ label:"на последней", description:"Потребитель закреплён на последней живой мажорной версии контракта." },
+      behind:{ label:"отстаёт", description:"Потребитель всё ещё закреплён на более старой живой мажорной версии." },
+      deprecated:{ label:"выводится", description:"Версия пока работает, но до даты вывода потребителям нужно с неё уйти." },
+      retired:{ label:"снято", description:"Версия больше не доступна для нового использования; её история остаётся видимой." },
+      missing:{ label:"не нашли", description:"Закреплённой версии нет у поставщика, поэтому зависимость не разрешается." },
+      dangling:{ label:"поставщик ушёл", description:"Зависимость указывает на поставщика, которого больше нет в этом спейсе." },
+      stale:{ label:"устарел", description:"Локальные данные старше допустимого окна и уже могут отличаться от репозитория." },
+      fresh:{ label:"свежий", description:"Локальные данные обновлены в пределах ожидаемого окна свежести." },
+      unreadable:{ label:"не читается", description:"Локальную копию не удалось прочитать. Неизвестные значения нельзя считать нулём." },
+      unresolved:{ label:"не нашли", description:"Ссылку не удалось связать с доступной для чтения записью." },
+      "space stale":{ label:"спейс устарел", description:"Локальная копия спейса старше обычного. Данные доступны, но в репозитории уже могли появиться изменения. Запустите a2a sync: после успешного обновления предупреждение исчезнет." },
+      settled:{ label:"всё закрыто", description:"Все документы треда завершены, и следующего хода протокола ни за кем нет." },
+      "your move":{ label:"ваш ход", description:"Следующее допустимое действие протокола должна выполнить ваша система." },
+      "waiting on others":{ label:"ход за другими", description:"Следующий допустимый ход протокола принадлежит другому участнику." },
+      "your approval pending":{ label:"ждёт вашего согласования", description:"Следующий шаг протокола требует явного согласования с вашей стороны." },
+      "up to date":{ label:"последняя версия", description:"Установленный бинарник совпадает с последним выпуском, известным этому снимку." },
+      "no action needed":{ label:"действий не нужно", description:"Это изменение не требует настройки, миграции или ручного шага у вас." },
+      overdue:{ label:"просрочено", description:"Указанный дедлайн прошёл, а документ ещё не дошёл до конечного состояния." },
+      "needs a look":{ label:"стоит посмотреть", description:"У документа есть дополнительный сигнал для проверки. Это не обязательно означает ошибку." },
+      resolved:{ label:"нашли, сумма сошлась", description:"Ссылку нашли, и записанная контрольная сумма содержимого совпала." },
+      "digest mismatch":{ label:"сумма не сошлась", description:"Ссылка существует, но её содержимое уже не совпадает с контрольной суммой в документе." }
+    }
+};
+
+const A2A_GLOSSARY = { en: A2A_GLOSSARY_EN, ru: A2A_GLOSSARY_RU };
+
+const STATE_TONE = {
+  published:"healthy", verified:"healthy", satisfied:"healthy", approved:"healthy", closed:"healthy",
+  blocked:"blockingStrong", blocking:"blockingStrong", missing:"blockingStrong", unreadable:"blockingStrong", rejected:"blockingStrong", declined:"blockingStrong", disputed:"blockingStrong",
+  deprecated:"attention", expired:"attention", overdue:"attention",
+  cancelled:"neutral", canceled:"neutral",
+  retired:"neutral", withdrawn:"neutral", superseded:"neutral", submitted:"neutral", in_progress:"neutral", responded:"neutral", accepted:"neutral", acknowledged:"neutral", proposed:"attention"
+};
+
+function listNames(names, ru) {
+  const xs = (names || []).filter(Boolean);
+  if (!xs.length) return "";
+  if (xs.length === 1) return xs[0];
+  return xs.slice(0, -1).join(", ") + (ru ? " и " : " and ") + xs[xs.length - 1];
+}
+
+function TYPE_WORDS(ru) {
+  const group = A2A_GLOSSARY[ru ? "ru" : "en"].types;
+  return Object.keys(group).reduce((out, key) => { out[key] = group[key].label; return out; }, {});
+}
+
+function EVENT_SIGNAL(transition, ru) {
+  // `activate` is positive, not neutral: it is the producer's owner-only
+  // attestation that a published version's OPERATIONAL half now exists
+  // (spec 05-declared-nature.md, `a2a contract activate`), and it is what
+  // discharges the `activation-owed` debt. Left to the default it read
+  // "Informational event", which is exactly the understatement P-1 refuses.
+  const positive = ["acknowledge","accept","start","respond","verify","verify-pass","close","approve","satisfy","unblock","publish","activate"];
+  const negative = ["block","decline","reject","verify-fail","dispute"];
+  const caution = ["deprecate"];
+  const tone = positive.indexOf(transition) > -1 ? "positive" : (negative.indexOf(transition) > -1 ? "negative" : (caution.indexOf(transition) > -1 ? "caution" : "neutral"));
+  const lead = ru
+    ? { positive:"Шаг выполнен", negative:"Нужна реакция", caution:"Жизненный цикл изменён", neutral:"Справочное событие" }[tone]
+    : { positive:"Step completed", negative:"Response needed", caution:"Lifecycle changed", neutral:"Informational event" }[tone];
+  const action = TRANSITION_PAST(ru)[transition] || transition;
+  return { tone, label: lead + (action ? " · " + action : "") };
+}
+
+function TRANSITION_PAST(ru) {
+  if (!ru) return {
+    create: "created", submit: "submitted", publish: "published", acknowledge: "acknowledged",
+    accept: "accepted", start: "started", respond: "answered", verify: "verified", close: "closed",
+    approve: "approved", satisfy: "satisfied", dispute: "disputed", note: "added a note to",
+    block: "blocked", unblock: "unblocked", decline: "declined", reject: "rejected",
+    cancel: "cancelled", withdraw: "withdrew", supersede: "superseded", propose: "proposed",
+    deprecate: "deprecated", retire: "retired", "verify-pass": "accepted", "verify-fail": "rejected",
+    activate: "brought live"
+  };
+  return {
+    create: "создал", submit: "отправил", publish: "опубликовал", acknowledge: "подтвердил получение",
+    accept: "принял", start: "начал работу", respond: "ответил", verify: "проверил", close: "закрыл",
+    approve: "согласовал", satisfy: "закрыл требование", dispute: "оспорил", note: "добавил заметку",
+    block: "заблокировал", unblock: "разблокировал", decline: "отказался", reject: "отклонил",
+    cancel: "отменил", withdraw: "отозвал", supersede: "заменил", propose: "предложил",
+    deprecate: "объявил устаревшей", retire: "снял версию", "verify-pass": "принял", "verify-fail": "отклонил",
+    activate: "включил в работу"
+  };
+}
+
+function OPERATIONAL_STATE(state, ru) {
+  const key = String(state || "") || "undeclared";
+  const words = ru ? {
+    ready: { label: "заявлено готовым", tone: "healthy", hint: "Поставщик подтвердил: эта часть интерфейса существует и работает." },
+    absent: { label: "заявлено отсутствующим", tone: "attention", hint: "Поставщик прямо сказал, что этого пока нет. Это известный пробел: на него можно планировать и спрашивать срок." },
+    undeclared: { label: "никто не заявлял", tone: "outline", hint: "Об этом не сказано ничего — ни «есть», ни «нет». Это не то же самое, что «заявлено отсутствующим»: заявления здесь просто нет." }
+  } : {
+    ready: { label: "declared ready", tone: "healthy", hint: "The provider has stated that this part of the interface exists and works." },
+    absent: { label: "declared missing", tone: "attention", hint: "The provider said out loud that this does not exist yet. A known gap: you can plan around it and ask for an eta." },
+    undeclared: { label: "never declared", tone: "outline", hint: "Nobody has said anything either way — not “yes”, not “no”. This is NOT the same as declared missing: there is no claim here at all." }
+  };
+  return words[key] || {
+    label: key,
+    tone: "neutral",
+    hint: ru ? "Состояние, которого этот интерфейс не знает." : "A state this surface does not know."
+  };
+}
+
+function operationalReadinessRows(items, ru) {
+  return (items || []).map(it => {
+    const word = OPERATIONAL_STATE(it.state, ru);
+    // `chip` is the one-line form for a pill; `name`/`label` stay separate so
+    // the detail panel can lay them out as a two-column row instead.
+    return { name: it.name, state: it.state, label: word.label, tone: word.tone, hint: word.hint, chip: it.name + " · " + word.label };
+  });
+}
+
+function WORK_MODE_TEXT(value, ru) {
+  const words = ru ? {
+    planning:"планирует", implementing:"реализует", testing:"тестирует", reviewing:"проверяет",
+    waiting:"ждёт", paused:"приостановил работу", finished:"завершил работу"
+  } : {
+    planning:"planning", implementing:"implementing", testing:"testing", reviewing:"reviewing",
+    waiting:"waiting", paused:"paused", finished:"finished"
+  };
+  return words[value] || (ru ? "статус неизвестен" : "status unknown");
+}
+
+function WORK_WAIT_KIND(value, ru) {
+  const words = ru ? {
+    system:"система", human:"человек", tool:"инструмент", timer:"время", external:"внешняя сторона"
+  } : {
+    system:"system", human:"human", tool:"tool", timer:"timer", external:"external party"
+  };
+  return words[value] || (ru ? "тип не указан" : "type not recorded");
+}
+
+const VERDICT_TONE = { met: "positive", unmet: "negative", not_warranted: "neutral", not_exercised: "caution" };
+
+function VERDICT_LABEL(ru) {
+  return ru
+    ? { met: "выполнено", unmet: "не выполнено", not_warranted: "не требовалось", not_exercised: "не проверялось" }
+    : { met: "met", unmet: "unmet", not_warranted: "not warranted", not_exercised: "not exercised" };
+}
+
+function outcomeOf(x) { return String((x && x.outcome) || ""); }
+
+function isSettled(x) { return outcomeOf(x) === "settled"; }
+
+function isRefused(x) { return outcomeOf(x) === "refused"; }
+
+function isAbandoned(x) { const o = outcomeOf(x); return o === "withdrawn" || o === "superseded"; }
+
+function mono(s) { return String(s || "?").slice(0, 2).toUpperCase(); }
+
+function monoCodes(names) {
+  const out = {}, used = new Set();
+  names.slice().sort().forEach(n => {
+    const s = String(n || "?");
+    let code = (s[0] + (s[1] || "")).toUpperCase();
+    for (let i = 2; used.has(code) && i < s.length; i++) code = (s[0] + s[i]).toUpperCase();
+    used.add(code);
+    out[n] = code;
+  });
+  return out;
+}
+
+function when(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  const p = (n) => String(n).padStart(2, "0");
+  return p(d.getUTCDate()) + "." + p(d.getUTCMonth() + 1) + "." + d.getUTCFullYear() + " " + p(d.getUTCHours()) + ":" + p(d.getUTCMinutes());
+}
+
+const AGE_RU = { m: " мин", h: " ч", d: " д", w: " нед" };
+
+function age(value) {
+  const raw = String(value == null ? "" : value);
+  if (!raw || document.documentElement.lang !== "ru") return raw;
+  if (raw === "just now") return "только что";
+  const m = raw.match(/^(\d+)([mhdw])$/);
+  return m ? m[1] + AGE_RU[m[2]] : raw;
+}
+
+function isoDay(value) {
+  const raw = String(value == null ? "" : value);
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? m[3] + "." + m[2] + "." + m[1] : raw;
+}
+
+function promptLine(label, value) { return value ? label + String(value) : null; }
+
+function promptDocLines(doc, indent) {
+  const p = doc.prompt || {};
+  const pad = indent || "";
+  const moves = (p.moves || []).join(", ");
+  const ask = (p.askFirst || []).join(", ");
+  return [
+    // The protocol's own spelling of the state, not the interface's. An agent
+    // matches this against the fold table; "in progress" is not a state there.
+    pad + "Type: " + doc.type + ", state " + doc.state,
+    promptLine(pad + "Title: ", doc.title),
+    promptLine(pad + "From: ", doc.from + (doc.to && doc.to.length ? ", to " + doc.to.join(", ") : "")),
+    promptLine(pad + "Deadline: ", doc.neededBy ? doc.neededBy + (doc.overdue ? " (already passed)" : "") : ""),
+    doc.blocking ? pad + "Blocking: yes" + (doc.priority ? ", priority " + doc.priority : "") : promptLine(pad + "Priority: ", doc.priority),
+    pad + "Moves: " + moves + (ask ? " — ask the person before " + ask : "")
+  ];
+}
+
+function promptTail(ctx, docs) {
+  const shows = docs.map(d => "  a2a show " + d.id + (ctx.space ? " --space " + ctx.space : ""));
+  const uniq = (values) => values.filter((v, i) => v && values.indexOf(v) === i);
+  const loops = uniq(docs.map(d => (d.prompt || {}).loop));
+  const shapes = uniq(docs.map(d => (d.prompt || {}).doc));
+  // What you draft is not what you are reading: answering a work request
+  // produces a response, and its shape is documented in its own file.
+  const drafts = uniq(docs.reduce((all, d) => all.concat((d.prompt || {}).drafts || []), []));
+  const plural = docs.length > 1;
+  return [
+    "",
+    "Everything above came from a static dashboard snapshot" + (ctx.generatedAt ? " taken " + ctx.generatedAt : "") + " and may already be out of date. Start by reading " + (plural ? "them" : "the document") + " as " + (plural ? "they stand" : "it stands") + " now:",
+    ""
+  ].concat(shows).concat([
+    "",
+    "Then work " + (plural ? "them" : "it") + " through the a2ahub skill rather than from this text:",
+    loops.length ? "  " + loops.join(", ") + " for the " + (loops.length > 1 ? "loops these moves belong" : "loop this move belongs") + " to" : null,
+    shapes.length ? "  " + shapes.join(", ") + " for the shape of the " + (plural ? "documents" : "document") + " above" : null,
+    drafts.length ? "  " + drafts.join(", ") + " for the shape of what taking one of these moves creates" : null,
+    "  reference/commands.md for the exact verb, and `a2a validate` before you submit.",
+    "",
+    // Deliberately does not name a file or a convention. This page has no idea
+    // which repository it was pasted into, and a prompt that says "write a spec
+    // under docs/features" is only correct inside the one it was written in.
+    "If answering this turns into work in this repository, do not start writing code from this prompt. Find how this repository takes work, from its own agent instructions and docs, propose the change in that form, and confirm it with the person before you begin."
+  ]);
+}
+
+function agentPromptText(ctx) {
+  // Prose paragraphs are single lines. Hand-wrapping them at some column looks
+  // tidy in a wide editor and ragged everywhere else, including the panel that
+  // shows this text back before it is copied; the reader wraps it, we do not.
+  // Only the fact lines and the indented command/file lines carry real breaks.
+  const out = [
+    "You are acting for `" + ctx.self + "` in the a2a exchange. Someone read this document on the local dashboard before you did and is handing the move back.",
+    "",
+    "Document: " + ctx.id,
+    promptLine("Space: ", ctx.space + (ctx.thread ? ", thread " + ctx.thread : ""))
+  ].concat(promptDocLines(ctx, "")).concat(promptTail(ctx, [ctx]));
+  return out.filter(l => l !== null).join("\n") + "\n";
+}
+
+const FILTER_H = 38;
+
+const AGENT_LABELS = {
+  "claude-code": "Claude Code",
+  "codex": "Codex",
+  "github-copilot": "GitHub Copilot",
+  "cursor": "Cursor",
+  "windsurf": "Windsurf",
+  "gemini-cli": "Gemini CLI",
+  "antigravity": "Antigravity",
+  "cline": "Cline",
+  "roo-code": "Roo Code",
+  "kilo-code": "Kilo Code",
+  "opencode": "OpenCode",
+  "aider": "Aider",
+  "continue": "Continue",
+  "amp": "Amp",
+  "goose": "Goose",
+  "devin": "Devin",
+  "zed": "Zed",
+  "jetbrains": "JetBrains AI",
+  "replit": "Replit Agent",
+  "warp": "Warp",
+  "trae": "Trae",
+  "augment": "Augment"
+};
+
+function actorIdentity(d, actorSystem, recordedName, actorKind, actorModel) {
+  const node = (d.nodes || []).find(n => n.system === actorSystem);
+  const owner = node && node.owners && node.owners.length ? String(node.owners[0]) : "";
+  const agentKey = String(recordedName || "").trim().toLowerCase();
+  const agentID = actorKind === "agent" && AGENT_LABELS[agentKey] ? agentKey : "";
+  const name = agentID ? String(owner || actorSystem || "") : String(recordedName || owner || actorSystem || "");
+  const login = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(owner) ? owner : "";
+  return {
+    actorName: name,
+    avatar: node && node.avatar ? node.avatar : "",
+    avatarMono: mono(name),
+    actorProfileURL: login ? "https://github.com/" + login : "",
+    actorProfileTitle: login ? "GitHub · " + login : "",
+    hasAgentBadge: !!agentID,
+    agentID,
+    agentLabel: AGENT_LABELS[agentID] || agentID,
+    agentModel: agentID ? String(actorModel || "") : ""
+  };
+}
+
+class Component extends DCLogic {
+  syncContext() {
+    const ctx = this.props && this.props.ctx || {};
+    this.state = Object.assign({ data: ctx.data || null, locale: ctx.locale === "ru" ? "ru" : "en" }, ctx.ui || {});
+    return ctx;
+  }
+
+  setState(update) {
+    const ctx = this.props && this.props.ctx || {};
+    const current = Object.assign({}, this.state || {}, { data: ctx.data || null, locale: ctx.locale === "ru" ? "ru" : "en" }, ctx.ui || {});
+    const patch = typeof update === "function" ? update(current) : update;
+    this.state = Object.assign({}, current, patch || {});
+    if (ctx.actions && ctx.actions.patch) ctx.actions.patch(patch || {});
+  }
+
+  go(view, extra) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.navigate) actions.navigate(view, extra); }
+  closeContractFile() { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.closeContractFile) actions.closeContractFile(); }
+  applyTheme(theme) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setTheme) actions.setTheme(theme); }
+  applyLocale(locale) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setLocale) actions.setLocale(locale); }
+  copy(text) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.copy) actions.copy(text); }
+
+  inScope(space) { return this.state.space === "all" || space === this.state.space; }
+
+  filterChip(active) {
+    return "display:inline-flex; align-items:center; min-height:" + FILTER_H + "px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; cursor:pointer; padding:0 12px; border-radius:8px; white-space:nowrap; " +
+      (active ? "background:var(--primary); color:var(--on-primary);" : "background:var(--surface); color:var(--body);");
+  }
+
+  blockedOn(from, to) {
+    const ru = this.state.locale === "ru";
+    const d = this.state.data;
+    const holders = (to || []).filter(Boolean);
+    if (holders.indexOf(d.self) > -1) return ru ? "блокирующий ход за вами" : "blocking move: you";
+    if (holders.length === 1) return (ru ? "блокирующий ход за " : "blocking move: ") + holders[0];
+    if (holders.length > 1) return ru ? "блокирующий ход за получателями" : "blocking move: recipients";
+    return ru ? "блокирующий ход не назначен" : "blocking move unassigned";
+  }
+
+  blockedWhy(a) {
+    const ru = this.state.locale === "ru";
+    const d = this.state.data;
+    const holders = (a.to || []).filter(Boolean);
+    const yours = holders.indexOf(d.self) > -1;
+    const obligation = ru ? "Документ фиксирует блокирующее протокольное обязательство." : "The document records a blocking protocol obligation.";
+    const next = yours
+      ? (ru ? " Следующий допустимый ход за вами." : " Your side owns the next allowed move.")
+      : (holders.length
+        ? (ru ? " Следующий допустимый ход за " + listNames(holders, ru) + "." : " The next allowed move belongs to " + listNames(holders, ru) + ".")
+        : (ru ? " Владелец следующего хода не записан." : " No owner is recorded for the next move."));
+    const when = a.neededBy ? (ru ? " Срок " : " Due ") + isoDay(a.neededBy) + "." : "";
+    const pri = a.priority ? (ru ? " Приоритет " + a.priority + "." : " Priority " + a.priority + ".") : "";
+    return obligation + next + when + pri;
+  }
+
+  statusOf(it) {
+    const ru = this.state.locale === "ru";
+    // Protocol state and Exchange completion are deliberately different for
+    // announcements: a delivered announcement remains `published`, but once
+    // every recipient acknowledged it the read model moves it to Archive.
+    const settled = isSettled(it) || !!it.archived;
+    if (it.blocking) return {
+      status: this.blockedOn(it.from, it.to) + " · " + it.priority, tone: "blocking",
+      why: this.blockedWhy({ from: it.from, to: it.to, neededBy: it.neededBy, priority: it.priority })
+    };
+    if (it.gatePending) return { status: ru ? "ждёт вашего согласования" : "your approval pending", tone: "attention" };
+    if (it.overdue) return { status: (ru ? "просрочено" : "overdue") + " · " + it.priority, tone: "blocking" };
+    if (it.activationOwed) return {
+      status: ru ? "нужно включить в работу" : "activation owed", tone: "attention",
+      why: ru
+        ? "Кто-то уже закрепил опубликованную мажорную версию этого контракта, а вы ещё не подтвердили, что операционная половина существует. Обязательство выведено из регистрации и публикации, а не из того, что записано в x_operational. Закрывается командой a2a contract activate."
+        : "Someone has pinned this contract's published major, and you have not yet attested that its operational half exists. The debt is derived from registration and publication, not from what x_operational says. a2a contract activate discharges it."
+    };
+    if (!settled && it.severity === "attention") return { status: (ru ? "стоит посмотреть" : "needs a look") + " · " + it.priority, tone: "attention" };
+    return { status: it.priority, tone: "neutral" };
+  }
+
+  rowFor(it, selKey, selValue, onSel) {
+    const ru = this.state.locale === "ru";
+    const d = this.state.data;
+    const codes = monoCodes(d.nodes.map(n => n.system));
+    const st = this.statusOf(it);
+    const toSelf = (it.to || []).includes(d.self);
+    const toText = (it.to || []).join(", ");
+    const toCode = toSelf ? codes[d.self] : codes[(it.to || [])[0]];
+    const space = d.spaces.find(s => s.id === it.space);
+    const sentence = it.reasonSentence || {};
+    const waitingOn = listNames(it.waitingOn || [], ru) || (ru ? "не указано" : "none recorded");
+    const expectedMove = it.expectedTransition || (ru ? "не указан" : "not recorded");
+    return {
+      id: it.id, type: it.type, title: it.title, status: st.status, tone: st.tone,
+      // A label that raises a question carries its answer on itself, so the
+      // reader hovers the badge rather than hunting for a separate mark.
+      statusWhy: st.why || "",
+      state: String(it.state || "").replace("_", " "), stateTone: STATE_TONE[it.state] || "neutral",
+      // A deadline outranks an age wherever there is one. "5 ч" says when the
+      // document last moved; the date says when it stops being optional, and a
+      // reader who just filtered by deadline should not have to open a card to
+      // see it. Overdue ones keep the red treatment on top.
+      time: it.neededBy ? (ru ? "дедлайн " : "due ") + isoDay(it.neededBy) : age(it.age),
+      from: it.from, to: toText, meta: it.space,
+      syncAge: space && space.readable ? age(space.syncAge) : "",
+      syncStale: !!(space && space.stale),
+      fromCode: codes[it.from] || "", toCode: toCode || "",
+      fromSelf: it.from === d.self, toSelf: toSelf,
+      reasonSentence: sentence[ru ? "ru" : "en"] || (ru ? "Объяснение пока не записано." : "No human explanation is recorded yet."),
+      waitingOnLabel: ru ? "Чей ход" : "Whose turn",
+      waitingOn,
+      expectedMoveLabel: ru ? "Ожидаемый ход" : "Expected move",
+      expectedMove,
+      hasTechnicalWhy: !!it.why,
+      technicalWhyLabel: ru ? "Техническое основание" : "Technical detail",
+      technicalWhy: it.why || "",
+      selected: selValue === it.id,
+      select: onSel || (() => this.setState({ [selKey]: it.id })),
+      openLabel: (ru ? "Открыть в Обмене: " : "Open in Exchange: ") + (it.title || it.id)
+    };
+  }
+
+  promptContext(fields) {
+    const d = this.state.data;
+    const due = fields.neededBy ? new Date(fields.neededBy) : null;
+    const at = d.generatedAt ? new Date(d.generatedAt) : null;
+    return Object.assign({
+      self: d.self,
+      // The instant as it is stored. DD.MM.YYYY is this interface's format for
+      // a person reading a screen; inside an English machine-facing payload it
+      // is one more thing to misparse.
+      generatedAt: d.generatedAt,
+      overdue: !!(due && at && !isNaN(due) && !isNaN(at) && due < at)
+    }, fields);
+  }
+
+  artifactSourceURL(artifact) {
+    const d = this.state.data;
+    const sp = d && (d.spaces || []).find(x => x.id === artifact.space);
+    let repo = String(sp && sp.repoURL || "").trim();
+    const path = String(artifact.path || "").replace(/^\/+/, "");
+    if (!repo || !path) return "";
+    if (repo.startsWith("git@github.com:")) repo = "https://github.com/" + repo.slice("git@github.com:".length);
+    if (repo.startsWith("ssh://git@github.com/")) repo = "https://github.com/" + repo.slice("ssh://git@github.com/".length);
+    if (!/^https:\/\/github\.com\//i.test(repo)) return "";
+    repo = repo.replace(/\.git\/?$/, "").replace(/\/$/, "");
+    const revision = encodeURIComponent(String(sp.revision || "HEAD"));
+    const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+    return repo + "/blob/" + revision + "/" + encodedPath;
+  }
+
+  metadataFor(artifact, ru) {
+    const e = artifact.envelope || {};
+    const flat = (value) => {
+      if (value === null || value === undefined) return "";
+      if (Array.isArray(value)) return value.map(flat).join(" · ");
+      if (typeof value === "object") return Object.keys(value).map(k => k + ": " + flat(value[k])).join(" · ");
+      return String(value);
+    };
+    const valueFor = (key, raw) => {
+      if (key === "created") return when(raw);
+      if (key === "needed_by") return isoDay(raw);
+      if (typeof raw === "boolean") return raw ? (ru ? "да" : "yes") : (ru ? "нет" : "no");
+      return flat(raw);
+    };
+    // The actor line already carries who/where/when and the type/state pills
+    // carry the operational facts. Keep the complete envelope in one quiet
+    // disclosure instead of repeating created/space/category as loud cards.
+    const primary = [];
+    const rest = Object.keys(e).sort().map(key => ({ label:key, value:valueFor(key, e[key]) }));
+    // These were the only useful facts in the old lower table that are not
+    // frontmatter. Keep them beside the metadata instead of preserving a
+    // second, duplicating facts section below the document.
+    if (artifact.path) rest.push({ label:"repository_path", value:artifact.path });
+    rest.push({ label:"snapshot_source", value:artifact.sourceClass + " · " + (ru ? "синхронизировано " : "synced ") + age(artifact.sync_age) });
+    return { primary, rest };
+  }
+
+  detailFor(id, fallbackList) {
+    const ru = this.state.locale === "ru";
+    const d = this.state.data;
+    const it = (fallbackList || []).find(x => x.id === id);
+    // Artifact ids are unique per space, not globally: the same id can exist in
+    // two connected spaces, so the detail must be resolved against the row's own
+    // space or "all spaces" would show a neighbour's document.
+    const a = d.artifactDetails.find(x => x.id === id && (!it || x.space === it.space));
+    if (!a) {
+      // Two different nothings, and they must not read alike: a row exists but
+      // its full record was not written into this snapshot, versus there is no
+      // row to open at all.
+      if (it) {
+        return {
+          present: false,
+          missingTitle: it.title || (ru ? "Полной записи по этому документу в снимке нет" : "This document has no full record in the snapshot"),
+          missingText: ru
+            ? "В снимке есть только сводка этого документа: тип " + it.type + ", состояние " + it.state + ", отправитель " + it.from + ". Конверт, события и тело не попали в снимок, и мы не восстанавливаем их догадками."
+            : "This snapshot carries only the document summary: type " + it.type + ", state " + it.state + ", from " + it.from + ". The envelope, events and body were not written into the snapshot, and missing facts are never reconstructed.",
+          missingHint: it.id
+        };
+      }
+      return {
+        present: false,
+        missingTitle: ru ? "Здесь пока пусто" : "Nothing to open here",
+        missingText: ru
+          ? "Выберите документ слева, чтобы прочитать его целиком: конверт, события, ссылки и тело."
+          : "Pick a document on the left to read the whole thing: envelope, events, references and body."
+      };
+    }
+    const e = a.envelope || {};
+    const actor = e.actor && typeof e.actor === "object" ? e.actor : {};
+    // actor.kind is passed, and it matters for more than the badge: without
+    // it actorIdentity cannot tell an agent id from a person's login, so the
+    // header rendered "codex создал контракт" beside the OWNER's photograph —
+    // the name saying one thing and the face another, on the same line. With
+    // kind, the name resolves to the principal exactly as the thread does, and
+    // the badge fields below carry the agent to ArtifactDetail's authorRow.
+    const authorIdentity = actorIdentity(d, a.from, actor.name || a.from, actor.kind, actor.model);
+    const pills = [];
+    // The blocking pill carries its own explanation here, because this is the
+    // one place with room for it: the list rows say who has to move and open
+    // this pane, and this pane says who stopped, who can start them again and
+    // by when.
+    if (e.blocking) pills.push({
+      text: this.blockedOn(a.from, a.to) + " · " + (e.priority || ""), tone: "blocking",
+      hint: this.blockedWhy({ from: a.from, to: a.to, neededBy: it ? it.neededBy || e.needed_by : e.needed_by, priority: e.priority })
+    });
+    else if (e.priority) pills.push({ text: e.priority, tone: "neutral" });
+    pills.push({ text: String(a.state || "").replace("_", " "), tone: STATE_TONE[a.state] || "neutral" });
+    if (a.sync_stale) pills.push({ text: "space stale", tone: "attention" });
+
+    const lists = [];
+    if (e.acceptance_criteria) lists.push({ heading: ru ? "Когда считаем, что готово" : "Acceptance criteria", items: e.acceptance_criteria, numbered: true });
+    if (e.options_considered) lists.push({ heading: ru ? "Какие варианты рассматривали" : "Options considered", items: e.options_considered, numbered: true });
+    if (e.deliverables) lists.push({ heading: ru ? "Что сдаётся" : "Deliverables", items: e.deliverables.map(x => typeof x === "string" ? x : (x.path || x.name || JSON.stringify(x))), numbered: false });
+    if (e.limitations) lists.push({ heading: ru ? "Чего этот результат не покрывает" : "Recorded limitations", items: e.limitations, numbered: false });
+
+    const metadata = this.metadataFor(a, ru);
+
+    const artifactWord = String(TYPE_WORDS(ru)[a.type] || a.type || (ru ? "документ" : "document")).toLocaleLowerCase(ru ? "ru-RU" : "en-US");
+    const carriesWorkReport = (d.workReports || []).some(report => report.space === a.space && report.artifact_id === a.id);
+    const lifecycleEvents = (a.events || []).filter(ev => !(carriesWorkReport && ev.transition === "publish")).map(ev => {
+      const system = String(ev.actor_system || "");
+      const eventName = String(ev.actor || system || (ru ? "неизвестный автор" : "unknown actor"));
+      const transition = String(ev.transition || "");
+      const signal = EVENT_SIGNAL(transition, ru);
+      const subjectLabel = transition === "respond" ? "" : (transition === "note" ? (ru ? "заметку" : "a note") : artifactWord);
+      // verify/close's own per-criterion judgement (event/v2 `verdicts[]`,
+      // P6 wave C) — same VERDICT_LABEL/VERDICT_TONE vocabulary the thread
+      // transcript's own `rows` mapping uses (B34, agent-exchange-2026-08):
+      // one spelling of `not_warranted`, not two. cause_owner is always
+      // present on every entry (internal/cli/cmd_lifecycle.go requires it,
+      // including on `met`), so the row can rely on it without a fallback.
+      const verdictLabel = VERDICT_LABEL(ru);
+      const verdicts = (ev.verdicts || []).map(v => ({
+        text: (ru ? "критерий " : "criterion ") + v.index + " · " + (verdictLabel[v.verdict] || v.verdict) + " · " + v.cause_owner,
+        tone: VERDICT_TONE[v.verdict] || "neutral"
+      }));
+      return {
+        isLifecycle: true,
+        isWorkReport: false,
+        actionText: transition === "note" ? (ru ? "добавил" : "added") : (TRANSITION_PAST(ru)[transition] || transition),
+        subjectLabel,
+        meta: system + (system ? " · " : "") + when(ev.at),
+        ...actorIdentity(d, system, eventName, ev.actor_kind, ev.actor_model),
+        systemSelf: system === d.self,
+        signalTone: signal.tone,
+        signalLabel: signal.label,
+        verdicts,
+        hasVerdicts: verdicts.length > 0,
+        verdictsTitle: ru ? "Вердикты по критериям" : "Criteria verdicts",
+        sortAt: ev.at || "",
+        sortKey: ev.ulid || ""
+        // `claimed_state` remains protocol diagnostics. The computed fold
+        // state wins, so matching claims do not become a second status line.
+      };
+    });
+    const workEvents = (d.workReports || []).filter(report => {
+      const subjectID = String(report.subject_ref || "").split("@")[0];
+      // A checkpoint is readable from both ends of the association: from the
+      // subject it describes and from the committed announcement that carries
+      // it. The latter is what lets thread- and contract-valued subjects remain
+      // visible in Exchange instead of disappearing from every document.
+      return report.space === a.space && (!a.thread || report.thread === a.thread) && (report.artifact_id === a.id || subjectID === a.id);
+    }).slice().sort((left, right) => {
+      // reported_at is authored display data. Git sequence is the authority
+      // for committed history, with artifact identity fixing same-commit order.
+      const committed = Number(right.commit_sequence || 0) - Number(left.commit_sequence || 0);
+      if (committed) return committed;
+      return String(left.artifact_id || "").localeCompare(String(right.artifact_id || ""));
+    }).map(report => {
+      const actor = report.actor || {};
+      const system = String(actor.system || "");
+      const eventName = actor.name || system || (ru ? "неизвестный исполнитель" : "unknown actor");
+      const waits = (report.waiting_on || []).map(wait => ({
+        label: WORK_WAIT_KIND(wait.kind, ru) + (wait.id ? " · " + wait.id : ""),
+        summary: wait.summary || "",
+        hasSummary: !!wait.summary
+      }));
+      const subject = String(report.subject_ref || "");
+      const contractAt = subject.lastIndexOf("@");
+      const subjectID = contractAt > 0 ? subject.slice(0, contractAt) : subject;
+      const subjectVersion = contractAt > 0 ? subject.slice(contractAt + 1) : "";
+      const subjectIsThread = subject.indexOf("thread:") === 0;
+      const subjectIsContract = subjectID.startsWith("XC-");
+      const subjectArtifact = (d.artifactDetails || []).find(item => item.space === a.space && item.id === subjectID);
+      const subjectItem = [].concat(d.inbox || [], d.outbox || [], d.archive || []).find(item => item.space === a.space && item.id === subjectID);
+      const subjectThread = (d.threadViews || []).find(item => item.space === a.space && item.thread === subject);
+      const subjectLabel = subjectIsThread
+        ? (subjectThread && subjectThread.opener && subjectThread.opener.title || subject)
+        : (subjectIsContract ? subject : (subjectArtifact && subjectArtifact.title || subject));
+      const hasSubjectLink = subjectIsThread ? !!subjectThread : (subjectIsContract || !!subjectItem);
+      const openSubject = subjectIsThread
+        ? () => this.go("threads", { space:a.space, threadSel:subject, threadSpace:a.space, tvFocus:"" })
+        : (subjectIsContract
+          ? () => this.go("contracts", { space:a.space, conSel:subjectID, conVersion:subjectVersion, contractFile:null, conRole:"all", conRisk:false })
+          : (subjectItem
+            ? () => this.go("work", { space:a.space, workSel:subjectID, workTab:"all", workState:(d.archive || []).some(item => item.space === a.space && item.id === subjectID) ? "closed" : "all", workType:"all", workDue:false })
+            : () => {}));
+      return {
+        isLifecycle: false,
+        isWorkReport: true,
+        actionText: ru ? "сообщил о работе над" : "reported work on",
+        subjectLabel,
+        subjectTitle: subjectIsThread
+          ? (ru ? "Открыть тред" : "Open thread")
+          : (subjectIsContract ? (ru ? "Открыть контракт" : "Open contract") : (ru ? "Открыть документ в Обмене" : "Open document in Exchange")),
+        hasSubjectLink,
+        openSubject,
+        meta: system + (system ? " · " : "") + when(report.reported_at),
+        ...actorIdentity(d, system, eventName, actor.kind, actor.model),
+        systemSelf: system === d.self,
+        signalTone: "neutral",
+        signalLabel: ru ? "Отчёт о работе · не меняет состояние документа" : "Work report · does not change document state",
+        workMode: WORK_MODE_TEXT(report.mode, ru),
+        workModeTone: report.mode === "waiting" || report.mode === "paused" ? "attention" : (report.mode === "finished" ? "healthy" : "agent"),
+        workSummary: report.summary || report.subject_ref || "",
+        workWaits: waits,
+        hasWorkWaits: waits.length > 0,
+        workEvidence: report.valid_until
+          ? ((ru ? "зафиксировано в Git · актуально до " : "committed in Git · valid until ") + when(report.valid_until))
+          : (ru ? "зафиксировано в Git · финальный отчёт" : "committed in Git · final report"),
+        sortAt: report.reported_at || "",
+        sortKey: report.artifact_id || report.work_id || ""
+      };
+    });
+    // Durable reports lead this rail in authoritative commit order. Lifecycle
+    // events do not currently carry commit sequence in ArtifactDetail, so they
+    // retain their own authored chronology rather than weakening report order
+    // with a second clock. Local leases never enter this collection.
+    lifecycleEvents.sort((left, right) => {
+      if (left.sortAt !== right.sortAt) return left.sortAt < right.sortAt ? 1 : -1;
+      return String(right.sortKey || "").localeCompare(String(left.sortKey || ""));
+    });
+    const events = workEvents.concat(lifecycleEvents);
+
+    const flagMessages = (a.flags || []).map(code => {
+      const f = d.flags.find(x => x.code === code && x.artifact === a.id) || d.flags.find(x => x.code === code);
+      return { code, message: f ? f.message : (ru ? "К этому замечанию не приложено пояснения." : "No message is recorded for this flag in the fixture.") };
+    });
+
+    // `a` is the artifact detail, which carries the domain's own verdict; the
+    // exchange row `it` may not exist for it at all (an artifact can be shown
+    // from a space whose inbox/outbox projection does not list it), so the
+    // verdict is read from `a` and only `archived` — a local, per-system fact
+    // the domain has no opinion on — still comes from the row.
+    const cancelled = isAbandoned(a);
+    const refused = isRefused(a);
+    const complete = isSettled(a) || (!cancelled && !refused && !!(it && it.archived));
+    let calloutTitle = "", calloutText = "", calloutTone = "neutral", calloutParts = [];
+    const needed = e.needed_by || (e.expected_response && e.expected_response.by);
+    if (e.expected_response || needed) {
+      if (complete) {
+        calloutTone = "healthy";
+        calloutTitle = ru ? "Документ завершён · протокольного хода нет" : "Document final · no protocol move is owed";
+      } else if (cancelled) {
+        calloutTone = "neutral";
+        calloutTitle = ru ? "Документ отменён · протокольного хода нет" : "Document cancelled · no protocol move is owed";
+      } else if (refused) {
+        calloutTone = "blocking";
+        calloutTitle = ru ? "Документ отклонён · текущая цепочка завершена" : "Document declined · current protocol chain is final";
+      } else {
+        calloutTone = e.blocking ? "blocking" : "attention";
+        calloutTitle = needed
+          ? (ru ? "Дедлайн " : "Due ") + isoDay(needed) + " · " + ((a.to || []).includes(d.self) ? (ru ? "ваш ход" : "your move") : (ru ? "ход за " : "waiting on ") + (a.to || []).join(", "))
+          : ((a.to || []).includes(d.self) ? (ru ? "Что от нас ждут в ответ" : "What is expected from us") : (ru ? "Что ждём в ответ" : "What we expect back"));
+      }
+      const targetLabel = (a.to || []).includes(d.self)
+        ? (ru ? "Что ждут от нас" : "What is expected from us")
+        : (ru ? "Что ждём от " : "What we expect from ") + (a.to || []).join(", ");
+      const interimLabel = a.from === d.self
+        ? (ru ? "Что до ответа делаем мы" : "What we do until the answer arrives")
+        : (ru ? "Что до ответа делает " : "What is continuing meanwhile at ") + a.from;
+      const responseShape = typeof e.expected_response === "string" ? e.expected_response : (e.expected_response && e.expected_response.shape);
+      if (needed && (complete || cancelled || refused)) calloutParts.push({ label: ru ? "Исторический дедлайн" : "Historical deadline", text: isoDay(needed) });
+      if (responseShape) calloutParts.push({ label: targetLabel, text: responseShape.replace(/[.\s]+$/, "") + "." });
+      if (e.interim_behavior) calloutParts.push({ label: interimLabel, text: e.interim_behavior.replace(/[.\s]+$/, "") + "." });
+      if (e.context) calloutParts.push({ label: ru ? "Контекст автора" : "Author context", text: e.context.replace(/[.\s]+$/, "") + "." });
+    } else if (e.context) {
+      calloutTitle = ru ? "Что автор приложил к документу" : "Context recorded with the artifact";
+      calloutText = e.context;
+      calloutParts = [{ label: ru ? "Контекст автора" : "Author context", text: e.context }];
+    } else if (e.verification) {
+      calloutTitle = ru ? "Чем автор это подтвердил" : "How the sender verified it";
+      calloutText = Array.isArray(e.verification) ? e.verification.join(" · ") : String(e.verification);
+      calloutParts = [{ label: ru ? "Проверка" : "Verification", text: calloutText }];
+    }
+    if (complete && calloutTitle) calloutTone = "healthy";
+    const calloutSignalLabel = !calloutTitle ? "" : calloutTone === "healthy"
+      ? (ru ? "Зелёный блок: документ дошёл до конечного состояния, следующего хода протокола нет." : "Green block: the document reached a terminal state; no next protocol move is recorded.")
+      : cancelled
+        ? (ru ? "Серый блок: документ отменён или отозван. Ход ни за кем; прежний дедлайн показан только как факт истории." : "Grey block: the document was cancelled or withdrawn. Nobody owes a move; any former deadline is historical only.")
+        : calloutTone === "blocking"
+          ? (refused
+            ? (ru ? "Красный блок: документ отклонён; текущая цепочка конечна, а новый ход должен быть допустим протоколом." : "Red block: the document was declined; the current chain is terminal and any new move must be allowed by the protocol.")
+            : (ru ? "Красный блок: документ фиксирует блокирующее ожидание; следующий ход протокола за его получателем." : "Red block: the document records a blocking wait; its recipient owns the next protocol move."))
+          : calloutTone === "attention"
+            ? ((a.to || []).includes(d.self)
+              ? (ru ? "Жёлтый блок: документ активен, следующий ход протокола ожидается от вас." : "Yellow block: the document is active; your side owns the next protocol move.")
+              : (ru ? "Жёлтый блок: документ активен, следующий ход протокола ожидается от другой стороны." : "Yellow block: the document is active; the other side owns the next protocol move."))
+            : (ru ? "Серый блок: это записанный автором контекст; активное протокольное ожидание не указано." : "Grey block: this is author-recorded context; no active protocol wait is recorded.");
+
+    // The attachment claim the Go side already derived
+    // (datapackage.AttachmentClaim -> cache.ShowResult.Attachments ->
+    // ArtifactDetail.Attachments), named KEY BY KEY rather than handed over
+    // as an opaque object. `attachments: a.attachments || []` used to be the
+    // whole of it, and the row below it was never painted at all — the
+    // panel showed `ref` and nothing else, so `digest` (a SEPARATE field
+    // from `ref`, spec 04 §7) had no way to reach a human comparing bytes.
+    // Nothing is re-derived here; the display wording stays in
+    // ArtifactDetail.dc.html, which owns its own two languages.
+    const attachments = (a.attachments || []).map(att => ({
+      ref: att.ref, digest: att.digest, role: att.role,
+      conforms_to: att.conforms_to, retention: att.retention, expires_at: att.expires_at,
+      verification: att.verification, verification_claim: att.verification_claim,
+      lapsed: !!att.lapsed, lapsed_on: att.lapsed_on, lapse_claim: att.lapse_claim
+    }));
+
+    return {
+      present: true, type: a.type, pills,
+      sourceClass: a.sourceClass,
+      syncStale: !!a.sync_stale,
+      syncAge: age(a.sync_age),
+      authorName: authorIdentity.actorName, authorMono: authorIdentity.avatarMono, authorAvatar: authorIdentity.avatar, authorFrom:a.from, authorTo:(a.to || []).join(", "),
+      authorAction: ru ? "создал" : "created",
+      authorSubject: artifactWord,
+      authorMeta: a.from + ((a.to || []).length ? " → " + (a.to || []).join(", ") : "") + (e.created ? " · " + when(e.created) : ""),
+      authorSystemSelf: a.from === d.self,
+      authorProfileURL: authorIdentity.actorProfileURL,
+      // The badge fields ride alongside the face. ArtifactDetail hands its
+      // authorRow to ActorEventLine, which already knows how to draw them —
+      // so an agent-authored document names its principal and shows which
+      // agent acted, in the same shape as every other surface.
+      authorHasAgentBadge: authorIdentity.hasAgentBadge,
+      authorAgentID: authorIdentity.agentID,
+      authorAgentLabel: authorIdentity.agentLabel,
+      authorAgentModel: authorIdentity.agentModel,
+      authorProfileTitle: authorIdentity.actorProfileTitle,
+      title: a.title, body: a.body || "", bodyHTML: a.bodyHTML || "",
+      calloutTitle, calloutText, calloutTone, calloutSignalLabel, calloutParts,
+      lists, metadataPrimary: metadata.primary, metadataRest: metadata.rest,
+      refs: (a.refs || []).map(r => ({
+        ref: r.ref, note: (e.refs || []).find(x => x.ref === r.ref) ? (e.refs.find(x => x.ref === r.ref).note || "") : "",
+        pillText: r.resolved === false ? (ru ? "не нашли" : "unresolved") : (r.digest_mismatch ? (ru ? "сумма не сошлась" : "digest mismatch") : (ru ? "нашли, сумма сошлась" : "resolved · digest matches")),
+        pillTone: r.resolved === false || r.digest_mismatch ? "blocking" : "healthy"
+      })),
+      events, flags: flagMessages,
+      // This literal is hand-picked, not a spread of `a`, so a field the Go
+      // layer adds is invisible here until it is named — which is exactly how
+      // AC4's dashboard half was built and dormant for one wave. The rows
+      // themselves are picked the same way, above.
+      attachments,
+      // spec 05-declared-nature.md AC4 (agent-exchange-2026-08 P5): the
+      // per-item x_operational[] projection (ArtifactDetail.OperationalItems
+      // -> a.operational_items), undeclared/absent already resolved on the
+      // Go side (cache.DeriveOperationalItems) — passed through for the
+      // same "name it or it's invisible" reason as attachments above. It was
+      // named there and read NOWHERE for a full wave (F1) — the epic's own
+      // founding distinction, carried end to end through two Go projections
+      // and painted on no screen. operationalReadinessRows is shared with the thread
+      // panel so the two cannot drift.
+      operationalItems: operationalReadinessRows(a.operational_items, ru),
+      // The handover, on our own move only. The gate is the canonical whose-move
+      // projection rather than the narrower human-attention queue: a routine
+      // move an agent would normally have taken unprompted is exactly the case
+      // where a person got here first.
+      hasPrompt: !!(it && it.yourMove && it.prompt),
+      prompt: {
+        text: it && it.prompt ? agentPromptText(this.promptContext({
+          id: a.id, type: a.type, state: a.state, title: a.title,
+          space: a.space, thread: a.thread, from: a.from, to: a.to,
+          neededBy: it.neededBy || e.needed_by, blocking: !!e.blocking,
+          priority: e.priority, prompt: it.prompt
+        })) : ""
+      },
+      threadLabel: a.thread ? (ru ? "Тред" : "Thread") : (ru ? "Тред не указан" : "No thread recorded"),
+      hasThread: !!a.thread,
+      openThread: () => this.go("threads", { space:a.space, threadSel:a.thread || "", threadSpace:a.space }),
+      sourceURL: this.artifactSourceURL(a),
+      footer: a.id
+    };
+  }
+
+  renderVals() {
+    const ctx = this.syncContext();
+    let d = ctx.data;
+    const s = this.state;
+    const ui = ctx.ui || {};
+    const ru = ctx.locale === "ru";
+    const c = DASHBOARD_I18N[ru ? "ru" : "en"];
+    if (!d && "ExchangeView" !== "GuideView") {
+      if ("ExchangeView" !== "DashboardShell") return {};
+      d = { spaces:[], nodes:[], inbox:[], outbox:[], archive:[], contracts:[], contractEdges:[], flags:[], meta:{}, tooling:{}, generatedAt:"", self:"" };
+    }
+    const scopedInbox = d.inbox.filter(i => this.inScope(i.space));
+    const scopedOutbox = d.outbox.filter(i => this.inScope(i.space));
+    const scopedArchive = d.archive.filter(i => this.inScope(i.space));
+    const exchangeByID = new Map();
+    scopedInbox.concat(scopedOutbox, scopedArchive).forEach(it => exchangeByID.set(String(it.space || "") + "\u0000" + it.id, it));
+    const exchangeAll = Array.from(exchangeByID.values());
+    const isIncoming = (it) => (it.to || []).indexOf(d.self) > -1;
+    const isOutgoing = (it) => it.from === d.self;
+    const isClosed = (it) => !!it.archived || (outcomeOf(it) !== "" && outcomeOf(it) !== "open") || String(it.state || "").toLowerCase() === "expired";
+    const hasActiveDeadline = (it) => !!it.neededBy && !isClosed(it);
+    const byNewest = (list) => list.slice().sort((a, b) => {
+      const sameSpace = String(a.space || "") === String(b.space || "");
+      // Git first-parent order is authoritative inside one space. The boolean
+      // matters because sequence zero is a valid first commit, not "missing".
+      if (sameSpace && a.createdOrderKnown && b.createdOrderKnown) {
+        const as = Number(a.createdSeq || 0), bs = Number(b.createdSeq || 0);
+        if (as !== bs) return bs - as;
+      }
+      // Two artifacts may be born in one commit; frontmatter creation time is
+      // the deterministic within-batch key and the cross-space fallback.
+      const at = a.createdAt || "", bt = b.createdAt || "";
+      if (at !== bt) return at && bt ? (at < bt ? 1 : -1) : (at ? -1 : 1);
+      return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
+    });
+    const workTypes = exchangeAll.map(i => i.type).filter((t, i, arr) => t && arr.indexOf(t) === i).sort();
+    const workType = workTypes.indexOf(s.workType) > -1 ? s.workType : "all";
+    const workState = ["open", "closed"].indexOf(s.workState) > -1 ? s.workState : "all";
+    const matchesDirection = (it, value) => value === "all" || (value === "incoming" ? isIncoming(it) : isOutgoing(it));
+    const matchesState = (it, value) => value === "all" || (value === "closed" ? isClosed(it) : !isClosed(it));
+    const filterExchange = (direction, lifecycle, type, dueOnly) => exchangeAll.filter(it =>
+      matchesDirection(it, direction) && matchesState(it, lifecycle) &&
+      (type === "all" || it.type === type) && (!dueOnly || hasActiveDeadline(it)));
+    const workList = byNewest(filterExchange(s.workTab, workState, workType, s.workDue));
+    const directionCount = (value) => filterExchange(value, workState, workType, s.workDue).length;
+    const stateCount = (value) => filterExchange(s.workTab, value, workType, s.workDue).length;
+    const workTypeCount = (type) => filterExchange(s.workTab, workState, type, s.workDue).length;
+    const dueCount = filterExchange(s.workTab, workState, workType, true).length;
+    const workSel = s.workSel && workList.some(i => i.id === s.workSel) ? s.workSel : (workList[0] && workList[0].id) || "";
+    const values = {
+      workAria:c.views[1],
+      typeMenuOpen: s.typeMenu,
+      typeMenuExpanded: s.typeMenu ? "true" : "false",
+      toggleTypeMenu: (ev) => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.setState(x => ({ typeMenu: !x.typeMenu })); },
+      typeButtonStyle: "display:inline-flex; align-items:center; gap:8px; min-height:" + FILTER_H + "px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; border-radius:10px; padding:0 14px 0 16px; cursor:pointer; white-space:nowrap; " +
+        (workType === "all" ? "background:var(--surface); color:var(--body); box-shadow:0 1px 2px rgba(33,30,23,.06);" : "background:var(--primary); color:var(--on-primary);") +
+        (s.typeMenu ? " box-shadow:0 1px 2px rgba(33,30,23,.06), inset 0 0 0 1.5px var(--border-strong);" : ""),
+      workTypeCurrent: workType === "all" ? (ru ? "Все типы" : "All types") : (TYPE_WORDS(ru)[workType] || workType),
+      workTypeFilters: [{ id: "all", label: ru ? "Все типы" : "All types" }].concat(workTypes.map(t => ({ id: t, label: TYPE_WORDS(ru)[t] || t }))).map(f => ({
+        label: f.label,
+        isAll: f.id === "all", isType: f.id !== "all", type: f.id,
+        count: String(workTypeCount(f.id)),
+        selected: workType === f.id,
+        current: workType === f.id ? "true" : null,
+        style: "display:flex; align-items:center; gap:9px; width:100%; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; border-radius:9px; padding:9px 10px; cursor:pointer; " +
+          (workType === f.id ? "background:var(--teal-tint); color:var(--teal-ink);" : "background:transparent; color:var(--body);"),
+        go: () => this.setState({ workType: f.id, workSel: "", typeMenu: false })
+      })),
+      workTabs: [["all", ru ? "Все" : "All"], ["incoming", ru ? "Входящие" : "Incoming"], ["outgoing", ru ? "Исходящие" : "Outgoing"]].map(([id, label]) => ({
+        label,
+        count: directionCount(id),
+        pressed: s.workTab === id ? "true" : "false",
+        go: () => this.setState({ workTab: id, workSel: "", typeMenu: false })
+      })),
+      workStates: [["all", ru ? "Все" : "All"], ["open", ru ? "Открытые" : "Open"], ["closed", ru ? "Закрытые" : "Closed"]].map(([id, label]) => ({
+        label,
+        count: stateCount(id),
+        pressed: workState === id ? "true" : "false",
+        go: () => this.setState({ workState: id, workSel: "", typeMenu: false })
+      })),
+      workDirectionAria: ru ? "Направление обмена" : "Exchange direction",
+      workStateAria: ru ? "Состояние документов" : "Document state",
+      hasDueFilter: exchangeAll.some(hasActiveDeadline) || !!s.workDue,
+      dueText: ru ? "С дедлайном" : "With a deadline",
+      dueCountText: String(dueCount),
+      duePressed: s.workDue ? "true" : "false",
+      dueStyle: this.filterChip(!!s.workDue) + (s.workDue ? "" : " box-shadow:inset 0 0 0 1px var(--border);"),
+      toggleDue: () => this.setState(x => ({ workDue: !x.workDue, workSel: "" })),
+      workRows: workList.map(it => this.rowFor(it, "workSel", workSel)),
+      workWholeEmpty: workList.length === 0,
+      workHasColumns: workList.length > 0,
+      showWorkFilters: exchangeAll.length > 0,
+      emptyWorkTitle: s.workDue && dueCount === 0
+        ? (ru ? "Ни у чего нет дедлайна" : "Nothing here has a deadline")
+        : workType !== "all"
+        ? (ru ? "Ничего такого типа" : "Nothing of that type")
+        : workState === "open"
+        ? (ru ? "Открытых документов нет" : "No open documents")
+        : workState === "closed"
+        ? (ru ? "Закрытых документов нет" : "No closed documents")
+        : (s.workTab === "incoming" ? (ru ? "Входящих нет" : "Nothing incoming") : (s.workTab === "outgoing" ? (ru ? "Исходящих нет" : "Nothing outgoing") : (ru ? "История обмена пуста" : "No exchange history yet"))),
+      emptyWorkText: s.workDue && dueCount === 0
+        ? (ru ? "Ни на одном документе в этой области не стоит срок. Снимите фильтр, чтобы увидеть остальное." : "Nothing in this scope carries a deadline. Clear the filter to see the rest.")
+        : workType !== "all"
+        ? (ru ? "Под этот тип в текущей области ничего не подошло. Снимите фильтр, чтобы увидеть остальное." : "Nothing of that type in this scope. Clear the filter to see the rest.")
+        : workState !== "all"
+        ? (ru ? "В выбранном направлении и состоянии документов нет. Измените один из фильтров, чтобы расширить ленту." : "No documents match the selected direction and state. Change either filter to broaden the feed.")
+        : s.workTab === "outgoing"
+        ? (ru ? "В этой области нет документов, отправленных вашей системой." : "There are no documents sent by your system in this scope.")
+        : (ru ? "В этой области нет документов, адресованных вашей системе." : "There are no documents addressed to your system in this scope."),
+      workDetail: this.detailFor(workSel, workList)
+    };
+    return values;
+  }
+}
+</script>
+</body>
+</html>

@@ -10,24 +10,29 @@ var ErrClientLimit = errors.New("localserver: SSE client limit reached")
 
 type revisionBroker struct {
 	mu      sync.Mutex
-	clients map[uint64]chan string
+	clients map[uint64]chan dashboardVersion
 	nextID  uint64
 	limit   int
 	closed  bool
 }
 
 func newRevisionBroker(limit int) *revisionBroker {
-	return &revisionBroker{clients: make(map[uint64]chan string), limit: limit}
+	return &revisionBroker{clients: make(map[uint64]chan dashboardVersion), limit: limit}
 }
 
-func (b *revisionBroker) register() (uint64, <-chan string, error) {
+type dashboardVersion struct {
+	revision        string
+	viewModelDigest string
+}
+
+func (b *revisionBroker) register() (uint64, <-chan dashboardVersion, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.closed || len(b.clients) >= b.limit {
 		return 0, nil, ErrClientLimit
 	}
 	b.nextID++
-	channel := make(chan string, 1)
+	channel := make(chan dashboardVersion, 1)
 	b.clients[b.nextID] = channel
 	return b.nextID, channel, nil
 }
@@ -41,7 +46,7 @@ func (b *revisionBroker) deregister(id uint64) {
 	}
 }
 
-func (b *revisionBroker) publish(revision string) {
+func (b *revisionBroker) publish(version dashboardVersion) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.closed {
@@ -49,13 +54,13 @@ func (b *revisionBroker) publish(revision string) {
 	}
 	for _, channel := range b.clients {
 		select {
-		case channel <- revision:
+		case channel <- version:
 		default:
 			select {
 			case <-channel:
 			default:
 			}
-			channel <- revision
+			channel <- version
 		}
 	}
 }

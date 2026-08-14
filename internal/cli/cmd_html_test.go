@@ -64,3 +64,23 @@ func TestHtmlCommand_DemoNoOpen(t *testing.T) {
 		t.Errorf("--no-open should not open a browser, stdout=%q", stdout.String())
 	}
 }
+
+func TestHtmlCommandDemoJSONMatchesIndentedCompatibilityGolden(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr bytes.Buffer
+	code := NewHtmlCommand(nil).Run(context.Background(), []string{"--demo", "--json"}, IO{Stdout: &stdout, Stderr: &stderr})
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr=%q", code, stderr.String())
+	}
+	want, err := os.ReadFile("testdata/html-demo-json.golden")
+	if err != nil {
+		t.Fatalf("read HTML demo JSON golden: %v", err)
+	}
+	if len(want) < 2 || want[len(want)-1] != '\n' || want[len(want)-2] == '\n' || !bytes.Contains(want, []byte("\n  \"generatedAt\": ")) {
+		t.Fatalf("golden does not pin two-space indentation plus one trailing newline")
+	}
+	if !bytes.Equal(stdout.Bytes(), want) {
+		t.Fatalf("a2a html --demo --json bytes differ from compatibility golden: got %d bytes, want %d", stdout.Len(), len(want))
+	}
+}

@@ -1,0 +1,1460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<section aria-label="{{ threadsAria }}" data-screen-label="Threads">
+        <sc-if value="{{ noThreadRows }}" hint-placeholder-val="{{ false }}">
+          <dc-import name="EmptyState" title="{{ emptyThreadsTitle }}" text="{{ emptyThreadsText }}" size="page" hint-size="100%,380px"></dc-import>
+        </sc-if>
+        <sc-if value="{{ hasThreadRows }}" hint-placeholder-val="{{ true }}">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(430px,100%),1fr)); gap:18px; align-items:start;">
+          <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
+            <sc-for list="{{ threadRows }}" as="t" hint-placeholder-count="5">
+              <button type="button" class="a2a-pick" data-thread-space="{{ t.space }}" data-thread-id="{{ t.id }}" aria-pressed="{{ t.selected }}" onClick="{{ t.select }}" style="{{ t.style }}">
+                <span style="display:flex; align-items:flex-start; gap:8px; flex-wrap:nowrap; margin-bottom:8px;">
+                  <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px;">
+                    <dc-import name="StatusPill" text="{{ t.pillText }}" tone="{{ t.pillTone }}" hint-size="110px,26px"></dc-import>
+                    <span style="font-size:15px; color:var(--muted);">{{ t.participants }}</span>
+                  </span>
+                  <span style="flex:0 0 auto; font-size:15px; color:var(--muted);">{{ t.age }}</span>
+                </span>
+                <span style="display:block; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; color:var(--text); margin-bottom:7px; overflow-wrap:anywhere;">{{ t.title }}</span>
+                <span style="display:block; font-size:15px; color:var(--muted); font-family:'IBM Plex Mono',monospace; overflow-wrap:anywhere;">{{ t.meta }}</span>
+              </button>
+            </sc-for>
+          </div>
+
+          <div style="min-width:0; background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
+            <sc-if value="{{ tvMissing }}" hint-placeholder-val="{{ false }}">
+              <dc-import name="EmptyState" title="{{ threadMissingTitle }}" text="{{ threadMissingText }}" size="panel" hint-size="100%,240px"></dc-import>
+            </sc-if>
+            <sc-if value="{{ tvPresent }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap; margin-bottom:var(--space-card-tags-to-author);">
+                <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px;">
+                  <dc-import name="StatusPill" text="{{ tvOrderPill }}" tone="agent" why="{{ tvOrderHint }}" hint-size="180px,26px"></dc-import>
+                  <sc-if value="{{ tvStale }}" hint-placeholder-val="{{ false }}">
+                    <dc-import name="StatusPill" text="{{ tvStaleText }}" tone="attention" hint-size="110px,26px"></dc-import>
+                  </sc-if>
+                </span>
+              </div>
+              <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; row-gap:9px; margin:0 0 var(--space-card-author-to-title);">
+                <span aria-label="{{ tvParticipantsAria }}" style="display:flex; align-items:center; min-height:34px; padding-left:2px;">
+                  <sc-for list="{{ tvParticipantFaces }}" as="face" hint-placeholder-count="3">
+                    <span title="{{ face.title }}" style="{{ face.style }}">{{ face.mono }}</span>
+                  </sc-for>
+                </span>
+                <span style="min-width:0; font-size:15px; line-height:1.45; color:var(--muted); overflow-wrap:anywhere;">{{ tvParticipantsText }} · <span style="font-family:'IBM Plex Mono',ui-monospace,monospace;">{{ tvSpaceText }}</span></span>
+              </div>
+              <h2 class="a2a-detail-title" style="margin:0 0 var(--space-card-title-to-content);">{{ tvTitle }}</h2>
+
+              <!-- A thread with nothing pending is finished. Rendering the
+                   "whose move" prompt over an empty list asked a question the
+                   record had already answered. -->
+              <sc-if value="{{ tvSettled }}" hint-placeholder-val="{{ false }}">
+                <div style="position:relative; background:var(--healthy-tint); border-radius:14px; padding:16px 54px 16px 18px; margin-bottom:0;">
+                  <span style="position:absolute; top:16px; right:17px; z-index:2;"><dc-import name="EventSignal" tone="positive" label="{{ tvSettledSignalLabel }}" hint-size="20px,20px"></dc-import></span>
+                  <span style="display:block; font-size:16px; font-weight:600; color:var(--healthy-strong);">{{ settledLabel }}</span>
+                  <span style="display:block; font-size:15px; line-height:1.5; color:var(--healthy-ink);">{{ settledText }}</span>
+                </div>
+              </sc-if>
+              <sc-if value="{{ tvPending }}" hint-placeholder-val="{{ true }}">
+              <div style="{{ tvPendingCalloutStyle }}">
+                <span style="position:absolute; top:16px; right:17px; z-index:2;"><dc-import name="EventSignal" tone="{{ tvPendingSignalTone }}" label="{{ tvPendingSignalLabel }}" hint-size="20px,20px"></dc-import></span>
+                <div style="margin-bottom:12px; padding-right:34px;">
+                  <div style="{{ tvPendingTitleStyle }}">{{ whoseMoveLabel }}</div>
+                  <div style="{{ tvPendingTextStyle }}">{{ whoseMoveText }}</div>
+                </div>
+                <!-- One handover for the thread, not one per document. Three
+                     documents in one conversation are one job: an agent handed
+                     all of them at once has the whole situation, and three
+                     primary buttons in a row announce three main actions,
+                     which means none. The documents below stay a list of
+                     facts. -->
+                <sc-if value="{{ tvHasPrompt }}" hint-placeholder-val="{{ true }}">
+                  <div style="margin-bottom:14px;">
+                    <dc-import name="AgentPrompt" det="{{ tvPrompt }}" hint-size="100%,44px"></dc-import>
+                  </div>
+                </sc-if>
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                  <sc-for list="{{ tvOpen }}" as="o" hint-placeholder-count="2">
+                    <!-- The pending document is a document card, not an id row:
+                         its title is the primary label and the whole surface
+                         opens the same ArtifactDetail modal used elsewhere. -->
+                    <button type="button" onClick="{{ o.openDocument }}" aria-label="{{ o.openLabel }}" style="width:100%; box-sizing:border-box; display:block; background:var(--surface); color:var(--text); border:0; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); text-align:left; cursor:pointer; box-shadow:inset 0 0 0 1px var(--hairline);">
+                      <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
+                        <span style="display:inline-flex; pointer-events:none;"><dc-import name="TypeBadge" type="{{ o.type }}" size="small" hint-size="130px,24px"></dc-import></span>
+                        <span style="display:inline-flex; pointer-events:none;"><dc-import name="StatusPill" text="{{ o.who }}" tone="{{ o.whoTone }}" size="small" hint-size="120px,24px"></dc-import></span>
+                        <span style="flex:1 1 auto; min-width:0; text-align:right; font-size:15px; color:var(--muted);">{{ o.needed }}</span>
+                      </div>
+                      <div style="margin-top:var(--space-inline); font-size:var(--font-card-title-sm); line-height:var(--line-card-title-sm); font-weight:600; color:var(--text); overflow-wrap:anywhere;">{{ o.title }}</div>
+                      <!-- The verdict, not just its conclusion: which move is
+                           owed, why it is owed, and — loudest of the three —
+                           whether a person rather than an agent has to make
+                           it. All three came off internal/pendency and were
+                           dropped here for a full wave. -->
+                      <sc-if value="{{ o.hasMove }}" hint-placeholder-val="{{ false }}">
+                        <div style="margin-top:var(--space-inline); font-size:15px; line-height:1.5; color:var(--muted); overflow-wrap:anywhere;"><span style="text-transform:uppercase; letter-spacing:.03em; font-size:13px; font-weight:600;">{{ o.moveLabel }}</span><span> · </span><span style="color:var(--text); font-weight:600;">{{ o.move }}</span></div>
+                      </sc-if>
+                      <sc-if value="{{ o.hasWhy }}" hint-placeholder-val="{{ false }}">
+                        <div style="margin-top:6px; font-size:15px; line-height:1.5; color:var(--muted); overflow-wrap:anywhere;">{{ o.why }}</div>
+                      </sc-if>
+                      <sc-if value="{{ o.hasHumanGate }}" hint-placeholder-val="{{ false }}">
+                        <div style="margin-top:9px; display:flex; align-items:flex-start; gap:9px; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--attention-tint); font-size:15px; line-height:1.5; color:var(--attention-ink); overflow-wrap:anywhere;">
+                          <span style="display:inline-flex; flex:0 0 auto; pointer-events:none;"><dc-import name="EventSignal" tone="caution" label="" hint-size="20px,20px"></dc-import></span>
+                          <span>{{ o.humanGate }}</span>
+                        </div>
+                      </sc-if>
+                      <!-- Operational readiness is a contract's own third
+                           state made visible: `undeclared` is not `absent`,
+                           and this row is where a consumer sees which of the
+                           two they are actually looking at. -->
+                      <sc-if value="{{ o.hasOperational }}" hint-placeholder-val="{{ false }}">
+                        <div style="margin-top:10px;">
+                          <div style="font-size:13px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:6px;">{{ o.operationalLabel }}</div>
+                          <span style="display:flex; gap:7px; flex-wrap:wrap;">
+                            <sc-for list="{{ o.operationalItems }}" as="op" hint-placeholder-count="3">
+                              <span style="display:inline-flex; pointer-events:none;"><dc-import name="StatusPill" text="{{ op.chip }}" tone="{{ op.tone }}" why="{{ op.hint }}" size="small" hint-size="180px,24px"></dc-import></span>
+                            </sc-for>
+                          </span>
+                        </div>
+                      </sc-if>
+                    </button>
+                  </sc-for>
+                </div>
+              </div>
+              </sc-if>
+
+              <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin:0 0 0 20px; padding:var(--space-after-section-heading) 0 var(--space-after-section-heading) 34px; border-left:2px solid var(--border);">
+                <div style="font-size:16px; font-weight:600;">{{ causalTimelineLabel }}</div>
+                <div style="font-size:15px; color:var(--muted);">{{ newestFirstLabel }} · {{ tvEntryCount }}</div>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:0; margin:0 0 20px 20px;">
+                <sc-for list="{{ tvEntries }}" as="e" hint-placeholder-count="6">
+                  <div style="{{ e.railStyle }}">
+                    <sc-if value="{{ e.isArtifact }}" hint-placeholder-val="{{ true }}">
+                      <div id="{{ e.anchor }}" style="{{ e.contentStyle }}">
+                        <dc-import name="ActorEventLine" row="{{ e }}" size="regular" layout="rail" hint-size="100%,44px"></dc-import>
+                        <div style="margin-top:14px;">
+                          <dc-import name="TimelineArtifactCard" card="{{ e.card }}" hint-size="100%,190px"></dc-import>
+                        </div>
+                        <!-- Registry state, not an event: who has registered as a consumer
+                             of this contract and the version each pinned. Never rendered
+                             for anything but a contract with at least one adopter — no
+                             empty label for a contract nobody consumes yet. -->
+                        <sc-if value="{{ e.hasAdopters }}" hint-placeholder-val="{{ false }}">
+                          <div style="margin-top:14px;">
+                            <div style="font-size:14px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:8px;">{{ e.adoptersTitle }}</div>
+                            <div style="display:flex; flex-direction:column; gap:4px;">
+                              <sc-for list="{{ e.adopters }}" as="ad" hint-placeholder-count="1">
+                                <div style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; color:var(--muted); overflow-wrap:anywhere;">{{ ad }}</div>
+                              </sc-for>
+                            </div>
+                          </div>
+                        </sc-if>
+                        <!-- The handoff's own data deliverables (spec 05a AC-7): package,
+                             attempt, verdict — unverified never reads like passed — the
+                             failing entry/rule/record on failure, and the supersede chain
+                             back to the first attempt. A delivery whose manifest cannot be
+                             resolved still gets its own row, marked as such, never omitted. -->
+                        <sc-if value="{{ e.hasDeliveries }}" hint-placeholder-val="{{ false }}">
+                          <div style="margin-top:14px;">
+                            <div style="font-size:14px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:8px;">{{ e.deliveriesTitle }}</div>
+                            <div style="display:flex; flex-direction:column; gap:10px;">
+                              <sc-for list="{{ e.deliveries }}" as="del" hint-placeholder-count="1">
+                                <div style="border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--surface-section); box-shadow:inset 0 0 0 1px var(--hairline);">
+                                  <!-- Header, outside both branches on purpose: the box whose
+                                       manifest never resolved is labelled exactly like the ones
+                                       that did. Name leads, package id and attempt follow it. -->
+                                  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                                    <span style="min-width:0; flex:1 1 220px;">
+                                      <strong style="display:block; font-size:15px; line-height:1.4; overflow-wrap:anywhere;">{{ del.nameLabel }}</strong>
+                                      <span style="display:block; margin-top:4px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; color:var(--muted); overflow-wrap:anywhere;">{{ del.metaLabel }}</span>
+                                    </span>
+                                    <sc-if value="{{ del.resolved }}" hint-placeholder-val="{{ true }}">
+                                      <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="{{ del.verdictText }}" tone="{{ del.verdictTone }}" size="small" hint-size="140px,24px"></dc-import></span>
+                                    </sc-if>
+                                  </div>
+                                  <sc-if value="{{ del.hasFailures }}" hint-placeholder-val="{{ false }}">
+                                    <div style="margin-top:12px;">
+                                      <div style="font-size:13px; font-weight:600; color:var(--blocking-ink); margin-bottom:6px;">{{ del.failuresTitle }}</div>
+                                      <div style="display:flex; flex-direction:column; gap:6px;">
+                                        <sc-for list="{{ del.failures }}" as="fl" hint-placeholder-count="1">
+                                          <div style="border-radius:var(--radius-nested); padding:9px 11px; background:var(--blocking-tint);">
+                                            <div style="display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+                                              <span style="min-width:0; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; font-weight:600; color:var(--blocking-strong); overflow-wrap:anywhere;">{{ fl.path }}</span>
+                                              <sc-if value="{{ fl.hasRecord }}" hint-placeholder-val="{{ true }}"><span style="flex:0 0 auto; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px; color:var(--blocking-ink);">{{ fl.recordLabel }}</span></sc-if>
+                                            </div>
+                                            <div style="margin-top:4px; font-size:14px; line-height:1.5; color:var(--blocking-ink); overflow-wrap:anywhere;">{{ fl.rule }}</div>
+                                          </div>
+                                        </sc-for>
+                                      </div>
+                                    </div>
+                                  </sc-if>
+                                  <sc-if value="{{ del.hasChain }}" hint-placeholder-val="{{ false }}">
+                                    <div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--hairline);">
+                                      <div style="font-size:13px; font-weight:600; color:var(--muted); margin-bottom:6px;">{{ del.chainTitle }}</div>
+                                      <div style="display:flex; flex-direction:column; gap:6px;">
+                                        <sc-for list="{{ del.chain }}" as="ch" hint-placeholder-count="1">
+                                          <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+                                            <span style="min-width:0;"><strong style="font-size:14px;">{{ ch.attemptLabel }}</strong><span style="margin-left:7px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px; color:var(--muted); overflow-wrap:anywhere;">{{ ch.packageId }}</span></span>
+                                            <span style="flex:0 0 auto; display:inline-flex; align-items:center; gap:7px;">
+                                              <sc-if value="{{ ch.isCurrent }}" hint-placeholder-val="{{ true }}"><span style="font-size:12px; color:var(--muted);">{{ ch.currentLabel }}</span></sc-if>
+                                              <dc-import name="StatusPill" text="{{ ch.verdictText }}" tone="{{ ch.verdictTone }}" size="small" hint-size="120px,22px"></dc-import>
+                                            </span>
+                                          </div>
+                                        </sc-for>
+                                      </div>
+                                    </div>
+                                  </sc-if>
+                                  <sc-if value="{{ del.unresolved }}" hint-placeholder-val="{{ false }}">
+                                    <div style="margin-top:12px; border-radius:var(--radius-nested); padding:9px 11px; background:var(--attention-tint);">
+                                      <div style="font-size:13px; font-weight:600; color:var(--attention-ink); margin-bottom:4px;">{{ del.unresolvedTitle }}</div>
+                                      <div style="font-size:13px; line-height:1.5; color:var(--attention-ink); overflow-wrap:anywhere;">{{ del.unresolvedText }}</div>
+                                    </div>
+                                  </sc-if>
+                                </div>
+                              </sc-for>
+                            </div>
+                          </div>
+                        </sc-if>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ e.isEvent }}" hint-placeholder-val="{{ false }}">
+                      <div id="{{ e.anchor }}" style="{{ e.contentStyle }}">
+                        <dc-import name="ActorEventLine" row="{{ e }}" size="regular" layout="rail" hint-size="100%,44px"></dc-import>
+                        <sc-if value="{{ e.hasAttachment }}" hint-placeholder-val="{{ false }}"><div style="margin-top:14px;"><dc-import name="TimelineArtifactCard" card="{{ e.attachment }}" hint-size="100%,190px"></dc-import></div></sc-if>
+                        <!-- verify/close's own per-criterion judgement (P6 wave C,
+                             event/v2 `verdicts[]`, threat-model.md T5). Rendered
+                             only when the event actually carries entries — no
+                             empty heading for every other transition. -->
+                        <sc-if value="{{ e.hasVerdicts }}" hint-placeholder-val="{{ false }}">
+                          <div style="margin-top:14px;">
+                            <div style="font-size:14px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:8px;">{{ e.verdictsTitle }}</div>
+                            <div style="display:flex; flex-direction:column; gap:6px;">
+                              <sc-for list="{{ e.verdicts }}" as="v" hint-placeholder-count="1">
+                                <div><dc-import name="StatusPill" text="{{ v.text }}" tone="{{ v.tone }}" size="small" hint-size="240px,24px"></dc-import></div>
+                              </sc-for>
+                            </div>
+                          </div>
+                        </sc-if>
+                      </div>
+                    </sc-if>
+                    <!-- A DERIVED row: `a2a contract adopt` emits no event, so this is
+                         read from the consumer's own registry rather than from this
+                         thread. It reuses ActorEventLine so the reader's eye is not
+                         asked to learn a second shape, and it carries no artifact card
+                         and no event signal, because nothing happened here. Its own
+                         meta line names where the fact came from. -->
+                    <sc-if value="{{ e.isDerived }}" hint-placeholder-val="{{ false }}">
+                      <div style="{{ e.contentStyle }}">
+                        <dc-import name="ActorEventLine" row="{{ e }}" size="regular" layout="rail" hint-size="100%,44px"></dc-import>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ e.isWorkReport }}" hint-placeholder-val="{{ false }}">
+                      <div id="{{ e.anchor }}" style="{{ e.contentStyle }}">
+                        <dc-import name="ActorEventLine" row="{{ e }}" size="regular" layout="rail" hint-size="100%,44px"></dc-import>
+                        <div data-work-report-history style="margin-top:var(--space-inline); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--surface-section); box-shadow:inset 0 0 0 1px var(--hairline);">
+                          <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:8px;">
+                            <dc-import name="StatusPill" text="{{ e.workMode }}" tone="{{ e.workModeTone }}" size="small" hint-size="110px,24px"></dc-import>
+                            <span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px; line-height:1.45; color:var(--muted);">{{ e.workEvidence }}</span>
+                          </div>
+                          <div style="font-size:15px; line-height:1.5; color:var(--body); overflow-wrap:anywhere;">{{ e.workSummary }}</div>
+                          <sc-if value="{{ e.hasWorkWaits }}" hint-placeholder-val="{{ false }}">
+                            <div style="display:flex; flex-direction:column; gap:5px; margin-top:10px; padding-top:9px; border-top:1px solid var(--hairline);">
+                              <sc-for list="{{ e.workWaits }}" as="w" hint-placeholder-count="2">
+                                <div style="font-size:13px; line-height:1.45; color:var(--muted); overflow-wrap:anywhere;"><span style="font-weight:600; color:var(--body);">{{ w.label }}</span><sc-if value="{{ w.hasSummary }}" hint-placeholder-val="{{ true }}"><span> · {{ w.summary }}</span></sc-if></div>
+                              </sc-for>
+                            </div>
+                          </sc-if>
+                        </div>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+
+              <sc-if value="{{ tvHasFlags }}" hint-placeholder-val="{{ false }}">
+                <div style="background:var(--blocking-tint); border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline);">
+                  <div style="font-size:16px; font-weight:600; color:var(--blocking-ink); margin-bottom:10px;">{{ threadFlagsLabel }}</div>
+                  <div style="display:flex; flex-direction:column; gap:8px;">
+                    <sc-for list="{{ tvFlags }}" as="f" hint-placeholder-count="1">
+                      <div style="font-size:15px; line-height:1.55; color:var(--blocking-strong); font-family:'IBM Plex Mono',monospace; overflow-wrap:anywhere;">{{ f }}</div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-if>
+
+              <footer style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; border-top:1px solid var(--hairline); margin-top:var(--space-section-strong); padding-top:15px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; line-height:1.5; color:var(--muted);">
+                <span style="min-width:0; display:inline-flex; align-items:center; gap:7px; flex-wrap:wrap; overflow-wrap:anywhere;"><dc-import name="FreshnessDot" stale="{{ tvFreshnessStale }}" age="{{ tvFreshnessAge }}" hint="{{ tvFreshnessHint }}" compact="{{ true }}" hint-size="9px,9px"></dc-import>{{ tvFreshnessText }}</span>
+                <span style="overflow-wrap:anywhere;">{{ tvSnapshotText }}</span>
+              </footer>
+            </sc-if>
+          </div>
+        </div>
+        </sc-if>
+      </section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1240,&quot;height&quot;:900},&quot;ctx&quot;:{&quot;editor&quot;:&quot;object&quot;,&quot;default&quot;:{},&quot;tsType&quot;:&quot;object&quot;}}">
+const DASHBOARD_EN = {
+    views:["Overview","Exchange","Threads","Contracts","Map","Spaces","Versions","Docs","Guide"],
+    backOverview:"Back to Overview", viewsLabel:"Views", more:"More", localeGroup:"Interface language", space:"Space",
+    errorTitle:"Could not read demo data", errorPrefix:"The dashboard is a read-only projection of", errorSuffix:". Missing facts are never inferred.",
+    openWork:"Open Exchange", direction:"Show", typeFilter:"Type",
+    spaceHealth:"Space health", spaceHealthTitle:"How current this page is",
+    spaceHealthSub:"Everything on these screens is read from a local copy of each space, taken once when this file was written. This is when that copy was last refreshed, and what each space expects of your binary.",
+    spaceHealthFlagsTitle:"Worth a look", spaceHealthFlagsText:"Recorded by committed events, or a problem reading the local copy. A flag is a reason to look, not a verdict.",
+    spaceHealthFooter:"Nothing here is inferred: an unreadable space is reported as unreadable, never as empty.",
+    spaceHealthMore:"Open Spaces", spaceHealthClose:"Close",
+    work:"Exchange", threads:"Threads", threadMissingTitle:"No full reconstruction is available for this thread", threadMissingText:"This row comes from the summary; only some demo threads include a complete causal transcript.",
+    whoseMove:"Whose move", whoseMoveText:"State and allowed transitions are derived from the events below.", causalTimeline:"Thread history", newestFirst:"newest first", opensChain:"opens the chain", subjectPrefix:"on", threadFlags:"Consistency, protocol and read evidence",
+    contracts:"Contracts and their versions", codeBacked:"code-backed", consumerLines:"Registered consumer lines", versionWindow:"Live version window", provenance:"Provenance and schema", codeBindingPrefix:"A code binding records the generator and source digest. Whether the current bytes still match is", notEvaluated:"not evaluated", codeBindingSuffix:" in this static read.",
+    network:"Who depends on whom", networkSub:"A solid line means one system depends on a contract another one publishes. A dashed line means an exchange between two systems is still open. Click any line or system to see the versions, the pinned lines and the open documents behind it.", exchangeMap:"Exchange map",
+    spaces:"Spaces", spacesSub:"A space is the shared repository systems exchange documents through. This is how fresh your copy of each one is, and which a2a version it wants before it accepts what you write.", freshness:"Freshness", participants:"Participants", writerFloor:"Writer floor", pinnedWorkflow:"Pinned workflow", revision:"Revision",
+    limitsTitle:"What this snapshot did not check", limitsSub:"This file was written once, from the local cache. Anything it could not read, or deliberately did not evaluate, is named here, so an empty space never passes for a clean result.",
+    emptyLimitsTitle:"Nothing to qualify", emptyLimitsText:"Every connected space was readable when this snapshot was written, and no flag was raised. The numbers above are the whole picture.",
+    emptySpacesTitle:"No spaces connected", emptySpacesText:"A space is the shared repository two systems exchange documents through. Connect one and this table fills in.",
+    integrityFlags:"Protocol and read flags", integrityFlagsText:"Facts recorded by committed events, or problems reading the local cache index. A flag is evidence, not a verdict.",
+    degradedReads:"Degraded reads", degradedReadsText:"These spaces answered from an older mirror revision, or not at all. Their counts are floors, never totals.",
+    notEvaluatedTitle:"What this read deliberately did not check", notEvaluatedText:"Not failures. Questions a static file honestly cannot answer, said out loud instead of shown as a zero or a green tick.",
+    versions:"Versions", localBinary:"Local binary", installed:"installed", latest:"latest", updateCandidate:"Update candidate", impact:"impact", publishedReleases:"Published releases in this snapshot", expandedNotes:"Expanded notes cover",
+    guide:"How a2ahub fits together", guideSub:"Document types, statuses, the dashboard's reading order, and a direct way to improve the product. Everything on this page is written for people first.",
+    lifecycleTitle:"Lifecycle is events, not an editable status", lifecycleText:"Every transition is validated before it is recorded. Both sides fold the same history into the same state.", lifecycleFoot:"This is a document status, not a release marker. Responses, blocks, disputes, cancellations, and supersessions remain separate immutable events with a validated actor.",
+    artifactTypesTitle:"Eight document types", artifactTypesText:"One file carries one intent. The protocol code remains a quick visual anchor and a human name is always shown beside it.", readingGuide:"How to read the dashboard",
+    docs:"Documentation", docsSub:"The same manual the agent reads is available here without a network connection. Sections and search are on the left; the exact source text is on the right.",
+    docSearch:"Search the docs", docSearchPlaceholder:"thread, contract, retire…", docNoMatch:"No section title, group or source path matches that search.",
+    docEmbedded:"available offline", emptyDocsTitle:"No documentation embedded", emptyDocsText:"This snapshot was written without the doc corpus. Reinstall the skill and render the dashboard again.",
+    loadingDoc:"Loading the embedded document…",
+    feedbackTitle:"Have an idea? Let’s make a2ahub better", feedbackText:"Bugs, rough edges and feature ideas are welcome. Give the context to your agent: it knows the feedback format, checks for duplicates and files a safe, actionable report.", githubRepo:"GitHub repository", publicHome:"Public home", designSystem:"Design system v4",
+    readingRows:[["Overview and Work","Human actions ordered by consequence and next owner. Priority, literal blocking, a pending approval, a deadline, and a stale snapshot remain five distinct signals."],["Threads","One intent per chain, in committed order where Git history exists and explicitly labelled declared order where it does not."],["Contracts and Map","Drift belongs to a consumer's pinned major line. A provider may be healthy while a consumer resolves nothing."],["Integrity and Versions","The limits of this snapshot and the independent compatibility axes that must not be inferred from one another."]]
+};
+
+const DASHBOARD_RU = {
+    views:["Обзор","Обмен","Треды","Контракты","Карта","Спейсы","Версии","Доки","Справка"],
+    backOverview:"Вернуться к обзору", viewsLabel:"Разделы", more:"Ещё", localeGroup:"Язык интерфейса", space:"Спейс",
+    errorTitle:"Не удалось прочитать данные", errorPrefix:"Дашборд только читает и показывает", errorSuffix:". Чего в файле нет, того он не придумывает.",
+    openWork:"Открыть обмен", direction:"Показать", typeFilter:"Тип",
+    spaceHealth:"Состояние спейсов", spaceHealthTitle:"Насколько свежее то, что вы читаете",
+    spaceHealthSub:"Всё на этих экранах взято из локальной копии спейса, снятой один раз, когда собирался этот файл. Здесь видно, когда копию последний раз обновляли и чего каждый спейс ждёт от вашего бинарника.",
+    spaceHealthFlagsTitle:"На что стоит посмотреть", spaceHealthFlagsText:"Сигналы из событий и локального снимка, которые стоит проверить. Они не обязательно означают ошибку.",
+    spaceHealthFooter:"Ничего не додумывается: если спейс не прочитался, так и написано, а не «ноль».",
+    spaceHealthMore:"Открыть спейсы", spaceHealthClose:"Закрыть",
+    work:"Обмен", threads:"Треды", threadMissingTitle:"Этот тред не удалось восстановить целиком", threadMissingText:"Есть только краткая сводка. В снимок не попала полная история: кто что сделал и в каком порядке.",
+    whoseMove:"Чей сейчас ход", whoseMoveText:"Посчитано по событиям ниже: что уже произошло и что после этого разрешено сделать.", causalTimeline:"История треда", newestFirst:"новое сверху", opensChain:"с этого всё началось", subjectPrefix:"для", threadFlags:"Что пошло не так в этом треде",
+    contracts:"Контракты и их версии", codeBacked:"собран из кода", consumerLines:"Кто на нём сидит", versionWindow:"Какие версии живы", provenance:"Откуда взялась схема", codeBindingPrefix:"Записано, чем и из какого исходника собран дескриптор. А вот совпадает ли он с кодом прямо сейчас,", notEvaluated:"не проверялось", codeBindingSuffix:": этот файл собран один раз и в код не заглядывает.",
+    network:"Кто от кого зависит", networkSub:"Сплошная линия значит, что одна система зависит от контракта, который публикует другая. Пунктир значит, что между двумя системами есть незакрытый обмен. Нажмите на линию или на систему, чтобы увидеть версии, закреплённые линии и открытые документы.", exchangeMap:"Карта обмена",
+    spaces:"Спейсы", spacesSub:"Системы обмениваются документами через общий репозиторий, он и называется спейсом. Здесь видно, насколько свежая у вас копия каждого и какую версию a2a он ждёт, чтобы принять вашу запись.", freshness:"Свежесть", participants:"Участники", writerFloor:"Минимум для записи", pinnedWorkflow:"Версия проверки в CI", revision:"Ревизия",
+    limitsTitle:"Что этот снимок не проверял", limitsSub:"Файл собран один раз из локального кэша. Всё, что не удалось прочитать или что мы намеренно не проверяли, названо здесь, чтобы пустое место не сошло за «всё в порядке».",
+    emptyLimitsTitle:"Уточнять нечего", emptyLimitsText:"Когда собирался снимок, все подключённые спейсы читались, замечаний не было. Цифры выше и есть вся картина.",
+    emptySpacesTitle:"Спейсы не подключены", emptySpacesText:"Спейс работает как общий репозиторий, через который две системы обмениваются документами. Подключите спейс, и таблица заполнится.",
+    integrityFlags:"Замечания", integrityFlagsText:"Сигналы из событий и локального снимка, которые стоит проверить. Они не обязательно означают ошибку.",
+    degradedReads:"Прочитано не полностью", degradedReadsText:"Эти спейсы ответили из устаревшей копии или не ответили вовсе. Их цифры значат «не меньше чем», а не точное число.",
+    notEvaluatedTitle:"Что мы намеренно не проверяли", notEvaluatedText:"Это не сбои. Это вопросы, на которые статический файл честно не отвечает и говорит об этом прямо, вместо того чтобы показать ноль или зелёную галочку.",
+    versions:"Версии", localBinary:"Ваш бинарник", installed:"стоит сейчас", latest:"последняя", updateCandidate:"Есть обновление", impact:"влияние", publishedReleases:"Выпуски", expandedNotes:"Подробности по",
+    guide:"Как устроен a2ahub", guideSub:"Типы документов, статусы, порядок чтения дашборда и прямой способ сделать продукт лучше. Эта страница сначала говорит с человеком, а уже потом — о протоколе.",
+    lifecycleTitle:"Статус не редактируется, он складывается из событий", lifecycleText:"Каждый переход проверяется до того, как попадёт в репозиторий. Обе стороны собирают из одной и той же истории одно и то же состояние.", lifecycleFoot:"Это статус документа, а не отметка о релизе. Ответы, блокировки, споры, отмены и замены не затираются: каждое остаётся отдельным событием с проверенным автором.",
+    artifactTypesTitle:"Восемь типов документов", artifactTypesText:"Один файл, одна мысль. Двухбуквенный код удобен глазу, но рядом всегда стоит нормальное название.", readingGuide:"Как читать дашборд",
+    docs:"Документация", docsSub:"То же руководство, что читает агент, доступно здесь без подключения к сети. Слева разделы и поиск, справа исходный текст.",
+    docSearch:"Поиск по докам", docSearchPlaceholder:"тред, контракт, вывод версии…", docNoMatch:"Ни одно название раздела, группа или путь к файлу не совпали с запросом.",
+    docEmbedded:"доступно без интернета", emptyDocsTitle:"Документация не вшита", emptyDocsText:"Этот снимок собран без корпуса документации. Переустановите навык и соберите дашборд заново.",
+    loadingDoc:"Загружается встроенный документ…",
+    feedbackTitle:"Есть идея? Давайте сделаем a2ahub лучше", feedbackText:"Баги, шероховатости и фичер-реквесты здесь действительно ждут. Передайте контекст своему агенту: он знает формат, проверит дубликаты и отправит безопасный, полезный отчёт.", githubRepo:"Репозиторий на GitHub", publicHome:"Главная сайта", designSystem:"Дизайн-система",
+    readingRows:[["Обзор и работа","Сверху то, где цена ошибки выше. Приоритет, блокировка, ожидание вашего согласования, срок и устаревшие данные остаются пятью разными сигналами, и они намеренно не слиты в один."],["Треды","Одна задача, один тред. Порядок берётся из коммитов Git; если истории нет, используется время, указанное автором, и это честно помечается."],["Контракты и карта","Расхождение считается для конкретного потребителя и той версии, которую он закрепил. У поставщика может быть всё хорошо ровно тогда, когда у потребителя не работает ничего."],["Спейсы и версии","Пределы этого снимка и три версии, которые нельзя выводить одну из другой."]]
+};
+
+const DASHBOARD_I18N = { en: DASHBOARD_EN, ru: DASHBOARD_RU };
+
+const A2A_GLOSSARY_EN = {
+    types: {
+      contract:{ code:"XC", label:"Contract", description:"A versioned interface one system publishes and another can depend on." },
+      requirement:{ code:"XR", label:"Requirement", description:"A durable condition the result must satisfy, without prescribing the implementation." },
+      question:{ code:"XQ", label:"Question", description:"A focused request for information that expects a typed response." },
+      work_request:{ code:"XW", label:"Work request", description:"A request for another system to deliver a concrete result, with acceptance criteria and an owner." },
+      decision:{ code:"XD", label:"Decision", description:"A recorded choice and its rationale, so other systems can act without reopening the discussion." },
+      handoff:{ code:"XH", label:"Handoff", description:"A transfer of responsibility or a ready result to the next system." },
+      response:{ code:"XS", label:"Response", description:"A direct answer linked to the request or question it addresses; the requester still verifies or disputes it." },
+      announcement:{ code:"XA", label:"Announcement", description:"Information others should know. It stays published; the dashboard archives it once every requested recipient acknowledges receipt." }
+    },
+    statuses: {
+      draft:{ label:"draft", description:"The document is still local and has not entered the shared exchange." },
+      submitted:{ label:"submitted", description:"The document entered the shared exchange and awaits the receiving side's next allowed move." },
+      acknowledged:{ label:"received", description:"The receiving side confirmed receipt. This says nothing yet about acceptance, verification or completion." },
+      accepted:{ label:"accepted", description:"The receiving side accepted the current step. This records agreement to proceed; it does not by itself close the document." },
+      in_progress:{ label:"in progress", description:"Work has started and the request has not reached a final state yet." },
+      published:{ label:"published", description:"The document is part of the shared record and visible to its participants." },
+      proposed:{ label:"proposed", description:"A change or choice was offered and still awaits the next protocol move." },
+      responded:{ label:"responded", description:"At least one linked response was recorded. The original document's author may now verify it or dispute the result." },
+      verified:{ label:"verified", description:"The author of the original document checked this response and confirmed the result. The response is final; no further move is expected." },
+      closed:{ label:"closed", description:"This request or question is complete and no further action is expected for it. Other documents in the thread may remain open." },
+      satisfied:{ label:"satisfied", description:"The requirement's owner confirmed that the recorded result satisfies it." },
+      declined:{ label:"declined", description:"The receiving side declined the requested step. The document stays in history; any follow-up requires a new valid move." },
+      superseded:{ label:"superseded", description:"A newer document replaced this one. This record remains visible as history." },
+      approved:{ label:"approved", description:"The required approvers accepted this decision. It is final unless a later decision supersedes it." },
+      rejected:{ label:"rejected", description:"The receiving side rejected the current check or approval. The matching event records the reason and the next allowed move." },
+      blocked:{ label:"blocked", description:"The record names a blocker that must be cleared before the next protocol move." },
+      blocking:{ label:"blocking", description:"This item records a blocking protocol obligation and deserves prompt attention." },
+      disputed:{ label:"disputed", description:"A participant challenged the result or interpretation; the disagreement remains open." },
+      cancelled:{ label:"cancelled", description:"The requester ended the work before completion; the history stays visible." },
+      withdrawn:{ label:"withdrawn", description:"The author retracted the document from active consideration; the record is preserved." },
+      expired:{ label:"expired", description:"The announcement's validity window ended. The published record remains visible as history." },
+      current:{ label:"on latest", description:"This consumer is pinned to the latest live contract major." },
+      behind:{ label:"behind", description:"This consumer is still pinned to an older live contract major." },
+      deprecated:{ label:"being retired", description:"This version still works, but consumers are expected to move away before its sunset." },
+      retired:{ label:"retired", description:"This version is no longer live for new use; its history remains visible." },
+      missing:{ label:"not found", description:"The pinned version is absent at the provider, so this dependency cannot resolve." },
+      dangling:{ label:"provider left", description:"The dependency points to a provider that is no longer present in this space." },
+      stale:{ label:"stale", description:"The local evidence is older than the freshness window, so the repository may already differ." },
+      fresh:{ label:"fresh", description:"The local evidence was refreshed within the expected freshness window." },
+      unreadable:{ label:"unreadable", description:"The local copy could not be read. Unknown values must not be treated as zero." },
+      unresolved:{ label:"unresolved", description:"The dashboard cannot connect this reference to a readable record." },
+      "space stale":{ label:"space stale", description:"The local space copy is older than usual. Data remains available, but the repository may have changed. Run a2a sync; the warning disappears after a successful refresh." },
+      settled:{ label:"settled", description:"Every document in this thread is final and no next protocol move is owed." },
+      "your move":{ label:"your move", description:"The next allowed protocol action belongs to your system." },
+      "waiting on others":{ label:"waiting on others", description:"The next allowed protocol move belongs to another participant." },
+      "your approval pending":{ label:"awaiting your approval", description:"The next protocol move requires an explicit approval from your side." },
+      "up to date":{ label:"latest version", description:"Your installed binary matches the newest release known to this snapshot." },
+      "no action needed":{ label:"no action needed", description:"This change does not require local configuration, migration, or manual follow-up." },
+      overdue:{ label:"overdue", description:"The recorded deadline passed before this document reached a terminal state." },
+      "needs a look":{ label:"needs a look", description:"This document carries an extra signal worth checking. It does not necessarily mean anything is wrong." },
+      resolved:{ label:"resolved · digest matches", description:"The reference was found and its recorded content digest matches." },
+      "digest mismatch":{ label:"digest mismatch", description:"The reference exists, but its content no longer matches the digest recorded by this document." }
+    }
+};
+
+const A2A_GLOSSARY_RU = {
+    types: {
+      contract:{ code:"XC", label:"Контракт", description:"Версионируемый интерфейс, который одна система публикует, а другая может использовать как зависимость." },
+      requirement:{ code:"XR", label:"Требование", description:"Устойчивое условие, которому должен соответствовать результат, без навязывания способа реализации." },
+      question:{ code:"XQ", label:"Вопрос", description:"Точный запрос информации, на который ожидается связанный типизированный ответ." },
+      work_request:{ code:"XW", label:"Запрос работы", description:"Просьба другой системе выдать конкретный результат с критериями готовности и ответственным." },
+      decision:{ code:"XD", label:"Решение", description:"Зафиксированный выбор и его причины, чтобы другие системы могли действовать, не открывая обсуждение заново." },
+      handoff:{ code:"XH", label:"Передача", description:"Передача ответственности или готового результата следующей системе." },
+      response:{ code:"XS", label:"Ответ", description:"Прямой ответ со ссылкой на запрос или вопрос. После этого автор исходного документа проверяет результат или оспаривает его." },
+      announcement:{ code:"XA", label:"Объявление", description:"Информация, которую участникам важно знать. Она остаётся опубликованной, а дашборд переносит её в архив после подтверждения всех запрошенных получателей." }
+    },
+    statuses: {
+      draft:{ label:"черновик", description:"Документ пока локальный и ещё не вошёл в общий обмен." },
+      submitted:{ label:"отправлено", description:"Документ вошёл в общий обмен и ждёт следующего допустимого шага принимающей стороны." },
+      acknowledged:{ label:"получили", description:"Принимающая сторона подтвердила получение. Это ещё ничего не говорит о принятии, проверке или завершении." },
+      accepted:{ label:"принято", description:"Принимающая сторона приняла текущий шаг. Это фиксирует согласие продолжить, но само по себе не закрывает документ." },
+      in_progress:{ label:"в работе", description:"Работа началась, но запрос ещё не дошёл до финального состояния." },
+      published:{ label:"опубликовано", description:"Документ вошёл в общий журнал и виден участникам обмена." },
+      proposed:{ label:"предложено", description:"Изменение или выбор предложены и ждут следующего допустимого шага." },
+      responded:{ label:"ответили", description:"Записан хотя бы один связанный ответ. Автор исходного документа может подтвердить его или оспорить результат." },
+      verified:{ label:"проверено", description:"Автор исходного документа проверил ответ и подтвердил результат. Ответ завершён; дальнейших шагов не ждут." },
+      closed:{ label:"закрыто", description:"Этот запрос или вопрос завершён; по нему больше не ждут действий. Другие документы треда могут оставаться открытыми." },
+      satisfied:{ label:"выполнено", description:"Автор требования подтвердил, что записанный результат ему соответствует." },
+      declined:{ label:"отклонено", description:"Принимающая сторона отказалась от запрошенного шага. Документ остаётся в истории; продолжение требует нового допустимого хода." },
+      superseded:{ label:"заменено", description:"Этот документ заменён более новым. Старая запись остаётся видимой как история." },
+      approved:{ label:"согласовано", description:"Все требуемые согласующие приняли это решение. Оно финально, пока его не заменит более новое." },
+      rejected:{ label:"отклонено", description:"Принимающая сторона отклонила текущую проверку или согласование. Причина и следующий допустимый ход записаны в соответствующем событии." },
+      blocked:{ label:"заблокировано", description:"В записи названа блокировка, которую нужно снять до следующего хода протокола." },
+      blocking:{ label:"блокирует", description:"Документ фиксирует блокирующее протокольное обязательство и требует быстрого внимания." },
+      disputed:{ label:"спорят", description:"Участник оспорил результат или трактовку; разногласие ещё не закрыто." },
+      cancelled:{ label:"отменено", description:"Заказчик остановил работу до завершения; история при этом сохраняется." },
+      withdrawn:{ label:"отозвано", description:"Автор снял документ с активного рассмотрения; запись остаётся в истории." },
+      expired:{ label:"срок истёк", description:"Срок действия объявления закончился. Опубликованная запись остаётся видимой в истории." },
+      current:{ label:"на последней", description:"Потребитель закреплён на последней живой мажорной версии контракта." },
+      behind:{ label:"отстаёт", description:"Потребитель всё ещё закреплён на более старой живой мажорной версии." },
+      deprecated:{ label:"выводится", description:"Версия пока работает, но до даты вывода потребителям нужно с неё уйти." },
+      retired:{ label:"снято", description:"Версия больше не доступна для нового использования; её история остаётся видимой." },
+      missing:{ label:"не нашли", description:"Закреплённой версии нет у поставщика, поэтому зависимость не разрешается." },
+      dangling:{ label:"поставщик ушёл", description:"Зависимость указывает на поставщика, которого больше нет в этом спейсе." },
+      stale:{ label:"устарел", description:"Локальные данные старше допустимого окна и уже могут отличаться от репозитория." },
+      fresh:{ label:"свежий", description:"Локальные данные обновлены в пределах ожидаемого окна свежести." },
+      unreadable:{ label:"не читается", description:"Локальную копию не удалось прочитать. Неизвестные значения нельзя считать нулём." },
+      unresolved:{ label:"не нашли", description:"Ссылку не удалось связать с доступной для чтения записью." },
+      "space stale":{ label:"спейс устарел", description:"Локальная копия спейса старше обычного. Данные доступны, но в репозитории уже могли появиться изменения. Запустите a2a sync: после успешного обновления предупреждение исчезнет." },
+      settled:{ label:"всё закрыто", description:"Все документы треда завершены, и следующего хода протокола ни за кем нет." },
+      "your move":{ label:"ваш ход", description:"Следующее допустимое действие протокола должна выполнить ваша система." },
+      "waiting on others":{ label:"ход за другими", description:"Следующий допустимый ход протокола принадлежит другому участнику." },
+      "your approval pending":{ label:"ждёт вашего согласования", description:"Следующий шаг протокола требует явного согласования с вашей стороны." },
+      "up to date":{ label:"последняя версия", description:"Установленный бинарник совпадает с последним выпуском, известным этому снимку." },
+      "no action needed":{ label:"действий не нужно", description:"Это изменение не требует настройки, миграции или ручного шага у вас." },
+      overdue:{ label:"просрочено", description:"Указанный дедлайн прошёл, а документ ещё не дошёл до конечного состояния." },
+      "needs a look":{ label:"стоит посмотреть", description:"У документа есть дополнительный сигнал для проверки. Это не обязательно означает ошибку." },
+      resolved:{ label:"нашли, сумма сошлась", description:"Ссылку нашли, и записанная контрольная сумма содержимого совпала." },
+      "digest mismatch":{ label:"сумма не сошлась", description:"Ссылка существует, но её содержимое уже не совпадает с контрольной суммой в документе." }
+    }
+};
+
+const A2A_GLOSSARY = { en: A2A_GLOSSARY_EN, ru: A2A_GLOSSARY_RU };
+
+const STATE_TONE = {
+  published:"healthy", verified:"healthy", satisfied:"healthy", approved:"healthy", closed:"healthy",
+  blocked:"blockingStrong", blocking:"blockingStrong", missing:"blockingStrong", unreadable:"blockingStrong", rejected:"blockingStrong", declined:"blockingStrong", disputed:"blockingStrong",
+  deprecated:"attention", expired:"attention", overdue:"attention",
+  cancelled:"neutral", canceled:"neutral",
+  retired:"neutral", withdrawn:"neutral", superseded:"neutral", submitted:"neutral", in_progress:"neutral", responded:"neutral", accepted:"neutral", acknowledged:"neutral", proposed:"attention"
+};
+
+function listNames(names, ru) {
+  const xs = (names || []).filter(Boolean);
+  if (!xs.length) return "";
+  if (xs.length === 1) return xs[0];
+  return xs.slice(0, -1).join(", ") + (ru ? " и " : " and ") + xs[xs.length - 1];
+}
+
+function ruPlural(n, one, few, many) {
+  const mod10 = n % 10, mod100 = n % 100;
+  const word = (mod10 === 1 && mod100 !== 11) ? one : ((mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) ? few : many);
+  return n + " " + word;
+}
+
+function TYPE_WORDS(ru) {
+  const group = A2A_GLOSSARY[ru ? "ru" : "en"].types;
+  return Object.keys(group).reduce((out, key) => { out[key] = group[key].label; return out; }, {});
+}
+
+const TYPE_LINK_ACCENT = {
+  work_request: "var(--type-work-request-accent)",
+  question: "var(--type-question-accent)",
+  decision: "var(--type-decision-accent)",
+  handoff: "var(--type-handoff-accent)",
+  requirement: "var(--type-requirement-accent)",
+  response: "var(--type-response-accent)",
+  announcement: "var(--type-announcement-accent)",
+  contract: "var(--type-contract-accent)"
+};
+
+function EVENT_SIGNAL(transition, ru) {
+  // `activate` is positive, not neutral: it is the producer's owner-only
+  // attestation that a published version's OPERATIONAL half now exists
+  // (spec 05-declared-nature.md, `a2a contract activate`), and it is what
+  // discharges the `activation-owed` debt. Left to the default it read
+  // "Informational event", which is exactly the understatement P-1 refuses.
+  const positive = ["acknowledge","accept","start","respond","verify","verify-pass","close","approve","satisfy","unblock","publish","activate"];
+  const negative = ["block","decline","reject","verify-fail","dispute"];
+  const caution = ["deprecate"];
+  const tone = positive.indexOf(transition) > -1 ? "positive" : (negative.indexOf(transition) > -1 ? "negative" : (caution.indexOf(transition) > -1 ? "caution" : "neutral"));
+  const lead = ru
+    ? { positive:"Шаг выполнен", negative:"Нужна реакция", caution:"Жизненный цикл изменён", neutral:"Справочное событие" }[tone]
+    : { positive:"Step completed", negative:"Response needed", caution:"Lifecycle changed", neutral:"Informational event" }[tone];
+  const action = TRANSITION_PAST(ru)[transition] || transition;
+  return { tone, label: lead + (action ? " · " + action : "") };
+}
+
+function TRANSITION_PAST(ru) {
+  if (!ru) return {
+    create: "created", submit: "submitted", publish: "published", acknowledge: "acknowledged",
+    accept: "accepted", start: "started", respond: "answered", verify: "verified", close: "closed",
+    approve: "approved", satisfy: "satisfied", dispute: "disputed", note: "added a note to",
+    block: "blocked", unblock: "unblocked", decline: "declined", reject: "rejected",
+    cancel: "cancelled", withdraw: "withdrew", supersede: "superseded", propose: "proposed",
+    deprecate: "deprecated", retire: "retired", "verify-pass": "accepted", "verify-fail": "rejected",
+    activate: "brought live"
+  };
+  return {
+    create: "создал", submit: "отправил", publish: "опубликовал", acknowledge: "подтвердил получение",
+    accept: "принял", start: "начал работу", respond: "ответил", verify: "проверил", close: "закрыл",
+    approve: "согласовал", satisfy: "закрыл требование", dispute: "оспорил", note: "добавил заметку",
+    block: "заблокировал", unblock: "разблокировал", decline: "отказался", reject: "отклонил",
+    cancel: "отменил", withdraw: "отозвал", supersede: "заменил", propose: "предложил",
+    deprecate: "объявил устаревшей", retire: "снял версию", "verify-pass": "принял", "verify-fail": "отклонил",
+    activate: "включил в работу"
+  };
+}
+
+function TRANSITION_NEXT(ru) {
+  if (!ru) return {
+    create: "create", submit: "submit", publish: "publish", acknowledge: "acknowledge",
+    accept: "accept", start: "start", respond: "answer", verify: "verify", close: "close",
+    approve: "approve", satisfy: "satisfy", dispute: "dispute", note: "add a note",
+    block: "block", unblock: "unblock", decline: "decline", reject: "reject",
+    cancel: "cancel", withdraw: "withdraw", supersede: "supersede", propose: "propose",
+    deprecate: "deprecate", retire: "retire", "verify-pass": "accept", "verify-fail": "reject",
+    activate: "bring live"
+  };
+  return {
+    create: "создать", submit: "отправить", publish: "опубликовать", acknowledge: "подтвердить получение",
+    accept: "принять", start: "начать работу", respond: "ответить", verify: "проверить", close: "закрыть",
+    approve: "согласовать", satisfy: "закрыть требование", dispute: "оспорить", note: "добавить заметку",
+    block: "заблокировать", unblock: "разблокировать", decline: "отказаться", reject: "отклонить",
+    cancel: "отменить", withdraw: "отозвать", supersede: "заменить", propose: "предложить",
+    deprecate: "объявить устаревшей", retire: "снять версию", "verify-pass": "принять", "verify-fail": "отклонить",
+    activate: "включить в работу"
+  };
+}
+
+function HUMAN_GATE_TEXT(gate, ru) {
+  if (!gate) return "";
+  return ru
+    ? "Ход за человеком (гейт " + gate + "). Ваш агент не может его сделать: событие, отправленное агентом, fold отметит как нарушение."
+    : "This move belongs to a person (gate " + gate + "). Your agent may not make it: the fold flags the event when an agent emits one.";
+}
+
+function OPERATIONAL_STATE(state, ru) {
+  const key = String(state || "") || "undeclared";
+  const words = ru ? {
+    ready: { label: "заявлено готовым", tone: "healthy", hint: "Поставщик подтвердил: эта часть интерфейса существует и работает." },
+    absent: { label: "заявлено отсутствующим", tone: "attention", hint: "Поставщик прямо сказал, что этого пока нет. Это известный пробел: на него можно планировать и спрашивать срок." },
+    undeclared: { label: "никто не заявлял", tone: "outline", hint: "Об этом не сказано ничего — ни «есть», ни «нет». Это не то же самое, что «заявлено отсутствующим»: заявления здесь просто нет." }
+  } : {
+    ready: { label: "declared ready", tone: "healthy", hint: "The provider has stated that this part of the interface exists and works." },
+    absent: { label: "declared missing", tone: "attention", hint: "The provider said out loud that this does not exist yet. A known gap: you can plan around it and ask for an eta." },
+    undeclared: { label: "never declared", tone: "outline", hint: "Nobody has said anything either way — not “yes”, not “no”. This is NOT the same as declared missing: there is no claim here at all." }
+  };
+  return words[key] || {
+    label: key,
+    tone: "neutral",
+    hint: ru ? "Состояние, которого этот интерфейс не знает." : "A state this surface does not know."
+  };
+}
+
+function operationalReadinessRows(items, ru) {
+  return (items || []).map(it => {
+    const word = OPERATIONAL_STATE(it.state, ru);
+    // `chip` is the one-line form for a pill; `name`/`label` stay separate so
+    // the detail panel can lay them out as a two-column row instead.
+    return { name: it.name, state: it.state, label: word.label, tone: word.tone, hint: word.hint, chip: it.name + " · " + word.label };
+  });
+}
+
+function WORK_MODE_TEXT(value, ru) {
+  const words = ru ? {
+    planning:"планирует", implementing:"реализует", testing:"тестирует", reviewing:"проверяет",
+    waiting:"ждёт", paused:"приостановил работу", finished:"завершил работу"
+  } : {
+    planning:"planning", implementing:"implementing", testing:"testing", reviewing:"reviewing",
+    waiting:"waiting", paused:"paused", finished:"finished"
+  };
+  return words[value] || (ru ? "статус неизвестен" : "status unknown");
+}
+
+function WORK_WAIT_KIND(value, ru) {
+  const words = ru ? {
+    system:"система", human:"человек", tool:"инструмент", timer:"время", external:"внешняя сторона"
+  } : {
+    system:"system", human:"human", tool:"tool", timer:"timer", external:"external party"
+  };
+  return words[value] || (ru ? "тип не указан" : "type not recorded");
+}
+
+const DELIVERY_VERDICT_TONE = { passed:"healthy", failed:"blockingStrong", errored:"attention", unverified:"outline" };
+
+function deliveryVerdictText(value, ru) {
+  const words = ru ? {
+    passed:"пройдено", failed:"не пройдено", errored:"ошибка проверки", unverified:"ещё не проверено"
+  } : {
+    passed:"passed", failed:"failed", errored:"verification errored", unverified:"not yet verified"
+  };
+  return words[value] || (ru ? "неизвестный вердикт: " + value : "unknown verdict: " + value);
+}
+
+const VERDICT_TONE = { met: "positive", unmet: "negative", not_warranted: "neutral", not_exercised: "caution" };
+
+function VERDICT_LABEL(ru) {
+  return ru
+    ? { met: "выполнено", unmet: "не выполнено", not_warranted: "не требовалось", not_exercised: "не проверялось" }
+    : { met: "met", unmet: "unmet", not_warranted: "not warranted", not_exercised: "not exercised" };
+}
+
+function mono(s) { return String(s || "?").slice(0, 2).toUpperCase(); }
+
+function when(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  const p = (n) => String(n).padStart(2, "0");
+  return p(d.getUTCDate()) + "." + p(d.getUTCMonth() + 1) + "." + d.getUTCFullYear() + " " + p(d.getUTCHours()) + ":" + p(d.getUTCMinutes());
+}
+
+function dayOnly(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  const p = (n) => String(n).padStart(2, "0");
+  return p(d.getUTCDate()) + "." + p(d.getUTCMonth() + 1) + "." + d.getUTCFullYear();
+}
+
+const AGE_RU = { m: " мин", h: " ч", d: " д", w: " нед" };
+
+function age(value) {
+  const raw = String(value == null ? "" : value);
+  if (!raw || document.documentElement.lang !== "ru") return raw;
+  if (raw === "just now") return "только что";
+  const m = raw.match(/^(\d+)([mhdw])$/);
+  return m ? m[1] + AGE_RU[m[2]] : raw;
+}
+
+function isoDay(value) {
+  const raw = String(value == null ? "" : value);
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? m[3] + "." + m[2] + "." + m[1] : raw;
+}
+
+function promptLine(label, value) { return value ? label + String(value) : null; }
+
+function promptDocLines(doc, indent) {
+  const p = doc.prompt || {};
+  const pad = indent || "";
+  const moves = (p.moves || []).join(", ");
+  const ask = (p.askFirst || []).join(", ");
+  return [
+    // The protocol's own spelling of the state, not the interface's. An agent
+    // matches this against the fold table; "in progress" is not a state there.
+    pad + "Type: " + doc.type + ", state " + doc.state,
+    promptLine(pad + "Title: ", doc.title),
+    promptLine(pad + "From: ", doc.from + (doc.to && doc.to.length ? ", to " + doc.to.join(", ") : "")),
+    promptLine(pad + "Deadline: ", doc.neededBy ? doc.neededBy + (doc.overdue ? " (already passed)" : "") : ""),
+    doc.blocking ? pad + "Blocking: yes" + (doc.priority ? ", priority " + doc.priority : "") : promptLine(pad + "Priority: ", doc.priority),
+    pad + "Moves: " + moves + (ask ? " — ask the person before " + ask : "")
+  ];
+}
+
+function promptTail(ctx, docs) {
+  const shows = docs.map(d => "  a2a show " + d.id + (ctx.space ? " --space " + ctx.space : ""));
+  const uniq = (values) => values.filter((v, i) => v && values.indexOf(v) === i);
+  const loops = uniq(docs.map(d => (d.prompt || {}).loop));
+  const shapes = uniq(docs.map(d => (d.prompt || {}).doc));
+  // What you draft is not what you are reading: answering a work request
+  // produces a response, and its shape is documented in its own file.
+  const drafts = uniq(docs.reduce((all, d) => all.concat((d.prompt || {}).drafts || []), []));
+  const plural = docs.length > 1;
+  return [
+    "",
+    "Everything above came from a static dashboard snapshot" + (ctx.generatedAt ? " taken " + ctx.generatedAt : "") + " and may already be out of date. Start by reading " + (plural ? "them" : "the document") + " as " + (plural ? "they stand" : "it stands") + " now:",
+    ""
+  ].concat(shows).concat([
+    "",
+    "Then work " + (plural ? "them" : "it") + " through the a2ahub skill rather than from this text:",
+    loops.length ? "  " + loops.join(", ") + " for the " + (loops.length > 1 ? "loops these moves belong" : "loop this move belongs") + " to" : null,
+    shapes.length ? "  " + shapes.join(", ") + " for the shape of the " + (plural ? "documents" : "document") + " above" : null,
+    drafts.length ? "  " + drafts.join(", ") + " for the shape of what taking one of these moves creates" : null,
+    "  reference/commands.md for the exact verb, and `a2a validate` before you submit.",
+    "",
+    // Deliberately does not name a file or a convention. This page has no idea
+    // which repository it was pasted into, and a prompt that says "write a spec
+    // under docs/features" is only correct inside the one it was written in.
+    "If answering this turns into work in this repository, do not start writing code from this prompt. Find how this repository takes work, from its own agent instructions and docs, propose the change in that form, and confirm it with the person before you begin."
+  ]);
+}
+
+function agentThreadPromptText(ctx) {
+  const docs = ctx.documents || [];
+  const out = [
+    "You are acting for `" + ctx.self + "` in the a2a exchange. Someone read this thread on the local dashboard before you did and is handing the move back. " +
+      (docs.length > 1 ? docs.length + " documents in it are waiting on you." : "One document in it is waiting on you."),
+    "",
+    "Thread: " + ctx.thread,
+    promptLine("Subject: ", ctx.title),
+    promptLine("Space: ", ctx.space),
+    promptLine("Participants: ", (ctx.participants || []).join(", "))
+  ];
+  docs.forEach((doc, i) => {
+    out.push("", (docs.length > 1 ? (i + 1) + ". " : "") + doc.id);
+    promptDocLines(doc, "   ").forEach(l => out.push(l));
+  });
+  if ((ctx.waiting || []).length) {
+    out.push("", "Still waiting on somebody else, so not yours to move on: " + ctx.waiting.join(", ") + ".");
+  }
+  return out.concat(promptTail(ctx, docs)).filter(l => l !== null).join("\n") + "\n";
+}
+
+const AGENT_LABELS = {
+  "claude-code": "Claude Code",
+  "codex": "Codex",
+  "github-copilot": "GitHub Copilot",
+  "cursor": "Cursor",
+  "windsurf": "Windsurf",
+  "gemini-cli": "Gemini CLI",
+  "antigravity": "Antigravity",
+  "cline": "Cline",
+  "roo-code": "Roo Code",
+  "kilo-code": "Kilo Code",
+  "opencode": "OpenCode",
+  "aider": "Aider",
+  "continue": "Continue",
+  "amp": "Amp",
+  "goose": "Goose",
+  "devin": "Devin",
+  "zed": "Zed",
+  "jetbrains": "JetBrains AI",
+  "replit": "Replit Agent",
+  "warp": "Warp",
+  "trae": "Trae",
+  "augment": "Augment"
+};
+
+function actorIdentity(d, actorSystem, recordedName, actorKind, actorModel) {
+  const node = (d.nodes || []).find(n => n.system === actorSystem);
+  const owner = node && node.owners && node.owners.length ? String(node.owners[0]) : "";
+  const agentKey = String(recordedName || "").trim().toLowerCase();
+  const agentID = actorKind === "agent" && AGENT_LABELS[agentKey] ? agentKey : "";
+  const name = agentID ? String(owner || actorSystem || "") : String(recordedName || owner || actorSystem || "");
+  const login = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(owner) ? owner : "";
+  return {
+    actorName: name,
+    avatar: node && node.avatar ? node.avatar : "",
+    avatarMono: mono(name),
+    actorProfileURL: login ? "https://github.com/" + login : "",
+    actorProfileTitle: login ? "GitHub · " + login : "",
+    hasAgentBadge: !!agentID,
+    agentID,
+    agentLabel: AGENT_LABELS[agentID] || agentID,
+    agentModel: agentID ? String(actorModel || "") : ""
+  };
+}
+
+class Component extends DCLogic {
+  syncContext() {
+    const ctx = this.props && this.props.ctx || {};
+    this.state = Object.assign({ data: ctx.data || null, locale: ctx.locale === "ru" ? "ru" : "en" }, ctx.ui || {});
+    return ctx;
+  }
+
+  setState(update) {
+    const ctx = this.props && this.props.ctx || {};
+    const current = Object.assign({}, this.state || {}, { data: ctx.data || null, locale: ctx.locale === "ru" ? "ru" : "en" }, ctx.ui || {});
+    const patch = typeof update === "function" ? update(current) : update;
+    this.state = Object.assign({}, current, patch || {});
+    if (ctx.actions && ctx.actions.patch) ctx.actions.patch(patch || {});
+  }
+
+  go(view, extra) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.navigate) actions.navigate(view, extra); }
+  closeContractFile() { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.closeContractFile) actions.closeContractFile(); }
+  applyTheme(theme) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setTheme) actions.setTheme(theme); }
+  applyLocale(locale) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setLocale) actions.setLocale(locale); }
+  copy(text) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.copy) actions.copy(text); }
+
+  inScope(space) { return this.state.space === "all" || space === this.state.space; }
+
+  cardButton(selected) {
+    return "display:block; width:100%; box-sizing:border-box; text-align:left; font-family:'Onest',sans-serif; border:0; border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); cursor:pointer;" +
+      (selected
+        ? " --a2a-pick-shadow:0 2px 10px -4px rgba(33,30,23,.22); --a2a-pick-active-shadow:var(--a2a-pick-shadow);"
+        : " --a2a-pick-surface:var(--surface-inactive-card); --a2a-pick-shadow:var(--shadow-inactive-card);");
+  }
+
+  promptContext(fields) {
+    const d = this.state.data;
+    const due = fields.neededBy ? new Date(fields.neededBy) : null;
+    const at = d.generatedAt ? new Date(d.generatedAt) : null;
+    return Object.assign({
+      self: d.self,
+      // The instant as it is stored. DD.MM.YYYY is this interface's format for
+      // a person reading a screen; inside an English machine-facing payload it
+      // is one more thing to misparse.
+      generatedAt: d.generatedAt,
+      overdue: !!(due && at && !isNaN(due) && !isNaN(at) && due < at)
+    }, fields);
+  }
+
+  renderVals() {
+    const ctx = this.syncContext();
+    let d = ctx.data;
+    const s = this.state;
+    const ui = ctx.ui || {};
+    const ru = ctx.locale === "ru";
+    const c = DASHBOARD_I18N[ru ? "ru" : "en"];
+    if (!d && "ThreadsView" !== "GuideView") {
+      if ("ThreadsView" !== "DashboardShell") return {};
+      d = { spaces:[], nodes:[], inbox:[], outbox:[], archive:[], contracts:[], contractEdges:[], flags:[], meta:{}, tooling:{}, generatedAt:"", self:"" };
+    }
+    const scopedArchive = d.archive.filter(i => this.inScope(i.space));
+    const threads = d.threads.filter(t => this.inScope(t.space));
+    const selectedThread = s.threadSel
+      ? threads.find(t => t.id === s.threadSel && (!s.threadSpace || t.space === s.threadSpace))
+      : null;
+    const activeThread = selectedThread || threads[0] || null;
+    const threadSel = activeThread ? activeThread.id : "";
+    const threadSpace = activeThread ? activeThread.space : "";
+    const tv = d.threadViews.find(v => v.space === threadSpace && v.thread === threadSel);
+    const tvWorkReports = tv ? (d.workReports || []).filter(report => report.space === tv.space && report.thread === tv.thread) : [];
+    const tvWorkArtifactIDs = new Set(tvWorkReports.map(report => report.artifact_id).filter(Boolean));
+    const tvRepresentedWorkIDs = new Set((tv && tv.transcript || []).filter(row => row.artifact && tvWorkArtifactIDs.has(row.artifact.id)).map(row => row.artifact.id));
+    const tvHiddenReportPublishes = (tv && tv.transcript || []).filter(row => row.event && row.event.transition === "publish" && tvWorkArtifactIDs.has(row.event.subject)).length;
+    const tvMissingReportCount = tvWorkReports.filter(report => !tvRepresentedWorkIDs.has(report.artifact_id)).length;
+    const tvEntryTotal = tv ? Math.max(0, (tv.transcript || []).length - tvHiddenReportPublishes + tvMissingReportCount) : 0;
+    const tvPend = tv ? (tv.open_items || []).filter(o => o.pending !== false) : [];
+    const tvMine = tvPend.filter(o => o.your_move && o.prompt);
+    const tvYours = tvPend.filter(o => o.your_move).length;
+    const tvOthers = [];
+    tvPend.forEach(o => (o.waiting_on || []).forEach(w => { if (w !== d.self && tvOthers.indexOf(w) === -1) tvOthers.push(w); }));
+    tvOthers.sort();
+    const othersList = listNames(tvOthers, ru);
+    const moveTitle = tvYours
+      ? (tvOthers.length
+        ? (ru ? "Ход за вами, " + othersList : "Waiting on you, " + othersList)
+        : (ru ? "Ход за вами" : "Your move"))
+      : (tvOthers.length
+        ? (ru ? "Ход за " + othersList : "Waiting on " + othersList)
+        : (ru ? "Ход за другой стороной" : "Waiting on the other side"));
+    const handOver = !tvMine.length ? ""
+      : (ru ? " Промпт ниже собирает их все: скопируйте и отдайте ход агенту." : " The prompt below covers all of them: copy it and hand the move to your agent.");
+    const moveText = tvYours === 0
+      ? (tvOthers.length
+        ? (ru ? "Вы никого не тормозите, ждут другую сторону." : "You are holding nobody up; the other side owes the move.")
+        : (ru ? "Открытые документы есть, но кто должен сделать следующий шаг, из событий не выводится." : "Open documents remain, but the events do not resolve who owes the next move."))
+      : tvYours < tvPend.length
+        ? (ru ? "На вас " + ruPlural(tvYours, "документ", "документа", "документов") + " из " + tvPend.length + ", остальные ждут ответа от других." + handOver : tvYours + " of " + tvPend.length + " open documents are on you; the rest await somebody else." + handOver)
+        : (ru
+          ? (tvPend.length === 1 ? "Один документ ждёт вашего шага." : "Все " + ruPlural(tvPend.length, "документ ждёт", "документа ждут", "документов ждут") + " вашего шага.") + (tvOthers.length ? " По некоторым сходить может и другая сторона." : "") + handOver
+          : (tvPend.length === 1 ? "One document is waiting on you." : "All " + tvPend.length + " open documents are waiting on you.") + (tvOthers.length ? " On some of them the other side can move too." : "") + handOver);
+    const tvSpaceRecord = tv ? (d.spaces || []).find(x => x.id === tv.space) : null;
+    const tvParticipantFaces = tv ? (tv.participants || []).slice(0, 4).map((system, i, list) => {
+      const node = (d.nodes || []).find(n => n.system === system);
+      return {
+        title: system,
+        mono: mono(system),
+        style: "position:relative; z-index:" + (list.length - i) + "; width:34px; height:34px; margin-left:" + (i ? "-10px" : "0") + "; border-radius:99px; overflow:hidden; display:flex; align-items:center; justify-content:center; flex:0 0 auto; background:" + (system === d.self ? "var(--teal-solid)" : "var(--attention-line)") + "; color:" + (system === d.self ? "var(--on-solid)" : "var(--attention-strong)") + "; box-shadow:0 0 0 2px var(--surface), inset 0 0 0 1px var(--hairline); font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:10px; font-weight:600;"
+      };
+    }) : [];
+    const tvHasBlockingWait = tvPend.some(o => o.blocking);
+    const tvFreshnessStale = !!(tv && (tv.sync_stale || (tvSpaceRecord && tvSpaceRecord.stale)));
+    const tvFreshnessAge = tvSpaceRecord && tvSpaceRecord.readable ? age(tvSpaceRecord.syncAge) : "";
+    const values = {
+      threadMissingTitle:c.threadMissingTitle,
+      threadMissingText:c.threadMissingText,
+      causalTimelineLabel:c.causalTimeline,
+      newestFirstLabel:c.newestFirst,
+      threadFlagsLabel:c.threadFlags,
+      threadsAria:c.views[2],
+      noThreadRows: threads.length === 0,
+      hasThreadRows: threads.length > 0,
+      emptyThreadsTitle: ru ? "Тредов пока нет" : "No threads yet",
+      emptyThreadsText: ru
+        ? "Тред появляется сам, когда первый документ отправлен: вопрос, запрос работы или объявление. Дальше ответы, доказательства и решение остаются в нём же."
+        : "A thread appears by itself the moment a first document is sent: a question, a work request, an announcement. Answers, evidence and the decision then stay attached to it.",
+      threadRows: threads.map(t => ({
+        id: t.id,
+        space: t.space,
+        selected: threadSpace === t.space && threadSel === t.id,
+        title: t.opener ? t.opener.title : t.id,
+        // Three states, not two: your move, someone else's move, or nobody's —
+        // a thread whose every item reached a terminal state is settled. When
+        // it is somebody else's, the pill names them: "waiting on others" is
+        // an answer a reader cannot do anything with.
+        pillText: t.settled
+          ? (ru ? "всё закрыто" : "settled")
+          : (t.yourMove
+            ? (ru ? "ваш ход" : "your move")
+            : ((t.waitingOthers || []).length
+              ? (ru ? "ход за " : "waiting on ") + (t.waitingOthers[0] + (t.waitingOthers.length > 1 ? " +" + (t.waitingOthers.length - 1) : ""))
+              : (ru ? "ход за другими" : "waiting on others"))),
+        pillTone: t.settled ? "healthy" : (t.yourMove ? "attention" : "neutral"),
+        participants: (t.participants || []).join(", "),
+        age: (ru ? "последнее движение " : "last activity ") + age(t.lastActivity),
+        meta: t.id + (ru ? " · документов: " : " · documents: ") + t.memberCount + " · " + t.space,
+        style: this.cardButton(threadSpace === t.space && threadSel === t.id),
+        select: () => this.setState({ threadSel: t.id, threadSpace: t.space, tvFocus: "" })
+      })),
+      whoseMoveLabel: moveTitle,
+      whoseMoveText: moveText,
+      tvPresent: !!tv,
+      tvMissing: !tv,
+      tvSettled: !!(tv && tv.settled),
+      tvPending: !!(tv && !tv.settled),
+      settledLabel: ru ? "Протокольного хода нет" : "No protocol move is owed",
+      settledText: ru
+        ? "Все документы этого треда дошли до конечного состояния. Запись остаётся целиком ниже; следующего хода протокола в снимке нет."
+        : "Every document in this thread reached a terminal state. The full record stays below; no next protocol move is recorded in the snapshot.",
+      tvTitle: tv ? (tv.opener ? tv.opener.title : tv.thread) : "",
+      tvOrderPill: tv ? (tv.order === "committed" ? (ru ? "порядок событий: по коммитам" : "event order: commits") : (ru ? "порядок событий: по времени авторов" : "event order: author timestamps")) : "",
+      tvOrderHint: tv ? (tv.order === "committed"
+        ? (ru ? "События показаны в том порядке, в котором попали в git. Если время авторов расходится, источником истины остаётся порядок коммитов." : "Events follow their committed git order. If author timestamps disagree, commit order remains the source of truth.")
+        : (ru ? "Порядок восстановлен по времени, которое указали авторы документов: надёжного порядка коммитов для этого треда нет." : "Order is reconstructed from author-declared timestamps because committed ordering is unavailable for this thread.")) : "",
+      tvStale: !!(tv && tv.sync_stale),
+      tvStaleText: tv && tv.sync_stale ? "space stale" : "",
+      tvParticipantFaces,
+      tvParticipantsAria: tv ? (ru ? "Участники треда: " : "Thread participants: ") + (tv.participants || []).join(", ") : "",
+      tvParticipantsText: tv ? (tv.participants || []).join(", ") : "",
+      tvSpaceText: tv ? tv.space : "",
+      tvPendingCalloutStyle: "position:relative; border-radius:var(--radius-card); padding:var(--padding-card-block) var(--padding-card-inline); margin-bottom:0; background:" + (tvHasBlockingWait ? "var(--blocking-tint)" : "var(--attention-tint)") + ";",
+      tvPendingTitleStyle: "font-size:16px; font-weight:600; color:" + (tvHasBlockingWait ? "var(--blocking-ink)" : "var(--attention-strong)") + ";",
+      tvPendingTextStyle: "font-size:15px; line-height:1.5; color:" + (tvHasBlockingWait ? "var(--blocking-strong)" : "var(--attention-ink)") + ";",
+      tvPendingSignalTone: tvHasBlockingWait ? "negative" : "caution",
+      tvPendingSignalLabel: tvHasBlockingWait
+        ? (ru ? "Красный блок: тред фиксирует блокирующее ожидание. Заголовок называет владельца следующего хода протокола." : "Red block: the thread records a blocking wait. The heading names the owner of the next protocol move.")
+        : (ru ? "Жёлтый блок: тред активен; заголовок называет владельца следующего хода протокола." : "Yellow block: the thread is active; the heading names the owner of the next protocol move."),
+      tvSettledSignalLabel: ru ? "Зелёный блок: все документы треда дошли до конечного состояния; следующего хода протокола нет." : "Green block: every document in the thread reached a terminal state; no next protocol move is recorded.",
+      tvFreshnessStale,
+      tvFreshnessAge,
+      tvFreshnessHint: tvFreshnessStale
+        ? (ru ? "Локальная копия спейса устарела: события треда могли измениться после этого снимка. Запустите a2a sync и соберите дашборд заново." : "The local space copy is stale: thread events may have changed after this snapshot. Run a2a sync and rebuild the dashboard.")
+        : (ru ? "Тред собран из актуальной локальной копии спейса; сетевых запросов из HTML нет." : "The thread was built from the current local space copy; the HTML makes no network requests."),
+      tvFreshnessText: tvFreshnessStale ? (ru ? "устаревшая локальная копия" : "stale local copy") : (ru ? "локальная копия актуальна" : "local copy current"),
+      tvSnapshotText: tv ? (ru ? "снимок " : "snapshot ") + when(d.generatedAt) + " · " + (tv.order === "committed" ? (ru ? "порядок по коммитам" : "commit order") : (ru ? "порядок по времени авторов" : "author-time order")) : "",
+      tvEntryCount: tv ? (ru ? "записей: " : "entries: ") + tvEntryTotal : "",
+      tvEntries: tv ? (() => {
+        const arts = tv.artifacts || [];
+        const reports = tvWorkReports;
+        const reportByArtifact = new Map(reports.map(report => [report.artifact_id, report]));
+        const titleOf = (id) => { const a = arts.find(x => x.id === id); return a && a.title ? a.title : id; };
+        const anchorOf = (id) => "tv-" + String(id || "").replace(/[^A-Za-z0-9_-]/g, "_");
+        const avatarFields = (identity, top, dim, system) => ({
+          hasAvatar: !!identity.avatar,
+          lacksAvatar: !identity.avatar,
+          avatar: identity.avatar,
+          avatarMono: identity.avatarMono,
+          actorProfileURL: identity.actorProfileURL,
+          actorProfileTitle: identity.actorProfileTitle,
+          hasAgentBadge: !!identity.hasAgentBadge,
+          agentID: identity.agentID || "",
+          agentLabel: identity.agentLabel || "",
+          agentModel: identity.agentModel || "",
+          systemSelf: system === d.self,
+          dim,
+          railOffset: 34
+        });
+        const relationsOf = (a) => {
+          const out = [];
+          if (a.parent) out.push({ verb: ru ? "отвечает на" : "answers", target: a.parent, label: titleOf(a.parent), answer: true });
+          (a.refs || []).forEach(r => { const ref = r && r.ref ? r.ref : r; if (ref) out.push({ verb: ru ? "ссылается на" : "references", target: ref, label: titleOf(ref), answer: false }); });
+          return out;
+        };
+        // Clicking a relation or a subject focuses the document it names: the
+        // rest of the transcript dims, the target scrolls into view. Reading a
+        // causal chain means following one link at a time, and hunting for the
+        // referenced card by eye in a 40-row transcript is the slow way.
+        const focus = s.tvFocus;
+        const known = (id) => arts.some(x => x.id === id);
+        const linkStyle = (answer) => "font-family:'IBM Plex Mono',monospace; font-size:14px; line-height:1.5; border:0; cursor:pointer; text-align:left; display:inline-flex; align-items:center; gap:6px; border-radius:6px; padding:4px 10px; overflow-wrap:anywhere; " +
+          (answer ? "background:var(--teal-tint); color:var(--teal-ink);" : "background:var(--canvas); color:var(--muted);");
+        const goTo = (id) => () => {
+          this.setState({ tvFocus: this.state.tvFocus === id ? "" : id });
+          requestAnimationFrame(() => {
+            const node = document.getElementById(anchorOf(id));
+            if (node) node.scrollIntoView({ behavior: "smooth", block: "center" });
+          });
+        };
+        const artifactCard = (a, meta, dim) => {
+          const full = (d.artifactDetails || []).find(x => x.id === a.id && (!tv.space || x.space === tv.space)) || {};
+          const envelope = full.envelope || {};
+          const st = meta.state || "";
+          return {
+            id: a.id,
+            type: a.type,
+            title: a.title,
+            state: st,
+            stateTone: STATE_TONE[st] || "neutral",
+            priority: envelope.priority || "",
+            focused: focus === a.id,
+            dim,
+            route: (a.from || "") + " → " + (a.to || []).join(", "),
+            openExchange: () => this.go("work", { workSel:a.id, workTab:"all", workState:scopedArchive.some(i => i.id === a.id) ? "closed" : "all", workType:"all", workDue:false, space:tv.space }),
+            openDocument: () => this.setState({ mapDocument: { id:a.id, space:tv.space || "" } })
+          };
+        };
+        // Deliveries render under the handoff artifact that carries them
+        // (Delivery.HandoffID joins against the artifact id) — spec 05a
+        // AC-7's own "thread-side, under the handoff that carries it"
+        // scope, and internal/html.Delivery's own render vocabulary,
+        // never re-derived here. An unresolved delivery still gets a row
+        // (never vanishes); "not yet verified" gets its own pill, never
+        // the passed one.
+        // A delivery is a package of FILES, and the reader is a person deciding
+        // what to do next — so every part of it is named rather than run
+        // together into one mono string. The deliverable's name leads (a handoff
+        // may carry several, and adjacent boxes labelled only by an opaque DP-
+        // id say nothing about which is which); the package id and attempt drop
+        // to a secondary line; each failing check becomes its own row with the
+        // file path, the record it is aimed at, and the rule in prose rather
+        // than three fields glued together with separators.
+        const attemptWord = (n) => (ru ? "Попытка " : "Attempt ") + n;
+        const deliveriesFor = (id) => (tv.deliveries || []).filter(del => del.handoffId === id).map(del => {
+          const resolved = del.resolution === "resolved";
+          const failures = (del.failures || []).map(f => ({
+            path: f.entryPath,
+            rule: f.rule,
+            hasRecord: f.record != null,
+            // ndjson violations are aimed at one line; a json entry has none.
+            recordLabel: f.record != null ? (ru ? "строка " : "line ") + f.record : ""
+          }));
+          const chain = (del.chain || []).map(c => ({
+            attemptLabel: c.attempt ? attemptWord(c.attempt) : (ru ? "Попытка" : "Attempt"),
+            packageId: c.packageId,
+            verdictText: c.resolution === "resolved" ? deliveryVerdictText(c.verdict, ru) : (ru ? "манифест не найден" : "manifest not found"),
+            verdictTone: c.resolution === "resolved" ? (DELIVERY_VERDICT_TONE[c.verdict] || "outline") : "outline",
+            isCurrent: !!del.packageId && c.packageId === del.packageId,
+            currentLabel: ru ? "эта" : "this one"
+          }));
+          const metaParts = [];
+          if (resolved && del.attempt) metaParts.push(attemptWord(del.attempt));
+          metaParts.push(resolved ? del.packageId : del.ref);
+          return {
+            resolved,
+            unresolved: !resolved,
+            nameLabel: del.name || (ru ? "Поставка данных" : "Data delivery"),
+            metaLabel: metaParts.filter(Boolean).join(" · "),
+            verdictText: resolved ? deliveryVerdictText(del.verdict, ru) : "",
+            verdictTone: resolved ? (DELIVERY_VERDICT_TONE[del.verdict] || "outline") : "outline",
+            hasFailures: failures.length > 0,
+            failuresTitle: ru
+              ? "Не прошло проверок: " + failures.length
+              : failures.length + (failures.length === 1 ? " check did not pass" : " checks did not pass"),
+            failures,
+            hasChain: chain.length > 1,
+            chainTitle: ru ? "Все попытки" : "Every attempt",
+            chain,
+            // Amber, not red: an unresolved manifest means the mirror cannot
+            // show the package, which is not the same as the package failing.
+            //
+            // The resolver's own reason string (del.unavailable) is deliberately
+            // not printed here: cache.ResolveDelivery produces exactly one, and
+            // every fact in it — the package ref, the handoff, the deliverable
+            // name — is already on screen in this box's header, so rendering it
+            // repeats the header in English inside a localized panel. It stays
+            // in the page data and in every JSON consumer. If a SECOND
+            // unavailable reason is ever added on the Go side, it carries
+            // information this panel does not, and this branch must surface it.
+            unresolvedTitle: ru ? "Пакет не найден в локальном зеркале" : "Package not found in the local mirror",
+            unresolvedText: ru
+              ? "Синхронизируйте спейс — до этого состав пакета и его вердикт показать нечем."
+              : "Sync the space — until then there is nothing to show about this package or its verdict."
+          };
+        });
+        const transcriptRows = (tv.transcript || []).filter(en => !(en.event && en.event.transition === "publish" && reportByArtifact.has(en.event.subject)));
+        const representedReports = new Set(transcriptRows.filter(en => en.artifact && reportByArtifact.has(en.artifact.id)).map(en => en.artifact.id));
+        reports.filter(report => !representedReports.has(report.artifact_id)).slice().sort((left, right) => {
+          const committed = Number(left.commit_sequence || 0) - Number(right.commit_sequence || 0);
+          if (committed) return committed;
+          return String(left.artifact_id || "").localeCompare(String(right.artifact_id || ""));
+        }).forEach(report => transcriptRows.push({ kind:"work_report", at:report.reported_at, work_report:report }));
+        const rows = transcriptRows.map(en => {
+          const report = en.kind === "work_report" ? en.work_report : (en.artifact && reportByArtifact.get(en.artifact.id));
+          if (report) {
+            const actor = report.actor || {};
+            const identity = actorIdentity(d, actor.system, actor.name || actor.system, actor.kind, actor.model);
+            const subject = String(report.subject_ref || "");
+            const subjectID = subject.split("@")[0];
+            const subjectArtifact = arts.find(item => item.id === subjectID) || {};
+            const subjectIsContract = subjectID.startsWith("XC-");
+            const subjectIsThread = subject.indexOf("thread:") === 0;
+            const subjectLabel = subjectArtifact.title || (subjectIsThread ? (tv.opener && tv.opener.title || tv.thread) : subject);
+            const hasSubjectLink = known(subjectID) || subjectIsContract || subjectIsThread;
+            const dim = !!focus && focus !== subjectID;
+            const waits = (report.waiting_on || []).map(wait => ({
+              label: WORK_WAIT_KIND(wait.kind, ru) + (wait.id ? " · " + wait.id : ""),
+              summary: wait.summary || "",
+              hasSummary: !!wait.summary
+            }));
+            return Object.assign({
+              isArtifact: false, isEvent: false, isWorkReport: true,
+              id: report.artifact_id || report.work_id, anchor: anchorOf(report.artifact_id || report.work_id),
+              actorName: identity.actorName,
+              actionText: ru ? "сообщил о работе над" : "reported work on",
+              meta: actor.system + (actor.system ? " · " : "") + when(report.reported_at),
+              hasSubjectLink,
+              subjectLabel,
+              subjectTitle: subjectIsThread
+                ? (ru ? "Открыть тред" : "Open thread")
+                : (subjectIsContract ? (ru ? "Открыть контракт" : "Open contract") : (ru ? "Показать документ в ленте" : "Focus the document in the timeline")),
+              openSubject: subjectIsThread
+                ? () => this.go("threads", { space:tv.space, threadSel:subject, threadSpace:tv.space, tvFocus:"" })
+                : (subjectIsContract
+                  ? () => {
+                    const at = subject.lastIndexOf("@");
+                    this.go("contracts", { space:tv.space, conSel:subjectID, conVersion:at > 0 ? subject.slice(at + 1) : "", contractFile:null, conRole:"all", conRisk:false });
+                  }
+                  : (known(subjectID) ? goTo(subjectID) : () => {})),
+              hasNoteLink: false,
+              contentStyle: "",
+              signalTone: "neutral",
+              signalLabel: ru ? "Отчёт о работе · не меняет состояние документа" : "Work report · does not change document state",
+              workMode: WORK_MODE_TEXT(report.mode, ru),
+              workModeTone: report.mode === "waiting" || report.mode === "paused" ? "attention" : (report.mode === "finished" ? "healthy" : "agent"),
+              workSummary: report.summary || report.subject_ref || "",
+              workWaits: waits,
+              hasWorkWaits: waits.length > 0,
+              workEvidence: report.valid_until
+                ? ((ru ? "зафиксировано в Git · актуально до " : "committed in Git · valid until ") + when(report.valid_until))
+                : (ru ? "зафиксировано в Git · финальный отчёт" : "committed in Git · final report"),
+              responseID: "", hasAttachment: false, attachment: {},
+              cardStyle: "", title: "", route: "", when: "", hasParent: false, relations: [], opensChain: false, hasState: false, state: "", stateTone: "neutral", openDoc: () => {}
+            }, avatarFields(identity, 2, dim, actor.system));
+          }
+          if (en.kind === "artifact") {
+            const a = en.artifact || {};
+            const meta = arts.find(x => x.id === a.id) || {};
+            const st = meta.state || "";
+            const rels = relationsOf(meta);
+            const dim = !!focus && focus !== a.id;
+            const identitySystem = a.from || meta.from;
+            const identity = actorIdentity(d, identitySystem, identitySystem);
+            const card = artifactCard(a, meta, dim);
+            const deliveries = deliveriesFor(a.id);
+            // Registry state, not a transcript event: a contract's adopters
+            // come from consumers.yaml via annotateThreadAdopters (Go side),
+            // never from an event on this thread, so they render beside the
+            // card rather than as another timeline row (see
+            // ThreadViewArtifact.Adopters in internal/html/model.go).
+            const adopters = meta.adopters || [];
+            return Object.assign({
+              isArtifact: true, isEvent: false, isWorkReport: false, type: a.type, title: a.title, id: a.id,
+              anchor: anchorOf(a.id),
+              route: card.route,
+              when: when(en.at),
+              hasState: !!st, state: String(st).replace("_", " "), stateTone: STATE_TONE[st] || "neutral",
+              hasParent: rels.length > 0,
+              relations: rels.map(r => ({
+                text: r.verb + " " + r.label,
+                title: known(r.target) ? (ru ? "Показать этот документ в ленте" : "Focus that document in the transcript") : r.target,
+                go: known(r.target) ? goTo(r.target) : () => {},
+                style: linkStyle(r.answer, dim) + (known(r.target) ? "" : " cursor:default;")
+              })),
+              opensChain: rels.length === 0,
+              openDoc: card.openExchange,
+              card,
+              hasDeliveries: deliveries.length > 0,
+              // Names the whole group, so a reader knows these boxes are data
+              // packages handed over with the document above them — not more
+              // protocol events.
+              deliveriesTitle: ru
+                ? (deliveries.length === 1 ? "Поставка данных" : "Поставки данных")
+                : (deliveries.length === 1 ? "Data delivery" : "Data deliveries"),
+              deliveries,
+              hasAdopters: adopters.length > 0,
+              adoptersTitle: ru ? "Кто принял" : "Adopted by",
+              adopters,
+              text: "", meta: card.route + " · " + when(en.at), hasSubject: false, subjectLabel: String(TYPE_WORDS(ru)[a.type] || a.type).toLocaleLowerCase(ru ? "ru-RU" : "en-US"), subjectStyle: "", subjectTitle: "", goSubject: () => {},
+              actorName: identity.actorName, actionText: ru ? "создал" : "created", hasSubjectLink: false, hasNoteLink: false,
+              hasAttachment: false, attachment: {}, responseID: "",
+              signalTone: "neutral", signalLabel: ru ? "Информационное событие · создал" : "Informational event · created",
+              contentStyle: ""
+            }, avatarFields(identity, 2, dim, identitySystem));
+          }
+          // A DERIVED row, and it must never be mistaken for an event.
+          //
+          // `a2a contract adopt` writes the consumer's consumes.yaml and emits
+          // NO event — internal/fold has no `adopt` transition at all. So the
+          // counterparty's most consequential act had no place in any
+          // chronology, and a contract's thread read as its owner talking to
+          // themselves. internal/cache/threadview.go now derives this row from
+          // the consumer's own registry (its `since:` date), and the Go side
+          // gives it its own transcript kind rather than dressing it as an
+          // event, so a reader of `a2a html --json` cannot conclude an event
+          // exists when none does.
+          //
+          // The rendering owes the same honesty: it says WHERE the fact comes
+          // from, and it carries no event signal, because nothing happened on
+          // this thread — a registry in another repository changed.
+          if (en.kind === "derived") {
+            const der = en.derived || {};
+            const derSystem = String(der.system || "");
+            const dim = !!focus && focus !== der.contract_id;
+            const identity = actorIdentity(d, derSystem, derSystem);
+            const major = der.major ? (ru ? "major " : "major ") + der.major : "";
+            // No `since:` means no date. Say so rather than inventing one or
+            // silently dropping the row — the fact of adoption is real either
+            // way, and threadview.go deliberately keeps an undated row.
+            const dated = String(der.since || "").trim();
+            return Object.assign({
+              isArtifact: false, isEvent: false, isWorkReport: false, isDerived: true,
+              type: "", id: "adopt:" + der.contract_id + ":" + derSystem, anchor: "",
+              actorName: identity.actorName,
+              // "приняла контракт" / "adopted the contract" — the verb agrees
+              // with its object in both languages. An earlier wording glued
+              // "потребитель" to "контракт" and produced the same
+              // case-agreement defect this wave fixed elsewhere.
+              actionText: ru ? "приняла" : "adopted",
+              // The manifest carries a DATE, not a timestamp. Running it through
+              // when() rendered "06.08.2026 00:00" — a midnight this fact does
+              // not have, and precision it never claimed. Show the date alone.
+              meta: [derSystem, major, dated ? dayOnly(dated) : (ru ? "дата не записана" : "no date recorded"),
+                     ru ? "по реестру потребителя, не событие" : "from the consumer's registry, not an event"]
+                .filter(Boolean).join(" · "),
+              hasSubjectLink: known(der.contract_id),
+              subjectLabel: ru ? "контракт" : "the contract",
+              subjectTitle: ru ? "Показать контракт в ленте" : "Focus the contract in the timeline",
+              openSubject: known(der.contract_id) ? goTo(der.contract_id) : () => {},
+              subjectLinkStyle: "display:inline; border:0; padding:0; background:transparent; color:var(--teal-ink); font:inherit; font-weight:400; cursor:pointer; text-decoration-line:underline; text-decoration-style:dotted; text-decoration-thickness:2px; text-underline-offset:5px;",
+              hasNoteLink: false, noteLinkLabel: "", noteTitle: "", noteLinkStyle: "", openNote: () => {},
+              contentStyle: "", responseID: "", eventWhen: dated ? dayOnly(dated) : "",
+              hasAttachment: false, attachment: {},
+              // Deliberately no signal: an event signal would assert that a
+              // protocol transition happened here, and none did.
+              signalTone: "neutral", signalLabel: ru ? "Запись реестра · не событие треда" : "Registry fact · not a thread event",
+              cardStyle: "",
+              title: "", route: "", when: "", hasParent: false, relations: [], opensChain: false, hasState: false, state: "", stateTone: "neutral", openDoc: () => {}
+            }, avatarFields(identity, 2, dim, derSystem));
+          }
+          const ev = en.event || {};
+          const actor = ev.actor || {};
+          const dim = !!focus && focus !== ev.subject && focus !== ev.response_id;
+          const note = String(ev.note || "").trim();
+          const subject = arts.find(x => x.id === ev.subject) || {};
+          const subjectType = String(TYPE_WORDS(ru)[subject.type] || (ru ? "документ" : "document")).toLocaleLowerCase(ru ? "ru-RU" : "en-US");
+          const identity = actorIdentity(d, actor.system, actor.name || actor.system, actor.kind, actor.model);
+          // The event's own §5.2.2 version, appended when it carries one.
+          // Without this a contract with three `publish` events rendered three
+          // IDENTICAL rows — "published the contract", three times — with
+          // nothing saying which version each created and every link resolving
+          // to the version-less contract id. Observed on a real space:
+          // XC-axon-getvisa-ingest carries a version-less publish (the
+          // contract itself) followed by 1.0.0 and 1.0.1, and read as one
+          // event repeated.
+          const evVersion = String(ev.version || "").trim();
+          const actionText = ev.transition === "note" ? (ru ? "добавил" : "added") : (TRANSITION_PAST(ru)[ev.transition] || ev.transition);
+          const signal = EVENT_SIGNAL(ev.transition, ru);
+          const consistency = ev.consistency;
+          // verify/close's own per-criterion judgement (P6 wave C, event/v2's
+          // `verdicts[]`) — decoded on the Go side (internal/cache/decode.go),
+          // carried onto the transcript event (internal/cache/threadview.go,
+          // internal/html/model.go) and, until this row named the field, never
+          // read here: the entry hop from Go field to rendered occurrence is
+          // its own place to lose data (this file's own wave-21 lesson, about
+          // `detailFor`'s hand-picked object literal — this row is the same
+          // shape, one function up).
+          const verdictLabel = VERDICT_LABEL(ru);
+          const verdicts = (ev.verdicts || []).map(v => ({
+            text: (ru ? "критерий " : "criterion ") + v.index + " · " + (verdictLabel[v.verdict] || v.verdict) + " · " + v.cause_owner,
+            tone: VERDICT_TONE[v.verdict] || "neutral"
+          }));
+          const noteDetail = note ? {
+            present: true,
+            type: "",
+            pills: [{ text: ru ? "заметка" : "note", tone: "outline" }],
+            bodyKey: "thread-note-" + (ev.ulid || ev.subject || String(en.at || "")),
+            hasFooter: false,
+            authorName: identity.actorName,
+            authorMono: identity.avatarMono,
+            authorAvatar: identity.avatar,
+            authorFrom: actor.system,
+            authorTo: subjectType,
+            authorProfileURL: identity.actorProfileURL,
+            authorProfileTitle: identity.actorProfileTitle,
+            title: ru ? "Заметка к «" + titleOf(ev.subject) + "»" : "Note on “" + titleOf(ev.subject) + "”",
+            body: note,
+            bodyHTML: "",
+            metadataLabel: ru ? "О заметке" : "About this note",
+            metadataHint: ru ? "из истории событий" : "from the event history",
+            metadataPrimary: [
+              { label: ru ? "Добавлено" : "Added", value: when(en.at), mono: false },
+              { label: ru ? "Система" : "System", value: actor.system, mono: true },
+              { label: ru ? "Документ" : "Document", value: subjectType, mono: false }
+            ],
+            metadataRest: [], lists: [], refs: [], events: [], flags: [], hasPrompt: false, hasThread: false
+          } : null;
+          return Object.assign({
+            isArtifact: false, isEvent: true, isWorkReport: false, type: "", id: ev.ulid, anchor: "",
+            actorName: identity.actorName,
+            actionText,
+            meta: actor.system + (actor.system ? " · " : "") + when(en.at),
+            hasSubjectLink: ev.transition !== "note" && known(ev.subject),
+            // The version rides with the SUBJECT, not with the verb. Putting it
+            // in the verb produced "опубликовал версию 1.0.1 контракт" — the
+            // version wedged between a verb and the noun it does not agree
+            // with. Attached to the subject it reads correctly in both
+            // languages ("контракт 1.0.1" / "contract 1.0.1") and puts the
+            // version where a reader looks for it: on the thing versioned.
+            subjectLabel: evVersion ? subjectType + " " + evVersion : subjectType,
+            subjectTitle: ru ? "Показать исходный документ в ленте" : "Focus the original document in the timeline",
+            openSubject: known(ev.subject) ? goTo(ev.subject) : () => {},
+            subjectLinkStyle: "display:inline; border:0; padding:0; background:transparent; color:" + (TYPE_LINK_ACCENT[subject.type] || "var(--teal-ink)") + "; font:inherit; font-weight:400; cursor:pointer; text-decoration-line:underline; text-decoration-style:dashed; text-decoration-thickness:2px; text-underline-offset:5px;",
+            hasNoteLink: ev.transition === "note" && !!note,
+            noteLinkLabel: ru ? "заметку" : "a note",
+            noteTitle: ru ? "Открыть заметку" : "Open note",
+            noteLinkStyle: "display:inline; border:0; padding:0; background:transparent; color:var(--teal-ink); font:inherit; font-weight:400; cursor:pointer; text-decoration-line:underline; text-decoration-style:solid; text-decoration-thickness:1.5px; text-underline-offset:5px;",
+            openNote: noteDetail ? () => this.setState({ threadNote: noteDetail }) : () => {},
+            contentStyle: "",
+            responseID: ev.response_id || "",
+            eventWhen: when(en.at),
+            hasAttachment: false,
+            attachment: {},
+            signalTone: signal.tone,
+            signalLabel: signal.label,
+            verdicts,
+            hasVerdicts: verdicts.length > 0,
+            verdictsTitle: ru ? "Вердикты по критериям" : "Criteria verdicts",
+            cardStyle: "",
+            title: "", route: "", when: "", hasParent: false, relations: [], opensChain: false, hasState: false, state: "", stateTone: "neutral", openDoc: () => {}
+          }, avatarFields(identity, 2, dim, actor.system));
+        }).reverse();
+        const joined = [];
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
+          const next = rows[i + 1];
+          // The response event names the artifact it created. Keep that proof
+          // directly under the event instead of inserting a second anonymous
+          // timeline node with the same actor, direction and timestamp.
+          if (row.isEvent && row.responseID && next && next.isArtifact && next.id === row.responseID) {
+            row.hasAttachment = true;
+            row.attachment = next.card;
+            row.anchor = next.anchor;
+            row.meta = next.route + " · " + row.eventWhen;
+            row.hasSubjectLink = false;
+            i++;
+          }
+          joined.push(row);
+        }
+        return joined.map((r, i) => Object.assign(r, {
+          railStyle: "position:relative; padding:0 0 28px 34px;" +
+            (i === joined.length - 1 ? " margin-left:2px;" : " border-left:2px solid var(--border);")
+        }));
+      })() : [],
+      tvOpen: tvPend.map(o => {
+        const artifact = (tv && tv.artifacts || []).find(a => a.id === o.id) || {};
+        const title = artifact.title || o.id;
+        // internal/pendency's own verdict, carried here instead of dropped.
+        // This panel used to print WHO owes a move and stop. But pendency's
+        // contract is that "somebody owes this" is a CLAIM that must be
+        // justified, never a fall-through — showing the conclusion and
+        // withholding the justification republishes exactly the ambiguity
+        // the relation was built to remove (internal/html/model.go's
+        // ThreadOpenItem doc comment; wave 36 F3).
+        return {
+          id: o.id, type: o.type, title,
+          who: o.your_move ? (ru ? "ваш ход" : "your move") : (ru ? "ход за " : "waiting on ") + listNames((o.waiting_on || []).filter(w => w !== d.self), ru),
+          whoTone: o.your_move ? "attention" : "neutral",
+          needed: o.needed_by ? (ru ? "дедлайн " : "due ") + isoDay(o.needed_by) : (o.blocking ? (ru ? "блокирующее ожидание" : "blocking protocol wait") : ""),
+          // The owed move, in words rather than as a protocol enum, and the
+          // reason it is owed. `why` is pendency's justification sentence —
+          // it is already a full sentence, so nothing is built around it.
+          hasMove: !!o.expected_transition,
+          moveLabel: ru ? "следующий ход" : "next move",
+          move: o.expected_transition ? (TRANSITION_NEXT(ru)[o.expected_transition] || o.expected_transition) : "",
+          hasWhy: !!o.why,
+          why: o.why || "",
+          // A human gate outranks everything else on this card: it says the
+          // move named directly above it is one your agent must NOT make.
+          hasHumanGate: !!o.human_gate,
+          humanGate: HUMAN_GATE_TEXT(o.human_gate, ru),
+          // Only a contract carries these; every other kind gets an empty
+          // list and the section disappears.
+          operationalItems: operationalReadinessRows(o.operational_items, ru),
+          hasOperational: !!(o.operational_items && o.operational_items.length),
+          operationalLabel: ru ? "операционная готовность" : "operational readiness",
+          openLabel: (ru ? "Открыть документ: " : "Open document: ") + title,
+          openDocument: () => this.setState({ mapDocument: { id:o.id, space:tv && tv.space || "" } })
+        };
+      }),
+      tvHasPrompt: tvMine.length > 0,
+      tvPrompt: {
+        text: tv && tvMine.length ? agentThreadPromptText(this.promptContext({
+          thread: tv.thread, space: tv.space,
+          title: tv.opener ? tv.opener.title : "",
+          participants: tv.participants || [],
+          documents: tvMine.map(o => {
+            const art = (tv.artifacts || []).find(a => a.id === o.id) || {};
+            return this.promptContext({
+              id: o.id, type: o.type, state: o.state, title: art.title,
+              from: art.from, to: art.to, neededBy: o.needed_by,
+              blocking: o.blocking, prompt: o.prompt
+            });
+          }),
+          waiting: tvPend.filter(o => !o.your_move).map(o => o.id)
+        })) : ""
+      },
+      tvHasFlags: !!(tv && ((tv.flags || []).length || (tv.unresolved || []).length)),
+      tvFlags: tv ? (tv.flags || []).map(f => ({
+        source: f.consistency ? "consistency" : "protocol",
+        kind: f.kind,
+        subject: f.subject,
+        event: f.event_ulid || "",
+        consistency: f.consistency
+      })).map(f => f.source === "consistency"
+        ? f.kind + (ru ? " для " : " on ") + f.subject + " · authoritative actual " + f.consistency.actual + "; producer claimed " + f.consistency.claimed + (f.event ? (ru ? " · событие " : " · event ") + f.event : "")
+        : f.kind + (ru ? " для " : " on ") + f.subject + (f.event ? (ru ? " · событие " : " · event ") + f.event : "")
+      ).concat((tv.unresolved || []).map(u => (ru ? "ссылка в никуда: " : "unresolved reference: ") + (u.ref || JSON.stringify(u)))) : []
+    };
+    return values;
+  }
+}
+</script>
+</body>
+</html>

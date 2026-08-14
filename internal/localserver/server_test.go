@@ -124,11 +124,39 @@ func TestConfigEnforcesHeaderClientRefreshAndBodyHardBounds(t *testing.T) {
 		func() Config { c := DefaultConfig(); c.MaxHeaderBytes = DefaultMaxHeaderBytes + 1; return c }(),
 		func() Config { c := DefaultConfig(); c.MaxSnapshotBytes = (16 << 20) + 1; return c }(),
 		func() Config { c := DefaultConfig(); c.MaxShellBytes = DefaultMaxShellBytes + 1; return c }(),
+		func() Config { c := DefaultConfig(); c.MaxDashboardBytes = MaximumDashboardBytes + 1; return c }(),
 	}
 	for _, config := range tests {
 		if _, err := New(config, &fakeReader{}, nil, fakeRenderer{}, nil); err == nil {
 			t.Fatalf("New() accepted invalid config: %#v", config)
 		}
+	}
+}
+
+func TestDashboardBoundDefaultsHardMaximumAndLastGoodRetention(t *testing.T) {
+	t.Parallel()
+	defaults := DefaultConfig()
+	if defaults.MaxDashboardBytes != DefaultMaxDashboardBytes || DefaultMaxDashboardBytes != 2<<20 || MaximumDashboardBytes != 4<<20 {
+		t.Fatalf("dashboard bounds = default %d configured %d hard %d", defaults.MaxDashboardBytes, DefaultMaxDashboardBytes, MaximumDashboardBytes)
+	}
+
+	config := defaults
+	config.MaxDashboardBytes = 8
+	renderer := &countingRenderer{shell: []byte("first"), viewModel: bytes.Repeat([]byte("x"), config.MaxDashboardBytes), fingerprint: "content:first"}
+	server, err := New(config, &fakeReader{}, nil, renderer, newFakeTickerFactory())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if err := server.publish(t.Context(), testSnapshot("exact-bound")); err != nil {
+		t.Fatalf("exact dashboard bound was refused: %v", err)
+	}
+	lastGood := server.store.dashboard()
+	renderer.set([]byte("second"), bytes.Repeat([]byte("y"), config.MaxDashboardBytes+1), "content:second")
+	if err := server.publish(t.Context(), testSnapshot("one-over")); !errors.Is(err, ErrSnapshotUnavailable) {
+		t.Fatalf("one-over dashboard error = %v, want ErrSnapshotUnavailable", err)
+	}
+	if current := server.store.dashboard(); current != lastGood || !bytes.Equal(current.viewModel, bytes.Repeat([]byte("x"), config.MaxDashboardBytes)) {
+		t.Fatal("oversized dashboard replaced the last good generation")
 	}
 }
 
@@ -200,7 +228,7 @@ func TestSyncErrorRequiresExplicitDegradedSnapshotAndPreservesCurrent(t *testing
 	}
 }
 
-func TestSameRevisionPublicationRefreshesSnapshotWithoutRebuildingShell(t *testing.T) {
+func TestSameKeyPublicationRefreshesSnapshotAndRetainsDashboardCandidate(t *testing.T) {
 	t.Parallel()
 	renderer := &countingRenderer{shell: []byte("first")}
 	server, err := New(DefaultConfig(), &fakeReader{}, nil, renderer, newFakeTickerFactory())
@@ -212,26 +240,27 @@ func TestSameRevisionPublicationRefreshesSnapshotWithoutRebuildingShell(t *testi
 		t.Fatalf("first publish error = %v", err)
 	}
 	servingSnapshot := server.store.get()
-	servingShell := server.store.shell()
+	servingDashboard := server.store.dashboard()
 
 	second := first
 	second.GeneratedAt = second.GeneratedAt.Add(time.Minute)
+	renderer.set([]byte("discarded shell"), []byte(`{"candidate":true}`), sha256Digest([]byte("first")))
 	if err := server.publish(t.Context(), second); err != nil {
 		t.Fatalf("same-revision publish error = %v", err)
 	}
 	refreshedSnapshot := server.store.get()
-	refreshedShell := server.store.shell()
+	refreshedDashboard := server.store.dashboard()
 	if refreshedSnapshot == servingSnapshot {
 		t.Fatal("same semantic revision retained stale snapshot bytes")
 	}
-	if refreshedSnapshot.revision != servingSnapshot.revision || refreshedSnapshot.ctx != servingSnapshot.ctx || refreshedShell.ctx != servingShell.ctx {
+	if refreshedSnapshot.revision != servingSnapshot.revision || refreshedSnapshot.ctx != servingSnapshot.ctx || refreshedDashboard.ctx != servingDashboard.ctx {
 		t.Fatal("same semantic revision did not preserve one cancellation lifetime")
 	}
-	if !bytes.Equal(refreshedShell.body, servingShell.body) {
-		t.Fatal("same semantic revision changed its coherent shell bytes")
+	if !bytes.Equal(refreshedDashboard.shell, servingDashboard.shell) || !bytes.Equal(refreshedDashboard.viewModel, servingDashboard.viewModel) || refreshedDashboard.viewModelDigest != servingDashboard.viewModelDigest {
+		t.Fatal("same dashboard key did not retain its coherent exact bytes and digest")
 	}
-	if calls := renderer.callCount(); calls != 1 {
-		t.Fatalf("same semantic revision render calls = %d, want 1", calls)
+	if calls := renderer.callCount(); calls != 2 {
+		t.Fatalf("same semantic revision render calls = %d, want 2", calls)
 	}
 	if bytes.Equal(refreshedSnapshot.body, servingSnapshot.body) {
 		t.Fatal("generated_at change did not refresh nonconditional snapshot body")
@@ -242,9 +271,67 @@ func TestSameRevisionPublicationRefreshesSnapshotWithoutRebuildingShell(t *testi
 	default:
 	}
 	select {
-	case <-servingShell.ctx.Done():
+	case <-servingDashboard.ctx.Done():
 		t.Fatal("same semantic revision canceled an in-flight shell reader")
 	default:
+	}
+}
+
+func TestSameRevisionSemanticDashboardChangeReplacesWholeGeneration(t *testing.T) {
+	t.Parallel()
+	renderer := &countingRenderer{shell: []byte("first shell"), viewModel: []byte(`{"semantic":1}`), fingerprint: "content:first"}
+	server, err := New(DefaultConfig(), &fakeReader{}, nil, renderer, newFakeTickerFactory())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	snapshot := testSnapshot("stable-operational-revision")
+	if err := server.publish(t.Context(), snapshot); err != nil {
+		t.Fatalf("first publish error = %v", err)
+	}
+	previous := server.store.dashboard()
+	renderer.set([]byte("second shell"), []byte(`{"semantic":2}`), "content:second")
+	if err := server.publish(t.Context(), snapshot); err != nil {
+		t.Fatalf("semantic publish error = %v", err)
+	}
+	current := server.store.dashboard()
+	if current == previous || current.revision != previous.revision || current.contentFingerprint == previous.contentFingerprint ||
+		bytes.Equal(current.shell, previous.shell) || bytes.Equal(current.viewModel, previous.viewModel) || current.viewModelDigest == previous.viewModelDigest {
+		t.Fatalf("same-revision semantic change did not replace the coherent generation: old=%+v new=%+v", previous, current)
+	}
+	select {
+	case <-previous.ctx.Done():
+	default:
+		t.Fatal("same-revision semantic change did not cancel superseded dashboard readers")
+	}
+}
+
+func TestClosedSnapshotStoreRejectsAndCancelsLatePublication(t *testing.T) {
+	t.Parallel()
+
+	store := &snapshotStore{}
+	store.close()
+	snapshotCtx, snapshotCancel := context.WithCancel(context.Background())
+	dashboardCtx, dashboardCancel := context.WithCancel(context.Background())
+	changed := store.replace(
+		&snapshotGeneration{revision: "late", body: []byte("snapshot"), ctx: snapshotCtx, cancel: snapshotCancel},
+		&dashboardGeneration{
+			revision: "late", contentFingerprint: "content:late", shell: []byte("shell"),
+			viewModel: []byte(`{"late":true}`), viewModelDigest: "sha256:late",
+			ctx: dashboardCtx, cancel: dashboardCancel,
+		},
+	)
+	if changed || store.get() != nil || store.dashboard() != nil {
+		t.Fatal("late publication repopulated a closed snapshot store")
+	}
+	select {
+	case <-snapshotCtx.Done():
+	default:
+		t.Fatal("closed store did not cancel the late snapshot candidate")
+	}
+	select {
+	case <-dashboardCtx.Done():
+	default:
+		t.Fatal("closed store did not cancel the late dashboard candidate")
 	}
 }
 
@@ -290,12 +377,12 @@ func TestRealNetSlowRootWriterIsBoundedAndCanceledByPublication(t *testing.T) {
 			runtime.Gosched()
 		}
 	}
-	oldShell := server.store.shell()
+	oldDashboard := server.store.dashboard()
 	if err := server.publish(t.Context(), testSnapshot("two")); err != nil {
 		t.Fatalf("publish() error = %v", err)
 	}
 	select {
-	case <-oldShell.ctx.Done():
+	case <-oldDashboard.ctx.Done():
 	default:
 		t.Fatal("new publication did not cancel slow shell generation")
 	}
@@ -539,6 +626,84 @@ func TestProductionServeStalledRootWriteHitsDeadlineAndReleasesBudget(t *testing
 		}
 	case <-t.Context().Done():
 		t.Fatal("Serve did not join after stalled-writer probe")
+	}
+}
+
+func TestProductionServeStalledDashboardWriteHitsDeadlineAndReleasesSharedBudget(t *testing.T) {
+	t.Parallel()
+	config := DefaultConfig()
+	config.Listen = "127.0.0.1:0"
+	config.WriteDeadline = 25 * time.Millisecond
+	config.MaxDashboardBytes = MaximumDashboardBytes
+	reader := &fakeReader{snapshot: testSnapshot("dashboard-deadline"), called: make(chan struct{}, 1)}
+	renderer := fakeRenderer{
+		shell: []byte("dashboard"), viewModel: bytes.Repeat([]byte("x"), config.MaxDashboardBytes), fingerprint: "content:dashboard-deadline",
+	}
+	server, err := New(config, reader, nil, renderer, newFakeTickerFactory())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(ctx, listener) }()
+	select {
+	case <-reader.called:
+	case <-t.Context().Done():
+		t.Fatal("initial snapshot was not read")
+	}
+	connection, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatalf("Dial() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := connection.Close(); err != nil {
+			t.Errorf("close connection: %v", err)
+		}
+	})
+	port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
+	if _, err := fmt.Fprintf(connection, "GET /api/v1/dashboard HTTP/1.1\r\nHost: localhost:%s\r\nConnection: close\r\n\r\n", port); err != nil {
+		t.Fatalf("write request error = %v", err)
+	}
+
+	const spinBudget = 15 * time.Second
+	acquired := time.NewTimer(spinBudget)
+	defer acquired.Stop()
+	for len(server.writerSlots) == 0 {
+		select {
+		case <-acquired.C:
+			t.Fatalf("stalled dashboard writer never acquired a shared slot within %s", spinBudget)
+		case <-t.Context().Done():
+			t.Fatal("stalled dashboard writer never acquired a shared slot")
+		default:
+			// Real write-deadline behavior is under test; release the P while the server writes.
+			time.Sleep(time.Millisecond)
+		}
+	}
+	deadline := time.NewTimer(spinBudget)
+	defer deadline.Stop()
+	for len(server.writerSlots) != 0 || server.LastError() == nil {
+		select {
+		case <-deadline.C:
+			t.Fatalf("stalled dashboard writer did not hit its deadline within %s: slots=%d error=%v", spinBudget, len(server.writerSlots), server.LastError())
+		case <-t.Context().Done():
+			t.Fatalf("stalled dashboard writer did not hit its deadline: slots=%d error=%v", len(server.writerSlots), server.LastError())
+		default:
+			// See the acquired loop: this wait deliberately observes real timeout semantics.
+			time.Sleep(time.Millisecond)
+		}
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Serve() error = %v", err)
+		}
+	case <-t.Context().Done():
+		t.Fatal("Serve did not join after stalled dashboard-writer probe")
 	}
 }
 

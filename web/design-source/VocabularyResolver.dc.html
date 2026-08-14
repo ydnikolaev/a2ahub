@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1,&quot;height&quot;:1}}">
+const A2A_VOCABULARY_POLICY = Object.freeze({ ALL: "emphatic" });
+
+const A2A_VOCABULARY_TONE_CLASSES = Object.freeze({
+  "needs-you": "tone-needs-you",
+  "waiting-them": "tone-waiting-them",
+  "progressing": "tone-progressing",
+  "settled": "tone-settled",
+  "broken": "tone-broken",
+  "unknown": "tone-unknown"
+});
+
+function lookupVocabulary(data, family, value, locale, policy) {
+  const table = data && data.vocabulary || {};
+  const entries = Array.isArray(table.entries) ? table.entries : [];
+  const fallback = table.unknown || {};
+  const entry = entries.find(candidate => candidate && candidate.family === family && candidate.value === value);
+  const selected = entry || fallback;
+  const ru = locale === "ru";
+  const activePolicy = policy || A2A_VOCABULARY_POLICY;
+  const treatment = Object.prototype.hasOwnProperty.call(activePolicy, family)
+    ? activePolicy[family]
+    : (activePolicy.ALL || "emphatic");
+  const toneClass = treatment === "neutral"
+    ? "tone-neutral"
+    : (A2A_VOCABULARY_TONE_CLASSES[selected.tone] || A2A_VOCABULARY_TONE_CLASSES.unknown);
+  const cue = String(selected.cue || fallback.cue || "");
+  return Object.freeze({
+    label: String(ru ? selected.labelRU || "" : selected.labelEN || ""),
+    explanation: String(ru ? selected.explanationRU || "" : selected.explanationEN || ""),
+    cue,
+    cueAttribute: cue,
+    toneClass
+  });
+}
+
+const A2A_VOCABULARY_RESOLVER = Object.freeze({
+  lookup: lookupVocabulary,
+  defaultPolicy: A2A_VOCABULARY_POLICY
+});
+globalThis.A2A_VOCABULARY_RESOLVER = A2A_VOCABULARY_RESOLVER;
+
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

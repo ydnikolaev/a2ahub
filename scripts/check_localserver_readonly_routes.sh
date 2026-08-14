@@ -27,7 +27,7 @@ fail() {
 test -f "$ROUTER" || fail "missing internal/localserver/router.go"
 
 routes="$(sed -nE 's/^[[:space:]]*case "(\/[^\"]*)":[[:space:]]*$/\1/p' "$ROUTER" | sort -u | tr '\n' ' ' | sed 's/ $//')"
-expected="/ /api/v1/events /api/v1/snapshot"
+expected="/ /api/v1/dashboard /api/v1/events /api/v1/snapshot"
 if [[ "$routes" != "$expected" ]]; then
   fail "route inventory is [$routes], want [$expected]"
 fi

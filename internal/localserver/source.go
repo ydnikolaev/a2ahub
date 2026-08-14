@@ -21,9 +21,11 @@ type FetchSyncer interface {
 	Sync(context.Context) (operational.Snapshot, error)
 }
 
-// ShellRenderer renders an operational snapshot into the dashboard document.
+// ShellRenderer renders one coherent dashboard generation. The transport owns
+// only the returned bytes and opaque fingerprint; it does not know the HTML
+// model that produced them.
 type ShellRenderer interface {
-	Render(context.Context, operational.Snapshot) ([]byte, error)
+	Render(context.Context, operational.Snapshot) (shell, viewModel []byte, contentFingerprint string, err error)
 }
 
 // Ticker is the owned refresh clock seam.

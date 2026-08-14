@@ -11,7 +11,10 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/html"
+	"github.com/ydnikolaev/a2ahub/internal/operational"
 	"github.com/ydnikolaev/a2ahub/internal/pendency"
+	"github.com/ydnikolaev/a2ahub/internal/workreport"
 )
 
 // catalog_test.go is the P13 catalog seam's own guard (spec 13 §8 AC #3 +
@@ -213,10 +216,41 @@ func TestCatalogVocabularyIsTheDomainsOwn(t *testing.T) {
 		gotKeys = append(gotKeys, key)
 	}
 	sort.Strings(gotKeys)
-	wantKeys := []string{"gate", "human_gates", "outcomes", "reason", "rule_identity", "states", "transitions"}
-	if !reflect.DeepEqual(gotKeys, wantKeys) {
-		t.Fatalf("vocabulary keys = %v, want exactly %v", gotKeys, wantKeys)
+	wantKeys := []string{
+		"consistency_severity",
+		"dependency_drift",
+		"freshness",
+		"gate",
+		"human_gates",
+		"live_transport",
+		"operational_state",
+		"outcomes",
+		"reason",
+		"rule_identity",
+		"source_freshness",
+		"states",
+		"transitions",
+		"work_mode",
 	}
+	if !reflect.DeepEqual(gotKeys, wantKeys) {
+		t.Errorf("vocabulary keys = %v, want exactly %v", gotKeys, wantKeys)
+	}
+	assertCatalogKeyOrder(t, stdout.String(), []string{
+		"outcomes",
+		"states",
+		"transitions",
+		"human_gates",
+		"reason",
+		"rule_identity",
+		"gate",
+		"freshness",
+		"source_freshness",
+		"work_mode",
+		"dependency_drift",
+		"consistency_severity",
+		"operational_state",
+		"live_transport",
+	})
 
 	base := fold.BuildVocabulary()
 	if got := decodeCatalogField[[]string](t, raw, "outcomes"); !reflect.DeepEqual(got, base.Outcomes) {
@@ -248,6 +282,168 @@ func TestCatalogVocabularyIsTheDomainsOwn(t *testing.T) {
 	sort.Strings(wantGates)
 	if got := decodeCatalogField[[]string](t, raw, "gate"); !reflect.DeepEqual(got, wantGates) {
 		t.Errorf("gate = %v, want derived unique non-empty values %v", got, wantGates)
+	}
+	if got, want := decodeCatalogField[[]operational.Freshness](t, raw, "freshness"), operational.FreshnessValues(); !reflect.DeepEqual(got, want) {
+		t.Errorf("freshness = %v, want operational-owned %v", got, want)
+	}
+	if got, want := decodeCatalogField[[]operational.SourceFreshness](t, raw, "source_freshness"), operational.SourceFreshnessValues(); !reflect.DeepEqual(got, want) {
+		t.Errorf("source_freshness = %v, want operational-owned %v", got, want)
+	}
+	if got, want := decodeCatalogField[[]workreport.Mode](t, raw, "work_mode"), workreport.Modes(); !reflect.DeepEqual(got, want) {
+		t.Errorf("work_mode = %v, want workreport-owned %v", got, want)
+	}
+	if got, want := decodeCatalogField[[]string](t, raw, "dependency_drift"), cache.DependencyDrifts(); !reflect.DeepEqual(got, want) {
+		t.Errorf("dependency_drift = %v, want cache-owned %v", got, want)
+	}
+	if got, want := decodeCatalogField[[]operational.ConsistencySeverity](t, raw, "consistency_severity"), operational.ConsistencySeverities(); !reflect.DeepEqual(got, want) {
+		t.Errorf("consistency_severity = %v, want operational-owned %v", got, want)
+	}
+	if got, want := decodeCatalogField[[]string](t, raw, "operational_state"), cache.OperationalStates(); !reflect.DeepEqual(got, want) {
+		t.Errorf("operational_state = %v, want cache-owned %v", got, want)
+	}
+	if got, want := decodeCatalogField[[]string](t, raw, "live_transport"), html.LiveTransportStates(); !reflect.DeepEqual(got, want) {
+		t.Errorf("live_transport = %v, want html-owned %v", got, want)
+	}
+}
+
+// TestCatalogVocabularyCoversDashboardVocabulary compares the actual binary
+// document with the payload dictionary. It starts from raw JSON so an additive
+// family or a changed field shape cannot disappear during a narrower decode.
+func TestCatalogVocabularyCoversDashboardVocabulary(t *testing.T) {
+	t.Parallel()
+	var stdout, stderr bytes.Buffer
+	if code := runCatalog([]string{"--vocabulary", "--json"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit code = %d (stderr: %q), want 0", code, stderr.String())
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(stdout.Bytes(), &raw); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+
+	catalogue := normalizedDashboardCatalogue(t, raw)
+	if len(catalogue) != len(html.VocabularyFamilies()) {
+		t.Errorf("normalized catalogue has %d families, want %d", len(catalogue), len(html.VocabularyFamilies()))
+	}
+	actual := make(map[catalogVocabularyPair]bool)
+	for _, family := range html.VocabularyFamilies() {
+		values, ok := catalogue[family]
+		if !ok || len(values) == 0 {
+			t.Errorf("catalogue family %q is empty", family)
+			continue
+		}
+		for _, value := range values {
+			pair := catalogVocabularyPair{family: family, value: value}
+			if value == "" {
+				t.Errorf("catalogue contains empty value in family %q", family)
+				continue
+			}
+			if actual[pair] {
+				t.Errorf("catalogue duplicates %s/%s", family, value)
+			}
+			actual[pair] = true
+		}
+	}
+
+	entries := make(map[catalogVocabularyPair]bool)
+	for _, entry := range html.DashboardVocabulary().Entries {
+		pair := catalogVocabularyPair{family: entry.Family, value: entry.Value}
+		if entry.Family == "" || entry.Value == "" {
+			t.Errorf("dashboard vocabulary contains fallback-like row family=%q value=%q", entry.Family, entry.Value)
+			continue
+		}
+		if entries[pair] {
+			t.Errorf("dashboard vocabulary duplicates %s/%s", pair.family, pair.value)
+		}
+		entries[pair] = true
+	}
+	for pair := range actual {
+		if !entries[pair] {
+			t.Errorf("dashboard vocabulary omits catalogue pair %s/%s", pair.family, pair.value)
+		}
+	}
+	for pair := range entries {
+		if !actual[pair] {
+			t.Errorf("dashboard vocabulary has non-catalogue pair %s/%s", pair.family, pair.value)
+		}
+	}
+}
+
+type catalogVocabularyPair struct {
+	family html.VocabularyFamily
+	value  string
+}
+
+func normalizedDashboardCatalogue(t *testing.T, raw map[string]json.RawMessage) map[html.VocabularyFamily][]string {
+	t.Helper()
+	baseStates := decodeCatalogField[map[string][]string](t, raw, "states")
+	humanGates := decodeCatalogField[map[string]string](t, raw, "human_gates")
+	return map[html.VocabularyFamily][]string{
+		html.VocabularyFamilyFreshness:           stringsFromCatalog(decodeCatalogField[[]operational.Freshness](t, raw, "freshness")),
+		html.VocabularyFamilySourceFreshness:     stringsFromCatalog(decodeCatalogField[[]operational.SourceFreshness](t, raw, "source_freshness")),
+		html.VocabularyFamilyOutcome:             decodeCatalogField[[]string](t, raw, "outcomes"),
+		html.VocabularyFamilyLifecycleState:      unionCatalogSlices(baseStates),
+		html.VocabularyFamilyReason:              stringsFromCatalog(decodeCatalogField[[]cache.ReasonCode](t, raw, "reason")),
+		html.VocabularyFamilyGate:                unionCatalogValues(humanGates),
+		html.VocabularyFamilyWorkMode:            stringsFromCatalog(decodeCatalogField[[]workreport.Mode](t, raw, "work_mode")),
+		html.VocabularyFamilyDependencyDrift:     decodeCatalogField[[]string](t, raw, "dependency_drift"),
+		html.VocabularyFamilyConsistencySeverity: stringsFromCatalog(decodeCatalogField[[]operational.ConsistencySeverity](t, raw, "consistency_severity")),
+		html.VocabularyFamilyOperationalState:    decodeCatalogField[[]string](t, raw, "operational_state"),
+		html.VocabularyFamilyLiveTransport:       decodeCatalogField[[]string](t, raw, "live_transport"),
+	}
+}
+
+func stringsFromCatalog[T ~string](values []T) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, string(value))
+	}
+	return out
+}
+
+func unionCatalogSlices(values map[string][]string) []string {
+	seen := map[string]bool{}
+	for _, group := range values {
+		for _, value := range group {
+			if value != "" {
+				seen[value] = true
+			}
+		}
+	}
+	return sortedCatalogSet(seen)
+}
+
+func unionCatalogValues(values map[string]string) []string {
+	seen := map[string]bool{}
+	for _, value := range values {
+		if value != "" {
+			seen[value] = true
+		}
+	}
+	return sortedCatalogSet(seen)
+}
+
+func sortedCatalogSet(values map[string]bool) []string {
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func assertCatalogKeyOrder(t *testing.T, document string, keys []string) {
+	t.Helper()
+	previous := -1
+	for _, key := range keys {
+		position := strings.Index(document, `"`+key+`"`)
+		if position < 0 {
+			t.Errorf("catalogue output omits key %q", key)
+			continue
+		}
+		if position <= previous {
+			t.Errorf("catalogue key %q appears out of contract order", key)
+		}
+		previous = position
 	}
 }
 

@@ -27,7 +27,7 @@ const (
 )
 
 // Render injects the DATA and DOCS globals into tmpl and returns the
-// self-contained HTML. json.MarshalIndent escapes <,>,& (SetEscapeHTML default),
+// self-contained HTML. encoding/json escapes <,>,& (SetEscapeHTML default),
 // so the JSON is safe inside a <script> block — no </script> breakout even if an
 // artifact title contains "</script>" (DATA) and no breakout from our own doc
 // HTML either (DOCS).
@@ -41,10 +41,16 @@ const (
 // that. A template whose markers are missing, duplicated, or out of order is an
 // error (fail loud, never emit a half-injected page).
 func Render(tmpl []byte, data Data, docs []DocSection) ([]byte, error) {
-	dataJSON, err := json.MarshalIndent(data, "", "  ")
+	dataJSON, err := CanonicalViewModelJSON(data)
 	if err != nil {
-		return nil, fmt.Errorf("html: marshal data: %w", err)
+		return nil, err
 	}
+	return renderEncoded(tmpl, dataJSON, docs)
+}
+
+// renderEncoded injects an already-canonicalized view model. DashboardRenderer
+// uses this path so its shell and route result originate from one encoding.
+func renderEncoded(tmpl, dataJSON []byte, docs []DocSection) ([]byte, error) {
 	if docs == nil {
 		docs = []DocSection{} // marshal to [] not null, so the page never sees a non-array DOCS
 	}

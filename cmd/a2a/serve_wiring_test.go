@@ -230,8 +230,8 @@ func TestProductionOperationalSnapshotRefreshesFromSecondCloneOverSSE(t *testing
 		t.Fatalf("SSE status = %d", sseResponse.StatusCode)
 	}
 	sseReader := bufio.NewReader(io.LimitReader(sseResponse.Body, 64<<10))
-	if revision := readRevisionEvent(t, sseReader); revision != initial.Revision {
-		t.Fatalf("initial SSE revision = %q, want %q", revision, initial.Revision)
+	if event := readRevisionEvent(t, sseReader); event.Revision != initial.Revision {
+		t.Fatalf("initial SSE revision = %q, want %q", event.Revision, initial.Revision)
 	}
 
 	seedCommittedWorkCheckpoint(t, fixture.Clone("beta"), itemID, threadID, workID)
@@ -240,9 +240,9 @@ func TestProductionOperationalSnapshotRefreshesFromSecondCloneOverSSE(t *testing
 		t.Fatalf("production source sync: %v", syncErr)
 	}
 	refreshTicker.tick()
-	newRevision := readRevisionEvent(t, sseReader)
-	if newRevision == initial.Revision {
-		t.Fatalf("SSE repeated initial revision %q after committed checkpoint", newRevision)
+	newVersion := readRevisionEvent(t, sseReader)
+	if newVersion.Revision == initial.Revision {
+		t.Fatalf("SSE repeated initial revision %q after committed checkpoint", newVersion.Revision)
 	}
 
 	conditionalRequest, err := http.NewRequestWithContext(t.Context(), http.MethodGet, baseURL+"/api/v1/snapshot", nil)
@@ -265,8 +265,8 @@ func TestProductionOperationalSnapshotRefreshesFromSecondCloneOverSSE(t *testing
 	if err := json.Unmarshal(conditionalBody, &changed); err != nil {
 		t.Fatalf("decode changed /snapshot: %v", err)
 	}
-	if changed.Revision != newRevision {
-		t.Fatalf("conditional snapshot revision = %q, SSE announced %q", changed.Revision, newRevision)
+	if changed.Revision != newVersion.Revision {
+		t.Fatalf("conditional snapshot revision = %q, SSE announced %q", changed.Revision, newVersion.Revision)
 	}
 	wantChanged, err := runtimeState.source.Snapshot(t.Context())
 	if err != nil {
@@ -304,13 +304,13 @@ func TestProductionOperationalSnapshotRefreshesFromSecondCloneOverSSE(t *testing
 		t.Fatalf("seed local heartbeat: %v", err)
 	}
 	refreshTicker.tick()
-	localRevision := readRevisionEvent(t, sseReader)
-	if localRevision == newRevision {
-		t.Fatalf("SSE did not advance for local-only heartbeat: %q", localRevision)
+	localVersion := readRevisionEvent(t, sseReader)
+	if localVersion.Revision == newVersion.Revision {
+		t.Fatalf("SSE did not advance for local-only heartbeat: %q", localVersion.Revision)
 	}
 	localBody, localETag := getSnapshotEventually(t, client, baseURL)
-	if localETag != `W/"`+localRevision+`"` {
-		t.Fatalf("local heartbeat ETag = %q, want revision %q", localETag, localRevision)
+	if localETag != `W/"`+localVersion.Revision+`"` {
+		t.Fatalf("local heartbeat ETag = %q, want revision %q", localETag, localVersion.Revision)
 	}
 	var localSnapshot operational.Snapshot
 	if err := json.Unmarshal(localBody, &localSnapshot); err != nil {
@@ -488,7 +488,12 @@ func getSnapshotEventually(t *testing.T, client *http.Client, baseURL string) ([
 	}
 }
 
-func readRevisionEvent(t *testing.T, reader *bufio.Reader) string {
+type observedDashboardVersion struct {
+	Revision  string `json:"revision"`
+	ViewModel string `json:"viewModel"`
+}
+
+func readRevisionEvent(t *testing.T, reader *bufio.Reader) observedDashboardVersion {
 	t.Helper()
 	fields := map[string]string{}
 	for {
@@ -509,14 +514,14 @@ func readRevisionEvent(t *testing.T, reader *bufio.Reader) string {
 	if len(fields) != 3 || fields["event"] != "revision" || fields["id"] == "" || fields["data"] == "" {
 		t.Fatalf("SSE event leaked more than revision metadata: %#v", fields)
 	}
-	var payload map[string]string
+	var payload observedDashboardVersion
 	if err := json.Unmarshal([]byte(fields["data"]), &payload); err != nil {
 		t.Fatalf("decode SSE data: %v", err)
 	}
-	if len(payload) != 1 || payload["revision"] != fields["id"] {
-		t.Fatalf("SSE data is not revision-only: %#v", payload)
+	if payload.Revision == "" || payload.ViewModel == "" || payload.ViewModel != fields["id"] || strings.Contains(fields["data"], "timeline") {
+		t.Fatalf("SSE data is not a bounded dashboard identity pair: %#v", payload)
 	}
-	return fields["id"]
+	return payload
 }
 
 type controlledTicker struct {

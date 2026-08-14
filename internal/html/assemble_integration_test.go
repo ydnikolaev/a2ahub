@@ -1,6 +1,7 @@
 package html
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -106,42 +107,140 @@ func TestAssemble_NodesAndContractEdges(t *testing.T) {
 	}
 }
 
-func TestDependencyFacts_UsesPinnedMajorLifecycle(t *testing.T) {
+func TestContractDependencyMappingCarriesDegradedScan(t *testing.T) {
 	t.Parallel()
-	ci := cache.ContractInfo{
-		Version: "2.3.0", State: "published",
-		Versions: []cache.ContractVersion{
-			{Version: "1.4.1", State: "deprecated", Sunset: "2026-10-01", Successor: "XC-axon-ingest@2.0.0"},
-			{Version: "2.3.0", State: "published"},
-		},
-	}
 
-	version, state, sunset, successor, majors, drift := dependencyFacts(ci, 1)
-	if version != "1.4.1" || state != "deprecated" || sunset != "2026-10-01" ||
-		successor != "XC-axon-ingest@2.0.0" || drift != "deprecated" ||
-		len(majors) != 2 || majors[0] != 1 || majors[1] != 2 {
-		t.Fatalf("pinned deprecated line wrong: version=%q state=%q sunset=%q successor=%q majors=%v drift=%q",
-			version, state, sunset, successor, majors, drift)
+	dir := t.TempDir()
+	for _, section := range []string{"atlas", "checkout"} {
+		if err := os.MkdirAll(filepath.Join(dir, section), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
+	if err := os.WriteFile(filepath.Join(dir, "atlas", "consumes.yaml"), []byte(
+		"schema: consumes/v1\nsystem: atlas\ndependencies:\n  - contract: XC-checkout-api\n    major: 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "checkout", "consumes.yaml"), []byte("not: [valid"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manifest := space.Manifest{Space: "space-sentinel", Participants: []space.Participant{
+		{System: "atlas", Section: "atlas/", Status: "active"},
+		{System: "checkout", Section: "checkout/", Status: "active"},
+	}}
+	store := cache.NewStore("atlas", t.TempDir(), []cache.SpaceMirror{{SpaceID: manifest.Space, Dir: dir, Manifest: manifest}}, time.Now, 0)
+	data, err := Assemble(t.Context(), store, "atlas", time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("Assemble: %v", err)
+	}
+	if len(data.ContractEdges) != 1 || data.ContractEdges[0].From != "atlas" || data.ContractEdges[0].To != "checkout" ||
+		data.ContractEdges[0].Space != manifest.Space || data.ContractEdges[0].Contract != "XC-checkout-api" ||
+		data.ContractEdges[0].PinnedMajor != 1 || data.ContractEdges[0].Drift != cache.DependencyDriftDangling {
+		t.Fatalf("mapped dependency edge = %+v", data.ContractEdges)
+	}
+	if data.Windows.ContractEdges != (operational.Window{Total: 1, Shown: 1}) {
+		t.Fatalf("root dependency window = %+v", data.Windows.ContractEdges)
+	}
+	lines := data.Aggregates.LinesOffCurrent
+	if lines.Complete || len(lines.Items) != 1 || lines.Window != (operational.Window{Total: 1, Shown: 1}) {
+		t.Fatalf("aggregate dependency projection = %+v", lines)
+	}
+	if len(lines.Degradations) != 1 {
+		t.Fatalf("dependency degradations = %+v, want one malformed registry", lines.Degradations)
+	}
+	degradation := lines.Degradations[0]
+	if degradation.Space != manifest.Space || degradation.System != "checkout" || degradation.Path != "checkout/consumes.yaml" ||
+		degradation.Code != cache.DependencyDegradationMalformedRegistry || strings.TrimSpace(degradation.Reason) == "" {
+		t.Fatalf("mapped dependency degradation = %+v", degradation)
+	}
+}
 
-	_, state, _, _, _, drift = dependencyFacts(ci, 3)
-	if state != "missing" || drift != "missing" {
-		t.Fatalf("unpublished registered major must be explicit, got state=%q drift=%q", state, drift)
-	}
+func TestViewModelMappingOperationalSnapshot(t *testing.T) {
+	t.Parallel()
 
-	zero := cache.ContractInfo{
-		Version: "1.0.0", State: "published",
-		Versions: []cache.ContractVersion{
-			{Version: "not-semver", State: "published"},
-			{Version: "0.9.0", State: "deprecated"},
-			{Version: "1.0.0", State: "published"},
-		},
+	now := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
+	dir := t.TempDir()
+	manifest := space.Manifest{Space: "space-sentinel", Participants: []space.Participant{}}
+	store := cache.NewStore("atlas", t.TempDir(), []cache.SpaceMirror{{SpaceID: manifest.Space, Dir: dir, Manifest: manifest}}, func() time.Time { return now }, 0)
+	validUntil := now.Add(time.Hour)
+	snapshot := operational.Snapshot{
+		SchemaVersion: operational.SchemaVersion, GeneratedAt: now, Revision: "sha256:" + strings.Repeat("a", 64),
+		Sources: []operational.Source{{Kind: operational.SourceSpace, Space: manifest.Space, Revision: "revision-sentinel", Freshness: operational.SourceCurrent, SyncedAt: &now}},
+		Timeline: []operational.TimelineRow{{
+			Space: manifest.Space, Thread: "thread:sentinel", Title: "title-sentinel", Participants: []string{"atlas"},
+			Protocol: operational.Protocol{WaitingOn: []string{}, BlockingBy: []string{}},
+			Work: []operational.Work{{
+				WorkID: "work:01ARZ3NDEKTSV4RRFFQ69G5FAV", SubjectRef: "XW-sentinel", Mode: workreport.ModeTesting,
+				Summary: "summary-sentinel", Actor: operational.Actor{Kind: "agent", Name: "codex", System: "atlas", Session: "session-sentinel"},
+				Freshness: operational.FreshnessLocalCurrent, Current: true, ValidUntil: &validUntil,
+				Source: "local-lease", WaitingOn: []workreport.WaitingOn{},
+			}},
+			WorkWindow:        operational.Window{Total: 3, Shown: 1, Truncated: true},
+			ConsistencyWindow: operational.Window{Total: 2, Shown: 1, Truncated: true},
+		}},
+		TimelineWindow: operational.Window{Total: 4, Shown: 1, Truncated: true},
+		Unavailable:    []operational.Unavailable{},
 	}
-	version, state, _, _, majors, drift = dependencyFacts(zero, 0)
-	if version != "0.9.0" || state != "deprecated" || drift != "deprecated" ||
-		len(majors) != 2 || majors[0] != 0 || majors[1] != 1 {
-		t.Fatalf("major zero must remain a valid registration: version=%q state=%q majors=%v drift=%q",
-			version, state, majors, drift)
+	got, err := AssembleWithOperational(t.Context(), store, "atlas", now, snapshot)
+	if err != nil {
+		t.Fatalf("AssembleWithOperational: %v", err)
+	}
+	if !reflect.DeepEqual(got.Operational, snapshot) {
+		t.Fatalf("AssembleWithOperational dropped source field Operational\n got: %#v\nwant: %#v", got.Operational, snapshot)
+	}
+}
+
+func TestViewModelMappingSpaceSynced(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
+	dir := t.TempDir()
+	gitDir := filepath.Join(dir, ".git")
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	head := filepath.Join(gitDir, "HEAD")
+	if err := os.WriteFile(head, []byte("ref: refs/heads/main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	syncedAt := now.Add(-2 * time.Minute)
+	if err := os.Chtimes(head, syncedAt, syncedAt); err != nil {
+		t.Fatal(err)
+	}
+	manifest := space.Manifest{Space: "space-sentinel", Participants: []space.Participant{}}
+	store := cache.NewStore("atlas", t.TempDir(), []cache.SpaceMirror{{SpaceID: manifest.Space, Dir: dir, Manifest: manifest}}, func() time.Time { return now }, 5*time.Minute)
+	data, err := Assemble(t.Context(), store, "atlas", now)
+	if err != nil {
+		t.Fatalf("Assemble: %v", err)
+	}
+	if len(data.Spaces) != 1 || !data.Spaces[0].Synced || data.Spaces[0].Stale || data.Spaces[0].SyncAge != "2m" {
+		t.Fatalf("SpaceHealth dropped source field Synced or freshness facts: %+v", data.Spaces)
+	}
+}
+
+func TestAssembleDeterministic(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
+	manifest := space.Manifest{Space: "space-sentinel", Participants: []space.Participant{}}
+	store := cache.NewStore("atlas", t.TempDir(), []cache.SpaceMirror{{SpaceID: manifest.Space, Dir: t.TempDir(), Manifest: manifest}}, func() time.Time { return now }, 0)
+	first, err := Assemble(t.Context(), store, "atlas", now)
+	if err != nil {
+		t.Fatalf("first Assemble: %v", err)
+	}
+	second, err := Assemble(t.Context(), store, "atlas", now)
+	if err != nil {
+		t.Fatalf("second Assemble: %v", err)
+	}
+	firstJSON, err := CanonicalViewModelJSON(first)
+	if err != nil {
+		t.Fatalf("first CanonicalViewModelJSON: %v", err)
+	}
+	secondJSON, err := CanonicalViewModelJSON(second)
+	if err != nil {
+		t.Fatalf("second CanonicalViewModelJSON: %v", err)
+	}
+	if !bytes.Equal(firstJSON, secondJSON) {
+		t.Fatalf("two complete assemblies differ: first=%d bytes second=%d bytes", len(firstJSON), len(secondJSON))
 	}
 }
 
@@ -392,5 +491,8 @@ func TestAssemble_Threads(t *testing.T) {
 	}
 	if !reflect.DeepEqual(data.Inbox, injected.Inbox) {
 		t.Fatalf("operational work changed attention queue\nbefore: %#v\n after: %#v", data.Inbox, injected.Inbox)
+	}
+	if !reflect.DeepEqual(injected.Operational, operationalSnapshot) {
+		t.Fatalf("AssembleWithOperational dropped source field Operational\n got: %#v\nwant: %#v", injected.Operational, operationalSnapshot)
 	}
 }

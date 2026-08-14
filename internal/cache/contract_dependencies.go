@@ -12,6 +12,10 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/version"
 )
 
+// DependencyDriftCurrent and the following dependency constants are the
+// closed machine vocabularies for projected drift and degraded evidence.
+// Drift describes the consumer pin relative to readable provider history;
+// degradation describes why a registry input could not be projected honestly.
 const (
 	DependencyDriftCurrent    = "current"
 	DependencyDriftBehind     = "behind"
@@ -25,6 +29,19 @@ const (
 	DependencyDegradationIncompleteRegistry   = "incomplete-registry"
 	DependencyDegradationIncompleteDependency = "incomplete-dependency"
 )
+
+// DependencyDrifts returns every dependency-drift value in stable normative
+// order. The returned slice is fresh so callers cannot mutate the vocabulary.
+func DependencyDrifts() []string {
+	return []string{
+		DependencyDriftCurrent,
+		DependencyDriftBehind,
+		DependencyDriftDeprecated,
+		DependencyDriftRetired,
+		DependencyDriftMissing,
+		DependencyDriftDangling,
+	}
+}
 
 // ContractDependencyEdge is one neutral consumer-to-provider contract line.
 // It contains cache-owned version/drift facts and no presentation language;

@@ -892,7 +892,7 @@ func waitingTieKey(values []workreport.WaitingOn) string {
 }
 
 func consistency(code, subject, summary string) Consistency {
-	return Consistency{Code: code, SubjectRef: safeText(subject, maximumKeyRunes), Severity: "warning", Summary: safeText(summary, maximumSummaryRunes)}
+	return Consistency{Code: code, SubjectRef: safeText(subject, maximumKeyRunes), Severity: ConsistencyWarning, Summary: safeText(summary, maximumSummaryRunes)}
 }
 
 func freshnessRank(value Freshness) int {

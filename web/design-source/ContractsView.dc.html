@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<section aria-label="{{ contractsAria }}" data-screen-label="Contracts">
+        <!-- No contracts at all: one empty state across the full width. The
+             second panel exists only to say "pick something on the left", and
+             with nothing on the left it was answering a question nobody asked. -->
+        <sc-if value="{{ noConRows }}" hint-placeholder-val="{{ false }}">
+          <dc-import name="EmptyState" title="{{ emptyContractsTitle }}" text="{{ emptyContractsText }}" hint="a2a contract new" size="page" hint-size="100%,380px"></dc-import>
+        </sc-if>
+
+        <sc-if value="{{ hasConRows }}" hint-placeholder-val="{{ true }}">
+        <!-- Two questions a contract list is actually opened with. "Whose is
+             this" — the ones I publish are mine to change, the ones I consume
+             are mine to keep up with, and they are read in completely
+             different moods. And "what is wrong" — every consumer line off the
+             provider's latest major, which is what the description above
+             already points at. Category and schema format make handsome
+             filters and answer nothing. -->
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; row-gap:10px; margin-bottom:18px;">
+          <dc-import name="SegmentedFilter" items="{{ conRoleTabs }}" hint-size="440px,38px"></dc-import>
+          <sc-if value="{{ hasConRisk }}" hint-placeholder-val="{{ true }}">
+            <button type="button" onClick="{{ toggleConRisk }}" aria-pressed="{{ conRiskPressed }}" style="{{ conRiskStyle }}">{{ conRiskLabel }}</button>
+          </sc-if>
+        </div>
+
+        <sc-if value="{{ noConFiltered }}" hint-placeholder-val="{{ false }}">
+          <dc-import name="EmptyState" title="{{ emptyConFilterTitle }}" text="{{ emptyConFilterText }}" size="page" hint-size="100%,340px"></dc-import>
+        </sc-if>
+        <sc-if value="{{ hasConFiltered }}" hint-placeholder-val="{{ true }}">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(430px,100%),1fr)); gap:18px; align-items:start;">
+          <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
+            <sc-for list="{{ conRows }}" as="c" hint-placeholder-count="6">
+              <button type="button" class="a2a-pick" onClick="{{ c.select }}" style="{{ c.style }}">
+                <span style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:6px;">
+                  <span style="font-family:'IBM Plex Mono',monospace; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; color:var(--text); overflow-wrap:anywhere;">{{ c.id }}</span>
+                  <dc-import name="StatusPill" text="{{ c.version }}" tone="agent" mono="{{ true }}" size="small" hint-size="70px,24px"></dc-import>
+                </span>
+                <span style="display:block; font-size:15px; color:var(--muted); margin-bottom:8px;">{{ c.meta }}</span>
+                <span style="display:flex; gap:7px; flex-wrap:wrap;">
+                  <sc-for list="{{ c.pills }}" as="p" hint-placeholder-count="1">
+                    <dc-import name="StatusPill" text="{{ p.text }}" tone="{{ p.tone }}" size="small" hint-size="110px,24px"></dc-import>
+                  </sc-for>
+                </span>
+              </button>
+            </sc-for>
+          </div>
+
+          <div style="min-width:0; background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:14px;">
+              <div style="min-width:0; flex:1 1 280px;">
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:7px; margin-bottom:9px;">
+                  <dc-import name="TypeBadge" type="contract" size="small" hint-size="130px,24px"></dc-import>
+                  <dc-import name="StatusPill" text="{{ cdState }}" tone="{{ cdStateTone }}" size="small" hint-size="100px,24px"></dc-import>
+                  <sc-if value="{{ cdCodeBacked }}" hint-placeholder-val="{{ true }}">
+                    <dc-import name="StatusPill" text="{{ codeBackedLabel }}" tone="outline" size="small" hint-size="110px,24px"></dc-import>
+                  </sc-if>
+                  <!-- Read this BEFORE running `a2a contract adopt`, which is
+                       the whole point: the refusal is a property of the
+                       descriptor, knowable now, not a surprise at the
+                       command line. -->
+                  <sc-if value="{{ cdNonAdoptable }}" hint-placeholder-val="{{ false }}">
+                    <dc-import name="StatusPill" text="{{ cdNonAdoptableLabel }}" tone="attention" why="{{ cdNonAdoptableWhy }}" size="small" hint-size="130px,24px"></dc-import>
+                  </sc-if>
+                </div>
+                <div style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; line-height:1.55; color:var(--muted); overflow-wrap:anywhere;">{{ cdSpaceLine }}</div>
+              </div>
+              <span style="flex:0 1 auto; min-width:0;"><dc-import name="SpaceSwitcher" det="{{ contractVersionSwitcher }}" hint-size="260px,42px"></dc-import></span>
+            </div>
+            <h2 class="a2a-detail-title" style="margin:0 0 8px; font-family:'IBM Plex Mono',monospace;">{{ cdId }}</h2>
+            <dc-import name="ProseDisclosure" text="{{ cdDescription }}" hint-size="100%,190px"></dc-import>
+            <div aria-live="polite" style="position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap;">{{ cdVersionAnnouncement }}</div>
+
+            <sc-if value="{{ cdIsOverview }}" hint-placeholder-val="{{ true }}">
+            <sc-if value="{{ cdHasRisk }}" hint-placeholder-val="{{ false }}">
+              <div style="background:var(--blocking-tint); border-radius:var(--radius-card); padding:var(--padding-card-block) var(--padding-card-inline); margin-bottom:var(--space-grid); box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--blocking-line) 48%, transparent);">
+                <div style="display:flex; align-items:center; gap:8px; padding-bottom:12px; margin-bottom:12px; border-bottom:1px solid color-mix(in srgb, var(--blocking-ink) 14%, transparent); font-size:14px; line-height:1.35; font-weight:600; color:var(--blocking-ink); text-transform:uppercase; letter-spacing:.025em;">{{ cdRiskHeading }}</div>
+                <div style="display:flex; flex-direction:column; gap:12px;">
+                  <sc-for list="{{ cdRisks }}" as="r" hint-placeholder-count="1">
+                    <div style="{{ r.style }}">
+                      <div style="font-size:var(--font-card-title-sm); line-height:var(--line-card-title-sm); font-weight:600; color:var(--blocking-ink); margin-bottom:var(--space-inline);">{{ r.title }}</div>
+                      <div style="display:grid; grid-template-columns:minmax(125px,auto) minmax(0,1fr); gap:7px 16px; padding:var(--padding-nested-block) var(--padding-nested-inline); border-radius:var(--radius-nested); background:color-mix(in srgb, var(--surface) 58%, transparent); font-size:15px; line-height:1.5; color:var(--blocking-strong);">
+                        <span style="color:var(--muted);">{{ r.consumerLabel }}</span><span style="font-family:'IBM Plex Mono',monospace; overflow-wrap:anywhere;">{{ r.consumer }}</span>
+                        <span style="color:var(--muted);">{{ r.pinnedLabel }}</span><span style="font-family:'IBM Plex Mono',monospace; overflow-wrap:anywhere;">{{ r.pinned }}</span>
+                        <span style="color:var(--muted);">{{ r.providerLabel }}</span><span style="font-family:'IBM Plex Mono',monospace; overflow-wrap:anywhere;">{{ r.provider }}</span>
+                        <sc-if value="{{ r.hasDeadline }}" hint-placeholder-val="{{ false }}"><span style="color:var(--muted);">{{ r.deadlineLabel }}</span><span>{{ r.deadline }}</span></sc-if>
+                      </div>
+                      <div style="margin-top:11px; font-size:15px; line-height:1.55; color:var(--blocking-strong);">{{ r.explanation }}</div>
+                      <sc-if value="{{ r.hasSuccessor }}" hint-placeholder-val="{{ true }}">
+                        <button type="button" onClick="{{ r.openSuccessor }}" aria-label="{{ r.successorAria }}" style="display:inline-flex; align-items:center; margin-top:12px; padding:9px 12px; border:0; border-radius:9px; background:var(--surface); color:var(--teal-ink); box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--teal-ink) 22%, transparent); font-family:'Onest',sans-serif; font-size:14px; font-weight:600; cursor:pointer; overflow-wrap:anywhere;">{{ r.successorLabel }}</button>
+                      </sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+
+            <!-- Who provides and who consumes, named outright. A contract card
+                 that lists "atlas → checkout" and expects the reader to
+                 remember which end is which fails the one question it exists
+                 to answer. -->
+            <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:18px;">
+              <div style="flex:1 1 220px; min-width:0; background:var(--teal-tint); border-radius:12px; padding:13px 15px;">
+                <div style="font-size:14px; color:var(--teal-ink); margin-bottom:4px;">{{ providerLabel }}</div>
+                <div style="font-family:'IBM Plex Mono',monospace; font-size:16px; font-weight:600; color:var(--teal-strong-ink); overflow-wrap:anywhere;">{{ cdProvider }}</div>
+              </div>
+              <div style="flex:2 1 300px; min-width:0; background:var(--page); border-radius:12px; padding:13px 15px; box-shadow:inset 0 0 0 1px var(--border);">
+                <div style="font-size:14px; color:var(--muted); margin-bottom:4px;">{{ consumersLabel }}</div>
+                <div style="font-family:'IBM Plex Mono',monospace; font-size:16px; font-weight:600; overflow-wrap:anywhere;">{{ cdConsumers }}</div>
+              </div>
+            </div>
+
+            <!-- One column, not two. These are two different readings of the
+                 same contract — who sits on which line, and what happened to
+                 each version — and side by side they compressed into unreadable
+                 260px strips. -->
+            <div style="margin-bottom:18px;">
+              <div style="display:flex; align-items:center; gap:7px; font-size:var(--font-subheading); line-height:var(--line-subheading); font-weight:600; margin-bottom:9px;">{{ consumerLinesLabel }}<dc-import name="HintDot" text="{{ consumerLinesHint }}" hint-size="17px,17px"></dc-import></div>
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <sc-for list="{{ cdLines }}" as="l" hint-placeholder-count="2">
+                  <div style="{{ l.style }}">
+                    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px; margin-bottom:5px;">
+                      <span style="font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:600; overflow-wrap:anywhere;">{{ l.route }}</span>
+                      <dc-import name="StatusPill" text="{{ l.drift }}" tone="{{ l.tone }}" size="small" hint-size="110px,24px"></dc-import>
+                    </div>
+                    <div style="font-family:'IBM Plex Mono',monospace; font-size:14px; line-height:1.55; color:var(--muted); overflow-wrap:anywhere;">{{ l.detail }}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="margin-bottom:18px;">
+              <div style="display:flex; align-items:center; gap:7px; font-size:var(--font-subheading); line-height:var(--line-subheading); font-weight:600; margin-bottom:9px;">{{ versionWindowLabel }}<dc-import name="HintDot" text="{{ versionWindowHint }}" hint-size="17px,17px"></dc-import></div>
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <!-- Version, state, then whole sentences on their own lines.
+                     The note used to be right-aligned in the same row and wrap
+                     under the pill, so "преемник XC-…@2.0.0 · объявлено в
+                     XA-…-a1b2" arrived as a right-ragged block of two ids and
+                     a separator. The announcement is a real document, so it
+                     opens. And the fact that actually decides whether a
+                     version can be switched off — who is still sitting on it —
+                     was not on the card at all. -->
+                <sc-for list="{{ cdVersions }}" as="v" hint-placeholder-count="3">
+                  <div data-contract-version="{{ v.version }}" role="{{ v.role }}" tabindex="{{ v.tabIndex }}" aria-label="{{ v.ariaLabel }}" onClick="{{ v.openVersion }}" onKeyDown="{{ v.openVersionKey }}" style="{{ v.style }}" style-hover="{{ v.hoverStyle }}">
+                    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px;">
+                      <span style="font-family:'IBM Plex Mono',monospace; font-size:16px; font-weight:600; color:{{ v.color }};">{{ v.version }}</span>
+                      <dc-import name="StatusPill" text="{{ v.state }}" tone="{{ v.tone }}" size="small" hint-size="90px,24px"></dc-import>
+                      <span style="{{ v.seatStyle }}">{{ v.seats }}</span>
+                    </div>
+                    <sc-if value="{{ v.hasNotes }}" hint-placeholder-val="{{ true }}">
+                      <div style="margin-top:7px; display:flex; flex-direction:column; gap:4px; font-size:15px; line-height:1.5; color:var(--muted);">
+                        <sc-for list="{{ v.notes }}" as="n" hint-placeholder-count="2">
+                          <sc-if value="{{ n.plain }}" hint-placeholder-val="{{ true }}"><span style="overflow-wrap:anywhere;">{{ n.text }}</span></sc-if>
+                          <sc-if value="{{ n.hasContract }}" hint-placeholder-val="{{ false }}">
+                            <span style="overflow-wrap:anywhere;">{{ n.prefix }}<button type="button" onClick="{{ n.openContract }}" aria-label="{{ n.contractAria }}" style="padding:0; border:0; background:transparent; color:var(--teal-ink); font:inherit; cursor:pointer; text-decoration:underline; text-decoration-thickness:1px; text-underline-offset:3px;">{{ n.contract }}</button>{{ n.suffix }}</span>
+                          </sc-if>
+                        </sc-for>
+                        <sc-if value="{{ v.hasAnnounce }}" hint-placeholder-val="{{ false }}">
+                          <button type="button" onClick="{{ v.openAnnounce }}" style="align-self:flex-start; padding:0; border:0; background:transparent; cursor:pointer; font-family:'Onest',sans-serif; font-size:15px; color:var(--teal-ink); text-align:left;">{{ v.announceLabel }}</button>
+                        </sc-if>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="border-top:1px solid var(--hairline); padding-top:16px;">
+              <div style="display:flex; align-items:center; gap:7px; font-size:16px; font-weight:600; margin-bottom:8px;">{{ provenanceLabel }}<dc-import name="HintDot" text="{{ provenanceHint }}" hint-size="17px,17px"></dc-import></div>
+              <dc-import name="FactTable" rows="{{ cdFacts }}" hint-size="100%,200px"></dc-import>
+              <div style="margin-top:12px; font-size:15px; line-height:1.55; color:var(--muted);">{{ codeBindingPrefix }} <strong>{{ notEvaluatedLabel }}</strong>{{ codeBindingSuffix }}</div>
+            </div>
+            </sc-if>
+
+            <sc-if value="{{ cdIsVersion }}" hint-placeholder-val="{{ false }}">
+              <sc-if value="{{ cdVersionUnavailable }}" hint-placeholder-val="{{ false }}">
+                <dc-import name="EmptyState" title="{{ cdVersionUnavailableTitle }}" text="{{ cdVersionUnavailableText }}" size="panel" hint-size="100%,230px"></dc-import>
+              </sc-if>
+
+              <sc-if value="{{ cdVersionAvailable }}" hint-placeholder-val="{{ true }}">
+                <div style="margin-bottom:18px; border-radius:12px; padding:4px 14px; background:var(--surface-section); box-shadow:inset 0 0 0 1px var(--hairline);"><dc-import name="FactTable" rows="{{ cdVersionOverviewFacts }}" hint-size="100%,190px"></dc-import></div>
+                <sc-if value="{{ cdVersionHasSuccessor }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ openCdVersionSuccessor }}" style="margin:0 0 18px; border:0; border-radius:10px; padding:10px 13px; background:var(--attention-tint); color:var(--attention-ink); font-family:'Onest',sans-serif; font-size:14px; font-weight:600; cursor:pointer; text-align:left;">{{ cdVersionSuccessorLabel }}</button></sc-if>
+                <sc-if value="{{ cdVersionHasChange }}" hint-placeholder-val="{{ true }}">
+                  <div style="background:var(--teal-tint); border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); margin-bottom:var(--space-grid);">
+                    <div style="font-size:15px; font-weight:600; color:var(--teal-strong-ink); margin-bottom:5px;">{{ cdVersionChangeTitle }}</div>
+                    <dc-import name="ProseDisclosure" text="{{ cdVersionChange }}" hint-size="100%,190px"></dc-import>
+                  </div>
+                </sc-if>
+
+                <section style="margin-bottom:22px;">
+                  <div style="display:flex; align-items:center; gap:7px; margin-bottom:10px; font-size:var(--font-subheading); line-height:var(--line-subheading); font-weight:600;">{{ cdVersionPinsTitle }}<dc-import name="HintDot" text="{{ cdVersionPinsHint }}" hint-size="17px,17px"></dc-import></div>
+                  <sc-if value="{{ cdVersionHasPins }}" hint-placeholder-val="{{ true }}">
+                    <div style="display:flex; flex-direction:column; gap:8px;">
+                      <sc-for list="{{ cdVersionPins }}" as="p" hint-placeholder-count="2">
+                        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--surface-section); box-shadow:inset 0 0 0 1px var(--hairline);">
+                          <span style="min-width:0;"><strong style="font-family:'IBM Plex Mono',ui-monospace,monospace;">{{ p.system }}</strong><span style="display:block; margin-top:3px; color:var(--muted); font-size:14px; overflow-wrap:anywhere;">{{ p.detail }}</span></span>
+                          <dc-import name="StatusPill" text="{{ p.drift }}" tone="{{ p.tone }}" size="small" hint-size="120px,24px"></dc-import>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ cdVersionNoPins }}" hint-placeholder-val="{{ false }}"><div style="color:var(--muted); font-size:15px;">{{ cdVersionNoPinsText }}</div></sc-if>
+                </section>
+
+                <section style="margin-bottom:22px; border-top:1px solid var(--hairline); padding-top:18px;">
+                  <div style="display:flex; align-items:center; gap:7px; margin-bottom:5px; font-size:var(--font-subheading); line-height:var(--line-subheading); font-weight:600;">{{ cdVersionPackageTitle }}<dc-import name="HintDot" text="{{ cdVersionPackageHint }}" hint-size="17px,17px"></dc-import></div>
+                  <sc-if value="{{ cdVersionLegacy }}" hint-placeholder-val="{{ false }}"><div style="margin:var(--space-inline) 0 var(--space-stack); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--attention-tint); color:var(--attention-ink); font-size:14px; line-height:1.5;">{{ cdVersionLegacyText }}</div></sc-if>
+                  <sc-if value="{{ cdVersionDocumentsOmitted }}" hint-placeholder-val="{{ false }}"><div data-contract-documents-omitted="true" style="margin:var(--space-inline) 0 var(--space-stack); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--attention-tint); color:var(--attention-ink); font-size:14px; line-height:1.5;">{{ cdVersionDocumentsOmittedText }}</div></sc-if>
+                  <sc-if value="{{ cdVersionNoDocs }}" hint-placeholder-val="{{ false }}"><div style="margin-top:10px; color:var(--muted); font-size:15px;">{{ cdVersionNoDocsText }}</div></sc-if>
+                  <sc-if value="{{ cdVersionHasNormativeDocs }}" hint-placeholder-val="{{ true }}">
+                    <div style="margin-top:14px; font-size:14px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em;">{{ cdVersionNormativeTitle }}</div>
+                    <div style="display:flex; flex-direction:column; gap:4px; margin-top:8px;">
+                      <sc-for list="{{ cdVersionNormativeTree }}" as="row" hint-placeholder-count="3">
+                        <sc-if value="{{ row.isDir }}" hint-placeholder-val="{{ false }}">
+                          <button type="button" data-contract-tree-dir="{{ row.key }}" onClick="{{ row.toggle }}" aria-expanded="{{ row.expandedAttr }}" aria-label="{{ row.dirAriaLabel }}" style="{{ row.rowStyle }}">
+                            <dc-import name="DisclosureIcon" expanded="{{ row.expandedAttr }}" hint-size="16px,16px"></dc-import>
+                            <span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; font-weight:600; overflow-wrap:anywhere;">{{ row.label }}</span>
+                          </button>
+                        </sc-if>
+                        <sc-if value="{{ row.isFile }}" hint-placeholder-val="{{ true }}">
+                          <button type="button" data-contract-file-key="{{ row.key }}" onClick="{{ row.open }}" style="{{ row.rowStyle }}">
+                            <span style="{{ row.iconStyle }}">{{ row.iconLabel }}</span>
+                            <span style="min-width:0; flex:1 1 260px;"><strong style="display:block; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; overflow-wrap:anywhere;">{{ row.label }}</strong><span style="display:block; margin-top:4px; color:var(--muted); font-size:13px;">{{ row.role }} · {{ row.media }}</span></span><span style="flex:0 0 auto; font-family:'IBM Plex Mono',ui-monospace,monospace; color:var(--muted); font-size:12px;">{{ row.size }}</span>
+                          </button>
+                        </sc-if>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ cdVersionHasSupportingDocs }}" hint-placeholder-val="{{ true }}">
+                    <div style="margin-top:16px; font-size:14px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em;">{{ cdVersionSupportingTitle }}</div>
+                    <div style="display:flex; flex-direction:column; gap:4px; margin-top:8px;">
+                      <sc-for list="{{ cdVersionSupportingTree }}" as="row" hint-placeholder-count="2">
+                        <sc-if value="{{ row.isDir }}" hint-placeholder-val="{{ false }}">
+                          <button type="button" data-contract-tree-dir="{{ row.key }}" onClick="{{ row.toggle }}" aria-expanded="{{ row.expandedAttr }}" aria-label="{{ row.dirAriaLabel }}" style="{{ row.rowStyle }}">
+                            <dc-import name="DisclosureIcon" expanded="{{ row.expandedAttr }}" hint-size="16px,16px"></dc-import>
+                            <span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; font-weight:600; overflow-wrap:anywhere;">{{ row.label }}</span>
+                          </button>
+                        </sc-if>
+                        <sc-if value="{{ row.isFile }}" hint-placeholder-val="{{ true }}">
+                          <button type="button" data-contract-file-key="{{ row.key }}" onClick="{{ row.open }}" style="{{ row.rowStyle }}">
+                            <span style="{{ row.iconStyle }}">{{ row.iconLabel }}</span>
+                            <span style="min-width:0; flex:1 1 260px;"><strong style="display:block; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; overflow-wrap:anywhere;">{{ row.label }}</strong><span style="display:block; margin-top:4px; color:var(--muted); font-size:13px;">{{ row.role }} · {{ row.media }}</span></span><span style="flex:0 0 auto; font-family:'IBM Plex Mono',ui-monospace,monospace; color:var(--muted); font-size:12px;">{{ row.size }}</span>
+                          </button>
+                        </sc-if>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                </section>
+
+                <sc-if value="{{ cdVersionHasHistory }}" hint-placeholder-val="{{ true }}">
+                  <section style="margin-bottom:22px; border-top:1px solid var(--hairline); padding-top:18px;">
+                    <div style="font-size:var(--font-subheading); line-height:var(--line-subheading); font-weight:600; margin-bottom:12px;">{{ cdVersionHistoryTitle }}</div>
+                    <div style="display:flex; flex-direction:column; margin-left:20px;">
+                      <sc-for list="{{ cdVersionHistory }}" as="e" hint-placeholder-count="2"><div style="{{ e.railStyle }}"><dc-import name="ActorEventLine" row="{{ e }}" size="regular" layout="rail" hint-size="100%,46px"></dc-import></div></sc-for>
+                    </div>
+                  </section>
+                </sc-if>
+
+                <div style="border-top:1px solid var(--hairline); padding-top:8px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:14px; padding:10px 0;">
+                    <span style="display:flex; align-items:center; gap:7px; min-width:0; font-size:var(--font-subheading); line-height:var(--line-subheading); font-weight:600;">{{ cdVersionProvenanceTitle }}<dc-import name="HintDot" text="{{ cdVersionProvenanceHint }}" hint-size="17px,17px"></dc-import></span>
+                    <button type="button" onClick="{{ toggleCdVersionProvenance }}" aria-expanded="{{ cdVersionProvenanceExpanded }}" aria-label="{{ cdVersionProvenanceToggleAria }}" style="display:flex; align-items:center; gap:7px; flex:0 0 auto; padding:7px 9px; border:0; border-radius:8px; background:transparent; color:var(--teal-ink); cursor:pointer; font-family:'Onest',sans-serif; font-size:14px; font-weight:600;"><span>{{ cdVersionProvenanceAction }}</span><dc-import name="DisclosureIcon" expanded="{{ cdVersionProvenanceExpanded }}" hint-size="18px,18px"></dc-import></button>
+                  </div>
+                  <sc-if value="{{ cdVersionProvenanceOpen }}" hint-placeholder-val="{{ false }}"><div style="margin-top:4px;"><dc-import name="FactTable" rows="{{ cdVersionFacts }}" hint-size="100%,340px"></dc-import></div></sc-if>
+                </div>
+              </sc-if>
+            </sc-if>
+          </div>
+        </div>
+        </sc-if>
+        </sc-if>
+      </section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1240,&quot;height&quot;:900},&quot;ctx&quot;:{&quot;editor&quot;:&quot;object&quot;,&quot;default&quot;:{},&quot;tsType&quot;:&quot;object&quot;}}">
+const DASHBOARD_EN = {
+    views:["Overview","Exchange","Threads","Contracts","Map","Spaces","Versions","Docs","Guide"],
+    backOverview:"Back to Overview", viewsLabel:"Views", more:"More", localeGroup:"Interface language", space:"Space",
+    errorTitle:"Could not read demo data", errorPrefix:"The dashboard is a read-only projection of", errorSuffix:". Missing facts are never inferred.",
+    openWork:"Open Exchange", direction:"Show", typeFilter:"Type",
+    spaceHealth:"Space health", spaceHealthTitle:"How current this page is",
+    spaceHealthSub:"Everything on these screens is read from a local copy of each space, taken once when this file was written. This is when that copy was last refreshed, and what each space expects of your binary.",
+    spaceHealthFlagsTitle:"Worth a look", spaceHealthFlagsText:"Recorded by committed events, or a problem reading the local copy. A flag is a reason to look, not a verdict.",
+    spaceHealthFooter:"Nothing here is inferred: an unreadable space is reported as unreadable, never as empty.",
+    spaceHealthMore:"Open Spaces", spaceHealthClose:"Close",
+    work:"Exchange", threads:"Threads", threadMissingTitle:"No full reconstruction is available for this thread", threadMissingText:"This row comes from the summary; only some demo threads include a complete causal transcript.",
+    whoseMove:"Whose move", whoseMoveText:"State and allowed transitions are derived from the events below.", causalTimeline:"Thread history", newestFirst:"newest first", opensChain:"opens the chain", subjectPrefix:"on", threadFlags:"Consistency, protocol and read evidence",
+    contracts:"Contracts and their versions", codeBacked:"code-backed", consumerLines:"Registered consumer lines", versionWindow:"Live version window", provenance:"Provenance and schema", codeBindingPrefix:"A code binding records the generator and source digest. Whether the current bytes still match is", notEvaluated:"not evaluated", codeBindingSuffix:" in this static read.",
+    network:"Who depends on whom", networkSub:"A solid line means one system depends on a contract another one publishes. A dashed line means an exchange between two systems is still open. Click any line or system to see the versions, the pinned lines and the open documents behind it.", exchangeMap:"Exchange map",
+    spaces:"Spaces", spacesSub:"A space is the shared repository systems exchange documents through. This is how fresh your copy of each one is, and which a2a version it wants before it accepts what you write.", freshness:"Freshness", participants:"Participants", writerFloor:"Writer floor", pinnedWorkflow:"Pinned workflow", revision:"Revision",
+    limitsTitle:"What this snapshot did not check", limitsSub:"This file was written once, from the local cache. Anything it could not read, or deliberately did not evaluate, is named here, so an empty space never passes for a clean result.",
+    emptyLimitsTitle:"Nothing to qualify", emptyLimitsText:"Every connected space was readable when this snapshot was written, and no flag was raised. The numbers above are the whole picture.",
+    emptySpacesTitle:"No spaces connected", emptySpacesText:"A space is the shared repository two systems exchange documents through. Connect one and this table fills in.",
+    integrityFlags:"Protocol and read flags", integrityFlagsText:"Facts recorded by committed events, or problems reading the local cache index. A flag is evidence, not a verdict.",
+    degradedReads:"Degraded reads", degradedReadsText:"These spaces answered from an older mirror revision, or not at all. Their counts are floors, never totals.",
+    notEvaluatedTitle:"What this read deliberately did not check", notEvaluatedText:"Not failures. Questions a static file honestly cannot answer, said out loud instead of shown as a zero or a green tick.",
+    versions:"Versions", localBinary:"Local binary", installed:"installed", latest:"latest", updateCandidate:"Update candidate", impact:"impact", publishedReleases:"Published releases in this snapshot", expandedNotes:"Expanded notes cover",
+    guide:"How a2ahub fits together", guideSub:"Document types, statuses, the dashboard's reading order, and a direct way to improve the product. Everything on this page is written for people first.",
+    lifecycleTitle:"Lifecycle is events, not an editable status", lifecycleText:"Every transition is validated before it is recorded. Both sides fold the same history into the same state.", lifecycleFoot:"This is a document status, not a release marker. Responses, blocks, disputes, cancellations, and supersessions remain separate immutable events with a validated actor.",
+    artifactTypesTitle:"Eight document types", artifactTypesText:"One file carries one intent. The protocol code remains a quick visual anchor and a human name is always shown beside it.", readingGuide:"How to read the dashboard",
+    docs:"Documentation", docsSub:"The same manual the agent reads is available here without a network connection. Sections and search are on the left; the exact source text is on the right.",
+    docSearch:"Search the docs", docSearchPlaceholder:"thread, contract, retire…", docNoMatch:"No section title, group or source path matches that search.",
+    docEmbedded:"available offline", emptyDocsTitle:"No documentation embedded", emptyDocsText:"This snapshot was written without the doc corpus. Reinstall the skill and render the dashboard again.",
+    loadingDoc:"Loading the embedded document…",
+    feedbackTitle:"Have an idea? Let’s make a2ahub better", feedbackText:"Bugs, rough edges and feature ideas are welcome. Give the context to your agent: it knows the feedback format, checks for duplicates and files a safe, actionable report.", githubRepo:"GitHub repository", publicHome:"Public home", designSystem:"Design system v4",
+    readingRows:[["Overview and Work","Human actions ordered by consequence and next owner. Priority, literal blocking, a pending approval, a deadline, and a stale snapshot remain five distinct signals."],["Threads","One intent per chain, in committed order where Git history exists and explicitly labelled declared order where it does not."],["Contracts and Map","Drift belongs to a consumer's pinned major line. A provider may be healthy while a consumer resolves nothing."],["Integrity and Versions","The limits of this snapshot and the independent compatibility axes that must not be inferred from one another."]]
+};
+
+const DASHBOARD_RU = {
+    views:["Обзор","Обмен","Треды","Контракты","Карта","Спейсы","Версии","Доки","Справка"],
+    backOverview:"Вернуться к обзору", viewsLabel:"Разделы", more:"Ещё", localeGroup:"Язык интерфейса", space:"Спейс",
+    errorTitle:"Не удалось прочитать данные", errorPrefix:"Дашборд только читает и показывает", errorSuffix:". Чего в файле нет, того он не придумывает.",
+    openWork:"Открыть обмен", direction:"Показать", typeFilter:"Тип",
+    spaceHealth:"Состояние спейсов", spaceHealthTitle:"Насколько свежее то, что вы читаете",
+    spaceHealthSub:"Всё на этих экранах взято из локальной копии спейса, снятой один раз, когда собирался этот файл. Здесь видно, когда копию последний раз обновляли и чего каждый спейс ждёт от вашего бинарника.",
+    spaceHealthFlagsTitle:"На что стоит посмотреть", spaceHealthFlagsText:"Сигналы из событий и локального снимка, которые стоит проверить. Они не обязательно означают ошибку.",
+    spaceHealthFooter:"Ничего не додумывается: если спейс не прочитался, так и написано, а не «ноль».",
+    spaceHealthMore:"Открыть спейсы", spaceHealthClose:"Закрыть",
+    work:"Обмен", threads:"Треды", threadMissingTitle:"Этот тред не удалось восстановить целиком", threadMissingText:"Есть только краткая сводка. В снимок не попала полная история: кто что сделал и в каком порядке.",
+    whoseMove:"Чей сейчас ход", whoseMoveText:"Посчитано по событиям ниже: что уже произошло и что после этого разрешено сделать.", causalTimeline:"История треда", newestFirst:"новое сверху", opensChain:"с этого всё началось", subjectPrefix:"для", threadFlags:"Что пошло не так в этом треде",
+    contracts:"Контракты и их версии", codeBacked:"собран из кода", consumerLines:"Кто на нём сидит", versionWindow:"Какие версии живы", provenance:"Откуда взялась схема", codeBindingPrefix:"Записано, чем и из какого исходника собран дескриптор. А вот совпадает ли он с кодом прямо сейчас,", notEvaluated:"не проверялось", codeBindingSuffix:": этот файл собран один раз и в код не заглядывает.",
+    network:"Кто от кого зависит", networkSub:"Сплошная линия значит, что одна система зависит от контракта, который публикует другая. Пунктир значит, что между двумя системами есть незакрытый обмен. Нажмите на линию или на систему, чтобы увидеть версии, закреплённые линии и открытые документы.", exchangeMap:"Карта обмена",
+    spaces:"Спейсы", spacesSub:"Системы обмениваются документами через общий репозиторий, он и называется спейсом. Здесь видно, насколько свежая у вас копия каждого и какую версию a2a он ждёт, чтобы принять вашу запись.", freshness:"Свежесть", participants:"Участники", writerFloor:"Минимум для записи", pinnedWorkflow:"Версия проверки в CI", revision:"Ревизия",
+    limitsTitle:"Что этот снимок не проверял", limitsSub:"Файл собран один раз из локального кэша. Всё, что не удалось прочитать или что мы намеренно не проверяли, названо здесь, чтобы пустое место не сошло за «всё в порядке».",
+    emptyLimitsTitle:"Уточнять нечего", emptyLimitsText:"Когда собирался снимок, все подключённые спейсы читались, замечаний не было. Цифры выше и есть вся картина.",
+    emptySpacesTitle:"Спейсы не подключены", emptySpacesText:"Спейс работает как общий репозиторий, через который две системы обмениваются документами. Подключите спейс, и таблица заполнится.",
+    integrityFlags:"Замечания", integrityFlagsText:"Сигналы из событий и локального снимка, которые стоит проверить. Они не обязательно означают ошибку.",
+    degradedReads:"Прочитано не полностью", degradedReadsText:"Эти спейсы ответили из устаревшей копии или не ответили вовсе. Их цифры значат «не меньше чем», а не точное число.",
+    notEvaluatedTitle:"Что мы намеренно не проверяли", notEvaluatedText:"Это не сбои. Это вопросы, на которые статический файл честно не отвечает и говорит об этом прямо, вместо того чтобы показать ноль или зелёную галочку.",
+    versions:"Версии", localBinary:"Ваш бинарник", installed:"стоит сейчас", latest:"последняя", updateCandidate:"Есть обновление", impact:"влияние", publishedReleases:"Выпуски", expandedNotes:"Подробности по",
+    guide:"Как устроен a2ahub", guideSub:"Типы документов, статусы, порядок чтения дашборда и прямой способ сделать продукт лучше. Эта страница сначала говорит с человеком, а уже потом — о протоколе.",
+    lifecycleTitle:"Статус не редактируется, он складывается из событий", lifecycleText:"Каждый переход проверяется до того, как попадёт в репозиторий. Обе стороны собирают из одной и той же истории одно и то же состояние.", lifecycleFoot:"Это статус документа, а не отметка о релизе. Ответы, блокировки, споры, отмены и замены не затираются: каждое остаётся отдельным событием с проверенным автором.",
+    artifactTypesTitle:"Восемь типов документов", artifactTypesText:"Один файл, одна мысль. Двухбуквенный код удобен глазу, но рядом всегда стоит нормальное название.", readingGuide:"Как читать дашборд",
+    docs:"Документация", docsSub:"То же руководство, что читает агент, доступно здесь без подключения к сети. Слева разделы и поиск, справа исходный текст.",
+    docSearch:"Поиск по докам", docSearchPlaceholder:"тред, контракт, вывод версии…", docNoMatch:"Ни одно название раздела, группа или путь к файлу не совпали с запросом.",
+    docEmbedded:"доступно без интернета", emptyDocsTitle:"Документация не вшита", emptyDocsText:"Этот снимок собран без корпуса документации. Переустановите навык и соберите дашборд заново.",
+    loadingDoc:"Загружается встроенный документ…",
+    feedbackTitle:"Есть идея? Давайте сделаем a2ahub лучше", feedbackText:"Баги, шероховатости и фичер-реквесты здесь действительно ждут. Передайте контекст своему агенту: он знает формат, проверит дубликаты и отправит безопасный, полезный отчёт.", githubRepo:"Репозиторий на GitHub", publicHome:"Главная сайта", designSystem:"Дизайн-система",
+    readingRows:[["Обзор и работа","Сверху то, где цена ошибки выше. Приоритет, блокировка, ожидание вашего согласования, срок и устаревшие данные остаются пятью разными сигналами, и они намеренно не слиты в один."],["Треды","Одна задача, один тред. Порядок берётся из коммитов Git; если истории нет, используется время, указанное автором, и это честно помечается."],["Контракты и карта","Расхождение считается для конкретного потребителя и той версии, которую он закрепил. У поставщика может быть всё хорошо ровно тогда, когда у потребителя не работает ничего."],["Спейсы и версии","Пределы этого снимка и три версии, которые нельзя выводить одну из другой."]]
+};
+
+const DASHBOARD_I18N = { en: DASHBOARD_EN, ru: DASHBOARD_RU };
+
+const STATE_TONE = {
+  published:"healthy", verified:"healthy", satisfied:"healthy", approved:"healthy", closed:"healthy",
+  blocked:"blockingStrong", blocking:"blockingStrong", missing:"blockingStrong", unreadable:"blockingStrong", rejected:"blockingStrong", declined:"blockingStrong", disputed:"blockingStrong",
+  deprecated:"attention", expired:"attention", overdue:"attention",
+  cancelled:"neutral", canceled:"neutral",
+  retired:"neutral", withdrawn:"neutral", superseded:"neutral", submitted:"neutral", in_progress:"neutral", responded:"neutral", accepted:"neutral", acknowledged:"neutral", proposed:"attention"
+};
+
+function listNames(names, ru) {
+  const xs = (names || []).filter(Boolean);
+  if (!xs.length) return "";
+  if (xs.length === 1) return xs[0];
+  return xs.slice(0, -1).join(", ") + (ru ? " и " : " and ") + xs[xs.length - 1];
+}
+
+function ruPlural(n, one, few, many) {
+  const mod10 = n % 10, mod100 = n % 100;
+  const word = (mod10 === 1 && mod100 !== 11) ? one : ((mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) ? few : many);
+  return n + " " + word;
+}
+
+function STATE_WORDS(ru) {
+  return ru
+    ? { published:"опубликована", deprecated:"выводится", retired:"снята", draft:"черновик" }
+    : { published:"published", deprecated:"deprecated", retired:"retired", draft:"draft" };
+}
+
+function DRIFT_WORDS(ru) {
+  return ru
+    ? { current:"на последней", behind:"отстал на мажорную", deprecated:"выводится", retired:"версия снята", missing:"версии нет у поставщика", dangling:"поставщик ушёл" }
+    : { current:"on the latest", behind:"one major behind", deprecated:"being retired", retired:"version retired", missing:"provider has no such major", dangling:"provider left" };
+}
+
+const DRIFT_TONE = { current: "healthy", behind: "attention", deprecated: "attention", retired: "neutral", missing: "blockingStrong", dangling: "outline" };
+
+function mono(s) { return String(s || "?").slice(0, 2).toUpperCase(); }
+
+function buildDocTree(files) {
+  const root = { dirs: new Map(), files: [], segPath: "" };
+  files.forEach(f => {
+    const parts = String(f.path || "").split("/").filter(Boolean);
+    const base = parts.pop() || f.path || f.key;
+    let node = root;
+    const segs = [];
+    parts.forEach(seg => {
+      segs.push(seg);
+      if (!node.dirs.has(seg)) node.dirs.set(seg, { dirs: new Map(), files: [], segPath: segs.join("/") });
+      node = node.dirs.get(seg);
+    });
+    node.files.push(Object.assign({}, f, { base }));
+  });
+  return root;
+}
+
+function flattenDocTree(node, depth, keyOf, isOpen, out) {
+  const dirEntries = Array.from(node.dirs.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  dirEntries.forEach(([name, child]) => {
+    let label = name;
+    let cur = child;
+    while (cur.dirs.size === 1 && cur.files.length === 0) {
+      const [[childName, grandchild]] = Array.from(cur.dirs.entries());
+      label = label + "/" + childName;
+      cur = grandchild;
+    }
+    const dirKey = keyOf(cur.segPath);
+    const open = isOpen(dirKey);
+    out.push({ isDir: true, isFile: false, depth, key: dirKey, label, expanded: open });
+    if (open) flattenDocTree(cur, depth + 1, keyOf, isOpen, out);
+  });
+  node.files.slice().sort((a, b) => a.base.localeCompare(b.base)).forEach(f => {
+    out.push(Object.assign({ isDir: false, isFile: true, depth }, f));
+  });
+  return out;
+}
+
+function fileTypeIcon(name) {
+  const m = String(name || "").toLowerCase().match(/\.([a-z0-9]+)$/);
+  const ext = m ? m[1] : "";
+  const ICONS = {
+    json: { label: "{ }", bg: "var(--attention-tint)", fg: "var(--attention-ink)" },
+    yaml: { label: "YML", bg: "var(--teal-tint)", fg: "var(--teal-ink)" },
+    yml: { label: "YML", bg: "var(--teal-tint)", fg: "var(--teal-ink)" },
+    md: { label: "MD", bg: "var(--sink)", fg: "var(--body)" },
+    js: { label: "JS", bg: "var(--border-strong)", fg: "var(--text)" },
+    ts: { label: "TS", bg: "var(--border-strong)", fg: "var(--text)" },
+    html: { label: "<>", bg: "var(--plum)", fg: "var(--on-solid)" },
+    csv: { label: "CSV", bg: "var(--green)", fg: "var(--on-solid)" },
+    txt: { label: "TXT", bg: "var(--hairline)", fg: "var(--muted)" }
+  };
+  return ICONS[ext] || { label: ext ? ext.slice(0, 3).toUpperCase() : "•", bg: "var(--hairline)", fg: "var(--muted)" };
+}
+
+function isoDay(value) {
+  const raw = String(value == null ? "" : value);
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? m[3] + "." + m[2] + "." + m[1] : raw;
+}
+
+const FILTER_H = 38;
+
+class Component extends DCLogic {
+  syncContext() {
+    const ctx = this.props && this.props.ctx || {};
+    this.state = Object.assign({ data: ctx.data || null, locale: ctx.locale === "ru" ? "ru" : "en" }, ctx.ui || {});
+    return ctx;
+  }
+
+  setState(update) {
+    const ctx = this.props && this.props.ctx || {};
+    const current = Object.assign({}, this.state || {}, { data: ctx.data || null, locale: ctx.locale === "ru" ? "ru" : "en" }, ctx.ui || {});
+    const patch = typeof update === "function" ? update(current) : update;
+    this.state = Object.assign({}, current, patch || {});
+    if (ctx.actions && ctx.actions.patch) ctx.actions.patch(patch || {});
+  }
+
+  go(view, extra) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.navigate) actions.navigate(view, extra); }
+  closeContractFile() { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.closeContractFile) actions.closeContractFile(); }
+  applyTheme(theme) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setTheme) actions.setTheme(theme); }
+  applyLocale(locale) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setLocale) actions.setLocale(locale); }
+  copy(text) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.copy) actions.copy(text); }
+
+  inScope(space) { return this.state.space === "all" || space === this.state.space; }
+
+  filterChip(active) {
+    return "display:inline-flex; align-items:center; min-height:" + FILTER_H + "px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; cursor:pointer; padding:0 12px; border-radius:8px; white-space:nowrap; " +
+      (active ? "background:var(--primary); color:var(--on-primary);" : "background:var(--surface); color:var(--body);");
+  }
+
+  cardButton(selected) {
+    return "display:block; width:100%; box-sizing:border-box; text-align:left; font-family:'Onest',sans-serif; border:0; border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); cursor:pointer;" +
+      (selected
+        ? " --a2a-pick-shadow:0 2px 10px -4px rgba(33,30,23,.22); --a2a-pick-active-shadow:var(--a2a-pick-shadow);"
+        : " --a2a-pick-surface:var(--surface-inactive-card); --a2a-pick-shadow:var(--shadow-inactive-card);");
+  }
+
+  renderVals() {
+    const ctx = this.syncContext();
+    let d = ctx.data;
+    const s = this.state;
+    const ui = ctx.ui || {};
+    const ru = ctx.locale === "ru";
+    const c = DASHBOARD_I18N[ru ? "ru" : "en"];
+    if (!d && "ContractsView" !== "GuideView") {
+      if ("ContractsView" !== "DashboardShell") return {};
+      d = { spaces:[], nodes:[], inbox:[], outbox:[], archive:[], contracts:[], contractEdges:[], flags:[], meta:{}, tooling:{}, generatedAt:"", self:"" };
+    }
+    const contractsAll = d.contracts.filter(c => this.inScope(c.space));
+    const conRoleOf = (c) => c.provider === d.self ? "provider" : ((c.consumers || []).indexOf(d.self) > -1 ? "consumer" : "other");
+    const conRisky = (c) => d.contractEdges.some(e => e.contract === c.id && e.drift !== "current");
+    const conRole = ["all", "provider", "consumer"].indexOf(s.conRole) > -1 ? s.conRole : "all";
+    const byRole = conRole === "all" ? contractsAll : contractsAll.filter(c => conRoleOf(c) === conRole);
+    const conRiskCount = byRole.filter(conRisky).length;
+    const contracts = s.conRisk ? byRole.filter(conRisky) : byRole;
+    const conSel = s.conSel && contracts.some(c => c.id === s.conSel) ? s.conSel : (contracts[0] && contracts[0].id) || "";
+    const con = contracts.find(c => c.id === conSel) || contracts[0];
+    const conEdges = con ? d.contractEdges.filter(e => e.contract === con.id) : [];
+    const risky = conEdges.filter(e => e.drift !== "current");
+    const conVersions = con ? (con.versions || []) : [];
+    const conVersion = s.conVersion && conVersions.some(v => v.version === s.conVersion) ? s.conVersion : "";
+    const selectedConVersion = conVersion ? conVersions.find(v => v.version === conVersion) : null;
+    const selectedConDetail = selectedConVersion && selectedConVersion.detail ? selectedConVersion.detail : null;
+    const selectedConDocuments = selectedConDetail ? (selectedConDetail.documents || []) : [];
+    const selectedConDocumentTotal = selectedConDetail && Number.isInteger(selectedConDetail.totalDocumentCount) && selectedConDetail.totalDocumentCount >= selectedConDocuments.length
+      ? selectedConDetail.totalDocumentCount
+      : selectedConDocuments.length;
+    const selectedConDocumentOmitted = selectedConDetail && Number.isInteger(selectedConDetail.omittedDocumentCount) && selectedConDetail.omittedDocumentCount >= 0
+      ? Math.max(selectedConDetail.omittedDocumentCount, selectedConDocumentTotal - selectedConDocuments.length)
+      : selectedConDocumentTotal - selectedConDocuments.length;
+    const contractVersionStatus = (v) => {
+      const current = !!(con && v.version === con.version && v.state === "published");
+      const semantic = current
+        ? (ru ? "текущая версия" : "current version")
+        : v.state === "published"
+          ? (ru ? "поддерживается" : "supported")
+          : v.state === "deprecated"
+            ? (ru ? "выводится" : "sunsetting")
+            : v.state === "retired"
+              ? (ru ? "снята" : "retired")
+              : (STATE_WORDS(ru)[v.state] || v.state);
+      const color = current ? "var(--healthy-ink)" : v.state === "published" ? "var(--teal-ink)" : v.state === "deprecated" ? "var(--ochre)" : "var(--muted)";
+      return { semantic, dot:"width:9px; height:9px; flex:0 0 9px; display:inline-block; border-radius:99px; background:" + color + "; box-shadow:0 0 0 3px color-mix(in srgb, " + color + " 14%, transparent);" };
+    };
+    const contractVersionOptions = [{
+      label:ru ? "Обзор контракта" : "Contract overview",
+      shortLabel:ru ? "Обзор" : "Overview",
+      selected:!conVersion,
+      statusDotStyle:"width:9px; height:9px; flex:0 0 9px; display:inline-block; border-radius:99px; background:var(--teal-ink); box-shadow:0 0 0 3px var(--teal-tint);",
+      go:() => this.setState({ conVersion:"", conFacts:false, contractFile:null })
+    }].concat(conVersions.slice().reverse().map(v => {
+      const status = contractVersionStatus(v);
+      return {
+        label:v.version + " · " + status.semantic,
+        shortLabel:v.version,
+        selected:v.version === conVersion,
+        statusDotStyle:status.dot,
+        go:() => this.setState({ conVersion:v.version, conFacts:false, contractFile:null })
+      };
+    }));
+    const contractRefParts = (ref) => {
+      const value = String(ref || "");
+      const split = value.lastIndexOf("@");
+      return split > 0 ? { id:value.slice(0, split), version:value.slice(split + 1) } : { id:value, version:"" };
+    };
+    const openContractRef = (ref, space) => {
+      const target = contractRefParts(ref);
+      return () => this.go("contracts", { conSel:target.id, conVersion:target.version, conFacts:false, contractFile:null, conRole:"all", conRisk:false, space:space || (con && con.space) || s.space });
+    };
+    const docTreeOpenState = s.docTreeOpen || {};
+    const docTreeKeyPrefix = con && selectedConVersion ? con.id + "@" + selectedConVersion.version : "";
+    const toggleDocTreeDir = (key) => this.setState(x => ({ docTreeOpen: Object.assign({}, x.docTreeOpen, { [key]: !((x.docTreeOpen || {})[key]) }) }));
+    const mapDocRow = (f) => {
+      const key = con.id + "@" + selectedConVersion.version + "|" + f.path;
+      return { key, path:f.path, role:f.role, media:f.mediaType || (ru ? "тип не записан" : "media type not recorded"), size:f.sizeBytes ? f.sizeBytes + (ru ? " Б" : " B") : "", digest:f.digest || "", open:() => this.setState({ contractFile:Object.assign({}, f, { key, contractID:con.id, version:selectedConVersion.version }) }) };
+    };
+    const docTreeRows = (docs, section) => {
+      const tree = buildDocTree(docs.map(mapDocRow));
+      const keyOf = (segPath) => docTreeKeyPrefix + "|" + section + "|" + segPath;
+      const isOpen = (key) => !!docTreeOpenState[key];
+      return flattenDocTree(tree, 0, keyOf, isOpen, []).map(row => {
+        if (row.isDir) {
+          return {
+            isDir: true, isFile: false, depth: row.depth, key: row.key, label: row.label,
+            expandedAttr: row.expanded ? "true" : "false",
+            dirAriaLabel: (row.expanded ? (ru ? "Свернуть папку " : "Collapse folder ") : (ru ? "Развернуть папку " : "Expand folder ")) + row.label,
+            toggle: () => toggleDocTreeDir(row.key),
+            rowStyle: "width:100%; display:flex; align-items:center; gap:8px; border:0; border-radius:var(--radius-nested); padding:8px 10px 8px " + (10 + row.depth * 18) + "px; text-align:left; cursor:pointer; background:transparent; color:var(--text); font-family:'Onest',sans-serif;"
+          };
+        }
+        const icon = fileTypeIcon(row.base);
+        return {
+          isDir: false, isFile: true, depth: row.depth, key: row.key, label: row.base,
+          role: row.role, media: row.media, size: row.size, open: row.open,
+          iconLabel: icon.label,
+          iconStyle: "flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; min-width:30px; height:22px; padding:0 4px; border-radius:6px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:10px; font-weight:700; background:" + icon.bg + "; color:" + icon.fg + ";",
+          rowStyle: "width:100%; display:flex; align-items:flex-start; gap:10px; border:0; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline) var(--padding-nested-block) " + (10 + row.depth * 18) + "px; text-align:left; cursor:pointer; background:" + (section === "normative" ? "var(--surface-section)" : "var(--page)") + "; color:var(--text); box-shadow:inset 0 0 0 1px " + (section === "normative" ? "var(--border)" : "var(--hairline)") + ";"
+        };
+      });
+    };
+    const values = {
+      codeBackedLabel:c.codeBacked,
+      consumerLinesLabel:c.consumerLines,
+      versionWindowLabel:c.versionWindow,
+      provenanceLabel:c.provenance,
+      codeBindingPrefix:c.codeBindingPrefix,
+      notEvaluatedLabel:c.notEvaluated,
+      codeBindingSuffix:c.codeBindingSuffix,
+      consumerLinesHint: ru
+        ? "Каждый потребитель закрепляет за собой мажорную версию и живёт на ней. Расхождение считается для его линии, а не для контракта в целом: у поставщика всё может быть в порядке ровно тогда, когда у потребителя не работает ничего."
+        : "Each consumer pins a major version and lives on it. Drift is judged per line, not per contract: the provider can be perfectly healthy at exactly the moment a consumer resolves nothing.",
+      versionWindowHint: ru
+        ? "Версии не удаляются. Старая может быть объявлена устаревшей и получить дату вывода, но пока на ней кто-то сидит, она остаётся видимой, а окончательное снятие ждёт подтверждений от потребителей."
+        : "Versions are never erased. An old one can be deprecated and given a sunset date, but while anyone still sits on it, it stays visible, and retirement waits for consumer acknowledgements.",
+      provenanceHint: ru
+        ? "Если дескриптор собран из кода, записано, чем и из какого исходника. Это метка происхождения, а не проверка: совпадает ли он с кодом прямо сейчас, статический файл не знает."
+        : "When a descriptor is generated from code, the generator and the source digest are recorded. That is provenance, not verification: a static file cannot know whether the bytes still match.",
+      contractsAria:c.views[3],
+      conRows: contracts.map(c => {
+        const edges = d.contractEdges.filter(e => e.contract === c.id);
+        const bad = edges.filter(e => e.drift !== "current");
+        // Drift words are protocol enums; a person reads the consumer's name and
+        // then what happened to its line, in their own language.
+        const driftWord = (e) => e.drift === "deprecated" && e.sunset
+          ? (ru ? "выводится до " : "sunset ") + isoDay(e.sunset)
+          : DRIFT_WORDS(ru)[e.drift] || e.drift;
+        const pills = bad.length
+          ? bad.slice(0, 2).map(e => ({ text: e.from + ": " + driftWord(e), tone: DRIFT_TONE[e.drift] || "neutral" }))
+          : [{ text: ru ? "все линии актуальны" : "all lines current", tone: "healthy" }];
+        // A descriptor may declare itself non-adoptable (`x_binding: none`, or
+        // the long form's `adoptable: false`) — published to be READ, never
+        // pinned. `a2a contract adopt` refuses one outright and writes
+        // nothing, with no override. Until this pill the refusal existed only
+        // inside the CLI, so the first a consumer heard of it was the command
+        // failing (wave 36 F4). It leads the row because it changes whether
+        // the card is worth opening at all.
+        if (c.nonAdoptable) pills.unshift({ text: ru ? "закреплять нельзя" : "not adoptable", tone: "attention" });
+        return {
+          id: c.id, version: c.version, meta: (ru ? "поставщик: " : "provider: ") + c.provider + " · " + c.category + " · " + c.space,
+          pills, style: this.cardButton(conSel === c.id), select: () => this.setState({ conSel: c.id, conVersion: "", conFacts:false, contractFile: null })
+        };
+      }),
+      hasConRows: contractsAll.length > 0,
+      noConRows: contractsAll.length === 0,
+      hasConFiltered: contracts.length > 0,
+      noConFiltered: contractsAll.length > 0 && contracts.length === 0,
+      conRoleTabs: [["all", ru ? "Все" : "All", contractsAll.length],
+                    ["provider", ru ? "Публикую я" : "I publish", contractsAll.filter(c => conRoleOf(c) === "provider").length],
+                    ["consumer", ru ? "Пользуюсь я" : "I depend on", contractsAll.filter(c => conRoleOf(c) === "consumer").length]].map(([id, label, n]) => ({
+        label,
+        count: n,
+        pressed: conRole === id ? "true" : "false",
+        go: () => this.setState({ conRole: id, conSel: "", conVersion: "", conFacts:false, contractFile: null, conRisk: false })
+      })),
+      hasConRisk: conRiskCount > 0 || !!s.conRisk,
+      conRiskLabel: (ru ? "Не на последней · " : "Off the latest · ") + conRiskCount,
+      conRiskPressed: s.conRisk ? "true" : "false",
+      conRiskStyle: this.filterChip(!!s.conRisk) + (s.conRisk ? "" : " box-shadow:inset 0 0 0 1px var(--border);"),
+      toggleConRisk: () => this.setState(x => ({ conRisk: !x.conRisk, conSel: "", conVersion: "", conFacts:false, contractFile: null })),
+      emptyConFilterTitle: s.conRisk
+        ? (ru ? "Здесь всё на последней версии" : "Everything here is on the latest")
+        : (conRole === "provider" ? (ru ? "Вы ничего не публикуете" : "You publish nothing here") : (ru ? "Вы ни от чего не зависите" : "You depend on nothing here")),
+      emptyConFilterText: s.conRisk
+        ? (ru ? "Ни один потребитель в этой выборке не отстал от поставщика. Снимите фильтр, чтобы увидеть остальные контракты." : "No consumer in this selection has fallen behind its provider. Clear the filter to see the other contracts.")
+        : (conRole === "provider"
+          ? (ru ? "В этих спейсах нет контрактов, где поставщик это вы. Переключитесь на «Все», чтобы увидеть чужие." : "No contract in these spaces has you as its provider. Switch to All to see the others.")
+          : (ru ? "В этих спейсах вы не закрепили ни одной версии чужого контракта. Переключитесь на «Все», чтобы увидеть остальные." : "You have not pinned a version of anyone else's contract in these spaces. Switch to All to see the rest.")),
+      emptyContractsTitle: ru ? "Контрактов пока нет" : "No contracts yet",
+      emptyContractsText: ru
+        ? "Контракт работает как интерфейс с историей версий: поставщик его публикует, а потребители закрепляют ту основную версию, которой пользуются. Пока в этих спейсах не опубликован ни один."
+        : "A contract is an interface with a version history: a provider publishes it, and consumers pin the major line they use. Nothing has been published in these spaces yet.",
+      providerLabel: ru ? "Кто публикует" : "Who publishes it",
+      consumersLabel: ru ? "Кто им пользуется" : "Who depends on it",
+      cdProvider: con ? con.provider : "",
+      cdConsumers: con ? ((con.consumers || []).join(", ") || (ru ? "пока никто" : "nobody yet")) : "",
+      cdId: con ? con.id : "",
+      cdState: selectedConVersion ? contractVersionStatus(selectedConVersion).semantic : (con ? con.state : ""),
+      cdStateTone: selectedConVersion
+        ? (selectedConVersion.version === (con && con.version) && selectedConVersion.state === "published" ? "healthy" : selectedConVersion.state === "published" ? "agent" : (STATE_TONE[selectedConVersion.state] || "neutral"))
+        : (con ? (STATE_TONE[con.state] || "neutral") : "neutral"),
+      cdNonAdoptable: !!(con && con.nonAdoptable),
+      cdNonAdoptableLabel: ru ? "закреплять нельзя" : "not adoptable",
+      cdNonAdoptableWhy: ru
+        ? "Дескриптор объявил себя непригодным для закрепления (x_binding). Этот контракт опубликован, чтобы его читали, а не чтобы на него садились: a2a contract adopt откажет и ничего не запишет, обойти это нельзя."
+        : "The descriptor declares itself non-adoptable (x_binding). This contract is published to be read, not pinned: a2a contract adopt refuses it and writes nothing, and there is no override.",
+      cdCodeBacked: selectedConDetail
+        ? !!(selectedConDetail.provenance && selectedConDetail.provenance.generatedTool && selectedConDetail.provenance.sourceDigest)
+        : !!(con && con.codeBacked),
+      cdSpaceLine: con ? (ru ? "спейс " : "space ") + con.space : "",
+      cdDescription: selectedConDetail && selectedConDetail.description ? selectedConDetail.description : (con ? con.description : ""),
+      cdIsOverview: !selectedConVersion,
+      cdIsVersion: !!selectedConVersion,
+      contractVersionSwitcher:{
+        ariaLabel:ru ? "Выбрать обзор или версию контракта" : "Choose contract overview or version",
+        options:contractVersionOptions
+      },
+      cdVersionAnnouncement: selectedConVersion && con ? con.id + "@" + selectedConVersion.version : (con ? con.id + (ru ? ": обзор" : ": overview") : ""),
+      cdHasRisk: risky.length > 0,
+      cdRiskHeading: ru
+        ? (risky.length === 1 ? "Нужно обновить одну линию потребителя" : "Нужно обновить " + ruPlural(risky.length, "линию потребителя", "линии потребителей", "линий потребителей"))
+        : risky.length + (risky.length === 1 ? " consumer line needs attention" : " consumer lines need attention"),
+      cdRisks: risky.map((e, i) => {
+        const version = con && (con.versions || []).find(v => v.version === e.pinnedVersion);
+        const successor = e.successor || (version && version.successor) || "";
+        const successorContract = String(successor).split("@")[0];
+        const pinnedState = STATE_WORDS(ru)[e.pinnedState] || e.pinnedState || (ru ? "состояние не записано" : "state not recorded");
+        const pinnedVersion = e.pinnedVersion || (e.pinnedMajor ? String(e.pinnedMajor) + ".x" : (ru ? "не записана" : "not recorded"));
+        const pinned = (con ? con.id : e.contract) + "@" + pinnedVersion + " · " + pinnedState;
+        const providerVersion = e.providerVersion || (con && con.version) || (ru ? "не записана" : "not recorded");
+        const provider = (con ? con.provider : e.to) + " · " + (con ? con.id : e.contract) + "@" + providerVersion;
+        const title = e.drift === "missing"
+          ? e.from + (ru ? ": закреплённой мажорной версии нет у поставщика" : ": the pinned major does not exist at the provider")
+          : e.drift === "dangling"
+            ? e.from + (ru ? ": поставщик больше не публикует контракт в этом спейсе" : ": the provider no longer publishes this contract in the space")
+            : e.drift === "retired"
+              ? e.from + (ru ? " использует снятую версию" : " uses a retired version")
+              : e.drift === "deprecated"
+                ? e.from + (ru ? " использует версию, которую выводят из эксплуатации" : " uses a version being sunset")
+                : e.from + (ru ? " остался на предыдущей мажорной версии" : " remains on an older major");
+        const explanation = e.drift === "missing"
+          ? (ru ? "У поставщика доступны только мажорные версии " : "The provider exposes only major versions ") + (e.availableMajors || []).join(ru ? " и " : " and ") + (ru ? ". Эта линия сейчас не разрешается." : ". This consumer line does not resolve.")
+          : e.drift === "dangling"
+            ? (ru ? "Дескриптор контракта для этой линии не найден. Сначала нужно выбрать действующего поставщика или убрать зависимость." : "No contract descriptor resolves for this line. Choose an active provider or remove the dependency first.")
+            : e.drift === "retired"
+              ? (ru ? "Версия уже снята. Потребителю нужно перейти на поддерживаемую мажорную линию." : "This version is already retired. The consumer must move to a supported major line.")
+              : e.drift === "deprecated"
+                ? (ru ? "Версия пока доступна, но её срок поддержки заканчивается." : "The version still resolves, but its support window is ending.")
+                : (ru ? "Поставщик уже публикует более новую мажорную линию; переход нужно запланировать отдельно." : "The provider already publishes a newer major line; plan the migration explicitly.");
+        return {
+          title,
+          consumerLabel: ru ? "Потребитель" : "Consumer",
+          consumer: e.from,
+          pinnedLabel: ru ? "Сейчас использует" : "Currently uses",
+          pinned,
+          providerLabel: ru ? "Поставщик публикует" : "Provider publishes",
+          provider,
+          hasDeadline: !!e.sunset || e.drift === "retired",
+          deadlineLabel: e.drift === "retired" ? (ru ? "Дата снятия" : "Retired on") : (ru ? "Отключение версии" : "Version sunset"),
+          deadline: e.sunset ? isoDay(e.sunset) : (e.drift === "retired" ? (ru ? "не записана" : "not recorded") : ""),
+          explanation,
+          hasSuccessor: !!successor,
+          successorAria: successorContract === (con && con.id)
+            ? (ru ? "Открыть версию контракта " : "Open contract version ") + successor
+            : (ru ? "Открыть контракт " : "Open contract ") + successor,
+          successorLabel: successor
+            ? ((successorContract === (con && con.id) ? (ru ? "Открыть версию " : "Open version ") + contractRefParts(successor).version : (ru ? "Открыть контракт " : "Open contract ") + successor) + " →")
+            : "",
+          openSuccessor: successorContract ? openContractRef(successor, con.space) : () => {},
+          style: "min-width:0;" + (i ? " padding-top:14px; border-top:1px solid color-mix(in srgb, var(--blocking-ink) 16%, transparent);" : "")
+        };
+      }),
+      cdLines: conEdges.map(e => ({
+        // The consumer, named on its own. The row used to open with
+        // "checkout → atlas", and that arrow points at the PROVIDER: it is a
+        // dependency edge, the same direction the exchange map draws and
+        // explains in its legend. On a card with no legend it reads as data
+        // flow, which runs the other way. The provider is named once in the
+        // box above, so the arrow has nothing left to say here.
+        route: e.from,
+        drift: DRIFT_WORDS(ru)[e.drift] || e.drift, tone: DRIFT_TONE[e.drift] || "neutral",
+        detail: e.drift === "missing"
+          ? (ru ? "закреплена версия " : "pinned major ") + e.pinnedMajor + (ru ? " · доступны " : " · available ") + (e.availableMajors || []).join(", ")
+          : (e.drift === "dangling" ? (ru ? "для этой линии не находится ни одного дескриптора" : "no descriptor resolves for this line") : (ru ? "закреплено " : "pinned ") + e.pinnedVersion + (ru ? " · поставщик " : " · provider ") + e.providerVersion),
+        style: "background:var(--page); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline);" + (e.drift === "missing" ? " box-shadow:inset 0 0 0 1.5px var(--blocking-line);" : "")
+      })),
+      cdVersions: con ? (con.versions || []).slice().reverse().map(v => {
+        // Who is still sitting on this version decides whether it can ever be
+        // switched off, which is the question the whole panel exists to answer.
+        const seated = conEdges.filter(e => e.pinnedVersion === v.version).map(e => e.from);
+        const notes = [];
+        if (v.sunset) notes.push({ plain:true, hasContract:false, text:ru ? "Выключают " + isoDay(v.sunset) + "." : "Switched off on " + isoDay(v.sunset) + "." });
+        if (v.successor) {
+          const successorContract = String(v.successor).split("@")[0];
+          notes.push({
+            plain:false,
+            hasContract:true,
+            prefix:ru ? "На смену пришла " : "Replaced by ",
+            contract:v.successor,
+            suffix:".",
+            contractAria:(ru ? "Открыть контракт " : "Open contract ") + v.successor,
+            openContract:successorContract ? openContractRef(v.successor, con.space) : () => {}
+          });
+        }
+        const hasInlineAction = notes.some(note => note.hasContract) || !!v.deprecationID;
+        const openVersion = () => this.go("contracts", { conSel:con.id, conVersion:v.version, conFacts:false, contractFile:null, conRole:"all", conRisk:false, space:con.space });
+        return {
+          version: v.version, state: v.state, tone: STATE_TONE[v.state] || "neutral",
+          color: v.state === "retired" ? "var(--muted)" : "var(--text)",
+          seats: seated.length
+            ? (ru ? "на ней " + listNames(seated, ru) : listNames(seated, ru) + (seated.length === 1 ? " sits here" : " sit here"))
+            : (ru ? "на ней никого" : "nobody here"),
+          seatStyle: "margin-left:auto; font-size:15px; color:" + (seated.length ? "var(--body)" : "var(--faint)") + "; overflow-wrap:anywhere;",
+          hasNotes: notes.length > 0 || !!v.deprecationID,
+          notes,
+          hasAnnounce: !!v.deprecationID,
+          announceLabel: (ru ? "Объявлено в " : "Announced in ") + (v.deprecationID || "") + " →",
+          openAnnounce: () => this.go("work", { workSel:v.deprecationID, workTab:"all", workState:"all", workType:"all", workDue:false, space:con.space }),
+          role:hasInlineAction ? "" : "button",
+          tabIndex:hasInlineAction ? "-1" : "0",
+          ariaLabel:hasInlineAction ? "" : ((ru ? "Открыть версию контракта " : "Open contract version ") + con.id + "@" + v.version),
+          openVersion:hasInlineAction ? () => {} : openVersion,
+          openVersionKey:hasInlineAction ? () => {} : (ev) => { if (ev && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); openVersion(); } },
+          style:"background:var(--page); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--border);" + (hasInlineAction ? "" : " cursor:pointer; transition:background-color 140ms ease, box-shadow 140ms ease;"),
+          hoverStyle:hasInlineAction ? "" : "background:var(--surface-section); box-shadow:inset 0 0 0 1px var(--border-strong);"
+        };
+      }) : [],
+      cdVersionAvailable: !!(selectedConDetail && selectedConDetail.status === "available"),
+      cdVersionUnavailable: !!selectedConVersion && (!selectedConDetail || selectedConDetail.status !== "available"),
+      cdVersionUnavailableTitle: ru ? "Исторический комплект недоступен" : "Historical package unavailable",
+      cdVersionUnavailableText: selectedConDetail && selectedConDetail.unavailableReason
+        ? selectedConDetail.unavailableReason
+        : (ru ? "Для этой версии в снимке нет проверяемого исторического комплекта. Это не означает, что комплект пуст." : "This snapshot has no verifiable historical package for the version. That does not mean the package is empty."),
+      cdVersionOverviewFacts: selectedConVersion && selectedConDetail ? [
+        { label:ru ? "версия" : "version", value:selectedConVersion.version, mono:true },
+        { label:ru ? "статус" : "status", value:contractVersionStatus(selectedConVersion).semantic },
+        { label:ru ? "публикация" : "publication", value:[selectedConDetail.publishedBy || "", selectedConDetail.publishedAt ? isoDay(selectedConDetail.publishedAt) : ""].filter(Boolean).join(" · ") || (ru ? "не записана" : "not recorded") },
+        { label:ru ? "формат схемы" : "schema format", value:selectedConDetail.schemaFormat || (ru ? "не записан" : "not recorded"), mono:true },
+        { label:ru ? "совместимость" : "compatibility", value:selectedConDetail.compatPolicy || (ru ? "не записана" : "not recorded") }
+      ] : [],
+      cdVersionHasSuccessor: !!(selectedConVersion && selectedConVersion.successor),
+      cdVersionSuccessorLabel: selectedConVersion && selectedConVersion.successor ? (ru ? "Перейти к преемнику " : "Open successor ") + selectedConVersion.successor + " →" : "",
+      openCdVersionSuccessor: selectedConVersion && selectedConVersion.successor ? (() => {
+        const parts = String(selectedConVersion.successor).split("@");
+        if (con && parts[0] === con.id && conVersions.some(v => v.version === parts[1])) this.setState({ conVersion:parts[1], conFacts:false, contractFile:null });
+        else this.go("contracts", { conSel:parts[0], conVersion:parts[1] || "", conFacts:false, contractFile:null, conRole:"all", conRisk:false, space:con ? con.space : s.space });
+      }) : () => {},
+      cdVersionHasChange: !!(selectedConDetail && selectedConDetail.changeSummary),
+      cdVersionChangeTitle: ru ? "Что изменилось" : "What changed",
+      cdVersionChange: selectedConDetail ? selectedConDetail.changeSummary || "" : "",
+      cdVersionPinsTitle: ru ? "Кто сейчас использует" : "Who uses it now",
+      cdVersionPinsHint: ru ? "Текущие закрепления из этого снимка, а не реконструкция прошлого." : "Current pins in this snapshot, not reconstructed historical usage.",
+      cdVersionHasPins: !!(selectedConDetail && (selectedConDetail.consumerPins || []).length),
+      cdVersionNoPins: !(selectedConDetail && (selectedConDetail.consumerPins || []).length),
+      cdVersionNoPinsText: ru ? "Сейчас на этой версии никто не закреплён." : "No consumer is currently pinned to this version.",
+      cdVersionPins: selectedConDetail ? (selectedConDetail.consumerPins || []).map(p => ({
+        system:p.system,
+        detail:[p.space || "", p.pinnedVersion ? (ru ? "закреплено " : "pinned ") + p.pinnedVersion : (p.pinnedMajor ? (ru ? "мажорная линия " : "major line ") + p.pinnedMajor : "")].filter(Boolean).join(" · "),
+        drift:DRIFT_WORDS(ru)[p.drift] || p.drift || (ru ? "состояние не записано" : "state not recorded"),
+        tone:DRIFT_TONE[p.drift] || "neutral"
+      })) : [],
+      cdVersionPackageTitle: ru ? "Комплект версии" : "Version package",
+      cdVersionPackageHint: ru ? "Метаданные файлов из точного опубликованного комплекта. Снимок может включать только ограниченную часть большого набора и всегда сообщает об этом." : "File metadata from the exact published package. The bounded snapshot may include only part of a large set and always says so.",
+      cdVersionLegacy: !!(selectedConDetail && selectedConDetail.provenance && selectedConDetail.provenance.profile === "contract-tree-v1"),
+      cdVersionLegacyText: ru ? "Это исторический комплект старого профиля: состав фиксирован, а дескриптор проверяется слабее, чем в contract-set-v2." : "This is a legacy-profile package: its inventory is fixed and descriptor verification is weaker than contract-set-v2.",
+      cdVersionDocumentsOmitted: selectedConDocumentOmitted > 0,
+      cdVersionDocumentsOmittedText: ru
+        ? "В снимок вошло файлов: " + selectedConDocuments.length + " из " + selectedConDocumentTotal + "; ещё " + selectedConDocumentOmitted + " не встроено из-за общего лимита дашборда. Показанные digest и метаданные точны только для перечисленных файлов; полный набор получите через materialize и проверьте командой check."
+        : "This snapshot includes " + selectedConDocuments.length + " of " + selectedConDocumentTotal + " files; " + selectedConDocumentOmitted + " more are not embedded because of the dashboard-wide bound. Shown digests and metadata apply only to the listed files; use materialize and check for the complete set.",
+      cdVersionHasNormativeDocs: selectedConDocuments.some(f => f.normative),
+      cdVersionHasSupportingDocs: selectedConDocuments.some(f => !f.normative),
+      cdVersionNoDocs: !!(selectedConDetail && selectedConDetail.status === "available" && selectedConDocumentTotal === 0),
+      cdVersionNoDocsText: ru ? "В опубликованном манифесте нет переносимых файлов." : "The published manifest declares no carried files.",
+      cdVersionNormativeTitle: ru ? "Определяют контракт" : "Define the contract",
+      cdVersionSupportingTitle: ru ? "Помогают внедрить" : "Support implementation",
+      cdVersionNormativeTree: docTreeRows(selectedConDocuments.filter(f => f.normative), "normative"),
+      cdVersionSupportingTree: docTreeRows(selectedConDocuments.filter(f => !f.normative), "supporting"),
+      cdVersionHistoryTitle: ru ? "История версии" : "Version history",
+      cdVersionHasHistory: !!(selectedConDetail && (selectedConDetail.history || []).length),
+      cdVersionHistory: selectedConDetail ? (selectedConDetail.history || []).slice().reverse().map((h, i, all) => ({
+        actorName:h.actor || (ru ? "неизвестный автор" : "unknown actor"),
+        avatarMono:mono(h.actor || "?"),
+        actionText:({ publish:ru ? "опубликовал версию" : "published version", published:ru ? "опубликовал версию" : "published version", deprecate:ru ? "начал вывод версии" : "deprecated version", deprecated:ru ? "начал вывод версии" : "deprecated version", retire:ru ? "снял версию" : "retired version", retired:ru ? "снял версию" : "retired version" })[h.transition] || h.transition,
+        subjectLabel:con.id + "@" + selectedConVersion.version,
+        meta:[h.at ? isoDay(h.at) : "", h.eventID || ""].filter(Boolean).join(" · "),
+        hasSignal:true,
+        signalTone:h.state === "retired" ? "neutral" : (h.state === "deprecated" ? "caution" : "positive"),
+        signalLabel:STATE_WORDS(ru)[h.state] || h.state,
+        railOffset:34,
+        railStyle:"position:relative; padding:0 0 " + (i === all.length - 1 ? "0" : "18px") + " 34px;" + (i === all.length - 1 ? " margin-left:2px;" : " border-left:2px solid var(--rail-line);")
+      })) : [],
+      cdVersionProvenanceTitle: ru ? "Публикация и проверка" : "Publication and verification",
+      cdVersionProvenanceHint: ru ? "Идентификаторы Git и контрольные суммы относятся только к выбранной версии." : "Git identities and digests belong only to the selected version.",
+      cdVersionProvenanceOpen:!!s.conFacts,
+      cdVersionProvenanceExpanded:s.conFacts ? "true" : "false",
+      cdVersionProvenanceAction:s.conFacts ? (ru ? "Свернуть" : "Collapse") : (ru ? "Развернуть" : "Expand"),
+      cdVersionProvenanceToggleAria:(s.conFacts ? (ru ? "Свернуть " : "Collapse ") : (ru ? "Развернуть " : "Expand ")) + (ru ? "публикацию и проверку" : "publication and verification"),
+      toggleCdVersionProvenance:() => this.setState(x => ({ conFacts:!x.conFacts })),
+      cdVersionFacts: selectedConDetail && selectedConDetail.provenance ? [
+        { label:ru ? "профиль комплекта" : "package profile", value:selectedConDetail.provenance.profile || (ru ? "не записано" : "not recorded"), mono:true },
+        { label:ru ? "коммит публикации" : "publication commit", value:selectedConDetail.provenance.commitSHA || (ru ? "не записано" : "not recorded"), mono:true },
+        { label:ru ? "дерево Git" : "Git tree", value:selectedConDetail.provenance.treeObjectID || (ru ? "не записано" : "not recorded"), mono:true },
+        { label:ru ? "дескриптор" : "descriptor", value:selectedConDetail.provenance.descriptorPath || (ru ? "не записан" : "not recorded"), mono:true },
+        { label:ru ? "событие публикации" : "publication event", value:selectedConDetail.provenance.publishEventPath || (ru ? "не записано" : "not recorded"), mono:true },
+        { label:ru ? "схема события" : "event schema", value:selectedConDetail.provenance.eventSchema || (ru ? "не записана" : "not recorded"), mono:true },
+        { label:ru ? "профиль digest" : "digest profile", value:selectedConDetail.provenance.digestProfile || (ru ? "не записано" : "not recorded"), mono:true },
+        { label:ru ? "опубликованный digest" : "published digest", value:selectedConDetail.provenance.publishedDigest || (ru ? "не записано" : "not recorded"), mono:true },
+        { label:ru ? "проверка комплекта" : "package verification", value:selectedConDetail.provenance.aggregateVerification || (ru ? "не проверено" : "not verified") },
+        { label:ru ? "проверка дескриптора" : "descriptor verification", value:selectedConDetail.provenance.descriptorVerification || (ru ? "не проверено" : "not verified") },
+        { label:ru ? "генератор" : "generator", value:selectedConDetail.provenance.generatedTool || (ru ? "не записан" : "not recorded"), mono:true },
+        { label:ru ? "digest исходника" : "source digest", value:selectedConDetail.provenance.sourceDigest || (ru ? "не записан" : "not recorded"), mono:true }
+      ] : [],
+      cdFacts: con ? [
+        { label:ru ? "формат схемы" : "schema format", value:con.schemaFormat, mono:true },
+        { label:ru ? "совместимость" : "compatibility", value:con.compatPolicy },
+        { label:ru ? "потребители" : "consumers", value:(con.consumers || []).join(", ") },
+        { label:ru ? "генератор" : "generator", value:con.generatedTool || (ru ? "не записано" : "not recorded"), mono:!!con.generatedTool, muted:!con.generatedTool },
+        { label:ru ? "контрольная сумма источника" : "source digest", value:con.sourceDigest ? con.sourceDigest.slice(0, 12) + "…" + con.sourceDigest.slice(-6) : (ru ? "не записано" : "not recorded"), mono:true, muted:!con.sourceDigest }
+      ] : []
+    };
+    return values;
+  }
+}
+</script>
+</body>
+</html>

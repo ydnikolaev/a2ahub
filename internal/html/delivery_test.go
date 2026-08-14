@@ -175,10 +175,10 @@ func TestProjectDeliveries_RenderedIntoPage(t *testing.T) {
 	// The failed attempt's package id, its failing entry path and rule, and
 	// the ndjson record number the top-level brief names explicitly.
 	for _, want := range []string{
-		`"packageId": "DP-beta-20260101-aaaa"`,
-		`"entryPath": "dataset/records.ndjson"`,
-		`"rule": "chk-schema"`,
-		`"record": 4108`,
+		`"packageId":"DP-beta-20260101-aaaa"`,
+		`"entryPath":"dataset/records.ndjson"`,
+		`"rule":"chk-schema"`,
+		`"record":4108`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("rendered page missing %s (the failed attempt's own facts)", want)
@@ -189,8 +189,8 @@ func TestProjectDeliveries_RenderedIntoPage(t *testing.T) {
 	// supersede chain naming BOTH the failed first attempt and itself, so a
 	// reader sees what was tried, not only the outcome.
 	for _, want := range []string{
-		`"packageId": "DP-beta-20260102-bbbb"`,
-		`"supersedes": "DP-beta-20260101-aaaa"`,
+		`"packageId":"DP-beta-20260102-bbbb"`,
+		`"supersedes":"DP-beta-20260101-aaaa"`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("rendered page missing %s (the accepted attempt's own facts)", want)
@@ -206,18 +206,18 @@ func TestProjectDeliveries_RenderedIntoPage(t *testing.T) {
 	// Every verdict state renders under its OWN name, and "unverified" is
 	// never mistakable for "passed" — the top-level brief's own guard
 	// against the defect this project has already shipped once.
-	for _, verdict := range []string{`"verdict": "failed"`, `"verdict": "passed"`, `"verdict": "unverified"`} {
+	for _, verdict := range []string{`"verdict":"failed"`, `"verdict":"passed"`, `"verdict":"unverified"`} {
 		if !strings.Contains(page, verdict) {
 			t.Errorf("rendered page missing %s", verdict)
 		}
 	}
-	if strings.Contains(page, `"verdict": "unverified: passed"`) {
+	if strings.Contains(page, `"verdict":"unverified: passed"`) {
 		t.Fatal("unverified must never render spelled as passed")
 	}
 
 	// The unresolved delivery still appears — never vanished — and carries
 	// its own reason.
-	if !strings.Contains(page, `"resolution": "unresolved"`) {
+	if !strings.Contains(page, `"resolution":"unresolved"`) {
 		t.Error("rendered page missing the unresolved delivery's resolution")
 	}
 	if !strings.Contains(page, "could not be resolved") {
@@ -430,12 +430,12 @@ func TestAssemble_DeliveriesReachThePageFromAFixtureSpace(t *testing.T) {
 	page := string(out)
 
 	for _, want := range []string{
-		`"packageId": "` + failingPackageID + `"`,
-		`"attempt": 1`,
-		`"verdict": "failed"`,
-		`"entryPath": "dataset/records.ndjson"`,
-		`"rule": "chk-schema"`,
-		`"record": 4108`,
+		`"packageId":"` + failingPackageID + `"`,
+		`"attempt":1`,
+		`"verdict":"failed"`,
+		`"entryPath":"dataset/records.ndjson"`,
+		`"rule":"chk-schema"`,
+		`"record":4108`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("rendered page missing %s (the failing delivery's own resolved facts, via the real assembly path)", want)
@@ -443,9 +443,9 @@ func TestAssemble_DeliveriesReachThePageFromAFixtureSpace(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		`"packageId": "` + unverifiedPackageID + `"`,
-		`"attempt": 2`,
-		`"verdict": "unverified"`,
+		`"packageId":"` + unverifiedPackageID + `"`,
+		`"attempt":2`,
+		`"verdict":"unverified"`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("rendered page missing %s (the unverified delivery's own resolved facts)", want)
@@ -454,7 +454,7 @@ func TestAssemble_DeliveriesReachThePageFromAFixtureSpace(t *testing.T) {
 	// "unverified" must be a byte-distinct value from "passed" in the
 	// rendered output — the exact defect this project has already shipped
 	// once (a missing report rounded down to a settled state).
-	if strings.Contains(page, `"verdict": "passed"`) {
+	if strings.Contains(page, `"verdict":"passed"`) {
 		t.Fatal("a delivery with no report.json rendered as passed — absent must never round down to good")
 	}
 }

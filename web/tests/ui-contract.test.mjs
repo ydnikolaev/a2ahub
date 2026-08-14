@@ -79,9 +79,100 @@ function dashboardController() {
   context.scrollTo = () => {};
   context.window = context;
   context.globalThis = context;
-  const { logic } = runtimeDesignPage('14-local-dashboard-v4.dc.html');
-  vm.runInNewContext(`${logic}\nglobalThis.__DashboardComponent = Component;`, context);
-  return new context.__DashboardComponent();
+  const resolverImport = dashboardSource.match(/<dc-import name="(VocabularyResolver)"[^>]*><\/dc-import>/);
+  assert.ok(resolverImport, 'root must literally import the vocabulary resolver');
+  const resolverLogic = runtimeDesignPage(`${resolverImport[1]}.dc.html`).logic;
+  vm.runInNewContext(`(() => { ${resolverLogic}\nreturn Component; })();`, context);
+  assert.equal(typeof context.A2A_VOCABULARY_RESOLVER?.lookup, 'function', 'root resolver import must expose one lookup');
+  const projectionSource = repoFile('web/src/lib/design-source.ts');
+  assert.doesNotMatch(projectionSource, /viewComponents|projectionNames/, 'public projection must derive components from root literal imports');
+  const rootViews = [...dashboardSource.matchAll(/<dc-import name="([A-Z][A-Za-z0-9]*)" ctx="\{\{ ([A-Za-z][A-Za-z0-9]*) \}\}"[^>]*><\/dc-import>/g)]
+    .filter(([, name]) => name !== 'DashboardShell' && name !== 'Modal');
+  const projectedDashboard = runtimeDesignPage('14-local-dashboard-v4.dc.html');
+  assert.ok(rootViews.length, 'root must expose literal view imports for projection discovery');
+  for (const [, name, ctx] of rootViews) {
+    assert.doesNotMatch(projectedDashboard.template, new RegExp(`<dc-import name="${name}"`), `${name} markup must be derived from its root import`);
+    assert.match(projectedDashboard.logic, new RegExp(`renderPart\\(${name}Projection, values\\.${ctx}\\)`), `${name} logic must be derived from its root context`);
+  }
+  const componentFiles = {
+    Dashboard: '14-local-dashboard-v4.dc.html',
+    DashboardShell: 'DashboardShell.dc.html',
+    DashboardLive: 'DashboardLive.dc.html',
+    Overview: 'Overview.dc.html',
+    ExchangeView: 'ExchangeView.dc.html',
+    ThreadsView: 'ThreadsView.dc.html',
+    ContractsView: 'ContractsView.dc.html',
+    MapView: 'MapView.dc.html',
+    SpacesView: 'SpacesView.dc.html',
+    VersionsView: 'VersionsView.dc.html',
+    DocsView: 'DocsView.dc.html',
+    GuideView: 'GuideView.dc.html',
+    Modal: 'Modal.dc.html',
+  };
+  const classes = {};
+  const logics = {};
+  for (const [name, file] of Object.entries(componentFiles)) {
+    const raw = name === 'Dashboard' ? component('14-local-dashboard-v4') : '';
+    const logic = name === 'Dashboard'
+      ? raw.match(/<script type="text\/x-dc" data-dc-script[^>]*>([\s\S]*?)<\/script>/)?.[1]
+      : runtimeDesignPage(file).logic;
+    assert.ok(logic, `${name} must expose design logic`);
+    logics[name] = logic;
+    vm.runInNewContext(`globalThis.__DashboardPart = (() => { ${logic}\nreturn Component; })();`, context);
+    assert.equal(typeof context.__DashboardPart, 'function', `${name} must expose a Component class`);
+    classes[name] = context.__DashboardPart;
+  }
+  assert.doesNotMatch(logics.Dashboard, /DASHBOARD_COMPONENT_FIELDS|const vals = Object\.assign\(base,/, 'root must not retain per-view presentation derivation');
+  assert.doesNotMatch(logics.Dashboard, /const operationalRows|const workList|const contractsAll|const releasesShown|docsVals\(/, 'root must retain only shared state, hydration, and cross-view control');
+  for (const [name, marker] of Object.entries({ Overview: /const operationalRows/, ExchangeView: /const workList/, ThreadsView: /const tvEntries|tvEntries:/, ContractsView: /const contractVersionOptions/, MapView: /openItem:/, SpacesView: /spaceRows:/, VersionsView: /const releasesShown/, DocsView: /docsVals\(/, GuideView: /guideFeatures:/ })) {
+    assert.match(logics[name], marker, `${name} must own its presentation derivation`);
+  }
+  assert.equal(typeof classes.Modal.prototype.componentDidMount, 'function', 'Modal must own root-overlay ESC lifecycle');
+  assert.equal(typeof classes.Modal.prototype.componentWillUnmount, 'function', 'Modal must tear down root-overlay ESC lifecycle');
+
+  const controller = new classes.Dashboard();
+  const renderRoot = controller.renderVals.bind(controller);
+  const viewNames = ['Overview', 'ExchangeView', 'ThreadsView', 'ContractsView', 'MapView', 'SpacesView', 'VersionsView', 'DocsView', 'GuideView'];
+  const views = Object.fromEntries(viewNames.map(name => [name, new classes[name]()]));
+  const expectedActions = { Overview: ['navigate', 'patch'], ExchangeView: ['navigate', 'patch'], ThreadsView: ['navigate', 'patch'], ContractsView: ['navigate', 'patch'], MapView: ['navigate', 'patch'], SpacesView: [], VersionsView: ['copy', 'patch'], DocsView: ['patch'], GuideView: [] };
+  for (const name of viewNames) {
+    const ctx = controller.viewContext(name, {});
+    assert.deepEqual(Object.keys(ctx).sort(), ['actions', 'data', 'locale', 'ui'], `${name} must receive exactly one view context`);
+    assert.deepEqual(Object.keys(ctx.actions).sort(), expectedActions[name], `${name} must receive only the root callbacks it uses`);
+  }
+  controller.renderVals = () => {
+    const rootValues = renderRoot();
+    for (const [name, view] of Object.entries(views)) {
+      view.props = { ctx: controller.viewContext(name, rootValues) };
+      Object.assign(rootValues, view.renderVals());
+    }
+    return rootValues;
+  };
+  const bindViewHelper = (name, method) => (...args) => {
+    const view = views[name];
+    view.props = { ctx: controller.viewContext(name) };
+    if (view.syncContext) view.syncContext();
+    return view[method](...args);
+  };
+  controller.statusOf = bindViewHelper('Overview', 'statusOf');
+  controller.detailFor = bindViewHelper('ExchangeView', 'detailFor');
+  controller.resolveVocabulary = (data, family, value, locale, policy) => context.A2A_VOCABULARY_RESOLVER.lookup(data, family, value, locale, policy);
+  controller.vocabularyPolicy = context.A2A_VOCABULARY_RESOLVER.defaultPolicy;
+
+  const live = new classes.DashboardLive();
+  controller.startOperationalStream = initialRevision => {
+    live.props = { initialRevision, onSnapshot: snapshot => controller.applyOperationalSnapshot(snapshot) };
+    live.startOperationalStream(initialRevision);
+  };
+  const unmountRoot = controller.componentWillUnmount.bind(controller);
+  controller.componentWillUnmount = () => {
+    live.componentWillUnmount();
+    unmountRoot();
+  };
+  for (const method of ['renderVals', 'viewContext', 'applyOperationalSnapshot', 'startOperationalStream', 'componentWillUnmount', 'resolveVocabulary']) {
+    assert.equal(typeof controller[method], 'function', `dashboard façade is missing ${method}`);
+  }
+  return controller;
 }
 
 function exchangeSubjectFixture() {

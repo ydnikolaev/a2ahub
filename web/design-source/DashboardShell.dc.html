@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<sc-if value="{{ isTop }}" hint-placeholder-val="{{ true }}">
+<header class="a2a-dashboard-shell-header" style="position:sticky; top:0; z-index:60; background:var(--surface);">
+    <div class="a2a-topbar" style="width:min(1240px, 100% - 56px); margin:0 auto; padding:14px 0; display:flex; align-items:flex-start; gap:16px; flex-wrap:nowrap; align-items:center;">
+      <span class="a2a-topbar-main" style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:14px; flex-wrap:nowrap;">
+      <button type="button" onClick="{{ goOverview }}" aria-label="{{ backOverviewLabel }}" style="font-family:'IBM Plex Mono',monospace; font-size:18px; font-weight:600; color:var(--text); background:transparent; border:0; padding:0; cursor:pointer; flex:0 0 auto;">a2a<span style="color:var(--logo-dim);">hub</span></button>
+      <span class="a2a-self-chip" style="flex:0 1 auto; min-width:0; display:flex; align-items:center; gap:8px; background:var(--canvas); border-radius:var(--radius-chip); padding:5px 12px 5px 6px; font-size:15px;">
+        <span style="flex:0 0 auto; width:26px; height:26px; border-radius:99px; background:var(--teal-solid); color:var(--on-solid); display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600;">{{ selfMono }}</span>
+        <span style="min-width:0; color:var(--body); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ selfLine }}</span>
+      </span>
+      <nav class="a2a-topnav" ref="{{ navRef }}" aria-label="{{ viewsLabel }}" style="flex:1 1 0; min-width:0; display:flex; align-items:center; gap:2px; font-size:16px; flex-wrap:nowrap;">
+        <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="8">
+          <button type="button" onClick="{{ t.go }}" aria-current="{{ t.current }}" style="{{ t.style }}">{{ t.label }}</button>
+        </sc-for>
+        <sc-if value="{{ hasMoreTabs }}" hint-placeholder-val="{{ false }}">
+          <span style="position:relative; flex:0 0 auto;">
+            <button type="button" onClick="{{ toggleMore }}" aria-expanded="{{ moreExpanded }}" style="{{ moreBtnStyle }}"><span>{{ moreLabel }}</span><dc-import name="DisclosureIcon" expanded="{{ moreOpen }}" hint-size="18px,18px"></dc-import></button>
+            <sc-if value="{{ moreOpen }}" hint-placeholder-val="{{ false }}">
+              <span style="position:absolute; top:calc(100% + 6px); left:0; z-index:95; min-width:210px; background:var(--surface); border-radius:12px; padding:8px; box-shadow:0 8px 24px rgba(0,0,0,.22); display:flex; flex-direction:column; gap:2px;">
+                <sc-for list="{{ moreTabs }}" as="m" hint-placeholder-count="3">
+                  <button type="button" onClick="{{ m.go }}" style="{{ m.style }}">{{ m.label }}</button>
+                </sc-for>
+              </span>
+            </sc-if>
+          </span>
+        </sc-if>
+      </nav>
+      </span>
+      <span class="a2a-topbar-actions" style="flex:0 0 auto; display:flex; align-items:center; gap:8px;">
+        <span role="group" aria-label="{{ localeGroupLabel }}" style="display:flex; align-items:center; gap:2px; min-height:38px; box-sizing:border-box; background:var(--canvas); border-radius:var(--radius-control); padding:3px;">
+          <button type="button" onClick="{{ setEN }}" aria-pressed="{{ enPressed }}" style="{{ enLocaleStyle }}">EN</button>
+          <button type="button" onClick="{{ setRU }}" aria-pressed="{{ ruPressed }}" style="{{ ruLocaleStyle }}">RU</button>
+        </span>
+        <button type="button" onClick="{{ toggleTheme }}" aria-pressed="{{ themePressed }}" aria-label="{{ themeLabel }}" title="{{ themeLabel }}" style="{{ themeIconStyle }}">
+          <sc-if value="{{ themeLight }}" hint-placeholder-val="{{ true }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg></sc-if>
+          <sc-if value="{{ themeDark }}" hint-placeholder-val="{{ false }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path></svg></sc-if>
+        </button>
+      </span>
+    </div>
+  </header>
+
+  <sc-if value="{{ updateRequired }}" hint-placeholder-val="{{ false }}">
+    <div class="a2a-dashboard-update-banner" role="region" aria-label="{{ bannerLabel }}" style="background:var(--attention-tint); padding:13px 0;">
+      <div style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0; display:flex; align-items:flex-start; gap:14px; flex-wrap:nowrap; font-size:16px; color:var(--attention-ink);">
+        <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:14px; flex-wrap:wrap; row-gap:8px;">
+          <span style="flex:0 0 auto; font-size:15px; font-weight:600; color:var(--on-solid); background:var(--ochre); border-radius:8px; padding:5px 12px;">{{ bannerLabel }}</span>
+          <span>{{ bannerText }}</span>
+        </span>
+        <button type="button" onClick="{{ goBanner }}" style="flex:0 0 auto; font-family:'Onest',sans-serif; font-size:16px; font-weight:600; color:var(--teal-ink); background:transparent; border:0; cursor:pointer; white-space:nowrap;">{{ bannerAction }}</button>
+      </div>
+    </div>
+  </sc-if>
+</sc-if>
+<sc-if value="{{ isPage }}" hint-placeholder-val="{{ false }}">
+<sc-if value="{{ hasError }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:640px; background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 3px rgba(33,30,23,.08);">
+        <h1 style="margin:0 0 10px; font-size:24px; font-weight:600; color:var(--blocking-ink);">{{ errorTitle }}</h1>
+        <p style="margin:0 0 10px; font-size:17px; line-height:1.6; color:var(--body);">{{ errorText }}</p>
+        <p style="margin:0; font-size:16px; line-height:1.6; color:var(--muted);">{{ errorPrefix }} <span style="font-family:'IBM Plex Mono',monospace; font-size:15px;">demo-data.json</span>{{ errorSuffix }}</p>
+      </div>
+    </sc-if>
+
+    <!-- ONE page header for every view: the icon, the name, the description and
+         — where the scope is switchable — the space switcher. It used to be
+         repeated inside each section, which is how nine screens ended up with
+         four different amounts of air above and below their own titles. -->
+    <sc-if value="{{ hasPageHeader }}" hint-placeholder-val="{{ true }}">
+      <header class="a2a-dashboard-page-header" style="display:flex; align-items:flex-start; gap:20px; flex-wrap:wrap; row-gap:14px; padding:6px 0 34px;">
+        <div style="flex:1 1 460px; min-width:0;">
+          <h1 style="display:flex; align-items:center; gap:13px; margin:0 0 12px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">
+            <span aria-hidden="true" style="{{ pageIconStyle }}">
+              <sc-if value="{{ isOverview }}" hint-placeholder-val="{{ true }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"></path><path d="M4 6h.01"></path><path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"></path><path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"></path><path d="M12 18h.01"></path><path d="M17.99 11.66A6 6 0 0 1 15.77 16.67"></path><circle cx="12" cy="12" r="2"></circle><path d="m13.41 10.59 5.66-5.66"></path></svg></sc-if>
+              <sc-if value="{{ isWork }}" hint-placeholder-val="{{ false }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9.5C2 7 4 5 6.5 5H18c2.2 0 4 1.8 4 4v8Z"></path><polyline points="15,9 18,9 18,11"></polyline><path d="M6.5 5C9 5 11 7 11 9.5V17a2 2 0 0 1-2 2"></path><line x1="6" x2="7" y1="10" y2="10"></line></svg></sc-if>
+              <sc-if value="{{ isThreads }}" hint-placeholder-val="{{ false }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m10.586 5.414-5.172 5.172"></path><path d="m18.586 13.414-5.172 5.172"></path><path d="M6 12h12"></path><circle cx="12" cy="20" r="2"></circle><circle cx="12" cy="4" r="2"></circle><circle cx="20" cy="12" r="2"></circle><circle cx="4" cy="12" r="2"></circle></svg></sc-if>
+              <sc-if value="{{ isContracts }}" hint-placeholder-val="{{ false }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17 2 2a1 1 0 1 0 3-3"></path><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"></path><path d="m21 3 1 11h-2"></path><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"></path><path d="M3 4h8"></path></svg></sc-if>
+              <sc-if value="{{ isNetwork }}" hint-placeholder-val="{{ false }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"></rect><rect x="2" y="16" width="6" height="6" rx="1"></rect><rect x="9" y="2" width="6" height="6" rx="1"></rect><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"></path><path d="M12 12V8"></path></svg></sc-if>
+              <sc-if value="{{ isSpaces }}" hint-placeholder-val="{{ false }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.341 6.484A10 10 0 0 1 10.266 21.85"></path><path d="M3.659 17.516A10 10 0 0 1 13.74 2.152"></path><circle cx="12" cy="12" r="3"></circle><circle cx="19" cy="5" r="2"></circle><circle cx="5" cy="19" r="2"></circle></svg></sc-if>
+              <sc-if value="{{ isVersions }}" hint-placeholder-val="{{ false }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13v8"></path><path d="M12 3v3"></path><path d="M18.172 6a2 2 0 0 1 1.414.586l2.06 2.06a1.207 1.207 0 0 1 0 1.708l-2.06 2.06a2 2 0 0 1-1.414.586H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z"></path></svg></sc-if>
+              <sc-if value="{{ isDocs }}" hint-placeholder-val="{{ false }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v16"></path><path d="M16 13h2"></path><path d="M16 9h2"></path><path d="M20.001 19A2 2 0 0022 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"></path><path d="M6 13h2"></path><path d="M6 9h2"></path></svg></sc-if>
+              <sc-if value="{{ isGuide }}" hint-placeholder-val="{{ false }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"></path></svg></sc-if>
+</span>
+            <span>{{ pageTitle }}</span>
+          </h1>
+          <p style="margin:0; font-size:18px; line-height:1.6; color:var(--body); max-width:760px;">{{ pageSub }}</p>
+          <sc-if value="{{ hasPageLink }}" hint-placeholder-val="{{ false }}">
+            <!-- The Overview queue holds only what needs a person. The rest of
+                 the inbox is one link away, named by its own count. -->
+            <button type="button" onClick="{{ goWork }}" style="margin-top:12px; padding:0; border:0; background:transparent; cursor:pointer; text-align:left; font-family:'Onest',sans-serif; font-size:16px; font-weight:600; color:var(--teal-ink);">{{ ovRestText }} →</button>
+          </sc-if>
+        </div>
+        <sc-if value="{{ hasSpaceSwitcher }}" hint-placeholder-val="{{ true }}">
+          <dc-import name="SpaceSwitcher" det="{{ spaceSwitcher }}" hint-size="220px,42px"></dc-import>
+        </sc-if>
+      </header>
+    </sc-if>
+
+</sc-if>
+<sc-if value="{{ isFooter }}" hint-placeholder-val="{{ false }}">
+  <footer class="a2a-dashboard-footer" style="background:var(--surface); padding:20px 0 30px;">
+    <div style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0; display:flex; align-items:flex-start; gap:22px; flex-wrap:nowrap; font-size:15px; color:var(--muted);">
+      <span style="flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:5px;">
+        <span style="display:flex; align-items:center; gap:8px; color:var(--body);"><dc-import name="FreshnessDot" stale="{{ footerStale }}" age="{{ footerAge }}" hint="{{ footerFreshnessHint }}" compact="{{ true }}" hint-size="9px,9px"></dc-import>{{ snapshotLine }}</span>
+        <span>{{ footerLine }}</span>
+      </span>
+      <span style="flex:0 0 auto; display:flex; gap:16px; flex-wrap:wrap; row-gap:8px; justify-content:flex-end;">
+        <a href="https://ydnikolaev.github.io/a2ahub/" style="text-decoration:none; font-family:'IBM Plex Mono',monospace; font-size:14px;">ydnikolaev.github.io/a2ahub</a>
+        <!-- Documentation is the in-file Docs view, not a network round trip:
+             the whole corpus is already embedded in this HTML. -->
+        <button type="button" onClick="{{ goDocs }}" style="padding:0; border:0; background:transparent; cursor:pointer; font-family:'Onest',sans-serif; font-size:15px; color:var(--teal-ink);">{{ documentationLabel }}</button>
+        <a href="https://github.com/ydnikolaev/a2ahub" style="text-decoration:none;">GitHub</a>
+      </span>
+    </div>
+  </footer>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1240,&quot;height&quot;:900},&quot;ctx&quot;:{&quot;editor&quot;:&quot;object&quot;,&quot;default&quot;:{},&quot;tsType&quot;:&quot;object&quot;}}">
+const DASHBOARD_EN = {
+    views:["Overview","Exchange","Threads","Contracts","Map","Spaces","Versions","Docs","Guide"],
+    backOverview:"Back to Overview", viewsLabel:"Views", more:"More", localeGroup:"Interface language", space:"Space",
+    errorTitle:"Could not read demo data", errorPrefix:"The dashboard is a read-only projection of", errorSuffix:". Missing facts are never inferred.",
+    openWork:"Open Exchange", direction:"Show", typeFilter:"Type",
+    spaceHealth:"Space health", spaceHealthTitle:"How current this page is",
+    spaceHealthSub:"Everything on these screens is read from a local copy of each space, taken once when this file was written. This is when that copy was last refreshed, and what each space expects of your binary.",
+    spaceHealthFlagsTitle:"Worth a look", spaceHealthFlagsText:"Recorded by committed events, or a problem reading the local copy. A flag is a reason to look, not a verdict.",
+    spaceHealthFooter:"Nothing here is inferred: an unreadable space is reported as unreadable, never as empty.",
+    spaceHealthMore:"Open Spaces", spaceHealthClose:"Close",
+    work:"Exchange", threads:"Threads", threadMissingTitle:"No full reconstruction is available for this thread", threadMissingText:"This row comes from the summary; only some demo threads include a complete causal transcript.",
+    whoseMove:"Whose move", whoseMoveText:"State and allowed transitions are derived from the events below.", causalTimeline:"Thread history", newestFirst:"newest first", opensChain:"opens the chain", subjectPrefix:"on", threadFlags:"Consistency, protocol and read evidence",
+    contracts:"Contracts and their versions", codeBacked:"code-backed", consumerLines:"Registered consumer lines", versionWindow:"Live version window", provenance:"Provenance and schema", codeBindingPrefix:"A code binding records the generator and source digest. Whether the current bytes still match is", notEvaluated:"not evaluated", codeBindingSuffix:" in this static read.",
+    network:"Who depends on whom", networkSub:"A solid line means one system depends on a contract another one publishes. A dashed line means an exchange between two systems is still open. Click any line or system to see the versions, the pinned lines and the open documents behind it.", exchangeMap:"Exchange map",
+    spaces:"Spaces", spacesSub:"A space is the shared repository systems exchange documents through. This is how fresh your copy of each one is, and which a2a version it wants before it accepts what you write.", freshness:"Freshness", participants:"Participants", writerFloor:"Writer floor", pinnedWorkflow:"Pinned workflow", revision:"Revision",
+    limitsTitle:"What this snapshot did not check", limitsSub:"This file was written once, from the local cache. Anything it could not read, or deliberately did not evaluate, is named here, so an empty space never passes for a clean result.",
+    emptyLimitsTitle:"Nothing to qualify", emptyLimitsText:"Every connected space was readable when this snapshot was written, and no flag was raised. The numbers above are the whole picture.",
+    emptySpacesTitle:"No spaces connected", emptySpacesText:"A space is the shared repository two systems exchange documents through. Connect one and this table fills in.",
+    integrityFlags:"Protocol and read flags", integrityFlagsText:"Facts recorded by committed events, or problems reading the local cache index. A flag is evidence, not a verdict.",
+    degradedReads:"Degraded reads", degradedReadsText:"These spaces answered from an older mirror revision, or not at all. Their counts are floors, never totals.",
+    notEvaluatedTitle:"What this read deliberately did not check", notEvaluatedText:"Not failures. Questions a static file honestly cannot answer, said out loud instead of shown as a zero or a green tick.",
+    versions:"Versions", localBinary:"Local binary", installed:"installed", latest:"latest", updateCandidate:"Update candidate", impact:"impact", publishedReleases:"Published releases in this snapshot", expandedNotes:"Expanded notes cover",
+    guide:"How a2ahub fits together", guideSub:"Document types, statuses, the dashboard's reading order, and a direct way to improve the product. Everything on this page is written for people first.",
+    lifecycleTitle:"Lifecycle is events, not an editable status", lifecycleText:"Every transition is validated before it is recorded. Both sides fold the same history into the same state.", lifecycleFoot:"This is a document status, not a release marker. Responses, blocks, disputes, cancellations, and supersessions remain separate immutable events with a validated actor.",
+    artifactTypesTitle:"Eight document types", artifactTypesText:"One file carries one intent. The protocol code remains a quick visual anchor and a human name is always shown beside it.", readingGuide:"How to read the dashboard",
+    docs:"Documentation", docsSub:"The same manual the agent reads is available here without a network connection. Sections and search are on the left; the exact source text is on the right.",
+    docSearch:"Search the docs", docSearchPlaceholder:"thread, contract, retire…", docNoMatch:"No section title, group or source path matches that search.",
+    docEmbedded:"available offline", emptyDocsTitle:"No documentation embedded", emptyDocsText:"This snapshot was written without the doc corpus. Reinstall the skill and render the dashboard again.",
+    loadingDoc:"Loading the embedded document…",
+    feedbackTitle:"Have an idea? Let’s make a2ahub better", feedbackText:"Bugs, rough edges and feature ideas are welcome. Give the context to your agent: it knows the feedback format, checks for duplicates and files a safe, actionable report.", githubRepo:"GitHub repository", publicHome:"Public home", designSystem:"Design system v4",
+    readingRows:[["Overview and Work","Human actions ordered by consequence and next owner. Priority, literal blocking, a pending approval, a deadline, and a stale snapshot remain five distinct signals."],["Threads","One intent per chain, in committed order where Git history exists and explicitly labelled declared order where it does not."],["Contracts and Map","Drift belongs to a consumer's pinned major line. A provider may be healthy while a consumer resolves nothing."],["Integrity and Versions","The limits of this snapshot and the independent compatibility axes that must not be inferred from one another."]]
+};
+
+const DASHBOARD_RU = {
+    views:["Обзор","Обмен","Треды","Контракты","Карта","Спейсы","Версии","Доки","Справка"],
+    backOverview:"Вернуться к обзору", viewsLabel:"Разделы", more:"Ещё", localeGroup:"Язык интерфейса", space:"Спейс",
+    errorTitle:"Не удалось прочитать данные", errorPrefix:"Дашборд только читает и показывает", errorSuffix:". Чего в файле нет, того он не придумывает.",
+    openWork:"Открыть обмен", direction:"Показать", typeFilter:"Тип",
+    spaceHealth:"Состояние спейсов", spaceHealthTitle:"Насколько свежее то, что вы читаете",
+    spaceHealthSub:"Всё на этих экранах взято из локальной копии спейса, снятой один раз, когда собирался этот файл. Здесь видно, когда копию последний раз обновляли и чего каждый спейс ждёт от вашего бинарника.",
+    spaceHealthFlagsTitle:"На что стоит посмотреть", spaceHealthFlagsText:"Сигналы из событий и локального снимка, которые стоит проверить. Они не обязательно означают ошибку.",
+    spaceHealthFooter:"Ничего не додумывается: если спейс не прочитался, так и написано, а не «ноль».",
+    spaceHealthMore:"Открыть спейсы", spaceHealthClose:"Закрыть",
+    work:"Обмен", threads:"Треды", threadMissingTitle:"Этот тред не удалось восстановить целиком", threadMissingText:"Есть только краткая сводка. В снимок не попала полная история: кто что сделал и в каком порядке.",
+    whoseMove:"Чей сейчас ход", whoseMoveText:"Посчитано по событиям ниже: что уже произошло и что после этого разрешено сделать.", causalTimeline:"История треда", newestFirst:"новое сверху", opensChain:"с этого всё началось", subjectPrefix:"для", threadFlags:"Что пошло не так в этом треде",
+    contracts:"Контракты и их версии", codeBacked:"собран из кода", consumerLines:"Кто на нём сидит", versionWindow:"Какие версии живы", provenance:"Откуда взялась схема", codeBindingPrefix:"Записано, чем и из какого исходника собран дескриптор. А вот совпадает ли он с кодом прямо сейчас,", notEvaluated:"не проверялось", codeBindingSuffix:": этот файл собран один раз и в код не заглядывает.",
+    network:"Кто от кого зависит", networkSub:"Сплошная линия значит, что одна система зависит от контракта, который публикует другая. Пунктир значит, что между двумя системами есть незакрытый обмен. Нажмите на линию или на систему, чтобы увидеть версии, закреплённые линии и открытые документы.", exchangeMap:"Карта обмена",
+    spaces:"Спейсы", spacesSub:"Системы обмениваются документами через общий репозиторий, он и называется спейсом. Здесь видно, насколько свежая у вас копия каждого и какую версию a2a он ждёт, чтобы принять вашу запись.", freshness:"Свежесть", participants:"Участники", writerFloor:"Минимум для записи", pinnedWorkflow:"Версия проверки в CI", revision:"Ревизия",
+    limitsTitle:"Что этот снимок не проверял", limitsSub:"Файл собран один раз из локального кэша. Всё, что не удалось прочитать или что мы намеренно не проверяли, названо здесь, чтобы пустое место не сошло за «всё в порядке».",
+    emptyLimitsTitle:"Уточнять нечего", emptyLimitsText:"Когда собирался снимок, все подключённые спейсы читались, замечаний не было. Цифры выше и есть вся картина.",
+    emptySpacesTitle:"Спейсы не подключены", emptySpacesText:"Спейс работает как общий репозиторий, через который две системы обмениваются документами. Подключите спейс, и таблица заполнится.",
+    integrityFlags:"Замечания", integrityFlagsText:"Сигналы из событий и локального снимка, которые стоит проверить. Они не обязательно означают ошибку.",
+    degradedReads:"Прочитано не полностью", degradedReadsText:"Эти спейсы ответили из устаревшей копии или не ответили вовсе. Их цифры значат «не меньше чем», а не точное число.",
+    notEvaluatedTitle:"Что мы намеренно не проверяли", notEvaluatedText:"Это не сбои. Это вопросы, на которые статический файл честно не отвечает и говорит об этом прямо, вместо того чтобы показать ноль или зелёную галочку.",
+    versions:"Версии", localBinary:"Ваш бинарник", installed:"стоит сейчас", latest:"последняя", updateCandidate:"Есть обновление", impact:"влияние", publishedReleases:"Выпуски", expandedNotes:"Подробности по",
+    guide:"Как устроен a2ahub", guideSub:"Типы документов, статусы, порядок чтения дашборда и прямой способ сделать продукт лучше. Эта страница сначала говорит с человеком, а уже потом — о протоколе.",
+    lifecycleTitle:"Статус не редактируется, он складывается из событий", lifecycleText:"Каждый переход проверяется до того, как попадёт в репозиторий. Обе стороны собирают из одной и той же истории одно и то же состояние.", lifecycleFoot:"Это статус документа, а не отметка о релизе. Ответы, блокировки, споры, отмены и замены не затираются: каждое остаётся отдельным событием с проверенным автором.",
+    artifactTypesTitle:"Восемь типов документов", artifactTypesText:"Один файл, одна мысль. Двухбуквенный код удобен глазу, но рядом всегда стоит нормальное название.", readingGuide:"Как читать дашборд",
+    docs:"Документация", docsSub:"То же руководство, что читает агент, доступно здесь без подключения к сети. Слева разделы и поиск, справа исходный текст.",
+    docSearch:"Поиск по докам", docSearchPlaceholder:"тред, контракт, вывод версии…", docNoMatch:"Ни одно название раздела, группа или путь к файлу не совпали с запросом.",
+    docEmbedded:"доступно без интернета", emptyDocsTitle:"Документация не вшита", emptyDocsText:"Этот снимок собран без корпуса документации. Переустановите навык и соберите дашборд заново.",
+    loadingDoc:"Загружается встроенный документ…",
+    feedbackTitle:"Есть идея? Давайте сделаем a2ahub лучше", feedbackText:"Баги, шероховатости и фичер-реквесты здесь действительно ждут. Передайте контекст своему агенту: он знает формат, проверит дубликаты и отправит безопасный, полезный отчёт.", githubRepo:"Репозиторий на GitHub", publicHome:"Главная сайта", designSystem:"Дизайн-система",
+    readingRows:[["Обзор и работа","Сверху то, где цена ошибки выше. Приоритет, блокировка, ожидание вашего согласования, срок и устаревшие данные остаются пятью разными сигналами, и они намеренно не слиты в один."],["Треды","Одна задача, один тред. Порядок берётся из коммитов Git; если истории нет, используется время, указанное автором, и это честно помечается."],["Контракты и карта","Расхождение считается для конкретного потребителя и той версии, которую он закрепил. У поставщика может быть всё хорошо ровно тогда, когда у потребителя не работает ничего."],["Спейсы и версии","Пределы этого снимка и три версии, которые нельзя выводить одну из другой."]]
+};
+
+const DASHBOARD_I18N = { en: DASHBOARD_EN, ru: DASHBOARD_RU };
+
+const VIEW_IDS = ["overview","work","threads","contracts","network","spaces","versions","docs","guide"];
+
+function ruPlural(n, one, few, many) {
+  const mod10 = n % 10, mod100 = n % 100;
+  const word = (mod10 === 1 && mod100 !== 11) ? one : ((mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) ? few : many);
+  return n + " " + word;
+}
+
+function mono(s) { return String(s || "?").slice(0, 2).toUpperCase(); }
+
+function monoCodes(names) {
+  const out = {}, used = new Set();
+  names.slice().sort().forEach(n => {
+    const s = String(n || "?");
+    let code = (s[0] + (s[1] || "")).toUpperCase();
+    for (let i = 2; used.has(code) && i < s.length; i++) code = (s[0] + s[i]).toUpperCase();
+    used.add(code);
+    out[n] = code;
+  });
+  return out;
+}
+
+function when(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  const p = (n) => String(n).padStart(2, "0");
+  return p(d.getUTCDate()) + "." + p(d.getUTCMonth() + 1) + "." + d.getUTCFullYear() + " " + p(d.getUTCHours()) + ":" + p(d.getUTCMinutes());
+}
+
+class Component extends DCLogic {
+  syncContext() {
+    const ctx = this.props && this.props.ctx || {};
+    this.state = Object.assign({ data: ctx.data || null, locale: ctx.locale === "ru" ? "ru" : "en" }, ctx.ui || {});
+    return ctx;
+  }
+
+  setState(update) {
+    const ctx = this.props && this.props.ctx || {};
+    const current = Object.assign({}, this.state || {}, { data: ctx.data || null, locale: ctx.locale === "ru" ? "ru" : "en" }, ctx.ui || {});
+    const patch = typeof update === "function" ? update(current) : update;
+    this.state = Object.assign({}, current, patch || {});
+    if (ctx.actions && ctx.actions.patch) ctx.actions.patch(patch || {});
+  }
+
+  go(view, extra) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.navigate) actions.navigate(view, extra); }
+  closeContractFile() { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.closeContractFile) actions.closeContractFile(); }
+  applyTheme(theme) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setTheme) actions.setTheme(theme); }
+  applyLocale(locale) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setLocale) actions.setLocale(locale); }
+  copy(text) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.copy) actions.copy(text); }
+
+  inScope(space) { return this.state.space === "all" || space === this.state.space; }
+
+  localeStyle(active) {
+    return "display:flex; align-items:center; justify-content:center; height:32px; box-sizing:border-box; font-family:'Onest',sans-serif; font-size:13px; font-weight:600; border:0; border-radius:var(--radius-inner); padding:0 8px; cursor:pointer; " +
+      (active ? "background:var(--surface); color:var(--text); box-shadow:0 1px 2px rgba(33,30,23,.14);" : "background:transparent; color:var(--muted);");
+  }
+
+  navLayout() {
+    // width per item is estimated from the label (Onest 16px ≈ 8.4px/char + 24px padding + 2px gap)
+    const labels = DASHBOARD_I18N[this.state.locale].views;
+    const items = VIEW_IDS.map((id, i) => ({ id, label: labels[i], w: Math.round(labels[i].length * 8.4) + 26 }));
+    if (window.innerWidth <= 700) {
+      const active = items.find(t => t.id === this.state.view) || items[0];
+      return { vis:[active], rest:items.filter(t => t !== active) };
+    }
+    const avail = this.state.navW;
+    const total = items.reduce((t, i) => t + i.w, 0);
+    if (!avail) {
+      const active = items.find(t => t.id === this.state.view) || items[0];
+      return { vis:[active], rest:items.filter(t => t !== active) };
+    }
+    if (total <= avail) return { vis: items, rest: [] };
+    const budget = avail - 92;
+    const vis = [], rest = [];
+    let used = 0;
+    for (let i = 0; i < items.length; i++) {
+      if (!rest.length && used + items[i].w <= budget) { vis.push(items[i]); used += items[i].w; }
+      else rest.push(items[i]);
+    }
+    if (!vis.length) {
+      const act = items.find(t => t.id === this.state.view) || items[0];
+      vis.push(act); rest.splice(rest.indexOf(act), 1);
+    }
+    const activeIdx = rest.findIndex(t => t.id === this.state.view);
+    if (activeIdx > -1) {
+      const swapOut = vis.pop();
+      vis.push(rest[activeIdx]);
+      rest.splice(activeIdx, 1, swapOut);
+      rest.sort((a, b) => items.indexOf(a) - items.indexOf(b));
+    }
+    return { vis, rest };
+  }
+
+  tabStyle(active) {
+    return "font-family:'Onest',sans-serif; font-size:16px; line-height:1.4; font-weight:600; border:0; cursor:pointer; white-space:nowrap; flex:0 0 auto; padding:9px 12px; border-radius:8px; " +
+      (active ? "background:var(--primary); color:var(--on-primary);" : "background:transparent; color:var(--body);");
+  }
+
+  renderVals() {
+    const ctx = this.syncContext();
+    let d = ctx.data;
+    const s = this.state;
+    const ui = ctx.ui || {};
+    const ru = ctx.locale === "ru";
+    const c = DASHBOARD_I18N[ru ? "ru" : "en"];
+    if (!d && "DashboardShell" !== "GuideView") {
+      if ("DashboardShell" !== "DashboardShell") return {};
+      d = { spaces:[], nodes:[], inbox:[], outbox:[], archive:[], contracts:[], contractEdges:[], flags:[], meta:{}, tooling:{}, generatedAt:"", self:"" };
+    }
+    const nav = this.navLayout();
+    const scopedSpaces = d.spaces.filter(x => this.inScope(x.id));
+    const footerStale = scopedSpaces.some(x => x.stale || !x.readable);
+    const footerFreshnessHint = footerStale
+      ? (ru ? "В снимке есть устаревшая или нечитаемая локальная копия спейса. Данные доступны, но уже могли измениться в репозитории. Запустите a2a sync и соберите дашборд заново." : "This snapshot includes a stale or unreadable local space copy. Data remains available, but the repository may already differ. Run a2a sync and rebuild the dashboard.")
+      : (ru ? "Все выбранные спейсы прочитаны из актуальных локальных копий. Точка станет жёлтой, если хотя бы одна копия устареет или перестанет читаться." : "Every selected space was read from a current local copy. The dot turns amber if any copy becomes stale or unreadable.");
+    const scopedInbox = d.inbox.filter(i => this.inScope(i.space));
+    const scopedOutbox = d.outbox.filter(i => this.inScope(i.space));
+    const needsYou = scopedInbox.filter(i => i.blocking || i.gatePending || i.overdue);
+    const restCount = scopedInbox.length - needsYou.length;
+    const flags = d.flags.filter(f => this.inScope(f.space));
+    const offCurrent = d.contractEdges.filter(e => this.inScope(e.space) && e.drift !== "current").length;
+    const scopedEdges = d.contractEdges.filter(e => this.inScope(e.space)).length;
+    const faceStyle = (i, kind, onDark) => "flex:0 0 22px; width:22px; height:22px; border-radius:99px; display:flex; align-items:center; justify-content:center; line-height:1; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:10px; font-weight:600; margin-left:" + (i ? "3px" : "0") + "; box-shadow:inset 0 0 0 1px " + (onDark ? "var(--primary)" : "var(--canvas)") + "; " +
+      (kind === "self" ? "background:var(--teal-solid); color:var(--on-solid);" : kind === "left" ? "background:var(--surface); color:var(--muted);" : "background:var(--border); color:var(--body);");
+    const facesFor = (spaceId, active) => {
+      const members = spaceId === "all" ? d.nodes : d.nodes.filter(n => (n.spaces || []).includes(spaceId));
+      const ordered = members.slice().sort((a, b) => (b.system === d.self ? 1 : 0) - (a.system === d.self ? 1 : 0) || a.system.localeCompare(b.system));
+      const shown = ordered.slice(0, 3).map((n, i) => ({
+        mono: monoCodes(d.nodes.map(x => x.system))[n.system],
+        title: n.system + " · " + n.org + (n.status === "left" ? (ru ? " · ушла из спейса" : " · left the space") : ""),
+        style: faceStyle(i, n.system === d.self ? "self" : (n.status === "left" ? "left" : "active"), active)
+      }));
+      const rest = ordered.length - shown.length;
+      if (rest > 0) shown.push({ mono: "+" + rest, title: ru ? ("Ещё " + rest + " " + (rest === 1 ? "участник" : rest < 5 ? "участника" : "участников")) : rest + (rest === 1 ? " more participant" : " more participants"), style: faceStyle(shown.length, "rest", active) });
+      return shown;
+    };
+    const spaceOptions = [{ id: "all", label: ru ? "Все спейсы" : "All spaces" }].concat(d.spaces.map(x => ({ id: x.id, label: x.id })))
+      .map(x => {
+        const selected = s.space === x.id;
+        return {
+          label: x.label, selected,
+          faces: x.id === "all" ? [] : facesFor(x.id, false),
+          go: () => this.setState({ space: x.id, ovSel: "", workSel: "", threadSel: "", threadSpace: "", conSel: "", conVersion: "", contractFile: null })
+        };
+      });
+    const tooling = d.tooling || {};
+    const values = {
+      hasError:!!s.error,
+      errorText: s.error === "invalid"
+        ? (ru ? "Файл нашёлся, но в нём нет meta.schema «a2a-design-demo/v4» и meta.synthetic: true. Мы показываем это как есть, а не пытаемся починить." : "The fixture was found but does not declare meta.schema “a2a-design-demo/v4” with meta.synthetic: true. The inconsistency is reported instead of repaired.")
+        : (s.error ? (ru ? "Файл не удалось загрузить (" + s.error.slice(5) + "). Недоступны и demo-data.json, и встроенная копия demo-data.js." : "The fixture could not be loaded (" + s.error.slice(5) + "). Neither demo-data.json nor the embedded demo-data.js copy is reachable.") : ""),
+      backOverviewLabel:c.backOverview,
+      viewsLabel:c.viewsLabel,
+      moreLabel:c.more,
+      localeGroupLabel:c.localeGroup,
+      errorTitle:c.errorTitle,
+      errorPrefix:c.errorPrefix,
+      errorSuffix:c.errorSuffix,
+      hasPageHeader: !!d && !s.error,
+      pageTitle: { overview:c.views[0], work:c.work, threads:c.threads, contracts:c.contracts, network:c.network, spaces:c.spaces, versions:c.versions, docs:c.docs, guide:c.guide }[s.view] || "",
+      hasPageLink: !!d && s.view === "overview",
+      hasSpaceSwitcher: !!d && ["overview","work","threads","contracts","network","spaces"].indexOf(s.view) > -1,
+      pageIconStyle: "flex:0 0 auto; display:flex; align-items:center; justify-content:center; width:42px; height:42px; border-radius:12px; background:var(--teal-tint); color:var(--teal-ink);",
+      networkSub:c.networkSub,
+      spacesSub:c.spacesSub,
+      documentationLabel:c.docs,
+      isOverview: !!d && s.view === "overview",
+      isWork: !!d && s.view === "work",
+      isThreads: !!d && s.view === "threads",
+      isContracts: !!d && s.view === "contracts",
+      isNetwork: !!d && s.view === "network",
+      isSpaces: !!d && s.view === "spaces",
+      isVersions: !!d && s.view === "versions",
+      isDocs: !!d && s.view === "docs",
+      isGuide: !!d && s.view === "guide",
+      navRef: (n) => { this.navNode = n; if (n && this.measureNav) setTimeout(this.measureNav, 0); },
+      tabs: nav.vis.map(t => ({ label: t.label, current: s.view === t.id ? "page" : null, style: this.tabStyle(s.view === t.id), go: () => this.go(t.id, { more: false }) })),
+      hasMoreTabs: nav.rest.length > 0,
+      moreTabs: nav.rest.map(t => ({
+        label: t.label,
+        style: "font-family:'Onest',sans-serif; font-size:15px; font-weight:600; text-align:left; border:0; cursor:pointer; padding:9px 10px; border-radius:8px; " +
+          (s.view === t.id ? "background:var(--canvas); color:var(--text);" : "background:transparent; color:var(--body);"),
+        go: () => this.go(t.id, { more: false })
+      })),
+      moreOpen: s.more,
+      moreExpanded: s.more ? "true" : "false",
+      moreBtnStyle: this.tabStyle(false) + " display:inline-flex; align-items:center; gap:5px;" + (s.more ? " background:var(--canvas);" : ""),
+      toggleMore: () => this.setState(x => ({ more: !x.more, lang: false })),
+      goOverview: () => this.go("overview", { more: false }),
+      goWork: () => this.go("work", { workTab: "incoming", workState: "open", workType: "all", workDue: false }),
+      goDocs: () => this.go("docs"),
+      themeLight: this.state.theme !== "dark",
+      themeDark: this.state.theme === "dark",
+      themeLabel: this.state.theme === "dark" ? (ru ? "Светлая тема" : "Light theme") : (ru ? "Тёмная тема" : "Dark theme"),
+      themePressed: this.state.theme === "dark" ? "true" : "false",
+      themeIconStyle: "display:flex; align-items:center; justify-content:center; width:38px; height:38px; box-sizing:border-box; font-size:17px; border:0; border-radius:var(--radius-control); cursor:pointer; " +
+        (this.state.theme === "dark" ? "background:var(--inverse-3); color:var(--on-inverse);" : "background:var(--canvas); color:var(--text);"),
+      toggleTheme: () => this.applyTheme(this.state.theme === "dark" ? "light" : "dark"),
+      enPressed:s.locale === "en" ? "true" : "false",
+      ruPressed:s.locale === "ru" ? "true" : "false",
+      enLocaleStyle:this.localeStyle(s.locale === "en"),
+      ruLocaleStyle:this.localeStyle(s.locale === "ru"),
+      setEN:() => this.applyLocale("en"),
+      setRU:() => this.applyLocale("ru"),
+      selfMono: mono(d.self),
+      selfLine: d.self + " · " + ((d.nodes.find(n => n.system === d.self) || {}).org || ""),
+      snapshotLine: (ru ? "Снимок " : "Snapshot ") + when(d.generatedAt) + (ru ? " · создан из локального кэша" : " · built from the local cache"),
+      footerStale,
+      footerAge: when(d.generatedAt),
+      footerFreshnessHint,
+      updateRequired: !!d.meta.synthetic || (!!tooling.updateAvailable && !!tooling.required),
+      bannerLabel: d.meta.synthetic ? (ru ? "Демо-режим" : "Demo dashboard") : (ru ? "Нужно обновление" : "Update required"),
+      bannerText: d.meta.synthetic ? (ru ? "Данные выдуманы, чтобы показать все экраны и состояния. Живых сервисов и репозиториев здесь нет." : "Synthetic data covers every screen and state; no live services or repositories are connected.") : (ru ? "Ваш бинарник " + tooling.current + " ниже минимальной версии записи " + tooling.floor + " в спейсе " + tooling.floorSpace + ". Последняя версия " + tooling.latest + ", проверено " + tooling.cacheAge + " назад." : "Local binary " + tooling.current + " is below writer floor " + tooling.floor + " in " + tooling.floorSpace + ". Latest is " + tooling.latest + "; checked " + tooling.cacheAge + " ago."),
+      bannerAction: d.meta.synthetic ? (ru ? "Про демо →" : "About the demo →") : (ru ? "Версии →" : "Versions →"),
+      goBanner: d.meta.synthetic ? () => this.go("guide") : () => this.go("versions"),
+      footerLine: (ru ? "Только чтение · без сетевых запросов · истина живёт в репозитории, а не здесь" : "Read-only projection · no network requests · not a source of truth") + (d.meta.synthetic ? (ru ? " · демо-данные, живых сервисов нет" : " · Synthetic demo data, no live services") : (d.meta.notice ? " · " + d.meta.notice : "")),
+      ovSub: (needsYou.length
+        ? (ru ? "Ваше решение нужно по " + ruPlural(needsYou.length, "документу", "документам", "документам") + ": ниже блокирующие протокольные обязательства, ожидающие вашего согласования и просроченные документы. " : "Your decision is needed on " + needsYou.length + (needsYou.length === 1 ? " document" : " documents") + ": blocking protocol obligations, pending approvals, and overdue documents appear below. ")
+        : (ru ? "Сейчас от вас ничего не ждут. " : "Nothing is waiting on you right now. ")) +
+        (scopedInbox.length + scopedOutbox.length === 0
+          ? (ru ? "В обороте сейчас ничего нет." : "Nothing is in flight right now.")
+          : (ru
+            ? "Всего в обороте " + ruPlural(scopedInbox.length, "входящий", "входящих", "входящих") + " и " + ruPlural(scopedOutbox.length, "исходящий", "исходящих", "исходящих") + "; у остальных в этом снимке нет хода протокола за человеком."
+            : scopedInbox.length + " incoming and " + scopedOutbox.length + " outgoing are in flight; the rest have no human-owned protocol move in this snapshot.")),
+      ovRestText: restCount
+        ? (ru ? c.openWork + ": ещё " + ruPlural(restCount, "входящий документ", "входящих документа", "входящих документов") + ", никого не тормозят" : c.openWork + ": " + restCount + " more incoming, holding nobody up")
+        : c.openWork,
+      workSub: ru
+        ? "Полная история обмена: входящие и исходящие документы, открытые и завершённые, последние сверху. Фильтры ниже работают вместе и не прячут завершённые записи."
+        : "The complete exchange history: incoming and outgoing documents, open and closed, newest first. The filters work together without hiding completed records.",
+      threadsSub: ru
+        ? "Одна задача, один тред: запрос, ответы, доказательства и решение лежат вместе, и все стороны видят их в одном порядке. Слева список тредов и чей сейчас ход, справа вся история, новое сверху."
+        : "One task, one thread: the request, the replies, the evidence and the decision stay together and read the same way for every side. The list on the left says whose move it is; the record on the right shows how it got there, newest first.",
+      conSub: ru
+        ? "Каждый контракт обещает остальным системам, что именно он отдаёт и в каком виде. У контракта есть версии, и каждый потребитель сидит на своей. Сейчас не на последней " + offCurrent + " линий из " + scopedEdges + ", с них и стоит начать."
+        : "A contract is one system's promise to the others: what it hands over and in what shape. It has versions, and every consumer sits on one of them. " + offCurrent + " of the " + scopedEdges + " registered lines are off the latest, so start there.",
+      spaceHealthDotStyle: "flex:0 0 9px; width:9px; height:9px; border-radius:99px; background:" +
+        (!d.spaces.filter(x => this.inScope(x.id)).length
+          ? "var(--border-strong)"
+          : (d.spaces.some(x => this.inScope(x.id) && !x.readable)
+            ? "var(--red)"
+            : (flags.length || d.spaces.some(x => this.inScope(x.id) && x.stale) ? "var(--ochre)" : "var(--green)"))) + ";",
+      verSub: ru
+        ? "Какая версия a2a стоит у вас сейчас и что менялось в каждом выпуске. Фильтры сверху сужают список по типу изменения и отделяют записи, которые чего-то от вас требуют, от тех, что можно просто прочитать."
+        : "Which a2a version you run right now, and what changed in every release. The filters up top narrow the list by kind of change, and separate the entries that ask something of you from the ones you can simply read."
+    };
+    values.isTop = ui.variant === "top";
+    values.isPage = ui.variant === "page";
+    values.isFooter = ui.variant === "footer";
+    values.docsSub = c.docsSub;
+    values.guideSub = c.guideSub;
+    values.pageSub = ({ overview: values.ovSub, work: values.workSub, threads: values.threadsSub, contracts: values.conSub, network: values.networkSub, spaces: values.spacesSub, versions: values.verSub, docs: values.docsSub, guide: values.guideSub })[s.view] || "";
+    values.spaceSwitcher = {
+      label: c.space,
+      value: s.space,
+      options: spaceOptions,
+      onChange: id => this.setState({ space:id, ovSel:"", workSel:"", threadSel:"", threadSpace:"", conSel:"", conVersion:"", contractFile:null }),
+      dotStyle: values.spaceHealthDotStyle
+    };
+    values.hasPageHeader = !!ctx.data && !s.error;
+    values.hasPageLink = !!ctx.data && s.view === "overview";
+    values.hasSpaceSwitcher = !!ctx.data && ["overview","work","threads","contracts","network","spaces"].indexOf(s.view) > -1;
+
+    return values;
+  }
+}
+</script>
+</body>
+</html>

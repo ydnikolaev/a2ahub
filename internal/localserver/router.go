@@ -35,6 +35,8 @@ func (s *Server) routeHandler() http.Handler {
 			s.handleRoot(writer, request)
 		case "/api/v1/snapshot":
 			s.handleSnapshot(writer, request)
+		case "/api/v1/dashboard":
+			s.handleDashboard(writer, request)
 		case "/api/v1/events":
 			s.handleEvents(writer, request)
 		default:
@@ -48,36 +50,31 @@ func (s *Server) handleRoot(writer http.ResponseWriter, request *http.Request) {
 		methodNotAllowed(writer, "GET, HEAD")
 		return
 	}
-	if request.Method == http.MethodGet {
-		select {
-		case s.writerSlots <- struct{}{}:
-			defer func() { <-s.writerSlots }()
-		default:
-			writer.Header().Set("Retry-After", "1")
-			http.Error(writer, "response writer limit reached", http.StatusServiceUnavailable)
-			return
-		}
-	}
 	s.setStaleHeader(writer)
-	shell := s.store.shell()
-	if shell == nil {
+	dashboard := s.store.dashboard()
+	if dashboard == nil {
 		http.Error(writer, "snapshot unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 	writer.Header().Set("Cache-Control", "no-store")
-	writer.Header().Set("Content-Length", fmt.Sprint(len(shell.body)))
 	if request.Method == http.MethodHead {
+		writer.Header().Set("Content-Length", fmt.Sprint(len(dashboard.shell)))
 		writer.WriteHeader(http.StatusOK)
 		return
 	}
+	if !s.acquireBodyWriter(writer) {
+		return
+	}
+	defer func() { <-s.writerSlots }()
 	if err := requireBoundedWriter(writer, s.config.WriteDeadline); err != nil {
 		writer.Header().Del("Content-Length")
 		http.Error(writer, "bounded response writes unsupported", http.StatusInternalServerError)
 		return
 	}
+	writer.Header().Set("Content-Length", fmt.Sprint(len(dashboard.shell)))
 	if err := withWriteDeadline(writer, s.config.WriteDeadline, func() error {
-		return writeBody(writer, shell.ctx, shell.body)
+		return writeBody(writer, dashboard.ctx, dashboard.shell)
 	}); err != nil && !errors.Is(err, context.Canceled) {
 		s.recordError(err)
 	}
@@ -87,16 +84,6 @@ func (s *Server) handleSnapshot(writer http.ResponseWriter, request *http.Reques
 	if request.Method != http.MethodGet && request.Method != http.MethodHead {
 		methodNotAllowed(writer, "GET, HEAD")
 		return
-	}
-	if request.Method == http.MethodGet {
-		select {
-		case s.writerSlots <- struct{}{}:
-			defer func() { <-s.writerSlots }()
-		default:
-			writer.Header().Set("Retry-After", "1")
-			http.Error(writer, "snapshot writer limit reached", http.StatusServiceUnavailable)
-			return
-		}
 	}
 	generation := s.store.get()
 	if generation == nil {
@@ -117,6 +104,10 @@ func (s *Server) handleSnapshot(writer http.ResponseWriter, request *http.Reques
 		writer.WriteHeader(http.StatusOK)
 		return
 	}
+	if !s.acquireBodyWriter(writer) {
+		return
+	}
+	defer func() { <-s.writerSlots }()
 	if err := requireBoundedWriter(writer, s.config.WriteDeadline); err != nil {
 		writer.Header().Del("Content-Length")
 		http.Error(writer, "bounded response writes unsupported", http.StatusInternalServerError)
@@ -127,6 +118,58 @@ func (s *Server) handleSnapshot(writer http.ResponseWriter, request *http.Reques
 		return writeBody(writer, generation.ctx, generation.body)
 	}); err != nil && !errors.Is(err, context.Canceled) {
 		s.recordError(err)
+	}
+}
+
+func (s *Server) handleDashboard(writer http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet && request.Method != http.MethodHead {
+		methodNotAllowed(writer, "GET, HEAD")
+		return
+	}
+	generation := s.store.dashboard()
+	if generation == nil {
+		http.Error(writer, "snapshot unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	etag := weakETag(generation.viewModelDigest)
+	writer.Header().Set("ETag", etag)
+	writer.Header().Set("Cache-Control", "no-store")
+	s.setStaleHeader(writer)
+	if request.Header.Get("If-None-Match") == etag {
+		writer.WriteHeader(http.StatusNotModified)
+		return
+	}
+	writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if request.Method == http.MethodHead {
+		writer.Header().Set("Content-Length", fmt.Sprint(len(generation.viewModel)))
+		writer.WriteHeader(http.StatusOK)
+		return
+	}
+	if !s.acquireBodyWriter(writer) {
+		return
+	}
+	defer func() { <-s.writerSlots }()
+	if err := requireBoundedWriter(writer, s.config.WriteDeadline); err != nil {
+		writer.Header().Del("Content-Length")
+		http.Error(writer, "bounded response writes unsupported", http.StatusInternalServerError)
+		return
+	}
+	writer.Header().Set("Content-Length", fmt.Sprint(len(generation.viewModel)))
+	if err := withWriteDeadline(writer, s.config.WriteDeadline, func() error {
+		return writeBody(writer, generation.ctx, generation.viewModel)
+	}); err != nil && !errors.Is(err, context.Canceled) {
+		s.recordError(err)
+	}
+}
+
+func (s *Server) acquireBodyWriter(writer http.ResponseWriter) bool {
+	select {
+	case s.writerSlots <- struct{}{}:
+		return true
+	default:
+		writer.Header().Set("Retry-After", "1")
+		http.Error(writer, "response writer limit reached", http.StatusServiceUnavailable)
+		return false
 	}
 }
 
@@ -176,13 +219,14 @@ func (s *Server) handleEvents(writer http.ResponseWriter, request *http.Request)
 	writer.Header().Set("Cache-Control", "no-store")
 	writer.Header().Set("X-Accel-Buffering", "no")
 	writer.WriteHeader(http.StatusOK)
-	generation := s.store.get()
+	generation := s.store.dashboard()
 	lastSent := request.Header.Get("Last-Event-ID")
-	if generation != nil && lastSent != generation.revision {
-		if err := s.writeRevision(writer, flusher, generation.revision); err != nil {
+	if generation != nil && lastSent != generation.viewModelDigest {
+		version := dashboardVersion{revision: generation.revision, viewModelDigest: generation.viewModelDigest}
+		if err := s.writeRevision(writer, flusher, version); err != nil {
 			return
 		}
-		lastSent = generation.revision
+		lastSent = generation.viewModelDigest
 	}
 	keepalive := s.tickers.NewTicker(s.config.SSEKeepalive)
 	defer keepalive.Stop()
@@ -190,17 +234,17 @@ func (s *Server) handleEvents(writer http.ResponseWriter, request *http.Request)
 		select {
 		case <-request.Context().Done():
 			return
-		case revision, open := <-revisions:
+		case version, open := <-revisions:
 			if !open {
 				return
 			}
-			if revision == lastSent {
+			if version.viewModelDigest == lastSent {
 				continue
 			}
-			if err := s.writeRevision(writer, flusher, revision); err != nil {
+			if err := s.writeRevision(writer, flusher, version); err != nil {
 				return
 			}
-			lastSent = revision
+			lastSent = version.viewModelDigest
 		case <-keepalive.C():
 			if err := withWriteDeadline(writer, s.config.WriteDeadline, func() error {
 				if _, err := writer.Write([]byte(": keepalive\n\n")); err != nil {
@@ -215,15 +259,16 @@ func (s *Server) handleEvents(writer http.ResponseWriter, request *http.Request)
 	}
 }
 
-func (s *Server) writeRevision(writer http.ResponseWriter, flusher http.Flusher, revision string) error {
+func (s *Server) writeRevision(writer http.ResponseWriter, flusher http.Flusher, version dashboardVersion) error {
 	payload, err := json.Marshal(struct {
-		Revision string `json:"revision"`
-	}{Revision: revision})
+		Revision  string `json:"revision"`
+		ViewModel string `json:"viewModel"`
+	}{Revision: version.revision, ViewModel: version.viewModelDigest})
 	if err != nil {
 		return err
 	}
 	return withWriteDeadline(writer, s.config.WriteDeadline, func() error {
-		if _, err := fmt.Fprintf(writer, "event: revision\nid: %s\ndata: %s\n\n", revision, payload); err != nil {
+		if _, err := fmt.Fprintf(writer, "event: revision\nid: %s\ndata: %s\n\n", version.viewModelDigest, payload); err != nil {
 			return err
 		}
 		flusher.Flush()

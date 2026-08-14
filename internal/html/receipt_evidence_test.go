@@ -157,7 +157,7 @@ func TestReceiptEvidenceHTMLJSONOmitsAbsentOptionalFields(t *testing.T) {
 
 func TestReceiptMismatchTemplateIsConsistencyActualFirst(t *testing.T) {
 	t.Parallel()
-	tmpl := string(DefaultTemplate())
+	tmpl := dashboardTemplateCorpus(t)
 	for _, required := range []string{
 		"Consistency, protocol and read evidence",
 		"authoritative actual ",

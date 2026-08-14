@@ -2,6 +2,7 @@ package localserver
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -34,10 +35,15 @@ const (
 	MaximumSSEClients = 256
 	// DefaultSnapshotWriters is the default concurrent snapshot response limit.
 	DefaultSnapshotWriters = 4
-	// MaximumRetainedBodies bounds retained response bodies.
-	MaximumRetainedBodies = 5
 	// DefaultMaxShellBytes bounds the default dashboard document size.
 	DefaultMaxShellBytes = 4 << 20
+	// DefaultMaxDashboardBytes bounds the default canonical dashboard view model.
+	DefaultMaxDashboardBytes = 2 << 20
+	// MaximumDashboardBytes is the configurable hard maximum for the canonical dashboard view model.
+	MaximumDashboardBytes = 4 << 20
+	// MaximumRetainedBytes is the conservative retained-body ceiling: current
+	// snapshot, shell and dashboard plus four superseded largest bodies.
+	MaximumRetainedBytes = 88 << 20
 	// DefaultWriteDeadline bounds individual response writes.
 	DefaultWriteDeadline = 2 * time.Second
 	// DefaultKeepalive is the SSE idle keepalive interval.
@@ -66,6 +72,7 @@ type Config struct {
 	SnapshotWriters   int
 	MaxSnapshotBytes  int
 	MaxShellBytes     int
+	MaxDashboardBytes int
 	WriteDeadline     time.Duration
 	ReadHeaderTimeout time.Duration
 	IdleTimeout       time.Duration
@@ -84,7 +91,7 @@ func DefaultConfig() Config {
 		Listen: DefaultListen, Refresh: DefaultRefresh, SSEKeepalive: DefaultKeepalive,
 		MaxSSEClients: DefaultSSEClients, SnapshotWriters: DefaultSnapshotWriters,
 		MaxSnapshotBytes: operational.MaximumEncodedSnapshot, WriteDeadline: DefaultWriteDeadline,
-		MaxShellBytes:     DefaultMaxShellBytes,
+		MaxShellBytes: DefaultMaxShellBytes, MaxDashboardBytes: DefaultMaxDashboardBytes,
 		ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second,
 		MaxHeaderBytes: DefaultMaxHeaderBytes, ShutdownTimeout: 5 * time.Second,
 	}
@@ -121,6 +128,9 @@ func (c Config) normalized() (Config, error) {
 	if c.MaxShellBytes == 0 {
 		c.MaxShellBytes = defaults.MaxShellBytes
 	}
+	if c.MaxDashboardBytes == 0 {
+		c.MaxDashboardBytes = defaults.MaxDashboardBytes
+	}
 	if c.WriteDeadline == 0 {
 		c.WriteDeadline = defaults.WriteDeadline
 	}
@@ -145,6 +155,7 @@ func (c Config) normalized() (Config, error) {
 		c.SnapshotWriters < 1 || c.SnapshotWriters > DefaultSnapshotWriters ||
 		c.MaxSnapshotBytes < 1 || c.MaxSnapshotBytes > operational.MaximumEncodedSnapshot ||
 		c.MaxShellBytes < 1 || c.MaxShellBytes > DefaultMaxShellBytes ||
+		c.MaxDashboardBytes < 1 || c.MaxDashboardBytes > MaximumDashboardBytes ||
 		c.WriteDeadline <= 0 || c.ReadHeaderTimeout <= 0 || c.IdleTimeout <= 0 ||
 		c.MaxHeaderBytes < 1024 || c.MaxHeaderBytes > DefaultMaxHeaderBytes || c.ShutdownTimeout <= 0 {
 		return Config{}, ErrInvalidConfig
@@ -159,16 +170,21 @@ type snapshotGeneration struct {
 	cancel   context.CancelFunc
 }
 
-type shellGeneration struct {
-	body   []byte
-	ctx    context.Context
-	cancel context.CancelFunc
+type dashboardGeneration struct {
+	revision           string
+	contentFingerprint string
+	shell              []byte
+	viewModel          []byte
+	viewModelDigest    string
+	ctx                context.Context
+	cancel             context.CancelFunc
 }
 
 type snapshotStore struct {
-	mu           sync.RWMutex
-	current      *snapshotGeneration
-	currentShell *shellGeneration
+	mu               sync.RWMutex
+	current          *snapshotGeneration
+	currentDashboard *dashboardGeneration
+	closed           bool
 }
 
 func (s *snapshotStore) get() *snapshotGeneration {
@@ -177,38 +193,40 @@ func (s *snapshotStore) get() *snapshotGeneration {
 	return s.current
 }
 
-func (s *snapshotStore) shell() *shellGeneration {
+func (s *snapshotStore) dashboard() *dashboardGeneration {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.currentShell
+	return s.currentDashboard
 }
 
-func (s *snapshotStore) replace(next *snapshotGeneration, shell *shellGeneration) (changed bool) {
+func (s *snapshotStore) replace(next *snapshotGeneration, dashboard *dashboardGeneration) (dashboardChanged bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	previous := s.current
-	previousShell := s.currentShell
-	// A semantic revision controls SSE and cancellation, but response-only
-	// observation fields are intentionally excluded from it. Publish the fresh
-	// bytes behind the same weak ETag while sharing the existing cancellation
-	// lifetime, so current readers are not aborted and a later semantic change
-	// still cancels every reader from this revision.
-	if previous != nil && previous.revision == next.revision {
+	if s.closed {
 		next.cancel()
-		shell.cancel()
-		next.ctx, next.cancel = previous.ctx, previous.cancel
-		shell.ctx, shell.cancel = previousShell.ctx, previousShell.cancel
-		s.current = next
-		s.currentShell = shell
+		dashboard.cancel()
 		return false
 	}
-	s.current = next
-	s.currentShell = shell
-	if previous != nil {
+	previous := s.current
+	previousDashboard := s.currentDashboard
+	// Snapshot observation fields may refresh behind the same revision. Preserve
+	// that route's existing cancellation lifetime while replacing its exact body.
+	if previous != nil && previous.revision == next.revision {
+		next.cancel()
+		next.ctx, next.cancel = previous.ctx, previous.cancel
+	} else if previous != nil {
 		previous.cancel()
 	}
-	if previousShell != nil {
-		previousShell.cancel()
+	s.current = next
+
+	if previousDashboard != nil && previousDashboard.revision == dashboard.revision &&
+		previousDashboard.contentFingerprint == dashboard.contentFingerprint {
+		dashboard.cancel()
+		return false
+	}
+	s.currentDashboard = dashboard
+	if previousDashboard != nil {
+		previousDashboard.cancel()
 	}
 	return true
 }
@@ -216,12 +234,15 @@ func (s *snapshotStore) replace(next *snapshotGeneration, shell *shellGeneration
 func (s *snapshotStore) close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.closed = true
 	if s.current != nil {
 		s.current.cancel()
 	}
-	if s.currentShell != nil {
-		s.currentShell.cancel()
+	if s.currentDashboard != nil {
+		s.currentDashboard.cancel()
 	}
+	s.current = nil
+	s.currentDashboard = nil
 }
 
 // Server exposes a read-only local operational snapshot and dashboard.
@@ -322,32 +343,39 @@ func (s *Server) publish(ctx context.Context, snapshot operational.Snapshot) err
 	if len(body) > s.config.MaxSnapshotBytes {
 		return fmt.Errorf("%w: snapshot has %d bytes, maximum %d", ErrSnapshotUnavailable, len(body), s.config.MaxSnapshotBytes)
 	}
-	// A semantic revision owns one coherent shell. Refreshes may advance only
-	// generated_at while the durable/local inputs remain unchanged; rebuilding
-	// the dashboard in that case would repeat every Git-backed projection on
-	// each poll for bytes the client cannot observe as a new generation.
-	var shell []byte
-	current := s.store.get()
-	currentShell := s.store.shell()
-	if current != nil && current.revision == snapshot.Revision && currentShell != nil {
-		shell = append([]byte(nil), currentShell.body...)
-	} else {
-		shell, err = s.renderer.Render(ctx, snapshot)
-		if err != nil {
-			return fmt.Errorf("localserver: render shell: %w", err)
-		}
+	// Render every successful poll: non-operational dashboard facts can change
+	// independently from the operational revision.
+	shell, viewModel, fingerprint, err := s.renderer.Render(ctx, snapshot)
+	if err != nil {
+		return fmt.Errorf("localserver: render dashboard: %w", err)
 	}
 	if len(shell) > s.config.MaxShellBytes {
 		return fmt.Errorf("%w: shell has %d bytes, maximum %d", ErrSnapshotUnavailable, len(shell), s.config.MaxShellBytes)
 	}
+	if len(viewModel) > s.config.MaxDashboardBytes {
+		return fmt.Errorf("%w: dashboard has %d bytes, maximum %d", ErrSnapshotUnavailable, len(viewModel), s.config.MaxDashboardBytes)
+	}
+	if fingerprint == "" {
+		return fmt.Errorf("%w: dashboard content fingerprint is empty", ErrSnapshotUnavailable)
+	}
 	generationCtx, cancel := context.WithCancel(context.Background())
 	generation := &snapshotGeneration{revision: snapshot.Revision, body: body, ctx: generationCtx, cancel: cancel}
-	shellCtx, shellCancel := context.WithCancel(context.Background())
-	shellBody := &shellGeneration{body: append([]byte(nil), shell...), ctx: shellCtx, cancel: shellCancel}
-	if s.store.replace(generation, shellBody) {
-		s.broker.publish(snapshot.Revision)
+	dashboardCtx, dashboardCancel := context.WithCancel(context.Background())
+	digest := sha256Digest(viewModel)
+	dashboard := &dashboardGeneration{
+		revision: snapshot.Revision, contentFingerprint: fingerprint,
+		shell: append([]byte(nil), shell...), viewModel: append([]byte(nil), viewModel...), viewModelDigest: digest,
+		ctx: dashboardCtx, cancel: dashboardCancel,
+	}
+	if s.store.replace(generation, dashboard) {
+		s.broker.publish(dashboardVersion{revision: snapshot.Revision, viewModelDigest: digest})
 	}
 	return nil
+}
+
+func sha256Digest(body []byte) string {
+	sum := sha256.Sum256(body)
+	return fmt.Sprintf("sha256:%x", sum)
 }
 
 func (s *Server) refresh(ctx context.Context) error {

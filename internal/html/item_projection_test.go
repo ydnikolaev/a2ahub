@@ -9,24 +9,6 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 )
 
-// itemFieldsThisPackageDeliberatelyDrops names the cache.Item fields Item is
-// allowed NOT to carry under the SAME name, each with the reason it is a
-// decision rather than an oversight.
-//
-// A field this package renames on projection lands here. toItem (assemble.go)
-// renames LatestEventAt/LatestEventSeq/LatestEventID to
-// MovedAt/ActivitySeq/ActivityEventID — real fields carrying the real fact,
-// just not the same identifier. The reflection check below only matches NAMES
-// (openitem_projection_test.go's own convention, chosen there for the same
-// reason), so a rename reads exactly like a drop and has to be argued into this
-// map like one.
-var itemFieldsThisPackageDeliberatelyDrops = map[string]string{
-	"LatestEventAt":  "renamed to MovedAt by toItem (assemble.go) — the activity clock, distinct from CreatedAt",
-	"LatestEventSeq": "renamed to ActivitySeq by toItem — the committed-order tie-breaker for MovedAt",
-	"LatestEventID":  "renamed to ActivityEventID by toItem — the current transition identity",
-	"RuleIdentity":   "consumed by attentionSentence in toItem to validate server-side composition; not forwarded because it is a dashboard-only lookup key and Why remains the technical detail",
-}
-
 // TestItemCarriesEveryCacheItemField is the drift gate for the projection
 // cache.Item -> html.Item. internal/html/openitem_projection_test.go already
 // guards cache.OpenItem -> html.ThreadOpenItem by reflection; nothing guarded

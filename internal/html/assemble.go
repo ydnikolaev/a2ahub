@@ -26,9 +26,9 @@ import (
 
 // Assemble builds the dashboard Data from a composed Store, as of now. self is
 // the ego system (the --system override); empty falls back to the Store's own
-// configured system. It reads only (Store already composed the mirrors);
-// consumes.yaml is walked per space mirror to derive contract-dependency edges.
-// No network.
+// configured system. It reads only (Store already composed the mirrors); the
+// cache-owned dependency projection supplies registry and drift facts. No
+// network.
 func Assemble(ctx context.Context, store *cache.Store, self string, now time.Time) (Data, error) {
 	return AssembleWithContractHistory(ctx, store, self, now, nil)
 }
@@ -61,10 +61,15 @@ func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache
 		self = store.OwnSystem()
 	}
 	mirrors := store.SpaceMirrors()
-	d := Data{GeneratedAt: now, Self: self, Nodes: []Node{}, ContractEdges: []ContractEdge{},
+	d := Data{Vocabulary: DashboardVocabulary(), GeneratedAt: now, Self: self, Nodes: []Node{}, ContractEdges: []ContractEdge{},
 		ExchangeEdges: []ExchangeEdge{}, Threads: []Thread{}, Inbox: []Item{}, Outbox: []Item{}, Archive: []Item{}, Contracts: []Contract{},
 		Spaces: []SpaceHealth{}, Flags: []Flag{}, ReleaseNotes: []ReleaseNote{}, ThreadViews: []ThreadView{},
-		WorkReports: []WorkReport{}, Operational: snapshot, ArtifactDetails: []ArtifactDetail{}, Unavailable: []UnavailableFact{}}
+		WorkReports: []WorkReport{}, Operational: snapshot, ArtifactDetails: []ArtifactDetail{}, Unavailable: []UnavailableFact{},
+		Aggregates: DashboardAggregates{
+			NeedYou: DashboardItemSet{Items: []Item{}}, NoHumanMove: DashboardItemSet{Items: []Item{}},
+			YouAwait:        DashboardItemSet{Items: []Item{}},
+			LinesOffCurrent: DashboardContractEdgeSet{Items: []ContractEdge{}, Degradations: []DependencyDegradation{}},
+		}}
 
 	un := store.UpdateNotice()
 	d.Tooling = Tooling{Current: un.Current, Latest: un.Latest, UpdateAvailable: un.UpdateAvailable,
@@ -102,7 +107,7 @@ func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache
 		d.Spaces = append(d.Spaces, SpaceHealth{
 			ID: m.SpaceID, RepoURL: m.RepoURL,
 			ParticipantCount: len(m.Manifest.Participants), Readable: readable,
-			SyncAge: syncAge, Stale: syncFact.Stale, Revision: syncFact.Revision,
+			Synced: syncFact.Synced, SyncAge: syncAge, Stale: syncFact.Stale, Revision: syncFact.Revision,
 			SchemaVersion: m.Manifest.Schema, MinBinaryVersion: m.Manifest.MinBinaryVersion,
 			WorkflowVersion: workflowVersion, WorkflowRef: workflowRef,
 		})
@@ -130,16 +135,23 @@ func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache
 	}
 	sort.Slice(d.Nodes, func(i, j int) bool { return d.Nodes[i].System < d.Nodes[j].System })
 
-	// Contracts catalog + a by-id index for drift lookups.
+	// Cache owns dependency registry parsing, drift classification and explicit
+	// scan degradation. HTML maps that one full ordered answer and derives only
+	// its presentation joins from the returned edges.
+	dependencyProjection, err := store.ContractDependencies(ctx)
+	if err != nil {
+		return Data{}, fmt.Errorf("html: contract dependencies: %w", err)
+	}
+	fullContractEdges := mapContractDependencyEdges(dependencyProjection.Edges)
+	dependencyDegradations := mapContractDependencyDegradations(dependencyProjection.Degradations)
+
+	// Contracts catalog and historical details use the full dependency set,
+	// never the admitted root prefix.
 	cinfos, err := store.Contracts(ctx, "")
 	if err != nil {
 		return Data{}, fmt.Errorf("html: contracts: %w", err)
 	}
 	type contractKey struct{ space, id string }
-	byID := map[contractKey]cache.ContractInfo{}
-	for _, c := range cinfos {
-		byID[contractKey{space: c.Space, id: c.ID}] = c
-	}
 	contractMirrors := make(map[string]cache.SpaceMirror, len(mirrors))
 	ambiguousMirror := make(map[string]bool)
 	for _, mirror := range mirrors {
@@ -152,56 +164,19 @@ func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache
 			contractMirrors[mirror.SpaceID] = mirror
 		}
 	}
-	// Contract-dependency edges from every space's consumes.yaml, plus the
-	// per-contract consumer lists.
+	// Consumer lists are a join over the same dependency projection, not a
+	// second registry traversal.
 	consumersOf := map[contractKey][]string{}
-	for _, m := range mirrors {
-		for _, p := range m.Manifest.Participants {
-			sec := strings.TrimSuffix(p.Section, "/")
-			if sec == "" {
-				continue
-			}
-			raw, rErr := os.ReadFile(filepath.Join(m.Dir, sec, "consumes.yaml"))
-			if rErr != nil {
-				continue // absent consumes.yaml is normal
-			}
-			cons, pErr := space.ParseConsumes(raw)
-			if pErr != nil {
-				continue // malformed → skip (degrade, never fail the view)
-			}
-			for _, dep := range cons.Dependencies {
-				provider := providerOf(dep.Contract)
-				key := contractKey{space: m.SpaceID, id: dep.Contract}
-				consumersOf[key] = append(consumersOf[key], p.System)
-				edge := ContractEdge{From: p.System, To: provider, Space: m.SpaceID,
-					Contract: dep.Contract, PinnedMajor: dep.Major}
-				ci, ok := byID[key]
-				switch {
-				case !ok || nodeStatus(nodeIdx, provider) == "left":
-					edge.Drift = "dangling"
-				default:
-					edge.ProviderVersion = ci.Version
-					edge.State = ci.State
-					edge.PinnedVersion, edge.PinnedState, edge.Sunset, edge.Successor,
-						edge.AvailableMajors, edge.Drift = dependencyFacts(ci, dep.Major)
-					edge.Description = ci.Description
-				}
-				d.ContractEdges = append(d.ContractEdges, edge)
-			}
-		}
+	for _, edge := range fullContractEdges {
+		key := contractKey{space: edge.Space, id: edge.Contract}
+		consumersOf[key] = append(consumersOf[key], edge.From)
 	}
-	sort.Slice(d.ContractEdges, func(i, j int) bool {
-		if d.ContractEdges[i].Space != d.ContractEdges[j].Space {
-			return d.ContractEdges[i].Space < d.ContractEdges[j].Space
-		}
-		return d.ContractEdges[i].Contract < d.ContractEdges[j].Contract
-	})
 
 	// Contracts catalog rows (with derived consumer lists).
 	for _, c := range cinfos {
 		cons := consumersOf[contractKey{space: c.Space, id: c.ID}]
 		sort.Strings(cons)
-		details, detailErr := resolveContractVersionDetails(ctx, contractMirrors, c, d.ContractEdges, historyValidator)
+		details, detailErr := resolveContractVersionDetails(ctx, contractMirrors, c, fullContractEdges, historyValidator)
 		if detailErr != nil {
 			return Data{}, detailErr
 		}
@@ -234,11 +209,28 @@ func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache
 	inItems := exchangeSnapshot.Inbox
 	outItems := exchangeSnapshot.Outbox
 	archiveItems := exchangeSnapshot.Archive
-	// Conversations, including their first turn, with their members and the
-	// document-to-document links inside them (spec 46 §T6.1). Built before the
-	// rows because it also returns every artifact's open item, and an inbox row
-	// carries the legal-move facts its agent prompt is assembled from.
-	threads, threadViews, openItems, err := buildThreads(exchangeSnapshot.Threads, self, now)
+
+	// Build the prompt lookup from the one carried snapshot, then map each root
+	// item exactly once. Aggregate and thread projections reuse these values.
+	openItems := openItemIndex{}
+	for _, result := range exchangeSnapshot.Threads {
+		openItems.put(result.Space, result.OpenItems)
+	}
+	fullInbox := mapDashboardItems(inItems, now, self, openItems, false)
+	fullOutbox := mapDashboardItems(outItems, now, self, openItems, false)
+	fullArchive := mapDashboardItems(archiveItems, now, self, openItems, true)
+	mappedItems := make(map[dashboardItemKey]Item, len(fullInbox)+len(fullOutbox))
+	indexMappedItems(mappedItems, fullInbox)
+	indexMappedItems(mappedItems, fullOutbox)
+
+	// P2 owns membership and order. NeedYou alone receives the canonical
+	// attention ordering; every other set preserves its returned order.
+	d.Aggregates = projectDashboardAggregates(inItems, outItems, self, now, dependencyProjection, mappedItems, fullContractEdges, dependencyDegradations)
+
+	// Conversations, including their first turn, are mapped once from the full
+	// snapshot. Matching open items copy the sentence and rule identity from
+	// the already-mapped active item index.
+	threads, threadViews, _, err := buildThreadsWithMappedItems(exchangeSnapshot.Threads, self, now, mappedItems, openItems)
 	if err != nil {
 		return Data{}, fmt.Errorf("html: threads: %w", err)
 	}
@@ -248,49 +240,23 @@ func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache
 	// happens here rather than by widening its signature for one field.
 	annotateThreadAdopters(threadViews, func(space, id string) []string {
 		return consumersOf[contractKey{space: space, id: id}]
-	}, d.ContractEdges)
-	d.Threads = threads
-	d.ThreadViews = threadViews
-	d.WorkReports = collectWorkReports(threadViews)
-
-	for _, it := range inItems {
-		d.Inbox = append(d.Inbox, toItem(it, now, self, openItems))
+	}, fullContractEdges)
+	fullWorkReports := collectWorkReports(threadViews)
+	admitThreadChildren(threads, threadViews)
+	d.Threads, d.ThreadViews, d.Windows.Threads, err = admitThreadPairs(threads, threadViews, maximumDashboardThreads)
+	if err != nil {
+		return Data{}, fmt.Errorf("html: paired thread admission: %w", err)
 	}
-	for _, it := range outItems {
-		d.Outbox = append(d.Outbox, toItem(it, now, self, openItems))
-	}
-	for _, it := range archiveItems {
-		item := toItem(it, now, self, openItems)
-		item.Archived = true
-		// Archive is the Exchange read-model's completed surface. Preserve the
-		// protocol state (for example, an announcement remains published), but
-		// do not keep presenting a completed document as needing attention.
-		item.Severity = "normal"
-		d.Archive = append(d.Archive, item)
-	}
-
-	// Full detail records for every visible Work row. Resolve the union in one
-	// cache pass: ShowMany reuses the canonical folded index, so this does not
-	// create a dashboard-only artifact walk or lifecycle projection.
-	detailRefs := visibleArtifactRefs(inItems, outItems, archiveItems)
-	if len(detailRefs) > 0 {
-		details, detailErr := store.ShowMany(ctx, detailRefs)
-		if detailErr != nil {
-			return Data{}, fmt.Errorf("html: artifact details: %w", detailErr)
-		}
-		for _, detail := range details {
-			projected, projectErr := toArtifactDetail(detail)
-			if projectErr != nil {
-				return Data{}, fmt.Errorf("html: artifact detail %s Markdown: %w", detail.ID, projectErr)
-			}
-			attachLinkedArtifactEvents(&projected, threadViews)
-			d.ArtifactDetails = append(d.ArtifactDetails, projected)
-		}
-	}
+	d.Inbox, d.Windows.Inbox = admitPrefix(fullInbox, maximumDashboardInboxItems)
+	d.Outbox, d.Windows.Outbox = admitPrefix(fullOutbox, maximumDashboardOutboxItems)
+	d.Archive, d.Windows.Archive = admitPrefix(fullArchive, maximumDashboardArchiveItems)
+	d.ContractEdges, d.Windows.ContractEdges = admitPrefix(fullContractEdges, maximumDashboardContractEdges)
+	d.WorkReports, d.Windows.WorkReports = admitPrefix(fullWorkReports, maximumDashboardWorkReports)
 
 	// Exchange overlay reads the same carried verdict fields as the row and
 	// thread projections; no presentation-side join or relation call remains.
-	d.ExchangeEdges = exchangeEdges(append(append([]cache.Item{}, inItems...), outItems...), now)
+	fullExchangeEdges := exchangeEdges(append(append([]cache.Item{}, inItems...), outItems...), now)
+	d.ExchangeEdges, d.Windows.ExchangeEdges = admitPrefix(fullExchangeEdges, maximumDashboardExchangeEdges)
 
 	// Read-health facts: committed fold violations plus any mirror files the
 	// best-effort index could not decode. Both already exist in cache; the old
@@ -332,6 +298,27 @@ func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache
 		}
 		return d.Flags[i].Message < d.Flags[j].Message
 	})
+	fullFlags := d.Flags
+	d.Flags, d.Windows.Flags = admitPrefix(fullFlags, maximumDashboardFlags)
+
+	// Resolve detail records once, from the ordered union of every admitted
+	// artifact-bearing collection. NeedYou is first so scarce slots favour an
+	// actionable attention card. The union itself is stable and unsorted.
+	detailRefs := dashboardArtifactDetailRefs(d)
+	admittedDetailRefs, detailWindow := admitPrefix(detailRefs, maximumDashboardArtifactDetails)
+	details, detailErr := store.ShowMany(ctx, admittedDetailRefs)
+	if detailErr != nil {
+		return Data{}, fmt.Errorf("html: artifact details: %w", detailErr)
+	}
+	for _, detail := range details {
+		projected, projectErr := toArtifactDetail(detail)
+		if projectErr != nil {
+			return Data{}, fmt.Errorf("html: artifact detail %s Markdown: %w", detail.ID, projectErr)
+		}
+		attachLinkedArtifactEvents(&projected, d.ThreadViews)
+		d.ArtifactDetails = append(d.ArtifactDetails, projected)
+	}
+	d.Windows.ArtifactDetails = detailWindow
 
 	// Release notes are already embedded in the binary and parsed by the same
 	// internal/notes package as `a2a whatsnew`; the HTML view projects that
@@ -353,6 +340,31 @@ func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache
 	)
 
 	return d, nil
+}
+
+func mapContractDependencyEdges(edges []cache.ContractDependencyEdge) []ContractEdge {
+	out := make([]ContractEdge, 0, len(edges))
+	for _, edge := range edges {
+		out = append(out, ContractEdge{
+			From: edge.From, To: edge.To, Space: edge.Space, Contract: edge.Contract,
+			PinnedMajor: edge.PinnedMajor, PinnedVersion: edge.PinnedVersion, PinnedState: edge.PinnedState,
+			ProviderVersion: edge.ProviderVersion, State: edge.State,
+			AvailableMajors: append([]int(nil), edge.AvailableMajors...), Drift: edge.Drift,
+			Sunset: edge.Sunset, Successor: edge.Successor, Description: edge.Description,
+		})
+	}
+	return out
+}
+
+func mapContractDependencyDegradations(degradations []cache.ContractDependencyDegradation) []DependencyDegradation {
+	out := make([]DependencyDegradation, 0, len(degradations))
+	for _, degradation := range degradations {
+		out = append(out, DependencyDegradation{
+			Space: degradation.Space, System: degradation.System, Path: degradation.Path,
+			Code: degradation.Code, Reason: degradation.Reason,
+		})
+	}
+	return out
 }
 
 func resolveContractVersionDetails(
@@ -601,7 +613,58 @@ const (
 	maximumEmbeddedContractDocuments         = 1024
 	maximumEmbeddedContractDocumentJSONBytes = 768 << 10
 	maximumEmbeddedContractPreviewJSONBytes  = 256 << 10
+
+	maximumDashboardInboxItems             = 64
+	maximumDashboardOutboxItems            = 64
+	maximumDashboardArchiveItems           = 64
+	maximumDashboardThreads                = 8
+	maximumDashboardThreadArtifacts        = 16
+	maximumDashboardThreadTranscriptRows   = 32
+	maximumDashboardThreadOpenItems        = 16
+	maximumDashboardThreadLinks            = 64
+	maximumDashboardThreadFlags            = 16
+	maximumDashboardThreadUnresolved       = 16
+	maximumDashboardThreadDeliveries       = 8
+	maximumDashboardArtifactDetails        = 32
+	maximumDashboardWorkReports            = 64
+	maximumDashboardContractEdges          = 128
+	maximumDashboardExchangeEdges          = 128
+	maximumDashboardFlags                  = 64
+	maximumDashboardAggregateItems         = 64
+	maximumDashboardAggregateContractEdges = 128
 )
+
+// admitPrefix returns a fresh, stable prefix and the exact fact describing
+// that operation. Empty inputs produce a non-nil empty slice and an honest
+// zero window.
+func admitPrefix[T any](input []T, maximum int) ([]T, operational.Window) {
+	shown := len(input)
+	if shown > maximum {
+		shown = maximum
+	}
+	prefix := make([]T, shown)
+	copy(prefix, input[:shown])
+	return prefix, operational.Window{Total: len(input), Shown: shown, Truncated: shown < len(input)}
+}
+
+func admitThreadPairs(threads []Thread, views []ThreadView, maximum int) ([]Thread, []ThreadView, operational.Window, error) {
+	if len(threads) != len(views) {
+		return nil, nil, operational.Window{}, fmt.Errorf("thread list/detail rows differ: %d != %d", len(threads), len(views))
+	}
+	shown := len(threads)
+	if shown > maximum {
+		shown = maximum
+	}
+	threadPrefix := append([]Thread{}, threads[:shown]...)
+	viewPrefix := append([]ThreadView{}, views[:shown]...)
+	for index := range threadPrefix {
+		if threadPrefix[index].Space != viewPrefix[index].Space || threadPrefix[index].ID != viewPrefix[index].Thread {
+			return nil, nil, operational.Window{}, fmt.Errorf("row %d identity differs: %s/%s != %s/%s", index,
+				threadPrefix[index].Space, threadPrefix[index].ID, viewPrefix[index].Space, viewPrefix[index].Thread)
+		}
+	}
+	return threadPrefix, viewPrefix, operational.Window{Total: len(threads), Shown: shown, Truncated: shown < len(threads)}, nil
+}
 
 type contractVersionDocumentRef struct {
 	key        string
@@ -670,8 +733,9 @@ func limitContractVersionDetails(contracts []Contract) {
 		remainingDocumentBytes -= cost
 	}
 	for contractIndex := range contracts {
-		for versionIndex := range contracts[contractIndex].Versions {
-			detail := contracts[contractIndex].Versions[versionIndex].Detail
+		contractValue := &contracts[contractIndex]
+		for _, versionValue := range contractValue.Versions {
+			detail := versionValue.Detail
 			if detail == nil || detail.Status != ContractVersionDetailAvailable {
 				continue
 			}
@@ -679,6 +743,21 @@ func limitContractVersionDetails(contracts []Contract) {
 		}
 	}
 	limitContractVersionPreviews(contracts)
+	for contractIndex := range contracts {
+		contractValue := &contracts[contractIndex]
+		for _, versionValue := range contractValue.Versions {
+			detail := versionValue.Detail
+			if detail == nil || detail.Status != ContractVersionDetailAvailable {
+				continue
+			}
+			for documentIndex := range detail.Documents {
+				document := &detail.Documents[documentIndex]
+				document.ShownBytes = int64(len(document.Preview))
+				document.TotalBytes = document.SizeBytes
+				document.Truncated = document.ShownBytes < document.TotalBytes
+			}
+		}
+	}
 }
 
 func contractVersionDocumentJSONBytes(document ContractVersionDocument) int {
@@ -781,13 +860,95 @@ func contractVersionConsumerPins(edges []ContractEdge, spaceID, contractID, vers
 	return pins
 }
 
-// buildThreads maps cache's already-rendered per-space thread results. Cache's
-// DashboardSnapshot grouped the same full (open + closed) index that powers
-// the exchange rows and reused those artifacts' carried pendency verdicts;
+type dashboardItemKey struct {
+	space string
+	id    string
+}
+
+func mapDashboardItems(items []cache.Item, now time.Time, self string, open openItemIndex, archived bool) []Item {
+	out := make([]Item, 0, len(items))
+	for _, source := range items {
+		item := toItem(source, now, self, open)
+		if archived {
+			item.Archived = true
+			// Archive is the completed Exchange surface. Preserve protocol state,
+			// but do not present a completed document as needing attention.
+			item.Severity = "normal"
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func indexMappedItems(index map[dashboardItemKey]Item, items []Item) {
+	for _, item := range items {
+		key := dashboardItemKey{space: item.Space, id: item.ID}
+		if _, exists := index[key]; !exists {
+			index[key] = item
+		}
+	}
+}
+
+func projectMappedItems(items []cache.Item, index map[dashboardItemKey]Item) []Item {
+	out := make([]Item, 0, len(items))
+	for _, item := range items {
+		out = append(out, index[dashboardItemKey{space: item.Space, id: item.ID}])
+	}
+	return out
+}
+
+type dashboardContractEdgeKey struct {
+	space       string
+	from        string
+	contract    string
+	pinnedMajor int
+}
+
+func projectMappedContractEdges(edges []cache.ContractDependencyEdge, mapped []ContractEdge) []ContractEdge {
+	index := make(map[dashboardContractEdgeKey]ContractEdge, len(mapped))
+	for _, edge := range mapped {
+		index[dashboardContractEdgeKey{space: edge.Space, from: edge.From, contract: edge.Contract, pinnedMajor: edge.PinnedMajor}] = edge
+	}
+	out := make([]ContractEdge, 0, len(edges))
+	for _, edge := range edges {
+		out = append(out, index[dashboardContractEdgeKey{space: edge.Space, from: edge.From, contract: edge.Contract, pinnedMajor: edge.PinnedMajor}])
+	}
+	return out
+}
+
+func projectDashboardAggregates(
+	inbox, outbox []cache.Item,
+	self string,
+	now time.Time,
+	dependencies cache.ContractDependencyProjection,
+	mappedItems map[dashboardItemKey]Item,
+	mappedEdges []ContractEdge,
+	degradations []DependencyDegradation,
+) DashboardAggregates {
+	sets := cache.BuildDashboardAggregateSets(inbox, outbox, self, now, dependencies)
+	sets.NeedYou = cache.OrderAttention(sets.NeedYou, now)
+	needYou := projectMappedItems(sets.NeedYou, mappedItems)
+	noHumanMove := projectMappedItems(sets.NoHumanMove, mappedItems)
+	youAwait := projectMappedItems(sets.YouAwait, mappedItems)
+	linesOffCurrent := projectMappedContractEdges(sets.LinesOffCurrent, mappedEdges)
+	var projected DashboardAggregates
+	projected.NeedYou.Items, projected.NeedYou.Window = admitPrefix(needYou, maximumDashboardAggregateItems)
+	projected.NoHumanMove.Items, projected.NoHumanMove.Window = admitPrefix(noHumanMove, maximumDashboardAggregateItems)
+	projected.YouAwait.Items, projected.YouAwait.Window = admitPrefix(youAwait, maximumDashboardAggregateItems)
+	projected.LinesOffCurrent.Items, projected.LinesOffCurrent.Window = admitPrefix(linesOffCurrent, maximumDashboardAggregateContractEdges)
+	projected.LinesOffCurrent.Complete = sets.DependencyComplete
+	projected.LinesOffCurrent.Degradations = append([]DependencyDegradation{}, degradations...)
+	return projected
+}
+
+// buildThreadsWithMappedItems maps cache's already-rendered per-space thread
+// results. Cache's DashboardSnapshot grouped the same full (open + closed)
+// index that powers the exchange rows and reused those artifacts' carried
+// pendency verdicts;
 // asking Store.Search/ThreadView again here would recreate both a second index
 // traversal and a second relation evaluation. A thread present in two spaces
 // remains two results because cache groups by space before thread identity.
-func buildThreads(results []cache.ThreadResult, self string, now time.Time) ([]Thread, []ThreadView, openItemIndex, error) {
+func buildThreadsWithMappedItems(results []cache.ThreadResult, self string, now time.Time, mappedItems map[dashboardItemKey]Item, openItems openItemIndex) ([]Thread, []ThreadView, openItemIndex, error) {
 	type row struct {
 		t  Thread
 		v  ThreadView
@@ -799,14 +960,19 @@ func buildThreads(results []cache.ThreadResult, self string, now time.Time) ([]T
 	// in flight: hiding them made the Threads page omit exactly the newest work.
 	// ThreadView remains the one computation for both the list and open-item
 	// prompts; the browser does not grow a second grouping rule.
-	openItems := openItemIndex{}
+	buildOpenItems := openItems == nil
+	if buildOpenItems {
+		openItems = openItemIndex{}
+	}
 	for _, result := range results {
-		openItems.put(result.Space, result.OpenItems)
+		if buildOpenItems {
+			openItems.put(result.Space, result.OpenItems)
+		}
 		if len(result.Artifacts) == 0 {
 			continue // ThreadView's own rendered member set is authoritative
 		}
 		th, at := toThread(result, self)
-		rows = append(rows, row{t: th, v: toThreadView(result, self), at: at})
+		rows = append(rows, row{t: th, v: toThreadViewWithMappedItems(result, self, mappedItems), at: at})
 	}
 
 	sort.Slice(rows, func(i, j int) bool {
@@ -833,6 +999,10 @@ func threadRowComesBefore(aAt time.Time, aSpace, aID string, bAt time.Time, bSpa
 }
 
 func toThreadView(result cache.ThreadResult, self string) ThreadView {
+	return toThreadViewWithMappedItems(result, self, nil)
+}
+
+func toThreadViewWithMappedItems(result cache.ThreadResult, self string, mappedItems map[dashboardItemKey]Item) ThreadView {
 	view := ThreadView{
 		Thread: result.Thread, Space: result.Space, Order: result.Order,
 		Opener:       ThreadViewOpener{ID: result.Opener.ID, Title: result.Opener.Title, From: result.Opener.From},
@@ -906,7 +1076,7 @@ func toThreadView(result cache.ThreadResult, self string) ThreadView {
 				break
 			}
 		}
-		view.OpenItems = append(view.OpenItems, ThreadOpenItem{
+		projected := ThreadOpenItem{
 			ID: item.ID, Type: item.Type, State: item.State, Blocking: item.Blocking,
 			NeededBy: item.NeededBy, NextActions: actions, WaitingOn: waiting,
 			YourMove: item.YourMove, Pending: len(waiting) > 0,
@@ -932,7 +1102,12 @@ func toThreadView(result cache.ThreadResult, self string) ThreadView {
 			// AC4's per-item projection, carried whole — see
 			// ThreadOpenItem.OperationalItems' own doc comment.
 			OperationalItems: item.OperationalItems,
-		})
+		}
+		if mapped, ok := mappedItems[dashboardItemKey{space: result.Space, id: item.ID}]; ok {
+			projected.RuleIdentity = mapped.RuleIdentity
+			projected.ReasonSentence = mapped.ReasonSentence
+		}
+		view.OpenItems = append(view.OpenItems, projected)
 		if len(waiting) > 0 {
 			view.Settled = false
 		}
@@ -1012,6 +1187,95 @@ func collectWorkReports(views []ThreadView) []WorkReport {
 		return reports[i].ArtifactID < reports[j].ArtifactID
 	})
 	return reports
+}
+
+func admitThreadChildren(threads []Thread, views []ThreadView) {
+	for index := range threads {
+		threads[index].Members, threads[index].Windows.Members = admitPrefix(threads[index].Members, maximumDashboardThreadArtifacts)
+		threads[index].Links, threads[index].Windows.Links = admitPrefix(threads[index].Links, maximumDashboardThreadLinks)
+	}
+	for index := range views {
+		views[index].Artifacts, views[index].Windows.Artifacts = admitPrefix(views[index].Artifacts, maximumDashboardThreadArtifacts)
+		views[index].Transcript, views[index].Windows.Transcript = admitPrefix(views[index].Transcript, maximumDashboardThreadTranscriptRows)
+		views[index].OpenItems, views[index].Windows.OpenItems = admitPrefix(views[index].OpenItems, maximumDashboardThreadOpenItems)
+		views[index].Flags, views[index].Windows.Flags = admitPrefix(views[index].Flags, maximumDashboardThreadFlags)
+		views[index].Unresolved, views[index].Windows.Unresolved = admitPrefix(views[index].Unresolved, maximumDashboardThreadUnresolved)
+		views[index].Deliveries, views[index].Windows.Deliveries = admitPrefix(views[index].Deliveries, maximumDashboardThreadDeliveries)
+	}
+}
+
+func dashboardArtifactDetailRefs(data Data) []string {
+	seen := make(map[string]bool)
+	refs := make([]string, 0)
+	add := func(spaceID, artifactID string) {
+		if artifactID == "" {
+			return
+		}
+		ref := artifactID
+		if !strings.Contains(artifactID, ":") && spaceID != "" {
+			ref = spaceID + ":" + artifactID
+		}
+		if seen[ref] {
+			return
+		}
+		seen[ref] = true
+		refs = append(refs, ref)
+	}
+	addItems := func(items []Item) {
+		for _, item := range items {
+			add(item.Space, item.ID)
+		}
+	}
+	addEdges := func(edges []ContractEdge) {
+		for _, edge := range edges {
+			if edge.Drift == cache.DependencyDriftDangling {
+				continue
+			}
+			add(edge.Space, edge.Contract)
+		}
+	}
+
+	addItems(data.Aggregates.NeedYou.Items)
+	addItems(data.Aggregates.NoHumanMove.Items)
+	addItems(data.Aggregates.YouAwait.Items)
+	addItems(data.Inbox)
+	addItems(data.Outbox)
+	addItems(data.Archive)
+	for index, thread := range data.Threads {
+		for _, member := range thread.Members {
+			add(thread.Space, member.ID)
+		}
+		if index >= len(data.ThreadViews) {
+			continue
+		}
+		view := data.ThreadViews[index]
+		for _, artifact := range view.Artifacts {
+			add(view.Space, artifact.ID)
+		}
+		for _, row := range view.Transcript {
+			if row.Artifact != nil {
+				add(view.Space, row.Artifact.ID)
+			}
+		}
+		for _, item := range view.OpenItems {
+			add(view.Space, item.ID)
+		}
+	}
+	for _, report := range data.WorkReports {
+		add(report.Space, report.ArtifactID)
+		add(report.Space, report.SubjectRef)
+	}
+	addEdges(data.ContractEdges)
+	addEdges(data.Aggregates.LinesOffCurrent.Items)
+	for _, flag := range data.Flags {
+		add(flag.Space, flag.Artifact)
+	}
+	for _, view := range data.ThreadViews {
+		for _, flag := range view.Flags {
+			add(view.Space, flag.Subject)
+		}
+	}
+	return refs
 }
 
 // toThread projects one cache.ThreadResult into the dashboard's Thread shape
@@ -1158,30 +1422,13 @@ func toItem(it cache.Item, now time.Time, self string, open openItemIndex) Item 
 		SyncStale: it.SyncStale, YourMove: it.YourMove, Description: it.Description,
 		WaitingOn: it.WaitingOn, ExpectedTransition: it.ExpectedTransition,
 		Why: it.Why, HumanGate: it.HumanGate, OperationalItems: it.OperationalItems,
-		ReasonSentence: attentionSentence(it),
-		Prompt:         prompt,
+		ReasonSentence: attentionSentence(it), RuleIdentity: it.RuleIdentity,
+		Prompt: prompt,
 		// Carried, never recomputed. The whole point of the domain having
 		// answered is that this layer stops deciding.
 		Outcome: it.Outcome, Terminal: it.Terminal,
 		StateSince: it.StateSince, StateBy: it.StateBy, StateEvent: it.StateEvent,
 	}
-}
-
-func visibleArtifactRefs(groups ...[]cache.Item) []string {
-	seen := map[string]bool{}
-	var refs []string
-	for _, items := range groups {
-		for _, item := range items {
-			ref := item.Space + ":" + item.ID
-			if seen[ref] {
-				continue
-			}
-			seen[ref] = true
-			refs = append(refs, ref)
-		}
-	}
-	sort.Strings(refs)
-	return refs
 }
 
 func toArtifactDetail(show cache.ShowResult) (ArtifactDetail, error) {
@@ -1372,69 +1619,6 @@ func exchangeEdges(items []cache.Item, now time.Time) []ExchangeEdge {
 	return out
 }
 
-// providerOf extracts the provider system from a contract id (XC-<provider>-<slug>).
-func providerOf(contractID string) string {
-	parts := strings.SplitN(contractID, "-", 3)
-	if len(parts) >= 2 {
-		return parts[1]
-	}
-	return ""
-}
-
-func nodeStatus(idx map[string]*Node, system string) string {
-	if n := idx[system]; n != nil {
-		return n.Status
-	}
-	return ""
-}
-
-// dependencyFacts answers the consumer's actual question: what is happening
-// on the MAJOR line I registered, not merely what the contract's newest major
-// is doing. ContractInfo.Versions is semver-ascending, so the last matching
-// entry is the newest version available on that line.
-func dependencyFacts(ci cache.ContractInfo, pinnedMajor int) (
-	pinnedVersion, pinnedState, sunset, successor string,
-	availableMajors []int, drift string,
-) {
-	seenMajors := map[int]bool{}
-	var pinned *cache.ContractVersion
-	for i := range ci.Versions {
-		v := &ci.Versions[i]
-		major, validMajor := parseMajor(v.Version)
-		if validMajor && !seenMajors[major] {
-			seenMajors[major] = true
-			availableMajors = append(availableMajors, major)
-		}
-		if validMajor && major == pinnedMajor {
-			pinned = v
-		}
-	}
-	sort.Ints(availableMajors)
-	if pinned == nil {
-		if len(ci.Versions) == 0 {
-			return "", ci.State, "", "", availableMajors,
-				driftOf(ci.State, pinnedMajor, ci.Version)
-		}
-		return "", "missing", "", "", availableMajors, "missing"
-	}
-
-	pinnedVersion, pinnedState = pinned.Version, pinned.State
-	sunset, successor = pinned.Sunset, pinned.Successor
-	switch pinned.State {
-	case "retired":
-		drift = "retired"
-	case "deprecated":
-		drift = "deprecated"
-	default:
-		if majorOf(ci.Version) > pinnedMajor {
-			drift = "behind"
-		} else {
-			drift = "current"
-		}
-	}
-	return pinnedVersion, pinnedState, sunset, successor, availableMajors, drift
-}
-
 // spaceWorkflowVersion reads the immutable reusable-workflow ref already
 // committed in a space mirror. It is a separate compatibility axis from
 // space.yaml's min_binary_version. Malformed/absent workflows degrade to
@@ -1499,47 +1683,6 @@ func toReleaseNotes(in []notes.ReleaseNotes) []ReleaseNote {
 		out = append(out, row)
 	}
 	return out
-}
-
-// driftOf grades a dependency: retired/deprecated states win; else a newer
-// provider major than the pinned one is "behind"; else "current".
-func driftOf(state string, pinnedMajor int, providerVersion string) string {
-	switch state {
-	case "retired":
-		return "retired"
-	case "deprecated":
-		return "deprecated"
-	}
-	if pm := majorOf(providerVersion); pm > pinnedMajor {
-		return "behind"
-	}
-	return "current"
-}
-
-func majorOf(version string) int {
-	major, _ := parseMajor(version)
-	return major
-}
-
-func parseMajor(version string) (int, bool) {
-	if version == "" {
-		return 0, false
-	}
-	seg := version
-	if i := strings.IndexByte(seg, '.'); i >= 0 {
-		seg = seg[:i]
-	}
-	if seg == "" {
-		return 0, false
-	}
-	n := 0
-	for _, r := range seg {
-		if r < '0' || r > '9' {
-			return 0, false
-		}
-		n = n*10 + int(r-'0')
-	}
-	return n, true
 }
 
 // maxPriority returns the more-urgent of two priority strings (p1 > p2 > p3 > "").

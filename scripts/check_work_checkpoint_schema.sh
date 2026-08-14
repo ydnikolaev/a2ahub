@@ -123,7 +123,15 @@ func (c *checker) checkGoVocabulary(rel, modeType, waitType, label string) {
 	c.compare(label+" "+modeType+" constants", typedStringConstants(file, modeType), canonicalModes)
 	c.compare(label+" "+waitType+" constants", typedStringConstants(file, waitType), canonicalWaitKinds)
 	if label == "workreport" {
-		c.compare(label+" "+modeType+" Valid behavior", validMethodVocabulary(file, modeType), canonicalModes)
+		modes, err := enumeratorVocabulary(file, "Modes", modeType)
+		if err != nil {
+			c.add("%s %s Modes behavior: %v", label, modeType, err)
+		} else {
+			c.compare(label+" "+modeType+" Modes vocabulary", modes, canonicalModes)
+		}
+		if err := validMethodConsumesEnumerator(file, modeType, "Modes"); err != nil {
+			c.add("%s %s Valid behavior: %v", label, modeType, err)
+		}
 		c.compare(label+" "+waitType+" Valid behavior", validMethodVocabulary(file, waitType), canonicalWaitKinds)
 	}
 }
@@ -276,7 +284,106 @@ func typedStringConstants(file *ast.File, typeName string) []string {
 	return values
 }
 
-func validMethodVocabulary(file *ast.File, typeName string) []string {
+func enumeratorVocabulary(file *ast.File, functionName, typeName string) ([]string, error) {
+	var matches []*ast.FuncDecl
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if ok && fn.Name.Name == functionName && fn.Recv == nil {
+			matches = append(matches, fn)
+		}
+	}
+	if len(matches) != 1 {
+		return nil, fmt.Errorf("expected exactly one %s function, found %d", functionName, len(matches))
+	}
+	fn := matches[0]
+	if fn.Type.TypeParams != nil || fieldCount(fn.Type.Params) != 0 || fn.Type.Results == nil || len(fn.Type.Results.List) != 1 {
+		return nil, fmt.Errorf("%s must have signature func() []%s", functionName, typeName)
+	}
+	result := fn.Type.Results.List[0]
+	resultType, ok := result.Type.(*ast.ArrayType)
+	if len(result.Names) != 0 || !ok || resultType.Len != nil || !isIdent(resultType.Elt, typeName) {
+		return nil, fmt.Errorf("%s must return an unnamed []%s", functionName, typeName)
+	}
+	if fn.Body == nil || len(fn.Body.List) != 1 {
+		return nil, fmt.Errorf("%s must directly return one fresh []%s literal", functionName, typeName)
+	}
+	ret, ok := fn.Body.List[0].(*ast.ReturnStmt)
+	if !ok || len(ret.Results) != 1 {
+		return nil, fmt.Errorf("%s must directly return one fresh []%s literal", functionName, typeName)
+	}
+	literal, ok := ret.Results[0].(*ast.CompositeLit)
+	if !ok {
+		return nil, fmt.Errorf("%s must directly return one fresh []%s literal", functionName, typeName)
+	}
+	literalType, ok := literal.Type.(*ast.ArrayType)
+	if !ok || literalType.Len != nil || !isIdent(literalType.Elt, typeName) || literal.Incomplete {
+		return nil, fmt.Errorf("%s must directly return one complete []%s literal", functionName, typeName)
+	}
+	constants := typedStringConstantMap(file, typeName)
+	values := make([]string, 0, len(literal.Elts))
+	for _, element := range literal.Elts {
+		ident, ok := element.(*ast.Ident)
+		if !ok {
+			return nil, fmt.Errorf("%s entries must be named %s constants", functionName, typeName)
+		}
+		value, ok := constants[ident.Name]
+		if !ok {
+			return nil, fmt.Errorf("%s entry %s is not a typed %s string constant", functionName, ident.Name, typeName)
+		}
+		values = append(values, value)
+	}
+	return values, nil
+}
+
+func validMethodConsumesEnumerator(file *ast.File, typeName, functionName string) error {
+	var matches []*ast.FuncDecl
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != "Valid" || fn.Recv == nil || len(fn.Recv.List) != 1 {
+			continue
+		}
+		receiverType, ok := fn.Recv.List[0].Type.(*ast.Ident)
+		if ok && receiverType.Name == typeName {
+			matches = append(matches, fn)
+		}
+	}
+	if len(matches) != 1 {
+		return fmt.Errorf("expected exactly one %s.Valid method, found %d", typeName, len(matches))
+	}
+	fn := matches[0]
+	receiver := fn.Recv.List[0]
+	if len(receiver.Names) != 1 || receiver.Names[0].Name == "_" || fn.Type.TypeParams != nil ||
+		fieldCount(fn.Type.Params) != 0 || fn.Type.Results == nil || len(fn.Type.Results.List) != 1 {
+		return fmt.Errorf("%s.Valid must have signature func (%s %s) Valid() bool", typeName, strings.ToLower(typeName[:1]), typeName)
+	}
+	result := fn.Type.Results.List[0]
+	if len(result.Names) != 0 || !isIdent(result.Type, "bool") {
+		return fmt.Errorf("%s.Valid must return one unnamed bool", typeName)
+	}
+	if fn.Body == nil || len(fn.Body.List) != 2 {
+		return closedValidShapeError(typeName, functionName)
+	}
+	rangeStmt, ok := fn.Body.List[0].(*ast.RangeStmt)
+	if !ok || rangeStmt.Tok != token.DEFINE || !isIdent(rangeStmt.Key, "_") {
+		return closedValidShapeError(typeName, functionName)
+	}
+	value, ok := rangeStmt.Value.(*ast.Ident)
+	if !ok || value.Name == "_" || value.Name == receiver.Names[0].Name || !isZeroArgumentCall(rangeStmt.X, functionName) ||
+		rangeStmt.Body == nil || len(rangeStmt.Body.List) != 1 {
+		return closedValidShapeError(typeName, functionName)
+	}
+	ifStmt, ok := rangeStmt.Body.List[0].(*ast.IfStmt)
+	if !ok || ifStmt.Init != nil || ifStmt.Else != nil || !isEquality(ifStmt.Cond, receiver.Names[0].Name, value.Name) ||
+		ifStmt.Body == nil || len(ifStmt.Body.List) != 1 || !isBoolReturn(ifStmt.Body.List[0], true) {
+		return closedValidShapeError(typeName, functionName)
+	}
+	if !isBoolReturn(fn.Body.List[1], false) {
+		return closedValidShapeError(typeName, functionName)
+	}
+	return nil
+}
+
+func typedStringConstantMap(file *ast.File, typeName string) map[string]string {
 	constants := make(map[string]string)
 	for _, decl := range file.Decls {
 		gen, ok := decl.(*ast.GenDecl)
@@ -285,17 +392,58 @@ func validMethodVocabulary(file *ast.File, typeName string) []string {
 		}
 		for _, rawSpec := range gen.Specs {
 			spec, ok := rawSpec.(*ast.ValueSpec)
-			if !ok || len(spec.Names) != 1 || len(spec.Values) != 1 {
+			if !ok || len(spec.Names) != 1 || len(spec.Values) != 1 || !isIdent(spec.Type, typeName) {
 				continue
 			}
-			ident, ok := spec.Type.(*ast.Ident)
-			literal, literalOK := spec.Values[0].(*ast.BasicLit)
-			if !ok || ident.Name != typeName || !literalOK || literal.Kind != token.STRING {
-				continue
+			literal, ok := spec.Values[0].(*ast.BasicLit)
+			if ok && literal.Kind == token.STRING {
+				constants[spec.Names[0].Name] = strings.Trim(literal.Value, `"`)
 			}
-			constants[spec.Names[0].Name] = strings.Trim(literal.Value, `"`)
 		}
 	}
+	return constants
+}
+
+func fieldCount(fields *ast.FieldList) int {
+	if fields == nil {
+		return 0
+	}
+	return fields.NumFields()
+}
+
+func isIdent(expression ast.Expr, name string) bool {
+	ident, ok := expression.(*ast.Ident)
+	return ok && ident.Name == name
+}
+
+func isZeroArgumentCall(expression ast.Expr, functionName string) bool {
+	call, ok := expression.(*ast.CallExpr)
+	return ok && call.Ellipsis == token.NoPos && len(call.Args) == 0 && isIdent(call.Fun, functionName)
+}
+
+func isEquality(expression ast.Expr, left, right string) bool {
+	binary, ok := expression.(*ast.BinaryExpr)
+	return ok && binary.Op == token.EQL && isIdent(binary.X, left) && isIdent(binary.Y, right)
+}
+
+func isBoolReturn(statement ast.Stmt, value bool) bool {
+	ret, ok := statement.(*ast.ReturnStmt)
+	if !ok || len(ret.Results) != 1 {
+		return false
+	}
+	want := "false"
+	if value {
+		want = "true"
+	}
+	return isIdent(ret.Results[0], want)
+}
+
+func closedValidShapeError(typeName, functionName string) error {
+	return fmt.Errorf("%s.Valid must only range over %s(), return true for an equal entry, and otherwise return false", typeName, functionName)
+}
+
+func validMethodVocabulary(file *ast.File, typeName string) []string {
+	constants := typedStringConstantMap(file, typeName)
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
 		if !ok || fn.Name.Name != "Valid" || fn.Recv == nil || len(fn.Recv.List) != 1 || fn.Body == nil {

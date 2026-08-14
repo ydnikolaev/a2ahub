@@ -158,6 +158,62 @@ func TestLimitContractVersionDetailsBoundsWorstCaseDeterministically(t *testing.
 	}
 }
 
+func TestContractDocumentBounds(t *testing.T) {
+	t.Parallel()
+
+	for _, size := range []int{2047, 2048, 2049} {
+		t.Run(fmt.Sprintf("bytes_%d", size), func(t *testing.T) {
+			t.Parallel()
+			raw := []byte(strings.Repeat("x", size))
+			contracts := []Contract{{Space: "space", ID: "XC-atlas-sentinel", Versions: []ContractVersion{{
+				Version: "1.0.0", Detail: &ContractVersionDetail{Status: ContractVersionDetailAvailable, Documents: []ContractVersionDocument{{
+					Path: "schema/sentinel.json", SizeBytes: int64(len(raw)), Preview: contractVersionPreview(raw),
+				}}},
+			}}}}
+			limitContractVersionDetails(contracts)
+			document := contracts[0].Versions[0].Detail.Documents[0]
+			wantShown := size
+			if wantShown > 2048 {
+				wantShown = 2048
+			}
+			if document.ShownBytes != int64(wantShown) || document.TotalBytes != int64(size) || document.Truncated != (size > 2048) {
+				t.Fatalf("contract document %d-byte bounds = shown %d total %d truncated %t, want %d/%d/%t",
+					size, document.ShownBytes, document.TotalBytes, document.Truncated, wantShown, size, size > 2048)
+			}
+		})
+	}
+
+	// 129 full previews exceed the later 256 KiB global preview allocation.
+	// The retained metadata remains present and must report the final shortened
+	// preview, rather than the earlier per-document 2048-byte result.
+	versions := make([]ContractVersion, 129)
+	for index := range versions {
+		versions[index] = ContractVersion{
+			Version: fmt.Sprintf("1.%03d.0", index),
+			Detail: &ContractVersionDetail{Status: ContractVersionDetailAvailable, Documents: []ContractVersionDocument{{
+				Path: "schema/sentinel.json", SizeBytes: 2048, Preview: strings.Repeat("x", 2048),
+			}}},
+		}
+	}
+	contracts := []Contract{{Space: "space", ID: "XC-atlas-sentinel", Versions: versions}}
+	limitContractVersionDetails(contracts)
+	var shortened *ContractVersionDocument
+	for versionIndex := range contracts[0].Versions {
+		documents := contracts[0].Versions[versionIndex].Detail.Documents
+		if len(documents) == 1 && documents[0].ShownBytes < documents[0].TotalBytes {
+			shortened = &documents[0]
+			break
+		}
+	}
+	if shortened == nil {
+		t.Fatal("global preview budget did not shorten a retained document; test fixture has no tooth")
+	}
+	if shortened.ShownBytes != int64(len(shortened.Preview)) || shortened.TotalBytes != 2048 || !shortened.Truncated {
+		t.Fatalf("globally shortened document bounds = shown %d preview %d total %d truncated %t",
+			shortened.ShownBytes, len(shortened.Preview), shortened.TotalBytes, shortened.Truncated)
+	}
+}
+
 func TestAssembleContractVersionDetailsResolveExactHistoricalPackages(t *testing.T) {
 	t.Parallel()
 

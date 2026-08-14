@@ -23,6 +23,7 @@ import (
 // Everything is space-tagged so the per-space tabs filter by space id.
 type Data struct {
 	Meta            DemoMeta             `json:"meta,omitempty"`
+	Vocabulary      VocabularyTable      `json:"vocabulary"`
 	GeneratedAt     time.Time            `json:"generatedAt"` // snapshot time (STATIC view)
 	Self            string               `json:"self"`        // the viewing system (ego node)
 	Tooling         Tooling              `json:"tooling"`
@@ -44,6 +45,96 @@ type Data struct {
 	Operational     operational.Snapshot `json:"operational"`
 	ArtifactDetails []ArtifactDetail     `json:"artifactDetails,omitempty"`
 	Unavailable     []UnavailableFact    `json:"unavailable,omitempty"`
+	Aggregates      DashboardAggregates  `json:"aggregates"`
+	Windows         DashboardWindows     `json:"windows"`
+}
+
+// VocabularyTable is the complete payload-local dictionary for status-bearing
+// values. Unknown is presentation fallback, not a fabricated domain entry.
+type VocabularyTable struct {
+	Entries []VocabularyEntry  `json:"entries"`
+	Unknown VocabularyFallback `json:"unknown"`
+}
+
+// VocabularyEntry binds one typed family/value pair to permanent bilingual
+// meaning and to the closed presentation cues the browser may apply.
+type VocabularyEntry struct {
+	Value         string           `json:"value"`
+	Family        VocabularyFamily `json:"family"`
+	LabelRU       string           `json:"labelRU"`
+	LabelEN       string           `json:"labelEN"`
+	ExplanationRU string           `json:"explanationRU"`
+	ExplanationEN string           `json:"explanationEN"`
+	Tone          VocabularyTone   `json:"tone"`
+	Cue           string           `json:"cue"`
+}
+
+// VocabularyFallback is the honest result for an unrecognized family/value.
+// It deliberately carries neither field, so it cannot pose as catalogue data.
+type VocabularyFallback struct {
+	LabelRU       string         `json:"labelRU"`
+	LabelEN       string         `json:"labelEN"`
+	ExplanationRU string         `json:"explanationRU"`
+	ExplanationEN string         `json:"explanationEN"`
+	Tone          VocabularyTone `json:"tone"`
+	Cue           string         `json:"cue"`
+}
+
+// VocabularyFamily identifies one closed family in the dashboard's bilingual
+// vocabulary.
+type VocabularyFamily string
+
+// VocabularyTone identifies the presentation intent and non-color cue assigned
+// to a dashboard vocabulary entry.
+type VocabularyTone string
+
+// DashboardItemSet is one admitted prefix of a cache-owned aggregate set.
+// Window.Total remains the KPI value even when Items is bounded.
+type DashboardItemSet struct {
+	Items  []Item             `json:"items"`
+	Window operational.Window `json:"window"`
+}
+
+// DashboardContractEdgeSet carries the admitted off-current dependency lines
+// and the evidence needed to distinguish a complete scan from degradation.
+type DashboardContractEdgeSet struct {
+	Items        []ContractEdge          `json:"items"`
+	Window       operational.Window      `json:"window"`
+	Complete     bool                    `json:"complete"`
+	Degradations []DependencyDegradation `json:"degradations"`
+}
+
+// DashboardAggregates carries the bounded attention and dependency summaries
+// shown at the dashboard root.
+type DashboardAggregates struct {
+	NeedYou         DashboardItemSet         `json:"needYou"`
+	NoHumanMove     DashboardItemSet         `json:"noHumanMove"`
+	YouAwait        DashboardItemSet         `json:"youAwait"`
+	LinesOffCurrent DashboardContractEdgeSet `json:"linesOffCurrent"`
+}
+
+// DependencyDegradation names a dependency registry input that could not be
+// included honestly in LinesOffCurrent.
+type DependencyDegradation struct {
+	Space  string `json:"space"`
+	System string `json:"system"`
+	Path   string `json:"path"`
+	Code   string `json:"code"`
+	Reason string `json:"reason"`
+}
+
+// DashboardWindows records every root collection whose embedded prefix may be
+// smaller than its domain total. Threads covers the paired list/detail slices.
+type DashboardWindows struct {
+	Inbox           operational.Window `json:"inbox"`
+	Outbox          operational.Window `json:"outbox"`
+	Archive         operational.Window `json:"archive"`
+	Threads         operational.Window `json:"threads"`
+	ContractEdges   operational.Window `json:"contractEdges"`
+	ExchangeEdges   operational.Window `json:"exchangeEdges"`
+	Flags           operational.Window `json:"flags"`
+	WorkReports     operational.Window `json:"workReports"`
+	ArtifactDetails operational.Window `json:"artifactDetails"`
 }
 
 // DemoMeta labels the canonical dense design fixture. Live data leaves this
@@ -102,6 +193,7 @@ type Tooling struct {
 type SpaceHealth struct {
 	ID               string `json:"id"`
 	RepoURL          string `json:"repoURL"`
+	Synced           bool   `json:"synced"`
 	SyncAge          string `json:"syncAge"` // pre-formatted (e.g. "3m"), "" if never synced
 	Stale            bool   `json:"stale"`
 	Revision         string `json:"revision,omitempty"` // exact mirror HEAD for this static snapshot
@@ -224,6 +316,7 @@ type Item struct {
 	HumanGate          string                  `json:"humanGate,omitempty"`
 	OperationalItems   []cache.OperationalItem `json:"operationalItems,omitempty"`
 	ReasonSentence     LocalizedText           `json:"reasonSentence,omitzero"`
+	RuleIdentity       cache.RuleIdentity      `json:"ruleIdentity,omitempty"`
 	// Description is a short human-readable summary (from the artifact body) —
 	// UNTRUSTED, rendered via textContent (D-001). Omitted when the body is empty.
 	Description string `json:"description,omitempty"`
@@ -291,6 +384,7 @@ type Thread struct {
 
 	Members []ThreadMember `json:"members"`
 	Links   []DocLink      `json:"links"`
+	Windows ThreadWindows  `json:"windows"`
 
 	// Settled reports that no member of this thread still owes anyone a move.
 	// The protocol has no thread-level "closed" state — closure is DERIVED:
@@ -299,6 +393,13 @@ type Thread struct {
 	// finished in every sense a reader cares about. Without this the list
 	// showed "waiting on others" on threads nobody was waiting on.
 	Settled bool `json:"settled"`
+}
+
+// ThreadWindows records admission metadata for a thread's member and link
+// collections.
+type ThreadWindows struct {
+	Members operational.Window `json:"members"`
+	Links   operational.Window `json:"links"`
 }
 
 // ThreadOpener is a thread's computed opener — the brief's own {id,title}
@@ -367,12 +468,10 @@ type Contract struct {
 	Versions []ContractVersion `json:"versions,omitempty"`
 	// NonAdoptable carries cache.ContractInfo.NonAdoptable straight through
 	// (F4, agent-exchange-2026-08 wave 36): the descriptor's own
-	// `x_binding` refusal `a2a contract adopt` computes today only AFTER an
-	// operator tries the command. False (the zero value) reads as
-	// "adoptable" whether the field is genuinely declared adoptable or
-	// simply undeclared — P-1's own default, and also today's transitional
-	// reading until cache.Store.Contracts (store.go) is wired to populate
-	// its source; see that field's own doc comment.
+	// `x_binding` refusal reaches the dashboard from cache.Store.Contracts.
+	// False (the zero value) reads as "adoptable" whether the field is
+	// genuinely declared adoptable or simply undeclared — P-1's own default;
+	// see the cache field's doc comment for that source distinction.
 	NonAdoptable bool `json:"nonAdoptable,omitempty"`
 }
 
@@ -447,6 +546,9 @@ type ContractVersionDocument struct {
 	SizeBytes       int64  `json:"sizeBytes,omitempty"`
 	Preview         string `json:"preview,omitempty"`
 	PreviewLanguage string `json:"previewLanguage,omitempty"`
+	ShownBytes      int64  `json:"shownBytes"`
+	TotalBytes      int64  `json:"totalBytes"`
+	Truncated       bool   `json:"truncated"`
 }
 
 // ContractVersionHistory is a compact version-lifecycle fact. EventID, Actor,
@@ -541,6 +643,7 @@ type ThreadView struct {
 	OpenItems    []ThreadOpenItem      `json:"open_items"`
 	Flags        []ThreadViewFlag      `json:"flags"`
 	Unresolved   []ThreadUnresolvedRef `json:"unresolved"`
+	Windows      ThreadViewWindows     `json:"windows"`
 
 	// Settled mirrors Thread.Settled for the detail pane, so the "whose move"
 	// panel can be replaced with a finished state instead of rendering an
@@ -562,6 +665,17 @@ type ThreadView struct {
 	// no data deliverables emits no `"deliveries"` key at all, never a
 	// stray `"deliveries":null`.
 	Deliveries []Delivery `json:"deliveries,omitempty"`
+}
+
+// ThreadViewWindows records admission metadata for every bounded collection in
+// the thread detail view.
+type ThreadViewWindows struct {
+	Artifacts  operational.Window `json:"artifacts"`
+	Transcript operational.Window `json:"transcript"`
+	OpenItems  operational.Window `json:"openItems"`
+	Flags      operational.Window `json:"flags"`
+	Unresolved operational.Window `json:"unresolved"`
+	Deliveries operational.Window `json:"deliveries"`
 }
 
 // ThreadViewOpener identifies the artifact that began a thread.
@@ -740,9 +854,11 @@ type ThreadOpenItem struct {
 	// surface naming a move the tool would then refuse. Fixing the relation
 	// alone would not have fixed it, because the failure was always on the
 	// surface.
-	ExpectedTransition string `json:"expected_transition,omitempty"`
-	Why                string `json:"why"`
-	HumanGate          string `json:"human_gate,omitempty"`
+	ExpectedTransition string             `json:"expected_transition,omitempty"`
+	Why                string             `json:"why"`
+	HumanGate          string             `json:"human_gate,omitempty"`
+	ReasonSentence     LocalizedText      `json:"reasonSentence,omitzero"`
+	RuleIdentity       cache.RuleIdentity `json:"ruleIdentity,omitempty"`
 
 	// OperationalItems carries cache.OpenItem.OperationalItems straight
 	// through (spec 05 AC4, agent-exchange-2026-08 P5) — the same "reuse

@@ -7,7 +7,7 @@ import (
 
 func TestDashboardLiveClientConsumesRevisionThenBoundedSnapshot(t *testing.T) {
 	t.Parallel()
-	template := DefaultTemplate()
+	template := []byte(dashboardTemplateCorpus(t))
 	for _, required := range [][]byte{
 		[]byte(`new EventSource("/api/v1/events")`),
 		[]byte(`fetch("/api/v1/snapshot"`),

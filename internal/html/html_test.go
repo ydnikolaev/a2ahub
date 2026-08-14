@@ -11,21 +11,6 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/workreport"
 )
 
-func TestProviderOf(t *testing.T) {
-	t.Parallel()
-	cases := map[string]string{
-		"XC-seomatrix-feed-v1": "seomatrix",
-		"XC-axon-ingest":       "axon",
-		"nodash":               "",
-		"XC-":                  "",
-	}
-	for in, want := range cases {
-		if got := providerOf(in); got != want {
-			t.Errorf("providerOf(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 func TestNoteProjectionReachesThreadAndArtifactDetail(t *testing.T) {
 	t.Parallel()
 	note := "A committed note must remain readable."
@@ -79,36 +64,6 @@ func TestCommittedWorkProjectionReachesThreadAndHistoryCollection(t *testing.T) 
 	reports := collectWorkReports([]ThreadView{thread})
 	if len(reports) != 1 || reports[0].SubjectRef != "XW-test" || reports[0].ReportedAt != reportedAt.Format(time.RFC3339Nano) {
 		t.Fatalf("collected work reports = %+v", reports)
-	}
-}
-
-func TestDriftOf(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		state           string
-		pinned          int
-		providerVersion string
-		want            string
-	}{
-		{"published", 1, "1.2.0", "current"},
-		{"published", 1, "2.0.0", "behind"},
-		{"deprecated", 1, "1.0.0", "deprecated"},
-		{"retired", 1, "3.0.0", "retired"},
-		{"published", 2, "1.0.0", "current"}, // provider not ahead
-	}
-	for _, c := range cases {
-		if got := driftOf(c.state, c.pinned, c.providerVersion); got != c.want {
-			t.Errorf("driftOf(%q,%d,%q) = %q, want %q", c.state, c.pinned, c.providerVersion, got, c.want)
-		}
-	}
-}
-
-func TestMajorOf(t *testing.T) {
-	t.Parallel()
-	for in, want := range map[string]int{"2.1.0": 2, "10.0.0": 10, "1": 1, "": 0, "vX": 0} {
-		if got := majorOf(in); got != want {
-			t.Errorf("majorOf(%q) = %d, want %d", in, got, want)
-		}
 	}
 }
 
@@ -206,7 +161,7 @@ func TestRender_InjectsBothRegions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(out, []byte(`"self": "axon"`)) {
+	if !bytes.Contains(out, []byte(`"self":"axon"`)) {
 		t.Fatalf("DATA not injected:\n%s", out)
 	}
 	// DOCS is injected as a section object; its html is JSON-escaped like DATA
@@ -241,7 +196,7 @@ func TestRender_MissingMarkers(t *testing.T) {
 
 // TestRender_SanitizesScriptBreakout: a hostile title containing "</script>"
 // must be escaped in the injected JSON so it cannot break out of the <script>
-// block (json.Marshal escapes < as <).
+// block (json.Marshal escapes < as \u003c).
 func TestRender_SanitizesScriptBreakout(t *testing.T) {
 	t.Parallel()
 	hostile := `</script><img src=x onerror=alert(1)>`
@@ -260,8 +215,8 @@ func TestRender_SanitizesScriptBreakout(t *testing.T) {
 // TestRender_SanitizesThreadTitle is TestRender_SanitizesScriptBreakout's own
 // shape, for the newly-surfaced Thread.Opener/Thread.Members titles (spec 46
 // §T6.1): a hostile title anywhere in a Thread must not break out of the
-// <script> block either — same json.MarshalIndent escaping, exercised over
-// the new struct.
+// <script> block either — same encoding/json escaping, exercised over
+// the new struct and canonical compact encoder.
 func TestRender_SanitizesThreadTitle(t *testing.T) {
 	t.Parallel()
 	hostile := `</script><img src=x onerror=alert(1)>`
@@ -329,7 +284,7 @@ func TestDefaultTemplate_HasMarkers(t *testing.T) {
 
 func TestDefaultTemplate_CarriesApprovedV4ViewsWithoutRemoteLoads(t *testing.T) {
 	t.Parallel()
-	tmpl := string(DefaultTemplate())
+	tmpl := dashboardTemplateCorpus(t)
 	// Integrity is no longer a view: its three panels are a qualifier on the
 	// freshness table and now live at the bottom of Spaces. Docs took its slot —
 	// the embedded SSOT corpus gets its own route instead of hiding in Guide.
@@ -369,7 +324,7 @@ func TestDefaultTemplate_ExplanatoryPopoversShareHoverBehavior(t *testing.T) {
 
 func TestDefaultTemplate_DetailHierarchyAndGuideStayConsistent(t *testing.T) {
 	t.Parallel()
-	tmpl := string(DefaultTemplate())
+	tmpl := dashboardTemplateCorpus(t)
 
 	for _, want := range []string{
 		`--font-detail-title: 28px`,
@@ -435,7 +390,7 @@ func TestDefaultTemplate_MapTooltipsEscapeTheSVGAndPanelsContainText(t *testing.
 
 func TestDefaultTemplate_ArtifactPreviewAndDeadlineHierarchy(t *testing.T) {
 	t.Parallel()
-	tmpl := string(DefaultTemplate())
+	tmpl := dashboardTemplateCorpus(t)
 	start := strings.Index(tmpl, `window.__resourceBlobs["./ArtifactDetail.dc.html"]`)
 	if start < 0 {
 		t.Fatal("embedded dashboard has no ArtifactDetail component")
@@ -536,7 +491,7 @@ func TestDefaultTemplate_ArtifactPreviewAndDeadlineHierarchy(t *testing.T) {
 
 func TestDefaultTemplate_WorkReportsUseDurableHistoryAndCollapseTechnicalPublish(t *testing.T) {
 	t.Parallel()
-	tmpl := string(DefaultTemplate())
+	tmpl := dashboardTemplateCorpus(t)
 	for _, required := range []string{
 		`"workReports"`,
 		`const workEvents = (d.workReports || []).filter`,
@@ -555,11 +510,7 @@ func TestDefaultTemplate_WorkReportsUseDurableHistoryAndCollapseTechnicalPublish
 
 func TestDashboardDesignSource_WorkReportAndThreadSelectionSemantics(t *testing.T) {
 	t.Parallel()
-	sourceBytes, err := os.ReadFile("../../web/design-source/14-local-dashboard-v4.dc.html")
-	if err != nil {
-		t.Fatalf("read dashboard design source: %v", err)
-	}
-	source := string(sourceBytes)
+	source := dashboardTemplateCorpus(t)
 	for _, required := range []string{
 		`report.artifact_id === a.id || subjectID === a.id`,
 		`Number(right.commit_sequence || 0) - Number(left.commit_sequence || 0)`,
@@ -578,7 +529,7 @@ func TestDashboardDesignSource_WorkReportAndThreadSelectionSemantics(t *testing.
 
 func TestDefaultTemplate_HumanFacingDashboardLabelsStayActionable(t *testing.T) {
 	t.Parallel()
-	tmpl := string(DefaultTemplate())
+	tmpl := dashboardTemplateCorpus(t)
 
 	for _, want := range []string{
 		`порядок событий: по коммитам`,
@@ -700,11 +651,7 @@ func TestDefaultTemplate_HumanFacingDashboardLabelsStayActionable(t *testing.T) 
 
 func TestDashboardDesignSource_OperationalRowsKeepEvidenceLayersSeparate(t *testing.T) {
 	t.Parallel()
-	sourceBytes, err := os.ReadFile("../../web/design-source/14-local-dashboard-v4.dc.html")
-	if err != nil {
-		t.Fatalf("read dashboard design source: %v", err)
-	}
-	source := string(sourceBytes)
+	source := dashboardTemplateCorpus(t)
 
 	heading := strings.Index(source, `<div class="a2a-overview-command-heading">`)
 	snapshot := strings.Index(source, `<div class="a2a-overview-snapshot">`)
@@ -771,11 +718,7 @@ func TestDashboardDesignSource_OperationalRowsKeepEvidenceLayersSeparate(t *test
 
 func TestDashboardDesignSource_SelectedSpaceOperationalEmptyStatesUseSnapshotEvidence(t *testing.T) {
 	t.Parallel()
-	sourceBytes, err := os.ReadFile("../../web/design-source/14-local-dashboard-v4.dc.html")
-	if err != nil {
-		t.Fatalf("read dashboard design source: %v", err)
-	}
-	source := string(sourceBytes)
+	source := dashboardTemplateCorpus(t)
 
 	for _, required := range []string{
 		`data-overview-operational-empty="true"`,
@@ -801,7 +744,7 @@ func TestDashboardDesignSource_SelectedSpaceOperationalEmptyStatesUseSnapshotEvi
 
 func TestDefaultTemplate_ThreadCardsShareRhythmAndOpenByTitle(t *testing.T) {
 	t.Parallel()
-	tmpl := string(DefaultTemplate())
+	tmpl := dashboardTemplateCorpus(t)
 
 	for _, want := range []string{
 		`--space-card-tags-to-author: 16px`,
@@ -917,7 +860,7 @@ func TestDefaultTemplate_ContractVersionPackageIsSelectableAndTextOnly(t *testin
 
 func TestDefaultTemplate_HasBilingualShellWithEnglishDefault(t *testing.T) {
 	t.Parallel()
-	tmpl := string(DefaultTemplate())
+	tmpl := dashboardTemplateCorpus(t)
 	for _, want := range []string{`<html lang="en">`, `a2a-locale`, `>EN</button>`, `>RU</button>`, `Interface language`, `Язык интерфейса`} {
 		if !strings.Contains(tmpl, want) {
 			t.Errorf("embedded dashboard is missing bilingual-shell marker %q", want)

@@ -42,6 +42,19 @@ const (
 	FreshnessUnknown Freshness = "unknown"
 )
 
+// FreshnessValues returns every freshness value in stable normative order.
+// The returned slice is fresh so callers cannot mutate the vocabulary.
+func FreshnessValues() []Freshness {
+	return []Freshness{
+		FreshnessLocalCurrent,
+		FreshnessCommittedCurrent,
+		FreshnessStale,
+		FreshnessFinished,
+		FreshnessPendingRecovery,
+		FreshnessUnknown,
+	}
+}
+
 // SourceKind identifies the origin of a projection fact.
 type SourceKind string
 
@@ -65,6 +78,18 @@ const (
 	// SourceDegraded identifies a source refreshed with an explicit problem.
 	SourceDegraded SourceFreshness = "degraded"
 )
+
+// SourceFreshnessValues returns every source freshness value in stable
+// normative order. The returned slice is fresh so callers cannot mutate the
+// vocabulary.
+func SourceFreshnessValues() []SourceFreshness {
+	return []SourceFreshness{
+		SourceCurrent,
+		SourceStale,
+		SourceUnavailable,
+		SourceDegraded,
+	}
+}
 
 // Actor identifies a protocol or work actor in public-safe form.
 type Actor struct {
@@ -145,12 +170,28 @@ type Work struct {
 	WaitingOn           []workreport.WaitingOn `json:"waiting_on"`
 }
 
+// ConsistencySeverity classifies the impact of a cross-source anomaly.
+type ConsistencySeverity string
+
+const (
+	// ConsistencyWarning marks an anomaly that needs attention without claiming
+	// the projected work item is unusable.
+	ConsistencyWarning ConsistencySeverity = "warning"
+)
+
+// ConsistencySeverities returns every consistency severity in stable
+// normative order. The returned slice is fresh so callers cannot mutate the
+// vocabulary.
+func ConsistencySeverities() []ConsistencySeverity {
+	return []ConsistencySeverity{ConsistencyWarning}
+}
+
 // Consistency records a bounded cross-source anomaly for a work item.
 type Consistency struct {
-	Code       string `json:"code"`
-	SubjectRef string `json:"subject_ref"`
-	Severity   string `json:"severity"`
-	Summary    string `json:"summary"`
+	Code       string              `json:"code"`
+	SubjectRef string              `json:"subject_ref"`
+	Severity   ConsistencySeverity `json:"severity"`
+	Summary    string              `json:"summary"`
 }
 
 // Window describes truncation applied to a bounded collection.
