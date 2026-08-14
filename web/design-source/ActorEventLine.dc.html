@@ -41,9 +41,10 @@
       <sc-if value="{{ hasPlainSubject }}" hint-placeholder-val="{{ false }}"><span style="{{ plainSubjectStyle }}">{{ subjectLabel }}</span></sc-if>
     </div>
     <div style="{{ metaStyle }}">{{ meta }}</div>
+    <sc-if value="{{ hasNoteText }}" hint-placeholder-val="{{ false }}"><div data-event-note style="margin-top:7px; color:var(--body); line-height:1.55; overflow-wrap:anywhere; white-space:pre-wrap;">{{ noteText }}</div></sc-if>
   </div>
 
-  <sc-if value="{{ hasSignal }}" hint-placeholder-val="{{ false }}"><span style="padding-top:1px;"><dc-import name="EventSignal" tone="{{ signalTone }}" label="{{ signalLabel }}" hint-size="20px,20px"></dc-import></span></sc-if>
+  <sc-if value="{{ hasSignal }}" hint-placeholder-val="{{ false }}"><span style="padding-top:1px;"><dc-import name="EventSignal" result="{{ signalResult }}" tone="{{ signalTone }}" label="{{ signalLabel }}" hint-size="20px,20px"></dc-import></span></sc-if>
 </div>
 
 </x-dc>
@@ -92,6 +93,8 @@ class Component extends DCLogic {
     const hasPlainSubject = !!row.subjectLabel && !hasSubjectLink && !hasNoteLink;
     const systemSelf = !!row.systemSelf;
     const dim = !!row.dim;
+    const transitionResult = row.transitionResult && typeof row.transitionResult === "object" ? row.transitionResult : null;
+    const signalLabel = row.signalLabel || "";
     const avatarBase = "width:" + s.avatar + "px; height:" + s.avatar + "px; border-radius:99px; display:flex; align-items:center; justify-content:center; overflow:hidden; background:" + (systemSelf ? "var(--teal-solid)" : "var(--attention-line)") + "; color:" + (systemSelf ? "var(--on-solid)" : "var(--attention-strong)") + "; box-shadow:0 0 0 " + (rail ? "4px var(--surface)" : "2px var(--surface-card)") + ", inset 0 0 0 1px var(--hairline);";
     const ru = document.documentElement.lang === "ru";
     const hasAgentBadge = !!row.hasAgentBadge && !!row.agentID;
@@ -106,7 +109,10 @@ class Component extends DCLogic {
     const agentHintText = agentLabel + (agentModel ? (ru ? " · модель " : " · model ") + agentModel : "") + ". " + agentClaimText;
     return {
       actorName: row.actorName || "",
-      actionText: row.actionText || "",
+      // Resolver output dominates for protocol events. Artifact creation,
+      // work checkpoints and registry facts intentionally omit it and retain
+      // their explicit static action path.
+      actionText: transitionResult ? transitionResult.label : (row.actionText || ""),
       meta: row.meta || "",
       avatar: row.avatar || "",
       avatarMono: row.avatarMono || "?",
@@ -126,10 +132,13 @@ class Component extends DCLogic {
       noteLinkLabel: row.noteLinkLabel || "",
       noteTitle: row.noteTitle || "",
       openNote: row.openNote || (() => {}),
+      hasNoteText:!!row.hasNoteText,
+      noteText:row.noteText || "",
+      signalResult: transitionResult,
       signalTone: row.signalTone || "neutral",
-      signalLabel: row.signalLabel || "",
-      hasSignal: row.hasSignal !== false && !!row.signalLabel,
-      shellStyle: "position:relative; min-width:0; display:grid; grid-template-columns:" + (rail ? "minmax(0,1fr)" : s.avatar + "px minmax(0,1fr)") + (row.hasSignal !== false && row.signalLabel ? " 20px" : "") + "; align-items:center; gap:" + s.gap + "px; min-height:" + s.min + "px;",
+      signalLabel,
+      hasSignal: row.hasSignal !== false && (!!transitionResult || !!signalLabel),
+      shellStyle: "position:relative; min-width:0; display:grid; grid-template-columns:" + (rail ? "minmax(0,1fr)" : s.avatar + "px minmax(0,1fr)") + (row.hasSignal !== false && (transitionResult || signalLabel) ? " 20px" : "") + "; align-items:center; gap:" + s.gap + "px; min-height:" + s.min + "px;",
       // The badge sits on this wrap, not inside the circle: the circle itself
       // has overflow:hidden (it clips a non-square embedded avatar to round),
       // and a badge positioned inside it would be clipped at the same edge it

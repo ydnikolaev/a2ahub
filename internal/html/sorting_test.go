@@ -1,6 +1,7 @@
 package html
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -46,23 +47,34 @@ func TestExchangeItemKeepsCreationAndActivityClocksSeparate(t *testing.T) {
 	}
 }
 
-func TestExchangeFeedComparatorUsesCreationNotActivity(t *testing.T) {
+func TestExchangeFeedPreservesServerCarriedOrder(t *testing.T) {
 	t.Parallel()
-	source := string(placeholderTemplate)
-	start := strings.Index(source, "const byNewest =")
-	end := strings.Index(source, "const workTypes =")
-	if start < 0 || end <= start {
-		t.Fatal("Exchange feed comparator is missing from the embedded dashboard")
+	raw, err := os.ReadFile("../../web/design-source/ExchangeView.dc.html")
+	if err != nil {
+		t.Fatalf("read ExchangeView: %v", err)
 	}
-	comparator := source[start:end]
-	for _, required := range []string{"createdOrderKnown", "createdSeq", "createdAt"} {
-		if !strings.Contains(comparator, required) {
-			t.Errorf("Exchange feed comparator does not use immutable creation key %q", required)
+	source := string(raw)
+	shipped := dashboardTemplateCorpus(t)
+	for _, required := range []string{
+		`const carried = aggregate ? (aggregate.items || []) : collections[tab];`,
+		`const workList = aggregate ? carried : carried.filter(item => this.inScope(item.space));`,
+		`const workReportRows = workReports.map(report =>`,
+		`workReportsHint:ru ? "в перенесённом порядке" : "in carried order"`,
+	} {
+		if !strings.Contains(source, required) {
+			t.Errorf("Exchange view is missing carried-order contract %q", required)
+		}
+		if !strings.Contains(shipped, required) {
+			t.Errorf("shipped dashboard is missing carried-order contract %q", required)
 		}
 	}
-	for _, forbidden := range []string{"movedAt", "activitySeq", "activityEventId"} {
-		if strings.Contains(comparator, forbidden) {
-			t.Errorf("Exchange feed comparator uses lifecycle activity key %q", forbidden)
+	for _, forbidden := range []string{
+		`const byNewest =`,
+		`createdOrderKnown`,
+		`Number(right.commit_sequence || 0) - Number(left.commit_sequence || 0)`,
+	} {
+		if strings.Contains(source, forbidden) {
+			t.Errorf("Exchange view still owns a local ordering rule %q", forbidden)
 		}
 	}
 }

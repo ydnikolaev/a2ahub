@@ -159,15 +159,24 @@ func TestReceiptMismatchTemplateIsConsistencyActualFirst(t *testing.T) {
 	t.Parallel()
 	tmpl := dashboardTemplateCorpus(t)
 	for _, required := range []string{
-		"Consistency, protocol and read evidence",
+		`data-event-consistency`,
+		`const consistency = ev.consistency && typeof ev.consistency === "object" ? ev.consistency : null;`,
 		"authoritative actual ",
-		"; producer claimed ",
-		`f.source === "consistency"`,
-		`ev.consistency`,
+		"claimed ",
+		"event_ulid ",
+		"producer ",
+		"cause ",
 	} {
 		if !strings.Contains(tmpl, required) {
 			t.Fatalf("template missing receipt consistency contract %q", required)
 		}
+	}
+	actual := strings.Index(tmpl, `"authoritative actual " + String(consistency.actual || "")`)
+	claimed := strings.Index(tmpl, `"claimed " + String(consistency.claimed || "")`)
+	event := strings.Index(tmpl, `"event_ulid " + String(consistency.event_ulid || "")`)
+	producer := strings.Index(tmpl, `"producer " + JSON.stringify(consistency.producer || {})`)
+	if actual < 0 || claimed <= actual || event <= claimed || producer <= event {
+		t.Fatalf("consistency evidence must render actual, claimed, event ULID, then producer: actual=%d claimed=%d event=%d producer=%d", actual, claimed, event, producer)
 	}
 	if strings.Contains(tmpl, "ev.claimed_state") {
 		t.Fatal("ordinary HTML timeline reads a matching receipt as a display signal")

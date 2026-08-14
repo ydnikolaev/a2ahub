@@ -1,0 +1,10 @@
+Space — checkout-core
+Evidence for space checkout-core is Source is current; it was last synchronized at 2026-07-30T17:03:00Z.
+Repository: https://example.invalid/northstar/checkout-core-space.
+Participants: 5 — atlas, catalog, checkout, comms, fulfillment.
+Compatibility: schema space/v1; minimum binary 0.16.2; workflow 0.16.2.
+Consistency: 33 — Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review, Sources need review; 1 — Sources need review.
+Unavailable evidence: None recorded.
+Snapshot: Source is current.
+Showing 32 of 33.
+Technical detail: collapsed.

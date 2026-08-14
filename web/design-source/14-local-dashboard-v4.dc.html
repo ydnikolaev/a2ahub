@@ -324,7 +324,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 <div data-screen-label="Local dashboard v4" style="min-height:100vh; display:flex; flex-direction:column;">
 
   <dc-import name="DashboardShell" ctx="{{ shellTopCtx }}" hint-size="100%,84px"></dc-import>
-  <sc-if value="{{ hasPageHeader }}" hint-placeholder-val="{{ false }}"><dc-import name="DashboardLive" initial-revision="{{ liveInitialRevision }}" on-snapshot="{{ applyOperationalSnapshot }}" hint-size="0,0"></dc-import></sc-if>
+  <sc-if value="{{ hasPageHeader }}" hint-placeholder-val="{{ false }}"><dc-import name="DashboardLive" data="{{ liveData }}" on-hydrate="{{ hydrateDashboard }}" on-state="{{ setLiveTransport }}" on-ready="{{ setRefresh }}" hint-size="0,0"></dc-import></sc-if>
 
   <main style="flex:1 1 auto; min-width:0; width:min(1240px, 100% - 56px); margin:0 auto; padding:26px 0 70px; box-sizing:border-box;">
 
@@ -559,6 +559,12 @@ const A2A_GLOSSARY_RU = {
 };
 
 const A2A_GLOSSARY = { en: A2A_GLOSSARY_EN, ru: A2A_GLOSSARY_RU };
+globalThis.A2A_GLOSSARY = Object.freeze({
+  entry(family, key, locale) {
+    const table = A2A_GLOSSARY[locale === "ru" ? "ru" : "en"];
+    return table && table[family] && table[family][key] || null;
+  }
+});
 
 const A2A_TYPE_GUIDE = ["contract","requirement","question","work_request","decision","handoff","response","announcement"];
 
@@ -649,6 +655,53 @@ const GUIDE_RU = {
 
 const GUIDE_GROUP_RU = { Start:"Начало", Concepts:"Концепции", Reference:"Справочник", Authoring:"Типы документов", Help:"Помощь" };
 
+const A2A_REQUIRED_DASHBOARD_COLLECTIONS = Object.freeze([
+  "spaces", "nodes", "contractEdges", "exchangeEdges", "threads", "inbox", "outbox", "archive", "contracts", "flags", "releaseNotes", "workReports"
+]);
+const A2A_REQUIRED_DASHBOARD_WINDOWS = Object.freeze([
+  "inbox", "outbox", "archive", "threads", "contractEdges", "exchangeEdges", "flags", "workReports", "artifactDetails"
+]);
+const A2A_REQUIRED_TOOLING_FIELDS = Object.freeze([
+  "current", "latest", "updateAvailable", "required", "floor", "floorSpace", "checkedAt", "cacheAge", "source", "fresh", "releaseURL"
+]);
+const A2A_REQUIRED_VOCABULARY_FALLBACK_FIELDS = Object.freeze([
+  "labelRU", "labelEN", "explanationRU", "explanationEN", "tone", "cue"
+]);
+const A2A_HAS_OWN = (owner, key) => Object.prototype.hasOwnProperty.call(owner, key);
+const a2aRecord = value => !!value && typeof value === "object" && !Array.isArray(value);
+const a2aCarriedCollection = (owner, key) => a2aRecord(owner) && A2A_HAS_OWN(owner, key) && (owner[key] === null || Array.isArray(owner[key]));
+const a2aWindow = value => a2aRecord(value) && typeof value.truncated === "boolean" && Number.isFinite(value.total) && Number.isFinite(value.shown);
+
+function acceptsCompleteDashboardData(data) {
+  if (!a2aRecord(data) || typeof data.generatedAt !== "string" || typeof data.self !== "string") return false;
+  if (!A2A_REQUIRED_DASHBOARD_COLLECTIONS.every(key => a2aCarriedCollection(data, key))) return false;
+  if (!a2aRecord(data.tooling) || !A2A_REQUIRED_TOOLING_FIELDS.every(key => A2A_HAS_OWN(data.tooling, key))) return false;
+  if (!a2aRecord(data.updateDetail) || !A2A_HAS_OWN(data.updateDetail, "status") || !A2A_HAS_OWN(data.updateDetail, "version") || !a2aCarriedCollection(data.updateDetail, "changes")) return false;
+  if (!a2aRecord(data.vocabulary) || !Array.isArray(data.vocabulary.entries) || !a2aRecord(data.vocabulary.unknown) || !A2A_REQUIRED_VOCABULARY_FALLBACK_FIELDS.every(key => A2A_HAS_OWN(data.vocabulary.unknown, key))) return false;
+
+  const operational = data.operational;
+  if (!a2aRecord(operational) || !Number.isFinite(operational.schema_version) || typeof operational.generated_at !== "string" || typeof operational.revision !== "string" || !/^sha256:[0-9a-f]{64}$/.test(operational.revision)) return false;
+  if (!["sources", "timeline", "unavailable"].every(key => a2aCarriedCollection(operational, key)) || !a2aWindow(operational.timeline_window)) return false;
+
+  if (!a2aRecord(data.windows) || !A2A_REQUIRED_DASHBOARD_WINDOWS.every(key => a2aWindow(data.windows[key]))) return false;
+  if (Array.isArray(data.threads) && !data.threads.every(thread => a2aRecord(thread.windows) && a2aWindow(thread.windows.members) && a2aWindow(thread.windows.links))) return false;
+  if (A2A_HAS_OWN(data, "threadViews") && data.threadViews !== null) {
+    if (!Array.isArray(data.threadViews) || !data.threadViews.every(view => {
+      const windows = view && view.windows;
+      return a2aRecord(windows) && ["artifacts", "transcript", "openItems", "flags", "unresolved", "deliveries"].every(key => a2aWindow(windows[key]));
+    })) return false;
+  }
+  if (!a2aRecord(data.aggregates)) return false;
+  for (const key of ["needYou", "noHumanMove", "youAwait"]) {
+    const set = data.aggregates[key];
+    if (!a2aRecord(set) || !a2aCarriedCollection(set, "items") || !a2aWindow(set.window)) return false;
+  }
+  const lines = data.aggregates.linesOffCurrent;
+  return a2aRecord(lines) && a2aCarriedCollection(lines, "items") && a2aWindow(lines.window) && typeof lines.complete === "boolean" && a2aCarriedCollection(lines, "degradations");
+}
+
+globalThis.A2A_COMPLETE_DASHBOARD = Object.freeze({ accepts:acceptsCompleteDashboardData });
+
 function normalizeDashboardData(input) {
   const data = Object.assign({}, input || {});
   ["spaces", "nodes", "contractEdges", "exchangeEdges", "threads", "inbox", "outbox", "archive", "contracts", "flags", "releaseNotes", "threadViews", "workReports", "artifactDetails", "unavailable"].forEach(key => {
@@ -668,6 +721,7 @@ function normalizeDashboardData(input) {
 const DASHBOARD_UI_FIELDS = {
   "DashboardShell": [
     "error",
+    "liveTransport",
     "more",
     "navW",
     "space",
@@ -679,6 +733,7 @@ const DASHBOARD_UI_FIELDS = {
     "space"
   ],
   "ExchangeView": [
+    "dashboardSet",
     "space",
     "typeMenu",
     "workDue",
@@ -700,6 +755,7 @@ const DASHBOARD_UI_FIELDS = {
     "conSel",
     "conVersion",
     "docTreeOpen",
+    "dashboardSet",
     "space"
   ],
   "MapView": [
@@ -719,18 +775,56 @@ const DASHBOARD_UI_FIELDS = {
   ],
   "GuideView": [],
   "Modal": [
-    "contractFile",
-    "mapDocument",
-    "space",
-    "spaceModal",
-    "threadNote"
+    "card"
   ]
 };
 
+const A2A_CARD_MANIFEST = /*A2A_CARD_MANIFEST*/null;
+const A2A_CARD_ROWS = A2A_CARD_MANIFEST && Array.isArray(A2A_CARD_MANIFEST.cards) ? A2A_CARD_MANIFEST.cards : [];
+const A2A_CARD_BY_KIND = new Map(A2A_CARD_ROWS.map(row => [row.kind, row]));
+const A2A_RESERVED_IDENTITY_FIELDS = Object.freeze({
+  cfile: Object.freeze(["space", "id", "version", "path"])
+});
+
+function encodeOpaqueTuple(values) {
+  const raw = encodeURIComponent(JSON.stringify(values)).replace(/%([0-9A-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let out = "";
+  for (let i = 0; i < raw.length; i += 3) {
+    const a = raw.charCodeAt(i), b = i + 1 < raw.length ? raw.charCodeAt(i + 1) : 0, c = i + 2 < raw.length ? raw.charCodeAt(i + 2) : 0;
+    const block = (a << 16) | (b << 8) | c;
+    out += alphabet[(block >> 18) & 63] + alphabet[(block >> 12) & 63] + (i + 1 < raw.length ? alphabet[(block >> 6) & 63] : "=") + (i + 2 < raw.length ? alphabet[block & 63] : "=");
+  }
+  return out.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function decodeOpaqueTuple(value) {
+  try {
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let input = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
+    while (input.length % 4) input += "=";
+    let raw = "";
+    for (let i = 0; i < input.length; i += 4) {
+      const a = alphabet.indexOf(input[i]), b = alphabet.indexOf(input[i + 1]);
+      const c = input[i + 2] === "=" ? 0 : alphabet.indexOf(input[i + 2]);
+      const d = input[i + 3] === "=" ? 0 : alphabet.indexOf(input[i + 3]);
+      if (a < 0 || b < 0 || c < 0 || d < 0) return null;
+      const block = (a << 18) | (b << 12) | (c << 6) | d;
+      raw += String.fromCharCode((block >> 16) & 255);
+      if (input[i + 2] !== "=") raw += String.fromCharCode((block >> 8) & 255);
+      if (input[i + 3] !== "=") raw += String.fromCharCode(block & 255);
+    }
+    return JSON.parse(decodeURIComponent([...raw].map(ch => "%" + ch.charCodeAt(0).toString(16).padStart(2, "0")).join("")));
+  } catch (e) { return null; }
+}
+
 class Component extends DCLogic {
-  state = { data: null, error: "", view: globalThis.A2A_DASHBOARD_START_VIEW || "overview", space: "all", ovSel: "", operationalOpen: "", workTab: "all", workState: "all", typeMenu: false, workDue: false, conRole: "all", conRisk: false, workSel: "", threadSel: "", threadSpace: "", conSel: "", conVersion: "", conFacts: false, contractFile: null, mapDocument: null, threadNote: null, doc: "overview", docQ: "", spaceModal: false, tvFocus: "", workType: "all", verKind: "all", verAction: "all", copied: "", more: false, navW: 0, theme: "light", locale: "en", docTreeOpen: {} };
+  state = { data: null, error: "", view: globalThis.A2A_DASHBOARD_START_VIEW || "overview", space: "all", ovSel: "", operationalOpen: "", workTab: "all", workState: "all", typeMenu: false, workDue: false, conRole: "all", conRisk: false, workSel: "", threadSel: "", threadSpace: "", conSel: "", conVersion: "", conFacts: false, card: null, dashboardSet: "", doc: "overview", docQ: "", tvFocus: "", workType: "all", verKind: "all", verAction: "all", copied: "", more: false, navW: 0, theme: "light", locale: "en", docTreeOpen: {}, liveTransport: "", refresh: null, retainedCardData: null, goneCard: false };
 
   componentDidMount() {
+    this.restoreCardFromHash();
+    this.onCardHashChange = () => this.restoreCardFromHash();
+    window.addEventListener("hashchange", this.onCardHashChange);
     // The build-time component projection composes DashboardShell.renderVals
     // into this controller; it does not run the projected component's
     // lifecycle. Keep the shared width observer here beside the navW state it
@@ -793,29 +887,158 @@ class Component extends DCLogic {
     this.applyLocale(savedLocale);
     setTimeout(() => this.hydrateDoc(), 0);
     if (window.A2A_DEMO) {
-      const data = normalizeDashboardData(window.A2A_DEMO);
-      this.setState({ data });
+      if (!this.hydrate(window.A2A_DEMO)) this.setState({ error: "invalid" });
       return;
     }
-    fetch("demo-data.json").then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(d => {
-      if (!d || !d.meta || d.meta.schema !== "a2a-design-demo/v4" || d.meta.synthetic !== true) {
-        this.setState({ error: "invalid" });
-        return;
-      }
-      this.setState({ data: normalizeDashboardData(d) });
-    }).catch(e => this.setState({ error: "load:" + e.message }));
+    this.setState({ error: "load:embedded dashboard data missing" });
   }
 
-  applyOperationalSnapshot(snapshot) {
-    const current = normalizeDashboardData(this.state.data || window.A2A_DEMO || {});
-    current.operational = snapshot;
-    this.setState({ data: current });
+  hydrate(data) {
+    const d = data;
+    if (!d || !d.meta || d.meta.schema !== "a2a-design-demo/v4" || d.meta.synthetic !== true) return false;
+    if (!globalThis.A2A_COMPLETE_DASHBOARD || !globalThis.A2A_COMPLETE_DASHBOARD.accepts(d)) return false;
+    const candidate = normalizeDashboardData(d);
+    const selection = this.state.card;
+    const previousCardData = this.state.retainedCardData || this.state.data;
+    const previouslyResolved = selection ? this.resolveCard(previousCardData, selection) : null;
+    const newlyResolved = selection ? this.resolveCard(candidate, selection) : null;
+    const goneCard = !!selection && !!previouslyResolved && !newlyResolved;
+    const retainedCardData = goneCard ? previousCardData : null;
+    const scrollX = Number(window.scrollX || 0);
+    const scrollY = Number(window.scrollY || 0);
+    if (this.hydrateScrollFrame != null && typeof window.cancelAnimationFrame === "function") window.cancelAnimationFrame(this.hydrateScrollFrame);
+    this.setState({ data:candidate, retainedCardData, goneCard });
+    if (typeof window.requestAnimationFrame === "function") {
+      this.hydrateScrollFrame = window.requestAnimationFrame(() => {
+        this.hydrateScrollFrame = null;
+        if (typeof window.scrollTo === "function") window.scrollTo(scrollX, scrollY);
+      });
+    }
+    return true;
   }
 
   go(view, extra) { this.setState(Object.assign({ view }, extra || {})); window.scrollTo(0, 0); }
 
-  closeContractFile() {
-    this.setState({ contractFile: null });
+  cardID(kind, source) {
+    const row = A2A_CARD_BY_KIND.get(kind);
+    const identityFields = row ? row.identityFields : A2A_RESERVED_IDENTITY_FIELDS[kind];
+    if (!identityFields || !source || typeof source !== "object") return "";
+    const tuple = identityFields.map(field => source[field]);
+    if (tuple.some(value => value == null || !["string", "number", "boolean"].includes(typeof value) || (typeof value === "number" && !Number.isFinite(value)))) return "";
+    return encodeOpaqueTuple([kind, tuple]);
+  }
+
+  resolveCard(data, selection) {
+    if (!data || typeof data !== "object" || !selection || typeof selection !== "object" || typeof selection.kind !== "string" || typeof selection.id !== "string" || !selection.kind || !selection.id) return null;
+    const row = A2A_CARD_BY_KIND.get(selection.kind);
+    if (!row || !Array.isArray(row.identityFields) || !Array.isArray(row.selectionPaths)) return null;
+    for (const path of row.selectionPaths) {
+      if (!Array.isArray(path) || !path.length) continue;
+      let lineages = [[data]];
+      for (const segment of path) {
+        const next = [];
+        for (const lineage of lineages) {
+          const parent = lineage[lineage.length - 1];
+          const value = parent && typeof parent === "object" ? parent[segment] : null;
+          const children = Array.isArray(value) ? value : [value];
+          for (const child of children) {
+            if (child && typeof child === "object" && !Array.isArray(child)) next.push(lineage.concat([child]));
+          }
+        }
+        lineages = next;
+        if (!lineages.length) break;
+      }
+      for (const lineage of lineages) {
+        const identity = {};
+        let complete = true;
+        for (const field of row.identityFields) {
+          let found = false;
+          for (let index = lineage.length - 1; index >= 0; index -= 1) {
+            const candidate = lineage[index];
+            if (Object.prototype.hasOwnProperty.call(candidate, field)) {
+              identity[field] = candidate[field];
+              found = true;
+              break;
+            }
+          }
+          if (!found) { complete = false; break; }
+        }
+        if (complete && this.cardID(row.kind, identity) === selection.id) return selection;
+      }
+    }
+    return null;
+  }
+
+  cardAccent(family, identity) {
+    if (!A2A_CARD_ROWS.some(row => row.accentFamilies.indexOf(family) >= 0)) return "";
+    const values = Array.isArray(identity) ? identity : [identity];
+    if (!values.length || values.some(value => value == null || !["string", "number", "boolean"].includes(typeof value) || (typeof value === "number" && !Number.isFinite(value)))) return "";
+    return encodeOpaqueTuple([family, identity]);
+  }
+
+  validCardAccent(row, accent) {
+    if (!row || !accent) return "";
+    const tuple = decodeOpaqueTuple(accent);
+    if (!Array.isArray(tuple) || tuple.length !== 2 || row.accentFamilies.indexOf(tuple[0]) < 0) return "";
+    const values = Array.isArray(tuple[1]) ? tuple[1] : [tuple[1]];
+    return values.length && values.every(value => value != null && ["string", "number", "boolean"].includes(typeof value) && (typeof value !== "number" || Number.isFinite(value))) ? accent : "";
+  }
+
+  openCard(kind, id, accent) {
+    const row = A2A_CARD_BY_KIND.get(kind);
+    if (!row || typeof id !== "string" || !id) return false;
+    const card = { kind, id, accent: this.validCardAccent(row, accent) };
+    const cardHash = "#card=" + encodeURIComponent(JSON.stringify([card.kind, card.id, card.accent]));
+    this.setState({ card, retainedCardData:null, goneCard:false });
+    if (window.location) window.location.hash = cardHash;
+    return true;
+  }
+
+  closeCard() {
+    if (window.location && String(window.location.hash || "").indexOf("#card=") === 0) {
+      if (window.history && window.history.replaceState) window.history.replaceState(null, "", String(window.location.pathname || "") + String(window.location.search || ""));
+      else window.location.hash = "";
+    }
+    this.setState({ card: null, retainedCardData:null, goneCard:false });
+  }
+
+  restoreCardFromHash() {
+    const hash = String(window.location && window.location.hash || "");
+    if (hash.indexOf("#card=") !== 0) { if (this.state.card) this.setState({ card:null, retainedCardData:null, goneCard:false }); return; }
+    try {
+      const tuple = JSON.parse(decodeURIComponent(hash.slice(6)));
+      if (!Array.isArray(tuple) || tuple.length !== 3 || typeof tuple[0] !== "string" || typeof tuple[1] !== "string" || !tuple[1] || typeof tuple[2] !== "string") throw new Error("invalid card tuple");
+      const row = A2A_CARD_BY_KIND.get(tuple[0]);
+      const card = { kind: tuple[0], id: tuple[1], accent: this.validCardAccent(row, tuple[2]) };
+      const current = this.state.card;
+      if (current && current.kind === card.kind && current.id === card.id && current.accent === card.accent) return;
+      this.setState({ card, retainedCardData:null, goneCard:false });
+    } catch (e) {
+      this.setState({ card: { kind: "", id: "", accent: "" }, retainedCardData:null, goneCard:false });
+    }
+  }
+
+  openAggregate(key) {
+    const view = { needYou:"work", noHumanMove:"work", youAwait:"work", linesOffCurrent:"contracts" }[key];
+    if (!view) return false;
+    this.setState({ view, dashboardSet:key, workSel:"", conSel:"" });
+    window.scrollTo(0, 0);
+    return true;
+  }
+
+  sourceURL(space, path, revision) {
+    const item = (this.state.data && this.state.data.spaces || []).find(candidate => candidate.id === space);
+    if (!item || !item.repoURL || !path || String(path).indexOf("\\") >= 0 || String(path)[0] === "/") return "";
+    const carriedRevision = String(item.revision || "");
+    if (!carriedRevision || (revision != null && String(revision) !== carriedRevision)) return "";
+    const parts = String(path).split("/");
+    if (parts.some(part => !part || part === "." || part === "..")) return "";
+    let repo = String(item.repoURL).trim().replace(/\.git$/, "");
+    let match = repo.match(/^https:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/i);
+    if (!match) match = repo.match(/^git@github\.com:([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/i);
+    if (!match) match = repo.match(/^ssh:\/\/git@github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/i);
+    if (!match || match[1] === "." || match[1] === ".." || match[2] === "." || match[2] === "..") return "";
+    return "https://github.com/" + encodeURIComponent(match[1]) + "/" + encodeURIComponent(match[2]) + "/blob/" + encodeURIComponent(carriedRevision) + "/" + parts.map(encodeURIComponent).join("/");
   }
 
   applyTheme(theme) {
@@ -958,6 +1181,7 @@ class Component extends DCLogic {
   }
 
   componentWillUnmount() {
+    window.removeEventListener("hashchange", this.onCardHashChange);
     window.removeEventListener("resize", this.measureNav);
     clearTimeout(this.navObserveTimer);
     clearTimeout(this.navMeasureTimer);
@@ -966,6 +1190,7 @@ class Component extends DCLogic {
     document.removeEventListener("click", this.onCapture, true);
     document.removeEventListener("click", this.onBodyClick);
     clearTimeout(this._copyT);
+    if (this.hydrateScrollFrame != null && typeof window.cancelAnimationFrame === "function") window.cancelAnimationFrame(this.hydrateScrollFrame);
   }
 
   uiSlice(name, extra) {
@@ -979,14 +1204,21 @@ class Component extends DCLogic {
       patch: patch => this.setState(patch),
       navigate: (view, extra) => this.go(view, extra),
       copy: text => this.copy(text),
-      closeContractFile: () => this.closeContractFile(),
       setTheme: theme => this.applyTheme(theme),
       setLocale: locale => this.applyLocale(locale)
+      ,cardID: (kind, source) => this.cardID(kind, source)
+      ,cardAccent: (family, identity) => this.cardAccent(family, identity)
+      ,openCard: (kind, id, accent) => this.openCard(kind, id, accent)
+      ,openAggregate: key => this.openAggregate(key)
+      ,sourceURL: (space, path, revision) => this.sourceURL(space, path, revision)
     };
     const allowed = {
-      Overview: ["patch", "navigate"], ExchangeView: ["patch", "navigate"], ThreadsView: ["patch", "navigate"],
-      ContractsView: ["patch", "navigate"], MapView: ["patch", "navigate"],
-      SpacesView: [], VersionsView: ["patch", "copy"], DocsView: ["patch"], GuideView: []
+      Overview: ["patch", "navigate", "cardID", "cardAccent", "openCard", "openAggregate"],
+      ExchangeView: ["patch", "navigate", "cardID", "cardAccent", "openCard"],
+      ThreadsView: ["patch", "navigate", "cardID", "cardAccent", "openCard"],
+      ContractsView: ["patch", "navigate", "copy", "sourceURL", "cardID", "cardAccent", "openCard"],
+      MapView: ["patch", "navigate", "cardID", "cardAccent", "openCard"],
+      SpacesView: ["cardID", "cardAccent", "openCard"], VersionsView: ["patch", "copy"], DocsView: ["patch"], GuideView: []
     }[name] || [];
     return Object.fromEntries(allowed.map(key => [key, actions[key]]));
   }
@@ -998,8 +1230,20 @@ class Component extends DCLogic {
   renderVals() {
     const data = this.state.data;
     const locale = this.state.locale;
-    const shellActions = { patch: patch => this.setState(patch), navigate: (view, extra) => this.go(view, extra), setTheme: theme => this.applyTheme(theme), setLocale: value => this.applyLocale(value) };
-    const modalActions = { patch: patch => this.setState(patch), navigate: (view, extra) => this.go(view, extra), closeContractFile: () => this.closeContractFile() };
+    const shellActions = {
+      patch: patch => this.setState(patch), navigate: (view, extra) => this.go(view, extra),
+      setTheme: theme => this.applyTheme(theme), setLocale: value => this.applyLocale(value),
+      refresh: typeof this.state.refresh === "function" ? this.state.refresh : null,
+      cardID: (kind, source) => this.cardID(kind, source), cardAccent: (family, identity) => this.cardAccent(family, identity),
+      openCard: (kind, id, accent) => this.openCard(kind, id, accent)
+    };
+    const modalActions = {
+      patch: patch => this.setState(patch), navigate: (view, extra) => this.go(view, extra),
+      closeCard: () => this.closeCard(),
+      cardID: (kind, source) => this.cardID(kind, source), cardAccent: (family, identity) => this.cardAccent(family, identity),
+      openCard: (kind, id, accent) => this.openCard(kind, id, accent), openAggregate: key => this.openAggregate(key),
+      copy: text => this.copy(text), sourceURL: (space, path, revision) => this.sourceURL(space, path, revision)
+    };
     return {
       hasPageHeader: !!data && !this.state.error,
       isOverview: !!data && this.state.view === "overview", isWork: !!data && this.state.view === "work",
@@ -1010,12 +1254,14 @@ class Component extends DCLogic {
       shellTopCtx: { data, locale, ui: this.uiSlice("DashboardShell", { variant:"top" }), actions: shellActions },
       shellPageCtx: { data, locale, ui: this.uiSlice("DashboardShell", { variant:"page" }), actions: shellActions },
       shellFooterCtx: { data, locale, ui: this.uiSlice("DashboardShell", { variant:"footer" }), actions: shellActions },
-      modalCtx: { data, locale, ui: this.uiSlice("Modal"), actions: modalActions },
+      modalCtx: { data, locale, ui: this.uiSlice("Modal", { cardManifest:A2A_CARD_MANIFEST, goneCard:this.state.goneCard, retainedCardData:this.state.retainedCardData }), actions: modalActions },
       overviewCtx: this.viewContext("Overview"), exchangeCtx: this.viewContext("ExchangeView"), threadsCtx: this.viewContext("ThreadsView"),
       contractsCtx: this.viewContext("ContractsView"), mapCtx: this.viewContext("MapView"), spacesCtx: this.viewContext("SpacesView"),
       versionsCtx: this.viewContext("VersionsView"), docsCtx: this.viewContext("DocsView"), guideCtx: this.viewContext("GuideView"),
-      liveInitialRevision: String((data && data.operational && data.operational.revision) || ""),
-      applyOperationalSnapshot: snapshot => this.applyOperationalSnapshot(snapshot)
+      liveData: data,
+      hydrateDashboard: candidate => this.hydrate(candidate),
+      setLiveTransport: liveTransport => this.setState({ liveTransport }),
+      setRefresh: refresh => this.setState({ refresh })
     };
   }
 }

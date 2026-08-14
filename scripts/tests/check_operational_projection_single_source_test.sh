@@ -52,7 +52,7 @@ expect_red "$browser_derivation" "browser-owned freshness vocabulary" "browser f
 
 missing_consumer="$WORK/missing-consumer"
 copy_tree "$missing_consumer"
-perl -0pi -e 's/w && w\.current === true/false/' "$missing_consumer/web/design-source/Overview.dc.html"
+perl -0pi -e 's/[A-Za-z_][A-Za-z0-9_]*\.current\s*===\s*true/false/g' "$missing_consumer/web/design-source/Overview.dc.html"
 expect_red "$missing_consumer" "core-owned work.current" "extracted current-work consumer"
 
 missing_import="$WORK/missing-import"

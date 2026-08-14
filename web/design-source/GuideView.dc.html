@@ -357,7 +357,6 @@ class Component extends DCLogic {
   }
 
   go(view, extra) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.navigate) actions.navigate(view, extra); }
-  closeContractFile() { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.closeContractFile) actions.closeContractFile(); }
   applyTheme(theme) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setTheme) actions.setTheme(theme); }
   applyLocale(locale) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setLocale) actions.setLocale(locale); }
   copy(text) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.copy) actions.copy(text); }

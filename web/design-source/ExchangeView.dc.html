@@ -7,57 +7,37 @@
 </head>
 <body>
 <x-dc>
+<sc-if value="{{ cardWorkReport }}" hint-placeholder-val="{{ false }}">
+  <sc-if value="{{ workReportPresent }}" hint-placeholder-val="{{ true }}">
+    <article data-card-kind="work-report" style="min-width:0; font-family:'Onest',sans-serif; color:var(--text);">
+      <div data-card-content>
+        <div data-work-report-fact="subject" data-accented="{{ workReportCard.subjectHighlighted }}" style="{{ workReportCard.subjectStyle }}"><h2 class="a2a-detail-title" style="margin:0; overflow-wrap:anywhere;">{{ workReportCard.identity }}</h2></div>
+        <div data-work-report-fact="lead" data-work-report-lead style="margin:0 0 var(--space-section); font-size:17px; line-height:1.6; color:var(--body); overflow-wrap:anywhere;">{{ workReportCard.lead }}</div>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <div data-work-report-fact="attribution" data-accented="{{ workReportCard.actorHighlighted }}" style="line-height:1.5; overflow-wrap:anywhere; {{ workReportCard.attributionStyle }}"><strong>{{ workReportCard.attributionLabel }}:</strong> {{ workReportCard.attribution }}</div>
+          <div data-work-report-fact="checkpoint" data-accented="{{ workReportCard.checkpointHighlighted }}" style="line-height:1.5; overflow-wrap:anywhere; {{ workReportCard.checkpointStyle }}"><strong>{{ workReportCard.checkpointLabel }}:</strong> {{ workReportCard.checkpoint }}</div>
+          <div data-work-report-fact="waits" style="line-height:1.5; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);"><strong>{{ workReportCard.waitsLabel }}:</strong> <sc-if value="{{ workReportCard.hasWaits }}" hint-placeholder-val="{{ true }}"><sc-for list="{{ workReportCard.waits }}" as="w" hint-placeholder-count="2"><span data-accented="{{ w.highlighted }}" style="{{ w.style }}">{{ w.separator }}<span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-weight:600;">{{ w.id }}</span><sc-if value="{{ w.hasSummary }}" hint-placeholder-val="{{ true }}"> — {{ w.summary }}</sc-if></span></sc-for>.</sc-if><sc-if value="{{ workReportCard.lacksWaits }}" hint-placeholder-val="{{ false }}">{{ workReportCard.noneRecorded }}</sc-if></div>
+          <sc-if value="{{ workReportCard.hasCurrent }}" hint-placeholder-val="{{ false }}"><div data-work-report-fact="current" style="line-height:1.5; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);"><strong>{{ workReportCard.currentLabel }}:</strong> <sc-if value="{{ workReportCard.currentClaimsVisible }}" hint-placeholder-val="{{ true }}">{{ workReportCard.bodyFreshnessResult.label }}; {{ workReportCard.committedCheckpointText }}.</sc-if><sc-if value="{{ workReportCard.currentDegraded }}" hint-placeholder-val="{{ false }}">{{ workReportCard.currentText }}</sc-if></div></sc-if>
+          <div data-work-report-fact="remaining" style="line-height:1.5; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);"><strong>{{ workReportCard.remainingLabel }}:</strong> {{ workReportCard.remainingText }}</div>
+          <div data-work-report-fact="snapshot" style="line-height:1.5; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);"><strong>{{ workReportCard.snapshotLabel }}:</strong> <sc-if value="{{ workReportCard.snapshotUnavailableOnly }}" hint-placeholder-val="{{ false }}">{{ workReportCard.snapshotUnavailable }}</sc-if><sc-if value="{{ workReportCard.hasBodySnapshotResult }}" hint-placeholder-val="{{ true }}">{{ workReportCard.bodySnapshotResult.label }}{{ workReportCard.snapshotEnding }}</sc-if><sc-if value="{{ workReportCard.snapshotUnknown }}" hint-placeholder-val="{{ false }}">{{ workReportCard.snapshotUnknownText }}</sc-if></div>
+        </div>
+        <details data-work-report-fact="technical" data-work-report-technical style="margin-top:var(--space-section); border-radius:var(--radius-nested); padding:12px 14px; background:var(--surface-section);"><summary style="cursor:pointer; color:var(--teal-ink); font-weight:600;">{{ workReportCard.technicalLabel }}</summary><div style="display:grid; grid-template-columns:minmax(110px,auto) minmax(0,1fr); gap:6px 14px; margin-top:12px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; line-height:1.5; overflow-wrap:anywhere;"><sc-for list="{{ workReportCard.technical }}" as="fact" hint-placeholder-count="6"><span>{{ fact.label }}</span><span>{{ fact.value }}</span></sc-for></div></details>
+      </div>
+      <div data-card-support="work-report:status" aria-label="{{ workReportCard.statusSupportLabel }}" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:var(--space-section);"><sc-for list="{{ workReportCard.statusSupport }}" as="status" hint-placeholder-count="4"><dc-import name="StatusPill" result="{{ status }}" size="small" hint-size="150px,24px"></dc-import></sc-for></div>
+    </article>
+  </sc-if>
+  <sc-if value="{{ workReportMissing }}" hint-placeholder-val="{{ false }}"><dc-import name="EmptyState" title="{{ workReportMissingTitle }}" text="{{ workReportMissingText }}" size="panel" hint-size="100%,300px"></dc-import></sc-if>
+</sc-if>
+
+<sc-if value="{{ regularExchange }}" hint-placeholder-val="{{ true }}">
 <section aria-label="{{ workAria }}" data-screen-label="Work">
-        <!-- Direction and lifecycle state are independent dimensions. A closed
-             incoming document must remain findable as incoming, rather than
-             disappearing into a separate archive-shaped destination. Type and
-             deadline then refine that same complete exchange history. -->
         <sc-if value="{{ showWorkFilters }}" hint-placeholder-val="{{ true }}">
         <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; row-gap:10px; margin-bottom:18px;">
           <span role="group" aria-label="{{ workDirectionAria }}"><dc-import name="SegmentedFilter" items="{{ workTabs }}" hint-size="420px,38px"></dc-import></span>
-          <span role="group" aria-label="{{ workStateAria }}"><dc-import name="SegmentedFilter" items="{{ workStates }}" hint-size="350px,38px"></dc-import></span>
-          <span data-type-menu style="position:relative; display:inline-flex;">
-            <button type="button" onClick="{{ toggleTypeMenu }}" aria-expanded="{{ typeMenuExpanded }}" style="{{ typeButtonStyle }}">
-              <span>{{ workTypeCurrent }}</span>
-              <span style="display:inline-flex; align-items:center; transform:translateY(1px); color:var(--muted);"><dc-import name="DisclosureIcon" expanded="{{ typeMenuOpen }}" hint-size="18px,18px"></dc-import></span>
-            </button>
-            <sc-if value="{{ typeMenuOpen }}" hint-placeholder-val="{{ false }}">
-              <span style="position:absolute; z-index:120; top:calc(100% + 8px); left:0; min-width:250px; background:var(--surface); border-radius:14px; padding:8px; box-shadow:0 16px 40px -12px rgba(33,30,23,.42), 0 0 0 1px var(--border); display:flex; flex-direction:column; gap:2px;">
-                <sc-for list="{{ workTypeFilters }}" as="f" hint-placeholder-count="5">
-                  <button type="button" onClick="{{ f.go }}" aria-current="{{ f.current }}" style="{{ f.style }}">
-                    <!-- The badge IS the label for a type: it already carries
-                         the human word, the protocol code and the colour the
-                         cards use, so a plain-text row here would teach a
-                         second vocabulary for the same eight things. -->
-                    <span style="flex:1 1 auto; min-width:0; text-align:left; display:flex; pointer-events:none;">
-                      <sc-if value="{{ f.isType }}" hint-placeholder-val="{{ true }}">
-                        <dc-import name="TypeBadge" type="{{ f.type }}" size="small" hint-size="130px,24px"></dc-import>
-                      </sc-if>
-                      <sc-if value="{{ f.isAll }}" hint-placeholder-val="{{ false }}">
-                        <span>{{ f.label }}</span>
-                      </sc-if>
-                    </span>
-                    <span style="flex:0 0 auto; font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--muted);">{{ f.count }}</span>
-                    <sc-if value="{{ f.selected }}" hint-placeholder-val="{{ false }}">
-                      <span aria-hidden="true" style="flex:0 0 auto; color:var(--teal-ink);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
-                    </sc-if>
-                  </button>
-                </sc-for>
-              </span>
-            </sc-if>
-          </span>
-          <!-- One toggle, not a third dropdown: a deadline is a property a
-               document either has or does not, and the question behind it is
-               "what has a clock on it", which has one answer. Offered only when
-               something in scope actually carries one. -->
-          <sc-if value="{{ hasDueFilter }}" hint-placeholder-val="{{ true }}">
-            <!-- One binding, not "{{ label }} · {{ count }}": the button is a
-                 flex container so it can centre its own height, and flex drops
-                 a whitespace-only text node between two elements. -->
-            <button type="button" onClick="{{ toggleDue }}" aria-pressed="{{ duePressed }}" style="{{ dueStyle }}"><span>{{ dueText }}</span><span style="min-width:1.25em; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:12px; line-height:1; font-weight:500; color:var(--body);">{{ dueCountText }}</span></button>
-          </sc-if>
         </div>
         </sc-if>
+
+        <sc-if value="{{ hasWorkWindow }}" hint-placeholder-val="{{ false }}"><p data-work-window style="margin:0 0 14px; color:var(--muted); font-size:14px;">{{ workWindowText }}</p></sc-if>
 
         <sc-if value="{{ workWholeEmpty }}" hint-placeholder-val="{{ false }}">
           <dc-import name="EmptyState" title="{{ emptyWorkTitle }}" text="{{ emptyWorkText }}" size="page" hint-size="100%,380px"></dc-import>
@@ -66,13 +46,31 @@
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(430px,100%),1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
             <sc-for list="{{ workRows }}" as="r" hint-placeholder-count="6">
-              <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" status="{{ r.status }}" tone="{{ r.tone }}" status-why="{{ r.statusWhy }}" state="{{ r.state }}" state-tone="{{ r.stateTone }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" sync-age="{{ r.syncAge }}" sync-stale="{{ r.syncStale }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,150px"></dc-import>
+              <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" state-result="{{ r.stateResult }}" outcome-result="{{ r.outcomeResult }}" lifecycle-known="{{ r.lifecycleKnown }}" lifecycle-unknown-text="{{ r.lifecycleUnknownText }}" gate-result="{{ r.gateResult }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" sync-age="{{ r.syncAge }}" freshness-result="{{ r.freshnessResult }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" reason-sentence="{{ r.reasonSentence }}" waiting-on-label="{{ r.waitingOnLabel }}" waiting-on="{{ r.waitingOn }}" expected-move-label="{{ r.expectedMoveLabel }}" expected-move="{{ r.expectedMove }}" terminal-text="{{ r.terminalText }}" archived-text="{{ r.archivedText }}" your-move-text="{{ r.yourMoveText }}" gate-pending-text="{{ r.gatePendingText }}" urgency-text="{{ r.urgencyText }}" summary="{{ r.summary }}" operational-items="{{ r.operationalItems }}" none-recorded="{{ r.noneRecorded }}" not-recorded="{{ r.notRecorded }}" snapshot-unavailable="{{ r.snapshotUnavailable }}" snapshot-unknown-text="{{ r.snapshotUnknownText }}" pending-merge-text="{{ r.pendingMergeText }}" technical-label="{{ r.technicalLabel }}" technical-why="{{ r.technicalWhy }}" rule-label="{{ r.ruleLabel }}" rule-identity="{{ r.ruleIdentity }}" technical-evidence="{{ r.technicalEvidence }}" open-label="{{ r.openLabel }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,440px"></dc-import>
             </sc-for>
           </div>
-          <dc-import name="ArtifactDetail" det="{{ workDetail }}" hint-size="100%,600px"></dc-import>
         </div>
         </sc-if>
+
+        <section data-work-report-list style="margin-top:var(--space-section-strong); border-top:1px solid var(--hairline); padding-top:var(--space-section);">
+          <dc-import name="SectionHeading" title="{{ workReportsTitle }}" hint="{{ workReportsHint }}" hint-size="100%,32px"></dc-import>
+          <sc-if value="{{ hasWorkReportsWindow }}" hint-placeholder-val="{{ false }}"><p style="margin:0 0 12px; color:var(--muted); font-size:14px;">{{ workReportsWindowText }}</p></sc-if>
+          <sc-if value="{{ hasWorkReports }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex; flex-direction:column; gap:9px;">
+              <sc-for list="{{ workReportRows }}" as="report" hint-placeholder-count="3">
+                <button type="button" onClick="{{ report.open }}" aria-label="{{ report.openLabel }}" style="display:block; width:100%; border:0; border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); background:var(--surface-card); color:var(--text); box-shadow:var(--shadow-card); text-align:left; font-family:'Onest',sans-serif; cursor:pointer;">
+                  <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;"><dc-import name="StatusPill" result="{{ report.modeResult }}" size="small" hint-size="130px,24px"></dc-import><span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; color:var(--muted);">{{ report.reportedAt }}</span></span>
+                  <strong style="display:block; font-size:16px; line-height:1.45; overflow-wrap:anywhere;">{{ report.subject }}</strong>
+                  <span style="display:block; margin-top:5px; color:var(--body); line-height:1.5; overflow-wrap:anywhere;">{{ report.summary }}</span>
+                  <span style="display:block; margin-top:5px; color:var(--muted); font-size:14px; overflow-wrap:anywhere;">{{ report.actor }}</span>
+                </button>
+              </sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{ workReportsEmpty }}" hint-placeholder-val="{{ false }}"><p data-work-report-empty style="margin:0; color:var(--muted); font-size:14px; line-height:1.5;">{{ workReportsEmptyText }}</p></sc-if>
+        </section>
       </section>
+</sc-if>
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1240,&quot;height&quot;:900},&quot;ctx&quot;:{&quot;editor&quot;:&quot;object&quot;,&quot;default&quot;:{},&quot;tsType&quot;:&quot;object&quot;}}">
 const DASHBOARD_EN = {
@@ -153,50 +151,6 @@ const A2A_GLOSSARY_EN = {
       handoff:{ code:"XH", label:"Handoff", description:"A transfer of responsibility or a ready result to the next system." },
       response:{ code:"XS", label:"Response", description:"A direct answer linked to the request or question it addresses; the requester still verifies or disputes it." },
       announcement:{ code:"XA", label:"Announcement", description:"Information others should know. It stays published; the dashboard archives it once every requested recipient acknowledges receipt." }
-    },
-    statuses: {
-      draft:{ label:"draft", description:"The document is still local and has not entered the shared exchange." },
-      submitted:{ label:"submitted", description:"The document entered the shared exchange and awaits the receiving side's next allowed move." },
-      acknowledged:{ label:"received", description:"The receiving side confirmed receipt. This says nothing yet about acceptance, verification or completion." },
-      accepted:{ label:"accepted", description:"The receiving side accepted the current step. This records agreement to proceed; it does not by itself close the document." },
-      in_progress:{ label:"in progress", description:"Work has started and the request has not reached a final state yet." },
-      published:{ label:"published", description:"The document is part of the shared record and visible to its participants." },
-      proposed:{ label:"proposed", description:"A change or choice was offered and still awaits the next protocol move." },
-      responded:{ label:"responded", description:"At least one linked response was recorded. The original document's author may now verify it or dispute the result." },
-      verified:{ label:"verified", description:"The author of the original document checked this response and confirmed the result. The response is final; no further move is expected." },
-      closed:{ label:"closed", description:"This request or question is complete and no further action is expected for it. Other documents in the thread may remain open." },
-      satisfied:{ label:"satisfied", description:"The requirement's owner confirmed that the recorded result satisfies it." },
-      declined:{ label:"declined", description:"The receiving side declined the requested step. The document stays in history; any follow-up requires a new valid move." },
-      superseded:{ label:"superseded", description:"A newer document replaced this one. This record remains visible as history." },
-      approved:{ label:"approved", description:"The required approvers accepted this decision. It is final unless a later decision supersedes it." },
-      rejected:{ label:"rejected", description:"The receiving side rejected the current check or approval. The matching event records the reason and the next allowed move." },
-      blocked:{ label:"blocked", description:"The record names a blocker that must be cleared before the next protocol move." },
-      blocking:{ label:"blocking", description:"This item records a blocking protocol obligation and deserves prompt attention." },
-      disputed:{ label:"disputed", description:"A participant challenged the result or interpretation; the disagreement remains open." },
-      cancelled:{ label:"cancelled", description:"The requester ended the work before completion; the history stays visible." },
-      withdrawn:{ label:"withdrawn", description:"The author retracted the document from active consideration; the record is preserved." },
-      expired:{ label:"expired", description:"The announcement's validity window ended. The published record remains visible as history." },
-      current:{ label:"on latest", description:"This consumer is pinned to the latest live contract major." },
-      behind:{ label:"behind", description:"This consumer is still pinned to an older live contract major." },
-      deprecated:{ label:"being retired", description:"This version still works, but consumers are expected to move away before its sunset." },
-      retired:{ label:"retired", description:"This version is no longer live for new use; its history remains visible." },
-      missing:{ label:"not found", description:"The pinned version is absent at the provider, so this dependency cannot resolve." },
-      dangling:{ label:"provider left", description:"The dependency points to a provider that is no longer present in this space." },
-      stale:{ label:"stale", description:"The local evidence is older than the freshness window, so the repository may already differ." },
-      fresh:{ label:"fresh", description:"The local evidence was refreshed within the expected freshness window." },
-      unreadable:{ label:"unreadable", description:"The local copy could not be read. Unknown values must not be treated as zero." },
-      unresolved:{ label:"unresolved", description:"The dashboard cannot connect this reference to a readable record." },
-      "space stale":{ label:"space stale", description:"The local space copy is older than usual. Data remains available, but the repository may have changed. Run a2a sync; the warning disappears after a successful refresh." },
-      settled:{ label:"settled", description:"Every document in this thread is final and no next protocol move is owed." },
-      "your move":{ label:"your move", description:"The next allowed protocol action belongs to your system." },
-      "waiting on others":{ label:"waiting on others", description:"The next allowed protocol move belongs to another participant." },
-      "your approval pending":{ label:"awaiting your approval", description:"The next protocol move requires an explicit approval from your side." },
-      "up to date":{ label:"latest version", description:"Your installed binary matches the newest release known to this snapshot." },
-      "no action needed":{ label:"no action needed", description:"This change does not require local configuration, migration, or manual follow-up." },
-      overdue:{ label:"overdue", description:"The recorded deadline passed before this document reached a terminal state." },
-      "needs a look":{ label:"needs a look", description:"This document carries an extra signal worth checking. It does not necessarily mean anything is wrong." },
-      resolved:{ label:"resolved · digest matches", description:"The reference was found and its recorded content digest matches." },
-      "digest mismatch":{ label:"digest mismatch", description:"The reference exists, but its content no longer matches the digest recorded by this document." }
     }
 };
 
@@ -210,62 +164,10 @@ const A2A_GLOSSARY_RU = {
       handoff:{ code:"XH", label:"Передача", description:"Передача ответственности или готового результата следующей системе." },
       response:{ code:"XS", label:"Ответ", description:"Прямой ответ со ссылкой на запрос или вопрос. После этого автор исходного документа проверяет результат или оспаривает его." },
       announcement:{ code:"XA", label:"Объявление", description:"Информация, которую участникам важно знать. Она остаётся опубликованной, а дашборд переносит её в архив после подтверждения всех запрошенных получателей." }
-    },
-    statuses: {
-      draft:{ label:"черновик", description:"Документ пока локальный и ещё не вошёл в общий обмен." },
-      submitted:{ label:"отправлено", description:"Документ вошёл в общий обмен и ждёт следующего допустимого шага принимающей стороны." },
-      acknowledged:{ label:"получили", description:"Принимающая сторона подтвердила получение. Это ещё ничего не говорит о принятии, проверке или завершении." },
-      accepted:{ label:"принято", description:"Принимающая сторона приняла текущий шаг. Это фиксирует согласие продолжить, но само по себе не закрывает документ." },
-      in_progress:{ label:"в работе", description:"Работа началась, но запрос ещё не дошёл до финального состояния." },
-      published:{ label:"опубликовано", description:"Документ вошёл в общий журнал и виден участникам обмена." },
-      proposed:{ label:"предложено", description:"Изменение или выбор предложены и ждут следующего допустимого шага." },
-      responded:{ label:"ответили", description:"Записан хотя бы один связанный ответ. Автор исходного документа может подтвердить его или оспорить результат." },
-      verified:{ label:"проверено", description:"Автор исходного документа проверил ответ и подтвердил результат. Ответ завершён; дальнейших шагов не ждут." },
-      closed:{ label:"закрыто", description:"Этот запрос или вопрос завершён; по нему больше не ждут действий. Другие документы треда могут оставаться открытыми." },
-      satisfied:{ label:"выполнено", description:"Автор требования подтвердил, что записанный результат ему соответствует." },
-      declined:{ label:"отклонено", description:"Принимающая сторона отказалась от запрошенного шага. Документ остаётся в истории; продолжение требует нового допустимого хода." },
-      superseded:{ label:"заменено", description:"Этот документ заменён более новым. Старая запись остаётся видимой как история." },
-      approved:{ label:"согласовано", description:"Все требуемые согласующие приняли это решение. Оно финально, пока его не заменит более новое." },
-      rejected:{ label:"отклонено", description:"Принимающая сторона отклонила текущую проверку или согласование. Причина и следующий допустимый ход записаны в соответствующем событии." },
-      blocked:{ label:"заблокировано", description:"В записи названа блокировка, которую нужно снять до следующего хода протокола." },
-      blocking:{ label:"блокирует", description:"Документ фиксирует блокирующее протокольное обязательство и требует быстрого внимания." },
-      disputed:{ label:"спорят", description:"Участник оспорил результат или трактовку; разногласие ещё не закрыто." },
-      cancelled:{ label:"отменено", description:"Заказчик остановил работу до завершения; история при этом сохраняется." },
-      withdrawn:{ label:"отозвано", description:"Автор снял документ с активного рассмотрения; запись остаётся в истории." },
-      expired:{ label:"срок истёк", description:"Срок действия объявления закончился. Опубликованная запись остаётся видимой в истории." },
-      current:{ label:"на последней", description:"Потребитель закреплён на последней живой мажорной версии контракта." },
-      behind:{ label:"отстаёт", description:"Потребитель всё ещё закреплён на более старой живой мажорной версии." },
-      deprecated:{ label:"выводится", description:"Версия пока работает, но до даты вывода потребителям нужно с неё уйти." },
-      retired:{ label:"снято", description:"Версия больше не доступна для нового использования; её история остаётся видимой." },
-      missing:{ label:"не нашли", description:"Закреплённой версии нет у поставщика, поэтому зависимость не разрешается." },
-      dangling:{ label:"поставщик ушёл", description:"Зависимость указывает на поставщика, которого больше нет в этом спейсе." },
-      stale:{ label:"устарел", description:"Локальные данные старше допустимого окна и уже могут отличаться от репозитория." },
-      fresh:{ label:"свежий", description:"Локальные данные обновлены в пределах ожидаемого окна свежести." },
-      unreadable:{ label:"не читается", description:"Локальную копию не удалось прочитать. Неизвестные значения нельзя считать нулём." },
-      unresolved:{ label:"не нашли", description:"Ссылку не удалось связать с доступной для чтения записью." },
-      "space stale":{ label:"спейс устарел", description:"Локальная копия спейса старше обычного. Данные доступны, но в репозитории уже могли появиться изменения. Запустите a2a sync: после успешного обновления предупреждение исчезнет." },
-      settled:{ label:"всё закрыто", description:"Все документы треда завершены, и следующего хода протокола ни за кем нет." },
-      "your move":{ label:"ваш ход", description:"Следующее допустимое действие протокола должна выполнить ваша система." },
-      "waiting on others":{ label:"ход за другими", description:"Следующий допустимый ход протокола принадлежит другому участнику." },
-      "your approval pending":{ label:"ждёт вашего согласования", description:"Следующий шаг протокола требует явного согласования с вашей стороны." },
-      "up to date":{ label:"последняя версия", description:"Установленный бинарник совпадает с последним выпуском, известным этому снимку." },
-      "no action needed":{ label:"действий не нужно", description:"Это изменение не требует настройки, миграции или ручного шага у вас." },
-      overdue:{ label:"просрочено", description:"Указанный дедлайн прошёл, а документ ещё не дошёл до конечного состояния." },
-      "needs a look":{ label:"стоит посмотреть", description:"У документа есть дополнительный сигнал для проверки. Это не обязательно означает ошибку." },
-      resolved:{ label:"нашли, сумма сошлась", description:"Ссылку нашли, и записанная контрольная сумма содержимого совпала." },
-      "digest mismatch":{ label:"сумма не сошлась", description:"Ссылка существует, но её содержимое уже не совпадает с контрольной суммой в документе." }
     }
 };
 
 const A2A_GLOSSARY = { en: A2A_GLOSSARY_EN, ru: A2A_GLOSSARY_RU };
-
-const STATE_TONE = {
-  published:"healthy", verified:"healthy", satisfied:"healthy", approved:"healthy", closed:"healthy",
-  blocked:"blockingStrong", blocking:"blockingStrong", missing:"blockingStrong", unreadable:"blockingStrong", rejected:"blockingStrong", declined:"blockingStrong", disputed:"blockingStrong",
-  deprecated:"attention", expired:"attention", overdue:"attention",
-  cancelled:"neutral", canceled:"neutral",
-  retired:"neutral", withdrawn:"neutral", superseded:"neutral", submitted:"neutral", in_progress:"neutral", responded:"neutral", accepted:"neutral", acknowledged:"neutral", proposed:"attention"
-};
 
 function listNames(names, ru) {
   const xs = (names || []).filter(Boolean);
@@ -279,112 +181,20 @@ function TYPE_WORDS(ru) {
   return Object.keys(group).reduce((out, key) => { out[key] = group[key].label; return out; }, {});
 }
 
-function EVENT_SIGNAL(transition, ru) {
-  // `activate` is positive, not neutral: it is the producer's owner-only
-  // attestation that a published version's OPERATIONAL half now exists
-  // (spec 05-declared-nature.md, `a2a contract activate`), and it is what
-  // discharges the `activation-owed` debt. Left to the default it read
-  // "Informational event", which is exactly the understatement P-1 refuses.
-  const positive = ["acknowledge","accept","start","respond","verify","verify-pass","close","approve","satisfy","unblock","publish","activate"];
-  const negative = ["block","decline","reject","verify-fail","dispute"];
-  const caution = ["deprecate"];
-  const tone = positive.indexOf(transition) > -1 ? "positive" : (negative.indexOf(transition) > -1 ? "negative" : (caution.indexOf(transition) > -1 ? "caution" : "neutral"));
-  const lead = ru
-    ? { positive:"Шаг выполнен", negative:"Нужна реакция", caution:"Жизненный цикл изменён", neutral:"Справочное событие" }[tone]
-    : { positive:"Step completed", negative:"Response needed", caution:"Lifecycle changed", neutral:"Informational event" }[tone];
-  const action = TRANSITION_PAST(ru)[transition] || transition;
-  return { tone, label: lead + (action ? " · " + action : "") };
+function vocabulary(data, family, value, ru) {
+  return globalThis.A2A_VOCABULARY_RESOLVER.lookup(data, family, value || "__missing__", ru ? "ru" : "en");
 }
 
-function TRANSITION_PAST(ru) {
-  if (!ru) return {
-    create: "created", submit: "submitted", publish: "published", acknowledge: "acknowledged",
-    accept: "accepted", start: "started", respond: "answered", verify: "verified", close: "closed",
-    approve: "approved", satisfy: "satisfied", dispute: "disputed", note: "added a note to",
-    block: "blocked", unblock: "unblocked", decline: "declined", reject: "rejected",
-    cancel: "cancelled", withdraw: "withdrew", supersede: "superseded", propose: "proposed",
-    deprecate: "deprecated", retire: "retired", "verify-pass": "accepted", "verify-fail": "rejected",
-    activate: "brought live"
-  };
-  return {
-    create: "создал", submit: "отправил", publish: "опубликовал", acknowledge: "подтвердил получение",
-    accept: "принял", start: "начал работу", respond: "ответил", verify: "проверил", close: "закрыл",
-    approve: "согласовал", satisfy: "закрыл требование", dispute: "оспорил", note: "добавил заметку",
-    block: "заблокировал", unblock: "разблокировал", decline: "отказался", reject: "отклонил",
-    cancel: "отменил", withdraw: "отозвал", supersede: "заменил", propose: "предложил",
-    deprecate: "объявил устаревшей", retire: "снял версию", "verify-pass": "принял", "verify-fail": "отклонил",
-    activate: "включил в работу"
-  };
+function boundsSentence(window, ru) {
+  if (!window || !window.truncated || !(Number(window.shown) < Number(window.total))) return "";
+  return ru ? "Показано " + window.shown + " из " + window.total + "." : "Showing " + window.shown + " of " + window.total + ".";
 }
-
-function OPERATIONAL_STATE(state, ru) {
-  const key = String(state || "") || "undeclared";
-  const words = ru ? {
-    ready: { label: "заявлено готовым", tone: "healthy", hint: "Поставщик подтвердил: эта часть интерфейса существует и работает." },
-    absent: { label: "заявлено отсутствующим", tone: "attention", hint: "Поставщик прямо сказал, что этого пока нет. Это известный пробел: на него можно планировать и спрашивать срок." },
-    undeclared: { label: "никто не заявлял", tone: "outline", hint: "Об этом не сказано ничего — ни «есть», ни «нет». Это не то же самое, что «заявлено отсутствующим»: заявления здесь просто нет." }
-  } : {
-    ready: { label: "declared ready", tone: "healthy", hint: "The provider has stated that this part of the interface exists and works." },
-    absent: { label: "declared missing", tone: "attention", hint: "The provider said out loud that this does not exist yet. A known gap: you can plan around it and ask for an eta." },
-    undeclared: { label: "never declared", tone: "outline", hint: "Nobody has said anything either way — not “yes”, not “no”. This is NOT the same as declared missing: there is no claim here at all." }
-  };
-  return words[key] || {
-    label: key,
-    tone: "neutral",
-    hint: ru ? "Состояние, которого этот интерфейс не знает." : "A state this surface does not know."
-  };
-}
-
-function operationalReadinessRows(items, ru) {
-  return (items || []).map(it => {
-    const word = OPERATIONAL_STATE(it.state, ru);
-    // `chip` is the one-line form for a pill; `name`/`label` stay separate so
-    // the detail panel can lay them out as a two-column row instead.
-    return { name: it.name, state: it.state, label: word.label, tone: word.tone, hint: word.hint, chip: it.name + " · " + word.label };
-  });
-}
-
-function WORK_MODE_TEXT(value, ru) {
-  const words = ru ? {
-    planning:"планирует", implementing:"реализует", testing:"тестирует", reviewing:"проверяет",
-    waiting:"ждёт", paused:"приостановил работу", finished:"завершил работу"
-  } : {
-    planning:"planning", implementing:"implementing", testing:"testing", reviewing:"reviewing",
-    waiting:"waiting", paused:"paused", finished:"finished"
-  };
-  return words[value] || (ru ? "статус неизвестен" : "status unknown");
-}
-
-function WORK_WAIT_KIND(value, ru) {
-  const words = ru ? {
-    system:"система", human:"человек", tool:"инструмент", timer:"время", external:"внешняя сторона"
-  } : {
-    system:"system", human:"human", tool:"tool", timer:"timer", external:"external party"
-  };
-  return words[value] || (ru ? "тип не указан" : "type not recorded");
-}
-
-const VERDICT_TONE = { met: "positive", unmet: "negative", not_warranted: "neutral", not_exercised: "caution" };
-
-function VERDICT_LABEL(ru) {
-  return ru
-    ? { met: "выполнено", unmet: "не выполнено", not_warranted: "не требовалось", not_exercised: "не проверялось" }
-    : { met: "met", unmet: "unmet", not_warranted: "not warranted", not_exercised: "not exercised" };
-}
-
-function outcomeOf(x) { return String((x && x.outcome) || ""); }
-
-function isSettled(x) { return outcomeOf(x) === "settled"; }
-
-function isRefused(x) { return outcomeOf(x) === "refused"; }
-
-function isAbandoned(x) { const o = outcomeOf(x); return o === "withdrawn" || o === "superseded"; }
 
 function mono(s) { return String(s || "?").slice(0, 2).toUpperCase(); }
 
 function monoCodes(names) {
   const out = {}, used = new Set();
-  names.slice().sort().forEach(n => {
+  (names || []).forEach(n => {
     const s = String(n || "?");
     let code = (s[0] + (s[1] || "")).toUpperCase();
     for (let i = 2; used.has(code) && i < s.length; i++) code = (s[0] + s[i]).toUpperCase();
@@ -542,7 +352,6 @@ class Component extends DCLogic {
   }
 
   go(view, extra) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.navigate) actions.navigate(view, extra); }
-  closeContractFile() { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.closeContractFile) actions.closeContractFile(); }
   applyTheme(theme) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setTheme) actions.setTheme(theme); }
   applyLocale(locale) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setLocale) actions.setLocale(locale); }
   copy(text) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.copy) actions.copy(text); }
@@ -554,72 +363,68 @@ class Component extends DCLogic {
       (active ? "background:var(--primary); color:var(--on-primary);" : "background:var(--surface); color:var(--body);");
   }
 
-  blockedOn(from, to) {
-    const ru = this.state.locale === "ru";
-    const d = this.state.data;
-    const holders = (to || []).filter(Boolean);
-    if (holders.indexOf(d.self) > -1) return ru ? "блокирующий ход за вами" : "blocking move: you";
-    if (holders.length === 1) return (ru ? "блокирующий ход за " : "blocking move: ") + holders[0];
-    if (holders.length > 1) return ru ? "блокирующий ход за получателями" : "blocking move: recipients";
-    return ru ? "блокирующий ход не назначен" : "blocking move unassigned";
-  }
-
-  blockedWhy(a) {
-    const ru = this.state.locale === "ru";
-    const d = this.state.data;
-    const holders = (a.to || []).filter(Boolean);
-    const yours = holders.indexOf(d.self) > -1;
-    const obligation = ru ? "Документ фиксирует блокирующее протокольное обязательство." : "The document records a blocking protocol obligation.";
-    const next = yours
-      ? (ru ? " Следующий допустимый ход за вами." : " Your side owns the next allowed move.")
-      : (holders.length
-        ? (ru ? " Следующий допустимый ход за " + listNames(holders, ru) + "." : " The next allowed move belongs to " + listNames(holders, ru) + ".")
-        : (ru ? " Владелец следующего хода не записан." : " No owner is recorded for the next move."));
-    const when = a.neededBy ? (ru ? " Срок " : " Due ") + isoDay(a.neededBy) + "." : "";
-    const pri = a.priority ? (ru ? " Приоритет " + a.priority + "." : " Priority " + a.priority + ".") : "";
-    return obligation + next + when + pri;
-  }
-
-  statusOf(it) {
-    const ru = this.state.locale === "ru";
-    // Protocol state and Exchange completion are deliberately different for
-    // announcements: a delivered announcement remains `published`, but once
-    // every recipient acknowledged it the read model moves it to Archive.
-    const settled = isSettled(it) || !!it.archived;
-    if (it.blocking) return {
-      status: this.blockedOn(it.from, it.to) + " · " + it.priority, tone: "blocking",
-      why: this.blockedWhy({ from: it.from, to: it.to, neededBy: it.neededBy, priority: it.priority })
-    };
-    if (it.gatePending) return { status: ru ? "ждёт вашего согласования" : "your approval pending", tone: "attention" };
-    if (it.overdue) return { status: (ru ? "просрочено" : "overdue") + " · " + it.priority, tone: "blocking" };
-    if (it.activationOwed) return {
-      status: ru ? "нужно включить в работу" : "activation owed", tone: "attention",
-      why: ru
-        ? "Кто-то уже закрепил опубликованную мажорную версию этого контракта, а вы ещё не подтвердили, что операционная половина существует. Обязательство выведено из регистрации и публикации, а не из того, что записано в x_operational. Закрывается командой a2a contract activate."
-        : "Someone has pinned this contract's published major, and you have not yet attested that its operational half exists. The debt is derived from registration and publication, not from what x_operational says. a2a contract activate discharges it."
-    };
-    if (!settled && it.severity === "attention") return { status: (ru ? "стоит посмотреть" : "needs a look") + " · " + it.priority, tone: "attention" };
-    return { status: it.priority, tone: "neutral" };
-  }
-
   rowFor(it, selKey, selValue, onSel) {
     const ru = this.state.locale === "ru";
     const d = this.state.data;
     const codes = monoCodes(d.nodes.map(n => n.system));
-    const st = this.statusOf(it);
     const toSelf = (it.to || []).includes(d.self);
     const toText = (it.to || []).join(", ");
     const toCode = toSelf ? codes[d.self] : codes[(it.to || [])[0]];
     const space = d.spaces.find(s => s.id === it.space);
+    const source = ((d.operational || {}).sources || []).find(candidate => candidate.kind === "space" && candidate.space === it.space);
+    const itemUnavailable = (d.unavailable || []).find(candidate => candidate.id === it.id && (!candidate.scope || candidate.scope === it.space));
+    const sourceDiagnostic = (((d.operational || {}).unavailable) || []).find(candidate => candidate.source_kind === "space" && candidate.space === it.space);
+    const carriedSourceFreshness = String(source && source.freshness || "");
+    const sourceUnavailable = carriedSourceFreshness === "unavailable" || (!carriedSourceFreshness && !!sourceDiagnostic);
+    const unavailable = itemUnavailable || (sourceUnavailable ? sourceDiagnostic : null);
+    const unavailableEvidence = itemUnavailable || sourceDiagnostic;
+    const unavailableState = !!itemUnavailable || sourceUnavailable;
     const sentence = it.reasonSentence || {};
-    const waitingOn = listNames(it.waitingOn || [], ru) || (ru ? "не указано" : "none recorded");
-    const expectedMove = it.expectedTransition || (ru ? "не указан" : "not recorded");
+    const noneRecorded = ru ? "Ничего не записано." : "None recorded.";
+    const notRecorded = ru ? "Не записано." : "Not recorded.";
+    const unknown = ru ? "В этом снимке неизвестно." : "Unknown in this snapshot.";
+    const yesNo = value => value ? (ru ? "да" : "yes") : (ru ? "нет" : "no");
+    const waitingOn = listNames(it.waitingOn || [], ru) || noneRecorded;
+    const expectedMove = it.expectedTransition || unknown;
+    const actions = this.props && this.props.ctx && this.props.ctx.actions || {};
+    const resolver = globalThis.A2A_VOCABULARY_RESOLVER;
+    const knows = (family, value) => !!resolver.knows && resolver.knows(d, family, value);
+    const stateKnown = knows("lifecycle-state", it.state);
+    const outcomeKnown = !it.outcome || knows("outcome", it.outcome);
+    const lifecycleKnown = stateKnown && outcomeKnown;
+    const ruleIdentity = it.ruleIdentity && typeof it.ruleIdentity === "object" ? JSON.stringify(it.ruleIdentity) : String(it.ruleIdentity || "");
+    const operationalItems = (it.operationalItems || []).map(op => ({ name:op.name || "", result:vocabulary(d, "operational-state", op.state, ru) }));
+    const urgency = [];
+    if (it.priority) urgency.push((ru ? "приоритет " : "priority ") + it.priority);
+    if (it.neededBy) urgency.push((ru ? "срок " : "needed by ") + it.neededBy);
+    if (Object.prototype.hasOwnProperty.call(it, "blocking")) urgency.push((ru ? "блокирует: " : "blocking: ") + yesNo(it.blocking));
+    urgency.push((ru ? "просрочено: " : "overdue: ") + yesNo(it.overdue));
+    if (it.severity) urgency.push((ru ? "важность " : "severity ") + it.severity);
+    const unavailableReason = unavailable && (unavailable.reason || unavailable.summary);
+    const unavailableEvidenceReason = unavailableEvidence && (unavailableEvidence.reason || unavailableEvidence.summary);
+    const unavailableSentence = unavailableState
+      ? (unavailableReason
+        ? (ru ? "Недоступно в этом снимке: " : "Unavailable in this snapshot: ") + unavailableReason
+        : unknown)
+      : "";
+    const technicalEvidence = [
+      "Terminal: " + yesNo(it.terminal), "Archived: " + yesNo(it.archived), "GatePending: " + yesNo(it.gatePending),
+      "Overdue: " + yesNo(it.overdue), "SyncStale: " + yesNo(it.syncStale),
+      unavailableEvidence && unavailableEvidence.code ? "Unavailable code: " + unavailableEvidence.code : "",
+      unavailableEvidenceReason ? "Unavailable reason: " + unavailableEvidenceReason : ""
+    ].filter(Boolean).join("; ");
+    const open = onSel || (() => {
+      const id = actions.cardID ? actions.cardID("item", it) : "";
+      const accent = actions.cardAccent ? actions.cardAccent("state", [it.space || "", it.id || "", it.state || ""]) : "";
+      if (id && actions.openCard) actions.openCard("item", id, accent);
+    });
     return {
-      id: it.id, type: it.type, title: it.title, status: st.status, tone: st.tone,
-      // A label that raises a question carries its answer on itself, so the
-      // reader hovers the badge rather than hunting for a separate mark.
-      statusWhy: st.why || "",
-      state: String(it.state || "").replace("_", " "), stateTone: STATE_TONE[it.state] || "neutral",
+      id: it.id, type: it.type, title: it.title,
+      stateResult: lifecycleKnown ? vocabulary(d, "lifecycle-state", it.state, ru) : null,
+      outcomeResult: lifecycleKnown && it.outcome ? vocabulary(d, "outcome", it.outcome, ru) : null,
+      lifecycleKnown,
+      lifecycleUnknownText:lifecycleKnown ? "" : unknown,
+      gateResult: it.humanGate ? vocabulary(d, "gate", it.humanGate, ru) : null,
       // A deadline outranks an age wherever there is one. "5 ч" says when the
       // document last moved; the date says when it stops being optional, and a
       // reader who just filtered by deadline should not have to open a card to
@@ -627,50 +432,46 @@ class Component extends DCLogic {
       time: it.neededBy ? (ru ? "дедлайн " : "due ") + isoDay(it.neededBy) : age(it.age),
       from: it.from, to: toText, meta: it.space,
       syncAge: space && space.readable ? age(space.syncAge) : "",
-      syncStale: !!(space && space.stale),
+      freshnessResult: unavailableState ? vocabulary(d, "source-freshness", "unavailable", ru) : (carriedSourceFreshness ? vocabulary(d, "source-freshness", carriedSourceFreshness, ru) : null),
       fromCode: codes[it.from] || "", toCode: toCode || "",
       fromSelf: it.from === d.self, toSelf: toSelf,
-      reasonSentence: sentence[ru ? "ru" : "en"] || (ru ? "Объяснение пока не записано." : "No human explanation is recorded yet."),
+      reasonSentence: sentence[ru ? "ru" : "en"] || unknown,
       waitingOnLabel: ru ? "Чей ход" : "Whose turn",
       waitingOn,
       expectedMoveLabel: ru ? "Ожидаемый ход" : "Expected move",
       expectedMove,
-      hasTechnicalWhy: !!it.why,
-      technicalWhyLabel: ru ? "Техническое основание" : "Technical detail",
+      terminalText:(ru ? "терминально: " : "terminal: ") + yesNo(it.terminal),
+      archivedText:(ru ? "в архиве: " : "archived: ") + yesNo(it.archived),
+      yourMoveText:(ru ? "ваш ход: " : "your move: ") + yesNo(it.yourMove),
+      gatePendingText:(ru ? "ожидает: " : "pending: ") + yesNo(it.gatePending),
+      urgencyText:urgency.length ? urgency.join("; ") : notRecorded,
+      summary:it.description || notRecorded,
+      operationalItems,
+      noneRecorded,
+      notRecorded,
+      snapshotUnavailable:unavailableSentence,
+      snapshotUnknownText:!unavailableState && !carriedSourceFreshness && !it.pendingMerge ? unknown : "",
+      pendingMergeText:it.pendingMerge ? (ru ? "есть незавершённая общая запись" : "shared write pending") : "",
+      technicalLabel: ru ? "Технические подробности" : "Technical detail",
       technicalWhy: it.why || "",
+      ruleLabel: ru ? "Правило" : "Rule identity",
+      ruleIdentity,
+      technicalEvidence,
       selected: selValue === it.id,
-      select: onSel || (() => this.setState({ [selKey]: it.id })),
+      select: open,
       openLabel: (ru ? "Открыть в Обмене: " : "Open in Exchange: ") + (it.title || it.id)
     };
   }
 
   promptContext(fields) {
     const d = this.state.data;
-    const due = fields.neededBy ? new Date(fields.neededBy) : null;
-    const at = d.generatedAt ? new Date(d.generatedAt) : null;
     return Object.assign({
       self: d.self,
       // The instant as it is stored. DD.MM.YYYY is this interface's format for
       // a person reading a screen; inside an English machine-facing payload it
       // is one more thing to misparse.
-      generatedAt: d.generatedAt,
-      overdue: !!(due && at && !isNaN(due) && !isNaN(at) && due < at)
+      generatedAt: d.generatedAt
     }, fields);
-  }
-
-  artifactSourceURL(artifact) {
-    const d = this.state.data;
-    const sp = d && (d.spaces || []).find(x => x.id === artifact.space);
-    let repo = String(sp && sp.repoURL || "").trim();
-    const path = String(artifact.path || "").replace(/^\/+/, "");
-    if (!repo || !path) return "";
-    if (repo.startsWith("git@github.com:")) repo = "https://github.com/" + repo.slice("git@github.com:".length);
-    if (repo.startsWith("ssh://git@github.com/")) repo = "https://github.com/" + repo.slice("ssh://git@github.com/".length);
-    if (!/^https:\/\/github\.com\//i.test(repo)) return "";
-    repo = repo.replace(/\.git\/?$/, "").replace(/\/$/, "");
-    const revision = encodeURIComponent(String(sp.revision || "HEAD"));
-    const encodedPath = path.split("/").map(encodeURIComponent).join("/");
-    return repo + "/blob/" + revision + "/" + encodedPath;
   }
 
   metadataFor(artifact, ru) {
@@ -691,7 +492,7 @@ class Component extends DCLogic {
     // carry the operational facts. Keep the complete envelope in one quiet
     // disclosure instead of repeating created/space/category as loud cards.
     const primary = [];
-    const rest = Object.keys(e).sort().map(key => ({ label:key, value:valueFor(key, e[key]) }));
+    const rest = Object.keys(e).map(key => ({ label:key, value:valueFor(key, e[key]) }));
     // These were the only useful facts in the old lower table that are not
     // frontmatter. Keep them beside the metadata instead of preserving a
     // second, duplicating facts section below the document.
@@ -703,6 +504,7 @@ class Component extends DCLogic {
   detailFor(id, fallbackList) {
     const ru = this.state.locale === "ru";
     const d = this.state.data;
+    const actions = this.props && this.props.ctx && this.props.ctx.actions || {};
     const it = (fallbackList || []).find(x => x.id === id);
     // Artifact ids are unique per space, not globally: the same id can exist in
     // two connected spaces, so the detail must be resolved against the row's own
@@ -731,6 +533,11 @@ class Component extends DCLogic {
       };
     }
     const e = a.envelope || {};
+    const sourceSpace = (d.spaces || []).find(space => space.id === a.space);
+    const sourceURL = actions.sourceURL && sourceSpace && sourceSpace.revision && a.path
+      ? actions.sourceURL(a.space, a.path, sourceSpace.revision)
+      : "";
+    const detailSource = ((d.operational || {}).sources || []).find(candidate => candidate.kind === "space" && candidate.space === a.space);
     const actor = e.actor && typeof e.actor === "object" ? e.actor : {};
     // actor.kind is passed, and it matters for more than the badge: without
     // it actorIdentity cannot tell an agent id from a person's login, so the
@@ -739,18 +546,9 @@ class Component extends DCLogic {
     // kind, the name resolves to the principal exactly as the thread does, and
     // the badge fields below carry the agent to ArtifactDetail's authorRow.
     const authorIdentity = actorIdentity(d, a.from, actor.name || a.from, actor.kind, actor.model);
-    const pills = [];
-    // The blocking pill carries its own explanation here, because this is the
-    // one place with room for it: the list rows say who has to move and open
-    // this pane, and this pane says who stopped, who can start them again and
-    // by when.
-    if (e.blocking) pills.push({
-      text: this.blockedOn(a.from, a.to) + " · " + (e.priority || ""), tone: "blocking",
-      hint: this.blockedWhy({ from: a.from, to: a.to, neededBy: it ? it.neededBy || e.needed_by : e.needed_by, priority: e.priority })
-    });
-    else if (e.priority) pills.push({ text: e.priority, tone: "neutral" });
-    pills.push({ text: String(a.state || "").replace("_", " "), tone: STATE_TONE[a.state] || "neutral" });
-    if (a.sync_stale) pills.push({ text: "space stale", tone: "attention" });
+    const pills = [{ result:vocabulary(d, "lifecycle-state", a.state, ru) }];
+    if (a.outcome) pills.push({ result:vocabulary(d, "outcome", a.outcome, ru) });
+    if (detailSource && detailSource.freshness) pills.push({ result:vocabulary(d, "source-freshness", detailSource.freshness, ru) });
 
     const lists = [];
     if (e.acceptance_criteria) lists.push({ heading: ru ? "Когда считаем, что готово" : "Acceptance criteria", items: e.acceptance_criteria, numbered: true });
@@ -766,34 +564,36 @@ class Component extends DCLogic {
       const system = String(ev.actor_system || "");
       const eventName = String(ev.actor || system || (ru ? "неизвестный автор" : "unknown actor"));
       const transition = String(ev.transition || "");
-      const signal = EVENT_SIGNAL(transition, ru);
-      const subjectLabel = transition === "respond" ? "" : (transition === "note" ? (ru ? "заметку" : "a note") : artifactWord);
-      // verify/close's own per-criterion judgement (event/v2 `verdicts[]`,
-      // P6 wave C) — same VERDICT_LABEL/VERDICT_TONE vocabulary the thread
-      // transcript's own `rows` mapping uses (B34, agent-exchange-2026-08):
-      // one spelling of `not_warranted`, not two. cause_owner is always
-      // present on every entry (internal/cli/cmd_lifecycle.go requires it,
-      // including on `met`), so the row can rely on it without a fallback.
-      const verdictLabel = VERDICT_LABEL(ru);
+      const transitionKnown = !!globalThis.A2A_VOCABULARY_RESOLVER.knows && globalThis.A2A_VOCABULARY_RESOLVER.knows(d, "transition", transition);
+      const transitionResult = transitionKnown ? vocabulary(d, "transition", transition, ru) : null;
+      const subjectLabel = artifactWord;
       const verdicts = (ev.verdicts || []).map(v => ({
-        text: (ru ? "критерий " : "criterion ") + v.index + " · " + (verdictLabel[v.verdict] || v.verdict) + " · " + v.cause_owner,
-        tone: VERDICT_TONE[v.verdict] || "neutral"
+        text: (ru ? "критерий " : "criterion ") + v.index + " · " + v.verdict + " · " + v.cause_owner
       }));
+      const consistency = ev.consistency && typeof ev.consistency === "object" ? ev.consistency : null;
+      const consistencyText = consistency ? [
+        "authoritative actual " + String(consistency.actual || ""),
+        "claimed " + String(consistency.claimed || ""),
+        "event_ulid " + String(consistency.event_ulid || ""),
+        "producer " + JSON.stringify(consistency.producer || {}),
+        "cause " + String(consistency.cause || "")
+      ].join("; ") : "";
       return {
         isLifecycle: true,
         isWorkReport: false,
-        actionText: transition === "note" ? (ru ? "добавил" : "added") : (TRANSITION_PAST(ru)[transition] || transition),
+        actionText: transitionKnown ? transitionResult.label : (ru ? "В этом снимке неизвестно." : "Unknown in this snapshot."),
+        transitionRaw:transition,
         subjectLabel,
         meta: system + (system ? " · " : "") + when(ev.at),
         ...actorIdentity(d, system, eventName, ev.actor_kind, ev.actor_model),
         systemSelf: system === d.self,
-        signalTone: signal.tone,
-        signalLabel: signal.label,
+        hasSignal:false,
         verdicts,
         hasVerdicts: verdicts.length > 0,
         verdictsTitle: ru ? "Вердикты по критериям" : "Criteria verdicts",
-        sortAt: ev.at || "",
-        sortKey: ev.ulid || ""
+        hasConsistency:!!consistency,
+        consistencyLabel:ru ? "Техническая проверка согласованности" : "Technical consistency evidence",
+        consistencyText,
         // `claimed_state` remains protocol diagnostics. The computed fold
         // state wins, so matching claims do not become a second status line.
       };
@@ -805,18 +605,13 @@ class Component extends DCLogic {
       // it. The latter is what lets thread- and contract-valued subjects remain
       // visible in Exchange instead of disappearing from every document.
       return report.space === a.space && (!a.thread || report.thread === a.thread) && (report.artifact_id === a.id || subjectID === a.id);
-    }).slice().sort((left, right) => {
-      // reported_at is authored display data. Git sequence is the authority
-      // for committed history, with artifact identity fixing same-commit order.
-      const committed = Number(right.commit_sequence || 0) - Number(left.commit_sequence || 0);
-      if (committed) return committed;
-      return String(left.artifact_id || "").localeCompare(String(right.artifact_id || ""));
     }).map(report => {
+      const actions = this.props && this.props.ctx && this.props.ctx.actions || {};
       const actor = report.actor || {};
       const system = String(actor.system || "");
       const eventName = actor.name || system || (ru ? "неизвестный исполнитель" : "unknown actor");
       const waits = (report.waiting_on || []).map(wait => ({
-        label: WORK_WAIT_KIND(wait.kind, ru) + (wait.id ? " · " + wait.id : ""),
+        label: (wait.kind || (ru ? "тип не записан" : "type not recorded")) + (wait.id ? " · " + wait.id : ""),
         summary: wait.summary || "",
         hasSummary: !!wait.summary
       }));
@@ -828,6 +623,9 @@ class Component extends DCLogic {
       const subjectIsContract = subjectID.startsWith("XC-");
       const subjectArtifact = (d.artifactDetails || []).find(item => item.space === a.space && item.id === subjectID);
       const subjectItem = [].concat(d.inbox || [], d.outbox || [], d.archive || []).find(item => item.space === a.space && item.id === subjectID);
+      const subjectCollection = (d.archive || []).indexOf(subjectItem) >= 0
+        ? "archive"
+        : ((d.outbox || []).indexOf(subjectItem) >= 0 ? "outgoing" : "incoming");
       const subjectThread = (d.threadViews || []).find(item => item.space === a.space && item.thread === subject);
       const subjectLabel = subjectIsThread
         ? (subjectThread && subjectThread.opener && subjectThread.opener.title || subject)
@@ -836,9 +634,9 @@ class Component extends DCLogic {
       const openSubject = subjectIsThread
         ? () => this.go("threads", { space:a.space, threadSel:subject, threadSpace:a.space, tvFocus:"" })
         : (subjectIsContract
-          ? () => this.go("contracts", { space:a.space, conSel:subjectID, conVersion:subjectVersion, contractFile:null, conRole:"all", conRisk:false })
+          ? () => this.go("contracts", { space:a.space, conSel:subjectID, conVersion:subjectVersion, conRole:"all", conRisk:false })
           : (subjectItem
-            ? () => this.go("work", { space:a.space, workSel:subjectID, workTab:"all", workState:(d.archive || []).some(item => item.space === a.space && item.id === subjectID) ? "closed" : "all", workType:"all", workDue:false })
+            ? () => this.go("work", { space:a.space, workTab:subjectCollection, workSel:subjectID, dashboardSet:"" })
             : () => {}));
       return {
         isLifecycle: false,
@@ -853,28 +651,23 @@ class Component extends DCLogic {
         meta: system + (system ? " · " : "") + when(report.reported_at),
         ...actorIdentity(d, system, eventName, actor.kind, actor.model),
         systemSelf: system === d.self,
-        signalTone: "neutral",
-        signalLabel: ru ? "Отчёт о работе · не меняет состояние документа" : "Work report · does not change document state",
-        workMode: WORK_MODE_TEXT(report.mode, ru),
-        workModeTone: report.mode === "waiting" || report.mode === "paused" ? "attention" : (report.mode === "finished" ? "healthy" : "agent"),
+        workModeResult: vocabulary(d, "work-mode", report.mode, ru),
         workSummary: report.summary || report.subject_ref || "",
         workWaits: waits,
         hasWorkWaits: waits.length > 0,
         workEvidence: report.valid_until
-          ? ((ru ? "зафиксировано в Git · актуально до " : "committed in Git · valid until ") + when(report.valid_until))
-          : (ru ? "зафиксировано в Git · финальный отчёт" : "committed in Git · final report"),
-        sortAt: report.reported_at || "",
-        sortKey: report.artifact_id || report.work_id || ""
+          ? ((ru ? "отчёт " : "reported ") + when(report.reported_at) + (ru ? " · действителен до " : " · valid until ") + when(report.valid_until))
+          : ((ru ? "отчёт " : "reported ") + when(report.reported_at)),
+        workReportOpenLabel:ru ? "Открыть карточку отчёта" : "Open work-report card",
+        openWorkReport:() => {
+          const id = actions.cardID ? actions.cardID("work-report", report) : "";
+          const accent = actions.cardAccent ? actions.cardAccent("checkpoint", [report.space || "", report.artifact_id || ""]) : "";
+          if (id && actions.openCard) actions.openCard("work-report", id, accent);
+        }
       };
     });
-    // Durable reports lead this rail in authoritative commit order. Lifecycle
-    // events do not currently carry commit sequence in ArtifactDetail, so they
-    // retain their own authored chronology rather than weakening report order
-    // with a second clock. Local leases never enter this collection.
-    lifecycleEvents.sort((left, right) => {
-      if (left.sortAt !== right.sortAt) return left.sortAt < right.sortAt ? 1 : -1;
-      return String(right.sortKey || "").localeCompare(String(left.sortKey || ""));
-    });
+    // Both collections already arrive in their carried order. The durable
+    // reports remain ahead of lifecycle history without a second browser clock.
     const events = workEvents.concat(lifecycleEvents);
 
     const flagMessages = (a.flags || []).map(code => {
@@ -882,32 +675,10 @@ class Component extends DCLogic {
       return { code, message: f ? f.message : (ru ? "К этому замечанию не приложено пояснения." : "No message is recorded for this flag in the fixture.") };
     });
 
-    // `a` is the artifact detail, which carries the domain's own verdict; the
-    // exchange row `it` may not exist for it at all (an artifact can be shown
-    // from a space whose inbox/outbox projection does not list it), so the
-    // verdict is read from `a` and only `archived` — a local, per-system fact
-    // the domain has no opinion on — still comes from the row.
-    const cancelled = isAbandoned(a);
-    const refused = isRefused(a);
-    const complete = isSettled(a) || (!cancelled && !refused && !!(it && it.archived));
-    let calloutTitle = "", calloutText = "", calloutTone = "neutral", calloutParts = [];
+    let calloutTitle = "", calloutText = "", calloutParts = [];
     const needed = e.needed_by || (e.expected_response && e.expected_response.by);
     if (e.expected_response || needed) {
-      if (complete) {
-        calloutTone = "healthy";
-        calloutTitle = ru ? "Документ завершён · протокольного хода нет" : "Document final · no protocol move is owed";
-      } else if (cancelled) {
-        calloutTone = "neutral";
-        calloutTitle = ru ? "Документ отменён · протокольного хода нет" : "Document cancelled · no protocol move is owed";
-      } else if (refused) {
-        calloutTone = "blocking";
-        calloutTitle = ru ? "Документ отклонён · текущая цепочка завершена" : "Document declined · current protocol chain is final";
-      } else {
-        calloutTone = e.blocking ? "blocking" : "attention";
-        calloutTitle = needed
-          ? (ru ? "Дедлайн " : "Due ") + isoDay(needed) + " · " + ((a.to || []).includes(d.self) ? (ru ? "ваш ход" : "your move") : (ru ? "ход за " : "waiting on ") + (a.to || []).join(", "))
-          : ((a.to || []).includes(d.self) ? (ru ? "Что от нас ждут в ответ" : "What is expected from us") : (ru ? "Что ждём в ответ" : "What we expect back"));
-      }
+      calloutTitle = needed ? (ru ? "Записанный срок" : "Recorded deadline") + " · " + isoDay(needed) : (ru ? "Записанное ожидание" : "Recorded expectation");
       const targetLabel = (a.to || []).includes(d.self)
         ? (ru ? "Что ждут от нас" : "What is expected from us")
         : (ru ? "Что ждём от " : "What we expect from ") + (a.to || []).join(", ");
@@ -915,7 +686,7 @@ class Component extends DCLogic {
         ? (ru ? "Что до ответа делаем мы" : "What we do until the answer arrives")
         : (ru ? "Что до ответа делает " : "What is continuing meanwhile at ") + a.from;
       const responseShape = typeof e.expected_response === "string" ? e.expected_response : (e.expected_response && e.expected_response.shape);
-      if (needed && (complete || cancelled || refused)) calloutParts.push({ label: ru ? "Исторический дедлайн" : "Historical deadline", text: isoDay(needed) });
+      if (needed) calloutParts.push({ label: ru ? "Срок" : "Needed by", text: isoDay(needed) });
       if (responseShape) calloutParts.push({ label: targetLabel, text: responseShape.replace(/[.\s]+$/, "") + "." });
       if (e.interim_behavior) calloutParts.push({ label: interimLabel, text: e.interim_behavior.replace(/[.\s]+$/, "") + "." });
       if (e.context) calloutParts.push({ label: ru ? "Контекст автора" : "Author context", text: e.context.replace(/[.\s]+$/, "") + "." });
@@ -928,21 +699,6 @@ class Component extends DCLogic {
       calloutText = Array.isArray(e.verification) ? e.verification.join(" · ") : String(e.verification);
       calloutParts = [{ label: ru ? "Проверка" : "Verification", text: calloutText }];
     }
-    if (complete && calloutTitle) calloutTone = "healthy";
-    const calloutSignalLabel = !calloutTitle ? "" : calloutTone === "healthy"
-      ? (ru ? "Зелёный блок: документ дошёл до конечного состояния, следующего хода протокола нет." : "Green block: the document reached a terminal state; no next protocol move is recorded.")
-      : cancelled
-        ? (ru ? "Серый блок: документ отменён или отозван. Ход ни за кем; прежний дедлайн показан только как факт истории." : "Grey block: the document was cancelled or withdrawn. Nobody owes a move; any former deadline is historical only.")
-        : calloutTone === "blocking"
-          ? (refused
-            ? (ru ? "Красный блок: документ отклонён; текущая цепочка конечна, а новый ход должен быть допустим протоколом." : "Red block: the document was declined; the current chain is terminal and any new move must be allowed by the protocol.")
-            : (ru ? "Красный блок: документ фиксирует блокирующее ожидание; следующий ход протокола за его получателем." : "Red block: the document records a blocking wait; its recipient owns the next protocol move."))
-          : calloutTone === "attention"
-            ? ((a.to || []).includes(d.self)
-              ? (ru ? "Жёлтый блок: документ активен, следующий ход протокола ожидается от вас." : "Yellow block: the document is active; your side owns the next protocol move.")
-              : (ru ? "Жёлтый блок: документ активен, следующий ход протокола ожидается от другой стороны." : "Yellow block: the document is active; the other side owns the next protocol move."))
-            : (ru ? "Серый блок: это записанный автором контекст; активное протокольное ожидание не указано." : "Grey block: this is author-recorded context; no active protocol wait is recorded.");
-
     // The attachment claim the Go side already derived
     // (datapackage.AttachmentClaim -> cache.ShowResult.Attachments ->
     // ArtifactDetail.Attachments), named KEY BY KEY rather than handed over
@@ -962,8 +718,9 @@ class Component extends DCLogic {
     return {
       present: true, type: a.type, pills,
       sourceClass: a.sourceClass,
-      syncStale: !!a.sync_stale,
       syncAge: age(a.sync_age),
+      syncStale: !!a.sync_stale,
+      freshnessResult:detailSource && detailSource.freshness ? vocabulary(d, "source-freshness", detailSource.freshness, ru) : null,
       authorName: authorIdentity.actorName, authorMono: authorIdentity.avatarMono, authorAvatar: authorIdentity.avatar, authorFrom:a.from, authorTo:(a.to || []).join(", "),
       authorAction: ru ? "создал" : "created",
       authorSubject: artifactWord,
@@ -980,12 +737,12 @@ class Component extends DCLogic {
       authorAgentModel: authorIdentity.agentModel,
       authorProfileTitle: authorIdentity.actorProfileTitle,
       title: a.title, body: a.body || "", bodyHTML: a.bodyHTML || "",
-      calloutTitle, calloutText, calloutTone, calloutSignalLabel, calloutParts,
+      calloutTitle, calloutText, calloutParts,
       lists, metadataPrimary: metadata.primary, metadataRest: metadata.rest,
       refs: (a.refs || []).map(r => ({
         ref: r.ref, note: (e.refs || []).find(x => x.ref === r.ref) ? (e.refs.find(x => x.ref === r.ref).note || "") : "",
-        pillText: r.resolved === false ? (ru ? "не нашли" : "unresolved") : (r.digest_mismatch ? (ru ? "сумма не сошлась" : "digest mismatch") : (ru ? "нашли, сумма сошлась" : "resolved · digest matches")),
-        pillTone: r.resolved === false || r.digest_mismatch ? "blocking" : "healthy"
+        evidence:(ru ? "разрешено: " : "resolved: ") + (r.resolved ? (ru ? "да" : "yes") : (ru ? "нет" : "no"))
+          + "; " + (ru ? "расхождение digest: " : "digest mismatch: ") + (r.digest_mismatch ? (ru ? "да" : "yes") : (ru ? "нет" : "no"))
       })),
       events, flags: flagMessages,
       // This literal is hand-picked, not a spread of `a`, so a field the Go
@@ -1002,7 +759,7 @@ class Component extends DCLogic {
       // founding distinction, carried end to end through two Go projections
       // and painted on no screen. operationalReadinessRows is shared with the thread
       // panel so the two cannot drift.
-      operationalItems: operationalReadinessRows(a.operational_items, ru),
+      operationalItems: (a.operational_items || []).map(op => ({ name:op.name || "", result:vocabulary(d, "operational-state", op.state, ru) })),
       // The handover, on our own move only. The gate is the canonical whose-move
       // projection rather than the narrower human-attention queue: a routine
       // move an agent would normally have taken unprompted is exactly the case
@@ -1012,15 +769,116 @@ class Component extends DCLogic {
         text: it && it.prompt ? agentPromptText(this.promptContext({
           id: a.id, type: a.type, state: a.state, title: a.title,
           space: a.space, thread: a.thread, from: a.from, to: a.to,
-          neededBy: it.neededBy || e.needed_by, blocking: !!e.blocking,
+          neededBy: it.neededBy || e.needed_by, blocking: !!e.blocking, overdue:!!it.overdue,
           priority: e.priority, prompt: it.prompt
         })) : ""
       },
       threadLabel: a.thread ? (ru ? "Тред" : "Thread") : (ru ? "Тред не указан" : "No thread recorded"),
       hasThread: !!a.thread,
       openThread: () => this.go("threads", { space:a.space, threadSel:a.thread || "", threadSpace:a.space }),
-      sourceURL: this.artifactSourceURL(a),
+      sourceURL,
       footer: a.id
+    };
+  }
+
+  workReportCardFor(report, d, ru, card, actions) {
+    const actor = report.actor || {};
+    const actorDisplay = actor.name || actor.system || "";
+    const resolver = globalThis.A2A_VOCABULARY_RESOLVER;
+    const modeKnown = !!resolver.knows && resolver.knows(d, "work-mode", report.mode);
+    const modeResult = vocabulary(d, "work-mode", report.mode, ru);
+    const unknown = ru ? "В этом снимке неизвестно." : "Unknown in this snapshot.";
+    const notRecorded = ru ? "Не записано." : "Not recorded.";
+    const noneRecorded = ru ? "Ничего не записано." : "None recorded.";
+    const notRecordedInline = ru ? "не записано" : "not recorded";
+    const bodyResult = result => result ? { ...result, cue:"" } : result;
+    const sentence = value => /[.!?…]$/.test(String(value || "")) ? String(value) : String(value || "") + ".";
+    const sentenceEnding = result => result && /[.!?…]$/.test(String(result.label || "")) ? "" : ".";
+    const completeLead = actorDisplay && modeKnown && report.subject_ref && report.summary;
+    const lead = completeLead
+      ? (ru
+        ? actorDisplay + " сообщил о работе " + modeResult.label + " по " + report.subject_ref + ": " + report.summary + "."
+        : actorDisplay + " reported " + modeResult.label + " work on " + report.subject_ref + ": " + report.summary + ".")
+      : unknown;
+    const timeline = ((d.operational || {}).timeline || []).find(row => row.space === report.space && row.thread === report.thread);
+    const current = timeline && (timeline.work || []).find(work => work.work_id === report.work_id);
+    const source = ((d.operational || {}).sources || []).find(row => row.kind === "space" && row.space === report.space);
+    const unavailableFact = (((d.operational || {}).unavailable) || []).find(row => row.source_kind === "space" && row.space === report.space)
+      || (d.unavailable || []).find(row => row.id === report.artifact_id && (!row.scope || row.scope === report.space));
+    const carriedSourceFreshness = String(source && source.freshness || "");
+    const sourceUnavailable = carriedSourceFreshness === "unavailable" || (!carriedSourceFreshness && !!unavailableFact);
+    const unavailableReason = unavailableFact && (unavailableFact.summary || unavailableFact.reason);
+    const unavailableSentence = sourceUnavailable
+      ? (unavailableReason
+        ? (ru ? "Недоступно в этом снимке: " : "Unavailable in this snapshot: ") + unavailableReason
+        : unknown)
+      : "";
+    const remaining = current && current.shared_pending && current.shared_pending.remaining_action || "";
+    const accent = (family, identity) => actions && actions.cardAccent ? actions.cardAccent(family, identity) : "";
+    const highlighted = (family, identity) => !!card && !!card.accent && accent(family, identity) === card.accent;
+    const accentStyle = active => "border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:"
+      + (active ? "var(--attention-tint)" : "var(--surface-section)") + "; box-shadow:inset 0 0 0 1px var(--hairline);";
+    const checkpointIdentity = [report.space || "", report.artifact_id || ""];
+    const subjectIdentity = [report.space || "", report.artifact_id || "", report.subject_ref || ""];
+    const actorIdentity = [report.space || "", report.artifact_id || "", actor.kind || "", actor.name || "", actor.system || ""];
+    const checkpointHighlighted = highlighted("checkpoint", checkpointIdentity);
+    const subjectHighlighted = highlighted("subject", subjectIdentity);
+    const actorHighlighted = highlighted("actor", actorIdentity);
+    const actorKind = actor.kind === "human" ? (ru ? "человек" : "human") : actor.kind === "agent" ? (ru ? "агент" : "agent") : (actor.kind || notRecordedInline);
+    const attribution = actorKind + " " + (actorDisplay || unknown) + (actor.system ? (ru ? ", система " : ", system ") + actor.system : "") + ".";
+    const checkpoint = ru
+      ? "отчёт " + (report.reported_at || notRecordedInline) + "; " + (report.valid_until ? "действителен до " + report.valid_until : "срок действия не записан") + "."
+      : "reported " + (report.reported_at || notRecordedInline) + "; valid until " + (report.valid_until || notRecordedInline) + ".";
+    const technical = [
+      ["space", report.space], ["thread", report.thread], ["artifact", report.artifact_id], ["work", report.work_id],
+      ["subject", report.subject_ref], ["actor session", actor.session], ["commit sequence", report.commit_sequence], ["actor model", actor.model]
+    ].map(([label, value]) => ({ label, value:value == null || value === "" ? notRecorded : String(value) }));
+    if (current && current.committed_checkpoint) technical.push({ label:"committed checkpoint", value:String(current.committed_checkpoint.artifact_id || notRecorded) });
+    if (current && current.shared_pending) {
+      technical.push({ label:"shared stage", value:String(current.shared_pending.stage || notRecorded) });
+      technical.push({ label:"shared state", value:String(current.shared_pending.state || notRecorded) });
+    }
+    if (unavailableFact) {
+      technical.push({ label:"unavailable code", value:String(unavailableFact.code || notRecorded) });
+      technical.push({ label:"unavailable reason", value:String(unavailableReason || notRecorded) });
+    }
+    const currentParts = [];
+    if (current && Object.prototype.hasOwnProperty.call(current, "current")) currentParts.push((ru ? "текущее: " : "current: ") + (current.current ? (ru ? "да" : "yes") : (ru ? "нет" : "no")));
+    if (current && current.committed_checkpoint) currentParts.push(ru ? "общая контрольная точка есть" : "committed checkpoint present");
+    const freshnessResult = current && !sourceUnavailable ? vocabulary(d, "freshness", current.freshness, ru) : null;
+    const snapshotResult = sourceUnavailable
+      ? vocabulary(d, "source-freshness", "unavailable", ru)
+      : (carriedSourceFreshness ? vocabulary(d, "source-freshness", carriedSourceFreshness, ru) : null);
+    return {
+      factOrder:["subject","lead","attribution","checkpoint","waits","current","remaining","snapshot","technical"],
+      heading:ru ? "Отчёт о работе" : "Work report", subject:report.subject_ref || unknown,
+      identity:(ru ? "Отчёт о работе — " : "Work report — ") + (report.subject_ref || unknown), lead, modeResult, modeKnown,
+      subjectHighlighted, subjectStyle:"margin-bottom:var(--space-card-title-to-content);" + (subjectHighlighted ? " border-radius:var(--radius-nested); padding:8px 10px; background:var(--attention-tint);" : ""),
+      summary:report.summary || unknown,
+      attributionLabel:ru ? "Автор" : "Attribution",
+      attribution,
+      actorHighlighted, attributionStyle:accentStyle(actorHighlighted),
+      checkpointLabel:ru ? "Контрольная точка" : "Checkpoint",
+      checkpoint,
+      checkpointHighlighted, checkpointStyle:accentStyle(checkpointHighlighted),
+      waitsLabel:ru ? "Зависимости" : "Declared waits",
+      waits:(report.waiting_on || []).map((wait, index) => {
+        const waitHighlighted = highlighted("wait", [report.space || "", report.artifact_id || "", wait.kind || "", wait.id || ""]);
+        return { kind:wait.kind || notRecorded, id:wait.id || notRecordedInline, summary:wait.summary || "", hasSummary:!!wait.summary, separator:index ? "; " : "", highlighted:waitHighlighted, style:"line-height:1.5; overflow-wrap:anywhere;" + (waitHighlighted ? " border-radius:var(--radius-nested); padding:2px 3px; background:var(--attention-tint);" : "") };
+      }),
+      hasWaits:!!(report.waiting_on && report.waiting_on.length), lacksWaits:!(report.waiting_on && report.waiting_on.length), noneRecorded,
+      hasCurrent:!!current || sourceUnavailable, currentLabel:ru ? "Текущее состояние" : "Current reading",
+      currentDegraded:sourceUnavailable, currentClaimsVisible:!!current && !sourceUnavailable,
+      freshnessResult, bodyFreshnessResult:bodyResult(freshnessResult),
+      currentText:sourceUnavailable ? unavailableSentence : (currentParts.length ? currentParts.join("; ") : notRecorded),
+      committedCheckpointText:current && current.committed_checkpoint ? (ru ? "общая контрольная точка есть" : "committed checkpoint present") : (ru ? "общая контрольная точка не записана" : "committed checkpoint not recorded"),
+      remainingLabel:ru ? "Оставшееся общее действие" : "Remaining shared action", remaining:remaining || notRecorded, remainingText:remaining ? sentence(remaining) : notRecorded, hasRemainingCondition:!!(current && current.shared_pending), remainingResult:current && current.shared_pending ? vocabulary(d, "freshness", "pending-recovery", ru) : null,
+      snapshotLabel:ru ? "Снимок" : "Snapshot", hasSnapshotResult:!!snapshotResult, hasBodySnapshotResult:!!snapshotResult && !sourceUnavailable, snapshotUnavailableOnly:sourceUnavailable, snapshotResult, bodySnapshotResult:bodyResult(snapshotResult), snapshotEnding:sentenceEnding(snapshotResult),
+      snapshotUnavailable:unavailableSentence, hasSnapshotUnavailable:sourceUnavailable,
+      snapshotUnknown:!sourceUnavailable && !carriedSourceFreshness, snapshotUnknownText:!sourceUnavailable && !carriedSourceFreshness ? unknown : "",
+      statusSupportLabel:ru ? "Пояснения статусов отчёта о работе" : "Work-report status explanations",
+      statusSupport:[modeResult, freshnessResult, current && current.shared_pending ? vocabulary(d, "freshness", "pending-recovery", ru) : null, snapshotResult].filter(Boolean),
+      technicalLabel:ru ? "Технические подробности: свёрнуты." : "Technical detail: collapsed.", technical
     };
   }
 
@@ -1035,106 +893,77 @@ class Component extends DCLogic {
       if ("ExchangeView" !== "DashboardShell") return {};
       d = { spaces:[], nodes:[], inbox:[], outbox:[], archive:[], contracts:[], contractEdges:[], flags:[], meta:{}, tooling:{}, generatedAt:"", self:"" };
     }
-    const scopedInbox = d.inbox.filter(i => this.inScope(i.space));
-    const scopedOutbox = d.outbox.filter(i => this.inScope(i.space));
-    const scopedArchive = d.archive.filter(i => this.inScope(i.space));
-    const exchangeByID = new Map();
-    scopedInbox.concat(scopedOutbox, scopedArchive).forEach(it => exchangeByID.set(String(it.space || "") + "\u0000" + it.id, it));
-    const exchangeAll = Array.from(exchangeByID.values());
-    const isIncoming = (it) => (it.to || []).indexOf(d.self) > -1;
-    const isOutgoing = (it) => it.from === d.self;
-    const isClosed = (it) => !!it.archived || (outcomeOf(it) !== "" && outcomeOf(it) !== "open") || String(it.state || "").toLowerCase() === "expired";
-    const hasActiveDeadline = (it) => !!it.neededBy && !isClosed(it);
-    const byNewest = (list) => list.slice().sort((a, b) => {
-      const sameSpace = String(a.space || "") === String(b.space || "");
-      // Git first-parent order is authoritative inside one space. The boolean
-      // matters because sequence zero is a valid first commit, not "missing".
-      if (sameSpace && a.createdOrderKnown && b.createdOrderKnown) {
-        const as = Number(a.createdSeq || 0), bs = Number(b.createdSeq || 0);
-        if (as !== bs) return bs - as;
-      }
-      // Two artifacts may be born in one commit; frontmatter creation time is
-      // the deterministic within-batch key and the cross-space fallback.
-      const at = a.createdAt || "", bt = b.createdAt || "";
-      if (at !== bt) return at && bt ? (at < bt ? 1 : -1) : (at ? -1 : 1);
-      return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
+    const actions = ctx.actions || {};
+    if (ui.card && ui.card.kind === "work-report") {
+      const report = (d.workReports || []).find(candidate => actions.cardID && actions.cardID("work-report", candidate) === ui.card.id);
+      return {
+        cardWorkReport:true, regularExchange:false, workReportPresent:!!report, workReportMissing:!report,
+        workReportMissingTitle:ru ? "Отчёт не найден" : "Work report not found",
+        workReportMissingText:ru ? "В текущем снимке нет отчёта с таким непрозрачным идентификатором." : "The current snapshot has no work report for this opaque identity.",
+        workReportCard:report ? this.workReportCardFor(report, d, ru, ui.card, actions) : {}
+      };
+    }
+    const collections = {
+      incoming:d.inbox || [], outgoing:d.outbox || [], archive:d.archive || []
+    };
+    const windows = d.windows || {};
+    const dashboardKey = ["needYou", "noHumanMove", "youAwait"].indexOf(ui.dashboardSet) >= 0 ? ui.dashboardSet : "";
+    const aggregate = dashboardKey && d.aggregates && d.aggregates[dashboardKey];
+    const tab = ["incoming", "outgoing", "archive"].indexOf(s.workTab) >= 0 ? s.workTab : "incoming";
+    const carried = aggregate ? (aggregate.items || []) : collections[tab];
+    const workList = aggregate ? carried : carried.filter(item => this.inScope(item.space));
+    const workWindow = aggregate ? aggregate.window : (s.space === "all" ? windows[tab === "incoming" ? "inbox" : tab === "outgoing" ? "outbox" : "archive"] : null);
+    const workWindowText = boundsSentence(workWindow, ru);
+    const workReports = (d.workReports || []).filter(report => this.inScope(report.space));
+    const workReportsWindowText = boundsSentence(s.space === "all" ? windows.workReports : null, ru);
+    const workReportRows = workReports.map(report => {
+      const actor = report.actor || {};
+      return {
+        subject:report.subject_ref || (ru ? "В этом снимке неизвестно." : "Unknown in this snapshot."),
+        summary:report.summary || (ru ? "В этом снимке неизвестно." : "Unknown in this snapshot."),
+        actor:actor.name || actor.system || (ru ? "В этом снимке неизвестно." : "Unknown in this snapshot."),
+        reportedAt:report.reported_at || (ru ? "Не записано." : "Not recorded."),
+        modeResult:vocabulary(d, "work-mode", report.mode, ru),
+        openLabel:(ru ? "Открыть отчёт о работе: " : "Open work report: ") + (report.subject_ref || report.artifact_id || ""),
+        open:() => {
+          const id = actions.cardID ? actions.cardID("work-report", report) : "";
+          const accent = actions.cardAccent ? actions.cardAccent("checkpoint", [report.space || "", report.artifact_id || ""]) : "";
+          if (id && actions.openCard) actions.openCard("work-report", id, accent);
+        }
+      };
     });
-    const workTypes = exchangeAll.map(i => i.type).filter((t, i, arr) => t && arr.indexOf(t) === i).sort();
-    const workType = workTypes.indexOf(s.workType) > -1 ? s.workType : "all";
-    const workState = ["open", "closed"].indexOf(s.workState) > -1 ? s.workState : "all";
-    const matchesDirection = (it, value) => value === "all" || (value === "incoming" ? isIncoming(it) : isOutgoing(it));
-    const matchesState = (it, value) => value === "all" || (value === "closed" ? isClosed(it) : !isClosed(it));
-    const filterExchange = (direction, lifecycle, type, dueOnly) => exchangeAll.filter(it =>
-      matchesDirection(it, direction) && matchesState(it, lifecycle) &&
-      (type === "all" || it.type === type) && (!dueOnly || hasActiveDeadline(it)));
-    const workList = byNewest(filterExchange(s.workTab, workState, workType, s.workDue));
-    const directionCount = (value) => filterExchange(value, workState, workType, s.workDue).length;
-    const stateCount = (value) => filterExchange(s.workTab, value, workType, s.workDue).length;
-    const workTypeCount = (type) => filterExchange(s.workTab, workState, type, s.workDue).length;
-    const dueCount = filterExchange(s.workTab, workState, workType, true).length;
-    const workSel = s.workSel && workList.some(i => i.id === s.workSel) ? s.workSel : (workList[0] && workList[0].id) || "";
     const values = {
+      cardWorkReport:false,
+      regularExchange:true,
       workAria:c.views[1],
-      typeMenuOpen: s.typeMenu,
-      typeMenuExpanded: s.typeMenu ? "true" : "false",
-      toggleTypeMenu: (ev) => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.setState(x => ({ typeMenu: !x.typeMenu })); },
-      typeButtonStyle: "display:inline-flex; align-items:center; gap:8px; min-height:" + FILTER_H + "px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; border-radius:10px; padding:0 14px 0 16px; cursor:pointer; white-space:nowrap; " +
-        (workType === "all" ? "background:var(--surface); color:var(--body); box-shadow:0 1px 2px rgba(33,30,23,.06);" : "background:var(--primary); color:var(--on-primary);") +
-        (s.typeMenu ? " box-shadow:0 1px 2px rgba(33,30,23,.06), inset 0 0 0 1.5px var(--border-strong);" : ""),
-      workTypeCurrent: workType === "all" ? (ru ? "Все типы" : "All types") : (TYPE_WORDS(ru)[workType] || workType),
-      workTypeFilters: [{ id: "all", label: ru ? "Все типы" : "All types" }].concat(workTypes.map(t => ({ id: t, label: TYPE_WORDS(ru)[t] || t }))).map(f => ({
-        label: f.label,
-        isAll: f.id === "all", isType: f.id !== "all", type: f.id,
-        count: String(workTypeCount(f.id)),
-        selected: workType === f.id,
-        current: workType === f.id ? "true" : null,
-        style: "display:flex; align-items:center; gap:9px; width:100%; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; border-radius:9px; padding:9px 10px; cursor:pointer; " +
-          (workType === f.id ? "background:var(--teal-tint); color:var(--teal-ink);" : "background:transparent; color:var(--body);"),
-        go: () => this.setState({ workType: f.id, workSel: "", typeMenu: false })
-      })),
-      workTabs: [["all", ru ? "Все" : "All"], ["incoming", ru ? "Входящие" : "Incoming"], ["outgoing", ru ? "Исходящие" : "Outgoing"]].map(([id, label]) => ({
+      workTabs: [["incoming", ru ? "Входящие" : "Incoming"], ["outgoing", ru ? "Исходящие" : "Outgoing"], ["archive", ru ? "Архив" : "Archive"]].map(([id, label]) => ({
         label,
-        count: directionCount(id),
-        pressed: s.workTab === id ? "true" : "false",
-        go: () => this.setState({ workTab: id, workSel: "", typeMenu: false })
+        pressed: !aggregate && tab === id ? "true" : "false",
+        go: () => this.setState({ workTab:id, workSel:"", dashboardSet:"" })
       })),
-      workStates: [["all", ru ? "Все" : "All"], ["open", ru ? "Открытые" : "Open"], ["closed", ru ? "Закрытые" : "Closed"]].map(([id, label]) => ({
-        label,
-        count: stateCount(id),
-        pressed: workState === id ? "true" : "false",
-        go: () => this.setState({ workState: id, workSel: "", typeMenu: false })
-      })),
-      workDirectionAria: ru ? "Направление обмена" : "Exchange direction",
-      workStateAria: ru ? "Состояние документов" : "Document state",
-      hasDueFilter: exchangeAll.some(hasActiveDeadline) || !!s.workDue,
-      dueText: ru ? "С дедлайном" : "With a deadline",
-      dueCountText: String(dueCount),
-      duePressed: s.workDue ? "true" : "false",
-      dueStyle: this.filterChip(!!s.workDue) + (s.workDue ? "" : " box-shadow:inset 0 0 0 1px var(--border);"),
-      toggleDue: () => this.setState(x => ({ workDue: !x.workDue, workSel: "" })),
-      workRows: workList.map(it => this.rowFor(it, "workSel", workSel)),
+      workDirectionAria: ru ? "Перенесённые сервером коллекции обмена" : "Server-carried exchange collections",
+      hasWorkWindow:!!workWindowText,
+      workWindowText,
+      hasWorkReports:workReportRows.length > 0,
+      workReportsEmpty:workReportRows.length === 0,
+      workReportsTitle:ru ? "Отчёты о работе" : "Work reports",
+      workReportsHint:ru ? "в перенесённом порядке" : "in carried order",
+      hasWorkReportsWindow:!!workReportsWindowText,
+      workReportsWindowText,
+      workReportsEmptyText:workReportsWindowText
+        ? (ru ? "В этом ограниченном префиксе нет отчётов; перенесённое окно сообщает о записях за его пределами." : "No reports in this bounded prefix; the carried window reports records outside it.")
+        : (ru ? "Ничего не записано." : "None recorded."),
+      workReportRows,
+      workRows: workList.map(it => this.rowFor(it, "workSel", "")),
       workWholeEmpty: workList.length === 0,
       workHasColumns: workList.length > 0,
-      showWorkFilters: exchangeAll.length > 0,
-      emptyWorkTitle: s.workDue && dueCount === 0
-        ? (ru ? "Ни у чего нет дедлайна" : "Nothing here has a deadline")
-        : workType !== "all"
-        ? (ru ? "Ничего такого типа" : "Nothing of that type")
-        : workState === "open"
-        ? (ru ? "Открытых документов нет" : "No open documents")
-        : workState === "closed"
-        ? (ru ? "Закрытых документов нет" : "No closed documents")
-        : (s.workTab === "incoming" ? (ru ? "Входящих нет" : "Nothing incoming") : (s.workTab === "outgoing" ? (ru ? "Исходящих нет" : "Nothing outgoing") : (ru ? "История обмена пуста" : "No exchange history yet"))),
-      emptyWorkText: s.workDue && dueCount === 0
-        ? (ru ? "Ни на одном документе в этой области не стоит срок. Снимите фильтр, чтобы увидеть остальное." : "Nothing in this scope carries a deadline. Clear the filter to see the rest.")
-        : workType !== "all"
-        ? (ru ? "Под этот тип в текущей области ничего не подошло. Снимите фильтр, чтобы увидеть остальное." : "Nothing of that type in this scope. Clear the filter to see the rest.")
-        : workState !== "all"
-        ? (ru ? "В выбранном направлении и состоянии документов нет. Измените один из фильтров, чтобы расширить ленту." : "No documents match the selected direction and state. Change either filter to broaden the feed.")
-        : s.workTab === "outgoing"
-        ? (ru ? "В этой области нет документов, отправленных вашей системой." : "There are no documents sent by your system in this scope.")
-        : (ru ? "В этой области нет документов, адресованных вашей системе." : "There are no documents addressed to your system in this scope."),
-      workDetail: this.detailFor(workSel, workList)
+      showWorkFilters:!aggregate && !!((d.inbox || []).length || (d.outbox || []).length || (d.archive || []).length),
+      emptyWorkTitle:workWindowText
+        ? (ru ? "В этом ограниченном префиксе нет записей" : "No items in this bounded prefix")
+        : (ru ? "В этой коллекции пока пусто" : "This carried collection is empty"),
+      emptyWorkText:workWindowText
+        ? (ru ? "Перенесённое окно сообщает о записях за пределами этого ограниченного префикса; коллекция не считается пустой." : "The carried window reports items outside this bounded prefix; the collection is not claimed empty.")
+        : (ru ? "Выберите другую серверную коллекцию обмена." : "Choose another server-carried exchange collection.")
     };
     return values;
   }

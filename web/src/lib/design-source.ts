@@ -2,6 +2,70 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const sourceRoot = resolve(process.cwd(), 'design-source');
+const cardManifestMarker = '/*A2A_CARD_MANIFEST*/null';
+
+type CardManifestRow = {
+  kind: string;
+  component: string;
+  identityFields: string[];
+  selectionPaths: string[][];
+  accentFamilies: string[];
+};
+
+type CardManifest = {
+  version: number;
+  cards: CardManifestRow[];
+};
+
+export function readCardManifest(): CardManifest {
+  const path = resolve(sourceRoot, 'cards.manifest.json');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, 'utf8'));
+  } catch (error) {
+    throw new Error(`card manifest: cannot read strict JSON: ${String(error)}`);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('card manifest: root must be an object');
+  const manifest = parsed as Partial<CardManifest>;
+  if (manifest.version !== 1 || !Array.isArray(manifest.cards) || manifest.cards.length !== 7) {
+    throw new Error('card manifest: expected version 1 and exactly seven card rows');
+  }
+  const kinds = new Set<string>();
+  for (const [index, row] of manifest.cards.entries()) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) throw new Error(`card manifest: row ${index} must be an object`);
+    if (typeof row.kind !== 'string' || !/^[a-z][a-z0-9-]*$/.test(row.kind) || kinds.has(row.kind)) {
+      throw new Error(`card manifest: row ${index} has a missing, malformed, or duplicate kind`);
+    }
+    kinds.add(row.kind);
+    if (typeof row.component !== 'string' || !/^[A-Z][A-Za-z0-9]*$/.test(row.component)) {
+      throw new Error(`card manifest: ${row.kind} has a malformed component`);
+    }
+    try {
+      readFileSync(resolve(sourceRoot, `${row.component}.dc.html`), 'utf8');
+    } catch {
+      throw new Error(`card manifest: ${row.kind} names unknown component ${row.component}`);
+    }
+    for (const [field, values] of [['identityFields', row.identityFields], ['accentFamilies', row.accentFamilies]] as const) {
+      if (!Array.isArray(values) || !values.length || values.some(value => typeof value !== 'string' || !/^[a-z][a-z0-9_-]*$/.test(value)) || new Set(values).size !== values.length) {
+        throw new Error(`card manifest: ${row.kind} has malformed ${field}`);
+      }
+    }
+    if (!Array.isArray(row.selectionPaths) || !row.selectionPaths.length || row.selectionPaths.some(path =>
+      !Array.isArray(path) || !path.length || path.some(segment => typeof segment !== 'string' || !/^[a-z][A-Za-z0-9]*$/.test(segment))
+    ) || new Set(row.selectionPaths.map(path => path.join('.'))).size !== row.selectionPaths.length) {
+      throw new Error(`card manifest: ${row.kind} has malformed selectionPaths`);
+    }
+  }
+  return manifest as CardManifest;
+}
+
+export function injectCardManifest(source: string): string {
+  const first = source.indexOf(cardManifestMarker);
+  if (first < 0 || source.indexOf(cardManifestMarker, first + cardManifestMarker.length) >= 0) {
+    throw new Error('card manifest: dashboard root must contain exactly one injection marker');
+  }
+  return source.replace(cardManifestMarker, JSON.stringify(readCardManifest()).replaceAll('<', '\\u003c'));
+}
 
 // Exact-literal substitutions against the approved design source. A stale
 // needle makes String.replace a silent no-op — the site builds green and the
@@ -50,7 +114,8 @@ function preserveDynamicTables(source: string) {
 }
 
 export function runtimeDesignPage(file: string, variant?: 'guide') {
-  const source = readFileSync(resolve(sourceRoot, file), 'utf8');
+  let source = readFileSync(resolve(sourceRoot, file), 'utf8');
+  if (file === '14-local-dashboard-v4.dc.html') source = injectCardManifest(source);
   const open = source.indexOf('<x-dc>');
   const close = source.lastIndexOf('</x-dc>');
   const scriptOpen = source.indexOf('<script type="text/x-dc" data-dc-script', close);
@@ -88,6 +153,9 @@ export function runtimeDesignPage(file: string, variant?: 'guide') {
     // cannot drift into separate component registries.
     const rootContextImports = [...template.matchAll(/<dc-import name="([A-Z][A-Za-z0-9]*)" ctx="\{\{ ([A-Za-z][A-Za-z0-9]*) \}\}"[^>]*><\/dc-import>/g)]
       .map((match) => ({ declaration: match[0], name: match[1], ctx: match[2] }));
+    const rootSupportImports = [...template.matchAll(/<dc-import name="([A-Z][A-Za-z0-9]*)"[^>]*><\/dc-import>/g)]
+      .map((match) => ({ declaration: match[0], name: match[1] }))
+      .filter(({ declaration }) => !/\sctx="\{\{ [A-Za-z][A-Za-z0-9]* \}\}"/.test(declaration));
     const shellTemplate = componentTemplate('DashboardShell');
     const shellTopOpen = '<sc-if value="{{ isTop }}" hint-placeholder-val="{{ true }}">';
     const shellPageOpen = '<sc-if value="{{ isPage }}" hint-placeholder-val="{{ false }}">';
@@ -198,6 +266,14 @@ class Component extends DCLogic {
       // tooling can inspect complete screens. Compose the corresponding
       // presentation classes into one projection controller as well; the
       // directly opened design source still uses the literal dc-import seams.
+      // Support-only imports have no ctx/render surface, but their module side
+      // effects must run before the root controller's first render. Leaving
+      // them as asynchronous dc-imports makes the public projection race its
+      // own declared dependency (VocabularyResolver was the first real scar).
+      const projectionSupport = rootSupportImports.map(({ declaration, name }) => {
+        template = must(template, declaration, '');
+        return `(() => {\n${componentLogic(name)}\nreturn Component;\n})();`;
+      }).join('\n');
       const inlinedRootImports = rootContextImports.filter(({ declaration }) => !template.includes(declaration));
       const inlinedComponentNames = [...new Set(inlinedRootImports.map(({ name }) => name))];
       const projectionClasses = inlinedComponentNames.map((name) => {
@@ -214,7 +290,7 @@ class Component extends DCLogic {
       const projectionRenders = inlinedRootImports
         .map(({ name, ctx }) => `    Object.assign(values, renderPart(${name}Projection, values.${ctx}));`)
         .join('\n');
-      logic = logic.replace('class Component extends DCLogic {', 'class DashboardRootComponent extends DCLogic {');
+      logic = `${projectionSupport}\n${logic.replace('class Component extends DCLogic {', 'class DashboardRootComponent extends DCLogic {')}`;
       logic += `\n${projectionClasses}\nclass Component extends DashboardRootComponent {\n  renderVals() {\n    const values = super.renderVals();\n    const renderPart = (Part, ctx) => { const part = new Part(); part.props = { ctx }; return part.renderVals(); };\n${projectionRenders}\n    return values;\n  }\n}\n`;
     }
   }

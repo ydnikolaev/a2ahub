@@ -7,12 +7,13 @@
 </head>
 <body>
 <x-dc>
-<section aria-label="{{ overviewAria }}" data-screen-label="Overview">
+<section aria-label="{{ overviewAria }}" data-screen-label="Overview" data-card-kind="{{ cardKind }}">
         <!-- Overview answers two independent questions side by side. The
              operational half says what is moving across the whole system;
              the signal half gives the compact numbers and tells the reader
              which facts were actually present in this snapshot. -->
         <div class="a2a-overview-command-shell">
+        <sc-if value="{{ normalMode }}" hint-placeholder-val="{{ true }}">
         <div class="a2a-overview-command-heading">
           <div class="a2a-overview-operational-heading">
             <h2 id="a2a-overview-operational-title" class="a2a-overview-section-title">{{ operationalTitle }}</h2>
@@ -22,22 +23,27 @@
             <span style="display:inline-flex; align-items:center; gap:7px; font-size:14px; line-height:1.4; color:var(--muted);"><span aria-hidden="true" style="{{ operationalSnapshotDotStyle }}"></span>{{ operationalSnapshot }}</span>
           </div>
         </div>
-        <div class="a2a-overview-command-grid">
+        </sc-if>
+        <div class="a2a-overview-command-grid" style="{{ commandGridStyle }}">
         <!-- Three fixed rows, one grid: label, number, note. Letting the note
              sit beside the number meant a short one stayed inline and a long
              one wrapped underneath, so no two cards agreed on where anything
              was. `align-content:start` inside `align-items:stretch` keeps the
              rows locked across the row of cards whatever the text does. -->
+        <sc-if value="{{ normalMode }}" hint-placeholder-val="{{ true }}">
         <div class="a2a-overview-kpis">
           <sc-for list="{{ ovStats }}" as="s" hint-placeholder-count="4">
-            <div style="position:relative; min-width:0; display:grid; grid-template-rows:auto auto 1fr; row-gap:4px; align-content:start; background:var(--surface); border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); box-shadow:var(--shadow-card);">
+            <div data-overview-kpi="{{ s.key }}" style="position:relative; min-width:0; background:var(--surface); border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); box-shadow:var(--shadow-card); color:var(--text);">
+              <button type="button" onClick="{{ s.open }}" aria-label="{{ s.accessibleName }}" style="width:100%; min-height:100%; display:grid; grid-template-rows:auto auto 1fr; row-gap:4px; align-content:start; border:0; background:transparent; padding:0; color:inherit; font-family:'Onest',sans-serif; text-align:left; cursor:pointer;">
               <div style="padding-right:24px; font-size:15px; line-height:1.35; color:var(--muted);">{{ s.label }}</div>
-              <span style="position:absolute; top:14px; right:14px;"><dc-import name="HintDot" text="{{ s.hint }}" hint-size="17px,17px"></dc-import></span>
               <div style="{{ s.valueStyle }}">{{ s.value }}</div>
               <div style="font-size:15px; line-height:1.45; color:var(--muted);">{{ s.note }}</div>
+              </button>
+              <span style="position:absolute; top:14px; right:14px;"><dc-import name="HintDot" text="{{ s.hint }}" hint-size="17px,17px"></dc-import></span>
             </div>
           </sc-for>
         </div>
+        </sc-if>
 
         <!-- A separate operational picture, not a replacement for the human
              attention queue below. One row is one space/thread process in the
@@ -55,75 +61,45 @@
             <div class="a2a-overview-operational-list">
               <sc-for list="{{ operationalRows }}" as="r" hint-placeholder-count="4">
                 <article class="a2a-overview-process" data-operational-process="true" style="min-width:0;">
+                  <sc-if value="{{ cardMode }}" hint-placeholder-val="{{ false }}">
+                  <div class="a2a-overview-process-card" data-card-content style="padding:var(--padding-card-block) var(--padding-card-inline);">
+                    <h2 data-card-fact="operational:identity" class="a2a-detail-title" style="margin:0 0 var(--space-card-title-to-content);">{{ r.heading }}</h2>
+                    <div data-card-fact="operational:lead" style="color:var(--body); font-size:15px; line-height:1.55;">{{ r.protocolCardLead }}</div>
+                    <div data-card-fact="operational:protocol" style="margin-top:var(--space-after-section-heading);">{{ r.protocolCardText }}</div>
+                    <div data-card-fact="operational:participants" style="margin-top:var(--space-after-section-heading);">{{ r.participantsCardText }}</div>
+                    <div data-card-fact="operational:milestone" data-accented="{{ r.milestoneHighlighted }}" style="margin-top:var(--space-after-section-heading); {{ r.milestoneStyle }}">{{ r.milestoneText }}</div>
+                    <div data-card-fact="operational:work" data-accented="{{ r.workCardHighlighted }}" style="margin-top:var(--space-after-section-heading); {{ r.workCardStyle }}">{{ r.workCardText }}</div>
+                    <div data-card-fact="operational:waits-checkpoint" data-accented="{{ r.waitsCheckpointHighlighted }}" style="margin-top:var(--space-after-section-heading); {{ r.waitsCheckpointStyle }}">{{ r.waitsCheckpointCardText }}</div>
+                    <div data-card-fact="operational:shared-pending" data-accented="{{ r.sharedPendingHighlighted }}" style="margin-top:var(--space-after-section-heading); {{ r.sharedPendingStyle }}">{{ r.sharedPendingCardText }}</div>
+                    <div data-card-fact="operational:consistency" data-accented="{{ r.consistencyCardHighlighted }}" style="margin-top:var(--space-after-section-heading); {{ r.consistencyCardStyle }}">{{ r.consistencyCardText }}</div>
+                    <div data-card-fact="operational:source" data-accented="{{ r.sourceHighlighted }}" style="margin-top:var(--space-after-section-heading); {{ r.sourceStyle }}">{{ r.sourceCardText }}</div>
+                    <sc-if value="{{ r.hasWorkWindowText }}" hint-placeholder-val="{{ true }}"><div data-card-fact="operational:work-bounds" style="margin-top:var(--space-after-section-heading);">{{ r.workBoundsCardText }}</div></sc-if>
+                    <sc-if value="{{ r.hasConsistencyWindowText }}" hint-placeholder-val="{{ true }}"><div data-card-fact="operational:consistency-bounds" style="margin-top:var(--space-after-section-heading);">{{ r.consistencyBoundsCardText }}</div></sc-if>
+                    <details data-operational-technical="true" style="margin-top:var(--space-section); color:var(--muted);">
+                      <summary style="cursor:pointer; font-size:13px; font-weight:600;">{{ r.technicalCollapsedLabel }}</summary>
+                      <div style="margin-top:6px; font-family:'IBM Plex Mono',monospace; font-size:12px; overflow-wrap:anywhere;">{{ r.technicalText }}</div>
+                    </details>
+                  </div>
+                  </sc-if>
+                  <sc-if value="{{ normalMode }}" hint-placeholder-val="{{ true }}">
                   <div class="a2a-overview-process-card">
                   <div data-operational-process-identity="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline);">
-                    <button type="button" onClick="{{ r.openThread }}" aria-label="{{ r.openThreadLabel }}" style="display:block; width:100%; padding:0; border:0; background:transparent; color:var(--text); font-family:'Onest',sans-serif; text-align:left; cursor:pointer;">
-                      <span style="display:block; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; overflow-wrap:anywhere;">{{ r.title }}</span>
-                      <span style="display:block; margin-top:4px; color:var(--muted); font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; line-height:1.45; overflow-wrap:anywhere;">{{ r.meta }}</span>
+                    <button type="button" onClick="{{ r.openCard }}" aria-label="{{ r.openCardLabel }}" style="display:block; width:100%; padding:0; border:0; background:transparent; color:var(--text); font-family:'Onest',sans-serif; text-align:left; cursor:pointer;">
+                      <span style="display:block; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; overflow-wrap:anywhere;">{{ r.heading }}</span>
+                      <span style="display:block; margin-top:4px; color:var(--muted); font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; line-height:1.45; overflow-wrap:anywhere; {{ r.identityTechnicalStyle }}">{{ r.space }} · {{ r.thread }}</span>
                     </button>
+                    <button type="button" data-open-thread-card onClick="{{ r.openThreadCard }}" aria-label="{{ r.openThreadCardLabel }}" style="margin-top:8px; padding:0; border:0; background:transparent; color:var(--teal-ink); font-family:'Onest',sans-serif; font-size:13px; font-weight:600; cursor:pointer;">{{ r.openThreadCardText }}</button>
                   </div>
-
-                  <sc-if value="{{ r.hasCurrentWork }}" hint-placeholder-val="true">
-                  <div data-operational-current-work="true" role="group" aria-label="{{ r.currentWorkLabel }}" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline); background:var(--teal-tint);">
-                    <h3 style="margin:0 0 var(--space-inline); color:var(--text); font-size:var(--font-meta); line-height:var(--line-meta); font-weight:600;">{{ r.currentWorkLabel }}</h3>
-                      <div style="display:flex; flex-direction:column; gap:9px;">
-                        <sc-for list="{{ r.currentWork }}" as="w" hint-placeholder-count="2">
-                          <div style="padding:var(--padding-nested-block) var(--padding-nested-inline); border:1px solid var(--border); border-radius:var(--radius-nested); background:var(--surface); font-size:14px; line-height:1.5; color:var(--muted);">
-                            <dc-import name="ActorEventLine" row="{{ w.actorEvent }}" size="compact" layout="inline" hint-size="100%,34px"></dc-import>
-                            <div style="margin-top:7px; color:var(--body); overflow-wrap:anywhere;">{{ w.summary }}</div>
-                            <sc-if value="{{ w.hasSubject }}" hint-placeholder-val="true"><button type="button" onClick="{{ w.openSubject }}" style="margin:4px 0 0; padding:0; border:0; background:transparent; color:var(--teal-ink); font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; text-decoration:underline; text-underline-offset:3px;">{{ w.subject }}</button></sc-if>
-                            <sc-if value="{{ w.hasWaiting }}" hint-placeholder-val="false">
-                              <div style="margin-top:6px; padding-top:6px; border-top:1px solid var(--hairline);">
-                                <sc-for list="{{ w.waiting }}" as="dep" hint-placeholder-count="2"><div style="overflow-wrap:anywhere;">{{ dep.label }}: <span style="color:var(--body);">{{ dep.kind }} · {{ dep.id }}</span><sc-if value="{{ dep.hasSummary }}" hint-placeholder-val="true"><span> — {{ dep.summary }}</span></sc-if></div></sc-for>
-                              </div>
-                            </sc-if>
-                            <div style="margin-top:6px; font-size:12px; line-height:1.45; color:var(--faint);">{{ w.reported }} · {{ w.observed }} · {{ w.expires }}</div>
-                          </div>
-                        </sc-for>
-                      </div>
-                  </div>
-                  </sc-if>
-                  <!-- No current report is not the same shape as a report: a
-                       full teal-tinted section with its own heading claimed as
-                       much vertical space for "unknown" as a real report takes
-                       for real content. One muted line, still carrying the
-                       group's accessible name, says the same fact in the space
-                       the fact is worth. -->
-                  <sc-if value="{{ r.currentUnknown }}" hint-placeholder-val="false">
-                  <div data-operational-current-work="true" role="group" aria-label="{{ r.currentWorkLabel }}" style="padding:8px var(--padding-list-card-inline); border-top:1px solid var(--hairline); color:var(--faint); font-size:13px; line-height:1.4;">{{ r.currentUnknownText }}</div>
-                  </sc-if>
-
-                  <sc-if value="{{ r.hasHistoricalWork }}" hint-placeholder-val="false">
-                    <div data-operational-work-history="true" role="group" aria-label="{{ r.historicalWorkLabel }}" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline);">
-                      <h3 style="margin:0 0 var(--space-inline); color:var(--muted); font-size:var(--font-meta); line-height:var(--line-meta); font-weight:600;">{{ r.historicalWorkLabel }}</h3>
-                      <div style="display:flex; flex-direction:column; gap:8px;">
-                        <sc-for list="{{ r.historicalWork }}" as="w" hint-placeholder-count="2">
-                          <div style="padding:var(--padding-nested-block) var(--padding-nested-inline); border-radius:var(--radius-nested); background:var(--surface-section); font-size:13px; line-height:1.5; color:var(--muted);">
-                            <dc-import name="ActorEventLine" row="{{ w.actorEvent }}" size="compact" layout="inline" hint-size="100%,34px"></dc-import>
-                            <div style="margin-top:6px; color:var(--body); overflow-wrap:anywhere;">{{ w.summary }}</div>
-                            <sc-if value="{{ w.hasSubject }}" hint-placeholder-val="true"><button type="button" onClick="{{ w.openSubject }}" style="margin:4px 0 0; padding:0; border:0; background:transparent; color:var(--teal-ink); font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; text-decoration:underline; text-underline-offset:3px;">{{ w.subject }}</button></sc-if>
-                            <sc-if value="{{ w.hasWaiting }}" hint-placeholder-val="false"><div style="margin-top:5px;"><sc-for list="{{ w.waiting }}" as="dep" hint-placeholder-count="2"><div style="overflow-wrap:anywhere;">{{ dep.label }}: <span style="color:var(--body);">{{ dep.kind }} · {{ dep.id }}</span><sc-if value="{{ dep.hasSummary }}" hint-placeholder-val="true"><span> — {{ dep.summary }}</span></sc-if></div></sc-for></div></sc-if>
-                            <div style="margin-top:5px; font-size:12px; line-height:1.45; color:var(--faint);">{{ w.reported }} · {{ w.observed }} · {{ w.expires }}</div>
-                          </div>
-                        </sc-for>
-                      </div>
-                    </div>
-                  </sc-if>
 
                   <div data-operational-protocol="true" role="group" aria-label="{{ r.protocolLabel }}" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline); background:var(--surface);">
-                    <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:8px;">
+                    <p style="margin:0 0 10px; color:var(--body); font-size:15px; line-height:1.55;">{{ r.protocolLead }}</p>
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
                       <h3 style="margin:0; color:var(--text); font-size:var(--font-meta); line-height:var(--line-meta); font-weight:600;">{{ r.protocolLabel }}</h3>
-                      <span style="color:var(--muted); font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px;">{{ r.protocolState }}</span>
+                      <dc-import name="StatusPill" result="{{ r.protocolResult }}" size="small" hint-size="120px,24px"></dc-import>
+                      <span style="color:var(--muted); font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px;">{{ r.openCountText }}</span>
                     </div>
-                    <!-- Nothing to move on, wait for or be blocked by is a real
-                         fact ("your move: no"), so it stays reachable behind a
-                         one-line toggle instead of a three-box grid printed
-                         even when every box says "no" or "not recorded". A
-                         card with a real move, a real wait or a real block
-                         keeps the grid open exactly as before. -->
                     <sc-if value="{{ r.obligationsGridVisible }}" hint-placeholder-val="{{ true }}">
-                      <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px;">
-                        <div style="min-width:0; padding:8px 9px; border-radius:var(--radius-inner); background:var(--canvas);"><div style="color:var(--faint); font-size:12px; line-height:1.35; font-weight:500;">{{ r.yourMoveLabel }}</div><div style="margin-top:2px; color:var(--body); font-size:13px; overflow-wrap:anywhere;">{{ r.yourMove }}</div></div>
+                      <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;">
                         <div style="min-width:0; padding:8px 9px; border-radius:var(--radius-inner); background:var(--canvas);"><div style="color:var(--faint); font-size:12px; line-height:1.35; font-weight:500;">{{ r.waitingOnLabel }}</div><div style="margin-top:2px; color:var(--body); font-size:13px; overflow-wrap:anywhere;">{{ r.waitingOn }}</div></div>
                         <div style="min-width:0; padding:8px 9px; border-radius:var(--radius-inner); background:var(--canvas);"><div style="color:var(--faint); font-size:12px; line-height:1.35; font-weight:500;">{{ r.blockingByLabel }}</div><div style="margin-top:2px; color:var(--body); font-size:13px; overflow-wrap:anywhere;">{{ r.blockingBy }}</div></div>
                       </div>
@@ -135,12 +111,61 @@
                     </sc-if>
                   </div>
 
-                  <div data-operational-latest-event="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline); color:var(--muted);">
-                    <div style="margin-bottom:7px; color:var(--faint); font-size:var(--font-meta); line-height:var(--line-meta); font-weight:600;">{{ r.latestEventLabel }}</div>
-                    <sc-if value="{{ r.hasLatestEvent }}" hint-placeholder-val="true"><dc-import name="ActorEventLine" row="{{ r.event }}" size="compact" layout="inline" hint-size="100%,34px"></dc-import></sc-if>
-                    <sc-if value="{{ r.lacksLatestEvent }}" hint-placeholder-val="false"><div style="font-size:13px; line-height:1.45;">{{ r.noLatestEventText }}</div></sc-if>
+                  <div data-operational-participants="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline); color:var(--body);">{{ r.participantsText }}</div>
+                  <div data-operational-latest-milestone="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline); color:var(--muted); {{ r.milestoneStyle }}">{{ r.milestoneText }}</div>
+
+                  <div data-operational-work="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline);">
+                    <h3 style="margin:0 0 8px; font-size:var(--font-meta); color:var(--muted);">{{ r.workLabel }}</h3>
+                    <sc-if value="{{ r.workEmpty }}" hint-placeholder-val="{{ false }}"><div style="color:var(--faint);">{{ r.noneRecorded }}</div></sc-if>
+                    <sc-for list="{{ r.work }}" as="w" hint-placeholder-count="2">
+                      <button type="button" onClick="{{ w.openCard }}" aria-label="{{ w.openCardLabel }}" style="display:block; width:100%; padding:var(--padding-nested-block) var(--padding-nested-inline); margin-top:8px; border:0; border-radius:var(--radius-nested); background:var(--surface-section); color:var(--body); font:inherit; text-align:left; cursor:pointer; {{ w.accentStyle }}">
+                        <div style="display:flex; align-items:center; gap:7px; flex-wrap:wrap;"><strong>{{ w.actor }}</strong><dc-import name="StatusPill" result="{{ w.modeResult }}" size="small" hint-size="110px,24px"></dc-import><dc-import name="StatusPill" result="{{ w.freshnessResult }}" size="small" hint-size="120px,24px"></dc-import></div>
+                        <div style="margin-top:6px;">{{ w.summary }}</div>
+                        <div style="margin-top:6px; color:var(--muted);">{{ w.evidenceText }}</div>
+                      </button>
+                    </sc-for>
+                  </div>
+
+                  <div data-operational-waits-checkpoint="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline);">
+                    <h3 style="margin:0 0 8px; font-size:var(--font-meta); color:var(--muted);">{{ r.waitsCheckpointLabel }}</h3>
+                    <sc-if value="{{ r.workEmpty }}" hint-placeholder-val="{{ false }}"><div style="color:var(--faint);">{{ r.noneRecorded }}</div></sc-if>
+                    <sc-for list="{{ r.work }}" as="w" hint-placeholder-count="2">
+                      <div style="padding:var(--padding-nested-block) var(--padding-nested-inline); margin-top:8px; border-radius:var(--radius-nested); background:var(--surface-section); color:var(--body);">
+                        <strong>{{ w.actor }}</strong>
+                        <div style="margin-top:6px; color:var(--muted);">{{ w.checkpointText }}</div>
+                        <sc-if value="{{ w.waitsEmpty }}" hint-placeholder-val="{{ false }}"><div style="margin-top:5px; color:var(--faint);">{{ r.noneRecorded }}</div></sc-if>
+                        <sc-for list="{{ w.waits }}" as="wait" hint-placeholder-count="1">
+                          <div style="margin-top:5px; color:var(--muted); {{ wait.accentStyle }}">
+                            <div>{{ wait.text }}</div>
+                            <sc-if value="{{ wait.hasTechnical }}" hint-placeholder-val="true"><details style="{{ r.nestedTechnicalStyle }} margin-top:4px;"><summary style="cursor:pointer; font-size:13px;">{{ r.technicalLabel }}</summary><div style="margin-top:4px; font-family:'IBM Plex Mono',monospace; font-size:12px; overflow-wrap:anywhere;">{{ wait.technical }}</div></details></sc-if>
+                          </div>
+                        </sc-for>
+                      </div>
+                    </sc-for>
+                  </div>
+
+                  <div data-operational-shared-pending="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline);">
+                    <h3 style="margin:0 0 8px; font-size:var(--font-meta); color:var(--muted);">{{ r.sharedPendingLabel }}</h3>
+                    <sc-if value="{{ r.sharedPendingEmpty }}" hint-placeholder-val="{{ false }}"><div style="color:var(--faint);">{{ r.sharedPendingEmptyText }}</div></sc-if>
+                    <sc-for list="{{ r.work }}" as="w" hint-placeholder-count="2">
+                      <sc-if value="{{ w.hasSharedPending }}" hint-placeholder-val="{{ false }}"><div style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-top:6px;"><dc-import name="StatusPill" result="{{ w.sharedPendingResult }}" size="small" hint-size="140px,24px"></dc-import><span>{{ w.sharedPendingText }}</span></div></sc-if>
+                    </sc-for>
+                  </div>
+
+                  <div data-operational-consistency="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline);">
+                    <h3 style="margin:0 0 8px; font-size:var(--font-meta); color:var(--muted);">{{ r.consistencyLabel }}</h3>
+                    <sc-if value="{{ r.consistencyEmpty }}" hint-placeholder-val="{{ false }}"><div style="color:var(--faint);">{{ r.noneRecorded }}</div></sc-if>
+                    <sc-for list="{{ r.consistency }}" as="issue" hint-placeholder-count="1">
+                      <div style="margin-top:7px; {{ issue.accentStyle }}"><dc-import name="StatusPill" result="{{ issue.result }}" size="small" hint-size="120px,24px"></dc-import><details style="{{ r.nestedTechnicalStyle }} margin-top:6px;"><summary style="cursor:pointer; color:var(--muted); font-size:13px;">{{ r.technicalLabel }}</summary><div style="margin-top:5px; color:var(--muted); font-size:13px; overflow-wrap:anywhere;">{{ issue.technical }}</div></details></div>
+                    </sc-for>
+                  </div>
+
+                  <div data-operational-source="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline); display:flex; align-items:center; gap:8px; flex-wrap:wrap; {{ r.sourceStyle }}"><span>{{ r.sourceLabel }}</span><dc-import name="StatusPill" result="{{ r.sourceResult }}" size="small" hint-size="120px,24px"></dc-import><span style="color:var(--muted);">{{ r.sourceSynced }}</span><sc-if value="{{ r.hasSourceUnavailableText }}" hint-placeholder-val="false"><span style="flex-basis:100%; color:var(--body);">{{ r.sourceUnavailableText }}</span></sc-if></div>
+                  <div data-operational-windows="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline); color:var(--muted);"><sc-if value="{{ r.hasWorkWindowText }}" hint-placeholder-val="{{ true }}"><div>{{ r.workBoundsLabel }}: {{ r.workWindowText }}</div></sc-if><sc-if value="{{ r.hasConsistencyWindowText }}" hint-placeholder-val="{{ true }}"><div>{{ r.consistencyBoundsLabel }}: {{ r.consistencyWindowText }}</div></sc-if></div>
+                  <div style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline);"><details><summary style="cursor:pointer; color:var(--muted); font-size:13px; font-weight:600;">{{ r.technicalCollapsedLabel }}</summary><div style="margin-top:6px; color:var(--muted); font-family:'IBM Plex Mono',monospace; font-size:12px; overflow-wrap:anywhere;">{{ r.technicalText }}</div></details>
                   </div>
                   </div>
+                  </sc-if>
                 </article>
               </sc-for>
             </div>
@@ -151,6 +176,7 @@
           </div>
         </section>
 
+        <sc-if value="{{ normalMode }}" hint-placeholder-val="{{ true }}">
         <section class="a2a-overview-inventory" aria-label="{{ inventoryAria }}" style="background:var(--surface); border-radius:var(--radius-card); padding:var(--padding-card-block) var(--padding-card-inline); box-shadow:var(--shadow-card);">
           <div style="padding-bottom:13px; border-bottom:1px solid var(--hairline);">
             <h2 style="margin:0 0 4px; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; color:var(--text);">{{ inventoryTitle }}</h2>
@@ -164,20 +190,9 @@
               </div>
             </sc-for>
           </div>
-          <sc-if value="{{ inventoryTypesPresent }}" hint-placeholder-val="true">
-            <div style="margin-top:15px; font-size:13px; line-height:1.4; font-weight:600; color:var(--body);">{{ inventoryTypesTitle }}</div>
-            <div style="display:flex; flex-wrap:wrap; gap:7px; margin-top:9px;">
-              <sc-for list="{{ inventoryTypes }}" as="t" hint-placeholder-count="8">
-                <span style="display:inline-flex; align-items:center; gap:6px; padding:var(--padding-badge-solid-block) var(--padding-badge-solid-inline); border-radius:var(--radius-badge); background:var(--canvas); color:var(--body); font-size:var(--font-badge-small); line-height:var(--line-badge);"><span>{{ t.label }}</span><strong style="font-family:'IBM Plex Mono',monospace; font-size:var(--font-badge-small); color:var(--text);">{{ t.value }}</strong></span>
-              </sc-for>
-            </div>
-          </sc-if>
         </section>
 
-        <!-- Human attention is a compact route into Exchange, not a second
-             document reader. The whole section disappears when it has no
-             rows; an empty heading would advertise a problem that is absent. -->
-        <sc-if value="{{ hasOvRows }}" hint-placeholder-val="{{ true }}">
+        <!-- The carried empty set is affirmative evidence, not load failure. -->
         <section class="a2a-overview-attention" data-overview-attention="true" aria-label="{{ attentionTitle }}">
           <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:var(--space-stack); margin:0 0 var(--space-grid);">
             <div style="min-width:0;">
@@ -187,18 +202,19 @@
             <span style="flex:0 0 auto; font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--muted);">{{ attentionCount }}</span>
           </div>
           <div style="min-width:0; display:flex; flex-direction:column; gap:var(--space-grid);">
+            <sc-if value="{{ attentionEmpty }}" hint-placeholder-val="{{ false }}"><div data-overview-attention-empty="true"><dc-import name="EmptyState" title="{{ attentionEmptyTitle }}" text="{{ attentionEmptyText }}" size="panel" hint-size="100%,180px"></dc-import></div></sc-if>
             <sc-for list="{{ ovRows }}" as="r" hint-placeholder-count="3">
               <article style="width:100%; min-width:0; display:block; border:1px solid var(--border); border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); background:var(--surface); color:var(--text); font-family:'Onest',sans-serif; text-align:left; box-shadow:var(--shadow-card);">
-                <button type="button" onClick="{{ r.select }}" aria-label="{{ r.openLabel }}" style="width:100%; min-width:0; display:block; border:0; padding:0; background:transparent; color:inherit; font:inherit; text-align:left; cursor:pointer;">
+                <button type="button" onClick="{{ r.openCard }}" aria-label="{{ r.openLabel }}" style="width:100%; min-width:0; display:block; border:0; padding:0; background:transparent; color:inherit; font:inherit; text-align:left; cursor:pointer;">
                 <span style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:8px;">
                   <span style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; min-width:0;">
                     <dc-import name="TypeBadge" type="{{ r.type }}" size="small" hint-size="130px,24px"></dc-import>
-                    <dc-import name="StatusPill" text="{{ r.status }}" tone="{{ r.tone }}" why="{{ r.statusWhy }}" size="small" hint-size="110px,24px"></dc-import>
+                    <span style="font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; overflow-wrap:anywhere;">{{ r.title }}</span>
                   </span>
                   <span style="flex:0 0 auto; font-size:15px; line-height:1.4; color:var(--muted); white-space:nowrap;">{{ r.time }}</span>
                 </span>
-                <span style="display:block; margin-bottom:8px; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; overflow-wrap:anywhere;">{{ r.title }}</span>
                 <span style="display:block; margin-bottom:10px; font-size:15px; line-height:1.55; color:var(--body); overflow-wrap:anywhere;">{{ r.reasonSentence }}</span>
+                <span style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-bottom:9px;"><dc-import name="StatusPill" result="{{ r.statusResult }}" size="small" hint-size="120px,24px"></dc-import><dc-import name="StatusPill" result="{{ r.outcomeResult }}" size="small" hint-size="120px,24px"></dc-import></span>
                 <span style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; margin-bottom:9px;">
                   <span style="min-width:0; padding:8px 9px; border-radius:var(--radius-inner); background:var(--canvas);"><span style="display:block; color:var(--faint); font-size:12px; line-height:1.35; font-weight:500;">{{ r.waitingOnLabel }}</span><span style="display:block; margin-top:2px; color:var(--body); font-size:13px; overflow-wrap:anywhere;">{{ r.waitingOn }}</span></span>
                   <span style="min-width:0; padding:8px 9px; border-radius:var(--radius-inner); background:var(--canvas);"><span style="display:block; color:var(--faint); font-size:12px; line-height:1.35; font-weight:500;">{{ r.expectedMoveLabel }}</span><span style="display:block; margin-top:2px; color:var(--body); font-size:13px; overflow-wrap:anywhere;">{{ r.expectedMove }}</span></span>
@@ -221,768 +237,411 @@
       </section>
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1240,&quot;height&quot;:900},&quot;ctx&quot;:{&quot;editor&quot;:&quot;object&quot;,&quot;default&quot;:{},&quot;tsType&quot;:&quot;object&quot;}}">
-const DASHBOARD_EN = {
-    views:["Overview","Exchange","Threads","Contracts","Map","Spaces","Versions","Docs","Guide"],
-    backOverview:"Back to Overview", viewsLabel:"Views", more:"More", localeGroup:"Interface language", space:"Space",
-    errorTitle:"Could not read demo data", errorPrefix:"The dashboard is a read-only projection of", errorSuffix:". Missing facts are never inferred.",
-    openWork:"Open Exchange", direction:"Show", typeFilter:"Type",
-    spaceHealth:"Space health", spaceHealthTitle:"How current this page is",
-    spaceHealthSub:"Everything on these screens is read from a local copy of each space, taken once when this file was written. This is when that copy was last refreshed, and what each space expects of your binary.",
-    spaceHealthFlagsTitle:"Worth a look", spaceHealthFlagsText:"Recorded by committed events, or a problem reading the local copy. A flag is a reason to look, not a verdict.",
-    spaceHealthFooter:"Nothing here is inferred: an unreadable space is reported as unreadable, never as empty.",
-    spaceHealthMore:"Open Spaces", spaceHealthClose:"Close",
-    work:"Exchange", threads:"Threads", threadMissingTitle:"No full reconstruction is available for this thread", threadMissingText:"This row comes from the summary; only some demo threads include a complete causal transcript.",
-    whoseMove:"Whose move", whoseMoveText:"State and allowed transitions are derived from the events below.", causalTimeline:"Thread history", newestFirst:"newest first", opensChain:"opens the chain", subjectPrefix:"on", threadFlags:"Consistency, protocol and read evidence",
-    contracts:"Contracts and their versions", codeBacked:"code-backed", consumerLines:"Registered consumer lines", versionWindow:"Live version window", provenance:"Provenance and schema", codeBindingPrefix:"A code binding records the generator and source digest. Whether the current bytes still match is", notEvaluated:"not evaluated", codeBindingSuffix:" in this static read.",
-    network:"Who depends on whom", networkSub:"A solid line means one system depends on a contract another one publishes. A dashed line means an exchange between two systems is still open. Click any line or system to see the versions, the pinned lines and the open documents behind it.", exchangeMap:"Exchange map",
-    spaces:"Spaces", spacesSub:"A space is the shared repository systems exchange documents through. This is how fresh your copy of each one is, and which a2a version it wants before it accepts what you write.", freshness:"Freshness", participants:"Participants", writerFloor:"Writer floor", pinnedWorkflow:"Pinned workflow", revision:"Revision",
-    limitsTitle:"What this snapshot did not check", limitsSub:"This file was written once, from the local cache. Anything it could not read, or deliberately did not evaluate, is named here, so an empty space never passes for a clean result.",
-    emptyLimitsTitle:"Nothing to qualify", emptyLimitsText:"Every connected space was readable when this snapshot was written, and no flag was raised. The numbers above are the whole picture.",
-    emptySpacesTitle:"No spaces connected", emptySpacesText:"A space is the shared repository two systems exchange documents through. Connect one and this table fills in.",
-    integrityFlags:"Protocol and read flags", integrityFlagsText:"Facts recorded by committed events, or problems reading the local cache index. A flag is evidence, not a verdict.",
-    degradedReads:"Degraded reads", degradedReadsText:"These spaces answered from an older mirror revision, or not at all. Their counts are floors, never totals.",
-    notEvaluatedTitle:"What this read deliberately did not check", notEvaluatedText:"Not failures. Questions a static file honestly cannot answer, said out loud instead of shown as a zero or a green tick.",
-    versions:"Versions", localBinary:"Local binary", installed:"installed", latest:"latest", updateCandidate:"Update candidate", impact:"impact", publishedReleases:"Published releases in this snapshot", expandedNotes:"Expanded notes cover",
-    guide:"How a2ahub fits together", guideSub:"Document types, statuses, the dashboard's reading order, and a direct way to improve the product. Everything on this page is written for people first.",
-    lifecycleTitle:"Lifecycle is events, not an editable status", lifecycleText:"Every transition is validated before it is recorded. Both sides fold the same history into the same state.", lifecycleFoot:"This is a document status, not a release marker. Responses, blocks, disputes, cancellations, and supersessions remain separate immutable events with a validated actor.",
-    artifactTypesTitle:"Eight document types", artifactTypesText:"One file carries one intent. The protocol code remains a quick visual anchor and a human name is always shown beside it.", readingGuide:"How to read the dashboard",
-    docs:"Documentation", docsSub:"The same manual the agent reads is available here without a network connection. Sections and search are on the left; the exact source text is on the right.",
-    docSearch:"Search the docs", docSearchPlaceholder:"thread, contract, retire…", docNoMatch:"No section title, group or source path matches that search.",
-    docEmbedded:"available offline", emptyDocsTitle:"No documentation embedded", emptyDocsText:"This snapshot was written without the doc corpus. Reinstall the skill and render the dashboard again.",
-    loadingDoc:"Loading the embedded document…",
-    feedbackTitle:"Have an idea? Let’s make a2ahub better", feedbackText:"Bugs, rough edges and feature ideas are welcome. Give the context to your agent: it knows the feedback format, checks for duplicates and files a safe, actionable report.", githubRepo:"GitHub repository", publicHome:"Public home", designSystem:"Design system v4",
-    readingRows:[["Overview and Work","Human actions ordered by consequence and next owner. Priority, literal blocking, a pending approval, a deadline, and a stale snapshot remain five distinct signals."],["Threads","One intent per chain, in committed order where Git history exists and explicitly labelled declared order where it does not."],["Contracts and Map","Drift belongs to a consumer's pinned major line. A provider may be healthy while a consumer resolves nothing."],["Integrity and Versions","The limits of this snapshot and the independent compatibility axes that must not be inferred from one another."]]
-};
-
-const DASHBOARD_RU = {
-    views:["Обзор","Обмен","Треды","Контракты","Карта","Спейсы","Версии","Доки","Справка"],
-    backOverview:"Вернуться к обзору", viewsLabel:"Разделы", more:"Ещё", localeGroup:"Язык интерфейса", space:"Спейс",
-    errorTitle:"Не удалось прочитать данные", errorPrefix:"Дашборд только читает и показывает", errorSuffix:". Чего в файле нет, того он не придумывает.",
-    openWork:"Открыть обмен", direction:"Показать", typeFilter:"Тип",
-    spaceHealth:"Состояние спейсов", spaceHealthTitle:"Насколько свежее то, что вы читаете",
-    spaceHealthSub:"Всё на этих экранах взято из локальной копии спейса, снятой один раз, когда собирался этот файл. Здесь видно, когда копию последний раз обновляли и чего каждый спейс ждёт от вашего бинарника.",
-    spaceHealthFlagsTitle:"На что стоит посмотреть", spaceHealthFlagsText:"Сигналы из событий и локального снимка, которые стоит проверить. Они не обязательно означают ошибку.",
-    spaceHealthFooter:"Ничего не додумывается: если спейс не прочитался, так и написано, а не «ноль».",
-    spaceHealthMore:"Открыть спейсы", spaceHealthClose:"Закрыть",
-    work:"Обмен", threads:"Треды", threadMissingTitle:"Этот тред не удалось восстановить целиком", threadMissingText:"Есть только краткая сводка. В снимок не попала полная история: кто что сделал и в каком порядке.",
-    whoseMove:"Чей сейчас ход", whoseMoveText:"Посчитано по событиям ниже: что уже произошло и что после этого разрешено сделать.", causalTimeline:"История треда", newestFirst:"новое сверху", opensChain:"с этого всё началось", subjectPrefix:"для", threadFlags:"Что пошло не так в этом треде",
-    contracts:"Контракты и их версии", codeBacked:"собран из кода", consumerLines:"Кто на нём сидит", versionWindow:"Какие версии живы", provenance:"Откуда взялась схема", codeBindingPrefix:"Записано, чем и из какого исходника собран дескриптор. А вот совпадает ли он с кодом прямо сейчас,", notEvaluated:"не проверялось", codeBindingSuffix:": этот файл собран один раз и в код не заглядывает.",
-    network:"Кто от кого зависит", networkSub:"Сплошная линия значит, что одна система зависит от контракта, который публикует другая. Пунктир значит, что между двумя системами есть незакрытый обмен. Нажмите на линию или на систему, чтобы увидеть версии, закреплённые линии и открытые документы.", exchangeMap:"Карта обмена",
-    spaces:"Спейсы", spacesSub:"Системы обмениваются документами через общий репозиторий, он и называется спейсом. Здесь видно, насколько свежая у вас копия каждого и какую версию a2a он ждёт, чтобы принять вашу запись.", freshness:"Свежесть", participants:"Участники", writerFloor:"Минимум для записи", pinnedWorkflow:"Версия проверки в CI", revision:"Ревизия",
-    limitsTitle:"Что этот снимок не проверял", limitsSub:"Файл собран один раз из локального кэша. Всё, что не удалось прочитать или что мы намеренно не проверяли, названо здесь, чтобы пустое место не сошло за «всё в порядке».",
-    emptyLimitsTitle:"Уточнять нечего", emptyLimitsText:"Когда собирался снимок, все подключённые спейсы читались, замечаний не было. Цифры выше и есть вся картина.",
-    emptySpacesTitle:"Спейсы не подключены", emptySpacesText:"Спейс работает как общий репозиторий, через который две системы обмениваются документами. Подключите спейс, и таблица заполнится.",
-    integrityFlags:"Замечания", integrityFlagsText:"Сигналы из событий и локального снимка, которые стоит проверить. Они не обязательно означают ошибку.",
-    degradedReads:"Прочитано не полностью", degradedReadsText:"Эти спейсы ответили из устаревшей копии или не ответили вовсе. Их цифры значат «не меньше чем», а не точное число.",
-    notEvaluatedTitle:"Что мы намеренно не проверяли", notEvaluatedText:"Это не сбои. Это вопросы, на которые статический файл честно не отвечает и говорит об этом прямо, вместо того чтобы показать ноль или зелёную галочку.",
-    versions:"Версии", localBinary:"Ваш бинарник", installed:"стоит сейчас", latest:"последняя", updateCandidate:"Есть обновление", impact:"влияние", publishedReleases:"Выпуски", expandedNotes:"Подробности по",
-    guide:"Как устроен a2ahub", guideSub:"Типы документов, статусы, порядок чтения дашборда и прямой способ сделать продукт лучше. Эта страница сначала говорит с человеком, а уже потом — о протоколе.",
-    lifecycleTitle:"Статус не редактируется, он складывается из событий", lifecycleText:"Каждый переход проверяется до того, как попадёт в репозиторий. Обе стороны собирают из одной и той же истории одно и то же состояние.", lifecycleFoot:"Это статус документа, а не отметка о релизе. Ответы, блокировки, споры, отмены и замены не затираются: каждое остаётся отдельным событием с проверенным автором.",
-    artifactTypesTitle:"Восемь типов документов", artifactTypesText:"Один файл, одна мысль. Двухбуквенный код удобен глазу, но рядом всегда стоит нормальное название.", readingGuide:"Как читать дашборд",
-    docs:"Документация", docsSub:"То же руководство, что читает агент, доступно здесь без подключения к сети. Слева разделы и поиск, справа исходный текст.",
-    docSearch:"Поиск по докам", docSearchPlaceholder:"тред, контракт, вывод версии…", docNoMatch:"Ни одно название раздела, группа или путь к файлу не совпали с запросом.",
-    docEmbedded:"доступно без интернета", emptyDocsTitle:"Документация не вшита", emptyDocsText:"Этот снимок собран без корпуса документации. Переустановите навык и соберите дашборд заново.",
-    loadingDoc:"Загружается встроенный документ…",
-    feedbackTitle:"Есть идея? Давайте сделаем a2ahub лучше", feedbackText:"Баги, шероховатости и фичер-реквесты здесь действительно ждут. Передайте контекст своему агенту: он знает формат, проверит дубликаты и отправит безопасный, полезный отчёт.", githubRepo:"Репозиторий на GitHub", publicHome:"Главная сайта", designSystem:"Дизайн-система",
-    readingRows:[["Обзор и работа","Сверху то, где цена ошибки выше. Приоритет, блокировка, ожидание вашего согласования, срок и устаревшие данные остаются пятью разными сигналами, и они намеренно не слиты в один."],["Треды","Одна задача, один тред. Порядок берётся из коммитов Git; если истории нет, используется время, указанное автором, и это честно помечается."],["Контракты и карта","Расхождение считается для конкретного потребителя и той версии, которую он закрепил. У поставщика может быть всё хорошо ровно тогда, когда у потребителя не работает ничего."],["Спейсы и версии","Пределы этого снимка и три версии, которые нельзя выводить одну из другой."]]
-};
-
-const DASHBOARD_I18N = { en: DASHBOARD_EN, ru: DASHBOARD_RU };
-
-const A2A_GLOSSARY_EN = {
-    types: {
-      contract:{ code:"XC", label:"Contract", description:"A versioned interface one system publishes and another can depend on." },
-      requirement:{ code:"XR", label:"Requirement", description:"A durable condition the result must satisfy, without prescribing the implementation." },
-      question:{ code:"XQ", label:"Question", description:"A focused request for information that expects a typed response." },
-      work_request:{ code:"XW", label:"Work request", description:"A request for another system to deliver a concrete result, with acceptance criteria and an owner." },
-      decision:{ code:"XD", label:"Decision", description:"A recorded choice and its rationale, so other systems can act without reopening the discussion." },
-      handoff:{ code:"XH", label:"Handoff", description:"A transfer of responsibility or a ready result to the next system." },
-      response:{ code:"XS", label:"Response", description:"A direct answer linked to the request or question it addresses; the requester still verifies or disputes it." },
-      announcement:{ code:"XA", label:"Announcement", description:"Information others should know. It stays published; the dashboard archives it once every requested recipient acknowledges receipt." }
-    },
-    statuses: {
-      draft:{ label:"draft", description:"The document is still local and has not entered the shared exchange." },
-      submitted:{ label:"submitted", description:"The document entered the shared exchange and awaits the receiving side's next allowed move." },
-      acknowledged:{ label:"received", description:"The receiving side confirmed receipt. This says nothing yet about acceptance, verification or completion." },
-      accepted:{ label:"accepted", description:"The receiving side accepted the current step. This records agreement to proceed; it does not by itself close the document." },
-      in_progress:{ label:"in progress", description:"Work has started and the request has not reached a final state yet." },
-      published:{ label:"published", description:"The document is part of the shared record and visible to its participants." },
-      proposed:{ label:"proposed", description:"A change or choice was offered and still awaits the next protocol move." },
-      responded:{ label:"responded", description:"At least one linked response was recorded. The original document's author may now verify it or dispute the result." },
-      verified:{ label:"verified", description:"The author of the original document checked this response and confirmed the result. The response is final; no further move is expected." },
-      closed:{ label:"closed", description:"This request or question is complete and no further action is expected for it. Other documents in the thread may remain open." },
-      satisfied:{ label:"satisfied", description:"The requirement's owner confirmed that the recorded result satisfies it." },
-      declined:{ label:"declined", description:"The receiving side declined the requested step. The document stays in history; any follow-up requires a new valid move." },
-      superseded:{ label:"superseded", description:"A newer document replaced this one. This record remains visible as history." },
-      approved:{ label:"approved", description:"The required approvers accepted this decision. It is final unless a later decision supersedes it." },
-      rejected:{ label:"rejected", description:"The receiving side rejected the current check or approval. The matching event records the reason and the next allowed move." },
-      blocked:{ label:"blocked", description:"The record names a blocker that must be cleared before the next protocol move." },
-      blocking:{ label:"blocking", description:"This item records a blocking protocol obligation and deserves prompt attention." },
-      disputed:{ label:"disputed", description:"A participant challenged the result or interpretation; the disagreement remains open." },
-      cancelled:{ label:"cancelled", description:"The requester ended the work before completion; the history stays visible." },
-      withdrawn:{ label:"withdrawn", description:"The author retracted the document from active consideration; the record is preserved." },
-      expired:{ label:"expired", description:"The announcement's validity window ended. The published record remains visible as history." },
-      current:{ label:"on latest", description:"This consumer is pinned to the latest live contract major." },
-      behind:{ label:"behind", description:"This consumer is still pinned to an older live contract major." },
-      deprecated:{ label:"being retired", description:"This version still works, but consumers are expected to move away before its sunset." },
-      retired:{ label:"retired", description:"This version is no longer live for new use; its history remains visible." },
-      missing:{ label:"not found", description:"The pinned version is absent at the provider, so this dependency cannot resolve." },
-      dangling:{ label:"provider left", description:"The dependency points to a provider that is no longer present in this space." },
-      stale:{ label:"stale", description:"The local evidence is older than the freshness window, so the repository may already differ." },
-      fresh:{ label:"fresh", description:"The local evidence was refreshed within the expected freshness window." },
-      unreadable:{ label:"unreadable", description:"The local copy could not be read. Unknown values must not be treated as zero." },
-      unresolved:{ label:"unresolved", description:"The dashboard cannot connect this reference to a readable record." },
-      "space stale":{ label:"space stale", description:"The local space copy is older than usual. Data remains available, but the repository may have changed. Run a2a sync; the warning disappears after a successful refresh." },
-      settled:{ label:"settled", description:"Every document in this thread is final and no next protocol move is owed." },
-      "your move":{ label:"your move", description:"The next allowed protocol action belongs to your system." },
-      "waiting on others":{ label:"waiting on others", description:"The next allowed protocol move belongs to another participant." },
-      "your approval pending":{ label:"awaiting your approval", description:"The next protocol move requires an explicit approval from your side." },
-      "up to date":{ label:"latest version", description:"Your installed binary matches the newest release known to this snapshot." },
-      "no action needed":{ label:"no action needed", description:"This change does not require local configuration, migration, or manual follow-up." },
-      overdue:{ label:"overdue", description:"The recorded deadline passed before this document reached a terminal state." },
-      "needs a look":{ label:"needs a look", description:"This document carries an extra signal worth checking. It does not necessarily mean anything is wrong." },
-      resolved:{ label:"resolved · digest matches", description:"The reference was found and its recorded content digest matches." },
-      "digest mismatch":{ label:"digest mismatch", description:"The reference exists, but its content no longer matches the digest recorded by this document." }
-    }
-};
-
-const A2A_GLOSSARY_RU = {
-    types: {
-      contract:{ code:"XC", label:"Контракт", description:"Версионируемый интерфейс, который одна система публикует, а другая может использовать как зависимость." },
-      requirement:{ code:"XR", label:"Требование", description:"Устойчивое условие, которому должен соответствовать результат, без навязывания способа реализации." },
-      question:{ code:"XQ", label:"Вопрос", description:"Точный запрос информации, на который ожидается связанный типизированный ответ." },
-      work_request:{ code:"XW", label:"Запрос работы", description:"Просьба другой системе выдать конкретный результат с критериями готовности и ответственным." },
-      decision:{ code:"XD", label:"Решение", description:"Зафиксированный выбор и его причины, чтобы другие системы могли действовать, не открывая обсуждение заново." },
-      handoff:{ code:"XH", label:"Передача", description:"Передача ответственности или готового результата следующей системе." },
-      response:{ code:"XS", label:"Ответ", description:"Прямой ответ со ссылкой на запрос или вопрос. После этого автор исходного документа проверяет результат или оспаривает его." },
-      announcement:{ code:"XA", label:"Объявление", description:"Информация, которую участникам важно знать. Она остаётся опубликованной, а дашборд переносит её в архив после подтверждения всех запрошенных получателей." }
-    },
-    statuses: {
-      draft:{ label:"черновик", description:"Документ пока локальный и ещё не вошёл в общий обмен." },
-      submitted:{ label:"отправлено", description:"Документ вошёл в общий обмен и ждёт следующего допустимого шага принимающей стороны." },
-      acknowledged:{ label:"получили", description:"Принимающая сторона подтвердила получение. Это ещё ничего не говорит о принятии, проверке или завершении." },
-      accepted:{ label:"принято", description:"Принимающая сторона приняла текущий шаг. Это фиксирует согласие продолжить, но само по себе не закрывает документ." },
-      in_progress:{ label:"в работе", description:"Работа началась, но запрос ещё не дошёл до финального состояния." },
-      published:{ label:"опубликовано", description:"Документ вошёл в общий журнал и виден участникам обмена." },
-      proposed:{ label:"предложено", description:"Изменение или выбор предложены и ждут следующего допустимого шага." },
-      responded:{ label:"ответили", description:"Записан хотя бы один связанный ответ. Автор исходного документа может подтвердить его или оспорить результат." },
-      verified:{ label:"проверено", description:"Автор исходного документа проверил ответ и подтвердил результат. Ответ завершён; дальнейших шагов не ждут." },
-      closed:{ label:"закрыто", description:"Этот запрос или вопрос завершён; по нему больше не ждут действий. Другие документы треда могут оставаться открытыми." },
-      satisfied:{ label:"выполнено", description:"Автор требования подтвердил, что записанный результат ему соответствует." },
-      declined:{ label:"отклонено", description:"Принимающая сторона отказалась от запрошенного шага. Документ остаётся в истории; продолжение требует нового допустимого хода." },
-      superseded:{ label:"заменено", description:"Этот документ заменён более новым. Старая запись остаётся видимой как история." },
-      approved:{ label:"согласовано", description:"Все требуемые согласующие приняли это решение. Оно финально, пока его не заменит более новое." },
-      rejected:{ label:"отклонено", description:"Принимающая сторона отклонила текущую проверку или согласование. Причина и следующий допустимый ход записаны в соответствующем событии." },
-      blocked:{ label:"заблокировано", description:"В записи названа блокировка, которую нужно снять до следующего хода протокола." },
-      blocking:{ label:"блокирует", description:"Документ фиксирует блокирующее протокольное обязательство и требует быстрого внимания." },
-      disputed:{ label:"спорят", description:"Участник оспорил результат или трактовку; разногласие ещё не закрыто." },
-      cancelled:{ label:"отменено", description:"Заказчик остановил работу до завершения; история при этом сохраняется." },
-      withdrawn:{ label:"отозвано", description:"Автор снял документ с активного рассмотрения; запись остаётся в истории." },
-      expired:{ label:"срок истёк", description:"Срок действия объявления закончился. Опубликованная запись остаётся видимой в истории." },
-      current:{ label:"на последней", description:"Потребитель закреплён на последней живой мажорной версии контракта." },
-      behind:{ label:"отстаёт", description:"Потребитель всё ещё закреплён на более старой живой мажорной версии." },
-      deprecated:{ label:"выводится", description:"Версия пока работает, но до даты вывода потребителям нужно с неё уйти." },
-      retired:{ label:"снято", description:"Версия больше не доступна для нового использования; её история остаётся видимой." },
-      missing:{ label:"не нашли", description:"Закреплённой версии нет у поставщика, поэтому зависимость не разрешается." },
-      dangling:{ label:"поставщик ушёл", description:"Зависимость указывает на поставщика, которого больше нет в этом спейсе." },
-      stale:{ label:"устарел", description:"Локальные данные старше допустимого окна и уже могут отличаться от репозитория." },
-      fresh:{ label:"свежий", description:"Локальные данные обновлены в пределах ожидаемого окна свежести." },
-      unreadable:{ label:"не читается", description:"Локальную копию не удалось прочитать. Неизвестные значения нельзя считать нулём." },
-      unresolved:{ label:"не нашли", description:"Ссылку не удалось связать с доступной для чтения записью." },
-      "space stale":{ label:"спейс устарел", description:"Локальная копия спейса старше обычного. Данные доступны, но в репозитории уже могли появиться изменения. Запустите a2a sync: после успешного обновления предупреждение исчезнет." },
-      settled:{ label:"всё закрыто", description:"Все документы треда завершены, и следующего хода протокола ни за кем нет." },
-      "your move":{ label:"ваш ход", description:"Следующее допустимое действие протокола должна выполнить ваша система." },
-      "waiting on others":{ label:"ход за другими", description:"Следующий допустимый ход протокола принадлежит другому участнику." },
-      "your approval pending":{ label:"ждёт вашего согласования", description:"Следующий шаг протокола требует явного согласования с вашей стороны." },
-      "up to date":{ label:"последняя версия", description:"Установленный бинарник совпадает с последним выпуском, известным этому снимку." },
-      "no action needed":{ label:"действий не нужно", description:"Это изменение не требует настройки, миграции или ручного шага у вас." },
-      overdue:{ label:"просрочено", description:"Указанный дедлайн прошёл, а документ ещё не дошёл до конечного состояния." },
-      "needs a look":{ label:"стоит посмотреть", description:"У документа есть дополнительный сигнал для проверки. Это не обязательно означает ошибку." },
-      resolved:{ label:"нашли, сумма сошлась", description:"Ссылку нашли, и записанная контрольная сумма содержимого совпала." },
-      "digest mismatch":{ label:"сумма не сошлась", description:"Ссылка существует, но её содержимое уже не совпадает с контрольной суммой в документе." }
-    }
-};
-
-const A2A_GLOSSARY = { en: A2A_GLOSSARY_EN, ru: A2A_GLOSSARY_RU };
-
-const A2A_TYPE_GUIDE = ["contract","requirement","question","work_request","decision","handoff","response","announcement"];
-
-const STATE_TONE = {
-  published:"healthy", verified:"healthy", satisfied:"healthy", approved:"healthy", closed:"healthy",
-  blocked:"blockingStrong", blocking:"blockingStrong", missing:"blockingStrong", unreadable:"blockingStrong", rejected:"blockingStrong", declined:"blockingStrong", disputed:"blockingStrong",
-  deprecated:"attention", expired:"attention", overdue:"attention",
-  cancelled:"neutral", canceled:"neutral",
-  retired:"neutral", withdrawn:"neutral", superseded:"neutral", submitted:"neutral", in_progress:"neutral", responded:"neutral", accepted:"neutral", acknowledged:"neutral", proposed:"attention"
-};
-
-function listNames(names, ru) {
-  const xs = (names || []).filter(Boolean);
-  if (!xs.length) return "";
-  if (xs.length === 1) return xs[0];
-  return xs.slice(0, -1).join(", ") + (ru ? " и " : " and ") + xs[xs.length - 1];
+function listText(values, ru, emptyText) {
+  const rows = (values || []).filter(Boolean).map(String);
+  if (!rows[0]) return emptyText;
+  if (!rows[1]) return rows[0];
+  return rows.slice(0, -1).join(", ") + (ru ? " и " : " and ") + rows[rows.length - 1];
 }
 
-function ruPlural(n, one, few, many) {
-  const mod10 = n % 10, mod100 = n % 100;
-  const word = (mod10 === 1 && mod100 !== 11) ? one : ((mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) ? few : many);
-  return n + " " + word;
+function windowSentence(window, ru) {
+  const carried = window || {};
+  if (carried.truncated !== true || !(carried.shown < carried.total)) return "";
+  return ru
+    ? "Показано " + carried.shown + " из " + carried.total + "."
+    : "Showing " + carried.shown + " of " + carried.total + ".";
 }
 
-function TYPE_WORDS(ru) {
-  const group = A2A_GLOSSARY[ru ? "ru" : "en"].types;
-  return Object.keys(group).reduce((out, key) => { out[key] = group[key].label; return out; }, {});
-}
-
-function TRANSITION_PAST(ru) {
-  if (!ru) return {
-    create: "created", submit: "submitted", publish: "published", acknowledge: "acknowledged",
-    accept: "accepted", start: "started", respond: "answered", verify: "verified", close: "closed",
-    approve: "approved", satisfy: "satisfied", dispute: "disputed", note: "added a note to",
-    block: "blocked", unblock: "unblocked", decline: "declined", reject: "rejected",
-    cancel: "cancelled", withdraw: "withdrew", supersede: "superseded", propose: "proposed",
-    deprecate: "deprecated", retire: "retired", "verify-pass": "accepted", "verify-fail": "rejected",
-    activate: "brought live"
-  };
-  return {
-    create: "создал", submit: "отправил", publish: "опубликовал", acknowledge: "подтвердил получение",
-    accept: "принял", start: "начал работу", respond: "ответил", verify: "проверил", close: "закрыл",
-    approve: "согласовал", satisfy: "закрыл требование", dispute: "оспорил", note: "добавил заметку",
-    block: "заблокировал", unblock: "разблокировал", decline: "отказался", reject: "отклонил",
-    cancel: "отменил", withdraw: "отозвал", supersede: "заменил", propose: "предложил",
-    deprecate: "объявил устаревшей", retire: "снял версию", "verify-pass": "принял", "verify-fail": "отклонил",
-    activate: "включил в работу"
-  };
-}
-
-function outcomeOf(x) { return String((x && x.outcome) || ""); }
-
-function isSettled(x) { return outcomeOf(x) === "settled"; }
-
-function mono(s) { return String(s || "?").slice(0, 2).toUpperCase(); }
-
-function monoCodes(names) {
-  const out = {}, used = new Set();
-  names.slice().sort().forEach(n => {
-    const s = String(n || "?");
-    let code = (s[0] + (s[1] || "")).toUpperCase();
-    for (let i = 2; used.has(code) && i < s.length; i++) code = (s[0] + s[i]).toUpperCase();
-    used.add(code);
-    out[n] = code;
-  });
-  return out;
-}
-
-function when(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (isNaN(d)) return iso;
-  const p = (n) => String(n).padStart(2, "0");
-  return p(d.getUTCDate()) + "." + p(d.getUTCMonth() + 1) + "." + d.getUTCFullYear() + " " + p(d.getUTCHours()) + ":" + p(d.getUTCMinutes());
-}
-
-const AGE_RU = { m: " мин", h: " ч", d: " д", w: " нед" };
-
-function age(value) {
-  const raw = String(value == null ? "" : value);
-  if (!raw || document.documentElement.lang !== "ru") return raw;
-  if (raw === "just now") return "только что";
-  const m = raw.match(/^(\d+)([mhdw])$/);
-  return m ? m[1] + AGE_RU[m[2]] : raw;
-}
-
-function isoDay(value) {
-  const raw = String(value == null ? "" : value);
-  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  return m ? m[3] + "." + m[2] + "." + m[1] : raw;
-}
-
-const AGENT_LABELS = {
-  "claude-code": "Claude Code",
-  "codex": "Codex",
-  "github-copilot": "GitHub Copilot",
-  "cursor": "Cursor",
-  "windsurf": "Windsurf",
-  "gemini-cli": "Gemini CLI",
-  "antigravity": "Antigravity",
-  "cline": "Cline",
-  "roo-code": "Roo Code",
-  "kilo-code": "Kilo Code",
-  "opencode": "OpenCode",
-  "aider": "Aider",
-  "continue": "Continue",
-  "amp": "Amp",
-  "goose": "Goose",
-  "devin": "Devin",
-  "zed": "Zed",
-  "jetbrains": "JetBrains AI",
-  "replit": "Replit Agent",
-  "warp": "Warp",
-  "trae": "Trae",
-  "augment": "Augment"
-};
-
-function actorIdentity(d, actorSystem, recordedName, actorKind, actorModel) {
-  const node = (d.nodes || []).find(n => n.system === actorSystem);
-  const owner = node && node.owners && node.owners.length ? String(node.owners[0]) : "";
-  const agentKey = String(recordedName || "").trim().toLowerCase();
-  const agentID = actorKind === "agent" && AGENT_LABELS[agentKey] ? agentKey : "";
-  const name = agentID ? String(owner || actorSystem || "") : String(recordedName || owner || actorSystem || "");
-  const login = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(owner) ? owner : "";
-  return {
-    actorName: name,
-    avatar: node && node.avatar ? node.avatar : "",
-    avatarMono: mono(name),
-    actorProfileURL: login ? "https://github.com/" + login : "",
-    actorProfileTitle: login ? "GitHub · " + login : "",
-    hasAgentBadge: !!agentID,
-    agentID,
-    agentLabel: AGENT_LABELS[agentID] || agentID,
-    agentModel: agentID ? String(actorModel || "") : ""
-  };
+function technicalJoin(values) {
+  return values.filter(Boolean).map(String).join(" · ");
 }
 
 class Component extends DCLogic {
   syncContext() {
     const ctx = this.props && this.props.ctx || {};
-    this.state = Object.assign({ data: ctx.data || null, locale: ctx.locale === "ru" ? "ru" : "en" }, ctx.ui || {});
+    this.state = Object.assign({ data:ctx.data || null, locale:ctx.locale === "ru" ? "ru" : "en" }, ctx.ui || {});
     return ctx;
   }
 
   setState(update) {
     const ctx = this.props && this.props.ctx || {};
-    const current = Object.assign({}, this.state || {}, { data: ctx.data || null, locale: ctx.locale === "ru" ? "ru" : "en" }, ctx.ui || {});
+    const current = Object.assign({}, this.state || {}, { data:ctx.data || null, locale:ctx.locale === "ru" ? "ru" : "en" }, ctx.ui || {});
     const patch = typeof update === "function" ? update(current) : update;
     this.state = Object.assign({}, current, patch || {});
     if (ctx.actions && ctx.actions.patch) ctx.actions.patch(patch || {});
   }
 
-  go(view, extra) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.navigate) actions.navigate(view, extra); }
-  closeContractFile() { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.closeContractFile) actions.closeContractFile(); }
-  applyTheme(theme) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setTheme) actions.setTheme(theme); }
-  applyLocale(locale) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setLocale) actions.setLocale(locale); }
-  copy(text) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.copy) actions.copy(text); }
-
-  inScope(space) { return this.state.space === "all" || space === this.state.space; }
-
-  blockedOn(from, to) {
-    const ru = this.state.locale === "ru";
-    const d = this.state.data;
-    const holders = (to || []).filter(Boolean);
-    if (holders.indexOf(d.self) > -1) return ru ? "блокирующий ход за вами" : "blocking move: you";
-    if (holders.length === 1) return (ru ? "блокирующий ход за " : "blocking move: ") + holders[0];
-    if (holders.length > 1) return ru ? "блокирующий ход за получателями" : "blocking move: recipients";
-    return ru ? "блокирующий ход не назначен" : "blocking move unassigned";
+  inScope(space) {
+    return this.state.space === "all" || space === this.state.space;
   }
 
-  blockedWhy(a) {
-    const ru = this.state.locale === "ru";
-    const d = this.state.data;
-    const holders = (a.to || []).filter(Boolean);
-    const yours = holders.indexOf(d.self) > -1;
-    const obligation = ru ? "Документ фиксирует блокирующее протокольное обязательство." : "The document records a blocking protocol obligation.";
-    const next = yours
-      ? (ru ? " Следующий допустимый ход за вами." : " Your side owns the next allowed move.")
-      : (holders.length
-        ? (ru ? " Следующий допустимый ход за " + listNames(holders, ru) + "." : " The next allowed move belongs to " + listNames(holders, ru) + ".")
-        : (ru ? " Владелец следующего хода не записан." : " No owner is recorded for the next move."));
-    const when = a.neededBy ? (ru ? " Срок " : " Due ") + isoDay(a.neededBy) + "." : "";
-    const pri = a.priority ? (ru ? " Приоритет " + a.priority + "." : " Priority " + a.priority + ".") : "";
-    return obligation + next + when + pri;
+  vocabulary(data, family, value, locale) {
+    return globalThis.A2A_VOCABULARY_RESOLVER.lookup(data, family, String(value || ""), locale);
   }
 
-  statusOf(it) {
-    const ru = this.state.locale === "ru";
-    // Protocol state and Exchange completion are deliberately different for
-    // announcements: a delivered announcement remains `published`, but once
-    // every recipient acknowledged it the read model moves it to Archive.
-    const settled = isSettled(it) || !!it.archived;
-    if (it.blocking) return {
-      status: this.blockedOn(it.from, it.to) + " · " + it.priority, tone: "blocking",
-      why: this.blockedWhy({ from: it.from, to: it.to, neededBy: it.neededBy, priority: it.priority })
-    };
-    if (it.gatePending) return { status: ru ? "ждёт вашего согласования" : "your approval pending", tone: "attention" };
-    if (it.overdue) return { status: (ru ? "просрочено" : "overdue") + " · " + it.priority, tone: "blocking" };
-    if (it.activationOwed) return {
-      status: ru ? "нужно включить в работу" : "activation owed", tone: "attention",
-      why: ru
-        ? "Кто-то уже закрепил опубликованную мажорную версию этого контракта, а вы ещё не подтвердили, что операционная половина существует. Обязательство выведено из регистрации и публикации, а не из того, что записано в x_operational. Закрывается командой a2a contract activate."
-        : "Someone has pinned this contract's published major, and you have not yet attested that its operational half exists. The debt is derived from registration and publication, not from what x_operational says. a2a contract activate discharges it."
-    };
-    if (!settled && it.severity === "attention") return { status: (ru ? "стоит посмотреть" : "needs a look") + " · " + it.priority, tone: "attention" };
-    return { status: it.priority, tone: "neutral" };
-  }
-
-  rowFor(it, selKey, selValue, onSel) {
-    const ru = this.state.locale === "ru";
-    const d = this.state.data;
-    const codes = monoCodes(d.nodes.map(n => n.system));
-    const st = this.statusOf(it);
-    const toSelf = (it.to || []).includes(d.self);
-    const toText = (it.to || []).join(", ");
-    const toCode = toSelf ? codes[d.self] : codes[(it.to || [])[0]];
-    const space = d.spaces.find(s => s.id === it.space);
-    const sentence = it.reasonSentence || {};
-    const waitingOn = listNames(it.waitingOn || [], ru) || (ru ? "не указано" : "none recorded");
-    const expectedMove = it.expectedTransition || (ru ? "не указан" : "not recorded");
+  attentionRow(item, data, ru, actions) {
+    const locale = ru ? "ru" : "en";
+    const sentence = item.reasonSentence || {};
+    const id = actions.cardID ? actions.cardID("item", item) : "";
+    const cardAccent = actions.cardAccent ? actions.cardAccent("state", [item.space || "", item.id || "", item.state || ""]) : "";
     return {
-      id: it.id, type: it.type, title: it.title, status: st.status, tone: st.tone,
-      // A label that raises a question carries its answer on itself, so the
-      // reader hovers the badge rather than hunting for a separate mark.
-      statusWhy: st.why || "",
-      state: String(it.state || "").replace("_", " "), stateTone: STATE_TONE[it.state] || "neutral",
-      // A deadline outranks an age wherever there is one. "5 ч" says when the
-      // document last moved; the date says when it stops being optional, and a
-      // reader who just filtered by deadline should not have to open a card to
-      // see it. Overdue ones keep the red treatment on top.
-      time: it.neededBy ? (ru ? "дедлайн " : "due ") + isoDay(it.neededBy) : age(it.age),
-      from: it.from, to: toText, meta: it.space,
-      syncAge: space && space.readable ? age(space.syncAge) : "",
-      syncStale: !!(space && space.stale),
-      fromCode: codes[it.from] || "", toCode: toCode || "",
-      fromSelf: it.from === d.self, toSelf: toSelf,
-      reasonSentence: sentence[ru ? "ru" : "en"] || (ru ? "Объяснение пока не записано." : "No human explanation is recorded yet."),
-      waitingOnLabel: ru ? "Чей ход" : "Whose turn",
-      waitingOn,
-      expectedMoveLabel: ru ? "Ожидаемый ход" : "Expected move",
-      expectedMove,
-      hasTechnicalWhy: !!it.why,
-      technicalWhyLabel: ru ? "Техническое основание" : "Technical detail",
-      technicalWhy: it.why || "",
-      selected: selValue === it.id,
-      select: onSel || (() => this.setState({ [selKey]: it.id })),
-      openLabel: (ru ? "Открыть в Обмене: " : "Open in Exchange: ") + (it.title || it.id)
+      id:item.id,
+      type:item.type,
+      title:item.title,
+      reasonSentence:sentence[locale] || (ru ? "В этом снимке неизвестно." : "Unknown in this snapshot."),
+      statusResult:this.vocabulary(data, "lifecycle-state", item.state, locale),
+      outcomeResult:this.vocabulary(data, "outcome", item.outcome, locale),
+      time:item.neededBy || item.age || "",
+      from:item.from || (ru ? "не записано" : "not recorded"),
+      to:listText(item.to, ru, ru ? "не записано" : "not recorded"),
+      meta:item.space || "",
+      waitingOnLabel:ru ? "Чей ход" : "Whose turn",
+      waitingOn:listText(item.waitingOn, ru, ru ? "не записано" : "none recorded"),
+      expectedMoveLabel:ru ? "Ожидаемый ход" : "Expected move",
+      expectedMove:item.expectedTransition || (ru ? "не записан" : "not recorded"),
+      hasTechnicalWhy:!!item.why,
+      technicalWhyLabel:ru ? "Технические подробности" : "Technical detail",
+      technicalWhy:item.why || "",
+      openLabel:(ru ? "Открыть карточку: " : "Open card: ") + (item.title || item.id),
+      openCard:() => {
+        if (id && actions.openCard) actions.openCard("item", id, cardAccent);
+      }
+    };
+  }
+
+  processRow(row, data, operational, ru, actions, card) {
+    const locale = ru ? "ru" : "en";
+    const protocol = row.protocol || {};
+    const waitingOwners = protocol.waiting_on || [];
+    const blockers = protocol.blocking_by || [];
+    const none = ru ? "ничего не записано" : "none recorded";
+    const notRecorded = ru ? "Не записано." : "Not recorded.";
+    const unknown = ru ? "В этом снимке неизвестно." : "Unknown in this snapshot.";
+    const owners = listText(waitingOwners, ru, "");
+    const protocolResult = this.vocabulary(data, "outcome", protocol.settled === true ? "settled" : "open", locale);
+    const protocolLead = protocol.settled === true
+      ? (ru ? "Этот процесс завершён; ни за кем из участников нет следующего хода протокола." : "This process is settled; no participant owes a protocol move.")
+      : (owners
+        ? (ru
+          ? "Следующий ход протокола за " + owners + "; открытых документов: " + protocol.open_count + "."
+          : owners + " own the next protocol move; " + protocol.open_count + " items remain open.")
+        : unknown);
+    const protocolCardLead = protocol.settled === true || !owners || ru
+      ? protocolLead
+      : owners + (waitingOwners.length === 1 ? " owns" : " own") + " the next protocol move; " + protocol.open_count + " items remain open.";
+    const source = (operational.sources || []).find(candidate => candidate.kind === "space" && candidate.space === row.space) || {};
+    const unavailableFact = (operational.unavailable || []).find(candidate => candidate.space === row.space && candidate.source_kind === "space") || null;
+    const unavailable = unavailableFact || {};
+    const carriedSourceFreshness = String(source.freshness || "");
+    const sourceUnavailable = carriedSourceFreshness === "unavailable" || (!carriedSourceFreshness && !!unavailableFact);
+    const sourceResult = this.vocabulary(data, "source-freshness", sourceUnavailable ? "unavailable" : carriedSourceFreshness, locale);
+    const unavailableSummary = String(unavailable.summary || "");
+    const sourceUnavailableText = sourceUnavailable
+      ? (unavailableSummary
+        ? (ru ? "Недоступно в этом снимке: " : "Unavailable in this snapshot: ") + unavailableSummary + (/[^.!?]$/.test(unavailableSummary) ? "." : "")
+        : unknown)
+      : "";
+    const latest = row.latest_milestone || {};
+    const latestActor = latest.actor || {};
+    const milestoneResult = this.vocabulary(data, "transition", latest.transition, locale);
+    const cardAccent = String(card && card.accent || "");
+    const accent = (family, identity) => !!cardAccent && !!actions.cardAccent && actions.cardAccent(family, identity) === cardAccent;
+    const accentStyle = (family, identity) => accent(family, identity) ? "outline:3px solid var(--teal-solid); outline-offset:2px;" : "";
+    const cardID = actions.cardID ? actions.cardID("operational-process", row) : "";
+    const threadCardID = actions.cardID ? actions.cardID("thread", { space:row.space, thread:row.thread }) : "";
+    const workRows = row.work || [];
+    const work = workRows.map(item => {
+      const actor = item.actor || {};
+      const waits = (item.waiting_on || []).map(wait => ({
+        text:wait.summary || notRecorded,
+        technical:technicalJoin([wait.kind, wait.id]),
+        hasTechnical:!!(wait.kind || wait.id),
+        accentStyle:accentStyle("wait", [item.work_id || "", wait.kind || "", wait.id || ""])
+      }));
+      const checkpoint = item.committed_checkpoint || {};
+      const pending = item.shared_pending || {};
+      const hasPending = !!pending.remaining_action;
+      const workAccent = actions.cardAccent ? actions.cardAccent("work-row", item.work_id || "") : "";
+      return {
+        actor:actor.name || actor.system || (ru ? "исполнитель не записан" : "actor not recorded"),
+        modeResult:this.vocabulary(data, "work-mode", item.mode, locale),
+        freshnessResult:this.vocabulary(data, "freshness", item.freshness, locale),
+        summary:item.summary || unknown,
+        evidenceText:technicalJoin([
+          (ru ? "текущая: " : "current: ") + (item.current === true ? (ru ? "да" : "yes") : (ru ? "нет" : "no")),
+          (ru ? "сообщено " : "reported ") + (item.reported_at || notRecorded),
+          (ru ? "наблюдалось " : "observed ") + (item.observed_at || notRecorded),
+          (ru ? "действует до " : "valid until ") + (item.valid_until || notRecorded),
+          item.source ? (ru ? "источник " : "source ") + item.source : ""
+        ]),
+        checkpointText:checkpoint.artifact_id
+          ? (ru ? "Общая контрольная точка есть." : "Committed checkpoint present.")
+          : (ru ? "Контрольная точка не записана." : "Checkpoint not recorded."),
+        waitsEmpty:!waits[0],
+        hasSharedPending:hasPending,
+        sharedPendingResult:this.vocabulary(data, "freshness", "pending-recovery", locale),
+        sharedPendingText:hasPending
+          ? (ru ? "Оставшееся общее действие: " : "Remaining shared action: ") + pending.remaining_action
+          : "",
+        technical:technicalJoin([item.work_id, item.subject_ref, actor.system, actor.session, item.reported_at, item.observed_at, item.valid_until, item.source]),
+        waits,
+        accentStyle:accentStyle("work-row", item.work_id || ""),
+        openCardLabel:(ru ? "Открыть строку работы: " : "Open work row: ") + (item.summary || item.work_id || unknown),
+        openCard:() => {
+          if (cardID && actions.openCard) actions.openCard("operational-process", cardID, workAccent);
+        }
+      };
+    });
+    const consistency = (row.consistency || []).map(issue => ({
+      result:this.vocabulary(data, "consistency-severity", issue.severity, locale),
+      technical:technicalJoin([issue.code, issue.summary, issue.subject_ref]),
+      accentStyle:accentStyle("consistency-anomaly", [issue.code || "", issue.subject_ref || ""])
+    }));
+    const workWindowText = windowSentence(row.work_window, ru);
+    const consistencyWindowText = windowSentence(row.consistency_window, ru);
+    const obligationsKey = "obligations|" + (row.space || "") + "|" + (row.thread || "");
+    const obligationToggled = !!(this.state.docTreeOpen || {})[obligationsKey];
+    const obligationsOwed = protocol.your_move === true || !!waitingOwners[0] || !!blockers[0];
+    const milestoneIdentity = [latest.kind || "", latest.at || "", latest.subject || ""];
+    const consistencyTotal = row.consistency_window && row.consistency_window.total;
+    const protocolCardText = protocol.settled === true
+      ? (ru
+        ? "Протокол: " + protocolResult.label + "; блокировки не записаны."
+        : "Protocol: " + protocolResult.label + "; blockers: none recorded.")
+      : (ru
+        ? "Протокол: " + protocolResult.label + "; " + (blockers[0] ? "блокирует " + blockers.join(", ") + "." : "блокировки не записаны.")
+        : "Protocol: " + protocolResult.label + "; blockers: " + (blockers[0] ? blockers.join(", ") : "none recorded") + ".");
+    const workCardText = (ru ? "Работа: " : "Work: ") + (work[0]
+      ? work.map(item => item.actor + " — " + item.modeResult.label + ", " + item.freshnessResult.label).join("; ") + "."
+      : (row.work_window && row.work_window.truncated === false && row.work_window.shown === 0 && row.work_window.total === 0
+        ? (ru ? "Ничего не записано." : "None recorded.")
+        : unknown));
+    const waits = work.flatMap(item => item.waits);
+    const waitsText = waits[0]
+      ? waits.map(wait => wait.text).join("; ")
+      : (ru ? "зависимости не записаны" : "none recorded");
+    const checkpointPresent = workRows.some(item => item.committed_checkpoint && item.committed_checkpoint.artifact_id);
+    const waitsCheckpointCardText = (ru ? "Зависимости и контрольная точка: " : "Waits and checkpoint: ")
+      + waitsText + "; "
+      + (checkpointPresent
+        ? (ru ? "общая контрольная точка есть." : "committed checkpoint present.")
+        : (ru ? "контрольная точка не записана." : "checkpoint not recorded."));
+    const pendingRows = workRows.filter(item => item.shared_pending && item.shared_pending.remaining_action);
+    const sharedPendingCardText = (ru ? "Оставшееся общее действие: " : "Remaining shared action: ")
+      + (pendingRows[0]
+        ? pendingRows.map(item => item.shared_pending.remaining_action).join("; ") + "."
+        : notRecorded);
+    const consistencyLabels = [];
+    consistency.forEach(issue => {
+      if (issue.result.label && !consistencyLabels.includes(issue.result.label)) consistencyLabels.push(issue.result.label);
+    });
+    const consistencyCardText = (ru ? "Согласованность: " : "Consistency: ")
+      + (consistencyTotal == null ? unknown : consistencyTotal)
+      + (consistencyLabels[0] ? " — " + consistencyLabels.join(", ") : "") + ".";
+    const sourceCardText = (ru ? "Источник: " : "Source: ") + sourceResult.label + "; "
+      + (source.synced_at
+        ? (ru ? "синхронизация " : "synchronized ") + source.synced_at + "."
+        : (ru ? "синхронизация в этом снимке неизвестна." : "synchronization unknown in this snapshot."))
+      + (sourceUnavailableText ? " " + sourceUnavailableText : "");
+    const anyAccent = (family, identities) => identities.some(identity => accent(family, identity));
+    const anyAccentStyle = (family, identities) => anyAccent(family, identities)
+      ? "outline:3px solid var(--teal-solid); outline-offset:2px;"
+      : "";
+    return {
+      space:row.space || "",
+      thread:row.thread || "",
+      title:row.title || row.thread || unknown,
+      heading:(ru ? "Операционный процесс — " : "Operational process — ") + (row.title || row.thread || unknown),
+      protocolLabel:ru ? "Протокол" : "Protocol",
+      protocolResult,
+      protocolLead,
+      protocolCardLead,
+      protocolCardText,
+      openCountText:ru ? "открыто: " + protocol.open_count : "open: " + protocol.open_count,
+      waitingOnLabel:ru ? "Ждём от" : "Waiting on",
+      waitingOn:listText(waitingOwners, ru, none),
+      blockingByLabel:ru ? "Блокирует" : "Blocked by",
+      blockingBy:listText(blockers, ru, none),
+      obligationsQuiet:!obligationsOwed,
+      obligationsGridVisible:obligationsOwed || obligationToggled,
+      obligationsToggleAttr:obligationToggled ? "true" : "false",
+      obligationsToggleLabel:obligationToggled ? (ru ? "Скрыть" : "Hide") : (ru ? "Показать" : "Show"),
+      obligationsToggleAria:(obligationToggled ? (ru ? "Скрыть " : "Hide ") : (ru ? "Показать " : "Show ")) + (ru ? "протокольные обязательства" : "protocol obligations"),
+      toggleObligations:() => this.setState(current => ({ docTreeOpen:Object.assign({}, current.docTreeOpen, { [obligationsKey]:!((current.docTreeOpen || {})[obligationsKey]) }) })),
+      participantsText:(ru ? "Участники: " : "Participants: ") + listText(row.participants, ru, none) + ".",
+      participantsCardText:(ru ? "Участники: " : "Participants: ") + ((row.participants || []).length ? row.participants.join(", ") : none) + ".",
+      milestoneText:latest.at
+        ? (ru
+          ? "Последний этап: " + milestoneResult.label + " записан " + latest.at + " системой " + (latestActor.system || latestActor.name || none) + "."
+          : "Latest milestone: " + milestoneResult.label + " recorded at " + latest.at + " by " + (latestActor.system || latestActor.name || none) + ".")
+        : (ru ? "Последний этап: Не записано." : "Latest milestone: Not recorded."),
+      milestoneResult,
+      milestoneHighlighted:accent("milestone", milestoneIdentity),
+      milestoneStyle:accentStyle("milestone", milestoneIdentity),
+      workLabel:ru ? "Работа" : "Work",
+      work,
+      workEmpty:!work[0],
+      workCardText,
+      workCardHighlighted:anyAccent("work-row", workRows.map(item => item.work_id || "")),
+      workCardStyle:anyAccentStyle("work-row", workRows.map(item => item.work_id || "")),
+      waitsCheckpointLabel:ru ? "Зависимости и контрольная точка" : "Waits and checkpoint",
+      waitsCheckpointCardText,
+      waitsCheckpointHighlighted:anyAccent("wait", workRows.flatMap(item => (item.waiting_on || []).map(wait => [item.work_id || "", wait.kind || "", wait.id || ""]))),
+      waitsCheckpointStyle:anyAccentStyle("wait", workRows.flatMap(item => (item.waiting_on || []).map(wait => [item.work_id || "", wait.kind || "", wait.id || ""]))),
+      sharedPendingLabel:ru ? "Незавершённая общая запись" : "Unfinished shared write",
+      sharedPendingEmpty:!work.some(item => item.hasSharedPending),
+      sharedPendingEmptyText:notRecorded,
+      sharedPendingCardText,
+      sharedPendingHighlighted:anyAccent("work-row", pendingRows.map(item => item.work_id || "")),
+      sharedPendingStyle:anyAccentStyle("work-row", pendingRows.map(item => item.work_id || "")),
+      consistencyLabel:(ru ? "Согласованность: " : "Consistency: ") + (consistencyTotal == null ? unknown : consistencyTotal),
+      consistency,
+      consistencyEmpty:!consistency[0],
+      consistencyCardText,
+      consistencyCardHighlighted:anyAccent("consistency-anomaly", (row.consistency || []).map(issue => [issue.code || "", issue.subject_ref || ""])),
+      consistencyCardStyle:anyAccentStyle("consistency-anomaly", (row.consistency || []).map(issue => [issue.code || "", issue.subject_ref || ""])),
+      sourceLabel:ru ? "Источник:" : "Source:",
+      sourceResult,
+      sourceHighlighted:accent("source", [row.space || "", source.revision || ""]),
+      sourceStyle:accentStyle("source", [row.space || "", source.revision || ""]),
+      sourceSynced:source.synced_at
+        ? (ru ? "синхронизация " : "synchronized ") + source.synced_at
+        : (ru ? "синхронизация в этом снимке неизвестна" : "synchronization unknown in this snapshot"),
+      hasSourceUnavailableText:sourceUnavailableText !== "",
+      sourceUnavailableText,
+      sourceCardText,
+      workBoundsLabel:ru ? "Граница работы" : "Work bounds",
+      consistencyBoundsLabel:ru ? "Граница согласованности" : "Consistency bounds",
+      workWindowText,
+      consistencyWindowText,
+      hasWorkWindowText:!!workWindowText,
+      hasConsistencyWindowText:!!consistencyWindowText,
+      workBoundsCardText:(ru ? "Граница работы: " : "Work bounds: ") + workWindowText,
+      consistencyBoundsCardText:(ru ? "Граница согласованности: " : "Consistency bounds: ") + consistencyWindowText,
+      noneRecorded:ru ? "Ничего не записано." : "None recorded.",
+      technicalLabel:ru ? "Технические подробности" : "Technical detail",
+      technicalCollapsedLabel:ru ? "Технические подробности: свёрнуты." : "Technical detail: collapsed.",
+      nestedTechnicalStyle:card ? "display:none;" : "",
+      identityTechnicalStyle:card ? "display:none;" : "",
+      technicalText:technicalJoin([
+        row.space, row.thread, latest.subject, source.revision, source.observed_at, unavailable.code, unavailable.summary,
+        ...work.map(item => item.technical),
+        ...work.flatMap(item => item.waits.map(wait => wait.technical)),
+        ...consistency.map(issue => issue.technical)
+      ]),
+      cardID,
+      openCardLabel:(ru ? "Открыть карточку процесса: " : "Open process card: ") + (row.title || row.thread),
+      openCard:() => {
+        if (cardID && actions.openCard) actions.openCard("operational-process", cardID, "");
+      },
+      openThreadCardLabel:(ru ? "Открыть карточку треда: " : "Open thread card: ") + (row.title || row.thread),
+      openThreadCardText:ru ? "Открыть тред" : "Open thread",
+      openThreadCard:() => {
+        if (threadCardID && actions.openCard) actions.openCard("thread", threadCardID, "");
+      }
     };
   }
 
   renderVals() {
     const ctx = this.syncContext();
-    let d = ctx.data;
-    const s = this.state;
-    const ui = ctx.ui || {};
+    const data = ctx.data;
+    if (!data) return {};
     const ru = ctx.locale === "ru";
-    const c = DASHBOARD_I18N[ru ? "ru" : "en"];
-    if (!d && "Overview" !== "GuideView") {
-      if ("Overview" !== "DashboardShell") return {};
-      d = { spaces:[], nodes:[], inbox:[], outbox:[], archive:[], contracts:[], contractEdges:[], flags:[], meta:{}, tooling:{}, generatedAt:"", self:"" };
+    const actions = ctx.actions || {};
+    const card = ctx.ui && ctx.ui.card || null;
+    const cardMode = !!card;
+    const operational = data.operational || { sources:[], timeline:[], unavailable:[] };
+    const timeline = operational.timeline || [];
+    let selected = null;
+    if (cardMode && card.kind === "operational-process" && actions.cardID) {
+      selected = timeline.find(row => actions.cardID("operational-process", row) === card.id) || null;
     }
-    const scopedInbox = d.inbox.filter(i => this.inScope(i.space));
-    const scopedOutbox = d.outbox.filter(i => this.inScope(i.space));
-    const scopedArchive = d.archive.filter(i => this.inScope(i.space));
-    const needsYou = scopedInbox.filter(i => i.blocking || i.gatePending || i.overdue);
-    const restCount = scopedInbox.length - needsYou.length;
-    const exchangeByID = new Map();
-    scopedInbox.concat(scopedOutbox, scopedArchive).forEach(it => exchangeByID.set(String(it.space || "") + "\u0000" + it.id, it));
-    const exchangeAll = Array.from(exchangeByID.values());
-    const threads = d.threads.filter(t => this.inScope(t.space));
-    const operational = d.operational || { sources:[], timeline:[], unavailable:[] };
-    const operationalAll = (operational.timeline || []).filter(o => this.inScope(o.space));
-    const operationalWindow = operational.timeline_window || {};
-    const operationalUnavailable = operational.unavailable || [];
-    const isCurrentWork = (w) => w && w.current === true;
-    const operationalSource = operationalAll;
-    const operationalShown = operationalSource;
-    const operationalRows = operationalShown.map(o => {
-      const protocol = o.protocol || { settled:false, open_count:0, waiting_on:[], blocking_by:[] };
-      const latest = o.latest_milestone || {};
-      // `note` is transition-free (D-025, internal/fold/table.go TNote): it
-      // never moves the protocol, so it is not a protocol event and does not
-      // belong in a slot that claims to be one. Excluded rather than
-      // relabelled — the fold's own definition decides this, not what is
-      // convenient to render. A space whose only latest_milestone is a note
-      // now correctly falls through to noLatestEventText below.
-      const hasLatestEvent = !!o.latest_milestone && latest.transition !== "note";
-      const latestActor = latest.actor || {};
-      const source = (operational.sources || []).find(s => s.kind === "space" && s.space === o.space) || {};
-      const work = o.work || [];
-      const freshnessText = (value) => ({
-        "local-current": ru ? "наблюдается локально" : "observed locally",
-        "committed-current": ru ? "зафиксировано в Git" : "committed in Git",
-        "pending-recovery": ru ? "публикация требует восстановления" : "publication needs recovery",
-        "stale": ru ? "отчёт устарел" : "report expired",
-        "finished": ru ? "автор сообщил о завершении" : "reported finished",
-        "unknown": ru ? "актуальность неизвестна" : "freshness unknown"
-      })[value] || (value || (ru ? "актуальность неизвестна" : "freshness unknown"));
-      const workModeText = (value) => ({
-        "planning": ru ? "планирует" : "planning",
-        "implementing": ru ? "реализует" : "implementing",
-        "testing": ru ? "тестирует" : "testing",
-        "reviewing": ru ? "проверяет" : "reviewing",
-        "waiting": ru ? "ждёт" : "waiting",
-        "paused": ru ? "приостановил работу" : "paused",
-        "finished": ru ? "завершил работу" : "finished"
-      })[value] || (ru ? "статус неизвестен" : "status unknown");
-      const waitKindText = (value) => ({
-        "system": ru ? "система" : "system",
-        "human": ru ? "человек" : "human",
-        "tool": ru ? "инструмент" : "tool",
-        "timer": ru ? "время" : "timer",
-        "external": ru ? "внешняя сторона" : "external"
-      })[value] || (ru ? "тип не указан" : "type not recorded");
-      // Work is likewise bounded by the projection. Keep every included report
-      // so historical evidence is not hidden merely because current reports
-      // happened to fill a browser-owned cap first.
-      const workRows = work.map(w => {
-        const actor = w.actor || {};
-        const actorName = actor.name || actor.system || (ru ? "неизвестный исполнитель" : "unknown actor");
-        const actorSystem = actor.system || (ru ? "система не указана" : "system not recorded");
-        const freshness = freshnessText(w.freshness);
-        const waiting = (w.waiting_on || []).map(dep => ({
-          kind: waitKindText(dep.kind),
-          id: dep.id || "",
-          summary: dep.summary || "",
-          hasSummary: !!dep.summary,
-          label: ru ? "Ожидает" : "Waiting on"
-        }));
-        const subject = String(w.subject_ref || "");
-        const subjectID = subject.split("@")[0];
-        const hasSubject = /^X[A-Z]-/.test(subjectID);
-        const subjectIsContract = subjectID.startsWith("XC-");
-        const subjectHasDetail = (d.artifactDetails || []).some(a => a.id === subjectID && (!o.space || a.space === o.space));
-        return {
-          current: isCurrentWork(w),
-          actorEvent: {
-            actionText: workModeText(w.mode),
-            meta: [actorSystem, freshness].filter(Boolean).join(" · "),
-            ...actorIdentity(d, actor.system, actorName, actor.kind, actor.model),
-            systemSelf: actor.system === d.self,
-            hasSubjectLink: false,
-            hasSignal: false
-          },
-          summary: w.summary || w.subject_ref || "",
-          subject,
-          hasSubject,
-          openSubject: (event) => {
-            if (event && event.stopPropagation) event.stopPropagation();
-            if (!hasSubject) return;
-            if (subjectIsContract) {
-              this.go("contracts", { space:o.space, conSel:subjectID, conVersion:"", contractFile:null, conRole:"all", conRisk:false });
-              return;
-            }
-            if (subjectHasDetail) {
-              this.setState({ mapDocument:{ id:subjectID, space:o.space || "" } });
-              return;
-            }
-            this.go("threads", { space:o.space, threadSel:o.thread, threadSpace:o.space, tvFocus:subjectID, operationalOpen:"" });
-          },
-          waiting,
-          hasWaiting: waiting.length > 0,
-          reported: (ru ? "сообщено " : "reported ") + when(w.reported_at),
-          observed: w.observed_at ? ((ru ? "увидели " : "observed ") + when(w.observed_at)) : (ru ? "локальное наблюдение отсутствует" : "no local observation"),
-          expires: w.valid_until ? ((ru ? "актуально до " : "valid until ") + when(w.valid_until)) : (ru ? "срок не указан" : "no expiry recorded")
-        };
-      });
-      const currentWork = workRows.filter(w => w.current);
-      const historicalWork = workRows.filter(w => !w.current);
-      const waitingOn = listNames(protocol.waiting_on || [], ru);
-      const blockingBy = listNames(protocol.blocking_by || [], ru);
-      const latestSystem = String(latestActor.system || "");
-      const latestName = String(latestActor.name || latestActor.system || (ru ? "исполнитель не указан" : "actor not recorded"));
-      const latestSubjectID = String(latest.subject || "");
-      const latestSubject = exchangeAll.find(a => a.id === latestSubjectID && (!o.space || a.space === o.space)) || {};
-      const latestSubjectType = String(TYPE_WORDS(ru)[latestSubject.type] || latestSubject.type || (ru ? "документ" : "document")).toLocaleLowerCase(ru ? "ru-RU" : "en-US");
-      const latestSubjectHasDetail = (d.artifactDetails || []).some(a => a.id === latestSubjectID && (!o.space || a.space === o.space));
-      // "acknowledge" ("подтвердил получение …") already names its own verb
-      // object — получение ЧЕГО? — a genitive complement, never the nominative
-      // TYPE_WORDS label every other transition here happens to share with an
-      // inanimate accusative object ("опубликовал контракт" works by
-      // coincidence of Russian grammar; "подтвердил получение контракт" does
-      // not). Bounded, closed, eight entries — the same shape TYPE_WORDS
-      // already is, restricted to the one verb in this one slot that needs it.
-      const TYPE_GENITIVE_RU = {
-        contract: "контракта", requirement: "требования", question: "вопроса",
-        work_request: "запроса работы", decision: "решения", handoff: "передачи",
-        response: "ответа", announcement: "объявления"
-      };
-      const latestSubjectLabel = latest.transition === "respond"
-        ? (ru
-          ? "на " + (latestSubject.type ? latestSubjectType : "«" + (o.title || o.thread) + "»")
-          : "to " + (latestSubject.type ? latestSubjectType : "“" + (o.title || o.thread) + "”"))
-        : (ru && latest.transition === "acknowledge" && latestSubject.type && TYPE_GENITIVE_RU[latestSubject.type])
-          ? TYPE_GENITIVE_RU[latestSubject.type]
-          : (latestSubject.type ? latestSubjectType : (o.title || o.thread));
-      const openCountText = ru
-        ? ruPlural(protocol.open_count || 0, "открытое обязательство", "открытых обязательства", "открытых обязательств")
-        : (protocol.open_count || 0) + ((protocol.open_count || 0) === 1 ? " open obligation" : " open obligations");
-      const sourceFreshness = ({
-        current: ru ? "копия актуальна" : "current copy",
-        stale: ru ? "копия устарела" : "stale copy",
-        degraded: ru ? "копия неполна" : "degraded copy",
-        unavailable: ru ? "копия недоступна" : "copy unavailable"
-      })[source.freshness] || (ru ? "актуальность копии неизвестна" : "copy freshness unknown");
-      // Absence is a fact ("your move: no") worth keeping reachable, not a
-      // reason to print three negatives on every quiet card. When there is
-      // nothing to move on, wait for or be blocked by, the grid collapses
-      // behind the same expand-key mechanic the version-package tree uses
-      // (contract@version|section|path there, obligations|space|thread here)
-      // so a reader who wants the granular "no" still gets it, one click away.
-      const obligationsQuiet = protocol.your_move !== true && !waitingOn && !blockingBy;
-      const obligationsKey = "obligations|" + (o.space || "") + "|" + (o.thread || "");
-      const obligationsOpen = !!(s.docTreeOpen || {})[obligationsKey];
+    const operationalSource = cardMode
+      ? (selected ? [selected] : [])
+      : timeline.filter(row => this.inScope(row.space));
+    const operationalRows = operationalSource.map(row => this.processRow(row, data, operational, ru, actions, card));
+    const aggregates = data.aggregates || {};
+    const needYou = aggregates.needYou || { items:[], window:{} };
+    const noHumanMove = aggregates.noHumanMove || { items:[], window:{} };
+    const youAwait = aggregates.youAwait || { items:[], window:{} };
+    const linesOffCurrent = aggregates.linesOffCurrent || { items:[], window:{} };
+    const needItems = needYou.items || [];
+    const windows = data.windows || {};
+    const windowTotal = window => window && window.total != null ? window.total : (ru ? "неизвестно" : "unknown");
+    const valueOf = set => set.window && set.window.total;
+    const stat = (key, label, set, note, hint) => {
+      const value = valueOf(set);
+      const displayValue = value == null ? (ru ? "неизвестно" : "unknown") : value;
       return {
-        event: {
-          actionText: TRANSITION_PAST(ru)[latest.transition] || latest.transition || (ru ? "зафиксировал процесс" : "recorded the process"),
-          meta: [latestSystem, when(latest.at)].filter(Boolean).join(" · "),
-          ...actorIdentity(d, latestSystem, latestName, latestActor.kind, latestActor.model),
-          systemSelf: latestSystem === d.self,
-          hasSubjectLink: hasLatestEvent && !!latestSubjectID,
-          subjectLabel: latestSubjectLabel,
-          subjectTitle: ru ? "Открыть исходный документ" : "Open the source document",
-          openSubject: () => latestSubjectHasDetail
-            ? this.setState({ mapDocument:{ id:latestSubjectID, space:o.space || "" } })
-            : this.go("threads", { space:o.space, threadSel:o.thread, threadSpace:o.space, tvFocus:latestSubjectID, operationalOpen:"" }),
-          hasSignal: false
-        },
-        hasLatestEvent,
-        lacksLatestEvent: !hasLatestEvent,
-        title: o.title || o.thread,
-        meta: [o.space, o.thread, sourceFreshness, (o.consistency || []).length ? (ru ? "есть предупреждение целостности" : "consistency warning") : ""].filter(Boolean).join(" · "),
-        currentWorkLabel: ru ? "Текущие рабочие потоки" : "Current workstreams",
-        currentWork,
-        hasCurrentWork: currentWork.length > 0,
-        currentUnknown: currentWork.length === 0,
-        currentUnknownText: ru ? "Текущий статус работы неизвестен: актуального отчёта в снимке нет." : "Current work status is unknown: this snapshot has no current report.",
-        historicalWorkLabel: ru ? "Исторические отчёты о работе" : "Historical work reports",
-        historicalWork,
-        hasHistoricalWork: historicalWork.length > 0,
-        protocolLabel: ru ? "Протокольные обязательства" : "Protocol obligations",
-        protocolState: protocol.settled
-          ? (ru ? "урегулировано · " : "settled · ") + openCountText
-          : openCountText,
-        yourMoveLabel: ru ? "Ваш ход" : "Your move",
-        yourMove: protocol.your_move === true ? (ru ? "да" : "yes") : (ru ? "нет" : "no"),
-        waitingOnLabel: ru ? "Ждём от" : "Waiting on",
-        waitingOn: waitingOn || (ru ? "не указано" : "none recorded"),
-        blockingByLabel: ru ? "Блокирует" : "Blocked by",
-        blockingBy: blockingBy || (ru ? "не указано" : "none recorded"),
-        obligationsQuiet,
-        obligationsGridVisible: !obligationsQuiet || obligationsOpen,
-        obligationsOpen,
-        obligationsToggleAttr: obligationsOpen ? "true" : "false",
-        obligationsToggleLabel: obligationsOpen ? (ru ? "Скрыть" : "Hide") : (ru ? "Показать" : "Show"),
-        obligationsToggleAria: (obligationsOpen ? (ru ? "Скрыть " : "Hide ") : (ru ? "Показать " : "Show ")) + (ru ? "протокольные обязательства" : "protocol obligations"),
-        toggleObligations: () => this.setState(x => ({ docTreeOpen: Object.assign({}, x.docTreeOpen, { [obligationsKey]: !((x.docTreeOpen || {})[obligationsKey]) }) })),
-        latestEventLabel: ru ? "Последнее протокольное событие · история" : "Latest protocol event · history",
-        noLatestEventText: ru ? "В снимке нет протокольного события для этого процесса." : "No protocol event is included for this process in the snapshot.",
-        openThreadLabel: (ru ? "Открыть тред: " : "Open thread: ") + (o.title || o.thread),
-        openThread: () => this.go("threads", { space:o.space, threadSel:o.thread, threadSpace:o.space, tvFocus:"", operationalOpen:"" })
+        key,
+        label,
+        value:displayValue,
+        note,
+        hint,
+        accessibleName:label + " · " + displayValue,
+        valueStyle:"font-size:40px; line-height:1; font-weight:600; color:var(--text);",
+        open:() => { if (actions.openAggregate) actions.openAggregate(key); }
       };
-    });
-    const selectedOperationalSpace = s.space !== "all" ? s.space : "";
-    const selectedSpaceSource = selectedOperationalSpace
-      ? (operational.sources || []).find(source => source.kind === "space" && source.space === selectedOperationalSpace)
-      : null;
-    const selectedSpaceUnavailable = selectedOperationalSpace
-      ? operationalUnavailable.find(item => item.space === selectedOperationalSpace)
-      : null;
-    const selectedUnavailableSummary = selectedSpaceUnavailable && selectedSpaceUnavailable.summary
-      ? String(selectedSpaceUnavailable.summary)
-      : "";
-    const selectedSourceUnavailable = !!selectedSpaceSource && selectedSpaceSource.freshness === "unavailable";
-    let operationalEmptyKind = "no-rows";
-    if (operationalRows.length === 0 && selectedOperationalSpace) {
-      if (selectedSpaceUnavailable || selectedSourceUnavailable) operationalEmptyKind = "unavailable";
-      else if (operationalWindow.truncated) operationalEmptyKind = "truncated";
-      else if (selectedSpaceSource) operationalEmptyKind = "readable-no-rows";
-      else operationalEmptyKind = "no-source";
-    } else if (operationalRows.length === 0 && operationalWindow.truncated) {
-      operationalEmptyKind = "truncated";
-    } else if (operationalRows.length === 0 && operationalUnavailable.length) {
-      operationalEmptyKind = "unavailable";
-    }
-    const operationalEmptyBase = ({
-      unavailable: selectedOperationalSpace
-        ? (ru
-          ? "Выбранный спейс недоступен в этом снимке. Причина указана источником; процессы не восстанавливаются догадками."
-          : "The selected space is unavailable in this snapshot. The source records the reason; process rows are not reconstructed.")
-        : (ru ? "Операционные источники в этом снимке недоступны." : "Operational sources are unavailable in this snapshot."),
-      truncated: selectedOperationalSpace
-        ? (ru
-          ? "Операционный таймлайн был усечён до строки выбранного спейса. По этому снимку нельзя сказать, есть ли у него процессы за границей окна."
-          : "The operational timeline was truncated before a row for the selected space appeared. This snapshot cannot say what lies beyond the window.")
-        : (ru ? "Операционный таймлайн в этом снимке был усечён; строки за границей окна неизвестны." : "The operational timeline in this snapshot was truncated; rows beyond the window are unknown."),
-      "readable-no-rows": ru
-        ? "Выбранный спейс прочитан, но в этом снимке для него нет операционных строк."
-        : "The selected space was readable, but this snapshot contains no operational rows for it.",
-      "no-source": ru
-        ? "В этом снимке нет операционного источника для выбранного спейса."
-        : "This snapshot has no operational source for the selected space.",
-      "no-rows": ru
-        ? "В этом снимке нет операционных строк."
-        : "This snapshot contains no operational rows."
-    })[operationalEmptyKind];
-    const operationalEmptyText = operationalEmptyKind === "unavailable" && selectedUnavailableSummary
-      ? operationalEmptyBase + " " + selectedUnavailableSummary
-      : operationalEmptyBase;
-    const operationalEmptyTitle = operationalEmptyKind === "unavailable"
-      ? (ru ? "Операционные данные недоступны" : "Operational data is unavailable")
-      : (operationalEmptyKind === "truncated"
-        ? (ru ? "Операционный таймлайн неполный" : "The operational timeline is incomplete")
-        : (ru ? "Нет видимых рабочих процессов" : "No visible work processes"));
-    const scopedDetails = (d.artifactDetails || []).filter(a => this.inScope(a.space));
-    const scopedContracts = (d.contracts || []).filter(cn => this.inScope(cn.space));
-    const snapshotEventCount = scopedDetails.reduce((sum, detail) => sum + ((detail.events || []).length), 0);
-    const workReportCount = operationalAll.reduce((sum, row) => sum + ((row.work || []).length), 0);
-    const inventoryTypes = A2A_TYPE_GUIDE.map(type => ({
-      label: TYPE_WORDS(ru)[type] || type,
-      value: exchangeAll.filter(item => item.type === type).length
-    })).filter(row => row.value > 0);
-    const inventoryRows = [
-      { label:ru ? "Документы" : "Documents", value:exchangeAll.length },
-      { label:ru ? "События" : "Events", value:snapshotEventCount },
-      { label:ru ? "Треды" : "Threads", value:threads.length },
-      { label:ru ? "Контракты" : "Contracts", value:scopedContracts.length },
-      { label:ru ? "Отчёты о работе" : "Work reports", value:workReportCount },
-      { label:ru ? "Доступные спейсы" : "Readable spaces", value:d.spaces.filter(space => this.inScope(space.id) && space.readable).length + "/" + d.spaces.filter(space => this.inScope(space.id)).length }
-    ];
-    const offCurrent = d.contractEdges.filter(e => this.inScope(e.space) && e.drift !== "current").length;
-    const scopedEdges = d.contractEdges.filter(e => this.inScope(e.space)).length;
-    const values = {
-      overviewAria:c.views[0],
-      ovStats: [
-        { label:ru ? "Нужны вы" : "Need you", value:needsYou.length, note:ru ? "блокирующий ход, согласование или дедлайн" : "blocking move, approval, or deadline",
-          hint:ru ? "Документы, где снимок фиксирует блокирующее протокольное обязательство, ждёт вашего согласования или показывает просроченный дедлайн. Это не прогноз дальнейшей работы." : "Documents where the snapshot records a blocking protocol obligation, awaits your approval, or shows an overdue deadline. This does not predict further work.",
-          valueStyle:"font-size:40px; line-height:1; font-weight:600; color:" + (needsYou.length ? "var(--ochre)" : "var(--green)") + ";" },
-        { label:ru ? "Без хода человека" : "No human move", value:restCount, note:ru ? "входящие без хода за вами" : "incoming not assigned to you",
-          hint:ru ? "Входящие документы, где снимок не называет человека владельцем следующего хода протокола. Снимок не предсказывает, что агент сделает дальше." : "Incoming documents for which the snapshot assigns no human-owned next protocol move. It does not predict what an agent will do next.",
-          valueStyle:"font-size:40px; line-height:1; font-weight:600; color:var(--green);" },
-        { label:ru ? "Ждёте вы" : "You await", value:scopedOutbox.length, note:ru ? "отправлено, ответа нет" : "outgoing documents",
-          hint:ru ? "Вы отправили, ход теперь за другой системой. Пока она не ответит, здесь ничего не изменится." : "You sent these; the move is now the other system's. Nothing here changes until it answers.",
-          valueStyle:"font-size:40px; line-height:1; font-weight:600; color:var(--text);" },
-        { label:ru ? "Линии не на последней" : "Lines off current", value:offCurrent, note:(ru ? "из " : "of ") + scopedEdges + (ru ? " закреплённых" : " registered"),
-          hint:ru ? "Сколько зависимостей сидит не на последней мажорной версии контракта. Это не обязательно плохо: старая версия может жить годами. Плохо становится тогда, когда её уже выводят." : "How many dependencies sit on something other than the contract's latest major. Not automatically bad: an old line can live for years. It gets bad once it is being retired.",
-          valueStyle:"font-size:40px; line-height:1; font-weight:600; color:" + (offCurrent ? "var(--ochre)" : "var(--green)") + ";" }
-      ],
-      inventoryAria: ru ? "Данные в снимке" : "Snapshot inventory",
-      inventoryTitle: ru ? "Данные в снимке" : "Snapshot inventory",
-      inventorySub: ru ? "Только то, что удалось прочитать и включить в этот снимок." : "Only records that were readable and included in this snapshot.",
-      inventoryRows,
-      inventoryTypesPresent: inventoryTypes.length > 0,
-      inventoryTypesTitle: ru ? "Документы по типам" : "Documents by type",
-      inventoryTypes,
-      operationalTitle: ru ? "Где мы сейчас" : "Where things stand",
-      operationalSub: ru
-        ? "Кто сейчас работает, кто ждёт и где остались протокольные обязательства."
-        : "Who is working now, who is waiting, and where protocol obligations remain.",
-      operationalSnapshot: (ru ? "снимок " : "snapshot ") + when(operational.generated_at || d.generatedAt) + ((operational.sources || []).some(o => o.freshness === "stale" || o.freshness === "degraded" || o.freshness === "unavailable") ? (ru ? " · есть неполные источники" : " · degraded sources") : ""),
-      operationalSnapshotDotStyle: "width:8px; height:8px; border-radius:99px; background:" + ((operational.sources || []).some(o => o.freshness === "stale" || o.freshness === "degraded" || o.freshness === "unavailable") ? "var(--ochre)" : "var(--healthy-ink)") + "; box-shadow:0 0 0 3px " + ((operational.sources || []).some(o => o.freshness === "stale" || o.freshness === "degraded" || o.freshness === "unavailable") ? "var(--attention-tint)" : "var(--healthy-tint)") + ";",
-      operationalRows,
-      operationalPresent: operationalRows.length > 0,
-      operationalEmpty: operationalRows.length === 0,
-      operationalEmptyTitle,
-      operationalEmptyText,
-      operationalOpenThread: ru ? "Открыть весь тред" : "Open the full thread",
-      operationalMore: operationalSource.length > operationalRows.length,
-      operationalMoreText: ru ? "Остальные процессы в Тредах" : "All other processes in Threads",
-      goThreads: () => this.go("threads", { operationalOpen:"" }),
-      attentionTitle: ru ? "Требуют вашего внимания" : "Needs your attention",
-      attentionSub: needsYou.length
-        ? (ru ? "Только блокировки, ожидающие согласования и просроченные документы." : "Only blocks, pending approvals, and overdue documents.")
-        : (ru ? "Сейчас ни один документ не требует решения человека." : "No document currently needs a human decision."),
-      attentionCount: String(needsYou.length),
-      ovRows: needsYou.map(it => this.rowFor(it, "", "", () => this.go("work", { workSel:it.id, workTab:"incoming", workState:"all", workType:"all", workDue:false }))),
-      hasOvRows: needsYou.length > 0
     };
-    return values;
+    const ovStats = [
+      stat("needYou", ru ? "Нужны вы" : "Need you", needYou, ru ? "точный перенесённый набор" : "exact carried set", ru ? "Серверный набор документов, где нужен ваш ход." : "The server-carried set of documents that need your move."),
+      stat("noHumanMove", ru ? "Без хода человека" : "No human move", noHumanMove, ru ? "точный перенесённый набор" : "exact carried set", ru ? "Серверный набор без следующего хода человека." : "The server-carried set with no next human move."),
+      stat("youAwait", ru ? "Ждёте вы" : "You await", youAwait, ru ? "точный перенесённый набор" : "exact carried set", ru ? "Серверный набор документов, где вы ждёте другую сторону." : "The server-carried set where your side awaits another participant."),
+      stat("linesOffCurrent", ru ? "Линии не на последней" : "Lines off current", linesOffCurrent, ru ? "точный перенесённый набор" : "exact carried set", ru ? "Серверный набор зарегистрированных линий вне текущей версии." : "The server-carried set of registered lines off current.")
+    ];
+    const inventoryRows = [
+      { label:ru ? "Входящие" : "Inbox", value:windowTotal(windows.inbox) },
+      { label:ru ? "Исходящие" : "Outbox", value:windowTotal(windows.outbox) },
+      { label:ru ? "Архив" : "Archive", value:windowTotal(windows.archive) },
+      { label:ru ? "Треды" : "Threads", value:windowTotal(windows.threads) },
+      { label:ru ? "Отчёты о работе" : "Work reports", value:windowTotal(windows.workReports) },
+      { label:ru ? "Детали документов" : "Artifact details", value:windowTotal(windows.artifactDetails) }
+    ];
+    const ovRows = needItems.map(item => this.attentionRow(item, data, ru, actions));
+    const attentionEmpty = needYou.window && needYou.window.total === 0;
+    const attentionPrefixMissing = !attentionEmpty && !needItems[0];
+    const timelineWindow = operational.timeline_window || {};
+    const timelineBound = windowSentence(timelineWindow, ru);
+    return {
+      cardMode,
+      normalMode:!cardMode,
+      cardKind:cardMode ? "operational-process" : "",
+      cardProcess:operationalRows[0] || null,
+      commandGridStyle:cardMode ? 'grid-template-columns:minmax(0,1fr); grid-template-areas:"operational";' : "",
+      overviewAria:cardMode ? (ru ? "Карточка операционного процесса" : "Operational process card") : (ru ? "Обзор" : "Overview"),
+      ovStats,
+      inventoryAria:ru ? "Данные в снимке" : "Snapshot inventory",
+      inventoryTitle:ru ? "Данные в снимке" : "Snapshot inventory",
+      inventorySub:ru ? "Только независимо перенесённые серверные итоги." : "Only independently carried server totals.",
+      inventoryRows,
+      operationalTitle:ru ? "Где мы сейчас" : "Where things stand",
+      operationalSub:ru ? "Перенесённые протокольные, рабочие и операционные факты." : "Carried protocol, work, and operational facts.",
+      operationalSnapshot:(ru ? "снимок " : "snapshot ") + (operational.generated_at || data.generatedAt || ""),
+      operationalSnapshotDotStyle:"width:8px; height:8px; border-radius:99px; background:var(--muted);",
+      operationalRows,
+      operationalPresent:!!operationalRows[0],
+      operationalEmpty:!operationalRows[0],
+      operationalEmptyTitle:cardMode ? (ru ? "Процесс недоступен" : "Process unavailable") : (ru ? "Нет видимых рабочих процессов" : "No visible work processes"),
+      operationalEmptyText:cardMode
+        ? (ru ? "В этом снимке нет процесса с таким перенесённым идентификатором." : "This snapshot has no process for the carried identity.")
+        : (timelineBound || (ru ? "В этом снимке нет операционных строк." : "This snapshot contains no operational rows.")),
+      operationalMore:!cardMode && !!timelineBound,
+      operationalMoreText:timelineBound || (ru ? "Открыть Треды" : "Open Threads"),
+      goThreads:() => { if (actions.navigate) actions.navigate("threads", { operationalOpen:"" }); },
+      attentionTitle:ru ? "Требуют вашего внимания" : "Needs your attention",
+      attentionSub:attentionEmpty
+        ? (ru ? "Перенесённый набор полон и пуст." : "The carried set is complete and empty.")
+        : (ru ? "Строки идут в серверном порядке." : "Rows remain in server order."),
+      attentionCount:String(valueOf(needYou) == null ? (ru ? "неизвестно" : "unknown") : valueOf(needYou)),
+      ovRows,
+      attentionEmpty:attentionEmpty || attentionPrefixMissing,
+      attentionEmptyTitle:attentionPrefixMissing
+        ? (ru ? "Строки внимания не вошли в окно" : "Attention rows are outside this window")
+        : (ru ? "Всё спокойно" : "All clear"),
+      attentionEmptyText:attentionPrefixMissing
+        ? (ru ? "Сервер сообщает ненулевой итог, но не включил ни одной строки в этот ограниченный снимок." : "The server reports a non-zero total but admitted no rows into this bounded snapshot.")
+        : (ru ? "Ничто не требует вашего хода." : "Nothing needs your move.")
+    };
   }
 }
 </script>

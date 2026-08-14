@@ -162,6 +162,97 @@ func TestDemoFixtureParses(t *testing.T) {
 	}
 }
 
+// TestDemoCarriesCoherentDashboardAdmission keeps the public showroom on the
+// same carried-window and cache-owned aggregate contract as a live dashboard.
+// Non-empty source collections paired with zero totals are not a harmless demo
+// shortcut: every W3 view is forbidden to recover those facts in the browser.
+func TestDemoCarriesCoherentDashboardAdmission(t *testing.T) {
+	t.Parallel()
+
+	data, err := DemoData()
+	if err != nil {
+		t.Fatalf("DemoData: %v", err)
+	}
+	windows := []struct {
+		name   string
+		length int
+		window operational.Window
+	}{
+		{"inbox", len(data.Inbox), data.Windows.Inbox},
+		{"outbox", len(data.Outbox), data.Windows.Outbox},
+		{"archive", len(data.Archive), data.Windows.Archive},
+		{"threads", len(data.Threads), data.Windows.Threads},
+		{"contract edges", len(data.ContractEdges), data.Windows.ContractEdges},
+		{"exchange edges", len(data.ExchangeEdges), data.Windows.ExchangeEdges},
+		{"flags", len(data.Flags), data.Windows.Flags},
+		{"work reports", len(data.WorkReports), data.Windows.WorkReports},
+		{"artifact details", len(data.ArtifactDetails), data.Windows.ArtifactDetails},
+	}
+	for _, row := range windows {
+		want := operational.Window{Total: row.length, Shown: row.length}
+		if row.window != want {
+			t.Errorf("demo %s window = %+v, want %+v", row.name, row.window, want)
+		}
+	}
+	if len(data.Threads) != len(data.ThreadViews) {
+		t.Fatalf("demo paired threads = %d rows / %d views", len(data.Threads), len(data.ThreadViews))
+	}
+	for index := range data.Threads {
+		thread, view := data.Threads[index], data.ThreadViews[index]
+		if thread.Space != view.Space || thread.ID != view.Thread {
+			t.Fatalf("demo thread pair %d identity = %s/%s vs %s/%s", index, thread.Space, thread.ID, view.Space, view.Thread)
+		}
+		if thread.Windows.Members != (operational.Window{Total: len(thread.Members), Shown: len(thread.Members)}) ||
+			thread.Windows.Links != (operational.Window{Total: len(thread.Links), Shown: len(thread.Links)}) {
+			t.Errorf("demo thread %s child windows = %+v", thread.ID, thread.Windows)
+		}
+		viewWindows := []struct {
+			length int
+			window operational.Window
+		}{
+			{len(view.Artifacts), view.Windows.Artifacts}, {len(view.Transcript), view.Windows.Transcript},
+			{len(view.OpenItems), view.Windows.OpenItems}, {len(view.Flags), view.Windows.Flags},
+			{len(view.Unresolved), view.Windows.Unresolved}, {len(view.Deliveries), view.Windows.Deliveries},
+		}
+		for _, child := range viewWindows {
+			if child.window != (operational.Window{Total: child.length, Shown: child.length}) {
+				t.Errorf("demo thread view %s child window = %+v, want total/shown %d", view.Thread, child.window, child.length)
+			}
+		}
+	}
+
+	activeInbox := 0
+	for _, item := range data.Inbox {
+		if !item.Terminal {
+			activeInbox++
+		}
+	}
+	if got := data.Aggregates.NeedYou.Window.Total + data.Aggregates.NoHumanMove.Window.Total; got != activeInbox {
+		t.Errorf("demo active inbox aggregate partition = %d, want %d", got, activeInbox)
+	}
+	if data.Aggregates.YouAwait.Window.Total == 0 {
+		t.Error("demo YouAwait is empty despite carried outbox pendency")
+	}
+	offCurrent := 0
+	for _, edge := range data.ContractEdges {
+		if edge.Drift != "current" {
+			offCurrent++
+		}
+	}
+	if data.Aggregates.LinesOffCurrent.Window.Total != offCurrent {
+		t.Errorf("demo LinesOffCurrent total = %d, want %d", data.Aggregates.LinesOffCurrent.Window.Total, offCurrent)
+	}
+	sets := []DashboardItemSet{data.Aggregates.NeedYou, data.Aggregates.NoHumanMove, data.Aggregates.YouAwait}
+	for index, set := range sets {
+		if set.Items == nil || len(set.Items) != set.Window.Shown || set.Window.Shown > set.Window.Total {
+			t.Errorf("demo item aggregate %d = items:%d window:%+v", index, len(set.Items), set.Window)
+		}
+	}
+	if data.Aggregates.LinesOffCurrent.Items == nil || len(data.Aggregates.LinesOffCurrent.Items) != data.Aggregates.LinesOffCurrent.Window.Shown {
+		t.Errorf("demo LinesOffCurrent items/window = %d %+v", len(data.Aggregates.LinesOffCurrent.Items), data.Aggregates.LinesOffCurrent.Window)
+	}
+}
+
 // updateDemoCopy rewrites the published demo projection instead of asserting
 // it, the same `-update` idiom internal/livee2e/report_test.go uses for its
 // golden reports.

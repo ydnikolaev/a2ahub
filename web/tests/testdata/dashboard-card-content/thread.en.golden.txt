@@ -1,0 +1,9 @@
+Thread — Prevent duplicate payment capture after a worker retry
+Unknown in this snapshot.
+Protocol: your move; 2 open items; waiting on none recorded.
+Participants: atlas, checkout.
+Opener and membership: Prevent duplicate payment capture after a worker retry; 3 documents.
+Open obligations: Prevent duplicate payment capture after a worker retry — In progress now; Should a retry reuse the original capture idempotency key? — Submitted for review.
+Transcript and relationships: submitted for review; 12 rows; 2 parent links; 0 deliveries.
+Snapshot: Source is current.
+Technical detail: collapsed.

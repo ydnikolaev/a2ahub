@@ -238,7 +238,8 @@ func TestProjectDeliveries_RenderedIntoPage(t *testing.T) {
 // its own design source, not that either one renders a delivery at all).
 func TestDefaultTemplate_ConsumesThreadViewDeliveries(t *testing.T) {
 	t.Parallel()
-	tmpl := string(DefaultTemplate())
+	tmpl := dashboardDesignSource(t, "ThreadsView.dc.html")
+	shipped := dashboardTemplateCorpus(t)
 
 	// handoffId is Delivery's own join key (spec 05a AC-7: rendered "under
 	// the handoff that carries it") — its presence in the shipped bundle is
@@ -251,32 +252,26 @@ func TestDefaultTemplate_ConsumesThreadViewDeliveries(t *testing.T) {
 	if !strings.Contains(tmpl, "hasDeliveries") {
 		t.Error("template.html never gates on hasDeliveries — a thread with no deliveries would render an empty section instead of none at all")
 	}
-	// "passed" and "failed" already occur in the pre-existing bundle
-	// (transition vocabulary, `verify-fail`, unrelated UI copy), so they do
-	// not discriminate the delivery markup. The reader-facing copy below
-	// does — each string exists ONLY in the delivery branch:
-	//
-	//   "not yet verified" / "verification errored" — deliveryVerdictText,
-	//     what makes unverified visibly distinct from passed at the markup
-	//     level rather than only in the Go projection.
-	//   "Data deliveries" — the group heading that says these boxes are data
-	//     handed over with the document above them, not more protocol events.
-	//   "Every attempt" — the supersede-chain heading.
-	//   "Package not found in the local mirror" — the unresolved branch,
-	//     which must keep its own presentation rather than collapsing into
-	//     the failed one.
-	//   "recordLabel" — a property read, so a minifier must not rename it;
-	//     its presence proves a failing check is still split into file,
-	//     record and rule instead of being concatenated back into one line.
-	//
-	// A rebuild that dropped or flattened the delivery branch fails here.
+	// Verdict is carried source data. The browser may present it, but must not
+	// recreate a local verdict-label/status table. The remaining literals and
+	// property reads distinguish the delivery renderer from unrelated protocol
+	// history: its heading, join, failure facts, attempt chain and unresolved
+	// branch must all remain reachable in the shipped bundle.
 	for _, want := range []string{
-		"not yet verified", "verification errored",
 		"Data deliveries", "Every attempt",
 		"Package not found in the local mirror", "recordLabel",
+		"del.verdict", "del.failures", "del.chain",
 	} {
 		if !strings.Contains(tmpl, want) {
 			t.Errorf("template.html missing %q — the delivery markup is not in the shipped bundle", want)
+		}
+		if !strings.Contains(shipped, want) {
+			t.Errorf("shipped dashboard missing delivery contract %q", want)
+		}
+	}
+	for _, forbidden := range []string{"deliveryVerdictText", `const DELIVERY_VERDICTS`, `const DELIVERY_STATUS`} {
+		if strings.Contains(tmpl, forbidden) {
+			t.Errorf("template.html still owns stale delivery verdict vocabulary %q", forbidden)
 		}
 	}
 }

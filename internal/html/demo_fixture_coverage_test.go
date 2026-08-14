@@ -65,6 +65,11 @@ func TestDemoFixtureCoversBinaryVocabulary(t *testing.T) {
 		for _, artifact := range view.Artifacts {
 			add(VocabularyFamilyLifecycleState, artifact.State)
 		}
+		for _, row := range view.Transcript {
+			if row.Event != nil {
+				add(VocabularyFamilyTransition, row.Event.Transition)
+			}
+		}
 		for _, item := range view.OpenItems {
 			add(VocabularyFamilyOutcome, string(item.Outcome))
 			add(VocabularyFamilyLifecycleState, item.State)
@@ -77,6 +82,9 @@ func TestDemoFixtureCoversBinaryVocabulary(t *testing.T) {
 	for _, detail := range data.ArtifactDetails {
 		add(VocabularyFamilyOutcome, string(detail.Outcome))
 		add(VocabularyFamilyLifecycleState, detail.State)
+		for _, event := range detail.Events {
+			add(VocabularyFamilyTransition, event.Transition)
+		}
 		for _, operationalItem := range detail.OperationalItems {
 			add(VocabularyFamilyOperationalState, operationalItem.State)
 		}
@@ -85,6 +93,11 @@ func TestDemoFixtureCoversBinaryVocabulary(t *testing.T) {
 		add(VocabularyFamilyLifecycleState, contract.State)
 		for _, version := range contract.Versions {
 			add(VocabularyFamilyLifecycleState, version.State)
+			if version.Detail != nil {
+				for _, event := range version.Detail.History {
+					add(VocabularyFamilyTransition, event.Transition)
+				}
+			}
 		}
 	}
 	for _, edge := range data.ContractEdges {
@@ -96,6 +109,9 @@ func TestDemoFixtureCoversBinaryVocabulary(t *testing.T) {
 		add(VocabularyFamilySourceFreshness, string(source.Freshness))
 	}
 	for _, row := range data.Operational.Timeline {
+		if row.LatestMilestone != nil {
+			add(VocabularyFamilyTransition, row.LatestMilestone.Transition)
+		}
 		for _, work := range row.Work {
 			add(VocabularyFamilyFreshness, string(work.Freshness))
 			add(VocabularyFamilyWorkMode, string(work.Mode))
@@ -248,6 +264,7 @@ func demoFixtureCatalogue(t *testing.T) map[VocabularyFamily][]string {
 		VocabularyFamilySourceFreshness:     decodeDemoCatalogueField[[]string](t, raw, "source_freshness"),
 		VocabularyFamilyOutcome:             decodeDemoCatalogueField[[]string](t, raw, "outcomes"),
 		VocabularyFamilyLifecycleState:      sortedDemoCatalogueSet(lifecycle),
+		VocabularyFamilyTransition:          decodeDemoCatalogueField[[]string](t, raw, "transitions"),
 		VocabularyFamilyReason:              decodeDemoCatalogueField[[]string](t, raw, "reason"),
 		VocabularyFamilyGate:                decodeDemoCatalogueField[[]string](t, raw, "gate"),
 		VocabularyFamilyWorkMode:            decodeDemoCatalogueField[[]string](t, raw, "work_mode"),

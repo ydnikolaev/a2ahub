@@ -462,7 +462,7 @@
             "checkout"
           ],
           "state": "disputed",
-          "seq": 106
+          "seq": 108
         },
         {
           "id": "XQ-checkout-20260730-a1b2",
@@ -473,7 +473,7 @@
             "atlas"
           ],
           "state": "submitted",
-          "seq": 109
+          "seq": 111
         }
       ],
       "links": [
@@ -685,7 +685,7 @@
         "atlas",
         "support"
       ],
-      "memberCount": 1,
+      "memberCount": 6,
       "openCount": 0,
       "lastActivity": "3d",
       "opener": {
@@ -705,6 +705,61 @@
           ],
           "state": "closed",
           "seq": 701
+        },
+        {
+          "id": "XQ-atlas-20260726-d3c1",
+          "type": "question",
+          "title": "Should the redaction fixture retain original attachment names?",
+          "from": "atlas",
+          "to": [
+            "support"
+          ],
+          "state": "declined",
+          "seq": 704
+        },
+        {
+          "id": "XR-atlas-20260726-s4t1",
+          "type": "requirement",
+          "title": "Redaction evidence must preserve stable record counts",
+          "from": "atlas",
+          "to": [
+            "support"
+          ],
+          "state": "satisfied",
+          "seq": 707
+        },
+        {
+          "id": "XR-atlas-20260726-w4t2",
+          "type": "requirement",
+          "title": "Retain the superseded redaction sample for comparison",
+          "from": "atlas",
+          "to": [
+            "support"
+          ],
+          "state": "withdrawn",
+          "seq": 711
+        },
+        {
+          "id": "XH-atlas-20260726-v4p1",
+          "type": "handoff",
+          "title": "Redaction digest verification fixture",
+          "from": "atlas",
+          "to": [
+            "support"
+          ],
+          "state": "accepted",
+          "seq": 713
+        },
+        {
+          "id": "XH-atlas-20260726-v4f1",
+          "type": "handoff",
+          "title": "Unredacted negative-control fixture",
+          "from": "atlas",
+          "to": [
+            "support"
+          ],
+          "state": "rejected",
+          "seq": 717
         }
       ],
       "links": []
@@ -1556,6 +1611,13 @@
                 "state": "published",
                 "actor": "atlas",
                 "at": "2026-07-22T13:05:00Z"
+              },
+              {
+                "eventID": "01K1L22ACTIVATED0000000001",
+                "transition": "activate",
+                "state": "published",
+                "actor": "atlas",
+                "at": "2026-07-22T13:06:00Z"
               }
             ],
             "provenance": {
@@ -2222,6 +2284,50 @@
         },
         {
           "seq": 106,
+          "kind": "event",
+          "at": "2026-07-28T12:00:00Z",
+          "event": {
+            "ulid": "01K1A2B3C4D5E6F7G8H9J0K1P3",
+            "subject": "XW-checkout-20260728-c3d4",
+            "transition": "block",
+            "claimed_state": "blocked",
+            "actor": {
+              "kind": "agent",
+              "name": "atlas-agent",
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 107,
+          "kind": "event",
+          "at": "2026-07-28T12:15:00Z",
+          "event": {
+            "ulid": "01K1A2B3C4D5E6F7G8H9J0K1P4",
+            "subject": "XW-checkout-20260728-c3d4",
+            "transition": "unblock",
+            "claimed_state": "in_progress",
+            "actor": {
+              "kind": "agent",
+              "name": "atlas-agent",
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 108,
           "kind": "artifact",
           "at": "2026-07-29T14:00:00Z",
           "artifact": {
@@ -2235,7 +2341,7 @@
           }
         },
         {
-          "seq": 107,
+          "seq": 109,
           "kind": "event",
           "at": "2026-07-29T14:01:00Z",
           "event": {
@@ -2281,7 +2387,7 @@
           }
         },
         {
-          "seq": 108,
+          "seq": 110,
           "kind": "event",
           "at": "2026-07-30T08:15:00Z",
           "event": {
@@ -2303,7 +2409,7 @@
           }
         },
         {
-          "seq": 109,
+          "seq": 111,
           "kind": "artifact",
           "at": "2026-07-30T11:50:00Z",
           "artifact": {
@@ -2317,7 +2423,7 @@
           }
         },
         {
-          "seq": 110,
+          "seq": 112,
           "kind": "event",
           "at": "2026-07-30T11:57:00Z",
           "event": {
@@ -3495,6 +3601,56 @@
           ],
           "title": "Which fixture proves attachment names are redacted?",
           "state": "closed"
+        },
+        {
+          "id": "XQ-atlas-20260726-d3c1",
+          "type": "question",
+          "from": "atlas",
+          "to": [
+            "support"
+          ],
+          "title": "Should the redaction fixture retain original attachment names?",
+          "state": "declined"
+        },
+        {
+          "id": "XR-atlas-20260726-s4t1",
+          "type": "requirement",
+          "from": "atlas",
+          "to": [
+            "support"
+          ],
+          "title": "Redaction evidence must preserve stable record counts",
+          "state": "satisfied"
+        },
+        {
+          "id": "XR-atlas-20260726-w4t2",
+          "type": "requirement",
+          "from": "atlas",
+          "to": [
+            "support"
+          ],
+          "title": "Retain the superseded redaction sample for comparison",
+          "state": "withdrawn"
+        },
+        {
+          "id": "XH-atlas-20260726-v4p1",
+          "type": "handoff",
+          "from": "atlas",
+          "to": [
+            "support"
+          ],
+          "title": "Redaction digest verification fixture",
+          "state": "accepted"
+        },
+        {
+          "id": "XH-atlas-20260726-v4f1",
+          "type": "handoff",
+          "from": "atlas",
+          "to": [
+            "support"
+          ],
+          "title": "Unredacted negative-control fixture",
+          "state": "rejected"
         }
       ],
       "transcript": [
@@ -3536,6 +3692,364 @@
         },
         {
           "seq": 703,
+          "kind": "event",
+          "at": "2026-07-26T09:02:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1P1",
+            "subject": "XQ-atlas-20260726-t5v6",
+            "transition": "note",
+            "claimed_state": "submitted",
+            "actor": {
+              "kind": "agent",
+              "name": "atlas-agent",
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            },
+            "note": "The fixture keeps only redacted attachment names.",
+            "transition_free": true
+          }
+        },
+        {
+          "seq": 704,
+          "kind": "artifact",
+          "at": "2026-07-26T09:03:00Z",
+          "artifact": {
+            "id": "XQ-atlas-20260726-d3c1",
+            "type": "question",
+            "from": "atlas",
+            "to": [
+              "support"
+            ],
+            "title": "Should the redaction fixture retain original attachment names?"
+          }
+        },
+        {
+          "seq": 705,
+          "kind": "event",
+          "at": "2026-07-26T09:04:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1P2",
+            "subject": "XQ-atlas-20260726-d3c1",
+            "transition": "submit",
+            "claimed_state": "submitted",
+            "actor": {
+              "kind": "agent",
+              "name": "atlas-agent",
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 706,
+          "kind": "event",
+          "at": "2026-07-26T09:05:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1P3",
+            "subject": "XQ-atlas-20260726-d3c1",
+            "transition": "decline",
+            "claimed_state": "declined",
+            "actor": {
+              "kind": "agent",
+              "name": "support-agent",
+              "system": "support",
+              "model": "gpt-5",
+              "session": "session:demo-support"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 707,
+          "kind": "artifact",
+          "at": "2026-07-26T09:06:00Z",
+          "artifact": {
+            "id": "XR-atlas-20260726-s4t1",
+            "type": "requirement",
+            "from": "atlas",
+            "to": [
+              "support"
+            ],
+            "title": "Redaction evidence must preserve stable record counts"
+          }
+        },
+        {
+          "seq": 708,
+          "kind": "event",
+          "at": "2026-07-26T09:07:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1P4",
+            "subject": "XR-atlas-20260726-s4t1",
+            "transition": "publish",
+            "claimed_state": "published",
+            "actor": {
+              "kind": "agent",
+              "name": "atlas-agent",
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 709,
+          "kind": "event",
+          "at": "2026-07-26T09:08:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1P5",
+            "subject": "XR-atlas-20260726-s4t1",
+            "transition": "acknowledge",
+            "claimed_state": "acknowledged",
+            "actor": {
+              "kind": "agent",
+              "name": "support-agent",
+              "system": "support",
+              "model": "gpt-5",
+              "session": "session:demo-support"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 710,
+          "kind": "event",
+          "at": "2026-07-26T09:09:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1P6",
+            "subject": "XR-atlas-20260726-s4t1",
+            "transition": "satisfy",
+            "claimed_state": "satisfied",
+            "actor": {
+              "kind": "agent",
+              "name": "atlas-agent",
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 711,
+          "kind": "artifact",
+          "at": "2026-07-26T09:10:00Z",
+          "artifact": {
+            "id": "XR-atlas-20260726-w4t2",
+            "type": "requirement",
+            "from": "atlas",
+            "to": [
+              "support"
+            ],
+            "title": "Retain the superseded redaction sample for comparison"
+          }
+        },
+        {
+          "seq": 712,
+          "kind": "event",
+          "at": "2026-07-26T09:11:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1P7",
+            "subject": "XR-atlas-20260726-w4t2",
+            "transition": "withdraw",
+            "claimed_state": "withdrawn",
+            "actor": {
+              "kind": "agent",
+              "name": "atlas-agent",
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 713,
+          "kind": "artifact",
+          "at": "2026-07-26T09:12:00Z",
+          "artifact": {
+            "id": "XH-atlas-20260726-v4p1",
+            "type": "handoff",
+            "from": "atlas",
+            "to": [
+              "support"
+            ],
+            "title": "Redaction digest verification fixture"
+          }
+        },
+        {
+          "seq": 714,
+          "kind": "event",
+          "at": "2026-07-26T09:13:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1P8",
+            "subject": "XH-atlas-20260726-v4p1",
+            "transition": "submit",
+            "claimed_state": "submitted",
+            "actor": {
+              "kind": "agent",
+              "name": "atlas-agent",
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 715,
+          "kind": "event",
+          "at": "2026-07-26T09:14:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1P9",
+            "subject": "XH-atlas-20260726-v4p1",
+            "transition": "acknowledge",
+            "claimed_state": "acknowledged",
+            "actor": {
+              "kind": "agent",
+              "name": "support-agent",
+              "system": "support",
+              "model": "gpt-5",
+              "session": "session:demo-support"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 716,
+          "kind": "event",
+          "at": "2026-07-26T09:15:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1Q1",
+            "subject": "XH-atlas-20260726-v4p1",
+            "transition": "verify-pass",
+            "claimed_state": "accepted",
+            "actor": {
+              "kind": "agent",
+              "name": "support-agent",
+              "system": "support",
+              "model": "gpt-5",
+              "session": "session:demo-support"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 717,
+          "kind": "artifact",
+          "at": "2026-07-26T09:16:00Z",
+          "artifact": {
+            "id": "XH-atlas-20260726-v4f1",
+            "type": "handoff",
+            "from": "atlas",
+            "to": [
+              "support"
+            ],
+            "title": "Unredacted negative-control fixture"
+          }
+        },
+        {
+          "seq": 718,
+          "kind": "event",
+          "at": "2026-07-26T09:17:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1Q2",
+            "subject": "XH-atlas-20260726-v4f1",
+            "transition": "submit",
+            "claimed_state": "submitted",
+            "actor": {
+              "kind": "agent",
+              "name": "atlas-agent",
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 719,
+          "kind": "event",
+          "at": "2026-07-26T09:18:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1Q3",
+            "subject": "XH-atlas-20260726-v4f1",
+            "transition": "acknowledge",
+            "claimed_state": "acknowledged",
+            "actor": {
+              "kind": "agent",
+              "name": "support-agent",
+              "system": "support",
+              "model": "gpt-5",
+              "session": "session:demo-support"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 720,
+          "kind": "event",
+          "at": "2026-07-26T09:19:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1Q4",
+            "subject": "XH-atlas-20260726-v4f1",
+            "transition": "verify-fail",
+            "claimed_state": "rejected",
+            "actor": {
+              "kind": "agent",
+              "name": "support-agent",
+              "system": "support",
+              "model": "gpt-5",
+              "session": "session:demo-support"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 721,
           "kind": "event",
           "at": "2026-07-27T11:30:00Z",
           "event": {
@@ -3803,6 +4317,38 @@
           "actor": "atlas-agent",
           "actor_system": "atlas",
           "at": "2026-07-28T09:22:00Z",
+          "actor_kind": "agent",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-atlas",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          }
+        },
+        {
+          "ulid": "01K1A2B3C4D5E6F7G8H9J0K1P3",
+          "subject": "XW-checkout-20260728-c3d4",
+          "transition": "block",
+          "claimed_state": "blocked",
+          "actor": "atlas-agent",
+          "actor_system": "atlas",
+          "at": "2026-07-28T12:00:00Z",
+          "actor_kind": "agent",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-atlas",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          }
+        },
+        {
+          "ulid": "01K1A2B3C4D5E6F7G8H9J0K1P4",
+          "subject": "XW-checkout-20260728-c3d4",
+          "transition": "unblock",
+          "claimed_state": "in_progress",
+          "actor": "atlas-agent",
+          "actor_system": "atlas",
+          "at": "2026-07-28T12:15:00Z",
           "actor_kind": "agent",
           "actor_model": "gpt-5",
           "actor_session": "session:demo-atlas",
@@ -4371,6 +4917,23 @@
             "tool": "a2a",
             "version": "0.19.0"
           }
+        },
+        {
+          "ulid": "01K4A2B3C4D5E6F7G8H9J0K1P1",
+          "subject": "XQ-atlas-20260726-t5v6",
+          "transition": "note",
+          "claimed_state": "submitted",
+          "actor": "atlas-agent",
+          "actor_system": "atlas",
+          "at": "2026-07-26T09:02:00Z",
+          "actor_kind": "agent",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-atlas",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          },
+          "note": "The fixture keeps only redacted attachment names."
         },
         {
           "ulid": "01K4A2B3C4D5E6F7G8H9J0K1MN",

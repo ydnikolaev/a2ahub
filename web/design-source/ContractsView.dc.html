@@ -8,6 +8,52 @@
 <body>
 <x-dc>
 <section aria-label="{{ contractsAria }}" data-screen-label="Contracts">
+        <sc-if value="{{ cardUnavailable }}" hint-placeholder-val="{{ false }}">
+          <dc-import name="EmptyState" title="{{ cardUnavailableTitle }}" text="{{ cardUnavailableText }}" size="panel" hint-size="100%,260px"></dc-import>
+        </sc-if>
+
+        <sc-if value="{{ cardContract }}" hint-placeholder-val="{{ false }}">
+          <article data-card-kind="contract" style="display:flex; flex-direction:column; gap:18px; min-width:0;">
+            <div data-card-content style="display:flex; flex-direction:column; gap:var(--space-after-section-heading);">
+              <h2 data-card-fact="contract:identity" class="a2a-detail-title" style="margin:0; font-family:'IBM Plex Mono',ui-monospace,monospace; overflow-wrap:anywhere;">{{ contractCard.identity }}</h2>
+              <div data-card-fact="contract:condition" style="font-size:16px; line-height:1.6; color:var(--body);"><span data-card-fact="contract:lead">{{ contractCard.lead }}</span></div>
+              <div data-card-fact="contract:description">{{ contractCard.descriptionText }}</div>
+              <div data-card-fact="contract:consumers">{{ contractCard.consumersPrefix }}<sc-for list="{{ contractCard.consumers }}" as="consumer" hint-placeholder-count="2"><span style="{{ consumer.contentStyle }}">{{ consumer.name }}</span>{{ consumer.separator }}</sc-for><sc-if value="{{ contractCard.consumersEmpty }}" hint-placeholder-val="{{ false }}">{{ contractCard.consumersEmpty }}</sc-if></div>
+              <div data-card-fact="contract:dependencies">{{ contractCard.dependenciesPrefix }}<sc-for list="{{ contractCard.dependencies }}" as="line" hint-placeholder-count="2"><sc-if value="{{ line.hasSuccessor }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ line.openSuccessor }}" aria-label="{{ line.successorOpenLabel }}" style="{{ line.contentStyle }}">{{ line.cardText }}</button></sc-if><sc-if value="{{ line.noSuccessor }}" hint-placeholder-val="{{ true }}"><span style="{{ line.contentStyle }}">{{ line.cardText }}</span></sc-if>{{ line.separator }}</sc-for><sc-if value="{{ contractCard.dependenciesEmpty }}" hint-placeholder-val="{{ false }}">{{ contractCard.dependenciesEmpty }}</sc-if></div>
+              <div data-card-fact="contract:metadata">{{ contractCard.interfaceText }}</div>
+              <div data-card-fact="contract:versions">{{ contractCard.versionsPrefix }}<sc-for list="{{ contractCard.versions }}" as="version" hint-placeholder-count="3"><button type="button" onClick="{{ version.open }}" aria-label="{{ version.openLabel }}" style="{{ version.contentStyle }}">{{ version.cardText }}</button>{{ version.separator }}</sc-for><sc-if value="{{ contractCard.versionsEmpty }}" hint-placeholder-val="{{ false }}">{{ contractCard.versionsEmpty }}</sc-if></div>
+              <div data-card-fact="contract:adoption">{{ contractCard.adoptionText }}</div>
+              <div data-card-fact="contract:snapshot">{{ contractCard.snapshotText }}</div>
+              <details data-card-fact="contract:technical" style="color:var(--muted);"><summary style="cursor:pointer; font-size:13px; font-weight:600;">{{ contractCard.technicalTitle }}</summary><div style="margin-top:10px;"><dc-import name="FactTable" rows="{{ contractCard.technical }}" hint-size="100%,260px"></dc-import></div></details>
+            </div>
+            <div data-card-support="contract:status" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;" aria-label="{{ contractCard.statusSupportLabel }}"><dc-import name="StatusPill" result="{{ contractCard.stateResult }}" size="small" hint-size="150px,24px"></dc-import><dc-import name="StatusPill" result="{{ contractCard.snapshotResult }}" size="small" hint-size="170px,24px"></dc-import></div>
+          </article>
+        </sc-if>
+
+        <sc-if value="{{ cardContractVersion }}" hint-placeholder-val="{{ false }}">
+          <article data-card-kind="cver" style="display:flex; flex-direction:column; gap:18px; min-width:0;">
+            <div data-card-content style="display:flex; flex-direction:column; gap:var(--space-after-section-heading);">
+              <h2 data-card-fact="cver:identity" class="a2a-detail-title" style="margin:0; font-family:'IBM Plex Mono',ui-monospace,monospace; overflow-wrap:anywhere;">{{ contractVersionCard.identity }}</h2>
+              <div data-card-fact="cver:condition" style="font-size:16px; line-height:1.6; color:var(--body);"><span data-card-fact="cver:lead">{{ contractVersionCard.lead }}</span></div>
+              <div data-card-fact="cver:publication">{{ contractVersionCard.publicationText }}</div>
+              <div data-card-fact="cver:description-change">{{ contractVersionCard.descriptionChangeText }}</div>
+              <div data-card-fact="cver:consumers">{{ contractVersionCard.consumersPrefix }}<sc-for list="{{ contractVersionCard.consumerPins }}" as="pin" hint-placeholder-count="2"><span data-accented="{{ pin.highlighted }}" style="{{ pin.contentStyle }}">{{ pin.cardText }}</span>{{ pin.separator }}</sc-for><sc-if value="{{ contractVersionCard.noConsumers }}" hint-placeholder-val="{{ false }}">{{ contractVersionCard.consumersEmptyText }}</sc-if></div>
+              <div data-card-fact="cver:documents">{{ contractVersionCard.documentsPrefix }}<sc-for list="{{ contractVersionCard.documents }}" as="document" hint-placeholder-count="2"><span style="{{ document.contentStyle }}">{{ document.path }}</span>{{ document.separator }}</sc-for><sc-if value="{{ contractVersionCard.noDocuments }}" hint-placeholder-val="{{ false }}">{{ contractVersionCard.documentsEmptyText }}</sc-if></div>
+              <sc-for list="{{ contractVersionCard.previewFacts }}" as="preview" hint-placeholder-count="1"><div style="{{ preview.style }}">{{ preview.text }}</div></sc-for>
+              <div data-card-fact="cver:metadata">{{ contractVersionCard.metadataText }}</div>
+              <div data-card-fact="cver:history">{{ contractVersionCard.historyPrefix }}<sc-for list="{{ contractVersionCard.history }}" as="event" hint-placeholder-count="3"><span style="{{ event.contentStyle }}">{{ event.cardText }}</span>{{ event.separator }}</sc-for><sc-if value="{{ contractVersionCard.noHistory }}" hint-placeholder-val="{{ false }}">{{ contractVersionCard.historyEmptyText }}</sc-if></div>
+              <div data-card-fact="cver:successor">{{ contractVersionCard.successorPrefix }}<sc-if value="{{ contractVersionCard.hasSuccessor }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ contractVersionCard.openSuccessor }}" aria-label="{{ contractVersionCard.successorOpenLabel }}" style="{{ contractVersionCard.successorContentStyle }}">{{ contractVersionCard.successorText }}</button></sc-if><sc-if value="{{ contractVersionCard.sunsetWithoutSuccessor }}" hint-placeholder-val="{{ false }}"><span>{{ contractVersionCard.successorText }}</span></sc-if><sc-if value="{{ contractVersionCard.noSunsetOrSuccessor }}" hint-placeholder-val="{{ true }}">{{ contractVersionCard.notRecorded }}</sc-if></div>
+              <div data-card-fact="cver:snapshot">{{ contractVersionCard.snapshotText }}</div>
+              <sc-if value="{{ contractVersionCard.hasDocumentsWindowText }}" hint-placeholder-val="{{ false }}"><div>{{ contractVersionCard.documentsWindowText }}</div></sc-if>
+              <sc-for list="{{ contractVersionCard.byteNotices }}" as="notice" hint-placeholder-count="1"><div>{{ notice }}</div></sc-for>
+              <details data-card-fact="cver:technical" style="color:var(--muted);"><summary style="cursor:pointer; font-size:13px; font-weight:600;">{{ contractVersionCard.technicalTitle }}</summary><div style="margin-top:10px;"><dc-import name="FactTable" rows="{{ contractVersionCard.technical }}" hint-size="100%,360px"></dc-import></div></details>
+            </div>
+            <div data-card-support="cver:status" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;" aria-label="{{ contractVersionCard.statusSupportLabel }}"><dc-import name="StatusPill" result="{{ contractVersionCard.stateResult }}" size="small" hint-size="150px,24px"></dc-import><dc-import name="StatusPill" result="{{ contractVersionCard.snapshotResult }}" size="small" hint-size="170px,24px"></dc-import></div>
+            <sc-if value="{{ contractVersionCard.available }}" hint-placeholder-val="{{ true }}"><section data-card-support="cver:documents" style="display:flex; flex-direction:column; gap:10px;" aria-label="{{ contractVersionCard.documentSupportLabel }}"><sc-for list="{{ contractVersionCard.documents }}" as="document" hint-placeholder-count="2"><article data-contract-file-key="{{ document.cfileID }}" aria-label="{{ document.supportAria }}" style="{{ document.style }}"><div style="display:flex; gap:8px; flex-wrap:wrap;"><sc-for list="{{ document.actions }}" as="action" hint-placeholder-count="2"><sc-if value="{{ action.copy }}" hint-placeholder-val="{{ true }}"><button type="button" onClick="{{ action.run }}" style="border:1px solid var(--border); border-radius:8px; padding:7px 10px; background:var(--surface); color:var(--teal-ink); cursor:pointer;">{{ action.label }}</button></sc-if><sc-if value="{{ action.source }}" hint-placeholder-val="{{ true }}"><a href="{{ action.url }}" target="_blank" rel="noopener noreferrer" style="border:1px solid var(--border); border-radius:8px; padding:7px 10px; color:var(--teal-ink); text-decoration:none;">{{ action.label }}</a></sc-if></sc-for></div><sc-if value="{{ document.hasPreview }}" hint-placeholder-val="{{ true }}"><pre style="margin:10px 0 0; max-height:360px; overflow:auto; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--inverse); color:var(--on-inverse); white-space:pre-wrap; overflow-wrap:anywhere;">{{ document.preview }}</pre></sc-if></article></sc-for></section></sc-if>
+          </article>
+        </sc-if>
+
+        <sc-if value="{{ contractsScreen }}" hint-placeholder-val="{{ true }}">
         <!-- No contracts at all: one empty state across the full width. The
              second panel exists only to say "pick something on the left", and
              with nothing on the left it was answering a question nobody asked. -->
@@ -16,36 +62,29 @@
         </sc-if>
 
         <sc-if value="{{ hasConRows }}" hint-placeholder-val="{{ true }}">
-        <!-- Two questions a contract list is actually opened with. "Whose is
-             this" — the ones I publish are mine to change, the ones I consume
-             are mine to keep up with, and they are read in completely
-             different moods. And "what is wrong" — every consumer line off the
-             provider's latest major, which is what the description above
-             already points at. Category and schema format make handsome
-             filters and answer nothing. -->
-        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; row-gap:10px; margin-bottom:18px;">
-          <dc-import name="SegmentedFilter" items="{{ conRoleTabs }}" hint-size="440px,38px"></dc-import>
-          <sc-if value="{{ hasConRisk }}" hint-placeholder-val="{{ true }}">
-            <button type="button" onClick="{{ toggleConRisk }}" aria-pressed="{{ conRiskPressed }}" style="{{ conRiskStyle }}">{{ conRiskLabel }}</button>
-          </sc-if>
-        </div>
-
-        <sc-if value="{{ noConFiltered }}" hint-placeholder-val="{{ false }}">
-          <dc-import name="EmptyState" title="{{ emptyConFilterTitle }}" text="{{ emptyConFilterText }}" size="page" hint-size="100%,340px"></dc-import>
-        </sc-if>
         <sc-if value="{{ hasConFiltered }}" hint-placeholder-val="{{ true }}">
+        <sc-if value="{{ hasAggregateLines }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-bottom:18px; border-radius:var(--radius-card); padding:var(--padding-card-block) var(--padding-card-inline); background:var(--attention-tint); color:var(--attention-ink);">
+            <strong>{{ aggregateTitle }}</strong>
+            <sc-if value="{{ aggregateHasWindow }}" hint-placeholder-val="{{ true }}"><p style="margin:6px 0 0;">{{ aggregateWindowText }}</p></sc-if>
+            <sc-if value="{{ aggregateEmptyText }}" hint-placeholder-val="{{ false }}"><p style="margin:6px 0 0;">{{ aggregateEmptyText }}</p></sc-if>
+            <div style="display:flex; flex-direction:column; gap:8px; margin-top:12px;"><sc-for list="{{ aggregateLineRows }}" as="line" hint-placeholder-count="2"><div style="{{ line.style }}"><strong style="font-family:'IBM Plex Mono',ui-monospace,monospace;">{{ line.consumer }}</strong><span>{{ line.contract }}</span><dc-import name="StatusPill" result="{{ line.driftResult }}" size="small" hint-size="150px,24px"></dc-import><sc-if value="{{ line.hasSuccessor }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ line.openSuccessor }}" style="border:0; border-radius:8px; padding:7px 10px; background:var(--surface); color:var(--teal-ink); cursor:pointer;">{{ line.successor }}</button></sc-if></div></sc-for></div>
+            <sc-if value="{{ aggregateHasDegradations }}" hint-placeholder-val="{{ false }}"><details style="margin-top:12px;"><summary>{{ aggregateDegradationsTitle }}</summary><div style="display:flex; flex-direction:column; gap:7px; margin-top:8px;"><sc-for list="{{ aggregateDegradations }}" as="degradation" hint-placeholder-count="2"><div><strong>{{ degradation.code }}</strong> · {{ degradation.reason }}</div></sc-for></div></details></sc-if>
+          </div>
+        </sc-if>
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(430px,100%),1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
             <sc-for list="{{ conRows }}" as="c" hint-placeholder-count="6">
               <button type="button" class="a2a-pick" onClick="{{ c.select }}" style="{{ c.style }}">
                 <span style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:6px;">
                   <span style="font-family:'IBM Plex Mono',monospace; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; color:var(--text); overflow-wrap:anywhere;">{{ c.id }}</span>
-                  <dc-import name="StatusPill" text="{{ c.version }}" tone="agent" mono="{{ true }}" size="small" hint-size="70px,24px"></dc-import>
+                  <span style="font-family:'IBM Plex Mono',ui-monospace,monospace; color:var(--muted);">{{ c.version }}</span>
+                  <dc-import name="StatusPill" result="{{ c.stateResult }}" size="small" hint-size="120px,24px"></dc-import>
                 </span>
                 <span style="display:block; font-size:15px; color:var(--muted); margin-bottom:8px;">{{ c.meta }}</span>
                 <span style="display:flex; gap:7px; flex-wrap:wrap;">
                   <sc-for list="{{ c.pills }}" as="p" hint-placeholder-count="1">
-                    <dc-import name="StatusPill" text="{{ p.text }}" tone="{{ p.tone }}" size="small" hint-size="110px,24px"></dc-import>
+                    <dc-import name="StatusPill" result="{{ p.result }}" size="small" hint-size="140px,24px"></dc-import>
                   </sc-for>
                 </span>
               </button>
@@ -57,16 +96,16 @@
               <div style="min-width:0; flex:1 1 280px;">
                 <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:7px; margin-bottom:9px;">
                   <dc-import name="TypeBadge" type="contract" size="small" hint-size="130px,24px"></dc-import>
-                  <dc-import name="StatusPill" text="{{ cdState }}" tone="{{ cdStateTone }}" size="small" hint-size="100px,24px"></dc-import>
+                  <dc-import name="StatusPill" result="{{ cdStateResult }}" size="small" hint-size="140px,24px"></dc-import>
                   <sc-if value="{{ cdCodeBacked }}" hint-placeholder-val="{{ true }}">
-                    <dc-import name="StatusPill" text="{{ codeBackedLabel }}" tone="outline" size="small" hint-size="110px,24px"></dc-import>
+                    <dc-import name="StatusPill" staticText="{{ codeBackedLabel }}" staticTone="outline" size="small" hint-size="110px,24px"></dc-import>
                   </sc-if>
                   <!-- Read this BEFORE running `a2a contract adopt`, which is
                        the whole point: the refusal is a property of the
                        descriptor, knowable now, not a surprise at the
                        command line. -->
                   <sc-if value="{{ cdNonAdoptable }}" hint-placeholder-val="{{ false }}">
-                    <dc-import name="StatusPill" text="{{ cdNonAdoptableLabel }}" tone="attention" why="{{ cdNonAdoptableWhy }}" size="small" hint-size="130px,24px"></dc-import>
+                    <dc-import name="StatusPill" staticText="{{ cdNonAdoptableLabel }}" staticTone="attention" why="{{ cdNonAdoptableWhy }}" size="small" hint-size="130px,24px"></dc-import>
                   </sc-if>
                 </div>
                 <div style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; line-height:1.55; color:var(--muted); overflow-wrap:anywhere;">{{ cdSpaceLine }}</div>
@@ -127,7 +166,7 @@
                   <div style="{{ l.style }}">
                     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px; margin-bottom:5px;">
                       <span style="font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:600; overflow-wrap:anywhere;">{{ l.route }}</span>
-                      <dc-import name="StatusPill" text="{{ l.drift }}" tone="{{ l.tone }}" size="small" hint-size="110px,24px"></dc-import>
+                      <dc-import name="StatusPill" result="{{ l.driftResult }}" size="small" hint-size="140px,24px"></dc-import>
                     </div>
                     <div style="font-family:'IBM Plex Mono',monospace; font-size:14px; line-height:1.55; color:var(--muted); overflow-wrap:anywhere;">{{ l.detail }}</div>
                   </div>
@@ -150,7 +189,7 @@
                   <div data-contract-version="{{ v.version }}" role="{{ v.role }}" tabindex="{{ v.tabIndex }}" aria-label="{{ v.ariaLabel }}" onClick="{{ v.openVersion }}" onKeyDown="{{ v.openVersionKey }}" style="{{ v.style }}" style-hover="{{ v.hoverStyle }}">
                     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px;">
                       <span style="font-family:'IBM Plex Mono',monospace; font-size:16px; font-weight:600; color:{{ v.color }};">{{ v.version }}</span>
-                      <dc-import name="StatusPill" text="{{ v.state }}" tone="{{ v.tone }}" size="small" hint-size="90px,24px"></dc-import>
+                      <dc-import name="StatusPill" result="{{ v.stateResult }}" size="small" hint-size="140px,24px"></dc-import>
                       <span style="{{ v.seatStyle }}">{{ v.seats }}</span>
                     </div>
                     <sc-if value="{{ v.hasNotes }}" hint-placeholder-val="{{ true }}">
@@ -200,7 +239,7 @@
                       <sc-for list="{{ cdVersionPins }}" as="p" hint-placeholder-count="2">
                         <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--surface-section); box-shadow:inset 0 0 0 1px var(--hairline);">
                           <span style="min-width:0;"><strong style="font-family:'IBM Plex Mono',ui-monospace,monospace;">{{ p.system }}</strong><span style="display:block; margin-top:3px; color:var(--muted); font-size:14px; overflow-wrap:anywhere;">{{ p.detail }}</span></span>
-                          <dc-import name="StatusPill" text="{{ p.drift }}" tone="{{ p.tone }}" size="small" hint-size="120px,24px"></dc-import>
+                          <dc-import name="StatusPill" result="{{ p.driftResult }}" size="small" hint-size="140px,24px"></dc-import>
                         </div>
                       </sc-for>
                     </div>
@@ -224,10 +263,10 @@
                           </button>
                         </sc-if>
                         <sc-if value="{{ row.isFile }}" hint-placeholder-val="{{ true }}">
-                          <button type="button" data-contract-file-key="{{ row.key }}" onClick="{{ row.open }}" style="{{ row.rowStyle }}">
+                          <div data-contract-file-key="{{ row.key }}" style="{{ row.rowStyle }}">
                             <span style="{{ row.iconStyle }}">{{ row.iconLabel }}</span>
-                            <span style="min-width:0; flex:1 1 260px;"><strong style="display:block; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; overflow-wrap:anywhere;">{{ row.label }}</strong><span style="display:block; margin-top:4px; color:var(--muted); font-size:13px;">{{ row.role }} · {{ row.media }}</span></span><span style="flex:0 0 auto; font-family:'IBM Plex Mono',ui-monospace,monospace; color:var(--muted); font-size:12px;">{{ row.size }}</span>
-                          </button>
+                            <span style="min-width:0; flex:1 1 260px;"><strong style="display:block; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; overflow-wrap:anywhere;">{{ row.label }}</strong><span style="display:block; margin-top:4px; color:var(--muted); font-size:13px;">{{ row.role }} · {{ row.media }}</span></span><span style="flex:0 0 auto; font-family:'IBM Plex Mono',ui-monospace,monospace; color:var(--muted); font-size:12px;">{{ row.size }}</span><span style="display:flex; gap:7px;"><sc-for list="{{ row.actions }}" as="action" hint-placeholder-count="2"><sc-if value="{{ action.copy }}" hint-placeholder-val="{{ true }}"><button type="button" onClick="{{ action.run }}" style="border:1px solid var(--border); border-radius:8px; padding:6px 9px; background:var(--surface); color:var(--teal-ink); cursor:pointer;">{{ action.label }}</button></sc-if><sc-if value="{{ action.source }}" hint-placeholder-val="{{ true }}"><a href="{{ action.url }}" target="_blank" rel="noopener noreferrer" style="border:1px solid var(--border); border-radius:8px; padding:6px 9px; color:var(--teal-ink); text-decoration:none;">{{ action.label }}</a></sc-if></sc-for></span>
+                          </div>
                         </sc-if>
                       </sc-for>
                     </div>
@@ -243,10 +282,10 @@
                           </button>
                         </sc-if>
                         <sc-if value="{{ row.isFile }}" hint-placeholder-val="{{ true }}">
-                          <button type="button" data-contract-file-key="{{ row.key }}" onClick="{{ row.open }}" style="{{ row.rowStyle }}">
+                          <div data-contract-file-key="{{ row.key }}" style="{{ row.rowStyle }}">
                             <span style="{{ row.iconStyle }}">{{ row.iconLabel }}</span>
-                            <span style="min-width:0; flex:1 1 260px;"><strong style="display:block; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; overflow-wrap:anywhere;">{{ row.label }}</strong><span style="display:block; margin-top:4px; color:var(--muted); font-size:13px;">{{ row.role }} · {{ row.media }}</span></span><span style="flex:0 0 auto; font-family:'IBM Plex Mono',ui-monospace,monospace; color:var(--muted); font-size:12px;">{{ row.size }}</span>
-                          </button>
+                            <span style="min-width:0; flex:1 1 260px;"><strong style="display:block; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; overflow-wrap:anywhere;">{{ row.label }}</strong><span style="display:block; margin-top:4px; color:var(--muted); font-size:13px;">{{ row.role }} · {{ row.media }}</span></span><span style="flex:0 0 auto; font-family:'IBM Plex Mono',ui-monospace,monospace; color:var(--muted); font-size:12px;">{{ row.size }}</span><span style="display:flex; gap:7px;"><sc-for list="{{ row.actions }}" as="action" hint-placeholder-count="2"><sc-if value="{{ action.copy }}" hint-placeholder-val="{{ true }}"><button type="button" onClick="{{ action.run }}" style="border:1px solid var(--border); border-radius:8px; padding:6px 9px; background:var(--surface); color:var(--teal-ink); cursor:pointer;">{{ action.label }}</button></sc-if><sc-if value="{{ action.source }}" hint-placeholder-val="{{ true }}"><a href="{{ action.url }}" target="_blank" rel="noopener noreferrer" style="border:1px solid var(--border); border-radius:8px; padding:6px 9px; color:var(--teal-ink); text-decoration:none;">{{ action.label }}</a></sc-if></sc-for></span>
+                          </div>
                         </sc-if>
                       </sc-for>
                     </div>
@@ -257,7 +296,7 @@
                   <section style="margin-bottom:22px; border-top:1px solid var(--hairline); padding-top:18px;">
                     <div style="font-size:var(--font-subheading); line-height:var(--line-subheading); font-weight:600; margin-bottom:12px;">{{ cdVersionHistoryTitle }}</div>
                     <div style="display:flex; flex-direction:column; margin-left:20px;">
-                      <sc-for list="{{ cdVersionHistory }}" as="e" hint-placeholder-count="2"><div style="{{ e.railStyle }}"><dc-import name="ActorEventLine" row="{{ e }}" size="regular" layout="rail" hint-size="100%,46px"></dc-import></div></sc-for>
+                      <sc-for list="{{ cdVersionHistory }}" as="e" hint-placeholder-count="2"><div style="{{ e.railStyle }}"><div style="display:flex; align-items:center; gap:8px;"><div style="min-width:0; flex:1 1 auto;"><dc-import name="ActorEventLine" row="{{ e }}" size="regular" layout="rail" hint-size="100%,46px"></dc-import></div><dc-import name="StatusPill" result="{{ e.stateResult }}" size="small" hint-size="140px,24px"></dc-import></div></div></sc-for>
                     </div>
                   </section>
                 </sc-if>
@@ -273,6 +312,7 @@
             </sc-if>
           </div>
         </div>
+        </sc-if>
         </sc-if>
         </sc-if>
       </section>
@@ -346,132 +386,95 @@ const DASHBOARD_RU = {
 
 const DASHBOARD_I18N = { en: DASHBOARD_EN, ru: DASHBOARD_RU };
 
-const STATE_TONE = {
-  published:"healthy", verified:"healthy", satisfied:"healthy", approved:"healthy", closed:"healthy",
-  blocked:"blockingStrong", blocking:"blockingStrong", missing:"blockingStrong", unreadable:"blockingStrong", rejected:"blockingStrong", declined:"blockingStrong", disputed:"blockingStrong",
-  deprecated:"attention", expired:"attention", overdue:"attention",
-  cancelled:"neutral", canceled:"neutral",
-  retired:"neutral", withdrawn:"neutral", superseded:"neutral", submitted:"neutral", in_progress:"neutral", responded:"neutral", accepted:"neutral", acknowledged:"neutral", proposed:"attention"
-};
-
-function listNames(names, ru) {
-  const xs = (names || []).filter(Boolean);
-  if (!xs.length) return "";
-  if (xs.length === 1) return xs[0];
-  return xs.slice(0, -1).join(", ") + (ru ? " и " : " and ") + xs[xs.length - 1];
+function resolveVocabulary(data, family, value, ru) {
+  return globalThis.A2A_VOCABULARY_RESOLVER.lookup(data, family, value || "__missing__", ru ? "ru" : "en");
 }
 
-function ruPlural(n, one, few, many) {
-  const mod10 = n % 10, mod100 = n % 100;
-  const word = (mod10 === 1 && mod100 !== 11) ? one : ((mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) ? few : many);
-  return n + " " + word;
-}
-
-function STATE_WORDS(ru) {
-  return ru
-    ? { published:"опубликована", deprecated:"выводится", retired:"снята", draft:"черновик" }
-    : { published:"published", deprecated:"deprecated", retired:"retired", draft:"draft" };
-}
-
-function DRIFT_WORDS(ru) {
-  return ru
-    ? { current:"на последней", behind:"отстал на мажорную", deprecated:"выводится", retired:"версия снята", missing:"версии нет у поставщика", dangling:"поставщик ушёл" }
-    : { current:"on the latest", behind:"one major behind", deprecated:"being retired", retired:"version retired", missing:"provider has no such major", dangling:"provider left" };
-}
-
-const DRIFT_TONE = { current: "healthy", behind: "attention", deprecated: "attention", retired: "neutral", missing: "blockingStrong", dangling: "outline" };
-
-function mono(s) { return String(s || "?").slice(0, 2).toUpperCase(); }
-
-function buildDocTree(files) {
-  const root = { dirs: new Map(), files: [], segPath: "" };
-  files.forEach(f => {
-    const parts = String(f.path || "").split("/").filter(Boolean);
-    const base = parts.pop() || f.path || f.key;
-    let node = root;
-    const segs = [];
-    parts.forEach(seg => {
-      segs.push(seg);
-      if (!node.dirs.has(seg)) node.dirs.set(seg, { dirs: new Map(), files: [], segPath: segs.join("/") });
-      node = node.dirs.get(seg);
-    });
-    node.files.push(Object.assign({}, f, { base }));
-  });
-  return root;
-}
-
-function flattenDocTree(node, depth, keyOf, isOpen, out) {
-  const dirEntries = Array.from(node.dirs.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  dirEntries.forEach(([name, child]) => {
-    let label = name;
-    let cur = child;
-    while (cur.dirs.size === 1 && cur.files.length === 0) {
-      const [[childName, grandchild]] = Array.from(cur.dirs.entries());
-      label = label + "/" + childName;
-      cur = grandchild;
-    }
-    const dirKey = keyOf(cur.segPath);
-    const open = isOpen(dirKey);
-    out.push({ isDir: true, isFile: false, depth, key: dirKey, label, expanded: open });
-    if (open) flattenDocTree(cur, depth + 1, keyOf, isOpen, out);
-  });
-  node.files.slice().sort((a, b) => a.base.localeCompare(b.base)).forEach(f => {
-    out.push(Object.assign({ isDir: false, isFile: true, depth }, f));
-  });
-  return out;
-}
-
-function fileTypeIcon(name) {
-  const m = String(name || "").toLowerCase().match(/\.([a-z0-9]+)$/);
-  const ext = m ? m[1] : "";
-  const ICONS = {
-    json: { label: "{ }", bg: "var(--attention-tint)", fg: "var(--attention-ink)" },
-    yaml: { label: "YML", bg: "var(--teal-tint)", fg: "var(--teal-ink)" },
-    yml: { label: "YML", bg: "var(--teal-tint)", fg: "var(--teal-ink)" },
-    md: { label: "MD", bg: "var(--sink)", fg: "var(--body)" },
-    js: { label: "JS", bg: "var(--border-strong)", fg: "var(--text)" },
-    ts: { label: "TS", bg: "var(--border-strong)", fg: "var(--text)" },
-    html: { label: "<>", bg: "var(--plum)", fg: "var(--on-solid)" },
-    csv: { label: "CSV", bg: "var(--green)", fg: "var(--on-solid)" },
-    txt: { label: "TXT", bg: "var(--hairline)", fg: "var(--muted)" }
-  };
-  return ICONS[ext] || { label: ext ? ext.slice(0, 3).toUpperCase() : "•", bg: "var(--hairline)", fg: "var(--muted)" };
+function knowsVocabulary(data, family, value) {
+  const resolver = globalThis.A2A_VOCABULARY_RESOLVER;
+  return !!(resolver && resolver.knows && resolver.knows(data, family, value));
 }
 
 function isoDay(value) {
   const raw = String(value == null ? "" : value);
-  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  return m ? m[3] + "." + m[2] + "." + m[1] : raw;
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? match[3] + "." + match[2] + "." + match[1] : raw;
 }
 
-const FILTER_H = 38;
+function isoDate(value) {
+  const raw = String(value == null ? "" : value);
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : raw;
+}
+
+function mono(value) { return String(value || "?").slice(0, 2).toUpperCase(); }
+
+function notRecorded(ru) { return ru ? "Не записано." : "Not recorded."; }
+function noneRecorded(ru) { return ru ? "Ничего не записано." : "None recorded."; }
+function unknownInSnapshot(ru) { return ru ? "В этом снимке неизвестно." : "Unknown in this snapshot."; }
+
+function sentence(value, fallback) {
+  const raw = String(value == null ? "" : value).trim();
+  if (!raw) return fallback;
+  return /[.!?…]$/.test(raw) ? raw : raw + ".";
+}
+
+function phrase(value) {
+  return String(value == null ? "" : value).trim().replace(/[.!?…]+$/, "");
+}
+
+function unavailableInSnapshot(reason, ru) {
+  const value = String(reason || "").trim();
+  if (!value) return unknownInSnapshot(ru);
+  const sentence = /[.!?…]$/.test(value) ? value : value + ".";
+  return (ru ? "Недоступно в этом снимке: " : "Unavailable in this snapshot: ") + sentence;
+}
+
+function collectionBounds(window, ru) {
+  if (!window || !(window.truncated === true && window.shown < window.total)) return "";
+  return ru ? "Показано " + window.shown + " из " + window.total + "." : "Showing " + window.shown + " of " + window.total + ".";
+}
+
+function documentBounds(document, ru) {
+  if (!document || !document.truncated) return "";
+  return ru
+    ? "Показаны первые " + document.shownBytes + " байт из " + document.totalBytes + " байт."
+    : "Showing the first " + document.shownBytes + " bytes of " + document.totalBytes + " bytes.";
+}
+
+function refParts(ref) {
+  const value = String(ref || "");
+  const split = value.lastIndexOf("@");
+  return split > 0 ? { id:value.slice(0, split), version:value.slice(split + 1) } : { id:value, version:"" };
+}
 
 class Component extends DCLogic {
   syncContext() {
     const ctx = this.props && this.props.ctx || {};
-    this.state = Object.assign({ data: ctx.data || null, locale: ctx.locale === "ru" ? "ru" : "en" }, ctx.ui || {});
+    this.state = Object.assign({ data:ctx.data || null, locale:ctx.locale === "ru" ? "ru" : "en" }, ctx.ui || {});
     return ctx;
   }
 
   setState(update) {
     const ctx = this.props && this.props.ctx || {};
-    const current = Object.assign({}, this.state || {}, { data: ctx.data || null, locale: ctx.locale === "ru" ? "ru" : "en" }, ctx.ui || {});
+    const current = Object.assign({}, this.state || {}, { data:ctx.data || null, locale:ctx.locale === "ru" ? "ru" : "en" }, ctx.ui || {});
     const patch = typeof update === "function" ? update(current) : update;
     this.state = Object.assign({}, current, patch || {});
     if (ctx.actions && ctx.actions.patch) ctx.actions.patch(patch || {});
   }
 
-  go(view, extra) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.navigate) actions.navigate(view, extra); }
-  closeContractFile() { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.closeContractFile) actions.closeContractFile(); }
-  applyTheme(theme) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setTheme) actions.setTheme(theme); }
-  applyLocale(locale) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setLocale) actions.setLocale(locale); }
-  copy(text) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.copy) actions.copy(text); }
+  go(view, extra) {
+    const actions = this.props && this.props.ctx && this.props.ctx.actions || {};
+    if (actions.navigate) actions.navigate(view, extra);
+  }
 
-  inScope(space) { return this.state.space === "all" || space === this.state.space; }
+  copy(text) {
+    const actions = this.props && this.props.ctx && this.props.ctx.actions || {};
+    if (actions.copy) actions.copy(text);
+  }
 
-  filterChip(active) {
-    return "display:inline-flex; align-items:center; min-height:" + FILTER_H + "px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; cursor:pointer; padding:0 12px; border-radius:8px; white-space:nowrap; " +
-      (active ? "background:var(--primary); color:var(--on-primary);" : "background:var(--surface); color:var(--body);");
+  inScope(space) {
+    return !this.state.space || this.state.space === "all" || space === this.state.space;
   }
 
   cardButton(selected) {
@@ -483,108 +486,496 @@ class Component extends DCLogic {
 
   renderVals() {
     const ctx = this.syncContext();
-    let d = ctx.data;
-    const s = this.state;
+    const data = ctx.data || { spaces:[], contracts:[], contractEdges:[], aggregates:{}, operational:{ sources:[] } };
     const ui = ctx.ui || {};
+    const actions = ctx.actions || {};
     const ru = ctx.locale === "ru";
     const c = DASHBOARD_I18N[ru ? "ru" : "en"];
-    if (!d && "ContractsView" !== "GuideView") {
-      if ("ContractsView" !== "DashboardShell") return {};
-      d = { spaces:[], nodes:[], inbox:[], outbox:[], archive:[], contracts:[], contractEdges:[], flags:[], meta:{}, tooling:{}, generatedAt:"", self:"" };
-    }
-    const contractsAll = d.contracts.filter(c => this.inScope(c.space));
-    const conRoleOf = (c) => c.provider === d.self ? "provider" : ((c.consumers || []).indexOf(d.self) > -1 ? "consumer" : "other");
-    const conRisky = (c) => d.contractEdges.some(e => e.contract === c.id && e.drift !== "current");
-    const conRole = ["all", "provider", "consumer"].indexOf(s.conRole) > -1 ? s.conRole : "all";
-    const byRole = conRole === "all" ? contractsAll : contractsAll.filter(c => conRoleOf(c) === conRole);
-    const conRiskCount = byRole.filter(conRisky).length;
-    const contracts = s.conRisk ? byRole.filter(conRisky) : byRole;
-    const conSel = s.conSel && contracts.some(c => c.id === s.conSel) ? s.conSel : (contracts[0] && contracts[0].id) || "";
-    const con = contracts.find(c => c.id === conSel) || contracts[0];
-    const conEdges = con ? d.contractEdges.filter(e => e.contract === con.id) : [];
-    const risky = conEdges.filter(e => e.drift !== "current");
-    const conVersions = con ? (con.versions || []) : [];
-    const conVersion = s.conVersion && conVersions.some(v => v.version === s.conVersion) ? s.conVersion : "";
-    const selectedConVersion = conVersion ? conVersions.find(v => v.version === conVersion) : null;
-    const selectedConDetail = selectedConVersion && selectedConVersion.detail ? selectedConVersion.detail : null;
-    const selectedConDocuments = selectedConDetail ? (selectedConDetail.documents || []) : [];
-    const selectedConDocumentTotal = selectedConDetail && Number.isInteger(selectedConDetail.totalDocumentCount) && selectedConDetail.totalDocumentCount >= selectedConDocuments.length
-      ? selectedConDetail.totalDocumentCount
-      : selectedConDocuments.length;
-    const selectedConDocumentOmitted = selectedConDetail && Number.isInteger(selectedConDetail.omittedDocumentCount) && selectedConDetail.omittedDocumentCount >= 0
-      ? Math.max(selectedConDetail.omittedDocumentCount, selectedConDocumentTotal - selectedConDocuments.length)
-      : selectedConDocumentTotal - selectedConDocuments.length;
-    const contractVersionStatus = (v) => {
-      const current = !!(con && v.version === con.version && v.state === "published");
-      const semantic = current
-        ? (ru ? "текущая версия" : "current version")
-        : v.state === "published"
-          ? (ru ? "поддерживается" : "supported")
-          : v.state === "deprecated"
-            ? (ru ? "выводится" : "sunsetting")
-            : v.state === "retired"
-              ? (ru ? "снята" : "retired")
-              : (STATE_WORDS(ru)[v.state] || v.state);
-      const color = current ? "var(--healthy-ink)" : v.state === "published" ? "var(--teal-ink)" : v.state === "deprecated" ? "var(--ochre)" : "var(--muted)";
-      return { semantic, dot:"width:9px; height:9px; flex:0 0 9px; display:inline-block; border-radius:99px; background:" + color + "; box-shadow:0 0 0 3px color-mix(in srgb, " + color + " 14%, transparent);" };
-    };
-    const contractVersionOptions = [{
-      label:ru ? "Обзор контракта" : "Contract overview",
-      shortLabel:ru ? "Обзор" : "Overview",
-      selected:!conVersion,
-      statusDotStyle:"width:9px; height:9px; flex:0 0 9px; display:inline-block; border-radius:99px; background:var(--teal-ink); box-shadow:0 0 0 3px var(--teal-tint);",
-      go:() => this.setState({ conVersion:"", conFacts:false, contractFile:null })
-    }].concat(conVersions.slice().reverse().map(v => {
-      const status = contractVersionStatus(v);
+    const contractsAll = (data.contracts || []).filter(contract => this.inScope(contract.space));
+    const allEdges = data.contractEdges || [];
+    const card = ui.card || null;
+    const resolve = (family, value) => resolveVocabulary(data, family, value, ru);
+    const knows = (family, value) => knowsVocabulary(data, family, value);
+    const glossary = globalThis.A2A_GLOSSARY;
+    const contractTypeEntry = glossary && glossary.entry ? glossary.entry("types", "contract", ru ? "ru" : "en") : null;
+    const contractTypeLabel = contractTypeEntry && contractTypeEntry.label || (ru ? "Контракт" : "Contract");
+    const accent = (family, identity) => actions.cardAccent ? actions.cardAccent(family, identity) : "";
+    const highlighted = (family, identity) => !!card && !!card.accent && accent(family, identity) === card.accent;
+    const sourceSnapshot = (space) => {
+      const source = (((data.operational || {}).sources) || []).find(candidate => candidate.kind === "space" && candidate.space === space);
+      const unavailable = (((data.operational || {}).unavailable) || []).find(candidate => candidate.source_kind === "space" && candidate.space === space);
+      const freshness = source && source.freshness || (unavailable ? "unavailable" : "");
+      const known = !!freshness && knows("source-freshness", freshness);
+      const unavailableActive = known && freshness === "unavailable";
       return {
-        label:v.version + " · " + status.semantic,
-        shortLabel:v.version,
-        selected:v.version === conVersion,
-        statusDotStyle:status.dot,
-        go:() => this.setState({ conVersion:v.version, conFacts:false, contractFile:null })
+        result:resolve("source-freshness", freshness),
+        unavailable:unavailableActive ? unavailableInSnapshot(unavailable && unavailable.summary, ru) : (known ? "" : unknownInSnapshot(ru)),
+        evidence:unavailableActive ? unavailable : null
       };
-    }));
-    const contractRefParts = (ref) => {
-      const value = String(ref || "");
-      const split = value.lastIndexOf("@");
-      return split > 0 ? { id:value.slice(0, split), version:value.slice(split + 1) } : { id:value, version:"" };
     };
-    const openContractRef = (ref, space) => {
-      const target = contractRefParts(ref);
-      return () => this.go("contracts", { conSel:target.id, conVersion:target.version, conFacts:false, contractFile:null, conRole:"all", conRisk:false, space:space || (con && con.space) || s.space });
+    const spaceRecord = (space) => (data.spaces || []).find(candidate => candidate.id === space) || null;
+    const openExact = (contract, version, targetAccent) => {
+      if (!contract || !version || !actions.cardID || !actions.openCard) return;
+      const id = actions.cardID("cver", { space:contract.space, id:contract.id, version:version.version });
+      if (id) actions.openCard("cver", id, targetAccent || "");
     };
-    const docTreeOpenState = s.docTreeOpen || {};
-    const docTreeKeyPrefix = con && selectedConVersion ? con.id + "@" + selectedConVersion.version : "";
-    const toggleDocTreeDir = (key) => this.setState(x => ({ docTreeOpen: Object.assign({}, x.docTreeOpen, { [key]: !((x.docTreeOpen || {})[key]) }) }));
-    const mapDocRow = (f) => {
-      const key = con.id + "@" + selectedConVersion.version + "|" + f.path;
-      return { key, path:f.path, role:f.role, media:f.mediaType || (ru ? "тип не записан" : "media type not recorded"), size:f.sizeBytes ? f.sizeBytes + (ru ? " Б" : " B") : "", digest:f.digest || "", open:() => this.setState({ contractFile:Object.assign({}, f, { key, contractID:con.id, version:selectedConVersion.version }) }) };
+    const openContract = (contract, targetAccent) => {
+      if (!contract || !actions.cardID || !actions.openCard) return;
+      const id = actions.cardID("contract", contract);
+      if (id) actions.openCard("contract", id, targetAccent || "");
     };
-    const docTreeRows = (docs, section) => {
-      const tree = buildDocTree(docs.map(mapDocRow));
-      const keyOf = (segPath) => docTreeKeyPrefix + "|" + section + "|" + segPath;
-      const isOpen = (key) => !!docTreeOpenState[key];
-      return flattenDocTree(tree, 0, keyOf, isOpen, []).map(row => {
-        if (row.isDir) {
-          return {
-            isDir: true, isFile: false, depth: row.depth, key: row.key, label: row.label,
-            expandedAttr: row.expanded ? "true" : "false",
-            dirAriaLabel: (row.expanded ? (ru ? "Свернуть папку " : "Collapse folder ") : (ru ? "Развернуть папку " : "Expand folder ")) + row.label,
-            toggle: () => toggleDocTreeDir(row.key),
-            rowStyle: "width:100%; display:flex; align-items:center; gap:8px; border:0; border-radius:var(--radius-nested); padding:8px 10px 8px " + (10 + row.depth * 18) + "px; text-align:left; cursor:pointer; background:transparent; color:var(--text); font-family:'Onest',sans-serif;"
-          };
+    const openRef = (space, ref, targetAccent) => {
+      const target = refParts(ref);
+      if (!target.id || !target.version || !actions.cardID || !actions.openCard) return;
+      const id = actions.cardID("cver", { space, id:target.id, version:target.version });
+      if (id) actions.openCard("cver", id, targetAccent || "");
+    };
+
+    let cardContract = null;
+    let cardVersionContract = null;
+    let cardVersion = null;
+    if (card && card.kind === "contract" && actions.cardID) {
+      cardContract = (data.contracts || []).find(contract => actions.cardID("contract", contract) === card.id) || null;
+    }
+    if (card && card.kind === "cver" && actions.cardID) {
+      for (const candidate of data.contracts || []) {
+        for (const version of candidate.versions || []) {
+          if (actions.cardID("cver", { space:candidate.space, id:candidate.id, version:version.version }) === card.id) {
+            cardVersionContract = candidate;
+            cardVersion = version;
+            break;
+          }
         }
-        const icon = fileTypeIcon(row.base);
+        if (cardVersion) break;
+      }
+    }
+
+    const selectedID = ui.conSel && contractsAll.some(contract => contract.id === ui.conSel) ? ui.conSel : ((contractsAll[0] || {}).id || "");
+    const selectedContract = contractsAll.find(contract => contract.id === selectedID) || contractsAll[0] || null;
+    const selectedVersions = selectedContract ? selectedContract.versions || [] : [];
+    const selectedVersion = ui.conVersion ? selectedVersions.find(version => version.version === ui.conVersion) || null : null;
+    const selectedDetail = selectedVersion && selectedVersion.detail || null;
+    const selectedDocuments = selectedDetail ? selectedDetail.documents || [] : [];
+    const selectedEdges = selectedContract ? allEdges.filter(edge => edge.space === selectedContract.space && edge.contract === selectedContract.id) : [];
+
+    const versionRows = (contract) => (contract.versions || []).map((version, index, rows) => {
+      const identity = [contract.space, contract.id, version.version];
+      const active = highlighted("version", identity);
+      const stateResult = resolve("lifecycle-state", version.state);
+      return {
+        version:version.version,
+        stateResult,
+        cardText:version.version + " " + stateResult.label,
+        separator:index === rows.length - 1 ? "." : "; ",
+        openLabel:(ru ? "Открыть версию контракта " : "Open contract version ") + contract.id + "@" + version.version,
+        highlighted:active,
+        style:"width:100%; display:flex; align-items:center; justify-content:space-between; gap:10px; border:0; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); text-align:left; cursor:pointer; color:var(--text); background:" + (active ? "var(--attention-tint)" : "var(--surface-section)") + "; box-shadow:inset 0 0 0 1px var(--border);",
+        contentStyle:"display:inline; border:0; border-radius:5px; padding:0; background:" + (active ? "var(--attention-tint)" : "transparent") + "; color:inherit; font:inherit; cursor:pointer;",
+        open:() => openExact(contract, version, "")
+      };
+    });
+
+    const dependencyRows = (contract) => allEdges
+      .filter(edge => edge.space === contract.space && edge.contract === contract.id)
+      .map((edge, index, rows) => {
+        const identity = [edge.space, edge.from, edge.to, edge.contract];
+        const active = highlighted("dependency-line", identity);
+        const driftResult = resolve("dependency-drift", edge.drift);
+        const pinned = edge.pinnedVersion || (edge.pinnedMajor ? edge.pinnedMajor + ".x" : phrase(notRecorded(ru)));
         return {
-          isDir: false, isFile: true, depth: row.depth, key: row.key, label: row.base,
-          role: row.role, media: row.media, size: row.size, open: row.open,
-          iconLabel: icon.label,
-          iconStyle: "flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; min-width:30px; height:22px; padding:0 4px; border-radius:6px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:10px; font-weight:700; background:" + icon.bg + "; color:" + icon.fg + ";",
-          rowStyle: "width:100%; display:flex; align-items:flex-start; gap:10px; border:0; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline) var(--padding-nested-block) " + (10 + row.depth * 18) + "px; text-align:left; cursor:pointer; background:" + (section === "normative" ? "var(--surface-section)" : "var(--page)") + "; color:var(--text); box-shadow:inset 0 0 0 1px " + (section === "normative" ? "var(--border)" : "var(--hairline)") + ";"
+          edge,
+          consumer:edge.from,
+          detail:(ru ? "закреплено " : "pinned ") + (edge.pinnedVersion || (edge.pinnedMajor ? edge.pinnedMajor + ".x" : notRecorded(ru))) + (edge.providerVersion ? (ru ? " · поставщик " : " · provider ") + edge.providerVersion : ""),
+          cardText:edge.from + " " + pinned + " — " + driftResult.label,
+          separator:index === rows.length - 1 ? "." : "; ",
+          driftResult,
+          pinnedStateResult:resolve("lifecycle-state", edge.pinnedState),
+          providerStateResult:resolve("lifecycle-state", edge.state),
+          successor:edge.successor || "",
+          hasSuccessor:!!edge.successor,
+          noSuccessor:!edge.successor,
+          successorOpenLabel:(ru ? "Открыть версию-преемник " : "Open successor version ") + (edge.successor || ""),
+          openSuccessor:edge.successor ? () => openRef(contract.space, edge.successor, "") : () => {},
+          highlighted:active,
+          contentStyle:"display:inline; border:0; border-radius:5px; padding:0; background:" + (active ? "var(--attention-tint)" : "transparent") + "; color:inherit; font:inherit; cursor:" + (edge.successor ? "pointer" : "default") + ";",
+          style:"border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:" + (active ? "var(--attention-tint)" : "var(--surface-section)") + "; box-shadow:inset 0 0 0 1px var(--hairline);"
         };
       });
+
+    const buildContractCard = (contract) => {
+      if (!contract) return null;
+      const stateResult = resolve("lifecycle-state", contract.state);
+      const stateKnown = knows("lifecycle-state", contract.state);
+      const dependencies = dependencyRows(contract);
+      const consumers = (contract.consumers || []).map((name, index, rows) => {
+        const identity = [contract.space, contract.id, name];
+        const active = highlighted("consumer", identity);
+        return { name, separator:index === rows.length - 1 ? "." : ", ", highlighted:active, contentStyle:"border-radius:5px; background:" + (active ? "var(--attention-tint)" : "transparent") + ";", style:"display:inline-flex; border-radius:var(--radius-badge); padding:6px 9px; background:" + (active ? "var(--attention-tint)" : "var(--surface-section)") + "; box-shadow:inset 0 0 0 1px var(--border);" };
+      });
+      const versions = versionRows(contract);
+      const snapshot = sourceSnapshot(contract.space);
+      return {
+        title:contract.id + (ru ? " от " : " by ") + contract.provider,
+        identity:contractTypeLabel + " — " + contract.id + (ru ? " от " : " by ") + contract.provider,
+        lead:contract.provider && contract.version && stateKnown
+          ? (ru ? contract.provider + " публикует версию " + contract.version + "; состояние контракта — " + stateResult.label + "." : contract.provider + " publishes version " + contract.version + "; its contract state is " + stateResult.label + ".")
+          : unknownInSnapshot(ru),
+        stateResult,
+        description:contract.description || notRecorded(ru),
+        descriptionText:(ru ? "Описание: " : "Description: ") + sentence(contract.description, notRecorded(ru)),
+        consumersPrefix:ru ? "Потребители: " : "Consumers: ",
+        consumersText:(ru ? "Потребители: " : "Consumers: ") + (consumers.length ? consumers.map(row => row.name).join(", ") + "." : noneRecorded(ru)),
+        consumersTitle:ru ? "Потребители" : "Consumers",
+        consumers,
+        consumersEmpty:consumers.length === 0 ? noneRecorded(ru) : "",
+        dependenciesTitle:ru ? "Зависимости" : "Dependencies",
+        dependencies,
+        dependenciesEmpty:dependencies.length === 0 ? noneRecorded(ru) : "",
+        dependenciesPrefix:ru ? "Зависимости: " : "Dependencies: ",
+        dependenciesText:(ru ? "Зависимости: " : "Dependencies: ") + (dependencies.length ? dependencies.map(row => row.cardText).join("; ") + "." : noneRecorded(ru)),
+        metadataTitle:ru ? "Интерфейс" : "Interface",
+        metadata:[
+          { label:ru ? "код" : "code backed", value:contract.codeBacked ? (ru ? "да" : "yes") : (ru ? "нет" : "no") },
+          { label:ru ? "категория" : "category", value:contract.category || notRecorded(ru) },
+          { label:ru ? "формат схемы" : "schema format", value:contract.schemaFormat || notRecorded(ru), mono:true },
+          { label:ru ? "совместимость" : "compatibility", value:contract.compatPolicy || notRecorded(ru) },
+          { label:ru ? "генератор" : "generator", value:contract.generatedTool || notRecorded(ru), mono:true }
+        ],
+        interfaceText:(ru ? "Интерфейс: " : "Interface: ") + (contract.codeBacked || contract.category || contract.schemaFormat || contract.compatPolicy
+          ? (ru ? (contract.codeBacked ? "подкреплён кодом" : "не подкреплён кодом") : (contract.codeBacked ? "code-backed" : "not code-backed")) +
+            "; " + (ru ? "категория " : "category ") + (contract.category || phrase(notRecorded(ru))) +
+            "; " + (ru ? "схема " : "schema ") + (contract.schemaFormat || phrase(notRecorded(ru))) +
+            "; " + (ru ? "совместимость " : "compatibility ") + (contract.compatPolicy || phrase(notRecorded(ru))) + "."
+          : notRecorded(ru)),
+        versionsTitle:ru ? "Точные версии" : "Exact versions",
+        versionsPrefix:ru ? "Версии: " : "Versions: ",
+        versions,
+        versionsEmpty:versions.length === 0 ? noneRecorded(ru) : "",
+        adoptionTitle:ru ? "Подключение" : "Adoption",
+        adoption:contract.nonAdoptable ? (ru ? "Запрещено дескриптором." : "Disallowed by the descriptor.") : (ru ? "Разрешено." : "Allowed."),
+        adoptionText:(ru ? "Подключение: " : "Adoption: ") + (snapshot.unavailable
+          ? unknownInSnapshot(ru)
+          : (contract.nonAdoptable ? (ru ? "запрещено дескриптором." : "disallowed by the descriptor.") : (ru ? "разрешено." : "allowed."))),
+        snapshotTitle:ru ? "Снимок" : "Snapshot",
+        snapshotResult:snapshot.result,
+        snapshotUnavailable:snapshot.unavailable,
+        snapshotText:(ru ? "Снимок: " : "Snapshot: ") + sentence(snapshot.result && snapshot.result.label, unknownInSnapshot(ru)),
+        statusSupportLabel:ru ? "Пояснения состояний контракта и снимка" : "Contract and snapshot status explanations",
+        technicalTitle:ru ? "Технические подробности: свёрнуты." : "Technical detail: collapsed.",
+        technical:[
+          { label:ru ? "спейс" : "space", value:contract.space, mono:true },
+          { label:ru ? "digest источника" : "source digest", value:contract.sourceDigest || notRecorded(ru), mono:true }
+        ].concat(snapshot.evidence ? [
+          { label:ru ? "код недоступности снимка" : "snapshot unavailable code", value:snapshot.evidence.code || notRecorded(ru), mono:true },
+          { label:ru ? "причина недоступности снимка" : "snapshot unavailable reason", value:snapshot.evidence.reason || snapshot.evidence.summary || notRecorded(ru) }
+        ] : [])
+      };
     };
+
+    const buildVersionCard = (contract, version) => {
+      if (!contract || !version) return null;
+      const detail = version.detail || null;
+      const available = !!detail && detail.status === "available";
+      const stateResult = resolve("lifecycle-state", version.state);
+      const stateKnown = knows("lifecycle-state", version.state);
+      const space = spaceRecord(contract.space);
+      const revision = space && space.revision || "";
+      const snapshot = sourceSnapshot(contract.space);
+      const pins = detail ? (detail.consumerPins || []).map((pin, index, rows) => {
+        const identity = [contract.space, contract.id, version.version, pin.system];
+        const dependencyHighlighted = allEdges.some(edge => {
+          const dependencyIdentity = [edge.space, edge.from, edge.to, edge.contract];
+          return edge.space === contract.space &&
+            edge.contract === contract.id &&
+            edge.from === pin.system &&
+            edge.pinnedVersion === version.version &&
+            highlighted("dependency-line", dependencyIdentity);
+        });
+        const pinHighlighted = highlighted("consumer-pin", identity) || dependencyHighlighted;
+        const driftResult = resolve("dependency-drift", pin.drift);
+        const pinned = pin.pinnedVersion || (pin.pinnedMajor ? pin.pinnedMajor + ".x" : phrase(notRecorded(ru)));
+        return {
+          system:pin.system,
+          detail:[pin.space || "", pin.pinnedVersion ? (ru ? "закреплено " : "pinned ") + pin.pinnedVersion : (pin.pinnedMajor ? (ru ? "мажорная линия " : "major line ") + pin.pinnedMajor : "")].filter(Boolean).join(" · "),
+          cardText:pin.system + " " + pinned + " — " + driftResult.label,
+          separator:index === rows.length - 1 ? "." : "; ",
+          driftResult,
+          pinnedStateResult:resolve("lifecycle-state", pin.pinnedState),
+          highlighted:pinHighlighted,
+          contentStyle:"border-radius:5px; background:" + (pinHighlighted ? "var(--attention-tint)" : "transparent") + ";",
+          style:"display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:" + (pinHighlighted ? "var(--attention-tint)" : "var(--surface-section)") + "; box-shadow:inset 0 0 0 1px var(--hairline);"
+        };
+      }) : [];
+      const documents = detail ? (detail.documents || []).map((document, index, rows) => {
+        const identity = [contract.space, contract.id, version.version, document.path];
+        const documentHighlighted = highlighted("document", identity);
+        const command = "a2a contract materialize " + contract.id + "@" + version.version + " --to <project-relative-dir>";
+        const sourceURL = actions.sourceURL ? actions.sourceURL(contract.space, document.path, revision) : "";
+        const fileActions = [{ kind:"copy", copy:true, source:false, label:ru ? "Копировать команду" : "Copy command", run:() => this.copy(command), url:"" }];
+        if (sourceURL) fileActions.push({ kind:"source", copy:false, source:true, label:ru ? "Открыть на GitHub" : "Open on GitHub", run:() => {}, url:sourceURL });
+        return {
+          source:document,
+          path:document.path,
+          role:document.role,
+          mediaType:document.mediaType || notRecorded(ru),
+          sizeText:Number.isFinite(document.sizeBytes) ? document.sizeBytes + (ru ? " байт" : " bytes") : notRecorded(ru),
+          previewFact:(ru ? "Предпросмотр документа: " : "Document preview: ") + document.path + "; " + (document.previewLanguage || phrase(notRecorded(ru))) + "; " + (Number.isFinite(document.sizeBytes) ? document.sizeBytes + (ru ? " байт." : " bytes.") : notRecorded(ru)),
+          preview:document.preview || "",
+          hasPreview:!!document.preview,
+          byteNotice:documentBounds(document, ru),
+          hasByteNotice:!!documentBounds(document, ru),
+          cfileKind:"cfile",
+          cfileID:actions.cardID ? actions.cardID("cfile", { space:contract.space, id:contract.id, version:version.version, path:document.path }) : "",
+          accent:accent("document", identity),
+          highlighted:documentHighlighted,
+          separator:index === rows.length - 1 ? "." : ", ",
+          contentStyle:"border-radius:5px; background:" + (documentHighlighted ? "var(--attention-tint)" : "transparent") + ";",
+          supportAria:(ru ? "Действия и предпросмотр документа " : "Actions and preview for document ") + document.path,
+          actions:fileActions,
+          style:"border-radius:var(--radius-card); padding:var(--padding-card-block) var(--padding-card-inline); background:" + (documentHighlighted ? "var(--attention-tint)" : "var(--surface-section)") + "; box-shadow:inset 0 0 0 1px var(--border);"
+        };
+      }) : [];
+      const history = detail ? (detail.history || []).map((event, index, rows) => {
+        const identity = [contract.space, contract.id, version.version, event.eventID];
+        const transitionResult = resolve("transition", event.transition);
+        const stateResult = resolve("lifecycle-state", event.state);
+        const historyHighlighted = highlighted("history-event", identity);
+        const actorCard = event.actor || (ru ? "автор не записан" : "actor not recorded");
+        const timeCard = event.at ? isoDate(event.at) : (ru ? "время не записано" : "time not recorded");
+        return {
+          eventID:event.eventID,
+          transitionResult,
+          transition:transitionResult.label,
+          stateResult,
+          actor:event.actor || notRecorded(ru),
+          at:event.at ? isoDay(event.at) : notRecorded(ru),
+          cardText:transitionResult.label + " — " + stateResult.label + " — " + actorCard + " — " + timeCard,
+          separator:index === rows.length - 1 ? "." : "; ",
+          highlighted:historyHighlighted,
+          contentStyle:"border-radius:5px; background:" + (historyHighlighted ? "var(--attention-tint)" : "transparent") + ";",
+          style:"display:grid; grid-template-columns:minmax(90px,auto) minmax(130px,auto) minmax(90px,1fr) auto; gap:8px; align-items:center; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:" + (historyHighlighted ? "var(--attention-tint)" : "var(--surface-section)") + ";"
+        };
+      }) : [];
+      const successorIdentity = [contract.space, contract.id, version.version, version.successor || ""];
+      const shown = documents.length;
+      const total = detail ? detail.totalDocumentCount : 0;
+      const documentsWindowText = detail && detail.omittedDocumentCount > 0
+        ? collectionBounds({ shown, total, truncated:true }, ru)
+        : "";
+      const unavailableText = unavailableInSnapshot(detail && detail.unavailableReason, ru);
+      const knownLead = ru ? "Версия " + version.version + ": " + stateResult.label + "." : "Version " + version.version + " is " + stateResult.label + ".";
+      const publicationDate = detail && detail.publishedAt ? isoDate(detail.publishedAt) : "";
+      const publicationActor = detail && detail.publishedBy || "";
+      const description = detail && detail.description || "";
+      const changeSummary = detail && detail.changeSummary || "";
+      const metadataKnown = !!(detail && (detail.schemaFormat || detail.compatPolicy));
+      const successorText = (version.sunset ? isoDate(version.sunset) : phrase(notRecorded(ru))) + "; " + (version.successor || phrase(notRecorded(ru))) + ".";
+      return {
+        detail,
+        title:contract.id + " " + version.version,
+        identity:contractTypeLabel + " — " + contract.id + " " + version.version,
+        lead:stateKnown ? knownLead + (available ? "" : " " + unavailableText) : unknownInSnapshot(ru),
+        stateResult,
+        available,
+        unavailable:!available,
+        unavailableTitle:ru ? "Исторический комплект недоступен" : "Historical package unavailable",
+        unavailableText,
+        publication:[
+          { label:ru ? "опубликовал" : "published by", value:detail && detail.publishedBy || notRecorded(ru) },
+          { label:ru ? "опубликовано" : "published at", value:detail && detail.publishedAt ? isoDay(detail.publishedAt) : notRecorded(ru) }
+        ],
+        publicationText:(ru ? "Публикация: " : "Publication: ") + (publicationDate && publicationActor
+          ? (ru ? publicationDate + ", " + publicationActor + "." : publicationDate + " by " + publicationActor + ".")
+          : notRecorded(ru)),
+        descriptionTitle:ru ? "Описание и изменение" : "Description and change",
+        description:description || notRecorded(ru),
+        changeSummary:changeSummary || notRecorded(ru),
+        descriptionChangeText:(ru ? "Описание и изменение: " : "Description and change: ") + (description || changeSummary
+          ? phrase(description || notRecorded(ru)) + "; " + sentence(changeSummary, notRecorded(ru))
+          : notRecorded(ru)),
+        consumersTitle:ru ? "Потребители" : "Consumers",
+        consumersPrefix:ru ? "Потребители: " : "Consumers: ",
+        consumerPins:pins,
+        noConsumers:pins.length === 0,
+        consumersEmptyText:available ? noneRecorded(ru) : unknownInSnapshot(ru),
+        documentsTitle:ru ? "Документы" : "Documents",
+        documentsPrefix:ru ? "Документы: " : "Documents: ",
+        documents,
+        noDocuments:documents.length === 0,
+        documentsEmptyText:available ? noneRecorded(ru) : unknownInSnapshot(ru),
+        previewFacts:documents.map(document => ({ text:document.previewFact, style:document.contentStyle })),
+        byteNotices:documents.map(document => document.byteNotice).filter(Boolean),
+        documentsWindowText,
+        hasDocumentsWindowText:!!documentsWindowText,
+        metadataTitle:ru ? "Метаданные" : "Metadata",
+        metadata:[
+          { label:ru ? "формат схемы" : "schema format", value:detail && detail.schemaFormat || notRecorded(ru), mono:true },
+          { label:ru ? "совместимость" : "compatibility", value:detail && detail.compatPolicy || notRecorded(ru) }
+        ],
+        metadataText:(ru ? "Метаданные: " : "Metadata: ") + (metadataKnown
+          ? (detail.schemaFormat || phrase(notRecorded(ru))) + "; " + (detail.compatPolicy || phrase(notRecorded(ru))) + "."
+          : notRecorded(ru)),
+        historyTitle:ru ? "История" : "History",
+        historyPrefix:ru ? "История: " : "History: ",
+        history,
+        noHistory:history.length === 0,
+        historyEmptyText:available ? noneRecorded(ru) : unknownInSnapshot(ru),
+        successorTitle:ru ? "Вывод и преемник" : "Sunset and successor",
+        successorPrefix:ru ? "Вывод и преемник: " : "Sunset and successor: ",
+        successor:version.successor || "",
+        successorText,
+        hasSuccessor:!!version.successor,
+        noSuccessor:!version.successor,
+        sunsetWithoutSuccessor:!!version.sunset && !version.successor,
+        noSunsetOrSuccessor:!version.sunset && !version.successor,
+        successorOpenLabel:(ru ? "Открыть версию-преемник " : "Open successor version ") + (version.successor || ""),
+        openSuccessor:version.successor ? () => openRef(contract.space, version.successor, accent("successor", successorIdentity)) : () => {},
+        successorStyle:"border:0; border-radius:var(--radius-nested); padding:10px 12px; cursor:pointer; color:var(--teal-ink); background:" + (highlighted("successor", successorIdentity) ? "var(--attention-tint)" : "var(--surface-section)") + ";",
+        successorContentStyle:"display:inline; border:0; border-radius:5px; padding:0; background:" + (highlighted("successor", successorIdentity) ? "var(--attention-tint)" : "transparent") + "; color:inherit; font:inherit; cursor:pointer;",
+        snapshotTitle:ru ? "Снимок" : "Snapshot",
+        snapshotResult:snapshot.result,
+        snapshotUnavailable:snapshot.unavailable,
+        snapshotText:(ru ? "Снимок: " : "Snapshot: ") + sentence(snapshot.result && snapshot.result.label, unknownInSnapshot(ru)),
+        statusSupportLabel:ru ? "Пояснения состояний версии и снимка" : "Version and snapshot status explanations",
+        documentSupportLabel:ru ? "Действия и содержимое предпросмотра документов" : "Document actions and preview payloads",
+        technicalTitle:ru ? "Технические подробности: свёрнуты." : "Technical detail: collapsed.",
+        technical:[
+          { label:ru ? "спейс" : "space", value:contract.space, mono:true },
+          { label:ru ? "причина недоступности" : "unavailable reason", value:detail && detail.unavailableReason || notRecorded(ru) },
+          { label:ru ? "профиль" : "profile", value:detail && detail.provenance && detail.provenance.profile || notRecorded(ru), mono:true },
+          { label:ru ? "коммит" : "commit", value:detail && detail.provenance && detail.provenance.commitSHA || notRecorded(ru), mono:true },
+          { label:ru ? "дерево" : "tree", value:detail && detail.provenance && detail.provenance.treeObjectID || notRecorded(ru), mono:true },
+          { label:ru ? "digest" : "digest", value:detail && detail.provenance && detail.provenance.publishedDigest || notRecorded(ru), mono:true }
+        ].concat(snapshot.evidence ? [
+          { label:ru ? "код недоступности снимка" : "snapshot unavailable code", value:snapshot.evidence.code || notRecorded(ru), mono:true },
+          { label:ru ? "причина недоступности снимка" : "snapshot unavailable reason", value:snapshot.evidence.reason || snapshot.evidence.summary || notRecorded(ru) }
+        ] : []),
+        provenance:detail && detail.provenance || {},
+        noneRecorded:noneRecorded(ru),
+        notRecorded:notRecorded(ru)
+      };
+    };
+
+    const aggregate = ui.dashboardSet === "linesOffCurrent" && data.aggregates ? data.aggregates.linesOffCurrent || null : null;
+    const aggregateLineRows = aggregate ? (aggregate.items || []).map(edge => ({
+      edge,
+      consumer:edge.from,
+      contract:edge.contract,
+      driftResult:resolve("dependency-drift", edge.drift),
+      successor:edge.successor || "",
+      hasSuccessor:!!edge.successor,
+      openSuccessor:edge.successor ? () => openRef(edge.space, edge.successor, "") : () => {},
+      style:"display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--surface);"
+    })) : [];
+    const aggregateDegradations = aggregate ? (aggregate.degradations || []).map(source => ({ source, space:source.space, system:source.system, path:source.path, code:source.code, reason:source.reason })) : [];
+    const aggregateWindowText = aggregate ? collectionBounds(aggregate.window, ru) : "";
+    const aggregateEmptyText = aggregate && aggregate.complete && aggregateLineRows.length === 0 ? noneRecorded(ru) : "";
+
+    const contractVersionOptions = selectedContract ? [{
+      label:ru ? "Обзор контракта" : "Contract overview",
+      shortLabel:ru ? "Обзор" : "Overview",
+      selected:!selectedVersion,
+      go:() => this.setState({ conVersion:"", conFacts:false, dashboardSet:"" })
+    }].concat(selectedVersions.map(version => ({
+      label:version.version,
+      shortLabel:version.version,
+      selected:!!selectedVersion && version.version === selectedVersion.version,
+      result:resolve("lifecycle-state", version.state),
+      go:() => openExact(selectedContract, version, "")
+    }))) : [];
+
+    const screenVersionRows = selectedContract ? selectedVersions.map(version => {
+      const pins = version.detail ? (version.detail.consumerPins || []).map(pin => pin.system) : [];
+      const notes = [];
+      if (version.sunset) notes.push({ plain:true, hasContract:false, text:(ru ? "Выключают " : "Switched off on ") + isoDay(version.sunset) + "." });
+      if (version.successor) notes.push({ plain:false, hasContract:true, prefix:ru ? "На смену пришла " : "Replaced by ", contract:version.successor, suffix:".", contractAria:(ru ? "Открыть версию " : "Open version ") + version.successor, openContract:() => openRef(selectedContract.space, version.successor, accent("successor", [selectedContract.space, selectedContract.id, version.version, version.successor])) });
+      const openVersion = () => openExact(selectedContract, version, "");
+      return {
+        version:version.version,
+        stateResult:resolve("lifecycle-state", version.state),
+        color:"var(--text)",
+        seats:pins.length ? (ru ? "потребители: " : "consumers: ") + pins.join(", ") : noneRecorded(ru),
+        seatStyle:"margin-left:auto; font-size:15px; color:var(--muted); overflow-wrap:anywhere;",
+        hasNotes:notes.length > 0 || !!version.deprecationID,
+        notes,
+        hasAnnounce:!!version.deprecationID,
+        announceLabel:(ru ? "Объявлено в " : "Announced in ") + (version.deprecationID || "") + " →",
+        openAnnounce:() => this.go("work", { workSel:version.deprecationID, workTab:"all", workState:"all", workType:"all", workDue:false, space:selectedContract.space }),
+        role:"button",
+        tabIndex:"0",
+        ariaLabel:(ru ? "Открыть версию контракта " : "Open contract version ") + selectedContract.id + "@" + version.version,
+        openVersion,
+        openVersionKey:(event) => { if (event && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openVersion(); } },
+        style:"background:var(--page); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--border); cursor:pointer;",
+        hoverStyle:"background:var(--surface-section); box-shadow:inset 0 0 0 1px var(--border-strong);"
+      };
+    }) : [];
+
+    const mapScreenDocument = (document) => {
+      const command = selectedContract && selectedVersion ? "a2a contract materialize " + selectedContract.id + "@" + selectedVersion.version + " --to <project-relative-dir>" : "";
+      const selectedSpace = selectedContract ? spaceRecord(selectedContract.space) : null;
+      const sourceURL = selectedContract && actions.sourceURL ? actions.sourceURL(selectedContract.space, document.path, selectedSpace && selectedSpace.revision || "") : "";
+      const fileActions = [{ kind:"copy", copy:true, source:false, label:ru ? "Копировать команду" : "Copy command", run:() => this.copy(command), url:"" }];
+      if (sourceURL) fileActions.push({ kind:"source", copy:false, source:true, label:ru ? "Открыть на GitHub" : "Open on GitHub", run:() => {}, url:sourceURL });
+      return {
+        isDir:false,
+        isFile:true,
+        depth:0,
+        key:actions.cardID ? actions.cardID("cfile", { space:selectedContract && selectedContract.space, id:selectedContract && selectedContract.id, version:selectedVersion && selectedVersion.version, path:document.path }) : "",
+        cfileKind:"cfile",
+        label:document.path,
+        role:document.role,
+        media:document.mediaType || notRecorded(ru),
+        size:Number.isFinite(document.sizeBytes) ? document.sizeBytes + (ru ? " Б" : " B") : "",
+        actions:fileActions,
+        iconLabel:"•",
+        iconStyle:"flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:99px; background:var(--hairline); color:var(--muted);",
+        rowStyle:"width:100%; display:flex; align-items:flex-start; gap:10px; border:0; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); text-align:left; background:var(--surface-section); color:var(--text); box-shadow:inset 0 0 0 1px var(--border);"
+      };
+    };
+
+    const screenHistory = selectedDetail ? (selectedDetail.history || []).map((event, index, rows) => {
+      const transitionResult = resolve("transition", event.transition);
+      return {
+        actorName:event.actor || (ru ? "неизвестный автор" : "unknown actor"),
+        avatarMono:mono(event.actor || "?"),
+        transitionResult,
+        actionText:transitionResult.label,
+        subjectLabel:selectedContract.id + "@" + selectedVersion.version,
+        meta:[event.at ? isoDay(event.at) : "", event.eventID || ""].filter(Boolean).join(" · "),
+        hasSignal:false,
+        signalLabel:"",
+        stateResult:resolve("lifecycle-state", event.state),
+        railOffset:34,
+        railStyle:"position:relative; padding:0 0 " + (index === rows.length - 1 ? "0" : "18px") + " 34px;" + (index === rows.length - 1 ? " margin-left:2px;" : " border-left:2px solid var(--rail-line);")
+      };
+    }) : [];
+
+    const selectedStateResult = selectedVersion ? resolve("lifecycle-state", selectedVersion.state) : (selectedContract ? resolve("lifecycle-state", selectedContract.state) : null);
+    const contractCard = buildContractCard(cardContract);
+    const contractVersionCard = buildVersionCard(cardVersionContract, cardVersion);
+    const selectedOmitted = selectedDetail ? selectedDetail.omittedDocumentCount || 0 : 0;
     const values = {
+      contractsAria:c.views[3],
+      contractsScreen:!card,
+      cardContract:!!contractCard,
+      cardContractVersion:!!contractVersionCard,
+      cardUnavailable:!!card && !contractCard && !contractVersionCard,
+      cardUnavailableTitle:ru ? "Карточка недоступна" : "Card unavailable",
+      cardUnavailableText:ru ? "Объект этой карточки отсутствует в принятом снимке." : "The card object is absent from the accepted snapshot.",
+      contractCard,
+      contractVersionCard,
+      aggregateTitle:ru ? "Линии не на текущей версии" : "Lines off current",
+      hasAggregateLines:!!aggregate,
+      aggregateLineRows,
+      aggregateWindow:aggregate ? aggregate.window : null,
+      aggregateWindowText,
+      aggregateHasWindow:!!aggregateWindowText,
+      aggregateComplete:aggregate ? !!aggregate.complete : true,
+      aggregateEmptyText,
+      aggregateDegradations,
+      aggregateHasDegradations:aggregateDegradations.length > 0,
+      aggregateDegradationsTitle:ru ? "Неполные источники" : "Degraded sources",
       codeBackedLabel:c.codeBacked,
       consumerLinesLabel:c.consumerLines,
       versionWindowLabel:c.versionWindow,
@@ -592,295 +983,114 @@ class Component extends DCLogic {
       codeBindingPrefix:c.codeBindingPrefix,
       notEvaluatedLabel:c.notEvaluated,
       codeBindingSuffix:c.codeBindingSuffix,
-      consumerLinesHint: ru
-        ? "Каждый потребитель закрепляет за собой мажорную версию и живёт на ней. Расхождение считается для его линии, а не для контракта в целом: у поставщика всё может быть в порядке ровно тогда, когда у потребителя не работает ничего."
-        : "Each consumer pins a major version and lives on it. Drift is judged per line, not per contract: the provider can be perfectly healthy at exactly the moment a consumer resolves nothing.",
-      versionWindowHint: ru
-        ? "Версии не удаляются. Старая может быть объявлена устаревшей и получить дату вывода, но пока на ней кто-то сидит, она остаётся видимой, а окончательное снятие ждёт подтверждений от потребителей."
-        : "Versions are never erased. An old one can be deprecated and given a sunset date, but while anyone still sits on it, it stays visible, and retirement waits for consumer acknowledgements.",
-      provenanceHint: ru
-        ? "Если дескриптор собран из кода, записано, чем и из какого исходника. Это метка происхождения, а не проверка: совпадает ли он с кодом прямо сейчас, статический файл не знает."
-        : "When a descriptor is generated from code, the generator and the source digest are recorded. That is provenance, not verification: a static file cannot know whether the bytes still match.",
-      contractsAria:c.views[3],
-      conRows: contracts.map(c => {
-        const edges = d.contractEdges.filter(e => e.contract === c.id);
-        const bad = edges.filter(e => e.drift !== "current");
-        // Drift words are protocol enums; a person reads the consumer's name and
-        // then what happened to its line, in their own language.
-        const driftWord = (e) => e.drift === "deprecated" && e.sunset
-          ? (ru ? "выводится до " : "sunset ") + isoDay(e.sunset)
-          : DRIFT_WORDS(ru)[e.drift] || e.drift;
-        const pills = bad.length
-          ? bad.slice(0, 2).map(e => ({ text: e.from + ": " + driftWord(e), tone: DRIFT_TONE[e.drift] || "neutral" }))
-          : [{ text: ru ? "все линии актуальны" : "all lines current", tone: "healthy" }];
-        // A descriptor may declare itself non-adoptable (`x_binding: none`, or
-        // the long form's `adoptable: false`) — published to be READ, never
-        // pinned. `a2a contract adopt` refuses one outright and writes
-        // nothing, with no override. Until this pill the refusal existed only
-        // inside the CLI, so the first a consumer heard of it was the command
-        // failing (wave 36 F4). It leads the row because it changes whether
-        // the card is worth opening at all.
-        if (c.nonAdoptable) pills.unshift({ text: ru ? "закреплять нельзя" : "not adoptable", tone: "attention" });
-        return {
-          id: c.id, version: c.version, meta: (ru ? "поставщик: " : "provider: ") + c.provider + " · " + c.category + " · " + c.space,
-          pills, style: this.cardButton(conSel === c.id), select: () => this.setState({ conSel: c.id, conVersion: "", conFacts:false, contractFile: null })
-        };
-      }),
-      hasConRows: contractsAll.length > 0,
-      noConRows: contractsAll.length === 0,
-      hasConFiltered: contracts.length > 0,
-      noConFiltered: contractsAll.length > 0 && contracts.length === 0,
-      conRoleTabs: [["all", ru ? "Все" : "All", contractsAll.length],
-                    ["provider", ru ? "Публикую я" : "I publish", contractsAll.filter(c => conRoleOf(c) === "provider").length],
-                    ["consumer", ru ? "Пользуюсь я" : "I depend on", contractsAll.filter(c => conRoleOf(c) === "consumer").length]].map(([id, label, n]) => ({
-        label,
-        count: n,
-        pressed: conRole === id ? "true" : "false",
-        go: () => this.setState({ conRole: id, conSel: "", conVersion: "", conFacts:false, contractFile: null, conRisk: false })
+      consumerLinesHint:ru ? "Порядок и состояние каждой линии перенесены из снимка." : "Each line keeps the order and condition carried by the snapshot.",
+      versionWindowHint:ru ? "Версии показаны в порядке, перенесённом сервером." : "Versions keep the server-carried order.",
+      provenanceHint:ru ? "Это метаданные происхождения, а не браузерная проверка." : "This is provenance metadata, not a browser-side verification.",
+      conRows:contractsAll.map(contract => ({
+        id:contract.id,
+        version:contract.version,
+        stateResult:resolve("lifecycle-state", contract.state),
+        meta:(ru ? "поставщик: " : "provider: ") + contract.provider + (contract.category ? " · " + contract.category : "") + " · " + contract.space,
+        pills:[],
+        style:this.cardButton(selectedID === contract.id),
+        select:() => openContract(contract, "")
       })),
-      hasConRisk: conRiskCount > 0 || !!s.conRisk,
-      conRiskLabel: (ru ? "Не на последней · " : "Off the latest · ") + conRiskCount,
-      conRiskPressed: s.conRisk ? "true" : "false",
-      conRiskStyle: this.filterChip(!!s.conRisk) + (s.conRisk ? "" : " box-shadow:inset 0 0 0 1px var(--border);"),
-      toggleConRisk: () => this.setState(x => ({ conRisk: !x.conRisk, conSel: "", conVersion: "", conFacts:false, contractFile: null })),
-      emptyConFilterTitle: s.conRisk
-        ? (ru ? "Здесь всё на последней версии" : "Everything here is on the latest")
-        : (conRole === "provider" ? (ru ? "Вы ничего не публикуете" : "You publish nothing here") : (ru ? "Вы ни от чего не зависите" : "You depend on nothing here")),
-      emptyConFilterText: s.conRisk
-        ? (ru ? "Ни один потребитель в этой выборке не отстал от поставщика. Снимите фильтр, чтобы увидеть остальные контракты." : "No consumer in this selection has fallen behind its provider. Clear the filter to see the other contracts.")
-        : (conRole === "provider"
-          ? (ru ? "В этих спейсах нет контрактов, где поставщик это вы. Переключитесь на «Все», чтобы увидеть чужие." : "No contract in these spaces has you as its provider. Switch to All to see the others.")
-          : (ru ? "В этих спейсах вы не закрепили ни одной версии чужого контракта. Переключитесь на «Все», чтобы увидеть остальные." : "You have not pinned a version of anyone else's contract in these spaces. Switch to All to see the rest.")),
-      emptyContractsTitle: ru ? "Контрактов пока нет" : "No contracts yet",
-      emptyContractsText: ru
-        ? "Контракт работает как интерфейс с историей версий: поставщик его публикует, а потребители закрепляют ту основную версию, которой пользуются. Пока в этих спейсах не опубликован ни один."
-        : "A contract is an interface with a version history: a provider publishes it, and consumers pin the major line they use. Nothing has been published in these spaces yet.",
-      providerLabel: ru ? "Кто публикует" : "Who publishes it",
-      consumersLabel: ru ? "Кто им пользуется" : "Who depends on it",
-      cdProvider: con ? con.provider : "",
-      cdConsumers: con ? ((con.consumers || []).join(", ") || (ru ? "пока никто" : "nobody yet")) : "",
-      cdId: con ? con.id : "",
-      cdState: selectedConVersion ? contractVersionStatus(selectedConVersion).semantic : (con ? con.state : ""),
-      cdStateTone: selectedConVersion
-        ? (selectedConVersion.version === (con && con.version) && selectedConVersion.state === "published" ? "healthy" : selectedConVersion.state === "published" ? "agent" : (STATE_TONE[selectedConVersion.state] || "neutral"))
-        : (con ? (STATE_TONE[con.state] || "neutral") : "neutral"),
-      cdNonAdoptable: !!(con && con.nonAdoptable),
-      cdNonAdoptableLabel: ru ? "закреплять нельзя" : "not adoptable",
-      cdNonAdoptableWhy: ru
-        ? "Дескриптор объявил себя непригодным для закрепления (x_binding). Этот контракт опубликован, чтобы его читали, а не чтобы на него садились: a2a contract adopt откажет и ничего не запишет, обойти это нельзя."
-        : "The descriptor declares itself non-adoptable (x_binding). This contract is published to be read, not pinned: a2a contract adopt refuses it and writes nothing, and there is no override.",
-      cdCodeBacked: selectedConDetail
-        ? !!(selectedConDetail.provenance && selectedConDetail.provenance.generatedTool && selectedConDetail.provenance.sourceDigest)
-        : !!(con && con.codeBacked),
-      cdSpaceLine: con ? (ru ? "спейс " : "space ") + con.space : "",
-      cdDescription: selectedConDetail && selectedConDetail.description ? selectedConDetail.description : (con ? con.description : ""),
-      cdIsOverview: !selectedConVersion,
-      cdIsVersion: !!selectedConVersion,
-      contractVersionSwitcher:{
-        ariaLabel:ru ? "Выбрать обзор или версию контракта" : "Choose contract overview or version",
-        options:contractVersionOptions
-      },
-      cdVersionAnnouncement: selectedConVersion && con ? con.id + "@" + selectedConVersion.version : (con ? con.id + (ru ? ": обзор" : ": overview") : ""),
-      cdHasRisk: risky.length > 0,
-      cdRiskHeading: ru
-        ? (risky.length === 1 ? "Нужно обновить одну линию потребителя" : "Нужно обновить " + ruPlural(risky.length, "линию потребителя", "линии потребителей", "линий потребителей"))
-        : risky.length + (risky.length === 1 ? " consumer line needs attention" : " consumer lines need attention"),
-      cdRisks: risky.map((e, i) => {
-        const version = con && (con.versions || []).find(v => v.version === e.pinnedVersion);
-        const successor = e.successor || (version && version.successor) || "";
-        const successorContract = String(successor).split("@")[0];
-        const pinnedState = STATE_WORDS(ru)[e.pinnedState] || e.pinnedState || (ru ? "состояние не записано" : "state not recorded");
-        const pinnedVersion = e.pinnedVersion || (e.pinnedMajor ? String(e.pinnedMajor) + ".x" : (ru ? "не записана" : "not recorded"));
-        const pinned = (con ? con.id : e.contract) + "@" + pinnedVersion + " · " + pinnedState;
-        const providerVersion = e.providerVersion || (con && con.version) || (ru ? "не записана" : "not recorded");
-        const provider = (con ? con.provider : e.to) + " · " + (con ? con.id : e.contract) + "@" + providerVersion;
-        const title = e.drift === "missing"
-          ? e.from + (ru ? ": закреплённой мажорной версии нет у поставщика" : ": the pinned major does not exist at the provider")
-          : e.drift === "dangling"
-            ? e.from + (ru ? ": поставщик больше не публикует контракт в этом спейсе" : ": the provider no longer publishes this contract in the space")
-            : e.drift === "retired"
-              ? e.from + (ru ? " использует снятую версию" : " uses a retired version")
-              : e.drift === "deprecated"
-                ? e.from + (ru ? " использует версию, которую выводят из эксплуатации" : " uses a version being sunset")
-                : e.from + (ru ? " остался на предыдущей мажорной версии" : " remains on an older major");
-        const explanation = e.drift === "missing"
-          ? (ru ? "У поставщика доступны только мажорные версии " : "The provider exposes only major versions ") + (e.availableMajors || []).join(ru ? " и " : " and ") + (ru ? ". Эта линия сейчас не разрешается." : ". This consumer line does not resolve.")
-          : e.drift === "dangling"
-            ? (ru ? "Дескриптор контракта для этой линии не найден. Сначала нужно выбрать действующего поставщика или убрать зависимость." : "No contract descriptor resolves for this line. Choose an active provider or remove the dependency first.")
-            : e.drift === "retired"
-              ? (ru ? "Версия уже снята. Потребителю нужно перейти на поддерживаемую мажорную линию." : "This version is already retired. The consumer must move to a supported major line.")
-              : e.drift === "deprecated"
-                ? (ru ? "Версия пока доступна, но её срок поддержки заканчивается." : "The version still resolves, but its support window is ending.")
-                : (ru ? "Поставщик уже публикует более новую мажорную линию; переход нужно запланировать отдельно." : "The provider already publishes a newer major line; plan the migration explicitly.");
-        return {
-          title,
-          consumerLabel: ru ? "Потребитель" : "Consumer",
-          consumer: e.from,
-          pinnedLabel: ru ? "Сейчас использует" : "Currently uses",
-          pinned,
-          providerLabel: ru ? "Поставщик публикует" : "Provider publishes",
-          provider,
-          hasDeadline: !!e.sunset || e.drift === "retired",
-          deadlineLabel: e.drift === "retired" ? (ru ? "Дата снятия" : "Retired on") : (ru ? "Отключение версии" : "Version sunset"),
-          deadline: e.sunset ? isoDay(e.sunset) : (e.drift === "retired" ? (ru ? "не записана" : "not recorded") : ""),
-          explanation,
-          hasSuccessor: !!successor,
-          successorAria: successorContract === (con && con.id)
-            ? (ru ? "Открыть версию контракта " : "Open contract version ") + successor
-            : (ru ? "Открыть контракт " : "Open contract ") + successor,
-          successorLabel: successor
-            ? ((successorContract === (con && con.id) ? (ru ? "Открыть версию " : "Open version ") + contractRefParts(successor).version : (ru ? "Открыть контракт " : "Open contract ") + successor) + " →")
-            : "",
-          openSuccessor: successorContract ? openContractRef(successor, con.space) : () => {},
-          style: "min-width:0;" + (i ? " padding-top:14px; border-top:1px solid color-mix(in srgb, var(--blocking-ink) 16%, transparent);" : "")
-        };
-      }),
-      cdLines: conEdges.map(e => ({
-        // The consumer, named on its own. The row used to open with
-        // "checkout → atlas", and that arrow points at the PROVIDER: it is a
-        // dependency edge, the same direction the exchange map draws and
-        // explains in its legend. On a card with no legend it reads as data
-        // flow, which runs the other way. The provider is named once in the
-        // box above, so the arrow has nothing left to say here.
-        route: e.from,
-        drift: DRIFT_WORDS(ru)[e.drift] || e.drift, tone: DRIFT_TONE[e.drift] || "neutral",
-        detail: e.drift === "missing"
-          ? (ru ? "закреплена версия " : "pinned major ") + e.pinnedMajor + (ru ? " · доступны " : " · available ") + (e.availableMajors || []).join(", ")
-          : (e.drift === "dangling" ? (ru ? "для этой линии не находится ни одного дескриптора" : "no descriptor resolves for this line") : (ru ? "закреплено " : "pinned ") + e.pinnedVersion + (ru ? " · поставщик " : " · provider ") + e.providerVersion),
-        style: "background:var(--page); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline);" + (e.drift === "missing" ? " box-shadow:inset 0 0 0 1.5px var(--blocking-line);" : "")
+      hasConRows:contractsAll.length > 0,
+      noConRows:contractsAll.length === 0,
+      hasConFiltered:contractsAll.length > 0,
+      noConFiltered:false,
+      hasConRisk:false,
+      conRoleTabs:[],
+      emptyContractsTitle:ru ? "Контрактов пока нет" : "No contracts yet",
+      emptyContractsText:ru ? "В выбранных спейсах не опубликован ни один контракт." : "No contract is published in the selected spaces.",
+      providerLabel:ru ? "Кто публикует" : "Who publishes it",
+      consumersLabel:ru ? "Кто им пользуется" : "Who depends on it",
+      cdProvider:selectedContract ? selectedContract.provider : "",
+      cdConsumers:selectedContract ? ((selectedContract.consumers || []).join(", ") || noneRecorded(ru)) : "",
+      cdId:selectedContract ? selectedContract.id : "",
+      cdStateResult:selectedStateResult,
+      cdNonAdoptable:!!(selectedContract && selectedContract.nonAdoptable),
+      cdNonAdoptableLabel:ru ? "закреплять нельзя" : "not adoptable",
+      cdNonAdoptableWhy:ru ? "Дескриптор запрещает закрепление." : "The descriptor disallows adoption.",
+      cdCodeBacked:selectedDetail ? !!(selectedDetail.provenance && selectedDetail.provenance.generatedTool && selectedDetail.provenance.sourceDigest) : !!(selectedContract && selectedContract.codeBacked),
+      cdSpaceLine:selectedContract ? (ru ? "спейс " : "space ") + selectedContract.space : "",
+      cdDescription:selectedDetail && selectedDetail.description ? selectedDetail.description : (selectedContract && selectedContract.description || notRecorded(ru)),
+      cdIsOverview:!selectedVersion,
+      cdIsVersion:!!selectedVersion,
+      contractVersionSwitcher:{ ariaLabel:ru ? "Выбрать обзор или версию контракта" : "Choose contract overview or version", options:contractVersionOptions },
+      cdVersionAnnouncement:selectedVersion && selectedContract ? selectedContract.id + "@" + selectedVersion.version : (selectedContract ? selectedContract.id + (ru ? ": обзор" : ": overview") : ""),
+      cdHasRisk:false,
+      cdRisks:[],
+      cdLines:selectedEdges.map(edge => ({
+        route:edge.from,
+        driftResult:resolve("dependency-drift", edge.drift),
+        detail:(ru ? "закреплено " : "pinned ") + (edge.pinnedVersion || (edge.pinnedMajor ? edge.pinnedMajor + ".x" : notRecorded(ru))) + (edge.providerVersion ? (ru ? " · поставщик " : " · provider ") + edge.providerVersion : ""),
+        style:"background:var(--page); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline);"
       })),
-      cdVersions: con ? (con.versions || []).slice().reverse().map(v => {
-        // Who is still sitting on this version decides whether it can ever be
-        // switched off, which is the question the whole panel exists to answer.
-        const seated = conEdges.filter(e => e.pinnedVersion === v.version).map(e => e.from);
-        const notes = [];
-        if (v.sunset) notes.push({ plain:true, hasContract:false, text:ru ? "Выключают " + isoDay(v.sunset) + "." : "Switched off on " + isoDay(v.sunset) + "." });
-        if (v.successor) {
-          const successorContract = String(v.successor).split("@")[0];
-          notes.push({
-            plain:false,
-            hasContract:true,
-            prefix:ru ? "На смену пришла " : "Replaced by ",
-            contract:v.successor,
-            suffix:".",
-            contractAria:(ru ? "Открыть контракт " : "Open contract ") + v.successor,
-            openContract:successorContract ? openContractRef(v.successor, con.space) : () => {}
-          });
-        }
-        const hasInlineAction = notes.some(note => note.hasContract) || !!v.deprecationID;
-        const openVersion = () => this.go("contracts", { conSel:con.id, conVersion:v.version, conFacts:false, contractFile:null, conRole:"all", conRisk:false, space:con.space });
-        return {
-          version: v.version, state: v.state, tone: STATE_TONE[v.state] || "neutral",
-          color: v.state === "retired" ? "var(--muted)" : "var(--text)",
-          seats: seated.length
-            ? (ru ? "на ней " + listNames(seated, ru) : listNames(seated, ru) + (seated.length === 1 ? " sits here" : " sit here"))
-            : (ru ? "на ней никого" : "nobody here"),
-          seatStyle: "margin-left:auto; font-size:15px; color:" + (seated.length ? "var(--body)" : "var(--faint)") + "; overflow-wrap:anywhere;",
-          hasNotes: notes.length > 0 || !!v.deprecationID,
-          notes,
-          hasAnnounce: !!v.deprecationID,
-          announceLabel: (ru ? "Объявлено в " : "Announced in ") + (v.deprecationID || "") + " →",
-          openAnnounce: () => this.go("work", { workSel:v.deprecationID, workTab:"all", workState:"all", workType:"all", workDue:false, space:con.space }),
-          role:hasInlineAction ? "" : "button",
-          tabIndex:hasInlineAction ? "-1" : "0",
-          ariaLabel:hasInlineAction ? "" : ((ru ? "Открыть версию контракта " : "Open contract version ") + con.id + "@" + v.version),
-          openVersion:hasInlineAction ? () => {} : openVersion,
-          openVersionKey:hasInlineAction ? () => {} : (ev) => { if (ev && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); openVersion(); } },
-          style:"background:var(--page); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--border);" + (hasInlineAction ? "" : " cursor:pointer; transition:background-color 140ms ease, box-shadow 140ms ease;"),
-          hoverStyle:hasInlineAction ? "" : "background:var(--surface-section); box-shadow:inset 0 0 0 1px var(--border-strong);"
-        };
-      }) : [],
-      cdVersionAvailable: !!(selectedConDetail && selectedConDetail.status === "available"),
-      cdVersionUnavailable: !!selectedConVersion && (!selectedConDetail || selectedConDetail.status !== "available"),
-      cdVersionUnavailableTitle: ru ? "Исторический комплект недоступен" : "Historical package unavailable",
-      cdVersionUnavailableText: selectedConDetail && selectedConDetail.unavailableReason
-        ? selectedConDetail.unavailableReason
-        : (ru ? "Для этой версии в снимке нет проверяемого исторического комплекта. Это не означает, что комплект пуст." : "This snapshot has no verifiable historical package for the version. That does not mean the package is empty."),
-      cdVersionOverviewFacts: selectedConVersion && selectedConDetail ? [
-        { label:ru ? "версия" : "version", value:selectedConVersion.version, mono:true },
-        { label:ru ? "статус" : "status", value:contractVersionStatus(selectedConVersion).semantic },
-        { label:ru ? "публикация" : "publication", value:[selectedConDetail.publishedBy || "", selectedConDetail.publishedAt ? isoDay(selectedConDetail.publishedAt) : ""].filter(Boolean).join(" · ") || (ru ? "не записана" : "not recorded") },
-        { label:ru ? "формат схемы" : "schema format", value:selectedConDetail.schemaFormat || (ru ? "не записан" : "not recorded"), mono:true },
-        { label:ru ? "совместимость" : "compatibility", value:selectedConDetail.compatPolicy || (ru ? "не записана" : "not recorded") }
+      cdVersions:screenVersionRows,
+      cdVersionAvailable:!!selectedDetail && selectedDetail.status === "available",
+      cdVersionUnavailable:!!selectedVersion && (!selectedDetail || selectedDetail.status !== "available"),
+      cdVersionUnavailableTitle:ru ? "Исторический комплект недоступен" : "Historical package unavailable",
+      cdVersionUnavailableText:ru ? "В этом снимке неизвестно." : "Unknown in this snapshot.",
+      cdVersionOverviewFacts:selectedVersion && selectedDetail ? [
+        { label:ru ? "версия" : "version", value:selectedVersion.version, mono:true },
+        { label:ru ? "статус" : "status", value:selectedStateResult.label },
+        { label:ru ? "публикация" : "publication", value:[selectedDetail.publishedBy || "", selectedDetail.publishedAt ? isoDay(selectedDetail.publishedAt) : ""].filter(Boolean).join(" · ") || notRecorded(ru) },
+        { label:ru ? "формат схемы" : "schema format", value:selectedDetail.schemaFormat || notRecorded(ru), mono:true },
+        { label:ru ? "совместимость" : "compatibility", value:selectedDetail.compatPolicy || notRecorded(ru) }
       ] : [],
-      cdVersionHasSuccessor: !!(selectedConVersion && selectedConVersion.successor),
-      cdVersionSuccessorLabel: selectedConVersion && selectedConVersion.successor ? (ru ? "Перейти к преемнику " : "Open successor ") + selectedConVersion.successor + " →" : "",
-      openCdVersionSuccessor: selectedConVersion && selectedConVersion.successor ? (() => {
-        const parts = String(selectedConVersion.successor).split("@");
-        if (con && parts[0] === con.id && conVersions.some(v => v.version === parts[1])) this.setState({ conVersion:parts[1], conFacts:false, contractFile:null });
-        else this.go("contracts", { conSel:parts[0], conVersion:parts[1] || "", conFacts:false, contractFile:null, conRole:"all", conRisk:false, space:con ? con.space : s.space });
-      }) : () => {},
-      cdVersionHasChange: !!(selectedConDetail && selectedConDetail.changeSummary),
-      cdVersionChangeTitle: ru ? "Что изменилось" : "What changed",
-      cdVersionChange: selectedConDetail ? selectedConDetail.changeSummary || "" : "",
-      cdVersionPinsTitle: ru ? "Кто сейчас использует" : "Who uses it now",
-      cdVersionPinsHint: ru ? "Текущие закрепления из этого снимка, а не реконструкция прошлого." : "Current pins in this snapshot, not reconstructed historical usage.",
-      cdVersionHasPins: !!(selectedConDetail && (selectedConDetail.consumerPins || []).length),
-      cdVersionNoPins: !(selectedConDetail && (selectedConDetail.consumerPins || []).length),
-      cdVersionNoPinsText: ru ? "Сейчас на этой версии никто не закреплён." : "No consumer is currently pinned to this version.",
-      cdVersionPins: selectedConDetail ? (selectedConDetail.consumerPins || []).map(p => ({
-        system:p.system,
-        detail:[p.space || "", p.pinnedVersion ? (ru ? "закреплено " : "pinned ") + p.pinnedVersion : (p.pinnedMajor ? (ru ? "мажорная линия " : "major line ") + p.pinnedMajor : "")].filter(Boolean).join(" · "),
-        drift:DRIFT_WORDS(ru)[p.drift] || p.drift || (ru ? "состояние не записано" : "state not recorded"),
-        tone:DRIFT_TONE[p.drift] || "neutral"
+      cdVersionHasSuccessor:!!(selectedVersion && selectedVersion.successor),
+      cdVersionSuccessorLabel:selectedVersion && selectedVersion.successor ? (ru ? "Перейти к преемнику " : "Open successor ") + selectedVersion.successor + " →" : "",
+      openCdVersionSuccessor:selectedVersion && selectedVersion.successor ? () => openRef(selectedContract.space, selectedVersion.successor, accent("successor", [selectedContract.space, selectedContract.id, selectedVersion.version, selectedVersion.successor])) : () => {},
+      cdVersionHasChange:!!(selectedDetail && selectedDetail.changeSummary),
+      cdVersionChangeTitle:ru ? "Что изменилось" : "What changed",
+      cdVersionChange:selectedDetail && selectedDetail.changeSummary || "",
+      cdVersionPinsTitle:ru ? "Кто сейчас использует" : "Who uses it now",
+      cdVersionPinsHint:ru ? "Точные закрепления из принятого снимка." : "Exact pins from the accepted snapshot.",
+      cdVersionHasPins:!!(selectedDetail && (selectedDetail.consumerPins || []).length),
+      cdVersionNoPins:!(selectedDetail && (selectedDetail.consumerPins || []).length),
+      cdVersionNoPinsText:noneRecorded(ru),
+      cdVersionPins:selectedDetail ? (selectedDetail.consumerPins || []).map(pin => ({
+        system:pin.system,
+        detail:[pin.space || "", pin.pinnedVersion ? (ru ? "закреплено " : "pinned ") + pin.pinnedVersion : (pin.pinnedMajor ? (ru ? "мажорная линия " : "major line ") + pin.pinnedMajor : "")].filter(Boolean).join(" · "),
+        driftResult:resolve("dependency-drift", pin.drift)
       })) : [],
-      cdVersionPackageTitle: ru ? "Комплект версии" : "Version package",
-      cdVersionPackageHint: ru ? "Метаданные файлов из точного опубликованного комплекта. Снимок может включать только ограниченную часть большого набора и всегда сообщает об этом." : "File metadata from the exact published package. The bounded snapshot may include only part of a large set and always says so.",
-      cdVersionLegacy: !!(selectedConDetail && selectedConDetail.provenance && selectedConDetail.provenance.profile === "contract-tree-v1"),
-      cdVersionLegacyText: ru ? "Это исторический комплект старого профиля: состав фиксирован, а дескриптор проверяется слабее, чем в contract-set-v2." : "This is a legacy-profile package: its inventory is fixed and descriptor verification is weaker than contract-set-v2.",
-      cdVersionDocumentsOmitted: selectedConDocumentOmitted > 0,
-      cdVersionDocumentsOmittedText: ru
-        ? "В снимок вошло файлов: " + selectedConDocuments.length + " из " + selectedConDocumentTotal + "; ещё " + selectedConDocumentOmitted + " не встроено из-за общего лимита дашборда. Показанные digest и метаданные точны только для перечисленных файлов; полный набор получите через materialize и проверьте командой check."
-        : "This snapshot includes " + selectedConDocuments.length + " of " + selectedConDocumentTotal + " files; " + selectedConDocumentOmitted + " more are not embedded because of the dashboard-wide bound. Shown digests and metadata apply only to the listed files; use materialize and check for the complete set.",
-      cdVersionHasNormativeDocs: selectedConDocuments.some(f => f.normative),
-      cdVersionHasSupportingDocs: selectedConDocuments.some(f => !f.normative),
-      cdVersionNoDocs: !!(selectedConDetail && selectedConDetail.status === "available" && selectedConDocumentTotal === 0),
-      cdVersionNoDocsText: ru ? "В опубликованном манифесте нет переносимых файлов." : "The published manifest declares no carried files.",
-      cdVersionNormativeTitle: ru ? "Определяют контракт" : "Define the contract",
-      cdVersionSupportingTitle: ru ? "Помогают внедрить" : "Support implementation",
-      cdVersionNormativeTree: docTreeRows(selectedConDocuments.filter(f => f.normative), "normative"),
-      cdVersionSupportingTree: docTreeRows(selectedConDocuments.filter(f => !f.normative), "supporting"),
-      cdVersionHistoryTitle: ru ? "История версии" : "Version history",
-      cdVersionHasHistory: !!(selectedConDetail && (selectedConDetail.history || []).length),
-      cdVersionHistory: selectedConDetail ? (selectedConDetail.history || []).slice().reverse().map((h, i, all) => ({
-        actorName:h.actor || (ru ? "неизвестный автор" : "unknown actor"),
-        avatarMono:mono(h.actor || "?"),
-        actionText:({ publish:ru ? "опубликовал версию" : "published version", published:ru ? "опубликовал версию" : "published version", deprecate:ru ? "начал вывод версии" : "deprecated version", deprecated:ru ? "начал вывод версии" : "deprecated version", retire:ru ? "снял версию" : "retired version", retired:ru ? "снял версию" : "retired version" })[h.transition] || h.transition,
-        subjectLabel:con.id + "@" + selectedConVersion.version,
-        meta:[h.at ? isoDay(h.at) : "", h.eventID || ""].filter(Boolean).join(" · "),
-        hasSignal:true,
-        signalTone:h.state === "retired" ? "neutral" : (h.state === "deprecated" ? "caution" : "positive"),
-        signalLabel:STATE_WORDS(ru)[h.state] || h.state,
-        railOffset:34,
-        railStyle:"position:relative; padding:0 0 " + (i === all.length - 1 ? "0" : "18px") + " 34px;" + (i === all.length - 1 ? " margin-left:2px;" : " border-left:2px solid var(--rail-line);")
-      })) : [],
-      cdVersionProvenanceTitle: ru ? "Публикация и проверка" : "Publication and verification",
-      cdVersionProvenanceHint: ru ? "Идентификаторы Git и контрольные суммы относятся только к выбранной версии." : "Git identities and digests belong only to the selected version.",
-      cdVersionProvenanceOpen:!!s.conFacts,
-      cdVersionProvenanceExpanded:s.conFacts ? "true" : "false",
-      cdVersionProvenanceAction:s.conFacts ? (ru ? "Свернуть" : "Collapse") : (ru ? "Развернуть" : "Expand"),
-      cdVersionProvenanceToggleAria:(s.conFacts ? (ru ? "Свернуть " : "Collapse ") : (ru ? "Развернуть " : "Expand ")) + (ru ? "публикацию и проверку" : "publication and verification"),
-      toggleCdVersionProvenance:() => this.setState(x => ({ conFacts:!x.conFacts })),
-      cdVersionFacts: selectedConDetail && selectedConDetail.provenance ? [
-        { label:ru ? "профиль комплекта" : "package profile", value:selectedConDetail.provenance.profile || (ru ? "не записано" : "not recorded"), mono:true },
-        { label:ru ? "коммит публикации" : "publication commit", value:selectedConDetail.provenance.commitSHA || (ru ? "не записано" : "not recorded"), mono:true },
-        { label:ru ? "дерево Git" : "Git tree", value:selectedConDetail.provenance.treeObjectID || (ru ? "не записано" : "not recorded"), mono:true },
-        { label:ru ? "дескриптор" : "descriptor", value:selectedConDetail.provenance.descriptorPath || (ru ? "не записан" : "not recorded"), mono:true },
-        { label:ru ? "событие публикации" : "publication event", value:selectedConDetail.provenance.publishEventPath || (ru ? "не записано" : "not recorded"), mono:true },
-        { label:ru ? "схема события" : "event schema", value:selectedConDetail.provenance.eventSchema || (ru ? "не записана" : "not recorded"), mono:true },
-        { label:ru ? "профиль digest" : "digest profile", value:selectedConDetail.provenance.digestProfile || (ru ? "не записано" : "not recorded"), mono:true },
-        { label:ru ? "опубликованный digest" : "published digest", value:selectedConDetail.provenance.publishedDigest || (ru ? "не записано" : "not recorded"), mono:true },
-        { label:ru ? "проверка комплекта" : "package verification", value:selectedConDetail.provenance.aggregateVerification || (ru ? "не проверено" : "not verified") },
-        { label:ru ? "проверка дескриптора" : "descriptor verification", value:selectedConDetail.provenance.descriptorVerification || (ru ? "не проверено" : "not verified") },
-        { label:ru ? "генератор" : "generator", value:selectedConDetail.provenance.generatedTool || (ru ? "не записан" : "not recorded"), mono:true },
-        { label:ru ? "digest исходника" : "source digest", value:selectedConDetail.provenance.sourceDigest || (ru ? "не записан" : "not recorded"), mono:true }
+      cdVersionPackageTitle:ru ? "Комплект версии" : "Version package",
+      cdVersionPackageHint:ru ? "Точный исторический пакет выбранной версии." : "The exact historical package for the selected version.",
+      cdVersionLegacy:!!(selectedDetail && selectedDetail.provenance && selectedDetail.provenance.profile === "contract-tree-v1"),
+      cdVersionLegacyText:ru ? "Исторический комплект старого профиля." : "Historical package using the legacy profile.",
+      cdVersionDocumentsOmitted:selectedOmitted > 0,
+      cdVersionDocumentsOmittedText:selectedOmitted > 0 ? collectionBounds({ shown:selectedDocuments.length, total:selectedDetail.totalDocumentCount, truncated:true }, ru) : "",
+      cdVersionHasNormativeDocs:selectedDocuments.length > 0,
+      cdVersionHasSupportingDocs:false,
+      cdVersionNoDocs:!!selectedDetail && selectedDetail.status === "available" && selectedDocuments.length === 0 && selectedDetail.totalDocumentCount === 0,
+      cdVersionNoDocsText:noneRecorded(ru),
+      cdVersionNormativeTitle:ru ? "Документы в порядке снимка" : "Documents in snapshot order",
+      cdVersionSupportingTitle:ru ? "Помогают внедрить" : "Support implementation",
+      cdVersionNormativeTree:selectedDocuments.map(mapScreenDocument),
+      cdVersionSupportingTree:[],
+      cdVersionHistoryTitle:ru ? "История версии" : "Version history",
+      cdVersionHasHistory:screenHistory.length > 0,
+      cdVersionHistory:screenHistory,
+      cdVersionProvenanceTitle:ru ? "Публикация и проверка" : "Publication and verification",
+      cdVersionProvenanceHint:ru ? "Идентификаторы относятся только к выбранной версии." : "The identifiers belong only to the selected version.",
+      cdVersionProvenanceOpen:!!ui.conFacts,
+      cdVersionProvenanceExpanded:ui.conFacts ? "true" : "false",
+      cdVersionProvenanceAction:ui.conFacts ? (ru ? "Свернуть" : "Collapse") : (ru ? "Развернуть" : "Expand"),
+      cdVersionProvenanceToggleAria:(ui.conFacts ? (ru ? "Свернуть " : "Collapse ") : (ru ? "Развернуть " : "Expand ")) + (ru ? "публикацию и проверку" : "publication and verification"),
+      toggleCdVersionProvenance:() => this.setState(current => ({ conFacts:!current.conFacts })),
+      cdVersionFacts:selectedDetail && selectedDetail.provenance ? [
+        { label:ru ? "профиль комплекта" : "package profile", value:selectedDetail.provenance.profile || notRecorded(ru), mono:true },
+        { label:ru ? "коммит публикации" : "publication commit", value:selectedDetail.provenance.commitSHA || notRecorded(ru), mono:true },
+        { label:ru ? "дерево Git" : "Git tree", value:selectedDetail.provenance.treeObjectID || notRecorded(ru), mono:true },
+        { label:ru ? "опубликованный digest" : "published digest", value:selectedDetail.provenance.publishedDigest || notRecorded(ru), mono:true }
       ] : [],
-      cdFacts: con ? [
-        { label:ru ? "формат схемы" : "schema format", value:con.schemaFormat, mono:true },
-        { label:ru ? "совместимость" : "compatibility", value:con.compatPolicy },
-        { label:ru ? "потребители" : "consumers", value:(con.consumers || []).join(", ") },
-        { label:ru ? "генератор" : "generator", value:con.generatedTool || (ru ? "не записано" : "not recorded"), mono:!!con.generatedTool, muted:!con.generatedTool },
-        { label:ru ? "контрольная сумма источника" : "source digest", value:con.sourceDigest ? con.sourceDigest.slice(0, 12) + "…" + con.sourceDigest.slice(-6) : (ru ? "не записано" : "not recorded"), mono:true, muted:!con.sourceDigest }
+      cdFacts:selectedContract ? [
+        { label:ru ? "формат схемы" : "schema format", value:selectedContract.schemaFormat || notRecorded(ru), mono:true },
+        { label:ru ? "совместимость" : "compatibility", value:selectedContract.compatPolicy || notRecorded(ru) },
+        { label:ru ? "потребители" : "consumers", value:(selectedContract.consumers || []).join(", ") || noneRecorded(ru) },
+        { label:ru ? "генератор" : "generator", value:selectedContract.generatedTool || notRecorded(ru), mono:true },
+        { label:ru ? "контрольная сумма источника" : "source digest", value:selectedContract.sourceDigest || notRecorded(ru), mono:true }
       ] : []
     };
     return values;

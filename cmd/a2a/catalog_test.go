@@ -382,6 +382,7 @@ func normalizedDashboardCatalogue(t *testing.T, raw map[string]json.RawMessage) 
 		html.VocabularyFamilySourceFreshness:     stringsFromCatalog(decodeCatalogField[[]operational.SourceFreshness](t, raw, "source_freshness")),
 		html.VocabularyFamilyOutcome:             decodeCatalogField[[]string](t, raw, "outcomes"),
 		html.VocabularyFamilyLifecycleState:      unionCatalogSlices(baseStates),
+		html.VocabularyFamilyTransition:          decodeCatalogField[[]string](t, raw, "transitions"),
 		html.VocabularyFamilyReason:              stringsFromCatalog(decodeCatalogField[[]cache.ReasonCode](t, raw, "reason")),
 		html.VocabularyFamilyGate:                unionCatalogValues(humanGates),
 		html.VocabularyFamilyWorkMode:            stringsFromCatalog(decodeCatalogField[[]workreport.Mode](t, raw, "work_mode")),

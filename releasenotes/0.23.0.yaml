@@ -263,3 +263,34 @@ changes:
     action:
       scope: none
       why: "No action. Regenerate a demo dashboard with the current binary to inspect the expanded state and bounds coverage."
+
+  - id: RN-02300-9
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: >
+        The dashboard's principal screens previously disagreed about status,
+        order, counts and detail content even when they described the same
+        carried object. The rebuilt view families make those answers visible
+        from one model and one card route.
+    impact: normal
+    subject: "the local dashboard now keeps one bilingual card, one status vocabulary and one explicit refresh path"
+    detail: >
+      Overview, Exchange, Threads, Contracts, Map and Spaces now consume the
+      server-carried sets, ordering, reasons, windows and byte bounds directly.
+      Seven canonical card kinds render the same ordered RU/EN facts from every
+      entry point; the map's parallel detail dialog is removed, unknown values
+      never leak raw, and one resolver owns status words, cues and chroma.
+
+      Live SSE messages now announce a newer digest without replacing the
+      screen. Refresh dashboard performs one conditional fetch and one atomic
+      hydrate, preserving the selected view, filters, hash, focus, scroll and
+      mounted card state; a removed card remains readable with an exact gone
+      banner over retained last-good data. File and non-loopback dashboards
+      remain inert. The external GitHub provider/API tier is deliberately
+      deferred; deterministic Open on GitHub links still use only the carried
+      repository and revision and perform no network request.
+    affects: [dashboard, serve, "a2a html"]
+    action:
+      scope: none
+      why: "No action. Regenerate or reopen the dashboard to use the coherent views and explicit refresh control."

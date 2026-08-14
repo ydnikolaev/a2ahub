@@ -7,294 +7,262 @@
 </head>
 <body>
 <x-dc>
-<section aria-label="{{ spacesAria }}" data-screen-label="Spaces">
-        <sc-if value="{{ noSpaces }}" hint-placeholder-val="{{ false }}">
-          <dc-import name="EmptyState" title="{{ emptySpacesTitle }}" text="{{ emptySpacesText }}" hint="a2a space connect" size="page" hint-size="100%,380px"></dc-import>
-        </sc-if>
-        <sc-if value="{{ hasSpaces }}" hint-placeholder-val="{{ true }}">
-        <div style="background:var(--surface); border-radius:var(--radius-panel); padding:8px var(--padding-card-inline) var(--padding-list-card-block); box-shadow:var(--shadow-card); overflow-x:auto;">
-          <table style="width:100%; border-collapse:collapse; font-size:16px; min-width:820px;">
-            <thead>
-              <tr>
-                <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);">{{ spaceLabel }}</th>
-                <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);"><span style="display:inline-flex; align-items:center; gap:6px;">{{ freshnessLabel }}<dc-import name="HintDot" text="{{ freshnessHint }}" hint-size="17px,17px"></dc-import></span></th>
-                <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);">{{ participantsLabel }}</th>
-                <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);"><span style="display:inline-flex; align-items:center; gap:6px;">{{ writerFloorLabel }}<dc-import name="HintDot" text="{{ writerFloorHint }}" hint-size="17px,17px"></dc-import></span></th>
-                <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);"><span style="display:inline-flex; align-items:center; gap:6px;">{{ pinnedWorkflowLabel }}<dc-import name="HintDot" text="{{ pinnedWorkflowHint }}" hint-size="17px,17px"></dc-import></span></th>
-                <th style="text-align:left; padding:16px 0 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);">{{ revisionLabel }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <sc-for list="{{ spaceRows }}" as="s" hint-placeholder-count="4">
-                <tr>
-                  <td style="{{ s.cell }}"><span style="font-family:'IBM Plex Mono',monospace; font-weight:600;">{{ s.id }}</span></td>
-                  <td style="{{ s.cell }}"><dc-import name="StatusPill" text="{{ s.pillText }}" tone="{{ s.pillTone }}" size="small" hint-size="100px,24px"></dc-import></td>
-                  <td style="{{ s.cell }}">{{ s.participants }}</td>
-                  <td style="{{ s.cell }}"><span style="font-family:'IBM Plex Mono',monospace;">{{ s.floor }}</span></td>
-                  <td style="{{ s.cell }}"><span style="font-family:'IBM Plex Mono',monospace;">{{ s.workflow }}</span></td>
-                  <td style="{{ s.cellLast }}"><span style="font-family:'IBM Plex Mono',monospace; color:var(--muted);">{{ s.revision }}</span></td>
-                </tr>
-              </sc-for>
-            </tbody>
-          </table>
-        </div>
-        </sc-if>
+<sc-if value="{{ cardSpace }}" hint-placeholder-val="{{ false }}">
+  <sc-if value="{{ spaceCardPresent }}" hint-placeholder-val="{{ true }}">
+    <article data-card-kind="space" data-space-card style="display:flex; flex-direction:column; gap:var(--space-section);">
+      <div data-card-content style="display:flex; flex-direction:column; gap:var(--space-after-section-heading);">
+        <h2 data-space-card-fact="identity" class="a2a-detail-title" style="margin:0; font-family:'IBM Plex Mono',ui-monospace,monospace; overflow-wrap:anywhere;">{{ spaceCard.identity }}</h2>
+        <div data-space-card-fact="condition" data-accented="{{ spaceCard.sourceHighlighted }}" style="{{ spaceCard.contentSourceStyle }}">{{ spaceCard.lead }}</div>
+        <div data-space-card-fact="repository">{{ spaceCard.repositoryText }}</div>
+        <div data-space-card-fact="participants">{{ spaceCard.participantsPrefix }}<sc-if value="{{ spaceCard.participantListKnown }}" hint-placeholder-val="{{ true }}">{{ spaceCard.participantCountText }}<sc-for list="{{ spaceCard.participants }}" as="participant" hint-placeholder-count="2"><span data-accented="{{ participant.highlighted }}" style="{{ participant.contentStyle }}">{{ participant.name }}</span>{{ participant.separator }}</sc-for></sc-if><sc-if value="{{ spaceCard.participantListUnknown }}" hint-placeholder-val="{{ false }}">{{ spaceCard.participantsFallbackText }}</sc-if></div>
+        <div data-space-card-fact="compatibility">{{ spaceCard.compatibilityCardText }}</div>
+        <div data-space-card-fact="consistency">{{ spaceCard.consistencyCardText }}</div>
+        <div data-space-card-fact="unavailable">{{ spaceCard.unavailableCardText }}</div>
+        <div data-space-card-fact="snapshot">{{ spaceCard.snapshotCardText }}</div>
+        <sc-for list="{{ spaceCard.consistencyBounds }}" as="notice" hint-placeholder-count="1"><div>{{ notice }}</div></sc-for>
+        <details data-space-card-fact="technical" style="color:var(--muted);"><summary style="cursor:pointer; font-size:13px; font-weight:600;">{{ spaceCard.technicalCollapsedLabel }}</summary><div style="margin-top:10px;"><dc-import name="FactTable" rows="{{ spaceCard.technical }}" hint-size="100%,250px"></dc-import><div style="display:flex; flex-direction:column; gap:8px; margin-top:10px;"><sc-for list="{{ spaceCard.sourceDiagnostics }}" as="entry" hint-placeholder-count="1"><dc-import name="FactTable" rows="{{ entry.technical }}" hint-size="100%,170px"></dc-import></sc-for></div></div></details>
+      </div>
+      <div data-card-support="space:status" aria-label="{{ spaceCard.statusSupportLabel }}" style="display:flex; align-items:center; gap:9px; flex-wrap:wrap;"><dc-import name="FreshnessDot" result="{{ spaceCard.sourceResult }}" age="{{ spaceCard.syncAge }}" compact="{{ true }}" hint-size="13px,13px"></dc-import><dc-import name="StatusPill" result="{{ spaceCard.sourceResult }}" size="small" hint-size="150px,24px"></dc-import></div>
+      <sc-if value="{{ spaceCard.hasConsistencyAnomalies }}" hint-placeholder-val="{{ false }}"><div data-card-support="space:consistency-status" aria-label="{{ spaceCard.consistencySupportLabel }}" style="display:flex; flex-wrap:wrap; gap:8px;"><sc-for list="{{ spaceCard.consistencyGroups }}" as="group" hint-placeholder-count="2"><sc-for list="{{ group.anomalies }}" as="anomaly" hint-placeholder-count="2"><span data-consistency-anomaly data-accented="{{ anomaly.highlighted }}" style="{{ anomaly.style }}"><dc-import name="StatusPill" result="{{ anomaly.severityResult }}" size="small" hint-size="150px,24px"></dc-import></span></sc-for></sc-for></div></sc-if>
+    </article>
+  </sc-if>
+  <sc-if value="{{ spaceCardMissing }}" hint-placeholder-val="{{ false }}"><div><h2>{{ missingTitle }}</h2><p>{{ missingText }}</p></div></sc-if>
+</sc-if>
 
-        <!-- The former Integrity view. It is a qualifier on the freshness table
-             above, not a destination of its own: on a healthy one-space setup it
-             is empty, and an empty page reads as a broken one. -->
-        <div style="margin-top:34px; padding-top:26px; border-top:1px solid var(--border);">
-          <h2 style="margin:0 0 8px; font-size:var(--font-section-title); line-height:var(--line-section-title); font-weight:600; letter-spacing:-0.01em;">{{ limitsTitle }}</h2>
-          <p style="margin:0 0 18px; font-size:16px; line-height:1.6; color:var(--body); max-width:820px;">{{ limitsSub }}</p>
-
-          <sc-if value="{{ noLimits }}" hint-placeholder-val="{{ false }}">
-            <dc-import name="EmptyState" title="{{ emptyLimitsTitle }}" text="{{ emptyLimitsText }}" size="panel" hint-size="100%,240px"></dc-import>
-          </sc-if>
-
-          <sc-if value="{{ hasLimits }}" hint-placeholder-val="{{ true }}">
-          <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(400px,100%),1fr)); gap:var(--space-grid); align-items:start;">
-            <sc-if value="{{ hasIntFlags }}" hint-placeholder-val="{{ true }}">
-              <div style="background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-card-block) var(--padding-card-inline); box-shadow:var(--shadow-card);">
-                <div style="font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; margin-bottom:4px;">{{ integrityFlagsLabel }}</div>
-                <p style="margin:0 0 12px; font-size:15px; line-height:1.55; color:var(--muted);">{{ integrityFlagsText }}</p>
-                <div style="display:flex; flex-direction:column; gap:10px;">
-                  <sc-for list="{{ intFlags }}" as="f" hint-placeholder-count="4">
-                    <div style="background:var(--page); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline);">
-                      <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:6px;">
-                        <dc-import name="StatusPill" text="{{ f.code }}" tone="attention" mono="{{ true }}" size="small" hint-size="150px,24px"></dc-import>
-                        <span style="font-size:15px; color:var(--muted);">{{ f.origin }}</span>
-                      </div>
-                      <div style="font-size:16px; line-height:1.55; color:var(--body); overflow-wrap:anywhere;">{{ f.message }}</div>
-                    </div>
-                  </sc-for>
-                </div>
-              </div>
-            </sc-if>
-            <div style="display:flex; flex-direction:column; gap:16px;">
-              <sc-if value="{{ hasIntDegraded }}" hint-placeholder-val="{{ true }}">
-                <div style="background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-card-block) var(--padding-card-inline); box-shadow:var(--shadow-card);">
-                  <div style="font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; margin-bottom:4px;">{{ degradedReadsLabel }}</div>
-                  <p style="margin:0 0 12px; font-size:15px; line-height:1.55; color:var(--muted);">{{ degradedReadsText }}</p>
-                  <div style="display:flex; flex-direction:column; gap:10px; font-size:16px;">
-                    <sc-for list="{{ intDegraded }}" as="g" hint-placeholder-count="3">
-                      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-                        <span style="font-family:'IBM Plex Mono',monospace;">{{ g.id }}</span>
-                        <dc-import name="StatusPill" text="{{ g.pillText }}" tone="{{ g.pillTone }}" size="small" hint-size="100px,24px"></dc-import>
-                        <span style="color:var(--muted); font-size:15px;">{{ g.note }}</span>
-                      </div>
-                    </sc-for>
-                  </div>
-                </div>
-              </sc-if>
-              <sc-if value="{{ hasIntUnavailable }}" hint-placeholder-val="{{ true }}">
-                <div style="background:var(--page); border-radius:var(--radius-panel); padding:var(--padding-card-block) var(--padding-card-inline); box-shadow:inset 0 0 0 1px var(--border);">
-                  <div style="font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; margin-bottom:6px;">{{ notEvaluatedTitle }}</div>
-                  <p style="margin:0 0 12px; font-size:15px; line-height:1.55; color:var(--muted);">{{ notEvaluatedText }}</p>
-                  <div style="display:flex; flex-direction:column; gap:10px; font-size:16px; line-height:1.55; color:var(--muted);">
-                    <sc-for list="{{ intUnavailable }}" as="u" hint-placeholder-count="4">
-                      <div><strong style="color:var(--body);">{{ u.title }}</strong>: {{ u.reason }}</div>
-                    </sc-for>
-                  </div>
-                </div>
-              </sc-if>
+<sc-if value="{{ normalSpaces }}" hint-placeholder-val="{{ true }}">
+  <section aria-label="{{ spacesAria }}" data-screen-label="Spaces">
+    <sc-if value="{{ noSpaces }}" hint-placeholder-val="{{ false }}"><dc-import name="EmptyState" title="{{ emptySpacesTitle }}" text="{{ emptySpacesText }}" hint="a2a space connect" size="page" hint-size="100%,380px"></dc-import></sc-if>
+    <sc-if value="{{ hasSpaces }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex; flex-direction:column; gap:var(--space-grid);">
+        <sc-for list="{{ spaceRows }}" as="space" hint-placeholder-count="3">
+          <article data-space-row style="background:var(--surface); border-radius:var(--radius-card); padding:var(--padding-card-block) var(--padding-card-inline); box-shadow:var(--shadow-card);">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:14px; flex-wrap:wrap;">
+              <div><div style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:var(--font-card-title-md); font-weight:600; overflow-wrap:anywhere;">{{ space.id }}</div><div style="margin-top:5px; color:var(--muted);">{{ space.repository }}</div></div>
+              <button type="button" onClick="{{ space.open }}" style="border:0; border-radius:9px; padding:8px 11px; background:var(--teal-tint); color:var(--teal-ink); cursor:pointer;">{{ openLabel }}</button>
             </div>
-          </div>
-          </sc-if>
-        </div>
-      </section>
+            <div data-space-source data-accented="{{ space.sourceHighlighted }}" style="{{ space.sourceStyle }}">
+              <dc-import name="FreshnessDot" result="{{ space.sourceResult }}" age="{{ space.syncAge }}" compact="{{ true }}" hint-size="13px,13px"></dc-import><dc-import name="StatusPill" result="{{ space.sourceResult }}" size="small" hint-size="150px,24px"></dc-import><span>{{ space.sourceSyncedAt }}</span>
+            </div>
+            <sc-if value="{{ space.hasWorkFreshness }}" hint-placeholder-val="{{ false }}"><section style="margin-top:12px;"><strong>{{ workFreshnessLabel }}</strong><div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:7px;"><sc-for list="{{ space.workFreshness }}" as="work" hint-placeholder-count="2"><dc-import name="FreshnessDot" result="{{ work.result }}" age="{{ work.age }}" compact="{{ true }}" hint-size="13px,13px"></dc-import><dc-import name="StatusPill" result="{{ work.result }}" size="small" hint-size="150px,24px"></dc-import></sc-for></div></section></sc-if>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin-top:12px;"><div style="{{ space.factStyle }}"><strong>{{ participantsLabel }}</strong><div style="margin-top:6px;">{{ space.participantsText }}</div></div><div style="{{ space.factStyle }}"><strong>{{ compatibilityLabel }}</strong><div style="margin-top:6px;">{{ space.compatibilityText }}</div></div></div>
+            <section style="margin-top:12px;"><strong>{{ consistencyLabel }}</strong><sc-if value="{{ space.consistencyUnknown }}" hint-placeholder-val="{{ false }}"><p>{{ space.unknown }}</p></sc-if><sc-if value="{{ space.consistencyEmpty }}" hint-placeholder-val="{{ false }}"><p>{{ space.noneRecorded }}</p></sc-if><div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;"><sc-for list="{{ space.consistencyGroups }}" as="group" hint-placeholder-count="2"><div style="{{ space.factStyle }}"><div style="color:var(--muted);">{{ group.countText }}<sc-if value="{{ group.hasWindowText }}" hint-placeholder-val="{{ false }}"> · {{ group.windowText }}</sc-if></div><div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;"><sc-for list="{{ group.anomalies }}" as="anomaly" hint-placeholder-count="2"><div data-consistency-anomaly data-accented="{{ anomaly.highlighted }}" style="{{ anomaly.style }}"><dc-import name="StatusPill" result="{{ anomaly.severityResult }}" size="small" hint-size="150px,24px"></dc-import><details aria-label="{{ anomaly.technicalAria }}" style="margin-top:7px;"><summary>{{ technicalLabel }}</summary><div style="margin-top:8px;"><dc-import name="FactTable" rows="{{ anomaly.technical }}" hint-size="100%,170px"></dc-import></div></details></div></sc-for></div></div></sc-for></div></section>
+            <sc-if value="{{ space.hasUnavailable }}" hint-placeholder-val="{{ false }}"><section style="margin-top:12px;"><strong>{{ unavailableLabel }}</strong><div style="margin-top:7px;"><sc-for list="{{ space.unavailable }}" as="entry" hint-placeholder-count="1"><div>{{ entry.body }}</div></sc-for></div></section></sc-if>
+            <sc-if value="{{ space.hasSourceDiagnostics }}" hint-placeholder-val="{{ false }}"><details data-space-diagnostics style="margin-top:12px;"><summary>{{ technicalLabel }}</summary><div style="display:flex; flex-direction:column; gap:8px; margin-top:9px;"><sc-for list="{{ space.sourceDiagnostics }}" as="entry" hint-placeholder-count="1"><dc-import name="FactTable" rows="{{ entry.technical }}" hint-size="100%,170px"></dc-import></sc-for></div></details></sc-if>
+          </article>
+        </sc-for>
+      </div>
+    </sc-if>
+  </section>
+</sc-if>
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1240,&quot;height&quot;:900},&quot;ctx&quot;:{&quot;editor&quot;:&quot;object&quot;,&quot;default&quot;:{},&quot;tsType&quot;:&quot;object&quot;}}">
-const DASHBOARD_EN = {
-    views:["Overview","Exchange","Threads","Contracts","Map","Spaces","Versions","Docs","Guide"],
-    backOverview:"Back to Overview", viewsLabel:"Views", more:"More", localeGroup:"Interface language", space:"Space",
-    errorTitle:"Could not read demo data", errorPrefix:"The dashboard is a read-only projection of", errorSuffix:". Missing facts are never inferred.",
-    openWork:"Open Exchange", direction:"Show", typeFilter:"Type",
-    spaceHealth:"Space health", spaceHealthTitle:"How current this page is",
-    spaceHealthSub:"Everything on these screens is read from a local copy of each space, taken once when this file was written. This is when that copy was last refreshed, and what each space expects of your binary.",
-    spaceHealthFlagsTitle:"Worth a look", spaceHealthFlagsText:"Recorded by committed events, or a problem reading the local copy. A flag is a reason to look, not a verdict.",
-    spaceHealthFooter:"Nothing here is inferred: an unreadable space is reported as unreadable, never as empty.",
-    spaceHealthMore:"Open Spaces", spaceHealthClose:"Close",
-    work:"Exchange", threads:"Threads", threadMissingTitle:"No full reconstruction is available for this thread", threadMissingText:"This row comes from the summary; only some demo threads include a complete causal transcript.",
-    whoseMove:"Whose move", whoseMoveText:"State and allowed transitions are derived from the events below.", causalTimeline:"Thread history", newestFirst:"newest first", opensChain:"opens the chain", subjectPrefix:"on", threadFlags:"Consistency, protocol and read evidence",
-    contracts:"Contracts and their versions", codeBacked:"code-backed", consumerLines:"Registered consumer lines", versionWindow:"Live version window", provenance:"Provenance and schema", codeBindingPrefix:"A code binding records the generator and source digest. Whether the current bytes still match is", notEvaluated:"not evaluated", codeBindingSuffix:" in this static read.",
-    network:"Who depends on whom", networkSub:"A solid line means one system depends on a contract another one publishes. A dashed line means an exchange between two systems is still open. Click any line or system to see the versions, the pinned lines and the open documents behind it.", exchangeMap:"Exchange map",
-    spaces:"Spaces", spacesSub:"A space is the shared repository systems exchange documents through. This is how fresh your copy of each one is, and which a2a version it wants before it accepts what you write.", freshness:"Freshness", participants:"Participants", writerFloor:"Writer floor", pinnedWorkflow:"Pinned workflow", revision:"Revision",
-    limitsTitle:"What this snapshot did not check", limitsSub:"This file was written once, from the local cache. Anything it could not read, or deliberately did not evaluate, is named here, so an empty space never passes for a clean result.",
-    emptyLimitsTitle:"Nothing to qualify", emptyLimitsText:"Every connected space was readable when this snapshot was written, and no flag was raised. The numbers above are the whole picture.",
-    emptySpacesTitle:"No spaces connected", emptySpacesText:"A space is the shared repository two systems exchange documents through. Connect one and this table fills in.",
-    integrityFlags:"Protocol and read flags", integrityFlagsText:"Facts recorded by committed events, or problems reading the local cache index. A flag is evidence, not a verdict.",
-    degradedReads:"Degraded reads", degradedReadsText:"These spaces answered from an older mirror revision, or not at all. Their counts are floors, never totals.",
-    notEvaluatedTitle:"What this read deliberately did not check", notEvaluatedText:"Not failures. Questions a static file honestly cannot answer, said out loud instead of shown as a zero or a green tick.",
-    versions:"Versions", localBinary:"Local binary", installed:"installed", latest:"latest", updateCandidate:"Update candidate", impact:"impact", publishedReleases:"Published releases in this snapshot", expandedNotes:"Expanded notes cover",
-    guide:"How a2ahub fits together", guideSub:"Document types, statuses, the dashboard's reading order, and a direct way to improve the product. Everything on this page is written for people first.",
-    lifecycleTitle:"Lifecycle is events, not an editable status", lifecycleText:"Every transition is validated before it is recorded. Both sides fold the same history into the same state.", lifecycleFoot:"This is a document status, not a release marker. Responses, blocks, disputes, cancellations, and supersessions remain separate immutable events with a validated actor.",
-    artifactTypesTitle:"Eight document types", artifactTypesText:"One file carries one intent. The protocol code remains a quick visual anchor and a human name is always shown beside it.", readingGuide:"How to read the dashboard",
-    docs:"Documentation", docsSub:"The same manual the agent reads is available here without a network connection. Sections and search are on the left; the exact source text is on the right.",
-    docSearch:"Search the docs", docSearchPlaceholder:"thread, contract, retire…", docNoMatch:"No section title, group or source path matches that search.",
-    docEmbedded:"available offline", emptyDocsTitle:"No documentation embedded", emptyDocsText:"This snapshot was written without the doc corpus. Reinstall the skill and render the dashboard again.",
-    loadingDoc:"Loading the embedded document…",
-    feedbackTitle:"Have an idea? Let’s make a2ahub better", feedbackText:"Bugs, rough edges and feature ideas are welcome. Give the context to your agent: it knows the feedback format, checks for duplicates and files a safe, actionable report.", githubRepo:"GitHub repository", publicHome:"Public home", designSystem:"Design system v4",
-    readingRows:[["Overview and Work","Human actions ordered by consequence and next owner. Priority, literal blocking, a pending approval, a deadline, and a stale snapshot remain five distinct signals."],["Threads","One intent per chain, in committed order where Git history exists and explicitly labelled declared order where it does not."],["Contracts and Map","Drift belongs to a consumer's pinned major line. A provider may be healthy while a consumer resolves nothing."],["Integrity and Versions","The limits of this snapshot and the independent compatibility axes that must not be inferred from one another."]]
+const SPACE_I18N = {
+  en:{ spaces:"Spaces", emptyTitle:"No spaces connected", emptyText:"Connect a shared repository to see its carried source and consistency facts.", open:"Open space", kind:"Space", repository:"Repository", participants:"Participants", compatibility:"Compatibility", consistency:"Consistency", unavailable:"Unavailable evidence", snapshot:"Snapshot", technical:"Technical detail", workFreshness:"Work evidence freshness", none:"None recorded.", notRecorded:"Not recorded.", unknown:"Unknown in this snapshot.", count:"anomalies", shown:"Showing", of:"of", missingTitle:"Space not found", missingText:"The current snapshot has no space with this opaque identity." },
+  ru:{ spaces:"Спейсы", emptyTitle:"Спейсы не подключены", emptyText:"Подключите общий репозиторий, чтобы увидеть перенесённые факты об источнике и согласованности.", open:"Открыть спейс", kind:"Спейс", repository:"Репозиторий", participants:"Участники", compatibility:"Совместимость", consistency:"Согласованность", unavailable:"Недоступные данные", snapshot:"Снимок", technical:"Технические подробности", workFreshness:"Свежесть данных о работе", none:"Ничего не записано.", notRecorded:"Не записано.", unknown:"В этом снимке неизвестно.", count:"аномалий", shown:"Показано", of:"из", missingTitle:"Спейс не найден", missingText:"В текущем снимке нет спейса с таким непрозрачным идентификатором." }
 };
-
-const DASHBOARD_RU = {
-    views:["Обзор","Обмен","Треды","Контракты","Карта","Спейсы","Версии","Доки","Справка"],
-    backOverview:"Вернуться к обзору", viewsLabel:"Разделы", more:"Ещё", localeGroup:"Язык интерфейса", space:"Спейс",
-    errorTitle:"Не удалось прочитать данные", errorPrefix:"Дашборд только читает и показывает", errorSuffix:". Чего в файле нет, того он не придумывает.",
-    openWork:"Открыть обмен", direction:"Показать", typeFilter:"Тип",
-    spaceHealth:"Состояние спейсов", spaceHealthTitle:"Насколько свежее то, что вы читаете",
-    spaceHealthSub:"Всё на этих экранах взято из локальной копии спейса, снятой один раз, когда собирался этот файл. Здесь видно, когда копию последний раз обновляли и чего каждый спейс ждёт от вашего бинарника.",
-    spaceHealthFlagsTitle:"На что стоит посмотреть", spaceHealthFlagsText:"Сигналы из событий и локального снимка, которые стоит проверить. Они не обязательно означают ошибку.",
-    spaceHealthFooter:"Ничего не додумывается: если спейс не прочитался, так и написано, а не «ноль».",
-    spaceHealthMore:"Открыть спейсы", spaceHealthClose:"Закрыть",
-    work:"Обмен", threads:"Треды", threadMissingTitle:"Этот тред не удалось восстановить целиком", threadMissingText:"Есть только краткая сводка. В снимок не попала полная история: кто что сделал и в каком порядке.",
-    whoseMove:"Чей сейчас ход", whoseMoveText:"Посчитано по событиям ниже: что уже произошло и что после этого разрешено сделать.", causalTimeline:"История треда", newestFirst:"новое сверху", opensChain:"с этого всё началось", subjectPrefix:"для", threadFlags:"Что пошло не так в этом треде",
-    contracts:"Контракты и их версии", codeBacked:"собран из кода", consumerLines:"Кто на нём сидит", versionWindow:"Какие версии живы", provenance:"Откуда взялась схема", codeBindingPrefix:"Записано, чем и из какого исходника собран дескриптор. А вот совпадает ли он с кодом прямо сейчас,", notEvaluated:"не проверялось", codeBindingSuffix:": этот файл собран один раз и в код не заглядывает.",
-    network:"Кто от кого зависит", networkSub:"Сплошная линия значит, что одна система зависит от контракта, который публикует другая. Пунктир значит, что между двумя системами есть незакрытый обмен. Нажмите на линию или на систему, чтобы увидеть версии, закреплённые линии и открытые документы.", exchangeMap:"Карта обмена",
-    spaces:"Спейсы", spacesSub:"Системы обмениваются документами через общий репозиторий, он и называется спейсом. Здесь видно, насколько свежая у вас копия каждого и какую версию a2a он ждёт, чтобы принять вашу запись.", freshness:"Свежесть", participants:"Участники", writerFloor:"Минимум для записи", pinnedWorkflow:"Версия проверки в CI", revision:"Ревизия",
-    limitsTitle:"Что этот снимок не проверял", limitsSub:"Файл собран один раз из локального кэша. Всё, что не удалось прочитать или что мы намеренно не проверяли, названо здесь, чтобы пустое место не сошло за «всё в порядке».",
-    emptyLimitsTitle:"Уточнять нечего", emptyLimitsText:"Когда собирался снимок, все подключённые спейсы читались, замечаний не было. Цифры выше и есть вся картина.",
-    emptySpacesTitle:"Спейсы не подключены", emptySpacesText:"Спейс работает как общий репозиторий, через который две системы обмениваются документами. Подключите спейс, и таблица заполнится.",
-    integrityFlags:"Замечания", integrityFlagsText:"Сигналы из событий и локального снимка, которые стоит проверить. Они не обязательно означают ошибку.",
-    degradedReads:"Прочитано не полностью", degradedReadsText:"Эти спейсы ответили из устаревшей копии или не ответили вовсе. Их цифры значат «не меньше чем», а не точное число.",
-    notEvaluatedTitle:"Что мы намеренно не проверяли", notEvaluatedText:"Это не сбои. Это вопросы, на которые статический файл честно не отвечает и говорит об этом прямо, вместо того чтобы показать ноль или зелёную галочку.",
-    versions:"Версии", localBinary:"Ваш бинарник", installed:"стоит сейчас", latest:"последняя", updateCandidate:"Есть обновление", impact:"влияние", publishedReleases:"Выпуски", expandedNotes:"Подробности по",
-    guide:"Как устроен a2ahub", guideSub:"Типы документов, статусы, порядок чтения дашборда и прямой способ сделать продукт лучше. Эта страница сначала говорит с человеком, а уже потом — о протоколе.",
-    lifecycleTitle:"Статус не редактируется, он складывается из событий", lifecycleText:"Каждый переход проверяется до того, как попадёт в репозиторий. Обе стороны собирают из одной и той же истории одно и то же состояние.", lifecycleFoot:"Это статус документа, а не отметка о релизе. Ответы, блокировки, споры, отмены и замены не затираются: каждое остаётся отдельным событием с проверенным автором.",
-    artifactTypesTitle:"Восемь типов документов", artifactTypesText:"Один файл, одна мысль. Двухбуквенный код удобен глазу, но рядом всегда стоит нормальное название.", readingGuide:"Как читать дашборд",
-    docs:"Документация", docsSub:"То же руководство, что читает агент, доступно здесь без подключения к сети. Слева разделы и поиск, справа исходный текст.",
-    docSearch:"Поиск по докам", docSearchPlaceholder:"тред, контракт, вывод версии…", docNoMatch:"Ни одно название раздела, группа или путь к файлу не совпали с запросом.",
-    docEmbedded:"доступно без интернета", emptyDocsTitle:"Документация не вшита", emptyDocsText:"Этот снимок собран без корпуса документации. Переустановите навык и соберите дашборд заново.",
-    loadingDoc:"Загружается встроенный документ…",
-    feedbackTitle:"Есть идея? Давайте сделаем a2ahub лучше", feedbackText:"Баги, шероховатости и фичер-реквесты здесь действительно ждут. Передайте контекст своему агенту: он знает формат, проверит дубликаты и отправит безопасный, полезный отчёт.", githubRepo:"Репозиторий на GitHub", publicHome:"Главная сайта", designSystem:"Дизайн-система",
-    readingRows:[["Обзор и работа","Сверху то, где цена ошибки выше. Приоритет, блокировка, ожидание вашего согласования, срок и устаревшие данные остаются пятью разными сигналами, и они намеренно не слиты в один."],["Треды","Одна задача, один тред. Порядок берётся из коммитов Git; если истории нет, используется время, указанное автором, и это честно помечается."],["Контракты и карта","Расхождение считается для конкретного потребителя и той версии, которую он закрепил. У поставщика может быть всё хорошо ровно тогда, когда у потребителя не работает ничего."],["Спейсы и версии","Пределы этого снимка и три версии, которые нельзя выводить одну из другой."]]
-};
-
-const DASHBOARD_I18N = { en: DASHBOARD_EN, ru: DASHBOARD_RU };
-
-const UNAVAILABLE_RU = {
-  "snapshot-v3-verdict": [
-    "Проверка всего снимка не запускалась",
-    "Никто не прогонял валидацию именно перед сборкой этого файла, так что «всё сходится» здесь никто не подтверждал. Запустите a2a verify, если нужен свежий вердикт."
-  ],
-  "binding-byte-match": [
-    "Совпадает ли контракт с кодом прямо сейчас, неизвестно",
-    "У контракта записано, чем и из какого исходника он собран. Это отметка о происхождении: сверить её с текущим кодом можно только запустив генератор, а статический файл этого не делает."
-  ],
-  "hosted-hub-state": [
-    "Состояния общего Hub здесь нет",
-    "Hub остаётся будущей архитектурой, а не работающей сегодня поверхностью. Всё на этих экранах прочитано из вашей локальной копии."
-  ]
-};
-
-const AGE_RU = { m: " мин", h: " ч", d: " д", w: " нед" };
-
-function age(value) {
-  const raw = String(value == null ? "" : value);
-  if (!raw || document.documentElement.lang !== "ru") return raw;
-  if (raw === "just now") return "только что";
-  const m = raw.match(/^(\d+)([mhdw])$/);
-  return m ? m[1] + AGE_RU[m[2]] : raw;
-}
 
 class Component extends DCLogic {
   syncContext() {
     const ctx = this.props && this.props.ctx || {};
-    this.state = Object.assign({ data: ctx.data || null, locale: ctx.locale === "ru" ? "ru" : "en" }, ctx.ui || {});
+    this.state = Object.assign({ data:ctx.data || null, locale:ctx.locale === "ru" ? "ru" : "en", space:"all" }, ctx.ui || {});
     return ctx;
   }
 
-  setState(update) {
-    const ctx = this.props && this.props.ctx || {};
-    const current = Object.assign({}, this.state || {}, { data: ctx.data || null, locale: ctx.locale === "ru" ? "ru" : "en" }, ctx.ui || {});
-    const patch = typeof update === "function" ? update(current) : update;
-    this.state = Object.assign({}, current, patch || {});
-    if (ctx.actions && ctx.actions.patch) ctx.actions.patch(patch || {});
-  }
-
-  go(view, extra) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.navigate) actions.navigate(view, extra); }
-  closeContractFile() { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.closeContractFile) actions.closeContractFile(); }
-  applyTheme(theme) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setTheme) actions.setTheme(theme); }
-  applyLocale(locale) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setLocale) actions.setLocale(locale); }
-  copy(text) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.copy) actions.copy(text); }
-
-  inScope(space) { return this.state.space === "all" || space === this.state.space; }
+  inScope(space) { return this.state.space === "all" || this.state.space === space; }
 
   renderVals() {
     const ctx = this.syncContext();
-    let d = ctx.data;
-    const s = this.state;
-    const ui = ctx.ui || {};
+    const data = ctx.data || {};
+    const operational = data.operational || {};
+    const actions = ctx.actions || {};
     const ru = ctx.locale === "ru";
-    const c = DASHBOARD_I18N[ru ? "ru" : "en"];
-    if (!d && "SpacesView" !== "GuideView") {
-      if ("SpacesView" !== "DashboardShell") return {};
-      d = { spaces:[], nodes:[], inbox:[], outbox:[], archive:[], contracts:[], contractEdges:[], flags:[], meta:{}, tooling:{}, generatedAt:"", self:"" };
-    }
-    const flags = d.flags.filter(f => this.inScope(f.space));
-    const values = {
-      spaceLabel:c.space,
-      freshnessLabel:c.freshness,
-      participantsLabel:c.participants,
-      writerFloorLabel:c.writerFloor,
-      pinnedWorkflowLabel:c.pinnedWorkflow,
-      revisionLabel:c.revision,
-      freshnessHint: ru
-        ? "Когда мы последний раз синхронизировали локальную копию спейса. «Устарел» значит не поломку, а предупреждение: цифры ниже могут отставать от репозитория."
-        : "When the local copy of the space was last synced. “Stale” is not a failure but a warning: the numbers below may lag behind the repository.",
-      writerFloorHint: ru
-        ? "Минимальная версия a2a, документы от которой спейс принимает. Если ваш бинарник ниже, писать в этот спейс нельзя, читать можно."
-        : "The lowest a2a version whose documents this space accepts. Below it you cannot write to the space; reading still works.",
-      pinnedWorkflowHint: ru
-        ? "Версия проверки, закреплённая в CI спейса. Меняется отдельно от вашего бинарника и от минимума для записи, поэтому совпадение цифр случайно."
-        : "The validation workflow version pinned in the space's CI. It moves independently of your binary and of the writer floor, so matching numbers are a coincidence.",
-      limitsTitle:c.limitsTitle,
-      limitsSub:c.limitsSub,
-      emptyLimitsTitle:c.emptyLimitsTitle,
-      emptyLimitsText:c.emptyLimitsText,
-      emptySpacesTitle:c.emptySpacesTitle,
-      emptySpacesText:c.emptySpacesText,
-      integrityFlagsLabel:c.integrityFlags,
-      integrityFlagsText:c.integrityFlagsText,
-      degradedReadsLabel:c.degradedReads,
-      degradedReadsText:c.degradedReadsText,
-      notEvaluatedTitle:c.notEvaluatedTitle,
-      notEvaluatedText:c.notEvaluatedText,
-      spacesAria:c.views[5],
-      spaceRows: d.spaces.filter(x => this.inScope(x.id)).map((x, i, arr) => {
-        const line = i === arr.length - 1 ? "none" : "1px solid var(--hairline)";
-        return {
-          id: x.id,
-          pillText: !x.readable ? (ru ? "не читается" : "unreadable") : (x.stale ? "space stale" : (ru ? "свежий · " : "fresh · ") + age(x.syncAge)),
-          pillTone: !x.readable ? "blocking" : (x.stale ? "attention" : "healthy"),
-          participants: x.readable ? String(x.participantCount) : (ru ? "не проверялось" : "not evaluated"),
-          floor: x.minBinaryVersion || (ru ? "не записано" : "not recorded"),
-          workflow: x.workflowVersion || (ru ? "не записано" : "not recorded"),
-          revision: x.revision ? x.revision.slice(0, 10) : (ru ? "не записано" : "not recorded"),
-          cell: "padding:14px 16px 14px 0; vertical-align:top; border-bottom:" + line + ";",
-          cellLast: "padding:14px 0; vertical-align:top; border-bottom:" + line + ";"
-        };
-      }),
-      intFlags: flags.map(f => ({ code: f.code, origin: f.source + " · " + f.system + (f.space ? " · " + f.space : ""), message: f.message })),
-      intDegraded: d.spaces.filter(x => this.inScope(x.id) && (x.stale || !x.readable)).map(x => ({
-        id: x.id,
-        pillText: !x.readable ? (ru ? "не читается" : "unreadable") : "space stale",
-        pillTone: !x.readable ? "blocking" : "attention",
-        note: !x.readable ? (ru ? "манифест не прочитался" : "manifest could not be read") : (ru ? "читаем из устаревшей копии" : "reading from an older mirror revision")
-      })),
-      intUnavailable: d.unavailable.map(u => {
-        const say = ru ? UNAVAILABLE_RU[u.id] : null;
-        return { title: say ? say[0] : u.title, reason: say ? say[1] : u.reason };
-      }),
-      hasIntFlags: flags.length > 0,
-      hasIntDegraded: d.spaces.some(x => this.inScope(x.id) && (x.stale || !x.readable)),
-      hasIntUnavailable: d.unavailable.length > 0,
-      hasLimits: flags.length > 0 || d.unavailable.length > 0 || d.spaces.some(x => this.inScope(x.id) && (x.stale || !x.readable)),
-      noLimits: !(flags.length > 0 || d.unavailable.length > 0 || d.spaces.some(x => this.inScope(x.id) && (x.stale || !x.readable))),
-      hasSpaces: d.spaces.filter(x => this.inScope(x.id)).length > 0,
-      noSpaces: d.spaces.filter(x => this.inScope(x.id)).length === 0
+    const words = SPACE_I18N[ru ? "ru" : "en"];
+    const resolver = globalThis.A2A_VOCABULARY_RESOLVER;
+    const resolve = (family, value) => resolver.lookup(data, family, value || "__missing__", ru ? "ru" : "en");
+    const sentence = value => {
+      const raw = String(value || "").trim();
+      if (!raw) return words.unknown;
+      return /[.!?…]$/.test(raw) ? raw : raw + ".";
     };
-    return values;
+    const phrase = value => String(value || "").trim().replace(/[.!?…]+$/, "");
+    const unavailableSentence = value => {
+      const raw = String(value || "").trim();
+      if (!raw) return words.unknown;
+      return (ru ? "Недоступно в этом снимке: " : "Unavailable in this snapshot: ") + sentence(raw);
+    };
+    const bounds = window => window && window.truncated && window.shown < window.total
+      ? (ru ? words.shown + " " + window.shown + " " + words.of + " " + window.total + "." : words.shown + " " + window.shown + " " + words.of + " " + window.total + ".")
+      : "";
+    const accent = (family, identity) => actions.cardAccent ? actions.cardAccent(family, identity) : "";
+    const card = ctx.ui && ctx.ui.card || null;
+    const highlighted = (family, identity) => !!card && !!card.accent && accent(family, identity) === card.accent;
+    const highlightStyle = active => "border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:" + (active ? "var(--attention-tint)" : "var(--surface-section)") + "; box-shadow:inset 0 0 0 1px var(--hairline);";
+    const sourceFor = space => (operational.sources || []).find(source => source.kind === "space" && source.space === space.id) || null;
+    const diagnosticsFor = space => (operational.unavailable || []).filter(entry => entry.source_kind === "space" && entry.space === space.id)
+      .concat((data.unavailable || []).filter(entry => entry.scope === space.id || entry.id === space.id));
+    const participantsFor = space => (data.nodes || []).filter(node => (node.spaces || []).includes(space.id));
+    const groupsFor = space => (operational.timeline || []).filter(row => row.space === space.id).map(row => {
+      const window = row.consistency_window || null;
+      const anomalies = (row.consistency || []).map(anomaly => {
+        const identity = [space.id || "", row.thread || "", anomaly.code || "", anomaly.subject_ref || ""];
+        const active = highlighted("consistency-anomaly", identity);
+        return {
+          severityResult:resolve("consistency-severity", anomaly.severity),
+          technicalAria:(ru ? "Технические подробности аномалии согласованности " : "Technical detail for consistency anomaly ") + (anomaly.code || words.unknown),
+          technical:[
+            { label:"code", value:anomaly.code || words.notRecorded },
+            { label:"summary", value:anomaly.summary || words.notRecorded },
+            { label:"subject", value:anomaly.subject_ref || words.notRecorded }
+          ],
+          highlighted:active,
+          style:highlightStyle(active)
+        };
+      });
+      const totalKnown = !!window && Number.isFinite(window.total);
+      return {
+        thread:row.thread || words.notRecorded,
+        anomalies,
+        countText:totalKnown ? String(window.total) + " " + words.count : words.unknown,
+        cardText:totalKnown && anomalies.length ? String(window.total) + " — " + anomalies.map(anomaly => anomaly.severityResult.label).join(", ") : words.unknown,
+        windowText:bounds(window),
+        hasWindowText:!!bounds(window),
+        totalKnown,
+        total:totalKnown ? window.total : null
+      };
+    });
+    const modelFor = space => {
+      const source = sourceFor(space);
+      const carriedSourceFreshness = String(source && source.freshness || "");
+      const sourceDiagnosticFacts = diagnosticsFor(space);
+      const sourceUnavailable = carriedSourceFreshness === "unavailable" || (!carriedSourceFreshness && sourceDiagnosticFacts.length > 0);
+      const sourceResult = resolve("source-freshness", sourceUnavailable ? "unavailable" : carriedSourceFreshness);
+      const sourceIdentity = [space.id || "", source && source.kind || "space"];
+      const sourceHighlighted = highlighted("source", sourceIdentity);
+      const participantRows = participantsFor(space).map((node, index, rows) => {
+        const active = highlighted("participant", [space.id || "", node.system || ""]);
+        return { name:node.system || words.notRecorded, separator:index === rows.length - 1 ? "." : ", ", highlighted:active, contentStyle:"border-radius:5px; background:" + (active ? "var(--attention-tint)" : "transparent") + ";", style:"border-radius:999px; padding:5px 9px; background:" + (active ? "var(--attention-tint)" : "var(--surface-section)") + ";" };
+      });
+      const groups = groupsFor(space);
+      const sourceDiagnostics = sourceDiagnosticFacts.map(entry => ({
+        body:unavailableSentence(entry.summary || entry.reason),
+        technical:[
+          { label:"code", value:entry.code || words.notRecorded },
+          { label:"scope", value:entry.scope || entry.space || words.notRecorded },
+          { label:"title", value:entry.title || words.notRecorded },
+          { label:"reason", value:entry.summary || entry.reason || words.notRecorded }
+        ]
+      }));
+      const unavailable = sourceUnavailable
+        ? (sourceDiagnostics.length ? sourceDiagnostics : [{ body:words.unknown, technical:[] }])
+        : [];
+      const participantNames = participantRows.map(row => row.name);
+      const participantsText = !space.readable
+        ? words.unknown
+        : (space.participantCount === 0
+          ? words.none
+          : String(space.participantCount) + (participantNames.length ? " — " + participantNames.join(", ") : ""));
+      const compatibilityText = !space.readable
+        ? words.unknown
+        : (ru
+          ? "схема " + (space.schemaVersion || phrase(words.notRecorded)) + "; минимальный бинарник " + (space.minBinaryVersion || phrase(words.notRecorded)) + "; процесс " + (space.workflowVersion || phrase(words.notRecorded))
+          : "schema " + (space.schemaVersion || phrase(words.notRecorded)) + "; minimum binary " + (space.minBinaryVersion || phrase(words.notRecorded)) + "; workflow " + (space.workflowVersion || phrase(words.notRecorded)));
+      const hasCompleteConsistency = groups.length > 0 && groups.every(group => group.totalKnown);
+      const consistencyEmpty = !!space.readable && hasCompleteConsistency && groups.every(group => group.total === 0);
+      const consistencyUnknown = !space.readable || !hasCompleteConsistency;
+      const consistencyFacts = groups.filter(group => group.totalKnown && group.total > 0);
+      const consistencyValue = consistencyUnknown
+        ? words.unknown
+        : (consistencyEmpty ? words.none : sentence(consistencyFacts.map(group => group.cardText).join("; ")));
+      const workFreshness = [];
+      for (const row of (operational.timeline || [])) {
+        if (row.space !== space.id) continue;
+        for (const work of (row.work || [])) workFreshness.push({ result:resolve("freshness", work.freshness), age:"" });
+      }
+      const sourceSyncedAt = source && source.synced_at || words.notRecorded;
+      const lead = !source
+        ? words.unknown
+        : (source.synced_at
+          ? (ru ? "Данные спейса " + space.id + ": " + sourceResult.label + "; последняя синхронизация — " + source.synced_at + "." : "Evidence for space " + space.id + " is " + sourceResult.label + "; it was last synchronized at " + source.synced_at + ".")
+          : (ru ? "Данные спейса " + space.id + ": " + sourceResult.label + "; последняя синхронизация: " + words.notRecorded : "Evidence for space " + space.id + " is " + sourceResult.label + "; last synchronization: " + words.notRecorded));
+      const id = actions.cardID ? actions.cardID("space", space) : "";
+      const participantListKnown = !!space.readable && space.participantCount > 0 && participantRows.length > 0;
+      const repositoryValue = space.repoURL || words.notRecorded;
+      const unavailableValue = unavailable.length ? unavailable.map(entry => entry.body).join(" ") : words.none;
+      return {
+        id:space.id || "", cardID:id, sourceResult, sourceSyncedAt, syncAge:space.syncAge || "", lead,
+        sourceHighlighted, sourceStyle:highlightStyle(sourceHighlighted),
+        contentSourceStyle:"border-radius:5px; background:" + (sourceHighlighted ? "var(--attention-tint)" : "transparent") + "; font-size:17px; line-height:1.6; overflow-wrap:anywhere;",
+        repository:space.repoURL || words.notRecorded,
+        participants:participantRows, participantsText, participantsFallbackText:sentence(participantsText), compatibilityText,
+        repositoryText:(ru ? "Репозиторий: " : "Repository: ") + sentence(repositoryValue),
+        participantsPrefix:ru ? "Участники: " : "Participants: ",
+        participantCountText:String(space.participantCount) + " — ",
+        participantListKnown,
+        participantListUnknown:!participantListKnown,
+        compatibilityCardText:(ru ? "Совместимость: " : "Compatibility: ") + sentence(compatibilityText),
+        consistencyCardText:(ru ? "Согласованность: " : "Consistency: ") + consistencyValue,
+        consistencyBounds:groups.map(group => group.windowText).filter(Boolean),
+        consistencyGroups:groups, consistencyEmpty, consistencyUnknown,
+        unavailable, hasUnavailable:unavailable.length > 0, noUnavailable:unavailable.length === 0,
+        unavailableCardText:(ru ? "Недоступные данные: " : "Unavailable evidence: ") + unavailableValue,
+        snapshotCardText:(ru ? "Снимок: " : "Snapshot: ") + sentence(sourceResult && sourceResult.label, words.unknown),
+        sourceDiagnostics, hasSourceDiagnostics:sourceDiagnostics.length > 0,
+        workFreshness, hasWorkFreshness:workFreshness.length > 0,
+        noneRecorded:words.none, notRecorded:words.notRecorded, unknown:words.unknown,
+        hasConsistencyAnomalies:groups.some(group => group.anomalies.length > 0),
+        statusSupportLabel:ru ? "Пояснение состояния источника" : "Source status explanation",
+        consistencySupportLabel:ru ? "Пояснения серьёзности аномалий" : "Consistency severity explanations",
+        factStyle:highlightStyle(false),
+        open:() => { if (id && actions.openCard) actions.openCard("space", id, accent("source", sourceIdentity)); },
+        technical:[
+          { label:"space", value:space.id || words.notRecorded },
+          { label:"space revision", value:space.revision || words.notRecorded },
+          { label:"source revision", value:source && source.revision || words.notRecorded },
+          { label:"source synchronized at", value:sourceSyncedAt },
+          { label:"SpaceHealth.Readable", value:Object.prototype.hasOwnProperty.call(space, "readable") ? String(space.readable) : words.notRecorded },
+          { label:"SpaceHealth.Stale", value:Object.prototype.hasOwnProperty.call(space, "stale") ? String(space.stale) : words.notRecorded },
+          { label:"SpaceHealth.Synced", value:Object.prototype.hasOwnProperty.call(space, "synced") ? String(space.synced) : words.notRecorded },
+          { label:"workflow reference", value:space.workflowRef || words.notRecorded },
+          { label:"repository", value:space.repoURL || words.notRecorded },
+          { label:"sync age", value:space.syncAge || words.notRecorded }
+        ]
+      };
+    };
+
+    const spaces = (data.spaces || []).filter(space => this.inScope(space.id));
+    const spaceRows = spaces.map(modelFor);
+    const cardMode = !!card && card.kind === "space";
+    let spaceCard = null;
+    if (cardMode && actions.cardID) {
+      const selected = (data.spaces || []).find(space => actions.cardID("space", space) === card.id);
+      if (selected) spaceCard = modelFor(selected);
+    }
+    if (spaceCard) {
+      const anomalyTechnical = spaceCard.consistencyGroups.flatMap((group, groupIndex) =>
+        group.anomalies.flatMap((anomaly, anomalyIndex) => anomaly.technical.map(fact => ({
+          label:"consistency " + (groupIndex + 1) + "." + (anomalyIndex + 1) + " " + fact.label,
+          value:fact.value
+        })))
+      );
+      spaceCard.technical = spaceCard.technical.concat(anomalyTechnical);
+      Object.assign(spaceCard, {
+      factOrder:["identity","condition","repository","participants","compatibility","consistency","unavailable","snapshot","technical"],
+      identity:(ru ? "Спейс — " : "Space — ") + spaceCard.id,
+      kindLabel:words.kind, repositoryLabel:words.repository, participantsLabel:words.participants,
+      compatibilityLabel:words.compatibility, consistencyLabel:words.consistency,
+      unavailableLabel:words.unavailable, snapshotLabel:words.snapshot, technicalLabel:words.technical,
+      technicalCollapsedLabel:ru ? "Технические подробности: свёрнуты." : "Technical detail: collapsed.",
+      nestedTechnicalStyle:"display:none;"
+      });
+    }
+    return {
+      cardSpace:cardMode, normalSpaces:!cardMode, spaceCardPresent:!!spaceCard, spaceCardMissing:cardMode && !spaceCard, spaceCard,
+      missingTitle:words.missingTitle, missingText:words.missingText,
+      spacesAria:words.spaces, hasSpaces:spaceRows.length > 0, noSpaces:spaceRows.length === 0, spaceRows:spaceRows,
+      emptySpacesTitle:words.emptyTitle, emptySpacesText:words.emptyText, openLabel:words.open,
+      participantsLabel:words.participants, compatibilityLabel:words.compatibility, consistencyLabel:words.consistency,
+      unavailableLabel:words.unavailable, technicalLabel:words.technical, workFreshnessLabel:words.workFreshness
+    };
   }
 }
 </script>

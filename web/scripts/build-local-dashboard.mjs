@@ -7,6 +7,7 @@ const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = resolve(webRoot, '..');
 const internal = join(repoRoot, 'internal/html');
 const sourceRoot = join(webRoot, 'design-source');
+const templateOut = process.env.A2A_DASHBOARD_OUTPUT ? resolve(process.env.A2A_DASHBOARD_OUTPUT) : join(internal, 'template.html');
 const runtimeDir = mkdtempSync('/private/tmp/a2a-dashboard-runtime-');
 const runtimeOut = join(runtimeDir, 'design-runtime.js');
 
@@ -44,7 +45,41 @@ const must = (source, from, to) => {
 };
 const mustAll = (source, pairs) => pairs.reduce((acc, [from, to]) => must(acc, from, to), source);
 
-const dashboard = read(join(sourceRoot, '14-local-dashboard-v4.dc.html'));
+const cardManifest = (() => {
+  let parsed;
+  try {
+    parsed = JSON.parse(read(join(sourceRoot, 'cards.manifest.json')));
+  } catch (error) {
+    throw new Error(`local dashboard build: cannot read strict card manifest JSON: ${String(error)}`);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || parsed.version !== 1 || !Array.isArray(parsed.cards) || parsed.cards.length !== 7) {
+    throw new Error('local dashboard build: card manifest must be version 1 with exactly seven rows');
+  }
+  const kinds = new Set();
+  for (const [index, row] of parsed.cards.entries()) {
+    if (!row || typeof row !== 'object' || Array.isArray(row) || typeof row.kind !== 'string' || !/^[a-z][a-z0-9-]*$/.test(row.kind) || kinds.has(row.kind)) {
+      throw new Error(`local dashboard build: card manifest row ${index} has a missing, malformed, or duplicate kind`);
+    }
+    kinds.add(row.kind);
+    if (typeof row.component !== 'string' || !/^[A-Z][A-Za-z0-9]*$/.test(row.component)) throw new Error(`local dashboard build: ${row.kind} has a malformed component`);
+    try { read(join(sourceRoot, `${row.component}.dc.html`)); } catch { throw new Error(`local dashboard build: ${row.kind} names unknown component ${row.component}`); }
+    for (const [field, values] of [['identityFields', row.identityFields], ['accentFamilies', row.accentFamilies]]) {
+      if (!Array.isArray(values) || !values.length || values.some((value) => typeof value !== 'string' || !/^[a-z][a-z0-9_-]*$/.test(value)) || new Set(values).size !== values.length) {
+        throw new Error(`local dashboard build: ${row.kind} has malformed ${field}`);
+      }
+    }
+    if (!Array.isArray(row.selectionPaths) || !row.selectionPaths.length || row.selectionPaths.some((path) =>
+      !Array.isArray(path) || !path.length || path.some((segment) => typeof segment !== 'string' || !/^[a-z][A-Za-z0-9]*$/.test(segment))
+    ) || new Set(row.selectionPaths.map((path) => path.join('.'))).size !== row.selectionPaths.length) {
+      throw new Error(`local dashboard build: ${row.kind} has malformed selectionPaths`);
+    }
+  }
+  return parsed;
+})();
+const manifestMarker = '/*A2A_CARD_MANIFEST*/null';
+let dashboard = read(join(sourceRoot, '14-local-dashboard-v4.dc.html'));
+if (dashboard.split(manifestMarker).length !== 2) throw new Error('local dashboard build: dashboard root must contain exactly one card manifest marker');
+dashboard = dashboard.replace(manifestMarker, JSON.stringify(cardManifest).replaceAll('<', '\\u003c'));
 const open = dashboard.indexOf('<x-dc>');
 const close = dashboard.lastIndexOf('</x-dc>');
 const scriptOpen = dashboard.indexOf('<script type="text/x-dc" data-dc-script', close);
@@ -135,6 +170,6 @@ ${root}
 // generator must produce exactly what a POSIX text file looks like — otherwise
 // every regeneration shows a one-line diff and the drift gate can never be byte-exact.
 const cleanTemplate = `${template.replace(/[ \t]+$/gm, '')}\n`;
-writeFileSync(join(internal, 'template.html'), cleanTemplate);
+writeFileSync(templateOut, cleanTemplate);
 rmSync(runtimeDir, { recursive: true });
 console.log(`local dashboard: ${cleanTemplate.length} byte template + injected DATA/DOCS`);

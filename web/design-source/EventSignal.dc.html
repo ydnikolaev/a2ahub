@@ -9,16 +9,19 @@
 <x-dc>
 <span data-event-signal style="position:relative; display:inline-flex; flex:0 0 auto;">
   <button type="button" onMouseEnter="{{ openHint }}" onMouseLeave="{{ closeHint }}" onFocus="{{ openHint }}" onBlur="{{ closeHint }}" aria-label="{{ label }}" aria-expanded="{{ expanded }}" style="{{ buttonStyle }}">
-    <sc-if value="{{ positive }}" hint-placeholder-val="{{ true }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg></sc-if>
-    <sc-if value="{{ negative }}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" aria-hidden="true"><path d="m7 7 10 10"></path><path d="M17 7 7 17"></path></svg></sc-if>
-    <sc-if value="{{ caution }}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" aria-hidden="true"><path d="M7 12h10"></path></svg></sc-if>
-    <sc-if value="{{ neutral }}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="3.25"></circle></svg></sc-if>
+    <sc-if value="{{ hasResult }}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="font-size:12px; line-height:1; font-weight:700;">{{ cue }}</span></sc-if>
+    <sc-if value="{{ lacksResult }}" hint-placeholder-val="{{ true }}">
+      <sc-if value="{{ positive }}" hint-placeholder-val="{{ true }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg></sc-if>
+      <sc-if value="{{ negative }}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" aria-hidden="true"><path d="m7 7 10 10"></path><path d="M17 7 7 17"></path></svg></sc-if>
+      <sc-if value="{{ caution }}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" aria-hidden="true"><path d="M7 12h10"></path></svg></sc-if>
+      <sc-if value="{{ neutral }}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="3.25"></circle></svg></sc-if>
+    </sc-if>
   </button>
   <sc-if value="{{ open }}" hint-placeholder-val="{{ false }}"><span role="tooltip" style="{{ bubbleStyle }}">{{ label }}</span></sc-if>
 </span>
 
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:280,&quot;height&quot;:100},&quot;tone&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;positive&quot;,&quot;negative&quot;,&quot;caution&quot;,&quot;neutral&quot;],&quot;default&quot;:&quot;positive&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;label&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Successful transition&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:280,&quot;height&quot;:100},&quot;result&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;tone&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;positive&quot;,&quot;negative&quot;,&quot;caution&quot;,&quot;neutral&quot;],&quot;default&quot;:&quot;positive&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;label&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Successful transition&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
 // A compact second reading channel for lifecycle events. Shape and a short
 // hover/focus label carry the meaning as well as colour, so red/green never
 // become the only way to distinguish an accepted move from a rejected one.
@@ -46,11 +49,18 @@ class Component extends DCLogic {
   }
 
   renderVals() {
-    const tone = TONES[this.props.tone] ? this.props.tone : "neutral";
+    const result = this.props.result && typeof this.props.result === "object" ? this.props.result : null;
+    const resolver = globalThis.A2A_VOCABULARY_RESOLVER;
+    const presentation = result && resolver && resolver.presentation ? resolver.presentation(result) : null;
+    const resultTone = result ? (presentation ? presentation.signalTone : "neutral") : "";
+    const tone = result ? resultTone : (TONES[this.props.tone] ? this.props.tone : "neutral");
     const t = TONES[tone];
-    const label = this.props.label || "";
+    const label = result ? (result.explanation || result.label || "") : (this.props.label || "");
     return {
       label,
+      cue: result ? String(result.cueAttribute || result.cue || "") : "",
+      hasResult: !!result,
+      lacksResult: !result,
       positive: tone === "positive",
       negative: tone === "negative",
       caution: tone === "caution",

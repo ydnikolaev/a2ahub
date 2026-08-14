@@ -7,15 +7,15 @@
 </head>
 <body>
 <x-dc>
-<span data-status-key="{{ statusKey }}" style="{{ wrapStyle }}" onMouseEnter="{{ enter }}" onMouseLeave="{{ leave }}" onClick="{{ tap }}">
-  <span style="{{ pillStyle }}">{{ text }}</span>
+<span data-status-key="{{ statusKey }}" data-vocabulary-cue="{{ cueAttribute }}" class="{{ toneClass }}" style="{{ wrapStyle }}" onMouseEnter="{{ enter }}" onMouseLeave="{{ leave }}" onClick="{{ tap }}">
+  <span style="{{ pillStyle }}"><sc-if value="{{ hasCue }}" hint-placeholder-val="{{ false }}"><span aria-hidden="true">{{ cue }}</span></sc-if><span>{{ text }}</span></span>
   <sc-if value="{{ open }}" hint-placeholder-val="{{ false }}">
     <span role="tooltip" style="{{ bubbleStyle }}">{{ why }}</span>
   </sc-if>
 </span>
 
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:260,&quot;height&quot;:60},&quot;text&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Blocking · p1&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;tone&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;blocking&quot;,&quot;blockingStrong&quot;,&quot;attention&quot;,&quot;healthy&quot;,&quot;neutral&quot;,&quot;agent&quot;,&quot;outline&quot;],&quot;default&quot;:&quot;blocking&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;mono&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;default&quot;,&quot;small&quot;],&quot;default&quot;:&quot;default&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;why&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:260,&quot;height&quot;:60},&quot;result&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;staticText&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;staticTone&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;text&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Blocking · p1&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;tone&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;blocking&quot;,&quot;blockingStrong&quot;,&quot;attention&quot;,&quot;healthy&quot;,&quot;neutral&quot;,&quot;agent&quot;,&quot;outline&quot;],&quot;default&quot;:&quot;blocking&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;mono&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;default&quot;,&quot;small&quot;],&quot;default&quot;:&quot;default&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;why&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
 const TONES = {
   blocking: { bg: "var(--blocking-tint)", fg: "var(--blocking-ink)" },
   blockingStrong: { bg: "var(--red)", fg: "var(--surface)" },
@@ -72,12 +72,19 @@ class Component extends DCLogic {
   }
 
   renderVals() {
-    const t = TONES[this.props.tone] || TONES.neutral;
+    const result = this.props.result && typeof this.props.result === "object" ? this.props.result : null;
+    const resolver = globalThis.A2A_VOCABULARY_RESOLVER;
+    const presentation = result && resolver && resolver.presentation ? resolver.presentation(result) : null;
+    const toneClass = result ? String(result.toneClass || "") : "";
+    const t = presentation
+      ? { bg:presentation.pillBackground, fg:presentation.pillForeground, ring:presentation.pillRing }
+      : (result ? TONES.neutral : (TONES[this.props.staticTone || this.props.tone] || TONES.neutral));
     const mono = this.props.mono ? "font-family:'IBM Plex Mono',ui-monospace,monospace; " : "font-family:'Onest',sans-serif; ";
     const lang = document.documentElement.lang === "ru" ? "ru" : "en";
     const glossary = globalThis.A2A_GLOSSARY;
-    const entry = glossary && glossary.entry ? glossary.entry("statuses", this.props.text, lang) : null;
-    const raw = String(this.props.text == null ? "" : this.props.text);
+    const staticText = this.props.staticText || this.props.text;
+    const entry = !result && glossary && glossary.entry ? glossary.entry("statuses", staticText, lang) : null;
+    const raw = String(result ? result.label || "" : (staticText == null ? "" : staticText));
     let translated = raw;
     if (entry && lang === "ru") {
       const enGlossary = globalThis.A2A_GLOSSARY && globalThis.A2A_GLOSSARY.entry
@@ -94,14 +101,19 @@ class Component extends DCLogic {
         }
       }
     }
-    const why = this.props.why || (entry ? entry.description : "");
+    const why = result ? String(result.explanation || "") : (this.props.why || (entry ? entry.description : ""));
+    const cue = result ? String(result.cue || "") : "";
     return {
       statusKey: raw,
       text: translated,
+      toneClass,
+      cue,
+      cueAttribute: result ? String(result.cueAttribute || cue) : "",
+      hasCue: !!cue,
       why,
       open: !!why && this.state.open,
       wrapStyle: "display:inline-flex; position:relative;" + (why ? " cursor:help;" : ""),
-      pillStyle: "display:inline-block; " + mono + "font-size:" + (this.props.size === "small" ? "var(--font-badge-small)" : "var(--font-badge-default)") + "; font-weight:600; line-height:var(--line-badge); border-radius:var(--radius-badge); padding:" + (t.ring ? "var(--padding-badge-outline-block) var(--padding-badge-outline-inline)" : "var(--padding-badge-solid-block) var(--padding-badge-solid-inline)") + "; background:" + t.bg + "; color:" + t.fg + "; box-shadow:" + (t.ring || "none") + "; white-space:nowrap;" +
+      pillStyle: "display:inline-flex; align-items:center; gap:5px; " + mono + "font-size:" + (this.props.size === "small" ? "var(--font-badge-small)" : "var(--font-badge-default)") + "; font-weight:600; line-height:var(--line-badge); border-radius:var(--radius-badge); padding:" + (t.ring ? "var(--padding-badge-outline-block) var(--padding-badge-outline-inline)" : "var(--padding-badge-solid-block) var(--padding-badge-solid-inline)") + "; background:" + t.bg + "; color:" + t.fg + "; box-shadow:" + (t.ring || "none") + "; white-space:nowrap;" +
         (why ? " text-decoration:underline; text-decoration-style:dotted; text-underline-offset:3px; text-decoration-color:currentColor;" : ""),
       bubbleStyle: "position:fixed; z-index:950; " + this.state.pos + " width:min(320px, 76vw); background:var(--inverse); color:var(--on-inverse-2); border-radius:var(--radius-chip); padding:12px 14px; font-family:'Onest',sans-serif; font-size:14px; line-height:1.55; font-weight:400; text-align:left; box-shadow:0 14px 34px rgba(33,30,23,.34); white-space:normal; pointer-events:none;",
       enter: why ? (ev) => this.show(ev && ev.currentTarget) : (() => {}),

@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "cards": [
+    {
+      "kind": "item",
+      "component": "ArtifactDetail",
+      "identityFields": ["space", "id"],
+      "selectionPaths": [["inbox"], ["outbox"], ["archive"]],
+      "accentFamilies": ["state", "owner", "move", "event", "reference", "attachment", "operational-item"]
+    },
+    {
+      "kind": "thread",
+      "component": "ThreadsView",
+      "identityFields": ["space", "thread"],
+      "selectionPaths": [["threadViews"]],
+      "accentFamilies": ["member", "open-item", "participant", "event", "reference", "delivery"]
+    },
+    {
+      "kind": "contract",
+      "component": "ContractsView",
+      "identityFields": ["space", "id"],
+      "selectionPaths": [["contracts"]],
+      "accentFamilies": ["version", "consumer", "dependency-line"]
+    },
+    {
+      "kind": "cver",
+      "component": "ContractsView",
+      "identityFields": ["space", "id", "version"],
+      "selectionPaths": [["contracts", "versions"]],
+      "accentFamilies": ["consumer-pin", "dependency-line", "document", "history-event", "successor"]
+    },
+    {
+      "kind": "work-report",
+      "component": "ExchangeView",
+      "identityFields": ["space", "artifact_id"],
+      "selectionPaths": [["workReports"]],
+      "accentFamilies": ["actor", "wait", "subject", "checkpoint"]
+    },
+    {
+      "kind": "space",
+      "component": "SpacesView",
+      "identityFields": ["id"],
+      "selectionPaths": [["spaces"]],
+      "accentFamilies": ["participant", "source", "consistency-anomaly"]
+    },
+    {
+      "kind": "operational-process",
+      "component": "Overview",
+      "identityFields": ["space", "thread"],
+      "selectionPaths": [["operational", "timeline"]],
+      "accentFamilies": ["milestone", "work-row", "wait", "consistency-anomaly", "source"]
+    }
+  ]
+}

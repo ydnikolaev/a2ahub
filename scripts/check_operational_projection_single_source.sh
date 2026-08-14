@@ -80,7 +80,10 @@ fi
 # The browser may localise and navigate, but current-work membership is a
 # core-owned boolean. Reintroducing a browser-side freshness set recreates the
 # exact second truth this gate exists to prevent.
-grep -Eq 'w[[:space:]]*&&[[:space:]]*w\.current[[:space:]]*===[[:space:]]*true' "${browser_sources[@]}" ||
+# The presentation variable name is intentionally irrelevant: extraction moved
+# the consumer from `w` to `item`, while the load-bearing contract stayed the
+# explicit comparison against the core-owned boolean.
+grep -Eq '[[:alpha:]_][[:alnum:]_]*\.current[[:space:]]*===[[:space:]]*true' "${browser_sources[@]}" ||
   fail "dashboard does not consume the core-owned work.current decision"
 if grep -Eq '\[[^]]*"local-current"[^]]*"committed-current"[^]]*\].*(current|fresh)|indexOf\(w\.freshness\)' "${browser_sources[@]}"; then
   fail "dashboard derives current work from a browser-owned freshness vocabulary"

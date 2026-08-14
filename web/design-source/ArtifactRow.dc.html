@@ -7,101 +7,94 @@
 </head>
 <body>
 <x-dc>
-<button type="button" class="a2a-pick" onClick="{{ select }}" style="{{ rowStyle }}">
-  <span style="display:flex; align-items:flex-start; gap:8px; flex-wrap:nowrap; margin-bottom:9px;">
-    <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px;">
+<article class="a2a-pick" style="{{ rowStyle }}">
+<button type="button" onClick="{{ select }}" aria-label="{{ openLabel }}" style="display:block; width:100%; padding:0; border:0; background:transparent; color:inherit; text-align:left; font:inherit; cursor:pointer;">
+  <span data-item-row-fact="identity" style="display:flex; align-items:flex-start; gap:8px; flex-wrap:nowrap; margin-bottom:9px;">
+    <span style="flex:1 1 auto; min-width:0;">
+      <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px;">
       <dc-import name="TypeBadge" type="{{ type }}" size="small" hint-size="140px,24px"></dc-import>
-      <!-- Lifecycle state, then why it needs a human. The state was missing
-           entirely: a card said "p2" without ever saying whether the document
-           had been acknowledged, was in progress or already answered. -->
-      <sc-if value="{{ hasState }}" hint-placeholder-val="{{ true }}">
-        <dc-import name="StatusPill" text="{{ state }}" tone="{{ stateTone }}" size="small" hint-size="100px,24px"></dc-import>
-      </sc-if>
-      <sc-if value="{{ hasStatus }}" hint-placeholder-val="{{ true }}">
-        <dc-import name="StatusPill" text="{{ status }}" tone="{{ tone }}" why="{{ statusWhy }}" size="small" hint-size="110px,24px"></dc-import>
-      </sc-if>
+      </span>
+      <span style="display:block; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; color:var(--text); margin-top:9px; overflow-wrap:anywhere;">{{ title }}</span>
     </span>
     <span style="{{ timeStyle }}">{{ time }}</span>
   </span>
-  <span style="display:block; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; color:var(--text); margin-bottom:9px; overflow-wrap:anywhere;">{{ title }}</span>
-  <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding-right:18px; font-size:15px; color:var(--muted);">
-    <span style="{{ fromMonoStyle }}">{{ fromMono }}</span>
-    <span>{{ from }}</span>
-    <span style="color:var(--border-strong);">→</span>
-    <span style="{{ toMonoStyle }}">{{ toMono }}</span>
-    <span>{{ to }}</span>
-    <span style="color:var(--border-strong);">·</span>
-    <span style="overflow-wrap:anywhere;">{{ meta }}</span>
-  </span>
-  <sc-if value="{{ hasFreshness }}" hint-placeholder-val="{{ true }}">
-    <!-- This card is itself a button, so the dot stays a span rather than an
-         invalid nested button. Hover and tap expose the same popover as the
-         full card; tap stops before it selects the document underneath. -->
-    <span data-row-freshness role="img" aria-label="{{ freshnessHint }}" title="{{ freshnessHint }}" onMouseEnter="{{ openFreshness }}" onMouseLeave="{{ closeFreshness }}" onClick="{{ toggleFreshness }}" style="{{ freshnessWrapStyle }}">
-      <span aria-hidden="true" style="{{ freshnessDotStyle }}"></span>
-      <sc-if value="{{ freshnessOpen }}" hint-placeholder-val="{{ false }}">
-        <span role="tooltip" style="{{ freshnessBubbleStyle }}">{{ freshnessHint }}</span>
-      </sc-if>
-    </span>
-  </sc-if>
+  <span data-item-row-fact="lead" style="display:block; color:var(--body); overflow-wrap:anywhere; font-size:15px; line-height:1.55;">{{ reasonSentence }}</span>
+  <span data-item-row-fact="lifecycle" style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-top:10px; font-size:14px; color:var(--muted);"><sc-if value="{{ lifecycleKnown }}" hint-placeholder-val="{{ true }}"><sc-if value="{{ hasState }}" hint-placeholder-val="{{ true }}"><dc-import name="StatusPill" result="{{ stateResult }}" size="small" hint-size="120px,24px"></dc-import></sc-if><sc-if value="{{ hasOutcome }}" hint-placeholder-val="{{ true }}"><dc-import name="StatusPill" result="{{ outcomeResult }}" size="small" hint-size="120px,24px"></dc-import></sc-if><span>{{ terminalText }}</span><span>·</span><span>{{ archivedText }}</span></sc-if><sc-if value="{{ lifecycleUnknown }}" hint-placeholder-val="{{ false }}"><span>{{ lifecycleUnknownText }}</span></sc-if></span>
+  <span data-item-row-fact="parties" style="display:block; margin-top:9px; color:var(--muted); font-size:14px; line-height:1.5;"><span style="display:flex; align-items:center; gap:7px; flex-wrap:wrap;"><span style="{{ fromMonoStyle }}">{{ fromMono }}</span><span>{{ from }}</span><span>→</span><span style="{{ toMonoStyle }}">{{ toMono }}</span><span>{{ to }}</span><span>·</span><span>{{ meta }}</span></span><span style="display:flex; gap:7px; flex-wrap:wrap; margin-top:5px;"><strong style="color:var(--body);">{{ waitingOnLabel }}</strong><span>{{ waitingOn }}</span><span>·</span><strong style="color:var(--body);">{{ expectedMoveLabel }}</strong><span>{{ expectedMove }}</span><span>·</span><span>{{ yourMoveText }}</span></span></span>
+  <span data-item-row-fact="gate" style="display:flex; align-items:flex-start; gap:7px; flex-wrap:wrap; margin-top:9px; color:var(--muted); font-size:14px; line-height:1.5;"><sc-if value="{{ hasGate }}" hint-placeholder-val="{{ true }}"><dc-import name="StatusPill" result="{{ gateResult }}" size="small" hint-size="120px,24px"></dc-import><span>{{ gateResult.explanation }}</span></sc-if><sc-if value="{{ lacksGate }}" hint-placeholder-val="{{ false }}"><span>{{ notRecorded }}</span></sc-if><span>· {{ gatePendingText }}</span></span>
+  <span data-item-row-fact="urgency" style="display:block; margin-top:9px; color:var(--muted); font-size:14px; line-height:1.5;">{{ urgencyText }}</span>
+  <span data-item-row-fact="summary" style="display:block; margin-top:9px; color:var(--body); font-size:14px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere;">{{ summary }}</span>
+  <span data-item-row-fact="operational" style="display:flex; gap:7px; flex-wrap:wrap; margin-top:9px;"><sc-if value="{{ hasOperational }}" hint-placeholder-val="{{ true }}"><sc-for list="{{ operationalItems }}" as="op" hint-placeholder-count="2"><span style="display:inline-flex; align-items:center; gap:6px;"><span style="font-family:'IBM Plex Mono',ui-monospace,monospace;">{{ op.name }}</span><dc-import name="StatusPill" result="{{ op.result }}" size="small" hint-size="140px,24px"></dc-import></span></sc-for></sc-if><sc-if value="{{ lacksOperational }}" hint-placeholder-val="{{ false }}"><span style="color:var(--muted); font-size:14px;">{{ noneRecorded }}</span></sc-if></span>
+  <span data-item-row-fact="snapshot" style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-top:9px; color:var(--muted); font-size:14px; line-height:1.5;"><sc-if value="{{ hasFreshness }}" hint-placeholder-val="{{ true }}"><dc-import name="FreshnessDot" result="{{ freshnessResult }}" age="{{ syncAge }}" compact="{{ true }}" hint-size="12px,12px"></dc-import></sc-if><sc-if value="{{ hasSnapshotUnavailable }}" hint-placeholder-val="{{ false }}"><span>{{ snapshotUnavailable }}</span></sc-if><sc-if value="{{ hasSnapshotUnknown }}" hint-placeholder-val="{{ false }}"><span>{{ snapshotUnknownText }}</span></sc-if><sc-if value="{{ hasPendingMerge }}" hint-placeholder-val="{{ false }}"><span>{{ pendingMergeText }}</span></sc-if></span>
 </button>
+<sc-if value="{{ hasTechnical }}" hint-placeholder-val="{{ true }}">
+  <details data-item-row-fact="technical" data-item-row-technical style="margin-top:11px; padding-top:9px; border-top:1px solid var(--hairline); font-size:13px; line-height:1.5;">
+    <summary style="cursor:pointer; color:var(--teal-ink); font-weight:600;">{{ technicalLabel }}</summary>
+    <div style="display:grid; grid-template-columns:minmax(90px,auto) minmax(0,1fr); gap:5px 12px; margin-top:8px; font-family:'IBM Plex Mono',ui-monospace,monospace; overflow-wrap:anywhere;"><span>Why</span><span>{{ technicalWhy }}</span><span>{{ ruleLabel }}</span><span>{{ ruleIdentity }}</span><span>Evidence</span><span>{{ technicalEvidence }}</span></div>
+  </details>
+</sc-if>
+</article>
 
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:460,&quot;height&quot;:150},&quot;type&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;work_request&quot;,&quot;question&quot;,&quot;decision&quot;,&quot;handoff&quot;,&quot;requirement&quot;,&quot;response&quot;,&quot;announcement&quot;,&quot;contract&quot;],&quot;default&quot;:&quot;work_request&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;title&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Prevent duplicate payment capture after a worker retry&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;status&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Blocking · p1&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;tone&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;blocking&quot;,&quot;blockingStrong&quot;,&quot;attention&quot;,&quot;healthy&quot;,&quot;neutral&quot;,&quot;agent&quot;,&quot;outline&quot;],&quot;default&quot;:&quot;blocking&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;statusWhy&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;time&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;2 days overdue&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;from&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;checkout&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;to&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;you&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;fromCode&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;toCode&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;meta&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;checkout-core&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;syncAge&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;только что&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;syncStale&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;fromSelf&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;toSelf&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;selected&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;onSelect&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:460,&quot;height&quot;:440},&quot;type&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;work_request&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;title&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Prevent duplicate payment capture after a worker retry&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;stateResult&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;outcomeResult&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;lifecycleKnown&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;lifecycleUnknownText&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;gateResult&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;time&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;20.08.2026&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;from&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;atlas&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;to&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;checkout&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;fromCode&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;toCode&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;meta&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;checkout-core&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;syncAge&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;freshnessResult&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;fromSelf&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;toSelf&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;reasonSentence&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Checkout owns the next move.&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;waitingOnLabel&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Whose turn&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;waitingOn&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;checkout&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;expectedMoveLabel&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Expected move&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;expectedMove&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;accept&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;terminalText&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;archivedText&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;yourMoveText&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;gatePendingText&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;urgencyText&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;summary&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;operationalItems&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;array&quot;},&quot;noneRecorded&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;notRecorded&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;snapshotUnavailable&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;snapshotUnknownText&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;pendingMergeText&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;technicalLabel&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Technical detail&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;technicalWhy&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;ruleLabel&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Rule identity&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;ruleIdentity&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;technicalEvidence&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;openLabel&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Open item&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;selected&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;onSelect&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;}}">
 function mono(name) { return String(name || "?").slice(0, 2).toUpperCase(); }
 class Component extends DCLogic {
-  state = { freshnessOpen: false };
-
-  componentDidMount() {
-    this.closeOnEscape = (ev) => {
-      if (ev.key === "Escape" && this.state.freshnessOpen) this.setState({ freshnessOpen: false });
-    };
-    window.addEventListener("keydown", this.closeOnEscape);
-  }
-
-  componentWillUnmount() {
-    window.removeEventListener("keydown", this.closeOnEscape);
-  }
-
   renderVals() {
     const p = this.props;
     const selected = !!p.selected;
-    const urgent = p.tone === "blocking" || p.tone === "blockingStrong";
     const avatar = (isSelf) => "flex:0 0 auto; width:24px; height:24px; border-radius:99px; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:11px; font-weight:600; flex:0 0 auto; " + (isSelf ? "background:var(--teal-solid); color:var(--on-solid);" : "background:var(--border); color:var(--body);");
     return {
       type: p.type,
       title: p.title ?? "",
-      status: p.status ?? "",
-      tone: p.tone || "neutral",
-      // The sentence behind a label that raises a question, shown on the pill
-      // itself. Empty for the labels that need none.
-      statusWhy: p.statusWhy ?? "",
-      hasStatus: !!p.status,
-      state: p.state ?? "",
-      stateTone: p.stateTone || "neutral",
-      hasState: !!p.state,
+      stateResult: p.stateResult || null,
+      hasState: !!p.stateResult,
+      outcomeResult: p.outcomeResult || null,
+      hasOutcome: !!p.outcomeResult,
+      lifecycleKnown: p.lifecycleKnown !== false,
+      lifecycleUnknown: p.lifecycleKnown === false,
+      lifecycleUnknownText: p.lifecycleUnknownText || "",
+      gateResult: p.gateResult || null,
+      hasGate: !!p.gateResult,
+      lacksGate: !p.gateResult,
       time: p.time ?? "",
       // Dates use the same human-facing type as the version timeline below;
       // identifiers keep the mono face, calendar labels do not.
-      timeStyle: "flex:0 0 auto; text-align:right; font-family:'Onest',sans-serif; font-size:14px; white-space:nowrap;" + (urgent ? " font-weight:600; color:var(--red);" : " color:var(--muted);"),
+      timeStyle: "flex:0 0 auto; text-align:right; font-family:'Onest',sans-serif; font-size:14px; white-space:nowrap; color:var(--muted);",
       from: p.from ?? "",
       to: p.to ?? "",
       meta: p.meta ?? "",
-      hasFreshness: !!p.syncAge,
-      freshnessHint: p.syncStale
-        ? ((document.documentElement.lang === "ru" ? "Локальная копия спейса может отставать от репозитория. Последняя синхронизация: " : "The local space copy may lag behind the repository. Last synced: ") + (p.syncAge || (document.documentElement.lang === "ru" ? "неизвестно" : "unknown")) + ".")
-        : ((document.documentElement.lang === "ru" ? "Локальная копия спейса актуальна. Последняя синхронизация: " : "The local space copy is current. Last synced: ") + (p.syncAge || (document.documentElement.lang === "ru" ? "неизвестно" : "unknown")) + "."),
-      freshnessOpen: this.state.freshnessOpen,
-      freshnessWrapStyle: "position:absolute; right:18px; bottom:18px; z-index:3; width:13px; height:13px; display:flex; align-items:center; justify-content:center; cursor:help;",
-      freshnessDotStyle: "width:9px; height:9px; flex:0 0 9px; display:inline-block; border-radius:99px; background:" + (p.syncStale ? "var(--ochre)" : "var(--healthy-ink)") + "; box-shadow:0 0 0 3px " + (p.syncStale ? "var(--attention-tint)" : "var(--healthy-tint)") + ";",
-      freshnessBubbleStyle: "position:absolute; z-index:400; right:0; bottom:calc(100% + 9px); width:min(300px,74vw); background:var(--inverse); color:var(--on-inverse-2); border-radius:12px; padding:11px 13px; font-family:'Onest',sans-serif; font-size:14px; line-height:1.5; font-weight:400; text-align:left; box-shadow:0 14px 34px rgba(33,30,23,.34); white-space:normal; pointer-events:none;",
-      openFreshness: () => this.setState({ freshnessOpen: true }),
-      closeFreshness: () => this.setState({ freshnessOpen: false }),
-      toggleFreshness: (ev) => {
-        if (ev && ev.stopPropagation) ev.stopPropagation();
-        if (ev && ev.preventDefault) ev.preventDefault();
-        this.setState(s => ({ freshnessOpen: !s.freshnessOpen }));
-      },
+      hasFreshness: !!p.freshnessResult,
+      freshnessResult: p.freshnessResult || null,
+      syncAge: p.syncAge || "",
+      reasonSentence: p.reasonSentence || "",
+      waitingOnLabel: p.waitingOnLabel || "",
+      waitingOn: p.waitingOn || "",
+      expectedMoveLabel: p.expectedMoveLabel || "",
+      expectedMove: p.expectedMove || "",
+      terminalText: p.terminalText || "",
+      archivedText: p.archivedText || "",
+      yourMoveText: p.yourMoveText || "",
+      gatePendingText: p.gatePendingText || "",
+      urgencyText: p.urgencyText || "",
+      summary: p.summary || "",
+      operationalItems: p.operationalItems || [],
+      hasOperational: !!(p.operationalItems && p.operationalItems.length),
+      lacksOperational: !(p.operationalItems && p.operationalItems.length),
+      noneRecorded: p.noneRecorded || "",
+      notRecorded: p.notRecorded || "",
+      snapshotUnavailable: p.snapshotUnavailable || "",
+      hasSnapshotUnavailable: !!p.snapshotUnavailable,
+      snapshotUnknownText: p.snapshotUnknownText || "",
+      hasSnapshotUnknown: !!p.snapshotUnknownText,
+      pendingMergeText: p.pendingMergeText || "",
+      hasPendingMerge: !!p.pendingMergeText,
+      technicalLabel: p.technicalLabel || "",
+      technicalWhy: p.technicalWhy || "",
+      ruleLabel: p.ruleLabel || "",
+      ruleIdentity: p.ruleIdentity || "",
+      technicalEvidence: p.technicalEvidence || "",
+      hasTechnical: !!(p.technicalWhy || p.ruleIdentity || p.technicalEvidence),
+      openLabel: p.openLabel || "",
       fromMono: p.fromCode || mono(p.from),
       toMono: p.toCode || mono(p.to),
       fromMonoStyle: avatar(p.fromSelf),

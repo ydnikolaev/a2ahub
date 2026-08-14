@@ -8,63 +8,142 @@
 <body>
 <x-dc>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1,&quot;height&quot;:1},&quot;initialRevision&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;onSnapshot&quot;:{&quot;editor&quot;:&quot;event&quot;,&quot;tsType&quot;:&quot;function&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1,&quot;height&quot;:1},&quot;data&quot;:{&quot;editor&quot;:&quot;object&quot;,&quot;tsType&quot;:&quot;object&quot;},&quot;onHydrate&quot;:{&quot;editor&quot;:&quot;event&quot;,&quot;tsType&quot;:&quot;function&quot;},&quot;onState&quot;:{&quot;editor&quot;:&quot;event&quot;,&quot;tsType&quot;:&quot;function&quot;},&quot;onReady&quot;:{&quot;editor&quot;:&quot;event&quot;,&quot;tsType&quot;:&quot;function&quot;}}">
 class Component extends DCLogic {
   componentDidMount() {
-    this.startOperationalStream(this.props.initialRevision);
+    this.startOperationalStream(this.props.data);
   }
 
-  componentDidUpdate() {
-    if (!this.liveRevision && this.props.initialRevision) this.liveRevision = String(this.props.initialRevision);
+  emitState(value) {
+    if (this.operationalStopped) return;
+    if (typeof this.props.onState === "function") this.props.onState(value);
   }
 
-  startOperationalStream(initialRevision) {
-    if (window.location.protocol !== "http:" || !window.EventSource) return;
-    const host = String(window.location.hostname || "").toLowerCase();
-    if (host !== "localhost" && host !== "127.0.0.1" && host !== "::1" && host !== "[::1]") return;
-    this.liveRevision = String(initialRevision || "");
+  dashboardIdentity(response) {
+    const value = response && response.headers && typeof response.headers.get === "function" ? response.headers.get("ETag") : "";
+    const match = typeof value === "string" ? value.match(/^W\/"(sha256:[0-9a-f]{64})"$/) : null;
+    return match ? { etag:value, digest:match[1] } : null;
+  }
+
+  completeCandidate(data) {
+    return !!globalThis.A2A_COMPLETE_DASHBOARD && globalThis.A2A_COMPLETE_DASHBOARD.accepts(data);
+  }
+
+  startOperationalStream(data) {
     this.operationalStopped = false;
-    this.retryTimers = this.retryTimers || new Set();
-    const pull = (revision, attempt) => {
-      const pullSequence = (this.operationalPullSequence || 0) + 1;
-      this.operationalPullSequence = pullSequence;
-      const headers = {};
-      if (this.liveRevision) headers["If-None-Match"] = 'W/"' + this.liveRevision + '"';
-      return fetch("/api/v1/snapshot", { method:"GET", headers, cache:"no-store", credentials:"same-origin" }).then(response => {
-        if (response.status === 304) return null;
-        if (!response.ok) throw new Error("HTTP " + response.status);
-        return response.json();
-      }).then(snapshot => {
-        if (!snapshot || pullSequence <= (this.operationalAppliedSequence || 0)) return;
+    if (window.location.protocol !== "http:" || !window.EventSource) { this.emitState(""); return; }
+    const host = String(window.location.hostname || "").toLowerCase();
+    if (host !== "localhost" && host !== "127.0.0.1" && host !== "::1" && host !== "[::1]") { this.emitState(""); return; }
+    this.acceptedRevision = String(data && data.operational && data.operational.revision || "");
+    this.operationalRefreshControllers = new Set();
+    this.refreshDashboard = () => this.refreshOperationalDashboard();
+    if (typeof this.props.onReady === "function") this.props.onReady(this.refreshDashboard);
+    this.operationalSetupController = new AbortController();
+    fetch("/api/v1/dashboard", { method:"HEAD", cache:"no-store", credentials:"same-origin", signal:this.operationalSetupController.signal }).then(response => {
+      if (this.operationalStopped) return;
+      const identity = response.ok ? this.dashboardIdentity(response) : null;
+      if (!identity || !/^sha256:[0-9a-f]{64}$/.test(this.acceptedRevision)) { this.emitState("unavailable"); return; }
+      this.acceptedETag = identity.etag;
+      this.acceptedDigest = identity.digest;
+      try {
+        this.operationalEvents = new EventSource("/api/v1/events");
+      } catch (e) {
+        this.emitState("unavailable");
+        return;
+      }
+      this.onOperationalOpen = () => { if (!this.operationalStopped) this.operationalConfirmed = true; };
+      this.onOperationalError = () => { if (!this.operationalStopped && !this.operationalConfirmed) this.emitState("unavailable"); };
+      this.onOperationalRevision = event => {
+        if (this.operationalStopped) return;
+        let payload;
+        try { payload = JSON.parse(event.data || "{}"); } catch (e) { return; }
+        const revision = payload && typeof payload.revision === "string" && /^sha256:[0-9a-f]{64}$/.test(payload.revision) ? payload.revision : "";
+        const viewModel = payload && typeof payload.viewModel === "string" && /^sha256:[0-9a-f]{64}$/.test(payload.viewModel) ? payload.viewModel : "";
+        if (!revision || !viewModel) return;
+        if (revision === this.acceptedRevision && viewModel === this.acceptedDigest) return;
+        if (revision === this.observedRevision && viewModel === this.observedDigest) return;
+        this.observedRevision = revision;
+        this.observedDigest = viewModel;
+        this.observedETag = 'W/"' + viewModel + '"';
+        this.emitState("newer-available");
+      };
+      this.operationalEvents.addEventListener("open", this.onOperationalOpen);
+      this.operationalEvents.addEventListener("error", this.onOperationalError);
+      this.operationalEvents.addEventListener("revision", this.onOperationalRevision);
+    }).catch(() => { if (!this.operationalStopped) this.emitState("unavailable"); });
+  }
+
+  refreshOperationalDashboard() {
+    if (this.operationalStopped || !this.acceptedETag) {
+      if (!this.operationalStopped) this.emitState("stale");
+      return Promise.resolve(false);
+    }
+    const pullSequence = (this.operationalPullSequence || 0) + 1;
+    this.operationalPullSequence = pullSequence;
+    const controller = new AbortController();
+    this.operationalRefreshControllers.add(controller);
+    this.emitState("refreshing");
+    const headers = { "If-None-Match":this.acceptedETag };
+    return fetch("/api/v1/dashboard", { method:"GET", headers, cache:"no-store", credentials:"same-origin", signal:controller.signal }).then(response => {
+      if (this.operationalStopped) return false;
+      if (response.status === 304) {
+        if (pullSequence <= (this.operationalAppliedSequence || 0)) return false;
+        const returned = this.dashboardIdentity(response);
+        const effectiveETag = returned ? returned.etag : this.acceptedETag;
+        if (effectiveETag !== this.acceptedETag) throw new Error("304 ETag mismatch");
         this.operationalAppliedSequence = pullSequence;
-        this.liveRevision = String(snapshot.revision || revision || "");
-        if (typeof this.props.onSnapshot === "function") this.props.onSnapshot(snapshot);
+        if (this.observedETag === effectiveETag) {
+          this.acceptedRevision = this.observedRevision;
+          this.acceptedDigest = this.observedDigest;
+        }
+        this.observedRevision = this.acceptedRevision;
+        this.observedDigest = this.acceptedDigest;
+        this.observedETag = this.acceptedETag;
+        this.emitState("updated");
+        return true;
+      }
+      if (!response.ok || response.status !== 200) throw new Error("HTTP " + response.status);
+      const identity = this.dashboardIdentity(response);
+      if (!identity) throw new Error("missing dashboard ETag");
+      return response.json().then(candidate => {
+        if (this.operationalStopped) return false;
+        if (!this.completeCandidate(candidate)) throw new Error("incomplete dashboard");
+        if (pullSequence <= (this.operationalAppliedSequence || 0)) return false;
+        const accepted = typeof this.props.onHydrate === "function" && this.props.onHydrate(candidate) === true;
+        if (!accepted) throw new Error("dashboard rejected");
+        if (this.operationalStopped) return false;
+        this.operationalAppliedSequence = pullSequence;
+        this.acceptedETag = identity.etag;
+        this.acceptedDigest = identity.digest;
+        this.acceptedRevision = candidate.operational.revision;
+        this.observedRevision = this.acceptedRevision;
+        this.observedDigest = this.acceptedDigest;
+        this.observedETag = this.acceptedETag;
+        this.emitState("updated");
+        return true;
       });
-    };
-    fetch("/api/v1/snapshot", { method:"HEAD", cache:"no-store", credentials:"same-origin" }).then(response => {
-      if (!response.ok || this.operationalEvents) return;
-      this.operationalEvents = new EventSource("/api/v1/events");
-      this.operationalEvents.addEventListener("revision", event => {
-        let revision = "";
-        try { revision = String(JSON.parse(event.data || "{}").revision || event.lastEventId || ""); } catch (e) { revision = String(event.lastEventId || ""); }
-        if (!revision || revision === this.liveRevision) return;
-        pull(revision, 0).catch(() => {
-          if (this.operationalStopped) return;
-          const timer = setTimeout(() => {
-            this.retryTimers.delete(timer);
-            if (!this.operationalStopped && revision !== this.liveRevision) pull(revision, 1).catch(() => {});
-          }, 250);
-          this.retryTimers.add(timer);
-        });
-      });
-    }).catch(() => {});
+    }).catch(() => {
+      if (!this.operationalStopped && pullSequence > (this.operationalAppliedSequence || 0)) this.emitState("stale");
+      return false;
+    }).finally(() => {
+      this.operationalRefreshControllers.delete(controller);
+    });
   }
 
   componentWillUnmount() {
     this.operationalStopped = true;
-    if (this.operationalEvents) this.operationalEvents.close();
-    for (const timer of this.retryTimers || []) clearTimeout(timer);
-    if (this.retryTimers) this.retryTimers.clear();
+    if (this.operationalSetupController) this.operationalSetupController.abort();
+    for (const controller of this.operationalRefreshControllers || []) controller.abort();
+    if (this.operationalRefreshControllers) this.operationalRefreshControllers.clear();
+    if (this.operationalEvents) {
+      if (typeof this.operationalEvents.removeEventListener === "function") {
+        this.operationalEvents.removeEventListener("open", this.onOperationalOpen);
+        this.operationalEvents.removeEventListener("error", this.onOperationalError);
+        this.operationalEvents.removeEventListener("revision", this.onOperationalRevision);
+      }
+      this.operationalEvents.close();
+    }
+    if (typeof this.props.onReady === "function") this.props.onReady(null);
   }
 
   renderVals() { return {}; }

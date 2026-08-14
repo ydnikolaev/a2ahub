@@ -1,0 +1,10 @@
+Question — Should a retry reuse the original capture idempotency key?
+Unknown in this snapshot.
+Lifecycle: Submitted for review; outcome: Still open.
+Parties and next move: from checkout; to atlas; waiting on atlas; unknown in this snapshot.
+Human gate: Not recorded.
+Urgency: p2; needed by 2026-07-31; not blocking; severity normal.
+Summary: Checkout needs one stable retry rule before it can finish the duplicate-capture fix.
+Operational declarations: None recorded.
+Snapshot: Source is current.
+Technical detail: collapsed.

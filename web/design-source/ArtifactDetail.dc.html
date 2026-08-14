@@ -7,8 +7,58 @@
 </head>
 <body>
 <x-dc>
-<div style="{{ overlayStyle }}" onClick="{{ dismissWide }}">
-<div style="{{ shellStyle }}" role="{{ shellRole }}" aria-modal="{{ shellAriaModal }}" aria-label="{{ shellAriaLabel }}">
+<sc-if value="{{ cardItem }}" hint-placeholder-val="{{ false }}">
+  <sc-if value="{{ itemCardPresent }}" hint-placeholder-val="{{ true }}">
+    <article data-card-kind="item" style="min-width:0; font-family:'Onest',sans-serif; color:var(--text);">
+      <div data-card-content>
+        <div data-item-fact="identity"><h2 class="a2a-detail-title" style="margin:0 0 var(--space-card-title-to-content); overflow-wrap:anywhere;">{{ itemCard.identity }}</h2></div>
+        <div data-item-fact="lead" data-item-lead style="margin:0 0 var(--space-section); font-size:17px; line-height:1.6; color:var(--body); overflow-wrap:anywhere;">{{ itemCard.reasonSentence }}</div>
+
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <div data-item-fact="lifecycle" data-accented="{{ itemCard.lifecycleHighlighted }}" style="line-height:1.55; overflow-wrap:anywhere; {{ itemCard.lifecycleStyle }}"><strong>{{ itemCard.lifecycleLabel }}:</strong> <sc-if value="{{ itemCard.hasLifecyclePills }}" hint-placeholder-val="{{ true }}">{{ itemCard.bodyStateResult.label }}; <strong>{{ itemCard.outcomeLabel }}:</strong> <sc-if value="{{ itemCard.hasOutcome }}" hint-placeholder-val="{{ true }}">{{ itemCard.bodyOutcomeResult.label }}{{ itemCard.outcomeEnding }}</sc-if><sc-if value="{{ itemCard.lacksOutcome }}" hint-placeholder-val="{{ false }}">{{ itemCard.notRecorded }}</sc-if></sc-if><sc-if value="{{ itemCard.lifecycleUnknown }}" hint-placeholder-val="{{ false }}">{{ itemCard.lifecycleUnknownText }}</sc-if></div>
+          <div data-item-fact="parties" data-accented="{{ itemCard.partiesHighlighted }}" style="line-height:1.55; overflow-wrap:anywhere; {{ itemCard.partiesStyle }}"><strong>{{ itemCard.partiesLabel }}:</strong> {{ itemCard.partiesText }}</div>
+          <div data-item-fact="gate" style="line-height:1.55; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);"><strong>{{ itemCard.gateLabel }}:</strong> <sc-if value="{{ itemCard.hasGate }}" hint-placeholder-val="{{ true }}">{{ itemCard.bodyGateResult.label }}{{ itemCard.gateEnding }}</sc-if><sc-if value="{{ itemCard.lacksGate }}" hint-placeholder-val="{{ false }}">{{ itemCard.notRecorded }}</sc-if></div>
+          <div data-item-fact="urgency" style="line-height:1.55; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);"><strong>{{ itemCard.urgencyLabel }}:</strong> {{ itemCard.urgencyText }}</div>
+          <div data-item-fact="summary" style="line-height:1.55; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);"><strong>{{ itemCard.summaryLabel }}:</strong> {{ itemCard.summary }}</div>
+          <div data-item-fact="operational" style="line-height:1.55; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);"><strong>{{ itemCard.operationalLabel }}:</strong> <sc-if value="{{ itemCard.hasOperational }}" hint-placeholder-val="{{ true }}"><sc-for list="{{ itemCard.operationalItems }}" as="op" hint-placeholder-count="2"><span data-accented="{{ op.highlighted }}" style="{{ op.style }}">{{ op.separator }}<span style="font-family:'IBM Plex Mono',ui-monospace,monospace; overflow-wrap:anywhere;">{{ op.name }}</span> — {{ op.bodyResult.label }}</span></sc-for>{{ itemCard.operationalEnding }}</sc-if><sc-if value="{{ itemCard.lacksOperational }}" hint-placeholder-val="{{ false }}">{{ itemCard.noneRecorded }}</sc-if></div>
+          <div data-item-fact="snapshot" style="line-height:1.55; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);"><strong>{{ itemCard.snapshotLabel }}:</strong> <sc-if value="{{ itemCard.snapshotUnavailableOnly }}" hint-placeholder-val="{{ false }}">{{ itemCard.snapshotUnavailable }}</sc-if><sc-if value="{{ itemCard.hasBodySnapshotResult }}" hint-placeholder-val="{{ true }}">{{ itemCard.bodySnapshotResult.label }}{{ itemCard.snapshotFactsSuffix }}{{ itemCard.snapshotEnding }}</sc-if><sc-if value="{{ itemCard.snapshotFactsOnly }}" hint-placeholder-val="{{ false }}">{{ itemCard.snapshotFacts }}.</sc-if><sc-if value="{{ itemCard.snapshotUnknown }}" hint-placeholder-val="{{ false }}">{{ itemCard.snapshotUnknownText }}</sc-if></div>
+        </div>
+
+        <details data-item-fact="technical" data-item-technical style="{{ itemCard.technicalStyle }}">
+          <summary style="cursor:pointer; color:var(--teal-ink); font-weight:600;">{{ itemCard.technicalLabel }}</summary>
+          <div style="display:grid; grid-template-columns:minmax(100px,auto) minmax(0,1fr); gap:7px 14px; margin-top:12px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; line-height:1.5; overflow-wrap:anywhere;">
+            <span>{{ itemCard.whyLabel }}</span><span>{{ itemCard.technicalWhy }}</span>
+            <span>{{ itemCard.ruleLabel }}</span><span>{{ itemCard.ruleIdentity }}</span>
+            <span>Evidence</span><span>{{ itemCard.technicalEvidence }}</span>
+            <span>space</span><span>{{ itemCard.space }}</span><span>id</span><span>{{ itemCard.id }}</span>
+          </div>
+          <sc-if value="{{ itemCard.hasTechnicalTargets }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex; flex-direction:column; gap:6px; margin-top:12px;">
+              <sc-for list="{{ itemCard.technicalTargets }}" as="target" hint-placeholder-count="4">
+                <div data-item-technical-target="{{ target.family }}" data-accented="{{ target.highlighted }}" style="{{ target.style }}"><span style="color:var(--muted);">{{ target.label }}</span><span style="font-family:'IBM Plex Mono',ui-monospace,monospace; overflow-wrap:anywhere;">{{ target.identity }}</span></div>
+              </sc-for>
+            </div>
+          </sc-if>
+        </details>
+      </div>
+      <div data-card-support="item:status" aria-label="{{ itemCard.statusSupportLabel }}" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:var(--space-section);"><sc-for list="{{ itemCard.statusSupport }}" as="status" hint-placeholder-count="4"><dc-import name="StatusPill" result="{{ status }}" size="small" hint-size="150px,24px"></dc-import></sc-for></div>
+      <sc-if value="{{ itemCard.hasLinkedWorkReports }}" hint-placeholder-val="false">
+        <div data-card-support="item:work-reports" style="display:flex; flex-direction:column; gap:8px; margin-top:var(--space-section);">
+          <sc-for list="{{ itemCard.linkedWorkReports }}" as="report" hint-placeholder-count="1">
+            <div data-work-report-history style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--surface-section); box-shadow:inset 0 0 0 1px var(--hairline);">
+              <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0;"><dc-import name="StatusPill" result="{{ report.modeResult }}" size="small" hint-size="130px,24px"></dc-import><span style="overflow-wrap:anywhere;">{{ report.summary }}</span></span>
+              <button type="button" onClick="{{ report.open }}" style="padding:0; border:0; background:transparent; color:var(--teal-ink); font-family:'Onest',sans-serif; font-size:14px; font-weight:600; cursor:pointer;">{{ report.openLabel }}</button>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+    </article>
+  </sc-if>
+  <sc-if value="{{ itemCardMissing }}" hint-placeholder-val="{{ false }}"><dc-import name="EmptyState" title="{{ itemCardMissingTitle }}" text="{{ itemCardMissingText }}" size="panel" hint-size="100%,300px"></dc-import></sc-if>
+</sc-if>
+
+<sc-if value="{{ legacyDetail }}" hint-placeholder-val="{{ true }}">
+<div style="{{ shellStyle }}">
   <sc-if value="{{ missing }}" hint-placeholder-val="{{ false }}">
     <dc-import name="EmptyState" title="{{ missingTitle }}" text="{{ missingText }}" hint="{{ missingHint }}" size="panel" hint-size="100%,300px"></dc-import>
   </sc-if>
@@ -23,7 +73,7 @@
             <dc-import name="TypeBadge" type="{{ type }}" size="small" hint-size="140px,24px"></dc-import>
           </sc-if>
           <sc-for list="{{ pills }}" as="p" hint-placeholder-count="2">
-            <dc-import name="StatusPill" text="{{ p.text }}" tone="{{ p.tone }}" why="{{ p.hint }}" size="small" hint-size="110px,24px"></dc-import>
+            <dc-import name="StatusPill" result="{{ p.result }}" size="small" hint-size="110px,24px"></dc-import>
           </sc-for>
         </div>
       </div>
@@ -31,9 +81,6 @@
         <sc-if value="{{ hasThread }}" hint-placeholder-val="{{ true }}">
           <button type="button" onClick="{{ openThread }}" style="display:inline-flex; align-items:center; gap:7px; font-family:'Onest',sans-serif; font-size:14px; font-weight:600; color:var(--teal-ink); background:var(--teal-tint); border:0; border-radius:10px; padding:10px 13px; cursor:pointer; white-space:nowrap;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10.586 5.414-5.172 5.172"></path><path d="m18.586 13.414-5.172 5.172"></path><path d="M6 12h12"></path><circle cx="12" cy="20" r="2"></circle><circle cx="12" cy="4" r="2"></circle><circle cx="20" cy="12" r="2"></circle><circle cx="4" cy="12" r="2"></circle></svg><span>{{ threadLabel }}</span></button>
         </sc-if>
-        <button type="button" onClick="{{ toggleWide }}" aria-label="{{ wideLabel }}" title="{{ wideLabel }}" aria-pressed="{{ widePressed }}" style="{{ wideButtonStyle }}">
-          <dc-import name="ExpandIcon" expanded="{{ isWide }}" hint-size="20px,20px"></dc-import>
-        </button>
       </div>
     </div>
 
@@ -51,7 +98,6 @@
          recipient. -->
     <sc-if value="{{ hasCallout }}" hint-placeholder-val="{{ true }}">
       <div style="{{ calloutStyle }}">
-        <span style="position:absolute; top:16px; right:17px; z-index:2;"><dc-import name="EventSignal" tone="{{ calloutSignalTone }}" label="{{ calloutSignalLabel }}" hint-size="20px,20px"></dc-import></span>
         <div style="{{ calloutTitleStyle }}">{{ calloutTitle }}</div>
         <div style="display:flex; flex-direction:column; gap:12px;">
           <sc-for list="{{ calloutParts }}" as="part" hint-placeholder-count="2">
@@ -69,7 +115,7 @@
         <div style="border-radius:var(--radius-nested); background:var(--surface-section); box-shadow:inset 0 0 0 1px var(--hairline); overflow:hidden;">
           <button type="button" onClick="{{ toggleMetadata }}" aria-expanded="{{ metadataExpanded }}" style="width:100%; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:11px 13px; border:0; color:var(--teal-ink); background:transparent; font-family:'Onest',sans-serif; font-size:14px; font-weight:600; cursor:pointer; text-align:left;">
             <span>{{ metadataToggleLabel }}</span>
-            <span style="display:flex; align-items:center; gap:8px; flex:0 0 auto;"><span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px; color:var(--muted);">{{ metadataCount }}</span><dc-import name="DisclosureIcon" expanded="{{ metadataExpanded }}" hint-size="18px,18px"></dc-import></span>
+            <dc-import name="DisclosureIcon" expanded="{{ metadataExpanded }}" hint-size="18px,18px"></dc-import>
           </button>
           <sc-if value="{{ metadataOpen }}" hint-placeholder-val="{{ false }}">
             <div style="padding:0 13px 8px;">
@@ -153,7 +199,7 @@
             <div style="{{ op.rowStyle }}">
               <span style="display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap; row-gap:6px;">
                 <span style="flex:1 1 auto; min-width:0; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:16px; font-weight:600; overflow-wrap:anywhere;">{{ op.name }}</span>
-                <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="{{ op.label }}" tone="{{ op.tone }}" size="small" hint-size="150px,26px"></dc-import></span>
+                <span style="flex:0 0 auto;"><dc-import name="StatusPill" result="{{ op.result }}" size="small" hint-size="150px,26px"></dc-import></span>
               </span>
               <span style="display:block; margin-top:5px; font-size:15px; line-height:1.5; color:var(--muted); overflow-wrap:anywhere;">{{ op.hint }}</span>
             </div>
@@ -172,7 +218,7 @@
                 <span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:16px; font-weight:600; overflow-wrap:anywhere;">{{ r.ref }}</span>
                 <span style="font-size:15px; color:var(--muted);">{{ r.note }}</span>
               </span>
-              <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="{{ r.pillText }}" tone="{{ r.pillTone }}" hint-size="120px,26px"></dc-import></span>
+              <span style="flex:0 0 auto; color:var(--muted); font-size:14px;">{{ r.evidence }}</span>
             </div>
           </sc-for>
         </div>
@@ -187,7 +233,6 @@
             <div style="background:var(--surface-section); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); display:flex; flex-direction:column; gap:4px;">
               <span style="display:flex; align-items:flex-start; gap:12px; flex-wrap:nowrap;">
                 <span style="flex:1 1 auto; min-width:0; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:16px; font-weight:600; overflow-wrap:anywhere;">{{ att.ref }}</span>
-                <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="{{ att.pillText }}" tone="{{ att.pillTone }}" hint-size="120px,26px"></dc-import></span>
               </span>
               <!-- The row's own facts, `digest` first: it is a SEPARATE field
                    from `ref` (spec 04 §7) and it is what a person comparing
@@ -220,10 +265,16 @@
           <sc-for list="{{ events }}" as="e" hint-placeholder-count="3">
             <div style="{{ e.railStyle }}">
               <dc-import name="ActorEventLine" row="{{ e }}" size="regular" layout="rail" hint-size="100%,46px"></dc-import>
+              <sc-if value="{{ e.hasConsistency }}" hint-placeholder-val="{{ false }}">
+                <details data-event-consistency style="margin-top:var(--space-inline); color:var(--muted);">
+                  <summary style="cursor:pointer; font-size:13px; font-weight:600;">{{ e.consistencyLabel }}</summary>
+                  <div style="margin-top:7px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px; line-height:1.55; overflow-wrap:anywhere;">{{ e.consistencyText }}</div>
+                </details>
+              </sc-if>
               <sc-if value="{{ e.isWorkReport }}" hint-placeholder-val="{{ false }}">
                 <div data-work-report-history style="margin-top:var(--space-inline); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--surface-section); box-shadow:inset 0 0 0 1px var(--hairline);">
                   <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:8px;">
-                    <dc-import name="StatusPill" text="{{ e.workMode }}" tone="{{ e.workModeTone }}" size="small" hint-size="110px,24px"></dc-import>
+                    <dc-import name="StatusPill" result="{{ e.workModeResult }}" size="small" hint-size="110px,24px"></dc-import>
                     <span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px; line-height:1.45; color:var(--muted);">{{ e.workEvidence }}</span>
                   </div>
                   <div style="font-size:15px; line-height:1.5; color:var(--body); overflow-wrap:anywhere;">{{ e.workSummary }}</div>
@@ -234,20 +285,17 @@
                       </sc-for>
                     </div>
                   </sc-if>
+                  <button type="button" onClick="{{ e.openWorkReport }}" style="margin-top:10px; padding:0; border:0; background:transparent; color:var(--teal-ink); font-family:'Onest',sans-serif; font-size:14px; font-weight:600; cursor:pointer;">{{ e.workReportOpenLabel }} →</button>
                 </div>
               </sc-if>
-              <!-- verify/close's own per-criterion judgement (event/v2
-                   `verdicts[]`, P6 wave C, threat-model.md T5) — same
-                   VERDICT_LABEL/VERDICT_TONE vocabulary the thread
-                   transcript already renders with (B34,
-                   agent-exchange-2026-08). Rendered only when this event
-                   actually carries entries. -->
+              <!-- Raw carried criterion verdicts remain visible without a
+                   browser-owned label or treatment table. -->
               <sc-if value="{{ e.hasVerdicts }}" hint-placeholder-val="{{ false }}">
                 <div style="margin-top:var(--space-inline);">
                   <div style="font-size:14px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:8px;">{{ e.verdictsTitle }}</div>
                   <div style="display:flex; flex-direction:column; gap:6px;">
                     <sc-for list="{{ e.verdicts }}" as="v" hint-placeholder-count="1">
-                      <div><dc-import name="StatusPill" text="{{ v.text }}" tone="{{ v.tone }}" size="small" hint-size="240px,24px"></dc-import></div>
+                      <div style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; color:var(--body);">{{ v.text }}</div>
                     </sc-for>
                   </div>
                 </div>
@@ -263,7 +311,7 @@
         <sc-for list="{{ flags }}" as="f" hint-placeholder-count="1">
           <div style="margin-bottom:4px;">
             <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:4px;">
-              <dc-import name="StatusPill" text="{{ flagLabel }}" tone="outline" hint-size="110px,24px"></dc-import>
+              <span style="font-size:13px; font-weight:600; color:var(--attention-ink);">{{ flagLabel }}</span>
               <span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:15px; color:var(--attention-ink);">{{ f.code }}</span>
             </div>
             <div style="font-size:15px; line-height:1.5; color:var(--attention-ink); overflow-wrap:anywhere;">{{ f.message }}</div>
@@ -282,57 +330,33 @@
         <span aria-hidden="true">·</span><span>{{ sourceClass }}</span>
       </span>
       <sc-if value="{{ hasFreshness }}" hint-placeholder-val="{{ true }}">
-        <dc-import name="FreshnessDot" stale="{{ syncStale }}" age="{{ syncAge }}" hint-size="12px,12px"></dc-import>
+        <dc-import name="FreshnessDot" result="{{ freshnessResult }}" age="{{ syncAge }}" hint-size="12px,12px"></dc-import>
       </sc-if>
+      <details data-artifact-snapshot-technical style="flex-basis:100%; color:var(--muted);">
+        <summary style="cursor:pointer; font-size:12px; font-weight:600;">{{ snapshotTechnicalLabel }}</summary>
+        <div style="margin-top:5px; overflow-wrap:anywhere;">{{ syncStaleTechnical }}</div>
+      </details>
     </footer>
     </sc-if>
 
   </sc-if>
 </div>
-</div>
+</sc-if>
 
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:760,&quot;height&quot;:700},&quot;det&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;modal&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;onClose&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:760,&quot;height&quot;:700},&quot;det&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;ctx&quot;:{&quot;editor&quot;:&quot;object&quot;,&quot;default&quot;:{},&quot;tsType&quot;:&quot;object&quot;}}">
 class Component extends DCLogic {
-  state = { bodyExpanded: false, metadataExpanded: false, wide: false };
+  state = { bodyExpanded: false, metadataExpanded: false };
 
   componentDidMount() {
-    const modal = this.props.modal === true || this.props.modal === "true";
-    if (modal) {
-      this.bodyOverflow = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
-    }
-    this.onOutside = (ev) => {
-      const target = ev && ev.target;
-      if (!this.state.bodyExpanded) return;
-      const body = target && target.closest ? target.closest("[data-artifact-body]") : null;
-      const key = this.props.det ? (this.props.det.bodyKey || this.props.det.footer) : "";
-      if (body && body.getAttribute("data-artifact-body") === key) return;
-      this.setState({ bodyExpanded: false });
-    };
-    this.onEscape = (ev) => {
-      if (ev.key !== "Escape") return;
-      const modal = this.props.modal === true || this.props.modal === "true";
-      if (modal) { if (this.props.onClose) this.props.onClose(); return; }
-      if (this.state.wide) { this.setState({ wide: false, bodyExpanded: false, metadataExpanded: false }); return; }
-      if (this.state.bodyExpanded) this.setState({ bodyExpanded: false });
-    };
-    document.addEventListener("click", this.onOutside);
-    window.addEventListener("keydown", this.onEscape);
     requestAnimationFrame(() => this.hydrateMarkdown());
   }
 
   componentDidUpdate(prevProps) {
     const before = prevProps && prevProps.det ? (prevProps.det.bodyKey || prevProps.det.footer) : "";
     const now = this.props.det ? (this.props.det.bodyKey || this.props.det.footer) : "";
-    if (before !== now && (this.state.bodyExpanded || this.state.metadataExpanded || this.state.wide)) this.setState({ bodyExpanded: false, metadataExpanded: false, wide: false });
+    if (before !== now && (this.state.bodyExpanded || this.state.metadataExpanded)) this.setState({ bodyExpanded: false, metadataExpanded: false });
     requestAnimationFrame(() => this.hydrateMarkdown());
-  }
-
-  componentWillUnmount() {
-    document.removeEventListener("click", this.onOutside);
-    window.removeEventListener("keydown", this.onEscape);
-    if (this.bodyOverflow !== undefined) document.body.style.overflow = this.bodyOverflow;
   }
 
   hydrateMarkdown() {
@@ -350,50 +374,179 @@ class Component extends DCLogic {
   }
 
   renderVals() {
+    const ctx = this.props.ctx || {};
+    const data = ctx.data || {};
+    const card = ctx.ui && ctx.ui.card;
+    const actions = ctx.actions || {};
+    const ru = ctx.locale ? ctx.locale === "ru" : document.documentElement.lang === "ru";
+    if (card && card.kind === "item") {
+      const candidates = [].concat(data.inbox || [], data.outbox || [], data.archive || []);
+      const item = candidates.find(candidate => actions.cardID && actions.cardID("item", candidate) === card.id);
+      const artifact = (data.artifactDetails || []).find(candidate => item && candidate.space === item.space && candidate.id === item.id) || {};
+      if (!item) return {
+        cardItem:true, legacyDetail:false, itemCardPresent:false, itemCardMissing:true,
+        itemCardMissingTitle:ru ? "Документ не найден" : "Item not found",
+        itemCardMissingText:ru ? "В текущем снимке нет записи с таким непрозрачным идентификатором." : "The current snapshot has no record for this opaque identity."
+      };
+      const resolver = globalThis.A2A_VOCABULARY_RESOLVER;
+      const resolve = (family, value) => resolver.lookup(data, family, value || "__missing__", ru ? "ru" : "en");
+      const glossary = globalThis.A2A_GLOSSARY;
+      const typeEntry = glossary && glossary.entry ? glossary.entry("types", item.type, ru ? "ru" : "en") : null;
+      const typeLabel = typeEntry && typeEntry.label || item.type || (ru ? "Неизвестный тип" : "Unknown type");
+      const sentence = item.reasonSentence || {};
+      const operational = item.operationalItems || artifact.operational_items || [];
+      const source = ((data.operational || {}).sources || []).find(candidate => candidate.kind === "space" && candidate.space === item.space);
+      const itemUnavailable = (data.unavailable || []).find(candidate => candidate.id === item.id && (!candidate.scope || candidate.scope === item.space));
+      const sourceDiagnostic = (((data.operational || {}).unavailable) || []).find(candidate => candidate.source_kind === "space" && candidate.space === item.space);
+      const carriedSourceFreshness = String(source && source.freshness || "");
+      const sourceUnavailable = carriedSourceFreshness === "unavailable" || (!carriedSourceFreshness && !!sourceDiagnostic);
+      const unavailable = itemUnavailable || (sourceUnavailable ? sourceDiagnostic : null);
+      const unavailableEvidence = itemUnavailable || sourceDiagnostic;
+      const unavailableState = !!itemUnavailable || sourceUnavailable;
+      const unavailableReason = unavailable && (unavailable.reason || unavailable.summary);
+      const unavailableEvidenceReason = unavailableEvidence && (unavailableEvidence.reason || unavailableEvidence.summary);
+      const yesNo = value => value ? (ru ? "да" : "yes") : (ru ? "нет" : "no");
+      const none = ru ? "Ничего не записано." : "None recorded.";
+      const notRecorded = ru ? "Не записано." : "Not recorded.";
+      const unknown = ru ? "В этом снимке неизвестно." : "Unknown in this snapshot.";
+      const unknownInline = ru ? "в этом снимке неизвестно" : "unknown in this snapshot";
+      const notRecordedInline = ru ? "не записано" : "not recorded";
+      const bodyResult = result => result ? { ...result, cue:"" } : result;
+      const sentenceEnding = result => result && /[.!?…]$/.test(String(result.label || "")) ? "" : ".";
+      const urgency = [];
+      if (item.priority) urgency.push(String(item.priority));
+      if (item.neededBy) urgency.push((ru ? "срок " : "needed by ") + item.neededBy);
+      if (Object.prototype.hasOwnProperty.call(item, "blocking")) urgency.push(item.blocking ? (ru ? "блокирует" : "blocking") : (ru ? "не блокирует" : "not blocking"));
+      if (Object.prototype.hasOwnProperty.call(item, "overdue")) urgency.push((ru ? "просрочено: " : "overdue: ") + yesNo(item.overdue));
+      if (item.severity) urgency.push((ru ? "важность " : "severity ") + item.severity);
+      const lifecycleKnown = !!resolver.knows && resolver.knows(data, "lifecycle-state", item.state) && (!item.outcome || resolver.knows(data, "outcome", item.outcome));
+      const waiting = item.waitingOn || [];
+      const recipients = item.to || [];
+      const parties = ru
+        ? "от " + (item.from || notRecordedInline)
+          + "; " + (recipients.length ? "для " + recipients.join(", ") : "получатели не записаны")
+          + "; " + (waiting.length ? "ожидаются " + waiting.join(", ") : "ожидаемых участников нет")
+          + "; " + (item.expectedTransition || unknownInline) + "."
+        : "from " + (item.from || notRecordedInline)
+          + "; to " + (recipients.length ? recipients.join(", ") : "none recorded")
+          + "; waiting on " + (waiting.length ? waiting.join(", ") : "none recorded")
+          + "; " + (item.expectedTransition || unknownInline) + ".";
+      const snapshotFacts = [];
+      if (item.pendingMerge) snapshotFacts.push(ru ? "есть незавершённая общая запись" : "shared write pending");
+      const unavailableSentence = unavailableState
+        ? (unavailableReason
+          ? (ru ? "Недоступно в этом снимке: " : "Unavailable in this snapshot: ") + unavailableReason
+          : unknown)
+        : "";
+      const rule = item.ruleIdentity && typeof item.ruleIdentity === "object" ? JSON.stringify(item.ruleIdentity) : String(item.ruleIdentity || notRecorded);
+      const technicalEvidence = [
+        "Terminal: " + yesNo(item.terminal), "Archived: " + yesNo(item.archived), "GatePending: " + yesNo(item.gatePending),
+        "Overdue: " + yesNo(item.overdue), "SyncStale: " + yesNo(item.syncStale),
+        unavailableEvidence && unavailableEvidence.code ? "Unavailable code: " + unavailableEvidence.code : "",
+        unavailableEvidenceReason ? "Unavailable reason: " + unavailableEvidenceReason : ""
+      ].filter(Boolean).join("; ");
+      const accent = (family, identity) => actions.cardAccent ? actions.cardAccent(family, identity) : "";
+      const highlighted = (family, identity) => !!card.accent && accent(family, identity) === card.accent;
+      const accentStyle = active => "border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:"
+        + (active ? "var(--attention-tint)" : "var(--surface-section)") + "; box-shadow:inset 0 0 0 1px var(--hairline);";
+      const lifecycleHighlighted = highlighted("state", [item.space || "", item.id || "", item.state || ""]);
+      const ownerHighlighted = waiting.some(owner => highlighted("owner", [item.space || "", item.id || "", owner || ""]));
+      const moveHighlighted = highlighted("move", [item.space || "", item.id || "", item.expectedTransition || ""]);
+      const partiesHighlighted = ownerHighlighted || moveHighlighted;
+      const stateResult = lifecycleKnown ? resolve("lifecycle-state", item.state) : null;
+      const outcomeResult = lifecycleKnown && item.outcome ? resolve("outcome", item.outcome) : null;
+      const gateResult = item.humanGate ? resolve("gate", item.humanGate) : null;
+      const operationalItems = operational.map((op, index) => {
+        const opHighlighted = highlighted("operational-item", [item.space || "", item.id || "", op.name || ""]);
+        const result = resolve("operational-state", op.state);
+        return {
+          name:op.name || "", result, bodyResult:bodyResult(result), separator:index ? "; " : "", highlighted:opHighlighted,
+          style:"border-radius:var(--radius-nested); padding:2px 3px; background:" + (opHighlighted ? "var(--attention-tint)" : "transparent") + ";"
+        };
+      });
+      const snapshotResult = unavailableState
+        ? resolve("source-freshness", "unavailable")
+        : (carriedSourceFreshness ? resolve("source-freshness", carriedSourceFreshness) : null);
+      const technicalTargets = [
+        ...(artifact.events || []).map(event => ({ family:"event", label:ru ? "событие" : "event", identity:String(event.ulid || event.id || event.transition || "") })),
+        ...(artifact.refs || []).map(ref => ({ family:"reference", label:ru ? "ссылка" : "reference", identity:String(ref.ref || "") })),
+        ...(artifact.attachments || []).map(attachment => ({ family:"attachment", label:ru ? "вложение" : "attachment", identity:String(attachment.ref || "") }))
+      ].filter(target => target.identity).map(target => {
+        const targetHighlighted = highlighted(target.family, [item.space || "", item.id || "", target.identity]);
+        return {
+          ...target,
+          highlighted:targetHighlighted,
+          style:"display:grid; grid-template-columns:minmax(90px,auto) minmax(0,1fr); gap:7px 14px; border-radius:var(--radius-nested); padding:7px 8px; background:" + (targetHighlighted ? "var(--attention-tint)" : "transparent") + ";"
+        };
+      });
+      const linkedWorkReports = (data.workReports || []).filter(report => {
+        const subjectID = String(report.subject_ref || "").split("@")[0];
+        return report.space === item.space && subjectID === item.id;
+      }).map(report => ({
+        modeResult:resolve("work-mode", report.mode),
+        summary:report.summary || report.subject_ref || unknown,
+        openLabel:ru ? "Открыть карточку отчёта" : "Open work-report card",
+        open:() => {
+          const id = actions.cardID ? actions.cardID("work-report", report) : "";
+          const reportAccent = actions.cardAccent ? actions.cardAccent("checkpoint", [report.space || "", report.artifact_id || ""]) : "";
+          if (id && actions.openCard) actions.openCard("work-report", id, reportAccent);
+        }
+      }));
+      return {
+        cardItem:true, legacyDetail:false, itemCardPresent:true, itemCardMissing:false,
+        itemCard:{
+          factOrder:["identity","lead","lifecycle","parties","gate","urgency","summary","operational","snapshot","technical"],
+          type:item.type || "", title:item.title || "", identity:typeLabel + " — " + (item.title || notRecorded), id:item.id || "", space:item.space || "",
+          reasonSentence:sentence[ru ? "ru" : "en"] || unknown,
+          lifecycleLabel:lifecycleKnown ? (ru ? "Жизненный цикл" : "Lifecycle") : (ru ? "Жизненный цикл и исход" : "Lifecycle and outcome"),
+          outcomeLabel:ru ? "исход" : "outcome",
+          lifecycleKnown, hasLifecyclePills:lifecycleKnown, lifecycleUnknown:!lifecycleKnown, lifecycleUnknownText:lifecycleKnown ? "" : unknown,
+          stateResult, bodyStateResult:bodyResult(stateResult), hasOutcome:!!outcomeResult, lacksOutcome:lifecycleKnown && !outcomeResult,
+          outcomeResult, bodyOutcomeResult:bodyResult(outcomeResult), outcomeEnding:sentenceEnding(outcomeResult),
+          terminalText:(ru ? "терминально: " : "terminal: ") + yesNo(item.terminal), archivedText:(ru ? "в архиве: " : "archived: ") + yesNo(item.archived),
+          lifecycleHighlighted, lifecycleStyle:accentStyle(lifecycleHighlighted),
+          partiesLabel:ru ? "Стороны и следующий ход" : "Parties and next move", partiesText:parties, partiesHighlighted, partiesStyle:accentStyle(partiesHighlighted), yourMoveText:(ru ? "ваш ход: " : "your move: ") + yesNo(item.yourMove),
+          gateLabel:ru ? "Участие человека" : "Human gate", hasGate:!!item.humanGate, lacksGate:!item.humanGate, gateResult, bodyGateResult:bodyResult(gateResult), gateEnding:sentenceEnding(gateResult), gatePendingText:(ru ? "ожидает: " : "pending: ") + yesNo(item.gatePending),
+          urgencyLabel:ru ? "Срочность" : "Urgency", urgencyText:urgency.length ? urgency.join("; ") + "." : notRecorded,
+          summaryLabel:ru ? "Кратко" : "Summary", summary:item.description || notRecorded,
+          operationalLabel:ru ? "Операционные декларации" : "Operational declarations",
+          hasOperational:operational.length > 0, lacksOperational:operational.length === 0,
+          operationalItems, operationalEnding:sentenceEnding(operationalItems.length ? operationalItems[operationalItems.length - 1].result : null),
+          snapshotLabel:ru ? "Снимок" : "Snapshot", hasSnapshotResult:!!snapshotResult, hasBodySnapshotResult:!!snapshotResult && !unavailableState, snapshotUnavailableOnly:unavailableState, snapshotResult, bodySnapshotResult:bodyResult(snapshotResult),
+          snapshotUnavailable:unavailableSentence, hasSnapshotUnavailable:unavailableState,
+          hasSnapshotFacts:snapshotFacts.length > 0, snapshotFacts:snapshotFacts.join("; "),
+          snapshotFactsSuffix:snapshotFacts.length ? "; " + snapshotFacts.join("; ") : "", snapshotEnding:sentenceEnding(snapshotResult), snapshotFactsOnly:!snapshotResult && snapshotFacts.length > 0,
+          snapshotUnknown:!unavailableState && !snapshotResult && snapshotFacts.length === 0, snapshotUnknownText:!unavailableState && !snapshotResult && snapshotFacts.length === 0 ? unknown : "",
+          technicalLabel:ru ? "Технические подробности: свёрнуты." : "Technical detail: collapsed.", whyLabel:"Why", ruleLabel:ru ? "Правило" : "Rule identity",
+          technicalWhy:item.why || notRecorded, ruleIdentity:rule, technicalEvidence,
+          hasTechnicalTargets:technicalTargets.length > 0, technicalTargets,
+          hasLinkedWorkReports:linkedWorkReports.length > 0, linkedWorkReports,
+          statusSupportLabel:ru ? "Пояснения статусов документа" : "Item status explanations",
+          statusSupport:[stateResult, outcomeResult, gateResult].concat(operationalItems.map(entry => entry.result), snapshotResult).filter(Boolean),
+          technicalStyle:"margin-top:var(--space-section); border-radius:var(--radius-nested); padding:12px 14px; background:var(--surface-section);", noneRecorded:none, notRecorded
+        }
+      };
+    }
     const d = this.props.det || {};
-    const ru = document.documentElement.lang === "ru";
-    const modal = this.props.modal === true || this.props.modal === "true";
-    const wide = modal || this.state.wide;
-    const closeModal = this.props.onClose || (() => {});
-    const tone = d.calloutTone === "healthy"
-      ? { bg: "var(--healthy-tint)", title: "var(--healthy-strong)", text: "var(--healthy-ink)" }
-      : d.calloutTone === "blocking"
-        ? { bg: "var(--blocking-tint)", title: "var(--blocking-ink)", text: "var(--blocking-strong)" }
-        : d.calloutTone === "attention"
-          ? { bg: "var(--attention-tint)", title: "var(--attention-strong)", text: "var(--attention-ink)" }
-          : { bg: "var(--surface-section)", title: "var(--text)", text: "var(--body)" };
     const bodyHasMore = String(d.body || "").split(/\r?\n/).length > 5 || String(d.body || "").length > 300;
-    const bodyOpen = bodyHasMore && (this.state.bodyExpanded || wide);
+    const bodyOpen = bodyHasMore && this.state.bodyExpanded;
     const calloutParts = (d.calloutParts && d.calloutParts.length ? d.calloutParts : (d.calloutText ? [{ label: "", text: d.calloutText }] : [])).map((part, i) => ({
       label: part.label || "",
       text: part.text || "",
-      style: (i ? "border-top:1px solid color-mix(in srgb, " + tone.text + " 18%, transparent); padding-top:12px;" : ""),
-      labelStyle: "font-size:13px; line-height:1.3; font-weight:600; letter-spacing:.035em; text-transform:uppercase; color:" + tone.title + "; margin-bottom:4px;",
-      textStyle: "font-size:16px; line-height:1.55; color:" + tone.text + "; overflow-wrap:anywhere;"
+      style: (i ? "border-top:1px solid var(--hairline); padding-top:12px;" : ""),
+      labelStyle: "font-size:13px; line-height:1.3; font-weight:600; letter-spacing:.035em; text-transform:uppercase; color:var(--text); margin-bottom:4px;",
+      textStyle: "font-size:16px; line-height:1.55; color:var(--body); overflow-wrap:anywhere;"
     }));
     return {
       present: !!d.present,
       missing: d.present === false,
       // With nothing to show, the card drops its own chrome and hands the whole
       // box to the shared empty state — no hollow panel, no borrowed record.
-      overlayStyle: wide ? "position:fixed; inset:0; z-index:" + (modal ? "420" : "220") + "; overflow:auto; display:flex; align-items:flex-start; padding:var(--padding-modal-backdrop); background:rgba(33,30,23,.48);" : "",
+      cardItem: false,
+      legacyDetail: true,
       shellStyle: d.present === false
         ? "min-width:0; font-family:'Onest',sans-serif;"
-        : "position:relative; min-width:0; background:var(--surface-card); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5); font-family:'Onest',sans-serif;" + (wide ? " width:min(1180px,100%); margin:auto; box-shadow:0 24px 70px -22px rgba(33,30,23,.6);" : ""),
-      shellRole: modal ? "dialog" : "",
-      shellAriaModal: modal ? "true" : "false",
-      shellAriaLabel: modal ? (d.title || (ru ? "Документ" : "Document")) : "",
-      isWide: wide,
-      isCompact: !wide,
-      widePressed: wide ? "true" : "false",
-      wideLabel: wide ? (ru ? "Свернуть карточку" : "Exit full width") : (ru ? "Развернуть карточку на всю ширину" : "Expand card to full width"),
-      wideButtonStyle: "width:38px; height:38px; flex:0 0 38px; display:flex; align-items:center; justify-content:center; border:0; border-radius:var(--radius-control); cursor:pointer; color:var(--teal-ink); background:var(--surface-section); box-shadow:inset 0 0 0 1px var(--border);",
-      toggleWide: modal ? closeModal : () => this.setState(s => ({ wide: !s.wide, bodyExpanded: false, metadataExpanded: false })),
-      dismissWide: (ev) => {
-        if (!wide || !ev || ev.target !== ev.currentTarget) return;
-        if (modal) closeModal();
-        else this.setState({ wide: false, bodyExpanded: false, metadataExpanded: false });
-      },
+        : "position:relative; min-width:0; background:var(--surface-card); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5); font-family:'Onest',sans-serif;",
       missingTitle: d.missingTitle || (ru ? "Ничего не выбрано" : "Nothing selected"),
       missingText: d.missingText || "",
       missingHint: d.missingHint || "",
@@ -404,7 +557,7 @@ class Component extends DCLogic {
       flagLabel: ru ? "флаг протокола" : "protocol flag",
       hasType: !!d.type,
       type: d.type,
-      pills: (d.pills || []).map(p => ({ text: p.text, tone: p.tone, hint: p.hint || "" })),
+      pills: (d.pills || []).map(p => ({ result:p.result || null })),
       sourceClass: d.sourceClass || "canonical",
       documentID: d.footer || "",
       hasFooter: d.hasFooter !== false && !!d.footer,
@@ -412,8 +565,10 @@ class Component extends DCLogic {
       hasSourceURL: !!d.sourceURL,
       lacksSourceURL: !d.sourceURL,
       hasFreshness: !!d.syncAge,
-      syncStale: !!d.syncStale,
+      freshnessResult:d.freshnessResult || null,
       syncAge: d.syncAge || "",
+      snapshotTechnicalLabel:ru ? "Технические подробности снимка" : "Snapshot technical detail",
+      syncStaleTechnical:"sync_stale=" + String(d.syncStale === true),
       hasAuthor: !!d.authorName,
       authorName: d.authorName || "",
       authorMono: d.authorMono || "?",
@@ -447,19 +602,16 @@ class Component extends DCLogic {
       },
       title: d.title || "",
       hasCallout: !!d.calloutTitle,
-      calloutSignalTone: d.calloutTone === "healthy" ? "positive" : (d.calloutTone === "blocking" ? "negative" : (d.calloutTone === "attention" ? "caution" : "neutral")),
-      calloutSignalLabel: d.calloutSignalLabel || "",
       calloutTitle: d.calloutTitle || "",
       calloutParts,
-      calloutStyle: "position:relative; background:" + tone.bg + "; border-radius:var(--radius-card); padding:17px 54px 17px 19px; margin-bottom:var(--space-section); box-shadow:inset 0 0 0 1px color-mix(in srgb, " + tone.title + " 10%, transparent);",
-      calloutTitleStyle: "font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; color:" + tone.title + ";" + (calloutParts.length ? " margin-bottom:var(--space-stack);" : ""),
+      calloutStyle: "position:relative; background:var(--surface-section); border-radius:var(--radius-card); padding:17px 19px; margin-bottom:var(--space-section); box-shadow:inset 0 0 0 1px var(--hairline);",
+      calloutTitleStyle: "font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; color:var(--text);" + (calloutParts.length ? " margin-bottom:var(--space-stack);" : ""),
       hasMetadata: !!((d.metadataPrimary && d.metadataPrimary.length) || (d.metadataRest && d.metadataRest.length)),
       metadataItems: [...(d.metadataPrimary || []), ...(d.metadataRest || [])].map(m => ({
         label:m.label,
         value:m.value,
         font:m.mono ? "'IBM Plex Mono',ui-monospace,monospace" : "'Onest',sans-serif"
       })),
-      metadataCount: String((d.metadataPrimary || []).length + (d.metadataRest || []).length),
       metadataOpen: this.state.metadataExpanded,
       metadataExpanded: this.state.metadataExpanded ? "true" : "false",
       metadataToggleLabel: this.state.metadataExpanded ? (ru ? "Скрыть метаданные" : "Hide metadata") : (ru ? "Метаданные" : "Metadata"),
@@ -472,8 +624,8 @@ class Component extends DCLogic {
       bodyHasMore,
       bodyExpanded: bodyOpen ? "true" : "false",
       bodyFaded: bodyHasMore && !bodyOpen,
-      showBodyToggle: bodyHasMore && !wide,
-      bodyWrapStyle: "margin:0 0 var(--space-section); max-width:" + (wide ? "100%" : "760px") + ";",
+      showBodyToggle: bodyHasMore,
+      bodyWrapStyle: "margin:0 0 var(--space-section); max-width:760px;",
       bodyShellStyle: "position:relative; overflow:hidden; background:var(--surface-section); border-radius:var(--radius-nested); padding:17px 20px 0; box-shadow:inset 0 0 0 1px var(--border);",
       bodyClipStyle: (bodyOpen || !bodyHasMore) ? "padding-bottom:17px;" : "max-height:8.25em; overflow:hidden;",
       bodyFadeStyle: "position:absolute; left:1px; right:1px; bottom:43px; height:70px; pointer-events:none; background:linear-gradient(180deg, color-mix(in srgb, var(--surface-section) 0%, transparent), var(--surface-section));",
@@ -499,13 +651,6 @@ class Component extends DCLogic {
       hasRefs: !!(d.refs && d.refs.length),
       refs: d.refs || [],
       hasAttachments: !!(d.attachments && d.attachments.length),
-      // Verification and lapse are orthogonal (spec 04 §7's axis table): an
-      // attachment can be verification:none AND lapsed, so the pill reads
-      // the lapse state FIRST (it is the more urgent fact), then falls back
-      // to the verification claim's own tone. Neither claim is re-derived
-      // here — pillText/pillTone are presentation-only labels layered on
-      // top of the already-computed verification_claim/lapsed/lapse_claim
-      // fields cache.ShowResult.Attachments carries.
       attachments: (d.attachments || []).map(att => {
         // `digest` is not `ref` restated. The schema requires both, and the
         // row showed only `ref` — so the one value a human uses to check the
@@ -533,11 +678,7 @@ class Component extends DCLogic {
           hasFacts: facts.length > 0,
           verificationClaim: att.verification_claim || "",
           lapsed: !!att.lapsed,
-          lapseClaim: att.lapse_claim || "",
-          pillText: att.lapsed
-            ? (ru ? "истекло" : "lapsed")
-            : (att.verification === "none" ? (ru ? "без вердикта" : "no verdict") : (ru ? "заявлено" : "claimed")),
-          pillTone: att.lapsed ? "blocking" : (att.verification === "none" ? "neutral" : "healthy")
+          lapseClaim: att.lapse_claim || ""
         };
       }),
       // Already projected by the caller (web/design-source's own
@@ -550,24 +691,18 @@ class Component extends DCLogic {
       operationalHint: ru ? "заявлено поставщиком" : "as declared by the provider",
       operationalItems: (d.operationalItems || []).map(op => ({
         name: op.name,
-        label: op.label,
-        tone: op.tone,
-        hint: op.hint,
+        result:op.result || null,
         // Three treatments, not two-plus-a-fallback: a filled green block for
         // a declared-ready item, a filled amber block for a declared gap, and
         // — for `undeclared` — no fill at all behind a DASHED outline, which
         // reads as "there is nothing here to fill in" rather than as a
         // quieter kind of missing.
         rowStyle: "border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); "
-          + (op.tone === "healthy"
-            ? "background:var(--healthy-tint); border:1px solid transparent;"
-            : op.tone === "attention"
-              ? "background:var(--attention-tint); border:1px solid transparent;"
-              : "background:transparent; border:1px dashed var(--border-strong);")
+          + "background:var(--surface-section); border:1px solid var(--hairline);"
       })),
       hasEvents: !!(d.events && d.events.length),
       events: (d.events || []).map((e, i, all) => Object.assign({}, e, {
-        hasSignal: true,
+        hasSignal: !!e.hasSignal,
         railOffset: 34,
         railStyle: "position:relative; padding:0 0 30px 34px;" + (i === all.length - 1 ? " margin-left:2px;" : " border-left:2px solid var(--border);")
       })),

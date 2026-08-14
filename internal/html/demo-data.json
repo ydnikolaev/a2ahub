@@ -373,6 +373,256 @@
         "cue": "✓"
       },
       {
+        "value": "accept",
+        "family": "transition",
+        "labelRU": "запрос принят",
+        "labelEN": "request accepted",
+        "explanationRU": "Получатель принял запрос или передачу; работа может продолжаться.",
+        "explanationEN": "The recipient accepted the request or handoff; work can continue.",
+        "tone": "progressing",
+        "cue": "→"
+      },
+      {
+        "value": "acknowledge",
+        "family": "transition",
+        "labelRU": "получение подтверждено",
+        "labelEN": "receipt acknowledged",
+        "explanationRU": "Адресат подтвердил получение документа; это ещё не означает выполнения обязательства.",
+        "explanationEN": "The recipient confirmed receipt of the document; this does not yet mean the obligation is fulfilled.",
+        "tone": "progressing",
+        "cue": "→"
+      },
+      {
+        "value": "activate",
+        "family": "transition",
+        "labelRU": "обязательство введено в действие",
+        "labelEN": "obligation activated",
+        "explanationRU": "Опубликованное обязательство введено в действие и теперь заявлено доступным.",
+        "explanationEN": "The published obligation was brought into operation and is now declared available.",
+        "tone": "progressing",
+        "cue": "→"
+      },
+      {
+        "value": "approve",
+        "family": "transition",
+        "labelRU": "согласовано",
+        "labelEN": "approved",
+        "explanationRU": "Обязательное согласование человеком завершилось одобрением.",
+        "explanationEN": "The required human review concluded with approval.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "block",
+        "family": "transition",
+        "labelRU": "заблокировано",
+        "labelEN": "blocked",
+        "explanationRU": "Продолжение остановлено записанной блокировкой до её явного снятия.",
+        "explanationEN": "Progress is stopped by a recorded blocker until it is explicitly removed.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "cancel",
+        "family": "transition",
+        "labelRU": "отменено",
+        "labelEN": "cancelled",
+        "explanationRU": "Работа остановлена до завершения и больше не ожидает продолжения.",
+        "explanationEN": "The work stopped before completion and no longer awaits continuation.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "close",
+        "family": "transition",
+        "labelRU": "закрытие записано",
+        "labelEN": "close recorded",
+        "explanationRU": "Цепочка закрыта и больше не ожидает следующего перехода.",
+        "explanationEN": "The thread is closed and no longer awaits another transition.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "decline",
+        "family": "transition",
+        "labelRU": "получатель отказал",
+        "labelEN": "declined",
+        "explanationRU": "Получатель отказался принять запрос или передачу; ожидаемый результат не достигнут.",
+        "explanationEN": "The recipient declined the request or handoff; the expected result was not achieved.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "deprecate",
+        "family": "transition",
+        "labelRU": "объявлено устаревающим",
+        "labelEN": "deprecated",
+        "explanationRU": "Версия помечена как устаревающая; для новой работы следует выбрать её преемника.",
+        "explanationEN": "The version was marked for phase-out; new work should use its successor.",
+        "tone": "needs-you",
+        "cue": "!"
+      },
+      {
+        "value": "dispute",
+        "family": "transition",
+        "labelRU": "оспорено",
+        "labelEN": "disputed",
+        "explanationRU": "Участник оспорил результат; разногласие нужно разрешить явно.",
+        "explanationEN": "A participant contested the result; the disagreement must be resolved explicitly.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "note",
+        "family": "transition",
+        "labelRU": "заметка добавлена",
+        "labelEN": "note added",
+        "explanationRU": "К цепочке добавлена информационная заметка; сама по себе она не определяет состояние протокола.",
+        "explanationEN": "An informational note was added to the thread; by itself it does not determine protocol state.",
+        "tone": "progressing",
+        "cue": "→"
+      },
+      {
+        "value": "propose",
+        "family": "transition",
+        "labelRU": "предложено",
+        "labelEN": "proposed",
+        "explanationRU": "Предложение опубликовано и теперь ждёт решения адресата.",
+        "explanationEN": "A proposal was published and now awaits the recipient's decision.",
+        "tone": "waiting-them",
+        "cue": "↗"
+      },
+      {
+        "value": "publish",
+        "family": "transition",
+        "labelRU": "опубликовано",
+        "labelEN": "published",
+        "explanationRU": "Документ опубликован и доступен участникам как действующая версия.",
+        "explanationEN": "The document was published and is available to participants as an active version.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "reject",
+        "family": "transition",
+        "labelRU": "отклонено",
+        "labelEN": "rejected",
+        "explanationRU": "Обязательное согласование завершилось отказом; решение не принято.",
+        "explanationEN": "The required approval ended in rejection; the decision was not accepted.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "respond",
+        "family": "transition",
+        "labelRU": "ответ записан",
+        "labelEN": "response recorded",
+        "explanationRU": "Ответ опубликован; исходный запрос может ещё ждать проверки или закрытия.",
+        "explanationEN": "A response was published; the original request may still await verification or closure.",
+        "tone": "progressing",
+        "cue": "→"
+      },
+      {
+        "value": "retire",
+        "family": "transition",
+        "labelRU": "выведено из использования",
+        "labelEN": "retired",
+        "explanationRU": "Версия окончательно выведена из использования и должна быть заменена поддерживаемой.",
+        "explanationEN": "The version was permanently retired from use and must be replaced by a supported one.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "satisfy",
+        "family": "transition",
+        "labelRU": "требование выполнено",
+        "labelEN": "requirement satisfied",
+        "explanationRU": "Участники подтвердили, что требуемое условие выполнено.",
+        "explanationEN": "The participants confirmed that the required condition has been met.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "start",
+        "family": "transition",
+        "labelRU": "работа начата",
+        "labelEN": "work started",
+        "explanationRU": "Принятая работа перешла к активному выполнению.",
+        "explanationEN": "The accepted work moved into active progress.",
+        "tone": "progressing",
+        "cue": "→"
+      },
+      {
+        "value": "submit",
+        "family": "transition",
+        "labelRU": "передано на рассмотрение",
+        "labelEN": "submitted for review",
+        "explanationRU": "Документ передан адресату и ждёт его следующего шага.",
+        "explanationEN": "The document was sent to its recipient and awaits their next step.",
+        "tone": "waiting-them",
+        "cue": "↗"
+      },
+      {
+        "value": "supersede",
+        "family": "transition",
+        "labelRU": "заменено новым",
+        "labelEN": "superseded",
+        "explanationRU": "Другой документ заменил этот; текущая версия сохраняется только в истории.",
+        "explanationEN": "Another document replaced this one; the current version remains only in history.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "unblock",
+        "family": "transition",
+        "labelRU": "разблокировано",
+        "labelEN": "unblocked",
+        "explanationRU": "Записанная блокировка снята, и работа может продолжаться.",
+        "explanationEN": "The recorded blocker was removed, and work can continue.",
+        "tone": "progressing",
+        "cue": "→"
+      },
+      {
+        "value": "verify",
+        "family": "transition",
+        "labelRU": "результат проверен",
+        "labelEN": "result verified",
+        "explanationRU": "Получатель проверил результат и подтвердил его соответствие запросу.",
+        "explanationEN": "The recipient checked the result and confirmed that it satisfies the request.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "verify-fail",
+        "family": "transition",
+        "labelRU": "проверка не пройдена",
+        "labelEN": "verification failed",
+        "explanationRU": "Проверка завершилась неуспешно; результат не принят.",
+        "explanationEN": "Verification failed; the result was not accepted.",
+        "tone": "broken",
+        "cue": "×"
+      },
+      {
+        "value": "verify-pass",
+        "family": "transition",
+        "labelRU": "проверка пройдена",
+        "labelEN": "verification passed",
+        "explanationRU": "Проверка завершилась успешно; результат принят.",
+        "explanationEN": "Verification passed; the result was accepted.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
+        "value": "withdraw",
+        "family": "transition",
+        "labelRU": "отозвано",
+        "labelEN": "withdrawn",
+        "explanationRU": "Автор отозвал документ до завершения ожидаемого результата.",
+        "explanationEN": "The author withdrew the document before the expected result was completed.",
+        "tone": "settled",
+        "cue": "✓"
+      },
+      {
         "value": "addressed-no-ack",
         "family": "reason",
         "labelRU": "Нужно подтвердить получение",
@@ -1188,7 +1438,7 @@
             "checkout"
           ],
           "state": "disputed",
-          "seq": 106
+          "seq": 108
         },
         {
           "id": "XQ-checkout-20260730-a1b2",
@@ -1199,7 +1449,7 @@
             "atlas"
           ],
           "state": "submitted",
-          "seq": 109
+          "seq": 111
         }
       ],
       "links": [
@@ -1217,13 +1467,13 @@
       "windows": {
         "members": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 3,
+          "shown": 3
         },
         "links": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 2,
+          "shown": 2
         }
       },
       "settled": false
@@ -1296,13 +1546,13 @@
       "windows": {
         "members": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 3,
+          "shown": 3
         },
         "links": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 2,
+          "shown": 2
         }
       },
       "settled": false
@@ -1389,13 +1639,13 @@
       "windows": {
         "members": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 4,
+          "shown": 4
         },
         "links": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 3,
+          "shown": 3
         }
       },
       "settled": false
@@ -1450,13 +1700,13 @@
       "windows": {
         "members": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 2,
+          "shown": 2
         },
         "links": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 1,
+          "shown": 1
         }
       },
       "settled": false
@@ -1468,7 +1718,7 @@
         "atlas",
         "support"
       ],
-      "memberCount": 1,
+      "memberCount": 6,
       "openCount": 0,
       "lastActivity": "3d",
       "opener": {
@@ -1488,14 +1738,69 @@
           ],
           "state": "closed",
           "seq": 701
+        },
+        {
+          "id": "XQ-atlas-20260726-d3c1",
+          "type": "question",
+          "title": "Should the redaction fixture retain original attachment names?",
+          "from": "atlas",
+          "to": [
+            "support"
+          ],
+          "state": "declined",
+          "seq": 704
+        },
+        {
+          "id": "XR-atlas-20260726-s4t1",
+          "type": "requirement",
+          "title": "Redaction evidence must preserve stable record counts",
+          "from": "atlas",
+          "to": [
+            "support"
+          ],
+          "state": "satisfied",
+          "seq": 707
+        },
+        {
+          "id": "XR-atlas-20260726-w4t2",
+          "type": "requirement",
+          "title": "Retain the superseded redaction sample for comparison",
+          "from": "atlas",
+          "to": [
+            "support"
+          ],
+          "state": "withdrawn",
+          "seq": 711
+        },
+        {
+          "id": "XH-atlas-20260726-v4p1",
+          "type": "handoff",
+          "title": "Redaction digest verification fixture",
+          "from": "atlas",
+          "to": [
+            "support"
+          ],
+          "state": "accepted",
+          "seq": 713
+        },
+        {
+          "id": "XH-atlas-20260726-v4f1",
+          "type": "handoff",
+          "title": "Unredacted negative-control fixture",
+          "from": "atlas",
+          "to": [
+            "support"
+          ],
+          "state": "rejected",
+          "seq": 717
         }
       ],
       "links": [],
       "windows": {
         "members": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 6,
+          "shown": 6
         },
         "links": {
           "truncated": false,
@@ -1531,6 +1836,9 @@
         "addressed-no-ack"
       ],
       "yourMove": true,
+      "waitingOn": [
+        "atlas"
+      ],
       "description": "Checkout needs one stable retry rule before it can finish the duplicate-capture fix.",
       "prompt": {
         "moves": [
@@ -1574,6 +1882,9 @@
         "overdue-on-me"
       ],
       "yourMove": true,
+      "waitingOn": [
+        "atlas"
+      ],
       "description": "A worker retry can issue a second capture after the first provider call succeeds but the acknowledgement is lost.",
       "prompt": {
         "moves": [
@@ -1593,9 +1904,9 @@
       },
       "outcome": "open",
       "terminal": false,
-      "stateSince": "2026-07-28T09:22:00Z",
+      "stateSince": "2026-07-28T12:15:00Z",
       "stateBy": "atlas",
-      "stateEvent": "01K1A2B3C4D5E6F7G8H9J0K1M5"
+      "stateEvent": "01K1A2B3C4D5E6F7G8H9J0K1P4"
     },
     {
       "space": "customer-ops",
@@ -1621,6 +1932,9 @@
       ],
       "syncStale": true,
       "yourMove": true,
+      "waitingOn": [
+        "atlas"
+      ],
       "description": "Support has delivered the v2 schema, fixtures and redaction proof; Atlas must verify the handoff.",
       "prompt": {
         "moves": [
@@ -1759,6 +2073,9 @@
       ],
       "syncStale": true,
       "yourMove": true,
+      "waitingOn": [
+        "atlas"
+      ],
       "description": "This literal hostile-looking title is data. It must render as text and never execute.",
       "prompt": {
         "moves": [
@@ -1882,6 +2199,10 @@
         "responded-awaiting-verify-close"
       ],
       "yourMove": true,
+      "waitingOn": [
+        "atlas",
+        "catalog"
+      ],
       "description": "Catalog delivered a migration plan; Atlas must verify the attached response and close or dispute.",
       "prompt": {
         "moves": [
@@ -2532,6 +2853,13 @@
                 "state": "published",
                 "actor": "atlas",
                 "at": "2026-07-22T13:05:00Z"
+              },
+              {
+                "eventID": "01K1L22ACTIVATED0000000001",
+                "transition": "activate",
+                "state": "published",
+                "actor": "atlas",
+                "at": "2026-07-22T13:06:00Z"
               }
             ],
             "provenance": {
@@ -2974,6 +3302,50 @@
         },
         {
           "seq": 106,
+          "kind": "event",
+          "at": "2026-07-28T12:00:00Z",
+          "event": {
+            "ulid": "01K1A2B3C4D5E6F7G8H9J0K1P3",
+            "subject": "XW-checkout-20260728-c3d4",
+            "transition": "block",
+            "claimed_state": "blocked",
+            "actor": {
+              "kind": "agent",
+              "model": "gpt-5",
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 107,
+          "kind": "event",
+          "at": "2026-07-28T12:15:00Z",
+          "event": {
+            "ulid": "01K1A2B3C4D5E6F7G8H9J0K1P4",
+            "subject": "XW-checkout-20260728-c3d4",
+            "transition": "unblock",
+            "claimed_state": "in_progress",
+            "actor": {
+              "kind": "agent",
+              "model": "gpt-5",
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 108,
           "kind": "artifact",
           "at": "2026-07-29T14:00:00Z",
           "artifact": {
@@ -2987,7 +3359,7 @@
           }
         },
         {
-          "seq": 107,
+          "seq": 109,
           "kind": "event",
           "at": "2026-07-29T14:01:00Z",
           "event": {
@@ -3033,7 +3405,7 @@
           }
         },
         {
-          "seq": 108,
+          "seq": 110,
           "kind": "event",
           "at": "2026-07-30T08:15:00Z",
           "event": {
@@ -3055,7 +3427,7 @@
           }
         },
         {
-          "seq": 109,
+          "seq": 111,
           "kind": "artifact",
           "at": "2026-07-30T11:50:00Z",
           "artifact": {
@@ -3069,7 +3441,7 @@
           }
         },
         {
-          "seq": 110,
+          "seq": 112,
           "kind": "event",
           "at": "2026-07-30T11:57:00Z",
           "event": {
@@ -3154,9 +3526,9 @@
           "why": "",
           "outcome": "open",
           "terminal": false,
-          "stateSince": "2026-07-28T09:22:00Z",
+          "stateSince": "2026-07-28T12:15:00Z",
           "stateBy": "atlas",
-          "stateEvent": "01K1A2B3C4D5E6F7G8H9J0K1M5"
+          "stateEvent": "01K1A2B3C4D5E6F7G8H9J0K1P4"
         },
         {
           "id": "XQ-checkout-20260730-a1b2",
@@ -3225,23 +3597,23 @@
       "windows": {
         "artifacts": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 3,
+          "shown": 3
         },
         "transcript": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 12,
+          "shown": 12
         },
         "openItems": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 2,
+          "shown": 2
         },
         "flags": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 1,
+          "shown": 1
         },
         "unresolved": {
           "truncated": false,
@@ -3669,18 +4041,18 @@
       "windows": {
         "artifacts": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 3,
+          "shown": 3
         },
         "transcript": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 10,
+          "shown": 10
         },
         "openItems": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 3,
+          "shown": 3
         },
         "flags": {
           "truncated": false,
@@ -4073,18 +4445,18 @@
       "windows": {
         "artifacts": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 4,
+          "shown": 4
         },
         "transcript": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 13,
+          "shown": 13
         },
         "openItems": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 1,
+          "shown": 1
         },
         "flags": {
           "truncated": false,
@@ -4098,8 +4470,8 @@
         },
         "deliveries": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 2,
+          "shown": 2
         }
       },
       "settled": false,
@@ -4420,33 +4792,33 @@
       "windows": {
         "artifacts": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 2,
+          "shown": 2
         },
         "transcript": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 8,
+          "shown": 8
         },
         "openItems": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 1,
+          "shown": 1
         },
         "flags": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 1,
+          "shown": 1
         },
         "unresolved": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 1,
+          "shown": 1
         },
         "deliveries": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 2,
+          "shown": 2
         }
       },
       "settled": false,
@@ -4502,6 +4874,56 @@
           ],
           "title": "Which fixture proves attachment names are redacted?",
           "state": "closed"
+        },
+        {
+          "id": "XQ-atlas-20260726-d3c1",
+          "type": "question",
+          "from": "atlas",
+          "to": [
+            "support"
+          ],
+          "title": "Should the redaction fixture retain original attachment names?",
+          "state": "declined"
+        },
+        {
+          "id": "XR-atlas-20260726-s4t1",
+          "type": "requirement",
+          "from": "atlas",
+          "to": [
+            "support"
+          ],
+          "title": "Redaction evidence must preserve stable record counts",
+          "state": "satisfied"
+        },
+        {
+          "id": "XR-atlas-20260726-w4t2",
+          "type": "requirement",
+          "from": "atlas",
+          "to": [
+            "support"
+          ],
+          "title": "Retain the superseded redaction sample for comparison",
+          "state": "withdrawn"
+        },
+        {
+          "id": "XH-atlas-20260726-v4p1",
+          "type": "handoff",
+          "from": "atlas",
+          "to": [
+            "support"
+          ],
+          "title": "Redaction digest verification fixture",
+          "state": "accepted"
+        },
+        {
+          "id": "XH-atlas-20260726-v4f1",
+          "type": "handoff",
+          "from": "atlas",
+          "to": [
+            "support"
+          ],
+          "title": "Unredacted negative-control fixture",
+          "state": "rejected"
         }
       ],
       "transcript": [
@@ -4544,6 +4966,364 @@
         {
           "seq": 703,
           "kind": "event",
+          "at": "2026-07-26T09:02:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1P1",
+            "subject": "XQ-atlas-20260726-t5v6",
+            "transition": "note",
+            "claimed_state": "submitted",
+            "actor": {
+              "kind": "agent",
+              "model": "gpt-5",
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            },
+            "note": "The fixture keeps only redacted attachment names.",
+            "transition_free": true
+          }
+        },
+        {
+          "seq": 704,
+          "kind": "artifact",
+          "at": "2026-07-26T09:03:00Z",
+          "artifact": {
+            "id": "XQ-atlas-20260726-d3c1",
+            "type": "question",
+            "from": "atlas",
+            "to": [
+              "support"
+            ],
+            "title": "Should the redaction fixture retain original attachment names?"
+          }
+        },
+        {
+          "seq": 705,
+          "kind": "event",
+          "at": "2026-07-26T09:04:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1P2",
+            "subject": "XQ-atlas-20260726-d3c1",
+            "transition": "submit",
+            "claimed_state": "submitted",
+            "actor": {
+              "kind": "agent",
+              "model": "gpt-5",
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 706,
+          "kind": "event",
+          "at": "2026-07-26T09:05:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1P3",
+            "subject": "XQ-atlas-20260726-d3c1",
+            "transition": "decline",
+            "claimed_state": "declined",
+            "actor": {
+              "kind": "agent",
+              "model": "gpt-5",
+              "name": "support-agent",
+              "session": "session:demo-support",
+              "system": "support"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 707,
+          "kind": "artifact",
+          "at": "2026-07-26T09:06:00Z",
+          "artifact": {
+            "id": "XR-atlas-20260726-s4t1",
+            "type": "requirement",
+            "from": "atlas",
+            "to": [
+              "support"
+            ],
+            "title": "Redaction evidence must preserve stable record counts"
+          }
+        },
+        {
+          "seq": 708,
+          "kind": "event",
+          "at": "2026-07-26T09:07:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1P4",
+            "subject": "XR-atlas-20260726-s4t1",
+            "transition": "publish",
+            "claimed_state": "published",
+            "actor": {
+              "kind": "agent",
+              "model": "gpt-5",
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 709,
+          "kind": "event",
+          "at": "2026-07-26T09:08:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1P5",
+            "subject": "XR-atlas-20260726-s4t1",
+            "transition": "acknowledge",
+            "claimed_state": "acknowledged",
+            "actor": {
+              "kind": "agent",
+              "model": "gpt-5",
+              "name": "support-agent",
+              "session": "session:demo-support",
+              "system": "support"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 710,
+          "kind": "event",
+          "at": "2026-07-26T09:09:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1P6",
+            "subject": "XR-atlas-20260726-s4t1",
+            "transition": "satisfy",
+            "claimed_state": "satisfied",
+            "actor": {
+              "kind": "agent",
+              "model": "gpt-5",
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 711,
+          "kind": "artifact",
+          "at": "2026-07-26T09:10:00Z",
+          "artifact": {
+            "id": "XR-atlas-20260726-w4t2",
+            "type": "requirement",
+            "from": "atlas",
+            "to": [
+              "support"
+            ],
+            "title": "Retain the superseded redaction sample for comparison"
+          }
+        },
+        {
+          "seq": 712,
+          "kind": "event",
+          "at": "2026-07-26T09:11:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1P7",
+            "subject": "XR-atlas-20260726-w4t2",
+            "transition": "withdraw",
+            "claimed_state": "withdrawn",
+            "actor": {
+              "kind": "agent",
+              "model": "gpt-5",
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 713,
+          "kind": "artifact",
+          "at": "2026-07-26T09:12:00Z",
+          "artifact": {
+            "id": "XH-atlas-20260726-v4p1",
+            "type": "handoff",
+            "from": "atlas",
+            "to": [
+              "support"
+            ],
+            "title": "Redaction digest verification fixture"
+          }
+        },
+        {
+          "seq": 714,
+          "kind": "event",
+          "at": "2026-07-26T09:13:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1P8",
+            "subject": "XH-atlas-20260726-v4p1",
+            "transition": "submit",
+            "claimed_state": "submitted",
+            "actor": {
+              "kind": "agent",
+              "model": "gpt-5",
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 715,
+          "kind": "event",
+          "at": "2026-07-26T09:14:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1P9",
+            "subject": "XH-atlas-20260726-v4p1",
+            "transition": "acknowledge",
+            "claimed_state": "acknowledged",
+            "actor": {
+              "kind": "agent",
+              "model": "gpt-5",
+              "name": "support-agent",
+              "session": "session:demo-support",
+              "system": "support"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 716,
+          "kind": "event",
+          "at": "2026-07-26T09:15:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1Q1",
+            "subject": "XH-atlas-20260726-v4p1",
+            "transition": "verify-pass",
+            "claimed_state": "accepted",
+            "actor": {
+              "kind": "agent",
+              "model": "gpt-5",
+              "name": "support-agent",
+              "session": "session:demo-support",
+              "system": "support"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 717,
+          "kind": "artifact",
+          "at": "2026-07-26T09:16:00Z",
+          "artifact": {
+            "id": "XH-atlas-20260726-v4f1",
+            "type": "handoff",
+            "from": "atlas",
+            "to": [
+              "support"
+            ],
+            "title": "Unredacted negative-control fixture"
+          }
+        },
+        {
+          "seq": 718,
+          "kind": "event",
+          "at": "2026-07-26T09:17:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1Q2",
+            "subject": "XH-atlas-20260726-v4f1",
+            "transition": "submit",
+            "claimed_state": "submitted",
+            "actor": {
+              "kind": "agent",
+              "model": "gpt-5",
+              "name": "atlas-agent",
+              "session": "session:demo-atlas",
+              "system": "atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 719,
+          "kind": "event",
+          "at": "2026-07-26T09:18:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1Q3",
+            "subject": "XH-atlas-20260726-v4f1",
+            "transition": "acknowledge",
+            "claimed_state": "acknowledged",
+            "actor": {
+              "kind": "agent",
+              "model": "gpt-5",
+              "name": "support-agent",
+              "session": "session:demo-support",
+              "system": "support"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 720,
+          "kind": "event",
+          "at": "2026-07-26T09:19:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1Q4",
+            "subject": "XH-atlas-20260726-v4f1",
+            "transition": "verify-fail",
+            "claimed_state": "rejected",
+            "actor": {
+              "kind": "agent",
+              "model": "gpt-5",
+              "name": "support-agent",
+              "session": "session:demo-support",
+              "system": "support"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
+          }
+        },
+        {
+          "seq": 721,
+          "kind": "event",
           "at": "2026-07-27T11:30:00Z",
           "event": {
             "ulid": "01K4A2B3C4D5E6F7G8H9J0K1MN",
@@ -4570,13 +5350,13 @@
       "windows": {
         "artifacts": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 6,
+          "shown": 6
         },
         "transcript": {
           "truncated": false,
-          "total": 0,
-          "shown": 0
+          "total": 21,
+          "shown": 21
         },
         "openItems": {
           "truncated": false,
@@ -6030,6 +6810,38 @@
           "at": "2026-07-28T09:22:00Z"
         },
         {
+          "ulid": "01K1A2B3C4D5E6F7G8H9J0K1P3",
+          "subject": "XW-checkout-20260728-c3d4",
+          "transition": "block",
+          "claimed_state": "blocked",
+          "actor_kind": "agent",
+          "actor": "atlas-agent",
+          "actor_system": "atlas",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-atlas",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          },
+          "at": "2026-07-28T12:00:00Z"
+        },
+        {
+          "ulid": "01K1A2B3C4D5E6F7G8H9J0K1P4",
+          "subject": "XW-checkout-20260728-c3d4",
+          "transition": "unblock",
+          "claimed_state": "in_progress",
+          "actor_kind": "agent",
+          "actor": "atlas-agent",
+          "actor_system": "atlas",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-atlas",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          },
+          "at": "2026-07-28T12:15:00Z"
+        },
+        {
           "ulid": "01K1A2B3C4D5E6F7G8H9J0K1M7",
           "subject": "XW-checkout-20260728-c3d4",
           "transition": "respond",
@@ -6612,6 +7424,23 @@
           "at": "2026-07-26T09:01:00Z"
         },
         {
+          "ulid": "01K4A2B3C4D5E6F7G8H9J0K1P1",
+          "subject": "XQ-atlas-20260726-t5v6",
+          "transition": "note",
+          "claimed_state": "submitted",
+          "actor_kind": "agent",
+          "actor": "atlas-agent",
+          "actor_system": "atlas",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-atlas",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          },
+          "at": "2026-07-26T09:02:00Z",
+          "note": "The fixture keeps only redacted attachment names."
+        },
+        {
           "ulid": "01K4A2B3C4D5E6F7G8H9J0K1MN",
           "subject": "XQ-atlas-20260726-t5v6",
           "transition": "close",
@@ -6751,85 +7580,590 @@
   ],
   "aggregates": {
     "needYou": {
-      "items": null,
+      "items": [
+        {
+          "space": "customer-ops",
+          "id": "XH-support-20260729-q5n6",
+          "type": "handoff",
+          "title": "PII-redacted support case stream v2",
+          "from": "support",
+          "to": [
+            "atlas"
+          ],
+          "state": "acknowledged",
+          "priority": "p2",
+          "blocking": true,
+          "gatePending": false,
+          "thread": "thread:support-20260729-q5n6",
+          "age": "1d",
+          "createdAt": "2026-07-29T17:05:00Z",
+          "movedAt": "2026-07-29T17:05:00Z",
+          "new": false,
+          "severity": "blocking",
+          "reasons": [
+            "p1-or-blocking-open"
+          ],
+          "syncStale": true,
+          "yourMove": true,
+          "waitingOn": [
+            "atlas"
+          ],
+          "description": "Support has delivered the v2 schema, fixtures and redaction proof; Atlas must verify the handoff.",
+          "prompt": {
+            "moves": [
+              "verify-pass",
+              "verify-fail"
+            ],
+            "doc": "reference/authoring/handoff.md",
+            "loop": "loops/receive.md §8.3 (receive loop)"
+          },
+          "outcome": "open",
+          "terminal": false,
+          "stateSince": "2026-07-29T05:45:00Z",
+          "stateBy": "atlas",
+          "stateEvent": "01K4A2B3C4D5E6F7G8H9J0K1MG"
+        },
+        {
+          "space": "checkout-core",
+          "id": "XW-checkout-20260728-c3d4",
+          "type": "work_request",
+          "title": "Prevent duplicate payment capture after a worker retry",
+          "from": "checkout",
+          "to": [
+            "atlas"
+          ],
+          "state": "in_progress",
+          "priority": "p1",
+          "blocking": true,
+          "gatePending": false,
+          "thread": "thread:checkout-20260728-c3d4",
+          "age": "1d",
+          "neededBy": "2026-07-29",
+          "createdAt": "2026-07-29T17:05:00Z",
+          "movedAt": "2026-07-29T17:05:00Z",
+          "new": false,
+          "severity": "blocking",
+          "reasons": [
+            "p1-or-blocking-open",
+            "overdue-on-me"
+          ],
+          "yourMove": true,
+          "waitingOn": [
+            "atlas"
+          ],
+          "description": "A worker retry can issue a second capture after the first provider call succeeds but the acknowledgement is lost.",
+          "prompt": {
+            "moves": [
+              "decline",
+              "block",
+              "respond"
+            ],
+            "askFirst": [
+              "decline",
+              "block"
+            ],
+            "doc": "reference/authoring/work_request.md",
+            "loop": "loops/receive.md §8.3 (receive loop)",
+            "drafts": [
+              "reference/authoring/response.md"
+            ]
+          },
+          "outcome": "open",
+          "terminal": false,
+          "stateSince": "2026-07-28T12:15:00Z",
+          "stateBy": "atlas",
+          "stateEvent": "01K1A2B3C4D5E6F7G8H9J0K1P4"
+        },
+        {
+          "space": "customer-ops",
+          "id": "XW-support-20260730-blocked",
+          "type": "work_request",
+          "title": "Backfill redacted attachment metadata",
+          "from": "support",
+          "to": [
+            "atlas"
+          ],
+          "state": "blocked",
+          "priority": "p1",
+          "blocking": true,
+          "gatePending": false,
+          "age": "8h",
+          "neededBy": "2026-08-02",
+          "createdAt": "2026-07-30T09:05:00Z",
+          "movedAt": "2026-07-30T09:05:00Z",
+          "new": true,
+          "severity": "blocking",
+          "reasons": [
+            "p1-or-blocking-open"
+          ],
+          "syncStale": true,
+          "yourMove": false,
+          "description": "The backfill cannot proceed until the archive mirror is readable again.",
+          "outcome": "open",
+          "terminal": false
+        }
+      ],
       "window": {
         "truncated": false,
-        "total": 0,
-        "shown": 0
+        "total": 3,
+        "shown": 3
       }
     },
     "noHumanMove": {
-      "items": null,
+      "items": [
+        {
+          "space": "checkout-core",
+          "id": "XQ-checkout-20260730-a1b2",
+          "type": "question",
+          "title": "Should a retry reuse the original capture idempotency key?",
+          "from": "checkout",
+          "to": [
+            "atlas"
+          ],
+          "state": "submitted",
+          "priority": "p2",
+          "blocking": false,
+          "gatePending": false,
+          "thread": "thread:checkout-20260728-c3d4",
+          "age": "5h",
+          "neededBy": "2026-07-31",
+          "createdAt": "2026-07-30T12:05:00Z",
+          "movedAt": "2026-07-30T12:05:00Z",
+          "new": true,
+          "severity": "normal",
+          "reasons": [
+            "addressed-no-ack"
+          ],
+          "yourMove": true,
+          "waitingOn": [
+            "atlas"
+          ],
+          "description": "Checkout needs one stable retry rule before it can finish the duplicate-capture fix.",
+          "prompt": {
+            "moves": [
+              "acknowledge",
+              "decline"
+            ],
+            "askFirst": [
+              "decline"
+            ],
+            "doc": "reference/authoring/question.md",
+            "loop": "loops/receive.md §8.3 (receive loop)"
+          },
+          "outcome": "open",
+          "terminal": false,
+          "stateSince": "2026-07-30T11:57:00Z",
+          "stateBy": "checkout",
+          "stateEvent": "01K1A2B3C4D5E6F7G8H9J0K1M9"
+        },
+        {
+          "space": "checkout-core",
+          "id": "XA-catalog-20260728-f6g7",
+          "type": "announcement",
+          "title": "Product feed v3 sunsets on 2026-09-01",
+          "from": "catalog",
+          "to": [
+            "atlas",
+            "checkout"
+          ],
+          "state": "published",
+          "priority": "p2",
+          "blocking": false,
+          "gatePending": false,
+          "thread": "thread:catalog-20260728-f6g7",
+          "age": "2d",
+          "createdAt": "2026-07-28T17:05:00Z",
+          "movedAt": "2026-07-28T17:05:00Z",
+          "new": true,
+          "severity": "normal",
+          "reasons": [
+            "addressed-no-ack"
+          ],
+          "yourMove": false,
+          "description": "Registered v3 consumers must move to XC-catalog-product-feed@4.0.0 before the sunset date.",
+          "outcome": "open",
+          "terminal": false,
+          "stateSince": "2026-07-28T07:01:00Z",
+          "stateBy": "catalog",
+          "stateEvent": "01K9A2B3C4D5E6F7G8H9J0K1M2"
+        },
+        {
+          "space": "customer-ops",
+          "id": "XA-comms-20260730-r7t8",
+          "type": "announcement",
+          "title": "Delivery status — São Paulo ✓ · مرحبا · 東京",
+          "from": "comms",
+          "to": [
+            "atlas",
+            "support"
+          ],
+          "state": "published",
+          "priority": "p4",
+          "blocking": false,
+          "gatePending": false,
+          "thread": "thread:comms-20260730-r7t8",
+          "age": "5h",
+          "createdAt": "2026-07-30T12:05:00Z",
+          "movedAt": "2026-07-30T12:05:00Z",
+          "new": true,
+          "severity": "attention",
+          "reasons": [
+            "addressed-no-ack"
+          ],
+          "syncStale": true,
+          "yourMove": false,
+          "description": "A routine liveness announcement with multilingual content for layout and escaping coverage.",
+          "outcome": "open",
+          "terminal": false
+        },
+        {
+          "space": "customer-ops",
+          "id": "XC-support-case-stream",
+          "type": "contract",
+          "title": "Support case stream",
+          "from": "support",
+          "to": [
+            "atlas"
+          ],
+          "state": "published",
+          "priority": "p3",
+          "blocking": false,
+          "gatePending": false,
+          "thread": "thread:support-20260718-b3c4",
+          "age": "2d",
+          "createdAt": "2026-07-28T17:05:00Z",
+          "movedAt": "2026-07-28T17:05:00Z",
+          "new": false,
+          "severity": "attention",
+          "syncStale": true,
+          "yourMove": false,
+          "operationalItems": [
+            {
+              "name": "case-event-stream",
+              "state": "ready"
+            },
+            {
+              "name": "historical-attachment-replay",
+              "state": "absent"
+            },
+            {
+              "name": "regional-residency-routing",
+              "state": "undeclared"
+            }
+          ],
+          "description": "Customer case updates and redacted conversation references.",
+          "outcome": "open",
+          "terminal": false
+        },
+        {
+          "space": "customer-ops",
+          "id": "XH-legacycrm-20260709-x3y4",
+          "type": "handoff",
+          "title": "\u003c/script\u003e\u003cimg src=x onerror=alert('rendering-test')\u003e",
+          "from": "legacycrm",
+          "to": [
+            "atlas"
+          ],
+          "state": "submitted",
+          "priority": "p2",
+          "blocking": false,
+          "gatePending": false,
+          "thread": "thread:legacycrm-20260709-x3y4",
+          "age": "3w",
+          "createdAt": "2026-07-09T17:05:00Z",
+          "movedAt": "2026-07-09T17:05:00Z",
+          "new": false,
+          "severity": "attention",
+          "reasons": [
+            "addressed-no-ack"
+          ],
+          "syncStale": true,
+          "yourMove": true,
+          "waitingOn": [
+            "atlas"
+          ],
+          "description": "This literal hostile-looking title is data. It must render as text and never execute.",
+          "prompt": {
+            "moves": [
+              "acknowledge"
+            ],
+            "doc": "reference/authoring/handoff.md",
+            "loop": "loops/receive.md §8.3 (receive loop)"
+          },
+          "outcome": "open",
+          "terminal": false,
+          "stateSince": "2026-07-09T10:01:00Z",
+          "stateBy": "legacycrm",
+          "stateEvent": "01K6A2B3C4D5E6F7G8H9J0K1M2"
+        },
+        {
+          "space": "checkout-core",
+          "id": "XW-catalog-20260731-accepted",
+          "type": "work_request",
+          "title": "Prepare the product-feed v4 cutover checklist",
+          "from": "catalog",
+          "to": [
+            "atlas"
+          ],
+          "state": "accepted",
+          "priority": "p2",
+          "blocking": false,
+          "gatePending": false,
+          "age": "6h",
+          "neededBy": "2026-08-15",
+          "createdAt": "2026-07-30T11:05:00Z",
+          "movedAt": "2026-07-30T11:05:00Z",
+          "new": true,
+          "severity": "attention",
+          "reasons": [
+            "activation-owed"
+          ],
+          "yourMove": false,
+          "description": "Atlas accepted ownership of the cutover checklist and must explicitly start the work.",
+          "outcome": "open",
+          "terminal": false
+        }
+      ],
       "window": {
         "truncated": false,
-        "total": 0,
-        "shown": 0
+        "total": 6,
+        "shown": 6
       }
     },
     "youAwait": {
-      "items": null,
+      "items": [
+        {
+          "space": "checkout-core",
+          "id": "XW-atlas-20260727-r7s8",
+          "type": "work_request",
+          "title": "Migrate the catalog adapter to product feed v4",
+          "from": "atlas",
+          "to": [
+            "catalog"
+          ],
+          "state": "responded",
+          "priority": "p2",
+          "blocking": false,
+          "gatePending": false,
+          "thread": "thread:atlas-20260727-r7s8",
+          "age": "9h",
+          "neededBy": "2026-08-15",
+          "createdAt": "2026-07-30T08:05:00Z",
+          "movedAt": "2026-07-30T08:05:00Z",
+          "new": true,
+          "severity": "normal",
+          "reasons": [
+            "state-changed-since-cursor",
+            "responded-awaiting-verify-close"
+          ],
+          "yourMove": true,
+          "waitingOn": [
+            "atlas",
+            "catalog"
+          ],
+          "description": "Catalog delivered a migration plan; Atlas must verify the attached response and close or dispute.",
+          "prompt": {
+            "moves": [
+              "close",
+              "supersede"
+            ],
+            "askFirst": [
+              "close",
+              "supersede"
+            ],
+            "doc": "reference/authoring/work_request.md",
+            "loop": "loops/send.md §8.2 (send loop)"
+          },
+          "outcome": "open",
+          "terminal": false,
+          "stateSince": "2026-07-30T07:56:00Z",
+          "stateBy": "catalog",
+          "stateEvent": "01K3A2B3C4D5E6F7G8H9J0K1MC"
+        }
+      ],
       "window": {
         "truncated": false,
-        "total": 0,
-        "shown": 0
+        "total": 1,
+        "shown": 1
       }
     },
     "linesOffCurrent": {
-      "items": null,
+      "items": [
+        {
+          "from": "fulfillment",
+          "to": "atlas",
+          "space": "checkout-core",
+          "contract": "XC-atlas-order-envelope",
+          "pinnedMajor": 1,
+          "pinnedVersion": "1.5.0",
+          "pinnedState": "retired",
+          "providerVersion": "2.2.0",
+          "state": "published",
+          "availableMajors": [
+            1,
+            2
+          ],
+          "drift": "retired",
+          "successor": "XC-atlas-order-envelope@2.0.0",
+          "description": "Canonical order envelope emitted after checkout confirmation."
+        },
+        {
+          "from": "atlas",
+          "to": "catalog",
+          "space": "checkout-core",
+          "contract": "XC-catalog-product-feed",
+          "pinnedMajor": 3,
+          "pinnedVersion": "3.4.0",
+          "pinnedState": "deprecated",
+          "providerVersion": "4.0.0",
+          "state": "published",
+          "availableMajors": [
+            3,
+            4
+          ],
+          "drift": "deprecated",
+          "sunset": "2026-09-01",
+          "successor": "XC-catalog-product-feed@4.0.0",
+          "description": "Incremental product and availability feed consumed by ordering systems."
+        },
+        {
+          "from": "checkout",
+          "to": "fulfillment",
+          "space": "checkout-core",
+          "contract": "XC-fulfillment-shipment-status",
+          "pinnedMajor": 3,
+          "providerVersion": "2.1.0",
+          "state": "published",
+          "availableMajors": [
+            2
+          ],
+          "drift": "missing",
+          "description": "Shipment status vocabulary and event payload."
+        },
+        {
+          "from": "atlas",
+          "to": "comms",
+          "space": "checkout-core",
+          "contract": "XC-comms-notification-request",
+          "pinnedMajor": 1,
+          "pinnedVersion": "1.3.0",
+          "pinnedState": "published",
+          "providerVersion": "2.0.0",
+          "state": "published",
+          "availableMajors": [
+            1,
+            2
+          ],
+          "drift": "behind",
+          "description": "Request envelope for transactional customer notifications."
+        },
+        {
+          "from": "atlas",
+          "to": "support",
+          "space": "customer-ops",
+          "contract": "XC-support-case-stream",
+          "pinnedMajor": 1,
+          "pinnedVersion": "1.4.0",
+          "pinnedState": "published",
+          "providerVersion": "2.0.0",
+          "state": "published",
+          "availableMajors": [
+            1,
+            2
+          ],
+          "drift": "behind",
+          "description": "Customer case updates and redacted conversation references."
+        },
+        {
+          "from": "support",
+          "to": "comms",
+          "space": "customer-ops",
+          "contract": "XC-comms-customer-notice",
+          "pinnedMajor": 1,
+          "pinnedVersion": "1.2.0",
+          "pinnedState": "deprecated",
+          "providerVersion": "2.0.0",
+          "state": "published",
+          "availableMajors": [
+            1,
+            2
+          ],
+          "drift": "deprecated",
+          "sunset": "2026-08-31",
+          "successor": "XC-comms-customer-notice@2.0.0",
+          "description": "Customer notice request with locale and delivery policy."
+        },
+        {
+          "from": "atlas",
+          "to": "legacycrm",
+          "space": "customer-ops",
+          "contract": "XC-legacycrm-export",
+          "pinnedMajor": 1,
+          "drift": "dangling"
+        }
+      ],
       "window": {
         "truncated": false,
-        "total": 0,
-        "shown": 0
+        "total": 7,
+        "shown": 7
       },
       "complete": false,
-      "degradations": null
+      "degradations": [
+        {
+          "space": "archive-migration",
+          "system": "",
+          "path": "",
+          "code": "unreadable-registry",
+          "reason": "the synthetic snapshot marks this space mirror unreadable"
+        }
+      ]
     }
   },
   "windows": {
     "inbox": {
       "truncated": false,
-      "total": 0,
-      "shown": 0
+      "total": 10,
+      "shown": 10
     },
     "outbox": {
       "truncated": false,
-      "total": 0,
-      "shown": 0
+      "total": 7,
+      "shown": 7
     },
     "archive": {
       "truncated": false,
-      "total": 0,
-      "shown": 0
+      "total": 6,
+      "shown": 6
     },
     "threads": {
       "truncated": false,
-      "total": 0,
-      "shown": 0
+      "total": 5,
+      "shown": 5
     },
     "contractEdges": {
       "truncated": false,
-      "total": 0,
-      "shown": 0
+      "total": 10,
+      "shown": 10
     },
     "exchangeEdges": {
       "truncated": false,
-      "total": 0,
-      "shown": 0
+      "total": 12,
+      "shown": 12
     },
     "flags": {
       "truncated": false,
-      "total": 0,
-      "shown": 0
+      "total": 3,
+      "shown": 3
     },
     "workReports": {
       "truncated": false,
-      "total": 0,
-      "shown": 0
+      "total": 8,
+      "shown": 8
     },
     "artifactDetails": {
       "truncated": false,
-      "total": 0,
-      "shown": 0
+      "total": 10,
+      "shown": 10
     }
   }
 }

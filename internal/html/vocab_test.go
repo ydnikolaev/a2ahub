@@ -54,6 +54,32 @@ func TestDashboardVocabularyCoverage(t *testing.T) {
 	}
 }
 
+func TestDashboardVocabularyClosedShape(t *testing.T) {
+	t.Parallel()
+
+	if got, want := len(VocabularyFamilies()), 12; got != want {
+		t.Errorf("vocabulary family count = %d, want %d", got, want)
+	}
+	table := DashboardVocabulary()
+	if got, want := len(table.Entries), 96; got != want {
+		t.Errorf("vocabulary row count = %d, want %d", got, want)
+	}
+
+	wantTransitions := fold.BuildVocabulary().Transitions
+	if got, want := len(wantTransitions), 25; got != want {
+		t.Fatalf("fold transition count = %d, want %d", got, want)
+	}
+	gotTransitions := make([]string, 0, len(wantTransitions))
+	for _, entry := range table.Entries {
+		if entry.Family == VocabularyFamilyTransition {
+			gotTransitions = append(gotTransitions, entry.Value)
+		}
+	}
+	if !reflect.DeepEqual(gotTransitions, wantTransitions) {
+		t.Errorf("transition rows = %v, want fold-owned stable order %v", gotTransitions, wantTransitions)
+	}
+}
+
 func TestDashboardVocabularyEntriesAreComplete(t *testing.T) {
 	t.Parallel()
 	table := DashboardVocabulary()
@@ -123,6 +149,17 @@ func TestDashboardVocabularyReturnsFreshCopies(t *testing.T) {
 		t.Fatal("DashboardVocabulary returned no entries")
 	}
 	mutated.Entries[0].LabelEN = "mutated"
+	transitionMutated := false
+	for i := range mutated.Entries {
+		if mutated.Entries[i].Family == VocabularyFamilyTransition {
+			mutated.Entries[i].ExplanationRU = "mutated"
+			transitionMutated = true
+			break
+		}
+	}
+	if !transitionMutated {
+		t.Fatal("DashboardVocabulary returned no transition entry")
+	}
 	mutated.Unknown.LabelEN = "mutated"
 	if got := DashboardVocabulary(); !reflect.DeepEqual(got, want) {
 		t.Errorf("DashboardVocabulary after caller mutation = %+v, want fresh %+v", got, want)
@@ -136,6 +173,7 @@ func TestDashboardVocabularyEnumeratorsReturnFreshCopies(t *testing.T) {
 		VocabularyFamilySourceFreshness,
 		VocabularyFamilyOutcome,
 		VocabularyFamilyLifecycleState,
+		VocabularyFamilyTransition,
 		VocabularyFamilyReason,
 		VocabularyFamilyGate,
 		VocabularyFamilyWorkMode,
@@ -203,6 +241,7 @@ func dashboardVocabularyPairs() []vocabularyPair {
 		VocabularyFamilySourceFreshness:     stringsOf(operational.SourceFreshnessValues()),
 		VocabularyFamilyOutcome:             append([]string(nil), base.Outcomes...),
 		VocabularyFamilyLifecycleState:      unionValues(base.States),
+		VocabularyFamilyTransition:          append([]string(nil), base.Transitions...),
 		VocabularyFamilyReason:              stringsOf(cache.ReasonCodes()),
 		VocabularyFamilyGate:                unionStrings(base.HumanGates),
 		VocabularyFamilyWorkMode:            stringsOf(workreport.Modes()),

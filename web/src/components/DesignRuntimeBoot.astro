@@ -5,6 +5,7 @@
 // every visitor.
 import design from '../generated/design.json';
 import demo from '../generated/demo.json';
+import { projectDemo } from '../lib/demo-projection';
 
 const {
   needsDemo = false,
@@ -12,7 +13,7 @@ const {
   needsReleases = false,
   needsLatest = false,
   allDocs = false,
-  compactDemo = false
+  demoProjection = 'full'
 } = Astro.props;
 
 // The docs INDEX ships the body of the document it actually points at.
@@ -40,23 +41,9 @@ const routeDocBodies = routeDoc && design.docBodies[routeDoc]
   ? { [routeDoc]: design.docBodies[routeDoc] }
   : {};
 
-const compactHomepageDemo = compactDemo ? {
-  meta: demo.meta,
-  generatedAt: demo.generatedAt,
-  self: demo.self,
-  tooling: demo.tooling,
-  spaces: demo.spaces,
-  nodes: demo.nodes,
-  contractEdges: demo.contractEdges,
-  exchangeEdges: demo.exchangeEdges,
-  inbox: demo.inbox,
-  outbox: demo.outbox,
-  contracts: demo.contracts
-} : demo;
-
 const payload = {
   components: design.components,
-  demo: needsDemo ? compactHomepageDemo : null,
+  demo: needsDemo ? projectDemo(demo, demoProjection) : null,
   docs: needsDocs ? (allDocs ? design.docs : compactDocs) : null,
   docBodies: needsDocs ? (allDocs ? design.docBodies : routeDocBodies) : null,
   // `changes` is NOT shipped, and that is the whole of it: every consumer of

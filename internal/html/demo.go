@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/notes"
 	"github.com/ydnikolaev/a2ahub/internal/operational"
@@ -82,6 +83,9 @@ func DemoData() (Data, error) {
 			return Data{}, fmt.Errorf("html: demo artifact detail %s Markdown: %w", d.ArtifactDetails[i].ID, renderErr)
 		}
 		d.ArtifactDetails[i].BodyHTML = rendered
+	}
+	if err := deriveDemoDashboardAdmission(&d); err != nil {
+		return Data{}, fmt.Errorf("html: demo dashboard admission: %w", err)
 	}
 	return d, nil
 }
@@ -390,8 +394,95 @@ func deriveDemoRowFacts(d *Data) {
 			// same as owing a move on it.
 			it.YourMove = containsString(oi.WaitingOn, d.Self)
 			it.Prompt = oi.Prompt
+			it.WaitingOn = append([]string{}, oi.WaitingOn...)
+			it.ExpectedTransition = oi.ExpectedTransition
+			it.Why = oi.Why
+			if oi.HumanGate != "" {
+				it.HumanGate = oi.HumanGate
+				it.GatePending = true
+			}
 		}
 	}
+}
+
+// deriveDemoDashboardAdmission runs the same bounded projection and
+// cache-owned aggregate builder as the live assembler over the synthetic
+// fixture's already-carried facts. The browser must never repair missing
+// totals by recounting inbox, threads, or dependency edges.
+func deriveDemoDashboardAdmission(d *Data) error {
+	admitThreadChildren(d.Threads, d.ThreadViews)
+	threads, views, threadWindow, err := admitThreadPairs(d.Threads, d.ThreadViews, maximumDashboardThreads)
+	if err != nil {
+		return err
+	}
+	d.Threads, d.ThreadViews, d.Windows.Threads = threads, views, threadWindow
+	d.Inbox, d.Windows.Inbox = admitPrefix(d.Inbox, maximumDashboardInboxItems)
+	d.Outbox, d.Windows.Outbox = admitPrefix(d.Outbox, maximumDashboardOutboxItems)
+	d.Archive, d.Windows.Archive = admitPrefix(d.Archive, maximumDashboardArchiveItems)
+	d.ContractEdges, d.Windows.ContractEdges = admitPrefix(d.ContractEdges, maximumDashboardContractEdges)
+	d.ExchangeEdges, d.Windows.ExchangeEdges = admitPrefix(d.ExchangeEdges, maximumDashboardExchangeEdges)
+	d.Flags, d.Windows.Flags = admitPrefix(d.Flags, maximumDashboardFlags)
+	d.WorkReports, d.Windows.WorkReports = admitPrefix(d.WorkReports, maximumDashboardWorkReports)
+	d.ArtifactDetails, d.Windows.ArtifactDetails = admitPrefix(d.ArtifactDetails, maximumDashboardArtifactDetails)
+
+	inbox, err := demoAggregateItems(d.Inbox)
+	if err != nil {
+		return fmt.Errorf("inbox aggregate input: %w", err)
+	}
+	outbox, err := demoAggregateItems(d.Outbox)
+	if err != nil {
+		return fmt.Errorf("outbox aggregate input: %w", err)
+	}
+	mappedItems := make(map[dashboardItemKey]Item, len(d.Inbox)+len(d.Outbox))
+	indexMappedItems(mappedItems, d.Inbox)
+	indexMappedItems(mappedItems, d.Outbox)
+
+	dependencies := cache.ContractDependencyProjection{Complete: true, Edges: make([]cache.ContractDependencyEdge, 0, len(d.ContractEdges)), Degradations: []cache.ContractDependencyDegradation{}}
+	for _, edge := range d.ContractEdges {
+		dependencies.Edges = append(dependencies.Edges, cache.ContractDependencyEdge{
+			From: edge.From, To: edge.To, Space: edge.Space, Contract: edge.Contract,
+			PinnedMajor: edge.PinnedMajor, PinnedVersion: edge.PinnedVersion, PinnedState: edge.PinnedState,
+			ProviderVersion: edge.ProviderVersion, State: edge.State,
+			AvailableMajors: append([]int(nil), edge.AvailableMajors...), Drift: edge.Drift,
+			Sunset: edge.Sunset, Successor: edge.Successor, Description: edge.Description,
+		})
+	}
+	for _, space := range d.Spaces {
+		if space.Readable {
+			continue
+		}
+		dependencies.Complete = false
+		dependencies.Degradations = append(dependencies.Degradations, cache.ContractDependencyDegradation{
+			Space: space.ID, Code: cache.DependencyDegradationUnreadableRegistry,
+			Reason: "the synthetic snapshot marks this space mirror unreadable",
+		})
+	}
+	d.Aggregates = projectDashboardAggregates(
+		inbox, outbox, d.Self, d.GeneratedAt, dependencies, mappedItems, d.ContractEdges,
+		mapContractDependencyDegradations(dependencies.Degradations),
+	)
+	return nil
+}
+
+func demoAggregateItems(items []Item) ([]cache.Item, error) {
+	out := make([]cache.Item, 0, len(items))
+	for _, item := range items {
+		var movedAt time.Time
+		if item.MovedAt != "" {
+			parsed, err := time.Parse(time.RFC3339Nano, item.MovedAt)
+			if err != nil {
+				return nil, fmt.Errorf("item %s movedAt %q: %w", item.ID, item.MovedAt, err)
+			}
+			movedAt = parsed
+		}
+		out = append(out, cache.Item{
+			Space: item.Space, ID: item.ID, Type: item.Type, Title: item.Title,
+			Blocking: item.Blocking, NeededBy: item.NeededBy, SyncStale: item.SyncStale,
+			LatestEventAt: movedAt, Terminal: item.Terminal, YourMove: item.YourMove,
+			WaitingOn: append([]string(nil), item.WaitingOn...), HumanGate: item.HumanGate,
+		})
+	}
+	return out, nil
 }
 
 // shiftBack turns one of humanizeAge's own outputs ("5h", "1d", "just now")

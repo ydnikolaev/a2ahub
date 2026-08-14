@@ -7,6 +7,7 @@ const (
 	VocabularyFamilySourceFreshness     VocabularyFamily = "source-freshness"
 	VocabularyFamilyOutcome             VocabularyFamily = "outcome"
 	VocabularyFamilyLifecycleState      VocabularyFamily = "lifecycle-state"
+	VocabularyFamilyTransition          VocabularyFamily = "transition"
 	VocabularyFamilyReason              VocabularyFamily = "reason"
 	VocabularyFamilyGate                VocabularyFamily = "gate"
 	VocabularyFamilyWorkMode            VocabularyFamily = "work-mode"
@@ -54,6 +55,7 @@ func VocabularyFamilies() []VocabularyFamily {
 		VocabularyFamilySourceFreshness,
 		VocabularyFamilyOutcome,
 		VocabularyFamilyLifecycleState,
+		VocabularyFamilyTransition,
 		VocabularyFamilyReason,
 		VocabularyFamilyGate,
 		VocabularyFamilyWorkMode,
@@ -116,6 +118,32 @@ var dashboardVocabularyEntries = []VocabularyEntry{
 	vocabularyEntry(VocabularyFamilyLifecycleState, "superseded", "Заменено следующим", "Superseded by another", "Этот документ сохранён в истории, но его роль теперь выполняет более новый.", "This document remains in history, but a newer one now serves its role.", VocabularyToneSettled),
 	vocabularyEntry(VocabularyFamilyLifecycleState, "verified", "Результат проверен", "Result verified", "Получатель проверил результат и подтвердил его соответствие запросу.", "The recipient checked the result and confirmed that it satisfies the request.", VocabularyToneSettled),
 	vocabularyEntry(VocabularyFamilyLifecycleState, "withdrawn", "Снято автором", "Taken back by author", "Автор отозвал документ, поэтому дальнейшая работа по нему не ожидается.", "The author withdrew the document, so no further work on it is expected.", VocabularyToneSettled),
+
+	vocabularyEntry(VocabularyFamilyTransition, "accept", "запрос принят", "request accepted", "Получатель принял запрос или передачу; работа может продолжаться.", "The recipient accepted the request or handoff; work can continue.", VocabularyToneProgressing),
+	vocabularyEntry(VocabularyFamilyTransition, "acknowledge", "получение подтверждено", "receipt acknowledged", "Адресат подтвердил получение документа; это ещё не означает выполнения обязательства.", "The recipient confirmed receipt of the document; this does not yet mean the obligation is fulfilled.", VocabularyToneProgressing),
+	vocabularyEntry(VocabularyFamilyTransition, "activate", "обязательство введено в действие", "obligation activated", "Опубликованное обязательство введено в действие и теперь заявлено доступным.", "The published obligation was brought into operation and is now declared available.", VocabularyToneProgressing),
+	vocabularyEntry(VocabularyFamilyTransition, "approve", "согласовано", "approved", "Обязательное согласование человеком завершилось одобрением.", "The required human review concluded with approval.", VocabularyToneSettled),
+	vocabularyEntry(VocabularyFamilyTransition, "block", "заблокировано", "blocked", "Продолжение остановлено записанной блокировкой до её явного снятия.", "Progress is stopped by a recorded blocker until it is explicitly removed.", VocabularyToneBroken),
+	vocabularyEntry(VocabularyFamilyTransition, "cancel", "отменено", "cancelled", "Работа остановлена до завершения и больше не ожидает продолжения.", "The work stopped before completion and no longer awaits continuation.", VocabularyToneSettled),
+	vocabularyEntry(VocabularyFamilyTransition, "close", "закрытие записано", "close recorded", "Цепочка закрыта и больше не ожидает следующего перехода.", "The thread is closed and no longer awaits another transition.", VocabularyToneSettled),
+	vocabularyEntry(VocabularyFamilyTransition, "decline", "получатель отказал", "declined", "Получатель отказался принять запрос или передачу; ожидаемый результат не достигнут.", "The recipient declined the request or handoff; the expected result was not achieved.", VocabularyToneBroken),
+	vocabularyEntry(VocabularyFamilyTransition, "deprecate", "объявлено устаревающим", "deprecated", "Версия помечена как устаревающая; для новой работы следует выбрать её преемника.", "The version was marked for phase-out; new work should use its successor.", VocabularyToneNeedsYou),
+	vocabularyEntry(VocabularyFamilyTransition, "dispute", "оспорено", "disputed", "Участник оспорил результат; разногласие нужно разрешить явно.", "A participant contested the result; the disagreement must be resolved explicitly.", VocabularyToneBroken),
+	vocabularyEntry(VocabularyFamilyTransition, "note", "заметка добавлена", "note added", "К цепочке добавлена информационная заметка; сама по себе она не определяет состояние протокола.", "An informational note was added to the thread; by itself it does not determine protocol state.", VocabularyToneProgressing),
+	vocabularyEntry(VocabularyFamilyTransition, "propose", "предложено", "proposed", "Предложение опубликовано и теперь ждёт решения адресата.", "A proposal was published and now awaits the recipient's decision.", VocabularyToneWaitingThem),
+	vocabularyEntry(VocabularyFamilyTransition, "publish", "опубликовано", "published", "Документ опубликован и доступен участникам как действующая версия.", "The document was published and is available to participants as an active version.", VocabularyToneSettled),
+	vocabularyEntry(VocabularyFamilyTransition, "reject", "отклонено", "rejected", "Обязательное согласование завершилось отказом; решение не принято.", "The required approval ended in rejection; the decision was not accepted.", VocabularyToneBroken),
+	vocabularyEntry(VocabularyFamilyTransition, "respond", "ответ записан", "response recorded", "Ответ опубликован; исходный запрос может ещё ждать проверки или закрытия.", "A response was published; the original request may still await verification or closure.", VocabularyToneProgressing),
+	vocabularyEntry(VocabularyFamilyTransition, "retire", "выведено из использования", "retired", "Версия окончательно выведена из использования и должна быть заменена поддерживаемой.", "The version was permanently retired from use and must be replaced by a supported one.", VocabularyToneSettled),
+	vocabularyEntry(VocabularyFamilyTransition, "satisfy", "требование выполнено", "requirement satisfied", "Участники подтвердили, что требуемое условие выполнено.", "The participants confirmed that the required condition has been met.", VocabularyToneSettled),
+	vocabularyEntry(VocabularyFamilyTransition, "start", "работа начата", "work started", "Принятая работа перешла к активному выполнению.", "The accepted work moved into active progress.", VocabularyToneProgressing),
+	vocabularyEntry(VocabularyFamilyTransition, "submit", "передано на рассмотрение", "submitted for review", "Документ передан адресату и ждёт его следующего шага.", "The document was sent to its recipient and awaits their next step.", VocabularyToneWaitingThem),
+	vocabularyEntry(VocabularyFamilyTransition, "supersede", "заменено новым", "superseded", "Другой документ заменил этот; текущая версия сохраняется только в истории.", "Another document replaced this one; the current version remains only in history.", VocabularyToneSettled),
+	vocabularyEntry(VocabularyFamilyTransition, "unblock", "разблокировано", "unblocked", "Записанная блокировка снята, и работа может продолжаться.", "The recorded blocker was removed, and work can continue.", VocabularyToneProgressing),
+	vocabularyEntry(VocabularyFamilyTransition, "verify", "результат проверен", "result verified", "Получатель проверил результат и подтвердил его соответствие запросу.", "The recipient checked the result and confirmed that it satisfies the request.", VocabularyToneSettled),
+	vocabularyEntry(VocabularyFamilyTransition, "verify-fail", "проверка не пройдена", "verification failed", "Проверка завершилась неуспешно; результат не принят.", "Verification failed; the result was not accepted.", VocabularyToneBroken),
+	vocabularyEntry(VocabularyFamilyTransition, "verify-pass", "проверка пройдена", "verification passed", "Проверка завершилась успешно; результат принят.", "Verification passed; the result was accepted.", VocabularyToneSettled),
+	vocabularyEntry(VocabularyFamilyTransition, "withdraw", "отозвано", "withdrawn", "Автор отозвал документ до завершения ожидаемого результата.", "The author withdrew the document before the expected result was completed.", VocabularyToneSettled),
 
 	vocabularyEntry(VocabularyFamilyReason, "addressed-no-ack", "Нужно подтвердить получение", "Acknowledge receipt", "Документ адресован вам, но подтверждение получения ещё не записано.", "A document is addressed to you, but your acknowledgement has not been recorded.", VocabularyToneNeedsYou),
 	vocabularyEntry(VocabularyFamilyReason, "responded-awaiting-verify-close", "Проверьте ответ", "Verify the response", "На ваш запрос ответили; теперь результат нужно проверить или закрыть цепочку.", "Your request has a response; verify the result or close the thread.", VocabularyToneNeedsYou),

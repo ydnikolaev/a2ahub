@@ -10,7 +10,7 @@
 <button data-timeline-artifact-card type="button" onClick="{{ openDocument }}" aria-label="{{ openLabel }}" style="{{ shellStyle }}">
   <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px; margin-bottom:10px;">
     <dc-import name="TypeBadge" type="{{ type }}" size="small" hint-size="130px,24px"></dc-import>
-    <sc-if value="{{ hasState }}" hint-placeholder-val="{{ true }}"><dc-import name="StatusPill" text="{{ state }}" tone="{{ stateTone }}" size="small" hint-size="100px,24px"></dc-import></sc-if>
+    <sc-if value="{{ hasState }}" hint-placeholder-val="{{ true }}"><dc-import name="StatusPill" result="{{ stateResult }}" size="small" hint-size="100px,24px"></dc-import></sc-if>
     <sc-if value="{{ hasPriority }}" hint-placeholder-val="{{ false }}"><dc-import name="StatusPill" text="{{ priority }}" tone="neutral" size="small" hint-size="60px,24px"></dc-import></sc-if>
   </div>
   <span style="display:block; margin:0; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; color:var(--text); overflow-wrap:anywhere;">{{ title }}</span>
@@ -24,15 +24,14 @@ class Component extends DCLogic {
     const ru = document.documentElement.lang === "ru";
     return {
       type: card.type || "work_request",
-      hasState: !!card.state,
-      state: String(card.state || "").replace("_", " "),
-      stateTone: card.stateTone || "neutral",
+      hasState: !!card.stateResult,
+      stateResult: card.stateResult || null,
       hasPriority: !!card.priority,
       priority: card.priority || "",
       title: card.title || "",
       openLabel: (ru ? "Открыть документ: " : "Open document: ") + (card.title || ""),
       openDocument: card.openDocument || (() => {}),
-      shellStyle: "width:100%; min-width:0; display:block; border:0; text-align:left; font-family:'Onest',sans-serif; color:var(--text); cursor:pointer; background:var(--page); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--border); transition:box-shadow .18s ease;" + (card.focused ? " box-shadow:inset 0 0 0 2px var(--focus);" : "")
+      shellStyle: "width:100%; min-width:0; display:block; border:0; text-align:left; font-family:'Onest',sans-serif; color:var(--text); cursor:pointer; background:var(--page); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--border); transition:box-shadow .18s ease;" + (card.focused ? " box-shadow:inset 0 0 0 2px var(--focus);" : "") + String(card.accentStyle || "")
     };
   }
 }

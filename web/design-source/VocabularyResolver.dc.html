@@ -20,6 +20,21 @@ const A2A_VOCABULARY_TONE_CLASSES = Object.freeze({
   "unknown": "tone-unknown"
 });
 
+const A2A_VOCABULARY_PRESENTATIONS = Object.freeze({
+  "tone-needs-you": Object.freeze({ pillBackground:"var(--blocking-tint)", pillForeground:"var(--blocking-ink)", pillRing:"", dotForeground:"var(--red)", dotBackground:"var(--blocking-tint)", markerColor:"var(--red)", signalTone:"caution" }),
+  "tone-waiting-them": Object.freeze({ pillBackground:"var(--attention-tint)", pillForeground:"var(--attention-ink)", pillRing:"", dotForeground:"var(--ochre)", dotBackground:"var(--attention-tint)", markerColor:"var(--ochre)", signalTone:"caution" }),
+  "tone-progressing": Object.freeze({ pillBackground:"var(--teal-tint)", pillForeground:"var(--focus)", pillRing:"", dotForeground:"var(--teal-ink)", dotBackground:"var(--teal-tint)", markerColor:"var(--teal-ink)", signalTone:"neutral" }),
+  "tone-settled": Object.freeze({ pillBackground:"var(--healthy-tint)", pillForeground:"var(--healthy-ink)", pillRing:"", dotForeground:"var(--healthy-ink)", dotBackground:"var(--healthy-tint)", markerColor:"var(--green)", signalTone:"positive" }),
+  "tone-broken": Object.freeze({ pillBackground:"var(--red)", pillForeground:"var(--surface)", pillRing:"", dotForeground:"var(--red)", dotBackground:"var(--blocking-tint)", markerColor:"var(--red)", signalTone:"negative" }),
+  "tone-unknown": Object.freeze({ pillBackground:"var(--hairline)", pillForeground:"var(--body)", pillRing:"", dotForeground:"var(--border-strong)", dotBackground:"var(--hairline)", markerColor:"var(--border-strong)", signalTone:"neutral" }),
+  "tone-neutral": Object.freeze({ pillBackground:"var(--hairline)", pillForeground:"var(--body)", pillRing:"", dotForeground:"var(--border-strong)", dotBackground:"var(--hairline)", markerColor:"var(--border-strong)", signalTone:"neutral" })
+});
+
+function vocabularyPresentation(result) {
+  const toneClass = result && String(result.toneClass || "");
+  return A2A_VOCABULARY_PRESENTATIONS[toneClass] || A2A_VOCABULARY_PRESENTATIONS[A2A_VOCABULARY_TONE_CLASSES.unknown];
+}
+
 function lookupVocabulary(data, family, value, locale, policy) {
   const table = data && data.vocabulary || {};
   const entries = Array.isArray(table.entries) ? table.entries : [];
@@ -44,8 +59,17 @@ function lookupVocabulary(data, family, value, locale, policy) {
   });
 }
 
+function knowsVocabulary(data, family, value) {
+  const entries = data && data.vocabulary && data.vocabulary.entries;
+  return Array.isArray(entries) && entries.some(candidate =>
+    candidate && candidate.family === family && candidate.value === value
+  );
+}
+
 const A2A_VOCABULARY_RESOLVER = Object.freeze({
   lookup: lookupVocabulary,
+  knows: knowsVocabulary,
+  presentation: vocabularyPresentation,
   defaultPolicy: A2A_VOCABULARY_POLICY
 });
 globalThis.A2A_VOCABULARY_RESOLVER = A2A_VOCABULARY_RESOLVER;

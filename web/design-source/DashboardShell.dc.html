@@ -35,6 +35,12 @@
       </nav>
       </span>
       <span class="a2a-topbar-actions" style="flex:0 0 auto; display:flex; align-items:center; gap:8px;">
+        <sc-if value="{{ hasLiveTransport }}" hint-placeholder-val="{{ false }}">
+          <span role="status" title="{{ liveTransportResult.explanation }}" style="display:inline-flex; align-items:center; gap:6px; min-height:38px; box-sizing:border-box; padding:6px 10px; border-radius:var(--radius-control); background:var(--canvas); color:var(--body); font-size:14px;"><span aria-hidden="true">{{ liveTransportResult.cue }}</span><span>{{ liveTransportResult.label }}</span></span>
+        </sc-if>
+        <sc-if value="{{ hasRefresh }}" hint-placeholder-val="{{ false }}">
+          <button type="button" onClick="{{ refreshDashboard }}" aria-label="{{ refreshLabel }}" title="{{ refreshLabel }}" style="display:inline-flex; align-items:center; justify-content:center; min-height:38px; box-sizing:border-box; padding:7px 12px; border:0; border-radius:var(--radius-control); background:var(--primary); color:var(--on-primary); font-family:'Onest',sans-serif; font-size:14px; font-weight:600; cursor:pointer;">{{ refreshLabel }}</button>
+        </sc-if>
         <span role="group" aria-label="{{ localeGroupLabel }}" style="display:flex; align-items:center; gap:2px; min-height:38px; box-sizing:border-box; background:var(--canvas); border-radius:var(--radius-control); padding:3px;">
           <button type="button" onClick="{{ setEN }}" aria-pressed="{{ enPressed }}" style="{{ enLocaleStyle }}">EN</button>
           <button type="button" onClick="{{ setRU }}" aria-pressed="{{ ruPressed }}" style="{{ ruLocaleStyle }}">RU</button>
@@ -107,7 +113,7 @@
   <footer class="a2a-dashboard-footer" style="background:var(--surface); padding:20px 0 30px;">
     <div style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0; display:flex; align-items:flex-start; gap:22px; flex-wrap:nowrap; font-size:15px; color:var(--muted);">
       <span style="flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:5px;">
-        <span style="display:flex; align-items:center; gap:8px; color:var(--body);"><dc-import name="FreshnessDot" stale="{{ footerStale }}" age="{{ footerAge }}" hint="{{ footerFreshnessHint }}" compact="{{ true }}" hint-size="9px,9px"></dc-import>{{ snapshotLine }}</span>
+        <span style="display:flex; align-items:center; gap:8px; color:var(--body);"><dc-import name="FreshnessDot" result="{{ footerFreshnessResult }}" age="{{ footerAge }}" compact="{{ true }}" hint-size="13px,13px"></dc-import>{{ snapshotLine }}</span>
         <span>{{ footerLine }}</span>
       </span>
       <span style="flex:0 0 auto; display:flex; gap:16px; flex-wrap:wrap; row-gap:8px; justify-content:flex-end;">
@@ -236,7 +242,6 @@ class Component extends DCLogic {
   }
 
   go(view, extra) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.navigate) actions.navigate(view, extra); }
-  closeContractFile() { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.closeContractFile) actions.closeContractFile(); }
   applyTheme(theme) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setTheme) actions.setTheme(theme); }
   applyLocale(locale) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setLocale) actions.setLocale(locale); }
   copy(text) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.copy) actions.copy(text); }
@@ -301,23 +306,28 @@ class Component extends DCLogic {
       d = { spaces:[], nodes:[], inbox:[], outbox:[], archive:[], contracts:[], contractEdges:[], flags:[], meta:{}, tooling:{}, generatedAt:"", self:"" };
     }
     const nav = this.navLayout();
-    const scopedSpaces = d.spaces.filter(x => this.inScope(x.id));
-    const footerStale = scopedSpaces.some(x => x.stale || !x.readable);
-    const footerFreshnessHint = footerStale
-      ? (ru ? "В снимке есть устаревшая или нечитаемая локальная копия спейса. Данные доступны, но уже могли измениться в репозитории. Запустите a2a sync и соберите дашборд заново." : "This snapshot includes a stale or unreadable local space copy. Data remains available, but the repository may already differ. Run a2a sync and rebuild the dashboard.")
-      : (ru ? "Все выбранные спейсы прочитаны из актуальных локальных копий. Точка станет жёлтой, если хотя бы одна копия устареет или перестанет читаться." : "Every selected space was read from a current local copy. The dot turns amber if any copy becomes stale or unreadable.");
-    const scopedInbox = d.inbox.filter(i => this.inScope(i.space));
-    const scopedOutbox = d.outbox.filter(i => this.inScope(i.space));
-    const needsYou = scopedInbox.filter(i => i.blocking || i.gatePending || i.overdue);
-    const restCount = scopedInbox.length - needsYou.length;
-    const flags = d.flags.filter(f => this.inScope(f.space));
-    const offCurrent = d.contractEdges.filter(e => this.inScope(e.space) && e.drift !== "current").length;
-    const scopedEdges = d.contractEdges.filter(e => this.inScope(e.space)).length;
+    const sourceRows = d.operational && Array.isArray(d.operational.sources) ? d.operational.sources : [];
+    const sourceFor = space => sourceRows.find(source => source.kind === "space" && source.space === space);
+    const activeSource = s.space === "all" ? sourceRows.find(source => source.kind === "local-work") : sourceFor(s.space);
+    const resolveSource = source => globalThis.A2A_VOCABULARY_RESOLVER.lookup(d, "source-freshness", source && source.freshness || "__missing__", ctx.locale);
+    const footerFreshnessResult = resolveSource(activeSource);
+    const liveTransport = typeof ui.liveTransport === "string" ? ui.liveTransport : "";
+    const liveTransportResult = liveTransport ? globalThis.A2A_VOCABULARY_RESOLVER.lookup(d, "live-transport", liveTransport, ctx.locale) : null;
+    const refresh = ctx.actions && typeof ctx.actions.refresh === "function" ? ctx.actions.refresh : null;
+    const openSpaceHealth = () => {
+      const space = (d.spaces || []).find(candidate => candidate.id === s.space);
+      const source = space ? sourceFor(space.id) : null;
+      const actions = ctx.actions || {};
+      if (!space || !actions.cardID || !actions.openCard) return;
+      const id = actions.cardID("space", space);
+      const targetAccent = actions.cardAccent ? actions.cardAccent("source", [space.id, source && source.kind || "space"]) : "";
+      if (id) actions.openCard("space", id, targetAccent);
+    };
     const faceStyle = (i, kind, onDark) => "flex:0 0 22px; width:22px; height:22px; border-radius:99px; display:flex; align-items:center; justify-content:center; line-height:1; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:10px; font-weight:600; margin-left:" + (i ? "3px" : "0") + "; box-shadow:inset 0 0 0 1px " + (onDark ? "var(--primary)" : "var(--canvas)") + "; " +
       (kind === "self" ? "background:var(--teal-solid); color:var(--on-solid);" : kind === "left" ? "background:var(--surface); color:var(--muted);" : "background:var(--border); color:var(--body);");
     const facesFor = (spaceId, active) => {
       const members = spaceId === "all" ? d.nodes : d.nodes.filter(n => (n.spaces || []).includes(spaceId));
-      const ordered = members.slice().sort((a, b) => (b.system === d.self ? 1 : 0) - (a.system === d.self ? 1 : 0) || a.system.localeCompare(b.system));
+      const ordered = members;
       const shown = ordered.slice(0, 3).map((n, i) => ({
         mono: monoCodes(d.nodes.map(x => x.system))[n.system],
         title: n.system + " · " + n.org + (n.status === "left" ? (ru ? " · ушла из спейса" : " · left the space") : ""),
@@ -333,7 +343,8 @@ class Component extends DCLogic {
         return {
           label: x.label, selected,
           faces: x.id === "all" ? [] : facesFor(x.id, false),
-          go: () => this.setState({ space: x.id, ovSel: "", workSel: "", threadSel: "", threadSpace: "", conSel: "", conVersion: "", contractFile: null })
+          result: x.id === "all" ? null : resolveSource(sourceFor(x.id)),
+          go: () => this.setState({ space: x.id, ovSel: "", workSel: "", threadSel: "", threadSpace: "", conSel: "", conVersion: "", dashboardSet: "" })
         };
       });
     const tooling = d.tooling || {};
@@ -341,7 +352,7 @@ class Component extends DCLogic {
       hasError:!!s.error,
       errorText: s.error === "invalid"
         ? (ru ? "Файл нашёлся, но в нём нет meta.schema «a2a-design-demo/v4» и meta.synthetic: true. Мы показываем это как есть, а не пытаемся починить." : "The fixture was found but does not declare meta.schema “a2a-design-demo/v4” with meta.synthetic: true. The inconsistency is reported instead of repaired.")
-        : (s.error ? (ru ? "Файл не удалось загрузить (" + s.error.slice(5) + "). Недоступны и demo-data.json, и встроенная копия demo-data.js." : "The fixture could not be loaded (" + s.error.slice(5) + "). Neither demo-data.json nor the embedded demo-data.js copy is reachable.") : ""),
+        : (s.error ? (ru ? "Встроенные данные дашборда отсутствуют (" + s.error.slice(5) + ")." : "The embedded dashboard data is missing (" + s.error.slice(5) + ").") : ""),
       backOverviewLabel:c.backOverview,
       viewsLabel:c.viewsLabel,
       moreLabel:c.more,
@@ -357,6 +368,11 @@ class Component extends DCLogic {
       networkSub:c.networkSub,
       spacesSub:c.spacesSub,
       documentationLabel:c.docs,
+      hasLiveTransport: !!liveTransportResult,
+      liveTransportResult,
+      hasRefresh: !!refresh,
+      refreshLabel: refresh ? (ru ? "Обновить дашборд" : "Refresh dashboard") : "",
+      refreshDashboard: () => { if (refresh) refresh(); },
       isOverview: !!d && s.view === "overview",
       isWork: !!d && s.view === "work",
       isThreads: !!d && s.view === "threads",
@@ -398,26 +414,18 @@ class Component extends DCLogic {
       selfMono: mono(d.self),
       selfLine: d.self + " · " + ((d.nodes.find(n => n.system === d.self) || {}).org || ""),
       snapshotLine: (ru ? "Снимок " : "Snapshot ") + when(d.generatedAt) + (ru ? " · создан из локального кэша" : " · built from the local cache"),
-      footerStale,
       footerAge: when(d.generatedAt),
-      footerFreshnessHint,
+      footerFreshnessResult,
       updateRequired: !!d.meta.synthetic || (!!tooling.updateAvailable && !!tooling.required),
       bannerLabel: d.meta.synthetic ? (ru ? "Демо-режим" : "Demo dashboard") : (ru ? "Нужно обновление" : "Update required"),
       bannerText: d.meta.synthetic ? (ru ? "Данные выдуманы, чтобы показать все экраны и состояния. Живых сервисов и репозиториев здесь нет." : "Synthetic data covers every screen and state; no live services or repositories are connected.") : (ru ? "Ваш бинарник " + tooling.current + " ниже минимальной версии записи " + tooling.floor + " в спейсе " + tooling.floorSpace + ". Последняя версия " + tooling.latest + ", проверено " + tooling.cacheAge + " назад." : "Local binary " + tooling.current + " is below writer floor " + tooling.floor + " in " + tooling.floorSpace + ". Latest is " + tooling.latest + "; checked " + tooling.cacheAge + " ago."),
       bannerAction: d.meta.synthetic ? (ru ? "Про демо →" : "About the demo →") : (ru ? "Версии →" : "Versions →"),
       goBanner: d.meta.synthetic ? () => this.go("guide") : () => this.go("versions"),
-      footerLine: (ru ? "Только чтение · без сетевых запросов · истина живёт в репозитории, а не здесь" : "Read-only projection · no network requests · not a source of truth") + (d.meta.synthetic ? (ru ? " · демо-данные, живых сервисов нет" : " · Synthetic demo data, no live services") : (d.meta.notice ? " · " + d.meta.notice : "")),
-      ovSub: (needsYou.length
-        ? (ru ? "Ваше решение нужно по " + ruPlural(needsYou.length, "документу", "документам", "документам") + ": ниже блокирующие протокольные обязательства, ожидающие вашего согласования и просроченные документы. " : "Your decision is needed on " + needsYou.length + (needsYou.length === 1 ? " document" : " documents") + ": blocking protocol obligations, pending approvals, and overdue documents appear below. ")
-        : (ru ? "Сейчас от вас ничего не ждут. " : "Nothing is waiting on you right now. ")) +
-        (scopedInbox.length + scopedOutbox.length === 0
-          ? (ru ? "В обороте сейчас ничего нет." : "Nothing is in flight right now.")
-          : (ru
-            ? "Всего в обороте " + ruPlural(scopedInbox.length, "входящий", "входящих", "входящих") + " и " + ruPlural(scopedOutbox.length, "исходящий", "исходящих", "исходящих") + "; у остальных в этом снимке нет хода протокола за человеком."
-            : scopedInbox.length + " incoming and " + scopedOutbox.length + " outgoing are in flight; the rest have no human-owned protocol move in this snapshot.")),
-      ovRestText: restCount
-        ? (ru ? c.openWork + ": ещё " + ruPlural(restCount, "входящий документ", "входящих документа", "входящих документов") + ", никого не тормозят" : c.openWork + ": " + restCount + " more incoming, holding nobody up")
-        : c.openWork,
+      footerLine: (ru ? "Только чтение · истина живёт в репозитории, а не здесь" : "Read-only projection · not a source of truth") + (d.meta.synthetic ? (ru ? " · демо-данные, живых сервисов нет" : " · Synthetic demo data, no live services") : (d.meta.notice ? " · " + d.meta.notice : "")),
+      ovSub: ru
+        ? "Действия за человеком показаны в серверном порядке внимания. Полные перенесённые списки доступны в Обмене."
+        : "Human-owned actions appear in server-carried attention order. Open Exchange for the complete carried lists.",
+      ovRestText: c.openWork,
       workSub: ru
         ? "Полная история обмена: входящие и исходящие документы, открытые и завершённые, последние сверху. Фильтры ниже работают вместе и не прячут завершённые записи."
         : "The complete exchange history: incoming and outgoing documents, open and closed, newest first. The filters work together without hiding completed records.",
@@ -425,14 +433,8 @@ class Component extends DCLogic {
         ? "Одна задача, один тред: запрос, ответы, доказательства и решение лежат вместе, и все стороны видят их в одном порядке. Слева список тредов и чей сейчас ход, справа вся история, новое сверху."
         : "One task, one thread: the request, the replies, the evidence and the decision stay together and read the same way for every side. The list on the left says whose move it is; the record on the right shows how it got there, newest first.",
       conSub: ru
-        ? "Каждый контракт обещает остальным системам, что именно он отдаёт и в каком виде. У контракта есть версии, и каждый потребитель сидит на своей. Сейчас не на последней " + offCurrent + " линий из " + scopedEdges + ", с них и стоит начать."
-        : "A contract is one system's promise to the others: what it hands over and in what shape. It has versions, and every consumer sits on one of them. " + offCurrent + " of the " + scopedEdges + " registered lines are off the latest, so start there.",
-      spaceHealthDotStyle: "flex:0 0 9px; width:9px; height:9px; border-radius:99px; background:" +
-        (!d.spaces.filter(x => this.inScope(x.id)).length
-          ? "var(--border-strong)"
-          : (d.spaces.some(x => this.inScope(x.id) && !x.readable)
-            ? "var(--red)"
-            : (flags.length || d.spaces.some(x => this.inScope(x.id) && x.stale) ? "var(--ochre)" : "var(--green)"))) + ";",
+        ? "Каждый контракт обещает остальным системам, что именно он отдаёт и в каком виде. Зарегистрированные линии и их перенесённые границы показаны ниже."
+        : "A contract is one system's promise to the others: what it hands over and in what shape. Registered lines and their carried bounds appear below.",
       verSub: ru
         ? "Какая версия a2a стоит у вас сейчас и что менялось в каждом выпуске. Фильтры сверху сужают список по типу изменения и отделяют записи, которые чего-то от вас требуют, от тех, что можно просто прочитать."
         : "Which a2a version you run right now, and what changed in every release. The filters up top narrow the list by kind of change, and separate the entries that ask something of you from the ones you can simply read."
@@ -447,8 +449,10 @@ class Component extends DCLogic {
       label: c.space,
       value: s.space,
       options: spaceOptions,
-      onChange: id => this.setState({ space:id, ovSel:"", workSel:"", threadSel:"", threadSpace:"", conSel:"", conVersion:"", contractFile:null }),
-      dotStyle: values.spaceHealthDotStyle
+      healthLabel: "",
+      healthResult: s.space === "all" ? null : resolveSource(sourceFor(s.space)),
+      openHealth: openSpaceHealth,
+      onChange: id => this.setState({ space:id, ovSel:"", workSel:"", threadSel:"", threadSpace:"", conSel:"", conVersion:"", dashboardSet:"" }),
     };
     values.hasPageHeader = !!ctx.data && !s.error;
     values.hasPageLink = !!ctx.data && s.view === "overview";

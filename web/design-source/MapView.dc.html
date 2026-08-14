@@ -9,7 +9,7 @@
 <x-dc>
 <section aria-label="{{ networkAria }}" data-screen-label="Network">
         <div style="margin-bottom:20px;">
-          <dc-import name="NetworkMap" data="{{ data }}" space="{{ space }}" locale="{{ locale }}" on-space-change="{{ setSpace }}" on-open-contract="{{ openContract }}" on-open-item="{{ openItem }}" on-open-document="{{ openDocument }}" show-space-tabs="{{ false }}" heading="{{ networkMapHeading }}" hint-size="100%,1000px"></dc-import>
+          <dc-import name="NetworkMap" data="{{ data }}" space="{{ space }}" locale="{{ locale }}" on-space-change="{{ setSpace }}" on-open-contract="{{ openContract }}" show-space-tabs="{{ false }}" heading="{{ networkMapHeading }}" hint-size="100%,1000px"></dc-import>
         </div>
               </section>
 </x-dc>
@@ -98,7 +98,6 @@ class Component extends DCLogic {
   }
 
   go(view, extra) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.navigate) actions.navigate(view, extra); }
-  closeContractFile() { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.closeContractFile) actions.closeContractFile(); }
   applyTheme(theme) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setTheme) actions.setTheme(theme); }
   applyLocale(locale) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.setLocale) actions.setLocale(locale); }
   copy(text) { const actions = (this.props && this.props.ctx && this.props.ctx.actions) || {}; if (actions.copy) actions.copy(text); }
@@ -123,10 +122,14 @@ class Component extends DCLogic {
       networkAria:c.views[4],
       data: d,
       space: s.space,
-      setSpace: (id) => this.setState({ space: id, ovSel: "", workSel: "", threadSel: "", threadSpace: "", conSel: "", conVersion: "", contractFile: null }),
-      openItem: (id, space, outgoing) => this.go("work", { workSel:id, workTab:outgoing ? "outgoing" : "incoming", workState:"all", workType:"all", workDue:false, space:this.state.space === "all" ? "all" : space }),
-      openDocument: (id, space) => this.setState({ mapDocument: { id, space:space || "" } }),
-      openContract: (contractId, space) => this.go("contracts", { conSel: contractId, conVersion: "", contractFile: null, conRole: "all", conRisk: false, space: this.state.space === "all" ? "all" : space })
+      setSpace: (id) => this.setState({ space: id, ovSel: "", workSel: "", threadSel: "", threadSpace: "", conSel: "", conVersion: "" }),
+      openContract: (edge) => {
+        const actions = ctx.actions || {};
+        if (!edge || !edge.pinnedVersion || !actions.cardID || !actions.cardAccent || !actions.openCard) return;
+        const id = actions.cardID("cver", { space:edge.space, id:edge.contract, version:edge.pinnedVersion });
+        const accent = actions.cardAccent("dependency-line", [edge.space, edge.from, edge.to, edge.contract]);
+        if (id && accent) actions.openCard("cver", id, accent);
+      }
     };
     return values;
   }
