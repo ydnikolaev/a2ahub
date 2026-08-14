@@ -283,6 +283,9 @@ changes:
       never leak raw, and one resolver owns status words, cues and chroma.
       Release sequences preserve the carried server order; the remaining
       browser sorts are bounded, named presentation-only layout operations.
+      Portable schemas now freeze the seven card object shapes, including the
+      nested thread facts, while deliberately leaving the local dashboard
+      envelope outside the public contract.
 
       Live SSE messages now announce a newer digest without replacing the
       screen. Refresh dashboard performs one conditional fetch and one atomic

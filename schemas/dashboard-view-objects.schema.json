@@ -1,0 +1,713 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://a2ahub.org/schemas/dashboard-view-objects.schema.json",
+  "title": "Portable dashboard view-object cores",
+  "description": "Additive portability contract for reusable dashboard object cores. This is not a schema for html.Data, the local dashboard response, operational snapshot-v1, or a future hub envelope. The local/viewer envelope is deliberately unstable: self, KPI aggregates, collection composition, ordering results and envelope windows are not governed. Viewer-relative moves and prompts, repository display locators and ages, local-work evidence and calm presentation policy are also outside this contract. Only properties named by a selected definition are governed; unknown members remain additive.",
+  "type": "object",
+  "additionalProperties": true,
+  "$defs": {
+    "localizedText": {
+      "description": "A server-authored bilingual sentence carried as reusable semantic text.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "ru": {"type": "string"},
+        "en": {"type": "string"}
+      },
+      "required": ["ru", "en"]
+    },
+    "item": {
+      "description": "Portable Data.inbox[], Data.outbox[] and Data.archive[] item core. Viewer-relative yourMove and prompt permissions are intentionally ungoverned.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "space": {"type": "string"},
+        "id": {"type": "string"},
+        "type": {"type": "string"},
+        "title": {"type": "string"},
+        "from": {"type": "string"},
+        "to": {"type": "array", "items": {"type": "string"}},
+        "state": {"type": "string"},
+        "priority": {"type": "string"},
+        "blocking": {"type": "boolean"},
+        "gatePending": {"type": "boolean"},
+        "thread": {"type": "string"},
+        "age": {"type": "string"},
+        "neededBy": {"type": "string"},
+        "createdAt": {"type": "string"},
+        "createdSeq": {"type": "integer"},
+        "createdOrderKnown": {"type": "boolean"},
+        "movedAt": {"type": "string"},
+        "activitySeq": {"type": "integer"},
+        "activityEventId": {"type": "string"},
+        "new": {"type": "boolean"},
+        "severity": {"type": "string"},
+        "reasons": {"type": "array", "items": {"type": "string"}},
+        "overdue": {"type": "boolean"},
+        "activationOwed": {"type": "boolean"},
+        "pendingMerge": {"type": "boolean"},
+        "syncStale": {"type": "boolean"},
+        "archived": {"type": "boolean"},
+        "waitingOn": {"type": "array", "items": {"type": "string"}},
+        "expectedTransition": {"type": "string"},
+        "why": {"type": "string"},
+        "humanGate": {"type": "string"},
+        "operationalItems": {"type": "array", "items": {"$ref": "#/$defs/operationalItem"}},
+        "reasonSentence": {"$ref": "#/$defs/localizedText"},
+        "ruleIdentity": {"type": "string"},
+        "description": {"type": "string"},
+        "outcome": {"type": "string"},
+        "terminal": {"type": "boolean"},
+        "stateSince": {"type": "string"},
+        "stateBy": {"type": "string"},
+        "stateEvent": {"type": "string"}
+      },
+      "required": ["space", "id", "type", "title", "from", "state", "blocking", "gatePending", "new", "severity", "terminal"]
+    },
+    "operationalItem": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "name": {"type": "string"},
+        "state": {"type": "string"}
+      },
+      "required": ["name", "state"]
+    },
+    "threadOpener": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "id": {"type": "string"},
+        "title": {"type": "string"}
+      },
+      "required": ["id", "title"]
+    },
+    "threadMember": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "id": {"type": "string"},
+        "type": {"type": "string"},
+        "title": {"type": "string"},
+        "from": {"type": "string"},
+        "to": {"type": "array", "items": {"type": "string"}},
+        "state": {"type": "string"},
+        "seq": {"type": "integer"}
+      },
+      "required": ["id", "type", "title", "from", "state", "seq"]
+    },
+    "docLink": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "from": {"type": "string"},
+        "to": {"type": "string"},
+        "kind": {"type": "string"}
+      },
+      "required": ["from", "to", "kind"]
+    },
+    "threadWindows": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "members": {"$ref": "#/$defs/window"},
+        "links": {"$ref": "#/$defs/window"}
+      },
+      "required": ["members", "links"]
+    },
+    "threadSummary": {
+      "description": "Supporting Data.threads[] summary joined by ThreadsView. It is not the registered thread card selection; that card selects Data.threadViews[] through threadView. Viewer-relative yourMove and waitingOthers are intentionally ungoverned.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "id": {"type": "string"},
+        "space": {"type": "string"},
+        "participants": {"type": "array", "items": {"type": "string"}},
+        "memberCount": {"type": "integer"},
+        "openCount": {"type": "integer"},
+        "lastActivity": {"type": "string"},
+        "opener": {"$ref": "#/$defs/threadOpener"},
+        "members": {"type": "array", "items": {"$ref": "#/$defs/threadMember"}},
+        "links": {"type": "array", "items": {"$ref": "#/$defs/docLink"}},
+        "windows": {"$ref": "#/$defs/threadWindows"},
+        "settled": {"type": "boolean"}
+      },
+      "required": ["id", "space", "participants", "memberCount", "openCount", "lastActivity", "opener", "members", "links", "windows", "settled"]
+    },
+    "threadView": {
+      "description": "Portable Data.threadViews[] core selected by the registered thread card. Its reusable nested objects are ref-backed definitions; only open-item your_move and prompt permissions remain additive viewer projections and are intentionally ungoverned.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "thread": {"type": "string"},
+        "space": {"type": "string"},
+        "order": {"type": "string"},
+        "opener": {"$ref": "#/$defs/threadViewOpener"},
+        "participants": {"type": "array", "items": {"type": "string"}},
+        "sync_stale": {"type": "boolean"},
+        "artifacts": {"type": "array", "items": {"$ref": "#/$defs/threadViewArtifact"}},
+        "transcript": {"type": "array", "items": {"$ref": "#/$defs/threadTranscriptRow"}},
+        "open_items": {"type": "array", "items": {"$ref": "#/$defs/threadOpenItem"}},
+        "flags": {"type": "array", "items": {"$ref": "#/$defs/threadViewFlag"}},
+        "unresolved": {"type": "array", "items": {"$ref": "#/$defs/threadUnresolvedRef"}},
+        "windows": {"$ref": "#/$defs/threadViewWindows"},
+        "settled": {"type": "boolean"},
+        "deliveries": {"type": "array", "items": {"$ref": "#/$defs/delivery"}}
+      },
+      "required": ["thread", "space", "order", "opener", "participants", "sync_stale", "artifacts", "transcript", "open_items", "flags", "unresolved", "windows", "settled"]
+    },
+    "threadViewOpener": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "id": {"type": "string"},
+        "title": {"type": "string"},
+        "from": {"type": "string"}
+      },
+      "required": ["id", "title", "from"]
+    },
+    "threadViewArtifact": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "id": {"type": "string"},
+        "type": {"type": "string"},
+        "from": {"type": "string"},
+        "to": {"type": "array", "items": {"type": "string"}},
+        "title": {"type": "string"},
+        "state": {"type": "string"},
+        "parent": {"type": "string"},
+        "refs": {"type": "array", "items": {"type": "object"}},
+        "adopters": {"type": "array", "items": {"type": "string"}}
+      },
+      "required": ["id", "type", "from", "title", "state"]
+    },
+    "threadTranscriptRow": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "seq": {"type": "integer"},
+        "kind": {"type": "string"},
+        "at": {"type": "string"},
+        "artifact": {"$ref": "#/$defs/transcriptArtifact"},
+        "event": {"$ref": "#/$defs/transcriptEvent"},
+        "derived": {"$ref": "#/$defs/transcriptDerived"}
+      },
+      "required": ["seq", "kind", "at"]
+    },
+    "transcriptArtifact": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "id": {"type": "string"},
+        "type": {"type": "string"},
+        "from": {"type": "string"},
+        "to": {"type": "array", "items": {"type": "string"}},
+        "title": {"type": "string"},
+        "work": {"$ref": "#/$defs/workReport"}
+      },
+      "required": ["id", "type", "from", "title"]
+    },
+    "transcriptEvent": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "ulid": {"type": "string"},
+        "subject": {"type": "string"},
+        "transition": {"type": "string"},
+        "claimed_state": {"type": "string"},
+        "actor": {"type": "object"},
+        "produced_by": {"type": "object"},
+        "consistency": {"type": "object"},
+        "response_id": {"type": "string"},
+        "version": {"type": "string"},
+        "note": {"type": "string"},
+        "reason_code": {"type": "string"},
+        "transition_free": {"type": "boolean"},
+        "verdicts": {"type": "array", "items": {"type": "object"}}
+      },
+      "required": ["ulid", "subject", "transition", "actor"]
+    },
+    "transcriptDerived": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "contract_id": {"type": "string"},
+        "system": {"type": "string"},
+        "major": {"type": "integer"},
+        "since": {"type": "string"}
+      },
+      "required": ["contract_id", "system", "major"]
+    },
+    "threadOpenItem": {
+      "description": "Portable ThreadOpenItem core. Viewer-relative your_move and prompt are deliberately absent from properties and remain additive.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "id": {"type": "string"},
+        "type": {"type": "string"},
+        "state": {"type": "string"},
+        "blocking": {"type": "boolean"},
+        "needed_by": {"type": "string"},
+        "next_actions": {"type": "array", "items": {"$ref": "#/$defs/threadNextAction"}},
+        "waiting_on": {"type": "array", "items": {"type": "string"}},
+        "pending": {"type": "boolean"},
+        "expected_transition": {"type": "string"},
+        "why": {"type": "string"},
+        "human_gate": {"type": "string"},
+        "reasonSentence": {"$ref": "#/$defs/localizedText"},
+        "ruleIdentity": {"type": "string"},
+        "operational_items": {"type": "array", "items": {"$ref": "#/$defs/operationalItem"}},
+        "outcome": {"type": "string"},
+        "terminal": {"type": "boolean"},
+        "stateSince": {"type": "string"},
+        "stateBy": {"type": "string"},
+        "stateEvent": {"type": "string"}
+      },
+      "required": ["id", "type", "state", "blocking", "next_actions", "waiting_on", "pending", "why", "terminal"]
+    },
+    "threadNextAction": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "transition": {"type": "string"},
+        "by": {"type": "array", "items": {"type": "string"}}
+      },
+      "required": ["transition", "by"]
+    },
+    "threadViewFlag": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "kind": {"type": "string"},
+        "subject": {"type": "string"},
+        "event_ulid": {"type": "string"},
+        "consistency": {"type": "object"}
+      },
+      "required": ["kind", "subject"]
+    },
+    "threadUnresolvedRef": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "id": {"type": "string"},
+        "kind": {"type": "string"}
+      },
+      "required": ["id", "kind"]
+    },
+    "threadViewWindows": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "artifacts": {"$ref": "#/$defs/window"},
+        "transcript": {"$ref": "#/$defs/window"},
+        "openItems": {"$ref": "#/$defs/window"},
+        "flags": {"$ref": "#/$defs/window"},
+        "unresolved": {"$ref": "#/$defs/window"},
+        "deliveries": {"$ref": "#/$defs/window"}
+      },
+      "required": ["artifacts", "transcript", "openItems", "flags", "unresolved", "deliveries"]
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "handoffId": {"type": "string"},
+        "name": {"type": "string"},
+        "ref": {"type": "string"},
+        "resolution": {"type": "string"},
+        "unavailable": {"type": "string"},
+        "packageId": {"type": "string"},
+        "attempt": {"type": "integer"},
+        "supersedes": {"type": "string"},
+        "verdict": {"type": "string"},
+        "reportId": {"type": "string"},
+        "failures": {"type": "array", "items": {"$ref": "#/$defs/deliveryFailure"}},
+        "chain": {"type": "array", "items": {"$ref": "#/$defs/deliveryChainEntry"}}
+      },
+      "required": ["handoffId", "name", "ref", "resolution", "chain"]
+    },
+    "deliveryFailure": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "entryPath": {"type": "string"},
+        "rule": {"type": "string"},
+        "record": {"type": "integer"}
+      },
+      "required": ["entryPath", "rule"]
+    },
+    "deliveryChainEntry": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "packageId": {"type": "string"},
+        "attempt": {"type": "integer"},
+        "resolution": {"type": "string"},
+        "verdict": {"type": "string"},
+        "reportId": {"type": "string"}
+      },
+      "required": ["packageId", "resolution"]
+    },
+    "contractVersion": {
+      "description": "Portable Data.contracts[].versions[] core; parent space and contract identity remain the selecting context.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "version": {"type": "string"},
+        "state": {"type": "string"},
+        "sunset": {"type": "string"},
+        "successor": {"type": "string"},
+        "deprecationID": {"type": "string"},
+        "detail": {"$ref": "#/$defs/contractVersionDetail"}
+      },
+      "required": ["version", "state"]
+    },
+    "contractVersionConsumerPin": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "system": {"type": "string"},
+        "space": {"type": "string"},
+        "pinnedMajor": {"type": "integer"},
+        "pinnedVersion": {"type": "string"},
+        "pinnedState": {"type": "string"},
+        "drift": {"type": "string"}
+      },
+      "required": ["system"]
+    },
+    "contractVersionDocument": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "path": {"type": "string"},
+        "role": {"type": "string"},
+        "normative": {"type": "boolean"},
+        "mediaType": {"type": "string"},
+        "conformsTo": {"type": "string"},
+        "digest": {"type": "string"},
+        "sizeBytes": {"type": "integer"},
+        "preview": {"type": "string"},
+        "previewLanguage": {"type": "string"},
+        "shownBytes": {"type": "integer"},
+        "totalBytes": {"type": "integer"},
+        "truncated": {"type": "boolean"}
+      },
+      "required": ["path", "role", "normative", "shownBytes", "totalBytes", "truncated"]
+    },
+    "contractVersionHistory": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "eventID": {"type": "string"},
+        "transition": {"type": "string"},
+        "state": {"type": "string"},
+        "actor": {"type": "string"},
+        "at": {"type": "string"}
+      },
+      "required": ["eventID", "transition", "state"]
+    },
+    "contractVersionProvenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "profile": {"type": "string"},
+        "commitSHA": {"type": "string"},
+        "treeObjectID": {"type": "string"},
+        "descriptorPath": {"type": "string"},
+        "publishEventPath": {"type": "string"},
+        "eventSchema": {"type": "string"},
+        "digestProfile": {"type": "string"},
+        "publishedDigest": {"type": "string"},
+        "aggregateVerification": {"type": "string"},
+        "descriptorVerification": {"type": "string"},
+        "generatedTool": {"type": "string"},
+        "sourceDigest": {"type": "string"}
+      },
+      "required": []
+    },
+    "contractVersionDetail": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "status": {"type": "string"},
+        "unavailableReason": {"type": "string"},
+        "description": {"type": "string"},
+        "schemaFormat": {"type": "string"},
+        "compatPolicy": {"type": "string"},
+        "publishedAt": {"type": "string"},
+        "publishedBy": {"type": "string"},
+        "changeSummary": {"type": "string"},
+        "consumerPins": {"type": "array", "items": {"$ref": "#/$defs/contractVersionConsumerPin"}},
+        "totalDocumentCount": {"type": "integer"},
+        "omittedDocumentCount": {"type": "integer"},
+        "documents": {"type": "array", "items": {"$ref": "#/$defs/contractVersionDocument"}},
+        "history": {"type": "array", "items": {"$ref": "#/$defs/contractVersionHistory"}},
+        "provenance": {"$ref": "#/$defs/contractVersionProvenance"}
+      },
+      "required": ["status", "totalDocumentCount"]
+    },
+    "contract": {
+      "description": "Portable Data.contracts[] core. The versions collection reuses contractVersion without changing the parent identity.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "space": {"type": "string"},
+        "id": {"type": "string"},
+        "provider": {"type": "string"},
+        "version": {"type": "string"},
+        "state": {"type": "string"},
+        "codeBacked": {"type": "boolean"},
+        "category": {"type": "string"},
+        "schemaFormat": {"type": "string"},
+        "compatPolicy": {"type": "string"},
+        "generatedTool": {"type": "string"},
+        "sourceDigest": {"type": "string"},
+        "consumers": {"type": "array", "items": {"type": "string"}},
+        "description": {"type": "string"},
+        "versions": {"type": "array", "items": {"$ref": "#/$defs/contractVersion"}},
+        "nonAdoptable": {"type": "boolean"}
+      },
+      "required": ["space", "id", "provider", "version", "state", "codeBacked"]
+    },
+    "workReportActor": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "kind": {"type": "string"},
+        "name": {"type": "string"},
+        "system": {"type": "string"},
+        "model": {"type": "string"},
+        "session": {"type": "string"}
+      },
+      "required": ["kind", "name", "system"]
+    },
+    "workReportWait": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "kind": {"type": "string"},
+        "id": {"type": "string"},
+        "summary": {"type": "string"}
+      },
+      "required": ["kind", "id"]
+    },
+    "workReport": {
+      "description": "Portable Data.workReports[] committed checkpoint core.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "space": {"type": "string"},
+        "thread": {"type": "string"},
+        "artifact_id": {"type": "string"},
+        "work_id": {"type": "string"},
+        "subject_ref": {"type": "string"},
+        "mode": {"type": "string"},
+        "summary": {"type": "string"},
+        "actor": {"$ref": "#/$defs/workReportActor"},
+        "waiting_on": {"type": "array", "items": {"$ref": "#/$defs/workReportWait"}},
+        "reported_at": {"type": "string"},
+        "valid_until": {"type": "string"},
+        "commit_sequence": {"type": "integer"}
+      },
+      "required": ["space", "thread", "artifact_id", "work_id", "subject_ref", "mode", "summary", "actor", "waiting_on", "reported_at", "commit_sequence"]
+    },
+    "space": {
+      "description": "Portable Data.spaces[] core. Configured repoURL and preformatted syncAge are local display facts and remain ungoverned.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "id": {"type": "string"},
+        "synced": {"type": "boolean"},
+        "stale": {"type": "boolean"},
+        "revision": {"type": "string"},
+        "participantCount": {"type": "integer"},
+        "readable": {"type": "boolean"},
+        "schemaVersion": {"type": "string"},
+        "minBinaryVersion": {"type": "string"},
+        "workflowVersion": {"type": "string"},
+        "workflowRef": {"type": "string"}
+      },
+      "required": ["id", "synced", "stale", "participantCount", "readable"]
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "kind": {"type": "string"},
+        "name": {"type": "string"},
+        "system": {"type": "string"},
+        "model": {"type": "string"},
+        "session": {"type": "string"}
+      },
+      "required": ["kind", "name", "system"]
+    },
+    "protocol": {
+      "description": "Reusable folded protocol core. The viewer-relative your_move member is intentionally ungoverned.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "settled": {"type": "boolean"},
+        "open_count": {"type": "integer"},
+        "waiting_on": {"type": "array", "items": {"type": "string"}},
+        "blocking_by": {"type": "array", "items": {"type": "string"}}
+      },
+      "required": ["settled", "open_count", "waiting_on", "blocking_by"]
+    },
+    "milestone": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "kind": {"type": "string"},
+        "at": {"type": "string"},
+        "actor": {"$ref": "#/$defs/actor"},
+        "transition": {"type": "string"},
+        "subject": {"type": "string"}
+      },
+      "required": ["kind", "at", "actor", "transition", "subject"]
+    },
+    "waitingOn": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "kind": {"type": "string"},
+        "id": {"type": "string"},
+        "summary": {"type": "string"}
+      },
+      "required": ["kind", "id"]
+    },
+    "committedCheckpoint": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "artifact_id": {"type": "string"},
+        "reported_at": {"type": "string"},
+        "valid_until": {"type": "string"}
+      },
+      "required": ["artifact_id", "reported_at"]
+    },
+    "operationalWork": {
+      "description": "Reusable operational work core. observed_at and shared_pending are local-work evidence and remain ungoverned.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "work_id": {"type": "string"},
+        "subject_ref": {"type": "string"},
+        "mode": {"type": "string"},
+        "summary": {"type": "string"},
+        "actor": {"$ref": "#/$defs/actor"},
+        "freshness": {"type": "string"},
+        "current": {"type": "boolean"},
+        "reported_at": {"type": "string"},
+        "valid_until": {"type": "string"},
+        "source": {"type": "string"},
+        "committed_checkpoint": {"$ref": "#/$defs/committedCheckpoint"},
+        "waiting_on": {"type": "array", "items": {"$ref": "#/$defs/waitingOn"}}
+      },
+      "required": ["work_id", "subject_ref", "mode", "summary", "actor", "freshness", "current", "source", "waiting_on"]
+    },
+    "consistency": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "code": {"type": "string"},
+        "subject_ref": {"type": "string"},
+        "severity": {"type": "string"},
+        "summary": {"type": "string"}
+      },
+      "required": ["code", "subject_ref", "severity", "summary"]
+    },
+    "operationalProcess": {
+      "description": "Portable Data.operational.timeline[] semantic row. Identity is the pair (space, thread). Snapshot.timeline_window, Protocol.your_move, Work.observed_at and Work.shared_pending remain ungoverned.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "space": {"type": "string"},
+        "thread": {"type": "string"},
+        "title": {"type": "string"},
+        "participants": {"type": "array", "items": {"type": "string"}},
+        "protocol": {"$ref": "#/$defs/protocol"},
+        "latest_milestone": {"$ref": "#/$defs/milestone"},
+        "work": {"type": "array", "items": {"$ref": "#/$defs/operationalWork"}},
+        "work_window": {"$ref": "#/$defs/window"},
+        "consistency": {"type": "array", "items": {"$ref": "#/$defs/consistency"}},
+        "consistency_window": {"$ref": "#/$defs/window"}
+      },
+      "required": ["space", "thread", "title", "participants", "protocol", "work", "work_window", "consistency", "consistency_window"]
+    },
+    "spaceSource": {
+      "description": "Portable support shape selected only when Source.kind is space. observed_at and every local-work source remain ungoverned.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "kind": {"const": "space", "type": "string"},
+        "space": {"type": "string"},
+        "revision": {"type": "string"},
+        "synced_at": {"type": "string"},
+        "freshness": {"type": "string", "enum": ["current", "stale", "unavailable", "degraded"]}
+      },
+      "required": ["kind", "space", "revision", "freshness"]
+    },
+    "spaceUnavailable": {
+      "description": "Portable support shape selected only for a space-scoped Unavailable fact; local-work unavailability remains ungoverned.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "source_kind": {"const": "space", "type": "string"},
+        "space": {"type": "string"},
+        "code": {"type": "string"},
+        "summary": {"type": "string"}
+      },
+      "required": ["source_kind", "space", "code", "summary"]
+    },
+    "vocabularyEntry": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "value": {"type": "string"},
+        "family": {"type": "string", "enum": ["freshness", "source-freshness", "outcome", "lifecycle-state", "transition", "reason", "gate", "work-mode", "dependency-drift", "consistency-severity", "operational-state", "live-transport"]},
+        "labelRU": {"type": "string"},
+        "labelEN": {"type": "string"},
+        "explanationRU": {"type": "string"},
+        "explanationEN": {"type": "string"},
+        "tone": {"type": "string", "enum": ["needs-you", "waiting-them", "progressing", "settled", "broken", "unknown"]},
+        "cue": {"type": "string"}
+      },
+      "required": ["value", "family", "labelRU", "labelEN", "explanationRU", "explanationEN", "tone", "cue"]
+    },
+    "vocabularyFallback": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "labelRU": {"type": "string"},
+        "labelEN": {"type": "string"},
+        "explanationRU": {"type": "string"},
+        "explanationEN": {"type": "string"},
+        "tone": {"type": "string", "enum": ["needs-you", "waiting-them", "progressing", "settled", "broken", "unknown"]},
+        "cue": {"type": "string"}
+      },
+      "required": ["labelRU", "labelEN", "explanationRU", "explanationEN", "tone", "cue"]
+    },
+    "vocabularyTable": {
+      "description": "Complete carried reusable vocabulary table. The entries array has no maximum: the observed 96 rows are catalogue evidence, not a wire ceiling. Consumer calm policy remains outside this contract.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "entries": {"type": "array", "items": {"$ref": "#/$defs/vocabularyEntry"}},
+        "unknown": {"$ref": "#/$defs/vocabularyFallback"}
+      },
+      "required": ["entries", "unknown"]
+    },
+    "window": {
+      "description": "Reusable truncation metadata for one bounded collection, independent of the local envelope that carries it.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "truncated": {"type": "boolean"},
+        "total": {"type": "integer"},
+        "shown": {"type": "integer"}
+      },
+      "required": ["truncated", "total", "shown"]
+    }
+  }
+}

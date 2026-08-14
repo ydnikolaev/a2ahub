@@ -1,0 +1,147 @@
+{
+  "aggregates": "viewer-owned and deliberately the wrong shape",
+  "windows": false,
+  "futureEnvelopeMember": {"allowed": true},
+  "inbox": [
+    {
+      "space": "space-a",
+      "id": "XW-additive",
+      "type": "work_request",
+      "title": "Additive item",
+      "from": "checkout",
+      "state": "submitted",
+      "blocking": false,
+      "gatePending": false,
+      "new": false,
+      "severity": "normal",
+      "yourMove": "viewer-relative and intentionally type-changed",
+      "prompt": {"moves": "permission is not portable", "askFirst": false},
+      "terminal": false,
+      "futureItemMember": 1
+    }
+  ],
+  "outbox": [],
+  "archive": [],
+  "threads": [
+    {
+      "id": "thread-additive",
+      "space": "space-a",
+      "participants": ["atlas", "checkout"],
+      "memberCount": 0,
+      "openCount": 0,
+      "lastActivity": "",
+      "opener": {"id": "XW-additive", "title": "Additive item"},
+      "yourMove": {"viewer": "local"},
+      "waitingOthers": "viewer-relative and intentionally type-changed",
+      "members": [],
+      "links": [],
+      "windows": {"members": {"truncated": false, "total": 0, "shown": 0}, "links": {"truncated": false, "total": 0, "shown": 0}},
+      "settled": true,
+      "futureThreadMember": true
+    }
+  ],
+  "threadViews": [
+    {
+      "thread": "thread-additive",
+      "space": "space-a",
+      "order": "00000000000000000001",
+      "opener": {"id": "XW-additive", "title": "Additive item", "from": "checkout", "futureOpenerMember": true},
+      "participants": ["atlas", "checkout"],
+      "sync_stale": false,
+      "artifacts": [{"id": "XW-additive", "type": "work_request", "from": "checkout", "to": ["atlas"], "title": "Additive item", "state": "submitted", "parent": "XA-parent", "refs": [{"kind": "ref"}], "adopters": ["atlas · 1.0.0"], "futureArtifactMember": true}],
+      "transcript": [
+        {"seq": 1, "kind": "artifact", "at": "2026-08-14T08:00:00Z", "artifact": {"id": "XW-additive", "type": "work_request", "from": "checkout", "to": ["atlas"], "title": "Additive item", "work": {"space": "space-a", "thread": "thread-additive", "artifact_id": "XA-additive", "work_id": "work:01ARZ3NDEKTSV4RRFFQ69G5FAV", "subject_ref": "XC-additive@1.0.0", "mode": "planning", "summary": "Planning", "actor": {"kind": "agent", "name": "codex", "system": "atlas"}, "waiting_on": [], "reported_at": "2026-08-14T08:00:00Z", "commit_sequence": 1}, "futureTranscriptArtifactMember": true}},
+        {"seq": 2, "kind": "event", "at": "2026-08-14T08:01:00Z", "event": {"ulid": "01K2M4N6P8R0T2V4X6Z8A0B2C6", "subject": "XW-additive", "transition": "submit", "claimed_state": "submitted", "actor": {"kind": "agent"}, "produced_by": {"tool": "a2a"}, "consistency": {"future": true}, "response_id": "XA-additive-response", "version": "1.0.0", "note": "Submitted", "reason_code": "submitted", "transition_free": false, "verdicts": [{"index": 0}], "futureTranscriptEventMember": true}},
+        {"seq": 3, "kind": "derived", "at": "2026-08-14", "derived": {"contract_id": "XC-additive", "system": "atlas", "major": 1, "since": "2026-08-14", "futureTranscriptDerivedMember": true}}
+      ],
+      "open_items": [{"id": "XW-additive", "type": "work_request", "state": "submitted", "blocking": false, "needed_by": "2026-08-20", "next_actions": [{"transition": "accept", "by": ["atlas"], "futureNextActionMember": true}], "waiting_on": ["atlas"], "your_move": "local", "prompt": {"moves": "local", "askFirst": 1}, "pending": true, "expected_transition": "accept", "why": "waiting for acceptance", "human_gate": "", "reasonSentence": {"ru": "Ожидается принятие.", "en": "Waiting for acceptance."}, "ruleIdentity": "work-request:submitted:recipient", "operational_items": [{"name": "review", "state": "ready"}], "outcome": "open", "terminal": false, "stateSince": "2026-08-14T08:00:00Z", "stateBy": "checkout", "stateEvent": "01K2M4N6P8R0T2V4X6Z8A0B2C6", "futureOpenItemMember": true}],
+      "flags": [{"kind": "additive", "subject": "XW-additive", "event_ulid": "01K2M4N6P8R0T2V4X6Z8A0B2C6", "consistency": {"future": true}, "futureFlagMember": true}],
+      "unresolved": [{"id": "XA-additive-missing", "kind": "artifact", "futureUnresolvedMember": true}],
+      "windows": {"artifacts": {"truncated": false, "total": 1, "shown": 1}, "transcript": {"truncated": false, "total": 3, "shown": 3}, "openItems": {"truncated": false, "total": 1, "shown": 1}, "flags": {"truncated": false, "total": 1, "shown": 1}, "unresolved": {"truncated": false, "total": 1, "shown": 1}, "deliveries": {"truncated": false, "total": 1, "shown": 1}, "futureWindowsMember": true},
+      "settled": true,
+      "deliveries": [{"handoffId": "XH-additive", "name": "additive-package", "ref": "DP-additive@1", "resolution": "resolved", "packageId": "DP-additive", "attempt": 1, "supersedes": "", "verdict": "passed", "reportId": "VR-additive", "failures": [{"entryPath": "data.json", "rule": "shape", "record": 1, "futureFailureMember": true}], "chain": [{"packageId": "DP-additive", "attempt": 1, "resolution": "resolved", "verdict": "passed", "reportId": "VR-additive", "futureChainMember": true}], "futureDeliveryMember": true}],
+      "futureThreadViewMember": true
+    }
+  ],
+  "contracts": [
+    {
+      "space": "space-a",
+      "id": "XC-additive",
+      "provider": "atlas",
+      "version": "1.0.0",
+      "state": "published",
+      "codeBacked": false,
+      "versions": [{"version": "1.0.0", "state": "published", "futureVersionMember": true}],
+      "futureContractMember": []
+    }
+  ],
+  "workReports": [
+    {
+      "space": "space-a",
+      "thread": "thread-additive",
+      "artifact_id": "XA-additive",
+      "work_id": "work:01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "subject_ref": "XC-additive@1.0.0",
+      "mode": "planning",
+      "summary": "Planning",
+      "actor": {"kind": "agent", "name": "codex", "system": "atlas"},
+      "waiting_on": [],
+      "reported_at": "2026-08-14T08:00:00Z",
+      "commit_sequence": 1,
+      "futureReportMember": {}
+    }
+  ],
+  "spaces": [
+    {
+      "id": "space-a",
+      "repoURL": 42,
+      "synced": true,
+      "syncAge": ["viewer", "formatted"],
+      "stale": false,
+      "participantCount": 2,
+      "readable": true,
+      "futureSpaceMember": "allowed"
+    }
+  ],
+  "operational": {
+    "sources": [
+      {"kind": "space", "space": "space-a", "revision": "commit-a", "observed_at": 123, "freshness": "current", "futureSourceMember": true},
+      {"kind": "local-work", "revision": false, "observed_at": ["local"], "freshness": 99, "localOnly": true}
+    ],
+    "timeline": [
+      {
+        "space": "space-a",
+        "thread": "thread-additive",
+        "title": "Additive process",
+        "participants": ["atlas"],
+        "protocol": {"settled": true, "open_count": 0, "waiting_on": [], "your_move": "viewer-relative", "blocking_by": [], "futureProtocolMember": true},
+        "work": [{"work_id": "work:01ARZ3NDEKTSV4RRFFQ69G5FAV", "subject_ref": "XC-additive@1.0.0", "mode": "planning", "summary": "Planning", "actor": {"kind": "agent", "name": "codex", "system": "atlas"}, "freshness": "local-current", "current": true, "observed_at": false, "source": "local-lease", "shared_pending": "local-only", "waiting_on": [], "futureWorkMember": 1}],
+        "work_window": {"truncated": false, "total": 1, "shown": 1},
+        "consistency": [],
+        "consistency_window": {"truncated": false, "total": 0, "shown": 0},
+        "futureProcessMember": null
+      },
+      {
+        "space": "space-b",
+        "thread": "thread-additive",
+        "title": "Same token, different space",
+        "participants": ["billing"],
+        "protocol": {"settled": true, "open_count": 0, "waiting_on": [], "blocking_by": []},
+        "work": [],
+        "work_window": {"truncated": false, "total": 0, "shown": 0},
+        "consistency": [],
+        "consistency_window": {"truncated": false, "total": 0, "shown": 0}
+      }
+    ],
+    "timeline_window": "envelope-local and intentionally type-changed",
+    "unavailable": [
+      {"source_kind": "space", "space": "space-b", "code": "mirror-missing", "summary": "Mirror unavailable", "futureUnavailableMember": true},
+      {"source_kind": "local-work", "space": 123, "code": false, "summary": ["local"], "localOnly": true}
+    ]
+  },
+  "vocabulary": {
+    "entries": [{"value": "accept", "family": "transition", "labelRU": "принято", "labelEN": "accepted", "explanationRU": "Запрос принят.", "explanationEN": "The request was accepted.", "tone": "progressing", "cue": "→", "futureEntryMember": true}],
+    "unknown": {"labelRU": "неизвестно", "labelEN": "unknown", "explanationRU": "Не распознано.", "explanationEN": "Not recognized.", "tone": "unknown", "cue": "?", "futureFallbackMember": true},
+    "futureTableMember": []
+  }
+}

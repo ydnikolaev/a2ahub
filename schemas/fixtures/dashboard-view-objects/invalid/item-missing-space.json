@@ -1,0 +1,1 @@
+{"definition":"item","missing":"space","instance":{"id":"XW-missing-space","type":"work_request","title":"Missing space","from":"checkout","state":"submitted","blocking":false,"gatePending":false,"new":false,"severity":"normal","terminal":false}}

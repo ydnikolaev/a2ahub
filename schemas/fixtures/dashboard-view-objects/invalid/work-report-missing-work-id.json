@@ -1,0 +1,1 @@
+{"definition":"workReport","missing":"work_id","instance":{"space":"space-a","thread":"thread-one","artifact_id":"XA-one","subject_ref":"XC-one@1.0.0","mode":"testing","summary":"Testing","actor":{"kind":"agent","name":"codex","system":"atlas"},"waiting_on":[],"reported_at":"2026-08-14T08:00:00Z","commit_sequence":1}}

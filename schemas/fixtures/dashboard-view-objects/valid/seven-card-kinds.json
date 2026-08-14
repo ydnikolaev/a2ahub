@@ -1,0 +1,258 @@
+{
+  "self": "atlas",
+  "aggregates": {"viewerLocal": true},
+  "windows": {"inbox": {"truncated": false, "total": 1, "shown": 1}},
+  "inbox": [
+    {
+      "space": "space-a",
+      "id": "XW-atlas-20260814-portable",
+      "type": "work_request",
+      "title": "Freeze portable view objects",
+      "from": "checkout",
+      "to": ["atlas"],
+      "state": "accepted",
+      "priority": "high",
+      "blocking": true,
+      "gatePending": false,
+      "thread": "thread-shared",
+      "age": "4m",
+      "neededBy": "2026-08-20",
+      "createdAt": "2026-08-14T08:00:00Z",
+      "createdSeq": 12,
+      "createdOrderKnown": true,
+      "movedAt": "2026-08-14T08:04:00Z",
+      "activitySeq": 13,
+      "activityEventId": "01K2M4N6P8R0T2V4X6Z8A0B2C4",
+      "new": true,
+      "severity": "blocking",
+      "reasons": ["gate-pending-on-me"],
+      "overdue": false,
+      "activationOwed": true,
+      "pendingMerge": false,
+      "syncStale": false,
+      "archived": false,
+      "yourMove": true,
+      "waitingOn": ["atlas"],
+      "expectedTransition": "start",
+      "why": "accepted work is ready",
+      "humanGate": "",
+      "operationalItems": [{"name": "tests", "state": "ready"}],
+      "reasonSentence": {"ru": "Можно начинать.", "en": "Ready to start."},
+      "ruleIdentity": "work-request:accepted:recipient",
+      "description": "A portable item core.",
+      "prompt": {"moves": ["start"], "askFirst": [], "doc": "work-request.md", "loop": "work", "drafts": []},
+      "outcome": "open",
+      "terminal": false,
+      "stateSince": "2026-08-14T08:04:00Z",
+      "stateBy": "checkout",
+      "stateEvent": "01K2M4N6P8R0T2V4X6Z8A0B2C4"
+    }
+  ],
+  "outbox": [],
+  "archive": [],
+  "threads": [
+    {
+      "id": "thread-shared",
+      "space": "space-a",
+      "participants": ["atlas", "checkout"],
+      "memberCount": 1,
+      "openCount": 1,
+      "lastActivity": "4m",
+      "opener": {"id": "XW-atlas-20260814-portable", "title": "Freeze portable view objects"},
+      "yourMove": true,
+      "waitingOthers": [],
+      "members": [{"id": "XW-atlas-20260814-portable", "type": "work_request", "title": "Freeze portable view objects", "from": "checkout", "to": ["atlas"], "state": "accepted", "seq": 12}],
+      "links": [{"from": "XW-atlas-20260814-portable", "to": "XC-dashboard", "kind": "ref"}],
+      "windows": {
+        "members": {"truncated": false, "total": 1, "shown": 1},
+        "links": {"truncated": false, "total": 1, "shown": 1}
+      },
+      "settled": false
+    }
+  ],
+  "threadViews": [
+    {
+      "thread": "thread-shared",
+      "space": "space-a",
+      "order": "00000000000000000013",
+      "opener": {"id": "XW-atlas-20260814-portable", "title": "Freeze portable view objects", "from": "checkout"},
+      "participants": ["atlas", "checkout"],
+      "sync_stale": false,
+      "artifacts": [{"id": "XW-atlas-20260814-portable", "type": "work_request", "from": "checkout", "to": ["atlas"], "title": "Freeze portable view objects", "state": "accepted", "parent": "XA-dashboard-parent", "refs": [{"kind": "contract", "id": "XC-dashboard"}], "adopters": ["checkout · 2.0.0"]}],
+      "transcript": [
+        {
+          "seq": 12,
+          "kind": "artifact",
+          "at": "2026-08-14T08:00:00Z",
+          "artifact": {
+            "id": "XW-atlas-20260814-portable",
+            "type": "work_request",
+            "from": "checkout",
+            "to": ["atlas"],
+            "title": "Freeze portable view objects",
+            "work": {"space": "space-a", "thread": "thread-shared", "artifact_id": "XA-atlas-status", "work_id": "work:01ARZ3NDEKTSV4RRFFQ69G5FAV", "subject_ref": "XC-dashboard@2.0.0", "mode": "testing", "summary": "Running portable schema tests", "actor": {"kind": "agent", "name": "codex", "system": "atlas"}, "waiting_on": [], "reported_at": "2026-08-14T08:05:00Z", "commit_sequence": 14}
+          }
+        },
+        {
+          "seq": 13,
+          "kind": "event",
+          "at": "2026-08-14T08:04:00Z",
+          "event": {"ulid": "01K2M4N6P8R0T2V4X6Z8A0B2C4", "subject": "XW-atlas-20260814-portable", "transition": "accept", "claimed_state": "accepted", "actor": {"kind": "agent", "name": "codex", "system": "checkout"}, "produced_by": {"tool": "a2a", "version": "0.8.0"}, "consistency": {"kind": "receipt"}, "response_id": "XA-response", "version": "2.0.0", "note": "Accepted", "reason_code": "accepted", "transition_free": false, "verdicts": [{"index": 0, "verdict": "pass", "cause_owner": "checkout"}]}
+        },
+        {
+          "seq": 14,
+          "kind": "derived",
+          "at": "2026-08-14",
+          "derived": {"contract_id": "XC-dashboard", "system": "checkout", "major": 2, "since": "2026-08-14"}
+        }
+      ],
+      "open_items": [{"id": "XW-atlas-20260814-portable", "type": "work_request", "state": "accepted", "blocking": true, "needed_by": "2026-08-20", "next_actions": [{"transition": "start", "by": ["atlas"]}], "waiting_on": ["atlas"], "your_move": true, "prompt": {"moves": ["start"]}, "pending": true, "expected_transition": "start", "why": "accepted work is ready", "human_gate": "", "reasonSentence": {"ru": "Можно начинать.", "en": "Ready to start."}, "ruleIdentity": "work-request:accepted:recipient", "operational_items": [{"name": "tests", "state": "ready"}], "outcome": "open", "terminal": false, "stateSince": "2026-08-14T08:04:00Z", "stateBy": "checkout", "stateEvent": "01K2M4N6P8R0T2V4X6Z8A0B2C4"}],
+      "flags": [{"kind": "receipt-mismatch", "subject": "XW-atlas-20260814-portable", "event_ulid": "01K2M4N6P8R0T2V4X6Z8A0B2C4", "consistency": {"kind": "receipt", "cause": "fixture"}}],
+      "unresolved": [{"id": "XA-missing", "kind": "artifact"}],
+      "windows": {
+        "artifacts": {"truncated": false, "total": 1, "shown": 1},
+        "transcript": {"truncated": false, "total": 3, "shown": 3},
+        "openItems": {"truncated": false, "total": 1, "shown": 1},
+        "flags": {"truncated": false, "total": 1, "shown": 1},
+        "unresolved": {"truncated": false, "total": 1, "shown": 1},
+        "deliveries": {"truncated": false, "total": 1, "shown": 1}
+      },
+      "settled": false,
+      "deliveries": [{"handoffId": "XH-dashboard", "name": "dashboard-schema", "ref": "DP-dashboard@2", "resolution": "resolved", "packageId": "DP-dashboard", "attempt": 2, "supersedes": "DP-dashboard@1", "verdict": "failed", "reportId": "VR-dashboard", "failures": [{"entryPath": "schemas/dashboard.json", "rule": "schema", "record": 1}], "chain": [{"packageId": "DP-dashboard", "attempt": 1, "resolution": "resolved", "verdict": "failed", "reportId": "VR-dashboard-1"}]}]
+    }
+  ],
+  "contracts": [
+    {
+      "space": "space-a",
+      "id": "XC-dashboard",
+      "provider": "atlas",
+      "version": "2.0.0",
+      "state": "published",
+      "codeBacked": true,
+      "category": "data",
+      "schemaFormat": "json-schema",
+      "compatPolicy": "additive",
+      "generatedTool": "a2a",
+      "sourceDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "consumers": ["checkout"],
+      "description": "Portable dashboard objects.",
+      "versions": [
+        {
+          "version": "2.0.0",
+          "state": "published",
+          "sunset": "",
+          "successor": "",
+          "deprecationID": "",
+          "detail": {
+            "status": "available",
+            "unavailableReason": "",
+            "description": "Current immutable carried set.",
+            "schemaFormat": "json-schema",
+            "compatPolicy": "additive",
+            "publishedAt": "2026-08-14T08:00:00Z",
+            "publishedBy": "atlas",
+            "changeSummary": "Freeze portable shapes.",
+            "consumerPins": [{"system": "checkout", "space": "space-a", "pinnedMajor": 2, "pinnedVersion": "2.0.0", "pinnedState": "published", "drift": "current"}],
+            "totalDocumentCount": 1,
+            "omittedDocumentCount": 0,
+            "documents": [{"path": "schema.json", "role": "schema", "normative": true, "mediaType": "application/schema+json", "conformsTo": "https://json-schema.org/draft/2020-12/schema", "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "sizeBytes": 128, "preview": "{}", "previewLanguage": "json", "shownBytes": 2, "totalBytes": 2, "truncated": false}],
+            "history": [{"eventID": "01K2M4N6P8R0T2V4X6Z8A0B2C5", "transition": "publish", "state": "published", "actor": "atlas", "at": "2026-08-14T08:00:00Z"}],
+            "provenance": {"profile": "schema-v1", "commitSHA": "commit-a", "treeObjectID": "tree-a", "descriptorPath": "contracts/XC-dashboard/2.0.0/contract.yaml", "publishEventPath": "events/publish.yaml", "eventSchema": "v2", "digestProfile": "sha256", "publishedDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "aggregateVerification": "verified", "descriptorVerification": "verified", "generatedTool": "a2a", "sourceDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}
+          }
+        }
+      ],
+      "nonAdoptable": false
+    }
+  ],
+  "workReports": [
+    {
+      "space": "space-a",
+      "thread": "thread-shared",
+      "artifact_id": "XA-atlas-status",
+      "work_id": "work:01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "subject_ref": "XC-dashboard@2.0.0",
+      "mode": "testing",
+      "summary": "Running portable schema tests",
+      "actor": {"kind": "agent", "name": "codex", "system": "atlas", "model": "gpt", "session": "session-a"},
+      "waiting_on": [{"kind": "system", "id": "checkout", "summary": "Review the freeze"}],
+      "reported_at": "2026-08-14T08:05:00Z",
+      "valid_until": "2026-08-14T09:05:00Z",
+      "commit_sequence": 14
+    }
+  ],
+  "spaces": [
+    {
+      "id": "space-a",
+      "repoURL": "https://github.com/example/space-a.git",
+      "synced": true,
+      "syncAge": "1m",
+      "stale": false,
+      "revision": "commit-a",
+      "participantCount": 2,
+      "readable": true,
+      "schemaVersion": "1",
+      "minBinaryVersion": "0.8.0",
+      "workflowVersion": "3",
+      "workflowRef": "refs/heads/main"
+    }
+  ],
+  "operational": {
+    "sources": [
+      {"kind": "space", "space": "space-a", "revision": "commit-a", "synced_at": "2026-08-14T08:05:00Z", "observed_at": "2026-08-14T08:06:00Z", "freshness": "current"},
+      {"kind": "local-work", "revision": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "observed_at": "2026-08-14T08:06:00Z", "freshness": "degraded"}
+    ],
+    "timeline": [
+      {
+        "space": "space-a",
+        "thread": "thread-shared",
+        "title": "Portable freeze",
+        "participants": ["atlas", "checkout"],
+        "protocol": {"settled": false, "open_count": 1, "waiting_on": ["atlas"], "your_move": true, "blocking_by": ["review"]},
+        "latest_milestone": {"kind": "event", "at": "2026-08-14T08:04:00Z", "actor": {"kind": "agent", "name": "codex", "system": "checkout", "model": "gpt", "session": "session-b"}, "transition": "accept", "subject": "XW-atlas-20260814-portable"},
+        "work": [
+          {
+            "work_id": "work:01ARZ3NDEKTSV4RRFFQ69G5FAV",
+            "subject_ref": "XC-dashboard@2.0.0",
+            "mode": "testing",
+            "summary": "Running portable schema tests",
+            "actor": {"kind": "agent", "name": "codex", "system": "atlas", "model": "gpt", "session": "session-a"},
+            "freshness": "local-current",
+            "current": true,
+            "reported_at": "2026-08-14T08:05:00Z",
+            "observed_at": "2026-08-14T08:06:00Z",
+            "valid_until": "2026-08-14T09:05:00Z",
+            "source": "local-lease",
+            "committed_checkpoint": {"artifact_id": "XA-atlas-status", "reported_at": "2026-08-14T08:05:00Z", "valid_until": "2026-08-14T09:05:00Z"},
+            "shared_pending": {"operation_id": "op-one", "action": "checkpoint", "stage": "pushed", "state": "outcome-unknown", "remaining_action": "observe-provider-outcome"},
+            "waiting_on": [{"kind": "system", "id": "checkout", "summary": "Review the freeze"}]
+          }
+        ],
+        "work_window": {"truncated": false, "total": 1, "shown": 1},
+        "consistency": [{"code": "future-clock-anomaly", "subject_ref": "XC-dashboard@2.0.0", "severity": "warning", "summary": "Clock differs"}],
+        "consistency_window": {"truncated": false, "total": 1, "shown": 1}
+      },
+      {
+        "space": "space-b",
+        "thread": "thread-shared",
+        "title": "Same thread token in another space",
+        "participants": ["atlas", "billing"],
+        "protocol": {"settled": true, "open_count": 0, "waiting_on": [], "your_move": false, "blocking_by": []},
+        "work": [],
+        "work_window": {"truncated": false, "total": 0, "shown": 0},
+        "consistency": [],
+        "consistency_window": {"truncated": false, "total": 0, "shown": 0}
+      }
+    ],
+    "timeline_window": {"truncated": false, "total": 2, "shown": 2},
+    "unavailable": [
+      {"source_kind": "space", "space": "space-b", "code": "mirror-missing", "summary": "Mirror unavailable"},
+      {"source_kind": "local-work", "code": "lease-unreadable", "summary": "Local lease unavailable"}
+    ]
+  },
+  "vocabulary": {
+    "entries": [
+      {"value": "accept", "family": "transition", "labelRU": "запрос принят", "labelEN": "request accepted", "explanationRU": "Получатель принял запрос.", "explanationEN": "The recipient accepted the request.", "tone": "progressing", "cue": "→"}
+    ],
+    "unknown": {"labelRU": "неизвестно", "labelEN": "unknown", "explanationRU": "Значение не распознано.", "explanationEN": "The value is not recognized.", "tone": "unknown", "cue": "?"}
+  }
+}

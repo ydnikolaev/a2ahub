@@ -1,0 +1,1 @@
+{"definition":"operationalProcess","missing":"space","instance":{"thread":"thread-one","title":"Process","participants":[],"protocol":{"settled":true,"open_count":0,"waiting_on":[],"blocking_by":[]},"work":[],"work_window":{"truncated":false,"total":0,"shown":0},"consistency":[],"consistency_window":{"truncated":false,"total":0,"shown":0}}}
