@@ -286,6 +286,9 @@ changes:
       Portable schemas now freeze the seven card object shapes, including the
       nested thread facts, while deliberately leaving the local dashboard
       envelope outside the public contract.
+      The loopback server's CSP admits the bundled component evaluator while
+      continuing to deny remote scripts, styles, images and non-self
+      connections.
 
       Live SSE messages now announce a newer digest without replacing the
       screen. Refresh dashboard performs one conditional fetch and one atomic

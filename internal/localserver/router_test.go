@@ -223,6 +223,9 @@ func TestSecurityHeadersForbidRemoteResourcesAndCORS(t *testing.T) {
 	if response.status != 200 || !strings.Contains(csp, "default-src 'none'") || !strings.Contains(csp, "connect-src 'self'") {
 		t.Fatalf("CSP = %q", csp)
 	}
+	if !strings.Contains(csp, "script-src 'unsafe-inline' 'unsafe-eval'") {
+		t.Fatalf("CSP blocks the embedded component runtime: %q", csp)
+	}
 	if response.header.Get("Access-Control-Allow-Origin") != "" || response.header.Get("X-Content-Type-Options") != "nosniff" {
 		t.Fatalf("unsafe headers = %v", response.header)
 	}
