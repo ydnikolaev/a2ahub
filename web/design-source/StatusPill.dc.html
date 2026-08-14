@@ -90,7 +90,9 @@ class Component extends DCLogic {
       const enGlossary = globalThis.A2A_GLOSSARY && globalThis.A2A_GLOSSARY.entry
         ? globalThis.A2A_GLOSSARY.entry("statuses", entry.key, "en")
         : null;
+      // dashboard-derivation: allow-sort-begin layout-only -- match the longest localized label first while formatting one carried status
       const candidates = [entry.key, enGlossary && enGlossary.label].filter(Boolean).sort((a, b) => b.length - a.length);
+      // dashboard-derivation: allow-sort-end
       const low = raw.toLowerCase();
       for (const candidate of candidates) {
         const c = String(candidate).toLowerCase();

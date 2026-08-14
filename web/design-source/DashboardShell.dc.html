@@ -208,6 +208,7 @@ function mono(s) { return String(s || "?").slice(0, 2).toUpperCase(); }
 
 function monoCodes(names) {
   const out = {}, used = new Set();
+  // dashboard-derivation: allow-sort-begin layout-only -- stabilize two-letter avatar collision labels without changing rendered member order
   names.slice().sort().forEach(n => {
     const s = String(n || "?");
     let code = (s[0] + (s[1] || "")).toUpperCase();
@@ -215,6 +216,7 @@ function monoCodes(names) {
     used.add(code);
     out[n] = code;
   });
+  // dashboard-derivation: allow-sort-end
   return out;
 }
 
@@ -284,7 +286,9 @@ class Component extends DCLogic {
       const swapOut = vis.pop();
       vis.push(rest[activeIdx]);
       rest.splice(activeIdx, 1, swapOut);
+      // dashboard-derivation: allow-sort-begin layout-only -- restore authored tab layout after moving the active tab into the visible strip
       rest.sort((a, b) => items.indexOf(a) - items.indexOf(b));
+      // dashboard-derivation: allow-sort-end
     }
     return { vis, rest };
   }

@@ -312,11 +312,7 @@ class Component extends DCLogic {
     }
     const tooling = d.tooling || {};
     const upd = d.updateDetail || {};
-    const releasesAll = d.releaseNotes.slice().sort((a, b) => {
-      const seg = (v) => String(v || "").split(".").map(n => parseInt(n, 10) || 0);
-      const x = seg(b.version), y = seg(a.version);
-      return (x[0] - y[0]) || (x[1] - y[1]) || (x[2] - y[2]);
-    });
+    const releasesAll = d.releaseNotes.slice();
     const filtered = s.verKind !== "all" || s.verAction !== "all";
     const kindMatches = (c, kind) => kind === "all" || c.kind === kind;
     const actionMatches = (c, action) => {

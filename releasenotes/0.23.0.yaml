@@ -281,6 +281,8 @@ changes:
       Seven canonical card kinds render the same ordered RU/EN facts from every
       entry point; the map's parallel detail dialog is removed, unknown values
       never leak raw, and one resolver owns status words, cues and chroma.
+      Release sequences preserve the carried server order; the remaining
+      browser sorts are bounded, named presentation-only layout operations.
 
       Live SSE messages now announce a newer digest without replacing the
       screen. Refresh dashboard performs one conditional fetch and one atomic
