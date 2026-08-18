@@ -27,7 +27,20 @@
 # lane-reads-opaque: check 5 greps each PUBLIC gate script in turn — `grep -E ... "$public_file"` — where $public_file is bound by iterating ALLOW_FILES, this file's own literal list. The set is declared here and nowhere else, so the read is bounded by this script's own contents rather than by any caller input; the classifier resolves literals, not a loop variable.
 set -euo pipefail
 
-cd "$(git rev-parse --show-toplevel)"
+# The tree under judgement. Defaults to this repository, which is the only
+# thing it was ever pointed at — and that is precisely why this gate was the
+# last one in the repo with no teeth: a check that can only ever run against a
+# tree that is green by construction has nowhere to put a violating fixture.
+# `scripts/tests/classify_guard_test.sh` builds one repo per check and points
+# this at it. Same shape as CONTRACT_CARRIED_SET_ROOT next door.
+#
+# The asymmetry that makes the teeth mean something: the BOUNDARY (ALLOW/DENY/
+# PENDING/PRIVATE_ONLY, below) is declared in THIS file and is never read from
+# the tree, while the tree supplies only the facts being judged. Teaching these
+# lists to read from $CLASSIFY_GUARD_ROOT would make every fixture agree with
+# itself and silently delete every case below — the same trap
+# check_contract_carried_set.sh records in its own header.
+cd "${CLASSIFY_GUARD_ROOT:-$(git rev-parse --show-toplevel)}"
 
 # ── SSOT of the public/private boundary. ──────────────────────────────────────────
 # Every DENY entry MUST also be in .gitignore — check 3 asserts it, so the two can
@@ -66,6 +79,7 @@ PUBLIC_VALIDATOR_FILES=(
   scripts/tests/check_human_gates_test.sh
   scripts/tests/check_loop_reachability_test.sh
   scripts/tests/check_loop_coverage_test.sh
+  scripts/tests/classify_guard_test.sh
 )
 ALLOW_FILES=( .gitignore .golangci.yml .goreleaser.yaml .gitleaks.toml .govulncheck-allow.txt Makefile SECURITY.md README.md LICENSE NOTICE go.mod go.sum cc-coverage.yaml scripts/install.sh scripts/dev-install.sh scripts/e2e-authoring-smoke.sh scripts/classify-guard.sh scripts/release-preflight.sh scripts/check-release-notes-freshness.sh scripts/check-roadmap-release-decisions.sh scripts/check-provider-tier-deferral.sh scripts/bump-space-template.sh scripts/check-gosec-scope.sh scripts/check-readme.sh scripts/dashboard-template-drift.sh scripts/check-view-vocabulary.sh scripts/check-pendency-uniqueness.sh scripts/check-loop-coverage.sh scripts/check-human-gates.sh scripts/check-loop-reachability.sh scripts/check-prose-roster.sh scripts/check-prose-coverage.sh scripts/check-operational-confidence.sh scripts/verify.sh scripts/build-release-cohort.sh "${PUBLIC_VALIDATOR_FILES[@]}" )
 DENY_DIRS=( .agents .claude .codex .mate .sporo )   # scripts/ handled below (install.sh + e2e-authoring-smoke.sh are the public exceptions)
@@ -225,8 +239,17 @@ if [ -f "$PUBLISHER" ]; then
   # The STRIP array as the publisher actually declares it: every `--path X`
   # inside the STRIP=( ... ) block, read from the file rather than re-typed
   # here — a copy would be the same drift one layer down.
+  # `|| true` is load-bearing, and it was missing until 2026-08-18. `grep`
+  # exits 1 when it matches nothing; under `set -euo pipefail` that failure
+  # propagates out of the command substitution and kills the script BEFORE the
+  # refusal below can print. So a publisher whose STRIP block this cannot read
+  # produced a bare non-zero exit with no message at all — fail-closed, but
+  # mute, which is the shape that gets misdiagnosed as an unrelated crash. This
+  # gate's own header promises "the message prints the FIX, not the symptom".
+  # Found by writing the teeth (scripts/tests/classify_guard_test.sh); the
+  # branch had been unreachable dead code since check 4 was written.
   strip_paths="$(awk '/^STRIP=\(/{inside=1} inside{print} inside&&/\)/{exit}' "$PUBLISHER" |
-    grep -oE -- '--path [^ )]+' | sed 's/^--path //')"
+    grep -oE -- '--path [^ )]+' | sed 's/^--path //' || true)"
   if [ -z "$strip_paths" ]; then
     flag "$PUBLISHER — could not read its STRIP=( ) block; this check cannot vouch for the boundary"
   fi
