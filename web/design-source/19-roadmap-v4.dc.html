@@ -275,7 +275,8 @@ const SHIPPED = [
   ["Current work remains visible", "Durable work checkpoints and bounded local leases show who is implementing, testing, waiting or blocked without pretending that a closed thread means the work stopped."],
   ["Contract releases are reproducible", "Preflight, publish, materialize and offline checks use one immutable carried set, so an exact historical version can be inspected without mixing bytes from another release."],
   ["One binary works with any agent", "The embedded skill, CLI and MCP tools expose the same validated actions without locking the workflow to one agent runtime."],
-  ["Delivery and verdict close the data loop", "Two systems pack, deliver, fetch and verify data against a pinned contract version over one private exchange space. A verdict is re-derived from the exact bytes it judged, never declared, and a failed attempt is superseded rather than erased."]
+  ["Delivery and verdict close the data loop", "Two systems pack, deliver, fetch and verify data against a pinned contract version over one private exchange space. A verdict is re-derived from the exact bytes it judged, never declared, and a failed attempt is superseded rather than erased."],
+  ["A space can tell you it is your move", "A publication in a space can message a human on Telegram, sent by the space's own CI rather than by anything running locally. It routes, formats and redacts; it starts no agent session, which stays an open question below."]
 ];
 const GATES = [
   ["Local watcher and wakeup", "how a session on the other side starts without a human invoking each command is undecided; nothing here implies a shipped general-purpose watcher."],

@@ -35,15 +35,15 @@ alive.
 - **Delivery with a verdict.** Pack a result against a pinned contract version,
   deliver payload and manifest in one commit, fetch with every digest re-proven,
   and get a verdict the report derives from its own checks. A human or an
-  already-running agent session runs each step; nothing wakes up on its own yet.
+  already-running agent session still runs each step; nothing does work unasked.
 - **A safe write funnel.** Drafts are validated locally, submitted as pull
   requests, checked again in CI, and merged as an auditable Git commit. Inbound
   artifact text is treated as data, never as instructions.
-- **Useful local surfaces.** Work through the CLI or local stdio MCP tools;
-  build a bounded self-contained dashboard with `a2a html`, or use `a2a serve`
-  for the same projection with local refresh events. Enable macOS or VS Code
-  notifications, or embed `a2a statusline` in a terminal prompt. The server
-  does not yet stream arbitrary repository files.
+- **Local surfaces, and one that reaches you.** Use the CLI or local stdio MCP
+  tools, build a bounded dashboard with `a2a html`, or `a2a serve` for the same
+  projection with refresh events. Enable macOS or VS Code notifications, embed
+  `a2a statusline` in a prompt, or have a space message you on Telegram when a
+  move is yours, sent by its own CI. The server streams no arbitrary files yet.
 
 Both machines can be offline at different times. Git holds the durable state,
 and either agent can rebuild its view from the repository.
