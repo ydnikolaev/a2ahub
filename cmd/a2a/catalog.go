@@ -130,6 +130,11 @@ func catalogCLICommand(name string) (cli.Command, bool) {
 		return cli.NewCompletionCommand(nil, nil), true
 	case "notifications":
 		return cli.NewNotificationsCommand(nil), true
+	case "notify":
+		// space-notify-2026-08 P3: no dependencies to nil out — NewNotifyCommand()
+		// wires its own gitDiffNameOnly/time.Now, matching "template"'s own
+		// zero-config shape. The catalog path only reads Name()+Synopsis().
+		return cli.NewNotifyCommand(), true
 	case "connect":
 		return cli.NewConnectCommand("", "", ""), true
 	case "disconnect":

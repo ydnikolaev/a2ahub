@@ -68,6 +68,11 @@ var mcpExcludedVerbs = map[string]bool{
 	"notifications": true, // P49/OP-223: installs and coordinates host-native UI components — CLI-only
 	"feedback":      true, // P25: files feedback on a2a itself (consumer submit + hub-operator triage) — a host act, CLI-only (spec 25 §T1: triage "Not exposed via MCP")
 	"space":         true, // P33 §12: scaffolds a NEW space repo onto the local filesystem — an operator/host act outside any connected space, CLI-only (like init/skill/html)
+	// TEMPORARY (space-notify-2026-08 P3): the MCP twins for notify's sub-verbs
+	// land in P6 (W4). This is the ONLY time-limited entry in this list — every
+	// other row states a permanent design reason. P6 deletes this line and P7's
+	// freeze gate fails if it is still here.
+	"notify": true,
 }
 
 // toolAction is one reachable MCP capability: a grouped tool plus one of its

@@ -182,6 +182,12 @@ func buildCommands() map[string]command {
 		}
 		return cli.NewNotificationsCommand(controller).Run(context.Background(), args, stdio(stdout, stderr))
 	}
+	// P3 (space-notify-2026-08): `a2a notify render` reads the space-repo
+	// checkout at cwd — no project config, no mirror clone, exactly like
+	// `template` above.
+	m["notify"] = func(args []string, stdout, stderr io.Writer) int {
+		return cli.NewNotifyCommand().Run(context.Background(), args, stdio(stdout, stderr))
+	}
 	m["connect"] = func(args []string, stdout, stderr io.Writer) int {
 		p, err := resolvePaths()
 		if err != nil {

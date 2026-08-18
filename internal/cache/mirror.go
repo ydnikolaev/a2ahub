@@ -19,6 +19,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/pendency"
 	"github.com/ydnikolaev/a2ahub/internal/provenance"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/version"
@@ -655,6 +656,221 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 	}
 
 	return out, skips, nil
+}
+
+// NotifyArtifact is space-notify-2026-08 P3's narrow, purpose-built
+// projection of one folded artifact — the envelope facts, the folded
+// state, the legal next actions, and the pendency verdict — for a
+// space-side notifier that has no cache and no single "own system".
+//
+// It exists so P3 (internal/spacenotify) never becomes a second
+// artifact/event walker (spec 03 §5: "if the reviewer finds two
+// assemblies in the tree after this phase, the phase failed regardless of
+// its tests"). foldedArtifact itself stays unexported — it carries ~25
+// caller-resolved fact fields and unexported member types (envelopeProbe,
+// refEntry, eventVerdictEntry), and publishing it would freeze a read
+// model this epic has no business freezing. This type carries only what
+// the notifier's message model actually needs.
+type NotifyArtifact struct {
+	ID    string
+	Kind  string // fold.Kind, carried as a plain string — OpenItem.Type's own precedent (threadview.go)
+	Title string
+	Space string
+
+	From      string
+	To        []string // normalized
+	Broadcast bool
+	Thread    string
+
+	Priority string
+	Blocking bool
+	NeededBy string
+	// Overdue is overdueAt(NeededBy, the injected now) — this package's own
+	// day-granular rule (overdue.go), never re-derived by the caller.
+	Overdue bool
+
+	RelPath string
+	// Body is the artifact's own markdown document body (frontmatter
+	// stripped) — spec 03's message model "description" field. There is no
+	// `description` YAML property anywhere in envelope/v1 or /v2
+	// (base.schema.json's own property list carries none); the artifact's
+	// own free-text IS the body.
+	Body []byte
+
+	State string // fold.State, plain string, same convention as Kind above
+
+	// Addressees is the COMPLETE set of systems this artifact concerns:
+	// `to` (normalized) plus every participant whose OWN consumes.yaml
+	// names the contract this artifact deprecates — spec 03's "one thing
+	// the CI plane can do better than the cache": pendency.Input.
+	// ExtraAddressees' own doc comment invites exactly this caller, because
+	// this function can read every participant's registry, not just one
+	// system's (mirror.go/inbox.go's myDependencyContracts, ownSystem-scoped).
+	Addressees []string
+
+	// Verdict is internal/pendency's own answer for this artifact, resolved
+	// ONCE — fed the complete Addressees set above as
+	// pendency.Input.ExtraAddressees — never re-resolved per route or per
+	// participant. Spec 03's own measured finding (2026-08-18 getvisa
+	// probe): whose move it is is a property of the artifact, not the
+	// reader; perspective enters at filtering and labelling only.
+	Verdict pendency.Verdict
+
+	// Actions is the full, unfiltered legal-next-move list — the same
+	// (transition, by-systems) computation buildOpenItems performs
+	// (threadview.go), reached here directly rather than through that
+	// function because buildOpenItems both computes AND discards its own
+	// pendency.Resolve call per item and has no way to return the ONE
+	// Verdict this function needs computed against the complete addressee
+	// set instead of a single ownSystem's narrow one.
+	Actions []NextAction
+}
+
+// BuildNotifyIndex is space-notify-2026-08 P3's one exported entry point
+// into this package's directory-shaped folding assembly (buildIndex and
+// its neighbours). It composes buildIndex's own output into
+// NotifyArtifact — see that type's own doc comment for why a narrow
+// projection is exported instead of foldedArtifact itself.
+//
+// ownSystem is deliberately not a parameter: buildIndex's own ownSystem
+// argument feeds ONLY myDependencyContracts (spec 03's measured probe,
+// 2026-08-18), and this function performs that same per-participant
+// registry read itself — once per manifest participant, not once per
+// caller — to hand pendency the COMPLETE addressee set rather than one
+// system's narrow view. This is a direct per-participant consumes.yaml
+// read, never a second walk of artifacts or events: buildIndex is called
+// exactly once, below.
+//
+// now is the instant overdueAt measures Overdue against, injected rather
+// than read from time.Now() (rails: no buried clock read) so two calls
+// over the same inputs at the same instant produce byte-identical Overdue
+// facts (spec 03 AC9's determinism requirement).
+func BuildNotifyIndex(ctx context.Context, spaceID, dir string, manifest space.Manifest, now time.Time) ([]NotifyArtifact, []SkippedFile, error) {
+	folded, skips, err := buildIndex(ctx, spaceID, dir, "", manifest)
+	if err != nil {
+		return nil, nil, err
+	}
+	byID := byArtifactID(folded)
+
+	// The complete addressee set: P4 Edge 3's late-adopter fact, widened
+	// from ONE system's registry (myDependencyContracts' own documented
+	// narrowness) to EVERY participant's, because this caller — unlike a
+	// single-system mirror — can read every registry in the space.
+	lateAdopters := map[string][]string{} // artifact id -> systems that depend on the contract it deprecates
+	for _, p := range manifest.Participants {
+		deps, depSkip := myDependencyContracts(dir, p.System)
+		if depSkip != nil {
+			skips = append(skips, *depSkip)
+		}
+		if len(deps) == 0 {
+			continue
+		}
+		for _, fa := range folded {
+			if cid := fa.Env.deprecatedContractID(); cid != "" && deps[cid] {
+				lateAdopters[fa.Env.ID] = append(lateAdopters[fa.Env.ID], p.System)
+			}
+		}
+	}
+	if len(skips) > 0 {
+		sort.Slice(skips, func(i, j int) bool { return skips[i].Path < skips[j].Path })
+	}
+
+	out := make([]NotifyArtifact, 0, len(folded))
+	for _, fa := range folded {
+		env := fa.Env
+		to := normalizeTo(env.To)
+		extra := append([]string(nil), lateAdopters[env.ID]...)
+
+		var parentFrom string
+		if fa.kind() == fold.KindResponse {
+			parentFrom = responseParentFrom(fa, byID)
+		}
+
+		// The verdict is resolved EXCLUSIVELY through resolveVerdict
+		// (inbox.go) — this package's own structural gate
+		// (pendency_callsite_test.go's TestOnlyOneFunctionResolvesThePendencyRelation)
+		// refuses a second internal/pendency.Resolve call site, and rightly
+		// so (three documented scars). resolveVerdict's own `me`-scoped
+		// extraAddressees(fa, me) can only ever widen ExtraAddressees to
+		// ONE system per call — never the complete set this function needs
+		// (AC11b) — so the complete set is assembled by calling
+		// resolveVerdict ONCE per late adopter (on a local, mutated COPY of
+		// fa whose DeprecatesMyDependency is forced true — the exact fact
+		// extraAddressees reads) and taking the UNION of every call's
+		// Owners. This is provably equivalent to one call with the full
+		// ExtraAddressees slice: unackedTargets — the ONLY resolver that
+		// reads ExtraAddressees at all — filters `t == in.From` and
+		// `in.Acks[t]` per element, independently of every other element,
+		// so unioning per-element results equals filtering the union
+		// up front. Every other pendency row ignores ExtraAddressees
+		// entirely, so Expected/Why/RuleIdentity/HumanGate are identical
+		// across every one of these calls whenever Owners comes back
+		// non-empty — the verdict actually surfaced is taken from
+		// whichever call produced a populated Owners set, so its Why never
+		// claims "settled" over a debt one of the late-adopter calls found.
+		verdict := resolveVerdict(fa, "", manifest, parentFrom)
+		if len(lateAdopters[env.ID]) > 0 {
+			owners := append([]string(nil), verdict.Owners...)
+			for _, adopter := range lateAdopters[env.ID] {
+				widened := fa
+				widened.DeprecatesMyDependency = true
+				v := resolveVerdict(widened, adopter, manifest, parentFrom)
+				owners = append(owners, v.Owners...)
+				if len(v.Owners) > 0 {
+					verdict = v
+				}
+			}
+			verdict.Owners = dedupSorted(owners)
+		}
+
+		// NextActions: buildOpenItems' own logic (threadview.go), applied
+		// here directly — see NotifyArtifact.Actions' own doc comment for
+		// why that function cannot simply be called instead.
+		authEnv := envelopeFrom(fa)
+		if fa.kind() == fold.KindResponse {
+			if parent, ok := byID[env.Parent]; ok {
+				authEnv = envelopeFrom(parent)
+			}
+		}
+		var actions []NextAction
+		for _, mv := range fold.LegalNextFor(fa.kind(), fa.Result, "") {
+			if fa.kind() != fold.KindResponse && mv.Transition == fold.TDispute {
+				continue
+			}
+			actions = append(actions, NextAction{Transition: mv.Transition, By: legalSystems(mv, authEnv, manifest)})
+		}
+		if fa.kind() == fold.KindAnnouncement && verdict.Expected == fold.TAcknowledge && len(verdict.Owners) > 0 {
+			actions = append(actions, NextAction{Transition: verdict.Expected, By: verdict.Owners})
+		}
+
+		addressees := dedupSorted(append(append([]string(nil), to...), extra...))
+
+		out = append(out, NotifyArtifact{
+			ID: env.ID, Kind: string(fa.kind()), Title: env.Title, Space: env.Space,
+			From: env.From, To: to, Broadcast: env.isBroadcast(), Thread: env.Thread,
+			Priority: env.Priority, Blocking: env.Blocking, NeededBy: env.NeededBy,
+			Overdue: overdueAt(env.NeededBy, now), RelPath: fa.RelPath, Body: extractNotifyBody(fa.Raw),
+			State: string(fa.Result.State), Addressees: addressees,
+			Verdict: verdict, Actions: actions,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, skips, nil
+}
+
+// extractNotifyBody best-effort decodes raw's frontmatter and returns the
+// document body — the artifact's own free-text "description" spec 03's
+// message model names (there is no `description` YAML property anywhere
+// in envelope/v1 or /v2; base.schema.json's own property list carries
+// none — the artifact's own body IS that fact). A document that fails to
+// parse (already reported as a skip by walkArtifacts, upstream of every
+// caller of this function) returns nil.
+func extractNotifyBody(raw []byte) []byte {
+	fm, err := artifact.ParseFrontmatter(raw)
+	if err != nil {
+		return nil
+	}
+	return fm.Body
 }
 
 // parentReopenFailed reports whether parentFlags (the PARENT's own
