@@ -302,3 +302,47 @@ changes:
     action:
       scope: none
       why: "No action. Regenerate or reopen the dashboard to use the coherent views and explicit refresh control."
+
+  - id: RN-02300-10
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: >
+        The plan assigns notification fan-out to the hub, which is a v2
+        service, so until it exists no always-on party tells a human that a
+        move needs them — every local surface is silent while the machine is
+        asleep. §15 records the interim explicitly: the space-CI
+        Actions-to-Telegram fallback may ship instead. This is the first
+        wave of that epic.
+    impact: normal
+    subject: "a space's notification routes are declared, validated and refused when malformed"
+    detail: >
+      `notification_routes` has shipped in the space template since it was
+      written, and nothing validated it: the manifest schema does not declare
+      the key, and `additionalProperties: true` accepted anything at all. A
+      route with a typo in it was silence, discovered only by a notification
+      that never arrived.
+
+      The shape is now enforced by the space's own pull-request gate. Every
+      route must name a channel, a chat and at least one event; unknown keys,
+      wrong types, values outside an enum, a duplicate event, a chat that is
+      not a numeric string, and more than sixteen routes are each refused with
+      the path that is wrong. A route whose `for` names a participant the
+      manifest does not list, or that duplicates another route's target, is
+      refused as well, and a manifest carrying anything shaped like a Telegram
+      bot token is refused outright.
+
+      Validation lives in the policy layer rather than in the schema, because
+      `manifest/v1`'s bytes are frozen: they decide whether documents already
+      committed to shared spaces are valid. The open schema accepts the key on
+      every binary already deployed, so adopting this needs no upgrade, no
+      floor bump and no workflow bump — only a route worth adding.
+
+      The agent-prompt tables and the bilingual dashboard vocabulary also moved
+      out of the presentation package into their own, so a caller that is not a
+      browser can quote the same words and the same legal moves. Nothing
+      rendered changes.
+    affects: ["space.yaml", "a2a validate", dashboard]
+    action:
+      scope: none
+      why: "No action. A space with no notification_routes, or with an empty list, is unaffected; the key is optional and defaults to none."
