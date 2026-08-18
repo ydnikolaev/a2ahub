@@ -377,6 +377,16 @@ func contractLifecyclePublish(
 		HistoryValidator:  contractHistoryDocumentEngine{engine: engine},
 		Compatibility:     validate.ContractCompatibilityAdapter{},
 		Actor:             actor, Now: time.Now, Entropy: rand.Reader, LoadManifest: loadManifestFn,
+		// Same closure production uses (contract_p6_wiring.go). Supplied here
+		// rather than reached for from inside contractwiring, because the
+		// adapters live in `internal/cli` and ADR-001 makes `cli` a frontend
+		// nothing below it imports — this test drives the REAL assembly, so it
+		// has to hand over the real dependency too.
+		ValidateSubmitFiles: func(ctx context.Context, manifest space.Manifest, files []space.FileWrite) error {
+			resolver := cli.NewMirrorResolver(mirrorDir, manifest)
+			legality := cli.NewLegalityAdapter(mirrorDir, contractLifecycleSystem, manifest)
+			return cli.NewSubmitValidatorAdapter(engine, contractLifecycleSystem, resolver, legality).ValidateSubmit(ctx, files)
+		},
 	})
 	if err != nil {
 		t.Fatalf("contractwiring.NewPublicationService: %v", err)

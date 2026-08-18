@@ -10,7 +10,6 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
-	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
@@ -68,6 +67,21 @@ type PublicationDependencies struct {
 	Now          func() time.Time
 	Entropy      io.Reader
 	LoadManifest func() (space.Manifest, error)
+
+	// ValidateSubmitFiles runs the space's own artifact-resolution and
+	// legality rules over the candidate, against the manifest as refreshed at
+	// submit time.
+	//
+	// INJECTED rather than built here, and the reason is ADR-001. Those
+	// adapters (`MirrorResolver`, `LegalityAdapter`, `SubmitValidatorAdapter`)
+	// live in `internal/cli`, which ADR-001's table calls the "OP-2xx verb
+	// surface — thin frontend" and which nothing below it imports: the `mcp`
+	// row says "never `cli`" in as many words. This package sits below both.
+	// Calling into `cli` from here would invert that direction — and because
+	// no import-boundary test guards `internal/cli` the way one guards
+	// `internal/html` and `internal/localserver`, it would have inverted it
+	// silently. Found by the wave's own coherence probe, not by a gate.
+	ValidateSubmitFiles func(ctx context.Context, manifest space.Manifest, files []space.FileWrite) error
 }
 
 func (d PublicationDependencies) validate() error {
@@ -75,7 +89,7 @@ func (d PublicationDependencies) validate() error {
 		strings.TrimSpace(d.SpaceID) == "" || strings.TrimSpace(d.OwnSystem) == "" || strings.TrimSpace(d.Binary) == "" ||
 		d.Repository.Owner == "" || d.Repository.Name == "" || d.Host == nil || d.Engine == nil ||
 		d.ManifestValidator == nil || d.HistoryValidator == nil || d.Compatibility == nil ||
-		d.Now == nil || d.Entropy == nil || d.LoadManifest == nil {
+		d.Now == nil || d.Entropy == nil || d.LoadManifest == nil || d.ValidateSubmitFiles == nil {
 		return fmt.Errorf("contractwiring: complete publication dependencies are required")
 	}
 	return nil
@@ -104,6 +118,7 @@ func NewPublicationService(deps PublicationDependencies) (*space.ContractPublica
 	validator := &contractPublicationSubmitValidator{
 		events: events, engine: deps.Engine, mirrorDir: deps.MirrorDir,
 		ownSystem: deps.OwnSystem, loadManifest: deps.LoadManifest,
+		validateSubmitFiles: deps.ValidateSubmitFiles,
 	}
 	funnel := space.NewWriteFunnel(deps.Host, validator, deps.Binary)
 	recovery, err := space.NewContractPublicationRecovery(deps.Host, deps.MirrorDir, deps.RemoteURL, deps.Repository, deps.Credential, space.ContractPublicationRecoveryValidation{
@@ -283,11 +298,12 @@ func contractPublicationToStrings(value any) []string {
 }
 
 type contractPublicationSubmitValidator struct {
-	events       *contractPublicationEventBuilder
-	engine       *validate.Engine
-	mirrorDir    string
-	ownSystem    string
-	loadManifest func() (space.Manifest, error)
+	events              *contractPublicationEventBuilder
+	engine              *validate.Engine
+	mirrorDir           string
+	ownSystem           string
+	loadManifest        func() (space.Manifest, error)
+	validateSubmitFiles func(ctx context.Context, manifest space.Manifest, files []space.FileWrite) error
 }
 
 func (v *contractPublicationSubmitValidator) ValidateSubmitCandidate(_ context.Context, files []space.FileWrite) error {
@@ -321,9 +337,7 @@ func (v *contractPublicationSubmitValidator) ValidateSubmit(ctx context.Context,
 	if err := validationResultError("publication event", result); err != nil {
 		return err
 	}
-	resolver := cli.NewMirrorResolver(v.mirrorDir, manifest)
-	legality := cli.NewLegalityAdapter(v.mirrorDir, v.ownSystem, manifest)
-	return cli.NewSubmitValidatorAdapter(v.engine, v.ownSystem, resolver, legality).ValidateSubmit(ctx, files)
+	return v.validateSubmitFiles(ctx, manifest, files)
 }
 
 func (v *contractPublicationSubmitValidator) publicationEvent(files []space.FileWrite) ([]byte, error) {

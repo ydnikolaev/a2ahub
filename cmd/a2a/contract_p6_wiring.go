@@ -174,6 +174,16 @@ func (c *contractP6Core) publish(ctx context.Context, input contractP6Publicatio
 		HistoryValidator:  contractHistoryDocumentEngine{engine: c.engine},
 		Compatibility:     validate.ContractCompatibilityAdapter{},
 		Actor:             actor, Now: c.now, Entropy: c.entropy, LoadManifest: c.loadManifest,
+		// The space's artifact-resolution and legality rules, supplied from
+		// HERE because they live in `internal/cli` and ADR-001 makes `cli` a
+		// frontend nothing below it imports. `internal/contractwiring` sits
+		// below `cli`, so it takes this as a dependency rather than reaching
+		// up for it.
+		ValidateSubmitFiles: func(ctx context.Context, manifest space.Manifest, files []space.FileWrite) error {
+			resolver := cli.NewMirrorResolver(c.mirrorDir, manifest)
+			legality := cli.NewLegalityAdapter(c.mirrorDir, c.ownSystem, manifest)
+			return cli.NewSubmitValidatorAdapter(c.engine, c.ownSystem, resolver, legality).ValidateSubmit(ctx, files)
+		},
 	})
 	if err != nil {
 		return space.ContractPublicationResult{}, err

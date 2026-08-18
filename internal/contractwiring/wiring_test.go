@@ -57,6 +57,9 @@ func validPublicationDependencies(t *testing.T) PublicationDependencies {
 		ManifestValidator: stubManifestValidator{}, HistoryValidator: stubHistoryValidator{}, Compatibility: validate.ContractCompatibilityAdapter{},
 		Actor: template.Actor{Kind: "agent", Name: "tester"}, Now: time.Now, Entropy: bytes.NewReader(make([]byte, 16)),
 		LoadManifest: func() (space.Manifest, error) { return space.Manifest{}, nil },
+		ValidateSubmitFiles: func(context.Context, space.Manifest, []space.FileWrite) error {
+			return nil
+		},
 	}
 }
 
