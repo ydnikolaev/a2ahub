@@ -112,12 +112,14 @@ func remoteBranchExists(t *testing.T, remoteURL, branch string) bool {
 // brief's allowlist) — a second `contract publish` of ANY kind, for ANY
 // reason, is unconditionally blocked while the FIRST publish's own
 // now-merged branch is still on the remote:
+//
 //   - what: `a2a contract publish` refuses with "space: operation-conflict:
 //     remote publication-head probe failed: space: operation-conflict:
 //     remote recovery publication-plan-recompute" — BEFORE the compatibility
 //     check is ever consulted. Reproduced with NO schema change at all
 //     (publish 1.0.0, then publish 1.1.0 unmodified): same refusal, same
 //     stage.
+//
 //   - where: internal/space/contract_operation_recovery.go's
 //     ContractPublicationRecovery.ProbeContractPublicationHeads (line ~74)
 //     calls proveHead for EVERY branch `git ls-remote --heads` returns under
@@ -135,6 +137,7 @@ func remoteBranchExists(t *testing.T, remoteURL, branch string) bool {
 //     branch-pruning step of its own, and no `a2a` verb performs one either
 //     — `a2a sync` only fast-forwards the local mirror, never touches
 //     remote refs.
+//
 //   - impact, verified half: this is not fakegithub-specific in the one way
 //     checked — internal/host/remote_heads.go's ListContractPublishHeads
 //     lists heads via `git ls-remote --heads` (a real ref query, not a
@@ -142,6 +145,7 @@ func remoteBranchExists(t *testing.T, remoteURL, branch string) bool {
 //     is visible to the probe regardless of host. Most GitHub repos do NOT
 //     have "automatically delete head branches" enabled by default, and
 //     nothing in this codebase asserts it must be.
+//
 //   - impact, UNVERIFIED half: whether the recompute itself
 //     (verifyRecomputedPublication) would also disagree with the recorded
 //     plan digest against a REAL GitHub-authored commit/trailer shape is
@@ -152,6 +156,7 @@ func remoteBranchExists(t *testing.T, remoteURL, branch string) bool {
 //     reproduces with zero schema involvement, not far enough to name the
 //     exact byte/field that disagrees. That is the next investigation, not
 //     this one's claim.
+//
 //   - what keeps this test moving: nothing in the product. testkit/fakegithub
 //     now prunes a merged same-repo head branch, because that is what a real
 //     space does — internal/livee2e/protection.go's RepoSettingsBody applies
@@ -161,18 +166,39 @@ func remoteBranchExists(t *testing.T, remoteURL, branch string) bool {
 //     the fix: the fake was modelling a repository configuration nobody runs.
 //     The assertion below now proves the prune happened rather than causing
 //     it.
+//
 //   - what this therefore MASKS, deliberately and with the receipt filed:
 //     the refusal itself is untouched. A space with pruning off, a prune that
 //     is merely slow, or a publish that races one, all still land on it — and
 //     the live matrix can never find that, because the settings it provisions
 //     are exactly the ones that hide it. Filed in docs/backlog.md under
 //     "contract publication".
+//
 //   - what would have to change to fix it: ProbeContractPublicationHeads
 //     could skip a branch whose recorded target version is already resolvable
 //     in main's own published history. Publish() already trusts history that
 //     way for its EXPLICIT-target fast path a few lines earlier; the probe
 //     just never asks the same question, and instead re-verifies every
 //     historical branch it happens to still see.
+//
+//   - UPDATE 2026-08-18: that fix SHIPPED, in exactly the shape named above.
+//     `ContractPublicationHeadProbeRequest.ResolvedInMain` is wired in
+//     `Publish` from the same `ResolveContractPublicationTarget` the
+//     explicit-target fast path uses, and `proveHead` now skips a head whose
+//     target already resolves in main before any recompute runs. So the CLASS
+//     this comment describes is closed: an already-published head is no longer
+//     proven at all.
+//
+//     The precondition below is deliberately NOT relaxed on the strength of
+//     that, and the reason is worth keeping. The work that shipped the fix
+//     could not organically reproduce the trigger this comment reports — a
+//     hand-built, genuinely unmodified merged-but-unpruned branch recomputed
+//     CLEANLY in a scratch test, so the regression tests manufacture the
+//     mismatch instead. The reason string and the code path match this report
+//     exactly; the root cause of the original live failure does not, and is
+//     still unconfirmed. Until something reproduces it, this test's own
+//     prune-based precondition is the only thing standing where that unknown
+//     is, and removing it would trade a known-good guard for a guess.
 func TestContractCompatOfflinePOL007RollingWindow(t *testing.T) {
 	t.Parallel()
 
