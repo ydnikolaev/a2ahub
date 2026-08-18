@@ -80,8 +80,8 @@ func TestTroubleshootingEnumeratesEveryDoctorCheck(t *testing.T) {
 		}
 		fixedNames[rosterName] = true
 	}
-	if len(fixedNames) != 17 {
-		t.Fatalf("doctor emitted %d fixed checks (%v), want 17; update the documented count and this tripwire together", len(fixedNames), fixedNames)
+	if len(fixedNames) != 20 {
+		t.Fatalf("doctor emitted %d fixed checks (%v), want 20; update the documented count and this tripwire together", len(fixedNames), fixedNames)
 	}
 	// One connected space was configured above, so exactly one visibility
 	// row must have been printed (and checked against the doc) — a count of

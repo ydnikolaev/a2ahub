@@ -79,7 +79,12 @@ linters:
       # the same token and neither layer could import the other. Same seam,
       # same fixed argv (`gh auth token`, resolved via exec.LookPath, never a
       # shell) — only its address changed.
-      - path: ^(cmd/a2a/notifications_platform\.go|internal/cache/mirror\.go|internal/cli/(cmd_contract|cmd_html|cmd_statusline|cmd_update|cmd_validate_ci|contract_git)\.go|internal/ghauth/ghauth\.go|internal/host/github\.go|internal/mcp/tools_contract\.go|internal/release/selfcheck\.go|internal/space/(credential|mirror)\.go)$
+      # internal/cli/cmd_notify_setup.go: the setup flow's two exec seams, both
+      # fixed argv against a LookPath-resolved binary and never a shell — `gh
+      # secret set/list` (the secret is sealed by gh, which owns the NaCl
+      # crypto this binary has no dependency for) and `stty -echo` around the
+      # TTY token prompt. Same shape as internal/ghauth's own `gh auth token`.
+      - path: ^(cmd/a2a/notifications_platform\.go|internal/cache/mirror\.go|internal/cli/(cmd_contract|cmd_html|cmd_notify_setup|cmd_statusline|cmd_update|cmd_validate_ci|contract_git)\.go|internal/ghauth/ghauth\.go|internal/host/github\.go|internal/mcp/tools_contract\.go|internal/release/selfcheck\.go|internal/space/(credential|mirror)\.go)$
         text: "G204:"
         linters: [gosec]
       # cmd/a2a/feedback_freshness.go: AC3's hub-of-record freshness probe
@@ -131,7 +136,7 @@ linters:
       # already-resolved root cmd_validate_ci.go does, one line above it in
       # this same allowlist, for the same reason: the space-CI notification
       # projection runs in a checkout and takes its facts from the repository.
-      - path: ^(cmd/a2a/wire\.go|internal/(artifact/digesttree|cache/(cursor|marker|mirror|statusline_refresh)|cli/(adapters|cmd_init|cmd_notify|cmd_skill|cmd_validate_ci)|coveragepolicy/policy|e2e/coverage|feedback/(ledger|triage)|html/assemble|mcp/(adapters|wire)|notification/files|release/(cache|cohort|detail|download|verifier)|space/(config|mirror|mirrorlock)|surface/link|template/contract_scaffold)\.go)$
+      - path: ^(cmd/a2a/wire\.go|internal/(artifact/digesttree|cache/(cursor|marker|mirror|statusline_refresh)|cli/(adapters|cmd_init|cmd_notify|cmd_notify_setup|cmd_skill|cmd_validate_ci)|coveragepolicy/policy|e2e/coverage|feedback/(ledger|triage)|html/assemble|mcp/(adapters|wire)|notification/files|release/(cache|cohort|detail|download|verifier)|space/(config|mirror|mirrorlock)|surface/link|template/contract_scaffold)\.go)$
         text: "G304:"
         linters: [gosec]
       # nilerr: a2ahub's validate/adapter layer returns validation FAILURES as

@@ -223,6 +223,17 @@ func BuildRegistryWithOperations(store *cache.Store, write WriteDeps, submitStag
 	}
 	r.Register(dataTool)
 
+	// --- a2a_notify (action: render|send|setup|discover|verify) ----------
+	// space-notify-2026-08 P6: registered with the zero value in this pass
+	// (Operations == nil, every action answers ErrNotifyOperationsUnavailable)
+	// — see tools_notify.go's own doc comment for the reasoning and the
+	// follow-up this leaves.
+	notifyTool, err := NewNotifyTool(NotifyToolDeps{})
+	if err != nil {
+		panic(fmt.Sprintf("mcp: build a2a_notify: %v", err))
+	}
+	r.Register(notifyTool)
+
 	return r
 }
 

@@ -9,13 +9,15 @@ import (
 
 // TestBuildRegistryExpectedToolCount proves BuildRegistry registers
 // exactly the P15 capability-grouped tool set plus P31's standalone
-// a2a_whatsnew, plus spec 05a's a2a_data: a2a_read + a2a_new + a2a_submit +
-// a2a_lifecycle + a2a_exchange + a2a_contract + a2a_data + a2a_whatsnew +
-// a2a_work = 9 tools (spec 15 §T1/§8 AC #1, extended P31, extended spec
-// 05a). BuildRegistry registers a2a_data degraded (zero-value
-// DataToolDeps{}, via BuildRegistryWithOperations) even though this
-// constructor takes no data-operations argument — the same "degraded but
-// present" precedent ContractToolOperations{}'s zero value already sets for
+// a2a_whatsnew, spec 05a's a2a_data, and space-notify-2026-08 P6's
+// a2a_notify: a2a_read + a2a_new + a2a_submit + a2a_lifecycle +
+// a2a_exchange + a2a_contract + a2a_data + a2a_whatsnew + a2a_work +
+// a2a_notify = 10 tools (spec 15 §T1/§8 AC #1, extended P31, extended spec
+// 05a, extended spec 06). BuildRegistry registers a2a_data AND a2a_notify
+// degraded (zero-value DataToolDeps{}/NotifyToolDeps{}, via
+// BuildRegistryWithOperations) even though this constructor takes no
+// data/notify-operations argument — the same "degraded but present"
+// precedent ContractToolOperations{}'s zero value already sets for
 // a2a_contract. cmd/a2a/mcp_parity_test.go is the authoritative
 // capability-parity check against the CLI's own verb set; this is a
 // package-local sanity count.
@@ -32,7 +34,7 @@ func TestBuildRegistryExpectedToolCount(t *testing.T) {
 	names := registry.ToolNames()
 	want := []string{
 		"a2a_contract", "a2a_data", "a2a_exchange", "a2a_lifecycle",
-		"a2a_new", "a2a_read", "a2a_submit", "a2a_whatsnew", "a2a_work",
+		"a2a_new", "a2a_notify", "a2a_read", "a2a_submit", "a2a_whatsnew", "a2a_work",
 	}
 	if len(names) != len(want) {
 		t.Fatalf("expected %d tools, got %d: %v", len(want), len(names), names)

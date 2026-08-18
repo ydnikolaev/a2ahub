@@ -17,19 +17,50 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/ghauth"
+	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/spacenotify"
 )
 
-// NotifyCommand implements `a2a notify <render|send>`. `render` is P3's;
-// `send` is P4's (this phase); `setup`/`discover`/`verify` (P6) are later
-// phases' additions to this SAME command, not a new one — see spec 03 T1's
-// own "what adding a verb costs" note.
+// NotifySubcommand describes one `a2a notify <sub>` sub-verb for external
+// surface enumeration — the same {Name, Synopsis} shape
+// cli.ContractSubcommands() provides (spec 06 §"Closing the parity debt").
+type NotifySubcommand struct {
+	Name     string // e.g. "setup"
+	Synopsis string
+}
+
+// NotifySubcommands is the SSOT list of the `a2a notify` family's
+// sub-verbs for surface enumeration — the MCP parity test
+// (cmd/a2a/mcp_parity_test.go) expands the bare `notify` designated verb
+// through exactly this list, the same shape it already does for
+// `cli.ContractSubcommands()` and `cli.DataSubcommands()`. The notify
+// sub-verbs are dispatched by the bare switch in NotifyCommand.Run (they
+// are NOT registered as individual cli.Command values / buildCommands
+// keys), so this list is their only machine-enumerable home. KEEP IN SYNC
+// with that switch: a sub-verb added there without a row here (or vice
+// versa) is exactly the drift the parity gate exists to catch.
+func NotifySubcommands() []NotifySubcommand {
+	return []NotifySubcommand{
+		{Name: "render", Synopsis: "turn a push range into P3's ordered JSON message array"},
+		{Name: "send", Synopsis: "read a message array from stdin and deliver it to Telegram"},
+		{Name: "setup", Synopsis: "walk a human from no bot to a proven, delivering route (spec 06)"},
+		{Name: "discover", Synopsis: "list the chats the bot can currently see (one getUpdates call)"},
+		{Name: "verify", Synopsis: "read-only: report the route/secret/delivery facts doctor also reports"},
+	}
+}
+
+// NotifyCommand implements `a2a notify <render|send|setup|discover|verify>`.
+// `render` is P3's; `send` is P4's; `setup`/`discover`/`verify` are P6's —
+// see spec 03 T1's own "what adding a verb costs" note for why these all
+// live on this SAME command rather than a new one.
 type NotifyCommand struct {
 	// gitChanged is the DI seam over `git diff --name-only`
 	// (cmd_validate_ci.go's own gitChangedFilesFunc type + gitDiffNameOnly
@@ -41,11 +72,63 @@ type NotifyCommand struct {
 	// injected *http.Client/BaseURL) — real by default; tests construct
 	// NotifyCommand directly (or call runNotifySend) with an httptest fake.
 	telegram *spacenotify.Client
+
+	// The following back `setup`/`discover`/`verify` (P6, spec 06). Every
+	// one is a DI seam (rails: no buried side effect) real-defaulted by
+	// NewNotifyCommand; tests override individually so the token-hygiene
+	// and unproven-vs-configured paths are driven without a TTY, a `gh`
+	// binary or a live GitHub/Telegram call.
+	//
+	// ghAvailable/ghToken mirror internal/ghauth's own two-function shape
+	// (Available/Token) — this file adds NO second discovery path for
+	// "is gh here and authenticated", it calls ghauth's.
+	ghAvailable func(ctx context.Context) bool
+	ghToken     func(ctx context.Context) (string, bool)
+	// scopes reads the workflow token scope through the EXISTING
+	// host.Host.TokenScopes primitive (spaceScopeChecker's own shape,
+	// cmd_space.go) — no new host method (spec 06 §"Where the host calls
+	// live").
+	scopes spaceScopeChecker
+	// setupAdapter performs the four GitHub REST reads/writes host.Host
+	// does not offer: admin-permission read, workflow_dispatch trigger,
+	// and run-conclusion/delivery-evidence read. It deliberately does NOT
+	// set the secret — see notifySetupAdapter's own doc comment for why.
+	setupAdapter *notifySetupAdapter
+	// promptToken reads the bot token from the human's TTY, echo disabled,
+	// and returns it in a redactingToken. Never called in
+	// --non-interactive mode.
+	promptToken func(stdio IO) (redactingToken, error)
+	// ghSecretSet feeds `gh secret set <name> --repo <repo>` from STDIN —
+	// never argv (spec 06 §T1 step 4).
+	ghSecretSet func(ctx context.Context, secretName, repo string, value redactingToken) error
+	// gitRemote resolves the local checkout's own `origin` remote URL —
+	// `notify setup/verify` run standalone at the space-repo checkout
+	// (cwd), exactly like `notify render`, so the space repo's identity
+	// comes from the local git remote, never from `.a2a/config.yaml`
+	// (that file describes a CONSUMER project's connected spaces, not a
+	// space repo's own identity).
+	gitRemote gitRemoteURLFunc
+	// sleep backs the run-status poll loop (step 7); tests inject a no-op
+	// so a poll never actually waits wall-clock time.
+	sleep func(time.Duration)
 }
 
 // NewNotifyCommand constructs the real, wired NotifyCommand.
 func NewNotifyCommand() *NotifyCommand {
-	return &NotifyCommand{gitChanged: gitDiffNameOnly, now: time.Now, telegram: spacenotify.NewClient()}
+	h := host.NewGitHubHost(http.DefaultClient, notifyGitHubAPIBase())
+	return &NotifyCommand{
+		gitChanged:   gitDiffNameOnly,
+		now:          time.Now,
+		telegram:     spacenotify.NewClient(),
+		ghAvailable:  ghauth.Available,
+		ghToken:      ghauth.Token,
+		scopes:       h,
+		setupAdapter: newNotifySetupAdapter(http.DefaultClient, notifyGitHubAPIBase()),
+		promptToken:  readTokenFromTTY,
+		ghSecretSet:  runGHSecretSet,
+		gitRemote:    gitRemoteOriginURL,
+		sleep:        time.Sleep,
+	}
 }
 
 // Name implements cli.Command.
@@ -53,10 +136,14 @@ func (c *NotifyCommand) Name() string { return "notify" }
 
 // Synopsis implements cli.Command.
 func (c *NotifyCommand) Synopsis() string {
-	return "space-side CI notification projection and delivery (SPACE plane — see `a2a notifications` for the local/native plane): render --base <sha>|--all|--only <id,id> [--limit <n>] [--json] — turn a push range into P3's ordered JSON message array; send [--dry-run] — read that array from stdin and deliver it to Telegram, one delivery record per message on stdout"
+	return "space-side CI notification projection and delivery (SPACE plane — see `a2a notifications` for the local/native plane): render --base <sha>|--all|--only <id,id> [--limit <n>] [--json] — turn a push range into P3's ordered JSON message array; send [--dry-run] — read that array from stdin and deliver it to Telegram, one delivery record per message on stdout; setup [--non-interactive] — walk a human from no bot to a proven, delivering route; discover — list the chats the bot can currently see; verify — read-only route/secret/delivery report"
 }
 
-const notifyUsage = "usage: a2a notify render (--base <sha> | --all | --only <id,id>) [--limit <n>] [--json]\n       a2a notify send [--dry-run]"
+const notifyUsage = "usage: a2a notify render (--base <sha> | --all | --only <id,id>) [--limit <n>] [--json]\n" +
+	"       a2a notify send [--dry-run]\n" +
+	"       a2a notify setup [--space <id>] [--for <participant>] [--events <list>] [--locale <ru|en>] [--non-interactive]\n" +
+	"       a2a notify discover [--timeout <duration>]\n" +
+	"       a2a notify verify [--space <id>]"
 
 // Run implements cli.Command.
 func (c *NotifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
@@ -70,6 +157,12 @@ func (c *NotifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return runNotifyRender(ctx, ".", c.gitChanged, c.now, rest, stdio)
 	case "send":
 		return runNotifySend(ctx, c.telegram, rest, stdio)
+	case "setup":
+		return runNotifySetup(ctx, c, ".", rest, stdio)
+	case "discover":
+		return runNotifyDiscover(ctx, c, rest, stdio)
+	case "verify":
+		return runNotifyVerify(ctx, c, ".", rest, stdio)
 	default:
 		_, _ = fmt.Fprintf(stdio.Stderr, "a2a notify: unknown sub-verb %q\n%s\n", sub, notifyUsage)
 		return 2

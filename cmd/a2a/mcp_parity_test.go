@@ -29,7 +29,9 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -41,7 +43,7 @@ import (
 // groupedToolNames is the P15 capability-grouped tool set (spec 15 §T1).
 var groupedToolNames = []string{
 	"a2a_contract", "a2a_data", "a2a_exchange", "a2a_lifecycle",
-	"a2a_new", "a2a_read", "a2a_submit", "a2a_whatsnew", "a2a_work",
+	"a2a_new", "a2a_notify", "a2a_read", "a2a_submit", "a2a_whatsnew", "a2a_work",
 }
 
 // mcpExcludedVerbs is the CLI-only verb set with NO MCP tool by design
@@ -68,11 +70,49 @@ var mcpExcludedVerbs = map[string]bool{
 	"notifications": true, // P49/OP-223: installs and coordinates host-native UI components — CLI-only
 	"feedback":      true, // P25: files feedback on a2a itself (consumer submit + hub-operator triage) — a host act, CLI-only (spec 25 §T1: triage "Not exposed via MCP")
 	"space":         true, // P33 §12: scaffolds a NEW space repo onto the local filesystem — an operator/host act outside any connected space, CLI-only (like init/skill/html)
-	// TEMPORARY (space-notify-2026-08 P3): the MCP twins for notify's sub-verbs
-	// land in P6 (W4). This is the ONLY time-limited entry in this list — every
-	// other row states a permanent design reason. P6 deletes this line and P7's
-	// freeze gate fails if it is still here.
-	"notify": true,
+}
+
+// TestMCPExcludedVerbsCarriesNoTemporaryRow is the guard spec 06
+// §"Closing the parity debt" requires: P3 added the notify-verb exclusion
+// as the ONLY time-limited row this list has ever carried, and P6 pays it
+// back by deleting that row AND leaving this test behind so the
+// next "just until the next phase" exclusion is caught here rather than by
+// somebody's memory. It could not exist before P6: P3 *is* the temporary
+// entry, so this test would have failed on arrival — see this phase's own
+// report for the W1-W3 gap that left open.
+//
+// It reads mcp_parity_test.go's OWN source (this file) rather than
+// mcpExcludedVerbs' runtime value, because a Go map carries no comments at
+// runtime — the marker this test enforces is a documentation convention,
+// and the only place that convention can be checked is the source that
+// carries it.
+func TestMCPExcludedVerbsCarriesNoTemporaryRow(t *testing.T) {
+	t.Parallel()
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate this test's own source file")
+	}
+	raw, err := os.ReadFile(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inMap := false
+	for i, line := range strings.Split(string(raw), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "var mcpExcludedVerbs") {
+			inMap = true
+			continue
+		}
+		if !inMap {
+			continue
+		}
+		if trimmed == "}" {
+			break
+		}
+		if strings.Contains(line, "TEMPORARY") {
+			t.Fatalf("mcp_parity_test.go:%d: mcpExcludedVerbs carries a row marked TEMPORARY — a temporary exclusion guarded only by a comment is a permanent exclusion with a note attached; either remove the row or replace the marker with a permanent design reason:\n%s", i+1, line)
+		}
+	}
 }
 
 // toolAction is one reachable MCP capability: a grouped tool plus one of its
@@ -137,6 +177,17 @@ func (ta toolAction) verb() string {
 		return "whatsnew"
 	case "a2a_work":
 		return "work-" + ta.action
+	case "a2a_notify":
+		// Without this case every a2a_notify action would fall to default
+		// and project to its bare action name — and "verify" would then
+		// silently collide with a2a_exchange's own "verify" action in
+		// checkBijection's verb()-keyed map (the identical failure class
+		// a2a_data's own "verify" case above documents at length; seeded-red
+		// receipt in this phase's report: removing this case does NOT fail
+		// loud, it silently drops notify's true verify capability from
+		// `got` and leaves "notify-verify" unreachable while "verify"
+		// stays claimed by exchange).
+		return "notify-" + ta.action
 	default:
 		// a2a_read view == the read verb; a2a_lifecycle / a2a_exchange
 		// action == the lifecycle/exchange verb.
@@ -173,6 +224,17 @@ func designatedCLIVerbs() []string {
 		if name == "work" {
 			for _, sub := range cli.WorkSubcommands() {
 				out = append(out, "work-"+sub)
+			}
+			continue
+		}
+		if name == "notify" {
+			// space-notify-2026-08 P6: `notify` needs the same two-level
+			// expansion `contract`/`data` already get — cli.NotifySubcommands()
+			// is its own only machine-enumerable home (NotifyCommand.Run
+			// dispatches a bare switch, exactly like ContractCommand.Run and
+			// DataCommand.Run).
+			for _, sub := range cli.NotifySubcommands() {
+				out = append(out, "notify-"+sub.Name)
 			}
 			continue
 		}
@@ -272,6 +334,9 @@ func mcpCapabilityPairs(t *testing.T) []toolAction {
 	}
 	for _, a := range mcp.WorkActions {
 		pairs = append(pairs, toolAction{"a2a_work", a})
+	}
+	for _, a := range mcp.NotifyActions {
+		pairs = append(pairs, toolAction{"a2a_notify", a})
 	}
 	return pairs
 }

@@ -3,6 +3,13 @@
 // file-private helpers (doctor* prefix) — no shared helper, no package var,
 // per this phase's plan Placement decision (avoids collision with P6/P7/P8's
 // parallel verb files in this same package).
+//
+// ONE deliberate exception, added by space-notify-2026-08 P6: the three
+// notify-* checks below call notifyCheckRoutes/notifyCheckSecret/
+// notifyCheckDelivery (cmd_notify_setup.go) rather than re-implementing
+// them, because spec 06 T1 requires `notify verify` to report "the same
+// facts doctor reports" — one function per fact, read by both callers,
+// never two hand-synced copies.
 package cli
 
 import (
@@ -11,6 +18,7 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -79,6 +87,14 @@ type DoctorCommand struct {
 	// `a2a notifications status`; doctor never grows a second platform probe.
 	NotificationStatus func(context.Context, string) (notification.Status, error)
 
+	// notifyAdapter/ghSecretList back the three P6 notify checks (spec 06
+	// doctor table): notify-delivery reads workflow-run conclusions through
+	// the SAME notifySetupAdapter `notify verify` uses (real-defaulted by
+	// NewDoctorCommand); notify-secret shells to `gh secret list` — presence
+	// only, never a value.
+	notifyAdapter *notifySetupAdapter
+	ghSecretList  notifyGHSecretListFunc
+
 	// ParticipantAvatarStatus is wired by cmd/a2a from the avatar cache owner.
 	// The CLI receives policy, not the cache path or on-disk format. The first
 	// result says a validated local image exists; the second says foreground
@@ -123,6 +139,8 @@ func NewDoctorCommand(h host.Host, binaryVersion, projectConfigPath, machineConf
 		lookupGit:         func() error { _, err := exec.LookPath("git"); return err },
 		cachePath:         release.CachePath,
 		skillDir:          skillDefaultDir,
+		notifyAdapter:     newNotifySetupAdapter(http.DefaultClient, notifyGitHubAPIBase()),
+		ghSecretList:      runGHSecretList,
 	}
 }
 
@@ -194,6 +212,9 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		{"statusline wiring", func() (bool, string) { return c.doctorCheckStatuslineWiring() }},
 		{"skill discoverable", func() (bool, string) { return c.doctorCheckSkillDiscoverable() }},
 		{"skill manual current", func() (bool, string) { return c.doctorCheckSkillManualCurrent() }},
+		{"notify-routes", func() (bool, string) { return c.doctorCheckNotifyRoutes(cfg, machine) }},
+		{"notify-secret", func() (bool, string) { return c.doctorCheckNotifySecret(ctx, cfg, machine) }},
+		{"notify-delivery", func() (bool, string) { return c.doctorCheckNotifyDelivery(ctx, cfg, machine) }},
 	}
 
 	allOK := true
@@ -678,6 +699,111 @@ func (c *DoctorCommand) doctorCheckCIPresence(cfg space.ProjectConfig, machine s
 		if _, err := c.readFile(filepath.Join(dir, ".github", "workflows", "a2a-validate.yml")); err != nil {
 			ok = false
 			failures = append(failures, fmt.Sprintf("%s: missing .github/workflows/a2a-validate.yml: %v", ref.ID, err))
+		}
+	}
+	return ok, strings.Join(failures, "; ")
+}
+
+// doctorCheckNotifyRoutes is P6's first notify check (spec 06 doctor
+// table): every route in each connected space's mirrored space.yaml
+// validates and names a known participant. A space with no routes at all
+// is silently green — adopting notifications costs nothing (space-
+// template's own a2a-notify.yml header states the identical philosophy).
+func (c *DoctorCommand) doctorCheckNotifyRoutes(cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
+	if len(cfg.Spaces) == 0 {
+		return true, ""
+	}
+	ok := true
+	var failures []string
+	for _, ref := range cfg.Spaces {
+		dir := c.resolveMirror(c.projectRoot, ref, machine)
+		raw, err := c.readFile(filepath.Join(dir, "space.yaml"))
+		if err != nil {
+			continue // no mirror yet: doctorCheckSpaceAccess already reports this
+		}
+		manifest, err := space.ParseManifest(raw)
+		if err != nil {
+			ok = false
+			failures = append(failures, fmt.Sprintf("%s: cannot parse space.yaml: %v", ref.ID, err))
+			continue
+		}
+		if routesOK, detail := notifyCheckRoutes(manifest); !routesOK {
+			ok = false
+			failures = append(failures, ref.ID+": "+detail)
+		}
+	}
+	return ok, strings.Join(failures, "; ")
+}
+
+// doctorCheckNotifySecret is P6's second notify check: every secret a
+// route names exists on the space repo — presence via `gh secret list`,
+// NEVER the value.
+func (c *DoctorCommand) doctorCheckNotifySecret(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
+	if len(cfg.Spaces) == 0 || c.ghSecretList == nil {
+		return true, ""
+	}
+	ok := true
+	var failures []string
+	for _, ref := range cfg.Spaces {
+		dir := c.resolveMirror(c.projectRoot, ref, machine)
+		raw, err := c.readFile(filepath.Join(dir, "space.yaml"))
+		if err != nil {
+			continue
+		}
+		manifest, err := space.ParseManifest(raw)
+		if err != nil || len(manifest.NotificationRoutes) == 0 {
+			continue
+		}
+		owner, name, err := doctorRepoOwnerName(ref.RepoURL)
+		if err != nil {
+			ok = false
+			failures = append(failures, ref.ID+": cannot resolve repo owner/name: "+err.Error())
+			continue
+		}
+		if secretOK, detail := notifyCheckSecret(ctx, c.ghSecretList, owner+"/"+name, manifest); !secretOK {
+			ok = false
+			failures = append(failures, ref.ID+": "+detail)
+		}
+	}
+	return ok, strings.Join(failures, "; ")
+}
+
+// doctorCheckNotifyDelivery is P6's third notify check: the most recent
+// a2a-notify run on the connected space's default branch concluded green.
+// Uses the SAME space write credential doctorCheckStuckGreenPRs/
+// doctorCheckDefaultBranchHealthy already resolve — a read-only use of it,
+// never a second credential source.
+func (c *DoctorCommand) doctorCheckNotifyDelivery(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
+	if len(cfg.Spaces) == 0 || c.notifyAdapter == nil {
+		return true, ""
+	}
+	ok := true
+	var failures []string
+	for _, ref := range cfg.Spaces {
+		dir := c.resolveMirror(c.projectRoot, ref, machine)
+		raw, err := c.readFile(filepath.Join(dir, "space.yaml"))
+		if err != nil {
+			continue
+		}
+		manifest, err := space.ParseManifest(raw)
+		if err != nil || len(manifest.NotificationRoutes) == 0 {
+			continue // no route configured: nothing to check delivery for
+		}
+		owner, name, err := doctorRepoOwnerName(ref.RepoURL)
+		if err != nil {
+			ok = false
+			failures = append(failures, ref.ID+": cannot resolve repo owner/name: "+err.Error())
+			continue
+		}
+		cred, err := c.doctorResolveSpaceCredential(ctx, ref, machine)
+		if err != nil {
+			ok = false
+			failures = append(failures, ref.ID+": cannot resolve a credential: "+err.Error())
+			continue
+		}
+		if deliveryOK, detail := notifyCheckDelivery(ctx, c.notifyAdapter, cred.Token, owner, name); !deliveryOK {
+			ok = false
+			failures = append(failures, ref.ID+": "+detail)
 		}
 	}
 	return ok, strings.Join(failures, "; ")
