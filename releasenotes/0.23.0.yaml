@@ -431,5 +431,5 @@ changes:
       merely silent.
     affects: ["space.yaml", "a2a space init", "a2a space update", "a2a notify", "a2a doctor", MCP]
     action:
-      scope: optional
-      why: "Existing spaces gain nothing until an operator runs `a2a space update` and then `a2a notify setup`. A space that does neither is unchanged."
+      scope: space
+      why: "Optional per space. Existing spaces gain nothing until an operator runs `a2a space update` and then `a2a notify setup`. A space that does neither is unchanged."
