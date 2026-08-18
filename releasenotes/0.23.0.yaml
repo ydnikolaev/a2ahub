@@ -346,3 +346,47 @@ changes:
     action:
       scope: none
       why: "No action. A space with no notification_routes, or with an empty list, is unaffected; the key is optional and defaults to none."
+
+  - id: RN-02300-11
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: >
+        The routes were declared but nothing read them. This is the verb that
+        turns a push into the messages those routes describe, and the sender
+        that puts them on the wire.
+    impact: normal
+    subject: "`a2a notify` turns a push into chat messages, from the repository alone"
+    detail: >
+      `a2a notify render` reads a space checkout and prints, as JSON, the
+      messages a push would produce: one per configured route per qualifying
+      artifact, carrying the type, who sent it to whom, whose move it is now,
+      priority and deadline, the artifact's own text, and — for a route that
+      names a participant — a copy-paste block that hands the move to an agent.
+
+      It needs no local cache. A CI runner has none, so the facts come from the
+      repository itself, folded through the same machinery every other read
+      surface uses rather than a second implementation that could disagree with
+      it. `--only <id,id>` renders exactly the artifacts you name, however old
+      or settled, which is how a layout gets reviewed on real documents.
+
+      `a2a notify send` reads that array and delivers it. A failed send fails
+      the command: a notification that silently did not fire is the same defect
+      as a check that silently passed. A missing token is refused before
+      anything is sent, naming the variable that is missing; Telegram's own
+      rate limiting is honoured and then, if it persists, reported rather than
+      swallowed.
+
+      Messages render two ways over one set of facts — HTML by default, and
+      Telegram's newer rich blocks per route — so a newer chat capability can
+      never become a second version of what a message says. `--dry-run` prints
+      exactly what would be sent without sending it.
+
+      Anything shaped like a credential is stripped from an artifact's text
+      before it can reach a chat, and the bot token cannot appear in any
+      output: it is held in a type that prints as [redacted], and every error
+      is rebuilt rather than passed through from the transport.
+    affects: ["a2a notify"]
+    action:
+      scope: none
+      why: "No action. The verb is inert without a configured notification route; delivery from CI arrives with the workflow in a later change."
