@@ -206,6 +206,7 @@ covered:
   tool:a2a_exchange: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
   tool:a2a_lifecycle: "loops/receive.md#§8.3 Receive loop — \"something arrived for my system\""
   tool:a2a_new: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  tool:a2a_notify: "notifications.md#`a2a notify setup` — the flow that never sees the token"
   # Partial credit, named rather than hidden (the loop-phases.yaml
   # precedent, §"category- or variant-scoped" cells): a2a_read's own
   # `view=` enum includes `search`, and `cmd:search` is NOT covered below

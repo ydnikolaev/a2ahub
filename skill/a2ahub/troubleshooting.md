@@ -43,12 +43,15 @@ notification components: PASS · notifications not enabled for this project
 statusline wiring: PASS
 skill discoverable: PASS · no a2ahub skill installed
 skill manual current: PASS · no skill installed
+notify-routes: PASS · no notification routes configured for this space
+notify-secret: PASS · no route names a secret, so none is required
+notify-delivery: PASS · no a2a-notify run recorded yet for this space
 repository visibility [getvisa]: PASS: no observed mismatch
 ```
 
-All seventeen fixed checks, in the order the binary prints them, followed by
+All twenty fixed checks, in the order the binary prints them, followed by
 one `repository visibility` row per connected space (this project has one,
-`getvisa`) — that row is not one of the fixed seventeen and always prints
+`getvisa`) — that row is not one of the fixed twenty and always prints
 LAST, after every one of them. **A `PASS` carrying a note is a pass** — do
 not report it as a problem.
 
@@ -68,6 +71,14 @@ Twelve rows can print `PASS · <note>`:
 | `threads intact` | the space holds artifacts written before threads existed, so they carry no `thread:` |
 | `skipped mirror files` | a file in the mirror could not be decoded, so it is missing from every read verb's output |
 | `notification components` | notifications are not enabled, or this build has no notification probe wired |
+| `notify-routes` | a route in `space.yaml` is malformed, or names a participant the manifest does not list |
+| `notify-secret` | a route names a secret the space repo does not hold — presence only; doctor never reads a secret's value |
+| `notify-delivery` | the last `a2a-notify` run on `main` failed, or there has never been one |
+
+The three `notify-*` rows are the SPACE plane — the chat notifications a space's
+own CI sends. `notification components` just above them is the LOCAL plane
+(macOS, VS Code). Two planes, adjacent names; see
+[notifications.md](notifications.md) for which is which.
 
 Six of those rows — `participant avatars`, `space scaffolding current`, both
 `skill` rows, `threads intact` and `skipped mirror files` — can **never** FAIL.
@@ -135,6 +146,9 @@ under a sentence promising output order, while the binary printed it last.
 | **skipped mirror files** | Every `.md` artifact and every event file in each mirror actually decodes, so the read model holds the whole space. | Advisory only — this row never FAILs. A note names each undecodable file and why (`unreadable`, `not-frontmatter-shaped`, `undecodable-yaml`, `no-id`, `unrelativizable-path`). **This is the row to read when a document you know exists does not show up.** A skipped file is missing from `search`, `inbox`, `outbox`, `thread` and `statusline` — `show` still prints it, because that path parses the file itself. Fixable only by whoever owns that file's section, which under diff-authz may not be you. |
 | **notification components** | Every channel enabled for this project has an installed component with a compatible CLI handshake; macOS permission/login-item state is healthy when available. | The companion is absent, version-skewed, permission-denied, awaiting the user's Gatekeeper decision, or its login item is missing. Run `a2a notifications status --probe --json`, then repeat `a2a notifications install --channel <channel>` to repair it. For macOS `approval-required`, the human opens A2A Notifier once and explicitly chooses **System Settings → Privacy & Security → Open Anyway**; never clear quarantine or disable Gatekeeper for them. |
 | **statusline wiring** | The `git` binary is on `PATH` (the prerequisite for §7.5's hub-less statusline-refresh fallback). | `git` is not on `PATH`, so the statusline's git-fetch fallback refresh cannot run. |
+| **notify-routes** | Every `notification_routes[]` entry in the space's `space.yaml` is well-formed and names a participant the manifest actually lists. | A route is malformed, or its `for:` names a system absent from `participants[]`. The space's own PR gate refuses both (POL-021 / REF-022), so this row failing means a route reached `main` before the rule existed, or the manifest changed under it. Fix the route in `space.yaml` through the normal write funnel. |
+| **notify-secret** | Every secret a route names exists on the space repo. **Presence only — doctor never reads a secret's value.** | A route names a secret the repo does not hold, so its messages cannot be sent. Run `a2a notify setup`, or set it directly with `gh secret set <NAME> --repo <space-repo>`. A route with no secret configured is not an error until it has one to lose. |
+| **notify-delivery** | The most recent `a2a-notify` run on `main` concluded green. | The last run failed, or there has never been one. A failed run is the honest state a silent channel would hide — read it with `gh run list --workflow a2a-notify.yml --repo <space-repo>`. "Never run" is normal for a space that has just configured its first route and not yet pushed. |
 | **skill discoverable** | The `a2ahub` skill tree is installed and reachable by your agent harness. | Advisory only — this row never FAILs. It reports whether a skill is installed at all. |
 | **skill manual current** | The installed skill's generated reference matches this binary's own command catalog. | Advisory only — this row never FAILs. A note here means the installed manual describes a different binary version; `a2a skill install` refreshes it. |
 | **repository visibility** | Whether the space repo's GitHub visibility matches what the material inside it is classified as. Visibility is read from the host; classification comes from the artifacts themselves. | **This row never FAILs — it PASSes or reports UNVERIFIED**, because visibility is evidence, never write authority. A **WARN** on a PUBLIC repo means it carries higher-classified material than `public`: that is the one reading to act on, and the fix is the repository's visibility or the material's classification, not this row. On a **private or internal** repo carrying nothing `restricted`, it PASSes as "no observed mismatch". On a private repo that DOES carry `restricted` material it PASSes only when a bilateral proof source is named; otherwise it reports UNVERIFIED with "repository privacy alone does not prove intended pairwise audience" — which is **not a problem to fix**. It says the honest thing: a private repo proves the audience is small, never that it is the specific pair the material was restricted to. An UNVERIFIED reading "visibility could not be verified" means the credential could not read repo metadata (a fine-grained token needs `Repository metadata: read`), so the answer is unknown rather than bad. |

@@ -123,3 +123,47 @@ last month renders exactly as it would have when it was new.
 
 A route naming a secret this version does not declare is refused here, by name,
 rather than discovered as a missing environment variable inside the sender.
+
+## `a2a notify setup` — the flow that never sees the token
+
+`a2a notify setup` walks a human from "no bot" to a proven, delivering route.
+**The agent never asks for the token and never receives it** — the tool reads
+it on the human's own TTY with echo disabled, holds it only in memory, and
+feeds `gh secret set` over stdin. If an agent is driving a non-interactive
+session, run `a2a notify setup --non-interactive`: it refuses to prompt and
+prints the exact one-liner for the human to run themselves. Never ask a human
+to paste a bot token into chat, and never accept one if offered — point them
+at the command instead.
+
+The flow, once the human runs it in a terminal:
+
+1. Prints a four-line BotFather instruction (open @BotFather, `/newbot`, copy
+   the token).
+2. Reads the token on the TTY, checks the caller has **admin** on the space
+   repo (needed for the secret) and separately reports the **`workflow`**
+   token scope (needed only if the same human later runs `a2a space update`) —
+   two distinct facts, never conflated.
+3. Sets `TG_BOT_TOKEN` on the space repo via `gh secret set`, then
+   immediately calls `a2a notify discover` with the same in-memory token so
+   the human sees which chats the bot can already see — no group privacy mode
+   change required, one `getUpdates` call restricted to `my_chat_member`.
+4. Prints the exact `notification_routes` stanza to add to `space.yaml` — a
+   normal, reviewable pull request through the same write funnel every other
+   manifest change uses. This tool never opens that PR itself.
+5. Once the route has merged, re-running `a2a notify setup` triggers the
+   space's `a2a-notify.yml` via `workflow_dispatch`, naming a real artifact id
+   through the `artifacts` input (never the bare dispatch, which would prove
+   nothing — see the runbook), and reports one of three outcomes:
+   `configured` (the run was green **and delivered at least one message**),
+   `unproven` (green, but sent nothing — a green run that sent nothing is
+   never reported as configured), or the run's own conclusion on failure.
+
+`a2a notify discover` and `a2a notify verify` are the read-only halves:
+`discover` lists the chats the bot currently sees; `verify` reports the same
+three facts `a2a doctor` does — route validity, secret presence (never the
+value), and the last `a2a-notify` run's conclusion — as JSON, for a space
+whose route is already live.
+
+Rotation and teardown live in
+[../../docs/runbooks/space-notify.md](../../docs/runbooks/space-notify.md),
+not here — that is an operator runbook, not agent-facing skill prose.
