@@ -329,20 +329,24 @@ func happySpaceInit(ctx context.Context, h *harness) Result {
 				Observed: "required check context not present in the live protection document",
 			}
 		}
+		narrative := fmt.Sprintf("main: space.yaml names %s(owner=%s)+%s(owner=%s), CODEOWNERS roots on %s, protection requires %q",
+			systemAlpha, h.Pre.ProvisionerLogin, systemBravo, h.Pre.ParticipantLogin, h.Pre.ProvisionerLogin, requiredCheckContext)
 		return Result{
 			Scenario: scenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictPass,
-			Detail: fmt.Sprintf("main: space.yaml names %s(owner=%s)+%s(owner=%s), CODEOWNERS roots on %s, protection requires %q",
-				systemAlpha, h.Pre.ProvisionerLogin, systemBravo, h.Pre.ParticipantLogin, h.Pre.ProvisionerLogin, requiredCheckContext),
+			Detail:       narrative,
+			PassEvidence: narrative,
 		}
 	}
 
 	// The carve-out's own branch says WHAT it did not judge, in the Detail
 	// the report renders. A skipped assertion that reads identically to a
 	// judged one is how a carve-out becomes a false green.
+	narrative := fmt.Sprintf("main: space.yaml names %s(owner=%s)+%s(owner=%s), CODEOWNERS roots on %s; protection-armed NOT judged in this tier (provider-only)",
+		systemAlpha, h.Pre.ProvisionerLogin, systemBravo, h.Pre.ParticipantLogin, h.Pre.ProvisionerLogin)
 	return Result{
 		Scenario: scenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictPass,
-		Detail: fmt.Sprintf("main: space.yaml names %s(owner=%s)+%s(owner=%s), CODEOWNERS roots on %s; protection-armed NOT judged in this tier (provider-only)",
-			systemAlpha, h.Pre.ProvisionerLogin, systemBravo, h.Pre.ParticipantLogin, h.Pre.ProvisionerLogin),
+		Detail:       narrative,
+		PassEvidence: narrative,
 	}
 }
 
@@ -383,9 +387,11 @@ func happySubmitGateMerge(ctx context.Context, h *harness, system string, c *che
 			fmt.Sprintf("PR #%d auto-merges with no human once the required check is green", sub.PRNumber))
 	}
 
+	narrative := fmt.Sprintf("%s: PR #%d green + auto-merged, no human", sub.ID, sub.PRNumber)
 	return Result{
 		Scenario: scenario, System: system, Surface: SurfaceCLI, Verdict: VerdictPass,
-		Detail: fmt.Sprintf("%s: PR #%d green + auto-merged, no human", sub.ID, sub.PRNumber),
+		Detail:       narrative,
+		PassEvidence: narrative,
 	}
 }
 
@@ -497,9 +503,11 @@ func happyLifecycleTransitions(ctx context.Context, h *harness, system string, c
 			"the final withdraw PR passes its required check, lands, and leaves main stable for the next scenario")
 	}
 
+	narrative := fmt.Sprintf("%s: publish PR #%d, withdraw PR #%d — distinct", sub.ID, sub.PRNumber, withdrawPR.Number)
 	return Result{
 		Scenario: scenario, System: system, Surface: SurfaceCLI, Verdict: VerdictPass,
-		Detail: fmt.Sprintf("%s: publish PR #%d, withdraw PR #%d — distinct", sub.ID, sub.PRNumber, withdrawPR.Number),
+		Detail:       narrative,
+		PassEvidence: narrative,
 	}
 }
 
@@ -603,10 +611,12 @@ func happyContractLifecycle(ctx context.Context, h *harness, system string, c *c
 			"the final retirement PR passes its required check, lands, and leaves main stable for the next scenario")
 	}
 
+	narrative := fmt.Sprintf("%s: publish PR #%d, deprecate PR #%d, retire PR #%d — all distinct",
+		sub.ID, sub.PRNumber, deprecatePR.Number, retirePR.Number)
 	return Result{
 		Scenario: scenario, System: system, Surface: SurfaceCLI, Verdict: VerdictPass,
-		Detail: fmt.Sprintf("%s: publish PR #%d, deprecate PR #%d, retire PR #%d — all distinct",
-			sub.ID, sub.PRNumber, deprecatePR.Number, retirePR.Number),
+		Detail:       narrative,
+		PassEvidence: narrative,
 	}
 }
 
@@ -687,9 +697,11 @@ func happyCrossSystemVisibility(ctx context.Context, h *harness, system string, 
 		}
 	}
 
+	narrative := fmt.Sprintf("%s merged (PR #%d) by %s, observed in the peer's inbox after sync", sub.ID, sub.PRNumber, author.System)
 	return Result{
 		Scenario: scenario, System: system, Surface: SurfaceCLI, Verdict: VerdictPass,
-		Detail: fmt.Sprintf("%s merged (PR #%d) by %s, observed in the peer's inbox after sync", sub.ID, sub.PRNumber, author.System),
+		Detail:       narrative,
+		PassEvidence: narrative,
 	}
 }
 
@@ -738,9 +750,11 @@ func happyValidateCIBothModes(ctx context.Context, h *harness) Result {
 		}
 	}
 
+	narrative := fmt.Sprintf("v3-pr against PR #%d's own diff, then v3-full-repo against the synced mirror — both exit 0", sub.PRNumber)
 	return Result{
 		Scenario: scenario, System: system, Surface: SurfaceCLI, Verdict: VerdictPass,
-		Detail: fmt.Sprintf("v3-pr against PR #%d's own diff, then v3-full-repo against the synced mirror — both exit 0", sub.PRNumber),
+		Detail:       narrative,
+		PassEvidence: narrative,
 	}
 }
 
@@ -783,8 +797,10 @@ func happyCheckstatusCompoundContext(ctx context.Context, h *harness) Result {
 		}
 	}
 
+	narrative := fmt.Sprintf("host.CheckStatus resolved Name=%q on PR #%d — the live P34 evidence, settling spec 34 §6's spacing question", res.Name, sub.PRNumber)
 	return Result{
 		Scenario: scenario, System: system, Surface: SurfaceCLI, Verdict: VerdictPass,
-		Detail: fmt.Sprintf("host.CheckStatus resolved Name=%q on PR #%d — the live P34 evidence, settling spec 34 §6's spacing question", res.Name, sub.PRNumber),
+		Detail:       narrative,
+		PassEvidence: narrative,
 	}
 }

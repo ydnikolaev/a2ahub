@@ -455,10 +455,12 @@ func rwRollingWindow(ctx context.Context, h *harness) Result {
 		return rwResultFromErr("contract-still-operable-land-sync", err, "2.1.0 lands on main")
 	}
 
+	narrative := fmt.Sprintf(
+		"%s: 1.0.0 (PR #%d) -> 1.1.0 (PR #%d) -> 2.0.0 (PR #%d) -> deprecate 1.1.0 (PR #%d, %s) while 2.0.0 live, contract still reads published -> B adopts LATE and still sees the deprecation -> maintenance 1.2.0 baselined on 1.1.0 (PR #%d) -> B acks (PR #%d) -> retire 1.1.0 while 1.2.0+2.0.0 published (PR #%d) -> contract still operable, 2.1.0 lands (PR #%d)",
+		sub.ID, v100PR, v110PR, v200PR, deprecatePR.Number, announcementID, v120PR, ackPR.Number, retirePR.Number, stillOperablePR.Number)
 	return Result{
 		Scenario: rwScenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictPass,
-		Detail: fmt.Sprintf(
-			"%s: 1.0.0 (PR #%d) -> 1.1.0 (PR #%d) -> 2.0.0 (PR #%d) -> deprecate 1.1.0 (PR #%d, %s) while 2.0.0 live, contract still reads published -> B adopts LATE and still sees the deprecation -> maintenance 1.2.0 baselined on 1.1.0 (PR #%d) -> B acks (PR #%d) -> retire 1.1.0 while 1.2.0+2.0.0 published (PR #%d) -> contract still operable, 2.1.0 lands (PR #%d)",
-			sub.ID, v100PR, v110PR, v200PR, deprecatePR.Number, announcementID, v120PR, ackPR.Number, retirePR.Number, stillOperablePR.Number),
+		Detail:       narrative,
+		PassEvidence: narrative,
 	}
 }

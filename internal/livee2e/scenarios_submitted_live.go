@@ -285,10 +285,12 @@ func subfamExchangeLifecycle(ctx context.Context, h *harness, kind, scenario str
 		return subfamFail(scenario, "terminal-state-read", state, "the "+kind+" reaches the terminal `closed` state", state)
 	}
 
+	narrative := fmt.Sprintf("%s: submit PR #%d, ack PR #%d, respond PR #%d, close PR #%d — folded state %q",
+		sub.ID, sub.PRNumber, ackPR.Number, respondPR.Number, closePR.Number, state)
 	return Result{
 		Scenario: scenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictPass,
-		Detail: fmt.Sprintf("%s: submit PR #%d, ack PR #%d, respond PR #%d, close PR #%d — folded state %q",
-			sub.ID, sub.PRNumber, ackPR.Number, respondPR.Number, closePR.Number, state),
+		Detail:       narrative,
+		PassEvidence: narrative,
 	}
 }
 
@@ -365,10 +367,12 @@ func subfamHandoffLifecycle(ctx context.Context, h *harness) Result {
 			"the handoff reaches the terminal `accepted` state (handoffRows carries no transition out of accepted)", state)
 	}
 
+	narrative := fmt.Sprintf("%s: submit PR #%d, ack PR #%d, verify-pass PR #%d — folded state %q",
+		sub.ID, sub.PRNumber, ackPR.Number, verifyPassPR.Number, state)
 	return Result{
 		Scenario: scenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictPass,
-		Detail: fmt.Sprintf("%s: submit PR #%d, ack PR #%d, verify-pass PR #%d — folded state %q",
-			sub.ID, sub.PRNumber, ackPR.Number, verifyPassPR.Number, state),
+		Detail:       narrative,
+		PassEvidence: narrative,
 	}
 }
 
@@ -579,9 +583,11 @@ func subfamResponseLifecycle(ctx context.Context, h *harness) Result {
 		parentState = "unread: " + parentErr.Error()
 	}
 
+	narrative := fmt.Sprintf("%s (parent %s): ack PR #%d, respond PR #%d, note PR #%d, verify PR #%d — response state %q, parent state %q (D-024 bonus, unasserted)",
+		responseID, parent.ID, ackPR.Number, respondPR.Number, notePR.Number, verifyPR.Number, responseState, parentState)
 	return Result{
 		Scenario: scenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictPass,
-		Detail: fmt.Sprintf("%s (parent %s): ack PR #%d, respond PR #%d, note PR #%d, verify PR #%d — response state %q, parent state %q (D-024 bonus, unasserted)",
-			responseID, parent.ID, ackPR.Number, respondPR.Number, notePR.Number, verifyPR.Number, responseState, parentState),
+		Detail:       narrative,
+		PassEvidence: narrative,
 	}
 }

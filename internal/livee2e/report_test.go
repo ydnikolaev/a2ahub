@@ -3,6 +3,10 @@ package livee2e
 import (
 	"errors"
 	"flag"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -491,4 +495,141 @@ func TestRenderStaysQuietForAnOrdinaryPass(t *testing.T) {
 	if strings.Contains(out, "evidence:") {
 		t.Errorf("an ordinary pass printed an evidence line: %s", out)
 	}
+}
+
+// TestNoPassingResultLiteralCarriesAnUnreadableDetail is the structural half
+// of the fix for the class where a scenario builds a VerdictPass Result whose
+// narrative lives in Detail — a field Render (this file) never inspects on a
+// passing row (the `continue` right after the PassEvidence check). A row like
+// that renders nothing under EITHER outcome: the failing branch for the same
+// scenario is built by a different Result literal (the family's own
+// `...ResultFromErr` helper), so the pass-branch Detail is unreachable no
+// matter which way the row goes.
+//
+// This walks every non-test .go source file in this package directory —
+// parsed as text via go/parser, so it sees scenario files even though they
+// sit behind `//go:build livee2e` and this test file does not carry that tag
+// — and fails if any `Result{...}` composite literal sets Verdict to the bare
+// identifier VerdictPass and a non-empty Detail without also setting
+// PassEvidence. TestRenderPrintsEvidenceForAClaimingPass/
+// TestRenderStaysQuietForAnOrdinaryPass already prove Render's OWN behavior
+// (drop Detail, print PassEvidence) for a hand-built Result; this test is the
+// one that reds when a NEW scenario call site reintroduces the authoring
+// mistake, which a Render-only test cannot see since it never inspects
+// scenario source.
+//
+// A `[]Result{a, {...}}` slice literal elides the element type on its inner
+// literals, so an inner Result literal's own ast.CompositeLit.Type is nil —
+// checkResultLitElided below is how scenarios_mcp_live.go's own
+// `return []Result{submitResult, {Verdict: VerdictPass, Detail: ...}}` shape
+// (an untyped element inside a typed slice literal) still gets inspected
+// rather than silently passed over because it carries no direct "Result"
+// identifier of its own.
+//
+// Known blind spots, named rather than silently claimed: a Result built by
+// mutating fields after construction (`res.Verdict = VerdictPass` followed by
+// `res.Detail = ...` on separate lines) is invisible to a composite-literal
+// walk, and a Result assembled through a shared multi-verdict helper (verdict
+// passed as a parameter, not the literal identifier VerdictPass) is invisible
+// too, because neither shape puts the identifier VerdictPass inside the
+// struct literal this test inspects. Both shapes exist in this package.
+// scenarios_boundary_live.go's own boundaryResult was one (fixed by having
+// the helper set both Detail and PassEvidence unconditionally, closing the
+// indirection at its one source rather than at each of its seven call
+// sites), and scenarios_mcp_live.go had a bare field-mutation instance (fixed
+// directly). This test cannot re-detect either shape if it recurs elsewhere
+// in the package — that gap is reported, not hidden.
+func TestNoPassingResultLiteralCarriesAnUnreadableDetail(t *testing.T) {
+	t.Parallel()
+
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("ReadDir(.): %v", err)
+	}
+
+	var violations []string
+	fset := token.NewFileSet()
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, perr := parser.ParseFile(fset, name, nil, 0)
+		if perr != nil {
+			t.Fatalf("parse %s: %v", name, perr)
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			lit, ok := n.(*ast.CompositeLit)
+			if !ok {
+				return true
+			}
+			if ident, ok := lit.Type.(*ast.Ident); ok && ident.Name == "Result" {
+				checkResultLit(lit, fset, &violations)
+				return true
+			}
+			// []Result{...}: each unkeyed, untyped element literal is itself
+			// an implicit Result — the elision go/ast represents as Type ==
+			// nil rather than as a repeated "Result" identifier.
+			arr, ok := lit.Type.(*ast.ArrayType)
+			if !ok {
+				return true
+			}
+			elt, ok := arr.Elt.(*ast.Ident)
+			if !ok || elt.Name != "Result" {
+				return true
+			}
+			for _, e := range lit.Elts {
+				if inner, ok := e.(*ast.CompositeLit); ok && inner.Type == nil {
+					checkResultLit(inner, fset, &violations)
+				}
+			}
+			return true
+		})
+	}
+
+	if len(violations) > 0 {
+		t.Errorf("passing Result literal(s) carry a Detail that Render will never print for a pass "+
+			"(add PassEvidence naming the same claim, or drop Detail if it says nothing a reader needs): %s",
+			strings.Join(violations, ", "))
+	}
+}
+
+// checkResultLit inspects one Result composite literal's fields and appends a
+// "file:line" violation string if it is a VerdictPass row carrying a
+// non-empty Detail with no PassEvidence.
+func checkResultLit(lit *ast.CompositeLit, fset *token.FileSet, violations *[]string) {
+	var isPass, hasDetail, hasPassEvidence bool
+	for _, elt := range lit.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		key, ok := kv.Key.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		switch key.Name {
+		case "Verdict":
+			if v, ok := kv.Value.(*ast.Ident); ok && v.Name == "VerdictPass" {
+				isPass = true
+			}
+		case "Detail":
+			if !isEmptyStringLit(kv.Value) {
+				hasDetail = true
+			}
+		case "PassEvidence":
+			hasPassEvidence = true
+		}
+	}
+	if isPass && hasDetail && !hasPassEvidence {
+		pos := fset.Position(lit.Pos())
+		*violations = append(*violations, fmt.Sprintf("%s:%d", pos.Filename, pos.Line))
+	}
+}
+
+// isEmptyStringLit reports whether expr is the literal "" — a Detail field
+// explicitly set to nothing is not the bug this gate exists to catch.
+func isEmptyStringLit(expr ast.Expr) bool {
+	lit, ok := expr.(*ast.BasicLit)
+	return ok && lit.Kind == token.STRING && lit.Value == `""`
 }

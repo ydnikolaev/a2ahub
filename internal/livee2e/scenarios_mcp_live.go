@@ -56,9 +56,11 @@ func mcpSubmitAndVisibility(ctx context.Context, h *harness, system string, auth
 	if _, err := happyAwaitMerged(ctx, h, pr); err != nil {
 		return []Result{mcpFail(submitScenario, system, "PR auto-merges", err), mcpFail(visibilityScenario, system, "MCP-authored write lands", err)}
 	}
+	submitNarrative := fmt.Sprintf("%s: JSON-RPC initialize + a2a_new + a2a_submit, PR #%d green and merged", write.IDs[0], pr)
 	submitResult := Result{
 		Scenario: submitScenario, System: system, Surface: SurfaceMCP, Verdict: VerdictPass,
-		Detail: fmt.Sprintf("%s: JSON-RPC initialize + a2a_new + a2a_submit, PR #%d green and merged", write.IDs[0], pr),
+		Detail:       submitNarrative,
+		PassEvidence: submitNarrative,
 	}
 
 	observerSession, err := startMCPSession(ctx, observer)
@@ -80,9 +82,11 @@ func mcpSubmitAndVisibility(ctx context.Context, h *harness, system string, auth
 			Expected: "observer MCP inbox contains " + write.IDs[0], Observed: evidence,
 		}}
 	}
+	visibilityNarrative := fmt.Sprintf("%s authored through MCP by %s and observed through MCP by %s", write.IDs[0], author.System, observer.System)
 	return []Result{submitResult, {
 		Scenario: visibilityScenario, System: system, Surface: SurfaceMCP, Verdict: VerdictPass,
-		Detail: fmt.Sprintf("%s authored through MCP by %s and observed through MCP by %s", write.IDs[0], author.System, observer.System),
+		Detail:       visibilityNarrative,
+		PassEvidence: visibilityNarrative,
 	}}
 }
 
@@ -125,8 +129,9 @@ func mcpLifecycle(ctx context.Context, h *harness, system string, c *checkout) R
 	if err := happyLandAndSync(ctx, h, c, withdrawPR); err != nil {
 		return mcpFail(scenario, system, "MCP withdraw lands with a green required check", err)
 	}
+	narrative := fmt.Sprintf("%s: publish PR #%d, withdraw PR #%d via JSON-RPC", publish.IDs[0], publishPR, withdrawPR)
 	return Result{Scenario: scenario, System: system, Surface: SurfaceMCP, Verdict: VerdictPass,
-		Detail: fmt.Sprintf("%s: publish PR #%d, withdraw PR #%d via JSON-RPC", publish.IDs[0], publishPR, withdrawPR)}
+		Detail: narrative, PassEvidence: narrative}
 }
 
 func mcpContractLifecycle(ctx context.Context, h *harness, system string, c *checkout) Result {
@@ -184,8 +189,9 @@ func mcpContractLifecycle(ctx context.Context, h *harness, system string, c *che
 	if err := happyLandAndSync(ctx, h, c, retirePR); err != nil {
 		return mcpFail(scenario, system, "MCP retirement lands with a green required check", err)
 	}
+	narrative := fmt.Sprintf("%s: publish #%d, deprecate #%d, retire #%d via JSON-RPC", id, publishPR, deprecatePR, retirePR)
 	return Result{Scenario: scenario, System: system, Surface: SurfaceMCP, Verdict: VerdictPass,
-		Detail: fmt.Sprintf("%s: publish #%d, deprecate #%d, retire #%d via JSON-RPC", id, publishPR, deprecatePR, retirePR)}
+		Detail: narrative, PassEvidence: narrative}
 }
 
 func mcpOutOfSectionRefused(ctx context.Context, h *harness) Result {
@@ -228,8 +234,10 @@ func mcpOutOfSectionRefused(ctx context.Context, h *harness) Result {
 	case len(newBranches) > 0 || len(newPulls) > 0:
 		res.Verdict, res.Expected, res.Observed = VerdictFail, "refusal creates no remote state", fmt.Sprintf("branches=%v pulls=%v", newBranches, newPulls)
 	default:
+		refusalNarrative := fmt.Sprintf("%s refused with JSON-RPC result.isError=true and CC-002; no branch/PR", id)
 		res.Verdict = VerdictPass
-		res.Detail = fmt.Sprintf("%s refused with JSON-RPC result.isError=true and CC-002; no branch/PR", id)
+		res.Detail = refusalNarrative
+		res.PassEvidence = refusalNarrative
 	}
 	return res
 }

@@ -198,10 +198,12 @@ func illegalfamRefusalStep(ctx context.Context, h *harness, scenario string, c *
 		totalAfterN = len(totalAfter)
 	}
 
+	narrative := fmt.Sprintf("`%s` (acted as %s) refused citing %s; PR count on %s stayed %d (asserted); run-wide total %d -> %d (recorded evidence, not asserted — see illegalfamRefusalStep's own doc comment)",
+		cmdText, c.System, wantCode, branch, branchBefore, len(totalBefore), totalAfterN)
 	return Result{
 		Scenario: scenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictPass,
-		Detail: fmt.Sprintf("`%s` (acted as %s) refused citing %s; PR count on %s stayed %d (asserted); run-wide total %d -> %d (recorded evidence, not asserted — see illegalfamRefusalStep's own doc comment)",
-			cmdText, c.System, wantCode, branch, branchBefore, len(totalBefore), totalAfterN),
+		Detail:       narrative,
+		PassEvidence: narrative,
 	}
 }
 

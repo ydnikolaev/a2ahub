@@ -234,11 +234,13 @@ func layer3FiveXXInjected(ctx context.Context, h *harness) Result {
 			"the retry's own stdout says `already submitted`, naming the PR the injected 5xx had withheld", retryStdout)
 	}
 
+	narrative := fmt.Sprintf("%s: injected %d on PR #%d's OpenPR call (proxy %s); the branch and PR landed for real anyway (spec 36 §T6-d); a plain retry (no proxy) found it via the funnel's own idempotent-retry path and reported %q — deliberately left OPEN, not merged, by this row (see this function's own doc comment on why a merge-timing race is not this row's claim)",
+		id, http.StatusGatewayTimeout, pr.Number, proxy.URL(), strings.TrimSpace(retryStdout))
 	return Result{
 		Scenario: layer3FiveXXInjectedScenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictPass,
 		EvidenceClass: EvidenceClassInjectedFault,
-		Detail: fmt.Sprintf("%s: injected %d on PR #%d's OpenPR call (proxy %s); the branch and PR landed for real anyway (spec 36 §T6-d); a plain retry (no proxy) found it via the funnel's own idempotent-retry path and reported %q — deliberately left OPEN, not merged, by this row (see this function's own doc comment on why a merge-timing race is not this row's claim)",
-			id, http.StatusGatewayTimeout, pr.Number, proxy.URL(), strings.TrimSpace(retryStdout)),
+		Detail:        narrative,
+		PassEvidence:  narrative,
 	}
 }
 
@@ -303,10 +305,12 @@ func layer3InterruptedSubmitRetried(ctx context.Context, h *harness) Result {
 			"exactly ONE PR exists on "+sub.Branch+" after the retry — the funnel's step 0 (FindPRByHeadBranch) short-circuits before ever pushing or opening a second PR", "")
 	}
 
+	narrative := fmt.Sprintf("%s: PR #%d — %d PR on %s before the retry, %d after; retry's own stdout: %q (left OPEN on purpose — merging is orthogonal to this row's own claim)",
+		sub.ID, sub.PRNumber, beforeCount, sub.Branch, afterCount, strings.TrimSpace(retryStdout))
 	return Result{
 		Scenario: scenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictPass,
-		Detail: fmt.Sprintf("%s: PR #%d — %d PR on %s before the retry, %d after; retry's own stdout: %q (left OPEN on purpose — merging is orthogonal to this row's own claim)",
-			sub.ID, sub.PRNumber, beforeCount, sub.Branch, afterCount, strings.TrimSpace(retryStdout)),
+		Detail:       narrative,
+		PassEvidence: narrative,
 	}
 }
 
@@ -434,9 +438,11 @@ func layer3ConcurrentWrites(ctx context.Context, h *harness) Result {
 		}
 	}
 
+	narrative := fmt.Sprintf("A: %s (PR #%d, title %q); B: %s (PR #%d, title %q) — both landed, both present with correct content on BOTH checkouts after sync",
+		subA.ID, subA.PRNumber, titleA, subB.ID, subB.PRNumber, titleB)
 	return Result{
 		Scenario: scenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictPass,
-		Detail: fmt.Sprintf("A: %s (PR #%d, title %q); B: %s (PR #%d, title %q) — both landed, both present with correct content on BOTH checkouts after sync",
-			subA.ID, subA.PRNumber, titleA, subB.ID, subB.PRNumber, titleB),
+		Detail:       narrative,
+		PassEvidence: narrative,
 	}
 }

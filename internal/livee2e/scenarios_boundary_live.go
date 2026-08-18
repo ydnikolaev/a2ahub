@@ -78,10 +78,22 @@ const boundaryMergeableStatePollInterval = 3 * time.Second
 
 // boundaryResult builds one row for this family. Surface is always
 // SurfaceCLI for this wave (spec 36 §10's cliOnly() amendment).
+//
+// detail is set into BOTH Detail and PassEvidence rather than routed by
+// verdict: this helper serves every verdict this family reports, and Render
+// (report.go) already picks the right one to print by verdict — Detail on a
+// non-pass row, PassEvidence on a pass. Seven of this family's own call
+// sites pass a VerdictPass row a claim-bearing detail (a PR number, a
+// conclusion sequence) that used to land only in Detail, which Render never
+// inspects on a passing row — the row rendered nothing under either outcome.
+// Setting both costs nothing on a non-pass row (PassEvidence there is simply
+// never read) and mirrors scenarios_space_live.go's own `res` closure, the
+// same shared-helper shape.
 func boundaryResult(scenario, system string, verdict Verdict, expected, observed, detail string) Result {
 	return Result{
 		Scenario: scenario, System: system, Surface: SurfaceCLI,
-		Verdict: verdict, Expected: expected, Observed: observed, Detail: detail,
+		Verdict: verdict, Expected: expected, Observed: observed,
+		Detail: detail, PassEvidence: detail,
 	}
 }
 

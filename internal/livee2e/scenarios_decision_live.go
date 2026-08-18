@@ -185,9 +185,11 @@ func draftfamDecisionLifecycle(ctx context.Context, h *harness) Result {
 			"the decision reaches the terminal `approved` state once BOTH required_approvers have approved (quorum)", state)
 	}
 
+	narrative := fmt.Sprintf("%s: propose PR #%d, B-approve PR #%d, A-approve PR #%d — folded state %q",
+		sub.ID, sub.PRNumber, bApprovePR.Number, aApprovePR.Number, state)
 	return Result{
 		Scenario: scenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictPass,
-		Detail: fmt.Sprintf("%s: propose PR #%d, B-approve PR #%d, A-approve PR #%d — folded state %q",
-			sub.ID, sub.PRNumber, bApprovePR.Number, aApprovePR.Number, state),
+		Detail:       narrative,
+		PassEvidence: narrative,
 	}
 }
