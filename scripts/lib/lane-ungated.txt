@@ -104,6 +104,17 @@ docs/the-plan/conformance-*.md
 # readers belongs there, under the gates that judge published pages.
 docs/presentations/**
 
+# Vision prose — landscape reads and where-do-we-go-next arguments about
+# systems OUTSIDE this repository (other agent runtimes, plugin
+# marketplaces, registries). No gate can judge them: the load-bearing claims
+# are about third-party manifests and submission processes, which no local
+# check can reach and which go stale on their owners' schedule, not ours.
+# Each row therefore carries its own source URL and verification date inline,
+# the SourceURL/VerifiedOn idiom internal/surface/registry.go already uses.
+# The day a vision doc's claim becomes a COMMITMENT it stops being this
+# class: it becomes a spec under docs/features/**, which is gated.
+docs/vision/**
+
 # Operator prose. publish-to-public.sh is the exception, claimed by
 # harness-teeth, because it carries its own --teeth self-test.
 docs/runbooks/**
