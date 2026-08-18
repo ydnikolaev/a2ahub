@@ -14,7 +14,16 @@ import (
 func TestFullShippedLegacyCorpusMatchesDigestTreeFS(t *testing.T) {
 	t.Parallel()
 
-	const wantLegacyCorpusFiles = 69 // Every shipped envelope/event/manifest/consumes v1 schema + fixture file.
+	// Every shipped envelope/event/manifest/consumes v1 schema + fixture file.
+	//
+	// 69 -> 73 on 2026-08-18: `manifest/v1/fixtures/invalid/` gained two
+	// POLICY-class fixtures and their sidecars (space-route-unresolved-participant
+	// -> REF-022, space-route-unknown-field -> POL-021), so the corpus a
+	// contract carries grew for a reason that has nothing to do with contracts.
+	// That is the pin working: it counts what ships, not what any one consumer
+	// meant to change, and a fixture added for the validator's benefit is still
+	// bytes a published contract tree has to account for.
+	const wantLegacyCorpusFiles = 73
 	schemasRoot := filepath.Join("..", "..", "schemas")
 	digestRoot := t.TempDir()
 	var candidates []CandidateFile
