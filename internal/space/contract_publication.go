@@ -804,7 +804,7 @@ func (s *ContractPublicationService) Publish(ctx context.Context, request Contra
 	}
 	mutations = append(mutations, Mutation{Path: event.Path, Operation: MutationWrite, Bytes: append([]byte(nil), event.Content...)})
 
-	submit, preparation, runtime, err := bindContractPublicationSubmission(request, plan, planning, mutations, eventID)
+	submit, preparation, runtime, err := bindContractPublicationSubmission(request, plan, planning, mutations, eventID, s.funnel.binaryVersion)
 	if err != nil {
 		return ContractPublicationResult{}, err
 	}
@@ -1203,7 +1203,7 @@ func publicationEventProducerVersion(raw []byte) (string, bool) {
 	return event.ProducedBy.Version, err == nil && canonical == event.ProducedBy.Version
 }
 
-func bindContractPublicationSubmission(request ContractPublicationRequest, plan contract.PublicationPlan, planning ContractPublicationPlanningContext, mutations []Mutation, eventID string) (SubmitRequest, PreparationContext, SubmissionRuntime, error) {
+func bindContractPublicationSubmission(request ContractPublicationRequest, plan contract.PublicationPlan, planning ContractPublicationPlanningContext, mutations []Mutation, eventID string, binaryVersion string) (SubmitRequest, PreparationContext, SubmissionRuntime, error) {
 	submit := request.SubmitTemplate
 	if len(submit.Files) != 0 || len(submit.Mutations) != 0 || len(submit.ArtifactIDs) != 0 || submit.OperationKey != "" ||
 		submit.ExpectedBaseSHA != "" ||
@@ -1237,7 +1237,13 @@ func bindContractPublicationSubmission(request ContractPublicationRequest, plan 
 	targetIdentity := repositoryIdentity(submit.Repo)
 	recovery := &RecoveryV1{
 		CandidateIntentDigest: plan.CandidateIntentDigest, IntentKey: plan.IntentKey,
-		PlanDigest: plan.PlanDigest, Target: plan.Contract + "@" + plan.TargetVersion,
+		// MintedByVersion records the RUNNING binary at mint time. It is set
+		// here, not in WriteFunnel.PrepareSubmission's own later finalization
+		// pass (prepared.go), because that pass only overwrites the specific
+		// fields it lists — every other field set here, including this one,
+		// survives unchanged into the frozen record.
+		MintedByVersion: binaryVersion,
+		PlanDigest:      plan.PlanDigest, Target: plan.Contract + "@" + plan.TargetVersion,
 		VersionSelector: plan.VersionSelector,
 	}
 	preparation := PreparationContext{

@@ -393,7 +393,7 @@ func TestContractPublicationSubmissionRequiresUnchangedObservedWriteFloor(t *tes
 				},
 			}
 			submit, preparation, runtime, err := bindContractPublicationSubmission(
-				request, plan, planning, nil, "XE-01K1A2B3C4D5E6F7G8H9J0K1M7",
+				request, plan, planning, nil, "XE-01K1A2B3C4D5E6F7G8H9J0K1M7", "0.19.0",
 			)
 			if test.wantErr != nil {
 				if !errors.Is(err, test.wantErr) {
@@ -406,6 +406,57 @@ func TestContractPublicationSubmissionRequiresUnchangedObservedWriteFloor(t *tes
 				t.Fatalf("submit=%+v preparation=%+v runtime=%+v err=%v", submit, preparation, runtime, err)
 			}
 		})
+	}
+}
+
+// TestContractPublicationBindsMintedByVersionFromTheRunningBinary proves the
+// seam this work adds: bindContractPublicationSubmission stamps the
+// RecoveryV1 record it mints with the RUNNING binary's own version, passed
+// in as its own trailing parameter (mirroring NewWriteFunnel's own
+// binaryVersion parameter) rather than read from the space's
+// min_binary_version floor.
+func TestContractPublicationBindsMintedByVersionFromTheRunningBinary(t *testing.T) {
+	t.Parallel()
+
+	_, source := publicationDeclaredCandidate(nil, false)
+	record := publicationRecoveryRecord(
+		"sha256:"+strings.Repeat("b", 64),
+		"op-v1-"+strings.Repeat("c", 64),
+		"op-v1-"+strings.Repeat("d", 64),
+		"explicit:1.0.0",
+		"1.0.0",
+	)
+	plan := publicationRecoveryPlan(record, source)
+	planning := publicationPlanningContext(strings.Repeat("a", 40), "0.19.0")
+	request := ContractPublicationRequest{
+		System: "atlas", ContractID: "XC-atlas-demo", ProducerCompatibility: "0.19.0",
+		SubmitTemplate: SubmitRequest{
+			RepoDir: "/bounded/repo", RemoteURL: "https://example.test/acme/getvisa.git",
+			Repo: host.Repo{Owner: "acme", Name: "getvisa"}, PRBody: "Publish exact contract",
+			MinBinaryVersion: "0.19.0",
+		},
+	}
+
+	_, preparation, _, err := bindContractPublicationSubmission(
+		request, plan, planning, nil, "XE-01K1A2B3C4D5E6F7G8H9J0K1M7", "0.27.4",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preparation.Recovery == nil || preparation.Recovery.MintedByVersion != "0.27.4" {
+		t.Fatalf("preparation.Recovery = %+v, want MintedByVersion = %q", preparation.Recovery, "0.27.4")
+	}
+	// A different running binary version must bind a different stamp: this
+	// is what proves the value is genuinely threaded through, not a
+	// coincidental constant.
+	_, preparationOther, _, err := bindContractPublicationSubmission(
+		request, plan, planning, nil, "XE-01K1A2B3C4D5E6F7G8H9J0K1M7", "0.19.0",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preparationOther.Recovery == nil || preparationOther.Recovery.MintedByVersion != "0.19.0" {
+		t.Fatalf("preparationOther.Recovery = %+v, want MintedByVersion = %q", preparationOther.Recovery, "0.19.0")
 	}
 }
 

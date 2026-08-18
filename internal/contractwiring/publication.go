@@ -121,7 +121,7 @@ func NewPublicationService(deps PublicationDependencies) (*space.ContractPublica
 		validateSubmitFiles: deps.ValidateSubmitFiles,
 	}
 	funnel := space.NewWriteFunnel(deps.Host, validator, deps.Binary)
-	recovery, err := space.NewContractPublicationRecovery(deps.Host, deps.MirrorDir, deps.RemoteURL, deps.Repository, deps.Credential, space.ContractPublicationRecoveryValidation{
+	recovery, err := space.NewContractPublicationRecovery(deps.Host, deps.MirrorDir, deps.RemoteURL, deps.Repository, deps.Credential, deps.Binary, space.ContractPublicationRecoveryValidation{
 		ManifestValidator: deps.ManifestValidator,
 		HistoryValidator:  deps.HistoryValidator,
 		Compatibility:     deps.Compatibility,

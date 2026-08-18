@@ -45,6 +45,14 @@ type ContractPublicationRecovery struct {
 	manifestValidator ManifestValidator
 	historyValidator  ContractHistoryDocumentValidator
 	checker           contract.CompatibilityChecker
+	// binaryVersion is the RUNNING binary's own version — the same value
+	// space.NewWriteFunnel receives at the cmd/a2a seam (funnelBinaryVersion
+	// there, threaded here via internal/contractwiring's PublicationDependencies.
+	// Binary). It is what a recomputed publication plan is compared against a
+	// recovered head's own RecoveryV1.MintedByVersion with, so a verifier can
+	// tell "this head was minted by a different binary" apart from "this head
+	// is tampered".
+	binaryVersion string
 
 	mu       sync.Mutex
 	verified map[string]verifiedContractPublicationHead
@@ -58,15 +66,25 @@ type ContractPublicationRecoveryValidation struct {
 }
 
 // NewContractPublicationRecovery is part of the public package API.
-func NewContractPublicationRecovery(h contractPublicationRecoveryHost, repoDir, remoteURL string, repository host.Repo, credential host.Credential, validation ContractPublicationRecoveryValidation) (*ContractPublicationRecovery, error) {
+//
+// binaryVersion is the RUNNING binary's own version, mirroring
+// NewWriteFunnel(host, validator, binaryVersion)'s trailing positional
+// parameter — a plain non-empty value is required, but (unlike a manifest's
+// min_binary_version) it is NOT required to be canonical semver, because a
+// non-release binary can carry a non-semver stamp such as "dev" (see
+// cmd/a2a's own `version` default) and that is a legitimate running binary,
+// not an invalid one.
+func NewContractPublicationRecovery(h contractPublicationRecoveryHost, repoDir, remoteURL string, repository host.Repo, credential host.Credential, binaryVersion string, validation ContractPublicationRecoveryValidation) (*ContractPublicationRecovery, error) {
 	if h == nil || strings.TrimSpace(repoDir) == "" || strings.TrimSpace(remoteURL) == "" || repository.Owner == "" || repository.Name == "" ||
+		strings.TrimSpace(binaryVersion) == "" ||
 		validation.ManifestValidator == nil || validation.HistoryValidator == nil || validation.Compatibility == nil {
-		return nil, fmt.Errorf("%w: recovery host, repository and remote are required", ErrContractPublicationInvalid)
+		return nil, fmt.Errorf("%w: recovery host, repository, remote and binary version are required", ErrContractPublicationInvalid)
 	}
 	return &ContractPublicationRecovery{
 		host: h, repoDir: repoDir, remoteURL: remoteURL, repository: repository, credential: credential,
 		manifestValidator: validation.ManifestValidator, historyValidator: validation.HistoryValidator, checker: validation.Compatibility,
-		verified: make(map[string]verifiedContractPublicationHead),
+		binaryVersion: binaryVersion,
+		verified:      make(map[string]verifiedContractPublicationHead),
 	}, nil
 }
 
@@ -338,7 +356,7 @@ func (r *ContractPublicationRecovery) verifyRecomputedPublication(
 	if len(issues) != 0 || plan.PlanDigest != record.PlanDigest || plan.TargetVersion != target ||
 		plan.OperationKey != record.OperationKey || plan.IntentKey != record.IntentKey ||
 		plan.CandidateIntentDigest != record.CandidateIntentDigest || plan.HeadBranch != record.HeadBranch {
-		return remoteRecoveryConflict("publication-plan-recompute")
+		return remoteRecoveryConflict(publicationRecomputeConflictReason(record.MintedByVersion, r.binaryVersion))
 	}
 	wantTree := plan.PlannedBytes()
 	if len(wantTree) != len(complete) {
@@ -421,6 +439,36 @@ func (r *ContractPublicationRecovery) verifyRecomputedPublication(
 	}
 	*recoveredPlan = plan
 	return nil
+}
+
+// publicationRecomputeConflictReason classifies WHY a freshly recomputed
+// publication plan disagrees with a recovered head's own RecoveryV1 record,
+// once that disagreement is already established. A disagreement recomputed
+// by the SAME binary that minted the head is presumptively tampering; one
+// recomputed by a DIFFERENT binary — or by any binary against a record that
+// predates version recording entirely — cannot be told apart from a benign
+// plan-shape change across a binary upgrade, so it must not be reported with
+// the tampering-shaped reason.
+//
+//   - mintedByVersion == runningVersion: unchanged legacy reason — this is
+//     the exact "compare exactly as today" path.
+//   - mintedByVersion == "": the record predates version recording; that
+//     compatibility state is reported by name, not folded into tampering.
+//   - mintedByVersion != runningVersion (both non-empty): an unprovable
+//     cross-version recompute; the reason names BOTH versions so an operator
+//     can tell which upgrade crossed the boundary.
+//
+// It is still a refusal in every case — an unprovable head is not a safe
+// head — but only the first case may read as tampering.
+func publicationRecomputeConflictReason(mintedByVersion, runningVersion string) string {
+	switch {
+	case mintedByVersion == "":
+		return "publication-plan-recompute-unversioned-head"
+	case mintedByVersion == runningVersion:
+		return "publication-plan-recompute"
+	default:
+		return fmt.Sprintf("publication-plan-recompute-version-boundary minted-by=%s running=%s", mintedByVersion, runningVersion)
+	}
 }
 
 // RepairContractPublicationHead is part of the public package API.

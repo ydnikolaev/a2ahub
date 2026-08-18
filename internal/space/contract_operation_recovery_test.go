@@ -43,6 +43,37 @@ func (h contractRecoveryTestHost) EnableAutoMerge(ctx context.Context, request h
 	return h.pr.EnableAutoMerge(ctx, request)
 }
 
+// TestPublicationRecomputeConflictReason unit-tests the pure classifier
+// wired into verifyRecomputedPublication's conflict path in isolation from
+// the git/host fixtures a full probe/repair test needs. Argument order is
+// (mintedByVersion, runningVersion) — deliberately named in the assertions
+// below, because the two are easy to swap silently and a swap reports the
+// version boundary backwards without any test here catching it structurally;
+// only the argument names (and the deliberately asymmetric versions in the
+// boundary case) make a swap visible as a wrong resulting string.
+func TestPublicationRecomputeConflictReason(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		mintedByVersion string
+		runningVersion  string
+		want            string
+	}{
+		{"same version: unchanged legacy reason", "0.19.0", "0.19.0", "publication-plan-recompute"},
+		{"absent minted version: predates version recording", "", "0.19.0", "publication-plan-recompute-unversioned-head"},
+		{"different versions: names both, minted first", "0.18.0", "0.19.0", "publication-plan-recompute-version-boundary minted-by=0.18.0 running=0.19.0"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := publicationRecomputeConflictReason(tc.mintedByVersion, tc.runningVersion); got != tc.want {
+				t.Fatalf("publicationRecomputeConflictReason(%q, %q) = %q, want %q", tc.mintedByVersion, tc.runningVersion, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestContractPublicationRecoveryProvesRemoteTreeAndRepairsOnlyPR(t *testing.T) {
 	t.Parallel()
 	fx := spacefixture.New(t, "axon", "beta")
@@ -155,7 +186,7 @@ func TestContractPublicationRecoveryProvesRemoteTreeAndRepairsOnlyPR(t *testing.
 
 	fakePR := host.NewFakeHost()
 	recoveryHost := contractRecoveryTestHost{git: host.NewGitHubHost(nil, ""), pr: fakePR}
-	recovery, err := NewContractPublicationRecovery(recoveryHost, probe, fx.RemoteURL(), host.Repo{Owner: "acme", Name: "space"}, host.Credential{}, ContractPublicationRecoveryValidation{
+	recovery, err := NewContractPublicationRecovery(recoveryHost, probe, fx.RemoteURL(), host.Repo{Owner: "acme", Name: "space"}, host.Credential{}, "0.19.0", ContractPublicationRecoveryValidation{
 		ManifestValidator: acceptingPublicationManifestValidator{}, HistoryValidator: contractHistoryValidator(t), Compatibility: publicationCompatibilityChecker{},
 	})
 	if err != nil {
@@ -265,7 +296,13 @@ func TestContractPublicationRecoveryProvesRemoteTreeAndRepairsOnlyPR(t *testing.
 // When false, main never advances past the pre-publication floor-raise
 // commit, modelling a still-open (or otherwise never-landed) branch whose
 // target is NOT resolvable in main — the case that must still refuse.
-func contractPublicationHeadFixture(t *testing.T, fx *spacefixture.Fixture, source string, mergeToMain bool) (RecoveryV1, string) {
+//
+// mintedByVersion stamps the manufactured RecoveryV1's own MintedByVersion.
+// Pass the SAME value as the funnel's own binaryVersion below ("0.19.0") to
+// keep manufacturing the genuine same-binary disagreement the doc comment
+// above describes; pass a different (or empty) value to manufacture a
+// cross-version or version-absent disagreement instead.
+func contractPublicationHeadFixture(t *testing.T, fx *spacefixture.Fixture, source string, mergeToMain bool, mintedByVersion string) (RecoveryV1, string) {
 	t.Helper()
 	manifestPath := filepath.Join(source, "space.yaml")
 	manifestRaw, err := os.ReadFile(manifestPath)
@@ -336,7 +373,7 @@ func contractPublicationHeadFixture(t *testing.T, fx *spacefixture.Fixture, sour
 		FeatureFloor: "0.19.0", SchemaFloor: "0.19.0", ProfileFloor: "0.19.0", ProducerCompatibility: "0.19.0",
 		// PlanDigest is deliberately NOT plan.PlanDigest: see the doc comment
 		// above. Every other field is the real, correctly-recomputable value.
-		Recovery: &RecoveryV1{CandidateIntentDigest: candidate.Digest(), IntentKey: intentKey, PlanDigest: "sha256:" + strings.Repeat("7", 64), Target: target, VersionSelector: selector},
+		Recovery: &RecoveryV1{CandidateIntentDigest: candidate.Digest(), IntentKey: intentKey, MintedByVersion: mintedByVersion, PlanDigest: "sha256:" + strings.Repeat("7", 64), Target: target, VersionSelector: selector},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -389,11 +426,11 @@ func TestContractPublicationRecoveryProbeSkipsHeadResolvedInMain(t *testing.T) {
 	fx := spacefixture.New(t, "axon", "beta")
 	source := fx.Clone("axon")
 	probe := fx.Clone("beta")
-	record, headSHA := contractPublicationHeadFixture(t, fx, source, true)
+	record, headSHA := contractPublicationHeadFixture(t, fx, source, true, "0.19.0")
 
 	fakePR := host.NewFakeHost()
 	recoveryHost := contractRecoveryTestHost{git: host.NewGitHubHost(nil, ""), pr: fakePR}
-	recovery, err := NewContractPublicationRecovery(recoveryHost, probe, fx.RemoteURL(), host.Repo{Owner: "acme", Name: "space"}, host.Credential{}, ContractPublicationRecoveryValidation{
+	recovery, err := NewContractPublicationRecovery(recoveryHost, probe, fx.RemoteURL(), host.Repo{Owner: "acme", Name: "space"}, host.Credential{}, "0.19.0", ContractPublicationRecoveryValidation{
 		ManifestValidator: acceptingPublicationManifestValidator{}, HistoryValidator: contractHistoryValidator(t), Compatibility: publicationCompatibilityChecker{},
 	})
 	if err != nil {
@@ -403,11 +440,16 @@ func TestContractPublicationRecoveryProbeSkipsHeadResolvedInMain(t *testing.T) {
 	// WITHOUT the resolved-in-main lookup (ResolvedInMain nil, the
 	// pre-existing behaviour every caller that does not wire it still gets),
 	// the probe aborts the WHOLE listing over this one already-merged,
-	// unpruned branch — the ground truth's exact failing string.
+	// unpruned branch — the ground truth's exact failing string. The fixture
+	// mints with the SAME version the recovery adapter below runs as
+	// ("0.19.0"), so this is the genuine same-binary disagreement: the
+	// reason must be the EXACT unsuffixed legacy string, not the
+	// -unversioned-head or -version-boundary variant a HasSuffix (rather
+	// than Contains) check would catch a swap into.
 	_, err = recovery.ProbeContractPublicationHeads(t.Context(), ContractPublicationHeadProbeRequest{
 		System: "axon", ContractID: contractTestID, NamespacePrefix: "a2a/axon/contract-publish/op-v1-", MaximumHeads: 256,
 	})
-	if !errors.Is(err, ErrOperationConflict) || !strings.Contains(err.Error(), "publication-plan-recompute") {
+	if !errors.Is(err, ErrOperationConflict) || !strings.HasSuffix(err.Error(), "publication-plan-recompute") {
 		t.Fatalf("probe without ResolvedInMain = %v, want an operation-conflict publication-plan-recompute refusal", err)
 	}
 
@@ -450,11 +492,44 @@ func TestContractPublicationRecoveryProbeStillFailsUnresolvedConflictingHead(t *
 	fx := spacefixture.New(t, "axon", "beta")
 	source := fx.Clone("axon")
 	probe := fx.Clone("beta")
-	contractPublicationHeadFixture(t, fx, source, false)
+	contractPublicationHeadFixture(t, fx, source, false, "0.19.0")
 
 	fakePR := host.NewFakeHost()
 	recoveryHost := contractRecoveryTestHost{git: host.NewGitHubHost(nil, ""), pr: fakePR}
-	recovery, err := NewContractPublicationRecovery(recoveryHost, probe, fx.RemoteURL(), host.Repo{Owner: "acme", Name: "space"}, host.Credential{}, ContractPublicationRecoveryValidation{
+	recovery, err := NewContractPublicationRecovery(recoveryHost, probe, fx.RemoteURL(), host.Repo{Owner: "acme", Name: "space"}, host.Credential{}, "0.19.0", ContractPublicationRecoveryValidation{
+		ManifestValidator: acceptingPublicationManifestValidator{}, HistoryValidator: contractHistoryValidator(t), Compatibility: publicationCompatibilityChecker{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvedInMain := resolvedInMainFrom(t, fx)
+	// Same-version fixture, as above: the reason must be the exact
+	// unsuffixed legacy string.
+	_, err = recovery.ProbeContractPublicationHeads(t.Context(), ContractPublicationHeadProbeRequest{
+		System: "axon", ContractID: contractTestID, NamespacePrefix: "a2a/axon/contract-publish/op-v1-", MaximumHeads: 256,
+		ResolvedInMain: resolvedInMain,
+	})
+	if !errors.Is(err, ErrOperationConflict) || !strings.HasSuffix(err.Error(), "publication-plan-recompute") {
+		t.Fatalf("probe of an unresolved conflicting head with ResolvedInMain wired = %v, want an operation-conflict publication-plan-recompute refusal", err)
+	}
+}
+
+// TestContractPublicationRecoveryProbeUnversionedHeadNamesCompatibilityNotTampering
+// proves the SECOND verifier branch: a recovered head whose own RecoveryV1
+// record carries no MintedByVersion at all (every head written before this
+// work) must refuse with a reason distinct from, not folded into, the
+// same-binary tampering reason — this is the exact compatibility guarantee
+// TRAP 1 exists to protect, proven here at the verifier, not just at decode.
+func TestContractPublicationRecoveryProbeUnversionedHeadNamesCompatibilityNotTampering(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "axon", "beta")
+	source := fx.Clone("axon")
+	probe := fx.Clone("beta")
+	contractPublicationHeadFixture(t, fx, source, false, "")
+
+	fakePR := host.NewFakeHost()
+	recoveryHost := contractRecoveryTestHost{git: host.NewGitHubHost(nil, ""), pr: fakePR}
+	recovery, err := NewContractPublicationRecovery(recoveryHost, probe, fx.RemoteURL(), host.Repo{Owner: "acme", Name: "space"}, host.Credential{}, "0.19.0", ContractPublicationRecoveryValidation{
 		ManifestValidator: acceptingPublicationManifestValidator{}, HistoryValidator: contractHistoryValidator(t), Compatibility: publicationCompatibilityChecker{},
 	})
 	if err != nil {
@@ -465,8 +540,42 @@ func TestContractPublicationRecoveryProbeStillFailsUnresolvedConflictingHead(t *
 		System: "axon", ContractID: contractTestID, NamespacePrefix: "a2a/axon/contract-publish/op-v1-", MaximumHeads: 256,
 		ResolvedInMain: resolvedInMain,
 	})
-	if !errors.Is(err, ErrOperationConflict) || !strings.Contains(err.Error(), "publication-plan-recompute") {
-		t.Fatalf("probe of an unresolved conflicting head with ResolvedInMain wired = %v, want an operation-conflict publication-plan-recompute refusal", err)
+	if !errors.Is(err, ErrOperationConflict) || !strings.HasSuffix(err.Error(), "publication-plan-recompute-unversioned-head") {
+		t.Fatalf("probe of an unversioned head = %v, want an operation-conflict publication-plan-recompute-unversioned-head refusal", err)
+	}
+}
+
+// TestContractPublicationRecoveryProbeVersionBoundaryHeadNamesBothVersions
+// proves the THIRD verifier branch: a recovered head minted by a DIFFERENT
+// binary version than the one running the recompute must refuse with a
+// reason naming BOTH versions — an unprovable head is still refused, but its
+// reason must not read as tampering.
+func TestContractPublicationRecoveryProbeVersionBoundaryHeadNamesBothVersions(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "axon", "beta")
+	source := fx.Clone("axon")
+	probe := fx.Clone("beta")
+	contractPublicationHeadFixture(t, fx, source, false, "0.27.4")
+
+	fakePR := host.NewFakeHost()
+	recoveryHost := contractRecoveryTestHost{git: host.NewGitHubHost(nil, ""), pr: fakePR}
+	recovery, err := NewContractPublicationRecovery(recoveryHost, probe, fx.RemoteURL(), host.Repo{Owner: "acme", Name: "space"}, host.Credential{}, "0.19.0", ContractPublicationRecoveryValidation{
+		ManifestValidator: acceptingPublicationManifestValidator{}, HistoryValidator: contractHistoryValidator(t), Compatibility: publicationCompatibilityChecker{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvedInMain := resolvedInMainFrom(t, fx)
+	_, err = recovery.ProbeContractPublicationHeads(t.Context(), ContractPublicationHeadProbeRequest{
+		System: "axon", ContractID: contractTestID, NamespacePrefix: "a2a/axon/contract-publish/op-v1-", MaximumHeads: 256,
+		ResolvedInMain: resolvedInMain,
+	})
+	wantSuffix := "publication-plan-recompute-version-boundary minted-by=0.27.4 running=0.19.0"
+	if !errors.Is(err, ErrOperationConflict) || !strings.HasSuffix(err.Error(), wantSuffix) {
+		t.Fatalf("probe across a version boundary = %v, want a refusal ending %q", err, wantSuffix)
+	}
+	if strings.Contains(err.Error(), "unversioned-head") {
+		t.Fatalf("probe across a version boundary = %v, must not read as the unversioned-head case", err)
 	}
 }
 

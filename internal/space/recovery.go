@@ -18,11 +18,12 @@ import (
 )
 
 const (
-	recoveryVersion         = 1
-	recoveryMaxJSONBytes    = 12 * 1024
-	recoveryMaxArtifactIDs  = 16
-	recoveryMaxPRTitleRunes = 256
-	recoveryMaxPRBodyBytes  = 8 * 1024
+	recoveryVersion               = 1
+	recoveryMaxJSONBytes          = 12 * 1024
+	recoveryMaxArtifactIDs        = 16
+	recoveryMaxPRTitleRunes       = 256
+	recoveryMaxPRBodyBytes        = 8 * 1024
+	recoveryMaxMintedByVersionLen = 64
 )
 
 var (
@@ -54,24 +55,47 @@ type RecoveryV1 struct {
 	Flags                 RecoveryFlagsV1 `json:"flags"`
 	HeadBranch            string          `json:"head_branch"`
 	IntentKey             string          `json:"intent_key"`
-	OperationKey          string          `json:"operation_key"`
-	PlanDigest            string          `json:"plan_digest"`
-	PRBody                string          `json:"pr_body"`
-	PRTitle               string          `json:"pr_title"`
-	PreparedDigest        string          `json:"prepared_digest"`
-	Repository            string          `json:"repository"`
-	System                string          `json:"system"`
-	Target                string          `json:"target"`
-	Verb                  string          `json:"verb"`
-	Version               int             `json:"version"`
-	VersionSelector       string          `json:"version_selector"`
+	// MintedByVersion names the RUNNING BINARY that minted this record — not
+	// the record schema (see Version, below, which is the closed recovery-v1
+	// wire-shape version and must always be integer 1). It is OPTIONAL on
+	// decode: every head written before this field existed has no such key,
+	// and must still decode. A verifier reads its absence as "this record
+	// predates version recording," not as tampering. Encoded with
+	// `omitempty` so an unset value reproduces the exact legacy canonical
+	// bytes on round-trip.
+	MintedByVersion string `json:"minted_by_version,omitempty"`
+	OperationKey    string `json:"operation_key"`
+	PlanDigest      string `json:"plan_digest"`
+	PRBody          string `json:"pr_body"`
+	PRTitle         string `json:"pr_title"`
+	PreparedDigest  string `json:"prepared_digest"`
+	Repository      string `json:"repository"`
+	System          string `json:"system"`
+	Target          string `json:"target"`
+	Verb            string `json:"verb"`
+	Version         int    `json:"version"`
+	VersionSelector string `json:"version_selector"`
 }
 
-var recoveryV1Fields = map[string]struct{}{
+// recoveryV1RequiredFields is the closed set of fields every recovery-v1
+// record MUST carry, present and non-null. Together with
+// recoveryV1OptionalFields it defines the closed field set the decoder
+// enforces: any key outside the union of both is refused as unknown.
+var recoveryV1RequiredFields = map[string]struct{}{
 	"artifact_ids": {}, "base_branch": {}, "candidate_intent_digest": {}, "flags": {},
 	"head_branch": {}, "intent_key": {}, "operation_key": {}, "plan_digest": {},
 	"pr_body": {}, "pr_title": {}, "prepared_digest": {}, "repository": {},
 	"system": {}, "target": {}, "verb": {}, "version": {}, "version_selector": {},
+}
+
+// recoveryV1OptionalFields is the closed set of fields a recovery-v1 record
+// MAY carry. Absent is a valid, meaningful state (a record minted before the
+// field existed); present, the value must still be non-null. This is the
+// ONLY way a new field may be added to RecoveryV1 without breaking every
+// head ever written: adding to recoveryV1RequiredFields instead would make
+// every pre-existing record fail "field set is not closed".
+var recoveryV1OptionalFields = map[string]struct{}{
+	"minted_by_version": {},
 }
 
 // EncodeRecoveryV1 validates and emits the one canonical JSON representation.
@@ -109,18 +133,23 @@ func DecodeRecoveryV1(raw []byte) (RecoveryV1, error) {
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		return RecoveryV1{}, fmt.Errorf("%w: decode object: %w", ErrRecoveryInvalid, err)
 	}
-	if len(fields) != len(recoveryV1Fields) {
+	if len(fields) < len(recoveryV1RequiredFields) || len(fields) > len(recoveryV1RequiredFields)+len(recoveryV1OptionalFields) {
 		return RecoveryV1{}, fmt.Errorf("%w: field set is not closed", ErrRecoveryInvalid)
 	}
-	for name := range recoveryV1Fields {
+	for name := range recoveryV1RequiredFields {
 		value, ok := fields[name]
 		if !ok || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
 			return RecoveryV1{}, fmt.Errorf("%w: required field %q is missing or null", ErrRecoveryInvalid, name)
 		}
 	}
-	for name := range fields {
-		if _, ok := recoveryV1Fields[name]; !ok {
+	for name, value := range fields {
+		_, required := recoveryV1RequiredFields[name]
+		_, optional := recoveryV1OptionalFields[name]
+		if !required && !optional {
 			return RecoveryV1{}, fmt.Errorf("%w: unknown field %q", ErrRecoveryInvalid, name)
+		}
+		if optional && bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return RecoveryV1{}, fmt.Errorf("%w: optional field %q must not be null", ErrRecoveryInvalid, name)
 		}
 	}
 
@@ -236,6 +265,16 @@ func validateRecoveryV1(record RecoveryV1) error {
 	}
 	if !validVersionSelector(record.VersionSelector) {
 		return invalid("version_selector is not canonical")
+	}
+	// MintedByVersion is a free-form build-version stamp, not necessarily
+	// canonical semver (a non-release binary can carry "dev" — see
+	// cmd/a2a's own `version` default), so only its UTF-8/byte bounds are
+	// enforced, the same shape as PRTitle/PRBody. Empty is valid: it is the
+	// "absent" state for a pre-existing record (see the field's own doc
+	// comment).
+	if record.MintedByVersion != "" && (!utf8.ValidString(record.MintedByVersion) ||
+		strings.ContainsRune(record.MintedByVersion, '\x00') || len(record.MintedByVersion) > recoveryMaxMintedByVersionLen) {
+		return invalid("minted_by_version is outside its UTF-8/byte bounds")
 	}
 	return nil
 }
