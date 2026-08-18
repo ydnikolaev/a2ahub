@@ -116,13 +116,53 @@ check_history() {
   done <<< "$emitted"
 }
 
+# teach_frozen_schema prints the sanctioned alternative beside the refusal.
+#
+# The refusal alone ("bytes changed") tells an implementer they are wrong and
+# not what to do instead, and the answer has cost this repo twice: agent-exchange
+# P5 worked it out for `capabilities`, left it in its own phase plan, and
+# space-notify P1 hit the identical wall for `notification_routes` months later
+# because a private plan file of another epic is not somewhere anyone looks.
+# The convention this repo already applies to lane declarations — the refusal
+# teaches at the moment you need it — applies here for the same reason.
+teach_frozen_schema() {
+  local path="$1"
+  cat >&2 <<EOF
+
+  ── how to add a field to a frozen v1 schema ───────────────────────────────
+  You do not. \`$path\` is one of the paths schemas/published-v1.sha256
+  freezes, because its bytes decide whether documents ALREADY COMMITTED to
+  shared spaces are valid — so an in-place edit is a compatibility event
+  however additive it looks (docs/the-plan/plan/05-schemas.md §5.7.1).
+
+  The sanctioned move (ADR-018, root AGENTS.md §Anti-patterns #21):
+
+    1. Leave the schema at its published bytes. It is already
+       \`additionalProperties: true\`, so every deployed binary accepts your
+       new key today — no release, no min_binary_version bump, no pinned
+       workflow bump, no \`x_\` prefix.
+    2. Constrain it with a POLICY check in internal/validate — required
+       fields, enums, patterns, bounds, unknown keys, all of it. That layer
+       is not frozen, and V3 runs it on every pull request, so a malformed
+       value is still refused by the space's own gate.
+    3. Expect the refusals to be policy-class, which means the schema-only
+       fixture corpus cannot express them. Prove them in package tests; the
+       missing policy-fixture corpus is a row in docs/backlog.md.
+
+  Minting a new schema generation to type a few keys is ruled out — twice,
+  independently, on the migration it would force. If you believe your case is
+  the exception, that is an ADR, not a hand-edit of the hash manifest.
+  ───────────────────────────────────────────────────────────────────────────
+EOF
+}
+
 check_hashes() {
   local root="$1" manifest="$2" expected current path listed actual
   while read -r expected path; do
     [ -n "$expected" ] && [ -n "$path" ] || continue
     [ -f "$root/$path" ] || { fail "published-v1 manifest path missing: $path"; continue; }
     actual="$(shasum -a 256 "$root/$path" | awk '{print $1}')"
-    [ "$actual" = "$expected" ] || fail "published v1 bytes changed: $path"
+    [ "$actual" = "$expected" ] || { fail "published v1 bytes changed: $path"; teach_frozen_schema "$path"; }
   done < "$manifest"
 
   # The ratchet covers SCHEMAS, and deliberately not the authoring templates

@@ -63,21 +63,26 @@ type Capabilities struct {
 // `notification_routes.items`) — the seam spec 03 ("notify-projection")
 // reuses rather than duplicates, per its own "reuse the seam, do not shell
 // out again" instruction. Field set and cardinality mirror the schema
-// exactly: `channel`, `chat`, and `events` are schema-required; the rest
-// are schema-optional and carry `omitempty` here to match.
+// exactly: `channel`, `chat`, and `events` are required; the rest are
+// optional and carry `omitempty` here to match.
+//
+// Nothing about that shape is declared in a schema, and it cannot be.
+// `manifest/v1/space.schema.json` is byte-frozen under the §5.7.1
+// immutability ratchet, so a new property is added by a POLICY check rather
+// than a schema edit (ADR-018). The schema stays `additionalProperties: true`
+// and accepts the key; `internal/validate` decides whether it is well-formed.
 //
 // `Chat` is a string, not an integer — Telegram supergroup ids exceed the
-// safe integer range of several YAML/JSON readers (spec 01 §T2). `Topic` is
-// a pointer for the same reason internal/validate's own manifestRouteProbe
-// uses one: "absent" (the chat's general thread) is a distinct value from
-// any concrete thread id, including the schema's own floor of 1.
+// safe integer range of several YAML/JSON readers (spec 01 §T2). `Topic` is a
+// pointer because "absent" (the chat's general thread) is a distinct value
+// from any concrete thread id, including the policy layer's floor of 1.
 //
 // This is a structural decode only, matching ParseManifest's own leniency
 // (§ParseManifest doc comment below): an unknown key, a missing `chat`, or
-// any other schema violation still decodes into a usable value here. The
-// schema/policy verdict on whether a route is well-formed remains the
-// ManifestValidator seam's job (internal/validate's checkNotificationRoutes,
-// REF-022), never this package's.
+// any other malformation still decodes into a usable value here. The verdict
+// on whether a route is well-formed remains the ManifestValidator seam's job
+// (`internal/validate`'s checkNotificationRoutes — POL-021 for shape,
+// REF-022 for the referential half), never this package's.
 type NotificationRoute struct {
 	Channel  string   `yaml:"channel"`
 	Chat     string   `yaml:"chat"`
