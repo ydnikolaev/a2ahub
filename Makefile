@@ -137,12 +137,30 @@ runner-economics: ## No job runs an expensive runner ungated, and no job's timeo
 
 # lane-inputs:
 #   .github/workflows/**
-workflow-lint: ## Every GitHub Action `uses:` must be SHA-pinned (defeats tag-hijack; dependabot still bumps the pins).
+#   go.mod
+workflow-lint: ## Every GitHub Action `uses:` must be SHA-pinned (defeats tag-hijack; dependabot still bumps the pins), and no workflow pins a Go toolchain go.mod does not name.
 	@bad=$$(grep -rnE 'uses: +[^ ]+@' .github/workflows 2>/dev/null | grep -vE '@[0-9a-f]{40}([ "#]|$$)' | grep -v 'uses: \./' || true); \
 	if [ -n "$$bad" ]; then echo "workflow-lint: FAIL — unpinned action(s), pin to a full 40-hex SHA (# vX.Y.Z):"; echo "$$bad"; exit 1; fi; \
 	echo "workflow-lint: all actions SHA-pinned."
 	@grep -Fq "if: github.repository == 'ydnikolaev/a2ahub'" .github/workflows/classify-guard.yml || { echo "workflow-lint: FAIL — public classify backstop must skip the private source repository"; exit 1; }
 	@grep -Eq '^  actions: read$$' .github/workflows/codeql.yml || { echo "workflow-lint: FAIL — CodeQL needs actions: read with restrictive workflow permissions"; exit 1; }
+	@# A space repo has no go.mod, so the two REUSABLE workflows name the Go
+	@# toolchain explicitly (`go-version: "X.Y.Z"`) while every repo-local job
+	@# uses `go-version-file: go.mod`. That split is deliberate and it is also a
+	@# drift seam with no reader: on 2026-08-18 `make release-preflight` refused
+	@# v0.23.0 on six CALLED stdlib vulnerabilities, all fixed in go1.26.6, and
+	@# bumping go.mod alone would have left every space validating and notifying
+	@# on the vulnerable toolchain. Nothing would have said so.
+	@gomod_go=$$(awk '$$1 == "go" && $$2 ~ /^[0-9]+\.[0-9]+\.[0-9]+$$/ { print $$2; exit }' go.mod); \
+	test -n "$$gomod_go" || { echo "workflow-lint: FAIL — go.mod declares no patch-level go directive; the workflows have nothing to agree with."; exit 1; }; \
+	drift=$$(grep -rnE '^ *go-version: "[0-9]+\.[0-9]+\.[0-9]+"' .github/workflows 2>/dev/null | grep -vF "\"$$gomod_go\"" || true); \
+	if [ -n "$$drift" ]; then \
+	  echo "workflow-lint: FAIL — a workflow pins a Go toolchain go.mod does not name ($$gomod_go):"; \
+	  echo "$$drift"; \
+	  echo "  These are the REUSABLE workflows every space calls. A toolchain fix in go.mod reaches a space only through them."; \
+	  exit 1; \
+	fi; \
+	echo "workflow-lint: every explicit go-version matches go.mod ($$gomod_go)."
 	@test "$$(grep -Fc "if: github.repository == 'ydnikolaev/a2ahub'" .github/workflows/codeql.yml)" -eq 4 || { echo "workflow-lint: FAIL — all four CodeQL execution steps must remain public-repository-only"; exit 1; }
 	@command -v actionlint >/dev/null 2>&1 || { echo "workflow-lint: FAIL — actionlint missing; install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"; exit 1; }
 	@actionlint

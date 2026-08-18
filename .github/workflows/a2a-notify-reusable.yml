@@ -108,7 +108,7 @@ jobs:
         with:
           # Pinned to a2a's own toolchain, same as a2a-validate-reusable.yml
           # (a space repo has no go.mod, so go-version-file is not usable).
-          go-version: "1.26.5"
+          go-version: "1.26.6"
 
       # The push range and its fallback (spec 05 "The push range, and its
       # fallback"). Computed as its OWN step, separate from the

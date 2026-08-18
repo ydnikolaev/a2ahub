@@ -118,10 +118,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          # Pinned to a2a's own toolchain (go.mod `go 1.26.5`); bumped with
+          # Pinned to a2a's own toolchain (go.mod `go 1.26.6`); bumped with
           # the release. A space repo has no go.mod, so go-version-file is not
           # usable here — the version is named explicitly.
-          go-version: "1.26.5"
+          go-version: "1.26.6"
 
       - name: a2a validate --ci
         env:
