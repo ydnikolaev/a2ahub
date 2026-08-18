@@ -91,8 +91,31 @@ assert_version_free() { # $1 = repo, $2 = version
 # `*-reusable.yml` caller the template carries (space-notify-2026-08 P5 added
 # a second one, a2a-notify.yml -> a2a-notify-reusable.yml), not only the
 # validator, with no second copy of this function.
-assert_pins_resolve() { # $1 = repo
-  local repo="$1" rc=0 found=0 line ref wf_file wf_path
+#
+# ONE case is legitimately unresolvable and is NOT this gate's failure: a
+# reusable workflow introduced BY THE RELEASE BEING CUT. No published tag can
+# carry a file that no tag exists for yet, and the runbook REQUIRES the pin to
+# keep naming the previous release until Phase 4 step 15 (Phase 1 step 4: "do
+# NOT touch the space-template pin or floor" — a floor naming an unpublished
+# tag is the 2026-07-26 outage). Those two rules together make the first
+# release of any new reusable workflow an automatic red, which is how
+# space-notify-2026-08 refused `v0.23.0` on 2026-08-18 with nothing wrong.
+#
+# The two cases are told apart by asking the REMOTE, not by trusting the pin:
+#   * some published tag carries the file, and the pin names an older one
+#     -> the P33 miss. RED, unchanged.
+#   * NO published tag carries it, and the working tree does
+#     -> its first release. GREEN, with step 15 named out loud, because the
+#        template is only correct again AFTER that step runs.
+#   * NO published tag carries it, and the working tree does not either
+#     -> the pin references a workflow that exists nowhere. RED.
+#
+# `a2a space init` rewrites a scaffolded space's pin to the RUNNING BINARY's
+# version (cmd_space.go spaceNotifyWorkflowRefPattern), so the template's
+# literal pin is not what a real space gets — which is why the first-release
+# window is a documentation obligation rather than a live exposure.
+assert_pins_resolve() { # $1 = repo, $2 = version being cut (for the message)
+  local repo="$1" version="${2:-the release being cut}" rc=0 found=0 line ref wf_file wf_path tag carried
   while IFS= read -r line; do
     # strip comments, take the token after the last '@'
     line="${line%%#*}"
@@ -111,10 +134,34 @@ assert_pins_resolve() { # $1 = repo
       continue
     fi
     if ! git -C "$repo" cat-file -e "$ref:$wf_path" 2>/dev/null; then
-      fail "release-preflight: space-template pins @$ref, but that tag's tree does NOT contain
+      # Is this workflow published in ANY tag, or is it new in this release?
+      carried=""
+      while IFS= read -r tag; do
+        [ -n "$tag" ] || continue
+        if git -C "$repo" cat-file -e "$tag:$wf_path" 2>/dev/null; then carried="$tag"; break; fi
+      done < <(git -C "$repo" tag -l 'v*')
+
+      if [ -n "$carried" ]; then
+        fail "release-preflight: space-template pins @$ref, but that tag's tree does NOT contain
     $wf_path — every space created from this template would fail
-    'workflow not found'. Fix: pin the release that ADDED the reusable workflow."
-      rc=1
+    'workflow not found'. Fix: pin the release that ADDED the reusable workflow
+    (@$carried carries it)."
+        rc=1
+        continue
+      fi
+
+      if [ ! -f "$repo/$wf_path" ]; then
+        fail "release-preflight: space-template pins @$ref for $wf_path, and that file exists
+    in NO published tag AND NOT in the working tree — the pin names a reusable
+    workflow that exists nowhere. Fix: add the workflow, or drop the caller."
+        rc=1
+        continue
+      fi
+
+      ok "release-preflight: pin @$ref does not carry $wf_path, and neither does any published
+    tag — the workflow is NEW IN $version. Pre-tag this is the only legal state (runbook
+    Phase 1 step 4 forbids moving the pin). \`make space-template-baseline\` (Phase 4 step 15)
+    is MANDATORY after the tag, or the template ships a caller nothing resolves."
       continue
     fi
     ok "release-preflight: pin @$ref resolves and carries $wf_path"
@@ -603,6 +650,51 @@ teeth() {
   fi
   ok "teeth 4: newly added caller with a bad pin → RED (ADD direction)"
 
+  # --- teeth 4a: a reusable workflow NEW IN THE RELEASE BEING CUT → GREEN ---
+  # No published tag can carry it; the runbook forbids moving the pin pre-tag.
+  # This is the case that refused v0.23.0 on 2026-08-18 with nothing wrong.
+  rm -f "$tmp/$TEMPLATE_WORKFLOWS/extra.yml"
+  echo "on: workflow_call" > "$tmp/$REUSABLE_DIR/a2a-brandnew-reusable.yml"
+  echo "    uses: o/r/$REUSABLE_DIR/a2a-brandnew-reusable.yml@v0.2.0" > "$tmp/$TEMPLATE_WORKFLOWS/a2a-brandnew.yml"
+  if ! out="$(assert_pins_resolve "$tmp" v0.3.0 2>&1)"; then
+    echo "release-preflight --teeth: FAILED — a workflow new in the release being cut was refused" >&2
+    echo "$out" >&2; exit 1
+  fi
+  printf '%s\n' "$out" | grep -q "NEW IN v0.3.0" || {
+    echo "release-preflight --teeth: FAILED — green, but it did not name the first-release case" >&2
+    echo "$out" >&2; exit 1; }
+  printf '%s\n' "$out" | grep -q "space-template-baseline" || {
+    echo "release-preflight --teeth: FAILED — the first-release pass did not name step 15" >&2
+    echo "$out" >&2; exit 1; }
+  ok "teeth 4a: reusable workflow new in the release being cut → GREEN, naming step 15"
+
+  # --- teeth 4b: a pin to a reusable workflow that exists NOWHERE → RED ---
+  # The exemption above must not become "any missing file is fine".
+  rm -f "$tmp/$REUSABLE_DIR/a2a-brandnew-reusable.yml"
+  if out="$(assert_pins_resolve "$tmp" v0.3.0 2>&1)"; then
+    echo "release-preflight --teeth: FAILED — a pin to a workflow that exists nowhere stayed GREEN" >&2
+    echo "$out" >&2; exit 1
+  fi
+  printf '%s\n' "$out" | grep -q "exists nowhere" || {
+    echo "release-preflight --teeth: FAILED — red, but not with the exists-nowhere message" >&2
+    echo "$out" >&2; exit 1; }
+  ok "teeth 4b: pin to a workflow present in no tag and no working tree → RED"
+
+  # --- teeth 4c: the P33 miss must survive the exemption ---
+  # A workflow that IS carried by a published tag, pinned at an older one, is
+  # still the original red — and must now name the tag that carries it.
+  rm -f "$tmp/$TEMPLATE_WORKFLOWS/a2a-brandnew.yml"
+  echo "    uses: o/r/$REUSABLE_PATH@v0.1.0" > "$tmp/$TEMPLATE_WORKFLOWS/a2a-validate.yml"
+  if out="$(assert_pins_resolve "$tmp" v0.3.0 2>&1)"; then
+    echo "release-preflight --teeth: FAILED — the exemption swallowed the P33 miss" >&2
+    echo "$out" >&2; exit 1
+  fi
+  printf '%s\n' "$out" | grep -q "@v0.2.0 carries it" || {
+    echo "release-preflight --teeth: FAILED — red, but it did not name the tag that carries the workflow" >&2
+    echo "$out" >&2; exit 1; }
+  ok "teeth 4c: pre-workflow pin still RED, and names the tag that carries it"
+  echo "    uses: o/r/$REUSABLE_PATH@v0.2.0" > "$tmp/$TEMPLATE_WORKFLOWS/a2a-validate.yml"
+
   # --- teeth 6/7/8: the write-floor assertion ---
   # 6: a floor AHEAD of the version being cut → RED (the fleet-lockout case).
   printf 'schema: space/v1\nmin_binary_version: 9.9.9\n' > "$tmp/space-template/space.yaml"
@@ -870,7 +962,7 @@ git -C "$ROOT" fetch --quiet "$REMOTE" --tags
 
 rc=0
 assert_version_free "$ROOT" "$VERSION" || rc=1
-assert_pins_resolve "$ROOT" || rc=1
+assert_pins_resolve "$ROOT" "$VERSION" || rc=1
 assert_floor_not_ahead "$ROOT" "$VERSION" || rc=1
 assert_floor_moves_with_schema "$ROOT" "$VERSION" || rc=1
 assert_ref_default_matches "$ROOT" "$VERSION" || rc=1
