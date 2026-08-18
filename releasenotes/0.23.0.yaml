@@ -390,3 +390,46 @@ changes:
     action:
       scope: none
       why: "No action. The verb is inert without a configured notification route; delivery from CI arrives with the workflow in a later change."
+
+  - id: RN-02300-12
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: >
+        The verb existed and nothing ran it. This is the delivery plane — the
+        workflow a space adds with one line — and the setup flow that connects
+        a bot to it without the token ever passing through an agent.
+    impact: normal
+    subject: "a space can be told to notify Telegram, in one line and one secret"
+    detail: >
+      A space repository gains chat notifications by adding one `uses:` line
+      and one Actions secret. It carries no notification logic, no pinned
+      binary and no fetch token: everything lives in a reusable workflow in
+      a2ahub, referenced by release tag, so a fix reaches every space through a
+      version bump instead of an edit in each one. `a2a space init` writes the
+      caller for new spaces; `a2a space update` adds it to existing ones.
+
+      The job is silent until a route is configured, and loud when one is
+      broken: a route whose secret is missing fails the run rather than
+      quietly sending nothing. What was sent — and, on a dry run, exactly what
+      it would have looked like — is printed in the run's own summary, so a
+      layout can be reviewed before it reaches a chat and a failure can be read
+      without opening Telegram.
+
+      `a2a notify setup` walks a human through creating the bot, handing over
+      its token, choosing a chat, and proving the whole path works. The token
+      is typed at the terminal with the screen echo off, passed straight to
+      GitHub's secret store, and never written down anywhere else — no agent
+      involved in the conversation ever sees it. The setup reports success only
+      after a real run actually delivered a message; a green run that sent
+      nothing is reported as unproven, because it is.
+
+      `a2a doctor` gains three checks for a configured space: whether every
+      route is well-formed, whether the secrets they name exist (presence only
+      — no secret's value is ever read), and whether the last delivery
+      succeeded. A channel that has gone quiet is now diagnosable instead of
+      merely silent.
+    affects: ["space.yaml", "a2a space init", "a2a space update", "a2a notify", "a2a doctor", MCP]
+    action:
+      scope: optional
+      why: "Existing spaces gain nothing until an operator runs `a2a space update` and then `a2a notify setup`. A space that does neither is unchanged."
