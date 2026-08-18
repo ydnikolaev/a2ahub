@@ -12,11 +12,13 @@ package html
 import (
 	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/agentprompt"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/operational"
 	"github.com/ydnikolaev/a2ahub/internal/provenance"
+	"github.com/ydnikolaev/a2ahub/internal/viewvocab"
 )
 
 // Data is the full dashboard model — the `DATA` global the page renders from.
@@ -49,44 +51,34 @@ type Data struct {
 	Windows         DashboardWindows     `json:"windows"`
 }
 
+// VocabularyTable, VocabularyEntry, VocabularyFallback, VocabularyFamily and
+// VocabularyTone moved to internal/viewvocab (spec space-notify-2026-08 P2)
+// along with the vocabulary data table and DashboardVocabulary() itself, so a
+// caller outside the presentation layer can read the same RU/EN words
+// without importing internal/html and inverting the ADR-001 boundary this
+// package's import set protects. Aliased here — not re-declared — so the
+// dashboard's wire contract (JSON tags, field order, omitempty) is unchanged
+// by construction.
+
 // VocabularyTable is the complete payload-local dictionary for status-bearing
 // values. Unknown is presentation fallback, not a fabricated domain entry.
-type VocabularyTable struct {
-	Entries []VocabularyEntry  `json:"entries"`
-	Unknown VocabularyFallback `json:"unknown"`
-}
+type VocabularyTable = viewvocab.VocabularyTable
 
 // VocabularyEntry binds one typed family/value pair to permanent bilingual
 // meaning and to the closed presentation cues the browser may apply.
-type VocabularyEntry struct {
-	Value         string           `json:"value"`
-	Family        VocabularyFamily `json:"family"`
-	LabelRU       string           `json:"labelRU"`
-	LabelEN       string           `json:"labelEN"`
-	ExplanationRU string           `json:"explanationRU"`
-	ExplanationEN string           `json:"explanationEN"`
-	Tone          VocabularyTone   `json:"tone"`
-	Cue           string           `json:"cue"`
-}
+type VocabularyEntry = viewvocab.VocabularyEntry
 
 // VocabularyFallback is the honest result for an unrecognized family/value.
 // It deliberately carries neither field, so it cannot pose as catalogue data.
-type VocabularyFallback struct {
-	LabelRU       string         `json:"labelRU"`
-	LabelEN       string         `json:"labelEN"`
-	ExplanationRU string         `json:"explanationRU"`
-	ExplanationEN string         `json:"explanationEN"`
-	Tone          VocabularyTone `json:"tone"`
-	Cue           string         `json:"cue"`
-}
+type VocabularyFallback = viewvocab.VocabularyFallback
 
 // VocabularyFamily identifies one closed family in the dashboard's bilingual
 // vocabulary.
-type VocabularyFamily string
+type VocabularyFamily = viewvocab.VocabularyFamily
 
 // VocabularyTone identifies the presentation intent and non-color cue assigned
 // to a dashboard vocabulary entry.
-type VocabularyTone string
+type VocabularyTone = viewvocab.VocabularyTone
 
 // DashboardItemSet is one admitted prefix of a cache-owned aggregate set.
 // Window.Total remains the KPI value even when Items is bounded.
@@ -341,26 +333,15 @@ type Item struct {
 // which moves this system may legally make next is the fold engine's answer,
 // and restating it client-side would make the page a second source of protocol
 // truth — the rule SKILL.md puts above every other rule it carries.
-type AgentPrompt struct {
-	// Moves are the transitions Data.Self may take on this artifact right now,
-	// in the fold table's own order.
-	Moves []string `json:"moves"`
-	// AskFirst is the subset of Moves an agent must put to its human before
-	// taking, because they commit the system's resources or foreclose an option
-	// that cannot be reopened. The discriminator is the transition, never the
-	// document type.
-	AskFirst []string `json:"askFirst,omitempty"`
-	// Doc and Loop are paths inside the installed a2ahub skill: the file that
-	// owns this artifact type's shape, and the loop this move belongs to. Empty
-	// rather than guessed when the type is one the skill does not document.
-	Doc  string `json:"doc,omitempty"`
-	Loop string `json:"loop,omitempty"`
-	// Drafts are the authoring files for what TAKING one of these moves
-	// produces, which is a different document from the one being read:
-	// responding to a work request drafts a response. Empty when every move
-	// available here only records an event against the document already there.
-	Drafts []string `json:"drafts,omitempty"`
-}
+//
+// The struct and the composer that builds it moved to internal/agentprompt
+// (spec space-notify-2026-08 P2) so a caller outside the presentation layer
+// (a chat notifier, the CI plane) can compose the same prompt without
+// importing internal/html and inverting the ADR-001 boundary this package's
+// import set protects. Aliased here — not re-declared — so the JSON tags,
+// field order and omitempty behaviour on the wire are unchanged by
+// construction.
+type AgentPrompt = agentprompt.AgentPrompt
 
 // Thread is one conversation on the dashboard (spec 46 §T6.1) —
 // Store.ThreadView's read model projected for render. This includes a newly
