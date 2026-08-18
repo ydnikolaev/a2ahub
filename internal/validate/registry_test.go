@@ -145,10 +145,20 @@ func TestRegistryClosure(t *testing.T) {
 		produced["REF-011"] = true
 	}
 	// REF-013: manifest authority map assigns one active login twice.
-	record(checkManifestPolicy(manifestProbe{Participants: []manifestParticipantProbe{
-		{System: "axon", Section: "axon/", Owners: []string{"alice"}, Status: "active"},
-		{System: "matrix", Section: "matrix/", Owners: []string{"alice"}, Status: "active"},
-	}}))
+	// REF-022: notification route names a participant absent from
+	// participants[] — carried on the SAME probe (rather than a second
+	// call) so the closure gate actually exercises checkManifestPolicy's
+	// checkNotificationRoutes branch, which every prior probe left empty
+	// (space-notify-2026-08 propagation-probe gap 3).
+	record(checkManifestPolicy(manifestProbe{
+		Participants: []manifestParticipantProbe{
+			{System: "axon", Section: "axon/", Owners: []string{"alice"}, Status: "active"},
+			{System: "matrix", Section: "matrix/", Owners: []string{"alice"}, Status: "active"},
+		},
+		NotificationRoutes: []manifestRouteProbe{
+			{Channel: "telegram", Chat: "-1002034567890", For: "ghost", Events: []string{"blocking"}},
+		},
+	}))
 	// REF-014: one declared carried file resolves as a symlink rather than
 	// the exact regular bytes promised by the descriptor.
 	ref014Input := validContractInput(V2)

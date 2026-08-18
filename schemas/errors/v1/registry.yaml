@@ -193,6 +193,11 @@ entries:
     title: A supersession chain closes back on itself
     applies_to: internal/validate.CheckSupersessionGraph — the full-repo supersede-event graph, including the degenerate self-supersede 1-node case (§3.8, CC-025); V3 full-repo scan only, never V3-pr
 
+  - code: REF-022
+    class: referential
+    title: A notification route is not well-formed against its own manifest context
+    applies_to: space/v1 `notification_routes[]` (space-notify-2026-08 P1), internal/validate.checkNotificationRoutes — `for` names a participant absent from participants[], or two routes share the same (channel, chat, topic, for) tuple; one code, following checkManifestPolicy's own REF-013 grouping precedent, because every branch has the same consequence — the route cannot be trusted to address anyone
+
   - code: LFC-001
     class: lifecycle
     title: Event encodes an illegal transition for the subject's current folded state
@@ -216,7 +221,7 @@ entries:
   - code: POL-001
     class: policy
     title: Content matches a forbidden secret/credential pattern
-    applies_to: full raw artifact content, envelope + body (§10.4, §13.4, CC-010) — G5 override is flagged only, never granted by this engine
+    applies_to: full raw artifact content, envelope + body (§10.4, §13.4, CC-010) — G5 override is flagged only, never granted by this engine. Also scans a space's raw space.yaml bytes end to end (internal/validate.scanForSecrets, called from both ValidateManifest and ValidateManifestPolicy), reused rather than duplicated for the notification_routes rule that a manifest carries no Telegram bot-token shape anywhere — not in a route, not in a comment, not in a stray key (space-notify-2026-08 P1 rule 4)
 
   - code: POL-002
     class: policy

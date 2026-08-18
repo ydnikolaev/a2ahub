@@ -106,6 +106,148 @@ participants:
 	}
 }
 
+// TestParseManifestNotificationRouteMissingChat is spec 01 AC8: a route
+// missing the schema-required `chat` field entirely must still parse into a
+// usable Manifest — ParseManifest is a structural decode only, and the
+// well-formedness verdict (REF-022) belongs to the ManifestValidator seam,
+// never here.
+func TestParseManifestNotificationRouteMissingChat(t *testing.T) {
+	t.Parallel()
+
+	const manifestYAML = `
+schema: space/v1
+space: getvisa
+min_binary_version: 0.1.0
+participants:
+  - system: axon
+    org: yura
+    section: axon/
+    owners: [ydnikolaev]
+    status: active
+    joined: 2026-07-28
+notification_routes:
+  - channel: telegram
+    events: [blocking]
+`
+	m, err := ParseManifest([]byte(manifestYAML))
+	if err != nil {
+		t.Fatalf("ParseManifest: %v", err)
+	}
+	if len(m.NotificationRoutes) != 1 {
+		t.Fatalf("len(NotificationRoutes) = %d, want 1", len(m.NotificationRoutes))
+	}
+	route := m.NotificationRoutes[0]
+	if route.Chat != "" {
+		t.Fatalf("route.Chat = %q, want empty (missing chat must still parse)", route.Chat)
+	}
+	if route.Channel != "telegram" {
+		t.Fatalf("route.Channel = %q, want telegram", route.Channel)
+	}
+}
+
+// TestParseManifestNotificationRouteUnknownKey is spec 01 AC8's second edge
+// case: a route carrying a key the schema does not declare (which is a
+// REJECT once the ManifestValidator seam runs, via `additionalProperties:
+// false`) must still parse here — ParseManifest never enforces
+// additionalProperties, so an unknown key is silently ignored rather than a
+// decode failure.
+func TestParseManifestNotificationRouteUnknownKey(t *testing.T) {
+	t.Parallel()
+
+	const manifestYAML = `
+schema: space/v1
+space: getvisa
+min_binary_version: 0.1.0
+participants:
+  - system: axon
+    org: yura
+    section: axon/
+    owners: [ydnikolaev]
+    status: active
+    joined: 2026-07-28
+notification_routes:
+  - channel: telegram
+    chat: "-1002034567890"
+    events: [blocking]
+    made_up_field: surprise
+`
+	m, err := ParseManifest([]byte(manifestYAML))
+	if err != nil {
+		t.Fatalf("ParseManifest: %v", err)
+	}
+	if len(m.NotificationRoutes) != 1 {
+		t.Fatalf("len(NotificationRoutes) = %d, want 1", len(m.NotificationRoutes))
+	}
+	route := m.NotificationRoutes[0]
+	if route.Chat != "-1002034567890" || route.Channel != "telegram" {
+		t.Fatalf("route = %+v, want the known fields decoded despite the unknown key", route)
+	}
+}
+
+// TestParseManifestNotificationRouteRoundTrips is spec 01 AC8/T2: a
+// well-formed route with every optional field set decodes into the typed
+// field with every value intact, including `chat` staying a STRING (a
+// Telegram supergroup id can exceed the safe integer range of several
+// YAML/JSON readers, spec 01 §T2) and `topic` distinguishing "absent" from
+// the schema's own floor of 1.
+func TestParseManifestNotificationRouteRoundTrips(t *testing.T) {
+	t.Parallel()
+
+	const manifestYAML = `
+schema: space/v1
+space: getvisa
+min_binary_version: 0.1.0
+participants:
+  - system: axon
+    org: yura
+    section: axon/
+    owners: [ydnikolaev]
+    status: active
+    joined: 2026-07-28
+notification_routes:
+  - channel: telegram
+    chat: "-1002034567890"
+    topic: 42
+    for: axon
+    events: [human-gate, blocking]
+    locale: ru
+    secret: TG_BOT_TOKEN
+    renderer: rich
+`
+	m, err := ParseManifest([]byte(manifestYAML))
+	if err != nil {
+		t.Fatalf("ParseManifest: %v", err)
+	}
+	if len(m.NotificationRoutes) != 1 {
+		t.Fatalf("len(NotificationRoutes) = %d, want 1", len(m.NotificationRoutes))
+	}
+	route := m.NotificationRoutes[0]
+	if route.Channel != "telegram" {
+		t.Fatalf("route.Channel = %q, want telegram", route.Channel)
+	}
+	if route.Chat != "-1002034567890" {
+		t.Fatalf("route.Chat = %q, want -1002034567890 (must stay a string)", route.Chat)
+	}
+	if route.Topic == nil || *route.Topic != 42 {
+		t.Fatalf("route.Topic = %v, want *42", route.Topic)
+	}
+	if route.For != "axon" {
+		t.Fatalf("route.For = %q, want axon", route.For)
+	}
+	if len(route.Events) != 2 || route.Events[0] != "human-gate" || route.Events[1] != "blocking" {
+		t.Fatalf("route.Events = %v, want [human-gate blocking]", route.Events)
+	}
+	if route.Locale != "ru" {
+		t.Fatalf("route.Locale = %q, want ru", route.Locale)
+	}
+	if route.Secret != "TG_BOT_TOKEN" {
+		t.Fatalf("route.Secret = %q, want TG_BOT_TOKEN", route.Secret)
+	}
+	if route.Renderer != "rich" {
+		t.Fatalf("route.Renderer = %q, want rich", route.Renderer)
+	}
+}
+
 func TestParseManifestInvalidYAML(t *testing.T) {
 	t.Parallel()
 

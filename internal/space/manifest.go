@@ -12,11 +12,12 @@ import (
 // validation or policy/referential checks (D-011); those are the
 // ManifestValidator seam, wired to the real P2/P3 engines at P6.
 type Manifest struct {
-	Schema           string        `yaml:"schema"`
-	Space            string        `yaml:"space"`
-	MinBinaryVersion string        `yaml:"min_binary_version"`
-	Participants     []Participant `yaml:"participants"`
-	Vendored         []string      `yaml:"vendored,omitempty"`
+	Schema             string              `yaml:"schema"`
+	Space              string              `yaml:"space"`
+	MinBinaryVersion   string              `yaml:"min_binary_version"`
+	Participants       []Participant       `yaml:"participants"`
+	Vendored           []string            `yaml:"vendored,omitempty"`
+	NotificationRoutes []NotificationRoute `yaml:"notification_routes,omitempty"`
 
 	// Raw holds the exact bytes ParseManifest was given, so a caller can
 	// hand them, unmodified, to a ManifestValidator seam that needs the
@@ -55,6 +56,37 @@ type Capabilities struct {
 	Delivery   []string `yaml:"delivery"`
 	DeclaredBy string   `yaml:"declared_by,omitempty"`
 	DeclaredAt string   `yaml:"declared_at,omitempty"`
+}
+
+// NotificationRoute is one space.yaml `notification_routes[]` entry
+// (space-notify-2026-08 P1, schemas/manifest/v1/space.schema.json's
+// `notification_routes.items`) — the seam spec 03 ("notify-projection")
+// reuses rather than duplicates, per its own "reuse the seam, do not shell
+// out again" instruction. Field set and cardinality mirror the schema
+// exactly: `channel`, `chat`, and `events` are schema-required; the rest
+// are schema-optional and carry `omitempty` here to match.
+//
+// `Chat` is a string, not an integer — Telegram supergroup ids exceed the
+// safe integer range of several YAML/JSON readers (spec 01 §T2). `Topic` is
+// a pointer for the same reason internal/validate's own manifestRouteProbe
+// uses one: "absent" (the chat's general thread) is a distinct value from
+// any concrete thread id, including the schema's own floor of 1.
+//
+// This is a structural decode only, matching ParseManifest's own leniency
+// (§ParseManifest doc comment below): an unknown key, a missing `chat`, or
+// any other schema violation still decodes into a usable value here. The
+// schema/policy verdict on whether a route is well-formed remains the
+// ManifestValidator seam's job (internal/validate's checkNotificationRoutes,
+// REF-022), never this package's.
+type NotificationRoute struct {
+	Channel  string   `yaml:"channel"`
+	Chat     string   `yaml:"chat"`
+	Topic    *int     `yaml:"topic,omitempty"`
+	For      string   `yaml:"for,omitempty"`
+	Events   []string `yaml:"events"`
+	Locale   string   `yaml:"locale,omitempty"`
+	Secret   string   `yaml:"secret,omitempty"`
+	Renderer string   `yaml:"renderer,omitempty"`
 }
 
 // ParseManifest structurally parses raw space.yaml bytes. Malformed YAML
