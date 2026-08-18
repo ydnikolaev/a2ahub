@@ -702,3 +702,34 @@ changes:
     action:
       scope: none
       why: "No action. This release changes what the tests know, not what the dashboard does, beyond the copy fixes described above."
+  - id: RN-02300-21
+    kind: fix
+    roadmap:
+      visibility: shipped
+      why: >
+        The dashboard opens Exchange on "all directions" — that is what the
+        screen's own state asks for on a cold load. The re-composition dropped
+        that option from the chips but left the request in place, so the screen
+        quietly answered a narrower question than it was asked.
+    impact: normal
+    subject: "Exchange opens on everything again, not silently on incoming only"
+    detail: >
+      Opening Exchange showed only incoming documents while the screen's own
+      state asked for all of them. Nothing said so: the "All" chip was gone, no
+      other chip looked selected, and the shorter list read as "this is what
+      there is". On a real project that was two rows where the previous release
+      showed five.
+
+      "All" is back as the first direction and is honoured again. Its count is
+      what it can actually see, and it reports no window bound of its own —
+      three separate bounds do not add up to one, and a total nobody sent is
+      not a number worth printing.
+
+      The narrower reading of a value a screen does not recognise is the same
+      defect class this release fixes elsewhere by refusing outright. Here the
+      value was always legitimate; it was the screen that stopped understanding
+      it.
+    affects: ["a2a dashboard"]
+    action:
+      scope: none
+      why: "No action. If you had selected a direction, that selection still applies; only the default reading changed back."
