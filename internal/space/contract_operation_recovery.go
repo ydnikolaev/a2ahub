@@ -461,10 +461,13 @@ func (r *ContractPublicationRecovery) verifyRecomputedPublication(
 // It is still a refusal in every case — an unprovable head is not a safe
 // head — but only the first case may read as tampering.
 func publicationRecomputeConflictReason(mintedByVersion, runningVersion string) string {
-	switch {
-	case mintedByVersion == "":
+	// The empty case comes FIRST and stays first: when both versions are empty
+	// (a legacy record checked by a binary with no version stamp) that is the
+	// unversioned-head state, not a matching pair.
+	switch mintedByVersion {
+	case "":
 		return "publication-plan-recompute-unversioned-head"
-	case mintedByVersion == runningVersion:
+	case runningVersion:
 		return "publication-plan-recompute"
 	default:
 		return fmt.Sprintf("publication-plan-recompute-version-boundary minted-by=%s running=%s", mintedByVersion, runningVersion)
