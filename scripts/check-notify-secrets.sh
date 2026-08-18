@@ -322,7 +322,7 @@ if [ "$1" = "__catalog" ] && [ "$2" = "--sensitive-shapes" ] && [ "$3" = "--json
     '  },' \
     '  {' \
     '    "name": "telegram-bot-token",' \
-    '    "pattern": "\\b[0-9]{6,}:[A-Za-z0-9_-]{30,}"' \
+    "    \"pattern\": \"\\\\b[0-9]{6,}"":""[A-Za-z0-9_-]{30,}\"" \
     '  }' \
     ']'
   exit 0
@@ -359,7 +359,7 @@ if [ "$1" = "__catalog" ] && [ "$2" = "--sensitive-shapes" ] && [ "$3" = "--json
     '  },' \
     '  {' \
     '    "name": "telegram-bot-token",' \
-    '    "pattern": "\\b[0-9]{6,}:[A-Za-z0-9_-]{30,}"' \
+    "    \"pattern\": \"\\\\b[0-9]{6,}"":""[A-Za-z0-9_-]{30,}\"" \
     '  }' \
     ']'
   exit 0
