@@ -384,8 +384,11 @@ changes:
 
       Anything shaped like a credential is stripped from an artifact's text
       before it can reach a chat, and the bot token cannot appear in any
-      output: it is held in a type that prints as [redacted], and every error
-      is rebuilt rather than passed through from the transport.
+      output. It is held in a type that prints as [redacted], and no error
+      that touched a URL carrying it is ever wrapped or reformatted — both the
+      network layer and the request builder embed the full address in their
+      own error text, and Telegram's addresses carry the token, so those
+      errors are replaced rather than passed along.
     affects: ["a2a notify"]
     action:
       scope: none
