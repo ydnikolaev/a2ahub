@@ -1371,6 +1371,59 @@ func TestDoctorRunRendersSkillManualCurrentWithSeparator(t *testing.T) {
 	}
 }
 
+// --- doctorCheckAutomationCoverage --------------------------------------
+//
+// onboarding.md §8.6 recommends two automations doctor structurally cannot
+// observe (a harness session-start hook, and a2a-poll.yml in the
+// PARTICIPANT's own repo — D-021, "advisory, never invasive"). This row
+// must say so plainly, must never claim a verdict it did not earn (no PASS
+// wording implying a check happened, no FAIL at all), and must always
+// appear.
+
+func TestDoctorCheckAutomationCoverage_AlwaysPassWithAdvisory(t *testing.T) {
+	t.Parallel()
+	cmd := newTestDoctorCommand()
+	ok, detail := cmd.doctorCheckAutomationCoverage()
+	if !ok {
+		t.Fatalf("automation coverage must never FAIL (doctor cannot observe either automation, so it has no basis to fail); got fail: %s", detail)
+	}
+	for _, want := range []string{
+		"session-start hook",
+		"a2a-poll.yml",
+		"PARTICIPANT",
+		"cannot see",
+	} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("detail = %q, want it to mention %q", detail, want)
+		}
+	}
+}
+
+// TestDoctorRunRendersAutomationCoverageWithSeparator guards the same
+// PASS-line separator convention TestDoctorRunRendersSkillDiscoverableWithSeparator
+// pins for its siblings, and asserts the row is present and never a FAIL at
+// the Run level (zero connected spaces, so nothing else could make Run
+// non-zero either).
+func TestDoctorRunRendersAutomationCoverageWithSeparator(t *testing.T) {
+	t.Parallel()
+	cmd := newTestDoctorCommand()
+	cmd.loadProjectConfig = func(string) (space.ProjectConfig, error) { return space.ProjectConfig{}, nil }
+	cmd.loadMachineConfig = func(string) (space.MachineConfig, error) { return space.MachineConfig{}, nil }
+	cmd.lookupGit = func() error { return nil }
+
+	var stdout, stderr bytes.Buffer
+	code := cmd.Run(context.Background(), nil, IO{Stdout: &stdout, Stderr: &stderr})
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "automation coverage: PASS · ") {
+		t.Fatalf("stdout = %q, want a properly separated PASS line for automation coverage", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "automation coverage: FAIL") {
+		t.Fatalf("stdout = %q, automation coverage must never FAIL — it observes nothing to fail on", stdout.String())
+	}
+}
+
 // --- doctorVersionOlder: the file-private version comparator this phase's
 // plan Placement decision explicitly sanctions (internal/space's own
 // versionOlderThan is unexported to that package). ---

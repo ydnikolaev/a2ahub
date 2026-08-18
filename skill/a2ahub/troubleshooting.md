@@ -49,9 +49,9 @@ notify-delivery: PASS · no a2a-notify run recorded yet for this space
 repository visibility [getvisa]: PASS: no observed mismatch
 ```
 
-All twenty fixed checks, in the order the binary prints them, followed by
+All twenty-one fixed checks, in the order the binary prints them, followed by
 one `repository visibility` row per connected space (this project has one,
-`getvisa`) — that row is not one of the fixed twenty and always prints
+`getvisa`) — that row is not one of the fixed twenty-one and always prints
 LAST, after every one of them. **A `PASS` carrying a note is a pass** — do
 not report it as a problem.
 
@@ -106,28 +106,42 @@ violated).
 | `1` | One or more checks failed, OR the local project/machine config could not be loaded (in which case doctor prints a `doctor: cannot load … config` line to stderr before exiting). |
 | `2` | Usage error — including the `--space` flag, which is the v2 admin host-drift diff and is explicitly rejected in v1-min (doctor prints `doctor: --space: v1-min: not available`). |
 
-## The seventeen checks
+## The twenty-one checks
 
-`doctor` prints a fixed set of exactly seventeen checks — that fixed count is
+`doctor` prints a fixed set of exactly twenty-one checks — that fixed count is
 what this heading names, and it is why the count and the heading are kept in
-lockstep by the test guarding this file. **Each of the seventeen runs once per
-PROJECT, not once per connected space**: when a check must reason about
+lockstep by the test guarding this file. That lockstep was NOT holding: this
+heading still said "seventeen" on 2026-08-18 while the sentence forty lines up
+said "twenty". The tripwire did check the heading — against the hardcoded
+string `"## The seventeen checks"`, frozen at the roster size on the day it was
+written. An expectation spelled as a literal cannot notice that the thing it
+describes has moved; it can only notice somebody editing the doc without
+editing the test, which is the opposite of its job. The number is now DERIVED
+from the binary's own roster, and the summary sentence — which had no assertion
+at all — is checked too. **Each of the twenty-one
+runs once per PROJECT, not once per connected space**: when a check must reason about
 several connected spaces, it folds any per-space detail into a single line
 (`space access` and `credentials`, for example, join per-space failures with
 `; `). They print in the order below, top to bottom, matching `doctor`'s own
 output.
 
-The table carries an eighteenth row, `repository visibility`, because it is
-real output you will see — but it is NOT one of the fixed seventeen and shares
+The table carries a twenty-second row, `repository visibility`, because it is
+real output you will see — but it is NOT one of the fixed twenty-one and shares
 neither their order nor their cardinality. It prints ONE row PER CONNECTED
 SPACE, after every fixed check, so it is always LAST in the output and absent
 entirely from a project with no connected spaces. Its printed name carries
 the space id (`repository visibility [getvisa]`), which no other row does.
 
-**So the table below is in output order, all eighteen rows** — read it top to
+**So the table below is in output order, all twenty-two rows** — read it top to
 bottom and you are reading `doctor`'s own sequence. That is worth stating
-because it was not true until 2026-08-12: this row sat eighth in the table
-under a sentence promising output order, while the binary printed it last.
+because it has now been false TWICE. The first time, until 2026-08-12, this row
+sat eighth in the table under a sentence promising output order while the
+binary printed it last. The second time, until 2026-08-18, the three `notify-*`
+rows sat AHEAD of the two `skill-*` rows here while the binary prints them
+after — shipped by the epic that added them, under the same promise, and found
+only because a different change made the roster tripwire count wrong. A
+sentence promising an order that nothing checks will keep going stale; the
+tripwire now asserts the ORDER, not only the membership and the count.
 
 | Check | What it verifies | A FAIL means |
 |-------|------------------|--------------|
@@ -146,11 +160,12 @@ under a sentence promising output order, while the binary printed it last.
 | **skipped mirror files** | Every `.md` artifact and every event file in each mirror actually decodes, so the read model holds the whole space. | Advisory only — this row never FAILs. A note names each undecodable file and why (`unreadable`, `not-frontmatter-shaped`, `undecodable-yaml`, `no-id`, `unrelativizable-path`). **This is the row to read when a document you know exists does not show up.** A skipped file is missing from `search`, `inbox`, `outbox`, `thread` and `statusline` — `show` still prints it, because that path parses the file itself. Fixable only by whoever owns that file's section, which under diff-authz may not be you. |
 | **notification components** | Every channel enabled for this project has an installed component with a compatible CLI handshake; macOS permission/login-item state is healthy when available. | The companion is absent, version-skewed, permission-denied, awaiting the user's Gatekeeper decision, or its login item is missing. Run `a2a notifications status --probe --json`, then repeat `a2a notifications install --channel <channel>` to repair it. For macOS `approval-required`, the human opens A2A Notifier once and explicitly chooses **System Settings → Privacy & Security → Open Anyway**; never clear quarantine or disable Gatekeeper for them. |
 | **statusline wiring** | The `git` binary is on `PATH` (the prerequisite for §7.5's hub-less statusline-refresh fallback). | `git` is not on `PATH`, so the statusline's git-fetch fallback refresh cannot run. |
+| **skill discoverable** | The `a2ahub` skill tree is installed and reachable by your agent harness. | Advisory only — this row never FAILs. It reports whether a skill is installed at all. |
+| **skill manual current** | The installed skill's generated reference matches this binary's own command catalog. | Advisory only — this row never FAILs. A note here means the installed manual describes a different binary version; `a2a skill install` refreshes it. |
+| **automation coverage** | Nothing — and it says so. It names the two automations `onboarding.md` §8.6 recommends (a harness session-start hook, and a scheduled `a2a-poll.yml` in the PARTICIPANT's own repository) and states that doctor cannot observe either: the first is your harness's own config, which D-021 forbids a2a to read or write, and the second lives in a repository doctor is never pointed at. | It cannot FAIL. Always PASS-with-advisory, because a FAIL would claim doctor saw a broken state it structurally cannot see, and a bare PASS would be silent about something every new participant is told to set up. Check both by hand. |
 | **notify-routes** | Every `notification_routes[]` entry in the space's `space.yaml` is well-formed and names a participant the manifest actually lists. | A route is malformed, or its `for:` names a system absent from `participants[]`. The space's own PR gate refuses both (POL-021 / REF-022), so this row failing means a route reached `main` before the rule existed, or the manifest changed under it. Fix the route in `space.yaml` through the normal write funnel. |
 | **notify-secret** | Every secret a route names exists on the space repo. **Presence only — doctor never reads a secret's value.** | A route names a secret the repo does not hold, so its messages cannot be sent. Run `a2a notify setup`, or set it directly with `gh secret set <NAME> --repo <space-repo>`. A route with no secret configured is not an error until it has one to lose. |
 | **notify-delivery** | The most recent `a2a-notify` run on `main` concluded green. | The last run failed, or there has never been one. A failed run is the honest state a silent channel would hide — read it with `gh run list --workflow a2a-notify.yml --repo <space-repo>`. "Never run" is normal for a space that has just configured its first route and not yet pushed. |
-| **skill discoverable** | The `a2ahub` skill tree is installed and reachable by your agent harness. | Advisory only — this row never FAILs. It reports whether a skill is installed at all. |
-| **skill manual current** | The installed skill's generated reference matches this binary's own command catalog. | Advisory only — this row never FAILs. A note here means the installed manual describes a different binary version; `a2a skill install` refreshes it. |
 | **repository visibility** | Whether the space repo's GitHub visibility matches what the material inside it is classified as. Visibility is read from the host; classification comes from the artifacts themselves. | **This row never FAILs — it PASSes or reports UNVERIFIED**, because visibility is evidence, never write authority. A **WARN** on a PUBLIC repo means it carries higher-classified material than `public`: that is the one reading to act on, and the fix is the repository's visibility or the material's classification, not this row. On a **private or internal** repo carrying nothing `restricted`, it PASSes as "no observed mismatch". On a private repo that DOES carry `restricted` material it PASSes only when a bilateral proof source is named; otherwise it reports UNVERIFIED with "repository privacy alone does not prove intended pairwise audience" — which is **not a problem to fix**. It says the honest thing: a private repo proves the audience is small, never that it is the specific pair the material was restricted to. An UNVERIFIED reading "visibility could not be verified" means the credential could not read repo metadata (a fine-grained token needs `Repository metadata: read`), so the answer is unknown rather than bad. |
 
 ## Known limits — do NOT over-read a PASS

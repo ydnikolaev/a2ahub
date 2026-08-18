@@ -212,6 +212,7 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		{"statusline wiring", func() (bool, string) { return c.doctorCheckStatuslineWiring() }},
 		{"skill discoverable", func() (bool, string) { return c.doctorCheckSkillDiscoverable() }},
 		{"skill manual current", func() (bool, string) { return c.doctorCheckSkillManualCurrent() }},
+		{"automation coverage", func() (bool, string) { return c.doctorCheckAutomationCoverage() }},
 		{"notify-routes", func() (bool, string) { return c.doctorCheckNotifyRoutes(cfg, machine) }},
 		{"notify-secret", func() (bool, string) { return c.doctorCheckNotifySecret(ctx, cfg, machine) }},
 		{"notify-delivery", func() (bool, string) { return c.doctorCheckNotifyDelivery(ctx, cfg, machine) }},
@@ -1522,6 +1523,41 @@ func (c *DoctorCommand) doctorCheckSkillManualCurrent() (bool, string) {
 			manualVersion, c.binaryVersion)
 	}
 	return true, fmt.Sprintf(" · skill manual current (v%s)", manualVersion)
+}
+
+// doctorCheckAutomationCoverage names the two automations
+// skill/a2ahub/onboarding.md §8.6 ("Making the loop run without a human")
+// recommends — a harness session-start hook and a scheduled `a2a-poll.yml`
+// workflow in the PARTICIPANT's own repository — and says plainly that
+// doctor cannot observe either one, and why, rather than staying silent
+// about them.
+//
+// This is deliberately NOT a detection check (this phase's brief; D-021,
+// docs/the-plan/plan/07-client.md:140, 14-us-ac.md:143/:163: integration is
+// "advisory, never invasive… every user owns their statusline/harness
+// config"). Reading a harness's own settings file (e.g. Claude Code's
+// .claude/settings.json) would also be provider-specific and silent on
+// every other harness — the loud-specific-WRONG shape
+// doctorCheckSkillDiscoverable's own history already warns against (a
+// remedy that only works for one surface trains readers to distrust the
+// row). The poll workflow lives in the PARTICIPANT's repository, which is
+// never a tree doctor is pointed at: cfg.Spaces names the SPACE mirrors
+// doctor clones, not the participant's own working copy, so there is no
+// config surface here to read even if reading harness config were in
+// scope.
+//
+// Always PASS, with an advisory note — never a FAIL and never a bare PASS
+// with nothing said. A FAIL would misclaim doctor observed a broken state
+// it structurally cannot see; a bare PASS would be silent about something
+// onboarding.md tells every new participant to set up, which is the exact
+// gap this check exists to close.
+func (c *DoctorCommand) doctorCheckAutomationCoverage() (bool, string) {
+	return true, " · doctor cannot see whether either automation onboarding.md §8.6 " +
+		"recommends is set up: (1) a harness session-start hook running `a2a sync && " +
+		"a2a inbox --actionable` — that is your harness's own config (D-021: a2a " +
+		"never reads or writes it), or (2) a scheduled a2a-poll.yml workflow in " +
+		"the PARTICIPANT's own repository (not the space, so it is outside every " +
+		"path doctor reads) — check both by hand; see onboarding.md §8.6"
 }
 
 // doctorVersionOlder reports whether binaryVersion is strictly older than
