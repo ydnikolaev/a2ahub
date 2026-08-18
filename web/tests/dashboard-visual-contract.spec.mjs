@@ -113,8 +113,27 @@ async function openManifestCard(page, kind, locale) {
   return card;
 }
 
-function normalizeCardGolden(text) {
-  return text.replaceAll('\r\n', '\n').replace(/\n+$/, '') + '\n';
+// factIdentifiers reads the ordered `data-card-fact="<kind>:<slug>"` markers
+// under `region`, or null if `region` itself does not exist on the page
+// (distinct from "exists but is empty" — P2's re-shaped golden format needs
+// to say WHICH is true, per card-spec/README.md's retirement of byte-exact
+// prose equality: the golden is fact identity, order and placement, not
+// sentences, so "no region" and "region with no facts yet" are different
+// facts about the composition and must not collapse into the same golden).
+async function factIdentifiers(region) {
+  if ((await region.count()) === 0) return null;
+  return region.locator('[data-card-fact]').evaluateAll(
+    nodes => nodes.map(node => node.getAttribute('data-card-fact')),
+  );
+}
+
+function normalizeFactGolden(kind, regionName, facts) {
+  const lines = facts === null
+    ? [`(no ${regionName} region rendered for kind "${kind}")`]
+    : facts.length
+      ? facts
+      : [`(${regionName} region rendered for kind "${kind}" with no data-card-fact markers)`];
+  return Buffer.from(lines.join('\n') + '\n', 'utf8');
 }
 
 async function normalizedCardDOM(card) {
@@ -445,6 +464,16 @@ const displayMatrix = [
 ];
 
 test('card content goldens match P5 in both locales', async ({ page }) => {
+  // P2 (dashboard-ui-restoration-2026-08) re-shapes this producer: the golden
+  // is fact identity, order and placement — read from each region's
+  // `data-card-fact` markers — not the rendered sentence. See
+  // card-spec/README.md#composition-rules, "Byte-exact prose equality is
+  // retired". Two regions per kind per §4.5: the card's own SUMMARY (found by
+  // `[data-card-summary="<kind>"]`, ahead of the click that opens the modal)
+  // and the modal's DETAIL (`[data-card-content]`, the pre-existing region).
+  // P3 is the phase that gives cards their own summary region; until it
+  // lands, `factIdentifiers` returns null for every kind's summary and the
+  // golden names that explicitly rather than writing empty content silently.
   const rows = CARD_MANIFEST.cards;
   expect(rows).toHaveLength(7);
   expect(new Set(rows.map(row => row.kind)).size).toBe(7);
@@ -456,20 +485,33 @@ test('card content goldens match P5 in both locales', async ({ page }) => {
   for (const locale of ['en', 'ru']) {
     for (const { kind } of rows) {
       await openDashboard(page, { theme: 'light', locale, viewport: DESKTOP });
+      const summaryRegion = page.locator(`[data-card-summary="${kind}"]`);
       const card = await openManifestCard(page, kind, locale);
-      const content = card.locator('[data-card-content]');
-      await expect(content, `${kind} must expose exactly one visible P5 content region`).toHaveCount(1);
-      await expect(content).toBeVisible();
-      const actual = Buffer.from(normalizeCardGolden(await content.innerText()), 'utf8');
-      const golden = join(CARD_GOLDEN_DIR, `${kind}.${locale}.golden.txt`);
+      const detailRegion = card.locator('[data-card-content]');
+      await expect(detailRegion, `${kind} must expose exactly one visible P5 content region`).toHaveCount(1);
+      await expect(detailRegion).toBeVisible();
+
+      const summaryFacts = await factIdentifiers(summaryRegion);
+      const detailFacts = await factIdentifiers(detailRegion);
+      if (summaryFacts === null) {
+        test.info().annotations.push({ type: 'card-summary-region-missing', description: kind });
+      }
+
+      const summaryActual = normalizeFactGolden(kind, 'summary', summaryFacts);
+      const detailActual = normalizeFactGolden(kind, 'detail', detailFacts);
+      const summaryGolden = join(CARD_GOLDEN_DIR, `${kind}.${locale}.summary.golden.txt`);
+      const detailGolden = join(CARD_GOLDEN_DIR, `${kind}.${locale}.detail.golden.txt`);
 
       if (update) {
-        writeFileSync(golden, actual);
+        writeFileSync(summaryGolden, summaryActual);
+        writeFileSync(detailGolden, detailActual);
         continue;
       }
 
-      expect(existsSync(golden), `missing card-content golden: ${golden}`).toBe(true);
-      expect(actual, `card-content golden differs: ${golden}`).toEqual(readFileSync(golden));
+      expect(existsSync(summaryGolden), `missing card-content golden: ${summaryGolden}`).toBe(true);
+      expect(summaryActual, `card-content golden differs: ${summaryGolden}`).toEqual(readFileSync(summaryGolden));
+      expect(existsSync(detailGolden), `missing card-content golden: ${detailGolden}`).toBe(true);
+      expect(detailActual, `card-content golden differs: ${detailGolden}`).toEqual(readFileSync(detailGolden));
     }
   }
 });

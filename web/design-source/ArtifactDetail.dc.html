@@ -406,9 +406,11 @@ class Component extends DCLogic {
       const unavailableReason = unavailable && (unavailable.reason || unavailable.summary);
       const unavailableEvidenceReason = unavailableEvidence && (unavailableEvidence.reason || unavailableEvidence.summary);
       const yesNo = value => value ? (ru ? "да" : "yes") : (ru ? "нет" : "no");
+      // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state constant declarations; predates Rule A; P5 will replace with blank-slot pattern per card-spec composition rules
       const none = ru ? "Ничего не записано." : "None recorded.";
       const notRecorded = ru ? "Не записано." : "Not recorded.";
       const unknown = ru ? "В этом снимке неизвестно." : "Unknown in this snapshot.";
+      // dashboard-derivation: allow-provenance-end
       const unknownInline = ru ? "в этом снимке неизвестно" : "unknown in this snapshot";
       const notRecordedInline = ru ? "не записано" : "not recorded";
       const bodyResult = result => result ? { ...result, cue:"" } : result;

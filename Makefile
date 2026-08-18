@@ -60,7 +60,7 @@
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := spec-verify-refs lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus view-vocabulary pendency-uniqueness notify-workflow notify-secrets loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness roadmap-release-decisions provider-tier-deferral runner-economics space-template-baseline-check
+REPO_GATES := spec-verify-refs lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus view-vocabulary dashboard-props card-content pendency-uniqueness notify-workflow notify-secrets loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness roadmap-release-decisions provider-tier-deferral runner-economics space-template-baseline-check
 
 _print-repo-gates:
 	@echo "$(REPO_GATES)"
@@ -182,6 +182,12 @@ dashboard-derivation: ## Dashboard components preserve carried order/facts and k
 
 view-vocabulary: ## No component may classify by its own list of state names, or spell one the domain does not have.
 	@bash scripts/check-view-vocabulary.sh
+
+dashboard-props: ## No component may apply ?? or || to a prop its own data-props declaration marks required (P1, dashboard-ui-restoration-2026-08).
+	@bash scripts/check-dashboard-props.sh
+
+card-content: ## Card facts respect Rule A (empty-state sentence ban) and Rule C (placement/presence completeness) (P2, dashboard-ui-restoration-2026-08).
+	@bash scripts/check-card-content.sh
 
 notify-workflow: ## The notify workflow pair's security posture: no secrets: inherit, exact triggers, least-privilege permissions, no logic in the caller (P7).
 	@bash scripts/check-notify-workflow.sh
@@ -427,6 +433,8 @@ _harness-check:
 	@bash scripts/check-dashboard-cards.sh --teeth
 	@bash scripts/check-dashboard-derivation.sh --teeth
 	@bash scripts/check-view-vocabulary.sh --teeth
+	@bash scripts/check-dashboard-props.sh --teeth
+	@bash scripts/check-card-content.sh --teeth
 	@bash scripts/check-pendency-uniqueness.sh --teeth
 	@bash scripts/check-notify-workflow.sh --teeth
 	@bash scripts/check-notify-secrets.sh --teeth

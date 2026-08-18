@@ -426,9 +426,11 @@ class Component extends DCLogic {
       bannerAction: d.meta.synthetic ? (ru ? "Про демо →" : "About the demo →") : (ru ? "Версии →" : "Versions →"),
       goBanner: d.meta.synthetic ? () => this.go("guide") : () => this.go("versions"),
       footerLine: (ru ? "Только чтение · истина живёт в репозитории, а не здесь" : "Read-only projection · not a source of truth") + (d.meta.synthetic ? (ru ? " · демо-данные, живых сервисов нет" : " · Synthetic demo data, no live services") : (d.meta.notice ? " · " + d.meta.notice : "")),
+      // dashboard-derivation: allow-provenance-begin -- pre-existing provenance vocabulary in section subtitle; unclaimed phase; rephrase in a maintenance pass after epic closes
       ovSub: ru
         ? "Действия за человеком показаны в серверном порядке внимания. Полные перенесённые списки доступны в Обмене."
         : "Human-owned actions appear in server-carried attention order. Open Exchange for the complete carried lists.",
+      // dashboard-derivation: allow-provenance-end
       ovRestText: c.openWork,
       workSub: ru
         ? "Полная история обмена: входящие и исходящие документы, открытые и завершённые, последние сверху. Фильтры ниже работают вместе и не прячут завершённые записи."
@@ -436,9 +438,11 @@ class Component extends DCLogic {
       threadsSub: ru
         ? "Одна задача, один тред: запрос, ответы, доказательства и решение лежат вместе, и все стороны видят их в одном порядке. Слева список тредов и чей сейчас ход, справа вся история, новое сверху."
         : "One task, one thread: the request, the replies, the evidence and the decision stay together and read the same way for every side. The list on the left says whose move it is; the record on the right shows how it got there, newest first.",
+      // dashboard-derivation: allow-provenance-begin -- pre-existing provenance vocabulary in section subtitle; unclaimed phase; rephrase in a maintenance pass after epic closes
       conSub: ru
         ? "Каждый контракт обещает остальным системам, что именно он отдаёт и в каком виде. Зарегистрированные линии и их перенесённые границы показаны ниже."
         : "A contract is one system's promise to the others: what it hands over and in what shape. Registered lines and their carried bounds appear below.",
+      // dashboard-derivation: allow-provenance-end
       verSub: ru
         ? "Какая версия a2a стоит у вас сейчас и что менялось в каждом выпуске. Фильтры сверху сужают список по типу изменения и отделяют записи, которые чего-то от вас требуют, от тех, что можно просто прочитать."
         : "Which a2a version you run right now, and what changed in every release. The filters up top narrow the list by kind of change, and separate the entries that ask something of you from the ones you can simply read."

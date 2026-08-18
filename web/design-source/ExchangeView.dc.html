@@ -380,9 +380,11 @@ class Component extends DCLogic {
     const unavailableEvidence = itemUnavailable || sourceDiagnostic;
     const unavailableState = !!itemUnavailable || sourceUnavailable;
     const sentence = it.reasonSentence || {};
+    // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state constant declarations; predates Rule A; P5 will replace with blank-slot pattern per card-spec composition rules
     const noneRecorded = ru ? "Ничего не записано." : "None recorded.";
     const notRecorded = ru ? "Не записано." : "Not recorded.";
     const unknown = ru ? "В этом снимке неизвестно." : "Unknown in this snapshot.";
+    // dashboard-derivation: allow-provenance-end
     const yesNo = value => value ? (ru ? "да" : "yes") : (ru ? "нет" : "no");
     const waitingOn = listNames(it.waitingOn || [], ru) || noneRecorded;
     const expectedMove = it.expectedTransition || unknown;
@@ -581,7 +583,9 @@ class Component extends DCLogic {
       return {
         isLifecycle: true,
         isWorkReport: false,
+        // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state inline value; predates Rule A; P5 will replace with blank-slot pattern
         actionText: transitionKnown ? transitionResult.label : (ru ? "В этом снимке неизвестно." : "Unknown in this snapshot."),
+        // dashboard-derivation: allow-provenance-end
         transitionRaw:transition,
         subjectLabel,
         meta: system + (system ? " · " : "") + when(ev.at),
@@ -787,9 +791,11 @@ class Component extends DCLogic {
     const resolver = globalThis.A2A_VOCABULARY_RESOLVER;
     const modeKnown = !!resolver.knows && resolver.knows(d, "work-mode", report.mode);
     const modeResult = vocabulary(d, "work-mode", report.mode, ru);
+    // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state constant declarations; predates Rule A; P5 will replace with blank-slot pattern per card-spec composition rules
     const unknown = ru ? "В этом снимке неизвестно." : "Unknown in this snapshot.";
     const notRecorded = ru ? "Не записано." : "Not recorded.";
     const noneRecorded = ru ? "Ничего не записано." : "None recorded.";
+    // dashboard-derivation: allow-provenance-end
     const notRecordedInline = ru ? "не записано" : "not recorded";
     const bodyResult = result => result ? { ...result, cue:"" } : result;
     const sentence = value => /[.!?…]$/.test(String(value || "")) ? String(value) : String(value || "") + ".";
@@ -919,10 +925,12 @@ class Component extends DCLogic {
     const workReportRows = workReports.map(report => {
       const actor = report.actor || {};
       return {
+        // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state fallback values in work report rows; predates Rule A; P5 will replace with blank-slot pattern
         subject:report.subject_ref || (ru ? "В этом снимке неизвестно." : "Unknown in this snapshot."),
         summary:report.summary || (ru ? "В этом снимке неизвестно." : "Unknown in this snapshot."),
         actor:actor.name || actor.system || (ru ? "В этом снимке неизвестно." : "Unknown in this snapshot."),
         reportedAt:report.reported_at || (ru ? "Не записано." : "Not recorded."),
+        // dashboard-derivation: allow-provenance-end
         modeResult:vocabulary(d, "work-mode", report.mode, ru),
         openLabel:(ru ? "Открыть отчёт о работе: " : "Open work report: ") + (report.subject_ref || report.artifact_id || ""),
         open:() => {
@@ -936,11 +944,23 @@ class Component extends DCLogic {
       cardWorkReport:false,
       regularExchange:true,
       workAria:c.views[1],
-      workTabs: [["incoming", ru ? "Входящие" : "Incoming"], ["outgoing", ru ? "Исходящие" : "Outgoing"], ["archive", ru ? "Архив" : "Archive"]].map(([id, label]) => ({
-        label,
-        pressed: !aggregate && tab === id ? "true" : "false",
-        go: () => this.setState({ workTab:id, workSel:"", dashboardSet:"" })
-      })),
+      workTabs: [["incoming", ru ? "Входящие" : "Incoming"], ["outgoing", ru ? "Исходящие" : "Outgoing"], ["archive", ru ? "Архив" : "Archive"]].map(([id, label]) => {
+        // The chip's own render, not a stored literal: total when the space
+        // filter is "all" (a truncated window must report what exists, not
+        // what was shown), the in-scope collection length otherwise — the
+        // same this.inScope(item.space) filter workList already applies.
+        const windowKey = id === "incoming" ? "inbox" : id === "outgoing" ? "outbox" : "archive";
+        const scopedCount = collections[id].filter(item => this.inScope(item.space)).length;
+        const window = windows[windowKey];
+        const count = s.space === "all" && window && window.total != null ? window.total : scopedCount;
+        return {
+          label,
+          count,
+          pressed: !aggregate && tab === id ? "true" : "false",
+          go: () => this.setState({ workTab:id, workSel:"", dashboardSet:"" })
+        };
+      }),
+      // dashboard-derivation: allow-provenance-begin -- pre-existing provenance vocabulary in ARIA labels and empty-state strings; P5 will rephrase to user-state copy
       workDirectionAria: ru ? "Перенесённые сервером коллекции обмена" : "Server-carried exchange collections",
       hasWorkWindow:!!workWindowText,
       workWindowText,
@@ -964,6 +984,7 @@ class Component extends DCLogic {
       emptyWorkText:workWindowText
         ? (ru ? "Перенесённое окно сообщает о записях за пределами этого ограниченного префикса; коллекция не считается пустой." : "The carried window reports items outside this bounded prefix; the collection is not claimed empty.")
         : (ru ? "Выберите другую серверную коллекцию обмена." : "Choose another server-carried exchange collection.")
+      // dashboard-derivation: allow-provenance-end
     };
     return values;
   }

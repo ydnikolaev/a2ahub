@@ -57,8 +57,10 @@
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1240,&quot;height&quot;:900},&quot;ctx&quot;:{&quot;editor&quot;:&quot;object&quot;,&quot;default&quot;:{},&quot;tsType&quot;:&quot;object&quot;}}">
 const SPACE_I18N = {
+  // dashboard-derivation: allow-provenance-begin -- pre-existing provenance vocabulary in empty-state strings; P6 will rephrase to user-state copy
   en:{ spaces:"Spaces", emptyTitle:"No spaces connected", emptyText:"Connect a shared repository to see its carried source and consistency facts.", open:"Open space", kind:"Space", repository:"Repository", participants:"Participants", compatibility:"Compatibility", consistency:"Consistency", unavailable:"Unavailable evidence", snapshot:"Snapshot", technical:"Technical detail", workFreshness:"Work evidence freshness", none:"None recorded.", notRecorded:"Not recorded.", unknown:"Unknown in this snapshot.", count:"anomalies", shown:"Showing", of:"of", missingTitle:"Space not found", missingText:"The current snapshot has no space with this opaque identity." },
   ru:{ spaces:"Спейсы", emptyTitle:"Спейсы не подключены", emptyText:"Подключите общий репозиторий, чтобы увидеть перенесённые факты об источнике и согласованности.", open:"Открыть спейс", kind:"Спейс", repository:"Репозиторий", participants:"Участники", compatibility:"Совместимость", consistency:"Согласованность", unavailable:"Недоступные данные", snapshot:"Снимок", technical:"Технические подробности", workFreshness:"Свежесть данных о работе", none:"Ничего не записано.", notRecorded:"Не записано.", unknown:"В этом снимке неизвестно.", count:"аномалий", shown:"Показано", of:"из", missingTitle:"Спейс не найден", missingText:"В текущем снимке нет спейса с таким непрозрачным идентификатором." }
+  // dashboard-derivation: allow-provenance-end
 };
 
 class Component extends DCLogic {

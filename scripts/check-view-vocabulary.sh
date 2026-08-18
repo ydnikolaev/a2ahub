@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# check-view-vocabulary.sh — the view-derivation gate (agent-exchange P0, AC5/AC6).
+# check-view-vocabulary.sh — the view-derivation gate (agent-exchange P0, AC5/AC6)
+# plus the P2 (dashboard-ui-restoration-2026-08) provenance-vocabulary ban
+# (Rule B).
 #
 # A renderer must not decide what a state MEANS. `fold.OutcomeOf` and
 # `fold.Terminal` answer that once, the read model carries the answer, and a
 # component reads it. This gate is what keeps that true after the phase ships.
 #
-# It enforces two distinct things, and conflating them would break the second:
+# It enforces three distinct things, and conflating them would break the rest:
 #
 #   AC6 — no self-made classification. A component may not carry a LIST of
 #         state names and derive meaning from membership in it. That is what
@@ -21,10 +23,27 @@
 #         `canceled` with one `l`, which lived inside CANCELLED_STATES and
 #         matched nothing the fold could ever produce.
 #
+#   Rule B — no provenance vocabulary in a user-facing slot. Words describing
+#         HOW a snapshot was carried (`перенесённ*`, `carried`, `точный
+#         набор`, `exact set`, `полон и пуст`) never belong in a slot that
+#         tells the reader WHAT IS HAPPENING. Provenance is not deleted; it
+#         moves to Технические подробности — a quoted string on a line naming
+#         a `technical`-ish identifier is exempt, and so is a quoted string
+#         inside a bounded `// dashboard-derivation: allow-provenance-begin --
+#         <reason>` / `allow-provenance-end` marker, in the exact grammar
+#         `check-dashboard-derivation.sh` already uses for its sort
+#         exceptions — one convention for "this is deliberate", not two. This
+#         is a genuinely blunt word list (card-spec/README.md §Rule B says so
+#         too): it will catch provenance-flavored prose beyond the four
+#         originally measured phrases, in files this gate does not own the
+#         fix for.
+#
 # The vocabulary comes from the BINARY (`a2a __catalog --vocabulary --json`),
 # never from a list in this file and never by reading Go source: a gate that
 # names a fixed source of truth other than the shipped artifact stays green
-# through exactly the drift it exists to catch.
+# through exactly the drift it exists to catch. Rule B is the one exception:
+# there is no binary-owned provenance-word roster, so its word list lives here,
+# named as exactly that in `card-spec/README.md`'s Rule B.
 #
 # Scope note: this scans web/design-source/**, the AUTHORED components.
 # internal/html/template.html is generated from them and is proven identical
@@ -371,6 +390,115 @@ check_resolver_monopoly() { # $1 = scan root
   done <<< "$(resolver_tone_literals "$root")"
 }
 
+# provenance_records tags each source line BEGIN/END/BAD/CODE for the
+# allow-provenance marker, reusing the exact bounded-marker shape
+# check-dashboard-derivation.sh uses for allow-sort. Comments are stripped
+# from CODE lines so a phrase inside a comment cannot fail the gate.
+provenance_records() { # $1 = file
+  awk '
+    function strip_comments(text, out, start, rest, finish, slash) {
+      out=""
+      while (1) {
+        if (in_block) {
+          finish=index(text, "*/")
+          if (!finish) return out
+          text=substr(text, finish+2)
+          in_block=0
+        }
+        start=index(text, "/*")
+        slash=index(text, "//")
+        if (slash && (!start || slash < start)) return out substr(text, 1, slash-1)
+        if (!start) return out text
+        out=out substr(text, 1, start-1)
+        rest=substr(text, start+2)
+        finish=index(rest, "*/")
+        if (!finish) { in_block=1; return out }
+        text=substr(rest, finish+2)
+      }
+    }
+    /dashboard-derivation:[[:space:]]*allow-provenance-begin/ {
+      if ($0 ~ /^[[:space:]]*\/[\/][[:space:]]*dashboard-derivation:[[:space:]]*allow-provenance-begin[[:space:]]+--[[:space:]]+[^[:space:]].*$/)
+        printf "%d\tBEGIN\t%s\n", FNR, $0
+      else printf "%d\tBAD\t%s\n", FNR, $0
+      next
+    }
+    /dashboard-derivation:[[:space:]]*allow-provenance-end/ {
+      if ($0 ~ /^[[:space:]]*\/[\/][[:space:]]*dashboard-derivation:[[:space:]]*allow-provenance-end[[:space:]]*$/)
+        printf "%d\tEND\t%s\n", FNR, $0
+      else printf "%d\tBAD\t%s\n", FNR, $0
+      next
+    }
+    { printf "%d\tCODE\t%s\n", FNR, strip_comments($0) }
+  ' "$1"
+}
+
+# provenance_phrase tests one already-extracted quoted-string segment (without
+# its surrounding quotes) against the Rule B word list from card-spec/README.md
+# §Rule B: перенесённ*, carried, точный набор, exact set, полон и пуст, and
+# the English equivalents. Word-boundary via [^A-Za-z] padding rather than
+# `\b`, which BSD grep -E (the default on the macOS gates run under) does not
+# accept.
+provenance_phrase() { # $1 = segment content
+  printf '%s' " $1 " | grep -qE '[Пп]еренесённ|[^A-Za-z]([Cc]arried)[^A-Za-z]|[Тт]очный[[:space:]]+набор|[Ee]xact[[:space:]]+set|[Пп]олон[[:space:]]+и[[:space:]]+пуст'
+}
+
+check_provenance_ban() { # $1 = scan root
+  local root="$1" file lineno record content marker=0 segments seg
+  while IFS= read -r file; do
+    [ -z "$file" ] && continue
+    marker=0
+    while IFS=$'\t' read -r lineno record content; do
+      case "$record" in
+        BEGIN)
+          if [ "$marker" -eq 1 ]; then
+            gate_fail "view-vocabulary: $(basename "$file"):$lineno nests an allow-provenance marker — keep each exception bounded and independent"
+          else
+            marker=1
+          fi
+          ;;
+        END)
+          if [ "$marker" -eq 0 ]; then
+            gate_fail "view-vocabulary: $(basename "$file"):$lineno has an allow-provenance end without a matching begin"
+          else
+            marker=0
+          fi
+          ;;
+        BAD)
+          gate_fail "view-vocabulary: $(basename "$file"):$lineno has a malformed allow-provenance marker — use the exact documented begin/end syntax with a non-empty reason"
+          ;;
+        CODE)
+          [ "$marker" -eq 1 ] && continue
+          # Extract each quoted segment together with its OWN immediately
+          # preceding `key:` (if any), not the whole line: several kind
+          # components pack a whole `{ key:"value", key2:"value2" }` locale
+          # dictionary onto one physical line, so a line-wide "does this line
+          # mention technical anywhere" test would exempt an unrelated
+          # sibling key's provenance leak by accident.
+          segments="$(printf '%s\n' "$content" | grep -oE '([A-Za-z_$][A-Za-z0-9_$]*[[:space:]]*:[[:space:]]*)?"[^"]*"' 2>/dev/null || true)"
+          while IFS= read -r seg; do
+            [ -z "$seg" ] && continue
+            local key value
+            key="${seg%%\"*}"
+            # Технические подробности exemption: a quoted string assigned to
+            # a `technical`-ish key is where Rule B says provenance moves TO,
+            # not a second escape hatch that needs its own marker.
+            case "$key" in
+              *[Tt]echnical*) continue ;;
+            esac
+            value="${seg#*\"}"; value="${value%\"}"
+            if provenance_phrase "$value"; then
+              gate_fail "view-vocabulary: $(basename "$file"):$lineno carries provenance vocabulary in a user-facing string — \"$value\" describes how the snapshot was carried, not what is happening; move it to Технические подробности or bound it with a reasoned // dashboard-derivation: allow-provenance-begin -- <reason> marker"
+            fi
+          done <<< "$segments"
+          ;;
+      esac
+    done <<< "$(provenance_records "$file")"
+    if [ "$marker" -eq 1 ]; then
+      gate_fail "view-vocabulary: $(basename "$file") has an unclosed allow-provenance block"
+    fi
+  done <<< "$(find "$root" -type f -name '*.dc.html' 2>/dev/null | sort)"
+}
+
 run_check() { # $1 = scan root
   local root="$1" json states outcomes transitions
   if ! json="$(vocabulary_json)"; then
@@ -390,6 +518,7 @@ run_check() { # $1 = scan root
   fi
 
   check_resolver_monopoly "$root"
+  check_provenance_ban "$root"
 
   local line file lineno content words word known unknown
   while IFS= read -r line; do
@@ -785,6 +914,105 @@ FIXTURE
     echo "view-vocabulary --teeth: FAILED — a component reading the payload was refused" >&2
     return 1
   fi
+
+  # Rule B — the provenance-vocabulary ban (P2, dashboard-ui-restoration-2026-08).
+  # Green control FIRST: ordinary copy plus a provenance phrase correctly
+  # parked behind a `technical`-ish key must stay green — that key IS where
+  # Rule B says provenance moves to.
+  cat > "$tmp/ProvenanceGood.dc.html" <<'FIXTURE'
+<script>
+const copy = {
+  lead: "3 documents need your move.",
+  technicalHint: "точный перенесённый набор",
+};
+</script>
+FIXTURE
+  if ! ( run_check "$tmp" ) >/dev/null 2>&1; then
+    echo "view-vocabulary --teeth: FAILED — ordinary copy plus a technical-keyed provenance phrase was refused" >&2
+    return 1
+  fi
+  rm -f "$tmp/ProvenanceGood.dc.html"
+
+  # A named-offender RU phrase reds, naming file:line.
+  cat > "$tmp/ProvenanceRU.dc.html" <<'FIXTURE'
+<script>
+const hint = "точный перенесённый набор";
+</script>
+FIXTURE
+  local ru_output
+  if ru_output="$( ( run_check "$tmp" ) 2>&1 )"; then
+    echo "view-vocabulary --teeth: FAILED — a RU provenance phrase stayed green" >&2
+    return 1
+  elif [[ "$ru_output" != *"ProvenanceRU.dc.html:2"* ]]; then
+    echo "view-vocabulary --teeth: FAILED — RU provenance diagnostic omitted filename/line" >&2
+    return 1
+  fi
+  rm -f "$tmp/ProvenanceRU.dc.html"
+
+  # Its EN equivalent reds too — AC-4 requires both locales.
+  cat > "$tmp/ProvenanceEN.dc.html" <<'FIXTURE'
+<script>
+const hint = "exact carried set";
+</script>
+FIXTURE
+  local en_output
+  if en_output="$( ( run_check "$tmp" ) 2>&1 )"; then
+    echo "view-vocabulary --teeth: FAILED — an EN provenance phrase stayed green" >&2
+    return 1
+  elif [[ "$en_output" != *"ProvenanceEN.dc.html:2"* ]]; then
+    echo "view-vocabulary --teeth: FAILED — EN provenance diagnostic omitted filename/line" >&2
+    return 1
+  fi
+  rm -f "$tmp/ProvenanceEN.dc.html"
+
+  # The phrase inside a bounded, reasoned marker greens (AC-5, non-empty half).
+  cat > "$tmp/ProvenanceMarked.dc.html" <<'FIXTURE'
+<script>
+// dashboard-derivation: allow-provenance-begin -- shown once in a roadmap prototype, not the live dashboard
+const hint = "exact carried set";
+// dashboard-derivation: allow-provenance-end
+</script>
+FIXTURE
+  if ! ( run_check "$tmp" ) >/dev/null 2>&1; then
+    echo "view-vocabulary --teeth: FAILED — a bounded, reasoned allow-provenance marker was refused" >&2
+    return 1
+  fi
+  rm -f "$tmp/ProvenanceMarked.dc.html"
+
+  # The same marker with an EMPTY reason fails closed (AC-5, empty half).
+  cat > "$tmp/ProvenanceEmptyReason.dc.html" <<'FIXTURE'
+<script>
+// dashboard-derivation: allow-provenance-begin --
+const hint = "exact carried set";
+// dashboard-derivation: allow-provenance-end
+</script>
+FIXTURE
+  local empty_reason_output
+  if empty_reason_output="$( ( run_check "$tmp" ) 2>&1 )"; then
+    echo "view-vocabulary --teeth: FAILED — an allow-provenance marker with an empty reason stayed green" >&2
+    return 1
+  elif [[ "$empty_reason_output" != *"malformed allow-provenance marker"* ]]; then
+    echo "view-vocabulary --teeth: FAILED — empty-reason marker diagnostic did not name the malformed marker" >&2
+    return 1
+  fi
+  rm -f "$tmp/ProvenanceEmptyReason.dc.html"
+
+  # An unclosed marker fails closed too, even with no banned phrase inside it.
+  cat > "$tmp/ProvenanceUnclosed.dc.html" <<'FIXTURE'
+<script>
+// dashboard-derivation: allow-provenance-begin -- proving the unclosed-block guard
+const hint = "ordinary copy, no banned words here";
+</script>
+FIXTURE
+  local unclosed_output
+  if unclosed_output="$( ( run_check "$tmp" ) 2>&1 )"; then
+    echo "view-vocabulary --teeth: FAILED — an unclosed allow-provenance block stayed green" >&2
+    return 1
+  elif [[ "$unclosed_output" != *"unclosed allow-provenance block"* ]]; then
+    echo "view-vocabulary --teeth: FAILED — unclosed-marker diagnostic did not name the block" >&2
+    return 1
+  fi
+  rm -f "$tmp/ProvenanceUnclosed.dc.html"
 
   echo "view-vocabulary --teeth: ok"
 }

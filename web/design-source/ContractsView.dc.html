@@ -409,9 +409,11 @@ function isoDate(value) {
 
 function mono(value) { return String(value || "?").slice(0, 2).toUpperCase(); }
 
+// dashboard-derivation: allow-provenance-begin -- pre-existing empty-state helper functions; predates Rule A; P6 will replace with blank-slot pattern per card-spec composition rules
 function notRecorded(ru) { return ru ? "Не записано." : "Not recorded."; }
 function noneRecorded(ru) { return ru ? "Ничего не записано." : "None recorded."; }
 function unknownInSnapshot(ru) { return ru ? "В этом снимке неизвестно." : "Unknown in this snapshot."; }
+// dashboard-derivation: allow-provenance-end
 
 function sentence(value, fallback) {
   const raw = String(value == null ? "" : value).trim();
@@ -983,8 +985,10 @@ class Component extends DCLogic {
       codeBindingPrefix:c.codeBindingPrefix,
       notEvaluatedLabel:c.notEvaluated,
       codeBindingSuffix:c.codeBindingSuffix,
+      // dashboard-derivation: allow-provenance-begin -- pre-existing provenance vocabulary in hint strings; P6 §1.5 will rephrase as part of Rule A/B edits
       consumerLinesHint:ru ? "Порядок и состояние каждой линии перенесены из снимка." : "Each line keeps the order and condition carried by the snapshot.",
       versionWindowHint:ru ? "Версии показаны в порядке, перенесённом сервером." : "Versions keep the server-carried order.",
+      // dashboard-derivation: allow-provenance-end
       provenanceHint:ru ? "Это метаданные происхождения, а не браузерная проверка." : "This is provenance metadata, not a browser-side verification.",
       conRows:contractsAll.map(contract => ({
         id:contract.id,
@@ -1031,7 +1035,9 @@ class Component extends DCLogic {
       cdVersionAvailable:!!selectedDetail && selectedDetail.status === "available",
       cdVersionUnavailable:!!selectedVersion && (!selectedDetail || selectedDetail.status !== "available"),
       cdVersionUnavailableTitle:ru ? "Исторический комплект недоступен" : "Historical package unavailable",
+      // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state inline value; predates Rule A; P6 will replace with blank-slot pattern
       cdVersionUnavailableText:ru ? "В этом снимке неизвестно." : "Unknown in this snapshot.",
+      // dashboard-derivation: allow-provenance-end
       cdVersionOverviewFacts:selectedVersion && selectedDetail ? [
         { label:ru ? "версия" : "version", value:selectedVersion.version, mono:true },
         { label:ru ? "статус" : "status", value:selectedStateResult.label },

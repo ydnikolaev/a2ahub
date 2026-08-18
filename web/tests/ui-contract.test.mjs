@@ -991,6 +991,45 @@ test('P10 Exchange renders item and work-report facts through one content-only A
   assert.doesNotMatch(exchangeSource, /<sc-if value="\{\{ hasWorkReports \}\}"[^>]*>\s*<section data-work-report-list/, 'the report section must not disappear with an empty carried prefix');
 });
 
+test('P1 Exchange facet chips carry the real windowed counts, never an invented zero', () => {
+  const mkItem = (space, id) => ({ id, space, type: 'work_request', title: id, from: 'atlas', to: ['checkout'], state: 'submitted' });
+  const nodes = [{ system: 'atlas', owners: ['atlas'] }, { system: 'checkout', owners: ['checkout'] }];
+  const spaces = [{ id: 'space-a', readable: true }, { id: 'space-b', readable: true }];
+  const data = {
+    self: 'atlas', nodes, spaces, unavailable: [], operational: { sources: [] }, workReports: [],
+    contracts: [], contractEdges: [], flags: [],
+    inbox: [mkItem('space-a', 'XW-1'), mkItem('space-a', 'XW-2'), mkItem('space-b', 'XW-3')],
+    outbox: [],
+    archive: [mkItem('space-a', 'XW-4')],
+    // outbox is genuinely empty (window total 0); archive's window total (13) is
+    // far larger than its one-item carried array — a truncated collection, and
+    // the chip must report the window's total, not the shorter shown array.
+    windows: {
+      inbox: { shown: 3, total: 3, truncated: false },
+      outbox: { shown: 0, total: 0, truncated: false },
+      archive: { shown: 1, total: 13, truncated: true },
+    },
+  };
+  const actions = {};
+
+  const allSpaces = componentHarness('ExchangeView', {
+    ctx: { data, locale: 'en', ui: { space: 'all', workTab: 'incoming', workSel: '', dashboardSet: '' }, actions },
+  }).part.renderVals();
+  const tab = label => allSpaces.workTabs.find(t => t.label === label);
+  assert.equal(tab('Incoming').count, 3, 'the Incoming chip must equal windows.inbox.total');
+  assert.equal(tab('Outgoing').count, 0, 'a genuinely empty collection must read 0 because it is 0');
+  assert.equal(tab('Archive').count, 13, 'a truncated window must report its total, not the shorter carried/shown array length');
+  assert.equal(allSpaces.workRows.length, 3, 'the active tab renders exactly the carried inbox rows');
+
+  const scoped = componentHarness('ExchangeView', {
+    ctx: { data, locale: 'en', ui: { space: 'space-a', workTab: 'incoming', workSel: '', dashboardSet: '' }, actions },
+  }).part.renderVals();
+  const scopedTab = label => scoped.workTabs.find(t => t.label === label);
+  assert.equal(scopedTab('Incoming').count, 2, 'a narrowed space filter must report the in-scope collection length, not the window total');
+  assert.equal(scopedTab('Archive').count, 1, 'a narrowed space filter must not surface the unfiltered window total (13) here');
+  assert.equal(scoped.workRows.length, 2, 'the rendered rows and the chip must agree once the space filter narrows the set');
+});
+
 test('artifact detail suppresses the carried work report publish lifecycle duplicate', () => {
   const controller = dashboardController();
   const data = exchangeSubjectFixture();

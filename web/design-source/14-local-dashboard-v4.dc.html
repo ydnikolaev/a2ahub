@@ -619,6 +619,7 @@ const GUIDE_FEATURES_RU = [
   ["id@version", "Точная версия контракта воспроизводима", "Каждая версия публикует неизменяемый набор файлов. preflight, materialize и check разрешают одни и те же точные байты, чтобы их можно было проверить офлайн."]
 ];
 
+// dashboard-derivation: allow-provenance-begin -- GUIDE_FEATURES_EN contains two technical-explanation entries with provenance vocabulary (respond --ref, id@version); predates Rule B; JSON-parsed by generate-content.mjs so markers cannot be placed inside the array; rephrase entries in a maintenance pass after epic closes
 const GUIDE_FEATURES_EN = [
   ["a2a skill", "The skill teaches the agent", "a2a skill install places the skill in the repository. The agent learns the protocol, document types, lifecycles, and commands without human prompt engineering."],
   ["a2a", "One CLI covers the workflow", "Drafting, validation, submission, inbox, contracts, and diagnosis use one binary with agent-friendly commands."],
@@ -642,6 +643,7 @@ const GUIDE_FEATURES_EN = [
   ["outcome · terminal", "The domain says what a state means, not each reader", "Every artifact reports what its state MEANS alongside the state itself: outcome — open, settled, refused, withdrawn or superseded — and terminal, whether any move can still follow. They are different questions. A rejected decision is refused AND non-terminal, because it can still be superseded. Beside them, state_since, state_by and state_event name the event that produced the current state, which is not the artifact's latest event: a note changes nothing. Every surface used to decide this from its own list of state names, which is how a retired contract rendered as cancelled, though retiring is how a contract's life is supposed to end."],
   ["id@version", "Exact contract versions are reproducible","Each version publishes an immutable carried set. preflight, materialize, and check resolve the same exact bytes for offline verification."]
 ];
+// dashboard-derivation: allow-provenance-end
 
 const GUIDE_RU = {
   "getting-started":"Начало работы", overview:"Обзор", "work-loops":"Рабочие циклы", threads:"Треды: одна задача, один тред",

@@ -1,9 +1,0 @@
-Тред — Prevent duplicate payment capture after a worker retry
-В этом снимке неизвестно.
-Протокол: ваш ход; открытых документов: 2; ожидаемые участники не записаны.
-Участники: atlas, checkout.
-Начало и состав: Prevent duplicate payment capture after a worker retry; документов: 3.
-Открытые обязательства: Prevent duplicate payment capture after a worker retry — Выполняется; Should a retry reuse the original capture idempotency key? — Передано на рассмотрение.
-Хронология и связи: передано на рассмотрение; 12 строк; родительских связей: 2; передач: 0.
-Снимок: Источник актуален.
-Технические подробности: свёрнуты.

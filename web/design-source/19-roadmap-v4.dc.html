@@ -266,6 +266,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
 
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1300,&quot;height&quot;:900}}">
+// dashboard-derivation: allow-provenance-begin -- SHIPPED contains one technical-explanation entry with provenance vocabulary (Contract releases are reproducible); predates Rule B; JSON-parsed by generate-content.mjs so markers cannot be placed inside the array; rephrase in a maintenance pass after epic closes
 const SHIPPED = [
   ["Agents request work from agents", "Independent systems exchange requests, answers, decisions and handoffs without turning a person into the message bus."],
   ["Typed records replace chat archaeology", "Eight document types keep intent, responsibility and acceptance criteria explicit. Invalid moves fail before they enter the shared record."],
@@ -278,6 +279,7 @@ const SHIPPED = [
   ["Delivery and verdict close the data loop", "Two systems pack, deliver, fetch and verify data against a pinned contract version over one private exchange space. A verdict is re-derived from the exact bytes it judged, never declared, and a failed attempt is superseded rather than erased."],
   ["A space can tell you it is your move", "A publication in a space can message a human on Telegram, sent by the space's own CI rather than by anything running locally. It routes, formats and redacts; it starts no agent session, which stays an open question below."]
 ];
+// dashboard-derivation: allow-provenance-end
 const GATES = [
   ["Local watcher and wakeup", "how a session on the other side starts without a human invoking each command is undecided; nothing here implies a shipped general-purpose watcher."],
   ["Cross-machine claim and ownership", "who holds a turn across machines, for how long, and what a stalled claim means is undecided."],

@@ -486,7 +486,9 @@ function localizedSentence(value, ru) {
   if (value && Object.prototype.hasOwnProperty.call(value, locale) && typeof value[locale] === "string" && value[locale] !== "") {
     return value[locale];
   }
+  // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state return value in helper function; predates Rule A; P6 will replace with blank-slot pattern
   return ru ? "В этом снимке неизвестно." : "Unknown in this snapshot.";
+  // dashboard-derivation: allow-provenance-end
 }
 
 function collectionWindowSentence(window, ru) {
@@ -676,9 +678,11 @@ class Component extends DCLogic {
     const accentStyle = (family, identity) => selectedAccent && actions.cardAccent && actions.cardAccent(family, identity) === selectedAccent
       ? "outline:3px solid var(--teal-solid); outline-offset:2px;"
       : "";
+    // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state constant declarations; predates Rule A; P6 will replace with blank-slot pattern per card-spec composition rules
     const notRecorded = ru ? "Не записано." : "Not recorded.";
     const noneRecorded = ru ? "Ничего не записано." : "None recorded.";
     const unknown = ru ? "В этом снимке неизвестно." : "Unknown in this snapshot.";
+    // dashboard-derivation: allow-provenance-end
     // A canonical card is selected by its opaque [space, thread] identity.
     // Modal intentionally passes only ui.card, so the background screen's
     // space filter must not make the selected thread disappear.
@@ -706,7 +710,9 @@ class Component extends DCLogic {
       ? localizedSentence(leadOpenItem.reasonSentence, ru)
       : (tv && tv.settled
         ? (ru ? "Этот тред завершён; ни за кем из участников нет следующего хода протокола." : "This thread is settled; no participant owes a protocol move.")
+        // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state inline value; predates Rule A; P6 will replace with blank-slot pattern
         : (ru ? "В этом снимке неизвестно." : "Unknown in this snapshot."));
+        // dashboard-derivation: allow-provenance-end
     const tvSpaceRecord = tv ? (d.spaces || []).find(x => x.id === tv.space) : null;
     const tvParticipantFaces = tv ? (tv.participants || []).map((system, i, list) => {
       const node = (d.nodes || []).find(n => n.system === system);
@@ -806,12 +812,14 @@ class Component extends DCLogic {
       ? tv.windows.deliveries.total
       : null;
     const relationshipTotalsKnown = transcriptTotal !== null && linkTotal !== null && deliveryTotal !== null;
+    // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state inline values in card transcript text; predates Rule A; P6 will replace with blank-slot pattern
     const tvCardTranscriptText = !relationshipTotalsKnown
       ? (ru ? "Хронология и связи: В этом снимке неизвестно." : "Transcript and relationships: Unknown in this snapshot.")
       : transcriptTotal === 0 && linkTotal === 0 && deliveryTotal === 0
       ? (transcriptKnownEmpty && linksKnownEmpty && deliveriesKnownEmpty
         ? (ru ? "Хронология и связи: Ничего не записано." : "Transcript and relationships: None recorded.")
         : (ru ? "Хронология и связи: В этом снимке неизвестно." : "Transcript and relationships: Unknown in this snapshot."))
+    // dashboard-derivation: allow-provenance-end
       : (ru
         ? "Хронология и связи: " + (latestTransitionResult ? latestTransitionResult.label : unknown) + "; " + transcriptTotal + " строк; родительских связей: " + linkTotal + "; передач: " + deliveryTotal + "."
         : "Transcript and relationships: " + (latestTransitionResult ? latestTransitionResult.label : unknown) + "; " + transcriptTotal + " " + (transcriptTotal === 1 ? "row" : "rows") + "; " + linkTotal + " parent " + (linkTotal === 1 ? "link" : "links") + "; " + deliveryTotal + " " + (deliveryTotal === 1 ? "delivery" : "deliveries") + ".");

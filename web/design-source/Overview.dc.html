@@ -288,7 +288,9 @@ class Component extends DCLogic {
       id:item.id,
       type:item.type,
       title:item.title,
+      // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state fallback value; predates Rule A; P4 will replace with blank-slot pattern
       reasonSentence:sentence[locale] || (ru ? "В этом снимке неизвестно." : "Unknown in this snapshot."),
+      // dashboard-derivation: allow-provenance-end
       statusResult:this.vocabulary(data, "lifecycle-state", item.state, locale),
       outcomeResult:this.vocabulary(data, "outcome", item.outcome, locale),
       time:item.neededBy || item.age || "",
@@ -315,8 +317,10 @@ class Component extends DCLogic {
     const waitingOwners = protocol.waiting_on || [];
     const blockers = protocol.blocking_by || [];
     const none = ru ? "ничего не записано" : "none recorded";
+    // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state constant declarations; predates Rule A; P4 will replace with blank-slot pattern per card-spec composition rules
     const notRecorded = ru ? "Не записано." : "Not recorded.";
     const unknown = ru ? "В этом снимке неизвестно." : "Unknown in this snapshot.";
+    // dashboard-derivation: allow-provenance-end
     const owners = listText(waitingOwners, ru, "");
     const protocolResult = this.vocabulary(data, "outcome", protocol.settled === true ? "settled" : "open", locale);
     const protocolLead = protocol.settled === true
@@ -414,7 +418,9 @@ class Component extends DCLogic {
     const workCardText = (ru ? "Работа: " : "Work: ") + (work[0]
       ? work.map(item => item.actor + " — " + item.modeResult.label + ", " + item.freshnessResult.label).join("; ") + "."
       : (row.work_window && row.work_window.truncated === false && row.work_window.shown === 0 && row.work_window.total === 0
+        // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state inline value; predates Rule A; P4 will replace with blank-slot pattern
         ? (ru ? "Ничего не записано." : "None recorded.")
+        // dashboard-derivation: allow-provenance-end
         : unknown));
     const waits = work.flatMap(item => item.waits);
     const waitsText = waits[0]
@@ -474,7 +480,9 @@ class Component extends DCLogic {
         ? (ru
           ? "Последний этап: " + milestoneResult.label + " записан " + latest.at + " системой " + (latestActor.system || latestActor.name || none) + "."
           : "Latest milestone: " + milestoneResult.label + " recorded at " + latest.at + " by " + (latestActor.system || latestActor.name || none) + ".")
+        // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state inline value; predates Rule A; P4 will replace with blank-slot pattern
         : (ru ? "Последний этап: Не записано." : "Latest milestone: Not recorded."),
+        // dashboard-derivation: allow-provenance-end
       milestoneResult,
       milestoneHighlighted:accent("milestone", milestoneIdentity),
       milestoneStyle:accentStyle("milestone", milestoneIdentity),
@@ -518,7 +526,9 @@ class Component extends DCLogic {
       hasConsistencyWindowText:!!consistencyWindowText,
       workBoundsCardText:(ru ? "Граница работы: " : "Work bounds: ") + workWindowText,
       consistencyBoundsCardText:(ru ? "Граница согласованности: " : "Consistency bounds: ") + consistencyWindowText,
+      // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state value in return object; predates Rule A; P4 will replace with blank-slot pattern
       noneRecorded:ru ? "Ничего не записано." : "None recorded.",
+      // dashboard-derivation: allow-provenance-end
       technicalLabel:ru ? "Технические подробности" : "Technical detail",
       technicalCollapsedLabel:ru ? "Технические подробности: свёрнуты." : "Technical detail: collapsed.",
       nestedTechnicalStyle:card ? "display:none;" : "",
@@ -583,12 +593,14 @@ class Component extends DCLogic {
         open:() => { if (actions.openAggregate) actions.openAggregate(key); }
       };
     };
+    // dashboard-derivation: allow-provenance-begin -- pre-existing provenance vocabulary in stat hint strings; P4 will rephrase to user-state copy
     const ovStats = [
       stat("needYou", ru ? "Нужны вы" : "Need you", needYou, ru ? "точный перенесённый набор" : "exact carried set", ru ? "Серверный набор документов, где нужен ваш ход." : "The server-carried set of documents that need your move."),
       stat("noHumanMove", ru ? "Без хода человека" : "No human move", noHumanMove, ru ? "точный перенесённый набор" : "exact carried set", ru ? "Серверный набор без следующего хода человека." : "The server-carried set with no next human move."),
       stat("youAwait", ru ? "Ждёте вы" : "You await", youAwait, ru ? "точный перенесённый набор" : "exact carried set", ru ? "Серверный набор документов, где вы ждёте другую сторону." : "The server-carried set where your side awaits another participant."),
       stat("linesOffCurrent", ru ? "Линии не на последней" : "Lines off current", linesOffCurrent, ru ? "точный перенесённый набор" : "exact carried set", ru ? "Серверный набор зарегистрированных линий вне текущей версии." : "The server-carried set of registered lines off current.")
     ];
+    // dashboard-derivation: allow-provenance-end
     const inventoryRows = [
       { label:ru ? "Входящие" : "Inbox", value:windowTotal(windows.inbox) },
       { label:ru ? "Исходящие" : "Outbox", value:windowTotal(windows.outbox) },
@@ -612,26 +624,32 @@ class Component extends DCLogic {
       ovStats,
       inventoryAria:ru ? "Данные в снимке" : "Snapshot inventory",
       inventoryTitle:ru ? "Данные в снимке" : "Snapshot inventory",
+      // dashboard-derivation: allow-provenance-begin -- pre-existing provenance vocabulary in section sub-labels; P4 will rephrase to user-state copy
       inventorySub:ru ? "Только независимо перенесённые серверные итоги." : "Only independently carried server totals.",
       inventoryRows,
       operationalTitle:ru ? "Где мы сейчас" : "Where things stand",
       operationalSub:ru ? "Перенесённые протокольные, рабочие и операционные факты." : "Carried protocol, work, and operational facts.",
+      // dashboard-derivation: allow-provenance-end
       operationalSnapshot:(ru ? "снимок " : "snapshot ") + (operational.generated_at || data.generatedAt || ""),
       operationalSnapshotDotStyle:"width:8px; height:8px; border-radius:99px; background:var(--muted);",
       operationalRows,
       operationalPresent:!!operationalRows[0],
       operationalEmpty:!operationalRows[0],
       operationalEmptyTitle:cardMode ? (ru ? "Процесс недоступен" : "Process unavailable") : (ru ? "Нет видимых рабочих процессов" : "No visible work processes"),
+      // dashboard-derivation: allow-provenance-begin -- pre-existing provenance vocabulary in empty-state string; P4 will rephrase to user-state copy
       operationalEmptyText:cardMode
         ? (ru ? "В этом снимке нет процесса с таким перенесённым идентификатором." : "This snapshot has no process for the carried identity.")
         : (timelineBound || (ru ? "В этом снимке нет операционных строк." : "This snapshot contains no operational rows.")),
+      // dashboard-derivation: allow-provenance-end
       operationalMore:!cardMode && !!timelineBound,
       operationalMoreText:timelineBound || (ru ? "Открыть Треды" : "Open Threads"),
       goThreads:() => { if (actions.navigate) actions.navigate("threads", { operationalOpen:"" }); },
       attentionTitle:ru ? "Требуют вашего внимания" : "Needs your attention",
+      // dashboard-derivation: allow-provenance-begin -- pre-existing provenance vocabulary in attention subtitle; P4 will rephrase to user-state copy
       attentionSub:attentionEmpty
         ? (ru ? "Перенесённый набор полон и пуст." : "The carried set is complete and empty.")
         : (ru ? "Строки идут в серверном порядке." : "Rows remain in server order."),
+      // dashboard-derivation: allow-provenance-end
       attentionCount:String(valueOf(needYou) == null ? (ru ? "неизвестно" : "unknown") : valueOf(needYou)),
       ovRows,
       attentionEmpty:attentionEmpty || attentionPrefixMissing,

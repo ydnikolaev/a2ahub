@@ -30,10 +30,10 @@ class Component extends DCLogic {
       items: (this.props.items || []).map(item => {
         const active = item.pressed === true || item.pressed === "true";
         return {
-          label: item.label || "",
-          count: String(item.count ?? 0),
+          label: item.label,
+          count: String(item.count),
           pressed: active ? "true" : "false",
-          go: item.go || (() => {}),
+          go: item.go,
           style: "display:inline-flex; flex:0 0 auto; align-items:center; justify-content:space-between; gap:8px; min-height:32px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; cursor:pointer; padding:0 12px; border-radius:8px; white-space:nowrap; " +
             (active ? "background:var(--surface); color:var(--text); box-shadow:0 1px 2px rgba(33,30,23,.12);" : "background:transparent; color:var(--muted);"),
           countStyle: "min-width:1.25em; text-align:right; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px; line-height:1; font-weight:500; color:var(--body);"
