@@ -1,1 +1,8 @@
-(detail region rendered for kind "thread" with no data-card-fact markers)
+thread:title
+thread:whose-move
+thread:protocol
+thread:participants
+thread:membership
+thread:obligations
+thread:transcript
+thread:snapshot

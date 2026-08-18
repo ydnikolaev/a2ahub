@@ -1,1 +1,10 @@
-(detail region rendered for kind "item" with no data-card-fact markers)
+item:identity
+item:lead
+item:lifecycle
+item:parties
+item:gate
+item:urgency
+item:summary
+item:operational
+item:snapshot
+item:technical

@@ -352,6 +352,16 @@ class Component extends DCLogic {
         };
       });
     const tooling = d.tooling || {};
+    // Overview's lead sentence (P4, dashboard-ui-restoration-2026-08): read
+    // the totals from the same aggregate/window shape Overview.dc.html
+    // itself reads, never an array's length, so a bounded or absent local
+    // window cannot masquerade as a domain total.
+    const ovAggregates = d.aggregates || {};
+    const ovNeedYou = ovAggregates.needYou || {};
+    const needYouTotal = ovNeedYou.window && ovNeedYou.window.total != null ? ovNeedYou.window.total : null;
+    const ovWindows = d.windows || {};
+    const inboxTotal = ovWindows.inbox && ovWindows.inbox.total != null ? ovWindows.inbox.total : null;
+    const outboxTotal = ovWindows.outbox && ovWindows.outbox.total != null ? ovWindows.outbox.total : null;
     const values = {
       hasError:!!s.error,
       errorText: s.error === "invalid"
@@ -426,11 +436,24 @@ class Component extends DCLogic {
       bannerAction: d.meta.synthetic ? (ru ? "Про демо →" : "About the demo →") : (ru ? "Версии →" : "Versions →"),
       goBanner: d.meta.synthetic ? () => this.go("guide") : () => this.go("versions"),
       footerLine: (ru ? "Только чтение · истина живёт в репозитории, а не здесь" : "Read-only projection · not a source of truth") + (d.meta.synthetic ? (ru ? " · демо-данные, живых сервисов нет" : " · Synthetic demo data, no live services") : (d.meta.notice ? " · " + d.meta.notice : "")),
-      // dashboard-derivation: allow-provenance-begin -- pre-existing provenance vocabulary in section subtitle; unclaimed phase; rephrase in a maintenance pass after epic closes
-      ovSub: ru
-        ? "Действия за человеком показаны в серверном порядке внимания. Полные перенесённые списки доступны в Обмене."
-        : "Human-owned actions appear in server-carried attention order. Open Exchange for the complete carried lists.",
-      // dashboard-derivation: allow-provenance-end
+      // P4 (dashboard-ui-restoration-2026-08): the lead sentence says the
+      // operator's situation first — whether something needs a decision, and
+      // how much is in flight — using the totals the snapshot itself carries
+      // (aggregates.needYou / windows.inbox / windows.outbox), never an
+      // array's length standing in for a carried total. A total the snapshot
+      // does not carry says so in words rather than guessing at a count.
+      ovSub: (needYouTotal != null
+        ? (needYouTotal === 0
+          ? (ru ? "Сейчас от вас ничего не ждут." : "Nothing is waiting on you right now.")
+          : (ru
+            ? "Ваше решение нужно по " + ruPlural(needYouTotal, "документу", "документам", "документам") + "."
+            : "Your decision is needed on " + needYouTotal + (needYouTotal === 1 ? " document." : " documents.")))
+        : (ru ? "Снимок не сообщает, сколько документов ждёт вашего решения." : "This snapshot does not report how many documents need your decision.")) + " " +
+        (inboxTotal != null && outboxTotal != null
+          ? (ru
+            ? "Всего в обороте " + ruPlural(inboxTotal, "входящий", "входящих", "входящих") + " и " + ruPlural(outboxTotal, "исходящий", "исходящих", "исходящих") + "."
+            : inboxTotal + " incoming and " + outboxTotal + " outgoing are in flight.")
+          : (ru ? "Снимок не сообщает, сколько сейчас в обороте." : "This snapshot does not report how much is currently in flight.")),
       ovRestText: c.openWork,
       workSub: ru
         ? "Полная история обмена: входящие и исходящие документы, открытые и завершённые, последние сверху. Фильтры ниже работают вместе и не прячут завершённые записи."

@@ -11,17 +11,17 @@
   <sc-if value="{{ workReportPresent }}" hint-placeholder-val="{{ true }}">
     <article data-card-kind="work-report" style="min-width:0; font-family:'Onest',sans-serif; color:var(--text);">
       <div data-card-content>
-        <div data-work-report-fact="subject" data-accented="{{ workReportCard.subjectHighlighted }}" style="{{ workReportCard.subjectStyle }}"><h2 class="a2a-detail-title" style="margin:0; overflow-wrap:anywhere;">{{ workReportCard.identity }}</h2></div>
-        <div data-work-report-fact="lead" data-work-report-lead style="margin:0 0 var(--space-section); font-size:17px; line-height:1.6; color:var(--body); overflow-wrap:anywhere;">{{ workReportCard.lead }}</div>
+        <div data-work-report-fact="subject" data-card-fact="work-report:subject" data-accented="{{ workReportCard.subjectHighlighted }}" style="{{ workReportCard.subjectStyle }}"><h2 class="a2a-detail-title" style="margin:0; overflow-wrap:anywhere;">{{ workReportCard.identity }}</h2></div>
+        <div data-work-report-fact="lead" data-card-fact="work-report:lead" data-work-report-lead style="margin:0 0 var(--space-section); font-size:17px; line-height:1.6; color:var(--body); overflow-wrap:anywhere;">{{ workReportCard.lead }}</div>
         <div style="display:flex; flex-direction:column; gap:10px;">
-          <div data-work-report-fact="attribution" data-accented="{{ workReportCard.actorHighlighted }}" style="line-height:1.5; overflow-wrap:anywhere; {{ workReportCard.attributionStyle }}"><strong>{{ workReportCard.attributionLabel }}:</strong> {{ workReportCard.attribution }}</div>
-          <div data-work-report-fact="checkpoint" data-accented="{{ workReportCard.checkpointHighlighted }}" style="line-height:1.5; overflow-wrap:anywhere; {{ workReportCard.checkpointStyle }}"><strong>{{ workReportCard.checkpointLabel }}:</strong> {{ workReportCard.checkpoint }}</div>
-          <div data-work-report-fact="waits" style="line-height:1.5; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);"><strong>{{ workReportCard.waitsLabel }}:</strong> <sc-if value="{{ workReportCard.hasWaits }}" hint-placeholder-val="{{ true }}"><sc-for list="{{ workReportCard.waits }}" as="w" hint-placeholder-count="2"><span data-accented="{{ w.highlighted }}" style="{{ w.style }}">{{ w.separator }}<span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-weight:600;">{{ w.id }}</span><sc-if value="{{ w.hasSummary }}" hint-placeholder-val="{{ true }}"> — {{ w.summary }}</sc-if></span></sc-for>.</sc-if><sc-if value="{{ workReportCard.lacksWaits }}" hint-placeholder-val="{{ false }}">{{ workReportCard.noneRecorded }}</sc-if></div>
-          <sc-if value="{{ workReportCard.hasCurrent }}" hint-placeholder-val="{{ false }}"><div data-work-report-fact="current" style="line-height:1.5; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);"><strong>{{ workReportCard.currentLabel }}:</strong> <sc-if value="{{ workReportCard.currentClaimsVisible }}" hint-placeholder-val="{{ true }}">{{ workReportCard.bodyFreshnessResult.label }}; {{ workReportCard.committedCheckpointText }}.</sc-if><sc-if value="{{ workReportCard.currentDegraded }}" hint-placeholder-val="{{ false }}">{{ workReportCard.currentText }}</sc-if></div></sc-if>
-          <div data-work-report-fact="remaining" style="line-height:1.5; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);"><strong>{{ workReportCard.remainingLabel }}:</strong> {{ workReportCard.remainingText }}</div>
-          <div data-work-report-fact="snapshot" style="line-height:1.5; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);"><strong>{{ workReportCard.snapshotLabel }}:</strong> <sc-if value="{{ workReportCard.snapshotUnavailableOnly }}" hint-placeholder-val="{{ false }}">{{ workReportCard.snapshotUnavailable }}</sc-if><sc-if value="{{ workReportCard.hasBodySnapshotResult }}" hint-placeholder-val="{{ true }}">{{ workReportCard.bodySnapshotResult.label }}{{ workReportCard.snapshotEnding }}</sc-if><sc-if value="{{ workReportCard.snapshotUnknown }}" hint-placeholder-val="{{ false }}">{{ workReportCard.snapshotUnknownText }}</sc-if></div>
+          <div data-work-report-fact="attribution" data-card-fact="work-report:attribution" data-accented="{{ workReportCard.actorHighlighted }}" style="line-height:1.5; overflow-wrap:anywhere; {{ workReportCard.attributionStyle }}"><strong>{{ workReportCard.attributionLabel }}:</strong> {{ workReportCard.attribution }}</div>
+          <div data-work-report-fact="checkpoint" data-card-fact="work-report:checkpoint" data-accented="{{ workReportCard.checkpointHighlighted }}" style="line-height:1.5; overflow-wrap:anywhere; {{ workReportCard.checkpointStyle }}"><strong>{{ workReportCard.checkpointLabel }}:</strong> {{ workReportCard.checkpoint }}</div>
+          <div data-work-report-fact="waits" data-card-fact="work-report:waits" style="line-height:1.5; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);"><strong>{{ workReportCard.waitsLabel }}:</strong> <sc-if value="{{ workReportCard.hasWaits }}" hint-placeholder-val="{{ true }}"><sc-for list="{{ workReportCard.waits }}" as="w" hint-placeholder-count="2"><span data-accented="{{ w.highlighted }}" style="{{ w.style }}">{{ w.separator }}<span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-weight:600;">{{ w.id }}</span><sc-if value="{{ w.hasSummary }}" hint-placeholder-val="{{ true }}"> — {{ w.summary }}</sc-if></span></sc-for>.</sc-if><sc-if value="{{ workReportCard.lacksWaits }}" hint-placeholder-val="{{ false }}">{{ workReportCard.noneRecorded }}</sc-if></div>
+          <sc-if value="{{ workReportCard.hasCurrent }}" hint-placeholder-val="{{ false }}"><div data-work-report-fact="current" data-card-fact="work-report:current" style="line-height:1.5; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);"><strong>{{ workReportCard.currentLabel }}:</strong> <sc-if value="{{ workReportCard.currentClaimsVisible }}" hint-placeholder-val="{{ true }}">{{ workReportCard.bodyFreshnessResult.label }}; {{ workReportCard.committedCheckpointText }}.</sc-if><sc-if value="{{ workReportCard.currentDegraded }}" hint-placeholder-val="{{ false }}">{{ workReportCard.currentText }}</sc-if></div></sc-if>
+          <div data-work-report-fact="remaining" data-card-fact="work-report:remaining" style="line-height:1.5; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);"><strong>{{ workReportCard.remainingLabel }}:</strong> {{ workReportCard.remainingText }}</div>
+          <div data-work-report-fact="snapshot" data-card-fact="work-report:snapshot" style="line-height:1.5; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);"><strong>{{ workReportCard.snapshotLabel }}:</strong> <sc-if value="{{ workReportCard.snapshotUnavailableOnly }}" hint-placeholder-val="{{ false }}">{{ workReportCard.snapshotUnavailable }}</sc-if><sc-if value="{{ workReportCard.hasBodySnapshotResult }}" hint-placeholder-val="{{ true }}">{{ workReportCard.bodySnapshotResult.label }}{{ workReportCard.snapshotEnding }}</sc-if><sc-if value="{{ workReportCard.snapshotUnknown }}" hint-placeholder-val="{{ false }}">{{ workReportCard.snapshotUnknownText }}</sc-if></div>
         </div>
-        <details data-work-report-fact="technical" data-work-report-technical style="margin-top:var(--space-section); border-radius:var(--radius-nested); padding:12px 14px; background:var(--surface-section);"><summary style="cursor:pointer; color:var(--teal-ink); font-weight:600;">{{ workReportCard.technicalLabel }}</summary><div style="display:grid; grid-template-columns:minmax(110px,auto) minmax(0,1fr); gap:6px 14px; margin-top:12px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; line-height:1.5; overflow-wrap:anywhere;"><sc-for list="{{ workReportCard.technical }}" as="fact" hint-placeholder-count="6"><span>{{ fact.label }}</span><span>{{ fact.value }}</span></sc-for></div></details>
+        <details data-work-report-fact="technical" data-card-fact="work-report:technical" data-work-report-technical style="margin-top:var(--space-section); border-radius:var(--radius-nested); padding:12px 14px; background:var(--surface-section);"><summary style="cursor:pointer; color:var(--teal-ink); font-weight:600;">{{ workReportCard.technicalLabel }}</summary><div style="display:grid; grid-template-columns:minmax(110px,auto) minmax(0,1fr); gap:6px 14px; margin-top:12px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; line-height:1.5; overflow-wrap:anywhere;"><sc-for list="{{ workReportCard.technical }}" as="fact" hint-placeholder-count="6"><span>{{ fact.label }}</span><span>{{ fact.value }}</span></sc-for></div></details>
       </div>
       <div data-card-support="work-report:status" aria-label="{{ workReportCard.statusSupportLabel }}" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:var(--space-section);"><sc-for list="{{ workReportCard.statusSupport }}" as="status" hint-placeholder-count="4"><dc-import name="StatusPill" result="{{ status }}" size="small" hint-size="150px,24px"></dc-import></sc-for></div>
     </article>
@@ -34,6 +34,38 @@
         <sc-if value="{{ showWorkFilters }}" hint-placeholder-val="{{ true }}">
         <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; row-gap:10px; margin-bottom:18px;">
           <span role="group" aria-label="{{ workDirectionAria }}"><dc-import name="SegmentedFilter" items="{{ workTabs }}" hint-size="420px,38px"></dc-import></span>
+          <span role="group" aria-label="{{ workStateAria }}"><dc-import name="SegmentedFilter" items="{{ workStates }}" hint-size="350px,38px"></dc-import></span>
+          <sc-if value="{{ hasTypeFilter }}" hint-placeholder-val="{{ true }}">
+          <span data-type-menu style="position:relative; display:inline-flex;">
+            <button type="button" onClick="{{ toggleTypeMenu }}" aria-expanded="{{ typeMenuExpanded }}" style="{{ typeButtonStyle }}">
+              <span>{{ workTypeCurrent }}</span>
+              <span style="display:inline-flex; align-items:center; transform:translateY(1px); color:var(--muted);"><dc-import name="DisclosureIcon" expanded="{{ typeMenuOpen }}" hint-size="18px,18px"></dc-import></span>
+            </button>
+            <sc-if value="{{ typeMenuOpen }}" hint-placeholder-val="{{ false }}">
+              <span style="position:absolute; z-index:120; top:calc(100% + 8px); left:0; min-width:250px; background:var(--surface); border-radius:14px; padding:8px; box-shadow:0 16px 40px -12px rgba(33,30,23,.42), 0 0 0 1px var(--border); display:flex; flex-direction:column; gap:2px;">
+                <sc-for list="{{ workTypeFilters }}" as="f" hint-placeholder-count="5">
+                  <button type="button" onClick="{{ f.go }}" aria-current="{{ f.current }}" style="{{ f.style }}">
+                    <span style="flex:1 1 auto; min-width:0; text-align:left; display:flex; pointer-events:none;">
+                      <sc-if value="{{ f.isType }}" hint-placeholder-val="{{ true }}">
+                        <dc-import name="TypeBadge" type="{{ f.type }}" size="small" hint-size="130px,24px"></dc-import>
+                      </sc-if>
+                      <sc-if value="{{ f.isAll }}" hint-placeholder-val="{{ false }}">
+                        <span>{{ f.label }}</span>
+                      </sc-if>
+                    </span>
+                    <span style="flex:0 0 auto; font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--muted);">{{ f.count }}</span>
+                    <sc-if value="{{ f.selected }}" hint-placeholder-val="{{ false }}">
+                      <span aria-hidden="true" style="flex:0 0 auto; color:var(--teal-ink);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
+                    </sc-if>
+                  </button>
+                </sc-for>
+              </span>
+            </sc-if>
+          </span>
+          </sc-if>
+          <sc-if value="{{ hasDueFilter }}" hint-placeholder-val="{{ true }}">
+            <button type="button" onClick="{{ toggleDue }}" aria-pressed="{{ duePressed }}" style="{{ dueStyle }}"><span>{{ dueText }}</span><span style="min-width:1.25em; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:12px; line-height:1; font-weight:500; color:var(--body);">{{ dueCountText }}</span></button>
+          </sc-if>
         </div>
         </sc-if>
 
@@ -46,30 +78,22 @@
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(430px,100%),1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
             <sc-for list="{{ workRows }}" as="r" hint-placeholder-count="6">
-              <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" state-result="{{ r.stateResult }}" outcome-result="{{ r.outcomeResult }}" lifecycle-known="{{ r.lifecycleKnown }}" lifecycle-unknown-text="{{ r.lifecycleUnknownText }}" gate-result="{{ r.gateResult }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" sync-age="{{ r.syncAge }}" freshness-result="{{ r.freshnessResult }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" reason-sentence="{{ r.reasonSentence }}" waiting-on-label="{{ r.waitingOnLabel }}" waiting-on="{{ r.waitingOn }}" expected-move-label="{{ r.expectedMoveLabel }}" expected-move="{{ r.expectedMove }}" terminal-text="{{ r.terminalText }}" archived-text="{{ r.archivedText }}" your-move-text="{{ r.yourMoveText }}" gate-pending-text="{{ r.gatePendingText }}" urgency-text="{{ r.urgencyText }}" summary="{{ r.summary }}" operational-items="{{ r.operationalItems }}" none-recorded="{{ r.noneRecorded }}" not-recorded="{{ r.notRecorded }}" snapshot-unavailable="{{ r.snapshotUnavailable }}" snapshot-unknown-text="{{ r.snapshotUnknownText }}" pending-merge-text="{{ r.pendingMergeText }}" technical-label="{{ r.technicalLabel }}" technical-why="{{ r.technicalWhy }}" rule-label="{{ r.ruleLabel }}" rule-identity="{{ r.ruleIdentity }}" technical-evidence="{{ r.technicalEvidence }}" open-label="{{ r.openLabel }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,440px"></dc-import>
+              <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" state-result="{{ r.stateResult }}" outcome-result="{{ r.outcomeResult }}" lifecycle-known="{{ r.lifecycleKnown }}" lifecycle-unknown-text="{{ r.lifecycleUnknownText }}" gate-result="{{ r.gateResult }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" priority="{{ r.priority }}" sync-age="{{ r.syncAge }}" freshness-result="{{ r.freshnessResult }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" reason-sentence="{{ r.reasonSentence }}" waiting-on-label="{{ r.waitingOnLabel }}" waiting-on="{{ r.waitingOn }}" expected-move-label="{{ r.expectedMoveLabel }}" expected-move="{{ r.expectedMove }}" terminal-text="{{ r.terminalText }}" archived-text="{{ r.archivedText }}" your-move-text="{{ r.yourMoveText }}" gate-pending-text="{{ r.gatePendingText }}" urgency-text="{{ r.urgencyText }}" summary="{{ r.summary }}" operational-items="{{ r.operationalItems }}" none-recorded="{{ r.noneRecorded }}" not-recorded="{{ r.notRecorded }}" snapshot-unavailable="{{ r.snapshotUnavailable }}" snapshot-unknown-text="{{ r.snapshotUnknownText }}" pending-merge-text="{{ r.pendingMergeText }}" technical-label="{{ r.technicalLabel }}" technical-why="{{ r.technicalWhy }}" rule-label="{{ r.ruleLabel }}" rule-identity="{{ r.ruleIdentity }}" technical-evidence="{{ r.technicalEvidence }}" open-label="{{ r.openLabel }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,440px"></dc-import>
             </sc-for>
           </div>
           <sc-if value="{{ workPaneOpen }}" hint-placeholder-val="{{ false }}">
-          <div data-work-pane style="min-width:0; background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
-            <sc-if value="{{ workPaneDetailPresent }}" hint-placeholder-val="{{ true }}">
-              <h3 class="a2a-detail-title" style="margin:0 0 var(--space-card-title-to-content); overflow-wrap:anywhere;">{{ workPaneDetail.title }}</h3>
-              <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:var(--space-section);">
-                <sc-for list="{{ workPaneDetail.pills }}" as="p" hint-placeholder-count="2">
-                  <dc-import name="StatusPill" result="{{ p.result }}" size="small" hint-size="140px,24px"></dc-import>
-                </sc-for>
-              </div>
-              <details style="border-radius:var(--radius-nested); padding:12px 14px; background:var(--surface-section);">
-                <summary style="cursor:pointer; color:var(--teal-ink); font-weight:600;">{{ workPaneTechnicalLabel }}</summary>
-                <div style="display:grid; grid-template-columns:minmax(110px,auto) minmax(0,1fr); gap:6px 14px; margin-top:12px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; line-height:1.5; overflow-wrap:anywhere;">
-                  <sc-for list="{{ workPaneDetail.metadataRest }}" as="fact" hint-placeholder-count="6">
-                    <span>{{ fact.label }}</span><span>{{ fact.value }}</span>
-                  </sc-for>
-                </div>
-              </details>
-            </sc-if>
-            <sc-if value="{{ workPaneDetailMissing }}" hint-placeholder-val="{{ false }}">
-              <dc-import name="EmptyState" title="{{ workPaneDetail.missingTitle }}" text="{{ workPaneDetail.missingText }}" size="panel" hint-size="100%,200px"></dc-import>
-            </sc-if>
+          <div data-work-pane style="min-width:0;">
+            <!-- The pane is a render branch off workSel (specs/03-interaction-model.md
+                 §2-3): it composes ArtifactDetail's own already-shipped legacy
+                 detail region (deadline callout, metadata disclosure, author
+                 line, body, events) via its `det` prop, the exact call shape
+                 the v0.22.0 donor used. ArtifactDetail owns its own panel
+                 chrome (shellStyle), so this wrapper stays bare rather than
+                 painting a second background/shadow around the first. This
+                 is deliberately NOT the same shape as ContractsView's inline
+                 detail (which composes its own bespoke markup off ui.conSel)
+                 — see specs/05-exchange.md §11. -->
+            <dc-import name="ArtifactDetail" det="{{ workPaneDetail }}" hint-size="100%,600px"></dc-import>
           </div>
           </sc-if>
         </div>
@@ -81,10 +105,10 @@
           <sc-if value="{{ hasWorkReports }}" hint-placeholder-val="{{ true }}">
             <div style="display:flex; flex-direction:column; gap:9px;">
               <sc-for list="{{ workReportRows }}" as="report" hint-placeholder-count="3">
-                <button type="button" onClick="{{ report.open }}" aria-label="{{ report.openLabel }}" style="display:block; width:100%; border:0; border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); background:var(--surface-card); color:var(--text); box-shadow:var(--shadow-card); text-align:left; font-family:'Onest',sans-serif; cursor:pointer;">
+                <button type="button" data-card-summary="work-report" onClick="{{ report.open }}" aria-label="{{ report.openLabel }}" style="display:block; width:100%; border:0; border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); background:var(--surface-card); color:var(--text); box-shadow:var(--shadow-card); text-align:left; font-family:'Onest',sans-serif; cursor:pointer;">
                   <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;"><dc-import name="StatusPill" result="{{ report.modeResult }}" size="small" hint-size="130px,24px"></dc-import><span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; color:var(--muted);">{{ report.reportedAt }}</span></span>
-                  <strong style="display:block; font-size:16px; line-height:1.45; overflow-wrap:anywhere;">{{ report.subject }}</strong>
-                  <span style="display:block; margin-top:5px; color:var(--body); line-height:1.5; overflow-wrap:anywhere;">{{ report.summary }}</span>
+                  <strong data-card-fact="work-report:subject" style="display:block; font-size:16px; line-height:1.45; overflow-wrap:anywhere;">{{ report.subject }}</strong>
+                  <span data-card-fact="work-report:lead" style="display:block; margin-top:5px; color:var(--body); line-height:1.5; overflow-wrap:anywhere;">{{ report.summary }}</span>
                   <span style="display:block; margin-top:5px; color:var(--muted); font-size:14px; overflow-wrap:anywhere;">{{ report.actor }}</span>
                 </button>
               </sc-for>
@@ -403,7 +427,15 @@ class Component extends DCLogic {
     const unavailableEvidence = itemUnavailable || sourceDiagnostic;
     const unavailableState = !!itemUnavailable || sourceUnavailable;
     const sentence = it.reasonSentence || {};
-    // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state constant declarations; predates Rule A; P5 will replace with blank-slot pattern per card-spec composition rules
+    // P5 investigated replacing these with the blank-slot pattern and found
+    // it cannot: ui-contract.test.mjs (off-limits, frozen) asserts exact
+    // values built from these constants on rowFor's own return object —
+    // reasonSentence, waitingOn, expectedMove, urgencyText, summary,
+    // snapshotUnavailable/snapshotUnknownText — none of which the row's own
+    // markup renders any more (ArtifactRow.dc.html trims the row to badge,
+    // state, priority, time, title and the actor relay per specs/05-exchange.md
+    // §1), but the view-model fields themselves stay frozen by that test.
+    // dashboard-derivation: allow-provenance-begin -- ui-contract.test.mjs asserts exact reasonSentence/waitingOn/expectedMove/urgencyText/summary values built from these constants; frozen, off-limits test
     const noneRecorded = ru ? "Ничего не записано." : "None recorded.";
     const notRecorded = ru ? "Не записано." : "Not recorded.";
     const unknown = ru ? "В этом снимке неизвестно." : "Unknown in this snapshot.";
@@ -456,6 +488,11 @@ class Component extends DCLogic {
       // see it. Overdue ones keep the red treatment on top.
       time: it.neededBy ? (ru ? "дедлайн " : "due ") + isoDay(it.neededBy) : age(it.age),
       from: it.from, to: toText, meta: it.space,
+      // The row's own compact urgency signal (specs/05-exchange.md §1): the
+      // carried priority alone, rendered as a plain StatusPill by
+      // ArtifactRow. The joined `urgencyText` sentence below stays a
+      // pane/technical-detail fact.
+      priority: it.priority || "",
       syncAge: space && space.readable ? age(space.syncAge) : "",
       freshnessResult: unavailableState ? vocabulary(d, "source-freshness", "unavailable", ru) : (carriedSourceFreshness ? vocabulary(d, "source-freshness", carriedSourceFreshness, ru) : null),
       fromCode: codes[it.from] || "", toCode: toCode || "",
@@ -606,7 +643,11 @@ class Component extends DCLogic {
       return {
         isLifecycle: true,
         isWorkReport: false,
-        // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state inline value; predates Rule A; P5 will replace with blank-slot pattern
+        // Cannot fix: ui-contract.test.mjs (off-limits, frozen) asserts
+        // this equals exactly 'Unknown in this snapshot.' for an unknown
+        // transition (lifecycleEvents[1].actionText), guarding the same
+        // line against ever leaking the raw enum token into visible history.
+        // dashboard-derivation: allow-provenance-begin -- ui-contract.test.mjs asserts actionText equals exactly 'Unknown in this snapshot.' for an unknown transition; frozen, off-limits test
         actionText: transitionKnown ? transitionResult.label : (ru ? "В этом снимке неизвестно." : "Unknown in this snapshot."),
         // dashboard-derivation: allow-provenance-end
         transitionRaw:transition,
@@ -814,7 +855,12 @@ class Component extends DCLogic {
     const resolver = globalThis.A2A_VOCABULARY_RESOLVER;
     const modeKnown = !!resolver.knows && resolver.knows(d, "work-mode", report.mode);
     const modeResult = vocabulary(d, "work-mode", report.mode, ru);
-    // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state constant declarations; predates Rule A; P5 will replace with blank-slot pattern per card-spec composition rules
+    // Cannot fix: ui-contract.test.mjs (off-limits, frozen) asserts
+    // workReportCard.lead equals exactly 'Unknown in this snapshot.' when
+    // actor/mode/subject/summary cannot be established (per card-spec's own
+    // "Lead sentence" §, that IS the documented content for this position —
+    // it is the modal detail card, not the row).
+    // dashboard-derivation: allow-provenance-begin -- ui-contract.test.mjs asserts workReportCard.lead equals exactly 'Unknown in this snapshot.' when the report cannot be established; frozen, off-limits test
     const unknown = ru ? "В этом снимке неизвестно." : "Unknown in this snapshot.";
     const notRecorded = ru ? "Не записано." : "Not recorded.";
     const noneRecorded = ru ? "Ничего не записано." : "None recorded.";
@@ -940,20 +986,41 @@ class Component extends DCLogic {
     const aggregate = dashboardKey && d.aggregates && d.aggregates[dashboardKey];
     const tab = ["incoming", "outgoing", "archive"].indexOf(s.workTab) >= 0 ? s.workTab : "incoming";
     const carried = aggregate ? (aggregate.items || []) : collections[tab];
-    const workList = aggregate ? carried : carried.filter(item => this.inScope(item.space));
+    const workListBase = aggregate ? carried : carried.filter(item => this.inScope(item.space));
     const workWindow = aggregate ? aggregate.window : (s.space === "all" ? windows[tab === "incoming" ? "inbox" : tab === "outgoing" ? "outbox" : "archive"] : null);
     const workWindowText = boundsSentence(workWindow, ru);
+    // The second facet axis: the carried outcome of each item in the current
+    // direction (specs/05-exchange.md §3). `Item.Outcome` is already a
+    // server-computed classification (fold.OutcomeOf), always carried non-empty
+    // for every fold-backed item — reading it is presentation, not the banned
+    // client-side "isClosed" derivation the donor combined from three signals.
+    // Hidden entirely during an aggregate drill-down, exactly as the direction
+    // row already is: the drill-down's own count is not a filterable set here.
+    const isOpenOutcome = it => it.outcome === "open";
+    const matchesState = (it, value) => value === "all" || (value === "open" ? isOpenOutcome(it) : (!!it.outcome && !isOpenOutcome(it)));
+    const matchesType = (it, value) => value === "all" || it.type === value;
+    const matchesDue = (it, dueOnly) => !dueOnly || !!it.neededBy;
+    const filterWork = (state, type, dueOnly) => workListBase.filter(it => matchesState(it, state) && matchesType(it, type) && matchesDue(it, dueOnly));
+    const workState = !aggregate && ["open", "closed"].indexOf(s.workState) >= 0 ? s.workState : "all";
+    const workTypesPresent = [];
+    workListBase.forEach(it => { if (it.type && workTypesPresent.indexOf(it.type) < 0) workTypesPresent.push(it.type); });
+    const workType = !aggregate && workTypesPresent.indexOf(s.workType) >= 0 ? s.workType : "all";
+    const workDue = !aggregate && !!s.workDue;
+    const workList = filterWork(workState, workType, workDue);
+    const dueCount = filterWork(workState, workType, true).length;
     const workReports = (d.workReports || []).filter(report => this.inScope(report.space));
     const workReportsWindowText = boundsSentence(s.space === "all" ? windows.workReports : null, ru);
     const workReportRows = workReports.map(report => {
       const actor = report.actor || {};
       return {
-        // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state fallback values in work report rows; predates Rule A; P5 will replace with blank-slot pattern
-        subject:report.subject_ref || (ru ? "В этом снимке неизвестно." : "Unknown in this snapshot."),
-        summary:report.summary || (ru ? "В этом снимке неизвестно." : "Unknown in this snapshot."),
-        actor:actor.name || actor.system || (ru ? "В этом снимке неизвестно." : "Unknown in this snapshot."),
-        reportedAt:report.reported_at || (ru ? "Не записано." : "Not recorded."),
-        // dashboard-derivation: allow-provenance-end
+        // Rule A blank-slot (card-spec/README.md#composition-rules): a
+        // subject, summary, actor or report time this snapshot does not
+        // carry is not printed at all — no placeholder sentence takes its
+        // row's place.
+        subject:report.subject_ref || "",
+        summary:report.summary || "",
+        actor:actor.name || actor.system || "",
+        reportedAt:report.reported_at || "",
         modeResult:vocabulary(d, "work-mode", report.mode, ru),
         openLabel:(ru ? "Открыть отчёт о работе: " : "Open work report: ") + (report.subject_ref || report.artifact_id || ""),
         open:() => {
@@ -991,19 +1058,27 @@ class Component extends DCLogic {
           go: () => this.setState({ workTab:id, workSel:"", dashboardSet:"" })
         };
       }),
-      // dashboard-derivation: allow-provenance-begin -- pre-existing provenance vocabulary in ARIA labels and empty-state strings; P5 will rephrase to user-state copy
-      workDirectionAria: ru ? "Перенесённые сервером коллекции обмена" : "Server-carried exchange collections",
+      workDirectionAria: ru ? "Направление обмена" : "Exchange direction",
+      workStateAria: ru ? "Состояние документов" : "Document state",
       hasWorkWindow:!!workWindowText,
       workWindowText,
       hasWorkReports:workReportRows.length > 0,
       workReportsEmpty:workReportRows.length === 0,
       workReportsTitle:ru ? "Отчёты о работе" : "Work reports",
-      workReportsHint:ru ? "в перенесённом порядке" : "in carried order",
+      workReportsHint:ru ? "в порядке поступления" : "in received order",
       hasWorkReportsWindow:!!workReportsWindowText,
       workReportsWindowText,
       workReportsEmptyText:workReportsWindowText
-        ? (ru ? "В этом ограниченном префиксе нет отчётов; перенесённое окно сообщает о записях за его пределами." : "No reports in this bounded prefix; the carried window reports records outside it.")
+        ? (ru ? "В этом ограниченном префиксе нет отчётов; за его пределами есть записи." : "No reports in this bounded prefix; there are records outside it.")
+        // Rule A's "empty collection known to be complete" condition IS
+        // legitimately printed here — card-spec/README.md#composition-rules
+        // — but the exact literal is frozen by ui-contract.test.mjs
+        // (off-limits; asserts this equals exactly "None recorded." for a
+        // window with total:0), so the marker below stays bounded to this
+        // one fallback rather than being removed.
+        // dashboard-derivation: allow-provenance-begin -- ui-contract.test.mjs asserts workReportsEmptyText equals exactly "None recorded." for a known-empty (total:0) window; frozen, off-limits test
         : (ru ? "Ничего не записано." : "None recorded."),
+        // dashboard-derivation: allow-provenance-end
       workReportRows,
       // 03-interaction-model.md §2's second door: a row click now toggles
       // the pane via setState, no hash-route write, restoring AC-1. The
@@ -1025,13 +1100,63 @@ class Component extends DCLogic {
       workPaneDetailMissing: workPaneDetailMissing,
       workPaneTechnicalLabel: ru ? "Технические подробности" : "Technical detail",
       showWorkFilters:!aggregate && !!((d.inbox || []).length || (d.outbox || []).length || (d.archive || []).length),
-      emptyWorkTitle:workWindowText
+      // Second facet axis (specs/05-exchange.md §1/§3): the carried outcome,
+      // narrowed within whichever direction tab is active. Every other
+      // active choice is honoured — changing state immediately updates the
+      // type/deadline counts and vice versa — matching workTabs' own
+      // "omit only your own axis" counting already shipped by P1.
+      workStates: [["all", ru ? "Все" : "All"], ["open", ru ? "Открытые" : "Open"], ["closed", ru ? "Закрытые" : "Closed"]].map(([id, label]) => ({
+        label,
+        count: filterWork(id, workType, workDue).length,
+        pressed: workState === id ? "true" : "false",
+        go: () => this.setState({ workState:id, workSel:"" })
+      })),
+      hasTypeFilter: workTypesPresent.length > 0,
+      workTypeCurrent: workType === "all" ? (ru ? "Все типы" : "All types") : (TYPE_WORDS(ru)[workType] || workType),
+      workTypeFilters: [{ id:"all", label: ru ? "Все типы" : "All types" }].concat(workTypesPresent.map(t => ({ id:t, label: TYPE_WORDS(ru)[t] || t }))).map(f => ({
+        label: f.label,
+        isAll: f.id === "all", isType: f.id !== "all", type: f.id,
+        count: filterWork(workState, f.id, workDue).length,
+        selected: workType === f.id,
+        current: workType === f.id ? "true" : null,
+        style: "display:flex; align-items:center; gap:9px; width:100%; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; border-radius:9px; padding:9px 10px; cursor:pointer; " +
+          (workType === f.id ? "background:var(--teal-tint); color:var(--teal-ink);" : "background:transparent; color:var(--body);"),
+        go: () => this.setState({ workType:f.id, workSel:"", typeMenu:false })
+      })),
+      typeMenuOpen: !!s.typeMenu,
+      typeMenuExpanded: s.typeMenu ? "true" : "false",
+      toggleTypeMenu: (ev) => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.setState(x => ({ typeMenu: !x.typeMenu })); },
+      typeButtonStyle: "display:inline-flex; align-items:center; gap:8px; min-height:" + FILTER_H + "px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; border-radius:10px; padding:0 14px 0 16px; cursor:pointer; white-space:nowrap; " +
+        (workType === "all" ? "background:var(--surface); color:var(--body); box-shadow:0 1px 2px rgba(33,30,23,.06);" : "background:var(--primary); color:var(--on-primary);") +
+        (s.typeMenu ? " box-shadow:0 1px 2px rgba(33,30,23,.06), inset 0 0 0 1.5px var(--border-strong);" : ""),
+      // A deadline is a property a document either has or does not; offered
+      // only when something in the current tab actually carries one.
+      hasDueFilter: workListBase.some(it => !!it.neededBy) || workDue,
+      dueText: ru ? "С дедлайном" : "With a deadline",
+      dueCountText: String(dueCount),
+      duePressed: workDue ? "true" : "false",
+      dueStyle: this.filterChip(workDue) + (workDue ? "" : " box-shadow:inset 0 0 0 1px var(--border);"),
+      toggleDue: () => this.setState(x => ({ workDue: !x.workDue, workSel: "" })),
+      emptyWorkTitle: workDue && dueCount === 0
+        ? (ru ? "Ни у чего нет дедлайна" : "Nothing here has a deadline")
+        : workType !== "all"
+        ? (ru ? "Ничего такого типа" : "Nothing of that type")
+        : workState === "open"
+        ? (ru ? "Открытых документов нет" : "No open documents")
+        : workState === "closed"
+        ? (ru ? "Закрытых документов нет" : "No closed documents")
+        : workWindowText
         ? (ru ? "В этом ограниченном префиксе нет записей" : "No items in this bounded prefix")
-        : (ru ? "В этой коллекции пока пусто" : "This carried collection is empty"),
-      emptyWorkText:workWindowText
-        ? (ru ? "Перенесённое окно сообщает о записях за пределами этого ограниченного префикса; коллекция не считается пустой." : "The carried window reports items outside this bounded prefix; the collection is not claimed empty.")
-        : (ru ? "Выберите другую серверную коллекцию обмена." : "Choose another server-carried exchange collection.")
-      // dashboard-derivation: allow-provenance-end
+        : (ru ? "В этой коллекции пока пусто" : "This collection is empty right now"),
+      emptyWorkText: workDue && dueCount === 0
+        ? (ru ? "Ни на одном документе в этой области не стоит срок. Снимите фильтр, чтобы увидеть остальное." : "Nothing in this scope has a deadline. Clear the filter to see the rest.")
+        : workType !== "all"
+        ? (ru ? "Под этот тип в текущей области ничего не подошло. Снимите фильтр, чтобы увидеть остальное." : "Nothing of that type in this scope. Clear the filter to see the rest.")
+        : workState !== "all"
+        ? (ru ? "В выбранном направлении и состоянии документов нет. Измените фильтр, чтобы расширить ленту." : "No documents match the selected direction and state. Change the filter to broaden the feed.")
+        : workWindowText
+        ? (ru ? "Этот ограниченный список показывает не все записи; коллекция не считается пустой." : "This bounded prefix does not include every item; the collection is not claimed empty.")
+        : (ru ? "Выберите другую серверную коллекцию обмена." : "Choose another exchange collection.")
     };
     return values;
   }

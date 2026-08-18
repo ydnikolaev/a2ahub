@@ -552,7 +552,14 @@ test('P9 Overview consumes carried aggregates and renders obligations and explic
   const pendingGroup = template.slice(processOffsets[5], processOffsets[6]);
   assert.doesNotMatch(workGroup, /checkpointText|\{\{ w\.waits \}\}|hasSharedPending|sharedPendingText/, 'work rows must not interleave later P5 groups');
   assert.match(waitsGroup, /sc-for list="\{\{ r\.work \}\}"[\s\S]*checkpointText[\s\S]*sc-for list="\{\{ w\.waits \}\}"[\s\S]*\{\{ wait\.text \}\}[\s\S]*<details[\s\S]*\{\{ wait\.technical \}\}/);
-  assert.doesNotMatch(waitsGroup, /hasSharedPending|sharedPendingText/, 'shared pending must follow the complete waits/checkpoint group');
+  // The invariant is that shared pending's CONTENT follows the waits/checkpoint
+  // group — which the offset ordering above already proves. The group's own
+  // `sc-if` guard necessarily sits just before its marker, so naming
+  // `hasSharedPending` here pinned the absence of a conditional wrapper rather
+  // than the composition order. Migrated 2026-08-18 (wave 3): P4 wrapped the
+  // group and the card-spec order (waits = position 6, shared pending = 7) is
+  // unchanged.
+  assert.doesNotMatch(waitsGroup, /sharedPendingText/, 'shared pending content must follow the complete waits/checkpoint group');
   assert.match(pendingGroup, /sc-for list="\{\{ r\.work \}\}"[\s\S]*hasSharedPending[\s\S]*sharedPendingText/);
   assert.equal(template.split('{{ wait.text }}').length - 1, 1, 'each carried wait has one rendering path');
   assert.equal(template.split('{{ w.sharedPendingText }}').length - 1, 1, 'each carried shared-pending action has one rendering path');
@@ -634,8 +641,14 @@ test('P9 Overview consumes carried aggregates and renders obligations and explic
   assert.match(processRow.work[0].waits[0].technical, /wait:first/);
   assert.doesNotMatch(processRow.work[0].waits[0].text, /artifact|wait:first/, 'raw wait kind/id stay technical');
   assert.equal(processRow.milestoneResult.label, 'submitted for review');
-  assert.match(processRow.milestoneText, /submitted for review/);
-  assert.doesNotMatch(processRow.milestoneText, /\bsubmit\b/, 'raw milestone transition must not leak into visible copy');
+  // P4, wave 3: the milestone is no longer a flat prose string — it is a
+  // structured `milestoneEvent` consumed by `ActorEventLine`, which is what
+  // restores the donor's author line with its avatar. The invariant is
+  // unchanged and still asserted: the visible text carries the RESOLVED label
+  // and never the raw carried transition.
+  assert.equal(processRow.milestoneEvent.actionText, 'submitted for review');
+  assert.doesNotMatch(processRow.milestoneEvent.actionText, /\bsubmit\b/, 'raw milestone transition must not leak into visible copy');
+  assert.doesNotMatch(String(processRow.milestoneEvent.meta), /\bsubmit\b/, 'nor into the event meta line');
   assert.equal(processRow.workWindowText, 'Showing 16 of 36.');
   assert.equal(processRow.consistencyWindowText, 'Showing 32 of 33.');
   const processID = controller.cardID('operational-process', process);
@@ -684,16 +697,20 @@ test('P9 Overview consumes carried aggregates and renders obligations and explic
   delete process.work[0].valid_until;
   for (const item of process.work) delete item.shared_pending;
   changedProcess = controller.overviewValues().operationalRows.find(row => row.thread === process.thread && row.space === process.space);
-  assert.match(changedProcess.work[0].evidenceText, /reported Not recorded\./);
-  assert.match(changedProcess.work[0].evidenceText, /observed Not recorded\./);
-  assert.match(changedProcess.work[0].evidenceText, /valid until Not recorded\./);
-  assert.equal(changedProcess.sharedPendingEmptyText, 'Not recorded.');
+  // Rule A (P4, wave 3): an uncarried fact prints no fragment at all, so the
+  // evidence line no longer contains a filled-in placeholder. These pinned
+  // the sentence the rule now bans.
+  assert.doesNotMatch(changedProcess.work[0].evidenceText, /reported/, 'an uncarried reported must print no fragment at all');
+  assert.doesNotMatch(changedProcess.work[0].evidenceText, /observed/, 'an uncarried observed must print no fragment at all');
+  assert.doesNotMatch(changedProcess.work[0].evidenceText, /valid until/, 'an uncarried valid until must print no fragment at all');
+  assert.equal(changedProcess.sharedPendingEmptyText, undefined, 'an absent shared-pending action must carry no empty-state sentence');
 
   process.latest_milestone.transition = '<unknown-milestone-transition>';
   changedProcess = controller.overviewValues().operationalRows.find(row => row.thread === process.thread && row.space === process.space);
   assert.equal(changedProcess.milestoneResult.label, 'Unknown value');
-  assert.match(changedProcess.milestoneText, /Unknown value/);
-  assert.doesNotMatch(changedProcess.milestoneText, /unknown-milestone-transition/, 'unknown raw milestone transition must never leak');
+  assert.match(changedProcess.milestoneEvent.actionText, /Unknown value/);
+  assert.doesNotMatch(changedProcess.milestoneEvent.actionText, /unknown-milestone-transition/, 'unknown raw milestone transition must never leak');
+  assert.doesNotMatch(String(changedProcess.milestoneEvent.meta), /unknown-milestone-transition/, 'nor into the event meta line');
   process.work_window = { shown:2, total:2, truncated:true };
   process.consistency_window = { shown:1, total:1, truncated:true };
   controller.state.data.operational.timeline_window = { shown:1, total:1, truncated:true };
@@ -1713,7 +1730,11 @@ test('operational rows expose honest freshness metadata and navigate from proces
 
   const values = controller.renderVals();
   assert.equal(values.operationalRows.length, 1);
-  assert.equal(values.operationalSnapshot, 'snapshot 2026-08-03T12:00:00Z', 'Overview must not derive a second source verdict in snapshot chrome');
+  // Same carried instant, rendered in this interface's human format
+  // (DD.MM.YYYY HH:MM) rather than as the raw stored string — P4, wave 3. The
+  // assertion's point is unchanged and still load-bearing: the chrome states
+  // the snapshot instant and NOTHING derived, no second freshness verdict.
+  assert.equal(values.operationalSnapshot, 'snapshot 03.08.2026 12:00', 'Overview must not derive a second source verdict in snapshot chrome');
   const row = values.operationalRows[0];
   assert.equal(row.waitingOn, 'checkout');
   assert.equal(row.sourceResult.label, 'Source is stale');
@@ -1755,10 +1776,19 @@ test('pending recovery is rendered as recovery, never current execution', () => 
   assert.equal(row.work[0].freshnessResult.label, 'publication needs recovery');
   assert.notEqual(row.work[0].freshnessResult.label, 'observed locally');
   assert.match(row.work[0].evidenceText, /current: no/);
-  assert.match(row.work[0].evidenceText, /reported Not recorded\./);
-  assert.match(row.work[0].evidenceText, /observed Not recorded\./);
-  assert.match(row.work[0].evidenceText, /valid until Not recorded\./);
-  assert.equal(row.sharedPendingEmptyText, 'Not recorded.');
+  // Rule A, shipped by P4 in wave 3: a fragment whose fact the snapshot does
+  // not carry drops out of the evidence line entirely. This used to assert the
+  // placeholder sentence the rule now bans, so it pinned the defect. The
+  // invariant worth keeping is that the line says nothing about a reporting
+  // time it does not have.
+  assert.doesNotMatch(row.work[0].evidenceText, /reported/, 'an uncarried reported_at must print no fragment at all');
+  assert.match(row.work[0].evidenceText, /current: no/, 'the fragments that ARE carried still render');
+  assert.doesNotMatch(row.work[0].evidenceText, /observed/, 'an uncarried observed_at must print no fragment at all');
+  assert.doesNotMatch(row.work[0].evidenceText, /valid until/, 'an uncarried valid_until must print no fragment at all');
+  // Rule A: an absent shared-pending action prints NOTHING, so the empty-state
+  // string this used to assert no longer exists. Asserting its absence is the
+  // migrated form of the same check — the card must not invent a placeholder.
+  assert.equal(row.sharedPendingEmptyText, undefined, 'an absent shared-pending action must carry no empty-state sentence');
   const overviewSource = readFileSync(new URL('../design-source/Overview.dc.html', import.meta.url), 'utf8');
   assert.doesNotMatch(overviewSource, /hasCurrentWork|currentWork|historicalWork|currentUnknownText/, 'Overview must not reclassify carried recovery work into current/history buckets');
 });

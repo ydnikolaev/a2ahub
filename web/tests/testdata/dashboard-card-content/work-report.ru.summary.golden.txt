@@ -1,1 +1,16 @@
-(no summary region rendered for kind "work-report")
+work-report:subject
+work-report:lead
+work-report:subject
+work-report:lead
+work-report:subject
+work-report:lead
+work-report:subject
+work-report:lead
+work-report:subject
+work-report:lead
+work-report:subject
+work-report:lead
+work-report:subject
+work-report:lead
+work-report:subject
+work-report:lead

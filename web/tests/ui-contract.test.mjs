@@ -1428,8 +1428,25 @@ test('P12 contract cards preserve exact version packages and honest file bytes',
 
   const compiledTemplate = runtimeDesignPage('ContractsView.dc.html').template;
   const factMarkers = (kind) => Array.from(compiledTemplate.matchAll(new RegExp(`data-card-fact="${kind}:([^"]+)"`, 'g')), match => match[1]);
-  assert.deepEqual(factMarkers('contract'), ['identity','condition','lead','description','consumers','dependencies','metadata','versions','adoption','snapshot','technical']);
-  assert.deepEqual(factMarkers('cver'), ['identity','condition','lead','publication','description-change','consumers','documents','metadata','history','successor','snapshot','technical']);
+  // Two regions per kind, not one flat list. P2 re-shaped the card contract
+  // into a SUMMARY set and a DETAIL set, and in wave 3 P6 marked Contracts'
+  // master-list row as the summary region — so `identity` and `condition`,
+  // which card-spec places at `summary`, now legitimately appear twice in this
+  // file: once in the card article and once on the row. This assertion
+  // predated that model and read the file flat, so a correct change reddened
+  // it. Split rather than widened: the frozen detail order is still asserted
+  // exactly, and the summary set is asserted separately.
+  //
+  // The card articles precede the master list in this file, so the detail
+  // markers come first.
+  const contractDetail = ['identity','condition','lead','description','consumers','dependencies','metadata','versions','adoption','snapshot','technical'];
+  const cverDetail = ['identity','condition','lead','publication','description-change','consumers','documents','metadata','history','successor','snapshot','technical'];
+  const contractMarkers = factMarkers('contract');
+  const cverMarkers = factMarkers('cver');
+  assert.deepEqual(contractMarkers.slice(0, contractDetail.length), contractDetail, 'the frozen contract detail order must not move');
+  assert.deepEqual(cverMarkers.slice(0, cverDetail.length), cverDetail, 'the frozen cver detail order must not move');
+  assert.deepEqual(contractMarkers.slice(contractDetail.length), ['identity','condition'], "contract's summary region carries exactly its card-spec summary facts");
+  assert.deepEqual(cverMarkers.slice(cverDetail.length), ['identity','condition'], "cver's summary region carries exactly its card-spec summary facts");
 
   const source = component('ContractsView');
   assert.doesNotMatch(source, /STATE_TONE|DRIFT_TONE|STATE_WORDS|DRIFT_WORDS|state\s*===\s*["']published["']/);

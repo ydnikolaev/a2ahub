@@ -75,10 +75,10 @@
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(430px,100%),1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
             <sc-for list="{{ conRows }}" as="c" hint-placeholder-count="6">
-              <button type="button" class="a2a-pick" onClick="{{ c.select }}" style="{{ c.style }}">
+              <button type="button" class="a2a-pick" data-card-summary="{{ c.summaryAttr }}" onClick="{{ c.select }}" style="{{ c.style }}">
                 <span style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:6px;">
-                  <span style="font-family:'IBM Plex Mono',monospace; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; color:var(--text); overflow-wrap:anywhere;">{{ c.id }}</span>
-                  <span style="font-family:'IBM Plex Mono',ui-monospace,monospace; color:var(--muted);">{{ c.version }}</span>
+                  <span data-card-fact="contract:identity" style="font-family:'IBM Plex Mono',monospace; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; color:var(--text); overflow-wrap:anywhere;">{{ c.id }}</span>
+                  <span data-card-fact="contract:condition" style="font-family:'IBM Plex Mono',ui-monospace,monospace; color:var(--muted);">{{ c.version }}</span>
                   <dc-import name="StatusPill" result="{{ c.stateResult }}" size="small" hint-size="120px,24px"></dc-import>
                 </span>
                 <span style="display:block; font-size:15px; color:var(--muted); margin-bottom:8px;">{{ c.meta }}</span>
@@ -186,11 +186,11 @@
                      version can be switched off — who is still sitting on it —
                      was not on the card at all. -->
                 <sc-for list="{{ cdVersions }}" as="v" hint-placeholder-count="3">
-                  <div data-contract-version="{{ v.version }}" role="{{ v.role }}" tabindex="{{ v.tabIndex }}" aria-label="{{ v.ariaLabel }}" onClick="{{ v.openVersion }}" onKeyDown="{{ v.openVersionKey }}" style="{{ v.style }}" style-hover="{{ v.hoverStyle }}">
+                  <div data-contract-version="{{ v.version }}" data-card-summary="{{ v.summaryAttr }}" role="{{ v.role }}" tabindex="{{ v.tabIndex }}" aria-label="{{ v.ariaLabel }}" onClick="{{ v.openVersion }}" onKeyDown="{{ v.openVersionKey }}" style="{{ v.style }}" style-hover="{{ v.hoverStyle }}">
                     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px;">
-                      <span style="font-family:'IBM Plex Mono',monospace; font-size:16px; font-weight:600; color:{{ v.color }};">{{ v.version }}</span>
+                      <span data-card-fact="cver:identity" style="font-family:'IBM Plex Mono',monospace; font-size:16px; font-weight:600; color:{{ v.color }};">{{ v.version }}</span>
                       <dc-import name="StatusPill" result="{{ v.stateResult }}" size="small" hint-size="140px,24px"></dc-import>
-                      <span style="{{ v.seatStyle }}">{{ v.seats }}</span>
+                      <span data-card-fact="cver:condition" style="{{ v.seatStyle }}">{{ v.seats }}</span>
                     </div>
                     <sc-if value="{{ v.hasNotes }}" hint-placeholder-val="{{ true }}">
                       <div style="margin-top:7px; display:flex; flex-direction:column; gap:4px; font-size:15px; line-height:1.5; color:var(--muted);">
@@ -895,6 +895,10 @@ class Component extends DCLogic {
       return {
         version:version.version,
         stateResult:resolve("lifecycle-state", version.state),
+        // The version whose cver card is currently open doubles as that
+        // card's summary region (P6 §8 AC-9), the same convention conRows
+        // uses for the "contract" kind above.
+        summaryAttr:cardVersion && cardVersionContract === selectedContract && cardVersion.version === version.version ? "cver" : "",
         color:"var(--text)",
         seats:pins.length ? (ru ? "потребители: " : "consumers: ") + pins.join(", ") : noneRecorded(ru),
         seatStyle:"margin-left:auto; font-size:15px; color:var(--muted); overflow-wrap:anywhere;",
@@ -985,10 +989,8 @@ class Component extends DCLogic {
       codeBindingPrefix:c.codeBindingPrefix,
       notEvaluatedLabel:c.notEvaluated,
       codeBindingSuffix:c.codeBindingSuffix,
-      // dashboard-derivation: allow-provenance-begin -- pre-existing provenance vocabulary in hint strings; P6 §1.5 will rephrase as part of Rule A/B edits
-      consumerLinesHint:ru ? "Порядок и состояние каждой линии перенесены из снимка." : "Each line keeps the order and condition carried by the snapshot.",
-      versionWindowHint:ru ? "Версии показаны в порядке, перенесённом сервером." : "Versions keep the server-carried order.",
-      // dashboard-derivation: allow-provenance-end
+      consumerLinesHint:ru ? "Порядок и состояние каждой линии — как в принятом снимке." : "Each line's order and condition, as recorded in the accepted snapshot.",
+      versionWindowHint:ru ? "Версии показаны в порядке, записанном в снимке." : "Versions appear in the order recorded in the snapshot.",
       provenanceHint:ru ? "Это метаданные происхождения, а не браузерная проверка." : "This is provenance metadata, not a browser-side verification.",
       conRows:contractsAll.map(contract => ({
         id:contract.id,
@@ -997,6 +999,10 @@ class Component extends DCLogic {
         meta:(ru ? "поставщик: " : "provider: ") + contract.provider + (contract.category ? " · " + contract.category : "") + " · " + contract.space,
         pills:[],
         style:this.cardButton(selectedID === contract.id),
+        // The row for the contract whose card is currently open doubles as
+        // that card's summary region (P6 §8 AC-9): it is the one place the
+        // reader sees this contract before opening the detail.
+        summaryAttr:card && card.kind === "contract" && actions.cardID && actions.cardID("contract", contract) === card.id ? "contract" : "",
         select:() => openContract(contract, "")
       })),
       hasConRows:contractsAll.length > 0,
@@ -1035,9 +1041,7 @@ class Component extends DCLogic {
       cdVersionAvailable:!!selectedDetail && selectedDetail.status === "available",
       cdVersionUnavailable:!!selectedVersion && (!selectedDetail || selectedDetail.status !== "available"),
       cdVersionUnavailableTitle:ru ? "Исторический комплект недоступен" : "Historical package unavailable",
-      // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state inline value; predates Rule A; P6 will replace with blank-slot pattern
-      cdVersionUnavailableText:ru ? "В этом снимке неизвестно." : "Unknown in this snapshot.",
-      // dashboard-derivation: allow-provenance-end
+      cdVersionUnavailableText:unavailableInSnapshot(selectedDetail && selectedDetail.unavailableReason, ru),
       cdVersionOverviewFacts:selectedVersion && selectedDetail ? [
         { label:ru ? "версия" : "version", value:selectedVersion.version, mono:true },
         { label:ru ? "статус" : "status", value:selectedStateResult.label },

@@ -64,14 +64,14 @@
                   <sc-if value="{{ cardMode }}" hint-placeholder-val="{{ false }}">
                   <div class="a2a-overview-process-card" data-card-content style="padding:var(--padding-card-block) var(--padding-card-inline);">
                     <h2 data-card-fact="operational:identity" class="a2a-detail-title" style="margin:0 0 var(--space-card-title-to-content);">{{ r.heading }}</h2>
-                    <div data-card-fact="operational:lead" style="color:var(--body); font-size:15px; line-height:1.55;">{{ r.protocolCardLead }}</div>
+                    <sc-if value="{{ r.hasProtocolLead }}" hint-placeholder-val="{{ true }}"><div data-card-fact="operational:lead" style="color:var(--body); font-size:15px; line-height:1.55;">{{ r.protocolCardLead }}</div></sc-if>
                     <div data-card-fact="operational:protocol" style="margin-top:var(--space-after-section-heading);">{{ r.protocolCardText }}</div>
                     <div data-card-fact="operational:participants" style="margin-top:var(--space-after-section-heading);">{{ r.participantsCardText }}</div>
-                    <div data-card-fact="operational:milestone" data-accented="{{ r.milestoneHighlighted }}" style="margin-top:var(--space-after-section-heading); {{ r.milestoneStyle }}">{{ r.milestoneText }}</div>
-                    <div data-card-fact="operational:work" data-accented="{{ r.workCardHighlighted }}" style="margin-top:var(--space-after-section-heading); {{ r.workCardStyle }}">{{ r.workCardText }}</div>
-                    <div data-card-fact="operational:waits-checkpoint" data-accented="{{ r.waitsCheckpointHighlighted }}" style="margin-top:var(--space-after-section-heading); {{ r.waitsCheckpointStyle }}">{{ r.waitsCheckpointCardText }}</div>
-                    <div data-card-fact="operational:shared-pending" data-accented="{{ r.sharedPendingHighlighted }}" style="margin-top:var(--space-after-section-heading); {{ r.sharedPendingStyle }}">{{ r.sharedPendingCardText }}</div>
-                    <div data-card-fact="operational:consistency" data-accented="{{ r.consistencyCardHighlighted }}" style="margin-top:var(--space-after-section-heading); {{ r.consistencyCardStyle }}">{{ r.consistencyCardText }}</div>
+                    <sc-if value="{{ r.hasMilestone }}" hint-placeholder-val="{{ true }}"><div data-card-fact="operational:milestone" data-accented="{{ r.milestoneHighlighted }}" style="margin-top:var(--space-after-section-heading); {{ r.milestoneStyle }}"><dc-import name="ActorEventLine" row="{{ r.milestoneEvent }}" size="regular" hint-size="100%,46px"></dc-import></div></sc-if>
+                    <sc-if value="{{ r.hasWorkCardText }}" hint-placeholder-val="{{ true }}"><div data-card-fact="operational:work" data-accented="{{ r.workCardHighlighted }}" style="margin-top:var(--space-after-section-heading); {{ r.workCardStyle }}">{{ r.workCardText }}</div></sc-if>
+                    <sc-if value="{{ r.hasWork }}" hint-placeholder-val="{{ true }}"><div data-card-fact="operational:waits-checkpoint" data-accented="{{ r.waitsCheckpointHighlighted }}" style="margin-top:var(--space-after-section-heading); {{ r.waitsCheckpointStyle }}">{{ r.waitsCheckpointCardText }}</div></sc-if>
+                    <sc-if value="{{ r.hasSharedPending }}" hint-placeholder-val="{{ false }}"><div data-card-fact="operational:shared-pending" data-accented="{{ r.sharedPendingHighlighted }}" style="margin-top:var(--space-after-section-heading); {{ r.sharedPendingStyle }}">{{ r.sharedPendingCardText }}</div></sc-if>
+                    <sc-if value="{{ r.hasConsistencyCardText }}" hint-placeholder-val="{{ true }}"><div data-card-fact="operational:consistency" data-accented="{{ r.consistencyCardHighlighted }}" style="margin-top:var(--space-after-section-heading); {{ r.consistencyCardStyle }}">{{ r.consistencyCardText }}</div></sc-if>
                     <div data-card-fact="operational:source" data-accented="{{ r.sourceHighlighted }}" style="margin-top:var(--space-after-section-heading); {{ r.sourceStyle }}">{{ r.sourceCardText }}</div>
                     <sc-if value="{{ r.hasWorkWindowText }}" hint-placeholder-val="{{ true }}"><div data-card-fact="operational:work-bounds" style="margin-top:var(--space-after-section-heading);">{{ r.workBoundsCardText }}</div></sc-if>
                     <sc-if value="{{ r.hasConsistencyWindowText }}" hint-placeholder-val="{{ true }}"><div data-card-fact="operational:consistency-bounds" style="margin-top:var(--space-after-section-heading);">{{ r.consistencyBoundsCardText }}</div></sc-if>
@@ -83,23 +83,34 @@
                   </sc-if>
                   <sc-if value="{{ normalMode }}" hint-placeholder-val="{{ true }}">
                   <div class="a2a-overview-process-card">
-                  <div data-operational-process-identity="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline);">
+                  <div data-card-summary="operational-process">
+                  <div data-operational-process-identity="true" data-card-fact="operational:identity" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline);">
                     <button type="button" onClick="{{ r.openCard }}" aria-label="{{ r.openCardLabel }}" style="display:block; width:100%; padding:0; border:0; background:transparent; color:var(--text); font-family:'Onest',sans-serif; text-align:left; cursor:pointer;">
                       <span style="display:block; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; overflow-wrap:anywhere;">{{ r.heading }}</span>
-                      <span style="display:block; margin-top:4px; color:var(--muted); font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; line-height:1.45; overflow-wrap:anywhere; {{ r.identityTechnicalStyle }}">{{ r.space }} · {{ r.thread }}</span>
                     </button>
+                    <!-- OUTSIDE the button on purpose: FreshnessDot renders its
+                         own <button> for the hint, and a button inside a button
+                         is `nested-interactive` — axe-serious, and it breaks
+                         keyboard and screen-reader navigation. The card door
+                         stays the heading; this line sits beside it. -->
+                    <div style="display:flex; align-items:center; gap:7px; margin-top:4px; color:var(--muted); font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; line-height:1.45; overflow-wrap:anywhere; {{ r.identityTechnicalStyle }}"><span>{{ r.space }} · {{ r.thread }}</span><dc-import name="FreshnessDot" result="{{ r.sourceResult }}" compact="{{ true }}" hint-size="90px,18px"></dc-import></div>
                     <button type="button" data-open-thread-card onClick="{{ r.openThreadCard }}" aria-label="{{ r.openThreadCardLabel }}" style="margin-top:8px; padding:0; border:0; background:transparent; color:var(--teal-ink); font-family:'Onest',sans-serif; font-size:13px; font-weight:600; cursor:pointer;">{{ r.openThreadCardText }}</button>
                   </div>
 
-                  <div data-operational-protocol="true" role="group" aria-label="{{ r.protocolLabel }}" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline); background:var(--surface);">
-                    <p style="margin:0 0 10px; color:var(--body); font-size:15px; line-height:1.55;">{{ r.protocolLead }}</p>
+                  <div data-operational-protocol="true" data-card-fact="operational:protocol" role="group" aria-label="{{ r.protocolLabel }}" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline); background:var(--surface);">
+                    <sc-if value="{{ r.hasProtocolLead }}" hint-placeholder-val="{{ true }}"><p style="margin:0 0 10px; color:var(--body); font-size:15px; line-height:1.55;">{{ r.protocolLead }}</p></sc-if>
                     <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
                       <h3 style="margin:0; color:var(--text); font-size:var(--font-meta); line-height:var(--line-meta); font-weight:600;">{{ r.protocolLabel }}</h3>
                       <dc-import name="StatusPill" result="{{ r.protocolResult }}" size="small" hint-size="120px,24px"></dc-import>
                       <span style="color:var(--muted); font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px;">{{ r.openCountText }}</span>
                     </div>
                     <sc-if value="{{ r.obligationsGridVisible }}" hint-placeholder-val="{{ true }}">
-                      <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;">
+                      <!-- Three columns, not two: "Ваш ход" is viewer-local
+                           presentation chrome (card-spec's own note on
+                           Protocol.YourMove), never a portable card fact, so
+                           it carries no data-card-fact of its own. -->
+                      <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px;">
+                        
                         <div style="min-width:0; padding:8px 9px; border-radius:var(--radius-inner); background:var(--canvas);"><div style="color:var(--faint); font-size:12px; line-height:1.35; font-weight:500;">{{ r.waitingOnLabel }}</div><div style="margin-top:2px; color:var(--body); font-size:13px; overflow-wrap:anywhere;">{{ r.waitingOn }}</div></div>
                         <div style="min-width:0; padding:8px 9px; border-radius:var(--radius-inner); background:var(--canvas);"><div style="color:var(--faint); font-size:12px; line-height:1.35; font-weight:500;">{{ r.blockingByLabel }}</div><div style="margin-top:2px; color:var(--body); font-size:13px; overflow-wrap:anywhere;">{{ r.blockingBy }}</div></div>
                       </div>
@@ -110,55 +121,63 @@
                       </button>
                     </sc-if>
                   </div>
+                  </div>
 
                   <div data-operational-participants="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline); color:var(--body);">{{ r.participantsText }}</div>
-                  <div data-operational-latest-milestone="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline); color:var(--muted); {{ r.milestoneStyle }}">{{ r.milestoneText }}</div>
+                  <sc-if value="{{ r.hasMilestone }}" hint-placeholder-val="{{ true }}">
+                  <div data-operational-latest-milestone="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline); {{ r.milestoneStyle }}"><dc-import name="ActorEventLine" row="{{ r.milestoneEvent }}" size="regular" hint-size="100%,46px"></dc-import></div>
+                  </sc-if>
 
+                  <sc-if value="{{ r.hasWork }}" hint-placeholder-val="{{ true }}">
                   <div data-operational-work="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline);">
                     <h3 style="margin:0 0 8px; font-size:var(--font-meta); color:var(--muted);">{{ r.workLabel }}</h3>
-                    <sc-if value="{{ r.workEmpty }}" hint-placeholder-val="{{ false }}"><div style="color:var(--faint);">{{ r.noneRecorded }}</div></sc-if>
                     <sc-for list="{{ r.work }}" as="w" hint-placeholder-count="2">
                       <button type="button" onClick="{{ w.openCard }}" aria-label="{{ w.openCardLabel }}" style="display:block; width:100%; padding:var(--padding-nested-block) var(--padding-nested-inline); margin-top:8px; border:0; border-radius:var(--radius-nested); background:var(--surface-section); color:var(--body); font:inherit; text-align:left; cursor:pointer; {{ w.accentStyle }}">
                         <div style="display:flex; align-items:center; gap:7px; flex-wrap:wrap;"><strong>{{ w.actor }}</strong><dc-import name="StatusPill" result="{{ w.modeResult }}" size="small" hint-size="110px,24px"></dc-import><dc-import name="StatusPill" result="{{ w.freshnessResult }}" size="small" hint-size="120px,24px"></dc-import></div>
-                        <div style="margin-top:6px;">{{ w.summary }}</div>
+                        <sc-if value="{{ w.hasSummary }}" hint-placeholder-val="{{ true }}"><div style="margin-top:6px;">{{ w.summary }}</div></sc-if>
                         <div style="margin-top:6px; color:var(--muted);">{{ w.evidenceText }}</div>
                       </button>
                     </sc-for>
                   </div>
+                  </sc-if>
 
+                  <sc-if value="{{ r.hasWork }}" hint-placeholder-val="{{ true }}">
                   <div data-operational-waits-checkpoint="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline);">
                     <h3 style="margin:0 0 8px; font-size:var(--font-meta); color:var(--muted);">{{ r.waitsCheckpointLabel }}</h3>
-                    <sc-if value="{{ r.workEmpty }}" hint-placeholder-val="{{ false }}"><div style="color:var(--faint);">{{ r.noneRecorded }}</div></sc-if>
                     <sc-for list="{{ r.work }}" as="w" hint-placeholder-count="2">
                       <div style="padding:var(--padding-nested-block) var(--padding-nested-inline); margin-top:8px; border-radius:var(--radius-nested); background:var(--surface-section); color:var(--body);">
                         <strong>{{ w.actor }}</strong>
                         <div style="margin-top:6px; color:var(--muted);">{{ w.checkpointText }}</div>
-                        <sc-if value="{{ w.waitsEmpty }}" hint-placeholder-val="{{ false }}"><div style="margin-top:5px; color:var(--faint);">{{ r.noneRecorded }}</div></sc-if>
                         <sc-for list="{{ w.waits }}" as="wait" hint-placeholder-count="1">
+                          <sc-if value="{{ wait.hasText }}" hint-placeholder-val="{{ true }}">
                           <div style="margin-top:5px; color:var(--muted); {{ wait.accentStyle }}">
                             <div>{{ wait.text }}</div>
                             <sc-if value="{{ wait.hasTechnical }}" hint-placeholder-val="true"><details style="{{ r.nestedTechnicalStyle }} margin-top:4px;"><summary style="cursor:pointer; font-size:13px;">{{ r.technicalLabel }}</summary><div style="margin-top:4px; font-family:'IBM Plex Mono',monospace; font-size:12px; overflow-wrap:anywhere;">{{ wait.technical }}</div></details></sc-if>
                           </div>
+                          </sc-if>
                         </sc-for>
                       </div>
                     </sc-for>
                   </div>
+                  </sc-if>
 
+                  <sc-if value="{{ r.hasSharedPending }}" hint-placeholder-val="{{ false }}">
                   <div data-operational-shared-pending="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline);">
                     <h3 style="margin:0 0 8px; font-size:var(--font-meta); color:var(--muted);">{{ r.sharedPendingLabel }}</h3>
-                    <sc-if value="{{ r.sharedPendingEmpty }}" hint-placeholder-val="{{ false }}"><div style="color:var(--faint);">{{ r.sharedPendingEmptyText }}</div></sc-if>
                     <sc-for list="{{ r.work }}" as="w" hint-placeholder-count="2">
                       <sc-if value="{{ w.hasSharedPending }}" hint-placeholder-val="{{ false }}"><div style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-top:6px;"><dc-import name="StatusPill" result="{{ w.sharedPendingResult }}" size="small" hint-size="140px,24px"></dc-import><span>{{ w.sharedPendingText }}</span></div></sc-if>
                     </sc-for>
                   </div>
+                  </sc-if>
 
+                  <sc-if value="{{ r.hasConsistency }}" hint-placeholder-val="{{ false }}">
                   <div data-operational-consistency="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline);">
                     <h3 style="margin:0 0 8px; font-size:var(--font-meta); color:var(--muted);">{{ r.consistencyLabel }}</h3>
-                    <sc-if value="{{ r.consistencyEmpty }}" hint-placeholder-val="{{ false }}"><div style="color:var(--faint);">{{ r.noneRecorded }}</div></sc-if>
                     <sc-for list="{{ r.consistency }}" as="issue" hint-placeholder-count="1">
                       <div style="margin-top:7px; {{ issue.accentStyle }}"><dc-import name="StatusPill" result="{{ issue.result }}" size="small" hint-size="120px,24px"></dc-import><details style="{{ r.nestedTechnicalStyle }} margin-top:6px;"><summary style="cursor:pointer; color:var(--muted); font-size:13px;">{{ r.technicalLabel }}</summary><div style="margin-top:5px; color:var(--muted); font-size:13px; overflow-wrap:anywhere;">{{ issue.technical }}</div></details></div>
                     </sc-for>
                   </div>
+                  </sc-if>
 
                   <div data-operational-source="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline); display:flex; align-items:center; gap:8px; flex-wrap:wrap; {{ r.sourceStyle }}"><span>{{ r.sourceLabel }}</span><dc-import name="StatusPill" result="{{ r.sourceResult }}" size="small" hint-size="120px,24px"></dc-import><span style="color:var(--muted);">{{ r.sourceSynced }}</span><sc-if value="{{ r.hasSourceUnavailableText }}" hint-placeholder-val="false"><span style="flex-basis:100%; color:var(--body);">{{ r.sourceUnavailableText }}</span></sc-if></div>
                   <div data-operational-windows="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline); color:var(--muted);"><sc-if value="{{ r.hasWorkWindowText }}" hint-placeholder-val="{{ true }}"><div>{{ r.workBoundsLabel }}: {{ r.workWindowText }}</div></sc-if><sc-if value="{{ r.hasConsistencyWindowText }}" hint-placeholder-val="{{ true }}"><div>{{ r.consistencyBoundsLabel }}: {{ r.consistencyWindowText }}</div></sc-if></div>
@@ -213,7 +232,7 @@
                   </span>
                   <span style="flex:0 0 auto; font-size:15px; line-height:1.4; color:var(--muted); white-space:nowrap;">{{ r.time }}</span>
                 </span>
-                <span style="display:block; margin-bottom:10px; font-size:15px; line-height:1.55; color:var(--body); overflow-wrap:anywhere;">{{ r.reasonSentence }}</span>
+                <sc-if value="{{ r.hasReasonSentence }}" hint-placeholder-val="{{ true }}"><span style="display:block; margin-bottom:10px; font-size:15px; line-height:1.55; color:var(--body); overflow-wrap:anywhere;">{{ r.reasonSentence }}</span></sc-if>
                 <span style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-bottom:9px;"><dc-import name="StatusPill" result="{{ r.statusResult }}" size="small" hint-size="120px,24px"></dc-import><dc-import name="StatusPill" result="{{ r.outcomeResult }}" size="small" hint-size="120px,24px"></dc-import></span>
                 <span style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; margin-bottom:9px;">
                   <span style="min-width:0; padding:8px 9px; border-radius:var(--radius-inner); background:var(--canvas);"><span style="display:block; color:var(--faint); font-size:12px; line-height:1.35; font-weight:500;">{{ r.waitingOnLabel }}</span><span style="display:block; margin-top:2px; color:var(--body); font-size:13px; overflow-wrap:anywhere;">{{ r.waitingOn }}</span></span>
@@ -256,6 +275,20 @@ function technicalJoin(values) {
   return values.filter(Boolean).map(String).join(" · ");
 }
 
+// formatWhen renders a carried ISO timestamp for a person: no raw ISO
+// string, no microseconds, one shared display format across both locales
+// (only the surrounding sentence's words carry the locale). Display-only
+// formatting, not a threshold or a duration — check-dashboard-derivation.sh
+// explicitly allows this.
+function formatWhen(iso, ru) {
+  if (!iso) return ru ? "неизвестно" : "unknown";
+  const parsed = new Date(iso);
+  if (isNaN(parsed)) return String(iso);
+  const pad = n => String(n).padStart(2, "0");
+  return pad(parsed.getUTCDate()) + "." + pad(parsed.getUTCMonth() + 1) + "." + parsed.getUTCFullYear()
+    + " " + pad(parsed.getUTCHours()) + ":" + pad(parsed.getUTCMinutes());
+}
+
 class Component extends DCLogic {
   syncContext() {
     const ctx = this.props && this.props.ctx || {};
@@ -282,15 +315,19 @@ class Component extends DCLogic {
   attentionRow(item, data, ru, actions) {
     const locale = ru ? "ru" : "en";
     const sentence = item.reasonSentence || {};
+    const reasonText = sentence[locale] || "";
     const id = actions.cardID ? actions.cardID("item", item) : "";
     const cardAccent = actions.cardAccent ? actions.cardAccent("state", [item.space || "", item.id || "", item.state || ""]) : "";
+    // Rule A, "value cannot be established": the reason sentence is not
+    // printed when the snapshot carries no authored text for this locale —
+    // its absence is named once below, in the technical disclosure.
+    const reasonUnknownNote = ru ? "Причина хода: в этом снимке неизвестна." : "Reason for the move: unknown in this snapshot.";
     return {
       id:item.id,
       type:item.type,
       title:item.title,
-      // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state fallback value; predates Rule A; P4 will replace with blank-slot pattern
-      reasonSentence:sentence[locale] || (ru ? "В этом снимке неизвестно." : "Unknown in this snapshot."),
-      // dashboard-derivation: allow-provenance-end
+      hasReasonSentence:!!reasonText,
+      reasonSentence:reasonText,
       statusResult:this.vocabulary(data, "lifecycle-state", item.state, locale),
       outcomeResult:this.vocabulary(data, "outcome", item.outcome, locale),
       time:item.neededBy || item.age || "",
@@ -301,9 +338,9 @@ class Component extends DCLogic {
       waitingOn:listText(item.waitingOn, ru, ru ? "не записано" : "none recorded"),
       expectedMoveLabel:ru ? "Ожидаемый ход" : "Expected move",
       expectedMove:item.expectedTransition || (ru ? "не записан" : "not recorded"),
-      hasTechnicalWhy:!!item.why,
+      hasTechnicalWhy:!!item.why || !reasonText,
       technicalWhyLabel:ru ? "Технические подробности" : "Technical detail",
-      technicalWhy:item.why || "",
+      technicalWhy:[item.why, !reasonText ? reasonUnknownNote : ""].filter(Boolean).join(" "),
       openLabel:(ru ? "Открыть карточку: " : "Open card: ") + (item.title || item.id),
       openCard:() => {
         if (id && actions.openCard) actions.openCard("item", id, cardAccent);
@@ -317,19 +354,21 @@ class Component extends DCLogic {
     const waitingOwners = protocol.waiting_on || [];
     const blockers = protocol.blocking_by || [];
     const none = ru ? "ничего не записано" : "none recorded";
-    // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state constant declarations; predates Rule A; P4 will replace with blank-slot pattern per card-spec composition rules
-    const notRecorded = ru ? "Не записано." : "Not recorded.";
-    const unknown = ru ? "В этом снимке неизвестно." : "Unknown in this snapshot.";
-    // dashboard-derivation: allow-provenance-end
     const owners = listText(waitingOwners, ru, "");
     const protocolResult = this.vocabulary(data, "outcome", protocol.settled === true ? "settled" : "open", locale);
+    // Rule A, "value cannot be established": an unsettled process with no
+    // carried owner has no lead sentence to print — the card-spec's own
+    // placement table marks this fact "when carried", so an absent owner
+    // means no row rather than a filled-in guess. The absence is named once
+    // in technicalText below.
+    const hasProtocolLead = protocol.settled === true || !!owners;
     const protocolLead = protocol.settled === true
       ? (ru ? "Этот процесс завершён; ни за кем из участников нет следующего хода протокола." : "This process is settled; no participant owes a protocol move.")
       : (owners
         ? (ru
           ? "Следующий ход протокола за " + owners + "; открытых документов: " + protocol.open_count + "."
           : owners + " own the next protocol move; " + protocol.open_count + " items remain open.")
-        : unknown);
+        : "");
     const protocolCardLead = protocol.settled === true || !owners || ru
       ? protocolLead
       : owners + (waitingOwners.length === 1 ? " owns" : " own") + " the next protocol move; " + protocol.open_count + " items remain open.";
@@ -340,10 +379,11 @@ class Component extends DCLogic {
     const sourceUnavailable = carriedSourceFreshness === "unavailable" || (!carriedSourceFreshness && !!unavailableFact);
     const sourceResult = this.vocabulary(data, "source-freshness", sourceUnavailable ? "unavailable" : carriedSourceFreshness, locale);
     const unavailableSummary = String(unavailable.summary || "");
-    const sourceUnavailableText = sourceUnavailable
-      ? (unavailableSummary
-        ? (ru ? "Недоступно в этом снимке: " : "Unavailable in this snapshot: ") + unavailableSummary + (/[^.!?]$/.test(unavailableSummary) ? "." : "")
-        : unknown)
+    // card-spec/operational-process.md#empty-and-degraded: the degraded
+    // sentence prints only WITH a carried public-safe summary; without one
+    // there is nothing to say, so the row does not print at all.
+    const sourceUnavailableText = sourceUnavailable && unavailableSummary
+      ? (ru ? "Недоступно в этом снимке: " : "Unavailable in this snapshot: ") + unavailableSummary + (/[^.!?]$/.test(unavailableSummary) ? "." : "")
       : "";
     const latest = row.latest_milestone || {};
     const latestActor = latest.actor || {};
@@ -357,7 +397,8 @@ class Component extends DCLogic {
     const work = workRows.map(item => {
       const actor = item.actor || {};
       const waits = (item.waiting_on || []).map(wait => ({
-        text:wait.summary || notRecorded,
+        hasText:!!wait.summary,
+        text:wait.summary || "",
         technical:technicalJoin([wait.kind, wait.id]),
         hasTechnical:!!(wait.kind || wait.id),
         accentStyle:accentStyle("wait", [item.work_id || "", wait.kind || "", wait.id || ""])
@@ -370,12 +411,16 @@ class Component extends DCLogic {
         actor:actor.name || actor.system || (ru ? "исполнитель не записан" : "actor not recorded"),
         modeResult:this.vocabulary(data, "work-mode", item.mode, locale),
         freshnessResult:this.vocabulary(data, "freshness", item.freshness, locale),
-        summary:item.summary || unknown,
+        hasSummary:!!item.summary,
+        summary:item.summary || "",
+        // Each fragment is optional and carried independently; a fragment
+        // whose fact is absent drops out rather than printing a filled-in
+        // "not recorded" placeholder (Rule A).
         evidenceText:technicalJoin([
-          (ru ? "текущая: " : "current: ") + (item.current === true ? (ru ? "да" : "yes") : (ru ? "нет" : "no")),
-          (ru ? "сообщено " : "reported ") + (item.reported_at || notRecorded),
-          (ru ? "наблюдалось " : "observed ") + (item.observed_at || notRecorded),
-          (ru ? "действует до " : "valid until ") + (item.valid_until || notRecorded),
+          item.current === true ? (ru ? "текущая: да" : "current: yes") : item.current === false ? (ru ? "текущая: нет" : "current: no") : "",
+          item.reported_at ? (ru ? "сообщено " : "reported ") + item.reported_at : "",
+          item.observed_at ? (ru ? "наблюдалось " : "observed ") + item.observed_at : "",
+          item.valid_until ? (ru ? "действует до " : "valid until ") + item.valid_until : "",
           item.source ? (ru ? "источник " : "source ") + item.source : ""
         ]),
         checkpointText:checkpoint.artifact_id
@@ -390,7 +435,7 @@ class Component extends DCLogic {
         technical:technicalJoin([item.work_id, item.subject_ref, actor.system, actor.session, item.reported_at, item.observed_at, item.valid_until, item.source]),
         waits,
         accentStyle:accentStyle("work-row", item.work_id || ""),
-        openCardLabel:(ru ? "Открыть строку работы: " : "Open work row: ") + (item.summary || item.work_id || unknown),
+        openCardLabel:(ru ? "Открыть строку работы: " : "Open work row: ") + (item.summary || item.work_id || (ru ? "запись работы" : "work entry")),
         openCard:() => {
           if (cardID && actions.openCard) actions.openCard("operational-process", cardID, workAccent);
         }
@@ -407,7 +452,9 @@ class Component extends DCLogic {
     const obligationToggled = !!(this.state.docTreeOpen || {})[obligationsKey];
     const obligationsOwed = protocol.your_move === true || !!waitingOwners[0] || !!blockers[0];
     const milestoneIdentity = [latest.kind || "", latest.at || "", latest.subject || ""];
+    const hasMilestone = !!latest.at;
     const consistencyTotal = row.consistency_window && row.consistency_window.total;
+    const consistencyKnown = consistencyTotal != null;
     const protocolCardText = protocol.settled === true
       ? (ru
         ? "Протокол: " + protocolResult.label + "; блокировки не записаны."
@@ -415,13 +462,13 @@ class Component extends DCLogic {
       : (ru
         ? "Протокол: " + protocolResult.label + "; " + (blockers[0] ? "блокирует " + blockers.join(", ") + "." : "блокировки не записаны.")
         : "Protocol: " + protocolResult.label + "; blockers: " + (blockers[0] ? blockers.join(", ") : "none recorded") + ".");
-    const workCardText = (ru ? "Работа: " : "Work: ") + (work[0]
-      ? work.map(item => item.actor + " — " + item.modeResult.label + ", " + item.freshnessResult.label).join("; ") + "."
-      : (row.work_window && row.work_window.truncated === false && row.work_window.shown === 0 && row.work_window.total === 0
-        // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state inline value; predates Rule A; P4 will replace with blank-slot pattern
-        ? (ru ? "Ничего не записано." : "None recorded.")
-        // dashboard-derivation: allow-provenance-end
-        : unknown));
+    // Rule A, "empty collection known complete" and "value cannot be
+    // established": both collapse to the same outcome — the row does not
+    // print. Its absence is named once in technicalText below.
+    const hasWorkCardText = !!work[0];
+    const workCardText = hasWorkCardText
+      ? (ru ? "Работа: " : "Work: ") + work.map(item => item.actor + " — " + item.modeResult.label + ", " + item.freshnessResult.label).join("; ") + "."
+      : "";
     const waits = work.flatMap(item => item.waits);
     const waitsText = waits[0]
       ? waits.map(wait => wait.text).join("; ")
@@ -433,17 +480,17 @@ class Component extends DCLogic {
         ? (ru ? "общая контрольная точка есть." : "committed checkpoint present.")
         : (ru ? "контрольная точка не записана." : "checkpoint not recorded."));
     const pendingRows = workRows.filter(item => item.shared_pending && item.shared_pending.remaining_action);
-    const sharedPendingCardText = (ru ? "Оставшееся общее действие: " : "Remaining shared action: ")
-      + (pendingRows[0]
-        ? pendingRows.map(item => item.shared_pending.remaining_action).join("; ") + "."
-        : notRecorded);
+    const hasSharedPending = !!pendingRows[0];
+    const sharedPendingCardText = hasSharedPending
+      ? (ru ? "Оставшееся общее действие: " : "Remaining shared action: ") + pendingRows.map(item => item.shared_pending.remaining_action).join("; ") + "."
+      : "";
     const consistencyLabels = [];
     consistency.forEach(issue => {
       if (issue.result.label && !consistencyLabels.includes(issue.result.label)) consistencyLabels.push(issue.result.label);
     });
-    const consistencyCardText = (ru ? "Согласованность: " : "Consistency: ")
-      + (consistencyTotal == null ? unknown : consistencyTotal)
-      + (consistencyLabels[0] ? " — " + consistencyLabels.join(", ") : "") + ".";
+    const consistencyCardText = consistencyKnown
+      ? (ru ? "Согласованность: " : "Consistency: ") + consistencyTotal + (consistencyLabels[0] ? " — " + consistencyLabels.join(", ") : "") + "."
+      : "";
     const sourceCardText = (ru ? "Источник: " : "Source: ") + sourceResult.label + "; "
       + (source.synced_at
         ? (ru ? "синхронизация " : "synchronized ") + source.synced_at + "."
@@ -453,17 +500,49 @@ class Component extends DCLogic {
     const anyAccentStyle = (family, identities) => anyAccent(family, identities)
       ? "outline:3px solid var(--teal-solid); outline-offset:2px;"
       : "";
+    // AC-7: the card stays identifiable with every authored fact absent — the
+    // fallback chain ends on a carried identifier, never on a sentence.
+    const identityFallback = row.thread || row.space || (ru ? "процесс" : "process");
+    const milestoneActorName = latestActor.name || latestActor.system || (ru ? "система" : "system");
+    const milestoneEvent = hasMilestone ? {
+      actorName:milestoneActorName,
+      avatarMono:String(milestoneActorName || "?").slice(0, 2).toUpperCase(),
+      systemSelf:!latestActor.name && !!latestActor.system,
+      transitionResult:milestoneResult,
+      actionText:milestoneResult.label,
+      subjectLabel:latest.subject || "",
+      // §1's composition order: "system · localized time".
+      meta:[latestActor.system || "", formatWhen(latest.at, ru)].filter(Boolean).join(" · ")
+    } : null;
+    // Position 2, "protocol obligation" is a summary fact; the reader's own
+    // turn (`Protocol.YourMove`) stays list/card chrome per card-spec — it is
+    // viewer-local presentation, not a portable card fact, so it carries no
+    // data-card-fact marker.
+    const yourMoveText = protocol.your_move === true ? (ru ? "да" : "yes") : (ru ? "нет" : "no");
+    // Rule A: name every declared fact this row did not carry, once, here —
+    // never re-stated as a filled-in sentence in a summary or detail slot.
+    const omittedFacts = [
+      !hasProtocolLead ? (ru ? "ход протокола" : "protocol move") : "",
+      !hasMilestone ? (ru ? "последний этап" : "latest milestone") : "",
+      !hasWorkCardText ? (ru ? "работа" : "work") : "",
+      !work[0] ? (ru ? "зависимости и контрольная точка" : "waits and checkpoint") : "",
+      !hasSharedPending ? (ru ? "оставшееся общее действие" : "remaining shared action") : "",
+      !consistencyKnown ? (ru ? "итог согласованности" : "consistency total") : ""
+    ].filter(Boolean);
     return {
       space:row.space || "",
       thread:row.thread || "",
-      title:row.title || row.thread || unknown,
-      heading:(ru ? "Операционный процесс — " : "Operational process — ") + (row.title || row.thread || unknown),
+      title:row.title || identityFallback,
+      heading:(ru ? "Операционный процесс — " : "Operational process — ") + (row.title || identityFallback),
       protocolLabel:ru ? "Протокол" : "Protocol",
       protocolResult,
+      hasProtocolLead,
       protocolLead,
       protocolCardLead,
       protocolCardText,
       openCountText:ru ? "открыто: " + protocol.open_count : "open: " + protocol.open_count,
+      yourMoveLabel:ru ? "Ваш ход" : "Your move",
+      yourMoveText,
       waitingOnLabel:ru ? "Ждём от" : "Waiting on",
       waitingOn:listText(waitingOwners, ru, none),
       blockingByLabel:ru ? "Блокирует" : "Blocked by",
@@ -476,19 +555,16 @@ class Component extends DCLogic {
       toggleObligations:() => this.setState(current => ({ docTreeOpen:Object.assign({}, current.docTreeOpen, { [obligationsKey]:!((current.docTreeOpen || {})[obligationsKey]) }) })),
       participantsText:(ru ? "Участники: " : "Participants: ") + listText(row.participants, ru, none) + ".",
       participantsCardText:(ru ? "Участники: " : "Participants: ") + ((row.participants || []).length ? row.participants.join(", ") : none) + ".",
-      milestoneText:latest.at
-        ? (ru
-          ? "Последний этап: " + milestoneResult.label + " записан " + latest.at + " системой " + (latestActor.system || latestActor.name || none) + "."
-          : "Latest milestone: " + milestoneResult.label + " recorded at " + latest.at + " by " + (latestActor.system || latestActor.name || none) + ".")
-        // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state inline value; predates Rule A; P4 will replace with blank-slot pattern
-        : (ru ? "Последний этап: Не записано." : "Latest milestone: Not recorded."),
-        // dashboard-derivation: allow-provenance-end
+      hasMilestone,
+      milestoneEvent,
       milestoneResult,
       milestoneHighlighted:accent("milestone", milestoneIdentity),
       milestoneStyle:accentStyle("milestone", milestoneIdentity),
       workLabel:ru ? "Работа" : "Work",
       work,
+      hasWork:!!work[0],
       workEmpty:!work[0],
+      hasWorkCardText,
       workCardText,
       workCardHighlighted:anyAccent("work-row", workRows.map(item => item.work_id || "")),
       workCardStyle:anyAccentStyle("work-row", workRows.map(item => item.work_id || "")),
@@ -497,14 +573,17 @@ class Component extends DCLogic {
       waitsCheckpointHighlighted:anyAccent("wait", workRows.flatMap(item => (item.waiting_on || []).map(wait => [item.work_id || "", wait.kind || "", wait.id || ""]))),
       waitsCheckpointStyle:anyAccentStyle("wait", workRows.flatMap(item => (item.waiting_on || []).map(wait => [item.work_id || "", wait.kind || "", wait.id || ""]))),
       sharedPendingLabel:ru ? "Незавершённая общая запись" : "Unfinished shared write",
-      sharedPendingEmpty:!work.some(item => item.hasSharedPending),
-      sharedPendingEmptyText:notRecorded,
+      hasSharedPending,
       sharedPendingCardText,
       sharedPendingHighlighted:anyAccent("work-row", pendingRows.map(item => item.work_id || "")),
       sharedPendingStyle:anyAccentStyle("work-row", pendingRows.map(item => item.work_id || "")),
-      consistencyLabel:(ru ? "Согласованность: " : "Consistency: ") + (consistencyTotal == null ? unknown : consistencyTotal),
+      consistencyLabel:consistencyKnown
+        ? (ru ? "Согласованность: " + consistencyTotal : "Consistency: " + consistencyTotal)
+        : (ru ? "Согласованность" : "Consistency"),
       consistency,
+      hasConsistency:!!consistency[0],
       consistencyEmpty:!consistency[0],
+      hasConsistencyCardText:consistencyKnown,
       consistencyCardText,
       consistencyCardHighlighted:anyAccent("consistency-anomaly", (row.consistency || []).map(issue => [issue.code || "", issue.subject_ref || ""])),
       consistencyCardStyle:anyAccentStyle("consistency-anomaly", (row.consistency || []).map(issue => [issue.code || "", issue.subject_ref || ""])),
@@ -526,15 +605,13 @@ class Component extends DCLogic {
       hasConsistencyWindowText:!!consistencyWindowText,
       workBoundsCardText:(ru ? "Граница работы: " : "Work bounds: ") + workWindowText,
       consistencyBoundsCardText:(ru ? "Граница согласованности: " : "Consistency bounds: ") + consistencyWindowText,
-      // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state value in return object; predates Rule A; P4 will replace with blank-slot pattern
-      noneRecorded:ru ? "Ничего не записано." : "None recorded.",
-      // dashboard-derivation: allow-provenance-end
       technicalLabel:ru ? "Технические подробности" : "Technical detail",
       technicalCollapsedLabel:ru ? "Технические подробности: свёрнуты." : "Technical detail: collapsed.",
       nestedTechnicalStyle:card ? "display:none;" : "",
       identityTechnicalStyle:card ? "display:none;" : "",
       technicalText:technicalJoin([
         row.space, row.thread, latest.subject, source.revision, source.observed_at, unavailable.code, unavailable.summary,
+        omittedFacts.length ? (ru ? "не записано в этом снимке: " : "absent from this snapshot: ") + omittedFacts.join(", ") : "",
         ...work.map(item => item.technical),
         ...work.flatMap(item => item.waits.map(wait => wait.technical)),
         ...consistency.map(issue => issue.technical)
@@ -593,14 +670,12 @@ class Component extends DCLogic {
         open:() => { if (actions.openAggregate) actions.openAggregate(key); }
       };
     };
-    // dashboard-derivation: allow-provenance-begin -- pre-existing provenance vocabulary in stat hint strings; P4 will rephrase to user-state copy
     const ovStats = [
-      stat("needYou", ru ? "Нужны вы" : "Need you", needYou, ru ? "точный перенесённый набор" : "exact carried set", ru ? "Серверный набор документов, где нужен ваш ход." : "The server-carried set of documents that need your move."),
-      stat("noHumanMove", ru ? "Без хода человека" : "No human move", noHumanMove, ru ? "точный перенесённый набор" : "exact carried set", ru ? "Серверный набор без следующего хода человека." : "The server-carried set with no next human move."),
-      stat("youAwait", ru ? "Ждёте вы" : "You await", youAwait, ru ? "точный перенесённый набор" : "exact carried set", ru ? "Серверный набор документов, где вы ждёте другую сторону." : "The server-carried set where your side awaits another participant."),
-      stat("linesOffCurrent", ru ? "Линии не на последней" : "Lines off current", linesOffCurrent, ru ? "точный перенесённый набор" : "exact carried set", ru ? "Серверный набор зарегистрированных линий вне текущей версии." : "The server-carried set of registered lines off current.")
+      stat("needYou", ru ? "Нужны вы" : "Need you", needYou, ru ? "блокирующий ход, согласование или дедлайн" : "blocking move, approval, or deadline", ru ? "Документы, где снимок фиксирует блокирующее протокольное обязательство, ждёт вашего согласования или показывает просроченный дедлайн." : "Documents where the snapshot records a blocking protocol obligation, awaits your approval, or shows an overdue deadline."),
+      stat("noHumanMove", ru ? "Без хода человека" : "No human move", noHumanMove, ru ? "входящие без хода за вами" : "incoming not assigned to you", ru ? "Входящие документы, где снимок не называет человека владельцем следующего хода протокола." : "Incoming documents for which the snapshot assigns no human-owned next protocol move."),
+      stat("youAwait", ru ? "Ждёте вы" : "You await", youAwait, ru ? "отправлено, ответа нет" : "outgoing documents", ru ? "Вы отправили, ход теперь за другой системой." : "You sent these; the move is now the other system's."),
+      stat("linesOffCurrent", ru ? "Линии не на последней" : "Lines off current", linesOffCurrent, (ru ? "из " : "of ") + windowTotal(windows.contractEdges) + (ru ? " закреплённых" : " registered"), ru ? "Сколько зависимостей сидит не на последней мажорной версии контракта." : "How many dependencies sit on something other than the contract's latest major.")
     ];
-    // dashboard-derivation: allow-provenance-end
     const inventoryRows = [
       { label:ru ? "Входящие" : "Inbox", value:windowTotal(windows.inbox) },
       { label:ru ? "Исходящие" : "Outbox", value:windowTotal(windows.outbox) },
@@ -624,32 +699,26 @@ class Component extends DCLogic {
       ovStats,
       inventoryAria:ru ? "Данные в снимке" : "Snapshot inventory",
       inventoryTitle:ru ? "Данные в снимке" : "Snapshot inventory",
-      // dashboard-derivation: allow-provenance-begin -- pre-existing provenance vocabulary in section sub-labels; P4 will rephrase to user-state copy
-      inventorySub:ru ? "Только независимо перенесённые серверные итоги." : "Only independently carried server totals.",
+      inventorySub:ru ? "Только то, что удалось прочитать и включить в этот снимок." : "Only records that were readable and included in this snapshot.",
       inventoryRows,
       operationalTitle:ru ? "Где мы сейчас" : "Where things stand",
-      operationalSub:ru ? "Перенесённые протокольные, рабочие и операционные факты." : "Carried protocol, work, and operational facts.",
-      // dashboard-derivation: allow-provenance-end
-      operationalSnapshot:(ru ? "снимок " : "snapshot ") + (operational.generated_at || data.generatedAt || ""),
+      operationalSub:ru ? "Кто сейчас работает, кто ждёт и где остались протокольные обязательства." : "Who is working now, who is waiting, and where protocol obligations remain.",
+      operationalSnapshot:(ru ? "снимок " : "snapshot ") + formatWhen(operational.generated_at || data.generatedAt || "", ru),
       operationalSnapshotDotStyle:"width:8px; height:8px; border-radius:99px; background:var(--muted);",
       operationalRows,
       operationalPresent:!!operationalRows[0],
       operationalEmpty:!operationalRows[0],
       operationalEmptyTitle:cardMode ? (ru ? "Процесс недоступен" : "Process unavailable") : (ru ? "Нет видимых рабочих процессов" : "No visible work processes"),
-      // dashboard-derivation: allow-provenance-begin -- pre-existing provenance vocabulary in empty-state string; P4 will rephrase to user-state copy
       operationalEmptyText:cardMode
-        ? (ru ? "В этом снимке нет процесса с таким перенесённым идентификатором." : "This snapshot has no process for the carried identity.")
+        ? (ru ? "В этом снимке нет процесса с таким идентификатором." : "This snapshot has no process with that identity.")
         : (timelineBound || (ru ? "В этом снимке нет операционных строк." : "This snapshot contains no operational rows.")),
-      // dashboard-derivation: allow-provenance-end
       operationalMore:!cardMode && !!timelineBound,
       operationalMoreText:timelineBound || (ru ? "Открыть Треды" : "Open Threads"),
       goThreads:() => { if (actions.navigate) actions.navigate("threads", { operationalOpen:"" }); },
       attentionTitle:ru ? "Требуют вашего внимания" : "Needs your attention",
-      // dashboard-derivation: allow-provenance-begin -- pre-existing provenance vocabulary in attention subtitle; P4 will rephrase to user-state copy
       attentionSub:attentionEmpty
-        ? (ru ? "Перенесённый набор полон и пуст." : "The carried set is complete and empty.")
-        : (ru ? "Строки идут в серверном порядке." : "Rows remain in server order."),
-      // dashboard-derivation: allow-provenance-end
+        ? (ru ? "Сейчас ни один документ не требует решения человека." : "No document currently needs a human decision.")
+        : (ru ? "Только блокировки, ожидающие согласования и просроченные документы." : "Only blocks, pending approvals, and overdue documents."),
       attentionCount:String(valueOf(needYou) == null ? (ru ? "неизвестно" : "unknown") : valueOf(needYou)),
       ovRows,
       attentionEmpty:attentionEmpty || attentionPrefixMissing,

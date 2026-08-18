@@ -207,8 +207,12 @@ function resolveVocabulary(data, family, value, ru) {
     ? resolver.lookup(data, family, value, ru ? "ru" : "en")
     : { label:ru ? "Неизвестное значение" : "Unknown value", explanation:ru ? "Значение не входит в каталог." : "The value is not in the catalogue.", toneClass:"", cue:"?", cueAttribute:"?" };
 }
+// Rule A (dashboard-ui-restoration-2026-08, P6): a window whose shown/total
+// this snapshot did not carry is not printed as a placeholder sentence — the
+// row (or its segment of tableNote) is simply absent, not a "not recorded"
+// stand-in.
 function windowSentence(window, ru) {
-  if (!window || !Number.isInteger(window.shown) || !Number.isInteger(window.total)) return ru ? "Не записано" : "Not recorded";
+  if (!window || !Number.isInteger(window.shown) || !Number.isInteger(window.total)) return "";
   return ru ? "Показано " + window.shown + " из " + window.total + "." : "Showing " + window.shown + " of " + window.total + ".";
 }
 
@@ -431,9 +435,12 @@ class Component extends DCLogic {
     spaces.forEach(sp => {
       if (!sp.readable) {
         const unavailable = (d.unavailable || []).find(u => u.scope === sp.id || u.space === sp.id) || null;
-        const panelReason = unavailable && (unavailable.summary || unavailable.reason) || (ru ? "Не записано" : "Not recorded");
+        // Rule A: the dashed panel style already carries "this space is
+        // unreadable"; a reason this snapshot never carried is not printed
+        // as a "not recorded" placeholder underneath it.
+        const panelReason = unavailable && (unavailable.summary || unavailable.reason) || "";
         panels.push({
-          id:sp.id, meta:"", hasReason:true, reason:panelReason,
+          id:sp.id, meta:"", hasReason:!!panelReason, reason:panelReason,
           style:"position:absolute; z-index:1; box-sizing:border-box; left:" + GX + "px; top:" + y + "px; width:" + GW + "px; height:" + UNH + "px; border-radius:18px; padding:24px; border:1px dashed var(--border-strong); background:transparent; overflow:hidden;"
         });
         y += UNH + PGAP;
@@ -695,7 +702,7 @@ class Component extends DCLogic {
     const summaryRows = [
       { label:ru ? "Окно линий обмена" : "Exchange relation window", value:windowSentence(d.windows && d.windows.exchangeEdges, ru), mono:false },
       { label:ru ? "Окно замечаний" : "Flag window", value:windowSentence(d.windows && d.windows.flags, ru), mono:false }
-    ];
+    ].filter(row => row.value);
 
     const overviewLabel = ru ? "Обзор" : "Overview";
     const legendLabel = ru ? "Условные обозначения" : "Legend";
@@ -728,7 +735,10 @@ class Component extends DCLogic {
     return Object.assign({
       heading, summaryRows, modes, spaceTabs, intro, overviewLabel, legendLabel, introLabel,
       tableRows: tableView,
-      tableNote:(ru ? "Линии обмена: " : "Exchange relations: ") + windowSentence(d.windows && d.windows.exchangeEdges, ru) + " " + (ru ? "Замечания: " : "Flags: ") + windowSentence(d.windows && d.windows.flags, ru)
+      tableNote:[
+        windowSentence(d.windows && d.windows.exchangeEdges, ru) ? (ru ? "Линии обмена: " : "Exchange relations: ") + windowSentence(d.windows && d.windows.exchangeEdges, ru) : "",
+        windowSentence(d.windows && d.windows.flags, ru) ? (ru ? "Замечания: " : "Flags: ") + windowSentence(d.windows && d.windows.flags, ru) : ""
+      ].filter(Boolean).join(" ")
     }, canvas, shell, labels);
   }
 }

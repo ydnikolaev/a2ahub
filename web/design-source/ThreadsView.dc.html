@@ -16,14 +16,14 @@
           <sc-if value="{{ normalMode }}" hint-placeholder-val="{{ true }}">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
             <sc-for list="{{ threadRows }}" as="t" hint-placeholder-count="5">
-              <button type="button" class="a2a-pick" data-thread-space="{{ t.space }}" data-thread-id="{{ t.id }}" aria-pressed="{{ t.selected }}" onClick="{{ t.openCard }}" style="{{ t.style }}">
+              <button type="button" class="a2a-pick" data-thread-space="{{ t.space }}" data-thread-id="{{ t.id }}" data-card-summary="{{ t.summaryAttr }}" aria-pressed="{{ t.selected }}" onClick="{{ t.openCard }}" style="{{ t.style }}">
                 <span style="display:flex; align-items:flex-start; gap:8px; flex-wrap:nowrap; margin-bottom:8px;">
                   <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px;">
                     <span style="font-size:15px; color:var(--muted);">{{ t.participants }}</span>
                   </span>
                   <span style="flex:0 0 auto; font-size:15px; color:var(--muted);">{{ t.age }}</span>
                 </span>
-                <span style="display:block; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; color:var(--text); margin-bottom:7px; overflow-wrap:anywhere;">{{ t.title }}</span>
+                <span data-card-fact="thread:title" style="display:block; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; color:var(--text); margin-bottom:7px; overflow-wrap:anywhere;">{{ t.title }}</span>
                 <span style="display:block; font-size:15px; color:var(--muted); font-family:'IBM Plex Mono',monospace; overflow-wrap:anywhere;">{{ t.meta }}</span>
               </button>
             </sc-for>
@@ -37,16 +37,16 @@
             <sc-if value="{{ tvPresent }}" hint-placeholder-val="{{ true }}">
               <sc-if value="{{ cardMode }}" hint-placeholder-val="{{ false }}">
               <div data-card-content>
-                <h2 data-thread-title class="a2a-detail-title" style="margin:0 0 var(--space-card-title-to-content); {{ tvHeadingAccentStyle }}">{{ tvHeading }}</h2>
-                <div data-thread-lead style="color:var(--body); font-size:15px; line-height:1.55;">{{ whoseMoveText }}</div>
-                <div data-thread-protocol style="margin-top:var(--space-after-section-heading);">{{ tvCardProtocolText }}</div>
-                <div data-thread-participants style="margin-top:var(--space-after-section-heading); {{ tvParticipantsAccentStyle }}">{{ tvCardParticipantsText }}</div>
-                <div data-thread-membership style="margin-top:var(--space-after-section-heading);">{{ tvCardMembershipText }}</div>
-                <div data-thread-open-items style="margin-top:var(--space-after-section-heading); {{ tvOpenAccentStyle }}">{{ openObligationsLabel }} <sc-if value="{{ tvOpenKnownEmpty }}" hint-placeholder-val="{{ false }}">{{ noneRecordedText }}</sc-if><sc-if value="{{ tvOpenUnknown }}" hint-placeholder-val="{{ false }}">{{ unknownText }}</sc-if><sc-for list="{{ tvOpen }}" as="o" hint-placeholder-count="2"><button type="button" onClick="{{ o.openDocument }}" aria-label="{{ o.openLabel }}" style="display:inline; border:0; padding:0; background:transparent; color:inherit; font:inherit; cursor:pointer; {{ o.accentStyle }}">{{ o.cardText }}</button></sc-for></div>
+                <h2 data-thread-title data-card-fact="thread:title" class="a2a-detail-title" style="margin:0 0 var(--space-card-title-to-content); {{ tvHeadingAccentStyle }}">{{ tvHeading }}</h2>
+                <div data-thread-lead data-card-fact="thread:whose-move" style="color:var(--body); font-size:15px; line-height:1.55;">{{ whoseMoveText }}</div>
+                <div data-thread-protocol data-card-fact="thread:protocol" style="margin-top:var(--space-after-section-heading);">{{ tvCardProtocolText }}</div>
+                <div data-thread-participants data-card-fact="thread:participants" style="margin-top:var(--space-after-section-heading); {{ tvParticipantsAccentStyle }}">{{ tvCardParticipantsText }}</div>
+                <div data-thread-membership data-card-fact="thread:membership" style="margin-top:var(--space-after-section-heading);">{{ tvCardMembershipText }}</div>
+                <div data-thread-open-items data-card-fact="thread:obligations" style="margin-top:var(--space-after-section-heading); {{ tvOpenAccentStyle }}">{{ openObligationsLabel }} <sc-if value="{{ tvOpenKnownEmpty }}" hint-placeholder-val="{{ false }}">{{ noneRecordedText }}</sc-if><sc-if value="{{ tvOpenUnknown }}" hint-placeholder-val="{{ false }}">{{ unknownText }}</sc-if><sc-for list="{{ tvOpen }}" as="o" hint-placeholder-count="2"><button type="button" onClick="{{ o.openDocument }}" aria-label="{{ o.openLabel }}" style="display:inline; border:0; padding:0; background:transparent; color:inherit; font:inherit; cursor:pointer; {{ o.accentStyle }}">{{ o.cardText }}</button></sc-for></div>
                 <sc-if value="{{ openItemsWindowVisible }}" hint-placeholder-val="{{ false }}"><div data-card-bound="thread:open-items" style="margin-top:var(--space-after-section-heading);">{{ openItemsWindowText }}</div></sc-if>
-                <div data-thread-transcript style="margin-top:var(--space-after-section-heading); {{ tvTranscriptAccentStyle }}">{{ tvCardTranscriptText }}</div>
+                <div data-thread-transcript data-card-fact="thread:transcript" style="margin-top:var(--space-after-section-heading); {{ tvTranscriptAccentStyle }}">{{ tvCardTranscriptText }}</div>
                 <sc-if value="{{ transcriptWindowVisible }}" hint-placeholder-val="{{ false }}"><div data-card-bound="thread:transcript" style="margin-top:var(--space-after-section-heading);">{{ transcriptWindowText }}</div></sc-if>
-                <div data-thread-snapshot style="margin-top:var(--space-after-section-heading); {{ tvSourceAccentStyle }}">{{ tvCardSnapshotText }}</div>
+                <div data-thread-snapshot data-card-fact="thread:snapshot" style="margin-top:var(--space-after-section-heading); {{ tvSourceAccentStyle }}">{{ tvCardSnapshotText }}</div>
                 <details data-thread-card-technical style="margin-top:var(--space-section); color:var(--muted);">
                   <summary style="cursor:pointer; font-size:13px; font-weight:600;">{{ technicalCollapsedLabel }}</summary>
                   <pre style="margin-top:7px; white-space:pre-wrap; overflow-wrap:anywhere;">{{ tvTechnicalText }}</pre>
@@ -486,9 +486,10 @@ function localizedSentence(value, ru) {
   if (value && Object.prototype.hasOwnProperty.call(value, locale) && typeof value[locale] === "string" && value[locale] !== "") {
     return value[locale];
   }
-  // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state return value in helper function; predates Rule A; P6 will replace with blank-slot pattern
-  return ru ? "В этом снимке неизвестно." : "Unknown in this snapshot.";
-  // dashboard-derivation: allow-provenance-end
+  // Rule A: an open item this snapshot carries but whose reason sentence is
+  // not resolved for the active locale is not printed as a placeholder — the
+  // lead is blank rather than claiming the value could not be established.
+  return "";
 }
 
 function collectionWindowSentence(window, ru) {
@@ -678,7 +679,7 @@ class Component extends DCLogic {
     const accentStyle = (family, identity) => selectedAccent && actions.cardAccent && actions.cardAccent(family, identity) === selectedAccent
       ? "outline:3px solid var(--teal-solid); outline-offset:2px;"
       : "";
-    // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state constant declarations; predates Rule A; P6 will replace with blank-slot pattern per card-spec composition rules
+    // dashboard-derivation: allow-provenance-begin -- these three constants feed both "when carried" and "always" facts throughout this file (tvLinks[].toTitle, tvTitle, tvMembershipText, noneRecordedText, and more); a full blank-slot rewrite would change values web/tests/design-source.test.mjs asserts verbatim (:826, :849, :872, :893, :894) and that file is outside P6's footprint, so P6 leaves this and reports it
     const notRecorded = ru ? "Не записано." : "Not recorded.";
     const noneRecorded = ru ? "Ничего не записано." : "None recorded.";
     const unknown = ru ? "В этом снимке неизвестно." : "Unknown in this snapshot.";
@@ -706,13 +707,14 @@ class Component extends DCLogic {
     const tvPend = tv ? (tv.open_items || []) : [];
     const tvMine = tvPend.filter(o => o.your_move && o.prompt);
     const leadOpenItem = tvPend[0] || null;
+    // Rule A: when the view is present but carries neither a lead open item
+    // nor a settled protocol, that state is not asserted with a placeholder
+    // sentence — the lead is blank rather than claiming it is unknown.
     const moveText = leadOpenItem
       ? localizedSentence(leadOpenItem.reasonSentence, ru)
       : (tv && tv.settled
         ? (ru ? "Этот тред завершён; ни за кем из участников нет следующего хода протокола." : "This thread is settled; no participant owes a protocol move.")
-        // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state inline value; predates Rule A; P6 will replace with blank-slot pattern
-        : (ru ? "В этом снимке неизвестно." : "Unknown in this snapshot."));
-        // dashboard-derivation: allow-provenance-end
+        : "");
     const tvSpaceRecord = tv ? (d.spaces || []).find(x => x.id === tv.space) : null;
     const tvParticipantFaces = tv ? (tv.participants || []).map((system, i, list) => {
       const node = (d.nodes || []).find(n => n.system === system);
@@ -812,7 +814,7 @@ class Component extends DCLogic {
       ? tv.windows.deliveries.total
       : null;
     const relationshipTotalsKnown = transcriptTotal !== null && linkTotal !== null && deliveryTotal !== null;
-    // dashboard-derivation: allow-provenance-begin -- pre-existing empty-state inline values in card transcript text; predates Rule A; P6 will replace with blank-slot pattern
+    // dashboard-derivation: allow-provenance-begin -- tvCardTranscriptText's missing-window branch is asserted verbatim ('Transcript and relationships: Unknown in this snapshot.') by web/tests/design-source.test.mjs:883, which is outside P6's footprint; a blank-slot rewrite of this branch would break that assertion, so P6 leaves it and reports it
     const tvCardTranscriptText = !relationshipTotalsKnown
       ? (ru ? "Хронология и связи: В этом снимке неизвестно." : "Transcript and relationships: Unknown in this snapshot.")
       : transcriptTotal === 0 && linkTotal === 0 && deliveryTotal === 0
@@ -870,6 +872,10 @@ class Component extends DCLogic {
         age: (ru ? "последнее движение " : "last activity ") + age(t.lastActivity),
         meta: t.id + (ru ? " · документов: " : " · documents: ") + t.memberCount + " · " + t.space,
         style: this.cardButton(threadSpace === t.space && threadSel === t.id),
+        // The row for the thread whose card is currently open doubles as
+        // that card's summary region (P6 §8 AC-9), the same convention
+        // ContractsView's conRows uses for the "contract" kind.
+        summaryAttr:card && card.kind === "thread" && actions.cardID && actions.cardID("thread", { space:t.space, thread:t.id }) === card.id ? "thread" : "",
         openCard:() => {
           const id = actions.cardID ? actions.cardID("thread", { space:t.space, thread:t.id }) : "";
           if (id && actions.openCard) actions.openCard("thread", id, "");

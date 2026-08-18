@@ -1,1 +1,9 @@
-(detail region rendered for kind "space" with no data-card-fact markers)
+space:identity
+space:condition
+space:repository
+space:participants
+space:compatibility
+space:consistency
+space:unavailable
+space:snapshot
+space:technical

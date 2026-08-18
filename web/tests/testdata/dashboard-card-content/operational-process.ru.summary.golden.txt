@@ -1,1 +1,10 @@
-(no summary region rendered for kind "operational-process")
+operational:identity
+operational:protocol
+operational:identity
+operational:protocol
+operational:identity
+operational:protocol
+operational:identity
+operational:protocol
+operational:identity
+operational:protocol

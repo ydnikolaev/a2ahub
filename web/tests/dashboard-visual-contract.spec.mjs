@@ -357,7 +357,11 @@ async function exerciseRefreshCard(page, { locale, gone }) {
   await paneRow.click({ position: { x: 24, y: 70 } });
   await expect(page.locator('[data-work-pane]')).toBeVisible();
 
-  const filter = work.locator('[data-segmented-filter="true"] button[aria-pressed="true"]');
+  // P5 (wave 3) added a SECOND facet axis (all/open/closed) beside the
+  // direction one, so an unscoped "the pressed chip" now matches two buttons.
+  // This scenario is about the DIRECTION filter surviving a refresh, so scope
+  // to the first row rather than relaxing the assertion.
+  const filter = work.locator('[data-segmented-filter="true"]').first().locator('button[aria-pressed="true"]');
   await expect(filter).toContainText(outgoingLabel);
   await expect(page.locator('html')).toHaveAttribute('lang', locale);
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');

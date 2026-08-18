@@ -1,1 +1,9 @@
-(detail region rendered for kind "work-report" with no data-card-fact markers)
+work-report:subject
+work-report:lead
+work-report:attribution
+work-report:checkpoint
+work-report:waits
+work-report:current
+work-report:remaining
+work-report:snapshot
+work-report:technical

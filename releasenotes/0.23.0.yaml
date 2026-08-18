@@ -630,3 +630,43 @@ changes:
     action:
       scope: none
       why: "No action. Deep links, the card dialog and every existing route behave as before."
+  - id: RN-02300-19
+    kind: fix
+    roadmap:
+      visibility: shipped
+      why: >
+        A dashboard unification flattened every screen to the same shape: cards
+        printed a filled-in "not recorded" sentence for facts the snapshot did
+        not carry, rows lost the density that let a reader scan them, and
+        Exchange lost its facet filters entirely.
+    impact: normal
+    subject: "dashboard screens stop printing placeholder sentences for facts the snapshot does not carry"
+    detail: >
+      A fact that is not in the snapshot is now absent from the card rather
+      than present as "Not recorded." — an empty row taught nothing and cost a
+      line of attention on every card. Facts that ARE carried read the same as
+      before.
+
+      Overview's process cards regained their grouping and their author lines,
+      and the reader's own turn moved back out of the card into the list
+      chrome, where it belongs: a card can be shared, and whose move it is
+      depends on who is looking.
+
+      Exchange regained both facet axes — direction and open/closed — plus the
+      type filter and the deadline chip, and its rows are readable at a glance
+      again: badge, state, priority, deadline-or-age, title, and who is handing
+      to whom. The detail that used to crowd the row now lives in the pane
+      beside it.
+
+      Threads, Spaces and the map were re-read against Contracts, the one
+      screen that never regressed. Versions and the timeline card needed no
+      change, which was measured rather than assumed.
+
+      Two counts on Exchange can disagree when a collection is truncated: the
+      direction chips report the whole carried window, the new axes report what
+      is in the current view. The sentence directly below the chips states the
+      bound, and neither number is invented.
+    affects: ["a2a dashboard"]
+    action:
+      scope: none
+      why: "No action. Every route, deep link and card door behaves as before."

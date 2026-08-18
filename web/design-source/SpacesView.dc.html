@@ -11,16 +11,16 @@
   <sc-if value="{{ spaceCardPresent }}" hint-placeholder-val="{{ true }}">
     <article data-card-kind="space" data-space-card style="display:flex; flex-direction:column; gap:var(--space-section);">
       <div data-card-content style="display:flex; flex-direction:column; gap:var(--space-after-section-heading);">
-        <h2 data-space-card-fact="identity" class="a2a-detail-title" style="margin:0; font-family:'IBM Plex Mono',ui-monospace,monospace; overflow-wrap:anywhere;">{{ spaceCard.identity }}</h2>
-        <div data-space-card-fact="condition" data-accented="{{ spaceCard.sourceHighlighted }}" style="{{ spaceCard.contentSourceStyle }}">{{ spaceCard.lead }}</div>
-        <div data-space-card-fact="repository">{{ spaceCard.repositoryText }}</div>
-        <div data-space-card-fact="participants">{{ spaceCard.participantsPrefix }}<sc-if value="{{ spaceCard.participantListKnown }}" hint-placeholder-val="{{ true }}">{{ spaceCard.participantCountText }}<sc-for list="{{ spaceCard.participants }}" as="participant" hint-placeholder-count="2"><span data-accented="{{ participant.highlighted }}" style="{{ participant.contentStyle }}">{{ participant.name }}</span>{{ participant.separator }}</sc-for></sc-if><sc-if value="{{ spaceCard.participantListUnknown }}" hint-placeholder-val="{{ false }}">{{ spaceCard.participantsFallbackText }}</sc-if></div>
-        <div data-space-card-fact="compatibility">{{ spaceCard.compatibilityCardText }}</div>
-        <div data-space-card-fact="consistency">{{ spaceCard.consistencyCardText }}</div>
-        <div data-space-card-fact="unavailable">{{ spaceCard.unavailableCardText }}</div>
-        <div data-space-card-fact="snapshot">{{ spaceCard.snapshotCardText }}</div>
+        <h2 data-space-card-fact="identity" data-card-fact="space:identity" class="a2a-detail-title" style="margin:0; font-family:'IBM Plex Mono',ui-monospace,monospace; overflow-wrap:anywhere;">{{ spaceCard.identity }}</h2>
+        <div data-space-card-fact="condition" data-card-fact="space:condition" data-accented="{{ spaceCard.sourceHighlighted }}" style="{{ spaceCard.contentSourceStyle }}">{{ spaceCard.lead }}</div>
+        <div data-space-card-fact="repository" data-card-fact="space:repository">{{ spaceCard.repositoryText }}</div>
+        <div data-space-card-fact="participants" data-card-fact="space:participants">{{ spaceCard.participantsPrefix }}<sc-if value="{{ spaceCard.participantListKnown }}" hint-placeholder-val="{{ true }}">{{ spaceCard.participantCountText }}<sc-for list="{{ spaceCard.participants }}" as="participant" hint-placeholder-count="2"><span data-accented="{{ participant.highlighted }}" style="{{ participant.contentStyle }}">{{ participant.name }}</span>{{ participant.separator }}</sc-for></sc-if><sc-if value="{{ spaceCard.participantListUnknown }}" hint-placeholder-val="{{ false }}">{{ spaceCard.participantsFallbackText }}</sc-if></div>
+        <div data-space-card-fact="compatibility" data-card-fact="space:compatibility">{{ spaceCard.compatibilityCardText }}</div>
+        <div data-space-card-fact="consistency" data-card-fact="space:consistency">{{ spaceCard.consistencyCardText }}</div>
+        <div data-space-card-fact="unavailable" data-card-fact="space:unavailable">{{ spaceCard.unavailableCardText }}</div>
+        <div data-space-card-fact="snapshot" data-card-fact="space:snapshot">{{ spaceCard.snapshotCardText }}</div>
         <sc-for list="{{ spaceCard.consistencyBounds }}" as="notice" hint-placeholder-count="1"><div>{{ notice }}</div></sc-for>
-        <details data-space-card-fact="technical" style="color:var(--muted);"><summary style="cursor:pointer; font-size:13px; font-weight:600;">{{ spaceCard.technicalCollapsedLabel }}</summary><div style="margin-top:10px;"><dc-import name="FactTable" rows="{{ spaceCard.technical }}" hint-size="100%,250px"></dc-import><div style="display:flex; flex-direction:column; gap:8px; margin-top:10px;"><sc-for list="{{ spaceCard.sourceDiagnostics }}" as="entry" hint-placeholder-count="1"><dc-import name="FactTable" rows="{{ entry.technical }}" hint-size="100%,170px"></dc-import></sc-for></div></div></details>
+        <details data-space-card-fact="technical" data-card-fact="space:technical" style="color:var(--muted);"><summary style="cursor:pointer; font-size:13px; font-weight:600;">{{ spaceCard.technicalCollapsedLabel }}</summary><div style="margin-top:10px;"><dc-import name="FactTable" rows="{{ spaceCard.technical }}" hint-size="100%,250px"></dc-import><div style="display:flex; flex-direction:column; gap:8px; margin-top:10px;"><sc-for list="{{ spaceCard.sourceDiagnostics }}" as="entry" hint-placeholder-count="1"><dc-import name="FactTable" rows="{{ entry.technical }}" hint-size="100%,170px"></dc-import></sc-for></div></div></details>
       </div>
       <div data-card-support="space:status" aria-label="{{ spaceCard.statusSupportLabel }}" style="display:flex; align-items:center; gap:9px; flex-wrap:wrap;"><dc-import name="FreshnessDot" result="{{ spaceCard.sourceResult }}" age="{{ spaceCard.syncAge }}" compact="{{ true }}" hint-size="13px,13px"></dc-import><dc-import name="StatusPill" result="{{ spaceCard.sourceResult }}" size="small" hint-size="150px,24px"></dc-import></div>
       <sc-if value="{{ spaceCard.hasConsistencyAnomalies }}" hint-placeholder-val="{{ false }}"><div data-card-support="space:consistency-status" aria-label="{{ spaceCard.consistencySupportLabel }}" style="display:flex; flex-wrap:wrap; gap:8px;"><sc-for list="{{ spaceCard.consistencyGroups }}" as="group" hint-placeholder-count="2"><sc-for list="{{ group.anomalies }}" as="anomaly" hint-placeholder-count="2"><span data-consistency-anomaly data-accented="{{ anomaly.highlighted }}" style="{{ anomaly.style }}"><dc-import name="StatusPill" result="{{ anomaly.severityResult }}" size="small" hint-size="150px,24px"></dc-import></span></sc-for></sc-for></div></sc-if>
@@ -35,12 +35,12 @@
     <sc-if value="{{ hasSpaces }}" hint-placeholder-val="{{ true }}">
       <div style="display:flex; flex-direction:column; gap:var(--space-grid);">
         <sc-for list="{{ spaceRows }}" as="space" hint-placeholder-count="3">
-          <article data-space-row style="background:var(--surface); border-radius:var(--radius-card); padding:var(--padding-card-block) var(--padding-card-inline); box-shadow:var(--shadow-card);">
+          <article data-space-row data-card-summary="{{ space.summaryAttr }}" style="background:var(--surface); border-radius:var(--radius-card); padding:var(--padding-card-block) var(--padding-card-inline); box-shadow:var(--shadow-card);">
             <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:14px; flex-wrap:wrap;">
-              <div><div style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:var(--font-card-title-md); font-weight:600; overflow-wrap:anywhere;">{{ space.id }}</div><div style="margin-top:5px; color:var(--muted);">{{ space.repository }}</div></div>
+              <div><div data-card-fact="space:identity" style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:var(--font-card-title-md); font-weight:600; overflow-wrap:anywhere;">{{ space.id }}</div><div style="margin-top:5px; color:var(--muted);">{{ space.repository }}</div></div>
               <button type="button" onClick="{{ space.open }}" style="border:0; border-radius:9px; padding:8px 11px; background:var(--teal-tint); color:var(--teal-ink); cursor:pointer;">{{ openLabel }}</button>
             </div>
-            <div data-space-source data-accented="{{ space.sourceHighlighted }}" style="{{ space.sourceStyle }}">
+            <div data-space-source data-card-fact="space:condition" data-accented="{{ space.sourceHighlighted }}" style="{{ space.sourceStyle }}">
               <dc-import name="FreshnessDot" result="{{ space.sourceResult }}" age="{{ space.syncAge }}" compact="{{ true }}" hint-size="13px,13px"></dc-import><dc-import name="StatusPill" result="{{ space.sourceResult }}" size="small" hint-size="150px,24px"></dc-import><span>{{ space.sourceSyncedAt }}</span>
             </div>
             <sc-if value="{{ space.hasWorkFreshness }}" hint-placeholder-val="{{ false }}"><section style="margin-top:12px;"><strong>{{ workFreshnessLabel }}</strong><div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:7px;"><sc-for list="{{ space.workFreshness }}" as="work" hint-placeholder-count="2"><dc-import name="FreshnessDot" result="{{ work.result }}" age="{{ work.age }}" compact="{{ true }}" hint-size="13px,13px"></dc-import><dc-import name="StatusPill" result="{{ work.result }}" size="small" hint-size="150px,24px"></dc-import></sc-for></div></section></sc-if>
@@ -56,12 +56,12 @@
 </sc-if>
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1240,&quot;height&quot;:900},&quot;ctx&quot;:{&quot;editor&quot;:&quot;object&quot;,&quot;default&quot;:{},&quot;tsType&quot;:&quot;object&quot;}}">
+// dashboard-derivation: allow-provenance-begin -- pre-existing Rule A empty-state constants (none/notRecorded/unknown) used across both "when carried" and "always" facts throughout this file; a full blank-slot rewrite would touch fields web/tests/design-source.test.mjs asserts verbatim (gamma.sourceSyncedAt, gamma.unavailable[0].body, gamma.participantsText, and technical fact values) and that file is outside this phase's footprint; P6 leaves it and reports it
 const SPACE_I18N = {
-  // dashboard-derivation: allow-provenance-begin -- pre-existing provenance vocabulary in empty-state strings; P6 will rephrase to user-state copy
-  en:{ spaces:"Spaces", emptyTitle:"No spaces connected", emptyText:"Connect a shared repository to see its carried source and consistency facts.", open:"Open space", kind:"Space", repository:"Repository", participants:"Participants", compatibility:"Compatibility", consistency:"Consistency", unavailable:"Unavailable evidence", snapshot:"Snapshot", technical:"Technical detail", workFreshness:"Work evidence freshness", none:"None recorded.", notRecorded:"Not recorded.", unknown:"Unknown in this snapshot.", count:"anomalies", shown:"Showing", of:"of", missingTitle:"Space not found", missingText:"The current snapshot has no space with this opaque identity." },
-  ru:{ spaces:"Спейсы", emptyTitle:"Спейсы не подключены", emptyText:"Подключите общий репозиторий, чтобы увидеть перенесённые факты об источнике и согласованности.", open:"Открыть спейс", kind:"Спейс", repository:"Репозиторий", participants:"Участники", compatibility:"Совместимость", consistency:"Согласованность", unavailable:"Недоступные данные", snapshot:"Снимок", technical:"Технические подробности", workFreshness:"Свежесть данных о работе", none:"Ничего не записано.", notRecorded:"Не записано.", unknown:"В этом снимке неизвестно.", count:"аномалий", shown:"Показано", of:"из", missingTitle:"Спейс не найден", missingText:"В текущем снимке нет спейса с таким непрозрачным идентификатором." }
-  // dashboard-derivation: allow-provenance-end
+  en:{ spaces:"Spaces", emptyTitle:"No spaces connected", emptyText:"Connect a shared repository to see its source and consistency facts.", open:"Open space", kind:"Space", repository:"Repository", participants:"Participants", compatibility:"Compatibility", consistency:"Consistency", unavailable:"Unavailable evidence", snapshot:"Snapshot", technical:"Technical detail", workFreshness:"Work evidence freshness", none:"None recorded.", notRecorded:"Not recorded.", unknown:"Unknown in this snapshot.", count:"anomalies", shown:"Showing", of:"of", missingTitle:"Space not found", missingText:"The current snapshot has no space with this opaque identity." },
+  ru:{ spaces:"Спейсы", emptyTitle:"Спейсы не подключены", emptyText:"Подключите общий репозиторий, чтобы увидеть его факты об источнике и согласованности.", open:"Открыть спейс", kind:"Спейс", repository:"Репозиторий", participants:"Участники", compatibility:"Совместимость", consistency:"Согласованность", unavailable:"Недоступные данные", snapshot:"Снимок", technical:"Технические подробности", workFreshness:"Свежесть данных о работе", none:"Ничего не записано.", notRecorded:"Не записано.", unknown:"В этом снимке неизвестно.", count:"аномалий", shown:"Показано", of:"из", missingTitle:"Спейс не найден", missingText:"В текущем снимке нет спейса с таким непрозрачным идентификатором." }
 };
+// dashboard-derivation: allow-provenance-end
 
 class Component extends DCLogic {
   syncContext() {
@@ -192,6 +192,10 @@ class Component extends DCLogic {
       const unavailableValue = unavailable.length ? unavailable.map(entry => entry.body).join(" ") : words.none;
       return {
         id:space.id || "", cardID:id, sourceResult, sourceSyncedAt, syncAge:space.syncAge || "", lead,
+        // The row for the space whose card is currently open doubles as
+        // that card's summary region (P6 §8 AC-9), the same convention
+        // ContractsView's conRows uses for the "contract" kind.
+        summaryAttr:card && card.kind === "space" && actions.cardID && actions.cardID("space", space) === card.id ? "space" : "",
         sourceHighlighted, sourceStyle:highlightStyle(sourceHighlighted),
         contentSourceStyle:"border-radius:5px; background:" + (sourceHighlighted ? "var(--attention-tint)" : "transparent") + "; font-size:17px; line-height:1.6; overflow-wrap:anywhere;",
         repository:space.repoURL || words.notRecorded,
