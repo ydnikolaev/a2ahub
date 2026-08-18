@@ -265,6 +265,13 @@ var coverageManifest = []coverageEntry{
 	{Verb: "dashboard", Txtar: "ops_html.txtar", Tier: tierT3},
 	{Verb: "html", Txtar: "ops_html.txtar", Tier: tierT3},
 	{Verb: "notifications", GoTest: "internal/e2e.TestNotificationsStatusThroughStubbedBackend", Tier: tierInProcess},
+	// `notify` is the SPACE plane, not the local one beside it: it reads a
+	// space-repo checkout with no `.a2a/` at all and prints the messages a
+	// push would produce. The evidence is a direct-construction test rather
+	// than a txtar scenario because the T3 harness gives a connected PROJECT
+	// as cwd, and this verb's whole premise is running inside the space
+	// checkout itself, where no cache exists to connect to.
+	{Verb: "notify", GoTest: "internal/cli.TestNotifyRender_NoCache", Tier: tierInProcess},
 	{Verb: "serve", Txtar: "operational_commands.txtar", Tier: tierT3},
 	{Verb: "skill", Txtar: "ops_skill.txtar", Tier: tierT3},
 	{Verb: "version", Txtar: "ops_version.txtar", Tier: tierT3},

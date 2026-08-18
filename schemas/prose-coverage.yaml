@@ -173,6 +173,7 @@ covered:
   cmd:new: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
   cmd:note: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
   cmd:notifications: "notifications.md#Activation preflight"
+  cmd:notify: "notifications.md#`a2a notify render` — what a push would say"
   cmd:outbox: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
   cmd:reject: "loops.md#Condensed §0/§3 semantics"
   cmd:respond: "loops/receive.md#§8.3 Receive loop — \"something arrived for my system\""

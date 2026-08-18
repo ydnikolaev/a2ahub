@@ -127,7 +127,11 @@ linters:
       # in project config, a mirror/staging checkout, a release cache, or an
       # explicitly selected local input. This is deliberately an exact-file
       # allowlist, not the former repository-global suppression.
-      - path: ^(cmd/a2a/wire\.go|internal/(artifact/digesttree|cache/(cursor|marker|mirror|statusline_refresh)|cli/(adapters|cmd_init|cmd_skill|cmd_validate_ci)|coveragepolicy/policy|e2e/coverage|feedback/(ledger|triage)|html/assemble|mcp/(adapters|wire)|notification/files|release/(cache|cohort|detail|download|verifier)|space/(config|mirror|mirrorlock)|surface/link|template/contract_scaffold)\.go)$
+      # internal/cli/cmd_notify.go reads `space.yaml` from the same
+      # already-resolved root cmd_validate_ci.go does, one line above it in
+      # this same allowlist, for the same reason: the space-CI notification
+      # projection runs in a checkout and takes its facts from the repository.
+      - path: ^(cmd/a2a/wire\.go|internal/(artifact/digesttree|cache/(cursor|marker|mirror|statusline_refresh)|cli/(adapters|cmd_init|cmd_notify|cmd_skill|cmd_validate_ci)|coveragepolicy/policy|e2e/coverage|feedback/(ledger|triage)|html/assemble|mcp/(adapters|wire)|notification/files|release/(cache|cohort|detail|download|verifier)|space/(config|mirror|mirrorlock)|surface/link|template/contract_scaffold)\.go)$
         text: "G304:"
         linters: [gosec]
       # nilerr: a2ahub's validate/adapter layer returns validation FAILURES as
