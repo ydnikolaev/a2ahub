@@ -57,8 +57,9 @@ on:
         # validation, the producer stamp, thread-required). The preflight would
         # have said so; it takes an explicit VERSION and a network call, so it
         # is opt-in and out-of-band, and an opt-in gate is one somebody skips.
-        # releasenotes/refdefault_test.go holds this value equal to the newest
-        # authored release-notes version on every `make check`, offline.
+        # internal/notes' TestReusableRefDefaultMatchesTheNewestAuthoredVersion
+        # holds this value equal to the newest authored release-notes
+        # version on every `make check`, offline.
         default: "v0.23.0"
       space-path:
         description: "Working directory of the space content to validate (default: repo root)."

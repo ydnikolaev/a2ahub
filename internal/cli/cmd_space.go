@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
@@ -283,6 +284,15 @@ var spaceMinVersionPattern = regexp.MustCompile(`(min_binary_version:\s*)\S+`)
 // unrelated workflow content (job names, inputs) is untouched.
 var spaceWorkflowRefPattern = regexp.MustCompile(`(a2a-validate-reusable\.yml@)v?[0-9]+\.[0-9]+\.[0-9]+`)
 
+// spaceNotifyWorkflowRefPattern is spaceWorkflowRefPattern's own counterpart
+// for the notification caller (space-notify-2026-08 P5, spec 05 "Template
+// and adoption") — a SEPARATE pattern rather than widening the validator's
+// own, because the two callers pin two DIFFERENT reusable-workflow files and
+// a shared regex would rewrite whichever ref happened to match first, the
+// exact "wrong neighbour" bug class notes_test.go's own reusableRefDefault
+// scopes itself against.
+var spaceNotifyWorkflowRefPattern = regexp.MustCompile(`(a2a-notify-reusable\.yml@)v?[0-9]+\.[0-9]+\.[0-9]+`)
+
 // spaceApplySubstitutions rewrites one embedded template file's content per
 // its repo-relative path (io/fs slash-separated, matching fs.WalkDir's own
 // convention regardless of host OS). CODEOWNERS' `@REPLACE_WITH_ORG/...`
@@ -298,6 +308,10 @@ func spaceApplySubstitutions(path string, data []byte, spaceID, version string) 
 		// the embedded template — a v0.6.0 binary must not scaffold
 		// `@v0.5.0` (spec 33 §12 trap #2).
 		data = spaceWorkflowRefPattern.ReplaceAll(data, []byte("${1}v"+version))
+	case ".github/workflows/a2a-notify.yml":
+		// Same rule, same trap, the notification caller's own ref (spec 05
+		// "Template and adoption").
+		data = spaceNotifyWorkflowRefPattern.ReplaceAll(data, []byte("${1}v"+version))
 	}
 	return data
 }
@@ -397,11 +411,38 @@ func (c *SpaceCommand) spaceCheckWorkflowScope(ctx context.Context) (refuse, not
 		}
 	}
 	// Scopes were reported and do not include workflow. This is a hard refusal.
-	return "this write updates .github/workflows/, which GitHub refuses from a token without the `" + spaceWorkflowScope + "` scope.\n" +
+	//
+	// Names the SPECIFIC file(s) this command may write under .github/workflows/
+	// (spec 05 "The scope constraint that comes with it"): with a SECOND managed
+	// workflow (a2a-notify.yml, space-notify-2026-08 P5) a bare ".github/workflows/"
+	// no longer identifies which file the operator is being blocked on, and they
+	// may not have asked for either one specifically.
+	return "this write updates " + strings.Join(spaceManagedWorkflowPaths(), ", ") + ", which GitHub refuses from a token without the `" + spaceWorkflowScope + "` scope.\n" +
 		"  your token reports: " + strings.Join(scopes, ", ") + "\n" +
 		"  fix (either one):\n" +
 		"    gh auth refresh -h github.com -s " + spaceWorkflowScope + "\n" +
 		"    or use a fine-grained PAT scoped to this space with Contents/Pull requests/Workflows: write", ""
+}
+
+// spaceManagedWorkflowPaths returns every ".github/workflows/" path this
+// command may write, sorted, from spaceUpdateDispositionTable's own managed
+// set — a2a-validate.yml today, a2a-notify.yml joining it (spec 05). A single
+// SSOT so the scope refusal can never name a file the table itself no longer
+// carries.
+func spaceManagedWorkflowPaths() []string {
+	var paths []string
+	for p := range spaceUpdateDispositionTable {
+		if hasPathPrefixSpaceWorkflows(p) {
+			paths = append(paths, p)
+		}
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+// hasPathPrefixSpaceWorkflows reports whether p is under .github/workflows/.
+func hasPathPrefixSpaceWorkflows(p string) bool {
+	return strings.HasPrefix(p, ".github/workflows/")
 }
 
 // SpaceInfraNoValidation is the space.SubmitValidator `a2a space update`
@@ -465,10 +506,25 @@ const (
 // distinction is applied).
 var spaceUpdateDispositionTable = map[string]spaceUpdateDisposition{
 	".github/workflows/a2a-validate.yml": spaceDispositionManaged,
-	".github/dependabot.yml":             spaceDispositionManaged,
-	"BRANCH-PROTECTION.md":               spaceDispositionManaged,
-	"CODEOWNERS":                         spaceDispositionSeeded,
-	"space.yaml":                         spaceDispositionFieldManaged,
+	// a2a-notify.yml IS listed, deliberately, even though the "unlisted
+	// path" default branch already ADDS it automatically on the first
+	// `space update` a space that lacks it runs (spec 05's own AC-951.1
+	// path, spaceComputeUpdatePlanFor's "default" branch: unlisted+absent
+	// -> propagate). That default branch's OTHER half is what forces this
+	// row: "unlisted+PRESENT -> never touched again" (see this table's own
+	// doc comment above). Dependabot bumps an ADOPTED caller's own `uses:`
+	// TAG per space, but it does not rewrite the file's SHAPE — a future
+	// structural edit to this caller (a new `with:` input, a renamed
+	// trigger) would silently stop reaching every space that already
+	// adopted it, the exact drift `spaceDispositionManaged` exists to
+	// close for a2a-validate.yml. Verified empirically before writing this
+	// row (see this phase's own disposition_decision), not assumed from
+	// the spec.
+	".github/workflows/a2a-notify.yml": spaceDispositionManaged,
+	".github/dependabot.yml":           spaceDispositionManaged,
+	"BRANCH-PROTECTION.md":             spaceDispositionManaged,
+	"CODEOWNERS":                       spaceDispositionSeeded,
+	"space.yaml":                       spaceDispositionFieldManaged,
 }
 
 // spaceSeededAlternates lists the OTHER locations a seeded file may legitimately

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -136,11 +138,37 @@ func TestCurrentKnownIssues_CorpusIntegrity(t *testing.T) {
 	}
 }
 
-// reusableWorkflowPath is a2ahub's own reusable validation workflow — the
-// unit every space's ~5-line caller references by tag. Read from disk rather
-// than embedded: it is repo infrastructure, not product data, and no package
-// owns it (space-template embeds the CALLER, not this).
-const reusableWorkflowPath = "../../.github/workflows/a2a-validate-reusable.yml"
+// reusableWorkflowDir holds a2ahub's own reusable workflows — the units
+// every space's ~5-line caller references by tag. Read from disk rather
+// than embedded: it is repo infrastructure, not product data, and no
+// package owns it (space-template embeds the CALLERS, not these).
+const reusableWorkflowDir = "../../.github/workflows"
+
+// reusableWorkflowPaths is the DERIVED cover set for the pin-freshness gate
+// below: every `*-reusable.yml` file under reusableWorkflowDir, sorted for
+// deterministic test output. A second reusable workflow (space-notify-2026-08
+// P5's a2a-notify-reusable.yml) is covered by CONSTRUCTION the moment it
+// exists on disk — no second hardcoded const, no second test function.
+//
+// This is deliberate: a hardcoded single-path const is exactly the shape
+// that shipped this coupling WRONG TWICE (see
+// TestReusableRefDefaultMatchesTheNewestAuthoredVersion's own doc comment)
+// — its own guard was opt-in because nothing forced a NEW reusable workflow
+// to be added to it. A glob has no such opt-in step: any file matching the
+// `*-reusable.yml` naming convention this repo already uses is discovered,
+// not enumerated.
+func reusableWorkflowPaths(t *testing.T) []string {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(reusableWorkflowDir, "*-reusable.yml"))
+	if err != nil {
+		t.Fatalf("glob %s/*-reusable.yml: %v", reusableWorkflowDir, err)
+	}
+	if len(matches) == 0 {
+		t.Fatalf("no *-reusable.yml file found under %s — the discovery glob is broken, not the workflows", reusableWorkflowDir)
+	}
+	sort.Strings(matches)
+	return matches
+}
 
 // TestReusableRefDefaultMatchesTheNewestAuthoredVersion holds the one coupling
 // in this repo that has now shipped WRONG TWICE, in the same way, two releases
@@ -191,30 +219,40 @@ func TestReusableRefDefaultMatchesTheNewestAuthoredVersion(t *testing.T) {
 	// exactly the skew it exists to catch.
 	cutting := all[len(all)-1].Version
 
-	raw, err := os.ReadFile(reusableWorkflowPath)
-	if err != nil {
-		t.Fatalf("read %s: %v", reusableWorkflowPath, err)
-	}
+	// Every *-reusable.yml under .github/workflows/ is covered, DERIVED —
+	// see reusableWorkflowPaths' own doc comment for why a second hardcoded
+	// path would repeat the exact defect this test exists to close.
+	for _, path := range reusableWorkflowPaths(t) {
+		path := path
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			t.Parallel()
 
-	got, err := reusableRefDefault(string(raw))
-	if err != nil {
-		t.Fatalf("%s: %v", reusableWorkflowPath, err)
-	}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read %s: %v", path, err)
+			}
 
-	if strings.TrimPrefix(got, "v") != cutting {
-		t.Fatalf("validator skew: %s pins a2a-ref default %q, but the newest authored "+
-			"release-notes version — the one being cut — is %q.\n\n"+
-			"A space's caller passes no a2a-ref of its own, so this default IS the binary that "+
-			"runs `validate --ci` at that space's merge gate. Tags are immutable, so shipping a "+
-			"stale value here cannot be corrected after the fact: every space pinned to that tag "+
-			"validates with the old binary until somebody runs `a2a space update`, and nothing "+
-			"reports it. v0.7.0 and v0.10.0 both shipped this way.\n\n"+
-			"Fix: set the a2a-ref default to \"v%s\" BEFORE tagging.\n"+
-			"NB the space-template's pin and min_binary_version do NOT move with it — those name "+
-			"an already-PUBLISHED tag and bump after the release (docs/runbooks/release.md).\n"+
-			"If you are cutting a HOTFIX off an older line while newer notes already exist, this "+
-			"gate is asking for the wrong version: fix the ordering, do not weaken the gate.",
-			reusableWorkflowPath, got, cutting, cutting)
+			got, err := reusableRefDefault(string(raw))
+			if err != nil {
+				t.Fatalf("%s: %v", path, err)
+			}
+
+			if strings.TrimPrefix(got, "v") != cutting {
+				t.Fatalf("validator skew: %s pins a2a-ref default %q, but the newest authored "+
+					"release-notes version — the one being cut — is %q.\n\n"+
+					"A space's caller passes no a2a-ref of its own, so this default IS the binary that "+
+					"runs the pinned verb at that space's merge gate / CI. Tags are immutable, so shipping a "+
+					"stale value here cannot be corrected after the fact: every space pinned to that tag "+
+					"runs the old binary until somebody runs `a2a space update`, and nothing "+
+					"reports it. v0.7.0 and v0.10.0 both shipped this way for the validator.\n\n"+
+					"Fix: set the a2a-ref default to \"v%s\" BEFORE tagging.\n"+
+					"NB the space-template's pin and min_binary_version do NOT move with it — those name "+
+					"an already-PUBLISHED tag and bump after the release (docs/runbooks/release.md).\n"+
+					"If you are cutting a HOTFIX off an older line while newer notes already exist, this "+
+					"gate is asking for the wrong version: fix the ordering, do not weaken the gate.",
+					path, got, cutting, cutting)
+			}
+		})
 	}
 }
 

@@ -1,0 +1,288 @@
+# The SSOT space-notification workflow (space-notify-2026-08 P5, spec 05
+# §T5). ONE home for the `a2a notify render` + `a2a notify send` invocation
+# — the pinned module version co-located in one versioned unit, exactly the
+# shape a2a-validate-reusable.yml already established for the SAME reasons
+# (read that file's own header first). A space references this file by a
+# release-tag-pinned path and carries NO notification logic, NO pinned
+# binary and NO fetch-token secret of its own.
+#
+# Integrity: `go install github.com/ydnikolaev/a2ahub/cmd/a2a@<ver>` verifies
+# the module supply chain via the Go checksum DB (GOSUMDB) for free — no
+# A2A_BINARY_FETCH_TOKEN, no cosign step (same mechanism a2a-validate-
+# reusable.yml documents at length).
+#
+# `pull_request_target` is FORBIDDEN as a trigger here, and always will be:
+# that event runs with the BASE repo's secrets against a HEAD that can be a
+# fork's arbitrary code — a fork-authored commit could read TG_BOT_TOKEN out
+# from under the caller. This workflow is `workflow_call`-only; the caller
+# decides push/dispatch (see space-template's own a2a-notify.yml header).
+#
+# TG_BOT_TOKEN is an EXPLICIT secret input, never `secrets: inherit` —
+# a2ahub is public and a space repo may not be, so an explicit declaration
+# is what makes the token's path readable in code review (spec 05 US-5).
+name: a2a-notify-reusable
+
+on:
+  workflow_call:
+    inputs:
+      a2a-ref:
+        # The module version this unit pins — the co-located version that
+        # moves as a whole when the caller bumps the workflow tag/SHA
+        # (Dependabot for the tag; a2ahub's own release for this default).
+        description: "a2a module version to `go install` (e.g. v0.23.0)."
+        required: false
+        type: string
+        # MUST equal the tag being cut — same discipline as
+        # a2a-validate-reusable.yml's own `a2a-ref` default. Held equal by
+        # TestReusableRefDefaultMatchesTheNewestAuthoredVersion
+        # (internal/notes) offline, and by assert_ref_default_matches
+        # (scripts/release-preflight.sh), both extended to cover this file.
+        default: "v0.23.0"
+      space-path:
+        description: "Working directory of the space content (default: repo root). Mirrors the validator's own input."
+        required: false
+        type: string
+        default: "."
+      limit:
+        # No default of its own: the digest-coalescing threshold's default
+        # belongs to the `notify render --limit` CLI flag (spec 03) — this
+        # input is passed through only when an operator set it, so the
+        # value has exactly one home.
+        description: "The digest-coalescing threshold for the automatic (push/base) path. Empty means: let the CLI's own default decide."
+        required: false
+        type: number
+      base:
+        description: "The commit a workflow_dispatch run measures the range from. Absent, the dispatch path falls back to the single-commit form. Ignored entirely when `artifacts` is set."
+        required: false
+        type: string
+        default: ""
+      artifacts:
+        description: "Comma-separated artifact ids to send INSTEAD OF a push range — bypasses --base and the event filter entirely. workflow_dispatch-only; the push path never sets this."
+        required: false
+        type: string
+        default: ""
+      dry-run:
+        description: "Render and print the exact payloads; send nothing."
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      TG_BOT_TOKEN:
+        description: "The Telegram bot token a route's `secret` field names (spacenotify.DeclaredSecret). Optional: a space with no configured routes needs no secret at all."
+        required: false
+
+jobs:
+  notify:
+    # timeout-minutes: no measured basis exists yet — this is a brand-new
+    # job identity with zero completed runs, so scripts/lib/job-timeouts.tsv
+    # (REGENERATED from GitHub's own API, never hand-edited — see that
+    # file's own header) carries no row for it. check-runner-economics.sh's
+    # own header names this exact situation (ci.yml's `changes` job) and
+    # decides it explicitly: an unmeasured identity passes RULE 3 with a
+    # named warning rather than a fabricated bound. 10 minutes mirrors
+    # a2a-validate-reusable.yml's own `validate` job, which does the same
+    # `go install` plus a network call and is the closest measured analogue
+    # (see that job's row in job-timeouts.tsv); RULE 4's 60-minute cap
+    # still applies unconditionally.
+    timeout-minutes: 10
+    name: notify
+    runs-on: ubuntu-latest
+    # Least privilege: this job only reads the checkout and calls the
+    # Telegram API — no host API calls at all. A reusable workflow can only
+    # DOWNGRADE the caller's token, so the caller must itself grant at least
+    # this (spec 05 "Permissions").
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout space content
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Full history for TWO reasons (spec 05): `notify render`'s
+          # `--base` shells out to `git diff <base>...HEAD`, AND the
+          # folding assembly orders events by commit — a shallow clone
+          # would silently misorder or empty either one.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          # Pinned to a2a's own toolchain, same as a2a-validate-reusable.yml
+          # (a space repo has no go.mod, so go-version-file is not usable).
+          go-version: "1.26.5"
+
+      # The push range and its fallback (spec 05 "The push range, and its
+      # fallback"). Computed as its OWN step, separate from the
+      # render/send step below, so the fallback reason is captured once and
+      # stated in the job summary rather than inferred — a silently
+      # widened or silently empty range is the same class of defect as a
+      # gate that skips green.
+      - name: Determine the push range
+        id: range
+        if: inputs.artifacts == ''
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+          DISPATCH_BASE: ${{ inputs.base }}
+        run: |
+          set -euo pipefail
+          zero="0000000000000000000000000000000000000000"
+
+          # A root commit (no parent at all) cannot form a "$SHA^..$SHA"
+          # range. Rare — the very first commit of a brand-new repository —
+          # but the fallback-of-fallback is stated, not silently produced
+          # as an empty or wrong range.
+          root_commit=0
+          if ! git rev-parse -q --verify "$SHA^" >/dev/null 2>&1; then
+            root_commit=1
+          fi
+
+          # emit writes this step's outputs in ONE redirect (shellcheck
+          # SC2129: several individual `>>` appends to the same file in a
+          # row is exactly the "a print cannot red" shape one layer down —
+          # a single block makes the write atomic and silences nothing).
+          emit() { # $1 = mode, $2 = base (may be empty), $3 = range-note
+            {
+              echo "mode=$1"
+              if [ -n "$2" ]; then
+                echo "base=$2"
+              fi
+              echo "range-note=$3"
+            } >>"$GITHUB_OUTPUT"
+          }
+
+          emit_single_commit() { # $1 = why
+            if [ "$root_commit" -eq 1 ]; then
+              emit "all" "" "$1, and $SHA has no parent (root commit) — rendering every qualifying artifact instead of a single-commit range"
+            else
+              emit "base" "$SHA^" "$1 — single-commit fallback ($SHA^..$SHA)"
+            fi
+          }
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ -n "$DISPATCH_BASE" ]; then
+              emit "base" "$DISPATCH_BASE" "workflow_dispatch with an explicit base ($DISPATCH_BASE..$SHA)"
+            else
+              emit_single_commit "workflow_dispatch with no base input"
+            fi
+            exit 0
+          fi
+
+          # push event.
+          if [ "$BEFORE" = "$zero" ]; then
+            emit_single_commit "branch's first push (before is all-zero)"
+            exit 0
+          fi
+          if git cat-file -e "$BEFORE" 2>/dev/null && git merge-base --is-ancestor "$BEFORE" "$SHA" 2>/dev/null; then
+            emit "base" "$BEFORE" "ordinary push ($BEFORE..$SHA)"
+          else
+            emit_single_commit "force-push (before is not an ancestor of sha)"
+          fi
+
+      - name: Install a2a
+        env:
+          A2A_REF: ${{ inputs.a2a-ref }}
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/a2a-notify-bin"
+          # Retried on the NETWORK half only, same shape and same reason as
+          # a2a-validate-reusable.yml's own "a2a validate --ci" step: a
+          # transient GOSUMDB read must not redden a job that has not run
+          # the space's own content yet.
+          installed=0
+          for attempt in 1 2 3; do
+            if GOBIN="$bin" go install "github.com/ydnikolaev/a2ahub/cmd/a2a@$A2A_REF"; then
+              installed=1
+              break
+            fi
+            echo "::warning::a2a install attempt $attempt/3 failed (module proxy or checksum DB); retrying" >&2
+            sleep $((attempt * 5))
+          done
+          if [ "$installed" -ne 1 ]; then
+            echo "::error::could not install a2a@$A2A_REF after 3 attempts — this is the module supply chain, not this space's routes" >&2
+            exit 1
+          fi
+          echo "$bin" >>"$GITHUB_PATH"
+
+      - name: a2a notify render | send
+        id: notify
+        env:
+          SPACE_PATH: ${{ inputs.space-path }}
+          RANGE_MODE: ${{ steps.range.outputs.mode }}
+          RANGE_BASE: ${{ steps.range.outputs.base }}
+          RANGE_NOTE: ${{ steps.range.outputs.range-note }}
+          ARTIFACTS: ${{ inputs.artifacts }}
+          LIMIT: ${{ inputs.limit }}
+          DRY_RUN: ${{ inputs.dry-run }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd "$SPACE_PATH"
+
+          summary_range_note="$RANGE_NOTE"
+          render_args=(notify render)
+          if [ -n "$ARTIFACTS" ]; then
+            # Requirement 1 (spec 05): artifacts selects by id and bypasses
+            # both the range and the event filter.
+            render_args+=(--only "$ARTIFACTS")
+            summary_range_note="explicit artifacts: $ARTIFACTS (range and event filter bypassed)"
+          elif [ "$RANGE_MODE" = "all" ]; then
+            render_args+=(--all)
+          else
+            render_args+=(--base "$RANGE_BASE")
+            if [ -n "$LIMIT" ]; then
+              render_args+=(--limit "$LIMIT")
+            fi
+          fi
+
+          # BUILD/INSTALL is retried above; RENDER is not — an unknown
+          # --only id (requirement 2) or a manifest error is this space's
+          # own content, and must fail the job loudly and immediately,
+          # naming what it refused (a2a notify render's own stderr).
+          rendered="$(mktemp)"
+          a2a "${render_args[@]}" >"$rendered"
+
+          send_args=(notify send)
+          if [ "$DRY_RUN" = "true" ]; then
+            send_args+=(--dry-run)
+          fi
+
+          # Exit code read from a bare statement, never through a pipe
+          # (.claude/rules/check-convention.md "Reading a gate's result" —
+          # the four-release scar this repo already paid for that mistake
+          # once).
+          records="$(mktemp)"
+          set +e
+          a2a "${send_args[@]}" <"$rendered" >"$records"
+          status=$?
+          set -e
+
+          {
+            echo "### a2a notify"
+            echo
+            echo "range: $summary_range_note"
+            echo
+            if jq -e 'length > 0' "$records" >/dev/null 2>&1; then
+              echo "| artifact | class | chat | renderer | outcome |"
+              echo "|---|---|---|---|---|"
+              jq -r '.[] | "| \(.artifact) | \(.class) | \(.chat) | \(.renderer) | \(.outcome) |"' "$records"
+              if jq -e 'map(select(.outcome == "dry-run")) | length > 0' "$records" >/dev/null 2>&1; then
+                echo
+                echo "#### dry-run payloads (the exact bytes a live send would put on the wire)"
+                # A 4-backtick fence, not 3: an agent prompt commonly carries
+                # its own \`\`\`-fenced code block (the payload's own <pre><code>
+                # content), which would otherwise close this fence early and
+                # garble the one thing dry-run exists to let a reviewer see.
+                jq -r '.[] | select(.outcome == "dry-run") | "**\(.artifact)** (\(.renderer)):\n\n````\n\(.payload)\n````\n"' "$records"
+              fi
+              if jq -e 'map(select(.outcome == "failed")) | length > 0' "$records" >/dev/null 2>&1; then
+                echo
+                echo "#### failures"
+                jq -r '.[] | select(.outcome == "failed") | "- \(.artifact): \(.error)"' "$records"
+              fi
+            else
+              echo "0 messages — no routes configured, or nothing qualified."
+            fi
+          } >>"$GITHUB_STEP_SUMMARY"
+
+          exit "$status"

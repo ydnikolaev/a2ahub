@@ -74,6 +74,47 @@ func TestSpaceEmbedSentinelsPresent(t *testing.T) {
 	if !strings.Contains(string(workflow), "a2a-validate-reusable.yml@v") {
 		t.Error("a2a-validate.yml no longer carries an a2a-validate-reusable.yml@vX.Y.Z ref")
 	}
+
+	notify, err := fs.ReadFile(spacetemplate.Files, ".github/workflows/a2a-notify.yml")
+	if err != nil {
+		t.Fatalf("read .github/workflows/a2a-notify.yml: %v", err)
+	}
+	if !strings.Contains(string(notify), "a2a-notify-reusable.yml@v") {
+		t.Error("a2a-notify.yml no longer carries an a2a-notify-reusable.yml@vX.Y.Z ref")
+	}
+}
+
+// TestSpaceEmbedNotifyCallerHasNoLogic is spec 05 AC1: the notification
+// caller carries no logic beyond `uses:`, `with:` and `secrets:` — no `run:`
+// step at all (US-1: a space carries no notification logic of its own).
+func TestSpaceEmbedNotifyCallerHasNoLogic(t *testing.T) {
+	t.Parallel()
+
+	raw, err := fs.ReadFile(spacetemplate.Files, ".github/workflows/a2a-notify.yml")
+	if err != nil {
+		t.Fatalf("read .github/workflows/a2a-notify.yml: %v", err)
+	}
+	content := string(raw)
+
+	for _, line := range strings.Split(content, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "run:") {
+			t.Errorf("a2a-notify.yml carries a run: step (%q) — spec 05 AC1 requires no logic beyond uses:/with:/secrets:", line)
+		}
+	}
+	for _, want := range []string{"uses:", "with:", "secrets:"} {
+		if !strings.Contains(content, want) {
+			t.Errorf("a2a-notify.yml is missing %q — the thin-caller shape (spec 05 AC1):\n%s", want, content)
+		}
+	}
+	if strings.Contains(content, "pull_request_target:") {
+		t.Error("a2a-notify.yml must never trigger on pull_request_target — it would expose TG_BOT_TOKEN to fork code")
+	}
+	if !strings.Contains(content, "secrets:\n") || !strings.Contains(content, "TG_BOT_TOKEN:") {
+		t.Errorf("a2a-notify.yml does not declare TG_BOT_TOKEN explicitly (never secrets: inherit — spec 05 US-5):\n%s", content)
+	}
+	if strings.Contains(content, "secrets: inherit") {
+		t.Error("a2a-notify.yml uses `secrets: inherit` — forbidden (spec 05 US-5: a space may be private)")
+	}
 }
 
 func newSpaceIO() (cli.IO, *strings.Builder, *strings.Builder) {
@@ -116,6 +157,30 @@ func TestSpaceInitScaffolds(t *testing.T) {
 		}
 		if !strings.Contains(string(spaceYAML), "min_binary_version: 9.9.9") {
 			t.Errorf("scaffolded space.yaml does not carry min_binary_version: 9.9.9:\n%s", spaceYAML)
+		}
+	})
+
+	t.Run("notify caller version substitution pins the running binary's version, not the baked template version", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		target := filepath.Join(dir, "out")
+		cmd := cli.NewSpaceCommand(spacetemplate.Files, "9.9.9")
+
+		io, out, errOut := newSpaceIO()
+		code := cmd.Run(context.Background(), []string{"init", "myspace", "--dir", target}, io)
+		if code != 0 {
+			t.Fatalf("Run: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+		}
+
+		notify, err := os.ReadFile(filepath.Join(target, ".github", "workflows", "a2a-notify.yml"))
+		if err != nil {
+			t.Fatalf("read scaffolded a2a-notify.yml: %v", err)
+		}
+		if !strings.Contains(string(notify), "a2a-notify-reusable.yml@v9.9.9") {
+			t.Errorf("scaffolded notify caller does not pin @v9.9.9:\n%s", notify)
+		}
+		if strings.Contains(string(notify), "@v0.23.0") {
+			t.Errorf("scaffolded notify caller still pins the BAKED template version (@v0.23.0), not the running binary's version:\n%s", notify)
 		}
 	})
 
@@ -778,6 +843,145 @@ func TestSpaceUpdateSeededFileAtAnAlternateLocation(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), ".github/CODEOWNERS") {
 		t.Errorf("the alternate location was not reported as advisory drift; stdout=%s", out.String())
+	}
+}
+
+// --- `a2a-notify.yml` disposition (space-notify-2026-08 P5, spec 05
+// "Template and adoption") ------------------------------------------------
+
+// spaceUpdateNotifyTemplateFS is spaceUpdateTemplateFS() plus the
+// notification caller, added locally (never by mutating the shared helper —
+// TestSpaceUpdateSubmitsOncePreservingSpaceOwnedContent already establishes
+// this exact pattern for its own synthetic `a2a-nightly.yml`) so these two
+// tests cannot perturb every other test sharing spaceUpdateTemplateFS().
+func spaceUpdateNotifyTemplateFS(pin string) fstest.MapFS {
+	tmpl := spaceUpdateTemplateFS()
+	tmpl[".github/workflows/a2a-notify.yml"] = &fstest.MapFile{Data: []byte(
+		"jobs:\n  a2a-notify:\n    uses: ydnikolaev/a2ahub/.github/workflows/a2a-notify-reusable.yml@" + pin + "\n",
+	)}
+	return tmpl
+}
+
+// TestSpaceUpdateAddsNotifyCallerWhenAbsent is spec 05 AC7: `a2a space
+// update` adds the notification caller to a space that lacks it, pinned to
+// the running binary's own version — the same e2e shape AC-951.1's synthetic
+// `a2a-nightly.yml` case already proves for an UNLISTED path, run here
+// against the disposition-table row this phase added.
+func TestSpaceUpdateAddsNotifyCallerWhenAbsent(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	spaceUpdateSeedMirror(t, mirrorDir) // no a2a-notify.yml in the mirror at all
+
+	tmpl := spaceUpdateNotifyTemplateFS("v0.23.0")
+	funnel := &fakeSubmitFunnel{}
+	cmd := spaceUpdateFullyWiredCommand(tmpl, mirrorDir, funnel, "9.9.9")
+
+	io, out, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"update"}, io); code != 0 {
+		t.Fatalf("Run: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if len(funnel.calls) != 1 {
+		t.Fatalf("funnel.calls = %d, want 1", len(funnel.calls))
+	}
+	var notify *space.FileWrite
+	for i, f := range funnel.calls[0].Files {
+		if f.Path == ".github/workflows/a2a-notify.yml" {
+			notify = &funnel.calls[0].Files[i]
+		}
+	}
+	if notify == nil {
+		t.Fatalf("a2a-notify.yml missing from the request's Files — AC7 (add when absent) failed")
+	}
+	if !strings.Contains(string(notify.Content), "a2a-notify-reusable.yml@v9.9.9") {
+		t.Errorf("notify caller write does not pin the running binary's version 9.9.9:\n%s", notify.Content)
+	}
+	if !strings.Contains(out.String(), "add .github/workflows/a2a-notify.yml") {
+		t.Errorf("stdout does not report the add; stdout=%s", out.String())
+	}
+}
+
+// TestSpaceUpdateNotifyCallerPropagatesTemplateChanges is the disposition-
+// decision's own proof (spec 05's "answer this before writing code"):
+// `.github/workflows/a2a-notify.yml` must stay spaceDispositionManaged, NOT
+// rely on the "unlisted path" default, because that default's OTHER half —
+// spaceComputeUpdatePlanFor's own doc comment, ":702-717" — is "once
+// present, an unlisted path is presumed space-owned and this command never
+// touches it again". Dependabot bumps an ALREADY-ADOPTED caller's `uses:`
+// TAG per space, but nothing rewrites the file's SHAPE if it drifts from the
+// template any other way; only `spaceDispositionManaged` does. This test
+// seeds the mirror with the caller ALREADY present (simulating a space that
+// adopted it earlier) and a template that has since changed — content that
+// is NOT just the version pin, so a Dependabot-only story could not explain
+// a green run here.
+func TestSpaceUpdateNotifyCallerPropagatesTemplateChanges(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	spaceUpdateSeedMirror(t, mirrorDir)
+	// The space already adopted the caller at an EARLIER template shape.
+	writeSpaceMirrorFile(t, mirrorDir, ".github/workflows/a2a-notify.yml",
+		"jobs:\n  a2a-notify:\n    uses: ydnikolaev/a2ahub/.github/workflows/a2a-notify-reusable.yml@v0.20.0\n",
+	)
+
+	// The template's CURRENT shape: not just a version bump — an added
+	// `with:` line, so a green result here cannot be explained by
+	// Dependabot's own tag-only bump.
+	tmpl := spaceUpdateTemplateFS()
+	tmpl[".github/workflows/a2a-notify.yml"] = &fstest.MapFile{Data: []byte(
+		"jobs:\n  a2a-notify:\n    uses: ydnikolaev/a2ahub/.github/workflows/a2a-notify-reusable.yml@v0.23.0\n    with:\n      limit: 5\n",
+	)}
+
+	funnel := &fakeSubmitFunnel{}
+	cmd := spaceUpdateFullyWiredCommand(tmpl, mirrorDir, funnel, "9.9.9")
+
+	io, out, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"update"}, io); code != 0 {
+		t.Fatalf("Run: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if len(funnel.calls) != 1 {
+		t.Fatalf("funnel.calls = %d, want 1 — without spaceDispositionManaged the drifted caller is left "+
+			"untouched forever (the 'unlisted, present' branch), and this update would be a no-op; "+
+			"stdout=%s", len(funnel.calls), out.String())
+	}
+	var notify *space.FileWrite
+	for i, f := range funnel.calls[0].Files {
+		if f.Path == ".github/workflows/a2a-notify.yml" {
+			notify = &funnel.calls[0].Files[i]
+		}
+	}
+	if notify == nil {
+		t.Fatalf("a2a-notify.yml missing from the request's Files — the drifted caller was never resynced")
+	}
+	if !strings.Contains(string(notify.Content), "limit: 5") {
+		t.Errorf("notify caller write did not pick up the template's new `with: limit` line:\n%s", notify.Content)
+	}
+	if !strings.Contains(string(notify.Content), "a2a-notify-reusable.yml@v9.9.9") {
+		t.Errorf("notify caller write does not pin the running binary's version 9.9.9:\n%s", notify.Content)
+	}
+	if !strings.Contains(out.String(), "update .github/workflows/a2a-notify.yml") {
+		t.Errorf("stdout does not report the update; stdout=%s", out.String())
+	}
+}
+
+// TestSpaceUpdateRefusesWithoutWorkflowScopeNamesBothManagedFiles is AC 7b:
+// with a SECOND managed workflow, the scope refusal must name which file(s)
+// it was blocked on rather than a bare ".github/workflows/" that no longer
+// identifies one specific file an operator may not have asked for.
+func TestSpaceUpdateRefusesWithoutWorkflowScopeNamesBothManagedFiles(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	spaceUpdateSeedMirror(t, mirrorDir)
+	funnel := &fakeSubmitFunnel{}
+	cmd := spaceUpdateFullyWiredCommand(spaceUpdateNotifyTemplateFS("v0.23.0"), mirrorDir, funnel, "9.9.9")
+	cmd.Scopes = &fakeScopeChecker{scopes: []string{"repo", "read:org"}, reported: true}
+
+	io, _, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"update"}, io); code != 1 {
+		t.Fatalf("Run: code = %d, want 1; stderr=%s", code, errOut.String())
+	}
+	for _, want := range []string{".github/workflows/a2a-validate.yml", ".github/workflows/a2a-notify.yml"} {
+		if !strings.Contains(errOut.String(), want) {
+			t.Errorf("stderr does not name the blocked file %q; stderr=%s", want, errOut.String())
+		}
 	}
 }
 

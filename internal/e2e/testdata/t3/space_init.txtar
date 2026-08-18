@@ -7,7 +7,7 @@
 #     -X main.version=$A2A_STAMPED_VERSION, main_test.go's own
 #     harnessStampedVersion, so the pin must come out @v<that version>).
 exec a2a space init acme-space
-stdout 'wrote 8 files'
+stdout 'wrote 9 files'
 
 # The remaining steps are printed IN ORDER, and the two orderings that brick a
 # space when taken early are stated. Both were internal-runbook-only knowledge
@@ -23,12 +23,14 @@ stdout 'delete README.md'
 
 # The scaffolded tree carries the CI caller + dependabot — the dotfile-embed trap.
 exists acme-space/.github/workflows/a2a-validate.yml
+exists acme-space/.github/workflows/a2a-notify.yml
 exists acme-space/.github/dependabot.yml
 exists acme-space/space.yaml
 exists acme-space/CODEOWNERS
 
 # The ref pins the RUNNING binary's version, not the template's baked one.
 grep '@v'$A2A_STAMPED_VERSION_RE acme-space/.github/workflows/a2a-validate.yml
+grep '@v'$A2A_STAMPED_VERSION_RE acme-space/.github/workflows/a2a-notify.yml
 
 # Space id + write floor were substituted.
 grep 'space: acme-space' acme-space/space.yaml

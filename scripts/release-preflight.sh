@@ -47,8 +47,24 @@ set -euo pipefail
 
 REMOTE="${A2A_RELEASE_REMOTE:-public}"
 REUSABLE_PATH=".github/workflows/a2a-validate-reusable.yml"
+REUSABLE_DIR=".github/workflows"
 TEMPLATE_WORKFLOWS="space-template/.github/workflows"
 TEMPLATE_MANIFEST="space-template/space.yaml"
+
+# reusable_workflow_paths prints every *-reusable.yml under $1/$REUSABLE_DIR,
+# repo-relative, one per line, sorted. DERIVED rather than a hardcoded single
+# path — same discipline as internal/notes' own reusableWorkflowPaths (see
+# that test's doc comment): a hardcoded const/var is exactly the shape that
+# let this coupling ship wrong twice, because nothing forced a NEW reusable
+# workflow to be added to the guard. A future third reusable workflow is
+# covered by construction, not by remembering to touch this file again.
+reusable_workflow_paths() { # $1 = repo
+  local repo="$1" f
+  for f in "$repo/$REUSABLE_DIR"/*-reusable.yml; do
+    [ -e "$f" ] || continue
+    printf '%s\n' "${REUSABLE_DIR}/$(basename "$f")"
+  done
+}
 
 fail() { printf '\033[31m✗\033[0m %s\n' "$1" >&2; return 1; }
 ok()   { printf '\033[32m✓\033[0m %s\n' "$1"; }
@@ -69,15 +85,24 @@ assert_version_free() { # $1 = repo, $2 = version
 # (b) every pinned reusable-workflow ref must resolve to a tag whose tree
 #     carries the reusable workflow. A pin to a tag that predates the workflow
 #     fails every space's CI with "workflow not found".
+#
+# The referenced PATH is extracted per line (`${REUSABLE_DIR}/<basename before
+# the @>`), never assumed to be $REUSABLE_PATH — so this covers EVERY
+# `*-reusable.yml` caller the template carries (space-notify-2026-08 P5 added
+# a second one, a2a-notify.yml -> a2a-notify-reusable.yml), not only the
+# validator, with no second copy of this function.
 assert_pins_resolve() { # $1 = repo
-  local repo="$1" rc=0 found=0 line ref
+  local repo="$1" rc=0 found=0 line ref wf_file wf_path
   while IFS= read -r line; do
     # strip comments, take the token after the last '@'
     line="${line%%#*}"
-    case "$line" in *a2a-validate-reusable.yml@*) ;; *) continue ;; esac
+    case "$line" in *-reusable.yml@*) ;; *) continue ;; esac
     ref="${line##*@}"
     ref="$(printf '%s' "$ref" | tr -d '[:space:]')"
     [ -n "$ref" ] || continue
+    wf_file="${line##*/}"
+    wf_file="${wf_file%%@*}"
+    wf_path="${REUSABLE_DIR}/${wf_file}"
     found=$((found + 1))
     if ! git -C "$repo" rev-parse -q --verify "refs/tags/$ref" >/dev/null 2>&1; then
       fail "release-preflight: space-template pins @$ref, which is NOT a known tag on '$REMOTE'.
@@ -85,15 +110,15 @@ assert_pins_resolve() { # $1 = repo
       rc=1
       continue
     fi
-    if ! git -C "$repo" cat-file -e "$ref:$REUSABLE_PATH" 2>/dev/null; then
+    if ! git -C "$repo" cat-file -e "$ref:$wf_path" 2>/dev/null; then
       fail "release-preflight: space-template pins @$ref, but that tag's tree does NOT contain
-    $REUSABLE_PATH — every space created from this template would fail
+    $wf_path — every space created from this template would fail
     'workflow not found'. Fix: pin the release that ADDED the reusable workflow."
       rc=1
       continue
     fi
-    ok "release-preflight: pin @$ref resolves and carries $REUSABLE_PATH"
-  done < <(grep -rh "a2a-validate-reusable.yml@" "$repo/$TEMPLATE_WORKFLOWS" 2>/dev/null || true)
+    ok "release-preflight: pin @$ref resolves and carries $wf_path"
+  done < <(grep -rhE -- '-reusable\.yml@' "$repo/$TEMPLATE_WORKFLOWS" 2>/dev/null || true)
 
   if [ "$found" -eq 0 ]; then
     fail "release-preflight: no reusable-workflow pin found under $TEMPLATE_WORKFLOWS —
@@ -306,32 +331,55 @@ $formatted
 $formatted"
 }
 
-assert_ref_default_matches() { # $1 = repo, $2 = version (vX.Y.Z)
-  local repo="$1" want="$2" got
+# _assert_ref_default_matches_one is the single-file check; assert_ref_
+# default_matches below loops it over the DERIVED set (reusable_workflow_
+# paths), the same generalization notes_test.go's own
+# TestReusableRefDefaultMatchesTheNewestAuthoredVersion applies — see that
+# test's doc comment for why a single hardcoded path shipped this coupling
+# wrong twice.
+_assert_ref_default_matches_one() { # $1 = repo, $2 = wf_path (repo-relative), $3 = version (vX.Y.Z)
+  local repo="$1" wf_path="$2" want="$3" got
   # The `a2a-ref` input's own default inside the reusable workflow: the module
-  # version a SPACE's CI will `go run` when its caller does not override it.
-  got="$(sed -n '/^      a2a-ref:/,/^      [a-z-]*:/p' "$repo/$REUSABLE_PATH" 2>/dev/null \
+  # version a SPACE's CI will `go run`/`go install` when its caller does not
+  # override it.
+  got="$(sed -n '/^      a2a-ref:/,/^      [a-z-]*:/p' "$repo/$wf_path" 2>/dev/null \
     | sed -n 's/^ *default:[[:space:]]*"\{0,1\}\(v\{0,1\}[0-9][0-9.]*\)"\{0,1\}.*/\1/p' | head -1)"
   if [ -z "$got" ]; then
-    fail "release-preflight: $REUSABLE_PATH declares no a2a-ref default —
+    fail "release-preflight: $wf_path declares no a2a-ref default —
     every space caller would have to name a version itself."
     return 1
   fi
   if [ "${got#v}" != "${want#v}" ]; then
-    fail "release-preflight: the reusable workflow's a2a-ref default is $got, but you are
+    fail "release-preflight: $wf_path's a2a-ref default is $got, but you are
     cutting $want. A space pins the WORKFLOW by tag and inherits this default for the
-    VALIDATOR, so the two skewing means every space silently validates with $got while
+    binary it runs, so the two skewing means every space silently runs $got while
     believing it runs $want.
-    This is not hypothetical: v0.7.0 shipped with the default still at v0.5.0, so every
-    space at @v0.7.0 ran a validator two releases old, missing every binary-side
-    \`validate --ci\` fix since — including the computed contract-compatibility check, so a
-    breaking change labelled minor would not be caught at merge there. (It did NOT reopen
-    the v0.6.4 diff-authz bypass: that fix is workflow-side, passing --author explicitly,
-    so the pinned WORKFLOW carries it whichever binary it runs.)
-    Fix: set \`default: \"$want\"\` in $REUSABLE_PATH before tagging."
+    This is not hypothetical: v0.7.0 shipped a2a-validate-reusable.yml's default still at
+    v0.5.0, so every space at @v0.7.0 ran a validator two releases old, missing every
+    binary-side \`validate --ci\` fix since — including the computed contract-compatibility
+    check, so a breaking change labelled minor would not be caught at merge there. (It did
+    NOT reopen the v0.6.4 diff-authz bypass: that fix is workflow-side, passing --author
+    explicitly, so the pinned WORKFLOW carries it whichever binary it runs.)
+    Fix: set \`default: \"$want\"\` in $wf_path before tagging."
     return 1
   fi
-  ok "release-preflight: reusable a2a-ref default $got matches $want"
+  ok "release-preflight: $wf_path's a2a-ref default $got matches $want"
+}
+
+assert_ref_default_matches() { # $1 = repo, $2 = version (vX.Y.Z)
+  local repo="$1" want="$2" rc=0 wf_path found=0
+  while IFS= read -r wf_path; do
+    [ -n "$wf_path" ] || continue
+    found=$((found + 1))
+    _assert_ref_default_matches_one "$repo" "$wf_path" "$want" || rc=1
+  done < <(reusable_workflow_paths "$repo")
+
+  if [ "$found" -eq 0 ]; then
+    fail "release-preflight: no *-reusable.yml file found under $repo/$REUSABLE_DIR —
+    the discovery glob is broken, not the workflows."
+    return 1
+  fi
+  return "$rc"
 }
 
 # judge_pages_conclusion decides, from the last Pages run's conclusion alone,

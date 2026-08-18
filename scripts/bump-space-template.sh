@@ -36,8 +36,13 @@
 set -euo pipefail
 
 MANIFEST="space-template/space.yaml"
-WORKFLOW="space-template/.github/workflows/a2a-validate.yml"
-WORKFLOW_REF_COUNT=2   # the caller invokes the reusable workflow twice (PR + post-merge)
+# Every thin caller in the template, DERIVED rather than named. This used to be
+# one hardcoded path plus a hardcoded ref count, which meant the second caller
+# (a2a-notify.yml, space-notify-2026-08 P5) would have had its pin frozen at
+# whatever tag it first shipped with, forever, while a2a-validate.yml's advanced
+# every release. Nothing would have reported it: the script only ever counted
+# refs in the one file it knew about.
+WORKFLOW_DIR="space-template/.github/workflows"
 PUBLIC_REMOTE="${A2A_PUBLIC_REMOTE:-public}"
 
 usage() {
@@ -94,7 +99,45 @@ rewrite() { # $1 = file, $2 = ERE matching the OLD line, $3 = replacement line, 
 }
 
 floor_now()  { sed -nE 's/^min_binary_version:[[:space:]]*"?([0-9]+\.[0-9]+\.[0-9]+)"?.*/\1/p' "$MANIFEST" | head -1; }
-pins_now()   { sed -nE 's|.*a2a-validate-reusable\.yml@(v[0-9]+\.[0-9]+\.[0-9]+).*|\1|p' "$WORKFLOW" | sort -u; }
+
+# callers_now lists every template workflow that pins a reusable workflow by
+# tag. A caller that pins none is not a caller and is skipped; a NEW caller
+# joins automatically, which is the whole point of deriving instead of naming.
+callers_now() {
+  local f
+  for f in "$WORKFLOW_DIR"/*.yml; do
+    [ -f "$f" ] || continue
+    grep -qE -- '-reusable\.yml@v[0-9]+\.[0-9]+\.[0-9]+' "$f" && printf '%s\n' "$f"
+  done
+}
+
+pins_now() { # every pinned version across every caller, deduplicated
+  local f
+  for f in $(callers_now); do
+    sed -nE 's|.*-reusable\.yml@(v[0-9]+\.[0-9]+\.[0-9]+).*|\1|p' "$f"
+  done | sort -u
+}
+
+# EXPECTED_PINS declares how many reusable refs each caller must carry. The
+# caller SET is derived (a new caller is discovered, never named twice), but its
+# SHAPE is declared here on purpose.
+#
+# The first version of this generalization derived the count from the same file
+# it was about to validate, which quietly deleted the check: a caller that had
+# drifted to 1 of its 2 refs became "correct" by definition, and this script's
+# own --teeth caught it. The count is the difference between a script and a
+# wish (see rewrite() above) — it has to come from somewhere other than the
+# thing under test.
+#
+# A caller with no row here is REFUSED rather than guessed at, so adding one
+# cannot be forgotten silently.
+expected_pins() { # $1 = caller path
+  case "$(basename "$1")" in
+    a2a-validate.yml) echo 2 ;;   # PR gate + post-merge audit
+    a2a-notify.yml)   echo 1 ;;   # one job: push + workflow_dispatch share it
+    *) return 1 ;;
+  esac
+}
 
 bump() {
   local mode="$1" allow_unpublished="$2" version tag floor pins
@@ -151,7 +194,7 @@ bump() {
   fi
 
   if [ "$floor" = "$version" ] && [ "$pins" = "$tag" ]; then
-    echo "bump-space-template: ok — template already targets $tag (floor $floor, $WORKFLOW_REF_COUNT pin(s) at $tag)."
+    echo "bump-space-template: ok — template already targets $tag (floor $floor, $(pins_now | wc -l | tr -d ' ') distinct pin version(s) across $(callers_now | wc -l | tr -d ' ') caller(s))."
     return 0
   fi
 
@@ -167,9 +210,22 @@ bump() {
   rewrite "$MANIFEST" \
     '^min_binary_version:[[:space:]]*"?[0-9]+\.[0-9]+\.[0-9]+"?' \
     "min_binary_version: $version" 1
-  rewrite "$WORKFLOW" \
-    'a2a-validate-reusable\.yml@v[0-9]+\.[0-9]+\.[0-9]+' \
-    "a2a-validate-reusable.yml@$tag" "$WORKFLOW_REF_COUNT"
+  # One rewrite per caller, each proving its OWN ref count. The backreference
+  # keeps each caller pointing at its own reusable workflow — a pattern that
+  # replaced the whole filename would happily rewrite every caller to reference
+  # the same one, which is a worse outcome than the frozen pin this fixes.
+  local caller want
+  for caller in $(callers_now); do
+    if ! want="$(expected_pins "$caller")"; then
+      echo "bump-space-template: FAIL — $caller pins a reusable workflow but declares no expected ref count." >&2
+      echo "Add a row to expected_pins(). Deriving the count from the file would make this check agree with" >&2
+      echo "whatever the file happens to say, which is not a check." >&2
+      return 1
+    fi
+    rewrite "$caller" \
+      '(-reusable\.yml)@v[0-9]+\.[0-9]+\.[0-9]+' \
+      "\\1@$tag" "$want"
+  done
 
   floor="$(floor_now)"
   pins="$(pins_now)"
@@ -177,7 +233,7 @@ bump() {
     echo "bump-space-template: FAIL — post-write verification disagrees: floor=$floor pins=$(echo "$pins" | tr '\n' ' ')" >&2
     return 1
   fi
-  echo "bump-space-template: moved the template baseline to $tag (floor and $WORKFLOW_REF_COUNT workflow pin(s), together)."
+  echo "bump-space-template: moved the template baseline to $tag (floor and every caller's pin(s) across $(callers_now | wc -l | tr -d ' ') caller(s), together)."
 }
 
 teeth() {

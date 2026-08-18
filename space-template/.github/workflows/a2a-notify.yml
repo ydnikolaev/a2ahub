@@ -1,0 +1,82 @@
+# Space-side CI notification delivery (space-notify-2026-08 P5, spec 05
+# §T5). A thin CALLER of a2ahub's reusable notification workflow: this
+# space carries NO notification logic, NO pinned-binary fetch, and NO
+# fetch-token secret of its own — the render/send invocation, the pinned
+# a2a version and the range/artifact selection all live in the referenced
+# unit and move as a whole via a Dependabot bump of the tag below (see
+# .github/dependabot.yml) — never a hand-edit here. Present but silent
+# until `notification_routes` names a route (US-2): adopting this template
+# costs nothing.
+#
+# `pull_request_target` is FORBIDDEN as a trigger here — see the reusable
+# workflow's own header for why: it would expose TG_BOT_TOKEN to code from
+# a fork. Triggers are exactly `push: main` and `workflow_dispatch`.
+#
+# `workflow_dispatch` is what makes "send me this work request and that
+# contract so I can review the layout" a one-command operation from a
+# session, with no token on a laptop (spec 05 "Driving a test send from a
+# session"):
+#
+#   gh workflow run a2a-notify.yml --repo <space> \
+#      -f artifacts=XW-axon-20260817-038c,XC-seomatrix-c4-export \
+#      -f dry-run=false
+#   gh run watch --repo <space> --exit-status
+name: a2a-notify
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "The commit to measure the range from (empty: single-commit fallback)."
+        required: false
+        type: string
+      artifacts:
+        description: "Comma-separated artifact ids to send instead of a push range."
+        required: false
+        type: string
+      dry-run:
+        description: "Render and print the exact payloads; send nothing."
+        required: false
+        type: boolean
+        default: false
+
+# The reusable `notify` job needs contents:read to check out the space. A
+# reusable workflow can only DOWNGRADE the caller's token, so this is
+# granted here (never inherited beyond it).
+permissions:
+  contents: read
+
+jobs:
+  a2a-notify:
+    name: a2a-notify
+    # Pinned to an a2ahub RELEASE TAG (never @main): tags are immutable in
+    # a2ahub's publish model, and Dependabot bumps this ref by a reviewed PR.
+    #
+    # It names the PUBLISHED baseline, in lockstep with `min_binary_version`
+    # and with a2a-validate.yml's own pin — one decision, moved as a unit by
+    # `bump-space-template.sh` at release Phase 4. That is a DIFFERENT coupling
+    # from the reusable workflow's own `a2a-ref` default, which tracks the
+    # newest AUTHORED version and is held by internal/notes' offline gate.
+    # Confusing the two is how a split pair ships.
+    #
+    # Consequence worth knowing rather than "fixing": a2a-notify-reusable.yml
+    # does not exist at this tag — it first ships in v0.23.0 — so this line
+    # cannot resolve verbatim until that release. It never has to: `a2a space
+    # init` substitutes the RUNNING binary's own version here (cmd_space.go's
+    # spaceNotifyWorkflowRefPattern), so a scaffolded space always pins a tag
+    # that contains the file. This is the same bootstrap window
+    # a2a-validate.yml itself sat in before its first tag.
+    uses: ydnikolaev/a2ahub/.github/workflows/a2a-notify-reusable.yml@v0.22.0
+    with:
+      # workflow_dispatch-only inputs (requirement 5, spec 05): the push
+      # path never sets base/artifacts/dry-run, because `inputs.*` is only
+      # populated on a workflow_dispatch event — referencing it on push
+      # evaluates to empty/false regardless, and the ternary below states
+      # that explicitly rather than relying on the implicit empty.
+      base: ${{ github.event_name == 'workflow_dispatch' && inputs.base || '' }}
+      artifacts: ${{ github.event_name == 'workflow_dispatch' && inputs.artifacts || '' }}
+      dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run || false }}
+    secrets:
+      TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
