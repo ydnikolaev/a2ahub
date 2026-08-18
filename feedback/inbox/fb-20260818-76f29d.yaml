@@ -1,0 +1,45 @@
+# Feedback authoring skeleton (v1) — materialized by `a2a feedback new <kind>`
+# to `.a2a/feedback/<id>.yaml` (§T1, §11 A4). Every field required by
+# feedback.schema.json is present with a placeholder or auto-fill value so
+# the drafted file is schema-VALID once you replace the placeholders and
+# flip `checks.*` to true after honestly clearing every §2.1 gate.
+#
+# `id` / `context.a2a_version` / `context.os_arch` are filled in by the CLI
+# before this file ever reaches disk — the empty strings below are the
+# pre-fill placeholders `internal/feedback` overwrites, never hand-edited.
+#
+# `checks.*` starts all `false` on purpose: the agent must consciously flip
+# each one after actually verifying it (I5) — never bulk-set to true.
+
+feedback: v1
+id: fb-20260818-76f29d # auto-filled: fb-YYYYMMDD-<6 hex>
+kind: bug # bug | feature | docs | friction | protocol
+severity: major # blocker | major | minor
+title: verify --verdict indexes an unseen list and only range-checks it
+summary: "`a2a verify --verdict <index>:<verdict>:<owner>` takes a 0-based positional index into the parent's acceptance_criteria[], a list the caller cannot see at the moment of composing the flags, and validation checks only that the index RESOLVES. An off-by-one that stays in range therefore attaches every verdict to the wrong criterion and merges green. Ours failed only because a 1-based guess overflowed a six-entry list on the last flag; indices 1..5 resolved silently, one criterion off each. With a seventh criterion the record would now assert, permanently and in the audit trail, that criteria were verified by checks that looked at different criteria. The verification record is the artifact this protocol exists to produce, so a silent mis-binding inside it is worse than a refusal."
+context:
+    a2a_version: 0.22.0 # auto-filled
+    os_arch: darwin/arm64 # auto-filled (runtime.GOOS/runtime.GOARCH)
+    surface: cli # cli | schema | docs | skill | dashboard | space-ci | protocol
+    # command: ""       # optional: the failing/awkward invocation
+    # error_code: ""    # optional: whatever code you saw (e.g. POL-001)
+    # agent: ""         # optional: free self-report
+# evidence is REQUIRED when kind is bug (steps/expected/actual all
+# mandatory); optional otherwise — delete this block for non-bug kinds.
+evidence:
+    steps:
+        - "Have a work_request whose acceptance_criteria[] holds N entries, and a submitted response to it."
+        - "Run: a2a verify <response-id> --verdict 1:met:<owner> ... --verdict N:met:<owner> (1-based, the natural reading when nothing states the base)."
+        - "Observe: the operation is accepted locally and a PR is opened. Only the final flag is rejected by space CI, as REF-019, because index N overflows a 0..N-1 list."
+        - "Now repeat with N+1 criteria and the same 1-based flags: every index resolves, nothing is rejected, and the merged record binds each verdict to the criterion after the one intended."
+    expected: "Either the index base is unmistakable at the point of use, or the tool echoes what each index resolved to before the operation is minted. A verdict is a judgement ABOUT a specific criterion; binding it positionally to an unseen list makes that binding unverifiable by the person making the judgement."
+    actual: "Indices are 0-based, stated in no --help text and in no skill page we could find; validation range-checks only. A shift that stays in range produces a green, merged, permanently wrong verification record, with no signal at any point."
+proposal: "Three shapes, cheapest first, not mutually exclusive. (1) ECHO: before minting, print each verdict as `index -> <first 80 chars of the criterion>: met` so the author sees the binding they are asserting; this alone would have caught ours at composition. (2) NAME instead of counting: accept `--verdict <criterion-prefix>:<verdict>:<owner>`, matching a unique prefix of the criterion text, so the flag carries its own referent and a mis-binding cannot be silent. (3) COMPLETENESS: default to requiring a verdict for every criterion, since a partial set is nearly always an oversight rather than an intent, and a missing index is exactly what a shift produces at one end. Minimally, state the base in `--help` — but note that documenting it fixes only the careful reader, while (1) or (2) fixes the mechanism."
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
+# resolution is hub-mutated only; MUST be absent at submit — do not add it.
