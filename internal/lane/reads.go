@@ -715,6 +715,51 @@ func honestyForMakePhase(root string, doc *makefileDoc, d Declaration) (refusals
 			return nil, false, fmt.Errorf("honesty check for %q: read %s: %w", d.Phase, script, rerr)
 		}
 		lines := strings.Split(string(raw), "\n")
+
+		// A script whose own header carries MORE THAN ONE lane-inputs block
+		// is a declared multi-phase corpus, not "the script backing this one
+		// phase" — the same test loadScriptHeaders already applies when it
+		// excludes scripts/verify.sh from its own single-block scan ("it
+		// carries many blocks, one per wrapped/bare phase"; see its "%d
+		// lane-inputs blocks in one script header, want exactly one gate per
+		// script" refusal for the single-block case this mirrors). Nothing
+		// here names scripts/verify.sh by string — the block count is the
+		// signal, so a second script shaped the same way would be recognised
+		// without a code change; scripts/verify.sh is simply the one script
+		// in this corpus that is shaped that way today.
+		//
+		// A whole-file scan against ONE phase's declaration is dishonest in
+		// both directions for such a script: it credits the phase with every
+		// OTHER phase's reads, and — the defect this branch exists to close
+		// — it lets a lane-reads-opaque line ANYWHERE in the file absolve an
+		// unresolved construct that phase's own declared window never
+		// touches (D-9/D-11: a debt with a size, never a blanket exemption).
+		//
+		// Two of this corpus's three real Makefile-recipe-to-verify.sh cases
+		// (live-e2e, logic-e2e) already carry their OWN lane-inputs block
+		// inside scripts/verify.sh, so the verifyPhases loop in HonestyCheck
+		// already scans their PRECISE window via honestyForVerifyPhase.
+		// Re-scanning here would double-count opaqueCount and duplicate
+		// every refusal for the same declaration — the honest thing for the
+		// recipe arm to do is stop, not re-derive a window the verify.sh arm
+		// already owns.
+		//
+		// The third (harness-check) has NO lane-inputs block of its own
+		// inside scripts/verify.sh — its declaration sits on the Makefile
+		// target, and the reads it actually describes are
+		// `_harness-check`'s presence-gated `[ -f ... ]` guards, which are
+		// not a read-shaped construct in D-11's contract at all (grep, cat,
+		// find, source, wc, head, tail, sed, awk — not a shell `[ -f ]`
+		// test). It therefore has no honest window here either, the same
+		// "the honesty question has no subject" answer the presence-gate
+		// branch above gives an absent script.
+		blocks, berr := findLaneBlocks(lines, "#")
+		if berr != nil {
+			return nil, false, fmt.Errorf("honesty check for %q: %s: %w", d.Phase, script, berr)
+		}
+		if len(blocks) > 1 {
+			return nil, false, nil
+		}
 		return honestyForWindow(script, lines, 1, len(lines), false, d)
 	}
 

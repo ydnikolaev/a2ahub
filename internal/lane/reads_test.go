@@ -6,6 +6,63 @@ import (
 	"testing"
 )
 
+// TestHonestyCheckMakefileRecipeToMultiPhaseCorpusScopesPerPhase pins the
+// fix for the defect this brief exists to close: a Makefile-recipe phase
+// whose recipe shells to a MULTI-PHASE corpus script (scripts/verify.sh —
+// here, its testdata analogue carrying two lane-inputs blocks, one per
+// wrapped phase) must not credit that phase with the WHOLE file's reads.
+// Before the fix, honestyForMakePhase scanned [1, len(lines)] for every
+// such phase, so ANY lane-reads-opaque line anywhere in the file absolved
+// EVERY unresolved construct in the file for EVERY phase reached through
+// the Makefile — phase-a's own opaque directive would silently cover
+// phase-b's genuinely undeclared, undirected read too.
+//
+// testdata/teeth-multiphase-recipe/ mirrors the real corpus's
+// live-e2e/logic-e2e/harness-check shape: phase-a and phase-b are both
+// REPO_GATES targets whose recipe is `bash scripts/verify.sh <mode>`, and
+// scripts/verify.sh backs BOTH via its own per-phase lane-inputs blocks
+// (D-1's verify.sh home) — so each phase's REAL window comes from
+// honestyForVerifyPhase (the verifyPhases loop), not from the make-recipe
+// arm's now-disabled whole-file fallback. phase-a's own window covers an
+// unresolved read with its own lane-reads-opaque line (legitimate); phase-b's
+// own window carries a DIFFERENT unresolved read with NO opaque line of its
+// own — the refusal must name phase-b specifically, and phase-a's directive
+// must not leak into it.
+func TestHonestyCheckMakefileRecipeToMultiPhaseCorpusScopesPerPhase(t *testing.T) {
+	const dir = "testdata/teeth-multiphase-recipe"
+
+	decls, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	refusals, opaque, err := HonestyCheck(dir, decls)
+	if err != nil {
+		t.Fatalf("HonestyCheck: %v", err)
+	}
+
+	if len(refusals) != 1 {
+		t.Fatalf("got %d refusals, want exactly 1 (phase-b's own undeclared, undirected read): %+v", len(refusals), refusals)
+	}
+	r := refusals[0]
+	if !strings.Contains(r.Problem, `phase "phase-b"`) {
+		t.Errorf("refusal does not name phase-b: %+v", r)
+	}
+	if strings.Contains(r.Problem, `phase "phase-a"`) {
+		t.Errorf("refusal must not name phase-a — its own opaque directive must not leak into phase-b's verdict: %+v", r)
+	}
+	if r.Subject != "scripts/verify.sh:20" {
+		t.Errorf("Subject = %q, want scripts/verify.sh:20 (phase-b's own cat \"$OTHER_VAR\" line)", r.Subject)
+	}
+
+	// Exactly ONE phase (phase-a) needed lane-reads-opaque to pass — the
+	// debt has a size, and it must not be inflated by scanning phase-b's
+	// window (or the make-recipe arm's now-skipped whole-file fallback)
+	// twice against the same declaration.
+	if opaque != 1 {
+		t.Errorf("opaque = %d, want 1 (only phase-a's own directive)", opaque)
+	}
+}
+
 func TestTokenizeShellLine(t *testing.T) {
 	cases := []struct {
 		name string
