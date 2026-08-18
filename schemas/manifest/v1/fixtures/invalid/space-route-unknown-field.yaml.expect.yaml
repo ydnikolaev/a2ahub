@@ -1,0 +1,2 @@
+code: POL-021
+note: notification_routes[0] carries an unknown field "unexpected" (additionalProperties:false, space-notify-2026-08 P1 §7); internal/validate/manifest.go routeShapeViolation.

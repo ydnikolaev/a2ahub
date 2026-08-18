@@ -1,0 +1,16 @@
+schema: space/v1
+space: getvisa
+min_binary_version: 0.1.0
+participants:
+  - system: axon
+    org: yura
+    section: axon/
+    owners: [ydnikolaev]
+    status: active
+    joined: 2026-07-28
+notification_routes:
+  - channel: telegram
+    chat: "-1002034567890"
+    events: [human-gate]
+    unexpected: true
+vendored: []

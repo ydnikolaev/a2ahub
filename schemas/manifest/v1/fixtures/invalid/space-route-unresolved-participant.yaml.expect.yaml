@@ -1,0 +1,2 @@
+code: REF-022
+note: notification_routes[0].for names "seomatrix", a system absent from participants[] (space-notify-2026-08 P1 rule 1); internal/validate/manifest.go notificationRouteViolation.

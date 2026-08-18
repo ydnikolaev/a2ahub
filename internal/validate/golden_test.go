@@ -148,6 +148,7 @@ func TestGoldenFixtures_EventManifestConsumes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("schema.Load: %v", err)
 	}
+	engine := New(corpus)
 
 	families := []struct {
 		name     string
@@ -156,6 +157,19 @@ func TestGoldenFixtures_EventManifestConsumes(t *testing.T) {
 		{"event", func(i any) ([]schema.FieldViolation, error) { return corpus.ValidateEvent("v1", i) }},
 		{"manifest", func(i any) ([]schema.FieldViolation, error) { return corpus.ValidateManifest("v1", i) }},
 		{"consumes", func(i any) ([]schema.FieldViolation, error) { return corpus.ValidateConsumes("v1", i) }},
+	}
+
+	// policyValidators routes a REF-/POL- sidecar to the Engine entry point
+	// that actually enforces POLICY-class rules (checkManifestPolicy,
+	// checkNotificationRoutes) — logic that lives in hand-written Go, not in
+	// the JSON-Schema corpus fam.validate above proves. Only "manifest" has
+	// one wired today. A family with no entry here that still carries a
+	// REF-/POL- sidecar is a fixture this loop cannot route to a real
+	// verdict, so it reds by explicit `default` below rather than silently
+	// falling through the schema-only path (which would report zero
+	// violations and turn a real refusal invisible in the corpus).
+	policyValidators := map[string]func([]byte) (Result, error){
+		"manifest": engine.ValidateManifest,
 	}
 
 	for _, fam := range families {
@@ -180,19 +194,51 @@ func TestGoldenFixtures_EventManifestConsumes(t *testing.T) {
 			invalidFiles := globFixtures(t, filepath.Join(corpusRoot, fam.name+"/v1/fixtures/invalid/*.yaml"))
 			for _, f := range invalidFiles {
 				wantCode := sidecarCode(t, f+".expect.yaml")
-				instance := decodeYAMLFile(t, f)
-				fvs, err := fam.validate(instance)
-				if err != nil {
-					t.Fatalf("%s: %v", f, err)
-				}
-				violations, err := mapSchemaViolations(fvs)
-				if err != nil {
-					t.Fatalf("%s: mapSchemaViolations: %v", f, err)
-				}
+
+				// Route by the sidecar's own code-class prefix: SCH- is a
+				// pure JSON-Schema violation (fam.validate + mapSchemaViolations,
+				// exactly as before); REF-/POL- are POLICY-class rules that the
+				// schema corpus never sees (checkManifestPolicy,
+				// checkNotificationRoutes), so they must go through the
+				// Engine instead. Any other prefix is unrecognised and must
+				// fail loudly, naming the code — a future code class added
+				// with no branch here must red this gate, never pass silently
+				// with zero violations reported.
 				var codes []string
-				for _, v := range violations {
-					codes = append(codes, v.Code)
+				switch {
+				case strings.HasPrefix(wantCode, "SCH-"):
+					instance := decodeYAMLFile(t, f)
+					fvs, err := fam.validate(instance)
+					if err != nil {
+						t.Fatalf("%s: %v", f, err)
+					}
+					violations, err := mapSchemaViolations(fvs)
+					if err != nil {
+						t.Fatalf("%s: mapSchemaViolations: %v", f, err)
+					}
+					for _, v := range violations {
+						codes = append(codes, v.Code)
+					}
+				case strings.HasPrefix(wantCode, "REF-"), strings.HasPrefix(wantCode, "POL-"):
+					policyValidate, ok := policyValidators[fam.name]
+					if !ok {
+						t.Fatalf("%s: sidecar names policy code %q, but family %q has no policy validator wired in this loop", f, wantCode, fam.name)
+					}
+					raw, err := os.ReadFile(f)
+					if err != nil {
+						t.Fatalf("read %s: %v", f, err)
+					}
+					result, err := policyValidate(raw)
+					if err != nil {
+						t.Fatalf("%s: %v", f, err)
+					}
+					for _, v := range result.Violations {
+						codes = append(codes, v.Code)
+					}
+				default:
+					t.Fatalf("%s: sidecar names code %q with an unrecognised prefix (want SCH-/REF-/POL-)", f, wantCode)
 				}
+
 				if len(codes) != 1 || codes[0] != wantCode {
 					t.Fatalf("%s: expected EXACTLY [%s], got %v", f, wantCode, codes)
 				}
