@@ -5,9 +5,30 @@
 # NO validation logic and NO fetch-token secret of its own — the
 # private-era copy/token/manual-pin design (spec 09 §T5) is dead (spec 33 §1).
 #
-# Integrity: `go run github.com/ydnikolaev/a2ahub/cmd/a2a@<ver>` verifies the
-# module supply chain via the Go checksum DB (GOSUMDB) for free — no
-# A2A_BINARY_FETCH_TOKEN, no cosign step (spec 33 §2, mechanism #1).
+# Integrity: a space downloads the SIGNED release binary `a2a-linux-amd64` and
+# verifies its keyless Sigstore bundle before running it — the same certificate
+# identity and OIDC issuer `internal/release`'s KeylessCosignVerifier pins for
+# `a2a update`. Still no A2A_BINARY_FETCH_TOKEN: the assets are public and the
+# proof is a public transparency-log entry, not a shared secret.
+#
+# This REPLACES spec 33 §2 mechanism #1 (GOSUMDB via `go install @<ver>`), and
+# the replacement is like-for-like on the property that mattered. GOSUMDB's
+# virtue was never "a checksum" — it was that the checksum lives in an
+# append-only PUBLIC log anyone can monitor. A checksum fetched from the same
+# release as the binary would have been a downgrade dressed as a swap: whoever
+# can replace the asset replaces the sums file beside it. Rekor plus the
+# workflow's OIDC identity is the same CLASS of guarantee — publicly logged,
+# verifiable by a third party after the fact.
+#
+# It also SHRINKS the supply chain rather than trading it: `go install` made
+# every space's pull request resolve, verify and compile a2ahub's whole module
+# graph — 34 external modules, 380 go.sum lines, including 56 sigstore/in-toto
+# packages that `validate --ci` never executes. One signed artifact replaces
+# all of it, and cosign moves from the BUILD path to the VERIFY path.
+#
+# The dogfood path (empty `a2a-ref`) still compiles from the caller's checkout
+# and is deliberately unsigned — there is no release to sign, that is the point
+# of the canary.
 #
 # The status-check CONTEXT a branch-protection rule binds to is
 # `<caller-job-name> / validate` — e.g. `a2a-validate / validate` when the
@@ -115,13 +136,25 @@ jobs:
           # main as a whole.
           ref: ${{ inputs.mode == 'v3-pr' && github.event.pull_request.head.sha || '' }}
 
-      - name: Set up Go
+      # Go is needed ONLY by the dogfood path below, which builds ./cmd/a2a
+      # from the caller's own checkout. A space downloads a signed release
+      # binary instead and never compiles anything, so setting Go up for it
+      # would be pure cost.
+      - name: Set up Go (dogfood only — a space downloads a signed binary)
+        if: inputs.a2a-ref == ''
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           # Pinned to a2a's own toolchain (go.mod `go 1.26.6`); bumped with
           # the release. A space repo has no go.mod, so go-version-file is not
           # usable here — the version is named explicitly.
           go-version: "1.26.6"
+
+      # cosign verifies the downloaded binary's keyless signature. Same action,
+      # same SHA pin, as the release workflow that PRODUCES the signature —
+      # deliberately, so the two ends of this chain cannot drift apart.
+      - name: Install cosign (space path only)
+        if: inputs.a2a-ref != ''
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.0.0
 
       - name: a2a validate --ci
         env:
@@ -180,29 +213,60 @@ jobs:
           # against sum.golang.org, so this was one flaky read away from a red
           # gate on every space, on every pull request, forever.
           #
-          # The INTEGRITY MECHANISM IS UNCHANGED and that is deliberate: this
-          # file's header states GOSUMDB verification is what buys "no
-          # A2A_BINARY_FETCH_TOKEN, no cosign step" (spec 33 §2, mechanism #1).
-          # `go install` verifies exactly what `go run` did. Only the retry is
-          # new, and it wraps the NETWORK half alone — a genuinely invalid
-          # space still reds once, never three times, because the validator
-          # runs outside the loop.
+          # That retry survives the 2026-08-18 move off `go install`, and it
+          # still wraps the NETWORK half alone. What changed is what it is
+          # retrying: a CDN download rather than a module-graph resolution.
+          # The verification below is outside the loop for the same reason the
+          # validator always was — a genuinely bad artifact reds once, never
+          # three times.
           bin="$RUNNER_TEMP/a2a-validate-bin"
+          mkdir -p "$bin"
           if [ -n "$A2A_REF" ]; then
-            # Spaces: pinned module from the Go checksum DB (no local source).
-            installed=0
+            # Spaces: the signed release binary, verified before it runs.
+            #
+            # linux-amd64 is hardcoded against this job's own `runs-on:
+            # ubuntu-latest`. If that ever becomes an arm64 runner the download
+            # 404s and the job reds loudly on the first line — which is the
+            # right failure for a wrong-architecture binary, and better than
+            # deriving an arch string that could resolve to something that runs
+            # but is not what anybody chose.
+            asset="a2a-linux-amd64"
+            base="https://github.com/ydnikolaev/a2ahub/releases/download/$A2A_REF"
+
+            # The NETWORK half retries; nothing below it does. A download that
+            # cannot complete is the internet, a signature that does not verify
+            # is not — and retrying a verification failure would turn one loud
+            # refusal into three and teach the reader to scroll past it.
+            downloaded=0
             for attempt in 1 2 3; do
-              if GOBIN="$bin" go install "github.com/ydnikolaev/a2ahub/cmd/a2a@$A2A_REF"; then
-                installed=1
+              if curl -fsSL -o "$RUNNER_TEMP/$asset" "$base/$asset" &&
+                 curl -fsSL -o "$RUNNER_TEMP/$asset.cosign.bundle" "$base/$asset.cosign.bundle"; then
+                downloaded=1
                 break
               fi
-              echo "::warning::a2a install attempt $attempt/3 failed (module proxy or checksum DB); retrying" >&2
+              echo "::warning::a2a download attempt $attempt/3 failed; retrying" >&2
               sleep $((attempt * 5))
             done
-            if [ "$installed" -ne 1 ]; then
-              echo "::error::could not install a2a@$A2A_REF after 3 attempts — this is the module supply chain, not this space's content" >&2
+            if [ "$downloaded" -ne 1 ]; then
+              echo "::error::could not download a2a $A2A_REF after 3 attempts — this is the release CDN, not this space's content" >&2
               exit 1
             fi
+
+            # The identity and issuer are the SAME PAIR internal/release's
+            # KeylessCosignVerifier pins for `a2a update` (cosign.go:122 and
+            # :27). They are written here rather than derived because the
+            # verifier lives INSIDE the binary being verified — this is the one
+            # place in the system that cannot ask a2a to check a2a.
+            #
+            # Not gateable, not retried, and it runs BEFORE the binary is put
+            # anywhere executable: an unverified asset never reaches $bin.
+            cosign verify-blob \
+              --bundle "$RUNNER_TEMP/$asset.cosign.bundle" \
+              --certificate-identity-regexp '^https://github\.com/ydnikolaev/a2ahub/\.github/workflows/release\.yml@refs/tags/' \
+              --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+              "$RUNNER_TEMP/$asset"
+
+            install -m 0755 "$RUNNER_TEMP/$asset" "$bin/a2a"
           else
             # a2ahub dogfood: the caller checkout IS a2ahub — build current code.
             GOBIN="$bin" go install "$GITHUB_WORKSPACE/cmd/a2a"
