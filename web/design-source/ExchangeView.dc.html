@@ -985,10 +985,26 @@ class Component extends DCLogic {
     const windows = d.windows || {};
     const dashboardKey = ["needYou", "noHumanMove", "youAwait"].indexOf(ui.dashboardSet) >= 0 ? ui.dashboardSet : "";
     const aggregate = dashboardKey && d.aggregates && d.aggregates[dashboardKey];
-    const tab = ["incoming", "outgoing", "archive"].indexOf(s.workTab) >= 0 ? s.workTab : "incoming";
-    const carried = aggregate ? (aggregate.items || []) : collections[tab];
+    // "all" is a real direction, not an unknown value to coerce away. The shell
+    // initialises workTab to "all" and v0.22.0 honoured it — its
+    // matchesDirection returned true for every item — so first load showed the
+    // whole exchange. Dropping the option while leaving the shell's initial
+    // state alone meant the state said "all" and the screen silently rendered
+    // "incoming": the D-1 class this epic exists to end, a component inventing
+    // a plausible answer for a value it does not support. Measured on axon:
+    // 2 rows against the donor's 5, from one invocation of the preview loop.
+    const tab = ["all", "incoming", "outgoing", "archive"].indexOf(s.workTab) >= 0 ? s.workTab : "all";
+    const collectionFor = key => key === "all"
+      ? (collections.incoming || []).concat(collections.outgoing || [], collections.archive || [])
+      : (collections[key] || []);
+    const carried = aggregate ? (aggregate.items || []) : collectionFor(tab);
     const workListBase = aggregate ? carried : carried.filter(item => this.inScope(item.space));
-    const workWindow = aggregate ? aggregate.window : (s.space === "all" ? windows[tab === "incoming" ? "inbox" : tab === "outgoing" ? "outbox" : "archive"] : null);
+    // No single carried window describes the union, so "all" reports none
+    // rather than borrowing one collection's bound and implying it covers
+    // the rest.
+    const windowKeyFor = key => key === "incoming" ? "inbox" : key === "outgoing" ? "outbox" : key === "archive" ? "archive" : "";
+    const workWindow = aggregate ? aggregate.window
+      : (s.space === "all" && windowKeyFor(tab) ? windows[windowKeyFor(tab)] : null);
     const workWindowText = boundsSentence(workWindow, ru);
     // The second facet axis: the carried outcome of each item in the current
     // direction (specs/05-exchange.md §3). `Item.Outcome` is already a
@@ -1043,14 +1059,16 @@ class Component extends DCLogic {
       cardWorkReport:false,
       regularExchange:true,
       workAria:c.views[1],
-      workTabs: [["incoming", ru ? "Входящие" : "Incoming"], ["outgoing", ru ? "Исходящие" : "Outgoing"], ["archive", ru ? "Архив" : "Archive"]].map(([id, label]) => {
+      workTabs: [["all", ru ? "Все" : "All"], ["incoming", ru ? "Входящие" : "Incoming"], ["outgoing", ru ? "Исходящие" : "Outgoing"], ["archive", ru ? "Архив" : "Archive"]].map(([id, label]) => {
         // The chip's own render, not a stored literal: total when the space
         // filter is "all" (a truncated window must report what exists, not
         // what was shown), the in-scope collection length otherwise — the
         // same this.inScope(item.space) filter workList already applies.
-        const windowKey = id === "incoming" ? "inbox" : id === "outgoing" ? "outbox" : "archive";
-        const scopedCount = collections[id].filter(item => this.inScope(item.space)).length;
-        const window = windows[windowKey];
+        const windowKey = windowKeyFor(id);
+        const scopedCount = collectionFor(id).filter(item => this.inScope(item.space)).length;
+        // "all" has no carried window of its own; summing three windows would
+        // invent a total no server sent, so it counts what it can see.
+        const window = windowKey ? windows[windowKey] : null;
         const count = s.space === "all" && window && window.total != null ? window.total : scopedCount;
         return {
           label,
