@@ -8046,6 +8046,34 @@
           }
         },
         {
+          "id": "RN-02300-14",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "publishing a second contract version is no longer blocked by the first publication's surviving branch",
+          "detail": "The remote publication-head probe aborted its whole listing on the first error from any head, before it had asked whether that head was even relevant. So a first publish's merged-but-unpruned branch could refuse every later publish with a recompute conflict, and a space with branch pruning turned off, or merely slow, would hit it while a space with pruning on would not.\nThe probe now skips a head whose recorded target version already resolves in the space's authoritative published history — the same question the publisher already asks and trusts one step earlier. A head that is genuinely in conflict, and not already published, still fails the probe exactly as before, and a skipped head is never eligible for the exact-intent repair path.\n",
+          "affects": [
+            "a2a contract publish"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "No action. Nothing about a published contract's content or its history changes; a publish that used to be refused now proceeds."
+          }
+        },
+        {
+          "id": "RN-02300-15",
+          "kind": "feat",
+          "impact": "normal",
+          "subject": "`a2a doctor` names the two automations it cannot see, instead of staying silent about them",
+          "detail": "A new `automation coverage` row names both automations the onboarding recommends — a harness session-start hook, and a scheduled poll workflow in the participant's own repository — states that doctor cannot observe either, says why, and tells you to check them by hand.\nIt never FAILs, and that is the design rather than a shortfall. The session-start hook lives in your agent harness's own configuration, which a2a does not read or write; the poll workflow lives in your repository, not the space, so it is outside every path doctor looks at. A FAIL would claim doctor had seen a broken state it structurally cannot see.\n",
+          "affects": [
+            "a2a doctor"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "No action. The row is informational; if you have not set up either automation, `onboarding.md` §8.6 describes both."
+          }
+        },
+        {
           "id": "KI-01900-PROVIDER-TIER-DEFERRED",
           "kind": "known-issue",
           "impact": "normal",
