@@ -85,11 +85,12 @@ func findLaneBlocks(lines []string, prefix string) ([]rawBlock, error) {
 					break
 				}
 				fullTrim := strings.TrimRight(c, " \t")
-				if fullTrim == "lane-inputs:" || fullTrim == "lane-inputs: ALWAYS" || fullTrim == "lane-inputs: NEVER" || fullTrim == "lane-claims:" {
-					// "lane-claims:" (D-10) is not part of the reason — it
-					// is its own sub-block, parsed below. Stopping the
-					// reason walk here keeps it out of Reason the same way
-					// the other three headers already do.
+				if fullTrim == "lane-inputs:" || fullTrim == "lane-inputs: ALWAYS" || fullTrim == "lane-inputs: NEVER" || fullTrim == "lane-claims:" || strings.HasPrefix(fullTrim, "lane-reads-opaque:") {
+					// "lane-claims:" (D-10) and "lane-reads-opaque:" (D-11)
+					// are not part of the reason — each is its own trailing
+					// sub-block, consumed separately below (Claims / the
+					// opaque directive) rather than being absorbed into
+					// Reason as more continuation prose.
 					break
 				}
 				reasonParts = append(reasonParts, trimmedC)
@@ -135,6 +136,7 @@ func findLaneBlocks(lines []string, prefix string) ([]rawBlock, error) {
 					end = k - 1
 				}
 			}
+			end = consumeOpaqueDirective(lines, end, prefix)
 
 			b := rawBlock{Kind: kind, Reason: reason, Claims: claims, StartLine: i + 1, EndLine: end + 1}
 			b.Following = followingLine(lines, end+1)
@@ -161,7 +163,11 @@ func findLaneBlocks(lines []string, prefix string) ([]rawBlock, error) {
 					break
 				}
 				c = strings.TrimSpace(c)
-				if c == "" || strings.HasPrefix(c, "lane-reason:") {
+				if c == "" || strings.HasPrefix(c, "lane-reason:") || strings.HasPrefix(c, "lane-reads-opaque:") {
+					// "lane-reads-opaque:" (D-11) is legal on a scoped block
+					// (logic-e2e's own declaration carries one) but is not a
+					// glob — it is its own trailing sub-block, consumed
+					// separately below rather than absorbed here.
 					break
 				}
 				if c == "lane-claims:" {
@@ -183,6 +189,7 @@ func findLaneBlocks(lines []string, prefix string) ([]rawBlock, error) {
 				continue
 			}
 			end := j - 1
+			end = consumeOpaqueDirective(lines, end, prefix)
 			b := rawBlock{Kind: KindScoped, Inputs: inputs, StartLine: i + 1, EndLine: end + 1}
 			b.Following = followingLine(lines, end+1)
 			blocks = append(blocks, b)
@@ -207,6 +214,35 @@ func commentContent(line, prefix string) (string, bool) {
 	rest := trimmed[len(prefix):]
 	rest = strings.TrimPrefix(rest, " ")
 	return rest, true
+}
+
+// consumeOpaqueDirective reports the new block-end index (0-based, inclusive)
+// after absorbing a trailing "lane-reads-opaque:" (D-11) sub-block, if one
+// sits immediately below end. end is the 0-based index of the last line
+// already claimed by the block (the last Inputs glob, or the last Reason /
+// Claims continuation line). D-11's inline reason text and any indented
+// continuation lines are consumed here — advancing EndLine and therefore
+// Following past them — but are never stored: this function only keeps the
+// directive out of Inputs/Reason, it does not interpret it. findOpaqueDirective
+// (reads.go) is the scan that actually reads the directive's text, over
+// whatever window a caller hands it.
+func consumeOpaqueDirective(lines []string, end int, prefix string) int {
+	if end+1 >= len(lines) {
+		return end
+	}
+	hc, isHeaderComment := commentContent(lines[end+1], prefix)
+	if !isHeaderComment || !strings.HasPrefix(strings.TrimRight(hc, " \t"), "lane-reads-opaque:") {
+		return end
+	}
+	k := end + 2
+	for k < len(lines) {
+		cc, isCont := commentContent(lines[k], prefix)
+		if !isCont || strings.TrimSpace(cc) == "" {
+			break
+		}
+		k++
+	}
+	return k - 1
 }
 
 // followingLine returns the first non-blank line at or after idx (0-based),

@@ -264,6 +264,94 @@ run_check() {
 	}
 }
 
+// TestFindLaneBlocksScopedWithReadsOpaqueDoesNotAbsorbIt pins D-11: a
+// trailing "lane-reads-opaque:" directive (with its inline reason text and
+// indented continuation lines, the same shape lane-reason: uses) below a
+// scoped block's globs must not be swallowed into Inputs as bogus glob
+// entries — it is its own trailing sub-block, consumed into EndLine (so
+// Following still resolves past it) but never stored as an Input.
+func TestFindLaneBlocksScopedWithReadsOpaqueDoesNotAbsorbIt(t *testing.T) {
+	src := `#!/usr/bin/env bash
+if [ "$MODE" = logic-e2e ]; then
+  # lane-inputs:
+  #   **/*.go
+  #   go.mod
+  # lane-reads-opaque: trim_telemetry (line ~156) rotates
+  #   "$VERIFY_ROOT"/telemetry.jsonl through "$tmp". Not repo content.
+  run_phase logic-e2e run_logic_tests
+fi
+`
+	lines := strings.Split(src, "\n")
+	blocks, err := findLaneBlocks(lines, "#")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(blocks) != 1 {
+		t.Fatalf("got %d blocks, want 1", len(blocks))
+	}
+	b := blocks[0]
+	want := []string{"**/*.go", "go.mod"}
+	if len(b.Inputs) != len(want) {
+		t.Fatalf("Inputs = %v, want %v (lane-reads-opaque: lines must not be absorbed as globs)", b.Inputs, want)
+	}
+	for i := range want {
+		if b.Inputs[i] != want[i] {
+			t.Errorf("Inputs[%d] = %q, want %q", i, b.Inputs[i], want[i])
+		}
+	}
+	// EndLine (1-based) must cover the opaque directive's own two lines —
+	// lines 6 and 7 — so Following resolves past them to the real
+	// run_phase statement rather than to the directive comment itself.
+	if want := 7; b.EndLine != want {
+		t.Errorf("EndLine = %d, want %d (must consume the lane-reads-opaque: sub-block)", b.EndLine, want)
+	}
+	if want := "  run_phase logic-e2e run_logic_tests"; b.Following != want {
+		t.Errorf("Following = %q, want %q", b.Following, want)
+	}
+}
+
+// TestFindLaneBlocksAlwaysNeverWithReadsOpaqueDoesNotAbsorbIt pins the same
+// D-11 guard on the ALWAYS/NEVER arm: a "lane-reads-opaque:" directive right
+// after lane-reason: must not be joined into Reason as more continuation
+// prose.
+func TestFindLaneBlocksAlwaysNeverWithReadsOpaqueDoesNotAbsorbIt(t *testing.T) {
+	src := `if [ "$MODE" = live ]; then
+  # lane-inputs: NEVER
+  # lane-reason: two credentials and a real throwaway GitHub space with
+  #   Actions latency. No diff may select it.
+  # lane-reads-opaque: trim_telemetry (line ~156) rotates
+  #   "$VERIFY_ROOT"/telemetry.jsonl through "$tmp". Not repo content.
+  run_phase live-e2e run_live_tests
+fi
+`
+	lines := strings.Split(src, "\n")
+	blocks, err := findLaneBlocks(lines, "#")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(blocks) != 1 {
+		t.Fatalf("got %d blocks, want 1", len(blocks))
+	}
+	b := blocks[0]
+	if b.Kind != KindNever {
+		t.Errorf("Kind = %v, want KindNever", b.Kind)
+	}
+	if strings.Contains(b.Reason, "lane-reads-opaque") || strings.Contains(b.Reason, "trim_telemetry") {
+		t.Errorf("Reason absorbed the lane-reads-opaque: directive: %q", b.Reason)
+	}
+	if !strings.Contains(b.Reason, "No diff may select it.") {
+		t.Errorf("Reason lost its own continuation line: %q", b.Reason)
+	}
+	// EndLine (1-based) must cover both lane-reads-opaque: lines — lines 5
+	// and 6, so Following resolves past them to the real run_phase line.
+	if want := 6; b.EndLine != want {
+		t.Errorf("EndLine = %d, want %d (must consume the lane-reads-opaque: sub-block)", b.EndLine, want)
+	}
+	if want := "  run_phase live-e2e run_live_tests"; b.Following != want {
+		t.Errorf("Following = %q, want %q", b.Following, want)
+	}
+}
+
 func TestFindLaneBlocksNone(t *testing.T) {
 	src := `#!/usr/bin/env bash
 # an ordinary comment, no lane-inputs block here
