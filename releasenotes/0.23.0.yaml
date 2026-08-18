@@ -670,3 +670,35 @@ changes:
     action:
       scope: none
       why: "No action. Every route, deep link and card door behaves as before."
+  - id: RN-02300-20
+    kind: fix
+    roadmap:
+      visibility: shipped
+      why: >
+        The dashboard's card evidence had drifted from what the cards actually
+        render: a suite of golden fixtures pinned sentences a later rule
+        banned, so the tests froze the defect instead of catching it, and four
+        card kinds carried region markers that could never resolve.
+    impact: normal
+    subject: "the dashboard's card evidence now describes what the cards render"
+    detail: >
+      Every card kind exposes its summary region, so a card's short form and
+      its full form can be told apart and compared. Four kinds previously
+      marked that region only while their own dialog was open, which never
+      happened — a row is a card's short form whether or not anything is open,
+      and it is now marked that way.
+
+      The remaining placeholder sentences are gone from every screen this
+      release touched, and the assertions that had pinned them now assert the
+      absence instead.
+
+      A dialog that merely repeats the row it was opened from is now a test
+      failure rather than a thing a reader has to notice.
+
+      Contracts is unchanged throughout, deliberately: it is the reference the
+      other screens were re-read against, and its card content is byte-for-byte
+      what it was.
+    affects: ["a2a dashboard"]
+    action:
+      scope: none
+      why: "No action. This release changes what the tests know, not what the dashboard does, beyond the copy fixes described above."

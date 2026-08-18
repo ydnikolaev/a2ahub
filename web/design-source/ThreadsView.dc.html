@@ -679,11 +679,17 @@ class Component extends DCLogic {
     const accentStyle = (family, identity) => selectedAccent && actions.cardAccent && actions.cardAccent(family, identity) === selectedAccent
       ? "outline:3px solid var(--teal-solid); outline-offset:2px;"
       : "";
-    // dashboard-derivation: allow-provenance-begin -- these three constants feed both "when carried" and "always" facts throughout this file (tvLinks[].toTitle, tvTitle, tvMembershipText, noneRecordedText, and more); a full blank-slot rewrite would change values web/tests/design-source.test.mjs asserts verbatim (:826, :849, :872, :893, :894) and that file is outside P6's footprint, so P6 leaves this and reports it
-    const notRecorded = ru ? "Не записано." : "Not recorded.";
-    const noneRecorded = ru ? "Ничего не записано." : "None recorded.";
-    const unknown = ru ? "В этом снимке неизвестно." : "Unknown in this snapshot.";
-    // dashboard-derivation: allow-provenance-end
+    // P7 (dashboard-ui-restoration-2026-08 07-evidence.md, 2026-08-18
+    // amendment): every position of card-spec/thread.md these constants feed
+    // (opener title, protocol, participants, membership, links, obligations,
+    // transcript) is `when carried`. The blank-slot pattern prints nothing
+    // when the data cannot be established. The one `always`-presence
+    // consumer (the thread's snapshot condition) does not read these
+    // constants any more — tvSnapshotDegradedText and tvCardSnapshotBase
+    // above use the always-legal fourth-condition text directly.
+    const notRecorded = "";
+    const noneRecorded = "";
+    const unknown = "";
     // A canonical card is selected by its opaque [space, thread] identity.
     // Modal intentionally passes only ui.card, so the background screen's
     // space filter must not make the selected thread disappear.
@@ -737,7 +743,7 @@ class Component extends DCLogic {
     const tvSnapshotDegradedText = tvSource && tvSource.freshness === "unavailable"
       ? (tvSourceUnavailableEvidence
         ? (ru ? "Недоступно в этом снимке: " : "Unavailable in this snapshot: ") + tvSourceUnavailableEvidence + "."
-        : unknown)
+        : (ru ? "Недоступно в этом снимке." : "Unavailable in this snapshot."))
       : "";
     const tvFreshnessAge = tvSpaceRecord && tvSpaceRecord.readable ? age(tvSpaceRecord.syncAge) : "";
     const transcriptWindowText = collectionWindowSentence(tv && tv.windows && tv.windows.transcript, ru);
@@ -753,22 +759,32 @@ class Component extends DCLogic {
       : (ru ? "открытых документов: " : "open items: ") + tvOpenCount + "; " + (tvWaitingOthers && tvWaitingOthers.length
         ? (ru ? "ожидаются " : "waiting on ") + tvWaitingOthers.join(", ") + "."
         : (ru ? "ожидаемые участники не записаны." : "waiting on none recorded."));
+    // Join the parts that exist rather than concatenating around a blank:
+    // under Rule A an uncarried title is now "", and a bare concatenation left
+    // the separator dangling in front of the count.
     const tvMembershipText = activeThread && activeThread.opener && typeof activeThread.memberCount === "number"
-      ? (activeThread.opener.title || notRecorded) + " · " + (ru ? "документов: " : "documents: ") + activeThread.memberCount
+      ? [activeThread.opener.title || "", (ru ? "документов: " : "documents: ") + activeThread.memberCount].filter(Boolean).join(" · ")
       : notRecorded;
     const threadProtocolKey = activeThread && activeThread.settled
       ? "settled"
       : (activeThread && activeThread.yourMove ? "your move" : "waiting on others");
     const threadProtocolLabel = resolveGlossaryLabel("statuses", threadProtocolKey, ru);
     const tvCardProtocolText = tvOpenCount == null
-      ? (ru ? "Протокол: " : "Protocol: ") + unknown
+      ? ""
       : (ru
         ? "Протокол: " + threadProtocolLabel + "; открытых документов: " + tvOpenCount + "; "
           + (tvWaitingOthers && tvWaitingOthers.length ? "ожидаются " + tvWaitingOthers.join(", ") + "." : "ожидаемые участники не записаны.")
         : "Protocol: " + threadProtocolLabel + "; " + tvOpenCount + " open " + (tvOpenCount === 1 ? "item" : "items") + "; waiting on "
           + (tvWaitingOthers && tvWaitingOthers.length ? tvWaitingOthers.join(", ") : "none recorded") + ".");
-    const tvCardParticipantsText = (ru ? "Участники: " : "Participants: ")
-      + (tv && tv.participants && tv.participants.length ? tv.participants.join(", ") : (ru ? "Ничего не записано" : "None recorded")) + ".";
+    // Rule A, blank slot: with no carried participants the line is not printed
+    // at all. It used to concatenate the banned sentence from a period-less
+    // literal plus ".", which the gate's phrase list — being
+    // period-terminated — could not see. Same shape as the NetworkMap leaks
+    // found in wave 3.
+    const tvCardParticipants = tv && tv.participants && tv.participants.length ? tv.participants.join(", ") : "";
+    const tvCardParticipantsText = tvCardParticipants
+      ? (ru ? "Участники: " : "Participants: ") + tvCardParticipants + "."
+      : "";
     const tvCardMembershipText = activeThread && activeThread.opener && typeof activeThread.memberCount === "number"
       ? (ru ? "Начало и состав: " : "Opener and membership: ") + (activeThread.opener.title || notRecorded) + "; "
         + (ru ? "документов: " + activeThread.memberCount + "." : activeThread.memberCount + " " + (activeThread.memberCount === 1 ? "document" : "documents") + ".")
@@ -814,18 +830,20 @@ class Component extends DCLogic {
       ? tv.windows.deliveries.total
       : null;
     const relationshipTotalsKnown = transcriptTotal !== null && linkTotal !== null && deliveryTotal !== null;
-    // dashboard-derivation: allow-provenance-begin -- tvCardTranscriptText's missing-window branch is asserted verbatim ('Transcript and relationships: Unknown in this snapshot.') by web/tests/design-source.test.mjs:883, which is outside P6's footprint; a blank-slot rewrite of this branch would break that assertion, so P6 leaves it and reports it
+    // P7 (dashboard-ui-restoration-2026-08 07-evidence.md, 2026-08-18
+    // amendment): "transcript and relationships" is card-spec/thread.md
+    // position 7, `when carried` — a missing window (value cannot be
+    // established) and a confirmed-empty window (empty collection known
+    // complete) are both Rule A "not printed" conditions, so both blank-slot
+    // the whole fused label+value field rather than printing a sentence.
     const tvCardTranscriptText = !relationshipTotalsKnown
-      ? (ru ? "Хронология и связи: В этом снимке неизвестно." : "Transcript and relationships: Unknown in this snapshot.")
+      ? ""
       : transcriptTotal === 0 && linkTotal === 0 && deliveryTotal === 0
-      ? (transcriptKnownEmpty && linksKnownEmpty && deliveriesKnownEmpty
-        ? (ru ? "Хронология и связи: Ничего не записано." : "Transcript and relationships: None recorded.")
-        : (ru ? "Хронология и связи: В этом снимке неизвестно." : "Transcript and relationships: Unknown in this snapshot."))
-    // dashboard-derivation: allow-provenance-end
+      ? ""
       : (ru
         ? "Хронология и связи: " + (latestTransitionResult ? latestTransitionResult.label : unknown) + "; " + transcriptTotal + " строк; родительских связей: " + linkTotal + "; передач: " + deliveryTotal + "."
         : "Transcript and relationships: " + (latestTransitionResult ? latestTransitionResult.label : unknown) + "; " + transcriptTotal + " " + (transcriptTotal === 1 ? "row" : "rows") + "; " + linkTotal + " parent " + (linkTotal === 1 ? "link" : "links") + "; " + deliveryTotal + " " + (deliveryTotal === 1 ? "delivery" : "deliveries") + ".");
-    const tvCardSnapshotBase = (ru ? "Снимок: " : "Snapshot: ") + (tvFreshnessResult ? tvFreshnessResult.label : unknown)
+    const tvCardSnapshotBase = (ru ? "Снимок: " : "Snapshot: ") + (tvFreshnessResult ? tvFreshnessResult.label : (ru ? "Недоступно в этом снимке." : "Unavailable in this snapshot."))
       + (tvSnapshotDegradedText ? "; " + tvSnapshotDegradedText : "");
     const tvCardSnapshotText = tvCardSnapshotBase + (/[^.!?]$/.test(tvCardSnapshotBase) ? "." : "");
     const transcriptAccentIdentities = transcriptRows.filter(entry => entry.kind === "event" && entry.event).map(entry => entry.event.ulid || "");
@@ -875,7 +893,11 @@ class Component extends DCLogic {
         // The row for the thread whose card is currently open doubles as
         // that card's summary region (P6 §8 AC-9), the same convention
         // ContractsView's conRows uses for the "contract" kind.
-        summaryAttr:card && card.kind === "thread" && actions.cardID && actions.cardID("thread", { space:t.space, thread:t.id }) === card.id ? "thread" : "",
+        // A row IS its kind's summary region — unconditionally, the way P4's and
+        // P5's static markers already are. Conditioning it on the open card was
+        // dead code: DASHBOARD_UI_FIELDS threads `card` into Modal alone, so this
+        // never resolved to anything but "" on the view's own render.
+        summaryAttr:"thread",
         openCard:() => {
           const id = actions.cardID ? actions.cardID("thread", { space:t.space, thread:t.id }) : "";
           if (id && actions.openCard) actions.openCard("thread", id, "");

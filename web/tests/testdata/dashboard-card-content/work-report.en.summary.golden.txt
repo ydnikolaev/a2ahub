@@ -1,16 +1,2 @@
 work-report:subject
 work-report:lead
-work-report:subject
-work-report:lead
-work-report:subject
-work-report:lead
-work-report:subject
-work-report:lead
-work-report:subject
-work-report:lead
-work-report:subject
-work-report:lead
-work-report:subject
-work-report:lead
-work-report:subject
-work-report:lead

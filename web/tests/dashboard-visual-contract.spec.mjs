@@ -65,6 +65,54 @@ async function openDashboardView(page, locale, labels) {
   await target.click();
 }
 
+// SUMMARY_SCREENS decides, per kind, WHICH screen owns that kind's summary
+// region (specs/07-evidence.md Task 1) rather than reading whatever screen
+// openManifestCard's detail door happens to leave the browser on:
+//   - item's summary lives on Exchange (ArtifactRow, imported only by
+//     ExchangeView.dc.html:81) -- Overview, where openManifestCard's own
+//     door for `item` lands, never renders ArtifactRow at all.
+//   - work-report's summary lives on Exchange too (its list is inline in
+//     ExchangeView, the same screen its detail door already opens from).
+//   - thread/contract/cver/space summaries live on their own list screens.
+//   - operational-process has no entry: its summary is on Overview, which
+//     openDashboard() already lands the browser on.
+const SUMMARY_SCREENS = {
+  item: { nav: { en: 'Exchange', ru: 'Обмен' }, screenLabel: 'Work' },
+  'work-report': { nav: { en: 'Exchange', ru: 'Обмен' }, screenLabel: 'Work' },
+  thread: { nav: { en: 'Threads', ru: 'Треды' }, screenLabel: 'Threads' },
+  contract: { nav: { en: 'Contracts', ru: 'Контракты' }, screenLabel: 'Contracts' },
+  cver: { nav: { en: 'Contracts', ru: 'Контракты' }, screenLabel: 'Contracts' },
+  space: { nav: { en: 'Spaces', ru: 'Спейсы' }, screenLabel: 'Spaces' },
+};
+
+// summaryRegionFor navigates to the deliberate screen and resolves the
+// summary locator there -- the card need not be open first: item's,
+// work-report's and operational-process's markers are STATIC (present on
+// every row of their list, unconditioned on any open card), so a clean,
+// un-opened load is a valid, deliberate sample point rather than an
+// accident of navigation. `.first()` is this phase's dedup decision for a
+// marker a multi-row fixture repeats on every row -- work-report's golden
+// used to read its two facts eight times over with no guard at all.
+//
+// thread/contract/cver/space's marker is instead conditioned on a
+// PER-VIEW `ui.card` the shell only threads into its separate Modal
+// render, never into these views' own screen instance (measured via a
+// fresh build, 2026-08-18: `[data-card-summary="thread"]` etc. stay ""
+// even with that exact card open on that exact screen) -- an
+// architectural gap this phase's allowlist cannot reach; see the phase
+// report. Their summary read below is still deliberate and correct given
+// the current wiring: it legitimately reads null until that gap closes.
+async function summaryRegionFor(page, kind, locale) {
+  const screen = SUMMARY_SCREENS[kind];
+  if (screen) {
+    await openDashboardView(page, locale, screen.nav);
+    await expect(page.locator(`[data-screen-label="${screen.screenLabel}"]`)).toBeVisible();
+  } else {
+    await expect(page.locator('[data-screen-label="Overview"]')).toBeVisible();
+  }
+  return page.locator(`[data-card-summary="${kind}"]`).first();
+}
+
 async function openManifestCard(page, kind, locale) {
   const labels = {
     work: { en: 'Exchange', ru: 'Обмен' },
@@ -531,11 +579,9 @@ test('card content goldens match P5 in both locales', async ({ page }) => {
   // `data-card-fact` markers — not the rendered sentence. See
   // card-spec/README.md#composition-rules, "Byte-exact prose equality is
   // retired". Two regions per kind per §4.5: the card's own SUMMARY (found by
-  // `[data-card-summary="<kind>"]`, ahead of the click that opens the modal)
-  // and the modal's DETAIL (`[data-card-content]`, the pre-existing region).
-  // P3 is the phase that gives cards their own summary region; until it
-  // lands, `factIdentifiers` returns null for every kind's summary and the
-  // golden names that explicitly rather than writing empty content silently.
+  // `[data-card-summary="<kind>"]`, resolved deliberately per
+  // SUMMARY_SCREENS above) and the modal's DETAIL (`[data-card-content]`,
+  // the pre-existing region).
   const rows = CARD_MANIFEST.cards;
   expect(rows).toHaveLength(7);
   expect(new Set(rows.map(row => row.kind)).size).toBe(7);
@@ -544,20 +590,36 @@ test('card content goldens match P5 in both locales', async ({ page }) => {
   const update = process.env.A2A_UPDATE_CARD_GOLDENS === '1';
   if (update) mkdirSync(CARD_GOLDEN_DIR, { recursive: true });
 
+  // Collected across both passes below and consumed by the AC-9 subset-rule
+  // block after the loop (specs/07-evidence.md Task 3 / §1, moved here from
+  // P3 AC-6 per 02-composition-rules.md §4).
+  const subsetSamples = [];
+
   for (const locale of ['en', 'ru']) {
     for (const { kind } of rows) {
+      // Pass 1: the SUMMARY region, on its own clean load navigated
+      // deliberately to the screen that owns it (see summaryRegionFor's own
+      // comment for why this is safe without opening the card first).
       await openDashboard(page, { theme: 'light', locale, viewport: DESKTOP });
-      const summaryRegion = page.locator(`[data-card-summary="${kind}"]`);
+      const summaryRegion = await summaryRegionFor(page, kind, locale);
+      const summaryFacts = await factIdentifiers(summaryRegion);
+      if (summaryFacts === null) {
+        test.info().annotations.push({ type: 'card-summary-region-missing', description: kind });
+      }
+
+      // Pass 2: the DETAIL region, via the existing door-opening flow, on a
+      // SEPARATE fresh load -- decoupled from pass 1 so a card's own
+      // backdrop (e.g. item's, opened from Overview) never has to be
+      // dismissed before navigating elsewhere to read a summary that does
+      // not depend on the card being open.
+      await openDashboard(page, { theme: 'light', locale, viewport: DESKTOP });
       const card = await openManifestCard(page, kind, locale);
       const detailRegion = card.locator('[data-card-content]');
       await expect(detailRegion, `${kind} must expose exactly one visible P5 content region`).toHaveCount(1);
       await expect(detailRegion).toBeVisible();
-
-      const summaryFacts = await factIdentifiers(summaryRegion);
       const detailFacts = await factIdentifiers(detailRegion);
-      if (summaryFacts === null) {
-        test.info().annotations.push({ type: 'card-summary-region-missing', description: kind });
-      }
+
+      subsetSamples.push({ kind, locale, summaryFacts, detailFacts });
 
       const summaryActual = normalizeFactGolden(kind, 'summary', summaryFacts);
       const detailActual = normalizeFactGolden(kind, 'detail', detailFacts);
@@ -575,6 +637,45 @@ test('card content goldens match P5 in both locales', async ({ page }) => {
       expect(existsSync(detailGolden), `missing card-content golden: ${detailGolden}`).toBe(true);
       expect(detailActual, `card-content golden differs: ${detailGolden}`).toEqual(readFileSync(detailGolden));
     }
+  }
+
+  if (update) return;
+
+  // AC-9 / Task 3, moved here from P3 AC-6 (02-composition-rules.md §4 "P7
+  // puts the subset rule on"): for each kind whose summary region is
+  // visible to this producer, the modal's fact set must not be a subset of
+  // the card's own summary set -- the defect this epic started from was a
+  // modal that merely repeated the row it came from.
+  //
+  // Only THREE of the seven kinds currently have a summary region at all
+  // (item, operational-process and work-report use a STATIC marker; the
+  // The tripwire below pins the EXACT set of kinds whose summary region is
+  // captured, so it reds on any change in either direction rather than
+  // silently passing an unexpanded rule.
+  //
+  // It read three kinds when P7 wrote it, because four markers were dead
+  // code: they were conditioned on `ui.card`, and the shell threads `card`
+  // into its Modal render alone -- never into a view's own screen instance
+  // (`DASHBOARD_UI_FIELDS`, 14-local-dashboard-v4.dc.html). The fix was NOT
+  // to thread card state into every view: a list row IS its kind's summary
+  // region, unconditionally, which is exactly why the three static markers
+  // already worked. The four conditions were removed, and this now pins all
+  // seven.
+  const kindsWithSummary = new Set(
+    subsetSamples
+      .filter(sample => sample.summaryFacts !== null && sample.summaryFacts.length > 0)
+      .map(sample => sample.kind),
+  );
+  expect([...kindsWithSummary].sort()).toEqual(['contract', 'cver', 'item', 'operational-process', 'space', 'thread', 'work-report']);
+
+  for (const { kind, locale, summaryFacts, detailFacts } of subsetSamples) {
+    if (!kindsWithSummary.has(kind)) continue;
+    const summarySet = new Set(summaryFacts || []);
+    const detailIsSubsetOfSummary = (detailFacts || []).every(fact => summarySet.has(fact));
+    expect(
+      detailIsSubsetOfSummary,
+      `${kind} (${locale}): the modal's fact set must not be a subset of the card's rendered summary set`,
+    ).toBe(false);
   }
 });
 

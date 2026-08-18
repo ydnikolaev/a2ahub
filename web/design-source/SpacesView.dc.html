@@ -56,12 +56,18 @@
 </sc-if>
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1240,&quot;height&quot;:900},&quot;ctx&quot;:{&quot;editor&quot;:&quot;object&quot;,&quot;default&quot;:{},&quot;tsType&quot;:&quot;object&quot;}}">
-// dashboard-derivation: allow-provenance-begin -- pre-existing Rule A empty-state constants (none/notRecorded/unknown) used across both "when carried" and "always" facts throughout this file; a full blank-slot rewrite would touch fields web/tests/design-source.test.mjs asserts verbatim (gamma.sourceSyncedAt, gamma.unavailable[0].body, gamma.participantsText, and technical fact values) and that file is outside this phase's footprint; P6 leaves it and reports it
+// P7 (dashboard-ui-restoration-2026-08 07-evidence.md, 2026-08-18
+// amendment): none/notRecorded/unknown fed both "when carried" facts
+// (card-spec/space.md positions 1-6, now blank-slotted to "") and the two
+// `always`-presence facts (positions 7-8, unavailable evidence and snapshot
+// condition) — those now read the always-legal fourth-condition text
+// directly at their call sites (unavailableSentence(), the no-diagnostics
+// branch of `unavailable`, and snapshotCardText above) rather than this
+// constant, so blanking it here is correct for every remaining consumer.
 const SPACE_I18N = {
-  en:{ spaces:"Spaces", emptyTitle:"No spaces connected", emptyText:"Connect a shared repository to see its source and consistency facts.", open:"Open space", kind:"Space", repository:"Repository", participants:"Participants", compatibility:"Compatibility", consistency:"Consistency", unavailable:"Unavailable evidence", snapshot:"Snapshot", technical:"Technical detail", workFreshness:"Work evidence freshness", none:"None recorded.", notRecorded:"Not recorded.", unknown:"Unknown in this snapshot.", count:"anomalies", shown:"Showing", of:"of", missingTitle:"Space not found", missingText:"The current snapshot has no space with this opaque identity." },
-  ru:{ spaces:"Спейсы", emptyTitle:"Спейсы не подключены", emptyText:"Подключите общий репозиторий, чтобы увидеть его факты об источнике и согласованности.", open:"Открыть спейс", kind:"Спейс", repository:"Репозиторий", participants:"Участники", compatibility:"Совместимость", consistency:"Согласованность", unavailable:"Недоступные данные", snapshot:"Снимок", technical:"Технические подробности", workFreshness:"Свежесть данных о работе", none:"Ничего не записано.", notRecorded:"Не записано.", unknown:"В этом снимке неизвестно.", count:"аномалий", shown:"Показано", of:"из", missingTitle:"Спейс не найден", missingText:"В текущем снимке нет спейса с таким непрозрачным идентификатором." }
+  en:{ spaces:"Spaces", emptyTitle:"No spaces connected", emptyText:"Connect a shared repository to see its source and consistency facts.", open:"Open space", kind:"Space", repository:"Repository", participants:"Participants", compatibility:"Compatibility", consistency:"Consistency", unavailable:"Unavailable evidence", snapshot:"Snapshot", technical:"Technical detail", workFreshness:"Work evidence freshness", none:"", notRecorded:"", unknown:"", count:"anomalies", shown:"Showing", of:"of", missingTitle:"Space not found", missingText:"The current snapshot has no space with this opaque identity." },
+  ru:{ spaces:"Спейсы", emptyTitle:"Спейсы не подключены", emptyText:"Подключите общий репозиторий, чтобы увидеть его факты об источнике и согласованности.", open:"Открыть спейс", kind:"Спейс", repository:"Репозиторий", participants:"Участники", compatibility:"Совместимость", consistency:"Согласованность", unavailable:"Недоступные данные", snapshot:"Снимок", technical:"Технические подробности", workFreshness:"Свежесть данных о работе", none:"", notRecorded:"", unknown:"", count:"аномалий", shown:"Показано", of:"из", missingTitle:"Спейс не найден", missingText:"В текущем снимке нет спейса с таким непрозрачным идентификатором." }
 };
-// dashboard-derivation: allow-provenance-end
 
 class Component extends DCLogic {
   syncContext() {
@@ -89,7 +95,7 @@ class Component extends DCLogic {
     const phrase = value => String(value || "").trim().replace(/[.!?…]+$/, "");
     const unavailableSentence = value => {
       const raw = String(value || "").trim();
-      if (!raw) return words.unknown;
+      if (!raw) return ru ? "Недоступно в этом снимке." : "Unavailable in this snapshot.";
       return (ru ? "Недоступно в этом снимке: " : "Unavailable in this snapshot: ") + sentence(raw);
     };
     const bounds = window => window && window.truncated && window.shown < window.total
@@ -155,7 +161,7 @@ class Component extends DCLogic {
         ]
       }));
       const unavailable = sourceUnavailable
-        ? (sourceDiagnostics.length ? sourceDiagnostics : [{ body:words.unknown, technical:[] }])
+        ? (sourceDiagnostics.length ? sourceDiagnostics : [{ body:(ru ? "Недоступно в этом снимке." : "Unavailable in this snapshot."), technical:[] }])
         : [];
       const participantNames = participantRows.map(row => row.name);
       const participantsText = !space.readable
@@ -195,7 +201,11 @@ class Component extends DCLogic {
         // The row for the space whose card is currently open doubles as
         // that card's summary region (P6 §8 AC-9), the same convention
         // ContractsView's conRows uses for the "contract" kind.
-        summaryAttr:card && card.kind === "space" && actions.cardID && actions.cardID("space", space) === card.id ? "space" : "",
+        // A row IS its kind's summary region — unconditionally, the way P4's and
+        // P5's static markers already are. Conditioning it on the open card was
+        // dead code: DASHBOARD_UI_FIELDS threads `card` into Modal alone, so this
+        // never resolved to anything but "" on the view's own render.
+        summaryAttr:"space",
         sourceHighlighted, sourceStyle:highlightStyle(sourceHighlighted),
         contentSourceStyle:"border-radius:5px; background:" + (sourceHighlighted ? "var(--attention-tint)" : "transparent") + "; font-size:17px; line-height:1.6; overflow-wrap:anywhere;",
         repository:space.repoURL || words.notRecorded,
@@ -211,7 +221,7 @@ class Component extends DCLogic {
         consistencyGroups:groups, consistencyEmpty, consistencyUnknown,
         unavailable, hasUnavailable:unavailable.length > 0, noUnavailable:unavailable.length === 0,
         unavailableCardText:(ru ? "Недоступные данные: " : "Unavailable evidence: ") + unavailableValue,
-        snapshotCardText:(ru ? "Снимок: " : "Snapshot: ") + sentence(sourceResult && sourceResult.label, words.unknown),
+        snapshotCardText:(ru ? "Снимок: " : "Snapshot: ") + (sourceResult && sourceResult.label ? sentence(sourceResult.label) : (ru ? "Недоступно в этом снимке." : "Unavailable in this snapshot.")),
         sourceDiagnostics, hasSourceDiagnostics:sourceDiagnostics.length > 0,
         workFreshness, hasWorkFreshness:workFreshness.length > 0,
         noneRecorded:words.none, notRecorded:words.notRecorded, unknown:words.unknown,

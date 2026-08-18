@@ -406,19 +406,20 @@ class Component extends DCLogic {
       const unavailableReason = unavailable && (unavailable.reason || unavailable.summary);
       const unavailableEvidenceReason = unavailableEvidence && (unavailableEvidence.reason || unavailableEvidence.summary);
       const yesNo = value => value ? (ru ? "да" : "yes") : (ru ? "нет" : "no");
-      // Cannot fix: this is the item card's DETAIL region (card-spec/item.md's
-      // own Ordered Facts table places lifecycle/parties/gate/urgency/summary/
-      // operational at detail placement, "when carried" — a fact the snapshot
-      // does not carry still occupies its labelled row here, unlike the row's
-      // blank-slot). ui-contract.test.mjs (off-limits, frozen) asserts exact
-      // values built from these constants: itemCard.reasonSentence equals
-      // 'Unknown in this snapshot.' when zero, and itemCard.snapshotUnknownText
-      // equals it too when the source is merely unresolved.
-      // dashboard-derivation: allow-provenance-begin -- ui-contract.test.mjs asserts itemCard.reasonSentence/snapshotUnknownText equal these exact canonical sentences; frozen, off-limits test
-      const none = ru ? "Ничего не записано." : "None recorded.";
-      const notRecorded = ru ? "Не записано." : "Not recorded.";
-      const unknown = ru ? "В этом снимке неизвестно." : "Unknown in this snapshot.";
-      // dashboard-derivation: allow-provenance-end
+      // P7 (dashboard-ui-restoration-2026-08 07-evidence.md, 2026-08-18
+      // amendment): every position these constants feed — lead, lifecycle,
+      // parties, gate, urgency, summary, operational — is `when carried`
+      // (card-spec/item.md's own Ordered Facts table), and card-spec placing
+      // a fact at `detail` does not license a Rule A "not printed" sentence
+      // there; a previous implementer made that argument and it was wrong.
+      // The blank-slot pattern prints nothing when the data cannot be
+      // established. The one `always`-presence consumer (the item's
+      // snapshot condition) does not read these constants any more; see
+      // unavailableSentence above, which uses the always-legal
+      // fourth-condition text directly.
+      const none = "";
+      const notRecorded = "";
+      const unknown = "";
       const unknownInline = ru ? "в этом снимке неизвестно" : "unknown in this snapshot";
       const notRecordedInline = ru ? "не записано" : "not recorded";
       const bodyResult = result => result ? { ...result, cue:"" } : result;
@@ -446,7 +447,7 @@ class Component extends DCLogic {
       const unavailableSentence = unavailableState
         ? (unavailableReason
           ? (ru ? "Недоступно в этом снимке: " : "Unavailable in this snapshot: ") + unavailableReason
-          : unknown)
+          : (ru ? "Недоступно в этом снимке." : "Unavailable in this snapshot."))
         : "";
       const rule = item.ruleIdentity && typeof item.ruleIdentity === "object" ? JSON.stringify(item.ruleIdentity) : String(item.ruleIdentity || notRecorded);
       const technicalEvidence = [
@@ -526,7 +527,7 @@ class Component extends DCLogic {
           snapshotUnavailable:unavailableSentence, hasSnapshotUnavailable:unavailableState,
           hasSnapshotFacts:snapshotFacts.length > 0, snapshotFacts:snapshotFacts.join("; "),
           snapshotFactsSuffix:snapshotFacts.length ? "; " + snapshotFacts.join("; ") : "", snapshotEnding:sentenceEnding(snapshotResult), snapshotFactsOnly:!snapshotResult && snapshotFacts.length > 0,
-          snapshotUnknown:!unavailableState && !snapshotResult && snapshotFacts.length === 0, snapshotUnknownText:!unavailableState && !snapshotResult && snapshotFacts.length === 0 ? unknown : "",
+          snapshotUnknown:!unavailableState && !snapshotResult && snapshotFacts.length === 0, snapshotUnknownText:!unavailableState && !snapshotResult && snapshotFacts.length === 0 ? (ru ? "Недоступно в этом снимке." : "Unavailable in this snapshot.") : "",
           technicalLabel:ru ? "Технические подробности: свёрнуты." : "Technical detail: collapsed.", whyLabel:"Why", ruleLabel:ru ? "Правило" : "Rule identity",
           technicalWhy:item.why || notRecorded, ruleIdentity:rule, technicalEvidence,
           hasTechnicalTargets:technicalTargets.length > 0, technicalTargets,

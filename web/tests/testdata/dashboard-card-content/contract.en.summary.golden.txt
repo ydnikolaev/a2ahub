@@ -1,1 +1,2 @@
-(no summary region rendered for kind "contract")
+contract:identity
+contract:condition

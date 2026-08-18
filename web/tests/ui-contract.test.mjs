@@ -674,7 +674,13 @@ test('P10 Exchange renders item and work-report facts through one content-only A
   assert.equal(exchange.workRows[0].summary, item.description);
   assert.equal(exchange.workRows[0].snapshotUnavailable, 'Unavailable in this snapshot: The item source was omitted from this snapshot.');
   assert.match(exchange.workRows[0].technicalEvidence, /SyncStale: yes/);
-  assert.equal(exchangeHarness.part.rowFor(reasonless, 'workSel', '').reasonSentence, 'Unknown in this snapshot.', 'a missing EN sentence must not fall back to RU');
+  // P7 (dashboard-ui-restoration-2026-08 07-evidence.md, 2026-08-18
+  // amendment): reasonSentence is a `when carried` fact (card-spec/item.md);
+  // a missing EN sentence blank-slots rather than falling back to a Rule A
+  // "not printed" sentence. Blank is still distinct from the carried RU
+  // sentence ('Некоторая причина только на русском'), so this remains a
+  // real guard against the RU sentence leaking into the EN render.
+  assert.equal(exchangeHarness.part.rowFor(reasonless, 'workSel', '').reasonSentence, '', 'a missing EN sentence must blank-slot, not fall back to RU or print a banned empty-state sentence');
   assert.deepEqual(Array.from(exchange.workRows[0].operationalItems, row => [row.name, row.result.label]), [
     ['endpoint', 'operational-state/ready'], ['runbook', 'operational-state/absent']
   ]);
@@ -827,10 +833,18 @@ test('P10 Exchange renders item and work-report facts through one content-only A
     ['source-freshness/unavailable', 'source-freshness/unavailable'],
     'an exact unavailable Source must win without an unavailable diagnostic',
   );
+  // P7 (dashboard-ui-restoration-2026-08 07-evidence.md, 2026-08-18
+  // amendment): the snapshot condition is an `always`-presence fact
+  // (card-spec/item.md position 9); Rule A couples `always` to the
+  // fourth-condition sentence exactly, so an unavailable source with no
+  // carried reason must use the bare "Unavailable in this snapshot." text,
+  // never the banned "Unknown in this snapshot." (that argument — that
+  // detail placement licenses a banned sentence — was the mistake this
+  // phase's amendment corrects).
   assert.deepEqual(
     [exactUnavailableRow.snapshotUnavailable, exactUnavailableDetail.snapshotUnavailable],
-    ['Unknown in this snapshot.', 'Unknown in this snapshot.'],
-    'unavailable without a carried public-safe reason must use canonical unknown',
+    ['Unavailable in this snapshot.', 'Unavailable in this snapshot.'],
+    'unavailable without a carried public-safe reason must use the always-legal fourth-condition sentence',
   );
 
   const absentSourceItemData = {
@@ -852,7 +866,9 @@ test('P10 Exchange renders item and work-report facts through one content-only A
     ctx:{ data, locale:'en', ui:{ card:{ kind:'item', id:'item:space-a:XW-reasonless', accent:'' } }, actions }
   });
   installResolver(reasonlessCard);
-  assert.equal(reasonlessCard.part.renderVals().itemCard.reasonSentence, 'Unknown in this snapshot.', 'the item card must use the canonical active-locale fallback');
+  // P7 (2026-08-18 amendment): reasonSentence is `when carried`
+  // (card-spec/item.md position 2); blank-slot, not a Rule A sentence.
+  assert.equal(reasonlessCard.part.renderVals().itemCard.reasonSentence, '', 'the item card must blank-slot a missing reason sentence');
 
   const unknownItem = { ...reasonless, space:'space-b', id:'XW-unknown', state:'secret-state-token', outcome:'secret-outcome-token', reasonSentence:{ en:'Unknown lifecycle item.', ru:'' } };
   const unknownItemData = { ...data, spaces:[...data.spaces, { id:'space-b', readable:true }], outbox:[reasonless, unknownItem], artifactDetails:[...data.artifactDetails, { ...unknownItem, events:[], refs:[], attachments:[] }], unavailable:[] };
@@ -861,14 +877,21 @@ test('P10 Exchange renders item and work-report facts through one content-only A
   const unknownItemValues = unknownItemCard.part.renderVals().itemCard;
   assert.equal(unknownItemValues.lifecycleKnown, false);
   assert.equal(unknownItemValues.hasLifecyclePills, false);
-  assert.equal(unknownItemValues.lifecycleUnknownText, 'Unknown in this snapshot.');
-  assert.equal(unknownItemValues.snapshotUnknownText, 'Unknown in this snapshot.', 'a snapshot with neither freshness nor unavailable must say canonical unknown');
+  // P7 (2026-08-18 amendment): lifecycle-and-outcome is `when carried`
+  // (card-spec/item.md position 3) — blank-slot. Snapshot condition is
+  // `always` (position 9) — Rule A's fourth-condition text, never blank and
+  // never the banned "Unknown in this snapshot.".
+  assert.equal(unknownItemValues.lifecycleUnknownText, '');
+  assert.equal(unknownItemValues.snapshotUnknownText, 'Unavailable in this snapshot.', 'a snapshot with neither freshness nor unavailable must use the always-legal fourth-condition sentence');
   const unknownItemRows = componentHarness('ExchangeView', { ctx:{ data:unknownItemData, locale:'en', ui:{ ...ui, dashboardSet:'', workTab:'outgoing' }, actions } });
   installResolver(unknownItemRows);
   const unknownRow = unknownItemRows.part.renderVals().workRows.find(row => row.id === 'XW-unknown');
   assert.equal(unknownRow.lifecycleKnown, false);
-  assert.equal(unknownRow.lifecycleUnknownText, 'Unknown in this snapshot.');
-  assert.equal(unknownRow.snapshotUnknownText, 'Unknown in this snapshot.');
+  // The row's own markup (ArtifactRow.dc.html) never renders these two
+  // fields at all (specs/05-exchange.md §1 trims the row); they blank-slot
+  // the same as every other dead view-model field this hatch used to guard.
+  assert.equal(unknownRow.lifecycleUnknownText, '');
+  assert.equal(unknownRow.snapshotUnknownText, '');
 
   const unknownReport = { ...reports[0], artifact_id:'XA-unknown-mode', work_id:'work:unknown', mode:'secret-mode-token' };
   const unknownReportData = { ...data, workReports:[...reports, unknownReport] };
@@ -876,14 +899,20 @@ test('P10 Exchange renders item and work-report facts through one content-only A
   installResolver(unknownReportCard);
   const unknownReportValues = unknownReportCard.part.renderVals().workReportCard;
   assert.equal(unknownReportValues.modeKnown, false);
-  assert.equal(unknownReportValues.lead, 'Unknown in this snapshot.');
+  // P7 (2026-08-18 amendment): the lead sentence is `when carried`
+  // (card-spec/work-report.md position 2) — blank-slot rather than the
+  // banned "Unknown in this snapshot.". The raw enum token must still never
+  // leak into it.
+  assert.equal(unknownReportValues.lead, '');
   assert.doesNotMatch(unknownReportValues.lead, /secret-mode-token/);
 
   const eventDetail = exchangeHarness.part.detailFor('XW-second', data.inbox);
   const lifecycleEvents = eventDetail.events.filter(event => event.isLifecycle);
+  // P7 (2026-08-18 amendment): an unrecognized transition is "value cannot
+  // be established" — blank-slot, not a printed sentence.
   assert.deepEqual(Array.from(lifecycleEvents, event => [event.transitionRaw, event.actionText]), [
     ['note', 'transition/note'],
-    ['secret-transition-token', 'Unknown in this snapshot.'],
+    ['secret-transition-token', ''],
   ]);
   assert.doesNotMatch(lifecycleEvents[1].actionText, /secret-transition-token/, 'an unknown transition must not leak its raw enum into visible history');
 
@@ -976,7 +1005,11 @@ test('P10 Exchange renders item and work-report facts through one content-only A
     ctx:{ data:knownEmptyReportsData, locale:'en', ui:{ ...ui, dashboardSet:'', workTab:'incoming' }, actions }
   });
   installResolver(knownEmptyReportsHarness);
-  assert.equal(knownEmptyReportsHarness.part.renderVals().workReportsEmptyText, 'None recorded.');
+  // P7 (2026-08-18 amendment): a confirmed-empty (total:0) window is Rule
+  // A's "empty collection known complete" condition — banned outside
+  // technical the same as the other two, so it blank-slots rather than
+  // printing "None recorded.".
+  assert.equal(knownEmptyReportsHarness.part.renderVals().workReportsEmptyText, '');
 
   const exchangeSource = component('ExchangeView');
   assert.doesNotMatch(exchangeSource, /const STATE_TONE|blockedWhy\(|statusOf\(|const isClosed|byNewest|statuses\s*:|urgent\s*:|EVENT_SIGNAL|TRANSITION_PAST|VERDICT_TONE|VERDICT_LABEL|WORK_WAIT_KIND|workEvents[\s\S]{0,220}\.sort\(/);

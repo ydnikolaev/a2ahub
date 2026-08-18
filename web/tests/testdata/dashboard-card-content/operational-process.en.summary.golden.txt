@@ -1,10 +1,2 @@
 operational:identity
 operational:protocol
-operational:identity
-operational:protocol
-operational:identity
-operational:protocol
-operational:identity
-operational:protocol
-operational:identity
-operational:protocol

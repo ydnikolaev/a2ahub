@@ -840,7 +840,11 @@ test('P11 Threads renders the carried reason sentence and honest transcript wind
   assert.equal(values.unresolvedWindowText, 'Showing 1 of 2.');
   assert.equal(values.deliveriesWindowText, 'Showing 1 of 2.');
   assert.deepEqual(Array.from(values.tvLinks, link => [link.from, link.to, link.kind]), [[carriedLink.from, carriedLink.to, carriedLink.kind]]);
-  assert.equal(values.tvLinks[0].toTitle, 'Not recorded.');
+  // P7 (dashboard-ui-restoration-2026-08 07-evidence.md, 2026-08-18
+  // amendment): "transcript and relationships" is a `when carried` fact
+  // (card-spec/thread.md position 7) — a member with no title blank-slots
+  // rather than printing the banned "Not recorded.".
+  assert.equal(values.tvLinks[0].toTitle, '');
   assert.equal(values.tvDiagnostics[0].severityResult.label, 'Sources need review');
   assert.match(values.tvDiagnostics[0].technical, /raw diagnostic cause/);
   assert.equal(values.tvFreshnessResult.label, 'Source degraded');
@@ -863,7 +867,12 @@ test('P11 Threads renders the carried reason sentence and honest transcript wind
   const unavailableFacts = controller.state.data.operational.unavailable;
   controller.state.data.operational.unavailable = unavailableFacts.filter(fact => fact.space !== view.space);
   values = controller.threadsValues();
-  assert.equal(values.tvSnapshotDegradedText, 'Unknown in this snapshot.');
+  // P7 (2026-08-18 amendment): the snapshot condition is `always`
+  // (card-spec/thread.md position 8); Rule A couples `always` to the
+  // fourth-condition sentence exactly, so unavailable-without-evidence must
+  // use the bare "Unavailable in this snapshot." text, never the banned
+  // "Unknown in this snapshot.".
+  assert.equal(values.tvSnapshotDegradedText, 'Unavailable in this snapshot.');
   controller.state.data.operational.unavailable = unavailableFacts;
 
   view.windows.transcript = { shown:3, total:3, truncated:true };
@@ -886,7 +895,11 @@ test('P11 Threads renders the carried reason sentence and honest transcript wind
   values = controller.threadsValues();
   assert.equal(values.tvOpenKnownEmpty, true);
   assert.equal(values.tvTranscriptKnownEmpty, true);
-  assert.equal(values.noneRecordedText, 'None recorded.');
+  // P7 (2026-08-18 amendment): a confirmed-empty open-items/transcript
+  // window is Rule A's "empty collection known complete" condition —
+  // banned outside technical, so it blank-slots rather than printing
+  // "None recorded.".
+  assert.equal(values.noneRecordedText, '');
   view.open_items = savedOpenItems;
   view.transcript = savedTranscript;
 
@@ -897,7 +910,10 @@ test('P11 Threads renders the carried reason sentence and honest transcript wind
   delete view.windows.deliveries;
   delete thread.windows.links;
   values = controller.threadsValues();
-  assert.equal(values.tvCardTranscriptText, 'Transcript and relationships: Unknown in this snapshot.', 'missing carried windows must not turn visible prefix lengths into totals');
+  // P7 (2026-08-18 amendment): missing window totals is "value cannot be
+  // established" for a `when carried` fact (card-spec/thread.md position
+  // 7) — the whole fused label+value field blank-slots.
+  assert.equal(values.tvCardTranscriptText, '', 'missing carried windows must not turn visible prefix lengths into totals');
   view.windows.transcript = savedTranscriptWindow;
   view.windows.deliveries = savedDeliveriesWindow;
   thread.windows.links = savedLinksWindow;
@@ -907,8 +923,19 @@ test('P11 Threads renders the carried reason sentence and honest transcript wind
   view.opener.title = '';
   thread.opener.title = '';
   values = controller.threadsValues();
-  assert.equal(values.tvTitle, 'Not recorded.');
-  assert.match(values.tvMembershipText, /^Not recorded\./);
+  // P7 (2026-08-18 amendment): opener title (position 1) and opener and
+  // membership (position 5) are `when carried` (card-spec/thread.md) —
+  // blank-slot rather than the banned "Not recorded.".
+  assert.equal(values.tvTitle, '');
+  // tvMembershipText fuses the (now blank-slotted) title into a longer
+  // sentence rather than gating on it structurally — restructuring that
+  // concatenation is outside this phase's scope (blanking the banned-
+  // sentence constants, not rewriting the surrounding markup/logic), so the
+  // leading separator is a known, accepted artifact; recorded in the phase
+  // report rather than fixed here.
+  // The separator belongs BETWEEN parts, so a blanked title must not leave it
+  // dangling in front of the count. The previous form pinned that artifact.
+  assert.equal(values.tvMembershipText, 'documents: 3');
   view.opener.title = savedViewTitle;
   thread.opener.title = savedThreadTitle;
 
@@ -1630,8 +1657,12 @@ test('P14 Spaces renders carried source, consistency, and freshness facts', () =
   assert.equal(delta.sourceResult.label, 'Source degraded');
   assert.equal(delta.hasUnavailable, false, 'exact Source degraded must keep a matching diagnostic Technical-only');
   assert.equal(gamma.sourceResult.label, 'Source unavailable');
-  assert.equal(gamma.sourceSyncedAt, 'Not recorded.');
-  assert.equal(gamma.unavailable[0].body, 'Unknown in this snapshot.', 'exact unavailable without a public summary must use canonical unknown');
+  // P7 (2026-08-18 amendment): synchronization condition is `when carried`
+  // (card-spec/space.md position 2) — blank-slot, not "Not recorded.".
+  // Unavailable evidence is `always` (position 7) — Rule A's fourth-condition
+  // sentence, never the banned "Unknown in this snapshot.".
+  assert.equal(gamma.sourceSyncedAt, '');
+  assert.equal(gamma.unavailable[0].body, 'Unavailable in this snapshot.', 'exact unavailable without a public summary must use the always-legal fourth-condition sentence');
   assert.equal(epsilon.sourceResult.label, 'Source unavailable', 'a matching diagnostic supplies unavailable only when Source is absent');
   assert.equal(epsilon.unavailable[0].body, 'Unavailable in this snapshot: The local mirror could not be read.');
   assert.notEqual(beta.sourceResult.label, gamma.sourceResult.label, 'stale and unavailable must remain visibly distinct carried states');
@@ -1645,13 +1676,19 @@ test('P14 Spaces renders carried source, consistency, and freshness facts', () =
     Array.from(beta.consistencyGroups[0].anomalies[0].technical, fact => [fact.label, fact.value]),
     [['code','future-clock-anomaly'], ['summary','The committed report is dated in the future.'], ['subject','XW-beta']],
   );
+  // P7 (2026-08-18 amendment): the shared notRecorded/none/unknown
+  // constants blank-slot uniformly per hatch (one constant, one fallback
+  // value); this technical-table cell is exempt from Rule A either way, so
+  // it reads blank rather than "Not recorded." now too.
   assert.deepEqual(
     Array.from(beta.consistencyGroups[0].anomalies[1].technical, fact => [fact.label, fact.value]),
-    [['code','future-severity-code'], ['summary','A future diagnostic remains technical.'], ['subject','Not recorded.']],
+    [['code','future-severity-code'], ['summary','A future diagnostic remains technical.'], ['subject','']],
   );
   assert.equal(alpha.consistencyEmpty, true);
   assert.equal(gamma.consistencyUnknown, true, 'an unreadable space must not turn a zero-shaped fixture into a known-empty claim');
-  assert.equal(gamma.participantsText, 'Unknown in this snapshot.');
+  // P7 (2026-08-18 amendment): participant count is `when carried`
+  // (card-spec/space.md position 4) — blank-slot, not the banned sentence.
+  assert.equal(gamma.participantsText, '');
 
   controller.state.space = 'beta';
   assert.deepEqual(Array.from(renderSpaces().spaceRows, row => row.id), ['beta'], 'user scope selection may filter without reordering');

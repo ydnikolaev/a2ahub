@@ -427,19 +427,20 @@ class Component extends DCLogic {
     const unavailableEvidence = itemUnavailable || sourceDiagnostic;
     const unavailableState = !!itemUnavailable || sourceUnavailable;
     const sentence = it.reasonSentence || {};
-    // P5 investigated replacing these with the blank-slot pattern and found
-    // it cannot: ui-contract.test.mjs (off-limits, frozen) asserts exact
-    // values built from these constants on rowFor's own return object —
-    // reasonSentence, waitingOn, expectedMove, urgencyText, summary,
-    // snapshotUnavailable/snapshotUnknownText — none of which the row's own
-    // markup renders any more (ArtifactRow.dc.html trims the row to badge,
-    // state, priority, time, title and the actor relay per specs/05-exchange.md
-    // §1), but the view-model fields themselves stay frozen by that test.
-    // dashboard-derivation: allow-provenance-begin -- ui-contract.test.mjs asserts exact reasonSentence/waitingOn/expectedMove/urgencyText/summary values built from these constants; frozen, off-limits test
-    const noneRecorded = ru ? "Ничего не записано." : "None recorded.";
-    const notRecorded = ru ? "Не записано." : "Not recorded.";
-    const unknown = ru ? "В этом снимке неизвестно." : "Unknown in this snapshot.";
-    // dashboard-derivation: allow-provenance-end
+    // P7 (dashboard-ui-restoration-2026-08 07-evidence.md, 2026-08-18
+    // amendment): reasonSentence, waitingOn, expectedMove, urgencyText and
+    // summary are `when carried` facts (card-spec/item.md) that the row's own
+    // markup no longer renders at all (ArtifactRow.dc.html trims the row to
+    // badge, state, priority, time, title and the actor relay per
+    // specs/05-exchange.md §1) — the blank-slot pattern for a `when carried`
+    // fact with no data is to print nothing, so these fall back to "" rather
+    // than a Rule A "not printed" sentence. The one `always`-presence
+    // consumer (the item's snapshot condition) does not read these constants
+    // any more — see unavailableSentence above, which uses the always-legal
+    // fourth-condition text directly.
+    const noneRecorded = "";
+    const notRecorded = "";
+    const unknown = "";
     const yesNo = value => value ? (ru ? "да" : "yes") : (ru ? "нет" : "no");
     const waitingOn = listNames(it.waitingOn || [], ru) || noneRecorded;
     const expectedMove = it.expectedTransition || unknown;
@@ -462,7 +463,7 @@ class Component extends DCLogic {
     const unavailableSentence = unavailableState
       ? (unavailableReason
         ? (ru ? "Недоступно в этом снимке: " : "Unavailable in this snapshot: ") + unavailableReason
-        : unknown)
+        : (ru ? "Недоступно в этом снимке." : "Unavailable in this snapshot."))
       : "";
     const technicalEvidence = [
       "Terminal: " + yesNo(it.terminal), "Archived: " + yesNo(it.archived), "GatePending: " + yesNo(it.gatePending),
@@ -643,13 +644,12 @@ class Component extends DCLogic {
       return {
         isLifecycle: true,
         isWorkReport: false,
-        // Cannot fix: ui-contract.test.mjs (off-limits, frozen) asserts
-        // this equals exactly 'Unknown in this snapshot.' for an unknown
-        // transition (lifecycleEvents[1].actionText), guarding the same
-        // line against ever leaking the raw enum token into visible history.
-        // dashboard-derivation: allow-provenance-begin -- ui-contract.test.mjs asserts actionText equals exactly 'Unknown in this snapshot.' for an unknown transition; frozen, off-limits test
-        actionText: transitionKnown ? transitionResult.label : (ru ? "В этом снимке неизвестно." : "Unknown in this snapshot."),
-        // dashboard-derivation: allow-provenance-end
+        // P7 (dashboard-ui-restoration-2026-08 07-evidence.md, 2026-08-18
+        // amendment): an unrecognized transition token is the "value cannot
+        // be established" condition — blank-slot, not a printed sentence.
+        // The raw enum token still must never leak into visible history;
+        // ui-contract.test.mjs guards that with a doesNotMatch assertion.
+        actionText: transitionKnown ? transitionResult.label : "",
         transitionRaw:transition,
         subjectLabel,
         meta: system + (system ? " · " : "") + when(ev.at),
@@ -855,16 +855,17 @@ class Component extends DCLogic {
     const resolver = globalThis.A2A_VOCABULARY_RESOLVER;
     const modeKnown = !!resolver.knows && resolver.knows(d, "work-mode", report.mode);
     const modeResult = vocabulary(d, "work-mode", report.mode, ru);
-    // Cannot fix: ui-contract.test.mjs (off-limits, frozen) asserts
-    // workReportCard.lead equals exactly 'Unknown in this snapshot.' when
-    // actor/mode/subject/summary cannot be established (per card-spec's own
-    // "Lead sentence" §, that IS the documented content for this position —
-    // it is the modal detail card, not the row).
-    // dashboard-derivation: allow-provenance-begin -- ui-contract.test.mjs asserts workReportCard.lead equals exactly 'Unknown in this snapshot.' when the report cannot be established; frozen, off-limits test
-    const unknown = ru ? "В этом снимке неизвестно." : "Unknown in this snapshot.";
-    const notRecorded = ru ? "Не записано." : "Not recorded.";
-    const noneRecorded = ru ? "Ничего не записано." : "None recorded.";
-    // dashboard-derivation: allow-provenance-end
+    // P7 (dashboard-ui-restoration-2026-08 07-evidence.md, 2026-08-18
+    // amendment): the lead sentence and every other position work-report.md
+    // lists below it (attribution, checkpoint, waits, remaining, and the
+    // lead itself) are `when carried` facts — the blank-slot pattern prints
+    // nothing when the data cannot be established, not a Rule A "not
+    // printed" sentence. The `always`-presence snapshot condition does not
+    // read these constants any more; see unavailableSentence above, which
+    // uses the always-legal fourth-condition text directly.
+    const unknown = "";
+    const notRecorded = "";
+    const noneRecorded = "";
     const notRecordedInline = ru ? "не записано" : "not recorded";
     const bodyResult = result => result ? { ...result, cue:"" } : result;
     const sentence = value => /[.!?…]$/.test(String(value || "")) ? String(value) : String(value || "") + ".";
@@ -886,7 +887,7 @@ class Component extends DCLogic {
     const unavailableSentence = sourceUnavailable
       ? (unavailableReason
         ? (ru ? "Недоступно в этом снимке: " : "Unavailable in this snapshot: ") + unavailableReason
-        : unknown)
+        : (ru ? "Недоступно в этом снимке." : "Unavailable in this snapshot."))
       : "";
     const remaining = current && current.shared_pending && current.shared_pending.remaining_action || "";
     const accent = (family, identity) => actions && actions.cardAccent ? actions.cardAccent(family, identity) : "";
@@ -950,7 +951,7 @@ class Component extends DCLogic {
       remainingLabel:ru ? "Оставшееся общее действие" : "Remaining shared action", remaining:remaining || notRecorded, remainingText:remaining ? sentence(remaining) : notRecorded, hasRemainingCondition:!!(current && current.shared_pending), remainingResult:current && current.shared_pending ? vocabulary(d, "freshness", "pending-recovery", ru) : null,
       snapshotLabel:ru ? "Снимок" : "Snapshot", hasSnapshotResult:!!snapshotResult, hasBodySnapshotResult:!!snapshotResult && !sourceUnavailable, snapshotUnavailableOnly:sourceUnavailable, snapshotResult, bodySnapshotResult:bodyResult(snapshotResult), snapshotEnding:sentenceEnding(snapshotResult),
       snapshotUnavailable:unavailableSentence, hasSnapshotUnavailable:sourceUnavailable,
-      snapshotUnknown:!sourceUnavailable && !carriedSourceFreshness, snapshotUnknownText:!sourceUnavailable && !carriedSourceFreshness ? unknown : "",
+      snapshotUnknown:!sourceUnavailable && !carriedSourceFreshness, snapshotUnknownText:!sourceUnavailable && !carriedSourceFreshness ? (ru ? "Недоступно в этом снимке." : "Unavailable in this snapshot.") : "",
       statusSupportLabel:ru ? "Пояснения статусов отчёта о работе" : "Work-report status explanations",
       statusSupport:[modeResult, freshnessResult, current && current.shared_pending ? vocabulary(d, "freshness", "pending-recovery", ru) : null, snapshotResult].filter(Boolean),
       technicalLabel:ru ? "Технические подробности: свёрнуты." : "Technical detail: collapsed.", technical
@@ -1068,17 +1069,15 @@ class Component extends DCLogic {
       workReportsHint:ru ? "в порядке поступления" : "in received order",
       hasWorkReportsWindow:!!workReportsWindowText,
       workReportsWindowText,
+      // P7 (dashboard-ui-restoration-2026-08 07-evidence.md, 2026-08-18
+      // amendment): a truncated prefix with records outside it gets its own
+      // real explanatory sentence (not a Rule A pattern). A window that is
+      // confirmed empty (total:0) is Rule A's "empty collection known
+      // complete" condition — banned outside technical the same as the
+      // other two — so it blank-slots rather than printing "None recorded.".
       workReportsEmptyText:workReportsWindowText
         ? (ru ? "В этом ограниченном префиксе нет отчётов; за его пределами есть записи." : "No reports in this bounded prefix; there are records outside it.")
-        // Rule A's "empty collection known to be complete" condition IS
-        // legitimately printed here — card-spec/README.md#composition-rules
-        // — but the exact literal is frozen by ui-contract.test.mjs
-        // (off-limits; asserts this equals exactly "None recorded." for a
-        // window with total:0), so the marker below stays bounded to this
-        // one fallback rather than being removed.
-        // dashboard-derivation: allow-provenance-begin -- ui-contract.test.mjs asserts workReportsEmptyText equals exactly "None recorded." for a known-empty (total:0) window; frozen, off-limits test
-        : (ru ? "Ничего не записано." : "None recorded."),
-        // dashboard-derivation: allow-provenance-end
+        : "",
       workReportRows,
       // 03-interaction-model.md §2's second door: a row click now toggles
       // the pane via setState, no hash-route write, restoring AC-1. The

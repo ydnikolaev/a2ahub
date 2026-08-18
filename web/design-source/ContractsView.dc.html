@@ -898,7 +898,11 @@ class Component extends DCLogic {
         // The version whose cver card is currently open doubles as that
         // card's summary region (P6 §8 AC-9), the same convention conRows
         // uses for the "contract" kind above.
-        summaryAttr:cardVersion && cardVersionContract === selectedContract && cardVersion.version === version.version ? "cver" : "",
+        // A row IS its kind's summary region — unconditionally, the way P4's and
+        // P5's static markers already are. Conditioning it on the open card was
+        // dead code: DASHBOARD_UI_FIELDS threads `card` into Modal alone, so this
+        // never resolved to anything but "" on the view's own render.
+        summaryAttr:"cver",
         color:"var(--text)",
         seats:pins.length ? (ru ? "потребители: " : "consumers: ") + pins.join(", ") : noneRecorded(ru),
         seatStyle:"margin-left:auto; font-size:15px; color:var(--muted); overflow-wrap:anywhere;",
@@ -1002,7 +1006,11 @@ class Component extends DCLogic {
         // The row for the contract whose card is currently open doubles as
         // that card's summary region (P6 §8 AC-9): it is the one place the
         // reader sees this contract before opening the detail.
-        summaryAttr:card && card.kind === "contract" && actions.cardID && actions.cardID("contract", contract) === card.id ? "contract" : "",
+        // A row IS its kind's summary region — unconditionally, the way P4's and
+        // P5's static markers already are. Conditioning it on the open card was
+        // dead code: DASHBOARD_UI_FIELDS threads `card` into Modal alone, so this
+        // never resolved to anything but "" on the view's own render.
+        summaryAttr:"contract",
         select:() => openContract(contract, "")
       })),
       hasConRows:contractsAll.length > 0,
