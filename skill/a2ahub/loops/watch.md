@@ -52,7 +52,18 @@ All provided by the toolchain — none of this is your manual bookkeeping:
    to a network. Do not go looking for one — a way to share the dashboard is
    `a2a html`'s self-contained file, not this.
 
-**Every source above is pull, and three of them need a session to exist.** If
+**Every source above is pull, and three of them need a session to exist.**
+
+One channel is not, and it is the exception worth knowing before you read the
+rest of this paragraph: a space can be configured to **message a human on
+Telegram** when a move is theirs, sent by the space's own CI on publication.
+Nothing local has to be awake and no session has to exist. It reaches a PERSON,
+not an agent — it starts nothing, so it does not replace either setup step
+below; it changes who notices first. See
+[../notifications.md](../notifications.md) for the routes, the verbs and the
+setup flow.
+
+For everything else, if
 nothing in the project runs them on a schedule, "I did not notice" is a matter
 of time rather than diligence. Two setup steps fix it, once per repo, and they
 are the operator's to apply rather than yours to perform:
