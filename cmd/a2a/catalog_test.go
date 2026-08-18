@@ -14,6 +14,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/html"
 	"github.com/ydnikolaev/a2ahub/internal/operational"
 	"github.com/ydnikolaev/a2ahub/internal/pendency"
+	"github.com/ydnikolaev/a2ahub/internal/sensitive"
 	"github.com/ydnikolaev/a2ahub/internal/workreport"
 )
 
@@ -512,6 +513,64 @@ func TestCatalogFlagRefusals(t *testing.T) {
 		{"vocabulary_without_json", []string{"--vocabulary"}},
 		{"json_without_vocabulary", []string{"--json"}},
 		{"unknown_flag", []string{"--nope"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var stdout, stderr bytes.Buffer
+			code := runCatalog(tc.args, &stdout, &stderr)
+			if code != 2 {
+				t.Fatalf("exit code = %d, want 2 (a usage refusal)", code)
+			}
+			if stderr.Len() == 0 {
+				t.Fatal("refused with no explanation on stderr")
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("a refusal still wrote to stdout: %q", stdout.String())
+			}
+		})
+	}
+}
+
+// TestCatalogSensitiveShapesIsTheDomainsOwn is space-notify-2026-08 P1 AC9 +
+// AC10: `--sensitive-shapes --json` answers, JSON-only, with EXACTLY
+// internal/sensitive.ContentMatchers()'s own output — a DERIVED equality
+// (walking both sides), never a hardcoded expected list, so a shape added to
+// the package's matcher set appears in the projection with no second edit.
+func TestCatalogSensitiveShapesIsTheDomainsOwn(t *testing.T) {
+	t.Parallel()
+	var stdout, stderr bytes.Buffer
+	code := runCatalog([]string{"--sensitive-shapes", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d (stderr: %q), want 0", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("wrote to stderr: %q", stderr.String())
+	}
+
+	var got []sensitive.MatcherShape
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, stdout.String())
+	}
+	want := sensitive.ContentMatchers()
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("--sensitive-shapes projection = %+v, want internal/sensitive's own %+v", got, want)
+	}
+	if len(got) == 0 {
+		t.Fatal("--sensitive-shapes projected an empty set")
+	}
+}
+
+// TestCatalogSensitiveShapesRefusals mirrors TestCatalogFlagRefusals for the
+// new projection: JSON-only, and mutually exclusive with the other two.
+func TestCatalogSensitiveShapesRefusals(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"sensitive_shapes_without_json", []string{"--sensitive-shapes"}},
+		{"sensitive_shapes_with_vocabulary", []string{"--sensitive-shapes", "--vocabulary", "--json"}},
+		{"sensitive_shapes_with_surfaces", []string{"--sensitive-shapes", "--surfaces", "--json"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

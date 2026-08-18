@@ -15,4 +15,16 @@ participants:
     owners: [misha-gh]
     status: active
     joined: 2026-07-28
+notification_routes:
+  - channel: telegram
+    chat: "-1002034567890"
+    topic: 42
+    for: axon
+    events: [human-gate, blocking]
+    locale: ru
+    secret: TG_BOT_TOKEN_AXON
+    renderer: rich
+  - channel: telegram
+    chat: "-1009876543210"
+    events: [published]
 vendored: []

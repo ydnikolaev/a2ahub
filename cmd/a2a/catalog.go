@@ -16,6 +16,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
 	"github.com/ydnikolaev/a2ahub/internal/operational"
 	"github.com/ydnikolaev/a2ahub/internal/pendency"
+	"github.com/ydnikolaev/a2ahub/internal/sensitive"
 	"github.com/ydnikolaev/a2ahub/internal/skillcoverage"
 	"github.com/ydnikolaev/a2ahub/internal/workreport"
 )
@@ -348,33 +349,50 @@ func renderCatalog() string {
 // than an observed run, and the residual hole (a newly added SURFACE is
 // not caught; only a newly added FIELD on an already-listed one is).
 //
+// `--sensitive-shapes --json` (space-notify-2026-08 P1 §"the surface P7
+// needs") switches it to internal/sensitive.ContentMatchers() — the closed
+// credential-shape matcher list, as data. It exists so a gate (P7's
+// check-notify-secrets.sh) can ASK the binary for the set it polices rather
+// than inlining a second copy of the regex — the same discipline
+// --vocabulary already applies for the fold/cache/pendency/operational
+// vocabularies.
+//
 // The bare `a2a __catalog` output is UNCHANGED, byte for byte:
 // skill/a2ahub/reference/commands.md is its committed projection and the
 // skill-drift job regenerates and diffs it.
 func runCatalog(args []string, stdout, stderr io.Writer) int {
-	vocabulary, surfaces, asJSON := false, false, false
+	vocabulary, surfaces, sensitiveShapes, asJSON := false, false, false, false
 	for _, arg := range args {
 		switch arg {
 		case "--vocabulary":
 			vocabulary = true
 		case "--surfaces":
 			surfaces = true
+		case "--sensitive-shapes":
+			sensitiveShapes = true
 		case "--json":
 			asJSON = true
 		default:
-			_, _ = fmt.Fprintf(stderr, "a2a __catalog: unknown flag %q (accepts --vocabulary --surfaces --json)\n", arg)
+			_, _ = fmt.Fprintf(stderr, "a2a __catalog: unknown flag %q (accepts --vocabulary --surfaces --sensitive-shapes --json)\n", arg)
 			return 2
+		}
+	}
+	projections := 0
+	for _, on := range []bool{vocabulary, surfaces, sensitiveShapes} {
+		if on {
+			projections++
 		}
 	}
 
 	switch {
-	case vocabulary && surfaces:
-		// Refused rather than picking one silently: the two are different
-		// projections of different questions ("what may a component
-		// spell" vs. "what does a read surface emit"), and a caller asking
-		// for both at once has a bug worth surfacing, not a default worth
-		// guessing.
-		_, _ = fmt.Fprintln(stderr, "a2a __catalog: --vocabulary and --surfaces are different projections — pass one")
+	case projections > 1:
+		// Refused rather than picking one silently: each is a different
+		// projection of a different question ("what may a component
+		// spell" vs. "what does a read surface emit" vs. "what credential
+		// shape does the closed matcher list police"), and a caller asking
+		// for more than one at once has a bug worth surfacing, not a
+		// default worth guessing.
+		_, _ = fmt.Fprintln(stderr, "a2a __catalog: --vocabulary, --surfaces, and --sensitive-shapes are different projections — pass one")
 		return 2
 	case vocabulary && !asJSON:
 		// Refused rather than defaulted to markdown. The vocabulary exists
@@ -386,8 +404,11 @@ func runCatalog(args []string, stdout, stderr io.Writer) int {
 	case surfaces && !asJSON:
 		_, _ = fmt.Fprintln(stderr, "a2a __catalog: --surfaces requires --json (the surface catalogue exists to be parsed, never rendered)")
 		return 2
-	case asJSON && !vocabulary && !surfaces:
-		_, _ = fmt.Fprintln(stderr, "a2a __catalog: --json is only defined with --vocabulary or --surfaces (the command catalog itself is markdown by contract)")
+	case sensitiveShapes && !asJSON:
+		_, _ = fmt.Fprintln(stderr, "a2a __catalog: --sensitive-shapes requires --json (the sensitive-shape set exists to be parsed, never rendered)")
+		return 2
+	case asJSON && !vocabulary && !surfaces && !sensitiveShapes:
+		_, _ = fmt.Fprintln(stderr, "a2a __catalog: --json is only defined with --vocabulary, --surfaces, or --sensitive-shapes (the command catalog itself is markdown by contract)")
 		return 2
 	case vocabulary:
 		enc := json.NewEncoder(stdout)
@@ -402,6 +423,14 @@ func runCatalog(args []string, stdout, stderr io.Writer) int {
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(catalogSurfaces()); err != nil {
 			_, _ = fmt.Fprintf(stderr, "a2a __catalog: encode surfaces: %v\n", err)
+			return 1
+		}
+		return 0
+	case sensitiveShapes:
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(sensitive.ContentMatchers()); err != nil {
+			_, _ = fmt.Fprintf(stderr, "a2a __catalog: encode sensitive-shapes: %v\n", err)
 			return 1
 		}
 		return 0

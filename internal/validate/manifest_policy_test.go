@@ -97,3 +97,157 @@ participants:
 		})
 	}
 }
+
+// TestValidateManifestPolicyNotificationRoutes is space-notify-2026-08 P1's
+// four policy rules (rule 4 excepted — it needs the raw bytes and is covered
+// by TestValidateManifestPolicyRule4SecretShape below), exercised directly
+// through ValidateManifestPolicy the way V3 runs them on every PR.
+func TestValidateManifestPolicyNotificationRoutes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		manifest  string
+		wantCodes []string
+		wantPaths []string
+	}{
+		{
+			name: "rule 1: for names an unknown participant",
+			manifest: `
+space: demo
+participants:
+  - {system: axon, section: axon/, owners: [alice], status: active}
+notification_routes:
+  - {channel: telegram, chat: "-100123", for: ghost, events: [human-gate]}
+`,
+			wantCodes: []string{"REF-022"},
+			wantPaths: []string{"notification_routes.0.for"},
+		},
+		{
+			name: "rule 1: for naming a known participant is accepted",
+			manifest: `
+space: demo
+participants:
+  - {system: axon, section: axon/, owners: [alice], status: active}
+notification_routes:
+  - {channel: telegram, chat: "-100123", for: axon, events: [human-gate]}
+`,
+		},
+		{
+			name: "rule 2: duplicate (channel, chat, topic, for) tuple",
+			manifest: `
+space: demo
+participants:
+  - {system: axon, section: axon/, owners: [alice], status: active}
+notification_routes:
+  - {channel: telegram, chat: "-100123", topic: 4, for: axon, events: [blocking]}
+  - {channel: telegram, chat: "-100123", topic: 4, for: axon, events: [human-gate]}
+`,
+			wantCodes: []string{"REF-022"},
+			wantPaths: []string{"notification_routes.1"},
+		},
+		{
+			name: "rule 2: same chat but different topic is not a duplicate",
+			manifest: `
+space: demo
+participants:
+  - {system: axon, section: axon/, owners: [alice], status: active}
+notification_routes:
+  - {channel: telegram, chat: "-100123", topic: 4, events: [blocking]}
+  - {channel: telegram, chat: "-100123", topic: 5, events: [blocking]}
+`,
+		},
+		{
+			name: "rule 3: events: [published] is legal widening, no code",
+			manifest: `
+space: demo
+participants:
+  - {system: axon, section: axon/, owners: [alice], status: active}
+notification_routes:
+  - {channel: telegram, chat: "-100123", events: [published]}
+`,
+		},
+	}
+
+	engine := mustEngine(t)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			result, err := engine.ValidateManifestPolicy([]byte(test.manifest))
+			if err != nil {
+				t.Fatalf("ValidateManifestPolicy: %v", err)
+			}
+			var gotCodes, gotPaths []string
+			for _, violation := range result.Violations {
+				gotCodes = append(gotCodes, violation.Code)
+				gotPaths = append(gotPaths, violation.Path)
+				if violation.Class != ClassReferential || violation.Severity != SeverityReject {
+					t.Fatalf("violation = %+v, want a rejecting referential violation", violation)
+				}
+			}
+			if !slices.Equal(gotCodes, test.wantCodes) {
+				t.Fatalf("codes = %v, want %v", gotCodes, test.wantCodes)
+			}
+			if !slices.Equal(gotPaths, test.wantPaths) {
+				t.Fatalf("paths = %v, want %v", gotPaths, test.wantPaths)
+			}
+			if result.Valid != (len(test.wantCodes) == 0) {
+				t.Fatalf("Valid = %v, want %v", result.Valid, len(test.wantCodes) == 0)
+			}
+		})
+	}
+}
+
+// TestValidateManifestPolicyRule4SecretShape is space-notify-2026-08 P1's
+// rule 4: the manifest's raw bytes carry no Telegram bot-token shape
+// anywhere, exercised through BOTH ValidateManifest (the PR-time schema
+// path) and ValidateManifestPolicy (V3's authority-map-only path) — the
+// fixture pairing convention only proves the first, and the two must agree
+// or a manifest carrying a token could pass V3's authority pre-check.
+func TestValidateManifestPolicyRule4SecretShape(t *testing.T) {
+	t.Parallel()
+
+	const manifestWithToken = `
+space: demo
+gates: default
+min_binary_version: 0.1.0
+participants:
+  - {system: axon, org: yura, section: axon/, owners: [alice], status: active, joined: 2026-07-28}
+notification_routes: []
+vendored: []
+# leaked in a stray comment: 123456789:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+`
+	engine := mustEngine(t)
+
+	t.Run("ValidateManifestPolicy rejects", func(t *testing.T) {
+		t.Parallel()
+		result, err := engine.ValidateManifestPolicy([]byte(manifestWithToken))
+		if err != nil {
+			t.Fatalf("ValidateManifestPolicy: %v", err)
+		}
+		assertHasPOL001(t, result)
+	})
+
+	t.Run("ValidateManifest rejects", func(t *testing.T) {
+		t.Parallel()
+		result, err := engine.ValidateManifest([]byte(manifestWithToken))
+		if err != nil {
+			t.Fatalf("ValidateManifest: %v", err)
+		}
+		assertHasPOL001(t, result)
+	})
+}
+
+func assertHasPOL001(t *testing.T, result Result) {
+	t.Helper()
+	if result.Valid {
+		t.Fatal("Valid = true, want false: manifest carries a Telegram bot-token shape")
+	}
+	for _, violation := range result.Violations {
+		if violation.Code == "POL-001" {
+			return
+		}
+	}
+	t.Fatalf("violations = %+v, want a POL-001 secret-shape violation", result.Violations)
+}

@@ -1,0 +1,2 @@
+code: SCH-004
+note: space.schema.json's notification_routes items require events minItems:1 (space-notify-2026-08 P1 §7); this fixture's events list is empty.

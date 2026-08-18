@@ -20,11 +20,38 @@ func TestContainsContentCredentialCorpus(t *testing.T) {
 		"sk_live_" + strings.Repeat("1", 24),
 		"Bearer " + strings.Repeat("a", 20),
 		"-----BEGIN PRIVATE KEY-----",
+		"123456789:" + strings.Repeat("A", 35),
 	}
 	for _, value := range values {
 		if !ContainsContent(value) {
 			t.Fatalf("credential shape was not detected: %q", value)
 		}
+	}
+}
+
+func TestContentMatchersProjectsContentPatterns(t *testing.T) {
+	t.Parallel()
+	shapes := ContentMatchers()
+	if len(shapes) != len(contentPatterns) {
+		t.Fatalf("ContentMatchers returned %d shapes, want %d (one per contentPatterns entry)", len(shapes), len(contentPatterns))
+	}
+	var sawTelegram bool
+	for i, shape := range shapes {
+		if shape.Name == "" {
+			t.Fatalf("shape %d has an empty Name", i)
+		}
+		if shape.Pattern != contentPatterns[i].pattern.String() {
+			t.Fatalf("shape %d Pattern = %q, want %q (contentPatterns[%d]'s own source)", i, shape.Pattern, contentPatterns[i].pattern.String(), i)
+		}
+		if shape.Name == "telegram-bot-token" {
+			sawTelegram = true
+			if !ContainsContent("123456789:" + strings.Repeat("A", 35)) {
+				t.Fatalf("telegram-bot-token shape %q does not match its own worked example", shape.Pattern)
+			}
+		}
+	}
+	if !sawTelegram {
+		t.Fatal("ContentMatchers did not carry a telegram-bot-token shape")
 	}
 }
 

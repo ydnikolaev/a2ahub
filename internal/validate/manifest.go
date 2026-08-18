@@ -82,6 +82,14 @@ func (e *Engine) ValidateManifest(raw []byte) (Result, error) {
 		return Result{}, &Error{Op: op, Err: merr}
 	}
 	violations = append(violations, checkManifestPolicy(probe)...)
+	// Rule 4 (space-notify-2026-08 P1): the manifest's raw bytes carry no
+	// Telegram bot-token shape anywhere — not in a route, not in a
+	// comment, not in a stray key. Reuses POL-001/scanForSecrets rather
+	// than a new code: this is the SAME fact ("content matches a
+	// forbidden secret/credential pattern") this file already scans
+	// envelopes and consumes-events for (engine.go:116), just applied to
+	// space.yaml's own raw bytes.
+	violations = append(violations, scanForSecrets(raw)...)
 	return newResult(V2, probe.Space, violations), nil
 }
 
@@ -98,16 +106,23 @@ func (e *Engine) ValidateManifestPolicy(raw []byte) (Result, error) {
 		// that second verdict here would only duplicate POL-002.
 		return newResult(V2, "", nil), nil
 	}
-	return newResult(V2, probe.Space, checkManifestPolicy(probe)), nil
+	violations := checkManifestPolicy(probe)
+	// Rule 4, mirrored from ValidateManifest above: V3's authority-map-only
+	// caller must see the same secret-shape refusal PR-time schema
+	// validation would have seen, or the PR gate and the merge gate
+	// disagree about a manifest that carries a live token.
+	violations = append(violations, scanForSecrets(raw)...)
+	return newResult(V2, probe.Space, violations), nil
 }
 
 // manifestProbe is validate's own minimal projection of the authority-bearing
 // manifest fields. Keeping it here preserves ADR-001: validate owns policy and
 // does not import the I/O-facing space package.
 type manifestProbe struct {
-	Schema       string                     `yaml:"schema"`
-	Space        string                     `yaml:"space"`
-	Participants []manifestParticipantProbe `yaml:"participants"`
+	Schema             string                     `yaml:"schema"`
+	Space              string                     `yaml:"space"`
+	Participants       []manifestParticipantProbe `yaml:"participants"`
+	NotificationRoutes []manifestRouteProbe       `yaml:"notification_routes"`
 }
 
 type manifestParticipantProbe struct {
@@ -115,6 +130,21 @@ type manifestParticipantProbe struct {
 	Section string   `yaml:"section"`
 	Owners  []string `yaml:"owners"`
 	Status  string   `yaml:"status"`
+}
+
+// manifestRouteProbe is validate's own minimal projection of
+// notification_routes[] (space-notify-2026-08 P1), decoded alongside
+// Participants for the two policy rules that are not schema-expressible:
+// `for` must resolve against a known participant, and no two routes may
+// share the same (channel, chat, topic, for) tuple. Topic is a pointer
+// because "absent" (the chat's general thread) is a distinct value from
+// any concrete thread id, including the schema's own floor of 1.
+type manifestRouteProbe struct {
+	Channel string   `yaml:"channel"`
+	Chat    string   `yaml:"chat"`
+	Topic   *int     `yaml:"topic"`
+	For     string   `yaml:"for"`
+	Events  []string `yaml:"events"`
 }
 
 // decodeManifest decodes raw twice — once as a schema instance, once into the
@@ -233,7 +263,63 @@ func checkManifestPolicy(probe manifestProbe) []Violation {
 			activeOwners[owner] = system
 		}
 	}
+	violations = append(violations, checkNotificationRoutes(probe)...)
 	return violations
+}
+
+// checkNotificationRoutes is space-notify-2026-08 P1's rules 1-2 (rule 3 is
+// a no-op by design — `events: [published]` is legal widening and gets no
+// code; rule 4 lives beside the raw bytes in ValidateManifest /
+// ValidateManifestPolicy, not here). Both rules share ONE code, REF-022,
+// following checkManifestPolicy's own REF-013 grouping precedent
+// immediately above: every branch has the same consequence — the route
+// cannot be trusted to address anyone, whether because it names an unknown
+// participant or because it duplicates another route's target.
+func checkNotificationRoutes(probe manifestProbe) []Violation {
+	var violations []Violation
+	participantSystems := make(map[string]bool, len(probe.Participants))
+	for _, participant := range probe.Participants {
+		if system := strings.TrimSpace(participant.System); system != "" {
+			participantSystems[system] = true
+		}
+	}
+
+	seenTuples := make(map[string]int, len(probe.NotificationRoutes))
+	for i, route := range probe.NotificationRoutes {
+		base := "notification_routes." + strconv.Itoa(i)
+
+		if route.For != "" && !participantSystems[route.For] {
+			violations = append(violations, notificationRouteViolation(
+				base+".for",
+				"route `for` names a participant absent from participants[]",
+			))
+		}
+
+		topicKey := ""
+		if route.Topic != nil {
+			topicKey = strconv.Itoa(*route.Topic)
+		}
+		tuple := route.Channel + "\x00" + route.Chat + "\x00" + topicKey + "\x00" + route.For
+		if prior, exists := seenTuples[tuple]; exists {
+			violations = append(violations, notificationRouteViolation(
+				base,
+				"route duplicates notification_routes."+strconv.Itoa(prior)+"'s (channel, chat, topic, for) tuple",
+			))
+		} else {
+			seenTuples[tuple] = i
+		}
+	}
+	return violations
+}
+
+func notificationRouteViolation(path, message string) Violation {
+	return Violation{
+		Code:     "REF-022",
+		Class:    ClassReferential,
+		Path:     path,
+		Message:  message,
+		Severity: SeverityReject,
+	}
 }
 
 func cleanTopLevelSection(raw string) (string, bool) {
