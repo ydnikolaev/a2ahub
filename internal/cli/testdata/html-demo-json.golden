@@ -8074,6 +8074,34 @@
           }
         },
         {
+          "id": "RN-02300-16",
+          "kind": "feat",
+          "impact": "normal",
+          "subject": "a space's merge check now runs a signed release binary instead of compiling one",
+          "detail": "The reusable validation workflow downloads the signed `a2a-linux-amd64` for the release its pin names, and verifies that binary's keyless Sigstore signature before placing it anywhere executable. The certificate identity and OIDC issuer are the same pair `a2a update` already verifies with, so both paths accept exactly the same signer.\nThe integrity property is unchanged in kind. What `go install` bought was not a checksum but a public, append-only log anyone can inspect after the fact; Sigstore's transparency log plus the release workflow's own identity is the same guarantee. Verifying a checksum file fetched from the same release would NOT have been — whoever could replace the binary could replace the checksums beside it.\nA space still needs no token: the assets are public and the proof is a public log entry. Nothing in a space changes until its workflow pin moves to this release or later.\n",
+          "affects": [
+            "a2a-validate-reusable.yml"
+          ],
+          "action": {
+            "scope": "space",
+            "why": "No action for a space pinned to an earlier release; a space adopts this when its workflow pin moves. Spaces that mirror the workflow rather than calling it must adopt the cosign step themselves."
+          }
+        },
+        {
+          "id": "RN-02300-17",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "a contract-publication conflict now says whether it is a version boundary or a real disagreement",
+          "detail": "A recovered publication head now records the version of the binary that minted it, and the refusal distinguishes three cases: the same binary recomputing its own head, which is the only one that may indicate tampering; a head recorded before this field existed; and a head minted by a different version, which names both versions so it is clear which upgrade crossed the boundary.\nAll three remain refusals — a head whose proof cannot be established is not a head to trust — but only one of them accuses anyone.\nHeads written by earlier releases keep working: the new field is optional on read, and its absence is reported as a compatibility state rather than folded into a conflict.\n",
+          "affects": [
+            "a2a contract publish"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "No action. Existing publication heads decode unchanged; a conflict message may now name two versions where it previously did not."
+          }
+        },
+        {
           "id": "KI-01900-PROVIDER-TIER-DEFERRED",
           "kind": "known-issue",
           "impact": "normal",
