@@ -10,12 +10,12 @@
 // surfaced was a 110-minute live GitHub run.
 //
 // This file is package main (not internal/e2e) specifically so it can reach
-// the unexported production types contractP6Core.publish assembles
-// (contractPublicationEventBuilder, contractPublicationSubmitValidator,
-// contractManifestEngine, contractHistoryDocumentEngine — all defined in
-// contract_p6_wiring.go) and wire them together itself, the same way
-// contractP6Core.publish does, but with a fake host in place of
-// contractP6Core's concrete *host.GitHubHost.
+// the unexported production types contractManifestEngine and
+// contractHistoryDocumentEngine (still defined in contract_p6_wiring.go, and
+// used by preflight/resolveHistorical too) and hand them to
+// internal/contractwiring.NewPublicationService — the SAME shared
+// constructor contractP6Core.publish itself calls — with a fake host in
+// place of contractP6Core's concrete *host.GitHubHost.
 //
 // The descriptor under test is never a hand-written literal: every contract
 // drafted here goes through the REAL `a2a contract new` (cli.NewCommand,
@@ -32,7 +32,6 @@ import (
 	"errors"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -40,6 +39,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
+	"github.com/ydnikolaev/a2ahub/internal/contractwiring"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
@@ -323,14 +323,19 @@ func contractLifecycleDraftAndSubmit(t *testing.T, contractCmd *cli.ContractComm
 	return id
 }
 
-// contractLifecyclePublish assembles space.NewContractPublicationService the
-// SAME way contractP6Core.publish does (cmd/a2a/contract_p6_wiring.go:154-193)
-// — the same repository, event builder, submit validator, funnel and
-// recovery types — except with a fake host in place of contractP6Core's
-// concrete *host.GitHubHost, and calls Publish once. It is rebuilt on every
-// call, matching production: contractP6Core.publish constructs a fresh
-// repository/events/validator/funnel/recovery on every invocation, never
-// reusing one across publishes.
+// contractLifecyclePublish assembles the production contract publication
+// service through internal/contractwiring.NewPublicationService — the SAME
+// shared constructor contractP6Core.publish itself calls
+// (cmd/a2a/contract_p6_wiring.go's publish method) — with a fake host in
+// place of contractP6Core's concrete *host.GitHubHost, and calls Publish
+// once. It is rebuilt on every call, matching production: contractP6Core.
+// publish constructs a fresh service on every invocation, never reusing one
+// across publishes.
+//
+// The credential is a single value threaded through both the repository and
+// the recovery adapter ({Token: "test-token"}), matching
+// contractwiring.PublicationDependencies' single Credential field and
+// production's own single `credential` variable serving both roles.
 func contractLifecyclePublish(
 	t *testing.T, mirrorDir, remoteURL string, engine *validate.Engine,
 	fakeHost *host.FakeHost, actor template.Actor, contractID, targetVersion string,
@@ -343,28 +348,17 @@ func contractLifecyclePublish(
 		t.Fatalf("loadManifest: %v", err)
 	}
 
-	slug := contractID[len("XC-"+contractLifecycleSystem+"-"):]
-	candidate, source, err := contractLifecycleFreezeMirrorCandidate(ctx, mirrorDir, slug)
+	// contractwiring.FreezePublicationCandidate is the exact production
+	// candidate-freezing logic contractP6Core.freezePublicationCandidate
+	// delegates to — called here directly with the full contract id, so
+	// this test exercises the same ownership guard (artifact.ParseID's
+	// prefix/system check) production does, not a hand copy that skipped it.
+	candidate, source, err := contractwiring.FreezePublicationCandidate(ctx, contractLifecycleSystem, "", mirrorDir, contractID, "")
 	if err != nil {
 		t.Fatalf("freeze publication candidate: %v", err)
 	}
 
-	repository, err := space.NewContractPublicationRepository(
-		mirrorDir, remoteURL, host.Credential{}, contractManifestEngine{engine: engine}, contractHistoryDocumentEngine{engine: engine},
-	)
-	if err != nil {
-		t.Fatalf("NewContractPublicationRepository: %v", err)
-	}
-
 	loadManifestFn := func() (space.Manifest, error) { return loadManifest(mirrorDir) }
-	events := &contractPublicationEventBuilder{
-		mirrorDir: mirrorDir, spaceID: contractLifecycleSpaceID, ownSystem: contractLifecycleSystem,
-		loadManifest: loadManifestFn, actor: actor, engine: engine, now: time.Now, entropy: rand.Reader,
-	}
-	validator := &contractPublicationSubmitValidator{
-		events: events, engine: engine, mirrorDir: mirrorDir,
-		ownSystem: contractLifecycleSystem, loadManifest: loadManifestFn,
-	}
 
 	// contractLifecycleRecoveryHost is this file's own stand-in for
 	// contractP6Core's single concrete *host.GitHubHost, used for BOTH the
@@ -373,23 +367,19 @@ func contractLifecyclePublish(
 	// publication's PreparationContext carries Recovery (every contract
 	// publish does).
 	recoveryHost := contractLifecycleRecoveryHost{FakeHost: fakeHost, git: host.NewGitHubHost(nil, "")}
-	funnel := space.NewWriteFunnel(recoveryHost, validator, "0.19.0")
+	credential := host.Credential{Token: "test-token"}
 
-	recovery, err := space.NewContractPublicationRecovery(
-		recoveryHost, mirrorDir, remoteURL, host.Repo{Owner: "fixture", Name: "space"}, host.Credential{Token: "test-token"},
-		space.ContractPublicationRecoveryValidation{
-			ManifestValidator: contractManifestEngine{engine: engine},
-			HistoryValidator:  contractHistoryDocumentEngine{engine: engine},
-			Compatibility:     validate.ContractCompatibilityAdapter{},
-		},
-	)
+	service, err := contractwiring.NewPublicationService(contractwiring.PublicationDependencies{
+		MirrorDir: mirrorDir, RemoteURL: remoteURL, SpaceID: contractLifecycleSpaceID, OwnSystem: contractLifecycleSystem,
+		Binary: "0.19.0", Repository: host.Repo{Owner: "fixture", Name: "space"}, Credential: credential,
+		Host: recoveryHost, Engine: engine,
+		ManifestValidator: contractManifestEngine{engine: engine},
+		HistoryValidator:  contractHistoryDocumentEngine{engine: engine},
+		Compatibility:     validate.ContractCompatibilityAdapter{},
+		Actor:             actor, Now: time.Now, Entropy: rand.Reader, LoadManifest: loadManifestFn,
+	})
 	if err != nil {
-		t.Fatalf("NewContractPublicationRecovery: %v", err)
-	}
-
-	service, err := space.NewContractPublicationService(repository, repository, recovery, validate.ContractCompatibilityAdapter{}, events, funnel)
-	if err != nil {
-		t.Fatalf("NewContractPublicationService: %v", err)
+		t.Fatalf("contractwiring.NewPublicationService: %v", err)
 	}
 
 	request := space.ContractPublicationRequest{
@@ -401,43 +391,11 @@ func contractLifecyclePublish(
 			CommitMessage:    "a2a(contract-publish): " + contractID,
 			CommitAuthorName: "a2a-" + contractLifecycleSystem, CommitAuthorEmail: "a2a-" + contractLifecycleSystem + "@a2ahub.invalid",
 			PRTitle: "Publish " + contractID, PRBody: "Publish an exact immutable contract version.",
-			Credential: host.Credential{Token: "test-token"},
+			Credential: credential,
 		},
-		SubmissionRuntime: space.SubmissionRuntime{RepoDir: mirrorDir, RemoteURL: remoteURL, Credential: host.Credential{Token: "test-token"}},
+		SubmissionRuntime: space.SubmissionRuntime{RepoDir: mirrorDir, RemoteURL: remoteURL, Credential: credential},
 	}
 	return service.Publish(ctx, request)
-}
-
-// contractLifecycleFreezeMirrorCandidate is this file's own copy of
-// contractP6Core.freezePublicationCandidate's no-staging-overlay branch
-// (cmd/a2a/contract_p6_wiring.go:256-286): resolve the mirror's own checked-
-// out HEAD, then freeze the candidate rooted at the contract's provides/
-// directory against that exact Git tree.
-func contractLifecycleFreezeMirrorCandidate(ctx context.Context, mirrorDir, slug string) (space.ContractPublicationCandidateReader, contract.CandidateSource, error) {
-	layout, err := space.NewLayout(contractLifecycleSystem)
-	if err != nil {
-		return nil, contract.CandidateSource{}, err
-	}
-	contractRoot := path.Dir(layout.ProvidesContract(slug))
-	commit, err := space.ResolveContractPublicationCandidateCommit(ctx, mirrorDir)
-	if err != nil {
-		return nil, contract.CandidateSource{}, err
-	}
-	reader, err := space.OpenContractCandidateReader(mirrorDir, space.ContractCandidateLocation{Path: contractRoot, Source: space.ContractCandidateSourceMirror})
-	if err != nil {
-		return nil, contract.CandidateSource{}, err
-	}
-	frozen, freezeErr := space.NewFrozenContractPublicationCandidate(ctx, reader, space.ContractPublicationMirrorTree{
-		RepoDir: mirrorDir, Commit: commit, Path: contractRoot,
-	})
-	closeErr := reader.Close()
-	if freezeErr != nil {
-		return nil, contract.CandidateSource{}, freezeErr
-	}
-	if closeErr != nil {
-		return nil, contract.CandidateSource{}, closeErr
-	}
-	return frozen, frozen.ContractPublicationCandidateSource(), nil
 }
 
 // contractLifecycleRecoveryHost embeds *host.FakeHost (which already

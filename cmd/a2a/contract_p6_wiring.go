@@ -17,10 +17,9 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
-	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
-	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/contractwiring"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -44,7 +43,7 @@ type contractP6Core struct {
 	authorEmail       string
 	binary            string
 	engine            *validate.Engine
-	host              *host.GitHubHost
+	host              contractwiring.Host
 	now               func() time.Time
 	entropy           io.Reader
 	resolveActor      func(kind, name, model string) (template.Actor, error)
@@ -168,28 +167,14 @@ func (c *contractP6Core) publish(ctx context.Context, input contractP6Publicatio
 	if err != nil {
 		return space.ContractPublicationResult{}, err
 	}
-	repository, err := c.publicationRepository(credential)
-	if err != nil {
-		return space.ContractPublicationResult{}, err
-	}
-	events := &contractPublicationEventBuilder{
-		mirrorDir: c.mirrorDir, spaceID: c.spaceID, ownSystem: c.ownSystem,
-		loadManifest: c.loadManifest, actor: actor, engine: c.engine, now: c.now, entropy: c.entropy,
-	}
-	validator := &contractPublicationSubmitValidator{
-		events: events, engine: c.engine, mirrorDir: c.mirrorDir,
-		ownSystem: c.ownSystem, loadManifest: c.loadManifest,
-	}
-	funnel := space.NewWriteFunnel(c.host, validator, c.binary)
-	recovery, err := space.NewContractPublicationRecovery(c.host, c.mirrorDir, c.remoteURL, c.repository, credential, space.ContractPublicationRecoveryValidation{
+	service, err := contractwiring.NewPublicationService(contractwiring.PublicationDependencies{
+		MirrorDir: c.mirrorDir, RemoteURL: c.remoteURL, SpaceID: c.spaceID, OwnSystem: c.ownSystem,
+		Binary: c.binary, Repository: c.repository, Credential: credential, Host: c.host, Engine: c.engine,
 		ManifestValidator: contractManifestEngine{engine: c.engine},
 		HistoryValidator:  contractHistoryDocumentEngine{engine: c.engine},
 		Compatibility:     validate.ContractCompatibilityAdapter{},
+		Actor:             actor, Now: c.now, Entropy: c.entropy, LoadManifest: c.loadManifest,
 	})
-	if err != nil {
-		return space.ContractPublicationResult{}, err
-	}
-	service, err := space.NewContractPublicationService(repository, repository, recovery, validate.ContractCompatibilityAdapter{}, events, funnel)
 	if err != nil {
 		return space.ContractPublicationResult{}, err
 	}
@@ -270,92 +255,11 @@ func contractPublicationSelector(explicit, bump string) (string, error) {
 	return "auto:" + bump, nil
 }
 
+// freezePublicationCandidate delegates to contractwiring.FreezePublicationCandidate,
+// the shared production logic cmd/a2a's own offline integration test calls
+// directly rather than carrying a hand copy of it.
 func (c *contractP6Core) freezePublicationCandidate(ctx context.Context, contractID, staging string) (space.ContractPublicationCandidateReader, contract.CandidateSource, error) {
-	parsed, err := artifact.ParseID(contractID)
-	if err != nil || parsed.Prefix != "XC" || parsed.System != c.ownSystem {
-		return nil, contract.CandidateSource{}, fmt.Errorf("contract publication id %q is not owned by %s", contractID, c.ownSystem)
-	}
-	layout, err := space.NewLayout(c.ownSystem)
-	if err != nil {
-		return nil, contract.CandidateSource{}, err
-	}
-	contractRoot := path.Dir(layout.ProvidesContract(parsed.Slug))
-	commit, err := space.ResolveContractPublicationCandidateCommit(ctx, c.mirrorDir)
-	if err != nil {
-		return nil, contract.CandidateSource{}, err
-	}
-	mirrorReader, err := space.OpenContractCandidateReader(c.mirrorDir, space.ContractCandidateLocation{Path: contractRoot, Source: space.ContractCandidateSourceMirror})
-	if err != nil {
-		return nil, contract.CandidateSource{}, err
-	}
-	mirrorFrozen, freezeErr := space.NewFrozenContractPublicationCandidate(ctx, mirrorReader, space.ContractPublicationMirrorTree{
-		RepoDir: c.mirrorDir, Commit: commit, Path: contractRoot,
-	})
-	closeErr := mirrorReader.Close()
-	if freezeErr != nil {
-		return nil, contract.CandidateSource{}, freezeErr
-	}
-	if closeErr != nil {
-		return nil, contract.CandidateSource{}, closeErr
-	}
-	if staging == "" {
-		return mirrorFrozen, mirrorFrozen.ContractPublicationCandidateSource(), nil
-	}
-
-	stagingReader, err := space.OpenContractCandidateReader(c.projectRoot, space.ContractCandidateLocation{Path: staging, Source: space.ContractCandidateSourceStaging})
-	if err != nil {
-		return nil, contract.CandidateSource{}, err
-	}
-	stagingFrozen, freezeErr := space.NewFrozenContractPublicationCandidate(ctx, stagingReader, space.ContractPublicationMirrorTree{})
-	closeErr = stagingReader.Close()
-	if freezeErr != nil {
-		return nil, contract.CandidateSource{}, freezeErr
-	}
-	if closeErr != nil {
-		return nil, contract.CandidateSource{}, closeErr
-	}
-	overlay, err := space.NewContractPublicationStagingOverlayReader(mirrorFrozen, stagingFrozen, staging)
-	if err != nil {
-		return nil, contract.CandidateSource{}, err
-	}
-	snapshot, err := overlay.ReadContractPublicationCandidate(ctx)
-	if err != nil {
-		return nil, contract.CandidateSource{}, err
-	}
-	frozen := &contractFixedPublicationCandidate{
-		snapshot: cloneContractCandidateSnapshot(snapshot),
-		source:   contract.CandidateSource{Kind: contract.CandidateSourceStaging, Location: staging, Fingerprint: snapshot.Fingerprint},
-	}
-	return frozen, frozen.source, nil
-}
-
-type contractFixedPublicationCandidate struct {
-	snapshot space.ContractCandidateSnapshot
-	source   contract.CandidateSource
-}
-
-func (c *contractFixedPublicationCandidate) ReadContractPublicationCandidate(context.Context) (space.ContractCandidateSnapshot, error) {
-	if c == nil || c.source.Fingerprint == "" {
-		return space.ContractCandidateSnapshot{}, space.ErrContractPublicationInvalid
-	}
-	return cloneContractCandidateSnapshot(c.snapshot), nil
-}
-
-func (c *contractFixedPublicationCandidate) ContractPublicationCandidateSource() contract.CandidateSource {
-	if c == nil {
-		return contract.CandidateSource{}
-	}
-	return c.source
-}
-
-func cloneContractCandidateSnapshot(snapshot space.ContractCandidateSnapshot) space.ContractCandidateSnapshot {
-	clone := snapshot
-	clone.Files = make([]space.ContractSnapshotFile, len(snapshot.Files))
-	for index := range snapshot.Files {
-		clone.Files[index] = snapshot.Files[index]
-		clone.Files[index].Raw = bytes.Clone(snapshot.Files[index].Raw)
-	}
-	return clone
+	return contractwiring.FreezePublicationCandidate(ctx, c.ownSystem, c.projectRoot, c.mirrorDir, contractID, staging)
 }
 
 type contractManifestEngine struct{ engine *validate.Engine }
@@ -398,234 +302,6 @@ func contractValidationResultError(label string, result validate.Result) error {
 		parts = append(parts, fmt.Sprintf("%s %s: %s", violation.Code, violation.Path, violation.Message))
 	}
 	return fmt.Errorf("%s validation rejected: %s", label, strings.Join(parts, "; "))
-}
-
-type contractPublicationEnvelope struct {
-	ID                string   `yaml:"id"`
-	Space             string   `yaml:"space"`
-	From              string   `yaml:"from"`
-	To                any      `yaml:"to"`
-	RequiredApprovers []string `yaml:"required_approvers"`
-}
-
-type contractPublicationEventActor struct {
-	Kind   string `yaml:"kind"`
-	Name   string `yaml:"name"`
-	System string `yaml:"system"`
-	Model  string `yaml:"model,omitempty"`
-}
-
-type contractPublicationEventDocument struct {
-	Schema        string                        `yaml:"schema"`
-	Event         string                        `yaml:"event"`
-	Space         string                        `yaml:"space"`
-	Subject       string                        `yaml:"subject"`
-	Transition    string                        `yaml:"transition"`
-	State         string                        `yaml:"state,omitempty"`
-	Actor         contractPublicationEventActor `yaml:"actor"`
-	At            string                        `yaml:"at"`
-	Version       string                        `yaml:"version"`
-	Digest        string                        `yaml:"digest"`
-	DigestProfile string                        `yaml:"digest_profile,omitempty"`
-	Publication   *contract.PublicationIntent   `yaml:"publication,omitempty"`
-}
-
-type contractPublicationEventBuilder struct {
-	mirrorDir    string
-	spaceID      string
-	ownSystem    string
-	actor        template.Actor
-	engine       *validate.Engine
-	now          func() time.Time
-	entropy      io.Reader
-	loadManifest func() (space.Manifest, error)
-
-	evaluation fold.CandidateEvaluation
-	eventPath  string
-	eventRaw   []byte
-}
-
-func (b *contractPublicationEventBuilder) BuildContractPublicationEvent(_ context.Context, plan contract.PublicationPlan) (space.FileWrite, error) {
-	manifest, err := b.loadManifest()
-	if err != nil {
-		return space.FileWrite{}, fmt.Errorf("load refreshed publication manifest: %w", err)
-	}
-	frontmatter, err := artifact.ParseFrontmatter(plan.FinalDescriptorBytes())
-	if err != nil {
-		return space.FileWrite{}, fmt.Errorf("parse finalized descriptor: %w", err)
-	}
-	var probe contractPublicationEnvelope
-	if err := yaml.Unmarshal(frontmatter.YAML, &probe); err != nil {
-		return space.FileWrite{}, fmt.Errorf("decode finalized descriptor: %w", err)
-	}
-	if probe.ID != plan.Contract || probe.From != b.ownSystem || probe.Space != b.spaceID {
-		return space.FileWrite{}, fmt.Errorf("finalized descriptor identity does not match publication wiring")
-	}
-	env := fold.Envelope{
-		ID: plan.Contract, Kind: fold.KindContract, From: probe.From,
-		To: contractPublicationToStrings(probe.To), RequiredApprovers: probe.RequiredApprovers,
-	}
-	events, err := b.committedEvents(manifest, plan.Contract)
-	if err != nil {
-		return space.FileWrite{}, err
-	}
-	prior := fold.NewResult(fold.KindContract)
-	if len(events) != 0 {
-		prior = fold.Fold(fold.KindContract, env, events, contractPublicationMembership(manifest))
-	}
-	actor := fold.Actor{Kind: b.actor.Kind, Name: b.actor.Name, System: b.ownSystem}
-	evaluation := fold.EvaluateCandidate(fold.KindContract, prior, fold.Event{
-		Subject: plan.Contract, Transition: fold.TPublish, Version: plan.TargetVersion, Actor: actor,
-	}, env, contractPublicationMembership(manifest))
-	if evaluation.Verdict != fold.VerdictLegal {
-		return space.FileWrite{}, fmt.Errorf("contract publish evaluation refused: %s", evaluation.Verdict)
-	}
-	now := b.now().UTC()
-	eventID, err := artifact.MintULIDAt(now, b.entropy)
-	if err != nil {
-		return space.FileWrite{}, fmt.Errorf("mint publication event: %w", err)
-	}
-	document := contractPublicationEventDocument{
-		Schema: plan.EventSchema, Event: eventID.String(), Space: probe.Space,
-		Subject: plan.Contract, Transition: fold.TPublish,
-		Actor: contractPublicationEventActor{Kind: b.actor.Kind, Name: b.actor.Name, System: b.ownSystem, Model: b.actor.Model},
-		At:    now.Format(time.RFC3339), Version: plan.TargetVersion, Digest: plan.AggregateDigest,
-	}
-	if evaluation.Applicable {
-		document.State = string(evaluation.Outcome)
-	}
-	if plan.EventSchema == "event/v2" {
-		document.DigestProfile = string(plan.DigestProfile)
-		document.Publication = &contract.PublicationIntent{
-			IntentKey: plan.IntentKey, CandidateIntentDigest: plan.CandidateIntentDigest,
-			VersionSelector: plan.VersionSelector, OperationKey: plan.OperationKey,
-		}
-	}
-	raw, err := yaml.Marshal(document)
-	if err != nil {
-		return space.FileWrite{}, fmt.Errorf("encode publication event: %w", err)
-	}
-	layout, err := space.NewLayout(b.ownSystem)
-	if err != nil {
-		return space.FileWrite{}, err
-	}
-	b.evaluation = evaluation
-	b.eventPath = layout.EventFile(now.Format("2006"), eventID.String())
-	b.eventRaw = bytes.Clone(raw)
-	return space.FileWrite{Path: b.eventPath, Content: raw}, nil
-}
-
-func (b *contractPublicationEventBuilder) committedEvents(manifest space.Manifest, subject string) ([]fold.Event, error) {
-	systems := make(map[string]struct{}, len(manifest.Participants)+1)
-	systems[b.ownSystem] = struct{}{}
-	for _, participant := range manifest.Participants {
-		systems[participant.System] = struct{}{}
-	}
-	var events []fold.Event
-	for system := range systems {
-		committed, err := cache.CommittedEvents(b.mirrorDir, system, subject)
-		if err != nil {
-			return nil, fmt.Errorf("read committed contract events for %s: %w", system, err)
-		}
-		events = append(events, committed...)
-	}
-	return events, nil
-}
-
-func contractPublicationMembership(manifest space.Manifest) fold.MembershipView {
-	return func(system string) fold.MembershipStatus {
-		for _, participant := range manifest.Participants {
-			if participant.System == system {
-				if participant.Status == "left" {
-					return fold.MembershipLeft
-				}
-				return fold.MembershipMember
-			}
-		}
-		return fold.MembershipUnknown
-	}
-}
-
-func contractPublicationToStrings(value any) []string {
-	switch typed := value.(type) {
-	case string:
-		return []string{typed}
-	case []any:
-		out := make([]string, 0, len(typed))
-		for _, item := range typed {
-			if text, ok := item.(string); ok {
-				out = append(out, text)
-			}
-		}
-		return out
-	case []string:
-		return append([]string(nil), typed...)
-	default:
-		return nil
-	}
-}
-
-type contractPublicationSubmitValidator struct {
-	events       *contractPublicationEventBuilder
-	engine       *validate.Engine
-	mirrorDir    string
-	ownSystem    string
-	loadManifest func() (space.Manifest, error)
-}
-
-func (v *contractPublicationSubmitValidator) ValidateSubmitCandidate(_ context.Context, files []space.FileWrite) error {
-	raw, err := v.publicationEvent(files)
-	if err != nil {
-		return err
-	}
-	if !bytes.Equal(raw, v.events.eventRaw) {
-		return fmt.Errorf("publication event changed before producer stamping")
-	}
-	result, err := v.engine.ValidateEventWithEvaluation(raw, "0.0.0", v.events.evaluation)
-	if err != nil {
-		return err
-	}
-	return contractValidationResultError("publication candidate event", result)
-}
-
-func (v *contractPublicationSubmitValidator) ValidateSubmit(ctx context.Context, files []space.FileWrite) error {
-	raw, err := v.publicationEvent(files)
-	if err != nil {
-		return err
-	}
-	manifest, err := v.loadManifest()
-	if err != nil {
-		return fmt.Errorf("load refreshed publication manifest: %w", err)
-	}
-	result, err := v.engine.ValidateEventWithEvaluation(raw, manifest.MinBinaryVersion, v.events.evaluation)
-	if err != nil {
-		return err
-	}
-	if err := contractValidationResultError("publication event", result); err != nil {
-		return err
-	}
-	resolver := cli.NewMirrorResolver(v.mirrorDir, manifest)
-	legality := cli.NewLegalityAdapter(v.mirrorDir, v.ownSystem, manifest)
-	return cli.NewSubmitValidatorAdapter(v.engine, v.ownSystem, resolver, legality).ValidateSubmit(ctx, files)
-}
-
-func (v *contractPublicationSubmitValidator) publicationEvent(files []space.FileWrite) ([]byte, error) {
-	if v == nil || v.events == nil || v.events.eventPath == "" {
-		return nil, fmt.Errorf("publication event builder has no evaluated event")
-	}
-	var raw []byte
-	for _, file := range files {
-		if file.Path == v.events.eventPath {
-			if raw != nil {
-				return nil, fmt.Errorf("publication event path is duplicated")
-			}
-			raw = file.Content
-		}
-	}
-	if raw == nil {
-		return nil, fmt.Errorf("publication event is missing")
-	}
-	return raw, nil
 }
 
 func (c *contractP6Core) resolveHistorical(ctx context.Context, ref string) (space.HistoricalSnapshot, error) {
@@ -1152,8 +828,6 @@ func contractMCPToolOperations(adapter mcpContractP6Operations) mcp.ContractTool
 
 var (
 	_ space.ContractHistoryDocumentValidator = contractHistoryDocumentEngine{}
-	_ space.ContractPublicationEventBuilder  = (*contractPublicationEventBuilder)(nil)
-	_ space.CandidateSubmitValidator         = (*contractPublicationSubmitValidator)(nil)
 	_ cli.ContractPublicationOperations      = cliContractP6Adapter{}
 	_ cli.ContractMaterializeOperation       = cliContractP6Adapter{}
 	_ cli.ContractCheckOperation             = cliContractP6Adapter{}
