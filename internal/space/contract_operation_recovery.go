@@ -121,12 +121,35 @@ func (r *ContractPublicationRecovery) proveHead(ctx context.Context, request Con
 		record.HeadBranch != branch || record.Repository != repositoryIdentity(r.repository) || !validRemoteRecoveryOID(parent) {
 		return ContractPublicationHeadProof{}, RecoveryV1{}, false, remoteRecoveryConflict("publication-recovery-metadata")
 	}
-	contractID, _, _ := strings.Cut(record.Target, "@")
+	contractID, target, _ := strings.Cut(record.Target, "@")
 	if record.System != request.System {
 		return ContractPublicationHeadProof{}, RecoveryV1{}, false, remoteRecoveryConflict("publication-recovery-system")
 	}
 	if contractID != request.ContractID {
 		return ContractPublicationHeadProof{}, record, false, nil
+	}
+	// A head recording a target that already resolves in authoritative
+	// main's own published history is a prior publish's own now-merged,
+	// not-yet-pruned branch: main has moved past it, so recomputing its plan
+	// against CURRENT history is guaranteed to disagree with what the
+	// branch's own trailer recorded, not because the branch is forged but
+	// because history advanced. Skip it — leave it out of the listing
+	// entirely — rather than let that guaranteed disagreement abort the
+	// WHOLE probe before every other head's own relevance/contract-ID filter
+	// is even consulted. request.ResolvedInMain is main's OWN answer
+	// (ContractPublicationRepository.ResolveContractPublicationTarget,
+	// supplied by Publish), never a host-reported "merged" state this
+	// package cannot verify offline. A head that does NOT resolve in main —
+	// including a genuinely conflicting or tampered one — still falls
+	// through to verifyPublicationTree exactly as before.
+	if request.ResolvedInMain != nil {
+		resolved, err := request.ResolvedInMain(ctx, contractID, target)
+		if err != nil {
+			return ContractPublicationHeadProof{}, RecoveryV1{}, false, err
+		}
+		if resolved {
+			return ContractPublicationHeadProof{}, record, false, nil
+		}
 	}
 	var recoveredPlan contract.PublicationPlan
 	if err := r.verifyPublicationTree(ctx, record, parent, head, message, authorName, authorEmail, changes, &recoveredPlan); err != nil {

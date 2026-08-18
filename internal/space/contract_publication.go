@@ -460,6 +460,20 @@ type ContractPublicationHeadProbeRequest struct {
 	ContractID      string
 	NamespacePrefix string
 	MaximumHeads    int
+	// ResolvedInMain reports whether contractID@version already resolves in
+	// authoritative main's own published history. Publish supplies main's
+	// own ResolveContractPublicationTarget (the same lookup its explicit-
+	// target fast path already trusts one call earlier) so the probe can
+	// skip a head recording an already-published target — a prior publish's
+	// own now-merged, not-yet-pruned branch — WITHOUT re-deriving main
+	// history itself and without trusting a host-only "merged" signal this
+	// package cannot verify offline. Skipping means the head is left out of
+	// the listing entirely; it is never treated as relevant, never verified,
+	// never eligible for repair. A head whose target is NOT resolved in main
+	// is unaffected: it is proved (and, on disagreement, refused) exactly as
+	// before. Nil is legal and preserves the pre-existing fail-closed
+	// behaviour (every head is proved, unconditionally).
+	ResolvedInMain func(ctx context.Context, contractID, target string) (bool, error)
 }
 
 // ContractPublicationRemoteProof is the restart boundary. Repair must use the
@@ -720,6 +734,10 @@ func (s *ContractPublicationService) Publish(ctx context.Context, request Contra
 	headListing, err := s.remote.ProbeContractPublicationHeads(ctx, ContractPublicationHeadProbeRequest{
 		System: request.System, ContractID: request.ContractID, NamespacePrefix: namespace,
 		MaximumHeads: hostContractPublishHeadLimit,
+		ResolvedInMain: func(ctx context.Context, contractID, target string) (bool, error) {
+			_, found, resolveErr := s.main.ResolveContractPublicationTarget(ctx, contractID, target)
+			return found, resolveErr
+		},
 	})
 	if err != nil {
 		return ContractPublicationResult{}, fmt.Errorf("%w: remote publication-head probe failed: %w", ErrOperationConflict, err)

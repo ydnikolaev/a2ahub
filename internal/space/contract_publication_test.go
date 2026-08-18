@@ -341,6 +341,21 @@ func TestContractPublicationPublishProbesBeforePlanningThenPreparesAndSubmitsOnc
 	if remote.request.MaximumHeads != 256 || remote.request.NamespacePrefix != "a2a/atlas/contract-publish/op-v1-" {
 		t.Fatalf("remote probe = %+v", remote.request)
 	}
+	// Publish must supply the probe with main's OWN ResolveContractPublicationTarget
+	// (the same lookup its explicit-target fast path already trusts one call
+	// earlier) so ProbeContractPublicationHeads can skip a head whose recorded
+	// target already resolves in main, rather than aborting the whole listing
+	// over it.
+	if remote.request.ResolvedInMain == nil {
+		t.Fatal("Publish did not supply a ResolvedInMain lookup to the remote probe")
+	}
+	beforeExacts := main.exacts
+	if found, err := remote.request.ResolvedInMain(t.Context(), "XC-atlas-demo", "1.0.0"); err != nil || found != main.exactFound {
+		t.Fatalf("ResolvedInMain(%q, %q) = %v, %v; want %v, nil", "XC-atlas-demo", "1.0.0", found, err, main.exactFound)
+	}
+	if main.exacts != beforeExacts+1 {
+		t.Fatalf("ResolvedInMain did not delegate to main.ResolveContractPublicationTarget: exacts = %d, want %d", main.exacts, beforeExacts+1)
+	}
 }
 
 func TestContractPublicationSubmissionRequiresUnchangedObservedWriteFloor(t *testing.T) {
