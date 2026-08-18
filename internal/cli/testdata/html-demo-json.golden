@@ -8102,6 +8102,62 @@
           }
         },
         {
+          "id": "RN-02300-18",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "picking a row in Exchange opens its detail beside the list again, instead of a dialog that repeats the row",
+          "detail": "Exchange rows select into an inline detail pane, the way Contracts and Threads already did. The pane is in the page, not a dialog: it traps no focus, locks no scrolling and paints no backdrop, so reading a document no longer covers the list it came from.\nThe card dialog is unchanged and still opens from Overview and from a `#card=` link, which is what a saved link keeps doing. Its own frame no longer paints a focus ring around itself when it opens, and its padding is sized for card content rather than for a layout it no longer has.\nA selection now survives an in-place refresh together with the filter, the space and the scroll offset — and a selected row that disappears from the newer data closes the pane rather than leaving it describing something the data no longer carries.\nKnown limit, measured rather than assumed: selecting a row still returns the page to the top. That is not new here and not specific to Exchange — Contracts, which never lost its pane, does the same. It is the shared re-render dropping the scroll offset, and it is recorded for a fix in the shell rather than patched per screen.\n",
+          "affects": [
+            "a2a dashboard"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "No action. Deep links, the card dialog and every existing route behave as before."
+          }
+        },
+        {
+          "id": "RN-02300-19",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "dashboard screens stop printing placeholder sentences for facts the snapshot does not carry",
+          "detail": "A fact that is not in the snapshot is now absent from the card rather than present as \"Not recorded.\" — an empty row taught nothing and cost a line of attention on every card. Facts that ARE carried read the same as before.\nOverview's process cards regained their grouping and their author lines, and the reader's own turn moved back out of the card into the list chrome, where it belongs: a card can be shared, and whose move it is depends on who is looking.\nExchange regained both facet axes — direction and open/closed — plus the type filter and the deadline chip, and its rows are readable at a glance again: badge, state, priority, deadline-or-age, title, and who is handing to whom. The detail that used to crowd the row now lives in the pane beside it.\nThreads, Spaces and the map were re-read against Contracts, the one screen that never regressed. Versions and the timeline card needed no change, which was measured rather than assumed.\nTwo counts on Exchange can disagree when a collection is truncated: the direction chips report the whole carried window, the new axes report what is in the current view. The sentence directly below the chips states the bound, and neither number is invented.\n",
+          "affects": [
+            "a2a dashboard"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "No action. Every route, deep link and card door behaves as before."
+          }
+        },
+        {
+          "id": "RN-02300-20",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "the dashboard's card evidence now describes what the cards render",
+          "detail": "Every card kind exposes its summary region, so a card's short form and its full form can be told apart and compared. Four kinds previously marked that region only while their own dialog was open, which never happened — a row is a card's short form whether or not anything is open, and it is now marked that way.\nThe remaining placeholder sentences are gone from every screen this release touched, and the assertions that had pinned them now assert the absence instead.\nA dialog that merely repeats the row it was opened from is now a test failure rather than a thing a reader has to notice.\nContracts is unchanged throughout, deliberately: it is the reference the other screens were re-read against, and its card content is byte-for-byte what it was.\n",
+          "affects": [
+            "a2a dashboard"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "No action. This release changes what the tests know, not what the dashboard does, beyond the copy fixes described above."
+          }
+        },
+        {
+          "id": "RN-02300-21",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "Exchange opens on everything again, not silently on incoming only",
+          "detail": "Opening Exchange showed only incoming documents while the screen's own state asked for all of them. Nothing said so: the \"All\" chip was gone, no other chip looked selected, and the shorter list read as \"this is what there is\". On a real project that was two rows where the previous release showed five.\n\"All\" is back as the first direction and is honoured again. Its count is what it can actually see, and it reports no window bound of its own — three separate bounds do not add up to one, and a total nobody sent is not a number worth printing.\nThe narrower reading of a value a screen does not recognise is the same defect class this release fixes elsewhere by refusing outright. Here the value was always legitimate; it was the screen that stopped understanding it.\n",
+          "affects": [
+            "a2a dashboard"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "No action. If you had selected a direction, that selection still applies; only the default reading changed back."
+          }
+        },
+        {
           "id": "KI-01900-PROVIDER-TIER-DEFERRED",
           "kind": "known-issue",
           "impact": "normal",

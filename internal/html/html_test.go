@@ -514,7 +514,7 @@ func TestDefaultTemplate_WorkReportsUseDurableHistoryAndCollapseTechnicalPublish
 		`filter(ev => !(carriesWorkReport && ev.transition === "publish"))`,
 		`const workReportRows = workReports.map(report =>`,
 		`actions.openCard("work-report", id, accent)`,
-		`workReportsHint:ru ? "в перенесённом порядке" : "in carried order"`,
+		`workReportsHint:ru ? "в порядке поступления" : "in received order"`,
 	} {
 		if !strings.Contains(tmpl, required) {
 			t.Errorf("dashboard work-report history is missing %q", required)
@@ -529,7 +529,11 @@ func TestDashboardDesignSource_WorkReportAndThreadSelectionSemantics(t *testing.
 	for _, required := range []string{
 		`report.artifact_id === a.id || subjectID === a.id`,
 		`const workReportRows = workReports.map(report =>`,
-		`const carried = aggregate ? (aggregate.items || []) : collections[tab];`,
+		// P8 (2026-08-19) restored the "all" direction, so the collection for a
+		// tab is resolved through collectionFor rather than indexed directly.
+		// The contract this pins is unchanged: the view takes what the server
+		// carried, in order, and never sorts it.
+		`const carried = aggregate ? (aggregate.items || []) : collectionFor(tab);`,
 	} {
 		if !strings.Contains(exchange, required) {
 			t.Errorf("exchange carried-order contract is missing %q", required)
@@ -751,8 +755,12 @@ func TestDashboardDesignSource_SelectedSpaceOperationalEmptyStatesUseSnapshotEvi
 		`operational.timeline_window || {}`,
 		`const timelineBound = windowSentence(timelineWindow, ru);`,
 		`This snapshot contains no operational rows.`,
-		`This snapshot has no process for the carried identity.`,
-		`The carried set is complete and empty.`,
+		// Rule B (P4, 2026-08-19): "carried" is provenance vocabulary and is
+		// banned from user-facing slots, so this reads "with that identity"
+		// now. The invariant is unchanged — the empty state names WHY it is
+		// empty rather than reconstructing a classifier, which the retired
+		// list below still enforces.
+		`This snapshot has no process with that identity.`,
 		`The server reports a non-zero total but admitted no rows into this bounded snapshot.`,
 	} {
 		if !strings.Contains(source, required) {

@@ -56,10 +56,13 @@ func TestExchangeFeedPreservesServerCarriedOrder(t *testing.T) {
 	source := string(raw)
 	shipped := dashboardTemplateCorpus(t)
 	for _, required := range []string{
-		`const carried = aggregate ? (aggregate.items || []) : collections[tab];`,
-		`const workList = aggregate ? carried : carried.filter(item => this.inScope(item.space));`,
+		`const carried = aggregate ? (aggregate.items || []) : collectionFor(tab);`,
+		// P5 (wave 3) added the facet axes, so the in-scope list became the BASE
+		// the facets filter, and gained its name. Still no sort: the order is
+		// whatever the server carried, all the way to the row.
+		`const workListBase = aggregate ? carried : carried.filter(item => this.inScope(item.space));`,
 		`const workReportRows = workReports.map(report =>`,
-		`workReportsHint:ru ? "в перенесённом порядке" : "in carried order"`,
+		`workReportsHint:ru ? "в порядке поступления" : "in received order"`,
 	} {
 		if !strings.Contains(source, required) {
 			t.Errorf("Exchange view is missing carried-order contract %q", required)
