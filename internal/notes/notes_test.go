@@ -223,7 +223,6 @@ func TestReusableRefDefaultMatchesTheNewestAuthoredVersion(t *testing.T) {
 	// see reusableWorkflowPaths' own doc comment for why a second hardcoded
 	// path would repeat the exact defect this test exists to close.
 	for _, path := range reusableWorkflowPaths(t) {
-		path := path
 		t.Run(filepath.Base(path), func(t *testing.T) {
 			t.Parallel()
 
