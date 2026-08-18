@@ -152,7 +152,7 @@ workflow-lint: ## Every GitHub Action `uses:` must be SHA-pinned (defeats tag-hi
 	@# bumping go.mod alone would have left every space validating and notifying
 	@# on the vulnerable toolchain. Nothing would have said so.
 	@gomod_go=$$(awk '$$1 == "go" && $$2 ~ /^[0-9]+\.[0-9]+\.[0-9]+$$/ { print $$2; exit }' go.mod); \
-	test -n "$$gomod_go" || { echo "workflow-lint: FAIL — go.mod declares no patch-level go directive; the workflows have nothing to agree with."; exit 1; }; \
+	test -n "$$gomod_go" || { echo "workflow-lint: FAIL — go.mod names no PATCH-level go directive (e.g. 'go 1.26.6'). A two-component 'go 1.27' is legal Go and this refuses it on purpose: the reusable workflows every space runs name a toolchain literally, and a govulncheck fix is a patch-level fact. Restore the patch component."; exit 1; }; \
 	drift=$$(grep -rnE '^ *go-version: "[0-9]+\.[0-9]+\.[0-9]+"' .github/workflows 2>/dev/null | grep -vF "\"$$gomod_go\"" || true); \
 	if [ -n "$$drift" ]; then \
 	  echo "workflow-lint: FAIL — a workflow pins a Go toolchain go.mod does not name ($$gomod_go):"; \
