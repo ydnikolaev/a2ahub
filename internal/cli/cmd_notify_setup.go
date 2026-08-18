@@ -694,6 +694,61 @@ func notifyNonInteractiveRefusal(repo string) string {
 // The three sub-verbs.
 // ---------------------------------------------------------------------
 
+// notifyRouteEvents resolves the `events:` list the printed route stanza
+// carries, from --events when given and from a default otherwise.
+//
+// It exists because the stanza used to hardcode `events: [state-change]` — a
+// value `internal/validate`'s route policy does not accept (the legal set is
+// human-gate | blocking | published), so `a2a notify setup`'s whole output, a
+// route for a human to paste into space.yaml, could not merge. The flag was
+// parsed and discarded at the same time, its own help text promising a
+// subscription control the code never read. Found 2026-08-18 by enumerating
+// the shipped flags against the prose, which is what release-runbook step 7
+// asks for and what sampling would have missed.
+//
+// The vocabulary comes from internal/spacenotify's own constants rather than a
+// third copy of the three strings. It is still a SECOND copy relative to
+// internal/validate's switch — validate is a core package whose import set
+// ADR-001 freezes, so importing spacenotify there is not a drive-by. What
+// keeps the two honest is the test that runs this function's output through
+// the real validator.
+//
+// Default: the two classes that mean a human is actually needed. `published`
+// is deliberately excluded — plan §11.3 marks ordinary publication chat-✘ and
+// calls widening to it a per-route, opt-in decision, so setup does not make it
+// for anybody.
+func notifyRouteEvents(flagValue string) ([]string, error) {
+	legal := map[string]bool{
+		spacenotify.ClassHumanGate: true,
+		spacenotify.ClassBlocking:  true,
+		spacenotify.ClassPublished: true,
+	}
+	if strings.TrimSpace(flagValue) == "" {
+		return []string{spacenotify.ClassHumanGate, spacenotify.ClassBlocking}, nil
+	}
+	seen := make(map[string]bool)
+	out := make([]string, 0, 3)
+	for _, raw := range strings.Split(flagValue, ",") {
+		event := strings.TrimSpace(raw)
+		if event == "" {
+			continue
+		}
+		if !legal[event] {
+			return nil, fmt.Errorf("--events: %q is not an event class; legal classes are %s, %s, %s",
+				event, spacenotify.ClassHumanGate, spacenotify.ClassBlocking, spacenotify.ClassPublished)
+		}
+		if seen[event] {
+			return nil, fmt.Errorf("--events: %q named twice; the route policy refuses a duplicate", event)
+		}
+		seen[event] = true
+		out = append(out, event)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("--events: named no event class; omit the flag for the default, or name at least one")
+	}
+	return out, nil
+}
+
 const notifySetupUsage = "usage: a2a notify setup [--space <id>] [--for <participant>] [--events <list>] [--locale <ru|en>] [--non-interactive]"
 
 func runNotifySetup(ctx context.Context, c *NotifyCommand, root string, args []string, stdio IO) int {
@@ -701,7 +756,7 @@ func runNotifySetup(ctx context.Context, c *NotifyCommand, root string, args []s
 	fs.SetOutput(stdio.Stderr)
 	_ = fs.String("space", "", "the space id this route belongs to (cosmetic; the repo identity comes from the local git remote)")
 	forParticipant := fs.String("for", "", "the participant this route serves")
-	_ = fs.String("events", "", "comma-separated event classes this route subscribes to")
+	events := fs.String("events", "", "comma-separated event classes this route subscribes to (human-gate|blocking|published); default human-gate,blocking")
 	locale := fs.String("locale", "en", "the human's locale for the printed instructions (ru|en)")
 	nonInteractive := fs.Bool("non-interactive", false, "refuse to prompt for a token; print the one-liner instead")
 	if err := fs.Parse(args); err != nil {
@@ -802,8 +857,13 @@ func runNotifySetup(ctx context.Context, c *NotifyCommand, root string, args []s
 	if forName == "" {
 		forName = "<participant>"
 	}
+	routeEvents, evErr := notifyRouteEvents(*events)
+	if evErr != nil {
+		_, _ = fmt.Fprintln(stdio.Stderr, "a2a notify setup: "+evErr.Error())
+		return 2
+	}
 	_, _ = fmt.Fprintln(stdio.Stdout, "add this route to space.yaml's notification_routes and submit it through the normal write funnel (a reviewable PR):")
-	_, _ = fmt.Fprintf(stdio.Stdout, "  - channel: telegram\n    chat: \"<chat id from above>\"\n    for: %s\n    events: [state-change]\n    secret: %s\n", forName, notifyTelegramSecretName)
+	_, _ = fmt.Fprintf(stdio.Stdout, "  - channel: telegram\n    chat: \"<chat id from above>\"\n    for: %s\n    events: [%s]\n    secret: %s\n", forName, strings.Join(routeEvents, ", "), notifyTelegramSecretName)
 
 	// Step 7: proof, ONLY once the route already exists in the manifest —
 	// "after the route merges" (spec 06 step 7). Before that this

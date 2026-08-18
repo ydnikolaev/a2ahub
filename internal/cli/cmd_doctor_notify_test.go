@@ -31,7 +31,7 @@ func TestDoctorCheckNotifyRoutes(t *testing.T) {
 		cmd := newTestDoctorCommand()
 		cmd.readFile = func(path string) ([]byte, error) {
 			if strings.HasSuffix(path, "space.yaml") {
-				return []byte(strings.ReplaceAll(notifyManifestFixture, "notification_routes:\n  - channel: telegram\n    chat: \"-1001\"\n    for: axon\n    events: [state-change]\n    secret: TG_BOT_TOKEN\n", "")), nil
+				return []byte(strings.ReplaceAll(notifyManifestFixture, "notification_routes:\n  - channel: telegram\n    chat: \"-1001\"\n    for: axon\n    events: [human-gate, blocking]\n    secret: TG_BOT_TOKEN\n", "")), nil
 			}
 			return nil, os.ErrNotExist
 		}

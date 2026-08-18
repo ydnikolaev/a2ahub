@@ -16,7 +16,9 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/validate"
 )
 
 // cmd_notify_setup_test.go exercises `a2a notify setup|discover|verify`
@@ -453,7 +455,7 @@ notification_routes:
   - channel: telegram
     chat: "-1001"
     for: axon
-    events: [state-change]
+    events: [human-gate, blocking]
     secret: TG_BOT_TOKEN
 `
 
@@ -499,7 +501,7 @@ func TestNotifyVerify_NoRoutesAgreesWithDoctor(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	writeNotifySpaceYAML(t, dir, strings.ReplaceAll(notifyManifestFixture,
-		"notification_routes:\n  - channel: telegram\n    chat: \"-1001\"\n    for: axon\n    events: [state-change]\n    secret: TG_BOT_TOKEN\n", ""))
+		"notification_routes:\n  - channel: telegram\n    chat: \"-1001\"\n    for: axon\n    events: [human-gate, blocking]\n    secret: TG_BOT_TOKEN\n", ""))
 
 	c := newTestNotifyCommand(t, nil)
 	c.ghToken = func(context.Context) (string, bool) {
@@ -618,4 +620,95 @@ func mustParseNotifyManifest(t *testing.T, raw string) space.Manifest {
 		t.Fatal(err)
 	}
 	return m
+}
+
+// TestNotifySetupPrintsARouteTheValidatorAccepts runs the exact stanza
+// `a2a notify setup` prints through the REAL manifest policy validator.
+//
+// This is the assertion whose absence let a defect ship: the stanza hardcoded
+// `events: [state-change]`, which is not one of the legal classes
+// (human-gate | blocking | published), so the route `notify setup` handed a
+// human to paste into space.yaml could never merge — and the test that covered
+// this output asserted the literal string instead, freezing the bug rather than
+// catching it. The notify fixtures carried the same illegal value and no test
+// in this package ever ran a validator over them.
+//
+// Asserting a literal proves the code still does what it does. Asserting the
+// output VALIDATES proves it does what it is for. It also keeps
+// internal/spacenotify's class constants and internal/validate's own switch
+// honest with each other without either package importing the other — ADR-001
+// freezes validate's import set, so that agreement cannot be a shared symbol
+// and has to be a test.
+func TestNotifySetupPrintsARouteTheValidatorAccepts(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name string
+		flag string
+		want string
+	}{
+		{name: "default", flag: "", want: "human-gate, blocking"},
+		{name: "explicit single", flag: "published", want: "published"},
+		{name: "explicit set", flag: "human-gate,published", want: "human-gate, published"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			events, err := notifyRouteEvents(test.flag)
+			if err != nil {
+				t.Fatalf("notifyRouteEvents(%q) error = %v", test.flag, err)
+			}
+			if got := strings.Join(events, ", "); got != test.want {
+				t.Fatalf("events = %q, want %q", got, test.want)
+			}
+
+			manifest := "schema: space/v1\nspace: demo\nmin_binary_version: 0.22.0\ngates: default\n" +
+				"participants:\n  - system: axon\n    org: acme\n    section: axon/\n    owners: [alice]\n" +
+				"    status: active\n    joined: \"2026-01-01\"\n" +
+				"notification_routes:\n  - channel: telegram\n    chat: \"-1001\"\n    for: axon\n" +
+				"    events: [" + strings.Join(events, ", ") + "]\n    secret: TG_BOT_TOKEN\n"
+
+			corpus, err := schema.Load()
+			if err != nil {
+				t.Fatalf("schema.Load: %v", err)
+			}
+			engine := validate.New(corpus)
+			result, err := engine.ValidateManifestPolicy([]byte(manifest))
+			if err != nil {
+				t.Fatalf("ValidateManifestPolicy: %v", err)
+			}
+			for _, v := range result.Violations {
+				t.Errorf("the stanza `a2a notify setup` prints does not validate: %s %s %s", v.Code, v.Path, v.Message)
+			}
+		})
+	}
+}
+
+// TestNotifyRouteEventsRefusesWhatThePolicyWouldRefuse keeps the flag from
+// promising a subscription the route policy will not accept — the shape the
+// discarded `--events` flag had, where the help text claimed a control the
+// code never read.
+func TestNotifyRouteEventsRefusesWhatThePolicyWouldRefuse(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name string
+		flag string
+		want string
+	}{
+		{name: "unknown class", flag: "state-change", want: "is not an event class"},
+		{name: "the digest class is not subscribable", flag: "digest", want: "is not an event class"},
+		{name: "duplicate", flag: "blocking,blocking", want: "named twice"},
+		{name: "only separators", flag: ",,", want: "named no event class"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := notifyRouteEvents(test.flag)
+			if err == nil {
+				t.Fatalf("notifyRouteEvents(%q) = nil error, want a refusal naming %q", test.flag, test.want)
+			}
+			if !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("notifyRouteEvents(%q) error = %q, want it to name %q", test.flag, err, test.want)
+			}
+		})
+	}
 }
