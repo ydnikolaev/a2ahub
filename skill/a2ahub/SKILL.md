@@ -138,6 +138,7 @@ the requested work.
 | [reference/retraction.md](reference/retraction.md) | Withdrawing a live datum via a `work_request` carrying an `x_retraction` block — schema-valid today, no release needed. Hand-maintained prose, not generated. |
 | [reference/bindings.md](reference/bindings.md) | A tracked, local `.a2a/bindings.yaml` mapping a consumed contract to where it lands in YOUR code — the missing half of `consumes.yaml`. Hand-maintained prose, not generated. |
 | [reference/threads.md](reference/threads.md) | What a thread IS and why it is the unit you read: one intent, both systems, ordered by commit rather than by anyone's clock, with "whose move is it" computed from the same engine the write verbs enforce. Hand-maintained prose, not generated. |
+| [reference/notify.md](reference/notify.md) | Space notifications: what every flag on `a2a notify render/send/setup/discover/verify` decides, the exit-code contract for all five, and the event classes a route may subscribe to. Hand-maintained prose, not generated. |
 | [reference/contract-versions.md](reference/contract-versions.md) | The rolling window — several versions of one contract alive at once, what each state means to each side, how a line retires without touching the others, and why a maintenance release needs an explicit `--version`. Hand-maintained prose, not generated. |
 | [reference/data-exchange.md](reference/data-exchange.md) | The contract data exchange loop (`a2a data pack/deliver/fetch/verify`) — where a packed payload sits in the handoff arc, the producer and consumer sequences, and why a response cannot claim a delivery the space does not hold. Hand-maintained prose, not generated. |
 | [reference/data-exchange-flags.md](reference/data-exchange-flags.md) | What every flag on the four `a2a data` verbs DECIDES, the exit-code contract, and how a source directory maps to the pinned contract's schema entries. Hand-maintained prose, not generated. |
@@ -170,7 +171,8 @@ The prose files in this skill — `SKILL.md`, `loops.md`, `loops/send.md`,
 `reference/status-announcements.md`, `reference/work-reporting.md`, `reference/retraction.md`,
 `reference/bindings.md`, `reference/threads.md`, `notifications.md`,
 `reference/contract-versions.md`, `reference/data-exchange.md`,
-`reference/data-exchange-flags.md`, `reference/data-exchange-refusals.md` and
+`reference/data-exchange-flags.md`, `reference/data-exchange-refusals.md`,
+`reference/notify.md` and
 `reference/actor-identity.md` — are **hand-maintained** and single-sourced here;
 they are reviewed at each tagged release against the maintainers' own
 release checklist, not by a machine gate.

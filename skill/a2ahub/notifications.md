@@ -7,9 +7,11 @@
 > **Read it when:** `a2a notifications status --json` reported an offer state
 > you have to act on, or a human asked to be notified outside the terminal.
 >
-> **Not here:** the pull-based channels an agent watches for itself — that is
-> the watch loop ([loops/watch.md](loops/watch.md)); what a failing
-> notifications check means ([troubleshooting.md](troubleshooting.md)).
+> **Not here:** what each `a2a notify` flag decides, the exit codes and the
+> event classes — that is [reference/notify.md](reference/notify.md), including
+> the MCP twin's current state; the pull-based channels an agent watches for
+> itself — that is the watch loop ([loops/watch.md](loops/watch.md)); what a
+> failing notifications check means ([troubleshooting.md](troubleshooting.md)).
 
 Use the binary as the source of truth.
 [reference/commands.md](reference/commands.md) catalogues which verbs exist —
@@ -113,15 +115,9 @@ a2a notify render --all            # the whole space
 a2a notify render --only XW-…,XC-… # exactly these, whatever their state
 ```
 
-**Exactly one of those three is required.** Naming none, or two, is a usage
-error (exit 2) — they are alternative ways to choose the candidate set, not
-options that combine.
-
-`--limit <n>` (default 5) is the digest cap on the `--base` and `--all` paths:
-a route sees that many artifacts as individual messages, and everything beyond
-folds into one digest message so a large push cannot turn into a wall. `--only`
-ignores it, along with everything else. `--json` is a no-op kept for symmetry
-with other verbs — JSON is the only output this verb has.
+**Exactly one of those three is required** — they choose the candidate set,
+they do not combine. What each one and `--limit` decide is
+[reference/notify.md](reference/notify.md).
 
 Each message carries the facts a decision needs — type, who to whom, whose turn,
 priority and deadline, the artifact's own body — and, for a route that names a
@@ -150,34 +146,11 @@ it WOULD have sent, through the same renderer the live path uses. That is the
 sanctioned rehearsal: a layout can be reviewed, and a failure read, without a
 chat receiving anything.
 
-## Exit codes
-
-The repo's convention, and the one a script needs, because two of these are
-easy to misread:
-
-| Verb | 0 | 1 | 2 |
-|---|---|---|---|
-| `render` | messages printed | a refusal (unknown `--only` id, undeclared secret) or an unreadable checkout | usage — no range selector, two of them, or a bad `--limit` |
-| `send` | every record sent, or dry-run | **at least one delivery failed** — the others still went | usage, or an invalid message array on stdin |
-| `setup` | the step reached its end | any named error — **including `--non-interactive`'s deliberate refusal to prompt**, which is the intended path, not a fault | usage |
-| `discover` | a chat id was found | no update arrived within `--timeout` (default 10s), or the API refused | usage |
-| `verify` | all three facts check out | at least one did not | usage |
-
-`send` exiting 1 does not mean nothing was delivered, and `setup
---non-interactive` exiting 1 does not mean it failed. Both are worth knowing
-before a script treats a non-zero code as an outage.
-
-## The MCP twin exists and is not wired yet
-
-`a2a_notify` is registered on the MCP surface with the same five actions, so an
-agent listing tools will find it. **Every call answers "notify operations are
-not available" today** — it is registered with a zero-value dependency set on
-purpose, and the follow-up is named in `internal/mcp/tools_notify.go`'s own doc
-comment.
-
-Use the CLI verbs above. This is written down because a tool that is present
-and always refuses, with nothing saying why, costs an agent a debugging session
-it cannot win.
+Every flag on all five verbs, the exit codes, and the event classes a route may
+subscribe to are [reference/notify.md](reference/notify.md). Two exit codes are
+worth knowing before a script treats non-zero as an outage: `send` exiting 1
+means at least one delivery failed while the others went, and `setup
+--non-interactive` exiting 1 is its intended refusal to prompt.
 
 ## `a2a notify setup` — the flow that never sees the token
 

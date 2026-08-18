@@ -21,6 +21,7 @@
     {"id":"data-exchange-refusals","group":"Reference","title":"Data exchange: refusals and verdicts","file":"a2ahub/reference/data-exchange-refusals.md"},
     {"id":"actor-identity","group":"Reference","title":"Who gets recorded as the actor","file":"a2ahub/reference/actor-identity.md"},
     {"id":"work-reporting","group":"Reference","title":"Reporting operational work","file":"a2ahub/reference/work-reporting.md"},
+    {"id":"notify","group":"Reference","title":"Space notifications: flags, exit codes, event classes","file":"a2ahub/reference/notify.md"},
     {"id":"notifications","group":"Reference","title":"Native and editor notifications","file":"a2ahub/notifications.md"},
     {"id":"decompose","group":"Reference","title":"Decompose example","file":"a2ahub/reference/decompose-example.md"},
     {"id":"feedback","group":"Reference","title":"Feedback","file":"a2ahub/reference/feedback.md"},
