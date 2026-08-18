@@ -49,6 +49,29 @@
               <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" state-result="{{ r.stateResult }}" outcome-result="{{ r.outcomeResult }}" lifecycle-known="{{ r.lifecycleKnown }}" lifecycle-unknown-text="{{ r.lifecycleUnknownText }}" gate-result="{{ r.gateResult }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" sync-age="{{ r.syncAge }}" freshness-result="{{ r.freshnessResult }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" reason-sentence="{{ r.reasonSentence }}" waiting-on-label="{{ r.waitingOnLabel }}" waiting-on="{{ r.waitingOn }}" expected-move-label="{{ r.expectedMoveLabel }}" expected-move="{{ r.expectedMove }}" terminal-text="{{ r.terminalText }}" archived-text="{{ r.archivedText }}" your-move-text="{{ r.yourMoveText }}" gate-pending-text="{{ r.gatePendingText }}" urgency-text="{{ r.urgencyText }}" summary="{{ r.summary }}" operational-items="{{ r.operationalItems }}" none-recorded="{{ r.noneRecorded }}" not-recorded="{{ r.notRecorded }}" snapshot-unavailable="{{ r.snapshotUnavailable }}" snapshot-unknown-text="{{ r.snapshotUnknownText }}" pending-merge-text="{{ r.pendingMergeText }}" technical-label="{{ r.technicalLabel }}" technical-why="{{ r.technicalWhy }}" rule-label="{{ r.ruleLabel }}" rule-identity="{{ r.ruleIdentity }}" technical-evidence="{{ r.technicalEvidence }}" open-label="{{ r.openLabel }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,440px"></dc-import>
             </sc-for>
           </div>
+          <sc-if value="{{ workPaneOpen }}" hint-placeholder-val="{{ false }}">
+          <div data-work-pane style="min-width:0; background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
+            <sc-if value="{{ workPaneDetailPresent }}" hint-placeholder-val="{{ true }}">
+              <h3 class="a2a-detail-title" style="margin:0 0 var(--space-card-title-to-content); overflow-wrap:anywhere;">{{ workPaneDetail.title }}</h3>
+              <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:var(--space-section);">
+                <sc-for list="{{ workPaneDetail.pills }}" as="p" hint-placeholder-count="2">
+                  <dc-import name="StatusPill" result="{{ p.result }}" size="small" hint-size="140px,24px"></dc-import>
+                </sc-for>
+              </div>
+              <details style="border-radius:var(--radius-nested); padding:12px 14px; background:var(--surface-section);">
+                <summary style="cursor:pointer; color:var(--teal-ink); font-weight:600;">{{ workPaneTechnicalLabel }}</summary>
+                <div style="display:grid; grid-template-columns:minmax(110px,auto) minmax(0,1fr); gap:6px 14px; margin-top:12px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; line-height:1.5; overflow-wrap:anywhere;">
+                  <sc-for list="{{ workPaneDetail.metadataRest }}" as="fact" hint-placeholder-count="6">
+                    <span>{{ fact.label }}</span><span>{{ fact.value }}</span>
+                  </sc-for>
+                </div>
+              </details>
+            </sc-if>
+            <sc-if value="{{ workPaneDetailMissing }}" hint-placeholder-val="{{ false }}">
+              <dc-import name="EmptyState" title="{{ workPaneDetail.missingTitle }}" text="{{ workPaneDetail.missingText }}" size="panel" hint-size="100%,200px"></dc-import>
+            </sc-if>
+          </div>
+          </sc-if>
         </div>
         </sc-if>
 
@@ -940,6 +963,14 @@ class Component extends DCLogic {
         }
       };
     });
+    // The pane is a render branch off the selection state already carried by
+    // every row (rowFor's selValue), exactly as ContractsView reads ui.conSel
+    // and ThreadsView reads s.threadSel — no new selection mechanism, no hash
+    // route write, see specs/03-interaction-model.md §3.
+    const workPaneOpen = !!(s.workSel && workList.some(it => it.id === s.workSel));
+    const workPaneDetail = s.workSel ? this.detailFor(s.workSel, workList) : null;
+    const workPaneDetailPresent = !!(workPaneDetail && workPaneDetail.present);
+    const workPaneDetailMissing = !!(workPaneDetail && !workPaneDetail.present);
     const values = {
       cardWorkReport:false,
       regularExchange:true,
@@ -974,9 +1005,25 @@ class Component extends DCLogic {
         ? (ru ? "В этом ограниченном префиксе нет отчётов; перенесённое окно сообщает о записях за его пределами." : "No reports in this bounded prefix; the carried window reports records outside it.")
         : (ru ? "Ничего не записано." : "None recorded."),
       workReportRows,
-      workRows: workList.map(it => this.rowFor(it, "workSel", "")),
+      // 03-interaction-model.md §2's second door: a row click now toggles
+      // the pane via setState, no hash-route write, restoring AC-1. The
+      // callback is deliberately zero-arg, closing over `it.id` from this
+      // very `.map`, rather than taking the id as a parameter the way the
+      // spec's own draft phrased it — `select` ends up bound straight to
+      // ArtifactRow's native `<button onClick>` (rowFor's `open`, passed
+      // through unwrapped as `on-select`/`onSelect`), and this runtime
+      // compiles `.dc.html` through `React.createElement`, so a handler
+      // bound there receives React's SyntheticEvent as its first argument,
+      // not the id. Ignoring that argument and reading `it.id` from the
+      // closure keeps the toggle correct regardless of what onClick passes.
+      workRows: workList.map(it => this.rowFor(it, "workSel", s.workSel, () => this.setState({ workSel: s.workSel === it.id ? "" : it.id }))),
       workWholeEmpty: workList.length === 0,
       workHasColumns: workList.length > 0,
+      workPaneOpen: workPaneOpen,
+      workPaneDetail: workPaneDetail,
+      workPaneDetailPresent: workPaneDetailPresent,
+      workPaneDetailMissing: workPaneDetailMissing,
+      workPaneTechnicalLabel: ru ? "Технические подробности" : "Technical detail",
       showWorkFilters:!aggregate && !!((d.inbox || []).length || (d.outbox || []).length || (d.archive || []).length),
       emptyWorkTitle:workWindowText
         ? (ru ? "В этом ограниченном префиксе нет записей" : "No items in this bounded prefix")

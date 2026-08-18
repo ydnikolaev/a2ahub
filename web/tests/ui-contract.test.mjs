@@ -685,8 +685,13 @@ test('P10 Exchange renders item and work-report facts through one content-only A
   assert.equal(consistencyEvent.hasConsistency, true);
   assert.match(consistencyEvent.consistencyText, /^authoritative actual submitted; claimed draft;/);
   assert.match(consistencyEvent.consistencyText, /event_ulid event-note; producer .*fixture.*; cause fixture receipt mismatch$/);
+  // 03-interaction-model.md §2's second door: a work row selects into the
+  // inline pane via setState and writes no card route. The card modal is
+  // still reachable for this same item — from Overview and from a `#card=`
+  // deep link — and its render stays covered by the ui.card harnesses below.
   exchange.workRows[0].select();
-  assert.deepEqual(opened.pop(), { kind:'item', id:'item:space-a:XW-second', accent:'state:space-a,XW-second,submitted' });
+  assert.equal(patches.at(-1).workSel, 'XW-second', 'a work row selects into the pane, it does not open the card modal');
+  assert.equal(opened.length, 0, 'the pane door must write no card route');
   exchange.workReportRows[0].open();
   assert.deepEqual(opened.pop(), { kind:'work-report', id:'work-report:space-a:XA-carried-first', accent:'checkpoint:space-a,XA-carried-first' });
   exchange.workTabs.find(tab => tab.label === 'Incoming').go();

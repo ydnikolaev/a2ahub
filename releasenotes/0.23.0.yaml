@@ -594,3 +594,39 @@ changes:
     action:
       scope: none
       why: "No action. Existing publication heads decode unchanged; a conflict message may now name two versions where it previously did not."
+  - id: RN-02300-18
+    kind: fix
+    roadmap:
+      visibility: shipped
+      why: >
+        A dashboard unification removed the Exchange master/detail pane while
+        leaving the selection state that fed it in place, so the screen kept
+        recording which row you picked and had nowhere to show it. Opening a
+        row went to a dialog that repeated the list row it came from.
+    impact: normal
+    subject: "picking a row in Exchange opens its detail beside the list again, instead of a dialog that repeats the row"
+    detail: >
+      Exchange rows select into an inline detail pane, the way Contracts and
+      Threads already did. The pane is in the page, not a dialog: it traps no
+      focus, locks no scrolling and paints no backdrop, so reading a document
+      no longer covers the list it came from.
+
+      The card dialog is unchanged and still opens from Overview and from a
+      `#card=` link, which is what a saved link keeps doing. Its own frame no
+      longer paints a focus ring around itself when it opens, and its padding
+      is sized for card content rather than for a layout it no longer has.
+
+      A selection now survives an in-place refresh together with the filter,
+      the space and the scroll offset — and a selected row that disappears
+      from the newer data closes the pane rather than leaving it describing
+      something the data no longer carries.
+
+      Known limit, measured rather than assumed: selecting a row still returns
+      the page to the top. That is not new here and not specific to Exchange —
+      Contracts, which never lost its pane, does the same. It is the shared
+      re-render dropping the scroll offset, and it is recorded for a fix in the
+      shell rather than patched per screen.
+    affects: ["a2a dashboard"]
+    action:
+      scope: none
+      why: "No action. Deep links, the card dialog and every existing route behave as before."

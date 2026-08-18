@@ -1,1 +1,11 @@
-PLACEHOLDER — P2 (dashboard-ui-restoration-2026-08) reshaped this golden's format from byte-exact prose to fact identity, order and placement (card-spec/README.md#composition-rules, "Byte-exact prose equality is retired"). Regenerate with A2A_UPDATE_CARD_GOLDENS=1 against web/tests/dashboard-visual-contract.spec.mjs. Content is P7's; do not hand-author it.
+contract:identity
+contract:condition
+contract:lead
+contract:description
+contract:consumers
+contract:dependencies
+contract:metadata
+contract:versions
+contract:adoption
+contract:snapshot
+contract:technical

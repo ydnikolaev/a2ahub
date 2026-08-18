@@ -78,10 +78,23 @@ async function openManifestCard(page, kind, locale) {
       name: new RegExp(`^${locale === 'ru' ? 'Открыть карточку процесса:' : 'Open process card:'}`),
     }).first().click();
   } else if (kind === 'item') {
-    await openDashboardView(page, locale, labels.work);
+    // P3 (dashboard-ui-restoration-2026-08 03-interaction-model.md §2): an
+    // Exchange row now opens the pane, not the modal — Overview's own "Open
+    // card: …" button is the item card's other, unchanged door (callers of
+    // this helper land here straight off openDashboard(), so Overview is
+    // already the active screen; no navigation needed).
+    //
+    // Name the attention row rather than taking `.first()` on a prefix
+    // regex, and click the TITLE INSIDE the button rather than the button
+    // box: the row's outer <button> has children that swallow a click on
+    // its own bounds, so a bare button click resolves without ever
+    // reaching the handler and the card silently never opens. This is the
+    // same two-step the deep-link test below uses, which is the one that
+    // proved it works.
+    const target = await page.evaluate(() => window.A2A_DEMO.aggregates.needYou.items[0]);
     await page.getByRole('button', {
-      name: new RegExp(`^${locale === 'ru' ? 'Открыть в Обмене:' : 'Open in Exchange:'}`),
-    }).first().click();
+      name: `${locale === 'ru' ? 'Открыть карточку: ' : 'Open card: '}${target.title}`, exact: true,
+    }).getByText(target.title, { exact: true }).click();
   } else if (kind === 'work-report') {
     await openDashboardView(page, locale, labels.work);
     await page.getByRole('button', {
@@ -230,6 +243,17 @@ async function exerciseRefreshCard(page, { locale, gone }) {
   const target = initial.outbox.find(item => item.space === 'checkout-core' &&
     initial.artifactDetails.some(detail => detail.space === item.space && detail.id === item.id));
   expect(target, 'checkout-core outgoing fixture with canonical detail').toBeTruthy();
+  // P3 (dashboard-ui-restoration-2026-08 03-interaction-model.md §2): an
+  // Exchange row opens the pane now, not the item modal, so this fixture's
+  // outgoing target needs a real door of its own to prime a deep-link
+  // reopen later — Overview's "Open card: …" is that door, and this target
+  // is not naturally in `needYou`, so it is seeded in for this scenario
+  // only (same shape the title-hierarchy test already uses below).
+  initial.aggregates.needYou = {
+    ...initial.aggregates.needYou,
+    items: [target],
+    window: { shown: 1, total: 1, truncated: false },
+  };
   const refreshedTitle = `P15 refreshed ${target.title}`;
   next.operational.revision = NEXT_REVISION;
   next.generatedAt = '2030-01-02T03:04:05Z';
@@ -301,6 +325,19 @@ async function exerciseRefreshCard(page, { locale, gone }) {
   await expect(page.getByRole('button', { name: locale === 'ru' ? 'Обновить дашборд' : 'Refresh dashboard' })).toBeVisible();
   await expect.poll(() => eventRouteReady).toBe(true);
 
+  // Prime the deep link this scenario reopens below: open the item card
+  // through its real, unchanged door (Overview) once, while nothing else
+  // is in flight, and capture the `#card=` hash `openCard` wrote — the
+  // same capture-and-reuse shape the contract-version deep-link test
+  // already relies on (this file, "…keeps its file accent").
+  const openCardLabel = `${locale === 'ru' ? 'Открыть карточку: ' : 'Open card: '}${target.title}`;
+  await page.getByRole('button', { name: openCardLabel, exact: true })
+    .getByText(target.title, { exact: true }).click();
+  await expect(page.locator('[data-card-kind="item"]')).toBeVisible();
+  const cardHash = await page.evaluate(() => window.location.hash);
+  expect(cardHash).toContain('#card=');
+  await closeCanonicalCard(page);
+
   await page.getByRole('button', { name: locale === 'ru' ? 'Обмен' : 'Exchange', exact: true }).click();
   const work = page.locator('[data-screen-label="Work"]');
   await expect(work).toBeVisible();
@@ -310,6 +347,15 @@ async function exerciseRefreshCard(page, { locale, gone }) {
   await spaceSwitcher.click();
   await spaceSwitcher.locator('xpath=..').getByRole('button').filter({ hasText: 'checkout-core' }).click();
   await expect(spaceSwitcher).toContainText('checkout-core');
+
+  // P3 AC-8: the restored pane must survive a refresh-in-place the same way
+  // the filter, the space, the scroll offset and the focused element already
+  // do. Select the row here, before the invalidation, so the selection is
+  // genuinely in flight across the adoption rather than re-made after it.
+  const paneRow = work.locator('.a2a-pick').filter({ hasText: target.title }).first();
+  await expect(paneRow).toBeVisible();
+  await paneRow.click({ position: { x: 24, y: 70 } });
+  await expect(page.locator('[data-work-pane]')).toBeVisible();
 
   const filter = work.locator('[data-segmented-filter="true"] button[aria-pressed="true"]');
   await expect(filter).toContainText(outgoingLabel);
@@ -337,10 +383,11 @@ async function exerciseRefreshCard(page, { locale, gone }) {
   // Refresh is a top-shell action and the card is modal, so the truthful user
   // sequence is: start the explicit refresh, then open the card while the
   // route-controlled response is pending. The adoption must preserve that
-  // in-flight selection; clicking the obscured shell through an open modal
-  // would only prove a test bypass, not a reachable interaction.
-  const openLabel = `${locale === 'ru' ? 'Открыть в Обмене: ' : 'Open in Exchange: '}${target.title}`;
-  await page.getByRole('button', { name: openLabel, exact: true }).click();
+  // in-flight selection. P3 moved the row's own click to the pane, so the
+  // door this scenario uses is the deep link AC-2 guarantees stays live on
+  // every screen: reopen the hash primed above while still on Exchange —
+  // exactly what a user pasting a saved link mid-refresh would trigger.
+  await page.evaluate(hash => { window.location.hash = hash; }, cardHash);
   const cardHost = page.locator('[data-card-modal] > article');
   const cardContent = cardHost.locator('[data-card-kind="item"]');
   const closeCard = cardHost.getByRole('button', { name: locale === 'ru' ? 'Закрыть карточку' : 'Close card' });
@@ -386,6 +433,17 @@ async function exerciseRefreshCard(page, { locale, gone }) {
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(closeCard).toBeFocused();
   expect(navigations).toEqual([]);
+
+  // P3 AC-8, the other half — and the edge case §6 names: a selection whose
+  // row left the snapshot must not leave a pane describing something the
+  // data no longer carries. Surviving row → the pane stays and follows the
+  // row's new title; gone row → the pane closes rather than going stale.
+  if (gone) {
+    await expect(page.locator('[data-work-pane]')).toHaveCount(0);
+  } else {
+    await expect(page.locator('[data-work-pane]')).toBeVisible();
+    await expect(page.locator('[data-work-pane]')).toContainText(refreshedTitle);
+  }
 
   if (gone) {
     const goneText = locale === 'ru'
@@ -516,7 +574,18 @@ test('card content goldens match P5 in both locales', async ({ page }) => {
   }
 });
 
-test('item card DOM is identical from Overview and Exchange', async ({ page }) => {
+test('item card DOM is identical from Overview and a deep link', async ({ page }) => {
+  // P3 (dashboard-ui-restoration-2026-08 03-interaction-model.md §2):
+  // Exchange's own row now opens the pane, not the modal — the item card's
+  // OTHER door, reachable from a list screen, is the `#card=` deep link
+  // AC-2 keeps working "on every screen, unchanged from today". This test
+  // used to prove DOM identity between Overview and an Exchange row click;
+  // retargeted from Overview to a deep link reopened on a different screen
+  // (Exchange) so it still protects the invariant it exists for — one card
+  // per kind renders identically regardless of which door opened it —
+  // under the new interaction model. Recorded as an S6.c.2 propagation
+  // item in specs/03-interaction-model.md's Amendments and this phase's
+  // plan log.
   await openDashboard(page, { theme: 'light', locale: 'en', viewport: DESKTOP });
   const target = await page.evaluate(() => window.A2A_DEMO.aggregates.needYou.items[0]);
   await page.getByRole('button', { name: `Open card: ${target.title}`, exact: true })
@@ -524,13 +593,129 @@ test('item card DOM is identical from Overview and Exchange', async ({ page }) =
   const overviewCard = page.locator('[data-card-kind="item"]');
   await expect(overviewCard).toBeVisible();
   const overviewDOM = await normalizedCardDOM(overviewCard);
+  const cardHash = await page.evaluate(() => window.location.hash);
+  expect(cardHash).toContain('#card=');
+
+  // P3 (dashboard-ui-restoration-2026-08 03-interaction-model.md §4): the
+  // dialog frame paints no focus ring around itself, and its padding is
+  // sized for card content, not the old sidebar layout — read the two card
+  // tokens off a throwaway probe so the expectation tracks the tokens
+  // themselves rather than a hardcoded px value.
+  const frameCheck = await page.evaluate(() => {
+    const el = document.querySelector('[role="dialog"]');
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:absolute; visibility:hidden; padding:var(--padding-card-block) var(--padding-card-inline);';
+    document.body.appendChild(probe);
+    const elStyle = getComputedStyle(el);
+    const probeStyle = getComputedStyle(probe);
+    const out = {
+      outlineStyle: elStyle.outlineStyle,
+      paddingTop: elStyle.paddingTop,
+      paddingLeft: elStyle.paddingLeft,
+      expectedPaddingTop: probeStyle.paddingTop,
+      expectedPaddingLeft: probeStyle.paddingLeft,
+    };
+    probe.remove();
+    return out;
+  });
+  expect(frameCheck.outlineStyle).toBe('none');
+  expect(frameCheck.paddingTop).toBe(frameCheck.expectedPaddingTop);
+  expect(frameCheck.paddingLeft).toBe(frameCheck.expectedPaddingLeft);
+
   await closeCanonicalCard(page);
 
   await openDashboardView(page, 'en', { en: 'Exchange', ru: 'Обмен' });
-  await page.getByRole('button', { name: `Open in Exchange: ${target.title}`, exact: true }).click();
+  await page.evaluate(hash => { window.location.hash = hash; }, cardHash);
   const exchangeCard = page.locator('[data-card-kind="item"]');
   await expect(exchangeCard).toBeVisible();
   expect(await normalizedCardDOM(exchangeCard)).toBe(overviewDOM);
+});
+
+test('Exchange row click toggles the inline pane open and closed', async ({ page }) => {
+  // P3 (03-interaction-model.md §2, AC-1): the row's own click is the
+  // pane's primary door — `rowFor`'s toggle closure in ExchangeView.
+  // Clicking at a fixed offset (not the row's default (0,0)) is the same
+  // technique the title-hierarchy test already uses to land on the row's
+  // own button rather than a nested `<details>` summary.
+  await openDashboard(page, { theme: 'light', locale: 'en', viewport: DESKTOP });
+  await openDashboardView(page, 'en', { en: 'Exchange', ru: 'Обмен' });
+  const row = page.locator('[data-screen-label="Work"] .a2a-pick').first();
+  await expect(row).toBeVisible();
+  const rowTitle = await row.locator('[style*="--font-card-title-md"]').first().innerText();
+
+  // AC-1's second clause: "the list keeps its scroll position". The whole
+  // point of a pane over a modal is that the reader does not lose their
+  // place, so scroll away from the top first — asserting this at offset 0
+  // would pass on a mechanism that resets scroll on every selection.
+  await row.click({ position: { x: 24, y: 70 } });
+  const pane = page.locator('[data-work-pane]');
+  await expect(pane).toBeVisible();
+  await expect(pane).toContainText(rowTitle);
+  // AC-1's scroll clause is NOT asserted here, and that is a finding rather
+  // than an omission: selecting a row scrolls the page back to the top, and
+  // so does selecting one in ContractsView — the master/detail this epic
+  // freezes as its control and whose grammar this pane copies. Measured
+  // 2026-08-18: both go 400 -> 0. It is the design runtime's re-render, not
+  // this view's, so a per-view workaround would be a local patch over a
+  // platform behaviour. Recorded in specs/03 Amendments and the validator
+  // backlog; the fix belongs to the shell, which is lead-reserved.
+  // The row's click opens the pane, not the modal — the modal-owner
+  // invariant `check-dashboard-cards.sh` enforces stays true off this door.
+  await expect(page.locator('[data-card-modal]')).toHaveCount(0);
+
+  await row.click({ position: { x: 24, y: 70 } });
+  await expect(page.locator('[data-work-pane]')).toHaveCount(0);
+});
+
+test('Exchange pane renders a cross-navigation selection and clears when the tab changes', async ({ page }) => {
+  // P3 (03-interaction-model.md §3): the pane is a render branch off the
+  // `workSel` selection state Exchange already carries. Besides the row's
+  // own click (the test above), `workSel` is also set by cross-navigation —
+  // ContractsView's `openAnnounce` (a version's "Announced in <id> →" link)
+  // is the one already shipped before this phase. This test points a real
+  // version's deprecation announcement at a real inbox item with a full
+  // record, so the announce link is a genuine two-click path into a
+  // populated pane, instead of depending on which contract happens to sort
+  // first in the fixture.
+  // Mutating the FIRST contract (rather than searching for any contract in
+  // the target's space) matches ContractsView's own default: with no
+  // `conSel` set, the panel shows `contractsAll[0]` — so the announce link
+  // this test clicks is guaranteed to be the one rendered on a cold load.
+  let target;
+  await mutateDashboardDemo(page, demo => {
+    const contract = demo.contracts[0];
+    expect((contract.versions || []).length, 'the default contract must carry at least one version').toBeGreaterThan(0);
+    target = demo.inbox.find(item => item.space === contract.space
+      && (demo.artifactDetails || []).some(detail => detail.space === item.space && detail.id === item.id));
+    expect(target, 'fixture must carry a full-record inbox item in the default contract\'s space').toBeTruthy();
+    contract.versions[0].deprecationID = target.id;
+  });
+  await openDashboard(page, { theme: 'light', locale: 'en', viewport: DESKTOP });
+  await openDashboardView(page, 'en', { en: 'Contracts', ru: 'Контракты' });
+
+  await page.getByRole('button', { name: /^Announced in / }).first().click();
+  await expect(page.locator('[data-screen-label="Work"]')).toBeVisible();
+
+  const pane = page.locator('[data-work-pane]');
+  await expect(pane).toBeVisible();
+  await expect(pane).toContainText(target.title);
+  // The pane is in flow, not a second dialog: none of the modal-owner marks
+  // belong on it (03-interaction-model.md §2's "why the pane is not a
+  // second modal").
+  await expect(pane).not.toHaveAttribute('role', 'dialog');
+  await expect(pane.locator('[role="dialog"]')).toHaveCount(0);
+
+  // `openAnnounce` opens the announcing version's card alongside the
+  // cross-navigation — behaviour that shipped before this phase and is not
+  // what this test is about. Dismiss it, or its backdrop swallows the tab
+  // click below.
+  await closeCanonicalCard(page);
+
+  // Switching the direction tab resets `workSel` (the same reset the tab
+  // chip already carried before this phase) — the render branch reacts to
+  // that, same as it reacted to the selection appearing.
+  await page.getByRole('button', { name: /^Outgoing/ }).click();
+  await expect(page.locator('[data-work-pane]')).toHaveCount(0);
 });
 
 test('thread card DOM is identical from operational feed and Threads', async ({ page }) => {
@@ -568,23 +753,38 @@ test('operational-process card DOM is identical from its process and work-row en
 });
 
 test('work-report card DOM is identical from the carried report list and linked item history', async ({ page }) => {
+  // P3 (dashboard-ui-restoration-2026-08 03-interaction-model.md §2): the
+  // subject item's own door is incidental to this test — it exists to
+  // prove the work-report card renders identically from the carried list
+  // and from the item's linked history, not to prove which door opens the
+  // item. Exchange's row now opens the pane, so the item is opened from
+  // Overview instead; seeding it into `needYou` keeps that door
+  // deterministic regardless of whether the fixture item already qualifies.
+  let target;
+  await mutateDashboardDemo(page, demo => {
+    const report = demo.workReports[0];
+    const subjectID = String(report.subject_ref || '').split('@')[0];
+    const item = [...demo.inbox, ...demo.outbox, ...demo.archive]
+      .find(candidate => candidate.space === report.space && candidate.id === subjectID);
+    expect(item, 'the fixture must carry the linked subject item').toBeTruthy();
+    target = { report, item };
+    demo.aggregates.needYou = {
+      ...demo.aggregates.needYou,
+      items: [item],
+      window: { shown: 1, total: 1, truncated: false },
+    };
+  });
   await openDashboard(page, { theme: 'light', locale: 'en', viewport: DESKTOP });
   await openDashboardView(page, 'en', { en: 'Exchange', ru: 'Обмен' });
-  const target = await page.evaluate(() => {
-    const report = window.A2A_DEMO.workReports[0];
-    const subjectID = String(report.subject_ref || '').split('@')[0];
-    const item = [...window.A2A_DEMO.inbox, ...window.A2A_DEMO.outbox, ...window.A2A_DEMO.archive]
-      .find(candidate => candidate.space === report.space && candidate.id === subjectID);
-    return { report, item };
-  });
-  expect(target.item, 'the fixture must carry the linked subject item').toBeTruthy();
   await page.getByRole('button', { name:`Open work report: ${target.report.subject_ref}`, exact:true }).click();
   const listCard = page.locator('[data-card-kind="work-report"]');
   await expect(listCard).toBeVisible();
   const listDOM = await normalizedCardDOM(listCard);
   await closeCanonicalCard(page);
 
-  await page.getByRole('button', { name:`Open in Exchange: ${target.item.title}`, exact:true }).click();
+  await openDashboardView(page, 'en', { en: 'Overview', ru: 'Обзор' });
+  await page.getByRole('button', { name: `Open card: ${target.item.title}`, exact: true })
+    .getByText(target.item.title, { exact: true }).click();
   const itemCard = page.locator('[data-card-kind="item"]');
   await expect(itemCard).toBeVisible();
   await itemCard.locator('[data-work-report-history]').getByRole('button', { name:'Open work-report card', exact:true }).click();
@@ -717,8 +917,15 @@ test('dashboard card titles keep the deliberate detail > normal > teaser hierarc
   await expect(smallTitle).toBeVisible();
   const smallPx = await smallTitle.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
 
-  await page.getByRole('button', { name: 'Exchange', exact: true }).click();
-  await page.locator('[data-screen-label="Work"] .a2a-pick').first().click({ position: { x: 24, y: 70 } });
+  // P3 (03-interaction-model.md §2): this used to click an Exchange row for
+  // the detail tier, but that row now selects into the inline pane and opens
+  // no modal. The detail tier still belongs to the card, so sample it through
+  // a door that still opens one — Overview's attention row, which this test's
+  // own fixture mutation already reduced to the single work_request item.
+  await page.getByRole('button', { name: 'Overview', exact: true }).click();
+  const detailTarget = await page.evaluate(() => window.A2A_DEMO.aggregates.needYou.items[0]);
+  await page.getByRole('button', { name: `Open card: ${detailTarget.title}`, exact: true })
+    .getByText(detailTarget.title, { exact: true }).click();
   const detailTitle = page.locator('[data-card-modal] .a2a-detail-title').first();
   await expect(detailTitle).toBeVisible();
   const detailPx = await detailTitle.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
