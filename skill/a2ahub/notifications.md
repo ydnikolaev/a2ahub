@@ -113,6 +113,16 @@ a2a notify render --all            # the whole space
 a2a notify render --only XW-…,XC-… # exactly these, whatever their state
 ```
 
+**Exactly one of those three is required.** Naming none, or two, is a usage
+error (exit 2) — they are alternative ways to choose the candidate set, not
+options that combine.
+
+`--limit <n>` (default 5) is the digest cap on the `--base` and `--all` paths:
+a route sees that many artifacts as individual messages, and everything beyond
+folds into one digest message so a large push cannot turn into a wall. `--only`
+ignores it, along with everything else. `--json` is a no-op kept for symmetry
+with other verbs — JSON is the only output this verb has.
+
 Each message carries the facts a decision needs — type, who to whom, whose turn,
 priority and deadline, the artifact's own body — and, for a route that names a
 participant, the copy-paste block that hands the move to an agent.
@@ -123,6 +133,51 @@ last month renders exactly as it would have when it was new.
 
 A route naming a secret this version does not declare is refused here, by name,
 rather than discovered as a missing environment variable inside the sender.
+
+## `a2a notify send` — the verb CI actually runs
+
+`send` reads a JSON message array on **stdin** — the array `render` prints — and
+delivers it, printing one delivery record per message. It is what the space's
+workflow runs; you rarely type it, but you do want it when a channel has gone
+quiet and you need to know whether the failure is rendering or delivery.
+
+```sh
+a2a notify render --base <sha> | a2a notify send --dry-run
+```
+
+`--dry-run` performs no API call and prints each record with the full payload
+it WOULD have sent, through the same renderer the live path uses. That is the
+sanctioned rehearsal: a layout can be reviewed, and a failure read, without a
+chat receiving anything.
+
+## Exit codes
+
+The repo's convention, and the one a script needs, because two of these are
+easy to misread:
+
+| Verb | 0 | 1 | 2 |
+|---|---|---|---|
+| `render` | messages printed | a refusal (unknown `--only` id, undeclared secret) or an unreadable checkout | usage — no range selector, two of them, or a bad `--limit` |
+| `send` | every record sent, or dry-run | **at least one delivery failed** — the others still went | usage, or an invalid message array on stdin |
+| `setup` | the step reached its end | any named error — **including `--non-interactive`'s deliberate refusal to prompt**, which is the intended path, not a fault | usage |
+| `discover` | a chat id was found | no update arrived within `--timeout` (default 10s), or the API refused | usage |
+| `verify` | all three facts check out | at least one did not | usage |
+
+`send` exiting 1 does not mean nothing was delivered, and `setup
+--non-interactive` exiting 1 does not mean it failed. Both are worth knowing
+before a script treats a non-zero code as an outage.
+
+## The MCP twin exists and is not wired yet
+
+`a2a_notify` is registered on the MCP surface with the same five actions, so an
+agent listing tools will find it. **Every call answers "notify operations are
+not available" today** — it is registered with a zero-value dependency set on
+purpose, and the follow-up is named in `internal/mcp/tools_notify.go`'s own doc
+comment.
+
+Use the CLI verbs above. This is written down because a tool that is present
+and always refuses, with nothing saying why, costs an agent a debugging session
+it cannot win.
 
 ## `a2a notify setup` — the flow that never sees the token
 
