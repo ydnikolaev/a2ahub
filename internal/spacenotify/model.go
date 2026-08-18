@@ -51,7 +51,12 @@ type Message struct {
 	Description string                   `json:"description,omitempty"`
 	Prompt      *agentprompt.AgentPrompt `json:"prompt,omitempty"`
 	Links       *Links                   `json:"links,omitempty"`
-	Truncated   []string                 `json:"truncated,omitempty"`
+	// Truncated carries structured facts about what boundAndRedact dropped
+	// from Description and why — never a sentence (04-render-and-transport.md
+	// TASK1's repair). A `ru` route and an `en` route read the SAME Truncated
+	// value; only the renderer's own bilingual vocabulary turns a code into
+	// words, in the route's own locale.
+	Truncated []TruncationReason `json:"truncated,omitempty"`
 	// Digest is populated ONLY when Class == ClassDigest, in which case
 	// Artifact/Parties/Turn/Urgency/Description/Prompt/Links all stay nil
 	// — a digest carries "no" prompt because "a prompt that names no
@@ -122,6 +127,33 @@ type DigestItem struct {
 	ID    string `json:"id"`
 	Type  string `json:"type"`
 	Title string `json:"title"`
+}
+
+// TruncationCode is the closed set of reasons Message.Truncated may carry.
+// A renderer switching on any other value is a bug this closed set is meant
+// to make impossible to compile around silently — the switch in both
+// renderers has a default arm that names the unrecognised code rather than
+// guessing a sentence for it.
+type TruncationCode string
+
+const (
+	// TruncationDescriptionBounded means boundAndRedact cut Description to
+	// Bound runes — the description text itself is still present, shortened.
+	TruncationDescriptionBounded TruncationCode = "description-bounded"
+	// TruncationDescriptionRedacted means internal/sensitive matched a
+	// credential shape in the (already-bounded) description text, so
+	// Description is "" — the FACT of redaction lives here; the sentence a
+	// human reads is composed by the renderer, in the route's own locale.
+	TruncationDescriptionRedacted TruncationCode = "description-redacted"
+)
+
+// TruncationReason is one structured drop: a closed Code plus whatever
+// parameter its sentence needs. Bound is meaningful only for
+// TruncationDescriptionBounded (the rune bound boundAndRedact applied); it
+// is the zero value (omitted from JSON) for every other code.
+type TruncationReason struct {
+	Code  TruncationCode `json:"code"`
+	Bound int            `json:"bound,omitempty"`
 }
 
 // Digest is the coalesced form a route's kept set takes once it exceeds

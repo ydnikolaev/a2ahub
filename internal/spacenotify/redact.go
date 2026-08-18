@@ -15,23 +15,27 @@ import (
 // text and are not exported.
 const maxDescriptionRunes = 600
 
-// redactedMarker replaces the WHOLE description when a credential shape is
-// found — the same whole-value-replacement convention
-// internal/cache/operational.go's safeOperationalText already uses (never
-// a partial in-place substitution that could leave a shape half-visible).
-const redactedMarker = "[redacted: a credential shape was present]"
-
 // boundAndRedact bounds and redacts an artifact's own markdown body into
 // Message.Description, returning the bounded/redacted text and the
-// Truncated facts describing what was dropped and why (spec 03's own
-// `truncated` field, AC3).
+// structured Truncated facts describing what was dropped and why (spec 03's
+// own `truncated` field, AC3) — never an English sentence baked into a fact
+// field (04-render-and-transport.md TASK1's repair: "Fields are facts;
+// sentences are P4's job", model.go's own first line). A `ru` route and an
+// `en` route read the IDENTICAL TruncationReason values from this
+// function; only the renderer, later, turns a code into words in the
+// route's own locale.
 //
 // Order matches internal/cache's own established precedent: bound FIRST,
 // then test the bounded text for a credential shape. internal/sensitive
 // is the ONLY redaction authority consulted (spec 03 §5: "internal/
 // sensitive for redaction") — this package invents no second heuristic.
-func boundAndRedact(body []byte) (string, []string) {
-	var truncated []string
+//
+// On redaction, Description becomes "" rather than a fixed marker string —
+// a marker IS a sentence, in one language, which is exactly what this
+// repair removes. The renderer composes the reader's-locale sentence from
+// TruncationDescriptionRedacted alone.
+func boundAndRedact(body []byte) (string, []TruncationReason) {
+	var truncated []TruncationReason
 
 	text := strings.TrimSpace(string(body))
 	if !utf8.ValidString(text) {
@@ -39,11 +43,11 @@ func boundAndRedact(body []byte) (string, []string) {
 	}
 	if n := utf8.RuneCountInString(text); n > maxDescriptionRunes {
 		text = string([]rune(text)[:maxDescriptionRunes])
-		truncated = append(truncated, "description truncated to 600 characters")
+		truncated = append(truncated, TruncationReason{Code: TruncationDescriptionBounded, Bound: maxDescriptionRunes})
 	}
 	if sensitive.ContainsContent(text) {
-		text = redactedMarker
-		truncated = append(truncated, "description redacted: a credential shape was present")
+		text = ""
+		truncated = append(truncated, TruncationReason{Code: TruncationDescriptionRedacted})
 	}
 	return text, truncated
 }

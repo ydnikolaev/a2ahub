@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,10 +26,10 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/spacenotify"
 )
 
-// NotifyCommand implements `a2a notify <render>`. Only `render` exists in
-// this phase (P3); `send` (P4) and `setup`/`discover`/`verify` (P6) are
-// later phases' additions to this SAME command, not a new one — see spec
-// 03 T1's own "what adding a verb costs" note.
+// NotifyCommand implements `a2a notify <render|send>`. `render` is P3's;
+// `send` is P4's (this phase); `setup`/`discover`/`verify` (P6) are later
+// phases' additions to this SAME command, not a new one — see spec 03 T1's
+// own "what adding a verb costs" note.
 type NotifyCommand struct {
 	// gitChanged is the DI seam over `git diff --name-only`
 	// (cmd_validate_ci.go's own gitChangedFilesFunc type + gitDiffNameOnly
@@ -36,11 +37,15 @@ type NotifyCommand struct {
 	gitChanged gitChangedFilesFunc
 	// now is the injected clock (rails: no buried time.Now()).
 	now func() time.Time
+	// telegram is `send`'s own transport seam (spacenotify.Client's own
+	// injected *http.Client/BaseURL) — real by default; tests construct
+	// NotifyCommand directly (or call runNotifySend) with an httptest fake.
+	telegram *spacenotify.Client
 }
 
 // NewNotifyCommand constructs the real, wired NotifyCommand.
 func NewNotifyCommand() *NotifyCommand {
-	return &NotifyCommand{gitChanged: gitDiffNameOnly, now: time.Now}
+	return &NotifyCommand{gitChanged: gitDiffNameOnly, now: time.Now, telegram: spacenotify.NewClient()}
 }
 
 // Name implements cli.Command.
@@ -48,10 +53,10 @@ func (c *NotifyCommand) Name() string { return "notify" }
 
 // Synopsis implements cli.Command.
 func (c *NotifyCommand) Synopsis() string {
-	return "space-side CI notification projection and delivery (SPACE plane — see `a2a notifications` for the local/native plane): render --base <sha>|--all|--only <id,id> [--limit <n>] [--json] — turn a push range into P3's ordered JSON message array"
+	return "space-side CI notification projection and delivery (SPACE plane — see `a2a notifications` for the local/native plane): render --base <sha>|--all|--only <id,id> [--limit <n>] [--json] — turn a push range into P3's ordered JSON message array; send [--dry-run] — read that array from stdin and deliver it to Telegram, one delivery record per message on stdout"
 }
 
-const notifyUsage = "usage: a2a notify render (--base <sha> | --all | --only <id,id>) [--limit <n>] [--json]"
+const notifyUsage = "usage: a2a notify render (--base <sha> | --all | --only <id,id>) [--limit <n>] [--json]\n       a2a notify send [--dry-run]"
 
 // Run implements cli.Command.
 func (c *NotifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
@@ -63,6 +68,8 @@ func (c *NotifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	switch sub {
 	case "render":
 		return runNotifyRender(ctx, ".", c.gitChanged, c.now, rest, stdio)
+	case "send":
+		return runNotifySend(ctx, c.telegram, rest, stdio)
 	default:
 		_, _ = fmt.Fprintf(stdio.Stderr, "a2a notify: unknown sub-verb %q\n%s\n", sub, notifyUsage)
 		return 2
@@ -149,6 +156,66 @@ func runNotifyRender(ctx context.Context, root string, git gitChangedFilesFunc, 
 	if err := enc.Encode(messages); err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "a2a notify render: cannot encode JSON output: %v\n", err)
 		return 1
+	}
+	return 0
+}
+
+const notifySendUsage = "usage: a2a notify send [--dry-run] (reads the message array `notify render` produces from stdin)"
+
+// maxNotifySendInputBytes bounds the stdin read (rails: bounded reads
+// everywhere) — generous for any realistic `notify render` output, far
+// short of this process's own memory budget.
+const maxNotifySendInputBytes = 16 << 20 // 16 MiB
+
+// runNotifySend is `send`'s own body (spec 04 T1): read the message array
+// `notify render` produced from stdin — and ONLY stdin, no second
+// space.yaml read (AC13) — deliver each message, and print one
+// spacenotify.DeliveryRecord per message, in send order, on stdout.
+//
+// Exit codes: 2 = usage (bad flags) or input that is not a valid message
+// array; 1 = at least one delivery record's outcome is "failed" (AC4); 0 =
+// every record is "sent" or "dry-run" (an empty array is still 0).
+func runNotifySend(ctx context.Context, client *spacenotify.Client, args []string, stdio IO) int {
+	fs := flag.NewFlagSet("notify send", flag.ContinueOnError)
+	fs.SetOutput(stdio.Stderr)
+	dryRun := fs.Bool("dry-run", false, "render and print delivery records without calling the Telegram API (US-3's rehearsal path, spec 04 T1)")
+	if err := fs.Parse(args); err != nil {
+		_, _ = fmt.Fprintln(stdio.Stderr, notifySendUsage)
+		return 2
+	}
+
+	raw, err := io.ReadAll(io.LimitReader(stdio.Stdin, maxNotifySendInputBytes+1))
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "a2a notify send: cannot read stdin: %v\n", err)
+		return 1
+	}
+	if len(raw) > maxNotifySendInputBytes {
+		_, _ = fmt.Fprintln(stdio.Stderr, "a2a notify send: input exceeds the bounded read limit")
+		return 1
+	}
+
+	var messages []spacenotify.Message
+	if err := json.Unmarshal(raw, &messages); err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "a2a notify send: input is not a valid message array: %v\n", err)
+		return 2
+	}
+
+	records := spacenotify.Send(ctx, client, messages, *dryRun)
+	if records == nil {
+		records = []spacenotify.DeliveryRecord{}
+	}
+
+	enc := json.NewEncoder(stdio.Stdout)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(records); err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "a2a notify send: cannot encode JSON output: %v\n", err)
+		return 1
+	}
+
+	for _, r := range records {
+		if r.Outcome == "failed" {
+			return 1
+		}
 	}
 	return 0
 }
