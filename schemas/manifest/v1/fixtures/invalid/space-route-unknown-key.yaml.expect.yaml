@@ -1,2 +1,0 @@
-code: SCH-003
-note: space.schema.json's notification_routes items set additionalProperties:false (space-notify-2026-08 P1 §7); `frequency` is an unknown key.

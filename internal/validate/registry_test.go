@@ -149,14 +149,29 @@ func TestRegistryClosure(t *testing.T) {
 	// participants[] — carried on the SAME probe (rather than a second
 	// call) so the closure gate actually exercises checkManifestPolicy's
 	// checkNotificationRoutes branch, which every prior probe left empty
-	// (space-notify-2026-08 propagation-probe gap 3).
+	// (space-notify-2026-08 propagation-probe gap 3). The route itself is
+	// otherwise shape-valid (channel/chat/events all present and
+	// well-formed) so this call proves REF-022 alone, not POL-021 too.
 	record(checkManifestPolicy(manifestProbe{
 		Participants: []manifestParticipantProbe{
 			{System: "axon", Section: "axon/", Owners: []string{"alice"}, Status: "active"},
 			{System: "matrix", Section: "matrix/", Owners: []string{"alice"}, Status: "active"},
 		},
-		NotificationRoutes: []manifestRouteProbe{
-			{Channel: "telegram", Chat: "-1002034567890", For: "ghost", Events: []string{"blocking"}},
+		NotificationRoutes: []any{
+			map[string]any{"channel": "telegram", "chat": "-1002034567890", "for": "ghost", "events": []any{"blocking"}},
+		},
+	}))
+	// POL-021: a notification route is not well-formed against its own
+	// declared shape (space-notify-2026-08 P1 §7, now Go policy because
+	// space.schema.json is byte-frozen at row 16 of
+	// schemas/published-v1.sha256) — an unknown key, exercised on its own
+	// probe so this call proves POL-021 alone, not REF-022 too.
+	record(checkManifestPolicy(manifestProbe{
+		Participants: []manifestParticipantProbe{
+			{System: "axon", Section: "axon/", Owners: []string{"alice"}, Status: "active"},
+		},
+		NotificationRoutes: []any{
+			map[string]any{"channel": "telegram", "chat": "-1002034567890", "events": []any{"blocking"}, "frequency": "hourly"},
 		},
 	}))
 	// REF-014: one declared carried file resolves as a symlink rather than

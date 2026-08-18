@@ -1,7 +1,9 @@
 package validate
 
 import (
+	"fmt"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -119,10 +121,21 @@ func (e *Engine) ValidateManifestPolicy(raw []byte) (Result, error) {
 // manifest fields. Keeping it here preserves ADR-001: validate owns policy and
 // does not import the I/O-facing space package.
 type manifestProbe struct {
-	Schema             string                     `yaml:"schema"`
-	Space              string                     `yaml:"space"`
-	Participants       []manifestParticipantProbe `yaml:"participants"`
-	NotificationRoutes []manifestRouteProbe       `yaml:"notification_routes"`
+	Schema       string                     `yaml:"schema"`
+	Space        string                     `yaml:"space"`
+	Participants []manifestParticipantProbe `yaml:"participants"`
+	// NotificationRoutes decodes as `any`, not `[]manifestRouteParsed` or even
+	// `[]any` — space.schema.json is byte-frozen (row 16 of
+	// schemas/published-v1.sha256) and no longer declares notification_routes
+	// at all, so nothing upstream guarantees this key is even an array before
+	// this package sees it. A typed decode target that yaml.v3 cannot satisfy
+	// (a mapping, a bare scalar) would fail the WHOLE manifest decode,
+	// collapsing every finding into one undifferentiated POL-002 — exactly
+	// the "decode error that swallows the violation" failure mode P1's own
+	// spec warns against. checkNotificationRoutes below type-asserts this
+	// value itself, and each of its elements, reporting the malformation
+	// rather than going blind to it.
+	NotificationRoutes any `yaml:"notification_routes"`
 }
 
 type manifestParticipantProbe struct {
@@ -132,19 +145,20 @@ type manifestParticipantProbe struct {
 	Status  string   `yaml:"status"`
 }
 
-// manifestRouteProbe is validate's own minimal projection of
-// notification_routes[] (space-notify-2026-08 P1), decoded alongside
-// Participants for the two policy rules that are not schema-expressible:
-// `for` must resolve against a known participant, and no two routes may
-// share the same (channel, chat, topic, for) tuple. Topic is a pointer
-// because "absent" (the chat's general thread) is a distinct value from
-// any concrete thread id, including the schema's own floor of 1.
-type manifestRouteProbe struct {
-	Channel string   `yaml:"channel"`
-	Chat    string   `yaml:"chat"`
-	Topic   *int     `yaml:"topic"`
-	For     string   `yaml:"for"`
-	Events  []string `yaml:"events"`
+// manifestRouteParsed is the referential half's best-effort typed view of
+// one notification_routes[] entry (space-notify-2026-08 P1), built by
+// checkRouteShape alongside its shape violations. Topic is a pointer
+// because "absent" (the chat's general thread) is a distinct value from any
+// concrete thread id, including the shape floor of 1. ok is false when the
+// route did not even decode as a mapping — such a route participates in
+// neither the `for`-resolution nor the tuple-dedup rule below, because there
+// is nothing well-formed enough to compare.
+type manifestRouteParsed struct {
+	ok      bool
+	Channel string
+	Chat    string
+	Topic   *int
+	For     string
 }
 
 // decodeManifest decodes raw twice — once as a schema instance, once into the
@@ -267,16 +281,77 @@ func checkManifestPolicy(probe manifestProbe) []Violation {
 	return violations
 }
 
-// checkNotificationRoutes is space-notify-2026-08 P1's rules 1-2 (rule 3 is
-// a no-op by design — `events: [published]` is legal widening and gets no
-// code; rule 4 lives beside the raw bytes in ValidateManifest /
-// ValidateManifestPolicy, not here). Both rules share ONE code, REF-022,
-// following checkManifestPolicy's own REF-013 grouping precedent
-// immediately above: every branch has the same consequence — the route
-// cannot be trusted to address anyone, whether because it names an unknown
-// participant or because it duplicates another route's target.
+// maxNotificationRoutes is the array's own maxItems floor, moved here from
+// space.schema.json's now-restored (frozen) bytes per space-notify-2026-08
+// P1 §7.
+const maxNotificationRoutes = 16
+
+// knownRouteFields is the closed key set a notification_routes[] entry may
+// carry, moved here from the route object's additionalProperties:false
+// (space-notify-2026-08 P1 §7) — an unknown key is a typo, and a typo in a
+// notification route is silence.
+var knownRouteFields = map[string]bool{
+	"channel":  true,
+	"chat":     true,
+	"topic":    true,
+	"for":      true,
+	"events":   true,
+	"locale":   true,
+	"secret":   true,
+	"renderer": true,
+}
+
+// chatPattern and secretPattern are moved verbatim from
+// space.schema.json's frozen `chat`/`secret` patterns (P1 §7).
+var (
+	chatPattern   = regexp.MustCompile(`^-?[0-9]+$`)
+	secretPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
+)
+
+// validNotificationEvent mirrors the frozen schema's `events[]` item enum
+// (P1 §7), bound to §11.3's chat rows plus the `published` widening.
+func validNotificationEvent(v string) bool {
+	switch v {
+	case "human-gate", "blocking", "published":
+		return true
+	}
+	return false
+}
+
+// checkNotificationRoutes is space-notify-2026-08 P1's full route
+// validation: the shape half the frozen schema.json used to own
+// (additionalProperties:false, required, enum, pattern, minItems/
+// uniqueItems, maxItems — POL-021, ClassPolicy, one code per the same
+// grouping argument REF-013/REF-022 already make: every shape branch has
+// the same consequence, a route this package cannot trust to even BE a
+// route) plus rules 1-2 (rule 3 is a no-op by design — `events: [published]`
+// is legal widening and gets no code; rule 4 lives beside the raw bytes in
+// ValidateManifest / ValidateManifestPolicy, not here). Rules 1-2 keep
+// their own code, REF-022 — a shape violation has no referent, so folding
+// it into REF-022 would make that code's own registered title
+// ("not well-formed against its own manifest CONTEXT") false.
 func checkNotificationRoutes(probe manifestProbe) []Violation {
 	var violations []Violation
+
+	var rawRoutes []any
+	switch v := probe.NotificationRoutes.(type) {
+	case nil:
+		// Absent: schema default `[]`, nothing to check.
+	case []any:
+		rawRoutes = v
+	default:
+		violations = append(violations, routeShapeViolation(
+			"notification_routes", "notification_routes must be an array",
+		))
+	}
+
+	if len(rawRoutes) > maxNotificationRoutes {
+		violations = append(violations, routeShapeViolation(
+			"notification_routes",
+			fmt.Sprintf("at most %d notification routes are allowed, found %d", maxNotificationRoutes, len(rawRoutes)),
+		))
+	}
+
 	participantSystems := make(map[string]bool, len(probe.Participants))
 	for _, participant := range probe.Participants {
 		if system := strings.TrimSpace(participant.System); system != "" {
@@ -284,8 +359,24 @@ func checkNotificationRoutes(probe manifestProbe) []Violation {
 		}
 	}
 
-	seenTuples := make(map[string]int, len(probe.NotificationRoutes))
-	for i, route := range probe.NotificationRoutes {
+	parsed := make([]manifestRouteParsed, len(rawRoutes))
+	for i, raw := range rawRoutes {
+		base := "notification_routes." + strconv.Itoa(i)
+		route, ok := raw.(map[string]any)
+		if !ok {
+			violations = append(violations, routeShapeViolation(base, "notification route must be a mapping"))
+			continue
+		}
+		shapeViolations, p := checkRouteShape(base, route)
+		violations = append(violations, shapeViolations...)
+		parsed[i] = p
+	}
+
+	seenTuples := make(map[string]int, len(parsed))
+	for i, route := range parsed {
+		if !route.ok {
+			continue
+		}
 		base := "notification_routes." + strconv.Itoa(i)
 
 		if route.For != "" && !participantSystems[route.For] {
@@ -312,10 +403,132 @@ func checkNotificationRoutes(probe manifestProbe) []Violation {
 	return violations
 }
 
+// checkRouteShape validates one decoded route mapping against every rule
+// space.schema.json's frozen notification_routes item declaration used to
+// enforce (P1 §7), returning both the violations and a best-effort typed
+// projection for the referential rules in checkNotificationRoutes above.
+// The projection is built from whatever DID validate — a route with a
+// malformed `topic` still contributes its (valid) `for` to the dedup rule,
+// the same way a schema-shaped route always could.
+func checkRouteShape(base string, route map[string]any) ([]Violation, manifestRouteParsed) {
+	var violations []Violation
+	parsed := manifestRouteParsed{ok: true}
+
+	for key := range route {
+		if !knownRouteFields[key] {
+			violations = append(violations, routeShapeViolation(base+"."+key, "unknown notification route field"))
+		}
+	}
+
+	if channelRaw, present := route["channel"]; !present {
+		violations = append(violations, routeShapeViolation(base+".channel", "channel is required"))
+	} else if channel, ok := channelRaw.(string); !ok || channel != "telegram" {
+		violations = append(violations, routeShapeViolation(base+".channel", `channel must be "telegram"`))
+	} else {
+		parsed.Channel = channel
+	}
+
+	if chatRaw, present := route["chat"]; !present {
+		violations = append(violations, routeShapeViolation(base+".chat", "chat is required"))
+	} else if chat, ok := chatRaw.(string); !ok {
+		violations = append(violations, routeShapeViolation(base+".chat", "chat must be a string matching ^-?[0-9]+$"))
+	} else if !chatPattern.MatchString(chat) {
+		violations = append(violations, routeShapeViolation(base+".chat", "chat must match ^-?[0-9]+$"))
+	} else {
+		parsed.Chat = chat
+	}
+
+	if topicRaw, present := route["topic"]; present {
+		topic, ok := topicRaw.(int)
+		if !ok || topic < 1 {
+			violations = append(violations, routeShapeViolation(base+".topic", "topic must be an integer >= 1"))
+		} else {
+			parsed.Topic = &topic
+		}
+	}
+
+	if forRaw, present := route["for"]; present {
+		forVal, ok := forRaw.(string)
+		if !ok {
+			violations = append(violations, routeShapeViolation(base+".for", "for must be a string"))
+		} else {
+			parsed.For = forVal
+		}
+	}
+
+	if eventsRaw, present := route["events"]; !present {
+		violations = append(violations, routeShapeViolation(base+".events", "events is required"))
+	} else if events, ok := eventsRaw.([]any); !ok {
+		violations = append(violations, routeShapeViolation(base+".events", "events must be an array"))
+	} else if len(events) < 1 {
+		violations = append(violations, routeShapeViolation(base+".events", "events must contain at least 1 item"))
+	} else {
+		seen := make(map[string]bool, len(events))
+		for j, evRaw := range events {
+			evPath := base + ".events." + strconv.Itoa(j)
+			ev, ok := evRaw.(string)
+			switch {
+			case !ok || !validNotificationEvent(ev):
+				violations = append(violations, routeShapeViolation(evPath, "event must be one of human-gate, blocking, published"))
+			case seen[ev]:
+				violations = append(violations, routeShapeViolation(evPath, `duplicate event "`+ev+`"`))
+			default:
+				seen[ev] = true
+			}
+		}
+	}
+
+	if localeRaw, present := route["locale"]; present {
+		locale, ok := localeRaw.(string)
+		if !ok || (locale != "ru" && locale != "en") {
+			violations = append(violations, routeShapeViolation(base+".locale", `locale must be "ru" or "en"`))
+		}
+	}
+
+	if secretRaw, present := route["secret"]; present {
+		secret, ok := secretRaw.(string)
+		if !ok || !secretPattern.MatchString(secret) {
+			violations = append(violations, routeShapeViolation(base+".secret", "secret must match ^[A-Z][A-Z0-9_]*$"))
+		}
+	}
+
+	if rendererRaw, present := route["renderer"]; present {
+		renderer, ok := rendererRaw.(string)
+		if !ok || (renderer != "html" && renderer != "rich") {
+			violations = append(violations, routeShapeViolation(base+".renderer", `renderer must be "html" or "rich"`))
+		}
+	}
+
+	return violations, parsed
+}
+
 func notificationRouteViolation(path, message string) Violation {
 	return Violation{
 		Code:     "REF-022",
 		Class:    ClassReferential,
+		Path:     path,
+		Message:  message,
+		Severity: SeverityReject,
+	}
+}
+
+// routeShapeViolation is POL-021: a notification_routes[] entry is not
+// well-formed against its own declared shape (space-notify-2026-08 P1 §7)
+// — an unknown key, a missing required field, a value outside its enum or
+// pattern, or the array exceeding its own maxItems. Class is ClassPolicy,
+// not ClassReferential: REF-022 above means "well-formed, but does not
+// resolve against the manifest's own context (participants[], sibling
+// routes)"; these checks have no referent at all; a route can be malformed
+// in this way with an empty, single-participant manifest. ClassSchema is
+// not used either — that class is reserved for internal/schema's own JSON-
+// Schema corpus mapper (schema_class.go), and this rule is hand-written Go
+// checking a shape the frozen schema.json can no longer declare, the same
+// reason malformedManifestViolation (POL-002) above is ClassPolicy despite
+// also being, in substance, a shape fact.
+func routeShapeViolation(path, message string) Violation {
+	return Violation{
+		Code:     "POL-021",
+		Class:    ClassPolicy,
 		Path:     path,
 		Message:  message,
 		Severity: SeverityReject,

@@ -316,3 +316,20 @@ entries:
       POL-017's own rule that only checkable facts refuse. Silence is a live
       state, and must read as neither "can receive anything" nor "can receive
       nothing" (agent-exchange-2026-08/P5, AC5/US-3)
+
+  - code: POL-021
+    class: policy
+    title: A notification route is not well-formed against its own declared shape
+    applies_to: >-
+      space/v1 `notification_routes[]` (space-notify-2026-08 P1 §7),
+      internal/validate.checkRouteShape — an unknown key, a missing required
+      field (channel/chat/events), a value outside its enum or pattern
+      (channel, chat, topic, events[], locale, secret, renderer), or the
+      array exceeding its own maxItems of 16. Moved from
+      schemas/manifest/v1/space.schema.json's route item declaration into Go
+      policy because that file is byte-frozen (schemas/published-v1.sha256
+      row 16) and additionalProperties:true on the route object leaves the
+      corpus unable to express any of this. Distinct from REF-022: these
+      checks have no referent — a route can be malformed this way against an
+      empty manifest — whereas REF-022 means the route IS well-formed but
+      fails to resolve against the manifest's own context

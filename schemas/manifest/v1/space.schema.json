@@ -41,32 +41,6 @@
     "vendored": {
       "type": "array",
       "description": "Read-only vendor mirrors (§4.4); item shape not tabulated in §5 (Open Q1) — typed permissively."
-    },
-    "notification_routes": {
-      "type": "array",
-      "description": "space-notify-2026-08 P1 §7: bot-relay notification routes. additionalProperties:false on the route object — an unknown key is a typo, and a typo in a notification route is silence. `chat` is a STRING, not an integer: Telegram supergroup ids exceed the safe integer range of several YAML/JSON readers.",
-      "default": [],
-      "maxItems": 16,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["channel", "chat", "events"],
-        "properties": {
-          "channel": { "enum": ["telegram"] },
-          "chat": { "type": "string", "pattern": "^-?[0-9]+$" },
-          "topic": { "type": "integer", "minimum": 1 },
-          "for": { "type": "string" },
-          "events": {
-            "type": "array",
-            "minItems": 1,
-            "uniqueItems": true,
-            "items": { "enum": ["human-gate", "blocking", "published"] }
-          },
-          "locale": { "enum": ["ru", "en"], "default": "en" },
-          "secret": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$", "default": "TG_BOT_TOKEN" },
-          "renderer": { "enum": ["html", "rich"], "default": "html" }
-        }
-      }
     }
   },
   "required": ["schema", "space", "min_binary_version", "participants"],
