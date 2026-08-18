@@ -8031,6 +8031,21 @@
           }
         },
         {
+          "id": "RN-02300-13",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "every space validates and notifies on a Go toolchain with six fewer called vulnerabilities",
+          "detail": "The toolchain moves from go1.26.5 to go1.26.6, which fixes all six standard-library vulnerabilities `govulncheck` reports as reachable from this code: quadratic path resolution in `net/url`, JavaScript regexp context tracking in `html/template`, post-handshake message flooding in `crypto/tls`, a missing `ReadHeaderTimeout` on the unencrypted HTTP/2 check in `net/http`, unbounded recursion in `encoding/asn1` (reached through detached cosign verification), and ASCII-only punycode labels in `x/net/idna`. The accepted-findings list stays empty: every called vulnerability is a hard red again.\nA space repository has no `go.mod`, so the two reusable workflows name the toolchain version explicitly while repo-local jobs read the file. That split had no reader, and bumping one without the other would have left every space on the vulnerable toolchain silently. `workflow-lint` now refuses any explicit `go-version:` that `go.mod` does not name.\n",
+          "affects": [
+            "a2a-validate-reusable.yml",
+            "a2a-notify-reusable.yml"
+          ],
+          "action": {
+            "scope": "space",
+            "why": "No action for an existing space pinned to an earlier release; a space adopts the new toolchain when its workflow pin moves to this release."
+          }
+        },
+        {
           "id": "KI-01900-PROVIDER-TIER-DEFERRED",
           "kind": "known-issue",
           "impact": "normal",
