@@ -71,3 +71,33 @@ func TestIdentifierAddsClosedPrefixDenylistWithoutContentFalsePositives(t *testi
 		}
 	}
 }
+
+// TestTelegramShapeSeesATokenInsideABotURL is the regression the closing audit
+// of space-notify-2026-08 forced.
+//
+// The shape shipped with a leading `\b`, added to stop it matching the `256:`
+// inside this repo's own `sha256:<64-hex>` digests. It did stop that — but the
+// {6,} quantifier already did, since `sha256:` carries three digits. The
+// boundary was redundant, and it made this matcher structurally blind in the
+// ONE context a Telegram token ever appears in: `.../bot<token>/METHOD`, where
+// `bot`'s `t` sits against the token's leading digit with no boundary between
+// them. Every "defensive second layer" that calls ContainsContent was therefore
+// blind exactly where a token can leak.
+func TestTelegramShapeSeesATokenInsideABotURL(t *testing.T) {
+	t.Parallel()
+	const token = "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw"
+
+	if !ContainsContent("https://api.telegram.org/bot" + token + "/sendMessage") {
+		t.Error("a token inside a bot URL is not detected — the one place it actually leaks")
+	}
+	if !ContainsContent("token=" + token) {
+		t.Error("a standalone token is not detected")
+	}
+	// And the collision the boundary was added for must stay refused.
+	if ContainsContent("sha256:" + strings.Repeat("a", 64)) {
+		t.Error("a sha256 digest is matched as a credential — the false positive is back")
+	}
+	if ContainsContent("sha512:" + strings.Repeat("b", 128)) {
+		t.Error("a sha512 digest is matched as a credential")
+	}
+}

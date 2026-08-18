@@ -49,6 +49,8 @@ func TestSend_DryRunMakesZeroAPICalls(t *testing.T) {
 // secret's own name in Error. Confirmed by hand; guard restored before
 // finalizing this file.
 func TestSend_MissingTokenRefusesBeforeSending(t *testing.T) {
+	// reason: t.Setenv/t.Chdir mutate process-global state, which Go
+	// refuses to combine with t.Parallel().
 	srv := failOnAnyRequest(t)
 	defer srv.Close()
 	c := fastClient(t, srv)
@@ -74,6 +76,8 @@ func TestSend_MissingTokenRefusesBeforeSending(t *testing.T) {
 // order, over a run mixing sent/dry-run-equivalent/failed outcomes — the
 // exact facts P5's job summary prints.
 func TestSend_MixedOutcomes(t *testing.T) {
+	// reason: t.Setenv/t.Chdir mutate process-global state, which Go
+	// refuses to combine with t.Parallel().
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "sendRichMessage") {
 			w.WriteHeader(http.StatusBadRequest)

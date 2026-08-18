@@ -275,3 +275,32 @@ func TestToken_StringNeverLeaksTheValue(t *testing.T) {
 		t.Fatalf("token leaked through json.Marshal: %s", marshaled)
 	}
 }
+
+// TestClient_Send_TokenNeverInErrorText_MalformedURL closes the half the
+// original test missed, found by the closing audit.
+//
+// TestClient_Send_TokenNeverInErrorText covers client.Do's transport failure.
+// http.NewRequestWithContext has the SAME defect and a different trigger: it
+// calls url.Parse, whose error embeds the raw URL verbatim. A bot token pasted
+// from a GitHub Actions secret with a trailing newline is enough — and that
+// error used to be wrapped with %w, so it reached the delivery record, stdout,
+// and $GITHUB_STEP_SUMMARY.
+//
+// The token below carries a control character for exactly that reason.
+func TestClient_Send_TokenNeverInErrorText_MalformedURL(t *testing.T) {
+	t.Parallel()
+	const secret = "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	c := fastClient(t, srv)
+	err := c.SendHTML(context.Background(), NewToken(secret+"\n"), sampleMessage())
+	if err == nil {
+		return // a request that somehow succeeds leaks nothing either
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("token leaked into the error text: %q", err.Error())
+	}
+}

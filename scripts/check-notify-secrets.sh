@@ -89,6 +89,7 @@ EXEMPT_PATHS=(
   "schemas/feedback/v1/fixtures/invalid/planted-secret*.yaml"
   "internal/operational/project_test.go"
   "internal/spacenotify/redact_test.go"
+  "internal/spacenotify/telegram_test.go"
   "internal/validate/eventreceipt_test.go"
   "internal/validate/registry_test.go"
   "internal/validate/manifest_policy_test.go"
@@ -107,6 +108,7 @@ EXEMPT_REASONS=(
   "gitleaks-allowlisted: P25 feedback secret-scan fixtures (FB-006) — fabricated tokens the validator's own tests assert it blocks"
   "TestCredentialRedactionCoversAssignmentsAndAuthorizationHeaders / TestPublicSessionHashesCanonicalCredentialShapes — fabricated fixtures proving operational redaction"
   "TestBoundAndRedact_CredentialShapeIsGone — fabricated fixture the test asserts gets removed"
+  "TestClient_Send_TokenNeverInErrorText* — a synthetic bot token, planted to prove it never reaches an error string"
   "TestValidateEventCredentialShapedSessionsUsePOL001 — fabricated fixture proving POL-001 classification"
   "TestRegistryClosure's POL-001 scanForSecrets fixture — fabricated"
   "TestValidateManifestPolicyRule4SecretShape — fabricated Telegram-shaped fixture proving rule 4 rejects it"
@@ -415,7 +417,12 @@ run_teeth() {
   work="$(mktemp -d)" || return 1
   trap 'rm -rf -- "${work:-}"' EXIT
 
-  tg_token='\'"b[0-9]{6,}:[A-Za-z0-9_-]{30,}"
+  # Split at the colon for the same reason the projection fixture above is:
+  # invariant 2 scans THIS file, and the shape must never appear contiguously
+  # in it. The leading backslash-b is a leftover from when the shape carried a
+  # word boundary; the closing audit removed it, which is what made the rest of
+  # this string the whole pattern.
+  tg_token='\'"b[0-9]{6,}"":""[A-Za-z0-9_-]{30,}"
 
   good_bin="$work/good-a2a"; write_stub_binary "$good_bin" good
   empty_bin="$work/empty-a2a"; write_stub_binary "$empty_bin" empty

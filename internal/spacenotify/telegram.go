@@ -179,8 +179,7 @@ func (c *Client) sendJSON(ctx context.Context, token Token, method string, body 
 	if err != nil {
 		return fmt.Errorf("notify send: %s: encode request: %w", method, err)
 	}
-	url := c.baseURL() + "/bot" + token.value + "/" + method
-	return c.send(ctx, method, url, payload)
+	return c.send(ctx, method, token, payload)
 }
 
 // errTransportFailed is a fixed, contentless sentinel — never the real
@@ -201,11 +200,27 @@ type attemptResult struct {
 // attempt performs ONE HTTP call and reports either a decoded apiResponse
 // or a safe (token-free) error — see errTransportFailed's own doc comment
 // for why a raw transport error is never surfaced.
-func (c *Client) attempt(ctx context.Context, method, url string, payload []byte) (attemptResult, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+func (c *Client) attempt(ctx context.Context, method string, token Token, payload []byte) (attemptResult, error) {
+	// Built against a REDACTED placeholder path, then the real path is set on
+	// the parsed URL — the token never reaches url.Parse.
+	//
+	// errTransportFailed below explains why client.Do's error is never
+	// surfaced. NewRequestWithContext has the SAME defect and it was missed
+	// here for a wave: it calls url.Parse, whose error text embeds the raw URL
+	// verbatim, and a bot token pasted from a GitHub Actions secret with a
+	// trailing newline is enough to trigger it. Wrapping that error with %w —
+	// which this function did — put the whole token into the delivery record,
+	// then into stdout, then into $GITHUB_STEP_SUMMARY, readable by anyone
+	// with read access to the run. internal/cli/cmd_notify_setup.go already
+	// documented and fixed the identical vector; this is the same mitigation,
+	// applied to the path that runs in every CI job.
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL()+"/bot[redacted]/"+method, bytes.NewReader(payload))
 	if err != nil {
-		return attemptResult{}, fmt.Errorf("notify send: %s: build request: %w", method, err)
+		// Fixed and contentless: the placeholder URL is the only thing that
+		// could have failed to parse, and naming it adds nothing.
+		return attemptResult{}, fmt.Errorf("notify send: %s: build request failed", method)
 	}
+	req.URL.Path = "/bot" + token.value + "/" + method
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, httpErr := c.httpClient().Do(req)
@@ -230,12 +245,12 @@ func (c *Client) attempt(ctx context.Context, method, url string, payload []byte
 // own retry_after (retryAfterFromResponse), classify every other outcome
 // through internal/host.ClassifyStatus (never a second policy), and fail
 // loudly — never silently — once the budget or MaxAttempts is exhausted.
-func (c *Client) send(ctx context.Context, method, url string, payload []byte) error {
+func (c *Client) send(ctx context.Context, method string, token Token, payload []byte) error {
 	deadline := time.Now().Add(host.RetryTotalCap)
 	var lastErr error
 
 	for attempt := 1; attempt <= host.MaxAttempts; attempt++ {
-		result, attemptErr := c.attempt(ctx, method, url, payload)
+		result, attemptErr := c.attempt(ctx, method, token, payload)
 
 		if attemptErr == nil && result.api.OK {
 			return nil

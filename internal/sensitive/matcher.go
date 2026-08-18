@@ -50,7 +50,18 @@ var contentPatterns = []contentShape{
 	// the exact shape (bot id : base64ish secret, unanchored elsewhere in
 	// arbitrary text) while requiring the digit run not be glued to a
 	// preceding word character, which a real Telegram bot id never is.
-	{"telegram-bot-token", regexp.MustCompile(`\b[0-9]{6,}:[A-Za-z0-9_-]{30,}`)},
+	// No `\b` here, deliberately, and the history is worth keeping: it was
+	// added to stop `\d+:` matching the `256:` inside this repo's own
+	// `sha256:<64-hex>` digests — but the {6,} quantifier ALREADY does that,
+	// since `sha256:` carries three digits and this needs six. The boundary
+	// was redundant, and it was worse than redundant: the ONLY context a
+	// Telegram token appears in is `.../bot<token>/METHOD`, where `bot`'s `t`
+	// sits against the token's leading digit. Both are word characters, so
+	// there is no boundary there and this shape could never match a leaked
+	// token in the one place it actually leaks. Verified both ways before the
+	// change: with `\b` the URL form does not match; without it, neither
+	// sha256 nor sha512 digests do.
+	{"telegram-bot-token", regexp.MustCompile(`[0-9]{6,}:[A-Za-z0-9_-]{30,}`)},
 }
 
 var identifierPrefixes = []string{

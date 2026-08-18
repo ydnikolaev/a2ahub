@@ -64,6 +64,8 @@ func TestNotifySend_DryRunProducesRecordsWithoutAPICalls(t *testing.T) {
 
 // TestNotifySend_MissingTokenExitsNonZero is AC5 through the CLI surface.
 func TestNotifySend_MissingTokenExitsNonZero(t *testing.T) {
+	// reason: t.Setenv/t.Chdir mutate process-global state, which Go
+	// refuses to combine with t.Parallel().
 	t.Setenv("A2A_NOTIFY_TEST_UNSET_TOKEN", "")
 
 	stdin, err := json.Marshal([]spacenotify.Message{sendFixtureMessage("A2A_NOTIFY_TEST_UNSET_TOKEN", "html")})
@@ -92,6 +94,8 @@ func TestNotifySend_MissingTokenExitsNonZero(t *testing.T) {
 // token value appears in NEITHER stdout NOR stderr, across a run that
 // deliberately fails (the path most likely to leak it).
 func TestNotifySend_TokenNeverInOutput(t *testing.T) {
+	// reason: t.Setenv/t.Chdir mutate process-global state, which Go
+	// refuses to combine with t.Parallel().
 	const secretValue = "AAAA:VERY-SECRET-TELEGRAM-TOKEN-VALUE"
 	t.Setenv("A2A_NOTIFY_TEST_TOKEN", secretValue)
 
@@ -123,6 +127,8 @@ func TestNotifySend_TokenNeverInOutput(t *testing.T) {
 
 // TestNotifySend_OKFalseExitsNonZero is AC4 through the CLI surface.
 func TestNotifySend_OKFalseExitsNonZero(t *testing.T) {
+	// reason: t.Setenv/t.Chdir mutate process-global state, which Go
+	// refuses to combine with t.Parallel().
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(`{"ok":false,"description":"chat not found"}`))
@@ -170,6 +176,8 @@ func TestNotifySend_UsageErrors(t *testing.T) {
 // runNotifyRender. A dry run in an empty directory containing no
 // space.yaml still succeeds, proving the route facts all come off stdin.
 func TestNotifySend_NoSecondSpaceYAMLRead(t *testing.T) {
+	// reason: t.Setenv/t.Chdir mutate process-global state, which Go
+	// refuses to combine with t.Parallel().
 	t.Chdir(t.TempDir()) // deliberately no space.yaml here
 
 	stdin, err := json.Marshal([]spacenotify.Message{sendFixtureMessage("TG_BOT_TOKEN", "html")})
