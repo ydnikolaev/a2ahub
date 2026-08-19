@@ -96,7 +96,7 @@ func validWorkAction(action string) bool {
 // hides part of what the operation IS inside a map documented as the caller's
 // schema-field overrides, and it makes the magic key's uniqueness a thing
 // somebody has to keep being right about.
-// RespondIncompleteness carries P6's per-criterion shortfall facts — the
+// RespondIncompleteness carries P6's per-criterion shortfall facts: the
 // `unmet[]` / `standing` / `blocked_by` a response may declare (defects-fix
 // P2, envelope/v2/response). A plain value type for the same reason
 // VerdictEntry below is one: this package stays stdlib-only.
@@ -131,7 +131,9 @@ func (r RespondIncompleteness) canonical() string {
 	return strings.Join(parts, "\x1f")
 }
 
-// incompleteness is why this parameter WIDENS the signature instead of taking
+// Respond derives the operation key for one `a2a respond` invocation.
+//
+// The `incompleteness` parameter is why this WIDENS the signature instead of taking
 // the second-entry-point shape LegalNextFor and ValidateEventWithContext use,
 // and the distinction is worth stating because this epic applies both:
 //

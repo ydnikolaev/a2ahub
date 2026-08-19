@@ -375,7 +375,7 @@ func mcpSeedAcceptedQuestionWithCriteria(t *testing.T, mirrorDir, id, to, criter
 // schema reason (envelope/v1's unevaluatedProperties:false, or envelope/v2's
 // own `if result: partial|cannot` conditional), not merely whatever a stub
 // agrees to record.
-func respondWithRealValidation(t *testing.T, parentID string, in RespondInput) (callErr error, mirrorDir string, fakeHost *host.FakeHost) {
+func respondWithRealValidation(t *testing.T, parentID string, in RespondInput) (mirrorDir string, fakeHost *host.FakeHost, callErr error) {
 	t.Helper()
 	fx := spacefixture.New(t, "axon", "beta")
 	mirrorDir = fx.Clone("beta")
@@ -409,7 +409,7 @@ func respondWithRealValidation(t *testing.T, parentID string, in RespondInput) (
 		t.Fatalf("marshal RespondInput: %v", merr)
 	}
 	_, _, callErr = handler(context.Background(), args)
-	return callErr, mirrorDir, fakeHost
+	return mirrorDir, fakeHost, callErr
 }
 
 // mcpGitOutputForTest runs a read-only git command in dir and returns its
@@ -476,7 +476,7 @@ func mcpCommittedResponseContent(t *testing.T, mirrorDir string, fakeHost *host.
 func TestRespondHandlerResultPartialWithStandingProvisionalValidates(t *testing.T) {
 	t.Parallel()
 	parentID := "XQ-axon-20260721-mrd1"
-	callErr, mirrorDir, fakeHost := respondWithRealValidation(t, parentID, RespondInput{Result: "partial", Standing: "provisional"})
+	mirrorDir, fakeHost, callErr := respondWithRealValidation(t, parentID, RespondInput{Result: "partial", Standing: "provisional"})
 	if callErr != nil {
 		t.Fatalf("respond partial+standing=provisional: %v", callErr)
 	}
@@ -494,7 +494,7 @@ func TestRespondHandlerResultPartialWithStandingProvisionalValidates(t *testing.
 func TestRespondHandlerPartialWithNoneOfTheThreeRefused(t *testing.T) {
 	t.Parallel()
 	parentID := "XQ-axon-20260721-mrd2"
-	callErr, _, _ := respondWithRealValidation(t, parentID, RespondInput{Result: "partial"})
+	_, _, callErr := respondWithRealValidation(t, parentID, RespondInput{Result: "partial"})
 	if callErr == nil {
 		t.Fatal("expected `result: partial` with none of unmet/standing/blocked_by to be refused")
 	}
@@ -507,7 +507,7 @@ func TestRespondHandlerPartialWithNoneOfTheThreeRefused(t *testing.T) {
 func TestRespondHandlerUnmetAndBlockedByValidates(t *testing.T) {
 	t.Parallel()
 	parentID := "XQ-axon-20260721-mrd3"
-	callErr, mirrorDir, fakeHost := respondWithRealValidation(t, parentID, RespondInput{
+	mirrorDir, fakeHost, callErr := respondWithRealValidation(t, parentID, RespondInput{
 		Result: "partial", Unmet: []RespondUnmetEntry{mcpUnmetIndex(2)},
 		BlockedBy: &RespondBlockedBy{ReasonCode: "out-of-scope", Owner: "seomatrix", Needs: "decision"},
 	})
@@ -529,7 +529,7 @@ func TestRespondHandlerUnmetAndBlockedByValidates(t *testing.T) {
 func TestRespondHandlerNoNewFieldsOmitsAllThreeKeys(t *testing.T) {
 	t.Parallel()
 	parentID := "XQ-axon-20260721-mrd4"
-	callErr, mirrorDir, fakeHost := respondWithRealValidation(t, parentID, RespondInput{Result: "answered"})
+	mirrorDir, fakeHost, callErr := respondWithRealValidation(t, parentID, RespondInput{Result: "answered"})
 	if callErr != nil {
 		t.Fatalf("respond answered: %v", callErr)
 	}

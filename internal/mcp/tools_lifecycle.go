@@ -792,7 +792,7 @@ func respondSeed(parentID, result string, respFields map[string]string, bodyOver
 		case u.Criterion != "":
 			buf.WriteString("unmet=" + u.Criterion + "\n")
 		case u.Index != nil:
-			buf.WriteString(fmt.Sprintf("unmet=%d\n", *u.Index))
+			fmt.Fprintf(&buf, "unmet=%d\n", *u.Index)
 		}
 	}
 	if standing != "" {
