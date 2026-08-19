@@ -560,9 +560,7 @@ func mirrorHoldsArtifact(mirrorDir, id string) bool {
 			return filepath.SkipAll
 		}
 		if err != nil {
-			// A best-effort walk: an inaccessible entry just is not a match,
-			// and the overall WalkDir error is deliberately discarded below.
-			return nil
+			return nil //nolint:nilerr // reason: best-effort walk — an inaccessible entry just is not a match, and mirrorHoldsArtifact discards WalkDir's overall error too (same grant as cmd/a2a/wire.go's own copy)
 		}
 		// Skip the bare `.git` object store — it never holds artifact files,
 		// and walking it grows with history (matches cmd/a2a's own walker

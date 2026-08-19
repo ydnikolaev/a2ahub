@@ -1357,3 +1357,229 @@ func TestNoteHandlerMultiSpaceDerivesFromIDs(t *testing.T) {
 		t.Fatalf("RepoDir = %q, want %q", fakeB.calls[0].RepoDir, mirrorB)
 	}
 }
+
+// TestRespondHandlerDoesNotPoisonAcrossCalls is the poisoning test for
+// newRespondHandler (audit MED finding): two sequential calls through ONE
+// constructed handler, each deriving its target space from parent_ids, must
+// never let call 1's resolved deps leak into call 2 through the captured
+// deps variable — see TestLifecycleHandlerMultiSpacePoisoningAcrossCalls's
+// own doc comment for why a single-call test cannot see this.
+func TestRespondHandlerDoesNotPoisonAcrossCalls(t *testing.T) {
+	t.Parallel()
+	mirrorA := t.TempDir()
+	mirrorB := t.TempDir()
+	idA := "XQ-axon-20260721-rpa1"
+	idB := "XQ-axon-20260721-rpb1"
+	for _, pair := range []struct {
+		dir string
+		id  string
+	}{{mirrorA, idA}, {mirrorB, idB}} {
+		writeQuestionArtifact(t, pair.dir, pair.id, "beta")
+		writeLifecycleEvent(t, pair.dir, "axon", 0, pair.id, "submit", "axon")
+		writeLifecycleEvent(t, pair.dir, "beta", 1, pair.id, "acknowledge", "beta")
+		writeLifecycleEvent(t, pair.dir, "beta", 2, pair.id, "accept", "beta")
+		writeLifecycleEvent(t, pair.dir, "beta", 3, pair.id, "start", "beta")
+	}
+
+	fakeA := &fakeFunnel{}
+	fakeB := &fakeFunnel{}
+	deps := testTwoSpaceWriteDeps("space-a", mirrorA, fakeA, "space-b", mirrorB, fakeB)
+	handler := newRespondHandler(deps) // constructed ONCE
+
+	args1, _ := json.Marshal(RespondInput{ParentIDs: []string{idA}, Result: "answered"})
+	if _, _, err := handler(context.Background(), args1); err != nil {
+		t.Fatalf("first call (space-a) failed: %v", err)
+	}
+	if len(fakeA.calls) != 1 || len(fakeB.calls) != 0 {
+		t.Fatalf("after call 1: expected a=1 b=0, got a=%d b=%d", len(fakeA.calls), len(fakeB.calls))
+	}
+
+	args2, _ := json.Marshal(RespondInput{ParentIDs: []string{idB}, Result: "answered"})
+	if _, _, err := handler(context.Background(), args2); err != nil {
+		t.Fatalf("second call (space-b), through the SAME handler, failed: %v — a poisoned deps from call 1 would try space-a's mirror for a space-b id", err)
+	}
+	if len(fakeB.calls) != 1 {
+		t.Fatalf("after call 2: expected space-b's funnel to see exactly 1 call, got %d", len(fakeB.calls))
+	}
+	if len(fakeA.calls) != 1 {
+		t.Fatalf("second call poisoned space-a's funnel: expected it to stay at 1, got %d", len(fakeA.calls))
+	}
+	if fakeB.calls[0].RepoDir != mirrorB {
+		t.Fatalf("second call's RepoDir = %q, want space-b's mirror %q", fakeB.calls[0].RepoDir, mirrorB)
+	}
+}
+
+// TestVerifyHandlerDoesNotPoisonAcrossCalls is the poisoning test for
+// newVerifyHandler: two sequential calls through ONE constructed handler,
+// each deriving its target space from targets (see
+// TestVerifyHandlerMultiSpaceDerivesFromTargets's own doc comment for why
+// this handler's resolveResponseID read needs care — it must run against the
+// RESOLVED deps, not the captured one), must never let call 1's resolved
+// deps leak into call 2.
+func TestVerifyHandlerDoesNotPoisonAcrossCalls(t *testing.T) {
+	t.Parallel()
+	mirrorA := t.TempDir()
+	mirrorB := t.TempDir()
+	parentIDA := "XQ-axon-20260721-vpa1"
+	parentIDB := "XQ-axon-20260721-vpb1"
+
+	for _, pair := range []struct {
+		dir string
+		id  string
+	}{{mirrorA, parentIDA}, {mirrorB, parentIDB}} {
+		writeQuestionArtifact(t, pair.dir, pair.id, "beta")
+		writeLifecycleEvent(t, pair.dir, "axon", 0, pair.id, "submit", "axon")
+		writeLifecycleEvent(t, pair.dir, "beta", 1, pair.id, "acknowledge", "beta")
+		writeLifecycleEvent(t, pair.dir, "beta", 2, pair.id, "accept", "beta")
+
+		respondFake := &fakeFunnel{}
+		respondArgs, _ := json.Marshal(RespondInput{ParentIDs: []string{pair.id}, Result: "answered"})
+		if _, _, err := newRespondHandler(testWriteDeps(pair.dir, respondFake))(context.Background(), respondArgs); err != nil {
+			t.Fatalf("respond fixture for %s failed: %v", pair.dir, err)
+		}
+		for _, fw := range respondFake.calls[0].Files {
+			if err := writeFileAllDirs(filepath.Join(pair.dir, fw.Path), fw.Content); err != nil {
+				t.Fatalf("materialize %s: %v", fw.Path, err)
+			}
+		}
+	}
+
+	fakeA := &fakeFunnel{}
+	fakeB := &fakeFunnel{}
+	// verify's role is RoleOwner (the parent's original requester, axon).
+	deps := testTwoSpaceWriteDepsWithSystem("axon", "space-a", mirrorA, fakeA, "space-b", mirrorB, fakeB)
+	handler := newVerifyHandler(deps) // constructed ONCE
+
+	args1, _ := json.Marshal(VerifyInput{Targets: []string{parentIDA}})
+	if _, _, err := handler(context.Background(), args1); err != nil {
+		t.Fatalf("first call (space-a) failed: %v", err)
+	}
+	if len(fakeA.calls) != 1 || len(fakeB.calls) != 0 {
+		t.Fatalf("after call 1: expected a=1 b=0, got a=%d b=%d", len(fakeA.calls), len(fakeB.calls))
+	}
+
+	args2, _ := json.Marshal(VerifyInput{Targets: []string{parentIDB}})
+	if _, _, err := handler(context.Background(), args2); err != nil {
+		t.Fatalf("second call (space-b), through the SAME handler, failed: %v — a poisoned deps from call 1 would try space-a's mirror for a space-b target", err)
+	}
+	if len(fakeB.calls) != 1 {
+		t.Fatalf("after call 2: expected space-b's funnel to see exactly 1 call, got %d", len(fakeB.calls))
+	}
+	if len(fakeA.calls) != 1 {
+		t.Fatalf("second call poisoned space-a's funnel: expected it to stay at 1, got %d", len(fakeA.calls))
+	}
+	if fakeB.calls[0].RepoDir != mirrorB {
+		t.Fatalf("second call's RepoDir = %q, want space-b's mirror %q", fakeB.calls[0].RepoDir, mirrorB)
+	}
+}
+
+// TestDisputeHandlerDoesNotPoisonAcrossCalls is the poisoning test for
+// newDisputeHandler: two sequential calls through ONE constructed handler,
+// each deriving its target space from ids (response ids), must never let
+// call 1's resolved deps leak into call 2.
+func TestDisputeHandlerDoesNotPoisonAcrossCalls(t *testing.T) {
+	t.Parallel()
+	mirrorA := t.TempDir()
+	mirrorB := t.TempDir()
+	parentIDA := "XQ-axon-20260721-dpa1"
+	parentIDB := "XQ-axon-20260721-dpb1"
+
+	responseID := make(map[string]string, 2)
+	for _, pair := range []struct {
+		dir string
+		id  string
+	}{{mirrorA, parentIDA}, {mirrorB, parentIDB}} {
+		writeQuestionArtifact(t, pair.dir, pair.id, "beta")
+		writeLifecycleEvent(t, pair.dir, "axon", 0, pair.id, "submit", "axon")
+		writeLifecycleEvent(t, pair.dir, "beta", 1, pair.id, "acknowledge", "beta")
+		writeLifecycleEvent(t, pair.dir, "beta", 2, pair.id, "accept", "beta")
+
+		respondFake := &fakeFunnel{}
+		respondArgs, _ := json.Marshal(RespondInput{ParentIDs: []string{pair.id}, Result: "answered"})
+		if _, _, err := newRespondHandler(testWriteDeps(pair.dir, respondFake))(context.Background(), respondArgs); err != nil {
+			t.Fatalf("respond fixture for %s failed: %v", pair.dir, err)
+		}
+		for _, fw := range respondFake.calls[0].Files {
+			if err := writeFileAllDirs(filepath.Join(pair.dir, fw.Path), fw.Content); err != nil {
+				t.Fatalf("materialize %s: %v", fw.Path, err)
+			}
+		}
+		for _, fw := range respondFake.calls[0].Files {
+			base := filepath.Base(fw.Path)
+			if strings.HasPrefix(base, "XS-") {
+				responseID[pair.dir] = strings.TrimSuffix(base, ".md")
+			}
+		}
+		if responseID[pair.dir] == "" {
+			t.Fatalf("could not find minted response id in %+v", respondFake.calls[0].Files)
+		}
+	}
+
+	fakeA := &fakeFunnel{}
+	fakeB := &fakeFunnel{}
+	deps := testTwoSpaceWriteDepsWithSystem("axon", "space-a", mirrorA, fakeA, "space-b", mirrorB, fakeB)
+	handler := newDisputeHandler(deps) // constructed ONCE
+
+	args1, _ := json.Marshal(DisputeInput{IDs: []string{responseID[mirrorA]}, Reason: "wrong answer"})
+	if _, _, err := handler(context.Background(), args1); err != nil {
+		t.Fatalf("first call (space-a) failed: %v", err)
+	}
+	if len(fakeA.calls) != 1 || len(fakeB.calls) != 0 {
+		t.Fatalf("after call 1: expected a=1 b=0, got a=%d b=%d", len(fakeA.calls), len(fakeB.calls))
+	}
+
+	args2, _ := json.Marshal(DisputeInput{IDs: []string{responseID[mirrorB]}, Reason: "wrong answer"})
+	if _, _, err := handler(context.Background(), args2); err != nil {
+		t.Fatalf("second call (space-b), through the SAME handler, failed: %v — a poisoned deps from call 1 would try space-a's mirror for a space-b id", err)
+	}
+	if len(fakeB.calls) != 1 {
+		t.Fatalf("after call 2: expected space-b's funnel to see exactly 1 call, got %d", len(fakeB.calls))
+	}
+	if len(fakeA.calls) != 1 {
+		t.Fatalf("second call poisoned space-a's funnel: expected it to stay at 1, got %d", len(fakeA.calls))
+	}
+	if fakeB.calls[0].RepoDir != mirrorB {
+		t.Fatalf("second call's RepoDir = %q, want space-b's mirror %q", fakeB.calls[0].RepoDir, mirrorB)
+	}
+}
+
+// TestNoteHandlerDoesNotPoisonAcrossCalls is the poisoning test for
+// newNoteHandler: two sequential calls through ONE constructed handler,
+// each deriving its target space from ids, must never let call 1's resolved
+// deps leak into call 2.
+func TestNoteHandlerDoesNotPoisonAcrossCalls(t *testing.T) {
+	t.Parallel()
+	mirrorA := t.TempDir()
+	mirrorB := t.TempDir()
+	idA := "XQ-axon-20260721-npa1"
+	idB := "XQ-axon-20260721-npb1"
+	writeQuestionArtifact(t, mirrorA, idA, "beta")
+	writeQuestionArtifact(t, mirrorB, idB, "beta")
+
+	fakeA := &fakeFunnel{}
+	fakeB := &fakeFunnel{}
+	deps := testTwoSpaceWriteDeps("space-a", mirrorA, fakeA, "space-b", mirrorB, fakeB)
+	handler := newNoteHandler(deps) // constructed ONCE
+
+	args1, _ := json.Marshal(NoteInput{IDs: []string{idA}, Note: "fyi"})
+	if _, _, err := handler(context.Background(), args1); err != nil {
+		t.Fatalf("first call (space-a) failed: %v", err)
+	}
+	if len(fakeA.calls) != 1 || len(fakeB.calls) != 0 {
+		t.Fatalf("after call 1: expected a=1 b=0, got a=%d b=%d", len(fakeA.calls), len(fakeB.calls))
+	}
+
+	args2, _ := json.Marshal(NoteInput{IDs: []string{idB}, Note: "fyi"})
+	if _, _, err := handler(context.Background(), args2); err != nil {
+		t.Fatalf("second call (space-b), through the SAME handler, failed: %v — a poisoned deps from call 1 would try space-a's mirror for a space-b id", err)
+	}
+	if len(fakeB.calls) != 1 {
+		t.Fatalf("after call 2: expected space-b's funnel to see exactly 1 call, got %d", len(fakeB.calls))
+	}
+	if len(fakeA.calls) != 1 {
+		t.Fatalf("second call poisoned space-a's funnel: expected it to stay at 1, got %d", len(fakeA.calls))
+	}
+	if fakeB.calls[0].RepoDir != mirrorB {
+		t.Fatalf("second call's RepoDir = %q, want space-b's mirror %q", fakeB.calls[0].RepoDir, mirrorB)
+	}
+}
