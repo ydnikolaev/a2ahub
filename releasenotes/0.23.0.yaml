@@ -733,3 +733,114 @@ changes:
     action:
       scope: none
       why: "No action. If you had selected a direction, that selection still applies; only the default reading changed back."
+  - id: RN-02300-22
+    kind: fix
+    roadmap:
+      visibility: shipped
+      why: >
+        A card could say "still open" while nothing and nobody was waiting.
+        Measured on a real space: seven documents carried that outcome and one
+        of them was open.
+    impact: normal
+    subject: "a document's outcome now answers about THAT document, not about its (kind, state) pair"
+    detail: >
+      `fold.OutcomeOf(kind, state)` is a pure function of two inputs, and for
+      two pairs the true answer needs a third that only the envelope carries:
+      an announcement's `ack_requested`, and whether a published contract has a
+      registered consumer. `internal/pendency` already answered both correctly
+      per document, so neither side was wrong — the seam between them was.
+
+      `OutcomeOf` keeps its exact signature and answer. `OutcomeOfDocument`
+      takes the caller-resolved fact, which is `LegalNextFor`'s own shipped
+      shape for the identical question. The liveness half moved in the same
+      change: `exchangeActive` short-circuited every kind but published
+      announcements to "active", so a published contract nobody consumes stayed
+      in the exchange feed forever.
+
+      The deprecation acknowledgement set is now resolved space-wide rather
+      than from the local system's registry alone, so the author of a
+      deprecation sees a late adopter who has not acknowledged.
+
+  - id: RN-02300-23
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: >
+        `envelope/v2/response` has declared `unmet`, `standing` and
+        `blocked_by` since the incompleteness work shipped, and no command
+        could produce any of them.
+    impact: normal
+    subject: "a response can finally say which acceptance criteria it did not satisfy"
+    detail: >
+      `a2a respond` gains `--unmet`, `--standing` and `--blocked-by`, and fresh
+      responses render `envelope/v2`. The MCP tool moves with the CLI — the two
+      are independent readers, so a fix on one side is not a fix.
+
+      A partial answer that names nothing is now refusable rather than the only
+      shape available: the schema requires a `partial` or `cannot` to carry
+      either the unmet set with what would unblock it, or a non-authoritative
+      standing.
+
+  - id: RN-02300-24
+    kind: fix
+    roadmap:
+      visibility: shipped
+      why: >
+        Two responses differing only in which criteria they failed derived the
+        same idempotency key, so a corrected response could be treated as a
+        repeat of the first and its correction never committed.
+    impact: normal
+    subject: "a response's idempotency key now includes what the response says it failed"
+    detail: >
+      The key folded in parents, result, fields, body and refs — everything the
+      operation IS — and not the shortfall facts. Adding them widened the
+      signature rather than adding a second entry point, deliberately: a key
+      without these facts is not a narrower key, it is a colliding one, and
+      leaving a callable narrow form would have left the defect reachable by
+      accident.
+
+      A caller that declares none of the three derives exactly the key it
+      derived before, so no in-flight operation is disturbed.
+
+  - id: RN-02300-25
+    kind: fix
+    roadmap:
+      visibility: shipped
+      why: >
+        An agent connected to several spaces over MCP had its write tools bound
+        to the first one, while the CLI resolves the target per invocation.
+    impact: normal
+    subject: "an MCP write can no longer be silently prepared against the wrong space"
+    detail: >
+      Server construction is per-space now, and a write that cannot name its
+      target while several spaces are connected is REFUSED, naming the
+      connected spaces — no default, because a default is how this defect gets
+      recreated one layer up. A single-space session is unchanged.
+
+      Partial, and stated as such: several write tools' inputs carry no field
+      that could name a space at all, so a call cannot express the target even
+      in principle. That is a tool-contract change and is not in this release.
+
+  - id: RN-02300-26
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: >
+        A validation error code could ship documented nowhere, fire on no
+        production path, and judge merged history no one may edit — and nothing
+        said so.
+    impact: minor
+    subject: "every validation error code is now checked for prose, reachability and scope"
+    detail: >
+      A new gate reads the error registry and refuses a code that appears in no
+      shipped prose, that no test proves fires through a production entry
+      point, or that rejects post-merge without a stated reason that it may
+      judge artifacts predating it.
+
+      Against the shipped corpus it found 26 gaps over 22 codes. They are
+      declared in the registry with reasons and owners rather than closed
+      silently, so the gate is green and BLOCKS the next code from joining
+      them. Codes that predate the prose rule carry that as their stated
+      reason, because applying a rule retroactively to history nobody may edit
+      is the very thing the rule forbids.
+
