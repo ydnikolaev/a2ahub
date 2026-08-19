@@ -1050,7 +1050,12 @@ class Component extends DCLogic {
     const matchesState = (it, value) => value === "all" || (value === "open" ? isOpenOutcome(it) : (!!it.outcome && !isOpenOutcome(it)));
     const matchesType = (it, value) => value === "all" || it.type === value;
     const matchesDue = (it, dueOnly) => !dueOnly || !!it.neededBy;
-    const filterWork = (state, type, dueOnly) => workListBase.filter(it => matchesState(it, state) && matchesType(it, type) && matchesDue(it, dueOnly));
+    // One predicate for all four axes, applied to whichever list the caller is
+    // counting. The row filters read from `workListBase` (already narrowed to
+    // the active direction); the direction chips read from their own
+    // collection, which is why this takes the list rather than closing over it.
+    const matchesFacets = (it, state, type, dueOnly) => matchesState(it, state) && matchesType(it, type) && matchesDue(it, dueOnly);
+    const filterWork = (state, type, dueOnly) => workListBase.filter(it => matchesFacets(it, state, type, dueOnly));
     const workState = !aggregate && ["open", "closed"].indexOf(s.workState) >= 0 ? s.workState : "all";
     const workTypesPresent = [];
     workListBase.forEach(it => { if (it.type && workTypesPresent.indexOf(it.type) < 0) workTypesPresent.push(it.type); });
@@ -1108,7 +1113,15 @@ class Component extends DCLogic {
         // collections now, so there is no single carried total to prefer over
         // the count — and inventing one by adding three windows would print a
         // number no server sent.
-        const count = collectionFor(id).filter(item => this.inScope(item.space)).length;
+        //
+        // "What it would show" includes the other three axes, and this row was
+        // the one place that ignored them: pressing Open (1) left Incoming
+        // reading 12, so two rows of chips described two different screens and
+        // only one of them was the one in front of you. Same rule the state,
+        // type and deadline chips already follow — omit ONLY your own axis.
+        const count = collectionFor(id)
+          .filter(item => this.inScope(item.space) && matchesFacets(item, workState, workType, workDue))
+          .length;
         return {
           label,
           count,

@@ -1109,6 +1109,103 @@ test('P1 Exchange facet chips count what they will show, and never an invented z
   assert.equal(scoped.workRows.length, scopedTab('Incoming').count, 'rows and the active chip agree under a space filter too');
 });
 
+// Every chip in the Exchange filter row answers one question — "how many
+// documents would I see if I pressed this" — and the answer has to honour the
+// choices already made on the OTHER three axes. Direction was the row that did
+// not: with Open (1) selected, Incoming still read 12, so the two rows of chips
+// described two different screens and only one of them was on the page.
+//
+// This walks the whole cross-product instead of the single case that was wrong,
+// because the rule is the invariant and the bug was only its cheapest witness:
+// a chip counts ITS OWN axis at its own value and every other axis at whatever
+// is currently selected. The expectation is computed by a second, deliberately
+// independent implementation of the four predicates — a test that reuses the
+// view's own helper would agree with any future mistake they make together.
+test('Exchange filter chips honour every axis but their own, across the whole cross-product', () => {
+  const self = 'atlas';
+  const item = (id, from, to, outcome, type, neededBy) => Object.assign(
+    { id, space: 'space-a', title: id, from, to, outcome, type, state: 'submitted' },
+    neededBy ? { neededBy } : {},
+  );
+  // Both types, both outcomes and at least one deadline exist in BOTH
+  // directions, so no combination below silently resets workType (the view
+  // validates it against the types present in the active direction) and the
+  // cross-product stays a cross-product.
+  const inbox = [
+    item('XI-1', 'beta', [self], 'open', 'contract', '2026-09-01'),
+    item('XI-2', 'beta', [self], 'closed', 'contract'),
+  ];
+  const outbox = [
+    item('XO-1', self, ['beta'], 'open', 'contract'),
+    item('XO-2', self, ['beta'], 'closed', 'announcement', '2026-09-03'),
+  ];
+  const archive = [
+    item('XI-3', 'beta', [self], 'closed', 'announcement', '2026-09-02'),
+    item('XI-4', 'beta', [self], 'open', 'announcement'),
+    item('XO-3', self, ['beta'], 'closed', 'contract'),
+    item('XO-4', self, ['beta'], 'open', 'announcement', '2026-09-04'),
+  ];
+  const data = {
+    self,
+    nodes: [{ system: self, owners: [self] }, { system: 'beta', owners: ['beta'] }],
+    spaces: [{ id: 'space-a', readable: true }],
+    unavailable: [], operational: { sources: [] }, workReports: [],
+    contracts: [], contractEdges: [], flags: [],
+    // Every combination below leaves at least one row standing, so the view
+    // auto-selects one and opens the detail pane — which reads this collection.
+    artifactDetails: [],
+    inbox, outbox, archive,
+    windows: {
+      inbox: { shown: 2, total: 2, truncated: false },
+      outbox: { shown: 2, total: 2, truncated: false },
+      archive: { shown: 4, total: 4, truncated: false },
+    },
+  };
+  const everything = inbox.concat(outbox, archive);
+  const expected = (direction, state, type, due) => everything.filter(it =>
+    (direction === 'all' || (direction === 'incoming' ? (it.to || []).includes(self) : it.from === self))
+    && (state === 'all' || (state === 'open' ? it.outcome === 'open' : !!it.outcome && it.outcome !== 'open'))
+    && (type === 'all' || it.type === type)
+    && (!due || !!it.neededBy)).length;
+
+  const DIRECTIONS = [['all', 'All'], ['incoming', 'Incoming'], ['outgoing', 'Outgoing']];
+  const STATES = [['all', 'All'], ['open', 'Open'], ['closed', 'Closed']];
+  const TYPES = ['all', 'contract', 'announcement'];
+
+  for (const [direction] of DIRECTIONS) {
+    for (const [state] of STATES) {
+      for (const type of TYPES) {
+        for (const due of [false, true]) {
+          const values = componentHarness('ExchangeView', {
+            ctx: {
+              data, locale: 'en', actions: {},
+              ui: { space: 'all', workTab: direction, workState: state, workType: type, workDue: due, workSel: '', dashboardSet: '' },
+            },
+          }).part.renderVals();
+          const where = `direction=${direction} state=${state} type=${type} deadline=${due}`;
+          for (const [id, label] of DIRECTIONS) {
+            assert.equal(values.workTabs.find(chip => chip.label === label).count, expected(id, state, type, due),
+              `direction chip "${id}" must count the other three axes as selected — ${where}`);
+          }
+          for (const [id, label] of STATES) {
+            assert.equal(values.workStates.find(chip => chip.label === label).count, expected(direction, id, type, due),
+              `state chip "${id}" must count the other three axes as selected — ${where}`);
+          }
+          for (const id of TYPES) {
+            assert.equal(values.workTypeFilters.find(chip => chip.type === id).count, expected(direction, state, id, due),
+              `type chip "${id}" must count the other three axes as selected — ${where}`);
+          }
+          assert.equal(Number(values.dueCountText), expected(direction, state, type, true),
+            `the deadline chip counts what turning it ON would show — ${where}`);
+          assert.equal(values.workRows.length, expected(direction, state, type, due), `rendered rows — ${where}`);
+          assert.equal(values.workTabs.find(chip => chip.pressed === 'true').count, values.workRows.length,
+            `the pressed direction chip and the rows it produced can never disagree — ${where}`);
+        }
+      }
+    }
+  }
+});
+
 test('artifact detail suppresses the carried work report publish lifecycle duplicate', () => {
   const controller = dashboardController();
   const data = exchangeSubjectFixture();
