@@ -25,3 +25,5 @@ POL-019	live	agent-exchange-2026-08/P5	recipient's declared manifest capabilitie
 POL-020	live	agent-exchange-2026-08/P5	recipient's manifest capabilities are undeclared; a required delivery mode cannot be confirmed	81115401	-
 REF-020	live	supersession-integrity	a supersession predecessor is claimed by more than one successor (CC-024)	PENDING	-
 REF-021	live	supersession-integrity	a supersession chain closes back on itself, including self-supersede (CC-025)	PENDING	-
+POL-022	live	defects-fix-2026-08/P9	a handoff body's required section carries no content, or its heading is missing
+POL-023	live	defects-fix-2026-08/P8	a contract invites a runtime pin against an operational half it declares absent

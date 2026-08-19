@@ -248,6 +248,14 @@ func (e *Engine) runCommonEnvelope(d Draft) (violations []Violation, artifactID 
 	}
 	violations = append(violations, declBlockViolations...)
 
+	// POL-023 (defects-fix-2026-08 P8): a contract inviting a runtime pin
+	// against an operational half it declares ABSENT. A warning, not a
+	// refusal — ADR-011 D2: publishing a promise before activating it is a
+	// designed sequence, so the conjunction is a claim ahead of the facts
+	// rather than an invalid document. Mode scope `both`, and a warning may
+	// judge history because it refuses nothing.
+	violations = append(violations, checkOperationalClaim(instance)...)
+
 	return violations, artifactID, env, instance, true, nil
 }
 

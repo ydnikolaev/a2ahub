@@ -3064,3 +3064,73 @@ func TestValidateCI_POL022ScopedToPRModeNotFullRepo(t *testing.T) {
 		}
 	}
 }
+
+// contractRuntimePinAgainstAbsentEndpoint renders a contract descriptor that
+// declares BOTH `runtime_pinnable: true` and an absent operational half —
+// XC-seomatrix-c4-export's own shape in the real getvisa space, and the
+// conjunction POL-023 exists to surface.
+func contractRuntimePinAgainstAbsentEndpoint(id, from string) string {
+	return "---\n" +
+		"schema: envelope/v2\n" +
+		"id: " + id + "\n" +
+		"type: contract\n" +
+		"title: A promise whose endpoint does not exist yet\n" +
+		"space: getvisa\n" +
+		"from: " + from + "\n" +
+		"to: [axon]\n" +
+		"actor: {kind: agent, name: claude-code}\n" +
+		"created: \"2026-08-17T17:31:37Z\"\n" +
+		"category: api\n" +
+		"priority: p3\n" +
+		"blocking: false\n" +
+		"classification: internal\n" +
+		"version: 1.0.0\n" +
+		"schema_format: json-schema-2020-12\n" +
+		"compat_policy: default\n" +
+		"x_binding:\n" +
+		"    artifact_class: producer_capability\n" +
+		"    compatibility_status: none\n" +
+		"    adoptable: true\n" +
+		"    runtime_pinnable: true\n" +
+		"x_operational:\n" +
+		"  - name: endpoint\n" +
+		"    state: absent\n" +
+		"thread: thread:" + from + "-20260817-knze\n" +
+		"artifacts:\n" +
+		"  - path: schema/c4-export.schema.json\n" +
+		"    role: schema\n" +
+		"    normative: true\n" +
+		"    media_type: application/schema+json\n" +
+		"---\n" +
+		"A contract descriptor. Its endpoint does not exist yet and it says so.\n"
+}
+
+// TestValidateCI_POL023WarnsOnARuntimePinAgainstAnAbsentEndpoint proves
+// POL-023 fires through the PRODUCTION entry point — `a2a validate --ci`,
+// the merge gate a space pins — and that it WARNS rather than refuses.
+// ADR-011 D2: publishing a promise before activating it is a designed
+// sequence (spec 05's own x_operational / `a2a contract activate` pair), so
+// the conjunction is a claim ahead of the facts, not an invalid document.
+func TestValidateCI_POL023WarnsOnARuntimePinAgainstAnAbsentEndpoint(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	rel := "seomatrix/provides/c4-export/contract.md"
+	root := ciRepo(t, ciSpaceYAML, map[string]string{
+		rel: contractRuntimePinAgainstAbsentEndpoint("XC-seomatrix-c4-export", "seomatrix"),
+	})
+
+	_, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "ydnikolaev")
+	var found *validate.Violation
+	for _, a := range rep.Artifacts {
+		if a.Path != rel || a.Result == nil {
+			continue
+		}
+		found = violationWithCodeCI(a.Result.Violations, "POL-023")
+	}
+	if found == nil {
+		t.Fatalf("expected POL-023 through validate --ci, got report=%+v stderr=%s", rep, errOut)
+	}
+	if found.Severity == "reject" {
+		t.Fatalf("POL-023 must WARN, not refuse — publishing before activating is a designed sequence (ADR-011 D2), got %q", found.Severity)
+	}
+}

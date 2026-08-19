@@ -924,3 +924,17 @@ entries:
       so at v3-full-repo this rule could only punish. The four handoffs in the
       real getvisa space are exactly that population.
 
+  - code: POL-023
+    class: policy
+    title: A contract invites a runtime pin against an operational half it declares absent
+    applies_to: >-
+      internal/validate.checkOperationalClaim — contract descriptors declaring
+      both x_binding.runtime_pinnable and an x_operational entry with
+      state: absent. Either declaration alone is silent.
+    severity: warning
+    mode_scope: both
+    mode_scope_reason: >-
+      A warning refuses nothing, so ADR-011 D3's "no rule judges immutable
+      history" does not bind it — surfacing the smell on a merged descriptor
+      costs nobody an edit they cannot make.
+

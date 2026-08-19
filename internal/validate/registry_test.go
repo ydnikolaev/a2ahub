@@ -415,6 +415,14 @@ func TestRegistryClosure(t *testing.T) {
 	// sections carry no content. The FIRST positive body check in this
 	// package — possession and the declaration block both refuse a specific
 	// wrong thing; this one requires a right thing to be present.
+	// POL-023 (defects-fix-2026-08 P8): the runtime-pin-against-absent-
+	// endpoint conjunction. A WARNING — either declaration alone is silent,
+	// which is why the pair is the fact and neither half is.
+	record(checkOperationalClaim(map[string]any{
+		"x_binding":     map[string]any{"runtime_pinnable": true},
+		"x_operational": []any{map[string]any{"name": "endpoint", "state": "absent"}},
+	}))
+
 	if violations, err := checkHandoffSections(
 		[]byte("## Context\n\n## What was built\n\n## How to verify\n\n## How to operate\n\n## Limitations & next steps\n"),
 		"handoff",
