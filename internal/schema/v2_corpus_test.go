@@ -186,7 +186,7 @@ func TestEventV2CorpusFixtures(t *testing.T) {
 		keyword string
 	}
 	want := map[string]expectation{
-		"additional-publication-field.json":      {path: "publication.extra", keyword: keywordFalseSchema},
+		"additional-publication-field.json": {path: "publication.extra", keyword: keywordFalseSchema},
 		// defects-fix-2026-08 P3 widened verdicts[] to an ORDINAL-or-ID item
 		// shape, which necessarily LOOSENED `required` from
 		// [index, verdict, cause_owner] to [verdict, cause_owner]. These two
@@ -196,21 +196,21 @@ func TestEventV2CorpusFixtures(t *testing.T) {
 		// (no referent at all). The epic's own auditor found the widening had
 		// shipped with zero fixture delta.
 		"verdicts-names-both-index-and-criterion.json": {path: "verdicts.0.criterion", keyword: keywordFalseSchema},
-		"malformed-candidate-intent-digest.json": {path: "publication.candidate_intent_digest", keyword: "pattern"},
-		"malformed-digest.json":                  {path: "digest", keyword: "pattern"},
-		"malformed-intent-key.json":              {path: "publication.intent_key", keyword: "pattern"},
-		"malformed-operation-key.json":           {path: "publication.operation_key", keyword: "pattern"},
-		"malformed-version-selector.json":        {path: "publication.version_selector", keyword: "pattern"},
-		"malformed-version.json":                 {path: "version", keyword: "pattern"},
-		"missing-candidate-intent-digest.json":   {path: "publication", keyword: "required"},
-		"missing-digest.json":                    {keyword: "required"},
-		"missing-intent-key.json":                {path: "publication", keyword: "required"},
-		"missing-operation-key.json":             {path: "publication", keyword: "required"},
-		"missing-profile.json":                   {keyword: "required"},
-		"missing-publication.json":               {keyword: "required"},
-		"missing-version-selector.json":          {path: "publication", keyword: "required"},
-		"missing-version.json":                   {keyword: "required"},
-		"unknown-profile.json":                   {path: "digest_profile", keyword: "enum"},
+		"malformed-candidate-intent-digest.json":       {path: "publication.candidate_intent_digest", keyword: "pattern"},
+		"malformed-digest.json":                        {path: "digest", keyword: "pattern"},
+		"malformed-intent-key.json":                    {path: "publication.intent_key", keyword: "pattern"},
+		"malformed-operation-key.json":                 {path: "publication.operation_key", keyword: "pattern"},
+		"malformed-version-selector.json":              {path: "publication.version_selector", keyword: "pattern"},
+		"malformed-version.json":                       {path: "version", keyword: "pattern"},
+		"missing-candidate-intent-digest.json":         {path: "publication", keyword: "required"},
+		"missing-digest.json":                          {keyword: "required"},
+		"missing-intent-key.json":                      {path: "publication", keyword: "required"},
+		"missing-operation-key.json":                   {path: "publication", keyword: "required"},
+		"missing-profile.json":                         {keyword: "required"},
+		"missing-publication.json":                     {keyword: "required"},
+		"missing-version-selector.json":                {path: "publication", keyword: "required"},
+		"missing-version.json":                         {keyword: "required"},
+		"unknown-profile.json":                         {path: "digest_profile", keyword: "enum"},
 	}
 	invalidPaths, err := filepath.Glob(filepath.Join(root, "invalid/*.json"))
 	if err != nil {
