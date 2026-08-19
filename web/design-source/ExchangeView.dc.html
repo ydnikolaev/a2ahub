@@ -995,7 +995,17 @@ class Component extends DCLogic {
     // by name ("Geometry and user-scope selection stay legal"). Only the
     // donor's newest-first re-sort was ever the banned part, and it stays gone —
     // the order below is the server's.
-    const exchangeAll = (collections.incoming || []).concat(collections.outgoing || [], collections.archive || []);
+    // Direction is a selection ACROSS the three collections, so their
+    // concatenation is three ordered runs and no order — the feed read "2
+    // weeks, 3 weeks, 1 day" under a heading that promises newest first. The
+    // server now cuts that order once and hands each item its place in it, so
+    // this restores the server's feed rather than deriving one: no clock
+    // arithmetic, no creation-versus-activity rule in the browser, one integer.
+    // dashboard-derivation: allow-sort-begin server-order -- restore Data.feedRank, the server's own merged Exchange order
+    const exchangeAll = (collections.incoming || []).concat(collections.outgoing || [], collections.archive || [])
+      .slice()
+      .sort((a, b) => (a.feedRank || Number.MAX_SAFE_INTEGER) - (b.feedRank || Number.MAX_SAFE_INTEGER));
+    // dashboard-derivation: allow-sort-end
     const tab = ["all", "incoming", "outgoing"].indexOf(s.workTab) >= 0 ? s.workTab : "all";
     const matchesDirection = (it, value) => value === "all"
       || (value === "incoming" ? (it.to || []).includes(d.self) : it.from === d.self);

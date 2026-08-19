@@ -712,7 +712,13 @@ class Component extends DCLogic {
           + "background:var(--surface-section); border:1px solid var(--hairline);"
       })),
       hasEvents: !!(d.events && d.events.length),
-      events: (d.events || []).map((e, i, all) => Object.assign({}, e, {
+      // Newest first — which is what this section's hint has always promised
+      // and what it did not do. The carried order is oldest-first and stays
+      // that way (the projection sorts ascending so the causal chain remains
+      // reconstructible, and the JSON keeps reading forwards); the reversal is
+      // display only, and it happens BEFORE the rail styling below so the
+      // terminating segment stays on the last row actually rendered.
+      events: (d.events || []).slice().reverse().map((e, i, all) => Object.assign({}, e, {
         hasSignal: !!e.hasSignal,
         railOffset: 34,
         railStyle: "position:relative; padding:0 0 30px 34px;" + (i === all.length - 1 ? " margin-left:2px;" : " border-left:2px solid var(--border);")

@@ -1047,3 +1047,63 @@ changes:
     why: If you connect a second space and an MCP write is refused, the message
       names what it needed. For `a2a_submit` the fix is the draft's `space:`
       field; for the contract sub-verbs, pass `"space"`.
+- id: RN-02300-33
+  kind: fix
+  impact: normal
+  subject: the Exchange filter chips count what they will actually show
+  detail: >
+    The Exchange screen carries four filter axes — direction, state, type,
+    deadline — and three of them already counted the way the row reads: "how
+    many would I see if I pressed this", with every other selected axis
+    honoured. Direction did not. With Open (1) selected, Incoming still read 12
+    and Outgoing 13, so the two rows of chips described two different screens
+    and only one of them was on the page.
+
+    Every chip now applies the same predicates the rows do, omitting only its
+    own axis. Pinned across the whole cross-product of the four axes rather
+    than at the single case that was wrong.
+  action:
+    scope: none
+    why: The screen counts correctly on the next render; nothing to run.
+- id: RN-02300-34
+  kind: fix
+  impact: normal
+  subject: the Exchange feed is ordered once, on the server, newest first
+  detail: >
+    The archive reached the dashboard in no order at all — one axon snapshot
+    interleaved a 28.07 document between two from 17.08 — so the window cut kept
+    an arbitrary subset instead of the newest records, and the header's promise
+    of "latest on top" was false. Direction is also a selection ACROSS inbox,
+    outbox and archive, so their concatenation showed three ordered runs and no
+    order: "2 weeks, 3 weeks, 1 day, 1 day".
+
+    The feed order is now decided in one place and before any window is cut:
+    newest first by the creation key the view model already declares, with the
+    per-space committed sequence breaking ties on the same instant. Each item
+    carries its place in the merged feed as `feedRank`, an additive optional
+    member, so the browser restores the server's order by reading one integer
+    instead of re-deriving the rule — which is how a newest-by-activity re-sort
+    got in once before.
+  action:
+    scope: none
+    why: >
+      A truncated archive window now keeps the newest records rather than an
+      arbitrary subset; if you were reading the archive through a bounded
+      snapshot, what it shows may differ from before.
+- id: RN-02300-35
+  kind: fix
+  impact: low
+  subject: every event history on the dashboard reads newest first
+  detail: >
+    An artifact's "Event history" shipped a "newest first" hint over an
+    oldest-first list — worse than either order alone, because a reader who
+    trusts the hint reads the sequence backwards without noticing. The thread
+    timeline and both contract histories had the same order and no hint at all.
+
+    All four now render newest first and say so where the reader can see it.
+    The reversal is display-only: the projection still sorts events ascending
+    so a causal chain stays reconstructible, and `a2a html --json` keeps
+    reading forwards.
+  action:
+    scope: none
+    why: Reading order only; no data or command changed.

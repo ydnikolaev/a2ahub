@@ -227,6 +227,23 @@ func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache
 	fullInbox := mapDashboardItems(inItems, now, self, openItems, false)
 	fullOutbox := mapDashboardItems(outItems, now, self, openItems, false)
 	fullArchive := mapDashboardItems(archiveItems, now, self, openItems, true)
+	// The feed order is decided HERE, once, for all three collections, and it
+	// is decided before the windows are cut. Two facts made that necessary:
+	// the archive arrived in no order at all (a 2026-08-19 axon snapshot
+	// interleaved 28.07 between two 17.08 documents), so `admitPrefix` was
+	// keeping an arbitrary subset rather than the newest; and the screen shows
+	// direction as a selection ACROSS the three collections, so a browser
+	// concatenating them saw three ordered runs and no order.
+	//
+	// Each item then carries its place in that merged feed as FeedRank, so the
+	// browser restores this order by reading one integer instead of
+	// re-implementing the rule — the rule being the model's own: creation, not
+	// activity (Item.CreatedAt's comment), which is exactly the distinction a
+	// client-side newest-by-activity re-sort lost once already.
+	sortExchangeFeed(fullInbox)
+	sortExchangeFeed(fullOutbox)
+	sortExchangeFeed(fullArchive)
+	rankExchangeFeed(fullInbox, fullOutbox, fullArchive)
 	mappedItems := make(map[dashboardItemKey]Item, len(fullInbox)+len(fullOutbox))
 	indexMappedItems(mappedItems, fullInbox)
 	indexMappedItems(mappedItems, fullOutbox)
@@ -871,6 +888,74 @@ func contractVersionConsumerPins(edges []ContractEdge, spaceID, contractID, vers
 type dashboardItemKey struct {
 	space string
 	id    string
+}
+
+// sortExchangeFeed puts a collection in the order the Exchange screen reads:
+// newest first, by the immutable creation key the view model declares.
+func sortExchangeFeed(items []Item) {
+	sort.SliceStable(items, func(i, j int) bool { return exchangeItemComesBefore(items[i], items[j]) })
+}
+
+// exchangeItemComesBefore is the one place the Exchange feed order lives.
+//
+// The key is CREATION, never activity: a late acknowledgement moves a
+// document's history, not its place in the feed (Item.CreatedAt).
+//
+// The creation INSTANT leads and the committed sequence breaks its ties, not
+// the other way round — and that order was chosen against real data. On the
+// axon snapshot the two disagree twice: getvisa committed XC-…-ingest (created
+// 29.07) at sequence 48, after XS-…-6vr2 (created 01.08) at sequence 40. Ranked
+// by sequence, the feed prints a two-week-old document above a two-and-a-half
+// week old one while the age column says otherwise, which reads as the bug this
+// order exists to fix. The sequence stays authoritative where it is the only
+// thing that can decide — the same instant, same space — and is consulted only
+// when both sides know their committed position, since sequence zero is
+// meaningful only then.
+//
+// A document whose creation instant was never recorded sorts last rather than
+// first: an unknown time must not read as the newest thing that happened.
+func exchangeItemComesBefore(a, b Item) bool {
+	if a.CreatedAt != b.CreatedAt {
+		if a.CreatedAt == "" {
+			return false
+		}
+		if b.CreatedAt == "" {
+			return true
+		}
+		aAt, aErr := time.Parse(time.RFC3339, a.CreatedAt)
+		bAt, bErr := time.Parse(time.RFC3339, b.CreatedAt)
+		if aErr == nil && bErr == nil && !aAt.Equal(bAt) {
+			return aAt.After(bAt)
+		}
+		if aErr != nil || bErr != nil {
+			return a.CreatedAt > b.CreatedAt
+		}
+	}
+	if a.Space == b.Space && a.CreatedOrderKnown && b.CreatedOrderKnown && a.CreatedSeq != b.CreatedSeq {
+		return a.CreatedSeq > b.CreatedSeq
+	}
+	if a.Space != b.Space {
+		return a.Space < b.Space
+	}
+	return a.ID < b.ID
+}
+
+// rankExchangeFeed stamps each item with its 1-based place in the merged feed
+// the three collections form. The collections are already individually sorted,
+// so this is a three-way merge on the same comparator; ranks are assigned
+// before any window is cut, so a truncated collection still carries ranks that
+// interleave correctly with the ones that survived beside it.
+func rankExchangeFeed(collections ...[]Item) {
+	merged := make([]*Item, 0)
+	for _, collection := range collections {
+		for index := range collection {
+			merged = append(merged, &collection[index])
+		}
+	}
+	sort.SliceStable(merged, func(i, j int) bool { return exchangeItemComesBefore(*merged[i], *merged[j]) })
+	for place, item := range merged {
+		item.FeedRank = int64(place + 1)
+	}
 }
 
 func mapDashboardItems(items []cache.Item, now time.Time, self string, open openItemIndex, archived bool) []Item {

@@ -20,6 +20,7 @@
       "createdAt": "2026-08-14T08:00:00Z",
       "createdSeq": 12,
       "createdOrderKnown": true,
+      "feedRank": 1,
       "movedAt": "2026-08-14T08:04:00Z",
       "activitySeq": 13,
       "activityEventId": "01K2M4N6P8R0T2V4X6Z8A0B2C4",

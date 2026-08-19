@@ -278,6 +278,13 @@ type Item struct {
 	CreatedAt         string `json:"createdAt,omitempty"`
 	CreatedSeq        int64  `json:"createdSeq,omitempty"`
 	CreatedOrderKnown bool   `json:"createdOrderKnown,omitempty"`
+	// FeedRank is this item's 1-based place in the merged Exchange feed, cut
+	// once on the server from the creation key above. The Exchange screen
+	// selects direction ACROSS inbox, outbox and archive, so no single carried
+	// collection describes the order the reader sees; rather than re-deriving
+	// the rule in the browser — which is how a newest-by-activity re-sort got
+	// in once — the server hands over the answer and the view reads it.
+	FeedRank int64 `json:"feedRank,omitempty"`
 	// MovedAt is the latest lifecycle activity instant. It remains available
 	// for freshness and history surfaces, but is not an Exchange sort key.
 	MovedAt string `json:"movedAt,omitempty"`

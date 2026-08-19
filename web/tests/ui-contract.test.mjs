@@ -1030,7 +1030,20 @@ test('P10 Exchange renders item and work-report facts through one content-only A
 
   const exchangeSource = component('ExchangeView');
   assert.doesNotMatch(exchangeSource, /const STATE_TONE|blockedWhy\(|statusOf\(|const isClosed|byNewest|statuses\s*:|urgent\s*:|EVENT_SIGNAL|TRANSITION_PAST|VERDICT_TONE|VERDICT_LABEL|WORK_WAIT_KIND|workEvents[\s\S]{0,220}\.sort\(/);
-  assert.doesNotMatch(exchangeSource, /\.sort\(|source-freshness[^\n]*(?:syncStale|\.stale)|(?:syncStale|\.stale)[^\n]*source-freshness/);
+  assert.doesNotMatch(exchangeSource, /source-freshness[^\n]*(?:syncStale|\.stale)|(?:syncStale|\.stale)[^\n]*source-freshness/);
+  // Exactly one sort, and it may only restore the order the server already
+  // cut. Direction selects across three collections, so their concatenation
+  // carries no order at all — but the fix for that is reading Data.feedRank,
+  // never re-deriving the feed rule here. A second sort, or this one drifting
+  // onto any other key, is the browser taking the decision back.
+  const exchangeSorts = Array.from(exchangeSource.matchAll(/^.*\.sort\(.*$/gm), match => match[0]);
+  assert.equal(exchangeSorts.length, 1, 'Exchange may hold exactly one sort: the carried feed rank');
+  assert.match(exchangeSorts[0], /feedRank/, 'the one sort reads the rank the server stamped, and nothing else');
+  assert.match(
+    exchangeSource,
+    /dashboard-derivation: allow-sort-begin server-order[^\n]*\n(?:[^\n]*\n){0,6}?[^\n]*\.sort\([\s\S]{0,400}?dashboard-derivation: allow-sort-end/,
+    'and it stays inside the declared server-order opt-out the derivation gate reads',
+  );
   assert.doesNotMatch(exchangeSource, /artifactSourceURL|git@github\.com|ssh:\/\/git@github\.com|revision\s*\|\|\s*["']HEAD["']/, 'Exchange must use only the carried root sourceURL seam and an exact revision');
   assert.match(exchangeSource, /find\(work => work\.work_id === report\.work_id\)/, 'Work.Current must join only on exact carried work identity');
   assert.doesNotMatch(exchangeSource, /find\(work =>[^\n]*committed_checkpoint[^\n]*report\.artifact_id/, 'checkpoint artifact identity must not join Work.Current');
@@ -1495,13 +1508,14 @@ test('P12 contract cards preserve exact version packages and honest file bytes',
   assert.equal(retired.contractVersionCard.changeSummary, 'Retired-only change summary');
   assert.equal(retired.contractVersionCard.provenance.commitSHA, 'retired-commit');
   assert.deepEqual(Array.from(retired.contractVersionCard.documents, row => row.path), retiredDetail.documents.map(document => document.path), 'retired documents must not fall back to the current package or change order');
-  assert.deepEqual(Array.from(retired.contractVersionCard.history, row => row.eventID), ['event-publish','event-deprecate','event-retire'], 'history must retain carried order');
+  assert.deepEqual(Array.from(retired.contractVersionCard.history, row => row.eventID), ['event-retire','event-deprecate','event-publish'], 'the card renders the history newest first');
+  assert.deepEqual(Array.from(retiredDetail.history, row => row.eventID), ['event-publish','event-deprecate','event-retire'], 'and the carried lifecycle order is left exactly as the projection built it');
   assert.equal(retired.contractVersionCard.stateResult.label, 'lifecycle-state/retired');
   assert.equal(retired.contractVersionCard.consumerPins[0].driftResult.label, 'dependency-drift/retired');
   assert.equal(retired.contractVersionCard.consumerPins[0].pinnedStateResult.label, 'lifecycle-state/retired');
   assert.equal(retired.contractVersionCard.history[1].stateResult.label, 'lifecycle-state/deprecated');
-  assert.equal(retired.contractVersionCard.history[2].transitionResult.label, 'Retired transition');
-  assert.equal(retired.contractVersionCard.history[2].transition, 'Retired transition');
+  assert.equal(retired.contractVersionCard.history[0].transitionResult.label, 'Retired transition');
+  assert.equal(retired.contractVersionCard.history[0].transition, 'Retired transition');
   assert.doesNotMatch(JSON.stringify(retired.contractVersionCard.history), /<raw-retire-transition>/, 'raw transition enums must not leak through the card');
   assert.equal(retired.contractVersionCard.documents[0].byteNotice, 'Showing the first 64 bytes of 380 bytes.');
   assert.equal(retired.contractVersionCard.documents[1].byteNotice, '', 'complete previews must not display a truncation notice');
@@ -1542,18 +1556,21 @@ test('P12 contract cards preserve exact version packages and honest file bytes',
   assert.equal(ru.contractVersionCard.documents[0].byteNotice, 'Показаны первые 64 байт из 380 байт.');
   assert.equal(ru.contractVersionCard.documents[1].byteNotice, '');
   assert.equal(ru.contractVersionCard.documentsWindowText, 'Показано 3 из 5.');
-  assert.equal(ru.contractVersionCard.history[2].transitionResult.label, 'Вывод версии');
-  assert.equal(ru.contractVersionCard.history[2].transition, 'Вывод версии');
+  assert.equal(ru.contractVersionCard.history[0].transitionResult.label, 'Вывод версии');
+  assert.equal(ru.contractVersionCard.history[0].transition, 'Вывод версии');
 
   const screen = render('en', { space:'space-a', conSel:'XC-orders', conVersion:'1.5.0', card:null });
-  assert.equal(screen.cdVersionHistory[2].transitionResult.label, 'Retired transition');
-  assert.equal(screen.cdVersionHistory[2].actionText, 'Retired transition');
+  assert.equal(screen.cdVersionHistory[0].transitionResult.label, 'Retired transition');
+  assert.equal(screen.cdVersionHistory[0].actionText, 'Retired transition');
+  assert.match(screen.cdVersionHistory[screen.cdVersionHistory.length - 1].railStyle, /margin-left:2px/, 'the rail still terminates on the last row drawn, which is now the oldest');
+  assert.equal(screen.cdNewestFirstLabel, 'newest first', 'the screen timeline says which end it starts from');
   assert.doesNotMatch(JSON.stringify(screen.cdVersionHistory), /<raw-retire-transition>/, 'raw transition enums must not leak through the screen timeline');
   assert.equal(screen.cdVersionNormativeTree[2].key, cardID('cfile', { space:'space-a', id:'XC-orders', version:'1.5.0', path:retiredDetail.documents[2].path }));
   assert.equal(screen.cdVersionNormativeTree[2].size, '0 B');
   const ruScreen = render('ru', { space:'space-a', conSel:'XC-orders', conVersion:'1.5.0', card:null });
-  assert.equal(ruScreen.cdVersionHistory[2].transitionResult.label, 'Вывод версии');
-  assert.equal(ruScreen.cdVersionHistory[2].actionText, 'Вывод версии');
+  assert.equal(ruScreen.cdVersionHistory[0].transitionResult.label, 'Вывод версии');
+  assert.equal(ruScreen.cdVersionHistory[0].actionText, 'Вывод версии');
+  assert.equal(ruScreen.cdNewestFirstLabel, 'новое сверху');
 
   const empty = render('en', { card:{ kind:'contract', id:cardID('contract', emptyContract), accent:'' } });
   assert.equal(empty.contractCard.consumersEmpty, 'None recorded.');
@@ -1627,7 +1644,18 @@ test('P12 contract cards preserve exact version packages and honest file bytes',
 
   const source = component('ContractsView');
   assert.doesNotMatch(source, /STATE_TONE|DRIFT_TONE|STATE_WORDS|DRIFT_WORDS|state\s*===\s*["']published["']/);
-  assert.doesNotMatch(source, /\.sort\(|\.reverse\(/, 'contract/version/history/document presentation must retain carried order');
+  // Sorting stays banned outright: a browser that re-ranks versions, documents
+  // or drift is deriving domain order, which is the whole point of this line.
+  // Reversal is now allowed in exactly one place and counted, because the
+  // dashboard's reading rule is newest-first for every chronology — so the two
+  // history projections reverse for display while everything else, documents
+  // and versions included, still renders in the order the snapshot carried.
+  assert.doesNotMatch(source, /\.sort\(/, 'contract/version/document presentation must retain carried order');
+  const reversals = Array.from(source.matchAll(/^.*\.reverse\(\).*$/gm), match => match[0]);
+  assert.equal(reversals.length, 2, 'exactly two reversals: the version card history and the screen timeline');
+  for (const line of reversals) {
+    assert.match(line, /history \|\| \[\]\)\.slice\(\)\.reverse\(\)/, 'a reversal may only re-read a carried history for display, never reorder anything else');
+  }
   assert.doesNotMatch(source, /conRiskCount|conRoleOf|conRisky|const\s+(?:risky|bad|seated)|ruPlural|driftWord/, 'browser-owned status membership and domain count helpers must be gone');
   assert.doesNotMatch(source, /contractEdges[\s\S]{0,160}(?:unique|new Set)|(?:unique|new Set)[\s\S]{0,160}contractEdges/, 'aggregate mode must not derive unique-contract counts');
 });
@@ -1687,4 +1715,96 @@ test('EN and RU lifecycle copy does not infer work state from protocol state', (
     /работа стоит/i,
   ];
   for (const claim of forbidden) assert.doesNotMatch(dashboardSource, claim);
+});
+
+// One reading rule across every chronology on this dashboard: the last thing
+// that happened is the first thing you read. The label said so long before the
+// screens did — ArtifactDetail has shipped a "newest first" hint over an
+// oldest-first list, which is worse than either order alone, because a reader
+// who trusts the hint reads the sequence backwards without noticing.
+//
+// The reversal is display-only and the carried arrays stay untouched: the
+// projection sorts events ascending so a causal chain can be reconstructed, and
+// `a2a html --json` keeps reading forwards. That is the pair this pins — the
+// rendered order flipped, the carried order not — plus the rail styling, which
+// keys off "last row drawn" and would silently draw a line into empty space if
+// the reversal happened after it.
+test('every event history renders newest first, and mutates nothing carried', () => {
+  const carriedEvents = [
+    { ulid:'ev-1', actionText:'published', at:'2026-08-06T02:47:00Z' },
+    { ulid:'ev-2', actionText:'noted', at:'2026-08-06T12:24:00Z' },
+    { ulid:'ev-3', actionText:'answered', at:'2026-08-07T09:00:00Z' },
+  ];
+  const det = { events: carriedEvents };
+  const detail = componentHarness('ArtifactDetail', { det }).part.renderVals();
+  assert.deepEqual(Array.from(detail.events, event => event.ulid), ['ev-3','ev-2','ev-1'], 'the artifact event history reads newest first');
+  assert.deepEqual(Array.from(det.events, event => event.ulid), ['ev-1','ev-2','ev-3'], 'the carried array is not reordered in place');
+  assert.equal(detail.newestFirstLabel, 'newest first', 'and the hint over it is now true');
+  assert.match(detail.events[detail.events.length - 1].railStyle, /margin-left:2px/, 'the rail terminates on the last row drawn');
+  assert.doesNotMatch(detail.events[detail.events.length - 1].railStyle, /border-left/);
+  assert.match(detail.events[0].railStyle, /border-left/, 'every row above it still carries the line');
+
+  const artifactRow = (id, at) => ({ kind:'artifact', at, artifact:{ id, type:'announcement', title:id, from:'atlas' } });
+  const threadData = {
+    self:'atlas', locale:'en', vocabulary:{ entries:[], unknown:{} },
+    nodes:[{ system:'atlas', owners:['atlas'] }], spaces:[{ id:'space-a', readable:true }],
+    unavailable:[], operational:{ sources:[] }, workReports:[], contracts:[], contractEdges:[], flags:[],
+    inbox:[], outbox:[], archive:[], artifactDetails:[],
+    threads:[{ id:'thread-1', space:'space-a', title:'One intent', participants:['atlas'], opener:'atlas' }],
+    threadViews:[{
+      space:'space-a', thread:'thread-1', opener:'atlas', participants:['atlas'],
+      artifacts:[{ id:'XA-1', type:'announcement', title:'XA-1', from:'atlas' }, { id:'XA-2', type:'announcement', title:'XA-2', from:'atlas' }, { id:'XA-3', type:'announcement', title:'XA-3', from:'atlas' }],
+      transcript:[artifactRow('XA-1', '2026-08-06T02:47:00Z'), artifactRow('XA-2', '2026-08-06T12:24:00Z'), artifactRow('XA-3', '2026-08-07T09:00:00Z')],
+      open_items:[], deliveries:[], links:[], windows:{},
+    }],
+  };
+  const threads = componentHarness('ThreadsView', {
+    ctx:{ data:threadData, locale:'en', actions:{}, ui:{ space:'all', threadSel:'thread-1', threadSpace:'space-a' } },
+  }).part.renderVals();
+  assert.deepEqual(Array.from(threads.tvEntries, entry => entry.id), ['XA-3','XA-2','XA-1'], 'the thread timeline reads newest first too');
+  assert.deepEqual(Array.from(threadData.threadViews[0].transcript, row => row.artifact.id), ['XA-1','XA-2','XA-3'], 'the committed transcript order is untouched');
+  assert.equal(threads.newestFirstLabel, 'newest first', 'and the timeline says so where the reader can see it');
+  assert.match(threads.tvEntries[threads.tvEntries.length - 1].railStyle, /margin-left:2px/);
+  assert.match(threads.tvEntries[0].railStyle, /border-left/);
+});
+
+// The feed under a heading that promises "newest first, latest on top" read
+// "2 weeks, 3 weeks, 1 day, 1 day" on axon, because direction is a selection
+// ACROSS three collections and their concatenation is three ordered runs and no
+// order. The order is now cut once on the server, which stamps each item with
+// its place in the merged feed; the browser restores that and derives nothing —
+// no clock arithmetic, no creation-versus-activity rule, one integer.
+test('the Exchange feed reads in the server order, not collection after collection', () => {
+  const item = (id, feedRank, extra = {}) => Object.assign({
+    id, space:'space-a', title:id, type:'announcement', from:'beta', to:['atlas'], state:'submitted', outcome:'open', feedRank,
+  }, extra);
+  const data = {
+    self:'atlas', nodes:[{ system:'atlas', owners:['atlas'] }, { system:'beta', owners:['beta'] }],
+    spaces:[{ id:'space-a', readable:true }], unavailable:[], operational:{ sources:[] }, workReports:[],
+    contracts:[], contractEdges:[], flags:[], artifactDetails:[],
+    // Deliberately interleaved: every collection holds items from both ends of
+    // the feed, so a concatenation cannot accidentally produce the right answer.
+    inbox:[item('XW-2', 2), item('XW-5', 5)],
+    outbox:[item('XW-1', 1, { from:'atlas', to:['beta'] }), item('XW-4', 4, { from:'atlas', to:['beta'] })],
+    archive:[item('XW-3', 3), item('XW-6', 6)],
+    windows:{ inbox:{ shown:2, total:2, truncated:false }, outbox:{ shown:2, total:2, truncated:false }, archive:{ shown:2, total:2, truncated:false } },
+  };
+  const render = (workTab) => componentHarness('ExchangeView', {
+    ctx:{ data, locale:'en', actions:{}, ui:{ space:'all', workTab, workState:'all', workType:'all', workDue:false, workSel:'', dashboardSet:'' } },
+  }).part.renderVals();
+
+  assert.deepEqual(Array.from(render('all').workRows, row => row.id), ['XW-1','XW-2','XW-3','XW-4','XW-5','XW-6'],
+    'the merged feed follows the rank the server cut, across all three collections');
+  assert.deepEqual(Array.from(render('incoming').workRows, row => row.id), ['XW-2','XW-3','XW-5','XW-6'],
+    'a direction narrows the feed without disturbing its order');
+  assert.deepEqual(Array.from(render('outgoing').workRows, row => row.id), ['XW-1','XW-4']);
+
+  // A snapshot that predates the rank must not be reordered into nonsense: an
+  // item with no rank keeps the carried position rather than jumping to the top.
+  const rankless = JSON.parse(JSON.stringify(data));
+  for (const collection of ['inbox','outbox','archive']) for (const row of rankless[collection]) delete row.feedRank;
+  assert.deepEqual(Array.from(render.call(null, 'all') && componentHarness('ExchangeView', {
+    ctx:{ data:rankless, locale:'en', actions:{}, ui:{ space:'all', workTab:'all', workState:'all', workType:'all', workDue:false, workSel:'', dashboardSet:'' } },
+  }).part.renderVals().workRows, row => row.id), ['XW-2','XW-5','XW-1','XW-4','XW-3','XW-6'],
+    'without ranks the carried collection order survives unchanged');
 });

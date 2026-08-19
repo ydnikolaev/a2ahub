@@ -142,6 +142,7 @@
 
               <div data-thread-transcript style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin:0 0 0 20px; padding:var(--space-after-section-heading) 0 var(--space-after-section-heading) 34px; border-left:2px solid var(--border);">
                 <div style="font-size:16px; font-weight:600;">{{ causalTimelineLabel }}</div>
+                <div style="font-size:var(--font-meta); line-height:var(--line-meta); color:var(--muted);">{{ newestFirstLabel }}</div>
                 <sc-if value="{{ transcriptWindowVisible }}" hint-placeholder-val="{{ false }}"><div style="font-size:15px; color:var(--muted);">{{ transcriptWindowText }}</div></sc-if>
                 <sc-if value="{{ tvTranscriptKnownEmpty }}" hint-placeholder-val="{{ false }}"><div style="font-size:15px; color:var(--body);">{{ noneRecordedText }}</div></sc-if>
               </div>
@@ -1307,9 +1308,16 @@ class Component extends DCLogic {
             title: "", route: "", when: "", hasParent: false, relations: [], opensChain: false, hasState: false, stateResult:null, openDoc: () => {}
           }, avatarFields(identity, 2, dim, actor.system));
         });
-        return rows.map((r, i) => Object.assign(r, {
+        // Newest first, like every other event history on this dashboard. The
+        // carried transcript is the committed causal order and is not touched:
+        // this reverses the RENDER, after every row has been built from its
+        // neighbours, so a row that reads its predecessors still reads them in
+        // the order they were committed. Reversed before the rail styling, so
+        // the segment that terminates the line stays on the last row drawn.
+        const ordered = rows.slice().reverse();
+        return ordered.map((r, i) => Object.assign(r, {
           railStyle: "position:relative; padding:0 0 28px 34px;" +
-            (i === rows.length - 1 ? " margin-left:2px;" : " border-left:2px solid var(--border);")
+            (i === ordered.length - 1 ? " margin-left:2px;" : " border-left:2px solid var(--border);")
         }));
       })() : [],
       tvOpen: tvPend.map((o, index, rows) => {

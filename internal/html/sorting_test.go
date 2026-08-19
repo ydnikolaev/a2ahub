@@ -81,3 +81,93 @@ func TestExchangeFeedPreservesServerCarriedOrder(t *testing.T) {
 		}
 	}
 }
+
+// The Exchange feed order, at the one place it is decided. Two defects sit
+// behind these cases. The archive reached the browser in no order at all — a
+// 2026-08-19 axon snapshot interleaved a 28.07 document between two 17.08 ones
+// — so the window cut kept an arbitrary subset instead of the newest. And the
+// screen selects direction ACROSS the three collections, so their concatenation
+// showed three ordered runs and no order: "2 weeks, 3 weeks, 1 day, 1 day".
+func TestExchangeFeedOrdersByCreationNewestFirst(t *testing.T) {
+	t.Parallel()
+	item := func(space, id, created string, seq int64, known bool) Item {
+		return Item{Space: space, ID: id, CreatedAt: created, CreatedSeq: seq, CreatedOrderKnown: known}
+	}
+
+	// Within one space the committed sequence is exact where timestamps tie.
+	if !exchangeItemComesBefore(item("a", "x", "2026-08-01T00:00:00Z", 9, true), item("a", "y", "2026-08-01T00:00:00Z", 4, true)) {
+		t.Error("a later committed sequence in the same space must come first")
+	}
+	// It is consulted only when both sides know their committed position:
+	// sequence zero is meaningful, absence of the fact is not.
+	if !exchangeItemComesBefore(item("a", "x", "2026-08-02T00:00:00Z", 0, false), item("a", "y", "2026-08-01T00:00:00Z", 9, false)) {
+		t.Error("without a known committed order the creation instant decides")
+	}
+	// And the instant LEADS the sequence: getvisa really does commit an older
+	// document at a higher sequence, and ranking by sequence there prints a
+	// two-week-old row above a two-and-a-half-week-old one while the age column
+	// says the opposite. This is the case that decided the order of the two.
+	if !exchangeItemComesBefore(item("getvisa", "XS-newer-created", "2026-08-01T18:59:38Z", 40, true), item("getvisa", "XC-older-created", "2026-07-29T16:49:35Z", 48, true)) {
+		t.Error("a later creation instant must outrank a later committed sequence")
+	}
+	if !exchangeItemComesBefore(item("a", "x", "2026-08-02T00:00:00Z", 0, false), item("b", "y", "2026-08-01T00:00:00Z", 0, true)) {
+		t.Error("across spaces the newer creation instant comes first")
+	}
+	// An unrecorded creation instant must never read as the newest thing that
+	// happened; it sorts last, deterministically.
+	if !exchangeItemComesBefore(item("a", "x", "2026-08-01T00:00:00Z", 0, false), item("a", "y", "", 0, false)) {
+		t.Error("an item with no recorded creation instant sorts after one that has it")
+	}
+	if exchangeItemComesBefore(item("a", "y", "", 0, false), item("a", "x", "2026-08-01T00:00:00Z", 0, false)) {
+		t.Error("and the same pair must not reverse when compared the other way round")
+	}
+	// Ties are broken so the order is total, never snapshot-dependent.
+	if !exchangeItemComesBefore(item("alpha", "z", "2026-08-01T00:00:00Z", 0, false), item("beta", "a", "2026-08-01T00:00:00Z", 0, false)) {
+		t.Error("equal creation must tie-break by space")
+	}
+	if !exchangeItemComesBefore(item("alpha", "a", "2026-08-01T00:00:00Z", 0, false), item("alpha", "b", "2026-08-01T00:00:00Z", 0, false)) {
+		t.Error("equal creation and space must tie-break by id")
+	}
+
+	archive := []Item{
+		item("getvisa", "XA-old", "2026-07-28T19:08:22Z", 18, true),
+		item("getvisa", "XA-new", "2026-08-18T00:06:38Z", 78, true),
+		item("getvisa", "XA-mid", "2026-08-17T22:17:03Z", 76, true),
+	}
+	sortExchangeFeed(archive)
+	if got := []string{archive[0].ID, archive[1].ID, archive[2].ID}; got[0] != "XA-new" || got[1] != "XA-mid" || got[2] != "XA-old" {
+		t.Fatalf("archive order = %v, want newest first", got)
+	}
+}
+
+// The rank is what the browser reads instead of re-deriving the rule, so it has
+// to describe the MERGED feed — one dense 1..n sequence across all three
+// collections — and it has to be stamped before any window is cut, or a
+// truncated collection would carry ranks that no longer interleave.
+func TestExchangeFeedRankMergesEveryCollectionBeforeTheWindow(t *testing.T) {
+	t.Parallel()
+	at := func(day int) string { return time.Date(2026, 8, day, 12, 0, 0, 0, time.UTC).Format(time.RFC3339) }
+	inbox := []Item{{Space: "s", ID: "in-1", CreatedAt: at(5)}}
+	outbox := []Item{{Space: "s", ID: "out-1", CreatedAt: at(9)}}
+	archive := []Item{{Space: "s", ID: "arc-1", CreatedAt: at(7)}, {Space: "s", ID: "arc-2", CreatedAt: at(3)}}
+	for _, collection := range [][]Item{inbox, outbox, archive} {
+		sortExchangeFeed(collection)
+	}
+	rankExchangeFeed(inbox, outbox, archive)
+
+	ranks := map[string]int64{}
+	for _, collection := range [][]Item{inbox, outbox, archive} {
+		for _, item := range collection {
+			if item.FeedRank == 0 {
+				t.Fatalf("%s carries no feed rank; the browser would have nothing to order by", item.ID)
+			}
+			ranks[item.ID] = item.FeedRank
+		}
+	}
+	want := map[string]int64{"out-1": 1, "arc-1": 2, "in-1": 3, "arc-2": 4}
+	for id, wantRank := range want {
+		if ranks[id] != wantRank {
+			t.Errorf("%s rank = %d, want %d (ranks: %v)", id, ranks[id], wantRank, ranks)
+		}
+	}
+}

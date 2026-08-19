@@ -53,6 +53,14 @@ func DemoData() (Data, error) {
 	releases = notes.AttachCurrentKnownIssues(releases, releases, currentIssues)
 	d.ReleaseNotes = toReleaseNotes(releases)
 	deriveDemoOwnership(&d)
+	// The fixture is authored by hand and carries no feed order. Deriving it
+	// here — with the same comparator the real projection uses — keeps the demo
+	// dashboard from being the one surface whose Exchange feed is unordered,
+	// and keeps the fixture from having to hand-maintain 25 ranks.
+	sortExchangeFeed(d.Inbox)
+	sortExchangeFeed(d.Outbox)
+	sortExchangeFeed(d.Archive)
+	rankExchangeFeed(d.Inbox, d.Outbox, d.Archive)
 	deriveDemoRowFacts(&d)
 	deriveDemoDerivedState(&d)
 	if err := deriveDemoPreviewBound(&d); err != nil {

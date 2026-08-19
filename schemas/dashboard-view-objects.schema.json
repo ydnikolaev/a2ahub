@@ -37,6 +37,7 @@
         "createdAt": {"type": "string"},
         "createdSeq": {"type": "integer"},
         "createdOrderKnown": {"type": "boolean"},
+        "feedRank": {"type": "integer"},
         "movedAt": {"type": "string"},
         "activitySeq": {"type": "integer"},
         "activityEventId": {"type": "string"},
