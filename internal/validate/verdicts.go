@@ -15,16 +15,12 @@
 // unmet[] and verdicts[] both index the same parent acceptance_criteria[]
 // array. resolveOutOfRangeIndices below is the ONE bounds check both codes
 // need — resolve a count via ParentCriteriaCounter, then flag every index
-// outside [0, count). checkVerdictIndexRange (REF-019) calls it.
-// checkUnmetIndexRange (REF-018, incompleteness.go) does NOT — that file is
-// off this wave's allowlist, so its own inline loop is untouched. That is a
-// real duplication this wave could not close: incompleteness.go:202-212's
-// loop and this file's resolveOutOfRangeIndices are the same rule, twice,
-// exactly the "one guarantee, two implementations" shape this repo's own
-// fold.go (broadcastAckPermitted's comment) records as having already
-// caused a bug. The fix is a two-line edit at incompleteness.go — replace
-// checkUnmetIndexRange's loop body with a call to resolveOutOfRangeIndices
-// — named here rather than silently left for someone to rediscover.
+// outside [0, count). checkVerdictIndexRange (REF-019) calls it, and — as
+// of defects-fix-2026-08 P4 — so does incompleteness.go's
+// checkUnmetIndexRange (REF-018): that file's own inline loop is gone, and
+// the "one guarantee, two implementations" duplication this comment used to
+// warn about (this repo's own fold.go, broadcastAckPermitted's comment,
+// records having already caused a bug from exactly this shape) is closed.
 //
 // Deliberately NOT closed by giving resolveOutOfRangeIndices the ParentOf
 // hop this file adds below for verify's own sake (point 2 was): env.Parent,
@@ -91,15 +87,57 @@
 // lifecycleEventSchema). Below that floor they still author event/v1, where
 // `verdicts[]` cannot exist at all — additionalProperties:false refuses it
 // structurally, independent of anything this file does.
+//
+// # defects-fix-2026-08 P4 — REF-023, the completeness half
+//
+// docs/inbox/defects/04-the-verification-record-defaults-to-empty.md
+// measured the real getvisa space: 21 acceptance criteria declared across
+// three work_requests closed by binaries that HAD this file's REF-019
+// range check, and only 6 were ever judged. Two closes carried
+// `verdicts: []` over parents declaring 7 and 8 criteria — legal under the
+// schema's own "no minItems floor" comment, and legal under
+// checkVerdictIndexRange's own OLD short-circuit
+// (`if !present || len(indices) == 0 { return nil }`), which returned
+// before it ever asked whether the count it had just resolved was
+// satisfied. checkVerdictCompleteness below (REF-023) is that question,
+// asked: given the SAME resolved count this file already had, does
+// verdicts[] name every one of them?
+//
+// It lives INSIDE checkVerdictIndexRange (called from it, not from a
+// second engine.go hookpoint) for the same reason the ParentOf hop lives
+// here rather than in the shared bounds function: every caller of this
+// file — eventproducer.go, engine.go — is off this wave's allowlist, so a
+// rule that needed a NEW call site could not ship at all. Riding the one
+// call site REF-019 already has means REF-023 is reachable everywhere
+// REF-019 already is, on day one, with zero new wiring.
+//
+// The id-addressed form (P3, base.schema.json's `{id, text}` shape) is
+// enhancement-only here, deliberately: no concrete Resolver implements
+// ParentCriteriaIDs below yet (cli.MirrorResolver, internal/cli/adapters.go,
+// is off this wave's allowlist too), so an id-addressed parent's
+// completeness cannot be judged in production until a later wave adds it
+// there — reported as a lead action, not silently assumed. The rule still
+// reaches the MEASURED defect: both getvisa closes are over ordinal
+// (bare-string) parents, and an ordinal parent's completeness needs nothing
+// but the count this file already resolves.
 package validate
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
 
 // resolveOutOfRangeIndices resolves subjectID's declared
 // acceptance_criteria[] count via resolver (only when resolver also
 // implements ParentCriteriaCounter — the same consumer-side optional
 // upgrade incompleteness.go declares) and reports which of indices fall
-// outside [0, count).
+// outside [0, count), alongside the resolved count itself — REF-023's
+// completeness question (checkVerdictCompleteness below) needs the exact
+// same count this function already resolves, and a second resolver
+// round-trip to fetch it again would cost a real file read in production
+// (cli.MirrorResolver re-reads and re-parses the parent's frontmatter per
+// call, per its own AcceptanceCriteriaCount doc comment).
 //
 // checked=false covers every "cannot check" case alike: resolver does not
 // implement ParentCriteriaCounter, or subjectID's count could not be
@@ -108,21 +146,71 @@ import "fmt"
 // own doc comment, "cannot check" is never treated as "check passed" — a
 // caller that gets checked=false must not report a false negative by
 // assuming zero violations means the index was verified in range.
-func resolveOutOfRangeIndices(resolver Resolver, subjectID string, indices []int) (outOfRange []int, checked bool) {
+//
+// incompleteness.go's checkUnmetIndexRange (REF-018) and this file's
+// checkVerdictIndexRange (REF-019) both call this — the ONE bounds
+// implementation the two ranges share, per this file's own package doc.
+func resolveOutOfRangeIndices(resolver Resolver, subjectID string, indices []int) (outOfRange []int, count int, checked bool) {
 	counter, ok := resolver.(ParentCriteriaCounter)
 	if !ok {
-		return nil, false
+		return nil, 0, false
 	}
-	count, ok := counter.AcceptanceCriteriaCount(subjectID)
+	count, ok = counter.AcceptanceCriteriaCount(subjectID)
 	if !ok {
-		return nil, false
+		return nil, 0, false
 	}
 	for _, idx := range indices {
 		if idx < 0 || idx >= count {
 			outOfRange = append(outOfRange, idx)
 		}
 	}
-	return outOfRange, true
+	return outOfRange, count, true
+}
+
+// ParentCriteriaIDs is validate's own consumer-side optional upgrade,
+// alongside ParentCriteriaCounter (incompleteness.go) and
+// ResponseParentResolver (below): a Resolver that can also report the
+// ORDERED list of criterion identifiers parentID's own
+// acceptance_criteria[] declares, when that array carries P3's
+// id-addressed form ({id, text} objects, base.schema.json) rather than the
+// original ordinal form (bare strings). len(ids) equals the same count
+// AcceptanceCriteriaCount would report for the same parentID; ids[i] is the
+// id at position i.
+//
+// checkVerdictIndexRange uses it for two questions a bare count cannot
+// answer for an id-addressed parent: resolving a `criterion`-keyed
+// verdicts[] entry to its position (REF-019's own out-of-range question,
+// extended to the id form — wave 2's probe found this shape entirely
+// unchecked) and naming a missing criterion BY ID rather than by an
+// ordinal position an id-addressed parent's own author never used
+// (REF-023's message contract).
+//
+// ok=false covers every "cannot resolve" case alike — unresolvable
+// parentID, a parse failure, or an ordinal-only acceptance_criteria[] that
+// carries no ids at all — the same "cannot check is not check passed" rail
+// ParentCriteriaCounter's own doc comment already establishes; never
+// degrading to a slice of empty strings.
+//
+// No concrete Resolver implements this today — cli.MirrorResolver
+// (internal/cli/adapters.go) is off this wave's allowlist — so an
+// id-addressed parent's verdicts[] gets NO REF-019 id-range check and NO
+// REF-023 completeness verdict in production until a later wave adds it
+// there (see this file's package doc, "P4 — REF-023" section, and this
+// wave's own reported lead action).
+type ParentCriteriaIDs interface {
+	AcceptanceCriteriaIDs(parentID string) (ids []string, ok bool)
+}
+
+// resolveParentCriteriaIDs is ParentCriteriaIDs' own consumer-side type
+// assertion, isolated here the same way resolveOutOfRangeIndices isolates
+// ParentCriteriaCounter's — every caller degrades through this one place
+// rather than repeating the assertion.
+func resolveParentCriteriaIDs(resolver Resolver, parentID string) (ids []string, ok bool) {
+	lister, ok := resolver.(ParentCriteriaIDs)
+	if !ok {
+		return nil, false
+	}
+	return lister.AcceptanceCriteriaIDs(parentID)
 }
 
 // ResponseParentResolver is validate's own consumer-side optional upgrade
@@ -146,10 +234,25 @@ type ResponseParentResolver interface {
 	ParentOf(responseID string) (parentID string, ok bool)
 }
 
-// checkVerdictIndexRange is REF-019 (AC7's index-integrity half): every
-// entry in an EVENT's `verdicts[].index` must be a valid index into the
-// declared parent's `acceptance_criteria[]` — subjectID is the event's own
-// `subject` field (the caller's job to supply).
+// verdictRef is one verdicts[] entry's own addressing — a bare index (P3's
+// ordinal form) or a criterion id (P3's id-addressed form). Mutually
+// exclusive per entry, per event.schema.json's own allOf ("naming BOTH
+// index and criterion on one entry is refused"), so exactly one of
+// hasIndex/criterion is meaningful.
+type verdictRef struct {
+	index    int
+	hasIndex bool
+	// criterion is non-empty exactly when hasIndex is false.
+	criterion string
+}
+
+// checkVerdictIndexRange is REF-019 (AC7's index-integrity half) AND
+// REF-023 (defects-fix-2026-08 P4's completeness half, riding this same
+// call site — see this file's package doc): every entry in an EVENT's
+// `verdicts[]` must resolve into the declared parent's
+// `acceptance_criteria[]`, and every declared criterion must be named by
+// at least one entry — subjectID is the event's own `subject` field (the
+// caller's job to supply).
 //
 // Tries subjectID directly first (the `close` case: the event's subject IS
 // the criteria-bearing parent). When that fails to resolve AND resolver also
@@ -158,22 +261,30 @@ type ResponseParentResolver interface {
 // package doc, point 2, for why this makes REF-019 reachable on both
 // transitions rather than `close` alone.
 func checkVerdictIndexRange(subjectID string, instance any, resolver Resolver) []Violation {
-	indices, present := eventVerdictIndices(instance)
-	if !present || len(indices) == 0 {
+	refs, present := eventVerdictRefs(instance)
+	if !present {
 		return nil
 	}
+
+	var indices []int
+	for _, r := range refs {
+		if r.hasIndex {
+			indices = append(indices, r.index)
+		}
+	}
+
 	// countedID is whichever id actually resolved a count — subjectID
-	// itself (`close`) or, after the hop, its own parent (`verify`). The
+	// itself (`close`) or, after the hop, its own parent (`verify`). Every
 	// violation below must name THIS id, never subjectID unconditionally:
 	// a hopped `verify` event's subject is a response id, and reporting
 	// "does not resolve to an entry in <response id>'s acceptance_criteria[]"
 	// would misname the artifact whose array was actually bounds-checked.
 	countedID := subjectID
-	outOfRange, checked := resolveOutOfRangeIndices(resolver, subjectID, indices)
+	outOfRange, count, checked := resolveOutOfRangeIndices(resolver, subjectID, indices)
 	if !checked {
 		if parentResolver, ok := resolver.(ResponseParentResolver); ok {
 			if parentID, found := parentResolver.ParentOf(subjectID); found {
-				outOfRange, checked = resolveOutOfRangeIndices(resolver, parentID, indices)
+				outOfRange, count, checked = resolveOutOfRangeIndices(resolver, parentID, indices)
 				countedID = parentID
 			}
 		}
@@ -181,8 +292,11 @@ func checkVerdictIndexRange(subjectID string, instance any, resolver Resolver) [
 	if !checked {
 		return nil
 	}
+
 	var out []Violation
+	invalidIdx := make(map[int]bool, len(outOfRange))
 	for _, idx := range outOfRange {
+		invalidIdx[idx] = true
 		out = append(out, Violation{
 			Code:  "REF-019",
 			Class: ClassReferential,
@@ -194,22 +308,156 @@ func checkVerdictIndexRange(subjectID string, instance any, resolver Resolver) [
 			Severity: SeverityReject,
 		})
 	}
+
+	// Criterion (id) form: REF-019's own out-of-range question, extended to
+	// the id-addressed shape wave 2's probe found entirely unchecked — an
+	// id that does not resolve into countedID's own declared list names a
+	// criterion that does not exist, exactly the fact the index-form check
+	// above already reports, addressed differently. Only attempted when
+	// resolver offers the ordered id list at all (ParentCriteriaIDs) — see
+	// that interface's own doc comment for why no concrete Resolver does
+	// yet.
+	ids, haveIDs := resolveParentCriteriaIDs(resolver, countedID)
+	unresolvedCriteria := map[string]bool{}
+	if haveIDs {
+		known := make(map[string]bool, len(ids))
+		for _, id := range ids {
+			known[id] = true
+		}
+		for _, r := range refs {
+			if r.hasIndex || known[r.criterion] {
+				continue
+			}
+			unresolvedCriteria[r.criterion] = true
+			out = append(out, Violation{
+				Code:  "REF-019",
+				Class: ClassReferential,
+				Path:  "verdicts",
+				Message: fmt.Sprintf(
+					"verdicts[] names criterion %q, which does not resolve to an entry in %s's acceptance_criteria[]",
+					r.criterion, countedID,
+				),
+				Severity: SeverityReject,
+			})
+		}
+	}
+
+	out = append(out, checkVerdictCompleteness(countedID, count, refs, invalidIdx, ids, haveIDs, unresolvedCriteria)...)
 	return out
 }
 
-// eventVerdictIndices reads an EVENT instance's top-level `verdicts[]`
-// field (event/v2/event.schema.json's shape: an array of
-// `{index, verdict, cause_owner}` objects) into the `index` values it
-// names — the same decode rail incompleteness.go's responseUnmetIndices
-// uses for `unmet[]`: schema.DecodeYAMLInstance decodes a YAML `!!int`
-// scalar to Go int64, never float64, so this reads exactly that type.
+// checkVerdictCompleteness is REF-023 (defects-fix-2026-08 P4, the next
+// free referential code — see this file's package doc, "P4 — REF-023"):
+// when count (already resolved by checkVerdictIndexRange above — resolving
+// it a second time here would repeat exactly the round-trip
+// resolveOutOfRangeIndices' own doc comment says this file avoids) is
+// greater than zero and refs names fewer than count DISTINCT, VALID
+// criteria, refuse and name every criterion left unjudged.
+//
+// count == 0 is the schema's own "no minItems floor" case — a parent that
+// declares no acceptance_criteria[] at all stays expressible with an empty
+// verdicts[] — and stays silent here, deliberately, matching AC4.
+//
+// An entry whose own index/criterion did not resolve (present in invalidIdx
+// or unresolvedCriteria) does not count as "judged": REF-019 already names
+// it wrong above, and letting a bogus entry also satisfy completeness would
+// let it silently stand in for a real judgement.
+//
+// When refs carries a criterion-form entry and resolver offers no
+// ParentCriteriaIDs (haveIDs=false — every production Resolver today, see
+// that interface's own doc comment), completeness cannot be judged for
+// THIS event at all: without the parent's own id list there is no way to
+// tell which of its criteria a `criterion`-keyed entry actually names, so
+// guessing would either wrongly clear a short id-addressed record or
+// wrongly refuse a complete one. Both are worse than the "cannot check is
+// not check passed" degrade this file already follows everywhere else, so
+// this function returns nil rather than approximate. A verdicts[] array
+// carrying ONLY index-form entries (including the empty array — zero
+// entries of any form) is unaffected by this guard and is judged as
+// before.
+func checkVerdictCompleteness(parentID string, count int, refs []verdictRef, invalidIdx map[int]bool, ids []string, haveIDs bool, unresolvedCriteria map[string]bool) []Violation {
+	if count == 0 {
+		return nil
+	}
+	if !haveIDs {
+		for _, r := range refs {
+			if !r.hasIndex {
+				return nil
+			}
+		}
+	}
+
+	judged := make(map[int]bool, count)
+	for _, r := range refs {
+		if r.hasIndex {
+			if r.index >= 0 && r.index < count && !invalidIdx[r.index] {
+				judged[r.index] = true
+			}
+			continue
+		}
+		if unresolvedCriteria[r.criterion] {
+			continue
+		}
+		for i, id := range ids {
+			if id == r.criterion {
+				judged[i] = true
+				break
+			}
+		}
+	}
+
+	if len(judged) >= count {
+		return nil
+	}
+
+	var missing []string
+	for i := 0; i < count; i++ {
+		if judged[i] {
+			continue
+		}
+		if haveIDs && i < len(ids) && ids[i] != "" {
+			missing = append(missing, ids[i])
+		} else {
+			missing = append(missing, strconv.Itoa(i))
+		}
+	}
+
+	return []Violation{{
+		Code:  "REF-023",
+		Class: ClassReferential,
+		Path:  "verdicts",
+		Message: fmt.Sprintf(
+			"verdicts[] names %d of %d declared acceptance criteria in %s; missing: %s",
+			len(judged), count, parentID, strings.Join(missing, ", "),
+		),
+		Severity: SeverityReject,
+	}}
+}
+
+// eventVerdictRefs reads an EVENT instance's top-level `verdicts[]` field
+// (event/v2/event.schema.json's shape: an array of `{index|criterion,
+// verdict, cause_owner}` objects) into the addressing each entry names —
+// the same decode rail incompleteness.go's responseUnmetIndices uses for
+// `unmet[]`: schema.DecodeYAMLInstance decodes a YAML `!!int` scalar to Go
+// int64, never float64, so this reads exactly that type for `index`, and a
+// YAML `!!str` scalar as Go string for `criterion`.
 //
 // present=false means the field was absent or not the expected shape
 // (degrade to "nothing to check", never an error) — present=true with a
 // zero-length result means the field WAS an (possibly empty) array, which
 // the schema's own "no minItems floor" comment permits (a close over a
 // parent with no acceptance_criteria[] at all).
-func eventVerdictIndices(instance any) (indices []int, present bool) {
+//
+// Widened by defects-fix-2026-08 P4 (wave 2's own probe finding): the OLD
+// eventVerdictIndices this replaces read only `entry["index"].(int64)` —
+// an id-form entry (`{criterion: "ac3", ...}`, no `index` key) failed that
+// type assertion and was silently `continue`d, so REF-019 never
+// range-checked it and a completeness rule built on the old reader would
+// have counted zero for a fully-judged id-addressed close. Every entry
+// this function CAN read (either form) is now returned; an entry with
+// neither key readable is still skipped — the schema class already flags
+// that shape, and this function only reads the entries it can.
+func eventVerdictRefs(instance any) (refs []verdictRef, present bool) {
 	m, ok := instance.(map[string]any)
 	if !ok {
 		return nil, false
@@ -218,7 +466,7 @@ func eventVerdictIndices(instance any) (indices []int, present bool) {
 	if !ok {
 		return nil, false
 	}
-	out := make([]int, 0, len(raw))
+	out := make([]verdictRef, 0, len(raw))
 	for _, v := range raw {
 		entry, ok := v.(map[string]any)
 		if !ok {
@@ -226,11 +474,14 @@ func eventVerdictIndices(instance any) (indices []int, present bool) {
 			// shape; this function only reads the entries it can.
 			continue
 		}
-		n, ok := entry["index"].(int64)
-		if !ok {
+		if n, ok := entry["index"].(int64); ok {
+			out = append(out, verdictRef{index: int(n), hasIndex: true})
 			continue
 		}
-		out = append(out, int(n))
+		if s, ok := entry["criterion"].(string); ok && s != "" {
+			out = append(out, verdictRef{criterion: s})
+			continue
+		}
 	}
 	return out, true
 }

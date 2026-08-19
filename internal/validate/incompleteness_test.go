@@ -104,6 +104,33 @@ func TestCheckUnmetIndexRange_DormantWithoutParentCriteriaCounter(t *testing.T) 
 	}
 }
 
+// TestCheckUnmetIndexRange_NeverConsultsResponseParentResolverHop is AC5:
+// checkUnmetIndexRange (REF-018) and checkVerdictIndexRange (REF-019) share
+// resolveOutOfRangeIndices, verdicts.go's ONE bounds implementation, but
+// the ParentOf hop stays in checkVerdictIndexRange alone — env.Parent
+// (this rule's own subjectID) IS already the parent id, so a shared hop
+// would resolve the GRANDPARENT's criteria count instead and bounds-check
+// the wrong array. Proven by a resolver that CANNOT resolve env.Parent
+// directly but CAN resolve it through ResponseParentResolver.ParentOf to a
+// grandparent with a generous count: if the hop were ever consulted here,
+// the out-of-range index below would resolve in-range against the
+// grandparent and produce nothing. It must instead degrade to "cannot
+// check".
+func TestCheckUnmetIndexRange_NeverConsultsResponseParentResolverHop(t *testing.T) {
+	t.Parallel()
+	env := envelope{Type: "response", Parent: "XW-axon-20260808-p9d3"}
+	instance := map[string]any{"unmet": []any{int64(9)}}
+	resolver := &criteriaResolverWithParent{
+		criteriaResolver: criteriaResolver{criteria: map[string]int{"XW-axon-20260808-grandparent": 20}},
+		parents:          map[string]string{"XW-axon-20260808-p9d3": "XW-axon-20260808-grandparent"},
+	}
+
+	got := checkUnmetIndexRange(env, instance, resolver)
+	if len(got) != 0 {
+		t.Fatalf("checkUnmetIndexRange appears to have consulted the ResponseParentResolver hop (a grandparent's count), got %+v", got)
+	}
+}
+
 // TestUnmetIndexRange_EngineWiring is the end-to-end proof that
 // engine.go's ValidateForSubmit actually reaches checkIncompleteness: the
 // SAME out-of-range index, through the real Engine, with a

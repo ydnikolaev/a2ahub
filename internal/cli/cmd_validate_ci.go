@@ -285,7 +285,7 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 	// would report a fork or cycle that does not exist repo-wide.
 	var supersedeLinks []validate.SupersedeLink
 	for _, relPath := range events {
-		rep, ok := validateCIEvent(engine, resolver, root, relPath, manifest.MinBinaryVersion)
+		rep, ok := validateCIEvent(engine, resolver, root, relPath, manifest.MinBinaryVersion, mode)
 		if rep == nil {
 			continue // deleted in this PR
 		}
@@ -811,7 +811,16 @@ func supersedeBareID(ref string) string {
 // a rule that is true and inert. `validate --ci` is the merge-time path a space
 // actually pins, exactly as P6 already recorded for REF-018, so it is the caller
 // that has to offer it.
-func validateCIEvent(engine *validate.Engine, resolver validate.Resolver, root, relPath, spaceFloor string) (*validateReport, bool) {
+//
+// mode carries defects-fix-2026-08 P4's own D3 scoping (ADR-011): REF-023
+// (a verify/close event whose verdicts[] does not name every criterion the
+// parent declares) is suppressed at v3-full-repo, the same seat
+// validateCIArtifact already uses for REF-017/POL-022 — a merged verify/close
+// event is immutable and no verb rewrites its verdicts[], so a post-merge
+// audit against it could only punish, never repair. getvisa's own two
+// `verdicts: []` closes (over 7 and 8 declared criteria) are exactly that
+// population.
+func validateCIEvent(engine *validate.Engine, resolver validate.Resolver, root, relPath, spaceFloor, mode string) (*validateReport, bool) {
 	raw, err := os.ReadFile(filepath.Join(root, relPath))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -822,6 +831,9 @@ func validateCIEvent(engine *validate.Engine, resolver validate.Resolver, root, 
 	result, err := engine.ValidateEventWithContext(raw, spaceFloor, validate.EventContext{Resolver: resolver})
 	if err != nil {
 		return &validateReport{Path: relPath, Error: err.Error()}, false
+	}
+	if mode == "v3-full-repo" {
+		result = result.SuppressingCode("REF-023")
 	}
 	r := result
 	return &validateReport{Path: relPath, Result: &r}, result.Valid

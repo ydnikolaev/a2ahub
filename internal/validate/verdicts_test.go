@@ -27,7 +27,11 @@ func TestCheckVerdictIndexRange_InRangeProducesNoViolation(t *testing.T) {
 
 // TestCheckVerdictIndexRange_OutOfRangeProducesREF019 is the mutation
 // case: an index the parent does not declare must be refused, naming the
-// exact index and REF-019.
+// exact index and REF-019. The parent declares 2 criteria and this event
+// names only the one out-of-range entry, so REF-023 (P4's completeness
+// rule, riding the same call site) ALSO fires — an invalid entry does not
+// count as "judged" (verdicts.go's own doc comment on checkVerdictCompleteness),
+// so this is asserted by CODE PRESENCE, not by an exact violation count.
 func TestCheckVerdictIndexRange_OutOfRangeProducesREF019(t *testing.T) {
 	t.Parallel()
 	instance := map[string]any{
@@ -38,12 +42,9 @@ func TestCheckVerdictIndexRange_OutOfRangeProducesREF019(t *testing.T) {
 	resolver := &criteriaResolver{criteria: map[string]int{"XW-axon-20260808-p9d3": 2}}
 
 	violations := checkVerdictIndexRange("XW-axon-20260808-p9d3", instance, resolver)
-	if len(violations) != 1 {
-		t.Fatalf("out-of-range verdict index produced %d violations, want 1: %+v", len(violations), violations)
-	}
-	v := violations[0]
-	if v.Code != "REF-019" {
-		t.Errorf("code = %q, want REF-019", v.Code)
+	v := violationWithCode(violations, "REF-019")
+	if v == nil {
+		t.Fatalf("out-of-range verdict index produced no REF-019: %+v", violations)
 	}
 	if v.Class != ClassReferential {
 		t.Errorf("class = %q, want referential", v.Class)
@@ -133,27 +134,33 @@ func TestCheckVerdictIndexRange_VerifyHopsThroughParentOf(t *testing.T) {
 
 	t.Run("out_of_range_after_hop_produces_REF019", func(t *testing.T) {
 		t.Parallel()
+		// The parent declares 2 criteria and this event names only the
+		// one out-of-range entry, so REF-023 (completeness) also fires —
+		// asserted by code presence, matching
+		// TestCheckVerdictIndexRange_OutOfRangeProducesREF019's own reasoning.
 		instance := map[string]any{
 			"verdicts": []any{
 				map[string]any{"index": int64(5), "verdict": "unmet", "cause_owner": "seomatrix"},
 			},
 		}
 		violations := checkVerdictIndexRange(responseID, instance, resolver)
-		if len(violations) != 1 {
-			t.Fatalf("hopped out-of-range verdict index produced %d violations, want 1: %+v", len(violations), violations)
+		v := violationWithCode(violations, "REF-019")
+		if v == nil {
+			t.Fatalf("hopped out-of-range verdict index produced no REF-019: %+v", violations)
 		}
-		if violations[0].Code != "REF-019" {
-			t.Errorf("code = %q, want REF-019", violations[0].Code)
-		}
-		if !strings.Contains(violations[0].Message, parentID) {
-			t.Errorf("message %q does not name the resolved parent %q", violations[0].Message, parentID)
+		if !strings.Contains(v.Message, parentID) {
+			t.Errorf("message %q does not name the resolved parent %q", v.Message, parentID)
 		}
 	})
 
 	t.Run("in_range_after_hop_produces_no_violation", func(t *testing.T) {
 		t.Parallel()
+		// Names BOTH of the parent's 2 declared criteria, so REF-023
+		// (completeness) does not also fire alongside the in-range REF-019
+		// happy path this subtest exists to prove.
 		instance := map[string]any{
 			"verdicts": []any{
+				map[string]any{"index": int64(0), "verdict": "met", "cause_owner": "axon"},
 				map[string]any{"index": int64(1), "verdict": "met", "cause_owner": "axon"},
 			},
 		}
@@ -221,6 +228,232 @@ func TestCheckVerdictIndexRange_AbsentVerdictsIsNotChecked(t *testing.T) {
 	violations := checkVerdictIndexRange("XW-axon-20260808-p9d3", map[string]any{}, resolver)
 	if len(violations) != 0 {
 		t.Fatalf("absent verdicts[] produced violations: %+v", violations)
+	}
+}
+
+// --- REF-023: completeness (defects-fix-2026-08 P4) ---
+
+// TestCheckVerdictIndexRange_EmptyVerdictsOverDeclaredCriteriaRefusesREF023
+// is the measured defect itself (docs/inbox/defects/
+// 04-the-verification-record-defaults-to-empty.md): a close/verify over a
+// parent declaring N>0 criteria with `verdicts: []` used to return before
+// ever asking the question this test pins. Reconstructed at N=3 for a
+// tight fixture — the real getvisa closes were over 7 and 8.
+func TestCheckVerdictIndexRange_EmptyVerdictsOverDeclaredCriteriaRefusesREF023(t *testing.T) {
+	t.Parallel()
+	instance := map[string]any{"verdicts": []any{}}
+	resolver := &criteriaResolver{criteria: map[string]int{"XW-axon-20260808-p9d3": 3}}
+
+	violations := checkVerdictIndexRange("XW-axon-20260808-p9d3", instance, resolver)
+	v := violationWithCode(violations, "REF-023")
+	if v == nil {
+		t.Fatalf("empty verdicts[] over a 3-criteria parent produced no REF-023: %+v", violations)
+	}
+	if v.Severity != SeverityReject {
+		t.Errorf("severity = %q, want reject", v.Severity)
+	}
+	for _, want := range []string{"0", "1", "2"} {
+		if !strings.Contains(v.Message, want) {
+			t.Errorf("message %q does not name missing criterion %q", v.Message, want)
+		}
+	}
+}
+
+// TestCheckVerdictIndexRange_NMinusOneVerdictsNamesTheMissingOne is the
+// spec's own worded acceptance criterion: N criteria, N-1 verdicts, refused
+// naming the missing one.
+func TestCheckVerdictIndexRange_NMinusOneVerdictsNamesTheMissingOne(t *testing.T) {
+	t.Parallel()
+	instance := map[string]any{
+		"verdicts": []any{
+			map[string]any{"index": int64(0), "verdict": "met", "cause_owner": "axon"},
+			map[string]any{"index": int64(1), "verdict": "unmet", "cause_owner": "seomatrix"},
+		},
+	}
+	resolver := &criteriaResolver{criteria: map[string]int{"XW-axon-20260808-p9d3": 3}}
+
+	violations := checkVerdictIndexRange("XW-axon-20260808-p9d3", instance, resolver)
+	v := violationWithCode(violations, "REF-023")
+	if v == nil {
+		t.Fatalf("2 of 3 criteria judged produced no REF-023: %+v", violations)
+	}
+	if !strings.Contains(v.Message, "2") {
+		t.Errorf("message %q does not name the missing criterion (index 2)", v.Message)
+	}
+	if violationWithCode(violations, "REF-019") != nil {
+		t.Errorf("two well-formed in-range indices also tripped REF-019: %+v", violations)
+	}
+}
+
+// TestCheckVerdictIndexRange_FullyJudgedProducesNoCompletenessViolation is
+// the completeness rule's own happy path: every declared criterion named,
+// no REF-023.
+func TestCheckVerdictIndexRange_FullyJudgedProducesNoCompletenessViolation(t *testing.T) {
+	t.Parallel()
+	instance := map[string]any{
+		"verdicts": []any{
+			map[string]any{"index": int64(0), "verdict": "met", "cause_owner": "axon"},
+			map[string]any{"index": int64(1), "verdict": "unmet", "cause_owner": "seomatrix"},
+			map[string]any{"index": int64(2), "verdict": "not_warranted", "cause_owner": "axon"},
+		},
+	}
+	resolver := &criteriaResolver{criteria: map[string]int{"XW-axon-20260808-p9d3": 3}}
+
+	violations := checkVerdictIndexRange("XW-axon-20260808-p9d3", instance, resolver)
+	if len(violations) != 0 {
+		t.Fatalf("all 3 declared criteria judged produced violations: %+v", violations)
+	}
+}
+
+// TestCheckVerdictIndexRange_ZeroDeclaredCriteriaStaysSilent is AC4: a
+// parent with no acceptance_criteria[] at all (count 0) is the schema's own
+// "no minItems floor" case and REF-023 must stay silent, even for an empty
+// verdicts[].
+func TestCheckVerdictIndexRange_ZeroDeclaredCriteriaStaysSilent(t *testing.T) {
+	t.Parallel()
+	instance := map[string]any{"verdicts": []any{}}
+	resolver := &criteriaResolver{criteria: map[string]int{"XW-axon-20260808-p9d3": 0}}
+
+	violations := checkVerdictIndexRange("XW-axon-20260808-p9d3", instance, resolver)
+	if len(violations) != 0 {
+		t.Fatalf("a parent declaring zero acceptance_criteria[] produced violations for an empty verdicts[]: %+v", violations)
+	}
+}
+
+// TestCheckVerdictIndexRange_NotExercisedSatisfiesCompleteness is AC6: the
+// enum's not_exercised member is still a JUDGEMENT for completeness
+// purposes — the whole reason the strict form is affordable (this file's
+// package doc).
+func TestCheckVerdictIndexRange_NotExercisedSatisfiesCompleteness(t *testing.T) {
+	t.Parallel()
+	instance := map[string]any{
+		"verdicts": []any{
+			map[string]any{"index": int64(0), "verdict": "not_exercised", "cause_owner": "axon"},
+		},
+	}
+	resolver := &criteriaResolver{criteria: map[string]int{"XW-axon-20260808-p9d3": 1}}
+
+	violations := checkVerdictIndexRange("XW-axon-20260808-p9d3", instance, resolver)
+	if len(violations) != 0 {
+		t.Fatalf("a not_exercised verdict was treated as unjudged: %+v", violations)
+	}
+}
+
+// criteriaResolverWithIDs extends criteriaResolver with ParentCriteriaIDs —
+// REF-023's own id-addressed completeness path (and REF-019's id-form range
+// check), exercised only by this file's own tests since no concrete
+// Resolver implements it yet (ParentCriteriaIDs' own doc comment).
+type criteriaResolverWithIDs struct {
+	criteriaResolver
+	ids map[string][]string
+}
+
+func (r *criteriaResolverWithIDs) AcceptanceCriteriaIDs(parentID string) ([]string, bool) {
+	ids, ok := r.ids[parentID]
+	return ids, ok
+}
+
+var _ ParentCriteriaIDs = (*criteriaResolverWithIDs)(nil)
+
+// TestCheckVerdictIndexRange_IDAddressedFullyJudgedPasses is the id-form
+// mirror of TestCheckVerdictIndexRange_FullyJudgedProducesNoCompletenessViolation.
+func TestCheckVerdictIndexRange_IDAddressedFullyJudgedPasses(t *testing.T) {
+	t.Parallel()
+	const parentID = "XW-axon-20260808-idpar"
+	resolver := &criteriaResolverWithIDs{
+		criteriaResolver: criteriaResolver{criteria: map[string]int{parentID: 2}},
+		ids:              map[string][]string{parentID: {"ac1", "ac2"}},
+	}
+	instance := map[string]any{
+		"verdicts": []any{
+			map[string]any{"criterion": "ac1", "verdict": "met", "cause_owner": "axon"},
+			map[string]any{"criterion": "ac2", "verdict": "met", "cause_owner": "axon"},
+		},
+	}
+
+	violations := checkVerdictIndexRange(parentID, instance, resolver)
+	if len(violations) != 0 {
+		t.Fatalf("an id-addressed close naming every declared criterion was refused: %+v", violations)
+	}
+}
+
+// TestCheckVerdictIndexRange_IDAddressedMissingOneRefusedByID proves the
+// message contract: "by id where the parent declares ids" — the missing
+// criterion is named "ac2", never its ordinal position 1.
+func TestCheckVerdictIndexRange_IDAddressedMissingOneRefusedByID(t *testing.T) {
+	t.Parallel()
+	const parentID = "XW-axon-20260808-idpar"
+	resolver := &criteriaResolverWithIDs{
+		criteriaResolver: criteriaResolver{criteria: map[string]int{parentID: 2}},
+		ids:              map[string][]string{parentID: {"ac1", "ac2"}},
+	}
+	instance := map[string]any{
+		"verdicts": []any{
+			map[string]any{"criterion": "ac1", "verdict": "met", "cause_owner": "axon"},
+		},
+	}
+
+	violations := checkVerdictIndexRange(parentID, instance, resolver)
+	v := violationWithCode(violations, "REF-023")
+	if v == nil {
+		t.Fatalf("an id-addressed close missing one criterion produced no REF-023: %+v", violations)
+	}
+	if !strings.Contains(v.Message, "ac2") {
+		t.Errorf("message %q does not name the missing criterion by id (ac2)", v.Message)
+	}
+	if strings.Contains(v.Message, "missing: 1") {
+		t.Errorf("message %q named the missing criterion by ordinal position, want its id", v.Message)
+	}
+}
+
+// TestCheckVerdictIndexRange_IDAddressedUnknownIDRefusedByREF019 is the
+// id-form's own out-of-range case (wave 2's probe finding, this file's
+// package doc): a criterion id that does not resolve into the parent's
+// declared list is refused by REF-019, the same fact the index-form check
+// already reports, addressed differently.
+func TestCheckVerdictIndexRange_IDAddressedUnknownIDRefusedByREF019(t *testing.T) {
+	t.Parallel()
+	const parentID = "XW-axon-20260808-idpar"
+	resolver := &criteriaResolverWithIDs{
+		criteriaResolver: criteriaResolver{criteria: map[string]int{parentID: 2}},
+		ids:              map[string][]string{parentID: {"ac1", "ac2"}},
+	}
+	instance := map[string]any{
+		"verdicts": []any{
+			map[string]any{"criterion": "ac9", "verdict": "met", "cause_owner": "axon"},
+		},
+	}
+
+	violations := checkVerdictIndexRange(parentID, instance, resolver)
+	v := violationWithCode(violations, "REF-019")
+	if v == nil {
+		t.Fatalf("an unresolvable criterion id produced no REF-019: %+v", violations)
+	}
+	if !strings.Contains(v.Message, "ac9") {
+		t.Errorf("message %q does not name the offending id ac9", v.Message)
+	}
+}
+
+// TestCheckVerdictIndexRange_IDFormWithoutParentCriteriaIDsDegradesSilently
+// is ParentCriteriaIDs' own "cannot check is not check passed" rail: a
+// Resolver that resolves the COUNT (ParentCriteriaCounter) but not the id
+// LIST (ParentCriteriaIDs — every production Resolver today) must not
+// guess at a criterion-form entry's completeness. Guessing either
+// direction is worse than silence: it could wrongly clear a short
+// id-addressed record or wrongly refuse a complete one.
+func TestCheckVerdictIndexRange_IDFormWithoutParentCriteriaIDsDegradesSilently(t *testing.T) {
+	t.Parallel()
+	const parentID = "XW-axon-20260808-idpar"
+	resolver := &criteriaResolver{criteria: map[string]int{parentID: 2}}
+	instance := map[string]any{
+		"verdicts": []any{
+			map[string]any{"criterion": "ac1", "verdict": "met", "cause_owner": "axon"},
+		},
+	}
+
+	violations := checkVerdictIndexRange(parentID, instance, resolver)
+	if len(violations) != 0 {
+		t.Fatalf("id-addressed verdicts without a ParentCriteriaIDs-capable resolver produced a false violation: %+v", violations)
 	}
 }
 

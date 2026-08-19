@@ -461,15 +461,6 @@ entries:
     severity: reject
     mode_scope: both
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
-    reachability_exempt: >-
-      reachability debt, DECLARED not closed (defects-fix-2026-08 P1, wave
-      1): no test in internal/cli, internal/mcp or internal/e2e proves this
-      code fires through a production entry point. That is the same 'true
-      and inert' shape finding 04 measured for REF-019, and the honest state
-      is that it is unproven rather than known-broken. The gate is wired and
-      green so it BLOCKS the next code from joining this list; the list
-      itself is a counted debt row in docs/validator-backlog.md, not a
-      silence.
     mode_scope_reason: >-
       OPEN QUESTION, declared rather than answered (defects-fix-2026-08 P1,
       wave 1): this reject code was added to an ALREADY-POPULATED corpus, so
@@ -937,4 +928,22 @@ entries:
       A warning refuses nothing, so ADR-011 D3's "no rule judges immutable
       history" does not bind it — surfacing the smell on a merged descriptor
       costs nobody an edit they cannot make.
+
+  - code: REF-023
+    class: referential
+    title: verdicts[] does not name every criterion the parent declares
+    applies_to: >-
+      internal/validate.checkVerdictCompleteness (verdicts.go) — event/v2
+      verify/close `verdicts[]`, checked against the resolved parent's
+      declared `acceptance_criteria[]` count (ParentCriteriaCounter). Fires
+      when the parent declares N>0 criteria and verdicts[] names fewer than
+      N distinct, valid criteria (defects-fix-2026-08 P4, docs/inbox/defects/
+      04-the-verification-record-defaults-to-empty.md).
+    severity: reject
+    mode_scope: v3-pr
+    mode_scope_reason: >-
+      ADR-011 D3. A merged verify/close event is immutable and no verb
+      rewrites its verdicts[], so a post-merge audit against it could only
+      punish. getvisa's own two verdicts: [] closes (over 7 and 8 declared
+      criteria) are exactly that population.
 

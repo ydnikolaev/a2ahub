@@ -27,3 +27,4 @@ REF-020	live	supersession-integrity	a supersession predecessor is claimed by mor
 REF-021	live	supersession-integrity	a supersession chain closes back on itself, including self-supersede (CC-025)	PENDING	-
 POL-022	live	defects-fix-2026-08/P9	a handoff body's required section carries no content, or its heading is missing
 POL-023	live	defects-fix-2026-08/P8	a contract invites a runtime pin against an operational half it declares absent
+REF-023	live	defects-fix-2026-08/P4	verdicts[] does not name every criterion the parent declares

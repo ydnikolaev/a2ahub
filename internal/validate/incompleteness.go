@@ -185,30 +185,33 @@ func checkIncompleteness(env envelope, instance any, events []CandidateEvent, re
 // does nothing when resolver does not implement ParentCriteriaCounter (see
 // this file's Deviation) or when the parent cannot be resolved at all —
 // both are "cannot check", never "check passed".
+//
+// Bounds-checking itself is verdicts.go's resolveOutOfRangeIndices — the
+// ONE implementation REF-018 (here) and REF-019 (verdicts.go's
+// checkVerdictIndexRange) share as of defects-fix-2026-08 P4, closing the
+// duplication this file's own comment used to name (env.Parent is passed
+// as subjectID directly: this is the `close`/`verify`-response case where
+// the response's OWN parent field already is the criteria-bearing id, so
+// no ParentOf hop belongs here — that hop is checkVerdictIndexRange's own,
+// never shared into this bounds check, per verdicts.go's package doc).
 func checkUnmetIndexRange(env envelope, instance any, resolver Resolver) []Violation {
 	unmet, present := responseUnmetIndices(instance)
 	if !present || len(unmet) == 0 {
 		return nil
 	}
-	counter, ok := resolver.(ParentCriteriaCounter)
-	if !ok {
-		return nil
-	}
-	count, ok := counter.AcceptanceCriteriaCount(env.Parent)
-	if !ok {
+	outOfRange, count, checked := resolveOutOfRangeIndices(resolver, env.Parent, unmet)
+	if !checked {
 		return nil
 	}
 	var out []Violation
-	for _, idx := range unmet {
-		if idx < 0 || idx >= count {
-			out = append(out, Violation{
-				Code:     "REF-018",
-				Class:    ClassReferential,
-				Path:     "unmet",
-				Message:  fmt.Sprintf("unmet[] names criterion index %d, which does not resolve to an entry in the parent's acceptance_criteria[] (%d declared)", idx, count),
-				Severity: SeverityReject,
-			})
-		}
+	for _, idx := range outOfRange {
+		out = append(out, Violation{
+			Code:     "REF-018",
+			Class:    ClassReferential,
+			Path:     "unmet",
+			Message:  fmt.Sprintf("unmet[] names criterion index %d, which does not resolve to an entry in the parent's acceptance_criteria[] (%d declared)", idx, count),
+			Severity: SeverityReject,
+		})
 	}
 	return out
 }

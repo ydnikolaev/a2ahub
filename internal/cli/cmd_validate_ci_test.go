@@ -3002,6 +3002,126 @@ func TestValidateCI_REF019FiresOnAnOutOfRangeVerdictIndex(t *testing.T) {
 	})
 }
 
+// TestValidateCI_REF023FiresOnAnIncompleteVerdictsArray is defects-fix-2026-08
+// P4's own production-path proof, the exact shape finding 04 measured on the
+// real getvisa space: a close over a parent declaring N criteria whose
+// verdicts[] names fewer than N. Mirrors
+// TestValidateCI_REF019FiresOnAnOutOfRangeVerdictIndex's own two-directions
+// structure (both refused and accepted, so the test cannot pass against an
+// engine that refuses everything or nothing).
+func TestValidateCI_REF023FiresOnAnIncompleteVerdictsArray(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+
+	const parentRel = "axon/exchange/XW-axon-20260730-cr02.md"
+	const eventRel = "axon/events/2026/01J40A7M9P1S3V5W7Y9A1C3E5J.yaml"
+
+	// A parent declaring exactly TWO acceptance criteria.
+	parent := "---\nschema: envelope/v1\nid: XW-axon-20260730-cr02\ntype: work_request\n" +
+		"title: two criteria\nspace: getvisa\nfrom: axon\nto: [peer]\n" +
+		"actor: {kind: agent, name: bot, model: m}\ncreated: 2026-07-30T09:00:00Z\n" +
+		"category: data\npriority: p3\nblocking: false\n" +
+		"interim_behavior: \"we wait\"\nneeded_by: 2026-08-01\n" +
+		"acceptance_criteria:\n  - \"first\"\n  - \"second\"\n" +
+		"thread: thread:axon-20260730-cr02\nclassification: internal\n---\nbody\n"
+
+	closeEventWithVerdicts := func(block string) string {
+		return "schema: event/v2\n" +
+			"event: 01J40A7M9P1S3V5W7Y9A1C3E5J\n" +
+			"space: getvisa\n" +
+			"subject: XW-axon-20260730-cr02\n" +
+			"transition: close\n" +
+			"actor: {kind: agent, name: bot, system: axon}\n" +
+			"at: 2026-07-30T10:00:00Z\n" +
+			"produced_by:\n  tool: a2a\n  version: \"0.10.0\"\n" +
+			block
+	}
+
+	t.Run("an empty verdicts array over a 2-criteria parent is refused", func(t *testing.T) {
+		t.Parallel()
+		root := ciRepo(t, ciManifestWithFloor("0.10.0"), map[string]string{
+			parentRel: parent,
+			eventRel:  closeEventWithVerdicts("verdicts: []\n"),
+		})
+		code, rep, _ := runCI(t, engine, root, fakeGit(eventRel), "v3-pr", "deadbeef", "ydnikolaev")
+		if code == 0 || rep.Valid {
+			t.Fatalf("a close with verdicts: [] over a 2-criteria parent merged clean: code=%d valid=%v\n"+
+				"REF-023 is the exact defect docs/inbox/defects/"+
+				"04-the-verification-record-defaults-to-empty.md measured on the real getvisa space.",
+				code, rep.Valid)
+		}
+		if !ciReportHasViolation(rep, eventRel, "REF-023") {
+			t.Fatalf("refused, but not by REF-023 — some other rule reddened this and the completeness check "+
+				"may still be inert:\n%+v", rep.Artifacts)
+		}
+	})
+
+	t.Run("a verdicts array naming both declared criteria is accepted", func(t *testing.T) {
+		t.Parallel()
+		block := "verdicts:\n" +
+			"  - index: 0\n    verdict: met\n    cause_owner: axon\n" +
+			"  - index: 1\n    verdict: not_exercised\n    cause_owner: axon\n"
+		root := ciRepo(t, ciManifestWithFloor("0.10.0"), map[string]string{
+			parentRel: parent,
+			eventRel:  closeEventWithVerdicts(block),
+		})
+		code, rep, errOut := runCI(t, engine, root, fakeGit(eventRel), "v3-pr", "deadbeef", "ydnikolaev")
+		if ciReportHasViolation(rep, eventRel, "REF-023") {
+			t.Fatalf("a verdicts[] array naming every declared criterion was refused by REF-023: "+
+				"code=%d stderr=%s\n%+v", code, errOut, rep.Artifacts)
+		}
+	})
+}
+
+// TestValidateCI_REF023ScopedToPRModeNotFullRepo is REF-023 through the
+// PRODUCTION entry point and its ADR-011 D3 scoping, proved the way
+// REF-017's and POL-022's own tests prove it: ONE event through BOTH modes,
+// so what the test measures is the scoping, not two different fixtures. The
+// fixture is getvisa's own measured shape: verdicts: [] over a declared
+// parent, merged and immutable.
+func TestValidateCI_REF023ScopedToPRModeNotFullRepo(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	const parentRel = "axon/exchange/XW-axon-20260730-cr03.md"
+	const eventRel = "axon/events/2026/01J40A7M9P1S3V5W7Y9A1C3E5K.yaml"
+
+	parent := "---\nschema: envelope/v1\nid: XW-axon-20260730-cr03\ntype: work_request\n" +
+		"title: two criteria\nspace: getvisa\nfrom: axon\nto: [peer]\n" +
+		"actor: {kind: agent, name: bot, model: m}\ncreated: 2026-07-30T09:00:00Z\n" +
+		"category: data\npriority: p3\nblocking: false\n" +
+		"interim_behavior: \"we wait\"\nneeded_by: 2026-08-01\n" +
+		"acceptance_criteria:\n  - \"first\"\n  - \"second\"\n" +
+		"thread: thread:axon-20260730-cr03\nclassification: internal\n---\nbody\n"
+	event := "schema: event/v2\n" +
+		"event: 01J40A7M9P1S3V5W7Y9A1C3E5K\n" +
+		"space: getvisa\n" +
+		"subject: XW-axon-20260730-cr03\n" +
+		"transition: close\n" +
+		"actor: {kind: agent, name: bot, system: axon}\n" +
+		"at: 2026-07-30T10:00:00Z\n" +
+		"produced_by:\n  tool: a2a\n  version: \"0.10.0\"\n" +
+		"verdicts: []\n"
+
+	root := ciRepo(t, ciManifestWithFloor("0.10.0"), map[string]string{
+		parentRel: parent,
+		eventRel:  event,
+	})
+
+	code, rep, errOut := runCI(t, engine, root, fakeGit(eventRel), "v3-pr", "deadbeef", "ydnikolaev")
+	if code == 0 || rep.Valid {
+		t.Fatalf("expected v3-pr to refuse an incomplete verdicts[] array, got code=%d valid=%v stderr=%s", code, rep.Valid, errOut)
+	}
+	if !ciReportHasViolation(rep, eventRel, "REF-023") {
+		t.Fatalf("expected REF-023 in the v3-pr result, got %+v", rep.Artifacts)
+	}
+
+	code, rep, errOut = runCI(t, engine, root, nil, "v3-full-repo", "", "")
+	if ciReportHasViolation(rep, eventRel, "REF-023") {
+		t.Fatalf("expected v3-full-repo to suppress REF-023 — a merged verify/close event is immutable and no "+
+			"verb rewrites its verdicts[] — got code=%d stderr=%s\n%+v", code, errOut, rep.Artifacts)
+	}
+}
+
 // handoffEmptySectionsArtifact renders a schema-valid handoff whose five
 // §16.2-required body sections are present and empty — the shape all four
 // handoffs in the real getvisa space have, measured before POL-022 existed.

@@ -655,6 +655,76 @@ func (r *MirrorResolver) AcceptanceCriteriaCount(parentID string) (count int, ok
 	return len(criteria), true
 }
 
+// AcceptanceCriteriaIDs implements validate.ParentCriteriaIDs
+// (defects-fix-2026-08 P4). It is the SAME read as AcceptanceCriteriaCount
+// above, one field deeper: the ids an id-addressed parent declares, so
+// REF-019's range check and REF-023's completeness rule can resolve a
+// `criterion:`-keyed verdict entry to a position.
+//
+// It ships in the same wave as the interface, deliberately. P4's own report
+// named the gap honestly — the rule existed and no production Resolver
+// offered the capability, so an id-addressed parent degraded to "cannot
+// check" through `a2a validate --ci`. That is the epic's own founding shape
+// (a guarantee whose authoring path was never moved to it) reproduced by the
+// phase that exists to end it, and `internal/cli/cmd_lifecycle.go`'s
+// lifecycleResolveVerdicts ALREADY writes `criterion:`-keyed entries for
+// id-declaring parents, so real events of that shape exist now.
+//
+// ok=false means the parent declares no ids — a plain-string
+// acceptance_criteria array, an unresolvable parent, or no criteria at all.
+// The consumer degrades to the ordinal path rather than refusing, which is
+// resolveParentCriteriaIDs' own documented contract.
+func (r *MirrorResolver) AcceptanceCriteriaIDs(parentID string) (ids []string, ok bool) {
+	r.ensureIndex()
+	entry, found := r.index[parentID]
+	if !found {
+		return nil, false
+	}
+	raw, err := os.ReadFile(filepath.Join(r.mirrorDir, filepath.FromSlash(entry.Path)))
+	if err != nil {
+		return nil, false
+	}
+	fm, err := artifact.ParseFrontmatter(raw)
+	if err != nil {
+		return nil, false
+	}
+	inst, err := schema.DecodeYAMLInstance(fm.YAML)
+	if err != nil {
+		return nil, false
+	}
+	m, ok := inst.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	criteria, ok := m["acceptance_criteria"].([]any)
+	if !ok {
+		return nil, false
+	}
+	out := make([]string, 0, len(criteria))
+	for _, c := range criteria {
+		obj, isObj := c.(map[string]any)
+		if !isObj {
+			// The array is HOMOGENEOUS by schema (P3): one plain string means
+			// this is an ordinal-addressed parent, so it declares no ids at
+			// all rather than a partial set.
+			return nil, false
+		}
+		id, isStr := obj["id"].(string)
+		if !isStr || id == "" {
+			return nil, false
+		}
+		out = append(out, id)
+	}
+	if len(out) == 0 {
+		return nil, false
+	}
+	return out, true
+}
+
+// var _ validate.ParentCriteriaIDs = (*MirrorResolver)(nil) is the same
+// type-level gate the counter carries below, for the same reason.
+var _ validate.ParentCriteriaIDs = (*MirrorResolver)(nil)
+
 // var _ validate.ParentCriteriaCounter = (*MirrorResolver)(nil) is P6's
 // type-level gate (2026-08-09 readiness audit, row 50): it fails to COMPILE
 // if AcceptanceCriteriaCount is ever removed or its signature drifts, which
