@@ -158,6 +158,23 @@
 # placeholders. Neither is "merely inconvenient" today, though: as shipped,
 # nothing reaches either.
 unreachable:
+  envelope/v2/response/residue: >-
+    residue[] is an array of {criterion|criterion_index, carried_to} objects and
+    no authoring surface reaches it: --field writes one scalar node and the
+    schema refuses it for an array (the same refusal envelope/v1/base/origin
+    records), and a live template placeholder would make every fresh response
+    author a carried-forward criterion nobody carried (P-1). Unlike unmet and
+    blocked_by, which defects-fix-2026-08 P2 gave purpose-built flags, residue
+    has none yet — it is written by a successor-aware surface that does not
+    exist, and inventing a flag for it before that surface does would be the
+    same shape as the schema-with-no-authoring-path this epic exists to end.
+  envelope/v2/response/residue[].criterion: >-
+    Same as residue above: it is a member of that unreachable array, not a
+    separately-addressable field.
+  envelope/v2/response/residue[].criterion_index: >-
+    Same as residue above.
+  envelope/v2/response/residue[].carried_to: >-
+    Same as residue above.
   envelope/v1/base/origin: >-
     origin is array-typed on the base schema (envelope/v1/base.schema.json);
     the append pass (internal/template's applyFills) only ever writes one
@@ -555,6 +572,7 @@ fields:
     standing: AUTHOR
     residue: AUTHOR
     residue[].criterion_index: AUTHOR
+    residue[].criterion: AUTHOR
     residue[].carried_to: AUTHOR
   event/v1/event:
     schema: TOOL
@@ -614,6 +632,7 @@ fields:
     produced_by.version: TOOL
     verdicts: AUTHOR
     verdicts[].index: AUTHOR
+    verdicts[].criterion: AUTHOR
     verdicts[].verdict: AUTHOR
     verdicts[].cause_owner: AUTHOR
     # P5 2026-08-10 (AC1 discharge half, specs/05-declared-nature.md):

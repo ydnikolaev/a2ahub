@@ -50,7 +50,28 @@
       "required": ["shape"],
       "additionalProperties": false
     },
-    "acceptance_criteria": { "type": "array", "items": { "type": "string" } },
+    "acceptance_criteria": {
+      "type": "array",
+      "description": "defects-fix-2026-08 P3: HOMOGENEOUS — either every entry is a plain string (the original, ordinal-addressed form) or every entry is a {id, text} object (the id-addressed form); a mixed array has no single addressing mode and is refused. Per-type schemas (e.g. work_request) may narrow this further.",
+      "anyOf": [
+        { "items": { "type": "string" } },
+        {
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Stable, minted at authoring; never reused within one artifact."
+              },
+              "text": { "type": "string", "minLength": 1 }
+            },
+            "required": ["id", "text"],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
     "thread": {
       "type": "string",
       "description": "Correlation ID per the-plan §3.8: the conversation this artifact belongs to. Minted by the tool (`a2a new`) and inherited by every derived artifact, so an author never types one. Same rand4 alphabet as the `id` pattern above. REQUIRED since P46 — every artifact is on a thread, which is what makes an incomplete conversation impossible to mistake for a complete one.",

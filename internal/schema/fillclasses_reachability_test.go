@@ -205,6 +205,33 @@ type shippedTemplate struct {
 // ships, so its AUTHOR fields are judged like any other envelope group's —
 // reachable, or carrying a real `unreachable:` reason (schemas/fill-
 // classes.yaml).
+
+// dedicatedFlagReaches is this gate's THIRD reachability mechanism, added
+// 2026-08-19 (defects-fix-2026-08 P2/P3) because a fourth kind of authoring
+// surface shipped and the gate modelled only two.
+//
+// AC5's two named mechanisms are `--field <key>=...` and an already-present
+// template placeholder. Neither reaches a field whose only door is a
+// PURPOSE-BUILT FLAG: `--field` writes one scalar node and is refused for an
+// array or a mapping (its own comment says so, and that refusal is why `--ref`
+// exists), while a live template placeholder for an optional block would make
+// every fresh draft author a declaration nobody made (P-1).
+//
+// So `a2a respond --unmet` / `--blocked-by` DO reach these fields, and calling
+// them "unreachable" in fill-classes.yaml would have been a lie in the one
+// place this repo keeps honest — the alternative this gate offered, and the
+// reason it is widened instead.
+//
+// Keyed group/field. A row here is a claim that a shipped flag writes that
+// field; the flag's own test is what proves it.
+var dedicatedFlagReaches = map[string]bool{
+	"envelope/v2/response/unmet":                  true, // a2a respond --unmet
+	"envelope/v2/response/blocked_by":             true, // a2a respond --blocked-by
+	"envelope/v2/response/blocked_by.reason_code": true,
+	"envelope/v2/response/blocked_by.owner":       true,
+	"envelope/v2/response/blocked_by.needs":       true,
+}
+
 func TestEveryAuthorFieldIsReachableOrDeclaredUnreachable(t *testing.T) {
 	table, err := schema.LoadFillClasses()
 	if err != nil {
@@ -280,8 +307,12 @@ func TestEveryAuthorFieldIsReachableOrDeclaredUnreachable(t *testing.T) {
 
 		for _, field := range authorFields {
 			checked++
-			reachable := false
+			// The third mechanism first — see dedicatedFlagReaches' own comment.
+			reachable := dedicatedFlagReaches[group+"/"+field]
 			for _, typ := range shippedTypes {
+				if reachable {
+					break
+				}
 				if _, ferr := renderWithField(typ, generation, field); ferr == nil {
 					reachable = true
 					break
@@ -337,7 +368,6 @@ func TestEveryAuthorFieldIsReachableOrDeclaredUnreachable(t *testing.T) {
 	// field-by-field refusal, which is a stronger claim than is true.
 	wantExcluded := map[string]bool{
 		"consumes/v1/consumes": true,
-		"envelope/v2/response": true,
 		"event/v1/event":       true,
 		"event/v2/event":       true,
 		"manifest/v1/space":    true,

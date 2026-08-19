@@ -252,7 +252,12 @@ func TestT3CloseAndVerifyVerdictThroughRealBinary(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("verify with a malformed --verdict: exit %d, want 2\nstdout=%s\nstderr=%s", code, stdout, stderr)
 	}
-	if !strings.Contains(stderr, "want <index>:<met|unmet|not_warranted|not_exercised>:<cause_owner>") {
+	// AMENDED 2026-08-19 (defects-fix-2026-08 P3): the first segment now
+	// accepts a criterion ID as well as an ordinal, so the refusal names both
+	// forms. The assertion follows the shipped surface rather than pinning a
+	// shape the flag outgrew — the widening is the phase's own deliverable
+	// (fb-20260818-76f29d: an ordinal into a list the author cannot see).
+	if !strings.Contains(stderr, "want <index-or-criterion-id>:<met|unmet|not_warranted|not_exercised>:<cause_owner>") {
 		t.Fatalf("malformed --verdict refusal does not name the expected shape: %s", stderr)
 	}
 

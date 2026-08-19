@@ -4,18 +4,28 @@
   "title": "Envelope: work_request (v2)",
   "description": "A work request carrying the v1 shape plus attachments[]: bytes moving WITH the request, addressed by digest, without implying a contract pin or a fulfilled deliver. P5's binding lands on this same file (D3).",
   "allOf": [
-    { "$ref": "base.schema.json" },
+    {
+      "$ref": "base.schema.json"
+    },
     {
       "if": {
         "properties": {
           "category": {
-            "enum": ["contract-change", "process-change"]
+            "enum": [
+              "contract-change",
+              "process-change"
+            ]
           }
         },
-        "required": ["category"]
+        "required": [
+          "category"
+        ]
       },
       "then": {
-        "required": ["proposed_change", "refs"],
+        "required": [
+          "proposed_change",
+          "refs"
+        ],
         "properties": {
           "refs": {
             "type": "array",
@@ -28,7 +38,9 @@
                   "pattern": "@"
                 }
               },
-              "required": ["ref"]
+              "required": [
+                "ref"
+              ]
             }
           }
         }
@@ -36,20 +48,30 @@
     },
     {
       "if": {
-        "required": ["blocking"],
+        "required": [
+          "blocking"
+        ],
         "properties": {
-          "blocking": { "const": false }
+          "blocking": {
+            "const": false
+          }
         }
       },
       "then": {
-        "required": ["interim_behavior"]
+        "required": [
+          "interim_behavior"
+        ]
       }
     }
   ],
   "type": "object",
   "properties": {
-    "type": { "const": "work_request" },
-    "id": { "pattern": "^XW-" },
+    "type": {
+      "const": "work_request"
+    },
+    "id": {
+      "pattern": "^XW-"
+    },
     "category": {
       "type": "string",
       "enum": [
@@ -64,14 +86,45 @@
     },
     "acceptance_criteria": {
       "type": "array",
-      "items": { "type": "string" },
-      "minItems": 1
+      "minItems": 1,
+      "description": "defects-fix-2026-08 P3: this type keeps its own minItems:1 — a work_request without acceptance criteria is not a work_request — but it must NOT re-narrow the item shape. base.schema.json widened items to `string | {id, text}` and this property's own `items: {type: string}` ANDed with it through the allOf $ref, refusing the object form for the ONE v2 type most likely to carry criteria at all. Found by P3's implementer against the real corpus, outside their allowlist. Item shape lives in the base, once.",
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "text"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      ]
     },
-    "proposed_change": { "type": "string" },
+    "proposed_change": {
+      "type": "string"
+    },
     "to": {
       "description": "Exchange type (X class, not decision): exactly one target system.",
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "minItems": 1,
       "maxItems": 1
     },
@@ -99,23 +152,40 @@
       },
       "additionalProperties": false,
       "oneOf": [
-        { "const": "none" },
+        {
+          "const": "none"
+        },
         {
           "type": "object",
-          "required": ["artifact_class", "compatibility_status", "adoptable", "runtime_pinnable"]
+          "required": [
+            "artifact_class",
+            "compatibility_status",
+            "adoptable",
+            "runtime_pinnable"
+          ]
         }
       ],
       "allOf": [
         {
           "description": "T2's asymmetry: a `compatibility_status: none` claim inside the long form must be as unadoptable and unpinnable as the bare `none` sentinel, or the long form reopens the escape hatch T2 names — the sentinel and the long form must not disagree.",
           "if": {
-            "properties": { "compatibility_status": { "const": "none" } },
-            "required": ["compatibility_status"]
+            "properties": {
+              "compatibility_status": {
+                "const": "none"
+              }
+            },
+            "required": [
+              "compatibility_status"
+            ]
           },
           "then": {
             "properties": {
-              "adoptable": { "const": false },
-              "runtime_pinnable": { "const": false }
+              "adoptable": {
+                "const": false
+              },
+              "runtime_pinnable": {
+                "const": false
+              }
             }
           }
         }
@@ -135,18 +205,26 @@
             "type": "string",
             "pattern": "^sha256:[a-f0-9]{64}$"
           },
-          "role": { "type": "string" },
+          "role": {
+            "type": "string"
+          },
           "conforms_to": {
             "type": "string",
             "pattern": "^XC-.+@[0-9]+\\.[0-9]+\\.[0-9]+$"
           },
           "verification": {
             "type": "string",
-            "enum": ["required", "offered", "none"]
+            "enum": [
+              "required",
+              "offered",
+              "none"
+            ]
           },
           "retention": {
             "oneOf": [
-              { "const": "pinned" },
+              {
+                "const": "pinned"
+              },
               {
                 "type": "string",
                 "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
@@ -156,22 +234,51 @@
           "expires_at": {
             "type": "string",
             "format": "date-time",
-            "description": "When the retention lapses, absolute. Written by the tool at attach time; absent under retention: pinned. A duration alone is a RECIPE and a reader has no anchor to apply it to \u2014 nothing records when the bytes were attached, so a reader computing a lapse date from `created` would produce a confidently wrong one. The date is the fact; carry it."
+            "description": "When the retention lapses, absolute. Written by the tool at attach time; absent under retention: pinned. A duration alone is a RECIPE and a reader has no anchor to apply it to — nothing records when the bytes were attached, so a reader computing a lapse date from `created` would produce a confidently wrong one. The date is the fact; carry it."
           }
         },
-        "required": ["ref", "digest", "verification", "retention"],
+        "required": [
+          "ref",
+          "digest",
+          "verification",
+          "retention"
+        ],
         "additionalProperties": false,
         "allOf": [
           {
-            "if": { "properties": { "retention": { "const": "pinned" } }, "required": ["retention"] },
-            "then": { "not": { "required": ["expires_at"] } },
-            "else": { "required": ["expires_at"] }
+            "if": {
+              "properties": {
+                "retention": {
+                  "const": "pinned"
+                }
+              },
+              "required": [
+                "retention"
+              ]
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "expires_at"
+                ]
+              }
+            },
+            "else": {
+              "required": [
+                "expires_at"
+              ]
+            }
           }
         ]
       }
     }
   },
-  "required": ["category", "acceptance_criteria"],
-  "patternProperties": { "^x_": true },
+  "required": [
+    "category",
+    "acceptance_criteria"
+  ],
+  "patternProperties": {
+    "^x_": true
+  },
   "unevaluatedProperties": false
 }

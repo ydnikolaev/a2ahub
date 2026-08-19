@@ -324,6 +324,49 @@ func mcpSeedAcceptedQuestion(t *testing.T, mirrorDir, id, to string) {
 	writeLifecycleEvent(t, mirrorDir, to, 2, id, "accept", to)
 }
 
+// mcpUnmetIndex builds one bare-index `unmet[]` entry (defects-fix-2026-08
+// P3: RespondUnmetEntry.Index is a pointer, so tests need a helper for it
+// rather than a struct literal per call site).
+func mcpUnmetIndex(n int) RespondUnmetEntry {
+	idx := n
+	return RespondUnmetEntry{Index: &idx}
+}
+
+// mcpUnmetCriterion builds one criterion-id `unmet[]` entry.
+func mcpUnmetCriterion(id string) RespondUnmetEntry {
+	return RespondUnmetEntry{Criterion: id}
+}
+
+// mcpSeedAcceptedQuestionWithCriteria is mcpSeedAcceptedQuestion plus an
+// injected `acceptance_criteria:` block (defects-fix-2026-08 P3) —
+// criteriaYAML is the already-indented block body, mirroring internal/cli's
+// own seedAcceptedQuestionWithCriteria (cmd_lifecycle_test.go, off this
+// phase's allowlist, reproduced here per ADR-001).
+func mcpSeedAcceptedQuestionWithCriteria(t *testing.T, mirrorDir, id, to, criteriaYAML string) {
+	t.Helper()
+	content := "---\n" +
+		"schema: envelope/v2\n" +
+		"id: " + id + "\n" +
+		"type: question\n" +
+		"title: t\n" +
+		"space: fixture-space\n" +
+		"from: axon\n" +
+		"to: [" + to + "]\n" +
+		"thread: " + testFixtureThread + "\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"category: clarification\n" +
+		"priority: p3\n" +
+		"blocking: true\n" +
+		"classification: internal\n" +
+		"acceptance_criteria:\n" + criteriaYAML +
+		"---\nbody\n"
+	writeMirrorFile(t, mirrorDir, "axon/exchanges/"+id+".md", content)
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, id, "submit", "axon")
+	writeLifecycleEvent(t, mirrorDir, to, 1, id, "acknowledge", to)
+	writeLifecycleEvent(t, mirrorDir, to, 2, id, "accept", to)
+}
+
 // respondWithRealValidation drives a2a_respond through the SAME real
 // schema.Load/validate.New/space.NewWriteFunnel stack
 // internal/mcp/adapters_test.go's own TestSubmitValidatorAdapter* tests use
@@ -465,7 +508,7 @@ func TestRespondHandlerUnmetAndBlockedByValidates(t *testing.T) {
 	t.Parallel()
 	parentID := "XQ-axon-20260721-mrd3"
 	callErr, mirrorDir, fakeHost := respondWithRealValidation(t, parentID, RespondInput{
-		Result: "partial", Unmet: []int{2},
+		Result: "partial", Unmet: []RespondUnmetEntry{mcpUnmetIndex(2)},
 		BlockedBy: &RespondBlockedBy{ReasonCode: "out-of-scope", Owner: "seomatrix", Needs: "decision"},
 	})
 	if callErr != nil {
@@ -544,14 +587,20 @@ func TestRespondHandlerBlockedByMissingNeedsRefused(t *testing.T) {
 	}
 }
 
-// TestRespondHandlerUnmetDuplicateIndexRefused is respondValidateUnmet's own
-// mutation-tested guard.
+// TestRespondHandlerUnmetDuplicateIndexRefused is respondResolveUnmet's own
+// mutation-tested guard (defects-fix-2026-08 P3 renamed the function that
+// carries this rule from respondValidateUnmet — see that function's own
+// doc comment — but the guard, and this test's own load-bearing lesson
+// about asserting on a SPECIFIC message, both carry forward unchanged).
 func TestRespondHandlerUnmetDuplicateIndexRefused(t *testing.T) {
 	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-mrd7"
+	mcpSeedAcceptedQuestion(t, mirrorDir, parentID, "beta")
 	fake := &fakeFunnel{}
-	deps := testWriteDeps(t.TempDir(), fake)
+	deps := testWriteDeps(mirrorDir, fake)
 	handler := newRespondHandler(deps)
-	in := RespondInput{ParentIDs: []string{"XQ-axon-20260721-mrd7"}, Result: "partial", Standing: "provisional", Unmet: []int{1, 1}}
+	in := RespondInput{ParentIDs: []string{parentID}, Result: "partial", Standing: "provisional", Unmet: []RespondUnmetEntry{mcpUnmetIndex(1), mcpUnmetIndex(1)}}
 	args, _ := json.Marshal(in)
 	_, _, err := handler(context.Background(), args)
 	// Asserted on the SPECIFIC message — see TestRespondHandlerInvalidStandingRefused's
@@ -560,11 +609,132 @@ func TestRespondHandlerUnmetDuplicateIndexRefused(t *testing.T) {
 	// because the empty mirrorDir's downstream loadEnvelope failure produced
 	// an unrelated non-nil error. Caught during this phase's own mutation
 	// testing (see mutation_evidence) and fixed here rather than left silent.
-	if err == nil || !strings.Contains(err.Error(), "was already given") {
+	if err == nil || !strings.Contains(err.Error(), "two entries resolve to the same criterion") {
 		t.Fatalf("expected a duplicate-unmet-index refusal, got %v", err)
 	}
 	if len(fake.calls) != 0 {
 		t.Fatalf("expected the funnel to never be called for a duplicate unmet index, got %d calls", len(fake.calls))
+	}
+}
+
+// --- defects-fix-2026-08 P3: "a criterion has a name" — MCP unmet[] -------
+
+// TestRespondHandlerUnmetByIDResolvesAgainstDeclaredCriteria is spec 03
+// AC7's MCP half: `unmet: [{"criterion": "ac2"}]` against a parent
+// declaring ids writes `unmet: [{criterion: ac2}]` — never a bare index.
+func TestRespondHandlerUnmetByIDResolvesAgainstDeclaredCriteria(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-mc01"
+	mcpSeedAcceptedQuestionWithCriteria(t, mirrorDir, parentID, "beta", "  - id: ac1\n    text: \"first\"\n  - id: ac2\n    text: \"second\"\n")
+
+	fake := &fakeFunnel{}
+	deps := testWriteDeps(mirrorDir, fake)
+	handler := newRespondHandler(deps)
+	in := RespondInput{
+		ParentIDs: []string{parentID}, Result: "partial", Unmet: []RespondUnmetEntry{mcpUnmetCriterion("ac2")},
+		BlockedBy: &RespondBlockedBy{ReasonCode: "out-of-scope", Owner: "seomatrix", Needs: "bytes"},
+	}
+	args, _ := json.Marshal(in)
+	_, _, err := handler(context.Background(), args)
+	if err != nil {
+		t.Fatalf("respond: %v", err)
+	}
+	var respContent string
+	for _, fw := range fake.calls[0].Files {
+		if strings.HasPrefix(filepath.Base(fw.Path), "XS-") {
+			respContent = string(fw.Content)
+		}
+	}
+	if respContent == "" {
+		t.Fatalf("no XS- response file among %+v", fake.calls[0].Files)
+	}
+	if !strings.Contains(respContent, "criterion: ac2") {
+		t.Fatalf("expected the committed response to carry unmet: [{criterion: ac2}], got:\n%s", respContent)
+	}
+	if strings.Contains(respContent, "unmet:\n    - 1") || strings.Contains(respContent, "unmet: [1]") {
+		t.Fatalf("expected unmet to be written by CRITERION, never resolved back to a bare index, got:\n%s", respContent)
+	}
+}
+
+// TestRespondHandlerUnmetUnknownIDRefusedNamingDeclaredIDs is AC4's MCP
+// half: an id that resolves to nothing is refused, naming what the parent
+// DOES declare.
+func TestRespondHandlerUnmetUnknownIDRefusedNamingDeclaredIDs(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-mc02"
+	mcpSeedAcceptedQuestionWithCriteria(t, mirrorDir, parentID, "beta", "  - id: ac1\n    text: \"first\"\n")
+
+	fake := &fakeFunnel{}
+	deps := testWriteDeps(mirrorDir, fake)
+	handler := newRespondHandler(deps)
+	in := RespondInput{
+		ParentIDs: []string{parentID}, Result: "partial", Unmet: []RespondUnmetEntry{mcpUnmetCriterion("nosuch")},
+		BlockedBy: &RespondBlockedBy{ReasonCode: "out-of-scope", Owner: "seomatrix", Needs: "bytes"},
+	}
+	args, _ := json.Marshal(in)
+	_, _, err := handler(context.Background(), args)
+	if err == nil {
+		t.Fatal("expected an unresolvable criterion id to be refused")
+	}
+	if !strings.Contains(err.Error(), "ac1") {
+		t.Fatalf("refusal does not name the ids the parent declares: %v", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("funnel called for an id that does not resolve, got %d calls", len(fake.calls))
+	}
+}
+
+// TestRespondHandlerUnmetBareIndexRefusedWhenParentDeclaresIDs closes the
+// mis-binding mechanism itself: a bare positional index against an
+// id-declaring parent is refused, not silently accepted.
+func TestRespondHandlerUnmetBareIndexRefusedWhenParentDeclaresIDs(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-mc03"
+	mcpSeedAcceptedQuestionWithCriteria(t, mirrorDir, parentID, "beta", "  - id: ac1\n    text: \"first\"\n")
+
+	fake := &fakeFunnel{}
+	deps := testWriteDeps(mirrorDir, fake)
+	handler := newRespondHandler(deps)
+	in := RespondInput{
+		ParentIDs: []string{parentID}, Result: "partial", Unmet: []RespondUnmetEntry{mcpUnmetIndex(0)},
+		BlockedBy: &RespondBlockedBy{ReasonCode: "out-of-scope", Owner: "seomatrix", Needs: "bytes"},
+	}
+	args, _ := json.Marshal(in)
+	_, _, err := handler(context.Background(), args)
+	if err == nil {
+		t.Fatal("expected a bare index against an id-declaring parent to be refused")
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("funnel called for a bare index against an id-declaring parent, got %d calls", len(fake.calls))
+	}
+}
+
+// TestRespondHandlerUnmetIDRefusedWhenParentDeclaresNoIDs is the mirror
+// direction: a criterion-id entry against an ordinal-only parent is
+// refused too.
+func TestRespondHandlerUnmetIDRefusedWhenParentDeclaresNoIDs(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-mc04"
+	mcpSeedAcceptedQuestionWithCriteria(t, mirrorDir, parentID, "beta", "  - \"plain string criterion\"\n")
+
+	fake := &fakeFunnel{}
+	deps := testWriteDeps(mirrorDir, fake)
+	handler := newRespondHandler(deps)
+	in := RespondInput{
+		ParentIDs: []string{parentID}, Result: "partial", Unmet: []RespondUnmetEntry{mcpUnmetCriterion("ac1")},
+		BlockedBy: &RespondBlockedBy{ReasonCode: "out-of-scope", Owner: "seomatrix", Needs: "bytes"},
+	}
+	args, _ := json.Marshal(in)
+	_, _, err := handler(context.Background(), args)
+	if err == nil {
+		t.Fatal("expected a criterion id against an ordinal-only parent to be refused")
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("funnel called for a criterion id against an ordinal-only parent, got %d calls", len(fake.calls))
 	}
 }
 

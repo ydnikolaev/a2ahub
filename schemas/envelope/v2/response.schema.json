@@ -37,8 +37,20 @@
     },
     "unmet": {
       "type": "array",
-      "items": { "type": "integer", "minimum": 0 },
-      "description": "Which of the parent's acceptance_criteria[] this response did not satisfy, by INDEX into that array — never by restating the criterion in prose (AC4), so the record cannot drift from what the parent actually asked. May be present and empty: a `standing`-only shortfall (D1's `p1pf`) answered every criterion and has nothing to list here."
+      "description": "Which of the parent's acceptance_criteria[] this response did not satisfy — never by restating the criterion in prose (AC4), so the record cannot drift from what the parent actually asked. defects-fix-2026-08 P3: HOMOGENEOUS — either every entry is a bare INDEX into that array (an ordinal-only parent) or every entry is {criterion: <id>} (a parent whose acceptance_criteria[] declares ids); a mixed array is refused. May be present and empty: a `standing`-only shortfall (D1's `p1pf`) answered every criterion and has nothing to list here.",
+      "anyOf": [
+        { "items": { "type": "integer", "minimum": 0 } },
+        {
+          "items": {
+            "type": "object",
+            "properties": {
+              "criterion": { "type": "string", "minLength": 1 }
+            },
+            "required": ["criterion"],
+            "additionalProperties": false
+          }
+        }
+      ]
     },
     "blocked_by": {
       "type": "object",
@@ -81,7 +93,12 @@
           "criterion_index": {
             "type": "integer",
             "minimum": 0,
-            "description": "Index into the parent's acceptance_criteria[] whose non-met verdict is carried forward."
+            "description": "Index into the parent's acceptance_criteria[] whose non-met verdict is carried forward. Mutually exclusive with `criterion` below (defects-fix-2026-08 P3) — an ordinal-only parent uses this; a parent whose acceptance_criteria[] declares ids uses `criterion` instead."
+          },
+          "criterion": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Names the parent's acceptance_criteria[].id whose non-met verdict is carried forward (defects-fix-2026-08 P3). Mutually exclusive with `criterion_index` above."
           },
           "carried_to": {
             "type": "string",
@@ -89,8 +106,22 @@
             "description": "The successor artifact id that inherits the open criterion."
           }
         },
-        "required": ["criterion_index", "carried_to"],
-        "additionalProperties": false
+        "required": ["carried_to"],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "description": "Naming BOTH criterion_index and criterion on one entry is refused — same shape as event/v2's own verdicts[] index/criterion exclusivity, and the same reason: two identities for one binding has no single answer.",
+            "if": { "required": ["criterion_index"] },
+            "then": { "properties": { "criterion": false } }
+          },
+          {
+            "description": "Naming NEITHER is refused too — an entry must name what it carries forward.",
+            "anyOf": [
+              { "required": ["criterion_index"] },
+              { "required": ["criterion"] }
+            ]
+          }
+        ]
       },
       "description": "Where a non-met criterion goes when a terminal transition (close/withdraw/cancel) would otherwise extinguish it silently (D3, AC8). Shape only: the refusal — a terminal transition over a parent with a non-met verdict and no residue — depends on the closing event and the parent's verdicts, neither of which a response instance carries; that cross-artifact check belongs to internal/validate, off this wave's allowlist."
     }

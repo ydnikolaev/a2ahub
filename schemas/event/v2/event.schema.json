@@ -136,7 +136,12 @@
           "index": {
             "type": "integer",
             "minimum": 0,
-            "description": "Index into the parent's acceptance_criteria[] this verdict judges — the same by-index grammar unmet[] uses, checked for range by REF-019."
+            "description": "Index into the parent's acceptance_criteria[] this verdict judges — the same by-index grammar unmet[] uses, checked for range by REF-019. Mutually exclusive with `criterion` below (defects-fix-2026-08 P3) — an ordinal-only parent uses this; a parent whose acceptance_criteria[] declares ids uses `criterion` instead."
+          },
+          "criterion": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Names the parent's acceptance_criteria[].id this verdict judges (defects-fix-2026-08 P3). Mutually exclusive with `index` above."
           },
           "verdict": {
             "type": "string",
@@ -148,8 +153,22 @@
             "description": "Who the verifier holds responsible for a non-met verdict — the attributability T5 names as its only discharge. Present on every entry, including `met` ones, so the array cannot mix attributed and unattributed judgements."
           }
         },
-        "required": ["index", "verdict", "cause_owner"],
-        "additionalProperties": false
+        "required": ["verdict", "cause_owner"],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "description": "Naming BOTH index and criterion on one entry is refused — two identities for one binding has no single answer.",
+            "if": { "required": ["index"] },
+            "then": { "properties": { "criterion": false } }
+          },
+          {
+            "description": "Naming NEITHER is refused too — a verdict must name the criterion it judges.",
+            "anyOf": [
+              { "required": ["index"] },
+              { "required": ["criterion"] }
+            ]
+          }
+        ]
       }
     }
   },

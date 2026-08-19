@@ -186,14 +186,107 @@ func refsFromList(refs []string) []refEntry {
 // below rather than shared — the established idiom this file's own
 // respondSeed/parentThread/thread-conflict duplication already follows.
 type RespondInput struct {
-	ParentIDs    []string          `json:"parent_ids"`
-	Result       string            `json:"result"`
-	Fields       map[string]string `json:"fields,omitempty"`
-	BodyOverride string            `json:"body_override,omitempty"`
-	Actor        ActorInput        `json:"actor,omitempty"`
-	Unmet        []int             `json:"unmet,omitempty"`
-	Standing     string            `json:"standing,omitempty"`
-	BlockedBy    *RespondBlockedBy `json:"blocked_by,omitempty"`
+	ParentIDs    []string            `json:"parent_ids"`
+	Result       string              `json:"result"`
+	Fields       map[string]string   `json:"fields,omitempty"`
+	BodyOverride string              `json:"body_override,omitempty"`
+	Actor        ActorInput          `json:"actor,omitempty"`
+	Unmet        []RespondUnmetEntry `json:"unmet,omitempty"`
+	Standing     string              `json:"standing,omitempty"`
+	BlockedBy    *RespondBlockedBy   `json:"blocked_by,omitempty"`
+}
+
+// RespondUnmetEntry is one `unmet[]` input entry (defects-fix-2026-08 P3):
+// EITHER a bare non-negative JSON integer (an ordinal-only parent) or a
+// `{"criterion": "<id>"}` object (a parent whose acceptance_criteria[]
+// declares ids) — mirrors internal/cli's lifecycleUnmetToken/
+// lifecycleUnmetEntry exactly (ADR-001 forbids internal/mcp importing
+// internal/cli, so this is this package's own copy, the same duplication
+// idiom RespondInput's own doc comment above already establishes for the
+// whole Unmet field). Index is a pointer for the same "distinguish absent
+// from zero" reason internal/cli's lifecycleVerdictEntry.Index is: a bare
+// int can't tell "ordinal index 0" from "not this form" apart.
+// resolvedIndex is set by respondResolveUnmet, never by UnmarshalJSON — it
+// is the one stable identity both wire forms share, for operation.Respond's
+// key and the canonical sort, mirroring internal/cli's own resolvedIndex.
+type RespondUnmetEntry struct {
+	Index         *int
+	Criterion     string
+	resolvedIndex int
+}
+
+// MarshalJSON is UnmarshalJSON's own inverse, needed so a RespondUnmetEntry
+// built directly in Go (this package's own tests; a caller that constructs
+// the struct rather than parsing wire JSON) round-trips to the SAME wire
+// shape UnmarshalJSON expects back — WITHOUT it, Go's default struct
+// marshaling emits BOTH fields ({"Index":2,"Criterion":""}), and
+// UnmarshalJSON's own object branch then reads the empty "Criterion" key
+// as a real (but empty) criterion rather than "this wasn't the criterion
+// form at all", tripping its own "must set a non-empty criterion" refusal
+// on a perfectly valid bare-index entry.
+func (e RespondUnmetEntry) MarshalJSON() ([]byte, error) {
+	if e.Criterion != "" {
+		return json.Marshal(struct {
+			Criterion string `json:"criterion"`
+		}{Criterion: e.Criterion})
+	}
+	if e.Index != nil {
+		return json.Marshal(*e.Index)
+	}
+	return []byte("null"), nil
+}
+
+// UnmarshalJSON accepts BOTH of unmet[]'s input shapes: a bare JSON number
+// (decoded as the ordinal index) or an object carrying `criterion`.
+func (e *RespondUnmetEntry) UnmarshalJSON(data []byte) error {
+	var asInt int
+	if err := json.Unmarshal(data, &asInt); err == nil {
+		if asInt < 0 {
+			return fmt.Errorf("unmet entry %d must be a non-negative integer", asInt)
+		}
+		e.Index = &asInt
+		return nil
+	}
+	var obj struct {
+		Criterion string `json:"criterion"`
+	}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return fmt.Errorf("unmet entry must be a non-negative integer or {\"criterion\": \"<id>\"}: %w", err)
+	}
+	if obj.Criterion == "" {
+		return fmt.Errorf("unmet entry object must set a non-empty \"criterion\"")
+	}
+	e.Criterion = obj.Criterion
+	return nil
+}
+
+// RespondCriterion is one parsed entry of a parent's own
+// `acceptance_criteria[]` — mirrors internal/cli's
+// lifecycleAcceptanceCriterion exactly (same ADR-001 duplication). ID is ""
+// for the plain-string (ordinal) form.
+type RespondCriterion struct {
+	ID   string
+	Text string
+}
+
+// UnmarshalYAML accepts BOTH of acceptance_criteria[]'s item shapes: a bare
+// string (ordinal form) or a `{id, text}` mapping (P3's id form).
+func (c *RespondCriterion) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		c.ID = ""
+		c.Text = value.Value
+		return nil
+	}
+	var obj struct {
+		ID   string `yaml:"id"`
+		Text string `yaml:"text"`
+	}
+	if err := value.Decode(&obj); err != nil {
+		return err
+	}
+	c.ID = obj.ID
+	c.Text = obj.Text
+	return nil
 }
 
 // RespondBlockedBy is envelope/v2/response.schema.json's own `blocked_by`
@@ -227,20 +320,69 @@ var respondStandingEnum = map[string]bool{
 	"authoritative": true, "provisional": true, "advisory": true,
 }
 
-// respondValidateUnmet checks unmet indices are non-negative and unique —
-// the same rules internal/cli's lifecycleParseUnmet enforces on `--unmet`.
-func respondValidateUnmet(unmet []int) error {
-	seen := map[int]bool{}
-	for _, index := range unmet {
-		if index < 0 {
-			return fmt.Errorf("respond: unmet index %d must be a non-negative integer", index)
+// respondDeclaredCriterionIDs returns criteria's own `id` values, in array
+// order — used only to NAME what a parent declares in a refusal message,
+// mirrors internal/cli's lifecycleDeclaredCriterionIDs.
+func respondDeclaredCriterionIDs(criteria []RespondCriterion) []string {
+	var ids []string
+	for _, c := range criteria {
+		if c.ID != "" {
+			ids = append(ids, c.ID)
 		}
-		if seen[index] {
-			return fmt.Errorf("respond: unmet index %d was already given — one entry per unmet criterion", index)
-		}
-		seen[index] = true
 	}
-	return nil
+	return ids
+}
+
+// respondResolveUnmet resolves each RespondUnmetEntry against a specific
+// parent's `acceptance_criteria[]` — mirrors internal/cli's
+// lifecycleResolveUnmet exactly (same resolution rule, same refusal shape,
+// same canonical resolvedIndex sort/dedupe): a criterion-id entry resolves
+// to that criterion's array position; a bare-index entry is used directly.
+// Each direction is refused, by name, when it does not match the parent's
+// own shape — including a bare index against an id-declaring parent, which
+// is what actually closes the mis-binding class this phase answers rather
+// than merely documenting it.
+func respondResolveUnmet(tokens []RespondUnmetEntry, criteria []RespondCriterion) ([]RespondUnmetEntry, error) {
+	idsDeclared := len(respondDeclaredCriterionIDs(criteria)) > 0
+	idPosition := map[string]int{}
+	for i, c := range criteria {
+		if c.ID != "" {
+			idPosition[c.ID] = i
+		}
+	}
+	out := make([]RespondUnmetEntry, 0, len(tokens))
+	seen := map[int]bool{}
+	for _, tok := range tokens {
+		var entry RespondUnmetEntry
+		switch {
+		case tok.Criterion != "":
+			if !idsDeclared {
+				return nil, fmt.Errorf("respond: unmet %s: this parent declares no criterion ids; use a 0-based index into its acceptance_criteria[] instead", tok.Criterion)
+			}
+			pos, ok := idPosition[tok.Criterion]
+			if !ok {
+				return nil, fmt.Errorf("respond: unmet %s: no such criterion id; this parent declares: %s", tok.Criterion, strings.Join(respondDeclaredCriterionIDs(criteria), ", "))
+			}
+			entry.Criterion = tok.Criterion
+			entry.resolvedIndex = pos
+		case tok.Index != nil:
+			if idsDeclared {
+				return nil, fmt.Errorf("respond: unmet %d: this parent declares criterion ids; use one of them instead of a bare index (declares: %s)", *tok.Index, strings.Join(respondDeclaredCriterionIDs(criteria), ", "))
+			}
+			index := *tok.Index
+			entry.Index = &index
+			entry.resolvedIndex = index
+		default:
+			return nil, fmt.Errorf("respond: unmet entry carries neither an index nor a criterion id")
+		}
+		if seen[entry.resolvedIndex] {
+			return nil, fmt.Errorf("respond: unmet: two entries resolve to the same criterion (position %d) — one entry per unmet criterion", entry.resolvedIndex)
+		}
+		seen[entry.resolvedIndex] = true
+		out = append(out, entry)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].resolvedIndex < out[j].resolvedIndex })
+	return out, nil
 }
 
 // respondValidateBlockedBy checks blockedBy's three fields against
@@ -276,9 +418,6 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 		case "answered", "delivered", "partial", "cannot":
 		default:
 			return nil, "", fmt.Errorf("respond: result must be one of answered|delivered|partial|cannot")
-		}
-		if uerr := respondValidateUnmet(in.Unmet); uerr != nil {
-			return nil, "", uerr
 		}
 		if in.Standing != "" && !respondStandingEnum[in.Standing] {
 			return nil, "", fmt.Errorf("respond: standing must be one of authoritative|provisional|advisory")
@@ -316,13 +455,35 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 		// B22). A nil slice encodes as nothing, so an MCP respond keeps the
 		// exact key it had before that flag existed.
 		//
+		// unmet id-form resolution (defects-fix-2026-08 P3): resolved
+		// against ParentIDs[0]'s own acceptance_criteria[] — the same "one
+		// set applies to the whole batch" simplification this handler
+		// already made pre-P3 (one `unmet` set, reused identically for
+		// every parent in the loop below), extended one step earlier so a
+		// criterion id has a parent to resolve against before the loop
+		// even starts.
+		var unmet []RespondUnmetEntry
+		if len(in.Unmet) > 0 {
+			criteria, cerr := parentAcceptanceCriteria(deps.MirrorDir, in.ParentIDs[0])
+			if cerr != nil {
+				return nil, "", fmt.Errorf("respond: %s: %w", in.ParentIDs[0], cerr)
+			}
+			unmet, err = respondResolveUnmet(in.Unmet, criteria)
+			if err != nil {
+				return nil, "", err
+			}
+		}
+		opUnmet := make([]int, len(unmet))
+		for i, u := range unmet {
+			opUnmet[i] = u.resolvedIndex
+		}
 		// CLOSED by the lead the same wave this gap was reported (see
 		// internal/operation/key.go's own comment on why this WIDENED the
 		// signature instead of adding a second entry point): a key minted
 		// without these three is not narrower, it is COLLIDING — two responses
 		// differing only in `unmet[]` would mint one key, so a corrected
 		// response dedups as already-done and its correction never commits.
-		respondFacts := operation.RespondIncompleteness{Unmet: in.Unmet, Standing: in.Standing}
+		respondFacts := operation.RespondIncompleteness{Unmet: opUnmet, Standing: in.Standing}
 		if in.BlockedBy != nil {
 			respondFacts.BlockedByReason = in.BlockedBy.ReasonCode
 			respondFacts.BlockedByOwner = in.BlockedBy.Owner
@@ -379,7 +540,7 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 					parentID)
 			}
 
-			seed := respondSeed(parentID, in.Result, respFields, bodyOverride, actor, in.Unmet, in.Standing, in.BlockedBy)
+			seed := respondSeed(parentID, in.Result, respFields, bodyOverride, actor, unmet, in.Standing, in.BlockedBy)
 
 			// Wave K, MCP half. internal/cli's RespondCommand.Run carries
 			// the same three fills with the full rationale; ADR-001 keeps
@@ -458,11 +619,24 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 			// decode/assign/re-encode idiom as `to` above, and the same
 			// "written only when the caller actually gave it" discipline as
 			// internal/cli's RespondCommand.Run (P-1 — absence stays
-			// absence).
-			if len(in.Unmet) > 0 {
-				unmetSeq := make([]int, len(in.Unmet))
-				copy(unmetSeq, in.Unmet)
-				respDoc["unmet"] = unmetSeq
+			// absence). P3 widening: HOMOGENEOUS by construction —
+			// respondResolveUnmet already guarantees every entry shares one
+			// form (the same parent, the same idsDeclared flag), so which
+			// branch fires is decided once, from the first entry.
+			if len(unmet) > 0 {
+				if unmet[0].Criterion != "" {
+					unmetSeq := make([]map[string]string, len(unmet))
+					for i, u := range unmet {
+						unmetSeq[i] = map[string]string{"criterion": u.Criterion}
+					}
+					respDoc["unmet"] = unmetSeq
+				} else {
+					unmetSeq := make([]int, len(unmet))
+					for i, u := range unmet {
+						unmetSeq[i] = *u.Index
+					}
+					respDoc["unmet"] = unmetSeq
+				}
 			}
 			if in.Standing != "" {
 				respDoc["standing"] = in.Standing
@@ -544,6 +718,42 @@ func parentThread(mirrorDir, id string) (string, error) {
 	return probe.Thread, nil
 }
 
+// parentAcceptanceCriteria reads id's committed envelope frontmatter for
+// its `acceptance_criteria[]` field (defects-fix-2026-08 P3: the id-form
+// `--unmet`/verify-`criterion` resolution needs the parent's own declared
+// criteria, exactly as parentThread above needs `thread`) — the SAME
+// narrow, package-local re-decode idiom parentThread's own doc comment
+// already established and flags as a lead-side envelopeProbe-folding
+// candidate: eventdoc.go's envelopeProbe is off this phase's allowlist, so
+// this is a second file read via the SAME unexported helpers loadEnvelope
+// already calls (artifactPath, readBoundedFile, maxMirrorEventBytes),
+// never a second layout/read implementation.
+func parentAcceptanceCriteria(mirrorDir, id string) ([]RespondCriterion, error) {
+	parsed, err := artifact.ParseID(id)
+	if err != nil {
+		return nil, fmt.Errorf("mcp: %s: %w", id, err)
+	}
+	relPath, err := artifactPath(parsed)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := readBoundedFile(filepath.Join(mirrorDir, relPath), maxMirrorEventBytes)
+	if err != nil {
+		return nil, fmt.Errorf("mcp: cannot read %s: %w", id, err)
+	}
+	fm, err := artifact.ParseFrontmatter(raw)
+	if err != nil {
+		return nil, fmt.Errorf("mcp: %s: %w", id, err)
+	}
+	var probe struct {
+		AcceptanceCriteria []RespondCriterion `yaml:"acceptance_criteria"`
+	}
+	if err := yaml.Unmarshal(fm.YAML, &probe); err != nil {
+		return nil, fmt.Errorf("mcp: %s: cannot decode envelope: %w", id, err)
+	}
+	return probe.AcceptanceCriteria, nil
+}
+
 // respondSeed builds respond's own canonical, content-derived seed
 // (mirrors internal/cli's lifecycleRespondSeed exactly — fixed-order join,
 // SORTED field keys, no `now`).
@@ -558,7 +768,7 @@ func parentThread(mirrorDir, id string) (string, error) {
 // An absent unmet/standing/blockedBy (every caller before this phase)
 // writes exactly the bytes respondSeed always wrote — no existing
 // responseID changes.
-func respondSeed(parentID, result string, respFields map[string]string, bodyOverride []byte, actor fold.Actor, unmet []int, standing string, blockedBy *RespondBlockedBy) []byte {
+func respondSeed(parentID, result string, respFields map[string]string, bodyOverride []byte, actor fold.Actor, unmet []RespondUnmetEntry, standing string, blockedBy *RespondBlockedBy) []byte {
 	keys := make([]string, 0, len(respFields))
 	for k := range respFields {
 		keys = append(keys, k)
@@ -571,8 +781,19 @@ func respondSeed(parentID, result string, respFields map[string]string, bodyOver
 	for _, k := range keys {
 		buf.WriteString(k + "=" + respFields[k] + "\n")
 	}
-	for _, index := range unmet {
-		buf.WriteString(fmt.Sprintf("unmet=%d\n", index))
+	// The ordinal branch writes the EXACT byte format every pre-P3 caller
+	// already hashed ("unmet=<n>\n") — an existing bare-integer `unmet`
+	// call must keep minting the same responseID it always did. The
+	// criterion branch ("unmet=<id>\n") is new content no legacy caller
+	// could ever have produced, so it cannot collide with anything already
+	// committed.
+	for _, u := range unmet {
+		switch {
+		case u.Criterion != "":
+			buf.WriteString("unmet=" + u.Criterion + "\n")
+		case u.Index != nil:
+			buf.WriteString(fmt.Sprintf("unmet=%d\n", *u.Index))
+		}
 	}
 	if standing != "" {
 		buf.WriteString("standing=" + standing + "\n")

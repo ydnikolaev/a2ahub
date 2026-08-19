@@ -385,6 +385,42 @@ func seedAcceptedQuestion(t *testing.T, mirrorDir, id, to string) {
 	writeLifecycleEvent(t, mirrorDir, to, 2, id, "accept", to)
 }
 
+// seedAcceptedQuestionWithCriteria is seedAcceptedQuestion, plus an injected
+// `acceptance_criteria:` block (defects-fix-2026-08 P3) — criteriaYAML is
+// the already-indented block body (e.g. `"  - \"text\"\n"` or
+// `"  - id: ac1\n    text: \"text\"\n"`), letting callers exercise both
+// shapes without a second seed function. These tests go through
+// fakeLifecycleFunnel (never the real funnel/schema pipeline — the same
+// pattern every other verify/close test in this file already uses), so the
+// seeded frontmatter is read by cmd_lifecycle.go's own probe directly and
+// never itself schema-validated here; the schema-level shape guarantees are
+// proven separately, against the real corpus, by
+// TestSchemaAcceptanceCriteria* below.
+func seedAcceptedQuestionWithCriteria(t *testing.T, mirrorDir, id, to, criteriaYAML string) {
+	t.Helper()
+	content := "---\n" +
+		"schema: envelope/v2\n" +
+		"id: " + id + "\n" +
+		"type: question\n" +
+		"title: t\n" +
+		"space: fixture-space\n" +
+		"from: axon\n" +
+		"to: [" + to + "]\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"category: clarification\n" +
+		"priority: p3\n" +
+		"blocking: true\n" +
+		"classification: internal\n" +
+		"thread: thread:axon-20260721-t9a1\n" +
+		"acceptance_criteria:\n" + criteriaYAML +
+		"---\nbody\n"
+	writeMirrorFile(t, mirrorDir, "axon/exchanges/"+id+".md", content)
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, id, "submit", "axon")
+	writeLifecycleEvent(t, mirrorDir, to, 1, id, "acknowledge", to)
+	writeLifecycleEvent(t, mirrorDir, to, 2, id, "accept", to)
+}
+
 // TestVerifySingleResponseAutoCloses is the D-024 convenience: a
 // single-response exchange's `verify` ALSO emits `close` on the parent in
 // the same PR.
@@ -1992,6 +2028,7 @@ func TestRespondNoFlagsOmitsAllThreeKeys(t *testing.T) {
 // bytes (this epic's own paid-for trap).
 type lifecycleVerdictProbe struct {
 	Index      int    `yaml:"index"`
+	Criterion  string `yaml:"criterion,omitempty"`
 	Verdict    string `yaml:"verdict"`
 	CauseOwner string `yaml:"cause_owner"`
 }
@@ -2827,5 +2864,473 @@ func TestCloseEndToEndAuthorsEventV2ThatPassesSubmitValidation(t *testing.T) {
 	got := (*probe.Verdicts)[0]
 	if got.Index != 0 || got.Verdict != "met" || got.CauseOwner != "axon" {
 		t.Fatalf("pushed close event: verdicts[0] = %+v, want {0 met axon}", got)
+	}
+}
+
+// --- defects-fix-2026-08 P3: "a criterion has a name" -----------------
+
+// zzzResponseHeaderV2 is the base frontmatter every schema-level P3 case
+// below shares — schemas/envelope/v2 response's own required fields plus
+// `parent`/`result` (mirrors internal/schema's own responseV2Header
+// fixture shape, off this phase's allowlist, reproduced here so this
+// package's own schema-fidelity proof does not need that file touched).
+const p3ResponseHeaderV2 = `
+schema: envelope/v2
+id: XS-axon-20260808-p9d3
+type: response
+title: A valid v2 response
+space: getvisa
+from: axon
+to: [seomatrix]
+thread: thread:axon-20260808-k3f9
+actor: {kind: agent, name: codex}
+created: "2026-08-08T08:40:00Z"
+priority: p3
+blocking: true
+classification: internal
+parent: XW-axon-20260808-p9d3
+result: answered
+`
+
+func p3ValidateResponse(t *testing.T, doc string) []schema.FieldViolation {
+	t.Helper()
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	instance, err := schema.DecodeYAMLInstance([]byte(doc))
+	if err != nil {
+		t.Fatalf("DecodeYAMLInstance: %v", err)
+	}
+	violations, err := corpus.ValidateEnvelope("response", "envelope/v2", instance)
+	if err != nil {
+		t.Fatalf("ValidateEnvelope: %v", err)
+	}
+	return violations
+}
+
+func p3ValidateEvent(t *testing.T, doc string) []schema.FieldViolation {
+	t.Helper()
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	instance, err := schema.DecodeYAMLInstance([]byte(doc))
+	if err != nil {
+		t.Fatalf("DecodeYAMLInstance: %v", err)
+	}
+	violations, err := corpus.ValidateEvent("v2", instance)
+	if err != nil {
+		t.Fatalf("ValidateEvent: %v", err)
+	}
+	return violations
+}
+
+// TestSchemaAcceptanceCriteriaBothShapesValidate is spec 03 AC3/AC8's
+// positive half (T2): schemas/envelope/v2/base.schema.json's
+// `acceptance_criteria[]` accepts EITHER the plain-string (ordinal) form or
+// the `{id, text}` (id-addressed) form, each internally homogeneous.
+func TestSchemaAcceptanceCriteriaBothShapesValidate(t *testing.T) {
+	t.Parallel()
+	t.Run("string form", func(t *testing.T) {
+		t.Parallel()
+		doc := p3ResponseHeaderV2 + "acceptance_criteria:\n  - \"plain string form\"\n"
+		if v := p3ValidateResponse(t, doc); len(v) != 0 {
+			t.Fatalf("string-form acceptance_criteria refused: %+v", v)
+		}
+	})
+	t.Run("id/text object form", func(t *testing.T) {
+		t.Parallel()
+		doc := p3ResponseHeaderV2 + "acceptance_criteria:\n  - id: ac1\n    text: \"object form\"\n"
+		if v := p3ValidateResponse(t, doc); len(v) != 0 {
+			t.Fatalf("object-form acceptance_criteria refused: %+v", v)
+		}
+	})
+}
+
+// TestSchemaAcceptanceCriteriaMixedArrayRefused is spec 03 AC8: a MIXED
+// acceptance_criteria array (one string, one {id,text} object) has no
+// single addressing mode and is refused.
+//
+// TEETH: this test was watched RED before base.schema.json's `anyOf`
+// widening landed (a plain `items: {type: string}` schema silently accepts
+// only the first entry's shape and produces zero violations for the
+// second) — mutation_evidence in this phase's own report reproduces that
+// red on demand by reverting the schema edit.
+func TestSchemaAcceptanceCriteriaMixedArrayRefused(t *testing.T) {
+	t.Parallel()
+	doc := p3ResponseHeaderV2 + "acceptance_criteria:\n  - \"plain string\"\n  - id: ac1\n    text: \"object form\"\n"
+	v := p3ValidateResponse(t, doc)
+	if len(v) == 0 {
+		t.Fatal("expected a mixed acceptance_criteria array to be refused")
+	}
+	for _, fv := range v {
+		if !strings.HasPrefix(fv.Path, "acceptance_criteria") {
+			t.Fatalf("violation does not name acceptance_criteria: %+v", v)
+		}
+	}
+}
+
+// TestSchemaUnmetObjectFormValidates/TestSchemaUnmetMixedArrayRefused prove
+// response.schema.json's `unmet[]` item-type widening (spec 03 T2: "an
+// item-TYPE change, not a new field") the same way as acceptance_criteria
+// above.
+func TestSchemaUnmetObjectFormValidates(t *testing.T) {
+	t.Parallel()
+	doc := p3ResponseHeaderV2 + "unmet:\n  - criterion: ac1\n"
+	if v := p3ValidateResponse(t, doc); len(v) != 0 {
+		t.Fatalf("unmet {criterion} form refused: %+v", v)
+	}
+}
+
+func TestSchemaUnmetMixedArrayRefused(t *testing.T) {
+	t.Parallel()
+	doc := p3ResponseHeaderV2 + "unmet:\n  - 0\n  - criterion: ac1\n"
+	v := p3ValidateResponse(t, doc)
+	if len(v) == 0 {
+		t.Fatal("expected a mixed unmet array (one int, one {criterion}) to be refused")
+	}
+}
+
+// TestSchemaResidueCriterionMutualExclusivity proves T2's "residue[].
+// criterion and criterion_index are mutually exclusive alternatives —
+// naming both in one entry is refused" for all three cells: both named,
+// criterion-only, neither named.
+func TestSchemaResidueCriterionMutualExclusivity(t *testing.T) {
+	t.Parallel()
+	t.Run("both named is refused", func(t *testing.T) {
+		t.Parallel()
+		doc := p3ResponseHeaderV2 + "residue:\n  - criterion_index: 0\n    criterion: ac1\n    carried_to: XS-axon-20260809-q7d2\n"
+		if v := p3ValidateResponse(t, doc); len(v) == 0 {
+			t.Fatal("expected residue naming both criterion_index and criterion to be refused")
+		}
+	})
+	t.Run("criterion only is accepted", func(t *testing.T) {
+		t.Parallel()
+		doc := p3ResponseHeaderV2 + "residue:\n  - criterion: ac1\n    carried_to: XS-axon-20260809-q7d2\n"
+		if v := p3ValidateResponse(t, doc); len(v) != 0 {
+			t.Fatalf("residue criterion-only refused: %+v", v)
+		}
+	})
+	t.Run("neither named is refused", func(t *testing.T) {
+		t.Parallel()
+		doc := p3ResponseHeaderV2 + "residue:\n  - carried_to: XS-axon-20260809-q7d2\n"
+		if v := p3ValidateResponse(t, doc); len(v) == 0 {
+			t.Fatal("expected residue naming neither criterion_index nor criterion to be refused")
+		}
+	})
+}
+
+// TestSchemaVerdictsCriterionMutualExclusivity is spec 03 AC6, event/v2's
+// own side of the identical rule.
+//
+// TEETH: "both named is refused" was watched RED before event.schema.json's
+// allOf if/then (`properties: {criterion: false}`) landed — a bare
+// `oneOf: [{required:[index]},{required:[criterion]}]` (this phase's first
+// draft) DOES refuse it too, but classifies as an unclassified
+// `other:*kind.OneOf` FieldViolation keyword rather than the existing
+// `falseSchema`/SCH-003 code every other "field this schema forbids" case
+// already uses — reverting to that shape keeps this test green (len(v) is
+// still > 0) while silently regressing the registry-code mapping, which is
+// why the mutation this phase actually ran was the KEYWORD, not the count
+// (see mutation_evidence in this phase's own report).
+func TestSchemaVerdictsCriterionMutualExclusivity(t *testing.T) {
+	t.Parallel()
+	header := `{
+  "schema": "event/v2",
+  "event": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "space": "getvisa",
+  "subject": "XS-axon-20260808-p9d3",
+  "transition": "verify",
+  "actor": {"kind": "agent", "name": "codex", "system": "axon"},
+  "at": "2026-08-08T08:40:00Z"`
+	t.Run("criterion only is accepted", func(t *testing.T) {
+		t.Parallel()
+		doc := header + `, "verdicts": [{"criterion": "ac1", "verdict": "met", "cause_owner": "axon"}]}`
+		if v := p3ValidateEvent(t, doc); len(v) != 0 {
+			t.Fatalf("verdicts criterion-only refused: %+v", v)
+		}
+	})
+	t.Run("both named is refused", func(t *testing.T) {
+		t.Parallel()
+		doc := header + `, "verdicts": [{"index": 0, "criterion": "ac1", "verdict": "met", "cause_owner": "axon"}]}`
+		v := p3ValidateEvent(t, doc)
+		if len(v) == 0 {
+			t.Fatal("expected verdicts naming both index and criterion to be refused")
+		}
+		var sawClassified bool
+		for _, fv := range v {
+			if fv.Keyword == "falseSchema" || fv.Keyword == "required" {
+				sawClassified = true
+			}
+			if strings.HasPrefix(fv.Keyword, "other:") {
+				t.Fatalf("verdicts both-named violation used an UNCLASSIFIED keyword %q (needs a new schemas/errors/v1/registry.yaml row) rather than an existing classified one: %+v", fv.Keyword, v)
+			}
+		}
+		if !sawClassified {
+			t.Fatalf("expected a classified (falseSchema/required) violation, got: %+v", v)
+		}
+	})
+	t.Run("neither named is refused", func(t *testing.T) {
+		t.Parallel()
+		doc := header + `, "verdicts": [{"verdict": "met", "cause_owner": "axon"}]}`
+		if v := p3ValidateEvent(t, doc); len(v) == 0 {
+			t.Fatal("expected verdicts naming neither index nor criterion to be refused")
+		}
+	})
+}
+
+// TestVerifyEchoesVerdictBindingBeforeMinting is spec 03 AC1/AC2 (US-1):
+// `a2a verify --verdict` prints each binding's criterion text (truncated to
+// 80 RUNES — []rune-bounded, never a byte slice, so this fixture uses a
+// non-ASCII criterion to actually exercise that: a byte-length truncation
+// would split "é" mid-character and this test would still pass on an
+// ASCII-only fixture) BEFORE the funnel is ever called, for an ORDINAL
+// parent (prints the bare index).
+func TestVerifyEchoesVerdictBindingBeforeMinting(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-ec01"
+	longText := strings.Repeat("é", 85)
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentID, "beta", "  - \""+longText+"\"\n")
+	responseID := respondFlow(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewVerifyCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--verdict", "0:met:seomatrix", responseID}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	wantTrunc := strings.Repeat("é", 80) + "…"
+	if !strings.Contains(out.String(), "0 -> ") {
+		t.Fatalf("expected the echo to name the bare index for an ordinal parent, got stdout=%q", out.String())
+	}
+	if !strings.Contains(out.String(), wantTrunc) {
+		t.Fatalf("expected the echo to carry the []rune-truncated 80-character criterion text, got stdout=%q", out.String())
+	}
+	if strings.Contains(out.String(), longText) {
+		t.Fatalf("echo printed the FULL untruncated criterion text, want only its first 80 runes: stdout=%q", out.String())
+	}
+	if !strings.Contains(out.String(), "met") || !strings.Contains(out.String(), "seomatrix") {
+		t.Fatalf("expected the echo to also carry the verdict and cause_owner, got stdout=%q", out.String())
+	}
+	// AC1: printed BEFORE minting — the echo must already be on stdout even
+	// though this assertion runs after Run() returns, so the REAL proof is
+	// ordering-independent: the funnel is a fake that only records calls
+	// after Run() drives them, and code==0 here already proves the write
+	// path completed; TestVerifyRejectsMalformedVerdictFlag-style negative
+	// cases (below) are what prove the echo does NOT print when the
+	// resolution refuses before any write.
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+}
+
+// TestVerifyEchoesVerdictBindingForIDDeclaringParent is AC2's other cell:
+// a parent whose acceptance_criteria[] declares ids gets the id-form echo
+// (`ac1 -> "…"`), not a bare index.
+func TestVerifyEchoesVerdictBindingForIDDeclaringParent(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-ec02"
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentID, "beta", "  - id: ac1\n    text: \"Every code exists in the registry.\"\n")
+	responseID := respondFlow(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewVerifyCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--verdict", "ac1:met:seomatrix", responseID}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), "ac1 -> \"Every code exists in the registry.\"") {
+		t.Fatalf("expected the echo to name the criterion id, got stdout=%q", out.String())
+	}
+}
+
+// TestVerifyVerdictByIDResolvesAgainstDeclaredCriteria is AC3/AC7's CLI
+// half: `--verdict ac1:met:owner` against an id-declaring parent writes
+// `verdicts: [{criterion: ac1, ...}]` — never an `index` key.
+func TestVerifyVerdictByIDResolvesAgainstDeclaredCriteria(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-ec03"
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentID, "beta", "  - id: ac1\n    text: \"first\"\n  - id: ac2\n    text: \"second\"\n")
+	responseID := respondFlow(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewVerifyCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--verdict", "ac2:met:seomatrix", responseID}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	verify := findEventByTransition(t, fake.calls[0].Files, "verify")
+	if verify.Verdicts == nil || len(*verify.Verdicts) != 1 {
+		t.Fatalf("expected exactly one verdicts entry, got %v", verify.Verdicts)
+	}
+	got := (*verify.Verdicts)[0]
+	if got.Criterion != "ac2" || got.Index != 0 || got.Verdict != "met" || got.CauseOwner != "seomatrix" {
+		t.Fatalf("verdicts[0] = %+v, want {Criterion:ac2 Index:0 met seomatrix} (ac2 is array position 1, resolved — never written as an index)", got)
+	}
+}
+
+// TestVerifyVerdictUnknownIDRefusedNamingDeclaredIDs is AC4: an id that
+// resolves to nothing is refused locally, exit 2, naming what the parent
+// DOES declare.
+func TestVerifyVerdictUnknownIDRefusedNamingDeclaredIDs(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-ec04"
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentID, "beta", "  - id: ac1\n    text: \"first\"\n")
+	responseID := respondFlow(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewVerifyCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--verdict", "nosuch:met:seomatrix", responseID}, io)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2; stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatal("funnel called for an id that does not resolve")
+	}
+	if !strings.Contains(errOut.String(), "ac1") {
+		t.Fatalf("refusal does not name the ids the parent declares: %s", errOut.String())
+	}
+}
+
+// TestVerifyVerdictBareIndexRefusedWhenParentDeclaresIDs closes the
+// mis-binding mechanism itself (spec 03, not just documentation): a bare
+// positional index against an id-declaring parent is refused, not silently
+// accepted — accepting it would reopen fb-20260818-76f29d's exact class of
+// bug for the id form.
+func TestVerifyVerdictBareIndexRefusedWhenParentDeclaresIDs(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-ec05"
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentID, "beta", "  - id: ac1\n    text: \"first\"\n")
+	responseID := respondFlow(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewVerifyCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--verdict", "0:met:seomatrix", responseID}, io)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2; stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatal("funnel called for a bare index against an id-declaring parent")
+	}
+}
+
+// TestVerifyVerdictIDRefusedWhenParentDeclaresNoIDs is the mirror
+// direction: a criterion-id token against an ordinal-only parent is
+// refused too (nothing to resolve it against).
+func TestVerifyVerdictIDRefusedWhenParentDeclaresNoIDs(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-ec06"
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentID, "beta", "  - \"plain string criterion\"\n")
+	responseID := respondFlow(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewVerifyCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--verdict", "ac1:met:seomatrix", responseID}, io)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2; stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatal("funnel called for a criterion id against an ordinal-only parent")
+	}
+}
+
+// TestCloseEchoesVerdictBindingBeforeMinting is AC1/AC2's `close` half —
+// close's own ids ARE the parents directly (no response indirection).
+func TestCloseEchoesVerdictBindingBeforeMinting(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-ec07"
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentID, "beta", "  - id: ac1\n    text: \"first criterion\"\n")
+	respondFlow(t, mirrorDir, parentID, "beta")
+	writeLifecycleEvent(t, mirrorDir, "beta", 3, parentID, "respond", "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewCloseCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--verdict", "ac1:met:seomatrix", parentID}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), "ac1 -> \"first criterion\"") {
+		t.Fatalf("expected close's own pre-mint echo, got stdout=%q", out.String())
+	}
+}
+
+// TestRespondUnmetByIDWritesCriterionForm is AC7: `a2a respond --unmet ac3`
+// writes `unmet: [{criterion: ac3}]` against a parent declaring ids.
+func TestRespondUnmetByIDWritesCriterionForm(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-am81"
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentID, "beta", "  - id: ac1\n    text: \"first\"\n  - id: ac2\n    text: \"second\"\n")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--result", "partial", "--unmet", "ac2", "--blocked-by", "other:seomatrix:bytes", parentID}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	var respPath string
+	for _, fw := range fake.calls[0].Files {
+		if strings.HasPrefix(filepath.Base(fw.Path), "XS-") {
+			respPath = fw.Path
+		}
+	}
+	if respPath == "" {
+		t.Fatalf("no XS- response file among %+v", fake.calls[0].Files)
+	}
+	var content string
+	for _, fw := range fake.calls[0].Files {
+		if fw.Path == respPath {
+			content = string(fw.Content)
+		}
+	}
+	var doc struct {
+		Unmet []map[string]string `yaml:"unmet"`
+	}
+	fm, err := artifact.ParseFrontmatter([]byte(content))
+	if err != nil {
+		t.Fatalf("ParseFrontmatter: %v", err)
+	}
+	if err := yaml.Unmarshal(fm.YAML, &doc); err != nil {
+		t.Fatalf("decode response frontmatter: %v; content=%s", err, content)
+	}
+	if len(doc.Unmet) != 1 || doc.Unmet[0]["criterion"] != "ac2" {
+		t.Fatalf("unmet = %+v, want [{criterion: ac2}]; content=%s", doc.Unmet, content)
+	}
+}
+
+// TestRespondUnmetIDRefusedAgainstOrdinalParent mirrors --verdict's own
+// direction check: a criterion id against a parent with no declared ids is
+// refused, not silently accepted.
+func TestRespondUnmetIDRefusedAgainstOrdinalParent(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-am82"
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentID, "beta", "  - \"plain string criterion\"\n")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--result", "partial", "--unmet", "ac1", "--blocked-by", "other:seomatrix:bytes", parentID}, io)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2; stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatal("funnel called for a criterion id against an ordinal-only parent")
 	}
 }

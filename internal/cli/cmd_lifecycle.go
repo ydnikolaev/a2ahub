@@ -68,6 +68,54 @@ type lifecycleEnvelopeProbe struct {
 	// `respond` propagates the PARENT's thread onto its response, never
 	// minting or inventing a new one for a derived artifact.
 	Thread string `yaml:"thread"`
+	// AcceptanceCriteria is defects-fix-2026-08 P3's own read of
+	// schemas/envelope/v2/base.schema.json's `acceptance_criteria[]` —
+	// this file's own probe already decodes a parent's frontmatter for
+	// every other field above, so the pre-mint echo (T1) and the
+	// `--verdict`/`--unmet` id-form resolution below ride that SAME read
+	// rather than a second one through internal/validate's
+	// ParentCriteriaCounter/ResponseParentResolver (REF-019's own
+	// resolver, off this phase's allowlist — see this phase's own
+	// Deviations report for why widening it was not needed here). Absent
+	// or empty on any parent that carries no `acceptance_criteria[]` at
+	// all (a decision, most requirements) — never an error, since this
+	// probe already treats every field as "whatever the document has".
+	AcceptanceCriteria []lifecycleAcceptanceCriterion `yaml:"acceptance_criteria"`
+}
+
+// lifecycleAcceptanceCriterion is one parsed entry of a parent's own
+// `acceptance_criteria[]` — schemas/envelope/v2/base.schema.json's P3
+// widening accepts a HOMOGENEOUS array of either bare strings (the
+// original, ordinal-addressed form) or `{id, text}` objects (the new
+// id-addressed form); this type reads whichever shape a committed
+// document actually carries. ID is "" for the plain-string form (the
+// array has no ids to resolve against — --verdict/--unmet stay
+// integer-only for that parent); schema-side homogeneity/shape
+// enforcement is server/CI's job (internal/validate), not this decode's.
+type lifecycleAcceptanceCriterion struct {
+	ID   string
+	Text string
+}
+
+// UnmarshalYAML implements yaml.Unmarshaler so a single field can decode
+// EITHER of acceptance_criteria[]'s two item shapes without a second
+// probe type or a second parse pass.
+func (c *lifecycleAcceptanceCriterion) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		c.ID = ""
+		c.Text = value.Value
+		return nil
+	}
+	var obj struct {
+		ID   string `yaml:"id"`
+		Text string `yaml:"text"`
+	}
+	if err := value.Decode(&obj); err != nil {
+		return err
+	}
+	c.ID = obj.ID
+	c.Text = obj.Text
+	return nil
 }
 
 // lifecyclePrefixInfo maps a §3.3 id prefix to its fold.Kind — the same
@@ -206,18 +254,33 @@ type lifecycleEventDoc struct {
 	Verdicts *[]lifecycleVerdictEntry `yaml:"verdicts,omitempty"`
 }
 
-// lifecycleVerdictEntry is one entry of `a2a verify`'s `--verdict` flag and
-// of the `verdicts[]` it authors — schemas/event/v2/event.schema.json's own
-// shape, `{index, verdict, cause_owner}`. `cause_owner` is required on EVERY
-// entry there, including `met` ones ("so the array cannot mix attributed and
-// unattributed judgements", that schema's own description) — spec 06 §7's
-// prose calls it optional, but the shipped schema (this phase's ground
-// truth) does not, so this type and lifecycleParseVerdicts follow the
+// lifecycleVerdictEntry is one RESOLVED entry of `a2a verify`'s `--verdict`
+// flag and of the `verdicts[]` it authors — schemas/event/v2/
+// event.schema.json's own shape, EITHER `{index, verdict, cause_owner}` (a
+// parent with no declared ids) OR `{criterion, verdict, cause_owner}` (P3: a
+// parent whose acceptance_criteria[] declares ids), never both on one entry.
+// `cause_owner` is required on EVERY entry, including `met` ones ("so the
+// array cannot mix attributed and unattributed judgements", that schema's
+// own description) — spec 06 §7's prose calls it optional, but the shipped
+// schema (this phase's ground truth) does not, so this type follows the
 // schema.
+//
+// Index is a POINTER (the same "distinguish absent from zero" shape this
+// file's own lifecycleEventDoc.Verdicts field doc comment already explains
+// for the identical reason): `omitempty` on a bare `int` would silently
+// drop `index: 0` — the FIRST criterion — while writing every other index
+// correctly, exactly the class of bug a truncated array would hide.
+// resolvedIndex is never nil/empty: lifecycleResolveVerdicts always fills it
+// (from Index directly, or from Criterion's resolved array position) so
+// operation.VerdictEntry and the canonical sort below have one stable
+// identity regardless of which wire form an entry actually carries —
+// internal/operation/key.go keeps reading a plain int and needs no change.
 type lifecycleVerdictEntry struct {
-	Index      int    `yaml:"index"`
-	Verdict    string `yaml:"verdict"`
-	CauseOwner string `yaml:"cause_owner"`
+	Index         *int   `yaml:"index,omitempty"`
+	Criterion     string `yaml:"criterion,omitempty"`
+	Verdict       string `yaml:"verdict"`
+	CauseOwner    string `yaml:"cause_owner"`
+	resolvedIndex int
 }
 
 // lifecycleVerdictEnum is the closed vocabulary schemas/event/v2/
@@ -228,48 +291,34 @@ var lifecycleVerdictEnum = map[string]bool{
 	"met": true, "unmet": true, "not_warranted": true, "not_exercised": true,
 }
 
-// lifecycleParseVerdicts parses each `--verdict <index>:<verdict>:
-// <cause_owner>` entry (repeatable; newStringList — the same DI/flag shape
-// `--ref` uses, cmd_new.go) and returns them CANONICALISED BY INDEX, not by
-// argument order.
-//
-// This is the opposite choice from `--ref`/refs[]: a ref array has no
-// identity field of its own, so its WRITTEN ORDER is the only thing that
-// distinguishes two refs and lifecycleRespondSeed's own doc comment
-// preserves it deliberately. A verdict entry names its own position via
-// `index`, so two invocations naming the SAME judgement set in a different
-// --verdict order describe the IDENTICAL content; sorting by index (not by
-// the order flags were given) is what makes both the written array and
-// operation.Verify's key canonical, so a caller assembling flags from an
-// unordered source (a map range, a generated script) does not mint a second
-// branch for one already-recorded judgement.
-func lifecycleParseVerdicts(raw []string) ([]lifecycleVerdictEntry, error) {
-	out := make([]lifecycleVerdictEntry, 0, len(raw))
-	seenIndex := map[int]bool{}
+// lifecycleVerdictToken is `--verdict <index-or-criterion-id>:<verdict>:
+// <cause_owner>`, parsed but NOT YET resolved against a parent —
+// lifecycleParseVerdicts' own output. Exactly one of IndexToken/
+// CriterionToken is set: a token that parses as a non-negative integer is
+// an index; anything else is a criterion id. Resolution (which needs the
+// parent's own acceptance_criteria[], not yet in hand at parse time) is
+// lifecycleResolveVerdicts' job, below.
+type lifecycleVerdictToken struct {
+	IndexToken     *int
+	CriterionToken string
+	Verdict        string
+	CauseOwner     string
+}
+
+// lifecycleParseVerdicts parses each `--verdict` flag value (repeatable;
+// newStringList — the same DI/flag shape `--ref` uses, cmd_new.go) into
+// unresolved tokens. It validates everything parse alone can check (shape,
+// the verdict enum, cause_owner) but does NOT resolve a criterion id to a
+// position, sort, or dedupe by resolved identity — lifecycleResolveVerdicts
+// does that once the caller has loaded the parent's own acceptance_criteria[]
+// (T1: the same read the pre-mint echo needs).
+func lifecycleParseVerdicts(raw []string) ([]lifecycleVerdictToken, error) {
+	out := make([]lifecycleVerdictToken, 0, len(raw))
 	for _, v := range raw {
 		parts := strings.SplitN(v, ":", 3)
 		if len(parts) != 3 {
-			return nil, fmt.Errorf("--verdict %q: want <index>:<met|unmet|not_warranted|not_exercised>:<cause_owner>", v)
+			return nil, fmt.Errorf("--verdict %q: want <index-or-criterion-id>:<met|unmet|not_warranted|not_exercised>:<cause_owner>", v)
 		}
-		index, err := strconv.Atoi(parts[0])
-		if err != nil || index < 0 {
-			return nil, fmt.Errorf("--verdict %q: index must be a non-negative integer", v)
-		}
-		// One verdict per judged criterion (index) — a duplicate is a caller
-		// error, not a "last one wins" ambiguity, and rejecting it here is
-		// also what keeps this function's own sort-by-index canonicalisation
-		// TOTAL: sort.Slice is not stable, and a comparator that only
-		// compares Index cannot order two entries sharing one index — the
-		// SAME judgement set given via --verdict in two different flag
-		// orders could then sort to two different permutations and mint two
-		// different operation.Verify keys, which is exactly the
-		// nondeterminism this flag exists to prevent (see
-		// lifecycleRespondSeed's own doc comment for the identical class of
-		// trap).
-		if seenIndex[index] {
-			return nil, fmt.Errorf("--verdict %q: index %d already has a verdict — one verdict per judged criterion", v, index)
-		}
-		seenIndex[index] = true
 		verdict := parts[1]
 		if !lifecycleVerdictEnum[verdict] {
 			return nil, fmt.Errorf("--verdict %q: verdict must be one of met|unmet|not_warranted|not_exercised", v)
@@ -278,10 +327,134 @@ func lifecycleParseVerdicts(raw []string) ([]lifecycleVerdictEntry, error) {
 		if causeOwner == "" {
 			return nil, fmt.Errorf("--verdict %q: cause_owner is required (schemas/event/v2/event.schema.json requires it on every entry, including met)", v)
 		}
-		out = append(out, lifecycleVerdictEntry{Index: index, Verdict: verdict, CauseOwner: causeOwner})
+		token := lifecycleVerdictToken{Verdict: verdict, CauseOwner: causeOwner}
+		if index, err := strconv.Atoi(parts[0]); err == nil {
+			if index < 0 {
+				return nil, fmt.Errorf("--verdict %q: index must be a non-negative integer", v)
+			}
+			token.IndexToken = &index
+		} else {
+			if parts[0] == "" {
+				return nil, fmt.Errorf("--verdict %q: criterion id must not be empty", v)
+			}
+			token.CriterionToken = parts[0]
+		}
+		out = append(out, token)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Index < out[j].Index })
 	return out, nil
+}
+
+// lifecycleDeclaredCriterionIDs returns criteria's own `id` values, in
+// array order — used only to NAME what a parent declares in a refusal
+// message (AC4: "naming what the parent DOES declare"), never to resolve
+// anything itself.
+func lifecycleDeclaredCriterionIDs(criteria []lifecycleAcceptanceCriterion) []string {
+	var ids []string
+	for _, c := range criteria {
+		if c.ID != "" {
+			ids = append(ids, c.ID)
+		}
+	}
+	return ids
+}
+
+// lifecycleResolveVerdicts resolves lifecycleParseVerdicts' raw tokens
+// against a specific parent's `acceptance_criteria[]` (criteria may be nil
+// or carry no ids at all — the ordinal-only case every caller before P3
+// already used): a criterion-id token resolves to that criterion's array
+// position; a bare-index token is used directly. Each direction is refused,
+// locally and by name (AC4), when it does not match the parent's own shape:
+// an id token against a parent that declares no ids, an unresolvable id, or
+// a bare-index token against a parent that DOES declare ids — the last
+// refusal is what actually closes the mis-binding fb-20260818-76f29d
+// reported, rather than merely documenting the base.
+//
+// The returned entries are sorted by resolvedIndex — lifecycleParseVerdicts
+// used to sort by Index directly (its own doc comment explains why: the
+// SAME judgement set given via --verdict in a different flag order must
+// mint the identical operation.Verify/Close key); resolvedIndex is what
+// makes that guarantee hold for the id form too, since two entries naming
+// the same criterion by different identities (an id and its own equivalent
+// index) collide here exactly like two entries naming the same bare index
+// always did.
+func lifecycleResolveVerdicts(tokens []lifecycleVerdictToken, criteria []lifecycleAcceptanceCriterion) ([]lifecycleVerdictEntry, error) {
+	idsDeclared := len(lifecycleDeclaredCriterionIDs(criteria)) > 0
+	idPosition := map[string]int{}
+	for i, c := range criteria {
+		if c.ID != "" {
+			idPosition[c.ID] = i
+		}
+	}
+	out := make([]lifecycleVerdictEntry, 0, len(tokens))
+	seen := map[int]bool{}
+	for _, tok := range tokens {
+		entry := lifecycleVerdictEntry{Verdict: tok.Verdict, CauseOwner: tok.CauseOwner}
+		switch {
+		case tok.CriterionToken != "":
+			if !idsDeclared {
+				return nil, fmt.Errorf("--verdict %s: this parent declares no criterion ids; use a 0-based index into its acceptance_criteria[] instead", tok.CriterionToken)
+			}
+			pos, ok := idPosition[tok.CriterionToken]
+			if !ok {
+				return nil, fmt.Errorf("--verdict %s: no such criterion id; this parent declares: %s", tok.CriterionToken, strings.Join(lifecycleDeclaredCriterionIDs(criteria), ", "))
+			}
+			entry.Criterion = tok.CriterionToken
+			entry.resolvedIndex = pos
+		case tok.IndexToken != nil:
+			if idsDeclared {
+				return nil, fmt.Errorf("--verdict %d: this parent declares criterion ids; use one of them instead of a bare index (declares: %s)", *tok.IndexToken, strings.Join(lifecycleDeclaredCriterionIDs(criteria), ", "))
+			}
+			index := *tok.IndexToken
+			entry.Index = &index
+			entry.resolvedIndex = index
+		default:
+			return nil, fmt.Errorf("--verdict: token carries neither an index nor a criterion id")
+		}
+		if seen[entry.resolvedIndex] {
+			return nil, fmt.Errorf("--verdict: two entries resolve to the same criterion (position %d) — one verdict per judged criterion", entry.resolvedIndex)
+		}
+		seen[entry.resolvedIndex] = true
+		out = append(out, entry)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].resolvedIndex < out[j].resolvedIndex })
+	return out, nil
+}
+
+// lifecycleTruncateCriterionText implements AC1's "first 80 characters":
+// []rune-bounded, never a byte slice — a byte-length truncation would split
+// a multi-byte UTF-8 criterion mid-character (P3's own constraint: an
+// ASCII-only fixture would never catch that class of corruption).
+func lifecycleTruncateCriterionText(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
+}
+
+// lifecycleEchoVerdicts implements T1/US-1 (AC1, AC2): prints each resolved
+// verdict's binding — the criterion it judges, truncated to its first 80
+// characters, the verdict, and the cause_owner — BEFORE anything is minted,
+// so the author sees exactly what they are asserting rather than trusting
+// an unseen array's order (the incident fb-20260818-76f29d reported). Runs
+// for BOTH parent shapes (AC2): an ordinal parent prints the bare index
+// (`2 -> "…"`), an id-declaring parent prints the criterion id
+// (`ac3 -> "…"`). criteria may be shorter than a resolved index actually
+// needs (should not happen post-resolution, but this never guesses at
+// missing text — it says so plainly instead, per this file's own "never
+// print a guess" discipline).
+func lifecycleEchoVerdicts(w io.Writer, verdicts []lifecycleVerdictEntry, criteria []lifecycleAcceptanceCriterion) {
+	for _, v := range verdicts {
+		key := v.Criterion
+		if key == "" && v.Index != nil {
+			key = strconv.Itoa(*v.Index)
+		}
+		text := "(criterion text unavailable)"
+		if v.resolvedIndex >= 0 && v.resolvedIndex < len(criteria) {
+			text = lifecycleTruncateCriterionText(criteria[v.resolvedIndex].Text, 80)
+		}
+		_, _ = fmt.Fprintf(w, "  %s -> %q  %s  (%s)\n", key, text, v.Verdict, v.CauseOwner)
+	}
 }
 
 // lifecycleBlockedByReasonEnum is envelope/v2/response.schema.json's own
@@ -361,30 +534,99 @@ func lifecycleParseBlockedBy(raw string) (lifecycleBlockedByEntry, error) {
 	return lifecycleBlockedByEntry{ReasonCode: reasonCode, Owner: owner, Needs: needs}, nil
 }
 
-// lifecycleParseUnmet parses each `--unmet <index>` flag value (repeatable;
-// newStringList — the same DI/flag shape `--ref`/`--verdict` use) into a
-// SORTED, DEDUPED list of indices into the parent's acceptance_criteria[]
-// (envelope/v2/response.schema.json's own `unmet[]`: an array of
-// non-negative integers). Sorted for the same reason lifecycleParseVerdicts
-// sorts by index rather than argument order: two invocations naming the
-// same set of unmet criteria in a different flag order describe the
-// IDENTICAL content, and this function's canonical form is what
-// lifecycleRespondSeed hashes.
-func lifecycleParseUnmet(raw []string) ([]int, error) {
-	seen := map[int]bool{}
-	out := make([]int, 0, len(raw))
+// lifecycleUnmetToken is `--unmet <index-or-criterion-id>`, parsed but not
+// yet resolved — the same token shape lifecycleVerdictToken carries, for
+// the same reason (resolution needs the parent's own acceptance_criteria[],
+// not yet in hand at parse time).
+type lifecycleUnmetToken struct {
+	IndexToken     *int
+	CriterionToken string
+}
+
+// lifecycleParseUnmet parses each `--unmet <index-or-criterion-id>` flag
+// value (repeatable; newStringList — the same DI/flag shape `--ref`/
+// `--verdict` use) into unresolved tokens — a token that parses as a
+// non-negative integer is an index; anything else is a criterion id.
+// lifecycleResolveUnmet (below) resolves, sorts, and dedupes them once the
+// parent is in hand, mirroring lifecycleResolveVerdicts exactly (spec 03
+// T1: "both parsers go through lifecycleParseVerdicts' resolution, not a
+// second reader").
+func lifecycleParseUnmet(raw []string) ([]lifecycleUnmetToken, error) {
+	out := make([]lifecycleUnmetToken, 0, len(raw))
 	for _, v := range raw {
-		index, err := strconv.Atoi(strings.TrimSpace(v))
-		if err != nil || index < 0 {
-			return nil, fmt.Errorf("--unmet %q: must be a non-negative integer", v)
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return nil, fmt.Errorf("--unmet %q: must not be empty", v)
 		}
-		if seen[index] {
-			return nil, fmt.Errorf("--unmet %q: index %d was already given — one entry per unmet criterion", v, index)
+		if index, err := strconv.Atoi(trimmed); err == nil {
+			if index < 0 {
+				return nil, fmt.Errorf("--unmet %q: must be a non-negative integer", v)
+			}
+			out = append(out, lifecycleUnmetToken{IndexToken: &index})
+			continue
 		}
-		seen[index] = true
-		out = append(out, index)
+		out = append(out, lifecycleUnmetToken{CriterionToken: trimmed})
 	}
-	sort.Ints(out)
+	return out, nil
+}
+
+// lifecycleUnmetEntry is one RESOLVED `--unmet` entry — envelope/v2/
+// response.schema.json's own widened `unmet[]` item shape (P3): EITHER a
+// bare non-negative integer (a parent with no declared ids) OR
+// `{criterion: <id>}` (a parent whose acceptance_criteria[] declares ids),
+// resolved the same way lifecycleVerdictEntry is.
+type lifecycleUnmetEntry struct {
+	Index         *int
+	Criterion     string
+	resolvedIndex int
+}
+
+// lifecycleResolveUnmet mirrors lifecycleResolveVerdicts exactly (same
+// resolution rule, same refusal shape, same canonical resolvedIndex sort) —
+// `unmet[]` and `verdicts[]` both index the SAME parent
+// acceptance_criteria[] array (this file's own long-standing comment on
+// `--unmet`'s flag registration), so a criterion id or a bare index must
+// resolve identically for both.
+func lifecycleResolveUnmet(tokens []lifecycleUnmetToken, criteria []lifecycleAcceptanceCriterion) ([]lifecycleUnmetEntry, error) {
+	idsDeclared := len(lifecycleDeclaredCriterionIDs(criteria)) > 0
+	idPosition := map[string]int{}
+	for i, c := range criteria {
+		if c.ID != "" {
+			idPosition[c.ID] = i
+		}
+	}
+	out := make([]lifecycleUnmetEntry, 0, len(tokens))
+	seen := map[int]bool{}
+	for _, tok := range tokens {
+		var entry lifecycleUnmetEntry
+		switch {
+		case tok.CriterionToken != "":
+			if !idsDeclared {
+				return nil, fmt.Errorf("--unmet %s: this parent declares no criterion ids; use a 0-based index into its acceptance_criteria[] instead", tok.CriterionToken)
+			}
+			pos, ok := idPosition[tok.CriterionToken]
+			if !ok {
+				return nil, fmt.Errorf("--unmet %s: no such criterion id; this parent declares: %s", tok.CriterionToken, strings.Join(lifecycleDeclaredCriterionIDs(criteria), ", "))
+			}
+			entry.Criterion = tok.CriterionToken
+			entry.resolvedIndex = pos
+		case tok.IndexToken != nil:
+			if idsDeclared {
+				return nil, fmt.Errorf("--unmet %d: this parent declares criterion ids; use one of them instead of a bare index (declares: %s)", *tok.IndexToken, strings.Join(lifecycleDeclaredCriterionIDs(criteria), ", "))
+			}
+			index := *tok.IndexToken
+			entry.Index = &index
+			entry.resolvedIndex = index
+		default:
+			return nil, fmt.Errorf("--unmet: token carries neither an index nor a criterion id")
+		}
+		if seen[entry.resolvedIndex] {
+			return nil, fmt.Errorf("--unmet: two entries resolve to the same criterion (position %d) — one entry per unmet criterion", entry.resolvedIndex)
+		}
+		seen[entry.resolvedIndex] = true
+		out = append(out, entry)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].resolvedIndex < out[j].resolvedIndex })
 	return out, nil
 }
 
@@ -1106,18 +1348,36 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 	eventSchema := "event/v1"
 	var verdicts []lifecycleVerdictEntry
 	if c.spec.SupportsVerdicts {
-		var verr error
-		verdicts, verr = lifecycleParseVerdicts(verdictFlags)
+		verdictTokens, verr := lifecycleParseVerdicts(verdictFlags)
 		if verr != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "%s: %v\n", c.spec.Verb, verr)
 			return 2
 		}
 		eventSchema = lifecycleEventSchema(c.deps.manifest.MinBinaryVersion)
-		if len(verdicts) > 0 && eventSchema != "event/v2" {
+		if len(verdictTokens) > 0 && eventSchema != "event/v2" {
 			_, _ = fmt.Fprintf(stdio.Stderr,
 				"%s: --verdict requires this space's min_binary_version to be at or above %s (event/v2); this space's floor is %q\n",
 				c.spec.Verb, contract.ContractPublicationFloor, c.deps.manifest.MinBinaryVersion)
 			return 1
+		}
+		// verdicts is resolved ONCE, against ids[0] — close's own ids ARE
+		// the parents directly (no response indirection), and this row
+		// already applies ONE verdict set uniformly to every id's close
+		// event in the batch loop below (verdictsPtr, shared), so
+		// resolving against the first is the same existing assumption made
+		// explicit. T1: echoed BEFORE anything is minted (AC1/AC2).
+		if len(verdictTokens) > 0 {
+			_, firstProbe, rerr := lifecycleLoadEnvelope(c.deps.mirrorDir, ids[0])
+			if rerr != nil {
+				_, _ = fmt.Fprintf(stdio.Stderr, "%s: %s: %v\n", c.spec.Verb, ids[0], rerr)
+				return 1
+			}
+			verdicts, rerr = lifecycleResolveVerdicts(verdictTokens, firstProbe.AcceptanceCriteria)
+			if rerr != nil {
+				_, _ = fmt.Fprintf(stdio.Stderr, "%s: %v\n", c.spec.Verb, rerr)
+				return 2
+			}
+			lifecycleEchoVerdicts(stdio.Stdout, verdicts, firstProbe.AcceptanceCriteria)
 		}
 	}
 	// verdictsPtr: nil (omitted) below the floor or on a row that does not
@@ -1150,7 +1410,7 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 	if len(verdicts) > 0 {
 		opVerdicts := make([]operation.VerdictEntry, len(verdicts))
 		for i, v := range verdicts {
-			opVerdicts[i] = operation.VerdictEntry{Index: v.Index, Verdict: v.Verdict, CauseOwner: v.CauseOwner}
+			opVerdicts[i] = operation.VerdictEntry{Index: v.resolvedIndex, Verdict: v.Verdict, CauseOwner: v.CauseOwner}
 		}
 		operationKey = operation.Close(c.deps.ownSystem, actor.Kind, actor.Name, ids, opVerdicts)
 	}
@@ -1262,7 +1522,7 @@ var _ Command = (*LifecycleCommand)(nil)
 // and every caller today that doesn't use the three new flags) writes
 // exactly the bytes lifecycleRespondSeed always wrote — no existing
 // responseID changes.
-func lifecycleRespondSeed(parentID, result string, respFields map[string]string, bodyOverride []byte, actor fold.Actor, refs []string, unmet []int, standing string, blockedBy *lifecycleBlockedByEntry) []byte {
+func lifecycleRespondSeed(parentID, result string, respFields map[string]string, bodyOverride []byte, actor fold.Actor, refs []string, unmet []lifecycleUnmetEntry, standing string, blockedBy *lifecycleBlockedByEntry) []byte {
 	keys := make([]string, 0, len(respFields))
 	for k := range respFields {
 		keys = append(keys, k)
@@ -1278,8 +1538,18 @@ func lifecycleRespondSeed(parentID, result string, respFields map[string]string,
 	for _, ref := range refs {
 		buf.WriteString("ref=" + ref + "\n")
 	}
-	for _, index := range unmet {
-		buf.WriteString("unmet=" + strconv.Itoa(index) + "\n")
+	// The ordinal branch writes the EXACT byte format every pre-P3 caller
+	// already hashed ("unmet=<n>\n") — an existing --unmet <index> call
+	// must keep minting the same responseID it always did. The criterion
+	// branch ("unmet=<id>\n") is new content no legacy caller could ever
+	// have produced, so it cannot collide with anything already committed.
+	for _, u := range unmet {
+		switch {
+		case u.Criterion != "":
+			buf.WriteString("unmet=" + u.Criterion + "\n")
+		case u.Index != nil:
+			buf.WriteString("unmet=" + strconv.Itoa(*u.Index) + "\n")
+		}
 	}
 	if standing != "" {
 		buf.WriteString("standing=" + standing + "\n")
@@ -1399,10 +1669,29 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			return 2
 		}
 	}
-	unmet, uerr := lifecycleParseUnmet(unmetFlags)
+	unmetTokens, uerr := lifecycleParseUnmet(unmetFlags)
 	if uerr != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "respond: %v\n", uerr)
 		return 2
+	}
+	// unmet id-form resolution (spec 03 T1 item 5): resolved against
+	// parents[0]'s own acceptance_criteria[] — the same "one set applies to
+	// the whole batch" simplification `unmetSeq` below already made before
+	// this phase (one --unmet set, reused identically for every parent in
+	// the loop), extended one step earlier so a criterion id has a parent
+	// to resolve against BEFORE the loop even starts.
+	var unmet []lifecycleUnmetEntry
+	if len(unmetTokens) > 0 {
+		_, firstParentProbe, err := lifecycleLoadEnvelope(c.deps.mirrorDir, parents[0])
+		if err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "respond: %s: %v\n", parents[0], err)
+			return 1
+		}
+		unmet, uerr = lifecycleResolveUnmet(unmetTokens, firstParentProbe.AcceptanceCriteria)
+		if uerr != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "respond: %v\n", uerr)
+			return 2
+		}
 	}
 	if *standing != "" && !lifecycleStandingEnum[*standing] {
 		_, _ = fmt.Fprintln(stdio.Stderr, "respond: --standing must be one of authoritative|provisional|advisory")
@@ -1451,7 +1740,19 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// (which IS in this phase's allowlist) mints a genuinely different
 	// responseID for it. Flagged for the lead rather than silently worked
 	// around; the fix is the same shape refs already got in key.go.
-	respondFacts := operation.RespondIncompleteness{Unmet: unmet, Standing: *standing}
+	// opUnmet: internal/operation/key.go's RespondIncompleteness.Unmet still
+	// reads a plain []int (that file is lead-reserved, off this phase's
+	// allowlist — this file's own pre-P3 comment two lines below already
+	// flags unmet/standing/blocked_by as NOT feeding operation.Respond's key
+	// precisely). resolvedIndex is the one stable identity both wire forms
+	// share, so it is what goes here — unchanged for every pre-P3 caller
+	// (Index IS resolvedIndex for the ordinal form) and the least-wrong
+	// value available for the new id form, given the constraint.
+	opUnmet := make([]int, len(unmet))
+	for i, u := range unmet {
+		opUnmet[i] = u.resolvedIndex
+	}
+	respondFacts := operation.RespondIncompleteness{Unmet: opUnmet, Standing: *standing}
 	if blockedBy != nil {
 		respondFacts.BlockedByReason = blockedBy.ReasonCode
 		respondFacts.BlockedByOwner = blockedBy.Owner
@@ -1672,10 +1973,27 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		// rendered. Written only when the caller actually gave the flag —
 		// an unconditional `unmet: []`/`standing: authoritative` would
 		// declare something nobody asked for.
+		// P3 widening: unmet[] items are HOMOGENEOUS (schemas/envelope/v2/
+		// response.schema.json's own array-level anyOf) — either every entry
+		// carries a bare integer or every entry carries {criterion: <id>},
+		// never mixed. lifecycleResolveUnmet already guarantees this by
+		// construction (every token resolved against the SAME parent's SAME
+		// idsDeclared flag), so which branch fires below is decided once,
+		// from the first entry, not per-entry.
 		if len(unmet) > 0 {
-			unmetSeq := make([]int, len(unmet))
-			copy(unmetSeq, unmet)
-			respDoc["unmet"] = unmetSeq
+			if unmet[0].Criterion != "" {
+				unmetSeq := make([]map[string]string, len(unmet))
+				for i, u := range unmet {
+					unmetSeq[i] = map[string]string{"criterion": u.Criterion}
+				}
+				respDoc["unmet"] = unmetSeq
+			} else {
+				unmetSeq := make([]int, len(unmet))
+				for i, u := range unmet {
+					unmetSeq[i] = *u.Index
+				}
+				respDoc["unmet"] = unmetSeq
+			}
 		}
 		if *standing != "" {
 			respDoc["standing"] = *standing
@@ -1794,7 +2112,7 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a verify <response-id|parent-id...> [--refs <response-id>] [--verdict <index>:<verdict>:<cause_owner>]...")
 		return 2
 	}
-	verdicts, verr := lifecycleParseVerdicts(verdictFlags)
+	verdictTokens, verr := lifecycleParseVerdicts(verdictFlags)
 	if verr != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "verify: %v\n", verr)
 		return 2
@@ -1809,11 +2127,44 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// floor-gated refusal (publication_plan.go's own message) already
 	// follows.
 	eventSchema := lifecycleEventSchema(c.deps.manifest.MinBinaryVersion)
-	if len(verdicts) > 0 && eventSchema != "event/v2" {
+	if len(verdictTokens) > 0 && eventSchema != "event/v2" {
 		_, _ = fmt.Fprintf(stdio.Stderr,
 			"verify: --verdict requires this space's min_binary_version to be at or above %s (event/v2); this space's floor is %q\n",
 			contract.ContractPublicationFloor, c.deps.manifest.MinBinaryVersion)
 		return 1
+	}
+
+	// verdicts is resolved ONCE, against targets[0]'s own parent — the same
+	// "one verdict set, uniform across the whole batch" design this file
+	// already had (verdictsPtr below is reused, byte-identical, for EVERY
+	// target's verify event and D-024 close event in the loop): a batch
+	// verify call already assumed one Index space works for every target,
+	// so resolving against any one of them (the first) is that same
+	// assumption made explicit rather than a new one. T1: printed BEFORE
+	// anything is minted (AC1/AC2), for both parent shapes.
+	var verdicts []lifecycleVerdictEntry
+	if len(verdictTokens) > 0 {
+		firstResponseID, rerr := lifecycleResolveResponseID(c.deps.mirrorDir, c.deps.manifest, targets[0], *refs)
+		if rerr != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "verify: %s: %v\n", targets[0], rerr)
+			return 1
+		}
+		_, firstResponseProbe, rerr := lifecycleLoadEnvelope(c.deps.mirrorDir, firstResponseID)
+		if rerr != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "verify: %s: %v\n", firstResponseID, rerr)
+			return 1
+		}
+		_, firstParentProbe, rerr := lifecycleLoadEnvelope(c.deps.mirrorDir, firstResponseProbe.Parent)
+		if rerr != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "verify: %s: %v\n", firstResponseProbe.Parent, rerr)
+			return 1
+		}
+		verdicts, rerr = lifecycleResolveVerdicts(verdictTokens, firstParentProbe.AcceptanceCriteria)
+		if rerr != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "verify: %v\n", rerr)
+			return 2
+		}
+		lifecycleEchoVerdicts(stdio.Stdout, verdicts, firstParentProbe.AcceptanceCriteria)
 	}
 	// verdictsPtr is nil (omitted) below the floor and non-nil (present, even
 	// when empty) at/above it — schemas/event/v2/event.schema.json's own
@@ -1847,7 +2198,7 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if len(verdicts) > 0 {
 		opVerdicts := make([]operation.VerdictEntry, len(verdicts))
 		for i, v := range verdicts {
-			opVerdicts[i] = operation.VerdictEntry{Index: v.Index, Verdict: v.Verdict, CauseOwner: v.CauseOwner}
+			opVerdicts[i] = operation.VerdictEntry{Index: v.resolvedIndex, Verdict: v.Verdict, CauseOwner: v.CauseOwner}
 		}
 		operationKey = operation.Verify(c.deps.ownSystem, actor.Kind, actor.Name, targets, opVerdicts)
 	}
