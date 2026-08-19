@@ -426,6 +426,16 @@ func (c *checkout) Draft(ctx context.Context, artifactType string, extra ...stri
 			"scope it with liveRunSlug(<base>, h.PRFloor) as every other standing draft in this tier does", artifactType)
 	}
 	args := append([]string{"new", artifactType}, fields...)
+	// A type whose BODY carries a shipped invariant gets one, through the same
+	// public flag an author would use. See draftBody's own comment for why the
+	// matrix cannot submit a template-rendered handoff any more.
+	if body, ok := draftBody(artifactType); ok && !hasBodyFileArg(extra) {
+		path := filepath.Join(c.Dir, ".a2a-matrix-body-"+artifactType+".md")
+		if writeErr := os.WriteFile(path, []byte(body), 0o644); writeErr != nil {
+			return "", nil, fmt.Errorf("livee2e: write matrix body for %s: %w", artifactType, writeErr)
+		}
+		args = append(args, "--body-file", path)
+	}
 	args = append(args, extra...)
 	stdout, stderr, runErr := c.Run(ctx, args...)
 	if runErr != nil {
@@ -455,4 +465,15 @@ func setupCheckout(ctx context.Context, c *checkout, spaceURL string) error {
 		return fmt.Errorf("livee2e: a2a connect (%s): %w: %s", c.System, err, strings.TrimSpace(stderr))
 	}
 	return nil
+}
+
+// hasBodyFileArg reports whether a caller already supplied its own body, so
+// Draft never overrides a path's deliberate choice.
+func hasBodyFileArg(extra []string) bool {
+	for _, a := range extra {
+		if a == "--body-file" {
+			return true
+		}
+	}
+	return false
 }

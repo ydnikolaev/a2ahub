@@ -107,3 +107,54 @@ func hasSlugArg(extra []string) bool {
 	}
 	return false
 }
+
+// draftBody is the live matrix's BODY for artifact types whose body carries a
+// shipped invariant, expressed the same way draftFieldArgs expresses fields:
+// only through the public authoring interface (`a2a new --body-file`).
+//
+// It exists because POL-022 (defects-fix-2026-08 P9) refuses a handoff whose
+// §16.2-required sections carry no content, and the matrix authored handoffs
+// straight from the template — five headings and nothing under them. The rule
+// caught the driver, which is the rule working: a handoff that says nothing is
+// not a handoff, and a conformance path that submits one was proving a
+// narrative no real producer could have written.
+//
+// The text is deliberately short and specific rather than lorem: what a
+// section must NOT be is empty, and a driver padding them with filler would
+// satisfy the letter while teaching the next reader that padding is the answer.
+//
+// An empty return means the type's body carries no invariant and the template
+// stands as rendered.
+func draftBody(artifactType string) (string, bool) {
+	switch artifactType {
+	case "handoff":
+		return strings.Join([]string{
+			"## Context",
+			"",
+			"The live conformance matrix drives this path against the real binary.",
+			"This handoff exists so the path can reach the transitions it declares.",
+			"",
+			"## What was built",
+			"",
+			"The deliverable named in `deliverables[]` above — a matrix artifact,",
+			"referenced by the id the path's own step recorded.",
+			"",
+			"## How to verify",
+			"",
+			"Re-run the suite named in `verification` above; the matrix asserts the",
+			"folded state after each step rather than trusting the command's exit.",
+			"",
+			"## How to operate",
+			"",
+			"Nothing to operate: this artifact is driven by the matrix and is never",
+			"consumed by a running system.",
+			"",
+			"## Limitations & next steps",
+			"",
+			"It carries one deliverable and one criterion, which is the minimum a",
+			"path needs. A real handoff carries what its own work produced.",
+			"",
+		}, "\n"), true
+	}
+	return "", false
+}
