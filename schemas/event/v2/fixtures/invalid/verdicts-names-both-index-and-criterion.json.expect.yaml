@@ -1,0 +1,2 @@
+code: SCH-006
+note: "defects-fix-2026-08 P3: an entry addresses its criterion by ORDINAL or by ID, never both — two addressing modes in one entry have no single referent."

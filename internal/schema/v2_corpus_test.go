@@ -187,6 +187,15 @@ func TestEventV2CorpusFixtures(t *testing.T) {
 	}
 	want := map[string]expectation{
 		"additional-publication-field.json":      {path: "publication.extra", keyword: keywordFalseSchema},
+		// defects-fix-2026-08 P3 widened verdicts[] to an ORDINAL-or-ID item
+		// shape, which necessarily LOOSENED `required` from
+		// [index, verdict, cause_owner] to [verdict, cause_owner]. These two
+		// fixtures are the only thing that proves the anyOf/if-then still
+		// refuses the two shapes that loosening opened: an entry naming BOTH
+		// addressing modes (no single referent) and an entry naming NEITHER
+		// (no referent at all). The epic's own auditor found the widening had
+		// shipped with zero fixture delta.
+		"verdicts-names-both-index-and-criterion.json": {path: "verdicts.0.criterion", keyword: keywordFalseSchema},
 		"malformed-candidate-intent-digest.json": {path: "publication.candidate_intent_digest", keyword: "pattern"},
 		"malformed-digest.json":                  {path: "digest", keyword: "pattern"},
 		"malformed-intent-key.json":              {path: "publication.intent_key", keyword: "pattern"},

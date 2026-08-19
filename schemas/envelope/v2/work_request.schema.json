@@ -87,34 +87,7 @@
     "acceptance_criteria": {
       "type": "array",
       "minItems": 1,
-      "description": "defects-fix-2026-08 P3: this type keeps its own minItems:1 — a work_request without acceptance criteria is not a work_request — but it must NOT re-narrow the item shape. base.schema.json widened items to `string | {id, text}` and this property's own `items: {type: string}` ANDed with it through the allOf $ref, refusing the object form for the ONE v2 type most likely to carry criteria at all. Found by P3's implementer against the real corpus, outside their allowlist. Item shape lives in the base, once.",
-      "anyOf": [
-        {
-          "items": {
-            "type": "string"
-          }
-        },
-        {
-          "items": {
-            "type": "object",
-            "required": [
-              "id",
-              "text"
-            ],
-            "properties": {
-              "id": {
-                "type": "string",
-                "minLength": 1
-              },
-              "text": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "additionalProperties": false
-          }
-        }
-      ]
+      "description": "defects-fix-2026-08 P3: this type keeps its own minItems:1 — a work_request without acceptance criteria is not a work_request — and DEFERS the item shape to base.schema.json through the allOf $ref above, which is the only home for it. It briefly carried a byte-identical copy of the base's anyOf; the epic's own auditor called that out, and it was right: two copies agree today and the base changing would silently re-narrow this type exactly as its original `items: {type: string}` did."
     },
     "proposed_change": {
       "type": "string"

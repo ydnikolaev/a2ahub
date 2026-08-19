@@ -1730,16 +1730,18 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// through `fields`: template.Render's applyFills walks that map and
 	// refuses any key it cannot place (ErrUnappliableField).
 	//
-	// KNOWN GAP (this phase's own deviations report): unmet/standing/
-	// blocked_by do NOT feed operation.Respond's key the way refs does —
-	// internal/operation/key.go is off this phase's allowlist. A retry
-	// differing ONLY in one of the three new flags (same parents/result/
-	// fields/refs/body) mints the SAME operationKey and may be treated as a
-	// repeat of the first call at the funnel's own idempotency layer
-	// (space.WriteStateAlreadyOpen), even though lifecycleRespondSeed below
-	// (which IS in this phase's allowlist) mints a genuinely different
-	// responseID for it. Flagged for the lead rather than silently worked
-	// around; the fix is the same shape refs already got in key.go.
+	// CLOSED by the lead in the SAME commit this gap was reported (see
+	// internal/operation/key.go's own comment for why the signature WIDENED
+	// instead of gaining a second entry point): unmet/standing/blocked_by
+	// now feed the key. A retry differing only in one of them mints a
+	// different operationKey, so a corrected response is no longer treated
+	// as a repeat of the first at the funnel's idempotency layer.
+	//
+	// The comment is corrected rather than deleted: it read as a live gap
+	// for one wave while the code three lines below already closed it, and
+	// the epic's own auditor found the drift — CLI and MCP are independent
+	// readers by ADR-001, and internal/mcp's sibling comment described the
+	// shipped behaviour correctly the whole time.
 	// opUnmet: internal/operation/key.go's RespondIncompleteness.Unmet still
 	// reads a plain []int (that file is lead-reserved, off this phase's
 	// allowlist — this file's own pre-P3 comment two lines below already

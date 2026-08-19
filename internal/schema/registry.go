@@ -2,6 +2,7 @@ package schema
 
 import (
 	"fmt"
+	"sort"
 
 	"gopkg.in/yaml.v3"
 )
@@ -15,6 +16,17 @@ type RegistryEntry struct {
 	Class     string `yaml:"class"`
 	Title     string `yaml:"title"`
 	AppliesTo string `yaml:"applies_to"`
+	// ModeScope is ADR-011 D3's declaration, read by the CI surface rather
+	// than restated there: `v3-pr` means the code refuses at the write gate
+	// and returns NO verdict at the post-merge audit, because a rule that
+	// can only be satisfied by editing an immutable artifact must not judge
+	// immutable history. `both` (or empty) means it judges everywhere.
+	//
+	// It exists so the suppression is DERIVED. cmd_validate_ci.go carried
+	// one hardcoded `SuppressingCode("REF-017")` literal, spec 01's AC5
+	// asked for it to become a declaration, and by the end of this epic
+	// there were THREE such literals — the copy-paste the AC predicted.
+	ModeScope string `yaml:"mode_scope"`
 }
 
 // Registry is the parsed, embedded schemas/errors/v1/registry.yaml.
@@ -67,6 +79,20 @@ func (r *Registry) Codes() []string {
 	for _, e := range r.entries {
 		out = append(out, e.Code)
 	}
+	return out
+}
+
+// CodesScopedToWriteGate returns every code whose declared mode_scope is
+// `v3-pr` — the set a post-merge audit must suppress (ADR-011 D3). Sorted,
+// so a caller's behaviour cannot depend on registry order.
+func (r *Registry) CodesScopedToWriteGate() []string {
+	var out []string
+	for _, e := range r.entries {
+		if e.ModeScope == "v3-pr" {
+			out = append(out, e.Code)
+		}
+	}
+	sort.Strings(out)
 	return out
 }
 

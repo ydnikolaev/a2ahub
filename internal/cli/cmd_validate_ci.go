@@ -35,9 +35,11 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
 	"github.com/ydnikolaev/a2ahub/internal/workcheckpoint"
+	"github.com/ydnikolaev/a2ahub/schemas"
 	"gopkg.in/yaml.v3"
 )
 
@@ -533,20 +535,19 @@ func validateCIArtifact(ctx context.Context, engine *validate.Engine, root, relP
 	// contextual defect behind a verdict this mode no longer stands
 	// behind.
 	if mode == "v3-full-repo" {
-		result = result.SuppressingCode("REF-017")
-		// POL-022 (defects-fix-2026-08 P9), same ADR-011 D3 reasoning as
-		// REF-017 above and the same seat: a merged handoff's BODY is
-		// immutable and no verb rewrites it, so a post-merge audit could
-		// only punish. The four handoffs in the real getvisa space are
-		// exactly that population — every one of them has five empty
-		// §16.2 sections and every one of them is already merged.
-		result = result.SuppressingCode("POL-022")
-		// POL-022 (defects-fix-2026-08 P9), same ADR-011 D3 reasoning as
-		// REF-017 above and the same seat: a merged handoff's BODY is
-		// immutable and no verb rewrites it, so a post-merge audit could
-		// only punish. The four handoffs in the real getvisa space are
-		// exactly that population — every one of them has five empty
-		// §16.2 sections and every one of them is already merged.
+		// ADR-011 D3, DERIVED rather than restated: every code whose
+		// registry row declares `mode_scope: v3-pr` is suppressed here.
+		// A rule that can only be satisfied by editing an immutable
+		// artifact must not judge immutable history, and WHICH codes those
+		// are is a fact the registry already carries.
+		//
+		// This replaced three hardcoded SuppressingCode literals. Spec 01's
+		// AC5 asked for exactly this after the FIRST one; by the end of the
+		// epic there were three, which is the copy-paste that AC predicted
+		// and the whole argument for a declaration over a literal.
+		for _, code := range validateCIWriteGateOnlyCodes() {
+			result = result.SuppressingCode(code)
+		}
 	}
 	result.InvocationPoint = validate.V3
 	// V3 preserves V2's fail-closed order: the existing generic submit policy
@@ -833,7 +834,9 @@ func validateCIEvent(engine *validate.Engine, resolver validate.Resolver, root, 
 		return &validateReport{Path: relPath, Error: err.Error()}, false
 	}
 	if mode == "v3-full-repo" {
-		result = result.SuppressingCode("REF-023")
+		for _, code := range validateCIWriteGateOnlyCodes() {
+			result = result.SuppressingCode(code)
+		}
 	}
 	r := result
 	return &validateReport{Path: relPath, Result: &r}, result.Valid
@@ -1327,4 +1330,26 @@ func (x *xBindingProbe) declaresNoCompatibilityClaim() bool {
 		return false
 	}
 	return x.Sentinel || x.CompatibilityStatus == "none"
+}
+
+// validateCIWriteGateOnlyCodes is ADR-011 D3's declared set, read from the
+// embedded error registry once. A code earns membership by declaring
+// `mode_scope: v3-pr` on its own registry row — never by being named here.
+func registryBytes() []byte {
+	raw, err := schemas.FS.ReadFile("errors/v1/registry.yaml")
+	if err != nil {
+		return nil
+	}
+	return raw
+}
+
+func validateCIWriteGateOnlyCodes() []string {
+	registry, err := schema.LoadRegistry(registryBytes())
+	if err != nil {
+		// Fail CLOSED to suppressing nothing: a registry this binary cannot
+		// read is a build-time defect, and silently widening a post-merge
+		// audit is safer than silently narrowing it.
+		return nil
+	}
+	return registry.CodesScopedToWriteGate()
 }

@@ -38,6 +38,7 @@ func fixValidManifest(t *testing.T, fx *spacefixture.Fixture, system string) {
 
 // reason: mutates process env through the production credential seam.
 func TestProductionDegradedContractSurfaceFailsLegacyWritesClosed(t *testing.T) {
+	// reason: t.Setenv below forbids t.Parallel() (AGENTS.md testing rails).
 	t.Setenv("A2A_TOKEN_FIXTURE_SPACE", "test-token")
 
 	projectRoot := t.TempDir()
@@ -135,6 +136,7 @@ func TestResolvePaths(t *testing.T) {
 
 // reason: mutates process env (t.Setenv) — not run in parallel.
 func TestNewServerFromConfigFullHappyPath(t *testing.T) {
+	// reason: t.Setenv below forbids t.Parallel() (AGENTS.md testing rails).
 	fx := spacefixture.New(t, "axon", "beta")
 	fixValidManifest(t, fx, "beta")
 	t.Setenv("A2A_TOKEN_FIXTURE_SPACE", "test-token")
@@ -180,6 +182,7 @@ func TestNewServerFromConfigFullHappyPath(t *testing.T) {
 // reason: mutates process env indirectly via machine config credential
 // lookup failure path — kept sequential alongside the happy-path test.
 func TestNewServerFromConfigNoConnectedSpaces(t *testing.T) {
+	t.Parallel()
 	projectRoot := t.TempDir()
 	projectConfig := filepath.Join(projectRoot, ".a2a", "config.yaml")
 	machineConfig := filepath.Join(t.TempDir(), "machine-config.yaml")
@@ -290,6 +293,7 @@ func TestNewServerFromConfigNoProjectConfig(t *testing.T) {
 //
 // reason: mutates process env through the production credential seam.
 func TestNewServerFromConfigMultipleSpacesRefusesAmbiguousLegacyWrite(t *testing.T) {
+	// reason: t.Setenv below forbids t.Parallel() (AGENTS.md testing rails).
 	t.Setenv("A2A_TOKEN_SPACE_ONE", "test-token-one")
 	t.Setenv("A2A_TOKEN_SPACE_TWO", "test-token-two")
 
@@ -375,6 +379,7 @@ func TestNewServerFromConfigMultipleSpacesRefusesAmbiguousLegacyWrite(t *testing
 //
 // reason: mutates process env through the production credential seam.
 func TestNewServerFromConfigMultipleSpacesPreCallRefreshesEverySpace(t *testing.T) {
+	// reason: t.Setenv below forbids t.Parallel() (AGENTS.md testing rails).
 	t.Setenv("A2A_TOKEN_SPACE_ONE", "test-token-one")
 	t.Setenv("A2A_TOKEN_SPACE_TWO", "test-token-two")
 
@@ -435,6 +440,7 @@ func TestNewServerFromConfigMultipleSpacesPreCallRefreshesEverySpace(t *testing.
 // A session that can still tell you what your counterparty sent beats a
 // session that will not open.
 func TestNewServerFromConfigUnreachableSpaceStillServesReads(t *testing.T) {
+	// reason: t.Setenv below forbids t.Parallel() (AGENTS.md testing rails).
 	t.Setenv("A2A_TOKEN_FIXTURE_SPACE", "test-token")
 
 	projectRoot := t.TempDir()
