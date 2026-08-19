@@ -7,5 +7,6 @@ contract:dependencies
 contract:metadata
 contract:versions
 contract:adoption
+contract:operational
 contract:snapshot
 contract:technical

@@ -1513,7 +1513,13 @@ test('P12 contract cards preserve exact version packages and honest file bytes',
   //
   // The card articles precede the master list in this file, so the detail
   // markers come first.
-  const contractDetail = ['identity','condition','lead','description','consumers','dependencies','metadata','versions','adoption','snapshot','technical'];
+  // 'operational' entered this order in 2770547b (P8, 2026-08-19): a contract
+  // that promises an interface which does not exist yet now says so on the card,
+  // between adoption and snapshot. The frozen list was not moved with it, so this
+  // assertion has been red on main ever since — invisible because the npm lane is
+  // not inside `make check` and CI has no Node. Moved deliberately, which is the
+  // only way this list is ever allowed to move.
+  const contractDetail = ['identity','condition','lead','description','consumers','dependencies','metadata','versions','adoption','operational','snapshot','technical'];
   const cverDetail = ['identity','condition','lead','publication','description-change','consumers','documents','metadata','history','successor','snapshot','technical'];
   const contractMarkers = factMarkers('contract');
   const cverMarkers = factMarkers('cver');
