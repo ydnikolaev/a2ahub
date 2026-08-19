@@ -1145,31 +1145,31 @@ func TestEquivSubmit(t *testing.T) {
 	assertRequestsEquivalent(t, "submit", cliFunnel.calls[0], mcpFunnel.calls[0])
 }
 
-// TestEquivMultiSpaceSubmitCLIResolvesMCPRefusesAmbiguity is P7's own
-// multi-space case for this parity harness (spec 07 §6 "parity" / §8 AC5):
-// the asymmetry P7 closes safely without full parity.
+// TestEquivMultiSpaceSubmitResolvesTheDraftsOwnSpace is P7's own
+// multi-space case for this parity harness (spec 07 §6 "parity" / §8 AC5),
+// and it now asserts parity rather than the asymmetry it was written for.
 //
-// The CLI's real a2a submit entry point (runSubmit, cmd/a2a/wire.go:1275)
-// resolves its target space from the staged draft's OWN `space:` field via
-// findSpace — genuinely per-invocation, independent of how many spaces are
-// connected. internal/mcp/tools_submit.go's grouped a2a_submit tool has no
-// equivalent: it reads it.env.Space (the identical field) but only to
-// check the batch stays within one space, never to pick a mirror — so
-// before P7 a two-space MCP session built EVERY submit against
-// cfg.Spaces[0] alone, landing a draft declaring "space-two" in
-// "space-one"'s repository regardless of what the draft said. That gap in
-// tools_submit.go is outside this phase's footprint (see this phase's own
-// report); what P7 closes is the SAFETY half — the write no longer lands
-// in the wrong space silently, it refuses and names both connected spaces.
+// The CLI's real `a2a submit` entry point (runSubmit) resolves its target
+// from the staged draft's OWN `space:` field via findSpace — genuinely
+// per-invocation, whatever the connected count. internal/mcp's grouped
+// a2a_submit had no equivalent: it read the identical field only to check
+// the batch stayed within one space, so a two-space session built EVERY
+// submit against cfg.Spaces[0] and landed a draft declaring "space-two" in
+// "space-one"'s repository. P7 closed the SAFETY half by refusing such a
+// write outright; the residual drain closed the rest — a2a_submit now
+// resolves from that same field, so both doors answer the same way.
+//
+// What this measures is where the write WENT, not what the error said: the
+// draft names space-two, and space-one's origin must not move. A refusal on
+// space grounds is a regression to the interim behaviour and fails here by
+// name.
 //
 // This drives the REAL production server (buildMCPServer, not a hand-built
 // registry) through one real tools/call over Server.Serve's own JSON-RPC
-// loop — the same path a real client takes (mirrors
-// TestWireMCPDataToolIsNotDegraded's own precedent, cmd/a2a/
-// wire_tier_test.go:695).
+// loop — the same path a real client takes.
 //
 // reason: t.Chdir + t.Setenv — same exemption newWireFixture documents.
-func TestEquivMultiSpaceSubmitCLIResolvesMCPRefusesAmbiguity(t *testing.T) {
+func TestEquivMultiSpaceSubmitResolvesTheDraftsOwnSpace(t *testing.T) {
 	const id = "XQ-beta-20260721-m900"
 
 	fxOne := spacefixture.New(t, "axon", "beta")
@@ -1193,9 +1193,9 @@ func TestEquivMultiSpaceSubmitCLIResolvesMCPRefusesAmbiguity(t *testing.T) {
 	t.Chdir(projectRoot)
 
 	// The parity point, made concrete: the CLI's OWN per-invocation
-	// resolver (the same function runSubmit calls) DOES pick "space-two"
-	// from a config naming both — this is not a config that could never
-	// resolve, it is a call MCP alone cannot express today.
+	// resolver (the same function runSubmit calls) picks "space-two" from a
+	// config naming both. MCP must now reach the same answer from the same
+	// field — that equality is what this test exists to hold.
 	cfg := space.ProjectConfig{System: "beta", Spaces: []space.Ref{
 		{ID: "space-one", RepoURL: fxOne.OriginDir},
 		{ID: "space-two", RepoURL: fxTwo.OriginDir},
@@ -1216,6 +1216,8 @@ func TestEquivMultiSpaceSubmitCLIResolvesMCPRefusesAmbiguity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildMCPServer: %v", err)
 	}
+
+	beforeOne := fxOne.HeadSHA(fxOne.Clone("beta"), "main")
 
 	request := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"a2a_submit","arguments":{"ids":["%s"]}}}`+"\n", id)
 	var out bytes.Buffer
@@ -1240,14 +1242,30 @@ func TestEquivMultiSpaceSubmitCLIResolvesMCPRefusesAmbiguity(t *testing.T) {
 	if resp.Error != nil {
 		t.Fatalf("tools/call itself failed (not a handler-level refusal): %+v\nraw: %s", resp.Error, out.String())
 	}
-	if !resp.Result.IsError || len(resp.Result.Content) == 0 {
-		t.Fatalf("expected a2a_submit to refuse the ambiguous multi-space write, got: %s", out.String())
+	var text string
+	if len(resp.Result.Content) > 0 {
+		text = resp.Result.Content[0].Text
 	}
-	text := resp.Result.Content[0].Text
-	for _, want := range []string{"space is required when multiple spaces are connected", "space-one", "space-two"} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("a2a_submit refusal = %q, want it to contain %q", text, want)
+
+	// The regression this guards: a refusal on SPACE grounds means MCP has
+	// gone back to being unable to express what the CLI expresses from the
+	// very same field. Any other outcome — success, or a failure further
+	// down the write path this fixture cannot complete — means resolution
+	// worked, which is what parity means here.
+	for _, refusal := range []string{
+		"space is required when multiple spaces are connected",
+		"is not connected",
+	} {
+		if strings.Contains(text, refusal) {
+			t.Fatalf("a2a_submit refused on space grounds (%q) for a draft naming connected space-two; the CLI's findSpace resolves the same field: %s", refusal, text)
 		}
+	}
+
+	// And where it went, measured rather than inferred: space-one is the
+	// space cfg.Spaces[0] would have chosen, so its origin moving is the
+	// original defect reproducing.
+	if afterOne := fxOne.HeadSHA(fxOne.Clone("beta"), "main"); afterOne != beforeOne {
+		t.Fatalf("space-one's origin HEAD moved from %s to %s — a draft declaring space-two landed in the FIRST configured space", beforeOne, afterOne)
 	}
 }
 

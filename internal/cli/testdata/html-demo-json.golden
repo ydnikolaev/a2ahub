@@ -8268,6 +8268,17 @@
           }
         },
         {
+          "id": "RN-02300-32",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "an MCP write in a multi-space session names its own target space",
+          "detail": "Each write tool now resolves which connected space it targets, per call, before it reads any mirror. `a2a_submit` takes it from the draft envelope's own `space:` field. `a2a_lifecycle` and `a2a_exchange` derive it from the artifact ids the call already carries — the connected space whose mirror holds them. `a2a_contract`'s `deprecate`, `retire`, `adopt` and `activate` take the explicit `space` input their `publish`/`preflight`/`materialize`/ `check` siblings already take, because a contract's committed path carries no artifact id and cannot be derived from one.\nNo tool's input schema changed: `a2a_contract` already advertised `space`, and the other three read facts the call was already sending.\nThere is still no default. A call that cannot name or derive its target is refused, naming every connected space, and a batch whose ids span two spaces is refused naming both — one call targets one space. A session connected to a single space behaves exactly as before.\n",
+          "action": {
+            "scope": "local",
+            "why": "If you connect a second space and an MCP write is refused, the message names what it needed. For `a2a_submit` the fix is the draft's `space:` field; for the contract sub-verbs, pass `\"space\"`."
+          }
+        },
+        {
           "id": "KI-01900-PROVIDER-TIER-DEFERRED",
           "kind": "known-issue",
           "impact": "normal",
