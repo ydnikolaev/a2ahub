@@ -15,57 +15,171 @@
 # Every code below is cited by >=1 fixture's <name>.expect.yaml sidecar
 # under schemas/**/fixtures/invalid/ (AC-201.7: no orphans, no undefined
 # citations).
+#
+# defects-fix-2026-08/P1 adds three more per-entry fields, declared HERE
+# rather than beside the Go `Severity:`/mode literals that also carry this
+# information — this file already says, two paragraphs up, that it "is the
+# authored SSOT... the Go mapper... loads/mirrors it, never leads it." A
+# severity or scope that could disagree between two owners is exactly the
+# defect scripts/check-error-codes.sh exists to catch, so ONE of the two
+# copies has to be authoritative; this is that copy, matching the choice
+# already made for {code, class, title, applies_to}.
+#
+#   severity: reject|warning — MUST agree with the `Severity: Severity*`
+#     literal nearest this code's `Code: "..."` in internal/validate/*.go
+#     (non-test), scanned in that order; check-error-codes.sh reds on
+#     disagreement. Every schema-class code (SCH-*) is uniformly `reject`
+#     (internal/validate/schema_class.go:36 hardcodes it for the whole
+#     class — there is no per-code literal to disagree with).
+#   mode_scope: v3-pr|v3-full-repo|both — which of `validate --ci`'s two
+#     invocation modes this code may return a verdict in (ADR-011 D3,
+#     docs/decisions.md). `both` is the default; `v3-pr` and
+#     `v3-full-repo` name a code deliberately restricted to one (REF-017's
+#     write-gate-only scope; REF-020/REF-021's full-repo-only supersession
+#     graph, which a PR's partial event slice cannot evaluate at all).
+#   mode_scope_reason: required on every `severity: reject` code scoped
+#     `both` (T5's third obligation) — ADR-011's own principle is "a rule
+#     that can only be satisfied by editing an immutable artifact must not
+#     judge immutable history," so a reject code running post-merge needs a
+#     stated reason it does NOT retroactively judge content that was valid
+#     when written. Absent is not silently accepted: check-error-codes.sh
+#     names the code and reds. Several rows below deliberately carry
+#     `severity: reject` / `mode_scope: both` with NO reason — codes added
+#     to an already-populated corpus after ADR-011's founding incident
+#     (agent-exchange-2026-08 P5/P6, space-notify-2026-08 P1), where the
+#     retroactive-judgment risk is real and unresolved. That is this
+#     phase's own reported gap, not an oversight to quietly patch here.
 
 entries:
   - code: SCH-001
     class: schema
     title: Required field missing
     applies_to: envelope/v1 (all 8 type schemas), event/v1, manifest/v1, consumes/v1
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      schema-shape checks re-derive from schemas/published-v1.sha256's frozen
+      bytes on every run — the same rule set every existing document was
+      authored against, so a full-repo re-check cannot manufacture a new
+      failure against content that already satisfied it.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: SCH-002
     class: schema
     title: Value not permitted by its field's closed enum
     applies_to: envelope/v1 category enums, event/v1 transition enum
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      schema-shape checks re-derive from schemas/published-v1.sha256's frozen
+      bytes on every run — the same rule set every existing document was
+      authored against, so a full-repo re-check cannot manufacture a new
+      failure against content that already satisfied it.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: SCH-003
     class: schema
     title: Field present that its type's schema forbids
     applies_to: envelope/v1 decision.schema.json (no `category` field per §5.2.1)
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      schema-shape checks re-derive from schemas/published-v1.sha256's frozen
+      bytes on every run — the same rule set every existing document was
+      authored against, so a full-repo re-check cannot manufacture a new
+      failure against content that already satisfied it.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: SCH-004
     class: schema
     title: Exchange type's `to` field does not have exactly one entry
     applies_to: envelope/v1 question/work_request/response/handoff schemas (§3.4.3, X class except decision)
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      schema-shape checks re-derive from schemas/published-v1.sha256's frozen
+      bytes on every run — the same rule set every existing document was
+      authored against, so a full-repo re-check cannot manufacture a new
+      failure against content that already satisfied it.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: SCH-005
     class: schema
     title: Conditionally-required field missing for the declared category
     applies_to: envelope/v1 work_request.schema.json (contract-change/process-change requires proposed_change + a pinned refs entry), announcement.schema.json (deprecation requires deprecates)
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      schema-shape checks re-derive from schemas/published-v1.sha256's frozen
+      bytes on every run — the same rule set every existing document was
+      authored against, so a full-repo re-check cannot manufacture a new
+      failure against content that already satisfied it.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: SCH-006
     class: schema
     title: Value's JSON type does not match the schema's declared type
     applies_to: any schemas/** schema (e.g. consumes/v1 dependencies[].major must be an integer)
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      schema-shape checks re-derive from schemas/published-v1.sha256's frozen
+      bytes on every run — the same rule set every existing document was
+      authored against, so a full-repo re-check cannot manufacture a new
+      failure against content that already satisfied it.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: SCH-007
     class: schema
     title: String value fails its schema pattern (ID grammar, semver, ULID)
     applies_to: envelope/v1 id (§3.3 grammar), event/v1 event (ULID), manifest/v1 min_binary_version (semver)
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      schema-shape checks re-derive from schemas/published-v1.sha256's frozen
+      bytes on every run — the same rule set every existing document was
+      authored against, so a full-repo re-check cannot manufacture a new
+      failure against content that already satisfied it.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: SCH-008
     class: schema
     title: interim_behavior missing while blocking is false
     applies_to: envelope/v1 requirement.schema.json, work_request.schema.json (§5.2 `interim_behavior` row, CC-011)
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      schema-shape checks re-derive from schemas/published-v1.sha256's frozen
+      bytes on every run — the same rule set every existing document was
+      authored against, so a full-repo re-check cannot manufacture a new
+      failure against content that already satisfied it.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: SCH-009
     class: schema
     title: String value is shorter than the schema's minimum length
     applies_to: any schemas/** schema with minLength (including durable actor names)
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      schema-shape checks re-derive from schemas/published-v1.sha256's frozen
+      bytes on every run — the same rule set every existing document was
+      authored against, so a full-repo re-check cannot manufacture a new
+      failure against content that already satisfied it.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: SCH-010
     class: schema
     title: Value is outside its declared numeric or string length bound
     applies_to: any schemas/** schema with minimum, maximum, or maxLength (including announcement/v2 durable work fields)
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      schema-shape checks re-derive from schemas/published-v1.sha256's frozen
+      bytes on every run — the same rule set every existing document was
+      authored against, so a full-repo re-check cannot manufacture a new
+      failure against content that already satisfied it.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: SCH-011
     class: schema
@@ -82,81 +196,178 @@ entries:
   # cited by internal/validate's own test corpus (golden fixtures +
   # dedicated unit tests), not by schemas/**/fixtures/invalid/ sidecars
   # (that corpus is schema-class only, P2-owned).
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      schema-shape checks re-derive from schemas/published-v1.sha256's frozen
+      bytes on every run — the same rule set every existing document was
+      authored against, so a full-repo re-check cannot manufacture a new
+      failure against content that already satisfied it.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: REF-001
     class: referential
     title: Artifact id does not match its filename
     applies_to: internal/artifact.Validate's ErrIDMismatch guard (§3.3, CC-003)
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      artifact id/filename agreement is a structural fact fixed by §3.3's
+      standing grammar at authoring time; a full-repo re-check restates the
+      same comparison the write gate already made (thread-integrity era,
+      predates ADR-011).
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: REF-002
     class: referential
     title: Artifact id's system component does not match its owning section
     applies_to: internal/artifact.Validate's ErrSectionMismatch guard (§3.3/§4.2, CC-003)
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      the id's system component vs owning section is the same structural
+      comparison at write and audit time; nothing about it can change without
+      the file itself changing.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: REF-003
     class: referential
     title: A ref/id does not resolve against the local artifact cache
     applies_to: envelope/v1 refs[].ref (§5.7, §3.8, CC-070)
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      ref resolution against the local artifact cache re-derives from the
+      CURRENT cache on every run; an artifact that resolved at write time
+      keeps resolving unless the referent itself was removed, which is its
+      own defect to catch, not a retroactive rule change.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: REF-004
     class: referential
     title: A pinned ref's digest does not match its resolved target
     applies_to: envelope/v1 refs[].ref pinned with `#digest` (§5.7)
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      a pinned digest either matches its resolved target or it does not — a
+      structural, re-derivable comparison with no rule that could
+      retroactively change its answer.
 
   - code: REF-005
     class: referential
     title: "`from` does not match this system's configured own section"
     applies_to: envelope/v1 `from` (§10.3 authz matrix, CC-002; decision-type exempt per §5.2)
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      `from` vs the owning section is fixed by the artifact's own path and
+      body, unaffected by anything added after it was written.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: REF-006
     class: referential
     title: "`to` includes an unknown system, or a system marked `left`"
     applies_to: envelope/v1 `to` (§10.3, CC-008)
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      `to` naming an unknown or left system is re-evaluated against the
+      CURRENT manifest by design (§10.3) — a full-repo audit surfacing a
+      since-departed recipient is the same evaluation the write gate ran, not
+      a retroactive judgment of history.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: REF-007
     class: referential
     title: A ref is unpinned (neither `@version` nor `#digest`) — drift-prone
     applies_to: envelope/v1 refs[].ref (§3.8) — warning severity, not a reject
+    severity: warning
+    mode_scope: both
 
   - code: REF-008
     class: referential
     title: A digest-pinned ref's target could not be resolved to verify
     applies_to: envelope/v1 refs[].ref pinned with `#digest` but unresolvable (§5.7) — warning, not a reject ("can't verify" ≠ "verified")
+    severity: warning
+    mode_scope: both
 
   - code: REF-009
     class: referential
     title: Artifact thread differs from its resolvable parent's thread
     applies_to: envelope thread+parent linkage — a resolvable parent cannot be silently forked into another conversation
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      thread-vs-parent agreement is a structural fact of the artifact's own
+      frontmatter (thread-integrity, commit dbc0815, predates ADR-011),
+      unaffected by anything added later.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: REF-010
     class: referential
     title: Thread names no known artifact and is not legally minted by the artifact's own system
     applies_to: envelope thread introduction when a ThreadResolver can prove the thread does not yet exist
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      thread legality is evaluated once against the artifact's own claimed
+      origin under a rule (thread-integrity, dbc0815) that predates every
+      artifact currently in a space's history.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: REF-011
     class: referential
     title: A committed artifact's thread or parent linkage changed after merge
     applies_to: V3 base-to-head comparison for immutable thread/parent linkage
+    severity: reject
+    mode_scope: v3-pr
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: REF-012
     class: referential
     title: A superseding artifact sits on a different thread from its predecessor
     applies_to: supersede linkage — warning severity because a later renegotiation may intentionally open a new conversation
+    severity: warning
+    mode_scope: both
 
   - code: REF-013
     class: referential
     title: Space manifest authority map is ambiguous or cannot safely grant write authority
     applies_to: space/v1 participants — unique non-empty systems and top-level sections, active participants with owners, one active system per owner login, and left participants granting no authority
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      manifest authority is re-derived from the CURRENT space.yaml on every
+      run (cmd_validate_ci.go runs ValidateManifestPolicy unconditionally in
+      v3-full-repo, and on space.yaml changes in v3-pr) — the manifest, not
+      immutable history, is what the audit judges.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: REF-014
     class: referential
     title: Declared contract sidecar cannot be resolved as the exact expected regular file
     applies_to: envelope/v2 contract carried-set V2/V3 validation for missing, unsafe-mode, or digest-mismatched descriptor and sidecar bytes
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      the contract sidecar's resolvability is a structural fact of the
+      CURRENT tree (operational-confidence/P5, commit 32a6d05, predates
+      ADR-011) — no retroactive rule change to worry about.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: REF-016
     class: referential
     title: Work subject or waiting system is invalid in checkpoint context
     applies_to: envelope/v2 work checkpoint V2/V3 validation when subject_ref is not the same thread or a resolved referenced artifact/contract, or a system wait target is absent from current and historical manifests
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      work-checkpoint subject/wait validity (operational-confidence/P2,
+      commit 32a6d05, predates ADR-011) is checked against current and
+      historical manifests by design — re-evaluating it in a full-repo audit
+      is the same check the write gate ran.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: REF-017
     class: referential
@@ -172,141 +383,272 @@ entries:
       returns no verdict in the post-merge full-repo audit, because a rule
       satisfiable only by editing an immutable artifact must not judge history
       that cannot be repaired.
+    severity: reject
+    mode_scope: v3-pr
 
   - code: REF-018
     class: referential
     title: An unmet[] index does not resolve to an entry in the parent's acceptance_criteria
     applies_to: envelope/v2 response `unmet[]` validated against the parent's declared acceptance_criteria — an index naming a criterion that does not exist is worse than prose, because it reads as precise (agent-exchange-2026-08/P6, AC1)
+    severity: reject
+    mode_scope: both
 
   - code: REF-019
     class: referential
     title: A verdicts[] index does not resolve to an entry in the parent's acceptance_criteria
     applies_to: event/v2 verify/close `verdicts[].index`, validated against the event's subject's declared acceptance_criteria — REF-018's own rule extended from a response's `unmet[]` to a verifier's `verdicts[]` (agent-exchange-2026-08/P6 wave C, AC7, threat-model.md T5)
+    severity: reject
+    mode_scope: both
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: REF-020
     class: referential
     title: A supersession predecessor is claimed by more than one successor
     applies_to: internal/validate.CheckSupersessionGraph — the full-repo supersede-event graph (§3.8 "supersession chains MUST be linear", CC-024); V3 full-repo scan only, never V3-pr (a PR diff cannot see the whole graph)
+    severity: reject
+    mode_scope: v3-full-repo
 
   - code: REF-021
     class: referential
     title: A supersession chain closes back on itself
     applies_to: internal/validate.CheckSupersessionGraph — the full-repo supersede-event graph, including the degenerate self-supersede 1-node case (§3.8, CC-025); V3 full-repo scan only, never V3-pr
+    severity: reject
+    mode_scope: v3-full-repo
 
   - code: REF-022
     class: referential
     title: A notification route is not well-formed against its own manifest context
     applies_to: space/v1 `notification_routes[]` (space-notify-2026-08 P1), internal/validate.checkNotificationRoutes — `for` names a participant absent from participants[], or two routes share the same (channel, chat, topic, for) tuple; one code, following checkManifestPolicy's own REF-013 grouping precedent, because every branch has the same consequence — the route cannot be trusted to address anyone
+    severity: reject
+    mode_scope: both
 
   - code: LFC-001
     class: lifecycle
     title: Event encodes an illegal transition for the subject's current folded state
     applies_to: lifecycle events checked pre-write via the fold seam (§3.5 rule 2, §7, CC-020)
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      the fold table judges the transition against the subject's own recorded
+      event history, which does not change after the fact.
 
   - code: LFC-002
     class: lifecycle
     title: Event's actor is not authorized for the attempted transition
     applies_to: lifecycle events checked pre-write via the fold seam (§3.5 rule 3, §10.3, §7, CC-021)
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      actor authorization is evaluated against the manifest's authority map
+      at the time of the event; re-checking it later restates the same fact.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: LFC-003
     class: lifecycle
     title: Applicable first-party event is missing its producer evaluation receipt
     applies_to: contextual event validation when produced_by is a2a at or above ClaimReceiptFloor and fold.EvaluateCandidate identifies one scalar receipt scope
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      the producer-receipt requirement (operational-confidence/P1, commit
+      32a6d05, predates ADR-011) is a structural presence check, not a
+      retroactive judgment.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: LFC-004
     class: lifecycle
     title: A terminal transition closes a parent carrying an unmet criterion with no residue
     applies_to: internal/validate.checkResidue — a close/withdraw/cancel over a parent whose response declared unmet criteria, with no residue naming where each went. Absent is a refusal rather than a default, because both anchor work_requests were closed weeks early with open items in the closing notes, and a week later those items were on no surface (agent-exchange-2026-08/P6, AC8)
+    severity: reject
+    mode_scope: both
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: POL-001
     class: policy
     title: Content matches a forbidden secret/credential pattern
     applies_to: full raw artifact content, envelope + body (§10.4, §13.4, CC-010) — G5 override is flagged only, never granted by this engine. Also scans a space's raw space.yaml bytes end to end (internal/validate.scanForSecrets, called from both ValidateManifest and ValidateManifestPolicy), reused rather than duplicated for the notification_routes rule that a manifest carries no Telegram bot-token shape anywhere — not in a route, not in a comment, not in a stray key (space-notify-2026-08 P1 rule 4)
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      a secret-shaped literal is a fact of the bytes; if the write gate would
+      have refused it, it never should have merged, and the audit exists to
+      catch the case where it did.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: POL-002
     class: policy
     title: Artifact frontmatter is missing or is not valid YAML
     applies_to: any artifact's `---`-delimited frontmatter block (§5.1, D-009, CC-001)
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      frontmatter YAML-validity is structural; nothing added to the corpus
+      later can make already-valid YAML invalid.
 
   - code: POL-003
     class: policy
     title: Artifact exceeds the configured size limit
     applies_to: any artifact's raw bytes (bounded-read guard, CC-006)
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      the size bound is a fixed constant, not a rule that tightens
+      retroactively against existing content.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: POL-004
     class: policy
     title: Artifact is not valid UTF-8
     applies_to: any artifact's raw bytes (CC-007)
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      UTF-8 validity is a byte-level fact, unaffected by anything added after
+      the file was written.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: POL-005
     class: policy
     title: Envelope schema version is outside the one-cycle overlap window this binary understands
     applies_to: envelope/v1 `schema` field (§5.4 last bullet, CC-005) — refuse write, read-only + warning
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      the one-cycle overlap window is evaluated against the CURRENT binary's
+      understood range by design (§5.4 last bullet) — an audit catching a
+      schema version that has since aged out of the window is the intended
+      behaviour, not a retroactive judgment of history.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: POL-006
     class: policy
     title: Retire refused, a registered consumer has not acknowledged the deprecation
     applies_to: internal/validate.CheckRetirePrecondition (§5.4/D-022, CC-081/CC-082/CC-086) — `a2a contract retire`, refused locally unless the human-gated override's full precondition set is met
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      retire-precondition is evaluated at the moment of the retire event
+      itself, never re-judged against a later state.
 
   - code: POL-007
     class: policy
     title: Declared version bump contradicts computed schema compatibility
     applies_to: internal/validate.CheckComputedCompatibility (§5.4b, D-010, CC-080) — a declared minor/patch whose new schema rejects a fixture valid under the prior version
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      computed compatibility compares two already-committed fixture sets; the
+      comparison does not change after the fact.
 
   - code: POL-008
     class: policy
     title: Computed compatibility could not be evaluated against the prior version's baseline
     applies_to: internal/validate.CheckComputedCompatibility (§5.4b, D-010) — an unparseable prior fixture, an uncompilable schema, or an ambiguous fixture->schema mapping; fail-closed per D-B. Deliberately carries NO CC-### — CC-080 is "a breaking change published as a minor", which is POL-007's case; "the baseline is unusable" has no corner case of its own, and the emitting code leaves CCRef empty to say so
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      an unusable baseline is a structural fact of the committed fixture, not
+      a rule that could retroactively change.
 
   - code: POL-009
     class: policy
     title: Contract publishes no schema, valid fixtures, or invalid fixtures
     applies_to: internal/validate.CheckContractPublishable (§5.3/§5.4b, D-010) — read by `a2a contract publish`, `a2a_contract publish`, and `validate --ci`. Every format must carry the plan's executable positive and negative examples; only deep fixture validation is format-specific, with §5.4b handing non-JSON-Schema semantics to the owner's own CI
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      contract publishability is evaluated against the descriptor's own
+      declared schema/fixtures, fixed at publish time.
 
   - code: POL-010
     class: policy
     title: Frontmatter value is still the template's own unfilled placeholder
     applies_to: internal/validate.checkUnfilledPlaceholders — V2 (`a2a submit` / `validate --ci`) ONLY, never V1 (`a2a new`/`a2a validate`). Not because V1 is silent on a placeholder — for the six types whose enum field still carries an unreplaced `<a|b|c>` token, V1 already refuses it as SCH-002, the ordinary JSON-Schema enum keyword — but because POL-010 is a submit-time policy about an UNFILLED PLACEHOLDER GENERALLY, including a prose one V1's schema cannot judge at all, such as `expected_response.shape` holding `<what a good answer looks like>` — a schema-valid string with no enum to violate. Fires when a frontmatter scalar, anywhere in the tree (including nested inside a mapping like `expected_response.shape`, or inside a sequence element like `refs[].ref`), matches `^<.*>$` verbatim — the template's own placeholder grammar, anchored at both ends and nothing more. An earlier narrower form additionally banned inner angle brackets and therefore missed every template's own `title` placeholder — the literal `<human/agent-scannable title, <=120 chars>` all eight templates carry, whose inner `<` comes from "<=120" — and any two-span value such as a `refs[].ref` holding `<id>#<digest>`; internal/validate's corpus test now pins the reported path set per type so that gap cannot reopen. The body is never in scope (free prose legitimately carries angle brackets). Accepted cost — a value that is GENUINELY, deliberately exactly `<foo>` is refused too and must be rephrased — this rule cannot distinguish "still a placeholder" from "a real value that happens to look like one". The message names both remedies, because an OPTIONAL field carrying a placeholder remains schema-valid (`needed_by`, `valid_until`, `env_requirements` — internal/schema does not assert `format`); deletion is correct only when that field is genuinely unused. The send loop separately requires an autonomous +1/+2-day `needed_by` on every response-bearing cross-system ask. For a path through a sequence index `--field` cannot reach it at all, so that case names the file edit instead
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      an unfilled template placeholder is a literal string fact in the
+      frontmatter, unaffected by anything added later.
 
   - code: POL-012
     class: policy
     title: Required first-party producer stamp is absent or invalid
     applies_to: committed event validation after the authoritative space floor activates ProducerStampFloor, plus malformed a2a produced_by.version claims
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      the producer-stamp requirement (operational-confidence/P1, commit
+      32a6d05, predates ADR-011) is a structural presence/shape check of the
+      event's own fields.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: POL-013
     class: policy
     title: Declared contract carried set is invalid
     applies_to: envelope/v2 contract carried-set V2/V3 validation for profile, role, path, media, bounds, exactness and authoritative-floor failures
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      the carried-set rules (operational-confidence/P5, commit 32a6d05,
+      predates ADR-011) check the descriptor's own declared artifacts, fixed
+      at publish time.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: POL-014
     class: policy
     title: Declared conformance suite contradicts itself
     applies_to: internal/validate.ValidateContractConformance for suite-inconsistent JSON Schema valid/invalid fixture outcomes; payload nonconformance and unsupported formats remain operation results
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      conformance-suite self-contradiction is evaluated against the
+      contract's own committed fixtures, fixed at publish time.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: POL-015
     class: policy
     title: Work checkpoint semantics are invalid
     applies_to: envelope/v2 work checkpoint V2/V3 validation for status/attention isolation, UTC validity bounds, immutable owner/sequence context, first-party session, and classification no-downgrade
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      work-checkpoint semantics (operational-confidence/P2, commit 32a6d05,
+      predates ADR-011) are structural facts of the checkpoint event's own
+      fields.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: POL-016
     class: policy
     title: First-party actor model or session is unsafe or invalid
     applies_to: a2a events at or above ClaimReceiptFloor; model is 1–96 Unicode scalars and session must be a bounded non-secret identifier
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      actor model/session validity is a structural fact of the event's own
+      fields, fixed at the time it was produced.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: POL-017
     class: policy
     title: Body enumerates what looks like a file tree while no attachment is declared
     applies_to: a heuristic WARNING, never a refusal — only checkable facts refuse, and "this looks like a file tree" is not one (agent-exchange-2026-08/P4, AC7)
+    severity: warning
+    mode_scope: both
 
   - code: POL-018
     class: policy
     title: Body hand-rolls a `key = value` block naming a field declared on this envelope's own type
     applies_to: internal/validate.checkDeclarationBlock — reject. The forbidden key set is DERIVED per call from schema.EnvelopeFieldPaths(version, typ), never a hardcoded list, so a field added tomorrow is policed the day it ships (agent-exchange-2026-08/P5, AC3/US-4)
+    severity: reject
+    mode_scope: both
 
   - code: POL-019
     class: policy
     title: The recipient's declared capabilities exclude a delivery mode this submission requires
     applies_to: internal/validate.CheckCapabilityMismatch — reject. Fires only when the recipient's manifest/v1 participants[].capabilities.delivery is DECLARED and does not contain the required mode; a declared set is a checkable fact, which is what separates this from POL-020 (agent-exchange-2026-08/P5, AC5/US-3)
+    severity: reject
+    mode_scope: both
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
 
   - code: POL-020
     class: policy
@@ -316,6 +658,8 @@ entries:
       POL-017's own rule that only checkable facts refuse. Silence is a live
       state, and must read as neither "can receive anything" nor "can receive
       nothing" (agent-exchange-2026-08/P5, AC5/US-3)
+    severity: warning
+    mode_scope: both
 
   - code: POL-021
     class: policy
@@ -333,3 +677,5 @@ entries:
       checks have no referent — a route can be malformed this way against an
       empty manifest — whereas REF-022 means the route IS well-formed but
       fails to resolve against the manifest's own context
+    severity: reject
+    mode_scope: both
