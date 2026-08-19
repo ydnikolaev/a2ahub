@@ -84,6 +84,24 @@ func TestProductionDegradedContractSurfaceFailsLegacyWritesClosed(t *testing.T) 
 	}
 }
 
+// commitArtifactFile commits and pushes a placeholder file named
+// "<id>.md" onto system's fixture clone — the on-disk shape
+// mirrorHoldsArtifact's walk (and so SpaceOfArtifacts) looks for.
+func commitArtifactFile(t *testing.T, fx *spacefixture.Fixture, system, id string) {
+	t.Helper()
+	dir := fx.Clone(system)
+	rel := filepath.Join(system, "exchanges", id+".md")
+	if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, rel)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, rel), []byte("placeholder\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitTest(t, dir, "add", rel)
+	runGitTest(t, dir, "-c", "user.name=fixture", "-c", "user.email=fixture@a2ahub.invalid", "commit", "-m", "add artifact "+id)
+	runGitTest(t, dir, "push", "origin", "HEAD:main")
+}
+
 func runGitTest(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", gitfixture.Args(args...)...)
@@ -482,6 +500,245 @@ func TestNewServerFromConfigUnreachableSpaceStillServesReads(t *testing.T) {
 		if writeTools[n] {
 			t.Errorf("write tool %q was registered over an unreachable space — a write that cannot "+
 				"reach the space would fail deep inside the funnel instead of not being offered", n)
+		}
+	}
+}
+
+// --- buildWriteDeps: per-space builder + the resolution seam -------------
+
+// reason: mutates process env through the production credential seam.
+func TestBuildWriteDepsTwoSpacesYieldDistinctMirrorDirsAndResolveSpace(t *testing.T) {
+	// reason: t.Setenv below forbids t.Parallel() (AGENTS.md testing rails).
+	t.Setenv("A2A_TOKEN_SPACE_ONE", "test-token-one")
+	t.Setenv("A2A_TOKEN_SPACE_TWO", "test-token-two")
+
+	fxOne := spacefixture.New(t, "beta")
+	fixValidManifest(t, fxOne, "beta")
+	fxTwo := spacefixture.New(t, "beta")
+	fixValidManifest(t, fxTwo, "beta")
+
+	cfg := space.ProjectConfig{System: "beta", Spaces: []space.Ref{
+		{ID: "space-one", RepoURL: fxOne.RemoteURL()},
+		{ID: "space-two", RepoURL: fxTwo.RemoteURL()},
+	}}
+	machine := space.MachineConfig{Credentials: map[string]string{
+		"space-one": "env:A2A_TOKEN_SPACE_ONE", "space-two": "env:A2A_TOKEN_SPACE_TWO",
+	}}
+	projectRoot := t.TempDir()
+	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
+
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test")
+	if err != nil {
+		t.Fatalf("buildWriteDeps: %v", err)
+	}
+	if write.SpaceID != "space-one" || write.MirrorDir == "" {
+		t.Fatalf("Spaces[0] set = %+v, want space-one with a non-empty MirrorDir", write)
+	}
+	if write.ResolveSpace == nil || write.SpaceOfArtifacts == nil {
+		t.Fatal("a two-space session must install both ResolveSpace and SpaceOfArtifacts")
+	}
+
+	other, err := write.ResolveSpace("space-two")
+	if err != nil {
+		t.Fatalf("ResolveSpace(space-two): %v", err)
+	}
+	if other.SpaceID != "space-two" {
+		t.Fatalf("ResolveSpace(space-two).SpaceID = %q, want space-two", other.SpaceID)
+	}
+	if other.MirrorDir == write.MirrorDir {
+		t.Fatalf("space-one and space-two share MirrorDir %q — each connected space must build its own mirror", write.MirrorDir)
+	}
+
+	if _, err := write.ResolveSpace("space-three"); err == nil {
+		t.Fatal("expected an error resolving an unconnected space id")
+	} else if !strings.Contains(err.Error(), "space-three") {
+		t.Fatalf("unconnected-space error = %v, want it to name %q", err, "space-three")
+	}
+}
+
+// TestBuildWriteDepsFailingSpaceSurfacesErrorOnlyWhenResolved is the P7
+// per-space-error contract: a space that fails to build must not cost the
+// session anything else — the failure is stored and returned only when
+// THAT space is the one a call targets, never at server start, never for a
+// different (working) space.
+//
+// reason: mutates process env through the production credential seam.
+func TestBuildWriteDepsFailingSpaceSurfacesErrorOnlyWhenResolved(t *testing.T) {
+	// reason: t.Setenv below forbids t.Parallel() (AGENTS.md testing rails).
+	t.Setenv("A2A_TOKEN_SPACE_ONE", "test-token-one")
+	t.Setenv("A2A_TOKEN_SPACE_TWO", "test-token-two")
+
+	fxOne := spacefixture.New(t, "beta")
+	fixValidManifest(t, fxOne, "beta")
+	unreachable := filepath.Join(t.TempDir(), "no-such-origin.git")
+
+	cfg := space.ProjectConfig{System: "beta", Spaces: []space.Ref{
+		{ID: "space-one", RepoURL: fxOne.RemoteURL()},
+		{ID: "space-two", RepoURL: unreachable},
+	}}
+	machine := space.MachineConfig{Credentials: map[string]string{
+		"space-one": "env:A2A_TOKEN_SPACE_ONE", "space-two": "env:A2A_TOKEN_SPACE_TWO",
+	}}
+	projectRoot := t.TempDir()
+	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
+
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test")
+	if err != nil {
+		t.Fatalf("Spaces[0] (space-one) is reachable — buildWriteDeps must not fail: %v", err)
+	}
+
+	sameSpace, err := write.ResolveSpace("space-one")
+	if err != nil {
+		t.Fatalf("resolving the already-built Spaces[0] must not fail: %v", err)
+	}
+	if sameSpace.MirrorDir != write.MirrorDir {
+		t.Fatalf("ResolveSpace(space-one).MirrorDir = %q, want %q", sameSpace.MirrorDir, write.MirrorDir)
+	}
+
+	if _, err := write.ResolveSpace("space-two"); err == nil {
+		t.Fatal("expected space-two's build failure to surface when space-two is targeted")
+	}
+}
+
+// TestBuildWriteDepsResolveSpaceIsNotAliasedByTheAmbiguousFunnelInstall pins
+// the aliasing hazard wire.go:249 creates: newServerFromConfig mutates the
+// RETURNED write's Funnel field to ambiguousSpaceFunnel AFTER buildWriteDeps
+// returns. If bySpace stored pointers instead of values, that mutation
+// would leak into every space's own resolved dep set, and a wave-2 handler
+// resolving ANY space would get a funnel that refuses everything instead of
+// the real one — permanently, for the life of the session.
+func TestBuildWriteDepsResolveSpaceIsNotAliasedByTheAmbiguousFunnelInstall(t *testing.T) {
+	// reason: t.Setenv below forbids t.Parallel() (AGENTS.md testing rails).
+	t.Setenv("A2A_TOKEN_SPACE_ONE", "test-token-one")
+	t.Setenv("A2A_TOKEN_SPACE_TWO", "test-token-two")
+
+	fxOne := spacefixture.New(t, "beta")
+	fixValidManifest(t, fxOne, "beta")
+	fxTwo := spacefixture.New(t, "beta")
+	fixValidManifest(t, fxTwo, "beta")
+
+	cfg := space.ProjectConfig{System: "beta", Spaces: []space.Ref{
+		{ID: "space-one", RepoURL: fxOne.RemoteURL()},
+		{ID: "space-two", RepoURL: fxTwo.RemoteURL()},
+	}}
+	machine := space.MachineConfig{Credentials: map[string]string{
+		"space-one": "env:A2A_TOKEN_SPACE_ONE", "space-two": "env:A2A_TOKEN_SPACE_TWO",
+	}}
+	projectRoot := t.TempDir()
+	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
+
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test")
+	if err != nil {
+		t.Fatalf("buildWriteDeps: %v", err)
+	}
+	if _, ok := write.Funnel.(ambiguousSpaceFunnel); ok {
+		t.Fatal("buildWriteDeps must never install the ambiguous funnel itself")
+	}
+
+	// Mirrors wire.go:249's own install, exactly.
+	write.Funnel = ambiguousSpaceFunnel{connected: spaceIDs(cfg.Spaces)}
+
+	resolvedOne, err := write.ResolveSpace("space-one")
+	if err != nil {
+		t.Fatalf("ResolveSpace(space-one): %v", err)
+	}
+	if _, ok := resolvedOne.Funnel.(ambiguousSpaceFunnel); ok {
+		t.Fatal("ResolveSpace(space-one)'s Funnel is the ambiguous refusal — the wire.go:249 " +
+			"mutation leaked into the resolved dependency set through a shared/aliased build")
+	}
+
+	resolvedTwo, err := write.ResolveSpace("space-two")
+	if err != nil {
+		t.Fatalf("ResolveSpace(space-two): %v", err)
+	}
+	if _, ok := resolvedTwo.Funnel.(ambiguousSpaceFunnel); ok {
+		t.Fatal("ResolveSpace(space-two)'s Funnel is the ambiguous refusal — the wire.go:249 " +
+			"mutation leaked into the resolved dependency set through a shared/aliased build")
+	}
+}
+
+// reason: mutates process env through the production credential seam.
+func TestBuildWriteDepsSpaceOfArtifactsRefusesSplitBatch(t *testing.T) {
+	// reason: t.Setenv below forbids t.Parallel() (AGENTS.md testing rails).
+	t.Setenv("A2A_TOKEN_SPACE_ONE", "test-token-one")
+	t.Setenv("A2A_TOKEN_SPACE_TWO", "test-token-two")
+
+	fxOne := spacefixture.New(t, "beta")
+	fixValidManifest(t, fxOne, "beta")
+	fxTwo := spacefixture.New(t, "beta")
+	fixValidManifest(t, fxTwo, "beta")
+	commitArtifactFile(t, fxOne, "beta", "XQ-beta-20260817-aaaa")
+	commitArtifactFile(t, fxTwo, "beta", "XQ-beta-20260817-bbbb")
+
+	cfg := space.ProjectConfig{System: "beta", Spaces: []space.Ref{
+		{ID: "space-one", RepoURL: fxOne.RemoteURL()},
+		{ID: "space-two", RepoURL: fxTwo.RemoteURL()},
+	}}
+	machine := space.MachineConfig{Credentials: map[string]string{
+		"space-one": "env:A2A_TOKEN_SPACE_ONE", "space-two": "env:A2A_TOKEN_SPACE_TWO",
+	}}
+	projectRoot := t.TempDir()
+	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
+
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test")
+	if err != nil {
+		t.Fatalf("buildWriteDeps: %v", err)
+	}
+
+	_, err = write.SpaceOfArtifacts([]string{"XQ-beta-20260817-aaaa", "XQ-beta-20260817-bbbb"})
+	if err == nil {
+		t.Fatal("expected a split-batch refusal")
+	}
+	for _, want := range []string{"space-one", "space-two"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("split-batch error = %v, want it to name %q", err, want)
+		}
+	}
+
+	// A single-space id still resolves cleanly — the guard is about a
+	// batch spanning spaces, not about deriving a space at all.
+	only, err := write.SpaceOfArtifacts([]string{"XQ-beta-20260817-bbbb"})
+	if err != nil {
+		t.Fatalf("SpaceOfArtifacts(single id): %v", err)
+	}
+	if only != "space-two" {
+		t.Fatalf("SpaceOfArtifacts(single id) = %q, want space-two", only)
+	}
+}
+
+// reason: mutates process env through the production credential seam.
+func TestBuildWriteDepsSpaceOfArtifactsRefusesUnknownID(t *testing.T) {
+	// reason: t.Setenv below forbids t.Parallel() (AGENTS.md testing rails).
+	t.Setenv("A2A_TOKEN_SPACE_ONE", "test-token-one")
+	t.Setenv("A2A_TOKEN_SPACE_TWO", "test-token-two")
+
+	fxOne := spacefixture.New(t, "beta")
+	fixValidManifest(t, fxOne, "beta")
+	fxTwo := spacefixture.New(t, "beta")
+	fixValidManifest(t, fxTwo, "beta")
+
+	cfg := space.ProjectConfig{System: "beta", Spaces: []space.Ref{
+		{ID: "space-one", RepoURL: fxOne.RemoteURL()},
+		{ID: "space-two", RepoURL: fxTwo.RemoteURL()},
+	}}
+	machine := space.MachineConfig{Credentials: map[string]string{
+		"space-one": "env:A2A_TOKEN_SPACE_ONE", "space-two": "env:A2A_TOKEN_SPACE_TWO",
+	}}
+	projectRoot := t.TempDir()
+	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
+
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test")
+	if err != nil {
+		t.Fatalf("buildWriteDeps: %v", err)
+	}
+
+	_, err = write.SpaceOfArtifacts([]string{"XQ-beta-20260817-zzzz"})
+	if err == nil {
+		t.Fatal("expected a refusal for an id no connected mirror holds")
+	}
+	for _, want := range []string{"space-one", "space-two"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("unknown-id error = %v, want it to name %q", err, want)
 		}
 	}
 }

@@ -387,6 +387,71 @@ type WriteDeps struct {
 	Now      func() time.Time
 	Entropy  io.Reader
 	ReadFile func(path string) ([]byte, error)
+
+	// ResolveSpace binds this dependency set to one connected space by id.
+	// nil in a single-space session, where every write already has exactly
+	// one possible target and the eager fields above are the answer — the
+	// same shape as WorkToolDeps.ResolveSpace (tools_work.go), and it
+	// relaxes the eager fields' NewWorkTool-style validation the same way.
+	//
+	// SubmitDeps embeds WriteDeps, so this field is promoted onto SubmitDeps
+	// too — but calling the PROMOTED closure there is a trap: it returns a
+	// WriteDeps with the resolved space's MirrorDir, while SubmitDeps.Legality
+	// (mirror-bound, built per-space in wire.go's buildWriteDeps) stays
+	// whatever space SubmitDeps was originally built against. A submit
+	// handler that resolves via the promoted field gets a legality fold
+	// judged against the WRONG space's committed history while the write
+	// lands in the resolved one — exactly the defect this seam exists to
+	// close, one field over. SubmitDeps needs its own
+	// `ResolveSpace func(spaceID string) (SubmitDeps, error)` field (added by
+	// the tools_submit.go owner) before any submit handler resolves per call.
+	ResolveSpace func(spaceID string) (WriteDeps, error)
+
+	// SpaceOfArtifacts names the connected space whose mirror holds every
+	// one of ids — the id most write tools already carry, used to DERIVE a
+	// target when the call names no explicit space. nil in a single-space
+	// session. Refuses (naming the connected spaces) when any id resolves to
+	// no connected mirror, or when two ids resolve to different spaces.
+	//
+	// A contract id (XC-<slug>) never matches here by design: a contract
+	// lives at <slug>/provides/<name>/contract.md
+	// (space.Layout.ProvidesContract), not at "<id>.md" — the a2a_contract
+	// family passes its own explicit "space" input instead of deriving from
+	// ids, so this refusing on a contract id is the intended outcome, not a
+	// gap.
+	SpaceOfArtifacts func(ids []string) (string, error)
+}
+
+// resolveWriteSpace binds deps to the space this call targets. spaceID is
+// the caller's explicit choice (the a2a_contract family's own "space" input,
+// already declared on that tool's schema); ids are the artifacts the call
+// acts on, from which the target is DERIVED when no explicit id is given.
+// A single-space session returns deps unchanged — byte-identical to today,
+// since deps.ResolveSpace is nil there and nothing below runs.
+//
+// The no-id/no-space case routes to deps.ResolveSpace(""): the production
+// closure (wire.go's buildWriteDeps) is the only place that knows the
+// connected-space list, so an empty spaceID there produces the same "space
+// is required when multiple spaces are connected" refusal, naming every
+// connected space, that WorkToolDeps.ResolveSpace's own id=="" branch
+// already returns (cmd/a2a/work_wiring.go) — this file never falls back to
+// Spaces[0] itself; a silent default there is precisely the defect this
+// closes, one layer up.
+func resolveWriteSpace(deps WriteDeps, spaceID string, ids []string) (WriteDeps, error) {
+	if deps.ResolveSpace == nil {
+		return deps, nil
+	}
+	if spaceID != "" {
+		return deps.ResolveSpace(spaceID)
+	}
+	if len(ids) > 0 {
+		name, err := deps.SpaceOfArtifacts(ids)
+		if err != nil {
+			return WriteDeps{}, err
+		}
+		return deps.ResolveSpace(name)
+	}
+	return deps.ResolveSpace("")
 }
 
 // buildRequest assembles a space.SubmitRequest for a batch of ids +

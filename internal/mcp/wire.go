@@ -236,15 +236,17 @@ func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, bui
 	// (WorkToolDeps.ResolveSpace), a2a_data, and a2a_contract's P6 sub-verbs
 	// (preflight/publish/materialize/check/diff/verify), which already
 	// resolve their own target per call via cmd/a2a's own per-space maps.
-	// buildWriteDeps above still resolves against cfg.Spaces[0] alone (its
-	// local reads — MirrorDir, Manifest, min_binary_version — need SOME
-	// concrete mirror on disk), but every one of those write paths funnels
+	// buildWriteDeps below now builds a set for EVERY connected space and
+	// hands the returned one ResolveSpace/SpaceOfArtifacts closures over the
+	// rest — but no handler consumes them yet, so this blanket refusal is
+	// still what a multi-space session gets. Every legacy write path funnels
 	// through WriteDeps.submit's single Funnel.Submit call
-	// (internal/mcp/eventdoc.go) before anything reaches the space's repo.
-	// Wrapping that ONE seam with a refusal is enough to close the defect
-	// for every legacy write tool without touching their handlers, and
-	// without a silent default to Spaces[0] recreating it one layer up
-	// (US-2). A single connected space is untouched below.
+	// (internal/mcp/eventdoc.go) before anything reaches the space's repo,
+	// so wrapping that ONE seam closes the defect for all of them without
+	// touching their handlers, and without a silent default to Spaces[0]
+	// recreating it one layer up (US-2). A single connected space is
+	// untouched below. This install is RETIRED, per tool, as each handler
+	// starts resolving its own target through resolveWriteSpace.
 	if len(cfg.Spaces) > 1 {
 		write.Funnel = ambiguousSpaceFunnel{connected: spaceIDs(cfg.Spaces)}
 	}
@@ -314,13 +316,118 @@ func buildStore(ctx context.Context, cfg space.ProjectConfig, machine space.Mach
 	return store, nil
 }
 
-// buildWriteDeps resolves the FIRST connected space's mirror (cloning/
-// fetching it if needed), engine, credential, and repo facts, then builds
-// WriteDeps/SubmitDeps/NewDeps over it — mirrors cmd/a2a/wire.go's own
+// buildWriteDeps builds a per-space dependency set for EVERY connected
+// space, then returns Spaces[0]'s own set — mirrors cmd/a2a/wire.go's own
 // resolveLifecycleDeps for a single, statically-chosen space (this file's
-// own deviation, see the doc comment above).
+// own deviation, see the doc comment above), which is why every eager
+// caller (wire.go:191's degraded path, the len(cfg.Spaces) == 1 install
+// path below) still sees exactly what it did before this wave.
+//
+// When more than one space is connected, the returned WriteDeps also
+// carries ResolveSpace/SpaceOfArtifacts closures over every OTHER space's
+// built set — the per-call seam the NEXT wave's handlers consume. Nothing
+// calls them yet: ambiguousSpaceFunnel below still refuses every legacy
+// write exactly as before, and ONLY Spaces[0]'s build failing changes what
+// the caller sees (a DIFFERENT space's build failure is stored and surfaced
+// only if THAT space is later resolved — never at server start, never for
+// the space actually in use).
 func buildWriteDeps(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig, p Paths, binaryVersion string) (WriteDeps, SubmitDeps, NewDeps, error) {
-	ref := cfg.Spaces[0]
+	corpus, err := schema.Load()
+	if err != nil {
+		return WriteDeps{}, SubmitDeps{}, NewDeps{}, err
+	}
+	engine := validate.New(corpus)
+
+	// spaceBuild is this function's own per-space result — a VALUE (not a
+	// pointer) so bySpace's entries are independent copies. That matters:
+	// wire.go's len(cfg.Spaces) > 1 install path below mutates the RETURNED
+	// write's Funnel field (write.Funnel = ambiguousSpaceFunnel{...}) after
+	// this function returns. A pointer map would alias that mutation into
+	// every space's stored build, so a later ResolveSpace(otherSpaceID) call
+	// would hand back the funnel that refuses everything instead of the real
+	// one — silently breaking the very seam this wave ships. Value semantics
+	// make that impossible: mutating the copy returned to the caller cannot
+	// reach bySpace's own stored copies.
+	type spaceBuild struct {
+		write   WriteDeps
+		submit  SubmitDeps
+		newDeps NewDeps
+		err     error
+	}
+	bySpace := make(map[string]spaceBuild, len(cfg.Spaces))
+	for _, ref := range cfg.Spaces {
+		write, submitDeps, newDeps, buildErr := buildWriteDepsForSpace(ctx, cfg, machine, p, binaryVersion, ref, engine)
+		bySpace[ref.ID] = spaceBuild{write: write, submit: submitDeps, newDeps: newDeps, err: buildErr}
+	}
+
+	primary := bySpace[cfg.Spaces[0].ID]
+	if primary.err != nil {
+		// Spaces[0] is the only build this function's caller reads
+		// synchronously (wire.go:191's degraded path) — a DIFFERENT
+		// connected space failing here must cost that caller nothing, so
+		// only Spaces[0]'s own error is returned.
+		return WriteDeps{}, SubmitDeps{}, NewDeps{}, primary.err
+	}
+
+	if len(cfg.Spaces) > 1 {
+		connected := spaceIDs(cfg.Spaces)
+		primary.write.ResolveSpace = func(spaceID string) (WriteDeps, error) {
+			if spaceID == "" {
+				return WriteDeps{}, fmt.Errorf(
+					"mcp: space is required when multiple spaces are connected; connected spaces are %s",
+					strings.Join(connected, ", "))
+			}
+			b, ok := bySpace[spaceID]
+			if !ok {
+				return WriteDeps{}, fmt.Errorf(
+					"mcp: space %q is not connected; connected spaces are %s", spaceID, strings.Join(connected, ", "))
+			}
+			if b.err != nil {
+				// Surfaced only because THIS space is the one targeted — see
+				// this function's own doc comment.
+				return WriteDeps{}, b.err
+			}
+			return b.write, nil
+		}
+		primary.write.SpaceOfArtifacts = func(ids []string) (string, error) {
+			resolvedSpace, resolvedID := "", ""
+			for _, id := range ids {
+				found := ""
+				for _, ref := range cfg.Spaces {
+					dir := space.ResolveMirrorLocation(p.ProjectRoot, ref, machine)
+					if mirrorHoldsArtifact(dir, id) {
+						found = ref.ID
+						break
+					}
+				}
+				if found == "" {
+					return "", fmt.Errorf(
+						"mcp: no connected space's mirror holds %s; connected spaces are %s",
+						id, strings.Join(connected, ", "))
+				}
+				if resolvedSpace == "" {
+					resolvedSpace, resolvedID = found, id
+					continue
+				}
+				if found != resolvedSpace {
+					return "", fmt.Errorf(
+						"mcp: batch spans multiple spaces: %s resolves to %q, %s resolves to %q — one call targets one space",
+						resolvedID, resolvedSpace, id, found)
+				}
+			}
+			return resolvedSpace, nil
+		}
+	}
+
+	return primary.write, primary.submit, primary.newDeps, nil
+}
+
+// buildWriteDepsForSpace resolves ONE connected space's mirror (cloning/
+// fetching it if needed), credential, and repo facts, then builds
+// WriteDeps/SubmitDeps/NewDeps over it. engine is built once by
+// buildWriteDeps' caller and shared across every space, rather than
+// reloading the embedded schema corpus once per connected space.
+func buildWriteDepsForSpace(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig, p Paths, binaryVersion string, ref space.Ref, engine *validate.Engine) (WriteDeps, SubmitDeps, NewDeps, error) {
 	mirrorDir := space.ResolveMirrorLocation(p.ProjectRoot, ref, machine)
 	if err := space.CloneOrFetch(ctx, mirrorDir, ref.RepoURL, readMirrorCredential(ctx, ref.ID, machine)); err != nil {
 		return WriteDeps{}, SubmitDeps{}, NewDeps{}, fmt.Errorf("mirror sync failed: %w", err)
@@ -333,12 +440,6 @@ func buildWriteDeps(ctx context.Context, cfg space.ProjectConfig, machine space.
 	if err != nil {
 		return WriteDeps{}, SubmitDeps{}, NewDeps{}, fmt.Errorf("parse manifest: %w", err)
 	}
-
-	corpus, err := schema.Load()
-	if err != nil {
-		return WriteDeps{}, SubmitDeps{}, NewDeps{}, err
-	}
-	engine := validate.New(corpus)
 
 	// The machine-config reference is OPTIONAL: the explicit
 	// A2A_TOKEN_<SPACE_ID> override is precedence step (a) and must be
@@ -409,6 +510,43 @@ func spaceIDs(refs []space.Ref) []string {
 		ids[i] = ref.ID
 	}
 	return ids
+}
+
+// mirrorHoldsArtifact reports whether mirrorDir contains a file named
+// "<id>.md" anywhere below its root — this package's own copy of
+// cmd/a2a/wire.go's mirrorHoldsArtifact/resolveTargetSpaceRef rule. ADR-001
+// forbids internal/mcp importing internal/cli, and cmd/a2a is a main
+// package neither side can import, so this walk is deliberately duplicated
+// rather than shared.
+//
+// A contract id (XC-<slug>) never matches here: a contract's committed path
+// is <slug>/provides/<name>/contract.md (space.Layout.ProvidesContract), not
+// "<id>.md" — SpaceOfArtifacts refusing to resolve one is therefore by
+// design; the a2a_contract family passes its own explicit "space" input
+// instead of deriving one from ids.
+func mirrorHoldsArtifact(mirrorDir, id string) bool {
+	var found bool
+	_ = filepath.WalkDir(mirrorDir, func(_ string, d os.DirEntry, err error) error {
+		if found {
+			return filepath.SkipAll
+		}
+		if err != nil {
+			// A best-effort walk: an inaccessible entry just is not a match,
+			// and the overall WalkDir error is deliberately discarded below.
+			return nil
+		}
+		// Skip the bare `.git` object store — it never holds artifact files,
+		// and walking it grows with history (matches cmd/a2a's own walker
+		// and internal/cache's).
+		if d.IsDir() && d.Name() == ".git" {
+			return filepath.SkipDir
+		}
+		if !d.IsDir() && d.Name() == id+".md" {
+			found = true
+		}
+		return nil
+	})
+	return found
 }
 
 // parseGitHubRepo extracts owner/name from a GitHub remote URL — mirrors
