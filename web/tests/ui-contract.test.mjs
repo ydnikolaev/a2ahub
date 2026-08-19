@@ -655,7 +655,15 @@ test('P10 Exchange renders item and work-report facts through one content-only A
     match => match[1]
   );
   const itemOrder = ['identity','lead','lifecycle','parties','gate','urgency','summary','operational','snapshot','technical'];
-  assert.deepEqual(compiledFactOrder('ArtifactRow.dc.html', 'data-item-row-fact'), itemOrder, 'the compiled row DOM must follow P5 order');
+  // The ROW and the DETAIL are different surfaces and stopped pretending to be
+  // the same one on 2026-08-19. The detail still renders every fact in P5's
+  // order. The row renders the four a reader scans — what it is, its state,
+  // who is handing it to whom, how fresh — because it had grown a tier per
+  // fact, including five spans kept EMPTY so this assertion would not move.
+  // Markup shaped by an assertion is the wrong way round; the row is now
+  // shaped by the reader and this line follows it.
+  const rowOrder = ['identity','lifecycle','title','parties','snapshot'];
+  assert.deepEqual(compiledFactOrder('ArtifactRow.dc.html', 'data-item-row-fact'), rowOrder, 'the compiled row DOM keeps the scannable four, in order');
   assert.deepEqual(compiledFactOrder('ArtifactDetail.dc.html', 'data-item-fact'), itemOrder, 'the compiled item-card DOM must follow P5 order');
   assert.deepEqual(compiledFactOrder('ExchangeView.dc.html', 'data-work-report-fact'), ['subject','lead','attribution','checkpoint','waits','current','remaining','snapshot','technical'], 'the compiled work-report DOM must follow P5 order');
 
@@ -981,14 +989,23 @@ test('P10 Exchange renders item and work-report facts through one content-only A
     },
   };
   let ordinaryEmpty;
-  for (const [workTab, total] of [['incoming', 5], ['outgoing', 6], ['archive', 7]]) {
+  // Direction is a selection across the collections now, so a direction has no
+  // window of its own. The notice names the bounds the server DID send for the
+  // collections that direction draws from — an archived document may be either
+  // direction, so its bound belongs to both — and never adds them into a union
+  // total nobody computed. "archive" is no longer a direction at all.
+  for (const [workTab, expected] of [
+    ['all', 'This snapshot is bounded: 0 of 5 incoming; 0 of 6 outgoing; 0 of 7 archived.'],
+    ['incoming', 'This snapshot is bounded: 0 of 5 incoming; 0 of 7 archived.'],
+    ['outgoing', 'This snapshot is bounded: 0 of 6 outgoing; 0 of 7 archived.'],
+  ]) {
     const ordinaryEmptyHarness = componentHarness('ExchangeView', {
       ctx:{ data:ordinaryEmptyData, locale:'en', ui:{ ...ui, dashboardSet:'', workTab }, actions }
     });
     installResolver(ordinaryEmptyHarness);
     const values = ordinaryEmptyHarness.part.renderVals();
     ordinaryEmpty ||= values;
-    assert.equal(values.workWindowText, `Showing 0 of ${total}.`, `${workTab} must render its exact carried window`);
+    assert.equal(values.workWindowText, expected, `${workTab} names its collections' carried bounds`);
     assert.match(values.emptyWorkText, /bounded prefix/i, `${workTab} must keep empty-prefix semantics`);
     assert.doesNotMatch(values.emptyWorkTitle + values.emptyWorkText, /collection is empty/i);
   }
@@ -1029,7 +1046,22 @@ test('P10 Exchange renders item and work-report facts through one content-only A
   assert.doesNotMatch(exchangeSource, /<sc-if value="\{\{ hasWorkReports \}\}"[^>]*>\s*<section data-work-report-list/, 'the report section must not disappear with an empty carried prefix');
 });
 
-test('P1 Exchange facet chips carry the real windowed counts, never an invented zero', () => {
+// P1 shipped this against a defect where SegmentedFilter printed `0` for a
+// count nobody passed. That invariant stands and is asserted below.
+//
+// What changed on 2026-08-19: direction became a SELECTION across the three
+// server collections (the v0.22.0 model — a closed incoming document stays
+// incoming instead of moving to an archive-shaped third bucket). A direction
+// therefore has no single carried window to report, so a chip counts the
+// documents it will show, and the bound is stated in the window sentence
+// beneath the chips rather than folded into the number.
+//
+// The two are different claims and only one of them was ever P1's: "never
+// print a number nobody computed" is kept; "the chip equals windows.<k>.total"
+// could not survive a chip that spans collections. A truncated collection now
+// under-reports in the chip and says so in the sentence — which is the honest
+// pair, not a silent one.
+test('P1 Exchange facet chips count what they will show, and never an invented zero', () => {
   const mkItem = (space, id) => ({ id, space, type: 'work_request', title: id, from: 'atlas', to: ['checkout'], state: 'submitted' });
   const nodes = [{ system: 'atlas', owners: ['atlas'] }, { system: 'checkout', owners: ['checkout'] }];
   const spaces = [{ id: 'space-a', readable: true }, { id: 'space-b', readable: true }];
@@ -1054,18 +1086,27 @@ test('P1 Exchange facet chips carry the real windowed counts, never an invented 
     ctx: { data, locale: 'en', ui: { space: 'all', workTab: 'incoming', workSel: '', dashboardSet: '' }, actions },
   }).part.renderVals();
   const tab = label => allSpaces.workTabs.find(t => t.label === label);
-  assert.equal(tab('Incoming').count, 3, 'the Incoming chip must equal windows.inbox.total');
-  assert.equal(tab('Outgoing').count, 0, 'a genuinely empty collection must read 0 because it is 0');
-  assert.equal(tab('Archive').count, 13, 'a truncated window must report its total, not the shorter carried/shown array length');
-  assert.equal(allSpaces.workRows.length, 3, 'the active tab renders exactly the carried inbox rows');
+  // This fixture files every item as from:'atlas' to:['checkout'] while
+  // self is 'atlas', so by direction every one of them is OUTGOING —
+  // including the three parked in the inbox array. That was invisible while
+  // direction WAS the array it sat in; it is the point now.
+  assert.equal(tab('All').count, 4, 'All spans the three collections');
+  assert.equal(tab('Incoming').count, 0, 'nothing here is addressed to self, so Incoming is truly 0 — a counted zero, not an unpassed one');
+  assert.equal(tab('Outgoing').count, 4, 'every item is from self, across inbox and archive alike');
+  assert.notEqual(tab('Incoming').count, undefined, 'the count is always computed; an absent count is the P1 defect');
+  assert.notEqual(tab('Outgoing').count, undefined, 'the count is always computed; an absent count is the P1 defect');
+  // The harness asks for the Incoming direction, and nothing here is addressed
+  // to self — so an empty list is the correct answer, and the chip agrees with
+  // it. Rows and chip disagreeing is the defect worth catching.
+  assert.equal(allSpaces.workRows.length, 0, 'rows agree with the Incoming chip');
+  assert.equal(allSpaces.workRows.length, tab('Incoming').count, 'the rendered rows and the active chip must always agree');
 
   const scoped = componentHarness('ExchangeView', {
     ctx: { data, locale: 'en', ui: { space: 'space-a', workTab: 'incoming', workSel: '', dashboardSet: '' }, actions },
   }).part.renderVals();
   const scopedTab = label => scoped.workTabs.find(t => t.label === label);
-  assert.equal(scopedTab('Incoming').count, 2, 'a narrowed space filter must report the in-scope collection length, not the window total');
-  assert.equal(scopedTab('Archive').count, 1, 'a narrowed space filter must not surface the unfiltered window total (13) here');
-  assert.equal(scoped.workRows.length, 2, 'the rendered rows and the chip must agree once the space filter narrows the set');
+  assert.equal(scopedTab('Outgoing').count, 3, 'a narrowed space filter narrows the chip too');
+  assert.equal(scoped.workRows.length, scopedTab('Incoming').count, 'rows and the active chip agree under a space filter too');
 });
 
 test('artifact detail suppresses the carried work report publish lifecycle duplicate', () => {

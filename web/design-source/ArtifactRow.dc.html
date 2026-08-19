@@ -9,36 +9,31 @@
 <x-dc>
 <article class="a2a-pick" data-card-summary="item" style="{{ rowStyle }}">
 <button type="button" onClick="{{ select }}" aria-label="{{ openLabel }}" style="display:block; width:100%; padding:0; border:0; background:transparent; color:inherit; text-align:left; font:inherit; cursor:pointer;">
+  <!-- Three tiers, which is the v0.22.0 row: what it is and when, what it is
+       called, who is handing it to whom. Everything a reader needs to SCAN is
+       above the fold of a single row; everything they need to READ is in the
+       pane beside the list. The row grew to seven tiers by giving each fact
+       its own line — badge, then title, then pills, then parties, then a
+       freshness line, then a technical disclosure — which doubled its height
+       (229px against the donor's 125px, measured on axon) and cut the list
+       from five visible rows to three. -->
   <span data-item-row-fact="identity" data-card-fact="item:identity" style="display:flex; align-items:flex-start; gap:8px; flex-wrap:nowrap; margin-bottom:9px;">
-    <span style="flex:1 1 auto; min-width:0;">
-      <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px;">
+    <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px;">
       <dc-import name="TypeBadge" type="{{ type }}" size="small" hint-size="140px,24px"></dc-import>
-      </span>
-      <span style="display:block; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; color:var(--text); margin-top:9px; overflow-wrap:anywhere;">{{ title }}</span>
+      <!-- display:contents so the pills join the badge's flex line rather than
+           forming a block of their own — the marker stays for the fact order. -->
+      <span data-item-row-fact="lifecycle" style="display:contents;"><sc-if value="{{ hasState }}" hint-placeholder-val="{{ true }}"><dc-import name="StatusPill" result="{{ stateResult }}" size="small" hint-size="120px,24px"></dc-import></sc-if><sc-if value="{{ hasOutcome }}" hint-placeholder-val="{{ true }}"><dc-import name="StatusPill" result="{{ outcomeResult }}" size="small" hint-size="120px,24px"></dc-import></sc-if><sc-if value="{{ hasPriority }}" hint-placeholder-val="{{ false }}"><dc-import name="StatusPill" text="{{ priority }}" tone="neutral" size="small" hint-size="60px,24px"></dc-import></sc-if></span>
     </span>
     <span style="{{ timeStyle }}">{{ time }}</span>
   </span>
-  <!-- The whose-move sentence, the full urgency/gate/operational/snapshot
-       lines and the second parties line are pane-only prose (specs/05-exchange.md
-       §1's "row" row): eighteen documents are a list, not eighteen essays
-       (US-3). These spans stay present, empty, so the compiled
-       data-item-row-fact order this repo's ui-contract.test.mjs asserts
-       does not move. -->
-  <span data-item-row-fact="lead"></span>
-  <span data-item-row-fact="lifecycle" style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-top:10px; font-size:14px; color:var(--muted);"><sc-if value="{{ hasState }}" hint-placeholder-val="{{ true }}"><dc-import name="StatusPill" result="{{ stateResult }}" size="small" hint-size="120px,24px"></dc-import></sc-if><sc-if value="{{ hasOutcome }}" hint-placeholder-val="{{ true }}"><dc-import name="StatusPill" result="{{ outcomeResult }}" size="small" hint-size="120px,24px"></dc-import></sc-if><sc-if value="{{ hasPriority }}" hint-placeholder-val="{{ false }}"><dc-import name="StatusPill" text="{{ priority }}" tone="neutral" size="small" hint-size="60px,24px"></dc-import></sc-if></span>
-  <span data-item-row-fact="parties" style="display:block; margin-top:9px; color:var(--muted); font-size:14px; line-height:1.5;"><span style="display:flex; align-items:center; gap:7px; flex-wrap:wrap;"><span style="{{ fromMonoStyle }}">{{ fromMono }}</span><span>{{ from }}</span><span>→</span><span style="{{ toMonoStyle }}">{{ toMono }}</span><span>{{ to }}</span><span>·</span><span>{{ meta }}</span></span></span>
-  <span data-item-row-fact="gate"></span>
-  <span data-item-row-fact="urgency"></span>
-  <span data-item-row-fact="summary"></span>
-  <span data-item-row-fact="operational"></span>
-  <span data-item-row-fact="snapshot" style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-top:9px;"><sc-if value="{{ hasFreshness }}" hint-placeholder-val="{{ true }}"><dc-import name="FreshnessDot" result="{{ freshnessResult }}" age="{{ syncAge }}" compact="{{ true }}" hint-size="12px,12px"></dc-import></sc-if></span>
+  <span data-item-row-fact="title" style="display:block; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; color:var(--text); margin-bottom:9px; overflow-wrap:anywhere;">{{ title }}</span>
+  <!-- The freshness dot rides the actor line instead of claiming a tier: it is
+       one glyph, and a line of its own cost more height than it carries. -->
+  <span data-item-row-fact="parties" style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; color:var(--muted); font-size:14px; line-height:1.5;"><span style="{{ fromMonoStyle }}">{{ fromMono }}</span><span>{{ from }}</span><span>→</span><span style="{{ toMonoStyle }}">{{ toMono }}</span><span>{{ to }}</span><span>·</span><span style="overflow-wrap:anywhere;">{{ meta }}</span><span data-item-row-fact="snapshot" style="display:contents;"><sc-if value="{{ hasFreshness }}" hint-placeholder-val="{{ true }}"><dc-import name="FreshnessDot" result="{{ freshnessResult }}" age="{{ syncAge }}" compact="{{ true }}" hint-size="12px,12px"></dc-import></sc-if></span></span>
 </button>
-<sc-if value="{{ hasTechnical }}" hint-placeholder-val="{{ true }}">
-  <details data-item-row-fact="technical" data-item-row-technical style="margin-top:11px; padding-top:9px; border-top:1px solid var(--hairline); font-size:13px; line-height:1.5;">
-    <summary style="cursor:pointer; color:var(--teal-ink); font-weight:600;">{{ technicalLabel }}</summary>
-    <div style="display:grid; grid-template-columns:minmax(90px,auto) minmax(0,1fr); gap:5px 12px; margin-top:8px; font-family:'IBM Plex Mono',ui-monospace,monospace; overflow-wrap:anywhere;"><span>Why</span><span>{{ technicalWhy }}</span><span>{{ ruleLabel }}</span><span>{{ ruleIdentity }}</span><span>Evidence</span><span>{{ technicalEvidence }}</span></div>
-  </details>
-</sc-if>
+<!-- The technical disclosure belongs to the DETAIL surface, not to a list
+     row: a row the reader is scanning should not carry a control that
+     expands it. ArtifactDetail renders the same facts in the pane. -->
 </article>
 
 </x-dc>

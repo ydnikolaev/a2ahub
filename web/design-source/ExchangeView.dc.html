@@ -81,7 +81,6 @@
               <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" state-result="{{ r.stateResult }}" outcome-result="{{ r.outcomeResult }}" lifecycle-known="{{ r.lifecycleKnown }}" lifecycle-unknown-text="{{ r.lifecycleUnknownText }}" gate-result="{{ r.gateResult }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" priority="{{ r.priority }}" sync-age="{{ r.syncAge }}" freshness-result="{{ r.freshnessResult }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" reason-sentence="{{ r.reasonSentence }}" waiting-on-label="{{ r.waitingOnLabel }}" waiting-on="{{ r.waitingOn }}" expected-move-label="{{ r.expectedMoveLabel }}" expected-move="{{ r.expectedMove }}" terminal-text="{{ r.terminalText }}" archived-text="{{ r.archivedText }}" your-move-text="{{ r.yourMoveText }}" gate-pending-text="{{ r.gatePendingText }}" urgency-text="{{ r.urgencyText }}" summary="{{ r.summary }}" operational-items="{{ r.operationalItems }}" none-recorded="{{ r.noneRecorded }}" not-recorded="{{ r.notRecorded }}" snapshot-unavailable="{{ r.snapshotUnavailable }}" snapshot-unknown-text="{{ r.snapshotUnknownText }}" pending-merge-text="{{ r.pendingMergeText }}" technical-label="{{ r.technicalLabel }}" technical-why="{{ r.technicalWhy }}" rule-label="{{ r.ruleLabel }}" rule-identity="{{ r.ruleIdentity }}" technical-evidence="{{ r.technicalEvidence }}" open-label="{{ r.openLabel }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,440px"></dc-import>
             </sc-for>
           </div>
-          <sc-if value="{{ workPaneOpen }}" hint-placeholder-val="{{ false }}">
           <div data-work-pane style="min-width:0;">
             <!-- The pane is a render branch off workSel (specs/03-interaction-model.md
                  §2-3): it composes ArtifactDetail's own already-shipped legacy
@@ -95,7 +94,6 @@
                  — see specs/05-exchange.md §11. -->
             <dc-import name="ArtifactDetail" det="{{ workPaneDetail }}" hint-size="100%,600px"></dc-import>
           </div>
-          </sc-if>
         </div>
         </sc-if>
 
@@ -985,35 +983,70 @@ class Component extends DCLogic {
     const windows = d.windows || {};
     const dashboardKey = ["needYou", "noHumanMove", "youAwait"].indexOf(ui.dashboardSet) >= 0 ? ui.dashboardSet : "";
     const aggregate = dashboardKey && d.aggregates && d.aggregates[dashboardKey];
-    // "all" is a real direction, not an unknown value to coerce away. The shell
-    // initialises workTab to "all" and v0.22.0 honoured it — its
-    // matchesDirection returned true for every item — so first load showed the
-    // whole exchange. Dropping the option while leaving the shell's initial
-    // state alone meant the state said "all" and the screen silently rendered
-    // "incoming": the D-1 class this epic exists to end, a component inventing
-    // a plausible answer for a value it does not support. Measured on axon:
-    // 2 rows against the donor's 5, from one invocation of the preview loop.
-    const tab = ["all", "incoming", "outgoing", "archive"].indexOf(s.workTab) >= 0 ? s.workTab : "all";
-    const collectionFor = key => key === "all"
-      ? (collections.incoming || []).concat(collections.outgoing || [], collections.archive || [])
-      : (collections[key] || []);
+    // Direction and lifecycle state are INDEPENDENT dimensions, which is the
+    // v0.22.0 model this epic restores. A closed incoming document stays
+    // findable as incoming instead of disappearing into an archive-shaped
+    // third destination — the donor says exactly this in its own comment, and
+    // the counts show what the third bucket costs: 2 visible of 25 on axon,
+    // because 22 closed documents sat in "Архив" and out of both directions.
+    //
+    // The server carries three collections; direction is a user-scope
+    // SELECTION over their union, which check-dashboard-derivation.sh permits
+    // by name ("Geometry and user-scope selection stay legal"). Only the
+    // donor's newest-first re-sort was ever the banned part, and it stays gone —
+    // the order below is the server's.
+    const exchangeAll = (collections.incoming || []).concat(collections.outgoing || [], collections.archive || []);
+    const tab = ["all", "incoming", "outgoing"].indexOf(s.workTab) >= 0 ? s.workTab : "all";
+    const matchesDirection = (it, value) => value === "all"
+      || (value === "incoming" ? (it.to || []).includes(d.self) : it.from === d.self);
+    const collectionFor = key => exchangeAll.filter(it => matchesDirection(it, key));
     const carried = aggregate ? (aggregate.items || []) : collectionFor(tab);
     const workListBase = aggregate ? carried : carried.filter(item => this.inScope(item.space));
-    // No single carried window describes the union, so "all" reports none
-    // rather than borrowing one collection's bound and implying it covers
-    // the rest.
-    const windowKeyFor = key => key === "incoming" ? "inbox" : key === "outgoing" ? "outbox" : key === "archive" ? "archive" : "";
-    const workWindow = aggregate ? aggregate.window
-      : (s.space === "all" && windowKeyFor(tab) ? windows[windowKeyFor(tab)] : null);
-    const workWindowText = boundsSentence(workWindow, ru);
+    // Direction is a cross-cut over the three server collections, so no single
+    // carried window describes it any more. Truncation is still reported —
+    // silently dropping it would be worse than the imprecision — but as the
+    // sum of what the server actually bounded, never as a per-direction claim
+    // it cannot support.
+    const workWindow = aggregate ? aggregate.window : null;
+    // Each collection carries its own bound and nothing carries the union's, so
+    // the notice names the bounds the server actually sent, one per truncated
+    // collection. Adding them would print a total nobody computed — the same
+    // invention this screen just stopped making in its chips.
+    // Only the collections the current direction can draw from: an archived
+    // document may be either, so its bound is relevant to both.
+    const relevantCollections = tab === "incoming" ? ["inbox", "archive"]
+      : tab === "outgoing" ? ["outbox", "archive"]
+      : ["inbox", "outbox", "archive"];
+    const collectionBounds = [
+      ["inbox", ru ? "входящих" : "incoming"],
+      ["outbox", ru ? "исходящих" : "outgoing"],
+      ["archive", ru ? "в архиве" : "archived"]
+    ].filter(([key]) => relevantCollections.indexOf(key) >= 0).map(([key, word]) => {
+      const w = windows[key];
+      return w && w.truncated && Number(w.shown) < Number(w.total)
+        ? (ru ? "показано " + w.shown + " из " + w.total + " " + word : w.shown + " of " + w.total + " " + word)
+        : "";
+    }).filter(Boolean);
+    const workWindowText = aggregate
+      ? boundsSentence(workWindow, ru)
+      : (s.space === "all" && collectionBounds.length
+        ? (ru ? "Снимок ограничен: " : "This snapshot is bounded: ") + collectionBounds.join(ru ? "; " : "; ") + "."
+        : "");
     // The second facet axis: the carried outcome of each item in the current
     // direction (specs/05-exchange.md §3). `Item.Outcome` is already a
     // server-computed classification (fold.OutcomeOf), always carried non-empty
     // for every fold-backed item — reading it is presentation, not the banned
-    // client-side "isClosed" derivation the donor combined from three signals.
+    // client-side closed-ness derivation the donor combined from three signals.
     // Hidden entirely during an aggregate drill-down, exactly as the direction
     // row already is: the drill-down's own count is not a filterable set here.
     const isOpenOutcome = it => it.outcome === "open";
+    // The state axis is the OUTCOME the server carried, and nothing else.
+    // v0.22.0 folded `archived` into "closed" here, which is why its chips read
+    // 3 open / 22 closed on this cache — but the server marks 4 of those 22
+    // archived documents `open`, so the fold hid a real distinction: archived
+    // says the exchange was filed away, open says nobody settled it. Deriving
+    // one from the other in the browser is exactly the closed-ness helper this
+    // view is forbidden to grow back, by name, in ui-contract.test.mjs.
     const matchesState = (it, value) => value === "all" || (value === "open" ? isOpenOutcome(it) : (!!it.outcome && !isOpenOutcome(it)));
     const matchesType = (it, value) => value === "all" || it.type === value;
     const matchesDue = (it, dueOnly) => !dueOnly || !!it.neededBy;
@@ -1051,25 +1084,31 @@ class Component extends DCLogic {
     // every row (rowFor's selValue), exactly as ContractsView reads ui.conSel
     // and ThreadsView reads s.threadSel — no new selection mechanism, no hash
     // route write, see specs/03-interaction-model.md §3.
-    const workPaneOpen = !!(s.workSel && workList.some(it => it.id === s.workSel));
-    const workPaneDetail = s.workSel ? this.detailFor(s.workSel, workList) : null;
+    // Master/detail, both columns always present — the v0.22.0 shape, and the
+    // one ContractsView never lost: a selection that has fallen out of the
+    // current filter falls back to the first row rather than emptying the
+    // right column, so the reader always has something to read and the layout
+    // never jumps between one and two columns.
+    const workSelID = s.workSel && workList.some(it => it.id === s.workSel)
+      ? s.workSel
+      : ((workList[0] || {}).id || "");
+    const workPaneDetail = workSelID ? this.detailFor(workSelID, workList) : null;
     const workPaneDetailPresent = !!(workPaneDetail && workPaneDetail.present);
     const workPaneDetailMissing = !!(workPaneDetail && !workPaneDetail.present);
     const values = {
       cardWorkReport:false,
       regularExchange:true,
       workAria:c.views[1],
-      workTabs: [["all", ru ? "Все" : "All"], ["incoming", ru ? "Входящие" : "Incoming"], ["outgoing", ru ? "Исходящие" : "Outgoing"], ["archive", ru ? "Архив" : "Archive"]].map(([id, label]) => {
+      workTabs: [["all", ru ? "Все" : "All"], ["incoming", ru ? "Входящие" : "Incoming"], ["outgoing", ru ? "Исходящие" : "Outgoing"]].map(([id, label]) => {
         // The chip's own render, not a stored literal: total when the space
         // filter is "all" (a truncated window must report what exists, not
         // what was shown), the in-scope collection length otherwise — the
         // same this.inScope(item.space) filter workList already applies.
-        const windowKey = windowKeyFor(id);
-        const scopedCount = collectionFor(id).filter(item => this.inScope(item.space)).length;
-        // "all" has no carried window of its own; summing three windows would
-        // invent a total no server sent, so it counts what it can see.
-        const window = windowKey ? windows[windowKey] : null;
-        const count = s.space === "all" && window && window.total != null ? window.total : scopedCount;
+        // Each chip counts the documents it would show. A direction spans
+        // collections now, so there is no single carried total to prefer over
+        // the count — and inventing one by adding three windows would print a
+        // number no server sent.
+        const count = collectionFor(id).filter(item => this.inScope(item.space)).length;
         return {
           label,
           count,
@@ -1108,10 +1147,12 @@ class Component extends DCLogic {
       // bound there receives React's SyntheticEvent as its first argument,
       // not the id. Ignoring that argument and reading `it.id` from the
       // closure keeps the toggle correct regardless of what onClick passes.
-      workRows: workList.map(it => this.rowFor(it, "workSel", s.workSel, () => this.setState({ workSel: s.workSel === it.id ? "" : it.id }))),
+      // Clicking a row selects it; clicking the selected one keeps it, because
+      // there is no "nothing selected" state to return to any more.
+      workRows: workList.map(it => this.rowFor(it, "workSel", workSelID, () => this.setState({ workSel: it.id }))),
       workWholeEmpty: workList.length === 0,
       workHasColumns: workList.length > 0,
-      workPaneOpen: workPaneOpen,
+      workPaneOpen: !!workPaneDetail,
       workPaneDetail: workPaneDetail,
       workPaneDetailPresent: workPaneDetailPresent,
       workPaneDetailMissing: workPaneDetailMissing,
