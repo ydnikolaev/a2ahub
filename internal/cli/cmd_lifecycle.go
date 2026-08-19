@@ -284,6 +284,110 @@ func lifecycleParseVerdicts(raw []string) ([]lifecycleVerdictEntry, error) {
 	return out, nil
 }
 
+// lifecycleBlockedByReasonEnum is envelope/v2/response.schema.json's own
+// `blocked_by.reason_code` enum, mirrored here (not $ref'd — that schema's
+// own description explains why: internal/schema/corpus.go registers only
+// refTarget entries, and a cross-family $ref from response.schema.json has
+// nothing to resolve against without a corpus.go change off this wave's
+// allowlist). The SAME vocabulary event/v2's own `reason_code` carries.
+var lifecycleBlockedByReasonEnum = map[string]bool{
+	"split-required": true, "security-concern": true, "out-of-scope": true,
+	"duplicate": true, "other": true,
+}
+
+// lifecycleBlockedByNeedsEnum is envelope/v2/response.schema.json's own
+// `blocked_by.needs` closed vocabulary.
+var lifecycleBlockedByNeedsEnum = map[string]bool{
+	"bytes": true, "judgement": true, "decision": true,
+}
+
+// lifecycleStandingEnum is envelope/v2/response.schema.json's own `standing`
+// enum. Absence (the flag not given at all) means undeclared, which is NOT
+// `authoritative` (P-1) — this table only validates a VALUE the caller
+// actually supplied.
+var lifecycleStandingEnum = map[string]bool{
+	"authoritative": true, "provisional": true, "advisory": true,
+}
+
+// lifecycleBlockedByEntry is `a2a respond`'s `--blocked-by` flag, parsed —
+// envelope/v2/response.schema.json's own `blocked_by` shape,
+// `{reason_code, owner, needs}`, ALL THREE required
+// (`"required": ["reason_code", "owner", "needs"]`,
+// `"additionalProperties": false`). blocked_by is a single OBJECT on that
+// schema, not an array, so unlike `--unmet`/`--verdict` this flag is not
+// repeatable — a second `--blocked-by` overwrites the first, exactly like
+// `--result`/`--standing`.
+type lifecycleBlockedByEntry struct {
+	ReasonCode string
+	Owner      string
+	Needs      string
+}
+
+// lifecycleParseBlockedBy parses one `--blocked-by
+// <reason_code>:<owner>:<needs>` flag value.
+//
+// DEVIATION from this phase's own spec text, recorded here rather than left
+// implicit: the spec and defect doc both write the flag's argument form as
+// `<reason_code>:<owner>` (two segments). envelope/v2/response.schema.json's
+// `blocked_by` requires THREE properties — `reason_code`, `owner`, AND
+// `needs` — and forbids any other key
+// (`additionalProperties: false`), so a two-segment flag can never produce
+// an object that validates: the anyOf branch that wants `unmet`+`blocked_by`
+// would still refuse the draft for `blocked_by` itself being incomplete.
+// `needs` gets no default here (P-1: absence must stay distinct from a
+// declared value; silently defaulting to `bytes` would assert something the
+// caller never claimed). Three segments, matching `--verdict`'s own
+// `<index>:<verdict>:<cause_owner>` shape (this file's own precedent).
+func lifecycleParseBlockedBy(raw string) (lifecycleBlockedByEntry, error) {
+	parts := strings.SplitN(raw, ":", 3)
+	if len(parts) != 3 {
+		return lifecycleBlockedByEntry{}, fmt.Errorf(
+			"--blocked-by %q: want <reason_code>:<owner>:<needs> — needs is required by envelope/v2/response.schema.json (bytes|judgement|decision)", raw)
+	}
+	reasonCode := parts[0]
+	if !lifecycleBlockedByReasonEnum[reasonCode] {
+		return lifecycleBlockedByEntry{}, fmt.Errorf(
+			"--blocked-by %q: reason_code must be one of split-required|security-concern|out-of-scope|duplicate|other", raw)
+	}
+	owner := strings.TrimSpace(parts[1])
+	if owner == "" {
+		return lifecycleBlockedByEntry{}, fmt.Errorf("--blocked-by %q: owner is required", raw)
+	}
+	needs := parts[2]
+	if !lifecycleBlockedByNeedsEnum[needs] {
+		return lifecycleBlockedByEntry{}, fmt.Errorf(
+			"--blocked-by %q: needs must be one of bytes|judgement|decision", raw)
+	}
+	return lifecycleBlockedByEntry{ReasonCode: reasonCode, Owner: owner, Needs: needs}, nil
+}
+
+// lifecycleParseUnmet parses each `--unmet <index>` flag value (repeatable;
+// newStringList — the same DI/flag shape `--ref`/`--verdict` use) into a
+// SORTED, DEDUPED list of indices into the parent's acceptance_criteria[]
+// (envelope/v2/response.schema.json's own `unmet[]`: an array of
+// non-negative integers). Sorted for the same reason lifecycleParseVerdicts
+// sorts by index rather than argument order: two invocations naming the
+// same set of unmet criteria in a different flag order describe the
+// IDENTICAL content, and this function's canonical form is what
+// lifecycleRespondSeed hashes.
+func lifecycleParseUnmet(raw []string) ([]int, error) {
+	seen := map[int]bool{}
+	out := make([]int, 0, len(raw))
+	for _, v := range raw {
+		index, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil || index < 0 {
+			return nil, fmt.Errorf("--unmet %q: must be a non-negative integer", v)
+		}
+		if seen[index] {
+			return nil, fmt.Errorf("--unmet %q: index %d was already given — one entry per unmet criterion", v, index)
+		}
+		seen[index] = true
+		out = append(out, index)
+	}
+	sort.Ints(out)
+	return out, nil
+}
+
 // lifecycleEventSchema mirrors internal/contract/publication_plan.go's own
 // authoring-floor split (PlanPublication, lines 396-403): a space whose
 // `min_binary_version` (floor) is at or above contract.ContractPublicationFloor
@@ -1149,7 +1253,16 @@ var _ Command = (*LifecycleCommand)(nil)
 // seed, which is the only determinism this function's callers actually
 // need (a retry with identical inputs must reproduce the identical
 // response id, so the funnel's dedup branch finds it).
-func lifecycleRespondSeed(parentID, result string, respFields map[string]string, bodyOverride []byte, actor fold.Actor, refs []string) []byte {
+// unmet/standing/blockedBy (defects-fix-2026-08 P2) join the seed for the
+// same reason refs did: they are content, not derived defaults, and a retry
+// differing ONLY in one of these three must NOT collide with a prior
+// response that named none of them — the exact class of gap this file's own
+// HIGH-1 fix-wave finding exists to close. Written AFTER refs so an empty
+// unmet[]/absent standing/absent blockedBy (every caller before this phase,
+// and every caller today that doesn't use the three new flags) writes
+// exactly the bytes lifecycleRespondSeed always wrote — no existing
+// responseID changes.
+func lifecycleRespondSeed(parentID, result string, respFields map[string]string, bodyOverride []byte, actor fold.Actor, refs []string, unmet []int, standing string, blockedBy *lifecycleBlockedByEntry) []byte {
 	keys := make([]string, 0, len(respFields))
 	for k := range respFields {
 		keys = append(keys, k)
@@ -1164,6 +1277,15 @@ func lifecycleRespondSeed(parentID, result string, respFields map[string]string,
 	}
 	for _, ref := range refs {
 		buf.WriteString("ref=" + ref + "\n")
+	}
+	for _, index := range unmet {
+		buf.WriteString("unmet=" + strconv.Itoa(index) + "\n")
+	}
+	if standing != "" {
+		buf.WriteString("standing=" + standing + "\n")
+	}
+	if blockedBy != nil {
+		buf.WriteString("blocked_by=" + blockedBy.ReasonCode + ":" + blockedBy.Owner + ":" + blockedBy.Needs + "\n")
 	}
 	buf.WriteString("body=")
 	buf.Write(bodyOverride)
@@ -1235,6 +1357,19 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	fs.Var(&refFlags, "ref", "artifact id to record in refs[] (repeatable; e.g. the fulfilling handoff)")
 	bodyFile := fs.String("body-file", "", "path to a file whose contents replace the response body")
 	result := fs.String("result", "", "answered|delivered|partial|cannot (required)")
+	// --unmet/--standing/--blocked-by (defects-fix-2026-08 P2, spec 02 §T1):
+	// envelope/v2/response's own P6 incompleteness fields. `--field` cannot
+	// author any of them — `unmet` and `blocked_by` are array/object-typed
+	// (writes ONE scalar node, refused for either), and even `standing`,
+	// though scalar, gets its own named flag rather than `--field
+	// standing=...` for the same reason `--verdict` (VerifyCommand, below)
+	// is its own flag and not `--field verdicts=...`: an author names the
+	// concept, not a JSON-shaped string. `--ref` is the shipped precedent
+	// for exactly this class of gap.
+	var unmetFlags newStringList
+	fs.Var(&unmetFlags, "unmet", "index into the parent's acceptance_criteria[] this response did NOT satisfy (repeatable)")
+	standing := fs.String("standing", "", "authoritative|provisional|advisory — whether these values are binding (absent = undeclared, NOT authoritative, per P-1)")
+	blockedByFlag := fs.String("blocked-by", "", "<reason_code>:<owner>:<needs> — what would unblock the unmet criteria (reason_code: split-required|security-concern|out-of-scope|duplicate|other; needs: bytes|judgement|decision)")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
 	// Wave K fix (see LifecycleCommand.Run's own comment above): any-order
 	// parsing, not a bare fs.Parse(args).
@@ -1264,6 +1399,24 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			return 2
 		}
 	}
+	unmet, uerr := lifecycleParseUnmet(unmetFlags)
+	if uerr != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "respond: %v\n", uerr)
+		return 2
+	}
+	if *standing != "" && !lifecycleStandingEnum[*standing] {
+		_, _ = fmt.Fprintln(stdio.Stderr, "respond: --standing must be one of authoritative|provisional|advisory")
+		return 2
+	}
+	var blockedBy *lifecycleBlockedByEntry
+	if *blockedByFlag != "" {
+		parsed, berr := lifecycleParseBlockedBy(*blockedByFlag)
+		if berr != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "respond: %v\n", berr)
+			return 2
+		}
+		blockedBy = &parsed
+	}
 	var bodyOverride []byte
 	if *bodyFile != "" {
 		b, err := c.deps.readFile(*bodyFile)
@@ -1287,8 +1440,25 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// its different refs[] is never committed. They must also not be smuggled
 	// through `fields`: template.Render's applyFills walks that map and
 	// refuses any key it cannot place (ErrUnappliableField).
+	//
+	// KNOWN GAP (this phase's own deviations report): unmet/standing/
+	// blocked_by do NOT feed operation.Respond's key the way refs does —
+	// internal/operation/key.go is off this phase's allowlist. A retry
+	// differing ONLY in one of the three new flags (same parents/result/
+	// fields/refs/body) mints the SAME operationKey and may be treated as a
+	// repeat of the first call at the funnel's own idempotency layer
+	// (space.WriteStateAlreadyOpen), even though lifecycleRespondSeed below
+	// (which IS in this phase's allowlist) mints a genuinely different
+	// responseID for it. Flagged for the lead rather than silently worked
+	// around; the fix is the same shape refs already got in key.go.
+	respondFacts := operation.RespondIncompleteness{Unmet: unmet, Standing: *standing}
+	if blockedBy != nil {
+		respondFacts.BlockedByReason = blockedBy.ReasonCode
+		respondFacts.BlockedByOwner = blockedBy.Owner
+		respondFacts.BlockedByNeeds = blockedBy.Needs
+	}
 	operationKey := operation.Respond(
-		c.deps.ownSystem, actor.Kind, actor.Name, parents, *result, fields, refs, bodyOverride,
+		c.deps.ownSystem, actor.Kind, actor.Name, parents, *result, fields, refs, bodyOverride, respondFacts,
 	)
 
 	now := c.deps.now()
@@ -1332,7 +1502,7 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		// MintExchangeIDAt still embeds today's UTC date from `now`; a retry
 		// crossing midnight still mints a different id (spec 08 §11
 		// amendment — accepted, out of scope here).
-		seed := lifecycleRespondSeed(parentID, *result, respFields, bodyOverride, actor, refs)
+		seed := lifecycleRespondSeed(parentID, *result, respFields, bodyOverride, actor, refs, unmet, *standing, blockedBy)
 		responseID, err := artifact.MintExchangeIDAt("XS", c.deps.ownSystem, now, bytes.NewReader(seed))
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "respond: cannot mint response id: %v\n", err)
@@ -1428,8 +1598,20 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		}
 		respFields["thread"] = parentProbe.Thread
 
+		// EnvelopeSchema: "envelope/v2" (defects-fix-2026-08 P2, LAST step of
+		// this phase's own load-bearing fix order): a response is always
+		// generationV2Unconditional (template.go's generationTable), and this
+		// call never went through RenderNew/selectGeneration at all — it
+		// renders `response` directly, so flipping the table alone would not
+		// have moved this surface. Same override mechanism
+		// internal/space/work_preparer.go:322 already uses for the identical
+		// reason (an Input-level Render call outside the RenderNew path).
+		// Ordered LAST, after schemas/templates/v2/response.md and the three
+		// flags above: doing this FIRST would render `a2a respond --result
+		// partial` with no way to satisfy the v2 conditional, which is
+		// TestRespondResultPartialGenerationOrderingGuard's own point.
 		draft, err := template.Render(template.Input{
-			Type: "response", ID: responseID, Actor: resolved, Created: now,
+			Type: "response", EnvelopeSchema: "envelope/v2", ID: responseID, Actor: resolved, Created: now,
 			Fields: respFields, Body: bodyOverride,
 		})
 		if err != nil {
@@ -1479,6 +1661,31 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 				refEntries = append(refEntries, map[string]string{"ref": ref})
 			}
 			respDoc["refs"] = refEntries
+		}
+		// unmet/standing/blocked_by (defects-fix-2026-08 P2): same
+		// decode/assign/re-encode idiom as `to`/`refs` above — `unmet` is a
+		// SEQUENCE and `blocked_by` a MAPPING, neither writable by
+		// applyFills' scalar-only append pass, and response.md's template
+		// carries all three only as commented-out placeholders (P-1:
+		// absence stays distinct from a declared value), so these are
+		// always fresh keys, never an overwrite of something the template
+		// rendered. Written only when the caller actually gave the flag —
+		// an unconditional `unmet: []`/`standing: authoritative` would
+		// declare something nobody asked for.
+		if len(unmet) > 0 {
+			unmetSeq := make([]int, len(unmet))
+			copy(unmetSeq, unmet)
+			respDoc["unmet"] = unmetSeq
+		}
+		if *standing != "" {
+			respDoc["standing"] = *standing
+		}
+		if blockedBy != nil {
+			respDoc["blocked_by"] = map[string]string{
+				"reason_code": blockedBy.ReasonCode,
+				"owner":       blockedBy.Owner,
+				"needs":       blockedBy.Needs,
+			}
 		}
 		respYAML, err := yaml.Marshal(respDoc)
 		if err != nil {

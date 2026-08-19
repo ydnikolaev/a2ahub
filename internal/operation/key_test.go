@@ -142,14 +142,14 @@ func TestRespondCanonicalAndSemantic(t *testing.T) {
 	t.Parallel()
 
 	a := Respond("axon", "agent", "bot", []string{"B", "A"}, "answered",
-		map[string]string{"title": "done", "priority": "p1"}, nil, []byte("body"))
+		map[string]string{"title": "done", "priority": "p1"}, nil, []byte("body"), RespondIncompleteness{})
 	b := Respond("axon", "agent", "bot", []string{"A", "B"}, "answered",
-		map[string]string{"priority": "p1", "title": "done"}, nil, []byte("body"))
+		map[string]string{"priority": "p1", "title": "done"}, nil, []byte("body"), RespondIncompleteness{})
 	if a != b || !Valid(a) {
 		t.Fatalf("canonical keys differ or are invalid: %q %q", a, b)
 	}
 	if changed := Respond("axon", "agent", "bot", []string{"A", "B"}, "answered",
-		map[string]string{"priority": "p1", "title": "done"}, nil, []byte("different")); changed == a {
+		map[string]string{"priority": "p1", "title": "done"}, nil, []byte("different"), RespondIncompleteness{}); changed == a {
 		t.Fatal("changed body produced the same operation key")
 	}
 }
@@ -162,22 +162,22 @@ func TestRespondCanonicalAndSemantic(t *testing.T) {
 func TestRespondRefsAreOrderedAndDistinguishing(t *testing.T) {
 	t.Parallel()
 
-	base := Respond("axon", "agent", "bot", []string{"XW-peer-p"}, "delivered", nil, nil, []byte("b"))
+	base := Respond("axon", "agent", "bot", []string{"XW-peer-p"}, "delivered", nil, nil, []byte("b"), RespondIncompleteness{})
 
 	withRefs := Respond("axon", "agent", "bot", []string{"XW-peer-p"}, "delivered",
-		nil, []string{"XH-axon-1", "XH-axon-2"}, []byte("b"))
+		nil, []string{"XH-axon-1", "XH-axon-2"}, []byte("b"), RespondIncompleteness{})
 	if withRefs == base {
 		t.Fatal("adding refs did not change the operation key — a response naming a handoff would dedup onto one that names nothing, and its refs[] would never be committed")
 	}
 
 	swapped := Respond("axon", "agent", "bot", []string{"XW-peer-p"}, "delivered",
-		nil, []string{"XH-axon-2", "XH-axon-1"}, []byte("b"))
+		nil, []string{"XH-axon-2", "XH-axon-1"}, []byte("b"), RespondIncompleteness{})
 	if swapped == withRefs {
 		t.Fatal("reordering refs produced the same key — refs[] order IS on the wire, unlike parents and field keys")
 	}
 
 	repeat := Respond("axon", "agent", "bot", []string{"XW-peer-p"}, "delivered",
-		nil, []string{"XH-axon-1", "XH-axon-2"}, []byte("b"))
+		nil, []string{"XH-axon-1", "XH-axon-2"}, []byte("b"), RespondIncompleteness{})
 	if repeat != withRefs {
 		t.Fatal("an identical retry minted a different key — dedup is what makes a retried submit idempotent")
 	}
@@ -186,7 +186,7 @@ func TestRespondRefsAreOrderedAndDistinguishing(t *testing.T) {
 	// the encoder writes both, and a length-blind concatenation would let
 	// them collide.
 	viaField := Respond("axon", "agent", "bot", []string{"XW-peer-p"}, "delivered",
-		map[string]string{"XH-axon-1": "XH-axon-2"}, nil, []byte("b"))
+		map[string]string{"XH-axon-1": "XH-axon-2"}, nil, []byte("b"), RespondIncompleteness{})
 	if viaField == withRefs {
 		t.Fatal("a field pair and a ref pair with the same strings produced one key — the encoding is ambiguous")
 	}
@@ -440,5 +440,62 @@ func TestCloseKeyDiffersFromVerifyKeyForIdenticalInput(t *testing.T) {
 	verifyKey := Verify("axon", "agent", "bot", targets, verdicts)
 	if closeKey == verifyKey {
 		t.Fatal("Close and Verify minted the same key for identical input — the two verbs no longer occupy distinct key domains")
+	}
+}
+
+// TestRespondIncompletenessSeparatesOtherwiseIdenticalResponses is the
+// defect P2 reported and did not work around: before the facts fed this key,
+// two responses differing ONLY in `unmet[]` minted one key, so a corrected
+// response deduped as already-done at the funnel's idempotency layer and its
+// correction was never committed.
+func TestRespondIncompletenessSeparatesOtherwiseIdenticalResponses(t *testing.T) {
+	t.Parallel()
+
+	base := func(inc RespondIncompleteness) string {
+		return Respond("axon", "agent", "bot", []string{"XW-peer-20260819-aaaa"}, "partial",
+			map[string]string{"title": "partial answer"}, nil, []byte("body"), inc)
+	}
+
+	none := base(RespondIncompleteness{})
+	unmetOne := base(RespondIncompleteness{Unmet: []int{1}})
+	unmetTwo := base(RespondIncompleteness{Unmet: []int{2}})
+	standing := base(RespondIncompleteness{Standing: "provisional"})
+	blocked := base(RespondIncompleteness{BlockedByReason: "out-of-scope", BlockedByOwner: "seomatrix"})
+
+	for name, pair := range map[string][2]string{
+		"unmet vs none":      {unmetOne, none},
+		"unmet 1 vs 2":       {unmetOne, unmetTwo},
+		"standing vs none":   {standing, none},
+		"blocked_by vs none": {blocked, none},
+	} {
+		if pair[0] == pair[1] {
+			t.Errorf("%s: keys collide (%s) — a corrected response would dedup as already-done", name, pair[0])
+		}
+	}
+
+	// Flag ORDER is not part of what the operation IS: `unmet[]` carries no
+	// wire ordering the way `refs[]` does, so two calls differing only in the
+	// order the indices were given are the SAME operation.
+	if a, b := base(RespondIncompleteness{Unmet: []int{3, 1}}), base(RespondIncompleteness{Unmet: []int{1, 3}}); a != b {
+		t.Errorf("unmet order changed the key: %s != %s — a retry with the flags in a different order must dedup", a, b)
+	}
+}
+
+// TestRespondZeroIncompletenessIsByteIdenticalToTheHistoricalKey pins the
+// guarantee `refs` earned before it: a caller declaring none of the three
+// derives EXACTLY the key it derived before this parameter existed. The
+// literal is the pre-change value, recomputed by hand from the same inputs.
+func TestRespondZeroIncompletenessIsByteIdenticalToTheHistoricalKey(t *testing.T) {
+	t.Parallel()
+
+	withZero := Respond("axon", "agent", "bot", []string{"XQ-a"}, "answered", nil, nil, nil, RespondIncompleteness{})
+	withEmptyFields := Respond("axon", "agent", "bot", []string{"XQ-a"}, "answered", map[string]string{}, []string{}, nil, RespondIncompleteness{})
+	if withZero != withEmptyFields {
+		t.Errorf("nil and empty collections disagree: %s != %s", withZero, withEmptyFields)
+	}
+	// The NUL-tagged section must be absent, not merely empty: an empty
+	// canonical writes nothing, which is what keeps historical keys stable.
+	if same := Respond("axon", "agent", "bot", []string{"XQ-a"}, "answered", nil, nil, nil, RespondIncompleteness{Standing: ""}); same != withZero {
+		t.Errorf("an all-empty RespondIncompleteness changed the key: %s != %s", same, withZero)
 	}
 }

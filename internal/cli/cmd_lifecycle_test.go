@@ -1724,6 +1724,267 @@ func TestRespondRefOrderChangesResponseID(t *testing.T) {
 	}
 }
 
+// --- P2 (defects-fix-2026-08): unmet/standing/blocked_by ------------------
+
+// respondWithRealValidation drives `a2a respond` through the SAME real
+// schema.Load/validate.New/space.NewWriteFunnel stack
+// TestRespondSetsToAsParentAuthorAndPassesSubmitValidation uses — never a
+// fakeLifecycleFunnel stub — because this is the ordering guard: it must be
+// possible for it to go red for a REAL reason (the funnel's own V2 pass
+// refusing an envelope/v1 draft that carries a field only envelope/v2
+// declares), not merely a stub agreeing to whatever it's handed.
+func respondWithRealValidation(t *testing.T, parentID string, args []string) (code int, out, errOut, mirrorDir string, fakeHost *host.FakeHost) {
+	t.Helper()
+	fx := spacefixture.New(t, "axon", "beta")
+	mirrorDir = fx.Clone("beta")
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	engine := validate.New(corpus)
+	manifest := lifecycleManifest()
+	legality := cli.NewLegalityAdapter(mirrorDir, "beta", manifest)
+	resolver := cli.NewMirrorResolver(mirrorDir, manifest)
+	validator := cli.NewSubmitValidatorAdapter(engine, "beta", resolver, legality)
+
+	fakeHost = host.NewFakeHost()
+	funnel := space.NewWriteFunnel(fakeHost, validator, "0.1.0")
+	hostCfg := lifecycleHostConfig()
+	hostCfg.RemoteURL = fx.RemoteURL()
+
+	cmd := cli.NewRespondCommand(funnel, mirrorDir, "fixture-space", "beta", manifest, hostCfg, lifecycleActorResolver("agent", "bot"))
+	io, outBuf, errBuf := newIO()
+	full := append([]string{}, args...)
+	full = append(full, parentID)
+	code = cmd.Run(context.Background(), full, io)
+	return code, outBuf.String(), errBuf.String(), mirrorDir, fakeHost
+}
+
+// committedResponseContent reads back the ONE committed XS- response file
+// from the branch the fake host received the push on — identical extraction
+// idiom to TestRespondSetsToAsParentAuthorAndPassesSubmitValidation.
+func committedResponseContent(t *testing.T, mirrorDir string, fakeHost *host.FakeHost) string {
+	t.Helper()
+	if len(fakeHost.Pushes) != 1 {
+		t.Fatalf("expected exactly one PushBranch call, got %d", len(fakeHost.Pushes))
+	}
+	branch := fakeHost.Pushes[0].Branch
+	changed := gitDiffNames(t, mirrorDir, "main", branch)
+	var responsePath string
+	for _, p := range changed {
+		if strings.HasPrefix(filepath.Base(p), "XS-") && strings.HasSuffix(p, ".md") {
+			responsePath = p
+		}
+	}
+	if responsePath == "" {
+		t.Fatalf("expected a committed XS- response file among %v", changed)
+	}
+	return runGitOutputForTest(t, mirrorDir, "show", branch+":"+responsePath)
+}
+
+// TestRespondResultPartialGenerationOrderingGuard is spec 02 AC4: it renders
+// `--result partial` through the REAL production path (respondWithRealValidation)
+// and validates the committed result — the test that would have caught this
+// phase's fix order being flipped (schemas/templates/v2/response.md and the
+// flags land BEFORE generationTable["response"] moves, per spec 02 §"The fix
+// order is load-bearing"). Recorded mutation evidence for this file's own
+// deviations report: run BEFORE the RespondCommand.Run `template.Render` call
+// was given `EnvelopeSchema: "envelope/v2"`, this test failed red (the
+// response rendered envelope/v1, whose unevaluatedProperties:false refused
+// the `standing` key at submit) — see the deviations report for the captured
+// stderr.
+func TestRespondResultPartialGenerationOrderingGuard(t *testing.T) {
+	t.Parallel()
+	parentID := "XQ-axon-20260721-grd1"
+	code, out, errOut, mirrorDir, fakeHost := respondWithRealValidation(t, parentID, []string{"--result", "partial", "--standing", "provisional"})
+	if code != 0 {
+		t.Fatalf("respond --result partial --standing provisional: code=%d, want 0; stdout=%s stderr=%s", code, out, errOut)
+	}
+	content := committedResponseContent(t, mirrorDir, fakeHost)
+	if !strings.Contains(content, "schema: envelope/v2") {
+		t.Fatalf("expected the committed response to carry schema: envelope/v2, got:\n%s", content)
+	}
+	if !strings.Contains(content, "standing: provisional") {
+		t.Fatalf("expected the committed response to carry standing: provisional, got:\n%s", content)
+	}
+}
+
+// TestRespondPartialWithNoneOfTheThreeIsRefused is spec 02 AC2's refusal
+// half: envelope/v2/response's own conditional requires (unmet AND
+// blocked_by) OR a non-authoritative standing on result partial/cannot — a
+// bare `--result partial` satisfies neither branch and must be refused by
+// the real V2 validation pass, not merely accepted and left to drift.
+func TestRespondPartialWithNoneOfTheThreeIsRefused(t *testing.T) {
+	t.Parallel()
+	parentID := "XQ-axon-20260721-grd2"
+	code, _, errOut, _, _ := respondWithRealValidation(t, parentID, []string{"--result", "partial"})
+	if code == 0 {
+		t.Fatalf("expected `--result partial` with none of unmet/standing/blocked_by to be refused, got code=0")
+	}
+	if errOut == "" {
+		t.Fatalf("expected a refusal message naming the real condition, got empty stderr")
+	}
+}
+
+// TestRespondPartialWithStandingAuthoritativeAloneIsRefused is spec 02 AC2's
+// sharpest edge: a bare `standing: authoritative` supplies no new signal
+// (response.schema.json's own `then` branch description) and must NOT
+// satisfy the conditional — the schema's `anyOf` second arm requires
+// `standing` to be `provisional` or `advisory`, never merely present.
+func TestRespondPartialWithStandingAuthoritativeAloneIsRefused(t *testing.T) {
+	t.Parallel()
+	parentID := "XQ-axon-20260721-grd3"
+	code, _, errOut, _, _ := respondWithRealValidation(t, parentID, []string{"--result", "partial", "--standing", "authoritative"})
+	if code == 0 {
+		t.Fatalf("expected `--result partial --standing authoritative` (alone) to be refused, got code=0")
+	}
+	if errOut == "" {
+		t.Fatalf("expected a refusal message, got empty stderr")
+	}
+}
+
+// TestRespondPartialWithUnmetAndBlockedByPasses is spec 02 AC1/AC2's other
+// passing branch: `unmet` + `blocked_by` (both required by the schema's
+// first `anyOf` arm) validates without any `standing` override.
+func TestRespondPartialWithUnmetAndBlockedByPasses(t *testing.T) {
+	t.Parallel()
+	parentID := "XQ-axon-20260721-grd4"
+	code, out, errOut, mirrorDir, fakeHost := respondWithRealValidation(t, parentID, []string{
+		"--result", "partial", "--unmet", "2", "--blocked-by", "out-of-scope:seomatrix:decision",
+	})
+	if code != 0 {
+		t.Fatalf("respond --result partial --unmet 2 --blocked-by out-of-scope:seomatrix:decision: code=%d, want 0; stdout=%s stderr=%s", code, out, errOut)
+	}
+	content := committedResponseContent(t, mirrorDir, fakeHost)
+	if !strings.Contains(content, "unmet:") || !strings.Contains(content, "- 2") {
+		t.Fatalf("expected the committed response to carry unmet: [2], got:\n%s", content)
+	}
+	if !strings.Contains(content, "reason_code: out-of-scope") || !strings.Contains(content, "owner: seomatrix") || !strings.Contains(content, "needs: decision") {
+		t.Fatalf("expected the committed response to carry the full blocked_by object, got:\n%s", content)
+	}
+}
+
+// TestRespondBlockedByRequiresAllThreeSegments is a CLI-level format guard
+// (exit 2, before any funnel call) for the deviation this phase's report
+// carries: the spec's own flag-shape text names only <reason_code>:<owner>,
+// but envelope/v2/response.schema.json's `blocked_by` requires `needs` too
+// (`"required": ["reason_code", "owner", "needs"]`) — a two-segment value
+// can never author an object that validates.
+func TestRespondBlockedByRequiresAllThreeSegments(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-grd5"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--result", "partial", "--blocked-by", "out-of-scope:seomatrix", parentID}, io)
+	if code != 2 {
+		t.Fatalf("expected a two-segment --blocked-by to be refused with exit 2, got code=%d stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the funnel to never be called for a malformed --blocked-by, got %d calls", len(fake.calls))
+	}
+}
+
+// TestRespondBlockedByInvalidReasonCodeRefused is lifecycleParseBlockedBy's
+// own reason_code enum guard (schema's own vocabulary — split-required|
+// security-concern|out-of-scope|duplicate|other).
+func TestRespondBlockedByInvalidReasonCodeRefused(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-grd8"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--result", "partial", "--blocked-by", "bogus-reason:seomatrix:bytes", parentID}, io)
+	if code != 2 {
+		t.Fatalf("expected an invalid reason_code to be refused with exit 2, got code=%d stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the funnel to never be called for an invalid reason_code, got %d calls", len(fake.calls))
+	}
+}
+
+// TestRespondBlockedByInvalidNeedsRefused is lifecycleParseBlockedBy's own
+// `needs` enum guard (bytes|judgement|decision).
+func TestRespondBlockedByInvalidNeedsRefused(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-grd9"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--result", "partial", "--blocked-by", "out-of-scope:seomatrix:bogus-needs", parentID}, io)
+	if code != 2 {
+		t.Fatalf("expected an invalid needs value to be refused with exit 2, got code=%d stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the funnel to never be called for an invalid needs value, got %d calls", len(fake.calls))
+	}
+}
+
+// TestRespondInvalidStandingValueRefused is the CLI-level enum guard on
+// --standing (distinct from TestRespondPartialWithStandingAuthoritative
+// AloneIsRefused, which exercises the SCHEMA's own conditional on a
+// schema-valid value).
+func TestRespondInvalidStandingValueRefused(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-grda"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--result", "partial", "--standing", "bogus", parentID}, io)
+	if code != 2 {
+		t.Fatalf("expected an invalid --standing value to be refused with exit 2, got code=%d stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the funnel to never be called for an invalid --standing value, got %d calls", len(fake.calls))
+	}
+}
+
+// TestRespondUnmetDuplicateIndexRefused is lifecycleParseUnmet's own
+// mutation-tested guard (see this phase's mutation_evidence): a repeated
+// --unmet index is a caller error, not a silent dedup.
+func TestRespondUnmetDuplicateIndexRefused(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-grd6"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--result", "partial", "--unmet", "1", "--unmet", "1", "--standing", "provisional", parentID}, io)
+	if code != 2 {
+		t.Fatalf("expected a duplicate --unmet index to be refused with exit 2, got code=%d stderr=%s", code, errOut.String())
+	}
+}
+
+// TestRespondNoFlagsOmitsAllThreeKeys is P-1's own discipline carried into
+// this phase's new fields: an `a2a respond` call that never uses --unmet/
+// --standing/--blocked-by must not declare any of them — absence stays
+// absence, never a placeholder or a silent default.
+func TestRespondNoFlagsOmitsAllThreeKeys(t *testing.T) {
+	t.Parallel()
+	parentID := "XQ-axon-20260721-grd7"
+	code, out, errOut, mirrorDir, fakeHost := respondWithRealValidation(t, parentID, []string{"--result", "answered"})
+	if code != 0 {
+		t.Fatalf("respond --result answered: code=%d, want 0; stdout=%s stderr=%s", code, out, errOut)
+	}
+	content := committedResponseContent(t, mirrorDir, fakeHost)
+	for _, key := range []string{"unmet:", "standing:", "blocked_by:"} {
+		if strings.Contains(content, key) {
+			t.Fatalf("expected no %s key on a flagless respond, got:\n%s", key, content)
+		}
+	}
+}
+
 // --- verify --verdict / event/v2 authoring (P6 wave C, T5's discharge) -----
 
 // lifecycleVerdictProbe/lifecycleEventProbe decode the wire shape these

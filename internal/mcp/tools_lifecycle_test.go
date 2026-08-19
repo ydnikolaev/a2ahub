@@ -3,11 +3,20 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/schema"
+	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/validate"
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
+	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
 
 func TestLifecycleHandlerAckLegalBatch(t *testing.T) {
@@ -299,6 +308,263 @@ func TestRespondHandlerInvalidResult(t *testing.T) {
 	_, _, err := handler(context.Background(), args)
 	if err == nil {
 		t.Fatal("expected an error for an invalid result value")
+	}
+}
+
+// --- P2 (defects-fix-2026-08): unmet/standing/blocked_by ------------------
+
+// mcpSeedAcceptedQuestion mirrors internal/cli's own seedAcceptedQuestion
+// (cmd_lifecycle_test.go, off this phase's allowlist) — submit/acknowledge/
+// accept, the minimum legal history `respond` needs.
+func mcpSeedAcceptedQuestion(t *testing.T, mirrorDir, id, to string) {
+	t.Helper()
+	writeQuestionArtifact(t, mirrorDir, id, to)
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, id, "submit", "axon")
+	writeLifecycleEvent(t, mirrorDir, to, 1, id, "acknowledge", to)
+	writeLifecycleEvent(t, mirrorDir, to, 2, id, "accept", to)
+}
+
+// respondWithRealValidation drives a2a_respond through the SAME real
+// schema.Load/validate.New/space.NewWriteFunnel stack
+// internal/mcp/adapters_test.go's own TestSubmitValidatorAdapter* tests use
+// — never fakeFunnel — because this is the parity half of spec 02's own
+// ordering guard: it must be possible for this call to fail for a REAL
+// schema reason (envelope/v1's unevaluatedProperties:false, or envelope/v2's
+// own `if result: partial|cannot` conditional), not merely whatever a stub
+// agrees to record.
+func respondWithRealValidation(t *testing.T, parentID string, in RespondInput) (callErr error, mirrorDir string, fakeHost *host.FakeHost) {
+	t.Helper()
+	fx := spacefixture.New(t, "axon", "beta")
+	mirrorDir = fx.Clone("beta")
+	mcpSeedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	engine := validate.New(corpus)
+	manifest := testManifest()
+	legality := NewLegalityAdapter(mirrorDir, "beta", manifest)
+	resolver := NewMirrorResolver(mirrorDir, manifest)
+	validator := NewSubmitValidatorAdapter(engine, "beta", resolver, legality)
+
+	fakeHost = host.NewFakeHost()
+	funnel := space.NewWriteFunnel(fakeHost, validator, "0.1.0")
+	hostCfg := testHostConfig()
+	hostCfg.RemoteURL = fx.RemoteURL()
+
+	deps := WriteDeps{
+		Funnel: funnel, MirrorDir: mirrorDir, SpaceID: "fixture-space", OwnSystem: "beta",
+		Manifest: manifest, HostCfg: hostCfg, ResolveActor: fixedActorResolver("agent", "bot"),
+		Now:     func() time.Time { return time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC) },
+		Entropy: repeatingReader{pattern: []byte("0123456789abcdef")}, ReadFile: os.ReadFile,
+	}
+	handler := newRespondHandler(deps)
+	in.ParentIDs = []string{parentID}
+	args, merr := json.Marshal(in)
+	if merr != nil {
+		t.Fatalf("marshal RespondInput: %v", merr)
+	}
+	_, _, callErr = handler(context.Background(), args)
+	return callErr, mirrorDir, fakeHost
+}
+
+// mcpGitOutputForTest runs a read-only git command in dir and returns its
+// stdout — the output-returning counterpart wire_test.go's own runGitTest
+// (same package, off this phase's allowlist) doesn't need, kept local to
+// this file rather than widening that helper.
+func mcpGitOutputForTest(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", gitfixture.Args(args...)...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git %v (dir=%s): %v", args, dir, err)
+	}
+	return string(out)
+}
+
+// mcpGitDiffNames lists paths that differ between base and branch — the
+// same idiom internal/cli's own gitDiffNames (off this phase's allowlist)
+// uses.
+func mcpGitDiffNames(t *testing.T, dir, base, branch string) []string {
+	t.Helper()
+	out := mcpGitOutputForTest(t, dir, "diff", "--name-only", base, branch)
+	var names []string
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line != "" {
+			names = append(names, line)
+		}
+	}
+	return names
+}
+
+// mcpCommittedResponseContent reads back the ONE committed XS- response
+// file off the branch the fake host received the push on — identical
+// extraction idiom to internal/cli's committedResponseContent.
+func mcpCommittedResponseContent(t *testing.T, mirrorDir string, fakeHost *host.FakeHost) string {
+	t.Helper()
+	if len(fakeHost.Pushes) != 1 {
+		t.Fatalf("expected exactly one PushBranch call, got %d", len(fakeHost.Pushes))
+	}
+	branch := fakeHost.Pushes[0].Branch
+	changed := mcpGitDiffNames(t, mirrorDir, "main", branch)
+	var responsePath string
+	for _, p := range changed {
+		if strings.HasPrefix(filepath.Base(p), "XS-") && strings.HasSuffix(p, ".md") {
+			responsePath = p
+		}
+	}
+	if responsePath == "" {
+		t.Fatalf("expected a committed XS- response file among %v", changed)
+	}
+	return mcpGitOutputForTest(t, mirrorDir, "show", branch+":"+responsePath)
+}
+
+// TestRespondHandlerResultPartialWithStandingProvisionalValidates is spec 02
+// AC4/AC5's MCP half: `a2a_respond` renders `--result partial` +
+// `standing: provisional` through the REAL production path and it validates
+// — the MCP twin of internal/cli's
+// TestRespondResultPartialGenerationOrderingGuard. Recorded mutation
+// evidence for this file's own deviations report: run BEFORE
+// newRespondHandler's `template.Render` call was given
+// `EnvelopeSchema: "envelope/v2"`, this test failed red with the identical
+// SCH-003/unevaluatedProperties refusal internal/cli's guard test recorded.
+func TestRespondHandlerResultPartialWithStandingProvisionalValidates(t *testing.T) {
+	t.Parallel()
+	parentID := "XQ-axon-20260721-mrd1"
+	callErr, mirrorDir, fakeHost := respondWithRealValidation(t, parentID, RespondInput{Result: "partial", Standing: "provisional"})
+	if callErr != nil {
+		t.Fatalf("respond partial+standing=provisional: %v", callErr)
+	}
+	content := mcpCommittedResponseContent(t, mirrorDir, fakeHost)
+	if !strings.Contains(content, "schema: envelope/v2") {
+		t.Fatalf("expected the committed response to carry schema: envelope/v2, got:\n%s", content)
+	}
+	if !strings.Contains(content, "standing: provisional") {
+		t.Fatalf("expected the committed response to carry standing: provisional, got:\n%s", content)
+	}
+}
+
+// TestRespondHandlerPartialWithNoneOfTheThreeRefused is spec 02 AC2's
+// refusal half, MCP side.
+func TestRespondHandlerPartialWithNoneOfTheThreeRefused(t *testing.T) {
+	t.Parallel()
+	parentID := "XQ-axon-20260721-mrd2"
+	callErr, _, _ := respondWithRealValidation(t, parentID, RespondInput{Result: "partial"})
+	if callErr == nil {
+		t.Fatal("expected `result: partial` with none of unmet/standing/blocked_by to be refused")
+	}
+}
+
+// TestRespondHandlerUnmetAndBlockedByValidates is spec 02 AC1/AC5's MCP
+// half: `unmet` + `blocked_by` validates without any `standing` override,
+// and carries the SAME shape internal/cli's TestRespondPartialWithUnmet
+// AndBlockedByPasses asserts on (the parity this phase's spec calls for).
+func TestRespondHandlerUnmetAndBlockedByValidates(t *testing.T) {
+	t.Parallel()
+	parentID := "XQ-axon-20260721-mrd3"
+	callErr, mirrorDir, fakeHost := respondWithRealValidation(t, parentID, RespondInput{
+		Result: "partial", Unmet: []int{2},
+		BlockedBy: &RespondBlockedBy{ReasonCode: "out-of-scope", Owner: "seomatrix", Needs: "decision"},
+	})
+	if callErr != nil {
+		t.Fatalf("respond partial+unmet+blocked_by: %v", callErr)
+	}
+	content := mcpCommittedResponseContent(t, mirrorDir, fakeHost)
+	if !strings.Contains(content, "unmet:") || !strings.Contains(content, "- 2") {
+		t.Fatalf("expected the committed response to carry unmet: [2], got:\n%s", content)
+	}
+	if !strings.Contains(content, "reason_code: out-of-scope") || !strings.Contains(content, "owner: seomatrix") || !strings.Contains(content, "needs: decision") {
+		t.Fatalf("expected the committed response to carry the full blocked_by object, got:\n%s", content)
+	}
+}
+
+// TestRespondHandlerNoNewFieldsOmitsAllThreeKeys is P-1's own discipline:
+// a plain `a2a_respond` call that never sets unmet/standing/blocked_by must
+// not declare any of them.
+func TestRespondHandlerNoNewFieldsOmitsAllThreeKeys(t *testing.T) {
+	t.Parallel()
+	parentID := "XQ-axon-20260721-mrd4"
+	callErr, mirrorDir, fakeHost := respondWithRealValidation(t, parentID, RespondInput{Result: "answered"})
+	if callErr != nil {
+		t.Fatalf("respond answered: %v", callErr)
+	}
+	content := mcpCommittedResponseContent(t, mirrorDir, fakeHost)
+	for _, key := range []string{"unmet:", "standing:", "blocked_by:"} {
+		if strings.Contains(content, key) {
+			t.Fatalf("expected no %s key on a flagless respond, got:\n%s", key, content)
+		}
+	}
+}
+
+// TestRespondHandlerInvalidStandingRefused is respondStandingEnum's own
+// mutation-tested guard.
+func TestRespondHandlerInvalidStandingRefused(t *testing.T) {
+	t.Parallel()
+	fake := &fakeFunnel{}
+	deps := testWriteDeps(t.TempDir(), fake)
+	handler := newRespondHandler(deps)
+	in := RespondInput{ParentIDs: []string{"XQ-axon-20260721-mrd5"}, Result: "partial", Standing: "bogus"}
+	args, _ := json.Marshal(in)
+	_, _, err := handler(context.Background(), args)
+	// Asserted on the SPECIFIC message, not merely err != nil: this call's
+	// mirrorDir carries no seeded parent, so a downstream failure (loadEnvelope
+	// finding no such artifact) would ALSO produce a non-nil error and let a
+	// broken respondStandingEnum check pass unnoticed — caught exactly this
+	// way while mutation-testing this test (see this phase's mutation_evidence).
+	if err == nil || !strings.Contains(err.Error(), "standing must be one of") {
+		t.Fatalf("expected a standing-enum refusal, got %v", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the funnel to never be called for an invalid standing, got %d calls", len(fake.calls))
+	}
+}
+
+// TestRespondHandlerBlockedByMissingNeedsRefused is respondValidateBlockedBy's
+// own mutation-tested guard: `needs` is required by
+// envelope/v2/response.schema.json (`"required": ["reason_code", "owner",
+// "needs"]`) and this phase gives it no default (P-1).
+func TestRespondHandlerBlockedByMissingNeedsRefused(t *testing.T) {
+	t.Parallel()
+	fake := &fakeFunnel{}
+	deps := testWriteDeps(t.TempDir(), fake)
+	handler := newRespondHandler(deps)
+	in := RespondInput{ParentIDs: []string{"XQ-axon-20260721-mrd6"}, Result: "partial", BlockedBy: &RespondBlockedBy{ReasonCode: "out-of-scope", Owner: "seomatrix"}}
+	args, _ := json.Marshal(in)
+	_, _, err := handler(context.Background(), args)
+	// Asserted on the SPECIFIC message — see TestRespondHandlerInvalidStandingRefused's
+	// own comment for why a bare err != nil is not enough here (empty
+	// mirrorDir, no seeded parent).
+	if err == nil || !strings.Contains(err.Error(), "blocked_by.needs must be one of") {
+		t.Fatalf("expected a blocked_by.needs refusal, got %v", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the funnel to never be called for a malformed blocked_by, got %d calls", len(fake.calls))
+	}
+}
+
+// TestRespondHandlerUnmetDuplicateIndexRefused is respondValidateUnmet's own
+// mutation-tested guard.
+func TestRespondHandlerUnmetDuplicateIndexRefused(t *testing.T) {
+	t.Parallel()
+	fake := &fakeFunnel{}
+	deps := testWriteDeps(t.TempDir(), fake)
+	handler := newRespondHandler(deps)
+	in := RespondInput{ParentIDs: []string{"XQ-axon-20260721-mrd7"}, Result: "partial", Standing: "provisional", Unmet: []int{1, 1}}
+	args, _ := json.Marshal(in)
+	_, _, err := handler(context.Background(), args)
+	// Asserted on the SPECIFIC message — see TestRespondHandlerInvalidStandingRefused's
+	// own comment: with a bare err != nil this test PASSED even after
+	// respondValidateUnmet's own duplicate-index branch was mutated dead,
+	// because the empty mirrorDir's downstream loadEnvelope failure produced
+	// an unrelated non-nil error. Caught during this phase's own mutation
+	// testing (see mutation_evidence) and fixed here rather than left silent.
+	if err == nil || !strings.Contains(err.Error(), "was already given") {
+		t.Fatalf("expected a duplicate-unmet-index refusal, got %v", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the funnel to never be called for a duplicate unmet index, got %d calls", len(fake.calls))
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 const prefix = "op-v1-"
@@ -95,8 +96,59 @@ func validWorkAction(action string) bool {
 // hides part of what the operation IS inside a map documented as the caller's
 // schema-field overrides, and it makes the magic key's uniqueness a thing
 // somebody has to keep being right about.
+// RespondIncompleteness carries P6's per-criterion shortfall facts — the
+// `unmet[]` / `standing` / `blocked_by` a response may declare (defects-fix
+// P2, envelope/v2/response). A plain value type for the same reason
+// VerdictEntry below is one: this package stays stdlib-only.
+//
+// The zero value means "declared nothing", and it MUST encode to nothing at
+// all — see Respond's own comment on why.
+// RespondIncompleteness is part of the public package API.
+type RespondIncompleteness struct {
+	Unmet           []int  // indices into the parent's acceptance_criteria[]
+	Standing        string // authoritative | provisional | advisory, "" when undeclared
+	BlockedByReason string
+	BlockedByOwner  string
+	BlockedByNeeds  string
+}
+
+// canonical renders the facts as one deterministic string, or "" when nothing
+// was declared. Unmet is sorted: the wire array's order carries no meaning
+// (unlike `refs[]`), so two calls differing only in flag order are the SAME
+// operation and must dedup onto one key — the same reasoning parents already
+// documents.
+func (r RespondIncompleteness) canonical() string {
+	if len(r.Unmet) == 0 && r.Standing == "" && r.BlockedByReason == "" && r.BlockedByOwner == "" && r.BlockedByNeeds == "" {
+		return ""
+	}
+	unmet := append([]int(nil), r.Unmet...)
+	sort.Ints(unmet)
+	parts := make([]string, 0, len(unmet)+4)
+	for _, i := range unmet {
+		parts = append(parts, "u"+strconv.Itoa(i))
+	}
+	parts = append(parts, "s="+r.Standing, "br="+r.BlockedByReason, "bo="+r.BlockedByOwner, "bn="+r.BlockedByNeeds)
+	return strings.Join(parts, "\x1f")
+}
+
+// incompleteness is why this parameter WIDENS the signature instead of taking
+// the second-entry-point shape LegalNextFor and ValidateEventWithContext use,
+// and the distinction is worth stating because this epic applies both:
+//
+//   - a SECOND ENTRY POINT is right when the narrow answer stays TRUE for a
+//     caller that genuinely holds only the narrow facts (fold.OutcomeOf: two
+//     facts still answer correctly for nineteen of twenty-one pairs);
+//   - a WIDENED SIGNATURE is right when the narrow answer becomes WRONG. A key
+//     minted without these facts is not a narrower key, it is a COLLIDING one:
+//     two responses differing only in `unmet[]` mint the same key, so a
+//     corrected response dedups as already-done and its correction is never
+//     committed. Leaving a callable narrow form would leave that bug reachable
+//     by accident, which is precisely how it was found.
+//
+// The compiler therefore visits every call site, which is the point.
+//
 // Respond is part of the public package API.
-func Respond(system, actorKind, actorName string, parentIDs []string, result string, fields map[string]string, refs []string, body []byte) string {
+func Respond(system, actorKind, actorName string, parentIDs []string, result string, fields map[string]string, refs []string, body []byte, incompleteness RespondIncompleteness) string {
 	parents := append([]string(nil), parentIDs...)
 	sort.Strings(parents)
 	fieldKeys := make([]string, 0, len(fields))
@@ -135,6 +187,25 @@ func Respond(system, actorKind, actorName string, parentIDs []string, result str
 	// exactly the key it derived before this parameter existed.
 	for _, ref := range refs {
 		encoder.add(ref)
+	}
+	// The incompleteness facts go LAST and are written ONLY when something was
+	// declared, and both halves matter.
+	//
+	// Written only when non-empty keeps every pre-existing key BYTE-IDENTICAL,
+	// the same guarantee refs earned above: a caller that declares none of the
+	// three derives exactly the key it derived before this parameter existed.
+	//
+	// Written as ONE length-prefixed entry with a NUL-prefixed domain tag is
+	// what keeps it unambiguous against the variable-length `refs` region it
+	// follows. The section-separation problem this file already documents
+	// applies again: nothing structurally separates two adjacent
+	// variable-length regions, so `refs["X"]` with no facts and no refs with a
+	// facts string of "X" would otherwise collide. A leading NUL byte cannot
+	// begin an artifact id — refs are `[A-Z]{2}-...` by §3.3's grammar — so the
+	// disjointness is structural rather than a vocabulary coincidence somebody
+	// has to keep being right about.
+	if canonical := incompleteness.canonical(); canonical != "" {
+		encoder.add("\x00respond-incompleteness-v1|" + canonical)
 	}
 	return encoder.key()
 }

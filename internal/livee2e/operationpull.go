@@ -51,6 +51,10 @@ func respondOperationWithFields(system, parentID, result string, fields map[stri
 		fields,
 		nil, // refs: no declared path drives `respond --ref` yet
 		nil,
+		// No declared path drives --unmet/--standing/--blocked-by yet either;
+		// the zero value encodes to nothing, so this key stays byte-identical
+		// to the one every historical run derived.
+		operation.RespondIncompleteness{},
 	)
 	return key, space.BranchName(system, "respond", key)
 }

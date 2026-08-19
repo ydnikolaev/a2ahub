@@ -175,12 +175,92 @@ func refsFromList(refs []string) []refEntry {
 
 // RespondInput is a2a_respond's structured input (mirrors internal/cli's
 // RespondCommand flags).
+//
+// Unmet/Standing/BlockedBy (defects-fix-2026-08 P2, spec 02) mirror
+// internal/cli's `--unmet`/`--standing`/`--blocked-by` flags — same three
+// fields, same envelope/v2/response.schema.json enums, but native JSON
+// shapes (an int array, a struct) rather than a CLI flag's colon-separated
+// string, since this surface's wire format already has structure a flag
+// string doesn't. ADR-001 forbids internal/mcp importing internal/cli, so
+// the validation (the enums, the required-together rules) is duplicated
+// below rather than shared — the established idiom this file's own
+// respondSeed/parentThread/thread-conflict duplication already follows.
 type RespondInput struct {
 	ParentIDs    []string          `json:"parent_ids"`
 	Result       string            `json:"result"`
 	Fields       map[string]string `json:"fields,omitempty"`
 	BodyOverride string            `json:"body_override,omitempty"`
 	Actor        ActorInput        `json:"actor,omitempty"`
+	Unmet        []int             `json:"unmet,omitempty"`
+	Standing     string            `json:"standing,omitempty"`
+	BlockedBy    *RespondBlockedBy `json:"blocked_by,omitempty"`
+}
+
+// RespondBlockedBy is envelope/v2/response.schema.json's own `blocked_by`
+// shape, `{reason_code, owner, needs}` — ALL THREE required
+// (`"required": ["reason_code", "owner", "needs"]`, `"additionalProperties":
+// false`). See internal/cli's lifecycleParseBlockedBy doc comment for why
+// this phase's own spec text (`<reason_code>:<owner>`, two segments) is a
+// deviation this wave's report records: `needs` is required and gets no
+// default (P-1 — absence must stay distinct from a declared value).
+type RespondBlockedBy struct {
+	ReasonCode string `json:"reason_code"`
+	Owner      string `json:"owner"`
+	Needs      string `json:"needs"`
+}
+
+// respondBlockedByReasonEnum/respondBlockedByNeedsEnum/respondStandingEnum
+// are envelope/v2/response.schema.json's own closed vocabularies, mirrored
+// (not $ref'd — that schema's own description explains why) identically to
+// internal/cli's lifecycleBlockedByReasonEnum/lifecycleBlockedByNeedsEnum/
+// lifecycleStandingEnum.
+var respondBlockedByReasonEnum = map[string]bool{
+	"split-required": true, "security-concern": true, "out-of-scope": true,
+	"duplicate": true, "other": true,
+}
+
+var respondBlockedByNeedsEnum = map[string]bool{
+	"bytes": true, "judgement": true, "decision": true,
+}
+
+var respondStandingEnum = map[string]bool{
+	"authoritative": true, "provisional": true, "advisory": true,
+}
+
+// respondValidateUnmet checks unmet indices are non-negative and unique —
+// the same rules internal/cli's lifecycleParseUnmet enforces on `--unmet`.
+func respondValidateUnmet(unmet []int) error {
+	seen := map[int]bool{}
+	for _, index := range unmet {
+		if index < 0 {
+			return fmt.Errorf("respond: unmet index %d must be a non-negative integer", index)
+		}
+		if seen[index] {
+			return fmt.Errorf("respond: unmet index %d was already given — one entry per unmet criterion", index)
+		}
+		seen[index] = true
+	}
+	return nil
+}
+
+// respondValidateBlockedBy checks blockedBy's three fields against
+// envelope/v2/response.schema.json's own `blocked_by` requirements — a nil
+// blockedBy (the field omitted) is valid, matching CLI's "flag not given at
+// all" case.
+func respondValidateBlockedBy(blockedBy *RespondBlockedBy) error {
+	if blockedBy == nil {
+		return nil
+	}
+	if !respondBlockedByReasonEnum[blockedBy.ReasonCode] {
+		return fmt.Errorf("respond: blocked_by.reason_code must be one of split-required|security-concern|out-of-scope|duplicate|other")
+	}
+	if strings.TrimSpace(blockedBy.Owner) == "" {
+		return fmt.Errorf("respond: blocked_by.owner is required")
+	}
+	if !respondBlockedByNeedsEnum[blockedBy.Needs] {
+		return fmt.Errorf("respond: blocked_by.needs must be one of bytes|judgement|decision")
+	}
+	return nil
 }
 
 func newRespondHandler(deps WriteDeps) HandlerFunc {
@@ -196,6 +276,15 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 		case "answered", "delivered", "partial", "cannot":
 		default:
 			return nil, "", fmt.Errorf("respond: result must be one of answered|delivered|partial|cannot")
+		}
+		if uerr := respondValidateUnmet(in.Unmet); uerr != nil {
+			return nil, "", uerr
+		}
+		if in.Standing != "" && !respondStandingEnum[in.Standing] {
+			return nil, "", fmt.Errorf("respond: standing must be one of authoritative|provisional|advisory")
+		}
+		if berr := respondValidateBlockedBy(in.BlockedBy); berr != nil {
+			return nil, "", berr
 		}
 
 		resolved, actorErr := deps.ResolveActor(in.Actor)
@@ -226,8 +315,21 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 		// gained one with AC9's submit half and MCP did not (epic-backlog
 		// B22). A nil slice encodes as nothing, so an MCP respond keeps the
 		// exact key it had before that flag existed.
+		//
+		// CLOSED by the lead the same wave this gap was reported (see
+		// internal/operation/key.go's own comment on why this WIDENED the
+		// signature instead of adding a second entry point): a key minted
+		// without these three is not narrower, it is COLLIDING — two responses
+		// differing only in `unmet[]` would mint one key, so a corrected
+		// response dedups as already-done and its correction never commits.
+		respondFacts := operation.RespondIncompleteness{Unmet: in.Unmet, Standing: in.Standing}
+		if in.BlockedBy != nil {
+			respondFacts.BlockedByReason = in.BlockedBy.ReasonCode
+			respondFacts.BlockedByOwner = in.BlockedBy.Owner
+			respondFacts.BlockedByNeeds = in.BlockedBy.Needs
+		}
 		operationKey := operation.Respond(
-			deps.OwnSystem, actor.Kind, actor.Name, in.ParentIDs, in.Result, in.Fields, nil, bodyOverride,
+			deps.OwnSystem, actor.Kind, actor.Name, in.ParentIDs, in.Result, in.Fields, nil, bodyOverride, respondFacts,
 		)
 
 		var files []space.FileWrite
@@ -277,7 +379,7 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 					parentID)
 			}
 
-			seed := respondSeed(parentID, in.Result, respFields, bodyOverride, actor)
+			seed := respondSeed(parentID, in.Result, respFields, bodyOverride, actor, in.Unmet, in.Standing, in.BlockedBy)
 
 			// Wave K, MCP half. internal/cli's RespondCommand.Run carries
 			// the same three fills with the full rationale; ADR-001 keeps
@@ -324,8 +426,13 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 			if evaluation.Verdict != fold.VerdictLegal {
 				return nil, "", fmt.Errorf("respond: %w", verdictError(parentID, evaluation.Verdict))
 			}
+			// EnvelopeSchema: "envelope/v2" — see internal/cli's identical
+			// RespondCommand.Run comment (cmd_lifecycle.go): a response is
+			// generationV2Unconditional, and this call never goes through
+			// RenderNew/selectGeneration, so it must set the override
+			// directly (internal/space/work_preparer.go:322's own precedent).
 			draft, err := template.Render(template.Input{
-				Type: "response", ID: responseID, Actor: resolved, Created: now,
+				Type: "response", EnvelopeSchema: "envelope/v2", ID: responseID, Actor: resolved, Created: now,
 				Fields: respFields, Body: bodyOverride,
 			})
 			if err != nil {
@@ -347,6 +454,26 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 				return nil, "", fmt.Errorf("respond: decode rendered response for %s: %w", parentID, err)
 			}
 			respDoc["to"] = []string{parentEnv.From}
+			// unmet/standing/blocked_by (defects-fix-2026-08 P2): same
+			// decode/assign/re-encode idiom as `to` above, and the same
+			// "written only when the caller actually gave it" discipline as
+			// internal/cli's RespondCommand.Run (P-1 — absence stays
+			// absence).
+			if len(in.Unmet) > 0 {
+				unmetSeq := make([]int, len(in.Unmet))
+				copy(unmetSeq, in.Unmet)
+				respDoc["unmet"] = unmetSeq
+			}
+			if in.Standing != "" {
+				respDoc["standing"] = in.Standing
+			}
+			if in.BlockedBy != nil {
+				respDoc["blocked_by"] = map[string]string{
+					"reason_code": in.BlockedBy.ReasonCode,
+					"owner":       in.BlockedBy.Owner,
+					"needs":       in.BlockedBy.Needs,
+				}
+			}
 			respYAML, err := yaml.Marshal(respDoc)
 			if err != nil {
 				return nil, "", fmt.Errorf("respond: encode rendered response for %s: %w", parentID, err)
@@ -420,7 +547,18 @@ func parentThread(mirrorDir, id string) (string, error) {
 // respondSeed builds respond's own canonical, content-derived seed
 // (mirrors internal/cli's lifecycleRespondSeed exactly — fixed-order join,
 // SORTED field keys, no `now`).
-func respondSeed(parentID, result string, respFields map[string]string, bodyOverride []byte, actor fold.Actor) []byte {
+//
+// unmet/standing/blockedBy (defects-fix-2026-08 P2) join the seed for the
+// same reason internal/cli's lifecycleRespondSeed folds them in: they are
+// content, not a derived default, and a retry differing ONLY in one of the
+// three must mint a DIFFERENT responseID, not collide with a prior response
+// that named none of them. Written after respFields/before body, matching
+// where CLI writes them relative to ITS OWN structure (CLI additionally has
+// a refs segment there; this surface has no `--ref` equivalent yet, B22).
+// An absent unmet/standing/blockedBy (every caller before this phase)
+// writes exactly the bytes respondSeed always wrote — no existing
+// responseID changes.
+func respondSeed(parentID, result string, respFields map[string]string, bodyOverride []byte, actor fold.Actor, unmet []int, standing string, blockedBy *RespondBlockedBy) []byte {
 	keys := make([]string, 0, len(respFields))
 	for k := range respFields {
 		keys = append(keys, k)
@@ -432,6 +570,15 @@ func respondSeed(parentID, result string, respFields map[string]string, bodyOver
 	buf.WriteString("result=" + result + "\n")
 	for _, k := range keys {
 		buf.WriteString(k + "=" + respFields[k] + "\n")
+	}
+	for _, index := range unmet {
+		buf.WriteString(fmt.Sprintf("unmet=%d\n", index))
+	}
+	if standing != "" {
+		buf.WriteString("standing=" + standing + "\n")
+	}
+	if blockedBy != nil {
+		buf.WriteString("blocked_by=" + blockedBy.ReasonCode + ":" + blockedBy.Owner + ":" + blockedBy.Needs + "\n")
 	}
 	buf.WriteString("body=")
 	buf.Write(bodyOverride)

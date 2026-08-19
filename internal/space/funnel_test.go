@@ -388,7 +388,7 @@ func TestFunnelOperationRetryReturnsOriginalIDsAcrossDateChange(t *testing.T) {
 	first.ArtifactID = "XS-axon-20260729-old1"
 	first.ArtifactIDs = []string{"XQ-peer-20260729-parent", first.ArtifactID}
 	first.OperationKey = operation.Respond(
-		"axon", "agent", "bot", []string{"XQ-peer-20260729-parent"}, "answered", nil, nil, []byte("same"),
+		"axon", "agent", "bot", []string{"XQ-peer-20260729-parent"}, "answered", nil, nil, []byte("same"), operation.RespondIncompleteness{},
 	)
 
 	fake := host.NewFakeHost()
@@ -430,7 +430,7 @@ func TestFunnelOperationResumesMatchingOrphanBranch(t *testing.T) {
 	}
 	req := newTestSubmitRequest(fx, "axon", l)
 	req.ArtifactIDs = []string{req.ArtifactID}
-	req.OperationKey = operation.Respond("axon", "agent", "bot", []string{req.ArtifactID}, "answered", nil, nil, nil)
+	req.OperationKey = operation.Respond("axon", "agent", "bot", []string{req.ArtifactID}, "answered", nil, nil, nil, operation.RespondIncompleteness{})
 
 	fake := host.NewFakeHost()
 	openFailure := errors.New("simulated PR creation outage")
@@ -473,7 +473,7 @@ func TestFunnelOperationRetryRecognizesMergedRemoteDespiteStaleLocalIntent(t *te
 	}
 	req := newTestSubmitRequest(fx, "axon", l)
 	req.ArtifactIDs = []string{"XS-axon-20260729-old1"}
-	req.OperationKey = operation.Respond("axon", "agent", "bot", []string{"XQ-peer-parent"}, "answered", nil, nil, nil)
+	req.OperationKey = operation.Respond("axon", "agent", "bot", []string{"XQ-peer-parent"}, "answered", nil, nil, nil, operation.RespondIncompleteness{})
 
 	fake := host.NewFakeHost()
 	funnel := NewWriteFunnel(fake, nil, "0.1.0")
@@ -511,7 +511,7 @@ func TestFunnelOperationRefusesMismatchedOrphan(t *testing.T) {
 	}
 	req := newTestSubmitRequest(fx, "axon", l)
 	req.ArtifactIDs = []string{req.ArtifactID}
-	req.OperationKey = operation.Respond("axon", "agent", "bot", []string{req.ArtifactID}, "answered", nil, nil, nil)
+	req.OperationKey = operation.Respond("axon", "agent", "bot", []string{req.ArtifactID}, "answered", nil, nil, nil, operation.RespondIncompleteness{})
 	fake := host.NewFakeHost()
 	fake.ReadRemoteBranchFunc = func(context.Context, host.RemoteBranchRequest) (host.RemoteBranchHead, error) {
 		return host.RemoteBranchHead{SHA: strings.Repeat("a", 40), Exists: true}, nil

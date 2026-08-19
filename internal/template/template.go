@@ -177,7 +177,18 @@ var generationTable = map[string]generationSelection{
 	"question":     generationV1,
 	"work_request": generationV2Unconditional,
 	"decision":     generationV1,
-	"response":     generationV1,
+	// response: generationV2Unconditional since defects-fix-2026-08 P2
+	// (spec 02-a-response-can-say-what-it-failed.md). schemas/templates/
+	// v2/response.md ships and `a2a respond`'s own authoring flags
+	// (--unmet/--standing/--blocked-by) landed BEFORE this row moved — the
+	// spec's own "fix order is load-bearing" section: envelope/v2/
+	// response's `if result: partial|cannot` conditional requires either
+	// (unmet AND blocked_by) or a non-authoritative standing, so flipping
+	// this row before the authoring surface existed would have made
+	// `a2a respond --result partial` render a draft that cannot validate.
+	// TestRespondResultPartialGenerationOrderingGuard (internal/cli) is the
+	// gate that proves the order, not merely asserts it.
+	"response":     generationV2Unconditional,
 	"handoff":      generationV1,
 	"announcement": generationV1, // B20: templates/v2/announcement.md is a work checkpoint, not a general v2 template — see generationTable's own doc comment.
 }

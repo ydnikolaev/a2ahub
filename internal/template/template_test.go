@@ -855,7 +855,9 @@ var wantGeneration = map[string]string{
 	"question":     "envelope/v1",
 	"work_request": "envelope/v2",
 	"decision":     "envelope/v1",
-	"response":     "envelope/v1",
+	// response: envelope/v2 since defects-fix-2026-08 P2 — see
+	// template.go's generationTable row comment for the fix-order reason.
+	"response":     "envelope/v2",
 	"handoff":      "envelope/v1",
 	"announcement": "envelope/v1", // B20
 }
