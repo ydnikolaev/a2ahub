@@ -79,23 +79,6 @@ func validWorkAction(action string) bool {
 	}
 }
 
-// Respond derives the operation key for one respond invocation. Parent order
-// and field map iteration cannot affect the result; body bytes are represented
-// only by their digest.
-//
-// refs are the envelope `refs[]` entries the response carries (`a2a respond
-// --ref`), and they are encoded IN GIVEN ORDER, unlike parents and field keys.
-// That asymmetry is deliberate: parents and fields are sets whose order is not
-// on the wire, while `refs[]` is an ordered array in the envelope, so two calls
-// differing only in ref order produce two different artifacts and must not
-// dedup onto one key.
-//
-// They are an explicit parameter rather than a synthetic entry in `fields`.
-// The first implementation smuggled them through as `fields["__respond_refs"]`
-// to avoid widening this signature, and that is the wrong shape twice over: it
-// hides part of what the operation IS inside a map documented as the caller's
-// schema-field overrides, and it makes the magic key's uniqueness a thing
-// somebody has to keep being right about.
 // RespondIncompleteness carries P6's per-criterion shortfall facts: the
 // `unmet[]` / `standing` / `blocked_by` a response may declare (defects-fix
 // P2, envelope/v2/response). A plain value type for the same reason
@@ -131,7 +114,23 @@ func (r RespondIncompleteness) canonical() string {
 	return strings.Join(parts, "\x1f")
 }
 
-// Respond derives the operation key for one `a2a respond` invocation.
+// Respond derives the operation key for one `a2a respond` invocation. Parent order
+// and field map iteration cannot affect the result; body bytes are represented
+// only by their digest.
+//
+// refs are the envelope `refs[]` entries the response carries (`a2a respond
+// --ref`), and they are encoded IN GIVEN ORDER, unlike parents and field keys.
+// That asymmetry is deliberate: parents and fields are sets whose order is not
+// on the wire, while `refs[]` is an ordered array in the envelope, so two calls
+// differing only in ref order produce two different artifacts and must not
+// dedup onto one key.
+//
+// They are an explicit parameter rather than a synthetic entry in `fields`.
+// The first implementation smuggled them through as `fields["__respond_refs"]`
+// to avoid widening this signature, and that is the wrong shape twice over: it
+// hides part of what the operation IS inside a map documented as the caller's
+// schema-field overrides, and it makes the magic key's uniqueness a thing
+// somebody has to keep being right about.
 //
 // The `incompleteness` parameter is why this WIDENS the signature instead of taking
 // the second-entry-point shape LegalNextFor and ValidateEventWithContext use,
