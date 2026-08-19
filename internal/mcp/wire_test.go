@@ -279,6 +279,149 @@ func TestNewServerFromConfigNoProjectConfig(t *testing.T) {
 	}
 }
 
+// TestNewServerFromConfigMultipleSpacesRefusesAmbiguousLegacyWrite is P7's
+// own regression: two REACHABLE connected spaces used to build the legacy
+// write graph (a2a_submit/a2a_lifecycle/a2a_exchange/a2a_contract's legacy
+// sub-verbs) against cfg.Spaces[0] alone — a submit naming an id whose
+// space no caller can express landed silently in the FIRST configured
+// space, never the one the artifact actually declared. This proves the
+// funnel wired into the real server (not a hand-built test double) refuses
+// instead, and names both connected spaces (US-2) rather than defaulting.
+//
+// reason: mutates process env through the production credential seam.
+func TestNewServerFromConfigMultipleSpacesRefusesAmbiguousLegacyWrite(t *testing.T) {
+	t.Setenv("A2A_TOKEN_SPACE_ONE", "test-token-one")
+	t.Setenv("A2A_TOKEN_SPACE_TWO", "test-token-two")
+
+	fx := spacefixture.New(t, "beta")
+	fixValidManifest(t, fx, "beta")
+
+	projectRoot := t.TempDir()
+	projectConfig := filepath.Join(projectRoot, ".a2a", "config.yaml")
+	machineConfig := filepath.Join(t.TempDir(), "machine-config.yaml")
+	if err := os.MkdirAll(filepath.Dir(projectConfig), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Both space entries share ONE origin — this test is about the
+	// AMBIGUITY of having two connected spaces, not about their content,
+	// so a second throwaway git fixture buys nothing.
+	if err := os.WriteFile(projectConfig, []byte(
+		"system: beta\nspaces:\n"+
+			"  - id: space-one\n    repo_url: "+fx.RemoteURL()+"\n"+
+			"  - id: space-two\n    repo_url: "+fx.RemoteURL()+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(machineConfig, []byte(
+		"credentials:\n  space-one: \"env:A2A_TOKEN_SPACE_ONE\"\n  space-two: \"env:A2A_TOKEN_SPACE_TWO\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stagingDir := filepath.Join(projectRoot, ".a2a", "staging")
+	p := Paths{ProjectConfig: projectConfig, MachineConfig: machineConfig, ProjectRoot: projectRoot, Staging: stagingDir}
+
+	beforeSHA := fx.HeadSHA(fx.Clone("beta"), "main")
+
+	server, err := NewServerFromConfig(context.Background(), p, "0.0.1-test", unavailableWorkToolDeps())
+	if err != nil {
+		t.Fatalf("NewServerFromConfig: %v", err)
+	}
+
+	// Q3: reads are unaffected — the multi-space surface still offers
+	// a2a_read (backed by cache.Store, which already loops every connected
+	// space in buildStore, not by the write graph this test is about).
+	if _, ok := server.registry.Get("a2a_read"); !ok {
+		t.Fatal("a multi-space session must still offer a2a_read")
+	}
+
+	id := "XQ-beta-20260721-a900"
+	writeStagedDraft(t, stagingDir, id, "question")
+
+	spec, ok := server.registry.Get("a2a_submit")
+	if !ok {
+		t.Fatal("expected a2a_submit to be registered for a reachable multi-space session")
+	}
+	args, err := json.Marshal(SubmitInput{IDs: []string{id}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, submitErr := spec.Handler(t.Context(), args)
+	if submitErr == nil {
+		t.Fatal("expected a2a_submit to refuse an ambiguous multi-space write")
+	}
+	if !strings.Contains(submitErr.Error(), "space is required when multiple spaces are connected") {
+		t.Fatalf("submit error = %v, want an ambiguous-space refusal", submitErr)
+	}
+	for _, want := range []string{"space-one", "space-two"} {
+		if !strings.Contains(submitErr.Error(), want) {
+			t.Fatalf("submit error = %v, want it to name connected space %q", submitErr, want)
+		}
+	}
+
+	// The safety property US-1 exists for: nothing was pushed anywhere,
+	// least of all the wrong space's real history.
+	afterSHA := fx.HeadSHA(fx.Clone("beta"), "main")
+	if afterSHA != beforeSHA {
+		t.Fatalf("origin HEAD moved from %s to %s — the ambiguous write was NOT refused before it reached the space", beforeSHA, afterSHA)
+	}
+}
+
+// TestNewServerFromConfigMultipleSpacesPreCallRefreshesEverySpace is the
+// read-refresh half of the same Spaces[0]-only root cause (P7): the
+// pre-call hook used to refresh only write.MirrorDir — the FIRST connected
+// space — leaving every other connected space's mirror frozen at server
+// start for the life of the session. This proves BOTH connected spaces'
+// mirrors are attempted, by making the SECOND one unreachable and watching
+// the refresh surface that failure.
+//
+// reason: mutates process env through the production credential seam.
+func TestNewServerFromConfigMultipleSpacesPreCallRefreshesEverySpace(t *testing.T) {
+	t.Setenv("A2A_TOKEN_SPACE_ONE", "test-token-one")
+	t.Setenv("A2A_TOKEN_SPACE_TWO", "test-token-two")
+
+	fxOne := spacefixture.New(t, "beta")
+	fixValidManifest(t, fxOne, "beta")
+	fxTwo := spacefixture.New(t, "beta")
+	fixValidManifest(t, fxTwo, "beta")
+
+	projectRoot := t.TempDir()
+	projectConfig := filepath.Join(projectRoot, ".a2a", "config.yaml")
+	machineConfig := filepath.Join(t.TempDir(), "machine-config.yaml")
+	if err := os.MkdirAll(filepath.Dir(projectConfig), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(projectConfig, []byte(
+		"system: beta\nspaces:\n"+
+			"  - id: space-one\n    repo_url: "+fxOne.RemoteURL()+"\n"+
+			"  - id: space-two\n    repo_url: "+fxTwo.RemoteURL()+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(machineConfig, []byte(
+		"credentials:\n  space-one: \"env:A2A_TOKEN_SPACE_ONE\"\n  space-two: \"env:A2A_TOKEN_SPACE_TWO\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := Paths{ProjectConfig: projectConfig, MachineConfig: machineConfig, ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
+	server, err := NewServerFromConfig(context.Background(), p, "0.0.1-test", unavailableWorkToolDeps())
+	if err != nil {
+		t.Fatalf("NewServerFromConfig: %v", err)
+	}
+	if server.preCall == nil {
+		t.Fatal("expected connected server pre-call hook")
+	}
+
+	// space-one stays reachable; only space-two (the SECOND connected
+	// space — never write.MirrorDir, the pre-fix refresh target) goes
+	// offline. If the pre-call hook only ever refreshed the first space,
+	// this call would report success.
+	offlineOrigin := fxTwo.OriginDir + ".offline"
+	if err := os.Rename(fxTwo.OriginDir, offlineOrigin); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.preCall(context.Background(), "a2a_read"); err == nil {
+		t.Fatal("expected the pre-call refresh to surface the SECOND connected space's unreachable mirror")
+	}
+}
+
 // TestNewServerFromConfigUnreachableSpaceStillServesReads is the regression
 // for a full outage where a partial degradation belongs.
 //

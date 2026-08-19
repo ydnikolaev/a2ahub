@@ -1145,6 +1145,129 @@ func TestEquivSubmit(t *testing.T) {
 	assertRequestsEquivalent(t, "submit", cliFunnel.calls[0], mcpFunnel.calls[0])
 }
 
+// TestEquivMultiSpaceSubmitCLIResolvesMCPRefusesAmbiguity is P7's own
+// multi-space case for this parity harness (spec 07 §6 "parity" / §8 AC5):
+// the asymmetry P7 closes safely without full parity.
+//
+// The CLI's real a2a submit entry point (runSubmit, cmd/a2a/wire.go:1275)
+// resolves its target space from the staged draft's OWN `space:` field via
+// findSpace — genuinely per-invocation, independent of how many spaces are
+// connected. internal/mcp/tools_submit.go's grouped a2a_submit tool has no
+// equivalent: it reads it.env.Space (the identical field) but only to
+// check the batch stays within one space, never to pick a mirror — so
+// before P7 a two-space MCP session built EVERY submit against
+// cfg.Spaces[0] alone, landing a draft declaring "space-two" in
+// "space-one"'s repository regardless of what the draft said. That gap in
+// tools_submit.go is outside this phase's footprint (see this phase's own
+// report); what P7 closes is the SAFETY half — the write no longer lands
+// in the wrong space silently, it refuses and names both connected spaces.
+//
+// This drives the REAL production server (buildMCPServer, not a hand-built
+// registry) through one real tools/call over Server.Serve's own JSON-RPC
+// loop — the same path a real client takes (mirrors
+// TestWireMCPDataToolIsNotDegraded's own precedent, cmd/a2a/
+// wire_tier_test.go:695).
+//
+// reason: t.Chdir + t.Setenv — same exemption newWireFixture documents.
+func TestEquivMultiSpaceSubmitCLIResolvesMCPRefusesAmbiguity(t *testing.T) {
+	const id = "XQ-beta-20260721-m900"
+
+	fxOne := spacefixture.New(t, "axon", "beta")
+	fxTwo := spacefixture.New(t, "axon", "beta")
+
+	projectRoot := t.TempDir()
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".a2a"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfgYAML := "schema: project/v1\nsystem: beta\nspaces:\n" +
+		"  - id: space-one\n    repo_url: " + fxOne.OriginDir + "\n" +
+		"  - id: space-two\n    repo_url: " + fxTwo.OriginDir + "\n"
+	if err := os.WriteFile(filepath.Join(projectRoot, ".a2a", "config.yaml"), []byte(cfgYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("HOME", home)
+	t.Setenv("A2A_TOKEN_SPACE_ONE", "token-one")
+	t.Setenv("A2A_TOKEN_SPACE_TWO", "token-two")
+	t.Chdir(projectRoot)
+
+	// The parity point, made concrete: the CLI's OWN per-invocation
+	// resolver (the same function runSubmit calls) DOES pick "space-two"
+	// from a config naming both — this is not a config that could never
+	// resolve, it is a call MCP alone cannot express today.
+	cfg := space.ProjectConfig{System: "beta", Spaces: []space.Ref{
+		{ID: "space-one", RepoURL: fxOne.OriginDir},
+		{ID: "space-two", RepoURL: fxTwo.OriginDir},
+	}}
+	if ref, ok := findSpace(cfg, "space-two"); !ok || ref.RepoURL != fxTwo.OriginDir {
+		t.Fatalf("findSpace(cfg, %q) = %+v, %v — the CLI's own resolver must pick space-two", "space-two", ref, ok)
+	}
+
+	stagingDir := filepath.Join(projectRoot, ".a2a", "staging")
+	writeStagedDraftEquivWithSpace(t, stagingDir, id, "space-two")
+
+	ctx := context.Background()
+	p, err := mcp.ResolvePaths()
+	if err != nil {
+		t.Fatalf("mcp.ResolvePaths: %v", err)
+	}
+	srv, err := buildMCPServer(ctx, p, "0.0.1-test")
+	if err != nil {
+		t.Fatalf("buildMCPServer: %v", err)
+	}
+
+	request := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"a2a_submit","arguments":{"ids":["%s"]}}}`+"\n", id)
+	var out bytes.Buffer
+	if err := srv.Serve(ctx, strings.NewReader(request), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+
+	var resp struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("decode tools/call response: %v\nraw: %s", err, out.String())
+	}
+	if resp.Error != nil {
+		t.Fatalf("tools/call itself failed (not a handler-level refusal): %+v\nraw: %s", resp.Error, out.String())
+	}
+	if !resp.Result.IsError || len(resp.Result.Content) == 0 {
+		t.Fatalf("expected a2a_submit to refuse the ambiguous multi-space write, got: %s", out.String())
+	}
+	text := resp.Result.Content[0].Text
+	for _, want := range []string{"space is required when multiple spaces are connected", "space-one", "space-two"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("a2a_submit refusal = %q, want it to contain %q", text, want)
+		}
+	}
+}
+
+// writeStagedDraftEquivWithSpace is writeStagedDraftEquiv parameterized by
+// the draft's `space:` field — the ONLY thing TestEquivMultiSpaceSubmit...
+// needs to vary, since it is the field the CLI's findSpace resolves
+// against (cmd/a2a/wire.go:1275) and internal/mcp/tools_submit.go reads
+// but does not yet resolve against (this phase's own footprint boundary).
+func writeStagedDraftEquivWithSpace(t *testing.T, stagingDir, id, spaceID string) {
+	t.Helper()
+	content := "---\nschema: envelope/v1\nid: " + id + "\ntype: question\ntitle: t\nspace: " + spaceID +
+		"\nthread: thread:axon-20260721-k3f9\nfrom: beta\nto: [axon]\nactor: {kind: agent, name: bot}\ncreated: 2026-07-21T10:00:00Z\ncategory: clarification\npriority: p3\nblocking: true\nclassification: internal\n---\nbody\n"
+	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingDir, id+".md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestEquivContractSubmitCarriesScaffold is the regression for the
 // 2026-07-29 live finding: both surfaces scaffolded a JSON-Schema contract,
 // but MCP submit dropped schema/** and fixtures/** from the funnel request.

@@ -227,6 +227,27 @@ func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, bui
 		}
 		return NewServer(registry, "a2a-mcp", binaryVersion, nil), nil
 	}
+	// P7 (one agent, one space): a session connected to MORE than one space
+	// has no per-call way to name a target for the legacy write graph today
+	// — a2a_submit/a2a_lifecycle/a2a_exchange and a2a_contract's legacy
+	// deprecate/retire/adopt/activate sub-verbs carry no "space" input field
+	// (internal/mcp/tools_lifecycle.go, tools_submit.go, tools_contract.go —
+	// all outside this phase's footprint), unlike a2a_work
+	// (WorkToolDeps.ResolveSpace), a2a_data, and a2a_contract's P6 sub-verbs
+	// (preflight/publish/materialize/check/diff/verify), which already
+	// resolve their own target per call via cmd/a2a's own per-space maps.
+	// buildWriteDeps above still resolves against cfg.Spaces[0] alone (its
+	// local reads — MirrorDir, Manifest, min_binary_version — need SOME
+	// concrete mirror on disk), but every one of those write paths funnels
+	// through WriteDeps.submit's single Funnel.Submit call
+	// (internal/mcp/eventdoc.go) before anything reaches the space's repo.
+	// Wrapping that ONE seam with a refusal is enough to close the defect
+	// for every legacy write tool without touching their handlers, and
+	// without a silent default to Spaces[0] recreating it one layer up
+	// (US-2). A single connected space is untouched below.
+	if len(cfg.Spaces) > 1 {
+		write.Funnel = ambiguousSpaceFunnel{connected: spaceIDs(cfg.Spaces)}
+	}
 	registry = BuildRegistryWithOperations(store, write, submitDeps.StagingDir, submitDeps.Legality, newDeps, contractOperations, dataOperations, workDeps)
 	srv := NewServer(registry, "a2a-mcp", binaryVersion, nil)
 
@@ -243,13 +264,29 @@ func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, bui
 	// funnel acquires its own, so the two holds are sequential and cannot
 	// nest (internal/space/mirrorlock.go's budget doc spells out why that
 	// matters).
-	refreshDir, refreshURL := write.MirrorDir, write.RepoURL
-	refreshCredential := write.HostCfg.Credential
+	//
+	// P7: SetPreCall only ever receives the tool NAME, never the call's
+	// arguments, so it cannot single out the one space a multi-space call
+	// actually named even where a tool has a "space" field. Refreshing
+	// EVERY connected space's mirror before every non-work/non-contract
+	// call is therefore both the safe and the only available answer here —
+	// the single-space case loops once and behaves exactly as before,
+	// while a two-space session no longer leaves the SECOND space's mirror
+	// frozen at server start for the life of the process (the same
+	// Spaces[0]-only root cause this phase closes for writes, just on the
+	// read-refresh seam instead of the write-funnel one).
+	refreshSpaces := append([]space.Ref(nil), cfg.Spaces...)
 	srv.SetPreCall(func(ctx context.Context, tool string) error {
 		if tool == WorkToolName || tool == "a2a_contract" {
 			return nil
 		}
-		return space.CloneOrFetch(ctx, refreshDir, refreshURL, refreshCredential)
+		for _, ref := range refreshSpaces {
+			dir := space.ResolveMirrorLocation(p.ProjectRoot, ref, machine)
+			if err := space.CloneOrFetch(ctx, dir, ref.RepoURL, readMirrorCredential(ctx, ref.ID, machine)); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	return srv, nil
 }
@@ -347,6 +384,31 @@ func buildWriteDeps(ctx context.Context, cfg space.ProjectConfig, machine space.
 		ResolveActor: resolveActor, WriteFile: os.WriteFile,
 	}
 	return write, submitDeps, newDeps, nil
+}
+
+// ambiguousSpaceFunnel refuses every write instead of silently landing it in
+// cfg.Spaces[0] (P7). It is WriteDeps.Funnel's sole consumer-facing seam
+// (internal/mcp/eventdoc.go's WriteDeps.submit calls Funnel.Submit exactly
+// once), so wrapping it here reaches a2a_submit, a2a_lifecycle, a2a_exchange
+// and a2a_contract's legacy deprecate/retire/adopt/activate sub-verbs alike
+// without touching any of their handler files.
+type ambiguousSpaceFunnel struct {
+	connected []string
+}
+
+func (f ambiguousSpaceFunnel) Submit(context.Context, space.SubmitRequest) (space.WriteResult, error) {
+	return space.WriteResult{}, fmt.Errorf(
+		"mcp: space is required when multiple spaces are connected; connected spaces are %s",
+		strings.Join(f.connected, ", "))
+}
+
+// spaceIDs extracts each connected space's id, in cfg.Spaces' own order.
+func spaceIDs(refs []space.Ref) []string {
+	ids := make([]string, len(refs))
+	for i, ref := range refs {
+		ids[i] = ref.ID
+	}
+	return ids
 }
 
 // parseGitHubRepo extracts owner/name from a GitHub remote URL — mirrors
