@@ -148,3 +148,65 @@ func TestRetiredIsSettledNotCancelled(t *testing.T) {
 		t.Errorf("Outcome(contract, retired) = %q, want %q — retiring a contract is how a contract's life is supposed to end", got, OutcomeSettled)
 	}
 }
+
+// TestOutcomeOfDocumentDefersToOutcomeOfByDefault pins that the new entry
+// point changes nothing for every pair OTHER than the two named ones —
+// moveOwed=true (the ordinary "somebody is still waiting" case) and every
+// pair outside the two special-cased ones must read exactly like OutcomeOf,
+// swept over RestingStates() rather than a hand-picked list.
+func TestOutcomeOfDocumentDefersToOutcomeOfByDefault(t *testing.T) {
+	t.Parallel()
+
+	for _, krs := range RestingStates() {
+		isSpecialPair := (krs.Kind == KindAnnouncement || krs.Kind == KindContract) && krs.State == StatePublished
+		for _, moveOwed := range []bool{true, false} {
+			if moveOwed == false && isSpecialPair {
+				continue // covered by TestOutcomeOfDocumentSettlesTheNamedPairsWhenNothingIsOwed
+			}
+			got := OutcomeOfDocument(krs.Kind, krs.State, moveOwed)
+			want := OutcomeOf(krs.Kind, krs.State)
+			if got != want {
+				t.Errorf("OutcomeOfDocument(%s, %s, moveOwed=%v) = %q, want %q (== OutcomeOf)", krs.Kind, krs.State, moveOwed, got, want)
+			}
+		}
+	}
+}
+
+// TestOutcomeOfDocumentSettlesTheNamedPairsWhenNothingIsOwed is defects/01's
+// own repro, at the unit level: an announcement published with no ack owed
+// and a contract published with no activation owed must not read `open`
+// with nobody waiting.
+func TestOutcomeOfDocumentSettlesTheNamedPairsWhenNothingIsOwed(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		kind Kind
+		why  string
+	}{
+		{KindAnnouncement, "unackedTargetsRow's onEmpty: delivery completes on publish, no acknowledgement is required"},
+		{KindContract, "contractPublishedRow's onEmpty: alive and settled, neither is a move anyone waits for"},
+	}
+	for _, c := range cases {
+		if got := OutcomeOfDocument(c.kind, StatePublished, false); got != OutcomeSettled {
+			t.Errorf("OutcomeOfDocument(%s, published, moveOwed=false) = %q, want %q — %s", c.kind, got, OutcomeSettled, c.why)
+		}
+		// moveOwed=true must still read OutcomeOpen — somebody genuinely
+		// owes a move, and (kind, state) alone was already right there.
+		if got := OutcomeOfDocument(c.kind, StatePublished, true); got != OutcomeOpen {
+			t.Errorf("OutcomeOfDocument(%s, published, moveOwed=true) = %q, want %q — a real debt must not be hidden", c.kind, got, OutcomeOpen)
+		}
+	}
+}
+
+// TestOutcomeOfDocumentNeverTouchesTerminal is design question 4: Terminal
+// is a third question, and settling the outcome must not make the pair
+// read terminal — supersede/deprecate/retire stay legal.
+func TestOutcomeOfDocumentNeverTouchesTerminal(t *testing.T) {
+	t.Parallel()
+
+	for _, kind := range []Kind{KindAnnouncement, KindContract} {
+		if Terminal(kind, StatePublished) {
+			t.Fatalf("Terminal(%s, published) = true; OutcomeOfDocument's settle branch assumes it stays false", kind)
+		}
+	}
+}

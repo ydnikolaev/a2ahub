@@ -298,6 +298,72 @@ type foldedArtifact struct {
 	// This is the OTHER half of AC4 — what a producer actually declared,
 	// distinct from whether anyone is owed activation over it.
 	OperationalItems []OperationalItem
+
+	// registryLateAdopters is F1's mirror-wide widening of P4 Edge 3
+	// (docs/inbox/defects/02-narrow-answers-survey.md F1): every manifest
+	// participant — not merely the CURRENT system, which is all
+	// DeprecatesMyDependency above can ever see — whose own consumes.yaml
+	// names the contract THIS deprecation announcement deprecates.
+	// pendency.Input.ExtraAddressees' own doc comment names exactly this
+	// caller ("a caller that can read every participant's registry may
+	// hand in the full set without any change here"); BuildNotifyIndex
+	// below already performs the identical per-participant walk for its
+	// own purposes, so this is the same fact resolved once per space
+	// instead of once per caller. extraAddressees (inbox.go) unions this
+	// with the {me}-scoped fact rather than replacing it, because
+	// ownSystem may not itself be a listed manifest participant.
+	//
+	// Unexported deliberately: item_completeness_test.go's reflection gate
+	// (foldedFieldsItemDeliberatelyDrops) is off-limits to this wave, and
+	// an unexported field is invisible to it — the same reasoning
+	// OperationalDebtOwed's own drop-list entry gives for why the INPUT
+	// stays off cache.Item, applied here to keep a NEW input off the gate
+	// entirely rather than adding an entry to a file this wave may not
+	// edit.
+	registryLateAdopters []string
+
+	// moveOwed is defects/01's own per-document fact: whether
+	// internal/pendency's verdict for THIS document names an owner, read
+	// only by fold.OutcomeOfDocument for the two (kind, state) pairs it
+	// narrows on — (announcement, published) and (contract, published).
+	// Every other pair leaves this false and unread.
+	//
+	// Resolved HERE, once per artifact during the build pass, rather than
+	// by toItem/buildOpenItems at read time: toItem's signature is frozen
+	// (internal/cache/dashboard.go, off-limits to this wave, calls it with
+	// today's three arguments, and dashboard.go IS the real production
+	// dashboard's own read path — internal/html/assemble.go:205 calls
+	// Store.DashboardSnapshot). Computed through resolveVerdict (inbox.go,
+	// this package's one relation home — pendency_callsite_test.go's
+	// TestOnlyOneFunctionResolvesThePendencyRelation), never re-derived,
+	// and cheap: it reads this SAME artifact's own already-computed
+	// OperationalDebtOwed/DeprecatesMyDependency/registryLateAdopters
+	// facts, paying no second registry scan.
+	//
+	// Unexported for the same reason registryLateAdopters is: invisible to
+	// item_completeness_test.go's off-limits reflection gate. toItem
+	// projects it into cache.Item's EXISTING Outcome field (never a new
+	// exported field — a new one would trip internal/html's own
+	// off-limits projection gates, item_projection_test.go/
+	// openitem_projection_test.go, which assert cache.Item/OpenItem's
+	// exported field set against html.Item/ThreadOpenItem 1:1).
+	moveOwed bool
+
+	// expired is F5's own wiring (defects-fix-2026-08 P5,
+	// docs/inbox/defects/02-narrow-answers-survey.md): fold.ExpiredOverlay
+	// had zero production callers. Set by Store.index's own
+	// applyExpiredOverlay (store.go) — the one chokepoint every read verb
+	// funnels through — gated to KindAnnouncement only, since Env.ValidUntil
+	// is the shared base-envelope field a contract's own deprecation sunset
+	// also uses (contract_window.go), a domain question §3.4.7's display
+	// overlay must not be conflated with (F3, "never time-triggered").
+	//
+	// Unexported for the same reason moveOwed/registryLateAdopters are:
+	// invisible to item_completeness_test.go's cross-check gate, and never
+	// promoted to cache.Item/OpenItem — a new exported field there would
+	// trip internal/html's own off-limits projection gates. Surfacing it
+	// on the wire is P8's own decision.
+	expired bool
 }
 
 func (f foldedArtifact) kind() fold.Kind { return fold.Kind(f.Env.Type) }
@@ -344,6 +410,34 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 	if depSkip != nil {
 		skips = append(skips, *depSkip)
 		sort.Slice(skips, func(i, j int) bool { return skips[i].Path < skips[j].Path })
+	}
+
+	// registryWideLateAdopters is F1's own widening (defects-fix-2026-08 P5,
+	// docs/inbox/defects/02-narrow-answers-survey.md): myDependencies just
+	// above can only ever see ownSystem's own registry, so an AUTHOR
+	// checking their OWN outbox for a deprecation announcement they wrote
+	// has no dependency on the contract they themselves deprecate and could
+	// never see anyone else's late adoption. This is the SAME
+	// per-participant walk BuildNotifyIndex already performs below for its
+	// own purposes, lifted into the shared build pass so every caller —
+	// not only the notify path — gets the complete addressee set, and
+	// foldedArtifact.registryLateAdopters (this function's own per-artifact
+	// output) is what carries it forward.
+	registryWideLateAdopters := map[string][]string{}
+	for _, p := range manifest.Participants {
+		deps, pSkip := myDependencyContracts(dir, p.System)
+		if pSkip != nil {
+			skips = append(skips, *pSkip)
+			sort.Slice(skips, func(i, j int) bool { return skips[i].Path < skips[j].Path })
+		}
+		if len(deps) == 0 {
+			continue
+		}
+		for _, a := range artifacts {
+			if cid := a.Env.deprecatedContractID(); cid != "" && deps[cid] {
+				registryWideLateAdopters[a.Env.ID] = append(registryWideLateAdopters[a.Env.ID], p.System)
+			}
+		}
 	}
 
 	// parentOf: response artifact ID -> parent artifact ID
@@ -598,7 +692,7 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 			contractNonAdoptable = contractNonAdoptableFromRaw(a.Raw)
 		}
 
-		out = append(out, foldedArtifact{
+		fa := foldedArtifact{
 			SpaceID: spaceID, RelPath: a.RelPath, Raw: a.Raw, Digest: a.Digest,
 			Env: a.Env, Result: result, Events: evs, EventEvidence: eventEvidence,
 			ReceiptMismatches: receiptMismatches, LatestEventAt: latest,
@@ -618,7 +712,20 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 			OperationalDebtOwed:    operationalDebtOwed,
 			OperationalItems:       operationalItems,
 			ContractNonAdoptable:   contractNonAdoptable,
-		})
+			// F1, evaluated once — see foldedArtifact's own comment.
+			registryLateAdopters: registryWideLateAdopters[a.Env.ID],
+		}
+		// moveOwed — see foldedArtifact's own comment. Gated to the exact
+		// two pairs fold.OutcomeOfDocument reads it for: every other
+		// kind/state pays nothing (no resolveVerdict call at all). me=""
+		// and parentFrom="" are safe here — extraAddressees no longer
+		// depends on "me" now that registryLateAdopters is mirror-wide
+		// (F1, above), OperationalDebtOwed is already mirror-wide, and
+		// neither of these two pairs is ever KindResponse.
+		if (env.Kind == fold.KindAnnouncement || env.Kind == fold.KindContract) && result.State == fold.StatePublished {
+			fa.moveOwed = len(resolveVerdict(fa, "", manifest, "").Owners) > 0
+		}
+		out = append(out, fa)
 	}
 
 	// Response closure-state overlay: fold's own model (see

@@ -46,16 +46,26 @@ func addressedToMe(fa foldedArtifact, me string) bool {
 // resolved here because this package can do the I/O and internal/pendency
 // deliberately cannot (pendency.Input.ExtraAddressees' own doc comment).
 //
-// It carries exactly P4 Edge 3: mirror.go resolved DeprecatesMyDependency
-// once, from THIS system's consumes.yaml, so the only extra addressee this
-// package can name is me. That narrowness is a property of the fact, not of
-// the rule — a caller able to read every participant's registry hands in a
-// wider set and nothing in pendency changes.
+// F1 (defects-fix-2026-08 P5, docs/inbox/defects/02-narrow-answers-survey.md):
+// it used to carry ONLY P4 Edge 3's own {me} fact — mirror.go's
+// DeprecatesMyDependency, resolved from THIS system's own consumes.yaml
+// alone, so a verdict asked about somebody ELSE's late adoption (the AUTHOR
+// checking their own outbox, most sharply) was silently narrow, while
+// FindRegisteredConsumersForMajor walked the whole mirror one file away in
+// the same package. mirror.go's own build pass now resolves the SAME
+// mirror-wide walk once per space (registryWideLateAdopters, buildIndex)
+// and carries it per artifact as foldedArtifact.registryLateAdopters; this
+// function unions it with the {me}-scoped fact rather than replacing it,
+// because ownSystem may not itself be a listed manifest participant (the
+// same reason LeftParticipants' own doc comment gives for a caller-side
+// fail-open rather than a hard requirement).
 func extraAddressees(fa foldedArtifact, me string) []string {
-	if !fa.DeprecatesMyDependency || me == "" {
-		return nil
+	var out []string
+	if fa.DeprecatesMyDependency && me != "" {
+		out = append(out, me)
 	}
-	return []string{me}
+	out = append(out, fa.registryLateAdopters...)
+	return out
 }
 
 // hasFulfillingResponse reports whether a response artifact naming this one

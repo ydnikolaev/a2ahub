@@ -11,6 +11,10 @@ import (
 // stated as the facts both `exchangeActive` and internal/pendency read.
 type exchangeSeed struct {
 	name string
+	// kind defaults to announcement (kindOrDefault) — every seed until P5
+	// (defects-fix-2026-08) was one, and leaving existing seeds unchanged
+	// keeps this table an additive diff rather than a mechanical rewrite.
+	kind fold.Kind
 	// me is whose exchange feed is being asked about.
 	me   string
 	from string
@@ -23,6 +27,12 @@ type exchangeSeed struct {
 	// announcement deprecates, so it is addressed even though the frozen
 	// `to:` predates its adoption.
 	registeredConsumer bool
+	// operationalDebtOwed is P5's contract counterpart (defects/01, design
+	// question 3): mirror.go's own contractOperationalDebtOwed, handed in
+	// directly here — a contract seed's own registered-consumer/floor
+	// arrangement is exercised in registered_consumers_test.go already;
+	// this table only needs the fact it resolves to.
+	operationalDebtOwed bool
 	// wantActive is what the exchange feed must say. It is stated
 	// independently of both implementations, from the domain question
 	// "does anything still have to happen before this is delivered".
@@ -110,6 +120,25 @@ var exchangeSeeds = []exchangeSeed{
 		wantActive: true, wantOwners: []string{"seomatrix"},
 		why: "the registry-matched half carries no ack_requested qualifier — the consumer owes an acknowledge and must be able to see the announcement",
 	},
+	// P5 (defects-fix-2026-08), design question 3's own "this commit owns
+	// both or neither": the contract half of the SAME "does anybody still
+	// owe a move" question, from the liveness side. Both seeds ask about
+	// the PRODUCER's own outbox — contractPublishedRow only ever names the
+	// producer, never a specific consumer, so a non-owner seed would be
+	// testing exchangeActiveFromVerdict's contract branch, not this table's
+	// own domain arrangement.
+	{
+		name: "published contract, no registered consumer", kind: fold.KindContract,
+		me: "axon", from: "axon", status: map[string]string{"axon": "active"},
+		operationalDebtOwed: false, wantActive: false, wantOwners: nil,
+		why: "contractPublishedRow's onEmpty: alive and settled, neither is a move anyone waits for — it must not linger in the producer's active feed forever",
+	},
+	{
+		name: "published contract, registered consumer owes activation", kind: fold.KindContract,
+		me: "axon", from: "axon", status: map[string]string{"axon": "active"},
+		operationalDebtOwed: true, wantActive: true, wantOwners: []string{"axon"},
+		why: "a registered consumer makes activation an owed move — the producer's own outbox must still show it as in flight",
+	},
 }
 
 // equalStrings compares two owner sets as SETS: internal/pendency builds its
@@ -135,6 +164,16 @@ func equalStrings(got, want []string) bool {
 	return true
 }
 
+// kindOrDefault defaults an unset seed kind to announcement — every seed
+// until P5 (defects-fix-2026-08) was one, and defaulting the zero value
+// keeps that whole table an additive diff.
+func (s exchangeSeed) kindOrDefault() fold.Kind {
+	if s.kind == "" {
+		return fold.KindAnnouncement
+	}
+	return s.kind
+}
+
 func (s exchangeSeed) artifact() (foldedArtifact, space.Manifest) {
 	var ps []space.Participant
 	for system, status := range s.status {
@@ -146,11 +185,12 @@ func (s exchangeSeed) artifact() (foldedArtifact, space.Manifest) {
 	}
 	return foldedArtifact{
 		Env: envelopeProbe{
-			Type: string(fold.KindAnnouncement), ID: "XA-axon-20260808-seed",
+			Type: string(s.kindOrDefault()), ID: "XA-axon-20260808-seed",
 			From: s.from, To: s.to, Category: "deprecation", AckRequested: s.ackRequested,
 		},
 		Result:                 fold.Result{State: fold.StatePublished, Acks: acks},
 		DeprecatesMyDependency: s.registeredConsumer,
+		OperationalDebtOwed:    s.operationalDebtOwed,
 	}, space.Manifest{Participants: ps}
 }
 
@@ -184,7 +224,10 @@ func TestExchangeActiveMatchesTheRelation(t *testing.T) {
 			// phase. Both assertions are here for that reason.
 			_, verdict := actionableReasons(fa, seed.me, manifest)
 			owed := containsString(verdict.Owners, seed.me)
-			if ownedByMe(fa, seed.me) {
+			// Contract liveness is unconditional on len(Owners) > 0 — see
+			// exchangeActiveFromVerdict's own comment on why a contract
+			// cannot split on ownedByMe the way an announcement does.
+			if ownedByMe(fa, seed.me) || fa.kind() == fold.KindContract {
 				owed = len(verdict.Owners) > 0
 			}
 			if owed != seed.wantActive {

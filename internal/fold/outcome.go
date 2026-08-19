@@ -154,6 +154,53 @@ func OutcomeOf(kind Kind, state State) Outcome {
 	return outcomes[kind][state]
 }
 
+// OutcomeOfDocument is OutcomeOf's per-document sibling — LegalNextFor's
+// own shipped precedent (legalnext.go:117, "using the full prior Result
+// rather than a single State") for the identical design question
+// (defects/01 §"design question 1"): a SECOND entry point that takes the
+// fuller value, because (kind, state) alone lies for two pairs. OutcomeOf
+// keeps its exact signature and answer unchanged for every caller that
+// genuinely holds only two facts (seam.md §1's frozen accessor, and this
+// package's own outcomes/openStates cross-checks iterate it directly) —
+// this is for the caller that also knows whether internal/pendency's own
+// verdict for THIS document names an owner.
+//
+// moveOwed is read for exactly two pairs, both named in defects/01
+// (docs/inbox/defects/01-open-without-a-waiter.md): (announcement,
+// published) — depends on ack_requested and a registry-matched late
+// adopter, neither of which (kind, state) alone can see — and (contract,
+// published) — depends on whether a registered consumer makes activation
+// an owed move. Every OTHER pair ignores moveOwed entirely and this
+// function answers exactly what OutcomeOf does; fold reads no clock and
+// no registry, so moveOwed must arrive as a caller-resolved fact, exactly
+// as pendency.Input's own caller-resolved fields do.
+//
+// It returns OutcomeSettled, never a new value, for the two pairs when
+// moveOwed is false — design question 2's own answer, "does it get an
+// EXISTING outcome (settled?)": internal/pendency's own prose for both
+// cases already says so verbatim. contractPublishedRow's onEmpty: "alive
+// and settled: the owner MAY publish a successor or deprecate, but
+// neither is a move anyone waits for." unackedTargetsRow's onEmpty for
+// !AckRequested: "domain 3.4.7 — delivery completes on publish, no
+// acknowledgement is required". Reusing the existing outcome keeps this a
+// caller-side read, never a new viewvocab tone/label decision.
+//
+// Design question 4 (defects/01): Terminal stays a third question,
+// unaffected by moveOwed. A settled-by-this-function announcement or
+// contract is still non-terminal — supersede/deprecate/retire remain
+// legal — exactly as it was before this function existed.
+func OutcomeOfDocument(kind Kind, state State, moveOwed bool) Outcome {
+	if !moveOwed {
+		switch {
+		case kind == KindAnnouncement && state == StatePublished:
+			return OutcomeSettled
+		case kind == KindContract && state == StatePublished:
+			return OutcomeSettled
+		}
+	}
+	return OutcomeOf(kind, state)
+}
+
 // Terminal reports whether an artifact of this kind, resting in this
 // state, has no legal transition out of it for ANY role. It is derived
 // from the transition rows, never from a literal set of state names, so a

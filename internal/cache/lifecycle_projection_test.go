@@ -97,6 +97,18 @@ func TestLifecycleProjectionOpenStates(t *testing.T) {
 						AckRequested: true,
 					},
 					Result: fold.Result{State: state, Acks: map[string]bool{}},
+					// P5 (defects-fix-2026-08): (contract, published) is the
+					// SAME conditional liveness AckRequested:true above
+					// already exists for on the announcement side — this
+					// loop's own state is "genuinely still live", so the
+					// fixture must carry the fact that keeps it that way, the
+					// same way it already carries AckRequested for the
+					// announcement/published open-check. Without it,
+					// exchangeActive correctly reads a published contract
+					// with no registered consumer as settled (defects/01),
+					// which this loop would misread as a regression rather
+					// than the fix.
+					OperationalDebtOwed: tt.kind == fold.KindContract && state == fold.StatePublished,
 				}
 				if !exchangeActive(fa, "axon", manifest) {
 					t.Errorf("exchangeActive(%q, %q) = false, want true", tt.kind, state)

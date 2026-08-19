@@ -1181,12 +1181,17 @@ func buildOpenItemsWithVerdicts(sorted []foldedArtifact, byID map[string]foldedA
 			ExpectedTransition: verdict.Expected,
 			Why:                verdict.Why,
 			HumanGate:          verdict.HumanGate,
-			Outcome:            fold.OutcomeOf(fa.kind(), fa.Result.State),
-			Terminal:           fold.Terminal(fa.kind(), fa.Result.State),
-			StateSince:         fa.StateSince,
-			StateBy:            fa.StateBy,
-			StateEvent:         fa.StateEventID,
-			OperationalItems:   fa.OperationalItems,
+			// OutcomeOfDocument, not the pure OutcomeOf: defects/01 (P5).
+			// `verdict` is already resolved above for WaitingOn/Why/
+			// HumanGate, so len(verdict.Owners) > 0 is read straight off
+			// it rather than a second, precomputed source — the freshest
+			// answer for this exact call's own manifest/parentFrom.
+			Outcome:          fold.OutcomeOfDocument(fa.kind(), fa.Result.State, len(verdict.Owners) > 0),
+			Terminal:         fold.Terminal(fa.kind(), fa.Result.State),
+			StateSince:       fa.StateSince,
+			StateBy:          fa.StateBy,
+			StateEvent:       fa.StateEventID,
+			OperationalItems: fa.OperationalItems,
 		})
 	}
 	return out

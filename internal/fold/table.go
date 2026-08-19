@@ -237,6 +237,34 @@ func decisionRows() []Row {
 		// facts (that authorship lives on a different, not-yet-existing
 		// artifact) — encoded as membership-only (RoleAny). Deviation,
 		// documented in the phase report.
+		//
+		// backlog.md:866 names this a real enforcement gap, deliberately
+		// NOT closed here: it carries a CONSILIUM-INPUT marker (the
+		// agent-to-agent architecture review owns the decision, alongside
+		// the sibling gap two rows down in the same backlog file —
+		// backlog.md:870, CandidateEvent carries no envelope). The two are
+		// the same shape: this row's Scenario names WHAT is unverifiable;
+		// backlog.md:870 names WHY, one layer down the call stack.
+		//
+		// What would close it, named so a future implementor does not have
+		// to re-derive it: CheckLegality/CheckCandidate resolve every OTHER
+		// role from THIS artifact's own envelope, reached through
+		// internal/validate.CandidateEvent (see backlog.md:870 and
+		// internal/validate/seam.go's LegalityAdapter/RegisterEnvelope). A
+		// successor's authorship and approval state live on a SIBLING
+		// artifact that, at legality-check time, has not been committed yet
+		// — CandidateEvent has no field for "the envelope of the artifact
+		// this event's own successor_id will name" because there is no such
+		// artifact to point at. Closing this gap needs a caller-resolved
+		// fact threaded in the same way pendency.Input.ExtraAddressees is:
+		// CandidateEvent (or a sibling type built for this one check) would
+		// need an optional SuccessorEnvelope field, populated by the
+		// caller — internal/validate, which CAN read the successor
+		// artifact's committed bytes before authorizing the supersede event
+		// that references it — and the row's Role would resolve against
+		// that fact instead of RoleAny. Left to CONSILIUM because widening
+		// CandidateEvent's shape is a decision about the pre-write legality
+		// seam generally (backlog.md:870), not about this one row alone.
 		{Kind: KindDecision, From: StateRejected, Transition: TSupersede, To: StateSuperseded, Role: RoleAny, Scenario: "successor-authorship-unverifiable"},
 		{Kind: KindDecision, From: StateApproved, Transition: TSupersede, To: StateSuperseded, Role: RoleAny, Scenario: "new-approved-decision-only-unverifiable"},
 	}

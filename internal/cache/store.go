@@ -269,10 +269,51 @@ func (s *Store) index(ctx context.Context) (map[string][]foldedArtifact, map[str
 		if err != nil {
 			return nil, nil, fmt.Errorf("cache: Store.index: space %s: %w", sm.SpaceID, err)
 		}
+		applyExpiredOverlay(fa, s.now())
 		out[sm.SpaceID] = fa
 		skips[sm.SpaceID] = sk
 	}
 	return out, skips, nil
+}
+
+// applyExpiredOverlay is F5's own wiring (defects-fix-2026-08 P5,
+// docs/inbox/defects/02-narrow-answers-survey.md): fold.ExpiredOverlay had
+// zero production callers.
+//
+// Applied HERE, once per Store.index build, rather than inside buildIndex
+// itself: buildIndex has callers outside this wave's allowlist
+// (internal/cache/operational.go and four of this package's own _test.go
+// files not granted here), so threading a `now` parameter through its own
+// signature would touch every one of them for a fact only Store.index's
+// own callers need — and Store.index IS the one chokepoint every read verb
+// funnels through (this file's own doc comment on index, above), so this
+// single call site reaches every one of them, dashboard included
+// (dashboard.go's DashboardSnapshot calls s.index(ctx) at its own line 27).
+//
+// Gated to KindAnnouncement only: Env.ValidUntil is the shared
+// base-envelope field, and a contract's own use of it (deprecation
+// sunset, contract_window.go's own Sunset: fa.Env.ValidUntil) is a
+// DIFFERENT domain question the operator refused to conflate with this one
+// (03-domain.md:115, "never time-triggered" — F3, defects/02): applying
+// the §3.4.7 expired overlay to a contract's sunset would misreport a
+// retire-readiness fact the domain deliberately does not compute this way.
+//
+// fold.ExpiredOverlay's own doc comment names it a "display overlay" —
+// never a state, never an event. It is stored on foldedArtifact.expired,
+// an unexported field: the ONLY safe wiring destination this wave's
+// allowlist reaches. Both internal/html's own projection gates
+// (item_projection_test.go, openitem_projection_test.go — off-limits)
+// assert cache.Item/OpenItem's EXPORTED field set against html.Item/
+// ThreadOpenItem 1:1, so a new EXPORTED field here would fail a gate this
+// wave cannot fix. Surfacing it on the wire (a reader-visible "past its
+// stated validity" fact) is P8's own decision, not this wave's.
+func applyExpiredOverlay(artifacts []foldedArtifact, now time.Time) {
+	for i := range artifacts {
+		if artifacts[i].kind() != fold.KindAnnouncement {
+			continue
+		}
+		artifacts[i].expired = fold.ExpiredOverlay(parseTimeField(artifacts[i].Env.ValidUntil), now)
+	}
 }
 
 // spaceSyncStale reports whether spaceID's mirror sync-age exceeds the
@@ -323,9 +364,15 @@ func toItem(fa foldedArtifact, syncStale, pendingMerge bool) Item {
 		CreatedAt: parseTimeField(fa.Env.Created), CreatedSeq: fa.Seq, CreatedOrderKnown: fa.OrderKnown,
 		LatestEventAt: fa.LatestEventAt, LatestEventSeq: fa.LatestEventSeq, LatestEventID: fa.LatestEventID,
 		Description: bodySummary(fa.Raw, 240),
-		Outcome:     fold.OutcomeOf(fa.kind(), fa.Result.State),
-		Terminal:    fold.Terminal(fa.kind(), fa.Result.State),
-		StateSince:  fa.StateSince, StateBy: fa.StateBy, StateEvent: fa.StateEventID,
+		// OutcomeOfDocument, not the pure OutcomeOf: defects/01 (P5,
+		// docs/inbox/defects/01-open-without-a-waiter.md). fa.moveOwed is
+		// mirror.go's own per-document fact (foldedArtifact's own doc
+		// comment), resolved once during the build pass through
+		// resolveVerdict — never re-derived here. OutcomeOf stays the pure
+		// fallback for every pair OutcomeOfDocument does not narrow on.
+		Outcome:    fold.OutcomeOfDocument(fa.kind(), fa.Result.State, fa.moveOwed),
+		Terminal:   fold.Terminal(fa.kind(), fa.Result.State),
+		StateSince: fa.StateSince, StateBy: fa.StateBy, StateEvent: fa.StateEventID,
 		// OperationalItems is spec 05 AC4's per-item x_operational[]
 		// projection (epic-backlog B25) — carried whole from
 		// foldedArtifact.OperationalItems, itself mirror.go's

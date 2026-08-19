@@ -498,11 +498,29 @@ func isOpen(kind fold.Kind, state fold.State) bool {
 // The relation answers now. `resolveVerdict` is the package's single
 // pendency.Input call site, so this question and `--actionable`'s cannot
 // drift apart again.
+//
+// needsLivenessVerdict names the SECOND pair this same question applies
+// to (defects/01, design question 3's own "this commit owns both or
+// neither"): a published contract with no registered consumer is the case
+// contractPublishedRow already answers "alive and settled: neither is a
+// move anyone waits for", and it stayed live in the exchange feed forever
+// until now for exactly the same reason a flagless deprecation did —
+// isOpen's own unconditional allowlist cannot see the third fact.
+func needsLivenessVerdict(fa foldedArtifact) bool {
+	switch {
+	case fa.kind() == fold.KindAnnouncement && fa.Result.State == fold.StatePublished:
+		return true
+	case fa.kind() == fold.KindContract && fa.Result.State == fold.StatePublished:
+		return true
+	}
+	return false
+}
+
 func exchangeActive(fa foldedArtifact, me string, manifest space.Manifest) bool {
 	if !isOpen(fa.kind(), fa.Result.State) {
 		return false
 	}
-	if fa.kind() != fold.KindAnnouncement || fa.Result.State != fold.StatePublished {
+	if !needsLivenessVerdict(fa) {
 		return true
 	}
 	verdict := resolveVerdict(fa, me, manifest, "")
@@ -516,8 +534,21 @@ func exchangeActiveFromVerdict(fa foldedArtifact, me string, verdict pendency.Ve
 	if !isOpen(fa.kind(), fa.Result.State) {
 		return false
 	}
-	if fa.kind() != fold.KindAnnouncement || fa.Result.State != fold.StatePublished {
+	if !needsLivenessVerdict(fa) {
 		return true
+	}
+	if fa.kind() == fold.KindContract {
+		// Liveness here is a property of the DOCUMENT, not the reader
+		// (spec 03-declared-nature.md's own finding: "whose move it is is
+		// a property of the artifact, not the reader"): contractPublishedRow
+		// only ever names the PRODUCER (never a consumer specifically), so
+		// splitting on ownedByMe the way the announcement branch below does
+		// would leave every non-owner's own containsString(verdict.Owners,
+		// me) permanently false — silently dropping a contract merely
+		// addressed to a consumer via `to:` out of THEIR active feed too, a
+		// change beyond this defect. len(verdict.Owners) > 0 answers "is
+		// this document still in flight" for everyone asking about it.
+		return len(verdict.Owners) > 0
 	}
 	// The author asks about the artifact — "is anyone still to acknowledge
 	// this" — while a recipient asks about itself. Both were already the

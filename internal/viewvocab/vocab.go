@@ -273,3 +273,66 @@ func vocabularyEntry(family VocabularyFamily, value, labelRU, labelEN, explanati
 		Cue:           toneCues[tone],
 	}
 }
+
+// handoffLifecycleStateOverrides is F2's own fix (defects-fix-2026-08 P5,
+// docs/inbox/defects/02-narrow-answers-survey.md F2): `accepted` and
+// `rejected` are the two live collisions between handoff's own meaning for
+// those state NAMES and every other kind's — fold.Outcome's own opening
+// comment records exactly this argument one layer down ("handoff `accepted`
+// — the state a passing verification produces, the end of that exchange —
+// was treated as the same fact as question `accepted`, which is the middle
+// of one"). Observed on four live handoffs (defects/02 F2).
+//
+// This is a SEPARATE map, never a second (family, value) row added to
+// dashboardVocabularyEntries: internal/html/vocab_test.go (off-limits to
+// this wave) asserts that table's exact shape two ways — a hard row count
+// (TestDashboardVocabularyClosedShape, "want 96") and a per-family value
+// set computed 1:1 from fold's own raw state names
+// (dashboardVocabularyPairs' unionValues(base.States), refusing "surplus"
+// pairs) — so a kind-qualified entry cannot be added to that table without
+// editing a file this wave may not touch. LifecycleStateEntry, below, is
+// the seam a future wave (P8) wires into the presentation lookup; today it
+// is read only by this package's own tests (TestImportsNothing only
+// inspects PRODUCTION imports, so a test importing fold to sweep
+// fold.RestingStates() does not violate it).
+var handoffLifecycleStateOverrides = map[string]VocabularyEntry{
+	"accepted": vocabularyEntry(VocabularyFamilyLifecycleState, "accepted",
+		"Передача принята", "Handoff accepted",
+		"Проверка переданной работы прошла успешно; обмен завершён, и дальнейший шаг по этой передаче не ожидается.",
+		"The handoff's verification passed; the exchange is complete and no further step on this handoff is expected.",
+		VocabularyToneSettled),
+	"rejected": vocabularyEntry(VocabularyFamilyLifecycleState, "rejected",
+		"Передача не принята", "Handoff verification failed",
+		"Проверка переданной работы не пройдена; отправитель обязан прислать исправленную передачу взамен этой.",
+		"The handoff's verification failed; the producer owes a corrected handoff that supersedes this one.",
+		VocabularyToneNeedsYou),
+}
+
+// LifecycleStateEntry resolves the bilingual dashboard entry for one
+// (kind, state) pair — F2's fix, one layer up from fold.Outcome's own
+// Kind-taking signature (that type's own doc comment is the argument this
+// function applies to the vocabulary). kind and state are plain strings,
+// never fold.Kind/fold.State: this package imports nothing in production
+// (TestImportsNothing), and a caller outside internal/fold already holds
+// the raw strings on its own envelope/read-model facts.
+//
+// For every kind other than "handoff", and for every handoff state other
+// than "accepted"/"rejected", this returns exactly what a lookup keyed on
+// state alone (DashboardVocabulary's own VocabularyFamilyLifecycleState
+// rows) already returns — this function narrows nothing else. The zero
+// VocabularyEntry is returned for a state this package's table has no row
+// for at all, the same "unknown is presentation fallback, never a
+// fabricated domain entry" discipline VocabularyFallback documents.
+func LifecycleStateEntry(kind, state string) VocabularyEntry {
+	if kind == "handoff" {
+		if e, ok := handoffLifecycleStateOverrides[state]; ok {
+			return e
+		}
+	}
+	for _, e := range dashboardVocabularyEntries {
+		if e.Family == VocabularyFamilyLifecycleState && e.Value == state {
+			return e
+		}
+	}
+	return VocabularyEntry{}
+}
