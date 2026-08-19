@@ -11,7 +11,10 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 )
 
 // rcWriteFile writes content at mirrorDir/relPath, creating parent
@@ -223,6 +226,248 @@ func TestFindRegisteredConsumers_SatisfiedRequirementCounts(t *testing.T) {
 // consumes/v1 registry must error, never round down to "consumes
 // nothing" — the retire gate's own reason for this rule (see
 // parseConsumesStrict's doc comment).
+// --- FindUnadoptedConsumption fixtures ---
+//
+// These exercise FindRegisteredConsumers' own OPPOSITE direction (spec 06
+// §5): a verify-passed handoff's "data" deliverable resolved against its
+// data-package/v1 manifest, against ownSystem's own consumes.yaml — never
+// git-committed, same plain on-disk layout as the fixtures above, plus a
+// data package's own <system>/data/<DP-id>/manifest.json
+// (packageresolver.go's own path shape).
+
+// rcWriteHandoff writes a handoff artifact naming exactly one "data"
+// deliverable (packageRef) alongside a "code" deliverable (deliverables[]
+// minItems:1, but never all-data in the real schema either — this mirrors
+// delivery_test.go's own handoffRaw fixture, which is why the "code" kind
+// is never counted is worth exercising once, here, rather than assumed).
+func rcWriteHandoff(t *testing.T, mirrorDir, id, from, to, packageRef string) {
+	t.Helper()
+	content := "---\nschema: envelope/v1\nid: " + id + "\ntype: handoff\ntitle: t\nspace: fixture-space\n" +
+		"from: " + from + "\nto: [" + to + "]\ncreated: 2026-08-17T10:00:00Z\n" +
+		"deliverables:\n" +
+		"  - name: dataset\n    ref: " + packageRef + "\n    kind: data\n" +
+		"  - name: notes\n    ref: docs/notes.md\n    kind: doc\n" +
+		"verification: manual\nacceptance_criteria: [\"done\"]\nlimitations: []\n" +
+		"fulfills: [\"XW-" + from + "-20260817-zzzz\"]\n---\nBody.\n"
+	rcWriteFile(t, mirrorDir, from+"/"+id+".md", content)
+}
+
+// rcWriteHandoffLifecycle commits submit (owner=from) + acknowledge
+// (target=to) events for id, and a verify-pass (target=to) event too when
+// accepted — the ONE handoffRows row (§3.4.5) that folds to
+// fold.StateAccepted. Events are committed under from's own tree, mirroring
+// this file's existing requirement fixtures (a subject's events live beside
+// its owning artifact's own system section, regardless of which system's
+// actor produced a given event).
+func rcWriteHandoffLifecycle(t *testing.T, mirrorDir, id, from, to string, accepted bool) {
+	t.Helper()
+	type step struct{ transition, system string }
+	steps := []step{{"submit", from}, {"acknowledge", to}}
+	if accepted {
+		steps = append(steps, step{"verify-pass", to})
+	}
+	// suffix must vary per handoff id — a shared "01HFXH...i" filename
+	// across two DIFFERENT handoffs from the SAME producer would collide on
+	// disk (rcWriteFile overwrites), silently dropping one handoff's own
+	// events under the other's file.
+	suffix := id
+	if at := strings.LastIndex(id, "-"); at >= 0 {
+		suffix = id[at+1:]
+	}
+	for i, s := range steps {
+		ulid := fmt.Sprintf("01HFXH%s%011d", suffix, i+1)
+		rcWriteFile(t, mirrorDir, fmt.Sprintf("%s/events/2026/%s.yaml", from, ulid),
+			fmt.Sprintf("schema: event/v1\nevent: %s\nspace: fixture-space\n"+
+				"subject: %s\ntransition: %s\nactor: {kind: agent, name: bot, system: %s}\n"+
+				"at: 2026-08-17T%02d:00:00Z\n", ulid, id, s.transition, s.system, 10+i))
+	}
+}
+
+// rcWriteDataPackageManifest writes a minimal data-package/v1 manifest.json
+// at packageresolver.go's own path shape ("<system>/data/<DP-id>/manifest.json",
+// system parsed out of packageID itself) pinning contractRef
+// ("<XC-id>@<version>#<digest>", data-package.schema.json's
+// pinnedContractRef) as its own `contract` field. Every other manifest
+// field is omitted: ResolvePackage only json.Unmarshals this document, it
+// never schema-validates it (this corpus never calls AssertFormat), so a
+// minimal document with schema/id/contract decodes exactly like a real one
+// for this reader's purposes.
+func rcWriteDataPackageManifest(t *testing.T, mirrorDir, packageID, contractRef string) {
+	t.Helper()
+	parsed, err := datapackage.ParsePackageID(packageID)
+	if err != nil {
+		t.Fatalf("rcWriteDataPackageManifest: ParsePackageID(%q): %v", packageID, err)
+	}
+	content := fmt.Sprintf(`{"schema":"data-package/v1","id":%q,"contract":%q}`, packageID, contractRef)
+	rcWriteFile(t, mirrorDir, parsed.System+"/data/"+packageID+"/manifest.json", content)
+}
+
+// TestFindUnadoptedConsumption_NamesUnadoptedContractWithDistinctPackageCount
+// is the live case's core shape (docs/inbox/defects/07): axon's own
+// consumes.yaml is a real, valid consumes/v1 registry with `dependencies:
+// []` (NOT a malformed placeholder — the live case parses cleanly and
+// still carries zero declared dependencies), while two DISTINCT
+// verify-passed deliveries pin the SAME unadopted contract. A third handoff
+// re-delivers one of the SAME two packages again (a resubmission) — this
+// must not inflate the count past 2 distinct packages.
+func TestFindUnadoptedConsumption_NamesUnadoptedContractWithDistinctPackageCount(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	rcWriteFile(t, mirrorDir, "axon/consumes.yaml", "schema: consumes/v1\nsystem: axon\ndependencies: []\n")
+
+	rcWriteDataPackageManifest(t, mirrorDir, "DP-seomatrix-20260818-p3my", "XC-seomatrix-regime-corpus@1.0.0#aaa111")
+	rcWriteDataPackageManifest(t, mirrorDir, "DP-seomatrix-20260818-jgf1", "XC-seomatrix-regime-corpus@1.0.0#bbb222")
+
+	rcWriteHandoff(t, mirrorDir, "XH-seomatrix-20260817-aaaa", "seomatrix", "axon", "DP-seomatrix-20260818-p3my")
+	rcWriteHandoffLifecycle(t, mirrorDir, "XH-seomatrix-20260817-aaaa", "seomatrix", "axon", true)
+
+	rcWriteHandoff(t, mirrorDir, "XH-seomatrix-20260817-bbbb", "seomatrix", "axon", "DP-seomatrix-20260818-jgf1")
+	rcWriteHandoffLifecycle(t, mirrorDir, "XH-seomatrix-20260817-bbbb", "seomatrix", "axon", true)
+
+	// Resubmission: a THIRD accepted handoff re-carries the FIRST package's
+	// own ref. Distinct-package count must stay 2, not 3.
+	rcWriteHandoff(t, mirrorDir, "XH-seomatrix-20260817-cccc", "seomatrix", "axon", "DP-seomatrix-20260818-p3my")
+	rcWriteHandoffLifecycle(t, mirrorDir, "XH-seomatrix-20260817-cccc", "seomatrix", "axon", true)
+
+	got, skip, err := FindUnadoptedConsumption(mirrorDir, "axon")
+	if err != nil {
+		t.Fatalf("FindUnadoptedConsumption: %v", err)
+	}
+	if skip != nil {
+		t.Fatalf("want no skip (a valid `dependencies: []` registry is the ordinary live case), got %+v", skip)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d contracts, want exactly 1: %+v", len(got), got)
+	}
+	if got[0].ContractID != "XC-seomatrix-regime-corpus" {
+		t.Fatalf("got contract %q, want XC-seomatrix-regime-corpus", got[0].ContractID)
+	}
+	if got[0].Count != 2 {
+		t.Fatalf("got Count=%d, want 2 DISTINCT packages (a resubmission of an already-counted package must not inflate the count)", got[0].Count)
+	}
+}
+
+// TestFindUnadoptedConsumption_RegisteredContractIsSilent is the AC's own
+// "a delivery conforming to a contract I DO consume -> silent" edge: one
+// contract IS in axon's own consumes.yaml (adopted) and must never appear,
+// while a second, unadopted contract in the SAME mirror still does.
+func TestFindUnadoptedConsumption_RegisteredContractIsSilent(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	rcWriteConsumesYAML(t, mirrorDir, "axon", "XC-seomatrix-regime-corpus", 1)
+
+	rcWriteDataPackageManifest(t, mirrorDir, "DP-seomatrix-20260818-p3my", "XC-seomatrix-regime-corpus@1.0.0#aaa111")
+	rcWriteHandoff(t, mirrorDir, "XH-seomatrix-20260817-aaaa", "seomatrix", "axon", "DP-seomatrix-20260818-p3my")
+	rcWriteHandoffLifecycle(t, mirrorDir, "XH-seomatrix-20260817-aaaa", "seomatrix", "axon", true)
+
+	// The second, unadopted contract in the same mirror — a real DP- id
+	// (this phase resolves the handoff-deliverables -> data-package/v1
+	// channel only; see this phase's own reported deviation on the live
+	// case's XS- response-attachment example, a different channel).
+	rcWriteDataPackageManifest(t, mirrorDir, "DP-seomatrix-20260818-n2yp", "XC-seomatrix-c4-export@1.0.0#ccc333")
+	rcWriteHandoff(t, mirrorDir, "XH-seomatrix-20260817-bbbb", "seomatrix", "axon", "DP-seomatrix-20260818-n2yp")
+	rcWriteHandoffLifecycle(t, mirrorDir, "XH-seomatrix-20260817-bbbb", "seomatrix", "axon", true)
+
+	got, skip, err := FindUnadoptedConsumption(mirrorDir, "axon")
+	if err != nil {
+		t.Fatalf("FindUnadoptedConsumption: %v", err)
+	}
+	if skip != nil {
+		t.Fatalf("want no skip, got %+v", skip)
+	}
+	if len(got) != 1 || got[0].ContractID != "XC-seomatrix-c4-export" {
+		t.Fatalf("got %+v, want exactly {XC-seomatrix-c4-export} — the registered contract must stay silent", got)
+	}
+}
+
+// TestFindUnadoptedConsumption_SelfPublishedNeverReported is the AC's own
+// "a contract I publish myself is never reported as unadopted" edge: a
+// delivery pins a contract whose own id embeds ownSystem as producer
+// (ClassStanding's <PREFIX>-<system>-<slug>), even though axon's own
+// consumes.yaml never lists it.
+func TestFindUnadoptedConsumption_SelfPublishedNeverReported(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	rcWriteFile(t, mirrorDir, "axon/consumes.yaml", "schema: consumes/v1\nsystem: axon\ndependencies: []\n")
+
+	rcWriteDataPackageManifest(t, mirrorDir, "DP-seomatrix-20260818-p3my", "XC-axon-getvisa-ingest@1.0.0#ddd444")
+	rcWriteHandoff(t, mirrorDir, "XH-seomatrix-20260817-aaaa", "seomatrix", "axon", "DP-seomatrix-20260818-p3my")
+	rcWriteHandoffLifecycle(t, mirrorDir, "XH-seomatrix-20260817-aaaa", "seomatrix", "axon", true)
+
+	got, skip, err := FindUnadoptedConsumption(mirrorDir, "axon")
+	if err != nil {
+		t.Fatalf("FindUnadoptedConsumption: %v", err)
+	}
+	if skip != nil {
+		t.Fatalf("want no skip, got %+v", skip)
+	}
+	if len(got) != 0 {
+		t.Fatalf("got %+v, want empty — axon publishes XC-axon-getvisa-ingest itself, never its own \"unadopted\" consumer", got)
+	}
+}
+
+// TestFindUnadoptedConsumption_NotYetVerifiedNotCounted: a handoff that is
+// only submitted+acknowledged, never verify-passed, must not count — the
+// fold never reaches StateAccepted.
+func TestFindUnadoptedConsumption_NotYetVerifiedNotCounted(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	rcWriteFile(t, mirrorDir, "axon/consumes.yaml", "schema: consumes/v1\nsystem: axon\ndependencies: []\n")
+
+	rcWriteDataPackageManifest(t, mirrorDir, "DP-seomatrix-20260818-p3my", "XC-seomatrix-regime-corpus@1.0.0#aaa111")
+	rcWriteHandoff(t, mirrorDir, "XH-seomatrix-20260817-aaaa", "seomatrix", "axon", "DP-seomatrix-20260818-p3my")
+	rcWriteHandoffLifecycle(t, mirrorDir, "XH-seomatrix-20260817-aaaa", "seomatrix", "axon", false)
+
+	got, skip, err := FindUnadoptedConsumption(mirrorDir, "axon")
+	if err != nil {
+		t.Fatalf("FindUnadoptedConsumption: %v", err)
+	}
+	if skip != nil {
+		t.Fatalf("want no skip, got %+v", skip)
+	}
+	if len(got) != 0 {
+		t.Fatalf("got %+v, want empty — the handoff was never verify-passed", got)
+	}
+}
+
+// TestFindUnadoptedConsumption_MalformedRegistryDegradesToSkipNeverFalseAdvisory
+// proves the asymmetry this function's own doc comment claims: an
+// unreadable/placeholder consumes.yaml must degrade to a reported SKIP,
+// never silently to "empty declared set" (which would falsely re-report an
+// already-registered contract as unadopted).
+func TestFindUnadoptedConsumption_MalformedRegistryDegradesToSkipNeverFalseAdvisory(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	rcWriteFile(t, mirrorDir, "axon/consumes.yaml", "consumes: []\n") // placeholder shape, refused by parseConsumesStrict
+
+	rcWriteDataPackageManifest(t, mirrorDir, "DP-seomatrix-20260818-p3my", "XC-seomatrix-regime-corpus@1.0.0#aaa111")
+	rcWriteHandoff(t, mirrorDir, "XH-seomatrix-20260817-aaaa", "seomatrix", "axon", "DP-seomatrix-20260818-p3my")
+	rcWriteHandoffLifecycle(t, mirrorDir, "XH-seomatrix-20260817-aaaa", "seomatrix", "axon", true)
+
+	got, skip, err := FindUnadoptedConsumption(mirrorDir, "axon")
+	if err != nil {
+		t.Fatalf("FindUnadoptedConsumption: %v", err)
+	}
+	if skip == nil {
+		t.Fatal("want a non-nil skip: the registry could not be read as consumes/v1")
+	}
+	if len(got) != 0 {
+		t.Fatalf("got %+v, want empty rows alongside the skip — never both a skip AND a (possibly false) contract list", got)
+	}
+}
+
+// TestFindUnadoptedConsumption_EmptyOwnSystemReturnsNil: no configured
+// identity means nothing can be resolved as "mine" — the same degrade
+// myDependencyContracts documents for an empty ownSystem.
+func TestFindUnadoptedConsumption_EmptyOwnSystemReturnsNil(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	got, skip, err := FindUnadoptedConsumption(mirrorDir, "")
+	if err != nil || skip != nil || got != nil {
+		t.Fatalf("got (%v, %v, %v), want (nil, nil, nil)", got, skip, err)
+	}
+}
+
 func TestFindRegisteredConsumers_MalformedConsumesFailsClosed(t *testing.T) {
 	t.Parallel()
 

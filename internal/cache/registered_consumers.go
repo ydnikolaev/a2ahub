@@ -26,9 +26,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
+	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/version"
@@ -304,4 +307,207 @@ func parseConsumesStrict(raw []byte, path string) (space.Consumes, error) {
 				"refusing to treat it as \"no registered consumers\"; fix the file (or write it with `a2a contract adopt`)", path)
 	}
 	return registry, nil
+}
+
+// UnadoptedConsumption is one contract ownSystem has verify-passed
+// deliveries against without ever listing in its own consumes.yaml — see
+// FindUnadoptedConsumption's own doc comment. Count is the number of
+// DISTINCT resolved data-package ids (doc.ID) conforming to ContractID,
+// never the number of deliverable OCCURRENCES: the same package referenced
+// by more than one handoff (a resubmission, a broadcast to several
+// targets) must not inflate the count past the number of packages a
+// reader would actually have to look at.
+type UnadoptedConsumption struct {
+	ContractID string
+	Count      int
+}
+
+// FindUnadoptedConsumption is FindRegisteredConsumers' own OPPOSITE
+// direction (spec 06 §5's anti-duplication bullet: "the mirror-wide walk
+// exists; this phase adds the opposite direction — deliveries I ACCEPTED
+// vs contracts I DECLARED"), computed for a new WARN-only `a2a doctor`
+// advisory (defects-fix-2026-08 P6, docs/inbox/defects/07-the-consumer-
+// registered-nowhere.md). Detection only — see the paragraph below on what
+// this deliberately does NOT decide.
+//
+// It scans every handoff addressed to ownSystem (handoff.schema.json's own
+// `to` is exactly one target system) that has folded to fold.StateAccepted.
+// That state is a valid proxy for "ownSystem verify-passed this delivery"
+// without re-deriving the transition by hand: §3.4.5's handoffRows table
+// (internal/fold/table.go) has exactly ONE row landing on StateAccepted —
+// `acknowledged --verify-pass--> accepted`, RoleTarget — so a handoff
+// folding to StateAccepted is, by construction, one ownSystem itself
+// verify-passed (RoleTarget resolves to the envelope's own To0(), the same
+// resolution requirementProbe's own doc comment above documents at length
+// for the satisfied-requirement half of this file's D-022 union). The
+// handoff's own fold state is the verify-pass signal used here — never
+// report.json (datapackage.Report answers a DIFFERENT question, "did the
+// content pass its checks", not "did the target accept the delivery").
+//
+// For each accepted handoff it resolves every "data" deliverable
+// (datapackage.DeliverableKindData; the other four kinds — code, contract,
+// config, doc — carry no data-package/v1 manifest to resolve, exactly
+// delivery.go's own ResolveDeliveries scope) against that manifest via the
+// same filesystem-backed resolver packageresolver.go already owns
+// (mirrorPackageResolver.ResolvePackage; participants is nil because
+// ResolvePackage never reads it — the producing system is parsed out of
+// the ref itself, see that method's own doc comment), and reports every
+// distinct contract id the manifest PINS (Document.Contract, already a
+// decoded Go field — no second YAML/JSON parse of the manifest here) that
+// is NEITHER already in ownSystem's own consumes.yaml (myDependencyContracts,
+// this file) NOR published by ownSystem itself. A producer is never a
+// consumer of its own contract: a contract id is ClassStanding
+// (<PREFIX>-<system>-<slug>, internal/artifact/id.go), so
+// artifact.ParseID(id).System names the producer directly, with no second
+// registry to consult.
+//
+// This function answers Piece 1 ONLY (spec 06's own "Two pieces, and only
+// the first is uncontroversial"): detection, never registration. Nothing
+// it returns is written anywhere, and internal/validate/policy_retire.go
+// (D-022's retire precondition) does not call it and does not change —
+// that gate stays scoped to DECLARED registrations, by design, and this
+// phase does not touch it. Piece 2 (should a verify-passed delivery
+// auto-register?) is the epic's own open question, not decided here.
+//
+// The returned *SkippedFile mirrors myDependencyContracts' own asymmetry
+// (that function's own doc comment): a consumes.yaml that EXISTS but
+// cannot be read as a real consumes/v1 registry must not silently degrade
+// to "empty declared set" here, because that would report every ALREADY-
+// adopted contract as unadopted a second time over — a worse false
+// advisory than simply not running. A non-nil skip means "render an
+// unverified-style line instead of a contract list", never both; an
+// ABSENT consumes.yaml (the live case: a real `consumes/v1` file with
+// `dependencies: []`) is the ordinary case and returns a nil skip.
+//
+// Best-effort otherwise, unlike findRegisteredConsumers' fail-closed
+// contract: one unreadable handoff, unresolvable manifest, or undecodable
+// deliverables[] block in a large mirror is silently excluded from the
+// count rather than aborting the whole scan or failing `a2a doctor` —
+// this is a WARN-only advisory, never a gate (spec 06 T1: "consuming
+// without adopting is a real risk and not an error"), and an operator is
+// better served by an undercount than by no advisory at all when one file
+// in a large mirror is malformed.
+func FindUnadoptedConsumption(mirrorDir, ownSystem string) ([]UnadoptedConsumption, *SkippedFile, error) {
+	if ownSystem == "" {
+		return nil, nil, nil
+	}
+	myDependencies, depSkip := myDependencyContracts(mirrorDir, ownSystem)
+	if depSkip != nil {
+		return nil, depSkip, nil
+	}
+
+	artifacts, _, err := walkArtifacts(mirrorDir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cache: %w", err)
+	}
+	events, _, err := walkEvents(mirrorDir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cache: %w", err)
+	}
+	eventsBySubject := map[string][]fold.Event{}
+	for _, re := range events {
+		eventsBySubject[re.Ev.Subject] = append(eventsBySubject[re.Ev.Subject], fold.Event{
+			ULID: re.Ev.Event, Subject: re.Ev.Subject, Transition: re.Ev.Transition,
+			ClaimedState: fold.State(re.Ev.State),
+			Actor:        fold.Actor{Kind: re.Ev.Actor.Kind, Name: re.Ev.Actor.Name, System: re.Ev.Actor.System},
+			Version:      canonicalEventVersion(re.Ev.Version),
+		})
+	}
+
+	resolver := newMirrorPackageResolver(mirrorDir, nil)
+
+	// packagesByContract dedups by resolved package id (doc.ID), never by
+	// deliverable occurrence — see UnadoptedConsumption's own doc comment.
+	packagesByContract := map[string]map[string]bool{}
+	for _, a := range artifacts {
+		if a.Env.Type != string(fold.KindHandoff) {
+			continue
+		}
+		to := normalizeTo(a.Env.To)
+		if !containsString(to, ownSystem) {
+			continue
+		}
+		// A naive subject==id-only query is the wrong default in this
+		// package (buildIndex's own doc comment, mirror.go: gatherEvents
+		// merges response-attached events into a PARENT's stream because a
+		// question/work_request's verify/dispute are committed under the
+		// RESPONSE's own subject, not the parent's). That merge is scoped
+		// to exactly fold.TVerify/fold.TDispute (gatherEvents, mirror.go) —
+		// the D-024 closure-model transitions on a RESPONSE. A handoff's
+		// own verify-pass/verify-fail (fold.TVerifyPass/TVerifyFail,
+		// table.go's handoffRows) are committed directly under the
+		// HANDOFF's own subject: handoffRows carries no response/parent
+		// relationship at all, so there is no second stream to merge in
+		// here — the direct eventsBySubject[a.Env.ID] lookup below is
+		// exactly what findRegisteredConsumers' own requirement fold above
+		// already does for the same reason (a requirement has no response
+		// wrapper either).
+		evs := eventsBySubject[a.Env.ID]
+		if len(evs) == 0 {
+			continue
+		}
+		// Membership-agnostic, same as findRegisteredConsumers' own
+		// requirement fold above: this read-only resolution never grants
+		// write authority, only reads what state the real events already
+		// folded to.
+		state := fold.Fold(fold.KindHandoff, fold.Envelope{ID: a.Env.ID, Kind: fold.KindHandoff, From: a.Env.From, To: to},
+			evs, func(string) fold.MembershipStatus { return fold.MembershipMember }).State
+		if state != fold.StateAccepted {
+			continue
+		}
+
+		deliverables, derr := datapackage.DecodeDeliverables(a.Raw)
+		if derr != nil {
+			continue
+		}
+		for _, d := range deliverables {
+			if d.Kind != datapackage.DeliverableKindData {
+				continue
+			}
+			doc, ok := resolver.ResolvePackage(d.Ref)
+			if !ok {
+				continue
+			}
+			contractID, _ := splitPinnedContractID(doc.Contract)
+			if contractID == "" || myDependencies[contractID] {
+				continue
+			}
+			if parsed, perr := artifact.ParseID(contractID); perr == nil && parsed.System == ownSystem {
+				continue
+			}
+			if packagesByContract[contractID] == nil {
+				packagesByContract[contractID] = map[string]bool{}
+			}
+			packagesByContract[contractID][doc.ID] = true
+		}
+	}
+
+	if len(packagesByContract) == 0 {
+		return nil, nil, nil
+	}
+	out := make([]UnadoptedConsumption, 0, len(packagesByContract))
+	for id, packages := range packagesByContract {
+		out = append(out, UnadoptedConsumption{ContractID: id, Count: len(packages)})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ContractID < out[j].ContractID })
+	return out, nil, nil
+}
+
+// splitPinnedContractID returns the bare contract id from a data-package/v1
+// manifest's own `contract` field ("<XC-id>@<version>#<digest>",
+// data-package.schema.json's pinnedContractRef). This is the same literal
+// split internal/space's own splitDataContractReference (data_resolve.go),
+// internal/cli/cmd_contract_p6.go and internal/mcp/tools_contract_p6.go
+// each already perform independently — internal/cache may not import
+// internal/cli or internal/mcp (ADR-001), and internal/space's own copy is
+// unexported to its package, so this is a fourth local copy of the SAME
+// shape those three already carry, never a new one — the same recorded
+// idiom this file's own dataPackagePrefix-adjacent duplication already
+// documents elsewhere in this package (packageresolver.go). It performs no
+// validation (that is verify's job, already done before this document was
+// ever committed) — only the split this caller needs.
+func splitPinnedContractID(ref string) (id, version string) {
+	body, _, _ := strings.Cut(ref, "#")
+	id, version, _ = strings.Cut(body, "@")
+	return id, version
 }

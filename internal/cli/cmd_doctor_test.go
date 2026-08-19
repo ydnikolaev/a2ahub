@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -2098,5 +2099,219 @@ func TestDoctorCheckDefaultBranchHealthyFAILDegradesWithoutRunURL(t *testing.T) 
 	}
 	if strings.Contains(detail, " — ") {
 		t.Fatalf("detail = %q, want no dangling link separator when URL is absent", detail)
+	}
+}
+
+// --- doctorUnadoptedConsumptionRows (defects-fix-2026-08 P6) ---
+//
+// These write the same on-disk shape internal/cache's own registered_
+// consumers_test.go fixtures use (a handoff .md, its lifecycle events, a
+// data package manifest.json), because doctorUnadoptedConsumptionRows is a
+// thin per-space wrapper over cache.FindUnadoptedConsumption — the
+// detection logic itself is exercised there; these tests are about the
+// row/advisory SHAPE this package produces from that fact.
+
+func docWriteFile(t *testing.T, root, relPath, content string) {
+	t.Helper()
+	full := filepath.Join(root, filepath.FromSlash(relPath))
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatalf("docWriteFile: mkdir: %v", err)
+	}
+	if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+		t.Fatalf("docWriteFile: write: %v", err)
+	}
+}
+
+// docWriteAcceptedDelivery commits a verify-passed (or not, per accepted)
+// handoff from "seomatrix" to "axon" whose one "data" deliverable resolves
+// to a data-package/v1 manifest pinning contractRef.
+func docWriteAcceptedDelivery(t *testing.T, mirror, handoffSuffix, packageSuffix, contractRef string, accepted bool) {
+	t.Helper()
+	handoffID := "XH-seomatrix-20260817-" + handoffSuffix
+	packageID := "DP-seomatrix-20260818-" + packageSuffix
+
+	docWriteFile(t, mirror, "seomatrix/"+handoffID+".md",
+		"---\nschema: envelope/v1\nid: "+handoffID+"\ntype: handoff\ntitle: t\nspace: getvisa\n"+
+			"from: seomatrix\nto: [axon]\ncreated: 2026-08-17T10:00:00Z\n"+
+			"deliverables:\n  - name: dataset\n    ref: "+packageID+"\n    kind: data\n"+
+			"verification: manual\nacceptance_criteria: [\"done\"]\nlimitations: []\n"+
+			"fulfills: [\"XW-seomatrix-20260817-zzzz\"]\n---\nBody.\n")
+
+	steps := []struct{ transition, system string }{{"submit", "seomatrix"}, {"acknowledge", "axon"}}
+	if accepted {
+		steps = append(steps, struct{ transition, system string }{"verify-pass", "axon"})
+	}
+	for i, s := range steps {
+		ulid := fmt.Sprintf("01HFXH%s%011d", handoffSuffix, i+1)
+		docWriteFile(t, mirror, fmt.Sprintf("seomatrix/events/2026/%s.yaml", ulid),
+			fmt.Sprintf("schema: event/v1\nevent: %s\nspace: getvisa\n"+
+				"subject: %s\ntransition: %s\nactor: {kind: agent, name: bot, system: %s}\n"+
+				"at: 2026-08-17T%02d:00:00Z\n", ulid, handoffID, s.transition, s.system, 10+i))
+	}
+
+	docWriteFile(t, mirror, "seomatrix/data/"+packageID+"/manifest.json",
+		fmt.Sprintf(`{"schema":"data-package/v1","id":%q,"contract":%q}`, packageID, contractRef))
+}
+
+func TestDoctorUnadoptedConsumptionRows_NamesContractWithCountAndAdoptCommand(t *testing.T) {
+	t.Parallel()
+	mirror := t.TempDir()
+	docWriteFile(t, mirror, "axon/consumes.yaml", "schema: consumes/v1\nsystem: axon\ndependencies: []\n")
+	docWriteAcceptedDelivery(t, mirror, "aaaa", "p3my", "XC-seomatrix-regime-corpus@1.0.0#aaa111", true)
+
+	cmd := newTestDoctorCommand()
+	cmd.resolveMirror = func(string, space.Ref, space.MachineConfig) string { return mirror }
+	cfg := space.ProjectConfig{System: "axon", Spaces: []space.Ref{{ID: "getvisa"}}}
+
+	rows := cmd.doctorUnadoptedConsumptionRows(cfg, space.MachineConfig{})
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want exactly 1: %+v", len(rows), rows)
+	}
+	row := rows[0]
+	if row.SpaceID != "getvisa" {
+		t.Fatalf("SpaceID = %q, want getvisa", row.SpaceID)
+	}
+	if row.Status != doctorVisibilityWARN {
+		t.Fatalf("Status = %q, want WARN — consuming without adopting must never fail doctor by itself", row.Status)
+	}
+	for _, want := range []string{"1 verify-passed delivery conforms to", "XC-seomatrix-regime-corpus", "a2a contract adopt XC-seomatrix-regime-corpus"} {
+		if !strings.Contains(row.Detail, want) {
+			t.Fatalf("Detail = %q, want it to contain %q", row.Detail, want)
+		}
+	}
+}
+
+// TestDoctorUnadoptedConsumptionRows_PluralCountAgreesGrammatically is the
+// count!=1 branch TestDoctorUnadoptedConsumptionRows_NamesContractWithCountAndAdoptCommand's
+// own count==1 fixture cannot exercise: the noun (delivery/deliveries) AND
+// its verb (conforms/conform) must both flip together, or "2 verify-passed
+// deliveries conforms to" ships instead of "2 verify-passed deliveries
+// conform to".
+func TestDoctorUnadoptedConsumptionRows_PluralCountAgreesGrammatically(t *testing.T) {
+	t.Parallel()
+	mirror := t.TempDir()
+	docWriteFile(t, mirror, "axon/consumes.yaml", "schema: consumes/v1\nsystem: axon\ndependencies: []\n")
+	docWriteAcceptedDelivery(t, mirror, "aaaa", "p3my", "XC-seomatrix-regime-corpus@1.0.0#aaa111", true)
+	docWriteAcceptedDelivery(t, mirror, "bbbb", "jgf1", "XC-seomatrix-regime-corpus@1.0.0#bbb222", true)
+
+	cmd := newTestDoctorCommand()
+	cmd.resolveMirror = func(string, space.Ref, space.MachineConfig) string { return mirror }
+	cfg := space.ProjectConfig{System: "axon", Spaces: []space.Ref{{ID: "getvisa"}}}
+
+	rows := cmd.doctorUnadoptedConsumptionRows(cfg, space.MachineConfig{})
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want exactly 1: %+v", len(rows), rows)
+	}
+	if !strings.Contains(rows[0].Detail, "2 verify-passed deliveries conform to XC-seomatrix-regime-corpus") {
+		t.Fatalf("Detail = %q, want the plural noun AND verb to agree", rows[0].Detail)
+	}
+}
+
+func TestDoctorUnadoptedConsumptionRows_SilentWhenNoUnadoptedDelivery(t *testing.T) {
+	t.Parallel()
+	mirror := t.TempDir()
+	docWriteFile(t, mirror, "axon/consumes.yaml", "schema: consumes/v1\nsystem: axon\ndependencies: []\n")
+
+	cmd := newTestDoctorCommand()
+	cmd.resolveMirror = func(string, space.Ref, space.MachineConfig) string { return mirror }
+	cfg := space.ProjectConfig{System: "axon", Spaces: []space.Ref{{ID: "getvisa"}}}
+
+	rows := cmd.doctorUnadoptedConsumptionRows(cfg, space.MachineConfig{})
+	if len(rows) != 0 {
+		t.Fatalf("got %+v, want no rows — nothing was verify-passed against an unadopted contract", rows)
+	}
+}
+
+func TestDoctorUnadoptedConsumptionRows_MalformedRegistryReportsUnverifiedNotWarn(t *testing.T) {
+	t.Parallel()
+	mirror := t.TempDir()
+	docWriteFile(t, mirror, "axon/consumes.yaml", "consumes: []\n") // placeholder shape, refused
+	docWriteAcceptedDelivery(t, mirror, "aaaa", "p3my", "XC-seomatrix-regime-corpus@1.0.0#aaa111", true)
+
+	cmd := newTestDoctorCommand()
+	cmd.resolveMirror = func(string, space.Ref, space.MachineConfig) string { return mirror }
+	cfg := space.ProjectConfig{System: "axon", Spaces: []space.Ref{{ID: "getvisa"}}}
+
+	rows := cmd.doctorUnadoptedConsumptionRows(cfg, space.MachineConfig{})
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want exactly 1 (the unverified row, no false contract list): %+v", len(rows), rows)
+	}
+	if rows[0].Status != doctorVisibilityUNVERIFIED {
+		t.Fatalf("Status = %q, want UNVERIFIED — an unreadable registry must never round down to a (possibly false) WARN advisory", rows[0].Status)
+	}
+	if !strings.Contains(rows[0].Detail, "consumes.yaml") {
+		t.Fatalf("Detail = %q, want it to name the registry path", rows[0].Detail)
+	}
+}
+
+func TestDoctorUnadoptedConsumptionRows_NoOwnSystemConfiguredReturnsNil(t *testing.T) {
+	t.Parallel()
+	cmd := newTestDoctorCommand()
+	rows := cmd.doctorUnadoptedConsumptionRows(space.ProjectConfig{Spaces: []space.Ref{{ID: "getvisa"}}}, space.MachineConfig{})
+	if rows != nil {
+		t.Fatalf("got %+v, want nil — no configured system id means nothing can be resolved as \"mine\"", rows)
+	}
+}
+
+// TestDoctorRunUnadoptedConsumptionWarnDoesNotChangeExitCode is spec 06
+// AC2's own claim, tested literally: the SAME connected space, byte-
+// identical except for one extra committed event (the verify-pass that
+// flips the new advisory on), must produce the SAME exit code either way —
+// "the check is a WARN and does not by itself change `a2a doctor`'s exit
+// code" (spec 06 §T1). This does not require the rest of doctor to be
+// green; it only requires the WARN row's presence to make no difference to
+// whatever exit code every OTHER check already produces.
+func TestDoctorRunUnadoptedConsumptionWarnDoesNotChangeExitCode(t *testing.T) {
+	t.Parallel()
+
+	buildMirror := func(t *testing.T, accepted bool) string {
+		root := t.TempDir()
+		mirror := filepath.Join(root, "mirror")
+		manifest := "schema: manifest/v1\nspace: getvisa\nmin_binary_version: 0.0.0\n" +
+			"participants:\n" +
+			"  - system: axon\n    org: o\n    section: axon\n    owners: [me]\n    status: active\n    joined: 2026-08-01\n" +
+			"  - system: seomatrix\n    org: o\n    section: seomatrix\n    owners: [me]\n    status: active\n    joined: 2026-08-01\n"
+		docWriteFile(t, mirror, "space.yaml", manifest)
+		docWriteFile(t, mirror, ".github/workflows/a2a-validate.yml", "name: a2a-validate\n")
+		docWriteFile(t, mirror, "axon/consumes.yaml", "schema: consumes/v1\nsystem: axon\ndependencies: []\n")
+		docWriteAcceptedDelivery(t, mirror, "aaaa", "p3my", "XC-seomatrix-regime-corpus@1.0.0#aaa111", accepted)
+		return mirror
+	}
+
+	runOnce := func(t *testing.T, mirror string) (int, string) {
+		t.Helper()
+		cmd := newTestDoctorCommand()
+		cmd.resolveMirror = func(string, space.Ref, space.MachineConfig) string { return mirror }
+		cmd.loadProjectConfig = func(string) (space.ProjectConfig, error) {
+			return space.ProjectConfig{System: "axon", Spaces: []space.Ref{{ID: "getvisa", RepoURL: "https://example.invalid/getvisa.git"}}}, nil
+		}
+		cmd.loadMachineConfig = func(string) (space.MachineConfig, error) { return space.MachineConfig{}, nil }
+		cmd.lookupGit = func() error { return nil }
+		cmd.cloneOrFetch = func(context.Context, string, string, host.Credential) error { return nil }
+		cmd.resolveCredential = func(context.Context, string, space.CredentialReference) (host.Credential, error) {
+			return host.Credential{Token: "tok"}, nil
+		}
+		var stdout, stderr bytes.Buffer
+		code := cmd.Run(context.Background(), nil, IO{Stdout: &stdout, Stderr: &stderr})
+		return code, stdout.String()
+	}
+
+	baselineCode, baselineOut := runOnce(t, buildMirror(t, false))
+	if strings.Contains(baselineOut, "consumed contract [") {
+		t.Fatalf("baseline (not yet verify-passed) unexpectedly already carries a consumed-contract row: %s", baselineOut)
+	}
+	if baselineCode != 0 {
+		t.Fatalf("baseline exit code = %d, want 0 (every OTHER check must already be green here, or the mutation this test exists to catch — wiring the new WARN row into allOK — cannot be observed): stdout=%q", baselineCode, baselineOut)
+	}
+
+	warnCode, warnOut := runOnce(t, buildMirror(t, true))
+	if !strings.Contains(warnOut, "consumed contract [getvisa]: WARN:") {
+		t.Fatalf("stdout = %q, want a WARN row naming the unadopted contract once the handoff is verify-passed", warnOut)
+	}
+	if !strings.Contains(warnOut, "run `a2a contract adopt XC-seomatrix-regime-corpus`") {
+		t.Fatalf("stdout = %q, want the exact `a2a contract adopt <id>` invocation", warnOut)
+	}
+	if warnCode != baselineCode {
+		t.Fatalf("exit code changed from %d (no WARN) to %d (WARN present) — a WARN-only advisory must never change `a2a doctor`'s exit code", baselineCode, warnCode)
 	}
 }

@@ -238,6 +238,13 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		// intentionally rendered as their own statuses and never change allOK.
 		_, _ = fmt.Fprintf(stdio.Stdout, "repository visibility [%s]: %s: %s\n", row.SpaceID, row.Status, row.Detail)
 	}
+	for _, row := range c.doctorUnadoptedConsumptionRows(cfg, machine) {
+		// Spec 06 T1: WARN, never FAIL — "consuming without adopting is a
+		// real risk and not an error; the operator may have reasons." Same
+		// advisory-on-success rule as the visibility rows just above: this
+		// loop never touches allOK.
+		_, _ = fmt.Fprintf(stdio.Stdout, "consumed contract [%s]: %s: %s\n", row.SpaceID, row.Status, row.Detail)
+	}
 
 	if !allOK {
 		return 1
@@ -1788,4 +1795,89 @@ func (c *DoctorCommand) doctorCheckSkippedFiles(ctx context.Context, cfg space.P
 	return true, " · mirror files could not be decoded and are missing from every read verb's output — " +
 		strings.Join(notes, "; ") +
 		" — fixable only by whoever owns that file's section; a counterparty's document may be outside this project's diff-authz"
+}
+
+// doctorUnadoptedConsumptionRow names one contract this project's own
+// system verify-passed deliveries against without ever listing in its own
+// consumes.yaml (defects-fix-2026-08 P6, spec 06, docs/inbox/defects/07).
+// It reuses visibility.go's own doctorVisibilityStatus vocabulary (WARN/
+// UNVERIFIED — same package, no import needed) rather than inventing a
+// second one for the same shape of advisory-on-success row.
+type doctorUnadoptedConsumptionRow struct {
+	SpaceID string
+	doctorVisibilityDecision
+}
+
+// doctorUnadoptedConsumptionRows computes spec 06's own advisory over every
+// connected space: cache.FindUnadoptedConsumption (registered_consumers.go)
+// is the read-only scan — FindRegisteredConsumers' own opposite direction,
+// deliveries this system ACCEPTED vs contracts it DECLARED — and this
+// function only turns that fact into one printable row per space, exactly
+// the shape doctorVisibilityRows already takes one file over. Deliberately
+// NOT folded into that function nor into visibility.go itself (off this
+// phase's allowlist): a second, independent advisory computation, printed
+// by its own loop in Run.
+//
+// cfg.System is this project's own configured identity (space.ProjectConfig's
+// own field — the exact value cmd/a2a's wire.go already passes as
+// ownSystem to cache.NewStore for every OTHER read verb this binary ships;
+// this is the first time doctor itself needs it). An unconfigured system
+// cannot resolve "mine" at all, so this returns no rows rather than
+// guessing.
+//
+// This is WARN-only and never touches Run's own allOK (spec 06 T1:
+// "consuming without adopting is a real risk and not an error; the
+// operator may have reasons") — Run's own loop prints these rows entirely
+// outside the `checks` slice, the same separation doctorVisibilityRows
+// already established for its own advisory-on-success rows.
+func (c *DoctorCommand) doctorUnadoptedConsumptionRows(cfg space.ProjectConfig, machine space.MachineConfig) []doctorUnadoptedConsumptionRow {
+	if cfg.System == "" {
+		return nil
+	}
+	refs := append([]space.Ref(nil), cfg.Spaces...)
+	sort.Slice(refs, func(i, j int) bool { return refs[i].ID < refs[j].ID })
+
+	var rows []doctorUnadoptedConsumptionRow
+	for _, ref := range refs {
+		dir := c.resolveMirror(c.projectRoot, ref, machine)
+		found, skip, err := cache.FindUnadoptedConsumption(dir, cfg.System)
+		if err != nil {
+			// A read-side failure this check cannot itself repair — same
+			// non-reporting rule doctorCheckSkippedFiles' own doc comment
+			// gives for a scan that cannot run at all; "space access"/
+			// "versions" already report an unreachable/unparseable mirror.
+			continue
+		}
+		if skip != nil {
+			rows = append(rows, doctorUnadoptedConsumptionRow{
+				SpaceID: ref.ID,
+				doctorVisibilityDecision: doctorVisibilityDecision{
+					Status: doctorVisibilityUNVERIFIED,
+					Detail: fmt.Sprintf("own consumes.yaml (%s) could not be read as a real consumes/v1 registry (%s) — unadopted-consumption advisory skipped", skip.Path, skip.Reason),
+				},
+			})
+			continue
+		}
+		for _, u := range found {
+			// word/verb agree together — "1 ... delivery conforms" vs
+			// "2 ... deliveries conform" — a single %s for the noun alone
+			// (delivery/deliveries) left the verb permanently singular
+			// ("2 verify-passed deliveries conforms"), the one line of
+			// this row's format string count==1's own test could not
+			// exercise.
+			word, verb := "delivery", "conforms"
+			if u.Count != 1 {
+				word, verb = "deliveries", "conform"
+			}
+			rows = append(rows, doctorUnadoptedConsumptionRow{
+				SpaceID: ref.ID,
+				doctorVisibilityDecision: doctorVisibilityDecision{
+					Status: doctorVisibilityWARN,
+					Detail: fmt.Sprintf("%d verify-passed %s %s to %s, which is not in this system's own consumes.yaml — run `a2a contract adopt %s`",
+						u.Count, word, verb, u.ContractID, u.ContractID),
+				},
+			})
+		}
+	}
+	return rows
 }
