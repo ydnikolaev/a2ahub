@@ -164,12 +164,19 @@ go_severity_for_code() { # $1 = code, $2 = source root
 # every other class, the code's own string must appear in a test file
 # outside internal/validate.
 #
-# Deliberately a find+loop, never `grep ... dir/*_test.go | grep -q .`: under
-# this script's own `set -o pipefail`, a glob that matches NOTHING in one of
-# the three directories is passed to grep as a literal, unopenable filename
-# (grep exit 2), and pipefail reports the PIPELINE's exit as that 2 even
-# when a LATER glob's grep -q found the code and exited 0 — a real false
-# "unreachable" this shape produced during --teeth's own control case,
+# Deliberately a find+loop, never a piped multi-glob search. Beneath this
+# script's own `set -o pipefail`, a glob that matches NOTHING in one of the
+# three directories is passed along as a literal, unopenable filename, the
+# search exits two, and pipefail reports the PIPELINE's exit as that even
+# when a LATER glob's own search found the code and exited zero — a real
+# false "unreachable" this shape produced during --teeth's own control case,
+#
+# The prose above deliberately avoids naming the search tool inline: the
+# lane extractor scans this file for read constructs and cannot tell a
+# COMMENT from a command, so an inline `<tool> ... <word>` in prose minted
+# two phantom paths ("under", "2") and reddened lane-declarations. Filed as
+# its own row in docs/validator-backlog.md — the extractor's weakness, not
+# this gate's.
 # watched failing before this fix.
 reachability_ok() { # $1 = code, $2 = root, $3 = class
   local code="$1" root="$2" class="$3" f
