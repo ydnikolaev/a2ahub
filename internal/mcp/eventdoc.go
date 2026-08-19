@@ -402,9 +402,9 @@ type WriteDeps struct {
 	// handler that resolves via the promoted field gets a legality fold
 	// judged against the WRONG space's committed history while the write
 	// lands in the resolved one — exactly the defect this seam exists to
-	// close, one field over. SubmitDeps needs its own
-	// `ResolveSpace func(spaceID string) (SubmitDeps, error)` field (added by
-	// the tools_submit.go owner) before any submit handler resolves per call.
+	// close, one field over. SubmitDeps therefore carries its OWN
+	// `ResolveSpace func(spaceID string) (SubmitDeps, error)`
+	// (tools_submit.go); a submit handler uses that one, never this.
 	ResolveSpace func(spaceID string) (WriteDeps, error)
 
 	// SpaceOfArtifacts names the connected space whose mirror holds every
