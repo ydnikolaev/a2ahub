@@ -161,7 +161,12 @@
           }
         }
       ],
-      "nonAdoptable": false
+      "nonAdoptable": false,
+      "operational": [
+        {"name": "endpoint", "state": "ready"},
+        {"name": "credential-channel", "state": "absent"},
+        {"name": "registration", "state": "undeclared"}
+      ]
     }
   ],
   "workReports": [

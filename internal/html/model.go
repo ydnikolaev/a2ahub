@@ -454,6 +454,27 @@ type Contract struct {
 	// genuinely declared adoptable or simply undeclared — P-1's own default;
 	// see the cache field's doc comment for that source distinction.
 	NonAdoptable bool `json:"nonAdoptable,omitempty"`
+	// Operational carries the contract's declared x_operational[] state —
+	// spec 08 (defects-fix-2026-08) "a contract tells its operational
+	// truth", the SAME cache.OperationalItemsFromEnvelope/
+	// DeriveOperationalItems projection Item.OperationalItems and
+	// ArtifactDetail.OperationalItems already carry (P5,
+	// agent-exchange-2026-08), never a second derivation here.
+	//
+	// P-1: nil means the descriptor never declared the field at all —
+	// "not declared", the Contracts card's third case. Non-nil means the
+	// field WAS declared, and (DeriveOperationalItems' own contract, see
+	// internal/cache/mirror.go) always covers every well-known name
+	// (endpoint, credential-channel, registration) with its own state —
+	// ready, absent, or per-item undeclared for a name this document
+	// never mentioned. Collapsing "never declared" and "declared empty"
+	// into the same zero value is exactly what P-1 forbids, so this is
+	// deliberately never given `omitempty`'s sibling meaning by any
+	// caller that flattens absence and an empty slice — see this field's
+	// own assembly site for the source of the distinction, which is the
+	// presence of the envelope's x_operational KEY, not the length of
+	// what cache derives from it.
+	Operational []cache.OperationalItem `json:"operational,omitempty"`
 }
 
 // ContractVersion is one version of a contract and the state it holds — the

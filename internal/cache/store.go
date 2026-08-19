@@ -1029,10 +1029,11 @@ func (s *Store) Contracts(ctx context.Context, provider string) ([]ContractInfo,
 				Description: bodySummary(fa.Raw, 240),
 				Versions:    versions,
 				Category:    fa.Env.Category, SchemaFormat: fa.Env.SchemaFormat,
-				CompatPolicy:  fa.Env.CompatPolicy,
-				GeneratedTool: fa.Env.GeneratedFrom.Tool,
-				SourceDigest:  fa.Env.GeneratedFrom.SourceDigest,
-				NonAdoptable:  fa.ContractNonAdoptable,
+				CompatPolicy:     fa.Env.CompatPolicy,
+				GeneratedTool:    fa.Env.GeneratedFrom.Tool,
+				SourceDigest:     fa.Env.GeneratedFrom.SourceDigest,
+				NonAdoptable:     fa.ContractNonAdoptable,
+				OperationalItems: fa.OperationalItems,
 			})
 		}
 	}

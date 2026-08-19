@@ -23,6 +23,7 @@
               <div data-card-fact="contract:metadata">{{ contractCard.interfaceText }}</div>
               <div data-card-fact="contract:versions">{{ contractCard.versionsPrefix }}<sc-for list="{{ contractCard.versions }}" as="version" hint-placeholder-count="3"><button type="button" onClick="{{ version.open }}" aria-label="{{ version.openLabel }}" style="{{ version.contentStyle }}">{{ version.cardText }}</button>{{ version.separator }}</sc-for><sc-if value="{{ contractCard.versionsEmpty }}" hint-placeholder-val="{{ false }}">{{ contractCard.versionsEmpty }}</sc-if></div>
               <div data-card-fact="contract:adoption">{{ contractCard.adoptionText }}</div>
+              <div data-card-fact="contract:operational">{{ contractCard.operationalText }}</div>
               <div data-card-fact="contract:snapshot">{{ contractCard.snapshotText }}</div>
               <details data-card-fact="contract:technical" style="color:var(--muted);"><summary style="cursor:pointer; font-size:13px; font-weight:600;">{{ contractCard.technicalTitle }}</summary><div style="margin-top:10px;"><dc-import name="FactTable" rows="{{ contractCard.technical }}" hint-size="100%,260px"></dc-import></div></details>
             </div>
@@ -658,6 +659,36 @@ class Component extends DCLogic {
         adoptionText:(ru ? "Подключение: " : "Adoption: ") + (snapshot.unavailable
           ? unknownInSnapshot(ru)
           : (contract.nonAdoptable ? (ru ? "запрещено дескриптором." : "disallowed by the descriptor.") : (ru ? "разрешено." : "allowed."))),
+        // Operational readiness (spec 08, defects-fix-2026-08 "a contract
+        // tells its operational truth"): contract.operational is nil/absent
+        // when the descriptor's own x_operational field was never declared
+        // — P-1's own reading. That is DISTINCT from a declared EMPTY array
+        // (contract.operational present, length 0): Go's own pipeline never
+        // emits the latter (cache.DeriveOperationalItems always returns
+        // every well-known name once x_operational is declared at all, and
+        // Contract.Operational's `omitempty` json tag drops nil and empty
+        // alike on the wire either way), but this portable view-object
+        // schema (schemas/dashboard-view-objects.schema.json) has
+        // additionalProperties:true precisely so a FOREIGN producer of
+        // these objects may emit exactly that shape, and the brief is
+        // explicit: absence must render differently from a declared empty
+        // array, or the card silently re-commits the P-1 collapse this
+        // phase exists to remove. Three readings, three sentences — never
+        // two collapsed into one. The vocabulary family is the SAME
+        // "operational-state" ArtifactDetail's Exchange card already
+        // resolves through for the identical {name, state} shape; no new
+        // words invented here. Plain text, one line, per the phase's own
+        // "renders it plainly; restyles nothing else" scope.
+        operationalTitle:ru ? "Операционная готовность" : "Operational readiness",
+        operationalText:!Array.isArray(contract.operational)
+          ? (ru ? "Операционная готовность: не объявлена." : "Operational readiness: not declared.")
+          : contract.operational.length === 0
+            ? (ru ? "Операционная готовность: объявлена, но ни один пункт не назван." : "Operational readiness: declared, with no items named.")
+            : (ru ? "Операционная готовность: " : "Operational readiness: ")
+              + contract.operational.map(op => (op.name || "") + " — " + resolve("operational-state", op.state).label).join("; ") + "."
+              + (contract.operational.some(op => op.state === "absent")
+                ? (ru ? " Отсутствующее закрывается командой a2a contract activate." : " Absent items clear once the provider runs a2a contract activate.")
+                : ""),
         snapshotTitle:ru ? "Снимок" : "Snapshot",
         snapshotResult:snapshot.result,
         snapshotUnavailable:snapshot.unavailable,

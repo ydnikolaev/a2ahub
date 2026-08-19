@@ -248,3 +248,36 @@ above applies to you until you have run it:
 Unregistered consumption is invisible by design. Read someone's contract
 without adopting it and nothing will ever tell you it is changing, because
 nothing in the space knows you are there.
+
+## Publishing a capability promise ahead of its operational half
+
+A published contract and a *running* one are not the same claim. `x_binding`
+(`adoptable`, `runtime_pinnable`) says whether the interface is safe to
+depend on; `x_operational[]` says whether the pieces that interface needs —
+`endpoint`, `credential-channel`, `registration` — actually exist yet. A
+provider may legitimately publish the shape first (`x_operational` items
+`absent`) and stand the endpoint up later — `a2a contract activate` is the
+verb that clears an item once it is live. Hand-editing a published descriptor
+is never the fix: it is immutable once published, by design.
+
+Three readings, never collapsed into one:
+
+- **never declared** — the document never mentions `x_operational` at all.
+  The Contracts card says "not declared", not "absent" — silence is a live
+  state, not a claim either way.
+- **declared `ready`** — the item exists and is usable now.
+- **declared `absent`** — the producer says, in machine-readable form, that
+  the item does not exist yet. This is a real, correct use of the protocol,
+  not an error — the same way a `deprecated` line above is a real state, not
+  a defect.
+
+`runtime_pinnable: true` beside a declared `absent` item is the one
+combination worth a second look: it invites a consumer to pin a runtime
+dependency on something the SAME document says is not there. Neither fact
+alone is a problem — a contract with no operational declarations at all, or
+one whose items are all `ready`, is ordinary; a contract declaring an absent
+item with no `runtime_pinnable` claim is ordinary too. It is the conjunction
+of both, on one document, that **POL-023** warns on (never refuses — this
+is a designed publish-then-activate sequence, not an invalid document),
+naming both facts and the `a2a contract activate` that reconciles them once
+the endpoint exists.

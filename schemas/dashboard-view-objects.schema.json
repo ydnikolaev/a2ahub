@@ -466,7 +466,8 @@
         "consumers": {"type": "array", "items": {"type": "string"}},
         "description": {"type": "string"},
         "versions": {"type": "array", "items": {"$ref": "#/$defs/contractVersion"}},
-        "nonAdoptable": {"type": "boolean"}
+        "nonAdoptable": {"type": "boolean"},
+        "operational": {"type": "array", "items": {"$ref": "#/$defs/operationalItem"}}
       },
       "required": ["space", "id", "provider", "version", "state", "codeBacked"]
     },

@@ -375,6 +375,17 @@ type ContractInfo struct {
 	// deliberately shows no affirmative "adoptable" badge for the same
 	// reason: false is silence, not a claim.
 	NonAdoptable bool `json:"-"`
+
+	// OperationalItems is the contract's own x_operational[] projection —
+	// carried whole from foldedArtifact.OperationalItems, mirror.go's
+	// DeriveOperationalItems output, never re-derived here. Same discipline
+	// cache.Item.OperationalItems already follows.
+	//
+	// It exists because the Contracts SCREEN had no seat for the fact: a
+	// contract could declare `endpoint: absent` in machine-readable form and
+	// the card a reader goes to for "what does this give me" could not say so
+	// (defects-fix-2026-08 P8, docs/inbox/defects/09).
+	OperationalItems []OperationalItem `json:"-"`
 	// Description is a short human-readable summary from the contract's body,
 	// for the dashboard's dependency map. json:"-" keeps `a2a contracts --json`
 	// byte-stable for its existing consumers (read as a Go field only).

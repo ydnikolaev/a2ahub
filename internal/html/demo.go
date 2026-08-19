@@ -579,6 +579,24 @@ func deriveDemoOwnership(d *Data) {
 //     so a fixture row can never disagree with the product about what its own
 //     state means.
 //
+//     Deliberately still fold.OutcomeOf, not fold.OutcomeOfDocument (spec 08,
+//     defects-fix-2026-08, one of the four sites P5 left — assemble.go's own
+//     call carries the identical finding): OutcomeOfDocument narrows exactly
+//     two pairs — (announcement, published), (contract, published) — on a
+//     THIRD fact, moveOwed, that only a live registry/ack_requested check
+//     (internal/pendency, folded once per document into
+//     foldedArtifact.moveOwed by internal/cache/mirror.go) can answer. This
+//     demo fixture states no such fact per row today, and there is no fold
+//     here to ask — every Item/ThreadOpenItem/ArtifactDetail this function
+//     derives comes from literal JSON, never from internal/cache. Hardcoding
+//     moveOwed to a constant would make the two narrowed pairs always resolve
+//     the same way regardless of what a given demo row is meant to show,
+//     which is a worse lie than the plain OutcomeOf reading it already prints
+//     today. What it would take: the demo fixture format would need to state
+//     moveOwed per artifact (a new JSON field), read here the same way
+//     StateSince/StateBy/StateEvent already are, from the fixture rather than
+//     asked of a fold this file has none of.
+//
 //   - StateSince, StateBy and StateEvent are READ OFF THE FIXTURE'S OWN
 //     EVENTS. They are not a function of (type, state) — they name a specific
 //     event — so there is nothing to ask the domain for. The rule mirrors the

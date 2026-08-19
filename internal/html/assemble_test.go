@@ -26,6 +26,55 @@ import (
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
 
+// TestContractOperationalDistinguishesUndeclaredFromDeclared proves the P-1
+// contract Contract.Operational's own doc comment states: nil (never
+// declared) must marshal WITHOUT the "operational" key, and a non-nil,
+// cache.OperationalItemsFromEnvelope-shaped array (spec 05/08) must marshal
+// WITH it, states intact — so a wire consumer (the Contracts card, spec 08)
+// can tell "the descriptor never touched x_operational" apart from "the
+// descriptor declared it, and DeriveOperationalItems' own well-known-name
+// coverage produced ready/absent/undeclared per item". Collapsing the two
+// into the same JSON shape is exactly what spec 08 8a/P-1 forbids.
+func TestContractOperationalDistinguishesUndeclaredFromDeclared(t *testing.T) {
+	t.Parallel()
+
+	neverDeclared := Contract{Space: "space-a", ID: "XC-atlas-orders", Provider: "atlas", Version: "1.0.0", State: "published"}
+	raw, err := json.Marshal(neverDeclared)
+	if err != nil {
+		t.Fatalf("marshal never-declared contract: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal never-declared contract: %v", err)
+	}
+	if _, present := decoded["operational"]; present {
+		t.Fatalf("never-declared contract marshaled an \"operational\" key: %s", raw)
+	}
+
+	declaredAbsent := Contract{Space: "space-a", ID: "XC-seomatrix-c4-export", Provider: "seomatrix", Version: "1.0.0", State: "published",
+		Operational: []cache.OperationalItem{
+			{Name: "endpoint", State: cache.OperationalStateAbsent},
+			{Name: "credential-channel", State: cache.OperationalStateAbsent},
+			{Name: "registration", State: cache.OperationalStateUndeclared},
+		},
+	}
+	raw, err = json.Marshal(declaredAbsent)
+	if err != nil {
+		t.Fatalf("marshal declared-absent contract: %v", err)
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal declared-absent contract: %v", err)
+	}
+	operational, ok := decoded["operational"].([]any)
+	if !ok || len(operational) != 3 {
+		t.Fatalf("declared-absent contract operational = %#v (raw %s), want a 3-element array", decoded["operational"], raw)
+	}
+	first, ok := operational[0].(map[string]any)
+	if !ok || first["name"] != "endpoint" || first["state"] != "absent" {
+		t.Fatalf("declared-absent contract operational[0] = %#v, want endpoint absent", operational[0])
+	}
+}
+
 func TestLimitContractVersionDetailsBoundsWorstCaseDeterministically(t *testing.T) {
 	t.Parallel()
 	if preview := contractVersionPreview([]byte("valid-prefix\xf0\x9f")); preview != "valid-prefix" || !utf8.ValidString(preview) {
@@ -329,6 +378,186 @@ func TestAssembleContractVersionDetailsResolveExactHistoricalPackages(t *testing
 		local.Detail.Description != "" || local.Detail.PublishedAt != "" {
 		t.Fatalf("unavailable version borrowed package facts: %+v", local.Detail)
 	}
+}
+
+// TestAssembleContractCarriesDeclaredOperationalStateAC1 asserts spec 08's
+// AC1 directly (defects-fix-2026-08, "a contract tells its operational
+// truth"), NOT the current broken behavior: a contract that declares
+// `x_operational` with `endpoint`/`credential-channel` absent — exactly the
+// real getvisa XC-seomatrix-c4-export's own shape (spec's own worked
+// example) — must assemble with Contract.Operational carrying both as
+// state "absent".
+//
+// THIS TEST IS EXPECTED TO FAIL today, on purpose (see this wave's
+// product_findings/lead_actions_needed, not a bent assertion): `cache.
+// OperationalItemsFromEnvelope` — the SAME projection Item.OperationalItems
+// and ArtifactDetail.OperationalItems already carry (P5, agent-
+// exchange-2026-08) — CAN read x_operational off this document's raw
+// envelope. But `store.Contracts(ctx, "")`, the only per-contract source
+// the Contracts-catalog assembly loop in assemble.go has, returns
+// cache.ContractInfo, which carries no OperationalItems field and no raw
+// envelope to decode one from — unlike cache.Item (toItem, internal/cache/
+// store.go), which already carries fa.OperationalItems off the identical
+// fold pass. Fixing this needs a field on cache.ContractInfo populated in
+// internal/cache/store.go — both outside this phase's grant (allowlist:
+// internal/html, not internal/cache). Left asserting the SPEC, not the
+// gap, per this wave's own instruction not to bend a test to match a wrong
+// product: it reddens now and goes green the moment the lead's
+// internal/cache change lands, with no edit to this file required.
+func TestAssembleContractCarriesDeclaredOperationalStateAC1(t *testing.T) {
+	t.Parallel()
+
+	fixture := spacefixture.New(t, "atlas", "checkout")
+	mirror := fixture.Clone("atlas")
+	writeHTMLContractFile(t, mirror, "checkout/consumes.yaml", "schema: consumes/v1\nsystem: checkout\ndependencies:\n  - contract: XC-atlas-orders\n    major: 1\n    since: 2026-05-01\n")
+	publishHTMLContractVersionDeclaringOperational(t, mirror, "1.0.0", "01K1A2B3C4D5E6F7G8H9J0K1N0", "2026-06-01T10:00:00Z", "OPERATIONAL_TOKEN")
+
+	manifestRaw, err := os.ReadFile(filepath.Join(mirror, "space.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := space.ParseManifest(manifestRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
+	store := cache.NewStore("atlas", t.TempDir(), []cache.SpaceMirror{{
+		SpaceID: manifest.Space, Dir: mirror, RepoURL: fixture.RemoteURL(), Manifest: manifest,
+	}}, func() time.Time { return now }, 0)
+
+	data, err := AssembleWithContractHistory(t.Context(), store, "", now, htmlContractHistoryValidator(t))
+	if err != nil {
+		t.Fatalf("Assemble: %v", err)
+	}
+	var assembled *Contract
+	for index := range data.Contracts {
+		if data.Contracts[index].Space == manifest.Space && data.Contracts[index].ID == "XC-atlas-orders" {
+			assembled = &data.Contracts[index]
+			break
+		}
+	}
+	if assembled == nil {
+		t.Fatalf("assembled contracts omit XC-atlas-orders: %+v", data.Contracts)
+	}
+	byName := make(map[string]string, len(assembled.Operational))
+	for _, item := range assembled.Operational {
+		byName[item.Name] = item.State
+	}
+	if byName["endpoint"] != cache.OperationalStateAbsent || byName["credential-channel"] != cache.OperationalStateAbsent {
+		t.Fatalf("Contract.Operational = %+v, want endpoint and credential-channel both %q (AC1) — KNOWN GAP: cache.ContractInfo carries no operational source yet, see lead_actions_needed for the exact internal/cache change this needs", assembled.Operational, cache.OperationalStateAbsent)
+	}
+}
+
+// publishHTMLContractVersionDeclaringOperational is publishHTMLContractVersion
+// (above) plus a declared `x_operational` block on the descriptor — the same
+// shape spec 05's AC4/spec 08's own worked example
+// (docs/inbox/defects/09-three-contracts-one-word.md) uses for
+// XC-seomatrix-c4-export: an endpoint and a credential channel both declared
+// absent. A second copy rather than parameterizing the shared helper: that
+// helper is exercised elsewhere by tests asserting its EXACT byte-for-byte
+// descriptor shape (contractVersionHistory's provenance assertions), and
+// this phase's allowlist does not license changing what those already prove.
+func publishHTMLContractVersionDeclaringOperational(t *testing.T, repo, version, eventID, publishedAt, token string) string {
+	t.Helper()
+
+	const root = "atlas/provides/orders"
+	descriptor := fmt.Sprintf(`---
+schema: envelope/v2
+id: XC-atlas-orders
+type: contract
+title: Orders contract
+space: fixture-space
+from: atlas
+to: [checkout]
+actor: {kind: agent, name: atlas-publisher}
+created: 2026-05-01T09:00:00Z
+category: api
+priority: p2
+blocking: false
+classification: internal
+version: %q
+schema_format: json-schema-2020-12
+compat_policy: backward
+thread: thread:atlas-20260501-a1b2
+generated_from:
+  tool: fixture-exporter
+  source_digest: sha256:%s
+x_operational:
+  - name: endpoint
+    state: absent
+  - name: credential-channel
+    state: absent
+artifacts:
+  - path: schema/orders.schema.json
+    role: schema
+    normative: true
+    media_type: application/schema+json
+  - path: fixtures/valid/orders.json
+    role: valid-fixture
+    normative: true
+    media_type: application/json
+    conforms_to: schema/orders.schema.json
+  - path: fixtures/invalid/orders.json
+    role: invalid-fixture
+    normative: true
+    media_type: application/json
+    conforms_to: schema/orders.schema.json
+  - path: artifacts/changelog.md
+    role: changelog
+    normative: false
+    media_type: text/markdown
+---
+Package description for %s.
+`, version, strings.Repeat("d", 64), token)
+	files := map[string]string{
+		"schema/orders.schema.json":    fmt.Sprintf("{\"title\":%q,\"type\":\"object\"}\n", token),
+		"fixtures/valid/orders.json":   fmt.Sprintf("{\"marker\":%q}\n", token),
+		"fixtures/invalid/orders.json": "null\n",
+		"artifacts/changelog.md":       "# " + token + "\n",
+	}
+	parsed, err := contract.ParseDescriptor([]byte(descriptor))
+	if err != nil {
+		t.Fatalf("ParseDescriptor: %v", err)
+	}
+	candidates := make([]contract.CandidateFile, 0, len(files))
+	for name, raw := range files {
+		candidates = append(candidates, contract.CandidateFile{Path: name, Kind: contract.CandidateRegular, Raw: []byte(raw)})
+	}
+	set, issues := contract.BuildCarriedSet(contract.ProfileContractSetV2, []byte(descriptor), parsed, candidates)
+	if len(issues) != 0 {
+		t.Fatalf("BuildCarriedSet: %+v", issues)
+	}
+	event := fmt.Sprintf(`schema: event/v2
+event: %s
+space: fixture-space
+subject: XC-atlas-orders
+transition: publish
+actor: {kind: agent, name: atlas-publisher, system: atlas}
+at: %s
+version: %q
+digest: %s
+digest_profile: contract-set-v2
+publication:
+  intent_key: op-v1-%s
+  candidate_intent_digest: sha256:%s
+  version_selector: explicit:%s
+  operation_key: op-v1-%s
+`, eventID, publishedAt, version, set.AggregateDigest,
+		strings.Repeat("a", 64), strings.Repeat("b", 64), version, strings.Repeat("c", 64))
+
+	writeHTMLContractFile(t, repo, root+"/contract.md", descriptor)
+	for name, raw := range files {
+		writeHTMLContractFile(t, repo, root+"/"+name, raw)
+	}
+	eventPath := "atlas/events/2026/" + eventID + ".yaml"
+	writeHTMLContractFile(t, repo, eventPath, event)
+	runHTMLContractGit(t, repo, nil, "add", "--", root, eventPath, "checkout/consumes.yaml")
+	runHTMLContractGit(t, repo, []string{
+		"GIT_AUTHOR_NAME=a2a-fixture", "GIT_AUTHOR_EMAIL=fixture@a2ahub.invalid",
+		"GIT_COMMITTER_NAME=a2a-fixture", "GIT_COMMITTER_EMAIL=fixture@a2ahub.invalid",
+	}, "commit", "-q", "-m", "publish "+version)
+	runHTMLContractGit(t, repo, nil, "push", "-q", "origin", "main")
+	return strings.TrimSpace(runHTMLContractGit(t, repo, nil, "rev-parse", "HEAD"))
 }
 
 func TestContractVersionHistoryProjectsOnlyProvenLifecycleStates(t *testing.T) {

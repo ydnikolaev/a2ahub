@@ -187,6 +187,13 @@ func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache
 				Successor: v.Successor, DeprecationID: v.DeprecationID, Detail: details[v.Version],
 			})
 		}
+		// Contract.Operational (spec 08, defects-fix-2026-08): carried
+		// straight off cache.ContractInfo, which gained the field in the
+		// same wave for exactly this — the phase's implementer found the
+		// projection had no seat for it and reported that rather than
+		// re-deriving x_operational from a second decode here, which is
+		// the anti-pattern P5's own comments warn against ("consumed,
+		// never re-derived").
 		d.Contracts = append(d.Contracts, Contract{Space: c.Space, ID: c.ID, Provider: c.Provider,
 			Version: c.Version, State: c.State, Consumers: dedupSorted(cons), Description: c.Description,
 			Versions: vers, Category: c.Category, SchemaFormat: c.SchemaFormat,
@@ -194,6 +201,7 @@ func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache
 			SourceDigest: c.SourceDigest,
 			CodeBacked:   c.GeneratedTool != "" && c.SourceDigest != "",
 			NonAdoptable: c.NonAdoptable,
+			Operational:  c.OperationalItems,
 		})
 	}
 	limitContractVersionDetails(d.Contracts)
@@ -1487,6 +1495,23 @@ func toArtifactDetail(show cache.ShowResult) (ArtifactDetail, error) {
 		// Asked here rather than carried from cache.ShowResult: that type has
 		// no outcome field, and the two arguments the domain needs — the kind
 		// and the state — are both already on the ShowResult being projected.
+		//
+		// Left on fold.OutcomeOf, not migrated to fold.OutcomeOfDocument
+		// (spec 08, defects-fix-2026-08, one of the four sites P5 left):
+		// OutcomeOfDocument needs a THIRD fact, moveOwed, for exactly the
+		// (announcement, published) and (contract, published) pairs — the
+		// SAME fa.moveOwed internal/cache/mirror.go already resolves once
+		// per document and toItem (store.go) already carries onto
+		// Item.Outcome via OutcomeOfDocument. cache.ShowResult carries
+		// neither moveOwed nor Outcome; it has never asked the registry/
+		// ack_requested question this fold pass folds into moveOwed. Migrating
+		// here without that fact means either guessing (wrong) or hardcoding
+		// moveOwed=false (silently WRONG for exactly the case the whole
+		// function exists to distinguish). What it would take: a
+		// `MoveOwed bool` field on cache.ShowResult, populated in
+		// Store.Show/ShowMany off the same foldedArtifact.moveOwed toItem
+		// already reads — an internal/cache change outside this phase's
+		// allowlist.
 		Outcome:          fold.OutcomeOf(fold.Kind(show.Type), fold.State(show.State)),
 		Terminal:         fold.Terminal(fold.Kind(show.Type), fold.State(show.State)),
 		OperationalItems: operationalItems,
