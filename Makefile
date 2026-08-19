@@ -49,7 +49,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check test check-validators lane lane-run lane-declarations web-quality _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
+.PHONY: check test check-validators lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -60,7 +60,7 @@
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := spec-verify-refs lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus view-vocabulary dashboard-props card-content pendency-uniqueness notify-workflow notify-secrets loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness roadmap-release-decisions provider-tier-deferral runner-economics space-template-baseline-check
+REPO_GATES := spec-verify-refs lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus view-vocabulary dashboard-props card-content pendency-uniqueness notify-workflow notify-secrets error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness roadmap-release-decisions provider-tier-deferral runner-economics space-template-baseline-check
 
 _print-repo-gates:
 	@echo "$(REPO_GATES)"
@@ -194,6 +194,9 @@ notify-workflow: ## The notify workflow pair's security posture: no secrets: inh
 
 notify-secrets: ## No credential shape internal/sensitive knows appears in the tracked tree; the Telegram shape exists in exactly one place (P7).
 	@bash scripts/check-notify-secrets.sh
+
+error-codes: ## Every validation code carries prose, a production-path test and an ADR-011 mode scope — or a stated exemption (defects-fix-2026-08 P1).
+	@bash scripts/check-error-codes.sh
 
 pendency-uniqueness: ## Whose-move-is-it has ONE home; no surface may resolve its own verdict (P2 AC3/AC4).
 	@bash scripts/check-pendency-uniqueness.sh

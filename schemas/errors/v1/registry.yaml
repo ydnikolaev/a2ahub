@@ -242,6 +242,7 @@ entries:
       keeps resolving unless the referent itself was removed, which is its
       own defect to catch, not a retroactive rule change.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    reachability_exempt: reachability debt, DECLARED not closed (defects-fix-2026-08 P1, wave 1): no test in internal/cli, internal/mcp or internal/e2e proves this code fires through a production entry point. That is the same 'true and inert' shape finding 04 measured for REF-019, and the honest state is that it is unproven rather than known-broken. The gate is wired and green so it BLOCKS the next code from joining this list; the list itself is a counted debt row in docs/validator-backlog.md, not a silence.
 
   - code: REF-004
     class: referential
@@ -284,6 +285,7 @@ entries:
     applies_to: envelope/v1 refs[].ref (§3.8) — warning severity, not a reject
     severity: warning
     mode_scope: both
+    reachability_exempt: reachability debt, DECLARED not closed (defects-fix-2026-08 P1, wave 1): no test in internal/cli, internal/mcp or internal/e2e proves this code fires through a production entry point. That is the same 'true and inert' shape finding 04 measured for REF-019, and the honest state is that it is unproven rather than known-broken. The gate is wired and green so it BLOCKS the next code from joining this list; the list itself is a counted debt row in docs/validator-backlog.md, not a silence.
 
   - code: REF-008
     class: referential
@@ -323,6 +325,7 @@ entries:
     severity: reject
     mode_scope: v3-pr
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    reachability_exempt: reachability debt, DECLARED not closed (defects-fix-2026-08 P1, wave 1): no test in internal/cli, internal/mcp or internal/e2e proves this code fires through a production entry point. That is the same 'true and inert' shape finding 04 measured for REF-019, and the honest state is that it is unproven rather than known-broken. The gate is wired and green so it BLOCKS the next code from joining this list; the list itself is a counted debt row in docs/validator-backlog.md, not a silence.
 
   - code: REF-012
     class: referential
@@ -330,6 +333,7 @@ entries:
     applies_to: supersede linkage — warning severity because a later renegotiation may intentionally open a new conversation
     severity: warning
     mode_scope: both
+    reachability_exempt: reachability debt, DECLARED not closed (defects-fix-2026-08 P1, wave 1): no test in internal/cli, internal/mcp or internal/e2e proves this code fires through a production entry point. That is the same 'true and inert' shape finding 04 measured for REF-019, and the honest state is that it is unproven rather than known-broken. The gate is wired and green so it BLOCKS the next code from joining this list; the list itself is a counted debt row in docs/validator-backlog.md, not a silence.
 
   - code: REF-013
     class: referential
@@ -355,6 +359,7 @@ entries:
       CURRENT tree (operational-confidence/P5, commit 32a6d05, predates
       ADR-011) — no retroactive rule change to worry about.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    reachability_exempt: reachability debt, DECLARED not closed (defects-fix-2026-08 P1, wave 1): no test in internal/cli, internal/mcp or internal/e2e proves this code fires through a production entry point. That is the same 'true and inert' shape finding 04 measured for REF-019, and the honest state is that it is unproven rather than known-broken. The gate is wired and green so it BLOCKS the next code from joining this list; the list itself is a counted debt row in docs/validator-backlog.md, not a silence.
 
   - code: REF-016
     class: referential
@@ -368,6 +373,7 @@ entries:
       historical manifests by design — re-evaluating it in a full-repo audit
       is the same check the write gate ran.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    reachability_exempt: reachability debt, DECLARED not closed (defects-fix-2026-08 P1, wave 1): no test in internal/cli, internal/mcp or internal/e2e proves this code fires through a production entry point. That is the same 'true and inert' shape finding 04 measured for REF-019, and the honest state is that it is unproven rather than known-broken. The gate is wired and green so it BLOCKS the next code from joining this list; the list itself is a counted debt row in docs/validator-backlog.md, not a silence.
 
   - code: REF-017
     class: referential
@@ -392,6 +398,7 @@ entries:
     applies_to: envelope/v2 response `unmet[]` validated against the parent's declared acceptance_criteria — an index naming a criterion that does not exist is worse than prose, because it reads as precise (agent-exchange-2026-08/P6, AC1)
     severity: reject
     mode_scope: both
+    mode_scope_reason: OPEN QUESTION, declared rather than answered (defects-fix-2026-08 P1, wave 1): this reject code was added to an ALREADY-POPULATED corpus, so whether it may judge artifacts that predate it is exactly ADR-011 D3's question and it belongs to the epic that authored the rule, not to this gate. Recorded so the question is countable; see docs/validator-backlog.md.
 
   - code: REF-019
     class: referential
@@ -400,6 +407,8 @@ entries:
     severity: reject
     mode_scope: both
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    reachability_exempt: reachability debt, DECLARED not closed (defects-fix-2026-08 P1, wave 1): no test in internal/cli, internal/mcp or internal/e2e proves this code fires through a production entry point. That is the same 'true and inert' shape finding 04 measured for REF-019, and the honest state is that it is unproven rather than known-broken. The gate is wired and green so it BLOCKS the next code from joining this list; the list itself is a counted debt row in docs/validator-backlog.md, not a silence.
+    mode_scope_reason: OPEN QUESTION, declared rather than answered (defects-fix-2026-08 P1, wave 1): this reject code was added to an ALREADY-POPULATED corpus, so whether it may judge artifacts that predate it is exactly ADR-011 D3's question and it belongs to the epic that authored the rule, not to this gate. Recorded so the question is countable; see docs/validator-backlog.md.
 
   - code: REF-020
     class: referential
@@ -421,6 +430,8 @@ entries:
     applies_to: space/v1 `notification_routes[]` (space-notify-2026-08 P1), internal/validate.checkNotificationRoutes — `for` names a participant absent from participants[], or two routes share the same (channel, chat, topic, for) tuple; one code, following checkManifestPolicy's own REF-013 grouping precedent, because every branch has the same consequence — the route cannot be trusted to address anyone
     severity: reject
     mode_scope: both
+    reachability_exempt: reachability debt, DECLARED not closed (defects-fix-2026-08 P1, wave 1): no test in internal/cli, internal/mcp or internal/e2e proves this code fires through a production entry point. That is the same 'true and inert' shape finding 04 measured for REF-019, and the honest state is that it is unproven rather than known-broken. The gate is wired and green so it BLOCKS the next code from joining this list; the list itself is a counted debt row in docs/validator-backlog.md, not a silence.
+    mode_scope_reason: OPEN QUESTION, declared rather than answered (defects-fix-2026-08 P1, wave 1): this reject code was added to an ALREADY-POPULATED corpus, so whether it may judge artifacts that predate it is exactly ADR-011 D3's question and it belongs to the epic that authored the rule, not to this gate. Recorded so the question is countable; see docs/validator-backlog.md.
 
   - code: LFC-001
     class: lifecycle
@@ -462,6 +473,7 @@ entries:
     severity: reject
     mode_scope: both
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    mode_scope_reason: OPEN QUESTION, declared rather than answered (defects-fix-2026-08 P1, wave 1): this reject code was added to an ALREADY-POPULATED corpus, so whether it may judge artifacts that predate it is exactly ADR-011 D3's question and it belongs to the epic that authored the rule, not to this gate. Recorded so the question is countable; see docs/validator-backlog.md.
 
   - code: POL-001
     class: policy
@@ -474,6 +486,7 @@ entries:
       have refused it, it never should have merged, and the audit exists to
       catch the case where it did.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    reachability_exempt: reachability debt, DECLARED not closed (defects-fix-2026-08 P1, wave 1): no test in internal/cli, internal/mcp or internal/e2e proves this code fires through a production entry point. That is the same 'true and inert' shape finding 04 measured for REF-019, and the honest state is that it is unproven rather than known-broken. The gate is wired and green so it BLOCKS the next code from joining this list; the list itself is a counted debt row in docs/validator-backlog.md, not a silence.
 
   - code: POL-002
     class: policy
@@ -495,6 +508,7 @@ entries:
       the size bound is a fixed constant, not a rule that tightens
       retroactively against existing content.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    reachability_exempt: reachability debt, DECLARED not closed (defects-fix-2026-08 P1, wave 1): no test in internal/cli, internal/mcp or internal/e2e proves this code fires through a production entry point. That is the same 'true and inert' shape finding 04 measured for REF-019, and the honest state is that it is unproven rather than known-broken. The gate is wired and green so it BLOCKS the next code from joining this list; the list itself is a counted debt row in docs/validator-backlog.md, not a silence.
 
   - code: POL-004
     class: policy
@@ -506,6 +520,7 @@ entries:
       UTF-8 validity is a byte-level fact, unaffected by anything added after
       the file was written.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    reachability_exempt: reachability debt, DECLARED not closed (defects-fix-2026-08 P1, wave 1): no test in internal/cli, internal/mcp or internal/e2e proves this code fires through a production entry point. That is the same 'true and inert' shape finding 04 measured for REF-019, and the honest state is that it is unproven rather than known-broken. The gate is wired and green so it BLOCKS the next code from joining this list; the list itself is a counted debt row in docs/validator-backlog.md, not a silence.
 
   - code: POL-005
     class: policy
@@ -519,6 +534,7 @@ entries:
       schema version that has since aged out of the window is the intended
       behaviour, not a retroactive judgment of history.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    reachability_exempt: reachability debt, DECLARED not closed (defects-fix-2026-08 P1, wave 1): no test in internal/cli, internal/mcp or internal/e2e proves this code fires through a production entry point. That is the same 'true and inert' shape finding 04 measured for REF-019, and the honest state is that it is unproven rather than known-broken. The gate is wired and green so it BLOCKS the next code from joining this list; the list itself is a counted debt row in docs/validator-backlog.md, not a silence.
 
   - code: POL-006
     class: policy
@@ -569,6 +585,7 @@ entries:
     mode_scope_reason: >-
       an unfilled template placeholder is a literal string fact in the
       frontmatter, unaffected by anything added later.
+    reachability_exempt: reachability debt, DECLARED not closed (defects-fix-2026-08 P1, wave 1): no test in internal/cli, internal/mcp or internal/e2e proves this code fires through a production entry point. That is the same 'true and inert' shape finding 04 measured for REF-019, and the honest state is that it is unproven rather than known-broken. The gate is wired and green so it BLOCKS the next code from joining this list; the list itself is a counted debt row in docs/validator-backlog.md, not a silence.
 
   - code: POL-012
     class: policy
@@ -581,6 +598,7 @@ entries:
       32a6d05, predates ADR-011) is a structural presence/shape check of the
       event's own fields.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    reachability_exempt: reachability debt, DECLARED not closed (defects-fix-2026-08 P1, wave 1): no test in internal/cli, internal/mcp or internal/e2e proves this code fires through a production entry point. That is the same 'true and inert' shape finding 04 measured for REF-019, and the honest state is that it is unproven rather than known-broken. The gate is wired and green so it BLOCKS the next code from joining this list; the list itself is a counted debt row in docs/validator-backlog.md, not a silence.
 
   - code: POL-013
     class: policy
@@ -604,6 +622,7 @@ entries:
       conformance-suite self-contradiction is evaluated against the
       contract's own committed fixtures, fixed at publish time.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    reachability_exempt: reachability debt, DECLARED not closed (defects-fix-2026-08 P1, wave 1): no test in internal/cli, internal/mcp or internal/e2e proves this code fires through a production entry point. That is the same 'true and inert' shape finding 04 measured for REF-019, and the honest state is that it is unproven rather than known-broken. The gate is wired and green so it BLOCKS the next code from joining this list; the list itself is a counted debt row in docs/validator-backlog.md, not a silence.
 
   - code: POL-015
     class: policy
@@ -616,6 +635,7 @@ entries:
       predates ADR-011) are structural facts of the checkpoint event's own
       fields.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    reachability_exempt: reachability debt, DECLARED not closed (defects-fix-2026-08 P1, wave 1): no test in internal/cli, internal/mcp or internal/e2e proves this code fires through a production entry point. That is the same 'true and inert' shape finding 04 measured for REF-019, and the honest state is that it is unproven rather than known-broken. The gate is wired and green so it BLOCKS the next code from joining this list; the list itself is a counted debt row in docs/validator-backlog.md, not a silence.
 
   - code: POL-016
     class: policy
@@ -641,6 +661,8 @@ entries:
     applies_to: internal/validate.checkDeclarationBlock — reject. The forbidden key set is DERIVED per call from schema.EnvelopeFieldPaths(version, typ), never a hardcoded list, so a field added tomorrow is policed the day it ships (agent-exchange-2026-08/P5, AC3/US-4)
     severity: reject
     mode_scope: both
+    reachability_exempt: reachability debt, DECLARED not closed (defects-fix-2026-08 P1, wave 1): no test in internal/cli, internal/mcp or internal/e2e proves this code fires through a production entry point. That is the same 'true and inert' shape finding 04 measured for REF-019, and the honest state is that it is unproven rather than known-broken. The gate is wired and green so it BLOCKS the next code from joining this list; the list itself is a counted debt row in docs/validator-backlog.md, not a silence.
+    mode_scope_reason: OPEN QUESTION, declared rather than answered (defects-fix-2026-08 P1, wave 1): this reject code was added to an ALREADY-POPULATED corpus, so whether it may judge artifacts that predate it is exactly ADR-011 D3's question and it belongs to the epic that authored the rule, not to this gate. Recorded so the question is countable; see docs/validator-backlog.md.
 
   - code: POL-019
     class: policy
@@ -649,6 +671,8 @@ entries:
     severity: reject
     mode_scope: both
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    reachability_exempt: reachability debt, DECLARED not closed (defects-fix-2026-08 P1, wave 1): no test in internal/cli, internal/mcp or internal/e2e proves this code fires through a production entry point. That is the same 'true and inert' shape finding 04 measured for REF-019, and the honest state is that it is unproven rather than known-broken. The gate is wired and green so it BLOCKS the next code from joining this list; the list itself is a counted debt row in docs/validator-backlog.md, not a silence.
+    mode_scope_reason: OPEN QUESTION, declared rather than answered (defects-fix-2026-08 P1, wave 1): this reject code was added to an ALREADY-POPULATED corpus, so whether it may judge artifacts that predate it is exactly ADR-011 D3's question and it belongs to the epic that authored the rule, not to this gate. Recorded so the question is countable; see docs/validator-backlog.md.
 
   - code: POL-020
     class: policy
@@ -660,6 +684,7 @@ entries:
       nothing" (agent-exchange-2026-08/P5, AC5/US-3)
     severity: warning
     mode_scope: both
+    reachability_exempt: reachability debt, DECLARED not closed (defects-fix-2026-08 P1, wave 1): no test in internal/cli, internal/mcp or internal/e2e proves this code fires through a production entry point. That is the same 'true and inert' shape finding 04 measured for REF-019, and the honest state is that it is unproven rather than known-broken. The gate is wired and green so it BLOCKS the next code from joining this list; the list itself is a counted debt row in docs/validator-backlog.md, not a silence.
 
   - code: POL-021
     class: policy
@@ -679,3 +704,5 @@ entries:
       fails to resolve against the manifest's own context
     severity: reject
     mode_scope: both
+    reachability_exempt: reachability debt, DECLARED not closed (defects-fix-2026-08 P1, wave 1): no test in internal/cli, internal/mcp or internal/e2e proves this code fires through a production entry point. That is the same 'true and inert' shape finding 04 measured for REF-019, and the honest state is that it is unproven rather than known-broken. The gate is wired and green so it BLOCKS the next code from joining this list; the list itself is a counted debt row in docs/validator-backlog.md, not a silence.
+    mode_scope_reason: OPEN QUESTION, declared rather than answered (defects-fix-2026-08 P1, wave 1): this reject code was added to an ALREADY-POPULATED corpus, so whether it may judge artifacts that predate it is exactly ADR-011 D3's question and it belongs to the epic that authored the rule, not to this gate. Recorded so the question is countable; see docs/validator-backlog.md.
