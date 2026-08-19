@@ -631,7 +631,13 @@ func deriveDemoDerivedState(d *Data) {
 	for _, list := range [][]Item{d.Inbox, d.Outbox, d.Archive} {
 		for i := range list {
 			it := &list[i]
-			it.Outcome = fold.OutcomeOf(fold.Kind(it.Type), fold.State(it.State))
+			// defects-fix-2026-08 P5/P8: the demo path asks the domain the same
+			// per-document question the real projection does. Its `moveOwed`
+			// fact is the fixture's own WaitingOn, which is the same thing
+			// internal/cache resolves from pendency — a demo whose outcome
+			// disagreed with the product's would teach a reader the wrong
+			// vocabulary in the one place they go to learn it.
+			it.Outcome = fold.OutcomeOfDocument(fold.Kind(it.Type), fold.State(it.State), len(it.WaitingOn) > 0)
 			it.Terminal = fold.Terminal(fold.Kind(it.Type), fold.State(it.State))
 			if origin, ok := origins[demoArtifactKey{it.Space, it.ID}]; ok {
 				it.StateSince, it.StateBy, it.StateEvent = origin.at, origin.by, origin.event
@@ -642,7 +648,7 @@ func deriveDemoDerivedState(d *Data) {
 		tv := &d.ThreadViews[i]
 		for j := range tv.OpenItems {
 			oi := &tv.OpenItems[j]
-			oi.Outcome = fold.OutcomeOf(fold.Kind(oi.Type), fold.State(oi.State))
+			oi.Outcome = fold.OutcomeOfDocument(fold.Kind(oi.Type), fold.State(oi.State), len(oi.WaitingOn) > 0)
 			oi.Terminal = fold.Terminal(fold.Kind(oi.Type), fold.State(oi.State))
 			if origin, ok := origins[demoArtifactKey{tv.Space, oi.ID}]; ok {
 				oi.StateSince, oi.StateBy, oi.StateEvent = origin.at, origin.by, origin.event
@@ -651,6 +657,12 @@ func deriveDemoDerivedState(d *Data) {
 	}
 	for i := range d.ArtifactDetails {
 		ad := &d.ArtifactDetails[i]
+		// ArtifactDetail carries no WaitingOn — the same shape
+		// cache.ShowResult has, and the same reason assemble.go:1515 still
+		// asks the two-fact form: this view is built from a `show` result,
+		// which carries no pendency verdict today. Named rather than faked:
+		// inventing a moveOwed here would make the demo disagree with the
+		// product for exactly the two pairs P5 exists to fix.
 		ad.Outcome = fold.OutcomeOf(fold.Kind(ad.Type), fold.State(ad.State))
 		ad.Terminal = fold.Terminal(fold.Kind(ad.Type), fold.State(ad.State))
 	}

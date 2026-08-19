@@ -997,9 +997,16 @@ func TestDemoDerivedStateIsDerivedNotAuthored(t *testing.T) {
 	}
 
 	carriers, terminal, outcomes := 0, 0, map[fold.Outcome]int{}
-	check := func(what, typ, state string, gotOutcome fold.Outcome, gotTerminal bool) {
+	// AMENDED 2026-08-19 (defects-fix-2026-08 P5/P8): `moveOwed` joined the
+	// signature because two (kind, state) pairs cannot answer for themselves
+	// — an announcement published with no ack requested, and a contract
+	// published with no registered consumer, are settled rather than open.
+	// Asserting the two-fact answer here would pin the demo to the form the
+	// epic replaced, and would have made the demo teach a reader an outcome
+	// the product no longer produces.
+	check := func(what, typ, state string, moveOwed bool, gotOutcome fold.Outcome, gotTerminal bool) {
 		carriers++
-		wantOutcome := fold.OutcomeOf(fold.Kind(typ), fold.State(state))
+		wantOutcome := fold.OutcomeOfDocument(fold.Kind(typ), fold.State(state), moveOwed)
 		wantTerminal := fold.Terminal(fold.Kind(typ), fold.State(state))
 		if gotOutcome != wantOutcome {
 			t.Errorf("%s: %s/%s outcome=%q, domain says %q", what, typ, state, gotOutcome, wantOutcome)
@@ -1014,16 +1021,18 @@ func TestDemoDerivedStateIsDerivedNotAuthored(t *testing.T) {
 	}
 	for _, list := range [][]Item{d.Inbox, d.Outbox, d.Archive} {
 		for _, it := range list {
-			check("exchange row "+it.ID, it.Type, it.State, it.Outcome, it.Terminal)
+			check("exchange row "+it.ID, it.Type, it.State, len(it.WaitingOn) > 0, it.Outcome, it.Terminal)
 		}
 	}
 	for _, tv := range d.ThreadViews {
 		for _, oi := range tv.OpenItems {
-			check("open item "+oi.ID, oi.Type, oi.State, oi.Outcome, oi.Terminal)
+			check("open item "+oi.ID, oi.Type, oi.State, len(oi.WaitingOn) > 0, oi.Outcome, oi.Terminal)
 		}
 	}
 	for _, ad := range d.ArtifactDetails {
-		check("artifact detail "+ad.ID, ad.Type, ad.State, ad.Outcome, ad.Terminal)
+		// ArtifactDetail carries no WaitingOn — see demo.go's own comment
+		// there; it asks the two-fact form and so does this check.
+		check("artifact detail "+ad.ID, ad.Type, ad.State, true, ad.Outcome, ad.Terminal)
 	}
 
 	if carriers == 0 {

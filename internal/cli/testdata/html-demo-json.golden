@@ -1975,7 +1975,7 @@
       ],
       "yourMove": false,
       "description": "Registered v3 consumers must move to XC-catalog-product-feed@4.0.0 before the sunset date.",
-      "outcome": "open",
+      "outcome": "settled",
       "terminal": false,
       "stateSince": "2026-07-28T07:01:00Z",
       "stateBy": "catalog",
@@ -2007,7 +2007,7 @@
       "syncStale": true,
       "yourMove": false,
       "description": "A routine liveness announcement with multilingual content for layout and escaping coverage.",
-      "outcome": "open",
+      "outcome": "settled",
       "terminal": false
     },
     {
@@ -2046,7 +2046,7 @@
         }
       ],
       "description": "Customer case updates and redacted conversation references.",
-      "outcome": "open",
+      "outcome": "settled",
       "terminal": false
     },
     {
@@ -2306,7 +2306,7 @@
       ],
       "yourMove": false,
       "description": "The v2 payload is now default; participating systems should report regressions in the linked thread.",
-      "outcome": "open",
+      "outcome": "settled",
       "terminal": false,
       "stateSince": "2026-07-30T13:05:00Z",
       "stateBy": "atlas",
@@ -12924,7 +12924,7 @@
           ],
           "yourMove": false,
           "description": "Registered v3 consumers must move to XC-catalog-product-feed@4.0.0 before the sunset date.",
-          "outcome": "open",
+          "outcome": "settled",
           "terminal": false,
           "stateSince": "2026-07-28T07:01:00Z",
           "stateBy": "catalog",
@@ -12956,7 +12956,7 @@
           "syncStale": true,
           "yourMove": false,
           "description": "A routine liveness announcement with multilingual content for layout and escaping coverage.",
-          "outcome": "open",
+          "outcome": "settled",
           "terminal": false
         },
         {
@@ -12995,7 +12995,7 @@
             }
           ],
           "description": "Customer case updates and redacted conversation references.",
-          "outcome": "open",
+          "outcome": "settled",
           "terminal": false
         },
         {
