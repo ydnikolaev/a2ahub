@@ -8164,8 +8164,8 @@
           "subject": "a document's outcome now answers about THAT document, not about its (kind, state) pair",
           "detail": "`fold.OutcomeOf(kind, state)` is a pure function of two inputs, and for two pairs the true answer needs a third that only the envelope carries: an announcement's `ack_requested`, and whether a published contract has a registered consumer. `internal/pendency` already answered both correctly per document, so neither side was wrong — the seam between them was.\n`OutcomeOf` keeps its exact signature and answer. `OutcomeOfDocument` takes the caller-resolved fact, which is `LegalNextFor`'s own shipped shape for the identical question. The liveness half moved in the same change: `exchangeActive` short-circuited every kind but published announcements to \"active\", so a published contract nobody consumes stayed in the exchange feed forever.\nThe deprecation acknowledgement set is now resolved space-wide rather than from the local system's registry alone, so the author of a deprecation sees a late adopter who has not acknowledged.\n",
           "action": {
-            "scope": "",
-            "why": ""
+            "scope": "none",
+            "why": "No action. Nothing you author changes; a card that used to say a document was open with nobody waiting now says it is settled."
           }
         },
         {
@@ -8175,8 +8175,8 @@
           "subject": "a response can finally say which acceptance criteria it did not satisfy",
           "detail": "`a2a respond` gains `--unmet`, `--standing` and `--blocked-by`, and fresh responses render `envelope/v2`. The MCP tool moves with the CLI — the two are independent readers, so a fix on one side is not a fix.\nA partial answer that names nothing is now refusable rather than the only shape available: the schema requires a `partial` or `cannot` to carry either the unmet set with what would unblock it, or a non-authoritative standing.\n",
           "action": {
-            "scope": "",
-            "why": ""
+            "scope": "local",
+            "why": "Use `--unmet`, `--standing` or `--blocked-by` on `a2a respond` when an answer falls short. A response that satisfies everything needs none of them."
           }
         },
         {
@@ -8186,8 +8186,8 @@
           "subject": "a response's idempotency key now includes what the response says it failed",
           "detail": "The key folded in parents, result, fields, body and refs — everything the operation IS — and not the shortfall facts. Adding them widened the signature rather than adding a second entry point, deliberately: a key without these facts is not a narrower key, it is a colliding one, and leaving a callable narrow form would have left the defect reachable by accident.\nA caller that declares none of the three derives exactly the key it derived before, so no in-flight operation is disturbed.\n",
           "action": {
-            "scope": "",
-            "why": ""
+            "scope": "none",
+            "why": "No action. A response that declares none of the three derives exactly the key it derived before, so no operation in flight is disturbed."
           }
         },
         {
@@ -8197,19 +8197,74 @@
           "subject": "an MCP write can no longer be silently prepared against the wrong space",
           "detail": "Server construction is per-space now, and a write that cannot name its target while several spaces are connected is REFUSED, naming the connected spaces — no default, because a default is how this defect gets recreated one layer up. A single-space session is unchanged.\nPartial, and stated as such: several write tools' inputs carry no field that could name a space at all, so a call cannot express the target even in principle. That is a tool-contract change and is not in this release.\n",
           "action": {
-            "scope": "",
-            "why": ""
+            "scope": "space",
+            "why": "If your MCP session connects to more than one space, a write that cannot name its target is now refused rather than prepared against the first one. Name the space, or connect one."
           }
         },
         {
           "id": "RN-02300-26",
           "kind": "feat",
-          "impact": "minor",
+          "impact": "low",
           "subject": "every validation error code is now checked for prose, reachability and scope",
           "detail": "A new gate reads the error registry and refuses a code that appears in no shipped prose, that no test proves fires through a production entry point, or that rejects post-merge without a stated reason that it may judge artifacts predating it.\nAgainst the shipped corpus it found 26 gaps over 22 codes. They are declared in the registry with reasons and owners rather than closed silently, so the gate is green and BLOCKS the next code from joining them. Codes that predate the prose rule carry that as their stated reason, because applying a rule retroactively to history nobody may edit is the very thing the rule forbids.\n",
           "action": {
-            "scope": "",
-            "why": ""
+            "scope": "none",
+            "why": "No action for a space. This gate runs in this repository and constrains what a future validation code may ship without."
+          }
+        },
+        {
+          "id": "RN-02300-27",
+          "kind": "feat",
+          "impact": "normal",
+          "subject": "a criterion can carry a name, and a verdict can use it",
+          "detail": "`a2a verify` and `a2a close` now print each binding — the criterion's own first characters beside the verdict — before anything is minted. That alone would have caught the reported incident at composition.\nAcceptance criteria may also carry an id. Where a parent declares them, `--verdict ac3:met:seomatrix` names the criterion instead of counting to it, and an id that resolves to nothing is refused locally, naming what the parent does declare. The array is homogeneous: all ordinals or all ids, because a mixed array has no single addressing mode.\nArtifacts already written keep the ordinal form and stay valid. The older envelope generation is immutable history and is not touched.\n",
+          "action": {
+            "scope": "local",
+            "why": "Give acceptance criteria ids if you want verdicts to name them. Existing criteria keep working unchanged, addressed by position."
+          }
+        },
+        {
+          "id": "RN-02300-28",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "closing an exchange now has to judge every criterion it was given",
+          "detail": "A verify or close over a parent that declares criteria must name a verdict for each, or it is refused at the merge gate — with the missing ones named. The enum already carries `not_warranted` and `not_exercised`, so a criterion that did not apply still gets a verdict and nobody is forced to claim something false.\nExchanges already closed stay closed and stay green: the rule refuses at the write gate and returns no verdict against merged history, which no verb can rewrite.\n",
+          "action": {
+            "scope": "space",
+            "why": "A close over a parent that declares acceptance criteria must now carry a verdict for each. Use `not_warranted` or `not_exercised` for one that did not apply. Exchanges already closed are unaffected."
+          }
+        },
+        {
+          "id": "RN-02300-29",
+          "kind": "feat",
+          "impact": "normal",
+          "subject": "a handoff whose required sections say nothing is refused",
+          "detail": "The five sections the domain requires must carry content. The check measures emptiness, never quality — there is no length floor, because a floor turns an empty handoff into a padded one, which reads as answered.\nThe section list comes from the handoff template itself, so a section added there is enforced the day it lands. Refused at the merge gate, silent against handoffs already merged.\n",
+          "action": {
+            "scope": "space",
+            "why": "Fill the five sections of a handoff before submitting it. Handoffs already merged are unaffected."
+          }
+        },
+        {
+          "id": "RN-02300-30",
+          "kind": "feat",
+          "impact": "normal",
+          "subject": "the Contracts screen says whether a contract's operational half exists",
+          "detail": "A contract card now states one of three things: the operational half is ready, it is declared absent (and `a2a contract activate` is what clears it), or it was never declared at all. Those are three different facts and the screen no longer collapses them into one.\nA new warning fires when a contract invites a runtime pin against an operational half it declares absent. A warning rather than a refusal: publishing a promise before activating it is a designed sequence, so the pair is a claim ahead of the facts, not an invalid document.\n",
+          "action": {
+            "scope": "local",
+            "why": "Declare `x_operational` on a contract whose endpoint is not up yet, and run `a2a contract activate` when it is. A contract that declares nothing reads as \"not declared\" rather than as ready."
+          }
+        },
+        {
+          "id": "RN-02300-31",
+          "kind": "feat",
+          "impact": "normal",
+          "subject": "doctor names a contract you consume but never adopted",
+          "detail": "`a2a doctor` reports a contract this system has verify-passed conforming deliveries against while its own registry does not list it, with the delivery count and the exact `a2a contract adopt` that fixes it.\nDetection only, and a warning: consuming without adopting is a real risk rather than an error, and the operator may have reasons. Whether such a delivery should REGISTER a consumer is a separate question and is not answered here — the retire precondition is unchanged.\n",
+          "action": {
+            "scope": "local",
+            "why": "Run `a2a doctor`. If it names a contract you consume but never adopted, run `a2a contract adopt \u003cid\u003e` — that is what puts you on the deprecation notice and behind the retire gate."
           }
         },
         {
