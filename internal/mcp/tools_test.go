@@ -1,6 +1,11 @@
 package mcp
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -71,5 +76,50 @@ func TestRawSchemaShape(t *testing.T) {
 	raw := rawSchema(map[string]string{"ids": "array"}, "ids")
 	if len(raw) == 0 {
 		t.Fatal("expected a non-empty schema")
+	}
+}
+
+// TestBuildRegistryWithOperationsCarriesSubmitResolver pins the seam that
+// went missing once and was invisible to every unit test that owns it.
+//
+// SubmitDeps grew its own per-space ResolveSpace closure, wire.go installed
+// it, and this constructor threw it away — it rebuilt SubmitDeps from a
+// (staging dir, legality) pair rather than carrying the caller's own value.
+// a2a_submit therefore went on refusing every multi-space write in a real
+// session while tools_submit_test.go stayed green throughout, because those
+// tests construct SubmitDeps directly and never travel through here. The
+// defect lived exactly in the gap between the two.
+//
+// Anything the caller puts on SubmitDeps must survive registry assembly.
+func TestBuildRegistryWithOperationsCarriesSubmitResolver(t *testing.T) {
+	t.Parallel()
+
+	staging := t.TempDir()
+	writeStagedDraftForSpace(t, staging, "XQ-beta-20260721-reg1", "question", "space-b")
+
+	var asked string
+	submit := SubmitDeps{
+		WriteDeps:  WriteDeps{OwnSystem: "beta", ReadFile: os.ReadFile},
+		StagingDir: staging,
+		ResolveSpace: func(spaceID string) (SubmitDeps, error) {
+			asked = spaceID
+			return SubmitDeps{}, errors.New("sentinel: the resolver reached the handler")
+		},
+	}
+
+	r := BuildRegistryWithOperations(nil, WriteDeps{OwnSystem: "beta", ReadFile: os.ReadFile},
+		submit, NewDeps{}, ContractToolOperations{}, DataToolDeps{})
+
+	spec, ok := r.Get("a2a_submit")
+	if !ok {
+		t.Fatal("a2a_submit is not registered")
+	}
+	_, _, err := spec.Handler(context.Background(),
+		json.RawMessage(`{"ids":["XQ-beta-20260721-reg1"]}`))
+	if err == nil || !strings.Contains(err.Error(), "sentinel: the resolver reached the handler") {
+		t.Fatalf("the registered a2a_submit handler did not use the caller's SubmitDeps.ResolveSpace; err = %v", err)
+	}
+	if asked != "space-b" {
+		t.Fatalf("resolver asked for space %q, want the draft's own space-b", asked)
 	}
 }

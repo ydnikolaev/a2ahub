@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -326,6 +327,316 @@ func TestSubmitSectionPath(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("submitSectionPath(%q, %q) = %q, want %q", tc.envType, tc.id, got, tc.want)
 		}
+	}
+}
+
+// --- resolveSubmitSpace / SubmitDeps.ResolveSpace ------------------------
+
+func writeStagedDraftForSpace(t *testing.T, stagingDir, id, envType, spaceID string) {
+	t.Helper()
+	content := "---\n" +
+		"schema: envelope/v1\n" +
+		"id: " + id + "\n" +
+		"type: " + envType + "\n" +
+		"title: t\n" +
+		"space: " + spaceID + "\n" +
+		"from: beta\n" +
+		"to: [axon]\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"category: clarification\n" +
+		"priority: p3\n" +
+		"blocking: true\n" +
+		"classification: internal\n" +
+		"---\nbody\n"
+	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingDir, id+".md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func testSubmitDeps(mirrorDir, stagingDir string, funnel Funnel) SubmitDeps {
+	return SubmitDeps{
+		WriteDeps: testWriteDeps(mirrorDir, funnel), StagingDir: stagingDir,
+		Legality: NewLegalityAdapter(mirrorDir, "beta", testManifest()),
+	}
+}
+
+func TestResolveSubmitSpaceNilResolverReturnsUnchanged(t *testing.T) {
+	t.Parallel()
+	deps := SubmitDeps{StagingDir: "/single/staging"}
+	got, err := resolveSubmitSpace(deps, "space-a")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.StagingDir != deps.StagingDir {
+		t.Fatalf("resolveSubmitSpace(nil resolver) = %+v, want unchanged %+v", got, deps)
+	}
+}
+
+func TestResolveSubmitSpaceExplicit(t *testing.T) {
+	t.Parallel()
+	want := SubmitDeps{StagingDir: "/space-b/staging"}
+	deps := SubmitDeps{
+		ResolveSpace: func(spaceID string) (SubmitDeps, error) {
+			if spaceID != "space-b" {
+				t.Fatalf("ResolveSpace called with %q, want %q", spaceID, "space-b")
+			}
+			return want, nil
+		},
+	}
+	got, err := resolveSubmitSpace(deps, "space-b")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.StagingDir != want.StagingDir {
+		t.Fatalf("resolveSubmitSpace(explicit) = %+v, want %+v", got, want)
+	}
+}
+
+func TestResolveSubmitSpacePlaceholderRefusedBeforeCallingResolveSpace(t *testing.T) {
+	t.Parallel()
+	deps := SubmitDeps{
+		ResolveSpace: func(spaceID string) (SubmitDeps, error) {
+			t.Fatalf("ResolveSpace must not be called for an unfilled placeholder; got %q", spaceID)
+			return SubmitDeps{}, nil
+		},
+	}
+	_, err := resolveSubmitSpace(deps, "<space-id>")
+	if err == nil || !strings.Contains(err.Error(), "never filled in") {
+		t.Fatalf("resolveSubmitSpace(placeholder) error = %v, want it to mention the unfilled placeholder", err)
+	}
+}
+
+// TestSubmitHandlerResolvesToTheNamedSpace: a draft whose `space:` names the
+// SECOND connected space lands there — the funnel it calls, and only it,
+// must be the resolved space's.
+func TestSubmitHandlerResolvesToTheNamedSpace(t *testing.T) {
+	t.Parallel()
+	mirrorA := t.TempDir()
+	mirrorB := t.TempDir()
+	staging := t.TempDir()
+	id := "XQ-beta-20260721-r001"
+	writeStagedDraftForSpace(t, staging, id, "question", "space-b")
+	writeMirrorFile(t, mirrorA, "space.yaml", "id: space-a\nschema_version: \"1\"\nmin_binary_version: \"0.0.0\"\nparticipants:\n  axon-bot: axon\n  beta-bot: beta\n")
+	writeMirrorFile(t, mirrorB, "space.yaml", "id: space-b\nschema_version: \"1\"\nmin_binary_version: \"0.0.0\"\nparticipants:\n  axon-bot: axon\n  beta-bot: beta\n")
+
+	fakeA := &fakeFunnel{}
+	fakeB := &fakeFunnel{}
+	primary := testSubmitDeps(mirrorA, staging, fakeA)
+	resolvedB := testSubmitDeps(mirrorB, staging, fakeB)
+	primary.ResolveSpace = func(spaceID string) (SubmitDeps, error) {
+		if spaceID != "space-b" {
+			t.Fatalf("ResolveSpace called with %q, want %q", spaceID, "space-b")
+		}
+		return resolvedB, nil
+	}
+
+	handler := newSubmitHandler(primary)
+	args, _ := json.Marshal(SubmitInput{IDs: []string{id}})
+	result, _, err := handler(context.Background(), args)
+	if err != nil {
+		t.Fatalf("submit handler failed: %v", err)
+	}
+	sr, ok := result.(submitResult)
+	if !ok || sr.Verb != "submit" {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	if len(fakeA.calls) != 0 {
+		t.Fatalf("expected NO calls against the primary (unresolved) space's funnel, got %d", len(fakeA.calls))
+	}
+	if len(fakeB.calls) != 1 {
+		t.Fatalf("expected exactly 1 call against the resolved space-b funnel, got %d", len(fakeB.calls))
+	}
+	if fakeB.calls[0].RepoDir != mirrorB {
+		t.Fatalf("RepoDir = %q, want the resolved space's own mirror %q", fakeB.calls[0].RepoDir, mirrorB)
+	}
+}
+
+// TestSubmitHandlerUsesTheResolvedSpacesLegality is the trap this brief
+// names explicitly: SubmitDeps.Legality is mirror-bound. A handler that
+// resolved only the promoted WriteDeps.ResolveSpace (or otherwise kept the
+// PRIMARY space's Legality) would judge this id against space-a's committed
+// history — which already carries a submit event for it — and short-circuit
+// as already-submitted without ever reaching the resolved space's funnel.
+func TestSubmitHandlerUsesTheResolvedSpacesLegality(t *testing.T) {
+	t.Parallel()
+	mirrorA := t.TempDir()
+	mirrorB := t.TempDir()
+	staging := t.TempDir()
+	id := "XQ-beta-20260721-r002"
+	writeStagedDraftForSpace(t, staging, id, "question", "space-b")
+	writeMirrorFile(t, mirrorA, "space.yaml", "id: space-a\nschema_version: \"1\"\nmin_binary_version: \"0.0.0\"\nparticipants:\n  axon-bot: axon\n  beta-bot: beta\n")
+	writeMirrorFile(t, mirrorB, "space.yaml", "id: space-b\nschema_version: \"1\"\nmin_binary_version: \"0.0.0\"\nparticipants:\n  axon-bot: axon\n  beta-bot: beta\n")
+	// Seeded ONLY in space-a's mirror — the primary/unresolved space.
+	writeLifecycleEvent(t, mirrorA, "beta", 0, id, "submit", "beta")
+
+	fakeA := &fakeFunnel{}
+	fakeB := &fakeFunnel{}
+	primary := testSubmitDeps(mirrorA, staging, fakeA)
+	resolvedB := testSubmitDeps(mirrorB, staging, fakeB)
+	primary.ResolveSpace = func(spaceID string) (SubmitDeps, error) { return resolvedB, nil }
+
+	handler := newSubmitHandler(primary)
+	args, _ := json.Marshal(SubmitInput{IDs: []string{id}})
+	result, _, err := handler(context.Background(), args)
+	if err != nil {
+		t.Fatalf("submit handler failed: %v", err)
+	}
+	sr, ok := result.(submitResult)
+	if !ok {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	if sr.State == "already-submitted" {
+		t.Fatalf("handler judged legality against the PRIMARY (unresolved) space's committed history; got state=%q", sr.State)
+	}
+	if len(fakeB.calls) != 1 {
+		t.Fatalf("expected the resolved space's funnel to be called exactly once, got %d", len(fakeB.calls))
+	}
+}
+
+// TestSubmitHandlerDoesNotPoisonAcrossCalls: two sequential submits through
+// ONE constructed handler naming different spaces. If the handler ever
+// assigned to the captured `deps` (rather than shadowing a local), the
+// SECOND call would inherit the first call's already-resolved (and
+// ResolveSpace == nil) deps and silently land in the wrong space.
+func TestSubmitHandlerDoesNotPoisonAcrossCalls(t *testing.T) {
+	t.Parallel()
+	mirrorA := t.TempDir()
+	mirrorB := t.TempDir()
+	mirrorC := t.TempDir()
+	staging := t.TempDir()
+	idB := "XQ-beta-20260721-p001"
+	idC := "XQ-beta-20260721-p002"
+	writeStagedDraftForSpace(t, staging, idB, "question", "space-b")
+	writeStagedDraftForSpace(t, staging, idC, "question", "space-c")
+	for _, m := range []string{mirrorA, mirrorB, mirrorC} {
+		writeMirrorFile(t, m, "space.yaml", "schema_version: \"1\"\nmin_binary_version: \"0.0.0\"\nparticipants:\n  axon-bot: axon\n  beta-bot: beta\n")
+	}
+
+	fakeA := &fakeFunnel{}
+	fakeB := &fakeFunnel{}
+	fakeC := &fakeFunnel{}
+	primary := testSubmitDeps(mirrorA, staging, fakeA)
+	resolvedB := testSubmitDeps(mirrorB, staging, fakeB)
+	resolvedC := testSubmitDeps(mirrorC, staging, fakeC)
+	primary.ResolveSpace = func(spaceID string) (SubmitDeps, error) {
+		switch spaceID {
+		case "space-b":
+			return resolvedB, nil
+		case "space-c":
+			return resolvedC, nil
+		default:
+			t.Fatalf("ResolveSpace called with unexpected id %q", spaceID)
+			return SubmitDeps{}, nil
+		}
+	}
+	handler := newSubmitHandler(primary)
+
+	argsB, _ := json.Marshal(SubmitInput{IDs: []string{idB}})
+	if _, _, err := handler(context.Background(), argsB); err != nil {
+		t.Fatalf("first call (space-b) failed: %v", err)
+	}
+	argsC, _ := json.Marshal(SubmitInput{IDs: []string{idC}})
+	if _, _, err := handler(context.Background(), argsC); err != nil {
+		t.Fatalf("second call (space-c) failed: %v", err)
+	}
+
+	if len(fakeA.calls) != 0 {
+		t.Fatalf("primary (never-named) space funnel calls = %d, want 0", len(fakeA.calls))
+	}
+	if len(fakeB.calls) != 1 {
+		t.Fatalf("space-b funnel calls = %d, want 1 — got poisoned by the other call", len(fakeB.calls))
+	}
+	if len(fakeC.calls) != 1 {
+		t.Fatalf("space-c funnel calls = %d, want 1 — got poisoned by the other call", len(fakeC.calls))
+	}
+}
+
+func TestSubmitHandlerRefusesUnconnectedSpaceByName(t *testing.T) {
+	t.Parallel()
+	mirrorA := t.TempDir()
+	staging := t.TempDir()
+	id := "XQ-beta-20260721-u001"
+	writeStagedDraftForSpace(t, staging, id, "question", "ghost-space")
+	writeMirrorFile(t, mirrorA, "space.yaml", "id: space-a\nschema_version: \"1\"\nmin_binary_version: \"0.0.0\"\nparticipants:\n  axon-bot: axon\n  beta-bot: beta\n")
+
+	fakeA := &fakeFunnel{}
+	primary := testSubmitDeps(mirrorA, staging, fakeA)
+	primary.ResolveSpace = func(spaceID string) (SubmitDeps, error) {
+		return SubmitDeps{}, fmt.Errorf("mcp: space %q is not connected; connected spaces are space-a, space-b", spaceID)
+	}
+	handler := newSubmitHandler(primary)
+
+	args, _ := json.Marshal(SubmitInput{IDs: []string{id}})
+	_, _, err := handler(context.Background(), args)
+	if err == nil || !strings.Contains(err.Error(), "ghost-space") || !strings.Contains(err.Error(), "not connected") {
+		t.Fatalf("expected a by-name refusal naming the unconnected space, got %v", err)
+	}
+	if len(fakeA.calls) != 0 {
+		t.Fatalf("expected the funnel NEVER to be called, got %d calls", len(fakeA.calls))
+	}
+}
+
+func TestSubmitHandlerRefusesUnfilledSpacePlaceholder(t *testing.T) {
+	t.Parallel()
+	mirrorA := t.TempDir()
+	staging := t.TempDir()
+	id := "XQ-beta-20260721-ph001"
+	writeStagedDraftForSpace(t, staging, id, "question", "<space-id>")
+	writeMirrorFile(t, mirrorA, "space.yaml", "id: space-a\nschema_version: \"1\"\nmin_binary_version: \"0.0.0\"\nparticipants:\n  axon-bot: axon\n  beta-bot: beta\n")
+
+	fakeA := &fakeFunnel{}
+	primary := testSubmitDeps(mirrorA, staging, fakeA)
+	primary.ResolveSpace = func(spaceID string) (SubmitDeps, error) {
+		t.Fatalf("ResolveSpace must not be called for an unfilled placeholder; got %q", spaceID)
+		return SubmitDeps{}, nil
+	}
+	handler := newSubmitHandler(primary)
+
+	args, _ := json.Marshal(SubmitInput{IDs: []string{id}})
+	_, _, err := handler(context.Background(), args)
+	if err == nil || !strings.Contains(err.Error(), "never filled in") {
+		t.Fatalf("expected the unfilled-placeholder refusal, got %v", err)
+	}
+	if len(fakeA.calls) != 0 {
+		t.Fatalf("expected the funnel NEVER to be called, got %d calls", len(fakeA.calls))
+	}
+}
+
+// TestSubmitHandlerSingleSpaceSessionUnchanged: SubmitDeps.ResolveSpace nil
+// (the single-space wiring) never touches the space named on the draft —
+// today's byte-identical behavior.
+func TestSubmitHandlerSingleSpaceSessionUnchanged(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	staging := t.TempDir()
+	id := "XQ-beta-20260721-s001"
+	// Names a space this single-space session never connected — must be
+	// ignored entirely, since deps.ResolveSpace is nil.
+	writeStagedDraftForSpace(t, staging, id, "question", "some-other-space")
+	writeMirrorFile(t, mirrorDir, "space.yaml", "id: fixture-space\nschema_version: \"1\"\nmin_binary_version: \"0.0.0\"\nparticipants:\n  axon-bot: axon\n  beta-bot: beta\n")
+
+	fake := &fakeFunnel{}
+	deps := testSubmitDeps(mirrorDir, staging, fake)
+	if deps.ResolveSpace != nil {
+		t.Fatalf("testSubmitDeps must not set ResolveSpace by default")
+	}
+	handler := newSubmitHandler(deps)
+
+	args, _ := json.Marshal(SubmitInput{IDs: []string{id}})
+	result, _, err := handler(context.Background(), args)
+	if err != nil {
+		t.Fatalf("submit handler failed: %v", err)
+	}
+	sr, ok := result.(submitResult)
+	if !ok || sr.Verb != "submit" {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly 1 funnel call against the single connected mirror, got %d", len(fake.calls))
 	}
 }
 

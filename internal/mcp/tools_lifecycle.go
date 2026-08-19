@@ -95,6 +95,16 @@ func newLifecycleHandler(spec lifecycleVerbSpec, deps WriteDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("%s: findings is required", spec.Verb)
 		}
 
+		// Resolve this call's target space from the ids it already
+		// carries, BEFORE the first deps.MirrorDir/deps.Manifest read
+		// below — a single-space session (deps.ResolveSpace nil) is
+		// unchanged; shadows the captured deps, never assigns to it, so
+		// no call ever poisons a later one through the same closure.
+		deps, err := resolveWriteSpace(deps, "", in.IDs)
+		if err != nil {
+			return nil, "", fmt.Errorf("%s: %w", spec.Verb, err)
+		}
+
 		resolved, actorErr := deps.ResolveActor(in.Actor)
 		if actorErr != nil {
 			return nil, "", fmt.Errorf("%s: %w", spec.Verb, actorErr)
@@ -424,6 +434,16 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 		}
 		if berr := respondValidateBlockedBy(in.BlockedBy); berr != nil {
 			return nil, "", berr
+		}
+
+		// Resolve this call's target space from parent_ids, BEFORE the
+		// first deps.MirrorDir read below (parentAcceptanceCriteria, then
+		// the per-parent loop's loadEnvelope/parentThread calls) — see
+		// newLifecycleHandler's identical comment for the shadowing
+		// discipline this repeats.
+		deps, err := resolveWriteSpace(deps, "", in.ParentIDs)
+		if err != nil {
+			return nil, "", fmt.Errorf("respond: %w", err)
 		}
 
 		resolved, actorErr := deps.ResolveActor(in.Actor)
@@ -831,6 +851,17 @@ func newVerifyHandler(deps WriteDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("verify: targets is required")
 		}
 
+		// Resolve this call's target space from targets, BEFORE the first
+		// deps.MirrorDir read below (resolveResponseID inside the loop) —
+		// the resolved deps is then used for every subsequent read in this
+		// call, including resolveResponseID's own deps.MirrorDir argument.
+		// See newLifecycleHandler's identical comment for the shadowing
+		// discipline this repeats.
+		deps, err := resolveWriteSpace(deps, "", in.Targets)
+		if err != nil {
+			return nil, "", fmt.Errorf("verify: %w", err)
+		}
+
 		resolved, actorErr := deps.ResolveActor(in.Actor)
 		if actorErr != nil {
 			return nil, "", fmt.Errorf("verify: %w", actorErr)
@@ -936,6 +967,15 @@ func newDisputeHandler(deps WriteDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("dispute: ids and reason are required")
 		}
 
+		// Resolve this call's target space from ids, BEFORE the first
+		// deps.MirrorDir read below (evaluateResponseCandidate inside the
+		// loop) — see newLifecycleHandler's identical comment for the
+		// shadowing discipline this repeats.
+		deps, err := resolveWriteSpace(deps, "", in.IDs)
+		if err != nil {
+			return nil, "", fmt.Errorf("dispute: %w", err)
+		}
+
 		resolved, actorErr := deps.ResolveActor(in.Actor)
 		if actorErr != nil {
 			return nil, "", fmt.Errorf("dispute: %w", actorErr)
@@ -1005,6 +1045,15 @@ func newNoteHandler(deps WriteDeps) HandlerFunc {
 		}
 		if len(in.IDs) == 0 || in.Note == "" {
 			return nil, "", fmt.Errorf("note: ids and note are required")
+		}
+
+		// Resolve this call's target space from ids, BEFORE the first
+		// deps.MirrorDir read below (evaluateCandidate/loadEnvelope inside
+		// the loop) — see newLifecycleHandler's identical comment for the
+		// shadowing discipline this repeats.
+		deps, err := resolveWriteSpace(deps, "", in.IDs)
+		if err != nil {
+			return nil, "", fmt.Errorf("note: %w", err)
 		}
 
 		resolved, actorErr := deps.ResolveActor(in.Actor)

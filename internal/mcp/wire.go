@@ -227,30 +227,31 @@ func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, bui
 		}
 		return NewServer(registry, "a2a-mcp", binaryVersion, nil), nil
 	}
-	// P7 (one agent, one space): a session connected to MORE than one space
-	// has no per-call way to name a target for the legacy write graph today
-	// — a2a_submit/a2a_lifecycle/a2a_exchange and a2a_contract's legacy
-	// deprecate/retire/adopt/activate sub-verbs carry no "space" input field
-	// (internal/mcp/tools_lifecycle.go, tools_submit.go, tools_contract.go —
-	// all outside this phase's footprint), unlike a2a_work
-	// (WorkToolDeps.ResolveSpace), a2a_data, and a2a_contract's P6 sub-verbs
-	// (preflight/publish/materialize/check/diff/verify), which already
-	// resolve their own target per call via cmd/a2a's own per-space maps.
-	// buildWriteDeps below now builds a set for EVERY connected space and
-	// hands the returned one ResolveSpace/SpaceOfArtifacts closures over the
-	// rest — but no handler consumes them yet, so this blanket refusal is
-	// still what a multi-space session gets. Every legacy write path funnels
-	// through WriteDeps.submit's single Funnel.Submit call
-	// (internal/mcp/eventdoc.go) before anything reaches the space's repo,
-	// so wrapping that ONE seam closes the defect for all of them without
-	// touching their handlers, and without a silent default to Spaces[0]
-	// recreating it one layer up (US-2). A single connected space is
-	// untouched below. This install is RETIRED, per tool, as each handler
-	// starts resolving its own target through resolveWriteSpace.
+	// P7 (one agent, one space): EVERY write family now resolves its own
+	// target per call, so this install is no longer how a multi-space
+	// session behaves — it is the backstop underneath them.
+	//
+	//   a2a_submit          reads the draft envelope's own `space:`
+	//   a2a_lifecycle       derives from the ids the call carries
+	//   a2a_exchange        derives from parent_ids / targets / ids
+	//   a2a_contract legacy takes the explicit "space" input its own P6
+	//                       siblings already take (a contract commits to
+	//                       <slug>/provides/<name>/contract.md, not
+	//                       "<id>.md", so deriving is unavailable there)
+	//
+	// Each of those resolves BEFORE its first mirror read and receives a
+	// per-space WriteDeps carrying that space's REAL funnel — buildWriteDeps
+	// stores its per-space builds by VALUE, so the mutation below cannot
+	// reach them. What is left refusing here is a write that resolved
+	// nothing: a handler added later without a resolve call, or a path none
+	// of the four shapes above covers. That is the property worth keeping —
+	// a new write tool's default is REFUSAL, not a silent landing in
+	// Spaces[0], which is how this defect was born. A single connected
+	// space is untouched (US-2, no default, ever).
 	if len(cfg.Spaces) > 1 {
 		write.Funnel = ambiguousSpaceFunnel{connected: spaceIDs(cfg.Spaces)}
 	}
-	registry = BuildRegistryWithOperations(store, write, submitDeps.StagingDir, submitDeps.Legality, newDeps, contractOperations, dataOperations, workDeps)
+	registry = BuildRegistryWithOperations(store, write, submitDeps, newDeps, contractOperations, dataOperations, workDeps)
 	srv := NewServer(registry, "a2a-mcp", binaryVersion, nil)
 
 	// The session refreshes its mirror before every non-contract write/read
@@ -389,6 +390,29 @@ func buildWriteDeps(ctx context.Context, cfg space.ProjectConfig, machine space.
 			}
 			return b.write, nil
 		}
+		// SubmitDeps' own resolver — mirrors primary.write.ResolveSpace above
+		// exactly (same refusals, same wording), but binds bySpace[id].submit
+		// so a resolved call's Legality is that space's own mirror-bound
+		// build, not Spaces[0]'s (tools_submit.go's SubmitDeps.ResolveSpace
+		// doc comment spells out the trap this closes).
+		primary.submit.ResolveSpace = func(spaceID string) (SubmitDeps, error) {
+			if spaceID == "" {
+				return SubmitDeps{}, fmt.Errorf(
+					"mcp: space is required when multiple spaces are connected; connected spaces are %s",
+					strings.Join(connected, ", "))
+			}
+			b, ok := bySpace[spaceID]
+			if !ok {
+				return SubmitDeps{}, fmt.Errorf(
+					"mcp: space %q is not connected; connected spaces are %s", spaceID, strings.Join(connected, ", "))
+			}
+			if b.err != nil {
+				// Surfaced only because THIS space is the one targeted — see
+				// this function's own doc comment.
+				return SubmitDeps{}, b.err
+			}
+			return b.submit, nil
+		}
 		primary.write.SpaceOfArtifacts = func(ids []string) (string, error) {
 			resolvedSpace, resolvedID := "", ""
 			for _, id := range ids {
@@ -487,12 +511,17 @@ func buildWriteDepsForSpace(ctx context.Context, cfg space.ProjectConfig, machin
 	return write, submitDeps, newDeps, nil
 }
 
-// ambiguousSpaceFunnel refuses every write instead of silently landing it in
+// ambiguousSpaceFunnel refuses a write instead of silently landing it in
 // cfg.Spaces[0] (P7). It is WriteDeps.Funnel's sole consumer-facing seam
 // (internal/mcp/eventdoc.go's WriteDeps.submit calls Funnel.Submit exactly
-// once), so wrapping it here reaches a2a_submit, a2a_lifecycle, a2a_exchange
-// and a2a_contract's legacy deprecate/retire/adopt/activate sub-verbs alike
-// without touching any of their handler files.
+// once), which is what let P7's first pass close the defect for every legacy
+// write tool at once without touching a single handler file.
+//
+// It is now the BACKSTOP, not the behaviour: every write family resolves its
+// own target per call and gets that space's real funnel, so this one is
+// reached only by a write that resolved nothing. Keeping it means a write
+// tool added later without a resolve call fails closed — see the install
+// site's own comment for the four shapes that do resolve.
 type ambiguousSpaceFunnel struct {
 	connected []string
 }

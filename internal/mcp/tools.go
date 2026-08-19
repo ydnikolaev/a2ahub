@@ -158,7 +158,15 @@ func BuildRegistry(store *cache.Store, write WriteDeps, submitStagingDir string,
 // this new parameter could not be inserted there without breaking that
 // call; a variadic cannot follow another variadic, so this is a new
 // function rather than a widened signature.
-func BuildRegistryWithOperations(store *cache.Store, write WriteDeps, submitStagingDir string, legality *LegalityAdapter, newDeps NewDeps, contractOperations ContractToolOperations, dataOperations DataToolDeps, workDeps ...WorkToolDeps) *Registry {
+//
+// It takes the whole SubmitDeps rather than its (staging dir, legality)
+// pieces — NARROWING the signature, not widening it. Rebuilding SubmitDeps
+// here from pieces silently dropped whatever else the caller had put on it,
+// and once SubmitDeps grew its own per-space ResolveSpace closure that
+// omission had teeth: wire.go installed the resolver, this function threw it
+// away, and a2a_submit went on refusing every multi-space write while its
+// unit tests — which construct SubmitDeps directly — stayed green.
+func BuildRegistryWithOperations(store *cache.Store, write WriteDeps, submit SubmitDeps, newDeps NewDeps, contractOperations ContractToolOperations, dataOperations DataToolDeps, workDeps ...WorkToolDeps) *Registry {
 	r := NewRegistry()
 	if len(workDeps) > 1 {
 		panic("mcp: BuildRegistry accepts at most one work dependency set")
@@ -169,11 +177,16 @@ func BuildRegistryWithOperations(store *cache.Store, write WriteDeps, submitStag
 	// doc comment) — no new BuildRegistry parameter, this one is already
 	// threaded through for submit's own idempotency short-circuit.
 	contractDeps := ContractDeps{
-		WriteDeps: write, StagingDir: submitStagingDir,
+		WriteDeps: write, StagingDir: submit.StagingDir,
 		Publication: contractOperations.Publication, Materialize: contractOperations.Materialize,
 		Check: contractOperations.Check, Inspection: contractOperations.Inspection,
 	}
-	submitDeps := SubmitDeps{WriteDeps: write, StagingDir: submitStagingDir, Legality: legality}
+	// write, not submit.WriteDeps: the caller mutates the WriteDeps it
+	// passes here after building submit (wire.go's ambiguousSpaceFunnel
+	// install), and every non-submit handler must see that mutation.
+	// submit keeps its own embedded copy plus its own ResolveSpace.
+	submitDeps := submit
+	submitDeps.WriteDeps = write
 
 	// --- a2a_read + a2a_whatsnew (need no space; see registerSpaceFree) --
 	registerSpaceFree(r, store)
@@ -258,7 +271,9 @@ func (o ContractToolOperations) complete() bool {
 // degraded). BuildRegistry remains the source-compatible isolated-test
 // constructor.
 func BuildRegistryWithContractOperations(store *cache.Store, write WriteDeps, submitStagingDir string, legality *LegalityAdapter, newDeps NewDeps, contractOperations ContractToolOperations, workDeps ...WorkToolDeps) *Registry {
-	return BuildRegistryWithOperations(store, write, submitStagingDir, legality, newDeps, contractOperations, DataToolDeps{}, workDeps...)
+	return BuildRegistryWithOperations(store, write,
+		SubmitDeps{WriteDeps: write, StagingDir: submitStagingDir, Legality: legality},
+		newDeps, contractOperations, DataToolDeps{}, workDeps...)
 }
 
 // registerContractTool keeps the grouped contract surface available when the

@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -946,5 +947,413 @@ func TestGateMarkerAgreesWithFold(t *testing.T) {
 	}
 	if gated == 0 {
 		t.Fatal("no verb in the table is human-gated according to fold — the registry lost its rows and a green result here would mean nothing")
+	}
+}
+
+// --- multi-space per-call derivation (wave 2) ------------------------------
+
+// testTwoSpaceWriteDepsWithSystem builds a WriteDeps whose ResolveSpace/
+// SpaceOfArtifacts closures route between TWO independently-seeded mirrors —
+// the shape wire.go's own buildWriteDeps installs in production
+// (wire.go:372-419, off this phase's allowlist), reproduced narrowly here
+// rather than a second implementation: same refusal messages (space
+// required/not connected, batch spans multiple spaces, no connected mirror
+// holds), same "resolved deps carries no ResolveSpace/SpaceOfArtifacts of its
+// own" value semantics (wire.go's bySpace map holds VALUES, and so does
+// byID here). Returns the FIRST space's own WriteDeps (mirrors
+// buildWriteDeps returning primary.write) — this stands in for
+// cfg.Spaces[0], the silent-default target this phase exists to stop a
+// handler from falling back to.
+func testTwoSpaceWriteDepsWithSystem(ownSystem, aID, aDir string, fakeA Funnel, bID, bDir string, fakeB Funnel) WriteDeps {
+	connected := []string{aID, bID}
+	build := func(dir string, funnel Funnel, spaceID string) WriteDeps {
+		d := testWriteDeps(dir, funnel)
+		d.SpaceID = spaceID
+		d.OwnSystem = ownSystem
+		return d
+	}
+	byID := map[string]WriteDeps{aID: build(aDir, fakeA, aID), bID: build(bDir, fakeB, bID)}
+	dirByID := map[string]string{aID: aDir, bID: bDir}
+
+	resolveSpace := func(spaceID string) (WriteDeps, error) {
+		if spaceID == "" {
+			return WriteDeps{}, fmt.Errorf(
+				"mcp: space is required when multiple spaces are connected; connected spaces are %s",
+				strings.Join(connected, ", "))
+		}
+		d, ok := byID[spaceID]
+		if !ok {
+			return WriteDeps{}, fmt.Errorf(
+				"mcp: space %q is not connected; connected spaces are %s", spaceID, strings.Join(connected, ", "))
+		}
+		return d, nil
+	}
+	spaceOfArtifacts := func(ids []string) (string, error) {
+		resolvedSpace, resolvedID := "", ""
+		for _, id := range ids {
+			found := ""
+			for _, sid := range connected {
+				if mirrorHoldsArtifact(dirByID[sid], id) {
+					found = sid
+					break
+				}
+			}
+			if found == "" {
+				return "", fmt.Errorf(
+					"mcp: no connected space's mirror holds %s; connected spaces are %s",
+					id, strings.Join(connected, ", "))
+			}
+			if resolvedSpace == "" {
+				resolvedSpace, resolvedID = found, id
+				continue
+			}
+			if found != resolvedSpace {
+				return "", fmt.Errorf(
+					"mcp: batch spans multiple spaces: %s resolves to %q, %s resolves to %q — one call targets one space",
+					resolvedID, resolvedSpace, id, found)
+			}
+		}
+		return resolvedSpace, nil
+	}
+
+	primary := byID[aID]
+	primary.ResolveSpace = resolveSpace
+	primary.SpaceOfArtifacts = spaceOfArtifacts
+	return primary
+}
+
+// testTwoSpaceWriteDeps is testTwoSpaceWriteDepsWithSystem's own-system="beta"
+// default, matching testWriteDeps' own default — the shape every
+// generic-verb/note test below needs (respond's own recipient is "beta");
+// verify/dispute's RoleOwner="axon" tests call the WithSystem form directly.
+func testTwoSpaceWriteDeps(aID, aDir string, fakeA Funnel, bID, bDir string, fakeB Funnel) WriteDeps {
+	return testTwoSpaceWriteDepsWithSystem("beta", aID, aDir, fakeA, bID, bDir, fakeB)
+}
+
+// TestLifecycleHandlerMultiSpaceDerivesFromSecondSpaceIDs is the test that
+// must redden without the change: ids living ONLY in the second connected
+// space must build their request against that space's own MirrorDir, never
+// silently against cfg.Spaces[0] (here, space-a, which holds nothing).
+func TestLifecycleHandlerMultiSpaceDerivesFromSecondSpaceIDs(t *testing.T) {
+	t.Parallel()
+	mirrorA := t.TempDir()
+	mirrorB := t.TempDir()
+	id := "XQ-axon-20260721-msa1"
+	writeQuestionArtifact(t, mirrorB, id, "beta")
+	writeLifecycleEvent(t, mirrorB, "axon", 0, id, "submit", "axon")
+
+	fakeA := &fakeFunnel{}
+	fakeB := &fakeFunnel{}
+	deps := testTwoSpaceWriteDeps("space-a", mirrorA, fakeA, "space-b", mirrorB, fakeB)
+	handler := newLifecycleHandler(LifecycleVerbTable[0], deps) // ack
+
+	args, _ := json.Marshal(LifecycleInput{IDs: []string{id}})
+	_, _, err := handler(context.Background(), args)
+	if err != nil {
+		t.Fatalf("ack against the second space failed: %v", err)
+	}
+	if len(fakeB.calls) != 1 {
+		t.Fatalf("expected the write to land in space-b's funnel, got %d calls", len(fakeB.calls))
+	}
+	if len(fakeA.calls) != 0 {
+		t.Fatalf("expected space-a's funnel to see NO calls, got %d", len(fakeA.calls))
+	}
+	if fakeB.calls[0].RepoDir != mirrorB {
+		t.Fatalf("RepoDir = %q, want the second space's mirror %q", fakeB.calls[0].RepoDir, mirrorB)
+	}
+}
+
+// TestLifecycleHandlerMultiSpaceBatchSpanningRefused covers a batch whose
+// ids span two spaces: the refusal comes from SpaceOfArtifacts, and the
+// handler must surface it with its own verb prefix.
+func TestLifecycleHandlerMultiSpaceBatchSpanningRefused(t *testing.T) {
+	t.Parallel()
+	mirrorA := t.TempDir()
+	mirrorB := t.TempDir()
+	idA := "XQ-axon-20260721-msb1"
+	idB := "XQ-axon-20260721-msb2"
+	writeQuestionArtifact(t, mirrorA, idA, "beta")
+	writeLifecycleEvent(t, mirrorA, "axon", 0, idA, "submit", "axon")
+	writeQuestionArtifact(t, mirrorB, idB, "beta")
+	writeLifecycleEvent(t, mirrorB, "axon", 0, idB, "submit", "axon")
+
+	fakeA := &fakeFunnel{}
+	fakeB := &fakeFunnel{}
+	deps := testTwoSpaceWriteDeps("space-a", mirrorA, fakeA, "space-b", mirrorB, fakeB)
+	handler := newLifecycleHandler(LifecycleVerbTable[0], deps)
+
+	args, _ := json.Marshal(LifecycleInput{IDs: []string{idA, idB}})
+	_, _, err := handler(context.Background(), args)
+	if err == nil {
+		t.Fatal("expected a refusal for a batch spanning two spaces")
+	}
+	if !strings.HasPrefix(err.Error(), "ack:") {
+		t.Fatalf("expected the refusal to carry the ack: verb prefix, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "space-a") || !strings.Contains(err.Error(), "space-b") {
+		t.Fatalf("expected the refusal to name BOTH spaces, got %v", err)
+	}
+	if len(fakeA.calls) != 0 || len(fakeB.calls) != 0 {
+		t.Fatalf("expected neither funnel to be called, got a=%d b=%d", len(fakeA.calls), len(fakeB.calls))
+	}
+}
+
+// TestLifecycleHandlerMultiSpaceUnknownArtifactRefused covers an id no
+// connected mirror holds: refused naming the connected spaces.
+func TestLifecycleHandlerMultiSpaceUnknownArtifactRefused(t *testing.T) {
+	t.Parallel()
+	mirrorA := t.TempDir()
+	mirrorB := t.TempDir()
+	fakeA := &fakeFunnel{}
+	fakeB := &fakeFunnel{}
+	deps := testTwoSpaceWriteDeps("space-a", mirrorA, fakeA, "space-b", mirrorB, fakeB)
+	handler := newLifecycleHandler(LifecycleVerbTable[0], deps)
+
+	args, _ := json.Marshal(LifecycleInput{IDs: []string{"XQ-axon-20260721-nowhere"}})
+	_, _, err := handler(context.Background(), args)
+	if err == nil {
+		t.Fatal("expected a refusal for an id no connected mirror holds")
+	}
+	if !strings.Contains(err.Error(), "space-a") || !strings.Contains(err.Error(), "space-b") {
+		t.Fatalf("expected the refusal to name the connected spaces, got %v", err)
+	}
+	if len(fakeA.calls) != 0 || len(fakeB.calls) != 0 {
+		t.Fatalf("expected neither funnel to be called, got a=%d b=%d", len(fakeA.calls), len(fakeB.calls))
+	}
+}
+
+// TestLifecycleHandlerSingleSpaceResolveSpaceNilUnchanged is the single-space
+// control: deps.ResolveSpace is nil (testWriteDeps' own default), and the
+// call must land exactly where it always did.
+func TestLifecycleHandlerSingleSpaceResolveSpaceNilUnchanged(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	id := "XQ-axon-20260721-ss01"
+	writeQuestionArtifact(t, mirrorDir, id, "beta")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, id, "submit", "axon")
+
+	fake := &fakeFunnel{}
+	deps := testWriteDeps(mirrorDir, fake)
+	if deps.ResolveSpace != nil {
+		t.Fatal("testWriteDeps must build a single-space WriteDeps (ResolveSpace nil)")
+	}
+	handler := newLifecycleHandler(LifecycleVerbTable[0], deps)
+
+	args, _ := json.Marshal(LifecycleInput{IDs: []string{id}})
+	_, _, err := handler(context.Background(), args)
+	if err != nil {
+		t.Fatalf("single-space ack failed: %v", err)
+	}
+	if len(fake.calls) != 1 || fake.calls[0].RepoDir != mirrorDir {
+		t.Fatalf("expected the single-space call to land unchanged in %q, got %+v", mirrorDir, fake.calls)
+	}
+}
+
+// TestLifecycleHandlerMultiSpacePoisoningAcrossCalls is the poisoning test:
+// two sequential calls through ONE constructed handler, targeting different
+// spaces, each landing in its own — the resolved deps must be a shadowed
+// LOCAL inside the closure, never an assignment to the captured deps that
+// every later call through the same handler would share (see
+// newLifecycleHandler's own doc comment). A resolved WriteDeps carries no
+// ResolveSpace/SpaceOfArtifacts of its own (value semantics, matching
+// wire.go's bySpace map) — so if call 1's resolved deps leaked into the
+// captured variable, call 2 (a DIFFERENT space) would silently keep call 1's
+// ResolveSpace==nil deps and fail to resolve at all, surfacing as a spurious
+// "cannot read" error against the wrong mirror rather than landing in
+// space-b's funnel.
+func TestLifecycleHandlerMultiSpacePoisoningAcrossCalls(t *testing.T) {
+	t.Parallel()
+	mirrorA := t.TempDir()
+	mirrorB := t.TempDir()
+	idA := "XQ-axon-20260721-psa1"
+	idB := "XQ-axon-20260721-psb1"
+	writeQuestionArtifact(t, mirrorA, idA, "beta")
+	writeLifecycleEvent(t, mirrorA, "axon", 0, idA, "submit", "axon")
+	writeQuestionArtifact(t, mirrorB, idB, "beta")
+	writeLifecycleEvent(t, mirrorB, "axon", 0, idB, "submit", "axon")
+
+	fakeA := &fakeFunnel{}
+	fakeB := &fakeFunnel{}
+	deps := testTwoSpaceWriteDeps("space-a", mirrorA, fakeA, "space-b", mirrorB, fakeB)
+	handler := newLifecycleHandler(LifecycleVerbTable[0], deps) // constructed ONCE
+
+	args1, _ := json.Marshal(LifecycleInput{IDs: []string{idA}})
+	if _, _, err := handler(context.Background(), args1); err != nil {
+		t.Fatalf("first call (space-a) failed: %v", err)
+	}
+	if len(fakeA.calls) != 1 || len(fakeB.calls) != 0 {
+		t.Fatalf("after call 1: expected a=1 b=0, got a=%d b=%d", len(fakeA.calls), len(fakeB.calls))
+	}
+
+	args2, _ := json.Marshal(LifecycleInput{IDs: []string{idB}})
+	if _, _, err := handler(context.Background(), args2); err != nil {
+		t.Fatalf("second call (space-b), through the SAME handler, failed: %v — a poisoned deps from call 1 would try space-a's mirror for a space-b id", err)
+	}
+	if len(fakeB.calls) != 1 {
+		t.Fatalf("after call 2: expected space-b's funnel to see exactly 1 call, got %d", len(fakeB.calls))
+	}
+	if len(fakeA.calls) != 1 {
+		t.Fatalf("second call poisoned space-a's funnel: expected it to stay at 1, got %d", len(fakeA.calls))
+	}
+	if fakeB.calls[0].RepoDir != mirrorB {
+		t.Fatalf("second call's RepoDir = %q, want space-b's mirror %q", fakeB.calls[0].RepoDir, mirrorB)
+	}
+}
+
+// TestRespondHandlerMultiSpaceDerivesFromParentIDs is the respond family's
+// own id source: parent_ids, not ids.
+func TestRespondHandlerMultiSpaceDerivesFromParentIDs(t *testing.T) {
+	t.Parallel()
+	mirrorA := t.TempDir()
+	mirrorB := t.TempDir()
+	id := "XQ-axon-20260721-msr1"
+	writeQuestionArtifact(t, mirrorB, id, "beta")
+	writeLifecycleEvent(t, mirrorB, "axon", 0, id, "submit", "axon")
+	writeLifecycleEvent(t, mirrorB, "beta", 1, id, "acknowledge", "beta")
+	writeLifecycleEvent(t, mirrorB, "beta", 2, id, "accept", "beta")
+	writeLifecycleEvent(t, mirrorB, "beta", 3, id, "start", "beta")
+
+	fakeA := &fakeFunnel{}
+	fakeB := &fakeFunnel{}
+	deps := testTwoSpaceWriteDeps("space-a", mirrorA, fakeA, "space-b", mirrorB, fakeB)
+	handler := newRespondHandler(deps)
+
+	args, _ := json.Marshal(RespondInput{ParentIDs: []string{id}, Result: "answered"})
+	_, _, err := handler(context.Background(), args)
+	if err != nil {
+		t.Fatalf("respond against the second space failed: %v", err)
+	}
+	if len(fakeB.calls) != 1 || len(fakeA.calls) != 0 {
+		t.Fatalf("expected respond to land in space-b only, got a=%d b=%d", len(fakeA.calls), len(fakeB.calls))
+	}
+	if fakeB.calls[0].RepoDir != mirrorB {
+		t.Fatalf("RepoDir = %q, want %q", fakeB.calls[0].RepoDir, mirrorB)
+	}
+}
+
+// TestVerifyHandlerMultiSpaceDerivesFromTargets is the "needs care" case
+// called out for this handler: the space is derived from in.Targets (here,
+// the PARENT id, not the response id, so resolveResponseID's own
+// deps.MirrorDir read below the derivation exercises the RESOLVED deps, not
+// the captured one).
+func TestVerifyHandlerMultiSpaceDerivesFromTargets(t *testing.T) {
+	t.Parallel()
+	mirrorA := t.TempDir()
+	mirrorB := t.TempDir()
+	parentID := "XQ-axon-20260721-msv1"
+	writeQuestionArtifact(t, mirrorB, parentID, "beta")
+	writeLifecycleEvent(t, mirrorB, "axon", 0, parentID, "submit", "axon")
+	writeLifecycleEvent(t, mirrorB, "beta", 1, parentID, "acknowledge", "beta")
+	writeLifecycleEvent(t, mirrorB, "beta", 2, parentID, "accept", "beta")
+
+	respondFake := &fakeFunnel{}
+	respondArgs, _ := json.Marshal(RespondInput{ParentIDs: []string{parentID}, Result: "answered"})
+	if _, _, err := newRespondHandler(testWriteDeps(mirrorB, respondFake))(context.Background(), respondArgs); err != nil {
+		t.Fatalf("respond failed: %v", err)
+	}
+	for _, fw := range respondFake.calls[0].Files {
+		if err := writeFileAllDirs(filepath.Join(mirrorB, fw.Path), fw.Content); err != nil {
+			t.Fatalf("materialize %s: %v", fw.Path, err)
+		}
+	}
+
+	fakeA := &fakeFunnel{}
+	fakeB := &fakeFunnel{}
+	// verify's role is RoleOwner (the parent's original requester, axon).
+	deps := testTwoSpaceWriteDepsWithSystem("axon", "space-a", mirrorA, fakeA, "space-b", mirrorB, fakeB)
+	handler := newVerifyHandler(deps)
+
+	// targets the PARENT id (not the response id) so resolveResponseID must
+	// walk readAllEvents against the RESOLVED mirror to find the response.
+	args, _ := json.Marshal(VerifyInput{Targets: []string{parentID}})
+	_, _, err := handler(context.Background(), args)
+	if err != nil {
+		t.Fatalf("verify against the second space failed: %v", err)
+	}
+	if len(fakeB.calls) != 1 || len(fakeA.calls) != 0 {
+		t.Fatalf("expected verify to land in space-b only, got a=%d b=%d", len(fakeA.calls), len(fakeB.calls))
+	}
+	if fakeB.calls[0].RepoDir != mirrorB {
+		t.Fatalf("RepoDir = %q, want %q", fakeB.calls[0].RepoDir, mirrorB)
+	}
+}
+
+// TestDisputeHandlerMultiSpaceDerivesFromIDs is the dispute family's own id
+// source: ids (response ids), same field name as lifecycle's but a distinct
+// input type — RoleOwner ("axon") disputes the response.
+func TestDisputeHandlerMultiSpaceDerivesFromIDs(t *testing.T) {
+	t.Parallel()
+	mirrorA := t.TempDir()
+	mirrorB := t.TempDir()
+	parentID := "XQ-axon-20260721-msd1"
+	writeQuestionArtifact(t, mirrorB, parentID, "beta")
+	writeLifecycleEvent(t, mirrorB, "axon", 0, parentID, "submit", "axon")
+	writeLifecycleEvent(t, mirrorB, "beta", 1, parentID, "acknowledge", "beta")
+	writeLifecycleEvent(t, mirrorB, "beta", 2, parentID, "accept", "beta")
+
+	respondFake := &fakeFunnel{}
+	respondArgs, _ := json.Marshal(RespondInput{ParentIDs: []string{parentID}, Result: "answered"})
+	if _, _, err := newRespondHandler(testWriteDeps(mirrorB, respondFake))(context.Background(), respondArgs); err != nil {
+		t.Fatalf("respond failed: %v", err)
+	}
+	for _, fw := range respondFake.calls[0].Files {
+		if err := writeFileAllDirs(filepath.Join(mirrorB, fw.Path), fw.Content); err != nil {
+			t.Fatalf("materialize %s: %v", fw.Path, err)
+		}
+	}
+	var responseID string
+	for _, fw := range respondFake.calls[0].Files {
+		base := filepath.Base(fw.Path)
+		if strings.HasPrefix(base, "XS-") {
+			responseID = strings.TrimSuffix(base, ".md")
+		}
+	}
+	if responseID == "" {
+		t.Fatalf("could not find minted response id in %+v", respondFake.calls[0].Files)
+	}
+
+	fakeA := &fakeFunnel{}
+	fakeB := &fakeFunnel{}
+	deps := testTwoSpaceWriteDepsWithSystem("axon", "space-a", mirrorA, fakeA, "space-b", mirrorB, fakeB)
+	handler := newDisputeHandler(deps)
+
+	args, _ := json.Marshal(DisputeInput{IDs: []string{responseID}, Reason: "wrong answer"})
+	_, _, err := handler(context.Background(), args)
+	if err != nil {
+		t.Fatalf("dispute against the second space failed: %v", err)
+	}
+	if len(fakeB.calls) != 1 || len(fakeA.calls) != 0 {
+		t.Fatalf("expected dispute to land in space-b only, got a=%d b=%d", len(fakeA.calls), len(fakeB.calls))
+	}
+	if fakeB.calls[0].RepoDir != mirrorB {
+		t.Fatalf("RepoDir = %q, want %q", fakeB.calls[0].RepoDir, mirrorB)
+	}
+}
+
+// TestNoteHandlerMultiSpaceDerivesFromIDs is the note family's own id source:
+// ids, no legality precondition (D-025), so this only needs the envelope
+// itself.
+func TestNoteHandlerMultiSpaceDerivesFromIDs(t *testing.T) {
+	t.Parallel()
+	mirrorA := t.TempDir()
+	mirrorB := t.TempDir()
+	id := "XQ-axon-20260721-msn1"
+	writeQuestionArtifact(t, mirrorB, id, "beta")
+
+	fakeA := &fakeFunnel{}
+	fakeB := &fakeFunnel{}
+	deps := testTwoSpaceWriteDeps("space-a", mirrorA, fakeA, "space-b", mirrorB, fakeB)
+	handler := newNoteHandler(deps)
+
+	args, _ := json.Marshal(NoteInput{IDs: []string{id}, Note: "fyi"})
+	_, _, err := handler(context.Background(), args)
+	if err != nil {
+		t.Fatalf("note against the second space failed: %v", err)
+	}
+	if len(fakeB.calls) != 1 || len(fakeA.calls) != 0 {
+		t.Fatalf("expected note to land in space-b only, got a=%d b=%d", len(fakeA.calls), len(fakeB.calls))
+	}
+	if fakeB.calls[0].RepoDir != mirrorB {
+		t.Fatalf("RepoDir = %q, want %q", fakeB.calls[0].RepoDir, mirrorB)
 	}
 }

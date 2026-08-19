@@ -367,6 +367,7 @@ func contractResolveVersionOrRefuse(all []eventDoc, id, explicit, currentVersion
 
 // ContractDeprecateInput is a2a_contract_deprecate's structured input.
 type ContractDeprecateInput struct {
+	Space     string     `json:"space,omitempty"`
 	ID        string     `json:"id"`
 	Version   string     `json:"version,omitempty"`
 	Successor string     `json:"successor"`
@@ -383,6 +384,18 @@ func newContractDeprecateHandler(deps ContractDeps) HandlerFunc {
 		if in.ID == "" || in.Successor == "" || in.Sunset == "" {
 			return nil, "", fmt.Errorf("contract deprecate: id, successor and sunset are required")
 		}
+
+		// Resolve the target space BEFORE the first deps.MirrorDir/deps.Manifest
+		// read below — a single-space session returns deps unchanged
+		// (resolveWriteSpace's own contract); shadowed locally so the resolved
+		// space never leaks into a later call through this same constructed
+		// handler.
+		resolvedWrite, err := resolveWriteSpace(deps.WriteDeps, in.Space, nil)
+		if err != nil {
+			return nil, "", fmt.Errorf("contract deprecate: %w", err)
+		}
+		deps := deps
+		deps.WriteDeps = resolvedWrite
 
 		resolved, actorErr := deps.ResolveActor(in.Actor)
 		if actorErr != nil {
@@ -558,6 +571,7 @@ func newContractDeprecateHandler(deps ContractDeps) HandlerFunc {
 
 // ContractRetireInput is a2a_contract_retire's structured input.
 type ContractRetireInput struct {
+	Space    string     `json:"space,omitempty"`
 	ID       string     `json:"id"`
 	Version  string     `json:"version,omitempty"`
 	Override bool       `json:"override,omitempty"`
@@ -573,6 +587,15 @@ func newContractRetireHandler(deps ContractDeps) HandlerFunc {
 		if in.ID == "" {
 			return nil, "", fmt.Errorf("contract retire: id is required")
 		}
+
+		// Resolve the target space BEFORE the first deps.MirrorDir/deps.Manifest
+		// read below — see the deprecate handler's identical comment.
+		resolvedWrite, err := resolveWriteSpace(deps.WriteDeps, in.Space, nil)
+		if err != nil {
+			return nil, "", fmt.Errorf("contract retire: %w", err)
+		}
+		deps := deps
+		deps.WriteDeps = resolvedWrite
 
 		resolved, actorErr := deps.ResolveActor(in.Actor)
 		if actorErr != nil {
@@ -855,6 +878,7 @@ func newContractVerifyExportHandler(deps ContractDeps) HandlerFunc {
 // ContractAdoptInput is a2a_contract action=adopt's structured input —
 // the MCP twin of `a2a contract adopt` (internal/cli's runAdopt).
 type ContractAdoptInput struct {
+	Space string `json:"space,omitempty"`
 	ID    string `json:"id"`
 	Major int    `json:"major,omitempty"`
 	Note  string `json:"note,omitempty"`
@@ -879,6 +903,15 @@ func newContractAdoptHandler(deps ContractDeps) HandlerFunc {
 		if parsed.System == deps.OwnSystem {
 			return nil, "", fmt.Errorf("contract adopt: %s is this system's OWN contract — the registry records what you consume from OTHERS (§5.2.3)", in.ID)
 		}
+
+		// Resolve the target space BEFORE the first deps.MirrorDir read below
+		// — see the deprecate handler's identical comment.
+		resolvedWrite, err := resolveWriteSpace(deps.WriteDeps, in.Space, nil)
+		if err != nil {
+			return nil, "", fmt.Errorf("contract adopt: %w", err)
+		}
+		deps := deps
+		deps.WriteDeps = resolvedWrite
 
 		// The descriptor is read UNCONDITIONALLY now, not only when major
 		// is 0, because the adoptability refusal below must not be skippable
@@ -1045,6 +1078,7 @@ func contractActivateEventSchema(floor string) string {
 
 // ContractActivateInput is a2a_contract's action=activate structured input.
 type ContractActivateInput struct {
+	Space     string     `json:"space,omitempty"`
 	ID        string     `json:"id"`
 	Version   string     `json:"version"`
 	Satisfies []string   `json:"satisfies"`
@@ -1103,6 +1137,16 @@ func newContractActivateHandler(deps ContractDeps) HandlerFunc {
 		if parsed.System != deps.OwnSystem {
 			return nil, "", fmt.Errorf("contract activate: %s is not owned by this system (%s) — only the producer may declare its own operational readiness", in.ID, deps.OwnSystem)
 		}
+
+		// Resolve the target space BEFORE the floor read just below (Refusal
+		// 2 reads deps.Manifest.MinBinaryVersion, and that floor is per-space)
+		// — see the deprecate handler's identical comment.
+		resolvedWrite, err := resolveWriteSpace(deps.WriteDeps, in.Space, nil)
+		if err != nil {
+			return nil, "", fmt.Errorf("contract activate: %w", err)
+		}
+		deps := deps
+		deps.WriteDeps = resolvedWrite
 
 		// Refusal 2 — the floor.
 		eventSchema := contractActivateEventSchema(deps.Manifest.MinBinaryVersion)

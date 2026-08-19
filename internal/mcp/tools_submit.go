@@ -43,6 +43,15 @@ type SubmitDeps struct {
 	WriteDeps
 	StagingDir string
 	Legality   *LegalityAdapter
+
+	// ResolveSpace binds this submit dependency set — INCLUDING its
+	// mirror-bound Legality — to one connected space. nil in a
+	// single-space session. Use this, never the promoted
+	// WriteDeps.ResolveSpace: see that field's doc comment (WriteDeps,
+	// eventdoc.go) for the trap — the promoted closure returns a WriteDeps
+	// whose MirrorDir moved without moving Legality, which stays whatever
+	// space SubmitDeps was originally built against.
+	ResolveSpace func(spaceID string) (SubmitDeps, error)
 }
 
 // SubmitInput is a2a_submit's structured input: an id ARRAY (OP-220
@@ -79,6 +88,19 @@ func newSubmitHandler(deps SubmitDeps) HandlerFunc {
 			}
 		}
 
+		// Resolve this call's target space from the DRAFT ITSELF —
+		// items[0].env.Space, already proven uniform across the batch above
+		// — BEFORE the first deps.Legality/deps.MirrorDir read below. A
+		// draft being submitted is not in any mirror yet, so unlike
+		// resolveWriteSpace this never derives from ids; the shadow keeps a
+		// single-space session (deps.ResolveSpace nil) unchanged and never
+		// assigns to the captured deps, so no call ever poisons a later one
+		// through the same closure.
+		deps, err := resolveSubmitSpace(deps, items[0].env.Space)
+		if err != nil {
+			return nil, "", fmt.Errorf("submit: %w", err)
+		}
+
 		var fresh []submitItem
 		var alreadyDone []string
 		for _, it := range items {
@@ -113,6 +135,26 @@ func newSubmitHandler(deps SubmitDeps) HandlerFunc {
 		}
 		return result, "", nil
 	}
+}
+
+// resolveSubmitSpace binds deps to the space spaceID names — always
+// items[0].env.Space, the draft's own explicit `space:` field, never
+// derived from ids (a submit draft lives in no mirror yet, so
+// SpaceOfArtifacts would refuse every submit — see this function's caller).
+// deps.ResolveSpace nil (single-space session) returns deps unchanged,
+// byte-identical to before this wave. An unfilled `<...>` placeholder is
+// refused by the same wording cmd/a2a's runSubmit uses (a draft `a2a new`
+// never completed, not a mis-connected space) BEFORE calling
+// deps.ResolveSpace, which would otherwise quote the raw placeholder back
+// as an unrecognized space id and read as a broken config instead.
+func resolveSubmitSpace(deps SubmitDeps, spaceID string) (SubmitDeps, error) {
+	if deps.ResolveSpace == nil {
+		return deps, nil
+	}
+	if strings.HasPrefix(spaceID, "<") && strings.HasSuffix(spaceID, ">") {
+		return SubmitDeps{}, fmt.Errorf("refused: the draft's space was never filled in (re-run `a2a_new`, or set the draft's `space:` field before submitting)")
+	}
+	return deps.ResolveSpace(spaceID)
 }
 
 type submitEnvelopeInfo struct {

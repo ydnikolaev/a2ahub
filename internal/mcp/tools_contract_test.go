@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -770,5 +771,345 @@ func TestContractAdoptStillAdoptsWhenBindingPermitsIt(t *testing.T) {
 				t.Fatalf("expected the adoption to reach the funnel exactly once, got %d", len(fake.calls))
 			}
 		})
+	}
+}
+
+// --- LEGACY-four space naming (deprecate/retire/adopt/activate take the
+// explicit "space" input their P6 siblings already carry) -----------------
+
+// contractSpaceBuild is one connected space's own mirror + funnel, mirroring
+// wire.go's own bySpace entry shape closely enough for these tests to prove
+// the same thing wire.go's real wiring proves: WHICH space a call reached.
+type contractSpaceBuild struct {
+	mirrorDir string
+	funnel    *fakeFunnel
+	write     WriteDeps
+}
+
+// contractMultiSpaceDeps wires TWO connected spaces ("space-a"/"space-b"),
+// each with its own mirror dir and funnel, the same shape wire.go's
+// buildWriteDeps wires WriteDeps.ResolveSpace/SpaceOfArtifacts across every
+// connected space: ONLY the returned (primary/"space-a") WriteDeps carries
+// the two closures — "space-b"'s own build does not, matching production,
+// where only Spaces[0]'s write is ever mutated to carry them (wire.go
+// buildWriteDeps' own doc comment). floorA/floorB set each space's
+// Manifest.MinBinaryVersion (the activate tests need these to differ).
+func contractMultiSpaceDeps(t *testing.T, floorA, floorB string) (deps ContractDeps, a, b *contractSpaceBuild) {
+	t.Helper()
+	a = &contractSpaceBuild{mirrorDir: t.TempDir(), funnel: &fakeFunnel{}}
+	b = &contractSpaceBuild{mirrorDir: t.TempDir(), funnel: &fakeFunnel{}}
+
+	a.write = testWriteDeps(a.mirrorDir, a.funnel)
+	a.write.SpaceID = "space-a"
+	a.write.OwnSystem = "axon"
+	a.write.Manifest.MinBinaryVersion = floorA
+
+	b.write = testWriteDeps(b.mirrorDir, b.funnel)
+	b.write.SpaceID = "space-b"
+	b.write.OwnSystem = "axon"
+	b.write.Manifest.MinBinaryVersion = floorB
+
+	connected := []string{"space-a", "space-b"}
+	a.write.ResolveSpace = func(spaceID string) (WriteDeps, error) {
+		switch spaceID {
+		case "":
+			return WriteDeps{}, fmt.Errorf(
+				"mcp: space is required when multiple spaces are connected; connected spaces are %s", strings.Join(connected, ", "))
+		case "space-a":
+			return a.write, nil
+		case "space-b":
+			return b.write, nil
+		default:
+			return WriteDeps{}, fmt.Errorf(
+				"mcp: space %q is not connected; connected spaces are %s", spaceID, strings.Join(connected, ", "))
+		}
+	}
+	a.write.SpaceOfArtifacts = func(ids []string) (string, error) {
+		return "", fmt.Errorf(
+			"mcp: no connected space's mirror holds %s; connected spaces are %s", strings.Join(ids, ", "), strings.Join(connected, ", "))
+	}
+
+	return ContractDeps{WriteDeps: a.write}, a, b
+}
+
+func TestContractDeprecateResolvesNamedSecondSpace(t *testing.T) {
+	t.Parallel()
+	deps, a, b := contractMultiSpaceDeps(t, "", "")
+	writeContractDescriptor(t, b.mirrorDir, "dep-space-b", "1.0.0")
+	writeLifecycleEvent(t, b.mirrorDir, "axon", 0, "XC-axon-dep-space-b", "publish", "axon")
+
+	handler := newContractDeprecateHandler(deps)
+	args, _ := json.Marshal(ContractDeprecateInput{
+		Space: "space-b", ID: "XC-axon-dep-space-b",
+		Successor: "XC-axon-dep-space-b-next@1.0.0", Sunset: "2099-01-01",
+	})
+	if _, _, err := handler(context.Background(), args); err != nil {
+		t.Fatalf("deprecate naming space-b failed: %v", err)
+	}
+	if len(b.funnel.calls) != 1 {
+		t.Fatalf("expected the write to reach space-b's funnel, got %d calls", len(b.funnel.calls))
+	}
+	if len(a.funnel.calls) != 0 {
+		t.Fatalf("space-a's funnel must never be called when the caller named space-b, got %+v", a.funnel.calls)
+	}
+}
+
+func TestContractRetireResolvesNamedSecondSpace(t *testing.T) {
+	t.Parallel()
+	deps, a, b := contractMultiSpaceDeps(t, "", "")
+	writeContractDescriptor(t, b.mirrorDir, "ret-space-b", "1.0.0")
+	writeLifecycleEvent(t, b.mirrorDir, "axon", 0, "XC-axon-ret-space-b", "publish", "axon")
+	writeLifecycleEvent(t, b.mirrorDir, "axon", 1, "XC-axon-ret-space-b", "deprecate", "axon")
+
+	handler := newContractRetireHandler(deps)
+	args, _ := json.Marshal(ContractRetireInput{Space: "space-b", ID: "XC-axon-ret-space-b"})
+	if _, _, err := handler(context.Background(), args); err != nil {
+		t.Fatalf("retire naming space-b failed: %v", err)
+	}
+	if len(b.funnel.calls) != 1 {
+		t.Fatalf("expected the write to reach space-b's funnel, got %d calls", len(b.funnel.calls))
+	}
+	if len(a.funnel.calls) != 0 {
+		t.Fatalf("space-a's funnel must never be called when the caller named space-b, got %+v", a.funnel.calls)
+	}
+}
+
+func TestContractAdoptResolvesNamedSecondSpace(t *testing.T) {
+	t.Parallel()
+	deps, a, b := contractMultiSpaceDeps(t, "", "")
+	writeContractDescriptorWithXOperational(t, b.mirrorDir, "beta", "adopt-space-b", "1.0.0", "")
+
+	handler := newContractAdoptHandler(deps)
+	args, _ := json.Marshal(ContractAdoptInput{Space: "space-b", ID: "XC-beta-adopt-space-b", Major: 1})
+	if _, _, err := handler(context.Background(), args); err != nil {
+		t.Fatalf("adopt naming space-b failed: %v", err)
+	}
+	if len(b.funnel.calls) != 1 {
+		t.Fatalf("expected the write to reach space-b's funnel, got %d calls", len(b.funnel.calls))
+	}
+	if len(a.funnel.calls) != 0 {
+		t.Fatalf("space-a's funnel must never be called when the caller named space-b, got %+v", a.funnel.calls)
+	}
+}
+
+// TestContractActivateResolvesNamedSecondSpaceAndItsFloor is the activate-
+// specific requirement: the min_binary_version floor `activate` enforces
+// must be the RESOLVED space's, not the space the handler was constructed
+// against. space-a's floor is deliberately left below
+// contract.ContractPublicationFloor (empty) while space-b's is at it — a
+// call naming space-b must succeed on space-b's OWN floor.
+func TestContractActivateResolvesNamedSecondSpaceAndItsFloor(t *testing.T) {
+	t.Parallel()
+	deps, a, b := contractMultiSpaceDeps(t, "", "0.19.0")
+	seedActivatablePublished(t, b.mirrorDir, "axon", "act-space-b", "1.0.0",
+		"x_operational:\n  - name: endpoint\n    state: absent\n")
+
+	handler := newContractActivateHandler(deps)
+	args, _ := json.Marshal(ContractActivateInput{
+		Space: "space-b", ID: "XC-axon-act-space-b", Version: "1.0.0", Satisfies: []string{"endpoint"},
+	})
+	if _, _, err := handler(context.Background(), args); err != nil {
+		t.Fatalf("activate naming space-b failed: %v", err)
+	}
+	if len(b.funnel.calls) != 1 {
+		t.Fatalf("expected the write to reach space-b's funnel, got %d calls", len(b.funnel.calls))
+	}
+	if len(a.funnel.calls) != 0 {
+		t.Fatalf("space-a's funnel must never be called when the caller named space-b, got %+v", a.funnel.calls)
+	}
+	ev := decodeContractActivateEvent(t, b.funnel.calls[0].Files[0].Content)
+	if ev.Schema != "event/v2" {
+		t.Fatalf("activate against space-b (floor 0.19.0) authored schema %q, want event/v2 — the RESOLVED space's floor was not used", ev.Schema)
+	}
+}
+
+// TestContractLegacyFourRefuseWhenSpaceOmittedAndMultipleConnected covers
+// all four verbs: with two spaces connected and no "space" named, each must
+// refuse — naming the connected spaces — rather than silently defaulting to
+// whichever space the handler happened to be constructed against.
+func TestContractLegacyFourRefuseWhenSpaceOmittedAndMultipleConnected(t *testing.T) {
+	t.Parallel()
+	deps, _, _ := contractMultiSpaceDeps(t, "0.19.0", "0.19.0")
+
+	cases := []struct {
+		name    string
+		handler HandlerFunc
+		args    any
+	}{
+		{"deprecate", newContractDeprecateHandler(deps), ContractDeprecateInput{
+			ID: "XC-axon-any", Successor: "XC-axon-other@1.0.0", Sunset: "2099-01-01",
+		}},
+		{"retire", newContractRetireHandler(deps), ContractRetireInput{ID: "XC-axon-any"}},
+		{"adopt", newContractAdoptHandler(deps), ContractAdoptInput{ID: "XC-beta-any", Major: 1}},
+		{"activate", newContractActivateHandler(deps), ContractActivateInput{
+			ID: "XC-axon-any", Version: "1.0.0", Satisfies: []string{"endpoint"},
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			args, err := json.Marshal(tc.args)
+			if err != nil {
+				t.Fatalf("marshal input: %v", err)
+			}
+			_, _, err = tc.handler(context.Background(), args)
+			if err == nil {
+				t.Fatal("expected a refusal naming the connected spaces")
+			}
+			for _, want := range []string{"space-a", "space-b"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("refusal = %v, want it to name %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+// TestContractDeprecateRefusesUnconnectedSpaceByName proves an explicit
+// "space" that names no connected space is refused, naming the space that
+// was asked for AND the ones actually connected.
+func TestContractDeprecateRefusesUnconnectedSpaceByName(t *testing.T) {
+	t.Parallel()
+	deps, _, _ := contractMultiSpaceDeps(t, "", "")
+	handler := newContractDeprecateHandler(deps)
+	args, _ := json.Marshal(ContractDeprecateInput{
+		Space: "space-nowhere", ID: "XC-axon-any", Successor: "XC-axon-other@1.0.0", Sunset: "2099-01-01",
+	})
+	_, _, err := handler(context.Background(), args)
+	if err == nil {
+		t.Fatal("expected a refusal naming the unconnected space")
+	}
+	if !strings.Contains(err.Error(), `"space-nowhere"`) {
+		t.Fatalf("refusal = %v, want it to name the requested space", err)
+	}
+	for _, want := range []string{"space-a", "space-b"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("refusal = %v, want it to name the connected spaces too", err)
+		}
+	}
+}
+
+// --- the poisoning tests: TWO sequential calls through ONE constructed
+// handler, naming different spaces, must not let the first call's resolved
+// space leak into the second (the captured `deps` in newContractXHandler's
+// closure is shared across every call the session ever makes) -------------
+
+func TestContractDeprecateSecondCallNotPoisonedByFirst(t *testing.T) {
+	t.Parallel()
+	deps, a, b := contractMultiSpaceDeps(t, "", "")
+	writeContractDescriptor(t, a.mirrorDir, "pois-a", "1.0.0")
+	writeLifecycleEvent(t, a.mirrorDir, "axon", 0, "XC-axon-pois-a", "publish", "axon")
+	writeContractDescriptor(t, b.mirrorDir, "pois-b", "1.0.0")
+	writeLifecycleEvent(t, b.mirrorDir, "axon", 0, "XC-axon-pois-b", "publish", "axon")
+
+	handler := newContractDeprecateHandler(deps)
+
+	firstArgs, _ := json.Marshal(ContractDeprecateInput{
+		Space: "space-b", ID: "XC-axon-pois-b", Successor: "XC-axon-pois-b-next@1.0.0", Sunset: "2099-01-01",
+	})
+	if _, _, err := handler(context.Background(), firstArgs); err != nil {
+		t.Fatalf("first call (space-b) failed: %v", err)
+	}
+
+	secondArgs, _ := json.Marshal(ContractDeprecateInput{
+		Space: "space-a", ID: "XC-axon-pois-a", Successor: "XC-axon-pois-a-next@1.0.0", Sunset: "2099-01-01",
+	})
+	if _, _, err := handler(context.Background(), secondArgs); err != nil {
+		t.Fatalf("second call (space-a) failed — the first call's resolved space poisoned the shared closure: %v", err)
+	}
+
+	if len(a.funnel.calls) != 1 {
+		t.Fatalf("expected space-a's funnel to be called exactly once (by the SECOND call), got %d", len(a.funnel.calls))
+	}
+	if len(b.funnel.calls) != 1 {
+		t.Fatalf("expected space-b's funnel to be called exactly once (by the FIRST call), got %d", len(b.funnel.calls))
+	}
+}
+
+func TestContractRetireSecondCallNotPoisonedByFirst(t *testing.T) {
+	t.Parallel()
+	deps, a, b := contractMultiSpaceDeps(t, "", "")
+	writeContractDescriptor(t, a.mirrorDir, "pois-a", "1.0.0")
+	writeLifecycleEvent(t, a.mirrorDir, "axon", 0, "XC-axon-pois-a", "publish", "axon")
+	writeLifecycleEvent(t, a.mirrorDir, "axon", 1, "XC-axon-pois-a", "deprecate", "axon")
+	writeContractDescriptor(t, b.mirrorDir, "pois-b", "1.0.0")
+	writeLifecycleEvent(t, b.mirrorDir, "axon", 0, "XC-axon-pois-b", "publish", "axon")
+	writeLifecycleEvent(t, b.mirrorDir, "axon", 1, "XC-axon-pois-b", "deprecate", "axon")
+
+	handler := newContractRetireHandler(deps)
+
+	firstArgs, _ := json.Marshal(ContractRetireInput{Space: "space-b", ID: "XC-axon-pois-b"})
+	if _, _, err := handler(context.Background(), firstArgs); err != nil {
+		t.Fatalf("first call (space-b) failed: %v", err)
+	}
+
+	secondArgs, _ := json.Marshal(ContractRetireInput{Space: "space-a", ID: "XC-axon-pois-a"})
+	if _, _, err := handler(context.Background(), secondArgs); err != nil {
+		t.Fatalf("second call (space-a) failed — the first call's resolved space poisoned the shared closure: %v", err)
+	}
+
+	if len(a.funnel.calls) != 1 {
+		t.Fatalf("expected space-a's funnel to be called exactly once (by the SECOND call), got %d", len(a.funnel.calls))
+	}
+	if len(b.funnel.calls) != 1 {
+		t.Fatalf("expected space-b's funnel to be called exactly once (by the FIRST call), got %d", len(b.funnel.calls))
+	}
+}
+
+func TestContractAdoptSecondCallNotPoisonedByFirst(t *testing.T) {
+	t.Parallel()
+	deps, a, b := contractMultiSpaceDeps(t, "", "")
+	writeContractDescriptorWithXOperational(t, a.mirrorDir, "beta", "pois-a", "1.0.0", "")
+	writeContractDescriptorWithXOperational(t, b.mirrorDir, "beta", "pois-b", "1.0.0", "")
+
+	handler := newContractAdoptHandler(deps)
+
+	firstArgs, _ := json.Marshal(ContractAdoptInput{Space: "space-b", ID: "XC-beta-pois-b", Major: 1})
+	if _, _, err := handler(context.Background(), firstArgs); err != nil {
+		t.Fatalf("first call (space-b) failed: %v", err)
+	}
+
+	secondArgs, _ := json.Marshal(ContractAdoptInput{Space: "space-a", ID: "XC-beta-pois-a", Major: 1})
+	if _, _, err := handler(context.Background(), secondArgs); err != nil {
+		t.Fatalf("second call (space-a) failed — the first call's resolved space poisoned the shared closure: %v", err)
+	}
+
+	if len(a.funnel.calls) != 1 {
+		t.Fatalf("expected space-a's funnel to be called exactly once (by the SECOND call), got %d", len(a.funnel.calls))
+	}
+	if len(b.funnel.calls) != 1 {
+		t.Fatalf("expected space-b's funnel to be called exactly once (by the FIRST call), got %d", len(b.funnel.calls))
+	}
+}
+
+func TestContractActivateSecondCallNotPoisonedByFirst(t *testing.T) {
+	t.Parallel()
+	deps, a, b := contractMultiSpaceDeps(t, "0.19.0", "0.19.0")
+	seedActivatablePublished(t, a.mirrorDir, "axon", "pois-a", "1.0.0",
+		"x_operational:\n  - name: endpoint\n    state: absent\n")
+	seedActivatablePublished(t, b.mirrorDir, "axon", "pois-b", "1.0.0",
+		"x_operational:\n  - name: endpoint\n    state: absent\n")
+
+	handler := newContractActivateHandler(deps)
+
+	firstArgs, _ := json.Marshal(ContractActivateInput{
+		Space: "space-b", ID: "XC-axon-pois-b", Version: "1.0.0", Satisfies: []string{"endpoint"},
+	})
+	if _, _, err := handler(context.Background(), firstArgs); err != nil {
+		t.Fatalf("first call (space-b) failed: %v", err)
+	}
+
+	secondArgs, _ := json.Marshal(ContractActivateInput{
+		Space: "space-a", ID: "XC-axon-pois-a", Version: "1.0.0", Satisfies: []string{"endpoint"},
+	})
+	if _, _, err := handler(context.Background(), secondArgs); err != nil {
+		t.Fatalf("second call (space-a) failed — the first call's resolved space poisoned the shared closure: %v", err)
+	}
+
+	if len(a.funnel.calls) != 1 {
+		t.Fatalf("expected space-a's funnel to be called exactly once (by the SECOND call), got %d", len(a.funnel.calls))
+	}
+	if len(b.funnel.calls) != 1 {
+		t.Fatalf("expected space-b's funnel to be called exactly once (by the FIRST call), got %d", len(b.funnel.calls))
 	}
 }

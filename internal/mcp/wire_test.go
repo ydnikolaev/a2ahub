@@ -300,17 +300,24 @@ func TestNewServerFromConfigNoProjectConfig(t *testing.T) {
 	}
 }
 
-// TestNewServerFromConfigMultipleSpacesRefusesAmbiguousLegacyWrite is P7's
-// own regression: two REACHABLE connected spaces used to build the legacy
-// write graph (a2a_submit/a2a_lifecycle/a2a_exchange/a2a_contract's legacy
-// sub-verbs) against cfg.Spaces[0] alone — a submit naming an id whose
-// space no caller can express landed silently in the FIRST configured
-// space, never the one the artifact actually declared. This proves the
-// funnel wired into the real server (not a hand-built test double) refuses
-// instead, and names both connected spaces (US-2) rather than defaulting.
+// TestNewServerFromConfigMultipleSpacesRefusesUnconnectedSubmitSpace is
+// P7's own regression, now proving the STRONGER answer that replaced its
+// first one. Two reachable connected spaces used to build the legacy write
+// graph against cfg.Spaces[0] alone, so a submit landed silently in the
+// FIRST configured space rather than the one the artifact declared. P7's
+// first fix refused every such write outright; the residual drain replaced
+// that with per-call resolution, so a2a_submit now reads the draft's own
+// `space:` field and refuses only when it names a space this session is not
+// connected to — naming the ones it IS connected to.
+//
+// The safety property is unchanged and still asserted below: nothing
+// reaches any space's real history. What changed is that a draft naming a
+// CONNECTED space is no longer collateral damage, which is the point of the
+// drain. Its positive half is TestNewServerFromConfigMultipleSpacesSubmit-
+// ResolvesAConnectedSpace, directly below.
 //
 // reason: mutates process env through the production credential seam.
-func TestNewServerFromConfigMultipleSpacesRefusesAmbiguousLegacyWrite(t *testing.T) {
+func TestNewServerFromConfigMultipleSpacesRefusesUnconnectedSubmitSpace(t *testing.T) {
 	// reason: t.Setenv below forbids t.Parallel() (AGENTS.md testing rails).
 	t.Setenv("A2A_TOKEN_SPACE_ONE", "test-token-one")
 	t.Setenv("A2A_TOKEN_SPACE_TWO", "test-token-two")
@@ -368,10 +375,13 @@ func TestNewServerFromConfigMultipleSpacesRefusesAmbiguousLegacyWrite(t *testing
 	}
 	_, _, submitErr := spec.Handler(t.Context(), args)
 	if submitErr == nil {
-		t.Fatal("expected a2a_submit to refuse an ambiguous multi-space write")
+		t.Fatal("expected a2a_submit to refuse a draft naming an unconnected space")
 	}
-	if !strings.Contains(submitErr.Error(), "space is required when multiple spaces are connected") {
-		t.Fatalf("submit error = %v, want an ambiguous-space refusal", submitErr)
+	// writeStagedDraft's fixture names `fixture-space`, which this session
+	// is not connected to. The refusal must say so and name what IS
+	// connected — never silently pick one.
+	if !strings.Contains(submitErr.Error(), "is not connected") {
+		t.Fatalf("submit error = %v, want a not-connected refusal naming the draft's space", submitErr)
 	}
 	for _, want := range []string{"space-one", "space-two"} {
 		if !strings.Contains(submitErr.Error(), want) {
@@ -384,6 +394,26 @@ func TestNewServerFromConfigMultipleSpacesRefusesAmbiguousLegacyWrite(t *testing
 	afterSHA := fx.HeadSHA(fx.Clone("beta"), "main")
 	if afterSHA != beforeSHA {
 		t.Fatalf("origin HEAD moved from %s to %s — the ambiguous write was NOT refused before it reached the space", beforeSHA, afterSHA)
+	}
+
+	// The positive half, in the SAME real server: a draft naming a
+	// CONNECTED space must get PAST resolution. It still fails afterwards —
+	// this fixture has no host to push to — and that is the point: the
+	// error must no longer be a space refusal. Before the drain, this call
+	// could not get past the blanket funnel no matter what the draft said.
+	connectedID := "XQ-beta-20260721-a901"
+	writeStagedDraftForSpace(t, stagingDir, connectedID, "question", "space-two")
+	connectedArgs, err := json.Marshal(SubmitInput{IDs: []string{connectedID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, connectedErr := spec.Handler(t.Context(), connectedArgs)
+	if connectedErr != nil {
+		for _, refusal := range []string{"is not connected", "space is required when multiple spaces are connected"} {
+			if strings.Contains(connectedErr.Error(), refusal) {
+				t.Fatalf("a draft naming connected space-two was refused on space grounds: %v", connectedErr)
+			}
+		}
 	}
 }
 
