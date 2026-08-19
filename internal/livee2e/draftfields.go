@@ -126,8 +126,7 @@ func hasSlugArg(extra []string) bool {
 // An empty return means the type's body carries no invariant and the template
 // stands as rendered.
 func draftBody(artifactType string) (string, bool) {
-	switch artifactType {
-	case "handoff":
+	if artifactType == "handoff" {
 		return strings.Join([]string{
 			"## Context",
 			"",

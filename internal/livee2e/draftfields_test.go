@@ -54,3 +54,53 @@ func TestLiveScenariosHaveNoFrontmatterPatchPath(t *testing.T) {
 		t.Errorf("draftfill.go exists again; live authoring must use the public command")
 	}
 }
+
+// TestDraftBodyHandoffFillsEverySectionThePolicyRequires pins the matrix's
+// handoff body against the rule that refused the old one. POL-022
+// (defects-fix-2026-08 P9) refuses a §16.2-required section carrying no
+// content, and the driver used to submit a template-rendered handoff — five
+// headings and nothing under them.
+//
+// It asserts CONTENT, not length: the rule measures emptiness and so does
+// this, because a test asserting a word count would license padding, which is
+// the one answer the rule's own spec forbids.
+func TestDraftBodyHandoffFillsEverySectionThePolicyRequires(t *testing.T) {
+	t.Parallel()
+
+	body, ok := draftBody("handoff")
+	if !ok {
+		t.Fatal("draftBody(handoff) reported no body — the matrix would submit a template-rendered handoff and POL-022 would refuse it")
+	}
+	sections := []string{"## Context", "## What was built", "## How to verify", "## How to operate", "## Limitations & next steps"}
+	lines := strings.Split(body, "\n")
+	for _, heading := range sections {
+		idx := -1
+		for i, l := range lines {
+			if strings.TrimSpace(l) == heading {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			t.Errorf("draftBody(handoff) omits the §16.2 section %q", heading)
+			continue
+		}
+		content := false
+		for _, l := range lines[idx+1:] {
+			if strings.HasPrefix(strings.TrimSpace(l), "## ") {
+				break
+			}
+			if strings.TrimSpace(l) != "" {
+				content = true
+				break
+			}
+		}
+		if !content {
+			t.Errorf("draftBody(handoff) leaves %q empty — that is the exact shape POL-022 refuses", heading)
+		}
+	}
+
+	if _, ok := draftBody("question"); ok {
+		t.Error("draftBody claims a body for a type whose template carries no body invariant")
+	}
+}
