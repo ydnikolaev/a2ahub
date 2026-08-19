@@ -491,7 +491,12 @@ async function exerciseRefreshCard(page, { locale, gone }) {
   // data no longer carries. Surviving row → the pane stays and follows the
   // row's new title; gone row → the pane closes rather than going stale.
   if (gone) {
-    await expect(page.locator('[data-work-pane]')).toHaveCount(0);
+    // AMENDED 2026-08-19 — the pane is permanent since 6703916b, so a
+    // selection whose row left the snapshot cannot close it. The invariant
+    // §6 actually needs is unchanged and is what is asserted: the pane must
+    // not keep describing something the data no longer carries.
+    await expect(page.locator('[data-work-pane]')).toBeVisible();
+    await expect(page.locator('[data-work-pane]')).not.toContainText(refreshedTitle);
   } else {
     await expect(page.locator('[data-work-pane]')).toBeVisible();
     await expect(page.locator('[data-work-pane]')).toContainText(refreshedTitle);
@@ -768,8 +773,29 @@ test('Exchange row click toggles the inline pane open and closed', async ({ page
   // invariant `check-dashboard-cards.sh` enforces stays true off this door.
   await expect(page.locator('[data-card-modal]')).toHaveCount(0);
 
+  // AMENDED 2026-08-19 — the pane is PERMANENT since 6703916b, so a second
+  // click cannot close it and asserting that it does was asserting a
+  // requirement the operator replaced ("сделай 2 колонки чтобы были сразу
+  // видны, справа полная карточка, клик по левой выбирает содержимое
+  // правой"). ExchangeView falls back to the first row when nothing is
+  // selected, so there is ALWAYS a detail to show.
+  //
+  // What the click still owes, and what is asserted instead: it SELECTS.
+  // Clicking a different row moves the pane onto that row rather than
+  // toggling anything, which is the two-column grammar's actual contract.
+  const rows = page.locator('[data-screen-label="Work"] .a2a-pick');
+  if (await rows.count() > 1) {
+    const second = rows.nth(1);
+    const secondTitle = await second.locator('[style*="--font-card-title-md"]').first().innerText();
+    await second.click({ position: { x: 24, y: 70 } });
+    await expect(pane).toBeVisible();
+    await expect(pane).toContainText(secondTitle);
+  }
+  // Re-clicking the SAME row is a no-op on visibility: the pane stays, and
+  // stays on that row. This is the assertion the old toggle case becomes.
   await row.click({ position: { x: 24, y: 70 } });
-  await expect(page.locator('[data-work-pane]')).toHaveCount(0);
+  await expect(pane).toBeVisible();
+  await expect(pane).toContainText(rowTitle);
 });
 
 test('Exchange pane renders a cross-navigation selection and clears when the tab changes', async ({ page }) => {
@@ -820,7 +846,13 @@ test('Exchange pane renders a cross-navigation selection and clears when the tab
   // chip already carried before this phase) — the render branch reacts to
   // that, same as it reacted to the selection appearing.
   await page.getByRole('button', { name: /^Outgoing/ }).click();
-  await expect(page.locator('[data-work-pane]')).toHaveCount(0);
+  // AMENDED 2026-08-19 — same reason as the toggle case above. Switching the
+  // direction tab still resets `workSel`, but the permanent pane answers a
+  // reset by falling back to the new tab's first row rather than by
+  // vanishing. The cross-navigation's own selection is what must not
+  // survive; the PANE is not.
+  await expect(page.locator('[data-work-pane]')).toBeVisible();
+  await expect(page.locator('[data-work-pane]')).not.toContainText(target.title);
 });
 
 test('thread card DOM is identical from operational feed and Threads', async ({ page }) => {
