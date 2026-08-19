@@ -3001,3 +3001,66 @@ func TestValidateCI_REF019FiresOnAnOutOfRangeVerdictIndex(t *testing.T) {
 		}
 	})
 }
+
+// handoffEmptySectionsArtifact renders a schema-valid handoff whose five
+// §16.2-required body sections are present and empty — the shape all four
+// handoffs in the real getvisa space have, measured before POL-022 existed.
+func handoffEmptySectionsArtifact(id, from, to string) string {
+	return "---\n" +
+		"schema: envelope/v1\n" +
+		"id: " + id + "\n" +
+		"type: handoff\n" +
+		"title: Delivery with nothing said about it\n" +
+		"space: getvisa\n" +
+		"from: " + from + "\n" +
+		"to: [" + to + "]\n" +
+		"actor: {kind: agent, name: claude-code}\n" +
+		"created: \"2026-08-10T09:00:00Z\"\n" +
+		"priority: p3\n" +
+		"blocking: false\n" +
+		"classification: internal\n" +
+		"thread: thread:" + from + "-20260810-e7k3\n" +
+		"deliverables:\n" +
+		"  - {name: \"the thing\", ref: \"XC-axon-ingest@1.1.0\", kind: contract}\n" +
+		"verification: \"Run the receiver's own check.\"\n" +
+		"limitations: []\n" +
+		"---\n" +
+		"## Context\n\n## What was built\n\n## How to verify\n\n## How to operate\n\n## Limitations & next steps\n"
+}
+
+// TestValidateCI_POL022ScopedToPRModeNotFullRepo is POL-022 through the
+// PRODUCTION entry point — `a2a validate --ci`, the merge gate a space
+// actually pins — and its ADR-011 D3 scoping, proved the way REF-017's own
+// test proves it: ONE artifact through BOTH modes, so what the test measures
+// is the scoping and not two different fixtures.
+func TestValidateCI_POL022ScopedToPRModeNotFullRepo(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	rel := "axon/exchanges/XH-axon-20260810-p022.md"
+	root := ciRepo(t, ciSpaceYAML, map[string]string{
+		rel: handoffEmptySectionsArtifact("XH-axon-20260810-p022", "axon", "seomatrix"),
+	})
+
+	code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "ydnikolaev")
+	if code == 0 || rep.Valid {
+		t.Fatalf("expected v3-pr to refuse a handoff whose required sections are empty, got code=%d valid=%v stderr=%s", code, rep.Valid, errOut)
+	}
+	if len(rep.Artifacts) != 1 || rep.Artifacts[0].Result == nil {
+		t.Fatalf("expected one artifact result, got %+v", rep.Artifacts)
+	}
+	if v := violationWithCodeCI(rep.Artifacts[0].Result.Violations, "POL-022"); v == nil {
+		t.Fatalf("expected POL-022 in the v3-pr result, got %+v", rep.Artifacts[0].Result.Violations)
+	} else if v.Severity != "reject" {
+		t.Fatalf("expected POL-022 SeverityReject in v3-pr, got %q", v.Severity)
+	}
+
+	code, rep, errOut = runCI(t, engine, root, nil, "v3-full-repo", "", "")
+	for _, a := range rep.Artifacts {
+		if a.Path != rel || a.Result == nil {
+			continue
+		}
+		if v := violationWithCodeCI(a.Result.Violations, "POL-022"); v != nil {
+			t.Fatalf("expected v3-full-repo to suppress POL-022 — a merged handoff's body is immutable and no verb rewrites it — got %+v (code=%d stderr=%s)", v, code, errOut)
+		}
+	}
+}

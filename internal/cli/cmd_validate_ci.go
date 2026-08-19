@@ -534,6 +534,19 @@ func validateCIArtifact(ctx context.Context, engine *validate.Engine, root, relP
 	// behind.
 	if mode == "v3-full-repo" {
 		result = result.SuppressingCode("REF-017")
+		// POL-022 (defects-fix-2026-08 P9), same ADR-011 D3 reasoning as
+		// REF-017 above and the same seat: a merged handoff's BODY is
+		// immutable and no verb rewrites it, so a post-merge audit could
+		// only punish. The four handoffs in the real getvisa space are
+		// exactly that population — every one of them has five empty
+		// §16.2 sections and every one of them is already merged.
+		result = result.SuppressingCode("POL-022")
+		// POL-022 (defects-fix-2026-08 P9), same ADR-011 D3 reasoning as
+		// REF-017 above and the same seat: a merged handoff's BODY is
+		// immutable and no verb rewrites it, so a post-merge audit could
+		// only punish. The four handoffs in the real getvisa space are
+		// exactly that population — every one of them has five empty
+		// §16.2 sections and every one of them is already merged.
 	}
 	result.InvocationPoint = validate.V3
 	// V3 preserves V2's fail-closed order: the existing generic submit policy

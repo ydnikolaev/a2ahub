@@ -411,6 +411,17 @@ func TestRegistryClosure(t *testing.T) {
 		[]CandidateEvent{{Subject: "XW-axon-20260808-clos", Transition: "close"}},
 	))
 
+	// POL-022 (defects-fix-2026-08 P9): a handoff whose §16.2-required body
+	// sections carry no content. The FIRST positive body check in this
+	// package — possession and the declaration block both refuse a specific
+	// wrong thing; this one requires a right thing to be present.
+	if violations, err := checkHandoffSections(
+		[]byte("## Context\n\n## What was built\n\n## How to verify\n\n## How to operate\n\n## Limitations & next steps\n"),
+		"handoff",
+	); err == nil {
+		record(violations)
+	}
+
 	for _, code := range append(append(registry.CodesInClass("referential"), registry.CodesInClass("lifecycle")...), registry.CodesInClass("policy")...) {
 		if !produced[code] {
 			t.Errorf("registry code %q is never produced by any exercised path in this test", code)

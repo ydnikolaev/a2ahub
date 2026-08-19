@@ -89,6 +89,24 @@ func (e *Engine) ValidateForSubmit(d Draft, events []CandidateEvent, ctx LocalCo
 	// never runs at V1/ValidateDraft — AC-401.1).
 	violations = append(violations, checkUnfilledPlaceholders(instance)...)
 
+	// POL-022, V2-only for the SAME reason POL-010 is, and the reason is not
+	// a style choice: `a2a new handoff` renders the five §16.2 headings as
+	// empty placeholders, so refusing an empty section at V1 would refuse the
+	// tool's own fresh draft. The refusal belongs at the boundary where a
+	// draft becomes a shared record — which is also exactly where ADR-011 D3
+	// puts it (reject at v3-pr, silent at v3-full-repo).
+	//
+	// This is the THIRD body reader in this package and the first POSITIVE
+	// one: possession and the declaration block each refuse a specific wrong
+	// thing, this one requires a right thing to be there.
+	if fm, ferr := artifact.ParseFrontmatter(d.Raw); ferr == nil {
+		sectionViolations, sverr := checkHandoffSections(fm.Body, env.Type)
+		if sverr != nil {
+			return Result{}, &Error{Op: op, Err: sverr}
+		}
+		violations = append(violations, sectionViolations...)
+	}
+
 	violations = append(violations, checkIDForm(env, d.Path)...)
 	violations = append(violations, checkRefs(env, ctx.Resolver)...)
 	violations = append(violations, checkFork(env, ctx.Resolver)...)

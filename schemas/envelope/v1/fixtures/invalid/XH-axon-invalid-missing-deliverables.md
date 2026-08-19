@@ -18,3 +18,25 @@ limitations: ["Rate-limited to 10 rps.", "No auth token self-service yet."]
 classification: internal
 ---
 Invalid fixture: `handoff` requires `deliverables[]` per §16.2 — omitted here.
+
+## Context
+
+This fixture exists to exercise the FRONTMATTER omission above. Its body is
+populated so it trips exactly that rule and not POL-022 as well — a fixture
+that fails for two reasons proves neither.
+
+## What was built
+
+Nothing; this is a fixture.
+
+## How to verify
+
+Validate it and expect exactly SCH-001.
+
+## How to operate
+
+Not applicable — it is never rendered.
+
+## Limitations & next steps
+
+None. Its whole job is the one violation its sidecar names.

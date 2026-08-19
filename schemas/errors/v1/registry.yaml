@@ -908,3 +908,19 @@ entries:
       question and it belongs to the epic that authored the rule, not to
       this gate. Recorded so the question is countable; see docs/validator-
       backlog.md.
+
+  - code: POL-022
+    class: policy
+    title: A handoff body's required section carries no content, or its heading is missing
+    applies_to: >-
+      internal/validate.checkHandoffSections — `handoff` artifacts only. The
+      required section list is DERIVED from schemas/templates/v1/handoff.md's
+      own body headings, never a hardcoded list, so a section added there is
+      enforced the day it lands.
+    severity: reject
+    mode_scope: v3-pr
+    mode_scope_reason: >-
+      ADR-011 D3. A merged handoff's body is immutable and no verb rewrites it,
+      so at v3-full-repo this rule could only punish. The four handoffs in the
+      real getvisa space are exactly that population.
+
