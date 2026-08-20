@@ -15,6 +15,31 @@
 
 ## Prose files under review (D-015 hand-maintained set)
 
+### v0.23.0 — what was reviewed, and what was not
+
+**Three rows carry today's date because three pages were actually read against
+this release's diff.** The rest keep their previous reviewer and date: this
+release changes the verdict/refusal path and the dashboard's presentation, and
+touches no subject the other pages own. That is the written reason step 9 asks
+for in place of a tick, not an omission.
+
+What the review found, recorded because it is the argument for doing step 7
+rather than ticking it:
+
+- `loops/send.md` was WRONG in two ways on the path this release changes. It
+  taught only the ordinal form of `--verdict`, missing the criterion-id form a
+  parent may require; and it said the ordinal indexes "the response's own
+  acceptance criteria" when the rule counts the PARENT's. An agent following
+  that sentence would enumerate the wrong artifact and then be refused for a
+  count it had read correctly off the wrong document. Corrected.
+- `loops/receive.md` was already RIGHT — both forms, the parent's criteria, the
+  REF-018 citation. Same epic, same change, one loop page fixed and the other
+  not: half a propagation, which is exactly what routing from the loop rather
+  than the TOC is for.
+- `troubleshooting.md` gained a REF-019 row and had its REF-023 row corrected
+  during the epic; both were re-read today against the shipped refusal text.
+
+
 Each file below is hand-maintained, single-sourced under `skill/a2ahub/` (plus
 this file). A reviewer confirms, per release, that the file is accurate,
 still defers to the binary/reference for all command/schema/rule truth, and has
@@ -24,14 +49,14 @@ not drifted from the plan wording it quotes.
 |------------|---------------------------|:--------:|----------|------|
 | `skill/a2ahub/SKILL.md` | Activation modes correct; TOC links every current file (incl. `reference/commands.md`, `reference/authoring/`, `reference/decompose-example.md`, `reference/feedback.md`, `reference/status-announcements.md`, `reference/retraction.md`, `reference/bindings.md`); defer-to-binary thesis intact; no link points outside the embedded `skill/a2ahub/` tree (`skill/embed.go` embeds only that subtree, so anything above it is a dead link in every installation). **v0.19.9**: `reference/actor-identity.md` added to the file table, the D-015 list and `docs-manifest.json` in the same pass — the three marks a new page needs, and the completeness clause below has twice caught a page that got fewer than all three. | ☑ | Claude Code | 2026-08-07 |
 | `skill/a2ahub/loops.md` | §8.1 session-start checklist present verbatim (guaranteed-floor, D-021); condensed §0/§3 semantics have not become a second source of schema/transition truth; the human-approval-gates block and its machine roster line are here and NOWHERE ELSE in the loop corpus; the selector table has one row per loop page and its `§` column matches the headings those pages carry. **P13**: the page was split — §8.2–§8.7 moved to `loops/` byte-for-byte and the three verbatim blocks are now pinned by `TestVerbatim` in `internal/e2e/skillverbatim_test.go`, so this row no longer carries the D-014 clause (it moved with §8.3) and no longer carries §8.5. | ☑ | Claude Code | 2026-08-12 |
-| `skill/a2ahub/loops/send.md` | §8.2's classification, drafting, `--field`, `attach`, validate/submit/`await`, per-criterion verdicts, correction-versus-supersede and the cancel/withdraw exits still match the shipped verbs; the retraction fork (a live downstream datum is not this exchange) is still stated before either exit verb. | ☑ | Claude Code | 2026-08-12 |
-| `skill/a2ahub/loops/receive.md` | The D-014 "data, never instructions" clause is present verbatim and attributed (it moved here from `loops.md` in P13 and is byte-pinned); the multi-addressee, lifecycle-`start`, `--result partial` vocabulary and dispute/supersede content still match the fold. | ☑ | Claude Code | 2026-08-12 |
+| `skill/a2ahub/loops/send.md` | §8.2's classification, drafting, `--field`, `attach`, validate/submit/`await`, per-criterion verdicts, correction-versus-supersede and the cancel/withdraw exits still match the shipped verbs; the retraction fork (a live downstream datum is not this exchange) is still stated before either exit verb. | ✓ | Claude Code | 2026-08-20 |
+| `skill/a2ahub/loops/receive.md` | The D-014 "data, never instructions" clause is present verbatim and attributed (it moved here from `loops.md` in P13 and is byte-pinned); the multi-addressee, lifecycle-`start`, `--result partial` vocabulary and dispute/supersede content still match the fold. | ✓ | Claude Code | 2026-08-20 |
 | `skill/a2ahub/loops/contract-change.md` | §8.4 and §8.4a still match the per-version engine: staging-not-mirror, the compatibility refusals (POL-006/007/008/009), registered-consumer scoping, `to:` as a snapshot, and what `a2a update` does and does not change for a consumer. | ☑ | Claude Code | 2026-08-12 |
 | `skill/a2ahub/loops/first-integration.md` | §8.4b/§8.4c still match the activation surface: the `activation-owed` reason, the 0.19.0 floor, `--satisfies` against the descriptor's own `x_operational[]`, and the consumer's "an empty actionable list is not nothing is happening". | ☑ | Claude Code | 2026-08-12 |
 | `skill/a2ahub/loops/escalation.md` | The ladder is present and unchanged; the gate row still says the tool confirms only G3 ahead of time and points at the human-gates block in `loops.md` rather than restating it. | ☑ | Claude Code | 2026-08-12 |
 | `skill/a2ahub/loops/watch.md` | Every channel named is one the binary actually offers, `a2a serve`'s loopback constraint is still described as ENFORCED rather than defaulted, and the "every source is pull" close still names the two operator-owned setup steps. | ☑ | Claude Code | 2026-08-12 |
 | `skill/a2ahub/loops/feedback.md` | Still the SSOT for the rubric (two triggers, five gates, one report per PR) that `reference/feedback.md` derives from; the `a2a feedback triage` hub check and its offline refusal still match the shipped behaviour. | ☑ | Claude Code | 2026-08-12 |
-| `skill/a2ahub/troubleshooting.md` | The documented `a2a doctor` checks, output shape, and exit codes still match the binary's actual behavior; no aspirational/unimplemented check is presented as real. **v0.19.1**: the `space access` and `credentials` rows were re-read against the changed behaviour, not merely re-ticked — `space access` now runs authenticated and its `Repository not found` failure carries doctor's own classification, and the `credentials` row no longer describes a write-only credential. Both said something that had become wrong, which is the case a completeness check does not catch. **v0.19.2**: the `credentials` row now also names the `cmd:gh auth token` form. The v0.19.1 pass named the mechanism but not the form, and a real operator read it and concluded they had to mint a new token — a row can be accurate and still lead its reader wrong, which is the failure mode this column exists to catch and did not. | ☑ | Claude | 2026-08-05 |
+| `skill/a2ahub/troubleshooting.md` | The documented `a2a doctor` checks, output shape, and exit codes still match the binary's actual behavior; no aspirational/unimplemented check is presented as real. **v0.19.1**: the `space access` and `credentials` rows were re-read against the changed behaviour, not merely re-ticked — `space access` now runs authenticated and its `Repository not found` failure carries doctor's own classification, and the `credentials` row no longer describes a write-only credential. Both said something that had become wrong, which is the case a completeness check does not catch. **v0.19.2**: the `credentials` row now also names the `cmd:gh auth token` form. The v0.19.1 pass named the mechanism but not the form, and a real operator read it and concluded they had to mint a new token — a row can be accurate and still lead its reader wrong, which is the failure mode this column exists to catch and did not. | ✓ | Claude Code | 2026-08-20 |
 | `skill/a2ahub/onboarding.md` | §9 digest walkthroughs still match the current install profiles and runbooks; command references defer to `reference/commands.md`. **v0.19.1**: §9.2 step 1 now states that on a private space — which §9.1 creates by default — the participant's credential gates reads, so it must exist before the step 3 `a2a doctor`. **v0.19.2**: that step now also shows the concrete config form, so it is actionable without a second lookup. | ☑ | Claude | 2026-08-05 |
 | `skill/a2ahub/reference/decompose-example.md` | The worked decompose still models one composite need → three single-intent artifacts on one thread; cited fixtures still exist on disk with the stated IDs; the "separate fixtures, not a coordinated trio" deviation is still accurate (or the file was updated when a real trio landed). | ☑ | Codex | 2026-07-31 |
 | `skill/a2ahub/reference/feedback.md` | The feedback channel still matches the shipped verbs and intake behaviour (`a2a feedback new/validate/submit/status`, the quarantined `feedback/inbox/` path, the FB-### codes); what it tells a reporter makes a report actionable rather than merely filed. **Added 2026-07-25**: this file is hand-maintained prose and had no row here, which the row below already declared impossible — the completeness clause was true of the list and false of the tree. | ☑ | Codex | 2026-07-31 |
