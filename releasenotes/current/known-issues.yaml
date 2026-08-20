@@ -85,28 +85,41 @@ issues:
       why: >
         Keep Gatekeeper enabled and approve only the A2A Notifier version
         obtained through the verified a2a release cohort.
-  - id: KI-02300-SUBMIT-SKIPS-REFERENTIAL
+  - id: KI-02301-MCP-VERDICT-RESOLVER-GAP
     kind: known-issue
     impact: high
-    subject: "The referential rules do not run at `a2a submit` — they run at the merge gate"
+    subject: "REF-019/REF-023 refuse at `a2a verify`/`a2a close` on the CLI surface only — the MCP surface still cannot check them"
     detail: >
-      `skill/a2ahub/troubleshooting.md` stated that REF-023 refuses at
-      `a2a validate`, `a2a submit` and `a2a validate --ci`. Measured 2026-08-20
-      (one-answer-2026-08): it does NOT refuse at `a2a submit`, on either
-      surface. The submit validator partitions the outgoing files into events
-      and drafts and runs the referential checks over DRAFTS only — and a
-      `verify`/`close` submission carries event files exclusively, so that loop
-      never executes. `a2a verify` with a deliberately incomplete `verdicts[]`
-      exits 0 every time.
+      rules-that-reach-2026-08 P1 closed KI-02300 (below, now retired): both
+      surfaces' SubmitValidatorAdapter.ValidateSubmit now calls
+      validate.ValidateEventWithContext over every event file in a submission,
+      the same entry point `a2a validate --ci` already used — so an
+      out-of-range or incomplete `verdicts[]` is refused AT SUBMIT, not merely
+      at the merge gate.
 
-      So REF-019 and REF-023, built as WRITE gates, fire only at
-      `a2a validate --ci` on the pull request. The false sentence in the skill
-      is corrected; the mechanism fix is tracked in docs/backlog.md and needs
-      the events partition to gain its own referential pass, reusing the
-      resolver the drafts loop already constructs.
+      That is true on the CLI surface (`a2a verify`, `a2a close`) and NOT true
+      on the MCP surface (`a2a mcp`'s `a2a_exchange` verify/close actions),
+      because internal/mcp.MirrorResolver does not implement
+      validate.ParentCriteriaCounter, validate.ParentCriteriaIDs or
+      validate.ResponseParentResolver the way internal/cli.MirrorResolver
+      does. verdicts.go's checkVerdictIndexRange (the shared engine code both
+      REF-019 and REF-023 ride) type-asserts the Resolver for those
+      capabilities before it can count a parent's declared criteria at all;
+      without them it degrades to "cannot check" and returns no violation —
+      correctly, per its own contract, but silently from an MCP-authored
+      write's point of view. Measured 2026-08-20: an MCP-authored `verify`
+      with an incomplete `verdicts[]` against a two-criterion parent still
+      exits 0 and mints; the same submission through the CLI is refused.
+
+      The fix is a resolver-capability port into internal/mcp/adapters.go
+      (AcceptanceCriteriaCount/AcceptanceCriteriaIDs/ParentOf, mirroring
+      internal/cli/adapters.go:629/:677/:752) plus its own test surface and
+      compile-time gates — scoped work, not a two-call-site fix, and reported
+      rather than done inside P1.
     action:
       scope: local
       why: >
-        Do not read a green `a2a submit` as proof that a verification record is
-        complete. Run `a2a validate` on the draft, or expect the refusal at the
-        merge gate.
+        An MCP-authored `verify`/`close` with an out-of-range or incomplete
+        `verdicts[]` still exits 0. Do not read a green MCP submit as proof of
+        referential completeness; run `a2a validate --ci` (the merge gate) or
+        author the write from the CLI surface, where the refusal is live.

@@ -508,6 +508,7 @@ type submitEnvelopeProbe struct {
 func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space.FileWrite) error {
 	events := map[string]mirrorEvent{}
 	var drafts []space.FileWrite
+	var violations []validate.Violation
 	for _, f := range files {
 		switch {
 		case strings.Contains(f.Path, "/events/"):
@@ -516,6 +517,20 @@ func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space
 				return fmt.Errorf("mcp: SubmitValidatorAdapter: decode event %s: %w", f.Path, err)
 			}
 			events[ev.Subject] = ev
+
+			// P1 (spec 01-the-write-gate-reaches-the-write.md §T1): the MCP
+			// twin of internal/cli/adapters.go's identical call — see that
+			// file's own comment on this call site for the full rationale.
+			// spaceFloor comes from v.legality's own already-parsed
+			// manifest, never a second space.yaml read (AC11).
+			result, err := v.engine.ValidateEventWithContext(f.Content, v.legality.manifest.MinBinaryVersion,
+				validate.EventContext{Resolver: v.resolver})
+			if err != nil {
+				return fmt.Errorf("mcp: SubmitValidatorAdapter: ValidateEventWithContext %s: %w", f.Path, err)
+			}
+			if !result.Valid {
+				violations = append(violations, result.Violations...)
+			}
 		case space.IsContractBaselinePath(f.Path):
 			// Contract schema/** and fixtures/** are data carried beside the
 			// descriptor, not envelope artifacts. Compatibility/publishability
@@ -526,7 +541,6 @@ func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space
 		}
 	}
 
-	var violations []validate.Violation
 	for _, d := range drafts {
 		fm, err := artifact.ParseFrontmatter(d.Content)
 		if err != nil {

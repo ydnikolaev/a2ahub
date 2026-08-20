@@ -915,6 +915,7 @@ func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space
 	events := map[string]mirrorEvent{}
 	var drafts []space.FileWrite
 	var registries []space.FileWrite
+	var violations []validate.Violation
 	for _, f := range files {
 		switch {
 		case strings.Contains(f.Path, "/events/"):
@@ -923,6 +924,24 @@ func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space
 				return fmt.Errorf("cli: SubmitValidatorAdapter: decode event %s: %w", f.Path, err)
 			}
 			events[ev.Subject] = ev
+
+			// P1 (spec 01-the-write-gate-reaches-the-write.md §T1): the ONLY
+			// place a `verify`/`close` submission — event files exclusively,
+			// so the drafts loop below never runs — gets judged at all.
+			// ValidateEventWithContext is the entry point cmd_validate_ci.go's
+			// validateCIEvent already calls at the merge gate; this is the
+			// same call one layer earlier. spaceFloor comes from
+			// v.legality's own already-parsed manifest (readMinBinaryVersion
+			// (cmd_submit.go) is what populated it) — never a second
+			// space.yaml read (AC11).
+			result, err := v.engine.ValidateEventWithContext(f.Content, v.legality.manifest.MinBinaryVersion,
+				validate.EventContext{Resolver: v.resolver})
+			if err != nil {
+				return fmt.Errorf("cli: SubmitValidatorAdapter: ValidateEventWithContext %s: %w", f.Path, err)
+			}
+			if !result.Valid {
+				violations = append(violations, result.Violations...)
+			}
 		case isConsumesRegistry(f.Path):
 			// The D-022 consumer registry is a non-artifact file (no
 			// envelope, no frontmatter) that the funnel nonetheless
@@ -949,7 +968,6 @@ func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space
 		}
 	}
 
-	var violations []validate.Violation
 	for _, r := range registries {
 		result, err := v.engine.ValidateConsumes(r.Content)
 		if err != nil {

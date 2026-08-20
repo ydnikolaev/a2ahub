@@ -2,16 +2,30 @@
 // open acceptance criterion the phase's tracker holds it `in-progress` for.
 // REF-023 (defects-fix-2026-08 P4, internal/validate/verdicts.go's
 // checkVerdictCompleteness) refuses an incomplete `verdicts[]` — fewer
-// entries than the parent's own declared acceptance_criteria[] — but that
-// rule fires ONLY at the merge-time gate, `a2a validate --ci --mode=v3-pr`
-// (internal/validate/verdicts.go's own package doc, "P4 — REF-023" section:
-// "the merge-time path a space actually pins"), never at submit time —
-// SubmitValidatorAdapter.ValidateSubmit (both internal/cli/adapters.go and
-// internal/mcp/adapters.go) only runs validate.ValidateForSubmit over
-// DRAFT files, never bare event files, so `a2a verify --verdict` with an
-// incomplete array SUCCEEDS at submit regardless of completeness — verified
-// empirically running this file's own first version, which found exactly
-// that before the `validate --ci` step was added below.
+// entries than the parent's own declared acceptance_criteria[] — and, until
+// rules-that-reach-2026-08 P1, fired ONLY at the merge-time gate,
+// `a2a validate --ci --mode=v3-pr`: SubmitValidatorAdapter.ValidateSubmit
+// (both internal/cli/adapters.go and internal/mcp/adapters.go) only ran
+// validate.ValidateForSubmit over DRAFT files, never bare event files, so
+// `a2a verify --verdict` with an incomplete array SUCCEEDED at submit
+// regardless of completeness — verified empirically running this file's own
+// first version, which found exactly that before the `validate --ci` step
+// was added below.
+//
+// # rules-that-reach-2026-08 P1 changed this — on ONE surface
+//
+// P1's own events-partition call to validate.ValidateEventWithContext makes
+// the CLI surface refuse the incomplete case AT SUBMIT now (the
+// "cli-authored" subtest below asserts the refusal directly, via `run` +
+// exit code + REF-023 in stderr, rather than committing it and catching it
+// downstream). The MCP surface's own SubmitValidatorAdapter gained the
+// identical call site, but internal/mcp.MirrorResolver does not implement
+// validate.ParentCriteriaCounter the way internal/cli.MirrorResolver does —
+// see internal/mcp/adapters_test.go's own P1 block for the full
+// explanation — so checkVerdictIndexRange (verdicts.go) still degrades to
+// "cannot check" on that surface, and the "mcp-authored" subtest below is
+// UNCHANGED: still refused only at merge, which is what it was already
+// covering and stays true evidence for.
 //
 // This is a T3 row: nothing proves AC5 until the BUILT `a2a` binary itself
 // — both surfaces cmd/a2a/wire.go wires (`a2a verify`) and
@@ -336,18 +350,24 @@ func TestP1AC5REF023RefusesAnIncompleteVerifyOnBothSurfaces(t *testing.T) {
 		shaAfterResponses := strings.TrimSpace(gitOutput(t, axon.fx.RemoteURL(), "rev-parse", "main"))
 		before := listCommittedPaths(t, mirrorDir, "HEAD", "axon/events")
 
-		axon.mustRun("verify", parentID, "--refs", responseA, "--verdict", "0:met:beta")
+		// rules-that-reach-2026-08 P1: the CLI surface's SubmitValidatorAdapter
+		// now calls validate.ValidateEventWithContext over every event file in
+		// the events partition, so an incomplete verdicts[] is refused AT
+		// SUBMIT — before this phase it minted clean here and was only caught
+		// later, at `validate --ci` (this file's own original header comment,
+		// now corrected below). `run`, not `mustRun`: the refusal is the
+		// assertion, and nothing is committed for it.
+		stdout, stderr, code := axon.run("verify", parentID, "--refs", responseA, "--verdict", "0:met:beta")
+		if code == 0 {
+			t.Fatalf("verify with an incomplete verdicts[] (CLI-authored): exit 0, want a submit-time refusal\nstdout=%s", stdout)
+		}
+		if !strings.Contains(stderr, "REF-023") {
+			t.Fatalf("verify with an incomplete verdicts[] (CLI-authored) refused, but not with REF-023: stderr=%s", stderr)
+		}
 		axon.mustRun("sync")
 		after := listCommittedPaths(t, mirrorDir, "HEAD", "axon/events")
-		incompletePath := soleAddedPath(t, before, after)
-		shaAfterIncomplete := strings.TrimSpace(gitOutput(t, axon.fx.RemoteURL(), "rev-parse", "main"))
-
-		code, rep, stderr := ac5RunValidateCI(t, mirrorDir, "v3-pr", shaAfterResponses, "axon-bot")
-		if code == 0 {
-			t.Fatalf("validate --ci over an incomplete verdicts[] (CLI-authored): exit 0, want a refusal\nreport=%+v\nstderr=%s", rep, stderr)
-		}
-		if !ac5CIHasViolation(rep, incompletePath, "REF-023") {
-			t.Fatalf("validate --ci over an incomplete verdicts[] (CLI-authored) did not refuse with REF-023: %+v\nstderr=%s", rep, stderr)
+		if len(after) != len(before) {
+			t.Fatalf("verify refused at submit but the mirror gained event(s) anyway: before=%v after=%v", before, after)
 		}
 
 		before = listCommittedPaths(t, mirrorDir, "HEAD", "axon/events")
@@ -356,9 +376,9 @@ func TestP1AC5REF023RefusesAnIncompleteVerifyOnBothSurfaces(t *testing.T) {
 		after = listCommittedPaths(t, mirrorDir, "HEAD", "axon/events")
 		completePath := soleAddedPath(t, before, after)
 
-		code, rep, stderr = ac5RunValidateCI(t, mirrorDir, "v3-pr", shaAfterIncomplete, "axon-bot")
-		if code != 0 || !rep.Valid {
-			t.Fatalf("validate --ci over a complete verdicts[] (CLI-authored): code=%d valid=%v, want an accepted PR\nreport=%+v\nstderr=%s", code, rep.Valid, rep, stderr)
+		code2, rep, ciStderr := ac5RunValidateCI(t, mirrorDir, "v3-pr", shaAfterResponses, "axon-bot")
+		if code2 != 0 || !rep.Valid {
+			t.Fatalf("validate --ci over a complete verdicts[] (CLI-authored): code=%d valid=%v, want an accepted PR\nreport=%+v\nstderr=%s", code2, rep.Valid, rep, ciStderr)
 		}
 		if ac5CIHasViolation(rep, completePath, "REF-023") {
 			t.Fatalf("validate --ci over a complete verdicts[] (CLI-authored) was refused by REF-023: %+v", rep)

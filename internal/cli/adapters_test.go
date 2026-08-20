@@ -14,6 +14,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
+	"github.com/ydnikolaev/a2ahub/internal/version"
 )
 
 // --- ResolveActor (§7.4 order) -------------------------------------------
@@ -646,6 +647,261 @@ func TestSubmitValidatorAdapterViolationNamesSkippedFile(t *testing.T) {
 	}
 	if !strings.Contains(msg, "undecodable-yaml") {
 		t.Fatalf("Error() = %q, want the skip reason named", msg)
+	}
+}
+
+// --- SubmitValidatorAdapter: events partition (P1, REF-019/REF-023) ------
+//
+// spec 01-the-write-gate-reaches-the-write.md §T1: before this phase the
+// events partition of ValidateSubmit decoded each event into a lookup map
+// used only by the drafts loop and validated nothing, so a `verify`/`close`
+// submission — which carries event files exclusively — was written
+// unjudged. These are P1's AC1/AC2/AC3/AC7/AC8, driven directly at the
+// adapter layer (the T3 row lives in internal/e2e).
+
+// p1WriteParentWithTwoCriteria seeds a committed work_request directly
+// under mirrorDir/<id>.md declaring exactly two acceptance_criteria —
+// REF-019's own bounds and REF-023's own completeness target. Same shape as
+// this file's own writeParentArtifact, restated under the fixture-space id
+// every other SubmitValidatorAdapter test here uses, so one manifest serves
+// both the events and drafts partitions of a single ValidateSubmit call.
+func p1WriteParentWithTwoCriteria(t *testing.T, mirrorDir, id string) {
+	t.Helper()
+	raw := "---\nschema: envelope/v1\nid: " + id + "\ntype: work_request\ntitle: t\nspace: fixture-space\n" +
+		"from: axon\nto: [beta]\nthread: " + cliFixtureThread + "\nactor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\npriority: p3\nblocking: true\nclassification: internal\n" +
+		"category: feature\nproposed_change: x\nacceptance_criteria:\n  - \"first\"\n  - \"second\"\n" +
+		"---\nbody\n"
+	if err := os.WriteFile(filepath.Join(mirrorDir, id+".md"), []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// p1CloseEvent builds a close event/v2 document over parentID —
+// cmd_validate_ci_test.go's own closeEvent fixture
+// (TestValidateCI_REF019FiresOnAnOutOfRangeVerdictIndex), restated here
+// because that helper is unexported in a different test binary.
+func p1CloseEvent(eventID, parentID, tail string) []byte {
+	return []byte("schema: event/v2\n" +
+		"event: " + eventID + "\n" +
+		"space: fixture-space\n" +
+		"subject: " + parentID + "\n" +
+		"transition: close\n" +
+		"actor: {kind: agent, name: bot, system: axon}\n" +
+		"at: 2026-07-21T10:00:00Z\n" +
+		tail)
+}
+
+// p1HasViolationCode reports whether violations carries code.
+func p1HasViolationCode(violations []validate.Violation, code string) bool {
+	for _, v := range violations {
+		if v.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
+// p1NewCLIAdapter builds a SubmitValidatorAdapter over a fresh engine and
+// mirrorDir, with axon/beta as the manifest's only participants — the
+// shared arrange step every test below reuses.
+func p1NewCLIAdapter(t *testing.T, mirrorDir string, manifest space.Manifest) *cli.SubmitValidatorAdapter {
+	t.Helper()
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	engine := validate.New(corpus)
+	legality := cli.NewLegalityAdapter(mirrorDir, "axon", manifest)
+	resolver := cli.NewMirrorResolver(mirrorDir, manifest)
+	return cli.NewSubmitValidatorAdapter(engine, "axon", resolver, legality)
+}
+
+var p1TwoSystemManifest = space.Manifest{Participants: []space.Participant{
+	{System: "axon", Status: "active"}, {System: "beta", Status: "active"},
+}}
+
+// TestSubmitValidatorAdapterEventsPartitionRefusesOutOfRangeVerdictIndex is
+// P1's AC1: a submission carrying only event files — exactly what
+// `a2a verify`/`a2a close` produce — must be refused when a `verdicts[]`
+// entry names an index outside the parent's own acceptance_criteria[].
+// WATCHED FAILING before the fix: pre-fix, ValidateSubmit's events branch
+// only decodes into a lookup map and returns nil for this exact submission.
+func TestSubmitValidatorAdapterEventsPartitionRefusesOutOfRangeVerdictIndex(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	const parentID = "XW-axon-20260820-p1a1"
+	p1WriteParentWithTwoCriteria(t, mirrorDir, parentID)
+	adapter := p1NewCLIAdapter(t, mirrorDir, p1TwoSystemManifest)
+
+	// The parent declares exactly two criteria (indices 0, 1) — 2 is out of range.
+	eventContent := p1CloseEvent("01J8QYK2Z3ABCDEFGHJKMNPQRT", parentID,
+		"verdicts:\n  - index: 2\n    verdict: met\n    cause_owner: axon\n")
+	files := []space.FileWrite{
+		{Path: "axon/events/2026/01J8QYK2Z3ABCDEFGHJKMNPQRT.yaml", Content: eventContent},
+	}
+
+	err := adapter.ValidateSubmit(context.Background(), files)
+	if err == nil {
+		t.Fatal("ValidateSubmit: expected a refusal for an out-of-range verdict index, got nil — " +
+			"an events-only submission must not write unjudged")
+	}
+	var violationErr *cli.ViolationError
+	if !errors.As(err, &violationErr) {
+		t.Fatalf("expected a *cli.ViolationError, got %T: %v", err, err)
+	}
+	if !p1HasViolationCode(violationErr.Violations, "REF-019") {
+		t.Fatalf("ValidateSubmit refused, but not with REF-019: %+v", violationErr.Violations)
+	}
+}
+
+// TestSubmitValidatorAdapterEventsPartitionRefusesIncompleteVerdicts is P1's
+// AC2 — REF-023's own completeness half, riding the same call site as AC1
+// (verdicts.go's checkVerdictIndexRange calls checkVerdictCompleteness
+// internally).
+func TestSubmitValidatorAdapterEventsPartitionRefusesIncompleteVerdicts(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	const parentID = "XW-axon-20260820-p1a2"
+	p1WriteParentWithTwoCriteria(t, mirrorDir, parentID)
+	adapter := p1NewCLIAdapter(t, mirrorDir, p1TwoSystemManifest)
+
+	// Only criterion 0 of the parent's two declared criteria is named.
+	eventContent := p1CloseEvent("01J8QYK2Z3ABCDEFGHJKMNPQR9", parentID,
+		"verdicts:\n  - index: 0\n    verdict: met\n    cause_owner: axon\n")
+	files := []space.FileWrite{
+		{Path: "axon/events/2026/01J8QYK2Z3ABCDEFGHJKMNPQR9.yaml", Content: eventContent},
+	}
+
+	err := adapter.ValidateSubmit(context.Background(), files)
+	if err == nil {
+		t.Fatal("ValidateSubmit: expected a refusal for an incomplete verdict set, got nil")
+	}
+	var violationErr *cli.ViolationError
+	if !errors.As(err, &violationErr) {
+		t.Fatalf("expected a *cli.ViolationError, got %T: %v", err, err)
+	}
+	if !p1HasViolationCode(violationErr.Violations, "REF-023") {
+		t.Fatalf("ValidateSubmit refused, but not with REF-023: %+v", violationErr.Violations)
+	}
+}
+
+// TestSubmitValidatorAdapterEventsPartitionAcceptsCompleteVerdicts is P1's
+// AC3 control case: a complete, in-range verdict set still exits 0 (the
+// event mints). Run at the manifest's min_binary_version PINNED to
+// version.ProducerStampFloor, with the event ALREADY carrying produced_by —
+// exactly what space.WriteFunnel.PrepareSubmission hands ValidateSubmit,
+// since StampProducer runs before the final ValidateSubmit call
+// (prepared.go: stamp at line ~229, validate at ~236). Proves the new call
+// site does not turn a correctly-stamped write into a false POL-012
+// refusal at a space that has raised its floor.
+func TestSubmitValidatorAdapterEventsPartitionAcceptsCompleteVerdicts(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	const parentID = "XW-axon-20260820-p1a3"
+	p1WriteParentWithTwoCriteria(t, mirrorDir, parentID)
+	manifest := space.Manifest{
+		MinBinaryVersion: version.ProducerStampFloor,
+		Participants:     p1TwoSystemManifest.Participants,
+	}
+	adapter := p1NewCLIAdapter(t, mirrorDir, manifest)
+
+	eventContent := p1CloseEvent("01J8QYK2Z3ABCDEFGHJKMNPQRV", parentID,
+		"produced_by:\n  tool: a2a\n  version: \""+version.ProducerStampFloor+"\"\n"+
+			"verdicts:\n  - index: 0\n    verdict: met\n    cause_owner: axon\n"+
+			"  - index: 1\n    verdict: met\n    cause_owner: axon\n")
+	files := []space.FileWrite{
+		{Path: "axon/events/2026/01J8QYK2Z3ABCDEFGHJKMNPQRV.yaml", Content: eventContent},
+	}
+
+	if err := adapter.ValidateSubmit(context.Background(), files); err != nil {
+		t.Fatalf("ValidateSubmit: %v, want a complete in-range verdict set to mint clean at a raised floor", err)
+	}
+}
+
+// TestSubmitValidatorAdapterEventsPartitionUnresolvableParentDegradesSilently
+// is P1's AC8: a resolver that cannot resolve the event's own subject at
+// all (an empty mirror — the parent was never committed) degrades to
+// "cannot check", never a synthesized violation.
+func TestSubmitValidatorAdapterEventsPartitionUnresolvableParentDegradesSilently(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir() // empty: the parent this event names was never committed
+	adapter := p1NewCLIAdapter(t, mirrorDir, p1TwoSystemManifest)
+
+	eventContent := p1CloseEvent("01J8QYK2Z3ABCDEFGHJKMNPQRW", "XW-axon-20260820-doesnotexist",
+		"verdicts:\n  - index: 0\n    verdict: met\n    cause_owner: axon\n")
+	files := []space.FileWrite{
+		{Path: "axon/events/2026/01J8QYK2Z3ABCDEFGHJKMNPQRW.yaml", Content: eventContent},
+	}
+
+	if err := adapter.ValidateSubmit(context.Background(), files); err != nil {
+		t.Fatalf("ValidateSubmit: %v, want an unresolvable parent to degrade to \"cannot check\" (nil), never a synthesized violation", err)
+	}
+}
+
+// TestSubmitValidatorAdapterEventsAndDraftsYieldOneVerdictNoDuplicate is
+// P1's AC7: a submission carrying BOTH a draft (with its own paired submit
+// event) AND an unrelated close event over a different, out-of-range
+// verdict set must judge both partitions into ONE result, with the
+// out-of-range violation reported exactly once — not duplicated by any
+// interaction between the drafts loop's own candidate widening and the
+// events partition's new call.
+func TestSubmitValidatorAdapterEventsAndDraftsYieldOneVerdictNoDuplicate(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	const parentID = "XW-axon-20260820-p1a7"
+	p1WriteParentWithTwoCriteria(t, mirrorDir, parentID)
+	adapter := p1NewCLIAdapter(t, mirrorDir, p1TwoSystemManifest)
+
+	// A VALID draft + its own submit event (same shape as
+	// TestSubmitValidatorAdapterValid), contributing zero violations.
+	draftContent := []byte("---\n" +
+		"schema: envelope/v1\n" +
+		"id: XQ-axon-20260721-k3f9\n" +
+		"type: question\n" +
+		"title: t\n" +
+		"space: fixture-space\n" +
+		"from: axon\n" +
+		"to: [beta]\n" +
+		"thread: " + cliFixtureThread + "\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"category: clarification\n" +
+		"priority: p3\n" +
+		"blocking: true\n" +
+		"classification: internal\n" +
+		"---\nbody\n")
+	draftEventContent := []byte("schema: event/v1\nevent: 01J8QYK2Z3ABCDEFGHJKMNPQRX\nspace: fixture-space\n" +
+		"subject: XQ-axon-20260721-k3f9\ntransition: submit\nactor: {kind: agent, name: bot, system: axon}\n" +
+		"at: 2026-07-21T10:00:00Z\n")
+
+	// The unrelated out-of-range close, same fixture as AC1's own test.
+	closeEventContent := p1CloseEvent("01J8QYK2Z3ABCDEFGHJKMNPQRY", parentID,
+		"verdicts:\n  - index: 2\n    verdict: met\n    cause_owner: axon\n")
+
+	files := []space.FileWrite{
+		{Path: "axon/exchanges/XQ-axon-20260721-k3f9.md", Content: draftContent},
+		{Path: "axon/events/2026/01J8QYK2Z3ABCDEFGHJKMNPQRX.yaml", Content: draftEventContent},
+		{Path: "axon/events/2026/01J8QYK2Z3ABCDEFGHJKMNPQRY.yaml", Content: closeEventContent},
+	}
+
+	err := adapter.ValidateSubmit(context.Background(), files)
+	if err == nil {
+		t.Fatal("ValidateSubmit: expected a refusal from the mixed batch's out-of-range close, got nil")
+	}
+	var violationErr *cli.ViolationError
+	if !errors.As(err, &violationErr) {
+		t.Fatalf("expected a *cli.ViolationError, got %T: %v", err, err)
+	}
+	count := 0
+	for _, v := range violationErr.Violations {
+		if v.Code == "REF-019" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("REF-019 violation count = %d, want exactly 1 (one verdict set, one out-of-range index, no duplicate reporting): %+v",
+			count, violationErr.Violations)
 	}
 }
 
