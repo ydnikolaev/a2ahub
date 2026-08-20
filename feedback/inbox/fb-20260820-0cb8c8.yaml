@@ -1,0 +1,47 @@
+# Feedback authoring skeleton (v1) — materialized by `a2a feedback new <kind>`
+# to `.a2a/feedback/<id>.yaml` (§T1, §11 A4). Every field required by
+# feedback.schema.json is present with a placeholder or auto-fill value so
+# the drafted file is schema-VALID once you replace the placeholders and
+# flip `checks.*` to true after honestly clearing every §2.1 gate.
+#
+# `id` / `context.a2a_version` / `context.os_arch` are filled in by the CLI
+# before this file ever reaches disk — the empty strings below are the
+# pre-fill placeholders `internal/feedback` overwrites, never hand-edited.
+#
+# `checks.*` starts all `false` on purpose: the agent must consciously flip
+# each one after actually verifying it (I5) — never bulk-set to true.
+
+feedback: v1
+id: fb-20260820-0cb8c8 # auto-filled: fb-YYYYMMDD-<6 hex>
+kind: protocol # bug | feature | docs | friction | protocol
+severity: major # blocker | major | minor
+title: an observed consumer should inform retire and deprecate without registering # 8-80 chars, specific
+summary: "FindUnadoptedConsumption's own doc comment leaves Piece 2 open as a binary — 'should a verify-passed delivery auto-register?' — and both answers are bad, which is probably why it is still open. Auto-register fabricates the adoption note and inverts the designed verify-then-adopt order; not registering leaves the producer's retire gate blind. There is a third option the binary hides: do not register, and make the producer's DECISION see it. Live case in the getvisa space: axon has a shipped client and three verify-passed deliveries against XC-seomatrix-regime-corpus, and is a registered consumer of nothing. policy_retire.go's own definition is 'satisfied requirement OR consumes.yaml entry' — the delivery path is neither, and internal/validate has zero references to it, so no gate reads it. seomatrix could retire that contract today, cleanly and ungated, out from under a live consumer whose deliveries are committed in their own space. The detection landed in 0.23.0 and is wired to one consumer-side WARN — the side that already knows."
+context:
+    a2a_version: 0.23.0 # auto-filled
+    os_arch: darwin/arm64 # auto-filled (runtime.GOOS/runtime.GOARCH)
+    surface: protocol # cli | schema | docs | skill | dashboard | space-ci | protocol
+    # command: ""       # optional: the failing/awkward invocation
+    # error_code: ""    # optional: whatever code you saw (e.g. POL-001)
+    # agent: ""         # optional: free self-report
+# evidence is REQUIRED when kind is bug (steps/expected/actual all
+# mandatory); optional otherwise — delete this block for non-bug kinds.
+evidence:
+    steps:
+        - "In the getvisa space, axon has three handoffs folded to accepted whose data-packages pin `contract: XC-seomatrix-regime-corpus@1.0.0#sha256:428ad3d8...` (seomatrix/data/DP-seomatrix-20260818-{p3my,n2yp,jgf1}/manifest.json)."
+        - "axon/consumes.yaml lists only XC-seomatrix-c4-export; axon/requires/ holds one requirement that predates the contract and names no contract id."
+        - "`a2a doctor` as of 0.23.0 correctly WARNs on the consumer side — the side that already knows."
+        - "internal/validate/policy_retire.go:22-25 defines registered consumer as satisfied requirement OR consumes.yaml entry."
+        - "`grep -rn 'verification-report\\|data-package' internal/validate` returns nothing: no policy gate reads the delivery path at all."
+        - "FindUnadoptedConsumption's doc comment states policy_retire.go does not call it and does not change, and that Piece 2 is the epic's open question."
+    expected: "A producer retiring a contract version sees every system a2a's own committed artifacts show consuming it, declared or not, before the retire proceeds."
+    actual: "Retire's consumer set is declarations only (policy_retire.go:22-25). Three verify-passed deliveries pinning the contract in the producer's own space make axon a consumer of record nowhere, and a clean ungated retire is available."
+proposal: "Add `observed` as a state distinct from `declared`, informing decisions and gating none. (1) RetirePrecondition gains Observed[] — never blocks, but is NAMED in retire's output, so the CLEAN path stops being silently blind: '0 declared consumers, 1 observed (axon: 3 packages, latest 2026-08-18)'. The human retiring then decides with the fact in view, which is all the override path already assumes. (2) `contract deprecate` seeds observed systems into the default `to:`. That needs no inbox change — routing is already consumes.yaml UNION the announcement's `to:` (inbox_deprecation_test.go:41,143). (3) A producer-side doctor row: the same scan from the other identity, 'someone consumes mine and never declared it'. FindUnadoptedConsumption filters on ownSystem and needs a sibling, not a rewrite. (4) Carry the VERSION. Line 471 does `contractID, _ := splitPinnedContractID(doc.Contract)` — the manifest pins id@version#digest and the version is parsed and dropped. Retire is per-version, so 'consumes 1.0.0' is actionable where 'consumes something' is not."
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
+# resolution is hub-mutated only; MUST be absent at submit — do not add it.
