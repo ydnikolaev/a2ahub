@@ -81,6 +81,15 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/gate-lib.sh"
 # exactly (its own comments are the reason, repeated here so this gate does
 # not require reading that file to understand itself); the rest are new,
 # found by actually running the scan against HEAD (see header).
+#
+# AND "THE REST ARE NEW" WAS A DEFECT, NOT A NOTE — 2026-08-20. Teaching this
+# gate a fabricated fixture while leaving `.gitleaks.toml` unaware left two
+# scanners over one corpus disagreeing, and the uninformed one is the one CI
+# runs. `internal/spacenotify/redact_test.go` sat exempt here and unlisted
+# there from 2026-08-18; the private main had not been pushed since 2026-08-13,
+# so the first push after that failed the gitleaks job and the finding was
+# chased as a possible leak before it was recognised as this repo's own test
+# input. Adding a path here now means adding it there in the same commit.
 EXEMPT_PATHS=(
   "internal/sensitive/matcher_test.go"
   "internal/provenance/evidence_test.go"

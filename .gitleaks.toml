@@ -21,6 +21,21 @@ paths = [
   # P25 feedback secret-scan fixtures: fabricated tokens the feedback
   # validator's own tests assert it blocks (FB-006). Not live credentials.
   '''schemas/feedback/v1/fixtures/invalid/planted-secret.*\.yaml''',
+  # The redaction test's own input. TestBoundAndRedact_CredentialShapeIsGone
+  # feeds a fabricated AWS-key-SHAPED literal to boundAndRedact and asserts the
+  # shape is gone from the output — so the string must match a known secret
+  # shape or the test proves nothing. It is a sequential placeholder, never a
+  # live credential.
+  #
+  # ADDED 2026-08-20, after this scanner failed on the first push in a week and
+  # the finding was chased as a possible leak. `scripts/check-notify-secrets.sh`
+  # had ALREADY exempted this path — its own comment says four of its entries
+  # mirror this file and "the rest are new, found by actually running the scan
+  # against HEAD". The local gate was taught and the CI gate was not, so the
+  # repo carried two scanners over one corpus disagreeing about the same file,
+  # and the one that runs in CI was the uninformed half. If a path is added
+  # there as fabricated, it belongs here too, or the disagreement returns.
+  '''internal/spacenotify/redact_test\.go''',
 ]
 
 # ── The three findings a working scanner surfaces, each inert and each here
