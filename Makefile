@@ -441,6 +441,22 @@ ci-parity-docker: ## The same suite under ubuntu + GNU userland, where every non
 harness-check: ## Run the gates' --teeth self-tests (harness gates are private/presence-gated; release-preflight is public).
 	@bash scripts/verify.sh harness
 
+# THE TEETH ASSERT WHAT A GATE SAYS, SO THEY PIN HOW IT SAYS IT.
+#
+# gate-lib switches format on GITHUB_ACTIONS: `::error::`/`::warning::` on
+# STDOUT under Actions, coloured `FAIL`/`WARN` on STDERR otherwise. Teeth that
+# grep for the message therefore passed on every laptop and failed on the
+# runner — `check-spec-verify-refs` T10 did exactly that on 2026-08-20, and it
+# was found only after a push, because nothing local ran the teeth in
+# annotation mode.
+#
+# Pinned empty here rather than fixed in that one script: a self-test asserts
+# CONTENT, and the annotation format is presentation owned by CI. One line
+# makes all 32 tooth scripts format-stable instead of leaving the next one to
+# rediscover this. The annotation path itself is then exercised by exactly one
+# dedicated tooth in scripts/verify.sh — without it, pinning here would mean
+# nothing checks that `::error::` is emitted correctly at all.
+_harness-check: export GITHUB_ACTIONS :=
 _harness-check:
 	@bash scripts/verify.sh --teeth
 	@bash scripts/check-frozen-allowlist.sh --teeth

@@ -541,6 +541,40 @@ run_teeth() {
     return 1
   fi
 
+  # ── gate-lib's ANNOTATION MODE, which every other tooth is now blind to. ──
+  #
+  # `_harness-check` pins GITHUB_ACTIONS empty for the whole teeth block (see
+  # the Makefile comment), because a self-test asserts what a gate SAYS and the
+  # annotation format is presentation owned by CI. That fix has a cost: with
+  # the format pinned, nothing else exercises the annotation path at all. This
+  # is the one place that does.
+  #
+  # Both halves matter and the second is the one that bit: under CI the
+  # emitters write to STDOUT, in plain mode to STDERR. A tooth capturing only
+  # one stream sees an empty string rather than a wrong string.
+  #
+  # The `.` that loads gate-lib is deliberately kept INSIDE the command string
+  # rather than on a line of its own: classify-guard check 5 resolves top-level
+  # `source`/`.` lines to literal paths and refuses what it cannot resolve —
+  # correctly, and it refused an earlier draft of this tooth. gate-lib is
+  # public (PUBLIC_VALIDATOR_FILES), so no boundary is being dodged, only an
+  # unresolvable line avoided.
+  local gatelib ann probe
+  gatelib="$ROOT/scripts/lib/gate-lib.sh"
+  probe='GATE_ROOT="$(mktemp -d)"; export GATE_ROOT; . "$1"; gate_fail "boom"; gate_warn "hmm"'
+  ann="$(env GITHUB_ACTIONS=true bash -c "$probe" _ "$gatelib" 2>/dev/null)"
+  if ! grep -q '^::error::boom$' <<<"$ann" || ! grep -q '^::warning::hmm$' <<<"$ann"; then
+    echo "verify --teeth: FAIL — GITHUB_ACTIONS=true must put ::error::/::warning:: on STDOUT, got:" >&2
+    printf '%s\n' "$ann" >&2
+    return 1
+  fi
+  ann="$(env -u GITHUB_ACTIONS bash -c "$probe" _ "$gatelib" 2>&1 >/dev/null)"
+  if ! grep -q 'FAIL.*boom' <<<"$ann" || ! grep -q 'WARN.*hmm' <<<"$ann"; then
+    echo "verify --teeth: FAIL — plain mode must put FAIL/WARN on STDERR, got:" >&2
+    printf '%s\n' "$ann" >&2
+    return 1
+  fi
+
   echo "verify --teeth: owned root accepted by construction; symlink and foreign residue refused; scoped tests reject stale binaries; target preserved; red status recorded and returned; lane strict mode refuses an empty or misspelled input and stays out of the way of a clean-tree default."
 }
 
