@@ -1,0 +1,47 @@
+# Feedback authoring skeleton (v1) — materialized by `a2a feedback new <kind>`
+# to `.a2a/feedback/<id>.yaml` (§T1, §11 A4). Every field required by
+# feedback.schema.json is present with a placeholder or auto-fill value so
+# the drafted file is schema-VALID once you replace the placeholders and
+# flip `checks.*` to true after honestly clearing every §2.1 gate.
+#
+# `id` / `context.a2a_version` / `context.os_arch` are filled in by the CLI
+# before this file ever reaches disk — the empty strings below are the
+# pre-fill placeholders `internal/feedback` overwrites, never hand-edited.
+#
+# `checks.*` starts all `false` on purpose: the agent must consciously flip
+# each one after actually verifying it (I5) — never bulk-set to true.
+
+feedback: v1
+id: fb-20260820-02f576 # auto-filled: fb-YYYYMMDD-<6 hex>
+kind: bug # bug | feature | docs | friction | protocol
+severity: major # blocker | major | minor
+title: "notify-reusable still go-installs a2a, retired the same day in validate" # 8-80 chars, specific
+summary: "Not a malfunction — a second caller of a pattern that was retired hours earlier, and both shipped in v0.23.0. a2a-notify-reusable.yml's `Install a2a` runs `go install github.com/ydnikolaev/a2ahub/cmd/a2a@$A2A_REF`, so every run resolves and compiles the whole module graph. Measured on a real space run: 69 s, against under a second of actual render+send. a2a-validate-reusable.yml moved off exactly this in 53aa37dc and states why: go install 'made every space's pull request resolve, verify and compile a2ahub's whole module graph — 34 external modules, 380 go.sum lines, including 56 sigstore/in-toto packages that validate --ci never executes'. Every clause holds for notify, which executes even less of that graph. Timeline says it is an oversight rather than a decision: notify was authored 63ead13c at 06:15 on 2026-08-18, the move landed 53aa37dc at 14:53 the same day, and the afternoon change swept only the file it touched."
+context:
+    a2a_version: 0.23.0 # auto-filled
+    os_arch: darwin/arm64 # auto-filled (runtime.GOOS/runtime.GOARCH)
+    surface: space-ci # cli | schema | docs | skill | dashboard | space-ci | protocol
+    command: "gh workflow run a2a-notify.yml --repo <space> -f artifacts=<id>"
+    # error_code: ""    # optional: whatever code you saw (e.g. POL-001)
+    # agent: ""         # optional: free self-report
+# evidence is REQUIRED when kind is bug (steps/expected/actual all
+# mandatory); optional otherwise — delete this block for non-bug kinds.
+evidence:
+    steps:
+        - "Trigger a space's a2a-notify workflow (push to its main, or a dispatch naming artifacts)."
+        - "Open the `Install a2a` step: it prints `go: downloading ...` for the full module graph — ydnikolaev/a2ahub, sigstore/sigstore-go, in-toto/attestation, go-openapi/*, grpc, protobuf, and the rest."
+        - "Time it from the job's step timings. On r22d222/a2a run 32429046938 the step ran 23:32:15Z to 23:33:24Z — 69 seconds; the `a2a notify render | send` step that follows took under a second."
+        - "Compare a2a-validate-reusable.yml, which for a non-empty a2a-ref downloads a2a-linux-amd64 plus its cosign bundle and runs `cosign verify-blob` instead of compiling."
+        - "git log dates the divergence: 63ead13c authored a2a-notify-reusable.yml at 2026-08-18 06:15 +0200; 53aa37dc moved validate off go install at 2026-08-18 14:53 +0200. Both are in v0.23.0."
+        - "The notify install step's own comment cites the validate step as its model — it carried over the network retry, not the mechanism the retry now sits on."
+    expected: "A space's notify job installs the same signed release binary its validate job now installs, and no reusable workflow compiles a2a from a remote module ref."
+    actual: "Install a2a runs `go install ...@v0.23.0` and takes 69 s of a job whose real work is under a second — on every push to a space's main and every dispatch. It is the pattern validate retired 8h before this file's own commit shipped."
+proposal: "Give notify the same download-and-cosign-verify step validate now has, then close the class with a rule so a third caller cannot repeat it. Home: `workflow-lint` — its lane-inputs are already .github/workflows/** plus go.mod, and its existing two rules are the same kind of hygiene. `runner-economics` is adjacent but wrong: it polices runner class and timeout-minutes, not what a job spends its minutes on, so this passed it. The rule must target the REMOTE module ref (`go install github.com/ydnikolaev/a2ahub/cmd/a2a@`) and not `go install` in general — validate's own dogfood branch legitimately runs `go install $GITHUB_WORKSPACE/cmd/a2a` from a local path, and a naive rule would redden it. Two smaller things while in there: notify has no dogfood branch at all, so an empty a2a-ref cannot mean what it means in validate; and the a2a-ref input's own description reads 'a2a module version to `go install`', so the retired mechanism is written into the input's prose too."
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
+# resolution is hub-mutated only; MUST be absent at submit — do not add it.
