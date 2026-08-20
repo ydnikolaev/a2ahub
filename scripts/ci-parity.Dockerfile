@@ -126,9 +126,27 @@ RUN chmod +x /usr/local/bin/parity-entrypoint
 # those forks — it was reproducing the runner's operating system while
 # reproducing a developer's laptop everywhere the code asks which it is.
 #
-# GITHUB_ACTIONS is deliberately NOT set: it is the flag that makes tooling reach
-# for the Actions API and a token this container does not have.
+# GITHUB_ACTIONS TOO, and leaving it out was a mistake that cost a red CI on
+# 2026-08-20. The reasoning for omitting it — "that flag makes tooling reach for
+# the Actions API and a token this container does not have" — was wrong about
+# what actually reads it here: scripts/lib/gate-lib.sh switches its output
+# format on it (`::error::`/`::warning::` on stdout instead of FAIL/WARN on
+# stderr), and scripts/verify.sh keys its setup-go cache contract to it. With
+# the flag unset this image reproduced ubuntu while reproducing a laptop's
+# gate-lib, and a tooth that greps a gate's message passed here and failed on
+# the runner.
+#
+# The contract is all-or-nothing: verify.sh refuses GITHUB_ACTIONS=true unless
+# GITHUB_WORKSPACE is set AND GOCACHE is exactly $GITHUB_WORKSPACE/.a2a/cache/
+# ci-go-build, which is the path actions/setup-go uses. Setting one without the
+# others is a refusal, by design.
+#
+# GITHUB_TOKEN stays unset — that is the credential, and nothing here should
+# have one.
 ENV CI=true
+ENV GITHUB_ACTIONS=true
+ENV GITHUB_WORKSPACE=/work
+ENV GOCACHE=/work/.a2a/cache/ci-go-build
 
 WORKDIR /work
 ENTRYPOINT ["/usr/local/bin/parity-entrypoint"]

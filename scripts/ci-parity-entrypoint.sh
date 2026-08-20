@@ -96,7 +96,10 @@ fi
 # exclusion, because reinstalling 350MB per run buys nothing and its absence is
 # not the fidelity being bought.
 echo "parity: removing untracked files — CI checks out, it does not inherit a working tree"
-git -C "$WORK" clean -ffdxq -e web/node_modules
+# .a2a holds GOCACHE (see the Dockerfile's setup-go contract note). CI arrives
+# with that cache restored by actions/setup-go, so keeping it IS the parity;
+# cleaning it would rebuild the world every run for no fidelity gained.
+git -C "$WORK" clean -ffdxq -e web/node_modules -e .a2a
 
 # `npm ci` only when the lockfile actually changed. CI runs it unconditionally
 # because its runner starts empty; here the volume persists, and reinstalling
