@@ -62,16 +62,23 @@ checks:
     no_sensitive_content: true
     duplicates_checked: true
 resolution: >-
-    Accepted, and it is a numbered acceptance criterion: agent-exchange-2026-08
-    P4 AC8 (docs/features/active/agent-exchange-2026-08/specs/04-possession.md)
-    — a directory `a2a data pack` writes must pass `a2a validate --ci` by
-    construction. The report is confirmed against the code, not just against its
-    own account: the packed README.md is recorded in manifest.json as
-    role=readme with no frontmatter, and artifact discovery collects every .md
-    under a member section without consulting that manifest, so POL-002 rejects
-    the tool's own output. Adding frontmatter would break the package digest, so
-    the writer and the checker cannot both be satisfied as they stand — which
-    is why this is a phase, not a one-line fix. Observed live on r22d222/a2a PR
-    #61, and that PR is still open because of it. Like cd2d11, this record sat
-    on the hub unread; that is epic-backlog B10.
-status: accepted
+    Accepted and SHIPPED in v0.19.10 (RN-01910-21), and it is a numbered
+    acceptance criterion: agent-exchange-2026-08 P4 AC8
+    (docs/features/active/agent-exchange-2026-08/specs/04-possession.md) — a
+    directory `a2a data pack` writes must pass `a2a validate --ci` by
+    construction. RE-VERIFIED 2026-08-20 against the code (one-answer-2026-08
+    P7): `isDataPackagePayloadPath` (internal/cli/cmd_validate_ci.go), backed
+    by `space.DataPackageForPath`, is now consulted by both artifact-discovery
+    sites in that file, so a package's own payload — including the packed
+    README the incident failed on — is exempted from POL-002's frontmatter
+    policy while a genuinely malformed artifact elsewhere under the same
+    system still reds. The report is confirmed against the code, not just
+    against its own account: the packed README.md is recorded in
+    manifest.json as role=readme with no frontmatter, and artifact discovery
+    used to collect every .md under a member section without consulting that
+    manifest, so POL-002 rejected the tool's own output. Adding frontmatter
+    would break the package digest, so the writer and the checker could not
+    both be satisfied unchanged — which is why this shipped as a phase, not a
+    one-line fix. Observed live on r22d222/a2a PR #61. Like cd2d11, this
+    record sat on the hub unread; that is epic-backlog B10.
+status: shipped

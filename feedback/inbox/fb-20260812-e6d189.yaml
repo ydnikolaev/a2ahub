@@ -111,5 +111,5 @@ resolution: >-
     is accepted and fixed separately. The two are one defect seen from both
     ends, and either fix alone would have left the reporter where they were.
 
-    Shipped in v0.20.0.
-status: accepted
+    Shipped in v0.20.0. RE-VERIFIED 2026-08-20 (one-answer-2026-08 P7) against internal/validate/possession.go, result.go and docs/decisions.md ADR-011: the conjunction rule and SuppressingCode("REF-017") at v3-full-repo both stand as described.
+status: shipped

@@ -84,5 +84,5 @@ resolution: >-
     (internal/artifact cannot import internal/space; the collapse runs the
     other way).
 
-    Shipped in v0.20.0.
-status: accepted
+    Shipped in v0.20.0. RE-VERIFIED 2026-08-20 (one-answer-2026-08 P7) against internal/cache/mirror.go and internal/cli/visibility.go: artifact.IsDataPackageReadmePath is consulted by both, exactly as claimed.
+status: shipped

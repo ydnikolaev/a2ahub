@@ -73,12 +73,27 @@ resolution: >-
     $0.87 — which also corrects this epic's own earlier conclusion that the
     public repository nets $0.00.
 
-    NOT fixed by this record's own merge. P13 is still `pending`; only its
-    timeout wave (K2) has shipped, and timeouts bound a failure rather than the
-    ordinary cost. The design exists, the measurement now exists twice, and the
-    wave is next.
+    SHIPPED in v0.21.0, RE-VERIFIED 2026-08-20 (one-answer-2026-08 P7)
+    directly against `.github/workflows/ci.yml`: a `changes` job
+    (`scripts/ci-changes.sh`) resolves the changed-file set ONCE and every
+    downstream job — `macos-notifier`, `web-quality`, the ceiling, the lane —
+    reads `needs.changes.outputs.*` rather than running unconditionally. This
+    corrects what this record's own earlier text said (below, left for the
+    record rather than silently rewritten): at the time it was written, P13
+    was `pending` with only its timeout wave shipped, and the filtering
+    described as "next" had not yet landed. It has landed since, in
+    agent-ops-2026-07 P13, and `releasenotes/0.21.0.yaml`'s "CI charges what
+    the diff can justify" entry states the same measurement this record made
+    independently: 55.3% of the twelve-day bill was `macos-notifier` against
+    zero commits touching the code it builds.
+
+    Superseded text, kept for its own measurement's sake: "NOT fixed by this
+    record's own merge. P13 is still `pending`; only its timeout wave (K2)
+    has shipped, and timeouts bound a failure rather than the ordinary cost.
+    The design exists, the measurement now exists twice, and the wave is
+    next." That was true on 2026-08-12 and is false now.
 
     One thing the report got wrong and is corrected here: it says eleven jobs.
     Ten ran on this PR. The eleventh (`CodeQL` as a separate context) appears on
     some feedback PRs and not others.
-status: accepted
+status: shipped

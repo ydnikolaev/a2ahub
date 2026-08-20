@@ -10,71 +10,23 @@ items:
       refs:
         - docs/features/active/operational-confidence-2026-08/README.md
       date: "2026-08-02"
-    - id: fb-20260806-cd2d11
-      kind: docs
-      severity: minor
-      title: publication never states its anchor, and never says no git tag is minted
-      verdict: accepted
-      route: phase
-      refs:
-        - docs/features/active/agent-exchange-2026-08/specs/07-loops.md
-      date: "2026-08-09"
-    - id: fb-20260808-5c73a9
+    # refs deliberately cites releasenotes/0.23.0.yaml, NOT
+    # docs/features/active/defects-fix-2026-08/specs/03-a-criterion-has-a-name.md
+    # even though that spec is the actual fix and its phase (P3) is `done`.
+    # check-feedback-corpus.sh's stale-verdict refusal (CHECK-C) would fire on
+    # a specs/ ref pointing at a done phase, and it would be WRONG here: P3
+    # being done is not the same fact as the record's own carrying release
+    # being cut. releasenotes/0.23.0.yaml reads `released: unreleased`
+    # (one-answer-2026-08 P6's own sentinel) — the code is merged and tested,
+    # the release has not shipped, so `accepted` (not `shipped`) is the
+    # honest verdict until a release note naming a real tagged version cites
+    # this id. See the record's own `resolution:` for the full re-verification.
+    - id: fb-20260818-76f29d
       kind: bug
       severity: major
-      title: data pack writes a role:readme file its own validator rejects with POL-002
-      verdict: accepted
-      route: phase
-      refs:
-        - docs/features/active/agent-exchange-2026-08/specs/04-possession.md
-      date: "2026-08-09"
-    - id: fb-20260812-d31acb
-      kind: bug
-      severity: major
-      title: an undecodable packed README is listed as noise by inbox and outbox
+      title: verify --verdict indexes an unseen list and only range-checks it
       verdict: accepted
       route: quick-fix
       refs:
-        - docs/features/active/agent-exchange-2026-08/specs/04-possession.md
-        - docs/backlog.md
-      date: "2026-08-12"
-    - id: fb-20260812-ee6dcd
-      kind: bug
-      severity: major
-      title: doctor reports a healthy space while its default branch is failing CI
-      verdict: accepted
-      route: quick-fix
-      refs:
-        - docs/decisions.md
-        - skill/a2ahub/troubleshooting.md
-      date: "2026-08-12"
-    - id: fb-20260812-e6d189
-      kind: bug
-      severity: major
-      title: REF-017 retroactively rejects merged artifacts and reddens the default branch
-      verdict: accepted
-      route: quick-fix
-      refs:
-        - docs/decisions.md
-        - docs/features/active/agent-exchange-2026-08/specs/04-possession.md
-      date: "2026-08-12"
-    - id: fb-20260812-f9cfac
-      kind: bug
-      severity: major
-      title: an undecodable packed README leaves repository-visibility UNVERIFIED
-      verdict: accepted
-      route: quick-fix
-      refs:
-        - docs/features/active/agent-exchange-2026-08/specs/04-possession.md
-        - docs/backlog.md
-      date: "2026-08-12"
-    - id: fb-20260812-755a23
-      kind: friction
-      severity: minor
-      title: a one-file feedback record costs eleven CI jobs, including a macOS build
-      verdict: accepted
-      route: phase
-      refs:
-        - docs/features/active/agent-ops-2026-07/specs/13-ci-economics.md
-        - docs/features/active/agent-ops-2026-07/plans/13-ci-economics.plan.md
-      date: "2026-08-12"
+        - releasenotes/0.23.0.yaml
+      date: "2026-08-20"

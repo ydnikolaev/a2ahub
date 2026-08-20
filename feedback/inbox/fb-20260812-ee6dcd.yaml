@@ -88,5 +88,5 @@ resolution: >-
     link it, because `CheckStatusResult` does not carry `html_url`. Both are
     rows in docs/backlog.md.
 
-    Shipped in v0.20.0.
-status: accepted
+    Shipped in v0.20.0. RE-VERIFIED 2026-08-20 (one-answer-2026-08 P7) against internal/cli/cmd_doctor.go:1204 and TestDoctorRunExitsNonZeroOnARedDefaultBranch, which passes on this tree.
+status: shipped

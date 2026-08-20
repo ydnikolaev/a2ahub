@@ -1,20 +1,23 @@
 feedback: v1
 id: fb-20260806-cd2d11
 resolution: >-
-    Accepted, and it is already a numbered acceptance criterion rather than a
-    queue entry: agent-exchange-2026-08 P7 AC6
-    (docs/features/active/agent-exchange-2026-08/specs/07-loops.md) — the page
-    describing publication must state what a published version is anchored BY.
-    The report is correct on both halves. No git tag is minted, and that is
-    deliberate: a tag is movable and a commit is not. But
-    reference/contract-versions.md says so nowhere, and states the commit rule
-    once, in passing, inside a bullet about retirement — which is how an
-    integrator defaulted to release-tag convention and wrote an unsatisfiable
-    acceptance criterion that survived several planning waves. This record also
-    arrived on the hub on 2026-08-06 and did not reach the authoring tree until
-    2026-08-09; that delay is epic-backlog B10 and is what P9 exists to make
-    impossible.
-status: accepted
+    Accepted and SHIPPED: agent-exchange-2026-08 P7 AC6
+    (docs/features/active/agent-exchange-2026-08/specs/07-loops.md, wave 28,
+    commits 2c35addf, a09db83e, 686628d6) — the page describing publication
+    now states what a published version is anchored BY. RE-VERIFIED 2026-08-20
+    (one-answer-2026-08 P7) directly against the shipped text:
+    skill/a2ahub/reference/contract-versions.md:188 reads "No git tag is
+    minted for a publish, on purpose: a tag is movable, a commit is not",
+    exactly the sentence this report asked for. The report was correct on
+    both halves. No git tag is minted, and that is deliberate: a tag is
+    movable and a commit is not. Before this fix, reference/contract-versions.md
+    said so nowhere, and stated the commit rule once, in passing, inside a
+    bullet about retirement — which is how an integrator defaulted to
+    release-tag convention and wrote an unsatisfiable acceptance criterion
+    that survived several planning waves. This record also arrived on the hub
+    on 2026-08-06 and did not reach the authoring tree until 2026-08-09; that
+    delay is epic-backlog B10 and is what P9 exists to make impossible.
+status: shipped
 kind: docs
 severity: minor
 title: publication never states its anchor, and never says no git tag is minted
