@@ -85,6 +85,23 @@ func TestMirrorResolverThreadOfAndThreadExists(t *testing.T) {
 	}
 }
 
+// TestAdaptersFileCarriesNoAcceptanceCriteriaDecode is P5's AC4 structural
+// gate on this surface, mirroring internal/cli/adapters_test.go's own test
+// of the same name: the parent-criteria resolution moved into
+// internal/cache (ADR-004), so a future edit that re-added its own
+// `m["acceptance_criteria"]` decode here would resurrect the sixth
+// duplication instance this phase closed.
+func TestAdaptersFileCarriesNoAcceptanceCriteriaDecode(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile("adapters.go")
+	if err != nil {
+		t.Fatalf("read adapters.go: %v", err)
+	}
+	if strings.Contains(string(raw), `["acceptance_criteria"]`) {
+		t.Fatal("internal/mcp/adapters.go decodes acceptance_criteria directly — the resolution must live only in internal/cache (P5, ADR-004), never a second copy on a surface")
+	}
+}
+
 // TestMirrorResolverAdapterCarriesNoWalk is AC-1.3's structural gate for
 // this surface: this file must never regain its own filepath.WalkDir — the
 // resolver's index build lives in internal/cache.BuildArtifactIndex now
@@ -247,43 +264,32 @@ func TestSubmitValidatorAdapterAcceptsContractBaselineFiles(t *testing.T) {
 	}
 }
 
-// --- SubmitValidatorAdapter: events partition (P1, REF-019/REF-023) ------
+// --- SubmitValidatorAdapter: events partition (P1/P5, REF-019/REF-023) ---
 //
 // MCP twin of internal/cli/adapters_test.go's own block of the same name —
 // spec 01-the-write-gate-reaches-the-write.md §T1.
 //
-// # AC4 is unsatisfiable on this surface today, and this is not this
-// # phase's call to fix
+// # P5 closed the gap this block used to document
 //
-// The spec's own contract table (§T1: "the resolver: already a field on
-// each adapter... no new plumbing") is FALSE for MCP. internal/cli's
-// MirrorResolver implements validate.ParentCriteriaCounter,
-// validate.ParentCriteriaIDs and validate.ResponseParentResolver
-// (adapters.go:629, :677, :752, gated at compile time by the var _
-// assertions at :726, :734, :782). internal/mcp's own MirrorResolver
-// implements neither — grep this file's KnownArtifact/Digest/ThreadOf/
-// ThreadExists/System/Skipped/ensureIndex against the CLI list above.
+// Until rules-that-reach-2026-08 P5, internal/mcp's own MirrorResolver
+// implemented validate.Resolver but NEITHER validate.ParentCriteriaCounter
+// NOR validate.ParentCriteriaIDs NOR validate.ResponseParentResolver — not
+// a duplicate of internal/cli's own capability, an ABSENCE of it. P1's own
+// events-partition call to ValidateEventWithContext was correct and
+// reached, but verdicts.go's checkVerdictIndexRange type-asserts the
+// Resolver for those three capabilities before it can count a parent's
+// declared criteria at all, so REF-019/REF-023 always degraded to "cannot
+// check" and returned nil on this surface — an MCP-authored incomplete or
+// out-of-range verdicts[] minted clean at submit
+// (KI-02301-MCP-VERDICT-RESOLVER-GAP, now retired).
 //
-// verdicts.go's checkVerdictIndexRange (internal/validate) type-asserts the
-// Resolver for those capabilities before it can count a parent's declared
-// criteria at all; without them it always degrades to "cannot check" and
-// returns nil. So the two call sites this phase adds are CORRECT and
-// reached — the events partition now really does invoke
-// ValidateEventWithContext, and it always did nothing wrong — but REF-019/
-// REF-023 are structurally inert on this surface regardless, exactly the
-// same "a rule that is true and inert" shape wave 25B's own history
-// (eventproducer.go's ValidateEventWithContext doc comment) already names.
-//
-// Verified empirically: an incomplete-verdicts submission through this
-// adapter returns exactly one violation, SCH-007 (an unrelated schema
-// note), never REF-023.
-//
-// Porting AcceptanceCriteriaCount/AcceptanceCriteriaIDs/ParentOf into this
-// file is real, scoped work — its own test surface, its own compile
-// gates — and a resolver-capability port is a bigger decision than "two
-// call sites" (spec §11's own amendment record: reading code, not the
-// backlog row, is what this epic's audits are for). Reported rather than
-// done here; see this wave's own report for the two next-step options.
+// P5 moved the capability into internal/cache (ADR-004) and gave this
+// surface's own MirrorResolver thin delegations to it (adapters.go, gated
+// at compile time by the var _ assertions immediately below ensureIndex),
+// the same shape internal/cli's MirrorResolver already carried. The two
+// tests below are the flipped proof: they used to assert the documented
+// gap (a clean submit); they now assert the refusal, watched failing
+// before this phase's fix and green after.
 
 // p1MCPWriteParentWithTwoCriteria mirrors internal/cli's own
 // p1WriteParentWithTwoCriteria.
@@ -320,14 +326,14 @@ func p1MCPHasViolationCode(violations []validate.Violation, code string) bool {
 	return false
 }
 
-// TestSubmitValidatorAdapterEventsPartitionCallsTheEntryPointButCannotResolveVerdictIndex
-// documents the gap this block's own header explains: the events partition
-// now DOES call ValidateEventWithContext (the fix this phase makes), but an
-// out-of-range verdict index passes through clean, because
-// internal/mcp.MirrorResolver does not implement
-// validate.ParentCriteriaCounter — see the header comment above for why
-// porting that capability is out of this phase's own scope.
-func TestSubmitValidatorAdapterEventsPartitionCallsTheEntryPointButCannotResolveVerdictIndex(t *testing.T) {
+// TestSubmitValidatorAdapterEventsPartitionRefusesOutOfRangeVerdictIndex is
+// P5's AC1 (renamed from
+// ...CallsTheEntryPointButCannotResolveVerdictIndex, which used to assert
+// the documented gap): with the capability now delegated to
+// internal/cache, an out-of-range verdict index is refused with REF-019 on
+// this surface too — mirrors internal/cli/adapters_test.go's own test of
+// the same name.
+func TestSubmitValidatorAdapterEventsPartitionRefusesOutOfRangeVerdictIndex(t *testing.T) {
 	t.Parallel()
 	corpus, err := schema.Load()
 	if err != nil {
@@ -348,19 +354,26 @@ func TestSubmitValidatorAdapterEventsPartitionCallsTheEntryPointButCannotResolve
 		{Path: "axon/events/2026/01J8QYK2Z3ABCDEFGHJKMNPQRT.yaml", Content: eventContent},
 	}
 
-	if err := adapter.ValidateSubmit(context.Background(), files); err != nil {
-		t.Fatalf("ValidateSubmit: %v, want nil today — this is the documented gap (REF-019 is unreachable "+
-			"on this surface, see this block's header comment), not the phase's own regression", err)
+	err = adapter.ValidateSubmit(context.Background(), files)
+	if err == nil {
+		t.Fatal("ValidateSubmit: expected a refusal for an out-of-range verdict index, got nil — " +
+			"an events-only submission must not write unjudged (P5: this surface now carries the same " +
+			"capability internal/cli already did)")
+	}
+	var violationErr *ViolationError
+	if !errors.As(err, &violationErr) {
+		t.Fatalf("expected a *ViolationError, got %T: %v", err, err)
+	}
+	if !p1MCPHasViolationCode(violationErr.Violations, "REF-019") {
+		t.Fatalf("ValidateSubmit refused, but not with REF-019: %+v", violationErr.Violations)
 	}
 }
 
-// TestSubmitValidatorAdapterEventsPartitionCallsTheEntryPointButCannotResolveVerdictCompleteness
-// is the same gap's REF-023 half: verdicts.go's checkVerdictCompleteness
-// rides the same call site as checkVerdictIndexRange (REF-019), so it
-// degrades identically. Verified: the only violation this submission
-// produces is SCH-007, an unrelated schema note about the event's own id
-// pattern's neighbourhood — never REF-023.
-func TestSubmitValidatorAdapterEventsPartitionCallsTheEntryPointButCannotResolveVerdictCompleteness(t *testing.T) {
+// TestSubmitValidatorAdapterEventsPartitionRefusesIncompleteVerdicts is
+// P5's AC2 (renamed from
+// ...CallsTheEntryPointButCannotResolveVerdictCompleteness) — REF-023's
+// own completeness half, riding the same call site as AC1.
+func TestSubmitValidatorAdapterEventsPartitionRefusesIncompleteVerdicts(t *testing.T) {
 	t.Parallel()
 	corpus, err := schema.Load()
 	if err != nil {
@@ -383,16 +396,83 @@ func TestSubmitValidatorAdapterEventsPartitionCallsTheEntryPointButCannotResolve
 
 	err = adapter.ValidateSubmit(context.Background(), files)
 	if err == nil {
-		return // no violations at all is also consistent with the documented gap
+		t.Fatal("ValidateSubmit: expected a refusal for an incomplete verdict set, got nil")
 	}
 	var violationErr *ViolationError
 	if !errors.As(err, &violationErr) {
 		t.Fatalf("expected a *ViolationError, got %T: %v", err, err)
 	}
-	if p1MCPHasViolationCode(violationErr.Violations, "REF-023") {
-		t.Fatalf("ValidateSubmit refused with REF-023 — the resolver-capability gap this block documents "+
-			"has closed; update this test (and the header comment) to assert the real refusal instead: %+v",
-			violationErr.Violations)
+	if !p1MCPHasViolationCode(violationErr.Violations, "REF-023") {
+		t.Fatalf("ValidateSubmit refused, but not with REF-023: %+v", violationErr.Violations)
+	}
+}
+
+// p1MCPWriteResponseArtifact mirrors internal/cli/adapters_test.go's own
+// writeResponseArtifact: a minimal response committed under
+// mirrorDir/id.md carrying a `parent:` field — ParentOf's own read target.
+func p1MCPWriteResponseArtifact(t *testing.T, mirrorDir, id, parentID string) {
+	t.Helper()
+	raw := "---\nid: " + id + "\ntype: response\nparent: " + parentID + "\n---\nbody\n"
+	if err := os.WriteFile(filepath.Join(mirrorDir, id+".md"), []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// p1MCPVerifyEvent mirrors p1MCPCloseEvent, transition verify — subject is
+// the RESPONSE id, never the parent directly.
+func p1MCPVerifyEvent(eventID, responseID, tail string) []byte {
+	return []byte("schema: event/v2\n" +
+		"event: " + eventID + "\n" +
+		"space: fixture-space\n" +
+		"subject: " + responseID + "\n" +
+		"transition: verify\n" +
+		"actor: {kind: agent, name: bot, system: axon}\n" +
+		"at: 2026-07-21T10:00:00Z\n" +
+		tail)
+}
+
+// TestSubmitValidatorAdapterEventsPartitionVerifyHopsToParentForVerdictCompleteness
+// is P5's own regression for the ResponseParentResolver hop specifically.
+// The two tests above use a `close` event, whose own subject already IS
+// the parent — resolveOutOfRangeIndices resolves a count directly and
+// ParentOf is never reached. A `verify` event's subject is the RESPONSE
+// id, so checkVerdictIndexRange (verdicts.go) can only resolve a count by
+// hopping through ResponseParentResolver.ParentOf first — the second of
+// the three capabilities P5 moved, left unexercised by a close-event
+// fixture alone.
+func TestSubmitValidatorAdapterEventsPartitionVerifyHopsToParentForVerdictCompleteness(t *testing.T) {
+	t.Parallel()
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	engine := validate.New(corpus)
+	mirrorDir := t.TempDir()
+	const parentID = "XW-axon-20260820-p5vh1"
+	const responseID = "XS-beta-20260820-p5vh1"
+	p1MCPWriteParentWithTwoCriteria(t, mirrorDir, parentID)
+	p1MCPWriteResponseArtifact(t, mirrorDir, responseID, parentID)
+	manifest := testManifest()
+	legality := NewLegalityAdapter(mirrorDir, "axon", manifest)
+	resolver := NewMirrorResolver(mirrorDir, manifest)
+	adapter := NewSubmitValidatorAdapter(engine, "axon", resolver, legality)
+
+	eventContent := p1MCPVerifyEvent("01J8QYK2Z3ABCDEFGHJKMNPQRZ", responseID,
+		"verdicts:\n  - index: 0\n    verdict: met\n    cause_owner: axon\n")
+	files := []space.FileWrite{
+		{Path: "axon/events/2026/01J8QYK2Z3ABCDEFGHJKMNPQRZ.yaml", Content: eventContent},
+	}
+
+	err = adapter.ValidateSubmit(context.Background(), files)
+	if err == nil {
+		t.Fatal("ValidateSubmit: expected a refusal for an incomplete verdict set reached via the verify->parent hop, got nil")
+	}
+	var violationErr *ViolationError
+	if !errors.As(err, &violationErr) {
+		t.Fatalf("expected a *ViolationError, got %T: %v", err, err)
+	}
+	if !p1MCPHasViolationCode(violationErr.Violations, "REF-023") {
+		t.Fatalf("ValidateSubmit refused, but not with REF-023: %+v", violationErr.Violations)
 	}
 }
 

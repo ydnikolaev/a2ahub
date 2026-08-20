@@ -19,6 +19,16 @@ package mcp
 // independently owned here (actor resolution, SubmitValidatorAdapter's
 // event/draft partitioning) is this phase's own drift to watch for.
 //
+// rules-that-reach-2026-08 P5 applied the SAME ADR-004 shape one layer
+// deeper: MirrorResolver's AcceptanceCriteriaCount/AcceptanceCriteriaIDs/
+// ParentOf (validate.ParentCriteriaCounter/ParentCriteriaIDs/
+// ResponseParentResolver) now delegate to internal/cache, closing
+// KI-02301-MCP-VERDICT-RESOLVER-GAP: this surface previously carried NO
+// implementation of those three capabilities at all (not a duplicate — an
+// absence), so REF-019/REF-023 degraded to "cannot check" on every
+// MCP-authored verify/close, silently, while the CLI surface already
+// answered them. See those three methods' own doc comments, below.
+//
 // os.Getenv lives ONLY in this file within internal/mcp (rails "config &
 // secrets": env access confined to the actor-resolution layer) —
 // resolveActor is the one call site.
@@ -415,6 +425,97 @@ func (r *MirrorResolver) ensureIndex() {
 		r.skipped = skipped
 	})
 }
+
+// AcceptanceCriteriaCount implements validate.ParentCriteriaCounter (P6's
+// REF-018 rule, internal/validate/incompleteness.go): it reports how many
+// `acceptance_criteria[]` entries parentID's own frontmatter declares.
+//
+// rules-that-reach-2026-08 P5: this surface previously carried no
+// implementation of this capability at all — internal/mcp.MirrorResolver
+// satisfied validate.Resolver but not validate.ParentCriteriaCounter, so
+// checkVerdictIndexRange (verdicts.go) type-asserted, failed, and degraded
+// to "cannot check" on every MCP-authored verify/close, silently, even
+// though the CLI surface already answered the identical question
+// (KI-02301-MCP-VERDICT-RESOLVER-GAP, now retired). ADR-004 (docs/
+// decisions.md) is why the fix is a delegation to
+// internal/cache.AcceptanceCriteriaCount rather than a second,
+// independently-worded copy of internal/cli's own former method: both
+// surfaces already import internal/cache, and this package still imports
+// no internal/cli symbol.
+//
+// ok=false covers every "cannot count" case alike — parentID absent from
+// this resolver's index, its file failing to re-read/parse/decode, or
+// `acceptance_criteria` absent from its frontmatter — deliberately never
+// degrading to (0, true) for an absent field. See
+// internal/cache.AcceptanceCriteriaCount's own doc comment for the full
+// contract.
+func (r *MirrorResolver) AcceptanceCriteriaCount(parentID string) (count int, ok bool) {
+	r.ensureIndex()
+	return cache.AcceptanceCriteriaCount(r.mirrorDir, r.index, parentID)
+}
+
+// var _ validate.ParentCriteriaCounter = (*MirrorResolver)(nil) is P5's
+// own type-level gate, mirroring internal/cli/adapters.go's identical
+// guard: it fails to COMPILE if AcceptanceCriteriaCount is ever removed or
+// its signature drifts. The runtime type-assertion this capability rides
+// (checkVerdictIndexRange) cannot otherwise distinguish "this Resolver
+// deliberately cannot answer" from "this Resolver was never given the
+// capability at all" — both degrade to the identical "cannot check"
+// outcome, which is exactly how this surface's own gap survived five
+// prior instances of this duplication class before being found by a
+// person reading code rather than a test going red. This guard turns the
+// next removal into a compile error instead.
+var _ validate.ParentCriteriaCounter = (*MirrorResolver)(nil)
+
+// AcceptanceCriteriaIDs implements validate.ParentCriteriaIDs
+// (defects-fix-2026-08 P4). It is the SAME read as AcceptanceCriteriaCount
+// above, one field deeper: the ids an id-addressed parent declares, so
+// REF-019's range check and REF-023's completeness rule can resolve a
+// `criterion:`-keyed verdict entry to a position.
+//
+// P5: a thin delegation to internal/cache.AcceptanceCriteriaIDs — see
+// AcceptanceCriteriaCount's own doc comment above for the full move
+// rationale.
+//
+// ok=false means the parent declares no ids — a plain-string
+// acceptance_criteria array, an unresolvable parent, or no criteria at all.
+// The consumer degrades to the ordinal path rather than refusing, which is
+// resolveParentCriteriaIDs' own documented contract.
+func (r *MirrorResolver) AcceptanceCriteriaIDs(parentID string) (ids []string, ok bool) {
+	r.ensureIndex()
+	return cache.AcceptanceCriteriaIDs(r.mirrorDir, r.index, parentID)
+}
+
+// var _ validate.ParentCriteriaIDs = (*MirrorResolver)(nil) is
+// AcceptanceCriteriaCount's own type-level-gate pattern, applied to this
+// second capability.
+var _ validate.ParentCriteriaIDs = (*MirrorResolver)(nil)
+
+// ParentOf implements validate.ResponseParentResolver (P6 wave C's REF-019,
+// internal/validate/verdicts.go): it reports a RESPONSE artifact's own
+// `parent` field, so checkVerdictIndexRange can hop from a `verify` event's
+// subject (the response id) to the criteria-bearing artifact
+// AcceptanceCriteriaCount actually knows how to count.
+//
+// P5: a thin delegation to internal/cache.ParentOf — see
+// AcceptanceCriteriaCount's own doc comment above for the full move
+// rationale.
+//
+// ok=false covers every "cannot resolve" case alike: responseID absent from
+// the index, the file failing to re-read/parse/decode, or `parent` empty or
+// absent (a non-response artifact, or a malformed response) — never a
+// synthesized parent id.
+func (r *MirrorResolver) ParentOf(responseID string) (parentID string, ok bool) {
+	r.ensureIndex()
+	return cache.ParentOf(r.mirrorDir, r.index, responseID)
+}
+
+// var _ validate.ResponseParentResolver = (*MirrorResolver)(nil) is
+// AcceptanceCriteriaCount's own type-level-gate pattern, applied to this
+// third and final capability — every mcp.NewMirrorResolver construction
+// site gets all three by construction, with nothing left to remember or
+// silently drop at a call site.
+var _ validate.ResponseParentResolver = (*MirrorResolver)(nil)
 
 // splitRefGrammar parses a §5.7 ref (`id`, `id@version`, `id#digest`,
 // `id@version#digest`) into its id/version/digest components.

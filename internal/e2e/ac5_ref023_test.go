@@ -12,23 +12,36 @@
 // first version, which found exactly that before the `validate --ci` step
 // was added below.
 //
-// # rules-that-reach-2026-08 P1 changed this — on ONE surface
+// # rules-that-reach-2026-08 P1 changed this — on ONE surface, then P5
+// # closed the other
 //
-// P1's own events-partition call to validate.ValidateEventWithContext makes
-// the CLI surface refuse the incomplete case AT SUBMIT now (the
-// "cli-authored" subtest below asserts the refusal directly, via `run` +
-// exit code + REF-023 in stderr, rather than committing it and catching it
-// downstream). The MCP surface's own SubmitValidatorAdapter gained the
-// identical call site, but internal/mcp.MirrorResolver does not implement
-// validate.ParentCriteriaCounter the way internal/cli.MirrorResolver does —
-// see internal/mcp/adapters_test.go's own P1 block for the full
-// explanation — so checkVerdictIndexRange (verdicts.go) still degrades to
-// "cannot check" on that surface, and the "mcp-authored" subtest below is
-// UNCHANGED: still refused only at merge, which is what it was already
-// covering and stays true evidence for.
+// P1's own events-partition call to validate.ValidateEventWithContext made
+// the CLI surface refuse the incomplete case AT SUBMIT (the "cli-authored"
+// subtest below asserts the refusal directly, via `run` + exit code +
+// REF-023 in stderr, rather than committing it and catching it downstream).
+// The MCP surface's own SubmitValidatorAdapter gained the identical call
+// site in P1, but internal/mcp.MirrorResolver did not yet implement
+// validate.ParentCriteriaCounter/ParentCriteriaIDs/ResponseParentResolver
+// the way internal/cli.MirrorResolver did, so checkVerdictIndexRange
+// (verdicts.go) still degraded to "cannot check" on that surface — the
+// "mcp-authored" subtest below used to assert exactly that gap (a clean
+// submit, caught only later at `validate --ci`).
 //
-// This is a T3 row: nothing proves AC5 until the BUILT `a2a` binary itself
-// — both surfaces cmd/a2a/wire.go wires (`a2a verify`) and
+// P5 (this phase) moved those three capabilities into internal/cache
+// (ADR-004, docs/decisions.md) and gave internal/mcp.MirrorResolver thin
+// delegations to them, closing KI-02301-MCP-VERDICT-RESOLVER-GAP (retired,
+// releasenotes/current/known-issues.yaml). The "mcp-authored" subtest below
+// is now the FLIPPED proof — restructured to mirror "cli-authored"'s own
+// shape (refusal AT SUBMIT, nothing committed for the incomplete case) —
+// watched failing before P5's fix and green after. AC3 (below) additionally
+// asserts the two surfaces' refusal text is byte-identical, which is why
+// both subtests now arrange their parent under the SAME id
+// (ac5RefusalParentID): the REF-023 message embeds the parent id, so two
+// different ids would defeat a byte-for-byte comparison regardless of
+// whether the underlying rule fired identically.
+//
+// This is a T3 row: nothing proves AC1/AC2/AC3 until the BUILT `a2a` binary
+// itself — both surfaces cmd/a2a/wire.go wires (`a2a verify`) and
 // internal/mcp/wire.go wires (`a2a mcp`'s own stdio JSON-RPC `a2a_exchange`
 // verify action) — is driven end to end, at a space floor AT OR ABOVE
 // contract.ContractPublicationFloor (wave33Floor, main_test.go's own
@@ -50,6 +63,14 @@
 // as a genuinely standalone write, over the SAME two declared criteria as
 // the first. The FIRST response is verified with an incomplete verdicts[]
 // (names only criterion 0 of 2); the SECOND with a complete one (both).
+//
+// The two subtests below deliberately do NOT call t.Parallel(): AC3's own
+// comparison, at the bottom of the outer test function, reads both
+// subtests' captured refusal text after both have run. A t.Parallel()
+// subtest only resumes once its PARENT test function has already returned
+// — so a parallel sibling cannot hand a value back to code that runs after
+// both `t.Run` calls in the same parent. The outer test itself still runs
+// parallel to the rest of this package (its own t.Parallel(), below).
 package e2e
 
 import (
@@ -66,6 +87,17 @@ import (
 // ac5Criteria is the two-criterion acceptance_criteria[] every AC5 fixture
 // parent declares.
 var ac5Criteria = []string{"first criterion is met", "second criterion is met"}
+
+// ac5RefusalParentID is the ONE parent id both the "cli-authored" and
+// "mcp-authored" subtests below arrange (in their own, fully isolated
+// hostRigs — separate remote, separate temp dirs, so there is no
+// collision) — required for AC3's byte-identical comparison:
+// checkVerdictCompleteness's own REF-023 message
+// (internal/validate/verdicts.go) embeds the parent id it counted against,
+// so two different ids would defeat a literal string-equality assertion
+// regardless of whether the rule itself fired identically on both
+// surfaces.
+const ac5RefusalParentID = "XQ-axon-20260820-ac5s"
 
 // ac5WriteQuestionWithCriteria is writeQuestionArtifact's (helpers_test.go)
 // own twin, widened to carry acceptance_criteria[] — base.schema.json
@@ -316,23 +348,54 @@ func ac5AssertMCPToolSucceeded(t *testing.T, toolName string, result ac5ToolsCal
 	t.Fatalf("mcp tools/call %s failed: %s", toolName, strings.Join(msgs, " | "))
 }
 
-// TestP1AC5REF023RefusesAnIncompleteVerifyOnBothSurfaces is P1's AC5: the
-// same incomplete-`verdicts[]` shape internal/cli's own direct-construction
-// proof already refuses (TestValidateCI_REF023FiresOnAnIncompleteVerdictsArray,
+// ac5AssertMCPToolFailed is ac5AssertMCPToolSucceeded's own inverse (P5):
+// fails the test, naming the tool's own SUCCESS, when result does NOT
+// report isError — and returns content[0]'s own text otherwise, the piece a
+// caller asserts on for the refusal's own wording (AC1/AC2/AC3 below).
+//
+// server.go's tools/call error branch (`spec.Handler` returning a non-nil
+// err) ALWAYS appends err.Error() as content[0] first, then a SECOND block
+// only when the handler's own structured return value is non-nil — which
+// this write-funnel path's own submitResult IS whenever
+// hasWriteResult(result) is true, even on a failed call (eventdoc.go's own
+// `submit`: a partial P4 outcome, e.g. a pushed branch the funnel could not
+// validate, still carries a non-zero WriteResult). Measured empirically: a
+// REF-023 refusal through `a2a_exchange` verify here carries content[0] =
+// the error text and content[1] = that partial result's own JSON — joining
+// both, as an earlier version of this helper did, corrupted AC3's own
+// byte-identical comparison against the CLI surface's single-line stderr.
+func ac5AssertMCPToolFailed(t *testing.T, toolName string, result ac5ToolsCallResult) string {
+	t.Helper()
+	if !result.IsError {
+		t.Fatalf("mcp tools/call %s: succeeded, want a refusal", toolName)
+	}
+	if len(result.Content) == 0 {
+		t.Fatalf("mcp tools/call %s: isError with no content block", toolName)
+	}
+	return strings.TrimSpace(result.Content[0].Text)
+}
+
+// TestP1AC5REF023RefusesAnIncompleteVerifyOnBothSurfaces is P1's AC5
+// (REF-023 refuses AT SUBMIT on the CLI surface) widened by P5 into
+// rules-that-reach-2026-08's own AC1/AC2/AC3: the same incomplete-
+// `verdicts[]` shape internal/cli's own direct-construction proof already
+// refuses (TestValidateCI_REF023FiresOnAnIncompleteVerdictsArray,
 // cmd_validate_ci_test.go) is proven here at T3 — the BUILT binary, on both
 // the CLI surface (`a2a verify`) and the MCP surface (`a2a mcp`'s
 // `a2a_exchange` verify action) — at wave33Floor
-// (contract.ContractPublicationFloor itself, never a literal).
+// (contract.ContractPublicationFloor itself, never a literal), refusing AT
+// SUBMIT identically on both, with byte-identical refusal text (AC3).
 func TestP1AC5REF023RefusesAnIncompleteVerifyOnBothSurfaces(t *testing.T) {
 	t.Parallel()
 
+	var cliRefusalText, mcpRefusalText string
+
 	t.Run("cli-authored", func(t *testing.T) {
-		t.Parallel()
 		axon := newHostRig(t, "axon", "axon", "beta")
 		beta := axon.peer("beta")
 		raiseHostRigFloor(t, axon, wave33Floor, "axon", "beta")
 
-		const parentID = "XQ-axon-20260820-ac51"
+		const parentID = ac5RefusalParentID
 		ac5ArrangeParent(t, axon, parentID)
 
 		axon.mustRun("sync")
@@ -351,12 +414,10 @@ func TestP1AC5REF023RefusesAnIncompleteVerifyOnBothSurfaces(t *testing.T) {
 		before := listCommittedPaths(t, mirrorDir, "HEAD", "axon/events")
 
 		// rules-that-reach-2026-08 P1: the CLI surface's SubmitValidatorAdapter
-		// now calls validate.ValidateEventWithContext over every event file in
-		// the events partition, so an incomplete verdicts[] is refused AT
-		// SUBMIT — before this phase it minted clean here and was only caught
-		// later, at `validate --ci` (this file's own original header comment,
-		// now corrected below). `run`, not `mustRun`: the refusal is the
-		// assertion, and nothing is committed for it.
+		// calls validate.ValidateEventWithContext over every event file in the
+		// events partition, so an incomplete verdicts[] is refused AT SUBMIT.
+		// `run`, not `mustRun`: the refusal is the assertion, and nothing is
+		// committed for it.
 		stdout, stderr, code := axon.run("verify", parentID, "--refs", responseA, "--verdict", "0:met:beta")
 		if code == 0 {
 			t.Fatalf("verify with an incomplete verdicts[] (CLI-authored): exit 0, want a submit-time refusal\nstdout=%s", stdout)
@@ -364,6 +425,7 @@ func TestP1AC5REF023RefusesAnIncompleteVerifyOnBothSurfaces(t *testing.T) {
 		if !strings.Contains(stderr, "REF-023") {
 			t.Fatalf("verify with an incomplete verdicts[] (CLI-authored) refused, but not with REF-023: stderr=%s", stderr)
 		}
+		cliRefusalText = strings.TrimSpace(stderr)
 		axon.mustRun("sync")
 		after := listCommittedPaths(t, mirrorDir, "HEAD", "axon/events")
 		if len(after) != len(before) {
@@ -386,12 +448,11 @@ func TestP1AC5REF023RefusesAnIncompleteVerifyOnBothSurfaces(t *testing.T) {
 	})
 
 	t.Run("mcp-authored", func(t *testing.T) {
-		t.Parallel()
 		axon := newHostRig(t, "axon", "axon", "beta")
 		beta := axon.peer("beta")
 		raiseHostRigFloor(t, axon, wave33Floor, "axon", "beta")
 
-		const parentID = "XQ-axon-20260820-ac52"
+		const parentID = ac5RefusalParentID
 		ac5ArrangeParent(t, axon, parentID)
 
 		axon.mustRun("sync")
@@ -409,23 +470,25 @@ func TestP1AC5REF023RefusesAnIncompleteVerifyOnBothSurfaces(t *testing.T) {
 		shaAfterResponses := strings.TrimSpace(gitOutput(t, axon.fx.RemoteURL(), "rev-parse", "main"))
 		before := listCommittedPaths(t, mirrorDir, "HEAD", "axon/events")
 
+		// P5: internal/mcp.MirrorResolver now carries the same three
+		// capabilities internal/cli.MirrorResolver does (ADR-004's shared
+		// internal/cache seat), so an incomplete verdicts[] is refused AT
+		// SUBMIT on this surface too — the same shape as "cli-authored" above,
+		// no longer "succeeds, caught only at validate --ci".
 		incompleteResult := axon.ac5RunMCPTool("a2a_exchange", map[string]any{
 			"action": "verify", "targets": []string{parentID}, "refs": responseA,
 			"verdicts": []ac5VerdictArg{{Index: ac5IndexPtr(0), Verdict: "met", CauseOwner: "beta"}},
 		})
-		ac5AssertMCPToolSucceeded(t, "a2a_exchange (verify, incomplete)", incompleteResult)
+		mcpErrText := ac5AssertMCPToolFailed(t, "a2a_exchange (verify, incomplete)", incompleteResult)
+		if !strings.Contains(mcpErrText, "REF-023") {
+			t.Fatalf("a2a_exchange verify with an incomplete verdicts[] (MCP-authored) failed, but not with REF-023: %s", mcpErrText)
+		}
+		mcpRefusalText = mcpErrText
 
 		axon.mustRun("sync")
 		after := listCommittedPaths(t, mirrorDir, "HEAD", "axon/events")
-		incompletePath := soleAddedPath(t, before, after)
-		shaAfterIncomplete := strings.TrimSpace(gitOutput(t, axon.fx.RemoteURL(), "rev-parse", "main"))
-
-		code, rep, stderr := ac5RunValidateCI(t, mirrorDir, "v3-pr", shaAfterResponses, "axon-bot")
-		if code == 0 {
-			t.Fatalf("validate --ci over an incomplete verdicts[] (MCP-authored): exit 0, want a refusal\nreport=%+v\nstderr=%s", rep, stderr)
-		}
-		if !ac5CIHasViolation(rep, incompletePath, "REF-023") {
-			t.Fatalf("validate --ci over an incomplete verdicts[] (MCP-authored) did not refuse with REF-023: %+v\nstderr=%s", rep, stderr)
+		if len(after) != len(before) {
+			t.Fatalf("verify refused at submit but the mirror gained event(s) anyway: before=%v after=%v", before, after)
 		}
 
 		before = listCommittedPaths(t, mirrorDir, "HEAD", "axon/events")
@@ -442,7 +505,7 @@ func TestP1AC5REF023RefusesAnIncompleteVerifyOnBothSurfaces(t *testing.T) {
 		after = listCommittedPaths(t, mirrorDir, "HEAD", "axon/events")
 		completePath := soleAddedPath(t, before, after)
 
-		code, rep, stderr = ac5RunValidateCI(t, mirrorDir, "v3-pr", shaAfterIncomplete, "axon-bot")
+		code, rep, stderr := ac5RunValidateCI(t, mirrorDir, "v3-pr", shaAfterResponses, "axon-bot")
 		if code != 0 || !rep.Valid {
 			t.Fatalf("validate --ci over a complete verdicts[] (MCP-authored): code=%d valid=%v, want an accepted PR\nreport=%+v\nstderr=%s", code, rep.Valid, rep, stderr)
 		}
@@ -450,4 +513,18 @@ func TestP1AC5REF023RefusesAnIncompleteVerifyOnBothSurfaces(t *testing.T) {
 			t.Fatalf("validate --ci over a complete verdicts[] (MCP-authored) was refused by REF-023: %+v", rep)
 		}
 	})
+
+	// AC3: the refusal text must be byte-identical across surfaces for the
+	// identical submission (same parent id, same incomplete verdicts[]
+	// shape) — proof that ADR-004's shared internal/cache seat, not two
+	// independently-worded adapters, produced this message. Skipped when
+	// either subtest above already failed: a mismatch downstream of an
+	// already-reported defect adds nothing.
+	if t.Failed() {
+		return
+	}
+	if cliRefusalText != mcpRefusalText {
+		t.Fatalf("AC3: refusal text differs between surfaces for the identical incomplete verdicts[] submission:\n  cli: %s\n  mcp: %s", cliRefusalText, mcpRefusalText)
+	}
+	t.Logf("AC3 refusal text, side by side:\n  cli: %s\n  mcp: %s", cliRefusalText, mcpRefusalText)
 }

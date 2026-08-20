@@ -20,7 +20,6 @@ import (
 	"io"
 	"os"
 	"os/user"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -594,27 +593,17 @@ func (r *MirrorResolver) ensureIndex() {
 // REF-018 rule, internal/validate/incompleteness.go): it reports how many
 // `acceptance_criteria[]` entries parentID's own frontmatter declares.
 //
-// It resolves parentID's on-disk path from THIS resolver's own index
-// (ensureIndex, above) rather than walking the mirror a second time —
-// TestMirrorResolverAdapterCarriesNoWalk (adapters_test.go) guards this
-// file against ever regaining its own directory walk (AC-1.3, spec
-// 01-resolver-one-home.md).
-// The file is then re-read and parsed for `acceptance_criteria[]`
-// specifically, via the SAME artifact.ParseFrontmatter ->
-// schema.DecodeYAMLInstance pair the rest of this package already uses,
-// never a second frontmatter parser — walkArtifacts' own decode discards
-// this field (ArtifactIndexEntry carries only Path/Thread/Digest), so it
-// cannot be read off the index alone.
-//
-// This method used to live in cmd/a2a as a package-private wrapper
-// (mirrorResolverWithCriteria) applied at only two of MirrorResolver's four
-// production construction sites (cmd/a2a/wire.go's own runSubmit and
-// resolveLifecycleDepsWithPolicy); contract_p6_wiring.go and work_wiring.go
-// each built a bare, uncounted resolver instead, so REF-018 was live or
-// dormant depending on which call site happened to remember the wrapper.
-// The 2026-08-09 readiness audit (row 50) moved the capability onto this
-// type instead, so every cli.NewMirrorResolver call site gets it by
-// construction, with nothing left to remember at the call site.
+// P5 (rules-that-reach-2026-08) MOVED the read/parse/decode substance of
+// this method into internal/cache.AcceptanceCriteriaCount, per ADR-004
+// (docs/decisions.md): both internal/cli and internal/mcp already import
+// internal/cache, and a second, independently-worded copy in
+// internal/mcp/adapters.go would have been the sixth instance of the
+// cli/mcp duplication class the ADR-001 DESIGN row tracks. What remains
+// here is a thin delegation — this resolver's own already-built index
+// (ensureIndex, above) is handed to the shared function rather than
+// walking the mirror a second time; TestMirrorResolverAdapterCarriesNoWalk
+// (adapters_test.go) still guards this file against ever regaining its
+// own directory walk (AC-1.3, spec 01-resolver-one-home.md).
 //
 // ok=false covers every "cannot count" case alike — parentID absent from
 // this resolver's index, its file failing to re-read/parse/decode, or
@@ -625,34 +614,11 @@ func (r *MirrorResolver) ensureIndex() {
 // criteria", firing REF-018 against any unmet[] entry on a parent kind
 // that never had the field to begin with — a verdict change
 // ParentCriteriaCounter's own doc comment (incompleteness.go) does not
-// permit.
+// permit. See internal/cache.AcceptanceCriteriaCount's own doc comment for
+// the full contract, carried forward unabridged by the move.
 func (r *MirrorResolver) AcceptanceCriteriaCount(parentID string) (count int, ok bool) {
 	r.ensureIndex()
-	entry, found := r.index[parentID]
-	if !found {
-		return 0, false
-	}
-	raw, err := os.ReadFile(filepath.Join(r.mirrorDir, filepath.FromSlash(entry.Path)))
-	if err != nil {
-		return 0, false
-	}
-	fm, err := artifact.ParseFrontmatter(raw)
-	if err != nil {
-		return 0, false
-	}
-	inst, err := schema.DecodeYAMLInstance(fm.YAML)
-	if err != nil {
-		return 0, false
-	}
-	m, ok := inst.(map[string]any)
-	if !ok {
-		return 0, false
-	}
-	criteria, ok := m["acceptance_criteria"].([]any)
-	if !ok {
-		return 0, false
-	}
-	return len(criteria), true
+	return cache.AcceptanceCriteriaCount(r.mirrorDir, r.index, parentID)
 }
 
 // AcceptanceCriteriaIDs implements validate.ParentCriteriaIDs
@@ -661,14 +627,10 @@ func (r *MirrorResolver) AcceptanceCriteriaCount(parentID string) (count int, ok
 // REF-019's range check and REF-023's completeness rule can resolve a
 // `criterion:`-keyed verdict entry to a position.
 //
-// It ships in the same wave as the interface, deliberately. P4's own report
-// named the gap honestly — the rule existed and no production Resolver
-// offered the capability, so an id-addressed parent degraded to "cannot
-// check" through `a2a validate --ci`. That is the epic's own founding shape
-// (a guarantee whose authoring path was never moved to it) reproduced by the
-// phase that exists to end it, and `internal/cli/cmd_lifecycle.go`'s
-// lifecycleResolveVerdicts ALREADY writes `criterion:`-keyed entries for
-// id-declaring parents, so real events of that shape exist now.
+// P5 moved the read/parse/decode substance into
+// internal/cache.AcceptanceCriteriaIDs (see AcceptanceCriteriaCount's own
+// doc comment above for the full move rationale); this method is now a
+// thin delegation over this resolver's own already-built index.
 //
 // ok=false means the parent declares no ids — a plain-string
 // acceptance_criteria array, an unresolvable parent, or no criteria at all.
@@ -676,49 +638,7 @@ func (r *MirrorResolver) AcceptanceCriteriaCount(parentID string) (count int, ok
 // resolveParentCriteriaIDs' own documented contract.
 func (r *MirrorResolver) AcceptanceCriteriaIDs(parentID string) (ids []string, ok bool) {
 	r.ensureIndex()
-	entry, found := r.index[parentID]
-	if !found {
-		return nil, false
-	}
-	raw, err := os.ReadFile(filepath.Join(r.mirrorDir, filepath.FromSlash(entry.Path)))
-	if err != nil {
-		return nil, false
-	}
-	fm, err := artifact.ParseFrontmatter(raw)
-	if err != nil {
-		return nil, false
-	}
-	inst, err := schema.DecodeYAMLInstance(fm.YAML)
-	if err != nil {
-		return nil, false
-	}
-	m, ok := inst.(map[string]any)
-	if !ok {
-		return nil, false
-	}
-	criteria, ok := m["acceptance_criteria"].([]any)
-	if !ok {
-		return nil, false
-	}
-	out := make([]string, 0, len(criteria))
-	for _, c := range criteria {
-		obj, isObj := c.(map[string]any)
-		if !isObj {
-			// The array is HOMOGENEOUS by schema (P3): one plain string means
-			// this is an ordinal-addressed parent, so it declares no ids at
-			// all rather than a partial set.
-			return nil, false
-		}
-		id, isStr := obj["id"].(string)
-		if !isStr || id == "" {
-			return nil, false
-		}
-		out = append(out, id)
-	}
-	if len(out) == 0 {
-		return nil, false
-	}
-	return out, true
+	return cache.AcceptanceCriteriaIDs(r.mirrorDir, r.index, parentID)
 }
 
 // var _ validate.ParentCriteriaIDs = (*MirrorResolver)(nil) is the same
@@ -739,11 +659,10 @@ var _ validate.ParentCriteriaCounter = (*MirrorResolver)(nil)
 // subject (the response id) to the criteria-bearing artifact
 // AcceptanceCriteriaCount actually knows how to count.
 //
-// Same shape as AcceptanceCriteriaCount just above: resolve responseID's
-// on-disk path from this resolver's own index (no second walk —
-// TestMirrorResolverAdapterCarriesNoWalk's own guard applies here too), then
-// re-read and parse for `parent` specifically — walkArtifacts' own decode
-// discards it (ArtifactIndexEntry carries only Path/Thread/Digest).
+// P5 moved the read/parse/decode substance into internal/cache.ParentOf
+// (see AcceptanceCriteriaCount's own doc comment above for the full move
+// rationale); this method is now a thin delegation over this resolver's
+// own already-built index.
 //
 // ok=false covers every "cannot resolve" case alike: responseID absent from
 // the index, the file failing to re-read/parse/decode, or `parent` empty or
@@ -751,28 +670,7 @@ var _ validate.ParentCriteriaCounter = (*MirrorResolver)(nil)
 // synthesized parent id.
 func (r *MirrorResolver) ParentOf(responseID string) (parentID string, ok bool) {
 	r.ensureIndex()
-	entry, found := r.index[responseID]
-	if !found {
-		return "", false
-	}
-	raw, err := os.ReadFile(filepath.Join(r.mirrorDir, filepath.FromSlash(entry.Path)))
-	if err != nil {
-		return "", false
-	}
-	fm, err := artifact.ParseFrontmatter(raw)
-	if err != nil {
-		return "", false
-	}
-	var probe struct {
-		Parent string `yaml:"parent"`
-	}
-	if err := yaml.Unmarshal(fm.YAML, &probe); err != nil {
-		return "", false
-	}
-	if probe.Parent == "" {
-		return "", false
-	}
-	return probe.Parent, true
+	return cache.ParentOf(r.mirrorDir, r.index, responseID)
 }
 
 // var _ validate.ResponseParentResolver = (*MirrorResolver)(nil) is

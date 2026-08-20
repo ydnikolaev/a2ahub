@@ -114,7 +114,7 @@
 // The id-addressed form (P3, base.schema.json's `{id, text}` shape) was
 // enhancement-only here at the time this paragraph was written: no
 // concrete Resolver implemented ParentCriteriaIDs below yet. That gap is
-// CLOSED — cli.MirrorResolver (internal/cli/adapters.go:726) now asserts
+// CLOSED — cli.MirrorResolver (internal/cli/adapters.go, its `var _ validate.ParentCriteriaIDs` block) asserts
 // itself against ParentCriteriaIDs at compile time, so an id-addressed
 // parent's completeness IS judged in production wherever a MirrorResolver
 // is the Resolver in play. Kept here as history: the rule reached the
@@ -193,7 +193,7 @@ func resolveOutOfRangeIndices(resolver Resolver, subjectID string, indices []int
 // ParentCriteriaCounter's own doc comment already establishes; never
 // degrading to a slice of empty strings.
 //
-// cli.MirrorResolver (internal/cli/adapters.go:726) implements this —
+// both surfaces' MirrorResolver implement this, via their `var _` blocks —
 // asserted at compile time via `var _ validate.ParentCriteriaIDs =
 // (*MirrorResolver)(nil)` — so an id-addressed parent's verdicts[] DOES get
 // a REF-019 id-range check and a REF-023 completeness verdict wherever a
@@ -225,7 +225,11 @@ func resolveParentCriteriaIDs(resolver Resolver, parentID string) (ids []string,
 // It resolves a RESPONSE id (a `verify` event's own `subject`, per fold's
 // applyResponseScoped) to the parent it answers, so checkVerdictIndexRange
 // can hop from a subject that is not itself criteria-bearing to the one
-// that is. cli.MirrorResolver (adapters.go) is the one shipped
+// that is. Since rules-that-reach-2026-08 P5 the capability lives in
+// internal/cache (parent_criteria.go) and BOTH cli.MirrorResolver and
+// mcp.MirrorResolver delegate to it, each holding compile-time assertions;
+// the sentence below described the single-surface world that preceded that.
+// cli.MirrorResolver (adapters.go) was the one shipped
 // implementation.
 type ResponseParentResolver interface {
 	// ParentOf reports responseID's own `parent` field and whether
@@ -317,7 +321,7 @@ func checkVerdictIndexRange(subjectID string, instance any, resolver Resolver) [
 	// criterion that does not exist, exactly the fact the index-form check
 	// above already reports, addressed differently. Only attempted when
 	// resolver offers the ordered id list at all (ParentCriteriaIDs) —
-	// cli.MirrorResolver does (adapters.go:726), so this is the live path
+	// both MirrorResolvers do (see their `var _` blocks), so this is the live path
 	// for that Resolver, not a dormant one.
 	ids, haveIDs := resolveParentCriteriaIDs(resolver, countedID)
 	unresolvedCriteria := map[string]bool{}
@@ -367,7 +371,8 @@ func checkVerdictIndexRange(subjectID string, instance any, resolver Resolver) [
 //
 // When refs carries a criterion-form entry and resolver offers no
 // ParentCriteriaIDs (haveIDs=false — every Resolver that is not a
-// cli.MirrorResolver, see that interface's own doc comment), completeness
+// either surface's MirrorResolver, both delegating to internal/cache since
+// rules-that-reach-2026-08 P5 — see that interface's own doc comment), completeness
 // cannot be judged for
 // THIS event at all: without the parent's own id list there is no way to
 // tell which of its criteria a `criterion`-keyed entry actually names, so

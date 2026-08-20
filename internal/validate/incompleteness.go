@@ -86,11 +86,22 @@
 // The honest residue is now TWO sites this fix structurally cannot reach, and
 // the paragraph above used to name only part of it. Both are filed:
 //
-//   - internal/mcp constructs its OWN resolver type (mcp/wire.go), so the MCP
-//     surface keeps the gap the CLI just closed — epic-backlog B16. Porting the
-//     method a second time would ship the rule twice, which is the shape
-//     fold.go's own broadcastAckPermitted comment records as having already
-//     caused a bug here; collapsing the two types is the real answer.
+//   - CLOSED 2026-08-20 by rules-that-reach-2026-08 P5, and the way it closed
+//     is worth keeping. This entry read: "internal/mcp constructs its OWN
+//     resolver type, so the MCP surface keeps the gap the CLI just closed —
+//     epic-backlog B16. Porting the method a second time would ship the rule
+//     twice; collapsing the two types is the real answer." The prediction held
+//     exactly. The capability did NOT get ported: the criteria resolution moved
+//     DOWN into internal/cache (parent_criteria.go), per ADR-004's direction,
+//     and both surfaces' MirrorResolver now delegate to it. The two adapter
+//     types still exist and still import nothing of each other's.
+//     Both surfaces carry `var _` assertions for all three interfaces, which is
+//     the part that matters for the next reader: the type-assert here degrades
+//     to "cannot check" on a miss, so a surface MISSING a capability was
+//     indistinguishable at runtime from a parent that genuinely cannot be
+//     resolved. That indistinguishability is why five instances of this class
+//     were each found by a person going to look, months apart. The sixth is a
+//     compile error.
 //   - `a2a data` gets dataNoopSubmitValidator, which runs NO V2 validation at
 //     all — not a resolver missing a capability, a write path missing a
 //     validator. Bigger and different — epic-backlog B15.

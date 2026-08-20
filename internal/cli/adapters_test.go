@@ -492,6 +492,25 @@ func TestMirrorResolverParentOf(t *testing.T) {
 	})
 }
 
+// TestAdaptersFileCarriesNoAcceptanceCriteriaDecode is P5's AC4 structural
+// gate on this surface, the same "read the file, grep the literal" shape
+// TestMirrorResolverAdapterCarriesNoWalk already uses above: the
+// parent-criteria resolution moved into internal/cache (ADR-004), so a
+// future edit that re-added its own `m["acceptance_criteria"]` decode here
+// would resurrect the sixth duplication instance this phase closed. The
+// bracket-literal target (rather than a bare substring match) survives
+// doc-comment prose that still legitimately mentions the field name.
+func TestAdaptersFileCarriesNoAcceptanceCriteriaDecode(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile("adapters.go")
+	if err != nil {
+		t.Fatalf("read adapters.go: %v", err)
+	}
+	if strings.Contains(string(raw), `["acceptance_criteria"]`) {
+		t.Fatal("internal/cli/adapters.go decodes acceptance_criteria directly — the resolution must live only in internal/cache (P5, ADR-004), never a second copy on a surface")
+	}
+}
+
 // --- SubmitValidatorAdapter ------------------------------------------------
 
 func TestSubmitValidatorAdapterValid(t *testing.T) {
