@@ -158,7 +158,17 @@ describe_exemptions() {
 # self-contained tree instead of the real one.
 tracked_files() { # $1 = root
   local root="$1"
-  if [ -d "$root/.git" ]; then
+  # ASK GIT, never test for a `.git` DIRECTORY. In a git worktree `.git` is a
+  # FILE holding a gitdir pointer, so a `-d` test says "not a repo" about a
+  # tree that plainly is one — and this function then silently switched to the
+  # find-everything fallback meant for a non-git root (an unpacked tarball),
+  # walking node_modules, build output and git internals. Found 2026-08-20 by
+  # running `make check` in a worktree to see what a RELEASE would actually
+  # contain: the scan blew past its argument list and the gate refused with
+  # grep exit 126, which at least failed loudly. The quieter half is worse —
+  # a scanner that changes what it scans depending on how the tree was checked
+  # out, without saying so.
+  if ( cd "$root" 2>/dev/null && git rev-parse --is-inside-work-tree >/dev/null 2>&1 ); then
     ( cd "$root" && git ls-files )
   else
     find "$root" -type f | sed "s|^${root}/||"
