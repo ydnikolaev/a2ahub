@@ -94,6 +94,7 @@ scripts/*
 !scripts/check-notify-secrets.sh
 !scripts/check-error-codes.sh
 !scripts/check-frozen-allowlist.sh
+!scripts/ci-parity.sh
 # The lane deriver's ungated list (P12). Public for the same reason internal/lane
 # is: a public checkout that has the derivation but not the file recording which
 # paths are deliberately outside it would refuse on every one of them. Same

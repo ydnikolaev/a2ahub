@@ -60,6 +60,7 @@ PUBLIC_VALIDATOR_FILES=(
   scripts/ci-usage-report.sh
   scripts/check-runner-economics.sh
   scripts/check-frozen-allowlist.sh
+  scripts/ci-parity.sh
   scripts/feedback-intake-policy.sh
   scripts/lib/lane-ungated.txt
   scripts/lib/job-timeouts.tsv

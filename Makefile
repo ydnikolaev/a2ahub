@@ -49,7 +49,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check test check-validators frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
+.PHONY: check test check-validators ci-parity ci-parity-audit frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -60,7 +60,7 @@
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := spec-verify-refs frozen-allowlist lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus view-vocabulary dashboard-props card-content pendency-uniqueness notify-workflow notify-secrets error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral runner-economics space-template-baseline-check
+REPO_GATES := spec-verify-refs ci-parity-audit frozen-allowlist lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus view-vocabulary dashboard-props card-content pendency-uniqueness notify-workflow notify-secrets error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral runner-economics space-template-baseline-check
 
 _print-repo-gates:
 	@echo "$(REPO_GATES)"
@@ -429,6 +429,12 @@ localserver-readonly-routes: ## Local HTTP exposes only the frozen read-only rou
 #   scripts/**/*.sh
 #   docs/runbooks/*.sh
 #   .agents/scripts/*.sh
+ci-parity: ## Run exactly what CI runs, locally, in CI's order (the thing `make check` alone does NOT do).
+	@bash scripts/ci-parity.sh --run
+
+ci-parity-audit: ## Refuse when a CI command is executed by no local step and carries no written excuse.
+	@bash scripts/ci-parity.sh --audit
+
 harness-check: ## Run the gates' --teeth self-tests (harness gates are private/presence-gated; release-preflight is public).
 	@bash scripts/verify.sh harness
 
