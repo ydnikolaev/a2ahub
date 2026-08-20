@@ -113,6 +113,22 @@ async function summaryRegionFor(page, kind, locale) {
   return page.locator(`[data-card-summary="${kind}"]`).first();
 }
 
+// The `#card=` deep link is a first-class door for every kind (the dashboard
+// writes it itself whenever a card opens, and restores from it on load). Two
+// kinds now have NO other door on purpose — a Threads row selects its thread
+// into the pane and Overview's "Open thread" leaves for the Threads screen;
+// Exchange's standalone work-report list is retired — so this is how their
+// cards are opened here. The encoding is the shell's own encodeOpaqueTuple:
+// UTF-8 JSON, base64url, no padding.
+function opaqueCardID(kind, identity) {
+  return Buffer.from(JSON.stringify([kind, identity]), 'utf8').toString('base64url');
+}
+
+async function openCardByDeepLink(page, kind, identity) {
+  const hash = '#card=' + encodeURIComponent(JSON.stringify([kind, opaqueCardID(kind, identity), '']));
+  await page.evaluate(value => { window.location.hash = value; }, hash);
+}
+
 async function openManifestCard(page, kind, locale) {
   const labels = {
     work: { en: 'Exchange', ru: 'Обмен' },
@@ -144,26 +160,28 @@ async function openManifestCard(page, kind, locale) {
       name: `${locale === 'ru' ? 'Открыть карточку: ' : 'Open card: '}${target.title}`, exact: true,
     }).getByText(target.title, { exact: true }).click();
   } else if (kind === 'work-report') {
-    await openDashboardView(page, locale, labels.work);
-    await page.getByRole('button', {
-      name: new RegExp(`^${locale === 'ru' ? 'Открыть отчёт о работе:' : 'Open work report:'}`),
-    }).first().click();
+    const report = await page.evaluate(() => window.A2A_DEMO.workReports[0]);
+    await openCardByDeepLink(page, 'work-report', [report.space, report.artifact_id]);
   } else if (kind === 'thread') {
-    await openDashboardView(page, locale, labels.threads);
-    await page.locator('[data-screen-label="Threads"] .a2a-pick').first().click();
+    const view = await page.evaluate(() => window.A2A_DEMO.threadViews[0]);
+    await openCardByDeepLink(page, 'thread', [view.space, view.thread]);
   } else if (kind === 'contract' || kind === 'cver') {
+    // Contracts rows and version rows both switch the screen's own pane now
+    // (03-interaction-model.md §2 applied to this screen), so the card is
+    // opened the way it is shared: by its deep link.
     await openDashboardView(page, locale, labels.contracts);
-    const row = page.locator('[data-screen-label="Contracts"] .a2a-pick').first();
-    await row.getByText(/^XC-[A-Za-z0-9-]+$/).click();
-    if (kind === 'cver') {
-      const contract = page.locator('[data-card-kind="contract"]');
-      await expect(contract).toBeVisible();
-      await contract.locator('[data-card-fact="contract:versions"] button').first().click();
+    const contract = await page.evaluate(() => window.A2A_DEMO.contracts[0]);
+    if (kind === 'contract') {
+      await openCardByDeepLink(page, 'contract', [contract.space, contract.id]);
+    } else {
+      await openCardByDeepLink(page, 'cver', [contract.space, contract.id, contract.versions[0].version]);
     }
   } else if (kind === 'space') {
+    // The "Open space" button is gone with its column; the space id in the
+    // first cell is the door now, and its label names the space it opens.
     await openDashboardView(page, locale, labels.spaces);
     await page.locator('[data-screen-label="Spaces"]').getByRole('button', {
-      name: locale === 'ru' ? 'Открыть спейс' : 'Open space', exact: true,
+      name: new RegExp(`^${locale === 'ru' ? 'Открыть спейс ' : 'Open space '}`),
     }).first().click();
   } else {
     throw new Error(`missing real UI card path for manifest kind ${kind}`);
@@ -198,6 +216,17 @@ function normalizeFactGolden(kind, regionName, facts) {
 }
 
 async function normalizedCardDOM(card) {
+  // Settle before snapshotting. The design runtime registers components as
+  // they stream in and paints a `.sc-placeholder` box for any it has not
+  // reached yet, so a card captured the instant it becomes visible can hold
+  // placeholders where a card captured a moment later holds the real
+  // component. This function's callers compare two captures to prove ONE
+  // card renders identically through either door — comparing a
+  // mid-registration snapshot against a settled one measures load timing
+  // instead, and does it non-deterministically: the pair passes in isolation
+  // and fails under the full suite's parallel workers, which is a gate that
+  // cannot be trusted either way.
+  await card.locator('.sc-placeholder').first().waitFor({ state: 'detached' }).catch(() => {});
   return card.evaluate((element) => {
     const clone = element.cloneNode(true);
     for (const target of clone.querySelectorAll('[data-accented]')) {
@@ -278,7 +307,7 @@ async function assertInertEmittedDashboard(page, url) {
   await afterAnimationFrames(page, 3);
   expect(await overview.innerHTML()).toBe(settled);
   expect(await page.evaluate(() => globalThis.__a2aNetworkProbe)).toEqual({ fetches: [], eventSources: [] });
-  await expect(page.getByRole('button', { name: /Refresh dashboard|Обновить дашборд/ })).toHaveCount(0);
+  await expect(page.locator('.a2a-dashboard-shell-header').getByRole('button', { name: /^(Refresh|Обновить)$/ })).toHaveCount(0);
 }
 
 async function exerciseRefreshCard(page, { locale, gone }) {
@@ -370,7 +399,7 @@ async function exerciseRefreshCard(page, { locale, gone }) {
   }, { selectedLocale: locale });
   await page.goto(DASHBOARD, { waitUntil: 'domcontentloaded' });
   await expect(page.locator('[data-screen-label="Overview"]')).toBeVisible();
-  await expect(page.getByRole('button', { name: locale === 'ru' ? 'Обновить дашборд' : 'Refresh dashboard' })).toBeVisible();
+  await expect(page.locator('.a2a-dashboard-shell-header').getByRole('button', { name: locale === 'ru' ? 'Обновить' : 'Refresh', exact: true })).toBeVisible();
   await expect.poll(() => eventRouteReady).toBe(true);
 
   // Prime the deep link this scenario reopens below: open the item card
@@ -427,7 +456,7 @@ async function exerciseRefreshCard(page, { locale, gone }) {
   expect(await page.locator('.a2a-dashboard-footer').innerText()).toBe(footerBeforeInvalidation);
   expect(page.url()).toBe(urlBeforeInvalidation);
 
-  await page.getByRole('button', { name: locale === 'ru' ? 'Обновить дашборд' : 'Refresh dashboard' }).click();
+  await page.locator('.a2a-dashboard-shell-header').getByRole('button', { name: locale === 'ru' ? 'Обновить' : 'Refresh', exact: true }).click();
   await getStart;
   await expect(page.locator('.a2a-dashboard-shell-header [role="status"]')).toHaveText(locale === 'ru' ? /Обновляется/ : /Refresh in progress/);
   expect(dashboardRequests.at(-1).headers['if-none-match']).toBe(INITIAL_ETAG);
@@ -446,9 +475,13 @@ async function exerciseRefreshCard(page, { locale, gone }) {
   await expect(cardContent).toBeVisible();
   await expect(cardContent.getByRole('heading').filter({ hasText: target.title })).toBeVisible();
   await cardContent.evaluate(element => { element.__p15BrowserIdentity = 'same-card-node'; });
-  const cardDisclosure = cardContent.locator('details[data-item-technical]');
-  await cardDisclosure.locator('summary').click();
-  await expect(cardDisclosure).toHaveAttribute('open', '');
+  // The item card renders the document itself now, so its expandable region is
+  // the metadata section of that document — the same role the retired card
+  // branch's technical <details> played: something a reader opens, which a
+  // refresh must not collapse.
+  const cardDisclosure = cardContent.locator('[data-artifact-section="metadata"]').getByRole('button').first();
+  await cardDisclosure.click();
+  await expect(cardDisclosure).toHaveAttribute('aria-expanded', 'true');
   // Let Modal's intentional first-open focus frame finish before establishing
   // the position that hydrate must preserve; otherwise the test races that
   // initial accessibility behavior and mistakes its one-time scroll for a
@@ -475,7 +508,7 @@ async function exerciseRefreshCard(page, { locale, gone }) {
   await afterAnimationFrames(page);
 
   expect(await cardContent.evaluate(element => element.__p15BrowserIdentity)).toBe('same-card-node');
-  await expect(cardDisclosure).toHaveAttribute('open', '');
+  await expect(cardDisclosure).toHaveAttribute('aria-expanded', 'true');
   expect(await page.evaluate(() => location.hash)).toBe(hash);
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollY);
   await expect(work).toBeVisible();
@@ -509,7 +542,15 @@ async function exerciseRefreshCard(page, { locale, gone }) {
     const banner = cardHost.locator('[data-card-gone]');
     await expect(banner).toHaveText(goneText);
     await expect(banner).toHaveAttribute('role', 'status');
-    expect(await banner.evaluate(node => node.parentElement === node.closest('[role="dialog"]'))).toBe(true);
+    // The dialog gained a pinned header, so the banner's parent is the
+    // scrolling body rather than the dialog element itself. What the assertion
+    // is actually for survives: it is a direct child of that region and it
+    // comes BEFORE the card content, so it is read first.
+    expect(await banner.evaluate(node => !!node.parentElement.matches('[data-card-body]'))).toBe(true);
+    expect(await banner.evaluate(node => {
+      const content = node.closest('[data-card-body]').querySelector('[data-card-kind]');
+      return !!(node.compareDocumentPosition(content) & Node.DOCUMENT_POSITION_FOLLOWING);
+    })).toBe(true);
     await expect(banner).not.toHaveAttribute('tabindex');
     await expect(banner).not.toBeFocused();
     await expect(cardContent.getByRole('heading').filter({ hasText: target.title })).toBeVisible();
@@ -671,7 +712,12 @@ test('card content goldens match P5 in both locales', async ({ page }) => {
       .filter(sample => sample.summaryFacts !== null && sample.summaryFacts.length > 0)
       .map(sample => sample.kind),
   );
-  expect([...kindsWithSummary].sort()).toEqual(['contract', 'cver', 'item', 'operational-process', 'space', 'thread', 'work-report']);
+  // work-report has no summary region any more, and that is a decision, not a
+  // gap: Exchange's standalone report list was retired because it repeated,
+  // outside the document, facts the document's own card already carries. The
+  // kind keeps its detail region and its deep link; the six kinds that still
+  // own a list still own a summary.
+  expect([...kindsWithSummary].sort()).toEqual(['contract', 'cver', 'item', 'operational-process', 'space', 'thread']);
 
   for (const { kind, locale, summaryFacts, detailFacts } of subsetSamples) {
     if (!kindsWithSummary.has(kind)) continue;
@@ -711,23 +757,32 @@ test('item card DOM is identical from Overview and a deep link', async ({ page }
   // sized for card content, not the old sidebar layout — read the two card
   // tokens off a throwaway probe so the expectation tracks the tokens
   // themselves rather than a hardcoded px value.
+  // The frame itself carries no padding since the header was pinned: the
+  // header and the scrolling body each pay their own, so the header can span
+  // the dialog's full width and the body can scroll under it. The card
+  // tokens are read off a throwaway probe so the expectation tracks the
+  // tokens rather than a hardcoded px value.
   const frameCheck = await page.evaluate(() => {
     const el = document.querySelector('[role="dialog"]');
+    const body = el.querySelector('[data-card-body]');
     const probe = document.createElement('div');
     probe.style.cssText = 'position:absolute; visibility:hidden; padding:var(--padding-card-block) var(--padding-card-inline);';
     document.body.appendChild(probe);
     const elStyle = getComputedStyle(el);
+    const bodyStyle = getComputedStyle(body);
     const probeStyle = getComputedStyle(probe);
     const out = {
       outlineStyle: elStyle.outlineStyle,
-      paddingTop: elStyle.paddingTop,
-      paddingLeft: elStyle.paddingLeft,
+      framePaddingTop: elStyle.paddingTop,
+      paddingTop: bodyStyle.paddingTop,
+      paddingLeft: bodyStyle.paddingLeft,
       expectedPaddingTop: probeStyle.paddingTop,
       expectedPaddingLeft: probeStyle.paddingLeft,
     };
     probe.remove();
     return out;
   });
+  expect(frameCheck.framePaddingTop).toBe('0px');
   expect(frameCheck.outlineStyle).toBe('none');
   expect(frameCheck.paddingTop).toBe(frameCheck.expectedPaddingTop);
   expect(frameCheck.paddingLeft).toBe(frameCheck.expectedPaddingLeft);
@@ -861,14 +916,26 @@ test('thread card DOM is identical from operational feed and Threads', async ({ 
     const row = window.A2A_DEMO.operational.timeline[0];
     return { space: row.space, thread: row.thread };
   });
-  await page.locator('[data-operational-process="true"] [data-open-thread-card]').first().click();
+  // Overview's "Open thread" LEAVES for the Threads screen now (it is a
+  // navigation, not a card door), so the card is opened here the way it is
+  // shared: by its deep link, from Overview.
+  await openCardByDeepLink(page, 'thread', [target.space, target.thread]);
   const operationalCard = page.locator('[data-card-kind="thread"]');
   await expect(operationalCard).toBeVisible();
   const operationalDOM = await normalizedCardDOM(operationalCard);
+  const threadHash = await page.evaluate(() => window.location.hash);
+  expect(threadHash).toContain('#card=');
   await closeCanonicalCard(page);
 
+  // A Threads row now SELECTS its thread into that screen's own pane instead
+  // of popping the card — the same interaction model Exchange's rows follow
+  // (03-interaction-model.md §2). The card's other door is the `#card=` deep
+  // link, reopened here on the Threads screen, so this still proves what it
+  // exists to prove: one kind, one card, identical from either door.
   await openDashboardView(page, 'en', { en: 'Threads', ru: 'Треды' });
   await page.locator(`[data-thread-id="${target.thread}"][data-thread-space="${target.space}"]`).click();
+  await expect(page.locator('[data-card-kind="thread"]')).toHaveCount(0);
+  await page.evaluate(hash => { window.location.hash = hash; }, threadHash);
   const threadsCard = page.locator('[data-card-kind="thread"]');
   await expect(threadsCard).toBeVisible();
   expect(await normalizedCardDOM(threadsCard)).toBe(operationalDOM);
@@ -889,52 +956,34 @@ test('operational-process card DOM is identical from its process and work-row en
   expect(await normalizedCardDOM(workRowCard)).toBe(processDOM);
 });
 
-test('work-report card DOM is identical from the carried report list and linked item history', async ({ page }) => {
-  // P3 (dashboard-ui-restoration-2026-08 03-interaction-model.md §2): the
-  // subject item's own door is incidental to this test — it exists to
-  // prove the work-report card renders identically from the carried list
-  // and from the item's linked history, not to prove which door opens the
-  // item. Exchange's row now opens the pane, so the item is opened from
-  // Overview instead; seeding it into `needYou` keeps that door
-  // deterministic regardless of whether the fixture item already qualifies.
-  let target;
-  await mutateDashboardDemo(page, demo => {
-    const report = demo.workReports[0];
-    const subjectID = String(report.subject_ref || '').split('@')[0];
-    const item = [...demo.inbox, ...demo.outbox, ...demo.archive]
-      .find(candidate => candidate.space === report.space && candidate.id === subjectID);
-    expect(item, 'the fixture must carry the linked subject item').toBeTruthy();
-    target = { report, item };
-    demo.aggregates.needYou = {
-      ...demo.aggregates.needYou,
-      items: [item],
-      window: { shown: 1, total: 1, truncated: false },
-    };
-  });
+test('work-report card DOM is identical wherever its deep link is opened', async ({ page }) => {
+  // Exchange's standalone work-report list is retired, and the subject item's
+  // linked history lives inside the item card's own body. What every kind
+  // still has is the `#card=` deep link the dashboard writes itself — so this
+  // test proves what it exists to prove (one kind, one card, identical
+  // wherever it is opened) across two different screens.
   await openDashboard(page, { theme: 'light', locale: 'en', viewport: DESKTOP });
-  await openDashboardView(page, 'en', { en: 'Exchange', ru: 'Обмен' });
-  await page.getByRole('button', { name:`Open work report: ${target.report.subject_ref}`, exact:true }).click();
-  const listCard = page.locator('[data-card-kind="work-report"]');
-  await expect(listCard).toBeVisible();
-  const listDOM = await normalizedCardDOM(listCard);
+  const report = await page.evaluate(() => window.A2A_DEMO.workReports[0]);
+  await openCardByDeepLink(page, 'work-report', [report.space, report.artifact_id]);
+  const overviewCard = page.locator('[data-card-kind="work-report"]');
+  await expect(overviewCard).toBeVisible();
+  const overviewDOM = await normalizedCardDOM(overviewCard);
   await closeCanonicalCard(page);
 
-  await openDashboardView(page, 'en', { en: 'Overview', ru: 'Обзор' });
-  await page.getByRole('button', { name: `Open card: ${target.item.title}`, exact: true })
-    .getByText(target.item.title, { exact: true }).click();
-  const itemCard = page.locator('[data-card-kind="item"]');
-  await expect(itemCard).toBeVisible();
-  await itemCard.locator('[data-work-report-history]').getByRole('button', { name:'Open work-report card', exact:true }).click();
-  const linkedCard = page.locator('[data-card-kind="work-report"]');
-  await expect(linkedCard).toBeVisible();
-  expect(await normalizedCardDOM(linkedCard)).toBe(listDOM);
+  await openDashboardView(page, 'en', { en: 'Exchange', ru: 'Обмен' });
+  await openCardByDeepLink(page, 'work-report', [report.space, report.artifact_id]);
+  const exchangeCard = page.locator('[data-card-kind="work-report"]');
+  await expect(exchangeCard).toBeVisible();
+  expect(await normalizedCardDOM(exchangeCard)).toBe(overviewDOM);
 });
 
 test('contract-version card DOM is identical from Contracts and Map and keeps its file accent', async ({ page }) => {
   await openDashboard(page, { theme: 'light', locale: 'en', viewport: DESKTOP });
+  // From Contracts: the version card's own deep link (the screen's rows switch
+  // its pane instead of popping the card). From the Map: the contract line,
+  // which is still a real door and the reason this test exists.
   await openDashboardView(page, 'en', { en: 'Contracts', ru: 'Контракты' });
-  await page.locator('[data-screen-label="Contracts"] .a2a-pick').first().click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Open contract version XC-atlas-order-envelope@2.2.0', exact: true }).click();
+  await openCardByDeepLink(page, 'cver', ['checkout-core', 'XC-atlas-order-envelope', '2.2.0']);
   const contractsCard = page.locator('[data-card-kind="cver"]');
   await expect(contractsCard).toBeVisible();
   const contractsDOM = await normalizedCardDOM(contractsCard);
@@ -980,7 +1029,8 @@ test('space card DOM is identical from the space switcher and Spaces', async ({ 
   await closeCanonicalCard(page);
 
   await openDashboardView(page, 'en', { en: 'Spaces', ru: 'Спейсы' });
-  await page.locator('[data-screen-label="Spaces"]').getByRole('button', { name: 'Open space', exact: true }).first().click();
+  // The space id in the row's first cell is the door; its label names the space.
+  await page.locator('[data-screen-label="Spaces"]').getByRole('button', { name: /^Open space / }).first().click();
   const spacesCard = page.locator('[data-card-kind="space"]');
   await expect(spacesCard).toBeVisible();
   expect(await normalizedCardDOM(spacesCard)).toBe(switcherDOM);
@@ -1023,7 +1073,14 @@ for (const viewport of [WIDE, COMPACT_DESKTOP, TABLET, MOBILE]) {
 
 test('dashboard card titles keep the deliberate detail > normal > teaser hierarchy', async ({ page }) => {
   await mutateDashboardDemo(page, demo => {
-    const item = structuredClone(demo.inbox.find(candidate => candidate.type === 'work_request'));
+    // The detail tier is sampled from the card's own title, so the seeded row
+    // must be one this snapshot carries in FULL: a summary-only row opens the
+    // card's honest "only the summary is here" state, which has no detail
+    // title to measure.
+    const carriesDetail = candidate => (demo.artifactDetails || [])
+      .some(record => record.id === candidate.id && record.space === candidate.space);
+    const item = structuredClone(demo.inbox.find(candidate => candidate.type === 'work_request' && carriesDetail(candidate))
+      || demo.inbox.find(carriesDetail));
     demo.aggregates.needYou = {
       ...demo.aggregates.needYou,
       items: [item],
@@ -1229,9 +1286,18 @@ test('all-spaces duplicate thread ids select and open the exact space row', asyn
   await expect(second).toHaveAttribute('aria-pressed', 'false');
   await second.click();
 
-  await expect(first).toHaveAttribute('aria-pressed', 'true');
-  await expect(second).toHaveAttribute('aria-pressed', 'false');
+  // A row SELECTS its thread into the pane now, so the exact (space, thread)
+  // pair — not the first row that happens to share the id — is what the
+  // selection and the pane must follow.
+  await expect(first).toHaveAttribute('aria-pressed', 'false');
+  await expect(second).toHaveAttribute('aria-pressed', 'true');
+  const pane = page.locator('[data-screen-label="Threads"] [data-thread-lead]');
+  await expect(pane).toBeVisible();
+  const paneTitle = page.locator('[data-screen-label="Threads"] [data-thread-title]');
+  await expect(paneTitle).toHaveText(/Second-space duplicate/);
+
   const dialog = page.locator('[data-card-modal] [role="dialog"]');
+  await openCardByDeepLink(page, 'thread', ['customer-ops', 'thread:release-duplicate']);
   await expect(dialog.locator('[data-card-kind="thread"]')).toBeVisible();
   expect(await dialog.innerText()).toContain('Second-space duplicate');
   expect(await dialog.innerText()).not.toContain('First-space duplicate');
@@ -1297,7 +1363,10 @@ test('exact contract-version card stays bounded and scrollable on a mobile viewp
   await page.getByRole('button', { name: 'Контракты', exact: true }).click();
   await expect(page.locator('[data-screen-label="Contracts"]')).toBeVisible();
 
-  await page.locator('[data-screen-label="Contracts"] .a2a-pick').first().click({ position: { x: 24, y: 68 } });
+  // The screen's rows switch its own pane, so the contract card is opened by
+  // its deep link; the card's own version list is still a real door and is
+  // what this test rides to the exact version.
+  await openCardByDeepLink(page, 'contract', ['checkout-core', 'XC-atlas-order-envelope']);
   const dialog = page.getByRole('dialog');
   await expect(dialog.locator('[data-card-kind="contract"]')).toBeVisible();
   const contractHash = await page.evaluate(() => window.location.hash);
