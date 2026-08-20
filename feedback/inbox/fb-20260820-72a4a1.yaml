@@ -1,0 +1,47 @@
+# Feedback authoring skeleton (v1) — materialized by `a2a feedback new <kind>`
+# to `.a2a/feedback/<id>.yaml` (§T1, §11 A4). Every field required by
+# feedback.schema.json is present with a placeholder or auto-fill value so
+# the drafted file is schema-VALID once you replace the placeholders and
+# flip `checks.*` to true after honestly clearing every §2.1 gate.
+#
+# `id` / `context.a2a_version` / `context.os_arch` are filled in by the CLI
+# before this file ever reaches disk — the empty strings below are the
+# pre-fill placeholders `internal/feedback` overwrites, never hand-edited.
+#
+# `checks.*` starts all `false` on purpose: the agent must consciously flip
+# each one after actually verifying it (I5) — never bulk-set to true.
+
+feedback: v1
+id: fb-20260820-72a4a1 # auto-filled: fb-YYYYMMDD-<6 hex>
+kind: bug # bug | feature | docs | friction | protocol
+severity: blocker # blocker | major | minor
+title: an unset number input is 0, not empty, so every space push fails on --limit 0 # 8-80 chars, specific
+summary: "a2a-notify-reusable.yml's `limit` input is `type: number`, `required: false`, with no default and a comment stating the intent: 'Empty means: let the CLI's own default decide ... the value has exactly one home.' GitHub does not give an unset number input an empty value — it gives it 0. The guard tests emptiness, `if [ -n $LIMIT ]`, and '0' is not empty, so the push path always appends `--limit 0`, which notify render correctly refuses as not positive, exit 2. So the input silently acquired a second home after all, and that home is a value the CLI rejects. Consequence is wider than the feature: the job fails on EVERY push to a space's main from the moment `a2a space update` installs the workflow, with no route configured and nothing the operator can change. That also breaks the release note's own promise that the job is silent until a route exists — measured on a space whose notification_routes was still []."
+context:
+    a2a_version: 0.23.0 # auto-filled
+    os_arch: darwin/arm64 # auto-filled (runtime.GOOS/runtime.GOARCH)
+    surface: space-ci # cli | schema | docs | skill | dashboard | space-ci | protocol
+    command: "a2a space update, then any push to the space main"
+    # error_code: ""    # optional: whatever code you saw (e.g. POL-001)
+    # agent: ""         # optional: free self-report
+# evidence is REQUIRED when kind is bug (steps/expected/actual all
+# mandatory); optional otherwise — delete this block for non-bug kinds.
+evidence:
+    steps:
+        - "Run `a2a space update` on a space, which installs .github/workflows/a2a-notify.yml pinned at v0.23.0. Leave notification_routes as []."
+        - "Push anything to that space's main."
+        - "The `a2a-notify / notify` job fails at the `a2a notify render | send` step: `a2a notify render: --limit must be positive`, exit code 2."
+        - "The job log shows `limit: 0` in the reusable-workflow inputs and `LIMIT: 0` in the step env, though the caller passes no limit at all — its `with:` block sets only base, artifacts and dry-run."
+        - "a2a-notify-reusable.yml declares limit as type: number, required: false, with NO default; GitHub resolves that to 0."
+        - "The guard at the render_args construction is `if [ -n $LIMIT ]` — a non-empty test, which '0' passes."
+    expected: "A push to a scaffolded space with no notification route runs the notify job silently and green, as the release note states."
+    actual: "The job fails on every push with `a2a notify render: --limit must be positive`, exit 2, before it ever looks at routes. Run 32420102043 on r22d222/a2a, whose notification_routes was [] at the time."
+proposal: "Test positivity, not emptiness: `if [ ${LIMIT:-0} -gt 0 ]`, or declare the input `type: string` with default '' so 'empty means unset' becomes true rather than intended. `type: number` cannot express absence in GitHub Actions — 0 IS its absence — so the one-home rule the comment states is not achievable with that type. Worth a second look while you are in here: the render step is deliberately un-retried and fails loudly because 'an unknown --only id or a manifest error is this space's own content'. That reasoning is right and this failure is not that — it is the wrapper's own argument construction. render already separates the two by exit code (2 usage, 1 refusal), so the step could treat a 2 as its own bug and say so, rather than presenting it to an operator as a refusal of their space's content. A space owner reading this run has no way to tell that the workflow, not their space, is what is wrong."
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
+# resolution is hub-mutated only; MUST be absent at submit — do not add it.
