@@ -144,7 +144,21 @@ state_lists() { # $1 = scan root
 # arrays above. Requiring comparisons on at least two distinct branches avoids
 # treating an unrelated fallback (`lookup[key] || "neutral"`) as a chain.
 state_equality_chains() { # $1 = scan root
-  find "$1" -type f -name '*.dc.html' -exec awk '
+  # The scanner is handed to awk with `-f`, not inline, and that is not style.
+  # Its regex spells the set `[;{}[:space:]]`, whose two middle members form the
+  # literal string `{}`. GNU find scans EVERY argument of `-exec ... +` for that
+  # string and refuses with "Only one instance of {} is supported" — while BSD
+  # find, which is what macOS has, only cares about the trailing placeholder.
+  # So this function returned nothing at all on Linux, the `2>/dev/null` below
+  # ate the refusal, and the whole AC6 inline-equality-chain rule was inert in
+  # CI while its teeth passed locally. Found 2026-08-20 by the container lane
+  # (`make ci-parity-docker`), which exists for exactly this.
+  #
+  # `-f` keeps the program out of find's argv, so the brace pair can never again
+  # be read as a placeholder. Do NOT inline it back.
+  local prog
+  prog="$(mktemp)" || { echo "view-vocabulary: mktemp failed" >&2; return 1; }
+  cat > "$prog" <<'CHAIN_AWK'
     function comparison(part) {
       return part ~ /={2,3}[[:space:]]*"[a-z_]+"/ || part ~ /"[a-z_]+"[[:space:]]*={2,3}/
     }
@@ -180,7 +194,12 @@ state_equality_chains() { # $1 = scan root
       for (i=1; i<=count; i++) if (comparison(branches[i])) compared++
       if (compared >= 2) print FILENAME ":" FNR ":" $0
     }
-  ' {} + 2>/dev/null
+CHAIN_AWK
+  # stderr is NOT silenced here. A scanner that cannot run must say so: an empty
+  # result and a clean exit are indistinguishable to the caller, and that is the
+  # shape that hid the defect above for as long as it existed.
+  find "$1" -type f -name '*.dc.html' -exec awk -f "$prog" {} +
+  rm -f "$prog"
 
   # Preserve the shipped one-line grammar above exactly, then add only the
   # missing multiline assignment/return form. A candidate begins at its
