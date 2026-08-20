@@ -84,6 +84,20 @@ if [ -n "$deleted" ]; then
   exit 1
 fi
 
+# A FRESH CHECKOUT IS THE THING CI JUDGES, SO THAT IS WHAT THIS JUDGES. rsync
+# copies the host's WORKING TREE, untracked build output included, and on
+# 2026-08-20 that hid a live defect: `npm run check:unit` reads
+# web/src/generated/demo.json and web/public/demo-data.json, both generated and
+# both gitignored. Every developer has them, so the suite passed here and in
+# this container — and failed the moment ci.yml's `web` job ran it on a clean
+# runner for the first time.
+#
+# `git clean` puts the copy back to tracked-files-only. node_modules is the one
+# exclusion, because reinstalling 350MB per run buys nothing and its absence is
+# not the fidelity being bought.
+echo "parity: removing untracked files — CI checks out, it does not inherit a working tree"
+git -C "$WORK" clean -ffdxq -e web/node_modules
+
 # `npm ci` only when the lockfile actually changed. CI runs it unconditionally
 # because its runner starts empty; here the volume persists, and reinstalling
 # 350MB per run buys nothing.
