@@ -41,11 +41,18 @@ ENV DEBIAN_FRONTEND=noninteractive
 # extensions CI does not have.
 # ripgrep is here because the ubuntu-latest runner image ships it and several
 # gates require it by name (`operational-confidence-guard` refuses outright
-# without it). Anything the runner preinstalls and a gate reads belongs in this
-# list — a missing tool turns a parity run into a tooling failure that looks
-# like a product failure.
+# without it). build-essential is here for the same reason at one remove: the
+# runner has gcc, so `go test -race` works there, and without a C toolchain the
+# race detector refuses with "-race requires cgo" — which surfaced as
+# `localserver-readonly-routes` announcing a route-matrix violation for a test
+# that never ran.
+#
+# Anything the runner preinstalls and a gate reads, directly or through the Go
+# toolchain, belongs in this list. A missing tool turns a parity run into a
+# tooling failure wearing a product failure's clothes.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl git make rsync jq shellcheck ripgrep \
+      build-essential \
       xz-utils unzip gnupg mawk coreutils findutils diffutils file procps \
  && rm -rf /var/lib/apt/lists/*
 
