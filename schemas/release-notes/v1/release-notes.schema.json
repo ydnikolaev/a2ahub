@@ -11,7 +11,12 @@
       "description": "Dotted major.minor.patch, matching this file's own name (e.g. 0.4.0.yaml -> \"0.4.0\").",
       "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
     },
-    "released": { "type": "string", "format": "date" },
+    "released": {
+      "type": "string",
+      "format": "date",
+      "description": "The ISO date the tag named by `version` was actually cut, OR the literal sentinel \"unreleased\" for a version authored ahead of its tag. Notes are written while changes are fresh (docs/runbooks/release.md Phase 1 step 1), which is BEFORE the tag exists — the sentinel is what lets that stay honest: it names the version without claiming it shipped on a date. scripts/check-release-record.sh (one-answer-2026-08 P6) refuses a real date here for a version with no matching `git tag`, offline, every commit; the operator corrects the sentinel to the real date at cut time.",
+      "pattern": "^([0-9]{4}-[0-9]{2}-[0-9]{2}|unreleased)$"
+    },
     "headline": { "type": "string" },
     "changes": {
       "type": "array",

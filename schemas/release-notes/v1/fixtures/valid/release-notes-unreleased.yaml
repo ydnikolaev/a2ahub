@@ -1,0 +1,13 @@
+schema: release-notes/v1
+version: "0.99.0"
+released: unreleased
+headline: "A version authored ahead of its tag (one-answer-2026-08 P6)"
+changes:
+  - id: RN-09900-1
+    kind: feat
+    impact: low
+    subject: "a change whose notes exist before the tag does"
+    detail: "released: unreleased is the sentinel scripts/check-release-record.sh accepts for a version with no matching git tag yet."
+    action:
+      scope: none
+      why: "nothing to run"

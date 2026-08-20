@@ -123,6 +123,7 @@ while IFS= read -r f; do
     [ "$f" = "scripts/e2e-authoring-smoke.sh" ] && continue
     [ "$f" = "scripts/release-preflight.sh" ] && continue
     [ "$f" = "scripts/check-release-notes-freshness.sh" ] && continue
+    [ "$f" = "scripts/check-release-record.sh" ] && continue
     [ "$f" = "scripts/check-roadmap-release-decisions.sh" ] && continue
     [ "$f" = "scripts/check-gosec-scope.sh" ] && continue
     [ "$f" = "scripts/check-readme.sh" ] && continue
@@ -193,6 +194,9 @@ if git check-ignore -q --no-index -- scripts/release-preflight.sh; then
 fi
 if git check-ignore -q --no-index -- scripts/check-release-notes-freshness.sh; then
   flag "scripts/check-release-notes-freshness.sh must stay PUBLIC (the offline notes gate)  → add '!scripts/check-release-notes-freshness.sh' to .gitignore"
+fi
+if git check-ignore -q --no-index -- scripts/check-release-record.sh; then
+  flag "scripts/check-release-record.sh must stay PUBLIC (the release-record gate: it runs inside \`make check\`, and a gate absent from the public checkout is green there while red here)  → add '!scripts/check-release-record.sh' to .gitignore"
 fi
 if git check-ignore -q --no-index -- scripts/check-gosec-scope.sh; then
   flag "scripts/check-gosec-scope.sh must stay PUBLIC (the gosec scope gate)  → add '!scripts/check-gosec-scope.sh' to .gitignore"

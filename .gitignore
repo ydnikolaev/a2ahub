@@ -43,6 +43,7 @@ scripts/*
 !scripts/classify-guard.sh
 !scripts/release-preflight.sh
 !scripts/check-release-notes-freshness.sh
+!scripts/check-release-record.sh
 !scripts/check-roadmap-release-decisions.sh
 !scripts/check-provider-tier-deferral.sh
 !scripts/bump-space-template.sh

@@ -378,6 +378,20 @@ $formatted
 $formatted"
 }
 
+# _ref_default_of reads the `a2a-ref` input's own `default:` inside a reusable
+# workflow file — the module version a SPACE's CI will `go run`/`go install`
+# when its caller does not override it. Extracted (P6, one-answer-2026-08,
+# B12) so scripts/check-release-record.sh — the everyday-tree gate that reads
+# this same default but against a DIFFERENT predicate (a published tag exists
+# for it, not "equals an explicit VERSION") — can `source` this file and reuse
+# the parsing without re-deriving it. Prints nothing (empty string) if the
+# input declares no default; the caller decides whether that is fatal.
+_ref_default_of() { # $1 = repo, $2 = wf_path (repo-relative)
+  local repo="$1" wf_path="$2"
+  sed -n '/^      a2a-ref:/,/^      [a-z-]*:/p' "$repo/$wf_path" 2>/dev/null \
+    | sed -n 's/^ *default:[[:space:]]*"\{0,1\}\(v\{0,1\}[0-9][0-9.]*\)"\{0,1\}.*/\1/p' | head -1
+}
+
 # _assert_ref_default_matches_one is the single-file check; assert_ref_
 # default_matches below loops it over the DERIVED set (reusable_workflow_
 # paths), the same generalization notes_test.go's own
@@ -386,11 +400,7 @@ $formatted"
 # wrong twice.
 _assert_ref_default_matches_one() { # $1 = repo, $2 = wf_path (repo-relative), $3 = version (vX.Y.Z)
   local repo="$1" wf_path="$2" want="$3" got
-  # The `a2a-ref` input's own default inside the reusable workflow: the module
-  # version a SPACE's CI will `go run`/`go install` when its caller does not
-  # override it.
-  got="$(sed -n '/^      a2a-ref:/,/^      [a-z-]*:/p' "$repo/$wf_path" 2>/dev/null \
-    | sed -n 's/^ *default:[[:space:]]*"\{0,1\}\(v\{0,1\}[0-9][0-9.]*\)"\{0,1\}.*/\1/p' | head -1)"
+  got="$(_ref_default_of "$repo" "$wf_path")"
   if [ -z "$got" ]; then
     fail "release-preflight: $wf_path declares no a2a-ref default —
     every space caller would have to name a version itself."
@@ -937,6 +947,15 @@ teeth() {
 }
 
 # ── entrypoint ───────────────────────────────────────────────────────────────
+#
+# Guarded by the BASH_SOURCE/$0 check below so this file can be `source`d —
+# scripts/check-release-record.sh does exactly that, to reuse _ref_default_of
+# (and, through it, the parsing _assert_ref_default_matches_one already
+# depends on) rather than re-deriving the a2a-ref scan. Sourcing must not run
+# the ceremony (it needs an explicit VERSION and the network); only running
+# this file directly does.
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 
 if [ "${1:-}" = "--teeth" ]; then
   teeth
@@ -982,3 +1001,5 @@ if [ "$rc" -ne 0 ]; then
   exit 1
 fi
 echo "release-preflight: OK — safe to cut $VERSION."
+
+fi # BASH_SOURCE guard

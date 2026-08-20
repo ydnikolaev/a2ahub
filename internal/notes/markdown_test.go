@@ -64,6 +64,26 @@ func TestRenderMarkdownUsesAuthoredNotesAsReleaseBody(t *testing.T) {
 	}
 }
 
+// TestRenderMarkdownRendersUnreleasedSentinelAsProse holds AC2 (one-answer-
+// 2026-08 P6) for the one renderer that is not a pass-through: a raw
+// "_Released unreleased._" would be a garbled restatement of the field name,
+// not a sentence, and this is the most public surface (the GitHub Release
+// body) for a version authored ahead of its tag.
+func TestRenderMarkdownRendersUnreleasedSentinelAsProse(t *testing.T) {
+	t.Parallel()
+
+	got := RenderMarkdown(ReleaseNotes{
+		Version: "0.99.0", Released: UnreleasedSentinel, Headline: "Authored ahead of its tag",
+	}, MarkdownOptions{})
+
+	if !strings.Contains(got, "_Not yet released._") {
+		t.Errorf("RenderMarkdown with the unreleased sentinel = %q, want it to contain \"_Not yet released._\"", got)
+	}
+	if strings.Contains(got, "_Released unreleased._") {
+		t.Errorf("RenderMarkdown with the unreleased sentinel restated the raw sentinel as a sentence:\n%s", got)
+	}
+}
+
 func TestRenderMarkdownOmitsEmptyOptionalSections(t *testing.T) {
 	t.Parallel()
 

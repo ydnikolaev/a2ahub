@@ -419,6 +419,40 @@ changes:
 	}
 }
 
+// TestParseReleaseNotes_UnreleasedSentinelPassesThrough is the other half of
+// AC2 (one-answer-2026-08 P6): CLI (`a2a whatsnew`), the MCP
+// StructuredContent, and internal/html's ReleaseNote projection all print
+// ReleaseNotes.Released verbatim (they hold no special-case for it), so
+// proving ParseReleaseNotes preserves the sentinel string unmodified is
+// sufficient evidence those three surfaces render it as "unreleased" too.
+// RenderMarkdown (this package's own GitHub-Release-body renderer) is the one
+// surface that is NOT a pass-through and gets its own test — see
+// TestRenderMarkdownRendersUnreleasedSentinelAsProse in markdown_test.go.
+func TestParseReleaseNotes_UnreleasedSentinelPassesThrough(t *testing.T) {
+	raw := []byte(`
+schema: release-notes/v1
+version: "0.99.0"
+released: unreleased
+headline: "authored ahead of its tag"
+changes:
+  - id: RN-TEST-1
+    kind: feat
+    impact: low
+    subject: "s"
+    detail: "d"
+    action:
+      scope: none
+      why: "y"
+`)
+	rn, err := ParseReleaseNotes(raw)
+	if err != nil {
+		t.Fatalf("ParseReleaseNotes: %v", err)
+	}
+	if rn.Released != UnreleasedSentinel {
+		t.Errorf("Released = %q, want the UnreleasedSentinel %q", rn.Released, UnreleasedSentinel)
+	}
+}
+
 func TestLoad_GlobError(t *testing.T) {
 	// fstest.MapFS never returns an error from fs.Glob for a valid
 	// pattern, so exercise the parse-failure path instead: a malformed

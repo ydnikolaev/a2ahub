@@ -34,6 +34,20 @@ type Action struct {
 // selection until the fix ships and removes them there.
 const KindKnownIssue = "known-issue"
 
+// UnreleasedSentinel is the ReleaseNotes.Released value an authored-ahead-of
+// -its-tag version carries instead of a real date (one-answer-2026-08 P6,
+// B12). Notes are written while changes are fresh (docs/runbooks/release.md
+// Phase 1 step 1), which is BEFORE the tag exists; the sentinel is what lets
+// that window stay honest — the notes may NAME the version without claiming
+// it was RELEASED on a date. scripts/check-release-record.sh refuses a real
+// date on a version with no matching `git tag`, offline, every commit; the
+// schema (schemas/release-notes/v1/release-notes.schema.json) accepts this
+// exact string via `released`'s pattern. CLI (`a2a whatsnew`), the MCP
+// StructuredContent and internal/html's ReleaseNote all print Released
+// verbatim, so the sentinel reaches them unmodified; RenderMarkdown (this
+// package) is the one renderer that special-cases it — see markdown.go.
+const UnreleasedSentinel = "unreleased"
+
 // Change is one entry in a release-notes file's changes list.
 type Change struct {
 	ID      string   `yaml:"id" json:"id"`
