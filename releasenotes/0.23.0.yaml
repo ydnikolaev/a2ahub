@@ -1195,3 +1195,67 @@ changes:
     why: >
       Additive. A hand-written bare-string array still validates and still
       resolves by index.
+- id: RN-02300-40
+  kind: fix
+  impact: high
+  subject: '`a2a verify` and `a2a close` now refuse a bad verdict set at submit, not at merge'
+  detail: >
+    A `verify`/`close` submission carries event files exclusively, and the
+    submit-time validator ran its referential pass over drafts only — so the
+    loop never executed and the submission was written unjudged. REF-019 (a
+    verdict index outside the parent's criteria range) and REF-023 (a verdict
+    set that does not name every declared criterion) were built as write gates
+    and fired only later, at the merge check.
+
+    Both now run at `a2a submit`, on the CLI and through MCP. The architecture
+    plan's own validation matrix has specified this since it was written —
+    "lifecycle legality of accompanying events" at the pre-write point — so this
+    closes a divergence from the specification rather than adding a rule.
+
+    `skill/a2ahub/troubleshooting.md` stated that REF-023 refuses at submit.
+    That sentence was false from the day it was written; it is true now, and the
+    page also documents REF-019, which an agent can now meet in its own loop.
+  action:
+    scope: local
+    why: >
+      A verdict set that used to submit clean and fail at merge is now refused
+      immediately. That is the point — but a loop that treated exit 0 from
+      `a2a verify` as "accepted" will now see a non-zero exit and a REF-019 or
+      REF-023 message instead. Read the criteria the parent declares and name
+      every one of them.
+- id: RN-02300-41
+  kind: fix
+  impact: normal
+  subject: 'Both surfaces answer the same way about a parent''s acceptance criteria'
+  detail: >
+    The MCP surface could not count a parent's criteria at all: its mirror
+    resolver implemented none of the three capabilities the referential rules
+    ask for, so those rules degraded to "cannot check" and an incomplete verdict
+    set submitted clean there even after the CLI began refusing it.
+
+    The resolution moved into `internal/cache`, which both surfaces already
+    read, and both now delegate to it. Neither surface imports the other. Both
+    also carry compile-time assertions, so a future surface missing the
+    capability is a build error rather than a rule that silently stops applying
+    — the failure mode that had hidden this class five times.
+  action:
+    scope: none
+    why: >
+      No interface changed. An MCP-driven loop simply starts receiving the same
+      refusals the CLI gives, with byte-identical text.
+- id: RN-02300-42
+  kind: fix
+  impact: low
+  subject: 'Two conditionally-required schema failures report the code they mean'
+  detail: >
+    A missing field required by a conditional — `waiting_on` for a waiting work
+    checkpoint, `session` on a work actor, `conforms_to` for a fixture role —
+    resolved to the generic "required field missing" code instead of the
+    conditional one, whenever the failing schema pointer sat one level deeper
+    than expected or was reached through a `$ref`. The classifier now matches
+    the construct rather than one spelling of its path.
+  action:
+    scope: none
+    why: >
+      The refusal already happened; only the code and message it carried were
+      less precise than the registry intends.
