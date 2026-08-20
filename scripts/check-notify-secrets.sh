@@ -59,11 +59,11 @@
 # Usage: bash scripts/check-notify-secrets.sh
 #        bash scripts/check-notify-secrets.sh --teeth
 
-# lane-inputs: ALWAYS
-# lane-reason: invariant 1 walks the entire tracked tree for a credential
-#   shape; no path glob narrows what it must re-check.
-# lane-claims:
-#   internal/sensitive/**
+# lane-inputs lives on this gate's Makefile recipe, not here. This script is
+# PRIVATE_ONLY and the publisher strips it, so a claim written here is absent
+# from every public checkout — and the lane derivation, unable to settle the
+# phase, refuses the WHOLE lane rather than that one gate. Public CI on `main`
+# was red for exactly that reason. Same placement as check-feedback-corpus.sh.
 # lane-reads-opaque: `source "$(dirname "${BASH_SOURCE[0]}")/lib/gate-lib.sh"`
 #   self-locates the shared helper through command substitution; every other
 #   unresolved construct below (the `--teeth` harness's stub binary and

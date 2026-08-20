@@ -183,17 +183,74 @@ dashboard-derivation: ## Dashboard components preserve carried order/facts and k
 view-vocabulary: ## No component may classify by its own list of state names, or spell one the domain does not have.
 	@bash scripts/check-view-vocabulary.sh
 
-dashboard-props: ## No component may apply ?? or || to a prop its own data-props declaration marks required (P1, dashboard-ui-restoration-2026-08).
-	@bash scripts/check-dashboard-props.sh
+# PRIVATE HARNESS GATE — the claim lives HERE, on the tracked recipe, because
+# the script is PRIVATE_ONLY and the publisher strips it. A claim written only
+# in an absent file is not a claim: the lane derivation cannot settle a phase
+# whose script is gone, so it REFUSES the whole lane, and public CI on `main`
+# was red from the moment P1 of dashboard-ui-restoration-2026-08 landed. Same shape and same fix as feedback-lint /
+# skill-citations / feedback-corpus below; the declaration is kept in the
+# script too, for the tree that has it.
+# lane-inputs:
+#   web/design-source/**
+dashboard-props: ## No component may apply ?? or || to a prop its own data-props declaration marks required (P1, dashboard-ui-restoration-2026-08; private harness gate, presence-gated).
+	@if [ -f scripts/check-dashboard-props.sh ]; then \
+	  bash scripts/check-dashboard-props.sh; \
+	else \
+	  echo "dashboard-props: skip — scripts/check-dashboard-props.sh absent (public checkout)."; \
+	fi
 
-card-content: ## Card facts respect Rule A (empty-state sentence ban) and Rule C (placement/presence completeness) (P2, dashboard-ui-restoration-2026-08).
-	@bash scripts/check-card-content.sh
+# PRIVATE HARNESS GATE — the claim lives HERE, on the tracked recipe, because
+# the script is PRIVATE_ONLY and the publisher strips it. A claim written only
+# in an absent file is not a claim: the lane derivation cannot settle a phase
+# whose script is gone, so it REFUSES the whole lane, and public CI on `main`
+# was red from the moment P2 landed on 2026-08-13. Same shape and same fix as feedback-lint /
+# skill-citations / feedback-corpus below; the declaration is kept in the
+# script too, for the tree that has it.
+# lane-inputs:
+#   docs/features/archive/dashboard-coherence-2026-08/card-spec/**
+#   web/design-source/**
+card-content: ## Card facts respect Rule A (empty-state sentence ban) and Rule C (placement/presence completeness) (P2, dashboard-ui-restoration-2026-08; private harness gate, presence-gated).
+	@if [ -f scripts/check-card-content.sh ]; then \
+	  bash scripts/check-card-content.sh; \
+	else \
+	  echo "card-content: skip — scripts/check-card-content.sh absent (public checkout)."; \
+	fi
 
-notify-workflow: ## The notify workflow pair's security posture: no secrets: inherit, exact triggers, least-privilege permissions, no logic in the caller (P7).
-	@bash scripts/check-notify-workflow.sh
+# PRIVATE HARNESS GATE — the claim lives HERE, on the tracked recipe, because
+# the script is PRIVATE_ONLY and the publisher strips it. A claim written only
+# in an absent file is not a claim: the lane derivation cannot settle a phase
+# whose script is gone, so it REFUSES the whole lane, and public CI on `main`
+# was red from the moment P7 landed. Same shape and same fix as feedback-lint /
+# skill-citations / feedback-corpus below; the declaration is kept in the
+# script too, for the tree that has it.
+# lane-inputs:
+#   .github/workflows/a2a-notify-reusable.yml
+#   space-template/.github/workflows/**
+notify-workflow: ## The notify workflow pair's security posture: no secrets: inherit, exact triggers, least-privilege permissions, no logic in the caller (P7; private harness gate, presence-gated).
+	@if [ -f scripts/check-notify-workflow.sh ]; then \
+	  bash scripts/check-notify-workflow.sh; \
+	else \
+	  echo "notify-workflow: skip — scripts/check-notify-workflow.sh absent (public checkout)."; \
+	fi
 
-notify-secrets: ## No credential shape internal/sensitive knows appears in the tracked tree; the Telegram shape exists in exactly one place (P7).
-	@bash scripts/check-notify-secrets.sh
+# PRIVATE HARNESS GATE — the claim lives HERE, on the tracked recipe, because
+# the script is PRIVATE_ONLY and the publisher strips it. A claim written only
+# in an absent file is not a claim: the lane derivation cannot settle a phase
+# whose script is gone, so it REFUSES the whole lane, and public CI on `main`
+# was red from the moment P7 landed. Same shape and same fix as feedback-lint /
+# skill-citations / feedback-corpus below; the declaration is kept in the
+# script too, for the tree that has it.
+# lane-inputs: ALWAYS
+# lane-reason: invariant 1 walks the entire tracked tree for a credential shape;
+#   no path glob narrows what it must re-check.
+# lane-claims:
+#   internal/sensitive/**
+notify-secrets: ## No credential shape internal/sensitive knows appears in the tracked tree; the Telegram shape exists in exactly one place (P7; private harness gate, presence-gated).
+	@if [ -f scripts/check-notify-secrets.sh ]; then \
+	  bash scripts/check-notify-secrets.sh; \
+	else \
+	  echo "notify-secrets: skip — scripts/check-notify-secrets.sh absent (public checkout)."; \
+	fi
 
 error-codes: ## Every validation code carries prose, a production-path test and an ADR-011 mode scope — or a stated exemption (defects-fix-2026-08 P1).
 	@bash scripts/check-error-codes.sh

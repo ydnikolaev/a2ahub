@@ -37,9 +37,11 @@
 # Usage: bash scripts/check-notify-workflow.sh
 #        bash scripts/check-notify-workflow.sh --teeth
 
-# lane-inputs:
-#   .github/workflows/a2a-notify-reusable.yml
-#   space-template/.github/workflows/**
+# lane-inputs lives on this gate's Makefile recipe, not here. This script is
+# PRIVATE_ONLY and the publisher strips it, so a claim written here is absent
+# from every public checkout — and the lane derivation, unable to settle the
+# phase, refuses the WHOLE lane rather than that one gate. Public CI on `main`
+# was red for exactly that reason. Same placement as check-feedback-corpus.sh.
 # lane-reads-opaque: `source "$(dirname "${BASH_SOURCE[0]}")/lib/gate-lib.sh"`
 #   self-locates the shared helper through command substitution; every other
 #   unresolved construct below is this file's own --teeth harness reading and
