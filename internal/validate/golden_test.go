@@ -134,30 +134,27 @@ func TestGoldenFixtures_Envelope(t *testing.T) {
 	if len(v1InvalidFiles) == 0 {
 		t.Fatal("expected at least one invalid envelope fixture")
 	}
-	// P3 widening (spec §11 amendment, AC5): envelope/v2's own invalid
-	// corpus, previously reached by no policy-class-capable test at all.
-	// Scoped to the response family (XS-*) — matching
-	// internal/schema/v2_corpus_test.go's own XA-*-scoped globs over this
-	// SAME directory, an established precedent in this corpus for a
-	// family-scoped glob rather than a blanket one. A blanket `*.md` here
-	// would ALSO re-run the other 25 pre-existing envelope/v2 invalid
-	// fixtures (announcement/contract) through this package's full
-	// Engine pipeline for the first time ever — and two of them (the
-	// `work` checkpoint's conditionally-required `actor.session` and
-	// `waiting_on` cases) surface a genuine, pre-existing schema_class.go
-	// classification bug when they do (see this phase's own Product
-	// findings report: schemaCode()'s SCH-005 detection is
-	// `strings.HasPrefix(SchemaPointer, "/allOf/") &&
-	// strings.HasSuffix(SchemaPointer, "/then")`, which misses a
-	// conditional required nested one level deeper — `/then/properties/
-	// actor` — or reached through a $ref'd $defs schema —
-	// `/$defs/workCheckpoint/allOf/1/then` — falling through to SCH-001
-	// instead). That bug is real and unrelated to REF-018/LFC-004, and
-	// schema_class.go is off this phase's allowlist to fix — narrowing to
-	// XS-* keeps this widening scoped to what this phase actually proves,
-	// without silently reporting the other 25 fixtures' sidecars as
-	// verified when this loop cannot yet get them past an unrelated defect.
-	v2InvalidFiles, err := filepath.Glob(filepath.Join(corpusRoot, "envelope/v2/fixtures/invalid/XS-*.md"))
+	// P3 widening (spec §11 amendment, AC1/AC5): envelope/v2's own invalid
+	// corpus, previously reached by no policy-class-capable test at all,
+	// and previously scoped to XS-* only (the family-scoped glob a prior
+	// phase used, matching internal/schema/v2_corpus_test.go's own
+	// XA-*-scoped globs over this SAME directory) because a blanket
+	// `*.md` surfaced a genuine, pre-existing schema_class.go
+	// classification bug in two `work` checkpoint fixtures — the
+	// conditionally-required `actor.session` and `waiting_on` cases.
+	// Now blanket-wide: schemaCode()'s SCH-005 detection has been widened
+	// (this same phase) to also match a conditional `required` reached one
+	// level deeper into a nested property (`actor.session`) or through a
+	// $ref hop into a $defs schema (`waiting_on`) — see
+	// isConditionalRequiredPointer's own comment for the three pointer
+	// shapes. That $defs-hop shape also corrected
+	// XC-axon-invalid-missing-conforms.md's sidecar, which had declared
+	// SCH-001 for the structurally identical construct
+	// ($defs.artifactEntry.allOf[4]'s role-gated conforms_to) — a sidecar
+	// fitted to this function's own prior bug rather than a real second
+	// category, per its own note ("fixture roles require conforms_to",
+	// SCH-005's title in words while declaring SCH-001 in code).
+	v2InvalidFiles, err := filepath.Glob(filepath.Join(corpusRoot, "envelope/v2/fixtures/invalid/*.md"))
 	if err != nil {
 		t.Fatalf("glob invalid (v2): %v", err)
 	}

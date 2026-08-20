@@ -1,2 +1,2 @@
-code: SCH-001
-note: "fixture roles require `conforms_to`."
+code: SCH-005
+note: "a `valid-fixture`/`invalid-fixture` role conditionally requires `conforms_to` — the declared-category conditional, same construct as work's `waiting_on` (P3, spec §T2)."
