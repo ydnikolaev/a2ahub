@@ -61,6 +61,9 @@ PUBLIC_VALIDATOR_FILES=(
   scripts/check-runner-economics.sh
   scripts/check-frozen-allowlist.sh
   scripts/ci-parity.sh
+  scripts/ci-parity-docker.sh
+  scripts/ci-parity.Dockerfile
+  scripts/ci-parity-entrypoint.sh
   scripts/feedback-intake-policy.sh
   scripts/lib/lane-ungated.txt
   scripts/lib/job-timeouts.tsv
