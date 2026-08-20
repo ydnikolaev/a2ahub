@@ -690,6 +690,168 @@ func TestTemplateListStaysOneColumn(t *testing.T) {
 
 // TestTemplateListJSONCarriesTheGeneration: the generation each type authors at
 // is still reachable — in a representation nothing splits on whitespace.
+// TestNewAcceptanceCriterionMintsIDsForV2RenderingType is spec 05 T1 row 1 /
+// AC1: for a type template.selectGeneration renders as envelope/v2
+// (work_request, response), `--acceptance-criterion` (repeatable) mints ids
+// ac1..acN in the order given, over exactly the text the author typed — and
+// the resulting draft is still V1-valid.
+func TestNewAcceptanceCriterionMintsIDsForV2RenderingType(t *testing.T) {
+	t.Parallel()
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	engine := validate.New(corpus)
+
+	for _, typ := range []string{"work_request", "response"} {
+		for _, n := range []int{1, 2, 7} {
+			t.Run(typ+"/"+string(rune('0'+n)), func(t *testing.T) {
+				t.Parallel()
+				stagingDir := t.TempDir()
+				cmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, nil)
+
+				args := []string{typ}
+				args = append(args, enumFieldArgs(typ)...)
+				var texts []string
+				for i := 1; i <= n; i++ {
+					text := "criterion text " + string(rune('A'+i-1))
+					texts = append(texts, text)
+					args = append(args, "--acceptance-criterion", text)
+				}
+
+				io, out, errOut := newIO()
+				code := cmd.Run(context.Background(), args, io)
+				if code != 0 {
+					t.Fatalf("new %s: code = %d; stdout=%s stderr=%s", typ, code, out.String(), errOut.String())
+				}
+
+				raw, path := readOnlyDraft(t, stagingDir)
+				for i, text := range texts {
+					wantID := "ac" + string(rune('0'+i+1))
+					if i+1 > 9 {
+						t.Fatalf("test only supports single-digit N")
+					}
+					if !bytes.Contains(raw, []byte("id: "+wantID)) {
+						t.Fatalf("draft is missing minted id %q:\n%s", wantID, raw)
+					}
+					if !bytes.Contains(raw, []byte("text: "+text)) {
+						t.Fatalf("draft is missing criterion text %q:\n%s", text, raw)
+					}
+				}
+
+				result, err := engine.ValidateDraft(validate.Draft{Path: path, Raw: raw})
+				if err != nil {
+					t.Fatalf("ValidateDraft: %v", err)
+				}
+				if !result.Valid {
+					t.Fatalf("draft for %s is V1-invalid: %+v\n---\n%s", typ, result.Violations, raw)
+				}
+			})
+		}
+	}
+}
+
+// TestNewAcceptanceCriterionOnV1RenderingTypeDraftsBareStringsNoIDs is spec
+// 05 T1 row 2 / AC3: on a type generationTable pins to envelope/v1, the same
+// flag drafts the bare-string form — no `id:`/`text:` keys anywhere, because
+// v1's own published `items: {type: string}` shape is immutable.
+func TestNewAcceptanceCriterionOnV1RenderingTypeDraftsBareStringsNoIDs(t *testing.T) {
+	t.Parallel()
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	engine := validate.New(corpus)
+
+	for _, typ := range []string{"requirement", "question", "decision", "handoff", "announcement"} {
+		t.Run(typ, func(t *testing.T) {
+			t.Parallel()
+			stagingDir := t.TempDir()
+			cmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, nil)
+
+			args := []string{typ}
+			if typ == "requirement" {
+				args = append(args, "--slug", "ingest")
+			}
+			args = append(args, enumFieldArgs(typ)...)
+			args = append(args, "--acceptance-criterion", "first criterion", "--acceptance-criterion", "second criterion")
+
+			io, out, errOut := newIO()
+			code := cmd.Run(context.Background(), args, io)
+			if code != 0 {
+				t.Fatalf("new %s: code = %d; stdout=%s stderr=%s", typ, code, out.String(), errOut.String())
+			}
+
+			raw, path := readOnlyDraft(t, stagingDir)
+			if !bytes.Contains(raw, []byte("first criterion")) || !bytes.Contains(raw, []byte("second criterion")) {
+				t.Fatalf("draft is missing the bare-string criteria:\n%s", raw)
+			}
+			if bytes.Contains(raw, []byte("id: ac1")) || bytes.Contains(raw, []byte(" text: first criterion")) {
+				t.Fatalf("a v1-rendering type must NOT mint ids — got:\n%s", raw)
+			}
+
+			result, err := engine.ValidateDraft(validate.Draft{Path: path, Raw: raw})
+			if err != nil {
+				t.Fatalf("ValidateDraft: %v", err)
+			}
+			if !result.Valid {
+				t.Fatalf("draft for %s is V1-invalid: %+v\n---\n%s", typ, result.Violations, raw)
+			}
+		})
+	}
+}
+
+// TestNewAcceptanceCriterionZeroDraftsNoKey is spec 05 §8 AC8: a type whose
+// template carries no acceptance_criteria key at all (question) gets none
+// when the flag is not given — never an empty array, and never a key the
+// author never asked for.
+func TestNewAcceptanceCriterionZeroDraftsNoKey(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	cmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, nil)
+	args := []string{"question"}
+	args = append(args, enumFieldArgs("question")...)
+
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), args, io)
+	if code != 0 {
+		t.Fatalf("new question: code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+
+	raw, _ := readOnlyDraft(t, stagingDir)
+	if bytes.Contains(raw, []byte("acceptance_criteria")) {
+		t.Fatalf("expected no acceptance_criteria key at all when the flag is not given:\n%s", raw)
+	}
+}
+
+// readOnlyDraft reads the single staged .md draft under stagingDir — the
+// same "find the one .md entry" shape TestNewDraftsEveryTypeV1Valid already
+// uses, factored out because these three tests all need it. Returns the raw
+// bytes and the draft's real path (ValidateDraft only reports Path; it never
+// reads it back off disk, but a real path keeps failure messages honest).
+func readOnlyDraft(t *testing.T, stagingDir string) ([]byte, string) {
+	t.Helper()
+	entries, err := os.ReadDir(stagingDir)
+	if err != nil {
+		t.Fatalf("ReadDir(%s): %v", stagingDir, err)
+	}
+	var draftName string
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".md") {
+			draftName = e.Name()
+		}
+	}
+	if draftName == "" {
+		t.Fatalf("no staged .md draft found among entries: %v", entries)
+	}
+	path := filepath.Join(stagingDir, draftName)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	return raw, path
+}
+
 func TestTemplateListJSONCarriesTheGeneration(t *testing.T) {
 	t.Parallel()
 	cmd := cli.NewTemplateCommand()

@@ -1345,7 +1345,7 @@ var lifecycleVerbTable = []lifecycleVerbSpec{
 	{Verb: "block", Transition: fold.TBlock, Synopsis: "block one or more artifacts on a blocker", RequireRefs: true},
 	{Verb: "unblock", Transition: fold.TUnblock, Synopsis: "unblock one or more artifacts (recovers pre-block state)"},
 	{Verb: "cancel", Transition: fold.TCancel, Synopsis: "cancel one or more artifacts"},
-	{Verb: "close", Transition: fold.TClose, Synopsis: "close one or more responded parents: close <parent-id...> [--verdict <index>:<met|unmet|not_warranted|not_exercised>:<cause_owner>]...", SupportsVerdicts: true},
+	{Verb: "close", Transition: fold.TClose, Synopsis: "close one or more responded parents: close <parent-id...> [--verdict <index-or-criterion-id>:<met|unmet|not_warranted|not_exercised>:<cause_owner>]...", SupportsVerdicts: true},
 	{Verb: "withdraw", Transition: fold.TWithdraw, Synopsis: "withdraw one or more requirements or proposed decisions"},
 	{Verb: "supersede", Transition: fold.TSupersede, Synopsis: "supersede an artifact with its successor", RequireRefs: true},
 	{Verb: "satisfy", Transition: fold.TSatisfy, Synopsis: "satisfy a requirement", RequireRefs: true},
@@ -1478,7 +1478,7 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 	// (TestOtherVerbRefusesVerdictFlagUnregistered).
 	var verdictFlags newStringList
 	if c.spec.SupportsVerdicts {
-		fs.Var(&verdictFlags, "verdict", "index:verdict:cause_owner verdict entry (repeatable; verdict is met|unmet|not_warranted|not_exercised)")
+		fs.Var(&verdictFlags, "verdict", "<index-or-criterion-id>:verdict:cause_owner verdict entry — index is 0-based into the parent's acceptance_criteria[], or its declared criterion id (e.g. ac1) when that array carries ids (repeatable; verdict is met|unmet|not_warranted|not_exercised)")
 	}
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
 	// Wave K fix (live run 6, "thirteen verbs refuse a flag written after
@@ -1855,7 +1855,7 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// concept, not a JSON-shaped string. `--ref` is the shipped precedent
 	// for exactly this class of gap.
 	var unmetFlags newStringList
-	fs.Var(&unmetFlags, "unmet", "index into the parent's acceptance_criteria[] this response did NOT satisfy (repeatable)")
+	fs.Var(&unmetFlags, "unmet", "0-based index into the parent's acceptance_criteria[] this response did NOT satisfy, or its declared criterion id (e.g. ac1) when that array carries ids (repeatable)")
 	standing := fs.String("standing", "", "authoritative|provisional|advisory — whether these values are binding (absent = undeclared, NOT authoritative, per P-1)")
 	blockedByFlag := fs.String("blocked-by", "", "<reason_code>:<owner>:<needs> — what would unblock the unmet criteria (reason_code: split-required|security-concern|out-of-scope|duplicate|other; needs: bytes|judgement|decision)")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
@@ -2339,7 +2339,7 @@ func (c *VerifyCommand) Name() string { return "verify" }
 
 // Synopsis implements cli.Command.
 func (c *VerifyCommand) Synopsis() string {
-	return "verify one or more responses: verify <response-id|parent-id...> [--refs <response-id>] [--verdict <index>:<met|unmet|not_warranted|not_exercised>:<cause_owner>]..."
+	return "verify one or more responses: verify <response-id|parent-id...> [--refs <response-id>] [--verdict <index-or-criterion-id>:<met|unmet|not_warranted|not_exercised>:<cause_owner>]..."
 }
 
 // Run implements cli.Command.
@@ -2355,7 +2355,7 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// it through `--field`. Repeatable (newStringList, cmd_new.go): one
 	// judged criterion per occurrence.
 	var verdictFlags newStringList
-	fs.Var(&verdictFlags, "verdict", "index:verdict:cause_owner verdict entry (repeatable; verdict is met|unmet|not_warranted|not_exercised)")
+	fs.Var(&verdictFlags, "verdict", "<index-or-criterion-id>:verdict:cause_owner verdict entry — index is 0-based into the parent's acceptance_criteria[], or its declared criterion id (e.g. ac1) when that array carries ids (repeatable; verdict is met|unmet|not_warranted|not_exercised)")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
 	// Wave K fix (see LifecycleCommand.Run's own comment above): any-order
 	// parsing, not a bare fs.Parse(args).

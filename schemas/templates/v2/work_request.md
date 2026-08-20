@@ -13,8 +13,9 @@ priority: p3
 blocking: false
 interim_behavior: "<what you do until this is resolved>"   # required when blocking: false
 needed_by: <YYYY-MM-DD>               # response-bearing ask: created +1d if blocking/p1, else +2d; >2d must cite an external non-agent constraint
-acceptance_criteria:                  # required
-  - "<measurable AC 1>"
+acceptance_criteria:                  # required — `a2a new --acceptance-criterion <text>` (repeatable)
+                                       # mints this {id, text} form, ids ac1..acN in the order given
+  - {id: ac1, text: "<measurable AC 1>"}
 # proposed_change: "<structured summary>"   # REQUIRED when category is contract-change or process-change
 thread: <thread:system-YYYYMMDD-rand4 — the conversation this belongs to; a2a new mints it>
 # refs:                                      # REQUIRED (with a pinned entry) when category is contract-change or process-change

@@ -184,18 +184,77 @@ func (s *spyFunnel) Submit(ctx context.Context, req space.SubmitRequest) (space.
 // or a host.
 func newEquivMirror(t *testing.T, ownSystem string) (mirrorDir string, funnel *spyFunnel, fakeHost *host.FakeHost) {
 	t.Helper()
+	return newEquivMirrorAtBinaryVersion(t, ownSystem, "0.1.0", nil)
+}
+
+// newEquivMirrorAtBinaryVersion is newEquivMirror's own seam, parameterized
+// by the funnel's injected binaryVersion (P2's own CC-085 half of the floor
+// story: internal/space/prepared.go's PrepareSubmission refuses
+// ErrStaleBinaryVersion when this is OLDER than the space.yaml pin a caller
+// hands it via SubmitRequest.MinBinaryVersion) and by an optional validator
+// — REQUIRED, non-nil, once binaryVersion reaches
+// version.OperationalConfidenceFloor: WriteFunnel.finalValidationRequired
+// then refuses ErrSubmitValidatorRequired for every construction in this
+// file that (like newEquivMirror) passes validator=nil, which is exactly
+// what every below-floor row in this file still does (matches
+// internal/cli's own TestAckEndToEndWithRealFunnelAndFakeHost precedent,
+// this file's own top doc comment). newEquivMirror is this with today's
+// exact defaults, so no existing call site changes behaviour.
+func newEquivMirrorAtBinaryVersion(t *testing.T, ownSystem, binaryVersion string, validator space.SubmitValidator) (mirrorDir string, funnel *spyFunnel, fakeHost *host.FakeHost) {
+	t.Helper()
 	fx := spacefixture.New(t, "axon", "beta")
 	dir := fx.Clone(ownSystem)
 	fh := host.NewFakeHost()
-	real := space.NewWriteFunnel(fh, nil, "0.1.0")
+	real := space.NewWriteFunnel(fh, validator, binaryVersion)
 	return dir, &spyFunnel{inner: real}, fh
 }
+
+// equivNoopValidator satisfies space.SubmitValidator with a pass-through —
+// see newEquivMirrorAtBinaryVersion's own doc comment for why an at-floor
+// row needs one. Neither transport's V2 pipeline is under test by this file
+// (already covered by P3/P6/P8, this file's own top doc comment); this stub
+// exists only so BOTH surfaces get the SAME pass-through, so an at-floor row
+// measures the CLI/MCP equivalence axis and not this stub's own behaviour.
+type equivNoopValidator struct{}
+
+func (equivNoopValidator) ValidateSubmit(context.Context, []space.FileWrite) error { return nil }
 
 func equivManifest() space.Manifest {
 	return space.Manifest{Participants: []space.Participant{
 		{System: "axon", Status: "active"},
 		{System: "beta", Status: "active"},
 	}}
+}
+
+// equivManifestAtFloor is equivManifest parameterized by MinBinaryVersion —
+// the field internal/cli's VerifyCommand/LifecycleCommand and internal/mcp's
+// newVerifyHandler/newLifecycleHandler actually read (via
+// lifecycleEventSchema) to choose event/v1 vs event/v2, NOT space.yaml on
+// disk (that file only feeds SubmitRequest.MinBinaryVersion, the CC-085 pin
+// — a different guard; see equivSpaceYAML's own doc comment). equivManifest
+// itself must keep its zero value ("", not "0.0.0"): an empty floor and an
+// explicit-but-below-floor one both fail closed to event/v1, but only the
+// empty one is what every EXISTING row in this file already depends on
+// staying unchanged (this phase's own Deviations report: do not silently
+// re-route ~30 rows through a guard they have never run).
+func equivManifestAtFloor(floor string) space.Manifest {
+	m := equivManifest()
+	m.MinBinaryVersion = floor
+	return m
+}
+
+// equivSpaceYAML is the five submit-fixture sites' own shared content
+// builder (this phase's Brief item 1, AC1/AC2), parameterized by
+// min_binary_version rather than hardcoding it: a literal "0.0.0" repeated
+// five times went stale silently the day the floor moved, and reading
+// contract.ContractPublicationFloor at the call site instead cannot. This
+// space.yaml feeds SubmitRequest.MinBinaryVersion (the CC-085 binary-pin
+// guard, internal/space/prepared.go) — a DIFFERENT floor read than
+// equivManifestAtFloor's (verify/close's event/v1-vs-event/v2 selector),
+// which is why both parameterizations exist side by side rather than one
+// subsuming the other.
+func equivSpaceYAML(floor string) string {
+	return "id: fixture-space\nschema_version: \"1\"\nmin_binary_version: \"" + floor + "\"\nparticipants:\n  axon-bot: axon\n  beta-bot: beta\n"
 }
 
 func equivCLIHostConfig(remoteURL string) cli.SubmitHostConfig {
@@ -1033,6 +1092,115 @@ func TestEquivVerify(t *testing.T) {
 	assertRequestsEquivalent(t, "verify", cliFunnel.calls[0], mcpFunnel.calls[0])
 }
 
+// verdictsBlockRE extracts a single event document's `verdicts:` field
+// (present as either `verdicts: []` on one line or a block-style sequence
+// with indented continuation lines) — this phase's own AC #4 assertion,
+// dedicated rather than folded into assertRequestsEquivalent's whole-file
+// compare, so a verdicts[] divergence is named as such rather than as a
+// generic file-content mismatch.
+var verdictsBlockRE = regexp.MustCompile(`(?ms)^verdicts:.*(?:\n[ \t]+.*)*`)
+
+// extractVerdictsBlock returns the `verdicts:` field's own raw text from one
+// committed event document, failing loudly if the key is absent (every
+// event/v2 verify/close carries it, even when empty — schemas/event/v2/
+// event.schema.json's own conditional).
+func extractVerdictsBlock(t *testing.T, verb string, content string) string {
+	t.Helper()
+	m := verdictsBlockRE.FindString(content)
+	if m == "" {
+		t.Fatalf("%s: no verdicts: field found in event document:\n%s", verb, content)
+	}
+	return m
+}
+
+// TestEquivVerifyCloseVerdictsAtFloor is TestEquivVerify's own at-floor row
+// (this phase's Brief item 1/2, AC #2/#4): below the floor, `verify`/the
+// D-024 paired `close` never author `verdicts[]` at all (P1's own axis was
+// unobservable there — see this file's Deviations report), so this is where
+// the suite actually watches the two surfaces bind a supplied --verdict/
+// verdicts set to the SAME content, not merely the SAME key.
+func TestEquivVerifyCloseVerdictsAtFloor(t *testing.T) {
+	t.Parallel()
+	const parentID = "XQ-axon-20260721-b902"
+
+	// A question parent carrying one ORDINAL (bare-string, no declared id)
+	// acceptance criterion — lifecycleResolveVerdicts/resolveVerdicts both
+	// accept a bare `--verdict 0:...`/`{"index":0,...}` against this shape
+	// without needing a second, id-addressed fixture.
+	seed := func(t *testing.T, mirrorDir string) {
+		content := "---\nschema: envelope/v1\nid: " + parentID + "\ntype: question\ntitle: t\nspace: fixture-space\nthread: thread:axon-20260721-k3f9\nfrom: axon\nto: [beta]\nactor: {kind: agent, name: bot}\ncreated: 2026-07-21T10:00:00Z\ncategory: clarification\npriority: p3\nblocking: true\nclassification: internal\nacceptance_criteria: [\"works\"]\n---\nbody\n"
+		writeMirrorFileEquiv(t, mirrorDir, "axon/exchanges/"+parentID+".md", content)
+		equivWriteEvent(t, mirrorDir, "axon", 0, parentID, "submit", "axon")
+		equivWriteEvent(t, mirrorDir, "beta", 1, parentID, "acknowledge", "beta")
+		equivWriteEvent(t, mirrorDir, "beta", 2, parentID, "accept", "beta")
+	}
+
+	manifest := equivManifestAtFloor(contract.ContractPublicationFloor)
+	binaryVersion := contract.ContractPublicationFloor
+	validator := equivNoopValidator{}
+
+	respondOnce := func(t *testing.T, mirrorDir string) *spyFunnel {
+		fh := host.NewFakeHost()
+		real := space.NewWriteFunnel(fh, validator, binaryVersion)
+		f := &spyFunnel{inner: real}
+		cmd := cli.NewRespondCommand(f, mirrorDir, "fixture-space", "beta", equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
+		runCLICommand(t, cmd, []string{"--result", "answered", parentID})
+		for _, fw := range f.calls[0].Files {
+			writeMirrorFileEquiv(t, mirrorDir, fw.Path, string(fw.Content))
+		}
+		return f
+	}
+
+	cliDir, cliFunnel, _ := newEquivMirrorAtBinaryVersion(t, "axon", binaryVersion, validator)
+	seed(t, cliDir)
+	cliRespondFake := respondOnce(t, cliDir)
+	cliResponseID := extractResponseID(cliRespondFake.calls[0].Files)
+	cliCmd := cli.NewVerifyCommand(cliFunnel, cliDir, "fixture-space", "axon", manifest, equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
+	runCLICommand(t, cliCmd, []string{"--verdict", "0:met:beta", cliResponseID})
+	if len(cliFunnel.calls) != 1 {
+		t.Fatalf("verify-at-floor: expected 1 CLI funnel call, got %d", len(cliFunnel.calls))
+	}
+
+	mcpDir, mcpFunnel, _ := newEquivMirrorAtBinaryVersion(t, "axon", binaryVersion, validator)
+	seed(t, mcpDir)
+	mcpRespondFake := respondOnce(t, mcpDir)
+	mcpResponseID := extractResponseID(mcpRespondFake.calls[0].Files)
+	writeDeps := mcp.WriteDeps{
+		Funnel: mcpFunnel, MirrorDir: mcpDir, SpaceID: "fixture-space", OwnSystem: "axon",
+		Manifest: manifest, HostCfg: equivMCPHostConfig(""), ResolveActor: equivMCPActorResolver("agent", "bot"),
+		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
+	}
+	registry := mcp.BuildRegistry(nil, writeDeps, "", nil, mcp.NewDeps{})
+	verdictIndex := 0
+	runMCPHandler(t, registry, "a2a_exchange", "verify", mcp.VerifyInput{
+		Targets:  []string{mcpResponseID},
+		Verdicts: []mcp.VerdictInputEntry{{Index: &verdictIndex, Verdict: "met", CauseOwner: "beta"}},
+	})
+	if len(mcpFunnel.calls) != 1 {
+		t.Fatalf("verify-at-floor: expected 1 MCP funnel call, got %d", len(mcpFunnel.calls))
+	}
+
+	if len(cliFunnel.calls[0].Files) != 2 || len(mcpFunnel.calls[0].Files) != 2 {
+		t.Fatalf("verify-at-floor: expected 2 files (verify+close) on both surfaces; CLI=%d MCP=%d", len(cliFunnel.calls[0].Files), len(mcpFunnel.calls[0].Files))
+	}
+	assertRequestsEquivalent(t, "verify-at-floor", cliFunnel.calls[0], mcpFunnel.calls[0])
+
+	// AC #4: verdicts[] content compared byte-for-byte, by name, on BOTH the
+	// verify event (Files[0]) and the D-024 paired close event (Files[1]) —
+	// not merely the key's presence.
+	rowNames := []string{"verify", "close"}
+	for i, row := range rowNames {
+		cliVerdicts := extractVerdictsBlock(t, row, string(cliFunnel.calls[0].Files[i].Content))
+		mcpVerdicts := extractVerdictsBlock(t, row, string(mcpFunnel.calls[0].Files[i].Content))
+		if cliVerdicts != mcpVerdicts {
+			t.Fatalf("%s: verdicts[] content mismatch:\n--- CLI ---\n%s\n--- MCP ---\n%s", row, cliVerdicts, mcpVerdicts)
+		}
+		if !strings.Contains(cliVerdicts, "verdict: met") || !strings.Contains(cliVerdicts, "cause_owner: beta") {
+			t.Fatalf("%s: verdicts[] does not carry the supplied judgement: %q", row, cliVerdicts)
+		}
+	}
+}
+
 func TestEquivDispute(t *testing.T) {
 	t.Parallel()
 	const parentID = "XQ-axon-20260721-b003"
@@ -1111,38 +1279,65 @@ func writeStagedDraftEquiv(t *testing.T, stagingDir, id string) {
 	}
 }
 
+// equivFloorCase is the shared below/at-floor row pair every submit-family
+// test below runs (this phase's Brief item 1, AC1/AC2): "submit" is asserted
+// once BELOW contract.ContractPublicationFloor (real behaviour — every space
+// that has not crossed the line, kept as its own row rather than relabelled
+// away) and once AT it. At-floor needs the funnel's own binaryVersion to
+// reach the SAME floor too (newEquivMirrorAtBinaryVersion's own doc
+// comment), plus a non-nil validator once it does.
+type equivFloorCase struct {
+	name          string
+	spaceFloor    string
+	binaryVersion string
+	validator     space.SubmitValidator
+}
+
+func equivFloorCases() []equivFloorCase {
+	return []equivFloorCase{
+		{name: "below-floor", spaceFloor: "0.0.0", binaryVersion: "0.1.0", validator: nil},
+		{name: "at-floor", spaceFloor: contract.ContractPublicationFloor, binaryVersion: contract.ContractPublicationFloor, validator: equivNoopValidator{}},
+	}
+}
+
 func TestEquivSubmit(t *testing.T) {
 	t.Parallel()
 	const id = "XQ-beta-20260721-c001"
 
-	cliDir, cliFunnel, _ := newEquivMirror(t, "beta")
-	writeMirrorFileEquiv(t, cliDir, "space.yaml", "id: fixture-space\nschema_version: \"1\"\nmin_binary_version: \"0.0.0\"\nparticipants:\n  axon-bot: axon\n  beta-bot: beta\n")
-	cliStaging := t.TempDir()
-	writeStagedDraftEquiv(t, cliStaging, id)
-	legalityForCLI := cli.NewLegalityAdapter(cliDir, "beta", equivManifest())
-	cliCmd := cli.NewSubmitCommand(cliFunnel, legalityForCLI, cli.NewNoopPendingMarker(), cliDir, "fixture-space", "beta", cliStaging, equivCLIHostConfig(""))
-	runCLICommand(t, cliCmd, []string{id})
-	if len(cliFunnel.calls) != 1 {
-		t.Fatalf("submit: expected 1 CLI funnel call, got %d", len(cliFunnel.calls))
-	}
+	for _, tc := range equivFloorCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	mcpDir, mcpFunnel, _ := newEquivMirror(t, "beta")
-	writeMirrorFileEquiv(t, mcpDir, "space.yaml", "id: fixture-space\nschema_version: \"1\"\nmin_binary_version: \"0.0.0\"\nparticipants:\n  axon-bot: axon\n  beta-bot: beta\n")
-	mcpStaging := t.TempDir()
-	writeStagedDraftEquiv(t, mcpStaging, id)
-	legalityForMCP := mcp.NewLegalityAdapter(mcpDir, "beta", equivManifest())
-	writeDeps := mcp.WriteDeps{
-		Funnel: mcpFunnel, MirrorDir: mcpDir, SpaceID: "fixture-space", OwnSystem: "beta",
-		Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""), ResolveActor: equivMCPActorResolver("agent", "bot"),
-		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
-	}
-	registry := mcp.BuildRegistry(nil, writeDeps, mcpStaging, legalityForMCP, mcp.NewDeps{})
-	runMCPHandler(t, registry, "a2a_submit", "", mcp.SubmitInput{IDs: []string{id}})
-	if len(mcpFunnel.calls) != 1 {
-		t.Fatalf("submit: expected 1 MCP funnel call, got %d", len(mcpFunnel.calls))
-	}
+			cliDir, cliFunnel, _ := newEquivMirrorAtBinaryVersion(t, "beta", tc.binaryVersion, tc.validator)
+			writeMirrorFileEquiv(t, cliDir, "space.yaml", equivSpaceYAML(tc.spaceFloor))
+			cliStaging := t.TempDir()
+			writeStagedDraftEquiv(t, cliStaging, id)
+			legalityForCLI := cli.NewLegalityAdapter(cliDir, "beta", equivManifest())
+			cliCmd := cli.NewSubmitCommand(cliFunnel, legalityForCLI, cli.NewNoopPendingMarker(), cliDir, "fixture-space", "beta", cliStaging, equivCLIHostConfig(""))
+			runCLICommand(t, cliCmd, []string{id})
+			if len(cliFunnel.calls) != 1 {
+				t.Fatalf("submit: expected 1 CLI funnel call, got %d", len(cliFunnel.calls))
+			}
 
-	assertRequestsEquivalent(t, "submit", cliFunnel.calls[0], mcpFunnel.calls[0])
+			mcpDir, mcpFunnel, _ := newEquivMirrorAtBinaryVersion(t, "beta", tc.binaryVersion, tc.validator)
+			writeMirrorFileEquiv(t, mcpDir, "space.yaml", equivSpaceYAML(tc.spaceFloor))
+			mcpStaging := t.TempDir()
+			writeStagedDraftEquiv(t, mcpStaging, id)
+			legalityForMCP := mcp.NewLegalityAdapter(mcpDir, "beta", equivManifest())
+			writeDeps := mcp.WriteDeps{
+				Funnel: mcpFunnel, MirrorDir: mcpDir, SpaceID: "fixture-space", OwnSystem: "beta",
+				Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""), ResolveActor: equivMCPActorResolver("agent", "bot"),
+				Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
+			}
+			registry := mcp.BuildRegistry(nil, writeDeps, mcpStaging, legalityForMCP, mcp.NewDeps{})
+			runMCPHandler(t, registry, "a2a_submit", "", mcp.SubmitInput{IDs: []string{id}})
+			if len(mcpFunnel.calls) != 1 {
+				t.Fatalf("submit: expected 1 MCP funnel call, got %d", len(mcpFunnel.calls))
+			}
+
+			assertRequestsEquivalent(t, "submit", cliFunnel.calls[0], mcpFunnel.calls[0])
+		})
+	}
 }
 
 // TestEquivMultiSpaceSubmitResolvesTheDraftsOwnSpace is P7's own
@@ -1299,63 +1494,70 @@ func TestEquivContractSubmitCarriesScaffold(t *testing.T) {
 		slug = "widget-submit-equiv"
 		id   = "XC-beta-widget-submit-equiv"
 	)
-	cliDir, cliFunnel, _ := newEquivMirror(t, "beta")
-	writeMirrorFileEquiv(t, cliDir, "space.yaml", "id: fixture-space\nschema_version: \"1\"\nmin_binary_version: \"0.0.0\"\nparticipants:\n  axon-bot: axon\n  beta-bot: beta\n")
-	cliStaging := t.TempDir()
-	newCmd := cli.NewNewCommand(cliStaging, "beta", equivCLIActorResolver("agent", "bot"), nil)
-	runCLICommand(t, newCmd, []string{
-		"contract", "--slug", slug,
-		"--field", "title=widget contract",
-		"--field", "space=fixture-space",
-		"--field", "to=[axon]",
-		"--field", "category=other",
-	})
-	cliSubmit := cli.NewSubmitCommand(
-		cliFunnel,
-		cli.NewLegalityAdapter(cliDir, "beta", equivManifest()),
-		cli.NewNoopPendingMarker(),
-		cliDir, "fixture-space", "beta", cliStaging, equivCLIHostConfig(""),
-	)
-	runCLICommand(t, cliSubmit, []string{id})
-	if len(cliFunnel.calls) != 1 {
-		t.Fatalf("contract submit: expected 1 CLI funnel call, got %d", len(cliFunnel.calls))
-	}
 
-	mcpDir, mcpFunnel, _ := newEquivMirror(t, "beta")
-	writeMirrorFileEquiv(t, mcpDir, "space.yaml", "id: fixture-space\nschema_version: \"1\"\nmin_binary_version: \"0.0.0\"\nparticipants:\n  axon-bot: axon\n  beta-bot: beta\n")
-	mcpStaging := t.TempDir()
-	writeDeps := mcp.WriteDeps{
-		Funnel: mcpFunnel, MirrorDir: mcpDir, SpaceID: "fixture-space", OwnSystem: "beta",
-		Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""), ResolveActor: equivMCPActorResolver("agent", "bot"),
-		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
-	}
-	newDeps := mcp.NewDeps{
-		StagingDir: mcpStaging, OwnSystem: "beta", Now: time.Now, Entropy: rand.Reader,
-		ResolveActor: equivMCPActorResolver("agent", "bot"), WriteFile: os.WriteFile,
-	}
-	registry := mcp.BuildRegistry(
-		nil,
-		writeDeps,
-		mcpStaging,
-		mcp.NewLegalityAdapter(mcpDir, "beta", equivManifest()),
-		newDeps,
-	)
-	runMCPHandler(t, registry, "a2a_new", "", mcp.NewInput{Items: []mcp.NewItem{{
-		Type: "contract",
-		Slug: slug,
-		Fields: map[string]string{
-			"title": "widget contract", "space": "fixture-space",
-			"to": "[axon]", "category": "other",
-		},
-	}}})
-	runMCPHandler(t, registry, "a2a_submit", "", mcp.SubmitInput{IDs: []string{id}})
-	if len(mcpFunnel.calls) != 1 {
-		t.Fatalf("contract submit: expected 1 MCP funnel call, got %d", len(mcpFunnel.calls))
-	}
+	for _, tc := range equivFloorCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	assertRequestsEquivalent(t, "contract-submit", cliFunnel.calls[0], mcpFunnel.calls[0])
-	if got := len(mcpFunnel.calls[0].Files); got != 5 {
-		t.Fatalf("contract submit: MCP carried %d files, want descriptor + 3 sidecars + publish event", got)
+			cliDir, cliFunnel, _ := newEquivMirrorAtBinaryVersion(t, "beta", tc.binaryVersion, tc.validator)
+			writeMirrorFileEquiv(t, cliDir, "space.yaml", equivSpaceYAML(tc.spaceFloor))
+			cliStaging := t.TempDir()
+			newCmd := cli.NewNewCommand(cliStaging, "beta", equivCLIActorResolver("agent", "bot"), nil)
+			runCLICommand(t, newCmd, []string{
+				"contract", "--slug", slug,
+				"--field", "title=widget contract",
+				"--field", "space=fixture-space",
+				"--field", "to=[axon]",
+				"--field", "category=other",
+			})
+			cliSubmit := cli.NewSubmitCommand(
+				cliFunnel,
+				cli.NewLegalityAdapter(cliDir, "beta", equivManifest()),
+				cli.NewNoopPendingMarker(),
+				cliDir, "fixture-space", "beta", cliStaging, equivCLIHostConfig(""),
+			)
+			runCLICommand(t, cliSubmit, []string{id})
+			if len(cliFunnel.calls) != 1 {
+				t.Fatalf("contract submit: expected 1 CLI funnel call, got %d", len(cliFunnel.calls))
+			}
+
+			mcpDir, mcpFunnel, _ := newEquivMirrorAtBinaryVersion(t, "beta", tc.binaryVersion, tc.validator)
+			writeMirrorFileEquiv(t, mcpDir, "space.yaml", equivSpaceYAML(tc.spaceFloor))
+			mcpStaging := t.TempDir()
+			writeDeps := mcp.WriteDeps{
+				Funnel: mcpFunnel, MirrorDir: mcpDir, SpaceID: "fixture-space", OwnSystem: "beta",
+				Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""), ResolveActor: equivMCPActorResolver("agent", "bot"),
+				Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
+			}
+			newDeps := mcp.NewDeps{
+				StagingDir: mcpStaging, OwnSystem: "beta", Now: time.Now, Entropy: rand.Reader,
+				ResolveActor: equivMCPActorResolver("agent", "bot"), WriteFile: os.WriteFile,
+			}
+			registry := mcp.BuildRegistry(
+				nil,
+				writeDeps,
+				mcpStaging,
+				mcp.NewLegalityAdapter(mcpDir, "beta", equivManifest()),
+				newDeps,
+			)
+			runMCPHandler(t, registry, "a2a_new", "", mcp.NewInput{Items: []mcp.NewItem{{
+				Type: "contract",
+				Slug: slug,
+				Fields: map[string]string{
+					"title": "widget contract", "space": "fixture-space",
+					"to": "[axon]", "category": "other",
+				},
+			}}})
+			runMCPHandler(t, registry, "a2a_submit", "", mcp.SubmitInput{IDs: []string{id}})
+			if len(mcpFunnel.calls) != 1 {
+				t.Fatalf("contract submit: expected 1 MCP funnel call, got %d", len(mcpFunnel.calls))
+			}
+
+			assertRequestsEquivalent(t, "contract-submit", cliFunnel.calls[0], mcpFunnel.calls[0])
+			if got := len(mcpFunnel.calls[0].Files); got != 5 {
+				t.Fatalf("contract submit: MCP carried %d files, want descriptor + 3 sidecars + publish event", got)
+			}
+		})
 	}
 }
 
@@ -2018,49 +2220,55 @@ func TestCC093InterleavedCLIThenMCPSubmitIdempotent(t *testing.T) {
 	t.Parallel()
 	const id = "XQ-beta-20260721-f001"
 
-	fx := spacefixture.New(t, "axon", "beta")
-	mirrorDir := fx.Clone("beta")
-	fakeHost := host.NewFakeHost()
-	sharedFunnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	for _, tc := range equivFloorCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	writeMirrorFileEquiv(t, mirrorDir, "space.yaml", "id: fixture-space\nschema_version: \"1\"\nmin_binary_version: \"0.0.0\"\nparticipants:\n  axon-bot: axon\n  beta-bot: beta\n")
+			fx := spacefixture.New(t, "axon", "beta")
+			mirrorDir := fx.Clone("beta")
+			fakeHost := host.NewFakeHost()
+			sharedFunnel := space.NewWriteFunnel(fakeHost, tc.validator, tc.binaryVersion)
 
-	staging := t.TempDir()
-	writeStagedDraftEquiv(t, staging, id)
+			writeMirrorFileEquiv(t, mirrorDir, "space.yaml", equivSpaceYAML(tc.spaceFloor))
 
-	// First: `a2a submit <id>` (CLI).
-	legality := cli.NewLegalityAdapter(mirrorDir, "beta", equivManifest())
-	cliCmd := cli.NewSubmitCommand(sharedFunnel, legality, cli.NewNoopPendingMarker(), mirrorDir, "fixture-space", "beta", staging, equivCLIHostConfig(fx.RemoteURL()))
-	runCLICommand(t, cliCmd, []string{id})
-	if len(fakeHost.Opens) != 1 {
-		t.Fatalf("expected exactly 1 OpenPR call after the CLI submit, got %d", len(fakeHost.Opens))
-	}
+			staging := t.TempDir()
+			writeStagedDraftEquiv(t, staging, id)
 
-	// Second: `a2a_submit` (MCP) on the SAME id, same session.
-	mcpLegality := mcp.NewLegalityAdapter(mirrorDir, "beta", equivManifest())
-	writeDeps := mcp.WriteDeps{
-		Funnel: sharedFunnel, MirrorDir: mirrorDir, SpaceID: "fixture-space", OwnSystem: "beta",
-		Manifest: equivManifest(), HostCfg: equivMCPHostConfig(fx.RemoteURL()), ResolveActor: equivMCPActorResolver("agent", "bot"),
-		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
-	}
-	registry := mcp.BuildRegistry(nil, writeDeps, staging, mcpLegality, mcp.NewDeps{})
-	spec, ok := registry.Get("a2a_submit")
-	if !ok {
-		t.Fatal("a2a_submit not registered")
-	}
-	raw, _ := json.Marshal(mcp.SubmitInput{IDs: []string{id}})
-	result, _, err := spec.Handler(context.Background(), raw)
-	if err != nil {
-		t.Fatalf("a2a_submit (second, MCP): unexpected error: %v", err)
-	}
+			// First: `a2a submit <id>` (CLI).
+			legality := cli.NewLegalityAdapter(mirrorDir, "beta", equivManifest())
+			cliCmd := cli.NewSubmitCommand(sharedFunnel, legality, cli.NewNoopPendingMarker(), mirrorDir, "fixture-space", "beta", staging, equivCLIHostConfig(fx.RemoteURL()))
+			runCLICommand(t, cliCmd, []string{id})
+			if len(fakeHost.Opens) != 1 {
+				t.Fatalf("expected exactly 1 OpenPR call after the CLI submit, got %d", len(fakeHost.Opens))
+			}
 
-	// AC #5: no duplicate PR.
-	if len(fakeHost.Opens) != 1 {
-		t.Fatalf("expected STILL exactly 1 OpenPR call after the interleaved MCP submit (no duplicate PR), got %d", len(fakeHost.Opens))
-	}
-	rendered, _ := json.Marshal(result)
-	if !strings.Contains(string(rendered), "already") {
-		t.Fatalf("expected the second call to report an already-done state, got: %s", rendered)
+			// Second: `a2a_submit` (MCP) on the SAME id, same session.
+			mcpLegality := mcp.NewLegalityAdapter(mirrorDir, "beta", equivManifest())
+			writeDeps := mcp.WriteDeps{
+				Funnel: sharedFunnel, MirrorDir: mirrorDir, SpaceID: "fixture-space", OwnSystem: "beta",
+				Manifest: equivManifest(), HostCfg: equivMCPHostConfig(fx.RemoteURL()), ResolveActor: equivMCPActorResolver("agent", "bot"),
+				Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
+			}
+			registry := mcp.BuildRegistry(nil, writeDeps, staging, mcpLegality, mcp.NewDeps{})
+			spec, ok := registry.Get("a2a_submit")
+			if !ok {
+				t.Fatal("a2a_submit not registered")
+			}
+			raw, _ := json.Marshal(mcp.SubmitInput{IDs: []string{id}})
+			result, _, err := spec.Handler(context.Background(), raw)
+			if err != nil {
+				t.Fatalf("a2a_submit (second, MCP): unexpected error: %v", err)
+			}
+
+			// AC #5: no duplicate PR.
+			if len(fakeHost.Opens) != 1 {
+				t.Fatalf("expected STILL exactly 1 OpenPR call after the interleaved MCP submit (no duplicate PR), got %d", len(fakeHost.Opens))
+			}
+			rendered, _ := json.Marshal(result)
+			if !strings.Contains(string(rendered), "already") {
+				t.Fatalf("expected the second call to report an already-done state, got: %s", rendered)
+			}
+		})
 	}
 }
 
@@ -2167,4 +2375,199 @@ func TestEquivContractDescriptorRefusalText(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestEquivLifecycleRefusalTextParity is this phase's Brief item 4 — the
+// LIFECYCLE gap TestEquivContractDescriptorRefusalText (B38) left open (see
+// this file's own §11-amendment-aligned comment there): B38 gives the
+// CONTRACT verbs a shared-core refusal-text comparison; nothing gave
+// verify/close/respond one, and those are exactly the verbs P1/P4 touch.
+// Built on B38's own two decisions, not re-deciding them: each subtest
+// compares the shared CORE of the message (never the whole string — the two
+// surfaces legitimately differ in framing, "--verdict" vs "verdicts",
+// "--unmet" vs "unmet"), and each was watched biting by reverting one
+// surface (this phase's own mutation-test report).
+func TestEquivLifecycleRefusalTextParity(t *testing.T) {
+	t.Parallel()
+
+	// verify/close: --verdict/verdicts supplied BELOW the floor. Reachable
+	// on both surfaces without crossing the floor at all — internal/cli's
+	// VerifyCommand.Run and internal/mcp's newVerifyHandler both refuse
+	// before ever touching the funnel, naming the SAME condition
+	// (min_binary_version, event/v2) in the same shared words.
+	t.Run("verify", func(t *testing.T) {
+		t.Parallel()
+		const parentID = "XQ-axon-20260721-b908"
+		seed := equivAcceptedQuestion(parentID)
+
+		respondOnce := func(t *testing.T, mirrorDir string) *spyFunnel {
+			fh := host.NewFakeHost()
+			real := space.NewWriteFunnel(fh, nil, "0.1.0")
+			f := &spyFunnel{inner: real}
+			cmd := cli.NewRespondCommand(f, mirrorDir, "fixture-space", "beta", equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
+			runCLICommand(t, cmd, []string{"--result", "answered", parentID})
+			for _, fw := range f.calls[0].Files {
+				writeMirrorFileEquiv(t, mirrorDir, fw.Path, string(fw.Content))
+			}
+			return f
+		}
+
+		cliDir, cliFunnel, _ := newEquivMirror(t, "axon")
+		seed(t, cliDir)
+		cliResponseID := extractResponseID(respondOnce(t, cliDir).calls[0].Files)
+		cliCmd := cli.NewVerifyCommand(cliFunnel, cliDir, "fixture-space", "axon", equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
+		io, _, cliErr := equivIO()
+		if code := cliCmd.Run(context.Background(), []string{"--verdict", "0:met:beta", cliResponseID}, io); code == 0 {
+			t.Fatalf("verify: CLI accepted --verdict below the floor")
+		}
+
+		mcpDir, mcpFunnel, _ := newEquivMirror(t, "axon")
+		seed(t, mcpDir)
+		mcpResponseID := extractResponseID(respondOnce(t, mcpDir).calls[0].Files)
+		writeDeps := mcp.WriteDeps{
+			Funnel: mcpFunnel, MirrorDir: mcpDir, SpaceID: "fixture-space", OwnSystem: "axon",
+			Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""), ResolveActor: equivMCPActorResolver("agent", "bot"),
+			Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
+		}
+		registry := mcp.BuildRegistry(nil, writeDeps, "", nil, mcp.NewDeps{})
+		spec, ok := registry.Get("a2a_exchange")
+		if !ok {
+			t.Fatal("a2a_exchange is not registered")
+		}
+		verdictIndex := 0
+		raw, err := marshalWithAction("verify", mcp.VerifyInput{Targets: []string{mcpResponseID}, Verdicts: []mcp.VerdictInputEntry{{Index: &verdictIndex, Verdict: "met", CauseOwner: "beta"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _, mcpErr := spec.Handler(context.Background(), raw)
+		if mcpErr == nil {
+			t.Fatalf("verify: MCP accepted verdicts below the floor")
+		}
+
+		for _, want := range []string{"min_binary_version to be at or above", "event/v2", "this space's floor is"} {
+			if !strings.Contains(cliErr.String(), want) {
+				t.Fatalf("verify: CLI refusal does not name %q:\n%s", want, cliErr.String())
+			}
+			if !strings.Contains(mcpErr.Error(), want) {
+				t.Fatalf("verify: MCP refusal does not name %q while the CLI does — the twins have drifted:\n%s", want, mcpErr.Error())
+			}
+		}
+		if len(cliFunnel.calls) != 0 || len(mcpFunnel.calls) != 0 {
+			t.Fatalf("verify: a local refusal must precede both funnels: CLI=%d MCP=%d", len(cliFunnel.calls), len(mcpFunnel.calls))
+		}
+	})
+
+	// close: the SAME --verdict/verdicts-below-floor condition, reached
+	// through the generic table-driven close row instead of the dedicated
+	// verify command — the floor check fires before any per-id legality
+	// evaluation on both surfaces, so a bare well-formed id is enough.
+	t.Run("close", func(t *testing.T) {
+		t.Parallel()
+		const id = "XQ-axon-20260721-b909"
+		seed := func(t *testing.T, mirrorDir string) {
+			equivWriteQuestion(t, mirrorDir, id, "beta")
+			equivWriteEvent(t, mirrorDir, "axon", 0, id, "submit", "axon")
+		}
+
+		cliDir, cliFunnel, _ := newEquivMirror(t, "axon")
+		seed(t, cliDir)
+		cliCmd := cli.NewCloseCommand(cliFunnel, cliDir, "fixture-space", "axon", equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
+		io, _, cliErr := equivIO()
+		if code := cliCmd.Run(context.Background(), []string{"--verdict", "0:met:beta", id}, io); code == 0 {
+			t.Fatalf("close: CLI accepted --verdict below the floor")
+		}
+
+		mcpDir, mcpFunnel, _ := newEquivMirror(t, "axon")
+		seed(t, mcpDir)
+		writeDeps := mcp.WriteDeps{
+			Funnel: mcpFunnel, MirrorDir: mcpDir, SpaceID: "fixture-space", OwnSystem: "axon",
+			Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""), ResolveActor: equivMCPActorResolver("agent", "bot"),
+			Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
+		}
+		registry := mcp.BuildRegistry(nil, writeDeps, "", nil, mcp.NewDeps{})
+		spec, ok := registry.Get("a2a_lifecycle")
+		if !ok {
+			t.Fatal("a2a_lifecycle is not registered")
+		}
+		verdictIndex := 0
+		raw, err := marshalWithAction("close", mcp.LifecycleInput{IDs: []string{id}, Verdicts: []mcp.VerdictInputEntry{{Index: &verdictIndex, Verdict: "met", CauseOwner: "beta"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _, mcpErr := spec.Handler(context.Background(), raw)
+		if mcpErr == nil {
+			t.Fatalf("close: MCP accepted verdicts below the floor")
+		}
+
+		for _, want := range []string{"min_binary_version to be at or above", "event/v2", "this space's floor is"} {
+			if !strings.Contains(cliErr.String(), want) {
+				t.Fatalf("close: CLI refusal does not name %q:\n%s", want, cliErr.String())
+			}
+			if !strings.Contains(mcpErr.Error(), want) {
+				t.Fatalf("close: MCP refusal does not name %q while the CLI does — the twins have drifted:\n%s", want, mcpErr.Error())
+			}
+		}
+		if len(cliFunnel.calls) != 0 || len(mcpFunnel.calls) != 0 {
+			t.Fatalf("close: a local refusal must precede both funnels: CLI=%d MCP=%d", len(cliFunnel.calls), len(mcpFunnel.calls))
+		}
+	})
+
+	// respond: an entirely different condition (no floor gate reaches
+	// respond's --unmet/unmet path at all — see this phase's Deviations
+	// report) — a BARE INDEX supplied against a parent whose
+	// acceptance_criteria[] DECLARES ids. lifecycleResolveUnmet/
+	// respondResolveUnmet both refuse this by name, identically.
+	t.Run("respond", func(t *testing.T) {
+		t.Parallel()
+		const parentID = "XQ-axon-20260721-b910"
+		content := "---\nschema: envelope/v1\nid: " + parentID + "\ntype: question\ntitle: t\nspace: fixture-space\nthread: thread:axon-20260721-k3f9\nfrom: axon\nto: [beta]\nactor: {kind: agent, name: bot}\ncreated: 2026-07-21T10:00:00Z\ncategory: clarification\npriority: p3\nblocking: true\nclassification: internal\nacceptance_criteria:\n  - id: crit-a\n    text: must work\n---\nbody\n"
+		seed := func(t *testing.T, mirrorDir string) {
+			writeMirrorFileEquiv(t, mirrorDir, "axon/exchanges/"+parentID+".md", content)
+			equivWriteEvent(t, mirrorDir, "axon", 0, parentID, "submit", "axon")
+			equivWriteEvent(t, mirrorDir, "beta", 1, parentID, "acknowledge", "beta")
+			equivWriteEvent(t, mirrorDir, "beta", 2, parentID, "accept", "beta")
+		}
+
+		cliDir, cliFunnel, _ := newEquivMirror(t, "beta")
+		seed(t, cliDir)
+		cliCmd := cli.NewRespondCommand(cliFunnel, cliDir, "fixture-space", "beta", equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
+		io, _, cliErr := equivIO()
+		if code := cliCmd.Run(context.Background(), []string{"--result", "answered", "--unmet", "0", parentID}, io); code == 0 {
+			t.Fatalf("respond: CLI accepted a bare index against a parent that declares criterion ids")
+		}
+
+		mcpDir, mcpFunnel, _ := newEquivMirror(t, "beta")
+		seed(t, mcpDir)
+		writeDeps := mcp.WriteDeps{
+			Funnel: mcpFunnel, MirrorDir: mcpDir, SpaceID: "fixture-space", OwnSystem: "beta",
+			Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""), ResolveActor: equivMCPActorResolver("agent", "bot"),
+			Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
+		}
+		registry := mcp.BuildRegistry(nil, writeDeps, "", nil, mcp.NewDeps{})
+		spec, ok := registry.Get("a2a_exchange")
+		if !ok {
+			t.Fatal("a2a_exchange is not registered")
+		}
+		unmetIndex := 0
+		raw, err := marshalWithAction("respond", mcp.RespondInput{ParentIDs: []string{parentID}, Result: "answered", Unmet: []mcp.RespondUnmetEntry{{Index: &unmetIndex}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _, mcpErr := spec.Handler(context.Background(), raw)
+		if mcpErr == nil {
+			t.Fatalf("respond: MCP accepted a bare index against a parent that declares criterion ids")
+		}
+
+		for _, want := range []string{"this parent declares criterion ids", "instead of a bare index", "crit-a"} {
+			if !strings.Contains(cliErr.String(), want) {
+				t.Fatalf("respond: CLI refusal does not name %q:\n%s", want, cliErr.String())
+			}
+			if !strings.Contains(mcpErr.Error(), want) {
+				t.Fatalf("respond: MCP refusal does not name %q while the CLI does — the twins have drifted:\n%s", want, mcpErr.Error())
+			}
+		}
+		if len(cliFunnel.calls) != 0 || len(mcpFunnel.calls) != 0 {
+			t.Fatalf("respond: a local refusal must precede both funnels: CLI=%d MCP=%d", len(cliFunnel.calls), len(mcpFunnel.calls))
+		}
+	})
 }

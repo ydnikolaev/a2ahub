@@ -26,6 +26,13 @@ package main
 // Deviation (see this phase's report): `statusline` is a buildCommands()
 // key but is NOT part of the §7.7-designated set (spec 14 scope note + AC
 // #6). Carried over from P14: it is in the exclusion set here.
+//
+// What this gate does NOT prove (one-answer-2026-08 P2 §T5): capability
+// bijection is a NAME-level check — it proves every designated verb maps to
+// exactly one reachable (tool, action) and back, never that the two
+// surfaces author the SAME bytes for a shared verb. The byte-level check
+// (event/commit content, modulo the minted id and wall clock) lives in
+// mcp_equivalence_test.go, this file's own sibling in package main.
 
 import (
 	"fmt"

@@ -139,6 +139,22 @@ func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 	fs.SetOutput(stdio.Stderr)
 	var fieldFlags newStringList
 	fs.Var(&fieldFlags, "field", "k=v field override (repeatable); k may be a dotted path into a nested field, e.g. expected_response.shape")
+	// --acceptance-criterion (P5, one-answer-2026-08 spec 05 T1): repeatable
+	// criterion text, one flag occurrence per criterion, the same
+	// newStringList shape --ref/--verdict already use. This command only
+	// COLLECTS the raw text, in order, into template.Input.AcceptanceCriteria
+	// — it never decides the shape itself. That decision is
+	// template.selectGeneration's, asked exactly once, inside RenderNew (via
+	// applyFills' own envelopeGeneration(in.EnvelopeSchema) read on whichever
+	// pass is about to become the actual output), never re-derived here from
+	// "a v2 template exists" (that rule is falsified by announcement, which
+	// HAS a templates/v2 file that is a work-checkpoint, not a general v2
+	// announcement; see generationTable's own doc comment). A type that
+	// authors envelope/v2 (work_request today) gets ids ac1..acN minted in
+	// the order given; every v1-rendering type gets bare strings and no
+	// ids — v1's own published, immutable `items: {type: string}` shape.
+	var acceptanceCriteria newStringList
+	fs.Var(&acceptanceCriteria, "acceptance-criterion", "acceptance criterion text (repeatable, one per occurrence); mints ids ac1..acN, in the order given, for a type that authors envelope/v2 (e.g. work_request) — a v1-rendering type drafts the bare-string form instead, with no ids")
 	bodyFile := fs.String("body-file", "", "path to a file whose contents replace the draft body")
 	thread := fs.String("thread", "", "thread id to attach")
 	slug := fs.String("slug", "", "slug for a standing-type id (required for contract/requirement)")
@@ -242,6 +258,7 @@ func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 	draft, err := template.RenderNew(template.Input{
 		Type: typ,
 		ID:   mintedID, Actor: resolvedActor, Created: now, Fields: fields, Body: bodyOverride,
+		AcceptanceCriteria: acceptanceCriteria,
 	}, validate.IsJSONSchemaFormat)
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "new: render failed: %v\n", err)

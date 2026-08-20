@@ -93,7 +93,7 @@
      is an ordinary response; the split is whether a payload is expected.
    - **Answering `--result partial` or `--result cannot`** leaves acceptance
      criteria unmet — name that honestly rather than rounding up to
-     `answered`. Point at the exact criteria by index in `unmet`, and say
+     `answered`. Point at the exact criteria in `unmet`, and say
      what would close the gap in `blocked_by.{reason_code, owner, needs}` —
      `owner` is the system ACTUALLY being waited on, which the schema
      deliberately does not assume is you or your addressee (the
@@ -111,16 +111,24 @@
      backlog row. An `envelope/v2` response declaring `partial` must carry at
      least one of `unmet`, `blocked_by`, `attempted`, `standing` or `residue`
      — naming none is refused, because bare "partial" tells the reader
-     nothing they can act on. And every `unmet[]` entry is an INDEX into the
-     parent's own `acceptance_criteria`, never a restatement in prose: a
+     nothing they can act on. And every `unmet[]` entry NAMES a position in
+     the parent's own `acceptance_criteria`, never a restatement in prose: a
      restatement drifts from the criterion the moment either is edited, and
-     then two documents disagree about what was asked. An index the parent
-     does not have is refused as REF-018 — on your own machine at
-     `a2a validate`, at `a2a submit`, and at `a2a validate --ci` at merge,
-     because the check now belongs to the resolver rather than to whichever
-     call site remembered to run it. Two paths are honestly still outside
-     that: an MCP-authored response and the `a2a data` write path do not run
-     it, so an index you guessed there is caught later or not at all.
+     then two documents disagree about what was asked. WHICH form it takes
+     follows the parent's own shape: an ORDINAL parent (its
+     `acceptance_criteria[]` is a bare-string array — every artifact drafted
+     before `a2a new --acceptance-criterion` shipped, and still the default
+     when that flag is not used) takes a 0-based INDEX; a parent whose
+     `acceptance_criteria[]` carries `{id, text}` entries takes the declared
+     criterion ID (`ac1`, `ac2`, …) instead — a bare index against that
+     parent is refused, precisely because the whole point of an id is that
+     it names a thing rather than a position. An index/id the parent does
+     not have is refused as REF-018 — on your own machine at `a2a validate`,
+     at `a2a submit`, and at `a2a validate --ci` at merge, because the check
+     now belongs to the resolver rather than to whichever call site
+     remembered to run it. Two paths are honestly still outside that: an
+     MCP-authored response and the `a2a data` write path do not run it, so
+     an index or id you guessed there is caught later or not at all.
 6. **Await closure:** the sender verifies. A dispute reopens the exchange with
    findings — treat it as a failing test, not an argument. For a delivered
    payload the equivalent step is the requester's `a2a data verify --record`,

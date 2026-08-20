@@ -80,6 +80,37 @@ type Input struct {
 	// wired at the cmd_new.go call site). A nil Body leaves the template's
 	// own body section untouched.
 	Body []byte
+	// AcceptanceCriteria carries `a2a new --acceptance-criterion` values
+	// (one per occurrence, author-typed text unchanged, in the order
+	// given). A nil/empty slice means the flag was not given at all —
+	// acceptance_criteria is left exactly as the template already has it
+	// (its own placeholder, or absent entirely for a type whose template
+	// carries no such key), never rewritten to an empty array.
+	//
+	// The SHAPE this renders is decided by EnvelopeSchema (already
+	// resolved through selectGeneration by the time applyFills runs, on
+	// both of RenderNew's passes): envelope/v2 mints the id-bearing
+	// `{id, text}` form with ids `ac1..acN` in the order given; every
+	// other generation (v1, or the sniff pass) renders bare strings and no
+	// ids — envelope/v1's own published `items: {type: string}` shape,
+	// immutable in the ratchet.
+	//
+	// This is a dedicated field rather than routed through Fields[
+	// "acceptance_criteria"] deliberately: Fields is a map[string]string,
+	// and the id-bearing form needs actual structure, not a hand-escaped
+	// YAML string a caller would have to build correctly. It also survives
+	// RenderNew's sniff-fallback path (`sniff.Fields = nil` on
+	// ErrUnappliableField) untouched, since that only clears Fields, never
+	// this field — the general mechanism's array/object append refusal
+	// (schemaAllowsField) never applies here either, because this package
+	// builds the exact typed node itself instead of asking a caller-typed
+	// string to parse into one.
+	//
+	// Neither AUTHOR fill-class rule is bent by this: the criterion TEXT
+	// is exactly what the author supplied, unchanged; the id is a
+	// tool-minted HANDLE over that text, the same precedent `a2a attach`
+	// sets for ref/digest over attached bytes.
+	AcceptanceCriteria []string
 }
 
 // Types returns the 8 canonical envelope type names this package has an
@@ -417,6 +448,16 @@ func applyFills(mapping *yaml.Node, in Input) error {
 		key := mapping.Content[i]
 		val := mapping.Content[i+1]
 		present[key.Value] = true
+		// acceptance_criteria is minted here, ahead of the switch below,
+		// ONLY when the caller actually supplied --acceptance-criterion
+		// values — an empty/nil in.AcceptanceCriteria falls straight
+		// through to the switch's own default case, so a hand-authored
+		// template placeholder or a plain --field acceptance_criteria=...
+		// override behaves exactly as before this field existed.
+		if key.Value == "acceptance_criteria" && len(in.AcceptanceCriteria) > 0 {
+			setAcceptanceCriteria(val, envelopeGeneration(in.EnvelopeSchema), in.AcceptanceCriteria)
+			continue
+		}
 		switch key.Value {
 		case "id":
 			setScalar(val, in.ID)
@@ -439,6 +480,26 @@ func applyFills(mapping *yaml.Node, in Input) error {
 			// it at V2. See Render's doc comment for the full story.
 		}
 	}
+
+	// acceptance_criteria is APPENDED when --acceptance-criterion was given
+	// and the template carries no such key at all (question, decision,
+	// announcement — their templates never render it, unlike work_request/
+	// requirement/handoff above, which hit the top-level case instead).
+	// schemas/envelope/v{1,2}/base.schema.json declares acceptance_criteria
+	// itself (AUTHOR, fill-classes.yaml), and every per-type schema $refs
+	// base with unevaluatedProperties:false, so the field is legal on
+	// EVERY type/generation this package renders — unlike the generic
+	// --field append pass below, which refuses any array/object-typed key
+	// outright (setField's append only ever writes one scalar node). This
+	// bypasses that refusal deliberately: the node built here is a real,
+	// correctly-typed sequence, not a caller-typed string being parsed.
+	if len(in.AcceptanceCriteria) > 0 && !present["acceptance_criteria"] {
+		mapping.Content = append(mapping.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: "acceptance_criteria"},
+			renderAcceptanceCriteria(envelopeGeneration(in.EnvelopeSchema), in.AcceptanceCriteria))
+		present["acceptance_criteria"] = true
+	}
+
 	// Second pass: any --field key not yet applied and not matched by the
 	// top-level loop above is tried as a DOTTED path into a nested mapping
 	// (e.g. `expected_response.shape`) — never a sequence index (`refs[0].
@@ -782,6 +843,54 @@ func setScalar(node *yaml.Node, value string) {
 	node.Value = value
 	node.Style = 0
 	node.Tag = ""
+}
+
+// setAcceptanceCriteria replaces node's content in place with the sequence
+// renderAcceptanceCriteria builds, preserving head/foot comments exactly as
+// setField does — the trailing template guidance comment above the key is
+// documentation for how to fill the field, and once filled it is noise
+// (setField's own doc comment); the head/foot pairing survives here because
+// they document the FIELD, not how to complete it.
+func setAcceptanceCriteria(node *yaml.Node, generation string, criteria []string) {
+	seq := renderAcceptanceCriteria(generation, criteria)
+	head, foot := node.HeadComment, node.FootComment
+	*node = *seq
+	node.HeadComment, node.FootComment = head, foot
+}
+
+// renderAcceptanceCriteria builds the acceptance_criteria[] sequence node
+// `a2a new --acceptance-criterion` mints, in the order the criteria were
+// given: envelope/v2 gets the id-bearing `{id, text}` form, ids minted
+// `ac1..acN`; every other generation (envelope/v1, or RenderNew's own v1
+// sniff pass) gets bare strings and no ids — v1's published, immutable
+// `items: {type: string}` shape (schemas/envelope/v1/base.schema.json).
+//
+// This is the ONE seat that mints a criterion id. The TEXT is exactly what
+// the author typed, unchanged; the id is a tool-minted HANDLE over that
+// text, in the order the author typed it — `a2a attach`'s own precedent for
+// a tool-minted value (ref/digest) over author-supplied bytes. Neither
+// AUTHOR fill-class field (the text) nor this minted handle collide with
+// what the epic calls fabrication: nothing here invents what the author
+// meant.
+func renderAcceptanceCriteria(generation string, criteria []string) *yaml.Node {
+	seq := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+	for i, text := range criteria {
+		if generation != "envelope/v2" {
+			seq.Content = append(seq.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: text})
+			continue
+		}
+		seq.Content = append(seq.Content, &yaml.Node{
+			Kind: yaml.MappingNode,
+			Tag:  "!!map",
+			Content: []*yaml.Node{
+				{Kind: yaml.ScalarNode, Value: "id"},
+				{Kind: yaml.ScalarNode, Value: fmt.Sprintf("ac%d", i+1)},
+				{Kind: yaml.ScalarNode, Value: "text"},
+				{Kind: yaml.ScalarNode, Value: text},
+			},
+		})
+	}
+	return seq
 }
 
 func rawTemplate(typ, envelopeSchema string) ([]byte, error) {
