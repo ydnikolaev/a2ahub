@@ -22,6 +22,11 @@ ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
 IMAGE=${PARITY_IMAGE:-a2ahub-ci-parity:local}
+# A fixed, repo-named container rather than docker's random two-word name: this
+# thing runs for twenty minutes and shows up in Docker Desktop next to every
+# other project's containers, where `flamboyant_hoover` tells nobody what it is
+# or whether it is safe to stop.
+CONTAINER=${PARITY_CONTAINER:-a2ahub-ci-parity}
 
 # ── Derive every toolchain version from the repository's own SSOT. ────────────
 # Nothing below is a constant. Each read fails closed with the file it was
@@ -72,7 +77,18 @@ docker build \
 
 # Named volumes, not bind mounts: see the entrypoint's header for why the host
 # tree is read-only and what would otherwise be clobbered.
+# A crashed daemon can leave the name held by a container `--rm` never got to
+# remove. Reclaim a dead one; refuse a live one rather than killing a run that
+# may be somebody else's.
+if state="$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null)"; then
+  if [ "$state" = "true" ]; then
+    die "a container named $CONTAINER is already running — wait for it, or stop it deliberately."
+  fi
+  docker rm "$CONTAINER" >/dev/null
+fi
+
 exec docker run --rm -i \
+  --name "$CONTAINER" \
   ${PARITY_TTY:+-t} \
   -v "$ROOT:/src:ro" \
   -v a2ahub-parity-work:/work \
