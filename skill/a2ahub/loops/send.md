@@ -154,8 +154,16 @@
    automatically. Pass → `a2a verify` (for a single-response exchange this also
    closes the parent; a requirement completes via `a2a satisfy`). Fail →
    `a2a dispute` with concrete findings, at most twice per exchange before human
-   escalation (8.5). **Judge per criterion, not just pass/fail:** both
-   `a2a verify` and the standalone `a2a close` accept a repeatable
+   escalation (8.5). **Judge per criterion — this is REQUIRED, not enrichment.** When the
+   parent declares any acceptance criteria, a `verify` or `close` that does
+   not name a verdict for EVERY one of them is refused at submit with REF-023,
+   and an out-of-range index is refused with REF-019. The command exits
+   non-zero and writes nothing; there is no PR to fix afterwards. (Before
+   0.23.0 both refusals existed but ran only at the merge check, so an
+   incomplete set submitted cleanly and failed later — if your loop treats
+   exit 0 from `a2a verify` as acceptance, that is the assumption that
+   changed.) Both `a2a verify` and the standalone `a2a close` accept a
+   repeatable
    `--verdict <index>:<met|unmet|not_warranted|not_exercised>:<cause_owner>`
    — `<index>` into the response's own acceptance criteria, `<cause_owner>`
    naming who is actually responsible for a shortfall; `a2a thread --json`
