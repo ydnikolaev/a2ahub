@@ -36,12 +36,22 @@ STATE=${PARITY_STATE:-/parity-state}
 
 excludes=$(mktemp)
 trap 'rm -f "$excludes"' EXIT
+# EVERY LINE HERE MUST BE UNTRACKED. `/integrations/` was on this list until
+# 2026-08-20 for its size (564MB) — and it is a tracked directory: only 352KB
+# across 40 files is tracked, the rest is four ignored build trees. So
+# `git ls-files` in the copy named files that were not there, and
+# `check-notify-secrets` reported that grep rejected all fourteen of its secret
+# shapes (exit 2 is grep's "a file could not be read", not "bad pattern").
+# Exclude the ignored subtrees by name, never their tracked parent.
 cat > "$excludes" <<'EXCL'
 /.a2a/
-/integrations/
 /dist/
 /a2a
 /coverage.out
+integrations/macos-notifier/.build/
+integrations/macos-notifier/dist/
+integrations/vscode/dist/
+integrations/vscode/node_modules/
 web/node_modules/
 web/dist/
 web/test-results/
@@ -60,6 +70,19 @@ cd "$WORK"
 # is root-owned inside a container nobody else touches, so the declaration is
 # accurate rather than a workaround.
 git config --global --add safe.directory "$WORK"
+
+# THE COPY MUST BE THE REPOSITORY. An exclude that names a tracked path leaves
+# `git ls-files` describing files that are not on disk, and gates that walk the
+# tracked set then fail for reasons that have nothing to do with the repo — the
+# defect above, found the expensive way. Deletions relative to the host tree are
+# the exact signature, so they are refused here rather than diagnosed later.
+deleted="$(git -C "$WORK" ls-files --deleted | head -20)"
+if [ -n "$deleted" ]; then
+  echo "parity: the synced copy is missing tracked files — an exclude names a tracked path:" >&2
+  printf '%s\n' "$deleted" | sed 's/^/  /' >&2
+  echo "  Fix the exclude list in scripts/ci-parity-entrypoint.sh; this run would judge a tree that is not the repository." >&2
+  exit 1
+fi
 
 # `npm ci` only when the lockfile actually changed. CI runs it unconditionally
 # because its runner starts empty; here the volume persists, and reinstalling
