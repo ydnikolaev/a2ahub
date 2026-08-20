@@ -136,7 +136,10 @@
 // precheck for other verbs) calls ValidateForSubmit directly with both.
 package validate
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // ParentCriteriaCounter is validate's own consumer-side optional upgrade
 // to Resolver (see this file's package-doc Deviation above for why it is
@@ -195,25 +198,74 @@ func checkIncompleteness(env envelope, instance any, events []CandidateEvent, re
 // no ParentOf hop belongs here — that hop is checkVerdictIndexRange's own,
 // never shared into this bounds check, per verdicts.go's package doc).
 func checkUnmetIndexRange(env envelope, instance any, resolver Resolver) []Violation {
-	unmet, present := responseUnmetIndices(instance)
-	if !present || len(unmet) == 0 {
+	refs, present := responseUnmetRefs(instance)
+	if !present || len(refs) == 0 {
 		return nil
 	}
-	outOfRange, count, checked := resolveOutOfRangeIndices(resolver, env.Parent, unmet)
-	if !checked {
-		return nil
+
+	var indices []int
+	for _, r := range refs {
+		if r.hasIndex {
+			indices = append(indices, r.index)
+		}
 	}
+
 	var out []Violation
-	for _, idx := range outOfRange {
-		out = append(out, Violation{
-			Code:     "REF-018",
-			Class:    ClassReferential,
-			Path:     "unmet",
-			Message:  fmt.Sprintf("unmet[] names criterion index %d, which does not resolve to an entry in the parent's acceptance_criteria[] (%d declared)", idx, count),
-			Severity: SeverityReject,
-		})
+	if outOfRange, count, checked := resolveOutOfRangeIndices(resolver, env.Parent, indices); checked {
+		for _, idx := range outOfRange {
+			out = append(out, Violation{
+				Code:     "REF-018",
+				Class:    ClassReferential,
+				Path:     "unmet",
+				Message:  fmt.Sprintf("unmet[] names criterion index %d, which does not resolve to an entry in the parent's acceptance_criteria[] (%d declared)", idx, count),
+				Severity: SeverityReject,
+			})
+		}
 	}
+
+	// Id form (P3 widening, base.schema.json's `{criterion: <id>}` shape):
+	// resolved independently via ParentCriteriaIDs — a DIFFERENT optional
+	// capability than ParentCriteriaCounter above (verdicts.go's own doc
+	// comment), so a resolver offering one but not the other still gets
+	// whichever half it can answer. ok=true with a zero-length ids is a
+	// determinable answer ("this parent declares no ids at all"), not
+	// "cannot check" — every criterion-form entry is then unresolvable and
+	// REF-018 fires naming the (empty) declared list, never silence; only
+	// ok=false (resolveParentCriteriaIDs' own "cannot resolve" rail)
+	// degrades to nothing, matching checkVerdictIndexRange's own id-form
+	// branch.
+	if ids, haveIDs := resolveParentCriteriaIDs(resolver, env.Parent); haveIDs {
+		known := make(map[string]bool, len(ids))
+		for _, id := range ids {
+			known[id] = true
+		}
+		for _, r := range refs {
+			if r.hasIndex || known[r.criterion] {
+				continue
+			}
+			out = append(out, Violation{
+				Code:     "REF-018",
+				Class:    ClassReferential,
+				Path:     "unmet",
+				Message:  fmt.Sprintf("unmet[] names criterion %q, which does not resolve to an entry in the parent's acceptance_criteria[] (declared: %s)", r.criterion, joinCriteriaOrNone(ids)),
+				Severity: SeverityReject,
+			})
+		}
+	}
+
 	return out
+}
+
+// joinCriteriaOrNone renders ids for a REF-018 id-form message: the
+// declared list, or an explicit "none" when the parent's own
+// acceptance_criteria[] resolves (ParentCriteriaIDs' ok=true) but declares
+// zero entries — the id form is then a DIFFERENT refusal (every id is
+// necessarily undeclared), never silence.
+func joinCriteriaOrNone(ids []string) string {
+	if len(ids) == 0 {
+		return "none"
+	}
+	return strings.Join(ids, ", ")
 }
 
 // checkResidue is AC8: a terminal transition (close/withdraw/cancel) over
@@ -228,25 +280,43 @@ func checkResidue(env envelope, instance any, events []CandidateEvent) []Violati
 	if env.Type != "response" {
 		return nil
 	}
-	unmet, present := responseUnmetIndices(instance)
-	if !present || len(unmet) == 0 {
+	refs, present := responseUnmetRefs(instance)
+	if !present || len(refs) == 0 {
 		// Nothing this response itself marked non-met to carry forward.
 		return nil
 	}
 	if !closesParent(env.Parent, events) {
 		return nil
 	}
-	covered := residueCriterionIndices(instance)
+	// Both unmet[] and residue[] live on this SAME response instance, so
+	// covering an id-form entry needs no resolver hop — it is a direct
+	// correlation between the two fields, matched by whichever addressing
+	// form the entry itself uses (index against residue[].criterion_index,
+	// id against residue[].criterion).
+	coveredIdx, coveredCriteria := residueCoverage(instance)
 	var out []Violation
-	for _, idx := range unmet {
-		if covered[idx] {
+	for _, r := range refs {
+		if r.hasIndex {
+			if coveredIdx[r.index] {
+				continue
+			}
+			out = append(out, Violation{
+				Code:     "LFC-004",
+				Class:    ClassLifecycle,
+				Path:     "residue",
+				Message:  fmt.Sprintf("a terminal transition closes this response's parent while criterion %d is unmet and no residue names where it went", r.index),
+				Severity: SeverityReject,
+			})
+			continue
+		}
+		if coveredCriteria[r.criterion] {
 			continue
 		}
 		out = append(out, Violation{
 			Code:     "LFC-004",
 			Class:    ClassLifecycle,
 			Path:     "residue",
-			Message:  fmt.Sprintf("a terminal transition closes this response's parent while criterion %d is unmet and no residue names where it went", idx),
+			Message:  fmt.Sprintf("a terminal transition closes this response's parent while criterion %q is unmet and no residue names where it went", r.criterion),
 			Severity: SeverityReject,
 		})
 	}
@@ -267,8 +337,17 @@ func closesParent(parentID string, events []CandidateEvent) bool {
 	return false
 }
 
-// responseUnmetIndices reads instance's top-level `unmet[]` field
-// (response.schema.json's shape: an array of non-negative integers).
+// responseUnmetRefs reads instance's top-level `unmet[]` field
+// (response.schema.json's shape, P3 widening: `anyOf` — an array of
+// non-negative integers OR an array of `{criterion: <id>}` objects, never
+// mixed within one array) into each entry's own addressing, sharing
+// verdicts.go's parseVerdictRefs — the same dual-form decode
+// eventVerdictRefs already established for `verdicts[]` ("an entry is an
+// index OR a criterion, never neither"). Both forms are schema-legal as of
+// defects-fix-2026-08 P3, so an entry this function skips is genuinely
+// malformed (neither key readable), not a shape the schema class already
+// flags on this function's behalf.
+//
 // present=false means the field was absent or not the expected shape
 // (degrade to "nothing to check", the same rail declaredAttachmentDigests
 // uses in possession.go) — present=true with a zero-length result means
@@ -280,7 +359,7 @@ func closesParent(parentID string, events []CandidateEvent) bool {
 // type, not a json.Unmarshal-shaped float64, because this package never
 // re-parses frontmatter through a second decoder (rails: read `instance`
 // as internal/schema already built it).
-func responseUnmetIndices(instance any) (indices []int, present bool) {
+func responseUnmetRefs(instance any) (refs []verdictRef, present bool) {
 	m, ok := instance.(map[string]any)
 	if !ok {
 		return nil, false
@@ -289,45 +368,38 @@ func responseUnmetIndices(instance any) (indices []int, present bool) {
 	if !ok {
 		return nil, false
 	}
-	out := make([]int, 0, len(raw))
-	for _, v := range raw {
-		n, ok := v.(int64)
-		if !ok {
-			// Not an integer entry — schema class (SCH-006/AC4's own
-			// "restated in prose" refusal) already flags this shape; this
-			// function only reads the entries it can, never errors.
-			continue
-		}
-		out = append(out, int(n))
-	}
-	return out, true
+	return parseVerdictRefs(raw), true
 }
 
-// residueCriterionIndices reads instance's top-level `residue[]` field
-// (response.schema.json's shape: `{criterion_index, carried_to}` objects)
-// into the set of criterion_index values it names. A malformed or absent
-// residue degrades to the empty set — "nothing named", which is exactly
-// what checkResidue's refusal is watching for.
-func residueCriterionIndices(instance any) map[int]bool {
-	out := map[int]bool{}
+// residueCoverage reads instance's top-level `residue[]` field
+// (response.schema.json's shape, P3 widening: `{criterion_index|criterion,
+// carried_to}` objects, mutually exclusive per entry) into the two sets of
+// entries it covers — by ordinal index and by criterion id. A malformed or
+// absent residue degrades to two empty sets — "nothing named", which is
+// exactly what checkResidue's refusal is watching for.
+func residueCoverage(instance any) (byIndex map[int]bool, byCriterion map[string]bool) {
+	byIndex = map[int]bool{}
+	byCriterion = map[string]bool{}
 	m, ok := instance.(map[string]any)
 	if !ok {
-		return out
+		return byIndex, byCriterion
 	}
 	raw, ok := m["residue"].([]any)
 	if !ok {
-		return out
+		return byIndex, byCriterion
 	}
 	for _, e := range raw {
 		em, ok := e.(map[string]any)
 		if !ok {
 			continue
 		}
-		n, ok := em["criterion_index"].(int64)
-		if !ok {
+		if n, ok := em["criterion_index"].(int64); ok {
+			byIndex[int(n)] = true
 			continue
 		}
-		out[int(n)] = true
+		if s, ok := em["criterion"].(string); ok && s != "" {
+			byCriterion[s] = true
+		}
 	}
-	return out
+	return byIndex, byCriterion
 }

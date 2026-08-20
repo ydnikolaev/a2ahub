@@ -1,0 +1,2 @@
+code: REF-018
+note: "unmet[]'s id-form entry names a criterion the parent does not declare — REF-018 (severity: reject), the P3 defect this phase closes. Proven through Engine.ValidateForSubmit via golden_test.go's REF-/POL- routed path (spec §11 amendment, AC5); the resolver is TestGoldenFixtures_Envelope's own envelopeV2PolicyResolver."

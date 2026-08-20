@@ -218,7 +218,7 @@ func TestCheckVerdictIndexRange_CloseDoesNotAttemptTheHop(t *testing.T) {
 }
 
 // TestCheckVerdictIndexRange_AbsentVerdictsIsNotChecked mirrors
-// responseUnmetIndices' own "present=false, not a violation" case for
+// responseUnmetRefs' own "present=false, not a violation" case for
 // verdicts[]: an event carrying no verdicts field at all (e.g. every
 // transition other than verify/close) is nothing this check has an
 // opinion about.

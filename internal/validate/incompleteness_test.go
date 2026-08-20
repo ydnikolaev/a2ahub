@@ -131,6 +131,168 @@ func TestCheckUnmetIndexRange_NeverConsultsResponseParentResolverHop(t *testing.
 	}
 }
 
+// --- AC1, id form (P3 "one reader for both wire forms"): unmet[]'s
+// --- {criterion: <id>} shape, resolved via ParentCriteriaIDs ---
+
+// TestCheckUnmetIndexRange_IDForm_UndeclaredIDRefuses is AC1's id-form
+// half (spec §8 row 1): an id `unmet[]` names that the parent does not
+// declare is REF-018, and the message lists every id the parent DOES
+// declare.
+func TestCheckUnmetIndexRange_IDForm_UndeclaredIDRefuses(t *testing.T) {
+	t.Parallel()
+	const parentID = "XW-axon-20260820-idpar"
+	env := envelope{Type: "response", Parent: parentID}
+	instance := map[string]any{"unmet": []any{map[string]any{"criterion": "nope"}}}
+	resolver := &criteriaResolverWithIDs{
+		criteriaResolver: criteriaResolver{},
+		ids:              map[string][]string{parentID: {"ac1", "ac2", "ac3"}},
+	}
+
+	got := checkUnmetIndexRange(env, instance, resolver)
+	if len(got) != 1 {
+		t.Fatalf("expected exactly one violation, got %+v", got)
+	}
+	if got[0].Code != "REF-018" {
+		t.Fatalf("expected REF-018, got %q", got[0].Code)
+	}
+	if got[0].Severity != SeverityReject {
+		t.Fatalf("expected SeverityReject, got %q", got[0].Severity)
+	}
+	for _, want := range []string{"nope", "ac1", "ac2", "ac3"} {
+		if !strings.Contains(got[0].Message, want) {
+			t.Errorf("message %q does not name %q", got[0].Message, want)
+		}
+	}
+}
+
+// TestCheckUnmetIndexRange_IDForm_ResolvableIDProducesNoViolation is AC1's
+// id-form happy path (spec §8 row 2): the same shape, but the named id IS
+// among the parent's declared ids.
+func TestCheckUnmetIndexRange_IDForm_ResolvableIDProducesNoViolation(t *testing.T) {
+	t.Parallel()
+	const parentID = "XW-axon-20260820-idpar"
+	env := envelope{Type: "response", Parent: parentID}
+	instance := map[string]any{"unmet": []any{map[string]any{"criterion": "ac1"}}}
+	resolver := &criteriaResolverWithIDs{
+		ids: map[string][]string{parentID: {"ac1", "ac2", "ac3"}},
+	}
+
+	got := checkUnmetIndexRange(env, instance, resolver)
+	if len(got) != 0 {
+		t.Fatalf("expected no violations for a resolvable id, got %+v", got)
+	}
+}
+
+// TestCheckUnmetIndexRange_IDForm_ParentDeclaringNoIDsStillRefuses is the
+// §6 edge case: "a parent declaring NO ids at all — the id form is then a
+// DIFFERENT refusal, not silence." ok=true with a zero-length ids slice is
+// a DETERMINABLE answer (the parent's own acceptance_criteria[] resolves
+// and declares zero ids), distinct from ok=false ("cannot resolve at
+// all") — every criterion-form entry is then necessarily undeclared, so
+// REF-018 still fires, naming the empty declared list.
+func TestCheckUnmetIndexRange_IDForm_ParentDeclaringNoIDsStillRefuses(t *testing.T) {
+	t.Parallel()
+	const parentID = "XW-axon-20260820-idpar"
+	env := envelope{Type: "response", Parent: parentID}
+	instance := map[string]any{"unmet": []any{map[string]any{"criterion": "ac1"}}}
+	resolver := &criteriaResolverWithIDs{
+		ids: map[string][]string{parentID: {}}, // resolves, declares zero ids
+	}
+
+	got := checkUnmetIndexRange(env, instance, resolver)
+	if len(got) != 1 {
+		t.Fatalf("expected exactly one violation (not silence) for a parent declaring no ids, got %+v", got)
+	}
+	if got[0].Code != "REF-018" {
+		t.Fatalf("expected REF-018, got %q", got[0].Code)
+	}
+}
+
+// TestCheckUnmetIndexRange_IDForm_NoParentCriteriaIDsDegradesSilently is
+// the "cannot check is never check passed" rail: a resolver that does not
+// implement ParentCriteriaIDs at all (ok=false, unresolvable) must produce
+// NO violation and NO clearance — never guess.
+func TestCheckUnmetIndexRange_IDForm_NoParentCriteriaIDsDegradesSilently(t *testing.T) {
+	t.Parallel()
+	env := envelope{Type: "response", Parent: "XW-axon-20260820-idpar"}
+	instance := map[string]any{"unmet": []any{map[string]any{"criterion": "ac1"}}}
+	resolver := &fakeResolver{known: map[string]bool{}}
+
+	got := checkUnmetIndexRange(env, instance, resolver)
+	if len(got) != 0 {
+		t.Fatalf("expected no violations without ParentCriteriaIDs, got %+v", got)
+	}
+}
+
+// TestCheckUnmetIndexRange_NeitherOptionalInterface is spec §8 row 6 /
+// this phase's plan acceptance item 6: a Resolver implementing NEITHER
+// ParentCriteriaCounter nor ParentCriteriaIDs yields no violation and no
+// clearance, for a response naming BOTH an out-of-range index and an
+// unresolvable id.
+func TestCheckUnmetIndexRange_NeitherOptionalInterface(t *testing.T) {
+	t.Parallel()
+	env := envelope{Type: "response", Parent: "XW-axon-20260820-idpar"}
+	instance := map[string]any{"unmet": []any{int64(99), map[string]any{"criterion": "ac1"}}}
+	resolver := &fakeResolver{known: map[string]bool{}}
+
+	got := checkUnmetIndexRange(env, instance, resolver)
+	if len(got) != 0 {
+		t.Fatalf("expected no violations from a Resolver implementing neither optional interface, got %+v", got)
+	}
+}
+
+// TestUnmetIndexRange_IDForm_EngineWiring is the id-form mirror of
+// TestUnmetIndexRange_EngineWiring: the same undeclared-id shape, through
+// the real Engine, with a ParentCriteriaIDs-capable Resolver supplied via
+// LocalContext.
+func TestUnmetIndexRange_IDForm_EngineWiring(t *testing.T) {
+	t.Parallel()
+	engine := mustEngine(t)
+	const parentID = "XW-axon-20260808-idpar"
+	resolver := &criteriaResolverWithIDs{
+		criteriaResolver: criteriaResolver{member: map[string]bool{"seomatrix": true}},
+		ids:              map[string][]string{parentID: {"ac1", "ac2"}},
+	}
+
+	raw := []byte("---\n" + `
+schema: envelope/v2
+id: XS-axon-20260808-p9d3
+type: response
+title: A valid v2 response
+space: getvisa
+from: axon
+to: [seomatrix]
+thread: thread:axon-20260808-k3f9
+actor: {kind: agent, name: codex}
+created: "2026-08-08T08:40:00Z"
+priority: p3
+blocking: true
+classification: internal
+parent: ` + parentID + `
+result: partial
+unmet: [{criterion: nope}]
+blocked_by:
+  reason_code: out-of-scope
+  owner: seomatrix
+  needs: bytes
+` + "---\nBody.\n")
+
+	result, err := engine.ValidateForSubmit(
+		Draft{Path: "axon/exchanges/XS-axon-20260808-p9d3.md", Raw: raw},
+		nil,
+		LocalContext{OwnSystem: "axon", Resolver: resolver},
+	)
+	if err != nil {
+		t.Fatalf("ValidateForSubmit: %v", err)
+	}
+	if result.Valid {
+		t.Fatalf("expected refusal for an unresolvable id-form unmet entry, got Valid=true")
+	}
+	if !hasCode(result.Violations, "REF-018") {
+		t.Fatalf("expected REF-018 among violations, got %+v", result.Violations)
+	}
+}
+
 // TestUnmetIndexRange_EngineWiring is the end-to-end proof that
 // engine.go's ValidateForSubmit actually reaches checkIncompleteness: the
 // SAME out-of-range index, through the real Engine, with a
@@ -272,6 +434,86 @@ func TestCheckResidue_SupersedeIsNotATerminalCloseForThisRule(t *testing.T) {
 	got := checkResidue(env, instance, events)
 	if len(got) != 0 {
 		t.Fatalf("expected no violations for supersede, got %+v", got)
+	}
+}
+
+// --- AC8, id form: unmet[]/residue[]'s {criterion: <id>} shape ---
+
+// TestCheckResidue_IDForm_ClosingUnmetCriterionWithoutResidueRefuses is
+// AC2's/US-2's id-form half (spec §8 row 3): a terminal transition over a
+// parent with an id-form unanswered criterion and no residue is LFC-004.
+// No resolver is involved — unmet[] and residue[] are correlated directly
+// on the SAME instance.
+func TestCheckResidue_IDForm_ClosingUnmetCriterionWithoutResidueRefuses(t *testing.T) {
+	t.Parallel()
+	env := envelope{Type: "response", Parent: "XW-axon-20260801-close1"}
+	instance := map[string]any{"unmet": []any{map[string]any{"criterion": "ac2"}}}
+	events := []CandidateEvent{
+		{Subject: "XW-axon-20260801-close1", Transition: "close", Actor: Actor{Kind: "agent", Name: "codex", System: "axon"}},
+	}
+
+	got := checkResidue(env, instance, events)
+	if len(got) != 1 {
+		t.Fatalf("expected exactly one violation, got %+v", got)
+	}
+	if got[0].Code != "LFC-004" {
+		t.Fatalf("expected LFC-004, got %q", got[0].Code)
+	}
+	if got[0].Severity != SeverityReject {
+		t.Fatalf("expected SeverityReject, got %q", got[0].Severity)
+	}
+	if !strings.Contains(got[0].Message, "ac2") {
+		t.Errorf("message %q does not name the unmet criterion id ac2", got[0].Message)
+	}
+}
+
+// TestCheckResidue_IDForm_ResidueNamingTheCriterionIsAccepted is AC4/US-2's
+// clearance half (spec §8 row 4): an id-form residue[] entry naming that
+// SAME criterion clears the LFC-004 refusal.
+func TestCheckResidue_IDForm_ResidueNamingTheCriterionIsAccepted(t *testing.T) {
+	t.Parallel()
+	env := envelope{Type: "response", Parent: "XW-axon-20260801-close1"}
+	instance := map[string]any{
+		"unmet": []any{map[string]any{"criterion": "ac2"}},
+		"residue": []any{
+			map[string]any{"criterion": "ac2", "carried_to": "XS-axon-20260822-q7d2"},
+		},
+	}
+	events := []CandidateEvent{
+		{Subject: "XW-axon-20260801-close1", Transition: "close", Actor: Actor{Kind: "agent", Name: "codex", System: "axon"}},
+	}
+
+	got := checkResidue(env, instance, events)
+	if len(got) != 0 {
+		t.Fatalf("expected no violations once id-form residue names the criterion, got %+v", got)
+	}
+}
+
+// TestCheckResidue_MixedFormsInResidueDoesNotPanic is the §6 edge case:
+// residue[] mixing index-form and criterion-form entries is refused by the
+// schema (mutually exclusive per entry), but this reader must degrade
+// safely rather than panic — an unmet id-form entry finds no matching
+// criterion-form residue entry (the residue array here carries only an
+// index-form one), so LFC-004 still fires rather than crashing.
+func TestCheckResidue_MixedFormsInResidueDoesNotPanic(t *testing.T) {
+	t.Parallel()
+	env := envelope{Type: "response", Parent: "XW-axon-20260801-close1"}
+	instance := map[string]any{
+		"unmet": []any{map[string]any{"criterion": "ac2"}},
+		"residue": []any{
+			map[string]any{"criterion_index": int64(0), "carried_to": "XS-axon-20260822-q7d2"},
+		},
+	}
+	events := []CandidateEvent{
+		{Subject: "XW-axon-20260801-close1", Transition: "close", Actor: Actor{Kind: "agent", Name: "codex", System: "axon"}},
+	}
+
+	got := checkResidue(env, instance, events)
+	if len(got) != 1 {
+		t.Fatalf("expected exactly one violation (id-form unmet not covered by an index-form residue), got %+v", got)
+	}
+	if got[0].Code != "LFC-004" {
+		t.Fatalf("expected LFC-004, got %q", got[0].Code)
 	}
 }
 

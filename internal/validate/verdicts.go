@@ -111,15 +111,17 @@
 // call site REF-019 already has means REF-023 is reachable everywhere
 // REF-019 already is, on day one, with zero new wiring.
 //
-// The id-addressed form (P3, base.schema.json's `{id, text}` shape) is
-// enhancement-only here, deliberately: no concrete Resolver implements
-// ParentCriteriaIDs below yet (cli.MirrorResolver, internal/cli/adapters.go,
-// is off this wave's allowlist too), so an id-addressed parent's
-// completeness cannot be judged in production until a later wave adds it
-// there — reported as a lead action, not silently assumed. The rule still
-// reaches the MEASURED defect: both getvisa closes are over ordinal
-// (bare-string) parents, and an ordinal parent's completeness needs nothing
-// but the count this file already resolves.
+// The id-addressed form (P3, base.schema.json's `{id, text}` shape) was
+// enhancement-only here at the time this paragraph was written: no
+// concrete Resolver implemented ParentCriteriaIDs below yet. That gap is
+// CLOSED — cli.MirrorResolver (internal/cli/adapters.go:726) now asserts
+// itself against ParentCriteriaIDs at compile time, so an id-addressed
+// parent's completeness IS judged in production wherever a MirrorResolver
+// is the Resolver in play. Kept here as history: the rule reached the
+// MEASURED defect (docs/inbox/defects/04-the-verification-record-defaults-
+// to-empty.md) before this closed too — both getvisa closes are over
+// ordinal (bare-string) parents, and an ordinal parent's completeness needs
+// nothing but the count this file already resolves.
 package validate
 
 import (
@@ -191,12 +193,12 @@ func resolveOutOfRangeIndices(resolver Resolver, subjectID string, indices []int
 // ParentCriteriaCounter's own doc comment already establishes; never
 // degrading to a slice of empty strings.
 //
-// No concrete Resolver implements this today — cli.MirrorResolver
-// (internal/cli/adapters.go) is off this wave's allowlist — so an
-// id-addressed parent's verdicts[] gets NO REF-019 id-range check and NO
-// REF-023 completeness verdict in production until a later wave adds it
-// there (see this file's package doc, "P4 — REF-023" section, and this
-// wave's own reported lead action).
+// cli.MirrorResolver (internal/cli/adapters.go:726) implements this —
+// asserted at compile time via `var _ validate.ParentCriteriaIDs =
+// (*MirrorResolver)(nil)` — so an id-addressed parent's verdicts[] DOES get
+// a REF-019 id-range check and a REF-023 completeness verdict wherever a
+// MirrorResolver is the Resolver in play (see this file's package doc,
+// "P4 — REF-023" section, corrected).
 type ParentCriteriaIDs interface {
 	AcceptanceCriteriaIDs(parentID string) (ids []string, ok bool)
 }
@@ -314,9 +316,9 @@ func checkVerdictIndexRange(subjectID string, instance any, resolver Resolver) [
 	// id that does not resolve into countedID's own declared list names a
 	// criterion that does not exist, exactly the fact the index-form check
 	// above already reports, addressed differently. Only attempted when
-	// resolver offers the ordered id list at all (ParentCriteriaIDs) — see
-	// that interface's own doc comment for why no concrete Resolver does
-	// yet.
+	// resolver offers the ordered id list at all (ParentCriteriaIDs) —
+	// cli.MirrorResolver does (adapters.go:726), so this is the live path
+	// for that Resolver, not a dormant one.
 	ids, haveIDs := resolveParentCriteriaIDs(resolver, countedID)
 	unresolvedCriteria := map[string]bool{}
 	if haveIDs {
@@ -364,8 +366,9 @@ func checkVerdictIndexRange(subjectID string, instance any, resolver Resolver) [
 // let it silently stand in for a real judgement.
 //
 // When refs carries a criterion-form entry and resolver offers no
-// ParentCriteriaIDs (haveIDs=false — every production Resolver today, see
-// that interface's own doc comment), completeness cannot be judged for
+// ParentCriteriaIDs (haveIDs=false — every Resolver that is not a
+// cli.MirrorResolver, see that interface's own doc comment), completeness
+// cannot be judged for
 // THIS event at all: without the parent's own id list there is no way to
 // tell which of its criteria a `criterion`-keyed entry actually names, so
 // guessing would either wrongly clear a short id-addressed record or
@@ -437,10 +440,13 @@ func checkVerdictCompleteness(parentID string, count int, refs []verdictRef, inv
 // eventVerdictRefs reads an EVENT instance's top-level `verdicts[]` field
 // (event/v2/event.schema.json's shape: an array of `{index|criterion,
 // verdict, cause_owner}` objects) into the addressing each entry names —
-// the same decode rail incompleteness.go's responseUnmetIndices uses for
-// `unmet[]`: schema.DecodeYAMLInstance decodes a YAML `!!int` scalar to Go
-// int64, never float64, so this reads exactly that type for `index`, and a
-// YAML `!!str` scalar as Go string for `criterion`.
+// the same decode rail incompleteness.go's responseUnmetRefs uses for
+// `unmet[]` (both call parseVerdictRefs below, this file's ONE per-entry
+// dual-form decode — see this file's package doc, "unmet[] needs the same
+// shape; extract it rather than writing a second one"):
+// schema.DecodeYAMLInstance decodes a YAML `!!int` scalar to Go int64,
+// never float64, so this reads exactly that type for `index`, and a YAML
+// `!!str` scalar as Go string for `criterion`.
 //
 // present=false means the field was absent or not the expected shape
 // (degrade to "nothing to check", never an error) — present=true with a
@@ -466,12 +472,38 @@ func eventVerdictRefs(instance any) (refs []verdictRef, present bool) {
 	if !ok {
 		return nil, false
 	}
+	return parseVerdictRefs(raw), true
+}
+
+// parseVerdictRefs is eventVerdictRefs' and responseUnmetRefs' shared
+// per-entry decode: each raw entry names an index OR a criterion id, never
+// neither. The two fields' WIRE shapes are not identical at the entry
+// level — event.schema.json's `verdicts[]` entries are always objects
+// (`{index|criterion, verdict, cause_owner}`), while response.schema.json's
+// `unmet[]` is `anyOf` a bare-integer array OR an array of `{criterion}`
+// objects (no `{index: N}` object form exists for `unmet[]` at all) — so
+// this function accepts a raw entry that is EITHER a bare int64 (unmet[]'s
+// index form) OR an object carrying "index" or "criterion" (verdicts[]'s
+// both forms, and unmet[]'s/residue[]'s own id form). An entry that is
+// neither is skipped — the schema class already flags that shape, and this
+// function only reads the entries it can.
+//
+// Extracted from eventVerdictRefs' own former inline loop (P3 "one reader
+// for both wire forms") so `unmet[]` reads the SAME dual-form decode
+// `verdicts[]` already established, rather than a second parser this
+// package's own rails would then have to keep in step by hand.
+func parseVerdictRefs(raw []any) []verdictRef {
 	out := make([]verdictRef, 0, len(raw))
 	for _, v := range raw {
+		if n, ok := v.(int64); ok {
+			out = append(out, verdictRef{index: int(n), hasIndex: true})
+			continue
+		}
 		entry, ok := v.(map[string]any)
 		if !ok {
-			// Not an object entry — the schema class already flags this
-			// shape; this function only reads the entries it can.
+			// Neither a bare integer nor an object entry — the schema class
+			// already flags this shape; this function only reads the
+			// entries it can.
 			continue
 		}
 		if n, ok := entry["index"].(int64); ok {
@@ -483,5 +515,5 @@ func eventVerdictRefs(instance any) (refs []verdictRef, present bool) {
 			continue
 		}
 	}
-	return out, true
+	return out
 }

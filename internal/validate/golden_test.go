@@ -56,11 +56,44 @@ func parseSystemFromID(id string) (string, error) {
 	return parts[1], nil
 }
 
-// TestGoldenFixtures_Envelope is AC-201.1's V1 half: every P2 envelope
-// golden fixture, run through Engine.ValidateDraft, is valid (zero
-// violations) when it lives under fixtures/valid/, and fails with
-// EXACTLY its sidecar's registry code when it lives under
-// fixtures/invalid/.
+// envelopeV2PolicyResolver is the fixed Resolver this file's ENGINE-routed
+// envelope/v2 invalid fixtures resolve against (P3 "one reader for both
+// wire forms", spec §11 amendment): unlike the v1 half above (schema class
+// only, no cross-artifact fact needed), a REF-/POL- sidecar under
+// envelope/v2/fixtures/invalid/ can name a rule that needs a resolved
+// parent — REF-018's id-form range check chief among them. Small and fixed
+// rather than generic, because this phase adds exactly ONE such fixture;
+// widen the maps (never fork a second resolver type) when a later phase
+// adds another.
+type envelopeV2PolicyResolver struct {
+	systemMembers map[string]bool
+	criteriaIDs   map[string][]string
+}
+
+func (r *envelopeV2PolicyResolver) KnownArtifact(id string) bool { return true }
+func (r *envelopeV2PolicyResolver) Digest(string) (string, bool) { return "", false }
+func (r *envelopeV2PolicyResolver) System(system string) (member, left bool) {
+	return r.systemMembers[system], false
+}
+func (r *envelopeV2PolicyResolver) AcceptanceCriteriaIDs(parentID string) ([]string, bool) {
+	ids, ok := r.criteriaIDs[parentID]
+	return ids, ok
+}
+
+var _ Resolver = (*envelopeV2PolicyResolver)(nil)
+var _ ParentCriteriaIDs = (*envelopeV2PolicyResolver)(nil)
+
+// TestGoldenFixtures_Envelope is AC-201.1's V1 half (schema-class fixtures,
+// SCH- sidecars, routed through Engine.ValidateDraft) PLUS P3's own
+// widening (spec §11 amendment, AC5): envelope/v2/fixtures/invalid/ is now
+// globbed too, and a REF-/POL- sidecar there — a policy-class rule the
+// schema corpus itself cannot express — routes through
+// Engine.ValidateForSubmit instead, mirroring
+// TestGoldenFixtures_EventManifestConsumes's own SCH-vs-REF-/POL- split
+// below. Before this widening, schemas/envelope/v2/fixtures/invalid/'s 67
+// files were read solely by internal/schema/v2_corpus_test.go
+// (schema-class only) — no fixture there could ever prove a
+// severity:reject POLICY rule fired through the real Engine.
 func TestGoldenFixtures_Envelope(t *testing.T) {
 	t.Parallel()
 	engine := mustEngine(t)
@@ -94,13 +127,52 @@ func TestGoldenFixtures_Envelope(t *testing.T) {
 		})
 	}
 
-	invalidFiles, err := filepath.Glob(filepath.Join(corpusRoot, "envelope/v1/fixtures/invalid/*.md"))
+	v1InvalidFiles, err := filepath.Glob(filepath.Join(corpusRoot, "envelope/v1/fixtures/invalid/*.md"))
 	if err != nil {
-		t.Fatalf("glob invalid: %v", err)
+		t.Fatalf("glob invalid (v1): %v", err)
 	}
-	if len(invalidFiles) == 0 {
+	if len(v1InvalidFiles) == 0 {
 		t.Fatal("expected at least one invalid envelope fixture")
 	}
+	// P3 widening (spec §11 amendment, AC5): envelope/v2's own invalid
+	// corpus, previously reached by no policy-class-capable test at all.
+	// Scoped to the response family (XS-*) — matching
+	// internal/schema/v2_corpus_test.go's own XA-*-scoped globs over this
+	// SAME directory, an established precedent in this corpus for a
+	// family-scoped glob rather than a blanket one. A blanket `*.md` here
+	// would ALSO re-run the other 25 pre-existing envelope/v2 invalid
+	// fixtures (announcement/contract) through this package's full
+	// Engine pipeline for the first time ever — and two of them (the
+	// `work` checkpoint's conditionally-required `actor.session` and
+	// `waiting_on` cases) surface a genuine, pre-existing schema_class.go
+	// classification bug when they do (see this phase's own Product
+	// findings report: schemaCode()'s SCH-005 detection is
+	// `strings.HasPrefix(SchemaPointer, "/allOf/") &&
+	// strings.HasSuffix(SchemaPointer, "/then")`, which misses a
+	// conditional required nested one level deeper — `/then/properties/
+	// actor` — or reached through a $ref'd $defs schema —
+	// `/$defs/workCheckpoint/allOf/1/then` — falling through to SCH-001
+	// instead). That bug is real and unrelated to REF-018/LFC-004, and
+	// schema_class.go is off this phase's allowlist to fix — narrowing to
+	// XS-* keeps this widening scoped to what this phase actually proves,
+	// without silently reporting the other 25 fixtures' sidecars as
+	// verified when this loop cannot yet get them past an unrelated defect.
+	v2InvalidFiles, err := filepath.Glob(filepath.Join(corpusRoot, "envelope/v2/fixtures/invalid/XS-*.md"))
+	if err != nil {
+		t.Fatalf("glob invalid (v2): %v", err)
+	}
+	if len(v2InvalidFiles) == 0 {
+		t.Fatal("expected at least one invalid envelope/v2 response (XS-*) fixture")
+	}
+	invalidFiles := append(append([]string{}, v1InvalidFiles...), v2InvalidFiles...)
+
+	policyResolver := &envelopeV2PolicyResolver{
+		systemMembers: map[string]bool{"axon": true, "seomatrix": true},
+		criteriaIDs: map[string][]string{
+			"XW-axon-20260820-par1": {"ac1", "ac2", "ac3"},
+		},
+	}
+
 	for _, f := range invalidFiles {
 		t.Run("invalid/"+filepath.Base(f), func(t *testing.T) {
 			t.Parallel()
@@ -115,9 +187,32 @@ func TestGoldenFixtures_Envelope(t *testing.T) {
 			if err != nil {
 				t.Fatalf("draftPathFor(%s): %v", id, err)
 			}
-			result, err := engine.ValidateDraft(Draft{Path: path, Raw: raw})
+
+			// Route by the sidecar's own code-class prefix — the SAME
+			// mechanism TestGoldenFixtures_EventManifestConsumes already
+			// uses below: SCH- is schema class, reachable at V1
+			// (ValidateDraft, exactly as before this widening); REF-/POL-
+			// are POLICY-class rules the schema corpus never sees, so they
+			// need ValidateForSubmit's cross-artifact context instead. Any
+			// other prefix fails loudly rather than silently reporting
+			// zero violations for a rule this loop cannot route to a real
+			// verdict.
+			var result Result
+			switch {
+			case strings.HasPrefix(wantCode, "SCH-"):
+				result, err = engine.ValidateDraft(Draft{Path: path, Raw: raw})
+			case strings.HasPrefix(wantCode, "REF-"), strings.HasPrefix(wantCode, "POL-"):
+				ownSystem := fromFrontmatter(t, raw)
+				result, err = engine.ValidateForSubmit(
+					Draft{Path: path, Raw: raw},
+					nil,
+					LocalContext{OwnSystem: ownSystem, Resolver: policyResolver},
+				)
+			default:
+				t.Fatalf("%s: sidecar names code %q with an unrecognised prefix (want SCH-/REF-/POL-)", f, wantCode)
+			}
 			if err != nil {
-				t.Fatalf("ValidateDraft: %v", err)
+				t.Fatalf("validate %s: %v", f, err)
 			}
 			if result.Valid {
 				t.Fatalf("expected fixture to be invalid (code %s), got Valid=true", wantCode)
@@ -249,6 +344,33 @@ func TestGoldenFixtures_EventManifestConsumes(t *testing.T) {
 
 func idFromFrontmatter(t *testing.T, raw []byte) string {
 	t.Helper()
+	m := frontmatterMap(t, raw)
+	id, _ := m["id"].(string)
+	if id == "" {
+		t.Fatalf("fixture has no `id` field")
+	}
+	return id
+}
+
+// fromFrontmatter reads a fixture's own `from` field — TestGoldenFixtures_
+// Envelope's REF-/POL- branch needs it to build a matching
+// LocalContext.OwnSystem (checkAuthz/CC-002 refuses `from != ownSystem`,
+// and a fixture whose ONLY intended violation is the sidecar's own code
+// must not pick up a second, unwanted one here).
+func fromFrontmatter(t *testing.T, raw []byte) string {
+	t.Helper()
+	m := frontmatterMap(t, raw)
+	from, _ := m["from"].(string)
+	if from == "" {
+		t.Fatalf("fixture has no `from` field")
+	}
+	return from
+}
+
+// frontmatterMap is idFromFrontmatter's and fromFrontmatter's shared
+// frontmatter decode.
+func frontmatterMap(t *testing.T, raw []byte) map[string]any {
+	t.Helper()
 	body := string(raw)
 	parts := strings.SplitN(body, "---\n", 3)
 	if len(parts) < 3 {
@@ -258,11 +380,7 @@ func idFromFrontmatter(t *testing.T, raw []byte) string {
 	if err := yaml.Unmarshal([]byte(parts[1]), &m); err != nil {
 		t.Fatalf("yaml.Unmarshal: %v", err)
 	}
-	id, _ := m["id"].(string)
-	if id == "" {
-		t.Fatalf("fixture has no `id` field")
-	}
-	return id
+	return m
 }
 
 func sidecarCode(t *testing.T, path string) string {
