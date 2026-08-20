@@ -3,6 +3,7 @@ package notes
 import (
 	"fmt"
 	"io/fs"
+	"regexp"
 	"sort"
 
 	"github.com/ydnikolaev/a2ahub/internal/version"
@@ -91,8 +92,38 @@ func ParseReleaseNotes(raw []byte) (ReleaseNotes, error) {
 	if err := yaml.Unmarshal(raw, &rn); err != nil {
 		return ReleaseNotes{}, &Error{Op: op, Err: ErrReleaseNotesInvalid}
 	}
+	if !releasedFieldWellFormed(rn.Released) {
+		return ReleaseNotes{}, &Error{Op: op, Input: rn.Version, Err: fmt.Errorf("%w: released: %q must be an ISO date (YYYY-MM-DD) or the %q sentinel", ErrReleaseNotesInvalid, rn.Released, UnreleasedSentinel)}
+	}
 	rn.Raw = raw
 	return rn, nil
+}
+
+// releasedReISODate is the shape `released` may take besides the sentinel.
+var releasedReISODate = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+
+// releasedFieldWellFormed is a POLICY check, and it lives here rather than in
+// schemas/release-notes/v1/release-notes.schema.json for a reason the schema
+// itself cannot state: that file is byte-frozen by schemas/published-v1.sha256,
+// because its bytes decide whether documents ALREADY COMMITTED to shared spaces
+// are valid, so an in-place edit is a compatibility event however additive it
+// looks (docs/the-plan/plan §5.7.1, ADR-018, root AGENTS.md §Anti-patterns #21).
+//
+// one-answer-2026-08 P6 first added a `pattern` to that schema and the
+// operational-confidence guard refused it by name, teaching this exact move at
+// the moment it was needed. The sanctioned shape is: leave the published bytes
+// alone, constrain in a layer that is not frozen, and accept that the refusal
+// is policy-class — which means the schema-only fixture corpus cannot express
+// it and it is proven in package tests instead. The missing policy-fixture
+// corpus is a row in docs/backlog.md.
+//
+// An EMPTY value stays legal here: `released` is not in the schema's own
+// required list, and a notes file that has not chosen yet is a different state
+// from one that chose something malformed. `scripts/check-release-record.sh`
+// is what decides whether a well-formed value is TRUE — a real date must have
+// a real tag — and that is deliberately a separate question from this one.
+func releasedFieldWellFormed(v string) bool {
+	return v == "" || v == UnreleasedSentinel || releasedReISODate.MatchString(v)
 }
 
 // Load reads every *.yaml file at the root of fsys (typically

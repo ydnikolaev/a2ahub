@@ -629,3 +629,40 @@ func assertVersionsEqual(t *testing.T, label string, got, want []string) {
 		}
 	}
 }
+
+// TestParseReleaseNotesRefusesAMalformedReleasedValue is the POLICY half of
+// what one-answer-2026-08 P6 first tried to put in the frozen schema. The
+// schema-only fixture corpus cannot express a policy-class refusal, so this
+// is where the constraint is proven — the shape the operational-confidence
+// guard's own teaching block prescribes for a byte-frozen v1 file.
+func TestParseReleaseNotesRefusesAMalformedReleasedValue(t *testing.T) {
+	t.Parallel()
+	base := "schema: release-notes/v1\nversion: \"0.1.0\"\nheadline: h\nchanges: []\n"
+	for _, tc := range []struct {
+		name    string
+		value   string
+		refused bool
+	}{
+		{"an ISO date is accepted", "2026-08-13", false},
+		{"the sentinel is accepted", UnreleasedSentinel, false},
+		{"an absent value is accepted — not-yet-chosen is not malformed", "", false},
+		{"free prose is refused", "soon", true},
+		{"a non-ISO date shape is refused", "13-08-2026", true},
+		{"a near-miss sentinel is refused", "un-released", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			raw := base
+			if tc.value != "" {
+				raw += "released: \"" + tc.value + "\"\n"
+			}
+			_, err := ParseReleaseNotes([]byte(raw))
+			if tc.refused && err == nil {
+				t.Fatalf("released: %q should be refused as malformed, got no error", tc.value)
+			}
+			if !tc.refused && err != nil {
+				t.Fatalf("released: %q should be accepted, got %v", tc.value, err)
+			}
+		})
+	}
+}
