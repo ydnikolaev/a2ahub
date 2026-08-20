@@ -110,7 +110,15 @@ async function summaryRegionFor(page, kind, locale) {
   } else {
     await expect(page.locator('[data-screen-label="Overview"]')).toBeVisible();
   }
-  return page.locator(`[data-card-summary="${kind}"]`).first();
+  // Wait for the region before deciding it is absent. factIdentifiers() reads
+  // count() with no wait and treats 0 as "this kind renders no summary region"
+  // — a real answer for work-report, and a race for every kind whose list the
+  // design runtime streams in. Without this the same suite passes and fails on
+  // the same source depending on machine load, which is the second instance of
+  // this shape in this file (see normalizedCardDOM's own note).
+  const region = page.locator(`[data-card-summary="${kind}"]`).first();
+  await region.waitFor({ state: 'attached', timeout: 5000 }).catch(() => {});
+  return region;
 }
 
 // The `#card=` deep link is a first-class door for every kind (the dashboard
