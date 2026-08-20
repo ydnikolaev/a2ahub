@@ -70,6 +70,18 @@ RUN test -n "${NODE_MAJOR}" || { echo "NODE_MAJOR is empty — it is derived fro
  && apt-get install -y --no-install-recommends nodejs \
  && rm -rf /var/lib/apt/lists/*
 
+# LAYER ORDER IS DELIBERATE FROM HERE DOWN. This is ~500MB and it changes
+# almost never; the three tool layers below it are small and their versions
+# move. Putting them after keeps a gitleaks or golangci-lint bump from
+# re-downloading chromium — which it did once, and the rebuild filled the
+# Docker VM's disk until apt reported every repository as unsigned.
+# Browsers are baked into a layer rather than fetched per run: ~500MB, and it is
+# the difference between a two-minute and a twelve-minute suite.
+ARG PLAYWRIGHT_VERSION
+RUN test -n "${PLAYWRIGHT_VERSION}" || { echo "PLAYWRIGHT_VERSION is empty — derived from web/package-lock.json." >&2; exit 1; } \
+ && npx --yes "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium \
+ && rm -rf /root/.npm/_cacache
+
 # gitleaks: CI downloads the linux_x64 archive because its runner is amd64.
 # This resolves the architecture instead, which is the one place the image
 # deliberately differs from the workflow — same version, same rules, native
@@ -102,13 +114,6 @@ RUN test -n "${ACTIONLINT_VERSION}" || { echo "ACTIONLINT_VERSION is empty — d
 # would make this image disagree with CI on the one gate whose whole job is to
 # know today's vulnerability set.
 RUN go install golang.org/x/vuln/cmd/govulncheck@latest
-
-# Browsers are baked into a layer rather than fetched per run: ~500MB, and it is
-# the difference between a two-minute and a twelve-minute suite.
-ARG PLAYWRIGHT_VERSION
-RUN test -n "${PLAYWRIGHT_VERSION}" || { echo "PLAYWRIGHT_VERSION is empty — derived from web/package-lock.json." >&2; exit 1; } \
- && npx --yes "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium \
- && rm -rf /root/.npm/_cacache
 
 COPY ci-parity-entrypoint.sh /usr/local/bin/parity-entrypoint
 RUN chmod +x /usr/local/bin/parity-entrypoint
