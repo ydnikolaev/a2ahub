@@ -118,6 +118,18 @@ RUN go install golang.org/x/vuln/cmd/govulncheck@latest
 COPY ci-parity-entrypoint.sh /usr/local/bin/parity-entrypoint
 RUN chmod +x /usr/local/bin/parity-entrypoint
 
+# THIS CONTAINER IS STANDING IN FOR CI, SO IT SAYS SO. GitHub Actions sets
+# CI=true for every step, and code in this repo branches on it: playwright.config
+# picks bundled chromium under CI and real Google Chrome otherwise;
+# dashboard-template-drift REFUSES a missing web/node_modules under CI and merely
+# skips locally. Without this the container took the local branch of every one of
+# those forks — it was reproducing the runner's operating system while
+# reproducing a developer's laptop everywhere the code asks which it is.
+#
+# GITHUB_ACTIONS is deliberately NOT set: it is the flag that makes tooling reach
+# for the Actions API and a token this container does not have.
+ENV CI=true
+
 WORKDIR /work
 ENTRYPOINT ["/usr/local/bin/parity-entrypoint"]
 CMD ["make", "ci-parity"]
