@@ -7,55 +7,13 @@
 </head>
 <body>
 <x-dc>
-<sc-if value="{{ cardItem }}" hint-placeholder-val="{{ false }}">
-  <sc-if value="{{ itemCardPresent }}" hint-placeholder-val="{{ true }}">
-    <article data-card-kind="item" style="min-width:0; font-family:'Onest',sans-serif; color:var(--text);">
-      <div data-card-content>
-        <div data-item-fact="identity" data-card-fact="item:identity"><h2 class="a2a-detail-title" style="margin:0 0 var(--space-card-title-to-content); overflow-wrap:anywhere;">{{ itemCard.identity }}</h2></div>
-        <div data-item-fact="lead" data-card-fact="item:lead" data-item-lead style="margin:0 0 var(--space-section); font-size:17px; line-height:1.6; color:var(--body); overflow-wrap:anywhere;">{{ itemCard.reasonSentence }}</div>
-
-        <div style="display:flex; flex-direction:column; gap:10px;">
-          <div data-item-fact="lifecycle" data-card-fact="item:lifecycle" data-accented="{{ itemCard.lifecycleHighlighted }}" style="line-height:1.55; overflow-wrap:anywhere; {{ itemCard.lifecycleStyle }}"><strong>{{ itemCard.lifecycleLabel }}:</strong> <sc-if value="{{ itemCard.hasLifecyclePills }}" hint-placeholder-val="{{ true }}">{{ itemCard.bodyStateResult.label }}; <strong>{{ itemCard.outcomeLabel }}:</strong> <sc-if value="{{ itemCard.hasOutcome }}" hint-placeholder-val="{{ true }}">{{ itemCard.bodyOutcomeResult.label }}{{ itemCard.outcomeEnding }}</sc-if><sc-if value="{{ itemCard.lacksOutcome }}" hint-placeholder-val="{{ false }}">{{ itemCard.notRecorded }}</sc-if></sc-if><sc-if value="{{ itemCard.lifecycleUnknown }}" hint-placeholder-val="{{ false }}">{{ itemCard.lifecycleUnknownText }}</sc-if></div>
-          <div data-item-fact="parties" data-card-fact="item:parties" data-accented="{{ itemCard.partiesHighlighted }}" style="line-height:1.55; overflow-wrap:anywhere; {{ itemCard.partiesStyle }}"><strong>{{ itemCard.partiesLabel }}:</strong> {{ itemCard.partiesText }}</div>
-          <div data-item-fact="gate" data-card-fact="item:gate" style="line-height:1.55; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);"><strong>{{ itemCard.gateLabel }}:</strong> <sc-if value="{{ itemCard.hasGate }}" hint-placeholder-val="{{ true }}">{{ itemCard.bodyGateResult.label }}{{ itemCard.gateEnding }}</sc-if><sc-if value="{{ itemCard.lacksGate }}" hint-placeholder-val="{{ false }}">{{ itemCard.notRecorded }}</sc-if></div>
-          <div data-item-fact="urgency" data-card-fact="item:urgency" style="line-height:1.55; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);"><strong>{{ itemCard.urgencyLabel }}:</strong> {{ itemCard.urgencyText }}</div>
-          <div data-item-fact="summary" data-card-fact="item:summary" style="line-height:1.55; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);"><strong>{{ itemCard.summaryLabel }}:</strong> {{ itemCard.summary }}</div>
-          <div data-item-fact="operational" data-card-fact="item:operational" style="line-height:1.55; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);"><strong>{{ itemCard.operationalLabel }}:</strong> <sc-if value="{{ itemCard.hasOperational }}" hint-placeholder-val="{{ true }}"><sc-for list="{{ itemCard.operationalItems }}" as="op" hint-placeholder-count="2"><span data-accented="{{ op.highlighted }}" style="{{ op.style }}">{{ op.separator }}<span style="font-family:'IBM Plex Mono',ui-monospace,monospace; overflow-wrap:anywhere;">{{ op.name }}</span> — {{ op.bodyResult.label }}</span></sc-for>{{ itemCard.operationalEnding }}</sc-if><sc-if value="{{ itemCard.lacksOperational }}" hint-placeholder-val="{{ false }}">{{ itemCard.noneRecorded }}</sc-if></div>
-          <div data-item-fact="snapshot" data-card-fact="item:snapshot" style="line-height:1.55; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);"><strong>{{ itemCard.snapshotLabel }}:</strong> <sc-if value="{{ itemCard.snapshotUnavailableOnly }}" hint-placeholder-val="{{ false }}">{{ itemCard.snapshotUnavailable }}</sc-if><sc-if value="{{ itemCard.hasBodySnapshotResult }}" hint-placeholder-val="{{ true }}">{{ itemCard.bodySnapshotResult.label }}{{ itemCard.snapshotFactsSuffix }}{{ itemCard.snapshotEnding }}</sc-if><sc-if value="{{ itemCard.snapshotFactsOnly }}" hint-placeholder-val="{{ false }}">{{ itemCard.snapshotFacts }}.</sc-if><sc-if value="{{ itemCard.snapshotUnknown }}" hint-placeholder-val="{{ false }}">{{ itemCard.snapshotUnknownText }}</sc-if></div>
-        </div>
-
-        <details data-item-fact="technical" data-card-fact="item:technical" data-item-technical style="{{ itemCard.technicalStyle }}">
-          <summary style="cursor:pointer; color:var(--teal-ink); font-weight:600;">{{ itemCard.technicalLabel }}</summary>
-          <div style="display:grid; grid-template-columns:minmax(100px,auto) minmax(0,1fr); gap:7px 14px; margin-top:12px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; line-height:1.5; overflow-wrap:anywhere;">
-            <span>{{ itemCard.whyLabel }}</span><span>{{ itemCard.technicalWhy }}</span>
-            <span>{{ itemCard.ruleLabel }}</span><span>{{ itemCard.ruleIdentity }}</span>
-            <span>Evidence</span><span>{{ itemCard.technicalEvidence }}</span>
-            <span>space</span><span>{{ itemCard.space }}</span><span>id</span><span>{{ itemCard.id }}</span>
-          </div>
-          <sc-if value="{{ itemCard.hasTechnicalTargets }}" hint-placeholder-val="{{ true }}">
-            <div style="display:flex; flex-direction:column; gap:6px; margin-top:12px;">
-              <sc-for list="{{ itemCard.technicalTargets }}" as="target" hint-placeholder-count="4">
-                <div data-item-technical-target="{{ target.family }}" data-accented="{{ target.highlighted }}" style="{{ target.style }}"><span style="color:var(--muted);">{{ target.label }}</span><span style="font-family:'IBM Plex Mono',ui-monospace,monospace; overflow-wrap:anywhere;">{{ target.identity }}</span></div>
-              </sc-for>
-            </div>
-          </sc-if>
-        </details>
-      </div>
-      <div data-card-support="item:status" aria-label="{{ itemCard.statusSupportLabel }}" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:var(--space-section);"><sc-for list="{{ itemCard.statusSupport }}" as="status" hint-placeholder-count="4"><dc-import name="StatusPill" result="{{ status }}" size="small" hint-size="150px,24px"></dc-import></sc-for></div>
-      <sc-if value="{{ itemCard.hasLinkedWorkReports }}" hint-placeholder-val="false">
-        <div data-card-support="item:work-reports" style="display:flex; flex-direction:column; gap:8px; margin-top:var(--space-section);">
-          <sc-for list="{{ itemCard.linkedWorkReports }}" as="report" hint-placeholder-count="1">
-            <div data-work-report-history style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--surface-section); box-shadow:inset 0 0 0 1px var(--hairline);">
-              <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0;"><dc-import name="StatusPill" result="{{ report.modeResult }}" size="small" hint-size="130px,24px"></dc-import><span style="overflow-wrap:anywhere;">{{ report.summary }}</span></span>
-              <button type="button" onClick="{{ report.open }}" style="padding:0; border:0; background:transparent; color:var(--teal-ink); font-family:'Onest',sans-serif; font-size:14px; font-weight:600; cursor:pointer;">{{ report.openLabel }}</button>
-            </div>
-          </sc-for>
-        </div>
-      </sc-if>
-    </article>
-  </sc-if>
-  <sc-if value="{{ itemCardMissing }}" hint-placeholder-val="{{ false }}"><dc-import name="EmptyState" title="{{ itemCardMissingTitle }}" text="{{ itemCardMissingText }}" size="panel" hint-size="100%,300px"></dc-import></sc-if>
-</sc-if>
+<!-- The component's own card branch is retired. The manifest routes the
+     `item` kind to ExchangeView, which imports THIS component's reading
+     surface — the document itself — so the card and the pane are one
+     rendering. Keeping a second, poorer copy of the card here is what
+     produced two answers to "what is this document" in the first place;
+     the P5 fact markers now live on the surface that ships (below), and
+     its own value builder stays because the summary rows still read it. -->
 
 <sc-if value="{{ legacyDetail }}" hint-placeholder-val="{{ true }}">
 <div style="{{ shellStyle }}">
@@ -68,7 +26,12 @@
          document title or the controls a reader is here to use. -->
     <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:var(--space-card-tags-to-author);">
       <div style="min-width:0; flex:1 1 auto;">
-        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:7px; margin-bottom:9px;">
+        <!-- P5 item facts, on the composition that actually ships. Routing the
+             item card through this reading surface moved every fact off the
+             retired card branch and left the card with nothing to attribute
+             its content to; these markers put them back, in the order this
+             surface reads (card-spec/item.md amended to match). -->
+        <div data-item-fact="lifecycle" data-card-fact="item:lifecycle" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:7px; margin-bottom:9px;">
           <sc-if value="{{ hasType }}" hint-placeholder-val="{{ true }}">
             <dc-import name="TypeBadge" type="{{ type }}" size="small" hint-size="140px,24px"></dc-import>
           </sc-if>
@@ -85,20 +48,21 @@
     </div>
 
     <sc-if value="{{ hasAuthor }}" hint-placeholder-val="{{ true }}">
-      <div data-artifact-author="{{ bodyKey }}" style="margin:0 0 var(--space-card-author-to-title);">
+      <div data-item-fact="parties" data-card-fact="item:parties" data-artifact-author="{{ bodyKey }}" style="margin:0 0 var(--space-card-author-to-title);">
         <dc-import name="ActorEventLine" row="{{ authorRow }}" size="regular" layout="inline" hint-size="100%,46px"></dc-import>
       </div>
     </sc-if>
 
-    <h3 class="a2a-detail-title" style="margin:0 0 var(--space-card-title-to-content);">{{ title }}</h3>
+    <h3 data-item-fact="identity" data-card-fact="item:identity" class="a2a-detail-title" style="margin:0 0 var(--space-card-title-to-content);">{{ title }}</h3>
 
     <!-- A declared date is the first consequence under the title. The sender's
          requested result and their own interim work are separate rows: joining
          them into one paragraph made the latter read as instructions to the
          recipient. -->
     <sc-if value="{{ hasCallout }}" hint-placeholder-val="{{ true }}">
-      <div style="{{ calloutStyle }}">
-        <div style="{{ calloutTitleStyle }}">{{ calloutTitle }}</div>
+      <div data-item-fact="lead" data-card-fact="item:lead" style="{{ calloutStyle }}">
+        <div data-item-fact="gate" data-card-fact="item:gate" style="{{ calloutTitleStyle }}">{{ calloutTitle }}</div>
+        <sc-if value="{{ hasCalloutSignal }}" hint-placeholder-val="{{ true }}"><span style="position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap;">{{ calloutSignalLabel }}</span></sc-if>
         <div style="display:flex; flex-direction:column; gap:12px;">
           <sc-for list="{{ calloutParts }}" as="part" hint-placeholder-count="2">
             <div style="{{ part.style }}">
@@ -111,7 +75,7 @@
     </sc-if>
 
     <sc-if value="{{ hasMetadata }}" hint-placeholder-val="{{ true }}">
-      <section data-artifact-metadata="{{ bodyKey }}" data-artifact-section="metadata" style="margin:0 0 var(--space-section);">
+      <section data-item-fact="technical" data-card-fact="item:technical" data-artifact-metadata="{{ bodyKey }}" data-artifact-section="metadata" style="margin:0 0 var(--space-section);">
         <div style="border-radius:var(--radius-nested); background:var(--surface-section); box-shadow:inset 0 0 0 1px var(--hairline); overflow:hidden;">
           <button type="button" onClick="{{ toggleMetadata }}" aria-expanded="{{ metadataExpanded }}" style="width:100%; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:11px 13px; border:0; color:var(--teal-ink); background:transparent; font-family:'Onest',sans-serif; font-size:14px; font-weight:600; cursor:pointer; text-align:left;">
             <span>{{ metadataToggleLabel }}</span>
@@ -135,7 +99,7 @@
          safe GFM path first (raw HTML is escaped, dangerous URLs rejected and
          remote images removed); only that projection enters this node. -->
     <sc-if value="{{ hasBody }}" hint-placeholder-val="{{ true }}">
-      <div data-artifact-body="{{ bodyKey }}" style="{{ bodyWrapStyle }}">
+      <div data-item-fact="summary" data-card-fact="item:summary" data-artifact-body="{{ bodyKey }}" style="{{ bodyWrapStyle }}">
         <div style="{{ bodyShellStyle }}">
           <div style="{{ bodyClipStyle }}">
             <sc-if value="{{ bodyIsHTML }}" hint-placeholder-val="{{ true }}"><div class="artifact-markdown" data-artifact-markdown="{{ bodyKey }}"></div></sc-if>
@@ -192,7 +156,7 @@
          sentences, because a reader who has never opened the spec has to be
          able to tell them apart at a glance. -->
     <sc-if value="{{ hasOperational }}" hint-placeholder-val="{{ false }}">
-      <div data-artifact-section="operational" style="border-top:1px solid var(--hairline); padding-top:var(--space-section); margin:0 0 var(--space-section);">
+      <div data-item-fact="operational" data-card-fact="item:operational" data-artifact-section="operational" style="border-top:1px solid var(--hairline); padding-top:var(--space-section); margin:0 0 var(--space-section);">
         <dc-import name="SectionHeading" title="{{ operationalLabel }}" hint="{{ operationalHint }}" hint-size="100%,32px"></dc-import>
         <div style="display:flex; flex-direction:column; gap:8px;">
           <sc-for list="{{ operationalItems }}" as="op" hint-placeholder-count="3">
@@ -277,7 +241,11 @@
                     <dc-import name="StatusPill" result="{{ e.workModeResult }}" size="small" hint-size="110px,24px"></dc-import>
                     <span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px; line-height:1.45; color:var(--muted);">{{ e.workEvidence }}</span>
                   </div>
-                  <div style="font-size:15px; line-height:1.5; color:var(--body); overflow-wrap:anywhere;">{{ e.workSummary }}</div>
+                  <!-- Not a card fact: this is the work report as it appears
+                       inside the DOCUMENT's history, and the item card's
+                       region must carry item facts only. The work-report card
+                       states the same lead in its own region. -->
+                  <div data-work-report-lead-inline style="font-size:15px; line-height:1.5; color:var(--body); overflow-wrap:anywhere;">{{ e.workSummary }}</div>
                   <sc-if value="{{ e.hasWorkWaits }}" hint-placeholder-val="{{ false }}">
                     <div style="display:flex; flex-direction:column; gap:5px; margin-top:10px; padding-top:9px; border-top:1px solid var(--hairline);">
                       <sc-for list="{{ e.workWaits }}" as="w" hint-placeholder-count="2">
@@ -320,23 +288,21 @@
       </div>
     </sc-if>
 
+    <sc-if value="{{ hasSnapshotFact }}" hint-placeholder-val="{{ true }}">
+      <!-- Position 10, the card-spec's `always` source condition: one line, at
+           the end, in the resolver's own words. The three-line chrome footer
+           that used to sit here is what a reader did not need; the verdict
+           itself they do. -->
+      <div data-item-fact="snapshot" data-card-fact="item:snapshot" style="margin-top:var(--space-section); font-size:15px; color:var(--muted);">{{ snapshotFactText }}</div>
+    </sc-if>
+
     <sc-if value="{{ hasFooter }}" hint-placeholder-val="{{ true }}">
-    <footer data-artifact-footer="{{ bodyKey }}" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; border-top:1px solid var(--hairline); margin-top:var(--space-section-strong); padding-top:15px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; line-height:1.5; color:var(--muted);">
-      <span style="min-width:0; display:inline-flex; align-items:center; gap:7px; flex-wrap:wrap; overflow-wrap:anywhere;">
-        <sc-if value="{{ hasSourceURL }}" hint-placeholder-val="{{ true }}">
-          <a href="{{ sourceURL }}" target="_blank" rel="noopener noreferrer" style="color:var(--teal-ink); font-weight:600; text-decoration:underline; text-decoration-thickness:1px; text-underline-offset:3px;">{{ documentID }}</a>
-        </sc-if>
-        <sc-if value="{{ lacksSourceURL }}" hint-placeholder-val="{{ false }}"><span style="font-weight:600; color:var(--body);">{{ documentID }}</span></sc-if>
-        <span aria-hidden="true">·</span><span>{{ sourceClass }}</span>
-      </span>
-      <sc-if value="{{ hasFreshness }}" hint-placeholder-val="{{ true }}">
-        <dc-import name="FreshnessDot" result="{{ freshnessResult }}" age="{{ syncAge }}" hint-size="12px,12px"></dc-import>
-      </sc-if>
-      <details data-artifact-snapshot-technical style="flex-basis:100%; color:var(--muted);">
-        <summary style="cursor:pointer; font-size:12px; font-weight:600;">{{ snapshotTechnicalLabel }}</summary>
-        <div style="margin-top:5px; overflow-wrap:anywhere;">{{ syncStaleTechnical }}</div>
-      </details>
-    </footer>
+    <!-- The footer said the document's own id back to a reader who is looking
+         at that document, the word "canonical", and "Source is current" — the
+         expected state of everything in a healthy snapshot. Three lines of
+         chrome under every artifact, none of which changed a decision. The
+         source link and the stale-source evidence still read where they are
+         acted on: the row's freshness dot and the technical disclosure. -->
     </sc-if>
 
   </sc-if>
@@ -344,7 +310,15 @@
 </sc-if>
 
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:760,&quot;height&quot;:700},&quot;det&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;ctx&quot;:{&quot;editor&quot;:&quot;object&quot;,&quot;default&quot;:{},&quot;tsType&quot;:&quot;object&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:760,&quot;height&quot;:700},&quot;det&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;chrome&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;panel&quot;,&quot;none&quot;],&quot;default&quot;:&quot;panel&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;ctx&quot;:{&quot;editor&quot;:&quot;object&quot;,&quot;default&quot;:{},&quot;tsType&quot;:&quot;object&quot;}}">
+// The nested fact-row treatment (gate, urgency, summary, operational,
+// snapshot) used to be retyped by hand at every site in the markup below —
+// same line-height, same overflow-wrap, same nested radius/padding/hairline
+// ring, copied five times. One constant, bound through renderVals() like
+// every other fact style, so the five markup sites read it instead of
+// carrying their own copy.
+const FACT_ROW_STYLE = "line-height:1.55; overflow-wrap:anywhere; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);";
+
 class Component extends DCLogic {
   state = { bodyExpanded: false, metadataExpanded: false };
 
@@ -507,6 +481,7 @@ class Component extends DCLogic {
         cardItem:true, legacyDetail:false, itemCardPresent:true, itemCardMissing:false,
         itemCard:{
           factOrder:["identity","lead","lifecycle","parties","gate","urgency","summary","operational","snapshot","technical"],
+          factRowStyle:FACT_ROW_STYLE,
           type:item.type || "", title:item.title || "", identity:typeLabel + " — " + (item.title || notRecorded), id:item.id || "", space:item.space || "",
           reasonSentence:sentence[ru ? "ru" : "en"] || unknown,
           lifecycleLabel:lifecycleKnown ? (ru ? "Жизненный цикл" : "Lifecycle") : (ru ? "Жизненный цикл и исход" : "Lifecycle and outcome"),
@@ -555,9 +530,21 @@ class Component extends DCLogic {
       // box to the shared empty state — no hollow panel, no borrowed record.
       cardItem: false,
       legacyDetail: true,
-      shellStyle: d.present === false
+      // The panel elevation was two hand-typed rgba(...) literals of the light ink —
+      // the light theme's ink baked into a value the dark re-point of
+      // --shadow-panel could never touch. On a dark page this legacy shell
+      // kept casting a warm light-mode shadow on the #16140F background.
+      // Chrome — surface, radius, padding, elevation — belongs to a host that
+      // does NOT already paint one. Where the host paints its own, drawing it
+      // again nests a second surface two pixels inside the first. This
+      // component does not know or ask which host it is in (it must not: it is
+      // content-only, and a test pins that); the host declares it. Default is
+      // the chrome, because the host that needs it came first.
+      shellStyle: this.props.chrome === "none"
+        ? "position:relative; min-width:0; font-family:'Onest',sans-serif;"
+        : d.present === false
         ? "min-width:0; font-family:'Onest',sans-serif;"
-        : "position:relative; min-width:0; background:var(--surface-card); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5); font-family:'Onest',sans-serif;",
+        : "position:relative; min-width:0; background:var(--surface-card); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:var(--shadow-panel); font-family:'Onest',sans-serif;",
       missingTitle: d.missingTitle || (ru ? "Ничего не выбрано" : "Nothing selected"),
       missingText: d.missingText || "",
       missingHint: d.missingHint || "",
@@ -615,8 +602,18 @@ class Component extends DCLogic {
       hasCallout: !!d.calloutTitle,
       calloutTitle: d.calloutTitle || "",
       calloutParts,
-      calloutStyle: "position:relative; background:var(--surface-section); border-radius:var(--radius-card); padding:17px 19px; margin-bottom:var(--space-section); box-shadow:inset 0 0 0 1px var(--hairline);",
-      calloutTitleStyle: "font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; color:var(--text);" + (calloutParts.length ? " margin-bottom:var(--space-stack);" : ""),
+      // Coloured by the vocabulary result the projection carries — the same
+      // presentation the outcome pill beside the title uses, so the block and
+      // that pill cannot disagree, and no tone is decided here. Colour is never
+      // the only signal: the title states the condition in words, and the
+      // spoken label repeats it for a reader who sees no colour at all.
+      calloutStyle: "position:relative; border-radius:var(--radius-card); padding:17px 19px; margin-bottom:var(--space-section); box-shadow:inset 0 0 0 1px var(--hairline); background:"
+        + (d.calloutResult ? globalThis.A2A_VOCABULARY_RESOLVER.presentation(d.calloutResult).pillBackground : "var(--surface-section)") + ";",
+      calloutSignalLabel: d.calloutSignalLabel || "",
+      hasCalloutSignal: !!d.calloutSignalLabel,
+      calloutTitleStyle: "font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; color:"
+        + (d.calloutResult ? globalThis.A2A_VOCABULARY_RESOLVER.presentation(d.calloutResult).pillForeground : "var(--text)") + ";"
+        + (calloutParts.length ? " margin-bottom:var(--space-stack);" : ""),
       hasMetadata: !!((d.metadataPrimary && d.metadataPrimary.length) || (d.metadataRest && d.metadataRest.length)),
       metadataItems: [...(d.metadataPrimary || []), ...(d.metadataRest || [])].map(m => ({
         label:m.label,
@@ -636,7 +633,10 @@ class Component extends DCLogic {
       bodyExpanded: bodyOpen ? "true" : "false",
       bodyFaded: bodyHasMore && !bodyOpen,
       showBodyToggle: bodyHasMore,
-      bodyWrapStyle: "margin:0 0 var(--space-section); max-width:760px;",
+      // The body is the document. It takes the width the host gives it —
+      // a 760px cap inside a 980px card left a column of empty paper
+      // beside every table and code block in the text.
+      bodyWrapStyle: "margin:0 0 var(--space-section);",
       bodyShellStyle: "position:relative; overflow:hidden; background:var(--surface-section); border-radius:var(--radius-nested); padding:17px 20px 0; box-shadow:inset 0 0 0 1px var(--border);",
       bodyClipStyle: (bodyOpen || !bodyHasMore) ? "padding-bottom:17px;" : "max-height:8.25em; overflow:hidden;",
       bodyFadeStyle: "position:absolute; left:1px; right:1px; bottom:43px; height:70px; pointer-events:none; background:linear-gradient(180deg, color-mix(in srgb, var(--surface-section) 0%, transparent), var(--surface-section));",
@@ -723,6 +723,13 @@ class Component extends DCLogic {
         railOffset: 34,
         railStyle: "position:relative; padding:0 0 30px 34px;" + (i === all.length - 1 ? " margin-left:2px;" : " border-left:2px solid var(--border);")
       })),
+      // The source condition, said once at the end of the document: the
+      // resolver's own label for the freshness the caller resolved, never a
+      // second verdict built here. Absent when the caller carries none.
+      hasSnapshotFact: !!(d.freshnessResult && d.freshnessResult.label),
+      snapshotFactText: d.freshnessResult && d.freshnessResult.label
+        ? (ru ? "Источник: " : "Source: ") + d.freshnessResult.label
+        : "",
       hasFlags: !!(d.flags && d.flags.length),
       flags: d.flags || [],
       hasThread: !!d.hasThread,

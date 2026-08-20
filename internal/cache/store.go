@@ -816,6 +816,9 @@ func (s *Store) buildShowResult(fa foldedArtifact, spaceID string, all []foldedA
 		From: fa.Env.From, To: normalizeTo(fa.Env.To), State: string(fa.Result.State),
 		Body: string(fm.Body), Thread: fa.Env.Thread, Digest: fa.Digest, Events: events, Flags: flags, Refs: refs,
 		SyncStale: syncStale, SyncAge: age.String(), Envelope: envelope, Attachments: attachments,
+		// The same fa.moveOwed toItem reads, carried so the detail projection
+		// can ask fold.OutcomeOfDocument instead of guessing without it.
+		MoveOwed: fa.moveOwed,
 	}
 }
 

@@ -107,10 +107,14 @@ function dashboardController({ fetch, EventSource, hash = '', protocol = 'http:'
   const viewNames = ['Overview', 'ExchangeView', 'ThreadsView', 'ContractsView', 'MapView', 'SpacesView', 'VersionsView', 'DocsView', 'GuideView'];
   const views = Object.fromEntries(viewNames.map(name => [name, new classes[name]()]));
   const cardActions = ['cardAccent', 'cardID', 'openCard'];
+  // closeCard rides with navigate on the three views that carry a door OUT of
+  // a card: leaving for another screen must dismiss the dialog it was opened
+  // from, or the reader lands behind it and reads the button as dead.
+  const leaveActions = [...cardActions, 'closeCard'];
   const expectedActions = {
-    Overview: [...cardActions, 'navigate', 'openAggregate', 'patch'].sort(),
-    ExchangeView: [...cardActions, 'navigate', 'patch'].sort(),
-    ThreadsView: [...cardActions, 'navigate', 'patch'].sort(),
+    Overview: [...leaveActions, 'navigate', 'openAggregate', 'patch'].sort(),
+    ExchangeView: [...leaveActions, 'navigate', 'patch'].sort(),
+    ThreadsView: [...leaveActions, 'navigate', 'patch'].sort(),
     ContractsView: [...cardActions, 'copy', 'navigate', 'patch', 'sourceURL'].sort(),
     MapView: [...cardActions, 'navigate', 'patch'].sort(),
     SpacesView: cardActions,
@@ -216,7 +220,7 @@ test('DashboardLive is the only network owner in the local-dashboard import grap
 test('dashboard card seam is manifest-backed and keeps identity opaque', () => {
   const manifest = JSON.parse(readFileSync(new URL('../design-source/cards.manifest.json', import.meta.url), 'utf8'));
   assert.deepEqual(manifest.cards.map(card => card.kind), ['item', 'thread', 'contract', 'cver', 'work-report', 'space', 'operational-process']);
-  assert.deepEqual(manifest.cards.map(card => card.component), ['ArtifactDetail', 'ThreadsView', 'ContractsView', 'ContractsView', 'ExchangeView', 'SpacesView', 'Overview']);
+  assert.deepEqual(manifest.cards.map(card => card.component), ['ExchangeView', 'ThreadsView', 'ContractsView', 'ContractsView', 'ExchangeView', 'SpacesView', 'Overview']);
   assert.deepEqual(manifest.cards.map(card => card.identityFields), [['space','id'], ['space','thread'], ['space','id'], ['space','id','version'], ['space','artifact_id'], ['id'], ['space','thread']]);
   assert.deepEqual(manifest.cards.map(card => card.selectionPaths), [
     [['inbox'],['outbox'],['archive']], [['threadViews']], [['contracts']], [['contracts','versions']],
@@ -229,7 +233,10 @@ test('dashboard card seam is manifest-backed and keeps identity opaque', () => {
     ['actor','wait','subject','checkpoint'], ['participant','source','consistency-anomaly'],
     ['milestone','work-row','wait','consistency-anomaly','source']
   ]);
-  assert.equal(new Set(manifest.cards.map(card => card.component)).size, 6, 'seven kinds must resolve through the six declared family components');
+  // Five families, not six: `item` joined `work-report` on ExchangeView, which
+  // is where the projection that builds a document's detail lives. ArtifactDetail
+  // still DRAWS both — it is imported by the view that knows what to draw.
+  assert.equal(new Set(manifest.cards.map(card => card.component)).size, 5, 'seven kinds must resolve through the five declared family components');
   assert.ok(runtimeDesignPage('14-local-dashboard-v4.dc.html').logic.includes(`const A2A_CARD_MANIFEST = ${JSON.stringify(manifest)};`), 'source projection must carry the exact parsed manifest bytes');
 
   const controller = dashboardController({ fetch: async () => ({ ok: false }), EventSource: null });
@@ -538,7 +545,9 @@ test('P9 Overview consumes carried aggregates and renders obligations and explic
     'data-operational-waits-checkpoint',
     'data-operational-shared-pending',
     'data-operational-consistency',
-    'data-operational-source',
+    // The summary's own source row was removed: the freshness dot beside the
+    // process identity already carries the resolved source-freshness result,
+    // and the row repeated it with a raw nanosecond instant behind it.
     'data-operational-windows'
   ];
   const processOffsets = processMarkers.map(marker => template.indexOf(marker));
@@ -569,7 +578,13 @@ test('P9 Overview consumes carried aggregates and renders obligations and explic
   controller.state.data = JSON.parse(readFileSync(new URL('../../internal/html/demo-data.json', import.meta.url), 'utf8'));
   controller.state.view = 'overview';
 
-  const [verdictItem, secondItem] = controller.state.data.inbox;
+  // Picked by what they ARE, not by where they sit: the Exchange feed is now
+  // ordered on the server (newest first by the carried creation key), so the
+  // fixture's inbox no longer happens to start with a submitted document. A
+  // test that indexes into a list is asserting the list's order by accident.
+  const verdictItem = controller.state.data.inbox.find(item => item.state === 'submitted');
+  const secondItem = controller.state.data.inbox.find(item => item !== verdictItem);
+  assert.ok(verdictItem && secondItem, 'the fixture must carry a submitted document and one other');
   verdictItem.waitingOn = ['atlas', 'checkout'];
   verdictItem.expectedTransition = 'approve';
   verdictItem.why = 'specs/03-domain.md: diagnostic rule citation';
@@ -631,7 +646,9 @@ test('P9 Overview consumes carried aggregates and renders obligations and explic
   assert.equal(processRow.obligationsGridVisible, true);
   assert.equal(processRow.waitingOn, 'atlas');
   assert.equal(processRow.blockingBy, 'atlas');
-  assert.equal(processRow.protocolResult.label, 'Still open');
+  // The outcome vocabulary was renamed away from open/closed: beside a document
+  // state like "accepted for work", "Still open" read as a contradiction.
+  assert.equal(processRow.protocolResult.label, 'Awaiting a move');
   assert.equal(processRow.work[0].modeResult.label, 'Implementing now');
   assert.equal(processRow.work[0].freshnessResult.label, 'observed locally');
   assert.equal(processRow.consistency[0].result.label, 'Sources need review');
@@ -646,7 +663,10 @@ test('P9 Overview consumes carried aggregates and renders obligations and explic
   // restores the donor's author line with its avatar. The invariant is
   // unchanged and still asserted: the visible text carries the RESOLVED label
   // and never the raw carried transition.
-  assert.equal(processRow.milestoneEvent.actionText, 'submitted for review');
+  // The row names a person and then says what they DID, so it carries the
+  // actor's form of the transition — "submitted" — while the pill beside it
+  // keeps stating the record's condition, "submitted for review".
+  assert.equal(processRow.milestoneEvent.actionText, 'submitted');
   assert.doesNotMatch(processRow.milestoneEvent.actionText, /\bsubmit\b/, 'raw milestone transition must not leak into visible copy');
   assert.doesNotMatch(String(processRow.milestoneEvent.meta), /\bsubmit\b/, 'nor into the event meta line');
   assert.equal(processRow.workWindowText, 'Showing 16 of 36.');
@@ -738,7 +758,18 @@ test('P11 Threads renders the carried reason sentence and honest transcript wind
   const source = readFileSync(new URL('../design-source/ThreadsView.dc.html', import.meta.url), 'utf8');
   const actorSource = readFileSync(new URL('../design-source/ActorEventLine.dc.html', import.meta.url), 'utf8');
   const timelineSource = readFileSync(new URL('../design-source/TimelineArtifactCard.dc.html', import.meta.url), 'utf8');
-  assert.match(template, /data-thread-card[\s\S]*data-thread-title[\s\S]*data-thread-lead[\s\S]*\{\{ whoseMoveText \}\}[\s\S]*data-thread-protocol[\s\S]*data-thread-participants[\s\S]*data-thread-membership[\s\S]*data-thread-open-items[\s\S]*\{\{ o\.reasonSentence \}\}[\s\S]*data-thread-transcript[\s\S]*\{\{ transcriptWindowText \}\}[\s\S]*data-thread-snapshot/);
+  // The panel's order was restored to the 0.22.0 shape: the participants' faces
+  // and their one line read ABOVE the title, the way a message header does,
+  // instead of as a labelled row buried between protocol and membership. And
+  // the snapshot footer is gone entirely — "Источник актуален" is the expected
+  // state of everything in a healthy snapshot, and the render time is already
+  // stamped once at the top of the page; what a reader acts on (a source that
+  // is NOT current) still shows on the row's own dot. The protocol and
+  // membership sentences left the panel too: they restated the callout above
+  // them, the face row beside the title, and the title itself. Both remain
+  // carried facts on the card face, which is what card-spec/thread.md freezes.
+  assert.match(template, /data-thread-card[\s\S]*data-thread-participants[\s\S]*data-thread-title[\s\S]*data-thread-lead[\s\S]*\{\{ whoseMoveText \}\}[\s\S]*data-thread-open-items[\s\S]*\{\{ o\.reasonSentence \}\}[\s\S]*data-thread-transcript[\s\S]*\{\{ transcriptWindowText \}\}/);
+  assert.doesNotMatch(template, /data-thread-snapshot[\s\S]{0,400}Источник|data-thread-snapshot[\s\S]{0,400}tvSnapshotText/, 'the thread snapshot footer stays removed');
   assert.match(template, /data-thread-technical[\s\S]*\{\{ o\.technicalWhy \}\}[\s\S]*\{\{ o\.ruleIdentity \}\}/);
   assert.doesNotMatch(source, /\bSTATE_TONE\b|\bHUMAN_GATE_TEXT\b|statuses\s*:/);
   assert.doesNotMatch(source, /\.sort\s*\(|tvEntryTotal|tvHiddenReportPublishes|tvMissingReportCount|tvRepresentedWorkIDs/);
@@ -817,13 +848,21 @@ test('P11 Threads renders the carried reason sentence and honest transcript wind
   assert.equal(values.tvOpen[0].technicalExpectedTransition, 'expected_transition=approve');
   assert.match(values.tvOpen[0].ruleIdentity, /approve/);
   assert.equal(values.tvOpen[0].stateResult.label, 'Proposed for review');
-  assert.equal(values.tvOpen[0].outcomeResult.label, 'Still open');
+  assert.equal(values.tvOpen[0].outcomeResult.label, 'Awaiting a move');
   assert.equal(values.tvOpen[0].gateResult.label, 'Owner approval gate');
   assert.deepEqual(Array.from(values.tvOpen, row => row.id), Array.from(view.open_items, item => item.id), 'open items preserve carried order');
-  assert.deepEqual(Array.from(values.tvEntries, row => row.id), [firstArtifact.id, transcriptEvent.event.ulid, secondArtifact.id], 'transcript preserves carried order and ignores global reports');
+  // Newest first, like every other chronology on this dashboard: the carried
+  // transcript is still the committed causal order, and the reversal is the
+  // RENDER, so the last thing that happened reads first. Global work reports
+  // are still ignored, which is what this row set exists to prove.
+  assert.deepEqual(Array.from(values.tvEntries, row => row.id), [secondArtifact.id, transcriptEvent.event.ulid, firstArtifact.id], 'the transcript renders newest first and ignores global reports');
   const eventRow = values.tvEntries[1];
   assert.equal(eventRow.transitionResult.label, 'submitted for review');
-  assert.equal(eventRow.actionText, eventRow.transitionResult.label);
+  // The row names a person, so it carries the ACTOR's form of the transition,
+  // not the record's: "ydnikolaev submitted", never "ydnikolaev submitted for
+  // review". The label form still states the condition wherever a pill does.
+  assert.equal(eventRow.actionText, eventRow.transitionResult.past);
+  assert.notEqual(eventRow.transitionResult.past, eventRow.transitionResult.label, 'the two forms answer different questions');
   transcriptEvent.event.transition = 'note';
   transcriptEvent.event.note = 'A carried note body that must stay in the transcript.';
   values = controller.threadsValues();
@@ -940,8 +979,13 @@ test('P11 Threads renders the carried reason sentence and honest transcript wind
   thread.opener.title = savedThreadTitle;
 
   const threadID = controller.cardID('thread', { space:view.space, thread:view.thread });
+  // A row click SELECTS into the master-detail pane now; the card modal stays
+  // reachable from a deep link and from other surfaces, and its render is what
+  // the rest of this block exercises.
   values.threadRows.find(row => row.id === view.thread && row.space === view.space).openCard();
-  assert.deepEqual(JSON.parse(JSON.stringify(controller.state.card)), { kind:'thread', id:threadID, accent:'' });
+  assert.equal(controller.state.card, null, 'a row click must not open the card modal');
+  assert.equal(controller.state.threadSel, view.thread);
+  assert.equal(controller.state.threadSpace, view.space);
   const cardValues = controller.threadsValues({ card:{ kind:'thread', id:threadID, accent:'' } });
   assert.equal(cardValues.cardMode, true);
   assert.equal(cardValues.tvTitle, view.opener.title);
@@ -950,13 +994,17 @@ test('P11 Threads renders the carried reason sentence and honest transcript wind
     transcript:Array.from(cardValues.tvEntries, row => row.id),
     links:Array.from(cardValues.tvLinks, row => [row.from, row.to, row.kind])
   };
+  // Rows are found by identity, not by position: the transcript renders newest
+  // first now, so an index picks a different row than it used to and the check
+  // would pass or fail by accident rather than by accent.
+  const entryById = (values, id) => values.tvEntries.find(row => row.id === id);
   const accentChecks = [
-    ['member', firstArtifact.id, values => values.tvEntries[0].accentStyle],
+    ['member', firstArtifact.id, values => entryById(values, firstArtifact.id).accentStyle],
     ['open-item', lead.id, values => values.tvOpen[0].accentStyle],
     ['participant', view.participants[0], values => values.tvParticipantFaces[0].accentStyle],
-    ['event', transcriptEvent.event.ulid, values => values.tvEntries[1].accentStyle],
+    ['event', transcriptEvent.event.ulid, values => entryById(values, transcriptEvent.event.ulid).accentStyle],
     ['reference', [carriedLink.from, carriedLink.to, carriedLink.kind], values => values.tvLinks[0].accentStyle],
-    ['delivery', [firstArtifact.id, 'DP-fixture'], values => values.tvEntries[0].deliveries[0].accentStyle]
+    ['delivery', [firstArtifact.id, 'DP-fixture'], values => entryById(values, firstArtifact.id).deliveries[0].accentStyle]
   ];
   for (const [family, identity, highlighted] of accentChecks) {
     const accented = controller.threadsValues({ card:{ kind:'thread', id:threadID, accent:controller.cardAccent(family, identity) } });
@@ -983,7 +1031,12 @@ test('contract version selection switches one atomic package without cross-versi
 
   const currentVersionCard = values.cdVersions.find(version => version.version === '2.2.0');
   assert.equal(currentVersionCard.role, 'button');
+  // A version row switches THIS pane, the same move the switcher above makes;
+  // the cver card keeps its own door — the `#card=` deep link every kind has.
   currentVersionCard.openVersion();
+  assert.equal(controller.state.conVersion, '2.2.0');
+  assert.equal(controller.state.card, null, 'switching a version must not pop a card over the contract');
+  controller.openCard('cver', controller.cardID('cver', { space:contract.space, id:contract.id, version:'2.2.0' }), '');
   assert.equal(controller.state.card.kind, 'cver');
 
   values = controller.contractsValues({ card:controller.state.card });
@@ -1004,6 +1057,8 @@ test('contract version selection switches one atomic package without cross-versi
   const retiredVersionCard = values.cdVersions.find(version => version.version === '1.5.0');
   assert.equal(retiredVersionCard.role, 'button');
   retiredVersionCard.openVersion();
+  assert.equal(controller.state.conVersion, '1.5.0');
+  controller.openCard('cver', controller.cardID('cver', { space:contract.space, id:contract.id, version:'1.5.0' }), '');
   values = controller.contractsValues({ card:controller.state.card });
   assert.equal(values.contractVersionCard.provenance.profile, 'contract-tree-v1');
   assert.deepEqual(Array.from(values.contractVersionCard.consumerPins, pin => pin.system), ['fulfillment']);
@@ -1547,7 +1602,9 @@ test('DashboardShell exposes carried live chrome only when refresh is eligible',
   shell.props = { ctx:controller.renderVals().shellTopCtx };
   let values = shell.renderVals();
   assert.equal(values.hasRefresh, true);
-  assert.equal(values.refreshLabel, 'Refresh dashboard');
+  // The control says what it does, not what it does it to: the reader is
+  // looking at the dashboard already.
+  assert.equal(values.refreshLabel, 'Refresh');
   assert.equal(values.liveTransportResult.label, 'Newer data available');
   assert.deepEqual(
     Array.from(values.spaceSwitcher.options.find(option => option.label === 'carried-order').faces, face => face.title),
@@ -1557,7 +1614,7 @@ test('DashboardShell exposes carried live chrome only when refresh is eligible',
   controller.state.locale = 'ru';
   shell.props = { ctx:controller.renderVals().shellTopCtx };
   values = shell.renderVals();
-  assert.equal(values.refreshLabel, 'Обновить дашборд');
+  assert.equal(values.refreshLabel, 'Обновить');
   controller.state.refresh = null;
   controller.state.liveTransport = '';
   shell.props = { ctx:controller.renderVals().shellTopCtx };
@@ -1702,12 +1759,16 @@ test('P14 Spaces renders carried source, consistency, and freshness facts', () =
   assert.equal(cardValues.cardSpace, true);
   assert.equal(cardValues.spaceCard.id, 'beta');
   assert.equal(cardValues.spaceCard.sourceHighlighted, true);
-  assert.equal(cardValues.spaceCard.lead, 'Evidence for space beta is Source is stale; it was last synchronized at 2026-08-14T08:20:00Z.');
+  // The lead names the age the server formatted, not the raw instant: a
+  // nanosecond ISO timestamp is a Technical fact, and stays one.
+  assert.equal(cardValues.spaceCard.lead, 'Evidence for space beta is Source is stale; the copy was refreshed 4h ago.');
+  assert.ok(cardValues.spaceCard.technical.some(fact => fact.label === 'source synchronized at' && fact.value === '2026-08-14T08:20:00Z'),
+    'the exact synchronization instant must survive in Technical detail');
   assert.equal(cardValues.spaceCard.repository, 'ssh://example.invalid/beta.git');
   assert.equal(cardValues.spaceCard.participantsText, '1 — atlas');
   assert.match(cardValues.spaceCard.compatibilityText, /schema space\/v1; minimum binary 0\.17\.0; workflow 3/);
   assert.equal(cardValues.spaceCard.consistencyCardText, 'Consistency: 3 — Sources need review, Unknown value.');
-  assert.deepEqual(Array.from(cardValues.spaceCard.factOrder), ['identity','condition','repository','participants','compatibility','consistency','unavailable','snapshot','technical']);
+  assert.deepEqual(Array.from(cardValues.spaceCard.factOrder), ['identity','snapshot','condition','repository','participants','compatibility','consistency','unavailable','technical']);
 
   controller.state.locale = 'ru';
   const ruCardValues = renderSpaces({ card:controller.state.card });
@@ -1719,7 +1780,7 @@ test('P14 Spaces renders carried source, consistency, and freshness facts', () =
 
   const spacesSource = readFileSync(new URL('../design-source/SpacesView.dc.html', import.meta.url), 'utf8');
   const actualFactOrder = Array.from(runtimeDesignPage('SpacesView.dc.html').template.matchAll(/data-space-card-fact="([^"]+)"/g), match => match[1]);
-  assert.deepEqual(actualFactOrder, ['identity','condition','repository','participants','compatibility','consistency','unavailable','snapshot','technical'], 'actual space-card DOM must follow P5 order');
+  assert.deepEqual(actualFactOrder, ['identity','snapshot','condition','repository','participants','compatibility','consistency','unavailable','technical'], 'actual space-card DOM must follow P5 order');
   assert.match(spacesSource, /<details aria-label="\{\{ anomaly\.technicalAria \}\}"/);
   for (const match of spacesSource.matchAll(/<dc-import name="FreshnessDot"([^>]*)>/g)) {
     assert.match(match[1], /result="\{\{/);

@@ -25,7 +25,11 @@ type dashboardViewMapping struct {
 }
 
 var dashboardViewMappings = []dashboardViewMapping{
-	{kind: "item", definition: "item", sourcePath: "Data.inbox[] / Data.outbox[] / Data.archive[]", component: "ArtifactDetail", selectionPaths: [][]string{{"inbox"}, {"outbox"}, {"archive"}}, identityFields: []string{"space", "id"}},
+	// The item card is rendered by ExchangeView, which imports ArtifactDetail's
+	// reading surface — one rendering for the card and the pane. ArtifactDetail's
+	// own card branch was retired on 2026-08-20; the manifest is the source of
+	// truth and this row follows it.
+	{kind: "item", definition: "item", sourcePath: "Data.inbox[] / Data.outbox[] / Data.archive[]", component: "ExchangeView", selectionPaths: [][]string{{"inbox"}, {"outbox"}, {"archive"}}, identityFields: []string{"space", "id"}},
 	{kind: "thread", definition: "threadView", sourcePath: "Data.threadViews[]", component: "ThreadsView", selectionPaths: [][]string{{"threadViews"}}, identityFields: []string{"space", "thread"}},
 	{kind: "contract", definition: "contract", sourcePath: "Data.contracts[]", component: "ContractsView", selectionPaths: [][]string{{"contracts"}}, identityFields: []string{"space", "id"}},
 	{kind: "cver", definition: "contractVersion", sourcePath: "Data.contracts[].versions[]", component: "ContractsView", selectionPaths: [][]string{{"contracts", "versions"}}, identityFields: []string{"space", "id", "version"}},

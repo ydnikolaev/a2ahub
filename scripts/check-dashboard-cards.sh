@@ -18,7 +18,15 @@ set -uo pipefail
 # shellcheck source=scripts/lib/gate-lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/gate-lib.sh"
 
-EXPECTED_CARD_PAIRS='item|ArtifactDetail
+# `item` moved to ExchangeView on 2026-08-19, for the same reason `work-report`
+# already lived there: the projection that knows how to build a document's
+# detail — its events, its callout, its metadata, its rendered body — is
+# ExchangeView.detailFor. While the card pointed at ArtifactDetail directly it
+# could only reach the thinner card-shaped rendering, so a reader who clicked a
+# document got a worse view of it than the pane beside the list was already
+# showing. ArtifactDetail still DRAWS the card; it just no longer has to
+# reconstruct what to draw.
+EXPECTED_CARD_PAIRS='item|ExchangeView
 thread|ThreadsView
 contract|ContractsView
 cver|ContractsView

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 )
 
 func TestThreadRowOrderHasExplicitTies(t *testing.T) {
@@ -61,8 +62,11 @@ func TestExchangeFeedPreservesServerCarriedOrder(t *testing.T) {
 		// the facets filter, and gained its name. Still no sort: the order is
 		// whatever the server carried, all the way to the row.
 		`const workListBase = aggregate ? carried : carried.filter(item => this.inScope(item.space));`,
-		`const workReportRows = workReports.map(report =>`,
-		`workReportsHint:ru ? "в порядке поступления" : "in received order"`,
+		// The work-report list these two lines pinned is gone: a checkpoint reads
+		// inside the document it describes, inside its thread, and as its own
+		// card opened from either — the list was a fourth place, detached from
+		// its subject, under a hint that said "in received order" while the
+		// server ordered by space and thread.
 	} {
 		if !strings.Contains(source, required) {
 			t.Errorf("Exchange view is missing carried-order contract %q", required)
@@ -169,5 +173,70 @@ func TestExchangeFeedRankMergesEveryCollectionBeforeTheWindow(t *testing.T) {
 		if ranks[id] != wantRank {
 			t.Errorf("%s rank = %d, want %d (ranks: %v)", id, ranks[id], wantRank, ranks)
 		}
+	}
+}
+
+// One document, two projections, one answer. The list row reads Item.Outcome
+// and the pane beside it reads ArtifactDetail.Outcome, and until
+// cache.ShowResult carried MoveOwed the two asked DIFFERENT questions: the row
+// asked fold.OutcomeOfDocument with the pendency fact, the detail asked
+// fold.OutcomeOf without it. They disagreed for exactly the pairs that fact
+// narrows — a published announcement and a published contract — which on axon
+// was six of twenty-five documents, each of them saying "Settled" on the card
+// and "Awaiting a move" in the pane at the same time.
+//
+// This walks every field the two projections share, not just outcome: the
+// defect was one instance of a class, and the class is "the same fact derived
+// twice". A new field on both types is covered the day it is added.
+func TestArtifactDetailNeverContradictsItsListRow(t *testing.T) {
+	t.Parallel()
+	data, err := DemoData()
+	if err != nil {
+		t.Fatalf("demo data: %v", err)
+	}
+	details := make(map[[2]string]ArtifactDetail, len(data.ArtifactDetails))
+	for _, detail := range data.ArtifactDetails {
+		details[[2]string{detail.Space, detail.ID}] = detail
+	}
+	checked := 0
+	for _, collection := range [][]Item{data.Inbox, data.Outbox, data.Archive} {
+		for _, item := range collection {
+			detail, ok := details[[2]string{item.Space, item.ID}]
+			if !ok {
+				continue
+			}
+			checked++
+			if item.Outcome != detail.Outcome {
+				t.Errorf("%s/%s: row says outcome %q, its detail says %q — one document cannot be settled in the list and awaiting a move in the pane",
+					item.Space, item.ID, item.Outcome, detail.Outcome)
+			}
+			if item.Terminal != detail.Terminal {
+				t.Errorf("%s/%s: row says terminal %v, its detail says %v", item.Space, item.ID, item.Terminal, detail.Terminal)
+			}
+			if item.State != detail.State {
+				t.Errorf("%s/%s: row says state %q, its detail says %q", item.Space, item.ID, item.State, detail.State)
+			}
+			if item.Type != detail.Type {
+				t.Errorf("%s/%s: row says type %q, its detail says %q", item.Space, item.ID, item.Type, detail.Type)
+			}
+			if item.Thread != detail.Thread {
+				t.Errorf("%s/%s: row says thread %q, its detail says %q", item.Space, item.ID, item.Thread, detail.Thread)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no item carried a matching artifact detail — this test would pass vacuously")
+	}
+	// And the two-fact form really is the wrong answer for those pairs, so a
+	// future edit that quietly restores it cannot pass by luck on a fixture
+	// where every document happens to owe a move.
+	narrowed := 0
+	for _, detail := range data.ArtifactDetails {
+		if fold.OutcomeOf(fold.Kind(detail.Type), fold.State(detail.State)) != detail.Outcome {
+			narrowed++
+		}
+	}
+	if narrowed == 0 {
+		t.Error("no demo document exercises the pairs OutcomeOfDocument narrows; the guard above would pass against the old two-fact call")
 	}
 }

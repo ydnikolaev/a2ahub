@@ -1029,10 +1029,22 @@ func TestDemoDerivedStateIsDerivedNotAuthored(t *testing.T) {
 			check("open item "+oi.ID, oi.Type, oi.State, len(oi.WaitingOn) > 0, oi.Outcome, oi.Terminal)
 		}
 	}
+	// The detail carries no WaitingOn of its own, but the document it describes
+	// does, and it is in this same fixture — which is where demo.go now reads
+	// moveOwed from. Asking the same question here is what keeps the check
+	// honest: pinning moveOwed=true would assert the two-fact answer the
+	// product stopped producing when cache.ShowResult started carrying the
+	// fact, and would let the demo contradict its own list again.
+	detailOwesMove := make(map[[2]string]bool)
+	for _, collection := range [][]Item{d.Inbox, d.Outbox, d.Archive} {
+		for _, item := range collection {
+			if len(item.WaitingOn) > 0 {
+				detailOwesMove[[2]string{item.Space, item.ID}] = true
+			}
+		}
+	}
 	for _, ad := range d.ArtifactDetails {
-		// ArtifactDetail carries no WaitingOn — see demo.go's own comment
-		// there; it asks the two-fact form and so does this check.
-		check("artifact detail "+ad.ID, ad.Type, ad.State, true, ad.Outcome, ad.Terminal)
+		check("artifact detail "+ad.ID, ad.Type, ad.State, detailOwesMove[[2]string{ad.Space, ad.ID}], ad.Outcome, ad.Terminal)
 	}
 
 	if carriers == 0 {

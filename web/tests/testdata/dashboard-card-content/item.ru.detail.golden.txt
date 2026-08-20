@@ -1,10 +1,8 @@
-item:identity
-item:lead
 item:lifecycle
 item:parties
+item:identity
+item:lead
 item:gate
-item:urgency
-item:summary
-item:operational
-item:snapshot
 item:technical
+item:summary
+item:snapshot

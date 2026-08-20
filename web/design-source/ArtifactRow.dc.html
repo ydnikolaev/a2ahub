@@ -27,10 +27,15 @@
     <span style="{{ timeStyle }}">{{ time }}</span>
   </span>
   <span data-item-row-fact="title" style="display:block; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; color:var(--text); margin-bottom:9px; overflow-wrap:anywhere;">{{ title }}</span>
-  <!-- The freshness dot rides the actor line instead of claiming a tier: it is
-       one glyph, and a line of its own cost more height than it carries. -->
-  <span data-item-row-fact="parties" style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; color:var(--muted); font-size:14px; line-height:1.5;"><span style="{{ fromMonoStyle }}">{{ fromMono }}</span><span>{{ from }}</span><span>→</span><span style="{{ toMonoStyle }}">{{ toMono }}</span><span>{{ to }}</span><span>·</span><span style="overflow-wrap:anywhere;">{{ meta }}</span><span data-item-row-fact="snapshot" style="display:contents;"><sc-if value="{{ hasFreshness }}" hint-placeholder-val="{{ true }}"><dc-import name="FreshnessDot" result="{{ freshnessResult }}" age="{{ syncAge }}" compact="{{ true }}" hint-size="12px,12px"></dc-import></sc-if></span></span>
+  <!-- The freshness dot is pinned to the card's bottom-right corner rather
+       than riding the actor line. It is a property of the ROW, not of the
+       hand-off it sat inside, and in the actor line it read as one more term
+       in "seomatrix → axon · getvisa ✓". A corner costs no height, keeps the
+       glyph in the same place on every card, and leaves the actor line to say
+       only who handed what to whom. -->
+  <span data-item-row-fact="parties" style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; color:var(--muted); font-size:14px; line-height:1.5;"><span style="{{ fromMonoStyle }}">{{ fromMono }}</span><span>{{ from }}</span><span>→</span><span style="{{ toMonoStyle }}">{{ toMono }}</span><span>{{ to }}</span><span>·</span><span style="overflow-wrap:anywhere;">{{ meta }}</span></span>
 </button>
+<span data-item-row-fact="snapshot" style="position:absolute; right:var(--padding-list-card-inline); bottom:var(--padding-list-card-block); display:flex; align-items:center; line-height:0;"><sc-if value="{{ hasFreshness }}" hint-placeholder-val="{{ true }}"><dc-import name="FreshnessDot" result="{{ freshnessResult }}" age="{{ syncAge }}" compact="{{ true }}" hint-size="12px,12px"></dc-import></sc-if></span>
 <!-- The technical disclosure belongs to the DETAIL surface, not to a list
      row: a row the reader is scanning should not carry a control that
      expands it. ArtifactDetail renders the same facts in the pane. -->
@@ -110,9 +115,15 @@ class Component extends DCLogic {
       select: p.onSelect || (() => {}),
       // Selection changes only the container treatment. Text, badges and
       // avatars stay fully opaque so their contrast is independent of state.
+      // The selected-row elevation used to be a hand-typed rgba(...) literal of the light ink
+      // literal: the light theme's ink, written down where the dark-theme
+      // re-point of --shadow-selected-card could never reach it. On
+      // html[data-theme="dark"] a selected row kept casting a warm
+      // light-mode shadow on the #16140F page. Repointed onto the role
+      // token; the hairline ring stays, unchanged.
       rowStyle: "position:relative; display:block; width:100%; box-sizing:border-box; text-align:left; font-family:'Onest',sans-serif; border:0; border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); cursor:pointer;" +
         (selected
-          ? " --a2a-pick-shadow:0 3px 12px -4px rgba(33,30,23,.24), inset 0 0 0 1px var(--border-strong); --a2a-pick-active-shadow:var(--a2a-pick-shadow);"
+          ? " --a2a-pick-shadow:var(--shadow-selected-card), inset 0 0 0 1px var(--border-strong); --a2a-pick-active-shadow:var(--a2a-pick-shadow);"
           : " --a2a-pick-surface:var(--surface-inactive-card); --a2a-pick-shadow:var(--shadow-inactive-card);")
     };
   }

@@ -1,9 +1,8 @@
 space:identity
+space:snapshot
 space:condition
 space:repository
 space:participants
 space:compatibility
 space:consistency
-space:unavailable
-space:snapshot
 space:technical

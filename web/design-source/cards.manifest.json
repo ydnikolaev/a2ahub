@@ -3,7 +3,7 @@
   "cards": [
     {
       "kind": "item",
-      "component": "ArtifactDetail",
+      "component": "ExchangeView",
       "identityFields": ["space", "id"],
       "selectionPaths": [["inbox"], ["outbox"], ["archive"]],
       "accentFamilies": ["state", "owner", "move", "event", "reference", "attachment", "operational-item"]

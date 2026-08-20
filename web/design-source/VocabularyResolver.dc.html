@@ -52,6 +52,11 @@ function lookupVocabulary(data, family, value, locale, policy) {
   const cue = String(selected.cue || fallback.cue || "");
   return Object.freeze({
     label: String(ru ? selected.labelRU || "" : selected.labelEN || ""),
+    // The actor's form of the same value, for a row that names a person and
+    // then says what they did. Carried only by transitions; everything else
+    // falls back to the label, so a caller can read `past` unconditionally
+    // without a second lookup and without inventing a verb of its own.
+    past: String((ru ? selected.pastRU : selected.pastEN) || (ru ? selected.labelRU : selected.labelEN) || ""),
     explanation: String(ru ? selected.explanationRU || "" : selected.explanationEN || ""),
     cue,
     cueAttribute: cue,

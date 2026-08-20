@@ -9,21 +9,34 @@
 <x-dc>
 <sc-if value="{{ cardSpace }}" hint-placeholder-val="{{ false }}">
   <sc-if value="{{ spaceCardPresent }}" hint-placeholder-val="{{ true }}">
+    <!-- The card answers one question, and v0.22.0 asked it out loud in the
+         heading: how fresh is the copy you are reading. Facts are sentences
+         under a marked space, not a column of "label:" rows with nothing
+         after the colon — the card-spec order is unchanged, each row is
+         simply gated on having something to say. -->
     <article data-card-kind="space" data-space-card style="display:flex; flex-direction:column; gap:var(--space-section);">
       <div data-card-content style="display:flex; flex-direction:column; gap:var(--space-after-section-heading);">
-        <h2 data-space-card-fact="identity" data-card-fact="space:identity" class="a2a-detail-title" style="margin:0; font-family:'IBM Plex Mono',ui-monospace,monospace; overflow-wrap:anywhere;">{{ spaceCard.identity }}</h2>
-        <div data-space-card-fact="condition" data-card-fact="space:condition" data-accented="{{ spaceCard.sourceHighlighted }}" style="{{ spaceCard.contentSourceStyle }}">{{ spaceCard.lead }}</div>
-        <div data-space-card-fact="repository" data-card-fact="space:repository">{{ spaceCard.repositoryText }}</div>
-        <div data-space-card-fact="participants" data-card-fact="space:participants">{{ spaceCard.participantsPrefix }}<sc-if value="{{ spaceCard.participantListKnown }}" hint-placeholder-val="{{ true }}">{{ spaceCard.participantCountText }}<sc-for list="{{ spaceCard.participants }}" as="participant" hint-placeholder-count="2"><span data-accented="{{ participant.highlighted }}" style="{{ participant.contentStyle }}">{{ participant.name }}</span>{{ participant.separator }}</sc-for></sc-if><sc-if value="{{ spaceCard.participantListUnknown }}" hint-placeholder-val="{{ false }}">{{ spaceCard.participantsFallbackText }}</sc-if></div>
-        <div data-space-card-fact="compatibility" data-card-fact="space:compatibility">{{ spaceCard.compatibilityCardText }}</div>
-        <div data-space-card-fact="consistency" data-card-fact="space:consistency">{{ spaceCard.consistencyCardText }}</div>
-        <div data-space-card-fact="unavailable" data-card-fact="space:unavailable">{{ spaceCard.unavailableCardText }}</div>
-        <div data-space-card-fact="snapshot" data-card-fact="space:snapshot">{{ spaceCard.snapshotCardText }}</div>
-        <sc-for list="{{ spaceCard.consistencyBounds }}" as="notice" hint-placeholder-count="1"><div>{{ notice }}</div></sc-for>
+        <h2 class="a2a-detail-title" style="margin:0;">{{ spaceHealthTitle }}</h2>
+        <p style="margin:0; color:var(--muted); font-size:15px; line-height:1.6;">{{ spaceHealthSub }}</p>
+        <div style="display:flex; flex-direction:column; gap:var(--space-after-section-heading); border-radius:var(--radius-nested); border:1px solid var(--border); padding:var(--padding-nested-block) var(--padding-nested-inline);">
+          <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap;">
+            <span data-space-card-fact="identity" data-card-fact="space:identity" style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:15px; font-weight:600; overflow-wrap:anywhere;">{{ spaceCard.id }}</span>
+            <span data-space-card-fact="snapshot" data-card-fact="space:snapshot" data-card-support="space:status" aria-label="{{ spaceCard.statusSupportLabel }}" style="display:inline-flex; align-items:center; gap:7px;"><dc-import name="StatusPill" result="{{ spaceCard.sourceResult }}" size="small" hint-size="150px,24px"></dc-import></span>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:11px;">
+            <sc-if value="{{ spaceCard.hasLead }}" hint-placeholder-val="{{ true }}"><div style="display:flex; gap:10px; align-items:flex-start; font-size:16px; line-height:1.6;"><span aria-hidden="true" style="flex:0 0 7px; width:7px; height:7px; margin-top:8px; border-radius:99px; background:var(--muted);"></span><span data-space-card-fact="condition" data-card-fact="space:condition" data-accented="{{ spaceCard.sourceHighlighted }}" style="{{ spaceCard.contentSourceStyle }}">{{ spaceCard.lead }}</span></div></sc-if>
+            <sc-if value="{{ spaceCard.hasRepositoryFact }}" hint-placeholder-val="{{ true }}"><div style="display:flex; gap:10px; align-items:flex-start; font-size:16px; line-height:1.6;"><span aria-hidden="true" style="flex:0 0 7px; width:7px; height:7px; margin-top:8px; border-radius:99px; background:var(--muted);"></span><span data-space-card-fact="repository" data-card-fact="space:repository">{{ spaceCard.repositoryText }}</span></div></sc-if>
+            <sc-if value="{{ spaceCard.hasParticipantsFact }}" hint-placeholder-val="{{ true }}"><div style="display:flex; gap:10px; align-items:flex-start; font-size:16px; line-height:1.6;"><span aria-hidden="true" style="flex:0 0 7px; width:7px; height:7px; margin-top:8px; border-radius:99px; background:var(--muted);"></span><span data-space-card-fact="participants" data-card-fact="space:participants">{{ spaceCard.participantsPrefix }}<sc-if value="{{ spaceCard.participantListKnown }}" hint-placeholder-val="{{ true }}">{{ spaceCard.participantCountText }}<sc-for list="{{ spaceCard.participants }}" as="participant" hint-placeholder-count="2"><span data-accented="{{ participant.highlighted }}" style="{{ participant.contentStyle }}">{{ participant.name }}</span>{{ participant.separator }}</sc-for></sc-if><sc-if value="{{ spaceCard.participantListUnknown }}" hint-placeholder-val="{{ false }}">{{ spaceCard.participantsFallbackText }}</sc-if></span></div></sc-if>
+            <sc-if value="{{ spaceCard.hasCompatibilityFact }}" hint-placeholder-val="{{ true }}"><div style="display:flex; gap:10px; align-items:flex-start; font-size:16px; line-height:1.6;"><span aria-hidden="true" style="flex:0 0 7px; width:7px; height:7px; margin-top:8px; border-radius:99px; background:var(--muted);"></span><span data-space-card-fact="compatibility" data-card-fact="space:compatibility">{{ spaceCard.compatibilityCardText }}</span></div></sc-if>
+            <sc-if value="{{ spaceCard.hasConsistencyFact }}" hint-placeholder-val="{{ false }}"><div style="display:flex; gap:10px; align-items:flex-start; font-size:16px; line-height:1.6;"><span aria-hidden="true" style="flex:0 0 7px; width:7px; height:7px; margin-top:8px; border-radius:99px; background:var(--muted);"></span><span data-space-card-fact="consistency" data-card-fact="space:consistency">{{ spaceCard.consistencyCardText }}</span></div></sc-if>
+            <sc-if value="{{ spaceCard.hasUnavailableFact }}" hint-placeholder-val="{{ false }}"><div style="display:flex; gap:10px; align-items:flex-start; font-size:16px; line-height:1.6;"><span aria-hidden="true" style="flex:0 0 7px; width:7px; height:7px; margin-top:8px; border-radius:99px; background:var(--muted);"></span><span data-space-card-fact="unavailable" data-card-fact="space:unavailable">{{ spaceCard.unavailableCardText }}</span></div></sc-if>
+            <sc-for list="{{ spaceCard.consistencyBounds }}" as="notice" hint-placeholder-count="1"><div style="display:flex; gap:10px; align-items:flex-start; font-size:16px; line-height:1.6;"><span aria-hidden="true" style="flex:0 0 7px; width:7px; height:7px; margin-top:8px; border-radius:99px; background:var(--muted);"></span><span>{{ notice }}</span></div></sc-for>
+          </div>
+        </div>
+        <p style="margin:0; color:var(--muted); font-size:15px; line-height:1.6;">{{ spaceHealthFooter }}</p>
         <details data-space-card-fact="technical" data-card-fact="space:technical" style="color:var(--muted);"><summary style="cursor:pointer; font-size:13px; font-weight:600;">{{ spaceCard.technicalCollapsedLabel }}</summary><div style="margin-top:10px;"><dc-import name="FactTable" rows="{{ spaceCard.technical }}" hint-size="100%,250px"></dc-import><div style="display:flex; flex-direction:column; gap:8px; margin-top:10px;"><sc-for list="{{ spaceCard.sourceDiagnostics }}" as="entry" hint-placeholder-count="1"><dc-import name="FactTable" rows="{{ entry.technical }}" hint-size="100%,170px"></dc-import></sc-for></div></div></details>
       </div>
-      <div data-card-support="space:status" aria-label="{{ spaceCard.statusSupportLabel }}" style="display:flex; align-items:center; gap:9px; flex-wrap:wrap;"><dc-import name="FreshnessDot" result="{{ spaceCard.sourceResult }}" age="{{ spaceCard.syncAge }}" compact="{{ true }}" hint-size="13px,13px"></dc-import><dc-import name="StatusPill" result="{{ spaceCard.sourceResult }}" size="small" hint-size="150px,24px"></dc-import></div>
-      <sc-if value="{{ spaceCard.hasConsistencyAnomalies }}" hint-placeholder-val="{{ false }}"><div data-card-support="space:consistency-status" aria-label="{{ spaceCard.consistencySupportLabel }}" style="display:flex; flex-wrap:wrap; gap:8px;"><sc-for list="{{ spaceCard.consistencyGroups }}" as="group" hint-placeholder-count="2"><sc-for list="{{ group.anomalies }}" as="anomaly" hint-placeholder-count="2"><span data-consistency-anomaly data-accented="{{ anomaly.highlighted }}" style="{{ anomaly.style }}"><dc-import name="StatusPill" result="{{ anomaly.severityResult }}" size="small" hint-size="150px,24px"></dc-import></span></sc-for></sc-for></div></sc-if>
+      <sc-if value="{{ spaceCard.hasConsistencyAnomalies }}" hint-placeholder-val="{{ false }}"><div data-card-support="space:consistency-status" aria-label="{{ spaceCard.consistencySupportLabel }}" style="display:flex; flex-direction:column; gap:8px;"><sc-for list="{{ spaceCard.consistencyGroups }}" as="group" hint-placeholder-count="2"><sc-for list="{{ group.anomalies }}" as="anomaly" hint-placeholder-count="2"><span data-consistency-anomaly data-accented="{{ anomaly.highlighted }}" style="{{ anomaly.style }}"><dc-import name="StatusPill" result="{{ anomaly.severityResult }}" size="small" hint-size="150px,24px"></dc-import><details aria-label="{{ anomaly.technicalAria }}" style="margin-top:7px;"><summary>{{ technicalLabel }}</summary><div style="margin-top:8px;"><dc-import name="FactTable" rows="{{ anomaly.technical }}" hint-size="100%,170px"></dc-import></div></details></span></sc-for></sc-for></div></sc-if>
     </article>
   </sc-if>
   <sc-if value="{{ spaceCardMissing }}" hint-placeholder-val="{{ false }}"><div><h2>{{ missingTitle }}</h2><p>{{ missingText }}</p></div></sc-if>
@@ -32,26 +45,110 @@
 <sc-if value="{{ normalSpaces }}" hint-placeholder-val="{{ true }}">
   <section aria-label="{{ spacesAria }}" data-screen-label="Spaces">
     <sc-if value="{{ noSpaces }}" hint-placeholder-val="{{ false }}"><dc-import name="EmptyState" title="{{ emptySpacesTitle }}" text="{{ emptySpacesText }}" hint="a2a space connect" size="page" hint-size="100%,380px"></dc-import></sc-if>
+
+    <!-- One row per space, not a card per space: a reader with one connected
+         space used to see three sentences of prose and a stack of identical
+         "0 anomalies" panels, one per thread, saying nothing ten times over.
+         A table says the same six facts once, at a glance, across every
+         space at once. -->
     <sc-if value="{{ hasSpaces }}" hint-placeholder-val="{{ true }}">
-      <div style="display:flex; flex-direction:column; gap:var(--space-grid);">
-        <sc-for list="{{ spaceRows }}" as="space" hint-placeholder-count="3">
-          <article data-space-row data-card-summary="{{ space.summaryAttr }}" style="background:var(--surface); border-radius:var(--radius-card); padding:var(--padding-card-block) var(--padding-card-inline); box-shadow:var(--shadow-card);">
-            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:14px; flex-wrap:wrap;">
-              <div><div data-card-fact="space:identity" style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:var(--font-card-title-md); font-weight:600; overflow-wrap:anywhere;">{{ space.id }}</div><div style="margin-top:5px; color:var(--muted);">{{ space.repository }}</div></div>
-              <button type="button" onClick="{{ space.open }}" style="border:0; border-radius:9px; padding:8px 11px; background:var(--teal-tint); color:var(--teal-ink); cursor:pointer;">{{ openLabel }}</button>
-            </div>
-            <div data-space-source data-card-fact="space:condition" data-accented="{{ space.sourceHighlighted }}" style="{{ space.sourceStyle }}">
-              <dc-import name="FreshnessDot" result="{{ space.sourceResult }}" age="{{ space.syncAge }}" compact="{{ true }}" hint-size="13px,13px"></dc-import><dc-import name="StatusPill" result="{{ space.sourceResult }}" size="small" hint-size="150px,24px"></dc-import><span>{{ space.sourceSyncedAt }}</span>
-            </div>
-            <sc-if value="{{ space.hasWorkFreshness }}" hint-placeholder-val="{{ false }}"><section style="margin-top:12px;"><strong>{{ workFreshnessLabel }}</strong><div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:7px;"><sc-for list="{{ space.workFreshness }}" as="work" hint-placeholder-count="2"><dc-import name="FreshnessDot" result="{{ work.result }}" age="{{ work.age }}" compact="{{ true }}" hint-size="13px,13px"></dc-import><dc-import name="StatusPill" result="{{ work.result }}" size="small" hint-size="150px,24px"></dc-import></sc-for></div></section></sc-if>
-            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin-top:12px;"><div style="{{ space.factStyle }}"><strong>{{ participantsLabel }}</strong><div style="margin-top:6px;">{{ space.participantsText }}</div></div><div style="{{ space.factStyle }}"><strong>{{ compatibilityLabel }}</strong><div style="margin-top:6px;">{{ space.compatibilityText }}</div></div></div>
-            <section style="margin-top:12px;"><strong>{{ consistencyLabel }}</strong><sc-if value="{{ space.consistencyUnknown }}" hint-placeholder-val="{{ false }}"><p>{{ space.unknown }}</p></sc-if><sc-if value="{{ space.consistencyEmpty }}" hint-placeholder-val="{{ false }}"><p>{{ space.noneRecorded }}</p></sc-if><div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;"><sc-for list="{{ space.consistencyGroups }}" as="group" hint-placeholder-count="2"><div style="{{ space.factStyle }}"><div style="color:var(--muted);">{{ group.countText }}<sc-if value="{{ group.hasWindowText }}" hint-placeholder-val="{{ false }}"> · {{ group.windowText }}</sc-if></div><div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;"><sc-for list="{{ group.anomalies }}" as="anomaly" hint-placeholder-count="2"><div data-consistency-anomaly data-accented="{{ anomaly.highlighted }}" style="{{ anomaly.style }}"><dc-import name="StatusPill" result="{{ anomaly.severityResult }}" size="small" hint-size="150px,24px"></dc-import><details aria-label="{{ anomaly.technicalAria }}" style="margin-top:7px;"><summary>{{ technicalLabel }}</summary><div style="margin-top:8px;"><dc-import name="FactTable" rows="{{ anomaly.technical }}" hint-size="100%,170px"></dc-import></div></details></div></sc-for></div></div></sc-for></div></section>
-            <sc-if value="{{ space.hasUnavailable }}" hint-placeholder-val="{{ false }}"><section style="margin-top:12px;"><strong>{{ unavailableLabel }}</strong><div style="margin-top:7px;"><sc-for list="{{ space.unavailable }}" as="entry" hint-placeholder-count="1"><div>{{ entry.body }}</div></sc-for></div></section></sc-if>
-            <sc-if value="{{ space.hasSourceDiagnostics }}" hint-placeholder-val="{{ false }}"><details data-space-diagnostics style="margin-top:12px;"><summary>{{ technicalLabel }}</summary><div style="display:flex; flex-direction:column; gap:8px; margin-top:9px;"><sc-for list="{{ space.sourceDiagnostics }}" as="entry" hint-placeholder-count="1"><dc-import name="FactTable" rows="{{ entry.technical }}" hint-size="100%,170px"></dc-import></sc-for></div></details></sc-if>
-          </article>
-        </sc-for>
+      <div style="background:var(--surface); border-radius:var(--radius-panel); padding:8px var(--padding-card-inline) var(--padding-list-card-block); box-shadow:var(--shadow-card); overflow-x:auto;">
+        <table style="width:100%; border-collapse:collapse; font-size:16px; min-width:820px;">
+          <thead>
+            <tr>
+              <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);">{{ spaceLabel }}</th>
+              <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);"><span style="display:inline-flex; align-items:center; gap:6px;">{{ freshnessLabel }}<dc-import name="HintDot" text="{{ freshnessHint }}" hint-size="17px,17px"></dc-import></span></th>
+              <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);">{{ participantsLabel }}</th>
+              <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);"><span style="display:inline-flex; align-items:center; gap:6px;">{{ writerFloorLabel }}<dc-import name="HintDot" text="{{ writerFloorHint }}" hint-size="17px,17px"></dc-import></span></th>
+              <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);"><span style="display:inline-flex; align-items:center; gap:6px;">{{ pinnedWorkflowLabel }}<dc-import name="HintDot" text="{{ pinnedWorkflowHint }}" hint-size="17px,17px"></dc-import></span></th>
+              <!-- The revision hash and the "open space" button are gone. A
+                   40-character digest is not something a reader compares by eye,
+                   and the button repeated the space id that is already the row's
+                   first cell and its own link. Both still reach a reader who
+                   wants them: the digest through the space card, the repository
+                   through the id. -->
+            </tr>
+          </thead>
+          <tbody>
+            <sc-for list="{{ spaceRows }}" as="space" hint-placeholder-count="3">
+              <tr data-space-row data-card-summary="{{ space.summaryAttr }}">
+                <td style="padding:14px 16px 14px 0; vertical-align:top; border-bottom:1px solid var(--hairline);"><button type="button" data-card-fact="space:identity" onClick="{{ space.open }}" aria-label="{{ space.openLabel }}" style="appearance:none; border:0; background:none; padding:0; text-align:left; cursor:pointer; color:var(--text); font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:inherit; font-weight:600; overflow-wrap:anywhere; text-decoration-line:underline; text-decoration-color:var(--border); text-underline-offset:4px;">{{ space.id }}</button></td>
+                <td data-space-source data-card-fact="space:condition" data-accented="{{ space.sourceHighlighted }}" style="padding:14px 16px 14px 0; vertical-align:top; border-bottom:1px solid var(--hairline);"><!-- One statement, not two: the dot and the pill were reading the SAME
+                     carried result, so the cell said "✓ ✓ Источник актуален" — the
+                     tick twice and the sentence once. The pill keeps it, because
+                     it carries the words as well as the tone. -->
+                <span style="display:inline-flex; align-items:center; gap:9px; flex-wrap:wrap;"><dc-import name="StatusPill" result="{{ space.sourceResult }}" size="small" hint-size="150px,24px"></dc-import></span></td>
+                <td style="padding:14px 16px 14px 0; vertical-align:top; border-bottom:1px solid var(--hairline);">{{ space.participantsText }}</td>
+                <td style="padding:14px 16px 14px 0; vertical-align:top; border-bottom:1px solid var(--hairline);"><span style="font-family:'IBM Plex Mono',ui-monospace,monospace;">{{ space.floor }}</span></td>
+                <td style="padding:14px 16px 14px 0; vertical-align:top; border-bottom:1px solid var(--hairline);"><span style="font-family:'IBM Plex Mono',ui-monospace,monospace;">{{ space.workflow }}</span></td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
       </div>
     </sc-if>
+
+    <!-- v0.22.0's own comment on this section, carried forward: it is a
+         qualifier on the table above, not a screen of its own. On a healthy
+         one-space setup it is empty, and an empty page reads as a broken
+         one, so it collapses to one reassuring empty state instead. -->
+    <div style="margin-top:34px; padding-top:26px; border-top:1px solid var(--border);">
+      <h2 style="margin:0 0 8px; font-size:var(--font-section-title); line-height:var(--line-section-title); font-weight:600; letter-spacing:-0.01em;">{{ limitsTitle }}</h2>
+      <p style="margin:0 0 18px; font-size:16px; line-height:1.6; color:var(--body); max-width:820px;">{{ limitsSub }}</p>
+
+      <sc-if value="{{ noLimits }}" hint-placeholder-val="{{ false }}">
+        <dc-import name="EmptyState" title="{{ emptyLimitsTitle }}" text="{{ emptyLimitsText }}" size="panel" hint-size="100%,240px"></dc-import>
+      </sc-if>
+
+      <sc-if value="{{ hasLimits }}" hint-placeholder-val="{{ true }}">
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(400px,100%),1fr)); gap:var(--space-grid); align-items:start;">
+        <sc-if value="{{ hasIntFlags }}" hint-placeholder-val="{{ true }}">
+          <div style="background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-card-block) var(--padding-card-inline); box-shadow:var(--shadow-card);">
+            <div style="font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; margin-bottom:4px;">{{ integrityFlagsLabel }}</div>
+            <p style="margin:0 0 12px; font-size:15px; line-height:1.55; color:var(--muted);">{{ integrityFlagsText }}</p>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              <sc-for list="{{ intFlags }}" as="f" hint-placeholder-count="4">
+                <div style="background:var(--page); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline);">
+                  <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:6px;">
+                    <dc-import name="StatusPill" staticText="{{ f.code }}" staticTone="attention" mono="{{ true }}" size="small" hint-size="150px,24px"></dc-import>
+                    <span style="font-size:15px; color:var(--muted);">{{ f.origin }}</span>
+                  </div>
+                  <div style="font-size:16px; line-height:1.55; color:var(--body); overflow-wrap:anywhere;">{{ f.message }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+        <div style="display:flex; flex-direction:column; gap:16px;">
+          <sc-if value="{{ hasIntDegraded }}" hint-placeholder-val="{{ true }}">
+            <div style="background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-card-block) var(--padding-card-inline); box-shadow:var(--shadow-card);">
+              <div style="font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; margin-bottom:4px;">{{ degradedReadsLabel }}</div>
+              <p style="margin:0 0 12px; font-size:15px; line-height:1.55; color:var(--muted);">{{ degradedReadsText }}</p>
+              <div style="display:flex; flex-direction:column; gap:10px; font-size:16px;">
+                <sc-for list="{{ intDegraded }}" as="g" hint-placeholder-count="3">
+                  <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                    <span style="font-family:'IBM Plex Mono',ui-monospace,monospace;">{{ g.id }}</span>
+                    <dc-import name="StatusPill" result="{{ g.sourceResult }}" size="small" hint-size="150px,24px"></dc-import>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ hasIntUnavailable }}" hint-placeholder-val="{{ true }}">
+            <div style="background:var(--page); border-radius:var(--radius-panel); padding:var(--padding-card-block) var(--padding-card-inline); box-shadow:inset 0 0 0 1px var(--border);">
+              <div style="font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; margin-bottom:6px;">{{ notEvaluatedTitle }}</div>
+              <p style="margin:0 0 12px; font-size:15px; line-height:1.55; color:var(--muted);">{{ notEvaluatedText }}</p>
+              <div style="display:flex; flex-direction:column; gap:10px; font-size:16px; line-height:1.55; color:var(--muted);">
+                <sc-for list="{{ intUnavailable }}" as="u" hint-placeholder-count="4">
+                  <div><strong style="color:var(--body);">{{ u.title }}</strong>: {{ u.reason }}</div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+      </sc-if>
+    </div>
   </section>
 </sc-if>
 </x-dc>
@@ -64,9 +161,48 @@
 // directly at their call sites (unavailableSentence(), the no-diagnostics
 // branch of `unavailable`, and snapshotCardText above) rather than this
 // constant, so blanking it here is correct for every remaining consumer.
+// The age the server formatted is a token ("4h", "just now"), not English
+// prose: rendering it in Russian is presentation, not a second verdict. Same
+// shape ExchangeView, ThreadsView and VersionsView already carry.
+const AGE_RU = { m: " мин", h: " ч", d: " д", w: " нед" };
+
+function ageText(value, ru) {
+  const raw = String(value == null ? "" : value);
+  if (!raw || !ru) return raw;
+  if (raw === "just now") return "только что";
+  const m = raw.match(/^(\d+)([mhdw])$/);
+  return m ? m[1] + AGE_RU[m[2]] : raw;
+}
+
 const SPACE_I18N = {
-  en:{ spaces:"Spaces", emptyTitle:"No spaces connected", emptyText:"Connect a shared repository to see its source and consistency facts.", open:"Open space", kind:"Space", repository:"Repository", participants:"Participants", compatibility:"Compatibility", consistency:"Consistency", unavailable:"Unavailable evidence", snapshot:"Snapshot", technical:"Technical detail", workFreshness:"Work evidence freshness", none:"", notRecorded:"", unknown:"", count:"anomalies", shown:"Showing", of:"of", missingTitle:"Space not found", missingText:"The current snapshot has no space with this opaque identity." },
-  ru:{ spaces:"Спейсы", emptyTitle:"Спейсы не подключены", emptyText:"Подключите общий репозиторий, чтобы увидеть его факты об источнике и согласованности.", open:"Открыть спейс", kind:"Спейс", repository:"Репозиторий", participants:"Участники", compatibility:"Совместимость", consistency:"Согласованность", unavailable:"Недоступные данные", snapshot:"Снимок", technical:"Технические подробности", workFreshness:"Свежесть данных о работе", none:"", notRecorded:"", unknown:"", count:"аномалий", shown:"Показано", of:"из", missingTitle:"Спейс не найден", missingText:"В текущем снимке нет спейса с таким непрозрачным идентификатором." }
+  en:{ cardTitle:"How fresh is what you are reading",
+    cardSub:"Everything on these screens comes from a local copy of the space, taken once when this file was built. Below is when that copy was last refreshed and what the space expects of your binary.",
+    cardFooter:"Nothing is filled in for you: a space that could not be read says so, instead of showing a zero.",
+    spaces:"Spaces", emptyTitle:"No spaces connected", emptyText:"Connect a shared repository to see its source and consistency facts.", open:"Open space", kind:"Space", repository:"Repository", participants:"Participants", compatibility:"Compatibility", consistency:"Consistency", unavailable:"Unavailable evidence", snapshot:"Snapshot", technical:"Technical detail", workFreshness:"Work evidence freshness", none:"", notRecorded:"", unknown:"", count:"anomalies", shown:"Showing", of:"of", missingTitle:"Space not found", missingText:"The current snapshot has no space with this opaque identity.",
+    freshness:"Freshness", writerFloor:"Writer floor", pinnedWorkflow:"Pinned workflow", revision:"Revision",
+    freshnessHint:"When the local copy of the space was last synced. “Stale” is not a failure but a warning: the facts below may lag behind the repository.",
+    writerFloorHint:"The lowest a2a version whose documents this space accepts. Below it you cannot write to the space; reading still works.",
+    pinnedWorkflowHint:"The validation workflow version pinned in the space's CI. It moves independently of your binary and of the writer floor, so matching numbers are a coincidence.",
+    limitsTitle:"What this snapshot did not check", limitsSub:"This file was written once, from the local cache. Anything it could not read, or deliberately did not evaluate, is named here, so an empty space never passes for a clean result.",
+    emptyLimitsTitle:"Nothing to qualify", emptyLimitsText:"Every connected space was readable when this snapshot was written, and no flag was raised. The table above is the whole picture.",
+    integrityFlags:"Protocol and read flags", integrityFlagsText:"Facts recorded by committed events, or problems reading the local cache index. A flag is evidence, not a verdict.",
+    degradedReads:"Degraded reads", degradedReadsText:"These spaces answered from an older mirror revision, from an unresponsive source, or not at all.",
+    notEvaluatedTitle:"What this read deliberately did not check", notEvaluatedText:"Not failures. Questions a static file honestly cannot answer, said out loud instead of shown as a zero or a green tick."
+  },
+  ru:{ cardTitle:"Насколько свежее то, что вы читаете",
+    cardSub:"Всё на этих экранах взято из локальной копии спейса, снятой один раз, когда собирался этот файл. Ниже видно, когда копию последний раз обновляли и чего спейс ждёт от вашего бинарника.",
+    cardFooter:"Ничего не додумывается: если спейс не прочитался, так и написано, а не «ноль».",
+    spaces:"Спейсы", emptyTitle:"Спейсы не подключены", emptyText:"Подключите общий репозиторий, чтобы увидеть его факты об источнике и согласованности.", open:"Открыть спейс", kind:"Спейс", repository:"Репозиторий", participants:"Участники", compatibility:"Совместимость", consistency:"Согласованность", unavailable:"Недоступные данные", snapshot:"Снимок", technical:"Технические подробности", workFreshness:"Свежесть данных о работе", none:"", notRecorded:"", unknown:"", count:"аномалий", shown:"Показано", of:"из", missingTitle:"Спейс не найден", missingText:"В текущем снимке нет спейса с таким непрозрачным идентификатором.",
+    freshness:"Свежесть", writerFloor:"Минимум для записи", pinnedWorkflow:"Версия проверки в CI", revision:"Ревизия",
+    freshnessHint:"Когда мы последний раз синхронизировали локальную копию спейса. «Устарел» значит не поломку, а предупреждение: факты ниже могут отставать от репозитория.",
+    writerFloorHint:"Минимальная версия a2a, документы от которой спейс принимает. Если ваш бинарник ниже, писать в этот спейс нельзя, читать можно.",
+    pinnedWorkflowHint:"Версия проверки, закреплённая в CI спейса. Меняется отдельно от вашего бинарника и от минимума для записи, поэтому совпадение цифр случайно.",
+    limitsTitle:"Что этот снимок не проверял", limitsSub:"Файл собран один раз из локального кэша. Всё, что не удалось прочитать или что мы намеренно не проверяли, названо здесь, чтобы пустое место не сошло за «всё в порядке».",
+    emptyLimitsTitle:"Уточнять нечего", emptyLimitsText:"Когда собирался снимок, все подключённые спейсы читались, замечаний не было. Таблица выше и есть вся картина.",
+    integrityFlags:"Замечания", integrityFlagsText:"Сигналы из событий и локального снимка, которые стоит проверить. Они не обязательно означают ошибку.",
+    degradedReads:"Прочитано не полностью", degradedReadsText:"Эти спейсы ответили из устаревшей копии, из недоступного источника или не ответили вовсе.",
+    notEvaluatedTitle:"Что мы намеренно не проверяли", notEvaluatedText:"Это не сбои. Это вопросы, на которые статический файл честно не отвечает и говорит об этом прямо, вместо того чтобы показать ноль или зелёную галочку."
+  }
 };
 
 class Component extends DCLogic {
@@ -93,6 +229,7 @@ class Component extends DCLogic {
       return /[.!?…]$/.test(raw) ? raw : raw + ".";
     };
     const phrase = value => String(value || "").trim().replace(/[.!?…]+$/, "");
+    const printable = value => String(value || "").trim() !== "";
     const unavailableSentence = value => {
       const raw = String(value || "").trim();
       if (!raw) return ru ? "Недоступно в этом снимке." : "Unavailable in this snapshot.";
@@ -169,11 +306,16 @@ class Component extends DCLogic {
         : (space.participantCount === 0
           ? words.none
           : String(space.participantCount) + (participantNames.length ? " — " + participantNames.join(", ") : ""));
-      const compatibilityText = !space.readable
-        ? words.unknown
-        : (ru
-          ? "схема " + (space.schemaVersion || phrase(words.notRecorded)) + "; минимальный бинарник " + (space.minBinaryVersion || phrase(words.notRecorded)) + "; процесс " + (space.workflowVersion || phrase(words.notRecorded))
-          : "schema " + (space.schemaVersion || phrase(words.notRecorded)) + "; minimum binary " + (space.minBinaryVersion || phrase(words.notRecorded)) + "; workflow " + (space.workflowVersion || phrase(words.notRecorded)));
+      // Only the versions the space actually carries reach the sentence.
+      // Joining three fixed clauses printed "схема ; минимальный бинарник ;
+      // процесс " when a space carried none of them — Rule A's empty value
+      // wearing a label, which is exactly what the canonical sentences are
+      // emptied out to prevent.
+      const compatibilityParts = [];
+      if (space.schemaVersion) compatibilityParts.push((ru ? "схема " : "schema ") + space.schemaVersion);
+      if (space.minBinaryVersion) compatibilityParts.push((ru ? "минимальный бинарник " : "minimum binary ") + space.minBinaryVersion);
+      if (space.workflowVersion) compatibilityParts.push((ru ? "процесс " : "workflow ") + space.workflowVersion);
+      const compatibilityText = !space.readable ? words.unknown : compatibilityParts.join("; ");
       const hasCompleteConsistency = groups.length > 0 && groups.every(group => group.totalKnown);
       const consistencyEmpty = !!space.readable && hasCompleteConsistency && groups.every(group => group.total === 0);
       const consistencyUnknown = !space.readable || !hasCompleteConsistency;
@@ -187,11 +329,25 @@ class Component extends DCLogic {
         for (const work of (row.work || [])) workFreshness.push({ result:resolve("freshness", work.freshness), age:"" });
       }
       const sourceSyncedAt = source && source.synced_at || words.notRecorded;
+      // The time phrase reads the server-formatted age, not the raw instant.
+      // "последняя синхронизация — 2026-08-19T23:05:56.799686588Z" is a
+      // machine fact wearing a sentence; nobody subtracts nanoseconds by eye.
+      // The exact timestamp is not lost — it stays a Technical fact ("source
+      // synchronized at"), which is where card-spec/space.md puts source
+      // observation timestamps anyway. A space that never synchronized keeps
+      // the freshness verdict and drops the time phrase entirely rather than
+      // printing a label with nothing after it.
+      const leadPrefix = ru
+        ? "Данные спейса " + space.id + ": " + sourceResult.label
+        : "Evidence for space " + space.id + " is " + sourceResult.label;
+      const justSynced = space.syncAge === "just now";
       const lead = !source
         ? words.unknown
-        : (source.synced_at
-          ? (ru ? "Данные спейса " + space.id + ": " + sourceResult.label + "; последняя синхронизация — " + source.synced_at + "." : "Evidence for space " + space.id + " is " + sourceResult.label + "; it was last synchronized at " + source.synced_at + ".")
-          : (ru ? "Данные спейса " + space.id + ": " + sourceResult.label + "; последняя синхронизация: " + words.notRecorded : "Evidence for space " + space.id + " is " + sourceResult.label + "; last synchronization: " + words.notRecorded));
+        : (space.syncAge
+          ? leadPrefix + (ru
+            ? "; копию обновляли " + ageText(space.syncAge, ru) + (justSynced ? "." : " назад.")
+            : "; the copy was refreshed " + space.syncAge + (justSynced ? "." : " ago."))
+          : leadPrefix + ".");
       const id = actions.cardID ? actions.cardID("space", space) : "";
       const participantListKnown = !!space.readable && space.participantCount > 0 && participantRows.length > 0;
       const repositoryValue = space.repoURL || words.notRecorded;
@@ -207,6 +363,17 @@ class Component extends DCLogic {
         // never resolved to anything but "" on the view's own render.
         summaryAttr:"space",
         sourceHighlighted, sourceStyle:highlightStyle(sourceHighlighted),
+        // Table-row facts (P7 restoration to v0.22.0's shape): the SAME raw
+        // fields compatibilityText already reads, surfaced individually so
+        // the table can put each in its own column instead of one sentence.
+        // sourceFreshnessValue is the exact value resolve() below was fed,
+        // reused (never re-derived from space.readable/space.stale) so the
+        // limits section's degraded-reads list reads the one carried verdict
+        // the pill already shows, not a second hand-rolled one.
+        floor:space.minBinaryVersion || words.notRecorded,
+        workflow:space.workflowVersion || words.notRecorded,
+        revision:space.revision || words.notRecorded,
+        sourceFreshnessValue:sourceUnavailable ? "unavailable" : carriedSourceFreshness,
         contentSourceStyle:"border-radius:5px; background:" + (sourceHighlighted ? "var(--attention-tint)" : "transparent") + "; font-size:17px; line-height:1.6; overflow-wrap:anywhere;",
         repository:space.repoURL || words.notRecorded,
         participants:participantRows, participantsText, participantsFallbackText:sentence(participantsText), compatibilityText,
@@ -221,15 +388,25 @@ class Component extends DCLogic {
         consistencyGroups:groups, consistencyEmpty, consistencyUnknown,
         unavailable, hasUnavailable:unavailable.length > 0, noUnavailable:unavailable.length === 0,
         unavailableCardText:(ru ? "Недоступные данные: " : "Unavailable evidence: ") + unavailableValue,
-        snapshotCardText:(ru ? "Снимок: " : "Snapshot: ") + (sourceResult && sourceResult.label ? sentence(sourceResult.label) : (ru ? "Недоступно в этом снимке." : "Unavailable in this snapshot.")),
         sourceDiagnostics, hasSourceDiagnostics:sourceDiagnostics.length > 0,
         workFreshness, hasWorkFreshness:workFreshness.length > 0,
         noneRecorded:words.none, notRecorded:words.notRecorded, unknown:words.unknown,
         hasConsistencyAnomalies:groups.some(group => group.anomalies.length > 0),
         statusSupportLabel:ru ? "Пояснение состояния источника" : "Source status explanation",
         consistencySupportLabel:ru ? "Пояснения серьёзности аномалий" : "Consistency severity explanations",
+        // Rule A, per fact: a value the snapshot could not establish prints
+        // NOTHING — not a label with an empty tail after the colon. The
+        // canonical sentences are already emptied out in SPACE_I18N, so the
+        // presence question is simply "did anything survive the trim".
+        hasLead:printable(lead),
+        hasRepositoryFact:printable(repositoryValue),
+        hasParticipantsFact:printable(participantsText),
+        hasCompatibilityFact:printable(compatibilityText),
+        hasConsistencyFact:printable(consistencyValue),
+        hasUnavailableFact:printable(unavailableValue),
         factStyle:highlightStyle(false),
         open:() => { if (id && actions.openCard) actions.openCard("space", id, accent("source", sourceIdentity)); },
+        openLabel:words.open + " " + (space.id || ""),
         technical:[
           { label:"space", value:space.id || words.notRecorded },
           { label:"space revision", value:space.revision || words.notRecorded },
@@ -247,6 +424,22 @@ class Component extends DCLogic {
 
     const spaces = (data.spaces || []).filter(space => this.inScope(space.id));
     const spaceRows = spaces.map(modelFor);
+
+    // The limits section is a qualifier on the table above, not a screen of
+    // its own (restored from v0.22.0's own comment to that effect): three
+    // carried collections, each printed only when it has something to say.
+    // "Degraded" never re-derives from space.readable/space.stale — it reads
+    // the same sourceFreshnessValue the row's own pill already resolved.
+    const flags = (data.flags || []).filter(flag => this.inScope(flag.space));
+    const intFlags = flags.map(flag => ({ code:flag.code || words.notRecorded, origin:[flag.source, flag.system, flag.space].filter(Boolean).join(" · "), message:flag.message || words.notRecorded }));
+    const intDegraded = spaceRows.filter(row => row.sourceFreshnessValue !== "current");
+    const globalUnavailable = data.unavailable || [];
+    const intUnavailable = globalUnavailable.map(entry => ({ title:entry.title || words.notRecorded, reason:entry.reason || words.notRecorded }));
+    const hasIntFlags = intFlags.length > 0;
+    const hasIntDegraded = intDegraded.length > 0;
+    const hasIntUnavailable = intUnavailable.length > 0;
+    const hasLimits = hasIntFlags || hasIntDegraded || hasIntUnavailable;
+
     const cardMode = !!card && card.kind === "space";
     let spaceCard = null;
     if (cardMode && actions.cardID) {
@@ -262,8 +455,7 @@ class Component extends DCLogic {
       );
       spaceCard.technical = spaceCard.technical.concat(anomalyTechnical);
       Object.assign(spaceCard, {
-      factOrder:["identity","condition","repository","participants","compatibility","consistency","unavailable","snapshot","technical"],
-      identity:(ru ? "Спейс — " : "Space — ") + spaceCard.id,
+      factOrder:["identity","snapshot","condition","repository","participants","compatibility","consistency","unavailable","technical"],
       kindLabel:words.kind, repositoryLabel:words.repository, participantsLabel:words.participants,
       compatibilityLabel:words.compatibility, consistencyLabel:words.consistency,
       unavailableLabel:words.unavailable, snapshotLabel:words.snapshot, technicalLabel:words.technical,
@@ -272,12 +464,20 @@ class Component extends DCLogic {
       });
     }
     return {
+      spaceHealthTitle:words.cardTitle, spaceHealthSub:words.cardSub, spaceHealthFooter:words.cardFooter,
       cardSpace:cardMode, normalSpaces:!cardMode, spaceCardPresent:!!spaceCard, spaceCardMissing:cardMode && !spaceCard, spaceCard,
       missingTitle:words.missingTitle, missingText:words.missingText,
       spacesAria:words.spaces, hasSpaces:spaceRows.length > 0, noSpaces:spaceRows.length === 0, spaceRows:spaceRows,
       emptySpacesTitle:words.emptyTitle, emptySpacesText:words.emptyText, openLabel:words.open,
       participantsLabel:words.participants, compatibilityLabel:words.compatibility, consistencyLabel:words.consistency,
-      unavailableLabel:words.unavailable, technicalLabel:words.technical, workFreshnessLabel:words.workFreshness
+      unavailableLabel:words.unavailable, technicalLabel:words.technical, workFreshnessLabel:words.workFreshness,
+      spaceLabel:words.kind, freshnessLabel:words.freshness, writerFloorLabel:words.writerFloor, pinnedWorkflowLabel:words.pinnedWorkflow, revisionLabel:words.revision,
+      freshnessHint:words.freshnessHint, writerFloorHint:words.writerFloorHint, pinnedWorkflowHint:words.pinnedWorkflowHint,
+      limitsTitle:words.limitsTitle, limitsSub:words.limitsSub, emptyLimitsTitle:words.emptyLimitsTitle, emptyLimitsText:words.emptyLimitsText,
+      integrityFlagsLabel:words.integrityFlags, integrityFlagsText:words.integrityFlagsText,
+      degradedReadsLabel:words.degradedReads, degradedReadsText:words.degradedReadsText,
+      notEvaluatedTitle:words.notEvaluatedTitle, notEvaluatedText:words.notEvaluatedText,
+      intFlags, intDegraded, intUnavailable, hasIntFlags, hasIntDegraded, hasIntUnavailable, hasLimits, noLimits:!hasLimits
     };
   }
 }

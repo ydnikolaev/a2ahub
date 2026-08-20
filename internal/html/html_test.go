@@ -316,9 +316,29 @@ func TestDefaultTemplate_ExplanatoryPopoversShareHoverBehavior(t *testing.T) {
 			stop = len(tmpl) - start - 1
 		}
 		resource := tmpl[start : start+1+stop]
-		if !strings.Contains(resource, `onMouseEnter`) || !strings.Contains(resource, `role=\"tooltip\"`) {
-			t.Errorf("%s does not expose its explanation on hover through the shared tooltip grammar", name)
+		// The trigger still opens on hover, but the bubble itself is no longer
+		// its own: all four (and EventSignal) hand-rolled the same ~25 lines of
+		// show/position/clamp, and had already drifted apart — two stacked at
+		// z-index 950, two at 500, so which tooltip won a collision was an
+		// accident. What this asserts now is the shared grammar in the literal
+		// sense: the hover door here, the bubble in InfoTooltip.
+		if !strings.Contains(resource, `onMouseEnter`) {
+			t.Errorf("%s no longer opens its explanation on hover", name)
 		}
+		if !strings.Contains(resource, `name=\"InfoTooltip\"`) {
+			t.Errorf("%s does not render its explanation through the shared InfoTooltip", name)
+		}
+		if strings.Contains(resource, `role=\"tooltip\"`) {
+			t.Errorf("%s still carries its own tooltip bubble; the shared component owns that markup", name)
+		}
+	}
+
+	// And the bubble exists twice, in exactly two owners: InfoTooltip, which
+	// every anchored hover bubble now goes through, and NetworkMap, whose tip
+	// is placed against a node inside its own SVG viewport rather than against
+	// a DOM trigger — a different placement problem, deliberately left alone.
+	if n := strings.Count(tmpl, `role=\"tooltip\"`); n != 2 {
+		t.Errorf("the dashboard carries %d tooltip bubbles; only InfoTooltip and the map's own tip may own that markup", n)
 	}
 }
 
@@ -410,7 +430,6 @@ func TestDefaultTemplate_ArtifactPreviewAndDeadlineHierarchy(t *testing.T) {
 	for _, required := range []string{
 		`data-artifact-markdown`,
 		`data-artifact-metadata`,
-		`data-artifact-footer`,
 		`data-artifact-author`,
 		`hydrateMarkdown`,
 		`bodyFadeStyle`,
@@ -418,7 +437,10 @@ func TestDefaultTemplate_ArtifactPreviewAndDeadlineHierarchy(t *testing.T) {
 		`metadataExpanded`,
 		`Метаданные`,
 		`История событий`,
-		`FreshnessDot`,
+		// FreshnessDot left the pane with the footer that held it. Freshness is
+		// still said here — as a pill, and only when it is NOT current, which
+		// is the case a reader has to act on. The always-present green dot now
+		// lives in the list row's corner, where it costs no height.
 		`ActorEventLine`,
 		`authorProfileURL`,
 		`authorAvatar`,
@@ -506,15 +528,18 @@ func TestDefaultTemplate_ArtifactPreviewAndDeadlineHierarchy(t *testing.T) {
 func TestDefaultTemplate_WorkReportsUseDurableHistoryAndCollapseTechnicalPublish(t *testing.T) {
 	t.Parallel()
 	tmpl := dashboardDesignSource(t, "ExchangeView.dc.html")
+	// What survives is the DURABLE half this test was always about: the
+	// checkpoint reading inside the document it describes, its publish event
+	// collapsed so the same act is not told twice, and the card reachable from
+	// there. The detached list — and the hint that claimed "in received order"
+	// over a space/thread ordering — is gone; a checkpoint is read beside its
+	// subject, not in a fourth place of its own.
 	for _, required := range []string{
-		`data-work-report-list`,
 		`const workEvents = (d.workReports || []).filter`,
 		`report.space === a.space && (!a.thread || report.thread === a.thread) && (report.artifact_id === a.id || subjectID === a.id)`,
 		`const carriesWorkReport = (d.workReports || []).some`,
 		`filter(ev => !(carriesWorkReport && ev.transition === "publish"))`,
-		`const workReportRows = workReports.map(report =>`,
 		`actions.openCard("work-report", id, accent)`,
-		`workReportsHint:ru ? "в порядке поступления" : "in received order"`,
 	} {
 		if !strings.Contains(tmpl, required) {
 			t.Errorf("dashboard work-report history is missing %q", required)
@@ -528,7 +553,6 @@ func TestDashboardDesignSource_WorkReportAndThreadSelectionSemantics(t *testing.
 	threads := dashboardDesignSource(t, "ThreadsView.dc.html")
 	for _, required := range []string{
 		`report.artifact_id === a.id || subjectID === a.id`,
-		`const workReportRows = workReports.map(report =>`,
 		// P8 (2026-08-19) restored the "all" direction, so the collection for a
 		// tab is resolved through collectionFor rather than indexed directly.
 		// The contract this pins is unchanged: the view takes what the server
@@ -543,15 +567,30 @@ func TestDashboardDesignSource_WorkReportAndThreadSelectionSemantics(t *testing.
 		`v.space === threadSpace && v.thread === threadSel`,
 		`threadSpace === t.space && threadSel === t.id`,
 		`data-thread-space="{{ t.space }}"`,
-		`actions.cardID("thread", { space:t.space, thread:t.id })`,
-		`actions.openCard("thread", id, "")`,
+		`this.setState({ threadSel: t.id, threadSpace: t.space, tvFocus: "" })`,
 	} {
 		if !strings.Contains(threads, required) {
 			t.Errorf("dashboard release semantic contract is missing %q", required)
 		}
 	}
-	if strings.Contains(exchange, `.sort(`) || strings.Contains(threads, `.sort(`) {
-		t.Fatal("dashboard exchange/thread views must preserve carried order instead of sorting in the browser")
+	// The browser must not DECIDE order. It may restore one the server already
+	// decided: direction selects across three collections, so their
+	// concatenation carries no order at all, and Item.FeedRank is the answer
+	// the projection cut before it cut any window. Exactly one sort, reading
+	// exactly that field — a second one, or this one drifting onto another key,
+	// is the view taking the decision back.
+	if strings.Contains(threads, `.sort(`) {
+		t.Fatal("the thread view must preserve carried order instead of sorting in the browser")
+	}
+	if got := strings.Count(exchange, `.sort(`); got != 1 {
+		t.Fatalf("exchange view holds %d sorts; exactly one is allowed, and only to restore the carried feed rank", got)
+	}
+	sortAt := strings.Index(exchange, `.sort(`)
+	if window := exchange[max(0, sortAt-400):sortAt]; !strings.Contains(window, "feedRank") && !strings.Contains(exchange[sortAt:min(len(exchange), sortAt+200)], "feedRank") {
+		t.Error("the exchange view's one sort must read Data.feedRank, the order the server already cut")
+	}
+	if !strings.Contains(exchange, "dashboard-derivation: allow-sort-begin server-order") {
+		t.Error("that sort must stay inside the declared server-order opt-out the derivation gate reads")
 	}
 }
 
@@ -701,7 +740,9 @@ func TestDashboardDesignSource_OperationalRowsKeepEvidenceLayersSeparate(t *test
 		`data-operational-waits-checkpoint`,
 		`data-operational-shared-pending`,
 		`data-operational-consistency`,
-		`data-operational-source`,
+		// The summary's own source row is gone: it printed the SAME resolved
+		// source-freshness the dot beside the process identity already shows,
+		// followed by a raw nanosecond instant nobody reads.
 		`data-operational-windows`,
 	}
 	previous := -1
@@ -790,8 +831,11 @@ func TestDefaultTemplate_ThreadCardsShareRhythmAndOpenByTitle(t *testing.T) {
 		`reasonSentence:localizedSentence(o.reasonSentence, ru)`,
 		`collectionWindowSentence(tv && tv.windows && tv.windows.transcript, ru)`,
 		`collectionWindowSentence(tv && tv.windows && tv.windows.openItems, ru)`,
-		`actions.cardID("thread", { space:t.space, thread:t.id })`,
-		`actions.openCard("thread", id, "")`,
+		// The row's click SELECTS into the master-detail pane now, so what this
+		// asserts is the selection write, not the card door. The identity it
+		// carries is the point either way: the space travels with the thread id,
+		// because two spaces can hold the same thread id.
+		`this.setState({ threadSel: t.id, threadSpace: t.space, tvFocus: "" })`,
 	} {
 		if !strings.Contains(tmpl, want) {
 			t.Errorf("thread cards are missing shared rhythm/title interaction %q", want)

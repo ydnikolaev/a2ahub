@@ -174,10 +174,12 @@ function dashboardController({ hash = '' } = {}) {
   const viewNames = ['Overview', 'ExchangeView', 'ThreadsView', 'ContractsView', 'MapView', 'SpacesView', 'VersionsView', 'DocsView', 'GuideView'];
   const views = Object.fromEntries(viewNames.map(name => [name, new classes[name]()]));
   const cardActions = ['cardAccent', 'cardID', 'openCard'];
+  // closeCard rides with navigate wherever a card carries a door OUT of itself.
+  const leaveActions = [...cardActions, 'closeCard'];
   const expectedActions = {
-    Overview: [...cardActions, 'navigate', 'openAggregate', 'patch'].sort(),
-    ExchangeView: [...cardActions, 'navigate', 'patch'].sort(),
-    ThreadsView: [...cardActions, 'navigate', 'patch'].sort(),
+    Overview: [...leaveActions, 'navigate', 'openAggregate', 'patch'].sort(),
+    ExchangeView: [...leaveActions, 'navigate', 'patch'].sort(),
+    ThreadsView: [...leaveActions, 'navigate', 'patch'].sort(),
     ContractsView: [...cardActions, 'copy', 'navigate', 'patch', 'sourceURL'].sort(),
     MapView: [...cardActions, 'navigate', 'patch'].sort(),
     SpacesView: cardActions,
@@ -471,8 +473,11 @@ test('shared card, panel and modal components consume semantic hierarchy tokens'
   assert.match(timeline, /var\(--radius-nested\)/);
   assert.match(timeline, /var\(--padding-nested-block\)/);
 
-  // Operator-approved P13 change: map details now use the canonical P12 card,
-  // so LinkDetail and NetworkMap no longer own a second panel/modal hierarchy.
+  // Operator-approved P13 change: map details use the canonical P12 card, so
+  // LinkDetail is gone and the map owns no second panel hierarchy. Refined
+  // 2026-08-19: a CONTRACT line routes to the version card as P13 intended; an
+  // exchange lane has no card kind and was left answering a click with nothing,
+  // so it keeps one dialog of its own — see the narrowed assertion below.
 });
 
 test('P13 map routes a contract relation to the canonical version card without modal markup', () => {
@@ -558,7 +563,20 @@ test('P13 map routes a contract relation to the canonical version card without m
   assert.equal(contractValues.contractVersionCard.consumerPins[0].highlighted, true, 'the exact-version consumer row is the relation accent target');
 
   const map = component('NetworkMap');
-  assert.doesNotMatch(map, /role="dialog"|aria-modal|padding-modal-backdrop|name="LinkDetail"|popDismiss|popStop/);
+  // P13 routed map details through the canonical card, and for a CONTRACT line
+  // that is exactly right — clicking one opens the version card, verified above.
+  // An exchange lane has no card kind, so the same rule left it opening nothing
+  // at all: the 0.22.0 dashboard answered a click on a lane with its own summary
+  // (author, recipient, space, live documents, strongest priority, what is
+  // blocked, longest without movement) and that answer simply disappeared. The
+  // aggregate exists nowhere else — no card carries "this pair of systems, right
+  // now" — so the lane keeps that answer, INLINE, in the map's own flow: the
+  // same master-detail move a thread or contract row makes. P13 stands whole —
+  // Modal.dc.html remains the only modal engine — and the retired LinkDetail
+  // component stays retired.
+  assert.doesNotMatch(map, /name="LinkDetail"|popDismiss|popStop/);
+  assert.doesNotMatch(map, /role="dialog"|aria-modal/, 'the map stands up no dialog of its own; Modal.dc.html is the single modal engine');
+  assert.match(map, /<section aria-label="\{\{ laneAriaLabel \}\}"/, 'the exchange lane answers a click with an inline summary section');
   assert.doesNotMatch(map, /blockedWhy|DRIFT_TONE|STATE_TONE|\bRISK\b|\.sort\(/);
   assert.doesNotMatch(map, /owedCount\s*(?:\|\||\?\?)\s*0/, 'missing owedCount must never default to zero');
   assert.throws(() => component('LinkDetail'), /ENOENT/);
@@ -642,9 +660,12 @@ test('P10 Exchange renders item and work-report facts through one content-only A
     'freshness/committed-current', 'freshness/pending-recovery', 'transition/note',
   ]);
   const installResolver = harness => {
+    // `past` is the actor's form the real resolver carries beside every label,
+    // falling back to the label where a family has no verb. The stub owes the
+    // same shape: without it an event row renders `undefined` after the name.
     harness.context.A2A_VOCABULARY_RESOLVER.lookup = (_data, family, value) => knownVocabulary.has(`${family}/${value}`) ? ({
-      label:`${family}/${value}`, explanation:`help:${family}/${value}`, toneClass:'tone-progressing', cue:'›', cueAttribute:'›'
-    }) : ({ label:'Unknown in this snapshot.', explanation:'Unknown vocabulary value.', toneClass:'tone-unknown', cue:'?', cueAttribute:'?' });
+      label:`${family}/${value}`, past:`${family}/${value}`, explanation:`help:${family}/${value}`, toneClass:'tone-progressing', cue:'›', cueAttribute:'›'
+    }) : ({ label:'Unknown in this snapshot.', past:'Unknown in this snapshot.', explanation:'Unknown vocabulary value.', toneClass:'tone-unknown', cue:'?', cueAttribute:'?' });
     harness.context.A2A_VOCABULARY_RESOLVER.knows = (_data, family, value) => knownVocabulary.has(`${family}/${value}`);
   };
   installResolver(exchangeHarness);
@@ -654,7 +675,13 @@ test('P10 Exchange renders item and work-report facts through one content-only A
     runtimeDesignPage(file).template.matchAll(new RegExp(`${attribute}="([^"]+)"`, 'g')),
     match => match[1]
   );
-  const itemOrder = ['identity','lead','lifecycle','parties','gate','urgency','summary','operational','snapshot','technical'];
+  // The item card IS the reading surface now (the component's own card branch
+  // is retired), so P5's ten facts are attributed on that composition and in
+  // its order: what it is and its state, who sent it, its title, the move it
+  // asks for, the raw envelope, the document, its operational declarations,
+  // and the source condition at the end. card-spec/item.md carries the same
+  // order with the reason (amended 2026-08-20).
+  const itemOrder = ['lifecycle','parties','identity','lead','gate','technical','summary','operational','snapshot'];
   // The ROW and the DETAIL are different surfaces and stopped pretending to be
   // the same one on 2026-08-19. The detail still renders every fact in P5's
   // order. The row renders the four a reader scans — what it is, its state,
@@ -692,7 +719,13 @@ test('P10 Exchange renders item and work-report facts through one content-only A
   assert.deepEqual(Array.from(exchange.workRows[0].operationalItems, row => [row.name, row.result.label]), [
     ['endpoint', 'operational-state/ready'], ['runbook', 'operational-state/absent']
   ]);
-  assert.deepEqual(Array.from(exchange.workReportRows, row => row.summary), ['First carried checkpoint', 'Second carried checkpoint'], 'work reports must retain carried order');
+  // The detached work-report list is gone: the same checkpoint already reads
+  // inside the document it describes, inside its thread's timeline, and as its
+  // own card opened from either — the list was the fourth place, and the only
+  // one where the report sat apart from its subject. What must survive is the
+  // report INSIDE the document, which is asserted a few lines below through
+  // detailFor's work rows.
+  assert.equal(exchange.workReportRows, undefined, 'Exchange must not rebuild a detached work-report list');
   const legacyDetail = exchangeHarness.part.detailFor('XW-second', data.inbox);
   assert.equal(legacyDetail.syncStale, true, 'artifact-detail snapshot evidence must carry the exact sync_stale field');
   const consistencyEvent = legacyDetail.events.find(event => event.transitionRaw === 'note');
@@ -706,7 +739,12 @@ test('P10 Exchange renders item and work-report facts through one content-only A
   exchange.workRows[0].select();
   assert.equal(patches.at(-1).workSel, 'XW-second', 'a work row selects into the pane, it does not open the card modal');
   assert.equal(opened.length, 0, 'the pane door must write no card route');
-  exchange.workReportRows[0].open();
+  // The card's door is the document's own history now that the detached list
+  // is gone: the "reported work on" row inside the pane opens exactly the card
+  // the list used to open, with the same identity and the same accent.
+  const reportRow = exchangeHarness.part.detailFor('XW-second', data.inbox).events.find(event => event.isWorkReport);
+  assert.ok(reportRow, 'the checkpoint must read inside the document it describes');
+  reportRow.openWorkReport();
   assert.deepEqual(opened.pop(), { kind:'work-report', id:'work-report:space-a:XA-carried-first', accent:'checkpoint:space-a,XA-carried-first' });
   exchange.workTabs.find(tab => tab.label === 'Incoming').go();
   assert.equal(patches.at(-1).dashboardSet, '', 'ordinary filters must clear aggregate drill-down state');
@@ -1009,24 +1047,12 @@ test('P10 Exchange renders item and work-report facts through one content-only A
     assert.match(values.emptyWorkText, /bounded prefix/i, `${workTab} must keep empty-prefix semantics`);
     assert.doesNotMatch(values.emptyWorkTitle + values.emptyWorkText, /collection is empty/i);
   }
-  assert.equal(ordinaryEmpty.hasWorkReports, false);
-  assert.equal(ordinaryEmpty.workReportsWindowText, 'Showing 0 of 2.');
-  assert.equal(ordinaryEmpty.workReportsEmpty, true);
-  assert.match(ordinaryEmpty.workReportsEmptyText, /bounded prefix/i, 'an empty truncated report prefix must remain visible and honest');
-
-  const knownEmptyReportsData = {
-    ...ordinaryEmptyData,
-    windows:{ ...ordinaryEmptyData.windows, workReports:{ shown:0, total:0, truncated:false } },
-  };
-  const knownEmptyReportsHarness = componentHarness('ExchangeView', {
-    ctx:{ data:knownEmptyReportsData, locale:'en', ui:{ ...ui, dashboardSet:'', workTab:'incoming' }, actions }
-  });
-  installResolver(knownEmptyReportsHarness);
-  // P7 (2026-08-18 amendment): a confirmed-empty (total:0) window is Rule
-  // A's "empty collection known complete" condition — banned outside
-  // technical the same as the other two, so it blank-slots rather than
-  // printing "None recorded.".
-  assert.equal(knownEmptyReportsHarness.part.renderVals().workReportsEmptyText, '');
+  // The detached report list and its bounded-prefix sentence are gone with it.
+  // What replaced them is not a quieter list — it is the checkpoint reading
+  // where its subject is, which the document-history assertions above cover.
+  for (const gone of ['hasWorkReports', 'workReportsEmpty', 'workReportsEmptyText', 'workReportRows', 'workReportsWindowText']) {
+    assert.equal(ordinaryEmpty[gone], undefined, `${gone} belongs to the removed report list`);
+  }
 
   const exchangeSource = component('ExchangeView');
   assert.doesNotMatch(exchangeSource, /const STATE_TONE|blockedWhy\(|statusOf\(|const isClosed|byNewest|statuses\s*:|urgent\s*:|EVENT_SIGNAL|TRANSITION_PAST|VERDICT_TONE|VERDICT_LABEL|WORK_WAIT_KIND|workEvents[\s\S]{0,220}\.sort\(/);
@@ -1054,9 +1080,15 @@ test('P10 Exchange renders item and work-report facts through one content-only A
   assert.doesNotMatch(detailSource, /\bmodal\b|onClose|position:fixed|aria-modal|shellRole|dismissWide|document\.body\.style\.overflow|addEventListener\("keydown"/);
   assert.doesNotMatch(detailSource, /FreshnessDot[^\n]*stale=|source-freshness[^\n]*syncStale|syncStale[^\n]*source-freshness|calloutTone|pillTone|VERDICT_TONE|VERDICT_LABEL/);
   assert.match(detailSource, /\.knows\(data, "lifecycle-state", item\.state\)/);
-  assert.match(detailSource, /data-item-technical-target=/, 'item technical identities must have distinct rendered accent targets');
+  // The rendered marker lived in this component's own card branch, which the
+  // manifest stopped reaching when `item` was routed through the reading
+  // surface — the assertion was green over dead code. The identities are still
+  // built and still distinct, which is what this line can honestly check;
+  // rendering them on the shipping surface is docs/validator-backlog.md's
+  // "item card's accent targets are carried but not rendered" (2026-08-20).
+  assert.match(detailSource, /family:"event"[\s\S]*family:"reference"[\s\S]*family:"attachment"/, 'item technical identities must stay distinct per accent family');
   assert.doesNotMatch(detailSource, /technicalHighlighted|metadataCount/, 'the generic technical accent and browser-derived metadata count must be absent');
-  assert.doesNotMatch(exchangeSource, /<sc-if value="\{\{ hasWorkReports \}\}"[^>]*>\s*<section data-work-report-list/, 'the report section must not disappear with an empty carried prefix');
+  assert.doesNotMatch(exchangeSource, /data-work-report-list/, 'the detached report list stays removed — a checkpoint reads inside its subject, not in a fourth place');
 });
 
 // P1 shipped this against a defect where SegmentedFilter printed `0` for a
@@ -1182,7 +1214,10 @@ test('Exchange filter chips honour every axis but their own, across the whole cr
     && (!due || !!it.neededBy)).length;
 
   const DIRECTIONS = [['all', 'All'], ['incoming', 'Incoming'], ['outgoing', 'Outgoing']];
-  const STATES = [['all', 'All'], ['open', 'Open'], ['closed', 'Closed']];
+  // The state chips say what the reader must DO — the outcome vocabulary was
+  // renamed away from "open/closed", which read as a contradiction beside a
+  // document state like "accepted for work".
+  const STATES = [['all', 'All'], ['open', 'Awaiting a move'], ['closed', 'Settled']];
   const TYPES = ['all', 'contract', 'announcement'];
 
   for (const [direction] of DIRECTIONS) {
@@ -1305,12 +1340,19 @@ test('all-spaces thread selection uses the exact space and thread identity', () 
   const firstID = controller.cardID('thread', { space:first.space, thread:first.id });
   const secondID = controller.cardID('thread', { space:secondSpace, thread:first.id });
   assert.notEqual(firstID, secondID, 'space is part of the opaque thread identity');
+  // A row click SELECTS into the master-detail pane; it no longer opens the
+  // card. What this test is actually about survives that change unaltered —
+  // the identity a click carries must name the SPACE, or two threads sharing
+  // an id across spaces select each other.
   values.threadRows[1].openCard();
-  assert.deepEqual(JSON.parse(JSON.stringify(controller.state.card)), { kind:'thread', id:secondID, accent:'' });
+  assert.equal(controller.state.card, null, 'a row click must not open the card modal any more');
+  assert.equal(controller.state.threadSel, first.id);
+  assert.equal(controller.state.threadSpace, secondSpace, 'the click carries the space, not just the thread id');
 
-  // Modal's card context contains ui.card only. Keep this explicit: a stale
-  // background space filter must never erase the exact opaque selection.
-  values = controller.threadsValues({ card:controller.state.card, space:undefined });
+  // The modal is still reachable — from a #card= deep link and from other
+  // surfaces — and its context still carries ui.card alone: a stale background
+  // space filter must never erase the exact opaque selection.
+  values = controller.threadsValues({ card:{ kind:'thread', id:secondID, accent:'' }, space:undefined });
   assert.equal(values.cardMode, true);
   assert.equal(values.tvSpaceText, secondSpace);
   assert.equal(values.tvTitle, 'Duplicate thread in second space');
@@ -1458,11 +1500,20 @@ test('P12 contract cards preserve exact version packages and honest file bytes',
     'transition/deprecate':{ en:'Deprecated transition', ru:'Объявление устаревшей' },
     'transition/<raw-retire-transition>':{ en:'Retired transition', ru:'Вывод версии' },
   };
-  const lookup = (_data, family, value, locale) => ({
-    label:transitionLabels[`${family}/${value}`]?.[locale] || (knownVocabulary.has(`${family}/${value}`) ? `${family}/${value}` : 'Unknown value'),
-    explanation:family === 'transition' ? (locale === 'ru' ? 'Справка о переходе' : 'Transition help') : `help:${family}/${value}`,
-    toneClass:'tone-settled', cue:'✓', cueAttribute:'✓'
-  });
+  const lookup = (_data, family, value, locale) => {
+    const label = transitionLabels[`${family}/${value}`]?.[locale] || (knownVocabulary.has(`${family}/${value}`) ? `${family}/${value}` : 'Unknown value');
+    return {
+      label,
+      // The real resolver carries the actor's form beside the label and falls
+      // back to the label where a family has no verb — a history row reads
+      // "ydnikolaev вывел версию", not "ydnikolaev вывод версии". A stub
+      // without it renders `undefined` into the row and would let a caller
+      // that forgot the fallback pass here.
+      past: label,
+      explanation:family === 'transition' ? (locale === 'ru' ? 'Справка о переходе' : 'Transition help') : `help:${family}/${value}`,
+      toneClass:'tone-settled', cue:'✓', cueAttribute:'✓'
+    };
+  };
   const knows = (_data, family, value) => knownVocabulary.has(`${family}/${value}`);
   const render = (locale, ui) => {
     const harness = componentHarness('ContractsView', { ctx:{ data, locale, ui, actions } });
@@ -1565,8 +1616,19 @@ test('P12 contract cards preserve exact version packages and honest file bytes',
   assert.match(screen.cdVersionHistory[screen.cdVersionHistory.length - 1].railStyle, /margin-left:2px/, 'the rail still terminates on the last row drawn, which is now the oldest');
   assert.equal(screen.cdNewestFirstLabel, 'newest first', 'the screen timeline says which end it starts from');
   assert.doesNotMatch(JSON.stringify(screen.cdVersionHistory), /<raw-retire-transition>/, 'raw transition enums must not leak through the screen timeline');
-  assert.equal(screen.cdVersionNormativeTree[2].key, cardID('cfile', { space:'space-a', id:'XC-orders', version:'1.5.0', path:retiredDetail.documents[2].path }));
-  assert.equal(screen.cdVersionNormativeTree[2].size, '0 B');
+  // The package is a folder tree (restored from v0.22.0): the row a reader
+  // sees first is the directory, and the files arrive when it is opened. The
+  // three fixture documents share one directory, so compact folding gives a
+  // single collapsed row until `docTreeOpen` names it.
+  assert.deepEqual(Array.from(screen.cdVersionNormativeTree, row => row.isDir), [true], 'a collapsed package shows its directory, not its files');
+  const packageDir = screen.cdVersionNormativeTree[0];
+  assert.equal(packageDir.label, 'contracts/XC-orders/1.5.0', 'single-entry directory chains collapse into one row');
+  const openScreen = render('en', { space:'space-a', conSel:'XC-orders', conVersion:'1.5.0', card:null, docTreeOpen:{ [packageDir.key]:true } });
+  const emptyFile = Array.from(openScreen.cdVersionNormativeTree).find(row => row.isFile && row.path === retiredDetail.documents[2].path);
+  assert.ok(emptyFile, 'an opened directory lists the documents it carries');
+  assert.equal(emptyFile.key, cardID('cfile', { space:'space-a', id:'XC-orders', version:'1.5.0', path:retiredDetail.documents[2].path }));
+  assert.equal(emptyFile.size, '0 B');
+  assert.equal(emptyFile.label, 'empty.txt', 'a file row carries its own name, not the whole path');
   const ruScreen = render('ru', { space:'space-a', conSel:'XC-orders', conVersion:'1.5.0', card:null });
   assert.equal(ruScreen.cdVersionHistory[0].transitionResult.label, 'Вывод версии');
   assert.equal(ruScreen.cdVersionHistory[0].actionText, 'Вывод версии');
@@ -1652,10 +1714,12 @@ test('P12 contract cards preserve exact version packages and honest file bytes',
   // and versions included, still renders in the order the snapshot carried.
   assert.doesNotMatch(source, /\.sort\(/, 'contract/version/document presentation must retain carried order');
   const reversals = Array.from(source.matchAll(/^.*\.reverse\(\).*$/gm), match => match[0]);
-  assert.equal(reversals.length, 2, 'exactly two reversals: the version card history and the screen timeline');
+  assert.equal(reversals.length, 4, 'four reversals: the two version histories, the versions block, and the switcher that lists the same versions');
   for (const line of reversals) {
-    assert.match(line, /history \|\| \[\]\)\.slice\(\)\.reverse\(\)/, 'a reversal may only re-read a carried history for display, never reorder anything else');
+    assert.match(line, /history \|\| \[\]\)\.slice\(\)\.reverse\(\)|selectedVersions\.slice\(\)\.reverse\(\)/,
+      'a reversal may only re-read a carried array for display — a history or the version list — and never reorder anything else');
   }
+  assert.doesNotMatch(source, /selectedVersions\.reverse\(\)|\bhistory\.reverse\(\)/, 'the carried arrays are re-read, never mutated in place');
   assert.doesNotMatch(source, /conRiskCount|conRoleOf|conRisky|const\s+(?:risky|bad|seated)|ruPlural|driftWord/, 'browser-owned status membership and domain count helpers must be gone');
   assert.doesNotMatch(source, /contractEdges[\s\S]{0,160}(?:unique|new Set)|(?:unique|new Set)[\s\S]{0,160}contractEdges/, 'aggregate mode must not derive unique-contract counts');
 });
@@ -1807,4 +1871,77 @@ test('the Exchange feed reads in the server order, not collection after collecti
     ctx:{ data:rankless, locale:'en', actions:{}, ui:{ space:'all', workTab:'all', workState:'all', workType:'all', workDue:false, workSel:'', dashboardSet:'' } },
   }).part.renderVals().workRows, row => row.id), ['XW-2','XW-5','XW-1','XW-4','XW-3','XW-6'],
     'without ranks the carried collection order survives unchanged');
+});
+
+// The block above a document's body says what STATE its expectation is in. It
+// had degraded to one neutral grey box titled "Записанное ожидание" — a
+// sentence true of every document that ever carried an expectation, which is
+// why it told a reader nothing: settled, refused and still-owed all looked
+// identical. The 0.22.0 dashboard said the state and coloured the block by it,
+// but computed that state in the browser from three signals — the
+// classification P0 banned. This asserts the restored behaviour AND the way it
+// is now reached: the state is read from the server's own `outcome`, so the
+// block cannot disagree with the pills beside the title.
+test('the expectation block names its state, reads it from the server, and says it in words too', () => {
+  const base = {
+    self:'atlas', nodes:[{ system:'atlas', owners:['atlas'] }, { system:'beta', owners:['beta'] }],
+    spaces:[{ id:'space-a', readable:true }], unavailable:[], operational:{ sources:[] }, workReports:[],
+    contracts:[], contractEdges:[], flags:[], inbox:[], outbox:[], archive:[], threadViews:[], threads:[],
+  };
+  const detailFor = (outcome, extraEnvelope = {}) => {
+    const item = { id:'XQ-1', space:'space-a', title:'A question', type:'question', from:'beta', to:['atlas'], state:'submitted', outcome };
+    const data = {
+      ...base,
+      inbox:[item],
+      artifactDetails:[{
+        space:'space-a', id:'XQ-1', type:'question', state:'submitted', outcome, events:[], flags:[],
+        // The detail carries its own parties: the block asks who owes the next
+        // move, and reading that off the row would make it wrong for a document
+        // shown from a space whose collections do not list it.
+        from:'beta', to:['atlas'],
+        envelope:{ expected_response:'One concise answer.', needed_by:'2026-09-01T00:00:00Z', ...extraEnvelope },
+      }],
+    };
+    const harness = componentHarness('ExchangeView', {
+      ctx:{ data, locale:'ru', actions:{}, ui:{ space:'all', workTab:'all', workSel:'XQ-1', dashboardSet:'' } },
+    });
+    // Name the family/value pair the block asked for, so the assertions below
+    // can prove it read the OUTCOME vocabulary — the same one the pill reads —
+    // rather than any tone of its own invention.
+    harness.context.A2A_VOCABULARY_RESOLVER.lookup = (_data, family, value) => ({
+      label:`${family}/${value}`, past:`${family}/${value}`, explanation:'', toneClass:'tone-settled', cue:'✓', cueAttribute:'✓',
+    });
+    return harness.part.detailFor('XQ-1', [item]);
+  };
+
+  const settled = detailFor('settled');
+  assert.equal(settled.calloutResult.label, 'outcome/settled', 'the block reads the same verdict the pill shows');
+  assert.match(settled.calloutTitle, /^Документ завершён/);
+  assert.match(settled.calloutSignalLabel, /Зелёный блок/, 'colour is never the only signal');
+  assert.deepEqual(Array.from(settled.calloutParts.filter(part => /Срок/.test(part.label)), part => part.label), ['Срок был'],
+    'a deadline on a closed document is history, and must not read as something still owed');
+
+  const open = detailFor('open');
+  assert.equal(open.calloutResult.label, 'outcome/open');
+  assert.match(open.calloutTitle, /^Срок 01\.09\.2026 · ваш ход$/, 'an open document names the date and whose move it is');
+  assert.match(open.calloutSignalLabel, /Жёлтый блок/);
+  assert.deepEqual(Array.from(open.calloutParts.filter(part => /Срок/.test(part.label)), part => part.label), ['Срок']);
+
+  const blocking = detailFor('open', { blocking:true });
+  assert.match(blocking.calloutSignalLabel, /Красный блок/, 'a recorded blocking wait is said in words, since the outcome vocabulary has no separate tone for it');
+
+  const refused = detailFor('refused');
+  assert.equal(refused.calloutResult.label, 'outcome/refused');
+  assert.match(refused.calloutTitle, /^Получен отказ/);
+
+  for (const [outcome, head] of [['withdrawn', /^Документ отозван/], ['superseded', /^Документ заменён/]]) {
+    const values = detailFor(outcome);
+    assert.match(values.calloutSignalLabel, /Серый блок/, `${outcome} owes nobody a move and must not shout`);
+    assert.match(values.calloutTitle, head);
+  }
+
+  // Read, not derived: the view must not rebuild the state from the signals
+  // 0.22.0 combined — that is the classification the derivation gate bans.
+  const source = component('ExchangeView');
+  assert.doesNotMatch(source, /isSettled\(|isAbandoned\(|isRefused\(/, 'the callout state is the carried outcome, never a browser-side verdict');
 });

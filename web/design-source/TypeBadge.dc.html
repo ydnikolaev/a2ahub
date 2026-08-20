@@ -9,9 +9,7 @@
 <x-dc>
 <span data-type-badge="{{ typeKey }}" style="{{ wrapStyle }}" onMouseEnter="{{ enter }}" onMouseLeave="{{ leave }}" onClick="{{ tap }}">
   <span style="{{ badgeStyle }}"><span style="{{ prefixStyle }}">{{ prefix }}</span> {{ word }}</span>
-  <sc-if value="{{ open }}" hint-placeholder-val="{{ false }}">
-    <span role="tooltip" style="{{ bubbleStyle }}">{{ why }}</span>
-  </sc-if>
+  <dc-import name="InfoTooltip" text="{{ why }}" open="{{ open }}" anchor="{{ anchorNode }}" on-dismiss="{{ closeHint }}" hint-size="0,0"></dc-import>
 </span>
 
 </x-dc>
@@ -38,35 +36,12 @@ const TYPES = {
   contract: { word: "contract", prefix: "XC", bg: "var(--teal-tint)", fg: "var(--teal-ink)", ring: "inset 0 0 0 1px var(--teal-hairline)" }
 };
 class Component extends DCLogic {
-  state = { open: false, pos: "" };
-
-  componentDidMount() {
-    this.gone = () => { if (this.state.open) this.setState({ open: false }); };
-    this.esc = (ev) => { if (ev.key === "Escape" && this.state.open) this.setState({ open: false }); };
-    window.addEventListener("scroll", this.gone, true);
-    window.addEventListener("resize", this.gone);
-    window.addEventListener("keydown", this.esc);
-  }
-
-  componentWillUnmount() {
-    window.removeEventListener("scroll", this.gone, true);
-    window.removeEventListener("resize", this.gone);
-    window.removeEventListener("keydown", this.esc);
-  }
-
-  show(el) {
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    const width = Math.min(320, window.innerWidth * 0.76);
-    const left = Math.max(12, Math.min(r.left, window.innerWidth - width - 12));
-    const below = window.innerHeight - r.bottom > 170;
-    this.setState({
-      open: true,
-      pos: below
-        ? "left:" + Math.round(left) + "px; top:" + Math.round(r.bottom + 7) + "px;"
-        : "left:" + Math.round(left) + "px; bottom:" + Math.round(window.innerHeight - r.top + 7) + "px;"
-    });
-  }
+  // The bubble itself — its placement, its show/hide, its dismiss listeners —
+  // moved into InfoTooltip (shared with StatusPill/FreshnessDot/HintDot/
+  // EventSignal). This was also the pill that pinned its bubble at
+  // z-index:500 while StatusPill pinned the same kind of surface at 950 —
+  // InfoTooltip settles that at 950 once, for everyone.
+  state = { open: false };
 
   renderVals() {
     const t = TYPES[this.props.type] || { word: this.props.type || "unknown type", prefix: "??", bg: "var(--hairline)", fg: "var(--body)", ring: "inset 0 0 0 1px var(--border-strong)" };
@@ -84,13 +59,15 @@ class Component extends DCLogic {
       wrapStyle: "display:inline-flex; position:relative;" + (why ? " cursor:help;" : ""),
       badgeStyle: "display:inline-flex; align-items:center; gap:6px; font-family:'Onest',sans-serif; font-size:" + size + "; font-weight:600; line-height:var(--line-badge); border-radius:var(--radius-badge); padding:" + (t.ring ? "var(--padding-badge-outline-block) var(--padding-badge-outline-inline)" : "var(--padding-badge-solid-block) var(--padding-badge-solid-inline)") + "; background:" + t.bg + "; color:" + t.fg + "; box-shadow:" + (t.ring || "none") + "; white-space:nowrap;",
       prefixStyle: "font-family:'IBM Plex Mono',ui-monospace,monospace; opacity:1;",
-      bubbleStyle: "position:fixed; z-index:500; " + this.state.pos + " width:min(320px,76vw); background:var(--inverse); color:var(--on-inverse-2); border-radius:var(--radius-chip); padding:12px 14px; font-family:'Onest',sans-serif; font-size:14px; line-height:1.55; font-weight:400; text-align:left; box-shadow:0 14px 34px rgba(33,30,23,.34); white-space:normal; pointer-events:none;",
-      enter: why ? (ev) => this.show(ev && ev.currentTarget) : (() => {}),
+      anchorNode: this.anchorNode || null,
+      enter: why ? (ev) => { this.anchorNode = ev && ev.currentTarget; this.setState({ open: true }); } : (() => {}),
       leave: why ? () => this.setState({ open: false }) : (() => {}),
+      closeHint: () => this.setState({ open: false }),
       tap: why ? (ev) => {
         if (ev && ev.stopPropagation) ev.stopPropagation();
         if (ev && ev.preventDefault) ev.preventDefault();
-        this.show(ev && ev.currentTarget);
+        this.anchorNode = ev && ev.currentTarget;
+        this.setState({ open: true });
       } : (() => {})
     };
   }

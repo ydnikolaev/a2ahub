@@ -115,8 +115,8 @@
       {
         "value": "open",
         "family": "outcome",
-        "labelRU": "Ещё открыт",
-        "labelEN": "Still open",
+        "labelRU": "Ждём хода",
+        "labelEN": "Awaiting a move",
         "explanationRU": "Обмен продолжается, и следующий допустимый шаг ещё ожидается.",
         "explanationEN": "The exchange is ongoing and another permitted step is still expected.",
         "tone": "progressing",
@@ -135,8 +135,8 @@
       {
         "value": "settled",
         "family": "outcome",
-        "labelRU": "Вопрос закрыт",
-        "labelEN": "Resolved",
+        "labelRU": "Ход не нужен",
+        "labelEN": "No move needed",
         "explanationRU": "Обязательство завершено успешно, дальнейший шаг не ожидается.",
         "explanationEN": "The obligation concluded successfully and no further step is expected.",
         "tone": "settled",
@@ -380,7 +380,9 @@
         "explanationRU": "Получатель принял запрос или передачу; работа может продолжаться.",
         "explanationEN": "The recipient accepted the request or handoff; work can continue.",
         "tone": "progressing",
-        "cue": "→"
+        "cue": "→",
+        "pastRU": "принял",
+        "pastEN": "accepted"
       },
       {
         "value": "acknowledge",
@@ -390,7 +392,9 @@
         "explanationRU": "Адресат подтвердил получение документа; это ещё не означает выполнения обязательства.",
         "explanationEN": "The recipient confirmed receipt of the document; this does not yet mean the obligation is fulfilled.",
         "tone": "progressing",
-        "cue": "→"
+        "cue": "→",
+        "pastRU": "подтвердил получение",
+        "pastEN": "acknowledged"
       },
       {
         "value": "activate",
@@ -400,7 +404,9 @@
         "explanationRU": "Опубликованное обязательство введено в действие и теперь заявлено доступным.",
         "explanationEN": "The published obligation was brought into operation and is now declared available.",
         "tone": "progressing",
-        "cue": "→"
+        "cue": "→",
+        "pastRU": "включил в работу",
+        "pastEN": "brought live"
       },
       {
         "value": "approve",
@@ -410,7 +416,9 @@
         "explanationRU": "Обязательное согласование человеком завершилось одобрением.",
         "explanationEN": "The required human review concluded with approval.",
         "tone": "settled",
-        "cue": "✓"
+        "cue": "✓",
+        "pastRU": "согласовал",
+        "pastEN": "approved"
       },
       {
         "value": "block",
@@ -420,7 +428,9 @@
         "explanationRU": "Продолжение остановлено записанной блокировкой до её явного снятия.",
         "explanationEN": "Progress is stopped by a recorded blocker until it is explicitly removed.",
         "tone": "broken",
-        "cue": "×"
+        "cue": "×",
+        "pastRU": "заблокировал",
+        "pastEN": "blocked"
       },
       {
         "value": "cancel",
@@ -430,7 +440,9 @@
         "explanationRU": "Работа остановлена до завершения и больше не ожидает продолжения.",
         "explanationEN": "The work stopped before completion and no longer awaits continuation.",
         "tone": "settled",
-        "cue": "✓"
+        "cue": "✓",
+        "pastRU": "отменил",
+        "pastEN": "cancelled"
       },
       {
         "value": "close",
@@ -440,7 +452,9 @@
         "explanationRU": "Цепочка закрыта и больше не ожидает следующего перехода.",
         "explanationEN": "The thread is closed and no longer awaits another transition.",
         "tone": "settled",
-        "cue": "✓"
+        "cue": "✓",
+        "pastRU": "закрыл",
+        "pastEN": "closed"
       },
       {
         "value": "decline",
@@ -450,7 +464,9 @@
         "explanationRU": "Получатель отказался принять запрос или передачу; ожидаемый результат не достигнут.",
         "explanationEN": "The recipient declined the request or handoff; the expected result was not achieved.",
         "tone": "broken",
-        "cue": "×"
+        "cue": "×",
+        "pastRU": "отказался",
+        "pastEN": "declined"
       },
       {
         "value": "deprecate",
@@ -460,7 +476,9 @@
         "explanationRU": "Версия помечена как устаревающая; для новой работы следует выбрать её преемника.",
         "explanationEN": "The version was marked for phase-out; new work should use its successor.",
         "tone": "needs-you",
-        "cue": "!"
+        "cue": "!",
+        "pastRU": "объявил устаревающим",
+        "pastEN": "deprecated"
       },
       {
         "value": "dispute",
@@ -470,7 +488,9 @@
         "explanationRU": "Участник оспорил результат; разногласие нужно разрешить явно.",
         "explanationEN": "A participant contested the result; the disagreement must be resolved explicitly.",
         "tone": "broken",
-        "cue": "×"
+        "cue": "×",
+        "pastRU": "оспорил",
+        "pastEN": "disputed"
       },
       {
         "value": "note",
@@ -480,7 +500,9 @@
         "explanationRU": "К цепочке добавлена информационная заметка; сама по себе она не определяет состояние протокола.",
         "explanationEN": "An informational note was added to the thread; by itself it does not determine protocol state.",
         "tone": "progressing",
-        "cue": "→"
+        "cue": "→",
+        "pastRU": "добавил заметку",
+        "pastEN": "added a note"
       },
       {
         "value": "propose",
@@ -490,7 +512,9 @@
         "explanationRU": "Предложение опубликовано и теперь ждёт решения адресата.",
         "explanationEN": "A proposal was published and now awaits the recipient's decision.",
         "tone": "waiting-them",
-        "cue": "↗"
+        "cue": "↗",
+        "pastRU": "предложил",
+        "pastEN": "proposed"
       },
       {
         "value": "publish",
@@ -500,7 +524,9 @@
         "explanationRU": "Документ опубликован и доступен участникам как действующая версия.",
         "explanationEN": "The document was published and is available to participants as an active version.",
         "tone": "settled",
-        "cue": "✓"
+        "cue": "✓",
+        "pastRU": "опубликовал",
+        "pastEN": "published"
       },
       {
         "value": "reject",
@@ -510,7 +536,9 @@
         "explanationRU": "Обязательное согласование завершилось отказом; решение не принято.",
         "explanationEN": "The required approval ended in rejection; the decision was not accepted.",
         "tone": "broken",
-        "cue": "×"
+        "cue": "×",
+        "pastRU": "отклонил",
+        "pastEN": "rejected"
       },
       {
         "value": "respond",
@@ -520,7 +548,9 @@
         "explanationRU": "Ответ опубликован; исходный запрос может ещё ждать проверки или закрытия.",
         "explanationEN": "A response was published; the original request may still await verification or closure.",
         "tone": "progressing",
-        "cue": "→"
+        "cue": "→",
+        "pastRU": "ответил",
+        "pastEN": "answered"
       },
       {
         "value": "retire",
@@ -530,7 +560,9 @@
         "explanationRU": "Версия окончательно выведена из использования и должна быть заменена поддерживаемой.",
         "explanationEN": "The version was permanently retired from use and must be replaced by a supported one.",
         "tone": "settled",
-        "cue": "✓"
+        "cue": "✓",
+        "pastRU": "вывел из использования",
+        "pastEN": "retired"
       },
       {
         "value": "satisfy",
@@ -540,7 +572,9 @@
         "explanationRU": "Участники подтвердили, что требуемое условие выполнено.",
         "explanationEN": "The participants confirmed that the required condition has been met.",
         "tone": "settled",
-        "cue": "✓"
+        "cue": "✓",
+        "pastRU": "выполнил требование",
+        "pastEN": "satisfied"
       },
       {
         "value": "start",
@@ -550,7 +584,9 @@
         "explanationRU": "Принятая работа перешла к активному выполнению.",
         "explanationEN": "The accepted work moved into active progress.",
         "tone": "progressing",
-        "cue": "→"
+        "cue": "→",
+        "pastRU": "начал работу",
+        "pastEN": "started"
       },
       {
         "value": "submit",
@@ -560,7 +596,9 @@
         "explanationRU": "Документ передан адресату и ждёт его следующего шага.",
         "explanationEN": "The document was sent to its recipient and awaits their next step.",
         "tone": "waiting-them",
-        "cue": "↗"
+        "cue": "↗",
+        "pastRU": "передал на рассмотрение",
+        "pastEN": "submitted"
       },
       {
         "value": "supersede",
@@ -570,7 +608,9 @@
         "explanationRU": "Другой документ заменил этот; текущая версия сохраняется только в истории.",
         "explanationEN": "Another document replaced this one; the current version remains only in history.",
         "tone": "settled",
-        "cue": "✓"
+        "cue": "✓",
+        "pastRU": "заменил",
+        "pastEN": "superseded"
       },
       {
         "value": "unblock",
@@ -580,7 +620,9 @@
         "explanationRU": "Записанная блокировка снята, и работа может продолжаться.",
         "explanationEN": "The recorded blocker was removed, and work can continue.",
         "tone": "progressing",
-        "cue": "→"
+        "cue": "→",
+        "pastRU": "разблокировал",
+        "pastEN": "unblocked"
       },
       {
         "value": "verify",
@@ -590,7 +632,9 @@
         "explanationRU": "Получатель проверил результат и подтвердил его соответствие запросу.",
         "explanationEN": "The recipient checked the result and confirmed that it satisfies the request.",
         "tone": "settled",
-        "cue": "✓"
+        "cue": "✓",
+        "pastRU": "проверил результат",
+        "pastEN": "verified"
       },
       {
         "value": "verify-fail",
@@ -600,7 +644,9 @@
         "explanationRU": "Проверка завершилась неуспешно; результат не принят.",
         "explanationEN": "Verification failed; the result was not accepted.",
         "tone": "broken",
-        "cue": "×"
+        "cue": "×",
+        "pastRU": "отклонил по проверке",
+        "pastEN": "rejected on verification"
       },
       {
         "value": "verify-pass",
@@ -610,7 +656,9 @@
         "explanationRU": "Проверка завершилась успешно; результат принят.",
         "explanationEN": "Verification passed; the result was accepted.",
         "tone": "settled",
-        "cue": "✓"
+        "cue": "✓",
+        "pastRU": "принял по проверке",
+        "pastEN": "accepted on verification"
       },
       {
         "value": "withdraw",
@@ -620,7 +668,9 @@
         "explanationRU": "Автор отозвал документ до завершения ожидаемого результата.",
         "explanationEN": "The author withdrew the document before the expected result was completed.",
         "tone": "settled",
-        "cue": "✓"
+        "cue": "✓",
+        "pastRU": "отозвал",
+        "pastEN": "withdrew"
       },
       {
         "value": "addressed-no-ack",
@@ -6647,7 +6697,7 @@
       "attachments": null,
       "sync_stale": false,
       "sync_age": "2m",
-      "outcome": "open",
+      "outcome": "settled",
       "terminal": false
     },
     {
@@ -7220,7 +7270,7 @@
       "attachments": null,
       "sync_stale": false,
       "sync_age": "2m",
-      "outcome": "open",
+      "outcome": "settled",
       "terminal": false
     },
     {
@@ -7385,7 +7435,7 @@
       "attachments": null,
       "sync_stale": false,
       "sync_age": "2m",
-      "outcome": "open",
+      "outcome": "settled",
       "terminal": false
     },
     {

@@ -24,7 +24,14 @@
           <span style="position:relative; flex:0 0 auto;">
             <button type="button" onClick="{{ toggleMore }}" aria-expanded="{{ moreExpanded }}" style="{{ moreBtnStyle }}"><span>{{ moreLabel }}</span><dc-import name="DisclosureIcon" expanded="{{ moreOpen }}" hint-size="18px,18px"></dc-import></button>
             <sc-if value="{{ moreOpen }}" hint-placeholder-val="{{ false }}">
-              <span style="position:absolute; top:calc(100% + 6px); left:0; z-index:95; min-width:210px; background:var(--surface); border-radius:12px; padding:8px; box-shadow:0 8px 24px rgba(0,0,0,.22); display:flex; flex-direction:column; gap:2px;">
+              <!-- This "more tabs" popover was the one shadow in the corpus built on
+                   rgb(0,0,0) instead of the ink (rgba(33,30,23,...)): dark theme
+                   re-points the ink AND --shadow-popover for a black page, but a
+                   literal rgb(0,0,0) shadow was already black, so nothing here was
+                   visibly broken by the swap -- it just meant this menu never
+                   inherited the popover role's actual elevation. Repointed onto
+                   --shadow-popover, which is what a dropdown menu IS. -->
+              <span style="position:absolute; top:calc(100% + 6px); left:0; z-index:95; min-width:210px; background:var(--surface); border-radius:12px; padding:8px; box-shadow:var(--shadow-popover); display:flex; flex-direction:column; gap:2px;">
                 <sc-for list="{{ moreTabs }}" as="m" hint-placeholder-count="3">
                   <button type="button" onClick="{{ m.go }}" style="{{ m.style }}">{{ m.label }}</button>
                 </sc-for>
@@ -35,8 +42,20 @@
       </nav>
       </span>
       <span class="a2a-topbar-actions" style="flex:0 0 auto; display:flex; align-items:center; gap:8px;">
+        <!-- The live-transport chip is gone from the bar. It reported the state
+             of a channel a static `a2a html` page never has, so it read
+             "Живое обновление недоступно" permanently — a standing apology for
+             a feature this render does not claim. The state still reaches the
+             page: DashboardLive owns it, and the Refresh control beside this is
+             what a reader acts on. -->
+        <!-- The transport state has no chip any more (it read as decoration
+             beside a button that says the same thing), but it still has to be
+             ANNOUNCED: a reader on a screen reader gets "newer data available"
+             / "refresh in progress" / "showing the new version" from this live
+             region, which is exactly the sequence the visual-contract suite
+             follows. Visually hidden, never silent. -->
         <sc-if value="{{ hasLiveTransport }}" hint-placeholder-val="{{ false }}">
-          <span role="status" title="{{ liveTransportResult.explanation }}" style="display:inline-flex; align-items:center; gap:6px; min-height:38px; box-sizing:border-box; padding:6px 10px; border-radius:var(--radius-control); background:var(--canvas); color:var(--body); font-size:14px;"><span aria-hidden="true">{{ liveTransportResult.cue }}</span><span>{{ liveTransportResult.label }}</span></span>
+          <span role="status" aria-live="polite" style="position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;">{{ liveTransportResult.label }}</span>
         </sc-if>
         <sc-if value="{{ hasRefresh }}" hint-placeholder-val="{{ false }}">
           <button type="button" onClick="{{ refreshDashboard }}" aria-label="{{ refreshLabel }}" title="{{ refreshLabel }}" style="display:inline-flex; align-items:center; justify-content:center; min-height:38px; box-sizing:border-box; padding:7px 12px; border:0; border-radius:var(--radius-control); background:var(--primary); color:var(--on-primary); font-family:'Onest',sans-serif; font-size:14px; font-weight:600; cursor:pointer;">{{ refreshLabel }}</button>
@@ -67,6 +86,16 @@
 </sc-if>
 <sc-if value="{{ isPage }}" hint-placeholder-val="{{ false }}">
 <sc-if value="{{ hasError }}" hint-placeholder-val="{{ false }}">
+      <!-- DEVIATION (dark-shadow-audit): this is only the FIRST layer of
+           --shadow-panel's two-layer value, not a drifted copy of it -- the
+           same single-layer literal marks every small max-width:640px notice
+           panel elsewhere in the corpus (e.g. 15-changelog-v4.dc.html:154),
+           while every full detail-pane panel carries the complete two-layer
+           value. Forcing --shadow-panel here would add a soft distant shadow
+           that this smaller notice box has never had -- left as a literal
+           per the "don't force the nearest token" rule; still owed a real
+           token (or a --shadow-notice role) in a follow-up, since it does
+           not move with the dark-theme ink swap today. -->
       <div style="max-width:640px; background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 3px rgba(33,30,23,.08);">
         <h1 style="margin:0 0 10px; font-size:24px; font-weight:600; color:var(--blocking-ink);">{{ errorTitle }}</h1>
         <p style="margin:0 0 10px; font-size:17px; line-height:1.6; color:var(--body);">{{ errorText }}</p>
@@ -251,8 +280,15 @@ class Component extends DCLogic {
   inScope(space) { return this.state.space === "all" || space === this.state.space; }
 
   localeStyle(active) {
+    // DEVIATION (dark-shadow-audit): the active EN/RU pill's lift is a small,
+    // high-alpha "active segment on --canvas" shadow -- same role as
+    // SegmentedFilter's active state -- and it matches no elevation-scale
+    // token: --shadow-card is the same 0 1px 2px shape but at .06 alpha,
+    // roughly a third the contrast. Forcing --shadow-card would visibly wash
+    // out the active-state affordance, so it stays a literal (still owed a
+    // real token, since it won't move with the dark-theme ink swap today).
     return "display:flex; align-items:center; justify-content:center; height:32px; box-sizing:border-box; font-family:'Onest',sans-serif; font-size:13px; font-weight:600; border:0; border-radius:var(--radius-inner); padding:0 8px; cursor:pointer; " +
-      (active ? "background:var(--surface); color:var(--text); box-shadow:0 1px 2px rgba(33,30,23,.14);" : "background:transparent; color:var(--muted);");
+      (active ? "background:var(--surface); color:var(--text); box-shadow:var(--shadow-card);" : "background:transparent; color:var(--muted);");
   }
 
   navLayout() {
@@ -385,7 +421,7 @@ class Component extends DCLogic {
       hasLiveTransport: !!liveTransportResult,
       liveTransportResult,
       hasRefresh: !!refresh,
-      refreshLabel: refresh ? (ru ? "Обновить дашборд" : "Refresh dashboard") : "",
+      refreshLabel: refresh ? (ru ? "Обновить" : "Refresh") : "",
       refreshDashboard: () => { if (refresh) refresh(); },
       isOverview: !!d && s.view === "overview",
       isWork: !!d && s.view === "work",

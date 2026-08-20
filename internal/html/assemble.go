@@ -1581,23 +1581,19 @@ func toArtifactDetail(show cache.ShowResult) (ArtifactDetail, error) {
 		// no outcome field, and the two arguments the domain needs — the kind
 		// and the state — are both already on the ShowResult being projected.
 		//
-		// Left on fold.OutcomeOf, not migrated to fold.OutcomeOfDocument
-		// (spec 08, defects-fix-2026-08, one of the four sites P5 left):
-		// OutcomeOfDocument needs a THIRD fact, moveOwed, for exactly the
-		// (announcement, published) and (contract, published) pairs — the
-		// SAME fa.moveOwed internal/cache/mirror.go already resolves once
-		// per document and toItem (store.go) already carries onto
-		// Item.Outcome via OutcomeOfDocument. cache.ShowResult carries
-		// neither moveOwed nor Outcome; it has never asked the registry/
-		// ack_requested question this fold pass folds into moveOwed. Migrating
-		// here without that fact means either guessing (wrong) or hardcoding
-		// moveOwed=false (silently WRONG for exactly the case the whole
-		// function exists to distinguish). What it would take: a
-		// `MoveOwed bool` field on cache.ShowResult, populated in
-		// Store.Show/ShowMany off the same foldedArtifact.moveOwed toItem
-		// already reads — an internal/cache change outside this phase's
-		// allowlist.
-		Outcome:          fold.OutcomeOf(fold.Kind(show.Type), fold.State(show.State)),
+		// The document-aware form, which needs a THIRD fact beyond kind and
+		// state: whether anybody still owes a move. Without it, a published
+		// announcement and a published contract read `open` here while
+		// Item.Outcome — which has asked OutcomeOfDocument since defects/01 —
+		// read `settled`, so the same document said "Settled" in the list and
+		// "Awaiting a move" in the pane next to it. Six of axon's
+		// twenty-five documents, two of the demo fixture's eight.
+		//
+		// The fix is the one this comment used to describe as out of scope:
+		// cache.ShowResult now carries MoveOwed off the same
+		// foldedArtifact.moveOwed that toItem reads, so both projections
+		// answer the same question with the same three facts.
+		Outcome:          fold.OutcomeOfDocument(fold.Kind(show.Type), fold.State(show.State), show.MoveOwed),
 		Terminal:         fold.Terminal(fold.Kind(show.Type), fold.State(show.State)),
 		OperationalItems: operationalItems,
 	}, nil
@@ -1627,10 +1623,20 @@ func attachLinkedArtifactEvents(detail *ArtifactDetail, views []ThreadView) {
 			}
 			actor, _ := row.Event.Actor["name"].(string)
 			actorSystem, _ := row.Event.Actor["system"].(string)
+			// kind and model travel with the name, and used to be dropped here.
+			// The dashboard resolves an agent-kind actor to the SYSTEM's owner
+			// and moves the tool into a badge, so an event that arrived through
+			// this join printed "claude-code answered" beside the owner's
+			// photograph — the tool's name where a person's belongs, on the one
+			// row a reader uses to tell who acted. `respond` reaches the
+			// document's timeline only through this path, which is why the
+			// defect was visible on responses and nowhere else.
+			actorKind, _ := row.Event.Actor["kind"].(string)
+			actorModel, _ := row.Event.Actor["model"].(string)
 			detail.Events = append(detail.Events, ArtifactDetailEvent{
 				ULID: row.Event.ULID, Subject: row.Event.Subject,
 				Transition: row.Event.Transition, ClaimedState: row.Event.ClaimedState,
-				Actor: actor, ActorSystem: actorSystem, At: row.At,
+				Actor: actor, ActorSystem: actorSystem, ActorKind: actorKind, ActorModel: actorModel, At: row.At,
 			})
 			seen[row.Event.ULID] = true
 		}

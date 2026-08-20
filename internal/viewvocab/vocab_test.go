@@ -44,3 +44,44 @@ func TestToneCuesReturnsFreshCopy(t *testing.T) {
 		}
 	}
 }
+
+// A transition without an actor form falls back to its label, and the label is
+// a statement about the record ("ответ записан"), not about the person the row
+// names. That fallback is honest but reads as broken grammar in a sentence
+// which already carries a name, so the set is closed here rather than left to
+// whoever adds the next transition.
+func TestEveryTransitionCarriesItsActorForm(t *testing.T) {
+	t.Parallel()
+	table := DashboardVocabulary()
+	seen := 0
+	for _, entry := range table.Entries {
+		if entry.Family != VocabularyFamilyTransition {
+			if entry.PastRU != "" || entry.PastEN != "" {
+				t.Errorf("%s/%s carries an actor form; only transitions have one", entry.Family, entry.Value)
+			}
+			continue
+		}
+		seen++
+		if entry.PastRU == "" || entry.PastEN == "" {
+			t.Errorf("transition %q has no actor form — a timeline row would read %q after a person's name", entry.Value, entry.LabelRU)
+		}
+		if entry.PastRU == entry.LabelRU {
+			t.Errorf("transition %q reuses its label as the actor form; the two answer different questions", entry.Value)
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no transition entries found — this test would pass vacuously")
+	}
+	for value := range transitionPastForms {
+		found := false
+		for _, entry := range table.Entries {
+			if entry.Family == VocabularyFamilyTransition && entry.Value == value {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("actor form %q names a transition the vocabulary does not carry", value)
+		}
+	}
+}

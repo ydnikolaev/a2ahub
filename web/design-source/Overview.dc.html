@@ -179,7 +179,11 @@
                   </div>
                   </sc-if>
 
-                  <div data-operational-source="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline); display:flex; align-items:center; gap:8px; flex-wrap:wrap; {{ r.sourceStyle }}"><span>{{ r.sourceLabel }}</span><dc-import name="StatusPill" result="{{ r.sourceResult }}" size="small" hint-size="120px,24px"></dc-import><span style="color:var(--muted);">{{ r.sourceSynced }}</span><sc-if value="{{ r.hasSourceUnavailableText }}" hint-placeholder-val="false"><span style="flex-basis:100%; color:var(--body);">{{ r.sourceUnavailableText }}</span></sc-if></div>
+                  <!-- The source row is gone: it printed the SAME resolved
+                       source-freshness the dot beside the process id already
+                       shows, followed by a raw nanosecond ISO instant. One
+                       verdict, said once, in the place a reader is already
+                       looking; the exact instant stays in Technical detail. -->
                   <div data-operational-windows="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline); color:var(--muted);"><sc-if value="{{ r.hasWorkWindowText }}" hint-placeholder-val="{{ true }}"><div>{{ r.workBoundsLabel }}: {{ r.workWindowText }}</div></sc-if><sc-if value="{{ r.hasConsistencyWindowText }}" hint-placeholder-val="{{ true }}"><div>{{ r.consistencyBoundsLabel }}: {{ r.consistencyWindowText }}</div></sc-if></div>
                   <div style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline);"><details><summary style="cursor:pointer; color:var(--muted); font-size:13px; font-weight:600;">{{ r.technicalCollapsedLabel }}</summary><div style="margin-top:6px; color:var(--muted); font-family:'IBM Plex Mono',monospace; font-size:12px; overflow-wrap:anywhere;">{{ r.technicalText }}</div></details>
                   </div>
@@ -287,6 +291,53 @@ function formatWhen(iso, ru) {
   const pad = n => String(n).padStart(2, "0");
   return pad(parsed.getUTCDate()) + "." + pad(parsed.getUTCMonth() + 1) + "." + parsed.getUTCFullYear()
     + " " + pad(parsed.getUTCHours()) + ":" + pad(parsed.getUTCMinutes());
+}
+
+const AGENT_LABELS = {
+  "claude-code": "Claude Code",
+  "codex": "Codex",
+  "github-copilot": "GitHub Copilot",
+  "cursor": "Cursor",
+  "windsurf": "Windsurf",
+  "gemini-cli": "Gemini CLI",
+  "antigravity": "Antigravity",
+  "cline": "Cline",
+  "roo-code": "Roo Code",
+  "kilo-code": "Kilo Code",
+  "opencode": "OpenCode",
+  "aider": "Aider",
+  "continue": "Continue",
+  "amp": "Amp",
+  "goose": "Goose",
+  "devin": "Devin",
+  "zed": "Zed",
+  "jetbrains": "JetBrains AI",
+  "replit": "Replit Agent",
+  "warp": "Warp",
+  "trae": "Trae",
+  "augment": "Augment"
+};
+
+// An agent-kind actor is a TOOL, and the row it appears on names a person: the
+// principal is the system's owner, exactly as Exchange and Threads resolve it.
+// Without this the Overview milestone printed "claude-code опубликовано
+// XC-…" — the tool's name where the owner belongs, over the owner's avatar.
+function resolveMilestoneActor(data, actor) {
+  const system = String(actor && actor.system || "");
+  const recorded = String(actor && actor.name || "");
+  const node = (data.nodes || []).find(candidate => candidate.system === system);
+  const owner = node && node.owners && node.owners.length ? String(node.owners[0]) : "";
+  const agentKey = recorded.trim().toLowerCase();
+  const agentID = actor && actor.kind === "agent" && AGENT_LABELS[agentKey] ? agentKey : "";
+  const name = agentID ? String(owner || system || "") : String(recorded || owner || system || "");
+  return {
+    actorName: name,
+    avatar: node && node.avatar ? node.avatar : "",
+    hasAgentBadge: !!agentID,
+    agentID,
+    agentLabel: AGENT_LABELS[agentID] || agentID,
+    agentModel: agentID ? String(actor && actor.model || "") : ""
+  };
 }
 
 class Component extends DCLogic {
@@ -503,13 +554,24 @@ class Component extends DCLogic {
     // AC-7: the card stays identifiable with every authored fact absent — the
     // fallback chain ends on a carried identifier, never on a sentence.
     const identityFallback = row.thread || row.space || (ru ? "процесс" : "process");
-    const milestoneActorName = latestActor.name || latestActor.system || (ru ? "система" : "system");
+    // Named apart from the accent identity array a few lines above, which
+    // shadows any same-named function in this scope.
+    const milestoneIdentityResult = resolveMilestoneActor(data, latestActor);
+    const milestoneActorName = milestoneIdentityResult.actorName || (ru ? "система" : "system");
     const milestoneEvent = hasMilestone ? {
       actorName:milestoneActorName,
+      avatar:milestoneIdentityResult.avatar,
+      hasAvatar:!!milestoneIdentityResult.avatar,
+      lacksAvatar:!milestoneIdentityResult.avatar,
+      hasAgentBadge:milestoneIdentityResult.hasAgentBadge,
+      agentID:milestoneIdentityResult.agentID,
+      agentLabel:milestoneIdentityResult.agentLabel,
+      agentModel:milestoneIdentityResult.agentModel,
       avatarMono:String(milestoneActorName || "?").slice(0, 2).toUpperCase(),
       systemSelf:!latestActor.name && !!latestActor.system,
       transitionResult:milestoneResult,
-      actionText:milestoneResult.label,
+      // The actor's form: this row names a person, so it reads "опубликовал".
+      actionText:milestoneResult.past,
       subjectLabel:latest.subject || "",
       // §1's composition order: "system · localized time".
       meta:[latestActor.system || "", formatWhen(latest.at, ru)].filter(Boolean).join(" · ")
@@ -533,7 +595,10 @@ class Component extends DCLogic {
       space:row.space || "",
       thread:row.thread || "",
       title:row.title || identityFallback,
-      heading:(ru ? "Операционный процесс — " : "Operational process — ") + (row.title || identityFallback),
+      // The row IS the process; prefixing every title with the category
+      // says nothing about WHICH one and pushes the actual name past the
+      // fold on a narrow card.
+      heading:row.title || identityFallback,
       protocolLabel:ru ? "Протокол" : "Protocol",
       protocolResult,
       hasProtocolLead,
@@ -621,10 +686,13 @@ class Component extends DCLogic {
       openCard:() => {
         if (cardID && actions.openCard) actions.openCard("operational-process", cardID, "");
       },
-      openThreadCardLabel:(ru ? "Открыть карточку треда: " : "Open thread card: ") + (row.title || row.thread),
+      openThreadCardLabel:(ru ? "Открыть тред: " : "Open thread: ") + (row.title || row.thread),
       openThreadCardText:ru ? "Открыть тред" : "Open thread",
+      // "Open thread" opens the THREAD, on the screen that reads threads —
+      // not a card modal over the overview. A reader who asked to go there
+      // wants the transcript and the rest of the list, not a dialog to close.
       openThreadCard:() => {
-        if (threadCardID && actions.openCard) actions.openCard("thread", threadCardID, "");
+        if (actions.navigate) actions.navigate("threads", { threadSel:row.thread || "", threadSpace:row.space || "", tvFocus:"" });
       }
     };
   }

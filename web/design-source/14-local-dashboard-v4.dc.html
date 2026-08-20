@@ -92,6 +92,22 @@
   --on-primary: #FAF7F0;
   --header-bg: rgba(241,238,230,.94);
   --shadow-card: 0 1px 2px rgba(33,30,23,.06);
+  /* Elevation, by ROLE rather than by hand. Every surface that lifts off the
+   * page used to type its own rgba(33,30,23,α) — the light theme's ink, written
+   * as a literal — which meant the dark theme could not reach it: the block
+   * below re-points the ink for everything EXCEPT a colour that was copied
+   * instead of referenced. A selected row on the dark page kept casting a warm
+   * light-mode shadow, and did so in eighteen files at once. Roles, not
+   * values, so a surface asks for what it IS and the theme answers. */
+  --shadow-panel: 0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);
+  --shadow-popover: 0 16px 40px -12px rgba(33,30,23,.42);
+  --shadow-selected-card: 0 3px 12px -4px rgba(33,30,23,.24);
+  --shadow-tooltip: 0 18px 40px -18px rgba(33,30,23,.34);
+  --shadow-modal: 0 24px 70px -22px rgba(33,30,23,.65);
+  /* The scrim is a FILL, not a shadow: it dims the page behind a dialog. It
+   * lives here because it is the same ink question, and it is the one value a
+   * modal must not invent for itself. */
+  --scrim: rgba(33,30,23,.5);
   /* Shared shape scale: nested controls step inward while identity chips get
    * the softer silhouette needed around circular avatars. */
   --radius-control: 10px;
@@ -224,6 +240,15 @@ html[data-theme="dark"] {
   --on-primary: #16140F;
   --header-bg: rgba(22,20,15,.94);
   --shadow-card: 0 1px 2px rgba(0,0,0,.4);
+  /* Dark elevation is black, not tinted ink, and carries more alpha: on a
+   * #16140F page a warm shadow reads as a smudge, and a faint one disappears
+   * entirely. Same roles, same geometry, so nothing shifts but the colour. */
+  --shadow-panel: 0 1px 3px rgba(0,0,0,.5), 0 18px 40px -28px rgba(0,0,0,.75);
+  --shadow-popover: 0 16px 40px -12px rgba(0,0,0,.7);
+  --shadow-selected-card: 0 3px 12px -4px rgba(0,0,0,.6);
+  --shadow-tooltip: 0 18px 40px -18px rgba(0,0,0,.68);
+  --shadow-modal: 0 24px 70px -22px rgba(0,0,0,.8);
+  --scrim: rgba(0,0,0,.66);
   --map-canvas: #191711;
   --map-grid: rgba(173,164,140,.11);
 }
@@ -326,7 +351,10 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
   <dc-import name="DashboardShell" ctx="{{ shellTopCtx }}" hint-size="100%,84px"></dc-import>
   <sc-if value="{{ hasPageHeader }}" hint-placeholder-val="{{ false }}"><dc-import name="DashboardLive" data="{{ liveData }}" on-hydrate="{{ hydrateDashboard }}" on-state="{{ setLiveTransport }}" on-ready="{{ setRefresh }}" hint-size="0,0"></dc-import></sc-if>
 
-  <main style="flex:1 1 auto; min-width:0; width:min(1240px, 100% - 56px); margin:0 auto; padding:26px 0 70px; box-sizing:border-box;">
+  <!-- 70px of air under the last row was a footer-sized gap on every screen
+       whose columns end early. The footer already carries its own top border
+       and padding; this only needs enough to keep the last card off it. -->
+  <main style="flex:1 1 auto; min-width:0; width:min(1240px, 100% - 56px); margin:0 auto; padding:26px 0 24px; box-sizing:border-box;">
 
     <dc-import name="DashboardShell" ctx="{{ shellPageCtx }}" hint-size="100%,160px"></dc-import>
 
@@ -1215,9 +1243,12 @@ class Component extends DCLogic {
       ,sourceURL: (space, path, revision) => this.sourceURL(space, path, revision)
     };
     const allowed = {
-      Overview: ["patch", "navigate", "cardID", "cardAccent", "openCard", "openAggregate"],
-      ExchangeView: ["patch", "navigate", "cardID", "cardAccent", "openCard"],
-      ThreadsView: ["patch", "navigate", "cardID", "cardAccent", "openCard"],
+      // closeCard rides with navigate: a door that LEAVES for another screen
+      // has to dismiss the card it was opened from, or the reader lands behind
+      // a dialog and thinks the button is dead.
+      Overview: ["patch", "navigate", "cardID", "cardAccent", "openCard", "closeCard", "openAggregate"],
+      ExchangeView: ["patch", "navigate", "cardID", "cardAccent", "openCard", "closeCard"],
+      ThreadsView: ["patch", "navigate", "cardID", "cardAccent", "openCard", "closeCard"],
       ContractsView: ["patch", "navigate", "copy", "sourceURL", "cardID", "cardAccent", "openCard"],
       MapView: ["patch", "navigate", "cardID", "cardAccent", "openCard"],
       SpacesView: ["cardID", "cardAccent", "openCard"], VersionsView: ["patch", "copy"], DocsView: ["patch"], GuideView: []

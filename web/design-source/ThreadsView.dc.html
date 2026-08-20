@@ -19,6 +19,10 @@
               <button type="button" class="a2a-pick" data-thread-space="{{ t.space }}" data-thread-id="{{ t.id }}" data-card-summary="{{ t.summaryAttr }}" aria-pressed="{{ t.selected }}" onClick="{{ t.openCard }}" style="{{ t.style }}">
                 <span style="display:flex; align-items:flex-start; gap:8px; flex-wrap:nowrap; margin-bottom:8px;">
                   <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px;">
+                    <!-- Whose move, read off the two carried booleans the
+                         server already resolved (settled/yourMove), never
+                         recomputed here from raw events. -->
+                    <dc-import name="StatusPill" text="{{ t.pillText }}" tone="{{ t.pillTone }}" hint-size="110px,26px"></dc-import>
                     <span style="font-size:15px; color:var(--muted);">{{ t.participants }}</span>
                   </span>
                   <span style="flex:0 0 auto; font-size:15px; color:var(--muted);">{{ t.age }}</span>
@@ -30,7 +34,14 @@
           </div>
           </sc-if>
 
-          <div style="min-width:0; background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
+          <!-- This panel's shadow used to be the light theme's ink typed out
+               by hand as a literal rgb triplet (33, 30, 23). html[data-theme="dark"]
+               re-points --shadow-panel to a black-based value on the #16140F
+               page; a copied literal doesn't hear that swap, so a dark-theme
+               reader kept seeing this detail pane cast a warm light-mode
+               shadow. --shadow-panel is exactly this value, so this is a
+               straight token swap, no behavior change. -->
+          <div style="min-width:0; background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:var(--shadow-panel);">
             <sc-if value="{{ tvMissing }}" hint-placeholder-val="{{ false }}">
               <dc-import name="EmptyState" title="{{ threadMissingTitle }}" text="{{ threadMissingText }}" size="panel" hint-size="100%,240px"></dc-import>
             </sc-if>
@@ -54,95 +65,129 @@
               </div>
               </sc-if>
               <sc-if value="{{ normalMode }}" hint-placeholder-val="{{ true }}">
-              <h2 data-thread-title class="a2a-detail-title" style="margin:0 0 var(--space-card-title-to-content);">{{ tvHeading }}</h2>
-
-              <!-- The lead is one carried sentence. Everything that follows
-                   is a separate P5 fact position, never folded into it. -->
-              <div data-thread-lead>
-                <div style="{{ tvPendingCalloutStyle }}">
-                  <div>
-                    <div style="{{ tvPendingTitleStyle }}">{{ whoseMoveLabel }}</div>
-                    <div style="{{ tvPendingTextStyle }}">{{ whoseMoveText }}</div>
-                  </div>
-                </div>
-              </div>
-
-              <div data-thread-protocol style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-top:var(--space-after-section-heading);">
-                <strong style="font-size:14px; color:var(--muted);">{{ protocolLabel }}</strong>
-                <span style="font-size:15px; color:var(--body);">{{ tvProtocolText }}</span>
-              </div>
-
-              <div data-thread-participants role="group" aria-label="{{ tvParticipantsAria }}" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:var(--space-after-section-heading);">
-                <strong style="font-size:14px; color:var(--muted);">{{ participantsLabel }}</strong>
+              <!-- Who is in this conversation reads BEFORE what it is about —
+                   faces first, the way an author line sits above a title
+                   everywhere else on this dashboard. -->
+              <div data-thread-participants role="group" aria-label="{{ tvParticipantsAria }}" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 var(--space-card-author-to-title);">
                 <span style="display:flex; align-items:center;">
                   <sc-for list="{{ tvParticipantFaces }}" as="p" hint-placeholder-count="3">
                     <span title="{{ p.title }}" style="{{ p.style }}">{{ p.mono }}</span>
                   </sc-for>
                 </span>
-                <span style="font-size:15px; color:var(--body);">{{ tvParticipantsText }}</span>
+                <span style="font-size:15px; color:var(--body); overflow-wrap:anywhere;">{{ tvParticipantsText }} · <span style="font-family:'IBM Plex Mono',ui-monospace,monospace;">{{ tvSpaceText }}</span></span>
+                <!-- The thread's freshness kept its dot when the snapshot footer
+                     went: the footer's three lines were chrome, but whether the
+                     local copy is current is a fact a reader acts on. One glyph
+                     beside the parties, with the full sentence on hover. -->
+                <sc-if value="{{ tvHasFreshness }}" hint-placeholder-val="{{ true }}"><dc-import name="FreshnessDot" result="{{ tvFreshnessResult }}" age="{{ tvFreshnessAge }}" compact="{{ true }}" hint-size="12px,12px"></dc-import></sc-if>
               </div>
 
-              <div data-thread-membership style="display:flex; align-items:baseline; gap:9px; flex-wrap:wrap; margin-top:var(--space-after-section-heading);">
-                <strong style="font-size:14px; color:var(--muted);">{{ membershipLabel }}</strong>
-                <span style="font-size:15px; color:var(--body);">{{ tvMembershipText }}</span>
+              <h2 data-thread-title class="a2a-detail-title" style="margin:0 0 var(--space-card-title-to-content);">{{ tvTitle }}</h2>
+
+              <!-- The lead is one carried sentence. Everything that follows
+                   is a separate P5 fact position, never folded into it. The
+                   block's colour is not permanent grey: it reads the SAME
+                   vocabulary result its own text names, so green ("no move
+                   owed") and amber ("a move is owed") can never disagree
+                   with the words beside them. -->
+              <div data-thread-lead>
+                <div style="{{ tvPendingCalloutStyle }}">
+                  <div style="display:flex; align-items:flex-start; gap:14px; flex-wrap:wrap;">
+                    <div style="flex:1 1 260px; min-width:0;">
+                      <div style="{{ tvPendingTitleStyle }}">{{ whoseMoveLabel }}</div>
+                      <div style="{{ tvPendingTextStyle }}">{{ whoseMoveText }}</div>
+                    </div>
+                    <!-- The handover sits WITH the move it hands over. It used
+                         to live under the obligations heading, one section
+                         away from the sentence that says a move is owed and
+                         whose it is. -->
+                    <sc-if value="{{ tvHasPrompt }}" hint-placeholder-val="{{ true }}">
+                      <span style="flex:0 0 auto;"><dc-import name="AgentPrompt" det="{{ tvPrompt }}" hint-size="100%,44px"></dc-import></span>
+                    </sc-if>
+                  </div>
+                </div>
               </div>
+
+              <!-- The panel prints no protocol or membership sentence. Both said
+                   back what the reader is already looking at: the callout above
+                   states whether a move is owed, the participants ride the face
+                   row beside the title, and the title IS the opener. The card
+                   face keeps both as carried facts (card-spec/thread.md); a
+                   panel standing next to the evidence does not need them. -->
 
               <!-- One handover for the thread, not one per document. The
                    documents stay in their carried order beneath it. -->
-              <div data-thread-open-items style="display:flex; flex-direction:column; gap:8px; margin-top:var(--space-after-section-heading);">
-                <strong style="font-size:14px; color:var(--muted);">{{ openObligationsLabel }}</strong>
-                <sc-if value="{{ tvHasPrompt }}" hint-placeholder-val="{{ true }}">
-                  <div style="margin-bottom:6px;">
-                    <dc-import name="AgentPrompt" det="{{ tvPrompt }}" hint-size="100%,44px"></dc-import>
-                  </div>
-                </sc-if>
-                <sc-if value="{{ tvOpenKnownEmpty }}" hint-placeholder-val="{{ false }}"><span style="font-size:15px; color:var(--body);">{{ noneRecordedText }}</span></sc-if>
-                <sc-if value="{{ openItemsWindowVisible }}" hint-placeholder-val="{{ false }}"><span style="font-size:15px; color:var(--muted);">{{ openItemsWindowText }}</span></sc-if>
+              <!-- The thread's open obligations: a titled section, not a muted
+                   label glued to a stack of buttons. Nothing owed prints
+                   nothing at all — the heading over empty space was the worst
+                   of it, because a reader cannot tell "no obligations" from
+                   "we failed to load them". -->
+              <sc-if value="{{ tvHasObligations }}" hint-placeholder-val="{{ true }}">
+              <div data-thread-open-items style="margin-top:var(--space-section); padding-top:var(--space-after-section-heading); border-top:1px solid var(--hairline); display:flex; flex-direction:column; gap:10px;">
+                <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;">
+                  <span style="font-size:16px; font-weight:600; color:var(--text);">{{ openObligationsLabel }}</span>
+                  <sc-if value="{{ openItemsWindowVisible }}" hint-placeholder-val="{{ false }}"><span style="font-size:var(--font-meta); line-height:var(--line-meta); color:var(--muted);">{{ openItemsWindowText }}</span></sc-if>
+                </div>
                 <sc-for list="{{ tvOpen }}" as="o" hint-placeholder-count="2">
-                    <!-- The pending document is a document card, not an id row:
-                         its title is the primary label and the whole surface
-                         opens the same ArtifactDetail modal used elsewhere. -->
-                    <button type="button" onClick="{{ o.openDocument }}" aria-label="{{ o.openLabel }}" style="width:100%; box-sizing:border-box; display:block; background:var(--surface); color:var(--text); border:0; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); text-align:left; cursor:pointer; box-shadow:inset 0 0 0 1px var(--hairline); {{ o.accentStyle }}">
-                      <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
-                        <span style="display:inline-flex; pointer-events:none;"><dc-import name="TypeBadge" type="{{ o.type }}" size="small" hint-size="130px,24px"></dc-import></span>
-                        <span style="display:inline-flex; pointer-events:none;"><dc-import name="StatusPill" result="{{ o.stateResult }}" size="small" hint-size="120px,24px"></dc-import></span>
-                        <span style="display:inline-flex; pointer-events:none;"><dc-import name="StatusPill" result="{{ o.outcomeResult }}" size="small" hint-size="120px,24px"></dc-import></span>
-                        <span style="flex:1 1 auto; min-width:0; text-align:right; font-size:15px; color:var(--muted);">{{ o.needed }}</span>
-                      </div>
-                      <div style="margin-top:var(--space-inline); font-size:var(--font-card-title-sm); line-height:var(--line-card-title-sm); font-weight:600; color:var(--text); overflow-wrap:anywhere;">{{ o.title }}</div>
-                      <div style="margin-top:var(--space-inline); font-size:15px; line-height:1.5; color:var(--body); overflow-wrap:anywhere;">{{ o.reasonSentence }}</div>
+                    <!-- The card is a container, and only its FACE is the door.
+                         The technical disclosure used to sit inside the button:
+                         a <details> nested in a clickable surface never opens —
+                         the click reaches the card and pops the document
+                         instead. Everything below the face is a sibling now,
+                         so the summary toggles and the face still opens. -->
+                    <div style="background:var(--page); border-radius:var(--radius-nested); box-shadow:inset 0 0 0 1px var(--border); overflow:hidden; {{ o.accentStyle }}">
+                      <button type="button" onClick="{{ o.openDocument }}" aria-label="{{ o.openLabel }}" style="width:100%; box-sizing:border-box; display:block; background:transparent; color:var(--text); border:0; padding:var(--padding-card-block) var(--padding-card-inline); text-align:left; cursor:pointer; font-family:'Onest',sans-serif;">
+                        <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
+                          <span style="display:inline-flex; pointer-events:none;"><dc-import name="TypeBadge" type="{{ o.type }}" size="small" hint-size="130px,24px"></dc-import></span>
+                          <span style="display:inline-flex; pointer-events:none;"><dc-import name="StatusPill" result="{{ o.stateResult }}" size="small" hint-size="120px,24px"></dc-import></span>
+                          <span style="display:inline-flex; pointer-events:none;"><dc-import name="StatusPill" result="{{ o.outcomeResult }}" size="small" hint-size="120px,24px"></dc-import></span>
+                          <span style="flex:1 1 auto; min-width:0; text-align:right; font-size:15px; color:var(--muted);">{{ o.needed }}</span>
+                        </div>
+                        <div style="margin-top:var(--space-inline); font-size:var(--font-card-title-sm); line-height:var(--line-card-title-sm); font-weight:600; color:var(--text); overflow-wrap:anywhere;">{{ o.title }}</div>
+                        <div style="margin-top:var(--space-inline); font-size:15px; line-height:1.5; color:var(--body); overflow-wrap:anywhere;">{{ o.reasonSentence }}</div>
+                      </button>
                       <sc-if value="{{ o.hasHumanGate }}" hint-placeholder-val="{{ false }}">
-                        <div style="margin-top:9px; display:flex; align-items:flex-start; gap:9px; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--surface-section); font-size:15px; line-height:1.5; color:var(--body); overflow-wrap:anywhere;">
+                        <div style="margin:0 var(--padding-card-inline) var(--padding-card-block); display:flex; align-items:flex-start; gap:9px; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--surface-section); font-size:15px; line-height:1.5; color:var(--body); overflow-wrap:anywhere;">
                           <span><dc-import name="StatusPill" result="{{ o.gateResult }}" size="small" hint-size="150px,24px"></dc-import><span style="display:block; margin-top:5px;">{{ o.gateResult.explanation }}</span></span>
                         </div>
                       </sc-if>
-                      <details data-thread-technical style="{{ nestedTechnicalStyle }} margin-top:10px; color:var(--muted);">
-                        <summary style="cursor:pointer; font-size:13px; font-weight:600;">{{ technicalDetailLabel }}</summary>
-                        <div style="margin-top:8px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px; line-height:1.55; overflow-wrap:anywhere;">{{ o.technicalWhy }}</div>
-                        <div style="margin-top:4px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px; line-height:1.55; overflow-wrap:anywhere;">{{ o.technicalExpectedTransition }}</div>
-                        <div style="margin-top:4px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px; line-height:1.55; overflow-wrap:anywhere;">{{ o.ruleIdentity }}</div>
-                      </details>
                       <!-- Operational readiness is a contract's own third
                            state made visible: `undeclared` is not `absent`,
                            and this row is where a consumer sees which of the
                            two they are actually looking at. -->
+                      <!-- A table, not a run-on line of chips: three named
+                           readiness items with three verdicts read as three
+                           rows, and the eye lands on the column of verdicts
+                           instead of parsing "name pill name pill name pill". -->
                       <sc-if value="{{ o.hasOperational }}" hint-placeholder-val="{{ false }}">
-                        <div style="margin-top:10px;">
+                        <div style="margin:0 var(--padding-card-inline) var(--padding-card-block);">
                           <div style="font-size:13px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:6px;">{{ o.operationalLabel }}</div>
-                          <span style="display:flex; gap:7px; flex-wrap:wrap;">
-                            <sc-for list="{{ o.operationalItems }}" as="op" hint-placeholder-count="3">
-                              <span style="display:inline-flex; align-items:center; gap:5px; pointer-events:none;"><span>{{ op.name }}</span><dc-import name="StatusPill" result="{{ op.result }}" size="small" hint-size="180px,24px"></dc-import></span>
-                            </sc-for>
-                          </span>
+                          <table style="width:100%; border-collapse:collapse; font-size:15px;">
+                            <tbody>
+                              <sc-for list="{{ o.operationalItems }}" as="op" hint-placeholder-count="3">
+                                <tr>
+                                  <td style="{{ op.nameStyle }}">{{ op.name }}</td>
+                                  <td style="{{ op.valueStyle }}"><dc-import name="StatusPill" result="{{ op.result }}" size="small" hint-size="120px,24px"></dc-import></td>
+                                </tr>
+                              </sc-for>
+                            </tbody>
+                          </table>
                         </div>
                       </sc-if>
-                    </button>
+                      <details data-thread-technical style="{{ nestedTechnicalStyle }} border-top:1px solid var(--hairline); padding:var(--padding-nested-block) var(--padding-card-inline); color:var(--muted);">
+                        <summary style="cursor:pointer; font-size:13px; font-weight:600;">{{ technicalDetailLabel }}</summary>
+                        <div style="margin-top:8px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px; line-height:1.55; overflow-wrap:anywhere;">{{ o.technicalWhy }}</div>
+                        <div style="{{ nestedNoteBodyStyle }} line-height:1.55;">{{ o.technicalExpectedTransition }}</div>
+                        <div style="{{ nestedNoteBodyStyle }} line-height:1.55;">{{ o.ruleIdentity }}</div>
+                      </details>
+                    </div>
                 </sc-for>
               </div>
+              </sc-if>
 
               <div data-thread-transcript style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin:0 0 0 20px; padding:var(--space-after-section-heading) 0 var(--space-after-section-heading) 34px; border-left:2px solid var(--border);">
                 <div style="font-size:16px; font-weight:600;">{{ causalTimelineLabel }}</div>
-                <div style="font-size:var(--font-meta); line-height:var(--line-meta); color:var(--muted);">{{ newestFirstLabel }}</div>
+                <div style="font-size:var(--font-meta); line-height:var(--line-meta); color:var(--muted);">{{ newestFirstLabel }}<sc-if value="{{ tvEntryCountVisible }}" hint-placeholder-val="{{ false }}"> · {{ tvEntryCount }}</sc-if></div>
                 <sc-if value="{{ transcriptWindowVisible }}" hint-placeholder-val="{{ false }}"><div style="font-size:15px; color:var(--muted);">{{ transcriptWindowText }}</div></sc-if>
                 <sc-if value="{{ tvTranscriptKnownEmpty }}" hint-placeholder-val="{{ false }}"><div style="font-size:15px; color:var(--body);">{{ noneRecordedText }}</div></sc-if>
               </div>
@@ -159,16 +204,11 @@
                              of this contract and the version each pinned. Never rendered
                              for anything but a contract with at least one adopter — no
                              empty label for a contract nobody consumes yet. -->
-                        <sc-if value="{{ e.hasAdopters }}" hint-placeholder-val="{{ false }}">
-                          <div style="margin-top:14px;">
-                            <div style="font-size:14px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:8px;">{{ e.adoptersTitle }}</div>
-                            <div style="display:flex; flex-direction:column; gap:4px;">
-                              <sc-for list="{{ e.adopters }}" as="ad" hint-placeholder-count="1">
-                                <div style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; color:var(--muted); overflow-wrap:anywhere;">{{ ad }}</div>
-                              </sc-for>
-                            </div>
-                          </div>
-                        </sc-if>
+                        <!-- "Adopted by" left the transcript: a contract's consumers
+                             are registry state, not something that happened in this
+                             thread, and the Contracts screen answers "who sits on
+                             which version" properly, with the drift verdict beside
+                             each name. -->
                         <!-- The handoff's own data deliverables (spec 05a AC-7): package,
                              attempt, verdict — unverified never reads like passed — the
                              failing entry/rule/record on failure, and the supersede chain
@@ -288,26 +328,33 @@
                 </sc-for>
               </div>
 
+              <!-- The links block prints only when it HAS links. It used to print
+                   its label unconditionally — "Хронология и связи:" over an empty
+                   line — on every thread whose documents carry no parent links,
+                   which on axon is most of them. A heading over nothing is not a
+                   fact about the thread, it is furniture. -->
+              <sc-if value="{{ tvHasLinks }}" hint-placeholder-val="{{ false }}">
               <div data-thread-links style="display:flex; flex-direction:column; gap:8px; margin-top:var(--space-after-section-heading);">
-                <strong style="font-size:14px; color:var(--muted);">{{ relationshipsLabel }}</strong>
+                <strong style="{{ fieldLabelStyle }}">{{ relationshipsLabel }}</strong>
                 <sc-if value="{{ tvLinksKnownEmpty }}" hint-placeholder-val="{{ false }}"><span style="font-size:15px; color:var(--body);">{{ noneRecordedText }}</span></sc-if>
                 <sc-for list="{{ tvLinks }}" as="l" hint-placeholder-count="2">
                   <div style="border-radius:var(--radius-nested); padding:10px 12px; background:var(--surface-section); {{ l.accentStyle }}">
                     <span style="font-size:15px; color:var(--body);">{{ l.fromTitle }} → {{ l.toTitle }}</span>
-                    <details data-thread-technical style="{{ nestedTechnicalStyle }} margin-top:5px; color:var(--muted);"><summary style="cursor:pointer; font-size:13px; font-weight:600;">{{ technicalDetailLabel }}</summary><div style="margin-top:4px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px; overflow-wrap:anywhere;">{{ l.technical }}</div></details>
+                    <details data-thread-technical style="{{ nestedTechnicalStyle }} margin-top:5px; color:var(--muted);"><summary style="cursor:pointer; font-size:13px; font-weight:600;">{{ technicalDetailLabel }}</summary><div style="{{ nestedNoteBodyStyle }}">{{ l.technical }}</div></details>
                   </div>
                 </sc-for>
                 <sc-if value="{{ linksWindowVisible }}" hint-placeholder-val="{{ false }}"><span style="font-size:15px; color:var(--muted);">{{ linksWindowText }}</span></sc-if>
                 <sc-if value="{{ deliveriesWindowVisible }}" hint-placeholder-val="{{ false }}"><span style="font-size:15px; color:var(--muted);">{{ deliveriesWindowText }}</span></sc-if>
               </div>
+              </sc-if>
 
               <sc-if value="{{ tvHasDiagnostics }}" hint-placeholder-val="{{ false }}">
                 <div data-thread-diagnostics style="display:flex; flex-direction:column; gap:8px; margin-top:var(--space-after-section-heading);">
-                  <strong style="font-size:14px; color:var(--muted);">{{ threadFlagsLabel }}</strong>
+                  <strong style="{{ fieldLabelStyle }}">{{ threadFlagsLabel }}</strong>
                   <sc-for list="{{ tvDiagnostics }}" as="diag" hint-placeholder-count="1">
                     <div style="border-radius:var(--radius-nested); padding:10px 12px; background:var(--surface-section);">
                       <sc-if value="{{ diag.hasSeverity }}" hint-placeholder-val="{{ false }}"><dc-import name="StatusPill" result="{{ diag.severityResult }}" size="small" hint-size="150px,24px"></dc-import></sc-if>
-                      <details data-thread-technical style="{{ nestedTechnicalStyle }} margin-top:6px; color:var(--muted);"><summary style="cursor:pointer; font-size:13px; font-weight:600;">{{ technicalDetailLabel }}</summary><div style="margin-top:4px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px; overflow-wrap:anywhere;">{{ diag.technical }}</div></details>
+                      <details data-thread-technical style="{{ nestedTechnicalStyle }} margin-top:6px; color:var(--muted);"><summary style="cursor:pointer; font-size:13px; font-weight:600;">{{ technicalDetailLabel }}</summary><div style="{{ nestedNoteBodyStyle }}">{{ diag.technical }}</div></details>
                     </div>
                   </sc-for>
                   <sc-if value="{{ flagsWindowVisible }}" hint-placeholder-val="{{ false }}"><span style="font-size:15px; color:var(--muted);">{{ flagsWindowText }}</span></sc-if>
@@ -315,18 +362,12 @@
                 </div>
               </sc-if>
 
-              <footer data-thread-snapshot style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; border-top:1px solid var(--hairline); margin-top:var(--space-section-strong); padding-top:15px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; line-height:1.5; color:var(--muted);">
-                <span style="min-width:0; display:inline-flex; align-items:center; gap:7px; flex-wrap:wrap; overflow-wrap:anywhere;"><dc-import name="FreshnessDot" result="{{ tvFreshnessResult }}" age="{{ tvFreshnessAge }}" compact="{{ true }}" hint-size="9px,9px"></dc-import>{{ tvFreshnessResult.label }}</span>
-                <sc-if value="{{ tvSnapshotDegradedVisible }}" hint-placeholder-val="{{ false }}"><span style="flex-basis:100%; color:var(--body);">{{ tvSnapshotDegradedText }}</span></sc-if>
-                <span style="overflow-wrap:anywhere;">{{ tvSnapshotText }}</span>
-                <sc-if value="{{ normalMode }}" hint-placeholder-val="{{ true }}"><sc-if value="{{ tvHasSnapshotTechnical }}" hint-placeholder-val="{{ true }}">
-                    <details data-thread-technical style="flex-basis:100%; color:var(--muted);">
-                      <summary style="cursor:pointer; font-size:13px; font-weight:600;">{{ technicalDetailLabel }}</summary>
-                      <div style="margin-top:7px; overflow-wrap:anywhere;">{{ tvSyncStaleTechnical }}</div>
-                      <sc-if value="{{ tvHasSourceUnavailableEvidence }}" hint-placeholder-val="{{ false }}"><div style="margin-top:4px; overflow-wrap:anywhere;">{{ tvSourceUnavailableEvidence }}</div></sc-if>
-                    </details>
-                </sc-if></sc-if>
-              </footer>
+              <!-- The snapshot footer is gone, the same one the document pane lost:
+                   "Источник актуален" is the expected state of everything in a
+                   healthy snapshot, and the render time is already stamped once at
+                   the top of the page. What a reader acts on — a source that is
+                   NOT current — still shows, as the dot beside the thread's own
+                   parties line, and the stale evidence is one hover away. -->
               </sc-if>
             </sc-if>
           </div>
@@ -645,9 +686,10 @@ class Component extends DCLogic {
   inScope(space) { return this.state.space === "all" || space === this.state.space; }
 
   cardButton(selected) {
+    // --shadow-selected-card repoint: see the panel comment above for why.
     return "display:block; width:100%; box-sizing:border-box; text-align:left; font-family:'Onest',sans-serif; border:0; border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); cursor:pointer;" +
       (selected
-        ? " --a2a-pick-shadow:0 2px 10px -4px rgba(33,30,23,.22); --a2a-pick-active-shadow:var(--a2a-pick-shadow);"
+        ? " --a2a-pick-shadow:var(--shadow-selected-card); --a2a-pick-active-shadow:var(--a2a-pick-shadow);"
         : " --a2a-pick-surface:var(--surface-inactive-card); --a2a-pick-shadow:var(--shadow-inactive-card);");
   }
 
@@ -711,17 +753,52 @@ class Component extends DCLogic {
     const threadSel = activeThread ? activeThread.id : "";
     const threadSpace = activeThread ? activeThread.space : "";
     const tv = cardMode ? cardThreadView : d.threadViews.find(v => v.space === threadSpace && v.thread === threadSel);
-    const tvPend = tv ? (tv.open_items || []) : [];
+    // `open_items` carries the thread's items, and a settled one is NOT an
+    // obligation: it arrives with `pending:false` and a carried `why` that
+    // says so out loud ("alive and settled ... neither is a move anyone waits
+    // for"). v0.22.0 filtered on that boolean; the filter was lost, so a
+    // closed contract became the panel's lead item and the panel announced a
+    // move nobody owes while the row's own pill said "всё закрыто".
+    const tvPend = tv ? (tv.open_items || []).filter(o => o.pending !== false) : [];
     const tvMine = tvPend.filter(o => o.your_move && o.prompt);
     const leadOpenItem = tvPend[0] || null;
+    // Who is waited on comes from the items' own carried `waiting_on`, never
+    // from the absence of your_move — "someone else" is not an answer to
+    // "whose move", and v0.22.0 named the parties.
+    const tvOthers = [];
+    tvPend.forEach(item => (item.waiting_on || []).forEach(system => {
+      if (system !== d.self && tvOthers.indexOf(system) === -1) tvOthers.push(system);
+    }));
+    const othersList = tvOthers.join(", ");
     // Rule A: when the view is present but carries neither a lead open item
     // nor a settled protocol, that state is not asserted with a placeholder
     // sentence — the lead is blank rather than claiming it is unknown.
     const moveText = leadOpenItem
       ? localizedSentence(leadOpenItem.reasonSentence, ru)
       : (tv && tv.settled
-        ? (ru ? "Этот тред завершён; ни за кем из участников нет следующего хода протокола." : "This thread is settled; no participant owes a protocol move.")
+        ? (ru ? "Все документы этого треда дошли до конечного состояния. Запись остаётся целиком ниже; следующего хода протокола в снимке нет." : "Every document in this thread reached a terminal state. The full record stays below; no next protocol move is recorded in the snapshot.")
         : "");
+    // The panel's title says WHOSE move it is: the carried thread-level
+    // boolean the row pill already reads for "yours", and the items' carried
+    // waiting_on for the names. Settled gets its own title; there is no open
+    // item left to ask.
+    const tvMoveTitle = leadOpenItem
+      ? (activeThread && activeThread.yourMove
+        ? (othersList ? (ru ? "Ход за вами и за " + othersList : "Waiting on you and " + othersList) : (ru ? "Ход за вами" : "Your move"))
+        : (othersList
+          ? (ru ? "Ход за " + othersList : "Waiting on " + othersList)
+          : resolveGlossaryLabel("statuses", "waiting on others", ru)))
+      : (tv && tv.settled ? (ru ? "Протокольного хода нет" : "No protocol move is owed") : c.whoseMove);
+    // The block's colour is the SAME vocabulary result its title and text
+    // already name — the presentation seam ArtifactDetail's callout uses
+    // (A2A_VOCABULARY_RESOLVER.presentation), never a tone invented here.
+    // Pending reads the lifecycle-state of the one open item the text above
+    // quotes; settled reads the outcome vocabulary's own "settled" entry, the
+    // same one a closed document's callout uses.
+    const tvMoveResult = leadOpenItem
+      ? resolveVocabulary(d, "lifecycle-state", leadOpenItem.state, ru)
+      : (tv && tv.settled ? resolveVocabulary(d, "outcome", "settled", ru) : null);
+    const tvMovePresentation = tvMoveResult ? globalThis.A2A_VOCABULARY_RESOLVER.presentation(tvMoveResult) : null;
     const tvSpaceRecord = tv ? (d.spaces || []).find(x => x.id === tv.space) : null;
     const tvParticipantFaces = tv ? (tv.participants || []).map((system, i, list) => {
       const node = (d.nodes || []).find(n => n.system === system);
@@ -874,6 +951,11 @@ class Component extends DCLogic {
       threadMissingText:c.threadMissingText,
       causalTimelineLabel:c.causalTimeline,
       newestFirstLabel:c.newestFirst,
+      // From the carried window total, never from tvEntries.length: counting
+      // the rows this browser happened to render is exactly the derivation
+      // Rule A forbids when the total the server carries can say it instead.
+      tvEntryCount:transcriptTotal == null ? "" : (ru ? "записей: " : "entries: ") + transcriptTotal,
+      tvEntryCountVisible:transcriptTotal != null,
       threadFlagsLabel:c.threadFlags,
       threadsAria:c.views[2],
       noThreadRows: threads.length === 0,
@@ -882,11 +964,19 @@ class Component extends DCLogic {
       emptyThreadsText: ru
         ? "Тред появляется сам, когда первый документ отправлен: вопрос, запрос работы или объявление. Дальше ответы, доказательства и решение остаются в нём же."
         : "A thread appears by itself the moment a first document is sent: a question, a work request, an announcement. Answers, evidence and the decision then stay attached to it.",
-      threadRows: threads.map(t => ({
+      threadRows: threads.map(t => {
+        // Three carried states, not a browser-side verdict: settled/yourMove
+        // are the server's own fields (Thread.Settled, Thread.YourMove), the
+        // same pair threadProtocolKey below already reads for the card. The
+        // row just picks a label off them; it invents no new classification.
+        const rowProtocolKey = t.settled ? "settled" : (t.yourMove ? "your move" : "waiting on others");
+        return {
         id: t.id,
         space: t.space,
         selected: threadSpace === t.space && threadSel === t.id,
         title: t.opener && t.opener.title ? t.opener.title : notRecorded,
+        pillText: resolveGlossaryLabel("statuses", rowProtocolKey, ru),
+        pillTone: t.settled ? "healthy" : (t.yourMove ? "attention" : "neutral"),
         participants: (t.participants || []).join(", "),
         age: (ru ? "последнее движение " : "last activity ") + age(t.lastActivity),
         meta: t.id + (ru ? " · документов: " : " · documents: ") + t.memberCount + " · " + t.space,
@@ -899,17 +989,25 @@ class Component extends DCLogic {
         // dead code: DASHBOARD_UI_FIELDS threads `card` into Modal alone, so this
         // never resolved to anything but "" on the view's own render.
         summaryAttr:"thread",
+        // A row click SELECTS the thread into this view's own master-detail
+        // pane (the same convention Exchange's rows use) instead of popping
+        // the card modal. selectedThread/activeThread above read threadSel
+        // and threadSpace, so writing those here is what makes the right
+        // pane switch. The card modal stays reachable — from a deep link and
+        // from other surfaces; only this row's door onto it is closed. (The
+        // route literal is deliberately not spelled here: only Modal may write
+        // it, and the dashboard-cards gate reads this file for that string.)
         openCard:() => {
-          const id = actions.cardID ? actions.cardID("thread", { space:t.space, thread:t.id }) : "";
-          if (id && actions.openCard) actions.openCard("thread", id, "");
+          this.setState({ threadSel: t.id, threadSpace: t.space, tvFocus: "" });
         }
-      })),
-      whoseMoveLabel:c.whoseMove,
+        };
+      }),
+      whoseMoveLabel: tvMoveTitle,
       whoseMoveText: moveText,
       protocolLabel:ru ? "Протокол:" : "Protocol:",
       participantsLabel:ru ? "Участники:" : "Participants:",
       membershipLabel:ru ? "Начало и состав:" : "Opener and membership:",
-      openObligationsLabel:ru ? "Открытые обязательства:" : "Open obligations:",
+      openObligationsLabel:ru ? "Открытые обязательства" : "Open obligations",
       relationshipsLabel:ru ? "Хронология и связи:" : "Transcript and relationships:",
       noneRecordedText:noneRecorded,
       unknownText:unknown,
@@ -921,6 +1019,15 @@ class Component extends DCLogic {
       tvCardTranscriptText,
       tvCardSnapshotText,
       tvLinks,
+      // The block earns its heading only when it carries something: a link, a
+      // bounded window worth naming, or a confirmed-empty collection that the
+      // reader asked about. Otherwise it prints nothing at all.
+      // A confirmed-empty link list is Rule A's first condition, not a
+      // reason to print a heading over nothing: linksKnownEmpty used to
+      // open this block, and the canonical "none recorded" sentence under
+      // it is empty, so every settled thread ended on a bare
+      // "Хронология и связи:" with white space beneath it.
+      tvHasLinks:tvLinks.length > 0 || linksWindowText !== "" || deliveriesWindowText !== "",
       tvLinksKnownEmpty:linksKnownEmpty,
       tvDiagnostics,
       tvHasDiagnostics:tvDiagnostics.length > 0 || flagsWindowText !== "" || unresolvedWindowText !== "",
@@ -937,10 +1044,11 @@ class Component extends DCLogic {
       tvParticipantsAria: tv ? (ru ? "Участники треда: " : "Thread participants: ") + (tv.participants || []).join(", ") : "",
       tvParticipantsText: tv ? (tv.participants || []).join(", ") : "",
       tvSpaceText: tv ? tv.space : "",
-      tvPendingCalloutStyle:"position:relative; border-radius:var(--radius-card); padding:var(--padding-card-block) var(--padding-card-inline); margin-bottom:0; background:var(--surface-section); box-shadow:inset 0 0 0 1px var(--hairline);",
-      tvPendingTitleStyle:"font-size:16px; font-weight:600; color:var(--muted);",
+      tvPendingCalloutStyle:"position:relative; border-radius:var(--radius-card); padding:var(--padding-card-block) var(--padding-card-inline); margin-bottom:0; background:" + (tvMovePresentation ? tvMovePresentation.pillBackground : "var(--surface-section)") + "; box-shadow:inset 0 0 0 1px var(--hairline);",
+      tvPendingTitleStyle:"font-size:16px; font-weight:600; color:" + (tvMovePresentation ? tvMovePresentation.pillForeground : "var(--muted)") + ";",
       tvPendingTextStyle:"font-size:15px; line-height:1.5; color:var(--body);",
       tvFreshnessResult,
+      tvHasFreshness:!!tvFreshnessResult,
       tvFreshnessAge,
       tvSourceUnavailableEvidence,
       tvSnapshotDegradedText,
@@ -961,12 +1069,24 @@ class Component extends DCLogic {
       unresolvedWindowText,
       deliveriesWindowVisible:deliveriesWindowText !== "",
       deliveriesWindowText,
+      tvHasObligations:tvPend.length > 0,
       tvOpenKnownEmpty:openItemsKnownEmpty,
       tvOpenUnknown:tvPend.length === 0 && !openItemsKnownEmpty,
       tvTranscriptKnownEmpty:transcriptKnownEmpty,
       technicalDetailLabel:ru ? "Технические подробности" : "Technical detail",
       technicalCollapsedLabel:ru ? "Технические подробности: свёрнуты." : "Technical detail: collapsed.",
       nestedTechnicalStyle:cardMode ? "display:none;" : "",
+      // The section-heading `<strong>` label (protocol/participants/membership/
+      // open-obligations/relationships/thread-flags) retyped this string at
+      // six markup call sites; one bound value now feeds all six.
+      fieldLabelStyle:"font-size:14px; color:var(--muted);",
+      // The monospace note body nested inside a <details> disclosure repeated
+      // this string at four call sites (two pairs, byte-identical within each
+      // pair). One bound value carries the shared stem; the two sites that
+      // also need line-height:1.55 append it after the binding — CSS doesn't
+      // care about declaration order for non-conflicting properties, so this
+      // is not a visual change.
+      nestedNoteBodyStyle:"margin-top:4px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px; overflow-wrap:anywhere;",
       tvTechnicalText,
       tvEntries: tv ? (() => {
         const arts = tv.artifacts || [];
@@ -993,6 +1113,16 @@ class Component extends DCLogic {
         // referenced card by eye in a 40-row transcript is the slow way.
         const focus = s.tvFocus;
         const known = (id) => arts.some(x => x.id === id);
+        // A contract's home is the Contracts screen, where its versions, its
+        // consumers and its package live. Opening a document card for it gave
+        // a reader the envelope of the publish event and none of that, so a
+        // contract routes to its own screen (and to the version, when the
+        // snapshot carries one) instead of popping a card.
+        const goToContract = (id, version) => () => {
+          const actionSet = (this.props && this.props.ctx && this.props.ctx.actions) || {};
+          if (actionSet.closeCard) actionSet.closeCard();
+          this.go("contracts", { space:tv.space || "", conSel:id, conVersion:version || "" });
+        };
         const goTo = (id) => () => {
           this.setState({ tvFocus: this.state.tvFocus === id ? "" : id });
           requestAnimationFrame(() => {
@@ -1014,11 +1144,11 @@ class Component extends DCLogic {
             dim,
             accentStyle:accentStyle("member", a.id),
             route: (a.from || "") + " → " + (a.to || []).join(", "),
-            openExchange: () => {
+            openExchange: a.type === "contract" ? goToContract(a.id, "") : () => {
               const id = actions.cardID ? actions.cardID("item", { space:tv.space, id:a.id }) : "";
               if (id && actions.openCard) actions.openCard("item", id, "");
             },
-            openDocument: () => {
+            openDocument: a.type === "contract" ? goToContract(a.id, "") : () => {
               const id = actions.cardID ? actions.cardID("item", { space:tv.space, id:a.id }) : "";
               if (id && actions.openCard) actions.openCard("item", id, "");
             }
@@ -1263,7 +1393,9 @@ class Component extends DCLogic {
           // Unknown raw values resolve to P8's explicit unknown result and may
           // not leak into the visible sentence.
           const transitionResult = resolveVocabulary(d, "transition", String(ev.transition || ""), ru);
-          const actionText = transitionResult.label;
+          // The actor's form: this row names a person and then says what they
+          // did, so "ответил" belongs here and "ответ записан" does not.
+          const actionText = transitionResult.past;
           // verify/close's own per-criterion judgement (P6 wave C, event/v2's
           // `verdicts[]`) — decoded on the Go side (internal/cache/decode.go),
           // carried onto the transcript event (internal/cache/threadview.go,
@@ -1291,9 +1423,23 @@ class Component extends DCLogic {
             subjectTitle: ru ? "Показать исходный документ в ленте" : "Focus the original document in the timeline",
             openSubject: known(ev.subject) ? goTo(ev.subject) : () => {},
             subjectLinkStyle: "display:inline; border:0; padding:0; background:transparent; color:" + (TYPE_LINK_ACCENT[subject.type] || "var(--teal-ink)") + "; font:inherit; font-weight:400; cursor:pointer; text-decoration-line:underline; text-decoration-style:dashed; text-decoration-thickness:2px; text-underline-offset:5px;",
-            hasNoteLink:false, noteLinkLabel:"", noteTitle:"", noteLinkStyle:"", openNote:() => {},
+            // A note is durable content, not a footnote: v0.22.0 opened it
+            // through the same reading surface a document uses. It has no card
+            // kind of its own, and its home IS the document it annotates — so
+            // the link opens that document's card, where the note stands in the
+            // history at full length. The transcript keeps the first lines as a
+            // preview instead of pasting a page of prose into the rail.
+            hasNoteLink:ev.transition === "note" && known(ev.subject),
+            noteLinkLabel:ev.transition === "note" ? (ru ? "Открыть документ" : "Open the document") : "",
+            noteTitle:ev.transition === "note" ? (ru ? "Открыть документ с этой заметкой" : "Open the document carrying this note") : "",
+            noteLinkStyle:"display:inline; border:0; padding:0; background:transparent; color:var(--teal-ink); font:inherit; font-weight:400; text-decoration:underline; cursor:pointer;",
+            openNote:() => {
+              const id = actions.cardID ? actions.cardID("item", { space:tv.space, id:ev.subject }) : "";
+              if (id && actions.openCard) actions.openCard("item", id, "");
+            },
             hasNoteText:ev.transition === "note" && !!note,
             noteText:ev.transition === "note" ? note : "",
+            noteClamped:true,
             accentStyle:accentStyle("event", ev.ulid),
             contentStyle:accentStyle("event", ev.ulid),
             responseID: ev.response_id || "",
@@ -1337,18 +1483,28 @@ class Component extends DCLogic {
           technicalWhy:o.why || "",
           technicalExpectedTransition:"expected_transition=" + String(o.expected_transition || ""),
           ruleIdentity:ruleIdentityText(o.ruleIdentity),
-          operationalItems:(o.operational_items || []).map(item => ({
+          operationalItems:(o.operational_items || []).map((item, itemIndex, itemRows) => ({
             name:item.name,
-            result:resolveVocabulary(d, "operational-state", item.state, ru)
+            result:resolveVocabulary(d, "operational-state", item.state, ru),
+            nameStyle:"padding:7px 12px 7px 0; vertical-align:middle; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; color:var(--body); overflow-wrap:anywhere;"
+              + (itemIndex === itemRows.length - 1 ? "" : " border-bottom:1px solid var(--hairline);"),
+            valueStyle:"padding:7px 0; vertical-align:middle; text-align:right; white-space:nowrap;"
+              + (itemIndex === itemRows.length - 1 ? "" : " border-bottom:1px solid var(--hairline);")
           })),
           hasOperational: !!(o.operational_items && o.operational_items.length),
           operationalLabel: ru ? "операционная готовность" : "operational readiness",
           cardText:(index === 0 ? "" : "; ") + (matched ? title + " — " + stateResult.label : unknown) + (index === rows.length - 1 ? "." : ""),
           openLabel: (ru ? "Открыть документ: " : "Open document: ") + title,
-          openDocument:() => {
-            const id = actions.cardID ? actions.cardID("item", { space:tv.space, id:o.id }) : "";
-            if (id && actions.openCard) actions.openCard("item", id, "");
-          }
+          openDocument:o.type === "contract"
+            ? (() => {
+                const actionSet = (this.props && this.props.ctx && this.props.ctx.actions) || {};
+                if (actionSet.closeCard) actionSet.closeCard();
+                this.go("contracts", { space:tv.space || "", conSel:o.id, conVersion:"" });
+              })
+            : (() => {
+                const id = actions.cardID ? actions.cardID("item", { space:tv.space, id:o.id }) : "";
+                if (id && actions.openCard) actions.openCard("item", id, "");
+              })
         };
       }),
       tvHasPrompt: tvMine.length > 0,

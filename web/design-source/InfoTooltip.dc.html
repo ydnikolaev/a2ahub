@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<sc-if value="{{ open }}" hint-placeholder-val="{{ false }}">
+  <span role="tooltip" style="{{ bubbleStyle }}">{{ text }}</span>
+</sc-if>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:320,&quot;height&quot;:80},&quot;text&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;What this means, in one sentence.&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;open&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;anchor&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;align&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;start&quot;,&quot;end&quot;],&quot;default&quot;:&quot;start&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;default&quot;,&quot;compact&quot;],&quot;default&quot;:&quot;default&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;onDismiss&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;}}">
+// The one hover/tap bubble, not five. StatusPill, TypeBadge, FreshnessDot,
+// HintDot and EventSignal each carried their own ~25-line show()/position/
+// viewport-clamp block and their own copy of the bubble style string, and the
+// five had already drifted: StatusPill and EventSignal stacked their bubble
+// at z-index:950, TypeBadge and HintDot at z-index:500, for the same KIND of
+// surface — which tooltip won a stacking fight was an accident of which
+// component happened to render last. This component owns the bubble surface,
+// its placement and its show/hide once; the five callers keep only their own
+// trigger markup, their own text, and the `open` bit they still need locally
+// (aria-expanded, a hover-state fill on a dot). z-index is pinned at 950 here
+// because a tooltip has to sit above the sticky dashboard header AND the
+// segmented filters, which is exactly what 950 already did for two of the
+// five — 500 was the drifted value, not a second legitimate role.
+//
+// The bubble's shadow was a hand-typed `rgba(33,30,23,.34)` in every one of
+// the five, copied five times over. That literal is the light theme's ink:
+// `html[data-theme="dark"]` re-points every semantic shadow token to a
+// black-based value on the #16140F page, but a copied rgba() is invisible to
+// that swap, so a dark-theme reader saw a warm light-mode shadow under every
+// hover bubble in the product. Repointed onto `var(--shadow-tooltip)`, the
+// one role token for "a hover bubble", so the swap now reaches it too.
+class Component extends DCLogic {
+  componentDidMount() {
+    // Superset of what the five owned separately: StatusPill/TypeBadge only
+    // closed on scroll/resize/Escape; FreshnessDot/HintDot also closed on an
+    // outside click; EventSignal (a plain hover/focus signal, no click) had
+    // no dismiss listeners of its own at all. Centralizing here means every
+    // caller now gets the full set — closing on an outside click is new for
+    // StatusPill/TypeBadge/EventSignal, not a regression for any of them.
+    this.dismiss = () => { if (this.props.open) this.close(); };
+    this.esc = (ev) => { if (ev.key === "Escape" && this.props.open) this.close(); };
+    this.away = (ev) => {
+      if (!this.props.open) return;
+      const anchor = this.props.anchor;
+      // A click on the trigger itself must not fight the trigger's own
+      // enter/tap handler; only a click genuinely outside the anchor closes.
+      if (anchor && anchor.contains && anchor.contains(ev.target)) return;
+      this.close();
+    };
+    window.addEventListener("scroll", this.dismiss, true);
+    window.addEventListener("resize", this.dismiss);
+    window.addEventListener("keydown", this.esc);
+    document.addEventListener("click", this.away, true);
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener("scroll", this.dismiss, true);
+    window.removeEventListener("resize", this.dismiss);
+    window.removeEventListener("keydown", this.esc);
+    document.removeEventListener("click", this.away, true);
+  }
+
+  close() {
+    if (this.props.onDismiss) this.props.onDismiss();
+  }
+
+  renderVals() {
+    const anchor = this.props.anchor;
+    const open = !!this.props.open && !!anchor;
+    const compact = this.props.size === "compact";
+    // FIXED, not absolute: triggers sit inside cards with their own overflow
+    // and inside a horizontally scrolling map, where an absolutely positioned
+    // bubble would be clipped instead of shown. The flip keeps it on screen
+    // near a viewport edge.
+    let pos = "";
+    if (open) {
+      const r = anchor.getBoundingClientRect();
+      const width = compact ? Math.min(260, window.innerWidth * 0.72) : Math.min(320, window.innerWidth * 0.76);
+      // EventSignal is the one caller that right-aligns its bubble against a
+      // small icon-only trigger; the other four left-align.
+      const rawLeft = this.props.align === "end" ? (r.right - width) : r.left;
+      const left = Math.max(12, Math.min(rawLeft, window.innerWidth - width - 12));
+      const below = window.innerHeight - r.bottom > 170;
+      pos = below
+        ? "left:" + Math.round(left) + "px; top:" + Math.round(r.bottom + 7) + "px;"
+        : "left:" + Math.round(left) + "px; bottom:" + Math.round(window.innerHeight - r.top + 7) + "px;";
+    }
+    const widthCss = compact ? "min(260px,72vw)" : "min(320px,76vw)";
+    const radius = compact ? "11px" : "var(--radius-chip)";
+    const padding = compact ? "9px 11px" : "12px 14px";
+    const fontSize = compact ? "13px" : "14px";
+    const lineHeight = compact ? "1.45" : "1.55";
+    return {
+      open,
+      text: this.props.text || "",
+      bubbleStyle: "position:fixed; z-index:950; " + pos + " width:" + widthCss + "; background:var(--inverse); color:var(--on-inverse-2); border-radius:" + radius + "; padding:" + padding + "; font-family:'Onest',sans-serif; font-size:" + fontSize + "; line-height:" + lineHeight + "; font-weight:400; text-align:left; box-shadow:var(--shadow-tooltip); white-space:normal; pointer-events:none;"
+    };
+  }
+}
+
+</script>
+</body>
+</html>
+</content>
+</invoke>

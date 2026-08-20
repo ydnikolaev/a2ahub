@@ -48,8 +48,8 @@
 
         <div style="margin-bottom:22px;">
           <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; row-gap:10px;">
-            <dc-import name="SegmentedFilter" items="{{ kindFilters }}" hint-size="620px,38px"></dc-import>
-            <dc-import name="SegmentedFilter" items="{{ actionFilters }}" hint-size="450px,38px"></dc-import>
+            <span style="display:block; min-width:0; max-width:100%; overflow:hidden;"><dc-import name="SegmentedFilter" items="{{ kindFilters }}" hint-size="620px,38px"></dc-import></span>
+            <span style="display:block; min-width:0; max-width:100%; overflow:hidden;"><dc-import name="SegmentedFilter" items="{{ actionFilters }}" hint-size="450px,38px"></dc-import></span>
           </div>
         </div>
 
@@ -312,7 +312,12 @@ class Component extends DCLogic {
     }
     const tooling = d.tooling || {};
     const upd = d.updateDetail || {};
-    const releasesAll = d.releaseNotes.slice();
+    // Newest first, like every other chronology on this dashboard. The corpus
+    // is carried oldest-to-newest — that is the order a release history is
+    // WRITTEN in — so a reader landing here met 0.2.0 from July at the top and
+    // had to scroll a year of releases to find the one they are running. The
+    // carried array is re-read for display, never reordered in place.
+    const releasesAll = d.releaseNotes.slice().reverse();
     const filtered = s.verKind !== "all" || s.verAction !== "all";
     const kindMatches = (c, kind) => kind === "all" || c.kind === kind;
     const actionMatches = (c, action) => {

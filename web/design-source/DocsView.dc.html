@@ -39,7 +39,12 @@
           </aside>
 
           <article style="flex:4 1 420px; min-width:0;">
-            <div style="background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
+            <!-- This literal was the light theme's ink baked into a two-layer
+                 shadow: dark theme re-points --shadow-panel for a #16140F page,
+                 but a hand-typed rgba(33,30,23,...) never moves, so this main
+                 doc panel kept casting a light-mode shadow after the swap.
+                 It IS the raised detail pane the role names. -->
+            <div style="background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:var(--shadow-panel);">
               <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap; margin-bottom:14px;">
                 <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px;">
                   <dc-import name="StatusPill" text="{{ docGroupLabel }}" tone="agent" size="small" hint-size="90px,24px"></dc-import>

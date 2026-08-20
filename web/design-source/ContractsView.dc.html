@@ -92,7 +92,14 @@
             </sc-for>
           </div>
 
-          <div style="min-width:0; background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
+          <!-- This panel's shadow used to be the light theme's ink typed out
+               by hand as a literal rgb triplet (33, 30, 23). html[data-theme="dark"]
+               re-points --shadow-panel to a black-based value on the #16140F
+               page; a copied literal doesn't hear that swap, so a dark-theme
+               reader kept seeing this detail pane cast a warm light-mode
+               shadow. --shadow-panel is exactly this value, so this is a
+               straight token swap, no behavior change. -->
+          <div style="min-width:0; background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:var(--shadow-panel);">
             <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:14px;">
               <div style="min-width:0; flex:1 1 280px;">
                 <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:7px; margin-bottom:9px;">
@@ -114,7 +121,7 @@
               <span style="flex:0 1 auto; min-width:0;"><dc-import name="SpaceSwitcher" det="{{ contractVersionSwitcher }}" hint-size="260px,42px"></dc-import></span>
             </div>
             <h2 class="a2a-detail-title" style="margin:0 0 8px; font-family:'IBM Plex Mono',monospace;">{{ cdId }}</h2>
-            <dc-import name="ProseDisclosure" text="{{ cdDescription }}" hint-size="100%,190px"></dc-import>
+            <dc-import name="ProseDisclosure" text="{{ cdDescription }}" shell="{{ true }}" hint-size="100%,190px"></dc-import>
             <div aria-live="polite" style="position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap;">{{ cdVersionAnnouncement }}</div>
 
             <sc-if value="{{ cdIsOverview }}" hint-placeholder-val="{{ true }}">
@@ -229,7 +236,7 @@
                 <sc-if value="{{ cdVersionHasChange }}" hint-placeholder-val="{{ true }}">
                   <div style="background:var(--teal-tint); border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); margin-bottom:var(--space-grid);">
                     <div style="font-size:15px; font-weight:600; color:var(--teal-strong-ink); margin-bottom:5px;">{{ cdVersionChangeTitle }}</div>
-                    <dc-import name="ProseDisclosure" text="{{ cdVersionChange }}" hint-size="100%,190px"></dc-import>
+                    <dc-import name="ProseDisclosure" text="{{ cdVersionChange }}" shell="{{ true }}" hint-size="100%,190px"></dc-import>
                   </div>
                 </sc-if>
 
@@ -266,7 +273,7 @@
                         <sc-if value="{{ row.isFile }}" hint-placeholder-val="{{ true }}">
                           <div data-contract-file-key="{{ row.key }}" style="{{ row.rowStyle }}">
                             <span style="{{ row.iconStyle }}">{{ row.iconLabel }}</span>
-                            <span style="min-width:0; flex:1 1 260px;"><strong style="display:block; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; overflow-wrap:anywhere;">{{ row.label }}</strong><span style="display:block; margin-top:4px; color:var(--muted); font-size:13px;">{{ row.role }} · {{ row.media }}</span></span><span style="flex:0 0 auto; font-family:'IBM Plex Mono',ui-monospace,monospace; color:var(--muted); font-size:12px;">{{ row.size }}</span><span style="display:flex; gap:7px;"><sc-for list="{{ row.actions }}" as="action" hint-placeholder-count="2"><sc-if value="{{ action.copy }}" hint-placeholder-val="{{ true }}"><button type="button" onClick="{{ action.run }}" style="border:1px solid var(--border); border-radius:8px; padding:6px 9px; background:var(--surface); color:var(--teal-ink); cursor:pointer;">{{ action.label }}</button></sc-if><sc-if value="{{ action.source }}" hint-placeholder-val="{{ true }}"><a href="{{ action.url }}" target="_blank" rel="noopener noreferrer" style="border:1px solid var(--border); border-radius:8px; padding:6px 9px; color:var(--teal-ink); text-decoration:none;">{{ action.label }}</a></sc-if></sc-for></span>
+                            <span style="min-width:0; flex:1 1 260px;"><strong style="display:block; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; overflow-wrap:anywhere;">{{ row.label }}</strong><span style="display:block; margin-top:4px; color:var(--muted); font-size:13px;">{{ row.role }} · {{ row.media }}</span></span><span style="flex:0 0 auto; font-family:'IBM Plex Mono',ui-monospace,monospace; color:var(--muted); font-size:12px;">{{ row.size }}</span>
                           </div>
                         </sc-if>
                       </sc-for>
@@ -285,7 +292,7 @@
                         <sc-if value="{{ row.isFile }}" hint-placeholder-val="{{ true }}">
                           <div data-contract-file-key="{{ row.key }}" style="{{ row.rowStyle }}">
                             <span style="{{ row.iconStyle }}">{{ row.iconLabel }}</span>
-                            <span style="min-width:0; flex:1 1 260px;"><strong style="display:block; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; overflow-wrap:anywhere;">{{ row.label }}</strong><span style="display:block; margin-top:4px; color:var(--muted); font-size:13px;">{{ row.role }} · {{ row.media }}</span></span><span style="flex:0 0 auto; font-family:'IBM Plex Mono',ui-monospace,monospace; color:var(--muted); font-size:12px;">{{ row.size }}</span><span style="display:flex; gap:7px;"><sc-for list="{{ row.actions }}" as="action" hint-placeholder-count="2"><sc-if value="{{ action.copy }}" hint-placeholder-val="{{ true }}"><button type="button" onClick="{{ action.run }}" style="border:1px solid var(--border); border-radius:8px; padding:6px 9px; background:var(--surface); color:var(--teal-ink); cursor:pointer;">{{ action.label }}</button></sc-if><sc-if value="{{ action.source }}" hint-placeholder-val="{{ true }}"><a href="{{ action.url }}" target="_blank" rel="noopener noreferrer" style="border:1px solid var(--border); border-radius:8px; padding:6px 9px; color:var(--teal-ink); text-decoration:none;">{{ action.label }}</a></sc-if></sc-for></span>
+                            <span style="min-width:0; flex:1 1 260px;"><strong style="display:block; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; overflow-wrap:anywhere;">{{ row.label }}</strong><span style="display:block; margin-top:4px; color:var(--muted); font-size:13px;">{{ row.role }} · {{ row.media }}</span></span><span style="flex:0 0 auto; font-family:'IBM Plex Mono',ui-monospace,monospace; color:var(--muted); font-size:12px;">{{ row.size }}</span>
                           </div>
                         </sc-if>
                       </sc-for>
@@ -322,6 +329,65 @@
       </section>
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1240,&quot;height&quot;:900},&quot;ctx&quot;:{&quot;editor&quot;:&quot;object&quot;,&quot;default&quot;:{},&quot;tsType&quot;:&quot;object&quot;}}">
+// A version package is a set of paths, not a set of rows: group by directory
+// so a 20-file manifest reads as a shape instead of a list of full paths
+// wrapped over three lines each. Restored from v0.22.0, which had exactly
+// this and lost it — the markup below still expects `isDir` rows.
+function buildDocTree(files) {
+  const root = { dirs:new Map(), files:[], segPath:"" };
+  files.forEach(file => {
+    const parts = String(file.path || "").split("/").filter(Boolean);
+    const base = parts.pop() || file.path || file.key;
+    let node = root;
+    const segs = [];
+    parts.forEach(seg => {
+      segs.push(seg);
+      if (!node.dirs.has(seg)) node.dirs.set(seg, { dirs:new Map(), files:[], segPath:segs.join("/") });
+      node = node.dirs.get(seg);
+    });
+    node.files.push(Object.assign({}, file, { base }));
+  });
+  return root;
+}
+
+// VS Code's own "compact folders" behaviour: a chain of directories that each
+// hold exactly one entry, itself a directory, collapses into a single row
+// instead of costing three clicks to reach the first real branch point.
+function flattenDocTree(node, depth, keyOf, isOpen, out) {
+  Array.from(node.dirs.entries()).forEach(([name, child]) => {
+    let label = name;
+    let cur = child;
+    while (cur.dirs.size === 1 && cur.files.length === 0) {
+      const entries = Array.from(cur.dirs.entries());
+      label = label + "/" + entries[0][0];
+      cur = entries[0][1];
+    }
+    const dirKey = keyOf(cur.segPath);
+    const open = isOpen(dirKey);
+    out.push({ isDir:true, isFile:false, depth, key:dirKey, label, expanded:open, node:cur });
+    if (open) flattenDocTree(cur, depth + 1, keyOf, isOpen, out);
+  });
+  node.files.forEach(file => out.push(Object.assign({ isDir:false, isFile:true, depth }, file)));
+  return out;
+}
+
+// A small monogram per extension, not a vendor icon set: inline text on a
+// token-coloured tile, the same grammar TypeBadge's two-letter prefixes use.
+function fileTypeIcon(name) {
+  const match = String(name || "").toLowerCase().match(/\.([a-z0-9]+)$/);
+  const ext = match ? match[1] : "";
+  const icons = {
+    json:{ label:"{ }", bg:"var(--attention-tint)", fg:"var(--attention-ink)" },
+    yaml:{ label:"YML", bg:"var(--teal-tint)", fg:"var(--teal-ink)" },
+    yml:{ label:"YML", bg:"var(--teal-tint)", fg:"var(--teal-ink)" },
+    md:{ label:"MD", bg:"var(--sink)", fg:"var(--body)" },
+    html:{ label:"<>", bg:"var(--sink)", fg:"var(--body)" },
+    csv:{ label:"CSV", bg:"var(--teal-tint)", fg:"var(--teal-ink)" },
+    txt:{ label:"TXT", bg:"var(--hairline)", fg:"var(--muted)" }
+  };
+  return icons[ext] || { label:ext ? ext.slice(0, 3).toUpperCase() : "\u2022", bg:"var(--hairline)", fg:"var(--muted)" };
+}
+
 const DASHBOARD_EN = {
     views:["Overview","Exchange","Threads","Contracts","Map","Spaces","Versions","Docs","Guide"],
     backOverview:"Back to Overview", viewsLabel:"Views", more:"More", localeGroup:"Interface language", space:"Space",
@@ -484,9 +550,10 @@ class Component extends DCLogic {
   }
 
   cardButton(selected) {
+    // --shadow-selected-card repoint: see the panel comment above for why.
     return "display:block; width:100%; box-sizing:border-box; text-align:left; font-family:'Onest',sans-serif; border:0; border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); cursor:pointer;" +
       (selected
-        ? " --a2a-pick-shadow:0 2px 10px -4px rgba(33,30,23,.22); --a2a-pick-active-shadow:var(--a2a-pick-shadow);"
+        ? " --a2a-pick-shadow:var(--shadow-selected-card); --a2a-pick-active-shadow:var(--a2a-pick-shadow);"
         : " --a2a-pick-surface:var(--surface-inactive-card); --a2a-pick-shadow:var(--shadow-inactive-card);");
   }
 
@@ -507,6 +574,9 @@ class Component extends DCLogic {
     const contractTypeLabel = contractTypeEntry && contractTypeEntry.label || (ru ? "Контракт" : "Contract");
     const accent = (family, identity) => actions.cardAccent ? actions.cardAccent(family, identity) : "";
     const highlighted = (family, identity) => !!card && !!card.accent && accent(family, identity) === card.accent;
+    // The active/inactive background swap for a highlighted inline label
+    // was retyped at seven call sites below; one closure now owns it.
+    const highlightStyle = (active) => "background:" + (active ? "var(--attention-tint)" : "transparent") + ";";
     const sourceSnapshot = (space) => {
       const source = (((data.operational || {}).sources) || []).find(candidate => candidate.kind === "space" && candidate.space === space);
       const unavailable = (((data.operational || {}).unavailable) || []).find(candidate => candidate.source_kind === "space" && candidate.space === space);
@@ -524,11 +594,6 @@ class Component extends DCLogic {
       if (!contract || !version || !actions.cardID || !actions.openCard) return;
       const id = actions.cardID("cver", { space:contract.space, id:contract.id, version:version.version });
       if (id) actions.openCard("cver", id, targetAccent || "");
-    };
-    const openContract = (contract, targetAccent) => {
-      if (!contract || !actions.cardID || !actions.openCard) return;
-      const id = actions.cardID("contract", contract);
-      if (id) actions.openCard("contract", id, targetAccent || "");
     };
     const openRef = (space, ref, targetAccent) => {
       const target = refParts(ref);
@@ -576,7 +641,7 @@ class Component extends DCLogic {
         openLabel:(ru ? "Открыть версию контракта " : "Open contract version ") + contract.id + "@" + version.version,
         highlighted:active,
         style:"width:100%; display:flex; align-items:center; justify-content:space-between; gap:10px; border:0; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); text-align:left; cursor:pointer; color:var(--text); background:" + (active ? "var(--attention-tint)" : "var(--surface-section)") + "; box-shadow:inset 0 0 0 1px var(--border);",
-        contentStyle:"display:inline; border:0; border-radius:5px; padding:0; background:" + (active ? "var(--attention-tint)" : "transparent") + "; color:inherit; font:inherit; cursor:pointer;",
+        contentStyle:"display:inline; border:0; border-radius:5px; padding:0; " + highlightStyle(active) + " color:inherit; font:inherit; cursor:pointer;",
         open:() => openExact(contract, version, "")
       };
     });
@@ -603,7 +668,7 @@ class Component extends DCLogic {
           successorOpenLabel:(ru ? "Открыть версию-преемник " : "Open successor version ") + (edge.successor || ""),
           openSuccessor:edge.successor ? () => openRef(contract.space, edge.successor, "") : () => {},
           highlighted:active,
-          contentStyle:"display:inline; border:0; border-radius:5px; padding:0; background:" + (active ? "var(--attention-tint)" : "transparent") + "; color:inherit; font:inherit; cursor:" + (edge.successor ? "pointer" : "default") + ";",
+          contentStyle:"display:inline; border:0; border-radius:5px; padding:0; " + highlightStyle(active) + " color:inherit; font:inherit; cursor:" + (edge.successor ? "pointer" : "default") + ";",
           style:"border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:" + (active ? "var(--attention-tint)" : "var(--surface-section)") + "; box-shadow:inset 0 0 0 1px var(--hairline);"
         };
       });
@@ -616,7 +681,7 @@ class Component extends DCLogic {
       const consumers = (contract.consumers || []).map((name, index, rows) => {
         const identity = [contract.space, contract.id, name];
         const active = highlighted("consumer", identity);
-        return { name, separator:index === rows.length - 1 ? "." : ", ", highlighted:active, contentStyle:"border-radius:5px; background:" + (active ? "var(--attention-tint)" : "transparent") + ";", style:"display:inline-flex; border-radius:var(--radius-badge); padding:6px 9px; background:" + (active ? "var(--attention-tint)" : "var(--surface-section)") + "; box-shadow:inset 0 0 0 1px var(--border);" };
+        return { name, separator:index === rows.length - 1 ? "." : ", ", highlighted:active, contentStyle:"border-radius:5px; " + highlightStyle(active), style:"display:inline-flex; border-radius:var(--radius-badge); padding:6px 9px; background:" + (active ? "var(--attention-tint)" : "var(--surface-section)") + "; box-shadow:inset 0 0 0 1px var(--border);" };
       });
       const versions = versionRows(contract);
       const snapshot = sourceSnapshot(contract.space);
@@ -738,7 +803,7 @@ class Component extends DCLogic {
           driftResult,
           pinnedStateResult:resolve("lifecycle-state", pin.pinnedState),
           highlighted:pinHighlighted,
-          contentStyle:"border-radius:5px; background:" + (pinHighlighted ? "var(--attention-tint)" : "transparent") + ";",
+          contentStyle:"border-radius:5px; " + highlightStyle(pinHighlighted),
           style:"display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:" + (pinHighlighted ? "var(--attention-tint)" : "var(--surface-section)") + "; box-shadow:inset 0 0 0 1px var(--hairline);"
         };
       }) : [];
@@ -765,7 +830,7 @@ class Component extends DCLogic {
           accent:accent("document", identity),
           highlighted:documentHighlighted,
           separator:index === rows.length - 1 ? "." : ", ",
-          contentStyle:"border-radius:5px; background:" + (documentHighlighted ? "var(--attention-tint)" : "transparent") + ";",
+          contentStyle:"border-radius:5px; " + highlightStyle(documentHighlighted),
           supportAria:(ru ? "Действия и предпросмотр документа " : "Actions and preview for document ") + document.path,
           actions:fileActions,
           style:"border-radius:var(--radius-card); padding:var(--padding-card-block) var(--padding-card-inline); background:" + (documentHighlighted ? "var(--attention-tint)" : "var(--surface-section)") + "; box-shadow:inset 0 0 0 1px var(--border);"
@@ -794,7 +859,7 @@ class Component extends DCLogic {
           cardText:transitionResult.label + " — " + stateResult.label + " — " + actorCard + " — " + timeCard,
           separator:index === rows.length - 1 ? "." : "; ",
           highlighted:historyHighlighted,
-          contentStyle:"border-radius:5px; background:" + (historyHighlighted ? "var(--attention-tint)" : "transparent") + ";",
+          contentStyle:"border-radius:5px; " + highlightStyle(historyHighlighted),
           style:"display:grid; grid-template-columns:minmax(90px,auto) minmax(130px,auto) minmax(90px,1fr) auto; gap:8px; align-items:center; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:" + (historyHighlighted ? "var(--attention-tint)" : "var(--surface-section)") + ";"
         };
       }) : [];
@@ -873,7 +938,7 @@ class Component extends DCLogic {
         successorOpenLabel:(ru ? "Открыть версию-преемник " : "Open successor version ") + (version.successor || ""),
         openSuccessor:version.successor ? () => openRef(contract.space, version.successor, accent("successor", successorIdentity)) : () => {},
         successorStyle:"border:0; border-radius:var(--radius-nested); padding:10px 12px; cursor:pointer; color:var(--teal-ink); background:" + (highlighted("successor", successorIdentity) ? "var(--attention-tint)" : "var(--surface-section)") + ";",
-        successorContentStyle:"display:inline; border:0; border-radius:5px; padding:0; background:" + (highlighted("successor", successorIdentity) ? "var(--attention-tint)" : "transparent") + "; color:inherit; font:inherit; cursor:pointer;",
+        successorContentStyle:"display:inline; border:0; border-radius:5px; padding:0; " + highlightStyle(highlighted("successor", successorIdentity)) + " color:inherit; font:inherit; cursor:pointer;",
         snapshotTitle:ru ? "Снимок" : "Snapshot",
         snapshotResult:snapshot.result,
         snapshotUnavailable:snapshot.unavailable,
@@ -918,20 +983,37 @@ class Component extends DCLogic {
       shortLabel:ru ? "Обзор" : "Overview",
       selected:!selectedVersion,
       go:() => this.setState({ conVersion:"", conFacts:false, dashboardSet:"" })
-    }].concat(selectedVersions.map(version => ({
+    // Newest first here too: the switcher and the versions block list the same
+    // versions, and a reader who just saw 1.1.0 at the top of the block must not
+    // find it last in this menu. Same display-only re-read of a carried array.
+    }].concat(selectedVersions.slice().reverse().map(version => ({
       label:version.version,
       shortLabel:version.version,
       selected:!!selectedVersion && version.version === selectedVersion.version,
       result:resolve("lifecycle-state", version.state),
-      go:() => openExact(selectedContract, version, "")
+      // Switches the card in place, exactly like the overview option above —
+      // it must not open a modal or navigate, only move this view's own
+      // version selection.
+      go:() => this.setState({ conVersion:version.version, conFacts:false, dashboardSet:"" })
     }))) : [];
 
-    const screenVersionRows = selectedContract ? selectedVersions.map(version => {
+    // Newest first, like every other chronology on this dashboard (the two
+    // history reversals above): a reader landing on "Какие версии живы" wants
+    // the current version on top, not the oldest one. The snapshot still
+    // carries versions in the order the projection built them (oldest to
+    // newest, so a causal read stays reconstructible) — this only re-reads
+    // that carried array for display, it does not mutate or re-sort it.
+    const versionsForDisplay = selectedVersions.slice().reverse();
+    const screenVersionRows = selectedContract ? versionsForDisplay.map(version => {
       const pins = version.detail ? (version.detail.consumerPins || []).map(pin => pin.system) : [];
       const notes = [];
       if (version.sunset) notes.push({ plain:true, hasContract:false, text:(ru ? "Выключают " : "Switched off on ") + isoDay(version.sunset) + "." });
       if (version.successor) notes.push({ plain:false, hasContract:true, prefix:ru ? "На смену пришла " : "Replaced by ", contract:version.successor, suffix:".", contractAria:(ru ? "Открыть версию " : "Open version ") + version.successor, openContract:() => openRef(selectedContract.space, version.successor, accent("successor", [selectedContract.space, selectedContract.id, version.version, version.successor])) });
-      const openVersion = () => openExact(selectedContract, version, "");
+      // A version row SWITCHES this pane to that version — the same move the
+      // switcher above makes — instead of popping a modal over the contract a
+      // reader is already looking at. The cver card stays reachable by deep
+      // link, and this row is still its summary region.
+      const openVersion = () => this.setState({ conVersion:version.version });
       return {
         version:version.version,
         stateResult:resolve("lifecycle-state", version.state),
@@ -953,7 +1035,7 @@ class Component extends DCLogic {
         openAnnounce:() => this.go("work", { workSel:version.deprecationID, workTab:"all", workState:"all", workType:"all", workDue:false, space:selectedContract.space }),
         role:"button",
         tabIndex:"0",
-        ariaLabel:(ru ? "Открыть версию контракта " : "Open contract version ") + selectedContract.id + "@" + version.version,
+        ariaLabel:(ru ? "Показать версию " : "Show version ") + selectedContract.id + "@" + version.version,
         openVersion,
         openVersionKey:(event) => { if (event && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openVersion(); } },
         style:"background:var(--page); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--border); cursor:pointer;",
@@ -961,38 +1043,81 @@ class Component extends DCLogic {
       };
     }) : [];
 
-    const mapScreenDocument = (document) => {
-      const command = selectedContract && selectedVersion ? "a2a contract materialize " + selectedContract.id + "@" + selectedVersion.version + " --to <project-relative-dir>" : "";
-      const selectedSpace = selectedContract ? spaceRecord(selectedContract.space) : null;
-      const sourceURL = selectedContract && actions.sourceURL ? actions.sourceURL(selectedContract.space, document.path, selectedSpace && selectedSpace.revision || "") : "";
-      const fileActions = [{ kind:"copy", copy:true, source:false, label:ru ? "Копировать команду" : "Copy command", run:() => this.copy(command), url:"" }];
-      if (sourceURL) fileActions.push({ kind:"source", copy:false, source:true, label:ru ? "Открыть на GitHub" : "Open on GitHub", run:() => {}, url:sourceURL });
+    const mapScreenDocument = (document, depth, base) => {
+      // The tree rows carry no buttons. "Copy command" pasted the SAME
+      // materialize command on every row of the package and "Open on GitHub"
+      // was a second door to a file the row already names — 22 files meant 44
+      // identical controls. The command belongs to the version; the card's own
+      // document section still carries both, per file, where a reader has
+      // already chosen one.
       return {
         isDir:false,
         isFile:true,
-        depth:0,
+        depth:depth || 0,
         key:actions.cardID ? actions.cardID("cfile", { space:selectedContract && selectedContract.space, id:selectedContract && selectedContract.id, version:selectedVersion && selectedVersion.version, path:document.path }) : "",
         cfileKind:"cfile",
-        label:document.path,
+        label:base || document.path,
+        path:document.path,
         role:document.role,
         media:document.mediaType || notRecorded(ru),
         size:Number.isFinite(document.sizeBytes) ? document.sizeBytes + (ru ? " Б" : " B") : "",
-        actions:fileActions,
-        iconLabel:"•",
-        iconStyle:"flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:99px; background:var(--hairline); color:var(--muted);",
-        rowStyle:"width:100%; display:flex; align-items:flex-start; gap:10px; border:0; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); text-align:left; background:var(--surface-section); color:var(--text); box-shadow:inset 0 0 0 1px var(--border);"
+        iconLabel:fileTypeIcon(base || document.path).label,
+        iconStyle:"flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; min-width:30px; height:22px; padding:0 5px; border-radius:6px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:11px; font-weight:600; background:" + fileTypeIcon(base || document.path).bg + "; color:" + fileTypeIcon(base || document.path).fg + ";",
+        rowStyle:"width:100%; box-sizing:border-box; display:flex; align-items:flex-start; gap:10px; border:0; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); padding-left:" + (14 + (depth || 0) * 18) + "px; text-align:left; background:var(--surface-section); color:var(--text); box-shadow:inset 0 0 0 1px var(--border);"
       };
+    };
+
+    // The package renders as a folder tree, the way v0.22.0 showed it: a
+    // directory is a row you can fold, and a file carries only its own name.
+    // Expansion state lives in the shared `docTreeOpen` UI field, so a
+    // re-render (or a version switch) keeps the folders the reader opened.
+    const docTreeOpen = ui.docTreeOpen || {};
+    const docTreeKeyPrefix = selectedContract && selectedVersion
+      ? selectedContract.id + "@" + selectedVersion.version
+      : "";
+    const toggleDocTreeDir = (key) => this.setState(state => ({
+      docTreeOpen:Object.assign({}, state.docTreeOpen || {}, { [key]:!((state.docTreeOpen || {})[key]) })
+    }));
+    const docTreeRows = (documents, section) => {
+      const tree = buildDocTree((documents || []).map(document => ({ path:document.path || "", document })));
+      const keyOf = (segPath) => docTreeKeyPrefix + "|" + section + "|" + segPath;
+      const isOpen = (key) => !!docTreeOpen[key];
+      return flattenDocTree(tree, 0, keyOf, isOpen, []).map(row => {
+        if (row.isDir) {
+          return {
+            isDir:true, isFile:false, depth:row.depth, key:row.key, label:row.label,
+            expandedAttr:row.expanded ? "true" : "false",
+            dirAriaLabel:(row.expanded ? (ru ? "Свернуть папку " : "Collapse folder ") : (ru ? "Развернуть папку " : "Expand folder ")) + row.label,
+            toggle:() => toggleDocTreeDir(row.key),
+            rowStyle:"width:100%; box-sizing:border-box; display:flex; align-items:center; gap:8px; border:0; border-radius:var(--radius-nested); padding:8px 10px 8px " + (10 + row.depth * 18) + "px; text-align:left; background:transparent; color:var(--text); cursor:pointer; font-family:'Onest',sans-serif;"
+          };
+        }
+        return mapScreenDocument(row.document, row.depth, row.base);
+      });
     };
 
     const screenHistory = selectedDetail ? (selectedDetail.history || []).slice().reverse().map((event, index, rows) => {
       const transitionResult = resolve("transition", event.transition);
+      // The row names a PERSON where the snapshot carries one: the system's
+      // registered owner, with that node's avatar, the same identity the
+      // thread transcript prints. The system moves to the meta line beside the
+      // date, and the event ULID leaves the sentence entirely — it is evidence
+      // identity, not something a reader reads. It stays the version card's
+      // own carried `eventID` (and its accent target), untouched.
+      const actorNode = (data.nodes || []).find(node => node.system === event.actor) || null;
+      const actorOwner = actorNode && actorNode.owners && actorNode.owners.length ? String(actorNode.owners[0]) : "";
+      const actorDisplay = actorOwner || event.actor || (ru ? "автор не записан" : "actor not recorded");
+      const actorLogin = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(actorOwner) ? actorOwner : "";
       return {
-        actorName:event.actor || (ru ? "неизвестный автор" : "unknown actor"),
-        avatarMono:mono(event.actor || "?"),
+        actorName:actorDisplay,
+        avatar:actorNode && actorNode.avatar ? actorNode.avatar : "",
+        avatarMono:mono(actorDisplay),
+        actorProfileURL:actorLogin ? "https://github.com/" + actorLogin : "",
+        actorProfileTitle:actorLogin ? "GitHub · " + actorLogin : "",
         transitionResult,
-        actionText:transitionResult.label,
+        actionText:transitionResult.past,
         subjectLabel:selectedContract.id + "@" + selectedVersion.version,
-        meta:[event.at ? isoDay(event.at) : "", event.eventID || ""].filter(Boolean).join(" · "),
+        meta:[event.actor || "", event.at ? isoDay(event.at) : ""].filter(Boolean).join(" · "),
         hasSignal:false,
         signalLabel:"",
         stateResult:resolve("lifecycle-state", event.state),
@@ -1051,7 +1176,11 @@ class Component extends DCLogic {
         // dead code: DASHBOARD_UI_FIELDS threads `card` into Modal alone, so this
         // never resolved to anything but "" on the view's own render.
         summaryAttr:"contract",
-        select:() => openContract(contract, "")
+        // A row click SELECTS this contract into the master-detail pane, the
+        // way it did before P7 pointed it at the modal — it does not open the
+        // card. Picking a new contract resets the version selection to its
+        // overview, same as the switcher's own overview option below.
+        select:() => this.setState({ conSel:contract.id, conVersion:"", conFacts:false, dashboardSet:"" })
       })),
       hasConRows:contractsAll.length > 0,
       noConRows:contractsAll.length === 0,
@@ -1125,7 +1254,7 @@ class Component extends DCLogic {
       cdVersionNoDocsText:noneRecorded(ru),
       cdVersionNormativeTitle:ru ? "Документы в порядке снимка" : "Documents in snapshot order",
       cdVersionSupportingTitle:ru ? "Помогают внедрить" : "Support implementation",
-      cdVersionNormativeTree:selectedDocuments.map(mapScreenDocument),
+      cdVersionNormativeTree:docTreeRows(selectedDocuments, "normative"),
       cdVersionSupportingTree:[],
       cdVersionHistoryTitle:ru ? "История версии" : "Version history",
       cdNewestFirstLabel:c.newestFirst,

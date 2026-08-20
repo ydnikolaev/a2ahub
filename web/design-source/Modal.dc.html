@@ -8,9 +8,24 @@
 <body>
 <x-dc>
   <sc-if value="{{ cardOpen }}" hint-placeholder-val="{{ false }}">
-    <div data-card-modal onClick="{{ dismissCard }}" style="position:fixed; inset:0; z-index:500; overflow:auto; overflow-anchor:none; display:flex; align-items:flex-start; padding:var(--padding-modal-backdrop); background:rgba(33,30,23,.5); font-family:'Onest',sans-serif;">
-      <article ref="{{ cardHostRef }}" tabindex="-1" role="dialog" aria-modal="true" aria-label="{{ cardAriaLabel }}" style="width:min(980px,100%); margin:auto; border-radius:var(--radius-panel); outline:none; padding:var(--padding-card-block) var(--padding-card-inline); background:var(--surface); color:var(--text); box-shadow:0 24px 70px -22px rgba(33,30,23,.65);">
-        <div style="display:flex; justify-content:flex-end; margin-bottom:12px;"><button type="button" onClick="{{ closeCard }}" aria-label="{{ cardCloseLabel }}" style="display:flex; align-items:center; justify-content:center; width:38px; height:38px; border:1px solid var(--border); border-radius:var(--radius-control); background:var(--surface-section); color:var(--muted); font-size:19px; cursor:pointer;">✕</button></div>
+    <!-- Backdrop fill and dialog elevation were both the light theme's ink
+         written as literals: rgba(33,30,23,...) never moves when
+         html[data-theme="dark"] re-points the ink and the shadow roles for a
+         #16140F page, so this scrim and this dialog kept casting a warm
+         light-mode look on a dark page. The scrim is a fill (--scrim), not a
+         shadow; the dialog gets the elevation role that names what it IS. -->
+    <div data-card-modal onClick="{{ dismissCard }}" style="position:fixed; inset:0; z-index:500; overflow:auto; overflow-anchor:none; display:flex; align-items:flex-start; padding:var(--padding-modal-backdrop); background:var(--scrim); font-family:'Onest',sans-serif;">
+      <!-- The 0.22.0 shape, restored: a PINNED header carrying the card's name
+           and the single ✕, over a body that scrolls under it. The version this
+           replaces put a bare ✕ in the top-right corner of a long scrolling
+           card, so a reader three screens into a thread had nothing telling
+           them what they were reading and no way out without scrolling back. -->
+      <article ref="{{ cardHostRef }}" tabindex="-1" role="dialog" aria-modal="true" aria-label="{{ cardAriaLabel }}" style="width:min(980px,100%); max-height:calc(100vh - 2 * var(--padding-modal-backdrop)); margin:auto; display:flex; flex-direction:column; border-radius:var(--radius-panel); outline:none; background:var(--surface); color:var(--text); box-shadow:var(--shadow-modal); overflow:hidden;">
+        <header style="flex:0 0 auto; position:sticky; top:0; z-index:2; display:flex; align-items:center; gap:12px; padding:var(--padding-card-block) var(--padding-card-inline); background:var(--surface); border-bottom:1px solid var(--hairline);">
+          <span style="flex:1 1 auto; min-width:0; font-size:var(--font-subheading); line-height:var(--line-subheading); font-weight:600; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ cardTitle }}</span>
+          <button type="button" onClick="{{ closeCard }}" aria-label="{{ cardCloseLabel }}" title="{{ cardCloseLabel }}" style="flex:0 0 auto; display:flex; align-items:center; justify-content:center; width:38px; height:38px; border:1px solid var(--border); border-radius:var(--radius-control); background:var(--surface-section); color:var(--muted); font-size:19px; cursor:pointer;">✕</button>
+        </header>
+        <div data-card-body style="flex:1 1 auto; min-height:0; overflow:auto; padding:var(--padding-card-block) var(--padding-card-inline);">
         <sc-if value="{{ cardGone }}" hint-placeholder-val="{{ false }}"><div data-card-gone role="status" style="margin-bottom:14px; padding:var(--padding-card-block) var(--padding-card-inline); border-radius:var(--radius-card); background:var(--attention-tint); color:var(--attention-ink);">{{ cardGoneText }}</div></sc-if>
         <sc-if value="{{ cardUnavailable }}" hint-placeholder-val="{{ false }}"><div data-card-unavailable style="padding:var(--padding-card-block) var(--padding-card-inline); border-radius:var(--radius-card); background:var(--surface-section); color:var(--body);">{{ cardUnavailableText }}</div></sc-if>
         <sc-if value="{{ cardArtifactDetail }}" hint-placeholder-val="{{ false }}"><dc-import name="ArtifactDetail" ctx="{{ cardCtx }}" hint-size="100%,720px"></dc-import></sc-if>
@@ -19,6 +34,7 @@
         <sc-if value="{{ cardExchangeView }}" hint-placeholder-val="{{ false }}"><dc-import name="ExchangeView" ctx="{{ cardCtx }}" hint-size="100%,720px"></dc-import></sc-if>
         <sc-if value="{{ cardSpacesView }}" hint-placeholder-val="{{ false }}"><dc-import name="SpacesView" ctx="{{ cardCtx }}" hint-size="100%,720px"></dc-import></sc-if>
         <sc-if value="{{ cardOverview }}" hint-placeholder-val="{{ false }}"><dc-import name="Overview" ctx="{{ cardCtx }}" hint-size="100%,720px"></dc-import></sc-if>
+        </div>
       </article>
     </div>
   </sc-if>
@@ -103,6 +119,19 @@ class Component extends DCLogic {
       cardUnavailable:!!card && !cardRow,
       cardUnavailableText:ru ? "Эта карточка недоступна в текущем снимке." : "This card is unavailable in the current snapshot.",
       cardAriaLabel:ru ? "Карточка дашборда" : "Dashboard card",
+      // The header names WHICH card is open, in the reader's own vocabulary for
+      // the kind. The manifest already binds kind → component; this is the same
+      // seven kinds said in words, and an unknown kind falls back to the
+      // generic label rather than printing a raw enum.
+      cardTitle:(cardRow ? ({
+        "item": ru ? "Документ" : "Document",
+        "thread": ru ? "Тред" : "Thread",
+        "contract": ru ? "Контракт" : "Contract",
+        "cver": ru ? "Версия контракта" : "Contract version",
+        "work-report": ru ? "Отчёт о работе" : "Work report",
+        "space": ru ? "Спейс" : "Space",
+        "operational-process": ru ? "Операционный процесс" : "Operational process"
+      }[cardRow.kind] || "") : "") || (ru ? "Карточка дашборда" : "Dashboard card"),
       cardCloseLabel:ru ? "Закрыть карточку" : "Close card",
       cardArtifactDetail:!!cardRow && cardRow.component === "ArtifactDetail",
       cardThreadsView:!!cardRow && cardRow.component === "ThreadsView",

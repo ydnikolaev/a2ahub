@@ -663,18 +663,33 @@ func deriveDemoDerivedState(d *Data) {
 			}
 		}
 	}
+	// The document the detail describes is the one that states moveOwed, and it
+	// is in this same fixture: the Item derived above reads it as
+	// len(WaitingOn) > 0. Asking the document-aware form with THAT fact is what
+	// keeps a demo row from disagreeing with itself — a published announcement
+	// reading "Settled" in the list and "Awaiting a move" in the pane beside
+	// it, which is exactly what the product did until cache.ShowResult started
+	// carrying MoveOwed. The two-fact form is no longer the honest answer here
+	// for the same reason it stopped being one in assemble.go.
+	owed := make(map[demoArtifactRef]bool)
+	for _, collection := range [][]Item{d.Inbox, d.Outbox, d.Archive} {
+		for _, item := range collection {
+			if len(item.WaitingOn) > 0 {
+				owed[demoArtifactRef{space: item.Space, id: item.ID}] = true
+			}
+		}
+	}
 	for i := range d.ArtifactDetails {
 		ad := &d.ArtifactDetails[i]
-		// ArtifactDetail carries no WaitingOn — the same shape
-		// cache.ShowResult has, and the same reason assemble.go:1515 still
-		// asks the two-fact form: this view is built from a `show` result,
-		// which carries no pendency verdict today. Named rather than faked:
-		// inventing a moveOwed here would make the demo disagree with the
-		// product for exactly the two pairs P5 exists to fix.
-		ad.Outcome = fold.OutcomeOf(fold.Kind(ad.Type), fold.State(ad.State))
+		ad.Outcome = fold.OutcomeOfDocument(fold.Kind(ad.Type), fold.State(ad.State), owed[demoArtifactRef{space: ad.Space, id: ad.ID}])
 		ad.Terminal = fold.Terminal(fold.Kind(ad.Type), fold.State(ad.State))
 	}
 }
+
+// demoArtifactRef is the space-qualified identity the moveOwed lookup above
+// joins on: the fixture is two full spaces plus one unavailable one, so an id
+// alone can name two different documents.
+type demoArtifactRef struct{ space, id string }
 
 // demoArtifactKey qualifies an artifact id by its space, because the fixture
 // is deliberately two full spaces plus one unavailable one

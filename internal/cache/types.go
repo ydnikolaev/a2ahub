@@ -317,6 +317,16 @@ type ShowResult struct {
 	Refs      []RefFact      `json:"refs,omitempty"`
 	SyncStale bool           `json:"sync_stale"`
 	SyncAge   string         `json:"sync_age,omitempty"`
+	// MoveOwed is the per-document fact that decides an outcome for the two
+	// pairs where state alone cannot: a published announcement and a published
+	// contract are SETTLED unless somebody still owes a move on them
+	// (docs/inbox/defects/01-open-without-a-waiter.md). toItem has read it
+	// since that defect was fixed; ShowResult did not carry it, so the
+	// artifact-detail projection fell back to fold.OutcomeOf and answered
+	// "open" for exactly those pairs — the same document reading "Settled" in
+	// the list and "Awaiting a move" in the pane beside it, on six of axon's
+	// twenty-five documents.
+	MoveOwed bool `json:"-"`
 	// Attachments is the typed projection of the artifact's own committed
 	// attachments[] (schemas/envelope/v2/work_request.schema.json), one
 	// datapackage.AttachmentClaim per entry — ref/digest/role/conforms_to/

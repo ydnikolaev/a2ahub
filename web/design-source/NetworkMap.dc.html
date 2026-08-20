@@ -18,7 +18,7 @@
     <span style="flex:1 1 320px; min-width:0; max-width:100%; display:flex; align-items:center; justify-content:flex-end; gap:8px;">
       <span ref="{{ modeScrollRef }}" class="{{ modeScrollClass }}" style="flex:1 1 auto; min-width:0; max-width:100%; overflow-x:auto; overflow-y:hidden; white-space:nowrap; scrollbar-width:none;">
         <span style="display:flex; justify-content:flex-end; width:max-content; min-width:100%;">
-          <dc-import name="SegmentedFilter" items="{{ modes }}" hint-size="470px,38px"></dc-import>
+          <span style="display:block; min-width:0; max-width:100%; overflow:hidden;"><dc-import name="SegmentedFilter" items="{{ modes }}" hint-size="470px,38px"></dc-import></span>
         </span>
       </span>
       <button type="button" onClick="{{ toggleExpand }}" aria-label="{{ expandLabel }}" title="{{ expandLabel }}" aria-pressed="{{ isExpanded }}" style="{{ expandStyle }}"><dc-import name="ExpandIcon" expanded="{{ isExpanded }}" hint-size="20px,20px"></dc-import></button>
@@ -84,7 +84,17 @@
   </div>
 
   <div style="{{ bleedStyle }}">
-  <div ref="{{ boxRef }}" onScroll="{{ onCanvasScroll }}" style="background-color:var(--surface-workbench); background-image:radial-gradient(circle at 1px 1px,var(--map-grid) 1px,transparent 1.2px); background-size:18px 18px; border-radius:var(--radius-card); padding:var(--padding-list-card-block); overflow-x:auto; box-shadow:0 20px 44px -30px rgba(33,30,23,.55), 0 2px 6px -4px rgba(33,30,23,.3), inset 0 0 0 1px var(--border-strong);">
+  <!-- The workbench canvas's shadow used to be the light theme's ink typed
+       out by hand as a literal rgb triplet (33, 30, 23), tuned heavier than
+       any other surface in this file — it is structurally --shadow-panel's
+       two-layer shape (a diffuse cast plus a tight contact shadow), just
+       stronger, because this canvas needs to read as more separated from the
+       page than an ordinary panel. html[data-theme="dark"] re-points
+       --shadow-panel to a black-based value on the #16140F page; the copied
+       literal didn't hear that swap, so a dark-theme reader kept seeing this
+       whole scrollable map cast a warm light-mode shadow. Repointed to the
+       matching role; the inset ring stays. -->
+  <div ref="{{ boxRef }}" onScroll="{{ onCanvasScroll }}" style="background-color:var(--surface-workbench); background-image:radial-gradient(circle at 1px 1px,var(--map-grid) 1px,transparent 1.2px); background-size:18px 18px; border-radius:var(--radius-card); padding:var(--padding-list-card-block); overflow-x:auto; box-shadow:var(--shadow-panel), inset 0 0 0 1px var(--border-strong);">
     <div style="{{ canvasStyle }}">
       <svg viewBox="{{ viewBox }}" width="{{ canvasW }}" height="{{ canvasH }}" aria-hidden="true" style="position:absolute; left:0; top:0; z-index:2; overflow:visible; pointer-events:none;">
         <defs>
@@ -132,7 +142,7 @@
       </sc-for>
 
       <sc-for list="{{ badges }}" as="b" hint-placeholder-count="6">
-        <button type="button" onClick="{{ b.go }}" onMouseEnter="{{ b.enter }}" onMouseLeave="{{ b.leave }}" title="{{ b.title }}" aria-label="{{ b.title }}" style="{{ b.style }}">{{ b.text }}</button>
+        <button type="button" onClick="{{ b.go }}" onMouseEnter="{{ b.enter }}" onMouseLeave="{{ b.leave }}" onFocus="{{ b.enter }}" onBlur="{{ b.leave }}" title="{{ b.title }}" aria-label="{{ b.title }}" style="{{ b.style }}">{{ b.text }}</button>
       </sc-for>
 
     </div>
@@ -140,6 +150,47 @@
   </div>
   <sc-if value="{{ tipOpen }}" hint-placeholder-val="{{ false }}">
     <div role="tooltip" style="{{ tipStyle }}">{{ tipText }}</div>
+  </sc-if>
+
+  <!-- An exchange lane has no card kind to route through, so its summary opens
+       INLINE, under the map, the same master-detail way a thread or contract row
+       switches its own pane. It is deliberately not a dialog: Modal.dc.html is
+       the single modal engine (P13), and a lane that is not a card has no
+       business standing up a second one. A contract line inside this panel still
+       routes through this.props.onOpenContract and closes the panel first. -->
+  <sc-if value="{{ laneOpen }}" hint-placeholder-val="{{ false }}">
+    <section aria-label="{{ laneAriaLabel }}" style="margin-top:var(--space-section); border-radius:var(--radius-panel); background:var(--surface); box-shadow:var(--shadow-panel); overflow:hidden; font-family:'Onest',sans-serif;">
+        <header style="display:flex; flex-direction:column; gap:8px; padding:var(--padding-card-block) var(--padding-card-inline); background:var(--surface); border-bottom:1px solid var(--hairline);">
+          <div style="display:flex; align-items:center; gap:12px;">
+            <span style="flex:1 1 auto; min-width:0; font-family:'IBM Plex Mono',monospace; font-size:var(--font-subheading); line-height:var(--line-subheading); font-weight:600; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ laneTitle }}</span>
+            <button type="button" onClick="{{ closeLane }}" aria-label="{{ laneCloseLabel }}" title="{{ laneCloseLabel }}" style="flex:0 0 auto; display:flex; align-items:center; justify-content:center; width:38px; height:38px; border:1px solid var(--border); border-radius:var(--radius-control); background:var(--surface-section); color:var(--muted); font-size:19px; cursor:pointer;">✕</button>
+          </div>
+          <div style="display:flex; align-items:center; gap:7px; flex-wrap:wrap;">
+            <sc-for list="{{ lanePills }}" as="p" hint-placeholder-count="3">
+              <dc-import name="StatusPill" text="{{ p.text }}" tone="{{ p.tone }}" size="small" hint-size="110px,24px"></dc-import>
+            </sc-for>
+          </div>
+        </header>
+        <div style="padding:var(--padding-card-block) var(--padding-card-inline);">
+          <p style="margin:0 0 var(--space-section); font-size:15px; line-height:1.58; color:var(--body); text-wrap:pretty;">{{ laneSentence }}</p>
+          <div style="background:var(--surface-section); border-radius:var(--radius-nested); padding:3px var(--padding-nested-inline); box-shadow:inset 0 0 0 1px var(--hairline);">
+            <dc-import name="FactTable" rows="{{ laneFacts }}" hint-size="100%,220px"></dc-import>
+          </div>
+          <sc-if value="{{ laneHasContracts }}" hint-placeholder-val="{{ false }}">
+            <div style="margin-top:var(--space-section);">
+              <div style="font-weight:600; color:var(--text); font-size:15px; margin-bottom:9px;">{{ laneContractsLabel }}</div>
+              <div style="display:flex; flex-direction:column; gap:2px;">
+                <sc-for list="{{ laneContractLines }}" as="l" hint-placeholder-count="2">
+                  <button type="button" onClick="{{ l.go }}" style="display:flex; flex-direction:column; align-items:flex-start; gap:3px; width:100%; box-sizing:border-box; text-align:left; font-family:'Onest',sans-serif; border:0; cursor:pointer; padding:9px 12px; border-radius:10px; background:var(--page);">
+                    <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; font-weight:600; color:var(--text);">{{ l.label }}</span>
+                    <span style="font-size:13px; line-height:1.45; color:var(--muted);">{{ l.why }}</span>
+                  </button>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+    </section>
   </sc-if>
   <sc-if value="{{ collapsible }}" hint-placeholder-val="{{ false }}">
     <button type="button" onClick="{{ toggleExtras }}" aria-expanded="{{ extrasExpanded }}" style="{{ extrasBtnStyle }}">
@@ -217,7 +268,7 @@ function windowSentence(window, ru) {
 }
 
 class Component extends DCLogic {
-  state = { data: null, mode: null, space: null, sel: null, hover: null, tipText: "", tipPos: "", expanded: false, extras: false, csx: 0, csy: 0, boxW: 0, modeOverflow: false };
+  state = { data: null, mode: null, space: null, sel: null, hover: null, tipText: "", tipPos: "", expanded: false, extras: false, csx: 0, csy: 0, boxW: 0, modeOverflow: false, laneEdge: null };
 
   componentDidMount() {
     this.measure = () => {
@@ -246,6 +297,10 @@ class Component extends DCLogic {
       if (this.state.tipText) this.setState({ tipText: "", tipPos: "" });
     };
     window.addEventListener("resize", this.clearTip);
+    this.onLaneKeyDown = (ev) => {
+      if (ev.key === "Escape" && this.state.laneEdge) this.closeLane();
+    };
+    window.addEventListener("keydown", this.onLaneKeyDown);
     setTimeout(this.measure, 0);
     if (this.props.data) return;
     if (window.A2A_DEMO) {
@@ -255,7 +310,7 @@ class Component extends DCLogic {
   }
   componentDidUpdate(prev) {
     if (prev.space !== this.props.space && this.props.space && this.props.space !== this.state.space)
-      this.setState({ space: this.props.space, sel: null });
+      this.setState({ space: this.props.space, sel: null, laneEdge: null });
     // the host header may mount after this component, so keep the sticky offset in sync
     if (this.measure) requestAnimationFrame(this.measure);
   }
@@ -263,6 +318,7 @@ class Component extends DCLogic {
     if (this.measure) window.removeEventListener("resize", this.measure);
     if (this.clearTip) window.removeEventListener("resize", this.clearTip);
     if (this.onScrollWin) window.removeEventListener("scroll", this.onScrollWin, true);
+    if (this.onLaneKeyDown) window.removeEventListener("keydown", this.onLaneKeyDown);
   }
   keyEnds(key) {
     const p = String(key || "").split(":");
@@ -350,7 +406,7 @@ class Component extends DCLogic {
   scope() { return this.state.space || this.props.space || "all"; }
   ru() { return this.props.locale === "ru"; }
   pickSpace(id) {
-    this.setState({ space: id, sel: null });
+    this.setState({ space: id, sel: null, laneEdge: null });
     if (this.props.onSpaceChange) this.props.onSpaceChange(id);
   }
   pick(kind, key, x, y) {
@@ -359,8 +415,24 @@ class Component extends DCLogic {
     this.setState({ sel: { kind, key, x, y } });
   }
   openRelation(r, key, x, y) {
+    if (r.kind === "x") { this.selectLane(r.e); return; }
     this.setState({ sel: { kind:"edge", key, x, y } });
     if (r.kind === "c" && this.props.onOpenContract) this.props.onOpenContract(r.e);
+  }
+  // The map owns exactly one dialog of its own (operator-approved, narrowed
+  // P13): a click on an exchange lane has no card kind to route through, so
+  // it keeps a summary here instead of opening nothing. A contract line still
+  // routes through the canonical card via openRelation above.
+  // Opening the dialog ENDS the map's focus state, and closing it leaves the
+  // map as it was found. Without that, clicking a lane left `sel` and `hover`
+  // pointing at it forever: the pointer moves onto the dialog, so the line
+  // never receives its mouseleave, and every other line stays dimmed to 0.12
+  // for the rest of the session — hover looked broken from the first click on.
+  selectLane(e) {
+    this.setState({ laneEdge: e, sel: null, hover: null, tipText: "", tipPos: "" });
+  }
+  closeLane() {
+    this.setState({ laneEdge: null, sel: null, hover: null, tipText: "", tipPos: "" });
   }
 
   avatar(kind, px) {
@@ -584,8 +656,10 @@ class Component extends DCLogic {
       mono: codes[d.self], name: d.self, meta: selfNode.org || "", hasRobot: true,
       avatarStyle: this.avatar("self", 34),
       enter: this.hoverOn("node:" + selfKey), leave: this.hoverOff("node:" + selfKey),
+      // --shadow-selected-card / --shadow-card repoint: see the canvas
+      // comment above for why.
       style: "position:absolute; z-index:3; box-sizing:border-box; overflow:hidden; left:" + SX + "px; top:" + Math.round(selfCY - SHv / 2) + "px; width:" + SW + "px; min-height:" + Math.round(SHv) + "px; display:flex; flex-direction:column; align-items:flex-start; text-align:left; font-family:'Onest',sans-serif; background:var(--surface-card); border:0; border-radius:14px; padding:14px 15px; cursor:pointer; transition:opacity .12s ease; opacity:" + (selfDim ? 0.4 : 1) + "; box-shadow:" +
-        (selfRing ? "0 0 0 2px var(--focus), 0 10px 26px -14px rgba(33,30,23,.7)" : "inset 0 0 0 1px var(--teal-hairline), 0 1px 2px rgba(33,30,23,.08)") + ";"
+        (selfRing ? "0 0 0 2px var(--focus), var(--shadow-selected-card)" : "inset 0 0 0 1px var(--teal-hairline), var(--shadow-card)") + ";"
     });
     groups.forEach(g => g.rows.forEach(row => {
       const n = row.node;
@@ -601,7 +675,7 @@ class Component extends DCLogic {
         meta:n.org || "",
         avatarStyle:this.avatar("member"),
         style: "position:absolute; z-index:3; box-sizing:border-box; left:" + MX + "px; top:" + (row.cy - MH / 2) + "px; width:" + MW + "px; height:" + MH + "px; display:flex; flex-direction:column; justify-content:center; text-align:left; font-family:'Onest',sans-serif; background:var(--surface-card); border:0; border-radius:12px; padding:9px 13px; cursor:pointer; transition:opacity .12s ease; opacity:" + (dim ? 0.4 : 1) + "; box-shadow:" +
-          (ring ? "0 0 0 2px var(--focus), 0 10px 24px -16px rgba(33,30,23,.7)" : "0 1px 2px rgba(33,30,23,.1)") + ";"
+          (ring ? "0 0 0 2px var(--focus), var(--shadow-selected-card)" : "var(--shadow-card)") + ";"
       });
     }));
     return {
@@ -616,9 +690,10 @@ class Component extends DCLogic {
     const scope = this.scope();
     const expanded = this.state.expanded;
     const ru = this.props.locale === "ru";
+    const lane = this.laneVals(d, ru);
     const emptyModes = [["both", ru ? "Всё" : "Everything"], ["contracts", ru ? "Контрактные линии" : "Contract lines"], ["exchanges", ru ? "Живая работа" : "Live work"]].map(([id, label]) => ({
       label, count:"", pressed: this.mode() === id,
-      go: () => this.setState({ mode: id, sel: null })
+      go: () => this.setState({ mode: id, sel: null, laneEdge: null })
     }));
     const shell = {
       shellStyle:expanded ? "position:relative; width:min(1480px, calc(100vw - 32px)); max-width:none; margin-left:calc((100% - min(1480px, calc(100vw - 32px))) / 2);" : "",
@@ -644,7 +719,9 @@ class Component extends DCLogic {
       stickyInnerStyle: !expanded && this.state.stuck ? "width:min(1240px, 100% - 56px); margin:0 auto;" : "width:100%;",
       tipOpen: !!this.state.tipText,
       tipText: this.state.tipText,
-      tipStyle: "position:fixed; z-index:1200; " + this.state.tipPos + " width:min(340px,78vw); box-sizing:border-box; background:var(--inverse); color:var(--on-inverse-2); border-radius:12px; padding:12px 14px; font-family:'Onest',sans-serif; font-size:14px; line-height:1.55; font-weight:400; text-align:left; box-shadow:0 16px 38px rgba(33,30,23,.36); white-space:normal; overflow-wrap:anywhere; pointer-events:none;",
+      // --shadow-tooltip repoint (this is a hover bubble): see the canvas
+      // comment above for why.
+      tipStyle: "position:fixed; z-index:1200; " + this.state.tipPos + " width:min(340px,78vw); box-sizing:border-box; background:var(--inverse); color:var(--on-inverse-2); border-radius:12px; padding:12px 14px; font-family:'Onest',sans-serif; font-size:14px; line-height:1.55; font-weight:400; text-align:left; box-shadow:var(--shadow-tooltip); white-space:normal; overflow-wrap:anywhere; pointer-events:none;",
       sentinelRef: (n) => { this.sentinelNode = n; },
       modeScrollRef: (n) => { this.modeScrollNode = n; if (n && this.measure) setTimeout(this.measure, 0); },
       modeScrollClass: this.state.modeOverflow ? "a2a-fade-scroll" : "",
@@ -674,7 +751,7 @@ class Component extends DCLogic {
       overviewLabel: ru ? "Обзор" : "Overview", legendLabel: ru ? "Условные обозначения" : "Legend", introLabel: ru ? "Как пользоваться" : "How to use it",
       canvasStyle: "position:relative; width:1080px; height:300px;", viewBox: "0 0 1080 300", canvasW: 1080, canvasH: 300,
       panels:[], cards:[], edges:[], badges:[], tableRows:[], tableNote:""
-    }, shell, labels);
+    }, shell, labels, lane);
 
     const codes = monoCodes(d.nodes.map(n => n.system));
     // an embedding page can present a subset of spaces (the home page shows two, the dashboard all)
@@ -682,9 +759,17 @@ class Component extends DCLogic {
     const spacesInScope = allow ? d.spaces.filter(x => allow.indexOf(x.id) > -1) : d.spaces;
     const inScope = (id) => (!allow || allow.indexOf(id) > -1) && (scope === "all" || scope === id);
     const shown = spacesInScope.filter(x => inScope(x.id));
+    // Each chip counts what it would show. The slot was already there and
+    // rendering empty, so the row reserved space for a number nobody drew: a
+    // reader could not tell whether "Contract lines" meant one line or thirty
+    // without pressing it. Counted over the SAME in-scope sets the canvas
+    // draws, so the chip and the picture can never disagree.
+    const contractsInScope = d.contractEdges.filter(e => inScope(e.space)).length;
+    const exchangesInScope = d.exchangeEdges.filter(e => inScope(e.space)).length;
+    const modeCounts = { both: contractsInScope + exchangesInScope, contracts: contractsInScope, exchanges: exchangesInScope };
     const modes = [["both", ru ? "Всё" : "Everything"], ["contracts", ru ? "Контрактные линии" : "Contract lines"], ["exchanges", ru ? "Живая работа" : "Live work"]].map(([id, label]) => ({
-      label, count:"", pressed: this.mode() === id,
-      go: () => this.setState({ mode: id, sel: null })
+      label, count:String(modeCounts[id]), pressed: this.mode() === id,
+      go: () => this.setState({ mode: id, sel: null, hover: null, laneEdge: null })
     }));
     const spaceTabs = [{ id: "all", label: ru ? "все спейсы" : "all spaces" }].concat(spacesInScope.map(x => ({ id: x.id, label: x.id })))
       .map(x => {
@@ -699,7 +784,22 @@ class Component extends DCLogic {
     const m = this.mode();
     const cAll = m === "exchanges" ? [] : d.contractEdges.filter(e => inScope(e.space));
     const xAll = m === "contracts" ? [] : d.exchangeEdges.filter(e => inScope(e.space));
+    // What the map IS, in five numbers — the 0.22.0 panel. It had degraded to
+    // two window sentences, which describe the SNAPSHOT's bounds rather than
+    // the graph: on a healthy one-space setup both read "showing 1 of 1" and
+    // the panel told a reader nothing about who depends on whom. The bounds are
+    // still honest and still printed, below the counts, and only when a window
+    // actually truncated something.
+    const systemsInScope = d.nodes.filter(n => !n.space || inScope(n.space)).length;
+    const readableSpaces = d.spaces.filter(x => inScope(x.id) && x.readable !== false).length;
+    const offCurrent = d.contractEdges.filter(e => inScope(e.space) && e.drift && e.drift !== "current").length;
+    const openLanes = d.exchangeEdges.filter(e => inScope(e.space)).length;
     const summaryRows = [
+      { label:ru ? "Системы" : "Systems", value:String(systemsInScope), mono:false },
+      { label:ru ? "Читаемые спейсы" : "Readable spaces", value:String(readableSpaces), mono:false },
+      { label:ru ? "Контрактные линии" : "Contract lines", value:String(contractsInScope), mono:false },
+      { label:ru ? "Не на актуальной версии" : "Off current", value:String(offCurrent), mono:false },
+      { label:ru ? "Открытые связи" : "Open lanes", value:String(openLanes), mono:false },
       { label:ru ? "Окно линий обмена" : "Exchange relation window", value:windowSentence(d.windows && d.windows.exchangeEdges, ru), mono:false },
       { label:ru ? "Окно замечаний" : "Flag window", value:windowSentence(d.windows && d.windows.flags, ru), mono:false }
     ].filter(row => row.value);
@@ -739,7 +839,76 @@ class Component extends DCLogic {
         windowSentence(d.windows && d.windows.exchangeEdges, ru) ? (ru ? "Линии обмена: " : "Exchange relations: ") + windowSentence(d.windows && d.windows.exchangeEdges, ru) : "",
         windowSentence(d.windows && d.windows.flags, ru) ? (ru ? "Замечания: " : "Flags: ") + windowSentence(d.windows && d.windows.flags, ru) : ""
       ].filter(Boolean).join(" ")
-    }, canvas, shell, labels);
+    }, canvas, shell, labels, lane);
+  }
+
+  // ---- exchange lane dialog -----------------------------------------------
+  // The one dialog the map is allowed to own (narrowed P13): a click on an
+  // exchange lane carries no card kind, so the aggregate the 0.22.0 dashboard
+  // used to answer with (author, recipient, space, live documents, strongest
+  // priority, what is blocked, longest without movement) lives here instead
+  // of disappearing. A fact this snapshot did not carry is never printed and
+  // never defaulted — same Rule A discipline as windowSentence above.
+  laneVals(d, ru) {
+    const e = this.state.laneEdge;
+    const closeLane = () => this.closeLane();
+    if (!e) {
+      return {
+        laneOpen: false, laneTitle: "", lanePills: [], laneSentence: "",
+        laneFacts: [], laneHasContracts: false, laneContractsLabel: "", laneContractLines: [],
+        laneAriaLabel: "", laneCloseLabel: "", closeLane
+      };
+    }
+    const hasOwedCount = typeof e.owedCount === "number";
+    const owed = hasOwedCount ? e.owedCount : 0;
+    const pills = [
+      { text: ru ? "живая работа" : "live work", tone: "outline" },
+      { text: e.space, tone: "neutral" }
+    ];
+    if (hasOwedCount) pills.push({
+      text: owed > 0 ? (ru ? "ждут хода" : "awaiting a move") : (ru ? "в работе" : "in flight"),
+      tone: owed > 0 ? "blocking" : "neutral"
+    });
+    const sentence = ru
+      ? "Живые документы между этими системами, а не структурная зависимость: они ещё открыты, а не обязательно кем-то не отвечены." +
+        (hasOwedCount ? (owed > 0 ? " У части из них есть невыполненный шаг — кто-то должен сделать следующий ход." : " Сейчас никто из участников не должен сделать ход — работа просто продолжается.") : "")
+      : "Live documents between these systems, not a structural dependency: they are still open, not necessarily unanswered by anybody." +
+        (hasOwedCount ? (owed > 0 ? " Some of them have an outstanding step — somebody owes the next move." : " Right now nobody owes a move — the work is simply continuing.") : "");
+    const facts = [
+      { label: ru ? "автор" : "author", value: e.from, mono: true },
+      { label: ru ? "получатель" : "recipient", value: e.to, mono: true },
+      { label: ru ? "спейс" : "space", value: e.space, mono: true },
+      { label: ru ? "живых документов" : "live documents", value: String(e.count) }
+    ];
+    if (e.maxPriority) facts.push({ label: ru ? "наивысший приоритет" : "strongest priority", value: e.maxPriority });
+    if (hasOwedCount) facts.push({
+      label: ru ? "кого ждут" : "blocked on",
+      value: owed > 0
+        ? (ru ? ruPlural(owed, "документ ждёт хода", "документа ждут хода", "документов ждут хода") : plural(owed, "document owes a move", "documents owe a move"))
+        : (ru ? "никого, всё движется" : "nobody, nothing is stopped")
+    });
+    if (e.maxStale) facts.push({ label: ru ? "без движения дольше всех" : "longest without movement", value: e.maxStale });
+    const lines = d ? (d.contractEdges || []).filter(x => x.space === e.space && ((x.from === e.from && x.to === e.to) || (x.from === e.to && x.to === e.from))) : [];
+    return {
+      laneOpen: true,
+      laneTitle: e.from + " → " + e.to,
+      lanePills: pills,
+      laneSentence: sentence,
+      laneFacts: facts,
+      laneHasContracts: lines.length > 0,
+      laneContractsLabel: ru ? "Контрактные линии между этими системами" : "Contract lines between these two",
+      laneContractLines: lines.map(x => ({
+        label: x.from + " → " + x.to,
+        why: this.relTip({ kind: "c", e: x }),
+        go: () => {
+          if (this.props.onOpenContract) this.props.onOpenContract(x);
+          this.closeLane();
+        }
+      })),
+      laneAriaLabel: (ru ? "Линия обмена: " : "Exchange lane: ") + e.from + " → " + e.to,
+      laneCloseLabel: ru ? "Закрыть сводку линии" : "Close lane summary",
+      closeLane
+    };
   }
 }
 

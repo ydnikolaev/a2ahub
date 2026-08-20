@@ -8,7 +8,7 @@
 <body>
 <x-dc>
 <span style="position:relative; flex:0 0 auto; display:inline-flex;">
-  <button type="button" onClick="{{ toggle }}" aria-expanded="{{ expanded }}" aria-label="{{ ariaLabel }}" style="{{ buttonStyle }}" style-hover="background:var(--surface-section); box-shadow:0 1px 2px rgba(33,30,23,.06), inset 0 0 0 1px var(--border-strong);">
+  <button type="button" onClick="{{ toggle }}" aria-expanded="{{ expanded }}" aria-label="{{ ariaLabel }}" style="{{ buttonStyle }}" style-hover="background:var(--surface-section); box-shadow:var(--shadow-card), inset 0 0 0 1px var(--border-strong);">
     <sc-if value="{{ hasFaces }}" hint-placeholder-val="{{ true }}">
       <span style="display:flex; align-items:center; flex:0 0 auto;">
         <sc-for list="{{ faces }}" as="f" hint-placeholder-count="3">
@@ -25,7 +25,7 @@
     <!-- The list sizes itself to the longest space id (`max-content`) so a name
          never breaks across two lines: "checkout-" / "core" reads as two
          different spaces for the half-second it takes to notice it is not. -->
-    <span style="position:absolute; z-index:120; top:calc(100% + 8px); right:0; width:max-content; min-width:260px; max-width:min(420px, 90vw); background:var(--surface); border-radius:14px; padding:8px; box-shadow:0 16px 40px -12px rgba(33,30,23,.42), 0 0 0 1px var(--border); display:flex; flex-direction:column; gap:2px;">
+    <span style="position:absolute; z-index:120; top:calc(100% + 8px); right:0; width:max-content; min-width:260px; max-width:min(420px, 90vw); background:var(--surface); border-radius:14px; padding:8px; box-shadow:var(--shadow-popover), 0 0 0 1px var(--border); display:flex; flex-direction:column; gap:2px;">
       <sc-for list="{{ options }}" as="o" hint-placeholder-count="4">
         <button type="button" onClick="{{ o.go }}" aria-current="{{ o.current }}" style="{{ o.style }}">
           <sc-if value="{{ o.hasFaces }}" hint-placeholder-val="{{ true }}">
@@ -117,8 +117,14 @@ class Component extends DCLogic {
       statusToneClass: currentTreatment.toneClass,
       // Weight is constant across states here as everywhere else: an open
       // control that bolds itself re-measures its own text and nudges the row.
-      buttonStyle: "display:inline-flex; align-items:center; gap:9px; max-width:280px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; color:var(--text); background:var(--surface); border:0; border-radius:10px; padding:9px 13px 9px 10px; cursor:pointer; box-shadow:0 1px 2px rgba(33,30,23,.06), inset 0 0 0 1px var(--border); transition:background-color 140ms ease, box-shadow 140ms ease;" +
-        (this.state.open ? " box-shadow:0 1px 2px rgba(33,30,23,.06), inset 0 0 0 1.5px var(--border-strong);" : ""),
+      // Both states were the light theme's ink literal (rgba(33,30,23,...))
+      // wrapping an inset ring: dark theme re-points --shadow-card and the
+      // ring color, but a hand-typed rgba never moves with it, so this
+      // control kept a light-mode shadow on a dark page. Elevation now reads
+      // the resting-card role; the ring geometry (and its per-state color)
+      // is untouched.
+      buttonStyle: "display:inline-flex; align-items:center; gap:9px; max-width:280px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; color:var(--text); background:var(--surface); border:0; border-radius:10px; padding:9px 13px 9px 10px; cursor:pointer; box-shadow:var(--shadow-card), inset 0 0 0 1px var(--border); transition:background-color 140ms ease, box-shadow 140ms ease;" +
+        (this.state.open ? " box-shadow:var(--shadow-card), inset 0 0 0 1.5px var(--border-strong);" : ""),
       options: options.map(o => {
         const resolved = treatment(o.result, o.statusDotStyle);
         return {

@@ -25,9 +25,12 @@
       <button type="button" onMouseEnter="{{ openAgentHint }}" onMouseLeave="{{ closeAgentHint }}" onFocus="{{ openAgentHint }}" onBlur="{{ closeAgentHint }}" aria-label="{{ agentBadgeAriaLabel }}" aria-expanded="{{ agentHintExpanded }}" style="{{ agentBadgeStyle }}">
         <dc-import name="AgentIcon" id="{{ agentID }}" size="12" hint-size="12px,12px"></dc-import>
       </button>
-      <sc-if value="{{ agentHintOpen }}" hint-placeholder-val="{{ false }}">
-        <span role="tooltip" style="{{ agentBubbleStyle }}">{{ agentHintText }}</span>
-      </sc-if>
+      <!-- The agent badge's bubble is the same bubble the five vocabulary
+           components use, so it comes from the same component now: one
+           placement rule, one dismiss behaviour, one z-index. It used to
+           hand-roll its own at z-index 960 — a third value in a family that
+           already disagreed at 500 and 950. -->
+      <dc-import name="InfoTooltip" text="{{ agentHintText }}" open="{{ agentHintOpen }}" anchor="{{ agentAnchorNode }}" size="compact" on-dismiss="{{ closeAgentHint }}" hint-size="0,0"></dc-import>
     </sc-if>
   </span>
 
@@ -41,7 +44,7 @@
       <sc-if value="{{ hasPlainSubject }}" hint-placeholder-val="{{ false }}"><span style="{{ plainSubjectStyle }}">{{ subjectLabel }}</span></sc-if>
     </div>
     <div style="{{ metaStyle }}">{{ meta }}</div>
-    <sc-if value="{{ hasNoteText }}" hint-placeholder-val="{{ false }}"><div data-event-note style="margin-top:7px; color:var(--body); line-height:1.55; overflow-wrap:anywhere; white-space:pre-wrap;">{{ noteText }}</div></sc-if>
+    <sc-if value="{{ hasNoteText }}" hint-placeholder-val="{{ false }}"><div data-event-note style="{{ noteStyle }}">{{ noteText }}</div></sc-if>
   </div>
 
   <sc-if value="{{ hasSignal }}" hint-placeholder-val="{{ false }}"><span style="padding-top:1px;"><dc-import name="EventSignal" result="{{ signalResult }}" tone="{{ signalTone }}" label="{{ signalLabel }}" hint-size="20px,20px"></dc-import></span></sc-if>
@@ -60,24 +63,14 @@ const SIZES = {
   large:   { avatar:48, gap:15, title:17, meta:15, mono:12, min:50 }
 };
 class Component extends DCLogic {
-  state = { agentHintOpen: false, agentHintPos: "" };
+  state = { agentHintOpen: false };
 
-  // Measures the badge button and flips the popover above it when there is
-  // not enough room below — the same fixed/measured approach as FreshnessDot
-  // and HintDot elsewhere in this file, so a badge inside a scrolling
-  // transcript rail is never clipped by an ancestor's overflow.
+  // Placement, clamping and dismissal moved into InfoTooltip with the bubble
+  // itself; what stays here is the state the trigger owns — whether its own
+  // hint is open, and which node it is anchored to.
   showAgentHint(btn) {
     if (!btn) return;
-    const r = btn.getBoundingClientRect();
-    const width = Math.min(280, window.innerWidth * 0.74);
-    const left = Math.max(12, Math.min(r.left, window.innerWidth - width - 12));
-    const below = window.innerHeight - r.bottom > 130;
-    this.setState({
-      agentHintOpen: true,
-      agentHintPos: below
-        ? "left:" + Math.round(left) + "px; top:" + Math.round(r.bottom + 7) + "px;"
-        : "left:" + Math.round(left) + "px; bottom:" + Math.round(window.innerHeight - r.top + 7) + "px;"
-    });
+    this.setState({ agentHintOpen: true });
   }
 
   renderVals() {
@@ -112,7 +105,12 @@ class Component extends DCLogic {
       // Resolver output dominates for protocol events. Artifact creation,
       // work checkpoints and registry facts intentionally omit it and retain
       // their explicit static action path.
-      actionText: transitionResult ? transitionResult.label : (row.actionText || ""),
+      // The row names a person and then says what they did, so the ACTOR's
+      // form wins: "ydnikolaev опубликовал", never "ydnikolaev опубликовано".
+      // A caller's own wording still comes first — "сообщил о работе над" and
+      // "приняла" are sentences no transition vocabulary can produce — and the
+      // label remains the last resort for a value with no verb.
+      actionText: row.actionText || (transitionResult ? (transitionResult.past || transitionResult.label) : ""),
       meta: row.meta || "",
       avatar: row.avatar || "",
       avatarMono: row.avatarMono || "?",
@@ -134,6 +132,11 @@ class Component extends DCLogic {
       openNote: row.openNote || (() => {}),
       hasNoteText:!!row.hasNoteText,
       noteText:row.noteText || "",
+      // A caller reading a whole transcript asks for the clamp; the document's
+      // own card leaves it off and prints the note in full. One component, the
+      // decision made by whoever owns the surface.
+      noteStyle:"margin-top:7px; color:var(--body); line-height:1.55; overflow-wrap:anywhere; white-space:pre-wrap;"
+        + (row.noteClamped ? " display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;" : ""),
       signalResult: transitionResult,
       signalTone: row.signalTone || "neutral",
       signalLabel,
@@ -162,8 +165,14 @@ class Component extends DCLogic {
       agentHintOpen: this.state.agentHintOpen,
       agentHintExpanded: this.state.agentHintOpen ? "true" : "false",
       agentHintText,
-      agentBubbleStyle: "position:fixed; z-index:960; " + this.state.agentHintPos + " width:min(280px,74vw); background:var(--inverse); color:var(--on-inverse-2); border-radius:10px; padding:10px 12px; font-family:'Onest',sans-serif; font-size:13px; line-height:1.5; font-weight:400; text-align:left; box-shadow:0 14px 34px rgba(33,30,23,.34); white-space:normal; pointer-events:none;",
-      openAgentHint: (ev) => this.showAgentHint(ev && ev.currentTarget),
+      // This is a hover bubble, and its shadow used to be typed out as a
+      // light-theme literal rgb triplet (33, 30, 23) — invisible to
+      // html[data-theme="dark"]'s re-point of --shadow-tooltip, so a
+      // dark-theme reader saw this bubble cast a warm light-mode shadow on
+      // the #16140F page instead of the dark one. --shadow-tooltip is that
+      // exact role ("a hover bubble").
+      agentAnchorNode: this.agentAnchor || null,
+      openAgentHint: (ev) => { this.agentAnchor = ev && ev.currentTarget; this.showAgentHint(ev && ev.currentTarget); },
       closeAgentHint: () => this.setState({ agentHintOpen: false })
     };
   }

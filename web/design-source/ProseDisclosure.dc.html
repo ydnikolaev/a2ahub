@@ -7,11 +7,11 @@
 </head>
 <body>
 <x-dc>
-<div ref="{{ rootRef }}" data-prose-disclosure style="position:relative; overflow:hidden; margin:0 0 12px;">
+<div ref="{{ rootRef }}" data-prose-disclosure style="{{ rootStyle }}">
   <div style="{{ clipStyle }}">
-    <p style="margin:0; font-size:16px; line-height:1.62; color:var(--body); max-width:760px; text-wrap:pretty;">{{ text }}</p>
+    <p style="{{ textStyle }}">{{ text }}</p>
   </div>
-  <sc-if value="{{ faded }}" hint-placeholder-val="{{ true }}"><div aria-hidden="true" style="position:absolute; left:0; right:0; bottom:42px; height:72px; pointer-events:none; background:linear-gradient(180deg,color-mix(in srgb,var(--page) 0%,transparent),var(--page));"></div></sc-if>
+  <sc-if value="{{ faded }}" hint-placeholder-val="{{ true }}"><div aria-hidden="true" style="{{ fadeStyle }}"></div></sc-if>
   <sc-if value="{{ hasMore }}" hint-placeholder-val="{{ true }}">
     <button type="button" onClick="{{ toggle }}" aria-expanded="{{ expanded }}" style="position:relative; z-index:1; width:100%; min-height:42px; margin-top:8px; display:flex; align-items:center; justify-content:center; gap:7px; border:0; border-top:1px solid var(--hairline); color:var(--teal-ink); background:var(--page); font-family:'Onest',sans-serif; font-size:15px; font-weight:600; cursor:pointer;">
       <dc-import name="DisclosureIcon" expanded="{{ expanded }}" hint-size="18px,18px"></dc-import><span>{{ label }}</span>
@@ -37,11 +37,32 @@ class Component extends DCLogic {
     const text = String(this.props.text || "");
     const hasMore = text.length > 420;
     const open = hasMore && this.state.open;
+    // `shell` paints the same reading surface an artifact body gets in the
+    // Exchange card — a section-tinted panel with its own border — so a
+    // contract descriptor and a document body look like the same kind of
+    // thing. Without it the prose floats directly on the card.
+    // The shell is for a BODY — text long enough to need clamping and a panel
+    // to sit in. A one-line description in a tinted box with no toggle reads
+    // as a leftover fragment, so a short text keeps the plain lead paragraph.
+    const shell = !!this.props.shell && hasMore;
     return {
       text,
+      rootStyle: shell
+        ? "position:relative; overflow:hidden; margin:0 0 var(--space-section); background:var(--surface-section); border-radius:var(--radius-nested); padding:17px 20px 0; box-shadow:inset 0 0 0 1px var(--border);"
+        : "position:relative; overflow:hidden; margin:0 0 12px;",
+      // Authored line breaks survive: a descriptor written as markdown is
+      // paragraphs and lists, and collapsing it into one run of text was the
+      // difference between a document and a wall.
+      textStyle: "margin:0; font-size:16px; line-height:1.62; color:var(--body); text-wrap:pretty; white-space:pre-wrap; overflow-wrap:anywhere;"
+        + (shell ? "" : " max-width:760px;"),
       rootRef: (node) => { this.root = node; },
       hasMore,
       faded: hasMore && !open,
+      // The fade has to end in the surface it sits on, or it paints a pale
+      // band across a tinted panel.
+      fadeStyle: "position:absolute; left:0; right:0; bottom:42px; height:72px; pointer-events:none; background:linear-gradient(180deg,color-mix(in srgb,"
+        + (shell ? "var(--surface-section)" : "var(--page)") + " 0%,transparent),"
+        + (shell ? "var(--surface-section)" : "var(--page)") + ");",
       expanded: open ? "true" : "false",
       clipStyle: open || !hasMore ? "" : "max-height:9.72em; overflow:hidden;",
       label: open ? (ru ? "Свернуть" : "Show less") : (ru ? "Показать ещё" : "Show more"),

@@ -23,6 +23,16 @@ type VocabularyEntry struct {
 	ExplanationEN string           `json:"explanationEN"`
 	Tone          VocabularyTone   `json:"tone"`
 	Cue           string           `json:"cue"`
+	// PastRU/PastEN are the ACTOR's form of a transition: what a person did,
+	// not what the record now says. A timeline row names someone and then this
+	// verb — "ydnikolaev опубликовал контракт" — where the label form would
+	// read "ydnikolaev ответ записан ответ", which is not a sentence in either
+	// language. Both forms are needed because two surfaces ask different
+	// questions: a pill states the resulting fact, a history states the act.
+	// Carried only by the transition family; empty everywhere else, and a
+	// reader falls back to the label rather than inventing a verb.
+	PastRU string `json:"pastRU,omitempty"`
+	PastEN string `json:"pastEN,omitempty"`
 }
 
 // VocabularyFallback is the honest result for an unrecognized family/value.
@@ -146,9 +156,9 @@ var dashboardVocabularyEntries = []VocabularyEntry{
 	vocabularyEntry(VocabularyFamilySourceFreshness, "unavailable", "Источник недоступен", "Source unavailable", "Источник не удалось прочитать; его факты не входят в текущую картину.", "The source could not be read, so its facts are absent from the current picture.", VocabularyToneBroken),
 	vocabularyEntry(VocabularyFamilySourceFreshness, "degraded", "Источник прочитан не полностью", "Source degraded", "Обновление завершилось с явной проблемой, поэтому часть фактов может быть неполной.", "The refresh completed with an explicit problem, so some facts may be incomplete.", VocabularyToneBroken),
 
-	vocabularyEntry(VocabularyFamilyOutcome, "open", "Ещё открыт", "Still open", "Обмен продолжается, и следующий допустимый шаг ещё ожидается.", "The exchange is ongoing and another permitted step is still expected.", VocabularyToneProgressing),
+	vocabularyEntry(VocabularyFamilyOutcome, "open", "Ждём хода", "Awaiting a move", "Обмен продолжается, и следующий допустимый шаг ещё ожидается.", "The exchange is ongoing and another permitted step is still expected.", VocabularyToneProgressing),
 	vocabularyEntry(VocabularyFamilyOutcome, "refused", "Получен отказ", "Refused", "Запрошенный результат отклонён и не считается выполненным.", "The requested result was declined and is not considered fulfilled.", VocabularyToneBroken),
-	vocabularyEntry(VocabularyFamilyOutcome, "settled", "Вопрос закрыт", "Resolved", "Обязательство завершено успешно, дальнейший шаг не ожидается.", "The obligation concluded successfully and no further step is expected.", VocabularyToneSettled),
+	vocabularyEntry(VocabularyFamilyOutcome, "settled", "Ход не нужен", "No move needed", "Обязательство завершено успешно, дальнейший шаг не ожидается.", "The obligation concluded successfully and no further step is expected.", VocabularyToneSettled),
 	vocabularyEntry(VocabularyFamilyOutcome, "superseded", "Заменён новым", "Replaced", "Этот документ больше не действует, потому что его заменил другой.", "This document no longer governs because another one replaced it.", VocabularyToneSettled),
 	vocabularyEntry(VocabularyFamilyOutcome, "withdrawn", "Отозван автором", "Withdrawn by author", "Автор прекратил этот обмен до завершения запрошенного результата.", "The author ended this exchange before the requested result was completed.", VocabularyToneSettled),
 
@@ -243,11 +253,56 @@ var dashboardVocabularyEntries = []VocabularyEntry{
 	vocabularyEntry(VocabularyFamilyLiveTransport, "unavailable", "Живое обновление недоступно", "Live updates unavailable", "Клиент не может получить обновления и продолжает показывать последний принятый снимок.", "The client cannot receive updates and continues to show the last accepted snapshot.", VocabularyToneBroken),
 }
 
+// transitionPastForms carries the actor's form of every transition the fold
+// engine can emit. Verbs stay short — a timeline row is one line with the
+// timestamp beside it, and a longer phrase re-rags the column — and they are
+// deliberately the same words the 0.22.0 dashboard used, because that is the
+// vocabulary the operator already reads fluently.
+//
+// A transition with no entry here falls back to its label form. That is a
+// degradation, not a design: TestEveryTransitionCarriesItsActorForm reds when
+// a new transition arrives without a verb.
+var transitionPastForms = map[string][2]string{
+	"accept":      {"принял", "accepted"},
+	"acknowledge": {"подтвердил получение", "acknowledged"},
+	"activate":    {"включил в работу", "brought live"},
+	"approve":     {"согласовал", "approved"},
+	"block":       {"заблокировал", "blocked"},
+	"cancel":      {"отменил", "cancelled"},
+	"close":       {"закрыл", "closed"},
+	"decline":     {"отказался", "declined"},
+	"deprecate":   {"объявил устаревающим", "deprecated"},
+	"dispute":     {"оспорил", "disputed"},
+	"note":        {"добавил заметку", "added a note"},
+	"propose":     {"предложил", "proposed"},
+	"publish":     {"опубликовал", "published"},
+	"reject":      {"отклонил", "rejected"},
+	"respond":     {"ответил", "answered"},
+	"retire":      {"вывел из использования", "retired"},
+	"satisfy":     {"выполнил требование", "satisfied"},
+	"start":       {"начал работу", "started"},
+	"submit":      {"передал на рассмотрение", "submitted"},
+	"supersede":   {"заменил", "superseded"},
+	"unblock":     {"разблокировал", "unblocked"},
+	"verify":      {"проверил результат", "verified"},
+	"verify-fail": {"отклонил по проверке", "rejected on verification"},
+	"verify-pass": {"принял по проверке", "accepted on verification"},
+	"withdraw":    {"отозвал", "withdrew"},
+}
+
 // DashboardVocabulary returns the complete bilingual dashboard dictionary.
 // Both the entry slice and fallback are rebuilt so callers cannot mutate the
 // package-owned table.
 func DashboardVocabulary() VocabularyTable {
 	entries := append([]VocabularyEntry(nil), dashboardVocabularyEntries...)
+	for index, entry := range entries {
+		if entry.Family != VocabularyFamilyTransition {
+			continue
+		}
+		if forms, ok := transitionPastForms[entry.Value]; ok {
+			entries[index].PastRU, entries[index].PastEN = forms[0], forms[1]
+		}
+	}
 	return VocabularyTable{
 		Entries: entries,
 		Unknown: VocabularyFallback{

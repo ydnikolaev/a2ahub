@@ -24,7 +24,14 @@ func TestTemplateUsesManifestCardRoutes(t *testing.T) {
 		t.Fatalf("decode card manifest: %v", err)
 	}
 	want := map[string]string{
-		"item":                "ArtifactDetail",
+		// `item` routes through ExchangeView for the same reason `work-report`
+		// already did: the projection that knows how to build a document's
+		// detail — events, callout, metadata, rendered body — is
+		// ExchangeView.detailFor. Pointed straight at ArtifactDetail, the card
+		// could only reach the thinner card-shaped rendering, so clicking a
+		// document gave a reader LESS than the pane beside the list was
+		// already showing. ArtifactDetail still draws it.
+		"item":                "ExchangeView",
 		"thread":              "ThreadsView",
 		"contract":            "ContractsView",
 		"cver":                "ContractsView",
@@ -73,7 +80,11 @@ func TestTemplateRendersCanonicalCardFacts(t *testing.T) {
 
 	contracts := map[string][]string{
 		"ArtifactDetail.dc.html": {
-			`data-artifact-footer`,
+			// The footer is gone: it repeated the document's own id back to a
+			// reader looking at that document, plus "canonical" and the expected
+			// state of everything in a healthy snapshot. The facts a reader acts
+			// on — the source link and stale-source evidence — stayed where they
+			// are acted on.
 			`syncStaleTechnical:"sync_stale=" + String(d.syncStale === true)`,
 			`data-event-consistency`,
 			`{{ e.consistencyText }}`,
