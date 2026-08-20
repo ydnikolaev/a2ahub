@@ -420,6 +420,109 @@ func lifecycleResolveVerdicts(tokens []lifecycleVerdictToken, criteria []lifecyc
 	return out, nil
 }
 
+// lifecycleVerdictEntryKey identifies WHICH --verdict token a resolved
+// entry came from — the identity a batch's per-target resolutions must
+// agree on, whatever POSITION it lands at in each parent's own
+// acceptance_criteria[] (spec 04 T1: "the same id may sit at different
+// positions" is legal; only a different referent is refused).
+func lifecycleVerdictEntryKey(v lifecycleVerdictEntry) string {
+	if v.Criterion != "" {
+		return "criterion:" + v.Criterion
+	}
+	return "index:" + strconv.Itoa(*v.Index)
+}
+
+// lifecycleVerdictEntryLabel is lifecycleVerdictEntryKey's human-facing
+// form — what a batch refusal names as "the token" (B31 refusal standard).
+func lifecycleVerdictEntryLabel(v lifecycleVerdictEntry) string {
+	if v.Criterion != "" {
+		return v.Criterion
+	}
+	return strconv.Itoa(*v.Index)
+}
+
+// lifecycleCriterionTextAt returns criteria[idx].Text and true, or ("",
+// false) when idx does not name an existing criterion — the same
+// "never guess" bounds check lifecycleEchoVerdicts already applies to its
+// own printed text, reused here so a batch's uniformity check treats an
+// out-of-range resolution as exactly what it is: this parent cannot bind
+// that token, which is what AC2 ("an index in range for one [parent] only")
+// means in practice.
+func lifecycleCriterionTextAt(criteria []lifecycleAcceptanceCriterion, idx int) (string, bool) {
+	if idx < 0 || idx >= len(criteria) {
+		return "", false
+	}
+	return criteria[idx].Text, true
+}
+
+// lifecycleVerdictParentBinding is one target's own resolved verdict set,
+// the parent id it was resolved against (for the refusal message and the
+// per-target echo prefix), and the parent's own acceptance_criteria[] (for
+// both the uniformity check and the per-target echo's text lookup).
+type lifecycleVerdictParentBinding struct {
+	TargetID string
+	ParentID string
+	Criteria []lifecycleAcceptanceCriterion
+	Verdicts []lifecycleVerdictEntry
+}
+
+// lifecycleVerdictsBindUniformly implements spec 04 T1's forced rule
+// (§11 Amendments: operation.Verify/Close take ONE verdict slice for the
+// whole batch — internal/operation/key.go:251/:317 — so independent
+// per-target verdict sets are structurally unavailable without widening
+// that package first, which is off this allowlist). Every target in
+// bindings must resolve the SAME tokens to the SAME referent: a criterion
+// that EXISTS in every target's own parent, with IDENTICAL text, whatever
+// POSITION it sits at in each parent's own acceptance_criteria[] array.
+//
+// Called only for len(bindings) > 1 — a single target has nothing to
+// disagree with, and this file's own non-negotiable keeps that path's
+// pre-P4 behaviour (including its pre-P4 TOLERANCE of an out-of-range
+// ordinal index — no bounds check ever ran for exactly one target, and
+// this function must not retroactively add one) byte-identical.
+func lifecycleVerdictsBindUniformly(flagName string, bindings []lifecycleVerdictParentBinding) error {
+	for _, refEntry := range bindings[0].Verdicts {
+		label := lifecycleVerdictEntryLabel(refEntry)
+		key := lifecycleVerdictEntryKey(refEntry)
+		var reports []string
+		var refText string
+		haveRef := false
+		disagree := false
+		for _, b := range bindings {
+			var entry *lifecycleVerdictEntry
+			for i := range b.Verdicts {
+				if lifecycleVerdictEntryKey(b.Verdicts[i]) == key {
+					entry = &b.Verdicts[i]
+					break
+				}
+			}
+			if entry == nil {
+				// Every binding resolved the SAME tokens (this function only
+				// runs once every target's own lifecycleResolveVerdicts has
+				// already succeeded for that target) — defensive, should
+				// never actually fire.
+				return fmt.Errorf("%s: --%s %s: internal: not resolved against this target's parent %s", b.TargetID, flagName, label, b.ParentID)
+			}
+			text, ok := lifecycleCriterionTextAt(b.Criteria, entry.resolvedIndex)
+			if !ok {
+				reports = append(reports, fmt.Sprintf("%s (parent %s, %d criteria): no criterion at that position", b.TargetID, b.ParentID, len(b.Criteria)))
+				disagree = true
+				continue
+			}
+			reports = append(reports, fmt.Sprintf("%s (parent %s): %q", b.TargetID, b.ParentID, text))
+			if !haveRef {
+				refText, haveRef = text, true
+			} else if text != refText {
+				disagree = true
+			}
+		}
+		if disagree {
+			return fmt.Errorf("--%s %s: batch cannot bind uniformly — %s", flagName, label, strings.Join(reports, "; "))
+		}
+	}
+	return nil
+}
+
 // lifecycleTruncateCriterionText implements AC1's "first 80 characters":
 // []rune-bounded, never a byte slice — a byte-length truncation would split
 // a multi-byte UTF-8 criterion mid-character (P3's own constraint: an
@@ -628,6 +731,76 @@ func lifecycleResolveUnmet(tokens []lifecycleUnmetToken, criteria []lifecycleAcc
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].resolvedIndex < out[j].resolvedIndex })
 	return out, nil
+}
+
+// lifecycleUnmetEntryKey/lifecycleUnmetEntryLabel mirror
+// lifecycleVerdictEntryKey/lifecycleVerdictEntryLabel exactly, for `--unmet`.
+func lifecycleUnmetEntryKey(u lifecycleUnmetEntry) string {
+	if u.Criterion != "" {
+		return "criterion:" + u.Criterion
+	}
+	return "index:" + strconv.Itoa(*u.Index)
+}
+
+func lifecycleUnmetEntryLabel(u lifecycleUnmetEntry) string {
+	if u.Criterion != "" {
+		return u.Criterion
+	}
+	return strconv.Itoa(*u.Index)
+}
+
+// lifecycleUnmetParentBinding mirrors lifecycleVerdictParentBinding exactly,
+// for `--unmet` — one parent's own resolved unmet set, the parent id it was
+// resolved against, and its own acceptance_criteria[].
+type lifecycleUnmetParentBinding struct {
+	TargetID string
+	ParentID string
+	Criteria []lifecycleAcceptanceCriterion
+	Unmet    []lifecycleUnmetEntry
+}
+
+// lifecycleUnmetsBindUniformly mirrors lifecycleVerdictsBindUniformly
+// exactly, for `--unmet` — see that function's own doc comment for the
+// forced rule this implements (spec 04 §11 Amendments: operation.Respond
+// takes ONE unmet slice for the whole batch, the same structural
+// constraint) and why it is gated on len(bindings) > 1.
+func lifecycleUnmetsBindUniformly(bindings []lifecycleUnmetParentBinding) error {
+	for _, refEntry := range bindings[0].Unmet {
+		label := lifecycleUnmetEntryLabel(refEntry)
+		key := lifecycleUnmetEntryKey(refEntry)
+		var reports []string
+		var refText string
+		haveRef := false
+		disagree := false
+		for _, b := range bindings {
+			var entry *lifecycleUnmetEntry
+			for i := range b.Unmet {
+				if lifecycleUnmetEntryKey(b.Unmet[i]) == key {
+					entry = &b.Unmet[i]
+					break
+				}
+			}
+			if entry == nil {
+				return fmt.Errorf("%s: --unmet %s: internal: not resolved against this target's parent %s", b.TargetID, label, b.ParentID)
+			}
+			text, ok := lifecycleCriterionTextAt(b.Criteria, entry.resolvedIndex)
+			if !ok {
+				reports = append(reports, fmt.Sprintf("%s (parent %s, %d criteria): no criterion at that position", b.TargetID, b.ParentID, len(b.Criteria)))
+				disagree = true
+				continue
+			}
+			reports = append(reports, fmt.Sprintf("%s (parent %s): %q", b.TargetID, b.ParentID, text))
+			if !haveRef {
+				refText, haveRef = text, true
+			} else if text != refText {
+				disagree = true
+			}
+		}
+		if disagree {
+			return fmt.Errorf("--unmet %s: batch cannot bind uniformly — %s", label, strings.Join(reports, "; "))
+		}
+	}
+	return nil
 }
 
 // lifecycleEventSchema mirrors internal/contract/publication_plan.go's own
@@ -1347,6 +1520,18 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 	// — the same shape VerifyCommand.Run already uses across its own batch).
 	eventSchema := "event/v1"
 	var verdicts []lifecycleVerdictEntry
+	// verdictBindings (spec 04, P4): one entry per id, each resolved
+	// against THAT id's own acceptance_criteria[] — close's own ids ARE
+	// the parents directly (no response indirection). verdictBindings[0]
+	// is verdicts above, the canonical set operation.Close's ONE key is
+	// derived from (byte-identical, for exactly one id, to the pre-P4
+	// "resolve against ids[0]" behaviour); every OTHER id's own close
+	// event authors from its OWN binding (US-3) once
+	// lifecycleVerdictsBindUniformly has confirmed every id resolves the
+	// SAME tokens to the SAME referent (T1/§11 Amendments: refused by
+	// name, naming the disagreeing id, otherwise — see that function's own
+	// doc comment for why this is forced rather than a strictness choice).
+	var verdictBindings []lifecycleVerdictParentBinding
 	if c.spec.SupportsVerdicts {
 		verdictTokens, verr := lifecycleParseVerdicts(verdictFlags)
 		if verr != nil {
@@ -1360,31 +1545,54 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 				c.spec.Verb, contract.ContractPublicationFloor, c.deps.manifest.MinBinaryVersion)
 			return 1
 		}
-		// verdicts is resolved ONCE, against ids[0] — close's own ids ARE
-		// the parents directly (no response indirection), and this row
-		// already applies ONE verdict set uniformly to every id's close
-		// event in the batch loop below (verdictsPtr, shared), so
-		// resolving against the first is the same existing assumption made
-		// explicit. T1: echoed BEFORE anything is minted (AC1/AC2).
 		if len(verdictTokens) > 0 {
-			_, firstProbe, rerr := lifecycleLoadEnvelope(c.deps.mirrorDir, ids[0])
-			if rerr != nil {
-				_, _ = fmt.Fprintf(stdio.Stderr, "%s: %s: %v\n", c.spec.Verb, ids[0], rerr)
-				return 1
+			for idx, id := range ids {
+				_, probe, rerr := lifecycleLoadEnvelope(c.deps.mirrorDir, id)
+				if rerr != nil {
+					_, _ = fmt.Fprintf(stdio.Stderr, "%s: %s: %v\n", c.spec.Verb, id, rerr)
+					return 1
+				}
+				resolved, rerr := lifecycleResolveVerdicts(verdictTokens, probe.AcceptanceCriteria)
+				if rerr != nil {
+					// idx==0's message is BYTE IDENTICAL to pre-P4 (this
+					// file's own non-negotiable: the single-target path does
+					// not move) — every OTHER id additionally names itself,
+					// since lifecycleResolveVerdicts' own error text does not
+					// (B31 refusal standard).
+					if idx == 0 {
+						_, _ = fmt.Fprintf(stdio.Stderr, "%s: %v\n", c.spec.Verb, rerr)
+					} else {
+						_, _ = fmt.Fprintf(stdio.Stderr, "%s: %s: batch cannot bind uniformly: %v\n", c.spec.Verb, id, rerr)
+					}
+					return 2
+				}
+				verdictBindings = append(verdictBindings, lifecycleVerdictParentBinding{
+					TargetID: id, ParentID: id, Criteria: probe.AcceptanceCriteria, Verdicts: resolved,
+				})
 			}
-			verdicts, rerr = lifecycleResolveVerdicts(verdictTokens, firstProbe.AcceptanceCriteria)
-			if rerr != nil {
-				_, _ = fmt.Fprintf(stdio.Stderr, "%s: %v\n", c.spec.Verb, rerr)
-				return 2
+			if len(verdictBindings) > 1 {
+				if uerr := lifecycleVerdictsBindUniformly("verdict", verdictBindings); uerr != nil {
+					_, _ = fmt.Fprintf(stdio.Stderr, "%s: %v\n", c.spec.Verb, uerr)
+					return 2
+				}
 			}
-			lifecycleEchoVerdicts(stdio.Stdout, verdicts, firstProbe.AcceptanceCriteria)
+			// T1: echoed once per id, PREFIXED with the id (AC1/AC2), and
+			// only once every id is confirmed to bind uniformly — a batch
+			// that is about to be refused prints no echo at all.
+			for _, b := range verdictBindings {
+				_, _ = fmt.Fprintf(stdio.Stdout, "%s:\n", b.TargetID)
+				lifecycleEchoVerdicts(stdio.Stdout, b.Verdicts, b.Criteria)
+			}
+			verdicts = verdictBindings[0].Verdicts
 		}
 	}
 	// verdictsPtr: nil (omitted) below the floor or on a row that does not
 	// support verdicts at all; non-nil (present, even when empty) at/above
 	// the floor on the close row — see VerifyCommand.Run's own identical
 	// comment on why an EMPTY array, not an absent key, is what the
-	// schema's conditional requires.
+	// schema's conditional requires. This is the CANONICAL (id[0]) pointer;
+	// the batch loop below overrides it per id when verdictBindings is
+	// populated.
 	var verdictsPtr *[]lifecycleVerdictEntry
 	if eventSchema == "event/v2" {
 		verdictsPtr = &verdicts
@@ -1424,7 +1632,7 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 
 	var files []space.FileWrite
 	parsedRefs := lifecycleRefsFromFlag(*refs)
-	for _, id := range ids {
+	for idx, id := range ids {
 		evaluation, _, err := lifecycleEvaluateCandidate(c.deps.mirrorDir, c.deps.manifest, id, fold.Event{
 			Transition: c.spec.Transition, Actor: actor,
 		})
@@ -1455,6 +1663,16 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 			_, _ = fmt.Fprintf(stdio.Stderr, "%s: cannot mint event id: %v\n", c.spec.Verb, err)
 			return 1
 		}
+		// idVerdictsPtr (US-3): THIS id's own resolved verdicts — identical
+		// to verdictsPtr (verdictBindings[0]) for id == ids[0], and for
+		// every batch that reached this point (uniformity already
+		// confirmed above), so this changes no id's WRITTEN bytes versus
+		// the canonical set — only which already-equal binding authors it.
+		idVerdictsPtr := verdictsPtr
+		if eventSchema == "event/v2" && len(verdictBindings) > 0 {
+			idVerdicts := verdictBindings[idx].Verdicts
+			idVerdictsPtr = &idVerdicts
+		}
 		ev := lifecycleEventDoc{
 			Schema: eventSchema, Event: eventID.String(), Space: probe.Space,
 			Subject: id, Transition: c.spec.Transition, State: lifecycleReceiptState(evaluation),
@@ -1463,7 +1681,7 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 			// Verdicts: nil (omitted) on every row except close, and nil
 			// below the floor even on close — see this Run's own comment
 			// above verdictsPtr's assignment.
-			Verdicts: verdictsPtr,
+			Verdicts: idVerdictsPtr,
 		}
 		if *reason != "" {
 			ev.Note = *reason
@@ -1674,24 +1892,47 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		_, _ = fmt.Fprintf(stdio.Stderr, "respond: %v\n", uerr)
 		return 2
 	}
-	// unmet id-form resolution (spec 03 T1 item 5): resolved against
-	// parents[0]'s own acceptance_criteria[] — the same "one set applies to
-	// the whole batch" simplification `unmetSeq` below already made before
-	// this phase (one --unmet set, reused identically for every parent in
-	// the loop), extended one step earlier so a criterion id has a parent
-	// to resolve against BEFORE the loop even starts.
+	// unmetBindings (spec 04, P4): resolved against EVERY parent's own
+	// acceptance_criteria[], not just parents[0] — the pre-P4 "one set
+	// applies to the whole batch" simplification, made explicit and now
+	// actually CHECKED (T1/§11 Amendments: operation.Respond takes ONE
+	// unmet slice for the whole batch, the same structural constraint
+	// lifecycleUnmetsBindUniformly's own doc comment explains for
+	// verdicts). unmetBindings[0].Unmet is the canonical set opUnmet/the
+	// response seed below fall back to when a parent-specific binding
+	// isn't in play — byte-identical, for exactly one parent, to the pre-P4
+	// "resolve against parents[0]" behaviour.
 	var unmet []lifecycleUnmetEntry
+	var unmetBindings []lifecycleUnmetParentBinding
 	if len(unmetTokens) > 0 {
-		_, firstParentProbe, err := lifecycleLoadEnvelope(c.deps.mirrorDir, parents[0])
-		if err != nil {
-			_, _ = fmt.Fprintf(stdio.Stderr, "respond: %s: %v\n", parents[0], err)
-			return 1
+		for idx, parentID := range parents {
+			_, parentProbe, err := lifecycleLoadEnvelope(c.deps.mirrorDir, parentID)
+			if err != nil {
+				_, _ = fmt.Fprintf(stdio.Stderr, "respond: %s: %v\n", parentID, err)
+				return 1
+			}
+			resolved, rerr := lifecycleResolveUnmet(unmetTokens, parentProbe.AcceptanceCriteria)
+			if rerr != nil {
+				// idx==0's message is BYTE IDENTICAL to pre-P4 — see the
+				// verify/close sites' own identical comment.
+				if idx == 0 {
+					_, _ = fmt.Fprintf(stdio.Stderr, "respond: %v\n", rerr)
+				} else {
+					_, _ = fmt.Fprintf(stdio.Stderr, "respond: %s: batch cannot bind uniformly: %v\n", parentID, rerr)
+				}
+				return 2
+			}
+			unmetBindings = append(unmetBindings, lifecycleUnmetParentBinding{
+				TargetID: parentID, ParentID: parentID, Criteria: parentProbe.AcceptanceCriteria, Unmet: resolved,
+			})
 		}
-		unmet, uerr = lifecycleResolveUnmet(unmetTokens, firstParentProbe.AcceptanceCriteria)
-		if uerr != nil {
-			_, _ = fmt.Fprintf(stdio.Stderr, "respond: %v\n", uerr)
-			return 2
+		if len(unmetBindings) > 1 {
+			if uerr := lifecycleUnmetsBindUniformly(unmetBindings); uerr != nil {
+				_, _ = fmt.Fprintf(stdio.Stderr, "respond: %v\n", uerr)
+				return 2
+			}
 		}
+		unmet = unmetBindings[0].Unmet
 	}
 	if *standing != "" && !lifecycleStandingEnum[*standing] {
 		_, _ = fmt.Fprintln(stdio.Stderr, "respond: --standing must be one of authoritative|provisional|advisory")
@@ -1773,11 +2014,23 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 	var files []space.FileWrite
 	var ids []string
-	for _, parentID := range parents {
+	for idx, parentID := range parents {
 		parentEnv, parentProbe, err := lifecycleLoadEnvelope(c.deps.mirrorDir, parentID)
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "respond: %s: %v\n", parentID, err)
 			return 1
+		}
+
+		// parentUnmet (US-3): THIS parent's own resolved unmet set — the
+		// judgement of the parent's OWN acceptance_criteria[], not a set
+		// resolved against some other parent in the batch and reused
+		// byte-for-byte. Identical to unmet (unmetBindings[0]) for
+		// parentID == parents[0], and for every batch that reached this
+		// point (uniformity already confirmed above), so no existing
+		// caller's seed/wire content changes.
+		parentUnmet := unmet
+		if len(unmetBindings) > 0 {
+			parentUnmet = unmetBindings[idx].Unmet
 		}
 
 		respFields := map[string]string{}
@@ -1805,7 +2058,7 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		// MintExchangeIDAt still embeds today's UTC date from `now`; a retry
 		// crossing midnight still mints a different id (spec 08 §11
 		// amendment — accepted, out of scope here).
-		seed := lifecycleRespondSeed(parentID, *result, respFields, bodyOverride, actor, refs, unmet, *standing, blockedBy)
+		seed := lifecycleRespondSeed(parentID, *result, respFields, bodyOverride, actor, refs, parentUnmet, *standing, blockedBy)
 		responseID, err := artifact.MintExchangeIDAt("XS", c.deps.ownSystem, now, bytes.NewReader(seed))
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "respond: cannot mint response id: %v\n", err)
@@ -1982,16 +2235,16 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		// construction (every token resolved against the SAME parent's SAME
 		// idsDeclared flag), so which branch fires below is decided once,
 		// from the first entry, not per-entry.
-		if len(unmet) > 0 {
-			if unmet[0].Criterion != "" {
-				unmetSeq := make([]map[string]string, len(unmet))
-				for i, u := range unmet {
+		if len(parentUnmet) > 0 {
+			if parentUnmet[0].Criterion != "" {
+				unmetSeq := make([]map[string]string, len(parentUnmet))
+				for i, u := range parentUnmet {
 					unmetSeq[i] = map[string]string{"criterion": u.Criterion}
 				}
 				respDoc["unmet"] = unmetSeq
 			} else {
-				unmetSeq := make([]int, len(unmet))
-				for i, u := range unmet {
+				unmetSeq := make([]int, len(parentUnmet))
+				for i, u := range parentUnmet {
 					unmetSeq[i] = *u.Index
 				}
 				respDoc["unmet"] = unmetSeq
@@ -2136,44 +2389,73 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return 1
 	}
 
-	// verdicts is resolved ONCE, against targets[0]'s own parent — the same
-	// "one verdict set, uniform across the whole batch" design this file
-	// already had (verdictsPtr below is reused, byte-identical, for EVERY
-	// target's verify event and D-024 close event in the loop): a batch
-	// verify call already assumed one Index space works for every target,
-	// so resolving against any one of them (the first) is that same
-	// assumption made explicit rather than a new one. T1: printed BEFORE
-	// anything is minted (AC1/AC2), for both parent shapes.
+	// verdictBindings (spec 04, P4): one entry per target, each resolved
+	// against THAT target's own parent's acceptance_criteria[] — not just
+	// targets[0]'s. verdictBindings[0] is verdicts below, the canonical set
+	// operation.Verify's ONE key is derived from (byte-identical, for
+	// exactly one target, to the pre-P4 "resolve against targets[0]"
+	// behaviour); every OTHER target's own verify (and D-024 close) event
+	// authors from its OWN binding (US-3) once
+	// lifecycleVerdictsBindUniformly has confirmed every target resolves
+	// the SAME tokens to the SAME referent (T1/§11 Amendments: refused by
+	// name, naming the disagreeing target, otherwise). T1: printed BEFORE
+	// anything is minted (AC1/AC2), for both parent shapes, once per
+	// target — and only once every target is confirmed to bind uniformly;
+	// a batch about to be refused prints no echo at all.
 	var verdicts []lifecycleVerdictEntry
+	var verdictBindings []lifecycleVerdictParentBinding
 	if len(verdictTokens) > 0 {
-		firstResponseID, rerr := lifecycleResolveResponseID(c.deps.mirrorDir, c.deps.manifest, targets[0], *refs)
-		if rerr != nil {
-			_, _ = fmt.Fprintf(stdio.Stderr, "verify: %s: %v\n", targets[0], rerr)
-			return 1
+		for idx, target := range targets {
+			responseID, rerr := lifecycleResolveResponseID(c.deps.mirrorDir, c.deps.manifest, target, *refs)
+			if rerr != nil {
+				_, _ = fmt.Fprintf(stdio.Stderr, "verify: %s: %v\n", target, rerr)
+				return 1
+			}
+			_, responseProbe, rerr := lifecycleLoadEnvelope(c.deps.mirrorDir, responseID)
+			if rerr != nil {
+				_, _ = fmt.Fprintf(stdio.Stderr, "verify: %s: %v\n", responseID, rerr)
+				return 1
+			}
+			_, parentProbe, rerr := lifecycleLoadEnvelope(c.deps.mirrorDir, responseProbe.Parent)
+			if rerr != nil {
+				_, _ = fmt.Fprintf(stdio.Stderr, "verify: %s: %v\n", responseProbe.Parent, rerr)
+				return 1
+			}
+			resolved, rerr := lifecycleResolveVerdicts(verdictTokens, parentProbe.AcceptanceCriteria)
+			if rerr != nil {
+				// idx==0's message is BYTE IDENTICAL to pre-P4 — see the
+				// close site's own identical comment.
+				if idx == 0 {
+					_, _ = fmt.Fprintf(stdio.Stderr, "verify: %v\n", rerr)
+				} else {
+					_, _ = fmt.Fprintf(stdio.Stderr, "verify: %s: batch cannot bind uniformly: %v\n", target, rerr)
+				}
+				return 2
+			}
+			verdictBindings = append(verdictBindings, lifecycleVerdictParentBinding{
+				TargetID: target, ParentID: responseProbe.Parent, Criteria: parentProbe.AcceptanceCriteria, Verdicts: resolved,
+			})
 		}
-		_, firstResponseProbe, rerr := lifecycleLoadEnvelope(c.deps.mirrorDir, firstResponseID)
-		if rerr != nil {
-			_, _ = fmt.Fprintf(stdio.Stderr, "verify: %s: %v\n", firstResponseID, rerr)
-			return 1
+		if len(verdictBindings) > 1 {
+			if uerr := lifecycleVerdictsBindUniformly("verdict", verdictBindings); uerr != nil {
+				_, _ = fmt.Fprintf(stdio.Stderr, "verify: %v\n", uerr)
+				return 2
+			}
 		}
-		_, firstParentProbe, rerr := lifecycleLoadEnvelope(c.deps.mirrorDir, firstResponseProbe.Parent)
-		if rerr != nil {
-			_, _ = fmt.Fprintf(stdio.Stderr, "verify: %s: %v\n", firstResponseProbe.Parent, rerr)
-			return 1
+		for _, b := range verdictBindings {
+			_, _ = fmt.Fprintf(stdio.Stdout, "%s:\n", b.TargetID)
+			lifecycleEchoVerdicts(stdio.Stdout, b.Verdicts, b.Criteria)
 		}
-		verdicts, rerr = lifecycleResolveVerdicts(verdictTokens, firstParentProbe.AcceptanceCriteria)
-		if rerr != nil {
-			_, _ = fmt.Fprintf(stdio.Stderr, "verify: %v\n", rerr)
-			return 2
-		}
-		lifecycleEchoVerdicts(stdio.Stdout, verdicts, firstParentProbe.AcceptanceCriteria)
+		verdicts = verdictBindings[0].Verdicts
 	}
 	// verdictsPtr is nil (omitted) below the floor and non-nil (present, even
 	// when empty) at/above it — schemas/event/v2/event.schema.json's own
 	// conditional REQUIRES the key on verify/close regardless of whether the
 	// caller supplied any --verdict entries, and its description is explicit
 	// that a parent with no acceptance_criteria[] at all "must stay
-	// expressible with an empty array" rather than an absent key.
+	// expressible with an empty array" rather than an absent key. This is the
+	// CANONICAL (targets[0]) pointer; the batch loop below overrides it per
+	// target when verdictBindings is populated.
 	var verdictsPtr *[]lifecycleVerdictEntry
 	if eventSchema == "event/v2" {
 		verdictsPtr = &verdicts
@@ -2214,7 +2496,7 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 	var files []space.FileWrite
 	var ids []string
-	for _, target := range targets {
+	for idx, target := range targets {
 		responseID, err := lifecycleResolveResponseID(c.deps.mirrorDir, c.deps.manifest, target, *refs)
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "verify: %s: %v\n", target, err)
@@ -2238,6 +2520,19 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			return 1
 		}
 
+		// targetVerdictsPtr (US-3): THIS target's own resolved verdicts —
+		// identical to verdictsPtr (verdictBindings[0]) for target ==
+		// targets[0], and for every batch that reached this point
+		// (uniformity already confirmed above), so this changes no
+		// target's WRITTEN bytes versus the canonical set — only which
+		// already-equal binding authors it. Shared by the paired D-024
+		// close event below (the SAME verification act).
+		targetVerdictsPtr := verdictsPtr
+		if eventSchema == "event/v2" && len(verdictBindings) > 0 {
+			targetVerdicts := verdictBindings[idx].Verdicts
+			targetVerdictsPtr = &targetVerdicts
+		}
+
 		verifyEventID, err := artifact.MintULIDAt(now, c.deps.entropy)
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "verify: cannot mint event id: %v\n", err)
@@ -2252,7 +2547,7 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			// EVERY event/v2 verify — schemas/event/v2/event.schema.json's
 			// conditional requires the key regardless of whether this
 			// invocation named any --verdict entries.
-			Verdicts: verdictsPtr,
+			Verdicts: targetVerdictsPtr,
 		}
 		verifyRaw, merr := yaml.Marshal(verifyEvent)
 		if merr != nil {
@@ -2290,7 +2585,7 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 				// verifier's judgement of the parent's acceptance criteria
 				// does not change because the convenience close rides in the
 				// same PR.
-				Verdicts: verdictsPtr,
+				Verdicts: targetVerdictsPtr,
 			}
 			closeRaw, merr := yaml.Marshal(closeEvent)
 			if merr != nil {

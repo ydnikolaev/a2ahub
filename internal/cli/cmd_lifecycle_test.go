@@ -3334,3 +3334,375 @@ func TestRespondUnmetIDRefusedAgainstOrdinalParent(t *testing.T) {
 		t.Fatal("funnel called for a criterion id against an ordinal-only parent")
 	}
 }
+
+// --- spec 04 P4: a batch judges every target against its own parent -------
+
+// TestVerifyEchoesPerTargetWithIDPrefix is spec 04 AC1 (US-1): a 2-target
+// `verify` batch prints ONE echo block PER target, each carrying that
+// target's own criterion text, prefixed by the target id — not a single
+// echo (against the first target's parent) reused for the whole batch.
+func TestVerifyEchoesPerTargetWithIDPrefix(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentA := "XQ-axon-20260721-p401"
+	parentB := "XQ-axon-20260721-p402"
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentA, "beta", "  - id: ac1\n    text: \"criterion A\"\n")
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentB, "beta", "  - id: ac1\n    text: \"criterion A\"\n")
+	responseA := respondFlow(t, mirrorDir, parentA, "beta")
+	responseB := respondFlow(t, mirrorDir, parentB, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewVerifyCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--verdict", "ac1:met:seomatrix", responseA, responseB}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), responseA+":") {
+		t.Fatalf("expected the echo to be prefixed with target %s, got stdout=%q", responseA, out.String())
+	}
+	if !strings.Contains(out.String(), responseB+":") {
+		t.Fatalf("expected the echo to be prefixed with target %s, got stdout=%q", responseB, out.String())
+	}
+	if got := strings.Count(out.String(), "ac1 -> \"criterion A\""); got != 2 {
+		t.Fatalf("expected TWO echo blocks (one per target), got %d in stdout=%q", got, out.String())
+	}
+}
+
+// TestVerifyBatchPerEventVerdictsMatchOwnParent is spec 04 AC5 (US-3): on a
+// uniform 2-target batch, EVERY minted event — both verify events AND both
+// D-024 close events — carries verdicts resolved against ITS OWN parent,
+// asserted per event rather than assumed from one representative event.
+func TestVerifyBatchPerEventVerdictsMatchOwnParent(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentA := "XQ-axon-20260721-p410"
+	parentB := "XQ-axon-20260721-p411"
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentA, "beta", "  - id: ac1\n    text: \"shared criterion\"\n")
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentB, "beta", "  - id: ac1\n    text: \"shared criterion\"\n")
+	responseA := respondFlow(t, mirrorDir, parentA, "beta")
+	responseB := respondFlow(t, mirrorDir, parentB, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewVerifyCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--verdict", "ac1:met:seomatrix", responseA, responseB}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	files := fake.calls[0].Files
+	var verifyEvents, closeEvents int
+	for _, fw := range files {
+		var probe lifecycleEventProbe
+		if err := yaml.Unmarshal(fw.Content, &probe); err != nil {
+			t.Fatalf("decode event %s: %v", fw.Path, err)
+		}
+		switch probe.Transition {
+		case "verify":
+			verifyEvents++
+		case "close":
+			closeEvents++
+		default:
+			continue
+		}
+		if probe.Verdicts == nil || len(*probe.Verdicts) != 1 {
+			t.Fatalf("event %s (%s of %s): expected exactly one verdicts entry, got %v", fw.Path, probe.Transition, probe.Subject, probe.Verdicts)
+		}
+		got := (*probe.Verdicts)[0]
+		if got.Criterion != "ac1" || got.Verdict != "met" || got.CauseOwner != "seomatrix" {
+			t.Fatalf("event %s (%s of %s): verdicts[0] = %+v, want {Criterion:ac1 met seomatrix}", fw.Path, probe.Transition, probe.Subject, got)
+		}
+	}
+	if verifyEvents != 2 || closeEvents != 2 {
+		t.Fatalf("expected 2 verify + 2 D-024 close events, got verify=%d close=%d (files=%d)", verifyEvents, closeEvents, len(files))
+	}
+}
+
+// TestVerifyBatchDivergentCriteriaCountsRefused is spec 04 AC2: two targets
+// whose parents declare different criteria counts, with an index in range
+// for only one, refuse the WHOLE batch by name — naming the target that
+// cannot bind.
+func TestVerifyBatchDivergentCriteriaCountsRefused(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentA := "XQ-axon-20260721-p420" // 5 criteria: index 4 in range
+	parentB := "XQ-axon-20260721-p421" // 3 criteria: index 4 out of range
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentA, "beta", "  - \"c0\"\n  - \"c1\"\n  - \"c2\"\n  - \"c3\"\n  - \"c4\"\n")
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentB, "beta", "  - \"c0\"\n  - \"c1\"\n  - \"c2\"\n")
+	responseA := respondFlow(t, mirrorDir, parentA, "beta")
+	responseB := respondFlow(t, mirrorDir, parentB, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewVerifyCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--verdict", "4:met:seomatrix", responseA, responseB}, io)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2; stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatal("funnel called for a batch that cannot bind uniformly")
+	}
+	if !strings.Contains(errOut.String(), responseB) {
+		t.Fatalf("expected the refusal to name the disagreeing target %s; got %q", responseB, errOut.String())
+	}
+}
+
+// TestVerifyBatchMixedIDAndOrdinalRefused is spec 04 AC3: a batch mixing an
+// id-declaring parent and an ordinal parent is refused for EITHER token
+// form.
+func TestVerifyBatchMixedIDAndOrdinalRefused(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	idParent := "XQ-axon-20260721-p430"
+	ordinalParent := "XQ-axon-20260721-p431"
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, idParent, "beta", "  - id: ac1\n    text: \"criterion\"\n")
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, ordinalParent, "beta", "  - \"criterion\"\n")
+	responseID1 := respondFlow(t, mirrorDir, idParent, "beta")
+	responseID2 := respondFlow(t, mirrorDir, ordinalParent, "beta")
+
+	t.Run("id token", func(t *testing.T) {
+		t.Parallel()
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewVerifyCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"--verdict", "ac1:met:seomatrix", responseID1, responseID2}, io)
+		if code != 2 {
+			t.Fatalf("code = %d, want 2; stderr=%s", code, errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatal("funnel called for a mixed id/ordinal batch")
+		}
+	})
+
+	t.Run("ordinal token", func(t *testing.T) {
+		t.Parallel()
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewVerifyCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"--verdict", "0:met:seomatrix", responseID1, responseID2}, io)
+		if code != 2 {
+			t.Fatalf("code = %d, want 2; stderr=%s", code, errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatal("funnel called for a mixed id/ordinal batch")
+		}
+	})
+}
+
+// TestVerifyBatchSameIDDifferentTextRefused is spec 04 AC4: two parents
+// both declaring `ac1` with DIFFERENT criterion text refuse the batch — the
+// referent is not the same judgement.
+func TestVerifyBatchSameIDDifferentTextRefused(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentA := "XQ-axon-20260721-p500"
+	parentB := "XQ-axon-20260721-p501"
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentA, "beta", "  - id: ac1\n    text: \"criterion A\"\n")
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentB, "beta", "  - id: ac1\n    text: \"criterion B (different)\"\n")
+	responseA := respondFlow(t, mirrorDir, parentA, "beta")
+	responseB := respondFlow(t, mirrorDir, parentB, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewVerifyCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--verdict", "ac1:met:seomatrix", responseA, responseB}, io)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2; stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatal("funnel called for a batch whose parents disagree on criterion text")
+	}
+	if !strings.Contains(errOut.String(), "criterion A") || !strings.Contains(errOut.String(), "criterion B (different)") {
+		t.Fatalf("expected the refusal to name BOTH criterion texts that disagree; got %q", errOut.String())
+	}
+}
+
+// TestCloseBatchDivergentCriteriaCountsRefused is AC7's `close` half of
+// TestVerifyBatchDivergentCriteriaCountsRefused (AC2): close's own ids ARE
+// the parents directly (no response indirection).
+func TestCloseBatchDivergentCriteriaCountsRefused(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentA := "XQ-axon-20260721-p470" // 5 criteria: index 4 in range
+	parentB := "XQ-axon-20260721-p471" // 3 criteria: index 4 out of range
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentA, "beta", "  - \"c0\"\n  - \"c1\"\n  - \"c2\"\n  - \"c3\"\n  - \"c4\"\n")
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentB, "beta", "  - \"c0\"\n  - \"c1\"\n  - \"c2\"\n")
+	respondFlow(t, mirrorDir, parentA, "beta")
+	respondFlow(t, mirrorDir, parentB, "beta")
+	writeLifecycleEvent(t, mirrorDir, "beta", 10, parentA, "respond", "beta")
+	writeLifecycleEvent(t, mirrorDir, "beta", 11, parentB, "respond", "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewCloseCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--verdict", "4:met:seomatrix", parentA, parentB}, io)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2; stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatal("funnel called for a batch that cannot bind uniformly")
+	}
+	if !strings.Contains(errOut.String(), parentB) {
+		t.Fatalf("expected the refusal to name the disagreeing target %s; got %q", parentB, errOut.String())
+	}
+}
+
+// TestCloseBatchMixedIDAndOrdinalRefused is AC7's `close` half of AC3.
+func TestCloseBatchMixedIDAndOrdinalRefused(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	idParent := "XQ-axon-20260721-p480"
+	ordinalParent := "XQ-axon-20260721-p481"
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, idParent, "beta", "  - id: ac1\n    text: \"criterion\"\n")
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, ordinalParent, "beta", "  - \"criterion\"\n")
+	respondFlow(t, mirrorDir, idParent, "beta")
+	respondFlow(t, mirrorDir, ordinalParent, "beta")
+	writeLifecycleEvent(t, mirrorDir, "beta", 20, idParent, "respond", "beta")
+	writeLifecycleEvent(t, mirrorDir, "beta", 21, ordinalParent, "respond", "beta")
+
+	t.Run("id token", func(t *testing.T) {
+		t.Parallel()
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewCloseCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"--verdict", "ac1:met:seomatrix", idParent, ordinalParent}, io)
+		if code != 2 {
+			t.Fatalf("code = %d, want 2; stderr=%s", code, errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatal("funnel called for a mixed id/ordinal batch")
+		}
+	})
+
+	t.Run("ordinal token", func(t *testing.T) {
+		t.Parallel()
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewCloseCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"--verdict", "0:met:seomatrix", idParent, ordinalParent}, io)
+		if code != 2 {
+			t.Fatalf("code = %d, want 2; stderr=%s", code, errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatal("funnel called for a mixed id/ordinal batch")
+		}
+	})
+}
+
+// TestCloseBatchSameIDDifferentTextRefused is AC7's `close` half of AC4.
+func TestCloseBatchSameIDDifferentTextRefused(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentA := "XQ-axon-20260721-p490"
+	parentB := "XQ-axon-20260721-p491"
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentA, "beta", "  - id: ac1\n    text: \"criterion A\"\n")
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentB, "beta", "  - id: ac1\n    text: \"criterion B (different)\"\n")
+	respondFlow(t, mirrorDir, parentA, "beta")
+	respondFlow(t, mirrorDir, parentB, "beta")
+	writeLifecycleEvent(t, mirrorDir, "beta", 30, parentA, "respond", "beta")
+	writeLifecycleEvent(t, mirrorDir, "beta", 31, parentB, "respond", "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewCloseCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--verdict", "ac1:met:seomatrix", parentA, parentB}, io)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2; stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatal("funnel called for a batch whose parents disagree on criterion text")
+	}
+	if !strings.Contains(errOut.String(), "criterion A") || !strings.Contains(errOut.String(), "criterion B (different)") {
+		t.Fatalf("expected the refusal to name BOTH criterion texts that disagree; got %q", errOut.String())
+	}
+}
+
+// TestRespondBatchUnmetDivergentCriteriaCountsRefused is AC7's `respond`
+// half of AC2, over `--unmet` (respond has no `--verdict`; unmet is its
+// own analogous per-criterion flag, resolved the same way).
+func TestRespondBatchUnmetDivergentCriteriaCountsRefused(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentA := "XQ-axon-20260721-p440" // 5 criteria: index 4 in range
+	parentB := "XQ-axon-20260721-p441" // 3 criteria: index 4 out of range
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentA, "beta", "  - \"c0\"\n  - \"c1\"\n  - \"c2\"\n  - \"c3\"\n  - \"c4\"\n")
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentB, "beta", "  - \"c0\"\n  - \"c1\"\n  - \"c2\"\n")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--result", "partial", "--unmet", "4", "--blocked-by", "other:seomatrix:bytes", parentA, parentB}, io)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2; stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatal("funnel called for a batch that cannot bind uniformly")
+	}
+	if !strings.Contains(errOut.String(), parentB) {
+		t.Fatalf("expected the refusal to name the disagreeing target %s; got %q", parentB, errOut.String())
+	}
+}
+
+// TestRespondBatchUnmetMixedIDAndOrdinalRefused is AC7's `respond` half of
+// AC3.
+func TestRespondBatchUnmetMixedIDAndOrdinalRefused(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	idParent := "XQ-axon-20260721-p450"
+	ordinalParent := "XQ-axon-20260721-p451"
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, idParent, "beta", "  - id: ac1\n    text: \"criterion\"\n")
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, ordinalParent, "beta", "  - \"criterion\"\n")
+
+	t.Run("id token", func(t *testing.T) {
+		t.Parallel()
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"--result", "partial", "--unmet", "ac1", "--blocked-by", "other:seomatrix:bytes", idParent, ordinalParent}, io)
+		if code != 2 {
+			t.Fatalf("code = %d, want 2; stderr=%s", code, errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatal("funnel called for a mixed id/ordinal batch")
+		}
+	})
+
+	t.Run("ordinal token", func(t *testing.T) {
+		t.Parallel()
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"--result", "partial", "--unmet", "0", "--blocked-by", "other:seomatrix:bytes", idParent, ordinalParent}, io)
+		if code != 2 {
+			t.Fatalf("code = %d, want 2; stderr=%s", code, errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatal("funnel called for a mixed id/ordinal batch")
+		}
+	})
+}
+
+// TestRespondBatchUnmetSameIDDifferentTextRefused is AC7's `respond` half
+// of AC4.
+func TestRespondBatchUnmetSameIDDifferentTextRefused(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentA := "XQ-axon-20260721-p460"
+	parentB := "XQ-axon-20260721-p461"
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentA, "beta", "  - id: ac1\n    text: \"criterion A\"\n")
+	seedAcceptedQuestionWithCriteria(t, mirrorDir, parentB, "beta", "  - id: ac1\n    text: \"criterion B (different)\"\n")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--result", "partial", "--unmet", "ac1", "--blocked-by", "other:seomatrix:bytes", parentA, parentB}, io)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2; stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatal("funnel called for a batch whose parents disagree on criterion text")
+	}
+	if !strings.Contains(errOut.String(), "criterion A") || !strings.Contains(errOut.String(), "criterion B (different)") {
+		t.Fatalf("expected the refusal to name BOTH criterion texts that disagree; got %q", errOut.String())
+	}
+}
