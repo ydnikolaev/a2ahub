@@ -27,6 +27,19 @@
 # what the other skipped, so "green" meant different things in each and nobody
 # could say which.
 #
+# TWO LIMITS THIS CANNOT SEE, both worth knowing before trusting a green:
+#
+#   - It compares COMMANDS, not conditions. A job gated on `if:` that evaluates
+#     false on every run still contributes its `run:` lines, so the audit reports
+#     them covered while CI executes them never. `ci.yml`'s `web` job is exactly
+#     that today: added 2026-08-14, `skipped` in 100% of runs since, so
+#     `dashboard-template-drift` and `npm run check:unit` have never once
+#     executed in CI. The audit said "covered" throughout.
+#   - It runs on darwin with BSD userland; every non-notifier CI job runs on
+#     Linux with GNU userland. Same command, different verdict — three live
+#     defects on 2026-08-20 alone. `make ci-parity-docker` is the half that
+#     closes it, and the release runbook names both.
+#
 # THE LIST IS DERIVED, NOT DUPLICATED. `--audit` extracts every `run:` command
 # from every workflow and refuses when one is neither executed here nor
 # explicitly excused below. A hand-copied list would drift exactly the way the
