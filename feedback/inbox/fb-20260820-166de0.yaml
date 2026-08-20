@@ -1,0 +1,48 @@
+# Feedback authoring skeleton (v1) — materialized by `a2a feedback new <kind>`
+# to `.a2a/feedback/<id>.yaml` (§T1, §11 A4). Every field required by
+# feedback.schema.json is present with a placeholder or auto-fill value so
+# the drafted file is schema-VALID once you replace the placeholders and
+# flip `checks.*` to true after honestly clearing every §2.1 gate.
+#
+# `id` / `context.a2a_version` / `context.os_arch` are filled in by the CLI
+# before this file ever reaches disk — the empty strings below are the
+# pre-fill placeholders `internal/feedback` overwrites, never hand-edited.
+#
+# `checks.*` starts all `false` on purpose: the agent must consciously flip
+# each one after actually verifying it (I5) — never bulk-set to true.
+
+feedback: v1
+id: fb-20260820-166de0 # auto-filled: fb-YYYYMMDD-<6 hex>
+kind: bug # bug | feature | docs | friction | protocol
+severity: minor # blocker | major | minor
+title: "a2a update's skill refresh writes only the version stamp, and doctor passes it" # 8-80 chars, specific
+summary: "`a2a update` from 0.22.0 to 0.23.0 printed `a2a: refreshed skill install (.a2ahub/skill -> v0.23.0)`, but the only file it wrote was PROVENANCE.md — a one-line version stamp. Diffed against the v0.23.0 tag's own skill/a2ahub/ tree, three files were a release behind and one was missing entirely: reference/notify.md was absent (the tag ships 15 reference files; the install had 14), troubleshooting.md was 79 lines behind and carried NEITHER the REF-019 nor the REF-023 row this very release added, notifications.md was 122 lines behind, and SKILL.md lacked the notify.md index row. `a2a doctor` reported `skill manual current: PASS - skill manual current (v0.23.0)` throughout, because it reads the stamp rather than the content. An explicit `a2a skill install` then wrote 35 files and the tree matched the tag byte-for-byte. The cost is concrete: an agent that hit REF-023 mid-loop would find nothing in its installed manual about the rule that just refused it."
+context:
+    a2a_version: 0.23.0 # auto-filled
+    os_arch: darwin/arm64 # auto-filled (runtime.GOOS/runtime.GOARCH)
+    surface: cli # cli | schema | docs | skill | dashboard | space-ci | protocol
+    command: "a2a update --yes"
+    # error_code: ""    # optional: whatever code you saw (e.g. POL-001)
+    # agent: ""         # optional: free self-report
+# evidence is REQUIRED when kind is bug (steps/expected/actual all
+# mandatory); optional otherwise — delete this block for non-bug kinds.
+evidence:
+    steps:
+        - "On a repo with .a2ahub/skill/ installed at 0.22.0, run `a2a update --yes` to 0.23.0."
+        - "Observe the final line: `a2a: refreshed skill install (.a2ahub/skill -> v0.23.0)`."
+        - "Run `git diff --stat .a2ahub/` — one file, PROVENANCE.md, one line changed."
+        - "Run `ls .a2ahub/skill/reference/ | wc -l` — 14, and reference/notify.md is absent."
+        - "Run `grep -c 'REF-019\\|REF-023' .a2ahub/skill/troubleshooting.md` — 0, though 0.23.0 added both rows."
+        - "Run `a2a doctor` — `skill manual current: PASS - skill manual current (v0.23.0)`."
+        - "Run `a2a skill install` explicitly — 35 files written, tree now matches the v0.23.0 tag."
+    expected: "The skill refresh performed by `a2a update` writes the same tree an explicit `a2a skill install` writes, and doctor's `skill manual current` fails when it does not."
+    actual: "`a2a update`'s refresh wrote only PROVENANCE.md, leaving 3 stale files and 1 missing file; doctor passed on the stale tree because the check compares the stamp, not the content."
+proposal: "Two independent halves. (1) Make the refresh path inside `a2a update` call the same writer `a2a skill install` calls, so a version bump can never leave content behind a stamp it just wrote. (2) Make doctor's `skill manual current` a CONTENT check — compare the installed tree against the embedded one (a per-file digest, or the docs-manifest.json the install already writes) and report which files differ. A stamp check is exactly the shape that reports PASS about a tree it never read, and here the two disagreed for the whole window between the update and the next explicit install."
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
+# resolution is hub-mutated only; MUST be absent at submit — do not add it.
