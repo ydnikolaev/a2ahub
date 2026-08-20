@@ -21,10 +21,12 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/operation"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
+	"github.com/ydnikolaev/a2ahub/internal/version"
 	"gopkg.in/yaml.v3"
 )
 
@@ -38,6 +40,17 @@ type lifecycleVerbSpec struct {
 	RequireRefs       bool
 	RequireFindings   bool
 	GateMarker        bool
+	// SupportsVerdicts is P1's own per-row switch (one-answer-2026-08 spec
+	// 01, mirroring internal/cli's cmd_lifecycle.go lifecycleVerbSpec's own
+	// field of the same name, B24): true on EXACTLY the `close` row.
+	// newLifecycleHandler reads it to decide, once per invocation, whether
+	// to honour LifecycleInput.Verdicts at all, floor-gate the authored
+	// schema to event/v2, and derive an operation.Close key — the SAME
+	// resolution (resolveVerdicts) newVerifyHandler already carries for its
+	// own verify/D-024-close pair. Every other row leaves this false, which
+	// keeps their own path byte-identical to before this field existed:
+	// verdicts left unset produces no schema change and no operation key.
+	SupportsVerdicts bool
 }
 
 // LifecycleVerbTable is the SSOT of every OP-211 generic (table-driven)
@@ -52,7 +65,7 @@ var LifecycleVerbTable = []lifecycleVerbSpec{
 	{Verb: "block", Transition: fold.TBlock, RequireRefs: true},
 	{Verb: "unblock", Transition: fold.TUnblock},
 	{Verb: "cancel", Transition: fold.TCancel},
-	{Verb: "close", Transition: fold.TClose},
+	{Verb: "close", Transition: fold.TClose, SupportsVerdicts: true},
 	{Verb: "withdraw", Transition: fold.TWithdraw},
 	{Verb: "supersede", Transition: fold.TSupersede, RequireRefs: true},
 	{Verb: "satisfy", Transition: fold.TSatisfy, RequireRefs: true},
@@ -72,6 +85,12 @@ type LifecycleInput struct {
 	Refs       []string   `json:"refs,omitempty"`
 	Findings   string     `json:"findings,omitempty"`
 	Actor      ActorInput `json:"actor,omitempty"`
+	// Verdicts is P1's own field (one-answer-2026-08 spec 01), honoured
+	// ONLY when spec.SupportsVerdicts (the close row) — every other row
+	// refuses it by name rather than silently dropping it, mirroring
+	// internal/cli's structural refusal (--verdict registered on no other
+	// row's FlagSet, so Go's own flag.ContinueOnError refuses it there).
+	Verdicts []VerdictInputEntry `json:"verdicts,omitempty"`
 }
 
 // newLifecycleHandler builds the table-driven generic verb handler for
@@ -94,6 +113,13 @@ func newLifecycleHandler(spec lifecycleVerbSpec, deps WriteDeps) HandlerFunc {
 		if spec.RequireFindings && in.Findings == "" {
 			return nil, "", fmt.Errorf("%s: findings is required", spec.Verb)
 		}
+		// verdicts (P1): a row that does NOT support verdicts refuses one by
+		// name rather than silently dropping it — see LifecycleInput's own
+		// doc comment on why this cannot be a Go-level "flag not
+		// registered" refusal the way internal/cli's FlagSet achieves it.
+		if len(in.Verdicts) > 0 && !spec.SupportsVerdicts {
+			return nil, "", fmt.Errorf("%s: does not support verdicts (only close does)", spec.Verb)
+		}
 
 		// Resolve this call's target space from the ids it already
 		// carries, BEFORE the first deps.MirrorDir/deps.Manifest read
@@ -105,11 +131,63 @@ func newLifecycleHandler(spec lifecycleVerbSpec, deps WriteDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("%s: %w", spec.Verb, err)
 		}
 
+		// eventSchema/verdicts (P1, close row only): mirrors
+		// internal/cli's LifecycleCommand.Run exactly — floor-gated the
+		// SAME way newVerifyHandler's own identical block is, resolved
+		// ONCE against ids[0] (close's ids ARE the criteria-bearing
+		// parents directly, no response indirection) and applied
+		// uniformly to every id's close event in the batch loop below.
+		eventSchema := "event/v1"
+		var verdicts []VerdictInputEntry
+		if spec.SupportsVerdicts {
+			eventSchema = lifecycleEventSchema(deps.Manifest.MinBinaryVersion)
+			if len(in.Verdicts) > 0 && eventSchema != "event/v2" {
+				return nil, "", fmt.Errorf(
+					"%s: verdicts requires this space's min_binary_version to be at or above %s (event/v2); this space's floor is %q",
+					spec.Verb, contract.ContractPublicationFloor, deps.Manifest.MinBinaryVersion)
+			}
+			if len(in.Verdicts) > 0 {
+				criteria, cerr := parentAcceptanceCriteria(deps.MirrorDir, in.IDs[0])
+				if cerr != nil {
+					return nil, "", fmt.Errorf("%s: %s: %w", spec.Verb, in.IDs[0], cerr)
+				}
+				var rerr error
+				verdicts, rerr = resolveVerdicts(in.Verdicts, criteria)
+				if rerr != nil {
+					return nil, "", fmt.Errorf("%s: %w", spec.Verb, rerr)
+				}
+			}
+		}
+		// verdictsPtr: nil (omitted) below the floor or on a row that does
+		// not support verdicts at all; non-nil (present, even when empty)
+		// at/above the floor on the close row — schemas/event/v2/
+		// event.schema.json's own conditional requires the key regardless
+		// of whether this invocation named any verdicts.
+		var verdictsPtr *[]VerdictInputEntry
+		if eventSchema == "event/v2" {
+			verdictsPtr = &verdicts
+		}
+
 		resolved, actorErr := deps.ResolveActor(in.Actor)
 		if actorErr != nil {
 			return nil, "", fmt.Errorf("%s: %w", spec.Verb, actorErr)
 		}
 		actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: deps.OwnSystem}
+
+		// operationKey (P1, close row only): derived only when verdicts
+		// actually carry content — below the floor, on a row that does not
+		// support verdicts, or above the floor with none supplied, this
+		// verb keeps its EXISTING dedup mechanism unchanged.
+		// operation.Close, not operation.Verify: see operation.Close's own
+		// doc comment for why a standalone close mints its own key domain.
+		var operationKey string
+		if len(verdicts) > 0 {
+			opVerdicts := make([]operation.VerdictEntry, len(verdicts))
+			for i, v := range verdicts {
+				opVerdicts[i] = operation.VerdictEntry{Index: v.resolvedIndex, Verdict: v.Verdict, CauseOwner: v.CauseOwner}
+			}
+			operationKey = operation.Close(deps.OwnSystem, actor.Kind, actor.Name, in.IDs, opVerdicts)
+		}
 
 		now := deps.Now()
 		layout, err := space.NewLayout(deps.OwnSystem)
@@ -138,10 +216,14 @@ func newLifecycleHandler(spec lifecycleVerbSpec, deps WriteDeps) HandlerFunc {
 				return nil, "", fmt.Errorf("%s: cannot mint event id: %w", spec.Verb, err)
 			}
 			ev := eventDoc{
-				Schema: "event/v1", Event: eventID.String(), Space: probe.Space,
+				Schema: eventSchema, Event: eventID.String(), Space: probe.Space,
 				Subject: id, Transition: spec.Transition, State: eventReceiptState(evaluation),
 				Actor: eventActorFrom(resolved, actor.System),
 				At:    now.UTC().Format(time.RFC3339),
+				// Verdicts: nil (omitted) on every row except close, and
+				// nil below the floor even on close — see verdictsPtr's
+				// own assignment above.
+				Verdicts: verdictsPtr,
 			}
 			if in.Reason != "" {
 				ev.Note = in.Reason
@@ -163,6 +245,7 @@ func newLifecycleHandler(spec lifecycleVerbSpec, deps WriteDeps) HandlerFunc {
 		}
 
 		req := deps.buildRequest(in.IDs, files, spec.Verb, spec.GateMarker)
+		req.OperationKey = operationKey
 		result, err := deps.submit(ctx, req, spec.Verb, in.IDs)
 		return result, "", err
 	}
@@ -393,6 +476,176 @@ func respondResolveUnmet(tokens []RespondUnmetEntry, criteria []RespondCriterion
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].resolvedIndex < out[j].resolvedIndex })
 	return out, nil
+}
+
+// --- verdicts (P1: one-answer-2026-08 spec 01) ----------------------------
+
+// VerdictInputEntry is one `verdicts[]` input entry for a2a_exchange verify
+// and a2a_lifecycle close — mirrors RespondUnmetEntry's dual-shape pattern
+// (index XOR criterion) plus `verdict` and `cause_owner`, both required on
+// EVERY entry, including a `met` one (schemas/event/v2/event.schema.json's
+// own requirement — spec 01 §11's amendment: spec 06 §7's prose calls
+// cause_owner optional, the shipped schema does not, and the schema wins).
+//
+// This SAME type is eventDoc's own `verdicts[]` entry (spec 01 §11's other
+// amendment): field order and yaml tags mirror internal/cli's
+// lifecycleVerdictEntry exactly, and Index is a POINTER for the identical
+// reason RespondUnmetEntry's own Index is — `omitempty` on a bare int would
+// silently drop `index: 0`, the FIRST criterion. resolvedIndex is set by
+// resolveVerdicts, never by UnmarshalJSON — the one stable identity both
+// wire forms share, for operation.VerdictEntry and the canonical sort.
+type VerdictInputEntry struct {
+	Index         *int   `yaml:"index,omitempty"`
+	Criterion     string `yaml:"criterion,omitempty"`
+	Verdict       string `yaml:"verdict"`
+	CauseOwner    string `yaml:"cause_owner"`
+	resolvedIndex int
+}
+
+// MarshalJSON is UnmarshalJSON's own inverse — see RespondUnmetEntry's own
+// doc comment for the round-trip trap this closes: without it, Go's default
+// struct marshaling would emit Index, Criterion, Verdict AND CauseOwner
+// together, and UnmarshalJSON's object branch would then read the empty
+// "criterion" key as a real (but empty) criterion, tripping the "neither an
+// index nor a criterion id" refusal on a perfectly valid bare-index entry.
+func (e VerdictInputEntry) MarshalJSON() ([]byte, error) {
+	if e.Criterion != "" {
+		return json.Marshal(struct {
+			Criterion  string `json:"criterion"`
+			Verdict    string `json:"verdict"`
+			CauseOwner string `json:"cause_owner"`
+		}{Criterion: e.Criterion, Verdict: e.Verdict, CauseOwner: e.CauseOwner})
+	}
+	if e.Index != nil {
+		return json.Marshal(struct {
+			Index      int    `json:"index"`
+			Verdict    string `json:"verdict"`
+			CauseOwner string `json:"cause_owner"`
+		}{Index: *e.Index, Verdict: e.Verdict, CauseOwner: e.CauseOwner})
+	}
+	return []byte("null"), nil
+}
+
+// UnmarshalJSON accepts ONE object shape carrying either "index" or
+// "criterion" (never both), plus "verdict" and "cause_owner" — shape only;
+// the verdict enum and cause_owner requiredness are checked by
+// resolveVerdicts, mirroring internal/cli's own parse/resolve split
+// (lifecycleParseVerdicts/lifecycleResolveVerdicts), folded into one
+// resolution step here since this surface's wire format is already
+// structured JSON, not a colon-separated flag string needing a separate
+// parse phase.
+func (e *VerdictInputEntry) UnmarshalJSON(data []byte) error {
+	var obj struct {
+		Index      *int   `json:"index"`
+		Criterion  string `json:"criterion"`
+		Verdict    string `json:"verdict"`
+		CauseOwner string `json:"cause_owner"`
+	}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return fmt.Errorf("verdict entry must be an object carrying either \"index\" or \"criterion\", plus \"verdict\" and \"cause_owner\": %w", err)
+	}
+	if obj.Index != nil && obj.Criterion != "" {
+		return fmt.Errorf("verdict entry must carry either \"index\" or \"criterion\", not both")
+	}
+	if obj.Index == nil && obj.Criterion == "" {
+		return fmt.Errorf("verdict entry must carry either \"index\" or \"criterion\"")
+	}
+	if obj.Index != nil && *obj.Index < 0 {
+		return fmt.Errorf("verdict entry index %d must be a non-negative integer", *obj.Index)
+	}
+	e.Index = obj.Index
+	e.Criterion = obj.Criterion
+	e.Verdict = obj.Verdict
+	e.CauseOwner = obj.CauseOwner
+	return nil
+}
+
+// verdictEnum is schemas/event/v2/event.schema.json's own closed
+// `verdicts[].verdict` vocabulary — mirrors internal/cli's
+// lifecycleVerdictEnum (ADR-001 duplication).
+var verdictEnum = map[string]bool{
+	"met": true, "unmet": true, "not_warranted": true, "not_exercised": true,
+}
+
+// resolveVerdicts resolves each VerdictInputEntry against a specific
+// parent's `acceptance_criteria[]` — the SHARED resolution both
+// a2a_exchange verify (against the response's own parent) and
+// a2a_lifecycle close (against the id it closes directly, "no response
+// indirection", spec 01 T1) use, rather than a third variant. Mirrors
+// respondResolveUnmet exactly (same four refusals, dedupe, canonical
+// resolvedIndex sort): a criterion-id entry resolves to that criterion's
+// array position; a bare-index entry is used directly; each direction is
+// refused, by name, when it does not match the parent's own shape.
+// Additionally checks the verdict enum and cause_owner requiredness (P1
+// §11's amendment; internal/cli performs the same two checks in
+// lifecycleParseVerdicts, before resolution). Error messages carry no verb
+// prefix — callers wrap with their own (`fmt.Errorf("%s: %w", verb, err)`),
+// since this one function serves two different verbs.
+func resolveVerdicts(tokens []VerdictInputEntry, criteria []RespondCriterion) ([]VerdictInputEntry, error) {
+	idsDeclared := len(respondDeclaredCriterionIDs(criteria)) > 0
+	idPosition := map[string]int{}
+	for i, c := range criteria {
+		if c.ID != "" {
+			idPosition[c.ID] = i
+		}
+	}
+	out := make([]VerdictInputEntry, 0, len(tokens))
+	seen := map[int]bool{}
+	for _, tok := range tokens {
+		if !verdictEnum[tok.Verdict] {
+			return nil, fmt.Errorf("verdict must be one of met|unmet|not_warranted|not_exercised")
+		}
+		if strings.TrimSpace(tok.CauseOwner) == "" {
+			return nil, fmt.Errorf("cause_owner is required on every verdict entry, including met (schemas/event/v2/event.schema.json requires it)")
+		}
+		entry := VerdictInputEntry{Verdict: tok.Verdict, CauseOwner: tok.CauseOwner}
+		switch {
+		case tok.Criterion != "":
+			if !idsDeclared {
+				return nil, fmt.Errorf("verdict %s: this parent declares no criterion ids; use a 0-based index into its acceptance_criteria[] instead", tok.Criterion)
+			}
+			pos, ok := idPosition[tok.Criterion]
+			if !ok {
+				return nil, fmt.Errorf("verdict %s: no such criterion id; this parent declares: %s", tok.Criterion, strings.Join(respondDeclaredCriterionIDs(criteria), ", "))
+			}
+			entry.Criterion = tok.Criterion
+			entry.resolvedIndex = pos
+		case tok.Index != nil:
+			if idsDeclared {
+				return nil, fmt.Errorf("verdict %d: this parent declares criterion ids; use one of them instead of a bare index (declares: %s)", *tok.Index, strings.Join(respondDeclaredCriterionIDs(criteria), ", "))
+			}
+			index := *tok.Index
+			entry.Index = &index
+			entry.resolvedIndex = index
+		default:
+			return nil, fmt.Errorf("verdict entry carries neither an index nor a criterion id")
+		}
+		if seen[entry.resolvedIndex] {
+			return nil, fmt.Errorf("verdicts: two entries resolve to the same criterion (position %d) — one verdict per judged criterion", entry.resolvedIndex)
+		}
+		seen[entry.resolvedIndex] = true
+		out = append(out, entry)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].resolvedIndex < out[j].resolvedIndex })
+	return out, nil
+}
+
+// lifecycleEventSchema is this package's own verify/close floor selector
+// (P1: one-answer-2026-08 spec 01) — mirrors internal/cli's cmd_lifecycle.go
+// lifecycleEventSchema and this package's own contractActivateEventSchema
+// (tools_contract.go) exactly, including the FAIL-CLOSED direction: a space
+// whose min_binary_version (floor) is at or above
+// contract.ContractPublicationFloor authors event/v2; below it,
+// unparseable, or absent, event/v1 — the conservative direction
+// version.OlderThan's own doc comment names. contractActivateEventSchema's
+// own doc comment used to claim this package's lifecycle path had no such
+// selector; this phase is what makes that sentence obsolete.
+func lifecycleEventSchema(floor string) string {
+	belowFloor, err := version.OlderThan(floor, contract.ContractPublicationFloor)
+	if err != nil || belowFloor {
+		return "event/v1"
+	}
+	return "event/v2"
 }
 
 // respondValidateBlockedBy checks blockedBy's three fields against
@@ -839,6 +1092,14 @@ type VerifyInput struct {
 	Targets []string   `json:"targets"`
 	Refs    string     `json:"refs,omitempty"`
 	Actor   ActorInput `json:"actor,omitempty"`
+	// Verdicts is P1's own field (one-answer-2026-08 spec 01): the
+	// verifier's per-criterion judgement, resolved ONCE against
+	// targets[0]'s own parent and applied uniformly to every target's
+	// verify event AND its D-024 paired close event in the batch loop
+	// below — mirrors internal/cli's VerifyCommand.Run exactly, including
+	// its own identical "one verdict set, uniform across the whole batch"
+	// assumption.
+	Verdicts []VerdictInputEntry `json:"verdicts,omitempty"`
 }
 
 func newVerifyHandler(deps WriteDeps) HandlerFunc {
@@ -862,11 +1123,65 @@ func newVerifyHandler(deps WriteDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("verify: %w", err)
 		}
 
+		// eventSchema/verdicts (P1): mirrors internal/cli's
+		// VerifyCommand.Run exactly — floor-gated the SAME way
+		// newLifecycleHandler's own identical close-row block is, resolved
+		// ONCE against targets[0]'s own parent (an indirection through the
+		// response, unlike close's own "no response indirection").
+		eventSchema := lifecycleEventSchema(deps.Manifest.MinBinaryVersion)
+		if len(in.Verdicts) > 0 && eventSchema != "event/v2" {
+			return nil, "", fmt.Errorf(
+				"verify: verdicts requires this space's min_binary_version to be at or above %s (event/v2); this space's floor is %q",
+				contract.ContractPublicationFloor, deps.Manifest.MinBinaryVersion)
+		}
+		var verdicts []VerdictInputEntry
+		if len(in.Verdicts) > 0 {
+			firstResponseID, rerr := resolveResponseID(deps.MirrorDir, in.Targets[0], in.Refs)
+			if rerr != nil {
+				return nil, "", fmt.Errorf("verify: %s: %w", in.Targets[0], rerr)
+			}
+			_, firstResponseProbe, rerr := loadEnvelope(deps.MirrorDir, firstResponseID)
+			if rerr != nil {
+				return nil, "", fmt.Errorf("verify: %s: %w", firstResponseID, rerr)
+			}
+			criteria, cerr := parentAcceptanceCriteria(deps.MirrorDir, firstResponseProbe.Parent)
+			if cerr != nil {
+				return nil, "", fmt.Errorf("verify: %s: %w", firstResponseProbe.Parent, cerr)
+			}
+			verdicts, rerr = resolveVerdicts(in.Verdicts, criteria)
+			if rerr != nil {
+				return nil, "", fmt.Errorf("verify: %w", rerr)
+			}
+		}
+		// verdictsPtr: nil (omitted) below the floor; non-nil (present,
+		// even when empty) at/above it — see newLifecycleHandler's
+		// identical comment for why the schema's own conditional requires
+		// this.
+		var verdictsPtr *[]VerdictInputEntry
+		if eventSchema == "event/v2" {
+			verdictsPtr = &verdicts
+		}
+
 		resolved, actorErr := deps.ResolveActor(in.Actor)
 		if actorErr != nil {
 			return nil, "", fmt.Errorf("verify: %w", actorErr)
 		}
 		actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: deps.OwnSystem}
+
+		// operationKey (P1): derived only when verdicts actually carry
+		// content — below the floor, or above it with none supplied,
+		// verify keeps its EXISTING dedup mechanism unchanged. Covers the
+		// D-024 paired close too (operation.Verify's own doc comment):
+		// both ride the ONE branch this key names, since they commit
+		// together.
+		var operationKey string
+		if len(verdicts) > 0 {
+			opVerdicts := make([]operation.VerdictEntry, len(verdicts))
+			for i, v := range verdicts {
+				opVerdicts[i] = operation.VerdictEntry{Index: v.resolvedIndex, Verdict: v.Verdict, CauseOwner: v.CauseOwner}
+			}
+			operationKey = operation.Verify(deps.OwnSystem, actor.Kind, actor.Name, in.Targets, opVerdicts)
+		}
 
 		now := deps.Now()
 		layout, err := space.NewLayout(deps.OwnSystem)
@@ -901,10 +1216,15 @@ func newVerifyHandler(deps WriteDeps) HandlerFunc {
 				return nil, "", fmt.Errorf("verify: cannot mint event id: %w", err)
 			}
 			verifyEvent := eventDoc{
-				Schema: "event/v1", Event: verifyEventID.String(), Space: parentProbe.Space,
+				Schema: eventSchema, Event: verifyEventID.String(), Space: parentProbe.Space,
 				Subject: responseID, Transition: fold.TVerify, State: eventReceiptState(evaluation),
 				Actor: eventActorFrom(resolved, actor.System),
 				At:    now.UTC().Format(time.RFC3339),
+				// Verdicts (P1): present, even empty, on EVERY event/v2
+				// verify — schemas/event/v2/event.schema.json's conditional
+				// requires the key regardless of whether this invocation
+				// named any verdicts.
+				Verdicts: verdictsPtr,
 			}
 			verifyRaw, merr := yaml.Marshal(verifyEvent)
 			if merr != nil {
@@ -927,10 +1247,15 @@ func newVerifyHandler(deps WriteDeps) HandlerFunc {
 					return nil, "", fmt.Errorf("verify: cannot mint event id: %w", err)
 				}
 				closeEvent := eventDoc{
-					Schema: "event/v1", Event: closeEventID.String(), Space: parentProbe.Space,
+					Schema: eventSchema, Event: closeEventID.String(), Space: parentProbe.Space,
 					Subject: parentID, Transition: fold.TClose, State: eventReceiptState(closeEvaluation),
 					Actor: eventActorFrom(resolved, actor.System),
 					At:    now.UTC().Format(time.RFC3339),
+					// Same verdicts as the paired verify above (D-024: it is
+					// the SAME verification act) — the verifier's judgement
+					// of the parent's acceptance criteria does not change
+					// because the convenience close rides in the same PR.
+					Verdicts: verdictsPtr,
 				}
 				closeRaw, merr := yaml.Marshal(closeEvent)
 				if merr != nil {
@@ -942,6 +1267,7 @@ func newVerifyHandler(deps WriteDeps) HandlerFunc {
 		}
 
 		req := deps.buildRequest(ids, files, "verify", false)
+		req.OperationKey = operationKey
 		result, err := deps.submit(ctx, req, "verify", ids)
 		return result, "", err
 	}

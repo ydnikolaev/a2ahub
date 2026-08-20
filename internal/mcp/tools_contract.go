@@ -1059,15 +1059,25 @@ type contractActivateEventDoc struct {
 // An unparseable or absent floor fails CLOSED to event/v1, the same
 // conservative direction version.OlderThan's own doc comment names.
 //
-// This package's other write verbs still author "event/v1" unconditionally
-// (no general event/v2 authoring path exists here yet — internal/cli's own
-// verify/close have one via this same function, tools_lifecycle.go does
-// not). `activate` is the first MCP write verb that needs the floor
-// selection, because — unlike verify/close, which fall back to event/v1
-// without `verdicts[]` — `activation` has no event/v1 shape to fall back
-// to at all (see newContractActivateHandler's own doc comment), so the
-// check is scoped to this one verb rather than a package-wide selector
-// this wave does not need.
+// CORRECTED 2026-08-20 (one-answer-2026-08 P1, spec 01 §8 row 8). This
+// comment used to say "no general event/v2 authoring path exists here yet
+// ... tools_lifecycle.go does not", and that sentence was the reason
+// `verify`/`close` on this surface authored event/v1 unconditionally while
+// internal/cli authored event/v2 above the floor — an MCP-driven agent
+// could not record a per-criterion judgement at all, so REF-023 (the
+// completeness rule) never fired on anything it wrote. tools_lifecycle.go
+// now HAS its own floor selector (`lifecycleEventSchema`, named after
+// internal/cli's own function for the analogous job) and its own
+// `verdicts` input, so the sentence is false and is corrected rather than
+// left to drift.
+//
+// `activate` still carries its own selector rather than sharing one: it is
+// the only verb here with no event/v1 shape to fall back to at all (see
+// newContractActivateHandler's own doc comment), so its floor check is a
+// hard precondition where the lifecycle verbs' is a choice of generation.
+// Two selectors, one constant — `contract.ContractPublicationFloor` is read
+// by both and by internal/cli, so the three cannot disagree about where the
+// line is.
 func contractActivateEventSchema(floor string) string {
 	belowFloor, err := version.OlderThan(floor, contract.ContractPublicationFloor)
 	if err != nil || belowFloor {

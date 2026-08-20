@@ -44,6 +44,22 @@ type eventDoc struct {
 	Version    string     `yaml:"version,omitempty"`
 	Commit     string     `yaml:"commit,omitempty"`
 	Digest     string     `yaml:"digest,omitempty"`
+	// Verdicts is P1's own field (one-answer-2026-08 spec 01, mirroring
+	// internal/cli's lifecycleEventDoc.Verdicts field exactly, spec §11's
+	// amendment): the verifier's per-criterion judgement, conditionally
+	// required by schemas/event/v2/event.schema.json on `verify`/`close` —
+	// WITH a pointer, not a bare slice: yaml.v3's `omitempty` drops an
+	// empty slice exactly the same as a nil one, and the schema's own
+	// description is explicit that a close over a parent with no
+	// acceptance_criteria[] at all must stay expressible with an empty
+	// array, not an absent key. Every other event-authoring site in this
+	// file leaves this nil, which `omitempty` on the POINTER still omits —
+	// so v1 writers are unaffected and the v1 schema's
+	// additionalProperties: false is never violated. MUST stay the LAST
+	// field: this struct's own field order mirrors internal/cli's
+	// lifecycleEventDoc exactly, and the equivalence suite's byte-identity
+	// depends on it.
+	Verdicts *[]VerdictInputEntry `yaml:"verdicts,omitempty"`
 }
 
 type eventActor struct {
