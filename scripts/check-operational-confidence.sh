@@ -320,8 +320,18 @@ run_teeth() {
   fi
 }
 
+# Guarded by the BASH_SOURCE/$0 check below so this file can be `source`d —
+# scripts/check-frozen-allowlist.sh does exactly that, to reuse the manifest
+# this file already reads (schemas/published-v1.sha256) and its ROOT
+# resolution, rather than writing a second parser of the ratchet
+# (rules-that-reach-2026-08 P2). Sourcing must not run this gate as a side
+# effect; only invoking this file directly does.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+
 case "${1:-check}" in
   check) run_all ;;
   --teeth) run_teeth ;;
   *) echo "usage: $0 [check|--teeth]" >&2; exit 2 ;;
 esac
+
+fi # BASH_SOURCE guard
