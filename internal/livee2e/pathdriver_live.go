@@ -608,13 +608,34 @@ func driveSecondRespondBundle(ctx context.Context, t *testing.T, h *harness, act
 // realizes.
 func driveVerifyThenAutoClose(ctx context.Context, t *testing.T, h *harness, actor *checkout, path Path, idxVerify, idxClose int, responseID string, ids pathIDs) {
 	t.Helper()
-	if _, stderr, err := actor.Run(ctx, "verify", responseID); err != nil {
+	// rules-that-reach-2026-08 P1: `a2a verify` now refuses at SUBMIT when
+	// verdicts[] does not name every acceptance criterion the parent
+	// declares (REF-023), where it used to succeed and be caught at merge.
+	// Every draft this driver mints carries exactly one criterion
+	// (draftfields.go: `acceptance_criteria=["the artifact validates"]`), and
+	// the bare-string form means the ordinal token is the referent. Naming it
+	// keeps these paths exercising the lifecycle route they exist for rather
+	// than the refusal — the refusal has its own coverage in internal/e2e.
+	stdout, stderr, err := actor.Run(ctx, "verify", responseID,
+		"--verdict", "0:met:"+actor.System)
+	if err != nil {
 		t.Fatalf("path %s step %d: a2a verify %s (%s): %v: %s", path.ID, idxVerify, responseID, actor.System, err, strings.TrimSpace(stderr))
 	}
-	pr, err := h.pullForBranchContaining(ctx, actor.System, "verify", responseID)
-	if err != nil {
-		t.Fatalf("path %s step %d: resolve verify PR for %s: %v", path.ID, idxVerify, responseID, err)
+	// The PR number comes from the verb's OWN output, not from guessing a
+	// branch name, and that is load-bearing rather than tidier. Supplying
+	// --verdict switches the funnel's dedup key from the batch's artifact id
+	// to operation.Verify's content-derived key (cmd_lifecycle.go's own
+	// comment above operationKey says so: two invocations naming the same
+	// targets with DIFFERENT judgements must not collide onto one
+	// content-independent branch). So the branch stops carrying the response
+	// id, and matchCompositeBranch — which looks a "+"-separated artifact id
+	// up under "a2a/<system>/verify/" — can no longer find it. Reading the
+	// number the command itself printed is independent of the grammar.
+	prNumber, perr := prNumberFromVerbOutput(stdout)
+	if perr != nil {
+		t.Fatalf("path %s step %d: resolve verify PR for %s: %v (stdout=%q)", path.ID, idxVerify, responseID, perr, strings.TrimSpace(stdout))
 	}
+	pr := branchPull{Number: prNumber}
 	if err := happyLandAndSync(ctx, h, actor, pr.Number); err != nil {
 		t.Fatalf("path %s step %d: land+sync verify PR #%d: %v", path.ID, idxVerify, pr.Number, err)
 	}

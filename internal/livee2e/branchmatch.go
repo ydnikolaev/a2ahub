@@ -3,7 +3,9 @@ package livee2e
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -115,4 +117,41 @@ func matchCompositeBranch(pulls []branchPull, system, verb, artifactID string) (
 		}
 	}
 	return best, nil
+}
+
+// prNumberFromVerbOutput reads the PR number out of a lifecycle verb's own
+// success line — `<verb>: opened PR <url> for <ids> (<state>)`, or the
+// `already submitted for <ids> (PR <url>, <state>)` form the funnel prints
+// when it recognises an idempotent repeat (cmd_lifecycle.go's submit).
+//
+// It exists because a branch NAME is not a stable handle once a verb derives
+// its dedup key from content. `a2a verify --verdict` does exactly that
+// (operation.Verify), so the branch stops carrying the target's artifact id
+// and matchCompositeBranch cannot find it. The number the command printed is
+// the same number under either grammar.
+func prNumberFromVerbOutput(out string) (int, error) {
+	for _, field := range strings.Fields(out) {
+		trimmed := strings.Trim(field, "(),")
+		// Any host grammar: the live tier's GitHub renders /pull/<n>, the
+		// logic tier's local host renders /pr/<n>. Match on "a URL whose last
+		// path segment is a positive integer" rather than on either spelling,
+		// so this reader does not have to be taught a third one.
+		if !strings.HasPrefix(trimmed, "http://") && !strings.HasPrefix(trimmed, "https://") {
+			continue
+		}
+		u, err := url.Parse(trimmed)
+		if err != nil {
+			continue
+		}
+		lastSlash := strings.LastIndex(u.Path, "/")
+		if lastSlash < 0 || lastSlash == len(u.Path)-1 {
+			continue
+		}
+		n, err := strconv.Atoi(u.Path[lastSlash+1:])
+		if err != nil || n <= 0 {
+			continue
+		}
+		return n, nil
+	}
+	return 0, fmt.Errorf("livee2e: no pull-request URL in verb output")
 }

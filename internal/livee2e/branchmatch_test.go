@@ -125,3 +125,66 @@ func TestMatchCompositeBranchPrefersOpenThenHighestNumber(t *testing.T) {
 		t.Fatalf("got #%d, want the highest closed PR number (#9)", got.Number)
 	}
 }
+
+// TestPRNumberFromVerbOutput pins the two output shapes a lifecycle verb
+// actually prints and the two host grammars this repo runs against. It exists
+// because the function replaced a branch-NAME lookup that stopped working the
+// moment `a2a verify --verdict` switched the funnel's dedup key from the
+// batch's artifact id to operation.Verify's content-derived key — so a reader
+// that guesses at either the URL grammar or the sentence shape reintroduces
+// exactly the fragility the function was written to remove.
+func TestPRNumberFromVerbOutput(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		out  string
+		want int
+	}{
+		{
+			name: "opened, github grammar",
+			out:  "verify: opened PR https://github.com/o/r/pull/41 for XS-a, XW-b (pending-merge)",
+			want: 41,
+		},
+		{
+			name: "opened, logic-tier local host grammar",
+			out:  "verify: opened PR https://example.invalid/pr/6 for XS-a, XW-b (pending-merge)",
+			want: 6,
+		},
+		{
+			name: "already submitted, PR in parentheses",
+			out:  "verify: already submitted for XS-a (PR https://example.invalid/pr/7, merged)",
+			want: 7,
+		},
+		{
+			name: "the verdict echo precedes the success line",
+			out:  "XS-a:\n  0 -> \"the artifact validates\"  met  (alpha)\nverify: opened PR https://example.invalid/pr/9 for XS-a (pending-merge)",
+			want: 9,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := prNumberFromVerbOutput(tc.out)
+			if err != nil {
+				t.Fatalf("prNumberFromVerbOutput(%q) = error %v, want %d", tc.out, err, tc.want)
+			}
+			if got != tc.want {
+				t.Fatalf("prNumberFromVerbOutput(%q) = %d, want %d", tc.out, got, tc.want)
+			}
+		})
+	}
+
+	t.Run("no URL is an error, never a zero", func(t *testing.T) {
+		t.Parallel()
+		if n, err := prNumberFromVerbOutput("verify: nothing to do"); err == nil {
+			t.Fatalf("want an error for output carrying no PR URL, got %d", n)
+		}
+	})
+	t.Run("a non-numeric last segment is not a PR number", func(t *testing.T) {
+		t.Parallel()
+		if n, err := prNumberFromVerbOutput("see https://example.invalid/pr/latest"); err == nil {
+			t.Fatalf("want an error for a non-numeric PR segment, got %d", n)
+		}
+	})
+}
