@@ -264,10 +264,26 @@ func pushTrace(t *testing.T, work, remote string) string {
 
 // maintenanceLines extracts just the offending trace lines, so a failure
 // names the evidence instead of dumping the whole GIT_TRACE.
+//
+// TWO VOCABULARIES, because git changed how it says this and the trace string
+// is the only evidence there is. Measured 2026-08-20 by pushing into a fresh
+// bare repo on each:
+//
+//	git 2.55 (darwin):  run_command: git maintenance run --auto --quiet --detach
+//	git 2.43 (ubuntu):  run_command: git gc --auto --quiet
+//
+// Matching only the first meant this detector saw nothing on the platform CI
+// runs on. The control assertion above caught that — but had the control not
+// existed, the hardened assertion would have passed VACUOUSLY there: it looks
+// for a string git never emits, so a regression in HardenRepo would have been
+// invisible on Linux while the test reported green.
+//
+// receive.autogc, which HardenRepoDir sets, governs both shapes, so the
+// guarantee under test is one thing; only its spelling in the trace moved.
 func maintenanceLines(trace string) string {
 	var hits []string
 	for _, line := range strings.Split(trace, "\n") {
-		if strings.Contains(line, "maintenance run") {
+		if strings.Contains(line, "maintenance run") || strings.Contains(line, "gc --auto") {
 			hits = append(hits, line)
 		}
 	}
