@@ -415,8 +415,22 @@ writeFileSync(join(publicRoot, 'site.webmanifest'), JSON.stringify({
 }, null, 2));
 
 mkdirSync(join(publicRoot, '.well-known'), { recursive: true });
-const securityBase = new Date(`${releases[0]?.released ?? '2026-08-01'}T00:00:00Z`);
+// `publishedReleases` admits a notes file as soon as its version has a tag, and
+// `released:` legally reads `unreleased` until the tag is cut. Those two facts
+// meet the moment a release is promoted: the tag appears, the notes still say
+// `unreleased`, and this line used to throw a bare `RangeError: Invalid time
+// value` naming neither the file nor the field. That is what broke the public
+// Pages build on v0.23.0 — and the private tree with it, since promotion
+// imports the tag here too.
+const newestReleased = releases[0]?.released;
+const securityBase = new Date(`${newestReleased ?? '2026-08-01'}T00:00:00Z`);
 securityBase.setUTCFullYear(securityBase.getUTCFullYear() + 1);
+if (Number.isNaN(securityBase.getTime())) {
+  throw new Error(
+    `releasenotes/${releases[0]?.version}.yaml has a published tag but \`released: ${newestReleased}\` is not a date. ` +
+    'Set it to the date the tag was cut; the `unreleased` sentinel is only legal before the tag exists.'
+  );
+}
 const securityExpiry = securityBase.toISOString().replace('.000', '');
 writeFileSync(join(publicRoot, '.well-known/security.txt'), `Contact: ${site.product.securityContact}\nExpires: ${securityExpiry}\nPreferred-Languages: en\nCanonical: ${canonical}/.well-known/security.txt\nPolicy: ${routeURL('security')}\n`);
 

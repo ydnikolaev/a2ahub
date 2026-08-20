@@ -568,6 +568,38 @@ judge_hub_protection() { # $1 = protection JSON
   return 0
 }
 
+assert_notes_carry_a_date() { # $1 = repo root, $2 = version (vX.Y.Z or X.Y.Z)
+  # `released: unreleased` is the LEGAL sentinel while notes are authored ahead
+  # of the tag. It becomes lethal the instant the tag exists: the site's
+  # `publishedReleases` admits a notes file as soon as its version is tagged,
+  # and then builds a Date from that field. On v0.23.0 the pair met — the tag
+  # was created, main moved, and the public Pages build died on
+  # `RangeError: Invalid time value`, naming neither the file nor the field.
+  # The private tree broke with it, because promotion imports the tag here too.
+  #
+  # Step 1 of the runbook already tells whoever cuts the release to correct the
+  # provisional date. Nothing enforced it, and "the cutter remembers" is what
+  # this gate exists to replace everywhere else in this file.
+  local root="$1" version="${2#v}" notes value
+  notes="$root/releasenotes/$version.yaml"
+  if [ ! -f "$notes" ]; then
+    echo "release-preflight: FAIL — no releasenotes/$version.yaml to cut $version from." >&2
+    return 1
+  fi
+  value="$(sed -n 's/^released:[[:space:]]*//p' "$notes" | head -1 | tr -d '"'"'"'[:space:]')"
+  case "$value" in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9])
+      printf '\xe2\x9c\x93 release-preflight: releasenotes/%s.yaml is dated %s, not the pre-tag sentinel\n' "$version" "$value"
+      return 0 ;;
+  esac
+  echo "release-preflight: FAIL — releasenotes/$version.yaml reads 'released: ${value:-<empty>}'." >&2
+  echo "    The 'unreleased' sentinel is legal only BEFORE the tag exists. Cutting with it" >&2
+  echo "    leaves a tagged version whose date is not a date, and the site build refuses on" >&2
+  echo "    it — the whole site, not just this release's page. Set it to the date you are" >&2
+  echo "    cutting (YYYY-MM-DD)." >&2
+  return 1
+}
+
 assert_feedback_hub_protected() {
   local slug branch blob problems
   slug="${A2A_PUBLIC_SLUG:-ydnikolaev/a2ahub}"
@@ -985,6 +1017,7 @@ assert_pins_resolve "$ROOT" "$VERSION" || rc=1
 assert_floor_not_ahead "$ROOT" "$VERSION" || rc=1
 assert_floor_moves_with_schema "$ROOT" "$VERSION" || rc=1
 assert_ref_default_matches "$ROOT" "$VERSION" || rc=1
+assert_notes_carry_a_date "$ROOT" "$VERSION" || rc=1
 if [ "${A2A_SKIP_PAGES_CHECK:-}" = "1" ]; then
   echo "release-preflight: SKIPPING the site-deploy check (A2A_SKIP_PAGES_CHECK=1) — the site may not announce $VERSION."
 else
