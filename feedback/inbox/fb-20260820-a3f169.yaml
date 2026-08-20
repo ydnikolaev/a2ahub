@@ -1,0 +1,48 @@
+# Feedback authoring skeleton (v1) — materialized by `a2a feedback new <kind>`
+# to `.a2a/feedback/<id>.yaml` (§T1, §11 A4). Every field required by
+# feedback.schema.json is present with a placeholder or auto-fill value so
+# the drafted file is schema-VALID once you replace the placeholders and
+# flip `checks.*` to true after honestly clearing every §2.1 gate.
+#
+# `id` / `context.a2a_version` / `context.os_arch` are filled in by the CLI
+# before this file ever reaches disk — the empty strings below are the
+# pre-fill placeholders `internal/feedback` overwrites, never hand-edited.
+#
+# `checks.*` starts all `false` on purpose: the agent must consciously flip
+# each one after actually verifying it (I5) — never bulk-set to true.
+
+feedback: v1
+id: fb-20260820-a3f169 # auto-filled: fb-YYYYMMDD-<6 hex>
+kind: bug # bug | feature | docs | friction | protocol
+severity: major # blocker | major | minor
+title: notify setup reads the one file that proves the checkout, and only at the end # 8-80 chars, specific
+summary: "`a2a notify setup` takes the repo it will write TG_BOT_TOKEN to from the local git remote, and nothing checks that the checkout is a space. Run it from a PARTICIPANT project — where .a2a/config.yaml lives and where every other a2a verb is run, so it is where an agent naturally is — and it resolves that project's own origin, reports it with full confidence, and sets the bot token on a repository whose CI never reads it. The channel then stays silent with a correct-looking secret in place. The gitRemote comment states the design (repo identity from the local remote, never from config.yaml) and I am not arguing with it; the gap is that setup never checks the remote it got. It degrades honestly when there is NO remote (prints the <owner>/<repo> placeholder), so the only case that produces a confidently wrong instruction is a valid remote belonging to the wrong repository. The fix needs no new input: setup already reads the file that settles it, and reads it too late."
+context:
+    a2a_version: 0.23.0 # auto-filled
+    os_arch: darwin/arm64 # auto-filled (runtime.GOOS/runtime.GOARCH)
+    surface: cli # cli | schema | docs | skill | dashboard | space-ci | protocol
+    command: "a2a notify setup --non-interactive --for axon"
+    # error_code: ""    # optional: whatever code you saw (e.g. POL-001)
+    # agent: ""         # optional: free self-report
+# evidence is REQUIRED when kind is bug (steps/expected/actual all
+# mandatory); optional otherwise — delete this block for non-bug kinds.
+evidence:
+    steps:
+        - "From a participant project that has .a2a/config.yaml naming a connected space, and whose own git origin is the project (not the space), run `a2a notify setup --non-interactive --for <system>`."
+        - "It prints `gh secret set TG_BOT_TOKEN --repo <the participant project>` and exits 1 — the documented refusal exit, so nothing in the exit code says the repo is wrong."
+        - "Run the same command from the space checkout: it prints the space repo. Both runs look equally confident; only one is right."
+        - "Note the honest case for contrast: with no git remote at all it prints `--repo <owner>/<repo>`, a visible placeholder."
+        - "In cmd_notify_setup.go, --non-interactive returns at the notifyNonInteractiveRefusal branch, before space.yaml is ever read."
+        - "The interactive path reads space.yaml at line 872, after the secret has been set, and a read failure prints `no space.yaml route to prove yet — re-run ... once the route above has merged`."
+        - "The sibling verb reads the same file first: `a2a notify verify` from a participant repo prints `cannot read space.yaml` and exits 1."
+    expected: "Setup refuses when its cwd is not a space checkout, before it names a repo or writes a secret — the same proof `notify verify` already demands of the same file."
+    actual: "From a participant repo it prints `gh secret set TG_BOT_TOKEN --repo <that project>` with no warning, and the interactive path sets the token there. space.yaml is absent, which proves the checkout, and setup either never reads it or reads it as 'route not merged yet'."
+proposal: "Read space.yaml at the TOP of setup and refuse there. A space repo always has one — `a2a space init` writes it, and `notify verify` already hard-requires it (cmd_notify_setup.go:988-991, exit 1 on a read failure). Setup reads the SAME file at line 872, but only in step 5, and treats a read failure as the benign 'no space.yaml route to prove yet — re-run once the route above has merged'. So the one fact that proves the checkout is read, and its absence is reported as 'right place, route not merged yet'. Two verbs, one file, opposite readings. In --non-interactive mode the early return means the file is never read at all; in interactive mode it is read only AFTER the secret was already set. Moving the read to the top fixes both paths with the guard the sibling verb already ships, and needs no .a2a/config.yaml. Optional second line, only if a cross-check is wanted: the connected space's repo_url IS in config.yaml, and using it to WARN on a mismatch is a different act from SOURCING the repo from it, which the design comment rules out."
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
+# resolution is hub-mutated only; MUST be absent at submit — do not add it.
