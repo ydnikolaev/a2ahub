@@ -1,4 +1,5 @@
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
@@ -8,7 +9,12 @@ const repoRoot = resolve(webRoot, '..');
 const internal = join(repoRoot, 'internal/html');
 const sourceRoot = join(webRoot, 'design-source');
 const templateOut = process.env.A2A_DASHBOARD_OUTPUT ? resolve(process.env.A2A_DASHBOARD_OUTPUT) : join(internal, 'template.html');
-const runtimeDir = mkdtempSync('/private/tmp/a2a-dashboard-runtime-');
+// `os.tmpdir()`, not a literal. This read `/private/tmp/...` until 2026-08-20 —
+// the path macOS resolves `/tmp` to, and a path Linux does not have at all. So
+// this build threw ENOENT on every non-darwin machine, and the only reason
+// nobody saw it is that CI installs no Node and skips the drift gate that runs
+// it. The container parity lane found it on its first green build.
+const runtimeDir = mkdtempSync(join(tmpdir(), 'a2a-dashboard-runtime-'));
 const runtimeOut = join(runtimeDir, 'design-runtime.js');
 
 await build({
