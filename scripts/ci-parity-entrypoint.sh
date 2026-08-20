@@ -101,5 +101,14 @@ if [ -f "$lock" ]; then
   fi
 fi
 
+# CI provisions the module cache with `go mod download` before any gate runs;
+# `make check` then sets GOPROXY=off deliberately, so the ceiling is offline.
+# Without this the container reached all 37 repo gates green and then died on
+# "module lookup disabled by GOPROXY=off" — a provisioning gap reported as a
+# build failure. `all` rather than the bare form because the testscript tier is
+# reached only behind a build tag, and its dependency is otherwise never pulled.
+echo "parity: priming the module cache"
+(cd "$WORK" && GOPROXY="${PARITY_GOPROXY:-https://proxy.golang.org,direct}" go mod download all)
+
 echo "parity: $(uname -s)/$(uname -m) · go $(go version | awk '{print $3}') · node $(node --version) · awk $(awk --version 2>&1 | head -1)"
 exec "$@"
