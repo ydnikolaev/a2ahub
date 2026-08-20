@@ -155,3 +155,18 @@ func prNumberFromVerbOutput(out string) (int, error) {
 	}
 	return 0, fmt.Errorf("livee2e: no pull-request URL in verb output")
 }
+
+// kindDeclaresAcceptanceCriteria reports whether a draft of this artifact kind
+// is minted carrying `acceptance_criteria[]` — the list REF-023 judges a
+// verify/close event's `verdicts[]` against since
+// rules-that-reach-2026-08 P1. It reads the same two kinds draftFieldArgs
+// (draftfields.go) actually gives the field to, so a scenario driving a family
+// generically does not have to know which one it is in.
+func kindDeclaresAcceptanceCriteria(kind string) bool {
+	switch kind {
+	case "work_request", "requirement":
+		return true
+	default:
+		return false
+	}
+}

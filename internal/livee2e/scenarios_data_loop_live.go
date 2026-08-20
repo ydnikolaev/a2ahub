@@ -522,13 +522,23 @@ func dataLoopFailSupersedePass(ctx context.Context, h *harness) Result {
 	if _, stderr, err := a.Run(ctx, "sync"); err != nil {
 		return dataLoopResultFromErr("owner-sync-before-close", fmt.Errorf("%w: %s", err, stderr), "A's a2a sync fetches B's response before closing")
 	}
-	if _, stderr, err := a.Run(ctx, "close", wr.ID); err != nil {
+	// rules-that-reach-2026-08 P1: `close` carries verdicts[] too, and REF-023
+	// judges it against the parent's declared criteria — a work_request
+	// declares one (draftfields.go), so a close naming none is now refused at
+	// submit. A question declares none, which is why the question-family close
+	// elsewhere needs no verdict.
+	closeOut, stderr, err := a.Run(ctx, "close", wr.ID, "--verdict", "0:met:"+a.System)
+	if err != nil {
 		return dataLoopResultFromErr("owner-close", fmt.Errorf("%w: %s", err, stderr), "A's a2a close succeeds and opens its own PR")
 	}
-	closePR, err := h.pullForBranch(ctx, space.BranchName(a.System, "close", wr.ID))
+	// Supplying --verdict moves the branch off BranchName(system, verb, id)
+	// onto operation.Verify's content-derived key, so the PR number is read
+	// from the verb's own output instead.
+	closePRNumber, err := prNumberFromVerbOutput(closeOut)
 	if err != nil {
-		return dataLoopResultFromErr("owner-close", err, "close's own branch has an open PR")
+		return dataLoopResultFromErr("owner-close", err, "close's own PR number is readable from its success line")
 	}
+	closePR := branchPull{Number: closePRNumber}
 	if err := happyLandAndSync(ctx, h, a, closePR.Number); err != nil {
 		return dataLoopResultFromErr("close-land-sync", err, "the close lands on main and reaches A's mirror")
 	}

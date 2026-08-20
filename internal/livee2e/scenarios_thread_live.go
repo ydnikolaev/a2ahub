@@ -374,13 +374,20 @@ func threadChainRun(ctx context.Context, h *harness) Result {
 	// --- finish the chain: A verifies (submitted -> verified), completing
 	// the full spine this row's brief names. Driven AFTER every assertion
 	// above, deliberately — see this function's own doc comment. ---
-	if _, stderr, err := a.Run(ctx, "verify", responseID); err != nil {
+	// rules-that-reach-2026-08 P1: verify refuses at SUBMIT when verdicts[] does
+	// not name every criterion the parent declares (REF-023), and the PR number
+	// comes from the verb's own output because --verdict switches the funnel's
+	// dedup key to operation.Verify's content-derived one — the branch stops
+	// carrying the response id. Same shape as the submitted-family scenario.
+	verifyOut, stderr, err := a.Run(ctx, "verify", responseID, "--verdict", "0:met:"+a.System)
+	if err != nil {
 		return threadChainResultFromErr("owner-verify", fmt.Errorf("%w: %s", err, stderr), "A's a2a verify succeeds and opens its own PR")
 	}
-	verifyPR, err := h.pullForBranchContaining(ctx, a.System, "verify", responseID)
+	verifyPRNumber, err := prNumberFromVerbOutput(verifyOut)
 	if err != nil {
-		return threadChainResultFromErr("owner-verify", err, "verify's own composite branch has an open PR")
+		return threadChainResultFromErr("owner-verify", err, "verify's own PR number is readable from its success line")
 	}
+	verifyPR := branchPull{Number: verifyPRNumber}
 	if err := happyLandAndSync(ctx, h, a, verifyPR.Number); err != nil {
 		return threadChainResultFromErr("verify-land-sync", err, "the verify (+ D-024 auto-close) lands on main and reaches A's mirror")
 	}

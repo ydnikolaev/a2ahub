@@ -266,13 +266,27 @@ func subfamExchangeLifecycle(ctx context.Context, h *harness, kind, scenario str
 	if _, stderr, err := a.Run(ctx, "sync"); err != nil {
 		return subfamResultFromErr(scenario, "owner-sync-before-close", fmt.Errorf("%w: %s", err, stderr), "A's a2a sync fetches B's response before closing")
 	}
-	if _, stderr, err := a.Run(ctx, "close", sub.ID); err != nil {
+	// rules-that-reach-2026-08 P1: `close` carries verdicts[], and REF-023
+	// judges it against the parent's DECLARED criteria — so this step differs
+	// by kind, which is why the guard is on the kind rather than unconditional.
+	// draftfields.go gives work_request (and requirement) one criterion each
+	// and gives question none, and this one function drives both families.
+	closeArgs := []string{"close", sub.ID}
+	if kindDeclaresAcceptanceCriteria(kind) {
+		closeArgs = append(closeArgs, "--verdict", "0:met:"+a.System)
+	}
+	closeOut, stderr, err := a.Run(ctx, closeArgs...)
+	if err != nil {
 		return subfamResultFromErr(scenario, "owner-close", fmt.Errorf("%w: %s", err, stderr), "A's a2a close succeeds and opens its own PR")
 	}
-	closePR, err := h.pullForBranch(ctx, space.BranchName(a.System, "close", sub.ID))
+	// With a verdict the branch moves off BranchName onto operation.Verify's
+	// content-derived key; without one it does not. Reading the number the
+	// verb printed is correct under both, so this does not branch again.
+	closePRNumber, err := prNumberFromVerbOutput(closeOut)
 	if err != nil {
-		return subfamResultFromErr(scenario, "owner-close", err, "close's own branch has an open PR")
+		return subfamResultFromErr(scenario, "owner-close", err, "close's own PR number is readable from its success line")
 	}
+	closePR := branchPull{Number: closePRNumber}
 	if err := happyLandAndSync(ctx, h, a, closePR.Number); err != nil {
 		return subfamResultFromErr(scenario, "close-land-sync", err, "the close lands on main and reaches A's mirror")
 	}
@@ -554,13 +568,23 @@ func subfamResponseLifecycle(ctx context.Context, h *harness) Result {
 	// --- A verifies: submitted -> verified. Single-response exchange, so
 	// D-024's convenience also closes the parent in the SAME PR — this
 	// branch is ALSO composite. ---
-	if _, stderr, err := a.Run(ctx, "verify", responseID); err != nil {
+	// rules-that-reach-2026-08 P1: verify now refuses at SUBMIT when verdicts[]
+	// does not name every criterion the parent declares (REF-023). This
+	// family's work_request carries exactly one, in the bare-string form
+	// (draftfields.go), so the ordinal token is the referent.
+	verifyOut, stderr, err := a.Run(ctx, "verify", responseID, "--verdict", "0:met:"+a.System)
+	if err != nil {
 		return subfamResultFromErr(scenario, "owner-verify", fmt.Errorf("%w: %s", err, stderr), "A's a2a verify succeeds and opens its own PR")
 	}
-	verifyPR, err := h.pullForBranchContaining(ctx, a.System, "verify", responseID)
+	// The PR number comes from the verb's own output rather than from a branch
+	// name: supplying --verdict switches the funnel's dedup key to
+	// operation.Verify's content-derived key, so the branch stops carrying the
+	// response id and a composite-branch lookup cannot find it.
+	verifyPRNumber, err := prNumberFromVerbOutput(verifyOut)
 	if err != nil {
-		return subfamResultFromErr(scenario, "owner-verify", err, "verify's own composite branch has an open PR")
+		return subfamResultFromErr(scenario, "owner-verify", err, "verify's own PR number is readable from its success line")
 	}
+	verifyPR := branchPull{Number: verifyPRNumber}
 	if err := happyLandAndSync(ctx, h, a, verifyPR.Number); err != nil {
 		return subfamResultFromErr(scenario, "verify-land-sync", err, "the verify (+ D-024 auto-close) lands on main and reaches A's mirror")
 	}
