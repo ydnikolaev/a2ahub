@@ -115,8 +115,8 @@
       {
         "value": "open",
         "family": "outcome",
-        "labelRU": "Ещё открыт",
-        "labelEN": "Still open",
+        "labelRU": "Ждём хода",
+        "labelEN": "Awaiting a move",
         "explanationRU": "Обмен продолжается, и следующий допустимый шаг ещё ожидается.",
         "explanationEN": "The exchange is ongoing and another permitted step is still expected.",
         "tone": "progressing",
@@ -135,8 +135,8 @@
       {
         "value": "settled",
         "family": "outcome",
-        "labelRU": "Вопрос закрыт",
-        "labelEN": "Resolved",
+        "labelRU": "Ход не нужен",
+        "labelEN": "No move needed",
         "explanationRU": "Обязательство завершено успешно, дальнейший шаг не ожидается.",
         "explanationEN": "The obligation concluded successfully and no further step is expected.",
         "tone": "settled",
@@ -380,7 +380,9 @@
         "explanationRU": "Получатель принял запрос или передачу; работа может продолжаться.",
         "explanationEN": "The recipient accepted the request or handoff; work can continue.",
         "tone": "progressing",
-        "cue": "→"
+        "cue": "→",
+        "pastRU": "принял",
+        "pastEN": "accepted"
       },
       {
         "value": "acknowledge",
@@ -390,7 +392,9 @@
         "explanationRU": "Адресат подтвердил получение документа; это ещё не означает выполнения обязательства.",
         "explanationEN": "The recipient confirmed receipt of the document; this does not yet mean the obligation is fulfilled.",
         "tone": "progressing",
-        "cue": "→"
+        "cue": "→",
+        "pastRU": "подтвердил получение",
+        "pastEN": "acknowledged"
       },
       {
         "value": "activate",
@@ -400,7 +404,9 @@
         "explanationRU": "Опубликованное обязательство введено в действие и теперь заявлено доступным.",
         "explanationEN": "The published obligation was brought into operation and is now declared available.",
         "tone": "progressing",
-        "cue": "→"
+        "cue": "→",
+        "pastRU": "включил в работу",
+        "pastEN": "brought live"
       },
       {
         "value": "approve",
@@ -410,7 +416,9 @@
         "explanationRU": "Обязательное согласование человеком завершилось одобрением.",
         "explanationEN": "The required human review concluded with approval.",
         "tone": "settled",
-        "cue": "✓"
+        "cue": "✓",
+        "pastRU": "согласовал",
+        "pastEN": "approved"
       },
       {
         "value": "block",
@@ -420,7 +428,9 @@
         "explanationRU": "Продолжение остановлено записанной блокировкой до её явного снятия.",
         "explanationEN": "Progress is stopped by a recorded blocker until it is explicitly removed.",
         "tone": "broken",
-        "cue": "×"
+        "cue": "×",
+        "pastRU": "заблокировал",
+        "pastEN": "blocked"
       },
       {
         "value": "cancel",
@@ -430,7 +440,9 @@
         "explanationRU": "Работа остановлена до завершения и больше не ожидает продолжения.",
         "explanationEN": "The work stopped before completion and no longer awaits continuation.",
         "tone": "settled",
-        "cue": "✓"
+        "cue": "✓",
+        "pastRU": "отменил",
+        "pastEN": "cancelled"
       },
       {
         "value": "close",
@@ -440,7 +452,9 @@
         "explanationRU": "Цепочка закрыта и больше не ожидает следующего перехода.",
         "explanationEN": "The thread is closed and no longer awaits another transition.",
         "tone": "settled",
-        "cue": "✓"
+        "cue": "✓",
+        "pastRU": "закрыл",
+        "pastEN": "closed"
       },
       {
         "value": "decline",
@@ -450,7 +464,9 @@
         "explanationRU": "Получатель отказался принять запрос или передачу; ожидаемый результат не достигнут.",
         "explanationEN": "The recipient declined the request or handoff; the expected result was not achieved.",
         "tone": "broken",
-        "cue": "×"
+        "cue": "×",
+        "pastRU": "отказался",
+        "pastEN": "declined"
       },
       {
         "value": "deprecate",
@@ -460,7 +476,9 @@
         "explanationRU": "Версия помечена как устаревающая; для новой работы следует выбрать её преемника.",
         "explanationEN": "The version was marked for phase-out; new work should use its successor.",
         "tone": "needs-you",
-        "cue": "!"
+        "cue": "!",
+        "pastRU": "объявил устаревающим",
+        "pastEN": "deprecated"
       },
       {
         "value": "dispute",
@@ -470,7 +488,9 @@
         "explanationRU": "Участник оспорил результат; разногласие нужно разрешить явно.",
         "explanationEN": "A participant contested the result; the disagreement must be resolved explicitly.",
         "tone": "broken",
-        "cue": "×"
+        "cue": "×",
+        "pastRU": "оспорил",
+        "pastEN": "disputed"
       },
       {
         "value": "note",
@@ -480,7 +500,9 @@
         "explanationRU": "К цепочке добавлена информационная заметка; сама по себе она не определяет состояние протокола.",
         "explanationEN": "An informational note was added to the thread; by itself it does not determine protocol state.",
         "tone": "progressing",
-        "cue": "→"
+        "cue": "→",
+        "pastRU": "добавил заметку",
+        "pastEN": "added a note"
       },
       {
         "value": "propose",
@@ -490,7 +512,9 @@
         "explanationRU": "Предложение опубликовано и теперь ждёт решения адресата.",
         "explanationEN": "A proposal was published and now awaits the recipient's decision.",
         "tone": "waiting-them",
-        "cue": "↗"
+        "cue": "↗",
+        "pastRU": "предложил",
+        "pastEN": "proposed"
       },
       {
         "value": "publish",
@@ -500,7 +524,9 @@
         "explanationRU": "Документ опубликован и доступен участникам как действующая версия.",
         "explanationEN": "The document was published and is available to participants as an active version.",
         "tone": "settled",
-        "cue": "✓"
+        "cue": "✓",
+        "pastRU": "опубликовал",
+        "pastEN": "published"
       },
       {
         "value": "reject",
@@ -510,7 +536,9 @@
         "explanationRU": "Обязательное согласование завершилось отказом; решение не принято.",
         "explanationEN": "The required approval ended in rejection; the decision was not accepted.",
         "tone": "broken",
-        "cue": "×"
+        "cue": "×",
+        "pastRU": "отклонил",
+        "pastEN": "rejected"
       },
       {
         "value": "respond",
@@ -520,7 +548,9 @@
         "explanationRU": "Ответ опубликован; исходный запрос может ещё ждать проверки или закрытия.",
         "explanationEN": "A response was published; the original request may still await verification or closure.",
         "tone": "progressing",
-        "cue": "→"
+        "cue": "→",
+        "pastRU": "ответил",
+        "pastEN": "answered"
       },
       {
         "value": "retire",
@@ -530,7 +560,9 @@
         "explanationRU": "Версия окончательно выведена из использования и должна быть заменена поддерживаемой.",
         "explanationEN": "The version was permanently retired from use and must be replaced by a supported one.",
         "tone": "settled",
-        "cue": "✓"
+        "cue": "✓",
+        "pastRU": "вывел из использования",
+        "pastEN": "retired"
       },
       {
         "value": "satisfy",
@@ -540,7 +572,9 @@
         "explanationRU": "Участники подтвердили, что требуемое условие выполнено.",
         "explanationEN": "The participants confirmed that the required condition has been met.",
         "tone": "settled",
-        "cue": "✓"
+        "cue": "✓",
+        "pastRU": "выполнил требование",
+        "pastEN": "satisfied"
       },
       {
         "value": "start",
@@ -550,7 +584,9 @@
         "explanationRU": "Принятая работа перешла к активному выполнению.",
         "explanationEN": "The accepted work moved into active progress.",
         "tone": "progressing",
-        "cue": "→"
+        "cue": "→",
+        "pastRU": "начал работу",
+        "pastEN": "started"
       },
       {
         "value": "submit",
@@ -560,7 +596,9 @@
         "explanationRU": "Документ передан адресату и ждёт его следующего шага.",
         "explanationEN": "The document was sent to its recipient and awaits their next step.",
         "tone": "waiting-them",
-        "cue": "↗"
+        "cue": "↗",
+        "pastRU": "передал на рассмотрение",
+        "pastEN": "submitted"
       },
       {
         "value": "supersede",
@@ -570,7 +608,9 @@
         "explanationRU": "Другой документ заменил этот; текущая версия сохраняется только в истории.",
         "explanationEN": "Another document replaced this one; the current version remains only in history.",
         "tone": "settled",
-        "cue": "✓"
+        "cue": "✓",
+        "pastRU": "заменил",
+        "pastEN": "superseded"
       },
       {
         "value": "unblock",
@@ -580,7 +620,9 @@
         "explanationRU": "Записанная блокировка снята, и работа может продолжаться.",
         "explanationEN": "The recorded blocker was removed, and work can continue.",
         "tone": "progressing",
-        "cue": "→"
+        "cue": "→",
+        "pastRU": "разблокировал",
+        "pastEN": "unblocked"
       },
       {
         "value": "verify",
@@ -590,7 +632,9 @@
         "explanationRU": "Получатель проверил результат и подтвердил его соответствие запросу.",
         "explanationEN": "The recipient checked the result and confirmed that it satisfies the request.",
         "tone": "settled",
-        "cue": "✓"
+        "cue": "✓",
+        "pastRU": "проверил результат",
+        "pastEN": "verified"
       },
       {
         "value": "verify-fail",
@@ -600,7 +644,9 @@
         "explanationRU": "Проверка завершилась неуспешно; результат не принят.",
         "explanationEN": "Verification failed; the result was not accepted.",
         "tone": "broken",
-        "cue": "×"
+        "cue": "×",
+        "pastRU": "отклонил по проверке",
+        "pastEN": "rejected on verification"
       },
       {
         "value": "verify-pass",
@@ -610,7 +656,9 @@
         "explanationRU": "Проверка завершилась успешно; результат принят.",
         "explanationEN": "Verification passed; the result was accepted.",
         "tone": "settled",
-        "cue": "✓"
+        "cue": "✓",
+        "pastRU": "принял по проверке",
+        "pastEN": "accepted on verification"
       },
       {
         "value": "withdraw",
@@ -620,7 +668,9 @@
         "explanationRU": "Автор отозвал документ до завершения ожидаемого результата.",
         "explanationEN": "The author withdrew the document before the expected result was completed.",
         "tone": "settled",
-        "cue": "✓"
+        "cue": "✓",
+        "pastRU": "отозвал",
+        "pastEN": "withdrew"
       },
       {
         "value": "addressed-no-ack",
@@ -1814,6 +1864,38 @@
   "inbox": [
     {
       "space": "checkout-core",
+      "id": "XA-catalog-20260728-f6g7",
+      "type": "announcement",
+      "title": "Product feed v3 sunsets on 2026-09-01",
+      "from": "catalog",
+      "to": [
+        "atlas",
+        "checkout"
+      ],
+      "state": "published",
+      "priority": "p2",
+      "blocking": false,
+      "gatePending": false,
+      "thread": "thread:catalog-20260728-f6g7",
+      "age": "2d",
+      "createdAt": "2026-07-28T17:05:00Z",
+      "feedRank": 2,
+      "movedAt": "2026-07-28T17:05:00Z",
+      "new": true,
+      "severity": "normal",
+      "reasons": [
+        "addressed-no-ack"
+      ],
+      "yourMove": false,
+      "description": "Registered v3 consumers must move to XC-catalog-product-feed@4.0.0 before the sunset date.",
+      "outcome": "settled",
+      "terminal": false,
+      "stateSince": "2026-07-28T07:01:00Z",
+      "stateBy": "catalog",
+      "stateEvent": "01K9A2B3C4D5E6F7G8H9J0K1M2"
+    },
+    {
+      "space": "checkout-core",
       "id": "XQ-checkout-20260730-a1b2",
       "type": "question",
       "title": "Should a retry reuse the original capture idempotency key?",
@@ -1829,6 +1911,7 @@
       "age": "5h",
       "neededBy": "2026-07-31",
       "createdAt": "2026-07-30T12:05:00Z",
+      "feedRank": 6,
       "movedAt": "2026-07-30T12:05:00Z",
       "new": true,
       "severity": "normal",
@@ -1859,6 +1942,62 @@
     },
     {
       "space": "checkout-core",
+      "id": "XS-checkout-20260730-disputed",
+      "type": "response",
+      "title": "Retry evidence disputed after a duplicate authorization",
+      "from": "checkout",
+      "to": [
+        "atlas"
+      ],
+      "state": "disputed",
+      "priority": "p1",
+      "blocking": true,
+      "gatePending": false,
+      "age": "2h",
+      "createdAt": "2026-07-30T15:05:00Z",
+      "feedRank": 9,
+      "movedAt": "2026-07-30T15:05:00Z",
+      "new": true,
+      "severity": "blocking",
+      "reasons": [
+        "disputed-toward-me",
+        "disputed"
+      ],
+      "yourMove": false,
+      "description": "Checkout disputes the first replay result and asks Atlas to reconcile the provider receipt.",
+      "outcome": "refused",
+      "terminal": true
+    },
+    {
+      "space": "checkout-core",
+      "id": "XW-catalog-20260731-accepted",
+      "type": "work_request",
+      "title": "Prepare the product-feed v4 cutover checklist",
+      "from": "catalog",
+      "to": [
+        "atlas"
+      ],
+      "state": "accepted",
+      "priority": "p2",
+      "blocking": false,
+      "gatePending": false,
+      "age": "6h",
+      "neededBy": "2026-08-15",
+      "createdAt": "2026-07-30T11:05:00Z",
+      "feedRank": 11,
+      "movedAt": "2026-07-30T11:05:00Z",
+      "new": true,
+      "severity": "attention",
+      "reasons": [
+        "activation-owed"
+      ],
+      "yourMove": false,
+      "description": "Atlas accepted ownership of the cutover checklist and must explicitly start the work.",
+      "outcome": "open",
+      "terminal": false
+    },
+    {
+      "space": "checkout-core",
       "id": "XW-checkout-20260728-c3d4",
       "type": "work_request",
       "title": "Prevent duplicate payment capture after a worker retry",
@@ -1874,6 +2013,7 @@
       "age": "1d",
       "neededBy": "2026-07-29",
       "createdAt": "2026-07-29T17:05:00Z",
+      "feedRank": 12,
       "movedAt": "2026-07-29T17:05:00Z",
       "new": false,
       "severity": "blocking",
@@ -1910,79 +2050,6 @@
     },
     {
       "space": "customer-ops",
-      "id": "XH-support-20260729-q5n6",
-      "type": "handoff",
-      "title": "PII-redacted support case stream v2",
-      "from": "support",
-      "to": [
-        "atlas"
-      ],
-      "state": "acknowledged",
-      "priority": "p2",
-      "blocking": true,
-      "gatePending": false,
-      "thread": "thread:support-20260729-q5n6",
-      "age": "1d",
-      "createdAt": "2026-07-29T17:05:00Z",
-      "movedAt": "2026-07-29T17:05:00Z",
-      "new": false,
-      "severity": "blocking",
-      "reasons": [
-        "p1-or-blocking-open"
-      ],
-      "syncStale": true,
-      "yourMove": true,
-      "waitingOn": [
-        "atlas"
-      ],
-      "description": "Support has delivered the v2 schema, fixtures and redaction proof; Atlas must verify the handoff.",
-      "prompt": {
-        "moves": [
-          "verify-pass",
-          "verify-fail"
-        ],
-        "doc": "reference/authoring/handoff.md",
-        "loop": "loops/receive.md §8.3 (receive loop)"
-      },
-      "outcome": "open",
-      "terminal": false,
-      "stateSince": "2026-07-29T05:45:00Z",
-      "stateBy": "atlas",
-      "stateEvent": "01K4A2B3C4D5E6F7G8H9J0K1MG"
-    },
-    {
-      "space": "checkout-core",
-      "id": "XA-catalog-20260728-f6g7",
-      "type": "announcement",
-      "title": "Product feed v3 sunsets on 2026-09-01",
-      "from": "catalog",
-      "to": [
-        "atlas",
-        "checkout"
-      ],
-      "state": "published",
-      "priority": "p2",
-      "blocking": false,
-      "gatePending": false,
-      "thread": "thread:catalog-20260728-f6g7",
-      "age": "2d",
-      "createdAt": "2026-07-28T17:05:00Z",
-      "movedAt": "2026-07-28T17:05:00Z",
-      "new": true,
-      "severity": "normal",
-      "reasons": [
-        "addressed-no-ack"
-      ],
-      "yourMove": false,
-      "description": "Registered v3 consumers must move to XC-catalog-product-feed@4.0.0 before the sunset date.",
-      "outcome": "settled",
-      "terminal": false,
-      "stateSince": "2026-07-28T07:01:00Z",
-      "stateBy": "catalog",
-      "stateEvent": "01K9A2B3C4D5E6F7G8H9J0K1M2"
-    },
-    {
-      "space": "customer-ops",
       "id": "XA-comms-20260730-r7t8",
       "type": "announcement",
       "title": "Delivery status — São Paulo ✓ · مرحبا · 東京",
@@ -1998,6 +2065,7 @@
       "thread": "thread:comms-20260730-r7t8",
       "age": "5h",
       "createdAt": "2026-07-30T12:05:00Z",
+      "feedRank": 13,
       "movedAt": "2026-07-30T12:05:00Z",
       "new": true,
       "severity": "attention",
@@ -2026,6 +2094,7 @@
       "thread": "thread:support-20260718-b3c4",
       "age": "2d",
       "createdAt": "2026-07-28T17:05:00Z",
+      "feedRank": 14,
       "movedAt": "2026-07-28T17:05:00Z",
       "new": false,
       "severity": "attention",
@@ -2065,6 +2134,7 @@
       "thread": "thread:legacycrm-20260709-x3y4",
       "age": "3w",
       "createdAt": "2026-07-09T17:05:00Z",
+      "feedRank": 17,
       "movedAt": "2026-07-09T17:05:00Z",
       "new": false,
       "severity": "attention",
@@ -2091,31 +2161,47 @@
       "stateEvent": "01K6A2B3C4D5E6F7G8H9J0K1M2"
     },
     {
-      "space": "checkout-core",
-      "id": "XW-catalog-20260731-accepted",
-      "type": "work_request",
-      "title": "Prepare the product-feed v4 cutover checklist",
-      "from": "catalog",
+      "space": "customer-ops",
+      "id": "XH-support-20260729-q5n6",
+      "type": "handoff",
+      "title": "PII-redacted support case stream v2",
+      "from": "support",
       "to": [
         "atlas"
       ],
-      "state": "accepted",
+      "state": "acknowledged",
       "priority": "p2",
-      "blocking": false,
+      "blocking": true,
       "gatePending": false,
-      "age": "6h",
-      "neededBy": "2026-08-15",
-      "createdAt": "2026-07-30T11:05:00Z",
-      "movedAt": "2026-07-30T11:05:00Z",
-      "new": true,
-      "severity": "attention",
+      "thread": "thread:support-20260729-q5n6",
+      "age": "1d",
+      "createdAt": "2026-07-29T17:05:00Z",
+      "feedRank": 18,
+      "movedAt": "2026-07-29T17:05:00Z",
+      "new": false,
+      "severity": "blocking",
       "reasons": [
-        "activation-owed"
+        "p1-or-blocking-open"
       ],
-      "yourMove": false,
-      "description": "Atlas accepted ownership of the cutover checklist and must explicitly start the work.",
+      "syncStale": true,
+      "yourMove": true,
+      "waitingOn": [
+        "atlas"
+      ],
+      "description": "Support has delivered the v2 schema, fixtures and redaction proof; Atlas must verify the handoff.",
+      "prompt": {
+        "moves": [
+          "verify-pass",
+          "verify-fail"
+        ],
+        "doc": "reference/authoring/handoff.md",
+        "loop": "loops/receive.md §8.3 (receive loop)"
+      },
       "outcome": "open",
-      "terminal": false
+      "terminal": false,
+      "stateSince": "2026-07-29T05:45:00Z",
+      "stateBy": "atlas",
+      "stateEvent": "01K4A2B3C4D5E6F7G8H9J0K1MG"
     },
     {
       "space": "customer-ops",
@@ -2133,6 +2219,7 @@
       "age": "8h",
       "neededBy": "2026-08-02",
       "createdAt": "2026-07-30T09:05:00Z",
+      "feedRank": 23,
       "movedAt": "2026-07-30T09:05:00Z",
       "new": true,
       "severity": "blocking",
@@ -2144,36 +2231,126 @@
       "description": "The backfill cannot proceed until the archive mirror is readable again.",
       "outcome": "open",
       "terminal": false
-    },
-    {
-      "space": "checkout-core",
-      "id": "XS-checkout-20260730-disputed",
-      "type": "response",
-      "title": "Retry evidence disputed after a duplicate authorization",
-      "from": "checkout",
-      "to": [
-        "atlas"
-      ],
-      "state": "disputed",
-      "priority": "p1",
-      "blocking": true,
-      "gatePending": false,
-      "age": "2h",
-      "createdAt": "2026-07-30T15:05:00Z",
-      "movedAt": "2026-07-30T15:05:00Z",
-      "new": true,
-      "severity": "blocking",
-      "reasons": [
-        "disputed-toward-me",
-        "disputed"
-      ],
-      "yourMove": false,
-      "description": "Checkout disputes the first replay result and asks Atlas to reconcile the provider receipt.",
-      "outcome": "refused",
-      "terminal": true
     }
   ],
   "outbox": [
+    {
+      "space": "checkout-core",
+      "id": "XA-atlas-20260730-d9e2",
+      "type": "announcement",
+      "title": "Order envelope v2 rollout enters the observation window",
+      "from": "atlas",
+      "to": [
+        "catalog",
+        "checkout",
+        "comms",
+        "fulfillment"
+      ],
+      "state": "published",
+      "priority": "p3",
+      "blocking": false,
+      "gatePending": false,
+      "thread": "thread:atlas-20260730-d9e2",
+      "age": "4h",
+      "createdAt": "2026-07-30T13:05:00Z",
+      "feedRank": 1,
+      "movedAt": "2026-07-30T13:05:00Z",
+      "new": true,
+      "severity": "normal",
+      "reasons": [
+        "state-changed-since-cursor"
+      ],
+      "yourMove": false,
+      "description": "The v2 payload is now default; participating systems should report regressions in the linked thread.",
+      "outcome": "settled",
+      "terminal": false,
+      "stateSince": "2026-07-30T13:05:00Z",
+      "stateBy": "atlas",
+      "stateEvent": "01K9D9E2F0A1B2C3D4E5F60718"
+    },
+    {
+      "space": "checkout-core",
+      "id": "XD-atlas-20260720-w3x4",
+      "type": "decision",
+      "title": "Adopt order envelope v2 as the default cross-system payload",
+      "from": "atlas",
+      "to": [
+        "checkout",
+        "fulfillment"
+      ],
+      "state": "proposed",
+      "priority": "p3",
+      "blocking": false,
+      "gatePending": true,
+      "thread": "thread:atlas-20260720-w3x4",
+      "age": "1w",
+      "createdAt": "2026-07-23T17:05:00Z",
+      "feedRank": 4,
+      "movedAt": "2026-07-23T17:05:00Z",
+      "new": false,
+      "severity": "normal",
+      "reasons": [
+        "state-changed-since-cursor",
+        "gate-pending-on-me"
+      ],
+      "yourMove": false,
+      "humanGate": "G3",
+      "description": "Checkout approved; Atlas is waiting for Fulfillment to complete the decision quorum.",
+      "outcome": "open",
+      "terminal": false
+    },
+    {
+      "space": "checkout-core",
+      "id": "XD-atlas-20260723-rejected",
+      "type": "decision",
+      "title": "Route every retry through a shared global lock",
+      "from": "atlas",
+      "to": [
+        "checkout"
+      ],
+      "state": "rejected",
+      "priority": "p3",
+      "blocking": false,
+      "gatePending": false,
+      "age": "1w",
+      "createdAt": "2026-07-23T17:05:00Z",
+      "feedRank": 5,
+      "movedAt": "2026-07-23T17:05:00Z",
+      "new": false,
+      "severity": "normal",
+      "yourMove": false,
+      "description": "The owner rejected a global lock in favor of provider-scoped idempotency keys.",
+      "outcome": "refused",
+      "terminal": false
+    },
+    {
+      "space": "checkout-core",
+      "id": "XR-atlas-notification-locale",
+      "type": "requirement",
+      "title": "Notification requests must carry an explicit locale",
+      "from": "atlas",
+      "to": [
+        "comms"
+      ],
+      "state": "acknowledged",
+      "priority": "p3",
+      "blocking": false,
+      "gatePending": false,
+      "thread": "thread:atlas-20260722-y5z6",
+      "age": "1w",
+      "createdAt": "2026-07-23T17:05:00Z",
+      "feedRank": 8,
+      "movedAt": "2026-07-23T17:05:00Z",
+      "new": false,
+      "severity": "normal",
+      "reasons": [
+        "stale-sla"
+      ],
+      "yourMove": false,
+      "description": "Comms acknowledged the requirement; Atlas is waiting for contract evidence before marking it satisfied.",
+      "outcome": "open",
+      "terminal": false
+    },
     {
       "space": "checkout-core",
       "id": "XW-atlas-20260727-r7s8",
@@ -2191,6 +2368,7 @@
       "age": "9h",
       "neededBy": "2026-08-15",
       "createdAt": "2026-07-30T08:05:00Z",
+      "feedRank": 10,
       "movedAt": "2026-07-30T08:05:00Z",
       "new": true,
       "severity": "normal",
@@ -2223,94 +2401,31 @@
       "stateEvent": "01K3A2B3C4D5E6F7G8H9J0K1MC"
     },
     {
-      "space": "checkout-core",
-      "id": "XD-atlas-20260720-w3x4",
-      "type": "decision",
-      "title": "Adopt order envelope v2 as the default cross-system payload",
+      "space": "customer-ops",
+      "id": "XH-atlas-20260724-declined",
+      "type": "handoff",
+      "title": "Transfer the legacy export replay runbook",
       "from": "atlas",
       "to": [
-        "checkout",
-        "fulfillment"
+        "legacycrm"
       ],
-      "state": "proposed",
-      "priority": "p3",
-      "blocking": false,
-      "gatePending": true,
-      "thread": "thread:atlas-20260720-w3x4",
-      "age": "1w",
-      "createdAt": "2026-07-23T17:05:00Z",
-      "movedAt": "2026-07-23T17:05:00Z",
-      "new": false,
-      "severity": "normal",
-      "reasons": [
-        "state-changed-since-cursor",
-        "gate-pending-on-me"
-      ],
-      "yourMove": false,
-      "humanGate": "G3",
-      "description": "Checkout approved; Atlas is waiting for Fulfillment to complete the decision quorum.",
-      "outcome": "open",
-      "terminal": false
-    },
-    {
-      "space": "checkout-core",
-      "id": "XR-atlas-notification-locale",
-      "type": "requirement",
-      "title": "Notification requests must carry an explicit locale",
-      "from": "atlas",
-      "to": [
-        "comms"
-      ],
-      "state": "acknowledged",
-      "priority": "p3",
+      "state": "declined",
+      "priority": "p2",
       "blocking": false,
       "gatePending": false,
-      "thread": "thread:atlas-20260722-y5z6",
-      "age": "1w",
-      "createdAt": "2026-07-23T17:05:00Z",
-      "movedAt": "2026-07-23T17:05:00Z",
+      "age": "6d",
+      "createdAt": "2026-07-24T17:05:00Z",
+      "feedRank": 16,
+      "movedAt": "2026-07-24T17:05:00Z",
       "new": false,
-      "severity": "normal",
+      "severity": "attention",
       "reasons": [
-        "stale-sla"
+        "declined"
       ],
+      "syncStale": true,
       "yourMove": false,
-      "description": "Comms acknowledged the requirement; Atlas is waiting for contract evidence before marking it satisfied.",
-      "outcome": "open",
-      "terminal": false
-    },
-    {
-      "space": "checkout-core",
-      "id": "XA-atlas-20260730-d9e2",
-      "type": "announcement",
-      "title": "Order envelope v2 rollout enters the observation window",
-      "from": "atlas",
-      "to": [
-        "catalog",
-        "checkout",
-        "comms",
-        "fulfillment"
-      ],
-      "state": "published",
-      "priority": "p3",
-      "blocking": false,
-      "gatePending": false,
-      "thread": "thread:atlas-20260730-d9e2",
-      "age": "4h",
-      "createdAt": "2026-07-30T13:05:00Z",
-      "movedAt": "2026-07-30T13:05:00Z",
-      "new": true,
-      "severity": "normal",
-      "reasons": [
-        "state-changed-since-cursor"
-      ],
-      "yourMove": false,
-      "description": "The v2 payload is now default; participating systems should report regressions in the linked thread.",
-      "outcome": "settled",
-      "terminal": false,
-      "stateSince": "2026-07-30T13:05:00Z",
-      "stateBy": "atlas",
-      "stateEvent": "01K9D9E2F0A1B2C3D4E5F60718"
+      "description": "Legacy CRM declined the runbook because the archive migration superseded that transfer.",
+      "terminal": true
     },
     {
       "space": "customer-ops",
@@ -2329,6 +2444,7 @@
       "age": "1w",
       "neededBy": "2026-07-24",
       "createdAt": "2026-07-23T17:05:00Z",
+      "feedRank": 19,
       "movedAt": "2026-07-23T17:05:00Z",
       "new": false,
       "severity": "attention",
@@ -2341,118 +2457,9 @@
       "description": "Support acknowledged the question but has not attached an answer; the requested date has passed.",
       "outcome": "open",
       "terminal": false
-    },
-    {
-      "space": "customer-ops",
-      "id": "XH-atlas-20260724-declined",
-      "type": "handoff",
-      "title": "Transfer the legacy export replay runbook",
-      "from": "atlas",
-      "to": [
-        "legacycrm"
-      ],
-      "state": "declined",
-      "priority": "p2",
-      "blocking": false,
-      "gatePending": false,
-      "age": "6d",
-      "createdAt": "2026-07-24T17:05:00Z",
-      "movedAt": "2026-07-24T17:05:00Z",
-      "new": false,
-      "severity": "attention",
-      "reasons": [
-        "declined"
-      ],
-      "syncStale": true,
-      "yourMove": false,
-      "description": "Legacy CRM declined the runbook because the archive migration superseded that transfer.",
-      "terminal": true
-    },
-    {
-      "space": "checkout-core",
-      "id": "XD-atlas-20260723-rejected",
-      "type": "decision",
-      "title": "Route every retry through a shared global lock",
-      "from": "atlas",
-      "to": [
-        "checkout"
-      ],
-      "state": "rejected",
-      "priority": "p3",
-      "blocking": false,
-      "gatePending": false,
-      "age": "1w",
-      "createdAt": "2026-07-23T17:05:00Z",
-      "movedAt": "2026-07-23T17:05:00Z",
-      "new": false,
-      "severity": "normal",
-      "yourMove": false,
-      "description": "The owner rejected a global lock in favor of provider-scoped idempotency keys.",
-      "outcome": "refused",
-      "terminal": false
     }
   ],
   "archive": [
-    {
-      "space": "customer-ops",
-      "id": "XQ-atlas-20260726-t5v6",
-      "type": "question",
-      "title": "Which fixture proves attachment names are redacted?",
-      "from": "atlas",
-      "to": [
-        "support"
-      ],
-      "state": "closed",
-      "priority": "p2",
-      "blocking": false,
-      "gatePending": false,
-      "thread": "thread:redaction-fixture-closed",
-      "age": "4d",
-      "neededBy": "2026-07-27",
-      "createdAt": "2026-07-26T17:05:00Z",
-      "movedAt": "2026-07-26T17:05:00Z",
-      "new": false,
-      "severity": "normal",
-      "syncStale": true,
-      "archived": true,
-      "yourMove": false,
-      "description": "Support supplied the requested fixture and Atlas closed the question.",
-      "outcome": "settled",
-      "terminal": true,
-      "stateSince": "2026-07-27T11:30:00Z",
-      "stateBy": "atlas",
-      "stateEvent": "01K4A2B3C4D5E6F7G8H9J0K1MN"
-    },
-    {
-      "space": "customer-ops",
-      "id": "XW-atlas-20260712-cancelled",
-      "type": "work_request",
-      "title": "Prepare a temporary CRM replay bridge",
-      "from": "atlas",
-      "to": [
-        "legacycrm"
-      ],
-      "state": "cancelled",
-      "priority": "p3",
-      "blocking": false,
-      "gatePending": false,
-      "thread": "thread:legacycrm-20260709-x3y4",
-      "age": "2w",
-      "neededBy": "2026-07-18",
-      "createdAt": "2026-07-16T17:05:00Z",
-      "movedAt": "2026-07-16T17:05:00Z",
-      "new": false,
-      "severity": "normal",
-      "syncStale": true,
-      "archived": true,
-      "yourMove": false,
-      "description": "The bridge was cancelled after the archive path replaced the temporary replay plan.",
-      "outcome": "withdrawn",
-      "terminal": true,
-      "stateSince": "2026-07-16T14:00:00Z",
-      "stateBy": "atlas",
-      "stateEvent": "01K6A2B3C4D5E6F7G8H9J0K1P2"
-    },
     {
       "space": "checkout-core",
       "id": "XD-atlas-20260718-draft",
@@ -2469,6 +2476,7 @@
       "gatePending": false,
       "age": "2w",
       "createdAt": "2026-07-16T17:05:00Z",
+      "feedRank": 3,
       "movedAt": "2026-07-16T17:05:00Z",
       "new": false,
       "severity": "normal",
@@ -2493,6 +2501,7 @@
       "gatePending": false,
       "age": "1w",
       "createdAt": "2026-07-23T17:05:00Z",
+      "feedRank": 7,
       "movedAt": "2026-07-23T17:05:00Z",
       "new": false,
       "severity": "normal",
@@ -2500,31 +2509,6 @@
       "yourMove": false,
       "description": "Replay verification confirmed that every retry reused the original provider key.",
       "outcome": "settled",
-      "terminal": false
-    },
-    {
-      "space": "customer-ops",
-      "id": "XR-atlas-20260716-withdrawn",
-      "type": "requirement",
-      "title": "Keep the temporary CRM bridge for six months",
-      "from": "atlas",
-      "to": [
-        "legacycrm"
-      ],
-      "state": "withdrawn",
-      "priority": "p4",
-      "blocking": false,
-      "gatePending": false,
-      "age": "2w",
-      "createdAt": "2026-07-16T17:05:00Z",
-      "movedAt": "2026-07-16T17:05:00Z",
-      "new": false,
-      "severity": "normal",
-      "syncStale": true,
-      "archived": true,
-      "yourMove": false,
-      "description": "Atlas withdrew the temporary bridge requirement once the archive path became the durable plan.",
-      "outcome": "withdrawn",
       "terminal": false
     },
     {
@@ -2542,6 +2526,7 @@
       "gatePending": false,
       "age": "2w",
       "createdAt": "2026-07-16T17:05:00Z",
+      "feedRank": 15,
       "movedAt": "2026-07-16T17:05:00Z",
       "new": false,
       "severity": "normal",
@@ -2551,6 +2536,94 @@
       "description": "The archive migration decision replaced this temporary replay approach.",
       "outcome": "superseded",
       "terminal": true
+    },
+    {
+      "space": "customer-ops",
+      "id": "XQ-atlas-20260726-t5v6",
+      "type": "question",
+      "title": "Which fixture proves attachment names are redacted?",
+      "from": "atlas",
+      "to": [
+        "support"
+      ],
+      "state": "closed",
+      "priority": "p2",
+      "blocking": false,
+      "gatePending": false,
+      "thread": "thread:redaction-fixture-closed",
+      "age": "4d",
+      "neededBy": "2026-07-27",
+      "createdAt": "2026-07-26T17:05:00Z",
+      "feedRank": 20,
+      "movedAt": "2026-07-26T17:05:00Z",
+      "new": false,
+      "severity": "normal",
+      "syncStale": true,
+      "archived": true,
+      "yourMove": false,
+      "description": "Support supplied the requested fixture and Atlas closed the question.",
+      "outcome": "settled",
+      "terminal": true,
+      "stateSince": "2026-07-27T11:30:00Z",
+      "stateBy": "atlas",
+      "stateEvent": "01K4A2B3C4D5E6F7G8H9J0K1MN"
+    },
+    {
+      "space": "customer-ops",
+      "id": "XR-atlas-20260716-withdrawn",
+      "type": "requirement",
+      "title": "Keep the temporary CRM bridge for six months",
+      "from": "atlas",
+      "to": [
+        "legacycrm"
+      ],
+      "state": "withdrawn",
+      "priority": "p4",
+      "blocking": false,
+      "gatePending": false,
+      "age": "2w",
+      "createdAt": "2026-07-16T17:05:00Z",
+      "feedRank": 21,
+      "movedAt": "2026-07-16T17:05:00Z",
+      "new": false,
+      "severity": "normal",
+      "syncStale": true,
+      "archived": true,
+      "yourMove": false,
+      "description": "Atlas withdrew the temporary bridge requirement once the archive path became the durable plan.",
+      "outcome": "withdrawn",
+      "terminal": false
+    },
+    {
+      "space": "customer-ops",
+      "id": "XW-atlas-20260712-cancelled",
+      "type": "work_request",
+      "title": "Prepare a temporary CRM replay bridge",
+      "from": "atlas",
+      "to": [
+        "legacycrm"
+      ],
+      "state": "cancelled",
+      "priority": "p3",
+      "blocking": false,
+      "gatePending": false,
+      "thread": "thread:legacycrm-20260709-x3y4",
+      "age": "2w",
+      "neededBy": "2026-07-18",
+      "createdAt": "2026-07-16T17:05:00Z",
+      "feedRank": 22,
+      "movedAt": "2026-07-16T17:05:00Z",
+      "new": false,
+      "severity": "normal",
+      "syncStale": true,
+      "archived": true,
+      "yourMove": false,
+      "description": "The bridge was cancelled after the archive path replaced the temporary replay plan.",
+      "outcome": "withdrawn",
+      "terminal": true,
+      "stateSince": "2026-07-16T14:00:00Z",
+      "stateBy": "atlas",
+      "stateEvent": "01K6A2B3C4D5E6F7G8H9J0K1P2"
     }
   ],
   "contracts": [
@@ -7828,7 +7901,7 @@
     },
     {
       "version": "0.23.0",
-      "released": "2026-08-13",
+      "released": "unreleased",
       "headline": "The transport registry gets a real caller, and the dashboard starts explaining whose move it is",
       "changes": [
         {
@@ -8276,6 +8349,116 @@
           "action": {
             "scope": "local",
             "why": "If you connect a second space and an MCP write is refused, the message names what it needed. For `a2a_submit` the fix is the draft's `space:` field; for the contract sub-verbs, pass `\"space\"`."
+          }
+        },
+        {
+          "id": "RN-02300-33",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "the Exchange filter chips count what they will actually show",
+          "detail": "The Exchange screen carries four filter axes — direction, state, type, deadline — and three of them already counted the way the row reads: \"how many would I see if I pressed this\", with every other selected axis honoured. Direction did not. With Open (1) selected, Incoming still read 12 and Outgoing 13, so the two rows of chips described two different screens and only one of them was on the page.\nEvery chip now applies the same predicates the rows do, omitting only its own axis. Pinned across the whole cross-product of the four axes rather than at the single case that was wrong.\n",
+          "action": {
+            "scope": "none",
+            "why": "The screen counts correctly on the next render; nothing to run."
+          }
+        },
+        {
+          "id": "RN-02300-34",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "the Exchange feed is ordered once, on the server, newest first",
+          "detail": "The archive reached the dashboard in no order at all — one axon snapshot interleaved a 28.07 document between two from 17.08 — so the window cut kept an arbitrary subset instead of the newest records, and the header's promise of \"latest on top\" was false. Direction is also a selection ACROSS inbox, outbox and archive, so their concatenation showed three ordered runs and no order: \"2 weeks, 3 weeks, 1 day, 1 day\".\nThe feed order is now decided in one place and before any window is cut: newest first by the creation key the view model already declares, with the per-space committed sequence breaking ties on the same instant. Each item carries its place in the merged feed as `feedRank`, an additive optional member, so the browser restores the server's order by reading one integer instead of re-deriving the rule — which is how a newest-by-activity re-sort got in once before.\n",
+          "action": {
+            "scope": "none",
+            "why": "A truncated archive window now keeps the newest records rather than an arbitrary subset; if you were reading the archive through a bounded snapshot, what it shows may differ from before.\n"
+          }
+        },
+        {
+          "id": "RN-02300-35",
+          "kind": "fix",
+          "impact": "low",
+          "subject": "every event history on the dashboard reads newest first",
+          "detail": "An artifact's \"Event history\" shipped a \"newest first\" hint over an oldest-first list — worse than either order alone, because a reader who trusts the hint reads the sequence backwards without noticing. The thread timeline and both contract histories had the same order and no hint at all.\nAll four now render newest first and say so where the reader can see it. The reversal is display-only: the projection still sorts events ascending so a causal chain stays reconstructible, and `a2a html --json` keeps reading forwards.\n",
+          "action": {
+            "scope": "none",
+            "why": "Reading order only; no data or command changed."
+          }
+        },
+        {
+          "id": "RN-02300-36",
+          "kind": "fix",
+          "impact": "high",
+          "subject": "an agent driving the loop through MCP can record a verdict at all",
+          "detail": "`verify` and `close` on the MCP surface hardcoded `event/v1` and the surface had no way to express a per-criterion judgement, so an agent that ran the exchange through MCP produced a permanently EMPTY verification record — and REF-023, the rule that refuses an incomplete one, could never fire on anything that surface wrote.\nBoth verbs now select `event/v2` in a space whose `min_binary_version` is at or above the publication floor, and accept `verdicts` in the same two shapes the CLI does: a 0-based index, or a criterion id when the parent declares them. A bare index against an id-declaring parent is refused by name, as is an unresolvable id, and supplying verdicts below the floor is refused rather than silently dropped.\nTwo calls naming the same targets with different judgements now also mint different operation keys. Before, they collided on one branch and the second was discarded as a repeat — the same defect the CLI fixed for itself.\n",
+          "action": {
+            "scope": "none",
+            "why": "Nothing you already do changes. A space below the publication floor keeps getting `event/v1` exactly as before.\n"
+          }
+        },
+        {
+          "id": "RN-02300-37",
+          "kind": "policy",
+          "impact": "normal",
+          "subject": "naming a criterion by id in `unmet[]` is now judged, not silently accepted",
+          "detail": "A response may name an unsatisfied criterion by its id (`{criterion: ac2}`) as well as by index. The validators only read the index form, so for an id-form response two REJECT-severity rules did nothing at all: REF-018 never asked whether the named ids resolve, and LFC-004 never asked whether a closing transition left one uncovered by `residue[]`.\nBoth now judge either form, and `residue[]` too. If you have been writing the id form, refusals you should have been getting will start arriving.\n",
+          "action": {
+            "scope": "space",
+            "why": "A response whose `unmet[]` names a criterion id the parent does not declare is now refused. That record was always wrong; it was not being caught.\n"
+          }
+        },
+        {
+          "id": "RN-02300-38",
+          "kind": "break",
+          "impact": "normal",
+          "subject": "a batch verify, close or respond refuses a judgement set that cannot bind to every target",
+          "detail": "`a2a verify R1 R2 --verdict …` resolved the flags against the FIRST target's parent and reused the result for every other one. When the parents declared different criteria, an index in range for one silently meant a different criterion for the next — and the pre-mint echo, which exists so you can see what you are asserting, showed only the first parent.\nEach target is now resolved and echoed against its own parent. A set that cannot bind identically across the batch is refused by name, saying which target disagreed and how.\n",
+          "action": {
+            "scope": "local",
+            "why": "A batch over parents with different criteria is now refused where it used to succeed. Split it into one invocation per parent; the records it was writing before were bound to criteria you never saw.\n"
+          }
+        },
+        {
+          "id": "RN-02300-39",
+          "kind": "feat",
+          "impact": "normal",
+          "subject": "`a2a new` can mint stable criterion ids, and the verdict flags say what they refer to",
+          "detail": "`a2a new --acceptance-criterion \u003ctext\u003e` (repeatable) drafts `acceptance_criteria[]` as `{id, text}` with ids `ac1..acN` for the types that render `envelope/v2`. Every later reference — a verdict, an `unmet[]` entry, a `residue[]` row — can then name the criterion instead of counting to it, which is what makes a mis-binding impossible rather than merely visible.\nTypes pinned to `envelope/v1` keep the bare-string form; their arrays are frozen bytes and stay ordinal.\n`--verdict` and `--unmet` help now state that a bare index is 0-based and that a criterion id is accepted, which the reporter of the original defect asked for and which no help text or skill page said.\n",
+          "action": {
+            "scope": "none",
+            "why": "Additive. A hand-written bare-string array still validates and still resolves by index.\n"
+          }
+        },
+        {
+          "id": "RN-02300-40",
+          "kind": "fix",
+          "impact": "high",
+          "subject": "`a2a verify` and `a2a close` now refuse a bad verdict set at submit, not at merge",
+          "detail": "A `verify`/`close` submission carries event files exclusively, and the submit-time validator ran its referential pass over drafts only — so the loop never executed and the submission was written unjudged. REF-019 (a verdict index outside the parent's criteria range) and REF-023 (a verdict set that does not name every declared criterion) were built as write gates and fired only later, at the merge check.\nBoth now run at `a2a submit`, on the CLI and through MCP. The architecture plan's own validation matrix has specified this since it was written — \"lifecycle legality of accompanying events\" at the pre-write point — so this closes a divergence from the specification rather than adding a rule.\n`skill/a2ahub/troubleshooting.md` stated that REF-023 refuses at submit. That sentence was false from the day it was written; it is true now, and the page also documents REF-019, which an agent can now meet in its own loop.\n",
+          "action": {
+            "scope": "local",
+            "why": "A verdict set that used to submit clean and fail at merge is now refused immediately. That is the point — but a loop that treated exit 0 from `a2a verify` as \"accepted\" will now see a non-zero exit and a REF-019 or REF-023 message instead. Read the criteria the parent declares and name every one of them.\n"
+          }
+        },
+        {
+          "id": "RN-02300-41",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "Both surfaces answer the same way about a parent's acceptance criteria",
+          "detail": "The MCP surface could not count a parent's criteria at all: its mirror resolver implemented none of the three capabilities the referential rules ask for, so those rules degraded to \"cannot check\" and an incomplete verdict set submitted clean there even after the CLI began refusing it.\nThe resolution moved into `internal/cache`, which both surfaces already read, and both now delegate to it. Neither surface imports the other. Both also carry compile-time assertions, so a future surface missing the capability is a build error rather than a rule that silently stops applying — the failure mode that had hidden this class five times.\n",
+          "action": {
+            "scope": "none",
+            "why": "No interface changed. An MCP-driven loop simply starts receiving the same refusals the CLI gives, with byte-identical text.\n"
+          }
+        },
+        {
+          "id": "RN-02300-42",
+          "kind": "fix",
+          "impact": "low",
+          "subject": "Two conditionally-required schema failures report the code they mean",
+          "detail": "A missing field required by a conditional — `waiting_on` for a waiting work checkpoint, `session` on a work actor, `conforms_to` for a fixture role — resolved to the generic \"required field missing\" code instead of the conditional one, whenever the failing schema pointer sat one level deeper than expected or was reached through a `$ref`. The classifier now matches the construct rather than one spelling of its path.\n",
+          "action": {
+            "scope": "none",
+            "why": "The refusal already happened; only the code and message it carried were less precise than the registry intends.\n"
           }
         },
         {
@@ -11833,7 +12016,7 @@
       "attachments": null,
       "sync_stale": false,
       "sync_age": "2m",
-      "outcome": "open",
+      "outcome": "settled",
       "terminal": false
     },
     {
@@ -12406,7 +12589,7 @@
       "attachments": null,
       "sync_stale": false,
       "sync_age": "2m",
-      "outcome": "open",
+      "outcome": "settled",
       "terminal": false
     },
     {
@@ -12571,7 +12754,7 @@
       "attachments": null,
       "sync_stale": false,
       "sync_age": "2m",
-      "outcome": "open",
+      "outcome": "settled",
       "terminal": false
     },
     {
@@ -12806,6 +12989,7 @@
           "thread": "thread:support-20260729-q5n6",
           "age": "1d",
           "createdAt": "2026-07-29T17:05:00Z",
+          "feedRank": 18,
           "movedAt": "2026-07-29T17:05:00Z",
           "new": false,
           "severity": "blocking",
@@ -12849,6 +13033,7 @@
           "age": "1d",
           "neededBy": "2026-07-29",
           "createdAt": "2026-07-29T17:05:00Z",
+          "feedRank": 12,
           "movedAt": "2026-07-29T17:05:00Z",
           "new": false,
           "severity": "blocking",
@@ -12899,6 +13084,7 @@
           "age": "8h",
           "neededBy": "2026-08-02",
           "createdAt": "2026-07-30T09:05:00Z",
+          "feedRank": 23,
           "movedAt": "2026-07-30T09:05:00Z",
           "new": true,
           "severity": "blocking",
@@ -12922,6 +13108,38 @@
       "items": [
         {
           "space": "checkout-core",
+          "id": "XA-catalog-20260728-f6g7",
+          "type": "announcement",
+          "title": "Product feed v3 sunsets on 2026-09-01",
+          "from": "catalog",
+          "to": [
+            "atlas",
+            "checkout"
+          ],
+          "state": "published",
+          "priority": "p2",
+          "blocking": false,
+          "gatePending": false,
+          "thread": "thread:catalog-20260728-f6g7",
+          "age": "2d",
+          "createdAt": "2026-07-28T17:05:00Z",
+          "feedRank": 2,
+          "movedAt": "2026-07-28T17:05:00Z",
+          "new": true,
+          "severity": "normal",
+          "reasons": [
+            "addressed-no-ack"
+          ],
+          "yourMove": false,
+          "description": "Registered v3 consumers must move to XC-catalog-product-feed@4.0.0 before the sunset date.",
+          "outcome": "settled",
+          "terminal": false,
+          "stateSince": "2026-07-28T07:01:00Z",
+          "stateBy": "catalog",
+          "stateEvent": "01K9A2B3C4D5E6F7G8H9J0K1M2"
+        },
+        {
+          "space": "checkout-core",
           "id": "XQ-checkout-20260730-a1b2",
           "type": "question",
           "title": "Should a retry reuse the original capture idempotency key?",
@@ -12937,6 +13155,7 @@
           "age": "5h",
           "neededBy": "2026-07-31",
           "createdAt": "2026-07-30T12:05:00Z",
+          "feedRank": 6,
           "movedAt": "2026-07-30T12:05:00Z",
           "new": true,
           "severity": "normal",
@@ -12967,34 +13186,31 @@
         },
         {
           "space": "checkout-core",
-          "id": "XA-catalog-20260728-f6g7",
-          "type": "announcement",
-          "title": "Product feed v3 sunsets on 2026-09-01",
+          "id": "XW-catalog-20260731-accepted",
+          "type": "work_request",
+          "title": "Prepare the product-feed v4 cutover checklist",
           "from": "catalog",
           "to": [
-            "atlas",
-            "checkout"
+            "atlas"
           ],
-          "state": "published",
+          "state": "accepted",
           "priority": "p2",
           "blocking": false,
           "gatePending": false,
-          "thread": "thread:catalog-20260728-f6g7",
-          "age": "2d",
-          "createdAt": "2026-07-28T17:05:00Z",
-          "movedAt": "2026-07-28T17:05:00Z",
+          "age": "6h",
+          "neededBy": "2026-08-15",
+          "createdAt": "2026-07-30T11:05:00Z",
+          "feedRank": 11,
+          "movedAt": "2026-07-30T11:05:00Z",
           "new": true,
-          "severity": "normal",
+          "severity": "attention",
           "reasons": [
-            "addressed-no-ack"
+            "activation-owed"
           ],
           "yourMove": false,
-          "description": "Registered v3 consumers must move to XC-catalog-product-feed@4.0.0 before the sunset date.",
-          "outcome": "settled",
-          "terminal": false,
-          "stateSince": "2026-07-28T07:01:00Z",
-          "stateBy": "catalog",
-          "stateEvent": "01K9A2B3C4D5E6F7G8H9J0K1M2"
+          "description": "Atlas accepted ownership of the cutover checklist and must explicitly start the work.",
+          "outcome": "open",
+          "terminal": false
         },
         {
           "space": "customer-ops",
@@ -13013,6 +13229,7 @@
           "thread": "thread:comms-20260730-r7t8",
           "age": "5h",
           "createdAt": "2026-07-30T12:05:00Z",
+          "feedRank": 13,
           "movedAt": "2026-07-30T12:05:00Z",
           "new": true,
           "severity": "attention",
@@ -13041,6 +13258,7 @@
           "thread": "thread:support-20260718-b3c4",
           "age": "2d",
           "createdAt": "2026-07-28T17:05:00Z",
+          "feedRank": 14,
           "movedAt": "2026-07-28T17:05:00Z",
           "new": false,
           "severity": "attention",
@@ -13080,6 +13298,7 @@
           "thread": "thread:legacycrm-20260709-x3y4",
           "age": "3w",
           "createdAt": "2026-07-09T17:05:00Z",
+          "feedRank": 17,
           "movedAt": "2026-07-09T17:05:00Z",
           "new": false,
           "severity": "attention",
@@ -13104,33 +13323,6 @@
           "stateSince": "2026-07-09T10:01:00Z",
           "stateBy": "legacycrm",
           "stateEvent": "01K6A2B3C4D5E6F7G8H9J0K1M2"
-        },
-        {
-          "space": "checkout-core",
-          "id": "XW-catalog-20260731-accepted",
-          "type": "work_request",
-          "title": "Prepare the product-feed v4 cutover checklist",
-          "from": "catalog",
-          "to": [
-            "atlas"
-          ],
-          "state": "accepted",
-          "priority": "p2",
-          "blocking": false,
-          "gatePending": false,
-          "age": "6h",
-          "neededBy": "2026-08-15",
-          "createdAt": "2026-07-30T11:05:00Z",
-          "movedAt": "2026-07-30T11:05:00Z",
-          "new": true,
-          "severity": "attention",
-          "reasons": [
-            "activation-owed"
-          ],
-          "yourMove": false,
-          "description": "Atlas accepted ownership of the cutover checklist and must explicitly start the work.",
-          "outcome": "open",
-          "terminal": false
         }
       ],
       "window": {
@@ -13158,6 +13350,7 @@
           "age": "9h",
           "neededBy": "2026-08-15",
           "createdAt": "2026-07-30T08:05:00Z",
+          "feedRank": 10,
           "movedAt": "2026-07-30T08:05:00Z",
           "new": true,
           "severity": "normal",
