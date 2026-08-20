@@ -48,6 +48,12 @@ GITLEAKS_VERSION="$(grep -oE 'GITLEAKS_VERSION:[[:space:]]*[0-9]+(\.[0-9]+)*' .g
   | head -1 | grep -oE '[0-9]+(\.[0-9]+)*')"
 [ -n "$GITLEAKS_VERSION" ] || die ".github/workflows/gitleaks.yml declares no GITLEAKS_VERSION."
 
+GOLANGCI_VERSION="$(grep -hoE 'golangci-lint/v[0-9]+(\.[0-9]+)*/install\.sh' .github/workflows/*.yml \
+  | sed -E 's#golangci-lint/(v[0-9.]+)/install\.sh#\1#' | sort -u)"
+[ -n "$GOLANGCI_VERSION" ] || die "no workflow installs golangci-lint — \`make check\` refuses without it, so the image needs the version CI uses."
+[ "$(printf '%s\n' "$GOLANGCI_VERSION" | wc -l | tr -d ' ')" = 1 ] \
+  || die "workflows disagree on the golangci-lint version ($(printf '%s' "$GOLANGCI_VERSION" | tr '\n' ' '))."
+
 ACTIONLINT_VERSION="$(grep -hoE 'actionlint@v[0-9]+(\.[0-9]+)*' .github/workflows/*.yml \
   | sed 's/.*@//' | sort -u)"
 [ -n "$ACTIONLINT_VERSION" ] || die "no workflow installs a pinned actionlint — \`make workflow-lint\` needs one in the image."
@@ -57,8 +63,8 @@ ACTIONLINT_VERSION="$(grep -hoE 'actionlint@v[0-9]+(\.[0-9]+)*' .github/workflow
 PLAYWRIGHT_VERSION="$(jq -r '.packages["node_modules/@playwright/test"].version // empty' web/package-lock.json 2>/dev/null || true)"
 [ -n "$PLAYWRIGHT_VERSION" ] || die "web/package-lock.json resolves no @playwright/test version — the browser layer would not match the suite that runs against it."
 
-printf 'ci-parity-docker: go %s · node %s · gitleaks %s · actionlint %s · playwright %s\n' \
-  "$GO_VERSION" "$NODE_MAJOR" "$GITLEAKS_VERSION" "$ACTIONLINT_VERSION" "$PLAYWRIGHT_VERSION"
+printf 'ci-parity-docker: go %s · node %s · gitleaks %s · golangci-lint %s · actionlint %s · playwright %s\n' \
+  "$GO_VERSION" "$NODE_MAJOR" "$GITLEAKS_VERSION" "$GOLANGCI_VERSION" "$ACTIONLINT_VERSION" "$PLAYWRIGHT_VERSION"
 
 command -v docker >/dev/null 2>&1 || die "docker is not on PATH."
 docker info >/dev/null 2>&1 || die "the Docker daemon is not reachable — start Docker Desktop."
@@ -70,6 +76,7 @@ docker build \
   --build-arg "GO_VERSION=$GO_VERSION" \
   --build-arg "NODE_MAJOR=$NODE_MAJOR" \
   --build-arg "GITLEAKS_VERSION=$GITLEAKS_VERSION" \
+  --build-arg "GOLANGCI_VERSION=$GOLANGCI_VERSION" \
   --build-arg "ACTIONLINT_VERSION=$ACTIONLINT_VERSION" \
   --build-arg "PLAYWRIGHT_VERSION=$PLAYWRIGHT_VERSION" \
   --tag "$IMAGE" \

@@ -85,6 +85,15 @@ RUN test -n "${GITLEAKS_VERSION}" || { echo "GITLEAKS_VERSION is empty — deriv
       | tar -xz -C /usr/local/bin gitleaks \
  && gitleaks version
 
+# `make check` refuses outright when .golangci.yml exists and the linter does
+# not — "a configured lint gate that silently skips is a hole, not a gate", in
+# its own words. The runner installs it as toolchain provisioning; so does this.
+ARG GOLANGCI_VERSION
+RUN test -n "${GOLANGCI_VERSION}" || { echo "GOLANGCI_VERSION is empty — derived from .github/workflows/ci.yml." >&2; exit 1; } \
+ && curl -sSfL "https://raw.githubusercontent.com/golangci/golangci-lint/${GOLANGCI_VERSION}/install.sh" \
+      | sh -s -- -b /root/go/bin "${GOLANGCI_VERSION}" \
+ && golangci-lint --version
+
 ARG ACTIONLINT_VERSION
 RUN test -n "${ACTIONLINT_VERSION}" || { echo "ACTIONLINT_VERSION is empty — derived from .github/workflows/ci.yml." >&2; exit 1; } \
  && go install "github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION}"
