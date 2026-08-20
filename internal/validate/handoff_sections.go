@@ -1,5 +1,5 @@
 // P9 "a required section that says nothing" (spec
-// docs/features/active/defects-fix-2026-08/specs/09-a-required-section-
+// docs/features/archive/defects-fix-2026-08/specs/09-a-required-section-
 // that-says-nothing.md, plan .../plans/09-a-required-section-that-says-
 // nothing.plan.md): docs/the-plan/plan/16-handoff-directive.md §16.2 lists
 // five handoff BODY sections as REQUIRED CONTENT with stated purposes

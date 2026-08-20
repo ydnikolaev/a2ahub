@@ -48,7 +48,7 @@ resolution: >-
     that table names one-answer-2026-08's own P1-P5 as what would close this,
     which is WRONG: the fix already exists, shipped by a DIFFERENT epic,
     `defects-fix-2026-08` P3
-    (docs/features/active/defects-fix-2026-08/specs/03-a-criterion-has-a-name.md,
+    (docs/features/archive/defects-fix-2026-08/specs/03-a-criterion-has-a-name.md,
     commit d9287883, tracker status: done). `lifecycleEchoVerdicts`
     (internal/cli/cmd_lifecycle.go) prints each resolved verdict's binding —
     criterion text, verdict, cause_owner — before anything is minted, citing

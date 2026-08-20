@@ -123,7 +123,7 @@ EXEMPT_REASONS=(
 # The doc that legitimately QUOTES the shipped Telegram regex source in
 # prose (explaining the deviation from spec 01's literal pattern) — not a
 # second implementation, so invariant 2 exempts it by name.
-TELEGRAM_DOC_EXEMPT="docs/features/active/space-notify-2026-08/specs/01-route-schema.md"
+TELEGRAM_DOC_EXEMPT="docs/features/archive/space-notify-2026-08/specs/01-route-schema.md"
 
 is_exempt() { # $1 = path relative to the scanned root
   local path="$1" pattern

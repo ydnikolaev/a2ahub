@@ -397,7 +397,7 @@ EOF
   # AC3 — one-answer-2026-08 P6's REAL plan file, copied unmodified, fed
   # straight to the refusal path (no tracker in scope, so the shipped-phase
   # skip cannot hide it). If this does not red, the gate is not written yet.
-  local p6="$ROOT/docs/features/active/one-answer-2026-08/plans/06-the-release-record-and-the-world-agree.plan.md"
+  local p6="$ROOT/docs/features/archive/one-answer-2026-08/plans/06-the-release-record-and-the-world-agree.plan.md"
   if [ -f "$p6" ]; then
     cp "$p6" "$tmp/p6.plan.md"
     out="$(judge_plan_entries "$tmp/p6.plan.md" "teeth/p6.plan.md (one-answer-2026-08 P6, copied)" 2>&1)" && {
@@ -411,7 +411,7 @@ EOF
 
   # control — a clean allowlist (this very phase's own plan) → GREEN, no
   # false positive.
-  local p2="$ROOT/docs/features/active/rules-that-reach-2026-08/plans/02-a-frozen-path-refuses-before-the-work.plan.md"
+  local p2="$ROOT/docs/features/archive/rules-that-reach-2026-08/plans/02-a-frozen-path-refuses-before-the-work.plan.md"
   if [ -f "$p2" ]; then
     cp "$p2" "$tmp/p2.plan.md"
     expect_green "control: this phase's own clean plan allowlist" \

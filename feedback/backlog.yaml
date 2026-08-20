@@ -11,7 +11,7 @@ items:
         - docs/features/active/operational-confidence-2026-08/README.md
       date: "2026-08-02"
     # refs deliberately cites releasenotes/0.23.0.yaml, NOT
-    # docs/features/active/defects-fix-2026-08/specs/03-a-criterion-has-a-name.md
+    # docs/features/archive/defects-fix-2026-08/specs/03-a-criterion-has-a-name.md
     # even though that spec is the actual fix and its phase (P3) is `done`.
     # check-feedback-corpus.sh's stale-verdict refusal (CHECK-C) would fire on
     # a specs/ ref pointing at a done phase, and it would be WRONG here: P3
