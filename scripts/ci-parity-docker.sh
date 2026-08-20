@@ -92,6 +92,7 @@ exec docker run --rm -i \
   ${PARITY_TTY:+-t} \
   -v "$ROOT:/src:ro" \
   -v a2ahub-parity-work:/work \
+  -v a2ahub-parity-state:/parity-state \
   -v a2ahub-parity-gocache:/root/.cache/go-build \
   -v a2ahub-parity-gomod:/root/go/pkg/mod \
   "$IMAGE" "$@"

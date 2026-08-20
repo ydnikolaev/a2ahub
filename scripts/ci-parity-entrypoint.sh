@@ -25,6 +25,12 @@ set -euo pipefail
 
 SRC=${PARITY_SRC:-/src}
 WORK=${PARITY_WORK:-/work}
+# Container state lives OUTSIDE the tree under judgement. It used to be a
+# `.parity-npm-stamp` at the work root, and `classify-guard` refused it on
+# sight — correctly: an unclassified top-level entry is exactly what that gate
+# exists to catch, and a harness that adds files to the tree it is judging is
+# measuring itself. Its own volume, so the copy stays byte-faithful to /src.
+STATE=${PARITY_STATE:-/parity-state}
 
 [ -d "$SRC/.git" ] || { echo "parity: $SRC is not a git checkout — the host repo must be mounted read-only there." >&2; exit 1; }
 
@@ -36,7 +42,6 @@ cat > "$excludes" <<'EXCL'
 /dist/
 /a2a
 /coverage.out
-/.parity-npm-stamp
 web/node_modules/
 web/dist/
 web/test-results/
@@ -61,12 +66,13 @@ git config --global --add safe.directory "$WORK"
 # 350MB per run buys nothing.
 lock="$WORK/web/package-lock.json"
 if [ -f "$lock" ]; then
+  mkdir -p "$STATE"
   want=$(sha256sum "$lock" | cut -d' ' -f1)
-  have=$(cat "$WORK/.parity-npm-stamp" 2>/dev/null || true)
+  have=$(cat "$STATE/npm-stamp" 2>/dev/null || true)
   if [ "$want" != "$have" ] || [ ! -d "$WORK/web/node_modules" ]; then
     echo "parity: npm ci (lockfile changed or node_modules absent)"
     (cd "$WORK/web" && npm ci)
-    printf '%s' "$want" > "$WORK/.parity-npm-stamp"
+    printf '%s' "$want" > "$STATE/npm-stamp"
   else
     echo "parity: npm ci skipped — lockfile unchanged since the last run"
   fi
