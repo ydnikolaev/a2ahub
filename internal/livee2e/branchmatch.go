@@ -163,10 +163,20 @@ func prNumberFromVerbOutput(out string) (int, error) {
 // (draftfields.go) actually gives the field to, so a scenario driving a family
 // generically does not have to know which one it is in.
 func kindDeclaresAcceptanceCriteria(kind string) bool {
-	switch kind {
-	case "work_request", "requirement":
-		return true
-	default:
+	// ASK draftFieldArgs, never mirror its list. A hand-copied list was the
+	// first shape of this predicate and it was wrong within the hour: it named
+	// work_request and requirement and missed handoff, which declares the field
+	// too — caught only because the test below asks the same source rather than
+	// the same list. The arguments here are placeholders; only the presence of
+	// the key is read.
+	args, ok := draftFieldArgs(kind, "space", "self", "peer")
+	if !ok {
 		return false
 	}
+	for _, a := range args {
+		if strings.HasPrefix(a, "acceptance_criteria=") {
+			return true
+		}
+	}
+	return false
 }

@@ -188,3 +188,31 @@ func TestPRNumberFromVerbOutput(t *testing.T) {
 		}
 	})
 }
+
+// TestKindDeclaresAcceptanceCriteria pins the predicate against the ONE place
+// the answer actually comes from — draftFieldArgs' own field lists. The two
+// must not drift: a kind that starts declaring acceptance_criteria without
+// this predicate learning about it makes a generic family scenario submit a
+// verdict-free close, which REF-023 refuses; a kind that stops declaring them
+// makes it submit a verdict against a criterion that no longer exists.
+func TestKindDeclaresAcceptanceCriteria(t *testing.T) {
+	t.Parallel()
+
+	for _, kind := range []string{"work_request", "requirement", "question", "decision", "handoff", "announcement", "contract", "response"} {
+		args, ok := draftFieldArgs(kind, "space", "alpha", "bravo")
+		if !ok {
+			continue
+		}
+		declared := false
+		for _, a := range args {
+			if strings.Contains(a, "acceptance_criteria=") {
+				declared = true
+				break
+			}
+		}
+		if got := kindDeclaresAcceptanceCriteria(kind); got != declared {
+			t.Errorf("kindDeclaresAcceptanceCriteria(%q) = %v, but draftFieldArgs %s declare acceptance_criteria",
+				kind, got, map[bool]string{true: "DOES", false: "does NOT"}[declared])
+		}
+	}
+}
