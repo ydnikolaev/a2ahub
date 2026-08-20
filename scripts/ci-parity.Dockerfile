@@ -39,8 +39,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 # mawk is named explicitly and gawk is deliberately NOT installed: ubuntu's
 # default `awk` is mawk, and installing gawk here would quietly grant the image
 # extensions CI does not have.
+# ripgrep is here because the ubuntu-latest runner image ships it and several
+# gates require it by name (`operational-confidence-guard` refuses outright
+# without it). Anything the runner preinstalls and a gate reads belongs in this
+# list — a missing tool turns a parity run into a tooling failure that looks
+# like a product failure.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl git make rsync jq shellcheck \
+      ca-certificates curl git make rsync jq shellcheck ripgrep \
       xz-utils unzip gnupg mawk coreutils findutils diffutils file procps \
  && rm -rf /var/lib/apt/lists/*
 
