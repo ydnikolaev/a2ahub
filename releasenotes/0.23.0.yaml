@@ -1107,3 +1107,91 @@ changes:
   action:
     scope: none
     why: Reading order only; no data or command changed.
+- id: RN-02300-36
+  kind: fix
+  impact: high
+  subject: an agent driving the loop through MCP can record a verdict at all
+  detail: >
+    `verify` and `close` on the MCP surface hardcoded `event/v1` and the surface
+    had no way to express a per-criterion judgement, so an agent that ran the
+    exchange through MCP produced a permanently EMPTY verification record — and
+    REF-023, the rule that refuses an incomplete one, could never fire on
+    anything that surface wrote.
+
+    Both verbs now select `event/v2` in a space whose `min_binary_version` is at
+    or above the publication floor, and accept `verdicts` in the same two shapes
+    the CLI does: a 0-based index, or a criterion id when the parent declares
+    them. A bare index against an id-declaring parent is refused by name, as is
+    an unresolvable id, and supplying verdicts below the floor is refused rather
+    than silently dropped.
+
+    Two calls naming the same targets with different judgements now also mint
+    different operation keys. Before, they collided on one branch and the second
+    was discarded as a repeat — the same defect the CLI fixed for itself.
+  action:
+    scope: none
+    why: >
+      Nothing you already do changes. A space below the publication floor keeps
+      getting `event/v1` exactly as before.
+- id: RN-02300-37
+  kind: policy
+  impact: normal
+  subject: naming a criterion by id in `unmet[]` is now judged, not silently accepted
+  detail: >
+    A response may name an unsatisfied criterion by its id (`{criterion: ac2}`)
+    as well as by index. The validators only read the index form, so for an
+    id-form response two REJECT-severity rules did nothing at all: REF-018 never
+    asked whether the named ids resolve, and LFC-004 never asked whether a
+    closing transition left one uncovered by `residue[]`.
+
+    Both now judge either form, and `residue[]` too. If you have been writing
+    the id form, refusals you should have been getting will start arriving.
+  action:
+    scope: space
+    why: >
+      A response whose `unmet[]` names a criterion id the parent does not
+      declare is now refused. That record was always wrong; it was not being
+      caught.
+- id: RN-02300-38
+  kind: break
+  impact: normal
+  subject: a batch verify, close or respond refuses a judgement set that cannot bind to every target
+  detail: >
+    `a2a verify R1 R2 --verdict …` resolved the flags against the FIRST target's
+    parent and reused the result for every other one. When the parents declared
+    different criteria, an index in range for one silently meant a different
+    criterion for the next — and the pre-mint echo, which exists so you can see
+    what you are asserting, showed only the first parent.
+
+    Each target is now resolved and echoed against its own parent. A set that
+    cannot bind identically across the batch is refused by name, saying which
+    target disagreed and how.
+  action:
+    scope: local
+    why: >
+      A batch over parents with different criteria is now refused where it used
+      to succeed. Split it into one invocation per parent; the records it was
+      writing before were bound to criteria you never saw.
+- id: RN-02300-39
+  kind: feat
+  impact: normal
+  subject: '`a2a new` can mint stable criterion ids, and the verdict flags say what they refer to'
+  detail: >
+    `a2a new --acceptance-criterion <text>` (repeatable) drafts
+    `acceptance_criteria[]` as `{id, text}` with ids `ac1..acN` for the types
+    that render `envelope/v2`. Every later reference — a verdict, an `unmet[]`
+    entry, a `residue[]` row — can then name the criterion instead of counting
+    to it, which is what makes a mis-binding impossible rather than merely
+    visible.
+
+    Types pinned to `envelope/v1` keep the bare-string form; their arrays are
+    frozen bytes and stay ordinal.
+
+    `--verdict` and `--unmet` help now state that a bare index is 0-based and
+    that a criterion id is accepted, which the reporter of the original defect
+    asked for and which no help text or skill page said.
+  action:
+    scope: none
+    why: >
+      Additive. A hand-written bare-string array still validates and still
+      resolves by index.

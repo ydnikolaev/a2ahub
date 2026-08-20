@@ -85,3 +85,28 @@ issues:
       why: >
         Keep Gatekeeper enabled and approve only the A2A Notifier version
         obtained through the verified a2a release cohort.
+  - id: KI-02300-SUBMIT-SKIPS-REFERENTIAL
+    kind: known-issue
+    impact: high
+    subject: "The referential rules do not run at `a2a submit` — they run at the merge gate"
+    detail: >
+      `skill/a2ahub/troubleshooting.md` stated that REF-023 refuses at
+      `a2a validate`, `a2a submit` and `a2a validate --ci`. Measured 2026-08-20
+      (one-answer-2026-08): it does NOT refuse at `a2a submit`, on either
+      surface. The submit validator partitions the outgoing files into events
+      and drafts and runs the referential checks over DRAFTS only — and a
+      `verify`/`close` submission carries event files exclusively, so that loop
+      never executes. `a2a verify` with a deliberately incomplete `verdicts[]`
+      exits 0 every time.
+
+      So REF-019 and REF-023, built as WRITE gates, fire only at
+      `a2a validate --ci` on the pull request. The false sentence in the skill
+      is corrected; the mechanism fix is tracked in docs/backlog.md and needs
+      the events partition to gain its own referential pass, reusing the
+      resolver the drafts loop already constructs.
+    action:
+      scope: local
+      why: >
+        Do not read a green `a2a submit` as proof that a verification record is
+        complete. Run `a2a validate` on the draft, or expect the refusal at the
+        merge gate.
