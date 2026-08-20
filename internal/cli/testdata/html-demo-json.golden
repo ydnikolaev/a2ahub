@@ -8462,6 +8462,17 @@
           }
         },
         {
+          "id": "RN-02300-43",
+          "kind": "feat",
+          "impact": "normal",
+          "subject": "The local dashboard names what each card fact is, and says so on hover",
+          "detail": "The render-observe pass over every screen lands its fifth slice: a shared InfoTooltip, and card-fact attribution across the design-source components so each rendered value is traceable to the model field it came from rather than to a layout accident. The view vocabulary and the cache reads behind those facts move with them, and the UI-contract tests assert the attribution instead of the markup that used to carry it.\nOne defect the pass found and closed: `ArtifactDetail`'s own `item` branch had stopped running in production once the card manifest routed that kind to `ExchangeView`, so a passing assertion was reading code no reader could reach. The dead markup is gone and the facts are attributed on the surface that actually ships.\nWhat the operator accepted rather than fixed, so a reader is not surprised: copy at six sites is unapproved, some sentences read oddly when every clause blanks, one card-spec contradicts itself between prose and table, four card-specs disagree on placement, Overview is 1.55x the donor's height at an identical process count, and Exchange shows three rows where the donor shows five.\n",
+          "action": {
+            "scope": "none",
+            "why": "Presentation only. No command, flag, schema or stored shape changes, and the dashboard is rendered fresh from the mirror on every run.\n"
+          }
+        },
+        {
           "id": "KI-01900-PROVIDER-TIER-DEFERRED",
           "kind": "known-issue",
           "impact": "normal",
