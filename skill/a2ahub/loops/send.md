@@ -164,9 +164,13 @@
    exit 0 from `a2a verify` as acceptance, that is the assumption that
    changed.) Both `a2a verify` and the standalone `a2a close` accept a
    repeatable
-   `--verdict <index>:<met|unmet|not_warranted|not_exercised>:<cause_owner>`
-   — `<index>` into the response's own acceptance criteria, `<cause_owner>`
-   naming who is actually responsible for a shortfall; `a2a thread --json`
+   `--verdict <index-or-criterion-id>:<met|unmet|not_warranted|not_exercised>:<cause_owner>`
+   — the first segment names a criterion of the PARENT (the work_request or
+   question being answered), NOT of the response: either its 0-based ordinal,
+   or its id when the parent declares one (`a2a new --acceptance-criterion`
+   mints `ac1..acN`, and a parent that declares ids REFUSES a bare ordinal so
+   the two can never be confused). `<cause_owner>` names who is actually
+   responsible for a shortfall; `a2a thread --json`
    then carries the same per-criterion verdicts on the event. Once more
    than one response is tracked, name the one you mean:
    `a2a verify --refs <response-id>` (a bare parent id is refused as
