@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -99,7 +98,7 @@ func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache
 	for _, m := range mirrors {
 		readable := m.Manifest.Space != "" || len(m.Manifest.Participants) > 0
 		syncFact := syncBySpace[m.SpaceID]
-		workflowVersion, workflowRef := spaceWorkflowVersion(m.Dir)
+		workflowVersion, workflowRef := space.WorkflowVersion(m.Dir)
 		syncAge := ""
 		if syncFact.Synced {
 			syncAge = humanizeAge(now, now.Add(-syncFact.Age))
@@ -1733,48 +1732,6 @@ func exchangeEdges(items []cache.Item, now time.Time) []ExchangeEdge {
 		return out[i].To < out[j].To
 	})
 	return out
-}
-
-// spaceWorkflowVersion reads the immutable reusable-workflow ref already
-// committed in a space mirror. It is a separate compatibility axis from
-// space.yaml's min_binary_version. Malformed/absent workflows degrade to
-// empty facts; the dashboard must label the axis unavailable, never guess it
-// from the binary or the template.
-func spaceWorkflowVersion(dir string) (version, ref string) {
-	raw, err := os.ReadFile(filepath.Join(dir, ".github", "workflows", "a2a-validate.yml"))
-	if err != nil {
-		return "", ""
-	}
-	var workflow struct {
-		Jobs map[string]struct {
-			Uses string `yaml:"uses"`
-		} `yaml:"jobs"`
-	}
-	if err := yaml.Unmarshal(raw, &workflow); err != nil {
-		return "", ""
-	}
-	var refs []string
-	for _, job := range workflow.Jobs {
-		if strings.Contains(job.Uses, "a2a-validate-reusable.yml@") {
-			refs = append(refs, job.Uses)
-		}
-	}
-	if len(refs) == 0 {
-		return "", ""
-	}
-	sort.Strings(refs)
-	ref = refs[0]
-	for _, candidate := range refs[1:] {
-		if candidate != ref {
-			return "mixed", strings.Join(refs, ", ")
-		}
-	}
-	at := strings.LastIndexByte(ref, '@')
-	if at < 0 || at == len(ref)-1 {
-		return "", ref
-	}
-	version = strings.TrimPrefix(ref[at+1:], "v")
-	return version, ref
 }
 
 func toReleaseNotes(in []notes.ReleaseNotes) []ReleaseNote {

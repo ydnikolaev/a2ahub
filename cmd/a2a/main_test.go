@@ -57,8 +57,37 @@ func TestRun_version(t *testing.T) {
 	if out == "" {
 		t.Fatalf("run(version) produced an empty stamp")
 	}
-	if strings.Count(out, "\n") != 0 {
-		t.Fatalf("run(version) stamp is not one line: %q", out)
+	// THE FIRST LINE IS STILL THE STAMP, and that is the part this test
+	// guards. `a2a version` stopped being one line on 2026-08-22 — it now
+	// reports the release and per-space axes too, because a consumer had no
+	// way to answer "which versions am I running?" and an agent wrote to a
+	// space from a stale binary for want of one. What must not drift is the
+	// stamp's position: anything parsing this output reads line 1.
+	first, _, _ := strings.Cut(out, "\n")
+	if !strings.HasPrefix(first, "a2a ") || !strings.HasSuffix(first, ")") {
+		t.Fatalf("run(version) first line is not the `a2a <version> (<commit>)` stamp: %q", first)
+	}
+}
+
+// TestRun_versionAliases pins the two spellings every consumer tries first.
+// They are aliases of the same dispatch entry, so the assertion is byte
+// equality with `version` — a second implementation is what would drift.
+func TestRun_versionAliases(t *testing.T) {
+	t.Parallel()
+
+	var canonical bytes.Buffer
+	if code := run([]string{"version"}, &canonical, &bytes.Buffer{}); code != 0 {
+		t.Fatalf("run(version) exit code = %d", code)
+	}
+	for _, alias := range []string{"--version", "-v"} {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{alias}, &stdout, &stderr)
+		if code != 0 {
+			t.Fatalf("run(%s) exit code = %d, want 0 (stderr=%q)", alias, code, stderr.String())
+		}
+		if stdout.String() != canonical.String() {
+			t.Fatalf("run(%s) differs from run(version):\n%s\n---\n%s", alias, stdout.String(), canonical.String())
+		}
 	}
 }
 

@@ -105,8 +105,29 @@ func stdio(stdout, stderr io.Writer) cli.IO {
 // buildCommands returns the dispatch map. Each entry is a closure matching
 // the existing `command` signature; it constructs the real verb and runs it.
 func buildCommands() map[string]command {
-	m := map[string]command{
-		"version": runVersion,
+	m := map[string]command{}
+
+	// `a2a version` answers the THREE version axes — binary, release, and each
+	// connected space's floor and template pin. It builds the store when there
+	// is a project to build it from, and answers the binary axis alone when
+	// there is not: a bare `a2a version` outside a project must never require a
+	// config file, which is why this entry has always been dependency-free.
+	//
+	// A store that fails to build is NOT an error here. It is the "no project"
+	// case, and the command says which axes it therefore cannot report rather
+	// than printing an empty space list that reads like "none connected".
+	m["version"] = func(args []string, stdout, stderr io.Writer) int {
+		cmd := &cli.VersionCommand{
+			Stamp:         versionStamp(),
+			BinaryVersion: version,
+			Now:           time.Now,
+		}
+		if p, err := resolvePaths(); err == nil {
+			if store, err := buildStore(context.Background(), p); err == nil {
+				cmd.Store = store
+			}
+		}
+		return cmd.Run(context.Background(), args, stdio(stdout, stderr))
 	}
 
 	// Static / cheap verbs.

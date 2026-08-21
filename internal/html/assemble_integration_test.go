@@ -257,7 +257,7 @@ func TestSpaceWorkflowVersion_MixedRefsAreExplicit(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(workflowDir, "a2a-validate.yml"), []byte(raw), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	version, ref := spaceWorkflowVersion(dir)
+	version, ref := space.WorkflowVersion(dir)
 	if version != "mixed" ||
 		ref != "org/repo/.github/workflows/a2a-validate-reusable.yml@v0.12.0, org/repo/.github/workflows/a2a-validate-reusable.yml@v0.13.0" {
 		t.Fatalf("mixed workflow refs not explicit: version=%q ref=%q", version, ref)

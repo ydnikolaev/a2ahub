@@ -40,16 +40,26 @@ func run(args []string, stdout, stderr io.Writer) int {
 		printUsage(stderr)
 		return 2
 	}
-	cmd, ok := buildCommands()[args[0]]
+	// `--version` / `-v` are the shape every CLI a consumer has ever used
+	// answers, and answering "unknown command" to them is a needless
+	// papercut — the more so for the one question this binary exists to make
+	// easy to ask. They are ALIASES, not a second implementation: the same
+	// dispatch entry runs, so the two spellings cannot drift.
+	name := args[0]
+	if name == "--version" || name == "-v" {
+		name = "version"
+		args = append([]string{"version"}, args[1:]...)
+	}
+	cmd, ok := buildCommands()[name]
 	if !ok {
-		_, _ = fmt.Fprintf(stderr, "unknown command %q\n", args[0])
+		_, _ = fmt.Fprintf(stderr, "unknown command %q\n", name)
 		return 2
 	}
 	// `a2a <verb> --help` is answered WITHOUT resolving the verb's
 	// dependencies: help must never require a project config, a mirror, or a
 	// credential — see help.go.
 	if helpRequested(args[1:]) {
-		return runVerbHelp(args[0], args[1:], stdout)
+		return runVerbHelp(name, args[1:], stdout)
 	}
 	return cmd(args[1:], stdout, stderr)
 }
@@ -86,7 +96,7 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  skill       install the a2ahub expert-skill tree into this repo")
 	_, _ = fmt.Fprintln(w, "  completion  print a shell completion script (bash|zsh|fish)")
 	_, _ = fmt.Fprintln(w, "  notifications install and control macOS / VS Code notification surfaces")
-	_, _ = fmt.Fprintln(w, "  version     print the binary version stamp")
+	_, _ = fmt.Fprintln(w, "  version     binary, release and per-space versions (alias: --version, -v)")
 	_, _ = fmt.Fprintln(w, "docs: https://a2ahub.dev/")
 }
 

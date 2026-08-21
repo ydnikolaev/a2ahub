@@ -175,3 +175,76 @@ func (s *Store) refreshUpdateNoticeForNotifications(ctx context.Context) {
 		s.updateChecker(refreshCtx)
 	}()
 }
+
+// SpaceVersion is one connected space's two version facts, which are
+// DELIBERATELY separate axes and were conflated by every surface until
+// 2026-08-22.
+//
+//   - Floor is the space's own `min_binary_version` — the contract it declares
+//     for anyone writing to it, reviewed in space.yaml. It is the ONLY thing
+//     that refuses a write (internal/space.ErrStaleBinaryVersion).
+//   - TemplatePin is the a2ahub release tag the space's committed workflows
+//     reference. It moves only when somebody runs `a2a space update`.
+//
+// The gap between them is the whole story of 2026-08-21: an agent wrote to
+// `axon` from a 0.23 binary while 0.24 was published, entirely legitimately,
+// because axon's floor still said 0.23.0 — the floor had not moved because the
+// space had not been updated, and NOTHING said so on any surface.
+type SpaceVersion struct {
+	ID    string `json:"id"`
+	Floor string `json:"min_binary_version"`
+	// FloorMet is false only when the floor is BOTH declared and unmet. An
+	// undeclared or unparseable floor is not a violation — it is an unknown,
+	// and reporting an unknown as a violation is how a gate cries wolf.
+	FloorMet    bool   `json:"floor_met"`
+	TemplatePin string `json:"template_pin"`
+	// TemplateBehind is true only when the pin is declared, parses, and is
+	// older than the newest known release. With no known latest (offline, no
+	// cache) it stays false: "I could not measure this" must never render as
+	// "this is fine" OR as "this is wrong".
+	TemplateBehind bool `json:"template_behind"`
+}
+
+// VersionReport is what `a2a version` prints and `a2a doctor` judges: the
+// binary, the release axis (the existing UpdateNotice SSOT, unchanged) and one
+// row per connected space. One computation, so the two surfaces cannot
+// disagree — the same reason UpdateNotice itself exists.
+type VersionReport struct {
+	Binary string         `json:"binary"`
+	Update UpdateNotice   `json:"update"`
+	Spaces []SpaceVersion `json:"spaces"`
+}
+
+// VersionReport composes the report. It never reaches the network: the release
+// axis reads whatever the T3 cache already holds (the same read UpdateNotice
+// does) and the space axis reads the mirrors already on disk.
+func (s *Store) VersionReport(binaryVersion string, workflowPin func(dir string) (string, string)) VersionReport {
+	notice := s.UpdateNotice()
+	if notice.Current == "" {
+		notice.Current = binaryVersion
+	}
+	report := VersionReport{Binary: binaryVersion, Update: notice, Spaces: []SpaceVersion{}}
+
+	for _, sm := range s.spaceMirrorsSnapshot() {
+		row := SpaceVersion{ID: sm.SpaceID, Floor: sm.Manifest.MinBinaryVersion, FloorMet: true}
+		if row.Floor != "" {
+			if older, err := version.OlderThan(binaryVersion, row.Floor); err == nil {
+				row.FloorMet = !older
+			}
+		}
+		if workflowPin != nil {
+			pin, _ := workflowPin(sm.Dir)
+			row.TemplatePin = pin
+			// "mixed" is a real, reportable state (a space whose jobs pin
+			// different tags) and it is NOT a version — comparing it would
+			// silently answer false. Left as the pin, judged by nobody.
+			if pin != "" && pin != "mixed" && notice.Latest != "" {
+				if older, err := version.OlderThan(pin, notice.Latest); err == nil {
+					row.TemplateBehind = older
+				}
+			}
+		}
+		report.Spaces = append(report.Spaces, row)
+	}
+	return report
+}
