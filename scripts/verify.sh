@@ -821,6 +821,13 @@ if [ "$MODE" = projection ]; then
   # private path is ALREADY absent, so its own empty/unmatched-set refusal
   # (teeth T6/T6b) would red every public run for the right reason at the wrong
   # time. An announced skip is the shape every other private gate here uses.
+  #
+  # NOTE: this guard stops the RUN. The one internal/lane reads is the
+  # Makefile RECIPE's — `recipeGuardsPresence` tolerates an absent script only
+  # when the recipe guards it, which is why `projection:` carries the same
+  # `if [ -f ... ]` shape feature-lint and its five siblings do. Both exist on
+  # purpose: this one for anyone invoking verify.sh directly, that one for the
+  # corpus scanner.
   if [ ! -f "$ROOT/scripts/check-projection.sh" ]; then
     echo "projection: skip — scripts/check-projection.sh absent (public checkout); there is nothing to project inside a projection."
     exit 0

@@ -320,8 +320,12 @@ release-postflight: ## MUST run AFTER promoting and tagging: the tag on the remo
 	@test -n "$(VERSION)" || { echo "release-postflight: set VERSION, e.g. make release-postflight VERSION=v0.24.0"; exit 2; }
 	@bash scripts/release-postflight.sh "$(VERSION)"
 
-projection: ## Judge the SHIPPED suite against a faithful public projection (release-loop-2026-08 P3). Not in `check`: it RUNS the ceiling, so membership would make the ceiling run the ceiling.
-	@bash scripts/check-projection.sh
+projection: ## Judge the SHIPPED suite against a faithful public projection (release-loop-2026-08 P3, presence-gated). Not in `check`: it RUNS the ceiling, so membership would make the ceiling run the ceiling.
+	@if [ -f scripts/check-projection.sh ]; then \
+	  bash scripts/check-projection.sh; \
+	else \
+	  echo "projection: skip — scripts/check-projection.sh absent (public checkout); there is nothing to project inside a projection."; \
+	fi
 
 vulncheck: ## govulncheck ./... gated by .govulncheck-allow.txt (NEW called vuln reds; accepted stays green). Needs network — NOT in `check`.
 	@command -v govulncheck >/dev/null 2>&1 || { echo "vulncheck: govulncheck missing — go install golang.org/x/vuln/cmd/govulncheck@latest"; exit 1; }
