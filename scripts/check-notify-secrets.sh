@@ -14,9 +14,10 @@
 # `a2a __catalog --sensitive-shapes --json` (P1, space-notify-2026-08 §1) —
 # never from a list hand-maintained in this file. If that projection is
 # missing, non-executable, or parses to zero usable shapes, this gate
-# REFUSES (fails loudly, exit 1) rather than falling back to an inlined
-# pattern: a gate carrying its own copy of the thing it checks is the
-# drift it exists to catch. `A2A_VERIFY_BINARY` selects the shared binary
+# REFUSES — loudly, and as an UNMEASURED run (gate-lib's own exit status
+# for "I could not measure this", distinct from a measured failure) rather
+# than falling back to an inlined pattern: a gate carrying its own copy of
+# the thing it checks is the drift it exists to catch. `A2A_VERIFY_BINARY` selects the shared binary
 # (the outer verify.sh runner exports it); a direct invocation falls back
 # to `go run ./cmd/a2a`, same convention as check-view-vocabulary.sh.
 #
@@ -223,6 +224,69 @@ shape_pairs() { # $1 = json
   done
 }
 
+# readable_corpus fills READABLE_CORPUS with the ABSOLUTE path of every
+# tracked file under $1 that this process can actually open, and refuses —
+# once, as a measurement failure — for the ones it cannot.
+#
+# THE INCIDENT THIS EXISTS FOR (2026-08-21, spec 02 §11 A1). Three files of
+# this very epic were renamed with the plain rename command instead of git's,
+# so their old paths stayed in the index and left the working tree. Every
+# shape's scan then met an unopenable argument, grep exited 2, and this gate
+# announced that all fourteen credential shapes had had their patterns
+# rejected. Fourteen lines sending the reader to inspect regular expressions,
+# about a pattern list that was correct.
+#
+# The refusal is per-corpus rather than per-shape because the fact is one
+# fact — this path could not be read — and repeating it once per shape is how
+# it drowned the real cause last time. The READABLE files are still scanned:
+# a partial measurement plus an explicit "and here is the part I could not
+# measure" beats refusing wholesale, and gate_summary already makes the
+# unmeasured half dominate the exit status.
+#
+# Returns 1 only when NOTHING is left to scan.
+READABLE_CORPUS=()
+readable_corpus() { # $1 = root, $2 = prose naming what would otherwise be reported
+  local root="$1" what="$2" files=() f unreadable=0 first=""
+  READABLE_CORPUS=()
+  mapfile -t files < <(tracked_files "$root")
+  if [ "${#files[@]}" -eq 0 ]; then
+    gate_unmeasured "notify-secrets: tracked_files returned zero files under $root — refusing rather than $what and reporting green"
+    return 1
+  fi
+  for f in "${files[@]}"; do
+    if [ -r "$root/$f" ]; then
+      READABLE_CORPUS+=("$root/$f")
+    else
+      unreadable=$((unreadable + 1))
+      [ -n "$first" ] || first="$f"
+    fi
+  done
+  if [ "$unreadable" -gt 0 ]; then
+    gate_unmeasured "notify-secrets: $unreadable tracked path(s) are absent from the working tree or unreadable (first: $first) — this run did NOT scan them, and that is a fact about the MEASUREMENT, not about the credential shapes. A tracked path missing from disk usually means a rename that went through the plain rename command instead of git's; restore or re-stage it and run this gate again."
+  fi
+  [ "${#READABLE_CORPUS[@]}" -gt 0 ]
+}
+
+# grep_corpus runs one search over READABLE_CORPUS and separates the two
+# things a non-zero grep means. Exit 1 is "no match", a finding. Exit 2 or
+# more is "I could not run", and grep's own stderr — kept, never discarded —
+# is the only thing that says which of the several causes it was.
+#
+# Sets GREP_HITS and GREP_STDERR; returns 0 when the search ran (match or
+# not) and 1 when it did not.
+GREP_HITS=""
+GREP_STDERR=""
+grep_corpus() { # $@ = grep arguments, before the corpus
+  local errfile rc
+  GREP_HITS=""; GREP_STDERR=""
+  errfile="$(mktemp)" || return 1
+  GREP_HITS="$(grep "$@" "${READABLE_CORPUS[@]}" 2>"$errfile")"
+  rc=$?
+  GREP_STDERR="$(tr '\n' ' ' <"$errfile" | cut -c1-400)"
+  rm -f "$errfile"
+  [ "$rc" -le 1 ]
+}
+
 # scan_secrets is invariant 1: no shape from $2 ("name|pattern" lines,
 # already unescaped) matches any non-exempt tracked file under $1.
 #
@@ -232,22 +296,19 @@ shape_pairs() { # $1 = json
 # using a construct grep -E cannot compile) look identical to exit 1 (no
 # match), and that shape would go unpoliced with a green gate. Same failure
 # class as a presence-skip; this is the thing spec 07 names by that word.
+#
+# Both of those are measurement failures, not findings, and since 2026-08-21
+# they say so in the word this repo reserves for it.
 scan_secrets() { # $1 = root, $2 = shapes
-  local root="$1" shapes="$2" files prefixed name pattern hits rc line file rel
-  mapfile -t files < <(tracked_files "$root")
-  if [ "${#files[@]}" -eq 0 ]; then
-    gate_fail "notify-secrets: tracked_files returned zero files under $root — refusing rather than scanning nothing and reporting green"
-    return
-  fi
-  prefixed=("${files[@]/#/$root/}")
+  local root="$1" shapes="$2" name pattern hits line file rel
+  readable_corpus "$root" "scanning nothing" || return
   while IFS='|' read -r name pattern; do
     [ -z "$name" ] && continue
-    hits="$(grep -InEH -- "$pattern" "${prefixed[@]}" 2>/dev/null)"
-    rc=$?
-    if [ "$rc" -gt 1 ]; then
-      gate_fail "notify-secrets: grep rejected the '$name' shape's pattern (exit $rc) — refusing rather than silently skipping that shape: $pattern"
+    if ! grep_corpus -InEH -- "$pattern"; then
+      gate_unmeasured "notify-secrets: the scan for the '$name' shape did not run to completion, so this run did NOT police that shape. grep said: ${GREP_STDERR:-<nothing>}. The pattern was: $pattern"
       continue
     fi
+    hits="$GREP_HITS"
     [ -z "$hits" ] && continue
     while IFS= read -r line; do
       [ -z "$line" ] && continue
@@ -273,26 +334,20 @@ scan_secrets() { # $1 = root, $2 = shapes
 # unmeasured, not proven, in that state. Same rc>1 refusal as scan_secrets
 # for a grep that errors rather than simply finding nothing.
 check_telegram_single_copy() { # $1 = root, $2 = shapes
-  local root="$1" shapes="$2" pattern files prefixed hits rc line file rel
+  local root="$1" shapes="$2" pattern hits line file rel
   pattern="$(printf '%s\n' "$shapes" | grep -m1 '^telegram-bot-token|' | cut -d'|' -f2-)"
   if [ -z "$pattern" ]; then
-    gate_fail "notify-secrets: the projection carries no telegram-bot-token shape — cannot check invariant 2 (single-copy regex)"
+    gate_unmeasured "notify-secrets: the projection carries no telegram-bot-token shape — invariant 2 (single-copy regex) was NOT checked this run"
     return
   fi
-  mapfile -t files < <(tracked_files "$root")
-  if [ "${#files[@]}" -eq 0 ]; then
-    gate_fail "notify-secrets: tracked_files returned zero files under $root — refusing rather than checking invariant 2 against nothing"
+  readable_corpus "$root" "checking invariant 2 against nothing" || return
+  if ! grep_corpus -FnH -- "$pattern"; then
+    gate_unmeasured "notify-secrets: the telegram-bot-token single-copy scan did not run to completion, so invariant 2 is unproven rather than satisfied. grep said: ${GREP_STDERR:-<nothing>}"
     return
   fi
-  prefixed=("${files[@]/#/$root/}")
-  hits="$(grep -FnH -- "$pattern" "${prefixed[@]}" 2>/dev/null)"
-  rc=$?
-  if [ "$rc" -gt 1 ]; then
-    gate_fail "notify-secrets: grep rejected the telegram-bot-token single-copy scan (exit $rc) — refusing rather than treating it as zero hits"
-    return
-  fi
+  hits="$GREP_HITS"
   if [ -z "$hits" ]; then
-    gate_fail "notify-secrets: found the telegram-bot-token regex source NOWHERE in the tree, not even at internal/sensitive/matcher.go — refusing rather than passing an invariant this run could not measure"
+    gate_unmeasured "notify-secrets: found the telegram-bot-token regex source NOWHERE in the tree, not even at internal/sensitive/matcher.go — the shape's own home matches it trivially, so finding it nowhere means the scan looked in the wrong place, not that the invariant holds"
     return
   fi
   while IFS= read -r line; do
@@ -310,12 +365,12 @@ check_telegram_single_copy() { # $1 = root, $2 = shapes
 run_check() { # $1 = root
   local root="${1:-$GATE_ROOT}" json shapes
   if ! json="$(sensitive_shapes_json)"; then
-    gate_fail "notify-secrets: could not obtain the sensitive-shape projection (a2a __catalog --sensitive-shapes --json) — REFUSING rather than falling back to an inlined regex"
+    gate_unmeasured "notify-secrets: could not obtain the sensitive-shape projection (a2a __catalog --sensitive-shapes --json) — REFUSING rather than falling back to an inlined regex"
     return
   fi
   shapes="$(shape_pairs "$json")"
   if [ -z "$shapes" ] || ! printf '%s\n' "$shapes" | grep -q '^telegram-bot-token|'; then
-    gate_fail "notify-secrets: the sensitive-shape projection parsed to zero usable shapes (or is missing telegram-bot-token) — REFUSING rather than policing an empty or wrong set"
+    gate_unmeasured "notify-secrets: the sensitive-shape projection parsed to zero usable shapes (or is missing telegram-bot-token) — REFUSING rather than policing an empty or wrong set"
     return
   fi
   scan_secrets "$root" "$shapes"
@@ -392,33 +447,87 @@ STUB
   chmod +x "$1"
 }
 
-teeth_expect() { # $1 = label, $2 = red|green, $3 = needle, $4 = root, $5 = A2A_VERIFY_BINARY override (may be empty)
+# teeth_expect runs one fixture and judges WHICH KIND of red it produced,
+# never merely that it was red. The three verdicts are the paired teeth spec
+# 02 §6 requires:
+#
+#   domain-red      the subject is genuinely wrong — a real finding, and the
+#                   word UNMEASURED must NOT appear
+#   unmeasured-red  the subject may be fine but this run could not measure
+#                   it — the word UNMEASURED must appear
+#   green           nothing found, and something WAS looked at
+#
+# Asserting only "it went red with this needle" is what let the class this
+# gate belongs to survive: every one of the nine recorded incidents was red
+# (or green) with a message about the wrong thing, and a tooth that reads the
+# exit status alone cannot see that. The needle stays because the message has
+# to be actionable; the verdict kind is what says it is the ACTIONABLE ONE.
+#
+# The last run's combined output is kept in _TEETH_LAST_OUT so the paired
+# tooth below can assert that a domain verdict and a refusal are not the same
+# string.
+_TEETH_LAST_OUT=""
+teeth_expect() { # $1 = label, $2 = domain-red|unmeasured-red|green, $3 = needle, $4 = root, $5 = A2A_VERIFY_BINARY override (may be empty)
   local label="$1" verdict="$2" needle="$3" root="$4" bin="${5:-}" out rc
   set +e
   out="$(
     (
       if [ -n "$bin" ]; then export A2A_VERIFY_BINARY="$bin"; else unset A2A_VERIFY_BINARY; fi
+      # BOTH counters, not just the error one: a subshell that inherited a
+      # non-zero unmeasured count would make every later fixture look
+      # incomplete, and the summary line each tooth reads is built from both.
       _GATE_ERRORS=0
+      _GATE_UNMEASURED=0
       run_check "$root"
       gate_summary "notify-secrets-teeth"
     ) 2>&1
   )"
   rc=$?
   set -e
-  if [ "$verdict" = "red" ]; then
-    if [ "$rc" -eq 0 ] || ! printf '%s\n' "$out" | grep -Fq "$needle"; then
-      echo "check-notify-secrets --teeth: FALSE GREEN — $label did not red with '$needle':" >&2
-      echo "$out" >&2
+  _TEETH_LAST_OUT="$out"
+  case "$verdict" in
+    domain-red|unmeasured-red)
+      if [ "$rc" -eq 0 ] || ! printf '%s\n' "$out" | grep -Fq "$needle"; then
+        echo "check-notify-secrets --teeth: FALSE GREEN — $label did not red with '$needle':" >&2
+        echo "$out" >&2
+        return 1
+      fi
+      if [ "$verdict" = "unmeasured-red" ] && ! printf '%s\n' "$out" | grep -Fq "UNMEASURED"; then
+        echo "check-notify-secrets --teeth: WRONG VERDICT — $label is a failed MEASUREMENT and must say UNMEASURED, not announce a finding about the tree:" >&2
+        echo "$out" >&2
+        return 1
+      fi
+      if [ "$verdict" = "domain-red" ] && printf '%s\n' "$out" | grep -Fq "UNMEASURED"; then
+        echo "check-notify-secrets --teeth: WRONG VERDICT — $label is a real finding about the tree and must NOT be reported as an unmeasured run:" >&2
+        echo "$out" >&2
+        return 1
+      fi
+      echo "check-notify-secrets --teeth: $label reds ($verdict)"
+      ;;
+    green)
+      if [ "$rc" -ne 0 ]; then
+        echo "check-notify-secrets --teeth: FALSE RED — $label should green:" >&2
+        echo "$out" >&2
+        return 1
+      fi
+      echo "check-notify-secrets --teeth: $label greens"
+      ;;
+    *)
+      echo "check-notify-secrets --teeth: unknown verdict '$verdict' for $label" >&2
       return 1
-    fi
-    echo "check-notify-secrets --teeth: $label reds"
-  elif [ "$rc" -ne 0 ]; then
-    echo "check-notify-secrets --teeth: FALSE RED — $label should green:" >&2
-    echo "$out" >&2
-    return 1
-  else
-    echo "check-notify-secrets --teeth: $label greens"
-  fi
+      ;;
+  esac
+}
+
+# seed_tracked_but_absent builds spec 02 §11 A1's real incident: a path that
+# is IN THE INDEX and NOT ON DISK. The scratch tree gets its own repository —
+# nothing here touches the checkout this gate lives in — and no commit is
+# needed, because `git ls-files` reads the index and `git add` is what fills
+# it. That is the whole reproduction: stage a file, delete it, and the
+# production scan meets an argument it cannot open.
+seed_tracked_but_absent() { # $1 = root, $2 = relative path to stage then delete
+  ( cd "$1" && git init -q . && git add -A ) >/dev/null 2>&1 || return 1
+  rm -f "$1/$2"
 }
 
 # seed_matcher_go writes a fixture root's internal/sensitive/matcher.go
@@ -432,7 +541,7 @@ seed_matcher_go() { # $1 = root, $2 = telegram pattern source
 }
 
 run_teeth() {
-  local work good_bin empty_bin noflag_bin badregex_bin fixture aws_token tg_token
+  local work good_bin empty_bin noflag_bin badregex_bin fixture aws_token tg_token ta_out tb_out
   work="$(mktemp -d)" || return 1
   trap 'rm -rf -- "${work:-}"' EXIT
 
@@ -450,18 +559,18 @@ run_teeth() {
   local not_exec="$work/not-executable"
   : >"$not_exec"
   fixture="$work/refusal-root"; mkdir -p "$fixture"
-  teeth_expect "A2A_VERIFY_BINARY not executable" red \
+  teeth_expect "A2A_VERIFY_BINARY not executable" unmeasured-red \
     "REFUSING rather than falling back to an inlined regex" "$fixture" "$not_exec" || return 1
 
   # Projection parses to zero shapes (missing telegram-bot-token too): refuses.
-  teeth_expect "projection parses to zero shapes" red \
+  teeth_expect "projection parses to zero shapes" unmeasured-red \
     "REFUSING rather than policing an empty or wrong set" "$fixture" "$empty_bin" || return 1
 
   # AC9's literal case: a binary built WITHOUT --sensitive-shapes support
   # (exits 2, unknown-flag stderr) is a third failure shape, distinct from
   # "not executable" and "parses to zero shapes" — must refuse the same way.
   noflag_bin="$work/noflag-a2a"; write_stub_binary "$noflag_bin" noflag
-  teeth_expect "binary built without --sensitive-shapes support" red \
+  teeth_expect "binary built without --sensitive-shapes support" unmeasured-red \
     "REFUSING rather than falling back to an inlined regex" "$fixture" "$noflag_bin" || return 1
 
   # Clean fixture tree: greens.
@@ -473,7 +582,7 @@ run_teeth() {
   # tracked_files returns zero files (an empty root — not a missing binary,
   # not a bad projection): refuses, does not silently scan nothing green.
   fixture="$work/empty-tree"; mkdir -p "$fixture"
-  teeth_expect "empty fixture tree (zero tracked files)" red \
+  teeth_expect "empty fixture tree (zero tracked files)" unmeasured-red \
     "returned zero files under" "$fixture" "$good_bin" || return 1
 
   # A shape whose pattern the ERE engine rejects (unbalanced group): grep
@@ -483,16 +592,17 @@ run_teeth() {
   fixture="$work/badregex-tree"; mkdir -p "$fixture/pkg"
   printf 'package pkg\n\nfunc Hello() string { return "hello" }\n' >"$fixture/pkg/hello.go"
   seed_matcher_go "$fixture" "$tg_token"
-  teeth_expect "grep rejects an uncompilable shape pattern" red \
-    "grep rejected the 'broken-shape' shape's pattern" "$fixture" "$badregex_bin" || return 1
+  teeth_expect "grep rejects an uncompilable shape pattern" unmeasured-red \
+    "the scan for the 'broken-shape' shape did not run to completion" "$fixture" "$badregex_bin" || return 1
 
   # A credential shape at an UNREGISTERED path: reds.
   aws_token="AKIA$(printf 'A%.0s' $(seq 1 16))"
   fixture="$work/unregistered-hit"; mkdir -p "$fixture/pkg"
   printf 'package pkg\n\nconst leaked = "%s"\n' "$aws_token" >"$fixture/pkg/leak.go"
   seed_matcher_go "$fixture" "$tg_token"
-  teeth_expect "credential shape at an unregistered path" red \
+  teeth_expect "credential shape at an unregistered path" domain-red \
     "matches the 'aws-access-key-id' credential shape" "$fixture" "$good_bin" || return 1
+  ta_out="$_TEETH_LAST_OUT"
 
   # The SAME shape at a path this gate's own registry names: greens — the
   # registry, not a second regex, is what's under test here.
@@ -507,10 +617,50 @@ run_teeth() {
   fixture="$work/second-copy"; mkdir -p "$fixture/internal/other"
   seed_matcher_go "$fixture" "$tg_token"
   printf 'package other\n\n// duplicated on purpose for the teeth case\nconst re = `%s`\n' "$tg_token" >"$fixture/internal/other/dup.go"
-  teeth_expect "telegram-bot-token regex source duplicated outside internal/sensitive" red \
+  teeth_expect "telegram-bot-token regex source duplicated outside internal/sensitive" domain-red \
     "regex source is duplicated outside internal/sensitive" "$fixture" "$good_bin" || return 1
 
-  echo "check-notify-secrets --teeth: PASS — not-executable, zero-shape and no-flag-support binaries all refuse; an empty tracked-file set and a grep-rejected pattern both refuse rather than silently pass; an unregistered credential-shaped literal reds while the same shape at a registered path greens; a second copy of the telegram regex source outside internal/sensitive reds"
+  # ── Tb, and it is the incident itself (spec 02 §11 A1) ────────────────
+  # The tree is CLEAN: no credential-shaped literal anywhere, the telegram
+  # regex source exactly where it belongs. The only thing wrong is that one
+  # tracked path is not on disk, so the scan cannot read it. That must be
+  # reported as a failed measurement — a fact about this run — and never as
+  # fourteen findings about the shapes' patterns, which is what it was
+  # reported as on 2026-08-21, to the author of the spec about this class,
+  # while it was being written.
+  fixture="$work/tracked-but-absent"; mkdir -p "$fixture/pkg"
+  printf 'package pkg\n\nfunc Hello() string { return "hello" }\n' >"$fixture/pkg/hello.go"
+  seed_matcher_go "$fixture" "$tg_token"
+  if ! seed_tracked_but_absent "$fixture" pkg/hello.go; then
+    echo "check-notify-secrets --teeth: could not build the tracked-but-absent fixture (git init/add failed)" >&2
+    return 1
+  fi
+  teeth_expect "a tracked path absent from the working tree" unmeasured-red \
+    "are absent from the working tree or unreadable" "$fixture" "$good_bin" || return 1
+  tb_out="$_TEETH_LAST_OUT"
+
+  # ── the pairing, which is the assertion that actually holds the class ──
+  # Either half alone proves nothing. "Tb says UNMEASURED" still passes if a
+  # real finding grew the same marker; "Ta says the file matches a shape"
+  # still passes if an unreadable input produces that identical line — which
+  # is precisely the substitution this phase exists to make impossible. So
+  # the two outputs are compared directly, and a run in which they agree is
+  # a failure however green each half looks on its own.
+  if [ "$ta_out" = "$tb_out" ]; then
+    echo "check-notify-secrets --teeth: a measured finding and a failed measurement produced the SAME output — one verdict is masquerading as the other:" >&2
+    echo "$ta_out" >&2
+    return 1
+  fi
+  if printf '%s\n' "$ta_out" | grep -Fq "UNMEASURED"; then
+    echo "check-notify-secrets --teeth: a real credential-shape finding was reported as an unmeasured run" >&2
+    return 1
+  fi
+  if ! printf '%s\n' "$tb_out" | grep -Fq "UNMEASURED"; then
+    echo "check-notify-secrets --teeth: an unreadable tracked path did not produce the measurement refusal" >&2
+    return 1
+  fi
+
+  echo "check-notify-secrets --teeth: PASS — not-executable, zero-shape and no-flag-support binaries, an empty tracked-file set, an uncompilable pattern and a tracked path absent from disk all refuse AS UNMEASURED; an unregistered credential-shaped literal and a duplicated telegram regex source both red as findings WITHOUT that marker; the same shape at a registered path greens; and the two verdicts are asserted to differ rather than merely to be red"
 }
 
 if [ "${1:-}" = "--teeth" ]; then

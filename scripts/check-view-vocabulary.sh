@@ -135,8 +135,15 @@ vocabulary_outcomes() { # $1 = vocabulary json
 # cost of a false positive on real, correct code is the wrong trade; the
 # honest boundary is a narrow pattern plus a written note of where it ends.
 state_lists() { # $1 = scan root
+  # stderr is NOT silenced, and the exit status is normalized rather than
+  # dropped: exit 1 is "no match", which is a RESULT, while anything above it
+  # is "I could not look", which is a fact about this run. Collapsing the two
+  # is the shape that hid the inline-chain defect below for weeks.
+  local rc
   grep -rnE '\[[[:space:]]*"[a-z_]+"([[:space:]]*,[[:space:]]*"[a-z_]+")+[[:space:]]*\]' \
-    --include='*.dc.html' "$1" 2>/dev/null
+    --include='*.dc.html' "$1"
+  rc=$?
+  [ "$rc" -le 1 ]
 }
 
 # state_equality_chains finds a one-line assignment or return whose `||`
@@ -149,10 +156,12 @@ state_equality_chains() { # $1 = scan root
   # literal string `{}`. GNU find scans EVERY argument of `-exec ... +` for that
   # string and refuses with "Only one instance of {} is supported" — while BSD
   # find, which is what macOS has, only cares about the trailing placeholder.
-  # So this function returned nothing at all on Linux, the `2>/dev/null` below
-  # ate the refusal, and the whole AC6 inline-equality-chain rule was inert in
-  # CI while its teeth passed locally. Found 2026-08-20 by the container lane
-  # (`make ci-parity-docker`), which exists for exactly this.
+  # So this function returned nothing at all on Linux, the stderr redirect
+  # that used to follow the walk swallowed the refusal, and the whole AC6
+  # inline-equality-chain rule was inert in CI while its teeth passed locally.
+  # Found 2026-08-20 by the container lane (`make ci-parity-docker`), which
+  # exists for exactly this. Both halves are now gone: nothing is silenced,
+  # and the walk's exit status is reported instead of discarded.
   #
   # `-f` keeps the program out of find's argv, so the brace pair can never again
   # be read as a placeholder. Do NOT inline it back.
@@ -195,10 +204,16 @@ state_equality_chains() { # $1 = scan root
       if (compared >= 2) print FILENAME ":" FNR ":" $0
     }
 CHAIN_AWK
-  # stderr is NOT silenced here. A scanner that cannot run must say so: an empty
-  # result and a clean exit are indistinguishable to the caller, and that is the
-  # shape that hid the defect above for as long as it existed.
+  # stderr is NOT silenced here, and since 2026-08-21 the exit status is not
+  # dropped either. A scanner that cannot run must say so: an empty result and
+  # a clean exit are indistinguishable to the caller, and that is the shape
+  # that hid the defect above for as long as it existed. The refusal only
+  # reaches a reader if this function reports it, so both walks are checked
+  # and the caller turns a non-zero into an explicit "this rule was not
+  # evaluated".
+  local one_line_rc multi_line_rc
   find "$1" -type f -name '*.dc.html' -exec awk -f "$prog" {} +
+  one_line_rc=$?
   rm -f "$prog"
 
   # Preserve the shipped one-line grammar above exactly, then add only the
@@ -262,7 +277,9 @@ CHAIN_AWK
         span=0
       }
     }
-  ' {} \; 2>/dev/null
+  ' {} \;
+  multi_line_rc=$?
+  [ "$one_line_rc" -eq 0 ] && [ "$multi_line_rc" -eq 0 ]
 }
 
 # vocabulary_transitions reads the same binary payload as the state/outcome
@@ -278,6 +295,8 @@ vocabulary_transitions() { # $1 = vocabulary json
 # TRANSITION and LABEL/TONE/CLASSIFICATION is admitted for further checking.
 # Ordinary translation/object tables remain outside this candidate grammar.
 transition_policy_maps() { # $1 = scan root
+  # No stderr redirect and no dropped status, for the reason
+  # state_equality_chains above spells out at length.
   find "$1" -type f -name '*.dc.html' -exec awk '
     function strip_comments(value, block_start, block_end, after_start) {
       while (1) {
@@ -324,7 +343,7 @@ transition_policy_maps() { # $1 = scan root
       if (text ~ /}[[:space:]]*\)?[[:space:]]*;[[:space:]]*$/) emit()
     }
     END { if (collecting) emit() }
-  ' {} \; 2>/dev/null
+  ' {} \;
 }
 
 transition_map_pairs() { # $1 = normalized object statement
@@ -389,14 +408,71 @@ outcome_operand() { # $1 = operand, $2 = source line
 # and thereby recreate presentation policy. No tone roster lives here; the
 # namespace itself is the invariant.
 resolver_tone_literals() { # $1 = scan root
-  grep -rnE 'tone-[a-z][a-z0-9-]*' --include='*.dc.html' "$1" 2>/dev/null
+  local rc
+  grep -rnE 'tone-[a-z][a-z0-9-]*' --include='*.dc.html' "$1"
+  rc=$?
+  [ "$rc" -le 1 ]
+}
+
+# ── measuring, and saying so when the measurement did not happen ─────────
+#
+# Every rule below is answered by a SCANNER: a walk of the authored
+# components whose output is a list of suspicious lines. A scanner that found
+# nothing and a scanner that never ran produce the same empty string, and
+# this gate has already paid for that confusion in full. On 2026-08-20 the
+# container lane found that GNU find had been refusing the
+# inline-equality-chain walk outright, a stderr redirect had eaten the
+# refusal, and the rule had been inert in CI for weeks while its own teeth
+# passed on every laptop. The gate said nothing at all, and nothing reads as
+# "nothing wrong".
+#
+# So a scanner now reports whether it RAN, and one that did not produces
+# gate_unmeasured: never silence, and never a claim about the components.
+COMPONENT_FILES=""
+
+# component_files lists the authored components once, sorted. Its exit status
+# is the walk's own, so "a corpus I could not walk" stays distinguishable
+# from "a corpus with nothing in it" — and both stay distinguishable from a
+# corpus this gate read and found clean.
+component_files() { # $1 = scan root
+  find "$1" -type f -name '*.dc.html' | sort
+}
+
+# scan_or_refuse runs one scanner and publishes its output in SCAN_OUT.
+#
+# Mode grep admits exit 1: for a search, "no match" is an ANSWER. Mode walk
+# admits only 0, because a walk has no such answer — it either enumerated the
+# corpus or it did not. Anything outside the admitted set is reported as an
+# unmeasured rule, carrying the scanner's own diagnostic, which is the only
+# text that says WHICH tool refused and why.
+SCAN_OUT=""
+scan_or_refuse() { # $1 = grep|walk, $2 = the rule this scanner answers, $3 = scanner function, $4 = scan root
+  local mode="$1" rule="$2" fn="$3" root="$4" errfile rc err
+  SCAN_OUT=""
+  if ! errfile="$(mktemp)"; then
+    gate_unmeasured "view-vocabulary: no scratch file for the $rule scanner's diagnostics, so that rule was NOT evaluated this run"
+    return 1
+  fi
+  SCAN_OUT="$("$fn" "$root" 2>"$errfile")"
+  rc=$?
+  err="$(tr '\n' ' ' <"$errfile" | cut -c1-400)"
+  rm -f "$errfile"
+  case "$mode" in
+    grep) [ "$rc" -le 1 ] && return 0 ;;
+    *) [ "$rc" -eq 0 ] && return 0 ;;
+  esac
+  gate_unmeasured "view-vocabulary: the scanner for $rule did not run over $root (exit $rc), so this run did NOT evaluate that rule — it is unproven, not satisfied. The scanner said: ${err:-<nothing>}"
+  return 1
 }
 
 check_resolver_monopoly() { # $1 = scan root
-  local root="$1" owner line file content lineno
+  local root="$1" owner line file content lineno tone_lines=""
   owner="$root/VocabularyResolver.dc.html"
   if [ ! -f "$owner" ]; then
     gate_fail "view-vocabulary: missing exact resolver owner VocabularyResolver.dc.html — failing closed rather than allowing tone classes without an owner"
+  fi
+  if scan_or_refuse grep "the resolver's monopoly on tone- classes" resolver_tone_literals "$root"; then
+    tone_lines="$SCAN_OUT"
   fi
   while IFS= read -r line; do
     [ -z "$line" ] && continue
@@ -406,7 +482,7 @@ check_resolver_monopoly() { # $1 = scan root
     if [ "$file" != "$owner" ]; then
       gate_fail "$(basename "$file"):$lineno spells a tone- class outside VocabularyResolver.dc.html — every chroma treatment must come from the one resolver"
     fi
-  done <<< "$(resolver_tone_literals "$root")"
+  done <<< "$tone_lines"
 }
 
 # provenance_records tags each source line BEGIN/END/BAD/CODE for the
@@ -462,10 +538,15 @@ provenance_phrase() { # $1 = segment content
 }
 
 check_provenance_ban() { # $1 = scan root
-  local root="$1" file lineno record content marker=0 segments seg
+  local root="$1" file lineno record content marker=0 segments seg records
   while IFS= read -r file; do
     [ -z "$file" ] && continue
     marker=0
+    # A file the tagger cannot read is not a file without provenance leaks.
+    if ! records="$(provenance_records "$file")"; then
+      gate_unmeasured "view-vocabulary: could not tag $(basename "$file") for the provenance-vocabulary rule, so that file was NOT judged by it"
+      continue
+    fi
     while IFS=$'\t' read -r lineno record content; do
       case "$record" in
         BEGIN)
@@ -511,35 +592,67 @@ check_provenance_ban() { # $1 = scan root
           done <<< "$segments"
           ;;
       esac
-    done <<< "$(provenance_records "$file")"
+    done <<< "$records"
     if [ "$marker" -eq 1 ]; then
       gate_fail "view-vocabulary: $(basename "$file") has an unclosed allow-provenance block"
     fi
-  done <<< "$(find "$root" -type f -name '*.dc.html' 2>/dev/null | sort)"
+  done <<< "$COMPONENT_FILES"
 }
 
 run_check() { # $1 = scan root
   local root="$1" json states outcomes transitions
+  # The three refusals below are all about the MEASUREMENT, not about the
+  # components: a binary that will not run and a vocabulary that parses to
+  # nothing say nothing whatsoever about web/design-source. They stay red —
+  # a gate that cannot measure must never look green — and they exit through
+  # gate_summary so the status carries the distinction the wording does.
   if ! json="$(vocabulary_json)"; then
-    gate_fail "view-vocabulary: could not read the vocabulary from the binary — failing closed rather than policing nothing"
-    return 1
+    gate_unmeasured "view-vocabulary: could not read the vocabulary from the binary — failing closed rather than policing nothing"
+    gate_summary "view-vocabulary"
+    return
   fi
   states="$(vocabulary_states "$json")"
   outcomes="$(vocabulary_outcomes "$json")"
   transitions="$(vocabulary_transitions "$json")"
   if [ -z "$states" ]; then
-    gate_fail "view-vocabulary: the binary returned no states — failing closed rather than policing nothing"
-    return 1
+    gate_unmeasured "view-vocabulary: the binary returned no states — failing closed rather than policing nothing"
+    gate_summary "view-vocabulary"
+    return
   fi
   if [ -z "$transitions" ]; then
-    gate_fail "view-vocabulary: the binary returned no transitions — failing closed rather than allowing a local transition policy unchecked"
-    return 1
+    gate_unmeasured "view-vocabulary: the binary returned no transitions — failing closed rather than allowing a local transition policy unchecked"
+    gate_summary "view-vocabulary"
+    return
+  fi
+
+  # The corpus preflight. Every rule below is a search for something WRONG,
+  # so a corpus of zero components satisfies all of them at once — the
+  # cheapest false green there is, and the one nobody investigates.
+  if ! COMPONENT_FILES="$(component_files "$root")"; then
+    gate_unmeasured "view-vocabulary: the component walk under $root did not complete, so no rule below was evaluated over a corpus this gate can vouch for"
+    gate_summary "view-vocabulary"
+    return
+  fi
+  if [ -z "$COMPONENT_FILES" ]; then
+    gate_unmeasured "view-vocabulary: no authored component (*.dc.html) was found under $root — every rule here would pass by having nothing to judge, and that is a green this run did not earn"
+    gate_summary "view-vocabulary"
+    return
   fi
 
   check_resolver_monopoly "$root"
   check_provenance_ban "$root"
 
   local line file lineno content words word known unknown
+  local state_list_lines="" chain_lines="" transition_map_lines=""
+  if scan_or_refuse grep "the AC6 state-list rule (a component classifying by its own list of state names)" state_lists "$root"; then
+    state_list_lines="$SCAN_OUT"
+  fi
+  if scan_or_refuse walk "the AC6 inline-equality-chain rule (the same classification spelled branch by branch)" state_equality_chains "$root"; then
+    chain_lines="$SCAN_OUT"
+  fi
+  if scan_or_refuse walk "the transition-policy-map rule (a browser-local label or tone map over binary-known transitions)" transition_policy_maps "$root"; then
+    transition_map_lines="$SCAN_OUT"
+  fi
   while IFS= read -r line; do
     [ -z "$line" ] && continue
     file="${line%%:*}"
@@ -575,7 +688,7 @@ run_check() { # $1 = scan root
     for word in $unknown; do
       gate_fail "$(basename "$file"):$lineno lists \"$word\", which is not a state the domain has — the binary's \`__catalog --vocabulary --json\` is the list, and a name outside it matches nothing the fold can ever produce"
     done
-  done <<< "$(state_lists "$root")"
+  done <<< "$state_list_lines"
 
   local pairs pair operand word records operands operand_records
   while IFS= read -r line; do
@@ -634,7 +747,7 @@ run_check() { # $1 = scan root
           ;;
       esac
     done <<< "$operands"
-  done <<< "$(state_equality_chains "$root")"
+  done <<< "$chain_lines"
 
   local map_pairs transition_count classification_count value upper_content
   while IFS= read -r line; do
@@ -667,10 +780,15 @@ run_check() { # $1 = scan root
         gate_fail "$(basename "$file"):$lineno classifies binary-known transitions as positive/negative/caution in the browser — use VocabularyResolver family \`transition\` instead"
       fi
     fi
-  done <<< "$(transition_policy_maps "$root")"
+  done <<< "$transition_map_lines"
 
   gate_summary "view-vocabulary"
 }
+
+# teeth_skipped records any fixture this environment could not build, so the
+# summary can name it instead of claiming it. Same shape, and the same
+# reason, as check-operational-confidence.sh's own variable of this name.
+teeth_skipped=""
 
 run_teeth() {
   local tmp
@@ -1033,7 +1151,174 @@ FIXTURE
   fi
   rm -f "$tmp/ProvenanceUnclosed.dc.html"
 
-  echo "view-vocabulary --teeth: ok"
+  # ── the paired teeth: which VERDICT, not merely red (spec 02 §6) ──────
+  #
+  # Every fixture above proves the gate reds when a component is wrong. None
+  # of them can tell that apart from the gate reding because it never looked,
+  # and this gate has already shipped that exact state: on 2026-08-20 the
+  # inline-equality-chain walk had been refused outright by GNU find for
+  # weeks, and because the refusal was swallowed the rule was simply absent
+  # from every CI run while these teeth passed on every laptop.
+  #
+  # So the three cases below are run over ONE corpus, and the assertion is
+  # that a finding and a failed measurement do not read the same.
+  local paired="$tmp/paired"
+  mkdir -p "$paired"
+  cp "$GATE_ROOT/web/design-source/VocabularyResolver.dc.html" "$paired/VocabularyResolver.dc.html"
+
+  # Tc — a readable corpus with nothing wrong in it greens.
+  if ! ( run_check "$paired" ) >/dev/null 2>&1; then
+    echo "view-vocabulary --teeth: FAILED — a clean, readable corpus did not green" >&2
+    return 1
+  fi
+
+  # Ta — the corpus is genuinely wrong. Domain words, and no measurement
+  # marker: a finding reported as a failed measurement sends the reader to
+  # check their toolchain instead of their component.
+  cat > "$paired/Offender.dc.html" <<'FIXTURE'
+<span class="tone-invented">bad</span>
+FIXTURE
+  local ta_out
+  if ta_out="$( ( run_check "$paired" ) 2>&1 )"; then
+    echo "view-vocabulary --teeth: FAILED — a non-owner tone class stayed green in the paired corpus" >&2
+    return 1
+  fi
+  if [[ "$ta_out" == *UNMEASURED* ]]; then
+    echo "view-vocabulary --teeth: FAILED — a real tone-class finding was reported as an unmeasured run:" >&2
+    echo "$ta_out" >&2
+    return 1
+  fi
+  rm -f "$paired/Offender.dc.html"
+
+  # Tb1 — the corpus is fine; the VOCABULARY cannot be read. The gate has
+  # nothing to police against and must say so rather than green.
+  local tb_out
+  if tb_out="$( ( export A2A_VERIFY_BINARY="$tmp/no-such-binary"; run_check "$paired" ) 2>&1 )"; then
+    echo "view-vocabulary --teeth: FAILED — an unreadable vocabulary source greened" >&2
+    return 1
+  fi
+  if [[ "$tb_out" != *UNMEASURED* || "$tb_out" != *"could not read the vocabulary from the binary"* ]]; then
+    echo "view-vocabulary --teeth: FAILED — an unreadable vocabulary source did not produce the measurement refusal:" >&2
+    echo "$tb_out" >&2
+    return 1
+  fi
+
+  # Tb2 — an EMPTY corpus. Every rule here is a search for something wrong,
+  # so zero components satisfies all of them at once. That is the false green
+  # this phase exists for, and it must be a refusal.
+  local empty_out
+  mkdir -p "$tmp/empty-corpus"
+  if empty_out="$( ( run_check "$tmp/empty-corpus" ) 2>&1 )"; then
+    echo "view-vocabulary --teeth: FAILED — a corpus with no components reported green" >&2
+    return 1
+  fi
+  if [[ "$empty_out" != *UNMEASURED* || "$empty_out" != *"no authored component"* ]]; then
+    echo "view-vocabulary --teeth: FAILED — an empty corpus did not refuse as unmeasured:" >&2
+    echo "$empty_out" >&2
+    return 1
+  fi
+
+  # Tb3 — a scan root that cannot be walked at all: the scanners' own
+  # refusal, which is the shape a stderr redirect hid for weeks.
+  local unwalkable_out
+  if unwalkable_out="$( ( run_check "$tmp/no-such-scan-root" ) 2>&1 )"; then
+    echo "view-vocabulary --teeth: FAILED — an unwalkable scan root reported green" >&2
+    return 1
+  fi
+  if [[ "$unwalkable_out" != *UNMEASURED* || "$unwalkable_out" != *"did not complete"* ]]; then
+    echo "view-vocabulary --teeth: FAILED — an unwalkable scan root did not refuse as unmeasured:" >&2
+    echo "$unwalkable_out" >&2
+    return 1
+  fi
+
+  # Tb4 — the corpus walks, and one component cannot be READ. This is the
+  # scanner-level half: the walk succeeded, so a preflight cannot catch it,
+  # and a search that dies part way through returns a SHORTER list rather
+  # than an error the caller can see.
+  local unreadable="$paired/Unreadable.dc.html"
+  printf '<span>ordinary component text</span>\n' >"$unreadable"
+  chmod 000 "$unreadable"
+  if [ -r "$unreadable" ]; then
+    # A privileged process reads a mode-000 file regardless, so this fixture
+    # cannot be built here. Recorded, not merely printed: the summary line
+    # below is built from this variable, because a teeth run that says "ok"
+    # while listing a case it never built is this phase's own subject. The
+    # container ship gate runs as root, so this branch is reachable in a
+    # documented lane, not hypothetical.
+    teeth_skipped="${teeth_skipped:+$teeth_skipped, }unreadable-component"
+    echo "view-vocabulary --teeth: skip unreadable-component — this process can read a mode-000 file (running privileged)"
+  else
+    local unreadable_out
+    if unreadable_out="$( ( run_check "$paired" ) 2>&1 )"; then
+      chmod 644 "$unreadable"
+      echo "view-vocabulary --teeth: FAILED — a component this gate could not read produced a GREEN run" >&2
+      return 1
+    fi
+    if [[ "$unreadable_out" != *UNMEASURED* || "$unreadable_out" != *Unreadable.dc.html* || "$unreadable_out" != *"the scanner for"* ]]; then
+      chmod 644 "$unreadable"
+      echo "view-vocabulary --teeth: FAILED — an unreadable component did not produce a measurement refusal naming it:" >&2
+      echo "$unreadable_out" >&2
+      return 1
+    fi
+  fi
+  chmod 644 "$unreadable"
+  rm -f "$unreadable"
+
+  # Tb5 — scan_or_refuse's own contract, asserted directly.
+  #
+  # The corpus fixtures above cannot isolate it: a broken corpus reaches
+  # several scanners at once and the walk-mode ones answer first, so a
+  # regression in the search-mode branch alone stays invisible through them.
+  # Watched: reverting that branch to "any exit status means the search ran"
+  # left every corpus tooth green.
+  #
+  # The distinction being pinned is that for a SEARCH, "found nothing" is an
+  # answer (exit 1) and anything above it is not; for a WALK there is no such
+  # answer, so only success counts.
+  _teeth_probe_no_match() { return 1; }
+  _teeth_probe_cannot_run() { echo "probe scanner: cannot read the corpus" >&2; return 2; }
+
+  local probe_out probe_rc
+  probe_out="$( ( _GATE_UNMEASURED=0; scan_or_refuse grep "a probe rule" _teeth_probe_no_match "$paired" ) 2>&1 )"
+  probe_rc=$?
+  if [ "$probe_rc" -ne 0 ] || [ -n "$probe_out" ]; then
+    echo "view-vocabulary --teeth: FAILED — a search that ran and matched nothing was treated as a failed measurement (rc $probe_rc): $probe_out" >&2
+    return 1
+  fi
+
+  probe_out="$( ( _GATE_UNMEASURED=0; scan_or_refuse grep "a probe rule" _teeth_probe_cannot_run "$paired" ) 2>&1 )"
+  probe_rc=$?
+  if [ "$probe_rc" -eq 0 ]; then
+    echo "view-vocabulary --teeth: FAILED — a search that could not run was reported as having run" >&2
+    return 1
+  fi
+  if [[ "$probe_out" != *UNMEASURED* || "$probe_out" != *"cannot read the corpus"* ]]; then
+    echo "view-vocabulary --teeth: FAILED — a search that could not run did not refuse as unmeasured, carrying its own diagnostic:" >&2
+    echo "$probe_out" >&2
+    return 1
+  fi
+
+  probe_out="$( ( _GATE_UNMEASURED=0; scan_or_refuse walk "a probe rule" _teeth_probe_no_match "$paired" ) 2>&1 )"
+  probe_rc=$?
+  if [ "$probe_rc" -eq 0 ] || [[ "$probe_out" != *UNMEASURED* ]]; then
+    echo "view-vocabulary --teeth: FAILED — a corpus WALK that exited non-zero was accepted as having enumerated the corpus:" >&2
+    echo "$probe_out" >&2
+    return 1
+  fi
+
+  # The assertion that holds the class: the two verdicts must not be the same
+  # string. Either half alone is satisfied by the bug it exists to catch.
+  if [ "$ta_out" = "$tb_out" ]; then
+    echo "view-vocabulary --teeth: FAILED — a measured finding and a failed measurement produced the SAME output; one verdict is masquerading as the other:" >&2
+    echo "$ta_out" >&2
+    return 1
+  fi
+
+  if [ -n "$teeth_skipped" ]; then
+    echo "view-vocabulary --teeth: ok — offending components red in domain words; an unreadable vocabulary, an empty corpus and an unwalkable scan root each refuse as UNMEASURED, and the two verdicts are asserted to differ; SKIPPED (fixture unbuildable here): $teeth_skipped"
+  else
+    echo "view-vocabulary --teeth: ok — offending components red in domain words; an unreadable vocabulary, an empty corpus, an unwalkable scan root and an unreadable component each refuse as UNMEASURED, and the two verdicts are asserted to differ"
+  fi
 }
 
 if [ "${1:-}" = "--teeth" ]; then
