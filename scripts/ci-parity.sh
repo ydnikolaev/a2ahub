@@ -966,7 +966,20 @@ telemetry_report() { # $1 = offset recorded before the run; $2 = a label
     | sed -n 's/.*"gate":"\([^"]*\)".*"mode":"\([^"]*\)".*/  \2 \1/p' \
     | sort | uniq -c | sort -rn | sed 's/^/  /'
 
+  # mode=test is EXCLUDED, and this is a limit of the RECORD rather than an
+  # exemption of convenience. `verify.sh test ./pkg/...` is per-target by
+  # construction — one invocation per package — but append_telemetry writes the
+  # gate name without the target, so 24 scoped runs over 24 different packages
+  # are indistinguishable from one gate paid 24 times. Measured on the ship
+  # gate's fifth run, 2026-08-21: exactly that, all passing, all different
+  # durations.
+  #
+  # The exclusion is derived from the MODE, never from a list of gate names, and
+  # it disappears the day telemetry records the target: at that point the pairs
+  # differ on their own and no rule is needed. Every other mode stays in — the
+  # composition's whole reason to exist is that `make check` is not paid twice.
   dupes="$(printf '%s\n' "$new" \
+    | grep -v '"mode":"test"' \
     | sed -n 's/.*"gate":"\([^"]*\)".*"mode":"\([^"]*\)".*/\2 \1/p' \
     | sort | uniq -d)"
   if [ -n "$dupes" ]; then
