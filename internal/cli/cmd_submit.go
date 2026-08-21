@@ -287,7 +287,7 @@ func (s stagedCarriedSet) reports() []validateReport {
 		return nil
 	}
 	byPath := map[string][]validate.Violation{}
-	for _, v := range carriedFindingViolations(space.ContractCarriedMembership(s.files, space.SpacePresenceFromDir(s.mirrorDir))) {
+	for _, v := range carriedFindingViolations(space.ContractCarriedMembership(s.files, space.PresenceFromDir(s.mirrorDir))) {
 		byPath[v.Path] = append(byPath[v.Path], v)
 	}
 
@@ -628,7 +628,7 @@ func (c *SubmitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// than inventing a second refusal stage, so it is all-or-nothing across
 	// the batch and lands BEFORE any git or network call: the funnel below
 	// is never reached.
-	if violations := carriedFindingViolations(space.ContractCarriedMembership(req.Files, space.SpacePresenceFromDir(c.mirrorDir))); len(violations) > 0 {
+	if violations := carriedFindingViolations(space.ContractCarriedMembership(req.Files, space.PresenceFromDir(c.mirrorDir))); len(violations) > 0 {
 		printCarriedClassification(stdio.Stderr, req.Files)
 		for _, v := range violations {
 			_, _ = fmt.Fprintf(stdio.Stderr, "submit: refused [%s] %s: %s\n", v.Code, v.Path, v.Message)

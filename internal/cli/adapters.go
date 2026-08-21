@@ -321,14 +321,14 @@ type LegalityAdapter struct {
 // system's own section) and resolving membership against manifest
 // (space.ParseManifest's own structural decode of space.yaml, as staged
 // locally — pre-merge, per §5.5).
+func NewLegalityAdapter(mirrorDir, system string, manifest space.Manifest) *LegalityAdapter {
+	return &LegalityAdapter{mirrorDir: mirrorDir, system: system, manifest: manifest, envelopes: map[string]fold.Envelope{}}
+}
+
 // MirrorDir is the space checkout this adapter reads. It is exported so a
 // sibling validator can ask the SPACE whether a declared contract companion
 // already exists, rather than inferring absence from one batch's contents.
 func (a *LegalityAdapter) MirrorDir() string { return a.mirrorDir }
-
-func NewLegalityAdapter(mirrorDir, system string, manifest space.Manifest) *LegalityAdapter {
-	return &LegalityAdapter{mirrorDir: mirrorDir, system: system, manifest: manifest, envelopes: map[string]fold.Envelope{}}
-}
 
 // RegisterEnvelope makes subject's envelope facts available to a
 // subsequent CheckLegality(candidate) call for that same subject — see
@@ -926,7 +926,7 @@ func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space
 	// through cmd_submit.go's pre-flight: the identical call, on the
 	// identical shared function, is what makes the MCP surface's verdict
 	// identical rather than merely similar (epic AC5).
-	violations = append(violations, carriedFindingViolations(space.ContractCarriedMembership(files, space.SpacePresenceFromDir(v.legality.MirrorDir())))...)
+	violations = append(violations, carriedFindingViolations(space.ContractCarriedMembership(files, space.PresenceFromDir(v.legality.MirrorDir())))...)
 
 	for _, r := range registries {
 		result, err := v.engine.ValidateConsumes(r.Content)
