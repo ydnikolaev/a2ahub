@@ -6,10 +6,13 @@
 # release-tag-pinned path and carries NO notification logic, NO pinned
 # binary and NO fetch-token secret of its own.
 #
-# Integrity: `go install github.com/ydnikolaev/a2ahub/cmd/a2a@<ver>` verifies
-# the module supply chain via the Go checksum DB (GOSUMDB) for free — no
-# A2A_BINARY_FETCH_TOKEN, no cosign step (same mechanism a2a-validate-
-# reusable.yml documents at length).
+# Integrity: a space downloads the SIGNED release binary `a2a-linux-amd64`
+# and verifies its keyless Sigstore bundle before it reaches $PATH — the
+# same certificate identity and OIDC issuer a2a-validate-reusable.yml's own
+# Integrity paragraph names, and the same pair internal/release's
+# KeylessCosignVerifier pins for `a2a update` (judge-the-thing-2026-08 P8).
+# Still no A2A_BINARY_FETCH_TOKEN: the assets are public and the proof is a
+# public transparency-log entry, not a shared secret.
 #
 # `pull_request_target` is FORBIDDEN as a trigger here, and always will be:
 # that event runs with the BASE repo's secrets against a HEAD that can be a
@@ -29,7 +32,7 @@ on:
         # The module version this unit pins — the co-located version that
         # moves as a whole when the caller bumps the workflow tag/SHA
         # (Dependabot for the tag; a2ahub's own release for this default).
-        description: "a2a module version to `go install` (e.g. v0.23.0)."
+        description: "A published release tag whose signed a2a-linux-amd64 asset this job downloads and verifies (e.g. v0.24.0). Empty is REFUSED here — unlike a2a-validate-reusable.yml, where empty means dogfood."
         required: false
         type: string
         # MUST equal the tag being cut — same discipline as
@@ -85,10 +88,11 @@ jobs:
     # own header names this exact situation (ci.yml's `changes` job) and
     # decides it explicitly: an unmeasured identity passes RULE 3 with a
     # named warning rather than a fabricated bound. 10 minutes mirrors
-    # a2a-validate-reusable.yml's own `validate` job, which does the same
-    # `go install` plus a network call and is the closest measured analogue
-    # (see that job's row in job-timeouts.tsv); RULE 4's 60-minute cap
-    # still applies unconditionally.
+    # a2a-validate-reusable.yml's own `validate` job, which downloads and
+    # cosign-verifies the same signed release asset plus a network call and
+    # is the closest measured analogue (see that job's row in
+    # job-timeouts.tsv); RULE 4's 60-minute cap still applies
+    # unconditionally.
     timeout-minutes: 10
     name: notify
     runs-on: ubuntu-latest
@@ -108,12 +112,14 @@ jobs:
           # would silently misorder or empty either one.
           fetch-depth: 0
 
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          # Pinned to a2a's own toolchain, same as a2a-validate-reusable.yml
-          # (a space repo has no go.mod, so go-version-file is not usable).
-          go-version: "1.26.6"
+      # cosign verifies the downloaded binary's keyless signature. Same
+      # action, same SHA pin, as the release workflow that PRODUCES the
+      # signature — deliberately, so the two ends of this chain cannot
+      # drift apart. Unguarded (no `if:`): unlike a2a-validate-reusable.yml,
+      # notify has no dogfood branch (D5/D3, spec 08 §T5), so there is no
+      # value of a2a-ref for which cosign is unwanted.
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.0.0
 
       # The push range and its fallback (spec 05 "The push range, and its
       # fallback"). Computed as its OWN step, separate from the
@@ -190,23 +196,62 @@ jobs:
         run: |
           set -euo pipefail
           bin="$RUNNER_TEMP/a2a-notify-bin"
+
+          # Unlike a2a-validate-reusable.yml, this workflow has no dogfood
+          # build path (D5, spec 08 §T5 "The sentinel") — an empty a2a-ref
+          # cannot mean "build from the caller's checkout" here, so it is
+          # refused BY NAME before any network call, rather than 404ing
+          # silently three retries later.
+          if [ -z "$A2A_REF" ]; then
+            echo "::error::a2a-notify-reusable.yml: a2a-ref must name a released version — unlike a2a-validate-reusable.yml, this workflow has no dogfood build path" >&2
+            exit 2
+          fi
+
+          mkdir -p "$bin"
+
+          # linux-amd64 is hardcoded against this job's own `runs-on:
+          # ubuntu-latest`. If that ever becomes an arm64 runner the
+          # download 404s and the job reds loudly on the first line — which
+          # is the right failure for a wrong-architecture binary, and
+          # better than deriving an arch string that could resolve to
+          # something that runs but is not what anybody chose.
+          asset="a2a-linux-amd64"
+          base="https://github.com/ydnikolaev/a2ahub/releases/download/$A2A_REF"
+
           # Retried on the NETWORK half only, same shape and same reason as
           # a2a-validate-reusable.yml's own "a2a validate --ci" step: a
-          # transient GOSUMDB read must not redden a job that has not run
-          # the space's own content yet.
-          installed=0
+          # transient CDN read must not redden a job that has not run the
+          # space's own content yet.
+          downloaded=0
           for attempt in 1 2 3; do
-            if GOBIN="$bin" go install "github.com/ydnikolaev/a2ahub/cmd/a2a@$A2A_REF"; then
-              installed=1
+            if curl -fsSL -o "$RUNNER_TEMP/$asset" "$base/$asset" &&
+               curl -fsSL -o "$RUNNER_TEMP/$asset.cosign.bundle" "$base/$asset.cosign.bundle"; then
+              downloaded=1
               break
             fi
-            echo "::warning::a2a install attempt $attempt/3 failed (module proxy or checksum DB); retrying" >&2
+            echo "::warning::a2a download attempt $attempt/3 failed; retrying" >&2
             sleep $((attempt * 5))
           done
-          if [ "$installed" -ne 1 ]; then
-            echo "::error::could not install a2a@$A2A_REF after 3 attempts — this is the module supply chain, not this space's routes" >&2
+          if [ "$downloaded" -ne 1 ]; then
+            echo "::error::could not download a2a $A2A_REF after 3 attempts — this is the release CDN, not this space's routes" >&2
             exit 1
           fi
+
+          # The identity and issuer are the SAME PAIR internal/release's
+          # KeylessCosignVerifier pins for `a2a update` (cosign.go:122 and
+          # :27). They are written here rather than derived because the
+          # verifier lives INSIDE the binary being verified — this is the
+          # one place in the system that cannot ask a2a to check a2a.
+          #
+          # Not gated, not retried, and it runs BEFORE the binary is put
+          # anywhere executable: an unverified asset never reaches $bin.
+          cosign verify-blob \
+            --bundle "$RUNNER_TEMP/$asset.cosign.bundle" \
+            --certificate-identity-regexp '^https://github\.com/ydnikolaev/a2ahub/\.github/workflows/release\.yml@refs/tags/' \
+            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+            "$RUNNER_TEMP/$asset"
+
+          install -m 0755 "$RUNNER_TEMP/$asset" "$bin/a2a"
           echo "$bin" >>"$GITHUB_PATH"
 
       - name: a2a notify render | send

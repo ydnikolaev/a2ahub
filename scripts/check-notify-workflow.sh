@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # check-notify-workflow.sh — the notify workflow pair's security posture
-# (space-notify-2026-08 P7, spec 07 §T5).
+# (space-notify-2026-08 P7, spec 07 §T5; invariant #6 is
+# judge-the-thing-2026-08 P8, spec 08 §T5).
 #
-# Owns exactly five invariants, all static and Node-free:
+# Owns exactly six invariants, all static and Node-free:
 #   1. `secrets: inherit` appears nowhere in either file, as a real mapping
 #      value — never as prose explaining that it is forbidden.
 #   2. Triggers: the reusable workflow's `on:` is exactly {workflow_call};
@@ -24,6 +25,19 @@
 #      empty member. This is the one invariant that reads
 #      a2a-validate-reusable.yml as well, because the defect it names is a
 #      property of the input DECLARATION, not of the notify pair.
+#   6. Signed-binary install, across BOTH reusable workflows (spec 08 §T5):
+#      6a. the literal `go install github.com/ydnikolaev/a2ahub/cmd/a2a@`
+#          (the RETIRED remote-module-ref mechanism) appears nowhere in
+#          either file — a2a-validate-reusable.yml's own local-path dogfood
+#          install (`go install "$GITHUB_WORKSPACE/cmd/a2a"`) carries no `@`
+#          and no module path, so it is deliberately NOT caught.
+#      6b. within any step's `run:` body, `releases/download/` present ⇒ a
+#          bare, unwrapped `cosign verify-blob` call is present, sits
+#          outside any `for`/`while` retry loop in that same body, and no
+#          `install `/`chmod `/`echo … >>"$GITHUB_PATH"` command precedes it
+#          — F1 (fails the step), F2 (fails once, not retried) and F3 (never
+#          executable before verified) from spec 08's "Failure posture",
+#          asserted structurally so none depends on a reviewer noticing.
 #
 # THE TRAP. Both forbidden literals (`pull_request_target`, `secrets:
 # inherit`) appear in BOTH real files as COMMENTS explaining why they are
@@ -127,9 +141,25 @@ keys_match_exactly() { # $1 = actual (newline-separated), $2 = expected (newline
   [ "$actual_sorted" = "$expected_sorted" ]
 }
 
-check_no_forbidden_literal() { # $1 = label, $2 = stripped content, $3 = literal
+check_no_forbidden_literal() { # $1 = label, $2 = stripped content, $3 = literal, $4 = citation (optional)
+  local citation="${4:-spec 07 T5}"
   if printf '%s\n' "$2" | grep -Fq -- "$3"; then
-    gate_fail "notify-workflow: $1 contains the literal \"$3\" outside a comment — forbidden (spec 07 T5)"
+    gate_fail "notify-workflow: $1 contains the literal \"$3\" outside a comment — forbidden ($citation)"
+  fi
+}
+
+# check_no_remote_install_literal enforces invariant #6a (spec 08 T5): the
+# module path plus `@` is the predicate — deliberately NOT plain
+# `go install`, which a2a-validate-reusable.yml's local-path dogfood install
+# (`go install "$GITHUB_WORKSPACE/cmd/a2a"`, no `@`, no module path) must
+# survive. An optional leading `"` is tolerated because both real files spell
+# the invocation as `go install "github.com/...@$REF"` — a plain
+# grep -F on the un-quoted literal (§8 criterion 1's own spelling) misses the
+# actual defect entirely, which is exactly the "a rule true and inert"
+# failure this epic is about.
+check_no_remote_install_literal() { # $1 = label, $2 = stripped content
+  if printf '%s\n' "$2" | grep -Eq 'go install ["]?github\.com/ydnikolaev/a2ahub/cmd/a2a@'; then
+    gate_fail "notify-workflow: $1 contains \"go install github.com/ydnikolaev/a2ahub/cmd/a2a@\" — the RETIRED remote-module-ref mechanism (spec 08 T5 #6a)"
   fi
 }
 
@@ -230,6 +260,113 @@ check_unset_expressible() { # $1 = label, $2 = stripped content
   done <<<"$violations"
 }
 
+# check_download_verify_order enforces invariant #6b (spec 08 T5 "the
+# gate"): within EVERY `run:` step body in the file, if `releases/download/`
+# is present then a bare, unretried `cosign verify-blob` call must also be
+# present and must precede any `install `/`chmod `/`echo …>>"$GITHUB_PATH"`
+# command in that same body.
+#
+# The "every line STRICTLY DEEPER than the run: anchor, up to the first line
+# at <= anchor" reader spec 08 §T5 asks for is folded into this one awk pass
+# (rather than a separate reader function feeding a second pass) so the
+# per-block state — has the download line been seen, has cosign, is a
+# retry loop currently open, is `set +e` currently in force — stays
+# together with the block it describes. Same `indent_of` shape as
+# trigger_keys/permissions_keys; a NEW variant because those two print
+# children at exactly `anchor + 2` and a `run:` body's shell text nests far
+# deeper (an `if`, a `for`, a backslash continuation).
+check_download_verify_order() { # $1 = label, $2 = stripped content
+  local violations reason
+  violations="$(printf '%s\n' "$2" | awk '
+    function indent_of(line,    tmp) { tmp = line; sub(/[^ ].*$/, "", tmp); return length(tmp) }
+    function reset_block() {
+      has_download = 0; has_cosign = 0; bad_order = 0
+      f1_broken = 0; f2_broken = 0
+      loop_depth = 0; pipefail_off = 0; cosign_stmt_active = 0
+    }
+    function eval_block() {
+      if (!has_download) return
+      if (!has_cosign) { print "no-verify"; return }
+      if (bad_order) print "bad-order"
+      if (f1_broken) print "f1-suppressed"
+      if (f2_broken) print "f2-inside-loop"
+    }
+    BEGIN { in_block = 0; reset_block() }
+    {
+      line = $0
+      if (in_block) {
+        if (line ~ /^[[:space:]]*$/) next
+        cur = indent_of(line)
+        if (cur <= anchor) {
+          eval_block()
+          in_block = 0
+          reset_block()
+          # fall through: this line may itself open a NEW run: block
+        } else {
+          t = line
+          sub(/^[[:space:]]*/, "", t)
+
+          # Retry-loop tracking: a for/while ... ; do opens depth, a lone
+          # "done" line closes it. Only the ONE retry loop this pair ever
+          # writes (wrapping the download curls) needs to be seen.
+          if (t ~ /^(for|while)[[:space:]].*;[[:space:]]*do[[:space:]]*$/) loop_depth++
+          else if (t ~ /^done[[:space:]]*$/ && loop_depth > 0) loop_depth--
+
+          # set +e / set -e (set -euo pipefail included) toggle whether a
+          # later bare command still fails the step.
+          if (t ~ /^set[[:space:]]+\+e([[:space:]]|$)/) pipefail_off = 1
+          else if (t ~ /^set[[:space:]]+-e/) pipefail_off = 0
+
+          if (t ~ /releases\/download\//) has_download = 1
+
+          if (cosign_stmt_active) {
+            if (t ~ /\|\|/) f1_broken = 1
+            if (t !~ /\\$/) cosign_stmt_active = 0
+          } else if (t ~ /cosign verify-blob/) {
+            has_cosign = 1
+            if (t ~ /\|\|/) f1_broken = 1
+            if (t ~ /^if[[:space:]]/) f1_broken = 1
+            if (pipefail_off) f1_broken = 1
+            if (loop_depth > 0) f2_broken = 1
+            if (t ~ /\\$/) cosign_stmt_active = 1
+          } else if (has_download && !has_cosign) {
+            if (t ~ /^install[[:space:]]/ || t ~ /^chmod[[:space:]]/ || t ~ /^echo[[:space:]].*GITHUB_PATH/) {
+              bad_order = 1
+            }
+          }
+          next
+        }
+      }
+      trimmed_open = line
+      sub(/^[[:space:]]*/, "", trimmed_open)
+      if (trimmed_open ~ /^run:/) {
+        anchor = indent_of(line)
+        in_block = 1
+        reset_block()
+      }
+    }
+    END { if (in_block) eval_block() }
+  ')"
+  [ -z "$violations" ] && return
+  while IFS= read -r reason; do
+    [ -z "$reason" ] && continue
+    case "$reason" in
+      no-verify)
+        gate_fail "notify-workflow: $1 has a run: body downloading from releases/download/ with no cosign verify-blob call (spec 08 T5 #6b)"
+        ;;
+      bad-order)
+        gate_fail "notify-workflow: $1 has a run: body where install/chmod/\$GITHUB_PATH precedes cosign verify-blob after a releases/download/ download (spec 08 T5 #6b ordering, F3)"
+        ;;
+      f1-suppressed)
+        gate_fail "notify-workflow: $1's cosign verify-blob call is wrapped (||, set +e, or a captured status) rather than a bare command — a verification that warns is not a verification (spec 08 T5 #6b, F1)"
+        ;;
+      f2-inside-loop)
+        gate_fail "notify-workflow: $1's cosign verify-blob call sits INSIDE the retry loop — a genuinely bad artifact must red once, not be retried (spec 08 T5 #6b, F2)"
+        ;;
+    esac
+  done <<<"$violations"
+}
+
 run_check() { # $1 = reusable path, $2 = caller path, $3 = a2a-validate-reusable.yml path
   local reusable="${1:-$REUSABLE_DEFAULT}" caller="${2:-$CALLER_DEFAULT}"
   local validate_reusable="${3:-$VALIDATE_REUSABLE_DEFAULT}"
@@ -280,6 +417,20 @@ run_check() { # $1 = reusable path, $2 = caller path, $3 = a2a-validate-reusable
   # the defect.
   check_unset_expressible "a2a-notify-reusable.yml" "$reusable_stripped"
   check_unset_expressible "a2a-validate-reusable.yml" "$validate_reusable_stripped"
+
+  # Invariant 6a: the RETIRED remote-module-ref install literal appears
+  # nowhere in either reusable workflow (spec 08 T5). Deliberately targets
+  # the remote ref, not `go install` in general — a2a-validate-reusable.yml's
+  # local-path dogfood install carries no `@` and no module path, and must
+  # not red here.
+  check_no_remote_install_literal "a2a-notify-reusable.yml" "$reusable_stripped"
+  check_no_remote_install_literal "a2a-validate-reusable.yml" "$validate_reusable_stripped"
+
+  # Invariant 6b: any run: body downloading from releases/download/ must
+  # verify with a bare cosign verify-blob call before anything makes the
+  # asset executable or reachable (spec 08 T5).
+  check_download_verify_order "a2a-notify-reusable.yml" "$reusable_stripped"
+  check_download_verify_order "a2a-validate-reusable.yml" "$validate_reusable_stripped"
 }
 
 # ── teeth fixtures ──────────────────────────────────────────────────────
@@ -430,6 +581,354 @@ jobs:
 YAML
 }
 
+# ── invariant #6 fixtures (spec 08 §T5) ─────────────────────────────────
+# All eight share the real "Install a2a"/"a2a validate --ci" step's shape at
+# 6/8-space indentation — the #6b reader needs a real run: anchor to nest
+# under, not the one-liner `run: echo notify` the invariant 1–5 fixtures
+# use. Four are spec 08 §T5's own named cases (remote-install, the correct
+# download+verify block, no-verify, verify-after-install) plus the local
+# dogfood green and the (b) substring trap; two more (verify-suppressed,
+# verify-inside-loop) are additions proving criterion 3's F1/F2 claims that
+# spec 08 §T5's four-fixture list does not itself name — see this phase's
+# §11.
+
+# write_reusable_remote_install — today's actual defect: go install of the
+# remote module ref. Must RED on #6a.
+write_reusable_remote_install() { # $1 = path
+  cat >"$1" <<'YAML'
+name: a2a-notify-reusable
+
+on:
+  workflow_call:
+    inputs:
+      a2a-ref:
+        type: string
+        default: "v0.24.0"
+    secrets:
+      TG_BOT_TOKEN:
+        required: false
+
+jobs:
+  notify:
+    permissions:
+      contents: read
+    steps:
+      - name: Install a2a
+        env:
+          A2A_REF: ${{ inputs.a2a-ref }}
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/a2a-notify-bin"
+          if GOBIN="$bin" go install "github.com/ydnikolaev/a2ahub/cmd/a2a@$A2A_REF"; then
+            echo ok
+          fi
+          echo "$bin" >>"$GITHUB_PATH"
+YAML
+}
+
+# write_reusable_download_verify — the correct download+verify+install
+# shape (C1–C7). Must GREEN on both #6a and #6b.
+write_reusable_download_verify() { # $1 = path
+  cat >"$1" <<'YAML'
+name: a2a-notify-reusable
+
+on:
+  workflow_call:
+    inputs:
+      a2a-ref:
+        type: string
+        default: "v0.24.0"
+    secrets:
+      TG_BOT_TOKEN:
+        required: false
+
+jobs:
+  notify:
+    permissions:
+      contents: read
+    steps:
+      - name: Install a2a
+        env:
+          A2A_REF: ${{ inputs.a2a-ref }}
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/a2a-notify-bin"
+          mkdir -p "$bin"
+          asset="a2a-linux-amd64"
+          base="https://github.com/ydnikolaev/a2ahub/releases/download/$A2A_REF"
+          downloaded=0
+          for attempt in 1 2 3; do
+            if curl -fsSL -o "$RUNNER_TEMP/$asset" "$base/$asset"; then
+              downloaded=1
+              break
+            fi
+            sleep $((attempt * 5))
+          done
+          if [ "$downloaded" -ne 1 ]; then
+            exit 1
+          fi
+          cosign verify-blob \
+            --bundle "$RUNNER_TEMP/$asset.cosign.bundle" \
+            --certificate-identity-regexp '^https://github\.com/ydnikolaev/a2ahub/\.github/workflows/release\.yml@refs/tags/' \
+            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+            "$RUNNER_TEMP/$asset"
+          install -m 0755 "$RUNNER_TEMP/$asset" "$bin/a2a"
+          echo "$bin" >>"$GITHUB_PATH"
+YAML
+}
+
+# write_reusable_download_no_verify — downloads from releases/download/ but
+# never calls cosign verify-blob at all. Must RED on #6b (no-verify).
+write_reusable_download_no_verify() { # $1 = path
+  cat >"$1" <<'YAML'
+name: a2a-notify-reusable
+
+on:
+  workflow_call:
+    inputs:
+      a2a-ref:
+        type: string
+        default: "v0.24.0"
+    secrets:
+      TG_BOT_TOKEN:
+        required: false
+
+jobs:
+  notify:
+    permissions:
+      contents: read
+    steps:
+      - name: Install a2a
+        env:
+          A2A_REF: ${{ inputs.a2a-ref }}
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/a2a-notify-bin"
+          mkdir -p "$bin"
+          asset="a2a-linux-amd64"
+          base="https://github.com/ydnikolaev/a2ahub/releases/download/$A2A_REF"
+          curl -fsSL -o "$RUNNER_TEMP/$asset" "$base/$asset"
+          install -m 0755 "$RUNNER_TEMP/$asset" "$bin/a2a"
+          echo "$bin" >>"$GITHUB_PATH"
+YAML
+}
+
+# write_reusable_verify_after_install — verifies, but AFTER install -m 0755
+# has already made the (unverified at that point) asset executable. Must RED
+# on #6b's ordering clause (F3).
+write_reusable_verify_after_install() { # $1 = path
+  cat >"$1" <<'YAML'
+name: a2a-notify-reusable
+
+on:
+  workflow_call:
+    inputs:
+      a2a-ref:
+        type: string
+        default: "v0.24.0"
+    secrets:
+      TG_BOT_TOKEN:
+        required: false
+
+jobs:
+  notify:
+    permissions:
+      contents: read
+    steps:
+      - name: Install a2a
+        env:
+          A2A_REF: ${{ inputs.a2a-ref }}
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/a2a-notify-bin"
+          mkdir -p "$bin"
+          asset="a2a-linux-amd64"
+          base="https://github.com/ydnikolaev/a2ahub/releases/download/$A2A_REF"
+          curl -fsSL -o "$RUNNER_TEMP/$asset" "$base/$asset"
+          install -m 0755 "$RUNNER_TEMP/$asset" "$bin/a2a"
+          cosign verify-blob \
+            --bundle "$RUNNER_TEMP/$asset.cosign.bundle" \
+            --certificate-identity-regexp '^https://github\.com/ydnikolaev/a2ahub/\.github/workflows/release\.yml@refs/tags/' \
+            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+            "$RUNNER_TEMP/$asset"
+          echo "$bin" >>"$GITHUB_PATH"
+YAML
+}
+
+# write_reusable_local_dogfood — a2a-validate-reusable.yml's OWN local-path
+# dogfood install, carrying no `@` and no module path. Must GREEN on #6a —
+# a rule that reddens the dogfood is the wrong rule (spec 08 §T5).
+write_reusable_local_dogfood() { # $1 = path
+  cat >"$1" <<'YAML'
+name: a2a-validate-reusable
+
+on:
+  workflow_call:
+    inputs:
+      a2a-ref:
+        type: string
+        default: ""
+    secrets:
+      TG_BOT_TOKEN:
+        required: false
+
+jobs:
+  validate:
+    permissions:
+      contents: read
+    steps:
+      - name: a2a validate --ci
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/a2a-validate-bin"
+          GOBIN="$bin" go install "$GITHUB_WORKSPACE/cmd/a2a"
+YAML
+}
+
+# write_reusable_download_verify_trap — the correct download+verify block,
+# but the step is named "Install a2a", it `uses:
+# sigstore/cosign-installer`, and the header prose says "chmod +x" — the
+# (b) trap spec 08 §T5 names: a substring predicate would red this correct
+# file three ways over. Must GREEN.
+write_reusable_download_verify_trap() { # $1 = path
+  cat >"$1" <<'YAML'
+# Install cosign, then Install a2a. The download is followed by
+# `install -m 0755` (not `chmod +x`), but this header still SAYS
+# "chmod +x" in prose, on purpose — a substring predicate must not red it.
+name: a2a-notify-reusable
+
+on:
+  workflow_call:
+    inputs:
+      a2a-ref:
+        type: string
+        default: "v0.24.0"
+    secrets:
+      TG_BOT_TOKEN:
+        required: false
+
+jobs:
+  notify:
+    permissions:
+      contents: read
+    steps:
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.0.0
+      - name: Install a2a
+        env:
+          A2A_REF: ${{ inputs.a2a-ref }}
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/a2a-notify-bin"
+          mkdir -p "$bin"
+          asset="a2a-linux-amd64"
+          base="https://github.com/ydnikolaev/a2ahub/releases/download/$A2A_REF"
+          downloaded=0
+          for attempt in 1 2 3; do
+            if curl -fsSL -o "$RUNNER_TEMP/$asset" "$base/$asset"; then
+              downloaded=1
+              break
+            fi
+            sleep $((attempt * 5))
+          done
+          if [ "$downloaded" -ne 1 ]; then
+            exit 1
+          fi
+          cosign verify-blob \
+            --bundle "$RUNNER_TEMP/$asset.cosign.bundle" \
+            --certificate-identity-regexp '^https://github\.com/ydnikolaev/a2ahub/\.github/workflows/release\.yml@refs/tags/' \
+            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+            "$RUNNER_TEMP/$asset"
+          install -m 0755 "$RUNNER_TEMP/$asset" "$bin/a2a"
+          echo "$bin" >>"$GITHUB_PATH"
+YAML
+}
+
+# write_reusable_verify_suppressed — cosign verify-blob runs, but its exit
+# is swallowed by a trailing `||` — a "verification" that cannot fail the
+# step. Must RED on #6b's F1 clause. Not one of spec 08 §T5's four named
+# fixtures; added because criterion 3 claims F1 is asserted by #6b and an
+# untested clause is exactly the "rule true and inert" shape this epic is
+# about (see this phase's own §11 deviation note).
+write_reusable_verify_suppressed() { # $1 = path
+  cat >"$1" <<'YAML'
+name: a2a-notify-reusable
+
+on:
+  workflow_call:
+    inputs:
+      a2a-ref:
+        type: string
+        default: "v0.24.0"
+    secrets:
+      TG_BOT_TOKEN:
+        required: false
+
+jobs:
+  notify:
+    permissions:
+      contents: read
+    steps:
+      - name: Install a2a
+        env:
+          A2A_REF: ${{ inputs.a2a-ref }}
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/a2a-notify-bin"
+          mkdir -p "$bin"
+          asset="a2a-linux-amd64"
+          base="https://github.com/ydnikolaev/a2ahub/releases/download/$A2A_REF"
+          curl -fsSL -o "$RUNNER_TEMP/$asset" "$base/$asset"
+          cosign verify-blob --bundle "$RUNNER_TEMP/$asset.cosign.bundle" "$RUNNER_TEMP/$asset" || echo "::warning::unverified"
+          install -m 0755 "$RUNNER_TEMP/$asset" "$bin/a2a"
+          echo "$bin" >>"$GITHUB_PATH"
+YAML
+}
+
+# write_reusable_verify_inside_loop — cosign verify-blob runs INSIDE the
+# retry loop that wraps the download — a bad artifact would be retried
+# three times instead of reddening once. Must RED on #6b's F2 clause. Same
+# rationale as write_reusable_verify_suppressed above: not one of the four
+# named fixtures, added to prove criterion 3's F2 claim rather than leave it
+# asserted-but-untested.
+write_reusable_verify_inside_loop() { # $1 = path
+  cat >"$1" <<'YAML'
+name: a2a-notify-reusable
+
+on:
+  workflow_call:
+    inputs:
+      a2a-ref:
+        type: string
+        default: "v0.24.0"
+    secrets:
+      TG_BOT_TOKEN:
+        required: false
+
+jobs:
+  notify:
+    permissions:
+      contents: read
+    steps:
+      - name: Install a2a
+        env:
+          A2A_REF: ${{ inputs.a2a-ref }}
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/a2a-notify-bin"
+          mkdir -p "$bin"
+          asset="a2a-linux-amd64"
+          base="https://github.com/ydnikolaev/a2ahub/releases/download/$A2A_REF"
+          for attempt in 1 2 3; do
+            curl -fsSL -o "$RUNNER_TEMP/$asset" "$base/$asset"
+            cosign verify-blob --bundle "$RUNNER_TEMP/$asset.cosign.bundle" "$RUNNER_TEMP/$asset"
+            break
+          done
+          install -m 0755 "$RUNNER_TEMP/$asset" "$bin/a2a"
+          echo "$bin" >>"$GITHUB_PATH"
+YAML
+}
+
 teeth_expect() { # $1 = label, $2 = red|green, $3 = needle, $4 = reusable, $5 = caller, $6 = validate_reusable (optional)
   local label="$1" verdict="$2" needle="$3" reusable="$4" caller="$5" validate_reusable="${6:-}" out rc
   set +e
@@ -551,7 +1050,77 @@ run_teeth() {
     "a2a-validate-reusable.yml's workflow_call input" \
     "$good_reusable" "$good_caller" "$bad_input_no_default" || return 1
 
-  echo "check-notify-workflow --teeth: PASS — secrets: inherit, pull_request_target, a run: step, an over-wide trigger/permissions block, a MISSING workflow file, and an input whose type/default/description cannot express \"unset\" (in either reusable workflow) all red; the comment-only + dry-run: good pair greens"
+  # ── invariant #6 (spec 08 §T5) ──────────────────────────────────────
+
+  local remote_install download_verify download_no_verify verify_after_install
+  local local_dogfood download_verify_trap verify_suppressed verify_inside_loop
+  remote_install="$work/remote-install-reusable.yml"; write_reusable_remote_install "$remote_install"
+  download_verify="$work/download-verify-reusable.yml"; write_reusable_download_verify "$download_verify"
+  download_no_verify="$work/download-no-verify-reusable.yml"; write_reusable_download_no_verify "$download_no_verify"
+  verify_after_install="$work/verify-after-install-reusable.yml"; write_reusable_verify_after_install "$verify_after_install"
+  local_dogfood="$work/local-dogfood-reusable.yml"; write_reusable_local_dogfood "$local_dogfood"
+  download_verify_trap="$work/download-verify-trap-reusable.yml"; write_reusable_download_verify_trap "$download_verify_trap"
+  verify_suppressed="$work/verify-suppressed-reusable.yml"; write_reusable_verify_suppressed "$verify_suppressed"
+  verify_inside_loop="$work/verify-inside-loop-reusable.yml"; write_reusable_verify_inside_loop "$verify_inside_loop"
+
+  # #6a: the remote-module-ref install literal — RED, naming the file and
+  # the literal (spec 08 §8 AC9).
+  teeth_expect "go install of the remote module ref (today's actual defect)" red \
+    'a2a-notify-reusable.yml contains "go install github.com/ydnikolaev/a2ahub/cmd/a2a@"' \
+    "$remote_install" "$good_caller" || return 1
+
+  # #6a/#6b: the correct download+verify+install block — GREEN.
+  teeth_expect "download + cosign verify-blob + install (the correct shape)" green "" \
+    "$download_verify" "$good_caller" || return 1
+
+  # #6a: a2a-validate-reusable.yml's own LOCAL-path dogfood install — GREEN.
+  # A rule that reddens the dogfood is the wrong rule (spec 08 §8 AC9).
+  teeth_expect "validate's local-path dogfood go install" green "" \
+    "$local_dogfood" "$good_caller" || return 1
+
+  # #6b clause (a): downloads from releases/download/ with NO cosign
+  # verify-blob call at all — RED.
+  teeth_expect "download with no cosign verify-blob at all" red \
+    "downloading from releases/download/ with no cosign verify-blob call" \
+    "$download_no_verify" "$good_caller" || return 1
+
+  # #6b ordering (F3): verifies, but AFTER install -m 0755 already made the
+  # (then-unverified) asset executable — RED.
+  teeth_expect "verifies AFTER install -m 0755 (ordering violated)" red \
+    "precedes cosign verify-blob" \
+    "$verify_after_install" "$good_caller" || return 1
+
+  # #6b (b) trap: correct block, but the step is named "Install a2a", uses
+  # sigstore/cosign-installer, and the header prose says "chmod +x" — three
+  # forbidden-token substrings in a file that is otherwise correct. GREEN,
+  # proving the predicate is line-anchored to a run: body command, not a
+  # substring scan of the whole file (spec 08 §T5 "(b) needs a THIRD reader
+  # shape").
+  teeth_expect "correct block named Install a2a / cosign-installer / chmod prose (the substring trap)" green "" \
+    "$download_verify_trap" "$good_caller" || return 1
+
+  # #6b F1: cosign verify-blob's exit is swallowed by a trailing || — RED.
+  # Not one of spec 08 §T5's four named fixtures; added because criterion 3
+  # claims F1 is asserted by #6b (§11 records this as an addition, not a
+  # deviation).
+  teeth_expect "cosign verify-blob wrapped in || (F1: a verification that warns is not one)" red \
+    "wrapped (||, set +e, or a captured status)" \
+    "$verify_suppressed" "$good_caller" || return 1
+
+  # #6b F2: cosign verify-blob runs INSIDE the retry loop — RED. Same
+  # rationale as the F1 case above.
+  teeth_expect "cosign verify-blob inside the retry loop (F2: must red once, not retry)" red \
+    "sits INSIDE the retry loop" \
+    "$verify_inside_loop" "$good_caller" || return 1
+
+  # #6a's reach: the SAME remote-install fixture, planted in the OTHER
+  # reusable workflow's slot (a2a-validate-reusable.yml) — RED, needle
+  # naming the second file specifically (spec 08 §8 AC11).
+  teeth_expect "the remote-install fixture reaches a2a-validate-reusable.yml's slot too" red \
+    'a2a-validate-reusable.yml contains "go install github.com/ydnikolaev/a2ahub/cmd/a2a@"' \
+    "$good_reusable" "$good_caller" "$remote_install" || return 1
+
+  echo "check-notify-workflow --teeth: PASS — secrets: inherit, pull_request_target, a run: step, an over-wide trigger/permissions block, a MISSING workflow file, an input whose type/default/description cannot express \"unset\" (in either reusable workflow), and the remote-module-ref install (in either reusable workflow) all red; a download that never verifies and one that verifies too late also red; the comment-only + dry-run: good pair, the correct download+verify block, validate's local-path dogfood, and the Install-a2a/cosign-installer/chmod-prose trap all green"
 }
 
 if [ "${1:-}" = "--teeth" ]; then
