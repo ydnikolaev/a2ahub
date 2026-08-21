@@ -27,6 +27,33 @@ type RegistryEntry struct {
 	// asked for it to become a declaration, and by the end of this epic
 	// there were THREE such literals — the copy-paste the AC predicted.
 	ModeScope string `yaml:"mode_scope"`
+	// EmittedBy names the PACKAGE that raises this code, and exists because
+	// two gates had been assuming the answer rather than reading it.
+	//
+	// Every code minted before 2026-08-21 is a validate.Violation raised from
+	// internal/validate (internal/cli re-presents two of them at its own
+	// severity, which check-error-codes.sh's scan order already accounts for).
+	// Both guards were built on that: check-error-codes.sh's obligation 0
+	// correlates a code's declared severity with the `Severity:` literal
+	// nearest its `Code:` literal, and internal/validate's TestRegistryClosure
+	// requires every referential/lifecycle code to be produced by a path that
+	// test exercises. Neither statement was written down; both were true by
+	// accident of there being one emitter.
+	//
+	// REF-024 broke the accident. It is a WRITE-FUNNEL refusal living in
+	// internal/space so BOTH surfaces inherit it through funnel.Submit
+	// (ADR-004: a shared concern moves DOWN into a package both import, never
+	// ACROSS). It carries no `Code:` literal because a funnel refusal is not a
+	// Violation, and it has no severity to correlate because it refuses BY
+	// CONSTRUCTION — there is no warning variant of "the package has not
+	// landed". Giving it a Code:/Severity: pair inside internal/cli would have
+	// greened the gate and forced the MCP surface to duplicate the mapping:
+	// B22 exactly, the shape this epic's AC5 exists to prevent.
+	//
+	// Empty means internal/validate, so the 23 codes that predate this field
+	// need no migration. The registry keeps declaring the fact; the gates stop
+	// inferring it.
+	EmittedBy string `yaml:"emitted_by"`
 }
 
 // Registry is the parsed, embedded schemas/errors/v1/registry.yaml.
@@ -94,6 +121,18 @@ func (r *Registry) CodesScopedToWriteGate() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// EmitterFor returns the package that raises code, resolving the documented
+// default: an entry with no `emitted_by` is raised from internal/validate.
+// Callers must go through this rather than reading EmittedBy directly, so the
+// default lives in exactly one place.
+func (r *Registry) EmitterFor(code string) string {
+	e, ok := r.byCode[code]
+	if !ok || e.EmittedBy == "" {
+		return "internal/validate"
+	}
+	return e.EmittedBy
 }
 
 // CodesInClass returns every code in the registry belonging to class

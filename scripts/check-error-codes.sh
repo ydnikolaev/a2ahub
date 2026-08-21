@@ -68,7 +68,9 @@
 # scripts/lib/lane-ungated.txt already uses for a path no gate claims. An
 # unexplained gap FAILS, naming the code — never a silent pass.
 #
-# ALSO, separately (obligation 0, load-bearing for obligation 3): the
+# ALSO, separately (obligation 0, load-bearing for obligation 3): FOR A CODE
+# RAISED FROM internal/validate — which is every code with no `emitted_by`
+# field, and the default this gate resolves — the
 # registry's declared `severity` must AGREE with the `Severity: Severity*`
 # literal nearest that code's `Code: "..."` in internal/validate/*.go (then
 # internal/cli/*.go, non-test, in that scan order — the same two directories
@@ -212,6 +214,8 @@ check_obligations() { # $1 = registry file, $2 = source root
     reason="$(registry_field "$registry" "$code" "mode_scope_reason")"
     prose_exempt="$(registry_field "$registry" "$code" "prose_exempt")"
     reach_exempt="$(registry_field "$registry" "$code" "reachability_exempt")"
+    emitted_by="$(registry_field "$registry" "$code" "emitted_by")"
+    [ -n "$emitted_by" ] || emitted_by="internal/validate"
 
     if [ -z "$severity" ]; then
       gate_fail "check-error-codes: $code declares no severity — obligation 3 (mode scope) cannot be judged"
@@ -227,8 +231,26 @@ check_obligations() { # $1 = registry file, $2 = source root
     esac
 
     # Obligation 0: severity correlation (SSOT is the registry; Go must agree).
+    #
+    # It correlates a DECLARED severity with the one the emitting Go code
+    # carries, so the two cannot drift. That presumes the emitter is a
+    # validate.Violation with a `Severity:` literal beside its `Code:` literal,
+    # which was true of every code minted before 2026-08-21 and was therefore
+    # never written down. REF-024 ended it: a write-funnel refusal in
+    # internal/space, placed there so BOTH write surfaces inherit it through
+    # funnel.Submit instead of each mapping it (ADR-004). It carries no `Code:`
+    # literal because a funnel refusal is not a Violation, and there is nothing
+    # to correlate because it refuses BY CONSTRUCTION — a funnel seat has no
+    # warning variant. Correlating a severity that cannot vary would be this
+    # gate asserting a claim rather than a fact.
+    #
+    # So the registry is asked who raises the code. A foreign emitter is
+    # ANNOUNCED, not silently skipped: an obligation that quietly stops
+    # applying is the defect this gate exists to catch, one level up.
     if [ "$class" = "schema" ]; then
       : # schema_class.go hardcodes SeverityReject uniformly for the whole class.
+    elif [ "$emitted_by" != "internal/validate" ]; then
+      echo "check-error-codes: obligation 0 exempt — $code (emitted_by:$emitted_by; a refusal raised outside internal/validate carries no Code:/Severity: pair to correlate and no severity variant to drift from — it refuses by construction. Its severity is proven by its emitter's own tests and by the declared path that drives it.)"
     elif sev_actual="$(go_severity_for_code "$code" "$root")"; then
       want="$(severity_label "$sev_actual")"
       if [ "$want" != "$severity" ]; then
@@ -494,7 +516,43 @@ EOF
   teeth_expect "severity correlation: registry disagrees with Go" red \
     "REF-906 declares severity:warning but the nearest Go literal is SeverityReject" "$reg" "$root" || return 1
 
-  echo "check-error-codes --teeth: PASS — AC1 (no production-path test), AC2 (reject code absent from skill/**) and AC3 (reject+both with no reason) all red naming the code; AC4's stated-reason exemption and a fully-closed row both green; a registry/Go severity disagreement reds distinctly from the three T5 obligations"
+  # emitted_by: a refusal raised OUTSIDE internal/validate has no Code:/
+  # Severity: pair to correlate. Two halves, and the first is the one that
+  # matters: WITHOUT the declaration the same tree reds, so the exemption is
+  # load-bearing rather than a branch that would have passed anyway. This
+  # mirrors the hand-check run when REF-024 introduced the shape on
+  # 2026-08-21; a hand-check nobody repeats is a gate not yet written.
+  d="$work/emitted-by"; write_fixture_tree "$d/root"; root="$d/root"
+  cat > "$d/undeclared.yaml" <<'EOF'
+entries:
+  - code: REF-907
+    class: referential
+    title: fixture
+    applies_to: fixture
+    severity: reject
+    mode_scope: v3-pr
+    prose_exempt: fixture
+    reachability_exempt: fixture
+EOF
+  teeth_expect "emitted_by absent: a funnel-shaped refusal still reds" red \
+    "REF-907 has no Severity: literal within 8 lines of its Code: literal" "$d/undeclared.yaml" "$root" || return 1
+
+  cat > "$d/declared.yaml" <<'EOF'
+entries:
+  - code: REF-907
+    class: referential
+    emitted_by: internal/space
+    title: fixture
+    applies_to: fixture
+    severity: reject
+    mode_scope: v3-pr
+    prose_exempt: fixture
+    reachability_exempt: fixture
+EOF
+  teeth_expect "emitted_by declared: obligation 0 stands down and says so" green \
+    "" "$d/declared.yaml" "$root" || return 1
+
+  echo "check-error-codes --teeth: PASS — AC1 (no production-path test), AC2 (reject code absent from skill/**) and AC3 (reject+both with no reason) all red naming the code; AC4's stated-reason exemption and a fully-closed row both green; a registry/Go severity disagreement reds distinctly from the three T5 obligations; and a code declaring emitted_by outside internal/validate stands obligation 0 down, while the SAME row without that declaration still reds"
 }
 
 if [ "${1:-}" = "--teeth" ]; then

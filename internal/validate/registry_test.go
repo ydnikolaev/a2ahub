@@ -430,9 +430,32 @@ func TestRegistryClosure(t *testing.T) {
 		record(violations)
 	}
 
+	// This loop's premise is that every referential/lifecycle/policy code is a
+	// validate.Violation this package raises. That was true by accident until
+	// 2026-08-21 — there was one emitter, so nobody had to say so — and
+	// REF-024 ended it: a write-funnel refusal in internal/space, placed there
+	// so BOTH write surfaces inherit it through funnel.Submit rather than each
+	// mapping it separately (ADR-004; the epic's AC5). No path this test
+	// exercises can produce it, and no path in this package ever will.
+	//
+	// So the loop asks the registry who raises a code instead of assuming.
+	// A foreign-emitter code is SKIPPED AND NAMED, never silently dropped:
+	// this test's whole job is to refuse a code nothing produces, and a
+	// skip nobody can see would be the same hole one level up. Its own
+	// evidence lives with its emitter — REF-024's is a declared conformance
+	// path plus internal/space's funnel-seat tests.
+	var foreign []string
 	for _, code := range append(append(registry.CodesInClass("referential"), registry.CodesInClass("lifecycle")...), registry.CodesInClass("policy")...) {
+		if emitter := registry.EmitterFor(code); emitter != "internal/validate" {
+			foreign = append(foreign, code+" ("+emitter+")")
+			continue
+		}
 		if !produced[code] {
 			t.Errorf("registry code %q is never produced by any exercised path in this test", code)
 		}
+	}
+	if len(foreign) > 0 {
+		t.Logf("not covered here, raised outside internal/validate and proven by their own emitter: %s",
+			strings.Join(foreign, ", "))
 	}
 }
