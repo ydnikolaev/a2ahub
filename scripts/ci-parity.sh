@@ -961,6 +961,16 @@ telemetry_report() { # $1 = offset recorded before the run; $2 = a label
     return "$GATE_EXIT_UNMEASURED"
   fi
 
+  # THE ONE COUNT, and it is deliberately not recomputed anywhere else.
+  # write_receipt used to count again from "$VERIFY_TELEMETRY" alone — the host
+  # file — and so wrote `verify_phases: 0` into the receipt after a run that had
+  # executed 71, because every one of those 71 was written by the container into
+  # a file the host cannot see. A receipt is the artifact the publisher trusts;
+  # one that announces a number nothing measured is the defect this whole gate
+  # exists to remove, wearing the gate's own clothes. Measured on the ship
+  # gate's sixth run, 2026-08-21 — the first green one.
+  COMPOSED_PHASE_COUNT="$total"
+
   printf '\nci-parity: %s executed %s verify phase(s):\n' "$label" "$total"
   printf '%s\n' "$new" \
     | sed -n 's/.*"gate":"\([^"]*\)".*"mode":"\([^"]*\)".*/  \2 \1/p' \
@@ -1146,6 +1156,8 @@ audit_runbook() { # $1 = runbook path (default: the release runbook)
 # uses for exactly this shape is a dated, written, COUNTED record that refuses
 # at the third unremediated use (scripts/check-provider-tier-deferral.sh).
 RECEIPT_DIR="$ROOT/.a2a/release-gate"
+# Set by telemetry_report, read by write_receipt. Empty means nobody counted.
+COMPOSED_PHASE_COUNT=""
 
 # list_members — the composition's member list, READ OUT OF suite_members()
 # rather than restated. A dry run that printed a second, hand-kept copy of the
@@ -1293,7 +1305,7 @@ release_gate() { # $1 = --dry-run | (empty)
     return 1
   fi
 
-  write_receipt "$head_before" "$((ended - started))" "$offset"
+  write_receipt "$head_before" "$((ended - started))" "$COMPOSED_PHASE_COUNT"
 }
 
 # write_receipt — THE PRODUCER HALF. The consumer half lives in
@@ -1305,9 +1317,15 @@ release_gate() { # $1 = --dry-run | (empty)
 # Under .a2a/, which is gitignored: a receipt written into the tracked tree
 # would dirty the very tree the publisher asserts clean, so the artifact would
 # refuse the publish it exists to authorise.
-write_receipt() { # $1 = sha, $2 = wall seconds, $3 = telemetry offset
-  local sha="$1" wall="$2" offset="$3" phases
-  phases="$(tail -n "+$((offset + 1))" "$VERIFY_TELEMETRY" 2>/dev/null | grep -c '"gate"' || true)"
+write_receipt() { # $1 = sha, $2 = wall seconds, $3 = the composed phase count
+  local sha="$1" wall="$2" phases="$3"
+  # This function does not count, and that is the point: the number it records
+  # is the one telemetry_report printed, folded across host AND container. A
+  # second counter here is how the receipt came to claim 0 over a run of 71.
+  if [ -z "$phases" ] || [ "$phases" -eq 0 ] 2>/dev/null; then
+    gate_unmeasured "the composed run passed but no phase count reached the receipt, so nothing can be written about what the pass covered. No receipt written for $sha."
+    return "$GATE_EXIT_UNMEASURED"
+  fi
   mkdir -p "$RECEIPT_DIR"
   cat > "$RECEIPT_DIR/$sha.json" <<JSON
 {
@@ -1316,14 +1334,14 @@ write_receipt() { # $1 = sha, $2 = wall seconds, $3 = telemetry offset
   "verdict": "pass",
   "at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "wall_seconds": $wall,
-  "verify_phases": ${phases:-0},
+  "verify_phases": $phases,
   "phases": [
     { "name": "container-suite", "userland": "gnu/linux", "verdict": "pass" },
     { "name": "macos-15-delta", "userland": "darwin", "verdict": "pass" }
   ]
 }
 JSON
-  printf '\nci-parity: RELEASE GATE GREEN for %s (%ss, %s verify phase(s)).\n' "$sha" "$wall" "${phases:-0}"
+  printf '\nci-parity: RELEASE GATE GREEN for %s (%ss, %s verify phase(s)).\n' "$sha" "$wall" "$phases"
   printf 'receipt: %s\n' "$RECEIPT_DIR/$sha.json"
 }
 
@@ -1886,11 +1904,56 @@ EOF
   fi
   rm -rf "$d18"
 
+  # T19 — THE RECEIPT CARRIES THE COMPOSED COUNT, NOT THE HALF THE HOST CAN SEE.
+  # The ship gate's sixth run, 2026-08-21, was the first green one, and its
+  # receipt read `"verdict": "pass", "verify_phases": 0` over a run that had
+  # executed 71. write_receipt counted a second time, from the host telemetry
+  # alone, and every one of those 71 lines had been written by the container
+  # into a file bound out of the image. Nothing was wrong with the RUN; the
+  # ARTIFACT the publisher trusts announced a number nobody had measured — this
+  # gate's own subject, wearing this gate's clothes.
+  #
+  # Paired on purpose. (a) proves the merged reading is what gets reported;
+  # (b) proves (a) is not vacuous — the very same host file, read without the
+  # container's, is UNMEASURED rather than a tidy zero, so 3 can only have come
+  # from across the boundary. (c) is structural and says so: it guards the
+  # regression itself, a second counter reappearing inside the writer.
+  local d19 out19 rc19=0 body19
+  d19="$(mktemp -d "${TMPDIR:-/tmp}/ci-parity-teeth.XXXXXX")"
+  : > "$d19/host.jsonl"
+  cat > "$d19/container.jsonl" <<'EOF'
+{"gate":"go-test","verdict":"pass","duration_ms":1,"mode":"full","at":"2026-08-21T00:00:00Z"}
+{"gate":"logic-e2e","verdict":"pass","duration_ms":1,"mode":"full","at":"2026-08-21T00:00:01Z"}
+{"gate":"gitleaks","verdict":"pass","duration_ms":1,"mode":"full","at":"2026-08-21T00:00:02Z"}
+EOF
+  out19="$(env A2A_VERIFY_TELEMETRY="$d19/host.jsonl" bash "$ROOT/scripts/ci-parity.sh" \
+    --phases 0 "the fixture" "$d19/container.jsonl:0" 2>&1)" || rc19=$?
+  if [ "$rc19" -ne 0 ] || ! printf '%s\n' "$out19" | grep -qF 'executed 3 verify phase(s)'; then
+    printf 'ci-parity --teeth: FAIL — T19a: phases written only by the container must still be counted; wanted 3, got rc=%s\n%s\n' "$rc19" "$out19" >&2
+    teeth_fail=1
+  fi
+  rc19=0
+  out19="$(env A2A_VERIFY_TELEMETRY="$d19/host.jsonl" bash "$ROOT/scripts/ci-parity.sh" \
+    --phases 0 "the fixture" 2>&1)" || rc19=$?
+  if [ "$rc19" -ne "$GATE_EXIT_UNMEASURED" ] || ! printf '%s\n' "$out19" | grep -qF 'UNMEASURED'; then
+    printf 'ci-parity --teeth: FAIL — T19b: the same host file read alone must be UNMEASURED, which is what proves T19a counted across the boundary; got rc=%s\n%s\n' "$rc19" "$out19" >&2
+    teeth_fail=1
+  fi
+  body19="$(awk '/^write_receipt\(\) \{/,/^\}/' "$ROOT/scripts/ci-parity.sh")"
+  if printf '%s\n' "$body19" | grep -q 'VERIFY_TELEMETRY'; then
+    printf 'ci-parity --teeth: FAIL — T19c: write_receipt reads the telemetry again. The count has ONE producer (telemetry_report) and is passed in; a second reading here is exactly how the receipt came to claim 0 over 71.\n' >&2
+    teeth_fail=1
+  fi
+  if [ "$teeth_fail" -eq 0 ]; then
+    printf 'ci-parity --teeth: T19 — the receipt records the composed count; a container-only run counts 3, the host file alone is UNMEASURED, and the writer does not count again\n'
+  fi
+  rm -rf "$d19"
+
   if [ "$teeth_fail" -ne 0 ]; then
     printf 'ci-parity --teeth: FAIL\n' >&2
     exit 1
   fi
-  printf 'ci-parity --teeth: 18 case(s) green.\n'
+  printf 'ci-parity --teeth: 19 case(s) green.\n'
 }
 
 case "${1:---run}" in
@@ -1914,7 +1977,7 @@ case "${1:---run}" in
   # --phases — read back what a run's phases actually were. The composition
   # calls telemetry_report itself; this is the same reading, on demand, for an
   # operator holding a transcript and a question about it.
-  --phases) telemetry_report "${2:-0}" "${3:-this run}" ;;
+  --phases) telemetry_report "${2:-0}" "${3:-this run}" "${4:-}" ;;
   --teeth) run_teeth ;;
   *) printf 'usage: %s [--run|--suite|--macos-delta|--release [--dry-run]|--audit [dir]|--audit-runbook [file]|--macos-jobs [dir]|--members|--teeth]\n' "$0" >&2; exit 2 ;;
 esac
