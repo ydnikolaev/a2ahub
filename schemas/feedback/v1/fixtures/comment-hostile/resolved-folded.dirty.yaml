@@ -1,0 +1,25 @@
+feedback: v1
+id: fb-20260819-55ee66 # auto-filled: fb-YYYYMMDD-<6 hex>
+kind: bug # bug | feature | docs | friction | protocol
+severity: major # blocker | major | minor
+title: "a folded resolution whose block indicator carries a comment" # 8-80 chars, specific
+summary: "A comment is legal after a block-scalar indicator, so a reader that looks for the indicator before stripping the comment never sees the block."
+context:
+    a2a_version: 0.23.0 # auto-filled
+    os_arch: darwin/arm64 # auto-filled
+    surface: cli
+evidence:
+    steps:
+        - "Write a folded resolution and leave the skeleton's comment on the indicator line."
+    expected: "the resolution text is read as a block"
+    actual: "the indicator line is read as a plain scalar and the block is lost"
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: shipped
+resolution: >- # hub-mutated only; written by triage
+    Shipped in v0.24.0. Every reader of this corpus now compares the VALUE a
+    line carries rather than the line itself.

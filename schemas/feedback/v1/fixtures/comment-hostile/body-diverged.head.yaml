@@ -1,0 +1,23 @@
+
+feedback: v1
+id: fb-20260819-66ff77
+kind: bug
+severity: blocker
+title: "the reporter's own words, as filed"
+summary: "A DIFFERENT summary, rewritten under cover of a comment-only normalization. This is the case a value-aware reader must keep refusing."
+context:
+    a2a_version: 0.23.0
+    os_arch: darwin/arm64
+    surface: cli
+evidence:
+    steps:
+        - "File the record."
+    expected: "the body is preserved"
+    actual: "the body was rewritten"
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new

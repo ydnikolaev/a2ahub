@@ -148,20 +148,165 @@ classify() { # stdin: the files API response (JSON array)
 # docs/runbooks/feedback-sync.sh applies for the same reason: `summary: |`
 # blocks contain blank lines and colons, and a naive split reports them as
 # keys.
+#
+# AND IT READS THE VALUE A LINE CARRIES, NOT THE LINE. This gate runs on the
+# PUBLIC repository and decides whether a triage verdict may touch the hub of
+# record. It compared key BLOCKS byte-wise, so a verdict against a record
+# filed by an in-field binary — one that still carries the authoring
+# skeleton's `# auto-filled:` comments — was read as a body rewrite and
+# refused with "a reporter's words are theirs". The reporter had no way to
+# fix that and no way to see why.
+#
+# THIS COPY OF THE RULE IS DELIBERATE, and it is the only duplicated one.
+# `feedback-intake.yml` fetches THIS FILE ALONE through `gh api
+# contents/...` and checks nothing out, anywhere — the security property the
+# whole workflow is built on — and the hub is an orphan branch with no
+# `scripts/` directory at all. So this reader cannot `source` a sibling
+# without widening a deliberately narrow trusted-input surface. What keeps
+# it in step with its three private siblings is the shared corpus,
+# schemas/feedback/v1/fixtures/comment-hostile/, which all four `--teeth`
+# harnesses drive (judge-the-thing-2026-08 P10 §T1.3).
 top_level_keys() {
   awk '
-    /^[A-Za-z_][A-Za-z0-9_-]*:([ \t]|$)/ { sub(/:.*/, ""); print; }
+    # ── the VALUE a line carries, not the line (P10) ──────────────────────
+    # _p10_indent(s) — leading space/tab count.
+    function _p10_indent(s,   i, c, n) {
+      n = 0
+      for (i = 1; i <= length(s); i++) {
+        c = substr(s, i, 1)
+        if (c == " " || c == "\t") { n++ } else { break }
+      }
+      return n
+    }
+    # _p10_strip(s) — s with its YAML comment removed. A `#` opens a comment
+    # only OUTSIDE a quoted scalar and only at the start of the line or after
+    # a space/tab, so `bug#42` and `"a bug in the # channel"` stay data. A
+    # quote opens a scalar only where a scalar may START (line start, or
+    # after a space/tab) — otherwise `don'"'"'t # note` would read its
+    # apostrophe as an opening quote and keep the comment.
+    function _p10_strip(s,   i, c, q, prev, n, out) {
+      n = length(s); q = ""
+      for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1)
+        prev = (i == 1) ? "" : substr(s, i - 1, 1)
+        if (q == "") {
+          if ((c == "\"" || c == "'"'"'") && (i == 1 || prev == " " || prev == "\t")) { q = c; continue }
+          if (c == "#" && (i == 1 || prev == " " || prev == "\t")) {
+            out = substr(s, 1, i - 1)
+            sub(/[ \t]+$/, "", out)
+            return out
+          }
+        } else if (q == "\"") {
+          if (c == "\\") { i++ } else if (c == "\"") { q = "" }
+        } else {
+          if (c == "'"'"'") { if (substr(s, i + 1, 1) == "'"'"'") { i++ } else { q = "" } }
+        }
+      }
+      return s
+    }
+    # _p10_line() — sets LINE and classifies the current record:
+    #   2  INSIDE a block scalar: DATA, verbatim, never scanned for comments
+    #   1  a comment and nothing else: the caller DROPS it, line and all
+    #   0  ordinary: LINE is $0 with any trailing comment removed
+    # The strip runs BEFORE the block-scalar indicator is looked for, because
+    # `resolution: >- # hub-mutated` is legal and the indicator is only at
+    # end-of-line once its comment is gone.
+    function _p10_line(   ind) {
+      LINE = $0
+      if (P10_BLOCK) {
+        if ($0 ~ /^[ \t]*$/) { return 2 }
+        if (_p10_indent($0) > P10_BLOCK_INDENT) { return 2 }
+        P10_BLOCK = 0
+      }
+      if ($0 ~ /^[ \t]*#/) { LINE = ""; return 1 }
+      LINE = _p10_strip($0)
+      if (LINE ~ /(:|^[ \t]*-)[ \t]*[|>][0-9]*[+-]?[ \t]*$/) {
+        P10_BLOCK = 1
+        P10_BLOCK_INDENT = _p10_indent($0)
+      }
+      return 0
+    }
+    {
+      if (_p10_line() != 0) { next }
+      if (LINE ~ /^[A-Za-z_][A-Za-z0-9_-]*:([ \t]|$)/) { sub(/:.*/, "", LINE); print LINE }
+    }
   ' "$1"
 }
 
-# key_block FILE KEY — the key and everything indented under it, so a change
-# anywhere inside a multi-line value counts as a change to that key.
+# key_block FILE KEY — the key and everything indented under it, COMMENT-FREE,
+# so a change anywhere inside a multi-line value counts as a change to that
+# key and a change to no value counts as nothing. A `#` inside a quoted or
+# block scalar is the reporter's own text and survives; a comment-only line
+# is dropped, line and all, because the skeleton's mid-document blocks
+# otherwise attach to the preceding key.
 key_block() {
   awk -v want="$2" '
-    /^[A-Za-z_][A-Za-z0-9_-]*:([ \t]|$)/ {
-      k = $0; sub(/:.*/, "", k); inblock = (k == want)
+    # ── the VALUE a line carries, not the line (P10) ──────────────────────
+    # _p10_indent(s) — leading space/tab count.
+    function _p10_indent(s,   i, c, n) {
+      n = 0
+      for (i = 1; i <= length(s); i++) {
+        c = substr(s, i, 1)
+        if (c == " " || c == "\t") { n++ } else { break }
+      }
+      return n
     }
-    inblock { print }
+    # _p10_strip(s) — s with its YAML comment removed. A `#` opens a comment
+    # only OUTSIDE a quoted scalar and only at the start of the line or after
+    # a space/tab, so `bug#42` and `"a bug in the # channel"` stay data. A
+    # quote opens a scalar only where a scalar may START (line start, or
+    # after a space/tab) — otherwise `don'"'"'t # note` would read its
+    # apostrophe as an opening quote and keep the comment.
+    function _p10_strip(s,   i, c, q, prev, n, out) {
+      n = length(s); q = ""
+      for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1)
+        prev = (i == 1) ? "" : substr(s, i - 1, 1)
+        if (q == "") {
+          if ((c == "\"" || c == "'"'"'") && (i == 1 || prev == " " || prev == "\t")) { q = c; continue }
+          if (c == "#" && (i == 1 || prev == " " || prev == "\t")) {
+            out = substr(s, 1, i - 1)
+            sub(/[ \t]+$/, "", out)
+            return out
+          }
+        } else if (q == "\"") {
+          if (c == "\\") { i++ } else if (c == "\"") { q = "" }
+        } else {
+          if (c == "'"'"'") { if (substr(s, i + 1, 1) == "'"'"'") { i++ } else { q = "" } }
+        }
+      }
+      return s
+    }
+    # _p10_line() — sets LINE and classifies the current record:
+    #   2  INSIDE a block scalar: DATA, verbatim, never scanned for comments
+    #   1  a comment and nothing else: the caller DROPS it, line and all
+    #   0  ordinary: LINE is $0 with any trailing comment removed
+    # The strip runs BEFORE the block-scalar indicator is looked for, because
+    # `resolution: >- # hub-mutated` is legal and the indicator is only at
+    # end-of-line once its comment is gone.
+    function _p10_line(   ind) {
+      LINE = $0
+      if (P10_BLOCK) {
+        if ($0 ~ /^[ \t]*$/) { return 2 }
+        if (_p10_indent($0) > P10_BLOCK_INDENT) { return 2 }
+        P10_BLOCK = 0
+      }
+      if ($0 ~ /^[ \t]*#/) { LINE = ""; return 1 }
+      LINE = _p10_strip($0)
+      if (LINE ~ /(:|^[ \t]*-)[ \t]*[|>][0-9]*[+-]?[ \t]*$/) {
+        P10_BLOCK = 1
+        P10_BLOCK_INDENT = _p10_indent($0)
+      }
+      return 0
+    }
+    {
+      cls = _p10_line()
+      if (cls == 1) { next }
+      if (cls == 0 && LINE ~ /^[A-Za-z_][A-Za-z0-9_-]*:([ \t]|$)/) {
+        k = LINE; sub(/:.*/, "", k); inblock = (k == want)
+      }
+      if (inblock) { print LINE }
+    }
   ' "$1"
 }
 
@@ -174,7 +319,11 @@ verdict_diff() { # $1 = base blob, $2 = head blob
   done
 
   if [ -z "$differing" ]; then
-    die "the record is byte-identical: a verdict that changes nothing is not a verdict"
+    # "carries no differing top-level key", not "is byte-identical": since
+    # P10 this reader compares VALUES, so a head that only dropped the
+    # skeleton's comments reaches here while differing in bytes. Saying
+    # byte-identical would be a refusal describing something it did not check.
+    die "the record carries no differing top-level key: a verdict that changes nothing is not a verdict"
   fi
 
   for key in $differing; do
@@ -260,7 +409,7 @@ run_teeth() {
     $pub CI_BASE_REF=feedback-hub
 
   # ── the verdict comparison ───────────────────────────────────────────────
-  local d; d="$(mktemp -d)"
+  local d d_p10; d="$(mktemp -d)"; d_p10="$(mktemp -d)"
   cat >"$d/base.yaml" <<'YAML'
 feedback: v1
 id: fb-20260812-755a23
@@ -302,18 +451,100 @@ YAML
     && t_bad "a byte-identical 'verdict' was allowed" \
     || t_ok "a verdict that changes nothing is refused"
 
+  # ── judge-the-thing-2026-08 P10: a record carries no scaffolding ─────────
+  #
+  # This gate runs on the PUBLIC repository and decides whether a triage
+  # verdict may touch the hub of record. It compared key BLOCKS byte-wise,
+  # so a verdict PR against a scaffolded base whose head is comment-free was
+  # read as a body rewrite and refused with "a reporter's words are theirs."
+  # Every v0.23.0 binary in the field keeps filing scaffolded records for the
+  # length of the rollover window, so this is not a transitional shape.
+  #
+  # The corpus below is SHARED with R1 (docs/runbooks/feedback-sync.sh),
+  # R2/R3 (scripts/check-feedback-corpus.sh) and R9
+  # (docs/runbooks/publish-to-public.sh). This reader keeps its OWN copy of
+  # the rule — the workflow fetches this file ALONE through `gh api
+  # contents/...` and never checks anything out, so it cannot source a
+  # sibling — and the corpus is what stops the four copies from drifting.
+  local corpus
+  corpus="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/schemas/feedback/v1/fixtures/comment-hostile"
+  if [ ! -d "$corpus" ]; then
+    t_bad "the shared comment-hostile corpus is missing: $corpus"
+  else
+    # THE LIVE SHAPE: a scaffolded base, a head that is that same record
+    # normalized (an in-field binary's record, re-filed by a current one)
+    # carrying one new `status`. Only `status` changed in VALUE terms.
+    sed 's/^status: new$/status: shipped/' "$corpus/scaffolded.clean.yaml" >"$d_p10/head.yaml"
+    if out="$(bash "$0" verdict-diff "$corpus/scaffolded.dirty.yaml" "$d_p10/head.yaml" 2>&1)"; then
+      grep -q "verdict-fields=status" <<<"$out" \
+        && t_ok "a verdict against a scaffolded base reports only the verdict field" \
+        || t_bad "scaffolded base: unexpected output $out"
+    else
+      t_bad "a verdict against a scaffolded base was refused as a body rewrite: $out"
+    fi
+
+    # THE RECONCILING TOOTH. Every dirty/clean pair must carry NO differing
+    # top-level key — which this reader reports by refusing the pair as a
+    # verdict that changes nothing. The MESSAGE is asserted, not merely the
+    # exit code: the negative case below also exits non-zero.
+    p10_pairs=0
+    p10_bad=""
+    for dirty in "$corpus"/*.dirty.yaml; do
+      clean="${dirty%.dirty.yaml}.clean.yaml"
+      if [ ! -f "$clean" ]; then
+        p10_bad="${p10_bad}$(basename "$dirty") has no clean twin; "
+        continue
+      fi
+      out="$(bash "$0" verdict-diff "$dirty" "$clean" 2>&1)" && rc=0 || rc=$?
+      if [ "$rc" -eq 0 ] || ! grep -q "no differing top-level key" <<<"$out"; then
+        p10_bad="${p10_bad}$(basename "$dirty"): $out; "
+      fi
+      p10_pairs=$((p10_pairs + 1))
+    done
+    if [ -n "$p10_bad" ]; then
+      t_bad "comment-hostile pairs disagree across this reader: $p10_bad"
+    elif [ "$p10_pairs" -lt 6 ]; then
+      t_bad "expected at least 6 comment-hostile pairs, found $p10_pairs"
+    else
+      t_ok "every comment-hostile pair ($p10_pairs) reads identically through key_block"
+    fi
+
+    # US-7: a `#` inside a folded block scalar is the reporter's own text.
+    if bash "$0" _internal-key-block "$corpus/folded-summary.dirty.yaml" summary \
+       | grep -q '# This heading is DATA'; then
+      t_ok "a '#' inside a folded summary is data, not a comment"
+    else
+      t_bad "a '#' inside a folded summary was eaten as a comment"
+    fi
+
+    # US-4: the guard is not bought back. A head that is comment-free AND
+    # rewrites the reporter's summary is still refused, in the same words.
+    if out="$(bash "$0" verdict-diff "$corpus/body-diverged.base.yaml" "$corpus/body-diverged.head.yaml" 2>&1)"; then
+      t_bad "a comment-only normalization that also rewrote the summary was ALLOWED: $out"
+    elif grep -q "A reporter's words are theirs" <<<"$out"; then
+      t_ok "a normalization that also rewrites the report body is still refused"
+    else
+      t_bad "the diverged pair was refused for the wrong reason: $out"
+    fi
+  fi
+
+  rm -rf "$d_p10"
+
   rm -rf "$d"
 
   if [ "$teeth_fail" -ne 0 ]; then
     echo "feedback-intake-policy --teeth: FAIL" >&2
     exit 1
   fi
-  echo "feedback-intake-policy --teeth: 14 case(s) green."
+  echo "feedback-intake-policy --teeth: 18 case(s) green."
 }
 
 case "${1:-}" in
   classify)     classify ;;
   verdict-diff) shift; verdict_diff "$1" "$2" ;;
+  # --teeth's own seam onto key_block, so the US-7 assertion drives the real
+  # function rather than a copy of it. Not part of the workflow's contract.
+  _internal-key-block) shift; key_block "$1" "$2" ;;
   --teeth)      run_teeth ;;
   *) echo "usage: feedback-intake-policy.sh {classify|verdict-diff BASE HEAD|--teeth}" >&2; exit 2 ;;
 esac

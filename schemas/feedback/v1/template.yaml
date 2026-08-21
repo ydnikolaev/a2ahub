@@ -10,6 +10,14 @@
 #
 # `checks.*` starts all `false` on purpose: the agent must consciously flip
 # each one after actually verifying it (I5) — never bulk-set to true.
+#
+# THESE COMMENTS STOP AT `a2a feedback submit`. They are the form, not the
+# report: the submitter strips every comment from the bytes it files — this
+# header, the enum reminders below, and any note you add while filling the
+# form — and changes nothing else about the document. So write freely here;
+# the corpus of record holds your ANSWERS and nothing about the form you
+# answered (judge-the-thing-2026-08 P10 §T1.1/§T1.2). A `#` inside a quoted
+# title or a block scalar is your text and survives.
 
 feedback: v1
 id: ""            # auto-filled: fb-YYYYMMDD-<6 hex>

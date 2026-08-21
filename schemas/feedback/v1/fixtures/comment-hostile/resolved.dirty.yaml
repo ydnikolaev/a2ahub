@@ -1,0 +1,23 @@
+feedback: v1
+id: fb-20260819-44dd55 # auto-filled: fb-YYYYMMDD-<6 hex>
+kind: bug # bug | feature | docs | friction | protocol
+severity: major # blocker | major | minor
+title: "a triaged record whose resolution line carries a comment" # 8-80 chars, specific
+summary: "The referent rule reads the resolution text; a trailing comment on that line used to travel with the referent it names."
+context:
+    a2a_version: 0.23.0 # auto-filled
+    os_arch: darwin/arm64 # auto-filled
+    surface: cli
+evidence:
+    steps:
+        - "Triage the record and write a one-line resolution."
+    expected: "the referent rule reads `fixed in v0.24.0`"
+    actual: "the referent rule reads `fixed in v0.24.0 # note`"
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: shipped
+resolution: fixed in v0.24.0 # note: hub-mutated, written by triage

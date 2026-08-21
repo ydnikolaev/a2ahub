@@ -1,0 +1,25 @@
+
+feedback: v1
+id: fb-20260818-76f29d
+kind: bug
+severity: minor
+title: "feedback-sync refuses a record whose id differs only by a comment"
+summary: "The hub copy carries the authoring skeleton's own trailing comment on its `id:` line; this tree's copy does not. The ids are identical, so the record is verdict-ahead, yet the reader compares the LINE and refuses it on every future run."
+context:
+    a2a_version: 0.23.0
+    os_arch: darwin/arm64
+    surface: cli
+    command: "make feedback-sync"
+evidence:
+    steps:
+        - "Submit a record with a v0.23.0 binary."
+        - "Run `make feedback-sync` against the hub."
+    expected: "the record is classified verdict-ahead and never overwritten"
+    actual: "the record is REFUSED, naming id among the differing keys"
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new

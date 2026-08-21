@@ -104,6 +104,7 @@ type Submitter struct {
 
 	now          func() time.Time
 	readFile     func(path string) ([]byte, error)
+	normalize    func(raw []byte) ([]byte, error)
 	appendLedger func(path string, item LedgerItem) error
 	cloneOrFetch func(ctx context.Context, dir, repoURL string, credential host.Credential) error
 	mirrorDir    func(projectRoot, slug string) string
@@ -118,6 +119,7 @@ func NewSubmitter(funnel Funnel, ledgerPath, projectRoot, slug string, cfg Submi
 		funnel: funnel, ledgerPath: ledgerPath, projectRoot: projectRoot, slug: slug, cfg: cfg,
 		now:          time.Now,
 		readFile:     os.ReadFile,
+		normalize:    normalizeRecord,
 		appendLedger: AppendLedger,
 		cloneOrFetch: space.CloneOrFetch,
 		mirrorDir:    defaultMirrorDir,
@@ -149,6 +151,12 @@ func (s *Submitter) SetClockForTest(now func() time.Time) { s.now = now }
 // SetReadFileForTest overrides the injected file reader.
 func (s *Submitter) SetReadFileForTest(f func(path string) ([]byte, error)) { s.readFile = f }
 
+// SetNormalizeForTest overrides the submit-time comment strip. It exists so
+// AC #3's fail-closed half can be driven directly: a normalization that
+// refuses must mean NO bytes and NO write, and the only honest way to assert
+// that is to inject the refusal.
+func (s *Submitter) SetNormalizeForTest(f func(raw []byte) ([]byte, error)) { s.normalize = f }
+
 // SetAppendLedgerForTest overrides only the local acknowledgement boundary.
 func (s *Submitter) SetAppendLedgerForTest(f func(path string, item LedgerItem) error) {
 	s.appendLedger = f
@@ -172,12 +180,28 @@ func (s *Submitter) Submit(ctx context.Context, path string) (SubmitResult, erro
 	if err != nil {
 		return SubmitResult{}, fmt.Errorf("feedback: %s: %w", op, err)
 	}
-	if err := s.validateRaw(raw); err != nil {
+
+	// THE LIFECYCLE BOUNDARY, and the one place it can be enforced. A draft
+	// is a form and may carry the skeleton's instructions; a submitted record
+	// is evidence and may not. Every submit route — `a2a feedback submit
+	// <file>`, `--all`, and any future caller, including an MCP tool if one is
+	// ever added — funnels through this function, so the guarantee cannot be
+	// reached around. Placing it in internal/cli would forfeit exactly that.
+	//
+	// VALIDATE THE BYTES YOU SEND: everything below reads `record`, never
+	// `raw`. Today the two carry the same values by construction; a validator
+	// that judged a different document from the one that ships would be this
+	// epic's own defect, one layer down.
+	record, err := s.normalize(raw)
+	if err != nil {
+		return SubmitResult{}, fmt.Errorf("feedback: %s: %w", op, err)
+	}
+	if err := s.validateRaw(record); err != nil {
 		return SubmitResult{}, err
 	}
 
 	var probe submitProbe
-	if err := yaml.Unmarshal(raw, &probe); err != nil {
+	if err := yaml.Unmarshal(record, &probe); err != nil {
 		return SubmitResult{}, fmt.Errorf("feedback: %s: %w", op, err)
 	}
 
@@ -205,7 +229,7 @@ func (s *Submitter) Submit(ctx context.Context, path string) (SubmitResult, erro
 		System:            "feedback",
 		Verb:              "submit",
 		ArtifactID:        probe.ID,
-		Files:             []space.FileWrite{{Path: gopath.Join("feedback", "inbox", probe.ID+".yaml"), Content: raw}},
+		Files:             []space.FileWrite{{Path: gopath.Join("feedback", "inbox", probe.ID+".yaml"), Content: record}},
 		CommitMessage:     title,
 		CommitAuthorName:  s.cfg.CommitAuthorName,
 		CommitAuthorEmail: s.cfg.CommitAuthorEmail,
@@ -277,7 +301,13 @@ func (s *Submitter) ValidatePath(path string) error {
 	if err != nil {
 		return fmt.Errorf("feedback: Submit: %w", err)
 	}
-	return s.validateRaw(raw)
+	// The same bytes Submit would send, so a batch pre-check and the write it
+	// gates cannot reach different verdicts.
+	record, err := s.normalize(raw)
+	if err != nil {
+		return fmt.Errorf("feedback: Submit: %w", err)
+	}
+	return s.validateRaw(record)
 }
 
 func (s *Submitter) validateRaw(raw []byte) error {

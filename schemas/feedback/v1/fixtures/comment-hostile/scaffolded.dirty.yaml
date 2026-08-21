@@ -1,0 +1,37 @@
+# Feedback authoring skeleton (v1) — materialized by `a2a feedback new <kind>`
+# to `.a2a/feedback/<id>.yaml`. Every field required by
+# feedback.schema.json is present with a placeholder or auto-fill value so
+# the drafted file is schema-VALID once you replace the placeholders.
+#
+# `checks.*` starts all `false` on purpose: the agent must consciously flip
+# each one after actually verifying it (I5) — never bulk-set to true.
+
+feedback: v1
+id: fb-20260818-76f29d # auto-filled: fb-YYYYMMDD-<6 hex>
+kind: bug # bug | feature | docs | friction | protocol
+severity: minor # blocker | major | minor
+title: "feedback-sync refuses a record whose id differs only by a comment" # 8-80 chars, specific
+summary: "The hub copy carries the authoring skeleton's own trailing comment on its `id:` line; this tree's copy does not. The ids are identical, so the record is verdict-ahead, yet the reader compares the LINE and refuses it on every future run."
+context:
+    a2a_version: 0.23.0 # auto-filled
+    os_arch: darwin/arm64 # auto-filled (runtime.GOOS/runtime.GOARCH)
+    surface: cli # cli | schema | docs | skill | dashboard | space-ci | protocol
+    command: "make feedback-sync"
+    # error_code: ""    # optional: whatever code you saw (e.g. POL-001)
+    # agent: ""         # optional: free self-report
+# evidence is REQUIRED when kind is bug (steps/expected/actual all
+# mandatory); optional otherwise — delete this block for non-bug kinds.
+evidence:
+    steps:
+        - "Submit a record with a v0.23.0 binary." # 1-10 concrete repro steps
+        - "Run `make feedback-sync` against the hub."
+    expected: "the record is classified verdict-ahead and never overwritten"
+    actual: "the record is REFUSED, naming id among the differing keys"
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
+# resolution is hub-mutated only; MUST be absent at submit — do not add it.
