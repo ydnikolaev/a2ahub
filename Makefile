@@ -573,6 +573,7 @@ _harness-check:
 		echo "harness-check: skip — scripts/check-skill-citations.sh absent (public checkout)."; \
 	fi
 	@bash scripts/check-operational-confidence.sh --teeth
+	@bash scripts/check-error-codes.sh --teeth
 	@bash scripts/check-lane-declarations.sh --teeth
 	@bash scripts/tests/check_event_writer_receipts_test.sh
 	@bash scripts/tests/check_contract_carried_set_test.sh

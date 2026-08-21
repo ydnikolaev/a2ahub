@@ -49,6 +49,32 @@
 #     (agent-exchange-2026-08 P5/P6, space-notify-2026-08 P1), where the
 #     retroactive-judgment risk is real and unresolved. That is this
 #     phase's own reported gap, not an oversight to quietly patch here.
+#
+# judge-the-thing-2026-08/P11 adds ONE more optional per-entry field, in the
+# same place and for the same reason as the three above.
+#
+#   path_exempt (a stated waiver, no fixed vocabulary) — this
+#     `severity: reject` code is named by no `Refusal{Code: "..."}` literal
+#     inside a conformance path internal/livee2e actually drives, and here
+#     is the reason. Required on every undriven reject code:
+#     check-error-codes.sh's fourth obligation names the code and reds
+#     otherwise, and a blank or whitespace-only value reds exactly like an
+#     absent one — silence must not be spellable. It is a WAIVER, never a
+#     claim about state: the driven set is derived from the catalogue's own
+#     literals, so nothing here asks to be trusted, and a waiver left on a
+#     code that HAS since been driven reds as a paid debt.
+#
+#     50 rows below carry one today, each citing a single counted debt row
+#     in docs/validator-backlog.md that holds the full argument (the shape
+#     REF-003's own reachability waiver already uses — "a counted debt
+#     row... not a silence"). The gate prints that count on every run and it
+#     must equal the number of waiver rows in this file, which is what makes
+#     it a burn-down anyone can re-derive rather than a number to believe.
+#     Retiring one is a one-line commit: declare a path in internal/livee2e
+#     that provokes the refusal, then delete the waiver.
+#
+#     Deliberately spelled without its colon in this header, so that the
+#     count above stays exactly the count of REAL waiver rows.
 
 entries:
   - code: SCH-001
@@ -63,6 +89,7 @@ entries:
       authored against, so a full-repo re-check cannot manufacture a new
       failure against content that already satisfied it.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    path_exempt: every conformance path submits a well-formed draft by construction, so no declared path provokes a JSON-Schema violation today. NOT exempt by class — obligation 2's by-class argument is about unit-test bypass and does not transfer to path-driving; a path that submitted a malformed draft WOULD trip this code. One member of the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument.
 
   - code: SCH-002
     class: schema
@@ -76,6 +103,7 @@ entries:
       authored against, so a full-repo re-check cannot manufacture a new
       failure against content that already satisfied it.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    path_exempt: every conformance path submits a well-formed draft by construction, so no declared path provokes a JSON-Schema violation today. NOT exempt by class — obligation 2's by-class argument is about unit-test bypass and does not transfer to path-driving; a path that submitted a malformed draft WOULD trip this code. One member of the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument.
 
   - code: SCH-003
     class: schema
@@ -89,6 +117,7 @@ entries:
       authored against, so a full-repo re-check cannot manufacture a new
       failure against content that already satisfied it.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    path_exempt: every conformance path submits a well-formed draft by construction, so no declared path provokes a JSON-Schema violation today. NOT exempt by class — obligation 2's by-class argument is about unit-test bypass and does not transfer to path-driving; a path that submitted a malformed draft WOULD trip this code. One member of the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument.
 
   - code: SCH-004
     class: schema
@@ -102,6 +131,7 @@ entries:
       authored against, so a full-repo re-check cannot manufacture a new
       failure against content that already satisfied it.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    path_exempt: every conformance path submits a well-formed draft by construction, so no declared path provokes a JSON-Schema violation today. NOT exempt by class — obligation 2's by-class argument is about unit-test bypass and does not transfer to path-driving; a path that submitted a malformed draft WOULD trip this code. One member of the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument.
 
   - code: SCH-005
     class: schema
@@ -115,6 +145,7 @@ entries:
       authored against, so a full-repo re-check cannot manufacture a new
       failure against content that already satisfied it.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    path_exempt: every conformance path submits a well-formed draft by construction, so no declared path provokes a JSON-Schema violation today. NOT exempt by class — obligation 2's by-class argument is about unit-test bypass and does not transfer to path-driving; a path that submitted a malformed draft WOULD trip this code. One member of the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument.
 
   - code: SCH-006
     class: schema
@@ -128,6 +159,7 @@ entries:
       authored against, so a full-repo re-check cannot manufacture a new
       failure against content that already satisfied it.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    path_exempt: every conformance path submits a well-formed draft by construction, so no declared path provokes a JSON-Schema violation today. NOT exempt by class — obligation 2's by-class argument is about unit-test bypass and does not transfer to path-driving; a path that submitted a malformed draft WOULD trip this code. One member of the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument.
 
   - code: SCH-007
     class: schema
@@ -141,6 +173,7 @@ entries:
       authored against, so a full-repo re-check cannot manufacture a new
       failure against content that already satisfied it.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    path_exempt: every conformance path submits a well-formed draft by construction, so no declared path provokes a JSON-Schema violation today. NOT exempt by class — obligation 2's by-class argument is about unit-test bypass and does not transfer to path-driving; a path that submitted a malformed draft WOULD trip this code. One member of the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument.
 
   - code: SCH-008
     class: schema
@@ -154,6 +187,7 @@ entries:
       authored against, so a full-repo re-check cannot manufacture a new
       failure against content that already satisfied it.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    path_exempt: every conformance path submits a well-formed draft by construction, so no declared path provokes a JSON-Schema violation today. NOT exempt by class — obligation 2's by-class argument is about unit-test bypass and does not transfer to path-driving; a path that submitted a malformed draft WOULD trip this code. One member of the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument.
 
   - code: SCH-009
     class: schema
@@ -167,6 +201,7 @@ entries:
       authored against, so a full-repo re-check cannot manufacture a new
       failure against content that already satisfied it.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    path_exempt: every conformance path submits a well-formed draft by construction, so no declared path provokes a JSON-Schema violation today. NOT exempt by class — obligation 2's by-class argument is about unit-test bypass and does not transfer to path-driving; a path that submitted a malformed draft WOULD trip this code. One member of the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument.
 
   - code: SCH-010
     class: schema
@@ -180,6 +215,7 @@ entries:
       authored against, so a full-repo re-check cannot manufacture a new
       failure against content that already satisfied it.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    path_exempt: every conformance path submits a well-formed draft by construction, so no declared path provokes a JSON-Schema violation today. NOT exempt by class — obligation 2's by-class argument is about unit-test bypass and does not transfer to path-driving; a path that submitted a malformed draft WOULD trip this code. One member of the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument.
 
   - code: SCH-011
     class: schema
@@ -204,6 +240,7 @@ entries:
       authored against, so a full-repo re-check cannot manufacture a new
       failure against content that already satisfied it.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    path_exempt: every conformance path submits a well-formed draft by construction, so no declared path provokes a JSON-Schema violation today. NOT exempt by class — obligation 2's by-class argument is about unit-test bypass and does not transfer to path-driving; a path that submitted a malformed draft WOULD trip this code. One member of the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument.
 
   - code: REF-001
     class: referential
@@ -217,6 +254,7 @@ entries:
       same comparison the write gate already made (thread-integrity era,
       predates ADR-011).
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: REF-002
     class: referential
@@ -229,6 +267,7 @@ entries:
       comparison at write and audit time; nothing about it can change without
       the file itself changing.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: REF-003
     class: referential
@@ -251,6 +290,7 @@ entries:
       green so it BLOCKS the next code from joining this list; the list
       itself is a counted debt row in docs/validator-backlog.md, not a
       silence.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: REF-004
     class: referential
@@ -262,6 +302,7 @@ entries:
       a pinned digest either matches its resolved target or it does not — a
       structural, re-derivable comparison with no rule that could
       retroactively change its answer.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: REF-005
     class: referential
@@ -273,6 +314,7 @@ entries:
       `from` vs the owning section is fixed by the artifact's own path and
       body, unaffected by anything added after it was written.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: REF-006
     class: referential
@@ -286,6 +328,7 @@ entries:
       since-departed recipient is the same evaluation the write gate ran, not
       a retroactive judgment of history.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: REF-007
     class: referential
@@ -321,6 +364,7 @@ entries:
       frontmatter (thread-integrity, commit dbc0815, predates ADR-011),
       unaffected by anything added later.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: REF-010
     class: referential
@@ -333,6 +377,7 @@ entries:
       origin under a rule (thread-integrity, dbc0815) that predates every
       artifact currently in a space's history.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: REF-011
     class: referential
@@ -350,6 +395,7 @@ entries:
       green so it BLOCKS the next code from joining this list; the list
       itself is a counted debt row in docs/validator-backlog.md, not a
       silence.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: REF-012
     class: referential
@@ -379,6 +425,7 @@ entries:
       v3-full-repo, and on space.yaml changes in v3-pr) — the manifest, not
       immutable history, is what the audit judges.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: REF-014
     class: referential
@@ -400,6 +447,7 @@ entries:
       green so it BLOCKS the next code from joining this list; the list
       itself is a counted debt row in docs/validator-backlog.md, not a
       silence.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: REF-016
     class: referential
@@ -422,6 +470,7 @@ entries:
       green so it BLOCKS the next code from joining this list; the list
       itself is a counted debt row in docs/validator-backlog.md, not a
       silence.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: REF-017
     class: referential
@@ -439,6 +488,7 @@ entries:
       that cannot be repaired.
     severity: reject
     mode_scope: v3-pr
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: REF-018
     class: referential
@@ -453,6 +503,7 @@ entries:
       question and it belongs to the epic that authored the rule, not to
       this gate. Recorded so the question is countable; see docs/validator-
       backlog.md.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: REF-019
     class: referential
@@ -468,6 +519,7 @@ entries:
       question and it belongs to the epic that authored the rule, not to
       this gate. Recorded so the question is countable; see docs/validator-
       backlog.md.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: REF-020
     class: referential
@@ -475,6 +527,7 @@ entries:
     applies_to: internal/validate.CheckSupersessionGraph — the full-repo supersede-event graph (§3.8 "supersession chains MUST be linear", CC-024); V3 full-repo scan only, never V3-pr (a PR diff cannot see the whole graph)
     severity: reject
     mode_scope: v3-full-repo
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: REF-021
     class: referential
@@ -482,6 +535,7 @@ entries:
     applies_to: internal/validate.CheckSupersessionGraph — the full-repo supersede-event graph, including the degenerate self-supersede 1-node case (§3.8, CC-025); V3 full-repo scan only, never V3-pr
     severity: reject
     mode_scope: v3-full-repo
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: REF-022
     class: referential
@@ -505,6 +559,7 @@ entries:
       question and it belongs to the epic that authored the rule, not to
       this gate. Recorded so the question is countable; see docs/validator-
       backlog.md.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: LFC-001
     class: lifecycle
@@ -538,6 +593,7 @@ entries:
       32a6d05, predates ADR-011) is a structural presence check, not a
       retroactive judgment.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: LFC-004
     class: lifecycle
@@ -553,6 +609,7 @@ entries:
       question and it belongs to the epic that authored the rule, not to
       this gate. Recorded so the question is countable; see docs/validator-
       backlog.md.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: POL-001
     class: policy
@@ -574,6 +631,7 @@ entries:
       green so it BLOCKS the next code from joining this list; the list
       itself is a counted debt row in docs/validator-backlog.md, not a
       silence.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: POL-002
     class: policy
@@ -584,6 +642,7 @@ entries:
     mode_scope_reason: >-
       frontmatter YAML-validity is structural; nothing added to the corpus
       later can make already-valid YAML invalid.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: POL-003
     class: policy
@@ -604,6 +663,7 @@ entries:
       green so it BLOCKS the next code from joining this list; the list
       itself is a counted debt row in docs/validator-backlog.md, not a
       silence.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: POL-004
     class: policy
@@ -624,6 +684,7 @@ entries:
       green so it BLOCKS the next code from joining this list; the list
       itself is a counted debt row in docs/validator-backlog.md, not a
       silence.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: POL-005
     class: policy
@@ -646,6 +707,7 @@ entries:
       green so it BLOCKS the next code from joining this list; the list
       itself is a counted debt row in docs/validator-backlog.md, not a
       silence.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: POL-006
     class: policy
@@ -666,6 +728,7 @@ entries:
     mode_scope_reason: >-
       computed compatibility compares two already-committed fixture sets; the
       comparison does not change after the fact.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: POL-008
     class: policy
@@ -676,6 +739,7 @@ entries:
     mode_scope_reason: >-
       an unusable baseline is a structural fact of the committed fixture, not
       a rule that could retroactively change.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: POL-009
     class: policy
@@ -686,6 +750,7 @@ entries:
     mode_scope_reason: >-
       contract publishability is evaluated against the descriptor's own
       declared schema/fixtures, fixed at publish time.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: POL-010
     class: policy
@@ -705,6 +770,7 @@ entries:
       green so it BLOCKS the next code from joining this list; the list
       itself is a counted debt row in docs/validator-backlog.md, not a
       silence.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: POL-012
     class: policy
@@ -726,6 +792,7 @@ entries:
       green so it BLOCKS the next code from joining this list; the list
       itself is a counted debt row in docs/validator-backlog.md, not a
       silence.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: POL-013
     class: policy
@@ -738,6 +805,7 @@ entries:
       predates ADR-011) check the descriptor's own declared artifacts, fixed
       at publish time.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: POL-014
     class: policy
@@ -758,6 +826,7 @@ entries:
       green so it BLOCKS the next code from joining this list; the list
       itself is a counted debt row in docs/validator-backlog.md, not a
       silence.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: POL-015
     class: policy
@@ -779,6 +848,7 @@ entries:
       green so it BLOCKS the next code from joining this list; the list
       itself is a counted debt row in docs/validator-backlog.md, not a
       silence.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: POL-016
     class: policy
@@ -790,6 +860,7 @@ entries:
       actor model/session validity is a structural fact of the event's own
       fields, fixed at the time it was produced.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: POL-017
     class: policy
@@ -820,6 +891,7 @@ entries:
       question and it belongs to the epic that authored the rule, not to
       this gate. Recorded so the question is countable; see docs/validator-
       backlog.md.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: POL-019
     class: policy
@@ -844,6 +916,7 @@ entries:
       question and it belongs to the epic that authored the rule, not to
       this gate. Recorded so the question is countable; see docs/validator-
       backlog.md.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: POL-020
     class: policy
@@ -899,6 +972,7 @@ entries:
       question and it belongs to the epic that authored the rule, not to
       this gate. Recorded so the question is countable; see docs/validator-
       backlog.md.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: POL-022
     class: policy
@@ -914,6 +988,7 @@ entries:
       ADR-011 D3. A merged handoff's body is immutable and no verb rewrites it,
       so at v3-full-repo this rule could only punish. The four handoffs in the
       real getvisa space are exactly that population.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
   - code: POL-023
     class: policy
@@ -946,6 +1021,7 @@ entries:
       rewrites its verdicts[], so a post-merge audit against it could only
       punish. getvisa's own two verdicts: [] closes (over 7 and 8 declared
       criteria) are exactly that population.
+    path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
 
   - code: REF-024
