@@ -149,7 +149,7 @@ func (r RespondIncompleteness) canonical() string {
 // The compiler therefore visits every call site, which is the point.
 //
 // Respond is part of the public package API.
-func Respond(system, actorKind, actorName string, parentIDs []string, result string, fields map[string]string, refs []string, body []byte, incompleteness RespondIncompleteness) string {
+func Respond(system, actorKind, actorName string, parentIDs []string, result string, fields map[string]string, refs []string, body []byte, incompleteness RespondIncompleteness, delivers []string) string {
 	parents := append([]string(nil), parentIDs...)
 	sort.Strings(parents)
 	fieldKeys := make([]string, 0, len(fields))
@@ -207,6 +207,30 @@ func Respond(system, actorKind, actorName string, parentIDs []string, result str
 	// has to keep being right about.
 	if canonical := incompleteness.canonical(); canonical != "" {
 		encoder.add("\x00respond-incompleteness-v1|" + canonical)
+	}
+	// delivers goes LAST, in GIVEN order, and it is here because P1 made the
+	// collision reachable: `delivers[]` names the data packages a response
+	// announces, so two responses on ONE parent differing ONLY in --delivers
+	// are two distinct acts. Without this they derive the same key, hence the
+	// same branch, and the second meets funnel.go's already-open short-circuit
+	// and is read as a RETRY OF THE FIRST — a second delivery on one
+	// work_request silently disappearing. This file's own comment above puts
+	// it plainly: a key minted without a distinguishing fact is a COLLIDING
+	// key, not a narrower one.
+	//
+	// Third use of the section discipline this file documents twice already,
+	// and both halves are inherited rather than re-argued. Written only when
+	// non-empty, so every pre-existing key stays BYTE-IDENTICAL — no response
+	// authored before this field existed carries it, so nothing in any space
+	// re-derives a different branch. Written as ONE length-prefixed entry
+	// behind a NUL-prefixed domain tag, so it cannot run together with the
+	// variable-length region before it; a leading NUL cannot begin a DP id.
+	//
+	// The separator is US (0x1f) rather than a printable character: package
+	// ids are `DP-<system>-<date>-<suffix>` and a control byte cannot occur
+	// inside one, so two orderings can never encode alike by coincidence.
+	if len(delivers) > 0 {
+		encoder.add("\x00respond-delivers-v1|" + strings.Join(delivers, "\x1f"))
 	}
 	return encoder.key()
 }

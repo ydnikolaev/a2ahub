@@ -142,14 +142,14 @@ func TestRespondCanonicalAndSemantic(t *testing.T) {
 	t.Parallel()
 
 	a := Respond("axon", "agent", "bot", []string{"B", "A"}, "answered",
-		map[string]string{"title": "done", "priority": "p1"}, nil, []byte("body"), RespondIncompleteness{})
+		map[string]string{"title": "done", "priority": "p1"}, nil, []byte("body"), RespondIncompleteness{}, nil)
 	b := Respond("axon", "agent", "bot", []string{"A", "B"}, "answered",
-		map[string]string{"priority": "p1", "title": "done"}, nil, []byte("body"), RespondIncompleteness{})
+		map[string]string{"priority": "p1", "title": "done"}, nil, []byte("body"), RespondIncompleteness{}, nil)
 	if a != b || !Valid(a) {
 		t.Fatalf("canonical keys differ or are invalid: %q %q", a, b)
 	}
 	if changed := Respond("axon", "agent", "bot", []string{"A", "B"}, "answered",
-		map[string]string{"priority": "p1", "title": "done"}, nil, []byte("different"), RespondIncompleteness{}); changed == a {
+		map[string]string{"priority": "p1", "title": "done"}, nil, []byte("different"), RespondIncompleteness{}, nil); changed == a {
 		t.Fatal("changed body produced the same operation key")
 	}
 }
@@ -162,22 +162,22 @@ func TestRespondCanonicalAndSemantic(t *testing.T) {
 func TestRespondRefsAreOrderedAndDistinguishing(t *testing.T) {
 	t.Parallel()
 
-	base := Respond("axon", "agent", "bot", []string{"XW-peer-p"}, "delivered", nil, nil, []byte("b"), RespondIncompleteness{})
+	base := Respond("axon", "agent", "bot", []string{"XW-peer-p"}, "delivered", nil, nil, []byte("b"), RespondIncompleteness{}, nil)
 
 	withRefs := Respond("axon", "agent", "bot", []string{"XW-peer-p"}, "delivered",
-		nil, []string{"XH-axon-1", "XH-axon-2"}, []byte("b"), RespondIncompleteness{})
+		nil, []string{"XH-axon-1", "XH-axon-2"}, []byte("b"), RespondIncompleteness{}, nil)
 	if withRefs == base {
 		t.Fatal("adding refs did not change the operation key — a response naming a handoff would dedup onto one that names nothing, and its refs[] would never be committed")
 	}
 
 	swapped := Respond("axon", "agent", "bot", []string{"XW-peer-p"}, "delivered",
-		nil, []string{"XH-axon-2", "XH-axon-1"}, []byte("b"), RespondIncompleteness{})
+		nil, []string{"XH-axon-2", "XH-axon-1"}, []byte("b"), RespondIncompleteness{}, nil)
 	if swapped == withRefs {
 		t.Fatal("reordering refs produced the same key — refs[] order IS on the wire, unlike parents and field keys")
 	}
 
 	repeat := Respond("axon", "agent", "bot", []string{"XW-peer-p"}, "delivered",
-		nil, []string{"XH-axon-1", "XH-axon-2"}, []byte("b"), RespondIncompleteness{})
+		nil, []string{"XH-axon-1", "XH-axon-2"}, []byte("b"), RespondIncompleteness{}, nil)
 	if repeat != withRefs {
 		t.Fatal("an identical retry minted a different key — dedup is what makes a retried submit idempotent")
 	}
@@ -186,7 +186,7 @@ func TestRespondRefsAreOrderedAndDistinguishing(t *testing.T) {
 	// the encoder writes both, and a length-blind concatenation would let
 	// them collide.
 	viaField := Respond("axon", "agent", "bot", []string{"XW-peer-p"}, "delivered",
-		map[string]string{"XH-axon-1": "XH-axon-2"}, nil, []byte("b"), RespondIncompleteness{})
+		map[string]string{"XH-axon-1": "XH-axon-2"}, nil, []byte("b"), RespondIncompleteness{}, nil)
 	if viaField == withRefs {
 		t.Fatal("a field pair and a ref pair with the same strings produced one key — the encoding is ambiguous")
 	}
@@ -453,7 +453,7 @@ func TestRespondIncompletenessSeparatesOtherwiseIdenticalResponses(t *testing.T)
 
 	base := func(inc RespondIncompleteness) string {
 		return Respond("axon", "agent", "bot", []string{"XW-peer-20260819-aaaa"}, "partial",
-			map[string]string{"title": "partial answer"}, nil, []byte("body"), inc)
+			map[string]string{"title": "partial answer"}, nil, []byte("body"), inc, nil)
 	}
 
 	none := base(RespondIncompleteness{})
@@ -488,14 +488,65 @@ func TestRespondIncompletenessSeparatesOtherwiseIdenticalResponses(t *testing.T)
 func TestRespondZeroIncompletenessIsByteIdenticalToTheHistoricalKey(t *testing.T) {
 	t.Parallel()
 
-	withZero := Respond("axon", "agent", "bot", []string{"XQ-a"}, "answered", nil, nil, nil, RespondIncompleteness{})
-	withEmptyFields := Respond("axon", "agent", "bot", []string{"XQ-a"}, "answered", map[string]string{}, []string{}, nil, RespondIncompleteness{})
+	withZero := Respond("axon", "agent", "bot", []string{"XQ-a"}, "answered", nil, nil, nil, RespondIncompleteness{}, nil)
+	withEmptyFields := Respond("axon", "agent", "bot", []string{"XQ-a"}, "answered", map[string]string{}, []string{}, nil, RespondIncompleteness{}, nil)
 	if withZero != withEmptyFields {
 		t.Errorf("nil and empty collections disagree: %s != %s", withZero, withEmptyFields)
 	}
 	// The NUL-tagged section must be absent, not merely empty: an empty
 	// canonical writes nothing, which is what keeps historical keys stable.
-	if same := Respond("axon", "agent", "bot", []string{"XQ-a"}, "answered", nil, nil, nil, RespondIncompleteness{Standing: ""}); same != withZero {
+	if same := Respond("axon", "agent", "bot", []string{"XQ-a"}, "answered", nil, nil, nil, RespondIncompleteness{Standing: ""}, nil); same != withZero {
 		t.Errorf("an all-empty RespondIncompleteness changed the key: %s != %s", same, withZero)
+	}
+}
+
+// TestRespondDeliversSeparatesOtherwiseIdenticalResponses pins the third use
+// of this file's section discipline, and it pins the same two properties the
+// refs and incompleteness sections earned before it.
+//
+// The distinguishing half: `delivers[]` names the data packages a response
+// announces, so two responses on ONE parent differing only in it are two
+// different acts. Sharing a key means sharing a branch, and the second write
+// then meets the funnel's already-open short-circuit and is read as a retry of
+// the first — a second delivery on one work_request disappearing in silence.
+//
+// The stability half, which is the one worth being explicit about: an EMPTY
+// delivers must write nothing at all, so every key derived before this
+// parameter existed is byte-identical. No response authored before
+// judge-the-thing-2026-08 P1 carries the field, so nothing already committed
+// in any space re-derives a different branch id.
+//
+// Order is content, not noise: `delivers[]` is a sequence on the wire and the
+// document's own seed carries it in GIVEN order, so two orderings are two
+// documents and must be two keys.
+func TestRespondDeliversSeparatesOtherwiseIdenticalResponses(t *testing.T) {
+	t.Parallel()
+
+	base := func(delivers []string) string {
+		return Respond("axon", "agent", "bot", []string{"XW-peer-20260819-aaaa"}, "delivered",
+			map[string]string{"title": "here it is"}, nil, []byte("body"), RespondIncompleteness{}, delivers)
+	}
+
+	none := base(nil)
+	one := base([]string{"DP-axon-20260821-aaaa"})
+	other := base([]string{"DP-axon-20260821-bbbb"})
+	both := base([]string{"DP-axon-20260821-aaaa", "DP-axon-20260821-bbbb"})
+	reversed := base([]string{"DP-axon-20260821-bbbb", "DP-axon-20260821-aaaa"})
+
+	for name, pair := range map[string][2]string{
+		"one package vs none":  {one, none},
+		"one package vs other": {one, other},
+		"two packages vs one":  {both, one},
+		"order is content":     {both, reversed},
+	} {
+		if pair[0] == pair[1] {
+			t.Errorf("%s: same operation key %s — the second response collapses onto the first's branch", name, pair[0])
+		}
+	}
+
+	// Absent, not merely empty. An empty slice must take the same path nil
+	// does, or a caller passing `[]string{}` silently renames its branch.
+	if empty := base([]string{}); empty != none {
+		t.Errorf("an empty delivers changed the key: %s != %s", empty, none)
 	}
 }

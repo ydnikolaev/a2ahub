@@ -3706,3 +3706,203 @@ func TestRespondBatchUnmetSameIDDifferentTextRefused(t *testing.T) {
 		t.Fatalf("expected the refusal to name BOTH criterion texts that disagree; got %q", errOut.String())
 	}
 }
+
+// --- respond --delivers (judge-the-thing-2026-08 P1) ----------------------
+
+type respondDeliversProbe struct {
+	Delivers []string `yaml:"delivers"`
+}
+
+func decodeResponseDelivers(t *testing.T, content string) []string {
+	t.Helper()
+	fm, err := artifact.ParseFrontmatter([]byte(content))
+	if err != nil {
+		t.Fatalf("ParseFrontmatter: %v", err)
+	}
+	var probe respondDeliversProbe
+	if err := yaml.Unmarshal(fm.YAML, &probe); err != nil {
+		t.Fatalf("decode delivers: %v", err)
+	}
+	return probe.Delivers
+}
+
+// TestRespondWritesDeliversInGivenOrder: `delivers[]` is a SEQUENCE on the
+// wire, so --delivers values are written in the order given, never sorted —
+// the same decision lifecycleRespondSeed's doc comment records for refs.
+func TestRespondWritesDeliversInGivenOrder(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-dvr1"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{
+		"--result", "delivered",
+		"--delivers", "DP-beta-20260821-dpk2",
+		"--delivers", "DP-beta-20260821-dpk1",
+		parentID,
+	}, io)
+	if code != 0 {
+		t.Fatalf("respond: code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	got := decodeResponseDelivers(t, extractResponseContent(fake.calls[0].Files))
+	want := []string{"DP-beta-20260821-dpk2", "DP-beta-20260821-dpk1"}
+	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("decoded delivers = %v, want %v (GIVEN order preserved)", got, want)
+	}
+}
+
+// TestRespondWithoutDeliversWritesNoKey is the oracle at CLI tier (§8
+// criterion 2): an ordinary `--result delivered` answer — what the declared
+// plain-answer catalogue paths drive — carries no `delivers` key at all, so
+// the submit-time refusal has nothing to read and the document is
+// byte-identical to what it was before this field existed.
+func TestRespondWithoutDeliversWritesNoKey(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-dvr2"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{"--result", "delivered", parentID}, io); code != 0 {
+		t.Fatalf("respond: code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	content := extractResponseContent(fake.calls[0].Files)
+	if got := decodeResponseDelivers(t, content); len(got) != 0 {
+		t.Fatalf("decoded delivers = %v, want none when --delivers was never given", got)
+	}
+	if strings.Contains(content, "delivers") {
+		t.Fatalf("the rendered response mentions `delivers` with no flag given:\n%s", content)
+	}
+}
+
+func TestRespondEmptyDeliversIsRefused(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-dvr3"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--result", "delivered", "--delivers", "", parentID}, io)
+	if code != 2 {
+		t.Fatalf("respond --delivers '': code = %d, want 2; stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the funnel never to be called on a usage refusal, got %d calls", len(fake.calls))
+	}
+}
+
+// TestRespondDeliversMintDistinctIDsAndDistinctOperationKeys pins both halves
+// of what `--delivers` must distinguish, and it is the closure of the residue
+// P1 reported rather than a new claim.
+//
+// The DOCUMENT's identity: two responses differing only in --delivers are two
+// different documents and mint two different response ids
+// (lifecycleRespondSeed carries delivers).
+//
+// The OPERATION KEY: same, and it was NOT so until 2026-08-21. P1 could not
+// reach internal/operation/key.go and left this test asserting the collision
+// out loud, with a failure message naming its own closure condition. It fired
+// exactly as written the day the lead added the field. Two responses on one
+// parent differing only in the package they announce used to derive ONE key,
+// hence one branch, so the second met the funnel's already-open short-circuit
+// and was read as a RETRY of the first — a second delivery on one
+// work_request silently disappearing.
+//
+// The third assertion is the one that would be easy to omit: a response with
+// NO delivers must derive the key it derived before the field existed. The
+// section is written only when non-empty for exactly that reason, and without
+// this check a stability property the whole design rests on would be resting
+// on a comment.
+func TestRespondDeliversMintDistinctIDsAndDistinctOperationKeys(t *testing.T) {
+	t.Parallel()
+	fixedNow := func() time.Time { return time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC) }
+	parentID := "XQ-axon-20260721-dvr4"
+
+	run := func(t *testing.T, delivers ...string) (string, string) {
+		t.Helper()
+		mirrorDir := t.TempDir()
+		seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		cmd.SetClockForTest(fixedNow)
+		args := []string{"--result", "delivered"}
+		for _, d := range delivers {
+			args = append(args, "--delivers", d)
+		}
+		args = append(args, parentID)
+		io, _, errOut := newIO()
+		if code := cmd.Run(context.Background(), args, io); code != 0 {
+			t.Fatalf("respond: code=%d stderr=%s", code, errOut.String())
+		}
+		return extractResponseID(fake.calls[0].Files), fake.calls[0].OperationKey
+	}
+
+	idNone, keyNone := run(t)
+	idOne, keyOne := run(t, "DP-beta-20260821-dpk1")
+	idTwo, keyTwo := run(t, "DP-beta-20260821-dpk2")
+	if idNone == idOne {
+		t.Fatalf("expected DIFFERENT response ids for no-delivers vs one package, got the same id %q", idNone)
+	}
+	if keyNone == keyOne {
+		t.Fatalf("two responses on one parent differing only in --delivers share operation key %q — "+
+			"the second collapses onto the first's branch and is read as a retry", keyNone)
+	}
+	if idOne == idTwo || keyOne == keyTwo {
+		t.Fatalf("announcing a DIFFERENT package is a different act: ids %q/%q keys %q/%q", idOne, idTwo, keyOne, keyTwo)
+	}
+	// Byte-stability. Not a paraphrase of the run above: this asserts the
+	// no-delivers key against a literal derived before the field existed, so
+	// a future change to the encoding cannot quietly rename every response
+	// branch already in every space.
+	const keyBeforeDeliversExisted = "op-v1-daccc5327c0a49b5923225ff8b2eb66a5a99bcda3dc84cff0f3b60bbaf9e5001"
+	if keyNone != keyBeforeDeliversExisted {
+		t.Fatalf("a response carrying no --delivers derives %q, but historically derived %q — "+
+			"the delivers section must write NOTHING when empty or every existing branch id moves",
+			keyNone, keyBeforeDeliversExisted)
+	}
+}
+
+// TestRespondRefusesUnlandedDeliversThroughTheRealFunnel is §8 criterion 1
+// at the CLI tier, driven through the production entry point rather than a
+// direct call to the check: a REAL space.WriteFunnel over a fixture space,
+// a response announcing a package whose payload PR has not merged (nothing
+// resolves it on origin/main), and the CLI must exit non-zero naming both
+// the package and REF-024 — with no PR opened at all.
+func TestRespondRefusesUnlandedDeliversThroughTheRealFunnel(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "axon", "beta")
+	mirrorDir := fx.Clone("beta")
+
+	parentID := "XQ-axon-20260721-dvr5"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+
+	fakeHost := host.NewFakeHost()
+	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	hostCfg := lifecycleHostConfig()
+	hostCfg.RemoteURL = fx.RemoteURL()
+
+	packageID := "DP-beta-20260821-dpk7"
+	cmd := cli.NewRespondCommand(funnel, mirrorDir, "fixture-space", "beta", lifecycleManifest(), hostCfg, lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--result", "delivered", "--delivers", packageID, parentID}, io)
+	if code == 0 {
+		t.Fatalf("respond --delivers <unlanded>: code = 0, want a refusal; stderr=%s", errOut.String())
+	}
+	msg := errOut.String()
+	if !strings.Contains(msg, "REF-024") {
+		t.Fatalf("expected the refusal to name REF-024, got: %s", msg)
+	}
+	if !strings.Contains(msg, packageID) {
+		t.Fatalf("expected the refusal to name the package %q, got: %s", packageID, msg)
+	}
+	if len(fakeHost.Opens) != 0 {
+		t.Fatalf("expected zero OpenPR calls on a refused response, got %d", len(fakeHost.Opens))
+	}
+}

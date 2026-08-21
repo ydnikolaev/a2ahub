@@ -764,6 +764,14 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 		}
 		operationKey := operation.Respond(
 			deps.OwnSystem, actor.Kind, actor.Name, in.ParentIDs, in.Result, in.Fields, nil, bodyOverride, respondFacts,
+			// delivers: nil until P2 gives this surface the field. B22's own
+			// shape, and it is temporary by design rather than by neglect —
+			// the CLI can author `delivers[]` and MCP cannot, so an MCP
+			// caller cannot yet mint a key that needs distinguishing. It
+			// still INHERITS the REF-024 refusal through funnel.Submit
+			// today, because that rule lives in internal/space where both
+			// surfaces reach it (ADR-004).
+			nil,
 		)
 
 		var files []space.FileWrite

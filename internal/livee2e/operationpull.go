@@ -28,7 +28,7 @@ const (
 // branch from those exact canonical inputs. Depending on ambient OS identity
 // here would let the command and observer compute different operation keys.
 func respondOperation(system, parentID, result string) (key, branch string) {
-	return respondOperationWithFields(system, parentID, result, nil)
+	return respondOperationWithFields(system, parentID, result, nil, nil)
 }
 
 // respondOperationWithFields generalizes respondOperation with an explicit
@@ -41,7 +41,7 @@ func respondOperation(system, parentID, result string) (key, branch string) {
 // the IDENTICAL content-derived responseID as the first (RespondCommand.
 // Run's own HIGH-1 fix-wave doc comment) and collapse onto its dedup
 // branch instead of authoring a genuinely second response.
-func respondOperationWithFields(system, parentID, result string, fields map[string]string) (key, branch string) {
+func respondOperationWithFields(system, parentID, result string, fields map[string]string, delivers []string) (key, branch string) {
 	key = operation.Respond(
 		system,
 		liveRespondActorKind,
@@ -49,24 +49,57 @@ func respondOperationWithFields(system, parentID, result string, fields map[stri
 		[]string{parentID},
 		result,
 		fields,
-		nil, // refs: no declared path drives `respond --ref` yet
+		// refs: still nil, and now for a NARROWER reason than the one this
+		// line used to carry until 2026-08-21 — that the catalogue drove
+		// none of respond's extra flags at all. judge-the-thing-2026-08
+		// P1's declared path
+		// (response-delivers-unlanded-package-refused,
+		// pathcatalogue_paths.go) DOES drive `a2a respond` with an extra
+		// flag through the real binary — `--delivers <DP-id>` — so the
+		// refusal it earns (REF-024, internal/space's
+		// checkResponseDeliversPossession) is no longer a rule that only a
+		// unit test executes, which is the epic's own AC2.
+		//
+		// `delivers` IS in this derivation as of 2026-08-21. P1 recorded the
+		// residue here — "when key.go gains `delivers`, this parameter list
+		// gains it too, on the same day" — and the lead closed it that day:
+		// two responses on one parent differing only in --delivers derived
+		// ONE key, so the second collapsed onto the first's dedup branch and
+		// vanished. Today every declared path that drives --delivers drives a
+		// REFUSAL, which never reaches a branch, so both live callers pass
+		// nil; the parameter exists so that a path driving a SUCCESSFUL
+		// --delivers respond derives the branch the CLI derives instead of
+		// silently resolving the wrong one.
+		//
+		// The `--ref` flag itself remains undriven by the catalogue; only
+		// `--delivers` gained a path here.
+		nil,
 		nil,
 		// No declared path drives --unmet/--standing/--blocked-by yet either;
 		// the zero value encodes to nothing, so this key stays byte-identical
 		// to the one every historical run derived.
 		operation.RespondIncompleteness{},
+		delivers,
 	)
 	return key, space.BranchName(system, "respond", key)
 }
 
-func respondCommandArgs(parentID, result string) []string {
-	return []string{
+// respondCommandArgs builds the real CLI invocation. extraArgs carries any
+// additional respond flags a path declares — `--delivers <DP-id>` is the
+// first one a declared path drives (judge-the-thing-2026-08 P1) — and is
+// written BEFORE the parent id, matching every other flag here; the command
+// parses flags in any order (parseArgsAnyOrder, cmd_lifecycle.go), so the
+// position is a readability choice, not a requirement. A caller that passes
+// none produces the exact argv every historical run produced.
+func respondCommandArgs(parentID, result string, extraArgs ...string) []string {
+	args := []string{
 		"respond",
 		"--result", result,
 		"--actor-kind", liveRespondActorKind,
 		"--actor-name", liveRespondActorName,
-		parentID,
 	}
+	args = append(args, extraArgs...)
+	return append(args, parentID)
 }
 
 // operationArtifactID resolves one generated artifact from the same
