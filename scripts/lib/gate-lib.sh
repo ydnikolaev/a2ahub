@@ -23,7 +23,15 @@
 
 # Repo root, resolved canonically from this lib's own location (scripts/lib → repo).
 # shellcheck disable=SC2034  # consumed by sourcing scripts, not within this lib
-GATE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Parameter expansion, not `dirname`: this library is sourced by every gate,
+# including ones whose own teeth run them under a MINIMAL PATH carrying no
+# coreutils. `dirname` missing there made this line print an error and resolve
+# GATE_ROOT to garbage — one level below the gate whose refusal then could not
+# be made. Found by ci-parity-docker on 2026-08-21; the host resolved it and
+# said nothing.
+_gate_lib_dir="${BASH_SOURCE[0]%/*}"
+[ "$_gate_lib_dir" = "${BASH_SOURCE[0]}" ] && _gate_lib_dir="."
+GATE_ROOT="$(cd "$_gate_lib_dir/../.." && pwd)"
 
 # Colors — off when stdout is not a TTY or NO_COLOR is set.
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then

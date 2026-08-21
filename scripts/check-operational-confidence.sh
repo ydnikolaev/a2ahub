@@ -25,13 +25,28 @@
 #   a path the lane-inputs above already declare.
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-SCRIPT_ABS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")"
+# SELF-LOCATION USES BASH BUILTINS, NOT coreutils, AND THAT IS LOAD-BEARING.
+#
+# This gate's own tooth runs it under a MINIMAL PATH to prove that an absent
+# ripgrep reports UNMEASURED rather than a corpus verdict. That PATH has no
+# `dirname` and no `basename` either — so a script that shells out to locate
+# itself cannot even source gate-lib.sh, and `gate_unmeasured` is then an
+# undefined command. The tooth failed exactly that way in the container on
+# 2026-08-21: "gate_unmeasured: command not found", i.e. the refusal this gate
+# was taught to make could not be made, in the one situation it exists for.
+#
+# Found by ci-parity-docker, not by the host: macOS resolved the two utilities
+# from a path the minimal set still carried. Parameter expansion has no such
+# dependency.
+_self_dir="${BASH_SOURCE[0]%/*}"
+[ "$_self_dir" = "${BASH_SOURCE[0]}" ] && _self_dir="."
+ROOT="$(cd "$_self_dir/.." && pwd -P)"
+SCRIPT_ABS="$(cd "$_self_dir" && pwd -P)/${BASH_SOURCE[0]##*/}"
 ERRORS=0
 UNMEASURED=0
 
 # shellcheck source=scripts/lib/gate-lib.sh
-source "$(dirname "${BASH_SOURCE[0]}")/lib/gate-lib.sh"
+source "$_self_dir/lib/gate-lib.sh"
 
 fail() { echo "operational-confidence-guard: FAIL — $*" >&2; ERRORS=$((ERRORS + 1)); }
 
