@@ -116,11 +116,23 @@ if [ "$#" -eq 0 ]; then
   set -- bash scripts/ci-parity.sh --suite
 fi
 
+# THE CONTAINER'S PHASE TELEMETRY, BOUND OUT TO THE HOST.
+#
+# verify.sh derives VERIFY_ROOT from ROOT, and ROOT is /work in here — a named
+# volume the host cannot read. So the composed ship gate, which counts phases
+# from telemetry, saw ZERO after a container suite that had just executed
+# forty-odd of them, and refused to write a receipt: "a suite that executed no
+# measurable phase must not report a phase count of 0 as if that were a clean
+# result." It was right, and this is what it was missing. Found on the ship
+# gate's fourth real run, 2026-08-21, with BOTH phases green.
+mkdir -p "$ROOT/.a2a/cache/parity-container"
+
 exec docker run --rm -i \
   --name "$CONTAINER" \
   ${PARITY_TTY:+-t} \
   -v "$ROOT:/src:ro" \
   -v a2ahub-parity-work:/work \
+  -v "$ROOT/.a2a/cache/parity-container:/work/.a2a/cache/verify" \
   -v a2ahub-parity-state:/parity-state \
   -v a2ahub-parity-gocache:/root/.cache/go-build \
   -v a2ahub-parity-gomod:/root/go/pkg/mod \

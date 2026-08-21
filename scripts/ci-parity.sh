@@ -934,6 +934,12 @@ telemetry_offset() {
 # a state that a future member could legitimately change; "no gate was paid for
 # twice in the same mode" is what the composition is FOR, and it stays true
 # however the member list grows. A repeat names both occurrences.
+# $3 (optional) — a SECOND telemetry file and its own offset, as
+# "<path>:<offset>". The container writes its phases into a bound-out file the
+# host cannot otherwise see; a report that read only the host's would say zero
+# after a suite that executed forty. Both are folded into one set, so the
+# no-phase-ran-twice invariant holds ACROSS the boundary rather than inside
+# each side of it.
 telemetry_report() { # $1 = offset recorded before the run; $2 = a label
   local offset="$1" label="$2" new dupes total
   if [ ! -f "$VERIFY_TELEMETRY" ]; then
@@ -941,6 +947,14 @@ telemetry_report() { # $1 = offset recorded before the run; $2 = a label
     return "$GATE_EXIT_UNMEASURED"
   fi
   new="$(tail -n "+$((offset + 1))" "$VERIFY_TELEMETRY")"
+  if [ -n "${3:-}" ]; then
+    local extra_path="${3%:*}" extra_off="${3##*:}"
+    if [ -f "$extra_path" ]; then
+      local extra
+      extra="$(tail -n "+$((extra_off + 1))" "$extra_path" 2>/dev/null || true)"
+      [ -n "$extra" ] && new="$(printf '%s\n%s' "$new" "$extra")"
+    fi
+  fi
   total="$(printf '%s' "$new" | grep -c '"gate"' || true)"
   if [ "$total" -eq 0 ]; then
     gate_unmeasured "$label: zero phases were recorded between the start of this run and now. A suite that executed no measurable phase must not report a phase count of 0 as if that were a clean result."
@@ -1221,6 +1235,13 @@ release_gate() { # $1 = --dry-run | (empty)
   fi
 
   local offset rc=0 container_rc=0 macos_rc=0
+  # The container writes its phase telemetry into a directory bound out by
+  # ci-parity-docker.sh (see its comment): verify.sh derives VERIFY_ROOT from
+  # ROOT, which is /work in there. Read THAT file for phase 1 — the host's own
+  # telemetry records nothing the container did.
+  local container_telemetry="$ROOT/.a2a/cache/parity-container/telemetry.jsonl"
+  local container_offset=0
+  [ -f "$container_telemetry" ] && container_offset="$(wc -l <"$container_telemetry" | tr -d ' ')"
   offset="$(telemetry_offset)"
 
   # PHASE 1 — the container. Its daemon was proved reachable above, so a
@@ -1248,7 +1269,7 @@ release_gate() { # $1 = --dry-run | (empty)
     return 1
   fi
 
-  telemetry_report "$offset" "the container suite" || rc=$?
+  telemetry_report "$offset" "the composed run" "$container_telemetry:$container_offset" || rc=$?
 
   ended="$(date +%s)"
   if [ "$container_rc" -ne 0 ] || [ "$macos_rc" -ne 0 ] || [ "$rc" -ne 0 ]; then
