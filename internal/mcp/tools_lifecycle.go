@@ -287,6 +287,13 @@ type RespondInput struct {
 	Unmet        []RespondUnmetEntry `json:"unmet,omitempty"`
 	Standing     string              `json:"standing,omitempty"`
 	BlockedBy    *RespondBlockedBy   `json:"blocked_by,omitempty"`
+	// Delivers (judge-the-thing-2026-08 P2, spec 02, closing half of B22)
+	// mirrors internal/cli's repeatable `--delivers` flag: the data package
+	// ids (DP-...) this response announces as delivered. A native JSON
+	// array, the same "this surface's wire format already has structure a
+	// flag string doesn't" reason Unmet/BlockedBy above are native shapes
+	// rather than a colon-separated string.
+	Delivers []string `json:"delivers,omitempty"`
 }
 
 // RespondUnmetEntry is one `unmet[]` input entry (defects-fix-2026-08 P3):
@@ -688,6 +695,19 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 		if berr := respondValidateBlockedBy(in.BlockedBy); berr != nil {
 			return nil, "", berr
 		}
+		// delivers (judge-the-thing-2026-08 P2): emptiness is the ONLY thing
+		// checked here, deliberately, mirroring internal/cli's own
+		// --delivers validation (cmd_lifecycle.go) — the id's grammar and
+		// whether it has landed are ONE question with ONE authority
+		// (space.ResolveDataPackage, reached through the funnel), and a
+		// second DP- parser here would be exactly the duplicated "is this
+		// package here" this epic is named after. A malformed id therefore
+		// refuses at submit, naming REF-024, on both surfaces.
+		for _, d := range in.Delivers {
+			if strings.TrimSpace(d) == "" {
+				return nil, "", fmt.Errorf("respond: delivers must not be empty")
+			}
+		}
 
 		// Resolve this call's target space from parent_ids, BEFORE the
 		// first deps.MirrorDir read below (parentAcceptanceCriteria, then
@@ -762,16 +782,17 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 			respondFacts.BlockedByOwner = in.BlockedBy.Owner
 			respondFacts.BlockedByNeeds = in.BlockedBy.Needs
 		}
+		// delivers (judge-the-thing-2026-08 P2, closing HALF of B22): this
+		// surface now authors the field, threaded into operation.Respond's
+		// key the SAME way internal/cli's own call site does (dbdd7257) — an
+		// empty/absent in.Delivers keeps deriving the pre-field key
+		// (Respond's own "written only when non-empty" discipline), so no
+		// existing MCP-authored branch moves. B22's OTHER half — an MCP
+		// `--ref`/`refs[]` equivalent — stays open; this phase's spec (§0
+		// T1) scopes it out by name.
 		operationKey := operation.Respond(
 			deps.OwnSystem, actor.Kind, actor.Name, in.ParentIDs, in.Result, in.Fields, nil, bodyOverride, respondFacts,
-			// delivers: nil until P2 gives this surface the field. B22's own
-			// shape, and it is temporary by design rather than by neglect —
-			// the CLI can author `delivers[]` and MCP cannot, so an MCP
-			// caller cannot yet mint a key that needs distinguishing. It
-			// still INHERITS the REF-024 refusal through funnel.Submit
-			// today, because that rule lives in internal/space where both
-			// surfaces reach it (ADR-004).
-			nil,
+			in.Delivers,
 		)
 
 		var files []space.FileWrite
@@ -821,7 +842,7 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 					parentID)
 			}
 
-			seed := respondSeed(parentID, in.Result, respFields, bodyOverride, actor, unmet, in.Standing, in.BlockedBy)
+			seed := respondSeed(parentID, in.Result, respFields, bodyOverride, actor, unmet, in.Standing, in.BlockedBy, in.Delivers)
 
 			// Wave K, MCP half. internal/cli's RespondCommand.Run carries
 			// the same three fills with the full rationale; ADR-001 keeps
@@ -896,6 +917,17 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 				return nil, "", fmt.Errorf("respond: decode rendered response for %s: %w", parentID, err)
 			}
 			respDoc["to"] = []string{parentEnv.From}
+			// delivers (judge-the-thing-2026-08 P2, closing HALF of B22):
+			// same decode/assign/re-encode idiom as `to` above, and the same
+			// "written only when the caller actually named a package"
+			// discipline internal/cli's RespondCommand.Run uses for its own
+			// identical `respDoc["delivers"]` assignment — an unconditional
+			// `delivers: []` would declare an announcement nobody made, and
+			// its ABSENCE is the ordinary answer shape the schema's own
+			// description turns on.
+			if len(in.Delivers) > 0 {
+				respDoc["delivers"] = append([]string(nil), in.Delivers...)
+			}
 			// unmet/standing/blocked_by (defects-fix-2026-08 P2): same
 			// decode/assign/re-encode idiom as `to` above, and the same
 			// "written only when the caller actually gave it" discipline as
@@ -1049,7 +1081,15 @@ func parentAcceptanceCriteria(mirrorDir, id string) ([]RespondCriterion, error) 
 // An absent unmet/standing/blockedBy (every caller before this phase)
 // writes exactly the bytes respondSeed always wrote — no existing
 // responseID changes.
-func respondSeed(parentID, result string, respFields map[string]string, bodyOverride []byte, actor fold.Actor, unmet []RespondUnmetEntry, standing string, blockedBy *RespondBlockedBy) []byte {
+//
+// delivers (judge-the-thing-2026-08 P2) joins LAST, in GIVEN order, exactly
+// where internal/cli's own lifecycleRespondSeed writes it (after
+// blocked_by, before body) — CONTENT, not a derived default, so two
+// responses on one parent differing ONLY in delivers must mint different
+// response ids. Written only when non-empty, so every caller that names
+// none (every MCP respond before this phase) writes exactly the bytes this
+// function always wrote and no existing responseID moves.
+func respondSeed(parentID, result string, respFields map[string]string, bodyOverride []byte, actor fold.Actor, unmet []RespondUnmetEntry, standing string, blockedBy *RespondBlockedBy, delivers []string) []byte {
 	keys := make([]string, 0, len(respFields))
 	for k := range respFields {
 		keys = append(keys, k)
@@ -1081,6 +1121,9 @@ func respondSeed(parentID, result string, respFields map[string]string, bodyOver
 	}
 	if blockedBy != nil {
 		buf.WriteString("blocked_by=" + blockedBy.ReasonCode + ":" + blockedBy.Owner + ":" + blockedBy.Needs + "\n")
+	}
+	for _, packageID := range delivers {
+		buf.WriteString("delivers=" + packageID + "\n")
 	}
 	buf.WriteString("body=")
 	buf.Write(bodyOverride)

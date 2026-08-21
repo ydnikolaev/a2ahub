@@ -1782,15 +1782,20 @@ func lifecycleRespondSeed(parentID, result string, respFields map[string]string,
 	// caller that names none writes exactly the bytes this function always
 	// wrote and no already-computed responseID moves.
 	//
-	// This is the DOCUMENT's identity only. It does NOT reach
-	// operation.Respond's operationKey — internal/operation/key.go is
-	// lead-reserved and off this phase's allowlist — so two responses on
-	// one parent differing ONLY in --delivers still derive the same key and
-	// the same branch, and the second reads as a retry of the first.
-	// Recorded as this phase's own reported residue (spec 01 §11), not
-	// papered over here: key.go's own comment argues at length that a key
-	// minted without a distinguishing fact is a COLLIDING key, not a
-	// narrower one, and it is right.
+	// This is the DOCUMENT's identity. The OPERATION KEY carries `delivers`
+	// too, as of `dbdd7257` — it did not when this comment was first
+	// written, and the paragraph that said so is replaced rather than
+	// amended because a comment describing a tree that has moved is the
+	// defect this epic is named after.
+	//
+	// The two are separate facts and both are needed. The document id is
+	// content-derived and decides whether these are two artifacts; the
+	// operation key decides whether they are two BRANCHES. With only the
+	// first, two responses on one parent differing only in --delivers met
+	// the funnel's already-open short-circuit and the second read as a
+	// retry of the first. key.go's own comment had already argued the
+	// principle: a key minted without a distinguishing fact is a COLLIDING
+	// key, not a narrower one.
 	for _, packageID := range delivers {
 		buf.WriteString("delivers=" + packageID + "\n")
 	}

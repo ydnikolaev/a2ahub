@@ -1583,3 +1583,129 @@ func TestNoteHandlerDoesNotPoisonAcrossCalls(t *testing.T) {
 		t.Fatalf("second call's RepoDir = %q, want space-b's mirror %q", fakeB.calls[0].RepoDir, mirrorB)
 	}
 }
+
+// --- delivers (judge-the-thing-2026-08 P2, closing half of B22) -----------
+
+// respondDeliversFile finds the ONE drafted XS- response file among a
+// respond call's Files, mirroring the extraction internal/cli's own
+// extractResponseContent (cmd_lifecycle_test.go, off this phase's
+// allowlist) does at its own tier.
+func respondDeliversFile(t *testing.T, files []space.FileWrite) string {
+	t.Helper()
+	for _, fw := range files {
+		if strings.HasPrefix(filepath.Base(fw.Path), "XS-") {
+			return string(fw.Content)
+		}
+	}
+	t.Fatalf("could not find a drafted XS- response file among %+v", files)
+	return ""
+}
+
+// TestRespondHandlerWritesDeliversInGivenOrder is the MCP half of §8
+// criterion 1's "ordering" edge case (spec 02 §6): `delivers[]` is a
+// SEQUENCE on the wire, so the given order survives into the committed
+// response, never sorted — internal/cli's own
+// TestRespondWritesDeliversInGivenOrder pins the identical rule at its own
+// tier.
+func TestRespondHandlerWritesDeliversInGivenOrder(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-dvm1"
+	mcpSeedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeFunnel{}
+	deps := testWriteDeps(mirrorDir, fake)
+	handler := newRespondHandler(deps)
+	in := RespondInput{
+		ParentIDs: []string{parentID}, Result: "delivered",
+		Delivers: []string{"DP-beta-20260821-dpk2", "DP-beta-20260821-dpk1"},
+	}
+	args, _ := json.Marshal(in)
+	if _, _, err := handler(context.Background(), args); err != nil {
+		t.Fatalf("respond delivers: %v", err)
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected 1 funnel call, got %d", len(fake.calls))
+	}
+	content := respondDeliversFile(t, fake.calls[0].Files)
+	first := strings.Index(content, "DP-beta-20260821-dpk2")
+	second := strings.Index(content, "DP-beta-20260821-dpk1")
+	if first < 0 || second < 0 || first > second {
+		t.Fatalf("expected delivers written in GIVEN order (dpk2 before dpk1), got:\n%s", content)
+	}
+}
+
+// TestRespondHandlerWithoutDeliversOmitsTheKey is the oracle at MCP tier
+// (§8 criterion 3, P-1): an ordinary `result: delivered` answer with no
+// `delivers` given carries no `delivers` key at all — internal/cli's own
+// TestRespondWithoutDeliversWritesNoKey is the CLI half of this same rule.
+func TestRespondHandlerWithoutDeliversOmitsTheKey(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-dvm2"
+	mcpSeedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeFunnel{}
+	deps := testWriteDeps(mirrorDir, fake)
+	handler := newRespondHandler(deps)
+	in := RespondInput{ParentIDs: []string{parentID}, Result: "delivered"}
+	args, _ := json.Marshal(in)
+	if _, _, err := handler(context.Background(), args); err != nil {
+		t.Fatalf("respond delivered (no delivers): %v", err)
+	}
+	content := respondDeliversFile(t, fake.calls[0].Files)
+	if strings.Contains(content, "delivers") {
+		t.Fatalf("the rendered response mentions `delivers` with none given:\n%s", content)
+	}
+}
+
+// TestRespondHandlerEmptyDeliversIsRefused mirrors internal/cli's own
+// TestRespondEmptyDeliversIsRefused: an empty (or whitespace-only) entry is
+// refused before ever reaching the funnel, the same as every other
+// repeatable id-bearing field on this handler.
+func TestRespondHandlerEmptyDeliversIsRefused(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-dvm4"
+	mcpSeedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeFunnel{}
+	deps := testWriteDeps(mirrorDir, fake)
+	handler := newRespondHandler(deps)
+	in := RespondInput{ParentIDs: []string{parentID}, Result: "delivered", Delivers: []string{""}}
+	args, _ := json.Marshal(in)
+	if _, _, err := handler(context.Background(), args); err == nil {
+		t.Fatal("respond delivers ['']: want a refusal, got nil")
+	}
+}
+
+// TestRespondHandlerRefusesUnlandedDeliversThroughTheRealFunnel is §8
+// criterion 2 at the MCP tier, driven through the production entry point
+// (respondWithRealValidation's real schema.Load/validate.New/
+// space.NewWriteFunnel stack) rather than a direct call to the check —
+// internal/cli's own TestRespondRefusesUnlandedDeliversThroughTheRealFunnel
+// pins the identical rule at its own tier: a response naming a package
+// whose payload PR has not merged is refused (REF-024), naming the
+// package, with zero pushes/opens — the SAME funnel seat both surfaces
+// reach through funnel.Submit (ADR-004), so this surface inherits the
+// refusal the moment it can author the field at all.
+func TestRespondHandlerRefusesUnlandedDeliversThroughTheRealFunnel(t *testing.T) {
+	t.Parallel()
+	parentID := "XQ-axon-20260721-dvm3"
+	packageID := "DP-beta-20260821-dpk9"
+	_, fakeHost, callErr := respondWithRealValidation(t, parentID, RespondInput{
+		Result: "delivered", Delivers: []string{packageID},
+	})
+	if callErr == nil {
+		t.Fatal("respond delivers <unlanded>: want a refusal, got nil")
+	}
+	if !strings.Contains(callErr.Error(), "REF-024") {
+		t.Fatalf("expected the refusal to name REF-024, got: %v", callErr)
+	}
+	if !strings.Contains(callErr.Error(), packageID) {
+		t.Fatalf("expected the refusal to name the package %q, got: %v", packageID, callErr)
+	}
+	if len(fakeHost.Pushes) != 0 || len(fakeHost.Opens) != 0 {
+		t.Fatalf("expected zero pushes/opens on a refused response, got %d/%d", len(fakeHost.Pushes), len(fakeHost.Opens))
+	}
+}

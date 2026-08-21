@@ -1042,6 +1042,102 @@ func TestEquivRespond(t *testing.T) {
 	}
 }
 
+// equivLandDataPackage commits packageID's manifest directly to
+// refs/remotes/origin/main in mirrorDir's own clone — the SAME git-tree
+// resolution ResolveDataPackage reads (internal/space/data_resolve.go),
+// replicated here (ADR-001: this package never imports internal/cli/
+// internal/space's own unexported test helpers) rather than shared.
+// Mirrors internal/space/data_resolve_test.go's own
+// commitDataPackageFixture: the identical <system>/data/<packageID>/
+// manifest.json layout DeliverDataPackage writes, so landing a package
+// here proves the SAME resolution that fixture proves at its own tier.
+// `git push` opportunistically updates THIS clone's own
+// refs/remotes/origin/main (git >= 1.8.4), which is what
+// contractGitResolveCommit reads — no separate fetch needed, and the
+// respond call that follows checks out FROM this exact ref
+// (restoreTreeToBase, funnel.go).
+func equivLandDataPackage(t *testing.T, mirrorDir, system, packageID string) {
+	t.Helper()
+	relDir := system + "/data/" + packageID
+	writeMirrorFileEquiv(t, mirrorDir, relDir+"/manifest.json", `{"schema":"data-package/v1"}`)
+	if out, err := execGit(mirrorDir, "add", "--", relDir); err != nil {
+		t.Fatalf("git add %s: %v\n%s", relDir, err, out)
+	}
+	if out, err := execGit(mirrorDir, "-c", "user.name=a2a-test", "-c", "user.email=a2a-test@a2ahub.invalid", "commit", "-q", "-m", "deliver "+packageID); err != nil {
+		t.Fatalf("git commit deliver %s: %v\n%s", packageID, err, out)
+	}
+	if out, err := execGit(mirrorDir, "push", "-q", "origin", "main"); err != nil {
+		t.Fatalf("git push origin main (%s): %v\n%s", packageID, err, out)
+	}
+}
+
+// TestEquivRespondDelivers is §8 criterion 1 (spec 02, judge-the-thing-
+// 2026-08 P2, closing HALF of B22): a `respond --result delivered` carrying
+// `delivers` produces a byte-identical event from both surfaces —
+// TestEquivRespond's own sibling, exercised with TWO package ids in a
+// non-alphabetical GIVEN order (spec 02 §6's "multiple package ids;
+// ordering" edge cases; the response id equality assertion below already
+// proves "absent field on both" the same way TestEquivRespond does, so this
+// case does not repeat it).
+//
+// Runs at the publication floor (contract.ContractPublicationFloor, both
+// the funnel's own binaryVersion and the mirror's space.yaml) rather than
+// the zero value every OTHER row in this file still uses — §8 criterion 4's
+// own "a fixture below the floor proves nothing" discipline, grepped for a
+// literal "0.0.0" this case must never carry. `delivers` itself is not
+// floor-gated (unlike verdicts/close, nothing here reads MinBinaryVersion,
+// so equivManifest() — the zero-value Manifest every other respond row
+// already relies on — is left alone, lines 229-239's own warning against
+// re-routing a row through a guard it has never run).
+func TestEquivRespondDelivers(t *testing.T) {
+	t.Parallel()
+	const parentID = "XQ-axon-20260821-dvm1"
+	seed := equivAcceptedQuestion(parentID)
+	packages := []string{"DP-beta-20260821-dpk2", "DP-beta-20260821-dpk1"}
+
+	cliDir, cliFunnel, _ := newEquivMirrorAtBinaryVersion(t, "beta", contract.ContractPublicationFloor, equivNoopValidator{})
+	writeMirrorFileEquiv(t, cliDir, "space.yaml", equivSpaceYAML(contract.ContractPublicationFloor))
+	seed(t, cliDir)
+	for _, pkg := range packages {
+		equivLandDataPackage(t, cliDir, "beta", pkg)
+	}
+	cliCmd := cli.NewRespondCommand(cliFunnel, cliDir, "fixture-space", "beta", equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
+	runCLICommand(t, cliCmd, []string{"--result", "delivered", "--delivers", packages[0], "--delivers", packages[1], parentID})
+	if len(cliFunnel.calls) != 1 {
+		t.Fatalf("respond-delivers: expected 1 CLI funnel call, got %d", len(cliFunnel.calls))
+	}
+
+	mcpDir, mcpFunnel, _ := newEquivMirrorAtBinaryVersion(t, "beta", contract.ContractPublicationFloor, equivNoopValidator{})
+	writeMirrorFileEquiv(t, mcpDir, "space.yaml", equivSpaceYAML(contract.ContractPublicationFloor))
+	seed(t, mcpDir)
+	for _, pkg := range packages {
+		equivLandDataPackage(t, mcpDir, "beta", pkg)
+	}
+	writeDeps := mcp.WriteDeps{
+		Funnel: mcpFunnel, MirrorDir: mcpDir, SpaceID: "fixture-space", OwnSystem: "beta",
+		Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""), ResolveActor: equivMCPActorResolver("agent", "bot"),
+		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
+	}
+	registry := mcp.BuildRegistry(nil, writeDeps, "", nil, mcp.NewDeps{})
+	runMCPHandler(t, registry, "a2a_exchange", "respond", mcp.RespondInput{ParentIDs: []string{parentID}, Result: "delivered", Delivers: packages})
+	if len(mcpFunnel.calls) != 1 {
+		t.Fatalf("respond-delivers: expected 1 MCP funnel call, got %d", len(mcpFunnel.calls))
+	}
+
+	cliReq := cliFunnel.calls[0]
+	mcpReq := mcpFunnel.calls[0]
+	assertRequestsEquivalent(t, "respond-delivers", cliReq, mcpReq)
+
+	cliResponseID := extractResponseID(cliFunnel.calls[0].Files)
+	mcpResponseID := extractResponseID(mcpFunnel.calls[0].Files)
+	if cliResponseID == "" || mcpResponseID == "" {
+		t.Fatalf("could not extract a response id from one of the surfaces: cli=%q mcp=%q", cliResponseID, mcpResponseID)
+	}
+	if cliResponseID != mcpResponseID {
+		t.Fatalf("respond-delivers: content-derived response id mismatch: CLI=%q MCP=%q (identical content must mint the identical id)", cliResponseID, mcpResponseID)
+	}
+}
+
 func TestEquivVerify(t *testing.T) {
 	t.Parallel()
 	const parentID = "XQ-axon-20260721-b002"
