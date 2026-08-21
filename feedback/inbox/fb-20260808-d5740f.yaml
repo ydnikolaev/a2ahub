@@ -60,4 +60,29 @@ checks:
     not_space_specific: true
     no_sensitive_content: true
     duplicates_checked: true
-status: accepted
+status: shipped
+resolution: >-
+  FIXED in v0.24.0. A response can now NAME the data package it announces —
+  `a2a respond --delivers <DP-id>`, on both surfaces — and the write funnel
+  refuses the response (REF-024) while that package has not landed on the
+  space's main branch. Because the check lives in `internal/space` at the
+  funnel seat, `a2a submit` and the MCP write path inherit it identically.
+
+  Atomicity was measured and rejected rather than skipped: bundling does not
+  make the handoff visible inside its own submit, the shipped flow responds
+  AFTER consumer verification so the claim is not yet true at deliver time,
+  and delivery is keyed on PackageID alone while respond is content-derived,
+  so the two idempotency disciplines cannot merge without contradicting D-6.
+  Naming the package makes the same origin/main resolution that defeated
+  atomicity into the check.
+
+  A response carrying no `delivers` is untouched — `delivered` is the ordinary
+  result word for any work_request, and six declared conformance paths answer
+  with it and no package anywhere near them. A cruder version of this check
+  reddened five of them on 2026-08-10 and was reverted; the oracle for this
+  one is that those paths stay green while a new seventh goes red.
+
+  Commit `73a55408`; declared path
+  `response-delivers-unlanded-package-refused` in
+  `internal/livee2e/pathcatalogue_paths.go`, so the rule is driven by the real
+  binary rather than by a unit test agreeing with itself.
