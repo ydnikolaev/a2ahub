@@ -513,76 +513,81 @@ harness-check: ## Run the gates' --teeth self-tests (harness gates are private/p
 # rediscover this. The annotation path itself is then exercised by exactly one
 # dedicated tooth in scripts/verify.sh — without it, pinning here would mean
 # nothing checks that `::error::` is emitted correctly at all.
+# ONE GUARD, DERIVED — not seven hand-written copies plus the ones nobody wrote.
+#
+# Seven of these invocations used to carry their own `if [ -f ... ]` block and
+# the rest did not, because the guard was added one script at a time, each time
+# after that script's absence had already broken a public checkout.
+# check-dashboard-props.sh and check-card-content.sh are both on the
+# publisher's STRIP list and never got one: v0.24.0's THIRD candidate died in
+# CI with `Error 127` on the first of them, on a tree whose own `make check`
+# was green — because `candidate.sh --check-only` runs `make check` and CI runs
+# `make check` AND this target.
+#
+# An ABSENT tooth is announced and skipped. A PRESENT tooth that fails still
+# fails. Adding a script to either list below inherits the guard, so the next
+# private tooth cannot repeat this — the list names WHAT to run, never how to
+# survive its own absence.
+HARNESS_TEETH := \
+  scripts/verify.sh \
+  scripts/check-frozen-allowlist.sh \
+  scripts/check-release-record.sh \
+  scripts/ci-changes.sh \
+  scripts/check-runner-economics.sh \
+  scripts/feedback-intake-policy.sh \
+  scripts/check-gosec-scope.sh \
+  scripts/release-preflight.sh \
+  scripts/check-dashboard-cards.sh \
+  scripts/check-dashboard-derivation.sh \
+  scripts/check-view-vocabulary.sh \
+  scripts/check-dashboard-props.sh \
+  scripts/check-card-content.sh \
+  scripts/check-pendency-uniqueness.sh \
+  scripts/check-notify-workflow.sh \
+  scripts/check-notify-secrets.sh \
+  scripts/check-release-notes-freshness.sh \
+  scripts/check-roadmap-release-decisions.sh \
+  scripts/check-provider-tier-deferral.sh \
+  scripts/bump-space-template.sh \
+  scripts/check-readme.sh \
+  scripts/dashboard-template-drift.sh \
+  docs/runbooks/publish-to-public.sh \
+  docs/runbooks/feedback-sync.sh \
+  scripts/check-feedback-corpus.sh \
+  scripts/check-spec-verify-refs.sh \
+  scripts/check-feature-lint.sh \
+  .agents/scripts/epic_docs_drift.sh \
+  scripts/check-skill-citations.sh \
+  scripts/check-operational-confidence.sh \
+  scripts/check-error-codes.sh \
+  scripts/check-lane-declarations.sh \
+  scripts/check-prose-roster.sh
+
+HARNESS_TESTS := \
+  scripts/tests/check_event_writer_receipts_test.sh \
+  scripts/tests/check_contract_carried_set_test.sh \
+  scripts/tests/check_work_checkpoint_schema_test.sh \
+  scripts/tests/check_operational_projection_single_source_test.sh \
+  scripts/tests/check_localserver_readonly_routes_test.sh \
+  scripts/tests/check_live_e2e_evidence_test.sh \
+  scripts/tests/check_human_gates_test.sh \
+  scripts/tests/check_loop_reachability_test.sh \
+  scripts/tests/check_loop_coverage_test.sh \
+  scripts/tests/classify_guard_test.sh
+
 _harness-check: export GITHUB_ACTIONS :=
 _harness-check:
-	@bash scripts/verify.sh --teeth
-	@bash scripts/check-frozen-allowlist.sh --teeth
-	@bash scripts/check-release-record.sh --teeth
-	@bash scripts/ci-changes.sh --teeth
-	@bash scripts/check-runner-economics.sh --teeth
-	@bash scripts/feedback-intake-policy.sh --teeth
-	@bash scripts/check-gosec-scope.sh --teeth
-	@bash scripts/release-preflight.sh --teeth
-	@bash scripts/check-dashboard-cards.sh --teeth
-	@bash scripts/check-dashboard-derivation.sh --teeth
-	@bash scripts/check-view-vocabulary.sh --teeth
-	@bash scripts/check-dashboard-props.sh --teeth
-	@bash scripts/check-card-content.sh --teeth
-	@bash scripts/check-pendency-uniqueness.sh --teeth
-	@bash scripts/check-notify-workflow.sh --teeth
-	@bash scripts/check-notify-secrets.sh --teeth
-	@bash scripts/check-release-notes-freshness.sh --teeth
-	@bash scripts/check-roadmap-release-decisions.sh --teeth
-	@bash scripts/check-provider-tier-deferral.sh --teeth
-	@bash scripts/bump-space-template.sh --teeth
-	@bash scripts/check-readme.sh --teeth
-	@bash scripts/dashboard-template-drift.sh --teeth
-	@if [ -f docs/runbooks/publish-to-public.sh ]; then \
-	  bash docs/runbooks/publish-to-public.sh --teeth; \
-	else \
-	  echo "harness-check: skip — private publish runbook absent (public checkout)."; \
-	fi
-	@if [ -f docs/runbooks/feedback-sync.sh ]; then \
-	  bash docs/runbooks/feedback-sync.sh --teeth; \
-	else \
-	  echo "harness-check: skip — docs/runbooks/feedback-sync.sh absent (public checkout)."; \
-	fi
-	@if [ -f scripts/check-feedback-corpus.sh ]; then \
-	  bash scripts/check-feedback-corpus.sh --teeth; \
-	else \
-	  echo "harness-check: skip — scripts/check-feedback-corpus.sh absent (public checkout)."; \
-	fi
-	@if [ -f scripts/check-spec-verify-refs.sh ]; then \
-	  bash scripts/check-spec-verify-refs.sh --teeth; \
-	else \
-	  echo "harness-check: skip — scripts/check-spec-verify-refs.sh absent (public checkout)."; \
-	fi
-	@if [ -f scripts/check-feature-lint.sh ]; then \
-	  bash scripts/check-feature-lint.sh --teeth; \
-	else \
-	  echo "harness-check: skip — scripts/check-feature-lint.sh absent (public checkout)."; \
-	fi
-	@if [ -f .agents/scripts/epic_docs_drift.sh ]; then \
-	  bash .agents/scripts/epic_docs_drift.sh --teeth; \
-	else \
-	  echo "harness-check: skip — .agents/scripts/epic_docs_drift.sh absent (public checkout)."; \
-	fi
-	@if [ -f scripts/check-skill-citations.sh ]; then \
-	  bash scripts/check-skill-citations.sh --teeth; \
-	else \
-		echo "harness-check: skip — scripts/check-skill-citations.sh absent (public checkout)."; \
-	fi
-	@bash scripts/check-operational-confidence.sh --teeth
-	@bash scripts/check-error-codes.sh --teeth
-	@bash scripts/check-lane-declarations.sh --teeth
-	@bash scripts/tests/check_event_writer_receipts_test.sh
-	@bash scripts/tests/check_contract_carried_set_test.sh
-	@bash scripts/tests/check_work_checkpoint_schema_test.sh
-	@bash scripts/tests/check_operational_projection_single_source_test.sh
-	@bash scripts/tests/check_localserver_readonly_routes_test.sh
-	@bash scripts/tests/check_live_e2e_evidence_test.sh
-	@bash scripts/tests/check_human_gates_test.sh
-	@bash scripts/tests/check_loop_reachability_test.sh
-	@bash scripts/tests/check_loop_coverage_test.sh
-	@bash scripts/tests/classify_guard_test.sh
-	@bash scripts/check-prose-roster.sh --teeth
+	@for s in $(HARNESS_TEETH); do \
+	  if [ -f "$$s" ]; then \
+	    bash "$$s" --teeth || exit 1; \
+	  else \
+	    echo "harness-check: skip — $$s absent (public checkout)."; \
+	  fi; \
+	done
+	@for s in $(HARNESS_TESTS); do \
+	  if [ -f "$$s" ]; then \
+	    bash "$$s" || exit 1; \
+	  else \
+	    echo "harness-check: skip — $$s absent (public checkout)."; \
+	  fi; \
+	done
