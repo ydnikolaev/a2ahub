@@ -83,6 +83,31 @@ added_at() {
 # which is wrong by an order of magnitude the moment a patch number reaches two
 # digits — the exact boundary the "newest record" lookup two functions below
 # already had to be fixed for once, at v0.19.10.
+# A notes file whose `released:` is the pre-tag SENTINEL is not a release, and
+# this function used to say otherwise. It enumerated by FILENAME alone, so
+# `releasenotes/0.24.0.yaml` — authored ahead of its tag, carrying
+# `released: unreleased` — was reported as "v0.24.0 (RELEASED — no deferral
+# record)". It had shipped nothing. Nothing had been deferred, because nothing
+# had been cut.
+#
+# The sentinel is not invented here. It is `internal/notes.UnreleasedSentinel`,
+# it is in `schemas/release-notes/v1/release-notes.schema.json`, and
+# `scripts/check-release-record.sh`'s own header states its purpose in one
+# line: it "keeps that window honest without blocking authoring ahead of the
+# tag". Authoring notes before the tag is the documented flow
+# (docs/runbooks/release.md Phase 1 step 1), so a gate that treats the act of
+# authoring as the act of shipping punishes the flow the runbook prescribes.
+#
+# Nothing is weakened by skipping it. `release-preflight.sh`'s
+# `assert_notes_carry_a_date` REFUSES the sentinel at cut time, so a version
+# cannot be tagged while wearing it; the moment it gains a date this gate
+# demands the record, which is exactly when an operator is present to sign
+# one. The obligation moves to the boundary that can discharge it, and does
+# not disappear.
+#
+# Found 2026-08-21 by judge-the-thing-2026-08's own lane, which is the epic
+# about a verdict read off a claim instead of the thing it stands for. This
+# was one: the claim was a filename, the thing was whether the version shipped.
 find_release_versions() {
   find releasenotes -maxdepth 1 -type f -name '*.yaml' 2>/dev/null |
     awk -F'[/.]' '
@@ -91,7 +116,16 @@ find_release_versions() {
       }
     ' |
     sort |
-    cut -f2-
+    cut -f2- |
+    while IFS="$(printf '\t')" read -r ver file; do
+      # The skip is ANNOUNCED, never silent: a gate that quietly stops
+      # covering a version is the shape this whole epic exists to remove.
+      if grep -qE '^released:[[:space:]]*"?unreleased"?[[:space:]]*$' "$file" 2>/dev/null; then
+        echo "provider-tier-deferral: not yet a release — v$ver carries the pre-tag sentinel (released: unreleased); its deferral record is due when the tag is cut." >&2
+        continue
+      fi
+      printf '%s\t%s\n' "$ver" "$file"
+    done
 }
 
 find_deferral_records() {
@@ -816,7 +850,44 @@ teeth() {
     exit 1
   }
 
-  echo "provider-tier-deferral --teeth: 3 uncleared releases red and names them; 2 uncleared greens; a live-e2e run after the oldest of 3 clears it to 2 and greens by git history, not mtime or filename; an untracked 3rd release reds too; an acknowledged 3rd ships; a 4th does NOT inherit the 3rd's signature; a recordless release reds unconditionally, even a lone one; a backfill of older records leaves the signature in the NEWEST RELEASE's record; a <placeholder> example is not a signature; a stripped public checkout declines instead of answering."
+  # Case 11: a notes file carrying the PRE-TAG SENTINEL is not a release.
+  #
+  # Two halves, and the first is what makes the second mean anything. A
+  # version whose `released:` is `unreleased` has shipped nothing, so it owes
+  # no deferral record — authoring notes ahead of the tag is the runbook's own
+  # flow. The SAME file with a real DATE and no record must still red, or this
+  # skip would be a hole rather than a boundary.
+  tmp11="$(mktemp -d)"
+  init_repo "$tmp11"
+  echo 'version: "0.1.0"' >"$tmp11/releasenotes/0.1.0.yaml"
+  printf 'released: unreleased\n' >>"$tmp11/releasenotes/0.1.0.yaml"
+  commit_at "$tmp11" 100 "a version authored ahead of its tag"
+
+  if ! out="$(cd "$tmp11" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — a version carrying the pre-tag sentinel was judged as RELEASED:" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -q 'not yet a release' || {
+    echo "provider-tier-deferral --teeth: FAILED — the skip was silent; a version dropping out of coverage must say so" >&2
+    echo "$out" >&2
+    exit 1
+  }
+
+  printf 'version: "0.1.0"\nreleased: "2026-08-21"\n' >"$tmp11/releasenotes/0.1.0.yaml"
+  commit_at "$tmp11" 200 "the same version, now actually cut"
+  if out="$(cd "$tmp11" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — the SAME file with a real date and no record stayed green; the sentinel skip is a hole, not a boundary" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -q 'v0.1.0 (RELEASED' || {
+    echo "provider-tier-deferral --teeth: FAILED — a dated, recordless release was not named" >&2
+    echo "$out" >&2
+    exit 1
+  }
+
+  echo "provider-tier-deferral --teeth: a pre-tag sentinel is not a release while the same file dated and recordless still reds; 3 uncleared releases red and names them; 2 uncleared greens; a live-e2e run after the oldest of 3 clears it to 2 and greens by git history, not mtime or filename; an untracked 3rd release reds too; an acknowledged 3rd ships; a 4th does NOT inherit the 3rd's signature; a recordless release reds unconditionally, even a lone one; a backfill of older records leaves the signature in the NEWEST RELEASE's record; a <placeholder> example is not a signature; a stripped public checkout declines instead of answering."
 }
 
 if [ "${1:-}" = "--teeth" ]; then teeth; exit 0; fi
