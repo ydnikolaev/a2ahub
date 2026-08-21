@@ -580,12 +580,32 @@ assert_notes_carry_a_date() { # $1 = repo root, $2 = version (vX.Y.Z or X.Y.Z)
   # Step 1 of the runbook already tells whoever cuts the release to correct the
   # provisional date. Nothing enforced it, and "the cutter remembers" is what
   # this gate exists to replace everywhere else in this file.
-  local root="$1" version="${2#v}" notes value
+  #
+  # AND THE DATE MUST BE QUOTED, which this check did not say until 2026-08-21.
+  # The schema is `"released": { "type": "string", "format": "date" }`
+  # (schemas/release-notes/v1). YAML resolves a BARE 2026-08-20 to a timestamp,
+  # not a string, so internal/notes' TestLoad_CorpusIntegrity refuses it with
+  # `schema violations: [{Path:released ... InvalidJsonValue}]`. All 40 other
+  # notes files quote it; v0.23.0 was stamped bare, and BECAUSE THIS FUNCTION
+  # STRIPPED THE QUOTES BEFORE COMPARING it read the bare form as correct. The
+  # release was cut on a green preflight over a tree whose own schema test was
+  # red, and it stayed red for a day. A gate that normalises away the very
+  # property its schema demands is judging a claim instead of the thing —
+  # judge-the-thing-2026-08 in one line, inside the gate that allowed it.
+  local root="$1" version="${2#v}" notes value raw
   notes="$root/releasenotes/$version.yaml"
   if [ ! -f "$notes" ]; then
     echo "release-preflight: FAIL — no releasenotes/$version.yaml to cut $version from." >&2
     return 1
   fi
+  raw="$(sed -n 's/^released:[[:space:]]*//p' "$notes" | head -1)"
+  case "$raw" in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9])
+      echo "release-preflight: FAIL — releasenotes/$version.yaml reads 'released: $raw' UNQUOTED." >&2
+      echo "    YAML resolves a bare date to a timestamp; the release-notes schema wants a string," >&2
+      echo "    and internal/notes TestLoad_CorpusIntegrity refuses it. Write it quoted." >&2
+      return 1 ;;
+  esac
   value="$(sed -n 's/^released:[[:space:]]*//p' "$notes" | head -1 | tr -d '"'"'"'[:space:]')"
   case "$value" in
     [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9])
