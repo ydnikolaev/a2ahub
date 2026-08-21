@@ -178,6 +178,38 @@ assert_released_dates_match_tags() { # $1 = repo
         ok "check-release-record: releasenotes/$version.yaml claims released: $released with no v$version tag, but $version predates the newest tag $newest — immutable history, not judged (ADR-011). Reported, not refused."
         continue
       fi
+      # THE CUT WINDOW. A date without a tag is a lie about the PAST — except
+      # for the hours between stamping the date and creating the tag, when it
+      # is a statement about the next few minutes.
+      #
+      # The window is not avoidable by ordering. The tag is created at the
+      # CANDIDATE's SHA (release.md Phase 3 step 13), so whatever the candidate
+      # carries is what gets tagged; the date must be inside the candidate, and
+      # the candidate is published before any tag exists. Meanwhile
+      # `release-preflight` REFUSES the sentinel at cut time, because a tagged
+      # version whose date is not a date kills the whole public site — not
+      # hypothetical: v0.23.0 shipped that way on 2026-08-20 and pages.yml has
+      # been failing with `RangeError: Invalid time value` since.
+      #
+      # So this gate and release-preflight demanded opposite things of one
+      # field and both were right. This gate was authored 2026-08-20, the same
+      # day v0.23.0 was cut; v0.24.0 is the FIRST release to meet it, and it
+      # blocked the candidate's own `make check` — which the provider-tier
+      # deferral requires as its evidence.
+      #
+      # TODAY is the discriminator, and it is deliberately self-closing. A cut
+      # in progress stamps today; a lie about a ship date is about a day that
+      # has already passed. If the tag never lands this greens for hours and
+      # reds tomorrow — an abandoned cut is caught by the same rule, one day
+      # later, with no state to keep and nothing to remember to clean up.
+      #
+      # NOT the candidate ref on the remote, which would be better evidence:
+      # this gate runs offline on every commit, by design.
+      if [ "$released" = "$(date -u +%Y-%m-%d)" ]; then
+        ok "check-release-record: releasenotes/$version.yaml is dated today ($released) with no v$version tag — the cut window (Phase 1 stamps the date, Phase 3 tags the candidate's SHA). Legal today; reds tomorrow if the tag never lands."
+        continue
+      fi
+
       fail "check-release-record: releasenotes/$version.yaml claims released: $released, but v$version
     is not a tag reachable from this checkout. The newest existing tag is ${newest:-<none>}.
     Notes may NAME an uncut version (docs/runbooks/release.md Phase 1 step 1); they may not claim it
@@ -237,6 +269,14 @@ assert_ref_default_is_tagged() { # $1 = repo
     notes="$repo/releasenotes/${got#v}.yaml"
     if [ -f "$notes" ] && [ "$(_released_field "$notes")" = "$UNRELEASED_SENTINEL" ]; then
       ok "check-release-record: $A2A_REF_WORKFLOW's a2a-ref default $got has no tag yet, and releasenotes/${got#v}.yaml carries the $UNRELEASED_SENTINEL sentinel — mid-release-sequence, legal (docs/runbooks/release.md Phase 1 steps 1-2)"
+      return 0
+    fi
+    # The same cut window the released-date check admits, for the same reason
+    # and with the same self-closing bound: once Phase 1 stamps the date the
+    # sentinel is gone, and this row would otherwise red for the hours between
+    # that stamp and Phase 3's tag while the release proceeds correctly.
+    if [ -f "$notes" ] && [ "$(_released_field "$notes")" = "$(date -u +%Y-%m-%d)" ]; then
+      ok "check-release-record: $A2A_REF_WORKFLOW's a2a-ref default $got has no tag yet, and releasenotes/${got#v}.yaml is dated today — the cut window, legal (release.md Phase 1 step 2 through Phase 3 step 13). Reds tomorrow if the tag never lands."
       return 0
     fi
     fail "check-release-record: $A2A_REF_WORKFLOW's a2a-ref default is $got, but $tag is not a tag
@@ -370,6 +410,35 @@ teeth() {
     echo "check-release-record --teeth: FAILED — red, but did not name the newest existing tag" >&2
     echo "$out" >&2; exit 1; }
   ok "teeth 3: released: DATE for an untagged version → RED, naming the version and the newest tag"
+
+  # --- teeth 3a/3b: THE CUT WINDOW, both directions. -------------------------
+  # 3a proves the loosening works; 3b proves it is a WINDOW and not a hole.
+  # Yesterday's date is one day outside it and must still red — otherwise the
+  # rule would say "a date without a tag is fine", which is the opposite of
+  # what this gate is for.
+  _teeth_notes() { # $1 = path, $2 = released value
+    printf 'schema: release-notes/v1\nversion: "0.2.0"\nreleased: "%s"\nheadline: h\nchanges:\n  - id: RN-1\n    kind: feat\n    impact: low\n    subject: s\n    detail: d\n    action:\n      scope: none\n      why: y\n' "$2" > "$1"
+  }
+
+  _teeth_notes "$tmp/releasenotes/0.2.0.yaml" "$(date -u +%Y-%m-%d)"
+  if ! out="$(assert_released_dates_match_tags "$tmp" 2>&1)"; then
+    echo "check-release-record --teeth: FAILED — 3a: TODAY's date with no tag was refused; the cut window cannot open" >&2
+    echo "$out" >&2; exit 1
+  fi
+  printf '%s\n' "$out" | grep -q "the cut window" || {
+    echo "check-release-record --teeth: FAILED — 3a: green, but not by the cut-window branch (it may have passed for the wrong reason)" >&2
+    echo "$out" >&2; exit 1; }
+  ok "teeth 3a: TODAY's date with no tag → GREEN, by the cut window and saying so"
+
+  _teeth_notes "$tmp/releasenotes/0.2.0.yaml" "$(date -u -v-1d +%Y-%m-%d 2>/dev/null || date -u -d 'yesterday' +%Y-%m-%d)"
+  if out="$(assert_released_dates_match_tags "$tmp" 2>&1)"; then
+    echo "check-release-record --teeth: FAILED — 3b: YESTERDAY's date with no tag stayed GREEN; the window is a hole, not a window" >&2
+    echo "$out" >&2; exit 1
+  fi
+  printf '%s\n' "$out" | grep -q "is not a tag reachable" || {
+    echo "check-release-record --teeth: FAILED — 3b: red, but not with the untagged-claim message" >&2
+    echo "$out" >&2; exit 1; }
+  ok "teeth 3b: YESTERDAY's date with no tag → still RED — an abandoned cut is caught one day later"
 
   # --- teeth 4: the sentinel clears it → GREEN ---
   printf 'schema: release-notes/v1\nversion: "0.2.0"\nreleased: unreleased\nheadline: h\nchanges:\n  - id: RN-1\n    kind: feat\n    impact: low\n    subject: s\n    detail: d\n    action:\n      scope: none\n      why: y\n' \
