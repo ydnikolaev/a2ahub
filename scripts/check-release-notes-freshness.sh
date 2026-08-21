@@ -108,11 +108,26 @@ run_check() {
     # livee2e-only commit stays green, a lane-only commit stays green, an
     # e2e-only commit stays green, and a commit that ALSO touches real product
     # code still reds in every case.
+    #
+    # testdata/ joined the list on 2026-08-21, by the same checkable test and
+    # for the same reason as the three packages above. It is the directory the
+    # Go toolchain itself ignores — nothing under it is ever compiled into
+    # cmd/a2a — so no user can observe a byte of it. It was found the way the
+    # e2e exclusion was: a commit that ONLY regenerated
+    # internal/cli/testdata/html-demo-json.golden after a release-notes file
+    # was added demanded a release note for its own bookkeeping. The golden
+    # embeds the notes corpus, so the notes edit moved it; asking that commit
+    # to describe a user-visible change would have meant inventing one.
+    #
+    # `*_test.go` above already covered most fixtures. What it missed is
+    # exactly the ones that are NOT Go source — goldens, txtar scripts, JSON
+    # and YAML fixtures — which is most of what testdata/ holds.
     git -C "$ROOT" log "$anchor..HEAD" --format='%H%x09%s' -- \
       internal/ cmd/ schemas/ space-template/ skill/ \
       ':(exclude)internal/livee2e/' \
       ':(exclude)internal/lane/' \
       ':(exclude)internal/e2e/' \
+      ':(exclude,glob)**/testdata/**' \
       ':(exclude,glob)**/*_test.go'
   )
 
@@ -305,7 +320,46 @@ run_teeth() {
     exit 1
   fi
 
-  echo "release-notes-freshness --teeth: uncovered fix reds with id; notes touch greens; docs/chore stay green; breaking commit reds; livee2e-only greens; livee2e+product reds; lane-only greens; lane+product reds; e2e-only greens; e2e+product reds; test-only greens; test+product reds."
+  # Re-anchor a third time: the pair above deliberately left the fixture red,
+  # and the two below are about what a TESTDATA-ONLY commit does to a GREEN
+  # gate. Inheriting the previous red would let them pass for the wrong reason.
+  printf '%s\n' 'version: "0.5.0"' >"$tmp/releasenotes/0.5.0.yaml"
+  git -C "$tmp" add releasenotes/0.5.0.yaml
+  git -C "$tmp" commit -q -m 'docs: author 0.5.0 release notes'
+  if ! ROOT="$tmp" bash "$SCRIPT_ABS" _internal-check >/dev/null; then
+    echo "release-notes-freshness --teeth: FAILED — the third re-anchor did not green the gate." >&2
+    exit 1
+  fi
+
+  # testdata/ — the directory the Go toolchain itself ignores. A fixture there
+  # is not Go source, so the *_test.go rule above cannot reach it, and it sits
+  # under internal/widget rather than any excluded package, so it can only stay
+  # green through the testdata rule itself. This is the real shape: a golden
+  # that embeds the release-notes corpus, regenerated because a notes file was
+  # added.
+  mkdir -p "$tmp/internal/widget/testdata"
+  printf '%s\n' '{"regenerated": true}' >"$tmp/internal/widget/testdata/demo.golden"
+  git -C "$tmp" add internal/widget/testdata/demo.golden
+  git -C "$tmp" commit -q -m 'fix(widget): regenerate the golden after a notes edit'
+  if ! ROOT="$tmp" bash "$SCRIPT_ABS" _internal-check >/dev/null; then
+    echo "release-notes-freshness --teeth: FAILED — a testdata-only regeneration demanded release notes." >&2
+    exit 1
+  fi
+
+  # And ONLY ALONE, exactly like every exclusion above it.
+  printf '%s\n' '{"regenerated": true, "again": true}' >"$tmp/internal/widget/testdata/demo.golden"
+  printf '%s\n' 'package widget' 'const Fixed = true' 'const Metadata = true' 'const Breaking = true' 'const AlsoProduct = true' 'const AndAgain = true' 'const WithGolden = true' >"$tmp/internal/widget/widget.go"
+  git -C "$tmp" add internal/widget/testdata/demo.golden internal/widget/widget.go
+  git -C "$tmp" commit -q -m 'fix(widget): change behaviour and its golden together'
+  out="$(ROOT="$tmp" bash "$SCRIPT_ABS" _internal-check 2>&1)"
+  rc=$?
+  if [ "$rc" -eq 0 ] || ! grep -q 'fix(widget): change behaviour and its golden together' <<<"$out"; then
+    echo "release-notes-freshness --teeth: FAILED — a commit touching product AND a golden stayed green:" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+
+  echo "release-notes-freshness --teeth: uncovered fix reds with id; notes touch greens; docs/chore stay green; breaking commit reds; livee2e-only greens; livee2e+product reds; lane-only greens; lane+product reds; e2e-only greens; e2e+product reds; test-only greens; test+product reds; testdata-only greens; testdata+product reds."
 }
 
 case "${1:-check}" in
