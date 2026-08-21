@@ -102,6 +102,12 @@ changes:
     are two distinct acts and now derive distinct operation keys. A response
     carrying no packages derives exactly the key it derived before this field
     existed, so nothing already committed changes branch.
+
+    The guide card in `a2a html`'s local dashboard, and the same card on the
+    public features page, name `respond --delivers` where they described
+    `--ref` as the delivery claim. `--ref` still records the handoff that
+    carried the payload; what changed is that the package has its own field
+    and its own refusal.
   affects:
   - contracts
   - cli
