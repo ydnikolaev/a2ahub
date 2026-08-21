@@ -7,20 +7,123 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
-	"testing/fstest"
 
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
+
+// updateRepoRoot resolves the product repo root from this source file's own
+// location (internal/cli/cmd_update_test.go -> ../.. is the repo root) —
+// the same runtime.Caller idiom internal/e2e/main_test.go's repoRoot uses,
+// copied rather than imported (internal/e2e is not a dependency of
+// internal/cli).
+func updateRepoRoot(t *testing.T) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	root, err := filepath.Abs(filepath.Join(filepath.Dir(thisFile), "..", ".."))
+	if err != nil {
+		t.Fatalf("resolve repo root: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "go.mod")); err != nil {
+		t.Fatalf("resolved root %s has no go.mod: %v", root, err)
+	}
+	return root
+}
+
+// updateChildBinOnce/updateChildBinPath/updateChildBinErr build the real
+// `a2a` binary EXACTLY ONCE for this test binary's whole run (spec 04 §11's
+// LEAD DECISION: "Build ONCE per test binary, not per case"), novel for
+// package cli — internal/e2e already owns this idiom (main_test.go:108-118)
+// for testscript-driven black-box tests; this package's seams
+// (postSwapRunner, resolveExec, source, runner) are unexported, so only a
+// package-cli test can wire them, and observing that the refreshed tree came
+// from the CHILD's own embed (criterion 1) requires a real child carrying a
+// real embed. No -ldflags, so the child stamps the package default "dev"
+// (cmd/a2a/main.go's own literal) — criterion 1 uses exactly that to prove
+// provenance: a PROVENANCE.md stamped "dev" while res.ToVersion is "0.3.0"
+// could only have been written by the child.
+var (
+	updateChildBinOnce sync.Once
+	updateChildBinPath string
+	updateChildBinErr  error
+)
+
+// updateChildBinary returns the path to the once-built child `a2a` binary,
+// failing the calling test (not the whole run) if the build itself failed.
+func updateChildBinary(t *testing.T) string {
+	t.Helper()
+	root := updateRepoRoot(t)
+	updateChildBinOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "a2a-cli-update-bin-*")
+		if err != nil {
+			updateChildBinErr = err
+			return
+		}
+		bin := filepath.Join(dir, "a2a")
+		cmd := exec.Command("go", "build", "-buildvcs=false", "-o", bin, "./cmd/a2a")
+		cmd.Dir = root
+		cmd.Env = append(os.Environ(), "GOWORK=off")
+		if out, buildErr := cmd.CombinedOutput(); buildErr != nil {
+			updateChildBinErr = fmt.Errorf("go build ./cmd/a2a: %w\n%s", buildErr, out)
+			return
+		}
+		updateChildBinPath = bin
+	})
+	if updateChildBinErr != nil {
+		t.Fatalf("build child a2a binary: %v", updateChildBinErr)
+	}
+	return updateChildBinPath
+}
+
+// assertSkillTreeMatchesRepo asserts that every file under the repo's own
+// skill/a2ahub/ embed corpus is byte-identical to the file the refresh wrote
+// at the same relative path under target — the criterion-1 provenance-of-
+// bytes assertion (spec 04 §8 row 1): the installed tree must come from
+// WHICHEVER binary ran `skill install`, not the parent process, and the only
+// binary that could have produced a match here is the child.
+func assertSkillTreeMatchesRepo(t *testing.T, repoRoot, target string) {
+	t.Helper()
+	repoTree := os.DirFS(filepath.Join(repoRoot, "skill", "a2ahub"))
+	err := fs.WalkDir(repoTree, ".", func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		want, readErr := fs.ReadFile(repoTree, p)
+		if readErr != nil {
+			return readErr
+		}
+		got, readErr := os.ReadFile(filepath.Join(target, filepath.FromSlash(p)))
+		if readErr != nil {
+			t.Errorf("read installed %s: %v", p, readErr)
+			return nil
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("installed %s does not match the repo's own skill/a2ahub embed", p)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk repo skill tree: %v", err)
+	}
+}
 
 // fakeUpdateSource is a release.Source test double: a fixed Release/error and
 // a call counter, so tests can assert `--check` and the consent gate never
@@ -424,6 +527,26 @@ func TestUpdateCommand_PostSwapDigest_JSONMode_NoHumanDigest(t *testing.T) {
 	}
 }
 
+// updateFakeSeamCall records one postSwapRunner invocation.
+type updateFakeSeamCall struct {
+	executable, dir string
+	args            []string
+}
+
+// updateFakeSeam returns a postSwapRunner fake that records every call and
+// dispatches its return value on args[0]: "skill" calls return skillErr,
+// every other call (the notification-component repair) returns nil. One
+// fake serves both callers per spec 04 §T1 "Consequence for fakes".
+func updateFakeSeam(calls *[]updateFakeSeamCall, skillErr error) func(context.Context, string, string, ...string) error {
+	return func(_ context.Context, executable, dir string, args ...string) error {
+		*calls = append(*calls, updateFakeSeamCall{executable: executable, dir: dir, args: args})
+		if len(args) > 0 && args[0] == "skill" {
+			return skillErr
+		}
+		return nil
+	}
+}
+
 func TestUpdateCommand_SkillRefresh_ManagedInstall_Refreshed(t *testing.T) {
 	rel, _, _ := newUpdateReleaseFixture(t, "0.3.0")
 	execPath, _ := newUpdateExecFixture(t)
@@ -449,9 +572,8 @@ func TestUpdateCommand_SkillRefresh_ManagedInstall_Refreshed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd.SkillFiles = fstest.MapFS{
-		"a2ahub/SKILL.md": &fstest.MapFile{Data: []byte("fresh content")},
-	}
+	var calls []updateFakeSeamCall
+	cmd.postSwapRunner = updateFakeSeam(&calls, nil)
 
 	stdio, stdout, stderr := newUpdateIO("")
 	code := cmd.Run(context.Background(), []string{"--yes", "--allow-unsigned"}, stdio)
@@ -462,19 +584,14 @@ func TestUpdateCommand_SkillRefresh_ManagedInstall_Refreshed(t *testing.T) {
 	if !strings.Contains(stdout.String(), "refreshed skill install") {
 		t.Fatalf("stdout = %q, want a refreshed-skill confirmation", stdout.String())
 	}
-	got, err := os.ReadFile(filepath.Join(skillTarget, "SKILL.md"))
-	if err != nil {
-		t.Fatalf("read refreshed SKILL.md: %v", err)
+	if len(calls) != 1 {
+		t.Fatalf("postSwapRunner calls = %d, want exactly 1 (%v)", len(calls), calls)
 	}
-	if string(got) != "fresh content" {
-		t.Fatalf("SKILL.md = %q, want the re-installed content", got)
+	if calls[0].executable != execPath || calls[0].dir != cmd.projectRoot {
+		t.Fatalf("call = %+v, want executable=%q dir=%q", calls[0], execPath, cmd.projectRoot)
 	}
-	prov, err := os.ReadFile(filepath.Join(skillTarget, skillProvenanceFile))
-	if err != nil {
-		t.Fatalf("read refreshed PROVENANCE.md: %v", err)
-	}
-	if !strings.Contains(string(prov), "a2a 0.3.0") {
-		t.Fatalf("PROVENANCE.md = %q, want it re-stamped to the ToVersion (0.3.0)", prov)
+	if want := []string{"skill", "install"}; strings.Join(calls[0].args, " ") != strings.Join(want, " ") {
+		t.Fatalf("call args = %v, want %v (no flags)", calls[0].args, want)
 	}
 }
 
@@ -494,21 +611,26 @@ func TestUpdateCommand_SkillRefresh_CustomConfiguredInstall(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(target, skillProvenanceFile), []byte(skillProvenance("0.1.0")), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cmd.SkillFiles = fstest.MapFS{
-		"a2ahub/SKILL.md": &fstest.MapFile{Data: []byte("fresh")},
-	}
-	var stdout, stderr bytes.Buffer
-	cmd.refreshInstalledSkill(release.ApplyResult{ToVersion: "0.3.0"}, IO{Stdout: &stdout, Stderr: &stderr}, false)
+	var calls []updateFakeSeamCall
+	cmd.postSwapRunner = updateFakeSeam(&calls, nil)
 
-	got, err := os.ReadFile(filepath.Join(target, "SKILL.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(got) != "fresh" {
-		t.Fatalf("custom SKILL.md=%q, want refreshed content", got)
-	}
+	var stdout, stderr bytes.Buffer
+	cmd.refreshInstalledSkill(context.Background(), "the-swapped-exec-path", release.ApplyResult{ToVersion: "0.3.0"}, IO{Stdout: &stdout, Stderr: &stderr}, false)
+
 	if !strings.Contains(stdout.String(), "agent/manual -> v0.3.0") || stderr.Len() != 0 {
 		t.Fatalf("stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+	if len(calls) != 1 {
+		t.Fatalf("postSwapRunner calls = %d, want exactly 1 (%v)", len(calls), calls)
+	}
+	// The exec's WORKING DIRECTORY is projectRoot — NOT the custom target
+	// (spec 04 §5 "Two resolutions of skill_dir": the CHILD resolves the
+	// target itself, from its own cwd's .a2a/config.yaml).
+	if calls[0].executable != "the-swapped-exec-path" || calls[0].dir != cmd.projectRoot {
+		t.Fatalf("call = %+v, want executable=%q dir=%q", calls[0], "the-swapped-exec-path", cmd.projectRoot)
+	}
+	if want := []string{"skill", "install"}; strings.Join(calls[0].args, " ") != strings.Join(want, " ") {
+		t.Fatalf("call args = %v, want %v (no --dir, no --force)", calls[0].args, want)
 	}
 	if _, err := os.Stat(filepath.Join(cmd.projectRoot, skillDefaultDir)); !os.IsNotExist(err) {
 		t.Fatalf("refresh unexpectedly touched default target: %v", err)
@@ -525,9 +647,8 @@ func TestUpdateCommand_SkillRefresh_NoInstall_SkippedSilently(t *testing.T) {
 	cmd.cachePath = func() (string, error) { return filepath.Join(t.TempDir(), "cache.json"), nil }
 	cmd.runner = updateMatchingRunner("0.3.0")
 	cmd.whatsnewRunner = updateFakeWhatsnewRunner("", fmt.Errorf("no digest"), &[][]string{})
-	cmd.SkillFiles = fstest.MapFS{
-		"a2ahub/SKILL.md": &fstest.MapFile{Data: []byte("fresh content")},
-	}
+	var calls []updateFakeSeamCall
+	cmd.postSwapRunner = updateFakeSeam(&calls, nil)
 	// No pre-existing install at cmd.projectRoot/.a2ahub/skill — never created.
 
 	stdio, stdout, stderr := newUpdateIO("")
@@ -542,6 +663,12 @@ func TestUpdateCommand_SkillRefresh_NoInstall_SkippedSilently(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(cmd.projectRoot, skillDefaultDir)); !os.IsNotExist(err) {
 		t.Fatalf("skill refresh created an install where none existed (err=%v)", err)
 	}
+	// The stronger claim criterion 5 asks for: the seam was NEVER invoked at
+	// all for the skill refresh (a component-repair call, if any, is fine —
+	// this fixture configures none, so any call at all is unexpected here).
+	if len(calls) != 0 {
+		t.Fatalf("postSwapRunner calls = %d, want 0 (%v)", len(calls), calls)
+	}
 }
 
 func TestUpdateCommand_SkillRefresh_ForeignTarget_SkippedNotClobbered(t *testing.T) {
@@ -554,9 +681,8 @@ func TestUpdateCommand_SkillRefresh_ForeignTarget_SkippedNotClobbered(t *testing
 	cmd.cachePath = func() (string, error) { return filepath.Join(t.TempDir(), "cache.json"), nil }
 	cmd.runner = updateMatchingRunner("0.3.0")
 	cmd.whatsnewRunner = updateFakeWhatsnewRunner("", fmt.Errorf("no digest"), &[][]string{})
-	cmd.SkillFiles = fstest.MapFS{
-		"a2ahub/SKILL.md": &fstest.MapFile{Data: []byte("fresh content")},
-	}
+	var calls []updateFakeSeamCall
+	cmd.postSwapRunner = updateFakeSeam(&calls, nil)
 
 	// A target that exists but carries NO a2ahub provenance marker — someone
 	// else's content. The update must never touch it.
@@ -579,6 +705,10 @@ func TestUpdateCommand_SkillRefresh_ForeignTarget_SkippedNotClobbered(t *testing
 	}
 	if _, err := os.ReadFile(filepath.Join(skillTarget, "unrelated.txt")); err != nil {
 		t.Fatalf("foreign target content was removed: %v", err)
+	}
+	// The stronger claim criterion 6 asks for: the seam was NEVER invoked.
+	if len(calls) != 0 {
+		t.Fatalf("postSwapRunner calls = %d, want 0 (%v)", len(calls), calls)
 	}
 }
 
@@ -728,7 +858,7 @@ func TestUpdateCommandRefreshesOnlyManagedEnabledNotificationComponents(t *testi
 	// reason: newTestUpdateCommand owns process environment through t.Setenv.
 	cmd := newTestUpdateCommand(t, "0.1.0")
 	var calls [][]string
-	cmd.companionRunner = func(_ context.Context, executable, dir string, args ...string) error {
+	cmd.postSwapRunner = func(_ context.Context, executable, dir string, args ...string) error {
 		calls = append(calls, append([]string{executable, dir}, args...))
 		return nil
 	}
@@ -756,6 +886,82 @@ func TestUpdateCommandRefreshesOnlyManagedEnabledNotificationComponents(t *testi
 	}
 	if len(results) != 1 || results[0].Status != "updated" || results[0].Profile != "Work" {
 		t.Fatalf("component results = %+v", results)
+	}
+}
+
+// TestUpdateCommand_SharedSeam_DispatchesBothCallersWithoutConflating is
+// spec 04 §6's "shared fake" row / §T1 "Consequence for fakes": the
+// notification-component repair and the skill refresh reach the SAME
+// postSwapRunner seam through one full `a2a update` run, and a fake
+// dispatching on args[0] sees exactly two kinds of call — one "skill" call
+// for the manual refresh, one "notifications" call for the component
+// repair — and does not conflate them (the skill call must never surface as
+// a component result, and vice versa).
+func TestUpdateCommand_SharedSeam_DispatchesBothCallersWithoutConflating(t *testing.T) {
+	rel, _, _ := newUpdateReleaseFixture(t, "0.3.0")
+	execPath, _ := newUpdateExecFixture(t)
+
+	cmd := newTestUpdateCommand(t, "0.1.0")
+	cmd.source = func(string) release.Source { return &fakeUpdateSource{rel: rel} }
+	cmd.resolveExec = func() (string, error) { return execPath, nil }
+	cmd.cachePath = func() (string, error) { return filepath.Join(t.TempDir(), "cache.json"), nil }
+	cmd.runner = updateMatchingRunner("0.3.0")
+	cmd.whatsnewRunner = updateFakeWhatsnewRunner("", fmt.Errorf("no digest"), &[][]string{})
+	cmd.loadMachineConfig = func(string) (space.MachineConfig, error) {
+		return space.MachineConfig{Notifications: space.NotificationConfig{
+			Projects:   []space.NotificationProject{{Root: "/projects/one", Channels: []string{"vscode"}}},
+			Components: []space.NotificationComponent{{Channel: "vscode", Version: "0.1.0"}},
+		}}, nil
+	}
+
+	// A pre-existing managed skill install so the refresh actually execs.
+	skillTarget := filepath.Join(cmd.projectRoot, skillDefaultDir)
+	if err := os.MkdirAll(skillTarget, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillTarget, "SKILL.md"), []byte("stale content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillTarget, skillProvenanceFile), []byte(skillProvenance("0.1.0")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var calls []updateFakeSeamCall
+	cmd.postSwapRunner = updateFakeSeam(&calls, nil)
+
+	stdio, stdout, stderr := newUpdateIO("")
+	code := cmd.Run(context.Background(), []string{"--yes", "--allow-unsigned", "--json"}, stdio)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if len(calls) != 2 {
+		t.Fatalf("postSwapRunner calls = %d, want exactly 2 (%v)", len(calls), calls)
+	}
+	var notificationsCalls, skillCalls int
+	for _, c := range calls {
+		if len(c.args) == 0 {
+			t.Fatalf("call with no args: %+v", c)
+		}
+		switch c.args[0] {
+		case "notifications":
+			notificationsCalls++
+		case "skill":
+			skillCalls++
+		default:
+			t.Fatalf("unexpected call kind %q: %+v", c.args[0], c)
+		}
+	}
+	if notificationsCalls != 1 || skillCalls != 1 {
+		t.Fatalf("notifications calls = %d, skill calls = %d, want 1 each (%v)", notificationsCalls, skillCalls, calls)
+	}
+
+	var result updateJSON
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("--json stdout is not one JSON document: %v (raw: %s)", err, stdout.String())
+	}
+	if len(result.Components) != 1 || result.Components[0].Channel != "vscode" || result.Components[0].Status != "updated" {
+		t.Fatalf("jsonResult.Components = %+v, want exactly the ONE notification component (the skill call must not be conflated into it)", result.Components)
 	}
 }
 
@@ -827,5 +1033,284 @@ func TestDefaultUpdateConfirm(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("defaultUpdateConfirm(%q) = %v, want %v", tc.input, got, tc.want)
 		}
+	}
+}
+
+// TestUpdateSkillRefreshWritesTheChildBinarysOwnTree is spec 04 §8 criterion
+// 1: after a refresh the installed tree must be byte-identical to the NEW
+// binary's own embedded skill/a2ahub corpus, and PROVENANCE must carry the
+// NEW binary's own stamp — neither supplied by the updating (parent)
+// process. res.ToVersion is deliberately set to a value ("0.3.0") that
+// differs from the child's real build stamp ("dev", the default when built
+// without -ldflags) so a PROVENANCE stamp of "dev" can only have been
+// written by the CHILD.
+func TestUpdateSkillRefreshWritesTheChildBinarysOwnTree(t *testing.T) {
+	root := updateRepoRoot(t)
+	execPath := updateChildBinary(t)
+	cmd := newTestUpdateCommand(t, "0.1.0")
+
+	// Seed a PRE-EXISTING managed skill install (provenance-marked, stale
+	// content) under the command's own projectRoot, exactly like the other
+	// SkillRefresh tests — the ownership gate must see an owned target.
+	skillTarget := filepath.Join(cmd.projectRoot, skillDefaultDir)
+	if err := os.MkdirAll(skillTarget, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillTarget, "SKILL.md"), []byte("stale content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillTarget, skillProvenanceFile), []byte(skillProvenance("0.1.0")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The DEFAULT seam (unmodified from NewUpdateCommand: the real os/exec
+	// closure) execs the real built binary. res.ToVersion is deliberately
+	// wrong ("0.3.0") so a correct "dev" stamp on disk could only have come
+	// from the CHILD, never from this parent process.
+	stdio, stdout, _ := newUpdateIO("")
+	cmd.refreshInstalledSkill(context.Background(), execPath, release.ApplyResult{ToVersion: "0.3.0"}, stdio, false)
+
+	assertSkillTreeMatchesRepo(t, root, skillTarget)
+
+	prov, err := os.ReadFile(filepath.Join(skillTarget, skillProvenanceFile))
+	if err != nil {
+		t.Fatalf("read PROVENANCE.md: %v", err)
+	}
+	if !strings.Contains(string(prov), "a2a dev") {
+		t.Fatalf("PROVENANCE.md = %q, want the CHILD's own dev stamp (built without -ldflags), not res.ToVersion", prov)
+	}
+	if strings.Contains(string(prov), "0.3.0") {
+		t.Fatalf("PROVENANCE.md = %q, want NO trace of the parent-supplied ToVersion (0.3.0)", prov)
+	}
+	if !strings.Contains(stdout.String(), "refreshed skill install") {
+		t.Fatalf("stdout = %q, want a refreshed-skill confirmation", stdout.String())
+	}
+	// §9's own claim, proven here (not by the fake-seam tests, which never
+	// spawn a child at all): the seam wires neither Stdout nor Stderr, so
+	// os/exec connects both to the null device BY CONSTRUCTION. This is the
+	// one test with a REAL child, so it is the one place the child's own
+	// three human lines ("a2a skill: installed N files to …", "entry
+	// point: …") could actually leak into this process's stdout — and don't.
+	if strings.Contains(stdout.String(), "entry point") || strings.Contains(stdout.String(), "files to") {
+		t.Fatalf("stdout = %q, want none of the child's own `skill install` output — the seam wires no Stdout, so os/exec connects it to the null device", stdout.String())
+	}
+}
+
+// TestUpdateSkillRefreshExecsTheSwappedBinary is spec 04 §8 criterion 4: the
+// refresh execs the swapped binary with argv exactly "skill install", no
+// flags, in projectRoot — and writes no file into the target itself (the
+// fake seam never touches disk, so any change to skillTarget could only
+// have come from this process, which criterion 1 already forbids).
+func TestUpdateSkillRefreshExecsTheSwappedBinary(t *testing.T) {
+	cmd := newTestUpdateCommand(t, "0.1.0")
+	execPath, _ := newUpdateExecFixture(t)
+
+	skillTarget := filepath.Join(cmd.projectRoot, skillDefaultDir)
+	if err := os.MkdirAll(skillTarget, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillTarget, "SKILL.md"), []byte("stale content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillTarget, skillProvenanceFile), []byte(skillProvenance("0.1.0")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var calls []updateFakeSeamCall
+	cmd.postSwapRunner = updateFakeSeam(&calls, nil)
+
+	stdio, _, _ := newUpdateIO("")
+	cmd.refreshInstalledSkill(context.Background(), execPath, release.ApplyResult{ToVersion: "0.3.0"}, stdio, false)
+
+	if len(calls) != 1 {
+		t.Fatalf("postSwapRunner calls = %d, want exactly 1 (%v)", len(calls), calls)
+	}
+	if calls[0].executable != execPath || calls[0].dir != cmd.projectRoot {
+		t.Fatalf("call = %+v, want executable=%q dir=%q", calls[0], execPath, cmd.projectRoot)
+	}
+	if want := []string{"skill", "install"}; strings.Join(calls[0].args, " ") != strings.Join(want, " ") {
+		t.Fatalf("call args = %v, want %v (no --force, no --dir)", calls[0].args, want)
+	}
+	got, err := os.ReadFile(filepath.Join(skillTarget, "SKILL.md"))
+	if err != nil {
+		t.Fatalf("read SKILL.md: %v", err)
+	}
+	if string(got) != "stale content" {
+		t.Fatalf("SKILL.md = %q, want it UNCHANGED — the fake seam never touched disk, so the refresh itself must write no file into the target", got)
+	}
+}
+
+// TestUpdateSkillRefresh_SeamError_NoConfirmationLine is spec 04 §8
+// criterion 7: a failing refresh leaves a2a update's exit code at 0, prints
+// NO confirmation line, and warns on stderr — in both human and --json mode.
+func TestUpdateSkillRefresh_SeamError_NoConfirmationLine(t *testing.T) {
+	for _, jsonMode := range []bool{false, true} {
+		rel, _, _ := newUpdateReleaseFixture(t, "0.3.0")
+		execPath, _ := newUpdateExecFixture(t)
+
+		cmd := newTestUpdateCommand(t, "0.1.0")
+		cmd.source = func(string) release.Source { return &fakeUpdateSource{rel: rel} }
+		cmd.resolveExec = func() (string, error) { return execPath, nil }
+		cmd.cachePath = func() (string, error) { return filepath.Join(t.TempDir(), "cache.json"), nil }
+		cmd.runner = updateMatchingRunner("0.3.0")
+		cmd.whatsnewRunner = updateFakeWhatsnewRunner("", fmt.Errorf("no digest"), &[][]string{})
+
+		skillTarget := filepath.Join(cmd.projectRoot, skillDefaultDir)
+		if err := os.MkdirAll(skillTarget, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(skillTarget, "SKILL.md"), []byte("stale content"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(skillTarget, skillProvenanceFile), []byte(skillProvenance("0.1.0")), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		var calls []updateFakeSeamCall
+		cmd.postSwapRunner = updateFakeSeam(&calls, fmt.Errorf("exec: skill install: exit status 1"))
+
+		args := []string{"--yes", "--allow-unsigned"}
+		if jsonMode {
+			args = append(args, "--json")
+		}
+		stdio, stdout, stderr := newUpdateIO("")
+		code := cmd.Run(context.Background(), args, stdio)
+
+		if code != 0 {
+			t.Fatalf("json=%v: exit code = %d, want 0 (the update itself already succeeded)", jsonMode, code)
+		}
+		if strings.Contains(stdout.String(), "refreshed skill install") {
+			t.Fatalf("json=%v: stdout = %q, want NO confirmation line when the refresh seam errors", jsonMode, stdout.String())
+		}
+		if stderr.Len() == 0 {
+			t.Fatalf("json=%v: stderr is empty, want a warning naming the failure", jsonMode)
+		}
+	}
+}
+
+// TestUpdateSkillRefresh_FailureWarningNamesRemedy is spec 04 §8 criterion
+// 8: the failure warning names `a2a skill install` AND `--force`, and says
+// the target was verified a2ahub-owned before the refresh — so an
+// interrupted child that removed PROVENANCE.md does not leave the operator
+// at a refusal with no way out (cmd_skill.go:294/303's remove-first,
+// stamp-last order).
+func TestUpdateSkillRefresh_FailureWarningNamesRemedy(t *testing.T) {
+	cmd := newTestUpdateCommand(t, "0.1.0")
+	execPath, _ := newUpdateExecFixture(t)
+
+	skillTarget := filepath.Join(cmd.projectRoot, skillDefaultDir)
+	if err := os.MkdirAll(skillTarget, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillTarget, "SKILL.md"), []byte("stale content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillTarget, skillProvenanceFile), []byte(skillProvenance("0.1.0")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var calls []updateFakeSeamCall
+	cmd.postSwapRunner = updateFakeSeam(&calls, fmt.Errorf("exec: skill install: exit status 1"))
+
+	stdio, _, stderr := newUpdateIO("")
+	cmd.refreshInstalledSkill(context.Background(), execPath, release.ApplyResult{ToVersion: "0.3.0"}, stdio, false)
+
+	if !strings.Contains(stderr.String(), "a2a skill install") || !strings.Contains(stderr.String(), "--force") {
+		t.Fatalf("stderr = %q, want it to name both `a2a skill install` and `--force`", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "owned") {
+		t.Fatalf("stderr = %q, want it to say the target was verified a2ahub-owned before the refresh", stderr.String())
+	}
+}
+
+// TestUpdateCommand_SkillRefresh_JSONCleanOnSuccessAndFailure is spec 04 §8
+// criterion 9: `a2a update --json` stdout parses as exactly one JSON
+// document whether the refresh succeeds or fails, and the refresh
+// contributes nothing to it — the child's own strings never appear because
+// the seam sets neither Stdout nor Stderr (os/exec connects both to the null
+// device by construction, not by a suppression rule this phase must
+// preserve).
+func TestUpdateCommand_SkillRefresh_JSONCleanOnSuccessAndFailure(t *testing.T) {
+	for _, seamErr := range []error{nil, fmt.Errorf("exec: skill install: exit status 1")} {
+		rel, _, _ := newUpdateReleaseFixture(t, "0.3.0")
+		execPath, _ := newUpdateExecFixture(t)
+
+		cmd := newTestUpdateCommand(t, "0.1.0")
+		cmd.source = func(string) release.Source { return &fakeUpdateSource{rel: rel} }
+		cmd.resolveExec = func() (string, error) { return execPath, nil }
+		cmd.cachePath = func() (string, error) { return filepath.Join(t.TempDir(), "cache.json"), nil }
+		cmd.runner = updateMatchingRunner("0.3.0")
+		cmd.whatsnewRunner = updateFakeWhatsnewRunner("", fmt.Errorf("no digest"), &[][]string{})
+
+		skillTarget := filepath.Join(cmd.projectRoot, skillDefaultDir)
+		if err := os.MkdirAll(skillTarget, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(skillTarget, "SKILL.md"), []byte("stale content"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(skillTarget, skillProvenanceFile), []byte(skillProvenance("0.1.0")), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		var calls []updateFakeSeamCall
+		cmd.postSwapRunner = updateFakeSeam(&calls, seamErr)
+
+		stdio, stdout, _ := newUpdateIO("")
+		code := cmd.Run(context.Background(), []string{"--yes", "--allow-unsigned", "--json"}, stdio)
+
+		if code != 0 {
+			t.Fatalf("seamErr=%v: exit code = %d, want 0", seamErr, code)
+		}
+		var result updateJSON
+		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+			t.Fatalf("seamErr=%v: --json stdout is not one JSON document: %v (raw: %s)", seamErr, err, stdout.String())
+		}
+		if strings.Contains(stdout.String(), "installed") || strings.Contains(stdout.String(), "entry point") {
+			t.Fatalf("seamErr=%v: stdout = %q, want none of the child's own `skill install` output", seamErr, stdout.String())
+		}
+	}
+}
+
+// TestUpdateSkillRefresh_DevFromVersion_StillRefreshes is spec 04 §8
+// criterion 10: a FromVersion that is not a release version still
+// refreshes — the digest's version precondition (printPostUpdateDigest
+// returns early when FromVersion does not parse) is NOT inherited by the
+// refresh. Driven directly against printPostUpdateDigest/refreshInstalledSkill
+// rather than through the full cmd.Run pipeline: release.Resolve itself
+// refuses an unparseable Current version before the swap step is ever
+// reached (release/resolve.go — version.OlderThan("dev", latest) errors), so
+// a dev-build `a2a update` never gets far enough to exercise this row
+// end-to-end. Calling both post-swap steps directly with
+// res.FromVersion = "dev" still proves the exact claim the criterion makes:
+// the refresh's own precondition set is disjoint from the digest's
+// (recorded as a deviation in spec 04 §11).
+func TestUpdateSkillRefresh_DevFromVersion_StillRefreshes(t *testing.T) {
+	cmd := newTestUpdateCommand(t, "0.1.0")
+	execPath, _ := newUpdateExecFixture(t)
+
+	skillTarget := filepath.Join(cmd.projectRoot, skillDefaultDir)
+	if err := os.MkdirAll(skillTarget, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillTarget, "SKILL.md"), []byte("stale content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillTarget, skillProvenanceFile), []byte(skillProvenance("0.1.0")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res := release.ApplyResult{FromVersion: "dev", ToVersion: "0.3.0"}
+	var whatsnewCalls [][]string
+	cmd.whatsnewRunner = updateFakeWhatsnewRunner("v0.3.0 — headline\n", nil, &whatsnewCalls)
+	var skillCalls []updateFakeSeamCall
+	cmd.postSwapRunner = updateFakeSeam(&skillCalls, nil)
+
+	stdio, _, _ := newUpdateIO("")
+	cmd.printPostUpdateDigest(context.Background(), execPath, res, stdio)
+	cmd.refreshInstalledSkill(context.Background(), execPath, res, stdio, false)
+
+	if len(whatsnewCalls) != 0 {
+		t.Fatalf("whatsnewRunner calls = %d, want 0 (FromVersion %q does not parse — the digest is skipped)", len(whatsnewCalls), res.FromVersion)
+	}
+	if len(skillCalls) != 1 {
+		t.Fatalf("postSwapRunner (skill) calls = %d, want exactly 1 — the refresh has no version precondition", len(skillCalls))
 	}
 }

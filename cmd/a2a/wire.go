@@ -272,8 +272,9 @@ func buildCommands() map[string]command {
 		// would write — the reverse of "versions", which only asks whether the
 		// binary is too old for the space. It needs the embedded template, and
 		// internal/cli must not import space-template directly, so it is wired
-		// here post-construction (the same shape init/update already use for
-		// SkillFiles). Left unwired the row degrades to an advisory "this build
+		// here post-construction (the same shape `init` already uses for
+		// SkillFiles — `update` stopped wiring it in judge-the-thing P4, which
+		// execs the swapped binary instead of writing this process's embed). Left unwired the row degrades to an advisory "this build
 		// wires no embedded space template" rather than failing — which is
 		// correct behaviour and exactly why it must actually be wired: an
 		// advisory nobody set up is indistinguishable from one that has nothing
@@ -297,10 +298,6 @@ func buildCommands() map[string]command {
 		// Bare version (like doctor): release.Info/version.OlderThan parse a
 		// bare major.minor.patch, not the "a2a x.y.z (sha)" stamp.
 		cmd := cli.NewUpdateCommand(version, p.projectConfig, p.machineConfig, p.projectRoot)
-		// P31 wave 5: best-effort skill-manual refresh after a successful swap
-		// (installSkillTree's own embedded tree — same DI the init/skill
-		// closures already pass).
-		cmd.SkillFiles = skill.Files
 		return cmd.Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["submit"] = runSubmit

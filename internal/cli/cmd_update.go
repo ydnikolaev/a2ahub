@@ -19,7 +19,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -76,20 +75,21 @@ type UpdateCommand struct {
 	// canned Runner.
 	whatsnewRunner release.Runner
 
-	// companionRunner executes the newly swapped binary in the project that
-	// already owns a channel. It repairs only a2a-managed component
-	// installations recorded in machine config, preserving VS Code profile
-	// ownership and never enabling a disabled channel.
-	companionRunner func(context.Context, string, string, ...string) error
-
-	// SkillFiles is the embedded a2ahub skill tree (skill.Files), DI'd by
-	// wire.go exactly like SkillCommand/InitCommand. When set (and this
-	// command's projectRoot has a MANAGED skill install already), a
-	// successful update best-effort refreshes it to the new version so the
-	// installed manual is never older than the binary. Left nil (the zero
-	// value, e.g. direct-construction tests that don't set it), the refresh
-	// step is a no-op.
-	SkillFiles fs.FS
+	// postSwapRunner execs the just-swapped NEW binary inside a project
+	// directory — the ONE seam for "run the new binary as itself, in the
+	// project it now owns" (renamed from companionRunner: P4,
+	// judge-the-thing-2026-08 spec 04 §T1 — it now has two callers and
+	// neither name nor doc should describe only one). Two consumers:
+	//   - refreshManagedNotificationComponents repairs a2a-managed
+	//     component installations recorded in machine config, preserving VS
+	//     Code profile ownership and never enabling a disabled channel.
+	//   - refreshInstalledSkill execs the child's own `skill install` so an
+	//     existing managed skill tree is refreshed from the CHILD's embed
+	//     and stamped with the CHILD's own version — never this (old)
+	//     process's embedded tree, which is what it did before this rename
+	//     (1c5feb9a onward: every update silently downgraded the manual
+	//     under an upgraded stamp).
+	postSwapRunner func(context.Context, string, string, ...string) error
 }
 
 // NewUpdateCommand constructs the update command. binaryVersion is this
@@ -124,7 +124,7 @@ func NewUpdateCommand(binaryVersion, projectConfigPath, machineConfigPath, proje
 		// repo is the resolved update_repo, so a repo rename flows through.
 		verifier:       func(repo string) release.Verifier { return release.KeylessVerifier(repo) },
 		whatsnewRunner: release.DefaultRunner,
-		companionRunner: func(ctx context.Context, executable, dir string, args ...string) error {
+		postSwapRunner: func(ctx context.Context, executable, dir string, args ...string) error {
 			cmd := exec.CommandContext(ctx, executable, args...)
 			cmd.Dir = dir
 			return cmd.Run()
@@ -332,7 +332,7 @@ func (c *UpdateCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if !*jsonFlag {
 		c.printPostUpdateDigest(ctx, execPath, res, stdio)
 	}
-	c.refreshInstalledSkill(res, stdio, *jsonFlag)
+	c.refreshInstalledSkill(ctx, execPath, res, stdio, *jsonFlag)
 
 	return 0
 }
@@ -348,7 +348,7 @@ func (c *UpdateCommand) refreshManagedNotificationComponents(
 	stdio IO,
 ) []updateComponentJSON {
 	var results []updateComponentJSON
-	if c.companionRunner == nil {
+	if c.postSwapRunner == nil {
 		return results
 	}
 	rootForChannel := make(map[string]string)
@@ -374,7 +374,7 @@ func (c *UpdateCommand) refreshManagedNotificationComponents(
 		if component.CodePath != "" {
 			args = append(args, "--code", component.CodePath)
 		}
-		if err := c.companionRunner(ctx, execPath, root, args...); err != nil {
+		if err := c.postSwapRunner(ctx, execPath, root, args...); err != nil {
 			result.Status = "failed"
 			result.Error = err.Error()
 			_, _ = fmt.Fprintf(
@@ -413,15 +413,27 @@ func (c *UpdateCommand) printPostUpdateDigest(ctx context.Context, execPath stri
 	_, _ = fmt.Fprint(stdio.Stdout, out)
 }
 
-// refreshInstalledSkill best-effort re-installs the a2ahub skill tree over an
-// EXISTING managed install (skillTargetState's owned==true) so the manual on
-// disk is stamped to the version just swapped to — never creates a new
-// install, and never fails the already-succeeded update on any error. The
-// human confirmation line is suppressed in --json mode (jsonMode), matching
-// the digest's own JSON-clean-stdout convention; a refresh failure still
-// warns to stderr regardless of jsonMode.
-func (c *UpdateCommand) refreshInstalledSkill(res release.ApplyResult, stdio IO, jsonMode bool) {
-	if c.projectRoot == "" || c.SkillFiles == nil {
+// refreshInstalledSkill best-effort refreshes an EXISTING managed skill
+// install (skillTargetState's owned==true) by EXEC'ING the just-swapped NEW
+// binary's own `skill install` (no flags) in projectRoot — never renders
+// from this (old) process's own embed, so the tree that lands and the
+// version stamped on it are both decided by exactly one process (P4,
+// judge-the-thing-2026-08 spec 04). Never creates a new install (the
+// ownership gate below stays in THIS process, before any exec), and never
+// fails the already-succeeded update on any error.
+//
+// The human confirmation line is printed ONLY after the child exits 0 —
+// there is no path on which this process announces a refresh it did not
+// observe succeed — and is suppressed in --json mode (jsonMode), matching
+// the digest's own JSON-clean-stdout convention. A refresh failure warns to
+// stderr regardless of jsonMode and names the remedy: `a2a skill install
+// --force` is safe to recommend here specifically, because the ownership
+// gate just verified the target was a2ahub-owned before this command
+// touched it (a child interrupted between installSkillTree's os.RemoveAll
+// and its PROVENANCE.md write, cmd_skill.go:294/303, leaves a non-empty
+// tree with no marker, which a plain `a2a skill install` would refuse).
+func (c *UpdateCommand) refreshInstalledSkill(ctx context.Context, execPath string, res release.ApplyResult, stdio IO, jsonMode bool) {
+	if c.projectRoot == "" || c.postSwapRunner == nil {
 		return
 	}
 	cfg, _ := c.loadProjectConfig(c.projectConfigPath)
@@ -434,8 +446,10 @@ func (c *UpdateCommand) refreshInstalledSkill(res release.ApplyResult, stdio IO,
 	if err != nil || !owned {
 		return
 	}
-	if _, err := installSkillTree(c.SkillFiles, target, res.ToVersion, false); err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "update: skill refresh failed (non-fatal): %v\n", err)
+	if err := c.postSwapRunner(ctx, execPath, c.projectRoot, "skill", "install"); err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr,
+			"update: skill refresh failed (non-fatal): %v — %s was verified a2ahub-owned before this ran; if it now refuses, run `a2a skill install --force`\n",
+			err, rel)
 		return
 	}
 	if !jsonMode {
