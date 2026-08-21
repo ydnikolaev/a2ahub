@@ -55,6 +55,8 @@ scripts/*
 !scripts/check-dashboard-derivation.sh
 !scripts/check-prose-roster.sh
 !scripts/check-prose-coverage.sh
+!scripts/check-projection.sh
+!scripts/release-postflight.sh
 !scripts/check-operational-confidence.sh
 !scripts/check-dashboard-props.sh
 !scripts/check-card-content.sh
@@ -110,6 +112,7 @@ scripts/lib/*
 !scripts/lib/job-timeouts.tsv
 !scripts/lib/ci-usage-window.json
 !scripts/lib/gate-lib.sh
+!scripts/lib/strip-set.txt
 !scripts/tests/
 scripts/tests/*
 !scripts/tests/check_contract_carried_set_test.sh

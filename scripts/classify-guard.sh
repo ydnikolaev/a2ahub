@@ -24,6 +24,12 @@
 
 # lane-inputs: ALWAYS
 # lane-reason: check 1 reads `git ls-files` over the whole tracked set (line 114) and check 2 globs every top-level working-tree entry with `for e in *` (line 123) — any newly tracked or newly appearing top-level path can flip the verdict
+# lane-claims:
+#   scripts/lib/strip-set.txt
+# lane-reads-opaque: the publish boundary's private path set is read through
+#   $STRIP_SET_FILE (defaulting to scripts/lib/strip-set.txt, declared in
+#   lane-claims just above) so the teeth can point this at a fixture's own
+#   list; the classifier resolves literals, not the seam variable.
 # lane-reads-opaque: check 5 greps each PUBLIC gate script in turn — `grep -E ... "$public_file"` — where $public_file is bound by iterating ALLOW_FILES, this file's own literal list. The set is declared here and nowhere else, so the read is bounded by this script's own contents rather than by any caller input; the classifier resolves literals, not a loop variable.
 set -euo pipefail
 
@@ -42,18 +48,40 @@ set -euo pipefail
 # check_contract_carried_set.sh records in its own header.
 cd "${CLASSIFY_GUARD_ROOT:-$(git rev-parse --show-toplevel)}"
 
-# PUBLISHER + STRIP_PATHS: read (never sourced — its argument loop falls
-# through to `exit 2` on zero args, which would kill THIS script) once, up
-# here, so both PRIVATE_ONLY_FILES below and check 4 further down read the
-# SAME extraction instead of each parsing the publisher's STRIP=( ) block for
-# itself. One entry per line ("--path X" with the flag stripped); a trailing
-# "/" marks a directory strip. Empty on a public checkout, where PUBLISHER
-# (living under docs/) is itself absent — nothing to compare against there,
-# and it is the honest answer, not a failure (see check 4's own note below).
+# STRIP_PATHS: the publish boundary's private path set, read ONCE up here so
+# that both PRIVATE_ONLY_FILES below and check 4 further down judge the SAME
+# extraction. One entry per line; a trailing "/" marks a directory strip.
+#
+# It is read from scripts/lib/strip-set.txt — THE definition (release-loop-2026-08
+# P3). It used to be scraped out of the publisher's own `STRIP=( )` array with
+# awk, which worked only because the publisher is present here: that file lives
+# under docs/ and is stripped, so the same derivation was impossible for
+# .github/workflows/classify-guard.yml, the one reader that only ever runs on
+# the PUBLIC checkout. That backstop therefore carried a hand-typed regex, and
+# it had drifted by five of six entries. The list now ships, and all four
+# readers parse this one file.
+#
+# STRIP_SET_FILE stays a variable rather than a literal so classify_guard_test.sh
+# can point this at a fixture's own list (the CLASSIFY_GUARD_ROOT idiom): the
+# BOUNDARY is still declared outside the tree under judgement, never read from it.
+# A tree that PREDATES the move — this gate's own fixtures, and any worktree
+# checked out at an older commit — still carries the list inside the
+# publisher's `STRIP=( )` array, so that read is kept as a second HOME for the
+# same list, never as a second copy of it. In this tree it can no longer
+# succeed: the publisher builds its array from the file and has no literal
+# left, so a missing strip-set.txt yields nothing here and check 4 refuses,
+# which is the fail-closed direction.
+STRIP_SET_FILE="${STRIP_SET_FILE:-scripts/lib/strip-set.txt}"
 PUBLISHER=docs/runbooks/publish-to-public.sh
 STRIP_PATHS=""
-if [ -f "$PUBLISHER" ]; then
-  # `|| true` is load-bearing (see check 4's history of this exact line).
+# `|| true` on both reads is load-bearing: grep exits 1 on no match, and under
+# `set -euo pipefail` that failure propagates out of the command substitution
+# and kills this script BEFORE any refusal can print — a bare non-zero exit
+# with no message at all, which is the shape that gets misdiagnosed as an
+# unrelated crash. See check 4's own note.
+if [ -f "$STRIP_SET_FILE" ]; then
+  STRIP_PATHS="$(grep -Ev '^[[:space:]]*(#|$)' "$STRIP_SET_FILE" || true)"
+elif [ -f "$PUBLISHER" ]; then
   STRIP_PATHS="$(awk '/^STRIP=\(/{inside=1} inside{print} inside&&/\)/{exit}' "$PUBLISHER" |
     grep -oE -- '--path [^ )]+' | sed 's/^--path //' || true)"
 fi
@@ -108,7 +136,7 @@ PUBLIC_VALIDATOR_FILES=(
   scripts/tests/check_loop_coverage_test.sh
   scripts/tests/classify_guard_test.sh
 )
-ALLOW_FILES=( .gitignore .golangci.yml .goreleaser.yaml .gitleaks.toml .govulncheck-allow.txt Makefile SECURITY.md README.md LICENSE NOTICE go.mod go.sum cc-coverage.yaml scripts/install.sh scripts/dev-install.sh scripts/e2e-authoring-smoke.sh scripts/classify-guard.sh scripts/release-preflight.sh scripts/check-release-notes-freshness.sh scripts/check-roadmap-release-decisions.sh scripts/check-provider-tier-deferral.sh scripts/bump-space-template.sh scripts/check-gosec-scope.sh scripts/check-readme.sh scripts/dashboard-template-drift.sh scripts/check-view-vocabulary.sh scripts/check-pendency-uniqueness.sh scripts/check-loop-coverage.sh scripts/check-human-gates.sh scripts/check-loop-reachability.sh scripts/check-prose-roster.sh scripts/check-prose-coverage.sh scripts/check-operational-confidence.sh scripts/check-error-codes.sh scripts/verify.sh scripts/build-release-cohort.sh "${PUBLIC_VALIDATOR_FILES[@]}" )
+ALLOW_FILES=( .gitignore .golangci.yml .goreleaser.yaml .gitleaks.toml .govulncheck-allow.txt Makefile SECURITY.md README.md LICENSE NOTICE go.mod go.sum cc-coverage.yaml scripts/install.sh scripts/dev-install.sh scripts/e2e-authoring-smoke.sh scripts/classify-guard.sh scripts/release-preflight.sh scripts/check-release-notes-freshness.sh scripts/check-roadmap-release-decisions.sh scripts/check-provider-tier-deferral.sh scripts/bump-space-template.sh scripts/check-gosec-scope.sh scripts/check-readme.sh scripts/dashboard-template-drift.sh scripts/check-view-vocabulary.sh scripts/check-pendency-uniqueness.sh scripts/check-loop-coverage.sh scripts/check-human-gates.sh scripts/check-loop-reachability.sh scripts/check-prose-roster.sh scripts/check-prose-coverage.sh scripts/check-operational-confidence.sh scripts/check-error-codes.sh scripts/verify.sh scripts/build-release-cohort.sh scripts/release-postflight.sh scripts/lib/strip-set.txt "${PUBLIC_VALIDATOR_FILES[@]}" )
 DENY_DIRS=( .agents .claude .codex .mate .sporo )   # scripts/ handled below (install.sh + e2e-authoring-smoke.sh are the public exceptions)
 DENY_FILES=( AGENTS.md CLAUDE.md )
 PENDING_DIRS=( docs )   # deferred to P6 — tracked today, tolerated by check 1, classified by check 2, exempt from check 3.
@@ -118,8 +146,8 @@ PENDING_DIRS=( docs )   # deferred to P6 — tracked today, tolerated by check 1
 # ALLOW_DIRS tree, so without this list they would classify as "public" and the
 # guard would be lying about the boundary.
 #
-# DERIVED from STRIP_PATHS (the publisher's STRIP=( ) block, read above) —
-# never a second, hand-typed copy. Filtered to individual FILE entries (a
+# DERIVED from STRIP_PATHS (scripts/lib/strip-set.txt, read above) — never a
+# second, hand-typed copy. Filtered to individual FILE entries (a
 # trailing "/" is a directory strip; those top-level dirs are already DENY_DIRS
 # or PENDING_DIRS and are resolved by check 1 before PRIVATE_ONLY_FILES is ever
 # consulted, so listing them here would be dead weight, not coverage). Until
@@ -283,11 +311,12 @@ fi
 # filtered tree is a candidate. None had been cut between P12 landing and
 # v0.19.9.
 #
-# The publisher lives under `docs/`, which is itself stripped, so this check is
-# guarded on its presence exactly like the Makefile guards the private gates.
-# On a public checkout there is nothing to compare against and skipping is the
-# honest answer, not a failure.
-if [ -f "$PUBLISHER" ]; then
+# Guarded on the presence of a strip-set HOME, not of the publisher: since
+# release-loop-2026-08 P3 the list lives in scripts/lib/strip-set.txt, which
+# SHIPS, so this check now bites in a public checkout too — one more place the
+# 2026-08-06 shape can be caught. A tree carrying neither home has nothing to
+# compare against, and skipping is the honest answer there, not a failure.
+if [ -f "$STRIP_SET_FILE" ] || [ -f "$PUBLISHER" ]; then
   # `|| true` is load-bearing, and it was missing until 2026-08-18. `grep`
   # exits 1 when it matches nothing; under `set -euo pipefail` that failure
   # propagates out of the command substitution and kills the script BEFORE the
@@ -299,12 +328,16 @@ if [ -f "$PUBLISHER" ]; then
   # branch had been unreachable dead code since check 4 was written. Preserved
   # here even though STRIP_PATHS is now read once at the top: the top-of-file
   # read has the same `|| true` and this guard still needs its OWN check,
-  # because "PUBLISHER exists but its STRIP block did not parse" is exactly
-  # the state STRIP_PATHS="" cannot otherwise distinguish from "PUBLISHER is
-  # absent".
+  # because "a strip-set home EXISTS but yielded nothing" is exactly the state
+  # STRIP_PATHS="" cannot otherwise distinguish from "no home is present".
+  #
+  # An EMPTY strip set is never "nothing to strip". It means git filter-repo
+  # would be handed no --path at all and force-push the private tree, and it
+  # means every derived reader below judges a boundary that classifies
+  # everything as public. Fail-closed, loudly, naming both homes.
   strip_paths="$STRIP_PATHS"
   if [ -z "$strip_paths" ]; then
-    flag "$PUBLISHER — could not read its STRIP=( ) block; this check cannot vouch for the boundary"
+    flag "the publish boundary's private path set is EMPTY — $STRIP_SET_FILE is absent or lists nothing, and could not read its STRIP=( ) block from $PUBLISHER either; this check cannot vouch for the boundary  → restore scripts/lib/strip-set.txt"
   fi
   for public_file in "${ALLOW_FILES[@]}"; do
     while IFS= read -r stripped; do

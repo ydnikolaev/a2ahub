@@ -1,0 +1,74 @@
+# strip-set.txt — THE publish boundary's private path set. ONE definition.
+#
+# Every path listed here is REMOVED from every commit of the public product
+# history by docs/runbooks/publish-to-public.sh. Four readers, zero copies:
+#
+#   docs/runbooks/publish-to-public.sh   builds STRIP=( --path X ... ) from it
+#   scripts/classify-guard.sh            derives PRIVATE_ONLY_FILES from it
+#   .github/workflows/classify-guard.yml derives its denylist regex from it
+#   scripts/check-projection.sh          removes exactly these from the projection
+#
+# It lives here, and it SHIPS, because the workflow above is the one reader
+# that only ever runs on the PUBLIC checkout — where the publisher, living
+# under docs/, has been stripped by the very filter that backstop double-
+# checks. Before this file the workflow had nothing present at runtime to
+# derive from and carried a hand-typed regex that had already drifted by five
+# of six entries. Shipping the list is not a leak: scripts/classify-guard.sh
+# already ships and already carries these names.
+#
+# FORMAT — parsed identically by all four readers:
+#   * one path per line, repo-relative;
+#   * a trailing "/" means a DIRECTORY and matches its whole subtree;
+#   * anything else is a FILE and is anchored exactly, which is what keeps
+#     .github/dependabot.yml from matching the space-template's own
+#     dependabot.yml at a different path;
+#   * a line whose first non-blank character is "#" is a comment; blank lines
+#     are ignored.
+#
+# AN EMPTY OR UNREADABLE LIST IS NEVER "NOTHING TO STRIP". Every reader
+# refuses loudly on it: for the publisher an empty set means git filter-repo
+# strips nothing and force-pushes the private tree, and for the gates it means
+# a projection identical to its source, which proves nothing while looking
+# green.
+
+# The harness trees. Delivered by `mate fleet pull`, never part of the product.
+.agents/
+.claude/
+.codex/
+.mate/
+AGENTS.md
+CLAUDE.md
+
+# Planning. Tracked here, PENDING untrack (classify-guard's PENDING_DIRS).
+docs/
+
+# Stripped because it CANNOT WORK on the public repo, not because it is
+# private: public main is force-pushed from the filtered history on every
+# publish, so a merged Dependabot PR is destroyed by the next publish and the
+# bot reopens it forever. Dependabot therefore runs on the PRIVATE repo, where
+# a merge survives and reaches public the normal way — through the publisher.
+# (The space-template's own dependabot.yml is a different file at a different
+# path and is published as usual: a space repo is never force-pushed.)
+.github/dependabot.yml
+
+# The private harness gates. BY FILE, never as `scripts/lib/` or `scripts/`:
+# that distinction is load-bearing and was learned at v0.19.9. The publisher
+# used to strip `--path scripts/lib/`, correct only while that directory held
+# gate-lib.sh alone; P12 then added scripts/lib/lane-ungated.txt beside it —
+# a PUBLIC validator file — and the public tree shipped
+# check-lane-declarations.sh without the list it reads, so `make check`
+# REFUSED on its first phase in every public checkout while the private tree
+# stayed green.
+scripts/check-feature-lint.sh
+scripts/check-feedback-corpus.sh
+scripts/check-skill-citations.sh
+scripts/check-spec-verify-refs.sh
+scripts/check-dashboard-props.sh
+scripts/check-card-content.sh
+
+# The projection gate itself (release-loop-2026-08 P3). Private for the same
+# reason the publisher is: it materialises a public projection of THIS tree
+# and runs the shipped suite in it. "The projection of a projection is not a
+# question" — there is nothing for it to do in a public checkout, and its
+# absence there is what keeps the shipped suite from re-entering it.
+scripts/check-projection.sh

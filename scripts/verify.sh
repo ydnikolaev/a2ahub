@@ -586,10 +586,10 @@ if [ "$MODE" = "--teeth" ]; then
 fi
 
 case "$MODE" in
-  full|validators|coverage|harness|live|logic-e2e|lane|lane-run) ;;
+  full|validators|coverage|harness|live|logic-e2e|lane|lane-run|projection) ;;
   test) validate_scoped_packages ;;
   *)
-    echo "usage: $0 [full|validators|coverage|harness|live|logic-e2e|lane|lane-run|test ./pkg...|--teeth]" >&2
+    echo "usage: $0 [full|validators|coverage|harness|live|logic-e2e|lane|lane-run|projection|test ./pkg...|--teeth]" >&2
     exit 2
     ;;
 esac
@@ -805,6 +805,41 @@ if [ "$MODE" = harness ]; then
   #   Makefile
   #   docs/runbooks/publish-to-public.sh
   run_phase harness-teeth make --no-print-directory _harness-check
+  exit 0
+fi
+
+if [ "$MODE" = projection ]; then
+  # THE PROJECTION GATE (release-loop-2026-08 P3). It materialises a public
+  # projection of the commit under test and runs CI's `check` job inside it, so
+  # "a shipped artifact reads a path the publisher removes" reds here instead
+  # of at a published candidate 45 minutes later.
+  #
+  # DELIBERATELY NOT INSIDE `full`. This phase runs `make check` and
+  # `make harness-check` in the projection, so ceiling membership would mean
+  # the ceiling runs the ceiling: roughly double the ~15-minute `check` job
+  # plus the ~136-second teeth, on every Go edit, as a COMMIT gate. It is the
+  # derived lane and the ship lane that reach it. The re-entry that membership
+  # would create is also refused by name inside the gate itself.
+  #
+  # The declaration below is as wide as the projection really is and no wider:
+  # the projection CONTAINS every shipped path, so any of them can change its
+  # verdict, while the private trees it removes cannot. The exclusions are the
+  # private path set (scripts/lib/strip-set.txt) minus its own home, which
+  # stays IN — a commit that only adds a path to the strip set can introduce
+  # this exact defect by making a file a shipped artifact already reads
+  # disappear, and a declaration that missed it would be a false green.
+  # docs/** is excluded and that is what AC5 asks for; the strip set is NOT in
+  # docs/, which is precisely why it can be.
+  # lane-inputs:
+  #   **
+  #   !docs/**
+  #   !.agents/**
+  #   !.claude/**
+  #   !.codex/**
+  #   !.mate/**
+  #   !AGENTS.md
+  #   !CLAUDE.md
+  run_phase projection bash "$ROOT/scripts/check-projection.sh" --all
   exit 0
 fi
 

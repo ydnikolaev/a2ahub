@@ -5,7 +5,8 @@
 # local script or the Makefile — the repo tracks no private (harness) path. A
 # local `--no-verify` can skip a git hook; it cannot skip CI.
 #
-# Keep the denylist below in sync with scripts/classify-guard.sh's DENY_* arrays.
+# The denylist below is DERIVED from scripts/lib/strip-set.txt, which ships for
+# exactly this reason; there is nothing here to keep in sync by hand.
 #
 # TODO(P6): add docs/ to the denylist once its untrack lands (publish-prep P6).
 # It is deliberately NOT flagged here yet — docs/ is a PENDING bucket (tracked,
@@ -53,9 +54,10 @@ jobs:
         if: github.repository == 'ydnikolaev/a2ahub'
         run: |
           set -euo pipefail
-          # scripts/ is matched as a DENY list, not an allow list, and it
-          # mirrors the STRIP set in docs/runbooks/publish-to-public.sh —
-          # the thing that actually decides what reaches this repo.
+          # scripts/ is matched as a DENY list, not an allow list, and it is
+          # DERIVED from scripts/lib/strip-set.txt — the one definition of the
+          # set the publisher removes, and so the thing that actually decides
+          # what reaches this repo.
           #
           # It used to be an allow list of the four then-public scripts, kept
           # "in sync" with scripts/classify-guard.sh by hand. It rotted the
@@ -82,27 +84,50 @@ jobs:
           # release-loop-2026-08 P5 tried to DERIVE this list rather than
           # hand-type it, and could not: this step only ever runs against the
           # PUBLIC checkout (`if: github.repository == 'ydnikolaev/a2ahub'`,
-          # above), where `docs/runbooks/publish-to-public.sh` — the one place
-          # the private-only script set is declared — does not exist, having
-          # been stripped by the very filter this backstop exists to double-
-          # check. There is nothing present at runtime to derive FROM. A
-          # `.gitignore`-based derivation was tried too and rejected: this
+          # above), where `docs/runbooks/publish-to-public.sh` — then the one
+          # place the private-only script set was declared — does not exist,
+          # having been stripped by the very filter this backstop exists to
+          # double-check. There was nothing present at runtime to derive FROM.
+          # A `.gitignore`-based derivation was tried too and rejected: this
           # repo's own `.gitignore` un-ignores every one of these scripts (so
           # they can be tracked here, in the private dev repo, ahead of being
           # stripped at publish) — it does not distinguish "private, stripped
           # later" from "public, stays" at all, so it cannot stand in for the
-          # publisher's STRIP set either.
+          # private path set either.
           #
-          # So this stays a hand-typed literal, corrected to name every script
-          # `docs/runbooks/publish-to-public.sh`'s STRIP=( ) block currently
-          # strips (was missing 5 of 6). It is no longer the "fourth
-          # restatement of one list" — P5's derivation of
-          # scripts/classify-guard.sh's PRIVATE_ONLY_FILES from that same
-          # STRIP set removed the third copy, so this is now the ONLY other
-          # reader, not one of a rotting set. It can still drift from STRIP by
-          # hand, same as before; nothing here removes that risk, only the
-          # duplication one layer down.
-          priv=$(git ls-files | grep -E '^(\.agents|\.claude|\.codex|\.mate)/|^(AGENTS\.md|CLAUDE\.md)$|^\.github/dependabot\.yml$|^scripts/check-feature-lint\.sh$|^scripts/check-feedback-corpus\.sh$|^scripts/check-skill-citations\.sh$|^scripts/check-spec-verify-refs\.sh$|^scripts/check-dashboard-props\.sh$|^scripts/check-card-content\.sh$' || true)
+          # P5 therefore left this a hand-typed literal WITH A MARKED SEAM,
+          # pending P3, and it had been missing 5 of the 6 private scripts.
+          # P3 closed the seam by giving the list a home that SHIPS —
+          # scripts/lib/strip-set.txt, classified PUBLIC in
+          # scripts/classify-guard.sh — so the derivation this step could not
+          # do is now the thing it does. There is no hand-typed copy left.
+          # THE DERIVATION IS ONE PHYSICAL LINE, AND THAT IS DELIBERATE.
+          # `ci-parity-audit` extracts every `run:` LINE as a CI command and
+          # refuses any that no local step executes and no written excuse
+          # covers — correctly, since this step is gated to the public repo and
+          # runs nowhere locally. A readable eight-line loop would therefore add
+          # eight uncovered commands. Folding it into the existing, already-
+          # excused `git ls-files | grep -E` line keeps the audit honest without
+          # inventing a local step that fakes running this. If this ever needs
+          # to grow, the right move is an excused_reason() entry in
+          # scripts/ci-parity.sh, not a second copy of the list.
+          #
+          # sed applies the same two rules the publisher's own matcher uses: a
+          # trailing "/" means a directory and matches its whole subtree
+          # (anchored at the front only), anything else is a file and is
+          # anchored at both ends — which is what keeps .github/dependabot.yml
+          # from matching the space-template's own dependabot.yml at a different
+          # path. The one SUBTRACTION is `docs/`, and it is a declared
+          # subtraction rather than a restatement.
+          # TODO(P6): drop the `/^docs\/$/d` clause once docs/ untracks and it
+          # graduates from a PENDING bucket to a DENY one. It is deliberately
+          # NOT flagged here yet, per publish-prep P1.
+          #
+          # AN EMPTY DERIVATION EXITS 9 WITH A NAMED ERROR. A pattern that
+          # matches nothing would make this job pass over any tree at all —
+          # a gate that cannot measure must not announce a verdict, so it
+          # refuses instead of reporting a clean tree it never inspected.
+          priv=$(pattern="$(sed -E -e '/^[[:space:]]*(#|$)/d' -e '/^docs\/$/d' -e 's/[].[*^$\\]/\\&/g' -e '/\/$/!s/$/$/' -e 's/^/^/' scripts/lib/strip-set.txt | paste -sd'|' -)"; [ -n "$pattern" ] || { echo "::error::scripts/lib/strip-set.txt is absent, unreadable, or lists no path. It IS the private path set this backstop matches on, it is classified PUBLIC in scripts/classify-guard.sh, and without it this job refuses rather than reporting a clean tree it never inspected." >&2; exit 9; }; git ls-files | grep -E "$pattern" || true)
           if [ -n "$priv" ]; then
             echo "::error::private (harness) paths tracked in the public repo:"
             echo "$priv"
