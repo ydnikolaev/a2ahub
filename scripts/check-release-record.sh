@@ -21,17 +21,27 @@
 #      schemas/release-notes/v1/release-notes.schema.json) is what keeps that
 #      window honest without blocking authoring ahead of the tag.
 #
-#   2. a2a-ref-default-without-tag — .github/workflows/a2a-validate-
-#      reusable.yml's `a2a-ref` input names a version with no tag. A space's
-#      caller passes no `a2a-ref` of its own (verified against `r22d222/a2a`
-#      live — see that file's own header), so this default IS the validator
-#      binary that runs at every space's merge gate the moment a tag carrying
-#      it is published. Scoped to exactly this ONE file — not every
-#      `*-reusable.yml` under .github/workflows/ — because this phase's
-#      footprint grants write access to only this one (spec 06 Footprint);
-#      the fleet-wide loop over every reusable workflow remains
-#      release-preflight.sh's `assert_ref_default_matches` job, at the
-#      ceremony tier, where the footprint to fix every file it finds exists.
+#   2. a2a-ref-default-without-tag — every `*-reusable.yml` under
+#      .github/workflows/'s `a2a-ref` input names a version with no tag. A
+#      space's caller passes no `a2a-ref` of its own (verified against
+#      `r22d222/a2a` live — see a2a-validate-reusable.yml's own header), so
+#      each default IS the validator/notifier binary that runs at every
+#      space's merge gate the moment a tag carrying it is published.
+#
+#      Was scoped to exactly ONE file (a2a-validate-reusable.yml) until
+#      release-loop-2026-08 P5, on the theory that a phase's footprint should
+#      grant write access only to what it fixes. That theory did not survive
+#      contact with a SECOND reusable workflow: space-notify-2026-08 P5 added
+#      a2a-notify-reusable.yml, this check kept naming only the first, and the
+#      everyday-tree gate silently stopped covering the notifier's own
+#      a2a-ref default while release-preflight.sh's `assert_ref_default_
+#      matches` (ceremony tier, network-gated) kept covering both — exactly
+#      the "everyday gate judges one, ceremony gate judges both" gap P5 was
+#      filed to close. Now DERIVED the same way that job derives its set:
+#      `reusable_workflow_paths()` (release-preflight.sh, sourced below) globs
+#      `.github/workflows/*-reusable.yml`, so a THIRD reusable workflow is
+#      covered by construction and this comment does not need a second
+#      correction the next time one is added.
 #      Reuses `_ref_default_of` from release-preflight.sh (sourced below,
 #      guarded so sourcing runs no ceremony) rather than re-deriving the
 #      a2a-ref parsing — see that function's own doc comment for why the
@@ -64,27 +74,35 @@
 # lane-inputs:
 #
 #	releasenotes/*.yaml
-#	.github/workflows/a2a-validate-reusable.yml
+#	.github/workflows/*-reusable.yml
 #	space-template/space.yaml
 #	space-template/.github/workflows/*.yml
 #
-# lane-reads-opaque: the tag set (`git tag -l 'v*'`) and HEAD's parent
+# lane-reads-opaque: (1) the tag set (`git tag -l 'v*'`) and HEAD's parent
 # commit are non-path inputs — a tag being cut, or a new commit landing with
-# no diff to the globs above, flips this gate's verdict on its own.
+# no diff to the globs above, flips this gate's verdict on its own. (2)
+# refusal 2's set of files to check is `reusable_workflow_paths()`'s
+# `"$repo/$REUSABLE_DIR"/*-reusable.yml` glob (release-preflight.sh:63) —
+# $REUSABLE_DIR is assigned in THAT file (line 50) and read here only through
+# the sourced function call, so the classifier cannot trace the literal back
+# across the source boundary the way it can a same-file variable. The glob
+# text is identical to the `.github/workflows/*-reusable.yml` entry declared
+# above, so this note explains the read rather than widening the declaration
+# further.
 #
 # Usage:
 #   bash scripts/check-release-record.sh          # the everyday check
 #   bash scripts/check-release-record.sh --teeth  # offline self-test
 set -euo pipefail
 
-# Sourced for _ref_default_of only — see refusal 2's header note above. The
-# BASH_SOURCE guard at the bottom of release-preflight.sh means this does not
-# run that file's ceremony (it needs an explicit VERSION and the network).
+# Sourced for _ref_default_of and reusable_workflow_paths — see refusal 2's
+# header note above. The BASH_SOURCE guard at the bottom of
+# release-preflight.sh means this does not run that file's ceremony (it needs
+# an explicit VERSION and the network).
 # shellcheck source=scripts/release-preflight.sh
 source "$(dirname "${BASH_SOURCE[0]}")/release-preflight.sh"
 
 UNRELEASED_SENTINEL="unreleased"
-A2A_REF_WORKFLOW=".github/workflows/a2a-validate-reusable.yml"
 TEMPLATE_MANIFEST="space-template/space.yaml"
 TEMPLATE_WORKFLOWS_DIR="space-template/.github/workflows"
 
@@ -258,20 +276,19 @@ assert_released_dates_match_tags() { # $1 = repo
 
 # ── refusal 2: a2a-ref default naming an untagged version ──────────────────
 
-assert_ref_default_is_tagged() { # $1 = repo
-  local repo="$1" got tag newest
+# _assert_ref_default_is_tagged_one is the single-file check; assert_ref_
+# default_is_tagged (below) loops it over every *-reusable.yml the repo
+# carries, via release-preflight.sh's reusable_workflow_paths() — the same
+# derived set assert_ref_default_matches already loops for the ceremony tier
+# (release-loop-2026-08 P5: this used to name only a2a-validate-reusable.yml
+# by hand, so a second reusable workflow, a2a-notify-reusable.yml, went
+# unchecked here while the ceremony gate covered it).
+_assert_ref_default_is_tagged_one() { # $1 = repo, $2 = wf_path (repo-relative)
+  local repo="$1" wf="$2" got tag newest notes
 
-  if ! _has_any_version_tag "$repo"; then
-    fail "check-release-record: this checkout carries no vX.Y.Z tags at all — a shallow clone
-    does not fetch tags, and this check cannot tell an $A2A_REF_WORKFLOW default naming a
-    published tag apart from one naming nothing real. cannot check is never check passed: use
-    fetch-depth: 0, or fetch --tags first."
-    return 1
-  fi
-
-  got="$(_ref_default_of "$repo" "$A2A_REF_WORKFLOW")"
+  got="$(_ref_default_of "$repo" "$wf")"
   if [ -z "$got" ]; then
-    fail "check-release-record: $A2A_REF_WORKFLOW declares no a2a-ref default —
+    fail "check-release-record: $wf declares no a2a-ref default —
     every space caller would then have to name a validator version itself."
     return 1
   fi
@@ -294,7 +311,7 @@ assert_ref_default_is_tagged() { # $1 = repo
     # longer contradicts it.
     notes="$repo/releasenotes/${got#v}.yaml"
     if [ -f "$notes" ] && [ "$(_released_field "$notes")" = "$UNRELEASED_SENTINEL" ]; then
-      ok "check-release-record: $A2A_REF_WORKFLOW's a2a-ref default $got has no tag yet, and releasenotes/${got#v}.yaml carries the $UNRELEASED_SENTINEL sentinel — mid-release-sequence, legal (docs/runbooks/release.md Phase 1 steps 1-2)"
+      ok "check-release-record: $wf's a2a-ref default $got has no tag yet, and releasenotes/${got#v}.yaml carries the $UNRELEASED_SENTINEL sentinel — mid-release-sequence, legal (docs/runbooks/release.md Phase 1 steps 1-2)"
       return 0
     fi
     # The same cut window the released-date check admits, for the same reason
@@ -302,20 +319,38 @@ assert_ref_default_is_tagged() { # $1 = repo
     # sentinel is gone, and this row would otherwise red for the hours between
     # that stamp and Phase 3's tag while the release proceeds correctly.
     if [ -f "$notes" ] && [ "$(_released_field "$notes")" = "$(date -u +%Y-%m-%d)" ]; then
-      ok "check-release-record: $A2A_REF_WORKFLOW's a2a-ref default $got has no tag yet, and releasenotes/${got#v}.yaml is dated today — the cut window, legal (release.md Phase 1 step 2 through Phase 3 step 13). Reds tomorrow if the tag never lands."
+      ok "check-release-record: $wf's a2a-ref default $got has no tag yet, and releasenotes/${got#v}.yaml is dated today — the cut window, legal (release.md Phase 1 step 2 through Phase 3 step 13). Reds tomorrow if the tag never lands."
       return 0
     fi
-    fail "check-release-record: $A2A_REF_WORKFLOW's a2a-ref default is $got, but $tag is not a tag
+    fail "check-release-record: $wf's a2a-ref default is $got, but $tag is not a tag
     reachable from this checkout. The newest existing tag is ${newest:-<none>}.
-    A space's caller passes no a2a-ref of its own, so this default IS the validator that runs at every
-    space's merge gate the moment a tag carrying it is published — naming an unpublished tag makes the
-    reusable workflow unresolvable and GitHub reports a run with NO JOBS rather than a failing check
+    A space's caller passes no a2a-ref of its own, so this default IS the validator/notifier that runs at
+    every space's merge gate the moment a tag carrying it is published — naming an unpublished tag makes
+    the reusable workflow unresolvable and GitHub reports a run with NO JOBS rather than a failing check
     (this happened on 2026-07-26, docs/runbooks/release.md's preamble).
     Fix: point the default at ${newest:-the newest published tag} until $tag is actually cut
     (docs/runbooks/release.md Phase 1 step 2 moves it back to the version being cut at that point)."
     return 1
   fi
-  ok "check-release-record: $A2A_REF_WORKFLOW's a2a-ref default $got names an existing tag"
+  ok "check-release-record: $wf's a2a-ref default $got names an existing tag"
+}
+
+assert_ref_default_is_tagged() { # $1 = repo
+  local repo="$1" rc=0 wf
+
+  if ! _has_any_version_tag "$repo"; then
+    fail "check-release-record: this checkout carries no vX.Y.Z tags at all — a shallow clone
+    does not fetch tags, and this check cannot tell a *-reusable.yml a2a-ref default naming a
+    published tag apart from one naming nothing real. cannot check is never check passed: use
+    fetch-depth: 0, or fetch --tags first."
+    return 1
+  fi
+
+  while IFS= read -r wf; do
+    _assert_ref_default_is_tagged_one "$repo" "$wf" || rc=1
+  done < <(reusable_workflow_paths "$repo")
+
+  return "$rc"
 }
 
 # ── refusal 3: the floor or a template pin moved backwards ─────────────────
@@ -569,6 +604,40 @@ teeth() {
   fi
   ok "teeth 7c: the same default, once its notes claim a released DATE → RED (the sentinel is the discriminator, not a blanket exemption)"
   rm -f "$tmp/releasenotes/0.3.0.yaml"
+
+  # --- teeth 7d: a SECOND *-reusable.yml (a2a-notify-reusable.yml) drifts,
+  # while a2a-validate-reusable.yml stays green → RED, naming the SECOND
+  # file. release-loop-2026-08 P5: before reusable_workflow_paths() replaced
+  # the hardcoded single-file check, this drift was invisible to the
+  # everyday-tree gate — only release-preflight.sh's network-gated ceremony
+  # tier covered a second reusable workflow's a2a-ref default. Resetting
+  # a2a-validate-reusable.yml back to a tagged default first proves the red
+  # below is attributable to the notify file, not a residual from teeth 7c. ---
+  printf 'on:\n  workflow_call:\n    inputs:\n      a2a-ref:\n        type: string\n        default: "v0.1.0"\n' \
+    > "$tmp/.github/workflows/a2a-validate-reusable.yml"
+  printf 'on:\n  workflow_call:\n    inputs:\n      a2a-ref:\n        type: string\n        default: "v0.3.0"\n' \
+    > "$tmp/.github/workflows/a2a-notify-reusable.yml"
+  if out="$(assert_ref_default_is_tagged "$tmp" 2>&1)"; then
+    echo "check-release-record --teeth: FAILED — a2a-notify-reusable.yml's a2a-ref default naming an untagged version stayed GREEN" >&2
+    echo "$out" >&2; exit 1
+  fi
+  printf '%s\n' "$out" | grep -q "a2a-notify-reusable.yml's a2a-ref default is v0.3.0" || {
+    echo "check-release-record --teeth: FAILED — red, but did not name a2a-notify-reusable.yml" >&2
+    echo "$out" >&2; exit 1; }
+  printf '%s\n' "$out" | grep -q "a2a-validate-reusable.yml's a2a-ref default v0.1.0 names an existing tag" || {
+    echo "check-release-record --teeth: FAILED — red, but a2a-validate-reusable.yml's own green line vanished (this must report per-file, not stop at the first)" >&2
+    echo "$out" >&2; exit 1; }
+  ok "teeth 7d: a SECOND *-reusable.yml (a2a-notify-reusable.yml) naming an untagged a2a-ref default → RED, naming that file specifically, while a2a-validate-reusable.yml's own green line still prints"
+
+  # --- teeth 7e: the notify file corrected → the whole set is GREEN again ---
+  printf 'on:\n  workflow_call:\n    inputs:\n      a2a-ref:\n        type: string\n        default: "v0.1.0"\n' \
+    > "$tmp/.github/workflows/a2a-notify-reusable.yml"
+  if ! assert_ref_default_is_tagged "$tmp" >/dev/null 2>&1; then
+    echo "check-release-record --teeth: FAILED — both *-reusable.yml files naming tagged defaults stayed RED" >&2
+    exit 1
+  fi
+  ok "teeth 7e: both *-reusable.yml files naming a tagged a2a-ref default → GREEN"
+  rm -f "$tmp/.github/workflows/a2a-notify-reusable.yml"
 
   # ── refusal 3: floor / pin direction ──────────────────────────────────────
 

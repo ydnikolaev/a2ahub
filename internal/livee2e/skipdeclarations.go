@@ -72,24 +72,18 @@ func skipDeclarations() []skipDeclaration {
 				"is never a silent hole: TestSkipDeclarationsCoverEverySkip pins that this exact " +
 				"skip, and no other, is the one this reason covers.",
 		},
-		{
-			File:       "privatecorpus_test.go",
-			Func:       "skipWithoutPrivateCorpus",
-			Occurrence: 1,
-			Reason: "NOT a live-provider skip either, and it fires in exactly one kind of tree: " +
-				"the FILTERED release candidate. Five tests in this package hold the shipped " +
-				"conformance catalogue against the corpus that declares it — spec files under " +
-				"docs/features/**, incident evidence under docs/inbox/** — and `docs/` is " +
-				"STRIPPED from the public projection. A tree that carries the catalogue but " +
-				"not the corpus cannot have drifted from that corpus, so the honest verdict " +
-				"there is \"not judged here\", the same answer the Makefile gives for five " +
-				"presence-gated private gates. In the PRIVATE tree every path is present and " +
-				"every one of those tests runs, which `make check` re-proves on each run. " +
-				"Added 2026-08-12 after reconstructing the candidate and discovering the six " +
-				"reads would fail its own `make check` in the Go tier — introduced 2026-08-09 " +
-				"to 08-11, with no candidate cut in between to execute them. The helper stats " +
-				"the exact path its caller is about to read and skips ONLY on absence; every " +
-				"other read error stays fatal.",
-		},
+		// The entry that used to live here, for privatecorpus_test.go's
+		// skipWithoutPrivateCorpus, is GONE rather than stale-and-ignored:
+		// release-loop-2026-08 P5 (spec 05 §11 Amendment A1) moved the actual
+		// `t.Skip` call to testkit/privatecorpus.SkipWithoutPrivateCorpus — a
+		// plain, non-`_test.go` file, exactly the pathdriver_live.go shape
+		// this file's own doc comment already carves out of scope ("a plain
+		// .go file that happens to take a *testing.T parameter... is driven
+		// BY a test but is not itself one"). skipWithoutPrivateCorpus here is
+		// now a thin delegate with no Skip call of its own, so
+		// scanSkipSites(".") correctly finds nothing to declare for it —
+		// keeping the old entry would have been the stale-declaration half
+		// of the exact defect TestSkipDeclarationsCoverEverySkip exists to
+		// catch.
 	}
 }

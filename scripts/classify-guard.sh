@@ -42,6 +42,22 @@ set -euo pipefail
 # check_contract_carried_set.sh records in its own header.
 cd "${CLASSIFY_GUARD_ROOT:-$(git rev-parse --show-toplevel)}"
 
+# PUBLISHER + STRIP_PATHS: read (never sourced — its argument loop falls
+# through to `exit 2` on zero args, which would kill THIS script) once, up
+# here, so both PRIVATE_ONLY_FILES below and check 4 further down read the
+# SAME extraction instead of each parsing the publisher's STRIP=( ) block for
+# itself. One entry per line ("--path X" with the flag stripped); a trailing
+# "/" marks a directory strip. Empty on a public checkout, where PUBLISHER
+# (living under docs/) is itself absent — nothing to compare against there,
+# and it is the honest answer, not a failure (see check 4's own note below).
+PUBLISHER=docs/runbooks/publish-to-public.sh
+STRIP_PATHS=""
+if [ -f "$PUBLISHER" ]; then
+  # `|| true` is load-bearing (see check 4's history of this exact line).
+  STRIP_PATHS="$(awk '/^STRIP=\(/{inside=1} inside{print} inside&&/\)/{exit}' "$PUBLISHER" |
+    grep -oE -- '--path [^ )]+' | sed 's/^--path //' || true)"
+fi
+
 # ── SSOT of the public/private boundary. ──────────────────────────────────────────
 # Every DENY entry MUST also be in .gitignore — check 3 asserts it, so the two can
 # never drift into a leak. PENDING entries are deliberately NOT required to be
@@ -51,6 +67,12 @@ PUBLIC_VALIDATOR_FILES=(
   scripts/check-dashboard-cards.sh
   scripts/check-dashboard-derivation.sh
   scripts/check-lane-declarations.sh
+  # Found by deriving PRIVATE_ONLY_FILES from the publisher's STRIP set
+  # instead of hand-typing it (release-loop-2026-08 P5): neither script was
+  # ever in STRIP, so both ship, and PRIVATE_ONLY_FILES claiming otherwise was
+  # itself the drift the derivation exists to remove.
+  scripts/check-notify-secrets.sh
+  scripts/check-notify-workflow.sh
   # ci-changes.sh is PUBLIC because `.github/workflows/ci.yml` calls it, and a
   # workflow that is published without the script it invokes is exactly the
   # v0.19.9 defect this list exists to prevent (see publish-to-public.sh's own
@@ -94,9 +116,28 @@ PENDING_DIRS=( docs )   # deferred to P6 — tracked today, tolerated by check 1
 # shape as PENDING_DIRS (tracked, not published, so not required to be
 # gitignored) but permanent rather than deferred — these live inside an
 # ALLOW_DIRS tree, so without this list they would classify as "public" and the
-# guard would be lying about the boundary. Must stay in sync with the STRIP set
-# in docs/runbooks/publish-to-public.sh.
-PRIVATE_ONLY_FILES=( .github/dependabot.yml scripts/check-feature-lint.sh scripts/check-feedback-corpus.sh scripts/check-notify-secrets.sh scripts/check-notify-workflow.sh scripts/check-skill-citations.sh scripts/check-spec-verify-refs.sh scripts/check-dashboard-props.sh scripts/check-card-content.sh )
+# guard would be lying about the boundary.
+#
+# DERIVED from STRIP_PATHS (the publisher's STRIP=( ) block, read above) —
+# never a second, hand-typed copy. Filtered to individual FILE entries (a
+# trailing "/" is a directory strip; those top-level dirs are already DENY_DIRS
+# or PENDING_DIRS and are resolved by check 1 before PRIVATE_ONLY_FILES is ever
+# consulted, so listing them here would be dead weight, not coverage). Until
+# this derivation, this WAS a hand-typed second copy, and it had already
+# drifted: it named scripts/check-notify-secrets.sh and
+# scripts/check-notify-workflow.sh as stripped when the publisher strips
+# neither — both ship, and the Makefile's private-gate guard printed "absent
+# (public checkout)" about files that are present.
+PRIVATE_ONLY_FILES=()
+if [ -n "$STRIP_PATHS" ]; then
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    case "$entry" in
+      */) continue ;;                      # directory strip — not this list's concern
+      *)  PRIVATE_ONLY_FILES+=("$entry") ;;
+    esac
+  done <<< "$STRIP_PATHS"
+fi
 # .history is the editor's own local-history tree (VS Code writes timestamped
 # snapshots of edited files there). Ephemeral and machine-local like .DS_Store:
 # never tracked, never published, and it reappears the moment anyone edits a
@@ -226,13 +267,16 @@ fi
 
 # ── check 4: the publisher's STRIP set may not delete a file this gate calls PUBLIC. ──
 #
-# The PRIVATE_ONLY_FILES comment above has always said the two must "stay in
-# sync with the STRIP set in docs/runbooks/publish-to-public.sh". Nothing
-# enforced it, and on 2026-08-06 they drifted: P12 added
-# `scripts/lib/lane-ungated.txt` — classified PUBLIC right here, in
-# PUBLIC_VALIDATOR_FILES — while the publisher went on stripping the whole of
-# `scripts/lib/`. So the public tree shipped `check-lane-declarations.sh`
-# without the list it reads, and `make check` refused on its first phase.
+# PRIVATE_ONLY_FILES above is now DERIVED from the same STRIP_PATHS read at
+# the top of this script, so the two cannot drift from EACH OTHER any more —
+# but a public file classified here (ALLOW_FILES) can still drift from
+# STRIP_PATHS itself, in the other direction: the publisher stripping
+# something this gate calls public. That is what this check still catches.
+# On 2026-08-06 that happened: P12 added `scripts/lib/lane-ungated.txt` —
+# classified PUBLIC right here, in PUBLIC_VALIDATOR_FILES — while the
+# publisher went on stripping the whole of `scripts/lib/`. So the public tree
+# shipped `check-lane-declarations.sh` without the list it reads, and
+# `make check` refused on its first phase.
 #
 # It cost a full release cycle to find, because it is invisible from here: the
 # private tree is green by construction, and the ONLY thing that executes the
@@ -243,11 +287,7 @@ fi
 # guarded on its presence exactly like the Makefile guards the private gates.
 # On a public checkout there is nothing to compare against and skipping is the
 # honest answer, not a failure.
-PUBLISHER=docs/runbooks/publish-to-public.sh
 if [ -f "$PUBLISHER" ]; then
-  # The STRIP array as the publisher actually declares it: every `--path X`
-  # inside the STRIP=( ... ) block, read from the file rather than re-typed
-  # here — a copy would be the same drift one layer down.
   # `|| true` is load-bearing, and it was missing until 2026-08-18. `grep`
   # exits 1 when it matches nothing; under `set -euo pipefail` that failure
   # propagates out of the command substitution and kills the script BEFORE the
@@ -256,9 +296,13 @@ if [ -f "$PUBLISHER" ]; then
   # mute, which is the shape that gets misdiagnosed as an unrelated crash. This
   # gate's own header promises "the message prints the FIX, not the symptom".
   # Found by writing the teeth (scripts/tests/classify_guard_test.sh); the
-  # branch had been unreachable dead code since check 4 was written.
-  strip_paths="$(awk '/^STRIP=\(/{inside=1} inside{print} inside&&/\)/{exit}' "$PUBLISHER" |
-    grep -oE -- '--path [^ )]+' | sed 's/^--path //' || true)"
+  # branch had been unreachable dead code since check 4 was written. Preserved
+  # here even though STRIP_PATHS is now read once at the top: the top-of-file
+  # read has the same `|| true` and this guard still needs its OWN check,
+  # because "PUBLISHER exists but its STRIP block did not parse" is exactly
+  # the state STRIP_PATHS="" cannot otherwise distinguish from "PUBLISHER is
+  # absent".
+  strip_paths="$STRIP_PATHS"
   if [ -z "$strip_paths" ]; then
     flag "$PUBLISHER — could not read its STRIP=( ) block; this check cannot vouch for the boundary"
   fi

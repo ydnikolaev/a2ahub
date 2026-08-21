@@ -26,7 +26,7 @@
 #
 # lane-inputs:
 #   space-template/space.yaml
-#   space-template/.github/workflows/a2a-validate.yml
+#   space-template/.github/workflows/*.yml
 #   releasenotes/*.yaml
 # lane-reads-opaque: rewrite()'s own `$file` parameter (line 77) backs the
 #   `sed -E "s|$pattern|$replacement|" "$file" >"$tmp"` read/write at line

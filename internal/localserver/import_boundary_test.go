@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/testkit/privatecorpus"
 )
 
 const repositoryImportPrefix = "github.com/ydnikolaev/a2ahub/"
@@ -39,13 +41,19 @@ func TestImportBoundaryMatchesADR001(t *testing.T) {
 	// An ABSENT docs/ is the public checkout and is announced, not guessed at
 	// (the shape scripts/check-provider-tier-deferral.sh already uses). A
 	// PRESENT docs/ with no decisions.md is somebody moving the SSOT, and that
-	// still fails — the skip must not become a way for this test to disappear
-	// where it is supposed to run.
+	// still fails — testkit/privatecorpus.SkipWithoutPrivateCorpus only ever
+	// judges the exact path it is given (docs/ itself), so a missing
+	// decisions.md beneath a present docs/ falls straight through to the
+	// os.ReadFile below and fails normally: the skip must not become a way
+	// for this test to disappear where it is supposed to run.
+	//
+	// release-loop-2026-08 P5 (spec 05 §11 Amendment A1): this used to be a
+	// hand-copied os.Stat+t.Skipf pair, byte-identical to internal/html's
+	// own — a `_test.go` helper cannot be imported across packages, so the
+	// duplication was forced by Go, and the fix is this one shared,
+	// importable helper.
 	repoRoot := filepath.Join(packageDir, "..", "..")
-	if _, err := os.Stat(filepath.Join(repoRoot, "docs")); os.IsNotExist(err) {
-		t.Skipf("skip — docs/ absent (public checkout); ADR-001's table is private and this "+
-			"boundary is judged in the source repository, not in the published projection (%s)", packageName)
-	}
+	privatecorpus.SkipWithoutPrivateCorpus(t, filepath.Join(repoRoot, "docs"))
 	decisions, err := os.ReadFile(filepath.Join(repoRoot, "docs", "decisions.md"))
 	if err != nil {
 		t.Fatalf("read ADR-001 for %s: %v", packageName, err)

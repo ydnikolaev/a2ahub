@@ -1,8 +1,9 @@
 package livee2e
 
 import (
-	"os"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/testkit/privatecorpus"
 )
 
 // skipWithoutPrivateCorpus skips a test whose subject is a corpus under
@@ -31,9 +32,17 @@ import (
 // these paths is present, so every one of these tests runs — which is what
 // `make check` on this repo proves on each run, and what makes the skip
 // observable rather than silent.
+//
+// This is a THIN, LOCAL delegate to testkit/privatecorpus.SkipWithoutPrivateCorpus
+// (release-loop-2026-08 P5, spec 05 §11 Amendment A1) — the ONE actual
+// definition, moved there once internal/html and internal/localserver each
+// grew the same 15 lines by hand because a `_test.go` helper cannot be
+// imported across packages. This package's own six call sites already spell
+// the unqualified name `skipWithoutPrivateCorpus`, so this wrapper is the
+// seam that lets them keep doing that without a second implementation: the
+// only `os.Stat` / skip-message pair for this concern lives in
+// testkit/privatecorpus, not here.
 func skipWithoutPrivateCorpus(t *testing.T, path string) {
 	t.Helper()
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		t.Skipf("skip — %s absent (public checkout): this test judges a corpus that is stripped from the candidate", path)
-	}
+	privatecorpus.SkipWithoutPrivateCorpus(t, path)
 }
