@@ -652,8 +652,10 @@ func (c *DoctorCommand) doctorCheckVersions(cfg space.ProjectConfig, machine spa
 	}
 	ok := true
 	var failures []string
+	mirrorDirs := map[string]string{}
 	for _, ref := range cfg.Spaces {
 		dir := c.resolveMirror(c.projectRoot, ref, machine)
+		mirrorDirs[ref.ID] = dir
 		raw, err := c.readFile(filepath.Join(dir, "space.yaml"))
 		if err != nil {
 			ok = false
@@ -685,10 +687,39 @@ func (c *DoctorCommand) doctorCheckVersions(cfg space.ProjectConfig, machine spa
 	// ADVISORY appended to the detail string. This never flips the floor
 	// comparison above: `ok` is untouched here, so the check still PASSES on
 	// the advisory alone (only a floor violation FAILs it).
+	latest := ""
 	if cp, err := c.cachePath(); err == nil {
-		if latest, _ := release.ReadLatest(cp, time.Now(), cache.DefaultUpdateCheckTTL); latest != "" {
-			if older, err := version.OlderThan(c.binaryVersion, latest); err == nil && older {
-				detail += fmt.Sprintf(" · update available: v%s -> v%s — run a2a update", c.binaryVersion, latest)
+		latest, _ = release.ReadLatest(cp, time.Now(), cache.DefaultUpdateCheckTTL)
+	}
+	if latest == "" {
+		// THE UNMEASURED CASE, and it is the one that hurts. When no check has
+		// ever run, EVERY surface is silent — this row, the advisory on every
+		// verb, the MCP note. Silence then reads as "you are current", which is
+		// a claim nobody made. It is named here because `doctor` is what an
+		// agent runs when told to check its setup.
+		detail += " · no release check has ever run on this machine, so nothing here can say whether a newer a2a exists — run a2a update --check"
+	} else if older, err := version.OlderThan(c.binaryVersion, latest); err == nil && older {
+		detail += fmt.Sprintf(" · update available: v%s -> v%s — run a2a update", c.binaryVersion, latest)
+	}
+
+	// THE SECOND AXIS, which no check has ever reported. A space pins an a2ahub
+	// template tag in its committed workflows, and that pin moves only when
+	// somebody runs `a2a space update`. A space can satisfy its own write floor
+	// while pinning a template several releases old — precisely how axon's floor
+	// sat at 0.23.0 while 0.24.0 shipped, letting an agent write from a stale
+	// binary legitimately and invisibly.
+	//
+	// Advisory, never a failure: whether to update the space is the space
+	// owner's decision, and refusing a writer for the owner's call punishes the
+	// wrong party.
+	if latest != "" {
+		for _, ref := range cfg.Spaces {
+			pin, _ := space.WorkflowVersion(mirrorDirs[ref.ID])
+			if pin == "" || pin == "mixed" {
+				continue
+			}
+			if older, err := version.OlderThan(pin, latest); err == nil && older {
+				detail += fmt.Sprintf(" · %s pins the a2ahub template at v%s while v%s is published — run a2a space update", ref.ID, pin, latest)
 			}
 		}
 	}

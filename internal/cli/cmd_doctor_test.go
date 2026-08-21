@@ -2381,3 +2381,51 @@ func TestDoctorRunUnadoptedConsumptionWarnDoesNotChangeExitCode(t *testing.T) {
 		t.Fatalf("exit code changed from %d (no WARN) to %d (WARN present) — a WARN-only advisory must never change `a2a doctor`'s exit code", baselineCode, warnCode)
 	}
 }
+
+// TestDoctorNamesTheUnmeasuredReleaseAxis: when NO release check has ever run
+// on this machine, every surface is silent — this row, the per-verb advisory,
+// the MCP note. Silence then reads as "you are current", which is a claim
+// nobody made. `doctor` is what an agent runs when told to check its setup, so
+// it is the place that must say "nobody has looked".
+func TestDoctorNamesTheUnmeasuredReleaseAxis(t *testing.T) {
+	t.Parallel()
+	cmd := newTestDoctorCommand()
+	cmd.binaryVersion = "0.24.0"
+	cmd.loadProjectConfig = func(string) (space.ProjectConfig, error) { return space.ProjectConfig{}, nil }
+	cmd.loadMachineConfig = func(string) (space.MachineConfig, error) { return space.MachineConfig{}, nil }
+	cmd.lookupGit = func() error { return nil }
+
+	var stdout, stderr bytes.Buffer
+	if code := cmd.Run(context.Background(), nil, IO{Stdout: &stdout, Stderr: &stderr}); code != 0 {
+		t.Fatalf("exit code = %d, want 0 — an unmeasured axis is not a failure", code)
+	}
+	if !strings.Contains(stdout.String(), "no release check has ever run on this machine") {
+		t.Fatalf("doctor must name the unmeasured release axis; stdout=%q", stdout.String())
+	}
+}
+
+// The paired half: with a check on disk, doctor must NOT claim nobody looked.
+// Without this, the test above passes for a row that prints the sentence
+// unconditionally.
+func TestDoctorDoesNotClaimUnmeasuredWhenAcheckExists(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cachePath := filepath.Join(dir, "update-check.json")
+	if err := release.WriteCheck(cachePath, release.CheckState{CheckedAt: time.Now(), Latest: "0.24.0", Source: "github"}); err != nil {
+		t.Fatalf("release.WriteCheck: %v", err)
+	}
+	cmd := newTestDoctorCommand()
+	cmd.binaryVersion = "0.24.0"
+	cmd.cachePath = func() (string, error) { return cachePath, nil }
+	cmd.loadProjectConfig = func(string) (space.ProjectConfig, error) { return space.ProjectConfig{}, nil }
+	cmd.loadMachineConfig = func(string) (space.MachineConfig, error) { return space.MachineConfig{}, nil }
+	cmd.lookupGit = func() error { return nil }
+
+	var stdout, stderr bytes.Buffer
+	if code := cmd.Run(context.Background(), nil, IO{Stdout: &stdout, Stderr: &stderr}); code != 0 {
+		t.Fatalf("exit code = %d", code)
+	}
+	if strings.Contains(stdout.String(), "no release check has ever run") {
+		t.Fatalf("a machine WITH a check must not be told nobody looked; stdout=%q", stdout.String())
+	}
+}
