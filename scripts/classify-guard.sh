@@ -384,8 +384,17 @@ for public_file in "${ALLOW_FILES[@]}"; do
   while IFS= read -r line; do
     # Only the self-locating form this repo actually writes:
     #   source "$(dirname "${BASH_SOURCE[0]}")/lib/gate-lib.sh"
+    #
+    # TWO forms, both literal-resolvable, and the second is not a stylistic
+    # variant. A gate whose own tooth runs it under a MINIMAL PATH — to prove
+    # an absent tool reports UNMEASURED rather than a verdict — has no
+    # `dirname` on that PATH either, so `$(dirname ...)` cannot locate the
+    # script and the refusal it exists to make becomes impossible. Parameter
+    # expansion is a bash builtin and has none of that dependency.
+    # Taught here rather than skipped, as the refusal below instructs.
     dep="$(printf '%s' "$line" |
-      sed -n 's|.*\$(dirname "\${BASH_SOURCE\[0\]}")/\([^"]*\)".*|\1|p')"
+      sed -n -e 's|.*\$(dirname "\${BASH_SOURCE\[0\]}")/\([^"]*\)".*|\1|p' \
+             -e 's|.*"\${BASH_SOURCE\[0\]%/\*}/\([^"]*\)".*|\1|p')"
     if [ -z "$dep" ]; then
       # A sourced path this cannot resolve is flagged, never passed silently —
       # the same refuse-loudly rule the lane parser applies to a construct it

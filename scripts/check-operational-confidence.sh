@@ -46,7 +46,7 @@ ERRORS=0
 UNMEASURED=0
 
 # shellcheck source=scripts/lib/gate-lib.sh
-source "$_self_dir/lib/gate-lib.sh"
+source "${BASH_SOURCE[0]%/*}/lib/gate-lib.sh"
 
 fail() { echo "operational-confidence-guard: FAIL — $*" >&2; ERRORS=$((ERRORS + 1)); }
 
