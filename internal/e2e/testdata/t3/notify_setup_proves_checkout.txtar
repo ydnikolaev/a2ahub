@@ -1,0 +1,37 @@
+# P6 (spec 06, judge-the-thing-2026-08): `a2a notify setup` proves its
+# checkout is a space BEFORE it ever names a repository. $WORK here is
+# exactly the cwd the defect targeted — txtar_test.go's own Setup seeds a
+# PARTICIPANT-shaped `.a2a/config.yaml` at $WORK root (the file every other
+# a2a verb reads, so it is where an agent naturally is), never a space
+# checkout: no space.yaml at $WORK's root, and no git remote either (no
+# .git directory at all).
+#
+# AC1/AC2 (US-1): --non-interactive must refuse before naming ANY
+# repository — the string `gh secret set` must appear in neither stream.
+! exec a2a notify setup --non-interactive
+stderr 'this checkout is not a space'
+stderr 'clone the space, cd into it'
+! stdout 'gh secret set'
+! stderr 'gh secret set'
+
+# AC6 (US-5 regression): seed a minimal, valid, routeless space.yaml. The
+# guard now passes — but $WORK still carries no git remote (no .git at
+# all), so the tool's own honest "I don't know" degradation must survive
+# this fix unchanged: the visible `<owner>/<repo>` placeholder still
+# prints, and the run still exits on --non-interactive's documented refusal.
+cp space.yaml.seed space.yaml
+! exec a2a notify setup --non-interactive
+stdout '--repo <owner>/<repo>'
+
+-- space.yaml.seed --
+schema: space/v1
+space: fixture-space
+min_binary_version: 0.1.0
+gates: default
+participants:
+  - system: axon
+    org: acme
+    section: axon/
+    owners: [alice]
+    status: active
+    joined: "2026-01-01"

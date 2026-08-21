@@ -680,6 +680,43 @@ func notifyBotInstructions(locale string) string {
 	}
 }
 
+// notifyReadSpaceManifest reads and parses space.yaml at root — the ONE
+// place in the binary that decides what its absence or malformedness means
+// (spec 06 §T1 "notify verify — one reader, not a second one"; §5 forbids a
+// second reader of this file). `notASpace` is true when space.yaml could
+// not be read at all — the checkout is not a space, the strongest possible
+// evidence there is. `notASpace` is false with a non-nil err when
+// space.yaml exists but did not parse: the right place, a broken manifest.
+// A bare YAML unmarshal is deliberately the whole test here — no
+// internal/validate schema pass, no required-field check (spec 06 §5): a
+// stricter proof than this would refuse space checkouts `notify verify`
+// itself already accepts.
+func notifyReadSpaceManifest(root string) (manifest space.Manifest, notASpace bool, err error) {
+	raw, readErr := os.ReadFile(filepath.Join(root, "space.yaml"))
+	if readErr != nil {
+		return space.Manifest{}, true, readErr
+	}
+	parsed, parseErr := space.ParseManifest(raw)
+	if parseErr != nil {
+		return space.Manifest{}, false, parseErr
+	}
+	return parsed, false, nil
+}
+
+// notifyNotASpaceMessage / notifyUnparseableManifestMessage are `setup`'s
+// two guard refusals (spec 06 §T1 "the messages"). House rule: name the
+// FIX, not the symptom (scripts/classify-guard.sh's own header).
+func notifyNotASpaceMessage() string {
+	return "a2a notify setup: this checkout is not a space — no space.yaml here. " +
+		"run this at the space repo's own checkout (clone the space, cd into it, re-run). " +
+		"a participant project is never the right cwd, even though every other a2a verb is."
+}
+
+func notifyUnparseableManifestMessage(err error) string {
+	return fmt.Sprintf("a2a notify setup: space.yaml here is not parseable: %v. "+
+		"fix it (or check it out clean) and re-run — setup will not name a repository it cannot prove.", err)
+}
+
 func notifyNonInteractiveRefusal(repo string) string {
 	target := repo
 	if target == "" {
@@ -762,6 +799,21 @@ func runNotifySetup(ctx context.Context, c *NotifyCommand, root string, args []s
 	if err := fs.Parse(args); err != nil {
 		_, _ = fmt.Fprintln(stdio.Stderr, notifySetupUsage)
 		return 2
+	}
+
+	// The guard (spec 06 §T1): prove this checkout is a space BEFORE a
+	// repository can be named — strictly before the BotFather print,
+	// strictly before *nonInteractive is even consulted, strictly before
+	// c.gitRemote, so a non-space checkout never resolves (and cannot
+	// misname) a repository at all.
+	manifest, notASpace, manifestErr := notifyReadSpaceManifest(root)
+	if manifestErr != nil {
+		if notASpace {
+			_, _ = fmt.Fprintln(stdio.Stderr, notifyNotASpaceMessage())
+		} else {
+			_, _ = fmt.Fprintln(stdio.Stderr, notifyUnparseableManifestMessage(manifestErr))
+		}
+		return 1
 	}
 
 	_, _ = fmt.Fprintln(stdio.Stdout, notifyBotInstructions(*locale))
@@ -868,14 +920,13 @@ func runNotifySetup(ctx context.Context, c *NotifyCommand, root string, args []s
 	// Step 7: proof, ONLY once the route already exists in the manifest —
 	// "after the route merges" (spec 06 step 7). Before that this
 	// invocation stops here; re-running `a2a notify setup` once the PR
-	// has merged reaches this branch.
-	raw, readErr := os.ReadFile(filepath.Join(root, "space.yaml"))
-	if readErr != nil {
-		_, _ = fmt.Fprintln(stdio.Stdout, "no space.yaml route to prove yet — re-run `a2a notify setup` once the route above has merged")
-		return 0
-	}
-	manifest, parseErr := space.ParseManifest(raw)
-	if parseErr != nil || len(manifest.NotificationRoutes) == 0 {
+	// has merged reaches this branch. `manifest` is the SAME parse the
+	// top-of-function guard already performed — space.yaml is read exactly
+	// once per invocation (spec 06 §T1 "step 7 loses its dead branch"): an
+	// absent space.yaml can no longer reach this point at all, so the old
+	// benign-on-a-missing-file fallback this step used to have is gone, not
+	// kept as a defensive re-read.
+	if len(manifest.NotificationRoutes) == 0 {
 		_, _ = fmt.Fprintln(stdio.Stdout, "no notification route in space.yaml yet — re-run `a2a notify setup` once the route above has merged")
 		return 0
 	}
@@ -985,14 +1036,13 @@ func runNotifyVerify(ctx context.Context, c *NotifyCommand, root string, args []
 		return 2
 	}
 
-	raw, err := os.ReadFile(filepath.Join(root, "space.yaml"))
+	manifest, notASpace, err := notifyReadSpaceManifest(root)
 	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "a2a notify verify: cannot read space.yaml: %v\n", err)
-		return 1
-	}
-	manifest, err := space.ParseManifest(raw)
-	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "a2a notify verify: %v\n", err)
+		if notASpace {
+			_, _ = fmt.Fprintf(stdio.Stderr, "a2a notify verify: cannot read space.yaml: %v\n", err)
+		} else {
+			_, _ = fmt.Fprintf(stdio.Stderr, "a2a notify verify: %v\n", err)
+		}
 		return 1
 	}
 

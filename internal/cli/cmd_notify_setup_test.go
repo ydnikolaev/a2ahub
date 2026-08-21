@@ -36,6 +36,34 @@ import (
 // about the URL BUILDER, only that a plain string round-trips.
 const notifySentinelToken = "123456789:SENTINEL-TG-TOKEN-DO-NOT-LEAK-9f31c2"
 
+// notifySpaceCheckoutFixture is the minimal, parseable, routeless
+// space.yaml the rebased setup tests seed into their temp dir so the
+// top-of-function guard (spec 06 §T1) passes and the test exercises what
+// happens AFTER the guard — exactly as a real space checkout would, never
+// a bare t.TempDir() that the guard now (correctly) refuses.
+const notifySpaceCheckoutFixture = `schema: space/v1
+space: demo
+min_binary_version: 0.22.0
+gates: default
+participants:
+  - system: axon
+    org: acme
+    section: axon/
+    owners: [alice]
+    status: active
+    joined: "2026-01-01"
+`
+
+// newSpaceCheckoutDir returns a temp dir seeded with notifySpaceCheckoutFixture
+// (spec 06 §6 "why every setup test changes" — a bare t.TempDir() is not a
+// space checkout, and every setup test used one before this phase).
+func newSpaceCheckoutDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeNotifySpaceYAML(t, dir, notifySpaceCheckoutFixture)
+	return dir
+}
+
 func fakeScopeChecker(scopes []string, reported bool, err error) spaceScopeChecker {
 	return fakeScopes{scopes: scopes, reported: reported, err: err}
 }
@@ -92,9 +120,9 @@ func TestNotifySetup_NonInteractiveRefuses(t *testing.T) {
 		return nil
 	}
 	var stdout, stderr bytes.Buffer
-	code := runNotifySetup(context.Background(), c, t.TempDir(), []string{"--non-interactive"}, IO{Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader("")})
+	code := runNotifySetup(context.Background(), c, newSpaceCheckoutDir(t), []string{"--non-interactive"}, IO{Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader("")})
 	if code != 1 {
-		t.Fatalf("exit code = %d, want 1 (refusal)", code)
+		t.Fatalf("exit code = %d, want 1 (refusal); stderr=%s", code, stderr.String())
 	}
 	out := stdout.String()
 	if !strings.Contains(out, "--non-interactive") {
@@ -112,7 +140,7 @@ func TestNotifySetup_NonInteractiveRefuses(t *testing.T) {
 
 func TestNotifySetup_TokenNeverLeaksAcrossFullFlow(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
+	dir := newSpaceCheckoutDir(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Every request this flow's adapter makes MUST be token-free in its
@@ -150,10 +178,18 @@ func TestNotifySetup_TokenNeverLeaksAcrossFullFlow(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	code := runNotifySetup(context.Background(), c, dir, nil, IO{Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader("")})
-	// No space.yaml in the temp dir: the flow stops after step 6, exit 0
-	// ("no route to prove yet").
+	// dir IS a proven space checkout (newSpaceCheckoutDir) with no
+	// notification_routes yet: the flow reaches step 7's own no-route exit,
+	// 0, for the RIGHT reason — the guard passed, not because space.yaml was
+	// ever absent. (The prior version of this test seeded a bare
+	// t.TempDir() and asserted this same exit 0 under a message that treated
+	// an absent space.yaml as benign — that premise was this phase's own
+	// defect, and the message is deleted from the tree, not adapted.)
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "no notification route in space.yaml yet") {
+		t.Errorf("stdout does not reach step 7's no-route message: %q", stdout.String())
 	}
 
 	// Positive control: the token DID travel through the legitimate stdin
@@ -223,7 +259,7 @@ func TestRedactingToken_NeverFormatsRawValue(t *testing.T) {
 
 func TestNotifySetup_RefusesWithoutAdmin(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
+	dir := newSpaceCheckoutDir(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"permissions":{"admin":false}}`))
@@ -240,6 +276,12 @@ func TestNotifySetup_RefusesWithoutAdmin(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("exit code = %d, want 1", code)
 	}
+	// The refusal must be the admin refusal, reached BECAUSE the checkout
+	// is a proven space — not the guard's own "not a space" message, which
+	// would mean the admin check was never reached at all.
+	if strings.Contains(stderr.String(), "this checkout is not a space") {
+		t.Fatalf("refused at the space-checkout guard instead of reaching the admin check: %q", stderr.String())
+	}
 	if !strings.Contains(stderr.String(), "admin") {
 		t.Errorf("stderr does not name the admin refusal: %q", stderr.String())
 	}
@@ -247,7 +289,7 @@ func TestNotifySetup_RefusesWithoutAdmin(t *testing.T) {
 
 func TestNotifySetup_WorkflowScopeReportedSeparatelyFromAdmin(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
+	dir := newSpaceCheckoutDir(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"permissions":{"admin":true}}`))
@@ -270,6 +312,233 @@ func TestNotifySetup_WorkflowScopeReportedSeparatelyFromAdmin(t *testing.T) {
 	}
 	if !strings.Contains(out, "workflow scope: no") {
 		t.Errorf("workflow-scope fact not reported separately: %q", out)
+	}
+}
+
+// ---------------------------------------------------------------------
+// The guard itself (spec 06 §T1/§6): setup proves the checkout is a space
+// BEFORE it names a repository, on both the --non-interactive and the
+// interactive path, and its two refusal messages stay distinct from the
+// benign "no route yet" state.
+// ---------------------------------------------------------------------
+
+// TestNotifySetup_GuardRefusesBeforeNamingARepo is US-1/AC1/AC2: from a
+// directory with no space.yaml, --non-interactive must refuse before
+// naming ANY repository — gitRemote is injected as a t.Fatal stub, proving
+// the repo was never even resolved, a stronger claim than proving it was
+// merely not printed.
+func TestNotifySetup_GuardRefusesBeforeNamingARepo(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir() // deliberately NOT a space checkout — no space.yaml.
+
+	c := newTestNotifyCommand(t, nil)
+	c.gitRemote = func(context.Context, string) (string, error) {
+		t.Fatal("the guard must refuse before gitRemote is ever called")
+		return "", nil
+	}
+	c.promptToken = func(IO) (redactingToken, error) {
+		t.Fatal("--non-interactive must never prompt for a token")
+		return redactingToken{}, nil
+	}
+	c.ghSecretSet = func(context.Context, string, string, redactingToken) error {
+		t.Fatal("--non-interactive must never call gh secret set")
+		return nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runNotifySetup(context.Background(), c, dir, []string{"--non-interactive"}, IO{Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader("")})
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "this checkout is not a space") {
+		t.Errorf("stderr does not name the not-a-space refusal: %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "space repo's own checkout") {
+		t.Errorf("stderr does not name the FIX, not just the symptom: %q", stderr.String())
+	}
+	combined := stdout.String() + stderr.String()
+	if strings.Contains(combined, "gh secret set") {
+		t.Errorf("output names a repository / gh secret set line from a non-space checkout: %q", combined)
+	}
+	if strings.Contains(combined, "BotFather") {
+		t.Errorf("BotFather instructions were printed before the checkout was proven: %q", combined)
+	}
+}
+
+// TestNotifySetup_GuardRefusesInteractiveBeforePromptOrSecret is US-2's own
+// credential-misdirection assertion: on the INTERACTIVE path too,
+// promptToken/ghSecretSet must never be reached from a non-space checkout.
+// It must fail loudly if the guard is ever moved below step 4.
+func TestNotifySetup_GuardRefusesInteractiveBeforePromptOrSecret(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	c := newTestNotifyCommand(t, nil)
+	c.gitRemote = func(context.Context, string) (string, error) {
+		t.Fatal("the guard must refuse before gitRemote is ever called")
+		return "", nil
+	}
+	c.promptToken = func(IO) (redactingToken, error) {
+		t.Fatal("must not prompt for a token from a non-space checkout")
+		return redactingToken{}, nil
+	}
+	c.ghSecretSet = func(context.Context, string, string, redactingToken) error {
+		t.Fatal("must not call gh secret set from a non-space checkout")
+		return nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runNotifySetup(context.Background(), c, dir, nil, IO{Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader("")})
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "this checkout is not a space") {
+		t.Errorf("stderr does not name the not-a-space refusal: %q", stderr.String())
+	}
+}
+
+// TestNotifySetup_MalformedManifestRefusesWithItsOwnMessage is US-3: an
+// unparseable space.yaml is a DIFFERENT state from "no space.yaml at all" —
+// the operator is standing in the right place, and must not be told to cd
+// elsewhere.
+func TestNotifySetup_MalformedManifestRefusesWithItsOwnMessage(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeNotifySpaceYAML(t, dir, "not: valid: yaml: [")
+
+	c := newTestNotifyCommand(t, nil)
+	c.gitRemote = func(context.Context, string) (string, error) {
+		t.Fatal("the guard must refuse before gitRemote is ever called")
+		return "", nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runNotifySetup(context.Background(), c, dir, []string{"--non-interactive"}, IO{Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader("")})
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if strings.Contains(stderr.String(), "this checkout is not a space") {
+		t.Errorf("a malformed (present) manifest must NOT print the not-a-space message: %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "not parseable") {
+		t.Errorf("stderr does not name the unparseable-manifest refusal: %q", stderr.String())
+	}
+}
+
+// TestNotifySetup_NoRouteYetStaysExitZero is US-3/AC5: a manifest that
+// parses but declares no route is still a BENIGN state, exit **0** — the
+// guard must not turn it into a refusal. This is the interactive path (the
+// only one that ever reaches step 7): --non-interactive returns at its own
+// refusal, exit 1, before step 7, so it cannot carry this assertion.
+func TestNotifySetup_NoRouteYetStaysExitZero(t *testing.T) {
+	t.Parallel()
+	dir := newSpaceCheckoutDir(t) // routeless fixture.
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"permissions":{"admin":true}}`))
+	}))
+	defer srv.Close()
+
+	c := newTestNotifyCommand(t, srv)
+	c.promptToken = func(IO) (redactingToken, error) { return redactingToken{value: "x"}, nil }
+	c.ghSecretSet = func(context.Context, string, string, redactingToken) error { return nil }
+
+	var stdout, stderr bytes.Buffer
+	code := runNotifySetup(context.Background(), c, dir, nil, IO{Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader("")})
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0 (a routeless manifest is benign, not a refusal); stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if strings.Contains(stdout.String()+stderr.String(), "this checkout is not a space") {
+		t.Errorf("a valid, routeless manifest must not be reported as 'not a space': %q", stdout.String()+stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "no notification route in space.yaml yet") {
+		t.Errorf("stdout does not reach step 7's no-route message: %q", stdout.String())
+	}
+}
+
+// TestNotifySetup_US5NoOriginRemoteStillPrintsPlaceholder is the US-5
+// REGRESSION test the spec calls out by name: on a space checkout with NO
+// origin remote, --non-interactive must keep printing the honest
+// `--repo <owner>/<repo>` placeholder — the fix must not eat the tool's own
+// "I don't know" degradation.
+func TestNotifySetup_US5NoOriginRemoteStillPrintsPlaceholder(t *testing.T) {
+	t.Parallel()
+	dir := newSpaceCheckoutDir(t)
+
+	c := newTestNotifyCommand(t, nil)
+	c.gitRemote = func(context.Context, string) (string, error) {
+		return "", errors.New("fatal: no such remote 'origin'")
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runNotifySetup(context.Background(), c, dir, []string{"--non-interactive"}, IO{Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader("")})
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "--repo <owner>/<repo>") {
+		t.Errorf("stdout does not print the honest placeholder: %q", stdout.String())
+	}
+}
+
+// TestNotifySetupAndVerify_AgreeOnTheSameThreeStates is US-4: setup and
+// verify must reach the SAME verdict over the same directory in all three
+// states, because one shared function (notifyReadSpaceManifest) decides it
+// — the anti-regression for the "two verbs, one file, opposite readings"
+// defect this phase fixes.
+func TestNotifySetupAndVerify_AgreeOnTheSameThreeStates(t *testing.T) {
+	t.Parallel()
+
+	noManifest := t.TempDir()
+
+	unparseable := t.TempDir()
+	writeNotifySpaceYAML(t, unparseable, "not: valid: yaml: [")
+
+	valid := newSpaceCheckoutDir(t)
+
+	for _, test := range []struct {
+		name string
+		dir  string
+	}{
+		{"no manifest", noManifest},
+		{"unparseable manifest", unparseable},
+		{"valid manifest", valid},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Drive the real verbs, over the shape each accepts: both
+			// must reach the same class of verdict (refuse-at-the-manifest
+			// vs proceed). setup's own admin/token seams are Fatal stubs so
+			// this only ever exercises the guard, never step 4+.
+			var setupOut, setupErrBuf, verifyOut, verifyErrBuf bytes.Buffer
+			sc := newTestNotifyCommand(t, nil)
+			sc.gitRemote = func(context.Context, string) (string, error) { return "", errors.New("no remote") }
+			sc.promptToken = func(IO) (redactingToken, error) { return redactingToken{}, errors.New("must not prompt") }
+			setupCode := runNotifySetup(context.Background(), sc, test.dir, []string{"--non-interactive"}, IO{Stdout: &setupOut, Stderr: &setupErrBuf, Stdin: strings.NewReader("")})
+
+			vc := newTestNotifyCommand(t, nil)
+			vc.gitRemote = func(context.Context, string) (string, error) { return "", errors.New("no remote") }
+			verifyCode := runNotifyVerify(context.Background(), vc, test.dir, nil, IO{Stdout: &verifyOut, Stderr: &verifyErrBuf, Stdin: strings.NewReader("")})
+
+			if test.name == "valid manifest" {
+				// setup still exits 1 here (--non-interactive's own
+				// documented refusal, once past the guard) but must NOT be
+				// the guard's own message; verify must reach its JSON report.
+				if strings.Contains(setupErrBuf.String(), "this checkout is not a space") || strings.Contains(setupErrBuf.String(), "not parseable") {
+					t.Errorf("setup refused a valid manifest at the guard: %q", setupErrBuf.String())
+				}
+				if verifyCode == 1 && (strings.Contains(verifyErrBuf.String(), "cannot read space.yaml") || strings.Contains(verifyErrBuf.String(), "ParseManifest")) {
+					t.Errorf("verify refused a valid manifest at the manifest read: %q", verifyErrBuf.String())
+				}
+				return
+			}
+			if setupCode != 1 {
+				t.Errorf("setup did not refuse %s: exit=%d stdout=%q stderr=%q", test.name, setupCode, setupOut.String(), setupErrBuf.String())
+			}
+			if verifyCode != 1 {
+				t.Errorf("verify did not refuse %s: exit=%d stdout=%q stderr=%q", test.name, verifyCode, verifyOut.String(), verifyErrBuf.String())
+			}
+		})
 	}
 }
 
