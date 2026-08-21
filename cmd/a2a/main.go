@@ -5,10 +5,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"runtime/debug"
+
+	"github.com/ydnikolaev/a2ahub/internal/cli"
 )
 
 // version and commit are the build-time stamp (§7.3, D-013 — the
@@ -61,7 +64,70 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if helpRequested(args[1:]) {
 		return runVerbHelp(name, args[1:], stdout)
 	}
-	return cmd(args[1:], stdout, stderr)
+	code := cmd(args[1:], stdout, stderr)
+	writeUpdateAdvisory(name, args[1:], stderr)
+	return code
+}
+
+// advisorySilentVerbs are the commands that must NOT get the generic advisory
+// appended, each for its own reason rather than by taste:
+//
+//	version     IS the report — a note repeating it would be noise
+//	update      IS the fix, and prints its own richer before/after
+//	doctor      already has a `versions` check that reports the same fact as a
+//	            finding, with the exact "v0.1.2 -> v0.3.0" prose (spec 19 AC#7)
+//	statusline  is one embedded line by contract; it already folds the notice
+//	            in, and a second line would break every prompt embedding it
+//	completion  emits a shell script to stdout that a shell will `eval`
+var advisorySilentVerbs = map[string]bool{
+	"version": true, "update": true, "doctor": true, "statusline": true, "completion": true,
+}
+
+// writeUpdateAdvisory renders the update notice ONCE, after any command, for
+// every verb that does not already own the subject.
+//
+// This is the fix for the shape that let an agent write from a stale binary:
+// the advisory used to live in three hand-placed copies, so whether you were
+// told depended on which verb you happened to run. Placing it here means a new
+// verb cannot be added without it.
+//
+// It builds the store best-effort and stays silent when there is no project —
+// no project means no configured cache to read, and inventing a warning there
+// would be a claim about a machine we know nothing about.
+//
+// The `--json` scan is deliberate and bounded: the flag is spelled the same by
+// every verb in this CLI that has one, and a false positive can only change
+// the ADVISORY's format on stderr — never the command's behaviour, never its
+// exit code, and never a byte of stdout.
+func writeUpdateAdvisory(name string, args []string, stderr io.Writer) {
+	render, jsonOut := advisoryMode(name, args)
+	if !render {
+		return
+	}
+	p, err := resolvePaths()
+	if err != nil {
+		return
+	}
+	store, err := buildStore(context.Background(), p)
+	if err != nil {
+		return
+	}
+	cli.WriteUpdateAdvisory(cli.IO{Stderr: stderr}, store.UpdateNotice(), jsonOut)
+}
+
+// advisoryMode is the whole DECISION, separated from the store read so it can
+// be tested without a project on disk. It answers two questions: does this verb
+// get the advisory at all, and in which shape.
+func advisoryMode(name string, args []string) (render, jsonOut bool) {
+	if advisorySilentVerbs[name] {
+		return false, false
+	}
+	for _, a := range args {
+		if a == "--json" || a == "-json" || a == "--json=true" || a == "-json=true" {
+			return true, true
+		}
+	}
+	return true, false
 }
 
 func printUsage(w io.Writer) {

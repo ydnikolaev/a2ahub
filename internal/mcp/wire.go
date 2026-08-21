@@ -147,6 +147,9 @@ func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, bui
 	}
 
 	registry := NewRegistry()
+	// EVERY tool carries the update advisory, not just a2a_read. Applied here,
+	// at construction, so no future registration can miss it.
+	registry.Decorate(updateNoticeDecorator(store))
 	if len(cfg.Spaces) == 0 {
 		// No connected space yet: the space-free tools still work (over zero
 		// mirrors, cache.Store's own tolerant-of-absent-config contract);

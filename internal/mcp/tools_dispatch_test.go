@@ -262,7 +262,11 @@ func TestReadDispatchAppendsUpdateAdvisoryWithoutTouchingStructuredContent(t *te
 			t.Fatalf("seed update-check cache: %v", err)
 		}
 		enabledStore.EnableUpdateNotice("0.1.0", cachePath, 6*time.Hour, nil)
-		dispatch := newReadDispatch(enabledStore)
+		// THROUGH THE DECORATOR, because that is where the advisory lives
+		// now: Registry.Decorate applies it to every tool, so a test that
+		// called newReadDispatch bare would assert the OLD arrangement and
+		// go green while every non-read tool stayed silent.
+		dispatch := updateNoticeDecorator(enabledStore)(newReadDispatch(enabledStore))
 		gotResult, gotBody, err := dispatch(context.Background(), json.RawMessage(`{"view":"inbox"}`))
 		if err != nil {
 			t.Fatalf("a2a_read view=inbox: %v", err)
@@ -342,7 +346,11 @@ func TestReadDispatchAppendsUpdateAdvisoryWithoutTouchingStructuredContent(t *te
 			t.Fatalf("seed update-check cache: %v", err)
 		}
 		enabledStore.EnableUpdateNotice("0.1.0", cachePath, 6*time.Hour, nil)
-		dispatch := newReadDispatch(enabledStore)
+		// THROUGH THE DECORATOR, because that is where the advisory lives
+		// now: Registry.Decorate applies it to every tool, so a test that
+		// called newReadDispatch bare would assert the OLD arrangement and
+		// go green while every non-read tool stayed silent.
+		dispatch := updateNoticeDecorator(enabledStore)(newReadDispatch(enabledStore))
 
 		showViewArgs, err := json.Marshal(map[string]string{"view": "show", "ref": id})
 		if err != nil {

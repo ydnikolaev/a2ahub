@@ -36,11 +36,29 @@ type ToolSpec struct {
 type Registry struct {
 	tools map[string]ToolSpec
 	order []string
+	// decorate wraps EVERY handler at registration. It exists so a
+	// cross-cutting concern is applied in one place rather than at each
+	// registration site, where a new tool silently misses it — which is
+	// exactly what happened to the update advisory: it was wrapped around
+	// a2a_read alone, so an agent told "send a notification" reached
+	// a2a_notify and was told nothing about the release it was missing.
+	decorate func(HandlerFunc) HandlerFunc
 }
 
 // NewRegistry constructs an empty Registry.
 func NewRegistry() *Registry {
 	return &Registry{tools: map[string]ToolSpec{}}
+}
+
+// Decorate installs a wrapper applied to every handler registered AFTERWARDS.
+// Call it before the first Register — a decorator installed late would cover
+// some tools and not others, which is the defect it exists to prevent, so a
+// non-empty registry is a programmer error rather than a partial application.
+func (r *Registry) Decorate(f func(HandlerFunc) HandlerFunc) {
+	if len(r.order) > 0 {
+		panic("mcp: Registry.Decorate: called after tools were registered — a decorator that covers only some tools is worse than none")
+	}
+	r.decorate = f
 }
 
 // Register adds spec to the registry. A duplicate Name is a programmer
@@ -55,6 +73,9 @@ func (r *Registry) Register(spec ToolSpec) {
 	}
 	if _, exists := r.tools[spec.Name]; exists {
 		panic(fmt.Sprintf("mcp: Registry.Register: tool %q already registered", spec.Name))
+	}
+	if r.decorate != nil {
+		spec.Handler = r.decorate(spec.Handler)
 	}
 	r.tools[spec.Name] = spec
 	r.order = append(r.order, spec.Name)

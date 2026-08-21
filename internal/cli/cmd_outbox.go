@@ -11,7 +11,6 @@ import (
 	"fmt"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
-	"github.com/ydnikolaev/a2ahub/internal/release"
 )
 
 // OutboxCommand implements `a2a outbox [--attention] [--json]` (OP-208):
@@ -63,7 +62,6 @@ func (c *OutboxCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return 1
 	}
 	code := outboxRender(stdio, items, *jsonOut)
-	outboxWriteUpdateAdvisory(stdio, c.store.UpdateNotice(), *jsonOut)
 	// Defect fix (filed 2026-07-26): a malformed mirror file used to drop
 	// out of the index without a word — see skipadvisory.go's own doc
 	// comment. outbox is cross-space, so this reports the union across
@@ -76,23 +74,6 @@ func (c *OutboxCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return int(cache.SeverityOf(items))
 	}
 	return code
-}
-
-// outboxWriteUpdateAdvisory emits the spec 19 T4 update-notice advisory
-// OUT-OF-BAND, to stderr ONLY (wave 12c amendment: the stdout item array's
-// bytes must stay byte-identical for existing consumers). See
-// inboxWriteUpdateAdvisory's doc comment (cmd_inbox.go) — same rule, kept a
-// file-private, uniquely-named copy per this package's own Placement
-// convention (no shared helper across verb files).
-func outboxWriteUpdateAdvisory(stdio IO, n cache.UpdateNotice, jsonOut bool) {
-	if n.Grade == release.GradeNone {
-		return
-	}
-	if jsonOut {
-		_ = json.NewEncoder(stdio.Stderr).Encode(n)
-		return
-	}
-	_, _ = fmt.Fprintf(stdio.Stderr, "note: %s\n", n.Sentence)
 }
 
 func outboxRender(stdio IO, items []cache.Item, jsonOut bool) int {

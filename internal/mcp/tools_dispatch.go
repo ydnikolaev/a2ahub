@@ -76,20 +76,22 @@ func newDispatch(tool, discKey string, handlers map[string]HandlerFunc, enum []s
 	}
 }
 
-// newReadDispatch builds a2a_read: view -> the 6 P14 read handlers, wrapped
-// ONCE with withUpdateNotice (spec 19 T4 AMENDED / §11 wave-12c) so every
-// view's response body carries the shared update advisory out-of-band —
-// StructuredContent (result) is untouched by the wrap, so P15's per-verb
-// byte-identity guarantee is unaffected.
+// newReadDispatch builds a2a_read: view -> the 6 P14 read handlers.
+//
+// It no longer wraps the advisory itself: Registry.Decorate applies it to
+// every tool at construction (tools_read.go's updateNoticeDecorator), so a
+// wrap here would attach it twice to this one tool. StructuredContent
+// (result) is untouched by the decorator, so P15's per-verb byte-identity
+// guarantee is unaffected either way.
 func newReadDispatch(store *cache.Store) HandlerFunc {
-	return withUpdateNotice(newDispatch("a2a_read", "view", map[string]HandlerFunc{
+	return (newDispatch("a2a_read", "view", map[string]HandlerFunc{
 		"inbox":     newInboxHandler(store),
 		"outbox":    newOutboxHandler(store),
 		"show":      newShowHandler(store),
 		"thread":    newThreadHandler(store),
 		"search":    newSearchHandler(store),
 		"contracts": newContractsHandler(store),
-	}, ReadViews), store)
+	}, ReadViews))
 }
 
 // newLifecycleDispatch builds a2a_lifecycle: action -> newLifecycleHandler

@@ -309,6 +309,25 @@ type ContractsInput struct {
 // GradeNone notice (EnableUpdateNotice never called on store, or nothing to
 // advise) leaves body byte-unchanged too; a handler error short-circuits
 // before any notice lookup and is returned exactly as inner produced it.
+// updateNoticeDecorator adapts withUpdateNotice to Registry.Decorate, so the
+// advisory is attached ONCE at registry construction rather than at a chosen
+// handler. Until 2026-08-22 it wrapped a2a_read alone: an agent asked to send
+// a notification reached a2a_notify, was told nothing about the release it was
+// missing, and wrote from a stale binary. The concern is cross-cutting, so it
+// belongs at the seam every tool passes through.
+func updateNoticeDecorator(store *cache.Store) func(HandlerFunc) HandlerFunc {
+	// A NIL STORE IS A REAL, LEGITIMATE STATE — some registries are built
+	// without one — and it means the advisory has nothing to read, not that
+	// something is wrong. Returning the handler untouched is the honest
+	// answer; wrapping it would panic inside Store.UpdateNotice on the first
+	// call, which is exactly what widening this decorator from one tool to
+	// all of them surfaced (TestEquivContractNew, 2026-08-22).
+	if store == nil {
+		return func(inner HandlerFunc) HandlerFunc { return inner }
+	}
+	return func(inner HandlerFunc) HandlerFunc { return withUpdateNotice(inner, store) }
+}
+
 func withUpdateNotice(inner HandlerFunc, store *cache.Store) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		result, body, err := inner(ctx, args)

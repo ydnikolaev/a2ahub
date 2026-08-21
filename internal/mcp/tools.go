@@ -168,6 +168,7 @@ func BuildRegistry(store *cache.Store, write WriteDeps, submitStagingDir string,
 // unit tests — which construct SubmitDeps directly — stayed green.
 func BuildRegistryWithOperations(store *cache.Store, write WriteDeps, submit SubmitDeps, newDeps NewDeps, contractOperations ContractToolOperations, dataOperations DataToolDeps, workDeps ...WorkToolDeps) *Registry {
 	r := NewRegistry()
+	r.Decorate(updateNoticeDecorator(store))
 	if len(workDeps) > 1 {
 		panic("mcp: BuildRegistry accepts at most one work dependency set")
 	}

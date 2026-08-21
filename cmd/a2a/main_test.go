@@ -116,3 +116,41 @@ func TestVersionStamp_nonEmpty(t *testing.T) {
 		t.Fatal("versionStamp() is empty")
 	}
 }
+
+// TestAdvisoryMode is the decision that replaced three hand-placed copies of
+// the update advisory. Until 2026-08-22 whether you were told about a release
+// depended on which verb you happened to run: `a2a inbox` and `a2a outbox`
+// held a copy, `a2a submit` and `a2a notify` did not. An agent asked to send a
+// notification was therefore told nothing, and wrote from a stale binary.
+//
+// Both directions, because either alone is meaningless — "every verb speaks"
+// passes for a rule that never suppresses, and "these verbs are silent" passes
+// for a rule that never speaks.
+func TestAdvisoryMode(t *testing.T) {
+	t.Parallel()
+
+	for _, verb := range []string{"submit", "respond", "notify", "sync", "ack", "show", "inbox", "outbox"} {
+		render, _ := advisoryMode(verb, nil)
+		if !render {
+			t.Fatalf("%q must carry the update advisory — this is the class of verb that carried nothing", verb)
+		}
+	}
+
+	// Each of these owns the subject already; a generic note would duplicate
+	// or, for statusline and completion, corrupt a contract.
+	for _, verb := range []string{"version", "update", "doctor", "statusline", "completion"} {
+		render, _ := advisoryMode(verb, nil)
+		if render {
+			t.Fatalf("%q must NOT get the generic advisory; it reports or is the fix itself", verb)
+		}
+	}
+
+	for _, args := range [][]string{{"--json"}, {"-json"}, {"--actionable", "--json"}, {"--json=true"}} {
+		if _, jsonOut := advisoryMode("inbox", args); !jsonOut {
+			t.Fatalf("args %v must select the JSON advisory shape", args)
+		}
+	}
+	if _, jsonOut := advisoryMode("inbox", []string{"--actionable"}); jsonOut {
+		t.Fatalf("no --json must select the prose shape")
+	}
+}
