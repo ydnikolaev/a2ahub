@@ -96,6 +96,7 @@ func (c *HtmlCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	noOpen := fs.Bool("no-open", false, "don't open the rendered file in your browser (for scripts/CI)")
 	focus := fs.String("focus", "", "focus one trusted space:artifact route")
 	updateFocus := fs.Bool("update", false, "focus the trusted local update card")
+	timing := fs.Bool("timing", false, "print a per-phase timing breakdown to stderr (also printed automatically for a slow render)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -103,6 +104,15 @@ func (c *HtmlCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		_, _ = fmt.Fprintf(stdio.Stderr, "usage: a2a %s [--system <id>] [--out <path>] [--json] [--demo] [--no-open] [--focus <space:id>] [--update]\n", c.name)
 		return 2
 	}
+
+	// A RENDER THAT CANNOT SAY WHERE ITS TIME WENT gets diagnosed by guessing.
+	// On 2026-08-22 `a2a html` was reported taking about a minute and the
+	// changelog was the natural suspect; measured, loading all 46 releases is
+	// 8.7 ms of an 80 ms demo render, so the minute is somewhere nobody had
+	// looked. The breakdown is printed on request AND, unasked, whenever the
+	// render is slow enough for a person to notice — a diagnostic nobody knows
+	// about is a diagnostic nobody runs.
+	phases := newHTMLPhases()
 
 	var data html.Data
 	var err error
@@ -120,6 +130,7 @@ func (c *HtmlCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			}
 		}
 	}
+	phases.mark("assemble")
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "a2a %s: %v\n", c.name, err)
 		return 1
@@ -150,6 +161,8 @@ func (c *HtmlCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		}
 		_, _ = stdio.Stdout.Write(b)
 		_, _ = fmt.Fprintln(stdio.Stdout)
+		phases.mark("marshal")
+		phases.report(stdio.Stderr, *timing)
 		return 0
 	}
 
@@ -158,7 +171,9 @@ func (c *HtmlCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		_, _ = fmt.Fprintf(stdio.Stderr, "a2a %s: %v\n", c.name, dErr)
 		return 1
 	}
+	phases.mark("docs")
 	page, rErr := html.Render(html.DefaultTemplate(), data, docs)
+	phases.mark("render")
 	if rErr != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "a2a %s: %v\n", c.name, rErr)
 		return 1
@@ -171,7 +186,9 @@ func (c *HtmlCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		_, _ = fmt.Fprintf(stdio.Stderr, "a2a %s: cannot write %s: %v\n", c.name, *out, wErr)
 		return 1
 	}
+	phases.mark("write")
 	_, _ = fmt.Fprintf(stdio.Stdout, "a2a %s: wrote %s\n", c.name, *out)
+	phases.report(stdio.Stderr, *timing)
 
 	// Open it in the default browser (default-on convenience; --no-open for
 	// scripts/CI). Best-effort: a launch failure never fails the render.
