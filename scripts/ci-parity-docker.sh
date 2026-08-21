@@ -94,6 +94,28 @@ if state="$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null)"; t
   docker rm "$CONTAINER" >/dev/null
 fi
 
+# WHAT THIS CONTAINER RUNS IS NAMED HERE, NOT INHERITED FROM THE IMAGE.
+#
+# The Dockerfile's `CMD ["make", "ci-parity"]` was the default until
+# 2026-08-21, and it stopped being the right one when the macos-15 delta became
+# an executed step rather than an excuse: `make ci-parity` is now audit + the
+# portable suite + the macOS delta, and the macOS delta cannot run on Linux —
+# it would refuse here, correctly and uselessly, every run.
+#
+# `--suite` is the userland-portable half: everything CI runs that is not tied
+# to a macOS toolchain. It is the composed release gate's PRIMARY phase, and it
+# is the container that runs it, because the container is the better judge on
+# two axes at once — GNU userland (where every non-notifier CI job actually
+# runs) and the TRACKED tree (the entrypoint syncs and `git clean`s, so this
+# judges what publishes, while the host judges a working tree carrying
+# generated, gitignored files).
+#
+# An explicit argument still wins, so `bash scripts/ci-parity-docker.sh make check`
+# and `... bash` keep working exactly as documented above.
+if [ "$#" -eq 0 ]; then
+  set -- bash scripts/ci-parity.sh --suite
+fi
+
 exec docker run --rm -i \
   --name "$CONTAINER" \
   ${PARITY_TTY:+-t} \

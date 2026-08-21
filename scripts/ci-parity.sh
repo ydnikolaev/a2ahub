@@ -5,6 +5,9 @@
 # lane-reason: it reads every .github/workflows/*.yml and compares them against
 #   its own execution list; any workflow edit can change its verdict, and it
 #   claims no path of its own.
+# lane-claims:
+#   docs/runbooks/release.md
+#   scripts/lib/gate-lib.sh
 # lane-reads-opaque: the dogfood EXECUTES step and tooth T1 both `cat "$report"`,
 #   a file this script CREATES with mktemp and deletes — it is the validator's
 #   own JSON output, never a repository input, so no repo path can flip a
@@ -54,6 +57,16 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+
+# gate_unmeasured, and the exit code that separates "I measured it and it is
+# wrong" (1) from "I could not measure it" (3). A composed SHIP gate is the
+# worst possible place to blur those two: "Docker is down" and "the tree is
+# broken" are opposite instructions to the operator, and only one of them is a
+# statement about shippability. Sourced, never executed (the lib guards its own
+# --teeth on BASH_SOURCE), and tracked + unstripped, so the projection's
+# `make check` reaches it the same way every other gate's does.
+# shellcheck source=lib/gate-lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/gate-lib.sh"
 
 # EXCUSED — each with the reason it cannot or should not run locally. An entry
 # here is a decision, not a hiding place: it prints on every audit.
@@ -120,15 +133,57 @@ excused_reason() { # $1 = command
     | *'test -s "$RUNNER_TEMP/policy.sh"'*)
       echo "runs on pull_request_target against a feedback file submitted by an incoming PR; there is no such event locally. The validator it drives is exercised by its own Go tiers." ;;
 
-    # Group 5 — macos-notifier and its toolchain (ci.yml's macos-15 job AND
-    # release.yml's macos-15 job, ~5). NAMED GAP: the macos-15 job builds and
-    # packages a Swift notifier; it needs the macOS toolchain and signing
-    # context. NOTHING local or containerised covers these two jobs — this is
-    # a known, named gap (release-loop-2026-08 P4), not a claim of coverage.
-    *"swift --version"* \
-    | *"integrations/macos-notifier/scripts/test.sh"* \
-    | *"integrations/macos-notifier/scripts/package-release.sh"*)
-      echo "the macos-15 job builds and packages a Swift notifier; it needs the macOS toolchain and signing context. NOTHING local or containerised covers these two jobs — this is a known, named gap (release-loop-2026-08 P4), not a claim of coverage." ;;
+    # Group 5 — macos-notifier. THE GAP IS CLOSED, AND ONLY ONE LINE OF IT IS
+    # STILL EXCUSED (release-loop-2026-08 P4, 2026-08-21).
+    #
+    # This entry used to excuse all three of the macos-15 commands with
+    # "NOTHING local or containerised covers these two jobs". That was true of
+    # the CONTAINER and false of the HOST: `ci.yml`'s check job is
+    # `runs-on: ubuntu-latest`, so a darwin host run is parity with nothing in
+    # CI *except* these two jobs — and this machine has the toolchain
+    # (`/usr/bin/swift`, Apple Swift 6.2.4). The excuse was covering for the
+    # fact that nobody had pointed the host at the one thing only the host can
+    # judge. They are now EXECUTES members: see macos_delta() below, which runs
+    # them and reports gate_unmeasured — never a silent skip — when the
+    # toolchain or the platform is absent.
+    #
+    # What remains excused is release.yml's variant of the SAME script, which
+    # differs from the ci.yml invocation only in where VERSION comes from.
+    *'VERSION="${VERSION#v}" integrations/macos-notifier/scripts/package-release.sh'*)
+      echo "the same script the ci.yml macos-15 step runs below, in the same SIGNING_MODE=adhoc mode; the only difference is VERSION, which release.yml derives from the tag being cut and which does not exist locally" ;;
+
+    # `make lane-run-strict` — LEFT the composition, 2026-08-21, and this is
+    # the coverage argument that lets it. It is a "covered by" excuse of the
+    # same shape as the `npm run build` one above, and it is derived, not
+    # asserted:
+    #
+    #   * `scripts/verify.sh`'s MODE=full ordered set is run_repo_gates plus
+    #     gofmt, vet, golangci-lint, go-test, coverage-policy and logic-e2e.
+    #     `run_derived_phase` can emit exactly those names plus three others:
+    #     harness-teeth, web-quality and projection, and `go-test-scoped:<pkg>`
+    #     — which is `go test <pkg>`, a strict subset of go-test's `./...`.
+    #   * All three of the others are EXECUTES members in their own right:
+    #     `make harness-check` (harness-teeth), `npm run check:quality`
+    #     (web-quality's own first half) and `make projection`.
+    #   * What the lane adds beyond the phases is the DERIVATION REFUSAL — a
+    #     changed path no gate claims. `make lane` is exactly that, derive-only,
+    #     and it is an EXECUTES member below.
+    #
+    # So every phase this command can run is run by the suite around it, and
+    # running it again re-pays them. Measured on this repo's own telemetry
+    # (.a2a/cache/verify/telemetry.jsonl, 2026-08-21): mode=full sums to 845 s
+    # of medians, of which logic-e2e alone is 542 s; `make lane` on a single Go
+    # file selects 26 phases including `projection` and `logic-e2e`. That
+    # duplicate was being paid ONCE PER USERLAND.
+    #
+    # THE ONE THING THIS EXCUSE DOES NOT COVER, said out loud: CI runs this
+    # target over a PULL REQUEST's changed set, and the local invocation could
+    # only ever run it over `git diff HEAD~1`, a different set entirely. The
+    # audit could never have proved the derivation right for CI's input; what
+    # it can prove is that no phase goes unrun, which is what the list above
+    # does.
+    "make lane-run-strict")
+      echo "every phase it can derive is run by the suite around it — MODE=full covers all of them except harness-teeth, web-quality and projection, each an EXECUTES member of its own ('make harness-check', 'npm run check:quality', 'make projection'), and the derivation refusal it adds is 'make lane', also below. Re-running it re-paid a whole ceiling per userland." ;;
 
     # Group 7 — shell scaffolding (set/exit lines with no check of their own).
     "set -e" | "set +e" | "set -euo pipefail" | "set -o pipefail" \
@@ -185,15 +240,26 @@ excused_reason() { # $1 = command
 }
 
 # EXECUTED — the local equivalent of each CI command, in CI's own order.
+#
+# Every step is TIMED and the elapsed seconds are printed on its own result
+# line. Not decoration: AC2 asks for a wall-clock comparison between the
+# composed gate and a full parity run, and job-timeouts.tsv's measured-median
+# discipline says report what a phase cost rather than what it was expected to.
+# A step whose cost nobody records is a step nobody can argue about removing —
+# which is how three ceiling runs accumulated in one runbook.
 run_step() { # $1 = label, $2... = command
   local label="$1"; shift
+  local start end rc=0
+  start="$(date +%s)"
   printf '\n=== ci-parity: %s ===\n' "$label"
-  if "$@"; then
-    printf 'ci-parity: %s OK\n' "$label"
+  "$@" || rc=$?
+  end="$(date +%s)"
+  if [ "$rc" -eq 0 ]; then
+    printf 'ci-parity: %s OK (%ss)\n' "$label" "$((end - start))"
     return 0
   fi
-  printf 'ci-parity: %s FAILED\n' "$label" >&2
-  return 1
+  printf 'ci-parity: %s FAILED (%ss)\n' "$label" "$((end - start))" >&2
+  return "$rc"
 }
 
 # extract_commands reads every `run:` value out of the given workflow YAML
@@ -559,6 +625,41 @@ audit() {
   printf '\nci-parity: every CI command is executed locally or excused with a reason.\n'
 }
 
+# audit_composed — the workflow half plus AC3's half.
+#
+# AC3's half is reached by `--audit`, so `ci-parity-audit` runs it: that target
+# is a REPO_GATES member, which means `make check`, the derived lane AND the
+# projection each execute it. A gate nothing runs is this epic's own subject —
+# `make harness-check` was reached by no local flow for a week and a tooth
+# stopped biting. `--audit-runbook` exists beside it for iterating on this half
+# alone, never as its only executor.
+#
+# IT IS DELIBERATELY NOT PART OF `--suite`, i.e. it does NOT run inside the
+# container. Two reasons, and the second is the load-bearing one. It reads a
+# private markdown file, which is not a userland-sensitive read — the container
+# buys nothing by re-parsing it, unlike the workflow extractor, whose awk
+# genuinely behaves differently under mawk. And putting an awk program that has
+# only ever been exercised under BSD awk at the FRONT of a twenty-minute
+# container suite would mean a mawk difference reds the release gate at minute
+# zero with "no step named a make target" — a message that cannot tell the
+# operator whether the runbook or the parser is at fault. Three executors on the
+# host are enough; a fourth in the one userland the author could not test is a
+# liability, not coverage.
+audit_composed() {
+  audit "${1:-}" || return $?
+  # A PRIVATE path: a public checkout has no docs/runbooks/release.md (docs/ is
+  # stripped at publish), and audit_runbook reports gate_unmeasured on a missing
+  # file rather than a clean pass — right for a gate, wrong for a public
+  # checkout that legitimately does not carry the input. So the presence check
+  # comes first, the same shape `make projection` and `_harness-check` already
+  # use for stripped inputs.
+  if [ -f "$RELEASE_RUNBOOK" ]; then
+    audit_runbook "$RELEASE_RUNBOOK" || return $?
+  else
+    printf 'ci-parity: runbook audit skipped — %s absent (public checkout; the release runbook is private and stripped at publish).\n' "$RELEASE_RUNBOOK"
+  fi
+}
+
 # EXECUTES_BEGIN
 # Each run_step's FIRST argument is the CI command VERBATIM — that is what the
 # audit greps for, so a label and its coverage claim cannot drift apart. The
@@ -615,16 +716,59 @@ a2a_validate_dogfood_step() (
   exit "$status"
 )
 
-execute_all() {
+# suite_members — THE USERLAND-PORTABLE SUITE. Everything CI runs that is not
+# tied to a macOS toolchain, in CI's own order. This is what the CONTAINER
+# executes, and it is the composed release gate's primary phase.
+#
+# THREE CHANGES LANDED HERE ON 2026-08-21 (release-loop-2026-08 P4). Each
+# removes a duplicate or closes a hole; none of them narrows what is judged.
+#
+#  1. THE STRICT LANE TARGET LEFT. Its coverage argument is written out in full
+#     in excused_reason() above — every phase it can derive is run by the
+#     members around it, so it was re-paying an entire ceiling, once per
+#     userland. Two members below are what keep that true rather than
+#     convenient. (Its name is deliberately NOT spelled in full anywhere between
+#     EXECUTES_BEGIN and EXECUTES_END: this block IS the coverage claim, greps
+#     are substring greps, and a command named in a comment about why it is
+#     absent would silently claim the very coverage the excuse is there to
+#     argue. That is the same class as the marker bug this file's extractor
+#     header records, one level up.)
+#  2. `make lane` and `make projection` JOINED, because they are what the lane
+#     was silently contributing. The spec's own amendment says dropping
+#     lane-run-strict "loses only the derivation refusal — and a11y/lighthouse";
+#     that enumeration is INCOMPLETE, and the missing member is the expensive
+#     one. `make lane` on a single Go file prints `projection matched **`, so
+#     every Go-touching release was running check-projection.sh's ~10-20 minute
+#     public-projection ceiling through the lane — the gate that exists to catch
+#     the `_harness-check` Error 127 class the runbook still lists as open. A
+#     member set without it would have dropped that gate silently, which is the
+#     precise failure mode this whole epic is about.
+#  3. `npm run check` became `npm run check:quality`, its own superset
+#     (`check && check:a11y && check:lighthouse`). Accessibility and Lighthouse
+#     were in the ship gate BY ACCIDENT until today: no workflow runs
+#     check:quality, and its only path was `make web-quality`, which the lane
+#     selects only when the diff happens to touch web/**. Gate membership
+#     depended on what was in HEAD~1. The coverage claim for CI's own
+#     `npm run check` is this sentence plus the label below — the audit greps
+#     this whole block, comments included, and `check:quality` runs
+#     `npm run check` as its literal first step.
+#
+#     It is `npm --prefix web run check:quality` rather than `make web-quality`
+#     on purpose: that target is presence-gated on web/node_modules and prints
+#     "skip" when it is absent. A silent skip is the correct behaviour for a
+#     COMMIT lane on a laptop that never installed Node, and the wrong one for
+#     a ship gate — the one place a skipped suite must be a refusal.
+suite_members() {
   run_step "bash scripts/ci-changes.sh"                bash scripts/ci-changes.sh
   run_step "bash scripts/ci-skill-drift.sh"            bash scripts/ci-skill-drift.sh
   run_step "bash scripts/dashboard-template-drift.sh"  bash scripts/dashboard-template-drift.sh
   run_step "make check"                                make check
   run_step "make harness-check"                        make harness-check
-  run_step "make lane-run-strict"                      env LANE_FILES="${LANE_FILES:-$(git diff --name-only HEAD~1 2>/dev/null | tr '\n' ' ')}" make lane-run-strict
+  run_step "make lane"                                 env LANE_FILES="${LANE_FILES:-$(git diff --name-only HEAD~1 2>/dev/null | tr '\n' ' ')}" make lane
+  run_step "make projection"                           make projection
   run_step "make vulncheck"                            make vulncheck
   run_step "npm run check:unit"                        npm --prefix web run check:unit
-  run_step "npm run check"                             npm --prefix web run check
+  run_step "npm run check:quality"                     npm --prefix web run check:quality
   run_step "npx playwright test tests/dashboard-visual-contract.spec.mjs" \
     sh -c 'cd web && npx playwright test tests/dashboard-visual-contract.spec.mjs'
   run_step "gitleaks dir"                              gitleaks dir --config .gitleaks.toml --redact --verbose .
@@ -632,7 +776,501 @@ execute_all() {
   run_step "a2a-validate-reusable.yml validate --ci (a2ahub dogfood: a2a-ref=\"\", mode=v3-full-repo)" \
     a2a_validate_dogfood_step
 }
+
+# macos_delta — THE ONLY THING A DARWIN HOST CAN PROVE THAT THE CONTAINER
+# CANNOT, and until 2026-08-21 the only part of CI that NOTHING ran.
+#
+# The job set is DERIVED, never listed: macos_jobs() below greps `runs-on:` and
+# reports every job that asks for a macOS runner. Today that resolves to exactly
+# two — `macos-notifier` in ci.yml and in release.yml — and if a third appears,
+# the derivation says so instead of a hand-kept list going quietly stale. That
+# is this epic's whole subject, applied to itself.
+#
+# The commands below are ci.yml's macos-15 job verbatim, with its own `env:`
+# block reproduced: VERSION=0.0.0 and SIGNING_MODE=adhoc, so nothing here needs
+# a signing identity, and OUTPUT_DIR pointed at a temp dir so the run leaves
+# nothing in the tree it is judging.
+#
+# ABSENT TOOLCHAIN IS gate_unmeasured, NOT A SKIP AND NOT A FAIL. "There is no
+# Swift here" is a fact about the measurement; "the notifier does not build" is
+# a fact about the product. A composed ship gate that let the first wear the
+# second's clothes — in either direction — would be worse than three separate
+# targets, because it would look complete.
+macos_delta() {
+  if [ "$(uname -s)" != "Darwin" ]; then
+    gate_unmeasured "the macos-15 delta needs a darwin host; this is $(uname -s). The container half of the release gate CANNOT stand in for it — ci.yml's and release.yml's macos-15 jobs build and package a Swift companion, and no Linux image runs them. Run \`bash scripts/ci-parity.sh --macos-delta\` on a macOS machine before shipping."
+    return "$GATE_EXIT_UNMEASURED"
+  fi
+  if ! command -v swift >/dev/null 2>&1; then
+    gate_unmeasured "the macos-15 delta needs a Swift toolchain and \`swift\` is not on PATH (install Xcode or the Command Line Tools). Nothing was measured about integrations/macos-notifier; this is NOT a claim that it builds."
+    return "$GATE_EXIT_UNMEASURED"
+  fi
+
+  local outdir rc=0
+  outdir="$(mktemp -d "${TMPDIR:-/tmp}/a2a-notifier.XXXXXX")"
+
+  # A SUBSHELL, so the three exports below do not outlive this phase. It is the
+  # last phase of `execute_all` today, which is exactly the argument that makes
+  # a leak invisible until somebody adds a fourth — and release_gate ALREADY
+  # runs `git rev-parse`, the telemetry read and the receipt write after it,
+  # with VERSION=0.0.0 exported into all of them. Same reasoning, same fix, as
+  # a2a_validate_dogfood_step's own subshell body above.
+  (
+    # ci.yml's macos-15 job sets these three in the step's own `env:` block. The
+    # values are that job's, not invented here: a different VERSION or a real
+    # SIGNING_MODE would be testing something CI does not run.
+    export VERSION=0.0.0 SIGNING_MODE=adhoc OUTPUT_DIR="$outdir"
+    run_step "swift --version"                                        swift --version
+    run_step "integrations/macos-notifier/scripts/test.sh"            bash integrations/macos-notifier/scripts/test.sh
+    run_step "integrations/macos-notifier/scripts/package-release.sh" bash integrations/macos-notifier/scripts/package-release.sh
+  ) || rc=$?
+  rm -rf "$outdir"
+  return "$rc"
+}
+
+execute_all() {
+  suite_members
+  macos_delta
+}
 # EXECUTES_END
+
+# --- the macOS partition, DERIVED ---------------------------------------
+#
+# macos_jobs prints one `<file>:<job>:<runs-on>` line per job whose `runs-on:`
+# asks for a macOS runner. The partition between "what the container can judge"
+# and "what only a darwin host can" is the ONE axis this repo can derive from
+# the workflows themselves, and the spec's original proposal — partition by
+# userland sensitivity — is not: that would be a hand-maintained column on the
+# EXECUTES list, the exact anti-pattern §5's own checkbox forbids.
+#
+# Matched on the PREFIX `macos`, not the literal `macos-15`, so a bump to
+# macos-16 does not silently empty this set. A `runs-on:` naming a matrix
+# expression (`${{ matrix.os }}`) resolves to no runner here and is reported as
+# UNRESOLVED rather than counted as ubuntu — a shape this reader does not
+# understand must never look like "nothing to report", the same rule the folded
+# `run: >` block follows.
+macos_jobs() { # $1 = workflow dir
+  local dir="${1:-.github/workflows}" f
+  for f in "$dir"/*.yml; do
+    [ -e "$f" ] || continue
+    awk -v file="$f" '
+      function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+      /^jobs:[ \t]*$/ { injobs = 1; next }
+      injobs && /^[^ \t#]/ { injobs = 0 }
+      injobs && /^  [A-Za-z_][A-Za-z0-9_-]*:[ \t]*$/ {
+        job = trim($0); sub(/:$/, "", job); next
+      }
+      injobs && job != "" && /^[ \t]+runs-on:[ \t]*/ {
+        line = $0
+        sub(/^[ \t]+runs-on:[ \t]*/, "", line)
+        line = trim(line)
+        if (line ~ /\$\{\{/) {
+          print file ":" job ":UNRESOLVED " line
+        } else if (tolower(line) ~ /^\[?"?'"'"'?macos/) {
+          print file ":" job ":" line
+        }
+      }
+    ' "$f"
+  done
+}
+
+# --- phase accounting: COUNT PHASES, NOT BANNERS ------------------------
+#
+# AC1 as drafted counts `make check` banners in a transcript. That measures the
+# wrong quantity and would have reported the old composition clean: the strict
+# lane re-ran the ceiling's phases WITHOUT printing a banner, which is exactly
+# how a whole duplicate ceiling hid inside a suite for weeks.
+#
+# scripts/verify.sh already appends one JSONL line per phase — gate, verdict,
+# duration, mode — to .a2a/cache/verify/telemetry.jsonl. Counting the lines a
+# run appends therefore answers "how many phases did this actually execute",
+# per mode, and gives AC2's wall clock for free. Two callers bracket a run with
+# telemetry_offset / telemetry_report.
+#
+# lane-reads-opaque: telemetry_report reads "$VERIFY_TELEMETRY", a path built
+#   from ROOT and pointing inside .a2a/cache/, which is this repo's gitignored
+#   local runtime state and never a repository input. It is scripts/verify.sh's
+#   own output file; nothing in the tracked corpus can flip a verdict through
+#   it.
+# Overridable ONLY so --teeth can point the reader at a constructed fixture: a
+# duplicate-phase refusal that can never be exercised is a refusal nobody has
+# seen fail, and this one guards the composition's whole reason to exist.
+VERIFY_TELEMETRY="${A2A_VERIFY_TELEMETRY:-$ROOT/.a2a/cache/verify/telemetry.jsonl}"
+
+telemetry_offset() {
+  if [ -f "$VERIFY_TELEMETRY" ]; then
+    wc -l <"$VERIFY_TELEMETRY" | tr -d ' '
+  else
+    echo 0
+  fi
+}
+
+# telemetry_report — print what the phases between $1 and now actually were,
+# and REFUSE a repeat.
+#
+# THE INVARIANT, and it is an invariant rather than a count: within ONE composed
+# run, no (gate, mode) pair may appear twice. "The ceiling ran exactly once" is
+# a state that a future member could legitimately change; "no gate was paid for
+# twice in the same mode" is what the composition is FOR, and it stays true
+# however the member list grows. A repeat names both occurrences.
+telemetry_report() { # $1 = offset recorded before the run; $2 = a label
+  local offset="$1" label="$2" new dupes total
+  if [ ! -f "$VERIFY_TELEMETRY" ]; then
+    gate_unmeasured "$label: scripts/verify.sh wrote no telemetry at $VERIFY_TELEMETRY, so the phase count is unknown. This is NOT a claim that fewer phases ran — it is a claim that nobody counted."
+    return "$GATE_EXIT_UNMEASURED"
+  fi
+  new="$(tail -n "+$((offset + 1))" "$VERIFY_TELEMETRY")"
+  total="$(printf '%s' "$new" | grep -c '"gate"' || true)"
+  if [ "$total" -eq 0 ]; then
+    gate_unmeasured "$label: zero phases were recorded between the start of this run and now. A suite that executed no measurable phase must not report a phase count of 0 as if that were a clean result."
+    return "$GATE_EXIT_UNMEASURED"
+  fi
+
+  printf '\nci-parity: %s executed %s verify phase(s):\n' "$label" "$total"
+  printf '%s\n' "$new" \
+    | sed -n 's/.*"gate":"\([^"]*\)".*"mode":"\([^"]*\)".*/  \2 \1/p' \
+    | sort | uniq -c | sort -rn | sed 's/^/  /'
+
+  dupes="$(printf '%s\n' "$new" \
+    | sed -n 's/.*"gate":"\([^"]*\)".*"mode":"\([^"]*\)".*/\2 \1/p' \
+    | sort | uniq -d)"
+  if [ -n "$dupes" ]; then
+    gate_fail "$label: a phase ran TWICE inside one composed run — the composition is paying for the same evidence more than once, which is the defect this gate exists to remove. Wanted: every (mode, gate) pair exactly once. Got these repeats:"
+    printf '%s\n' "$dupes" | sed 's/^/    /' >&2
+    return 1
+  fi
+  printf 'ci-parity: %s — no phase ran twice.\n' "$label"
+}
+
+# --- AC3's teeth: the runbook may not name a command nothing runs -------
+#
+# AC3 says release.md's three ceiling steps collapse to one and that the
+# convention names it. That is a DOCS criterion guarding against accretion —
+# and accretion is exactly how steps 5, 5a and 5b arrived, each added by
+# somebody who had read the document first. Prose cannot refuse. This can.
+#
+# Every `make <target>` and `bash scripts/<name>.sh` NAMED AS A STEP in the
+# runbook's Phases 1-3 must either be something the composed gate executes, or
+# carry a written excuse below. The unit is the STEP OPENING LINE (`5.`, `5a.`,
+# `13.`), not the prose: the surrounding paragraphs legitimately mention
+# `make lane`, `make logic-e2e` and half a dozen others while explaining WHEN
+# to reach for them, and a rule that refused those would be refusing the
+# document for being helpful.
+#
+# The `### Deferring the provider tier` subsection is deliberately outside the
+# scan: its numbered list is a set of CONDITIONS, not release steps, and its
+# numbering restarts at 1.
+RELEASE_RUNBOOK="docs/runbooks/release.md"
+
+# release_step_commands prints one command per line, as named in a step opener.
+release_step_commands() { # $1 = runbook path
+  awk '
+    /^### / {
+      inphase = ($0 ~ /^### Phase [123] /)
+    }
+    !inphase { next }
+    /^[ \t]*[0-9]+[a-z]?\.[ \t]/ {
+      line = $0
+      while (match(line, /make [a-z][a-z0-9-]*/)) {
+        print substr(line, RSTART, RLENGTH)
+        line = substr(line, RSTART + RLENGTH)
+      }
+      line = $0
+      while (match(line, /bash scripts\/[A-Za-z0-9_.-]+\.sh/)) {
+        print substr(line, RSTART, RLENGTH)
+        line = substr(line, RSTART + RLENGTH)
+      }
+    }
+  ' "$1" | sort -u
+}
+
+# release_step_member — exit 0 and print WHY when the named command is one the
+# composed release gate accounts for.
+#
+# MEMBERSHIP IS DERIVED FROM suite_members(), NOT RESTATED HERE, and that is
+# what gives spec §6's tooth T2 ("a suite removed from the composition → RED")
+# its teeth for free: delete `make projection` from the suite and the runbook
+# step that names it stops being a member on the same edit, so the audit reds
+# naming it. A hand-kept membership table would instead have gone on asserting
+# coverage for a member that no longer ran — the identical failure to the
+# EXECUTES markers this file already carries two scars from.
+#
+# Only the ENTRY POINTS are enumerated below, because they are compositions of
+# members rather than members themselves. Adding a row here is a decision
+# visible in a diff — the property steps 5, 5a and 5b never had.
+release_step_member() { # $1 = command
+  # A here-string, not a pipe into `grep -q`: under `set -o pipefail` an early
+  # -q exit can leave the producer with SIGPIPE and turn a MATCH into a
+  # nonzero pipeline status. It happens to work at fourteen members because
+  # the whole list is written before grep exits — which is a race, not a rule,
+  # and the failure it would eventually produce ("this member is not a member")
+  # is indistinguishable from the real refusal.
+  local members
+  members="$(list_members)"
+  if grep -qxF -- "$1" <<<"$members"; then
+    echo "an EXECUTES member of the composed suite, run in the container phase"
+    return 0
+  fi
+  case "$1" in
+    "make release-check")
+      echo "the composed gate itself" ;;
+    "make ci-parity-docker")
+      echo "the composed gate's container phase — the full suite, in the userland every non-notifier CI job runs" ;;
+    "make ci-parity")
+      echo "the same suite on the host, plus the macos-15 delta; every gate it runs is a composed-gate member" ;;
+    *) return 1 ;;
+  esac
+}
+
+# release_step_excused — exit 0 and print WHY when a step legitimately names a
+# command the composed gate does NOT run. Keyed to the command's NATURE, never
+# to a step number: the runbook's steps are about to be renumbered, and an
+# excuse that pinned "step 6" would expire on the rewrite that this gate exists
+# to permit.
+release_step_excused() { # $1 = command
+  case "$1" in
+    "make release-preflight")
+      echo "judges the RELEASE COORDINATES, not the tree — needs the network to assert the version is free on the release remote and that the template's pins resolve to published tags. A tree-judging composition cannot contain it and must not imply it ran" ;;
+    "make live-e2e"|"make live-e2e-evidence")
+      echo "the provider tier: real GitHub, real credentials, hours. Declared NEVER to the lane deriver for the same reason, and gated on a published candidate that does not exist when the composed gate runs" ;;
+    "make release-postflight"|"make space-template-baseline")
+      echo "runs AFTER the tag exists; there is no tag when the composed gate judges the tree" ;;
+    *) return 1 ;;
+  esac
+}
+
+audit_runbook() { # $1 = runbook path (default: the release runbook)
+  local book="${1:-$RELEASE_RUNBOOK}" cmd why missing=0 seen=0
+  if [ ! -f "$book" ]; then
+    gate_unmeasured "the release runbook is not at $book, so no step could be read. This is NOT a clean runbook; it is an unread one."
+    return "$GATE_EXIT_UNMEASURED"
+  fi
+  while IFS= read -r cmd; do
+    [ -n "$cmd" ] || continue
+    seen=$((seen + 1))
+    if why="$(release_step_member "$cmd")"; then
+      printf 'ci-parity: runbook step runs %s — %s\n' "$cmd" "$why"
+      continue
+    fi
+    if why="$(release_step_excused "$cmd")"; then
+      printf 'ci-parity: runbook step excused — %s (%s)\n' "$cmd" "$why"
+      continue
+    fi
+    printf 'ci-parity: UNCOMPOSED — %s is named as a step in %s Phases 1-3, and the composed release gate runs nothing that covers it\n' "$cmd" "$book" >&2
+    missing=$((missing + 1))
+  done < <(release_step_commands "$book")
+
+  if [ "$seen" -eq 0 ]; then
+    gate_unmeasured "no step in $book Phases 1-3 named a \`make\` target or a \`bash scripts/*.sh\` command. Either the phase headings changed shape or the extraction is broken; a runbook with zero commands is not a runbook this gate has judged."
+    return "$GATE_EXIT_UNMEASURED"
+  fi
+  if [ "$missing" -gt 0 ]; then
+    printf '\nci-parity: %d release step(s) name a command the composed gate does not run.\n' "$missing" >&2
+    printf 'Either make it a member of the composition, or add it to release_step_excused() with the reason it cannot be one.\n' >&2
+    printf 'A release runbook that grows a fourth suite beside the composed one is the accretion this gate exists to refuse (spec 04 AC3).\n' >&2
+    return 1
+  fi
+  printf '\nci-parity: every command named as a release step is run by the composed gate or excused with a reason (%d step command(s)).\n' "$seen"
+}
+
+# --- the composition ----------------------------------------------------
+#
+# CONTAINER-PRIMARY, and the inversion is the point. The spec's §T body proposes
+# host-full / container-delta; §11's pre-implementation audit found that
+# backwards on three independent grounds, all verified on the code:
+#
+#   * ci.yml's `check` job is `runs-on: ubuntu-latest`. A darwin host ceiling is
+#     parity with NOTHING in CI except the two macOS jobs.
+#   * The container SYNCS AND CLEANS, so it judges the TRACKED tree — what
+#     actually publishes — where the host judges a working tree with generated,
+#     gitignored files present. That difference has already shipped a live
+#     defect (ci.yml's web job, first clean-runner run).
+#   * release.md's own amendment ALREADY tells the operator to run the container
+#     and treat the host runs as satisfied by it. The draft's savings table was
+#     computed against a three-run baseline nobody is told to run any more.
+#
+# So: the container runs the full suite; the host runs only what the container
+# cannot reach. Docker becomes a hard requirement for cutting a release. That is
+# the correct trade, and it is stated rather than discovered — see the refusal
+# text below, which names the container's own value instead of degrading to a
+# host-only pass. A `--no-docker` flag is deliberately absent: a bare flag
+# becomes a permanent silent downgrade, and the escape hatch this repo already
+# uses for exactly this shape is a dated, written, COUNTED record that refuses
+# at the third unremediated use (scripts/check-provider-tier-deferral.sh).
+RECEIPT_DIR="$ROOT/.a2a/release-gate"
+
+# list_members — the composition's member list, READ OUT OF suite_members()
+# rather than restated. A dry run that printed a second, hand-kept copy of the
+# member list would be rehearsing a fiction, and this file already carries the
+# scar of a coverage claim drifting from the thing it claimed (the EXECUTES
+# markers, twice). Same mechanism, same reason: the source of truth is the code
+# that runs.
+list_members() {
+  sed -n '/^suite_members() {/,/^}/p' "$ROOT/scripts/ci-parity.sh" | awk '
+    # The label is the FIRST double-quoted argument, and it may contain
+    # backslash-escaped quotes of its own (the dogfood step carries
+    # a2a-ref=\"\"). A [^"]* match would truncate there and print a member
+    # name that is not the one that runs — so the quote is walked, escapes
+    # respected, exactly the way the workflow extractor above walks its own.
+    /^  run_step "/ {
+      s = substr($0, index($0, "\"") + 1)
+      out = ""
+      for (i = 1; i <= length(s); i++) {
+        c = substr(s, i, 1)
+        if (c == "\\") { out = out substr(s, i + 1, 1); i++; continue }
+        if (c == "\"") break
+        out = out c
+      }
+      print out
+    }
+  '
+}
+
+release_gate() { # $1 = --dry-run | (empty)
+  local dry=0
+  case "${1:-}" in
+    "") ;;
+    --dry-run) dry=1 ;;
+    *) printf 'usage: %s --release [--dry-run]\n' "$0" >&2; return 2 ;;
+  esac
+
+  local head_before head_after dirty started ended
+  started="$(date +%s)"
+  head_before="$(git -C "$ROOT" rev-parse HEAD)"
+
+  # A RECEIPT NAMES A SHA. If the working tree is not that SHA, the receipt is a
+  # claim about a tree that was never judged — which is precisely the 2026-08-21
+  # failure this deliverable exists to close, one step earlier in the pipeline.
+  # docs/runbooks/publish-to-public.sh's assert_private_source_ready refuses the
+  # same thing at the same strength; this is the producer half of that rule.
+  dirty="$(git -C "$ROOT" status --porcelain=v1 --untracked-files=all)"
+
+  printf '\n=== release gate — the tree at %s ===\n' "$head_before"
+  printf 'phase 1 (container, GNU userland) — the full suite:\n'
+  list_members | sed 's/^/  /'
+  printf 'phase 2 (host, darwin) — the macos-15 delta, derived from runs-on:\n'
+  macos_jobs .github/workflows | sed 's/^/  /'
+  printf 'receipt: %s/%s.json\n' "$RECEIPT_DIR" "$head_before"
+
+  # THE REHEARSAL RUNS ON A DIRTY TREE; THE REAL ONE DOES NOT. A ship gate
+  # nobody can rehearse is its own problem — and a rehearsal that refused
+  # exactly when a developer has edits open would be a rehearsal nobody could
+  # ever perform. So the dry run REPORTS the refusal the real run would make,
+  # by name, and exits 0; only the real run enforces it.
+  if [ "$dry" -eq 1 ]; then
+    if [ -n "$dirty" ]; then
+      printf '\nci-parity: this tree is DIRTY (%s path(s)). A real run would REFUSE here — see below — because a receipt naming %s would describe a tree that does not exist.\n' \
+        "$(printf '%s\n' "$dirty" | wc -l | tr -d ' ')" "$head_before"
+    fi
+    printf '\nci-parity: DRY RUN — nothing was executed and NO RECEIPT WAS WRITTEN. A rehearsal must never leave evidence a publisher would accept.\n'
+    return 0
+  fi
+
+  # THE UNMEASURABLE PRECONDITION IS REPORTED BEFORE THE MEANINGLESS ONE, which
+  # is gate-lib's own rule one level up ("UNMEASURED DOMINATES A MIXED RUN...
+  # what the exit code answers is 'can I trust this verdict as complete?'").
+  # Both checks below are instantaneous, so the order costs nothing and decides
+  # which single thing the operator is sent to fix first: a gate that cannot run
+  # at all outranks a tree that is not yet publishable.
+  #
+  # "DOCKER IS DOWN" AND "THE TREE IS BROKEN" ARE OPPOSITE INSTRUCTIONS.
+  # ci-parity-docker.sh already dies hard on a missing daemon, and its message is
+  # the right one — but its exit status is 1, indistinguishable from a gate that
+  # ran and refused. This probe is deliberately the same pair of checks that
+  # script makes, run BEFORE the phase, so an unreachable daemon reports
+  # gate_unmeasured (exit 3) while a container that started and then judged the
+  # tree reports gate_fail.
+  #
+  # There is deliberately NO --no-docker escape hatch. A bare flag becomes a
+  # permanent silent downgrade; the shape this repo already uses for a justified
+  # skip is a dated, written, COUNTED record that refuses at the third
+  # unremediated use (scripts/check-provider-tier-deferral.sh).
+  if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+    gate_unmeasured "the container phase could not START: Docker is not on PATH or its daemon is unreachable. NOTHING was measured — this is not a host-only pass, and the host cannot stand in. The container is the PRIMARY judge on two axes at once: GNU userland, where every non-notifier CI job actually runs (it found a rule that had been entirely inert in CI while its teeth passed on every laptop), and the TRACKED tree, because it syncs and cleans while the host judges a working tree carrying generated, gitignored files. Start Docker and re-run; there is no flag that skips this."
+    return "$GATE_EXIT_UNMEASURED"
+  fi
+
+  # A RECEIPT NAMES A SHA. If the working tree is not that SHA, the receipt is a
+  # claim about a tree that was never judged — which is precisely the 2026-08-21
+  # failure this deliverable exists to close, one step earlier in the pipeline.
+  if [ -n "$dirty" ]; then
+    gate_fail "the working tree has staged, worktree or untracked changes, so a receipt for $head_before would name a tree that does not exist. Commit or clean first; a ship verdict must be about something a publisher can push."
+    printf '%s\n' "$dirty" | head -20 | sed 's/^/    /' >&2
+    return 1
+  fi
+
+  local offset rc=0 container_rc=0 macos_rc=0
+  offset="$(telemetry_offset)"
+
+  # PHASE 1 — the container. Its daemon was proved reachable above, so a
+  # non-zero status from here is the tree's, not the harness's.
+  if ! run_step "release gate phase 1 — container suite" \
+      bash "$ROOT/scripts/ci-parity-docker.sh" bash scripts/ci-parity.sh --suite; then
+    container_rc=1
+    gate_fail "the container phase RAN and did not pass. It is the primary judge, not a second opinion, and there is no host-only verdict to fall back to."
+  fi
+
+  # PHASE 2 — the host. The only part of CI nothing else can reach.
+  if ! run_step "release gate phase 2 — macos-15 delta" macos_delta; then
+    macos_rc=$?
+    if [ "$macos_rc" -eq "$GATE_EXIT_UNMEASURED" ]; then
+      printf 'ci-parity: phase 2 was UNMEASURED (see above) — the composed gate makes no claim about the macOS companion.\n' >&2
+    else
+      gate_fail "the macos-15 delta failed: the Swift companion CI ships does not build or test here."
+    fi
+  fi
+
+  # AC4/T3 — a verdict may not outlive the SHA it judged.
+  head_after="$(git -C "$ROOT" rev-parse HEAD)"
+  if [ "$head_after" != "$head_before" ]; then
+    gate_fail "the tree moved under this run. Judged: $head_before. HEAD is now: $head_after. Nothing was proven about $head_after and no receipt was written; re-run the composed gate on the tree you intend to publish."
+    return 1
+  fi
+
+  telemetry_report "$offset" "the container suite" || rc=$?
+
+  ended="$(date +%s)"
+  if [ "$container_rc" -ne 0 ] || [ "$macos_rc" -ne 0 ] || [ "$rc" -ne 0 ]; then
+    printf '\nci-parity: RELEASE GATE RED — no receipt written for %s.\n' "$head_before" >&2
+    if [ "$macos_rc" -eq "$GATE_EXIT_UNMEASURED" ] && [ "$container_rc" -eq 0 ] && [ "$rc" -eq 0 ]; then
+      return "$GATE_EXIT_UNMEASURED"
+    fi
+    return 1
+  fi
+
+  write_receipt "$head_before" "$((ended - started))" "$offset"
+}
+
+# write_receipt — THE PRODUCER HALF. The consumer half lives in
+# docs/runbooks/publish-to-public.sh, whose assert_private_source_ready already
+# refuses a dirty tree and a HEAD that is not exactly the pushed branch, and is
+# therefore the one place that already knows about SHAs. Producer witnesses,
+# consumer refuses, and no fourth place learns what a SHA is.
+#
+# Under .a2a/, which is gitignored: a receipt written into the tracked tree
+# would dirty the very tree the publisher asserts clean, so the artifact would
+# refuse the publish it exists to authorise.
+write_receipt() { # $1 = sha, $2 = wall seconds, $3 = telemetry offset
+  local sha="$1" wall="$2" offset="$3" phases
+  phases="$(tail -n "+$((offset + 1))" "$VERIFY_TELEMETRY" 2>/dev/null | grep -c '"gate"' || true)"
+  mkdir -p "$RECEIPT_DIR"
+  cat > "$RECEIPT_DIR/$sha.json" <<JSON
+{
+  "schema": "a2ahub.release-gate.receipt/v1",
+  "sha": "$sha",
+  "verdict": "pass",
+  "at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "wall_seconds": $wall,
+  "verify_phases": ${phases:-0},
+  "phases": [
+    { "name": "container-suite", "userland": "gnu/linux", "verdict": "pass" },
+    { "name": "macos-15-delta", "userland": "darwin", "verdict": "pass" }
+  ]
+}
+JSON
+  printf '\nci-parity: RELEASE GATE GREEN for %s (%ss, %s verify phase(s)).\n' "$sha" "$wall" "${phases:-0}"
+  printf 'receipt: %s\n' "$RECEIPT_DIR/$sha.json"
+}
 
 # --- --teeth -----------------------------------------------------------
 #
@@ -975,16 +1613,253 @@ EOF
   fi
   rm -rf "$d10"
 
+  # ── release-loop-2026-08 P4, the composed ship gate. ──────────────────
+  #
+  # Every case below pins an INVARIANT, never a state. Wave 1 of this epic
+  # shipped a tooth asserting "the real corpus is currently red" and it expired
+  # the moment the finding was triaged; T1 above carries the amendment. So:
+  # nothing here counts members, names a step number, or asserts today's
+  # workflow inventory.
+
+  # T11 — THE PARTITION IS DERIVED. The host/container split is the one axis
+  # this repo can read out of the workflows themselves, and the epic exists to
+  # delete hand-kept lists. A macOS job must be reported, an ubuntu sibling must
+  # not, and a `runs-on:` this reader cannot resolve must be announced as
+  # UNRESOLVED rather than silently counted as neither — a shape not understood
+  # must never look like "nothing to report" (the same rule T4 pins for folded
+  # run blocks).
+  local d11 out11
+  d11="$(mktemp -d "${TMPDIR:-/tmp}/ci-parity-teeth.XXXXXX")"
+  cat > "$d11/mac.yml" <<'EOF'
+name: teeth-fixture-mac
+on: push
+jobs:
+  needs-a-mac:
+    runs-on: macos-99
+    steps:
+      - run: swift --version
+  needs-no-mac:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello
+  cannot-tell:
+    runs-on: ${{ matrix.os }}
+    steps:
+      - run: echo hello
+EOF
+  out11="$(bash "$ROOT/scripts/ci-parity.sh" --macos-jobs "$d11" 2>&1)"
+  if ! printf '%s\n' "$out11" | grep -qF 'needs-a-mac:macos-99' \
+    || printf '%s\n' "$out11" | grep -qF 'needs-no-mac' \
+    || ! printf '%s\n' "$out11" | grep -qF 'cannot-tell:UNRESOLVED'; then
+    printf 'ci-parity --teeth: FAIL — T11: the macOS partition must be DERIVED from runs-on: — a macos-prefixed runner reported (including a future major), an ubuntu sibling not, and an unresolvable runs-on announced rather than silently dropped\n%s\n' "$out11" >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T11 — the host/container partition is derived from runs-on:, tolerates a macOS major bump, and announces a runs-on it cannot resolve\n'
+  fi
+  rm -rf "$d11"
+
+  # T12 — AN ABSENT TOOLCHAIN IS UNMEASURED, NOT A FAILURE AND NOT A SKIP.
+  # "There is no Swift here" is a fact about the measurement; "the notifier does
+  # not build" is a fact about the product. A composed ship gate that let either
+  # wear the other's clothes would be worse than three separate targets, because
+  # it would look complete. Asserted in BOTH directions and on the exit code,
+  # which is what a caller branches on: 3, never 1.
+  local d12 out12 rc12=0 t
+  d12="$(mktemp -d "${TMPDIR:-/tmp}/ci-parity-teeth.XXXXXX")"
+  # A PATH with everything the script needs EXCEPT swift. `swift` is absent by
+  # omission rather than by a stub that fails, so what is exercised is the
+  # `command -v` guard a machine without Xcode would hit, not a fake failure.
+  for t in uname mktemp rm date sed git awk grep wc sort tail head cat ls tr cp mkdir dirname basename; do
+    if [ -x "/usr/bin/$t" ]; then ln -sf "/usr/bin/$t" "$d12/$t"
+    elif [ -x "/bin/$t" ]; then ln -sf "/bin/$t" "$d12/$t"; fi
+  done
+  out12="$(env PATH="$d12" /bin/bash "$ROOT/scripts/ci-parity.sh" --macos-delta 2>&1)" || rc12=$?
+  if [ "$rc12" -ne "$GATE_EXIT_UNMEASURED" ] \
+    || ! printf '%s\n' "$out12" | grep -qF 'UNMEASURED' \
+    || printf '%s\n' "$out12" | grep -qF 'FAIL'; then
+    printf 'ci-parity --teeth: FAIL — T12: a missing Swift toolchain must report UNMEASURED and exit %s, never FAIL and never a silent skip; got rc=%s\n%s\n' "$GATE_EXIT_UNMEASURED" "$rc12" "$out12" >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T12 — an unreachable macOS toolchain is UNMEASURED (exit %s), textually distinct from a product failure\n' "$GATE_EXIT_UNMEASURED"
+  fi
+  rm -rf "$d12"
+
+  # T13 — AC3 HAS TEETH. A release step naming a command the composition does
+  # not run is REFUSED, by name. This is the whole point of the docs criterion:
+  # steps 5, 5a and 5b each arrived from somebody who had read the document
+  # first, so prose could not have stopped any of them. The fixture uses the
+  # runbook's own heading shapes; the assertion is about the RULE, not about
+  # which targets happen to be members today.
+  local d13 out13 rc13=0
+  d13="$(mktemp -d "${TMPDIR:-/tmp}/ci-parity-teeth.XXXXXX")"
+  cat > "$d13/runbook.md" <<'EOF'
+### Phase 1 — prepare
+
+1. **`make check`** — a real member, must be accepted.
+2. **`make teeth-marker-t13-accreted`** — a fourth suite nobody composed.
+
+### Phase 4 — after the tag
+
+3. **`make teeth-marker-t13-out-of-phase`** — outside Phases 1-3, never judged.
+EOF
+  out13="$(bash "$ROOT/scripts/ci-parity.sh" --audit-runbook "$d13/runbook.md" 2>&1)" || rc13=$?
+  if [ "$rc13" -eq 0 ] \
+    || ! printf '%s\n' "$out13" | grep -qF 'UNCOMPOSED — make teeth-marker-t13-accreted' \
+    || printf '%s\n' "$out13" | grep -qF 'teeth-marker-t13-out-of-phase'; then
+    printf 'ci-parity --teeth: FAIL — T13: a release step naming an uncomposed command must RED naming it, and a step outside Phases 1-3 must not be judged; got rc=%s\n%s\n' "$rc13" "$out13" >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T13 — a runbook step naming a command the composition does not run is refused by name; Phase 4 is out of scope\n'
+  fi
+
+  # T14 — THE MEMBERSHIP CLAIM CANNOT DRIFT FROM THE THING THAT RUNS, which is
+  # spec §6's tooth T2 ("a suite removed from the composition → RED") mechanized:
+  # membership is read out of suite_members(), so a member deleted from the
+  # composition stops satisfying the runbook step that names it, on the same
+  # edit. Proved here by asking about a command that is NOT in the suite and
+  # NOT an entry point — the same answer a deleted member would produce.
+  local out14 rc14=0
+  cat > "$d13/removed.md" <<'EOF'
+### Phase 1 — prepare
+
+1. **`make teeth-marker-t14-was-a-member`** — a step whose member is gone.
+EOF
+  out14="$(bash "$ROOT/scripts/ci-parity.sh" --audit-runbook "$d13/removed.md" 2>&1)" || rc14=$?
+  if [ "$rc14" -eq 0 ] || ! printf '%s\n' "$out14" | grep -qF 'the composed release gate runs nothing that covers it'; then
+    printf 'ci-parity --teeth: FAIL — T14: a command absent from suite_members() must not satisfy a release step; membership is derived, so removing a member must red the step naming it. Got rc=%s\n%s\n' "$rc14" "$out14" >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T14 — membership is derived from the suite that runs, so a removed member reds the step that names it\n'
+  fi
+
+  # T15 — AN EMPTY READ IS UNMEASURED, NOT A CLEAN RUNBOOK. Zero extracted
+  # commands means the headings changed shape or the extractor broke; reporting
+  # "every step is composed" over nothing is the false green this whole file
+  # exists to refuse (T6 pins the same rule for an empty workflow corpus).
+  local out15 rc15=0
+  printf '### Phase 1 — prepare\n\n1. Author the notes.\n' > "$d13/empty.md"
+  out15="$(bash "$ROOT/scripts/ci-parity.sh" --audit-runbook "$d13/empty.md" 2>&1)" || rc15=$?
+  if [ "$rc15" -eq 0 ] || ! printf '%s\n' "$out15" | grep -qF 'UNMEASURED'; then
+    printf 'ci-parity --teeth: FAIL — T15: a runbook from which zero step commands were extracted must report UNMEASURED, not a clean pass; got rc=%s\n%s\n' "$rc15" "$out15" >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T15 — a runbook read that extracted nothing is UNMEASURED, never a clean pass\n'
+  fi
+  rm -rf "$d13"
+
+  # T16 — PHASES ARE COUNTED, AND A PHASE PAID FOR TWICE IS REFUSED BY NAME.
+  # AC1 as drafted counted `make check` BANNERS; the strict lane re-ran the
+  # ceiling's phases without printing one, which is how a whole duplicate
+  # ceiling hid inside a suite. The invariant is not "the ceiling ran exactly
+  # once" — a future member could legitimately change that count — it is that
+  # no (mode, gate) pair is paid for twice in one composed run.
+  local d16 out16 rc16=0
+  d16="$(mktemp -d "${TMPDIR:-/tmp}/ci-parity-teeth.XXXXXX")"
+  cat > "$d16/clean.jsonl" <<'EOF'
+{"gate":"go-test","verdict":"pass","duration_ms":1,"mode":"full","at":"2026-08-21T00:00:00Z"}
+{"gate":"logic-e2e","verdict":"pass","duration_ms":1,"mode":"full","at":"2026-08-21T00:00:01Z"}
+{"gate":"harness-teeth","verdict":"pass","duration_ms":1,"mode":"harness","at":"2026-08-21T00:00:02Z"}
+EOF
+  cp "$d16/clean.jsonl" "$d16/dupe.jsonl"
+  printf '{"gate":"logic-e2e","verdict":"pass","duration_ms":1,"mode":"full","at":"2026-08-21T00:00:03Z"}\n' >> "$d16/dupe.jsonl"
+
+  out16="$(env A2A_VERIFY_TELEMETRY="$d16/clean.jsonl" bash "$ROOT/scripts/ci-parity.sh" --phases 0 "the fixture" 2>&1)" || rc16=$?
+  if [ "$rc16" -ne 0 ] || ! printf '%s\n' "$out16" | grep -qF 'no phase ran twice'; then
+    printf 'ci-parity --teeth: FAIL — T16a: a run in which every phase appears once must pass and say so; got rc=%s\n%s\n' "$rc16" "$out16" >&2
+    teeth_fail=1
+  fi
+  rc16=0
+  out16="$(env A2A_VERIFY_TELEMETRY="$d16/dupe.jsonl" bash "$ROOT/scripts/ci-parity.sh" --phases 0 "the fixture" 2>&1)" || rc16=$?
+  if [ "$rc16" -eq 0 ] || ! printf '%s\n' "$out16" | grep -qF 'full logic-e2e' \
+    || ! printf '%s\n' "$out16" | grep -qF 'ran TWICE inside one composed run'; then
+    printf 'ci-parity --teeth: FAIL — T16b: a phase executed twice in one composed run must RED naming the repeated (mode, gate) pair; got rc=%s\n%s\n' "$rc16" "$out16" >&2
+    teeth_fail=1
+  fi
+  rc16=0
+  out16="$(env A2A_VERIFY_TELEMETRY="$d16/absent.jsonl" bash "$ROOT/scripts/ci-parity.sh" --phases 0 "the fixture" 2>&1)" || rc16=$?
+  if [ "$rc16" -ne "$GATE_EXIT_UNMEASURED" ] || ! printf '%s\n' "$out16" | grep -qF 'UNMEASURED'; then
+    printf 'ci-parity --teeth: FAIL — T16c: absent telemetry must be UNMEASURED (exit %s), never a phase count of zero reported as clean; got rc=%s\n%s\n' "$GATE_EXIT_UNMEASURED" "$rc16" "$out16" >&2
+    teeth_fail=1
+  fi
+  if [ "$teeth_fail" -eq 0 ]; then
+    printf 'ci-parity --teeth: T16 — phases are counted from verify.sh telemetry; a repeat reds naming it, and absent telemetry is UNMEASURED rather than zero\n'
+  fi
+  rm -rf "$d16"
+
+  # T17 — A REHEARSAL LEAVES NO EVIDENCE. `--release --dry-run` exists so a ship
+  # gate can be rehearsed at all; a rehearsal that wrote a receipt would hand
+  # the publisher an authorisation for a run that never happened.
+  local out17 rc17=0 receipts_before receipts_after
+  receipts_before="$( (ls -1 "$RECEIPT_DIR" 2>/dev/null || true) | wc -l | tr -d ' ')"
+  out17="$(bash "$ROOT/scripts/ci-parity.sh" --release --dry-run 2>&1)" || rc17=$?
+  receipts_after="$( (ls -1 "$RECEIPT_DIR" 2>/dev/null || true) | wc -l | tr -d ' ')"
+  if [ "$rc17" -ne 0 ] \
+    || [ "$receipts_before" != "$receipts_after" ] \
+    || ! printf '%s\n' "$out17" | grep -qF 'NO RECEIPT WAS WRITTEN'; then
+    printf 'ci-parity --teeth: FAIL — T17: a dry run must execute nothing, write no receipt, and say so; got rc=%s receipts %s->%s\n%s\n' "$rc17" "$receipts_before" "$receipts_after" "$out17" >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T17 — a rehearsal writes no receipt; the ship gate can be practised without producing evidence a publisher would accept\n'
+  fi
+
+  # T18 — THE TOOTH SPEC §6 CALLS THE IMPORTANT ONE. A composed gate that
+  # silently degraded to the host suite when Docker is down would be a WORSE
+  # instrument than three separate targets, because it would look complete. It
+  # must red — and it must red as UNMEASURED, because "the daemon is unreachable"
+  # is a fact about the measurement, not about the tree. Exercised through a
+  # PATH with no `docker` on it, which is what a machine without Docker Desktop
+  # actually looks like; the receipt count is asserted too, since the whole
+  # danger is an authorisation written for a run that never happened.
+  local d18 out18 rc18=0 before18 after18 t18
+  d18="$(mktemp -d "${TMPDIR:-/tmp}/ci-parity-teeth.XXXXXX")"
+  for t18 in bash uname mktemp rm date sed git awk grep wc sort tail head cat ls tr cp mkdir dirname basename swift; do
+    if [ -x "/usr/bin/$t18" ]; then ln -sf "/usr/bin/$t18" "$d18/$t18"
+    elif [ -x "/bin/$t18" ]; then ln -sf "/bin/$t18" "$d18/$t18"; fi
+  done
+  before18="$( (ls -1 "$RECEIPT_DIR" 2>/dev/null || true) | wc -l | tr -d ' ')"
+  out18="$(env PATH="$d18" /bin/bash "$ROOT/scripts/ci-parity.sh" --release 2>&1)" || rc18=$?
+  after18="$( (ls -1 "$RECEIPT_DIR" 2>/dev/null || true) | wc -l | tr -d ' ')"
+  if [ "$rc18" -ne "$GATE_EXIT_UNMEASURED" ] \
+    || ! printf '%s\n' "$out18" | grep -qF 'UNMEASURED' \
+    || ! printf '%s\n' "$out18" | grep -qF 'could not START' \
+    || [ "$before18" != "$after18" ]; then
+    printf 'ci-parity --teeth: FAIL — T18: an unreachable Docker daemon must red as UNMEASURED (exit %s) naming the container'"'"'s own value, and must write no receipt; got rc=%s receipts %s->%s\n%s\n' \
+      "$GATE_EXIT_UNMEASURED" "$rc18" "$before18" "$after18" "$out18" >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T18 — Docker unreachable is UNMEASURED, never a silent host-only pass, and leaves no receipt\n'
+  fi
+  rm -rf "$d18"
+
   if [ "$teeth_fail" -ne 0 ]; then
     printf 'ci-parity --teeth: FAIL\n' >&2
     exit 1
   fi
-  printf 'ci-parity --teeth: 10 case(s) green.\n'
+  printf 'ci-parity --teeth: 18 case(s) green.\n'
 }
 
 case "${1:---run}" in
-  --audit) if [ -n "${2:-}" ]; then audit "$2"; else audit; fi ;;
-  --run)   audit && execute_all ;;
+  --audit) if [ -n "${2:-}" ]; then audit_composed "$2"; else audit_composed; fi ;;
+  --audit-runbook) audit_runbook "${2:-$RELEASE_RUNBOOK}" ;;
+  # --run — the whole of what this machine can run: the audit, the portable
+  # suite, and the macOS delta. Correct and complete on darwin. NOT what the
+  # container runs; scripts/ci-parity-docker.sh passes `--suite` explicitly for
+  # exactly that reason, because a Linux image reaching the macOS phase would
+  # refuse — rightly, and pointlessly.
+  --run)   audit_composed && execute_all ;;
+  # --suite — the userland-portable half, and the container's entry point.
+  --suite) audit && suite_members ;;
+  # --macos-delta — the host's only honest content, and the one part of CI that
+  # nothing ran until 2026-08-21.
+  --macos-delta) macos_delta ;;
+  # --release — the composed ship gate: container-primary, host-delta, receipt.
+  --release) release_gate "${2:-}" ;;
+  --macos-jobs) macos_jobs "${2:-.github/workflows}" ;;
+  --members) list_members ;;
+  # --phases — read back what a run's phases actually were. The composition
+  # calls telemetry_report itself; this is the same reading, on demand, for an
+  # operator holding a transcript and a question about it.
+  --phases) telemetry_report "${2:-0}" "${3:-this run}" ;;
   --teeth) run_teeth ;;
-  *) printf 'usage: %s [--run|--audit [dir]|--teeth]\n' "$0" >&2; exit 2 ;;
+  *) printf 'usage: %s [--run|--suite|--macos-delta|--release [--dry-run]|--audit [dir]|--audit-runbook [file]|--macos-jobs [dir]|--members|--teeth]\n' "$0" >&2; exit 2 ;;
 esac

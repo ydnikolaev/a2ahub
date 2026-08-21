@@ -49,7 +49,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection live-e2e live-e2e-evidence logic-e2e install
+.PHONY: check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -319,6 +319,30 @@ release-preflight: vulncheck npm-audit ## MUST pass before cutting a release tag
 release-postflight: ## MUST run AFTER promoting and tagging: the tag on the remote, the Release's state/assets/body, pages.yml's run FOR THE PROMOTED COMMIT, the live site, and the template baseline. Usage: make release-postflight VERSION=v0.24.0
 	@test -n "$(VERSION)" || { echo "release-postflight: set VERSION, e.g. make release-postflight VERSION=v0.24.0"; exit 2; }
 	@bash scripts/release-postflight.sh "$(VERSION)"
+
+# THE SHIP GATE, composed. Container-primary: the container runs the FULL suite
+# (GNU userland, where every non-notifier CI job actually runs — and the TRACKED
+# tree, because its entrypoint syncs and `git clean`s, while the host judges a
+# working tree carrying generated, gitignored files). The host runs ONLY the
+# macos-15 delta, derived from `runs-on:` rather than any kept list: the two
+# Swift-notifier jobs that nothing covered before 2026-08-21.
+#
+# It records a receipt naming the SHA it judged, under .a2a/release-gate/;
+# docs/runbooks/publish-to-public.sh refuses a publish without one.
+#
+# NEEDS A DOCKER DAEMON, and that is now a hard requirement for cutting a
+# release. There is deliberately no flag to skip it — a bare flag becomes a
+# permanent silent downgrade. An unreachable daemon reports UNMEASURED (exit 3),
+# never a host-only pass.
+# lane-inputs: NEVER
+# lane-reason: it runs the ceiling inside a container and needs a Docker daemon;
+#   a ship gate, never a commit gate — the same classification ci-parity-docker
+#   already carries.
+release-check: ## THE SHIP GATE — the full suite in the container, the macos-15 delta on the host, and a receipt naming the SHA judged.
+	@bash scripts/ci-parity.sh --release
+
+release-check-dry: ## Rehearse `release-check`: print its members, the derived macOS jobs and the receipt path; execute nothing, write nothing.
+	@bash scripts/ci-parity.sh --release --dry-run
 
 projection: ## Judge the SHIPPED suite against a faithful public projection (release-loop-2026-08 P3, presence-gated). Not in `check`: it RUNS the ceiling, so membership would make the ceiling run the ceiling.
 	@if [ -f scripts/check-projection.sh ]; then \
