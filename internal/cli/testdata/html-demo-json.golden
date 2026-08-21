@@ -8476,7 +8476,7 @@
     },
     {
       "version": "0.24.0",
-      "released": "unreleased",
+      "released": "2026-08-21",
       "headline": "Verdicts stop being read off claims, and the checks that would have noticed are driven by something",
       "changes": [
         {
