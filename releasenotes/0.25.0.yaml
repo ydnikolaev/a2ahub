@@ -1,0 +1,134 @@
+schema: release-notes/v1
+version: 0.25.0
+released: ""
+headline: a2a tells you which versions you are running, on every surface, without
+  being asked
+changes:
+- id: RN-02500-0
+  kind: feat
+  roadmap:
+    visibility: shipped
+    why: >
+      An agent wrote to a space from a 0.23 binary while 0.24 was published, and
+      nothing anywhere said so. Nothing was broken and nothing was refused: the
+      space's floor was 0.23.0, so the write was legitimate. The floor had
+      simply not moved, because the space had not been updated. Three versions
+      decide whether that is fine and only one of them was visible.
+  impact: high
+  subject: a2a version answers all three version axes, not one
+  detail: >
+    `a2a version` printed the binary stamp and stopped. It now reports the
+    binary, the newest known release, and one row per connected space carrying
+    that space's `min_binary_version` floor AND the a2ahub template tag its
+    committed workflows pin.
+
+    Those last two are separate compatibility axes and were conflated
+    everywhere. A space can satisfy its own write floor while pinning a template
+    several releases old — that is exactly how a floor sits still while releases
+    go past it.
+
+    `--version` and `-v` are aliases of the same command, byte-equal by test.
+    It never touches the network: it renders the cache the background checker
+    already wrote, and says "no release check has ever run" in those words
+    rather than implying you are current. It will not grade a development
+    build either — `dev` cannot be compared to a release, so the release axis
+    reports that it cannot be judged rather than calling it up to date.
+  affects:
+  - cli
+  action:
+    scope: local
+    why: >
+      Run `a2a version` after updating. If a space shows BEHIND, `a2a space
+      update` moves its template pin and its floor with it.
+- id: RN-02500-1
+  kind: fix
+  roadmap:
+    visibility: shipped
+    why: >
+      Whether a2a told you a release existed depended on which verb you
+      happened to run. An agent asked to send a notification reached a verb
+      that held no copy of the advisory and was told nothing.
+  impact: high
+  subject: the update advisory reaches every verb and every MCP tool
+  detail: >
+    The advisory lived in three hand-placed copies — `a2a inbox`, `a2a outbox`
+    and the MCP `a2a_read` wrapper — with `a2a doctor` computing the same fact a
+    fourth, separate way. Every other verb said nothing. That is not a wording
+    problem: the copies decided which verbs speak, and nobody had decided that.
+
+    It now renders once from the CLI dispatcher after any command, and is
+    installed on every MCP tool at registry construction, so a new tool cannot
+    be registered without it. Five verbs stay silent for stated reasons:
+    `version` and `update` own the subject, `doctor` reports it as a finding
+    with richer prose, `statusline` is one embedded line by contract, and
+    `completion` emits a script that gets eval'd.
+
+    Unchanged: the advisory never touches stdout, and an up-to-date install
+    emits nothing at all.
+  affects:
+  - cli
+  - mcp
+  action:
+    scope: none
+    why: >
+      Nothing to do. Once you are on this release every verb and every MCP tool
+      carries the advisory, and an up-to-date install still says nothing.
+- id: RN-02500-2
+  kind: fix
+  roadmap:
+    visibility: shipped
+    why: >
+      When no release check has ever run, every surface is silent — and silence
+      reads as "you are current", which is a claim nobody made.
+  impact: normal
+  subject: doctor names the axis nobody measured, and the space that is behind
+  detail: >
+    The update advisory reads one cache that only `a2a sync`, `a2a update
+    --check`, the statusline refresher and the notifications path ever write. An
+    agent that submits and responds and never syncs leaves it empty forever, and
+    then no surface can say anything. `a2a doctor` now says nobody has looked,
+    and names the command that looks.
+
+    It also reports the second axis for the first time: a space pinning an
+    a2ahub template older than the newest published release, naming `a2a space
+    update`.
+
+    Both are advisory and neither fails the check. Whether to update a space is
+    the space owner's decision, and refusing a writer for the owner's call
+    punishes the wrong party — which is also why this release adds no second
+    refusal beside `min_binary_version`. That contract stays the only thing that
+    blocks a write: it is declared by the space, reviewed in `space.yaml`,
+    local, and deterministic.
+  affects:
+  - cli
+  action:
+    scope: local
+    why: >
+      Run `a2a doctor` once after updating. If it says no release check has ever
+      run, `a2a update --check` writes the cache every surface reads.
+- id: RN-02500-3
+  kind: feat
+  roadmap:
+    visibility: shipped
+    why: >
+      A slow render was diagnosed by guessing, because nothing in the product
+      could say where the time went.
+  impact: low
+  subject: a2a html says where its time went
+  detail: >
+    `a2a html` records assemble / docs / render / write and prints them
+    slowest-first. `--timing` asks for the breakdown; a render slower than three
+    seconds prints it unasked and says why, because the person who needs a
+    diagnostic is by definition not expecting to need it.
+
+    The suspected cause of a slow dashboard — the release-notes corpus carried
+    on the versions page — was measured and cleared: loading all 46 releases is
+    8.7 ms inside an 80 ms end-to-end render. Nothing was trimmed on a disproven
+    hypothesis.
+  affects:
+  - cli
+  action:
+    scope: none
+    why: >
+      Nothing to do. `--timing` is there when you want it, and a slow render
+      prints the breakdown without being asked.
