@@ -44,13 +44,18 @@ on:
         type: string
         default: "."
       limit:
-        # No default of its own: the digest-coalescing threshold's default
-        # belongs to the `notify render --limit` CLI flag (spec 03) — this
-        # input is passed through only when an operator set it, so the
-        # value has exactly one home.
-        description: "The digest-coalescing threshold for the automatic (push/base) path. Empty means: let the CLI's own default decide."
+        # `type: string`, not `number` (spec 07): only a string has an
+        # empty MEMBER that can mean "the operator set nothing" — an unset
+        # `number` input resolves to `0`, which the CLI refuses. The
+        # digest-coalescing threshold's default still belongs to the
+        # `notify render --limit` CLI flag (spec 03) — this input is
+        # forwarded only when the operator set a positive value, so the
+        # value has exactly one home; the step below tests that property,
+        # not emptiness.
+        description: "The digest-coalescing threshold for the automatic (push/base) path. An empty string means the --limit flag is not passed at all, and `a2a notify render`'s own default (5) applies."
         required: false
-        type: number
+        type: string
+        default: ""
       base:
         description: "The commit a workflow_dispatch run measures the range from. Absent, the dispatch path falls back to the single-commit form. Ignored entirely when `artifacts` is set."
         required: false
@@ -219,6 +224,34 @@ jobs:
           set -euo pipefail
           cd "$SPACE_PATH"
 
+          # limit's own guard (spec 07 §T5 "what the guard does, per
+          # value") — TWO stages, not one, and validated ONCE regardless of
+          # which range mode below actually forwards it: an EMPTY LIMIT (the
+          # golden path, and the only case that happens today) is silently
+          # skipped; a POSITIVE integer is accepted; anything else non-empty
+          # (`0`, a negative number, non-numeric) is refused HERE, before
+          # `a2a` is ever invoked. A collapsed one-stage `[ "$LIMIT" -gt 0 ]`
+          # would kill the golden (empty) path under `set -euo pipefail`
+          # with bash's own "integer expression expected" — the exact
+          # failure this two-stage form exists to avoid.
+          limit_arg=()
+          if [ -n "$LIMIT" ]; then
+            case "$LIMIT" in
+              *[!0-9]*)
+                limit_is_positive=0
+                ;;
+              *)
+                if [ "$LIMIT" -gt 0 ]; then limit_is_positive=1; else limit_is_positive=0; fi
+                ;;
+            esac
+            if [ "$limit_is_positive" -eq 1 ]; then
+              limit_arg=(--limit "$LIMIT")
+            else
+              echo "::error::a2a-notify-reusable.yml: limit=\"$LIMIT\" is not a positive integer — refusing to invoke 'a2a notify render' with it (this is the notify workflow's own input validation, not this space's content)" >&2
+              exit 2
+            fi
+          fi
+
           summary_range_note="$RANGE_NOTE"
           render_args=(notify render)
           if [ -n "$ARTIFACTS" ]; then
@@ -230,17 +263,30 @@ jobs:
             render_args+=(--all)
           else
             render_args+=(--base "$RANGE_BASE")
-            if [ -n "$LIMIT" ]; then
-              render_args+=(--limit "$LIMIT")
-            fi
+            render_args+=("${limit_arg[@]}")
           fi
 
           # BUILD/INSTALL is retried above; RENDER is not — an unknown
           # --only id (requirement 2) or a manifest error is this space's
           # own content, and must fail the job loudly and immediately,
           # naming what it refused (a2a notify render's own stderr).
+          #
+          # Exit-code attribution (spec 07 §T5 "the report's second half"):
+          # 2 = the WORKFLOW built a bad invocation — an ::error:: names the
+          # notify workflow (not the space) as at fault; 1 = this space's
+          # own content, and the CLI's own stderr (already on the console,
+          # unredirected) is left unchanged. Either way the job still reds.
           rendered="$(mktemp)"
+          set +e
           a2a "${render_args[@]}" >"$rendered"
+          render_status=$?
+          set -e
+          if [ "$render_status" -eq 2 ]; then
+            echo "::error::a2a-notify-reusable.yml built an invalid 'a2a notify render' invocation (exit 2 = a usage error) — this is a bug in the notify workflow, not this space's content. Please file against a2ahub." >&2
+            exit "$render_status"
+          elif [ "$render_status" -ne 0 ]; then
+            exit "$render_status"
+          fi
 
           send_args=(notify send)
           if [ "$DRY_RUN" = "true" ]; then
