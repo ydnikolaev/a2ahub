@@ -529,6 +529,7 @@ harness-check: ## Run the gates' --teeth self-tests (harness gates are private/p
 # private tooth cannot repeat this — the list names WHAT to run, never how to
 # survive its own absence.
 HARNESS_TEETH := \
+  scripts/lib/gate-lib.sh \
   scripts/verify.sh \
   scripts/check-frozen-allowlist.sh \
   scripts/check-release-record.sh \
