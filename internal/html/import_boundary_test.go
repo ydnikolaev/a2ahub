@@ -29,7 +29,24 @@ func TestImportBoundaryMatchesADR001(t *testing.T) {
 	if err != nil {
 		t.Fatalf("inspect production imports for %s: %v", packageName, err)
 	}
-	decisions, err := os.ReadFile(filepath.Join(packageDir, "..", "..", "docs", "decisions.md"))
+	// docs/ is stripped from the published projection (the STRIP list in
+	// docs/runbooks/publish-to-public.sh), and this test SHIPS. Read against a
+	// public checkout it could only ever fail — which it did, in v0.24.0's
+	// candidate, where the candidate's own `make check` is a required release
+	// gate. It was invisible until then only because an earlier gate reddened
+	// first.
+	//
+	// An ABSENT docs/ is the public checkout and is announced, not guessed at
+	// (the shape scripts/check-provider-tier-deferral.sh already uses). A
+	// PRESENT docs/ with no decisions.md is somebody moving the SSOT, and that
+	// still fails — the skip must not become a way for this test to disappear
+	// where it is supposed to run.
+	repoRoot := filepath.Join(packageDir, "..", "..")
+	if _, err := os.Stat(filepath.Join(repoRoot, "docs")); os.IsNotExist(err) {
+		t.Skipf("skip — docs/ absent (public checkout); ADR-001's table is private and this "+
+			"boundary is judged in the source repository, not in the published projection (%s)", packageName)
+	}
+	decisions, err := os.ReadFile(filepath.Join(repoRoot, "docs", "decisions.md"))
 	if err != nil {
 		t.Fatalf("read ADR-001 for %s: %v", packageName, err)
 	}
