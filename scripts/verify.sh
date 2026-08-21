@@ -809,6 +809,22 @@ if [ "$MODE" = harness ]; then
 fi
 
 if [ "$MODE" = projection ]; then
+  #
+  # PRESENCE-GATED, and the reason is this phase's own subject. verify.sh SHIPS;
+  # scripts/check-projection.sh is on the private path set and does not. Inside
+  # a projection the phase would therefore reference a file that is not there —
+  # a shipped artifact depending on a stripped path, which is precisely what
+  # this gate exists to refuse. Found by the gate itself, on its own first
+  # acceptance run, against HEAD.
+  #
+  # Shipping the gate instead would be worse: in the published repository every
+  # private path is ALREADY absent, so its own empty/unmatched-set refusal
+  # (teeth T6/T6b) would red every public run for the right reason at the wrong
+  # time. An announced skip is the shape every other private gate here uses.
+  if [ ! -f "$ROOT/scripts/check-projection.sh" ]; then
+    echo "projection: skip — scripts/check-projection.sh absent (public checkout); there is nothing to project inside a projection."
+    exit 0
+  fi
   # THE PROJECTION GATE (release-loop-2026-08 P3). It materialises a public
   # projection of the commit under test and runs CI's `check` job inside it, so
   # "a shipped artifact reads a path the publisher removes" reds here instead

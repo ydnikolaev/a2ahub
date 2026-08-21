@@ -74,21 +74,27 @@
 #   bash scripts/release-postflight.sh v0.24.0     # after promoting v0.24.0
 #   bash scripts/release-postflight.sh --teeth     # offline self-test
 #
-# NO `lane-inputs:` HEADER HERE, DELIBERATELY, FOR NOW. This script needs the
-# network and `gh` (public GitHub Release/Actions state) and a live curl of
-# a2ahub.dev — never auto-selectable from a diff, the same class
-# release-preflight.sh is in (which carries no lane-inputs declaration either,
-# for the same reason). `make lane`'s own declaration loader refuses the whole
-# repo's lane derivation when a script declares lane-inputs but no Makefile
-# recipe invokes it directly — verified empirically: adding
-# `# lane-inputs: NEVER` here before the `release-postflight` Makefile target
-# exists broke `make lane` repo-wide on this shared machine. Once the lead
-# wires that target (see lead_wiring_needed in this phase's report), the
-# declaration belongs here too:
-#   # lane-inputs: NEVER
-#   # lane-reason: needs the network and `gh` (public GitHub Release/Actions
-#   #   state) and a live curl of a2ahub.dev — never auto-selectable from a
-#   #   diff. Only `make release-postflight` reaches it.
+# The declaration below was deliberately withheld until the Makefile target
+# existed: `make lane`'s loader refuses the WHOLE repo's derivation when a
+# script declares lane-inputs and no recipe invokes it, and this phase's
+# implementer verified that empirically before leaving the note. The lead wired
+# `make release-postflight` afterwards, so it belongs here now.
+#
+# NO lane-inputs HERE, and that is not an oversight: `make lane`'s loader
+# refuses the WHOLE repo's derivation when a script declares lane-inputs and no
+# CORPUS PHASE's recipe invokes it. `make release-postflight` is a ceremony
+# target, not a phase — the same position release-preflight.sh sits in, which
+# carries no declaration either. Both need the network and a published tag, so
+# no diff could select them anyway.
+# lane-reads-opaque: three reads the classifier cannot resolve, every one of
+#   them this script's own machinery rather than a repository input. It sources
+#   release-preflight.sh through "$(dirname "${BASH_SOURCE[0]}")" to reuse
+#   judge_pages_conclusion rather than re-decide what a workflow conclusion
+#   means; it reads "$notes", which is releasenotes/<VERSION>.yaml with VERSION
+#   an argument, so the path exists only at call time; and it reaches GitHub and
+#   the live site, which no path glob can name. Declared rather than silenced:
+#   an unresolved read nobody explains is how a gate ends up judging something
+#   it never named.
 set -euo pipefail
 
 # shellcheck source=scripts/lib/gate-lib.sh
