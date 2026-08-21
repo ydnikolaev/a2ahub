@@ -2,7 +2,9 @@ package space
 
 import (
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -215,7 +217,41 @@ func ClassifyCarried(p string, descriptorRaw []byte) Carried {
 //
 // The returned order is deterministic (code, then path) and independent of
 // the batch's own file order.
-func ContractCarriedMembership(files []FileWrite) []CarriedFinding {
+// SpacePresenceFromDir answers, for a mirror checked out at dir, whether the
+// contract rooted at descriptorPath already holds rel. It is the "thing" half
+// of ContractCarriedMembership's REF-014 direction.
+//
+// It exists because the first version of that rule compared the descriptor's
+// inventory against THIS BATCH alone, and a re-publication legitimately carries
+// only what changed: on 2026-08-21 `TestContractLifecyclePublishRoundTrip`
+// published 1.0.0 with its scaffolded companions, merged them to main, and then
+// failed publishing 1.1.0 because the unchanged companions were not re-carried.
+// The refusal's own message said "no such file was found under the contract's
+// own directory" — describing a disk read the code never performed. A message
+// asserting a check that was not made is the defect this epic is named after,
+// introduced by the epic itself, and the fix is to make the code do what the
+// message already said.
+func SpacePresenceFromDir(dir string) func(descriptorPath, rel string) bool {
+	if dir == "" {
+		return nil
+	}
+	return func(descriptorPath, rel string) bool {
+		if descriptorPath == "" || rel == "" {
+			return false
+		}
+		_, err := os.Stat(filepath.Join(dir, filepath.Dir(descriptorPath), filepath.FromSlash(rel)))
+		return err == nil
+	}
+}
+
+// ContractCarriedMembership judges one proposed write's contract paths.
+// presentInSpace may be nil, and nil means UNKNOWN rather than absent: the
+// REF-014 direction (a declared entry nothing carries) then does not fire at
+// all, because a caller that cannot see the space cannot tell a missing file
+// from an unchanged one. POL-013 (a carried file nothing declares) needs no
+// space knowledge and fires either way, so a caller without a space still gets
+// the half it can answer honestly.
+func ContractCarriedMembership(files []FileWrite, presentInSpace func(descriptorPath, rel string) bool) []CarriedFinding {
 	descriptors := batchDescriptors(files)
 
 	// carriedRel[descriptorPath][rel] — what the batch actually carries for
@@ -251,6 +287,13 @@ func ContractCarriedMembership(files []FileWrite) []CarriedFinding {
 		}
 		for _, entry := range descriptor.Artifacts {
 			if entry.Path == "" || carriedRel[descriptorPath][entry.Path] {
+				continue
+			}
+			if presentInSpace == nil || presentInSpace(descriptorPath, entry.Path) {
+				// Already in the space (a re-publication carrying only what
+				// changed), or a caller that cannot see the space. Either
+				// way this entry names a file the space HAS or may have, and
+				// refusing it would refuse the ordinary republish.
 				continue
 			}
 			findings = append(findings, CarriedFinding{

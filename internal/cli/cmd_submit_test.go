@@ -942,6 +942,13 @@ func runValidateAll(t *testing.T, stagingDir string) (int, []allReport) {
 		t.Fatalf("schema.Load: %v", err)
 	}
 	cmd := cli.NewValidateCommand(validate.New(corpus), stagingDir)
+	// An EMPTY space, given explicitly. `--all` asks the space whether a
+	// declared companion is merely unchanged on main before calling it
+	// missing, and an empty MirrorDir means UNKNOWN — under which the
+	// REF-014 direction stays silent and a test asserting it would assert
+	// nothing. A temp dir with no contract tree is the honest "the space
+	// has none of these" these cases mean.
+	cmd.MirrorDir = t.TempDir()
 	io, out, errOut := newIO()
 	code := cmd.Run(context.Background(), []string{"--all"}, io)
 	var reports []allReport

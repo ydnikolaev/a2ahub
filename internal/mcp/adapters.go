@@ -208,6 +208,11 @@ type LegalityAdapter struct {
 }
 
 // NewLegalityAdapter constructs a LegalityAdapter.
+// MirrorDir is the space checkout this adapter reads. It is exported so a
+// sibling validator can ask the SPACE whether a declared contract companion
+// already exists, rather than inferring absence from one batch's contents.
+func (a *LegalityAdapter) MirrorDir() string { return a.mirrorDir }
+
 func NewLegalityAdapter(mirrorDir, system string, manifest space.Manifest) *LegalityAdapter {
 	return &LegalityAdapter{mirrorDir: mirrorDir, system: system, manifest: manifest, envelopes: map[string]fold.Envelope{}}
 }
@@ -687,7 +692,7 @@ func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space
 	// inventory entry (REF-014) are refused on this surface too, by the
 	// same shared function, so `a2a_submit` and `a2a submit` reach the
 	// identical verdict rather than a similar one.
-	violations = append(violations, carriedFindingViolations(space.ContractCarriedMembership(files))...)
+	violations = append(violations, carriedFindingViolations(space.ContractCarriedMembership(files, space.SpacePresenceFromDir(v.legality.MirrorDir())))...)
 
 	for _, d := range drafts {
 		fm, err := artifact.ParseFrontmatter(d.Content)

@@ -226,6 +226,15 @@ func buildCommands() map[string]command {
 			return fail(stderr, err)
 		}
 		cmd := cli.NewValidateCommand(engine, p.staging)
+		// MirrorDir is deliberately NOT set here. `validate` runs against
+		// staging and must work with no connected space at all; the mirror
+		// is resolved lazily by the space-bound verbs and reaching for it
+		// here would make a read verb clone. So `--all`'s dry run reports
+		// the half it can answer without a space (an undeclared carried
+		// file) and stays silent on the half it cannot (a declared entry
+		// that may simply be unchanged on main). The two verbs that REFUSE
+		// a write — `submit`'s pre-flight and the funnel validator on both
+		// surfaces — do have the space and judge both directions.
 		// Config layer resolves the CI diff-authz author from the
 		// environment (config & secrets rail: internal/cli never reads env
 		// itself); the `--author` flag, if given, overrides this inside Run.

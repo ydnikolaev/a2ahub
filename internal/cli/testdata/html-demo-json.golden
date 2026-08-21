@@ -8565,6 +8565,49 @@
           }
         },
         {
+          "id": "RN-02400-6",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "submit validates every file it carries, and the space's check judges the same set",
+          "detail": "A contract's descriptor can declare companion files — a changelog, a schema, notes — that are not envelope artifacts and carry no frontmatter. `submit` carried them unvalidated; `validate --ci` then met one and refused it as a broken artifact. Same binary on both sides, disagreeing about the same file.\nOne classifier now decides what a carried file IS, and both surfaces and both validation modes ask it. The set of paths `submit` carries equals the set `validate --ci` classifies — asserted as a set equality, because a check on one file cannot see a divergence.\n`submit` also judges membership in both directions before any pull request opens: a carried file the descriptor does not declare is refused, and a declared entry whose file is missing is refused. On refusal it prints the carried list with each file's classification, which previously appeared only on success.\n`validate --all` now reports on what `submit` would carry rather than on top-level drafts alone — in the reported shape, 27 paths where it had been 12 — so it is a genuine dry run of the refusals.\nAn already-merged companion is never re-judged: the undeclared refusal fires at the pull-request gate only.\n",
+          "affects": [
+            "contracts",
+            "cli"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "No action. A contract whose descriptor already declares its companions submits exactly as before; one that carries an undeclared file now learns so locally instead of from its space's CI.\n"
+          }
+        },
+        {
+          "id": "RN-02400-7",
+          "kind": "feat",
+          "impact": "low",
+          "subject": "the MCP surface can name a delivered package too",
+          "detail": "`a2a_lifecycle_respond` accepts the same `delivers` the CLI's `--delivers` writes, and the event it produces is byte-identical to the CLI's for the same inputs.\nThe refusal was never asymmetric — it lives below both surfaces at the write funnel, so an MCP caller announcing an unlanded package was already refused. What was missing was the ability to announce a landed one.\n",
+          "affects": [
+            "cli"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "No action. The field is optional and additive on both surfaces."
+          }
+        },
+        {
+          "id": "RN-02400-8",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "the notify workflow installs the same signed, verified binary its sibling installs",
+          "detail": "A space's notify job no longer resolves or compiles anything. It downloads the published linux binary and its signature bundle for the pinned release and verifies them with `cosign verify-blob`, using the same identity and issuer the validate workflow uses — compared character for character rather than described as equivalent.\nA signature that does not verify fails the job on the first attempt, is not retried, and leaves no installed binary behind.\nThe job also stops needing a Go toolchain at all, which removes the module graph resolution that dominated its runtime.\n",
+          "affects": [
+            "ci"
+          ],
+          "action": {
+            "scope": "space",
+            "why": "Picked up by `a2a space update` after this release, in the same update that carries the notify limit fix.\n"
+          }
+        },
+        {
           "id": "KI-01900-PROVIDER-TIER-DEFERRED",
           "kind": "known-issue",
           "impact": "normal",

@@ -90,6 +90,20 @@ type ValidateCommand struct {
 	// `--author` flag, when given, takes precedence over this.
 	CIGitHubActor string
 
+	// MirrorDir is the connected space checkout, injected by the wiring
+	// layer the same way CIGitHubActor is — this package never resolves it
+	// itself. EMPTY means "no space is known", and that is a real state
+	// rather than an oversight: `a2a validate` runs against staging and may
+	// be invoked with no space at all.
+	//
+	// It is read for exactly one question: whether a contract companion the
+	// descriptor declares but this batch does not carry ALREADY EXISTS in
+	// the space. Without it, `--all` cannot tell a missing companion from an
+	// unchanged one, and space.ContractCarriedMembership's own contract says
+	// nil means UNKNOWN — the REF-014 direction then does not fire, rather
+	// than firing on a guess.
+	MirrorDir string
+
 	readFile func(path string) ([]byte, error)
 	readDir  func(dir string) ([]os.DirEntry, error)
 }
@@ -256,6 +270,9 @@ func (c *ValidateCommand) Run(ctx context.Context, args []string, stdio IO) int 
 type stagedCarriedSet struct {
 	files   []space.FileWrite
 	localOf map[string]string
+	// mirrorDir carries ValidateCommand.MirrorDir through to the membership
+	// call; empty means the space is unknown. See that field's own comment.
+	mirrorDir string
 }
 
 // stagedCarriedSet.reports renders one validateReport per judged path, in a
@@ -270,7 +287,7 @@ func (s stagedCarriedSet) reports() []validateReport {
 		return nil
 	}
 	byPath := map[string][]validate.Violation{}
-	for _, v := range carriedFindingViolations(space.ContractCarriedMembership(s.files)) {
+	for _, v := range carriedFindingViolations(space.ContractCarriedMembership(s.files, space.SpacePresenceFromDir(s.mirrorDir))) {
 		byPath[v.Path] = append(byPath[v.Path], v)
 	}
 
@@ -355,7 +372,7 @@ func (s stagedCarriedSet) stagingRoot() string {
 // is to say about it, and a widening that started reporting NEW errors for
 // a malformed draft would be reporting the same defect twice.
 func (c *ValidateCommand) stagedCarriedSet(paths []string) (stagedCarriedSet, error) {
-	out := stagedCarriedSet{localOf: map[string]string{}}
+	out := stagedCarriedSet{localOf: map[string]string{}, mirrorDir: c.MirrorDir}
 	for _, p := range paths {
 		raw, err := c.readFile(p)
 		if err != nil {
@@ -611,7 +628,7 @@ func (c *SubmitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// than inventing a second refusal stage, so it is all-or-nothing across
 	// the batch and lands BEFORE any git or network call: the funnel below
 	// is never reached.
-	if violations := carriedFindingViolations(space.ContractCarriedMembership(req.Files)); len(violations) > 0 {
+	if violations := carriedFindingViolations(space.ContractCarriedMembership(req.Files, space.SpacePresenceFromDir(c.mirrorDir))); len(violations) > 0 {
 		printCarriedClassification(stdio.Stderr, req.Files)
 		for _, v := range violations {
 			_, _ = fmt.Fprintf(stdio.Stderr, "submit: refused [%s] %s: %s\n", v.Code, v.Path, v.Message)

@@ -154,7 +154,7 @@ func companionBatch(t *testing.T, extra map[string]string, drop ...string) []Fil
 
 func TestContractCarriedMembershipCleanBatchIsSilent(t *testing.T) {
 	t.Parallel()
-	if got := ContractCarriedMembership(companionBatch(t, nil)); len(got) != 0 {
+	if got := ContractCarriedMembership(companionBatch(t, nil), spaceHasNothing); len(got) != 0 {
 		t.Fatalf("a batch whose carried set equals its inventory must produce no violation, got %+v", got)
 	}
 }
@@ -163,7 +163,7 @@ func TestContractCarriedMembershipRefusesUndeclaredFile(t *testing.T) {
 	t.Parallel()
 	got := ContractCarriedMembership(companionBatch(t, map[string]string{
 		"axon/provides/content-feed/artifacts/NOTES.md": "scratch\n",
-	}))
+	}), spaceHasNothing)
 	if len(got) != 1 {
 		t.Fatalf("want exactly one violation, got %+v", got)
 	}
@@ -180,7 +180,7 @@ func TestContractCarriedMembershipRefusesUndeclaredFile(t *testing.T) {
 
 func TestContractCarriedMembershipRefusesDeclaredButAbsentFile(t *testing.T) {
 	t.Parallel()
-	got := ContractCarriedMembership(companionBatch(t, nil, "axon/provides/content-feed/artifacts/CHANGELOG.md"))
+	got := ContractCarriedMembership(companionBatch(t, nil, "axon/provides/content-feed/artifacts/CHANGELOG.md"), spaceHasNothing)
 	if len(got) != 1 {
 		t.Fatalf("want exactly one violation, got %+v", got)
 	}
@@ -200,7 +200,7 @@ func TestContractCarriedMembershipSilentWithoutADescriptor(t *testing.T) {
 	t.Parallel()
 	got := ContractCarriedMembership([]FileWrite{
 		{Path: "axon/provides/content-feed/artifacts/CHANGELOG.md", Content: []byte("# Changelog\n")},
-	})
+	}, spaceHasNothing)
 	if len(got) != 0 {
 		t.Fatalf("a companion whose descriptor is not in the batch gets no membership verdict, got %+v", got)
 	}
@@ -215,7 +215,7 @@ func TestContractCarriedMembershipLegacyDescriptorIsSilent(t *testing.T) {
 		{Path: "axon/provides/content-feed/contract.md", Content: v1Descriptor()},
 		{Path: "axon/provides/content-feed/schema/main.schema.json", Content: []byte(`{}`)},
 		{Path: "axon/provides/content-feed/artifacts/CHANGELOG.md", Content: []byte("# Changelog\n")},
-	})
+	}, spaceHasNothing)
 	if len(got) != 0 {
 		t.Fatalf("an envelope/v1 contract has no inventory; membership cannot be judged, got %+v", got)
 	}
@@ -230,10 +230,10 @@ func TestContractCarriedMembershipIsDeterministic(t *testing.T) {
 		"axon/provides/content-feed/artifacts/NOTES.md": "scratch\n",
 		"axon/provides/content-feed/artifacts/TODO.md":  "scratch\n",
 	}, "axon/provides/content-feed/fixtures/valid/ok.json")
-	first := ContractCarriedMembership(batch)
+	first := ContractCarriedMembership(batch, spaceHasNothing)
 	for i := 0; i < 8; i++ {
 		batch = append(batch[1:], batch[0])
-		got := ContractCarriedMembership(batch)
+		got := ContractCarriedMembership(batch, spaceHasNothing)
 		if len(got) != len(first) {
 			t.Fatalf("violation count changed with input order: %d vs %d", len(got), len(first))
 		}
@@ -242,5 +242,57 @@ func TestContractCarriedMembershipIsDeterministic(t *testing.T) {
 				t.Fatalf("violation order changed with input order: %+v vs %+v", got, first)
 			}
 		}
+	}
+}
+
+// spaceHasNothing is the presence resolver these cases assume: an EMPTY space,
+// which is what "batch-only" meant before the resolver existed. Passing it
+// explicitly rather than nil is the point — nil means UNKNOWN and silences the
+// REF-014 direction entirely, so a test passing nil would assert nothing about
+// the rule it is named for.
+func spaceHasNothing(string, string) bool { return false }
+
+// TestContractCarriedMembershipDoesNotRefuseAnUnchangedCompanion is the
+// republish case, and it is here because the rule's FIRST version refused it.
+//
+// A re-publication carries what changed. Companions that did not change are
+// already on main and are not re-sent, so comparing the descriptor's inventory
+// against THIS BATCH alone reports every one of them missing. On 2026-08-21
+// `TestContractLifecyclePublishRoundTrip` published 1.0.0 with its scaffolded
+// schema and fixtures, merged them, and then failed publishing 1.1.0 for
+// exactly that reason — and the refusal's own message said "no such file was
+// found under the contract's own directory", describing a read the code never
+// performed.
+//
+// The three sub-cases are the whole contract of the resolver: present in the
+// space is silent, absent from the space refuses, and UNKNOWN (nil) is silent
+// because a caller that cannot see the space cannot tell the two apart and
+// must not guess. POL-013 needs no space and fires in all three.
+func TestContractCarriedMembershipDoesNotRefuseAnUnchangedCompanion(t *testing.T) {
+	t.Parallel()
+
+	// The descriptor alone — the republish shape: four declared companions,
+	// none re-carried because none changed.
+	const dir = "axon/provides/content-feed/"
+	batch := companionBatch(t, nil,
+		dir+"schema/content-feed.schema.json", dir+"fixtures/valid/ok.json",
+		dir+"fixtures/invalid/bad.json", dir+"artifacts/CHANGELOG.md")
+
+	everythingOnMain := func(string, string) bool { return true }
+
+	if got := ContractCarriedMembership(batch, everythingOnMain); len(got) != 0 {
+		t.Errorf("companions already on main were refused as missing: %+v", got)
+	}
+	got := ContractCarriedMembership(batch, spaceHasNothing)
+	if len(got) != 4 {
+		t.Fatalf("companions absent from BOTH the batch and the space must each be REF-014; got %+v", got)
+	}
+	for _, f := range got {
+		if f.Code != "REF-014" {
+			t.Errorf("code = %q, want REF-014: %+v", f.Code, f)
+		}
+	}
+	if got := ContractCarriedMembership(batch, nil); len(got) != 0 {
+		t.Errorf("nil means UNKNOWN and must not refuse on a guess; got %+v", got)
 	}
 }
