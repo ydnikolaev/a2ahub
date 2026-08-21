@@ -1,0 +1,70 @@
+feedback: v1
+id: fb-20260820-d1e370
+kind: bug
+severity: major
+title: submit carries a declared companion that validate --ci rejects, unseen locally
+summary: >-
+  `a2a submit` is documented as "validate + open a PR". It validated the descriptor, then
+  carried fifteen sidecar files it did not validate — and the space's own
+  `a2a validate --ci` rejected one with POL-002, the gate submit exists to pre-empt. Same
+  binary, 0.22.0, both sides.
+
+  The file is `<system>/provides/<slug>/artifacts/CHANGELOG.md`, declared in the
+  descriptor's own inventory as `role: changelog` — a role the shipped scaffold names.
+  A changelog is markdown by nature; there is no other shape to write one in.
+
+  UNCATCHABLE LOCALLY: no local verb has it in scope. `a2a validate --all` validated 12
+  top-level descriptors and ZERO sidecars, green. `a2a validate <that path>` does
+  reproduce POL-002, but nothing tells an author to run it per carried file, and submit,
+  which prints the exact list, does not.
+
+  Root cause: discovery collects every .md under a member section without consulting the
+  inventory that classifies it — fb-20260808-5c73a9, one directory over. v0.19.8 taught
+  the collector to CARRY a declared companion (fb-20260806-c6ad38); nobody taught the
+  validator that a carried companion is not an artifact.
+context:
+    a2a_version: 0.22.0
+    os_arch: darwin/arm64
+    surface: cli
+    command: a2a submit .a2a/staging/XC-axon-getvisa-producer-feedback.md
+    error_code: POL-002
+    agent: claude-code (Opus 5)
+evidence:
+    steps:
+        - "a2a contract new <slug> — scaffold a json-schema contract in .a2a/staging/<system>/provides/<slug>/."
+        - "Add a companion changelog at artifacts/CHANGELOG.md (plain markdown, no frontmatter — it is a changelog) and declare it in the descriptor's artifacts inventory as `role: changelog, normative: false, media_type: text/markdown`."
+        - "a2a validate <descriptor> -> valid: true, zero violations."
+        - "a2a validate --all -> 12 drafts validated, 0 invalid. Note the count: it is the number of top-level descriptors in .a2a/staging/, and no sidecar appears in the output at all."
+        - "a2a submit <descriptor> -> opens the PR and prints `carried sidecar file(s): ... artifacts/CHANGELOG.md ...`."
+        - "The space's a2a-validate / validate check fails: [POL-002] severity=reject, `artifact frontmatter is missing or is not valid YAML`, on axon/provides/<slug>/artifacts/CHANGELOG.md. Observed live on r22d222/a2a PR #105, run 32317584921."
+    expected: >-
+      A file the descriptor declares as a companion under artifacts/ is not treated as an
+      artifact by discovery — the inventory that classifies it is already carried in the
+      same commit. Failing that, submit refuses BEFORE opening the PR, since it knows the
+      carried list and runs the same binary as the gate.
+    actual: >-
+      submit carries it silently and the space gate rejects it, so the PR is dead on
+      arrival and the author's only signal is a CI annotation on a file no local verb ever
+      mentioned. The tool wrote the file, declared it legal, carried it, and refused it.
+proposal: >-
+  ONE PREDICATE, NOT A SECOND EXEMPTION — the shape fb-20260812-d31acb chose, then applied
+  too narrowly. Discovery should ask "is this path declared as a carried companion by an
+  artifact in this same change?" rather than "does it end in .md?". The declaration is
+  neither remote nor inferred: for a contract it is the descriptor's own `artifacts:`
+  inventory, in the same commit, already carrying `role` and `media_type` for exactly
+  this. `IsDataPackageReadmePath` becomes one case of it, not the only one.
+
+  IF THAT IS A PHASE, ship the cheap half alone: make `a2a submit` validate what it
+  CARRIES, not only what it was pointed at. It already prints the list. Refusing locally
+  in a second beats a dead PR another participant reads as our broken write.
+
+  REJECT THE THIRD OPTION: telling authors to put frontmatter in a changelog. It makes the
+  carried bytes differ from the producer's own release tree — the property that lets a
+  generator prove the contract came from its code.
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
