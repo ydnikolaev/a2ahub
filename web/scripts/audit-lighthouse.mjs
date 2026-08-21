@@ -88,6 +88,34 @@ try {
         chrome = undefined;
       }
       if (!result?.lhr) throw new Error(`Lighthouse returned no report for ${route} run ${run + 1}`);
+
+      // A REPORT IS NOT A MEASUREMENT. When Lighthouse cannot load the page it
+      // still returns an lhr — with every category scored 0 and every metric
+      // n/a — and comparing those zeros against the thresholds below announces
+      // "performance 0 (min 80)" about a page nobody looked at.
+      //
+      // Found 2026-08-21, the first time `npm run check:quality` ran as a
+      // member of the composed ship gate: every route reported 0/0/0/0 in the
+      // container and the gate read it as a quality verdict. The discriminator
+      // Lighthouse itself provides is runtimeError; the all-zero shape is the
+      // belt for a version that stops setting it.
+      const runtimeError = result.lhr.runtimeError;
+      const everyScoreZero = Object.keys(thresholds)
+        .every((category) => (result.lhr.categories[category]?.score ?? 0) === 0);
+      if (runtimeError?.code && runtimeError.code !== 'NO_ERROR') {
+        throw new Error(
+          `UNMEASURED — Lighthouse could not load ${origin}${route} (run ${run + 1}): ` +
+          `${runtimeError.code}: ${runtimeError.message}. ` +
+          `This is a fact about the runner, not about the page: no threshold below was evaluated.`,
+        );
+      }
+      if (everyScoreZero) {
+        throw new Error(
+          `UNMEASURED — Lighthouse scored ${origin}${route} (run ${run + 1}) at 0 in EVERY category, ` +
+          `which is what an unloaded page looks like, not what a bad page looks like. ` +
+          `Refusing to report it as a quality verdict.`,
+        );
+      }
       const performanceScore = result.lhr.categories.performance?.score ?? 0;
       if (performanceScore < thresholds.performance) {
         const metrics = ['first-contentful-paint', 'largest-contentful-paint', 'total-blocking-time', 'cumulative-layout-shift', 'speed-index']

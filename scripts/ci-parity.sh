@@ -768,7 +768,7 @@ suite_members() {
   run_step "make projection"                           make projection
   run_step "make vulncheck"                            make vulncheck
   run_step "npm run check:unit"                        npm --prefix web run check:unit
-  run_step "npm run check:quality"                     npm --prefix web run check:quality
+  run_step "npm run check"                             npm --prefix web run check
   run_step "npx playwright test tests/dashboard-visual-contract.spec.mjs" \
     sh -c 'cd web && npx playwright test tests/dashboard-visual-contract.spec.mjs'
   run_step "gitleaks dir"                              gitleaks dir --config .gitleaks.toml --redact --verbose .
@@ -828,9 +828,30 @@ macos_delta() {
   return "$rc"
 }
 
+# host_only — WHAT ONLY A DEVELOPER HOST CAN MEASURE.
+#
+# The partition is NOT "userland sensitivity", which is undecidable and would
+# have needed a hand-kept column. It is MEASURABILITY: run each thing where it
+# can actually be measured, and say so where it cannot.
+#
+# `npm run check:quality` (a11y + Lighthouse) was a container member until
+# 2026-08-21, when the composed gate ran it there for the first time. Every
+# route came back `performance 0 [0/0/0] (min 80)` with every metric `n/a` —
+# which is what an unloaded page looks like, not a bad one. The same command on
+# this host: performance 96-99, accessibility 100, best-practices 100, SEO 100,
+# on every route. Lighthouse needs a browser stack the image does not carry, and
+# a threshold compared against an unmeasured zero is a verdict nobody earned.
+#
+# The container keeps `npm run check` — unit tests, the build, and the dist
+# assertions — which it measures perfectly well.
+host_only() {
+  run_step "npm run check:quality"                     npm --prefix web run check:quality
+  macos_delta
+}
+
 execute_all() {
   suite_members
-  macos_delta
+  host_only
 }
 # EXECUTES_END
 
@@ -1148,7 +1169,7 @@ release_gate() { # $1 = --dry-run | (empty)
   printf '\n=== release gate — the tree at %s ===\n' "$head_before"
   printf 'phase 1 (container, GNU userland) — the full suite:\n'
   list_members | sed 's/^/  /'
-  printf 'phase 2 (host, darwin) — the macos-15 delta, derived from runs-on:\n'
+  printf 'phase 2 (host, darwin) — npm run check:quality (a11y + Lighthouse: measurable here, not in the image) and the macos-15 delta, derived from runs-on:\n'
   macos_jobs .github/workflows | sed 's/^/  /'
   printf 'receipt: %s/%s.json\n' "$RECEIPT_DIR" "$head_before"
 
@@ -1211,7 +1232,7 @@ release_gate() { # $1 = --dry-run | (empty)
   fi
 
   # PHASE 2 — the host. The only part of CI nothing else can reach.
-  if ! run_step "release gate phase 2 — macos-15 delta" macos_delta; then
+  if ! run_step "release gate phase 2 — host-only: check:quality + the macos-15 delta" host_only; then
     macos_rc=$?
     if [ "$macos_rc" -eq "$GATE_EXIT_UNMEASURED" ]; then
       printf 'ci-parity: phase 2 was UNMEASURED (see above) — the composed gate makes no claim about the macOS companion.\n' >&2
