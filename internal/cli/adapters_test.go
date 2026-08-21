@@ -1039,3 +1039,122 @@ func TestSubmitValidatorCarriesCompanionArtifacts(t *testing.T) {
 		t.Error("the descriptor must stay an envelope artifact, not carried baseline data")
 	}
 }
+
+// --- P9 criterion 3: ONE function decides the class (spec 09) ----------
+
+// TestSubmitValidatorBranchesOnTheClassifierNotThePathPredicate is spec 09
+// criterion 3 on the CLI surface. Four path-family predicates —
+// IsDataPackageReadmePath, isDataPackagePayloadPath, isBlobPayloadPath and
+// IsContractBaselinePath — already answered one question between them, and
+// every reader answered it AGAIN in its own idiom: this dispatch by "is
+// this a contract baseline path", `validate --ci` by "does it end in .md".
+// Those two answers disagreed about
+// `<system>/provides/<slug>/artifacts/CHANGELOG.md`, which is
+// fb-20260820-d1e370 in one sentence.
+//
+// The predicate itself is NOT deleted in this phase (§T1 says so, and §9
+// records collapsing the family as named debt). What is forbidden is a
+// READER holding its own opinion, so this asserts the shape of the file
+// rather than a behaviour a passing test could reproduce by accident.
+func TestSubmitValidatorBranchesOnTheClassifierNotThePathPredicate(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile("adapters.go")
+	if err != nil {
+		t.Fatalf("read adapters.go: %v", err)
+	}
+	src := string(raw)
+	if strings.Contains(codeLinesOnly(src), "space.IsContractBaselinePath(") {
+		t.Fatalf("internal/cli/adapters.go still branches on space.IsContractBaselinePath — it must ask space.ClassifyCarried* instead (spec 09 criterion 3)")
+	}
+	if !strings.Contains(src, "space.ClassifyCarriedBatch(") {
+		t.Fatalf("internal/cli/adapters.go must classify its batch through space.ClassifyCarriedBatch (spec 09 criterion 3)")
+	}
+	if !strings.Contains(src, "space.ContractCarriedMembership(") {
+		t.Fatalf("internal/cli/adapters.go must reach the shared membership rule (spec 09 S-3/S-4)")
+	}
+}
+
+// TestValidateCIBranchesOnTheClassifierNotTheSuffix is the same criterion at
+// `validate --ci`'s discovery, the OTHER half of the disagreement: the loop
+// that classified by `.md` suffix three lines below a space.ContractForPath
+// call whose answer it discarded.
+func TestValidateCIBranchesOnTheClassifierNotTheSuffix(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile("cmd_validate_ci.go")
+	if err != nil {
+		t.Fatalf("read cmd_validate_ci.go: %v", err)
+	}
+	if !strings.Contains(string(raw), "descriptors.classify(p)") {
+		t.Fatalf("`validate --ci`'s discovery must consult the classifier before its .md/consumes/event switch (spec 09 criterion 3)")
+	}
+	if !strings.Contains(string(raw), "space.UndeclaredCompanionFinding(") {
+		t.Fatalf("`validate --ci` must raise S-3's refusal through the SHARED finding, so submit and the merge gate name the same fix in the same words")
+	}
+}
+
+// TestNoFifthPathFamilyPredicate is criterion 3's second clause: no new
+// path-family predicate is added anywhere. The named cost of getting this
+// wrong a third time is a fifth member of a family that already has four,
+// so the guard counts the family rather than trusting a review.
+func TestNoFifthPathFamilyPredicate(t *testing.T) {
+	t.Parallel()
+	family := []string{
+		"IsDataPackageReadmePath",
+		"isDataPackagePayloadPath",
+		"isBlobPayloadPath",
+		"IsContractBaselinePath",
+	}
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	var declared []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
+			continue
+		}
+		raw, err := os.ReadFile(e.Name())
+		if err != nil {
+			t.Fatalf("read %s: %v", e.Name(), err)
+		}
+		for _, line := range strings.Split(string(raw), "\n") {
+			if !strings.HasPrefix(line, "func ") {
+				continue
+			}
+			name, _, ok := strings.Cut(strings.TrimPrefix(line, "func "), "(")
+			if !ok || !strings.HasSuffix(line, "bool {") {
+				continue
+			}
+			lower := strings.ToLower(name)
+			if strings.Contains(lower, "payloadpath") || strings.Contains(lower, "baselinepath") || strings.Contains(lower, "readmepath") {
+				declared = append(declared, e.Name()+":"+name)
+			}
+		}
+	}
+	for _, d := range declared {
+		_, name, _ := strings.Cut(d, ":")
+		var known bool
+		for _, f := range family {
+			if name == f {
+				known = true
+			}
+		}
+		if !known {
+			t.Fatalf("%s is a FIFTH path-family predicate for a question space.ClassifyCarried already answers — make it a case of the classifier instead (spec 09, \"The named cost of getting this wrong a third time\")", d)
+		}
+	}
+}
+
+// codeLinesOnly strips whole-line comments so a shape assertion judges what
+// the file DOES, not what it says about what it used to do — the comments
+// above these call sites deliberately quote the predicate they replaced.
+func codeLinesOnly(src string) string {
+	var out []string
+	for _, line := range strings.Split(src, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "//") {
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}

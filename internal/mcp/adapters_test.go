@@ -557,3 +557,183 @@ func TestMCPExplicitHumanSuppressesDetection(t *testing.T) {
 		t.Fatalf("resolved actor = %+v, want the declared human identity", got)
 	}
 }
+
+// --- P9: the MCP surface reaches the identical rule (spec 09, epic AC5) ---
+//
+// fb-20260820-d1e370's defect had an exact twin here: this adapter's own
+// contract arm branched on space.IsContractBaselinePath, so a declared
+// companion carried by `a2a_submit` (internal/mcp/tools_submit.go carries
+// sidecars through the SAME collector) was accepted here and refused by the
+// space's `validate --ci` — and a companion whose media type is
+// text/markdown could reach artifact.ParseFrontmatter's HARD error, which
+// aborts the whole submit rather than reporting a violation.
+
+// p9Companion builds the incident's three fixtures for this surface: the
+// descriptor with its inventory, its sidecars, the lifecycle event, and
+// whatever the caller adds or drops.
+func p9CompanionFiles(slug string, extraEntries []string, extra map[string]string, drop ...string) []space.FileWrite {
+	descriptor := "---\n" +
+		"schema: envelope/v2\n" +
+		"id: XC-axon-" + slug + "\n" +
+		"type: contract\n" +
+		"title: Widget contract\n" +
+		"space: fixture-space\n" +
+		"from: axon\n" +
+		"to: [beta]\n" +
+		"thread: " + testFixtureThread + "\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"category: api\n" +
+		"priority: p3\n" +
+		"blocking: false\n" +
+		"classification: internal\n" +
+		"version: 1.0.0\n" +
+		"schema_format: json-schema-2020-12\n" +
+		"compat_policy: default\n" +
+		"artifacts:\n" +
+		"  - {path: schema/" + slug + ".schema.json, role: schema, normative: true, media_type: application/schema+json}\n" +
+		"  - {path: fixtures/valid/" + slug + ".json, role: valid-fixture, normative: true, media_type: application/json, conforms_to: schema/" + slug + ".schema.json}\n" +
+		"  - {path: artifacts/CHANGELOG.md, role: changelog, normative: false, media_type: text/markdown}\n"
+	for _, e := range extraEntries {
+		descriptor += "  - " + e + "\n"
+	}
+	descriptor += "---\ncontract body\n"
+
+	dir := "axon/provides/" + slug + "/"
+	files := map[string]string{
+		dir + "contract.md":                      descriptor,
+		dir + "schema/" + slug + ".schema.json":  `{"type":"object"}`,
+		dir + "fixtures/valid/" + slug + ".json": `{}`,
+		// A changelog is markdown by nature and has no frontmatter. There
+		// is no other shape to write one in.
+		dir + "artifacts/CHANGELOG.md": "# Changelog\n\n## 1.0.0\n\n- first publication\n",
+		"axon/events/2026/01J8QYK2Z3ABCDEFGHJKMNPQRS.yaml": "schema: event/v1\nevent: 01J8QYK2Z3ABCDEFGHJKMNPQRS\nspace: fixture-space\n" +
+			"subject: XC-axon-" + slug + "\ntransition: publish\nactor: {kind: agent, name: bot, system: axon}\n" +
+			"at: 2026-07-21T10:00:00Z\n",
+	}
+	for k, v := range extra {
+		files[k] = v
+	}
+	for _, d := range drop {
+		delete(files, d)
+	}
+	out := make([]space.FileWrite, 0, len(files))
+	for p, c := range files {
+		out = append(out, space.FileWrite{Path: p, Content: []byte(c)})
+	}
+	return out
+}
+
+func newP9Adapter(t *testing.T) *SubmitValidatorAdapter {
+	t.Helper()
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	manifest := testManifest()
+	mirrorDir := t.TempDir()
+	return NewSubmitValidatorAdapter(validate.New(corpus), "axon",
+		NewMirrorResolver(mirrorDir, manifest), NewLegalityAdapter(mirrorDir, "axon", manifest))
+}
+
+// TestSubmitValidatorAdapterP9CompanionParity is criterion 10: the MCP
+// surface reaches the IDENTICAL verdict on all three fixtures — pass,
+// undeclared (POL-013), declared-but-absent (REF-014) — the same codes
+// internal/cli's own adapter and `validate --ci` produce, because all three
+// call one shared function rather than three similar ones.
+//
+// TEETH: reverting this adapter's contract arm to
+// space.IsContractBaselinePath and dropping its
+// space.ContractCarriedMembership call makes every want-a-code case pass
+// silently.
+func TestSubmitValidatorAdapterP9CompanionParity(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		files []space.FileWrite
+		want  string
+	}{
+		{
+			name:  "a declared companion is carried and accepted",
+			files: p9CompanionFiles("widget-p", nil, nil),
+		},
+		{
+			name: "an undeclared carried file is refused",
+			files: p9CompanionFiles("widget-q", nil, map[string]string{
+				"axon/provides/widget-q/artifacts/NOTES.md": "scratch\n",
+			}),
+			want: "POL-013",
+		},
+		{
+			name:  "a declared entry whose file is not carried is refused",
+			files: p9CompanionFiles("widget-r", nil, nil, "axon/provides/widget-r/artifacts/CHANGELOG.md"),
+			want:  "REF-014",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := newP9Adapter(t).ValidateSubmit(context.Background(), tc.files)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("ValidateSubmit: %v — a DECLARED companion must submit on this surface too", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected a %s refusal, got nil", tc.want)
+			}
+			var verr *ViolationError
+			if !errors.As(err, &verr) {
+				t.Fatalf("expected a ViolationError carrying %s, got %T: %v — a HARD error aborts the whole submit instead of reporting a violation", tc.want, err, err)
+			}
+			var found bool
+			for _, v := range verr.Violations {
+				if v.Code == tc.want {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("expected %s among the violations, got %+v", tc.want, verr.Violations)
+			}
+		})
+	}
+}
+
+// TestAdaptersFileBranchesOnTheClassifierNotThePathPredicate is criterion 3
+// on this surface: after spec 09 there is exactly ONE function deciding what
+// a carried path is, and this file must consult it rather than branch on
+// space.IsContractBaselinePath directly. The predicate itself stays in
+// internal/space (it is not deleted in this phase, §T1) — what is forbidden
+// is a READER holding its own opinion, which is how the two halves of one
+// binary came to disagree about one path.
+func TestAdaptersFileBranchesOnTheClassifierNotThePathPredicate(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile("adapters.go")
+	if err != nil {
+		t.Fatalf("read adapters.go: %v", err)
+	}
+	code := mcpCodeLinesOnly(string(raw))
+	if strings.Contains(code, "space.IsContractBaselinePath(") {
+		t.Fatalf("internal/mcp/adapters.go still branches on space.IsContractBaselinePath — it must ask space.ClassifyCarried* instead (spec 09 criterion 3)")
+	}
+	if !strings.Contains(code, "space.ClassifyCarriedBatch(") {
+		t.Fatalf("internal/mcp/adapters.go must classify its batch through space.ClassifyCarriedBatch (spec 09 criterion 3)")
+	}
+	if !strings.Contains(code, "space.ContractCarriedMembership(") {
+		t.Fatalf("internal/mcp/adapters.go must reach the same membership rule the CLI does (epic AC5)")
+	}
+}
+
+// mcpCodeLinesOnly is internal/cli/adapters_test.go's codeLinesOnly twin:
+// the two surfaces may not import each other (ADR-001), so this three-line
+// helper is duplicated on purpose rather than promoted.
+func mcpCodeLinesOnly(src string) string {
+	var out []string
+	for _, line := range strings.Split(src, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "//") {
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}

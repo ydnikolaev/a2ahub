@@ -605,11 +605,42 @@ type submitEnvelopeProbe struct {
 	} `yaml:"actor"`
 }
 
+// carriedFindingViolations is internal/cli/adapters.go's twin, duplicated
+// on purpose: internal/mcp may never import internal/cli (ADR-001), and the
+// shared half — the class decision, the codes, the messages — already lives
+// DOWN in internal/space (ADR-004). What is copied here is a five-field
+// struct conversion, which internal/space cannot do for either surface
+// without taking an internal/validate dependency that closes an import
+// cycle through internal/template.
+func carriedFindingViolations(findings []space.CarriedFinding) []validate.Violation {
+	if len(findings) == 0 {
+		return nil
+	}
+	out := make([]validate.Violation, 0, len(findings))
+	for _, f := range findings {
+		out = append(out, validate.Violation{
+			Code:     f.Code,
+			Class:    validate.Class(f.Class),
+			Path:     f.Path,
+			Message:  f.Message,
+			Severity: validate.Severity(f.Severity),
+		})
+	}
+	return out
+}
+
 // ValidateSubmit implements space.SubmitValidator.
 func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space.FileWrite) error {
 	events := map[string]mirrorEvent{}
 	var drafts []space.FileWrite
 	var violations []validate.Violation
+	// P9 (spec 09): the MCP twin of internal/cli/adapters.go's own batch
+	// classification — the SAME shared function in internal/space, not a
+	// second copy of the reasoning (ADR-004, epic AC5).
+	carriedClasses := make(map[string]space.Carried, len(files))
+	for _, carried := range space.ClassifyCarriedBatch(files) {
+		carriedClasses[carried.Path] = carried
+	}
 	for _, f := range files {
 		switch {
 		case strings.Contains(f.Path, "/events/"):
@@ -632,15 +663,31 @@ func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space
 			if !result.Valid {
 				violations = append(violations, result.Violations...)
 			}
-		case space.IsContractBaselinePath(f.Path):
-			// Contract schema/** and fixtures/** are data carried beside the
-			// descriptor, not envelope artifacts. Compatibility/publishability
-			// owns their validation; feeding them to ParseFrontmatter makes a
-			// correct MCP first-publish impossible.
+		case carriedClasses[f.Path].Class.IsCompanion():
+			// Contract schema/**, fixtures/** and artifacts/** are data
+			// carried beside the descriptor, not envelope artifacts.
+			// Compatibility/publishability owns their validation; feeding
+			// them to ParseFrontmatter makes a correct MCP first-publish
+			// impossible — and for a declared companion whose media type is
+			// text/markdown, ParseFrontmatter's HARD ERROR (not a violation:
+			// this arm returns, aborting the whole submit) was reachable
+			// through no local verb at all before P9.
+			//
+			// This branched on space.IsContractBaselinePath directly until
+			// spec 09; it now asks the ONE classifier, exactly as
+			// internal/cli/adapters.go and `validate --ci` do, so the write
+			// surface an agent uses is not the weaker one (epic AC5).
 		default:
 			drafts = append(drafts, f)
 		}
 	}
+
+	// P9 S-3/S-4: the twin of internal/cli/adapters.go's identical call —
+	// an undeclared carried file (POL-013) and a declared-but-absent
+	// inventory entry (REF-014) are refused on this surface too, by the
+	// same shared function, so `a2a_submit` and `a2a submit` reach the
+	// identical verdict rather than a similar one.
+	violations = append(violations, carriedFindingViolations(space.ContractCarriedMembership(files))...)
 
 	for _, d := range drafts {
 		fm, err := artifact.ParseFrontmatter(d.Content)

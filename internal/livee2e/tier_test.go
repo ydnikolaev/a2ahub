@@ -175,8 +175,8 @@ func TestRealCatalogueDeclaresEveryTierCoherently(t *testing.T) {
 	t.Parallel()
 	catalogue := Catalogue()
 
-	if got := len(catalogue); got != 49 {
-		t.Fatalf("Catalogue() has %d rows, want 49", got)
+	if got := len(catalogue); got != 50 {
+		t.Fatalf("Catalogue() has %d rows, want 50", got)
 	}
 	if offenders := undeclaredTierRows(catalogue); len(offenders) > 0 {
 		t.Errorf("rows with no declared tier: %s", strings.Join(offenders, ", "))
@@ -201,7 +201,8 @@ func TestRealCatalogueDeclaresEveryTierCoherently(t *testing.T) {
 		}
 	}
 	t.Logf("tier split: logic=%d provider=%d total=%d", logic, provider, len(catalogue))
-	// 35/14 as of agent-exchange P11 wave D (the two `bytes` rows), from
+	// 36/14 as of judge-the-thing-2026-08 P9 (the declared-companion row),
+	// from 35/14 as of agent-exchange P11 wave D (the two `bytes` rows), from
 	// 33/14 as of P9 W7, from 29/18.
 	//
 	// The earlier note is kept because its lesson outlived its number: 29/18
@@ -229,8 +230,8 @@ func TestRealCatalogueDeclaresEveryTierCoherently(t *testing.T) {
 	// the fake's own behaviour rather than its documentation — fakegithub
 	// carries NO branch-protection route (its router's default arm 404s), and
 	// it seeds CheckConclusion: "success" as a constant.
-	if logic != 35 {
-		t.Errorf("logic rows = %d, want 35", logic)
+	if logic != 36 {
+		t.Errorf("logic rows = %d, want 36", logic)
 	}
 	if provider != 14 {
 		t.Errorf("provider rows = %d, want 14", provider)
@@ -243,11 +244,11 @@ func TestRealCatalogueDeclaresEveryTierCoherently(t *testing.T) {
 	// actually dispatch the logic runner on, so it must agree with the
 	// tally above against the REAL 49 rows, not just the synthetic slices
 	// TestFilterJudgeableByKeepsDeclarationOrder already covers.
-	if got := len(FilterJudgeableBy(catalogue, TierLogic)); got != 35 {
-		t.Errorf("FilterJudgeableBy(catalogue, TierLogic) = %d rows, want 35", got)
+	if got := len(FilterJudgeableBy(catalogue, TierLogic)); got != 36 {
+		t.Errorf("FilterJudgeableBy(catalogue, TierLogic) = %d rows, want 36", got)
 	}
-	if got := len(FilterJudgeableBy(catalogue, TierProvider)); got != 49 {
-		t.Errorf("FilterJudgeableBy(catalogue, TierProvider) = %d rows, want 49 (the provider tier may judge every row)", got)
+	if got := len(FilterJudgeableBy(catalogue, TierProvider)); got != 50 {
+		t.Errorf("FilterJudgeableBy(catalogue, TierProvider) = %d rows, want 50 (the provider tier may judge every row)", got)
 	}
 }
 

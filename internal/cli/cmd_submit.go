@@ -144,6 +144,7 @@ func (c *ValidateCommand) Run(ctx context.Context, args []string, stdio IO) int 
 	}
 
 	var paths []string
+	var allCarried stagedCarriedSet
 	if *all {
 		entries, err := c.readDir(c.stagingDir)
 		if err != nil && !os.IsNotExist(err) {
@@ -155,6 +156,28 @@ func (c *ValidateCommand) Run(ctx context.Context, args []string, stdio IO) int 
 				paths = append(paths, filepath.Join(c.stagingDir, e.Name()))
 			}
 		}
+		// P9 A-1 (spec 09, fb-20260820-d1e370): `--all` was a NON-recursive
+		// readDir of the staging root filtered to top-level `*.md`, so it
+		// returned green over a tree in which fifteen files were about to be
+		// carried and judged none of them. A staged companion lives at
+		// `.a2a/staging/<system>/provides/<slug>/artifacts/` and was
+		// unreachable by construction — a verdict named "all" that covers
+		// one directory level is a claim read in place of the thing it
+		// stands for.
+		//
+		// The widening reuses SUBMIT'S OWN carry collector
+		// (template.ContractSidecarsFromStaging), never a recursive `*.md`
+		// walk: a recursive walk would re-create the incident one directory
+		// over by judging the changelog as an artifact again (A-2), and it
+		// would judge files `submit` does not carry. Because the two verbs
+		// share one collector, they cannot answer differently about one
+		// tree.
+		carried, err := c.stagedCarriedSet(paths)
+		if err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "validate: %v\n", err)
+			return 1
+		}
+		allCarried = carried
 	} else {
 		if len(positional) != 1 {
 			_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a validate <path> | a2a validate --all")
@@ -198,6 +221,17 @@ func (c *ValidateCommand) Run(ctx context.Context, args []string, stdio IO) int 
 		reports = append(reports, validateReport{Path: p, Result: &result})
 	}
 
+	// A-3/A-4: every carried path is judged by its CLASSIFICATION, and the
+	// membership rules submit refuses on (S-3 undeclared, S-4
+	// declared-but-absent) are reported here too, so `--all` is a true dry
+	// run of submit's refusals rather than a weaker sibling of them.
+	for _, rep := range allCarried.reports() {
+		if rep.Result != nil && !rep.Result.Valid {
+			allValid = false
+		}
+		reports = append(reports, rep)
+	}
+
 	enc := json.NewEncoder(stdio.Stdout)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(reports); err != nil {
@@ -208,6 +242,165 @@ func (c *ValidateCommand) Run(ctx context.Context, args []string, stdio IO) int 
 		return 1
 	}
 	return 0
+}
+
+// stagedCarriedSet is `validate --all`'s widened half: exactly the files
+// `a2a submit` would carry for the staged contract drafts it was already
+// listing, plus each contract's descriptor so the inventory can be read.
+//
+// It keeps BOTH spellings of every path on purpose. `files` holds the
+// SPACE-relative form — the only form the descriptor's `artifacts:`
+// inventory and space.ContractCarriedMembership speak. `localOf` maps that
+// back to the staging path an author can actually open, which is the form
+// every other line of this report already uses.
+type stagedCarriedSet struct {
+	files   []space.FileWrite
+	localOf map[string]string
+}
+
+// stagedCarriedSet.reports renders one validateReport per judged path, in a
+// deterministic order, carrying whatever membership violations name it.
+//
+// A-5: the report SHAPE is unchanged — one validateReport per path. Only
+// the number of lines grows (12 -> 27 in the incident). The existing t3
+// assertions (new_validate.txtar, digest_possession.txtar) assert
+// `"valid": true` and specific codes, never a count of report lines.
+func (s stagedCarriedSet) reports() []validateReport {
+	if len(s.files) == 0 {
+		return nil
+	}
+	byPath := map[string][]validate.Violation{}
+	for _, v := range carriedFindingViolations(space.ContractCarriedMembership(s.files)) {
+		byPath[v.Path] = append(byPath[v.Path], v)
+	}
+
+	classes := map[string]space.Carried{}
+	for _, carried := range space.ClassifyCarriedBatch(s.files) {
+		classes[carried.Path] = carried
+	}
+
+	seen := map[string]bool{}
+	var out []validateReport
+	emit := func(spacePath string) {
+		if seen[spacePath] {
+			return
+		}
+		seen[spacePath] = true
+		violations := byPath[spacePath]
+		if violations == nil {
+			violations = []validate.Violation{}
+		}
+		out = append(out, validateReport{
+			Path: s.local(spacePath),
+			Result: &validate.Result{
+				Valid:           len(violations) == 0,
+				InvocationPoint: validate.V1,
+				ArtifactID:      classes[spacePath].ContractID,
+				Violations:      violations,
+			},
+		})
+	}
+	for _, f := range s.files {
+		// The descriptor itself already has its own report line, produced
+		// from the TOP-LEVEL staged draft this collector was seeded from —
+		// emitting it twice would be two verdicts about one file.
+		if classes[f.Path].Class == space.CarriedArtifact {
+			continue
+		}
+		emit(f.Path)
+	}
+	// S-4's own paths are, by definition, not in `files`: the inventory
+	// names a file nothing carries. Reported under the staging path the
+	// entry points at, so the message and the line agree about where to
+	// put the missing file.
+	missing := make([]string, 0, len(byPath))
+	for p := range byPath {
+		if !seen[p] {
+			missing = append(missing, p)
+		}
+	}
+	sort.Strings(missing)
+	for _, p := range missing {
+		emit(p)
+	}
+	return out
+}
+
+// local maps a space-relative carried path back to the staging path it was
+// read from (or would be read from).
+func (s stagedCarriedSet) local(spacePath string) string {
+	if local, ok := s.localOf[spacePath]; ok {
+		return local
+	}
+	return filepath.Join(s.stagingRoot(), filepath.FromSlash(spacePath))
+}
+
+// stagingRoot recovers the staging directory from any known mapping, so a
+// path the collector never saw (S-4's missing entry) still renders in the
+// same form as its siblings.
+func (s stagedCarriedSet) stagingRoot() string {
+	for spacePath, local := range s.localOf {
+		return strings.TrimSuffix(local, string(filepath.Separator)+filepath.FromSlash(spacePath))
+	}
+	return ""
+}
+
+// stagedCarriedSet collects, for every staged CONTRACT draft among paths,
+// exactly what `a2a submit` would carry for it — through submit's own
+// collector, never a second walker (internal/mcp/tools_submit.go:237's own
+// comment already forbids a second one).
+//
+// A draft that is not a contract, or whose id is not parseable, contributes
+// nothing: `--all`'s existing per-path report already says whatever there
+// is to say about it, and a widening that started reporting NEW errors for
+// a malformed draft would be reporting the same defect twice.
+func (c *ValidateCommand) stagedCarriedSet(paths []string) (stagedCarriedSet, error) {
+	out := stagedCarriedSet{localOf: map[string]string{}}
+	for _, p := range paths {
+		raw, err := c.readFile(p)
+		if err != nil {
+			continue
+		}
+		fm, err := artifact.ParseFrontmatter(raw)
+		if err != nil {
+			continue
+		}
+		var probe struct {
+			ID   string `yaml:"id"`
+			Type string `yaml:"type"`
+		}
+		if err := yaml.Unmarshal(fm.YAML, &probe); err != nil {
+			continue
+		}
+		if probe.Type != "contract" {
+			continue
+		}
+		parsed, err := artifact.ParseID(probe.ID)
+		if err != nil {
+			continue
+		}
+		layout, err := space.NewLayout(parsed.System)
+		if err != nil {
+			continue
+		}
+		// The descriptor joins the batch at its SPACE-relative path so the
+		// inventory can be read from the same bytes submit would carry —
+		// but it keeps the top-level staging path it was actually read
+		// from, which is the one an author edits.
+		descriptorPath := layout.ProvidesContract(parsed.Slug)
+		out.files = append(out.files, space.FileWrite{Path: descriptorPath, Content: raw})
+		out.localOf[descriptorPath] = p
+
+		sidecars, err := template.ContractSidecarsFromStaging(c.stagingDir, parsed.System, parsed.Slug)
+		if err != nil {
+			return stagedCarriedSet{}, fmt.Errorf("cannot collect carried files for %s: %w", probe.ID, err)
+		}
+		for _, sc := range sidecars {
+			out.files = append(out.files, sc)
+			out.localOf[sc.Path] = filepath.Join(c.stagingDir, filepath.FromSlash(sc.Path))
+		}
+	}
+	return out, nil
 }
 
 var _ Command = (*ValidateCommand)(nil)
@@ -403,6 +596,29 @@ func (c *SubmitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return 1
 	}
 
+	// P9 S-1/S-3/S-4/S-5/S-6 (spec 09, fb-20260820-d1e370): `a2a submit`
+	// promises "validate + open a PR" and carried fifteen sidecars it never
+	// judged — the space's own `--ci` was the first thing to look at them,
+	// and it refused one, so the PR was dead on arrival and the author's
+	// only signal was a CI annotation on a file no local verb had mentioned.
+	//
+	// Every carried path is classified against the descriptor's own
+	// inventory, carried in the SAME commit, in BOTH directions: a carried
+	// file nothing declares is refused (POL-013), and a declared entry
+	// nothing carries is refused (REF-014) — the failure
+	// internal/template/contract_scaffold.go:197 already warns about in a
+	// comment. This joins the existing pre-flight refusal loop above rather
+	// than inventing a second refusal stage, so it is all-or-nothing across
+	// the batch and lands BEFORE any git or network call: the funnel below
+	// is never reached.
+	if violations := carriedFindingViolations(space.ContractCarriedMembership(req.Files)); len(violations) > 0 {
+		printCarriedClassification(stdio.Stderr, req.Files)
+		for _, v := range violations {
+			_, _ = fmt.Fprintf(stdio.Stderr, "submit: refused [%s] %s: %s\n", v.Code, v.Path, v.Message)
+		}
+		return 1
+	}
+
 	result, err := c.funnel.Submit(ctx, req)
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "submit: %v\n", err)
@@ -435,6 +651,26 @@ func (c *SubmitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		}
 		warnAutoMerge(stdio, "submit", result.AutoMergeNote)
 		return 0
+	}
+}
+
+// printCarriedClassification is S-6: the carried list, printed on the
+// REFUSAL path with the classification each file was judged by.
+//
+// The list already existed — `submit` printed it on success only (:433
+// before this phase), which is precisely the report's complaint: the tool
+// knew exactly which fifteen files it was carrying and said so only once
+// the write had already happened. A refusal that names the batch it refused
+// is the difference between "fix this file" and "run the verb again and
+// read the CI annotation".
+func printCarriedClassification(w io.Writer, files []space.FileWrite) {
+	_, _ = fmt.Fprintln(w, "submit: carried file(s), with the classification each was judged by:")
+	for _, carried := range space.ClassifyCarriedBatch(files) {
+		line := fmt.Sprintf("submit:   %s  [%s]", carried.Path, carried.Class)
+		if carried.Entry.Role != "" {
+			line += fmt.Sprintf(" role=%s", carried.Entry.Role)
+		}
+		_, _ = fmt.Fprintln(w, line)
 	}
 }
 

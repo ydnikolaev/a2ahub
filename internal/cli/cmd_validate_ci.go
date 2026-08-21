@@ -176,8 +176,10 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 	var consumes []string
 	var events []string
 	var contractIDs []string
+	var undeclared []space.Carried
 	contractDescPaths := map[string]string{}
 	seenContracts := map[string]bool{}
+	descriptors := newCIDescriptorReader(root)
 	for _, p := range changed {
 		if id, descPath, ok := space.ContractForPath(p); ok && !seenContracts[id] {
 			seenContracts[id] = true
@@ -200,6 +202,47 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 			// though nothing here validates its content.
 			if isDataPackagePayloadPath(p) || isBlobPayloadPath(p) {
 				continue
+			}
+			// P9 (spec 09, fb-20260820-d1e370): a contract's own companion
+			// files are classified by the descriptor's `artifacts:`
+			// inventory — the answer space.ContractForPath already computed
+			// THREE LINES ABOVE, at :182, and which this switch used to
+			// discard in favour of "does it end in .md". That discard is the
+			// incident: a declared `artifacts/CHANGELOG.md` was refused with
+			// POL-002 by the very gate `a2a submit` exists to pre-empt.
+			//
+			// The descriptor is read from the CHECKOUT, never from `changed`
+			// — a PR touching only the companion leaves contract.md
+			// unchanged, and looking for it in the diff would classify the
+			// incident's own file as unclassifiable and exempt it by
+			// accident rather than on purpose.
+			//
+			// This one loop serves BOTH of spec 09 §T1's discovery sites:
+			// v3-full-repo's walkArtifacts output flows through here too
+			// (see :122), so the classifier is consulted once for both
+			// rather than twice in two shapes (§11).
+			switch carried := descriptors.classify(p); carried.Class {
+			case space.CarriedDeclaredCompanion, space.CarriedUnclassifiable:
+				// Judged by the carried-set rules, never by the artifact
+				// frontmatter policy. `unclassifiable` means the descriptor
+				// itself is absent or unparseable: its OWN violation is the
+				// verdict, and two red lines about one broken descriptor is
+				// noise whose fix is one edit.
+				continue
+			case space.CarriedUndeclaredCompanion:
+				// A proposed write must never land a file nothing
+				// classifies (US-3). Already-merged content is exempt:
+				// v3-full-repo judges an immutable publication, and a new
+				// refusal there would demand edits to it (US-7, ADR-011
+				// D3/D4). POL-013's own `mode_scope: both` is unchanged —
+				// which files a caller feeds a rule is a caller decision.
+				if mode == "v3-pr" {
+					undeclared = append(undeclared, carried)
+				}
+				continue
+			case space.CarriedArtifact, space.CarriedNotAContractPath:
+				// An envelope draft (the descriptor included) or a path no
+				// contract owns — the classification below is unchanged.
 			}
 			switch {
 			case strings.HasSuffix(p, ".md"):
@@ -224,6 +267,22 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 	if !manifestAuthorityValid && mode == "v3-pr" && len(changed) > 0 && !manifestChanged(changed) {
 		policy := manifestPolicy
 		report.Artifacts = append(report.Artifacts, validateReport{Path: "space.yaml", Result: &policy})
+		report.Valid = false
+	}
+	// P9 S-3 at the merge gate: a proposed write carrying a file under a
+	// contract's own directory that the descriptor's inventory does not
+	// declare. Reported as its own line, with the code the registry already
+	// assigns it — nothing is minted here, and the message is
+	// internal/space's, so submit and `--ci` name the same fix in the same
+	// words.
+	for _, carried := range undeclared {
+		result := validate.Result{
+			Valid:           false,
+			InvocationPoint: validate.V3,
+			ArtifactID:      carried.ContractID,
+			Violations:      carriedFindingViolations([]space.CarriedFinding{space.UndeclaredCompanionFinding(carried)}),
+		}
+		report.Artifacts = append(report.Artifacts, validateReport{Path: carried.Path, Result: &result})
 		report.Valid = false
 	}
 	for _, relPath := range artifacts {
@@ -1121,6 +1180,39 @@ func validateCIContract(ctx context.Context, root, base, id, descriptorPath, spa
 	}
 	res := validate.Result{Valid: valid, ArtifactID: id, InvocationPoint: validate.V2, Violations: violations}
 	return &validateReport{Path: relPath, Result: &res}, valid
+}
+
+// ciDescriptorReader is the checkout-side half of space.ClassifyCarried's
+// "caller owns the I/O" discipline: it resolves the descriptor bytes for a
+// path's contract, ONCE per contract directory, from the working tree.
+//
+// A PR that changes five of a contract's companions reads contract.md once;
+// a descriptor that is absent on disk is cached as nil, which
+// space.ClassifyCarried reads as `unclassifiable` rather than as an error —
+// the read failing IS the answer, and re-attempting it per path would turn
+// one missing file into N stat calls.
+type ciDescriptorReader struct {
+	root string
+	seen map[string][]byte
+}
+
+func newCIDescriptorReader(root string) *ciDescriptorReader {
+	return &ciDescriptorReader{root: root, seen: map[string][]byte{}}
+}
+
+// classify is the ONE call site's-eye view of space.ClassifyCarried: it
+// supplies the descriptor bytes and decides nothing itself.
+func (r *ciDescriptorReader) classify(p string) space.Carried {
+	_, descriptorPath, ok := space.ContractForPath(p)
+	if !ok {
+		return space.ClassifyCarried(p, nil)
+	}
+	raw, cached := r.seen[descriptorPath]
+	if !cached {
+		raw, _ = os.ReadFile(filepath.Join(r.root, filepath.FromSlash(descriptorPath)))
+		r.seen[descriptorPath] = raw
+	}
+	return space.ClassifyCarried(p, raw)
 }
 
 // spaceLevelArtifactDir is the one §4.2 directory that holds artifacts

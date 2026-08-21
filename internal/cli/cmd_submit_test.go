@@ -3,6 +3,7 @@ package cli_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -742,4 +743,295 @@ func runGitCombined(dir string, args ...string) (string, error) {
 	cmd.Stderr = &buf
 	err := cmd.Run()
 	return buf.String(), err
+}
+
+// --- P9: submit validates what it carries (spec 09) --------------------
+//
+// fb-20260820-d1e370. `a2a submit` is documented as "validate + open a PR";
+// it validated the descriptor, carried fifteen sidecars it did not
+// validate, and the space's own `validate --ci` refused one of them with
+// POL-002 — the gate submit exists to pre-empt.
+
+// writeV2ContractDraft is writeContractDraft's contract-set-v2 sibling: the
+// descriptor carries an `artifacts:` inventory, which is the declaration
+// this phase's classifier consults. extraEntries are appended verbatim as
+// further inventory rows.
+func writeV2ContractDraft(t *testing.T, stagingDir, id, slug string, extraEntries ...string) string {
+	t.Helper()
+	content := "---\n" +
+		"schema: envelope/v2\n" +
+		"id: " + id + "\n" +
+		"type: contract\n" +
+		"title: t\n" +
+		"space: fixture-space\n" +
+		"from: axon\n" +
+		"to: [beta]\n" +
+		"thread: " + cliFixtureThread + "\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"category: api\n" +
+		"priority: p3\n" +
+		"blocking: false\n" +
+		"classification: internal\n" +
+		"version: \"0.0.0\"\n" +
+		"compat_policy: strict-semver\n" +
+		"schema_format: json-schema-2020-12\n" +
+		"artifacts:\n" +
+		"  - {path: schema/" + slug + ".schema.json, role: schema, normative: true, media_type: application/schema+json}\n" +
+		"  - {path: fixtures/valid/" + slug + ".json, role: valid-fixture, normative: true, media_type: application/json, conforms_to: schema/" + slug + ".schema.json}\n" +
+		"  - {path: artifacts/CHANGELOG.md, role: changelog, normative: false, media_type: text/markdown}\n"
+	for _, e := range extraEntries {
+		content += "  - " + e + "\n"
+	}
+	content += "---\nbody\n"
+	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(stagingDir, id+".md")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write contract draft: %v", err)
+	}
+	return path
+}
+
+// stageDeclaredCompanionContract stages the incident's exact tree: a v2
+// contract whose inventory declares a frontmatter-free changelog under the
+// only location the envelope schema permits.
+func stageDeclaredCompanionContract(t *testing.T, stagingDir, slug string, extraEntries ...string) string {
+	t.Helper()
+	path := writeV2ContractDraft(t, stagingDir, "XC-axon-"+slug, slug, extraEntries...)
+	dir := "axon/provides/" + slug + "/"
+	writeStagedSidecar(t, stagingDir, dir+"schema/"+slug+".schema.json", `{"type":"object"}`)
+	writeStagedSidecar(t, stagingDir, dir+"fixtures/valid/"+slug+".json", `{}`)
+	writeStagedSidecar(t, stagingDir, dir+"artifacts/CHANGELOG.md", "# Changelog\n\n## 0.0.0\n\n- first publication\n")
+	return path
+}
+
+func newSubmitRig(t *testing.T, stagingDir string) (*fakeSubmitFunnel, *cli.SubmitCommand) {
+	t.Helper()
+	mirrorDir := t.TempDir()
+	writeMinimalSpaceYAML(t, mirrorDir)
+	legality := cli.NewLegalityAdapter(mirrorDir, "axon", testManifest())
+	fake := &fakeSubmitFunnel{}
+	return fake, cli.NewSubmitCommand(fake, legality, cli.NewNoopPendingMarker(), mirrorDir, "fixture-space", "axon", stagingDir, testHostConfig())
+}
+
+// TestSubmitCarriesAndPassesADeclaredCompanion is criterion 1 on the submit
+// side: the file the incident turned on is carried AND accepted, because
+// the descriptor declares it — not because companions are exempt.
+func TestSubmitCarriesAndPassesADeclaredCompanion(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	path := stageDeclaredCompanionContract(t, stagingDir, "widget-c")
+	fake, cmd := newSubmitRig(t, stagingDir)
+
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{path}, io); code != 0 {
+		t.Fatalf("code = %d, want 0 — a DECLARED companion must submit; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+	var sawCompanion bool
+	for _, f := range fake.calls[0].Files {
+		if f.Path == "axon/provides/widget-c/artifacts/CHANGELOG.md" {
+			sawCompanion = true
+		}
+	}
+	if !sawCompanion {
+		t.Fatalf("the declared companion must still be CARRIED; got %+v", fake.calls[0].Files)
+	}
+}
+
+// TestSubmitRefusesUndeclaredCarriedFile is criteria 4 and 6: a carried
+// path the inventory does not declare is refused with POL-013, naming the
+// path and the descriptor, BEFORE any git or network work — the injected
+// fake funnel records zero Submit calls — and the carried list is printed
+// on that refusal path, where before this phase it was printed only on
+// success.
+//
+// TEETH: removing cmd_submit.go's ContractCarriedMembership pre-flight
+// makes this exit 0 with one funnel call.
+func TestSubmitRefusesUndeclaredCarriedFile(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	path := stageDeclaredCompanionContract(t, stagingDir, "widget-d")
+	writeStagedSidecar(t, stagingDir, "axon/provides/widget-d/artifacts/NOTES.md", "scratch notes\n")
+	fake, cmd := newSubmitRig(t, stagingDir)
+
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{path}, io)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("the refusal must land BEFORE any git or network call; funnel was invoked %d time(s)", len(fake.calls))
+	}
+	stderr := errOut.String()
+	for _, want := range []string{
+		"POL-013",
+		"artifacts/NOTES.md",
+		"axon/provides/widget-d/contract.md",
+		"changelog", // the role vocabulary, as the next move
+	} {
+		if !strings.Contains(stderr, want) {
+			t.Fatalf("refusal must name %q; got:\n%s", want, stderr)
+		}
+	}
+	// S-6: the carried list, with each file's classification.
+	for _, want := range []string{
+		"carried file(s)",
+		"axon/provides/widget-d/artifacts/CHANGELOG.md  [declared-companion] role=changelog",
+		"axon/provides/widget-d/artifacts/NOTES.md  [undeclared-companion]",
+	} {
+		if !strings.Contains(stderr, want) {
+			t.Fatalf("the carried list must be printed on the REFUSAL path and name %q; got:\n%s", want, stderr)
+		}
+	}
+}
+
+// TestSubmitRefusesDeclaredButAbsentFile is criterion 5, S-3's mirror: the
+// descriptor must not name a file the space never receives — the failure
+// internal/template/contract_scaffold.go:197 already warns about in a
+// comment.
+//
+// TEETH: removing cmd_submit.go's ContractCarriedMembership pre-flight
+// makes this exit 0 with one funnel call.
+func TestSubmitRefusesDeclaredButAbsentFile(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	path := stageDeclaredCompanionContract(t, stagingDir, "widget-e",
+		"{path: artifacts/MISSING.md, role: other, normative: false, media_type: text/markdown}")
+	fake, cmd := newSubmitRig(t, stagingDir)
+
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{path}, io)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("the refusal must land BEFORE any git or network call; funnel was invoked %d time(s)", len(fake.calls))
+	}
+	stderr := errOut.String()
+	for _, want := range []string{"REF-014", "artifacts/MISSING.md", "axon/provides/widget-e/contract.md"} {
+		if !strings.Contains(stderr, want) {
+			t.Fatalf("refusal must name %q; got:\n%s", want, stderr)
+		}
+	}
+}
+
+// allReport is `validate --all`'s JSON output, decoded from OUTSIDE package
+// cli (validateReport is unexported) — the same bytes an author's tooling
+// reads.
+type allReport struct {
+	Path   string `json:"path"`
+	Error  string `json:"error,omitempty"`
+	Result *struct {
+		Valid      bool `json:"valid"`
+		Violations []struct {
+			Code string `json:"code"`
+			Path string `json:"path"`
+		} `json:"violations"`
+	} `json:"result,omitempty"`
+}
+
+func runValidateAll(t *testing.T, stagingDir string) (int, []allReport) {
+	t.Helper()
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	cmd := cli.NewValidateCommand(validate.New(corpus), stagingDir)
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--all"}, io)
+	var reports []allReport
+	if err := json.Unmarshal(out.Bytes(), &reports); err != nil {
+		t.Fatalf("decode --all report: %v\nstdout=%s stderr=%s", err, out.String(), errOut.String())
+	}
+	return code, reports
+}
+
+// TestValidateAllJudgesWhatSubmitWouldCarry is criteria 7 and 8: `--all`'s
+// set is {top-level drafts} ∪ {exactly what submit would carry}, asserted
+// as the exact path SET rather than as a count, and green over the
+// incident's own tree. A stray `.md` under staging that submit would NOT
+// carry stays absent — the widening reuses submit's collector, it is not a
+// recursive `*.md` walk (A-2), which would re-create the incident one
+// directory over.
+//
+// TEETH: reverting `--all` to the non-recursive top-level readDir reds the
+// set comparison — before this phase the report had ONE line here.
+func TestValidateAllJudgesWhatSubmitWouldCarry(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	stageDeclaredCompanionContract(t, stagingDir, "widget-f")
+	// Two strays submit would never carry: one outside any contract's
+	// carried roots, one at the staging root under no section at all.
+	writeStagedSidecar(t, stagingDir, "axon/provides/widget-f/NOTES.md", "not carried by submit\n")
+	writeStagedSidecar(t, stagingDir, "axon/docs/scratch.md", "not carried by submit\n")
+
+	code, reports := runValidateAll(t, stagingDir)
+
+	got := map[string]bool{}
+	for _, r := range reports {
+		got[filepath.ToSlash(strings.TrimPrefix(r.Path, stagingDir+string(filepath.Separator)))] = true
+	}
+	want := []string{
+		"XC-axon-widget-f.md",
+		"axon/provides/widget-f/schema/widget-f.schema.json",
+		"axon/provides/widget-f/fixtures/valid/widget-f.json",
+		"axon/provides/widget-f/artifacts/CHANGELOG.md",
+	}
+	for _, w := range want {
+		if !got[w] {
+			t.Fatalf("`--all` must judge %q — it is what `a2a submit` carries; got %v", w, got)
+		}
+	}
+	for _, unwanted := range []string{"axon/provides/widget-f/NOTES.md", "axon/docs/scratch.md"} {
+		if got[unwanted] {
+			t.Fatalf("`--all` reported %q, which `a2a submit` does not carry — the widening must reuse the collector, not walk *.md (A-2); got %v", unwanted, got)
+		}
+	}
+	if len(got) != len(want) {
+		t.Fatalf("`--all`'s set must EQUAL {top-level drafts} ∪ {what submit carries}; got %v, want exactly %v", got, want)
+	}
+	if code != 0 {
+		t.Fatalf("code = %d, want 0 — the incident's own tree is legal; reports=%+v", code, reports)
+	}
+}
+
+// TestValidateAllIsADryRunOfSubmitsRefusals is A-4: the same two membership
+// refusals submit makes, reported by `--all` over the same tree, so an
+// author never learns about them for the first time from a dead PR.
+//
+// TEETH: dropping stagedCarriedSet.reports' ContractCarriedMembership call
+// makes this exit 0 with no codes.
+func TestValidateAllIsADryRunOfSubmitsRefusals(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	stageDeclaredCompanionContract(t, stagingDir, "widget-g",
+		"{path: artifacts/MISSING.md, role: other, normative: false, media_type: text/markdown}")
+	writeStagedSidecar(t, stagingDir, "axon/provides/widget-g/artifacts/NOTES.md", "scratch\n")
+
+	code, reports := runValidateAll(t, stagingDir)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1 — `--all` must be a true dry run of submit's refusals; reports=%+v", code, reports)
+	}
+	codes := map[string]string{}
+	for _, r := range reports {
+		if r.Result == nil {
+			continue
+		}
+		for _, v := range r.Result.Violations {
+			codes[v.Code] = r.Path
+		}
+	}
+	if _, ok := codes["POL-013"]; !ok {
+		t.Fatalf("expected POL-013 for the undeclared artifacts/NOTES.md; got %+v", reports)
+	}
+	if line, ok := codes["REF-014"]; !ok {
+		t.Fatalf("expected REF-014 for the declared-but-absent artifacts/MISSING.md; got %+v", reports)
+	} else if !strings.Contains(filepath.ToSlash(line), "artifacts/MISSING.md") {
+		t.Fatalf("REF-014 must be reported against the path the entry points at, got %q", line)
+	}
 }

@@ -3254,3 +3254,354 @@ func TestValidateCI_POL023WarnsOnARuntimePinAgainstAnAbsentEndpoint(t *testing.T
 		t.Fatalf("POL-023 must WARN, not refuse — publishing before activating is a designed sequence (ADR-011 D2), got %q", found.Severity)
 	}
 }
+
+// --- P9 (spec 09-submit-validates-what-it-carries) ---------------------
+//
+// fb-20260820-d1e370: `a2a submit` carried a declared companion that the
+// space's own `validate --ci` then refused with POL-002. Discovery
+// classified `artifacts/CHANGELOG.md` as an ENVELOPE ARTIFACT purely by its
+// `.md` suffix, three lines below a `space.ContractForPath` call whose
+// answer it discarded.
+
+// declaredV2ContractWithCompanion is declaredV2Contract plus the ONE file
+// the incident turned on: a frontmatter-free `artifacts/CHANGELOG.md`,
+// declared `role: changelog, normative: false, media_type: text/markdown` —
+// the only location the envelope/v2 role-conditional path pattern permits.
+func declaredV2ContractWithCompanion(from, slug string) string {
+	return strings.Replace(declaredV2Contract(from, slug),
+		"---\nBody.\n",
+		"  - {path: artifacts/CHANGELOG.md, role: changelog, normative: false, media_type: text/markdown}\n---\nBody.\n",
+		1)
+}
+
+// companionChangelog is the carried bytes exactly as a producer's release
+// tree holds them: markdown, no frontmatter, nothing to parse an envelope
+// out of. The report's own third option (add frontmatter) is rejected
+// because it would make the carried bytes differ from that tree.
+const companionChangelog = "# Changelog\n\n## 0.0.0\n\n- first publication\n"
+
+// ciCompanionFixture builds a space checkout carrying one declared-companion
+// contract plus ONE genuinely malformed artifact elsewhere under the same
+// system — criterion 2's control, so the exemption reads as a
+// classification rather than as a suppression.
+func ciCompanionFixture(t *testing.T, slug string) (root, companionRel, brokenRel string, contractPaths []string) {
+	t.Helper()
+	dir := "axon/provides/" + slug + "/"
+	rel := dir + "contract.md"
+	companionRel = dir + "artifacts/CHANGELOG.md"
+	brokenRel = "axon/exchanges/XQ-axon-20260730-h2k8.md"
+
+	files := contractShapeSidecars(slug)
+	files[rel] = declaredV2ContractWithCompanion("axon", slug)
+	files[companionRel] = companionChangelog
+	files[brokenRel] = "no frontmatter at all, and this one really is an artifact\n"
+
+	// The floor must admit a declared `artifacts:` inventory at all — below
+	// 0.19.0 the descriptor-shape check refuses the key outright, and this
+	// fixture would then be red for a reason that is not its subject.
+	root = ciRepo(t, ciManifestWithFloor("0.19.3"), files)
+	contractPaths = []string{rel, companionRel,
+		dir + "schema/" + slug + ".schema.json",
+		dir + "fixtures/valid/" + slug + ".json",
+		dir + "fixtures/invalid/" + slug + ".json"}
+	return root, companionRel, brokenRel, contractPaths
+}
+
+// ciViolationsFor returns every violation the report carries for one path.
+func ciViolationsFor(rep ciReport, path string) []validate.Violation {
+	var out []validate.Violation
+	for _, a := range rep.Artifacts {
+		if a.Path != path || a.Result == nil {
+			continue
+		}
+		out = append(out, a.Result.Violations...)
+	}
+	return out
+}
+
+// TestValidateCI_DeclaredCompanionIsNotAnArtifact is the incident,
+// reproduced (criterion 1) in BOTH modes with criterion 2's control in the
+// same run: the declared companion carries no POL-002 anywhere, while a
+// genuinely malformed artifact under the same system still reds.
+//
+// TEETH: before the classifier landed, both modes reported
+// `[POL-002] artifact frontmatter is missing or is not valid YAML` against
+// axon/provides/<slug>/artifacts/CHANGELOG.md.
+func TestValidateCI_DeclaredCompanionIsNotAnArtifact(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	root, companionRel, brokenRel, _ := ciCompanionFixture(t, "content-feed")
+	contractGitRun(t, root, "init", "-q", "-b", "main")
+	contractGitRun(t, root, "add", "-A")
+	contractGitRun(t, root, "commit", "-q", "-m", "publish content-feed with a companion changelog")
+	base := contractGitRevParse(t, root, "HEAD")
+
+	for _, tc := range []struct {
+		mode    string
+		changed []string
+	}{
+		// brokenRel is in the v3-pr diff too, deliberately: criterion 2
+		// says the control runs "in the same run as #1", and v3-pr is the
+		// run that stops a pull request. A control that only fired in
+		// full-repo would leave the merge-gating mode proving nothing
+		// about suppression.
+		{mode: "v3-pr", changed: []string{"axon/provides/content-feed/contract.md", companionRel, brokenRel}},
+		{mode: "v3-full-repo"},
+	} {
+		t.Run(tc.mode, func(t *testing.T) {
+			_, rep, errOut := runCI(t, engine, root, fakeGit(tc.changed...), tc.mode, base, "ydnikolaev")
+			for _, v := range ciViolationsFor(rep, companionRel) {
+				if v.Code == "POL-002" {
+					t.Fatalf("%s: a DECLARED companion must never be judged as an envelope artifact; got %+v (stderr=%s)", tc.mode, v, errOut)
+				}
+			}
+			var sawBroken bool
+			for _, v := range ciViolationsFor(rep, brokenRel) {
+				if v.Code == "POL-002" {
+					sawBroken = true
+				}
+			}
+			if !sawBroken {
+				t.Fatalf("%s: POL-002 must still fire on a genuinely malformed artifact under the SAME system, in the SAME run — the exemption is a classification, not a suppression; report=%+v", tc.mode, rep.Artifacts)
+			}
+		})
+	}
+}
+
+// TestValidateCI_UndeclaredCompanionRefusedInPRNotFullRepo is criterion 9,
+// both halves in ONE test so the pair cannot drift: a file under a
+// contract's own directory that the descriptor does not declare is refused
+// when it is PROPOSED (v3-pr), and is NOT refused when it is already merged
+// (v3-full-repo, US-7 / ADR-011 D3/D4 — an immutable publication must not
+// be redded retroactively by a new rule). In full-repo it is also not
+// judged as an artifact, which is strictly better than today, where it was
+// wrongly rejected with POL-002.
+//
+// TEETH: dropping the `mode == "v3-pr"` guard reds the full-repo half;
+// dropping the CarriedUndeclaredCompanion arm entirely reds the PR half.
+func TestValidateCI_UndeclaredCompanionRefusedInPRNotFullRepo(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	const slug = "notes-feed"
+	dir := "axon/provides/" + slug + "/"
+	undeclared := dir + "artifacts/NOTES.md"
+	files := contractShapeSidecars(slug)
+	files[dir+"contract.md"] = declaredV2ContractWithCompanion("axon", slug)
+	files[dir+"artifacts/CHANGELOG.md"] = companionChangelog
+	files[undeclared] = "scratch notes nobody declared\n"
+	root := ciRepo(t, ciManifestWithFloor("0.19.3"), files)
+	contractGitRun(t, root, "init", "-q", "-b", "main")
+	contractGitRun(t, root, "add", "-A")
+	contractGitRun(t, root, "commit", "-q", "-m", "publish notes-feed")
+	base := contractGitRevParse(t, root, "HEAD")
+
+	prCode, prRep, _ := runCI(t, engine, root, fakeGit(dir+"contract.md", undeclared), "v3-pr", base, "ydnikolaev")
+	var sawPOL013 *validate.Violation
+	for _, v := range ciViolationsFor(prRep, undeclared) {
+		if v.Code == "POL-013" {
+			found := v
+			sawPOL013 = &found
+		}
+	}
+	if sawPOL013 == nil {
+		t.Fatalf("v3-pr must refuse an undeclared companion with POL-013 — a space must never receive a file nothing classifies; report=%+v", prRep.Artifacts)
+	}
+	if prCode != 1 {
+		t.Fatalf("v3-pr exit = %d, want 1", prCode)
+	}
+	for _, want := range []string{"artifacts/NOTES.md", dir + "contract.md"} {
+		if !strings.Contains(sawPOL013.Message, want) {
+			t.Fatalf("the refusal must print the FIX and name %q; got %q", want, sawPOL013.Message)
+		}
+	}
+
+	fullCode, fullRep, _ := runCI(t, engine, root, nil, "v3-full-repo", "", "")
+	for _, v := range ciViolationsFor(fullRep, undeclared) {
+		t.Fatalf("v3-full-repo must not judge an ALREADY-MERGED undeclared companion at all (US-7, ADR-011); got %+v", v)
+	}
+	if fullCode != 0 {
+		t.Fatalf("v3-full-repo exit = %d, want 0; report=%+v", fullCode, fullRep.Artifacts)
+	}
+}
+
+// --- criterion 11: the invariant, computed ----------------------------
+
+// parityFunnel captures the SubmitRequest without performing any write, so
+// the submit side of the comparison below is the real request builder's
+// own output rather than a re-derivation of it.
+type parityFunnel struct{ req space.SubmitRequest }
+
+func (f *parityFunnel) Submit(_ context.Context, req space.SubmitRequest) (space.WriteResult, error) {
+	f.req = req
+	return space.WriteResult{State: space.WriteStatePendingMerge, PRNumber: 1, PRURL: "https://example.invalid/pr/1", Branch: req.ArtifactID}, nil
+}
+
+// TestSubmitAndValidateCIClassifyTheSameSet is US-8 / criterion 11 — the
+// invariant this phase establishes, stated once and TESTED as a SET
+// EQUALITY rather than asserted:
+//
+//	{space-relative paths `a2a submit` CARRIES for a contract}
+//	  = {paths `validate --ci` CLASSIFIES and judges for that contract}
+//
+// and no path in that set is classified DIFFERENTLY by the two sides.
+//
+// A per-instance assertion is explicitly insufficient: before this phase it
+// would have passed for fourteen of the fifteen carried files, and the
+// fifteenth is the whole report. The two sides are driven from their OWN
+// inputs — submit from the staging tree through buildRequest, `--ci` from a
+// real `git diff` over a checkout of exactly what submit produced — so the
+// comparison cannot be satisfied by both halves reading one list.
+//
+// The second clause is the one that is easy to fake, and it is why the two
+// sides resolve the descriptor from DIFFERENT places: submit reads it out
+// of the batch it is about to write, `--ci` reads it from the checkout. A
+// classifier that quietly depended on one of those would show up here as a
+// class disagreement, not as a missing path.
+func TestSubmitAndValidateCIClassifyTheSameSet(t *testing.T) {
+	t.Parallel()
+	const slug = "parity-feed"
+	dir := "axon/provides/" + slug + "/"
+
+	// --- the submit side, from the staging tree it actually reads ---
+	stagingDir := t.TempDir()
+	descriptor := declaredV2ContractWithCompanion("axon", slug)
+	descriptor = strings.Replace(descriptor, "space: getvisa", "space: fixture-space", 1)
+	if err := os.WriteFile(filepath.Join(stagingDir, "XC-axon-"+slug+".md"), []byte(descriptor), 0o644); err != nil {
+		t.Fatalf("write staged descriptor: %v", err)
+	}
+	for rel, content := range map[string]string{
+		dir + "schema/" + slug + ".schema.json":    `{"type":"object"}`,
+		dir + "fixtures/valid/" + slug + ".json":   `{}`,
+		dir + "fixtures/invalid/" + slug + ".json": `null`,
+		dir + "artifacts/CHANGELOG.md":             companionChangelog,
+	} {
+		abs := filepath.Join(stagingDir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+			t.Fatalf("write staged sidecar: %v", err)
+		}
+	}
+
+	mirrorDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(mirrorDir, "space.yaml"), []byte("min_binary_version: \"0.1.0\"\n"), 0o644); err != nil {
+		t.Fatalf("write mirror space.yaml: %v", err)
+	}
+	legality := NewLegalityAdapter(mirrorDir, "axon", space.Manifest{Participants: []space.Participant{
+		{System: "axon", Status: "active"}, {System: "seomatrix", Status: "active"},
+	}})
+	funnel := &parityFunnel{}
+	cmd := NewSubmitCommand(funnel, legality, NewNoopPendingMarker(), mirrorDir, "fixture-space", "axon", stagingDir,
+		SubmitHostConfig{RemoteURL: "https://example.invalid/org/space.git", BaseBranch: "main"})
+	var out, errBuf bytes.Buffer
+	if code := cmd.Run(context.Background(), []string{filepath.Join(stagingDir, "XC-axon-"+slug+".md")},
+		IO{Stdout: &out, Stderr: &errBuf}); code != 0 {
+		t.Fatalf("submit code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errBuf.String())
+	}
+
+	submitSet := map[string]space.Carried{}
+	for _, carried := range space.ClassifyCarriedBatch(funnel.req.Files) {
+		if carried.Class == space.CarriedNotAContractPath {
+			continue
+		}
+		submitSet[carried.Path] = carried
+	}
+	if len(submitSet) == 0 {
+		t.Fatalf("submit carried no contract paths at all; files=%+v", funnel.req.Files)
+	}
+
+	// --- the --ci side, from a real git diff over a checkout of exactly
+	// what submit produced ---
+	root := ciRepo(t, ciManifestWithFloor("0.19.3"), nil)
+	contractGitRun(t, root, "init", "-q", "-b", "main")
+	contractGitRun(t, root, "add", "-A")
+	contractGitRun(t, root, "commit", "-q", "-m", "empty space")
+	base := contractGitRevParse(t, root, "HEAD")
+	for _, f := range funnel.req.Files {
+		abs := filepath.Join(root, filepath.FromSlash(f.Path))
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(abs, f.Content, 0o644); err != nil {
+			t.Fatalf("write %s: %v", f.Path, err)
+		}
+	}
+	contractGitRun(t, root, "add", "-A")
+	contractGitRun(t, root, "commit", "-q", "-m", "the PR submit would open")
+
+	changed, err := gitDiffNameOnly(context.Background(), root, base)
+	if err != nil {
+		t.Fatalf("git diff: %v", err)
+	}
+	descriptors := newCIDescriptorReader(root)
+	ciSet := map[string]space.Carried{}
+	for _, p := range changed {
+		carried := descriptors.classify(p)
+		if carried.Class == space.CarriedNotAContractPath {
+			continue
+		}
+		ciSet[p] = carried
+	}
+
+	// --- the set equality ---
+	for p := range submitSet {
+		if _, ok := ciSet[p]; !ok {
+			t.Errorf("submit carries %q into the space and `validate --ci` classifies nothing for it — that gap IS the defect", p)
+		}
+	}
+	for p := range ciSet {
+		if _, ok := submitSet[p]; !ok {
+			t.Errorf("`validate --ci` classifies %q but `a2a submit` never carried it", p)
+		}
+	}
+
+	// --- and no path is classified DIFFERENTLY by the two sides ---
+	for p, submitClass := range submitSet {
+		ciClass, ok := ciSet[p]
+		if !ok {
+			continue
+		}
+		if submitClass.Class != ciClass.Class {
+			t.Errorf("%q is %q to submit and %q to `validate --ci` — two halves of one binary must not disagree about one path", p, submitClass.Class, ciClass.Class)
+		}
+		if submitClass.Class == space.CarriedUnclassifiable {
+			t.Errorf("%q is unclassifiable to both sides — a carried path nothing classifies is itself the refusal (US-3)", p)
+		}
+	}
+
+	// The incident's own file must be in the set, on both sides, as a
+	// declared companion — otherwise the equality above could be satisfied
+	// by an empty intersection.
+	companion := dir + "artifacts/CHANGELOG.md"
+	if submitSet[companion].Class != space.CarriedDeclaredCompanion || ciSet[companion].Class != space.CarriedDeclaredCompanion {
+		t.Fatalf("the incident's own file must be a declared-companion on BOTH sides; submit=%q ci=%q",
+			submitSet[companion].Class, ciSet[companion].Class)
+	}
+
+	// ...and CLASSIFIES is only half of criterion 11. The production verb
+	// must reach the same answer, so the real `--ci` runs over the very
+	// commit submit would have opened and every path in the set must come
+	// back CLEAN — POL-002 above all. Without this the equality above would
+	// be a statement about a function the discovery loop might not call.
+	//
+	// Scoped to the set under comparison rather than to the run's exit code:
+	// the lifecycle event in the same commit is stamped by the REAL write
+	// funnel (`produced_by`, POL-012), which this fake deliberately is not,
+	// and that path is not a contract path and not this criterion's subject.
+	_, rep, errOut := runCI(t, ciEngine(t), root, fakeGit(changed...), "v3-pr", base, "ydnikolaev")
+	var judged bool
+	for p := range ciSet {
+		for _, a := range rep.Artifacts {
+			if a.Path == p {
+				judged = true
+			}
+		}
+		for _, v := range ciViolationsFor(rep, p) {
+			t.Errorf("`validate --ci` refused %q with [%s] — the PR `a2a submit` opens must not be refused for a file submit itself carried: %s (stderr=%s)", p, v.Code, v.Message, errOut)
+		}
+	}
+	if !judged {
+		t.Fatalf("`validate --ci` produced no report line for ANY path in the carried set — it classified nothing it was handed; report=%+v", rep.Artifacts)
+	}
+}

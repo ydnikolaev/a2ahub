@@ -1,0 +1,107 @@
+# P9 (spec 09-submit-validates-what-it-carries, fb-20260820-d1e370):
+# `a2a submit` promises "validate + open a PR" and carried fifteen sidecars
+# it never validated, so the space's own `a2a validate --ci` was the first
+# thing to judge them — and it refused one with POL-002, on a file the
+# scaffold wrote, the schema mandates the location of, and the role
+# vocabulary blesses.
+#
+# Driven through the BUILT binary because that is what the epic's AC2 asks
+# for and because the defect was a disagreement between two halves of ONE
+# binary: a unit test on either half alone reproduces neither.
+#
+# Three claims, in order:
+#   1. `validate --all` now judges the tree `a2a submit` would carry, and is
+#      GREEN about a declared companion carrying no frontmatter.
+#   2. a carried file the descriptor does not declare is refused — by
+#      `validate --all` and by `a2a submit`, locally, before any network
+#      call, with the carried list printed.
+#   3. removing that file makes both verbs green again, so the refusal is a
+#      classification rather than a suppression.
+
+mkdir .a2a/staging
+mkdir .a2a/staging/axon/provides/companion-feed/schema
+mkdir .a2a/staging/axon/provides/companion-feed/fixtures/valid
+mkdir .a2a/staging/axon/provides/companion-feed/fixtures/invalid
+mkdir .a2a/staging/axon/provides/companion-feed/artifacts
+cp contract.md .a2a/staging/XC-axon-companion-feed.md
+cp schema.json .a2a/staging/axon/provides/companion-feed/schema/companion-feed.schema.json
+cp valid.json .a2a/staging/axon/provides/companion-feed/fixtures/valid/companion-feed.json
+cp invalid.json .a2a/staging/axon/provides/companion-feed/fixtures/invalid/companion-feed.json
+cp CHANGELOG.md .a2a/staging/axon/provides/companion-feed/artifacts/CHANGELOG.md
+
+# 1. `--all` reaches the carried set. Before P9 this was a NON-recursive
+#    readDir of the staging root filtered to top-level *.md: it reported ONE
+#    line here and said nothing at all about the four files about to travel.
+exec a2a validate --all
+stdout 'CHANGELOG.md'
+stdout 'companion-feed.schema.json'
+! stdout '"valid": false'
+
+# 2. an undeclared carried file: named locally, in a second, rather than as
+#    a CI annotation on a PR that is already dead.
+cp NOTES.md .a2a/staging/axon/provides/companion-feed/artifacts/NOTES.md
+! exec a2a validate --all
+stdout 'POL-013'
+stdout 'NOTES.md'
+
+! exec a2a submit .a2a/staging/XC-axon-companion-feed.md
+stderr 'POL-013'
+stderr 'NOTES.md'
+# S-6: the carried list is printed on the REFUSAL path, with each file's
+# classification. It existed before this phase and was printed only on
+# success — which is the report's own core complaint.
+stderr 'carried file\(s\)'
+stderr 'declared-companion'
+stderr 'undeclared-companion'
+
+# 3. and it is a classification, not a suppression: remove the undeclared
+#    file and the same two verbs are green again.
+rm .a2a/staging/axon/provides/companion-feed/artifacts/NOTES.md
+exec a2a validate --all
+stdout '"valid": true'
+! stdout 'POL-013'
+
+-- contract.md --
+---
+schema: envelope/v2
+id: XC-axon-companion-feed
+type: contract
+title: Companion feed
+space: fixture-space
+from: axon
+to: [beta]
+thread: thread:axon-20260820-k3f9
+actor: {kind: agent, name: bot, model: claude-fable-5}
+created: 2026-08-20T10:00:00Z
+category: data-feed
+priority: p3
+blocking: false
+classification: internal
+version: 1.0.0
+schema_format: json-schema-2020-12
+compat_policy: default
+artifacts:
+  - {path: schema/companion-feed.schema.json, role: schema, normative: true, media_type: application/schema+json}
+  - {path: fixtures/valid/companion-feed.json, role: valid-fixture, normative: true, media_type: application/json, conforms_to: schema/companion-feed.schema.json}
+  - {path: fixtures/invalid/companion-feed.json, role: invalid-fixture, normative: true, media_type: application/json, conforms_to: schema/companion-feed.schema.json}
+  - {path: artifacts/CHANGELOG.md, role: changelog, normative: false, media_type: text/markdown}
+---
+# Companion feed
+
+A contract whose descriptor declares a companion changelog.
+
+-- schema.json --
+{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object"}
+-- valid.json --
+{}
+-- invalid.json --
+null
+-- CHANGELOG.md --
+# Changelog
+
+## 1.0.0
+
+- first publication
+
+-- NOTES.md --
+Scratch notes nobody declared in the descriptor's inventory.

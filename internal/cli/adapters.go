@@ -808,12 +808,47 @@ type submitEnvelopeProbe struct {
 	} `yaml:"actor"`
 }
 
+// carriedFindingViolations maps internal/space's registry-coded membership
+// findings into this package's Violation shape. It is a field copy, not a
+// decision: the code, class, severity and message are all internal/space's
+// answer, so `a2a submit`, `a2a validate --all` and `validate --ci` cannot
+// name different codes for one disagreement.
+//
+// internal/space returns its own struct rather than a validate.Violation
+// because internal/template imports internal/space and internal/validate's
+// own tests import internal/template — that edge is an import cycle Go
+// refuses at test-build time (carried_class.go says so at the type).
+func carriedFindingViolations(findings []space.CarriedFinding) []validate.Violation {
+	if len(findings) == 0 {
+		return nil
+	}
+	out := make([]validate.Violation, 0, len(findings))
+	for _, f := range findings {
+		out = append(out, validate.Violation{
+			Code:     f.Code,
+			Class:    validate.Class(f.Class),
+			Path:     f.Path,
+			Message:  f.Message,
+			Severity: validate.Severity(f.Severity),
+		})
+	}
+	return out
+}
+
 // ValidateSubmit implements space.SubmitValidator.
 func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space.FileWrite) error {
 	events := map[string]mirrorEvent{}
 	var drafts []space.FileWrite
 	var registries []space.FileWrite
 	var violations []validate.Violation
+	// P9 (spec 09): ONE classifier decides what each carried path is, for
+	// this surface and for `validate --ci` alike — see the contract arm
+	// below. Resolved once for the whole batch so a contract's descriptor
+	// is decoded once, not once per companion.
+	carriedClasses := make(map[string]space.Carried, len(files))
+	for _, carried := range space.ClassifyCarriedBatch(files) {
+		carriedClasses[carried.Path] = carried
+	}
 	for _, f := range files {
 		switch {
 		case strings.Contains(f.Path, "/events/"):
@@ -847,24 +882,46 @@ func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space
 			// SAME one the space's V3 runs, so a write can never land a
 			// registry the space would then reject.
 			registries = append(registries, f)
-		case space.IsContractBaselinePath(f.Path):
-			// A contract's own schema/** and fixtures/** (P37 D-D), carried
+		case carriedClasses[f.Path].Class.IsCompanion():
+			// A contract's own schema/**, fixtures/** and artifacts/**
+			// (P37 D-D + contract-set-v2's companion root), carried
 			// alongside contract.md by `submit`. They are not artifacts:
 			// no envelope, no frontmatter, no id. Feeding one to the drafts
 			// loop below runs artifact.ParseFrontmatter over a JSON schema
 			// and refuses the WHOLE submit — so the very files D-D requires
 			// would make the contract unsubmittable.
 			//
-			// Deliberately validated NOWHERE here. The compatibility rule
-			// that reads them lives in internal/validate and runs at
-			// publish and at merge (`validate --ci`); re-deciding anything
-			// about them at the funnel would be the second copy AC-970.2
-			// exists to forbid. §5.4b also permits non-JSON-Schema formats
-			// whose files this engine could not parse at all.
+			// P9 (spec 09, fb-20260820-d1e370) replaced this arm's
+			// `space.IsContractBaselinePath(f.Path)` guard with the ONE
+			// classifier every reader now consults. The predicate said only
+			// "this path lives beside a descriptor"; the classifier says
+			// WHICH file the descriptor declares it to be, which is the
+			// fact `validate --ci` needs and used to answer for itself by
+			// filename suffix. Two halves of one binary disagreeing about
+			// one path is what made a declared changelog submittable and
+			// unmergeable at the same time.
+			//
+			// Still validated by no ARTIFACT class here — that part of the
+			// old comment was right and stands. What is no longer true is
+			// "validated NOWHERE": ContractCarriedMembership judges the
+			// carried set against the descriptor's inventory in both
+			// directions at cmd_submit.go's pre-flight, before this funnel
+			// is reached at all. The compatibility and carried-set rules
+			// that read the bytes still live in internal/validate and still
+			// run at publish and at merge; re-deciding those here would be
+			// the second copy AC-970.2 exists to forbid, and §5.4b permits
+			// non-JSON-Schema formats whose files this engine could not
+			// parse at all.
 		default:
 			drafts = append(drafts, f)
 		}
 	}
+
+	// P9 S-3/S-4 at the funnel itself, so the rule cannot be reached only
+	// through cmd_submit.go's pre-flight: the identical call, on the
+	// identical shared function, is what makes the MCP surface's verdict
+	// identical rather than merely similar (epic AC5).
+	violations = append(violations, carriedFindingViolations(space.ContractCarriedMembership(files))...)
 
 	for _, r := range registries {
 		result, err := v.engine.ValidateConsumes(r.Content)
