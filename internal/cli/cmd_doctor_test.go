@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/skill"
 	"github.com/ydnikolaev/a2ahub/testkit/fakegithub"
 	"gopkg.in/yaml.v3"
 )
@@ -1184,10 +1186,11 @@ func TestDoctorRunUsesCustomSkillDirectoryForBothChecks(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	target := filepath.Join(root, "agent", "manual")
+	skillMD := []byte("---\nname: a2ahub\n---\n")
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(target, "SKILL.md"), []byte("---\nname: a2ahub\n---\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(target, "SKILL.md"), skillMD, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(target, skillProvenanceFile), []byte(skillProvenance("0.3.0")), 0o644); err != nil {
@@ -1201,6 +1204,10 @@ func TestDoctorRunUsesCustomSkillDirectoryForBothChecks(t *testing.T) {
 	cmd.loadMachineConfig = func(string) (space.MachineConfig, error) { return space.MachineConfig{}, nil }
 	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
 	cmd.lookupGit = func() error { return nil }
+	// A minimal embed matching the disk fixture byte-for-byte, so the walk
+	// this phase adds is clean rather than degrading the row to the
+	// "wires no embedded skill tree" advisory this test does not exercise.
+	cmd.SkillFiles = fstest.MapFS{"a2ahub/SKILL.md": {Data: skillMD}}
 
 	var stdout, stderr bytes.Buffer
 	if code := cmd.Run(context.Background(), nil, IO{Stdout: &stdout, Stderr: &stderr}); code != 0 {
@@ -1208,7 +1215,7 @@ func TestDoctorRunUsesCustomSkillDirectoryForBothChecks(t *testing.T) {
 	}
 	for _, want := range []string{
 		"skill discoverable: PASS · skill installed",
-		"skill manual current: PASS · skill manual current (v0.3.0)",
+		"skill manual current: PASS · skill manual current (v0.3.0, 1 files verified against this binary's own tree)",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Errorf("stdout missing %q:\n%s", want, stdout.String())
@@ -1256,29 +1263,43 @@ func TestDoctorCheckSkillManualCurrent_OlderManual_Advisory(t *testing.T) {
 	}
 }
 
+// TestDoctorCheckSkillManualCurrent_UpToDate_Clean is judge-the-thing-2026-08
+// P5 §8 #1's round-trip: a tree written by installSkillTree from THIS
+// binary's own embed, stamped with THIS binary's version, must be a clean
+// PASS carrying the tree-verified note — never a bare stamp-only PASS, which
+// is exactly the wording a forgotten cmd/a2a wiring line degrades to (§8
+// #10).
 func TestDoctorCheckSkillManualCurrent_UpToDate_Clean(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	target := filepath.Join(root, skillDefaultDir)
-	if err := os.MkdirAll(target, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(target, skillProvenanceFile), []byte(skillProvenance("0.3.0")), 0o644); err != nil {
+	if _, err := installSkillTree(skill.Files, target, "0.3.0", false); err != nil {
 		t.Fatal(err)
 	}
 
 	cmd := NewDoctorCommand(host.NewFakeHost(), "0.3.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
 	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
+	cmd.SkillFiles = skill.Files
 
 	ok, detail := cmd.doctorCheckSkillManualCurrent()
 	if !ok {
 		t.Fatalf("want pass, got fail: %s", detail)
 	}
-	if !strings.Contains(detail, "skill manual current (v0.3.0)") {
-		t.Fatalf("detail = %q, want the current-manual note", detail)
+	if !strings.Contains(detail, "skill manual current (v0.3.0, ") ||
+		!strings.Contains(detail, "files verified against this binary's own tree") {
+		t.Fatalf("detail = %q, want the tree-verified current-manual note", detail)
 	}
 }
 
+// TestDoctorCheckSkillManualCurrent_UnparseableProvenance_VersionUnknown
+// covers the OWNED case: the a2ahub provenance marker is present (so
+// skillTargetState reports owned=true and this check has standing to judge
+// the tree), but the version stamp itself is garbled. Before P5 the fixture
+// here carried no marker at all, which — now that ownership gates the whole
+// check (spec 05 "The other side of owned is row 2") — would hit the FOREIGN
+// branch (TestDoctorCheckSkillManualCurrent_ForeignInstall_NotJudged) instead
+// of this one. The marker is added so this test still exercises what its
+// name promises.
 func TestDoctorCheckSkillManualCurrent_UnparseableProvenance_VersionUnknown(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -1286,7 +1307,8 @@ func TestDoctorCheckSkillManualCurrent_UnparseableProvenance_VersionUnknown(t *t
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(target, skillProvenanceFile), []byte("not a real provenance file\n"), 0o644); err != nil {
+	garbled := skillProvenanceTag + "\nnot a real provenance file\n"
+	if err := os.WriteFile(filepath.Join(target, skillProvenanceFile), []byte(garbled), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1312,6 +1334,49 @@ func TestDoctorCheckSkillManualCurrent_UnparseableProvenance_VersionUnknown(t *t
 	}
 }
 
+// doctorSentinelFS fails the test the moment ANYTHING is read from it — the
+// tooth for judge-the-thing-2026-08 P5 §8 #8's second half: a NON-owned
+// directory must never be walked at all, not merely "walked and ignored".
+type doctorSentinelFS struct {
+	t *testing.T
+}
+
+func (s doctorSentinelFS) Open(name string) (fs.File, error) {
+	s.t.Helper()
+	s.t.Fatalf("doctorSentinelFS.Open(%q): a non-owned skill directory must never be read from the embedded tree", name)
+	return nil, fs.ErrNotExist
+}
+
+// TestDoctorCheckSkillManualCurrent_ForeignInstall_NotJudged is spec 05 §0 row
+// 2: a non-empty directory WITHOUT the a2ahub provenance marker is someone
+// else's, and doctor has no standing to judge it — not "unparseable", not
+// "version unknown", simply not our tree to read. Before P5, this exact
+// fixture (a PROVENANCE.md with no marker) hit the "no version stamp" branch
+// and reported a verdict about a tree this tool never installed.
+func TestDoctorCheckSkillManualCurrent_ForeignInstall_NotJudged(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	target := filepath.Join(root, skillDefaultDir)
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, skillProvenanceFile), []byte("not a real provenance file\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewDoctorCommand(host.NewFakeHost(), "0.3.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
+	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
+	cmd.SkillFiles = doctorSentinelFS{t: t}
+
+	ok, detail := cmd.doctorCheckSkillManualCurrent()
+	if !ok {
+		t.Fatalf("want pass (not our tree to judge), got fail: %s", detail)
+	}
+	if !strings.Contains(detail, "not judged") {
+		t.Fatalf("detail = %q, want it to say the directory is not judged", detail)
+	}
+}
+
 // TestDoctorSkillManualNamesADevBuildRatherThanSayingVersionUnknown is the case
 // that actually fires in normal development, every single time: a dev build
 // stamps `(a2a dev)`, the version pattern requires a leading digit, and the row
@@ -1329,9 +1394,10 @@ func TestDoctorSkillManualNamesADevBuildRatherThanSayingVersionUnknown(t *testin
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Verbatim from what skillProvenance writes on a dev build.
-	body := "Written by `a2a skill install` / `a2a init` (a2a dev).\n"
-	if err := os.WriteFile(filepath.Join(target, skillProvenanceFile), []byte(body), 0o644); err != nil {
+	// skillProvenance("dev") itself, not a hand-typed excerpt — the marker
+	// tag it carries is what makes this an OWNED install now that ownership
+	// gates the whole check (spec 05 "The other side of owned is row 2").
+	if err := os.WriteFile(filepath.Join(target, skillProvenanceFile), []byte(skillProvenance("dev")), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

@@ -38,3 +38,26 @@ stdout 'statusline wiring: PASS'
 # `--space` is explicitly rejected (v2, D-030) — never silently ignored.
 ! exec a2a doctor --space
 stderr 'not available'
+
+# judge-the-thing-2026-08 P5 (spec 05 §8 #10/#11): "skill manual current" now
+# walks the installed tree against THIS BINARY's own embedded skill.Files
+# once the stamp names this binary's own version — never a bare stamp-only
+# PASS again. §8 #10 requires the STABLE SUBSTRING assertion below and NEVER
+# the literal file count: a 36th skill file must red no test but this one,
+# and this is not it. Asserting the NOTE rather than just the PASS status is
+# the point — a forgotten `cmd.SkillFiles = skill.Files` line in
+# cmd/a2a/wire.go degrades to the "wires no embedded skill tree" advisory,
+# which this line would catch by NOT matching.
+exec a2a skill install
+stdout 'installed'
+exec a2a doctor
+stdout 'skill manual current: PASS · skill manual current \(v'$A2A_STAMPED_VERSION_RE', .* files verified against this binary''s own tree\)'
+
+# §8 #11: delete one reference file the tag ships — seeded on disk with
+# `rm`, never by running an older binary (once P4 lands, the bug that used
+# to PRODUCE this state cannot reproduce it, and this fixture must outlive
+# that bug) — and doctor must FAIL, naming the deleted path, exit 1.
+rm .a2ahub/skill/reference/notify.md
+! exec a2a doctor
+stdout 'skill manual current: FAIL:'
+stdout 'reference/notify.md'

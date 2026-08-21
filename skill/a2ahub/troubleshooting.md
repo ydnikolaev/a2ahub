@@ -67,7 +67,7 @@ Twelve rows can print `PASS · <note>`:
 | `stuck green PRs` | open-PR state could not be read, so the result is unknown rather than healthy |
 | `codeowners resolvable` | GitHub's CODEOWNERS diagnostics could not be read, so the result is unknown rather than healthy |
 | `skill discoverable` | no skill installed, or installed but no agent surface links it |
-| `skill manual current` | the installed manual is older than the binary |
+| `skill manual current` | always — the installed manual is older or newer than the binary, is a `dev` build, or — once the stamp names this binary — its on-disk tree was walked against the embed and matches (this row never returns a bare `PASS` with no note) |
 | `threads intact` | the space holds artifacts written before threads existed, so they carry no `thread:` |
 | `skipped mirror files` | a file in the mirror could not be decoded, so it is missing from every read verb's output |
 | `notification components` | notifications are not enabled, or this build has no notification probe wired |
@@ -80,9 +80,9 @@ own CI sends. `notification components` just above them is the LOCAL plane
 (macOS, VS Code). Two planes, adjacent names; see
 [notifications.md](notifications.md) for which is which.
 
-Six of those rows — `participant avatars`, `space scaffolding current`, both
-`skill` rows, `threads intact` and `skipped mirror files` — can **never** FAIL.
-The other ten can.
+Five of those rows — `participant avatars`, `space scaffolding current`,
+`skill discoverable`, `threads intact` and `skipped mirror files` — can
+**never** FAIL. The other eleven can.
 
 `threads intact` and `skipped mirror files` never FAIL for the same reason and it is worth understanding,
 because it changes what you do about the note: **neither condition is
@@ -161,7 +161,7 @@ tripwire now asserts the ORDER, not only the membership and the count.
 | **notification components** | Every channel enabled for this project has an installed component with a compatible CLI handshake; macOS permission/login-item state is healthy when available. | The companion is absent, version-skewed, permission-denied, awaiting the user's Gatekeeper decision, or its login item is missing. Run `a2a notifications status --probe --json`, then repeat `a2a notifications install --channel <channel>` to repair it. For macOS `approval-required`, the human opens A2A Notifier once and explicitly chooses **System Settings → Privacy & Security → Open Anyway**; never clear quarantine or disable Gatekeeper for them. |
 | **statusline wiring** | The `git` binary is on `PATH` (the prerequisite for §7.5's hub-less statusline-refresh fallback). | `git` is not on `PATH`, so the statusline's git-fetch fallback refresh cannot run. |
 | **skill discoverable** | The `a2ahub` skill tree is installed and reachable by your agent harness. | Advisory only — this row never FAILs. It reports whether a skill is installed at all. |
-| **skill manual current** | The installed skill's generated reference matches this binary's own command catalog. | Advisory only — this row never FAILs. A note here means the installed manual describes a different binary version; `a2a skill install` refreshes it. |
+| **skill manual current** | Whether the installed skill's on-disk tree matches THIS BINARY's own embedded copy — but only once the version stamp names this binary's own version; a stamp naming a different release compares against a tree this binary does not carry, so that case is answered from the stamp alone, never from a tree walk. | A stamp that is honestly older, newer, or from a `dev` build is not a FAIL — that PASSes with its own note (`a2a skill install` fixes an older one; a `dev` note only ever fires when its own tree walk finds drift). **Once the stamp names this binary, a FAIL means the on-disk tree disagrees with the embed** — a file is missing, a file's bytes differ, or a file exists on disk that the binary does not ship — and names the differing paths (up to five, then a count). The remedy is `a2a skill install`, and it says plainly that the reinstall **overwrites local edits** — a hand-edited file under an otherwise a2ahub-owned install is exactly the case this FAILs for. A directory with no a2ahub provenance marker is someone else's and is never judged at all. |
 | **automation coverage** | Nothing — and it says so. It names the two automations `onboarding.md` §8.6 recommends (a harness session-start hook, and a scheduled `a2a-poll.yml` in the PARTICIPANT's own repository) and states that doctor cannot observe either: the first is your harness's own config, which D-021 forbids a2a to read or write, and the second lives in a repository doctor is never pointed at. | It cannot FAIL. Always PASS-with-advisory, because a FAIL would claim doctor saw a broken state it structurally cannot see, and a bare PASS would be silent about something every new participant is told to set up. Check both by hand. |
 | **notify-routes** | Every `notification_routes[]` entry in the space's `space.yaml` is well-formed and names a participant the manifest actually lists. | A route is malformed, or its `for:` names a system absent from `participants[]`. The space's own PR gate refuses both (POL-021 / REF-022), so this row failing means a route reached `main` before the rule existed, or the manifest changed under it. Fix the route in `space.yaml` through the normal write funnel. |
 | **notify-secret** | Every secret a route names exists on the space repo. **Presence only — doctor never reads a secret's value.** | A route names a secret the repo does not hold, so its messages cannot be sent. Run `a2a notify setup`, or set it directly with `gh secret set <NAME> --repo <space-repo>`. A route with no secret configured is not an error until it has one to lose. |

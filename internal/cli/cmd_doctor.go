@@ -13,6 +13,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -65,6 +66,19 @@ type DoctorCommand struct {
 	// (doctorCheckScaffoldingCurrent) reports "could not be checked" rather
 	// than nil-panicking or silently skipping when this is unset.
 	TemplateFiles fs.FS
+
+	// SkillFiles is the embedded skill/a2ahub/ tree (skill.Files, the same
+	// embed `a2a skill install` and `a2a init` write from) — the authority
+	// "skill manual current" walks against once a stamp names THIS binary's
+	// own version (judge-the-thing-2026-08 P5). Exported and left NIL by
+	// NewDoctorCommand, same DI convention as TemplateFiles: the lead wires
+	// it post-construction in cmd/a2a (`cmd.SkillFiles = skill.Files`)
+	// because internal/cli must not import the skill package directly. Left
+	// unwired the row degrades to an advisory "this build wires no embedded
+	// skill tree" rather than failing — a forgotten wire.go line must never
+	// silently upgrade to a green PASS carrying the tree-verified note (§8
+	// #10's own point).
+	SkillFiles fs.FS
 
 	// The following are real-implementation-backed seams (rails DI):
 	// NewDoctorCommand defaults every one of them to the real internal/space
@@ -1475,16 +1489,45 @@ var doctorSkillManualVersionPattern = regexp.MustCompile(`a2a ([0-9][^)]*)\)`)
 // which is the argument for having written the test before trusting the regexp.
 var doctorSkillManualStampPattern = regexp.MustCompile(`\(a2a ([^)]+)\)`)
 
-// doctorCheckSkillManualCurrent is P31 wave 5's out-of-band-update catch: an
-// `a2a update` that swapped the binary but was interrupted before (or never
-// reached, e.g. a manually-copied binary replacing the installed one)
-// refreshing the installed skill leaves the manual stamped to an OLDER
-// version than the binary now running. Never a hard FAIL — a stale manual is
-// a nudge (advisory on PASS), matching doctorCheckSkillDiscoverable's own
-// advisory-on-PASS convention; an absent install is simply not this check's
-// concern (nothing to compare).
+// doctorCheckSkillManualCurrent is P31 wave 5's out-of-band-update catch,
+// closed by judge-the-thing-2026-08 P5: reading only PROVENANCE.md's version
+// STAMP against the binary version answers a question about a NOTE attached
+// to the tree, never about the tree itself, and every branch used to return
+// `true` — the row could not fail at all. `refreshInstalledSkill` used to
+// write the OLD binary's embedded tree stamped with the NEW version in one
+// call (fixed by P4, `internal/cli/cmd_update.go`); an interrupted update, a
+// binary swapped by hand, a downgrade, or a hand-edit all reach the same
+// disagreeing state, and this row is the only thing that ever looks at the
+// TREE to catch it.
+//
+// The walk is decisive ONLY when the stamp names THIS binary's own version
+// (see "The equality rows 3 and 4 stand on" in spec 05 — `skillProvenance`
+// and this check's own stamp regexp share one package-level `version` value
+// passed at both call sites in cmd/a2a/wire.go, §8 #14 pins the standing
+// dependency): a stamp naming a DIFFERENT version names a tree this binary
+// does not have, so any disk/embed difference there is the expected
+// consequence of comparing against the wrong referent, never evidence of a
+// contradiction. `dev` is the one deliberate exception — the stamp says
+// nothing by construction, so the walk is the ONLY signal that exists and it
+// always runs, but it can still never FAIL (there is no claim to
+// contradict; see spec 05 §0 "Row 8 is the fork this spec takes
+// deliberately").
+//
+// `skillTargetState` (cmd_skill.go) decides ownership FIRST: a non-empty,
+// unowned directory (no a2ahub provenance marker) is someone else's, and
+// this check has no standing to judge a tree it never installed — it PASSes
+// without reading it, let alone walking it.
 func (c *DoctorCommand) doctorCheckSkillManualCurrent() (bool, string) {
-	data, err := os.ReadFile(filepath.Join(c.projectRoot, filepath.FromSlash(c.skillDir), skillProvenanceFile))
+	target := filepath.Join(c.projectRoot, filepath.FromSlash(c.skillDir))
+	nonEmpty, owned, err := skillTargetState(target)
+	if err != nil || !nonEmpty {
+		return true, " · no skill installed"
+	}
+	if !owned {
+		return true, " · skill directory is not an a2ahub-managed install — not judged"
+	}
+
+	data, err := os.ReadFile(filepath.Join(target, skillProvenanceFile)) //nolint:gosec // reason: target is the resolved skill-install directory this binary itself computes from project config, never caller-supplied input.
 	if err != nil {
 		return true, " · no skill installed"
 	}
@@ -1504,8 +1547,7 @@ func (c *DoctorCommand) doctorCheckSkillManualCurrent() (bool, string) {
 	match := doctorSkillManualVersionPattern.FindStringSubmatch(string(data))
 	if match == nil {
 		if len(stamp) > 1 && stamp[1] == "dev" {
-			return true, " · skill installed by a development build (a2a dev), so there is no version to " +
-				"compare — expected when running from source"
+			return true, c.doctorSkillManualDevNote(target)
 		}
 		if len(stamp) > 1 {
 			return true, fmt.Sprintf(" · skill installed, but its version stamp %q is not a release "+
@@ -1529,7 +1571,264 @@ func (c *DoctorCommand) doctorCheckSkillManualCurrent() (bool, string) {
 			" · skill manual is v%s, binary is v%s — run 'a2a skill install'",
 			manualVersion, c.binaryVersion)
 	}
-	return true, fmt.Sprintf(" · skill manual current (v%s)", manualVersion)
+	// Row 6 (spec 05 §0): a manual stamped NEWER than this binary used to
+	// collapse into "skill manual current", which read a future release's
+	// manual as current. `older` false does not mean equal — check the other
+	// direction before treating the stamp as this binary's own.
+	if newer, newerErr := version.OlderThan(c.binaryVersion, manualVersion); newerErr == nil && newer {
+		return true, fmt.Sprintf(
+			" · skill manual is v%s, newer than this binary (v%s) — 'a2a skill install' would write an OLDER manual",
+			manualVersion, c.binaryVersion)
+	}
+
+	// Equal — the stamp names THIS binary, so a disk/embed difference is
+	// real evidence, not an artifact of comparing against the wrong release.
+	return c.doctorSkillManualWalk(target, manualVersion)
+}
+
+// doctorSkillManualDevNote answers row 8 (spec 05 §0): a `dev` stamp names no
+// version to compare, so the tree walk is the ONLY signal that exists and it
+// always runs — but it can never FAIL (there is no claim to contradict).
+func (c *DoctorCommand) doctorSkillManualDevNote(target string) string {
+	inSync := " · skill installed by a development build (a2a dev), so there is no version to " +
+		"compare — expected when running from source"
+	if c.SkillFiles == nil {
+		return inSync
+	}
+	res, err := doctorSkillTreeCompare(c.SkillFiles, target)
+	if err != nil || res.undecidable != "" || !res.hasDiff() {
+		return inSync
+	}
+	return fmt.Sprintf(" · skill installed by a development build (a2a dev); its tree differs from this "+
+		"binary's embedded tree in %d files (%s) — 'a2a skill install' rewrites them",
+		res.diffCount(), doctorSkillTreeNames(res, 5))
+}
+
+// doctorSkillManualWalk answers rows 3/4/10 (spec 05 §0): the stamp names
+// THIS binary, so the embedded tree is the authority the disk install is
+// judged against. c.SkillFiles == nil is undecidable-not-a-guess (the
+// TemplateFiles/doctorCheckScaffoldingCurrent precedent) — a forgotten
+// cmd/a2a wiring line must degrade to a named advisory, never to a silent
+// PASS carrying the tree-verified note (§8 #10).
+func (c *DoctorCommand) doctorSkillManualWalk(target, manualVersion string) (bool, string) {
+	if c.SkillFiles == nil {
+		return true, " · skill tree unverified: this build wires no embedded skill tree"
+	}
+	res, err := doctorSkillTreeCompare(c.SkillFiles, target)
+	if err != nil {
+		// The embed side failed to walk, which should not happen against a
+		// compiled-in tree — degrade to the stamp-only wording rather than
+		// surfacing a raw error (doctorCheckScaffoldingCurrent's own
+		// discipline: a class, never the raw message).
+		return true, fmt.Sprintf(" · skill manual current (v%s)", manualVersion)
+	}
+	if res.undecidable != "" {
+		return true, fmt.Sprintf(" · skill manual current (v%s) — tree could not be fully verified: "+
+			"%s could not be read", manualVersion, res.undecidable)
+	}
+	if !res.hasDiff() {
+		return true, fmt.Sprintf(" · skill manual current (v%s, %d files verified against this binary's own tree)",
+			manualVersion, res.total)
+	}
+	return false, doctorSkillTreeFailLine(manualVersion, res)
+}
+
+// doctorSkillTreeResult is doctorSkillTreeCompare's verdict: three
+// difference classes (spec 05 "What is compared, exactly" — reported
+// separately because they are three different defects), each sorted
+// lexicographically within itself (map iteration order would flap and break
+// output stability, spec 05 §8 #9). total is the count of files the embed
+// side carries — note text only, never an assertion target (§8 #10: a 36th
+// skill file must never red the stable-substring assertion). undecidable
+// carries the relative path of a disk file the walk could not read
+// (permissions, a dangling symlink) — the walk stops there rather than
+// guessing a classification for it.
+type doctorSkillTreeResult struct {
+	total       int
+	missing     []string // present in the embed, absent on disk
+	modified    []string // present in both, bytes differ
+	unexpected  []string // present on disk, absent from the embed
+	undecidable string
+}
+
+func (r doctorSkillTreeResult) hasDiff() bool {
+	return len(r.missing) > 0 || len(r.modified) > 0 || len(r.unexpected) > 0
+}
+
+func (r doctorSkillTreeResult) diffCount() int {
+	return len(r.missing) + len(r.modified) + len(r.unexpected)
+}
+
+// doctorSkillTreeReadDisk reads path, distinguishing "genuinely absent"
+// (Lstat itself says nothing is there) from "present but unreadable"
+// (permission denied, or a symlink whose target does not resolve) — the
+// latter is undecidable, never silently reclassified as missing.
+func doctorSkillTreeReadDisk(path string) (data []byte, undecidable bool) {
+	if _, err := os.Lstat(path); err != nil {
+		return nil, false // absent — the caller's missing/unexpected bookkeeping handles this
+	}
+	data, err := os.ReadFile(path) //nolint:gosec // reason: path is produced by filepath.WalkDir over the resolved skill-install directory, never caller-supplied input.
+	if err != nil {
+		return nil, true
+	}
+	return data, false
+}
+
+// doctorSkillTreeCompare walks c.SkillFiles the same way writeSkillTree does
+// (fs.WalkDir(files, "a2ahub") + the "a2ahub/" prefix strip, spec 05 §5 anti-
+// duplication — check and installer are proven to agree by this round-trip,
+// never by extracting a shared function) and diffs it against target, the
+// disk-side skill install. The one exemption is skillProvenanceFile at
+// target's OWN root — an exact string match against the existing constant,
+// never a suffix or basename match, so `reference/PROVENANCE.md` is NOT
+// exempt (spec 05 "The exclusion rule, and why it cannot widen"). The
+// returned error is reserved for the embed side failing to walk at all
+// (should not happen against a compiled-in tree); a disk-side read failure
+// is reported through result.undecidable instead, never as an error.
+func doctorSkillTreeCompare(files fs.FS, target string) (doctorSkillTreeResult, error) {
+	var res doctorSkillTreeResult
+
+	diskFiles := map[string]bool{}
+	walkErr := filepath.WalkDir(target, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			rel, relErr := filepath.Rel(target, p)
+			if relErr != nil {
+				rel = p
+			}
+			res.undecidable = filepath.ToSlash(rel)
+			return filepath.SkipAll
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, relErr := filepath.Rel(target, p)
+		if relErr != nil {
+			// This function's own contract, four lines up: a disk-side
+			// failure surfaces through res.undecidable, NEVER silently.
+			// Returning nil here dropped the file from diskFiles, so a file
+			// the walk found but could not place vanished from the
+			// comparison — and "unexpected" is precisely the verdict this
+			// check exists to produce. Same handling as the walk-error
+			// branch above.
+			res.undecidable = filepath.ToSlash(p)
+			return filepath.SkipAll
+		}
+		rel = filepath.ToSlash(rel)
+		if rel == skillProvenanceFile {
+			return nil
+		}
+		diskFiles[rel] = true
+		return nil
+	})
+	if res.undecidable != "" {
+		return res, nil
+	}
+	if walkErr != nil {
+		return res, walkErr
+	}
+
+	walkErr = fs.WalkDir(files, "a2ahub", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel := strings.TrimPrefix(strings.TrimPrefix(p, "a2ahub"), "/")
+		res.total++
+		embedData, readErr := fs.ReadFile(files, p)
+		if readErr != nil {
+			return readErr
+		}
+		if !diskFiles[rel] {
+			res.missing = append(res.missing, rel)
+			return nil
+		}
+		delete(diskFiles, rel)
+		diskData, undecidable := doctorSkillTreeReadDisk(filepath.Join(target, filepath.FromSlash(rel)))
+		if undecidable {
+			res.undecidable = rel
+			return fs.SkipAll
+		}
+		if !bytes.Equal(embedData, diskData) {
+			res.modified = append(res.modified, rel)
+		}
+		return nil
+	})
+	if res.undecidable != "" {
+		return doctorSkillTreeResult{total: res.total, undecidable: res.undecidable}, nil
+	}
+	if walkErr != nil {
+		return res, walkErr
+	}
+
+	for rel := range diskFiles {
+		res.unexpected = append(res.unexpected, rel)
+	}
+	sort.Strings(res.missing)
+	sort.Strings(res.modified)
+	sort.Strings(res.unexpected)
+	return res, nil
+}
+
+// doctorSkillTreeFailLine renders row 4 (spec 05 "The failure line"): a
+// single bounded, deterministic line naming the contradicted stamp, all
+// three class counts (including zeros, so the shape is stable), up to five
+// sorted class-labelled paths then "(+N more)", and a remedy that says
+// plainly that it overwrites local edits (spec 05 "The deliberate hand-
+// edit": the remedy destroys the edit, so the reader learns the real shape
+// of what they did).
+func doctorSkillTreeFailLine(stamp string, res doctorSkillTreeResult) string {
+	lead := fmt.Sprintf("skill tree does not match this binary (stamp says v%s)", stamp)
+	counts := fmt.Sprintf("%d missing, %d modified, %d unexpected", len(res.missing), len(res.modified), len(res.unexpected))
+
+	type labeled struct{ class, path string }
+	var all []labeled
+	for _, p := range res.missing {
+		all = append(all, labeled{"missing", p})
+	}
+	for _, p := range res.modified {
+		all = append(all, labeled{"modified", p})
+	}
+	for _, p := range res.unexpected {
+		all = append(all, labeled{"unexpected", p})
+	}
+	more := 0
+	if len(all) > 5 {
+		more = len(all) - 5
+		all = all[:5]
+	}
+	named := make([]string, 0, len(all))
+	for _, l := range all {
+		named = append(named, l.class+": "+l.path)
+	}
+	detail := strings.Join(named, "; ")
+	if more > 0 {
+		detail += fmt.Sprintf(" (+%d more)", more)
+	}
+	return fmt.Sprintf("%s: %s (%s) — run 'a2a skill install' (this OVERWRITES local edits)", lead, counts, detail)
+}
+
+// doctorSkillTreeNames renders up to limit sorted, unlabelled paths across
+// all three difference classes for the row 8 (`dev`) advisory, which never
+// FAILs and so never needs the class labels the failure line uses to name a
+// contradiction — dev has none to name.
+func doctorSkillTreeNames(res doctorSkillTreeResult, limit int) string {
+	names := make([]string, 0, res.diffCount())
+	names = append(names, res.missing...)
+	names = append(names, res.modified...)
+	names = append(names, res.unexpected...)
+	sort.Strings(names)
+	more := 0
+	if len(names) > limit {
+		more = len(names) - limit
+		names = names[:limit]
+	}
+	out := strings.Join(names, ", ")
+	if more > 0 {
+		out += fmt.Sprintf(" (+%d more)", more)
+	}
+	return out
 }
 
 // doctorCheckAutomationCoverage names the two automations

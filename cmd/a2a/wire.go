@@ -280,6 +280,7 @@ func buildCommands() map[string]command {
 		// advisory nobody set up is indistinguishable from one that has nothing
 		// to report.
 		cmd.TemplateFiles = spacetemplate.Files
+		cmd.SkillFiles = skill.Files // judge-the-thing-2026-08 P5: "skill manual current" walks this against the disk install once a stamp names this binary's own version
 		cmd.ParticipantAvatarStatus = func(login string) (bool, bool) {
 			return avatar.Cached(cacheDirOf(p), login), avatar.Supports(login)
 		}
