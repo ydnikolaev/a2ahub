@@ -5,6 +5,12 @@
 # lane-reason: it reads every .github/workflows/*.yml and compares them against
 #   its own execution list; any workflow edit can change its verdict, and it
 #   claims no path of its own.
+# lane-reads-opaque: the dogfood EXECUTES step and tooth T1 both `cat "$report"`,
+#   a file this script CREATES with mktemp and deletes — it is the validator's
+#   own JSON output, never a repository input, so no repo path can flip a
+#   verdict through it. Declared rather than silenced: the classifier is right
+#   that it cannot resolve the path, and an unresolved read that nobody explains
+#   is how a gate ends up judging something it never named.
 #
 # WHY THIS EXISTS, in one paragraph, because the cost is documented.
 #
@@ -658,7 +664,11 @@ teeth_fixture_dir() { # $1 = workflow.yml content; prints the fresh temp dir
 run_teeth() {
   # T1 — the real corpus. Expected RED, naming a command that lives ONLY
   # inside a literal block (release.yml's own release-notes guard) — the old
-  # `sed 's/.*run: //' | grep -v '^|$'` extraction has never read this line.
+  # The ORIGINAL extraction never read this line: it stripped through
+  # "run: ", which leaves a bare pipe for a literal block, and discarded that.
+  # (The pipeline is described rather than quoted here on purpose — a shell
+  # snippet inside a comment is parsed by the lane classifier as a real read,
+  # and this one made it resolve six English words as file arguments.)
   # The marker is the guard's own `[ ! -f ... ]` test, not the `notes=`
   # assignment two lines above it: P1's refinement (2026-08-21) correctly
   # drops a pure assignment as non-command noise, so the assignment itself no
