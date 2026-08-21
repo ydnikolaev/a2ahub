@@ -513,7 +513,7 @@ func TestFunnelSubmitReplayOfAlreadyMergedWriteIsNotBlockedByPossession(t *testi
 
 	req := newTestSubmitRequest(fx, "axon", l)
 	req.ArtifactIDs = []string{req.ArtifactID}
-	req.OperationKey = operation.Respond("axon", "agent", "bot", []string{req.ArtifactID}, "answered", nil, nil, nil, operation.RespondIncompleteness{})
+	req.OperationKey = operation.Respond("axon", "agent", "bot", []string{req.ArtifactID}, "answered", nil, nil, nil, operation.RespondIncompleteness{}, nil)
 	req.Files = []FileWrite{
 		{Path: l.Exchange(req.ArtifactID), Content: []byte(possessionWorkRequestBody(packageID, digest))},
 		{Path: l.EventFile("2026", "01J8QYK2Z3ABCDEFGHJKMNPQRU"), Content: []byte("event: submit\n")},

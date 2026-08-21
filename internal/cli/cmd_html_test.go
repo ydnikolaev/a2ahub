@@ -95,6 +95,12 @@ func TestHtmlCommandDemoJSONMatchesIndentedCompatibilityGolden(t *testing.T) {
 		t.Fatalf("golden does not pin two-space indentation plus one trailing newline")
 	}
 	if !bytes.Equal(stdout.Bytes(), want) {
-		t.Fatalf("a2a html --demo --json bytes differ from compatibility golden: got %d bytes, want %d", stdout.Len(), len(want))
+		t.Fatalf("a2a html --demo --json bytes differ from compatibility golden: got %d bytes, want %d.\n"+
+			"This golden embeds the release-notes corpus, so ANY releasenotes/*.yaml edit — a new file, or a\n"+
+			"date stamped at release time — moves it. Regenerate with:\n"+
+			"  go test ./internal/cli/ -run %s -update-html-demo-json-golden\n"+
+			"and commit the result alongside the notes change that caused it. Naming the remedy here because\n"+
+			"this test has now gone stale twice for the same reason and the message said only that bytes differ.",
+			stdout.Len(), len(want), t.Name())
 	}
 }

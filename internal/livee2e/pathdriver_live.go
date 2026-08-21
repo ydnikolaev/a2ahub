@@ -571,7 +571,7 @@ func driveRespondBundle(ctx context.Context, t *testing.T, h *harness, actor *ch
 func driveSecondRespondBundle(ctx context.Context, t *testing.T, h *harness, actor *checkout, path Path, idxCreate, idxSubmit, idxRespond int, parentID, result, distinguishingTitle, responseLocalName string, ids pathIDs) string {
 	t.Helper()
 	fields := map[string]string{"title": distinguishingTitle}
-	respondKey, respondBranch := respondOperationWithFields(actor.System, parentID, result, fields)
+	respondKey, respondBranch := respondOperationWithFields(actor.System, parentID, result, fields, nil)
 	args := append([]string{}, respondCommandArgs(parentID, result)...)
 	// respondCommandArgs' own last element is parentID; insert --field
 	// before it so parentID stays the trailing positional argument.

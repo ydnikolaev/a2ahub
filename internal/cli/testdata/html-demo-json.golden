@@ -8471,6 +8471,98 @@
             "scope": "none",
             "why": "Presentation only. No command, flag, schema or stored shape changes, and the dashboard is rendered fresh from the mirror on every run.\n"
           }
+        }
+      ]
+    },
+    {
+      "version": "0.24.0",
+      "released": "unreleased",
+      "headline": "Verdicts stop being read off claims, and the checks that would have noticed are driven by something",
+      "changes": [
+        {
+          "id": "RN-02400-0",
+          "kind": "fix",
+          "impact": "high",
+          "subject": "the notify workflow's optional limit input means unset when unset",
+          "detail": "`limit` was `type: number, required: false` with no default, beside a comment stating \"Empty means: let the CLI's own default decide\". A number type has no empty member. GitHub resolves the unset input to `0`, the guard tested for non-emptiness, `\"0\"` is non-empty, and every push failed with `--limit must be positive`.\nIt is now `type: string` with an explicit empty default and a two-stage guard: empty is skipped, a positive integer is forwarded, anything else is refused before `a2a` is invoked. The validation is hoisted above the range-mode branch, so `limit: 0` is refused under `--all` too.\nThe gate that judges these workflows gained a fifth invariant, and it reads BOTH reusable workflows: a `required: false` input over a non-string type must carry a default, and its description may not claim emptiness over a type with no empty member.\n",
+          "affects": [
+            "ci"
+          ],
+          "action": {
+            "scope": "space",
+            "why": "A space already updated to v0.23.0 must run `a2a space update` again once this release is tagged. A space that cannot wait can set `limit:` explicitly in its own `a2a-notify.yml` caller — one line, no release needed.\n"
+          }
+        },
+        {
+          "id": "RN-02400-1",
+          "kind": "fix",
+          "impact": "high",
+          "subject": "a2a update refreshes the skill with the binary it just installed",
+          "detail": "The refresh wrote the old process's embedded skill tree and stamped it with the version just installed, and the installer begins by removing the existing tree. So update did not merely fail to refresh the skill — it actively rewrote it to the previous version's content under the new version's stamp. The defect dates to 2026-07-23; v0.23.0 made it visible by adding a reference page the older tree lacks.\nThe refresh now execs the swapped binary, the way the post-update digest twenty lines above it already did.\n`a2a doctor`'s matching check no longer reads only the version stamp. It compares the installed TREE against the binary's own embedded one and can now FAIL, naming what is missing, modified or unexpected. Before this it returned a pass in every branch — it could not fail at all, which is why a downgraded tree looked healthy for a month.\n",
+          "affects": [
+            "cli"
+          ],
+          "action": {
+            "scope": "local",
+            "why": "Run `a2a skill install` once after updating to repair a tree an earlier `a2a update` downgraded. `a2a doctor` now tells you whether you need to.\n"
+          }
+        },
+        {
+          "id": "RN-02400-2",
+          "kind": "schema",
+          "impact": "normal",
+          "subject": "a response can name the delivery it announces, and an unlanded package is refused",
+          "detail": "`respond --delivers \u003cDP-id\u003e` records which data package a response announces. The write funnel resolves every named package against the space's main branch and refuses the response when one has not landed, naming the package and REF-024. Both write surfaces inherit the refusal, because it lives below them rather than in either one.\nA response carrying no `delivers` is untouched. `delivered` is the ordinary result word for any work request, and the declared conformance paths use it with no package anywhere near them — an earlier, cruder version of this check reddened five of them and was reverted.\nTwo responses on one parent that differ only in the package they announce are two distinct acts and now derive distinct operation keys. A response carrying no packages derives exactly the key it derived before this field existed, so nothing already committed changes branch.\n",
+          "affects": [
+            "contracts",
+            "cli"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "No action. The flag is optional and additive; every existing response and every already-merged artifact is unaffected.\n"
+          }
+        },
+        {
+          "id": "RN-02400-3",
+          "kind": "policy",
+          "impact": "normal",
+          "subject": "consumption observed from committed artifacts informs retire and deprecate",
+          "detail": "`retire` now names systems whose consumption is observed but undeclared, and PROCEEDS — observed consumption informs, and gates nothing. No new refusal, no new code, no path that can block on it alone.\nThe other half is the one that matters to the consumer: a deprecation announcement now reaches the inbox of a system with observed-but-undeclared consumption, so it finds out before the contract is gone. Both surfaces report it; a rule one surface can express and the other cannot is a shape this release is partly about removing.\nWith no deprecation announcement present, observed consumption changes nothing anywhere.\n",
+          "affects": [
+            "contracts"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "No action. Declaring consumption in `consumes.yaml` remains the right thing to do and is what makes the observation unnecessary.\n"
+          }
+        },
+        {
+          "id": "RN-02400-4",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "a feedback record's meaning is its values, and every reader agrees",
+          "detail": "A record submitted from the authoring template could carry the template's own scaffolding comment on its `id:` line. Four readers — the sync, the corpus check, the intake policy and the publisher — compared sections byte-wise and refused a record nothing was wrong with.\nSubmission now normalizes the record so the scaffolding never reaches it, and every reader compares values. One shared adversarial corpus is asked of all of them, so two implementations of one guarantee cannot drift apart quietly.\n",
+          "affects": [
+            "cli"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "No action. Records already submitted are unaffected; the readers now agree about them either way.\n"
+          }
+        },
+        {
+          "id": "RN-02400-5",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "notify setup proves its checkout before it names a repository",
+          "detail": "Setup now proves the checkout is a space before any line naming a repository is printed, using the same read `notify verify` already performed — the two verbs could previously reach opposite conclusions from one file.\n\"This is not a space checkout\" and \"this space has no route yet\" stay distinct: the first tells you to change directory, the second to wait for a pull request, and the second still exits zero. A space checkout with no `origin` remote keeps printing the visible placeholder rather than refusing.\n",
+          "affects": [
+            "cli"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "No action. The refusal only fires where the previous behaviour was wrong."
+          }
         },
         {
           "id": "KI-01900-PROVIDER-TIER-DEFERRED",
