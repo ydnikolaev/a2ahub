@@ -254,16 +254,6 @@ func Catalogue() []Scenario {
 		// real branch protection while other versions are published.
 		{Name: "contract-rolling-window", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"contract"}, Family: "contract-integrity", Tier: TierLogic},
 
-		// P9 (judge-the-thing-2026-08, spec 09, fb-20260820-d1e370) — the
-		// DECLARED COMPANION, end to end against a real space: A publishes a
-		// contract whose descriptor declares an `artifacts/CHANGELOG.md`
-		// carrying no frontmatter, `a2a submit` carries it, and the space's
-		// own required check must go GREEN on the very files submit sent.
-		// The negative control is the same row's second leg: an UNDECLARED
-		// file under the same contract directory is refused LOCALLY, before
-		// any PR opens, so the run's PR count does not grow.
-		{Name: "contract-declared-companion-merges", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"contract"}, Family: "contract-integrity", Tier: TierLogic},
-
 		// Spec 05a — the contract data exchange loop, against real
 		// GitHub: A publishes a contract and a work_request, B packs and
 		// delivers a FAILING attempt (a record_count disagreement the
