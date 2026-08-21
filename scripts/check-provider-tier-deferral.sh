@@ -58,6 +58,73 @@ set -euo pipefail
 OVERRIDE_MARKER_RE='^consecutive-deferral-acknowledged:[[:space:]]*[0-9]+([[:space:]]|$)'
 OVERRIDE_MARKER_EXAMPLE='consecutive-deferral-acknowledged: <N> — <who authorized shipping the Nth in a row, and why waiting was judged the larger risk>'
 
+# THE SIGNATURE MUST NAME WHAT IT SIGNS FOR. Two more parseable lines, siblings
+# of the marker above, in the same record — not a new mechanism.
+#
+# THE INCIDENT, MEASURED. v0.23.0's deferral record was authored 2026-08-14 and
+# signed for a candidate carrying, in its own words, "One change:
+# DeliverDataPackage looks its transport driver up in the registry", stating the
+# candidate "does NOT touch the surfaces that put v0.22.0 in the mandatory
+# table" and that "nothing needs it in the field". **v0.23.0 shipped 44
+# release-note entries. The record named ZERO of them.** By ship date it carried
+# two whole epics, a write-funnel validation change on both write surfaces and a
+# behaviour break. This gate — the one standing between a candidate and a
+# release cut with NO live provider evidence — was green throughout, and still
+# green after a human rewrote the record by hand on 2026-08-20. It never
+# participated in either direction, because it read presence, a filename and one
+# number, and never opened the record's prose.
+#
+# THIS DOES NOT INTRODUCE A DISCIPLINE; IT MAKES AN EXISTING ONE CHECKABLE.
+# v0.19.1's record already names the candidate SHA, the tree, the transcript's
+# own SHA-256 and the logic-tier digest as concrete values, by hand. v0.24.0's
+# already carries the SHA, the tree, the transcript path and a "what changed →
+# which unproven row covers it" table. `LOGIC_TIER_ROWS_SHA256` is the closest
+# ancestor in the runbooks: a digest of what was TESTED, travelling beside the
+# claim so a later reader can tell the catalogue moved. `covers-notes:` is the
+# same idea applied to what was AUTHORIZED.
+#
+# THE GAP, STATED RATHER THAN PAPERED OVER. A change that ships carrying NO
+# release-note entry is invisible to this binding. The notes are the release's
+# own machine-readable statement of what it carries and the SSOT three other
+# readers already use, but their completeness is the notes corpus's own
+# invariant (`release-notes-freshness`, `release-record`), not this gate's. A
+# green here means "the record names everything the notes declare" — never "the
+# record describes the diff".
+#
+# THE VALUE IS IDS AND NOTHING ELSE — no prose tail. The streak marker above
+# ends in "— <who authorized …>", and that shape must NOT be copied here: with a
+# tail allowed, every word of it becomes a phantom id and the set comparison
+# stops meaning anything. An unrecognized token is reported verbatim as
+# named-but-not-shipped, which is the honest reading of a typo.
+#
+# EXACTLY ONE LINE. The range form covers 44 ids in 24 characters, so a second
+# line buys nothing and would reintroduce the ambiguity the streak marker's own
+# history already paid for (a corrected signature APPENDED instead of edited —
+# see case 8).
+#
+# THE RANGE FORM IS WEAKER THAN THE LIST, AND THE DIFFERENCE IS WORTH KNOWING.
+# `A..B` is resolved by POSITION in the notes file's own declared order (never
+# by arithmetic on the id — the corpus has no single scheme). An entry APPENDED
+# after B therefore reds, which is the case that matters; but an entry INSERTED
+# between A and B after signing is covered silently. An enumeration cannot be
+# grown behind the operator's back, so a record that can afford the characters
+# should enumerate — v0.24.0's does, and says why.
+COVERS_MARKER_RE='^covers-notes:[[:space:]]*[^[:space:]]'
+COVERS_MARKER_EXAMPLE='covers-notes: RN-02400-0, RN-02400-1, RN-02400-2'
+COVERS_MARKER_RANGE_EXAMPLE='covers-notes: RN-02400-0..RN-02400-9'
+
+# The exact published candidate the record governs. Checked for PRESENCE only,
+# deliberately: there is no promoted SHA to compare against offline, and the
+# field is informational until release time, when the runbook's own three-object
+# assertion (candidate SHA == public ref SHA == tree hash, in
+# docs/runbooks/publish-to-public.sh) is what compares it.
+#
+# NO SHAPE CHECK, ON PURPOSE. A 40-hex regex would refuse v0.24.0's own honest
+# form, which names the candidate branch `a2a-candidate/1bd62f3a1e85` beside the
+# full SHA — that is A1's "never parse the scheme" trap, one field over.
+CANDIDATE_SHA_MARKER_RE='^candidate-sha:[[:space:]]*[^[:space:]]'
+CANDIDATE_SHA_EXAMPLE='candidate-sha: 1bd62f3a1e85dff151f5f798b674c422ef8f123f'
+
 # The unix timestamp a path was first ADDED to git, or empty if the path has
 # never been committed (still untracked / only staged). Filenames are not
 # comparable across the two kinds of artifact this gate orders (one carries a
@@ -186,10 +253,253 @@ live_e2e_names_version() {
   return 1
 }
 
+# Every release-note id a notes file DECLARES, one per line, in the file's own
+# declared order.
+#
+# THE ONE THING NOT TO GET WRONG (spec §11 A1): this NEVER parses the id scheme.
+# `id` is a bare {"type": "string"} in
+# schemas/release-notes/v1/release-notes.schema.json, and the RN-<versionkey>-<n>
+# shape is convention only — it is NOT consistent across the corpus. RN-0900-1,
+# RN-01200-1, RN-01900-0 and RN-02300-36 do not share a padding, so a regex like
+# RN-\d{5}-\d+ reds on v0.9.0's own notes. What comes out of here is a list of
+# literal strings, compared as strings; the gate never needs to know what an id
+# means. The indentation tolerance is the same story from the other side: older
+# files indent the sequence under `changes:` by two spaces, newer ones do not,
+# and both are valid YAML.
+notes_ids() {
+  awk '
+    /^[ \t]*-[ \t]+id:[ \t]*./ {
+      sub(/^[ \t]*-[ \t]+id:[ \t]*/, "")
+      sub(/[ \t\r]+$/, "")
+      sub(/^"/, ""); sub(/"$/, "")
+      sub(/^\047/, ""); sub(/\047$/, "")
+      if (length($0)) print
+    }
+  ' "$1"
+}
+
+# The 1-based position of an id inside a newline-delimited list, or empty when
+# the list does not contain it. `|| true` covers both grep's no-match exit and a
+# SIGPIPE from the producing printf; a bare failure inside `$( )` under `set -e`
+# would kill the script mid-refusal, which is the mute-gate failure this file
+# already carries two warnings about.
+id_position() {
+  local hit
+  hit="$(printf '%s\n' "$1" | grep -m1 -nxF -e "$2" || true)"
+  [ -n "$hit" ] || return 0
+  printf '%s' "${hit%%:*}"
+}
+
+# The core of this phase: does the record that signs for a release NAME what it
+# signs for? A SET COMPARISON between the id strings the notes file declares and
+# the id strings the record names — in both directions.
+#
+# Returns 1 with a refusal on any of: an unreadable or id-less notes file
+# (measurement-failed, NOT a domain verdict), a missing/duplicated/placeholder
+# `covers-notes:` line, an unresolvable or inverted range, a shipped id the
+# record does not name, a named id the release does not ship, or a
+# missing/placeholder `candidate-sha:`.
+check_record_covers_release() {
+  local record="$1" notes="$2" version="$3"
+
+  # MEASUREMENT BEFORE VERDICT. A gate that could not read its input must say
+  # THAT, and must not answer the domain question in either direction — green
+  # would be a claim it did not earn, and a domain FAIL would blame the record
+  # for the reader's failure.
+  if [ ! -r "$notes" ]; then
+    echo "provider-tier-deferral: measurement-failed — $notes exists in the release list but could not be read, so what v$version carries is unknown." >&2
+    echo "This is NOT a verdict about $record. The gate could not measure; it will not guess, and 'could not measure' is never green." >&2
+    return 1
+  fi
+  local shipped
+  shipped="$(notes_ids "$notes")"
+  if [ -z "$shipped" ]; then
+    echo "provider-tier-deferral: measurement-failed — $notes declares no release-note ids (empty, truncated, or not a release-notes/v1 document)." >&2
+    echo "The schema requires at least one entry under changes:, each with an id. There is nothing to compare $record against, so the" >&2
+    echo "coverage of v$version is UNJUDGED — which is not the same as covered. Fix the notes file." >&2
+    return 1
+  fi
+  local shipped_count
+  shipped_count="$(printf '%s\n' "$shipped" | wc -l | tr -d '[:space:]')"
+
+  local covers_count
+  covers_count="$(grep -cE "$COVERS_MARKER_RE" "$record" || true)"
+  [ -n "$covers_count" ] || covers_count=0
+
+  if [ "$covers_count" -eq 0 ]; then
+    echo "provider-tier-deferral: FAIL — $record signs for v$version but never says what it signs for: it carries no covers-notes: line," >&2
+    echo "while v$version ships $shipped_count release-note entries. Named: 0 of $shipped_count." >&2
+    printf '%s\n' "$shipped" | sed 's/^/  - /' >&2
+    echo "" >&2
+    echo "Add exactly one line naming the entries the operator was shown before signing:" >&2
+    echo "  $COVERS_MARKER_EXAMPLE" >&2
+    echo "or, when the release is contiguous, the inclusive-range form (resolved against the notes file's own order):" >&2
+    echo "  $COVERS_MARKER_RANGE_EXAMPLE" >&2
+    echo "and, beside it, the candidate the record governs:" >&2
+    echo "  $CANDIDATE_SHA_EXAMPLE" >&2
+    echo "" >&2
+    echo "This is not a new discipline: v0.19.1's record already names the candidate SHA, the tree, the transcript's own SHA-256 and" >&2
+    echo "the logic-tier digest as concrete values, by hand, and v0.24.0's carries the SHA, the tree and a what-changed table. These" >&2
+    echo "lines make that voluntary practice checkable — the release-machinery twin of LOGIC_TIER_ROWS_SHA256, which already travels" >&2
+    echo "beside a transcript so a reader can tell the catalogue moved. v0.23.0 is why: its record described 'one change', the release" >&2
+    echo "shipped 44 entries, and this gate was green the whole time." >&2
+    return 1
+  fi
+
+  if [ "$covers_count" -gt 1 ]; then
+    echo "provider-tier-deferral: FAIL — $record carries $covers_count covers-notes: lines; exactly one must be in force." >&2
+    grep -nE "$COVERS_MARKER_RE" "$record" | sed 's/^/    /' >&2
+    echo "" >&2
+    echo "Correcting the coverage means EDITING the line, not adding a second one — the same rule the streak signature learned the hard" >&2
+    echo "way. One line is enough for any release: the inclusive-range form covers 44 ids in 24 characters." >&2
+    return 1
+  fi
+
+  local covers_line
+  covers_line="$(grep -E "$COVERS_MARKER_RE" "$record" || true)"
+  if printf '%s' "$covers_line" | grep -q '<[^>]*>'; then
+    echo "provider-tier-deferral: FAIL — $record's covers-notes: line still contains a <placeholder>:" >&2
+    printf '%s\n' "$covers_line" | sed 's/^/    /' >&2
+    echo "" >&2
+    echo "That is the documented EXAMPLE shape, not a statement of coverage. A record that quotes the instruction has named nothing." >&2
+    return 1
+  fi
+
+  # Tokens: comma- and/or whitespace-separated. `A..B` is an inclusive range,
+  # resolved by POSITION in the notes file's own declared order — never by
+  # arithmetic on the id, which the corpus does not support (§11 A1).
+  local value
+  value="${covers_line#covers-notes:}"
+  local -a tokens=()
+  IFS=$', \t' read -r -a tokens <<<"$value"
+
+  local -a named=()
+  local tok start end pstart pend missing_ends rid
+  for tok in ${tokens[@]+"${tokens[@]}"}; do
+    [ -n "$tok" ] || continue
+    case "$tok" in
+      *..*)
+        start="${tok%%..*}"
+        end="${tok##*..}"
+        pstart="$(id_position "$shipped" "$start")"
+        pend="$(id_position "$shipped" "$end")"
+        if [ -z "$pstart" ] || [ -z "$pend" ]; then
+          missing_ends=""
+          [ -n "$pstart" ] || missing_ends="'$start'"
+          [ -n "$pend" ] || missing_ends="${missing_ends:+$missing_ends and }'$end'"
+          echo "provider-tier-deferral: FAIL — $record names the inclusive range '$tok', but $notes declares no id $missing_ends." >&2
+          echo "A range is resolved against the notes file's OWN declared order, so both endpoints must be ids v$version actually ships." >&2
+          echo "The gate does not compute ids: the corpus has no single scheme (RN-0900-1, RN-01200-1, RN-01900-0 all differ)." >&2
+          return 1
+        fi
+        if [ "$pstart" -gt "$pend" ]; then
+          echo "provider-tier-deferral: FAIL — $record names the range '$tok' backwards: '$start' is entry $pstart of $notes and '$end' is entry $pend." >&2
+          echo "An inclusive range must be written low..high in the notes file's own order; read backwards it would silently cover NOTHING." >&2
+          return 1
+        fi
+        while IFS= read -r rid; do
+          [ -n "$rid" ] || continue
+          named+=("$rid")
+        done <<<"$(printf '%s\n' "$shipped" | sed -n "${pstart},${pend}p")"
+        ;;
+      *)
+        named+=("$tok")
+        ;;
+    esac
+  done
+
+  # The set comparison, in BOTH directions. An EMPTY named set is handled
+  # explicitly rather than through `grep -f`: an empty pattern file is one of
+  # the few places GNU and BSD grep have historically disagreed about what -v
+  # means, and "the record named nothing" is precisely the case this gate exists
+  # for — it must not depend on which userland is running (see the GNU/BSD find
+  # divergence that left check-view-vocabulary.sh inert in CI for a week).
+  local named_file shipped_file missing extra
+  named_file="$(mktemp)"
+  shipped_file="$(mktemp)"
+  printf '%s\n' ${named[@]+"${named[@]}"} | grep -v '^$' | sort -u >"$named_file" || true
+  printf '%s\n' "$shipped" >"$shipped_file"
+  if [ -s "$named_file" ]; then
+    missing="$(grep -vxF -f "$named_file" "$shipped_file" || true)"
+    extra="$(grep -vxF -f "$shipped_file" "$named_file" || true)"
+  else
+    missing="$shipped"
+    extra=""
+  fi
+  rm -f "$named_file" "$shipped_file"
+
+  # ONE refusal reporting BOTH directions. They were two sequential refusals
+  # until a mutation showed what that costs: swapping a single digit in a real
+  # record's list (RN-02400-3 → RN-02400-99) reported only the entry left
+  # uncovered and said nothing about the id that does not exist, sending the
+  # author to look for a missing change rather than at their own typo. An id
+  # swap is the most likely mistake in this field, and it is exactly the case
+  # where both halves are needed to read the refusal.
+  if [ -n "$missing" ] || [ -n "$extra" ]; then
+    local missing_count=0 extra_count=0 named_count
+    [ -z "$missing" ] || missing_count="$(printf '%s\n' "$missing" | wc -l | tr -d '[:space:]')"
+    [ -z "$extra" ] || extra_count="$(printf '%s\n' "$extra" | wc -l | tr -d '[:space:]')"
+    named_count=$(( shipped_count - missing_count ))
+    echo "provider-tier-deferral: FAIL — $record signs for v$version, which ships $shipped_count release-note entries; the record names $named_count of them." >&2
+    if [ -n "$missing" ]; then
+      echo "$missing_count entr(y/ies) the signature does NOT cover:" >&2
+      printf '%s\n' "$missing" | sed 's/^/  - /' >&2
+      echo "" >&2
+      echo "A signature is given for what the operator was SHOWN. When the candidate outgrows it, the authorization is silently inherited" >&2
+      echo "by a release nobody saw — which is exactly v0.23.0: a record describing 'one change' and 'nothing needs it in the field',"  >&2
+      echo "against a release that shipped 44 entries, two epics and a behaviour break, with this gate green throughout." >&2
+      echo "Re-read the candidate and extend covers-notes: in $record to name the entries above, or re-sign it for the release it now is." >&2
+    fi
+    if [ -n "$extra" ]; then
+      [ -z "$missing" ] || echo "" >&2
+      echo "$extra_count id(s) the record names that $notes does not declare:" >&2
+      printf '%s\n' "$extra" | sed 's/^/  - /' >&2
+      echo "" >&2
+      echo "A record claiming coverage of an entry the release does not carry was copied from another release, or carries a typo." >&2
+      echo "The value of covers-notes: is ids and NOTHING else — no prose tail — so any stray word arrives here verbatim." >&2
+    fi
+    return 1
+  fi
+
+  local sha_count
+  sha_count="$(grep -cE "$CANDIDATE_SHA_MARKER_RE" "$record" || true)"
+  [ -n "$sha_count" ] || sha_count=0
+  if [ "$sha_count" -eq 0 ]; then
+    echo "provider-tier-deferral: FAIL — $record names what it covers but not the candidate it governs: no candidate-sha: line." >&2
+    echo "Add, beside covers-notes::" >&2
+    echo "  $CANDIDATE_SHA_EXAMPLE" >&2
+    echo "The runbook's condition 1 is an authorization 'for this candidate'. Without the SHA, a later reader cannot tell WHICH candidate" >&2
+    echo "was on the operator's screen, and the promotion step's own three-object assertion (candidate SHA == public ref SHA == tree hash)" >&2
+    echo "has nothing written down to assert against. The shape is not checked here — the short candidate-branch form is honest too." >&2
+    return 1
+  fi
+  if [ "$sha_count" -gt 1 ]; then
+    echo "provider-tier-deferral: FAIL — $record carries $sha_count candidate-sha: lines; exactly one candidate is governed." >&2
+    grep -nE "$CANDIDATE_SHA_MARKER_RE" "$record" | sed 's/^/    /' >&2
+    return 1
+  fi
+  if grep -E "$CANDIDATE_SHA_MARKER_RE" "$record" | grep -q '<[^>]*>'; then
+    echo "provider-tier-deferral: FAIL — $record's candidate-sha: line still contains a <placeholder>:" >&2
+    grep -E "$CANDIDATE_SHA_MARKER_RE" "$record" | grep '<[^>]*>' | sed 's/^/    /' >&2
+    echo "" >&2
+    echo "That is the documented EXAMPLE shape, not a candidate. Paste the SHA the operator actually signed against." >&2
+    return 1
+  fi
+
+  echo "provider-tier-deferral: $record names all $shipped_count of v$version's release-note ids, and the candidate it governs."
+}
+
 check_provider_tier_deferral() {
   local artifact rec ts newest_live=0
   local -a uncleared=()
   local -a uncleared_records=()
+  # Parallel to uncleared_records, appended at the SAME site so index N is the
+  # notes file and version of the record at index N. It exists so the coverage
+  # binding can reach the notes of the release whose record is being judged,
+  # WITHOUT a second notion of "newest" — the display strings in `uncleared`
+  # are annotated prose and were opened as a filename once already (case 5b).
+  local -a uncleared_notes=()
+  local -a uncleared_versions=()
   local -a recordless=()
 
   # THE EVIDENCE CORPUS MUST BE PRESENT, OR THIS GATE HAS NOTHING TO JUDGE.
@@ -290,6 +600,8 @@ check_provider_tier_deferral() {
     recpath="$(deferral_record_for_version "$relver" "${all_records[@]}")"
     if [ -n "$recpath" ]; then
       uncleared_records+=("$recpath")
+      uncleared_notes+=("$relpath")
+      uncleared_versions+=("$relver")
       if [ -z "$rel_ts" ]; then
         uncleared+=("v$relver ($(basename "$recpath"), release note uncommitted)")
       else
@@ -306,6 +618,46 @@ check_provider_tier_deferral() {
   done <<<"$(find_release_versions)"
 
   local count=${#uncleared[@]}
+
+  # THE ONE SELECTION OF "NEWEST", used by both readers below (the coverage
+  # binding and the streak signature). The newest record is the one belonging
+  # to the newest outstanding RELEASE, and the two wrong answers this line has
+  # already given are both worth keeping.
+  #
+  # (1) A FILENAME SORT stopped meaning "newest" at v0.19.10: as strings,
+  #     "v0.19.9-..." sorts AFTER "v0.19.10-...", so the gate asked the
+  #     v0.19.9 record to sign for a streak of nine — a signature its author
+  #     could not have made and its file has no business carrying. Found on
+  #     2026-08-12, cutting the first release whose patch number has two
+  #     digits.
+  #
+  # (2) GIT ADD-TIME replaced it, with an untracked record short-circuiting
+  #     to "newest" so a release flow could sign before committing. That
+  #     held for exactly one real use. On 2026-08-13 this revision's own
+  #     re-keying created THREE retrospective records at once (v0.19.4,
+  #     v0.19.5, v0.19.11 — releases that had shipped with nothing), all
+  #     untracked, and the loop took the first it happened to iterate. The
+  #     gate then demanded that the operator sign for a thirteen-release
+  #     streak inside a record about v0.19.4, a release from a week earlier.
+  #     A signature in that file would be a lie about when it was given.
+  #
+  # `uncleared_records` is appended in RELEASE-VERSION order by the loop
+  # above, which is fed by find_release_versions()'s own version sort. So
+  # the newest release's record is simply the last element — no clock, no
+  # filename, no git index, and nothing that a backfill can reorder. The
+  # "sign before committing" property survives untouched: an uncommitted
+  # record for the newest release is still that release's record.
+  #
+  # It is hoisted here, out of the streak-threshold branch it used to live in,
+  # so the coverage binding INHERITS this selection rather than inventing a
+  # second one. That inheritance is also what keeps the sixteen older records
+  # unjudged — ADR-011 holds by construction, not by an exemption list.
+  local newest="" newest_notes="" newest_version=""
+  if [ "${#uncleared_records[@]}" -gt 0 ]; then
+    newest="${uncleared_records[$(( ${#uncleared_records[@]} - 1 ))]}"
+    newest_notes="${uncleared_notes[$(( ${#uncleared_notes[@]} - 1 ))]}"
+    newest_version="${uncleared_versions[$(( ${#uncleared_versions[@]} - 1 ))]}"
+  fi
 
   # A recordless release is refused UNCONDITIONALLY — not gated behind the
   # streak-of-3 threshold below, and never silenceable by the
@@ -331,6 +683,24 @@ check_provider_tier_deferral() {
     return 1
   fi
 
+  # THE RECORD MUST NAME WHAT IT SIGNS FOR — and this runs BEFORE every path
+  # below that can return 0, which is the whole point of its position.
+  #
+  # It is NOT gated behind the streak-of-3 threshold, for two reasons. The
+  # threshold branch contains a `return 0` of its own: a valid
+  # `consecutive-deferral-acknowledged:` would otherwise green the gate with the
+  # coverage binding never read, which IS the incident's shape — a signature
+  # satisfying the gate while the record describes nothing. And condition 1 of
+  # the tier ("an operator authorized it explicitly, FOR THIS CANDIDATE, in
+  # writing") binds every deferral, not the third: a fresh streak's first
+  # release can carry a stale record just as easily as its sixteenth.
+  #
+  # Only the NEWEST outstanding release's record is opened, using the single
+  # selection hoisted above. The sixteen older records are never read.
+  if [ -n "$newest" ]; then
+    check_record_covers_release "$newest" "$newest_notes" "$newest_version" || return 1
+  fi
+
   if [ "$count" -ge 3 ]; then
     # Refusal is OVERRIDABLE, and deliberately so. The tier this guards already
     # requires a written operator authorization per candidate; a third
@@ -343,36 +713,10 @@ check_provider_tier_deferral() {
     # owner does not hold is a gate that gets deleted the first time it fires —
     # the same failure mode as prose, with more ceremony. Overridable-but-
     # recorded is the version that survives contact with the person it binds.
-    # The newest record is the one belonging to the newest RELEASE, and the
-    # two wrong answers this line has already given are both worth keeping.
-    #
-    # (1) A FILENAME SORT stopped meaning "newest" at v0.19.10: as strings,
-    #     "v0.19.9-..." sorts AFTER "v0.19.10-...", so the gate asked the
-    #     v0.19.9 record to sign for a streak of nine — a signature its author
-    #     could not have made and its file has no business carrying. Found on
-    #     2026-08-12, cutting the first release whose patch number has two
-    #     digits.
-    #
-    # (2) GIT ADD-TIME replaced it, with an untracked record short-circuiting
-    #     to "newest" so a release flow could sign before committing. That
-    #     held for exactly one real use. On 2026-08-13 this revision's own
-    #     re-keying created THREE retrospective records at once (v0.19.4,
-    #     v0.19.5, v0.19.11 — releases that had shipped with nothing), all
-    #     untracked, and the loop took the first it happened to iterate. The
-    #     gate then demanded that the operator sign for a thirteen-release
-    #     streak inside a record about v0.19.4, a release from a week earlier.
-    #     A signature in that file would be a lie about when it was given.
-    #
-    # `uncleared_records` is appended in RELEASE-VERSION order by the loop
-    # above, which is fed by find_release_versions()'s own version sort. So
-    # the newest release's record is simply the last element — no clock, no
-    # filename, no git index, and nothing that a backfill can reorder. The
-    # "sign before committing" property survives untouched: an uncommitted
-    # record for the newest release is still that release's record.
-    local newest=""
-    if [ "${#uncleared_records[@]}" -gt 0 ]; then
-      newest="${uncleared_records[$(( ${#uncleared_records[@]} - 1 ))]}"
-    fi
+    # `newest` is selected ONCE, above, and both readers use that one
+    # selection: the coverage binding and this streak signature. A second
+    # notion of "newest" is exactly what the comment there refuses.
+    local signed=""
     local signed=""
     if [ -n "$newest" ]; then
       # `|| true` is load-bearing under `set -e`: an unsigned record makes both
@@ -468,8 +812,13 @@ teeth() {
   # `make harness-check` leaked two temp git repos — in a trap whose own
   # comment explains this exact hazard for the vars it did cover. Case 7
   # (recordless release) follows the same rule.
-  tmp1="" tmp2="" tmp3="" tmp4="" tmp5="" tmp6="" tmp7=""
-  trap 'rm -rf "${tmp1:-}" "${tmp2:-}" "${tmp3:-}" "${tmp4:-}" "${tmp5:-}" "${tmp6:-}" "${tmp7:-}"' EXIT
+  #
+  # tmp8, tmp9 and tmp11 were in NEITHER line — added by cases 8, 10 and 11
+  # under a comment demanding they be in both — so every `make harness-check`
+  # leaked three more temp git repos. Listed now, along with the cases below.
+  tmp1="" tmp2="" tmp3="" tmp4="" tmp5="" tmp6="" tmp7="" tmp8="" tmp9="" tmp11=""
+  tmp12="" tmp13="" tmp14="" tmp15=""
+  trap 'rm -rf "${tmp1:-}" "${tmp2:-}" "${tmp3:-}" "${tmp4:-}" "${tmp5:-}" "${tmp6:-}" "${tmp7:-}" "${tmp8:-}" "${tmp9:-}" "${tmp11:-}" "${tmp12:-}" "${tmp13:-}" "${tmp14:-}" "${tmp15:-}"' EXIT
 
   init_repo() {
     local dir="$1"
@@ -505,6 +854,41 @@ teeth() {
     )
   }
 
+  # A release-notes file that actually DECLARES entries. The coverage binding
+  # measures what a release carries, so a `version: "0.1.0"` stub measures as
+  # "measurement-failed" — correctly — and every fixture whose newest release
+  # must reach the streak logic has to carry real ids.
+  #
+  # The ids are deliberately NOT of the RN-<versionkey>-<n> shape: the gate
+  # compares literal strings and must never parse the scheme (§11 A1). If any
+  # arithmetic ever creeps into the comparison, these fixtures red first.
+  notes_with_ids() {
+    local file="$1" version="$2" id
+    shift 2
+    {
+      printf 'schema: release-notes/v1\nversion: "%s"\nreleased: "2026-08-21"\nheadline: fixture\nchanges:\n' "$version"
+      for id in "$@"; do
+        printf -- '  - id: %s\n    kind: fix\n    impact: normal\n    subject: fixture\n    detail: fixture\n' "$id"
+      done
+    } >"$file"
+  }
+
+  # A deferral record carrying the coverage binding. Arguments after the id list
+  # are extra lines appended verbatim (the streak signature, when a case needs
+  # one). Only the NEWEST outstanding release's record ever needs this — every
+  # fixture that leaves older records as bare `echo r1 >` stubs is also tooth Te
+  # proving those older records are not judged.
+  record_covering() {
+    local file="$1" ids="$2" line
+    shift 2
+    {
+      printf 'fixture deferral record\n'
+      printf 'covers-notes: %s\n' "$ids"
+      printf 'candidate-sha: 0123456789abcdef0123456789abcdef01234567\n'
+      for line in "$@"; do printf '%s\n' "$line"; done
+    } >"$file"
+  }
+
   # Case 1: 3 releases, each carrying a matching deferral record, no live-e2e
   # artifact at all → RED, naming each record. The release note and its
   # record are committed TOGETHER, mirroring how this repo actually cuts a
@@ -518,8 +902,8 @@ teeth() {
   echo r2 >"$tmp1/docs/features/x/audits/v0.2.0-provider-tier-deferral.md"
   echo 'version: "0.2.0"' >"$tmp1/releasenotes/0.2.0.yaml"
   commit_at "$tmp1" 200 "add v0.2.0 deferral"
-  echo r3 >"$tmp1/docs/features/x/audits/v0.3.0-provider-tier-deferral.md"
-  echo 'version: "0.3.0"' >"$tmp1/releasenotes/0.3.0.yaml"
+  record_covering "$tmp1/docs/features/x/audits/v0.3.0-provider-tier-deferral.md" "fix-a, fix-b"
+  notes_with_ids "$tmp1/releasenotes/0.3.0.yaml" 0.3.0 fix-a fix-b
   commit_at "$tmp1" 300 "add v0.3.0 deferral"
 
   if out="$(cd "$tmp1" && check_provider_tier_deferral 2>&1)"; then
@@ -539,8 +923,8 @@ teeth() {
   echo r1 >"$tmp2/docs/features/x/audits/v0.1.0-provider-tier-deferral.md"
   echo 'version: "0.1.0"' >"$tmp2/releasenotes/0.1.0.yaml"
   commit_at "$tmp2" 100 "add v0.1.0 deferral"
-  echo r2 >"$tmp2/docs/features/x/audits/v0.2.0-provider-tier-deferral.md"
-  echo 'version: "0.2.0"' >"$tmp2/releasenotes/0.2.0.yaml"
+  record_covering "$tmp2/docs/features/x/audits/v0.2.0-provider-tier-deferral.md" "fix-a"
+  notes_with_ids "$tmp2/releasenotes/0.2.0.yaml" 0.2.0 fix-a
   commit_at "$tmp2" 200 "add v0.2.0 deferral"
 
   if ! out="$(cd "$tmp2" && check_provider_tier_deferral 2>&1)"; then
@@ -572,8 +956,8 @@ teeth() {
   echo r2 >"$tmp3/docs/features/x/audits/v0.2.0-provider-tier-deferral.md"
   echo 'version: "0.2.0"' >"$tmp3/releasenotes/0.2.0.yaml"
   commit_at "$tmp3" 200 "add v0.2.0 deferral"
-  echo r3 >"$tmp3/docs/features/x/audits/v0.3.0-provider-tier-deferral.md"
-  echo 'version: "0.3.0"' >"$tmp3/releasenotes/0.3.0.yaml"
+  record_covering "$tmp3/docs/features/x/audits/v0.3.0-provider-tier-deferral.md" "fix-a"
+  notes_with_ids "$tmp3/releasenotes/0.3.0.yaml" 0.3.0 fix-a
   commit_at "$tmp3" 300 "add v0.3.0 deferral"
   # Bump mtime only, no git-visible change (content is identical), so mtime
   # is now the newest path in the tree while its git add-date stays 150.
@@ -603,8 +987,8 @@ teeth() {
   echo r2 >"$tmp4/docs/features/x/audits/v0.2.0-provider-tier-deferral.md"
   echo 'version: "0.2.0"' >"$tmp4/releasenotes/0.2.0.yaml"
   commit_at "$tmp4" 200 "add v0.2.0 deferral"
-  echo r3 >"$tmp4/docs/features/x/audits/v0.3.0-provider-tier-deferral.md"
-  echo 'version: "0.3.0"' >"$tmp4/releasenotes/0.3.0.yaml"
+  record_covering "$tmp4/docs/features/x/audits/v0.3.0-provider-tier-deferral.md" "fix-a"
+  notes_with_ids "$tmp4/releasenotes/0.3.0.yaml" 0.3.0 fix-a
   # v0.3.0 deliberately left untracked — no commit_at call.
 
   if out="$(cd "$tmp4" && check_provider_tier_deferral 2>&1)"; then
@@ -629,9 +1013,9 @@ teeth() {
   echo r2 >"$tmp5/docs/features/x/audits/v0.2.0-provider-tier-deferral.md"
   echo 'version: "0.2.0"' >"$tmp5/releasenotes/0.2.0.yaml"
   commit_at "$tmp5" 200 "add v0.2.0 deferral"
-  printf 'r3\nconsecutive-deferral-acknowledged: 3 — operator signed for the streak\n' \
-    >"$tmp5/docs/features/x/audits/v0.3.0-provider-tier-deferral.md"
-  echo 'version: "0.3.0"' >"$tmp5/releasenotes/0.3.0.yaml"
+  record_covering "$tmp5/docs/features/x/audits/v0.3.0-provider-tier-deferral.md" "fix-a" \
+    'consecutive-deferral-acknowledged: 3 — operator signed for the streak'
+  notes_with_ids "$tmp5/releasenotes/0.3.0.yaml" 0.3.0 fix-a
   commit_at "$tmp5" 300 "add v0.3.0 deferral with the streak acknowledgement"
 
   if ! out="$(cd "$tmp5" && check_provider_tier_deferral 2>&1)"; then
@@ -666,9 +1050,10 @@ teeth() {
   echo r2 >"$tmp6/docs/features/x/audits/v0.2.0-provider-tier-deferral.md"
   echo 'version: "0.2.0"' >"$tmp6/releasenotes/0.2.0.yaml"
   commit_at "$tmp6" 200 "add v0.2.0 deferral"
-  printf 'r3\nconsecutive-deferral-acknowledged: 3 — signed before the record was committed\n' \
-    >"$tmp6/docs/features/x/audits/v0.3.0-provider-tier-deferral.md"   # deliberately NOT committed
-  echo 'version: "0.3.0"' >"$tmp6/releasenotes/0.3.0.yaml"             # deliberately NOT committed
+  record_covering "$tmp6/docs/features/x/audits/v0.3.0-provider-tier-deferral.md" "fix-a" \
+    'consecutive-deferral-acknowledged: 3 — signed before the record was committed'
+  # ...both deliberately NOT committed.
+  notes_with_ids "$tmp6/releasenotes/0.3.0.yaml" 0.3.0 fix-a
 
   if ! out="$(cd "$tmp6" && check_provider_tier_deferral 2>&1)"; then
     echo "provider-tier-deferral --teeth: FAILED — a signed but uncommitted 3rd record must ship" >&2
@@ -682,7 +1067,9 @@ teeth() {
   }
 
   # ...and unsigned-and-untracked must refuse WITH a message, never die mute.
-  echo r3 >"$tmp6/docs/features/x/audits/v0.3.0-provider-tier-deferral.md"
+  # The coverage lines stay: this half is about the missing streak SIGNATURE, and
+  # a record stripped of both would refuse for the first reason it hit instead.
+  record_covering "$tmp6/docs/features/x/audits/v0.3.0-provider-tier-deferral.md" "fix-a"
   if out="$(cd "$tmp6" && check_provider_tier_deferral 2>&1)"; then
     echo "provider-tier-deferral --teeth: FAILED — an unsigned 3rd record shipped" >&2
     exit 1
@@ -699,10 +1086,9 @@ teeth() {
   # and a signature that carried forward unread would let the streak grow
   # under a signature nobody re-made. (A 4th carrying NO marker is covered by
   # case 1's generic refusal, which correctly tells the author to sign.)
-  echo r4 >"$tmp5/docs/features/x/audits/v0.4.0-provider-tier-deferral.md"
-  printf 'consecutive-deferral-acknowledged: 3 — copied from the previous record and never re-read\n' \
-    >>"$tmp5/docs/features/x/audits/v0.4.0-provider-tier-deferral.md"
-  echo 'version: "0.4.0"' >"$tmp5/releasenotes/0.4.0.yaml"
+  record_covering "$tmp5/docs/features/x/audits/v0.4.0-provider-tier-deferral.md" "fix-d" \
+    'consecutive-deferral-acknowledged: 3 — copied from the previous record and never re-read'
+  notes_with_ids "$tmp5/releasenotes/0.4.0.yaml" 0.4.0 fix-d
   commit_at "$tmp5" 400 "add a 4th deferral carrying the 3rd's stale acknowledgement"
 
   if out="$(cd "$tmp5" && check_provider_tier_deferral 2>&1)"; then
@@ -762,8 +1148,9 @@ teeth() {
     echo "version: \"$v\"" >"$tmp8/releasenotes/$v.yaml"
     echo "r-$v" >"$tmp8/docs/features/x/audits/v$v-provider-tier-deferral.md"
   done
-  printf 'consecutive-deferral-acknowledged: 3 — signed in the NEWEST release, where the decision was made\n' \
-    >>"$tmp8/docs/features/x/audits/v0.3.0-provider-tier-deferral.md"
+  notes_with_ids "$tmp8/releasenotes/0.3.0.yaml" 0.3.0 fix-a
+  record_covering "$tmp8/docs/features/x/audits/v0.3.0-provider-tier-deferral.md" "fix-a" \
+    'consecutive-deferral-acknowledged: 3 — signed in the NEWEST release, where the decision was made'
   commit_at "$tmp8" 100 "three releases, the newest carrying the signature"
 
   # Now backfill two OLDER releases' records, uncommitted — the exact shape
@@ -887,7 +1274,472 @@ teeth() {
     exit 1
   }
 
-  echo "provider-tier-deferral --teeth: a pre-tag sentinel is not a release while the same file dated and recordless still reds; 3 uncleared releases red and names them; 2 uncleared greens; a live-e2e run after the oldest of 3 clears it to 2 and greens by git history, not mtime or filename; an untracked 3rd release reds too; an acknowledged 3rd ships; a 4th does NOT inherit the 3rd's signature; a recordless release reds unconditionally, even a lone one; a backfill of older records leaves the signature in the NEWEST RELEASE's record; a <placeholder> example is not a signature; a stripped public checkout declines instead of answering."
+  # ══════════════════════════════════════════════════════════════════════════
+  # THE COVERAGE BINDING — does the record NAME what it signs for?
+  #
+  # Cases 12-19 are the teeth of release-loop-2026-08 P7. Two of them replay
+  # REAL corpus artifacts rather than invented fixtures, because the incident
+  # and its counter-example both already exist in this repository.
+  # ══════════════════════════════════════════════════════════════════════════
+  local repo_root="$PWD" corpus
+  for corpus in releasenotes/0.23.0.yaml releasenotes/0.9.0.yaml; do
+    [ -r "$repo_root/$corpus" ] || {
+      echo "provider-tier-deferral --teeth: measurement-failed — $corpus is not readable from $repo_root." >&2
+      echo "Cases 13 and 19 replay real corpus files; run the teeth from the repository root." >&2
+      exit 1
+    }
+  done
+
+  # Case 12: teeth Ta and Te, plus AC5's grow → red → re-sign → green cycle.
+  #
+  # TWO outstanding releases, deliberately UNDER the streak-of-3 threshold: the
+  # binding is not gated behind it. Condition 1 of the tier ("an operator
+  # authorized it explicitly, FOR THIS CANDIDATE, in writing") binds a first
+  # deferral exactly as much as a seventeenth, and the threshold branch has a
+  # `return 0` of its own — a valid streak signature must never be able to green
+  # a record that describes nothing.
+  tmp12="$(mktemp -d)"
+  init_repo "$tmp12"
+  echo r1 >"$tmp12/docs/features/x/audits/v0.1.0-provider-tier-deferral.md"
+  echo 'version: "0.1.0"' >"$tmp12/releasenotes/0.1.0.yaml"
+  commit_at "$tmp12" 100 "v0.1.0, an older record from before the binding existed"
+  notes_with_ids "$tmp12/releasenotes/0.2.0.yaml" 0.2.0 fix-a fix-b fix-c
+  record_covering "$tmp12/docs/features/x/audits/v0.2.0-provider-tier-deferral.md" "fix-a, fix-b, fix-c"
+  commit_at "$tmp12" 200 "v0.2.0, whose record names every entry it ships"
+
+  if ! out="$(cd "$tmp12" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — a record naming every id its release ships went red:" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -q 'names all 3 of v0.2.0' || {
+    echo "provider-tier-deferral --teeth: FAILED — the green did not report what was verified:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+  # Tooth Te: v0.1.0's record carries no covers-notes: line at all and is NOT
+  # judged. This is the whole of ADR-011 compliance — the sixteen real older
+  # records are unjudged by inheriting the newest-record lookup, not by an
+  # exemption list.
+  if printf '%s' "$out" | grep -q 'v0.1.0-provider-tier-deferral'; then
+    echo "provider-tier-deferral --teeth: FAILED — an OLDER record was judged; the scope is inherited from the newest-record lookup and must never be widened:" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+
+  # ...the release then GROWS an entry after the signature. This is v0.23.0 in
+  # miniature: the record is unchanged, the candidate is not.
+  notes_with_ids "$tmp12/releasenotes/0.2.0.yaml" 0.2.0 fix-a fix-b fix-c fix-d
+  commit_at "$tmp12" 300 "v0.2.0 grows a fourth entry after its record was signed"
+  if out="$(cd "$tmp12" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — a release that outgrew its signature stayed green" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -q 'the record names 3 of them' || {
+    echo "provider-tier-deferral --teeth: FAILED — the red did not report how many of the shipped entries the record names:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+  printf '%s' "$out" | grep -qE '^  - fix-d$' || {
+    echo "provider-tier-deferral --teeth: FAILED — the red did not NAME the uncovered entry:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+
+  # ...and re-signing for what it now is greens again.
+  record_covering "$tmp12/docs/features/x/audits/v0.2.0-provider-tier-deferral.md" "fix-a, fix-b, fix-c, fix-d"
+  if ! out="$(cd "$tmp12" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — re-signing for the grown release did not green:" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -q 'names all 4 of v0.2.0' || {
+    echo "provider-tier-deferral --teeth: FAILED — the re-signed green did not report the new count:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+
+  # Tooth Tc: the record names an id the release does not carry. A record
+  # claiming coverage of something absent is a copy from another release.
+  record_covering "$tmp12/docs/features/x/audits/v0.2.0-provider-tier-deferral.md" "fix-a, fix-b, fix-c, fix-d, fix-e"
+  if out="$(cd "$tmp12" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — a record naming an entry the release does not ship stayed green" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -qE '^  - fix-e$' || {
+    echo "provider-tier-deferral --teeth: FAILED — the red did not name the id the notes file does not declare:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+
+  # ...which is also what happens to a PROSE TAIL. The streak signature's shape
+  # ends in "— <who authorized …>"; copying that habit here would turn every
+  # word into a phantom id, so the tail is refused verbatim rather than trimmed.
+  printf 'fixture\ncovers-notes: fix-a, fix-b, fix-c, fix-d — yura signed this\ncandidate-sha: 0123456789abcdef0123456789abcdef01234567\n' \
+    >"$tmp12/docs/features/x/audits/v0.2.0-provider-tier-deferral.md"
+  if out="$(cd "$tmp12" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — a prose tail on covers-notes: was silently tolerated; every word of it is a phantom id" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -qE '^  - yura$' || {
+    echo "provider-tier-deferral --teeth: FAILED — the red did not quote the prose tail's tokens verbatim:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+
+  # Tooth Td: the newest record carries no covers-notes: line → RED, printing
+  # the template, exactly as a missing signature does.
+  printf 'a record that signs for nothing in particular\n' \
+    >"$tmp12/docs/features/x/audits/v0.2.0-provider-tier-deferral.md"
+  if out="$(cd "$tmp12" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — a record with no covers-notes: line stayed green" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -q 'never says what it signs for' || {
+    echo "provider-tier-deferral --teeth: FAILED — the red did not say the record names nothing:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+  printf '%s' "$out" | grep -qF "$COVERS_MARKER_EXAMPLE" || {
+    echo "provider-tier-deferral --teeth: FAILED — the refusal did not print the template; a refusal that does not say what to write is a wall:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+  printf '%s' "$out" | grep -qF "$CANDIDATE_SHA_EXAMPLE" || {
+    echo "provider-tier-deferral --teeth: FAILED — the refusal did not print the candidate-sha template:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+  printf '%s' "$out" | grep -q "v0.19.1" || {
+    echo "provider-tier-deferral --teeth: FAILED — the refusal did not say this makes an EXISTING voluntary discipline checkable (v0.19.1's record already does it by hand); a rule that reads as newly invented is a rule that gets deleted:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+
+  # Tooth Tg: the inclusive RANGE form, and it must WORK rather than merely
+  # parse. Four halves, because a range that greens on everything is also what a
+  # broken "expand to all ids" implementation does.
+  record_covering "$tmp12/docs/features/x/audits/v0.2.0-provider-tier-deferral.md" "fix-a..fix-d"
+  if ! out="$(cd "$tmp12" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — an inclusive range covering every id went red:" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -q 'names all 4 of v0.2.0' || {
+    echo "provider-tier-deferral --teeth: FAILED — the range form parsed but did not resolve to the ids it covers:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+  record_covering "$tmp12/docs/features/x/audits/v0.2.0-provider-tier-deferral.md" "fix-a..fix-c"
+  if out="$(cd "$tmp12" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — a range stopping short of the last entry stayed green; the range expands to everything, which is not a range" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -qE '^  - fix-d$' || {
+    echo "provider-tier-deferral --teeth: FAILED — the short range's red did not name the entry left outside it:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+  record_covering "$tmp12/docs/features/x/audits/v0.2.0-provider-tier-deferral.md" "fix-d..fix-a"
+  if out="$(cd "$tmp12" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — an inverted range stayed green; read backwards it covers NOTHING" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -q 'backwards' || {
+    echo "provider-tier-deferral --teeth: FAILED — the inverted range did not red as inverted:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+  record_covering "$tmp12/docs/features/x/audits/v0.2.0-provider-tier-deferral.md" "fix-a..fix-z"
+  if out="$(cd "$tmp12" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — a range whose endpoint the release does not ship stayed green" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -q "declares no id 'fix-z'" || {
+    echo "provider-tier-deferral --teeth: FAILED — the unresolvable endpoint was not named:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+  # ...and the two forms mix on one line.
+  record_covering "$tmp12/docs/features/x/audits/v0.2.0-provider-tier-deferral.md" "fix-a..fix-b, fix-c, fix-d"
+  if ! out="$(cd "$tmp12" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — a range mixed with a list on one line went red:" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+
+  # A SECOND covers-notes: line is ambiguity, not a correction — the same
+  # lesson the streak signature learned when someone appended instead of edited.
+  printf 'covers-notes: fix-a, fix-b\n' \
+    >>"$tmp12/docs/features/x/audits/v0.2.0-provider-tier-deferral.md"
+  if out="$(cd "$tmp12" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — a record carrying TWO covers-notes: lines shipped on one of them" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -q 'covers-notes: lines; exactly one must be in force' || {
+    echo "provider-tier-deferral --teeth: FAILED — two coverage lines did not red as ambiguous:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+
+  # A <placeholder> is not a statement of coverage — v0.21.0's record greened
+  # this gate once by quoting the streak marker's own example.
+  printf 'fixture\ncovers-notes: <the ids this signature was given against>\ncandidate-sha: 0123456789abcdef0123456789abcdef01234567\n' \
+    >"$tmp12/docs/features/x/audits/v0.2.0-provider-tier-deferral.md"
+  if out="$(cd "$tmp12" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — a <placeholder> counted as a statement of coverage" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -q "covers-notes: line still contains a <placeholder>" || {
+    echo "provider-tier-deferral --teeth: FAILED — the placeholder coverage line was not named as one:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+
+  # candidate-sha: is required by PRESENCE, and its shape is deliberately not
+  # judged — v0.24.0's own record names `a2a-candidate/1bd62f3a1e85` beside the
+  # full SHA, and a 40-hex regex would refuse that honest short form.
+  printf 'fixture\ncovers-notes: fix-a, fix-b, fix-c, fix-d\n' \
+    >"$tmp12/docs/features/x/audits/v0.2.0-provider-tier-deferral.md"
+  if out="$(cd "$tmp12" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — a record naming its coverage but not its candidate stayed green" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -q 'no candidate-sha: line' || {
+    echo "provider-tier-deferral --teeth: FAILED — the missing candidate was not named as missing:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+  printf 'fixture\ncovers-notes: fix-a, fix-b, fix-c, fix-d\ncandidate-sha: <the SHA the operator signed against>\n' \
+    >"$tmp12/docs/features/x/audits/v0.2.0-provider-tier-deferral.md"
+  if out="$(cd "$tmp12" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — a <placeholder> counted as a candidate" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -q "candidate-sha: line still contains a <placeholder>" || {
+    echo "provider-tier-deferral --teeth: FAILED — the placeholder candidate was not named as one:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+  printf 'fixture\ncovers-notes: fix-a, fix-b, fix-c, fix-d\ncandidate-sha: a2a-candidate/1bd62f3a1e85\n' \
+    >"$tmp12/docs/features/x/audits/v0.2.0-provider-tier-deferral.md"
+  if ! out="$(cd "$tmp12" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — the short candidate-branch form was refused; the shape is not this gate's to judge:" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+
+  # THE REPLAY NEEDS A COMMIT, AND A PUBLISHED CHECKOUT'S HISTORY DOES NOT HAVE
+  # ONE. This script is on the Makefile's HARNESS_TEETH list and is NOT stripped
+  # at publish, so `_harness-check` runs these teeth on the published candidate
+  # too — that is how v0.24.0's third candidate died with Error 127. The public
+  # repository's history is created fresh by publish-to-public.sh, so a72ee625
+  # is not in it and never can be; refusing there would red a candidate for a
+  # reason that exists only in the checkout, which is exactly what case 10
+  # declines to do.
+  #
+  # The discriminator is the same STRUCTURAL one the gate itself uses: docs/ is
+  # what the publisher strips. In a PRIVATE checkout the object must be
+  # reachable, and its absence (a shallow clone) stays a hard refusal naming the
+  # fix — there the tooth can be run and simply was not.
+  local tb_summary=""
+  if [ ! -d docs/features ]; then
+    tb_summary="tooth Tb (the a72ee625 replay) was DECLINED in this checkout, so this line does NOT claim it"
+    echo "provider-tier-deferral --teeth: skip — tooth Tb replays commit a72ee625, and a published checkout's history is created fresh at publish, so that object cannot exist here. It is judged in the private repository, where the record it replays also lives."
+  else
+    # ══════════════════════════════════════════════════════════════════════════
+    # Case 13: TOOTH Tb — THE ACCEPTANCE OF THIS PHASE, and not an invented
+    # fixture. The real v0.23.0 deferral record, recovered from commit a72ee625,
+    # judged against what v0.23.0 actually shipped. The record signed for "one
+    # change"; the release carried 44 release-note entries. 0 named against 44
+    # shipped, and this gate was green throughout.
+    # ══════════════════════════════════════════════════════════════════════════
+    tmp13="$(mktemp -d)"
+    init_repo "$tmp13"
+    local stale_ref='a72ee625:docs/features/active/agent-ops-2026-07/audits/v0.23.0-provider-tier-deferral.md'
+    local stale_dest="$tmp13/docs/features/x/audits/v0.23.0-provider-tier-deferral.md"
+    if ! git -C "$repo_root" cat-file -e "$stale_ref"; then
+      echo "provider-tier-deferral --teeth: measurement-failed — cannot replay $stale_ref, so tooth Tb did not run." >&2
+      echo "This tooth is the acceptance of release-loop-2026-08 P7 and it replays REAL history rather than a fabricated record;" >&2
+      echo "a checkout that cannot reach that commit cannot judge it. Use fetch-depth: 0 (CI's check job already does)." >&2
+      exit 1
+    fi
+    git -C "$repo_root" cat-file -p "$stale_ref" >"$stale_dest"
+    cp "$repo_root/releasenotes/0.23.0.yaml" "$tmp13/releasenotes/0.23.0.yaml"
+    local shipped_23 want_23=44
+    shipped_23="$(notes_ids "$tmp13/releasenotes/0.23.0.yaml" | wc -l | tr -d '[:space:]')"
+    [ "$shipped_23" -eq "$want_23" ] || {
+      echo "provider-tier-deferral --teeth: measurement-failed — releasenotes/0.23.0.yaml declares $shipped_23 ids, not the $want_23 this tooth is the acceptance for." >&2
+      echo "The number is pinned on purpose: a fixture that drifts silently would keep passing while testing a different claim." >&2
+      exit 1
+    }
+    commit_at "$tmp13" 100 "replay: the stale v0.23.0 record against what v0.23.0 shipped"
+
+    if out="$(cd "$tmp13" && check_provider_tier_deferral 2>&1)"; then
+      echo "provider-tier-deferral --teeth: FAILED — the REAL stale v0.23.0 record stayed green against the 44 entries v0.23.0 shipped." >&2
+      echo "This is the incident itself; if it greens, the gate is exactly as blind as it was on 2026-08-14." >&2
+      echo "$out" >&2
+      exit 1
+    fi
+    printf '%s' "$out" | grep -q 'Named: 0 of 44' || {
+      echo "provider-tier-deferral --teeth: FAILED — the red did not measure the record against the release: 0 named of 44 shipped is the number:" >&2
+      echo "$out" >&2
+      exit 1
+    }
+    printf '%s' "$out" | grep -qE '^  - RN-02300-0$' || {
+      echo "provider-tier-deferral --teeth: FAILED — the red did not name the entries the record failed to cover:" >&2
+      echo "$out" >&2
+      exit 1
+    }
+    printf '%s' "$out" | grep -qE '^  - RN-02300-43$' || {
+      echo "provider-tier-deferral --teeth: FAILED — the red named some entries but not the last one; a truncated list hides the drift it exists to show:" >&2
+      echo "$out" >&2
+      exit 1
+    }
+
+    # ...and a PARTIAL signature reds on exactly the remainder. The stale record
+    # is given credit for the first eleven entries — far more than it named — and
+    # the other thirty-three must still surface, by name.
+    {
+      printf 'covers-notes: RN-02300-0..RN-02300-10\n'
+      printf 'candidate-sha: a72ee625\n'
+      git -C "$repo_root" cat-file -p "$stale_ref"
+    } >"$stale_dest"
+    if out="$(cd "$tmp13" && check_provider_tier_deferral 2>&1)"; then
+      echo "provider-tier-deferral --teeth: FAILED — a record covering 11 of 44 entries stayed green" >&2
+      echo "$out" >&2
+      exit 1
+    fi
+    printf '%s' "$out" | grep -q 'the record names 11 of them' || {
+      echo "provider-tier-deferral --teeth: FAILED — the partial red did not report how much of the release the signature covers:" >&2
+      echo "$out" >&2
+      exit 1
+    }
+    printf '%s' "$out" | grep -qE '^  - RN-02300-11$' || {
+      echo "provider-tier-deferral --teeth: FAILED — the partial red did not name the first uncovered entry:" >&2
+      echo "$out" >&2
+      exit 1
+    }
+    # BOTH ENDS OF THE LIST. Found by mutation: truncating the uncovered list to
+    # its first five entries left every other assertion here green, because they
+    # all read the front of it. A refusal that shows the beginning of the drift
+    # and hides the rest is the same false comfort as no refusal.
+    printf '%s' "$out" | grep -qE '^  - RN-02300-43$' || {
+      echo "provider-tier-deferral --teeth: FAILED — the partial red truncated the uncovered list before its last entry:" >&2
+      echo "$out" >&2
+      exit 1
+    }
+    if printf '%s' "$out" | grep -qE '^  - RN-02300-10$'; then
+      echo "provider-tier-deferral --teeth: FAILED — an entry INSIDE the signed range was reported as uncovered; the range does not resolve:" >&2
+      echo "$out" >&2
+      exit 1
+    fi
+    tb_summary="the real stale v0.23.0 record from a72ee625 reds against the 44 entries v0.23.0 shipped (0 named of 44) and again when credited with 11 of them"
+  fi
+
+  # Case 14: TOOTH Tf — a gate that cannot MEASURE must not announce a domain
+  # verdict. Never green, and never "the record is wrong" either: the record is
+  # not what failed.
+  tmp14="$(mktemp -d)"
+  init_repo "$tmp14"
+  printf 'schema: release-notes/v1\nversion: "0.1.0"\nreleased: "2026-08-21"\nheadline: truncated before its entries\n' \
+    >"$tmp14/releasenotes/0.1.0.yaml"
+  record_covering "$tmp14/docs/features/x/audits/v0.1.0-provider-tier-deferral.md" "fix-a"
+  commit_at "$tmp14" 100 "a release whose notes declare no entries at all"
+  if out="$(cd "$tmp14" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — a notes file declaring NO ids produced a green; unjudged is not covered" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -q 'measurement-failed' || {
+    echo "provider-tier-deferral --teeth: FAILED — an unmeasurable notes file produced a DOMAIN verdict instead of a measurement-failed refusal:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+
+  : >"$tmp14/releasenotes/0.1.0.yaml"
+  if out="$(cd "$tmp14" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — an EMPTY notes file produced a green" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -q 'measurement-failed' || {
+    echo "provider-tier-deferral --teeth: FAILED — an empty notes file did not refuse as a failed measurement:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+
+  notes_with_ids "$tmp14/releasenotes/0.1.0.yaml" 0.1.0 fix-a
+  chmod 000 "$tmp14/releasenotes/0.1.0.yaml"
+  if [ -r "$tmp14/releasenotes/0.1.0.yaml" ]; then
+    # ANNOUNCED, never silent: as root (the container lane's default user) the
+    # mode bits do not make a file unreadable, so this half cannot be staged
+    # here. The empty-file half above exercises the same refusal path.
+    echo "provider-tier-deferral --teeth: note — this user can read a 000-mode file (root), so Tf's unreadable-notes half was not staged; the empty-notes half above covers the same refusal."
+  else
+    if out="$(cd "$tmp14" && check_provider_tier_deferral 2>&1)"; then
+      echo "provider-tier-deferral --teeth: FAILED — an UNREADABLE notes file produced a green" >&2
+      echo "$out" >&2
+      exit 1
+    fi
+    printf '%s' "$out" | grep -q 'could not be read' || {
+      echo "provider-tier-deferral --teeth: FAILED — an unreadable notes file did not refuse as a failed measurement:" >&2
+      echo "$out" >&2
+      exit 1
+    }
+  fi
+  chmod 644 "$tmp14/releasenotes/0.1.0.yaml"
+
+  # Case 15: TOOTH Th — §11 A1's own test, against a REAL non-modern notes
+  # file. releasenotes/0.9.0.yaml indents its sequence two spaces, pads the
+  # version key to four digits and starts its counter at 1 (RN-0900-1), while
+  # v0.19.0 uses five digits and starts at 0. Any arithmetic on the id — any
+  # regex like RN-\d{5}-\d+ — reds here.
+  tmp15="$(mktemp -d)"
+  init_repo "$tmp15"
+  cp "$repo_root/releasenotes/0.9.0.yaml" "$tmp15/releasenotes/0.9.0.yaml"
+  local shipped_09 want_09=8
+  shipped_09="$(notes_ids "$tmp15/releasenotes/0.9.0.yaml" | wc -l | tr -d '[:space:]')"
+  [ "$shipped_09" -eq "$want_09" ] || {
+    echo "provider-tier-deferral --teeth: measurement-failed — releasenotes/0.9.0.yaml declares $shipped_09 ids, not the $want_09 this tooth pins." >&2
+    exit 1
+  }
+  record_covering "$tmp15/docs/features/x/audits/v0.9.0-provider-tier-deferral.md" "RN-0900-1..RN-0900-8"
+  commit_at "$tmp15" 100 "a release whose ids predate the modern padding"
+  if ! out="$(cd "$tmp15" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — a notes file using the OLD id padding and indentation did not compare correctly:" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -q 'names all 8 of v0.9.0' || {
+    echo "provider-tier-deferral --teeth: FAILED — the non-modern notes file was not read as 8 entries:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+  record_covering "$tmp15/docs/features/x/audits/v0.9.0-provider-tier-deferral.md" "RN-0900-1..RN-0900-7"
+  if out="$(cd "$tmp15" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — a short range over the non-modern file stayed green" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -qE '^  - RN-0900-8$' || {
+    echo "provider-tier-deferral --teeth: FAILED — the entry outside the range was not named on the non-modern file:" >&2
+    echo "$out" >&2
+    exit 1
+  }
+
+  echo "provider-tier-deferral --teeth: a pre-tag sentinel is not a release while the same file dated and recordless still reds; 3 uncleared releases red and names them; 2 uncleared greens; a live-e2e run after the oldest of 3 clears it to 2 and greens by git history, not mtime or filename; an untracked 3rd release reds too; an acknowledged 3rd ships; a 4th does NOT inherit the 3rd's signature; a recordless release reds unconditionally, even a lone one; a backfill of older records leaves the signature in the NEWEST RELEASE's record; a <placeholder> example is not a signature; a stripped public checkout declines instead of answering. The record also NAMES what it signs for: ${tb_summary}; a release that grows an entry after signing reds until re-signed; an older record without the field is not judged; a missing covers-notes: prints the template; an inclusive range resolves, refuses when short, inverted or unresolvable, and works on v0.9.0's non-modern id padding; a prose tail, a second line and a <placeholder> all refuse; candidate-sha: is required by presence and its shape is not judged; an unreadable or entry-less notes file refuses as a failed MEASUREMENT, never as a verdict."
 }
 
 if [ "${1:-}" = "--teeth" ]; then teeth; exit 0; fi
