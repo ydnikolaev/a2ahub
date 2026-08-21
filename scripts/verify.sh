@@ -532,6 +532,16 @@ run_teeth() {
   fi
 
   set +e
+  out="$(LANE_FILES="scripts/ci-parity.sh" bash "$ROOT/scripts/verify.sh" lane --plan 2>&1)"
+  rc=$?
+  set -e
+  if [ "$rc" -ne 2 ] || ! grep -q -- "--plan is a lane-run flag" <<<"$out"; then
+    echo "verify --teeth: FAIL — \`lane --plan\` must be refused by the mode that cannot honour it, not accepted and ignored:" >&2
+    echo "$out" >&2
+    return 1
+  fi
+
+  set +e
   out="$(LANE_FILES=" " bash "$ROOT/scripts/verify.sh" lane 2>&1)"
   rc=$?
   set -e
@@ -787,6 +797,16 @@ if [ "$MODE" = lane ] || [ "$MODE" = lane-run ]; then
   if [ "${A2A_VERIFY_REQUIRE_NONEMPTY:-}" = "true" ]; then
     require_nonempty=1
   fi
+  # `lane` DERIVES AND PRINTS; it never executes, so it has no plan to make.
+  # Accepting the flag and ignoring it would be the shape this whole change
+  # removes — a caller told the tool something and the tool silently did not
+  # do it. Refuse, and name the mode that implements it.
+  if [ "$MODE" = lane ] && [ "$plan_only" = 1 ]; then
+    echo "verify: --plan is a lane-run flag; \`$0 lane\` already executes nothing and prints the derived set." >&2
+    echo "        You probably want: $0 lane-run --plan  (classify, refuse, name deferrals, run nothing)." >&2
+    exit 2
+  fi
+
   paths="$(changed_paths)"
   if [ -z "$paths" ]; then
     if [ "$require_nonempty" = 1 ]; then
