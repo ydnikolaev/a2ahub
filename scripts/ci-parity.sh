@@ -1322,7 +1322,15 @@ write_receipt() { # $1 = sha, $2 = wall seconds, $3 = the composed phase count
   # This function does not count, and that is the point: the number it records
   # is the one telemetry_report printed, folded across host AND container. A
   # second counter here is how the receipt came to claim 0 over a run of 71.
-  if [ -z "$phases" ] || [ "$phases" -eq 0 ] 2>/dev/null; then
+  # A NUMERIC test, not an arithmetic one. `[ "$phases" -eq 0 ]` exits 2 on a
+  # non-integer, so the `||` chain went false, the refusal was skipped, and the
+  # receipt was written as `"verify_phases": abc,` — invalid JSON that the
+  # publisher's own `grep '"verdict": "pass"'` accepts without noticing.
+  case "$phases" in
+    ''|*[!0-9]*|0) _receipt_countless=1 ;;
+    *) _receipt_countless=0 ;;
+  esac
+  if [ "$_receipt_countless" -eq 1 ]; then
     gate_unmeasured "the composed run passed but no phase count reached the receipt, so nothing can be written about what the pass covered. No receipt written for $sha."
     return "$GATE_EXIT_UNMEASURED"
   fi
@@ -1939,13 +1947,25 @@ EOF
     printf 'ci-parity --teeth: FAIL — T19b: the same host file read alone must be UNMEASURED, which is what proves T19a counted across the boundary; got rc=%s\n%s\n' "$rc19" "$out19" >&2
     teeth_fail=1
   fi
-  body19="$(awk '/^write_receipt\(\) \{/,/^\}/' "$ROOT/scripts/ci-parity.sh")"
+  # CODE only. A structural assertion that reads the prose above the code will
+  # trip on the comment explaining the very shape it forbids — which is exactly
+  # what T19d did on its first run, against the comment naming `-eq 0` as the
+  # thing not to do.
+  body19="$(awk '/^write_receipt\(\) \{/,/^\}/' "$ROOT/scripts/ci-parity.sh" | grep -v '^[[:space:]]*#')"
   if printf '%s\n' "$body19" | grep -q 'VERIFY_TELEMETRY'; then
     printf 'ci-parity --teeth: FAIL — T19c: write_receipt reads the telemetry again. The count has ONE producer (telemetry_report) and is passed in; a second reading here is exactly how the receipt came to claim 0 over 71.\n' >&2
     teeth_fail=1
   fi
+  # T19d, also structural and said so: `[ "$n" -eq 0 ]` exits 2 on a
+  # non-integer, so an arithmetic guard lets a non-numeric count through and
+  # writes `"verify_phases": abc,` — invalid JSON the publisher's own
+  # `grep '"verdict": "pass"'` still accepts. The guard must be a NUMERIC test.
+  if printf '%s\n' "$body19" | grep -qE '\$phases" -eq 0|\$3" -eq 0'; then
+    printf 'ci-parity --teeth: FAIL — T19d: the receipt count is guarded arithmetically. `[ "$n" -eq 0 ]` exits 2 on a non-integer and the refusal is skipped; use a numeric case pattern so a non-numeric count refuses instead of producing invalid JSON.\n' >&2
+    teeth_fail=1
+  fi
   if [ "$teeth_fail" -eq 0 ]; then
-    printf 'ci-parity --teeth: T19 — the receipt records the composed count; a container-only run counts 3, the host file alone is UNMEASURED, and the writer does not count again\n'
+    printf 'ci-parity --teeth: T19 — the receipt records the composed count; a container-only run counts 3, the host file alone is UNMEASURED, the writer does not count again, and the count is guarded numerically rather than arithmetically\n'
   fi
   rm -rf "$d19"
 
