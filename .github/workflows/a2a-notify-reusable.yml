@@ -37,7 +37,7 @@ on:
         # TestReusableRefDefaultMatchesTheNewestAuthoredVersion
         # (internal/notes) offline, and by assert_ref_default_matches
         # (scripts/release-preflight.sh), both extended to cover this file.
-        default: "v0.23.0"
+        default: "v0.24.0"
       space-path:
         description: "Working directory of the space content (default: repo root). Mirrors the validator's own input."
         required: false
