@@ -1740,7 +1740,7 @@ var _ Command = (*LifecycleCommand)(nil)
 // and every caller today that doesn't use the three new flags) writes
 // exactly the bytes lifecycleRespondSeed always wrote — no existing
 // responseID changes.
-func lifecycleRespondSeed(parentID, result string, respFields map[string]string, bodyOverride []byte, actor fold.Actor, refs []string, unmet []lifecycleUnmetEntry, standing string, blockedBy *lifecycleBlockedByEntry) []byte {
+func lifecycleRespondSeed(parentID, result string, respFields map[string]string, bodyOverride []byte, actor fold.Actor, refs []string, unmet []lifecycleUnmetEntry, standing string, blockedBy *lifecycleBlockedByEntry, delivers []string) []byte {
 	keys := make([]string, 0, len(respFields))
 	for k := range respFields {
 		keys = append(keys, k)
@@ -1774,6 +1774,25 @@ func lifecycleRespondSeed(parentID, result string, respFields map[string]string,
 	}
 	if blockedBy != nil {
 		buf.WriteString("blocked_by=" + blockedBy.ReasonCode + ":" + blockedBy.Owner + ":" + blockedBy.Needs + "\n")
+	}
+	// delivers joins the seed for the reason refs did — it is CONTENT, in
+	// GIVEN order (delivers[] is a sequence on the wire, and respDoc
+	// preserves the same order), so two responses naming different packages
+	// must not mint one id. Written LAST and only when non-empty, so every
+	// caller that names none writes exactly the bytes this function always
+	// wrote and no already-computed responseID moves.
+	//
+	// This is the DOCUMENT's identity only. It does NOT reach
+	// operation.Respond's operationKey — internal/operation/key.go is
+	// lead-reserved and off this phase's allowlist — so two responses on
+	// one parent differing ONLY in --delivers still derive the same key and
+	// the same branch, and the second reads as a retry of the first.
+	// Recorded as this phase's own reported residue (spec 01 §11), not
+	// papered over here: key.go's own comment argues at length that a key
+	// minted without a distinguishing fact is a COLLIDING key, not a
+	// narrower one, and it is right.
+	for _, packageID := range delivers {
+		buf.WriteString("delivers=" + packageID + "\n")
 	}
 	buf.WriteString("body=")
 	buf.Write(bodyOverride)
@@ -1821,6 +1840,13 @@ func (c *RespondCommand) Name() string { return "respond" }
 
 // Synopsis implements cli.Command.
 func (c *RespondCommand) Synopsis() string {
+	// NOT extended with --delivers, deliberately: this one-line synopsis is
+	// the generated catalog (`a2a __catalog` -> skill/a2ahub/reference/
+	// commands.md, diffed by scripts/ci-skill-drift.sh), skill/** is off
+	// this phase's allowlist, and the line is already a summary rather than
+	// a flag list — defects-fix-2026-08 P2 added --unmet/--standing/
+	// --blocked-by without touching it either. The flag is reachable from
+	// `a2a respond -h` like its three siblings.
 	return "respond to one or more parents: respond --result <answered|delivered|partial|cannot> [--ref <artifact-id>]... <parent-id...>"
 }
 
@@ -1843,6 +1869,16 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// value `--field` structurally cannot express.
 	var refFlags newStringList
 	fs.Var(&refFlags, "ref", "artifact id to record in refs[] (repeatable; e.g. the fulfilling handoff)")
+	// --delivers (judge-the-thing-2026-08 P1, spec 01 §T2): the response
+	// NAMES the data package it announces. A separate flag from --ref for
+	// the reason the field is separate from refs[] — refs[] is a general,
+	// optional wire that carries anything, so an agent that omits it sails
+	// through the very check built to stop it (which is why the shipped
+	// possession check could not fire on fb-20260808-d5740f). `delivers`
+	// means exactly one thing, and internal/space refuses a submit naming a
+	// package that has not landed on origin/main (REF-024).
+	var deliversFlags newStringList
+	fs.Var(&deliversFlags, "delivers", "data package id (DP-...) this response announces as delivered (repeatable)")
 	bodyFile := fs.String("body-file", "", "path to a file whose contents replace the response body")
 	result := fs.String("result", "", "answered|delivered|partial|cannot (required)")
 	// --unmet/--standing/--blocked-by (defects-fix-2026-08 P2, spec 02 §T1):
@@ -1884,6 +1920,19 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	for _, r := range refs {
 		if strings.TrimSpace(r) == "" {
 			_, _ = fmt.Fprintln(stdio.Stderr, "respond: --ref must not be empty")
+			return 2
+		}
+	}
+	// Emptiness is the ONLY thing checked here, deliberately: the id's
+	// grammar and its landing are ONE question with ONE authority
+	// (space.ResolveDataPackage, reached through the funnel), and a second
+	// DP- parser in the CLI is precisely the duplicated "is this package
+	// here" this epic is named after. A malformed id therefore refuses at
+	// submit, naming REF-024, on both surfaces.
+	delivers := []string(deliversFlags)
+	for _, d := range delivers {
+		if strings.TrimSpace(d) == "" {
+			_, _ = fmt.Fprintln(stdio.Stderr, "respond: --delivers must not be empty")
 			return 2
 		}
 	}
@@ -2002,7 +2051,7 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		respondFacts.BlockedByNeeds = blockedBy.Needs
 	}
 	operationKey := operation.Respond(
-		c.deps.ownSystem, actor.Kind, actor.Name, parents, *result, fields, refs, bodyOverride, respondFacts,
+		c.deps.ownSystem, actor.Kind, actor.Name, parents, *result, fields, refs, bodyOverride, respondFacts, delivers,
 	)
 
 	now := c.deps.now()
@@ -2058,7 +2107,7 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		// MintExchangeIDAt still embeds today's UTC date from `now`; a retry
 		// crossing midnight still mints a different id (spec 08 §11
 		// amendment — accepted, out of scope here).
-		seed := lifecycleRespondSeed(parentID, *result, respFields, bodyOverride, actor, refs, parentUnmet, *standing, blockedBy)
+		seed := lifecycleRespondSeed(parentID, *result, respFields, bodyOverride, actor, refs, parentUnmet, *standing, blockedBy, delivers)
 		responseID, err := artifact.MintExchangeIDAt("XS", c.deps.ownSystem, now, bytes.NewReader(seed))
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "respond: cannot mint response id: %v\n", err)
@@ -2217,6 +2266,14 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 				refEntries = append(refEntries, map[string]string{"ref": ref})
 			}
 			respDoc["refs"] = refEntries
+		}
+		// delivers (judge-the-thing-2026-08 P1): the same array-typed-key
+		// shape as `refs` above, written only when the caller named a
+		// package — an unconditional `delivers: []` would declare an
+		// announcement nobody made, and its ABSENCE is the ordinary answer
+		// shape the schema's own description turns on.
+		if len(delivers) > 0 {
+			respDoc["delivers"] = append([]string(nil), delivers...)
 		}
 		// unmet/standing/blocked_by (defects-fix-2026-08 P2): same
 		// decode/assign/re-encode idiom as `to`/`refs` above — `unmet` is a

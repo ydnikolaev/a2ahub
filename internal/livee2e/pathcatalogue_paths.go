@@ -664,7 +664,48 @@ func dataLoopPaths() []Path {
 		},
 	}
 
-	return []Path{setup, attemptOneFails, attemptTwoPasses, requestClosed}
+	deliversUnlandedRefused := Path{
+		ID:           "response-delivers-unlanded-package-refused",
+		Precondition: setup.ID,
+		Intent: "the NEGATIVE control the delivery spine never had, and the incident it is " +
+			"cut from is fb-20260808-d5740f: a data delivery is ONE submit (payload + " +
+			"handoff + event) and `respond --result delivered` is a SECOND, independent " +
+			"PR, so a producer could announce a delivery whose payload had not merged and " +
+			"the consumer was told to fetch bytes nobody could resolve. B answers the " +
+			"acknowledged work_request with `--result delivered --delivers <DP-id>` for a " +
+			"package the space cannot resolve on origin/main, and the submit MUST be " +
+			"refused naming REF-024 (internal/space's checkResponseDeliversPossession, " +
+			"reached through funnel.Submit so BOTH write surfaces inherit it). " +
+			"THE ORACLE THIS PATH IS ONE HALF OF: the OTHER declared paths that answer " +
+			"`delivered` — work-request-lifecycle-accept-start-respond-verify-close, " +
+			"data-loop-request-answered-closed and their siblings — must stay GREEN and " +
+			"unchanged, because `delivered` is the ordinary result word for any " +
+			"work_request and a check that cannot tell those apart gets reverted, as one " +
+			"already was on 2026-08-10. What separates them is not the result word but " +
+			"the FIELD: this path is the only one that names a package. " +
+			"Drivability note (spec 01 §11): the incident's own shape is 'the payload PR " +
+			"is still open', and this tier's host stand-in auto-merges every write, so a " +
+			"PR cannot be held open here. The refusal reads exactly one fact — does this " +
+			"package resolve against origin/main — and an unmerged payload and a package " +
+			"that was never delivered are the SAME answer at that seat, which is why the " +
+			"never-delivered form drives the identical rule at a fraction of the cost. " +
+			"The work_request must be unchanged afterwards: still acknowledged, still " +
+			"pending on B, still owing `respond` — a refusal that silently moved the fold " +
+			"would otherwise pass unnoticed.",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TRespond,
+				Refused: &Refusal{Code: "REF-024"},
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateAcknowledged),
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TRespond),
+				},
+			},
+		},
+	}
+
+	return []Path{setup, attemptOneFails, attemptTwoPasses, requestClosed, deliversUnlandedRefused}
 }
 
 // --- Family 6 — deprecation and retirement (plan W3 "Paths" #6; W0's C1

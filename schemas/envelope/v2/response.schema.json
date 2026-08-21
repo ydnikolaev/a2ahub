@@ -75,6 +75,12 @@
       "required": ["reason_code", "owner", "needs"],
       "additionalProperties": false
     },
+    "delivers": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "description": "The data package(s) (DP- ids) this response announces as delivered — judge-the-thing-2026-08 P1, fb-20260808-d5740f. Present ONLY when the response is announcing a data delivery; its absence is the ordinary answer shape and stays unremarkable. `result: delivered` alone does NOT imply data — it is the ordinary result word for a work_request, and the declared conformance paths use it on exchanges with no data package anywhere near them, which is why this is a distinct field rather than a conditional on `result`. Shape only here: `ParsePackageID` is the authority on the id grammar and internal/space.ResolveDataPackage is the authority on whether the package has landed (the submit-time refusal, REF-024, resolves every entry against origin/main). Deliberately NOT made conditionally required when `result: delivered` — that would red the plain-answer paths on day one, and the parent-side declaration that would make \"a data delivery was expected\" decidable does not exist yet (spec §7's named residue)."
+    },
     "attempted": {
       "type": "string",
       "description": "What WAS done, so \"0 of N, reported\" is distinguishable from silence (US-2, AC3)."

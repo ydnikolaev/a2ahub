@@ -947,3 +947,39 @@ entries:
       punish. getvisa's own two verdicts: [] closes (over 7 and 8 declared
       criteria) are exactly that population.
 
+
+  - code: REF-024
+    class: referential
+    emitted_by: internal/space
+    title: A response names a delivered package that has not landed
+    applies_to: >-
+      internal/space.checkResponseDeliversPossession (delivery_possession.go)
+      — envelope/v2 response `delivers[]`, resolved entry by entry through
+      space.ResolveDataPackage against origin/main at the write funnel's own
+      seat (funnel.go's submitPreparedRequest, before any commit/push), so
+      BOTH write surfaces inherit it through funnel.Submit. Fires when a
+      response announces a data package the space cannot resolve — the
+      delivery's payload pull request has not merged yet, or the id is not a
+      DP id at all (judge-the-thing-2026-08 P1, fb-20260808-d5740f). A
+      response carrying no `delivers[]` is untouched: `delivered` is the
+      ordinary result word for a work_request and the declared conformance
+      paths use it with no package anywhere near them.
+    severity: reject
+    mode_scope: v3-pr
+    mode_scope_reason: >-
+      ADR-011 D3. The payload's landing is a fact about the MOMENT of the
+      write: this refusal lives in the write funnel and never runs
+      post-merge at all, and a merged response is immutable — no verb
+      rewrites its `delivers[]` — so at full-repo the rule could only
+      punish. It also could only punish WRONGLY: the package that was
+      unlanded at write time is merged by the time any audit reads it.
+    prose_exempt: >-
+      OWED, NOT WAIVED, and the sentence is written: skill/** is off the P1
+      allowlist (spec 01 §Footprint grants the schema, the registry, the
+      space check, the CLI wire and internal/livee2e — no skill path), so
+      the phase that mints this code cannot author its prose. The line the
+      loop reference needs is "`respond --delivers <DP-id>` names the data
+      package a response announces; the submit refuses (REF-024) while that
+      package has not landed on the space's main branch." Recorded in spec
+      01 §11; this exemption is deleted the moment that line lands, and its
+      presence is what stops the gate from greening on a silent gap.

@@ -574,6 +574,11 @@ fields:
     residue[].criterion_index: AUTHOR
     residue[].criterion: AUTHOR
     residue[].carried_to: AUTHOR
+    # judge-the-thing P1. The responder supplies which data package this
+    # response announces — nothing mints it and nothing resolves it from the
+    # environment — so AUTHOR by this table's stated default, the same reading
+    # the five P6 fields above take.
+    delivers: AUTHOR
   event/v1/event:
     schema: TOOL
     event: TOOL

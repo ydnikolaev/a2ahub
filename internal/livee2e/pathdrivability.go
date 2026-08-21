@@ -49,6 +49,11 @@ func drivenPathIDs() []string {
 		"data-loop-attempt-one-fails",
 		"data-loop-attempt-two-passes",
 		"data-loop-request-answered-closed",
+		// judge-the-thing-2026-08 P1: the refusal that answers
+		// fb-20260808-d5740f is driven through the real binary here, not
+		// by a unit test alone — the epic's AC2. Its own family's plain
+		// `delivered` paths above are the oracle it must not disturb.
+		"response-delivers-unlanded-package-refused",
 		"question-declined-after-acknowledge",
 		"work-request-declined-from-submitted",
 		"question-block-then-unblock-restores-accepted",

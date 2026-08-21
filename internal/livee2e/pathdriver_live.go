@@ -843,7 +843,7 @@ func driveRefusedSimpleVerb(ctx context.Context, t *testing.T, h *harness, actor
 // as driveRefusedSimpleVerb's own doc comment: no no-PR-opened assertion
 // (illegalfamRefusalStep's own stronger form) — code plus post-refusal
 // state/pendency only.
-func driveRefusedRespond(ctx context.Context, t *testing.T, h *harness, actor *checkout, path Path, stepIdx int, parentID, result string, ids pathIDs) {
+func driveRefusedRespond(ctx context.Context, t *testing.T, h *harness, actor *checkout, path Path, stepIdx int, parentID, result string, ids pathIDs, extraArgs ...string) {
 	t.Helper()
 	step := path.Steps[stepIdx]
 	if step.Refused == nil {
@@ -852,7 +852,7 @@ func driveRefusedRespond(ctx context.Context, t *testing.T, h *harness, actor *c
 	if step.Refused.Code == "" {
 		t.Fatalf("path %s step %d: declared Refused.Code is empty — a refusal must name the exact expected code", path.ID, stepIdx)
 	}
-	stdout, stderr, err := actor.Run(ctx, respondCommandArgs(parentID, result)...)
+	stdout, stderr, err := actor.Run(ctx, respondCommandArgs(parentID, result, extraArgs...)...)
 	if err == nil {
 		t.Fatalf("path %s step %d: a2a respond --result %s %s (%s): expected a REFUSAL naming %s, got success: stdout=%s", path.ID, stepIdx, result, parentID, actor.System, step.Refused.Code, stdout)
 	}
@@ -1102,6 +1102,38 @@ func runPathDataLoopRequestClosed(ctx context.Context, t *testing.T, h *harness,
 	syncBoth(ctx, t, h)
 	driveVerifyThenAutoClose(ctx, t, h, a, path, 3, 4, ids["response-to-request"], ids)
 	return ids
+}
+
+// runPathResponseDeliversUnlandedRefused drives judge-the-thing-2026-08 P1's
+// own declared path: B answers the acknowledged work_request naming a data
+// package the space cannot resolve, and the REAL binary must refuse it,
+// naming REF-024.
+//
+// The package id is well-formed and deliberately absent — a DP id for B's
+// own system that no delivery ever created, which is the SAME fact at the
+// refusal's seat as the incident's "the payload PR has not merged yet"
+// (this tier's host stand-in auto-merges every write, so an open PR is not
+// something a path can hold; see the path's own Intent).
+func runPathResponseDeliversUnlandedRefused(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "response-delivers-unlanded-package-refused")
+	ids := runPathDataLoopSetup(ctx, t, h, runTag)
+	b := h.B
+
+	syncBoth(ctx, t, h)
+	driveRefusedRespond(ctx, t, h, b, path, 0, ids["work-request"], "delivered", ids,
+		"--delivers", unlandedDataPackageID(b.System))
+	return ids
+}
+
+// unlandedDataPackageID mints a well-formed DP id (spec 05a §T2.1:
+// DP-<system>-<YYYYMMDD>-<rand4>, Crockford-base32 suffix) for a package
+// that has never been delivered into this space, so ResolveDataPackage
+// answers ErrDataPackageNotFound against origin/main. A FIXED literal
+// rather than a random one: the refusal must be reproducible, and this id
+// must never accidentally collide with a package a sibling path delivers.
+func unlandedDataPackageID(system string) string {
+	return fmt.Sprintf("DP-%s-20260101-nvr1", system)
 }
 
 func runPathContractDeprecateRetire(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
@@ -2376,6 +2408,7 @@ var driverForPath = map[string]func(ctx context.Context, t *testing.T, h *harnes
 	"data-loop-attempt-one-fails":                              runPathDataLoopAttemptOneFails,
 	"data-loop-attempt-two-passes":                             runPathDataLoopAttemptTwoPasses,
 	"data-loop-request-answered-closed":                        runPathDataLoopRequestClosed,
+	"response-delivers-unlanded-package-refused":               runPathResponseDeliversUnlandedRefused,
 	"contract-deprecate-retire-after-sunset":                   runPathContractDeprecateRetire,
 	"contract-retire-refused-without-ack":                      runPathContractRetireRefusedWithoutAck,
 	"question-declined-after-acknowledge":                      runPathQuestionDeclinedAfterAcknowledge,

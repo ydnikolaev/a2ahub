@@ -3,6 +3,7 @@ package space
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
@@ -327,5 +328,185 @@ func TestFunnelSubmitPlainDeliveredWithNoRefsIsUnaffected(t *testing.T) {
 	}
 	if len(fake.Pushes) != 1 || len(fake.Opens) != 1 {
 		t.Fatalf("expected exactly 1 push + 1 open, got %d/%d", len(fake.Pushes), len(fake.Opens))
+	}
+}
+
+// deliveryPossessionDeliversBody renders a minimal response body carrying a
+// `delivers[]` array — judge-the-thing-2026-08 P1's own wire (envelope/v2
+// response.schema.json). No packageIDs at all omits the key entirely, which
+// is the ordinary answer shape deliveryPossessionResponseBody already
+// renders and must stay indistinguishable from it.
+func deliveryPossessionDeliversBody(result string, packageIDs ...string) string {
+	body := "---\n" +
+		"id: XS-axon-20260821-resp2\n" +
+		"type: response\n" +
+		"result: " + result + "\n"
+	if len(packageIDs) > 0 {
+		body += "delivers:\n"
+		for _, id := range packageIDs {
+			body += "  - " + id + "\n"
+		}
+	}
+	return body + "---\nbody\n"
+}
+
+// TestCheckResponseDeliversPossession is P1's own half: the response NAMES
+// the package it announces, so the SAME origin/main resolution that made
+// atomicity impossible becomes the check — an unmerged payload PR means no
+// package on main means the response is refused.
+func TestCheckResponseDeliversPossession(t *testing.T) {
+	t.Parallel()
+
+	// THE incident (fb-20260808-d5740f): the payload PR has not merged, so
+	// the named package is not on origin/main, and the response that
+	// announces it must not land.
+	t.Run("delivers naming a package absent from origin main is refused, naming the package", func(t *testing.T) {
+		t.Parallel()
+		repo := newContractHistoryRepo(t)
+		packageID := "DP-axon-20260821-dpk1"
+		raw := []byte(deliveryPossessionDeliversBody("delivered", packageID))
+		err := checkResponseDeliveryPossession(t.Context(), repo, raw)
+		if !errors.Is(err, ErrResponseDeliversUnlanded) {
+			t.Fatalf("checkResponseDeliveryPossession = %v, want ErrResponseDeliversUnlanded", err)
+		}
+		if !strings.Contains(err.Error(), packageID) {
+			t.Fatalf("refusal %q does not name the package %q", err.Error(), packageID)
+		}
+		if !strings.Contains(err.Error(), "REF-024") {
+			t.Fatalf("refusal %q does not name its registry code REF-024", err.Error())
+		}
+	})
+
+	// The golden path: by the time the reference flow responds, the payload
+	// is already merged, so the announcement resolves and costs nothing.
+	t.Run("delivers naming a committed package is not a violation", func(t *testing.T) {
+		t.Parallel()
+		repo := newContractHistoryRepo(t)
+		packageID := "DP-axon-20260821-dpk2"
+		commitDataPackageFixture(t, repo, "axon", packageID, map[string]string{"manifest.json": `{"schema":"data-package/v1"}`})
+		raw := []byte(deliveryPossessionDeliversBody("delivered", packageID))
+		if err := checkResponseDeliveryPossession(t.Context(), repo, raw); err != nil {
+			t.Fatalf("checkResponseDeliveryPossession = %v, want nil", err)
+		}
+	})
+
+	// The oracle (§8 criterion 2), at unit tier: `delivered` is the ordinary
+	// result word for a plainly-answered work_request and the five/six
+	// declared catalogue paths use it with no package anywhere near them.
+	// A response that names NO package is exactly as unremarkable as it was
+	// before this field existed.
+	t.Run("delivers absent is untouched, even at result delivered", func(t *testing.T) {
+		t.Parallel()
+		repo := newContractHistoryRepo(t)
+		raw := []byte(deliveryPossessionDeliversBody("delivered"))
+		if err := checkResponseDeliveryPossession(t.Context(), repo, raw); err != nil {
+			t.Fatalf("checkResponseDeliveryPossession = %v, want nil", err)
+		}
+	})
+
+	// The trigger is the FIELD's presence, not the result word: an author
+	// who names a package they do not hold is just as unactionable at
+	// `partial` as at `delivered`, and nothing plain-answered carries the
+	// field at all.
+	t.Run("delivers naming an absent package is refused at any result", func(t *testing.T) {
+		t.Parallel()
+		repo := newContractHistoryRepo(t)
+		raw := []byte(deliveryPossessionDeliversBody("partial", "DP-axon-20260821-dpk3"))
+		if err := checkResponseDeliveryPossession(t.Context(), repo, raw); !errors.Is(err, ErrResponseDeliversUnlanded) {
+			t.Fatalf("checkResponseDeliveryPossession = %v, want ErrResponseDeliversUnlanded", err)
+		}
+	})
+
+	// §6's malformed-id edge case: ResolveDataPackage is the ONE authority
+	// on "is this package here" (spec §5), so a malformed id refuses through
+	// the same seat rather than through a second parser.
+	t.Run("a malformed delivers id is refused through the same seat", func(t *testing.T) {
+		t.Parallel()
+		repo := newContractHistoryRepo(t)
+		raw := []byte(deliveryPossessionDeliversBody("delivered", "not-a-package-id"))
+		err := checkResponseDeliveryPossession(t.Context(), repo, raw)
+		if !errors.Is(err, ErrResponseDeliversUnlanded) {
+			t.Fatalf("checkResponseDeliveryPossession = %v, want ErrResponseDeliversUnlanded", err)
+		}
+		if !errors.Is(err, ErrDataPackageInvalidReference) {
+			t.Fatalf("refusal does not carry ErrDataPackageInvalidReference: %v", err)
+		}
+	})
+
+	// A non-response artifact carrying the same key is not this check's
+	// business — the same narrowness the refs[] half already holds.
+	t.Run("a non-response type carrying delivers is not a violation", func(t *testing.T) {
+		t.Parallel()
+		repo := newContractHistoryRepo(t)
+		raw := []byte("---\nid: XW-axon-20260821-notresp\ntype: work_request\nresult: delivered\ndelivers:\n  - DP-axon-20260821-dpk4\n---\nbody\n")
+		if err := checkResponseDeliveryPossession(t.Context(), repo, raw); err != nil {
+			t.Fatalf("checkResponseDeliveryPossession = %v, want nil", err)
+		}
+	})
+}
+
+// TestFunnelSubmitRefusesUnlandedDeliversBeforeAnyGitAction is the incident
+// itself, run through the real funnel: the payload PR has not merged, the
+// response announces the package anyway, and the write is refused before any
+// commit/push git action (zero pushes, zero opens) — the second half of
+// "a data delivery is one submit, the response is a second, independent PR".
+func TestFunnelSubmitRefusesUnlandedDeliversBeforeAnyGitAction(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+
+	req := newTestSubmitRequest(fx, "axon", l)
+	req.Files = []FileWrite{
+		{Path: l.Exchange(req.ArtifactID), Content: []byte(deliveryPossessionDeliversBody("delivered", "DP-axon-20260821-fnp1"))},
+		{Path: l.EventFile("2026", "01J8QYK2Z3ABCDEFGHJKMNPQRS"), Content: []byte("event: submit\n")},
+	}
+
+	fake := host.NewFakeHost()
+	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+
+	_, err = funnel.Submit(t.Context(), req)
+	if !errors.Is(err, ErrResponseDeliversUnlanded) {
+		t.Fatalf("Submit error = %v, want ErrResponseDeliversUnlanded", err)
+	}
+	if len(fake.Pushes) != 0 || len(fake.Opens) != 0 {
+		t.Fatalf("expected zero pushes/opens, got %d/%d", len(fake.Pushes), len(fake.Opens))
+	}
+}
+
+// TestFunnelSubmitAcceptsLandedDelivers is §8 criterion 3: with the package
+// already merged — which is what the shipped reference flow always has by
+// the time it responds — the response submits exactly as it does today.
+func TestFunnelSubmitAcceptsLandedDelivers(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+
+	repo := fx.Clone("axon")
+	packageID := "DP-axon-20260821-fnp2"
+	commitDataPackageFixture(t, repo, "axon", packageID, map[string]string{"manifest.json": `{"schema":"data-package/v1"}`})
+
+	req := newTestSubmitRequest(fx, "axon", l)
+	req.Files = []FileWrite{
+		{Path: l.Exchange(req.ArtifactID), Content: []byte(deliveryPossessionDeliversBody("delivered", packageID))},
+		{Path: l.EventFile("2026", "01J8QYK2Z3ABCDEFGHJKMNPQRS"), Content: []byte("event: submit\n")},
+	}
+
+	fake := host.NewFakeHost()
+	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+
+	result, err := funnel.Submit(t.Context(), req)
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	if result.State != WriteStatePendingMerge {
+		t.Fatalf("State = %v, want %v", result.State, WriteStatePendingMerge)
 	}
 }
