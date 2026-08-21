@@ -12,7 +12,9 @@ type rawBlock struct {
 	Reason string
 	// Claims is non-empty only when a KindAlways block carries a
 	// `lane-claims:` sub-block (D-10) — see Declaration.Claims.
-	Claims    []string
+	Claims []string
+	// Tier is TierShip when the block carries a `lane-tier: ship` line.
+	Tier      Tier
 	StartLine int // 1-based, the "lane-inputs:" line itself
 	EndLine   int // 1-based, the last line the block consumed
 	// Following is the first non-blank line after the block ends, trimmed
@@ -138,6 +140,10 @@ func findLaneBlocks(lines []string, prefix string) ([]rawBlock, error) {
 			}
 			end = consumeOpaqueDirective(lines, end, prefix)
 
+			if t, _, _ := consumeTierDirective(lines, end, prefix); t != TierCommit {
+				errs = append(errs, blockErr(end+2, "lane-tier: is only legal on a scoped block (this one is %s) — ALWAYS runs in every lane and NEVER runs in none, so neither has a lane to assign", kind))
+				continue
+			}
 			b := rawBlock{Kind: kind, Reason: reason, Claims: claims, StartLine: i + 1, EndLine: end + 1}
 			b.Following = followingLine(lines, end+1)
 			blocks = append(blocks, b)
@@ -163,7 +169,7 @@ func findLaneBlocks(lines []string, prefix string) ([]rawBlock, error) {
 					break
 				}
 				c = strings.TrimSpace(c)
-				if c == "" || strings.HasPrefix(c, "lane-reason:") || strings.HasPrefix(c, "lane-reads-opaque:") {
+				if c == "" || strings.HasPrefix(c, "lane-reason:") || strings.HasPrefix(c, "lane-reads-opaque:") || strings.HasPrefix(c, "lane-tier:") {
 					// "lane-reads-opaque:" (D-11) is legal on a scoped block
 					// (logic-e2e's own declaration carries one) but is not a
 					// glob — it is its own trailing sub-block, consumed
@@ -190,7 +196,14 @@ func findLaneBlocks(lines []string, prefix string) ([]rawBlock, error) {
 			}
 			end := j - 1
 			end = consumeOpaqueDirective(lines, end, prefix)
-			b := rawBlock{Kind: KindScoped, Inputs: inputs, StartLine: i + 1, EndLine: end + 1}
+			tier, tierEnd, tierErr := consumeTierDirective(lines, end, prefix)
+			if tierErr != nil {
+				errs = append(errs, tierErr)
+				continue
+			}
+			end = tierEnd
+			end = consumeOpaqueDirective(lines, end, prefix)
+			b := rawBlock{Kind: KindScoped, Inputs: inputs, Tier: tier, StartLine: i + 1, EndLine: end + 1}
 			b.Following = followingLine(lines, end+1)
 			blocks = append(blocks, b)
 			i = end
@@ -255,4 +268,33 @@ func followingLine(lines []string, idx int) string {
 		return strings.TrimRight(lines[k], " \t")
 	}
 	return ""
+}
+
+// consumeTierDirective reads an optional `lane-tier: <value>` line directly
+// after a block's globs and returns the tier plus the new end index. An
+// UNKNOWN value is an error rather than a silent TierCommit: a typo that fell
+// back to the default would put a ship-lane phase into every commit, which is
+// the opposite of what the author wrote and nothing would say so.
+func consumeTierDirective(lines []string, end int, prefix string) (Tier, int, error) {
+	next := end + 1
+	if next >= len(lines) {
+		return TierCommit, end, nil
+	}
+	c, isComment := commentContent(lines[next], prefix)
+	if !isComment {
+		return TierCommit, end, nil
+	}
+	trimmed := strings.TrimSpace(c)
+	if !strings.HasPrefix(trimmed, "lane-tier:") {
+		return TierCommit, end, nil
+	}
+	value := strings.TrimSpace(strings.TrimPrefix(trimmed, "lane-tier:"))
+	switch value {
+	case "ship":
+		return TierShip, next, nil
+	case "":
+		return TierCommit, end, blockErr(next+1, "lane-tier: is present but empty; the only value today is `ship`")
+	default:
+		return TierCommit, end, blockErr(next+1, "lane-tier: %q is not a tier; the only value today is `ship` (a phase the derivation selects but only a ship lane executes)", value)
+	}
 }

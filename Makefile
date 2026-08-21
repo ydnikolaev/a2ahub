@@ -508,22 +508,23 @@ operational-projection-single-source: ## Static HTML and the local server consum
 localserver-readonly-routes: ## Local HTTP exposes only the frozen read-only route inventory.
 	@bash scripts/check_localserver_readonly_routes.sh
 
-# The gates' own teeth are reachable from a diff, and until 2026-08-12 they
-# were not. check-convention.md said "`make lane` selects it for you"; it did
-# not, because this recipe carried no declaration at all — and `make check` does
-# not run them either (the ceiling is `verify.sh full`; this is `verify.sh
-# harness`, a different mode). So a change to a gate's OWN logic selected
-# nothing that would exercise it, and the only thing standing between a broken
-# gate and a green tree was somebody remembering. Found by editing
-# feedback-sync.sh and noticing the derived lane did not name this target.
+# Until 2026-08-21 this recipe silently owned `harness-check`'s declaration.
+# The three `ci-parity*` recipes were inserted BETWEEN that comment block and
+# the target it described, and the extractor reads POSITION — so the block whose
+# prose says "what this target reads is their --teeth entrypoints" came to
+# select the full local CI suite on every shell-script commit. Nobody ever paid
+# for it, because `verify.sh lane-run` was silently dropping any derived phase
+# absent from its hand-written order: two defects that concealed each other.
 #
-# Same shape as web-quality's block above, and the same fix. The declaration is
-# the SCRIPTS, because what this target reads is their --teeth entrypoints —
-# not the corpora they judge, which each gate declares for itself.
-# lane-inputs:
-#   scripts/**/*.sh
-#   docs/runbooks/*.sh
-#   .agents/scripts/*.sh
+# A comment block is attached by ADJACENCY, so inserting a target above another
+# target's declaration silently reassigns it. That is a hazard of the form, not
+# of this Makefile, and it argues for every recipe carrying its own.
+# lane-inputs: NEVER
+# lane-reason: it runs the WHOLE of what CI runs — the ceiling, the teeth, the
+#   strict lane, the web suites, the browser contract and both gitleaks scans,
+#   in CI's order. A ship gate, never a commit gate, and a PHASE of
+#   `make release-check` rather than a step anyone sequences: the same
+#   classification `ci-parity-docker` and `release-check` already carry.
 ci-parity: ## Run exactly what CI runs, locally, in CI's order (the thing `make check` alone does NOT do).
 	@bash scripts/ci-parity.sh --run
 
@@ -533,6 +534,25 @@ ci-parity-audit: ## Refuse when a CI command is executed by no local step and ca
 ci-parity-docker: ## The same suite under ubuntu + GNU userland, where every non-notifier CI job actually runs.
 	@bash scripts/ci-parity-docker.sh
 
+# The gates' own teeth are reachable from a diff, and until 2026-08-12 they
+# were not. check-convention.md said "`make lane` selects it for you"; it did
+# not, because this recipe carried no declaration at all — and `make check` does
+# not run them either (the ceiling is `verify.sh full`; this is `verify.sh
+# harness`, a different mode). So a change to a gate's OWN logic selected
+# nothing that would exercise it, and the only thing standing between a broken
+# gate and a green tree was somebody remembering. Found by editing
+# feedback-sync.sh and noticing the derived lane did not name this target.
+#
+# THE DECLARATION FOR THIS LIVES IN scripts/verify.sh's `harness` mode, on the
+# `harness-teeth` phase this target invokes — not here. A copy here would be a
+# SECOND derivable phase doing the identical work: `make lane --plan` on a
+# shell-script change would select `harness-check` AND `harness-teeth` and pay
+# the ~173 s teeth twice. Measured on 2026-08-22, the moment this block was
+# moved back onto its own target after years above the wrong one.
+#
+# So the history above is kept for its lesson and the declaration is not
+# duplicated: a target that merely dispatches to a declared phase declares
+# nothing of its own.
 harness-check: ## Run the gates' --teeth self-tests (harness gates are private/presence-gated; release-preflight is public).
 	@bash scripts/verify.sh harness
 

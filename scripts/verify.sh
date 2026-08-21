@@ -541,6 +541,76 @@ run_teeth() {
     return 1
   fi
 
+  # ── THE DERIVED SET AND THE EXECUTED SET MUST BE THE SAME SET. ──
+  #
+  # Until 2026-08-21 `lane-run` filtered the derived phases through a
+  # hand-written roster and printed its own truncated count as the lane's
+  # size: `make lane` derived 12, the runner executed 10, and the green line
+  # said "10 derived phase(s) green". `projection` was one of the two it threw
+  # away, so a gate declared on nearly every commit had been executed by a lane
+  # exactly zero times since it was written.
+  #
+  # Three cases, and the third is what keeps the first from being a blanket
+  # refusal that would red every real lane. The fixture is a COPY of the
+  # declaration corpus with one undispatchable phase appended, reached through
+  # LANE_ROOT — the derivation reads the fixture, the runner stays real, and
+  # the refusal fires during classification. `--plan` keeps it honest AND
+  # safe: without it, a blunted refusal would let this self-test execute the
+  # derived lane, which selects `harness-teeth` — the self-test running itself.
+  local lanefix lane_out lane_rc=0
+  lanefix="$(mktemp -d "${TMPDIR:-/tmp}/verify-lane-teeth.XXXXXX")"
+  cp "$ROOT/Makefile" "$lanefix/"
+  cp -R "$ROOT/scripts" "$lanefix/scripts"
+  ( cd "$ROOT" && find internal -name doc.go -print0 ) | while IFS= read -r -d '' f; do
+    mkdir -p "$lanefix/$(dirname "$f")" && cp "$ROOT/$f" "$lanefix/$f"
+  done
+
+  # (c) FIRST, and deliberately: the untouched copy must derive and classify
+  # cleanly. A refusal tooth that never sees a green run cannot tell "refuses
+  # the undispatchable" from "refuses everything".
+  set +e
+  lane_out="$(LANE_ROOT="$lanefix" LANE_FILES="scripts/ci-parity.sh" bash "$ROOT/scripts/verify.sh" lane --require-nonempty 2>&1)"
+  lane_rc=$?
+  set -e
+  if [ "$lane_rc" -ne 0 ]; then
+    echo "verify --teeth: FAIL — the unmodified lane fixture did not derive cleanly, so the refusal case below proves nothing:" >&2
+    echo "$lane_out" >&2
+    rm -rf "$lanefix"
+    return 1
+  fi
+
+  # (a) an undispatchable derived phase is REFUSED BY NAME, not dropped.
+  printf '%s\n' '' \
+    'if [ "$MODE" = teeth-undispatchable ]; then' \
+    '  # lane-inputs:' \
+    '  #   scripts/ci-parity.sh' \
+    '  run_phase teeth-no-such-target true' \
+    '  exit 0' \
+    'fi' >> "$lanefix/scripts/verify.sh"
+  set +e
+  lane_out="$(LANE_ROOT="$lanefix" LANE_FILES="scripts/ci-parity.sh" bash "$ROOT/scripts/verify.sh" lane-run --plan 2>&1)"
+  lane_rc=$?
+  set -e
+  if [ "$lane_rc" -eq 0 ] || ! grep -q "teeth-no-such-target" <<<"$lane_out" || ! grep -q "REFUSED" <<<"$lane_out"; then
+    echo "verify --teeth: FAIL — a derived phase this runner cannot execute must be refused BY NAME, never dropped:" >&2
+    echo "$lane_out" >&2
+    rm -rf "$lanefix"
+    return 1
+  fi
+  rm -rf "$lanefix"
+
+  # (b) the ship tier is real and non-vacuous: `projection` is DERIVED by an
+  # ordinary Go edit (so it is not excluded) AND named as ship-tier (so the
+  # commit lane will defer rather than run it). Both halves, or "deferred"
+  # cannot be told apart from "never selected".
+  local shiplist alllist
+  shiplist="$(printf '%s\n' internal/cache/store.go | (cd "$ROOT" && go run internal/lane/lanecheck.go --ship-phases) 2>&1)"
+  alllist="$(printf '%s\n' internal/cache/store.go | (cd "$ROOT" && go run internal/lane/lanecheck.go --phases) 2>&1)"
+  if ! grep -qx "projection" <<<"$shiplist" || ! grep -qx "projection" <<<"$alllist"; then
+    echo "verify --teeth: FAIL — projection must be BOTH derived and ship-tier; derived=[$(grep -cx projection <<<"$alllist")] ship=[$(grep -cx projection <<<"$shiplist")]" >&2
+    return 1
+  fi
+
   # ── gate-lib's ANNOTATION MODE, which every other tooth is now blind to. ──
   #
   # `_harness-check` pins GITHUB_ACTIONS empty for the whole teeth block (see
@@ -575,7 +645,7 @@ run_teeth() {
     return 1
   fi
 
-  echo "verify --teeth: owned root accepted by construction; symlink and foreign residue refused; scoped tests reject stale binaries; target preserved; red status recorded and returned; lane strict mode refuses an empty or misspelled input and stays out of the way of a clean-tree default."
+  echo "verify --teeth: owned root accepted by construction; symlink and foreign residue refused; scoped tests reject stale binaries; target preserved; red status recorded and returned; lane strict mode refuses an empty or misspelled input and stays out of the way of a clean-tree default; a derived phase the runner cannot execute is refused by name rather than dropped, and the ship tier is both derived and deferred."
 }
 
 if [ "$MODE" = "--teeth" ]; then
@@ -669,6 +739,17 @@ run_derived_phase() {
   esac
 }
 
+# phase_is_dispatchable — can run_derived_phase actually execute this name?
+# The explicit cases first, then the Makefile's own .PHONY list, which is what
+# the `*)` fallback shells out to. Read from the Makefile rather than kept
+# here: a second list would be the very thing that produced the silent drop.
+phase_is_dispatchable() {
+  case "$1" in
+    build-cli|gofmt|vet|golangci-lint|go-test|coverage-policy|logic-e2e|harness-teeth|live-e2e|go-test-scoped:*) return 0 ;;
+  esac
+  grep '^\.PHONY:' "$ROOT/Makefile" | sed 's/^\.PHONY://' | tr ' ' '\n' | grep -qxF "$1"
+}
+
 if [ "$MODE" = lane ] || [ "$MODE" = lane-run ]; then
   # Strict mode: an empty (or unresolvable) input set is a REFUSAL, never a
   # silent green. The interactive default — a developer at a keyboard on a
@@ -681,14 +762,28 @@ if [ "$MODE" = lane ] || [ "$MODE" = lane-run ]; then
   # own boolean convention (`GITHUB_ACTIONS` above): exact string "true", not
   # bare `-n`, so an accidentally-set empty var does not silently arm it.
   require_nonempty=0
-  case "${2:-}" in
-    "") ;;
-    --require-nonempty) require_nonempty=1 ;;
-    *)
-      echo "usage: $0 $MODE [--require-nonempty]" >&2
-      exit 2
-      ;;
-  esac
+  plan_only=0
+  for arg in "${@:2}"; do
+    case "$arg" in
+      "") ;;
+      --require-nonempty) require_nonempty=1 ;;
+      # --plan — CLASSIFY WITHOUT EXECUTING. Derive, apply the ship tier,
+      # refuse an undispatchable phase, and print what would run; run nothing.
+      #
+      # It exists because the alternative is unsafe: a self-test that exercises
+      # the refusal has to reach `lane-run`, and a `lane-run` whose refusal is
+      # blunted EXECUTES the derived lane — which selects `harness-teeth`,
+      # which is the self-test. The tooth would run itself. Found on
+      # 2026-08-22 by a red-check that hung for ten minutes doing exactly that.
+      # It is also the honest way for a person to ask "what will this cost?"
+      # without paying it.
+      --plan) plan_only=1 ;;
+      *)
+        echo "usage: $0 $MODE [--require-nonempty] [--plan]" >&2
+        exit 2
+        ;;
+    esac
+  done
   if [ "${A2A_VERIFY_REQUIRE_NONEMPTY:-}" = "true" ]; then
     require_nonempty=1
   fi
@@ -714,26 +809,80 @@ if [ "$MODE" = lane ] || [ "$MODE" = lane-run ]; then
     echo "lane: refusing to run a lane the derivation could not settle (see above)." >&2
     exit 1
   fi
-  # A canonical ORDER, filtered by membership: build-cli feeds the
-  # binary-backed static gates, and coverage-policy reads the profile
-  # go-test writes. Running the derived set in declaration order would break
-  # both couplings for a reason nobody could see from the output.
-  ordered="build-cli $(make --no-print-directory -s _print-repo-gates) web-quality gofmt vet golangci-lint go-test coverage-policy logic-e2e harness-teeth"
-  ran=0
-  for phase in $ordered; do
-    if printf '%s\n' "$phases" | grep -qxF "$phase"; then
-      run_derived_phase "$phase"
-      ran=$((ran + 1))
-    fi
-  done
-  # Scoped package tests are not in the canonical order (their names carry a
-  # package path); run them last, after the whole-module phases they narrow.
+  # ORDER, NOT MEMBERSHIP — and until 2026-08-21 this was one hand-written
+  # string that silently decided both.
+  #
+  # The roster named all 22 phases in order to express exactly TWO couplings
+  # (its own comment said so): `build-cli` feeds the binary-backed static
+  # gates, and `coverage-policy` reads the profile `go-test` writes. Membership
+  # was its side effect — a derived phase absent from the string was DROPPED,
+  # and `ran` was then printed as though it were the lane's size. Measured that
+  # day: `make lane` derived 12, `lane-run` executed 10, and the green line
+  # said 10. A phase could be declared, matched against the diff, and never run,
+  # with nothing saying so.
+  #
+  # So the couplings are expressed as couplings and nothing else is ordered:
+  # build-cli first, coverage-policy after the whole-module tests, scoped
+  # package tests last (their names carry a package path, and they narrow what
+  # the whole-module phases already ran). Everything else runs in derivation
+  # order. A phase this runner cannot dispatch is now a NAMED REFUSAL — the
+  # same discipline as a path no gate claims.
+  ship_phases="$(printf '%s\n' "$paths" | go run internal/lane/lanecheck.go --ship-phases)" || {
+    echo "lane: refusing to run a lane whose ship-tier set could not be resolved (see above)." >&2
+    exit 1
+  }
+
+  derived=0 ran=0 deferred=0
+  run_now="" run_last="" run_coverage=""
   for phase in $phases; do
+    derived=$((derived + 1))
+    if [ -n "$ship_phases" ] && printf '%s\n' "$ship_phases" | grep -qxF "$phase"; then
+      deferred=$((deferred + 1))
+      echo "lane: $phase — DERIVED and DEFERRED to the ship lane (\`lane-tier: ship\`). Not run here; \`make release-check\` runs it, and \`make $phase\` pays it now."
+      continue
+    fi
     case "$phase" in
-      go-test-scoped:*) run_derived_phase "$phase"; ran=$((ran + 1)) ;;
+      build-cli)         run_now="build-cli $run_now" ;;
+      coverage-policy)   run_coverage="coverage-policy" ;;
+      go-test-scoped:*)  run_last="$run_last $phase" ;;
+      *)
+        # DISPATCHABILITY IS CHECKED, NOT ASSUMED. run_derived_phase's
+        # fallback is `make <phase>`, so a derived phase that is neither an
+        # explicit case nor a real target would fail as a make error — a
+        # different message, at a different layer, for what is really "this
+        # runner does not know this phase".
+        if ! phase_is_dispatchable "$phase"; then
+          echo "lane: REFUSED — the derivation selected phase '$phase', and this runner cannot execute it." >&2
+          echo "      It is neither a case in run_derived_phase nor a .PHONY target in the Makefile." >&2
+          echo "      Either give it a target/case, or declare it \`# lane-tier: ship\` if only a ship lane should pay for it." >&2
+          echo "      A derived phase is never silently dropped: that is how 'projection' went unrun from every lane it was ever selected for." >&2
+          exit 1
+        fi
+        run_now="$run_now $phase"
+        ;;
     esac
   done
-  echo "lane: $ran derived phase(s) green. This is NOT the ceiling — a release runs 'make check' (spec 12 J5)."
+
+  if [ "$plan_only" = 1 ]; then
+    for phase in $run_now $run_coverage $run_last; do
+      echo "lane: would run $phase"
+      ran=$((ran + 1))
+    done
+    echo "lane: PLAN ONLY — $derived derived, $ran would run, $deferred deferred to the ship lane. Nothing executed."
+    exit 0
+  fi
+
+  for phase in $run_now; do run_derived_phase "$phase"; ran=$((ran + 1)); done
+  for phase in $run_coverage; do run_derived_phase "$phase"; ran=$((ran + 1)); done
+  for phase in $run_last; do run_derived_phase "$phase"; ran=$((ran + 1)); done
+
+  # THREE NUMBERS, because one cannot carry the meaning. "$ran green" over a
+  # derived set of a different size is the shape that hid the drop.
+  if [ "$deferred" -gt 0 ]; then
+    echo "lane: $derived derived, $ran run and green, $deferred deferred to the ship lane (named above). This is NOT the ceiling — a release runs 'make check' (spec 12 J5)."
+  else
+    echo "lane: $derived derived, all $ran run and green. This is NOT the ceiling — a release runs 'make check' (spec 12 J5)."
+  fi
   exit 0
 fi
 
@@ -844,6 +993,22 @@ if [ "$MODE" = projection ]; then
   # derived lane and the ship lane that reach it. The re-entry that membership
   # would create is also refused by name inside the gate itself.
   #
+  # SHIP TIER (added 2026-08-21). Kind and Tier answer different questions:
+  # the globs below decide WHETHER a diff selects this phase, `lane-tier:`
+  # decides WHO EXECUTES it once selected. `NEVER` would be a false statement
+  # here — a docs-only commit genuinely must not select this gate and an
+  # internal/** one must, which is spec 03's AC5 — while `commit` would be
+  # wrong for a different reason: the commit lane judges the tree you are
+  # about to commit, and this gate judges a PUBLIC PROJECTION of a commit.
+  # Different question, different lane.
+  #
+  # It was already reachable: `make projection` is a phase-1 member of
+  # `make release-check` and ran there for 358 s on 2026-08-21. What it was
+  # NOT is honestly reported — `lane-run` filtered the derived set through a
+  # hand-written roster and printed its own truncated count as the lane's
+  # size, so this phase was derived on nearly every commit and executed by a
+  # lane exactly zero times. `lane-run` now names it instead.
+  #
   # The declaration below is as wide as the projection really is and no wider:
   # the projection CONTAINS every shipped path, so any of them can change its
   # verdict, while the private trees it removes cannot. The exclusions are the
@@ -862,6 +1027,7 @@ if [ "$MODE" = projection ]; then
   #   !.mate/**
   #   !AGENTS.md
   #   !CLAUDE.md
+  # lane-tier: ship
   run_phase projection bash "$ROOT/scripts/check-projection.sh" --all
   exit 0
 fi

@@ -273,6 +273,7 @@ func declarationFromBlock(b rawBlock, phase, relPath string) Declaration {
 		Inputs: b.Inputs,
 		Reason: b.Reason,
 		Claims: b.Claims,
+		Tier:   b.Tier,
 		Source: fmt.Sprintf("%s:%d", relPath, b.StartLine),
 	}
 }

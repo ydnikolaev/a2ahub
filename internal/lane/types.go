@@ -33,6 +33,44 @@ func (k Kind) String() string {
 	}
 }
 
+// Tier says WHICH LANE executes a phase the derivation selected. It is
+// orthogonal to Kind: Kind answers "does the changed-file set decide whether
+// this phase is selected?", Tier answers "once selected, who pays for it?".
+//
+// Before this existed the two questions shared one keyword and NEVER carried
+// both answers. `projection` is the case that forced them apart: its verdict
+// genuinely depends on which files changed — it declares `**` minus the
+// private trees, and a docs-only commit must not select it — so NEVER would
+// be a false statement about it. But the commit lane judges the tree you are
+// about to commit, while `projection` judges a PUBLIC PROJECTION of a commit.
+// That is a different question, and it belongs to the ship lane.
+//
+// The cost is real (358 s measured on 2026-08-21) but it is not the argument:
+// a cost argument stops being true the moment the number moves.
+type Tier int
+
+const (
+	// TierCommit is the default: the derived lane runs it.
+	TierCommit Tier = iota
+	// TierShip is selected by the derivation and REPORTED by `make lane`,
+	// but executed only by a ship lane (`make release-check`, which runs
+	// `make projection` as a phase-1 member, or the target by hand).
+	// `lane-run` NAMES it as deferred — never silently drops it, which is
+	// exactly what the hand-written runner roster did until 2026-08-21.
+	TierShip
+)
+
+func (t Tier) String() string {
+	switch t {
+	case TierCommit:
+		return "commit"
+	case TierShip:
+		return "ship"
+	default:
+		return fmt.Sprintf("Tier(%d)", int(t))
+	}
+}
+
 // Declaration is one `lane-inputs:` block, parsed from wherever the D-1
 // grammar allows it to live.
 type Declaration struct {
@@ -54,6 +92,10 @@ type Declaration struct {
 	// already runs in every lane regardless of what it claims, so Claims
 	// never selects the gate.
 	Claims []string
+	// Tier is TierShip only when the block carries `lane-tier: ship`,
+	// which is legal ONLY on a scoped declaration — ALWAYS runs everywhere
+	// and NEVER runs nowhere, so neither has a lane to be assigned to.
+	Tier Tier
 	// Source is "path:line" — where the block was found.
 	Source string
 }

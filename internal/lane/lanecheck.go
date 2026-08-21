@@ -71,6 +71,13 @@ func main() {
 		// that could disagree with the human-readable one is the copy
 		// problem this package exists to remove.
 		os.Exit(runDerive(root, os.Args[2:], true))
+	case "--ship-phases":
+		// The ship-tier subset of --phases, one name per line. Kept as its
+		// own flag rather than an annotation on --phases so the existing
+		// format has no second meaning: every consumer that greps a phase
+		// name out of --phases keeps working unchanged, and a runner that
+		// has not learned about tiers cannot silently mis-read one.
+		os.Exit(runDerive(root, os.Args[2:], true, lane.TierShip))
 	default:
 		usage()
 		os.Exit(2)
@@ -134,7 +141,7 @@ func runVerify(root string) int {
 	return 1
 }
 
-func runDerive(root string, args []string, namesOnly bool) int {
+func runDerive(root string, args []string, namesOnly bool, only ...lane.Tier) int {
 	changed := args
 	if len(changed) == 0 {
 		changed = readStdinPaths()
@@ -172,6 +179,9 @@ func runDerive(root string, args []string, namesOnly bool) int {
 		return sel.Phases[i].Declaration.Phase < sel.Phases[j].Declaration.Phase
 	})
 	for _, p := range sel.Phases {
+		if len(only) > 0 && p.Declaration.Tier != only[0] {
+			continue
+		}
 		if namesOnly {
 			fmt.Println(p.Declaration.Phase)
 			continue
@@ -180,6 +190,16 @@ func runDerive(root string, args []string, namesOnly bool) int {
 		switch p.Declaration.Kind {
 		case lane.KindAlways:
 			fmt.Printf("%s  ALWAYS (%s) — %s\n", p.Declaration.Phase, p.Declaration.Reason, est)
+		case lane.KindScoped:
+			if p.Declaration.Tier == lane.TierShip {
+				// Named, never implied. A phase the derivation selects and
+				// the commit lane does not execute must SAY so here, or the
+				// reader takes the list for the set that will run.
+				fmt.Printf("%s  %s — %s [SHIP TIER: derived, executed by the ship lane, not by `make lane-run`]\n",
+					p.Declaration.Phase, matchSummary(p.Matched), est)
+				continue
+			}
+			fmt.Printf("%s  %s — %s\n", p.Declaration.Phase, matchSummary(p.Matched), est)
 		default:
 			fmt.Printf("%s  %s — %s\n", p.Declaration.Phase, matchSummary(p.Matched), est)
 		}
