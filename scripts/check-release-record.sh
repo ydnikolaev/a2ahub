@@ -140,7 +140,7 @@ _is_behind() { # $1=cur $2=prev
 # ── refusal 1: released: date claimed for an untagged version ──────────────
 
 assert_released_dates_match_tags() { # $1 = repo
-  local repo="$1" f version released newest rc=0 checked=0
+  local repo="$1" f version released raw newest rc=0 checked=0
 
   if ! _has_any_version_tag "$repo"; then
     fail "check-release-record: this checkout carries no vX.Y.Z tags at all — a shallow clone
@@ -155,6 +155,32 @@ assert_released_dates_match_tags() { # $1 = repo
     [ -e "$f" ] || continue
     checked=$((checked + 1))
     version="$(basename "$f" .yaml)"
+
+    # THE NORMALISER CANNOT SEE THIS, WHICH IS WHY IT IS CHECKED FIRST.
+    #
+    # _released_field strips quoting on purpose — it compares VALUES. But a
+    # BARE YYYY-MM-DD is resolved by YAML to a timestamp node, not a string,
+    # and the release-notes schema demands a string; internal/notes
+    # TestLoad_CorpusIntegrity refuses it. So the one property that must hold
+    # is the one the reader erases before anyone looks.
+    #
+    # release-preflight.sh grew exactly this refusal on 2026-08-21 (bf2a5e5e),
+    # after v0.23.0 shipped red for a day because that gate ALSO stripped the
+    # quotes before comparing. The fix was never propagated here — and this is
+    # the gate that runs on every commit, while release-preflight is
+    # ceremony-only and needs VERSION= plus the network. The everyday gate was
+    # the blind one.
+    raw="$(sed -n 's/^released:[[:space:]]*//p' "$f" | head -1)"
+    case "$raw" in
+      [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9])
+        fail "check-release-record: releasenotes/$version.yaml reads 'released: $raw' UNQUOTED.
+    YAML resolves a bare date to a timestamp; the release-notes schema wants a string, and
+    internal/notes TestLoad_CorpusIntegrity refuses it. v0.23.0 shipped red for a day this way.
+    Fix: quote it — released: \"$raw\"."
+        rc=1
+        continue ;;
+    esac
+
     released="$(_released_field "$f")"
 
     if [ -z "$released" ] || [ "$released" = "$UNRELEASED_SENTINEL" ]; then
@@ -439,6 +465,23 @@ teeth() {
     echo "check-release-record --teeth: FAILED — 3b: red, but not with the untagged-claim message" >&2
     echo "$out" >&2; exit 1; }
   ok "teeth 3b: YESTERDAY's date with no tag → still RED — an abandoned cut is caught one day later"
+
+  # --- teeth 3c: the SAME date, UNQUOTED → RED, and the pair is the point ----
+  # 3a proved today's quoted date is legal. This proves the identical date
+  # written bare is not, because YAML resolves it to a timestamp and the
+  # release-notes schema demands a string. Without this pair the gate reads
+  # both spellings as one value — which is exactly how v0.23.0 shipped red for
+  # a day while release-preflight.sh's own quote-stripping comparison passed it.
+  printf 'schema: release-notes/v1\nversion: "0.2.0"\nreleased: %s\nheadline: h\nchanges:\n  - id: RN-1\n    kind: feat\n    impact: low\n    subject: s\n    detail: d\n    action:\n      scope: none\n      why: y\n' \
+    "$(date -u +%Y-%m-%d)" > "$tmp/releasenotes/0.2.0.yaml"
+  if out="$(assert_released_dates_match_tags "$tmp" 2>&1)"; then
+    echo "check-release-record --teeth: FAILED — 3c: an UNQUOTED bare date stayed GREEN; the reader strips the property the schema demands" >&2
+    echo "$out" >&2; exit 1
+  fi
+  printf '%s\n' "$out" | grep -q "UNQUOTED" || {
+    echo "check-release-record --teeth: FAILED — 3c: red, but not for the unquoted reason" >&2
+    echo "$out" >&2; exit 1; }
+  ok "teeth 3c: TODAY's date written UNQUOTED → RED, even though the same date quoted is legal (3a)"
 
   # --- teeth 4: the sentinel clears it → GREEN ---
   printf 'schema: release-notes/v1\nversion: "0.2.0"\nreleased: unreleased\nheadline: h\nchanges:\n  - id: RN-1\n    kind: feat\n    impact: low\n    subject: s\n    detail: d\n    action:\n      scope: none\n      why: y\n' \
