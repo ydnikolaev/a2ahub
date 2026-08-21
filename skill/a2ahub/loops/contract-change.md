@@ -53,11 +53,51 @@
      `publish` refuses it outright — with no baseline there is nothing to
      compute compatibility against. `a2a contract new` scaffolds both, and
      `a2a submit` carries them into the space with the contract.
+   - **What you carry is judged LOCALLY, before the write, against the
+     descriptor's own `artifacts:` inventory.** `a2a submit` (and
+     `a2a_submit` on MCP) decides what every carried path IS and compares
+     the batch against that inventory in both directions, refusing before
+     any git or network call: a carried file the descriptor does not declare
+     is **POL-013** — add it to that descriptor's `artifacts:` inventory
+     with a role from the contract-set-v2 vocabulary (`schema`,
+     `valid-fixture`, `invalid-fixture`, `errors`, `vocabulary`, `limits`,
+     `changelog`, `example`, `other`) and its `media_type`, or remove the
+     file — and an inventory entry whose file is nowhere is **REF-014**. A
+     refusal prints the whole carried list with the class each file was
+     judged by, so what you fix is a file you have been named, not a CI
+     annotation on a PR that is already open. That is what this replaces:
+     the batch used to go out unjudged, the space's own `--ci` was the first
+     thing to look at it, and a declared, frontmatter-free
+     `artifacts/CHANGELOG.md` came back refused as a malformed artifact.
+     `a2a validate --ci --mode=v3-pr` runs the same two checks at merge;
+     `--mode=v3-full-repo` deliberately does not, because a publication
+     already on the base branch is immutable and a refusal there would
+     demand an edit nobody is allowed to make.
+   - **Both codes are wider than that one check.** POL-013 covers a declared
+     carried set that is invalid at all — profile, role, path, media type,
+     bounds, exactness — and REF-014 covers a declared sidecar that does not
+     resolve to the exact expected regular file, digest included. `submit`
+     judges only membership, because the rest needs a publication context it
+     does not have; the same codes carry the rest of the verdict at
+     `a2a contract preflight`, `a2a contract publish` and the merge gate.
+     Meeting POL-013 over a wrong `media_type` is that half, not this one.
+   - **REF-014 asks the SPACE, not just the batch.** A re-publication
+     legitimately carries only what changed, so a declared companion this
+     batch omits is missing only when the contract's own directory in the
+     space does not already hold it — an unchanged file already on `main` is
+     never called missing. Where no space checkout is in reach the direction
+     stays silent rather than guessing; POL-013 needs no space knowledge and
+     fires either way. Neither code can fire for an `envelope/v1`
+     descriptor: that grammar has no `artifacts:` inventory at all, so there
+     is nothing to compare the batch against.
    - **The deprecation goes to whoever is REGISTERED**, computed from the same
      consumer registry that blocks your `retire`. A system that only appears
      in your contract's authoring-time `to:` and never ran `a2a contract
-     adopt` is not a registered consumer: it does not receive the
-     announcement and it does not block your retire.
+     adopt` is not a registered consumer: the announcement is not addressed
+     to it and it does not block your retire. That is not the same as it
+     never hearing about the change — if its own committed deliveries pin
+     your contract, `retire` names it to you and its inbox surfaces the
+     deprecation anyway (§8.4a step 1). It still does not block you.
    - **Correcting a published announcement (deprecation or any other) after
      the fact.** Once published it is immutable like every other artifact
      (§3.4) — the fix is `a2a supersede <old-XA-id> --refs <new-XA-id>` from
@@ -94,7 +134,9 @@
 
 The other side of §8.4: what a system that runs against SOMEONE ELSE's
 contract does. Every guarantee below turns on the one prerequisite in step 1
-— skip it and none of the rest applies to you.
+— skip it and none of the rest applies to you, with one exception step 1
+names: a producer retiring a contract your own accepted deliveries pin still
+sees you, and that deprecation still reaches your inbox.
 
 1. **Register, or none of this exists for you.** `a2a contract adopt <XC-id>
    [--major <n>] [--note <text>]` (§8.2 step 7) writes your own
@@ -103,10 +145,33 @@ contract does. Every guarantee below turns on the one prerequisite in step 1
    Re-running it is a no-op; a new `--major` re-pins. It reads the contract's
    currently published major off your local mirror, so run `a2a sync` first
    if you have not recently.
-   - **Unregistered consumption is invisible by design (D-022).** Read
-     another system's contract without ever running `adopt` and nothing will
-     ever notify you when it changes — the tool has no way to know you
-     depend on it, and you never block that contract's retirement either.
+   - **Unregistered consumption buys you none of the above, by design
+     (D-022).** Read another system's contract without ever running `adopt`
+     and nothing about *declaration* exists for you: no registration, and
+     you never block that contract's retirement. That half is untouched —
+     observed consumption gates nothing, mints no refusal code, and the
+     retire precondition weighs registered consumers and nothing else.
+   - **What you are no longer invisible to is the person retiring the
+     contract you are demonstrably eating.** If a data handoff addressed to
+     you has folded to `accepted` and its `data-package/v1` manifest pins
+     that contract — evidence already committed in the space, not anything
+     you declared — then the producer's `a2a contract retire` names you to
+     them on both surfaces ("0 declared consumer(s), 1 observed and
+     undeclared: `<you>` (3 packages)"), and the deprecation announcement
+     reaches your inbox even though the producer's `to:` was computed from
+     the registered set and does not name you. That item's own pendency
+     verdict names your two exits, both already in the vocabulary:
+     `a2a contract adopt` to declare the dependency, or acknowledge to
+     record "seen, and I do not depend on this". You read it
+     in the `why` field — `a2a inbox --json`, `a2a thread --json`, or the
+     dashboard; the one-line text listing prints the conclusion, not the
+     reasoning. Acknowledging also takes you out of the producer's list:
+     you have answered, so you are no longer an open risk to them.
+   - **None of that runs until a deprecation exists.** Observed consumption
+     is computed only when the space actually holds a deprecation
+     announcement for the contract; with none, it changes nothing anywhere.
+     The tool is not watching your deliveries — it is answering one question
+     at the moment somebody deprecates.
    - **`adopt` can refuse outright.** A contract descriptor may declare
      itself non-adoptable — `x_binding: none`, or the long form's
      `adoptable: false` — meant for something published to be read rather
@@ -129,11 +194,12 @@ contract does. Every guarantee below turns on the one prerequisite in step 1
      and re-running the verb would not add you (the announcement already
      exists and the write funnel dedups it). Your inbox therefore does not
      ask `to:` alone: **an announcement whose `deprecates:` names a
-     contract in your own `consumes.yaml` is yours**, addressed or not. So
-     adopting late still shows you the deprecation that was announced
-     before you arrived. It is a union, never a swap: if you were named in
-     `to:` and have since removed the dependency, you keep seeing it while
-     you migrate off.
+     contract in your own `consumes.yaml` is yours**, addressed or not —
+     and so is one whose contract your own accepted deliveries pin while you
+     declare it nowhere (step 1). So adopting late still shows you the
+     deprecation that was announced before you arrived. It is a union, never
+     a swap: if you were named in `to:` and have since removed the
+     dependency, you keep seeing it while you migrate off.
    - **A plain version bump owes you no notice at all.** A minor, a patch,
      or even a new major published WITHOUT a `deprecate` tells you nothing —
      §8.4 step 2 already says so for the producer's own benefit ("nothing

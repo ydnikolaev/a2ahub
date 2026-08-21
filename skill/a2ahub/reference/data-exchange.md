@@ -80,7 +80,7 @@ absent — one end had promised bytes, the other end was told to go verify them,
 and **both ends reported success.** Nothing in the record was false; nothing in
 it was checkable either.
 
-Two things changed, and you meet them at different moments:
+Three things changed, and you meet them at different moments:
 
 **1. Submitting such a response is refused.** When you discharge the request
 with `a2a respond --result delivered --ref <XH-id> <XW-id>`, submit resolves
@@ -100,23 +100,64 @@ the RESPONDER — who can still act — rather than the sender, who cannot verif
 what is not there. `a2a inbox --json`, `a2a thread --json` and the dashboard
 all read this from one place, so they cannot disagree about it.
 
-**Read the limit rather than discovering it.** The correlation runs through the
-handoff, because that is the only artifact which structurally names a package.
-So this catches *the handoff arrived and its package did not*. It does NOT
-catch *neither arrived*: `result: delivered` is the ordinary result word for
-finishing any work_request and claims no bytes on its own, so nothing can tell
-"delivered, bytes pending" from "delivered, no bytes were ever involved" until
-a response can name its own package. Which is also why the refusal is narrow
-and will not surprise an ordinary response: it fires only when a response
-references a handoff that itself declares a data deliverable.
+**3. A response can name its own package, and an unlanded one is refused.**
+`a2a respond --delivers <DP-id>` (repeatable) writes envelope/v2 response's
+`delivers[]` — the data package this response announces as delivered. Submit
+resolves every id named there against the space's own `origin/main` and refuses
+the write with **REF-024** while one of them has not landed: *the delivery's own
+pull request must merge before the response announcing it*. This is the incident
+above caught at the only moment it is still cheap, and it works because of the
+shape that defeated (1): a data delivery is ONE write (payload, manifest and
+handoff in a single commit) and the response is a SECOND, independent pull
+request, so at response time an unmerged payload is exactly a package that does
+not resolve.
 
-`--ref <artifact-id>` on `a2a respond` is repeatable and is what carries that
-reference — the envelope always had a `refs` field and no lifecycle verb could
-write it, because `--field` cannot fill a list. **Known gap, stated:** the MCP
-respond tool has no equivalent input, so an MCP-authored response cannot carry
-refs at all. The refusal itself lives in the shared write path, so nothing is
-left unchecked — but an MCP caller who needs to name the fulfilling handoff has
-to use the CLI.
+Four properties of that refusal are worth knowing before you meet it. It reads
+the same `origin/main` resolution `a2a data fetch` reads through, so "submit
+refused it" and "fetch cannot find it" are one fact rather than two
+implementations agreeing by luck. It sits in the write funnel, so `a2a submit`
+and the MCP write path both inherit it — there is no surface that skips it. Its
+trigger is the FIELD'S PRESENCE, never the result word: a `partial` that names a
+package it does not hold is refused on the same terms. And a `--delivers` value
+that is not a `DP-` id at all is refused there too, naming REF-024 rather than
+failing at parse time — the flag checks only that the value is non-empty,
+deliberately, so no second package-id parser exists to disagree with the id
+grammar. The recovery is the same as (1): merge the delivery's pull request,
+`a2a sync`, resubmit the same response.
+
+**Read the limit rather than discovering it.** The two refusals divide the
+problem differently and neither widens to cover the other. (1) correlates
+through the handoff, because a handoff was for a long time the only artifact
+that structurally named a package: it catches *the handoff arrived and its
+package did not*, and it fires only when a response references a handoff that
+itself declares a data deliverable. (3) reads the response's own `delivers[]`
+and needs no handoff at all, which is how it catches what (1) structurally
+cannot — when the handoff is still inside the unmerged payload pull request it
+resolves to nothing, and a check with nothing to correlate says nothing.
+
+What neither catches is a response that names no package, and that is the
+deliberate part. `result: delivered` is the ordinary result word for finishing
+ANY work_request and claims no bytes on its own — six declared conformance
+paths answer with it on exchanges that have no data package anywhere near
+them. So a plain answer — no `delivers[]`, and no handoff in `refs[]` that
+declares one — is untouched by both checks and is in no way malformed.
+`delivers` is a separate field rather than a condition on `result` for exactly
+that reason: an earlier, cruder check keyed on the result word reddened those
+paths and was narrowed. If you are announcing bytes, say so with
+`--delivers`; if you are answering a question, none of this reaches you.
+
+`--ref <artifact-id>` on `a2a respond` is repeatable and is what carries the
+reference (1) reads — the envelope always had a `refs` field and no lifecycle
+verb could write it, because `--field` cannot fill a list. `--delivers` is
+repeatable the same way and writes a plain list of package ids, not `{ref,
+note}` entries; the two are separate flags because they mean separate things —
+`refs[]` carries anything, and an agent who omits it sails past a check built on
+it, which is exactly why (1) alone could not catch the incident. **Known gap,
+stated:** the MCP respond tool takes `delivers` (a JSON array of the same ids)
+but still has no `refs` input, so an MCP-authored response can announce its own
+package and cannot name the handoff that carried it. Both refusals live in the
+shared write path, so nothing is left unchecked either way — but an MCP caller
+who needs to name the fulfilling handoff has to use the CLI.
 
 ## Producer sequence
 
@@ -223,17 +264,23 @@ intend to start, `a2a accept <XW-id>`.
    the manifest `pack` produced and `deliver` only ships what it is given.
 
 5. **Once accepted**, discharge the original request, naming the handoff that
-   actually delivered it:
+   actually delivered it and the package it carried:
 
    ```sh
-   a2a respond --result delivered --ref XH-beta-20260804-h001 XW-axon-20260804-w001
+   a2a respond --result delivered --ref XH-beta-20260804-h001 \
+     --delivers DP-beta-20260804-k3f9 XW-axon-20260804-w001
    ```
 
    `--ref` is repeatable and general-purpose; here it is what lets the
-   response record which handoff carried the bytes. **Submit refuses this
-   response if that handoff's `kind: data` deliverable does not resolve in
-   the space** — see "A response cannot claim a delivery whose bytes the space
-   does not have" above for what that means and what to do.
+   response record which handoff carried the bytes. `--delivers` is repeatable
+   and means exactly one thing: the package this response announces as
+   delivered. **Submit refuses this response if a named package has not landed
+   on the space's main branch (REF-024), or if the referenced handoff's
+   `kind: data` deliverable does not resolve in the space** — see "A response
+   cannot claim a delivery whose bytes the space does not have" above for what
+   each means and what to do. By this point in the sequence neither can fire:
+   the payload had to merge before the handoff could be acked at all, and the
+   verdict you are discharging was recorded against it.
 
    The consumer runs `a2a close XW-axon-20260804-w001` to finish it — that
    is the consumer's step, not yours; see below.

@@ -150,7 +150,10 @@ Every flag on all five verbs, the exit codes, and the event classes a route may
 subscribe to are [reference/notify.md](reference/notify.md). Two exit codes are
 worth knowing before a script treats non-zero as an outage: `send` exiting 1
 means at least one delivery failed while the others went, and `setup
---non-interactive` exiting 1 is its intended refusal to prompt.
+--non-interactive` exiting 1 is its intended refusal to prompt — except when
+the exit-1 output names no repository at all: that is step 0 below refusing
+the checkout itself, before `--non-interactive` was even consulted, and it
+means the wrong directory, not a declined prompt.
 
 ## `a2a notify setup` — the flow that never sees the token
 
@@ -165,6 +168,20 @@ at the command instead.
 
 The flow, once the human runs it in a terminal:
 
+0. First, before anything else — before the BotFather print, before the
+   token prompt, before a repository is even named — proves the checkout
+   actually **is** a space, by reading `space.yaml` at the checkout root: the
+   same read `notify verify` performs, so the two verbs can no longer reach
+   opposite conclusions from one file. No `space.yaml` there refuses on the
+   spot: exit 1, "this checkout is not a space" — the fix is to `cd` into the
+   space's own checkout (never a participant project) and re-run. A
+   `space.yaml` that IS present but does not parse is a different state, with
+   its own message, also exit 1 — the operator is standing in the right
+   place and the manifest itself needs fixing, not the directory. This guard
+   reads only `space.yaml`; it never touches the git remote the repository
+   name comes from — a space checkout with no `origin` remote still reaches
+   the `--non-interactive` refusal's own honest `--repo <owner>/<repo>`
+   placeholder, rather than being turned into a refusal here.
 1. Prints a four-line BotFather instruction (open @BotFather, `/newbot`, copy
    the token).
 2. Reads the token on the TTY, checks the caller has **admin** on the space
@@ -185,6 +202,10 @@ The flow, once the human runs it in a terminal:
    `configured` (the run was green **and delivered at least one message**),
    `unproven` (green, but sent nothing — a green run that sent nothing is
    never reported as configured), or the run's own conclusion on failure.
+   Re-running before the route has merged is its own benign wait state, not
+   an error: it reports there is no route yet and exits **0** — distinct from
+   step 0's exit-1 refusal above, which means the checkout itself is wrong,
+   not that the route is still in flight.
 
 `a2a notify discover` and `a2a notify verify` are the read-only halves:
 `discover` lists the chats the bot currently sees; `verify` reports the same

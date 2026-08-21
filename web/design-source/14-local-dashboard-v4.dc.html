@@ -635,7 +635,7 @@ const GUIDE_FEATURES_RU = [
   ["a2a feedback", "Агенты улучшают инструменты", "Структурированная обратная связь проверяется и разбирается как данные, поэтому случайный входящий текст не становится инструкцией."],
   ["a2a thread", "Одна задача, один тред", "Запрос, ответ, доказательства и решение лежат в одном треде и читаются всеми системами в одном и том же порядке."],
   ["verdicts[]", "Вердикт выносится по каждому критерию", "Событие verify или close несёт отдельное суждение по каждому критерию приёмки — выполнено, не выполнено, не требовалось, не проверялось — и называет, за кем причина. Частичный результат больше не округляется до «принято» или «отклонено»."],
-  ["respond --ref", "Ответ называет то, что действительно доставило результат", "--ref фиксирует handoff, который перенёс данные, а submit откажет, если этот deliverable не разрешается через спейс. Заявление о доставке обязано указывать на то, что спейс реально видит."],
+  ["respond --delivers", "Ответ называет пакет, который его доставил", "respond --delivers <DP-id> называет пакет данных, который объявляет ответ, а submit откажет (REF-024), пока этот пакет не попадёт в основную ветку спейса. --ref по-прежнему фиксирует handoff, который его перенёс — теперь заявление называет сам пакет."],
   ["pack → deliver → verify", "Данные едут пакетом, а вердикт выводится", "a2a data pack собирает неизменяемый пакет по закреплённому контракту, a2a data deliver создаёт несущий его handoff, а a2a data verify --record выводит verify-pass или verify-fail из самого отчёта. Вердикт никто не вписывает руками."],
   ["1.x · 2.x", "Контракт живёт в нескольких версиях", "Старая линия может уходить, пока новая уже работает. Ничего не удаляется, а каждый потребитель явно закрепляет используемую основную версию."],
   ["deprecate → ack", "Устаревание доходит до каждого", "Объявление доставляется всем зарегистрированным участникам, а окончательное снятие версии ждёт подтверждений. Поэтому поздно подключившийся потребитель не выпадает из процесса."],
@@ -647,7 +647,7 @@ const GUIDE_FEATURES_RU = [
   ["id@version", "Точная версия контракта воспроизводима", "Каждая версия публикует неизменяемый набор файлов. preflight, materialize и check разрешают одни и те же точные байты, чтобы их можно было проверить офлайн."]
 ];
 
-// dashboard-derivation: allow-provenance-begin -- GUIDE_FEATURES_EN contains two technical-explanation entries with provenance vocabulary (respond --ref, id@version); predates Rule B; JSON-parsed by generate-content.mjs so markers cannot be placed inside the array; rephrase entries in a maintenance pass after epic closes
+// dashboard-derivation: allow-provenance-begin -- GUIDE_FEATURES_EN contains two technical-explanation entries with provenance vocabulary (respond --delivers, id@version); predates Rule B; JSON-parsed by generate-content.mjs so markers cannot be placed inside the array; rephrase entries in a maintenance pass after epic closes
 const GUIDE_FEATURES_EN = [
   ["a2a skill", "The skill teaches the agent", "a2a skill install places the skill in the repository. The agent learns the protocol, document types, lifecycles, and commands without human prompt engineering."],
   ["a2a", "One CLI covers the workflow", "Drafting, validation, submission, inbox, contracts, and diagnosis use one binary with agent-friendly commands."],
@@ -660,7 +660,7 @@ const GUIDE_FEATURES_EN = [
   ["a2a feedback", "Agents improve the tools", "Structured feedback is validated and triaged as data, without treating inbound text as instructions."],
   ["a2a thread", "One intent, one thread", "The request, response, evidence, and decision stay in one causal thread and fold in the same order for every system."],
   ["verdicts[]", "A verdict names each criterion, not the whole job", "A verify or close event carries one judgement per acceptance criterion — met, unmet, not warranted, not exercised — and names who owns the cause. A partial result stops rounding up to accepted or down to rejected."],
-  ["respond --ref", "A response names what actually delivered it", "--ref records the handoff that carried the payload, and submit refuses the response outright when that deliverable does not resolve through the space. A claim of delivery has to point at something the space can see."],
+  ["respond --delivers", "A response names the package that delivered it", "respond --delivers <DP-id> names the data package a response announces, and submit refuses the response (REF-024) when that package has not landed on the space's main branch. --ref still records the handoff that carried it; the delivery claim now names the package itself."],
   ["pack → deliver → verify", "Data moves as a package, and the verdict is derived", "a2a data pack builds an immutable package against the pinned contract, a2a data deliver mints the handoff that carries it, and a2a data verify --record folds verify-pass or verify-fail out of the report itself. Nobody types the verdict."],
   ["1.x · 2.x", "A contract spans versions", "An older line may be leaving while the new one is active. Nothing is erased, and every consumer pins its major explicitly."],
   ["deprecate → ack", "Deprecation reaches every consumer", "The announcement follows registrations and retirement waits for acknowledgements, so late consumers remain visible."],

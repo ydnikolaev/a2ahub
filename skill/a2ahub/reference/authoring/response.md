@@ -16,6 +16,17 @@ result: <answered|delivered|partial|cannot>                  # required, closed 
 thread: <thread:system-YYYYMMDD-rand4 — the conversation this belongs to; a2a new mints it>
 # refs:
 #   - {ref: "<id>@<version>", note: "<what this delivers>"}
+# delivers:                            # OPTIONAL — the data package(s) this
+#                                      # response ANNOUNCES as delivered
+#                                      # (`a2a respond --delivers <DP-id>`,
+#                                      # repeatable). Present ONLY when the
+#                                      # response announces a data delivery;
+#                                      # its absence is the ordinary answer
+#                                      # shape — `result: delivered` alone
+#                                      # implies no package. Submit refuses
+#                                      # (REF-024) while a named package has
+#                                      # not landed on the space's main branch.
+#   - DP-<system>-<YYYYMMDD>-<rand4>
 # unmet:                              # OPTIONAL — P6 incompleteness. Indices into the
 #                                      # parent's acceptance_criteria[] this response did
 #                                      # NOT satisfy — by INDEX, never by restating the

@@ -1049,13 +1049,3 @@ entries:
       rewrites its `delivers[]` — so at full-repo the rule could only
       punish. It also could only punish WRONGLY: the package that was
       unlanded at write time is merged by the time any audit reads it.
-    prose_exempt: >-
-      OWED, NOT WAIVED, and the sentence is written: skill/** is off the P1
-      allowlist (spec 01 §Footprint grants the schema, the registry, the
-      space check, the CLI wire and internal/livee2e — no skill path), so
-      the phase that mints this code cannot author its prose. The line the
-      loop reference needs is "`respond --delivers <DP-id>` names the data
-      package a response announces; the submit refuses (REF-024) while that
-      package has not landed on the space's main branch." Recorded in spec
-      01 §11; this exemption is deleted the moment that line lands, and its
-      presence is what stops the gate from greening on a silent gap.

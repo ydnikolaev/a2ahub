@@ -68,11 +68,11 @@ The request, response, evidence, and decision stay in one causal thread and fold
 
 A verify or close event carries one judgement per acceptance criterion — met, unmet, not warranted, not exercised — and names who owns the cause. A partial result stops rounding up to accepted or down to rejected.
 
-## A response names what actually delivered it
+## A response names the package that delivered it
 
-**respond --ref**
+**respond --delivers**
 
---ref records the handoff that carried the payload, and submit refuses the response outright when that deliverable does not resolve through the space. A claim of delivery has to point at something the space can see.
+respond --delivers <DP-id> names the data package a response announces, and submit refuses the response (REF-024) when that package has not landed on the space's main branch. --ref still records the handoff that carried it; the delivery claim now names the package itself.
 
 ## Data moves as a package, and the verdict is derived
 

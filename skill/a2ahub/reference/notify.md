@@ -60,7 +60,7 @@ as an outage will get both wrong.
 |---|---|---|---|
 | `render` | messages printed | a refusal (unknown `--only` id, a route naming an undeclared secret) or an unreadable checkout | usage — no range selector, two of them, or a bad `--limit` |
 | `send` | every record sent, or dry-run | **at least one delivery failed** — the others still went | usage, or an invalid message array on stdin |
-| `setup` | the step reached its end | any named error, **including `--non-interactive`'s deliberate refusal to prompt** — the intended path, not a fault | usage |
+| `setup` | the step reached its end | any named error. Two are worth telling apart: **this checkout is not a space** — the step-0 guard, refusing before any repository is named, and the one to act on — and `--non-interactive`'s deliberate refusal to prompt, which is the intended path rather than a fault | usage |
 | `discover` | a chat id was found | no update arrived within `--timeout`, or the API refused | usage |
 | `verify` | all three facts check out | at least one did not | usage |
 
