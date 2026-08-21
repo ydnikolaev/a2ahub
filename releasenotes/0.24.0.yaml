@@ -230,6 +230,14 @@ changes:
 
     An already-merged companion is never re-judged: the undeclared refusal fires
     at the pull-request gate only.
+
+    A re-publication is not caught in this either. It carries only what changed,
+    and a companion that did not change is already in the space — the check asks
+    the space before calling a declared entry missing, so publishing 1.1.0 of a
+    contract whose schema is unchanged submits exactly as it did before. Where a
+    verb cannot see the space at all — `validate --all` runs against staging and
+    works with no space connected — it reports the half it can prove and stays
+    silent on the half it cannot, rather than guessing.
   affects:
   - contracts
   - cli
