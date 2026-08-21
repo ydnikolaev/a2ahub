@@ -230,6 +230,16 @@ var dedicatedFlagReaches = map[string]bool{
 	"envelope/v2/response/blocked_by.reason_code": true,
 	"envelope/v2/response/blocked_by.owner":       true,
 	"envelope/v2/response/blocked_by.needs":       true,
+	// judge-the-thing-2026-08 P1: `a2a respond --delivers <DP-id>` (repeatable).
+	// Same shape as its neighbours and for both of the reasons above at once.
+	// `delivers[]` is an ARRAY, so `--field` is refused for it by construction;
+	// and a live template placeholder would be worse than useless here, because
+	// the ABSENCE of this field is the normal case — six declared conformance
+	// paths answer `delivered` with no package anywhere near them, and making
+	// every fresh response author a delivery it is not making would recreate
+	// the ambiguity the flag was built to remove.
+	// Proven by internal/cli's TestRespondWritesDeliversInGivenOrder.
+	"envelope/v2/response/delivers": true,
 }
 
 func TestEveryAuthorFieldIsReachableOrDeclaredUnreachable(t *testing.T) {
