@@ -49,7 +49,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
+.PHONY: check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection live-e2e live-e2e-evidence logic-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -313,6 +313,16 @@ release-preflight: vulncheck npm-audit ## MUST pass before cutting a release tag
 	@bash scripts/check-roadmap-release-decisions.sh "$(VERSION)"
 	@bash scripts/release-preflight.sh "$(VERSION)"
 
+# lane-inputs: NEVER
+# lane-reason: needs the network, a published tag and a live site — it verifies
+#   an OUTCOME, not a tree, so no diff can select it. Release runbook Phase 3.
+release-postflight: ## MUST run AFTER promoting and tagging: the tag on the remote, the Release's state/assets/body, pages.yml's run FOR THE PROMOTED COMMIT, the live site, and the template baseline. Usage: make release-postflight VERSION=v0.24.0
+	@test -n "$(VERSION)" || { echo "release-postflight: set VERSION, e.g. make release-postflight VERSION=v0.24.0"; exit 2; }
+	@bash scripts/release-postflight.sh "$(VERSION)"
+
+projection: ## Judge the SHIPPED suite against a faithful public projection (release-loop-2026-08 P3). Not in `check`: it RUNS the ceiling, so membership would make the ceiling run the ceiling.
+	@bash scripts/check-projection.sh
+
 vulncheck: ## govulncheck ./... gated by .govulncheck-allow.txt (NEW called vuln reds; accepted stays green). Needs network — NOT in `check`.
 	@command -v govulncheck >/dev/null 2>&1 || { echo "vulncheck: govulncheck missing — go install golang.org/x/vuln/cmd/govulncheck@latest"; exit 1; }
 	@out=$$(govulncheck ./... 2>&1) || true; \
@@ -530,6 +540,8 @@ harness-check: ## Run the gates' --teeth self-tests (harness gates are private/p
 # survive its own absence.
 HARNESS_TEETH := \
   scripts/lib/gate-lib.sh \
+  scripts/check-projection.sh \
+  scripts/release-postflight.sh \
   scripts/verify.sh \
   scripts/check-frozen-allowlist.sh \
   scripts/check-release-record.sh \
