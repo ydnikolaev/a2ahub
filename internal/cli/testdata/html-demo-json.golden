@@ -8608,6 +8608,20 @@
           }
         },
         {
+          "id": "RN-02400-9",
+          "kind": "policy",
+          "impact": "low",
+          "subject": "every refusal this tool can produce is exercised, or carries a written reason why not",
+          "detail": "The refusal a response earns for announcing an unlanded data package was built in August to close a reported defect, proven by unit tests, and driven by no end-to-end path — so nothing ever confirmed it fires through the binary you actually run.\nA gate now refuses any rejecting error code that no declared conformance path provokes, unless the registry carries a written reason. Fifty codes carry one today and the gate prints that count on every run, so the debt is visible and re-derivable rather than remembered. Retiring one is a one-line change: drive it from a declared path, delete its reason.\nNothing about how the tool behaves changes. What changes is what a refusal means when you meet it: either something ran it end to end, or the reason it did not is written down where you can read it.\n",
+          "affects": [
+            "contracts"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "No action. This governs how refusals are proven, not what they refuse.\n"
+          }
+        },
+        {
           "id": "KI-01900-PROVIDER-TIER-DEFERRED",
           "kind": "known-issue",
           "impact": "normal",
