@@ -161,6 +161,42 @@ type Input struct {
 	// behaviour (the sender owes close), never a synthesized refusal.
 	DeliveryUnresolvable bool
 
+	// ObservedConsumptionUndeclared says the system this verdict is being
+	// computed for holds VERIFY-PASSED DELIVERIES pinning the contract THIS
+	// deprecation announcement deprecates, while declaring that contract
+	// nowhere — spec 03-observed-consumption.md's `observed` state, distinct
+	// from `declared` (§T2). A caller-resolved FACT for the same reason
+	// DeliveryUnresolvable and ExtraAddressees are: internal/cache resolves
+	// it (ObservedUndeclaredContracts, registered_consumers.go) by walking
+	// accepted handoffs, their data deliverables and each deliverable's
+	// data-package/v1 manifest against this system's own consumes.yaml —
+	// filesystem work this package does no part of, and internal/fold may
+	// not do at all (ADR-001, fold/doc.go: "no I/O ever"), which is why the
+	// presence check cannot live one layer down in the table itself.
+	//
+	// It changes the RATIONALE and nothing else. WHO owes the move rides
+	// ExtraAddressees, the carrier P4 Edge 3 already built for exactly this
+	// kind of registry-derived addressee — this bool cannot name a system,
+	// and minting a second carrier that could is what §5's anti-duplication
+	// bullet forbids. So the one row that reads it (announcement/published,
+	// unackedTargetsRow below) keeps `acknowledge` as the owed transition
+	// and only says the true thing about the exits: a system that DECLARED
+	// the dependency has one exit left, and a system whose consumption is
+	// merely OBSERVED has two — declare it, or acknowledge "seen, and I do
+	// not depend on this" (US-4, §8 criterion 5: no transition is added,
+	// internal/fold/table.go is untouched by that phase).
+	//
+	// EMPTY (false) MEANS "this system declared the contract, OR nothing it
+	// consumes is being deprecated, OR the caller cannot resolve the fact"
+	// — the same fail-open discipline every other caller-resolved fact in
+	// this struct documents. §8 criterion 4 rests on that direction: with
+	// no deprecation announcement in the space there is no artifact to
+	// carry the fact, so it is false everywhere and observed consumption
+	// changes nothing anywhere, which is how the narrowing that the
+	// 2026-08-10 regression cost is kept (deliveryUnresolvable's own
+	// NARROWED comment in internal/cache/mirror.go).
+	ObservedConsumptionUndeclared bool
+
 	// OperationalDebtOwed is P5 AC1's derivation (specs/05-declared-nature.md,
 	// "The P-1 problem, stated honestly"): true when the CALLER has already
 	// established that a published contract has a registered consumer AND
@@ -769,11 +805,35 @@ func parentOwnerRow(expected, why string) row {
 	}
 }
 
+// unackedTargetsRow is the announcement/published row, and the ONE row that
+// reads Input.ObservedConsumptionUndeclared (spec
+// 03-observed-consumption.md §7: "ONE new caller-resolved bool ... consumed
+// by NAME in ONE row").
+//
+// The whyFor below is the whole of what that fact changes. The owed
+// transition stays `acknowledge` and the owner set stays unackedTargets',
+// because an observed consumer reaches this row through ExtraAddressees
+// like any other registry-derived addressee — what is different is not WHO
+// owes or WHAT they owe, but what the record should say they may do about
+// it. A declared late adopter has one exit (acknowledge). A system whose
+// consumption is only observed has two, and both already exist: declare the
+// dependency with `a2a contract adopt`, or acknowledge — US-4's "answer 'I
+// saw it and I do not depend on this' without minting a new verb".
 func unackedTargetsRow(expected, why string) row {
 	return row{
 		who:      unackedTargets,
 		expected: expected,
 		why:      why,
+		whyFor: func(in Input) string {
+			if !in.ObservedConsumptionUndeclared {
+				return why
+			}
+			return "spec 03 (judge-the-thing-2026-08): this system's own verify-passed deliveries pin the contract " +
+				"being deprecated while its consumes.yaml declares it nowhere — observed consumption obliges the " +
+				"CONSUMER, since only it can tell a live pipeline from one experimental delivery. Two exits, both " +
+				"already in the vocabulary: `a2a contract adopt` to declare the dependency, or acknowledge to record " +
+				"\"seen, and I do not depend on this\""
+		},
 		onEmpty: func(in Input) string {
 			if !in.AckRequested {
 				// Only honest once the registry half has also come back

@@ -363,11 +363,25 @@ type UnadoptedConsumption struct {
 //
 // This function answers Piece 1 ONLY (spec 06's own "Two pieces, and only
 // the first is uncontroversial"): detection, never registration. Nothing
-// it returns is written anywhere, and internal/validate/policy_retire.go
-// (D-022's retire precondition) does not call it and does not change —
-// that gate stays scoped to DECLARED registrations, by design, and this
-// phase does not touch it. Piece 2 (should a verify-passed delivery
-// auto-register?) is the epic's own open question, not decided here.
+// it returns is written anywhere.
+//
+// PIECE 2 IS ANSWERED, and the answer was neither of the two this comment
+// used to pose. It asked "should a verify-passed delivery auto-register?"
+// as a binary, and both branches are bad — auto-registering fabricates an
+// adoption nobody committed and inverts the designed verify-then-adopt
+// order; not registering leaves the producer's retire decision blind.
+// fb-20260820-0cb8c8 named the third option and spec
+// 03-observed-consumption.md (judge-the-thing-2026-08) took it: do NOT
+// register, and make the producer's DECISION see it. `observed` is a state
+// distinct from `declared` — evidence, not commitment (§T2) — it INFORMS
+// retire and deprecate and GATES NOTHING (§8 criterion 2, §9).
+//
+// internal/validate/policy_retire.go still does not refuse on any of this,
+// and that has not changed: RetirePrecondition.Observed is read by
+// ObservedConsumptionNotice and by no branch of CheckRetirePrecondition.
+// What changed is that the fact now REACHES the decision, on both retire
+// surfaces, through FindObservedConsumers below — this same walk, asked
+// once per participant from the producer's side.
 //
 // The returned *SkippedFile mirrors myDependencyContracts' own asymmetry
 // (that function's own doc comment): a consumes.yaml that EXISTS but
@@ -510,4 +524,142 @@ func splitPinnedContractID(ref string) (id, version string) {
 	body, _, _ := strings.Cut(ref, "#")
 	id, version, _ = strings.Cut(body, "@")
 	return id, version
+}
+
+// ObservedConsumer is one system whose OWN committed, verify-passed
+// deliveries show it consuming a contract that NEITHER half of the D-022
+// declaration union names it against — spec 03-observed-consumption.md's
+// `observed` state, distinct from `declared` (§T2: an act of commitment
+// versus evidence, two different kinds of fact that must not be
+// conflated).
+//
+// Packages is FindUnadoptedConsumption's own distinct-package count for
+// that system, carried through unchanged (see UnadoptedConsumption).
+type ObservedConsumer struct {
+	System   string
+	Packages int
+}
+
+// FindObservedConsumers is FindUnadoptedConsumption asked from the
+// PRODUCER's side: "which systems does my own space's committed record
+// show consuming contractID without ever declaring it?" — the fact
+// `contract retire` needs so its clean path stops being silently blind
+// (fb-20260820-0cb8c8; spec 03-observed-consumption.md §8 criteria 1
+// and 7).
+//
+// It writes NO second walk. FindUnadoptedConsumption already resolves
+// exactly this evidence — accepted handoffs, their data deliverables,
+// each deliverable's data-package/v1 manifest, and the contract that
+// manifest pins — for ONE system; this runs it once per manifest
+// participant and keeps the rows naming contractID. That is the same
+// per-participant shape BuildNotifyIndex (mirror.go) already uses to
+// widen a single system's registry read into the whole space's, and it
+// is deliberate rather than a shared-walk extraction: FindUnadoptedConsumption
+// is `a2a doctor`'s live caller, and a rewrite of its body to serve a
+// second direction would put that surface's behaviour at risk for no fact
+// this function could not get by asking it. The cost is one mirror walk
+// per participant, paid only by `contract retire` — a rare, human-gated,
+// interactive command.
+//
+// NO DOUBLE COUNT (§6): the D-022 declared set is subtracted first, and
+// UNSCOPED by major on purpose. FindUnadoptedConsumption alone filters
+// only on consumes.yaml, so a system that registered by filing a
+// SATISFIED REQUIREMENT instead — the union's other half, which carries
+// no version at all — would otherwise be named twice over: once as a
+// consumer that blocks this retire, and once as a system that declared
+// nothing. Anyone who declared anything about this contract is declared,
+// full stop; `observed` means the record shows consumption and the
+// registry shows silence.
+//
+// `left` participants are excluded, for §5.4 bullet (a)/CC-062's reason:
+// a system that has left the space is already outside the ack set the
+// retire gate weighs, and naming it as a risk the producer should think
+// about would contradict the gate standing beside it.
+//
+// Best-effort per participant, never fail-closed — the OPPOSITE direction
+// from findRegisteredConsumers' own contract, and for the reason
+// myDependencyContracts documents: this function's output is an ADVISORY
+// that gates nothing (§8 criterion 2), so a participant whose consumes.yaml
+// exists but cannot be read as a consumes/v1 registry is silently
+// EXCLUDED (an undercount) rather than reported against every contract it
+// might consume (a false advisory, and the worse of the two). The declared
+// half above still fails closed through FindRegisteredConsumers, because
+// that set is the one the gate itself reads.
+func FindObservedConsumers(mirrorDir, contractID string, manifest space.Manifest) ([]ObservedConsumer, error) {
+	if contractID == "" {
+		return nil, nil
+	}
+	declared, err := FindRegisteredConsumers(mirrorDir, contractID)
+	if err != nil {
+		return nil, err
+	}
+
+	var out []ObservedConsumer
+	for _, p := range manifest.Participants {
+		if p.System == "" || p.Status == "left" || declared[p.System] {
+			continue
+		}
+		observed, skip, ferr := FindUnadoptedConsumption(mirrorDir, p.System)
+		if ferr != nil {
+			return nil, ferr
+		}
+		if skip != nil {
+			continue
+		}
+		for _, o := range observed {
+			if o.ContractID != contractID {
+				continue
+			}
+			out = append(out, ObservedConsumer{System: p.System, Packages: o.Count})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].System < out[j].System })
+	return out, nil
+}
+
+// ObservedUndeclaredContracts is FindObservedConsumers' CONSUMER-side
+// counterpart, and the cache half of spec 03-observed-consumption.md §7's
+// caller-resolved fact: the set of contract ids ownSystem holds
+// verify-passed deliveries against while declaring none of them.
+//
+// It exists so that internal/pendency's announcement/published row can be
+// told, as a plain bool on its Input, that THIS system's next move over a
+// deprecation is the observed-consumer one — the DeliveryUnresolvable
+// shape exactly (computed here, where the I/O is legal; carried through
+// pendency.Input; read by name in ONE row), because internal/fold does no
+// I/O ever (ADR-001) and internal/pendency takes a closed input set.
+//
+// A map rather than a per-artifact bool for the same reason
+// myDependencyContracts (this file) returns one: buildIndex's own pass
+// resolves the set ONCE per space and then indexes it by each
+// announcement's own `deprecates` contract id, instead of paying a mirror
+// walk per artifact.
+//
+// The trigger's narrowness is the CALLER's to keep, and §8 criterion 4 is
+// the reason it matters: with no deprecation announcement in the space
+// this set must never be built at all, because a fact computed for
+// nobody is how the 2026-08-10 regression reddened five declared paths
+// (deliveryUnresolvable's own NARROWED comment, mirror.go). The intended
+// gate is "at least one artifact has a non-empty deprecatedContractID",
+// evaluated before this is called.
+//
+// Same best-effort discipline as FindUnadoptedConsumption, whose result
+// this projects: an unreadable registry yields an EMPTY set (today's
+// behaviour for that system), never a synthesized obligation.
+func ObservedUndeclaredContracts(mirrorDir, ownSystem string) (map[string]bool, error) {
+	out := map[string]bool{}
+	if ownSystem == "" {
+		return out, nil
+	}
+	observed, skip, err := FindUnadoptedConsumption(mirrorDir, ownSystem)
+	if err != nil {
+		return nil, err
+	}
+	if skip != nil {
+		return out, nil
+	}
+	for _, o := range observed {
+		out[o.ContractID] = true
+	}
+	return out, nil
 }

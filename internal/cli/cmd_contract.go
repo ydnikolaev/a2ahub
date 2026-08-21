@@ -1018,6 +1018,16 @@ func (c *ContractCommand) runRetire(ctx context.Context, args []string, stdio IO
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract retire: %v\n", err)
 		return 1
 	}
+	// Observed consumption is NAMED before the gate is consulted, and on
+	// both outcomes (spec 03-observed-consumption.md §8 criterion 1): the
+	// producer is deciding either way, and the clean path — the one this
+	// phase exists for — is precisely the path that used to say nothing.
+	// It is printed, never returned: the line informs and refuses nothing
+	// (§9), so it cannot sit in the violation channel. Silent when nothing
+	// is observed, which is §8 criterion 4's floor.
+	if notice := validate.ObservedConsumptionNotice(precondition); notice != "" {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract retire: %s: %s\n", id, notice)
+	}
 	violation, overridden := validate.CheckRetirePrecondition(precondition)
 	if violation != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract retire: %s: refused: %s (%s)\n", id, violation.Message, violation.Code)
@@ -1127,7 +1137,57 @@ func contractBuildRetirePrecondition(mirrorDir string, manifest space.Manifest, 
 		HasReminder:  reminderCount > 0,
 		ActorIsHuman: actorIsHuman,
 		Override:     override,
+		Observed:     contractObservedConsumers(mirrorDir, manifest, contractID, ackedSystems),
 	}, nil
+}
+
+// contractObservedConsumers resolves spec 03-observed-consumption.md's
+// `observed` set — the systems this space's own committed, verify-passed
+// deliveries show consuming contractID while neither half of the D-022
+// declaration union names them (fb-20260820-0cb8c8).
+//
+// UNSCOPED by major, deliberately, where the declared half just above is
+// scoped (Edge 1): a delivery's data-package manifest pins a full
+// `id@version#digest`, but the fact being reported is "this system's
+// artifacts show it consuming your contract and it registered nowhere",
+// and a producer weighing a retire is worse served by silence about a
+// neighbouring major than by one line naming a system it can ask.
+//
+// ALREADY-ACKED SYSTEMS ARE DROPPED (§6's own "observed system already
+// acked" edge case). An unregistered system CAN acknowledge a deprecation
+// broadcast, and acknowledging is one of the two exits §9 names — "seen,
+// and I do not depend on this". A system that has taken an exit is not an
+// open risk, and naming it anyway is the nagging US-5 exists to prevent.
+// The filter lives HERE rather than on validate.ObservedConsumer, which
+// deliberately carries no Acked field: the ack set is the deprecation
+// thread's fact, already resolved by the caller above, and giving the type
+// an Acked would be the first step toward counting observation in the
+// un-acked set the gate reads.
+//
+// FAILS OPEN, and this is the one place in the retire path that does. An
+// error here degrades to "nothing observed", never to a refused retire:
+// this set gates nothing (§8 criterion 2), so letting an unreadable
+// registry or an unwalkable mirror block a retire the DECLARED set already
+// cleared would give observation exactly the veto §9 refuses it. The
+// declared half keeps its fail-closed contract one call above, unchanged.
+//
+// COST, stated because a reviewer should know it: cache.FindObservedConsumers
+// walks the mirror once per manifest participant. `contract retire` is a
+// rare, interactive, human-gated command, and it pays this on every run,
+// including the overwhelmingly common zero-observed one.
+func contractObservedConsumers(mirrorDir string, manifest space.Manifest, contractID string, acked map[string]bool) []validate.ObservedConsumer {
+	observed, err := cache.FindObservedConsumers(mirrorDir, contractID, manifest)
+	if err != nil {
+		return nil
+	}
+	out := make([]validate.ObservedConsumer, 0, len(observed))
+	for _, o := range observed {
+		if acked[o.System] {
+			continue
+		}
+		out = append(out, validate.ObservedConsumer{System: o.System, Packages: o.Packages})
+	}
+	return out
 }
 
 // contractSunsetPassed reports whether sunset (YYYY-MM-DD) is in the past

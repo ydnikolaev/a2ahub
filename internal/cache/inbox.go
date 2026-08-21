@@ -39,7 +39,15 @@ func addressedToMe(fa foldedArtifact, me string) bool {
 	if containsString(normalizeTo(fa.Env.To), me) {
 		return true
 	}
-	return fa.DeprecatesMyDependency
+	// judge-the-thing P3, and the lead's explicit call on the judgement the
+	// spec left open (§11 A1). DeprecatesMyDependency above is the DECLARED
+	// half — my own consumes.yaml names the contract. This is the observed
+	// half: no declaration anywhere, and a verify-passed delivery pinning
+	// the contract regardless. Without this clause the verdict is computed
+	// and the announcement still never reaches the one system actually
+	// eating the contract, which is the report (fb-20260820-0cb8c8) intact
+	// under a fix that looks applied.
+	return fa.DeprecatesMyDependency || fa.observedDeprecatedConsumption
 }
 
 // extraAddressees is the registry-derived half of "who is addressed",
@@ -62,6 +70,13 @@ func addressedToMe(fa foldedArtifact, me string) bool {
 func extraAddressees(fa foldedArtifact, me string) []string {
 	var out []string
 	if fa.DeprecatesMyDependency && me != "" {
+		out = append(out, me)
+	}
+	// judge-the-thing P3. An observed-but-undeclared consumer is addressed
+	// by the announcement too. Without this the next move is computed and
+	// never seen — the deprecation lands in nobody's `a2a inbox`, and a
+	// verdict nothing surfaces is this epic's own defect turned inside out.
+	if fa.observedDeprecatedConsumption && me != "" {
 		out = append(out, me)
 	}
 	out = append(out, fa.registryLateAdopters...)
@@ -181,6 +196,13 @@ func resolveVerdict(fa foldedArtifact, me string, manifest space.Manifest, paren
 		// registry/floor-derived fact here is — this package can do the
 		// I/O internal/pendency deliberately cannot.
 		OperationalDebtOwed: fa.OperationalDebtOwed,
+		// judge-the-thing P3 (spec 03 §7): resolved in mirror.go's build
+		// pass for the same reason every registry-derived fact here is —
+		// internal/pendency takes a CLOSED input set and does no I/O, so
+		// presence arrives only as a caller-resolved fact. This is the
+		// DeliveryUnresolvable / OperationalDebtOwed seam, extended, not a
+		// second one.
+		ObservedConsumptionUndeclared: fa.observedDeprecatedConsumption,
 	}
 	if fa.kind() == fold.KindResponse {
 		in.ParentFrom = parentFrom

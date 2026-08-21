@@ -677,7 +677,56 @@ func newContractRetireHandler(deps ContractDeps) HandlerFunc {
 		gated := len(overridden) > 0
 		req := deps.buildRequest([]string{in.ID}, files, "contract-retire", gated)
 		result, err := deps.submit(ctx, req, "contract retire", []string{in.ID})
-		return result, "", err
+		return contractRetireWithObserved(result, precondition), "", err
+	}
+}
+
+// contractRetireResult is the write funnel's own submitResult widened with
+// spec 03-observed-consumption.md's observed-consumer naming — §8 row 7
+// (the epic's AC5): internal/cli prints that line to stderr, and this
+// surface has no stderr, so it travels as structured data instead. Same
+// fact, same words, the door-appropriate channel.
+//
+// submitResult is EMBEDDED, so every §7.7 field a write tool already
+// returns marshals at exactly the same place it did before; this adds one
+// optional key and removes none. `body` was the other candidate and is
+// wrong for it: HandlerFunc's own contract reserves that return for "the
+// artifact body verbatim", and a write tool has none.
+type contractRetireResult struct {
+	submitResult
+	// ObservedNotice is validate.ObservedConsumptionNotice's one line —
+	// the SAME renderer internal/cli calls, never a second formatting of
+	// the same facts. Omitted entirely when nothing is observed (§8
+	// criterion 4: a plain retire's result shape is unchanged).
+	ObservedNotice string `json:"observed_consumption,omitempty"`
+	// ObservedConsumers is the machine half for an agent that would rather
+	// branch than parse prose — this IS an agent-to-agent surface.
+	ObservedConsumers []validate.ObservedConsumer `json:"observed_consumers,omitempty"`
+}
+
+// contractRetireWithObserved widens a retire's submit result with the
+// observed-consumption facts, and is a no-op in both the cases that matter:
+// nothing observed (the overwhelmingly common path), and a funnel result
+// this function cannot recognise.
+//
+// The type assertion is deliberately non-fatal. WriteDeps.submit returns a
+// submitResult on its PARTIAL-WRITE path too — result non-nil ALONGSIDE a
+// non-nil error — and that is exactly the case where a caller most needs
+// the PR/stage facts, so a failed assertion returns the original result
+// untouched rather than dropping it for the sake of an advisory.
+func contractRetireWithObserved(result any, precondition validate.RetirePrecondition) any {
+	notice := validate.ObservedConsumptionNotice(precondition)
+	if notice == "" {
+		return result
+	}
+	sr, ok := result.(submitResult)
+	if !ok {
+		return result
+	}
+	return contractRetireResult{
+		submitResult:      sr,
+		ObservedNotice:    notice,
+		ObservedConsumers: precondition.Observed,
 	}
 }
 
@@ -738,7 +787,36 @@ func contractBuildRetirePrecondition(mirrorDir string, manifest space.Manifest, 
 		HasReminder:  reminderCount > 0,
 		ActorIsHuman: actorIsHuman,
 		Override:     override,
+		Observed:     contractObservedConsumers(mirrorDir, manifest, contractID, ackedSystems),
 	}, nil
+}
+
+// contractObservedConsumers resolves spec 03-observed-consumption.md's
+// `observed` set — see internal/cli's own contractObservedConsumers for the
+// full rationale (ADR-001: mirrored here, never imported), including why it
+// is unscoped by major where the declared half above is scoped, and why
+// this is the one call in the retire path that fails OPEN: the set gates
+// nothing (§8 criterion 2), so an unreadable mirror must never block a
+// retire the declared set already cleared.
+//
+// §8 row 7 is the reason this exists on this surface at all:
+// `a2a_contract_retire` is a door onto the same rule, and a rule only the
+// CLI can express is the B22 shape the epic's AC5 exists to prevent — which
+// includes the already-acked filter below: a rule that nags on one door and
+// not the other is the same defect wearing different clothes.
+func contractObservedConsumers(mirrorDir string, manifest space.Manifest, contractID string, acked map[string]bool) []validate.ObservedConsumer {
+	observed, err := cache.FindObservedConsumers(mirrorDir, contractID, manifest)
+	if err != nil {
+		return nil
+	}
+	out := make([]validate.ObservedConsumer, 0, len(observed))
+	for _, o := range observed {
+		if acked[o.System] {
+			continue
+		}
+		out = append(out, validate.ObservedConsumer{System: o.System, Packages: o.Packages})
+	}
+	return out
 }
 
 func contractSunsetPassed(sunset string, now time.Time) bool {

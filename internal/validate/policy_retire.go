@@ -37,6 +37,42 @@ type RegisteredConsumer struct {
 	Left bool
 }
 
+// ObservedConsumer is one system whose OWN committed artifacts show it
+// consuming the contract being retired while NEITHER half of the D-022
+// declaration union names it (spec 03-observed-consumption.md §T2:
+// "declared consumption is an act of commitment, written; observed
+// consumption is evidence, computed" — the two are different kinds of
+// fact and must not be conflated).
+//
+// It is derived, never written: internal/cache resolves it from the
+// verify-passed deliveries already committed in the space
+// (FindObservedConsumers), so no registry entry, no schema field and no
+// migration exists for it — README AC3's "where a fact can be derived, it
+// is derived", because a second written claim can itself go stale.
+//
+// DELIBERATELY NOT A CONSUMER. This type is NOT RegisteredConsumer and
+// carries no Acked/Left: an observed system's silence is not an
+// outstanding acknowledgement, because it never registered and was never
+// owed one. Giving it those fields would be the first step to counting it
+// in the un-acked set, which §9 refuses in as many words.
+//
+// The json tags are load-bearing rather than decorative: internal/mcp
+// returns this type verbatim on `a2a_contract_retire`'s structured result
+// (§8 row 7), where every other key is snake_case — an untagged struct
+// would put `System`/`Packages` on an agent-facing wire beside `pr_url`
+// and `remaining_action`, which is the kind of inconsistency a caller has
+// to special-case forever. Violation (result.go) tags its own fields for
+// the same reason.
+type ObservedConsumer struct {
+	// System is the observed consuming system's id.
+	System string `json:"system"`
+	// Packages is the number of DISTINCT data packages that system
+	// verify-passed against this contract — a count of things a reader
+	// would actually have to look at, never of deliverable occurrences
+	// (cache.UnadoptedConsumption's own doc comment).
+	Packages int `json:"packages"`
+}
+
 // RetirePrecondition is CheckRetirePrecondition's own minimal input — the
 // caller (internal/cli) resolves every fact from the local mirror; this
 // package never reads a manifest or an event stream itself.
@@ -58,6 +94,27 @@ type RetirePrecondition struct {
 	// Override is whether the caller (`--override`) requested the
 	// human-gated override path.
 	Override bool
+
+	// Observed is every system the space's own committed record shows
+	// consuming this contract WITHOUT declaring it (spec
+	// 03-observed-consumption.md, US-1).
+	//
+	// READ BY NOTHING IN CheckRetirePrecondition, and that is the design,
+	// not an oversight (§8 criterion 2, §9 "Why observation does not
+	// veto"): a producer cannot distinguish "a pipeline lives on this"
+	// from "one experimental delivery was received" — only the consumer
+	// can — and a veto on the producer's guess would make any contract
+	// ever delivered against immortal. It reaches the DECISION instead of
+	// the GATE, through ObservedConsumptionNotice below, so the clean path
+	// stops being silently blind while staying exactly as clean.
+	//
+	// The field lives on this input rather than beside it because the
+	// notice is a function of the SAME facts the check reads (the declared
+	// consumer count is half of what makes "0 declared, 1 observed"
+	// meaningful) — and because a reader of this struct should meet, in
+	// one place, both the set that blocks and the set that deliberately
+	// does not.
+	Observed []ObservedConsumer
 }
 
 // CheckRetirePrecondition is the §5.4/D-022 retire-precondition
@@ -75,6 +132,13 @@ type RetirePrecondition struct {
 //     is met: retire succeeds; overridden lists the un-acked consumers
 //     (sorted, deterministic) for the caller to flag `retired-unacked`
 //     and notify (AC-202.3 second clause).
+//
+// p.Observed is READ BY NOTHING HERE. Observed consumption informs the
+// producer's decision and gates nothing (spec 03-observed-consumption.md
+// §8 criterion 2 / §9); it reaches the operator through
+// ObservedConsumptionNotice, never through this function's refusal set.
+// policy_retire_observed_test.go asserts that inertness over every branch
+// below rather than trusting this sentence.
 func CheckRetirePrecondition(p RetirePrecondition) (violation *Violation, overridden []string) {
 	var unacked []string
 	seen := map[string]bool{}
@@ -96,12 +160,11 @@ func CheckRetirePrecondition(p RetirePrecondition) (violation *Violation, overri
 		return nil, unacked
 	}
 
-	const textLimit = 8
 	shown := unacked
 	suffix := ""
-	if len(shown) > textLimit {
-		shown = shown[:textLimit]
-		suffix = fmt.Sprintf(" (+%d more)", len(unacked)-textLimit)
+	if len(shown) > retireNoticeLimit {
+		shown = shown[:retireNoticeLimit]
+		suffix = fmt.Sprintf(" (+%d more)", len(unacked)-retireNoticeLimit)
 	}
 	return &Violation{
 		Code:  "POL-006",
@@ -114,4 +177,87 @@ func CheckRetirePrecondition(p RetirePrecondition) (violation *Violation, overri
 		Severity: SeverityReject,
 		Subjects: append([]string(nil), unacked...),
 	}, nil
+}
+
+// retireNoticeLimit bounds how many systems either retire message renders
+// inline before collapsing the tail into "(+N more)" — the same cap
+// CheckRetirePrecondition's own POL-006 text uses, named once so the two
+// cannot drift into rendering the same kind of list two different ways.
+const retireNoticeLimit = 8
+
+// ObservedConsumptionNotice renders the one line `contract retire` prints
+// on BOTH surfaces when the space's own committed record shows systems
+// consuming this contract that never declared it — spec
+// 03-observed-consumption.md §8 criteria 1 and 7 (the epic's AC5).
+//
+// It returns "" when nothing is observed, which is the overwhelmingly
+// common case and §8 criterion 4's floor: with no observation there is no
+// line, so a plain retire's output is byte-identical to what it was before
+// this phase. Nothing here can refuse: the return type is a string, not a
+// *Violation, and that is the type system carrying §9's "informs, never
+// vetoes" rather than a comment asking for it.
+//
+// It lives in this package, and not in either surface, for ADR-004's
+// reason: `a2a contract retire` (internal/cli) and `a2a_contract_retire`
+// (internal/mcp) are two doors onto one rule, and a rule one door can
+// express and the other cannot is exactly the B22 shape this epic's AC5
+// exists to stop recurring. Both call this; neither formats its own.
+//
+// The declared count it opens with is deliberately the SAME set
+// CheckRetirePrecondition weighs — `left` systems excluded (§5.4 bullet
+// (a)), deduplicated by system — because "0 declared consumers, 1
+// observed" is the sentence that makes the clean path's blindness visible,
+// and it is only true if both halves are counted the same way the gate
+// counts them.
+func ObservedConsumptionNotice(p RetirePrecondition) string {
+	packages := map[string]int{}
+	var systems []string
+	for _, o := range p.Observed {
+		if o.System == "" {
+			continue
+		}
+		if _, seen := packages[o.System]; !seen {
+			systems = append(systems, o.System)
+		}
+		// A system named twice is one system: keep the LARGER count rather
+		// than summing, since each entry is already a distinct-package
+		// count for the same (system, contract) pair and summing would
+		// double-count a package a caller resolved twice.
+		if o.Packages > packages[o.System] {
+			packages[o.System] = o.Packages
+		}
+	}
+	if len(systems) == 0 {
+		return ""
+	}
+	sort.Strings(systems)
+
+	declared := map[string]bool{}
+	for _, c := range p.Consumers {
+		if c.Left {
+			continue
+		}
+		declared[c.System] = true
+	}
+
+	shown := systems
+	suffix := ""
+	if len(shown) > retireNoticeLimit {
+		shown = shown[:retireNoticeLimit]
+		suffix = fmt.Sprintf(" (+%d more)", len(systems)-retireNoticeLimit)
+	}
+	rendered := make([]string, 0, len(shown))
+	for _, s := range shown {
+		unit := "packages"
+		if packages[s] == 1 {
+			unit = "package"
+		}
+		rendered = append(rendered, fmt.Sprintf("%s (%d %s)", s, packages[s], unit))
+	}
+
+	return fmt.Sprintf(
+		"%d declared consumer(s), %d observed and undeclared: %s%s — their own verify-passed deliveries pin this contract while they declare it nowhere. "+
+			"Observed consumption never blocks retire (§9); it is named so this decision is not made blind. "+
+			"Each of them can exit with `a2a contract adopt` (declare the dependency) or by acknowledging the deprecation — no new verb, either way",
+		len(declared), len(systems), strings.Join(rendered, ", "), suffix)
 }

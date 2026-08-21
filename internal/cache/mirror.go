@@ -322,6 +322,20 @@ type foldedArtifact struct {
 	// edit.
 	registryLateAdopters []string
 
+	// observedDeprecatedConsumption is judge-the-thing-2026-08 P3's fact:
+	// this system is DEMONSTRABLY eating the contract this announcement
+	// deprecates — proven by verify-passed deliveries pinning it — while
+	// declaring nothing in consumes.yaml and satisfying no requirement.
+	// `RegisteredConsumer` (internal/validate/policy_retire.go) has always
+	// meant DECLARED, so an observed-only consumer was invisible to retire
+	// and never learned the contract was going away.
+	//
+	// Unexported for the same reason registryLateAdopters is, and the
+	// reasoning above it applies unchanged. Derived in buildIndex under a
+	// NARROW trigger — no artifact deprecates a contract, no walk happens,
+	// nothing changes anywhere (spec 03 §8 criterion 4).
+	observedDeprecatedConsumption bool
+
 	// moveOwed is defects/01's own per-document fact: whether
 	// internal/pendency's verdict for THIS document names an owner, read
 	// only by fold.OutcomeOfDocument for the two (kind, state) pairs it
@@ -437,6 +451,29 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 			if cid := a.Env.deprecatedContractID(); cid != "" && deps[cid] {
 				registryWideLateAdopters[a.Env.ID] = append(registryWideLateAdopters[a.Env.ID], p.System)
 			}
+		}
+	}
+
+	// observedDeprecated is P3's derivation and its trigger is deliberately
+	// narrow: the mirror walk behind ObservedUndeclaredContracts costs real
+	// I/O, so it runs only once a deprecation announcement is actually
+	// present. §8 criterion 4 is the property this shape buys — with no
+	// announcement anywhere, observed consumption changes NOTHING, and the
+	// five plain catalogue paths of 2026-08-10 stay green by construction
+	// rather than by a test remembering to check.
+	//
+	// An error is swallowed on purpose, the same fail-open every registry
+	// read in this pass takes: a mirror this walk cannot read must not turn
+	// an inbox query into a refusal, and observed consumption GATES NOTHING
+	// by design (§8 criterion 2).
+	observedDeprecated := map[string]bool{}
+	if ownSystem != "" {
+		for _, a := range artifacts {
+			if a.Env.deprecatedContractID() == "" {
+				continue
+			}
+			observedDeprecated, _ = ObservedUndeclaredContracts(dir, ownSystem)
+			break
 		}
 	}
 
@@ -714,6 +751,8 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 			ContractNonAdoptable:   contractNonAdoptable,
 			// F1, evaluated once — see foldedArtifact's own comment.
 			registryLateAdopters: registryWideLateAdopters[a.Env.ID],
+
+			observedDeprecatedConsumption: observedDeprecated[a.Env.deprecatedContractID()],
 		}
 		// moveOwed — see foldedArtifact's own comment. Gated to the exact
 		// two pairs fold.OutcomeOfDocument reads it for: every other

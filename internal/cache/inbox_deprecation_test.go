@@ -239,3 +239,85 @@ func containsItemID(items []Item, id string) bool {
 	}
 	return false
 }
+
+// TestInboxDeprecationReachesAnObservedOnlyConsumer is judge-the-thing-2026-08
+// P3's §8 criterion 3, END TO END, and it exists because the two halves landed
+// a wave apart and nothing joined them.
+//
+// axon declares NOTHING. No consumes.yaml, no satisfied requirement — the two
+// things `RegisteredConsumer` has always meant. What it has is a verify-passed
+// delivery of a package pinning XC-seomatrix-widget, which is the contract
+// seomatrix is now deprecating. It is demonstrably eating the contract and
+// invisible to every rule that asks who consumes it.
+//
+// The announcement's `to:` names only beta, exactly as the late-adopter test
+// above builds it, and for the same reason: a `to:` frozen at deprecate time
+// cannot name a consumer no registry knows about. The difference is that axon
+// will NEVER appear in a registry — that is the whole report
+// (fb-20260820-0cb8c8). Being a late adopter is a timing problem; being an
+// observed-only consumer is a category the system had no word for.
+//
+// TEETH: drop the `fa.observedDeprecatedConsumption` clause from
+// extraAddressees and this test reds — the deprecation vanishes from the inbox
+// of the one system actually consuming the contract.
+func TestInboxDeprecationReachesAnObservedOnlyConsumer(t *testing.T) {
+	t.Parallel()
+	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"}, fixtureParticipant{System: "beta"})
+	base := time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC)
+
+	// The observed consumption: seomatrix hands axon a package pinning the
+	// contract, and axon's verify passes. Nothing here is a declaration.
+	rcWriteDataPackageManifest(t, fx.dir, "DP-seomatrix-20260618-p3my", "XC-seomatrix-widget@1.0.0#aaa111")
+	rcWriteHandoff(t, fx.dir, "XH-seomatrix-20260617-aaaa", "seomatrix", "axon", "DP-seomatrix-20260618-p3my")
+	rcWriteHandoffLifecycle(t, fx.dir, "XH-seomatrix-20260617-aaaa", "seomatrix", "axon", true)
+	fxCommitAndPush(t, fx.dir, "fixture: a verify-passed delivery pinning the contract")
+
+	fx.commitArtifact("seomatrix/announcements/XA-seomatrix-20260701-dep.md",
+		deprecationAnnouncement("XA-seomatrix-20260701-dep", "seomatrix", "XC-seomatrix-widget@1.0.0", []string{"beta"}),
+		"1.0.0 sunsets on 2026-09-01.")
+	fx.commitEvent("seomatrix", fxULID(200), evt("XA-seomatrix-20260701-dep", "publish", "seomatrix", base))
+
+	store := NewStore("axon", t.TempDir(), []SpaceMirror{{SpaceID: "sp1", Dir: fx.dir, Manifest: mustManifest(t, fx)}}, func() time.Time { return base.Add(24 * time.Hour) }, 0)
+
+	items, err := store.Inbox(context.Background(), false)
+	if err != nil {
+		t.Fatalf("Inbox: %v", err)
+	}
+	if !containsItemID(items, "XA-seomatrix-20260701-dep") {
+		t.Fatalf("a system with observed-but-undeclared consumption never learns its contract is being deprecated: got %v", itemIDs(items))
+	}
+}
+
+// TestInboxDeprecationIsInertWithoutAnAnnouncement is the other half of P3's
+// §8 criterion 4, at the JOIN rather than at either end: the same observed
+// consumption, with NO deprecation announcement anywhere, must add nobody to
+// anybody's inbox.
+//
+// It guards the narrow trigger in buildIndex. Widen that trigger — walk the
+// mirror unconditionally — and this test still passes, which is worth saying
+// out loud: what it protects is the VERDICT, not the walk. The five plain
+// catalogue paths that reddened on 2026-08-10 are the cost of getting this
+// wrong, and they went red because a check could not tell an ordinary word
+// from a loaded one.
+func TestInboxDeprecationIsInertWithoutAnAnnouncement(t *testing.T) {
+	t.Parallel()
+	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"})
+	base := time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC)
+
+	rcWriteDataPackageManifest(t, fx.dir, "DP-seomatrix-20260618-p3my", "XC-seomatrix-widget@1.0.0#aaa111")
+	rcWriteHandoff(t, fx.dir, "XH-seomatrix-20260617-aaaa", "seomatrix", "axon", "DP-seomatrix-20260618-p3my")
+	rcWriteHandoffLifecycle(t, fx.dir, "XH-seomatrix-20260617-aaaa", "seomatrix", "axon", true)
+	fxCommitAndPush(t, fx.dir, "fixture: a verify-passed delivery and no announcement at all")
+
+	store := NewStore("axon", t.TempDir(), []SpaceMirror{{SpaceID: "sp1", Dir: fx.dir, Manifest: mustManifest(t, fx)}}, func() time.Time { return base.Add(24 * time.Hour) }, 0)
+
+	items, err := store.Inbox(context.Background(), false)
+	if err != nil {
+		t.Fatalf("Inbox: %v", err)
+	}
+	for _, it := range items {
+		if it.Type == "announcement" {
+			t.Fatalf("observed consumption synthesized an announcement out of nothing: %v", itemIDs(items))
+		}
+	}
+}
