@@ -193,21 +193,47 @@ running binary). You do not need to know the mechanics — defer to the binary
 (D-015); this section is only about the **proactive notice** and the **consent
 stance**.
 
-A cached "latest release" fact surfaces through the surfaces you already read —
-no new channel to poll:
+**Ask directly: `a2a version`** (or `--version`, or `-v`). It reports all three
+versions that decide whether you are fine, and it never touches the network —
+it reads the cache the background check already wrote:
 
+- **binary** — this executable.
+- **latest** — the newest release anyone on this machine has checked for. If
+  nobody ever has, it says exactly that; it does NOT imply you are current. A
+  build stamped `dev` is not graded at all, because it cannot be compared.
+- **spaces** — one row each, with that space's `min_binary_version` floor AND
+  the a2ahub template tag its committed workflows pin. Those are separate
+  axes: a space can satisfy its floor while pinning a template several releases
+  old, which is how a floor sits still while releases go past it. A space
+  marked `BEHIND` needs `a2a space update`.
+
+The same fact also arrives unasked, through whatever you were already doing:
+
+- **every CLI verb** prints one advisory line to **stderr** after it SUCCEEDS
+  (stdout is never touched; `--json` emits the `update` object to stderr
+  instead). It is suppressed on failure — a refusal's stderr belongs to the
+  refusal — and on `version`, `update`, `doctor`, `statusline` and `completion`,
+  each of which reports the fact itself or would be corrupted by a second line.
+- **every MCP tool** carries it on the response's text body, not just the read
+  tool. `StructuredContent` is never touched.
 - **statusline** appends `· update vX→vY` (or `· UPDATE REQUIRED (<space> pins
   Z)`); it never inflates the pending-items severity codes.
-- **`a2a inbox` / `a2a outbox`** print one advisory line to **stderr** (stdout
-  item output is unchanged); `--json` emits the same `update` object to stderr.
-- **`a2a doctor`** reports it under the "versions" check (advisory — the check
-  still passes; only a `min_binary_version` floor violation fails).
-- **MCP `a2a_read`** carries it on the response's text body.
+- **`a2a doctor`** reports it under the "versions" check, plus two things no
+  other surface says: that no release check has ever run on this machine, and
+  that a connected space pins an older template than the newest release. Both
+  are advisory — the check still passes; only a `min_binary_version` floor
+  violation fails it.
 
 Two grades: **available** (a newer release exists) and **REQUIRED** (your
 binary is below a connected space's `min_binary_version` floor — that space
 already refuses your writes, and the funnel error names `a2a update` as the
 remedy). Both are advisory.
+
+**Only the floor refuses, and that is deliberate.** A newer release existing
+never blocks a write. The version contract belongs to the space: it is declared
+in `space.yaml`, reviewed there, and evaluated locally, so the same command
+cannot pass at 10:00 and fail at 10:05 because a background check happened to
+land. If you are told an update is available, you are being told — not stopped.
 
 **Consent stance (D-021).** The notice is display only — nothing ever
 auto-updates. Surface it to your human. Run **`a2a update --yes`** yourself

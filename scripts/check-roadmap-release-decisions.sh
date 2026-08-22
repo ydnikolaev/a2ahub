@@ -18,10 +18,19 @@ check_one() {
         bad = 1
       }
     }
-    /^  - id: / { finish(); id=$3; kind=""; visibility=""; why=""; next }
-    /^    kind: / { kind=$2; next }
-    /^      visibility: / { visibility=$2; next }
-    /^      why: / { why=$0; sub(/^      why:[[:space:]]*/, "", why); next }
+    # INDENTATION-RELATIVE, not fixed. A YAML sequence under a mapping key is
+    # legal at the parent key\x27s indent OR two deeper, and this corpus uses
+    # BOTH: 268 entries at two spaces, 58 at zero. The original patterns
+    # matched only the two-space form, so this gate was BLIND to every entry in
+    # 58 of them — including the file being cut on 2026-08-22, where it
+    # reported "ships no feature" over two kind: feat entries. Its own teeth
+    # never caught it because every tooth fixture was written in the form the
+    # gate could see.
+    { match($0, /^ */); ind = RLENGTH; line = substr($0, ind + 1) }
+    line ~ /^- id: / { finish(); split(line, f, " "); id=f[3]; base=ind; kind=""; visibility=""; why=""; next }
+    line ~ /^kind: / && ind == base + 2 { kind=substr(line, 7); next }
+    line ~ /^visibility: / && ind == base + 4 { visibility=substr(line, 13); next }
+    line ~ /^why: / && ind == base + 4 { why=substr(line, 6); sub(/^[[:space:]]*/, "", why); next }
     END { finish(); exit bad }
   ' "$file")"
   rc=$?
@@ -40,11 +49,14 @@ check_one() {
   # them, and every release since happened to carry a feat, so an unconditional
   # requirement here sat latent until the first fix-only release met it and was
   # told to invent a roadmap decision for a bug fix.
-  if ! grep -Eq '^    kind: feat$' "$file"; then
+  # `^ *`, not a fixed depth, for the reason the awk above states: this corpus
+  # writes its sequence at two indents and these two greps read the coarse
+  # presence/value facts. The awk has already proven the relative structure.
+  if ! grep -Eq '^ *kind: feat$' "$file"; then
     echo "roadmap-release-decisions: $(basename "$file") ships no feature; no roadmap decision is owed."
     return 0
   fi
-  if grep -Eq '^      visibility: (shipped|omit)$' "$file"; then
+  if grep -Eq '^ *visibility: (shipped|omit)$' "$file"; then
     echo "roadmap-release-decisions: $(basename "$file") has an explicit decision for every feature."
   else
     echo "roadmap-release-decisions: FAIL — no valid shipped|omit decisions in $file" >&2
@@ -111,7 +123,55 @@ YAML
     exit 1
   }
 
-  echo "roadmap-release-decisions --teeth: undecided feature reds by id; an illegal value reds; an explicit decision greens; a fix-only release is exempt."
+  # THE FORM THE GATE COULD NOT SEE. Every fixture above is written with the
+  # sequence indented two spaces under `changes:`; 58 files in the real corpus
+  # write it at zero, and against those this gate reported "ships no feature"
+  # no matter what they shipped. A tooth corpus that only ever speaks the
+  # dialect the gate understands is a tooth that agrees with the bug.
+  cat >"$tmp/0.1.0.yaml" <<'YAML'
+schema: release-notes/v1
+version: 0.1.0
+changes:
+- id: RN-1
+  kind: feat
+  subject: new capability
+  detail: a capability with no roadmap decision at all
+  impact: normal
+  action:
+    scope: none
+    why: none
+YAML
+  if out="$(check_one "$tmp/0.1.0.yaml" 2>&1)"; then
+    echo "roadmap-release-decisions --teeth: FAILED — an undecided feature written at the corpus's OTHER indentation stayed green: $out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -q 'RN-1' || {
+    echo "roadmap-release-decisions --teeth: FAILED — the zero-indent red did not name the undecided feature" >&2
+    exit 1
+  }
+
+  cat >"$tmp/0.1.0.yaml" <<'YAML'
+schema: release-notes/v1
+version: 0.1.0
+changes:
+- id: RN-1
+  kind: feat
+  subject: new capability
+  detail: a capability whose decision is recorded
+  impact: normal
+  roadmap:
+    visibility: shipped
+    why: it ships
+  action:
+    scope: none
+    why: none
+YAML
+  check_one "$tmp/0.1.0.yaml" >/dev/null || {
+    echo "roadmap-release-decisions --teeth: FAILED — a DECIDED feature at the zero indentation was refused" >&2
+    exit 1
+  }
+
+  echo "roadmap-release-decisions --teeth: undecided feature reds by id; an illegal value reds; an explicit decision greens; a fix-only release is exempt; and both of the corpus's indentations are read, not just the one the fixtures used."
 }
 
 if [ "${1:-}" = "--teeth" ]; then teeth; exit 0; fi

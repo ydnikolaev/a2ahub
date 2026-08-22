@@ -45,7 +45,7 @@ import (
 // life of the process; __catalog is this verb itself (self-referencing —
 // it cannot construct-and-read its own Synopsis()).
 var catalogHandTypedSynopsis = map[string]string{
-	"version":   "print the binary version stamp",
+	"version":   "binary, release and per-space versions, and whether an update is available (alias: --version, -v)",
 	"mcp":       "serve the §7.7 MCP tool surface over stdio JSON-RPC",
 	"__catalog": "print this generated command/MCP catalog (hidden, machine-consumed)",
 }
