@@ -183,6 +183,29 @@ judge_curl_outcome() { # $1 = curl's exit code (non-zero)
   esac
 }
 
+# resolve_evidence_dir: which bucket currently holds the epic that owns this
+# gate? The verdict file is evidence, and evidence written into a path nobody
+# reads is the failure class this whole epic was cut against — so the bucket is
+# RESOLVED rather than frozen. An epic moves from docs/features/active/ to
+# docs/features/archive/ when it ships; freezing "active" here would mean the
+# first release after that archive writes its verdict into a directory that no
+# longer exists, and the operator would learn it from a stack trace at the end
+# of a publish.
+#
+# Neither bucket present is a REFUSAL, never a fallback: inventing a directory
+# would produce a verdict file the corpus does not carry.
+resolve_evidence_dir() { # $1=repo root -> prints the audits dir, or nothing
+  local root="$1" bucket dir
+  for bucket in active archive; do
+    dir="$root/docs/features/$bucket/release-loop-2026-08/audits"
+    if [ -d "$dir" ]; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # judge_template_names_tag: does the write floor equal $2, and does every
 # workflow pin in $3.. equal $2? (Stricter than release-preflight.sh's own
 # assert_floor_not_ahead, which only demands floor <= version — this
@@ -800,6 +823,25 @@ teeth() {
   fi
   echo "  + _cohort_min_assets: no .goreleaser.yaml → refuses rather than guessing"
 
+  # resolve_evidence_dir — BOTH buckets and the absence. A one-sided tooth
+  # asserting only "active resolves" cannot tell a resolver from the frozen
+  # path it replaced; the archive direction is the whole point, because that is
+  # the state this repository enters the moment the epic ships.
+  mkdir -p "$tmp/ev/docs/features/active/release-loop-2026-08/audits"
+  got="$(resolve_evidence_dir "$tmp/ev" || true)"
+  [ "$got" = "$tmp/ev/docs/features/active/release-loop-2026-08/audits" ] || {
+    echo "release-postflight --teeth: FAILED — resolve_evidence_dir did not find the active bucket (got '$got')" >&2; exit 1; }
+  rm -rf "$tmp/ev/docs/features/active"
+  mkdir -p "$tmp/ev/docs/features/archive/release-loop-2026-08/audits"
+  got="$(resolve_evidence_dir "$tmp/ev" || true)"
+  [ "$got" = "$tmp/ev/docs/features/archive/release-loop-2026-08/audits" ] || {
+    echo "release-postflight --teeth: FAILED — resolve_evidence_dir did not follow the epic into archive/ (got '$got')" >&2; exit 1; }
+  rm -rf "$tmp/ev/docs/features/archive"
+  if resolve_evidence_dir "$tmp/ev" >/dev/null 2>&1; then
+    echo "release-postflight --teeth: FAILED — resolve_evidence_dir invented a directory when neither bucket exists" >&2; exit 1
+  fi
+  echo "  + resolve_evidence_dir: follows the epic into archive/, and refuses when it is in neither bucket"
+
   # ── fixture repo (acts as both the private ROOT and the public remote) ──
 
   local remote_bare="$tmp/public.git" work="$tmp/work"
@@ -1113,7 +1155,17 @@ esac
 ROOT="$(git rev-parse --show-toplevel)"
 SLUG="${A2A_PUBLIC_SLUG:-ydnikolaev/a2ahub}"
 SITE_URL="${A2A_POSTFLIGHT_SITE_URL:-https://a2ahub.dev/changelog.md}"
-EVIDENCE_DIR="${A2A_POSTFLIGHT_EVIDENCE_DIR:-$ROOT/docs/features/active/release-loop-2026-08/audits}"
+EVIDENCE_DIR="${A2A_POSTFLIGHT_EVIDENCE_DIR:-}"
+if [ -z "$EVIDENCE_DIR" ]; then
+  EVIDENCE_DIR="$(resolve_evidence_dir "$ROOT" || true)"
+fi
+if [ -z "$EVIDENCE_DIR" ]; then
+  echo "release-postflight: cannot resolve where to write the verdict — the" >&2
+  echo "  release-loop-2026-08 audits directory is in neither docs/features/active/" >&2
+  echo "  nor docs/features/archive/. Point A2A_POSTFLIGHT_EVIDENCE_DIR at the" >&2
+  echo "  directory that should hold it rather than letting this gate invent one." >&2
+  exit 2
+fi
 
 _run_assertion "1-tag-resolves-on-remote" assert_tag_resolves "$ROOT" "$VERSION"
 _run_assertion "2-release-published-state" assert_release_state "$SLUG" "$VERSION"
