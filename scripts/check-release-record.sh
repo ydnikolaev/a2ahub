@@ -110,6 +110,37 @@ TEMPLATE_WORKFLOWS_DIR="space-template/.github/workflows"
 
 # _released_field prints releasenotes/<v>.yaml's top-level `released:` scalar
 # with any quoting stripped ('2026-08-13', "2026-08-13", or unreleased alike).
+# _cut_window_dates prints the UTC dates a dated-but-untagged version may carry.
+#
+# THE WINDOW IS TWO DAYS, AND THE SECOND ONE IS NOT GENEROSITY. It used to be
+# the current UTC calendar day, which reads as "a cut in progress stamps
+# today" — true, but it makes the window a CLIFF rather than a duration. A cut
+# takes about an hour end to end (ship gate, candidate, the candidate's own
+# check, promote, tag), so one started at 23:20 UTC cannot finish inside its
+# own window and reds mid-flight through no fault of its own. That happened on
+# 2026-08-22 and the answer was very nearly "wait 40 minutes for the calendar",
+# which is not a rule, it is a queue for a clock.
+#
+# Two days guarantees at least 24 hours to whoever starts a cut, whenever they
+# start it. Everything the one-day rule argued for survives: still offline,
+# still no state to keep, still self-closing — an abandoned cut reds a day
+# later than it used to, and teeth 3b holds that outer edge so the window
+# cannot quietly become a hole.
+_cut_window_dates() {
+  date -u +%Y-%m-%d
+  date -u -v-1d +%Y-%m-%d 2>/dev/null || date -u -d 'yesterday' +%Y-%m-%d
+}
+
+# _in_cut_window: is $1 one of the dates a cut in progress may carry?
+_in_cut_window() {
+  local candidate="$1" day
+  [ -n "$candidate" ] || return 1
+  while read -r day; do
+    [ "$candidate" = "$day" ] && return 0
+  done < <(_cut_window_dates)
+  return 1
+}
+
 _released_field() { # $1 = path
   sed -n "s/^released:[[:space:]]*['\"]\\{0,1\\}\\([^'\"]*\\)['\"]\\{0,1\\}[[:space:]]*\$/\\1/p" "$1" 2>/dev/null | head -1
 }
@@ -249,8 +280,8 @@ assert_released_dates_match_tags() { # $1 = repo
       #
       # NOT the candidate ref on the remote, which would be better evidence:
       # this gate runs offline on every commit, by design.
-      if [ "$released" = "$(date -u +%Y-%m-%d)" ]; then
-        ok "check-release-record: releasenotes/$version.yaml is dated today ($released) with no v$version tag — the cut window (Phase 1 stamps the date, Phase 3 tags the candidate's SHA). Legal today; reds tomorrow if the tag never lands."
+      if _in_cut_window "$released"; then
+        ok "check-release-record: releasenotes/$version.yaml is dated $released with no v$version tag — the cut window (Phase 1 stamps the date, Phase 3 tags the candidate's SHA). It spans today and yesterday in UTC, because a cut takes about an hour and must not be truncated by the calendar. Reds once that date is two days old and the tag never landed."
         continue
       fi
 
@@ -318,8 +349,8 @@ _assert_ref_default_is_tagged_one() { # $1 = repo, $2 = wf_path (repo-relative)
     # and with the same self-closing bound: once Phase 1 stamps the date the
     # sentinel is gone, and this row would otherwise red for the hours between
     # that stamp and Phase 3's tag while the release proceeds correctly.
-    if [ -f "$notes" ] && [ "$(_released_field "$notes")" = "$(date -u +%Y-%m-%d)" ]; then
-      ok "check-release-record: $wf's a2a-ref default $got has no tag yet, and releasenotes/${got#v}.yaml is dated today — the cut window, legal (release.md Phase 1 step 2 through Phase 3 step 13). Reds tomorrow if the tag never lands."
+    if [ -f "$notes" ] && _in_cut_window "$(_released_field "$notes")"; then
+      ok "check-release-record: $wf's a2a-ref default $got has no tag yet, and releasenotes/${got#v}.yaml is dated inside the cut window — legal (release.md Phase 1 step 2 through Phase 3 step 13). Reds once that date is two days old and the tag never landed."
       return 0
     fi
     fail "check-release-record: $wf's a2a-ref default is $got, but $tag is not a tag
@@ -492,16 +523,26 @@ teeth() {
   ok "teeth 3a: TODAY's date with no tag → GREEN, by the cut window and saying so"
 
   _teeth_notes "$tmp/releasenotes/0.2.0.yaml" "$(date -u -v-1d +%Y-%m-%d 2>/dev/null || date -u -d 'yesterday' +%Y-%m-%d)"
+  if ! out="$(assert_released_dates_match_tags "$tmp" 2>&1)"; then
+    echo "check-release-record --teeth: FAILED — 3c: YESTERDAY's date with no tag was refused; a cut that crossed midnight UTC would red mid-flight, which is the cliff this window exists to not be" >&2
+    echo "$out" >&2; exit 1
+  fi
+  printf '%s\n' "$out" | grep -q "the cut window" || {
+    echo "check-release-record --teeth: FAILED — 3c: green, but not by the cut-window branch" >&2
+    echo "$out" >&2; exit 1; }
+  ok "teeth 3c: YESTERDAY's date with no tag → GREEN, so a cut is never truncated by the calendar"
+
+  _teeth_notes "$tmp/releasenotes/0.2.0.yaml" "$(date -u -v-2d +%Y-%m-%d 2>/dev/null || date -u -d '2 days ago' +%Y-%m-%d)"
   if out="$(assert_released_dates_match_tags "$tmp" 2>&1)"; then
-    echo "check-release-record --teeth: FAILED — 3b: YESTERDAY's date with no tag stayed GREEN; the window is a hole, not a window" >&2
+    echo "check-release-record --teeth: FAILED — 3b: a TWO-DAY-OLD date with no tag stayed GREEN; the window is a hole, not a window" >&2
     echo "$out" >&2; exit 1
   fi
   printf '%s\n' "$out" | grep -q "is not a tag reachable" || {
     echo "check-release-record --teeth: FAILED — 3b: red, but not with the untagged-claim message" >&2
     echo "$out" >&2; exit 1; }
-  ok "teeth 3b: YESTERDAY's date with no tag → still RED — an abandoned cut is caught one day later"
+  ok "teeth 3b: a TWO-DAY-OLD date with no tag → RED — the window has an outer edge, and an abandoned cut is still caught"
 
-  # --- teeth 3c: the SAME date, UNQUOTED → RED, and the pair is the point ----
+  # --- teeth 3d: the SAME date, UNQUOTED → RED, and the pair is the point ----
   # 3a proved today's quoted date is legal. This proves the identical date
   # written bare is not, because YAML resolves it to a timestamp and the
   # release-notes schema demands a string. Without this pair the gate reads
@@ -516,7 +557,7 @@ teeth() {
   printf '%s\n' "$out" | grep -q "UNQUOTED" || {
     echo "check-release-record --teeth: FAILED — 3c: red, but not for the unquoted reason" >&2
     echo "$out" >&2; exit 1; }
-  ok "teeth 3c: TODAY's date written UNQUOTED → RED, even though the same date quoted is legal (3a)"
+  ok "teeth 3d: TODAY's date written UNQUOTED → RED, even though the same date quoted is legal (3a)"
 
   # --- teeth 4: the sentinel clears it → GREEN ---
   printf 'schema: release-notes/v1\nversion: "0.2.0"\nreleased: unreleased\nheadline: h\nchanges:\n  - id: RN-1\n    kind: feat\n    impact: low\n    subject: s\n    detail: d\n    action:\n      scope: none\n      why: y\n' \
