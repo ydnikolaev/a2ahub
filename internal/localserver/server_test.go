@@ -610,9 +610,28 @@ func TestProductionServeStalledRootWriteHitsDeadlineAndReleasesBudget(t *testing
 	// fails in seconds with its own name on it.
 	const spinBudget = 15 * time.Second
 
+	// THE ACQUISITION IS AN EDGE; THIS LOOP USED TO POLL A LEVEL.
+	//
+	// The slot is held for as long as the stalled write lasts, and that is
+	// bounded by the 25 ms write deadline above. A 1 ms poll on a saturated
+	// machine can be descheduled for longer than the whole acquire-write-
+	// deadline-release cycle, and then the window is GONE rather than late:
+	// the request has completed, no second one is coming, and this loop spins
+	// to its budget on a server that did exactly what was asked. That is what
+	// happened on 2026-08-05, again on 2026-08-10, and again on 2026-08-22,
+	// each time inside a full parallel run and never once in isolation.
+	//
+	// Sleeping instead of Gosched (below) removed one cause and not the class.
+	// So the condition now also accepts the TERMINAL state: LastError() can
+	// only be set from inside the held window — all three recordError sites in
+	// router.go sit between acquireBodyWriter and its deferred release — so a
+	// recorded error is proof the slot WAS acquired, whether or not this
+	// goroutine ever observed it held. The second loop below is unchanged and
+	// still makes the real assertion, so nothing is weakened: it demands the
+	// slot released AND the error recorded.
 	acquired := time.NewTimer(spinBudget)
 	defer acquired.Stop()
-	for len(server.writerSlots) == 0 {
+	for len(server.writerSlots) == 0 && server.LastError() == nil {
 		select {
 		case <-acquired.C:
 			t.Fatalf("stalled writer never acquired a bounded slot within %s", spinBudget)
@@ -688,9 +707,10 @@ func TestProductionServeStalledDashboardWriteHitsDeadlineAndReleasesSharedBudget
 	}
 
 	const spinBudget = 15 * time.Second
+	// Same edge-versus-level hazard as the root-write probe above, same fix.
 	acquired := time.NewTimer(spinBudget)
 	defer acquired.Stop()
-	for len(server.writerSlots) == 0 {
+	for len(server.writerSlots) == 0 && server.LastError() == nil {
 		select {
 		case <-acquired.C:
 			t.Fatalf("stalled dashboard writer never acquired a shared slot within %s", spinBudget)
