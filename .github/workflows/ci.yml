@@ -251,6 +251,28 @@ jobs:
         with:
           fetch-depth: 0
 
+      # THE RELEASE TAGS LIVE ON THE PUBLISHED REPOSITORY, NOT HERE, and
+      # `check-release-record` needs them.
+      #
+      # Releases are tagged on ydnikolaev/a2ahub at FILTERED commits that do not
+      # exist in this history at all (v0.24.0 -> 1bd62f3a, not an ancestor of
+      # this main). So the private remote carries exactly one tag, v0.1.0, and
+      # always will — and on 2026-08-22 this job reported all 48 shipped
+      # releases as never released. Locally the publisher imports each tag on
+      # promotion, which is why it is green on a laptop and red only here: the
+      # textbook shape of "works on my machine".
+      #
+      # Fetched into the EPHEMERAL CI checkout only. Nothing is pushed and the
+      # private repository is not polluted with rewritten history; the objects
+      # live and die with the runner. `|| true` because a gate must not be
+      # blinded by a network blip — the gate itself then reports what it can
+      # see, which is the honest failure mode rather than a masked one.
+      - name: Fetch the published release tags
+        run: |
+          git fetch --tags --no-recurse-submodules \
+            https://github.com/ydnikolaev/a2ahub.git 'refs/tags/*:refs/tags/*' || true
+          echo "tags now visible: $(git tag --list 'v[0-9]*' | wc -l | tr -d ' ')"
+
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -356,6 +378,28 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+
+      # THE RELEASE TAGS LIVE ON THE PUBLISHED REPOSITORY, NOT HERE, and
+      # `check-release-record` needs them.
+      #
+      # Releases are tagged on ydnikolaev/a2ahub at FILTERED commits that do not
+      # exist in this history at all (v0.24.0 -> 1bd62f3a, not an ancestor of
+      # this main). So the private remote carries exactly one tag, v0.1.0, and
+      # always will — and on 2026-08-22 this job reported all 48 shipped
+      # releases as never released. Locally the publisher imports each tag on
+      # promotion, which is why it is green on a laptop and red only here: the
+      # textbook shape of "works on my machine".
+      #
+      # Fetched into the EPHEMERAL CI checkout only. Nothing is pushed and the
+      # private repository is not polluted with rewritten history; the objects
+      # live and die with the runner. `|| true` because a gate must not be
+      # blinded by a network blip — the gate itself then reports what it can
+      # see, which is the honest failure mode rather than a masked one.
+      - name: Fetch the published release tags
+        run: |
+          git fetch --tags --no-recurse-submodules \
+            https://github.com/ydnikolaev/a2ahub.git 'refs/tags/*:refs/tags/*' || true
+          echo "tags now visible: $(git tag --list 'v[0-9]*' | wc -l | tr -d ' ')"
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

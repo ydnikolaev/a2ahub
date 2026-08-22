@@ -201,6 +201,17 @@ excused_reason() { # $1 = command
     *"apt-get install -y -qq ripgrep"* | *"rg --version"*)
       echo "provisioning, not a check" ;;
 
+    # The release tags live on the PUBLISHED repository; this private source
+    # remote carries exactly one, v0.1.0, because releases are tagged at
+    # FILTERED commits absent from this history. `check-release-record` needs
+    # them and is offline-by-design, so CI fetches them into its EPHEMERAL
+    # checkout. Provisioning of a fact, not a check — and it has no local
+    # counterpart because a developer checkout already has every tag, imported
+    # by the publisher on promotion. That asymmetry is exactly why this was
+    # green on every laptop and red only on CI.
+    *"git fetch --tags"* | *"tags now visible:"*)
+      echo "provisioning (the published release tags a source clone never receives), not a check" ;;
+
     # Group 2 close (dogfood, the rest) — a2a-validate-reusable.yml commands
     # that are real on the SPACE-PATH (a2a-ref != "") or v3-pr-mode branches,
     # neither of which a2a-validate-dogfood.yml's call
