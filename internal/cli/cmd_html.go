@@ -123,8 +123,15 @@ func (c *HtmlCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		if c.operational == nil {
 			data, err = html.AssembleWithContractHistory(ctx, c.store, *system, now, c.historyValidator)
 		} else {
+			// SNAPSHOT AND ASSEMBLE ARE MEASURED APART because the first
+			// measurement in axon could not tell them apart: 21.9 s of a
+			// 21.96 s render landed in one "assemble" bucket covering both an
+			// operational snapshot and the cache walk. A breakdown whose
+			// largest phase is two unrelated things is one guess better than
+			// no breakdown, not an answer.
 			var snapshot operational.Snapshot
 			snapshot, err = c.operational.Snapshot(ctx)
+			phases.mark("snapshot")
 			if err == nil {
 				data, err = html.AssembleWithOperationalAndContractHistory(ctx, c.store, *system, now, snapshot, c.historyValidator)
 			}
