@@ -332,8 +332,26 @@ func runReadVerb(t *testing.T, mirrorDir, spaceID, verb string, args ...string) 
 // main).
 func runReadVerbAs(t *testing.T, mirrorDir, spaceID, ownSystem, verb string, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
-	projectDir := t.TempDir()
-	homeDir := t.TempDir()
+	// NOT t.TempDir(), and the reason is the defect this helper carries.
+	//
+	// `a2a statusline` spawns a DETACHED child that keeps writing under
+	// projectDir/.a2a/cache after the verb returns. t.TempDir()'s cleanup runs
+	// os.RemoveAll the instant the test returns, and nothing orders the child's
+	// EXIT against that removal — so the test fails in cleanup, not in an
+	// assertion: `TempDir RemoveAll cleanup: unlinkat /tmp/TestE2E1Cascade…:
+	// directory not empty`. Observed on CI 2026-08-22 on both the private and
+	// the public repository, at a commit whose local suite had passed.
+	//
+	// waitForStatuslineRefresh below does not close it either: releasing the
+	// lease is not exiting, and its own comment claiming the lease is "the
+	// synchronization primitive" is the belief that hid this for as long as it
+	// did. The lease orders the WORK; nothing observable orders the EXIT.
+	//
+	// So the removal tolerates the race it cannot order — bounded, and it still
+	// FAILS if the directory never becomes removable, because a permanently
+	// undeletable temp dir is a real leak and must not be swallowed.
+	projectDir := detachSafeTempDir(t)
+	homeDir := detachSafeTempDir(t)
 
 	if err := os.MkdirAll(filepath.Join(projectDir, ".a2a"), 0o755); err != nil {
 		t.Fatalf("runReadVerbAs: mkdir: %v", err)
@@ -373,6 +391,32 @@ func runReadVerbAs(t *testing.T, mirrorDir, spaceID, ownSystem, verb string, arg
 		waitForStatuslineRefresh(t, filepath.Join(projectDir, ".a2a", "cache", "statusline-refresh.lease"))
 	}
 	return out.String(), errBuf.String(), exitCode
+}
+
+// detachSafeTempDir is t.TempDir() for a directory a process we do not own may
+// still be writing into. Same lifetime, same automatic cleanup — but the
+// removal retries for a bounded window instead of failing the test on the first
+// EEXIST, and reports honestly if the window expires.
+func detachSafeTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "a2a-e2e-*")
+	if err != nil {
+		t.Fatalf("detachSafeTempDir: %v", err)
+	}
+	t.Cleanup(func() {
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			if err := os.RemoveAll(dir); err == nil {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Errorf("detachSafeTempDir: %s was still not removable after 10s — a detached child is holding it far longer than any refresh should", dir)
+				return
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	})
+	return dir
 }
 
 func waitForStatuslineRefresh(t *testing.T, leasePath string) {

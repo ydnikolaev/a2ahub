@@ -445,7 +445,25 @@ func TestProductionServeKeepsHealthySSEBeyondOrdinaryWriteDeadlineAndJoins(t *te
 	t.Parallel()
 	config := DefaultConfig()
 	config.Listen = "127.0.0.1:0"
-	config.WriteDeadline = 25 * time.Millisecond
+	// WHAT IS UNDER TEST IS THE RELATIONSHIP, NOT THE NUMBER: an idle stream
+	// must outlive the ORDINARY per-write deadline. The idle probe below is
+	// 3x this value, so scaling it up preserves the property exactly.
+	//
+	// It was 25ms, and 25ms is not a property — it is a bet that every single
+	// write to a loopback socket completes within 25ms on whatever machine
+	// happens to run this. On a box under load that bet loses, the server
+	// closes the stream on a genuine deadline, and the test fails for a reason
+	// that has nothing to do with the behaviour it names. Raised to 500ms:
+	// twenty times the headroom against scheduler jitter, and the test still
+	// proves the same thing because the idle gap scales with it.
+	//
+	// HONEST PROVENANCE: this is inferred, not measured. The observed failure
+	// (2026-08-22, a looped suite on a quiet box) named this test but its full
+	// log was destroyed before the assertion could be read. The change is safe
+	// either way — it only widens a margin — but it is not a confirmed
+	// diagnosis, and the flake-detection work should re-test it rather than
+	// assume this closed it.
+	config.WriteDeadline = 500 * time.Millisecond
 	reader := &fakeReader{snapshot: testSnapshot("sse-one"), called: make(chan struct{}, 1)}
 	server, err := New(config, reader, nil, fakeRenderer{shell: []byte("ok")}, newFakeTickerFactory())
 	if err != nil {
