@@ -1,6 +1,6 @@
 schema: release-notes/v1
 version: 0.25.2
-released: unreleased
+released: "2026-08-22"
 headline: "`a2a update` works again — v0.25.0 broke it for every binary already installed"
 changes:
 - id: RN-02502-0
