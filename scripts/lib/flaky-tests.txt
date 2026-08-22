@@ -1,0 +1,16 @@
+# flaky-tests.txt — tests KNOWN to be non-deterministic, each with a reason and
+# a date. The shape is scripts/lib/lane-ungated.txt's: an explicit, dated,
+# COUNTED exception, never a way to silence a failure nobody investigated.
+#
+# Read by scripts/check-flaky-tests.sh. Format: one `Package/TestName` per line.
+# A `#` comment on the line ABOVE it must give the reason and the date.
+#
+# TWO RULES, and the second is what makes this list drain instead of grow:
+#   - a test that fails and is NOT listed here REDS the scan, by name;
+#   - a test that IS listed and passes every iteration ALSO REDS, because the
+#     entry has outlived its reason and the list must shrink.
+#
+# Empty is the correct state. It is empty today because both known flakes were
+# fixed on 2026-08-22 rather than listed:
+#   internal/e2e.TestE2E1Cascade — t.TempDir() cleanup raced a detached child
+#   internal/localserver.TestProductionServeKeepsHealthySSE… — 25ms write deadline
