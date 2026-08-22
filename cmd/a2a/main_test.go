@@ -154,3 +154,20 @@ func TestAdvisoryMode(t *testing.T) {
 		t.Fatalf("no --json must select the prose shape")
 	}
 }
+
+// TestAdvisoryModeSilencesInternalVerbs: `__`-prefixed verbs are the machine
+// surface, and their callers assert stderr is empty. The demo-fixture coverage
+// test found `a2a __catalog` emitting the update notice the moment the
+// advisory began rendering for every verb — a rule on the prefix covers the
+// next internal verb without anyone adding it to a list.
+func TestAdvisoryModeSilencesInternalVerbs(t *testing.T) {
+	t.Parallel()
+	for _, verb := range []string{"__catalog", "__anything"} {
+		if render, _ := advisoryMode(verb, nil); render {
+			t.Fatalf("%q is an internal machine verb and must write nothing to stderr", verb)
+		}
+	}
+	if render, _ := advisoryMode("submit", nil); !render {
+		t.Fatal("the prefix rule must not silence ordinary verbs")
+	}
+}

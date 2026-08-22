@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"runtime/debug"
+	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 )
@@ -65,7 +66,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runVerbHelp(name, args[1:], stdout)
 	}
 	code := cmd(args[1:], stdout, stderr)
-	writeUpdateAdvisory(name, args[1:], stderr)
+	// ONLY ON SUCCESS, and this matches MCP rather than merely resembling it:
+	// withUpdateNotice returns early when the inner handler errored, so an MCP
+	// refusal carries no advisory. A CLI refusal that carried one would break
+	// the two surfaces' byte-identical refusal contract — caught immediately by
+	// internal/e2e's REF-023 equivalence test — and, worse, would append advice
+	// to the channel the refusal itself speaks on, which other tools compare
+	// and parse. The advisory appears on the next command that succeeds.
+	if code == 0 {
+		writeUpdateAdvisory(name, args[1:], stderr)
+	}
 	return code
 }
 
@@ -119,6 +129,15 @@ func writeUpdateAdvisory(name string, args []string, stderr io.Writer) {
 // be tested without a project on disk. It answers two questions: does this verb
 // get the advisory at all, and in which shape.
 func advisoryMode(name string, args []string) (render, jsonOut bool) {
+	// `__`-prefixed verbs are the INTERNAL machine surface (`a2a __catalog`
+	// and friends). Their callers assert stderr is empty, because anything on
+	// it is a malfunction by definition — the demo-fixture coverage test found
+	// this the moment the advisory started rendering for every verb. A rule on
+	// the prefix, not a list of names, so the next internal verb is covered by
+	// existing.
+	if strings.HasPrefix(name, "__") {
+		return false, false
+	}
 	if advisorySilentVerbs[name] {
 		return false, false
 	}
