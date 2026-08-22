@@ -1,6 +1,6 @@
 schema: release-notes/v1
 version: 0.25.1
-released: unreleased
+released: "2026-08-22"
 headline: the local dashboard stops spawning two thousand git processes to render
   once
 changes:
