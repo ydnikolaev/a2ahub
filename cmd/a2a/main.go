@@ -185,10 +185,11 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "docs: https://a2ahub.dev/")
 }
 
-func runVersion(_ []string, stdout, _ io.Writer) int {
-	_, _ = fmt.Fprintln(stdout, versionStamp())
-	return 0
-}
+// (`runVersion` lived here until 2026-08-22: one line, the stamp. `a2a version`
+// now needs the store to report the release and per-space axes, so the verb is
+// a closure in wire.go beside the other store-backed commands. versionStamp
+// stays here — it is the build-time identity of THIS binary and belongs with
+// the ldflags vars it reads.)
 
 // versionStamp returns the one-line "a2a <version> (<commit>)" stamp.
 // commit prefers the ldflags-injected value; absent that, it falls back to

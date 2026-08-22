@@ -29,7 +29,7 @@ import (
 // gate exists to refuse, and a reader that silently picked the first one would
 // hide it.
 func WorkflowVersion(dir string) (version, ref string) {
-	raw, err := os.ReadFile(filepath.Join(dir, ".github", "workflows", "a2a-validate.yml"))
+	raw, err := os.ReadFile(filepath.Join(dir, ".github", "workflows", "a2a-validate.yml")) //nolint:gosec // reason: dir is a space mirror path this process already cloned and owns; the filename is a constant, so the only variable part is the mirror root the caller resolved.
 	if err != nil {
 		return "", ""
 	}
