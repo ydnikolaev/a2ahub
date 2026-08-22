@@ -5,7 +5,7 @@ issues:
     impact: normal
     subject: "The current releases shipped with their provider-tier verification deferred, by explicit operator authorization"
     detail: >
-      Every release from v0.19.0 through v0.24.0 shipped this way — SEVENTEEN
+      Every release from v0.19.0 through v0.25.1 shipped this way — NINETEEN
       of them, each authorized separately for its own candidate, and the count is
       machine-refused unless the newest record signs for its own position in the
       streak.
@@ -33,7 +33,7 @@ issues:
       token's scope non-reporting driving the preflight path, real concurrent
       writes losing nothing, and the space's own CI carrying no unexplained
       failures. The last full matrix that did prove them ran on 2026-08-05,
-      against a tree earlier than every one of these seventeen releases.
+      against a tree earlier than every one of these nineteen releases.
       Read the cost concretely rather than as a formality. v0.19.0 changed the
       contract publication path; v0.19.1 changed the git authentication used by
       every remote call in the write funnel; v0.19.2 and v0.19.3 changed how
@@ -69,8 +69,17 @@ issues:
       because v0.23.0's notify workflow fails on every space that updated to it,
       and v0.24.0 is the fix, so waiting had its own visible cost.
 
+      v0.25.0 and v0.25.1 are lighter than that worst case, and the records say
+      so rather than repeating v0.24.0's framing. v0.25.0 added no refusal and
+      moved no floor; v0.25.1 touches no write path at all — its one change to
+      shipped behaviour is a memo confined, by a checked one-installer /
+      one-caller argument, to the dashboard projection. What both still carry
+      is the sharpest item every release carries: the `a2a-ref` default in the
+      reusable workflows names the tag being cut, that IS the binary a space's
+      merge gate runs, and a tag is immutable.
+
       A provider-tier run is scheduled for the NEXT RELEASE, and anything it
-      finds ships as a patch release. SEVENTEEN consecutive deferrals
+      finds ships as a patch release. NINETEEN consecutive deferrals
       over the same surfaces is not improving with repetition, and more than one
       of them passed a date an earlier record had itself named as the deadline;
       the signed count in the newest deferral record is the honest measure of

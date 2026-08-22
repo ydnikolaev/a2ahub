@@ -52,6 +52,13 @@ All provided by the toolchain — none of this is your manual bookkeeping:
    to a network. Do not go looking for one — a way to share the dashboard is
    `a2a html`'s self-contained file, not this.
 
+   **If a render feels slow, measure it instead of guessing.** `a2a html`
+   prints a per-phase breakdown to stderr on `--timing`, and unasked whenever
+   a render takes longer than three seconds. Report the phase it names. The
+   one time this was diagnosed from a plausible story instead, the suspect —
+   the embedded changelog — turned out to be 8.7 ms of the render, and the
+   real cost was somewhere nobody had looked.
+
 **Every source above is pull, and three of them need a session to exist.**
 
 One channel is not, and it is the exception worth knowing before you read the

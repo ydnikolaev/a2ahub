@@ -54,7 +54,7 @@ not drifted from the plan wording it quotes.
 | `skill/a2ahub/loops/contract-change.md` | §8.4 and §8.4a still match the per-version engine: staging-not-mirror, the compatibility refusals (POL-006/007/008/009), registered-consumer scoping, `to:` as a snapshot, and what `a2a update` does and does not change for a consumer. | ✓ | Claude Code | 2026-08-21 |
 | `skill/a2ahub/loops/first-integration.md` | §8.4b/§8.4c still match the activation surface: the `activation-owed` reason, the 0.19.0 floor, `--satisfies` against the descriptor's own `x_operational[]`, and the consumer's "an empty actionable list is not nothing is happening". | ☑ | Claude Code | 2026-08-12 |
 | `skill/a2ahub/loops/escalation.md` | The ladder is present and unchanged; the gate row still says the tool confirms only G3 ahead of time and points at the human-gates block in `loops.md` rather than restating it. | ☑ | Claude Code | 2026-08-12 |
-| `skill/a2ahub/loops/watch.md` | Every channel named is one the binary actually offers, `a2a serve`'s loopback constraint is still described as ENFORCED rather than defaulted, and the "every source is pull" close still names the two operator-owned setup steps. | ☑ | Claude Code | 2026-08-12 |
+| `skill/a2ahub/loops/watch.md` | Every channel named is one the binary actually offers, `a2a serve`'s loopback constraint is still described as ENFORCED rather than defaulted, and the "every source is pull" close still names the two operator-owned setup steps. **v0.25.1**: the dashboard step gained the one instruction this release makes actionable — when a render is slow, run `a2a html --timing` and report the phase it names rather than the component you suspect. Added because the opposite happened: the slowness was attributed to the embedded changelog, which measured 8.7 ms of the render. | ☑ | Claude Code | 2026-08-22 |
 | `skill/a2ahub/loops/feedback.md` | Still the SSOT for the rubric (two triggers, five gates, one report per PR) that `reference/feedback.md` derives from; the `a2a feedback triage` hub check and its offline refusal still match the shipped behaviour. | ☑ | Claude Code | 2026-08-12 |
 | `skill/a2ahub/troubleshooting.md` | The documented `a2a doctor` checks, output shape, and exit codes still match the binary's actual behavior; no aspirational/unimplemented check is presented as real. **v0.19.1**: the `space access` and `credentials` rows were re-read against the changed behaviour, not merely re-ticked — `space access` now runs authenticated and its `Repository not found` failure carries doctor's own classification, and the `credentials` row no longer describes a write-only credential. Both said something that had become wrong, which is the case a completeness check does not catch. **v0.19.2**: the `credentials` row now also names the `cmd:gh auth token` form. The v0.19.1 pass named the mechanism but not the form, and a real operator read it and concluded they had to mint a new token — a row can be accurate and still lead its reader wrong, which is the failure mode this column exists to catch and did not. **v0.25.0**: doctor gained two advisory findings — "no release check has ever run on this machine" and a connected space pinning an older a2ahub template — both reported under the existing `versions` check, neither able to fail it. | ✓ | Claude Code | 2026-08-22 |
 | `skill/a2ahub/onboarding.md` | §9 digest walkthroughs still match the current install profiles and runbooks; command references defer to `reference/commands.md`. **v0.19.1**: §9.2 step 1 now states that on a private space — which §9.1 creates by default — the participant's credential gates reads, so it must exist before the step 3 `a2a doctor`. **v0.19.2**: that step now also shows the concrete config form, so it is actionable without a second lookup. | ☑ | Claude | 2026-08-05 |
@@ -76,6 +76,24 @@ not drifted from the plan wording it quotes.
 | `skill/RELEASE-CHECKLIST.md` (this file) | The prose-file list is complete — every hand-maintained prose file has a row; no generated `reference/**` file was added here by mistake. **Check it against `SKILL.md`'s own D-015 list, in both directions**: this clause silently held for two releases while `reference/feedback.md` was missing from both. **v0.19.9**: checked by enumerating `skill/a2ahub/**/*.md` minus the generated tree and differencing it against both lists — 15 files, four empty differences. That it took a script to answer honestly is the argument for a gate — a clause that has escaped twice will not be caught by reading harder the third time, and the check is a dozen lines of shell over `skill/a2ahub/**/*.md` minus the generated tree. It is NOT filed in `docs/validator-backlog.md`: that file records itself at 15 open rows against a `wip-limit=8` with no gate enforcing the brake, and says plainly that the honest move there is to drain, not to capture a 16th. So this sits here, in the row it would guard, until someone drains that queue or builds this one. | ☑ | Claude Code | 2026-08-07 |
 
 ## Sign-off
+
+- **Release tag:** `v0.25.1`
+- **Reviewer:** `Claude Code`
+- **Date:** `2026-08-22`
+
+> **v0.25.1 changes one shipped surface and one prose file, and they are the
+> same subject.** `a2a html --timing` existed from v0.25.0 and no page told an
+> agent to reach for it, so the prose was not wrong — it was silent about the
+> one thing that turns "the dashboard is slow" into a report somebody can act
+> on. `loops/watch.md` now carries it.
+>
+> Enumerated rather than sampled, per step 7: the release adds no verb, no
+> flag beyond that one already-shipped diagnostic, no sentinel, no exit code
+> and no MCP parameter. The behaviour change an agent can observe is that the
+> render is roughly three times faster, and there is nothing to instruct about
+> that.
+
+### Earlier sign-offs
 
 - **Release tag:** `v0.21.0`
 - **Reviewer:** `Claude Code`
