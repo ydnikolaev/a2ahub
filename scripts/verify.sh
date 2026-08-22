@@ -367,6 +367,26 @@ run_logic_tests() {
   go test ./internal/livee2e/... -tags=livee2e -race -v -run '^(TestLogicMatrix|TestLogicTierWritesNothingOutsideItsOwnTempDirs|TestNewLogicHarnessLeavesExecutionCandidateZero|TestProvisionLocalSpaceScaffoldsCleanSpace)$' -count=1 -timeout 20m
 }
 
+# phase_is_dispatchable — can run_derived_phase actually execute this name?
+#
+# The explicit cases first, then whether the Makefile DEFINES a target of that
+# name. The question is "does a recipe exist", and the answer is the target
+# definition — NOT `.PHONY` membership, which is orthogonal bookkeeping about
+# file-vs-task and says nothing about whether `make <name>` runs.
+#
+# The first draft asked `.PHONY`, and this refusal — the one that exists to stop
+# a silent drop — became a FALSE REFUSAL on its first real lane, against
+# `runner-economics`. Three REPO_GATES targets are outside `.PHONY` today
+# (dashboard-props, card-content, runner-economics), all of them perfectly
+# runnable. A guard that reads a proxy for the fact instead of the fact is the
+# same defect one layer up.
+phase_is_dispatchable() {
+  case "$1" in
+    build-cli|gofmt|vet|golangci-lint|go-test|coverage-policy|logic-e2e|harness-teeth|live-e2e|go-test-scoped:*) return 0 ;;
+  esac
+  grep -qE "^$1:" "$ROOT/Makefile"
+}
+
 run_teeth() {
   local tmp="$1" fixture_root foreign out rc
   mkdir -p "$tmp/project/scripts"
@@ -609,6 +629,28 @@ run_teeth() {
   fi
   rm -rf "$lanefix"
 
+  # (a2) EVERY PHASE THE CORPUS CAN PRODUCE IS DISPATCHABLE. The refusal above
+  # only helps if it fires on genuinely undispatchable names; a predicate that
+  # reads a PROXY for "a recipe exists" turns it into a refusal of working
+  # gates. The first draft asked `.PHONY` membership, and three REPO_GATES
+  # targets are outside `.PHONY` — so the very first real lane after the
+  # refusal shipped refused `runner-economics`, which runs perfectly well.
+  #
+  # A one-off enumeration missed it because the enumeration used the same
+  # proxy. This asserts the invariant against the REAL predicate instead.
+  local undispatchable="" g
+  for g in $(make --no-print-directory -s -C "$ROOT" _print-repo-gates); do
+    phase_is_dispatchable "$g" || undispatchable="$undispatchable $g"
+  done
+  if [ -n "$undispatchable" ]; then
+    echo "verify --teeth: FAIL — these repo gates are derivable but phase_is_dispatchable says the runner cannot execute them, so a real lane would REFUSE them:$undispatchable" >&2
+    return 1
+  fi
+  if phase_is_dispatchable "teeth-no-such-target-anywhere"; then
+    echo "verify --teeth: FAIL — phase_is_dispatchable accepts a name no target defines; the refusal it guards can then never fire." >&2
+    return 1
+  fi
+
   # (b) the ship tier is real and non-vacuous: `projection` is DERIVED by an
   # ordinary Go edit (so it is not excluded) AND named as ship-tier (so the
   # commit lane will defer rather than run it). Both halves, or "deferred"
@@ -655,7 +697,7 @@ run_teeth() {
     return 1
   fi
 
-  echo "verify --teeth: owned root accepted by construction; symlink and foreign residue refused; scoped tests reject stale binaries; target preserved; red status recorded and returned; lane strict mode refuses an empty or misspelled input and stays out of the way of a clean-tree default; a derived phase the runner cannot execute is refused by name rather than dropped, and the ship tier is both derived and deferred."
+  echo "verify --teeth: owned root accepted by construction; symlink and foreign residue refused; scoped tests reject stale binaries; target preserved; red status recorded and returned; lane strict mode refuses an empty or misspelled input and stays out of the way of a clean-tree default; a derived phase the runner cannot execute is refused by name rather than dropped, every repo gate is dispatchable so that refusal cannot fire on a working one, and the ship tier is both derived and deferred."
 }
 
 if [ "$MODE" = "--teeth" ]; then
@@ -747,17 +789,6 @@ run_derived_phase() {
       run_phase "$1" make --no-print-directory "$1"
       ;;
   esac
-}
-
-# phase_is_dispatchable — can run_derived_phase actually execute this name?
-# The explicit cases first, then the Makefile's own .PHONY list, which is what
-# the `*)` fallback shells out to. Read from the Makefile rather than kept
-# here: a second list would be the very thing that produced the silent drop.
-phase_is_dispatchable() {
-  case "$1" in
-    build-cli|gofmt|vet|golangci-lint|go-test|coverage-policy|logic-e2e|harness-teeth|live-e2e|go-test-scoped:*) return 0 ;;
-  esac
-  grep '^\.PHONY:' "$ROOT/Makefile" | sed 's/^\.PHONY://' | tr ' ' '\n' | grep -qxF "$1"
 }
 
 if [ "$MODE" = lane ] || [ "$MODE" = lane-run ]; then
