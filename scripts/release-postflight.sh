@@ -221,18 +221,48 @@ resolve_evidence_dir() { # $1=repo root -> prints the audits dir, or nothing
 # It never guesses. A HEAD with no receipt (the tree moved on after the
 # publish) is recorded as unrecorded, naming the SHA it looked at.
 judge_source_sha() { # $1=repo root -> prints the source sha, or an "unrecorded" line
-  local root="$1" head=""
+  local root="$1" head="" dir f sha passing="" nearest=""
   head="$(git -C "$root" rev-parse HEAD 2>/dev/null || true)"
   if [ -z "$head" ]; then
     printf 'unrecorded (no git HEAD)\n'
     return 0
   fi
-  if [ -f "$root/.a2a/release-gate/$head.json" ] &&
-     grep -q '"verdict"[[:space:]]*:[[:space:]]*"pass"' "$root/.a2a/release-gate/$head.json"; then
-    printf '%s\n' "$head"
+  dir="$root/.a2a/release-gate"
+  for f in "$dir"/*.json; do
+    [ -f "$f" ] || continue
+    sha="$(basename "$f" .json)"
+    case "$sha" in ''|*[!0-9a-f]*) continue ;; esac
+    grep -q '"verdict"[[:space:]]*:[[:space:]]*"pass"' "$f" || continue
+    passing="${passing}${sha}
+"
+  done
+  if [ -z "$passing" ]; then
+    printf 'unrecorded (no passing ship-gate receipt on this machine)\n'
     return 0
   fi
-  printf 'unrecorded (HEAD %s carries no passing ship-gate receipt)\n' "$head"
+  case "
+$passing" in
+    *"
+$head
+"*) printf '%s\n' "$head"; return 0 ;;
+  esac
+  # HEAD MOVED, and that is the ordinary case rather than the exception: this
+  # gate runs at runbook step 15b, after `make space-template-baseline`, and
+  # nothing forces that bump to stay uncommitted until then. Reading HEAD alone
+  # would therefore write "unrecorded" on almost every real release — a field
+  # that exists to end an hour of archaeology, inert on its first use.
+  #
+  # So walk back from HEAD to the nearest commit that DOES carry a passing
+  # receipt. The publisher refuses a HEAD without one, so that commit is the
+  # release source. The wording says which of the two answers this is; a reader
+  # must never have to guess whether the SHA was HEAD or inferred.
+  nearest="$(git -C "$root" rev-list --max-count=500 HEAD 2>/dev/null \
+    | grep -m1 -F -x -f <(printf '%s' "$passing") || true)"
+  if [ -n "$nearest" ]; then
+    printf '%s (nearest passing receipt; HEAD %s has none)\n' "$nearest" "$head"
+    return 0
+  fi
+  printf 'unrecorded (HEAD %s carries no passing ship-gate receipt, and no receipt here covers an ancestor of it)\n' "$head"
   return 0
 }
 
@@ -898,7 +928,31 @@ teeth() {
   got="$(judge_source_sha "$tmp/src")"
   [ "$got" = "$src_head" ] || {
     echo "release-postflight --teeth: FAILED — judge_source_sha did not name the SHA its passing receipt covers (got '$got')" >&2; exit 1; }
-  echo "  + judge_source_sha: a passing receipt names the private source; no receipt and a failing one are both recorded as unrecorded"
+
+  # THE ORDINARY CASE, and the one a HEAD-only reading gets wrong: the release
+  # is cut, then the baseline bump lands on top, and only then does this gate
+  # run. HEAD carries no receipt; its parent — the release source — does.
+  printf 'y\n' > "$tmp/src/g"; git -C "$tmp/src" add -A
+  git -C "$tmp/src" commit -qm "post-release baseline bump"
+  local moved_head
+  moved_head="$(git -C "$tmp/src" rev-parse HEAD)"
+  got="$(judge_source_sha "$tmp/src")"
+  case "$got" in
+    "$src_head (nearest passing receipt; HEAD $moved_head has none)") ;;
+    *) echo "release-postflight --teeth: FAILED — judge_source_sha did not walk back to the release source after HEAD moved (got '$got')" >&2; exit 1 ;;
+  esac
+
+  # An unrelated history: receipts exist, none of them covers an ancestor.
+  git -C "$tmp/src" checkout -q --orphan detached
+  git -C "$tmp/src" rm -q -rf --cached . >/dev/null 2>&1 || true
+  printf 'z\n' > "$tmp/src/h"; git -C "$tmp/src" add -- h
+  git -C "$tmp/src" commit -qm "unrelated root"
+  got="$(judge_source_sha "$tmp/src")"
+  case "$got" in
+    unrecorded*) ;;
+    *) echo "release-postflight --teeth: FAILED — judge_source_sha named a receipt that covers no ancestor of HEAD (got '$got')" >&2; exit 1 ;;
+  esac
+  echo "  + judge_source_sha: HEAD's own receipt wins; a moved HEAD walks back to the release source and says so; no receipt, a failing one, and a receipt covering no ancestor are all unrecorded"
 
   # ── fixture repo (acts as both the private ROOT and the public remote) ──
 
