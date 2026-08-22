@@ -1,0 +1,75 @@
+schema: release-notes/v1
+version: 0.25.1
+released: unreleased
+headline: the local dashboard stops spawning two thousand git processes to render
+  once
+changes:
+- id: RN-02501-0
+  kind: fix
+  roadmap:
+    visibility: shipped
+    why: >
+      `a2a html` was reported as taking about a minute, and the plausible
+      suspect — the release-notes corpus the versions page carries — was
+      wrong: loading all 46 releases is 8.7 ms, and the notes appear nowhere
+      in the hot path. The render had no way to say where its time went, so
+      the next report would have been diagnosed by the next plausible story.
+  impact: high
+  subject: a render answers each object-addressed git read once
+  detail: >
+    Measured against a real space: 21.5 s of a 21.6 s render was contract
+    version history, and a shim counted 2 197 `git` process spawns for 481
+    DISTINCT commands. Four out of five re-ran something that same render had
+    already asked — the same repository, the same arguments, the same
+    read-only tree — at roughly 10 ms of process spawn each. The forks were
+    the render.
+
+    A dashboard render now remembers its own object-addressed reads for
+    exactly as long as it runs. That is a memo, not a cache with a lifetime:
+    it is installed by one assemble and by nothing else, and any caller that
+    does not install it behaves exactly as before.
+
+    What it will NOT remember is the safety argument, and it is an allowlist
+    rather than a denylist. Only reads naming a resolved object — `cat-file`,
+    `ls-tree`, `diff-tree`, `rev-list`, and `rev-parse` solely when its target
+    begins with a full object id. A command naming a REF can answer
+    differently while the render runs, so it is never remembered. The render
+    fetches underneath itself, and a fetch only ADDS objects: an
+    object-addressed answer cannot change, a ref-addressed one can.
+
+    Measured effect, same space, same data: 2 197 forks and 21.6 s become 645
+    forks and 7.1 s. The data model is unchanged — `a2a html --json` before
+    and after differs in exactly the six timestamp fields that also differ
+    between two runs of one unmodified binary.
+  affects:
+  - cli
+  action:
+    scope: none
+    why: >
+      Nothing to do. The dashboard renders the same thing, faster.
+- id: RN-02501-1
+  kind: feat
+  roadmap:
+    visibility: shipped
+    why: >
+      The slowness above was attributed to the wrong component for as long as
+      it existed, because nothing measured it. A render that cannot say where
+      its time went gets diagnosed by whatever story sounds right.
+  impact: normal
+  subject: a2a html says where its time went
+  detail: >
+    `a2a html --timing` prints a per-phase breakdown — snapshot, assemble,
+    render, docs, write — to stderr, so `--json` output stays parseable. It is
+    also printed UNASKED whenever a render takes longer than three seconds: a
+    diagnostic nobody knows about is a diagnostic nobody runs.
+
+    The snapshot and the cache walk are measured apart. They were one bucket
+    at first, and that bucket held 99.5% of the render while covering two
+    unrelated things — one guess better than no breakdown, not an answer.
+  affects:
+  - cli
+  action:
+    scope: none
+    why: >
+      Run `a2a html --timing` if a render feels slow, and report the phase it
+      names rather than the component you suspect.
