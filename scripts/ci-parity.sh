@@ -767,6 +767,19 @@ suite_members() {
   run_step "make lane"                                 env LANE_FILES="${LANE_FILES:-$(git diff --name-only HEAD~1 2>/dev/null | tr '\n' ' ')}" make lane
   run_step "make projection"                           make projection
   run_step "make vulncheck"                            make vulncheck
+  # THE ONLY MEMBER HERE THAT CI DOES NOT RUN, and it is deliberate.
+  #
+  # Every other member mirrors a CI command; this one exists because CI itself
+  # cannot answer the question. CI runs the suite ONCE, so a test failing one
+  # run in three passes it two times in three — which is exactly how two
+  # timing-sensitive tests reached the v0.25.0 tag on 2026-08-22 and were then
+  # found by accident, on CI, after the tag. `ci-parity` and `ci-parity-docker`
+  # could not have caught either: they prove the environment matches, correctly,
+  # and no amount of environment fidelity answers "does this test always pass?".
+  #
+  # It costs roughly the Go tier twice over. A release is worth it; a commit is
+  # not, which is why `flaky-scan` is NEVER in the derived lane.
+  run_step "make flaky-scan"                           make flaky-scan
   run_step "npm run check:unit"                        npm --prefix web run check:unit
   run_step "npm run check"                             npm --prefix web run check
   run_step "npx playwright test tests/dashboard-visual-contract.spec.mjs" \

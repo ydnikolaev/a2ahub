@@ -49,7 +49,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install
+.PHONY: flaky-scan check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -312,6 +312,20 @@ release-preflight: vulncheck npm-audit ## MUST pass before cutting a release tag
 	@test -n "$(VERSION)" || { echo "release-preflight: set VERSION, e.g. make release-preflight VERSION=v0.6.0"; exit 2; }
 	@bash scripts/check-roadmap-release-decisions.sh "$(VERSION)"
 	@bash scripts/release-preflight.sh "$(VERSION)"
+
+# THE MECHANISM THIS REPOSITORY HAD NONE OF UNTIL 2026-08-22. The suite ran
+# once per gate; nothing anywhere asked whether a test agrees with itself. Two
+# timing-sensitive tests reached a tagged release and were both found by
+# accident on CI afterwards. `ci-parity`/`ci-parity-docker` could not have
+# caught either — they answer "is the environment the same?", correctly, and
+# no amount of environment fidelity answers "does this test always pass?".
+#
+# lane-inputs: NEVER
+# lane-reason: it runs the whole Go suite N times; a ship-lane and on-demand
+#   instrument, never a commit gate — the classification ci-parity-docker and
+#   release-check already carry.
+flaky-scan: ## Run the Go suite N times (FLAKY_COUNT, default 3) and refuse a test that disagrees with itself.
+	@bash scripts/check-flaky-tests.sh
 
 # lane-inputs: NEVER
 # lane-reason: needs the network, a published tag and a live site — it verifies
@@ -592,6 +606,7 @@ harness-check: ## Run the gates' --teeth self-tests (harness gates are private/p
 # private tooth cannot repeat this — the list names WHAT to run, never how to
 # survive its own absence.
 HARNESS_TEETH := \
+  scripts/check-flaky-tests.sh \
   scripts/lib/gate-lib.sh \
   scripts/check-projection.sh \
   scripts/release-postflight.sh \
