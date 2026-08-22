@@ -17,11 +17,11 @@ changes:
   impact: high
   subject: a render answers each object-addressed git read once
   detail: >
-    Measured against a real space: 21.5 s of a 21.6 s render was contract
+    Measured against a real space: 14.0 s of a 14.2 s render was contract
     version history, and a shim counted 2 197 `git` process spawns for 481
     DISTINCT commands. Four out of five re-ran something that same render had
     already asked — the same repository, the same arguments, the same
-    read-only tree — at roughly 10 ms of process spawn each. The forks were
+    read-only tree — at roughly 6 ms of process spawn each. The forks were
     the render.
 
     A dashboard render now remembers its own object-addressed reads for
@@ -37,8 +37,9 @@ changes:
     fetches underneath itself, and a fetch only ADDS objects: an
     object-addressed answer cannot change, a ref-addressed one can.
 
-    Measured effect, same space, same data: 2 197 forks and 21.6 s become 645
-    forks and 7.1 s. The data model is unchanged — `a2a html --json` before
+    Measured effect, same space, same data: 2 197 forks and ~13.8 s become 645
+    forks and ~4.2 s — three paired runs on an idle machine, 13.0-14.6 s
+    against 4.0-4.9 s. The data model is unchanged — `a2a html --json` before
     and after differs in exactly the six timestamp fields that also differ
     between two runs of one unmodified binary.
   affects:

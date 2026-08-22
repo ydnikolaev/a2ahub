@@ -61,7 +61,8 @@ func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache
 	// each object-addressed question once. Installed here rather than at every
 	// caller because the lifetime being scoped is this function's, and every
 	// entry point above funnels through it. Measured in a real space: 2 197
-	// git process spawns per render against 481 distinct commands.
+	// git process spawns per render against 481 distinct commands, ~14 s of a
+	// ~14 s render.
 	ctx = space.WithContractGitCache(ctx)
 	if self == "" {
 		self = store.OwnSystem()

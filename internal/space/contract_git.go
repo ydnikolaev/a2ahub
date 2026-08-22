@@ -39,7 +39,7 @@ func contractGitBytes(ctx context.Context, repoDir string, limit int64, args ...
 	// A render asks the same object-addressed question four times out of five
 	// (measured: 2 197 invocations, 481 distinct). When a caller has installed
 	// a memo for the life of ONE read-only operation, answer from it rather
-	// than paying another ~10 ms process spawn. Nothing that has not installed
+	// than paying another ~6 ms process spawn. Nothing that has not installed
 	// one is affected; see contract_git_memo.go for what is and is not eligible.
 	memo := contractGitMemoFrom(ctx)
 	memoKey := ""

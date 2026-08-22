@@ -9,11 +9,11 @@ import (
 
 // A DASHBOARD RENDER RE-RUNS THE SAME GIT COMMAND FOUR TIMES OUT OF FIVE.
 //
-// Measured in a real space on 2026-08-22: `a2a html` spent 21.5 s of a 21.6 s
+// Measured in a real space on 2026-08-22: `a2a html` spent 14.0 s of a 14.2 s
 // render inside contract-version history, and a shim on PATH counted 2 197
 // `git` invocations against 481 DISTINCT commands — 906 `cat-file` for 145
 // objects, 372 `ls-tree` for 108 trees, 302 `rev-list` for 77 commits, 292
-// `diff-tree` for 73. A process spawn costs ~10 ms here, so the forks WERE the
+// `diff-tree` for 73. A process spawn costs ~6 ms here, so the forks WERE the
 // render. `resolveContractVersionDetails` re-walks the same history once per
 // consumer pin, which is a caller shape this package cannot see.
 //
