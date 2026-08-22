@@ -33,6 +33,10 @@ changes:
     rather than implying you are current. It will not grade a development
     build either — `dev` cannot be compared to a release, so the release axis
     reports that it cannot be judged rather than calling it up to date.
+
+    The skill's "Staying current" section is rewritten to match: it described
+    the previous release's surface, saying the advisory prints on `a2a inbox`
+    and `a2a outbox` and rides the MCP read tool. Both stopped being true here.
   affects:
   - cli
   action:
