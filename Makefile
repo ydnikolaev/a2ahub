@@ -353,8 +353,13 @@ projection: ## Judge the SHIPPED suite against a faithful public projection (rel
 
 vulncheck: ## govulncheck ./... gated by .govulncheck-allow.txt (NEW called vuln reds; accepted stays green). Needs network — NOT in `check`.
 	@command -v govulncheck >/dev/null 2>&1 || { echo "vulncheck: govulncheck missing — go install golang.org/x/vuln/cmd/govulncheck@latest"; exit 1; }
-	@out=$$(govulncheck ./... 2>&1) || true; \
+	@out=$$(govulncheck ./... 2>&1); rc=$$?; \
 	found=$$(printf '%s\n' "$$out" | grep -oE 'GO-[0-9]{4}-[0-9]+' | sort -u); \
+	if [ "$$rc" -ne 0 ] && [ -z "$$found" ]; then \
+	  printf '%s\n' "$$out"; echo; \
+	  echo "vulncheck: UNMEASURED — govulncheck exited $$rc and reported no GO-id at all, so this is a run that did not complete (network, module resolution, toolchain), NOT a clean scan. A security gate must not print 'no called vulnerabilities' over a scan it never finished."; \
+	  exit 3; \
+	fi; \
 	new=""; for id in $$found; do grep -qxF "$$id" .govulncheck-allow.txt 2>/dev/null || new="$$new $$id"; done; \
 	if [ -n "$$new" ]; then printf '%s\n' "$$out"; echo; echo "vulncheck: FAIL — NEW vulnerabilities (not in .govulncheck-allow.txt):$$new"; exit 1; fi; \
 	if [ -n "$$found" ]; then echo "vulncheck: OK — only accepted vulns present:$$(printf '%s' "$$found" | tr '\n' ' ' | sed 's/^/ /')"; else echo "vulncheck: OK — no called vulnerabilities"; fi
