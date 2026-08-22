@@ -36,6 +36,19 @@ func contractGitBytes(ctx context.Context, repoDir string, limit int64, args ...
 	// Ask the shared buffer for one byte beyond this operation's ceiling.
 	// That makes the bound observable even on a platform where os/exec does
 	// not propagate the writer's overflow error after the process exits.
+	// A render asks the same object-addressed question four times out of five
+	// (measured: 2 197 invocations, 481 distinct). When a caller has installed
+	// a memo for the life of ONE read-only operation, answer from it rather
+	// than paying another ~10 ms process spawn. Nothing that has not installed
+	// one is affected; see contract_git_memo.go for what is and is not eligible.
+	memo := contractGitMemoFrom(ctx)
+	memoKey := ""
+	if memo != nil && contractGitMemoizable(args) {
+		memoKey = contractGitMemoKeyFor(repoDir, limit, args)
+		if raw, ok := memo.get(memoKey); ok {
+			return raw, nil
+		}
+	}
 	bufferLimit := limit + 1
 	gitArgs := append([]string{"--no-replace-objects", "--literal-pathspecs"}, args...)
 	cmd := exec.CommandContext(ctx, "git")
@@ -59,6 +72,9 @@ func contractGitBytes(ctx context.Context, repoDir string, limit int64, args ...
 	raw := append([]byte(nil), stdout.Bytes()...)
 	if int64(len(raw)) > limit {
 		return nil, fmt.Errorf("%w: git %s output exceeds %d bytes", ErrContractBoundedResult, firstContractGitArg(args), limit)
+	}
+	if memoKey != "" {
+		memo.put(memoKey, raw)
 	}
 	return raw, nil
 }

@@ -56,6 +56,13 @@ func AssembleWithOperational(ctx context.Context, store *cache.Store, self strin
 // historical validator; HTML only consumes it and never builds a second
 // schema engine locally.
 func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache.Store, self string, now time.Time, snapshot operational.Snapshot, historyValidator space.ContractHistoryDocumentValidator) (Data, error) {
+	// One assemble is ONE read-only projection of the spaces as they are at
+	// this instant, so the bounded contract-git reads underneath it may answer
+	// each object-addressed question once. Installed here rather than at every
+	// caller because the lifetime being scoped is this function's, and every
+	// entry point above funnels through it. Measured in a real space: 2 197
+	// git process spawns per render against 481 distinct commands.
+	ctx = space.WithContractGitCache(ctx)
 	if self == "" {
 		self = store.OwnSystem()
 	}
