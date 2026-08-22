@@ -69,6 +69,19 @@ printf 'ci-parity-docker: go %s · node %s · gitleaks %s · golangci-lint %s ·
 command -v docker >/dev/null 2>&1 || die "docker is not on PATH."
 docker info >/dev/null 2>&1 || die "the Docker daemon is not reachable — start Docker Desktop."
 
+# ONE NAME for the volume, because the guard and the mount must agree by
+# construction — a guard that watches a different string from the one the
+# container mounts is the same defect one layer up.
+WORK_VOLUME="${WORK_VOLUME:-a2ahub-parity-work}"
+
+holders="$(docker ps --filter "volume=$WORK_VOLUME" --format '{{.Names}}' 2>/dev/null | grep -v "^$CONTAINER$" || true)"
+if [ -n "$holders" ]; then
+  die "the parity work volume $WORK_VOLUME is in use by: $(printf '%s' "$holders" | tr '\n' ' ')
+       Every parity container mounts it at /work and its entrypoint rsyncs --delete over it, so two
+       runs corrupt each other's tree mid-check and produce verdicts that mean nothing. Wait for that
+       container, or stop it deliberately. Never run two parity containers at once."
+fi
+
 # The build context is scripts/, not the repo: the image needs its entrypoint
 # and nothing else, and a 3GB context would be sent on every invocation.
 docker build \
@@ -93,6 +106,31 @@ if state="$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null)"; t
   fi
   docker rm "$CONTAINER" >/dev/null
 fi
+
+# THE GUARD ABOVE PROTECTS THE NAME. THIS ONE PROTECTS THE RESOURCE, and the
+# difference cost a day on 2026-08-22.
+#
+# `a2ahub-parity-work` is a SHARED MUTABLE ROOT: every parity container mounts
+# it at /work, and the entrypoint opens by running `rsync -a --delete "$SRC/"
+# "$WORK/"` plus `git clean -ffdxq`. So a second container does not merely
+# perturb the first — it rewrites the working directory the first is running
+# `make check` inside, mid-run, and deletes the git worktree registrations the
+# projection depends on. Observed that day: a release gate and a forensics loop
+# ran together, the projection's worktree registration was destroyed under it,
+# `git ls-files` printed `fatal: not a git repository`, and a gate turned that
+# into "no tracked semver releasenotes/*.yaml file found" — which another gate
+# turned into a publish-boundary verdict. Three inventions on one corrupted
+# measurement, and roughly four container runs whose verdicts meant nothing.
+#
+# The name guard could not see any of it: `PARITY_CONTAINER=<anything-else>`
+# walks straight past it while mounting the very same volume. It was guarding
+# the label on the door, not the room.
+#
+# REFUSE, and name the holder. Deliberately NOT a queue and NOT a fallback to a
+# private volume: a silent wait hides that the machine is busy, and a silent
+# private volume throws away the warm caches and leaves somebody wondering why
+# the suite suddenly takes six minutes longer. Both are the quiet degradations
+# this repository keeps paying for.
 
 # WHAT THIS CONTAINER RUNS IS NAMED HERE, NOT INHERITED FROM THE IMAGE.
 #
@@ -131,7 +169,7 @@ exec docker run --rm -i \
   --name "$CONTAINER" \
   ${PARITY_TTY:+-t} \
   -v "$ROOT:/src:ro" \
-  -v a2ahub-parity-work:/work \
+  -v "$WORK_VOLUME":/work \
   -v "$ROOT/.a2a/cache/parity-container:/work/.a2a/cache/verify" \
   -v a2ahub-parity-state:/parity-state \
   -v a2ahub-parity-gocache:/root/.cache/go-build \
