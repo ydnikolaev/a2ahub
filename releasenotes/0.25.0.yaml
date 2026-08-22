@@ -1,6 +1,6 @@
 schema: release-notes/v1
 version: 0.25.0
-released: ""
+released: "2026-08-22"
 headline: a2a tells you which versions you are running, on every surface, without
   being asked
 changes:
