@@ -206,6 +206,36 @@ resolve_evidence_dir() { # $1=repo root -> prints the audits dir, or nothing
   return 1
 }
 
+# judge_source_sha: which PRIVATE commit was this release cut from? The tag
+# names a PUBLIC, filtered commit that exists in no private history, so after
+# the fact "what has changed since the release?" is unanswerable from the
+# repository alone — it cost an hour of comparing published file content on
+# 2026-08-22 to establish that v0.25.0 came from 371d15d1.
+#
+# The ship gate already knows: the publisher refuses a HEAD that carries no
+# passing receipt, so at publish time HEAD *is* the source, and its receipt
+# names it. This reads that same fact minutes later and writes it into the
+# verdict, which is committed — so the answer stops living in a gitignored
+# cache directory on one machine.
+#
+# It never guesses. A HEAD with no receipt (the tree moved on after the
+# publish) is recorded as unrecorded, naming the SHA it looked at.
+judge_source_sha() { # $1=repo root -> prints the source sha, or an "unrecorded" line
+  local root="$1" head=""
+  head="$(git -C "$root" rev-parse HEAD 2>/dev/null || true)"
+  if [ -z "$head" ]; then
+    printf 'unrecorded (no git HEAD)\n'
+    return 0
+  fi
+  if [ -f "$root/.a2a/release-gate/$head.json" ] &&
+     grep -q '"verdict"[[:space:]]*:[[:space:]]*"pass"' "$root/.a2a/release-gate/$head.json"; then
+    printf '%s\n' "$head"
+    return 0
+  fi
+  printf 'unrecorded (HEAD %s carries no passing ship-gate receipt)\n' "$head"
+  return 0
+}
+
 # judge_template_names_tag: does the write floor equal $2, and does every
 # workflow pin in $3.. equal $2? (Stricter than release-preflight.sh's own
 # assert_floor_not_ahead, which only demands floor <= version — this
@@ -842,6 +872,34 @@ teeth() {
   fi
   echo "  + resolve_evidence_dir: follows the epic into archive/, and refuses when it is in neither bucket"
 
+  # judge_source_sha — BOTH directions. The receipt-present case is the one
+  # that answers "what shipped"; the receipt-absent case is the one that must
+  # not quietly name a commit the ship gate never judged.
+  git init -q -b main "$tmp/src"
+  git -C "$tmp/src" config user.email teeth@example.com
+  git -C "$tmp/src" config user.name teeth
+  printf 'x\n' > "$tmp/src/f"; git -C "$tmp/src" add -A
+  git -C "$tmp/src" commit -qm "fixture"
+  local src_head
+  src_head="$(git -C "$tmp/src" rev-parse HEAD)"
+  got="$(judge_source_sha "$tmp/src")"
+  case "$got" in
+    unrecorded*) ;;
+    *) echo "release-postflight --teeth: FAILED — judge_source_sha named a SHA with no receipt at all (got '$got')" >&2; exit 1 ;;
+  esac
+  mkdir -p "$tmp/src/.a2a/release-gate"
+  printf '{ "sha": "%s", "verdict": "fail" }\n' "$src_head" > "$tmp/src/.a2a/release-gate/$src_head.json"
+  got="$(judge_source_sha "$tmp/src")"
+  case "$got" in
+    unrecorded*) ;;
+    *) echo "release-postflight --teeth: FAILED — judge_source_sha accepted a FAILING receipt as the release source (got '$got')" >&2; exit 1 ;;
+  esac
+  printf '{ "sha": "%s", "verdict": "pass", "verify_phases": 71 }\n' "$src_head" > "$tmp/src/.a2a/release-gate/$src_head.json"
+  got="$(judge_source_sha "$tmp/src")"
+  [ "$got" = "$src_head" ] || {
+    echo "release-postflight --teeth: FAILED — judge_source_sha did not name the SHA its passing receipt covers (got '$got')" >&2; exit 1; }
+  echo "  + judge_source_sha: a passing receipt names the private source; no receipt and a failing one are both recorded as unrecorded"
+
   # ── fixture repo (acts as both the private ROOT and the public remote) ──
 
   local remote_bare="$tmp/public.git" work="$tmp/work"
@@ -1192,6 +1250,7 @@ mkdir -p "$EVIDENCE_DIR" 2>/dev/null || true
   echo "version: $VERSION"
   echo "checked: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "bypass: ${A2A_SKIP_POSTFLIGHT_SITE_CHECK:-0}"
+  echo "source-sha: $(judge_source_sha "$ROOT")"
   echo
   printf '%s' "$RESULTS"
 } > "$EVIDENCE_DIR/${VERSION#v}-postflight-verdict.md" 2>/dev/null || true
