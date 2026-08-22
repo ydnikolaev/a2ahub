@@ -261,7 +261,7 @@ async function mutateDashboardDemo(page, mutate) {
     expect(match, 'dashboard runtime payload').not.toBeNull();
     const payload = JSON.parse(match[2]);
     mutate(payload.demo);
-    const body = source.replace(marker, `$1${JSON.stringify(payload).replaceAll('<', '\\u003c')}$3`);
+    const body = spliceMarkedPayload(source, marker, payload, 'dashboard runtime payload');
     await route.fulfill({ response, body });
   });
 }
@@ -273,12 +273,52 @@ function emittedDashboardDemo() {
   return JSON.parse(match[2]);
 }
 
-function emittedDashboardWithDemo(data) {
-  const marker = /(window\.A2A_DEMO=)([\s\S]*?)(;window\.A2A_DOCS=)/;
-  expect(emittedSource.match(marker), 'actual CLI dashboard data marker').not.toBeNull();
-  const encoded = JSON.stringify(data).replaceAll('<', '\\u003c');
-  return emittedSource.replace(marker, `$1${encoded}$3`);
+// replaceDemoPayload swaps the dashboard's embedded demo model for `payload`.
+//
+// THE REPLACEMENT IS A FUNCTION, AND THAT IS THE WHOLE POINT. A string
+// replacement makes `String.prototype.replace` READ the payload for `$&`,
+// `` $` ``, `$'` and `$1` — so any dashboard content carrying a `$` before a
+// quote or a backtick stops being data and becomes a directive.
+//
+// It is not theoretical. On 2026-08-22 a release note documenting the update
+// self-check contained the literal one-line stamp pattern ending in `$`,
+// immediately followed by a backtick. The demo model embeds the release-notes
+// corpus, so that text reached this replacement as `` $` `` — "the portion
+// before the match" — and spliced 405 609 bytes of the page into the middle
+// of its own script tag. Four refresh scenarios failed with `Invalid or
+// unexpected token`, inside the container phase of a release gate, three
+// hours after the same suite had passed. The release note was correct; this
+// line was not.
+function spliceMarkedPayload(source, marker, payload, label) {
+  expect(source.match(marker), label).not.toBeNull();
+  const encoded = JSON.stringify(payload).replaceAll('<', '\\u003c');
+  return source.replace(marker, (_full, before, _old, after) => before + encoded + after);
 }
+
+const DEMO_MARKER = /(window\.A2A_DEMO=)([\s\S]*?)(;window\.A2A_DOCS=)/;
+
+function replaceDemoPayload(source, payload) {
+  return spliceMarkedPayload(source, DEMO_MARKER, payload, 'actual CLI dashboard data marker');
+}
+
+function emittedDashboardWithDemo(data) {
+  ensureCLIEmittedDashboard();
+  return replaceDemoPayload(emittedSource, data);
+}
+
+// The guard for the line above, and it asserts the failure directly rather
+// than asserting that some page renders. Every `String.replace` special
+// sequence goes through the payload; if any is honoured, the round-trip stops
+// being the identity and the result grows by roughly the document's size.
+test('dashboard content carrying $-replacement sequences is data, never a directive', () => {
+  const source = 'head window.A2A_DEMO={"old":1};window.A2A_DOCS={} tail';
+  for (const hostile of ["$`", "$'", '$&', '$1', '$$']) {
+    const payload = { note: `a pattern ${hostile} inside content` };
+    expect(replaceDemoPayload(source, payload), `payload carrying ${hostile}`).toBe(
+      `head window.A2A_DEMO=${JSON.stringify(payload)};window.A2A_DOCS={} tail`,
+    );
+  }
+});
 
 async function afterAnimationFrames(page, count = 2) {
   await page.evaluate(frames => new Promise(resolve => {
