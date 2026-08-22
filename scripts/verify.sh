@@ -139,8 +139,19 @@ run_phase() {
     rc=$?
   fi
   end="$(now_ms)"
+  # THREE VERDICTS, NOT TWO. gate-lib spends exit 3 for "I could not measure
+  # this" precisely so it is distinguishable from "I measured it and it is
+  # wrong" — and this runner used to record BOTH as `fail`, which erased the
+  # distinction at the only place anything reads it back. Every gate_unmeasured
+  # inside `make check` was being filed as a measured failure.
+  #
+  # NB the caller still cannot see 3 through `make`: GNU Make turns a recipe's
+  # exit 3 into its own exit 2. That is a separate, real defect and it is why
+  # the TELEMETRY has to carry the distinction — the exit code cannot.
   verdict=pass
-  if [ "$rc" -ne 0 ]; then
+  if [ "$rc" -eq "${GATE_EXIT_UNMEASURED:-3}" ]; then
+    verdict=unmeasured
+  elif [ "$rc" -ne 0 ]; then
     verdict=fail
   fi
   append_telemetry "$gate" "$verdict" "$((end - start))"

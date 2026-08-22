@@ -26,7 +26,21 @@ IMAGE=${PARITY_IMAGE:-a2ahub-ci-parity:local}
 # thing runs for twenty minutes and shows up in Docker Desktop next to every
 # other project's containers, where `flamboyant_hoover` tells nobody what it is
 # or whether it is safe to stop.
-CONTAINER=${PARITY_CONTAINER:-a2ahub-ci-parity}
+# ONE SHARED VOLUME MUST IMPLY ONE CONTAINER NAME, and that is the whole
+# guarantee — the volume check below is only the friendly message.
+#
+# `docker run --name X` is ATOMIC at the daemon: a duplicate name is refused no
+# matter how narrow the race. The volume check cannot be, because it is a CHECK
+# and not an ACQUISITION: between it and `docker run` sits the image build,
+# which is seconds warm and minutes cold. Two invocations that both pass the
+# check both proceed.
+#
+# `PARITY_CONTAINER` used to decouple the name from the volume, and that is the
+# hole BOTH people on this machine walked through on 2026-08-22 — three times
+# between them, with names like a2ahub-flake-gt and a2ahub-gt2 — while mounting
+# the same /work and rsync --delete-ing over each other's live runs. Removing
+# the override is the fix; the guard below stays for the message it gives.
+CONTAINER=a2ahub-ci-parity
 
 # ── Derive every toolchain version from the repository's own SSOT. ────────────
 # Nothing below is a constant. Each read fails closed with the file it was

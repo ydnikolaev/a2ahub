@@ -108,13 +108,36 @@ gate_ok() { echo "${GATE_GRN}✓${GATE_NC} $*"; }
 # the gate script started — v1 granularity). Appends are best-effort: telemetry
 # must NEVER fail a gate. Home: .claude/.telemetry/gates.jsonl (gitignored,
 # survives `make clean-artifacts`).
-gate_telemetry() { # <name> <verdict:green|red|warn|unmeasured>
+# TWO FIELDS ADDED 2026-08-22, both because this store could not answer the one
+# question that mattered: "is this gate reliable?"
+#
+#   "teeth"  — a --teeth fixture run is SUPPOSED to go red, and until now it was
+#              written under the same gate name as a real run. check-projection
+#              read 575 red / 292 green in this file while having exactly TWO
+#              real runs on record, both green. The corpus was unusable for its
+#              only purpose.
+#   "run_id" — pairs with the `start` line below.
+#
+# And the deeper hole: this function is reachable ONLY from gate_summary, so a
+# gate that is killed, times out or OOMs writes NOTHING. Absence of a line then
+# reads as absence of a failure — indistinguishable from "never ran". A dying
+# process cannot write its own epitaph, so the START line is emitted up front;
+# a start with no outcome IS "began and did not survive to report".
+gate_telemetry() { # <name> <verdict:green|red|warn|unmeasured|start>
   {
     mkdir -p "$GATE_ROOT/.claude/.telemetry" &&
-      printf '{"ts":"%s","gate":"%s","verdict":"%s","duration_s":%d,"errors":%d,"warnings":%d}\n' \
+      printf '{"ts":"%s","gate":"%s","verdict":"%s","duration_s":%d,"errors":%d,"warnings":%d,"teeth":%s,"run_id":"%s"}\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" "$SECONDS" "$_GATE_ERRORS" "$_GATE_WARNINGS" \
+        "$([ -n "${_GATE_TEETH_ACTIVE:-}" ] && echo true || echo false)" "${_GATE_RUN_ID:-unknown}" \
         >> "$GATE_ROOT/.claude/.telemetry/gates.jsonl"
   } 2>/dev/null || true
+}
+
+# gate_started — emit the paired START. Called by a gate that wants a killed run
+# to leave a trace; the outcome line from gate_summary closes it by run_id.
+gate_started() { # <name>
+  _GATE_RUN_ID="${_GATE_RUN_ID:-$$-$SECONDS-$RANDOM}"
+  gate_telemetry "$1" start
 }
 
 # Print the tally; return 1 if any error, GATE_EXIT_UNMEASURED if anything

@@ -764,7 +764,12 @@ suite_members() {
   run_step "bash scripts/dashboard-template-drift.sh"  bash scripts/dashboard-template-drift.sh
   run_step "make check"                                make check
   run_step "make harness-check"                        make harness-check
-  run_step "make lane"                                 env LANE_FILES="${LANE_FILES:-$(git diff --name-only HEAD~1 2>/dev/null | tr '\n' ' ')}" make lane
+  # A root, shallow or merge HEAD makes `git diff HEAD~1` empty, the derivation
+  # then judges NOTHING, and the step greens. verify.sh already implements the
+  # refusal (A2A_VERIFY_REQUIRE_NONEMPTY); the ship gate simply never asked for
+  # it. The 2>/dev/null went with it — a swallowed git error is how the empty
+  # set arrives unannounced.
+  run_step "make lane"                                 env A2A_VERIFY_REQUIRE_NONEMPTY=true LANE_FILES="${LANE_FILES:-$(git diff --name-only HEAD~1 | tr '\n' ' ')}" make lane
   run_step "make projection"                           make projection
   run_step "make vulncheck"                            make vulncheck
   # THE ONLY MEMBER HERE THAT CI DOES NOT RUN, and it is deliberate.
@@ -858,7 +863,15 @@ macos_delta() {
 # The container keeps `npm run check` — unit tests, the build, and the dist
 # assertions — which it measures perfectly well.
 host_only() {
-  run_step "npm run check:quality"                     npm --prefix web run check:quality
+  # CI=true, and the container already sets it (ci-parity.Dockerfile ENV CI=true).
+  # The HOST did not, and playwright.config keys three things on it:
+  #   reuseExistingServer: !CI  — a STALE preview server on :4324 is reused, so
+  #                               the visual contract judges an old web/dist
+  #   forbidOnly:          CI   — a stray `test.only` greens the whole suite
+  #   retries:             CI?1:0
+  # This is the half of the ship gate the container cannot cover, so nothing
+  # else was ever going to catch it.
+  run_step "npm run check:quality"                     env CI=true npm --prefix web run check:quality
   macos_delta
 }
 
