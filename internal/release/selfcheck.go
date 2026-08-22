@@ -29,6 +29,37 @@ func DefaultRunner(ctx context.Context, path string, args ...string) (string, er
 // consumes this exact contract verbatim.
 var versionStampPattern = regexp.MustCompile(`^a2a\s+(\S+)\s+\([^)]*\)\s*$`)
 
+// ParseVersionStamp reads the stamped bare version out of a binary's own
+// `version` stdout. It is THE definition of that contract, exported so the
+// producing side can be tested against the same expression the consuming side
+// applies, rather than against a copy of it.
+//
+// IT READS THE FIRST LINE ONLY, and that is a fix rather than a convenience.
+// The pattern is anchored at both ends, so until 2026-08-22 it required the
+// WHOLE of stdout to be the stamp line. v0.25.0 gave `a2a version` a
+// three-axis report on stdout, and every already-installed binary — whose copy
+// of this parser is frozen — then read that as "unparseable version stamp" and
+// ABORTED THE UPDATE. `a2a update` was broken for every existing install, by
+// the release whose own headline was that a2a tells you which versions you are
+// running.
+//
+// Two things had to change and they protect different people. Reading one line
+// protects the NEXT format change from breaking updates again; putting the
+// axes back on stderr (internal/cli's version command) is what makes THIS
+// release installable by the binaries already out there, because their parser
+// cannot be fixed retroactively.
+func ParseVersionStamp(out string) (string, bool) {
+	line := out
+	if idx := strings.IndexByte(line, '\n'); idx >= 0 {
+		line = line[:idx]
+	}
+	match := versionStampPattern.FindStringSubmatch(strings.TrimSpace(line))
+	if match == nil {
+		return "", false
+	}
+	return match[1], true
+}
+
 // SelfCheckVersion runs binPath's own `version` verb (via run, or
 // DefaultRunner when run is nil) and requires its stamped bare version to
 // equal wantBareVersion (T1 step 3: catches wrong-arch or
@@ -45,12 +76,12 @@ func SelfCheckVersion(ctx context.Context, binPath, wantBareVersion string, run 
 		return &Error{Op: op, Input: binPath, Err: fmt.Errorf("%w: %w", ErrSelfCheckFailed, err)}
 	}
 
-	match := versionStampPattern.FindStringSubmatch(strings.TrimSpace(out))
-	if match == nil {
+	stamp, ok := ParseVersionStamp(out)
+	if !ok {
 		return &Error{Op: op, Input: out, Err: fmt.Errorf("%w: unparseable version stamp", ErrSelfCheckFailed)}
 	}
 
-	got := strings.TrimPrefix(match[1], "v")
+	got := strings.TrimPrefix(stamp, "v")
 	want := strings.TrimPrefix(wantBareVersion, "v")
 	if got != want {
 		return &Error{Op: op, Input: fmt.Sprintf("got %s, want %s", got, want), Err: ErrSelfCheckFailed}

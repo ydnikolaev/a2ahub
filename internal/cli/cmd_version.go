@@ -65,9 +65,9 @@ func (c *VersionCommand) Run(_ context.Context, args []string, stdio IO) int {
 			return c.emitJSON(stdio, cache.VersionReport{Binary: c.BinaryVersion, Spaces: []cache.SpaceVersion{}})
 		}
 		_, _ = fmt.Fprintln(stdio.Stdout, c.Stamp)
-		_, _ = fmt.Fprintln(stdio.Stdout)
-		_, _ = fmt.Fprintln(stdio.Stdout, "spaces and releases: UNAVAILABLE here — no a2a project was resolved from this directory.")
-		_, _ = fmt.Fprintln(stdio.Stdout, "                     run this inside a project, or `a2a init` to create one.")
+		_, _ = fmt.Fprintln(stdio.Stderr)
+		_, _ = fmt.Fprintln(stdio.Stderr, "spaces and releases: UNAVAILABLE here — no a2a project was resolved from this directory.")
+		_, _ = fmt.Fprintln(stdio.Stderr, "                     run this inside a project, or `a2a init` to create one.")
 		return 0
 	}
 
@@ -89,9 +89,26 @@ func (c *VersionCommand) emitJSON(stdio IO, report cache.VersionReport) int {
 	return 0
 }
 
+// render writes the STAMP LINE, and only the stamp line, to stdout; the three
+// axes go to stderr.
+//
+// THIS IS A COMPATIBILITY CONTRACT, not a formatting preference. Every
+// already-installed a2a self-checks a downloaded upgrade by running its
+// `version` verb and matching stdout — the WHOLE of stdout — against
+// `^a2a <version> (<sha>)$`. That parser is frozen inside binaries already on
+// people's machines and cannot be fixed retroactively. v0.25.0 put the report
+// on stdout and thereby broke `a2a update` for every one of them: the download
+// succeeded, the self-check said "unparseable version stamp", and the upgrade
+// rolled back. Discovered by running `a2a update` on 2026-08-22, from 0.24.0,
+// which is the first time anyone had.
+//
+// Stdout is therefore the machine contract and stderr is the human report —
+// the same split `a2a html --timing` and the update advisory already use, and
+// `--json` still puts the full structured report on stdout for callers that
+// want the axes. TestVersionStdoutIsTheFrozenStampContract holds it.
 func (c *VersionCommand) render(stdio IO, report cache.VersionReport) {
-	out := stdio.Stdout
-	_, _ = fmt.Fprintln(out, c.Stamp)
+	_, _ = fmt.Fprintln(stdio.Stdout, c.Stamp)
+	out := stdio.Stderr
 	_, _ = fmt.Fprintln(out)
 	_, _ = fmt.Fprintf(out, "binary    %s\n", report.Binary)
 

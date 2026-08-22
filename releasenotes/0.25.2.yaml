@@ -1,0 +1,74 @@
+schema: release-notes/v1
+version: 0.25.2
+released: unreleased
+headline: "`a2a update` works again — v0.25.0 broke it for every binary already installed"
+changes:
+- id: RN-02502-0
+  kind: fix
+  roadmap:
+    visibility: shipped
+    why: >
+      The release whose headline was that a2a tells you which versions you are
+      running is the release that made a2a unable to install its own upgrade.
+      Nothing caught it because nothing had ever run `a2a update` against a
+      candidate — the one path no gate exercises, found by running it for real.
+  impact: high
+  subject: the version stamp goes back on stdout, where every installed a2a reads it
+  detail: >
+    `a2a update` downloads the new binary and, before swapping it in, runs the
+    DOWNLOADED binary's `version` verb and matches its stdout against
+    `^a2a <version> (<sha>)$` — anchored at both ends, so the whole of stdout
+    must be that one line. That check runs inside the OLD binary, and every
+    copy of it already installed is frozen.
+
+    v0.25.0 put the three-axis report on stdout. From that moment every
+    installed a2a — 0.24.x and older, and 0.25.0 and 0.25.1 themselves —
+    downloaded the upgrade, read "unparseable version stamp", and rolled back.
+    `a2a update` has been failing for everyone since v0.25.0 shipped, and
+    `a2a doctor` could not see it because the defect is in the upgrade path,
+    not in the installed state.
+
+    Stdout is now the stamp line and nothing else; the three axes print to
+    stderr, so a human running `a2a version` still sees all of them. `--json`
+    is unchanged and still carries the full structured report on stdout. This
+    is the same stdout/stderr split the update advisory and `a2a html --timing`
+    already use: stdout is the machine contract, stderr is the report.
+
+    **This release is installable by every binary already out there** — checked
+    against the frozen expression itself, in both directions: it rejects what
+    v0.25.0 and v0.25.1 print and accepts what this release prints.
+  affects:
+  - cli
+  action:
+    scope: local
+    why: >
+      Run `a2a update` and it will work. If you are on v0.25.0 or v0.25.1 and
+      an earlier attempt failed with "unparseable version stamp", nothing was
+      damaged — the swap never happened and your binary is the old one.
+- id: RN-02502-1
+  kind: fix
+  roadmap:
+    visibility: shipped
+    why: >
+      The same defect could not have been introduced twice by accident if the
+      contract had been checked anywhere. It was written down and remembered,
+      which is the state every defect in this class starts from.
+  impact: normal
+  subject: the stamp contract is a test, not a convention
+  detail: >
+    The parser is exported as `release.ParseVersionStamp`, so the producing
+    side is now tested against the very expression the consuming side applies
+    rather than against a copy of it, and every `a2a version` test additionally
+    asserts that stdout is exactly one line and that the updater's own parser
+    reads the expected version out of it. Removing the guard reproduces the
+    v0.25.0 failure by name.
+
+    The parser also reads the FIRST LINE only from here on. That does not help
+    the binaries already installed — their copy is frozen — but it means the
+    next change to what `version` prints cannot break upgrades again.
+  affects:
+  - cli
+  action:
+    scope: none
+    why: >
+      Nothing to do.

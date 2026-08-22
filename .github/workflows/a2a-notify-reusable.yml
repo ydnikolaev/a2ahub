@@ -32,7 +32,7 @@ on:
         # The module version this unit pins — the co-located version that
         # moves as a whole when the caller bumps the workflow tag/SHA
         # (Dependabot for the tag; a2ahub's own release for this default).
-        description: "A published release tag whose signed a2a-linux-amd64 asset this job downloads and verifies (e.g. v0.25.1). Empty is REFUSED here — unlike a2a-validate-reusable.yml, where empty means dogfood."
+        description: "A published release tag whose signed a2a-linux-amd64 asset this job downloads and verifies (e.g. v0.25.2). Empty is REFUSED here — unlike a2a-validate-reusable.yml, where empty means dogfood."
         required: false
         type: string
         # MUST equal the tag being cut — same discipline as
@@ -40,7 +40,7 @@ on:
         # TestReusableRefDefaultMatchesTheNewestAuthoredVersion
         # (internal/notes) offline, and by assert_ref_default_matches
         # (scripts/release-preflight.sh), both extended to cover this file.
-        default: "v0.25.1"
+        default: "v0.25.2"
       space-path:
         description: "Working directory of the space content (default: repo root). Mirrors the validator's own input."
         required: false

@@ -11,8 +11,36 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
+
+// requireFrozenStampOnStdout holds the ONE contract every already-installed
+// a2a depends on: `a2a version`'s stdout is exactly the stamp line, and it
+// parses with the very expression the updater applies — not a copy of it.
+//
+// This test exists because the contract was broken in a shipped release and
+// nothing noticed. v0.25.0 moved the three-axis report onto stdout, and every
+// binary already on a machine — carrying a frozen copy of that parser —
+// refused the upgrade with "unparseable version stamp" and rolled back. It was
+// found by running `a2a update` for real on 2026-08-22, which is the only
+// thing that had ever exercised the path.
+func requireFrozenStampOnStdout(t *testing.T, stdout, wantStamp string) {
+	t.Helper()
+	if lines := strings.Count(strings.TrimSuffix(stdout, "\n"), "\n"); lines != 0 {
+		t.Fatalf("version stdout must be exactly the stamp line — every installed a2a matches the WHOLE of it; got %d extra line(s):\n%s", lines, stdout)
+	}
+	if strings.TrimSpace(stdout) != strings.TrimSpace(wantStamp) {
+		t.Fatalf("version stdout = %q, want the stamp %q", stdout, wantStamp)
+	}
+	got, ok := release.ParseVersionStamp(stdout)
+	if !ok {
+		t.Fatalf("the updater's own parser rejects this stdout — `a2a update` would abort on it:\n%s", stdout)
+	}
+	if want := strings.Fields(wantStamp)[1]; got != want {
+		t.Fatalf("the updater would read version %q from the stamp, want %q", got, want)
+	}
+}
 
 // versionFixture builds a mirror directory carrying a space.yaml floor and a
 // pinned a2a-validate.yml, which is exactly what a real mirror carries and
@@ -57,11 +85,12 @@ func TestVersionCommand_DevBuildRefusesToClaimUpToDate(t *testing.T) {
 	store.EnableUpdateNotice("dev", cachePath, time.Hour, func(context.Context) {})
 
 	cmd := &cli.VersionCommand{Stamp: "a2a dev (abc1234)", BinaryVersion: "dev", Store: store, Now: func() time.Time { return now }}
-	io, out, _ := newIO()
+	io, out, errOut := newIO()
 	if code := cmd.Run(context.Background(), nil, io); code != 0 {
 		t.Fatalf("code = %d", code)
 	}
-	got := out.String()
+	got := errOut.String()
+	requireFrozenStampOnStdout(t, out.String(), cmd.Stamp)
 	if !strings.Contains(got, "CANNOT be judged") {
 		t.Fatalf("a dev build must not be graded against a release; got:\n%s", got)
 	}
@@ -78,11 +107,12 @@ func TestVersionCommand_ReleasedBuildNamesTheUpdate(t *testing.T) {
 	store := versionStore(t, "0.25.0", now, nil)
 
 	cmd := &cli.VersionCommand{Stamp: "a2a 0.23.0 (abc1234)", BinaryVersion: "0.23.0", Store: store, Now: func() time.Time { return now }}
-	io, out, _ := newIO()
+	io, out, errOut := newIO()
 	if code := cmd.Run(context.Background(), nil, io); code != 0 {
 		t.Fatalf("code = %d", code)
 	}
-	got := out.String()
+	got := errOut.String()
+	requireFrozenStampOnStdout(t, out.String(), cmd.Stamp)
 	for _, want := range []string{"UPDATE AVAILABLE", "0.25.0", "a2a update"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in:\n%s", want, got)
@@ -102,11 +132,12 @@ func TestVersionCommand_FloorMetButTemplateBehind(t *testing.T) {
 	store := versionStore(t, "0.25.0", now, []cache.SpaceMirror{{SpaceID: "axon", Dir: dir, Manifest: manifest}})
 
 	cmd := &cli.VersionCommand{Stamp: "a2a 0.23.0 (abc1234)", BinaryVersion: "0.23.0", Store: store, Now: func() time.Time { return now }}
-	io, out, _ := newIO()
+	io, out, errOut := newIO()
 	if code := cmd.Run(context.Background(), nil, io); code != 0 {
 		t.Fatalf("code = %d", code)
 	}
-	got := out.String()
+	got := errOut.String()
+	requireFrozenStampOnStdout(t, out.String(), cmd.Stamp)
 	if !strings.Contains(got, "floor 0.23.0  ok") {
 		t.Fatalf("the floor is met and must be reported met:\n%s", got)
 	}
@@ -127,11 +158,12 @@ func TestVersionCommand_CurrentSpaceIsNotBehind(t *testing.T) {
 	store := versionStore(t, "0.25.0", now, []cache.SpaceMirror{{SpaceID: "axon", Dir: dir, Manifest: manifest}})
 
 	cmd := &cli.VersionCommand{Stamp: "a2a 0.25.0 (abc1234)", BinaryVersion: "0.25.0", Store: store, Now: func() time.Time { return now }}
-	io, out, _ := newIO()
+	io, out, errOut := newIO()
 	if code := cmd.Run(context.Background(), nil, io); code != 0 {
 		t.Fatalf("code = %d", code)
 	}
-	got := out.String()
+	got := errOut.String()
+	requireFrozenStampOnStdout(t, out.String(), cmd.Stamp)
 	if strings.Contains(got, "BEHIND") {
 		t.Fatalf("a space pinning the newest release must not be called behind:\n%s", got)
 	}
@@ -149,11 +181,12 @@ func TestVersionCommand_UnmetFloorNamesTheSpace(t *testing.T) {
 	store := versionStore(t, "0.25.0", now, []cache.SpaceMirror{{SpaceID: "axon", Dir: dir, Manifest: manifest}})
 
 	cmd := &cli.VersionCommand{Stamp: "a2a 0.23.0 (abc1234)", BinaryVersion: "0.23.0", Store: store, Now: func() time.Time { return now }}
-	io, out, _ := newIO()
+	io, out, errOut := newIO()
 	if code := cmd.Run(context.Background(), nil, io); code != 0 {
 		t.Fatalf("code = %d", code)
 	}
-	got := out.String()
+	got := errOut.String()
+	requireFrozenStampOnStdout(t, out.String(), cmd.Stamp)
 	if !strings.Contains(got, "UNMET — writes refused") {
 		t.Fatalf("an unmet floor must say writes are refused:\n%s", got)
 	}
@@ -165,11 +198,12 @@ func TestVersionCommand_UnmetFloorNamesTheSpace(t *testing.T) {
 func TestVersionCommand_NoProjectSaysUnavailable(t *testing.T) {
 	t.Parallel()
 	cmd := &cli.VersionCommand{Stamp: "a2a 0.25.0 (abc1234)", BinaryVersion: "0.25.0"}
-	io, out, _ := newIO()
+	io, out, errOut := newIO()
 	if code := cmd.Run(context.Background(), nil, io); code != 0 {
 		t.Fatalf("code = %d", code)
 	}
-	got := out.String()
+	got := errOut.String()
+	requireFrozenStampOnStdout(t, out.String(), cmd.Stamp)
 	if !strings.Contains(got, "UNAVAILABLE") {
 		t.Fatalf("outside a project the report must say so:\n%s", got)
 	}

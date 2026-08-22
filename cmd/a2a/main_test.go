@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
+
+	"github.com/ydnikolaev/a2ahub/internal/release"
 )
 
 // TestMain hardens this package's own git spawns against git's gc --auto
@@ -50,22 +52,29 @@ func TestRun_version(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("run(version) exit code = %d, want 0", code)
 	}
-	if stderr.Len() != 0 {
-		t.Fatalf("run(version) wrote to stderr: %q", stderr.String())
+	// STDOUT IS EXACTLY THE STAMP LINE, and this assertion is the corrected
+	// form of one that was wrong for a whole release.
+	//
+	// It used to demand an empty stderr and then check only that LINE 1 of
+	// stdout was the stamp, on the stated belief that "anything parsing this
+	// output reads line 1". Nothing does. `internal/release.SelfCheckVersion`
+	// — the check `a2a update` runs on a downloaded binary before swapping it
+	// in — matches an expression anchored at BOTH ends against the whole of
+	// stdout. So when v0.25.0 put the three axes there, this test passed and
+	// every installed a2a refused the upgrade as "unparseable version stamp".
+	//
+	// The report belongs on stderr for exactly that reason, and the parser
+	// itself is what this test now applies, rather than a restatement of it.
+	out := stdout.String()
+	if strings.Count(strings.TrimSuffix(out, "\n"), "\n") != 0 {
+		t.Fatalf("run(version) stdout must be exactly the stamp line — every installed a2a matches the WHOLE of it; got:\n%s", out)
 	}
-	out := strings.TrimSpace(stdout.String())
-	if out == "" {
-		t.Fatalf("run(version) produced an empty stamp")
+	if _, ok := release.ParseVersionStamp(out); !ok {
+		t.Fatalf("the updater's own parser rejects run(version) stdout — `a2a update` would abort on it: %q", out)
 	}
-	// THE FIRST LINE IS STILL THE STAMP, and that is the part this test
-	// guards. `a2a version` stopped being one line on 2026-08-22 — it now
-	// reports the release and per-space axes too, because a consumer had no
-	// way to answer "which versions am I running?" and an agent wrote to a
-	// space from a stale binary for want of one. What must not drift is the
-	// stamp's position: anything parsing this output reads line 1.
-	first, _, _ := strings.Cut(out, "\n")
-	if !strings.HasPrefix(first, "a2a ") || !strings.HasSuffix(first, ")") {
-		t.Fatalf("run(version) first line is not the `a2a <version> (<commit>)` stamp: %q", first)
+	// The axes are a human report and they must still be produced, on stderr.
+	if !strings.Contains(stderr.String(), "binary") {
+		t.Fatalf("run(version) stderr = %q, want the three-axis report", stderr.String())
 	}
 }
 
