@@ -1620,6 +1620,23 @@ func wireSpaceUpdate(ctx context.Context, cmd *cli.SpaceCommand, args []string) 
 		CommitAuthorName:  cfg.System,
 		CommitAuthorEmail: cfg.System + "@a2a.local",
 	}
+	// `--wait` reuses `a2a await`'s poller rather than growing a second one:
+	// the refusals that matter (a PR closed without merging, a required check
+	// that failed) are already its state machine's, and Refresh is exactly the
+	// mirror fetch whose absence let `a2a version` contradict a merged update.
+	// Clear is a no-op here because this write records no pending-artifact
+	// marker — it is space infrastructure, not an artifact.
+	awaiter := space.NewAwaiter(h)
+	cmd.AwaitPR = func(awaitCtx context.Context, branch string) (space.AwaitResult, error) {
+		return awaiter.Await(awaitCtx, space.AwaitRequest{
+			Branch: branch,
+			Repo:   host.Repo{Owner: owner, Name: name}, Credential: cred,
+			Refresh: func(refreshCtx context.Context) error {
+				return space.CloneOrFetch(refreshCtx, mirrorDir, ref.RepoURL, cred)
+			},
+			Clear: func() error { return nil },
+		})
+	}
 	return nil
 }
 

@@ -1117,3 +1117,124 @@ func TestSpaceUpdateDryRunWithUnreportedScopes(t *testing.T) {
 		t.Error("--dry-run must never call the funnel")
 	}
 }
+
+// --- `--wait`, all four directions ------------------------------------------
+//
+// `space update` opens a PR and writes nothing to the space; even after that
+// PR merges, the local mirror is unchanged until something fetches it, and
+// `a2a version`, `a2a doctor` and the dashboard all read the mirror. On
+// 2026-08-23 that gap told an operator their merged update had not happened.
+// `--wait` closes it, and these hold every edge that closing it introduced.
+
+func TestSpaceUpdateWaitRefusesWithDryRun(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	spaceUpdateSeedMirror(t, mirrorDir)
+	cmd := spaceUpdateFullyWiredCommand(spaceUpdateTemplateFS(), mirrorDir, &fakeSubmitFunnel{}, "9.9.9")
+	cmd.AwaitPR = func(context.Context, string) (space.AwaitResult, error) {
+		t.Fatal("--wait must not poll when the run opens no PR")
+		return space.AwaitResult{}, nil
+	}
+
+	io, _, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"update", "--wait", "--dry-run"}, io); code != 2 {
+		t.Fatalf("Run: code = %d, want 2 for contradictory flags", code)
+	}
+	if !strings.Contains(errOut.String(), "contradictory") {
+		t.Errorf("stderr = %q, want it to name the contradiction", errOut.String())
+	}
+}
+
+// A flag that is accepted and ignored is worse than one that does not exist.
+func TestSpaceUpdateWaitRefusesWhenUnwired(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	spaceUpdateSeedMirror(t, mirrorDir)
+	funnel := &fakeSubmitFunnel{}
+	cmd := spaceUpdateFullyWiredCommand(spaceUpdateTemplateFS(), mirrorDir, funnel, "9.9.9")
+	cmd.AwaitPR = nil
+
+	io, _, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"update", "--wait"}, io); code != 1 {
+		t.Fatalf("Run: code = %d, want 1 when --wait is unwired", code)
+	}
+	if len(funnel.calls) != 0 {
+		t.Errorf("funnel was called %d time(s); an unwired --wait must refuse BEFORE writing", len(funnel.calls))
+	}
+	if !strings.Contains(errOut.String(), "a2a sync") {
+		t.Errorf("stderr = %q, want the remedy that closes the loop without --wait", errOut.String())
+	}
+}
+
+func TestSpaceUpdateWaitRefreshesTheMirrorOnMerge(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	spaceUpdateSeedMirror(t, mirrorDir)
+	funnel := &fakeSubmitFunnel{}
+	cmd := spaceUpdateFullyWiredCommand(spaceUpdateTemplateFS(), mirrorDir, funnel, "9.9.9")
+	var awaitedBranch string
+	cmd.AwaitPR = func(_ context.Context, branch string) (space.AwaitResult, error) {
+		awaitedBranch = branch
+		return space.AwaitResult{PRURL: "https://example.invalid/pr/7"}, nil
+	}
+
+	io, out, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"update", "--wait"}, io); code != 0 {
+		t.Fatalf("Run: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if awaitedBranch == "" {
+		t.Fatal("--wait polled no branch; it must observe the branch the write pushed")
+	}
+	if !strings.Contains(out.String(), "mirror is refreshed") {
+		t.Errorf("stdout = %q, want it to say the mirror was refreshed — that is the whole point", out.String())
+	}
+	// The no-wait epilogue tells you to run `a2a sync`; after --wait that has
+	// already happened, and repeating it would be the same wrong instruction
+	// this flag exists to remove.
+	if strings.Contains(out.String(), "after it merges, run") {
+		t.Errorf("stdout = %q, want no post-merge instruction after --wait already did it", out.String())
+	}
+}
+
+// A refusal from the poller is about the PR, not about the update: the branch
+// is pushed and the PR is open either way, so the remedy must not be "run this
+// command again".
+func TestSpaceUpdateWaitReportsAPRThatNeverMerged(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	spaceUpdateSeedMirror(t, mirrorDir)
+	cmd := spaceUpdateFullyWiredCommand(spaceUpdateTemplateFS(), mirrorDir, &fakeSubmitFunnel{}, "9.9.9")
+	cmd.AwaitPR = func(context.Context, string) (space.AwaitResult, error) {
+		return space.AwaitResult{}, space.ErrAwaitClosed
+	}
+
+	io, out, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"update", "--wait"}, io); code != 1 {
+		t.Fatalf("Run: code = %d, want 1 when the PR never merges; stdout=%s", code, out.String())
+	}
+	if !strings.Contains(errOut.String(), "still open and unchanged") {
+		t.Errorf("stderr = %q, want it to say the PR is untouched", errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "a2a sync") {
+		t.Errorf("stderr = %q, want the remedy after the PR is resolved", errOut.String())
+	}
+}
+
+// Without --wait the command must NAME the step that closes the loop. Its last
+// line otherwise reads as completion, and it is not one.
+func TestSpaceUpdateNamesTheStepThatClosesTheLoop(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	spaceUpdateSeedMirror(t, mirrorDir)
+	cmd := spaceUpdateFullyWiredCommand(spaceUpdateTemplateFS(), mirrorDir, &fakeSubmitFunnel{}, "9.9.9")
+
+	io, out, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"update"}, io); code != 0 {
+		t.Fatalf("Run: code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	for _, want := range []string{"changed nothing in the space yet", "a2a sync", "--wait"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("stdout does not mention %q:\n%s", want, out.String())
+		}
+	}
+}

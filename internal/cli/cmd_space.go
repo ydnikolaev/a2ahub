@@ -80,6 +80,17 @@ type SpaceCommand struct {
 	// does not care) — the command then behaves exactly as before.
 	Scopes spaceScopeChecker
 
+	// AwaitPR polls the pull request this command opened until it merges and
+	// then refreshes the local mirror — `--wait`'s entire implementation, and
+	// deliberately NOT a second poller: the lead wires it to the same
+	// space.Awaiter `a2a await` uses, whose state machine already refuses a
+	// PR that closes without merging and one whose required check fails.
+	//
+	// Nil-able, like the six above: `--wait` then REFUSES by name rather than
+	// silently behaving as though the flag were absent. A flag that is
+	// accepted and ignored is worse than one that does not exist.
+	AwaitPR func(ctx context.Context, branch string) (space.AwaitResult, error)
+
 	// readFile is a DI seam (mirrors writeFile/mkdirAll's own convention)
 	// so a test can simulate the mirror's on-disk content without a real
 	// filesystem. NewSpaceCommand defaults it to os.ReadFile.
@@ -103,7 +114,7 @@ func (c *SpaceCommand) Name() string { return "space" }
 
 // Synopsis implements cli.Command.
 func (c *SpaceCommand) Synopsis() string {
-	return "space scaffolding: init <space-id> [--dir <path>] | update [--space <id>] [--dry-run] — write/migrate a space tree from the embedded template"
+	return "space scaffolding: init <space-id> [--dir <path>] | update [--space <id>] [--dry-run] [--wait] — write/migrate a space tree from the embedded template"
 }
 
 // Run implements cli.Command.
@@ -844,7 +855,7 @@ func spaceUpdatePRBody(owner, name, baseBranch string) string {
 	return b.String()
 }
 
-// runUpdate implements `a2a space update [--space <id>] [--dry-run]` (spec
+// runUpdate implements `a2a space update [--space <id>] [--dry-run] [--wait]` (spec
 // 35): diff the connected space's scaffolding against the embedded
 // template, print it, and (without --dry-run) submit it through the
 // existing write funnel with AllowSpaceInfrastructure set. Exit codes:
@@ -855,12 +866,21 @@ func (c *SpaceCommand) runUpdate(ctx context.Context, args []string, stdio IO) i
 	fset.SetOutput(stdio.Stderr)
 	spaceFlag := fset.String("space", "", "space id (defaults to the connected space)")
 	dryRun := fset.Bool("dry-run", false, "print the scaffolding diff without writing or pushing")
+	wait := fset.Bool("wait", false, "after opening the PR, poll until it merges and then refresh the local mirror")
 	if err := fset.Parse(args); err != nil {
 		return 2
 	}
 	if fset.NArg() > 0 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space update [--space <id>] [--dry-run]")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space update [--space <id>] [--dry-run] [--wait]")
 		return 2
+	}
+	if *wait && *dryRun {
+		_, _ = fmt.Fprintln(stdio.Stderr, "space update: --wait and --dry-run are contradictory: a dry run opens no PR to wait for")
+		return 2
+	}
+	if *wait && c.AwaitPR == nil {
+		_, _ = fmt.Fprintln(stdio.Stderr, "space update: --wait is not wired in this build; open the PR without it and run `a2a sync` after it merges")
+		return 1
 	}
 
 	if err := c.spaceUpdateWired(); err != nil {
@@ -969,5 +989,56 @@ func (c *SpaceCommand) runUpdate(ctx context.Context, args []string, stdio IO) i
 		_, _ = fmt.Fprintf(stdio.Stdout, "space update: opened PR %s (%s)\n", result.PRURL, result.State)
 		warnAutoMerge(stdio, "space update", result.AutoMergeNote)
 	}
+	if !*wait {
+		spaceUpdateNextStep(stdio)
+		return 0
+	}
+	return c.spaceUpdateWaitForMerge(ctx, stdio, result)
+}
+
+// spaceUpdateWaitForMerge is `--wait`: it observes the pull request until the
+// host reports it merged, then refreshes the mirror, which is the step whose
+// absence made `a2a version` contradict a completed update.
+//
+// It OBSERVES and never merges. The distinction is the whole reason this is
+// opt-in rather than the default: merging is the space's decision, gated by
+// its own CI and branch protection and sometimes by a person, and a CLI that
+// blocks by default on a human gate is a hung command rather than a complete
+// one. Today's own PR could not merge until a required check context was
+// changed, and the command said so — it must not have been waiting silently
+// while that was true.
+func (c *SpaceCommand) spaceUpdateWaitForMerge(ctx context.Context, stdio IO, result space.WriteResult) int {
+	if result.Branch == "" {
+		_, _ = fmt.Fprintln(stdio.Stderr, "space update: --wait has no branch to observe (the write reported none); run `a2a sync` after the PR merges")
+		return 1
+	}
+	_, _ = fmt.Fprintf(stdio.Stdout, "space update: waiting for %s to merge — this observes, it never merges; Ctrl-C is safe and changes nothing\n", result.PRURL)
+	awaited, err := c.AwaitPR(ctx, result.Branch)
+	if err != nil {
+		// A refusal here is about the PR, not about the update: the branch is
+		// pushed and the PR is open either way, so the remedy is always the
+		// same two words rather than a re-run of this command.
+		_, _ = fmt.Fprintf(stdio.Stderr, "space update: --wait stopped: %v\n", err)
+		_, _ = fmt.Fprintln(stdio.Stderr, "space update:   the PR is still open and unchanged; resolve it, then run `a2a sync`")
+		return 1
+	}
+	_, _ = fmt.Fprintf(stdio.Stdout, "space update: merged (%s), and the local mirror is refreshed — `a2a version` now reads the updated space.\n", awaited.PRURL)
 	return 0
+}
+
+// spaceUpdateNextStep names what actually closes this loop, because the
+// command's last line otherwise reads as completion.
+//
+// It does not: this command OPENS A PULL REQUEST and writes nothing to the
+// space. Even after that PR merges, the local mirror is unchanged until
+// something fetches it — and `a2a version`, `a2a doctor` and the dashboard all
+// read the mirror, never the network. On 2026-08-23 an operator ran this
+// command, merged its PR, and was then told by `a2a version` that the space
+// was still BEHIND and that the remedy was to run this command again. Nothing
+// was broken; one step was missing and nothing named it.
+func spaceUpdateNextStep(stdio IO) {
+	_, _ = fmt.Fprintln(stdio.Stdout, "space update: next: this opened a PR and changed nothing in the space yet.")
+	_, _ = fmt.Fprintln(stdio.Stdout, "space update:   after it merges, run `a2a sync` — the local mirror is what")
+	_, _ = fmt.Fprintln(stdio.Stdout, "space update:   `a2a version`, `a2a doctor` and the dashboard read, and it does")
+	_, _ = fmt.Fprintln(stdio.Stdout, "space update:   not move on its own. `a2a space update --wait` does both for you.")
 }
