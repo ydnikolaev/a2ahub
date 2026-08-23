@@ -1,6 +1,6 @@
 schema: release-notes/v1
 version: 0.25.3
-released: unreleased
+released: "2026-08-23"
 headline: a report read from a local mirror now says how old that mirror is
 changes:
 - id: RN-02503-0
