@@ -58,6 +58,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# A COMPOSITION IS NEVER AN ITERATING HUMAN (release-cost-2026-08 P2).
+# verify.sh refuses to re-run a mode over a byte-identical tree that already
+# passed — the right answer for somebody typing `make check` twice, and the
+# wrong one for a ship gate, which runs `make check` inside a container whose
+# work volume PERSISTS BETWEEN RUNS. Two ship gates over the same clean tree
+# would otherwise meet the guard in there and report the ceiling as exit 1.
+# Exported once, at the entry to every ci-parity path, rather than sprinkled
+# at the call sites that happen to be remembered.
+export VERIFY_AGAIN=1
+
 # gate_unmeasured, and the exit code that separates "I measured it and it is
 # wrong" (1) from "I could not measure it" (3). A composed SHIP gate is the
 # worst possible place to blur those two: "Docker is down" and "the tree is

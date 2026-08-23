@@ -122,11 +122,88 @@ configure_go_cache() {
   echo "verify: GOCACHE=$GOCACHE (owned by actions/setup-go for this ephemeral runner)"
 }
 
+# THE RECORD GAINS A TREE IDENTITY (release-cost-2026-08 P2). Every reader
+# tolerates its absence by construction — internal/lane/telemetry.go unmarshals
+# JSON into a struct, so an older line written by an older verify.sh simply
+# leaves the field empty, and the ring buffer below still holds thousands of
+# them. `""` when the identity could not be computed, which is honest and is
+# never equal to a real one, so the guard below cannot fire on it.
 append_telemetry() {
   local gate="$1" verdict="$2" duration_ms="$3" at
   at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-  printf '{"gate":"%s","verdict":"%s","duration_ms":%s,"mode":"%s","at":"%s"}\n' \
-    "$gate" "$verdict" "$duration_ms" "$MODE" "$at" >>"$VERIFY_ROOT/telemetry.jsonl"
+  printf '{"gate":"%s","verdict":"%s","duration_ms":%s,"mode":"%s","at":"%s","tree":"%s"}\n' \
+    "$gate" "$verdict" "$duration_ms" "$MODE" "$at" "${RUN_TREE:-}" >>"$VERIFY_ROOT/telemetry.jsonl"
+}
+
+# working_tree_delta prints every path this working tree has changed against
+# HEAD — staged, unstaged and untracked — one per line.
+#
+# ONE DEFINITION, TWO QUESTIONS. `lane_files` asks it to decide WHICH GATES a
+# diff can reach; `run_tree_identity` asks it to decide WHETHER THIS TREE HAS
+# ALREADY BEEN JUDGED. Both need exactly the same set and neither may drift
+# from the other, so the porcelain parsing — including the rename case below,
+# which cost a real bug to get right — lives here and nowhere else.
+#
+# `--porcelain=v1 -z` emits a RENAME/COPY as two NUL-terminated tokens:
+# "XY <newpath>\0<origpath>\0" — and the ORIGINAL path carries NO "XY "
+# prefix. A blanket `sed 's/^...//'` over every token therefore eats three
+# characters off it (verified: `git mv original.txt renamed.txt` yielded
+# "ginal.txt"), and the deriver then either refuses a path that does not
+# exist or, worse, matches a mangled fragment against some unrelated glob.
+# Both halves of a rename are real inputs — the old path stops existing and
+# the new one starts — so both are reported.
+working_tree_delta() {
+  git -C "$ROOT" status --porcelain=v1 -z --untracked-files=all |
+    while IFS= read -r -d '' record; do
+      printf '%s\n' "${record:3}"
+      case "${record:0:2}" in
+        [RC]*|?[RC])
+          IFS= read -r -d '' original || break
+          printf '%s\n' "$original"
+          ;;
+      esac
+    done
+}
+
+# run_tree_identity — a COMPLETE identity for the tree this run is judging.
+#
+# HEAD's sha, plus every changed path with the git hash of its CONTENT, plus
+# the mode and any explicit LANE_FILES. That is complete rather than
+# approximate, and the completeness is the whole point: a tracked file absent
+# from `git status` is byte-identical to HEAD by definition, so HEAD plus the
+# delta's contents determines the tree exactly.
+#
+# THIS IS NOT THE CACHE THE EPIC REFUSED, and the difference is not a matter
+# of degree. That cache would have keyed on DECLARED inputs — where 63% of
+# declarations self-admit reads they cannot name — and then SKIPPED a phase,
+# reporting a stored verdict as the current one. A wrong key there is a false
+# green. This asks git what the tree is, never a declaration; and it can only
+# REFUSE TO DISPATCH, never report a verdict it did not measure. A wrong
+# answer here costs one `VERIFY_AGAIN=1`.
+run_tree_identity() {
+  # `hashes` initialised: `set -u` is on, and an EMPTY delta — a clean tree,
+  # which is exactly what a ship gate judges — otherwise leaves it unset and
+  # the identity cannot be computed for the one tree that matters most.
+  local head paths hashes=""
+  head="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null)" || return 1
+  paths="$(working_tree_delta | LC_ALL=C sort -u)" || return 1
+  if [ -n "$paths" ]; then
+    # One `git hash-object` for the whole set, not one per file. A path that is
+    # not a readable regular file (a deletion, a directory) hashes to nothing
+    # and is reported by its status line alone — deterministic either way,
+    # which is all an identity needs.
+    hashes="$(printf '%s\n' "$paths" |
+      while IFS= read -r p; do
+        if [ -f "$ROOT/$p" ]; then
+          printf '%s %s\n' "$(git -C "$ROOT" hash-object -- "$p" 2>/dev/null || echo unreadable)" "$p"
+        else
+          printf 'absent %s\n' "$p"
+        fi
+      done)"
+  fi
+  printf 'head=%s\nmode=%s\nlane_files=%s\n%s\n' \
+    "$head" "$MODE" "${LANE_FILES:-}" "$hashes" |
+    git -C "$ROOT" hash-object --stdin 2>/dev/null
 }
 
 run_phase() {
@@ -187,9 +264,142 @@ bound_accelerators() {
   echo "verify: accelerator cache trimmed to ${size_after} KiB."
 }
 
+# ── THE REPETITION GUARD (release-cost-2026-08 P2) ───────────────────────────
+#
+# MEASURED MOTIVATION, not a hunch. On 2026-08-22 `logic-e2e` ran ELEVEN times
+# for 2 h 08 min, median 10.8 min, inside a total lane wall time of 4 h 37 min
+# — while `.claude/rules/check-convention.md` already said, in prose, to
+# iterate with the scoped test and run the lane once at a coherent step. The
+# rule existed and was ignored for a whole day, which is what a rule with no
+# mechanism does.
+#
+# THE QUESTION IT ASKS IS DELIBERATELY THE ANSWERABLE ONE: *have I already run
+# THIS command over THIS EXACT TREE, and did it pass?* Not "are the declared
+# inputs unchanged" — that is the mechanism the epic REFUSED, with evidence,
+# because declarations here are known-incomplete. This asks git.
+#
+# AND IT CANNOT TURN A RED VERDICT GREEN, by construction. It has exactly two
+# outcomes: refuse to dispatch, or dispatch unchanged. It never skips a phase,
+# never reports a stored verdict, and never touches a running gate's result.
+# The worst it can do is refuse a run somebody wanted, which costs one
+# VERIFY_AGAIN=1 — and the escape says out loud that it was used, so a
+# transcript still shows what happened.
+#
+# CLEANUP STORY: THERE IS NO NEW STATE. The guard reads the telemetry stream
+# that already exists, already has a bounded size (TELEMETRY_LIMIT above), and
+# is already trimmed on every exit by trim_telemetry. A record ages out of the
+# ring buffer and the guard goes quiet on its own. Every state file in this
+# repository has a cleanup story; this one's is "it is not a new file".
+REPEAT_GUARD_MODES="full validators coverage harness logic-e2e lane-run projection"
+
+# cheaper_than names the command that answers the same question for less, per
+# mode. A refusal that only scolds gets bypassed; one that hands over the
+# right tool gets used.
+cheaper_than() { # $1 = mode
+  case "$1" in
+    full)       echo "make lane-run — it judges what THIS tree's edits can actually reach, and refuses a path no gate claims rather than falling to the ceiling" ;;
+    validators) echo "make lane-run — the derivation selects only the repo gates this diff can actually reach" ;;
+    lane-run)   echo "the scoped test for the package you touched: make test PKG=./internal/<pkg>/..." ;;
+    logic-e2e)  echo "ONE path instead of the catalogue: go test -tags=livee2e ./internal/livee2e/ -run 'TestLogicMatrix/<row>'" ;;
+    projection) echo "bash scripts/check-projection.sh --template-only — the sub-second half, which rehearses the publisher's template projection alone" ;;
+    harness)    echo "the one gate's own --teeth: bash scripts/check-<gate>.sh --teeth" ;;
+    *)          echo "the scoped test or gate for the thing you actually changed" ;;
+  esac
+}
+
+# make_target_for — the command an operator would actually retype. A refusal
+# that names a target `make` does not have teaches the reader to distrust the
+# rest of the message; `verify.sh validators` is reached as `make
+# check-validators`, and the mode name is not the target name for four of the
+# seven guarded modes.
+make_target_for() { # $1 = mode
+  case "$1" in
+    full)       echo "check" ;;
+    validators) echo "check-validators" ;;
+    harness)    echo "harness-check" ;;
+    *)          echo "$1" ;;
+  esac
+}
+
+# _telemetry_field pulls one string field out of a telemetry line. Deliberately
+# not jq: this runner has no jq dependency and must work on a bare machine.
+_telemetry_field() { # $1 = line, $2 = field
+  printf '%s' "$1" | sed -n "s/.*\"$2\":\"\([^\"]*\)\".*/\1/p"
+}
+
+# todays_bill — how many times this mode has already run today (UTC) and what
+# it cost, in minutes. The sentence nobody had on 2026-08-22.
+todays_bill() { # $1 = mode -> "N runs, M min" or empty
+  local today runs ms
+  today="$(date -u +%Y-%m-%d)"
+  [ -f "$VERIFY_ROOT/telemetry.jsonl" ] || return 0
+  runs="$(grep -F "\"gate\":\"run:$1\"" "$VERIFY_ROOT/telemetry.jsonl" 2>/dev/null | grep -F "\"at\":\"$today" || true)"
+  [ -n "$runs" ] || return 0
+  ms="$(printf '%s\n' "$runs" | sed -n 's/.*"duration_ms":\([0-9]*\).*/\1/p' | awk '{t+=$1} END {print t+0}')"
+  printf '%s run(s) today costing %s min' "$(printf '%s\n' "$runs" | wc -l | tr -d ' ')" "$((ms / 60000))"
+}
+
+repeat_guard() {
+  case " $REPEAT_GUARD_MODES " in *" $MODE "*) ;; *) return 0 ;; esac
+
+  # A RUNNER IS NOT AN ITERATING HUMAN, and a gate that refuses to run is the
+  # last thing CI should ever do. On a hosted runner the cache is empty anyway,
+  # so this is belt and braces — but `ci-parity-docker` reuses a NAMED VOLUME
+  # between runs, so a second ship gate over an identical clean tree WOULD have
+  # met this guard inside the container and reported `make check` as exit 1.
+  # That is a composed gate blocked by an ergonomics feature, which is not a
+  # trade this guard is allowed to make. `ci-parity.sh` exports VERIFY_AGAIN=1
+  # for the same reason, one layer up, so every composition is covered whether
+  # or not it happens to run under Actions.
+  if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+    return 0
+  fi
+  RUN_TREE="$(run_tree_identity 2>/dev/null || true)"
+  [ -n "$RUN_TREE" ] || return 0
+
+  local bill last verdict tree when
+  bill="$(todays_bill "$MODE")"
+
+  if [ "${VERIFY_AGAIN:-}" = "1" ]; then
+    echo "verify: VERIFY_AGAIN=1 — the repetition guard was BYPASSED for \`$MODE\`${bill:+ ($bill)}. Running anyway."
+    return 0
+  fi
+
+  last="$(grep -F "\"gate\":\"run:$MODE\"" "$VERIFY_ROOT/telemetry.jsonl" 2>/dev/null | tail -1 || true)"
+  [ -n "$last" ] || { [ -n "$bill" ] && echo "verify: \`$MODE\` — $bill."; return 0; }
+  verdict="$(_telemetry_field "$last" verdict)"
+  tree="$(_telemetry_field "$last" tree)"
+  when="$(_telemetry_field "$last" at)"
+
+  # ONLY AFTER A PASS. A re-run following a FAILURE is somebody reading the
+  # output again, which is a legitimate thing to want and costs the operator
+  # nothing to be wrong about.
+  if [ "$verdict" = "pass" ] && [ -n "$tree" ] && [ "$tree" = "$RUN_TREE" ]; then
+    echo "verify: REFUSING to re-run \`$MODE\` — this exact tree already passed it at $when." >&2
+    echo "        Not 'the same files': the SAME BYTES. HEAD is unchanged and every path git reports as" >&2
+    echo "        modified hashes identically to that run, so there is nothing new for $MODE to judge." >&2
+    [ -n "$bill" ] && echo "        Already spent: $bill." >&2
+    echo "        Iterate with: $(cheaper_than "$MODE")" >&2
+    echo "        Run it anyway with: VERIFY_AGAIN=1 make $(make_target_for "$MODE")   (it will say that you did)" >&2
+    exit 1
+  fi
+  [ -n "$bill" ] && echo "verify: \`$MODE\` — $bill. Iterate with: $(cheaper_than "$MODE")"
+  return 0
+}
+
 finish() {
   local command_status=$? maintenance_status=0
   set +e
+  # THE RUN RECORD, written before the trim so it ages out with everything
+  # else. It is what repeat_guard reads next time, and it is the ONLY new
+  # thing P2 writes anywhere.
+  if [ -n "${RUN_TREE:-}" ] && [ -n "${RUN_STARTED_MS:-}" ]; then
+    if [ "$command_status" -eq 0 ]; then
+      append_telemetry "run:$MODE" pass "$(( $(now_ms) - RUN_STARTED_MS ))"
+    else
+      append_telemetry "run:$MODE" fail "$(( $(now_ms) - RUN_STARTED_MS ))"
+    fi
+  fi
   trim_telemetry
   maintenance_status=$?
   if [ "$maintenance_status" -eq 0 ]; then
@@ -708,6 +918,143 @@ run_teeth() {
     return 1
   fi
 
+  # ── THE REPETITION GUARD (release-cost-2026-08 P2) ────────────────────────
+  #
+  # Exercised through a FIXTURE REPOSITORY with its own telemetry file, never
+  # against this checkout: a guard whose only observable behaviour is refusing
+  # would otherwise be watched by breaking the tree it guards.
+  local rg rgt rgout rgrc
+  rg="$(mktemp -d)"
+  git -C "$rg" init -q -b main
+  git -C "$rg" config user.email teeth@example.invalid
+  git -C "$rg" config user.name "repeat guard teeth"
+  printf 'one\n' >"$rg/a.txt"
+  # `.a2a/` IS GITIGNORED IN THE REAL REPOSITORY, and the fixture has to say so
+  # or it is not a fixture of anything. Without this line the telemetry file
+  # this guard writes shows up as an untracked path in the fixture's own delta,
+  # so the act of RECORDING a run changes the tree identity and no run can ever
+  # match its own record — the guard silently never fires, which is precisely
+  # the failure the fixture exists to detect.
+  printf '.a2a/\n' >"$rg/.gitignore"
+  git -C "$rg" add a.txt .gitignore
+  git -C "$rg" commit -q -m "seed"
+  rgt="$rg/.a2a/cache/verify"
+  mkdir -p "$rgt"
+
+  # THE GUARD REFUSES BY CALLING `exit`, so its status has to be read off the
+  # command substitution itself — a trailing `echo rc=$?` INSIDE the subshell
+  # never runs on the refusing path, which is how this harness silently ate the
+  # first green run of these teeth.
+  _rg() { # $1..= env assignments are the caller's; sets rgout and rgrc
+    rgrc=0
+    rgout="$( set +e; repeat_guard 2>&1 )" || rgrc=$?
+  }
+
+  # The guard is a function in THIS file, so exercise it in-process with the
+  # fixture's variables swapped in and restored — cheaper and more faithful
+  # than re-entering verify.sh, which would run real phases.
+  local save_root="$ROOT" save_vroot="$VERIFY_ROOT" save_mode="$MODE" save_tree="${RUN_TREE:-}"
+  ROOT="$rg"; VERIFY_ROOT="$rgt"; MODE="full"
+
+  # T-P2a — AN EMPTY STREAM CANNOT REFUSE. This is also AC-5's "inert once
+  # cleared": the guard's whole state is the telemetry ring buffer, so a
+  # trimmed-away record leaves exactly this situation.
+  : >"$rgt/telemetry.jsonl"
+  _rg
+  if [ "$rgrc" -ne 0 ]; then
+    echo "verify --teeth: FAIL — P2a: an empty telemetry stream must not refuse anything: $rgout" >&2
+    ROOT="$save_root"; VERIFY_ROOT="$save_vroot"; MODE="$save_mode"; RUN_TREE="$save_tree"; rm -rf "$rg"; return 1
+  fi
+
+  # T-P2b — A PASS OVER THIS EXACT TREE REFUSES, names a cheaper command, and
+  # names the escape.
+  #
+  # THE TREE IS MADE DIRTY FIRST, and that is not incidental. P2c below has to
+  # edit a file that is ALREADY in the delta — otherwise it changes the delta's
+  # MEMBERSHIP, which even a file-name key notices, and the tooth passes
+  # against a guard keyed the wrong way. It did exactly that until a mutation
+  # (hash-object replaced by the bare path) left P2c green.
+  printf 'two\n' >>"$rg/a.txt"
+  RUN_TREE=""
+  RUN_TREE="$(run_tree_identity)"
+  append_telemetry "run:full" pass 900000
+  _rg
+  if [ "$rgrc" -eq 0 ] \
+    || ! grep -q 'REFUSING to re-run' <<<"$rgout" \
+    || ! grep -q 'VERIFY_AGAIN=1' <<<"$rgout" \
+    || ! grep -q 'make lane-run' <<<"$rgout"; then
+    echo "verify --teeth: FAIL — P2b: a pass over the identical tree must refuse, naming a cheaper command and the escape: $rgout" >&2
+    ROOT="$save_root"; VERIFY_ROOT="$save_vroot"; MODE="$save_mode"; RUN_TREE="$save_tree"; rm -rf "$rg"; return 1
+  fi
+
+  # T-P2c — AND A CHANGED TREE DOES NOT. Without this the guard is a rate
+  # limiter wearing a repetition guard's name.
+  #
+  # The edit is to the CONTENT of a file ALREADY IN THE DELTA — the same path
+  # set before and after — which is the single case a file-NAME key gets wrong,
+  # and it is the commonest iteration there is: fix the bug in the file you
+  # were already editing, run again. A guard that refused here would be
+  # refusing the loop it exists to serve.
+  printf 'three\n' >>"$rg/a.txt"
+  RUN_TREE=""
+  _rg
+  if [ "$rgrc" -ne 0 ] || grep -q 'REFUSING' <<<"$rgout"; then
+    echo "verify --teeth: FAIL — P2c: editing a file already in the delta must clear the guard; a name-keyed guard would still refuse: $rgout" >&2
+    ROOT="$save_root"; VERIFY_ROOT="$save_vroot"; MODE="$save_mode"; RUN_TREE="$save_tree"; rm -rf "$rg"; return 1
+  fi
+
+  # T-P2d — THE ESCAPE WORKS AND SAYS THAT IT WAS USED. A bypass nobody can
+  # see in a transcript is how "it passed" stops meaning anything.
+  git -C "$rg" checkout -q -- a.txt
+  RUN_TREE=""
+  rgrc=0; rgout="$( set +e; VERIFY_AGAIN=1 repeat_guard 2>&1 )" || rgrc=$?
+  if [ "$rgrc" -ne 0 ] || ! grep -q 'BYPASSED' <<<"$rgout"; then
+    echo "verify --teeth: FAIL — P2d: VERIFY_AGAIN=1 must run anyway AND announce it: $rgout" >&2
+    ROOT="$save_root"; VERIFY_ROOT="$save_vroot"; MODE="$save_mode"; RUN_TREE="$save_tree"; rm -rf "$rg"; return 1
+  fi
+
+  # T-P2e — A FAILING PREVIOUS RUN NEVER REFUSES. Re-running after a red is
+  # somebody reading the output again, and being wrong about that costs the
+  # operator a gate they wanted.
+  : >"$rgt/telemetry.jsonl"
+  RUN_TREE=""
+  RUN_TREE="$(run_tree_identity)"
+  append_telemetry "run:full" fail 900000
+  _rg
+  if [ "$rgrc" -ne 0 ] || grep -q 'REFUSING' <<<"$rgout"; then
+    echo "verify --teeth: FAIL — P2e: a previous FAILING run must never block a re-run: $rgout" >&2
+    ROOT="$save_root"; VERIFY_ROOT="$save_vroot"; MODE="$save_mode"; RUN_TREE="$save_tree"; rm -rf "$rg"; return 1
+  fi
+
+  # T-P2f — A RUNNER IS NEVER REFUSED. CI must not be blocked by an
+  # ergonomics feature, and ci-parity-docker's named volume makes this
+  # reachable rather than theoretical.
+  : >"$rgt/telemetry.jsonl"
+  RUN_TREE=""
+  RUN_TREE="$(run_tree_identity)"
+  append_telemetry "run:full" pass 900000
+  rgrc=0; rgout="$( set +e; GITHUB_ACTIONS=true repeat_guard 2>&1 )" || rgrc=$?
+  if [ "$rgrc" -ne 0 ] || grep -q 'REFUSING' <<<"$rgout"; then
+    echo "verify --teeth: FAIL — P2f: GITHUB_ACTIONS=true must never meet this guard: $rgout" >&2
+    ROOT="$save_root"; VERIFY_ROOT="$save_vroot"; MODE="$save_mode"; RUN_TREE="$save_tree"; rm -rf "$rg"; return 1
+  fi
+
+  # T-P2g — THE GUARD NEVER TOUCHES A VERDICT. It has two outcomes and this
+  # reads them out of its own source: every exit inside repeat_guard is either
+  # `exit 1` (refuse) or `return 0` (dispatch unchanged). An arm that returned
+  # anything else would be an arm that had started editing results.
+  local body sawother
+  body="$(awk '/^repeat_guard\(\)/{f=1} f{print} f && /^}/{exit}' "$save_root/scripts/verify.sh")"
+  sawother="$(grep -oE '^[[:space:]]*(exit|return) [0-9]+' <<<"$body" | grep -vE '(exit 1|return 0)$' || true)"
+  if [ -n "$sawother" ]; then
+    echo "verify --teeth: FAIL — P2g: repeat_guard may only refuse (exit 1) or dispatch unchanged (return 0); found: $sawother" >&2
+    ROOT="$save_root"; VERIFY_ROOT="$save_vroot"; MODE="$save_mode"; RUN_TREE="$save_tree"; rm -rf "$rg"; return 1
+  fi
+
+  ROOT="$save_root"; VERIFY_ROOT="$save_vroot"; MODE="$save_mode"; RUN_TREE="$save_tree"
+  rm -rf "$rg"
+  echo "verify --teeth: the repetition guard refuses a byte-identical tree that already passed, clears when a file already in the delta is EDITED (not renamed), announces its own bypass, never blocks a re-run after a red, never meets a runner, and can only refuse or dispatch."
+
   echo "verify --teeth: owned root accepted by construction; symlink and foreign residue refused; scoped tests reject stale binaries; target preserved; red status recorded and returned; lane strict mode refuses an empty or misspelled input and stays out of the way of a clean-tree default; a derived phase the runner cannot execute is refused by name rather than dropped, every repo gate is dispatchable so that refusal cannot fire on a working one, and the ship tier is both derived and deferred."
 }
 
@@ -731,6 +1078,9 @@ prepare_cache_root
 trap finish EXIT
 cd "$ROOT"
 
+RUN_STARTED_MS="$(now_ms)"
+repeat_guard
+
 changed_paths() {
   # What THIS working tree has changed against HEAD: staged, unstaged and
   # untracked, which is exactly the set a session is about to ask a gate to
@@ -751,24 +1101,9 @@ changed_paths() {
     printf '%s\n' $LANE_FILES
     return 0
   fi
-  # `--porcelain=v1 -z` emits a RENAME/COPY as two NUL-terminated tokens:
-  # "XY <newpath>\0<origpath>\0" — and the ORIGINAL path carries NO "XY "
-  # prefix. A blanket `sed 's/^...//'` over every token therefore eats three
-  # characters off it (verified: `git mv original.txt renamed.txt` yielded
-  # "ginal.txt"), and the deriver then either refuses a path that does not
-  # exist or, worse, matches a mangled fragment against some unrelated glob.
-  # Both halves of a rename are real inputs — the old path stops existing and
-  # the new one starts — so both are reported.
-  git -C "$ROOT" status --porcelain=v1 -z --untracked-files=all |
-    while IFS= read -r -d '' record; do
-      printf '%s\n' "${record:3}"
-      case "${record:0:2}" in
-        [RC]*|?[RC])
-          IFS= read -r -d '' original || break
-          printf '%s\n' "$original"
-          ;;
-      esac
-    done
+  # The porcelain walk, including the rename case that cost a real bug, lives
+  # in working_tree_delta — the same set run_tree_identity reads, on purpose.
+  working_tree_delta
 }
 
 # run_derived_phase maps ONE derived phase name to the thing that runs it.

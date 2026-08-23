@@ -21,13 +21,26 @@ const TelemetryPath = ".a2a/cache/verify/telemetry.jsonl"
 const MinSamples = 3
 
 // telemetryRecord mirrors scripts/verify.sh's append_telemetry line shape:
-// {"gate":"...","verdict":"pass|fail","duration_ms":123,"mode":"...","at":"..."}.
+// {"gate":"...","verdict":"pass|fail","duration_ms":123,"mode":"...","at":"...","tree":"..."}.
+//
+// Tree is the identity of the working tree the run judged — HEAD's sha plus
+// every changed path's content hash, folded (verify.sh run_tree_identity).
+// It is written by release-cost-2026-08 P2's repetition guard and is read
+// only by that guard, in shell; it is declared here because a field in this
+// stream that this struct does not name is a contract nobody can see.
+//
+// OLDER LINES CARRY NO "tree" AT ALL, and must keep parsing: the stream is a
+// ring buffer holding up to TELEMETRY_LIMIT records written by whatever
+// verify.sh was current at the time. Absent decodes to "", which is never
+// equal to a real identity, so no reader can mistake an old record for a
+// match. TestReadTelemetryToleratesRecordsWithoutTree holds that.
 type telemetryRecord struct {
 	Gate       string `json:"gate"`
 	Verdict    string `json:"verdict"`
 	DurationMS int64  `json:"duration_ms"`
 	Mode       string `json:"mode"`
 	At         string `json:"at"`
+	Tree       string `json:"tree,omitempty"`
 }
 
 // Estimate is one phase's duration estimate, derived from telemetry.
