@@ -248,7 +248,12 @@ jobs:
             sleep $((attempt * 5))
           done
           if [ "$downloaded" -ne 1 ]; then
-            echo "::error::could not download a2a $A2A_REF after 3 attempts — this is the release CDN, not this space's routes" >&2
+            # UNMEASURED — see a2a-validate-reusable.yml's twin for why the
+            # token and the "what did not happen" sentence are load bearing.
+            # Here the consequence is different and worth naming separately:
+            # nothing was sent, so a notification an operator is waiting for is
+            # missing rather than delayed (release-cost-2026-08 P3).
+            echo "::error::UNMEASURED: could not download a2a $A2A_REF after 3 attempts — NO NOTIFICATION WAS SENT. Nothing is wrong with this space's routes or artifacts; the a2ahub release CDN did not answer, so the notifier never ran. Re-run this job." >&2
             exit 1
           fi
 

@@ -49,7 +49,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: flaky-scan check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install
+.PHONY: flaky-scan check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -60,7 +60,7 @@
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := spec-verify-refs ci-parity-audit frozen-allowlist lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus view-vocabulary dashboard-props card-content pendency-uniqueness notify-workflow notify-secrets error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral runner-economics space-template-baseline-check
+REPO_GATES := spec-verify-refs ci-parity-audit frozen-allowlist lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus view-vocabulary dashboard-props card-content pendency-uniqueness notify-workflow notify-secrets error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral runner-economics space-template-baseline-check unmeasured-reach
 
 _print-repo-gates:
 	@echo "$(REPO_GATES)"
@@ -113,6 +113,23 @@ test: ## Scoped race test through the owned environment. Optional: A2A_VERIFY_TE
 # wave. This is exactly the hole check-convention.md predicts in its own words —
 # "a non-Go edit that changes path meaning does NOT select it today" — and the
 # fix it prescribes.
+# TWO WAYS THIS GATE USED TO NOT MEASURE, AND ONLY ONE OF THEM WAS RED
+# (release-cost-2026-08 P3, and both are named in release.md step 8).
+#
+#   * ABSENT `web/node_modules` printed "skip" and EXITED ZERO. A release step
+#     whose answer is "I could not run" answered "fine". That is the class the
+#     UNMEASURED vocabulary exists for and the one a grep cannot find, because
+#     a gate returning green leaves nothing to search for — this one was found
+#     by reading the recipe while writing the gate that cannot see it.
+#   * PLAYWRIGHT WITH NO BROWSER exits 1, byte-identical to a real a11y
+#     failure. On 2026-08-22 that cost a round of "the site is broken" over
+#     fourteen tests reporting `Executable doesn't exist`. The distinction is
+#     recoverable from the output, so it is recovered rather than assumed.
+#
+# The rc is carried through a file rather than a pipeline status: this
+# Makefile's shell is /bin/sh, which has no `pipefail`, and `if cmd | tee`
+# reads tee's status — the same class of misread that reported a red web lane
+# as green on 2026-08-05 and cost the site four releases.
 # lane-inputs:
 #   web/**
 #   ui/**
@@ -120,11 +137,22 @@ test: ## Scoped race test through the owned environment. Optional: A2A_VERIFY_TE
 #   internal/html/template.html
 #   scripts/dashboard-template-drift.sh
 web-quality: ## The web stack's own quality gate (npm). NOT part of `make check` — run when web/**, ui/** or skill/** changed.
-	@if [ -d web/node_modules ]; then \
-	  npm --prefix web run check:quality && bash scripts/dashboard-template-drift.sh; \
-	else \
-	  echo "web-quality: skip — web/node_modules absent (run 'npm --prefix web ci' first)."; \
-	fi
+	@. scripts/lib/gate-lib.sh; \
+	if [ ! -d web/node_modules ]; then \
+	  gate_unmeasured "web-quality: web/node_modules is absent, so NOTHING was measured — not a11y, not Lighthouse, not the dashboard template drift. This is NOT a pass. Run 'npm --prefix web ci' and try again."; \
+	  exit $$GATE_EXIT_UNMEASURED; \
+	fi; \
+	log=$$(mktemp); rcf=$$(mktemp); \
+	{ npm --prefix web run check:quality; echo $$? >"$$rcf"; } 2>&1 | tee "$$log"; \
+	rc=$$(cat "$$rcf"); rm -f "$$rcf"; \
+	if [ "$$rc" -ne 0 ] && grep -qE "Executable doesn't exist|playwright install" "$$log"; then \
+	  rm -f "$$log"; \
+	  gate_unmeasured "web-quality: Playwright has no browser installed, so the a11y suite DID NOT RUN — this exit code is about the machine, not about the site. Run 'npx --prefix web playwright install chromium' and re-run; only then is a red here a verdict."; \
+	  exit $$GATE_EXIT_UNMEASURED; \
+	fi; \
+	rm -f "$$log"; \
+	[ "$$rc" -eq 0 ] || exit "$$rc"; \
+	bash scripts/dashboard-template-drift.sh
 
 lane-declarations: ## Every validation phase declares the inputs that can change its verdict, and reads only what it declared (P12).
 	@bash scripts/check-lane-declarations.sh
@@ -365,14 +393,36 @@ projection: ## Judge the SHIPPED suite against a faithful public projection (rel
 	  echo "projection: skip — scripts/check-projection.sh absent (public checkout); there is nothing to project inside a projection."; \
 	fi
 
+# THE TWO UNMEASURED PATHS BELOW GO THROUGH gate-lib, and until 2026-08-23 they
+# did not (release-cost-2026-08 P3). Both were wrong, in opposite directions:
+#
+#   * a MISSING govulncheck binary exited 1 — a could-not-measure reported as a
+#     measured failure, which is the one rule gate-lib's own header states. It
+#     matters more here than almost anywhere: govulncheck.yml's previous step is
+#     `go install golang.org/x/vuln/cmd/govulncheck@latest`, UNPINNED, so an
+#     install that fails produces a vulnerability-shaped red.
+#   * the incomplete-scan path printed a careful, correct sentence with a plain
+#     `echo`, so under GITHUB_ACTIONS there was no `::error::` annotation and
+#     the run showed `Process completed with exit code 2` and nothing else. A
+#     reader seeing a red `govulncheck` on a release push could not tell a
+#     network hiccup from a called CVE without opening the log — the 2026-08-22
+#     gitleaks incident, in the gate next door.
+#
+# `gate_unmeasured` emits `::error::UNMEASURED: …` on stdout under
+# GITHUB_ACTIONS and plain text otherwise, which is the only channel that
+# survives: a step has two outcomes and make collapses exit 3 into its own 2.
 vulncheck: ## govulncheck ./... gated by .govulncheck-allow.txt (NEW called vuln reds; accepted stays green). Needs network — NOT in `check`.
-	@command -v govulncheck >/dev/null 2>&1 || { echo "vulncheck: govulncheck missing — go install golang.org/x/vuln/cmd/govulncheck@latest"; exit 1; }
-	@out=$$(govulncheck ./... 2>&1); rc=$$?; \
+	@. scripts/lib/gate-lib.sh; \
+	command -v govulncheck >/dev/null 2>&1 || { \
+	  gate_unmeasured "vulncheck: govulncheck is not on PATH, so NO SCAN RAN. This is a fact about the runner, not about the code — it is NOT a clean scan and NOT a finding. Install it: go install golang.org/x/vuln/cmd/govulncheck@latest"; \
+	  exit $$GATE_EXIT_UNMEASURED; }
+	@. scripts/lib/gate-lib.sh; \
+	out=$$(govulncheck ./... 2>&1); rc=$$?; \
 	found=$$(printf '%s\n' "$$out" | grep -oE 'GO-[0-9]{4}-[0-9]+' | sort -u); \
 	if [ "$$rc" -ne 0 ] && [ -z "$$found" ]; then \
 	  printf '%s\n' "$$out"; echo; \
-	  echo "vulncheck: UNMEASURED — govulncheck exited $$rc and reported no GO-id at all, so this is a run that did not complete (network, module resolution, toolchain), NOT a clean scan. A security gate must not print 'no called vulnerabilities' over a scan it never finished."; \
-	  exit 3; \
+	  gate_unmeasured "vulncheck: govulncheck exited $$rc and reported no GO-id at all, so THE SCAN DID NOT COMPLETE (network, module resolution, toolchain) and nothing was judged. This is NOT a clean scan and NOT a called vulnerability; re-run the job."; \
+	  exit $$GATE_EXIT_UNMEASURED; \
 	fi; \
 	new=""; for id in $$found; do grep -qxF "$$id" .govulncheck-allow.txt 2>/dev/null || new="$$new $$id"; done; \
 	if [ -n "$$new" ]; then printf '%s\n' "$$out"; echo; echo "vulncheck: FAIL — NEW vulnerabilities (not in .govulncheck-allow.txt):$$new"; exit 1; fi; \
@@ -485,6 +535,14 @@ roadmap-release-decisions: ## Every feature in the newest release notes is expli
 
 provider-tier-deferral: ## A 3rd consecutive logic-proven, provider-deferred release without an intervening live-e2e run refuses to ship.
 	@bash scripts/check-provider-tier-deferral.sh
+
+# NO PRESENCE GATE, deliberately: this script is PUBLIC (classify-guard
+# ALLOW_FILES), because the class it polices — a red job whose check never ran —
+# is a public-CI concern and the workflows it reads ship. If it is ever made
+# private, it needs the `[ -f ]` guard every private gate above carries.
+unmeasured-reach: ## A gate that could not measure must SAY SO where a reader looks (release-cost-2026-08 P3).
+	@bash scripts/check-unmeasured-reach.sh
+
 
 space-template-baseline-check: ## The space template's write floor and its workflow pins name one published release (release runbook Phase 4 step 15).
 	@bash scripts/bump-space-template.sh --check
@@ -629,6 +687,7 @@ HARNESS_TEETH := \
   scripts/check-release-notes-freshness.sh \
   scripts/check-roadmap-release-decisions.sh \
   scripts/check-provider-tier-deferral.sh \
+  scripts/check-unmeasured-reach.sh \
   scripts/bump-space-template.sh \
   scripts/check-readme.sh \
   scripts/dashboard-template-drift.sh \

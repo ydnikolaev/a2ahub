@@ -47,6 +47,7 @@ scripts/*
 !scripts/check-release-record.sh
 !scripts/check-roadmap-release-decisions.sh
 !scripts/check-provider-tier-deferral.sh
+!scripts/check-unmeasured-reach.sh
 !scripts/bump-space-template.sh
 !scripts/check-gosec-scope.sh
 !scripts/check-readme.sh

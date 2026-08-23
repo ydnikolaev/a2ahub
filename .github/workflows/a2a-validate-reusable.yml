@@ -263,7 +263,15 @@ jobs:
               sleep $((attempt * 5))
             done
             if [ "$downloaded" -ne 1 ]; then
-              echo "::error::could not download a2a $A2A_REF after 3 attempts — this is the release CDN, not this space's content" >&2
+              # UNMEASURED, and the token is not decoration. A step has two
+              # outcomes, so the only thing that can carry "the check did not
+              # run" is this text — and the reader here is a space maintainer
+              # looking at a red required check on their own pull request, with
+              # no context on a2ahub's release CDN at all. Say what did NOT
+              # happen first, then whose problem it is. Same shape as
+              # gitleaks.yml, and the same literal spelling every tooth in
+              # a2ahub asserts on (release-cost-2026-08 P3).
+              echo "::error::UNMEASURED: could not download a2a $A2A_REF after 3 attempts — THIS PULL REQUEST WAS NOT VALIDATED. Nothing was found wrong with it; the a2ahub release CDN did not answer, so the validator never ran. Re-run this job." >&2
               exit 1
             fi
 
