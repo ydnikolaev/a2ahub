@@ -8754,6 +8754,41 @@
             "scope": "none",
             "why": "Nothing to do.\n"
           }
+        }
+      ]
+    },
+    {
+      "version": "0.25.3",
+      "released": "unreleased",
+      "headline": "a report read from a local mirror now says how old that mirror is",
+      "changes": [
+        {
+          "id": "RN-02503-0",
+          "kind": "fix",
+          "impact": "high",
+          "subject": "version says how old each space row's mirror is, and a stale one asks for a sync",
+          "detail": "Every space row `a2a version` prints — the write floor, the template pin, whether either is behind — is read from a LOCAL MIRROR that this command deliberately never refreshes. That is on purpose: a version report must not answer differently at 10:00 and 10:05 because a background fetch happened to land. But a snapshot with no age on it reads as current, and then \"BEHIND\" is indistinguishable from \"you already fixed this\".\nEach row now carries the mirror's age, and says NEVER SYNCED when the mirror has never been fetched at all — a different state from \"fetched a long time ago\", and rendering them the same way turns \"I have no idea\" into \"it is old\". When the mirror is stale the recommended action becomes `a2a sync`, not `a2a space update`: a stale snapshot cannot tell \"behind\" from \"already updated\", so it must not name the remedy for the first one.\n**Writes were never affected and this changes nothing about them.** The write funnel fetches before it reads the floor, so a refusal is always decided on the live value; this is about the REPORT, which is why the fix is to carry the age rather than to make the report reach the network.\nThe freshness itself is the same computation the dashboard and `a2a doctor` already render — one definition, three consumers, rather than a second answer to one question.\n",
+          "affects": [
+            "cli"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "Nothing to do. If a space row looks wrong, the row now tells you whether it is old enough to be worth a `a2a sync` first.\n"
+          }
+        },
+        {
+          "id": "RN-02503-1",
+          "kind": "feat",
+          "impact": "normal",
+          "subject": "space update names what closes the loop, and --wait does it for you",
+          "detail": "The command now says, in its own last lines, that it opened a pull request and changed nothing in the space yet, and that `a2a sync` is what makes `a2a version`, `a2a doctor` and the dashboard see the result once that PR merges.\n`a2a space update --wait` does both: it observes the pull request until the host reports it merged, then refreshes the mirror and says so. It OBSERVES and never merges, and it is opt-in rather than the default for exactly that reason — merging is the space's decision, gated by its own CI, its branch protection and sometimes by a person, and a command that blocks by default on a human gate is a hung command rather than a complete one.\nIt reuses `a2a await`'s poller rather than growing a second one, so the refusals that matter are already its state machine's: a pull request that closes without merging, and a required check that fails. Either way the branch is pushed and the PR is open, so the message says the PR is untouched and names `a2a sync` rather than telling you to run the command again. `--wait` with `--dry-run` is refused as contradictory, and a build where it is not wired refuses by name instead of accepting the flag and ignoring it.\n",
+          "affects": [
+            "cli"
+          ],
+          "action": {
+            "scope": "local",
+            "why": "Optional. `a2a space update --wait` if you want one command that ends with the mirror already updated.\n"
+          }
         },
         {
           "id": "KI-01900-PROVIDER-TIER-DEFERRED",
