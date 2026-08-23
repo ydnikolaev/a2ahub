@@ -211,25 +211,40 @@ jobs:
 
           # linux-amd64 is hardcoded against this job's own `runs-on:
           # ubuntu-latest`. If that ever becomes an arm64 runner the
-          # download 404s and the job reds loudly on the first line — which
-          # is the right failure for a wrong-architecture binary, and
-          # better than deriving an arch string that could resolve to
-          # something that runs but is not what anybody chose.
+          # download 404s and the job reds on that answer WITHOUT retrying it
+          # (see the loop below) — which is the right failure for a
+          # wrong-architecture binary, and better than deriving an arch string
+          # that could resolve to something that runs but is not what anybody
+          # chose.
           asset="a2a-linux-amd64"
           base="https://github.com/ydnikolaev/a2ahub/releases/download/$A2A_REF"
 
-          # Retried on the NETWORK half only, same shape and same reason as
-          # a2a-validate-reusable.yml's own "a2a validate --ci" step: a
-          # transient CDN read must not redden a job that has not run the
-          # space's own content yet.
+          # Retried on the NETWORK half only — TRUE since 2026-08-23, and
+          # merely intended before that. `curl -f` exits 22 on an HTTP error,
+          # and a 404 for a wrong a2a-ref or a wrong-architecture asset is an
+          # ANSWER, not a transient: retrying it bought three attempts, two
+          # warnings that said "retrying" when the cause was permanent, and
+          # ~30 s of sleep before the real reason appeared. It also made the
+          # comment above — "404s and the job reds loudly on the first line" —
+          # false for as long as both stood.
           downloaded=0
           for attempt in 1 2 3; do
-            if curl -fsSL -o "$RUNNER_TEMP/$asset" "$base/$asset" &&
-               curl -fsSL -o "$RUNNER_TEMP/$asset.cosign.bundle" "$base/$asset.cosign.bundle"; then
+            rc=0
+            curl -fsSL -o "$RUNNER_TEMP/$asset" "$base/$asset" &&
+              curl -fsSL -o "$RUNNER_TEMP/$asset.cosign.bundle" "$base/$asset.cosign.bundle" || rc=$?
+            if [ "$rc" -eq 0 ]; then
               downloaded=1
               break
             fi
-            echo "::warning::a2a download attempt $attempt/3 failed; retrying" >&2
+            if [ "$rc" -eq 22 ]; then
+              echo "::error::a2a $A2A_REF: the release CDN answered with an HTTP error for $asset — an answer, not a transient. Check that a2a-ref names a published release carrying that asset." >&2
+              exit 1
+            fi
+            # No warning and no sleep on the last attempt: there is nothing
+            # left to retry, and saying "retrying" there was a lie that also
+            # cost 15 s.
+            [ "$attempt" -lt 3 ] || break
+            echo "::warning::a2a download attempt $attempt/3 failed (curl exit $rc); retrying" >&2
             sleep $((attempt * 5))
           done
           if [ "$downloaded" -ne 1 ]; then

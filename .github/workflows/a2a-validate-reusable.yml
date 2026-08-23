@@ -237,14 +237,29 @@ jobs:
             # cannot complete is the internet, a signature that does not verify
             # is not — and retrying a verification failure would turn one loud
             # refusal into three and teach the reader to scroll past it.
+            #
+            # AN HTTP ANSWER IS NOT THE INTERNET EITHER, and until 2026-08-23
+            # this loop treated it as such. `curl -f` exits 22 on an HTTP
+            # error, so a 404 from a wrong a2a-ref got three attempts, two
+            # warnings claiming a retry for a permanent cause, and ~30 s of
+            # sleep before the real reason was printed.
             downloaded=0
             for attempt in 1 2 3; do
-              if curl -fsSL -o "$RUNNER_TEMP/$asset" "$base/$asset" &&
-                 curl -fsSL -o "$RUNNER_TEMP/$asset.cosign.bundle" "$base/$asset.cosign.bundle"; then
+              rc=0
+              curl -fsSL -o "$RUNNER_TEMP/$asset" "$base/$asset" &&
+                curl -fsSL -o "$RUNNER_TEMP/$asset.cosign.bundle" "$base/$asset.cosign.bundle" || rc=$?
+              if [ "$rc" -eq 0 ]; then
                 downloaded=1
                 break
               fi
-              echo "::warning::a2a download attempt $attempt/3 failed; retrying" >&2
+              if [ "$rc" -eq 22 ]; then
+                echo "::error::a2a $A2A_REF: the release CDN answered with an HTTP error for $asset — an answer, not a transient. Check that a2a-ref names a published release carrying that asset." >&2
+                exit 1
+              fi
+              # No warning and no sleep on the last attempt: nothing is left to
+              # retry, and saying "retrying" there was a lie that cost 15 s.
+              [ "$attempt" -lt 3 ] || break
+              echo "::warning::a2a download attempt $attempt/3 failed (curl exit $rc); retrying" >&2
               sleep $((attempt * 5))
             done
             if [ "$downloaded" -ne 1 ]; then

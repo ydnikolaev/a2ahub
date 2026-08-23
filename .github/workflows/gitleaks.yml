@@ -65,15 +65,60 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
-      - name: Install gitleaks (pinned by digest, not by tag)
+      # NAME CORRECTED 2026-08-23. It read "pinned by digest, not by tag",
+      # which describes neither half of what happens: the URL names a VERSION
+      # TAG, and the digest is asserted AFTER the download by sha256sum. Both
+      # are good; the name simply was not either of them.
+      - name: Install gitleaks (version-pinned URL, digest checked after download)
         env:
           GITLEAKS_VERSION: 8.30.1
           GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
         run: |
           set -euo pipefail
           archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          curl -fsSL -o "$archive" \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+
+          # RETRIED ON THE NETWORK HALF ONLY, added 2026-08-23 after a
+          # `curl: (35) Recv failure: Connection reset by peer` on the release
+          # push for v0.25.2. Nothing was leaked and nothing was wrong: the
+          # scan never ran. This job reported that identically to a finding,
+          # and a red secret-scan on a release push is read as a leak until
+          # somebody opens the log.
+          #
+          # Same shape as the `Install a2a` steps in the two reusable
+          # workflows, and with their 2026-08-23 correction built in rather
+          # than copied around it: `curl -f` exits 22 on an HTTP ERROR, which
+          # is an answer — a wrong version pin must red on that answer, not be
+          # retried three times.
+          downloaded=0
+          for attempt in 1 2 3; do
+            rc=0
+            curl -fsSL -o "$archive" "$url" || rc=$?
+            if [ "$rc" -eq 0 ]; then
+              downloaded=1
+              break
+            fi
+            if [ "$rc" -eq 22 ]; then
+              echo "::error::gitleaks ${GITLEAKS_VERSION}: the download URL answered with an HTTP error — an answer, not a transient. Check GITLEAKS_VERSION names a published release carrying ${archive}." >&2
+              exit 1
+            fi
+            [ "$attempt" -lt 3 ] || break
+            echo "::warning::gitleaks download attempt $attempt/3 failed (curl exit $rc); retrying" >&2
+            sleep $((attempt * 5))
+          done
+
+          # UNMEASURED, said in the only channel that survives. A GitHub
+          # Actions step has exactly two outcomes, and `make`'s own collapse of
+          # exit 3 into 2 means no exit code can carry the distinction either
+          # (scripts/verify.sh's run_phase records it in telemetry for the same
+          # reason). So the TEXT has to: a reader seeing this job red must be
+          # able to tell "the scanner never ran" from "the scanner found
+          # something" without opening the log.
+          if [ "$downloaded" -ne 1 ]; then
+            echo "::error::UNMEASURED: could not fetch gitleaks after 3 attempts — the secret scan DID NOT RUN. This is the download, not a finding; re-run the job." >&2
+            exit 1
+          fi
+
           echo "${GITLEAKS_SHA256}  ${archive}" | sha256sum --check --strict
           tar -xzf "$archive" gitleaks
           sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
