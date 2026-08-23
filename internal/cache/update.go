@@ -203,6 +203,30 @@ type SpaceVersion struct {
 	// cache) it stays false: "I could not measure this" must never render as
 	// "this is fine" OR as "this is wrong".
 	TemplateBehind bool `json:"template_behind"`
+
+	// EVERY ROW ABOVE IS READ FROM A LOCAL MIRROR, AND A MIRROR LAGS. `a2a
+	// version` never touches the network — deliberately, so the same command
+	// cannot answer differently at 10:00 and 10:05 — which means these are
+	// facts about a SNAPSHOT, and a snapshot with no age on it reads as
+	// current.
+	//
+	// It cost real confusion on 2026-08-23: `a2a space update` opened a PR,
+	// the PR merged, the space was on the new template, and this command still
+	// said BEHIND and still recommended `a2a space update` — the command the
+	// operator had just run. The mirror was simply older than the merge.
+	//
+	// Writes are unaffected and never were: the funnel fetches before it reads
+	// the floor (space.WorkRuntime.refresh), so a refusal is always decided on
+	// the live value. This is about the REPORT, which is why the fix is to
+	// carry the age rather than to make the report reach the network.
+	SyncAge time.Duration `json:"sync_age_seconds"`
+	// Synced is false when this mirror has never been fetched at all — a
+	// different state from "fetched a long time ago", and rendering them the
+	// same way is how "I have no idea" becomes "it is old".
+	Synced bool `json:"synced"`
+	// Stale is true when the mirror was never synced, or its last sync is
+	// older than the store's freshness window.
+	Stale bool `json:"stale"`
 }
 
 // VersionReport is what `a2a version` prints and `a2a doctor` judges: the
@@ -244,6 +268,12 @@ func (s *Store) VersionReport(binaryVersion string, workflowPin func(dir string)
 				}
 			}
 		}
+		// One definition of mirror freshness, shared with SpaceSyncFacts —
+		// the dashboard and doctor already render it, and a second
+		// computation here would be a second answer to one question.
+		age, synced := mirrorSyncAge(s.now(), sm.Dir)
+		row.SyncAge, row.Synced = age, synced
+		row.Stale = !synced || age > s.ttl
 		report.Spaces = append(report.Spaces, row)
 	}
 	return report

@@ -45,6 +45,26 @@ func requireFrozenStampOnStdout(t *testing.T, stdout, wantStamp string) {
 // versionFixture builds a mirror directory carrying a space.yaml floor and a
 // pinned a2a-validate.yml, which is exactly what a real mirror carries and
 // what the two version axes are read from.
+// markMirrorSynced makes a fixture mirror look freshly fetched, which is what
+// `mirrorSyncAge` reads. Without it every fixture is a NEVER-SYNCED mirror,
+// and a never-synced mirror deliberately refuses to recommend acting on what
+// it shows — so a test asserting the "behind → a2a space update" remedy must
+// say that its snapshot is current.
+func markMirrorSynced(t *testing.T, dir string, at time.Time) {
+	t.Helper()
+	gitDir := filepath.Join(dir, ".git")
+	if err := os.MkdirAll(gitDir, 0o750); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
+	head := filepath.Join(gitDir, "FETCH_HEAD")
+	if err := os.WriteFile(head, []byte("0000000000000000000000000000000000000000\n"), 0o600); err != nil {
+		t.Fatalf("write FETCH_HEAD: %v", err)
+	}
+	if err := os.Chtimes(head, at, at); err != nil {
+		t.Fatalf("chtimes FETCH_HEAD: %v", err)
+	}
+}
+
 func versionFixture(t *testing.T, floor, pin string) (dir string, manifest space.Manifest) {
 	t.Helper()
 	dir = t.TempDir()
@@ -129,6 +149,9 @@ func TestVersionCommand_FloorMetButTemplateBehind(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
 	dir, manifest := versionFixture(t, "0.23.0", "v0.23.0")
+	// A CURRENT snapshot, so "behind" is a claim worth acting on and the
+	// remedy below is the space update rather than a sync.
+	markMirrorSynced(t, dir, now.Add(-time.Minute))
 	store := versionStore(t, "0.25.0", now, []cache.SpaceMirror{{SpaceID: "axon", Dir: dir, Manifest: manifest}})
 
 	cmd := &cli.VersionCommand{Stamp: "a2a 0.23.0 (abc1234)", BinaryVersion: "0.23.0", Store: store, Now: func() time.Time { return now }}
@@ -232,5 +255,39 @@ func TestVersionCommand_JSONCarriesBothAxes(t *testing.T) {
 	}
 	if len(report.Spaces) != 1 || !report.Spaces[0].TemplateBehind || !report.Spaces[0].FloorMet {
 		t.Fatalf("space axis wrong: %+v", report.Spaces)
+	}
+}
+
+// A STALE MIRROR CANNOT TELL "BEHIND" FROM "ALREADY UPDATED".
+//
+// Every space row `a2a version` prints is read from a local mirror the command
+// deliberately never refreshes. On 2026-08-23 that produced the worst possible
+// output: an operator ran `a2a space update`, merged its PR, and was then told
+// the space was still BEHIND and that the remedy was to run the command they
+// had just run. Nothing was broken; the mirror was simply older than the merge.
+func TestVersionCommand_StaleMirrorSaysSyncNotSpaceUpdate(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
+	dir, manifest := versionFixture(t, "0.23.0", "v0.22.0")
+	store := versionStore(t, "0.25.0", now, []cache.SpaceMirror{{SpaceID: "axon", Dir: dir, Manifest: manifest}})
+
+	cmd := &cli.VersionCommand{Stamp: "a2a 0.25.0 (abc1234)", BinaryVersion: "0.25.0", Store: store, Now: func() time.Time { return now }}
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), nil, io); code != 0 {
+		t.Fatalf("Run: code = %d, want 0", code)
+	}
+	got := errOut.String()
+	requireFrozenStampOnStdout(t, out.String(), cmd.Stamp)
+
+	// The fixture's mirror is a bare temp dir: never fetched, which is a
+	// DIFFERENT state from "fetched long ago" and must read as such.
+	if !strings.Contains(got, "NEVER SYNCED") {
+		t.Errorf("a mirror that was never fetched must say so:\n%s", got)
+	}
+	if !strings.Contains(got, "a2a sync") {
+		t.Errorf("a stale mirror's remedy is to sync, not to act on what it shows:\n%s", got)
+	}
+	if strings.Contains(got, "a2a space update    —") {
+		t.Errorf("a stale mirror must not recommend acting on a snapshot:\n%s", got)
 	}
 }

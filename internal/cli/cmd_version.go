@@ -144,7 +144,7 @@ func (c *VersionCommand) render(stdio IO, report cache.VersionReport) {
 			}
 		}
 		for _, sp := range report.Spaces {
-			_, _ = fmt.Fprintf(out, "  %-*s  %s   %s\n", width, sp.ID, floorPhrase(sp), templatePhrase(sp))
+			_, _ = fmt.Fprintf(out, "  %-*s  %s   %s   %s\n", width, sp.ID, floorPhrase(sp), templatePhrase(sp), mirrorPhrase(sp))
 		}
 	}
 
@@ -155,15 +155,64 @@ func (c *VersionCommand) render(stdio IO, report cache.VersionReport) {
 		actions = append(actions, fmt.Sprintf("a2a update    — install %s", report.Update.Latest))
 	}
 	for _, sp := range report.Spaces {
-		if sp.TemplateBehind {
-			actions = append(actions, fmt.Sprintf("a2a space update    — %q pins the a2ahub template at v%s, and v%s is published", sp.ID, sp.TemplatePin, report.Update.Latest))
+		if !sp.TemplateBehind {
+			continue
 		}
+		// A STALE MIRROR CANNOT TELL "BEHIND" FROM "ALREADY UPDATED", so it
+		// must not name the remedy for the first one. On 2026-08-23 this line
+		// told an operator to run `a2a space update` immediately after they
+		// had run it and merged its PR: the update had landed, the mirror had
+		// not been fetched since, and the row was a fact about a snapshot.
+		// Syncing is what turns the snapshot into an answer; only then is
+		// "behind" a claim worth acting on.
+		if sp.Stale {
+			actions = append(actions, fmt.Sprintf("a2a sync    — %q looks behind, but this mirror %s, so that is a fact about a snapshot; sync, then read this row again", sp.ID, mirrorAgePhrase(sp)))
+			continue
+		}
+		actions = append(actions, fmt.Sprintf("a2a space update    — %q pins the a2ahub template at v%s, and v%s is published", sp.ID, sp.TemplatePin, report.Update.Latest))
 	}
 	if len(actions) > 0 {
 		_, _ = fmt.Fprintln(out)
 		for _, a := range actions {
 			_, _ = fmt.Fprintf(out, "  %s\n", a)
 		}
+	}
+}
+
+// mirrorPhrase is the fourth column, and it exists because the other three are
+// read from a local mirror that `a2a version` deliberately never refreshes.
+// Without it the row says "BEHIND" with the same confidence whether the mirror
+// was fetched a second ago or a week ago.
+func mirrorPhrase(sp cache.SpaceVersion) string {
+	if !sp.Synced {
+		return "mirror NEVER SYNCED"
+	}
+	if sp.Stale {
+		return "mirror " + humanizeMirrorAge(sp.SyncAge) + " old — STALE"
+	}
+	return "mirror " + humanizeMirrorAge(sp.SyncAge) + " old"
+}
+
+// mirrorAgePhrase is the same fact in a sentence, for the action lines. The
+// age is computed once, in the store, next to the mirror it describes — the
+// renderer needs no clock of its own.
+func mirrorAgePhrase(sp cache.SpaceVersion) string {
+	if !sp.Synced {
+		return "has never been synced"
+	}
+	return "was last synced " + humanizeMirrorAge(sp.SyncAge) + " ago"
+}
+
+func humanizeMirrorAge(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return "less than a minute"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	}
 }
 
