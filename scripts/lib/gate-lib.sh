@@ -206,9 +206,39 @@ gate_summary() {
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   set -uo pipefail
 
+  # --unmeasured — THE ONE THING A MAKE RECIPE CAN USE.
+  #
+  # A recipe cannot `source` this file. GNU make runs every recipe under
+  # `/bin/sh`, and this Makefile's own header states the rule it lives by:
+  # "Recipes are POSIX sh — no bashisms — even though the gate scripts they
+  # call are bash (invoked explicitly via `bash`, never relying on $(SHELL))."
+  # Line 32 above is `${BASH_SOURCE[0]%/*}`, which dash refuses outright —
+  # `/bin/sh: Bad substitution`. On macOS `/bin/sh` IS bash 3.2, so a recipe
+  # that sourced this worked here and died on every Linux host: CI's runners,
+  # the parity container, and therefore `make check` and `make release-check`.
+  # Three recipes were written that way on 2026-08-23 and reproduced under
+  # `/bin/dash` before this entry point existed.
+  #
+  # So the library keeps its one job and gains one PUBLIC verb instead: print
+  # the UNMEASURED annotation, in whichever format the environment calls for,
+  # and exit 3. A recipe reaches it the way the header prescribes — through
+  # `bash`, explicitly — with no quoting gymnastics and no second spelling of
+  # the token.
+  if [ "${1:-}" = "--unmeasured" ]; then
+    shift
+    if [ "$#" -eq 0 ]; then
+      echo "gate-lib.sh --unmeasured needs a message: what did NOT happen, and whose problem it is." >&2
+      exit 2
+    fi
+    gate_unmeasured "$*"
+    exit "$GATE_EXIT_UNMEASURED"
+  fi
+
   if [ "${1:-}" != "--teeth" ]; then
     echo "gate-lib.sh is a library — source it, do not run it." >&2
-    echo "The only valid direct invocation is: bash ${BASH_SOURCE[0]} --teeth" >&2
+    echo "The only valid direct invocations are:" >&2
+    echo "  bash ${BASH_SOURCE[0]} --teeth" >&2
+    echo "  bash ${BASH_SOURCE[0]} --unmeasured \"<what did not happen>\"" >&2
     exit 2
   fi
 

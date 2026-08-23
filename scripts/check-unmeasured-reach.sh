@@ -260,6 +260,51 @@ run_check() {
     gate_fail "unmeasured-reach: $tgpath:$tgline treats an ABSENT TOOL as a measured failure. \`exit 1\` there says the check ran and refused; what happened is that it never ran. Use \`gate_unmeasured\` and exit \$GATE_EXIT_UNMEASURED, so the reader can tell 'not installed' from 'found something'. If the file is not a gate, add an arm to tool_guard_excuse()."
   done < <(tool_guards)
 
+  # ── check 5 — A RECIPE REACHES gate-lib THROUGH bash, NEVER BY SOURCING ────
+  #
+  # THE MECHANISM EVERYTHING ABOVE DEPENDS ON, AND IT WAS BROKEN FOR HALF A
+  # DAY. Three recipes were written as `@. scripts/lib/gate-lib.sh; …` so they
+  # could call `gate_unmeasured`. GNU make runs every recipe under `/bin/sh`,
+  # and gate-lib's first executable line is `${BASH_SOURCE[0]%/*}` — which dash
+  # refuses outright: `/bin/sh: Bad substitution`.
+  #
+  # On macOS `/bin/sh` IS bash 3.2, so it worked on the machine it was written
+  # on and died on every Linux host: CI's runners, the parity container, and
+  # therefore `make check` and `make release-check`. `workflow-lint` is a
+  # REPO_GATES member, so the ceiling itself was red everywhere it matters.
+  # Reproduced with `make SHELL=/bin/dash workflow-lint` before this check
+  # existed; the Makefile's own header had stated the rule all along —
+  # "Recipes are POSIX sh — no bashisms — even though the gate scripts they
+  # call are bash (invoked explicitly via `bash`, never relying on $(SHELL))".
+  #
+  # And the failure mode was this gate's own subject: sourcing dies BEFORE
+  # `gate_unmeasured` is defined, so the recipe cannot route through it and the
+  # reader sees a bare `make Error 2` with no annotation at all. The P3
+  # mechanism was unreachable in precisely the recipes meant to demonstrate it.
+  #
+  # `bash scripts/lib/gate-lib.sh --unmeasured "<what did not happen>"` is the
+  # supported entry, and it is what a POSIX recipe uses.
+  #
+  # THE PREDICATE ASKS THE SIMPLE QUESTION ON PURPOSE: a recipe line naming
+  # gate-lib must invoke it through `bash`. The first version tried to match
+  # the sourcing form directly and matched NOTHING — the real lines read
+  # `\t@. scripts/…`, and `@` is not a separator the pattern allowed, so the
+  # check was vacuous from birth. Its own tooth caught that, which is the only
+  # reason it is not still vacuous. "Must be reached this way" is both easier
+  # to get right and wider than "must not be reached that way".
+  local mk n mkbad=0
+  if [ -f "$ROOT/Makefile" ]; then
+    while IFS= read -r n; do
+      [ -n "$n" ] || continue
+      mkbad=1
+      mk="$(sed -n "${n}p" "$ROOT/Makefile")"
+      gate_fail "unmeasured-reach: Makefile:$n names gate-lib in a RECIPE without invoking it through \`bash\`. make runs recipes under /bin/sh; on Linux that is dash, and gate-lib's \`\${BASH_SOURCE[0]%/*}\` is a Bad substitution there — so a sourcing recipe dies BEFORE gate_unmeasured exists and the reader gets a bare \`make Error 2\`. Reproduce with: make SHELL=/bin/dash <target>. Use instead: bash scripts/lib/gate-lib.sh --unmeasured \"<what did not happen>\". The line is: ${mk# }"
+    done < <(grep -nE '^\t.*gate-lib\.sh' "$ROOT/Makefile" |
+               grep -vE 'bash[[:space:]]+[^[:space:]]*gate-lib\.sh' |
+               cut -d: -f1)
+  fi
+  [ "$mkbad" -eq 0 ] && gate_ok "unmeasured-reach: no Makefile recipe sources gate-lib; every one that needs it goes through bash, as the Makefile's own header requires"
+
   # ── check 3 — an excuse must still excuse something ────────────────────────
   #
   # A permanent exemption for a file that no longer produces an unmeasured
@@ -393,6 +438,27 @@ run_teeth() {
     echo "unmeasured-reach --teeth: T6 — the same guard via gate_unmeasured passes, so T5 is about the verdict and not about the guard"
   fi
 
+  # T8 — A RECIPE THAT SOURCES gate-lib IS REFUSED, and T9 is its inverse.
+  # This is the shape that made `make check` red on every Linux host while
+  # passing on the machine it was written on.
+  printf 'x:\n\t@. scripts/lib/gate-lib.sh; gate_unmeasured "nope"\n' >"$tmp/Makefile"
+  _t
+  if [ "$rc" -eq 0 ] || ! grep -qF 'names gate-lib in a RECIPE without invoking it through' <<<"$out"; then
+    echo "unmeasured-reach --teeth: FAILED — T8: a recipe sourcing gate-lib must be refused (rc=$rc)" >&2; echo "$out" >&2; fail=1
+  else
+    echo "unmeasured-reach --teeth: T8 — a Makefile recipe that sources gate-lib is refused; make runs recipes under /bin/sh and gate-lib is bash-only"
+  fi
+
+  # T9 — and the supported form passes, so T8 is about the sourcing and not
+  # about the recipe mentioning gate-lib at all.
+  printf 'x:\n\t@bash scripts/lib/gate-lib.sh --unmeasured "nothing ran"\n' >"$tmp/Makefile"
+  _t
+  if [ "$rc" -ne 0 ]; then
+    echo "unmeasured-reach --teeth: FAILED — T9: the bash entry point must pass, or T8 proved nothing (rc=$rc)" >&2; echo "$out" >&2; fail=1
+  else
+    echo "unmeasured-reach --teeth: T9 — the same recipe via \`bash gate-lib.sh --unmeasured\` passes, so T8 is about how it is reached"
+  fi
+
   # T7 — AN EXCUSE THAT EXCUSES NOTHING IS REFUSED. The arm that keeps both
   # exemption lists honest, and the one a reader would otherwise never check.
   # Pointed at the absent-tool list because the UNMEASURED list is empty, which
@@ -415,7 +481,7 @@ run_teeth() {
   fi
 
   [ "$fail" -eq 0 ] || { echo "unmeasured-reach --teeth: FAIL" >&2; exit 1; }
-  echo "unmeasured-reach --teeth: 7 case(s) green."
+  echo "unmeasured-reach --teeth: 9 case(s) green."
 }
 
 case "${1:-check}" in

@@ -137,18 +137,15 @@ test: ## Scoped race test through the owned environment. Optional: A2A_VERIFY_TE
 #   internal/html/template.html
 #   scripts/dashboard-template-drift.sh
 web-quality: ## The web stack's own quality gate (npm). NOT part of `make check` — run when web/**, ui/** or skill/** changed.
-	@. scripts/lib/gate-lib.sh; \
-	if [ ! -d web/node_modules ]; then \
-	  gate_unmeasured "web-quality: web/node_modules is absent, so NOTHING was measured — not a11y, not Lighthouse, not the dashboard template drift. This is NOT a pass. Run 'npm --prefix web ci' and try again."; \
-	  exit $$GATE_EXIT_UNMEASURED; \
+	@if [ ! -d web/node_modules ]; then \
+	  bash scripts/lib/gate-lib.sh --unmeasured "web-quality: web/node_modules is absent, so NOTHING was measured — not a11y, not Lighthouse, not the dashboard template drift. This is NOT a pass. Run 'npm --prefix web ci' and try again."; \
 	fi; \
 	log=$$(mktemp); rcf=$$(mktemp); \
 	{ npm --prefix web run check:quality; echo $$? >"$$rcf"; } 2>&1 | tee "$$log"; \
 	rc=$$(cat "$$rcf"); rm -f "$$rcf"; \
 	if [ "$$rc" -ne 0 ] && grep -qE "Executable doesn't exist|playwright install" "$$log"; then \
 	  rm -f "$$log"; \
-	  gate_unmeasured "web-quality: Playwright has no browser installed, so the a11y suite DID NOT RUN — this exit code is about the machine, not about the site. Run 'npx --prefix web playwright install chromium' and re-run; only then is a red here a verdict."; \
-	  exit $$GATE_EXIT_UNMEASURED; \
+	  bash scripts/lib/gate-lib.sh --unmeasured "web-quality: Playwright has no browser installed, so the a11y suite DID NOT RUN — this exit code is about the machine, not about the site. Run 'npx --prefix web playwright install chromium' and re-run; only then is a red here a verdict."; \
 	fi; \
 	rm -f "$$log"; \
 	[ "$$rc" -eq 0 ] || exit "$$rc"; \
@@ -194,9 +191,8 @@ workflow-lint: ## Every GitHub Action `uses:` must be SHA-pinned (defeats tag-hi
 # which claims the workflows were linted and found wanting; what actually
 # happened is that nothing was linted. Same rule the gate next door already
 # followed, in the gate that lints the workflows CI runs.
-	@. scripts/lib/gate-lib.sh; command -v actionlint >/dev/null 2>&1 || { \
-	  gate_unmeasured "workflow-lint: actionlint is not on PATH, so THE WORKFLOWS WERE NOT LINTED. Nothing was found wrong with them. Install it: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"; \
-	  exit $$GATE_EXIT_UNMEASURED; }
+	@command -v actionlint >/dev/null 2>&1 || \
+	  bash scripts/lib/gate-lib.sh --unmeasured "workflow-lint: actionlint is not on PATH, so THE WORKFLOWS WERE NOT LINTED. Nothing was found wrong with them. Install it: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"
 	@actionlint
 
 gosec-scope: ## G204/G304 stay live outside the exact reviewed path allowlist.
@@ -418,17 +414,13 @@ projection: ## Judge the SHIPPED suite against a faithful public projection (rel
 # GITHUB_ACTIONS and plain text otherwise, which is the only channel that
 # survives: a step has two outcomes and make collapses exit 3 into its own 2.
 vulncheck: ## govulncheck ./... gated by .govulncheck-allow.txt (NEW called vuln reds; accepted stays green). Needs network — NOT in `check`.
-	@. scripts/lib/gate-lib.sh; \
-	command -v govulncheck >/dev/null 2>&1 || { \
-	  gate_unmeasured "vulncheck: govulncheck is not on PATH, so NO SCAN RAN. This is a fact about the runner, not about the code — it is NOT a clean scan and NOT a finding. Install it: go install golang.org/x/vuln/cmd/govulncheck@latest"; \
-	  exit $$GATE_EXIT_UNMEASURED; }
-	@. scripts/lib/gate-lib.sh; \
-	out=$$(govulncheck ./... 2>&1); rc=$$?; \
+	@command -v govulncheck >/dev/null 2>&1 || \
+	  bash scripts/lib/gate-lib.sh --unmeasured "vulncheck: govulncheck is not on PATH, so NO SCAN RAN. This is a fact about the runner, not about the code — it is NOT a clean scan and NOT a finding. Install it: go install golang.org/x/vuln/cmd/govulncheck@latest"
+	@out=$$(govulncheck ./... 2>&1); rc=$$?; \
 	found=$$(printf '%s\n' "$$out" | grep -oE 'GO-[0-9]{4}-[0-9]+' | sort -u); \
 	if [ "$$rc" -ne 0 ] && [ -z "$$found" ]; then \
 	  printf '%s\n' "$$out"; echo; \
-	  gate_unmeasured "vulncheck: govulncheck exited $$rc and reported no GO-id at all, so THE SCAN DID NOT COMPLETE (network, module resolution, toolchain) and nothing was judged. This is NOT a clean scan and NOT a called vulnerability; re-run the job."; \
-	  exit $$GATE_EXIT_UNMEASURED; \
+	  bash scripts/lib/gate-lib.sh --unmeasured "vulncheck: govulncheck exited $$rc and reported no GO-id at all, so THE SCAN DID NOT COMPLETE (network, module resolution, toolchain) and nothing was judged. This is NOT a clean scan and NOT a called vulnerability; re-run the job."; \
 	fi; \
 	new=""; for id in $$found; do grep -qxF "$$id" .govulncheck-allow.txt 2>/dev/null || new="$$new $$id"; done; \
 	if [ -n "$$new" ]; then printf '%s\n' "$$out"; echo; echo "vulncheck: FAIL — NEW vulnerabilities (not in .govulncheck-allow.txt):$$new"; exit 1; fi; \

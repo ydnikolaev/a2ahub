@@ -422,6 +422,17 @@ repeat_guard() {
     [ -n "$bill" ] && echo "        Already spent: $bill." >&2
     echo "        Iterate with: $(cheaper_than "$MODE")" >&2
     echo "        Run it anyway with: VERIFY_AGAIN=1 make $(make_target_for "$MODE")   (it will say that you did)" >&2
+    # NOTHING RAN, SO NOTHING MAY BE RECORDED. `trap finish EXIT` is installed
+    # before this function is called, so this `exit` fires finish(), which sees
+    # RUN_TREE and RUN_STARTED_MS both set and would append `run:<mode> fail`
+    # for a run that never happened. The next invocation would then read that
+    # `fail`, find the `verdict = pass` clause false, and DISPATCH — with no
+    # VERIFY_AGAIN=1 and no BYPASSED line. A straight retry would slip through
+    # every other time, silently, which is precisely what the escape exists to
+    # make visible. It would also count each refusal into todays_bill as an
+    # expensive run. Found by review, reproduced by tooth P2h, which is the
+    # only one here that goes through the trap rather than around it.
+    REPEAT_REFUSED=1
     exit 1
   fi
   [ -n "$bill" ] && echo "verify: \`$MODE\` — $bill. Iterate with: $(cheaper_than "$MODE")"
@@ -434,7 +445,13 @@ finish() {
   # THE RUN RECORD, written before the trim so it ages out with everything
   # else. It is what repeat_guard reads next time, and it is the ONLY new
   # thing P2 writes anywhere.
-  if [ -n "${RUN_TREE:-}" ] && [ -n "${RUN_STARTED_MS:-}" ]; then
+  #
+  # REPEAT_REFUSED is the guard saying "I refused; nothing ran". Without that
+  # third condition the refusal's own `exit 1` lands here and records a failed
+  # run, which the next invocation reads as "the last attempt was not a pass"
+  # and lets through — the guard defeating itself on alternate attempts. Tooth
+  # P2h holds it, by running the whole trap sequence three times.
+  if [ -n "${RUN_TREE:-}" ] && [ -n "${RUN_STARTED_MS:-}" ] && [ -z "${REPEAT_REFUSED:-}" ]; then
     if [ "$command_status" -eq 0 ]; then
       append_telemetry "run:$MODE" pass "$(( $(now_ms) - RUN_STARTED_MS ))"
     else
@@ -1156,9 +1173,41 @@ run_teeth() {
     ROOT="$save_root"; VERIFY_ROOT="$save_vroot"; MODE="$save_mode"; RUN_TREE="$save_tree"; rm -rf "$rg"; return 1
   fi
 
+  # T-P2h — THE REFUSAL MUST NOT LOOK LIKE A RUN, and every previous tooth here
+  # was blind to it because `_rg` calls the guard inside a command
+  # substitution: `exit 1` leaves only that subshell, and `trap finish EXIT` is
+  # not installed there. In a real invocation the trap IS installed (two lines
+  # above the guard's call site), so the refusal's own `exit 1` fires finish(),
+  # which sees RUN_TREE and RUN_STARTED_MS both set and appends
+  # `run:<mode> fail` for a run that never happened.
+  #
+  # The consequence is the guard defeating itself on alternate attempts: the
+  # next invocation reads that `fail`, the `verdict = pass` clause is false,
+  # and it dispatches — with no VERIFY_AGAIN=1 and no BYPASSED line. A bypass
+  # nobody can see in a transcript is the exact thing P2d exists to forbid.
+  #
+  # So this exercises the WHOLE sequence, trap included, three times over one
+  # unchanged tree: run, refuse, refuse. The third is the assertion.
+  local n3 refusals=0
+  : >"$rgt/telemetry.jsonl"
+  for n3 in 1 2 3; do
+    ( trap finish EXIT
+      RUN_STARTED_MS="$(now_ms)"
+      VERIFY_AGAIN="" GITHUB_ACTIONS="" repeat_guard
+      true ) >/dev/null 2>&1 || refusals=$((refusals + 1))
+  done
+  if [ "$refusals" -ne 2 ]; then
+    echo "verify --teeth: FAIL — P2h: over ONE unchanged tree, run/refuse/refuse must give 2 refusals; got $refusals. A refusal recorded as a run lets every other retry through silently." >&2
+    ROOT="$save_root"; VERIFY_ROOT="$save_vroot"; MODE="$save_mode"; RUN_TREE="$save_tree"; rm -rf "$rg"; return 1
+  fi
+  if grep -q '"gate":"run:full","verdict":"fail"' "$rgt/telemetry.jsonl"; then
+    echo "verify --teeth: FAIL — P2h: a REFUSAL was recorded as a failed run. Nothing ran, so nothing may be recorded — and the next invocation reads that record and dispatches." >&2
+    ROOT="$save_root"; VERIFY_ROOT="$save_vroot"; MODE="$save_mode"; RUN_TREE="$save_tree"; rm -rf "$rg"; return 1
+  fi
+
   ROOT="$save_root"; VERIFY_ROOT="$save_vroot"; MODE="$save_mode"; RUN_TREE="$save_tree"
   rm -rf "$rg"
-  echo "verify --teeth: the repetition guard refuses a byte-identical tree that already passed, clears when a file already in the delta is EDITED (not renamed), announces its own bypass, never blocks a re-run after a red, never meets a runner, and can only refuse or dispatch."
+  echo "verify --teeth: the repetition guard refuses a byte-identical tree that already passed, clears when a file already in the delta is EDITED (not renamed), announces its own bypass, never blocks a re-run after a red, never meets a runner, can only refuse or dispatch, and does not record its own refusal as a run — so a straight retry does not slip through every other time."
 
   echo "verify --teeth: owned root accepted by construction; symlink and foreign residue refused; scoped tests reject stale binaries; target preserved; red status recorded and returned; lane strict mode refuses an empty or misspelled input and stays out of the way of a clean-tree default; a derived phase the runner cannot execute is refused by name rather than dropped, every repo gate is dispatchable so that refusal cannot fire on a working one, and the ship tier is both derived and deferred."
 }
