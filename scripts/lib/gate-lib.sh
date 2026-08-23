@@ -92,6 +92,24 @@ gate_fail() {
 # message CONTENT, which is what teeth may safely assert.
 gate_unmeasured() {
   _GATE_UNMEASURED=$((_GATE_UNMEASURED + 1))
+  # A MARKER FOR THE LAYER THAT CANNOT SEE THE EXIT CODE (release-cost-2026-08
+  # P3). verify.sh's run_phase files a phase as `unmeasured` rather than `fail`
+  # by testing for exit 3 — and it invokes every REPO_GATES member as
+  # `make <gate>`, so GNU make has already collapsed that 3 into its own 2
+  # before run_phase can read it. Measured 2026-08-23: the gate script alone
+  # exits 3, the same gate through make exits 2. So the three-verdict logic was
+  # DEAD for every repo gate, and the distinction verify.sh's own comment says
+  # "the TELEMETRY has to carry" was not in the telemetry.
+  #
+  # An environment variable crosses that boundary where an exit code cannot:
+  # run_phase points it at a scratch path, this appends, run_phase reads it
+  # afterwards. Absent variable = no marker = every non-verify caller behaves
+  # exactly as before. Best-effort by construction — a marker that could not be
+  # written must never turn a gate red, which would be this function's own
+  # subject in reverse.
+  if [ -n "${A2A_UNMEASURED_MARKER:-}" ]; then
+    printf '%s\n' "$*" >>"$A2A_UNMEASURED_MARKER" 2>/dev/null || true
+  fi
   if _gate_ci; then echo "::error::UNMEASURED: $*"; else echo "${GATE_RED}UNMEASURED${GATE_NC} $*" >&2; fi
 }
 

@@ -43,10 +43,20 @@
 #      producer to the rule, including local-only ones — STRICTER than the
 #      question, never weaker, and cheap to satisfy since gate_unmeasured is
 #      how one writes it anyway.
-#   3. A NEW SHAPE OF NOT-MEASURING that uses none of the tokens below. Check 2
-#      narrows the one shape that has actually bitten (a download loop that
-#      exhausts its retries), but a fourth costume would be invisible until
-#      somebody meets it.
+#   3. A NEW SHAPE OF NOT-MEASURING that uses none of the tokens below. Checks
+#      2 and 4 narrow the two shapes that have actually bitten — a download
+#      loop that exhausts its retries, and `command -v X || exit 1` — but a
+#      fourth costume would be invisible until somebody meets it. Check 4 also
+#      reads only the SINGLE-LINE guard form; the multi-line
+#      `if ! command -v …; then` was converted by hand and is not policed.
+#   4. CHECK 4 CANNOT TELL CODE FROM PROSE INSIDE A STRING. `code_of` removes
+#      comments, which is the mirror of the mistake `e07c0655` fixed next door
+#      — but a line that merely QUOTES the shape inside an `echo` still counts
+#      as carrying it. That bit this gate's own teeth twice within an hour,
+#      first as a fixture written on one source line and then as a failure
+#      message describing what it tests. Both were reworded rather than
+#      excused: an exception for the file that defines the rule is the least
+#      trustworthy thing this gate could contain.
 #
 # lane-reads-opaque: `source "$(dirname "${BASH_SOURCE[0]}")/lib/gate-lib.sh"`
 #   self-locates the shared helper through command substitution, the same
@@ -107,18 +117,65 @@ CARRIER_RE='gate_unmeasured[[:space:]]+"|::error::UNMEASURED'
 # `gate-lib.sh` is deliberately NOT here: it DEFINES the annotation, so it
 # carries by construction and an arm for it would never be reached — a dead
 # excuse, which is the thing check 3 exists to prevent.
-EXCUSED=(
-  "scripts/verify.sh|a CONSUMER of the verdict, not a producer of one: run_phase reads GATE_EXIT_UNMEASURED to file a phase as 'unmeasured' in telemetry rather than as 'fail'. It emits no verdict of its own, and the gate it ran has already printed the annotation"
-)
+#
+# EMPTY IS THE CORRECT STATE, the same claim `scripts/lib/flaky-tests.txt`
+# makes about itself. It held `scripts/verify.sh` for one afternoon, on the
+# grounds that the runner CONSUMES the verdict rather than producing one —
+# and then that stopped being true in the same wave: verify.sh now sources
+# gate-lib and calls `gate_unmeasured` itself, for a configured lint gate with
+# no linter. The arm went dead within hours of being written, which is the
+# whole argument for check 3 rather than for a list somebody promises to
+# re-read.
+EXCUSED=()
 
 excuse_for() { # $1 = repo-relative path; echoes the reason, or returns 1
   local e
-  for e in "${EXCUSED[@]}"; do
+  for e in ${EXCUSED[@]+"${EXCUSED[@]}"}; do
     [ "${e%%|*}" = "$1" ] || continue
     printf '%s\n' "${e#*|}"
     return 0
   done
   return 1
+}
+
+# TOOL_GUARD_EXCUSED — files whose `command -v … exit 1` is legitimately not a
+# gate refusing to measure. Two arms, both checked rather than assumed.
+TOOL_GUARD_EXCUSED=(
+  "scripts/dev-install.sh|an INSTALLER, not a gate: it puts a dev binary on PATH and has no verdict to report, so a missing Go toolchain is a precondition it cannot proceed without rather than a measurement it failed to take"
+  "scripts/release-postflight.sh|the guard is INVERTED and lives inside that script's own --teeth: it fires when \`gh\` IS still resolvable, asserting the fixture's minimal PATH actually hid it. Refusing there is the tooth working"
+)
+
+tool_guard_excuse() { # $1 = repo-relative path; echoes the reason, or returns 1
+  local e
+  for e in "${TOOL_GUARD_EXCUSED[@]}"; do
+    [ "${e%%|*}" = "$1" ] || continue
+    printf '%s\n' "${e#*|}"
+    return 0
+  done
+  return 1
+}
+
+# tool_guards prints `path:line` for every single-line absent-tool guard whose
+# failure arm exits non-zero without routing through gate_unmeasured.
+#
+# THE LINE NUMBER COMES FROM THE SAME SCAN AS THE VERDICT, and the first
+# version got that wrong: it decided on comment-stripped code and then looked
+# the line up with a raw `grep -n`, so the refusal pointed at a COMMENT
+# describing the rule while the real match was three hundred lines below. A
+# gate that names the wrong line teaches its reader to distrust the finding.
+# `code_of` is a per-line substitution, so numbering survives it.
+tool_guards() { # -> one `path:line` per match
+  git -C "$ROOT" ls-files 'scripts/*.sh' 'Makefile' |
+    while IFS= read -r f; do
+      case "$f" in scripts/tests/*) continue ;; esac
+      [ -f "$ROOT/$f" ] || continue
+      code_of "$ROOT/$f" |
+        grep -nE 'command -v' |
+        grep -E '(exit|return) 1' |
+        grep -v gate_unmeasured |
+        cut -d: -f1 |
+        while IFS= read -r n; do printf '%s:%s\n' "$f" "$n"; done
+    done
 }
 
 producers() { # -> one repo-relative path per line
@@ -172,20 +229,77 @@ run_check() {
     fi
   done
 
+  # ── check 4 — AN ABSENT TOOL IS NEVER A FINDING ───────────────────────────
+  #
+  # THE INVERSE CLASS, and the one check 1 is structurally blind to: a gate
+  # that CAN fail to measure but never says the word. `grep gate_unmeasured`
+  # finds nothing, because there is nothing to find — so this asks a different
+  # question, narrowed to the one shape that has actually been wrong here.
+  #
+  # `command -v X` guarding an `exit 1` is a gate announcing a MEASURED verdict
+  # about something it never measured. `workflow-lint` said
+  # "FAIL — actionlint missing" — which reads as "the workflows were linted and
+  # found wanting", when nothing was linted; and `check_lint` said the same
+  # about golangci-lint. Both are reachable from `make check` and therefore
+  # from ci.yml. Found by a ground sweep on 2026-08-23, not by check 1.
+  #
+  # SINGLE-LINE FORM ONLY. `check_lint`'s multi-line `if ! command -v …; then`
+  # is invisible to this and was converted by hand; widening the pattern to
+  # multi-line shell would be a parser, and a parser that is wrong is worse
+  # than a narrow check that says how narrow it is.
+  local tg tgpath tgline seen=""
+  while IFS= read -r tg; do
+    [ -n "$tg" ] || continue
+    tgpath="${tg%:*}"; tgline="${tg##*:}"
+    if reason="$(tool_guard_excuse "$tgpath")"; then
+      case " $seen " in *" $tgpath "*) continue ;; esac
+      seen="$seen $tgpath"
+      gate_ok "unmeasured-reach: absent-tool guard excused — $tgpath ($reason)"
+      continue
+    fi
+    gate_fail "unmeasured-reach: $tgpath:$tgline treats an ABSENT TOOL as a measured failure. \`exit 1\` there says the check ran and refused; what happened is that it never ran. Use \`gate_unmeasured\` and exit \$GATE_EXIT_UNMEASURED, so the reader can tell 'not installed' from 'found something'. If the file is not a gate, add an arm to tool_guard_excuse()."
+  done < <(tool_guards)
+
   # ── check 3 — an excuse must still excuse something ────────────────────────
   #
   # A permanent exemption for a file that no longer produces an unmeasured
   # verdict is how a list stops being read. Refuse it, the same way
   # lane-ungated.txt is COUNTED rather than merely allowed.
-  local e arm all
+  local e arm all guards
   all="$(producers)"
-  for e in "${EXCUSED[@]}"; do
+  for e in ${EXCUSED[@]+"${EXCUSED[@]}"}; do
     arm="${e%%|*}"
-    grep -qxF "$arm" <<<"$all" && continue
-    gate_fail "unmeasured-reach: EXCUSED carries an entry for $arm, which is no longer an UNMEASURED producer. Remove the entry; an exemption nobody re-examines is how a list stops being read."
+    # AN ABSENT FILE IS NOT A STALE EXCUSE. The publisher strips a path set from
+    # the public product, and `make projection` runs this gate inside that
+    # projection — so "the file this excuses is not here" is a fact about the
+    # checkout, not about the excuse. Reading it as staleness is the exact
+    # class that made four private gates red in every public checkout while the
+    # private tree stayed green.
+    [ -f "$ROOT/$arm" ] || continue
+    if ! grep -qxF "$arm" <<<"$all"; then
+      gate_fail "unmeasured-reach: EXCUSED carries an entry for $arm, which is no longer an UNMEASURED producer. Remove the entry; an exemption nobody re-examines is how a list stops being read."
+      continue
+    fi
+    # AND AN ENTRY WHOSE FILE NOW CARRIES THE TOKEN IS EQUALLY DEAD — check 1
+    # takes the carrying branch and never reaches the excuse. That is not
+    # hypothetical: verify.sh's own entry died this way within hours of being
+    # written, when it gained a gate_unmeasured call of its own.
+    if has_shape "$(code_of "$ROOT/$arm")" "$CARRIER_RE"; then
+      gate_fail "unmeasured-reach: EXCUSED carries an entry for $arm, which now CARRIES the token — check 1 never reaches the excuse, so the entry is dead. Remove it."
+    fi
+  done
+  # The absent-tool list gets the same treatment: an excuse for a file that no
+  # longer carries a bare `command -v … exit 1` is an exemption nobody is
+  # re-examining either.
+  guards="$(tool_guards | sed 's/:[0-9]*$//' | sort -u)"
+  for e in ${TOOL_GUARD_EXCUSED[@]+"${TOOL_GUARD_EXCUSED[@]}"}; do
+    arm="${e%%|*}"
+    [ -f "$ROOT/$arm" ] || continue   # absent ≠ stale; see the note above
+    grep -qxF "$arm" <<<"$guards" && continue
+    gate_fail "unmeasured-reach: TOOL_GUARD_EXCUSED carries an entry for $arm, which no longer treats an absent tool as a failure. Remove the entry."
   done
 
-  printf 'unmeasured-reach: %s producer(s) — %s carry the token, %s excused by name; %s workflow(s) retry something and all of them say what did not happen.\n' \
+  printf 'unmeasured-reach: %s producer(s) — %s carry the token, %s excused by name; %s workflow(s) retry something and all of them say what did not happen; every single-line absent-tool guard routes through gate_unmeasured or is excused.\n' \
     "$found" "$carried" "$excused" "$loops"
   printf 'unmeasured-reach: NOT covered by this gate, on purpose — a gate that returns GREEN when it could not measure (nothing to grep for); reachability from a workflow (not computed, so every producer is held to the rule rather than only the reachable ones); and a fourth shape of not-measuring that uses none of these tokens.\n'
   gate_summary "unmeasured-reach"
@@ -250,21 +364,58 @@ run_teeth() {
     echo "unmeasured-reach --teeth: T4 — the same workflow passes once it names what did not happen"
   fi
 
-  # T5 — AN EXCUSE THAT EXCUSES NOTHING IS REFUSED. This is the arm that keeps
-  # the exemption list honest, and it is the one a reader would otherwise never
-  # check: remove verify.sh and its standing excuse becomes a claim about a
-  # file that is not there.
-  rm -f "$tmp/scripts/verify.sh"
-  git -C "$tmp" rm -q --cached scripts/verify.sh >/dev/null 2>&1
+  # T5 — AN ABSENT-TOOL GUARD WITH NO EXCUSE IS REFUSED, and T6 is its inverse.
+  # Together they are check 4: the class check 1 is structurally blind to,
+  # because a gate that never says the word leaves nothing to grep for.
+  # SPLIT ACROSS TWO SOURCE LINES ON PURPOSE. Check 4 judges a single source
+  # line, and this gate's own teeth write a fixture carrying exactly the shape
+  # it polices — so as one line, the gate refused ITSELF, pointing at its own
+  # tooth. The gate has no absent-tool guard; it WRITES a fixture that does,
+  # and the text should not claim otherwise. Same move as verify.sh made for
+  # classify-guard, for the same reason.
+  printf '#!/usr/bin/env bash\ncommand -v widget >/dev/null 2>&1 || {' >"$tmp/scripts/check-widget.sh"
+  printf ' echo "gate: FAIL — widget missing"; exit 1; }\n' >>"$tmp/scripts/check-widget.sh"
   _t
-  if [ "$rc" -eq 0 ] || ! grep -qF 'no longer an UNMEASURED producer' <<<"$out"; then
-    echo "unmeasured-reach --teeth: FAILED — T5: a standing excuse for an absent producer stayed green (rc=$rc)" >&2; echo "$out" >&2; fail=1
+  if [ "$rc" -eq 0 ] || ! grep -qF 'treats an ABSENT TOOL as a measured failure' <<<"$out"; then
+    echo "unmeasured-reach --teeth: FAILED — T5: an absent-tool guard whose failure arm exits non-zero must be refused (rc=$rc)" >&2; echo "$out" >&2; fail=1
   else
-    echo "unmeasured-reach --teeth: T5 — an excuse whose producer is gone is refused, so the exemption list cannot quietly stop being read"
+    echo "unmeasured-reach --teeth: T5 — a gate that reports an absent tool as a measured FAILURE is refused; nothing ran, so nothing was found"
+  fi
+
+  # T6 — and the same guard routed through gate_unmeasured passes, so T5 is
+  # about the verdict and not about the `command -v`.
+  printf '#!/usr/bin/env bash\nsource "$(dirname "${BASH_SOURCE[0]}")/lib/gate-lib.sh"\ncommand -v widget >/dev/null 2>&1 || { gate_unmeasured "widget is absent, so nothing was checked"; exit "$GATE_EXIT_UNMEASURED"; }\n' \
+    >"$tmp/scripts/check-widget.sh"
+  _t
+  if [ "$rc" -ne 0 ]; then
+    echo "unmeasured-reach --teeth: FAILED — T6: the same guard via gate_unmeasured must pass, or T5 proved nothing (rc=$rc)" >&2; echo "$out" >&2; fail=1
+  else
+    echo "unmeasured-reach --teeth: T6 — the same guard via gate_unmeasured passes, so T5 is about the verdict and not about the guard"
+  fi
+
+  # T7 — AN EXCUSE THAT EXCUSES NOTHING IS REFUSED. The arm that keeps both
+  # exemption lists honest, and the one a reader would otherwise never check.
+  # Pointed at the absent-tool list because the UNMEASURED list is empty, which
+  # is its correct state — its one entry went dead within hours of being
+  # written and was removed rather than kept.
+  cp "$ROOT/scripts/dev-install.sh" "$tmp/scripts/dev-install.sh"
+  rm -f "$tmp/scripts/check-widget.sh"
+  _t
+  if [ "$rc" -ne 0 ]; then
+    echo "unmeasured-reach --teeth: FAILED — T7 setup: an excused absent-tool guard must be green before it goes stale (rc=$rc)" >&2; echo "$out" >&2; fail=1
+  fi
+  # STALE means the file is STILL HERE and no longer needs excusing — not that
+  # it is missing. A missing file is a stripped one, and the gate says so above.
+  printf '#!/usr/bin/env bash\necho "no guard here any more"\n' >"$tmp/scripts/dev-install.sh"
+  _t
+  if [ "$rc" -eq 0 ] || ! grep -qF 'no longer treats an absent tool as a failure' <<<"$out"; then
+    echo "unmeasured-reach --teeth: FAILED — T7: a standing excuse for a guard that is gone stayed green (rc=$rc)" >&2; echo "$out" >&2; fail=1
+  else
+    echo "unmeasured-reach --teeth: T7 — an excuse whose guard is gone is refused, so an exemption list cannot quietly stop being read"
   fi
 
   [ "$fail" -eq 0 ] || { echo "unmeasured-reach --teeth: FAIL" >&2; exit 1; }
-  echo "unmeasured-reach --teeth: 5 case(s) green."
+  echo "unmeasured-reach --teeth: 7 case(s) green."
 }
 
 case "${1:-check}" in

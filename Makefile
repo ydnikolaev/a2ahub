@@ -190,7 +190,13 @@ workflow-lint: ## Every GitHub Action `uses:` must be SHA-pinned (defeats tag-hi
 	fi; \
 	echo "workflow-lint: every explicit go-version matches go.mod ($$gomod_go)."
 	@test "$$(grep -Fc "if: github.repository == 'ydnikolaev/a2ahub'" .github/workflows/codeql.yml)" -eq 4 || { echo "workflow-lint: FAIL — all four CodeQL execution steps must remain public-repository-only"; exit 1; }
-	@command -v actionlint >/dev/null 2>&1 || { echo "workflow-lint: FAIL — actionlint missing; install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"; exit 1; }
+# AN ABSENT TOOL IS NEVER A FINDING (release-cost-2026-08 P3). This said FAIL,
+# which claims the workflows were linted and found wanting; what actually
+# happened is that nothing was linted. Same rule the gate next door already
+# followed, in the gate that lints the workflows CI runs.
+	@. scripts/lib/gate-lib.sh; command -v actionlint >/dev/null 2>&1 || { \
+	  gate_unmeasured "workflow-lint: actionlint is not on PATH, so THE WORKFLOWS WERE NOT LINTED. Nothing was found wrong with them. Install it: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"; \
+	  exit $$GATE_EXIT_UNMEASURED; }
 	@actionlint
 
 gosec-scope: ## G204/G304 stay live outside the exact reviewed path allowlist.

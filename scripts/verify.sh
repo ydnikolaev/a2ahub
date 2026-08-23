@@ -12,6 +12,22 @@ VERIFY_ROOT="$ROOT/.a2a/cache/verify"
 MARKER="$VERIFY_ROOT/.a2ahub-verify-cache-v1"
 MAX_CACHE_KIB=$((2 * 1024 * 1024))
 TELEMETRY_LIMIT=2000
+
+# ONE VOCABULARY FOR "I COULD NOT MEASURE THIS", not a second spelling.
+#
+# This runner referenced `GATE_EXIT_UNMEASURED` with a `:-3` default and never
+# had the function that produces it, so the one place it could itself fail to
+# measure — a configured lint gate with no linter — said FAIL instead. Every
+# other gate in this repository routes through gate-lib, the teeth assert on
+# its literal token, and inventing a second wording here is what spec 03 §5
+# forbids by name.
+#
+# Safe to source: the file's own `BASH_SOURCE == $0` guard keeps its teeth from
+# running, it defines no name this script already uses, and its only top-level
+# effects are zeroing three counters and choosing colours.
+# shellcheck source=lib/gate-lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/gate-lib.sh"
+
 MODE="${1:-full}"
 SCOPED_PACKAGES=()
 SCOPED_TEST_COUNT="${A2A_VERIFY_TEST_COUNT:-1}"
@@ -207,8 +223,15 @@ run_tree_identity() {
 }
 
 run_phase() {
-  local gate="$1" start end rc verdict
+  local gate="$1" start end rc verdict marker
   shift
+  marker="$VERIFY_ROOT/.unmeasured.$$"
+  rm -f "$marker"
+  # EXPORTED, not a `VAR=v cmd` prefix: several phases are shell FUNCTIONS in
+  # this file, and bash keeps a prefix assignment set after a function call
+  # rather than restoring it. Explicit export/unset behaves the same way for a
+  # function, a `make` child and an external script alike.
+  export A2A_UNMEASURED_MARKER="$marker"
   start="$(now_ms)"
   if "$@"; then
     rc=0
@@ -216,6 +239,7 @@ run_phase() {
     rc=$?
   fi
   end="$(now_ms)"
+  unset A2A_UNMEASURED_MARKER
   # THREE VERDICTS, NOT TWO. gate-lib spends exit 3 for "I could not measure
   # this" precisely so it is distinguishable from "I measured it and it is
   # wrong" — and this runner used to record BOTH as `fail`, which erased the
@@ -226,11 +250,28 @@ run_phase() {
   # exit 3 into its own exit 2. That is a separate, real defect and it is why
   # the TELEMETRY has to carry the distinction — the exit code cannot.
   verdict=pass
+  # THE EXIT CODE IS NOT ENOUGH, AND THIS USED TO BE THE WHOLE TEST.
+  #
+  # Every REPO_GATES member is dispatched below as `make <gate>`, so make has
+  # already turned the gate's exit 3 into its own exit 2 by the time it reaches
+  # here — measured 2026-08-23: check-operational-confidence.sh alone exits 3,
+  # `make operational-confidence-guard` exits 2. So this branch NEVER fired for
+  # a repo gate and every one of them was filed as `fail`. The comment above
+  # says the telemetry has to carry the distinction because the exit code
+  # cannot; it was not carrying it, for the same reason, one layer up.
+  #
+  # The marker closes it: gate-lib appends to $A2A_UNMEASURED_MARKER whenever
+  # gate_unmeasured fires, and an environment variable crosses the make
+  # boundary that an exit code does not. A phase that is not a gate-lib gate
+  # writes nothing and behaves exactly as before.
   if [ "$rc" -eq "${GATE_EXIT_UNMEASURED:-3}" ]; then
+    verdict=unmeasured
+  elif [ "$rc" -ne 0 ] && [ -s "$marker" ]; then
     verdict=unmeasured
   elif [ "$rc" -ne 0 ]; then
     verdict=fail
   fi
+  rm -f "$marker"
   append_telemetry "$gate" "$verdict" "$((end - start))"
   return "$rc"
 }
@@ -429,9 +470,13 @@ check_lint() {
     return 0
   fi
   if ! command -v golangci-lint >/dev/null 2>&1; then
-    echo "check: FAIL — .golangci.yml exists but golangci-lint is not installed." >&2
-    echo "       A configured lint gate that silently skips is a hole, not a gate." >&2
-    return 1
+    # A configured lint gate that silently skips is a hole, not a gate — and
+    # one that says FAIL is a different hole: it claims the code was linted and
+    # found wanting, when nothing was linted at all. UNMEASURED is both loud and
+    # true, and gate_summary already makes it dominate a mixed run
+    # (release-cost-2026-08 P3).
+    gate_unmeasured "check: .golangci.yml exists but golangci-lint is not on PATH, so THE CODE WAS NOT LINTED. This is not a clean lint and not a finding. Install it, or remove .golangci.yml if the gate is meant to be gone."
+    return "$GATE_EXIT_UNMEASURED"
   fi
   golangci-lint run ./...
 }
@@ -918,6 +963,58 @@ run_teeth() {
     return 1
   fi
 
+  # ── UNMEASURED SURVIVES THE MAKE BOUNDARY (release-cost-2026-08 P3) ───────
+  #
+  # THE DEFECT THIS PINS WAS LIVE AND SILENT. `run_phase` files a phase as
+  # `unmeasured` rather than `fail` by testing for exit 3 — and it dispatches
+  # every REPO_GATES member as `make <gate>`, so GNU make had already collapsed
+  # that 3 into its own 2. Measured 2026-08-23:
+  # `bash scripts/check-operational-confidence.sh` with no ripgrep exits 3;
+  # `make operational-confidence-guard` on the same PATH exits 2. So the branch
+  # never fired for a repo gate, and the distinction this file's own comment
+  # says "the TELEMETRY has to carry" was not in the telemetry.
+  #
+  # Both halves are asserted, because the first alone would pass against a
+  # run_phase that filed EVERYTHING as unmeasured.
+  local mkt mkgate mkout
+  mkt="$(mktemp -d)"
+  mkdir -p "$mkt/verify"
+
+  # (a) a phase that could not measure, reached through `make`, files
+  #     `unmeasured` even though make reports 2.
+  # WRITTEN WITH printf, NOT A HEREDOC, and the reason is a gate two doors
+  # down. classify-guard scans every PUBLIC script for a line whose FIRST
+  # token is `source` or `.` and refuses one it cannot resolve to a literal
+  # path — correctly, because a public gate that reads a stripped file dies on
+  # the candidate's first `make check`. A heredoc body is invisible to that:
+  # the sourcing line sat at column zero in THIS file and read as a dependency
+  # of the runner, which it is not. The runner does not source that path; it
+  # WRITES a fixture that does. printf makes the text stop claiming otherwise,
+  # rather than teaching the guard to parse heredocs.
+  printf '#!/usr/bin/env bash\n. "%s"\ngate_unmeasured "the fixture tool is absent, so nothing was scanned"\nexit "$GATE_EXIT_UNMEASURED"\n' "$ROOT/scripts/lib/gate-lib.sh" >"$mkt/gate.sh"
+  printf 'fixture:\n\t@bash %s/gate.sh\n' "$mkt" >"$mkt/Makefile"
+  ( VERIFY_ROOT="$mkt/verify" MODE=teeth
+    run_phase fixture-unmeasured make --no-print-directory -C "$mkt" fixture >/dev/null 2>&1 ) || true
+  mkout="$(grep -F '"gate":"fixture-unmeasured"' "$mkt/verify/telemetry.jsonl" 2>/dev/null | tail -1)"
+  if ! grep -q '"verdict":"unmeasured"' <<<"${mkout:-}"; then
+    echo "verify --teeth: FAIL — a gate that could not measure, reached through make, must be filed as unmeasured; got: ${mkout:-<no record>}" >&2
+    rm -rf "$mkt"; return 1
+  fi
+
+  # (b) AND A REAL FAILURE THROUGH THE SAME BOUNDARY IS STILL `fail`. Without
+  #     this, (a) passes against a runner that stopped telling them apart in
+  #     the other direction — which is the same defect, mirrored.
+  printf '#!/usr/bin/env bash\n. "%s"\ngate_fail "the fixture measured something and it is wrong"\nexit 1\n' "$ROOT/scripts/lib/gate-lib.sh" >"$mkt/gate.sh"
+  ( VERIFY_ROOT="$mkt/verify" MODE=teeth
+    run_phase fixture-failed make --no-print-directory -C "$mkt" fixture >/dev/null 2>&1 ) || true
+  mkout="$(grep -F '"gate":"fixture-failed"' "$mkt/verify/telemetry.jsonl" 2>/dev/null | tail -1)"
+  if ! grep -q '"verdict":"fail"' <<<"${mkout:-}"; then
+    echo "verify --teeth: FAIL — a gate that measured and refused must stay \`fail\`, or the two verdicts have merged the other way; got: ${mkout:-<no record>}" >&2
+    rm -rf "$mkt"; return 1
+  fi
+  rm -rf "$mkt"
+  echo "verify --teeth: UNMEASURED survives the make boundary — a repo gate that could not measure files as unmeasured while make reports its own 2, and a gate that measured and refused still files as fail."
+
   # ── THE REPETITION GUARD (release-cost-2026-08 P2) ────────────────────────
   #
   # Exercised through a FIXTURE REPOSITORY with its own telemetry file, never
@@ -945,9 +1042,17 @@ run_teeth() {
   # command substitution itself — a trailing `echo rc=$?` INSIDE the subshell
   # never runs on the refusing path, which is how this harness silently ate the
   # first green run of these teeth.
-  _rg() { # $1..= env assignments are the caller's; sets rgout and rgrc
+  # AND IT CONTROLS ITS OWN INPUTS. Both of the guard's early exits are read
+  # from the ENVIRONMENT, so a tooth that inherits the caller's would be
+  # vacuously green in exactly the two places it matters most: a lane invoked
+  # as `VERIFY_AGAIN=1 make lane-run` (which is how a developer runs it while
+  # iterating, and how this tooth was first seen to fail), and CI, where
+  # GITHUB_ACTIONS=true makes repeat_guard return before it decides anything.
+  # `make harness-check` runs on the runner, so without these two assignments
+  # the whole P2 set would have passed there without testing a single thing.
+  _rg() { # sets rgout and rgrc, with the guard's two escapes explicitly OFF
     rgrc=0
-    rgout="$( set +e; repeat_guard 2>&1 )" || rgrc=$?
+    rgout="$( set +e; VERIFY_AGAIN="" GITHUB_ACTIONS="" repeat_guard 2>&1 )" || rgrc=$?
   }
 
   # The guard is a function in THIS file, so exercise it in-process with the
@@ -1007,7 +1112,7 @@ run_teeth() {
   # see in a transcript is how "it passed" stops meaning anything.
   git -C "$rg" checkout -q -- a.txt
   RUN_TREE=""
-  rgrc=0; rgout="$( set +e; VERIFY_AGAIN=1 repeat_guard 2>&1 )" || rgrc=$?
+  rgrc=0; rgout="$( set +e; VERIFY_AGAIN=1 GITHUB_ACTIONS="" repeat_guard 2>&1 )" || rgrc=$?
   if [ "$rgrc" -ne 0 ] || ! grep -q 'BYPASSED' <<<"$rgout"; then
     echo "verify --teeth: FAIL — P2d: VERIFY_AGAIN=1 must run anyway AND announce it: $rgout" >&2
     ROOT="$save_root"; VERIFY_ROOT="$save_vroot"; MODE="$save_mode"; RUN_TREE="$save_tree"; rm -rf "$rg"; return 1
@@ -1033,7 +1138,7 @@ run_teeth() {
   RUN_TREE=""
   RUN_TREE="$(run_tree_identity)"
   append_telemetry "run:full" pass 900000
-  rgrc=0; rgout="$( set +e; GITHUB_ACTIONS=true repeat_guard 2>&1 )" || rgrc=$?
+  rgrc=0; rgout="$( set +e; VERIFY_AGAIN="" GITHUB_ACTIONS=true repeat_guard 2>&1 )" || rgrc=$?
   if [ "$rgrc" -ne 0 ] || grep -q 'REFUSING' <<<"$rgout"; then
     echo "verify --teeth: FAIL — P2f: GITHUB_ACTIONS=true must never meet this guard: $rgout" >&2
     ROOT="$save_root"; VERIFY_ROOT="$save_vroot"; MODE="$save_mode"; RUN_TREE="$save_tree"; rm -rf "$rg"; return 1
