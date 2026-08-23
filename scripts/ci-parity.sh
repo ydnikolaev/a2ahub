@@ -80,7 +80,23 @@ excused_reason() { # $1 = command
       echo "runs inside a space's own CI against a submitted file, not this repo" ;;
     *"npm run build"*)
       echo "covered by 'npm run check', which invokes it as prebuild+build" ;;
-    *"gitleaks version"*|*"install -m 0755 gitleaks"*|*"curl"*|*"tar "*|*"sha256sum"*)
+    # NARROWED 2026-08-23. This arm used to read
+    #   *"gitleaks version"*|*"install -m 0755 gitleaks"*|*"curl"*|*"tar "*|*"sha256sum"*
+    # and the three bare globs at the end excused ANY command containing
+    # `curl`, `tar ` or `sha256sum` — under a reason naming gitleaks. The
+    # golangci-lint install in ci.yml, which NO local step runs, was reported
+    # as "installs the pinned gitleaks binary". This audit is the declared
+    # SSOT for what CI runs, and it was answering with a claim it had not
+    # checked — the epic's own defect class, inside the gate the epic built.
+    #
+    # Every glob below now names gitleaks or the variable its own step
+    # defines, so a command from another step cannot wear this excuse.
+    *"gitleaks version"* \
+    | *"install -m 0755 gitleaks"* \
+    | *'archive="gitleaks_'* \
+    | *"releases/download/v\${GITLEAKS_VERSION}"* \
+    | *'echo "${GITLEAKS_SHA256}'* \
+    | *'tar -xzf "$archive" gitleaks'*)
       echo "installs the pinned gitleaks binary; the scans themselves are executed below" ;;
 
     # --- P1 close, 2026-08-21: the lead's triage of the remaining 73. ------
@@ -91,6 +107,7 @@ excused_reason() { # $1 = command
     # exist locally. What proves this path is the release runbook's own
     # post-tag verification, not a local re-run.
     *": > dist/SHA256SUMS"* \
+    | *'sha256sum "$asset" | sed'* \
     | *"cosign sign-blob"* \
     | *'cp "releasenotes/'* \
     | *"find dist -maxdepth 1 -type f"* \
@@ -201,6 +218,39 @@ excused_reason() { # $1 = command
     *"apt-get install -y -qq ripgrep"* | *"rg --version"*)
       echo "provisioning, not a check" ;;
 
+    # golangci-lint's own installer. Surfaced UNCOVERED on 2026-08-23 the
+    # moment the gitleaks arm above stopped excusing every command containing
+    # `curl` — until then this call, which NO local step runs, was reported as
+    # "installs the pinned gitleaks binary". It is provisioning: `make
+    # golangci-lint` runs the linter itself and IS executed below.
+    #
+    # Recorded rather than smoothed over: unlike the gitleaks install beside
+    # it, this one is `curl | sh` with NO checksum and NO signature — it is
+    # pinned by version in the URL and nothing verifies what arrives.
+    # docs/backlog.md carries that as its own row; this excuse covers the
+    # command not being locally re-run, and claims nothing about its integrity.
+    # The download RETRY LOOPS' own control flow — gitleaks.yml's install and
+    # the two reusable workflows' `Install a2a`. One arm because the three are
+    # deliberately the same shape, and the reason is true of all three: a loop
+    # that exists so a transient CDN read does not red a job has nothing for a
+    # local step to reproduce. Locally the tools are provisioned by the
+    # developer's own environment, and the SCANS and VALIDATIONS those loops
+    # feed are what the composed gate executes.
+    #
+    # Narrow on purpose: these globs name the loop's own variables (`$rc`,
+    # `$attempt`, `$archive`, `$RUNNER_TEMP/$asset`), not `curl`. The arm this
+    # sits beside used to end in a bare *"curl"* and excused a golangci-lint
+    # install under a gitleaks reason for it.
+    *'curl -fsSL -o "$archive" "$url"'* \
+    | *'curl -fsSL -o "$RUNNER_TEMP/$asset" "$base/$asset"'* \
+    | *'if [ "$rc" -eq 0 ]; then'* \
+    | *'if [ "$rc" -eq 22 ]; then'* \
+    | *'[ "$attempt" -lt 3 ] || break'*)
+      echo "a download retry loop's own control flow; the scan or validation it feeds is executed below" ;;
+
+    *"golangci-lint/v2.12.2/install.sh"*)
+      echo "provisioning, not a check (installs the linter; \`make golangci-lint\` runs it below)" ;;
+
     # The release tags live on the PUBLISHED repository; this private source
     # remote carries exactly one, v0.1.0, because releases are tagged at
     # FILTERED commits absent from this history. `check-release-record` needs
@@ -224,7 +274,8 @@ excused_reason() { # $1 = command
     | *'if [ -z "$A2A_BASE" ]; then'* \
     | *'if [ "$downloaded" -ne 1 ]; then'* \
     | *'install -m 0755 "$RUNNER_TEMP/$asset" "$bin/a2a"'* \
-    | *'sleep $((attempt * 5))'*)
+    | *'sleep $((attempt * 5))'* \
+    | *'if curl -fsSL -o "$RUNNER_TEMP/$asset"'*)
       echo "only reachable when a2a-ref is set (the space release-asset path) or mode=v3-pr; a2a-validate-dogfood.yml always calls with a2a-ref=\"\" and mode=v3-full-repo, so this branch is dead code on the path the dogfood EXECUTES step reproduces" ;;
     *'jq -r '*'while IFS=$'"'"'\t'"'"' read -r code path severity artifact_id message; do'*)
       echo "GitHub-annotation projection of the report for the PR UI; the report's own violations and the validator's exit status — what this check actually tests — are already checked by the dogfood EXECUTES step above, and there is no GitHub annotation API to write to locally" ;;
@@ -565,6 +616,22 @@ out_of_scope_workflows() { # $1 = workflow dir, $2... = all workflow files
   done
 }
 
+# executes_haystack is the coverage claim: the EXECUTES block of this file,
+# WITHOUT its comment lines.
+#
+# Stripping them is a correctness fix, not tidiness. The block is 220 lines of
+# which 138 are prose explaining what each step covers and why, and the
+# coverage test is a substring grep — so a command merely NAMED in a comment
+# registered as "run by the composed gate". A claim that this gate is the SSOT
+# for what CI runs, satisfied by a sentence ABOUT running something, is the
+# same defect as an over-broad excuse glob in the opposite direction: there a
+# command wore another step's reason, here a command wore a description of
+# itself.
+executes_haystack() {
+  sed -n '/^# EXECUTES_BEGIN/,/^# EXECUTES_END/p' "$ROOT/scripts/ci-parity.sh" \
+    | grep -v '^[[:space:]]*#'
+}
+
 audit() {
   local dir="${1:-.github/workflows}"
   local cmds executes missing=0
@@ -611,7 +678,15 @@ audit() {
   # made every command look uncovered, which is the same class of bug this
   # script exists to catch. (extract_commands' own header records the SECOND
   # instance of that class, in the extraction half instead of the markers.)
-  executes="$(sed -n '/^# EXECUTES_BEGIN/,/^# EXECUTES_END/p' "$ROOT/scripts/ci-parity.sh")"
+  # COMMENT LINES ARE STRIPPED, and that is a correctness fix rather than
+  # tidiness. The block is 220 lines of which about half are prose explaining
+  # what each step covers and why — so a command merely NAMED in a comment
+  # registered as "run by the composed gate". A claim that this gate is the
+  # SSOT for what CI runs, satisfied by a sentence about running it, is the
+  # same defect as the excuse globs narrowed above, in the opposite direction:
+  # there a command wore another step's reason, here a command wears a
+  # description of itself.
+  executes="$(executes_haystack)"
   if ! cmds="$(extract_commands "${inscope[@]}" | sort -u)"; then
     return 1
   fi
@@ -2006,11 +2081,66 @@ EOF
   fi
   rm -rf "$d19"
 
+  # --- T20: AN EXCUSE MUST NAME WHAT IT EXCUSES. -------------------------
+  #
+  # The gitleaks arm used to end in three bare globs — *"curl"*, *"tar "*,
+  # *"sha256sum"* — so ANY command containing those substrings was excused
+  # under a reason naming gitleaks. The golangci-lint installer, which no
+  # local step runs, was reported as "installs the pinned gitleaks binary".
+  # This audit is the declared SSOT for what CI runs and it was answering with
+  # a claim it had not checked.
+  #
+  # Both directions, because a one-sided tooth cannot tell a narrow arm from a
+  # deleted one: a real gitleaks command must still BE excused.
+  local gl_reason foreign_reason
+  gl_reason="$(excused_reason 'gitleaks version' || true)"
+  case "$gl_reason" in
+    *"pinned gitleaks binary"*) ;;
+    *)
+      printf 'ci-parity --teeth: FAIL — T20: narrowing removed the gitleaks excuse itself; a real gitleaks install command is now UNCOVERED (got %q)\n' "$gl_reason" >&2
+      teeth_fail=1 ;;
+  esac
+  for foreign in \
+    'curl -fsSL https://example.invalid/some-other-tool.tgz -o t.tgz' \
+    'tar -xzf some-other-tool.tgz' \
+    'sha256sum --check --strict other.txt'
+  do
+    foreign_reason="$(excused_reason "$foreign" || true)"
+    case "$foreign_reason" in
+      *"pinned gitleaks binary"*)
+        printf 'ci-parity --teeth: FAIL — T20: %q is excused as a gitleaks install. An excuse that matches a command it does not name is how a step nothing runs reports as covered.\n' "$foreign" >&2
+        teeth_fail=1 ;;
+    esac
+  done
+
+  # --- T21: A COMMENT IS NOT COVERAGE. -----------------------------------
+  #
+  # Coverage is a substring grep against the EXECUTES block, and that block is
+  # 220 lines of which 138 are prose. A command merely NAMED in a comment
+  # registered as run. The haystack must therefore carry no comment lines —
+  # and must still carry the real ones, or the tooth would pass against an
+  # empty string.
+  local haystack
+  haystack="$(executes_haystack)"
+  if [ -z "$haystack" ]; then
+    printf 'ci-parity --teeth: FAIL — T21: the coverage haystack is EMPTY; every command would read as uncovered\n' >&2
+    teeth_fail=1
+  fi
+  if printf '%s\n' "$haystack" | grep -qE '^[[:space:]]*#'; then
+    printf 'ci-parity --teeth: FAIL — T21: the coverage haystack still contains comment lines; a command named in prose counts as executed\n' >&2
+    teeth_fail=1
+  fi
+  if ! printf '%s\n' "$haystack" | grep -q 'run_step'; then
+    printf 'ci-parity --teeth: FAIL — T21: the coverage haystack carries no run_step line; stripping comments removed the claim itself\n' >&2
+    teeth_fail=1
+  fi
+
   if [ "$teeth_fail" -ne 0 ]; then
     printf 'ci-parity --teeth: FAIL\n' >&2
     exit 1
   fi
-  printf 'ci-parity --teeth: 19 case(s) green.\n'
+
+  printf 'ci-parity --teeth: 21 case(s) green.\n'
 }
 
 case "${1:---run}" in
