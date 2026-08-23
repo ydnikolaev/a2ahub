@@ -1298,6 +1298,218 @@ list_members() {
   '
 }
 
+
+# ── PHASE 0 — THE FAST STATIC PASS ───────────────────────────────────────────
+#
+# WHY, with the bill attached. Two of 2026-08-22's ship-gate runs were spent
+# discovering facts that cost nothing to check. One tree carried
+# `released: unreleased` past runbook step 1 and was refused by
+# release-preflight at step 6, AFTER the composed gate had run for 24 minutes;
+# another regenerated the demo-JSON golden before stamping the release date
+# rather than after, and the ten-byte drift was found by the container. Neither
+# fact needs a container, a network or a minute. Both cost one.
+#
+# THE MEMBERSHIP RULE, and it is not "every cheap gate". This pass judges THE
+# CUT COMMIT — the edits runbook Phase 1 steps 1-4 make immediately before the
+# ship gate, which no commit lane has ever judged against the release's own
+# semantics. Everything else in the tree was judged when it landed.
+#
+# Members come in two tiers, and the tiers carry DIFFERENT risk. They run
+# CHEAPEST FIRST — Tier B, then Tier A — for a reason stated at the call site:
+# Tier B is also the "is this a cut at all?" question, so it refuses alone in
+# under a second, while Tier A's four independent findings are collected
+# together rather than one twenty-second round trip at a time.
+#
+#   TIER A — already inside the container's own `make check`, moved earlier.
+#     Zero new refusals. Skipping this pass cannot make such a member green; it
+#     only means paying ~24 minutes for the identical finding. That is what
+#     makes a Tier A member safe by construction, and it is the answer to
+#     US-3's worry: a pass that only reorders refusals cannot teach an operator
+#     to bypass it, because there is nothing on the other side of the bypass.
+#
+#   TIER B — moved forward from `release-preflight` (step 6), which is
+#     network-gated as a whole while these three assertions are pure local
+#     reads. These ARE new refusals at step 5, so each must be argued
+#     satisfiable by step 5, and each is:
+#       * the notes carry a real, quoted date  <- runbook Phase 1 step 1
+#       * every a2a-ref default names the cut  <- runbook Phase 1 step 2
+#       * the template floor is not ahead      <- runbook Phase 1 step 4
+#     They are REUSED, not reimplemented: `release-preflight.sh` carries a
+#     BASH_SOURCE guard precisely so its assertions can be borrowed, and
+#     `check-release-record.sh` already borrows `_ref_default_of` the same way.
+#
+# WHAT THIS PASS CANNOT DO, stated because the spec asks for it in teeth
+# rather than in prose. It has exactly two exits: refuse (non-zero, no
+# receipt), or fall through to phase 1 unchanged. There is no path by which it
+# returns success on its own, and none by which it reaches `write_receipt`.
+# T23 asserts that structurally, against this function's own source, so an
+# edit that moves the container above it or lets a refusal fall through reds.
+#
+# WHERE IT SITS, and why not first. The Docker probe stays ahead of it: an
+# unreachable daemon is UNMEASURED, which gate-lib says dominates a mixed run,
+# and T18 exercises `--release` over a PATH carrying neither `docker` nor `go`.
+# The dirty-tree refusal stays ahead of it too, and that ordering is load
+# bearing rather than incidental: after it, the working tree IS the tree the
+# receipt will name, so every file this pass reads is a file the container
+# will read. It is also why `release-notes-freshness` is a member at all —
+# the "uncommitted notes file" state that gate correctly refuses cannot reach
+# here, because a tree carrying one is refused two checks earlier.
+#
+# NOT run by `--dry-run`. A rehearsal executes nothing (T17); the plan names
+# this phase and its members, and that is all a rehearsal may do.
+
+# fast_pass_version — the version being cut, DERIVED rather than passed in.
+#
+# The newest authored notes file is the same source `internal/notes`'
+# TestReusableRefDefaultMatchesTheNewestAuthoredVersion uses, so the two
+# cannot disagree about which release is in flight. An operator-supplied
+# version could; `make release-check` deliberately takes no argument.
+fast_pass_version() { # $1 = repo root -> "X.Y.Z", or empty
+  local f base
+  for f in "$1"/releasenotes/*.yaml; do
+    [ -f "$f" ] || continue
+    base="${f##*/}"; base="${base%.yaml}"
+    case "$base" in
+      [0-9]*.[0-9]*.[0-9]*) ;;
+      *) continue ;;
+    esac
+    case "$base" in
+      *[!0-9.]*) continue ;;
+    esac
+    printf '%s\n' "$base"
+  done | sort -V | tail -1
+}
+
+# _fp_run runs a member with the JUDGED TREE as its working directory. Several
+# of the Tier A gates read relative paths (`find releasenotes`), so a fixture
+# root is only judgeable if the cwd moves with it — which is exactly what the
+# teeth need.
+#
+# THE SCRIPTS THEMSELVES ARE ALWAYS THIS CHECKOUT'S ($ROOT), never the judged
+# tree's. Logic from here, data from there: a tooth pointing this at a fixture
+# is then exercising the REAL gate against fabricated content, rather than a
+# copy of the gate the tooth itself wrote — which would prove nothing about
+# what a release run does.
+_fp_run() { # $1 = root, $2... = command
+  local root="$1"; shift
+  ( cd "$root" || exit 1; "$@" )
+}
+
+# fast_pass_step — one member, timed, and its refusal NAMES THE RUNBOOK STEP
+# that satisfies it (AC-2). "Which of eighteen steps am I mid-way through" is
+# the question an operator actually has when a release gate reds.
+fast_pass_step() { # $1 = label, $2 = the runbook step that satisfies it, $3... = command
+  local label="$1" where="$2"; shift 2
+  local start end rc=0
+  start="$(date +%s)"
+  "$@" || rc=$?
+  end="$(date +%s)"
+  if [ "$rc" -eq 0 ]; then
+    printf 'ci-parity: fast pass — %s OK (%ss)\n' "$label" "$((end - start))"
+    return 0
+  fi
+  gate_fail "release fast pass: $label — see the lines above for the finding. Satisfied by: $where. Refused in $((end - start))s, before the container started; the container would have reported the same thing about twenty-four minutes from now."
+  return 1
+}
+
+FAST_PASS_PLAN='phase 0 (fast static pass, ~20s) — the cut commit itself, cheapest member first:
+  the notes carry a real, quoted date, not the sentinel      (release-preflight, borrowed)
+  every a2a-ref default names the version being cut          (release-preflight, borrowed)
+  the space-template write floor is not ahead of it          (release-preflight, borrowed)
+  the release record and the world agree                     (check-release-record)
+  the notes corpus covers every later product commit         (check-release-notes-freshness)
+  the demo-JSON golden matches the notes corpus it embeds    (internal/cli golden)
+  a provider-tier deferral record covers the version cut     (check-provider-tier-deferral)'
+
+fast_pass() { # $1 = repo root (default $ROOT) -> 0 pass, 1 refuse
+  local root="${1:-$ROOT}" version rc=0
+  version="$(fast_pass_version "$root")"
+  if [ -z "$version" ]; then
+    gate_fail "release fast pass: $root/releasenotes carries no semver <version>.yaml, so the version being cut cannot be named and no member below can be asked. Satisfied by: docs/runbooks/release.md Phase 1 step 1."
+    return 1
+  fi
+  printf '\n=== ci-parity: fast pass — the cut commit for v%s ===\n' "$version"
+
+  # ── TIER B FIRST, and the order is the acceptance criterion ────────────────
+  #
+  # Borrowed from release-preflight (step 6), which is network-gated as a whole
+  # while these three assertions are pure local reads costing well under a
+  # second. They are also the "is this a cut at all?" question: a tree still
+  # wearing the pre-tag sentinel has not finished step 1, so asking the four
+  # members below what they think of it would be judging a release candidate
+  # that does not exist yet. This trio therefore REFUSES IMMEDIATELY rather
+  # than collecting company — which is what makes the sentinel case, the one
+  # that cost twenty-four minutes on 2026-08-22, a sub-second refusal.
+  #
+  # In a SUBSHELL: release-preflight sets `set -euo pipefail` and four globals
+  # of its own at source time, and this script is not the place to find out
+  # which of them collide. The guard at the bottom of that file is what makes
+  # sourcing it safe; the subshell is what makes it local.
+  if ! (
+    set +e
+    # PARAMETER EXPANSION, not `$(dirname ...)`: classify-guard resolves exactly
+    # two literal forms and refuses anything else, because a PUBLIC file that
+    # sources a path the boundary check cannot read is how a private dependency
+    # ships invisibly. All four Tier A gates below and this one are ALLOW_FILES
+    # — checked, not remembered; `check-release-record.sh`,
+    # `check-release-notes-freshness.sh`, `check-provider-tier-deferral.sh` and
+    # `release-preflight.sh` each carry their own "must stay PUBLIC" refusal in
+    # classify-guard, so `make projection` sees the same phase 0 this tree does.
+    # shellcheck source=release-preflight.sh
+    . "${BASH_SOURCE[0]%/*}/release-preflight.sh"
+    prc=0
+    assert_notes_carry_a_date "$root" "v$version" || prc=1
+    assert_ref_default_matches "$root" "v$version" || prc=1
+    assert_floor_not_ahead     "$root" "v$version" || prc=1
+    exit "$prc"
+  ); then
+    gate_fail "release fast pass: a static release-preflight assertion refused — see the lines above. Satisfied by: docs/runbooks/release.md Phase 1 step 1 (the released: date), step 2 (the a2a-ref defaults) and step 4 (leave the template floor and pins alone). All three are pure local reads borrowed from step 6's gate, so none of this needed the network — and meeting them at step 6 instead costs the whole composed run again."
+    printf 'ci-parity: FAST PASS REFUSED — the four remaining members were NOT asked: this tree has not finished Phase 1, so there is no release candidate for them to judge. The container was never started and no receipt was written for %s.\n' \
+      "$(git -C "$root" rev-parse HEAD 2>/dev/null || echo 'this tree')" >&2
+    return 1
+  fi
+  printf 'ci-parity: fast pass — the three static release-preflight assertions OK\n'
+
+  # ── TIER A — already inside the container; asked here first, at no new risk ─
+  #
+  # ALL FOUR RUN even after one refuses. They are independent findings about a
+  # tree that IS a candidate, and three twenty-second round trips to collect
+  # them one at a time is the same impatience this epic was cut against, one
+  # order of magnitude down.
+  fast_pass_step "the release record and the world agree" \
+    "docs/runbooks/release.md Phase 1 steps 1-4 (the released: date, the a2a-ref default, the untouched template floor and pins)" \
+    _fp_run "$root" bash "$ROOT/scripts/check-release-record.sh" || rc=1
+
+  fast_pass_step "the notes corpus covers every product commit after it" \
+    "docs/runbooks/release.md Phase 1 step 1 (author releasenotes/$version.yaml)" \
+    _fp_run "$root" env ROOT="$root" bash "$ROOT/scripts/check-release-notes-freshness.sh" || rc=1
+
+  # The 2026-08-22 loss, by name. The golden embeds the release-notes corpus,
+  # so it moves TWICE per release — once when the notes file is added and
+  # again when `released:` stops being provisional. Regenerating after only
+  # the first leaves a drift nothing local catches, and the container found it.
+  fast_pass_step "the demo-JSON golden matches the notes corpus it embeds" \
+    "docs/runbooks/release.md Phase 1 step 1, its LAST edit (regenerate the golden AFTER stamping the date)" \
+    _fp_run "$root" go test ./internal/cli/ -count=1 \
+      -run 'TestHtmlCommandDemoJSONMatchesIndentedCompatibilityGolden' || rc=1
+
+  # LAST because it is the only expensive member: ~15s, almost all of it one
+  # repo-wide `find` for live-e2e evidence directories. Worth its price here —
+  # a release cut without a signed deferral record is refused by `make check`
+  # inside the container anyway, twenty-four minutes later.
+  fast_pass_step "a provider-tier deferral record covers v$version, or live evidence does" \
+    "docs/runbooks/release.md §\"Deferring the provider tier\", condition 1" \
+    _fp_run "$root" bash "$ROOT/scripts/check-provider-tier-deferral.sh" || rc=1
+
+  if [ "$rc" -ne 0 ]; then
+    printf 'ci-parity: FAST PASS REFUSED — the container was never started and no receipt was written for %s.\n' \
+      "$(git -C "$root" rev-parse HEAD 2>/dev/null || echo 'this tree')" >&2
+    return 1
+  fi
+  printf 'ci-parity: fast pass green — nothing static stands between this tree and a release.\n'
+  return 0
+}
+
 release_gate() { # $1 = --dry-run | (empty)
   local dry=0
   case "${1:-}" in
@@ -1318,6 +1530,7 @@ release_gate() { # $1 = --dry-run | (empty)
   dirty="$(git -C "$ROOT" status --porcelain=v1 --untracked-files=all)"
 
   printf '\n=== release gate — the tree at %s ===\n' "$head_before"
+  printf '%s\n' "$FAST_PASS_PLAN"
   printf 'phase 1 (container, GNU userland) — the full suite:\n'
   list_members | sed 's/^/  /'
   printf 'phase 2 (host, darwin) — npm run check:quality (a11y + Lighthouse: measurable here, not in the image) and the macos-15 delta, derived from runs-on:\n'
@@ -1368,6 +1581,15 @@ release_gate() { # $1 = --dry-run | (empty)
   if [ -n "$dirty" ]; then
     gate_fail "the working tree has staged, worktree or untracked changes, so a receipt for $head_before would name a tree that does not exist. Commit or clean first; a ship verdict must be about something a publisher can push."
     printf '%s\n' "$dirty" | head -20 | sed 's/^/    /' >&2
+    return 1
+  fi
+
+  # PHASE 0 — the fast static pass. Deliberately the LAST thing before the
+  # container and the FIRST thing that costs more than a second, so a static
+  # mistake in the cut commit is refused now rather than at minute twenty-four.
+  # It cannot pass this function on its own: the only two outcomes are the
+  # refusal below and falling through to phase 1 unchanged (T23 holds that).
+  if ! fast_pass "$ROOT"; then
     return 1
   fi
 
@@ -2135,12 +2357,134 @@ EOF
     teeth_fail=1
   fi
 
+
+  # ── T22-T25 — PHASE 0, THE FAST STATIC PASS (release-cost-2026-08 P1) ──────
+  #
+  # A fixture root exists so these can be watched failing without breaking the
+  # real repository. Logic comes from THIS checkout; only the content is
+  # fabricated — a tooth that ran a copy of the gate it wrote itself would
+  # prove nothing about what a release does.
+  local fpd
+  fpd="$(mktemp -d "${TMPDIR:-/tmp}/ci-parity-fastpass.XXXXXX")"
+  mkdir -p "$fpd/releasenotes" "$fpd/.github/workflows" "$fpd/space-template"
+  printf 'on:\n  workflow_call:\n    inputs:\n      a2a-ref:\n        type: string\n        default: "v0.99.0"\n' \
+    >"$fpd/.github/workflows/a2a-validate-reusable.yml"
+  printf 'min_binary_version: "0.98.0"\n' >"$fpd/space-template/space.yaml"
+
+  # T22 — THE SENTINEL IS REFUSED BEFORE ANYTHING EXPENSIVE STARTS, and this is
+  # the exact tree that cost a whole composed run on 2026-08-22: notes authored
+  # ahead of the tag, the provisional `released: unreleased` never corrected at
+  # step 1, discovered by release-preflight at step 6 after the container had
+  # already judged 24 minutes' worth of a tree that could not ship.
+  # The refusal must NAME THE RUNBOOK STEP (AC-2) and must say the container
+  # was never started — an operator reading "FAIL" alone cannot tell whether
+  # the expensive half ran.
+  local out22 rc22=0
+  printf 'schema: release-notes/v1\nversion: "0.99.0"\nreleased: unreleased\nheadline: fixture\n' \
+    >"$fpd/releasenotes/0.99.0.yaml"
+  out22="$(bash "$ROOT/scripts/ci-parity.sh" --fast-pass "$fpd" 2>&1)" || rc22=$?
+  if [ "$rc22" -eq 0 ] \
+    || ! printf '%s\n' "$out22" | grep -qF "released: unreleased" \
+    || ! printf '%s\n' "$out22" | grep -qF "docs/runbooks/release.md Phase 1 step 1" \
+    || ! printf '%s\n' "$out22" | grep -qiF "the container was never started"; then
+    printf 'ci-parity --teeth: FAIL — T22: a tree carrying the pre-tag sentinel must be refused by the fast pass, naming the runbook step and saying the container never ran; got rc=%s\n%s\n' "$rc22" "$out22" >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T22 — the pre-tag sentinel is refused in phase 0, naming runbook step 1, with the container never started\n'
+  fi
+
+  # T23 — AND T22 IS NOT VACUOUS. The same fixture with a real, quoted date
+  # gets PAST the three static assertions. Without this, "refused" could mean
+  # "any fixture is refused" and the sentinel would have nothing to do with it.
+  local out23 rc23=0
+  printf 'schema: release-notes/v1\nversion: "0.99.0"\nreleased: "2026-08-23"\nheadline: fixture\n' \
+    >"$fpd/releasenotes/0.99.0.yaml"
+  out23="$(bash "$ROOT/scripts/ci-parity.sh" --fast-pass "$fpd" 2>&1)" || rc23=$?
+  if printf '%s\n' "$out23" | grep -qF "released: unreleased" \
+    || ! printf '%s\n' "$out23" | grep -qF "the three static release-preflight assertions OK"; then
+    printf 'ci-parity --teeth: FAIL — T23: a dated fixture must pass the three static assertions, or T22 proved nothing about the sentinel; got rc=%s\n%s\n' "$rc23" "$out23" >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T23 — the same fixture with a real date passes the static trio, so T22 is about the sentinel and not about being a fixture\n'
+  fi
+
+  # T24 — THE VERSION BEING CUT IS DERIVED BY SEMVER, NOT BY STRING ORDER.
+  # This repository has already paid for that distinction once, at v0.19.10:
+  # a lookup that sorted lexically read `0.19.9` as newer than `0.19.10`. The
+  # fast pass names the version in every message it prints and asks every
+  # member about it, so getting this wrong would judge the wrong release while
+  # looking entirely healthy.
+  local out24 got24
+  printf 'schema: release-notes/v1\nversion: "0.99.9"\nreleased: unreleased\nheadline: fixture\n' \
+    >"$fpd/releasenotes/0.99.9.yaml"
+  printf 'schema: release-notes/v1\nversion: "0.99.10"\nreleased: unreleased\nheadline: fixture\n' \
+    >"$fpd/releasenotes/0.99.10.yaml"
+  out24="$(bash "$ROOT/scripts/ci-parity.sh" --fast-pass "$fpd" 2>&1)" || true
+  got24="$(printf '%s\n' "$out24" | sed -n 's/.*the cut commit for v\([0-9.]*\).*/\1/p' | head -1)"
+  if [ "$got24" != "0.99.10" ]; then
+    printf 'ci-parity --teeth: FAIL — T24: the version being cut must be the highest by semver; wanted 0.99.10, got %s\n%s\n' "${got24:-<none>}" "$out24" >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T24 — the version being cut is derived by semver order, so 0.99.10 outranks 0.99.9\n'
+  fi
+  rm -rf "$fpd"
+
+  # T25 — THE PASS CANNOT TURN A RED VERDICT GREEN, AND THIS IS THE TOOTH THAT
+  # SAYS SO (spec 01 AC-4, epic AC-6).
+  #
+  # Spec §6 asked for a tooth proving the fast pass is "a PREFIX, never a
+  # substitute". That framing does not survive contact with the ground and the
+  # honest tooth is a different one — see the spec's §11 amendment. The pass is
+  # a SUPERSET of the container on three axes (the release-preflight trio,
+  # which the container never runs) and a subset on the rest, so containment
+  # cannot be asserted in either direction.
+  #
+  # What IS assertable, and is the property that actually matters, is
+  # structural: inside `release_gate`, `fast_pass` is called BEFORE the
+  # container step, and its ONLY failure arm returns. It therefore has exactly
+  # two outcomes — refuse, or fall through to phase 1 unchanged — and no path
+  # by which it reaches `write_receipt` or makes this function succeed on its
+  # own. Read out of the function's own source, so an edit that reorders the
+  # phases or lets the refusal fall through reds here.
+  #
+  # THE DIRTY-TREE CHECK IS READ TOO, and it is not decoration. Two members —
+  # `release-notes-freshness` and `check-release-record` — can be correctly red
+  # on a tree whose notes file is authored but not yet committed, and the spec
+  # rejected both as members for exactly that reason. They are members here
+  # because that state cannot REACH this pass: `release_gate` refuses a dirty
+  # tree two checks earlier, so by the time phase 0 runs, the working tree is
+  # the tree the receipt will name. Move the dirty check below the fast pass
+  # and the spec's original objection becomes true again — so this tooth reds.
+  local body25 line_dirty line_fast line_container line_receipt
+  body25="$(awk '/^release_gate\(\)/{f=1} f{print} f && /^}/{exit}' "$ROOT/scripts/ci-parity.sh")"
+  line_dirty="$(printf '%s\n' "$body25" | grep -n 'the working tree has staged, worktree or untracked changes' | head -1 | cut -d: -f1)"
+  line_fast="$(printf '%s\n' "$body25" | grep -n 'if ! fast_pass "\$ROOT"; then' | head -1 | cut -d: -f1)"
+  line_container="$(printf '%s\n' "$body25" | grep -n 'release gate phase 1 — container suite' | head -1 | cut -d: -f1)"
+  line_receipt="$(printf '%s\n' "$body25" | grep -n 'write_receipt' | head -1 | cut -d: -f1)"
+  if [ -z "$line_dirty" ] || [ -z "$line_fast" ] || [ -z "$line_container" ] || [ -z "$line_receipt" ]; then
+    printf 'ci-parity --teeth: FAIL — T25: release_gate no longer contains one of the four anchors this tooth reads (dirty=%s fast_pass=%s container=%s write_receipt=%s); the ordering guarantee is unproven\n' \
+      "${line_dirty:-<none>}" "${line_fast:-<none>}" "${line_container:-<none>}" "${line_receipt:-<none>}" >&2
+    teeth_fail=1
+  elif [ "$line_dirty" -ge "$line_fast" ]; then
+    printf 'ci-parity --teeth: FAIL — T25: the dirty-tree refusal must come BEFORE the fast pass, or two of its members judge a working tree the receipt will never name; got dirty at %s, fast_pass at %s\n' \
+      "$line_dirty" "$line_fast" >&2
+    teeth_fail=1
+  elif [ "$line_fast" -ge "$line_container" ] || [ "$line_fast" -ge "$line_receipt" ]; then
+    printf 'ci-parity --teeth: FAIL — T25: the fast pass must be dispatched BEFORE the container and before any receipt is written; got fast_pass at %s, container at %s, write_receipt at %s\n' \
+      "$line_fast" "$line_container" "$line_receipt" >&2
+    teeth_fail=1
+  elif ! printf '%s\n' "$body25" | awk -v n="$line_fast" 'NR==n+1' | grep -qE '^[[:space:]]*return 1[[:space:]]*$'; then
+    printf 'ci-parity --teeth: FAIL — T25: the fast pass'"'"'s failure arm must RETURN; anything else lets a refused tree fall through into the container and on to a receipt\n' >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T25 — dirty-tree refusal, then the fast pass, then the container: the pass judges the tree the receipt will name, and its refusal returns rather than falling through\n'
+  fi
   if [ "$teeth_fail" -ne 0 ]; then
     printf 'ci-parity --teeth: FAIL\n' >&2
     exit 1
   fi
 
-  printf 'ci-parity --teeth: 21 case(s) green.\n'
+  printf 'ci-parity --teeth: 25 case(s) green.\n'
 }
 
 case "${1:---run}" in
@@ -2159,6 +2503,11 @@ case "${1:---run}" in
   --macos-delta) macos_delta ;;
   # --release — the composed ship gate: container-primary, host-delta, receipt.
   --release) release_gate "${2:-}" ;;
+  # --fast-pass [root] — phase 0 alone, over any tree. The root argument is not
+  # a convenience: it is the only way a tooth can watch this refuse without
+  # breaking the real repository, and a gate nobody can watch fail is the shape
+  # this whole file exists to remove.
+  --fast-pass) fast_pass "${2:-$ROOT}" ;;
   --macos-jobs) macos_jobs "${2:-.github/workflows}" ;;
   --members) list_members ;;
   # --phases — read back what a run's phases actually were. The composition
@@ -2166,5 +2515,5 @@ case "${1:---run}" in
   # operator holding a transcript and a question about it.
   --phases) telemetry_report "${2:-0}" "${3:-this run}" "${4:-}" ;;
   --teeth) run_teeth ;;
-  *) printf 'usage: %s [--run|--suite|--macos-delta|--release [--dry-run]|--audit [dir]|--audit-runbook [file]|--macos-jobs [dir]|--members|--teeth]\n' "$0" >&2; exit 2 ;;
+  *) printf 'usage: %s [--run|--suite|--macos-delta|--release [--dry-run]|--fast-pass [root]|--audit [dir]|--audit-runbook [file]|--macos-jobs [dir]|--members|--teeth]\n' "$0" >&2; exit 2 ;;
 esac
