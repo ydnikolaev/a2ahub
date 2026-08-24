@@ -1,0 +1,70 @@
+schema: release-notes/v1
+version: 0.25.4
+released: "2026-08-24"
+headline: a space's checks stop reporting a failed download as a finding
+changes:
+- id: RN-02504-0
+  kind: fix
+  roadmap:
+    visibility: shipped
+    why: >
+      A space's merge gate went red with `could not download a2a after 3
+      attempts`. Nothing was wrong with the pull request; the release CDN had
+      not answered, so the validator never ran. The reader of that check is a
+      maintainer of someone else's repository, with no context on a2ahub's
+      release CDN at all, and a red required check reads as "my change was
+      judged and refused" until somebody opens the log.
+  impact: high
+  subject: a validate or notify run that could not fetch a2a says what was NOT judged
+  detail: >
+    When the download of the `a2a` binary exhausts its retries, both reusable
+    workflows now say what did NOT happen before they say what failed:
+    **THIS PULL REQUEST WAS NOT VALIDATED** for the validator, and **NO
+    NOTIFICATION WAS SENT** for the notifier — each followed by the fact that
+    nothing was found wrong with the space's own content.
+
+    The distinction cannot be carried any other way. A GitHub Actions step has
+    exactly two outcomes, so no exit code can separate "the check found
+    something" from "the check never ran"; the printed text is the only
+    carrier, and an `::error::` annotation is the only part of it a reader sees
+    without opening the log.
+
+    The messages also carry the literal `UNMEASURED` token, which is the same
+    word every other gate in a2ahub uses for this state — one spelling, so a
+    reader who has seen it once recognises it here.
+  affects:
+  - space
+  action:
+    scope: none
+    why: >
+      Nothing to do. A space picks this up when it adopts the new template
+      pin; until then its checks behave exactly as before.
+- id: RN-02504-1
+  kind: fix
+  roadmap:
+    visibility: shipped
+    why: >
+      The download loop in both reusable workflows treated an HTTP answer as a
+      network hiccup. A wrong or unpublished `a2a-ref` therefore cost every
+      run three attempts and roughly thirty seconds of sleeping before it
+      printed the real reason, and told the reader twice that it was retrying
+      when no retry remained.
+  impact: normal
+  subject: a 404 for a2a is answered immediately instead of retried three times
+  detail: >
+    `curl -f` exits 22 on an HTTP error. That is an ANSWER from the server, not
+    an unreachable one, and retrying it cannot change it. Both workflows now
+    separate the two: exit 22 refuses at once, naming `a2a-ref` and the asset
+    it could not find, while a genuine transport failure still retries.
+
+    Two smaller lies went with it. The loop printed `retrying` on its third and
+    final attempt, when nothing was left to retry; and it slept fifteen seconds
+    after that final failure before giving up. A space whose caller names a
+    version that was never published now learns so in about a second.
+  affects:
+  - space
+  action:
+    scope: none
+    why: >
+      Nothing to do. The behaviour change is entirely inside the workflow's own
+      download step.

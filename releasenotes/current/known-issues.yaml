@@ -5,7 +5,7 @@ issues:
     impact: normal
     subject: "The current releases shipped with their provider-tier verification deferred, by explicit operator authorization"
     detail: >
-      Every release from v0.19.0 through v0.25.1 shipped this way — NINETEEN
+      Every release from v0.19.0 through v0.25.4 shipped this way — TWENTY-TWO
       of them, each authorized separately for its own candidate, and the count is
       machine-refused unless the newest record signs for its own position in the
       streak.
@@ -69,17 +69,22 @@ issues:
       because v0.23.0's notify workflow fails on every space that updated to it,
       and v0.24.0 is the fix, so waiting had its own visible cost.
 
-      v0.25.0 and v0.25.1 are lighter than that worst case, and the records say
-      so rather than repeating v0.24.0's framing. v0.25.0 added no refusal and
-      moved no floor; v0.25.1 touches no write path at all — its one change to
-      shipped behaviour is a memo confined, by a checked one-installer /
-      one-caller argument, to the dashboard projection. What both still carry
-      is the sharpest item every release carries: the `a2a-ref` default in the
+      v0.25.0 through v0.25.4 are lighter than that worst case, and their
+      records say so rather than repeating v0.24.0's framing. v0.25.0 added no
+      refusal and moved no floor; v0.25.1 touches no write path at all;
+      v0.25.2 restores `a2a update`; v0.25.3 is report-only. **v0.25.4 does not
+      change the binary at all** — its whole content is the two reusable
+      workflows' own download step. What every one of them still carries is the
+      sharpest item every release carries: the `a2a-ref` default in the
       reusable workflows names the tag being cut, that IS the binary a space's
       merge gate runs, and a tag is immutable.
 
-      A provider-tier run is scheduled for the NEXT RELEASE, and anything it
-      finds ships as a patch release. NINETEEN consecutive deferrals
+      The provider-tier run is deferred to the release after
+      `agent-exchange-2026-08` closes, rather than to an unnamed date: the
+      operator's own standing rule forbids the real-GitHub tier while that epic
+      is being implemented, so the tier is not merely unscheduled but
+      unavailable. Anything it finds ships as a patch release. TWENTY-TWO
+      consecutive deferrals
       over the same surfaces is not improving with repetition, and more than one
       of them passed a date an earlier record had itself named as the deadline;
       the signed count in the newest deferral record is the honest measure of
