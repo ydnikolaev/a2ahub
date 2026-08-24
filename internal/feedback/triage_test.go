@@ -522,7 +522,7 @@ func TestApplyVerdicts_ResolutionValueRoundTrips(t *testing.T) {
 	}{
 		{
 			name:       "long unbreakable token stays on its own line, unbroken",
-			resolution: "Fixed under P9; see docs/features/active/operational-confidence-2026-08/README.md for the write-up.",
+			resolution: "Fixed under P9; see docs/features/archive/operational-confidence-2026-08/README.md for the write-up.",
 		},
 		{
 			name:       "newline forces a literal block",

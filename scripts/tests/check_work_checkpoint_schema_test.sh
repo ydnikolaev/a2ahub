@@ -19,7 +19,7 @@ fail() {
 # In a public checkout that is not a hypothetical: `docs/**` is stripped at
 # publish, so this line reddened `_harness-check` on public `main` while the
 # candidate ref carrying the identical tree was green.
-DOCS_SPEC="docs/features/active/operational-confidence-2026-08/specs/02-reported-work-checkpoints.md"
+DOCS_SPEC="docs/features/archive/operational-confidence-2026-08/specs/02-reported-work-checkpoints.md"
 docs_present=false
 [ -f "$ROOT/$DOCS_SPEC" ] && docs_present=true
 
@@ -27,7 +27,7 @@ copy_tree() {
   local destination="$1"
   mkdir -p "$destination/schemas/envelope/v2" "$destination/schemas/templates/v2" \
     "$destination/internal/workreport" "$destination/internal/validate" \
-    "$destination/docs/features/active/operational-confidence-2026-08/specs"
+    "$destination/docs/features/archive/operational-confidence-2026-08/specs"
   cp "$ROOT/schemas/envelope/v2/announcement.schema.json" "$destination/schemas/envelope/v2/announcement.schema.json"
   cp "$ROOT/schemas/templates/v2/announcement.md" "$destination/schemas/templates/v2/announcement.md"
   cp "$ROOT/internal/workreport/types.go" "$destination/internal/workreport/types.go"

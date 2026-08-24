@@ -8,7 +8,7 @@
 #   schemas/templates/v2/announcement.md
 #   internal/workreport/types.go
 #   internal/validate/work_checkpoint.go
-#   docs/features/active/operational-confidence-2026-08/specs/02-reported-work-checkpoints.md
+#   docs/features/archive/operational-confidence-2026-08/specs/02-reported-work-checkpoints.md
 # lane-reads-opaque: the gate writes its Go analyzer into "$ANALYZER_DIR/main.go"
 #   (mktemp -d) and `go run`s it. The four unconditional reads and the one
 #   presence-gated docs read declared above come from reading that heredoc body;
@@ -137,7 +137,7 @@ func (c *checker) checkGoVocabulary(rel, modeType, waitType, label string) {
 }
 
 func (c *checker) checkDocsIfPresent() bool {
-	const rel = "docs/features/active/operational-confidence-2026-08/specs/02-reported-work-checkpoints.md"
+	const rel = "docs/features/archive/operational-confidence-2026-08/specs/02-reported-work-checkpoints.md"
 	_, err := os.Stat(filepath.Join(c.root, filepath.FromSlash(rel)))
 	if errors.Is(err, os.ErrNotExist) {
 		return false

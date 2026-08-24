@@ -11,7 +11,7 @@
 #   internal/cli/**/*.go
 #   !**/*_test.go
 #   docs/the-plan/plan/**
-#   docs/features/active/operational-confidence-2026-08/**
+#   docs/features/archive/operational-confidence-2026-08/**
 #   docs/decisions.md
 #   AGENTS.md
 # lane-reads-opaque: every real read is behind a function-parameter variable,
@@ -284,7 +284,7 @@ phase_record() {
 
 check_dispatch() {
   local root="$1" tracker p plan
-  tracker="$root/docs/features/active/operational-confidence-2026-08/tracker.yaml"
+  tracker="$root/docs/features/archive/operational-confidence-2026-08/tracker.yaml"
   if [ ! -r "$tracker" ]; then
     unmeasured "cannot read $tracker — the dispatch DAG was not judged, and 'the tracker is missing mandatory P0' is not what an unreadable tracker means"
     return
@@ -294,10 +294,10 @@ check_dispatch() {
     phase_record "$tracker" "$p" | grep -Eq 'blocked_by:.*P0' || fail "$p must be blocked_by P0"
   done
   while IFS= read -r plan; do
-    [ -f "$root/docs/features/active/operational-confidence-2026-08/$plan" ] || fail "tracker plan path missing: $plan"
+    [ -f "$root/docs/features/archive/operational-confidence-2026-08/$plan" ] || fail "tracker plan path missing: $plan"
   done < <(sed -n 's/^[[:space:]]*plan:[[:space:]]*//p' "$tracker")
-  require_marker 'lead owns final wiring' "$root/docs/features/active/operational-confidence-2026-08/plan.md" "shared wiring has no sequencing owner"
-  require_marker 'reconciled before assigning P1D' "$root/docs/features/active/operational-confidence-2026-08/plans/01-producer-evaluation-receipts.plan.md" "P1 cache/HTML overlap has no serialization guard"
+  require_marker 'lead owns final wiring' "$root/docs/features/archive/operational-confidence-2026-08/plan.md" "shared wiring has no sequencing owner"
+  require_marker 'reconciled before assigning P1D' "$root/docs/features/archive/operational-confidence-2026-08/plans/01-producer-evaluation-receipts.plan.md" "P1 cache/HTML overlap has no serialization guard"
 }
 
 check_boundaries() {
@@ -320,8 +320,27 @@ run_all() {
   else
     echo "operational-confidence-guard: note — private normative plan absent; product history/hash checks remain active."
   fi
-  if [ -f "$ROOT/docs/features/active/operational-confidence-2026-08/tracker.yaml" ]; then
+  # A MISSING EPIC IS UNMEASURED, NEVER A QUIET PASS. This was a bare
+  # `if [ -f ... ]; then check_dispatch; fi`, so the day that tracker moved —
+  # archiving the epic, 2026-08-24 — the whole dispatch check would have
+  # stopped running with nothing said. A gate naming a fixed directory going
+  # green through the very drift it exists to catch is this repository's
+  # oldest recurring defect, and the fix is not to remember the path: it is to
+  # refuse when the path is gone.
+  #
+  # The public projection legitimately has no docs/, so absence there is not a
+  # finding — which is why this reports UNMEASURED rather than failing.
+  #
+  # Through `unmeasured()`, NOT `gate_unmeasured` directly: this script owns its
+  # own exit path and counts locally (see the wrapper's own comment). The first
+  # version of this arm called the library function, so it PRINTED the
+  # annotation and still exited 0 — announcing that it could not measure while
+  # reporting a clean verdict, which is the precise failure this gate exists to
+  # refuse. Caught by running the mutation instead of trusting the message.
+  if [ -f "$ROOT/docs/features/archive/operational-confidence-2026-08/tracker.yaml" ]; then
     check_dispatch "$ROOT"
+  elif [ -d "$ROOT/docs/features" ]; then
+    unmeasured "docs/features exists but operational-confidence-2026-08/tracker.yaml is not where this gate looks, so the dispatch checks DID NOT RUN. If the epic moved, repoint this gate; if it was deleted, delete these checks with it."
   fi
   if [ -f "$ROOT/docs/decisions.md" ] && [ -f "$ROOT/AGENTS.md" ]; then
     check_boundaries "$ROOT"
@@ -447,10 +466,10 @@ run_teeth() {
   expect_red v1-immutability 'published v1 bytes changed' check_hashes "$tmp/hash" "$tmp/hash/manifest"
   local v1_mutation_out="$TEETH_LAST_OUT"
 
-  if corpus_present docs/features/active/operational-confidence-2026-08 mandatory-dag; then
-    mkdir -p "$tmp/dispatch/docs/features/active"
-    cp -R "$ROOT/docs/features/active/operational-confidence-2026-08" "$tmp/dispatch/docs/features/active/"
-    sed -i.bak '/- id: P1/,/- id: P2/ s/blocked_by: \[P0\]/blocked_by: []/' "$tmp/dispatch/docs/features/active/operational-confidence-2026-08/tracker.yaml"
+  if corpus_present docs/features/archive/operational-confidence-2026-08 mandatory-dag; then
+    mkdir -p "$tmp/dispatch/docs/features/archive"
+    cp -R "$ROOT/docs/features/archive/operational-confidence-2026-08" "$tmp/dispatch/docs/features/archive/"
+    sed -i.bak '/- id: P1/,/- id: P2/ s/blocked_by: \[P0\]/blocked_by: []/' "$tmp/dispatch/docs/features/archive/operational-confidence-2026-08/tracker.yaml"
     expect_red mandatory-dag 'P1 must be blocked_by P0' check_dispatch "$tmp/dispatch"
   fi
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# docs/features/active/operational-confidence-2026-08/audits/v0.19.1-provider-tier-deferral.md
+# docs/features/archive/operational-confidence-2026-08/audits/v0.19.1-provider-tier-deferral.md
 # §"Scheduled follow-up" promises, in prose only, that the next release
 # changing runtime/host/funnel/validator/authorization does not ship on the
 # `logic-proven, provider-deferred` tier again until a provider-tier

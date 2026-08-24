@@ -8,7 +8,7 @@ items:
       verdict: accepted
       route: phase
       refs:
-        - docs/features/active/operational-confidence-2026-08/README.md
+        - docs/features/archive/operational-confidence-2026-08/README.md
       date: "2026-08-02"
     # refs deliberately cites releasenotes/0.23.0.yaml, NOT
     # docs/features/archive/defects-fix-2026-08/specs/03-a-criterion-has-a-name.md
