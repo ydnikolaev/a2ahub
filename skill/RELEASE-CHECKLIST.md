@@ -15,6 +15,36 @@
 
 ## Prose files under review (D-015 hand-maintained set)
 
+### v0.25.4 — no row moves, and the reason is written rather than ticked
+
+**Not one prose row changed, and that is a finding rather than an omission.**
+Step 7 asks for the diff between the shipped surface and the prose. This
+release's diff against `cmd/`, `internal/cli/`, `internal/mcp/`, `schemas/` and
+`skill/` is one file — a regenerated demo-JSON golden. No verb, no flag, no
+reachable sentinel, no MCP parameter, no exit code. There is nothing for a
+prose page to have gone stale against.
+
+What the release DOES change lives entirely inside `a2a-validate-reusable.yml`
+and `a2a-notify-reusable.yml`, in the step that fetches the binary before a
+space's check begins. Two pages mention reusable workflows —
+`onboarding.md` and `troubleshooting.md` — and both were read against the
+change:
+
+- `onboarding.md` describes wiring a space's callers to the reusable workflows.
+  Unchanged by this release: the caller's inputs, the pin form and the setup
+  sequence are all identical.
+- `troubleshooting.md` documents `a2a doctor`'s checks and says nothing about a
+  space's CI check going red on a failed download. **It said nothing before
+  this release either**, so nothing is stale — and the message this release
+  ships is self-describing by design: "THIS PULL REQUEST WAS NOT VALIDATED …
+  the a2ahub release CDN did not answer" names the cause and the remedy in the
+  place the reader is already looking. A troubleshooting row would be a second
+  copy of a sentence that arrives on its own.
+
+Recorded here rather than ticked, because a tick asserts a page was read
+against the diff and these rows have no diff to be read against. The dates and
+reviewers in the table below stand.
+
 ### v0.23.0 — what was reviewed, and what was not
 
 **Three rows carry today's date because three pages were actually read against
