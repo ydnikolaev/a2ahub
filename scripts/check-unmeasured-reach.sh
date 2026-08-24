@@ -292,14 +292,25 @@ run_check() {
   # check was vacuous from birth. Its own tooth caught that, which is the only
   # reason it is not still vacuous. "Must be reached this way" is both easier
   # to get right and wider than "must not be reached that way".
-  local mk n mkbad=0
+  # A LITERAL TAB, BUILT WITH printf, NOT THE ESCAPE `\t` IN A PATTERN.
+  #
+  # This check shipped as `grep -nE '^\t…'` and passed on the host, where
+  # `grep` happens to be ugrep; BSD grep accepts `\t` too. GNU grep does not —
+  # it reads `\t` as a literal `t`, so the pattern matched nothing and the
+  # check was inert on every Linux host, exactly where CI runs. The container
+  # phase of the ship gate caught it, by its own tooth, which is the entire
+  # reason `ci-parity-docker` exists. A Makefile recipe line begins with a real
+  # tab; matching that byte is portable, and `[[:blank:]]` would be wrong
+  # because a space-indented line is not a recipe at all.
+  local mk n mkbad=0 tab
+  tab="$(printf '\t')"
   if [ -f "$ROOT/Makefile" ]; then
     while IFS= read -r n; do
       [ -n "$n" ] || continue
       mkbad=1
       mk="$(sed -n "${n}p" "$ROOT/Makefile")"
       gate_fail "unmeasured-reach: Makefile:$n names gate-lib in a RECIPE without invoking it through \`bash\`. make runs recipes under /bin/sh; on Linux that is dash, and gate-lib's \`\${BASH_SOURCE[0]%/*}\` is a Bad substitution there — so a sourcing recipe dies BEFORE gate_unmeasured exists and the reader gets a bare \`make Error 2\`. Reproduce with: make SHELL=/bin/dash <target>. Use instead: bash scripts/lib/gate-lib.sh --unmeasured \"<what did not happen>\". The line is: ${mk# }"
-    done < <(grep -nE '^\t.*gate-lib\.sh' "$ROOT/Makefile" |
+    done < <(grep -nE "^${tab}.*gate-lib\.sh" "$ROOT/Makefile" |
                grep -vE 'bash[[:space:]]+[^[:space:]]*gate-lib\.sh' |
                cut -d: -f1)
   fi
