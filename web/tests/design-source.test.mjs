@@ -1915,3 +1915,94 @@ test('the public runtime hides raw design markup without collapsing its shell', 
   assert.match(source, /x-dc \{ display: block; min-height: 100vh; visibility: hidden; \}/);
   assert.match(source, /#dc-root:empty \{ min-height: 100vh; \}/);
 });
+
+// Between 2026-08-14 and 2026-08-25 every label on the public homepage's
+// exchange map read "Unknown value". Two independent omissions produced it and
+// either one alone was enough: no page but the local dashboard imported
+// VocabularyResolver, so `globalThis.A2A_VOCABULARY_RESOLVER` was never
+// installed and NetworkMap fell through to its own fallback string; and the
+// `homepage` demo projection, added on 2026-08-14 for payload reasons, did not
+// carry `vocabulary`, so even an installed resolver had no catalogue to read.
+// Nothing failed — a page that resolves nothing renders a plausible page.
+//
+// These two tests derive the requirement from the component graph rather than
+// from a kept list, so a page that starts importing a resolver-consuming
+// component, or a component that starts resolving a new family, fails here
+// instead of degrading in silence.
+const DESIGN_ROOT = new URL('../design-source/', import.meta.url);
+const PUBLIC_RUNTIME_PAGES = [
+  '13-public-home-v4.dc.html',
+  '14-local-dashboard-v4.dc.html',
+  '15-changelog-v4.dc.html',
+  '20-dashboard-example-v4.dc.html'
+];
+
+function designSource(name) {
+  return readFileSync(new URL(name, DESIGN_ROOT), 'utf8');
+}
+function directImports(source) {
+  return [...source.matchAll(/<dc-import name="([A-Za-z0-9]+)"/g)].map((match) => match[1]);
+}
+function componentGraph(page) {
+  const seen = new Set();
+  const queue = directImports(designSource(page));
+  while (queue.length) {
+    const name = queue.shift();
+    if (seen.has(name)) continue;
+    seen.add(name);
+    let source;
+    try {
+      source = designSource(`${name}.dc.html`);
+    } catch {
+      continue;
+    }
+    queue.push(...directImports(source).filter((next) => !seen.has(next)));
+  }
+  return seen;
+}
+function resolvedFamilies(component) {
+  const source = designSource(`${component}.dc.html`);
+  return [
+    ...source.matchAll(/resolveVocabulary\([^,]+,\s*"([a-z-]+)"/g),
+    ...source.matchAll(/\.lookup\([^,]+,\s*"([a-z-]+)"/g)
+  ].map((match) => match[1]);
+}
+
+test('every runtime page that consumes the vocabulary resolver installs it', () => {
+  for (const page of PUBLIC_RUNTIME_PAGES) {
+    const graph = componentGraph(page);
+    const consumers = [...graph].filter((name) => {
+      if (name === 'VocabularyResolver') return false;
+      try {
+        return designSource(`${name}.dc.html`).includes('A2A_VOCABULARY_RESOLVER');
+      } catch {
+        return false;
+      }
+    });
+    if (!consumers.length) continue;
+    assert.ok(
+      graph.has('VocabularyResolver'),
+      `${page} imports ${consumers.join(', ')} — each reads A2A_VOCABULARY_RESOLVER, so the page must import VocabularyResolver`
+    );
+  }
+});
+
+test('a narrowed vocabulary projection carries every family its page resolves', async () => {
+  const { demoProjectionFields, demoVocabularyFamilies } = await import('../src/lib/demo-projection.ts');
+  const pageForProjection = { homepage: '13-public-home-v4.dc.html', 'dashboard-example': '20-dashboard-example-v4.dc.html' };
+
+  for (const [projection, declared] of Object.entries(demoVocabularyFamilies)) {
+    const page = pageForProjection[projection];
+    assert.ok(page, `projection ${projection} must name the page it narrows for`);
+    assert.ok(
+      demoProjectionFields[projection].includes('vocabulary'),
+      `${projection} narrows the vocabulary catalogue but does not project it`
+    );
+    const needed = [...new Set([...componentGraph(page)].flatMap(resolvedFamilies))].sort();
+    assert.deepEqual(
+      [...declared].sort(),
+      needed,
+      `${projection} declares [${[...declared].sort()}] but ${page} resolves [${needed}]`
+    );
+  }
+});

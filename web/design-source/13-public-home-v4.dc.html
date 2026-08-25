@@ -172,6 +172,8 @@ a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-r
 </style>
 </helmet>
 
+<dc-import name="VocabularyResolver" hint-size="0,0"></dc-import>
+
 <div data-screen-label="Public home v4" style="min-height:100vh;">
 
   <div style="position:sticky; top:0; z-index:80;"><dc-import name="SiteHeader" active="product" md="index.md" md-text="{{ mdText }}" hint-size="100%,66px"></dc-import></div>
@@ -252,7 +254,7 @@ a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-r
           <span style="display:inline-flex; align-items:center; gap:8px; background:var(--surface); border-radius:8px; padding:8px 13px; color:var(--body); box-shadow:inset 0 0 0 1px var(--border);"><span style="width:7px; height:7px; border-radius:99px; background:var(--ochre); flex:0 0 7px;"></span>synthetic demo snapshot</span>
         </div>
       </div>
-      <dc-import name="NetworkMap" heading="Exchange map" space="all" space-filter="checkout-core,risk-payments" collapse-extras="{{ true }}" wide="{{ true }}" show-matrix="{{ false }}" show-space-tabs="{{ false }}" hint-size="100%,920px"></dc-import>
+      <dc-import name="NetworkMap" heading="Exchange map" space="all" space-filter="checkout-core,customer-ops" collapse-extras="{{ true }}" wide="{{ true }}" show-matrix="{{ false }}" show-space-tabs="{{ false }}" hint-size="100%,920px"></dc-import>
       </div>
     </section>
 
