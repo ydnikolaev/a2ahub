@@ -15,6 +15,29 @@
 
 ## Prose files under review (D-015 hand-maintained set)
 
+### v0.25.5 — no row moves; the release does not touch the agent's surface
+
+**The shipped surface this release changes is the published website.** Step 7's
+diff against `cmd/`, `internal/cli/`, `internal/mcp/`, `schemas/` and `skill/`
+is one file — the regenerated demo-JSON golden, which moves because it embeds
+the release-notes corpus. No verb, no flag, no reachable sentinel, no MCP
+parameter, no exit code. There is nothing for a prose page to have gone stale
+against.
+
+The skill is how an AGENT learns to operate `a2a`, and nothing an agent calls
+moved. The exchange map, the home page copy and the space filter this release
+fixes are read by people, in a browser, on a page the skill never points an
+agent at.
+
+The separation was checked rather than assumed: `grep -rn "a2ahub.dev" skill/`
+returns nothing. The prose set does not point an agent at the public site on
+any page, so no row can have gone stale against a site change — which makes
+this a stronger answer than "the pages still read correctly", not a weaker one.
+
+Recorded rather than ticked, for the reason the v0.25.4 entry gives: a tick
+asserts a page was read against a diff, and these rows have no diff to be read
+against. The dates and reviewers in the table below stand.
+
 ### v0.25.4 — no row moves, and the reason is written rather than ticked
 
 **Not one prose row changed, and that is a finding rather than an omission.**
