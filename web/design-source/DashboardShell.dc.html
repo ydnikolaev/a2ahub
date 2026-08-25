@@ -301,10 +301,24 @@ class Component extends DCLogic {
     }
     const avail = this.state.navW;
     const total = items.reduce((t, i) => t + i.w, 0);
-    if (!avail) {
-      const active = items.find(t => t.id === this.state.view) || items[0];
-      return { vis:[active], rest:items.filter(t => t !== active) };
-    }
+    // navW === 0 is NOT MEASURED, and an unmeasured width must not be rendered
+    // as a folded layout. Folding is a CONSEQUENCE of a measurement — which is
+    // what the guarding test is named for, "desktop navigation measures its
+    // available width before folding views" — so before one exists the strip
+    // shows every view and the first measurement folds it if it must.
+    //
+    // It used to return the active view plus "More", i.e. the maximally folded
+    // layout, derived from a width nobody had taken. Measured in the parity
+    // container on 2026-08-25: exactly ONE frame of `Overview|More`, then 119
+    // frames of the full nine-view strip. Every dashboard load, every width.
+    //
+    // It cost a red ship gate twice: `dashboard-visual-contract`'s
+    // openDashboardView asks isVisible() and then clicks "More", and on a
+    // slower host the correcting re-render lands between the two, so the click
+    // hits a button already detached from the DOM. Measuring earlier does not
+    // fix it — the node's width is not resolvable at mount — and a test that
+    // waits for the strip to settle would only hide a real layout flash.
+    if (!avail) return { vis: items, rest: [] };
     if (total <= avail) return { vis: items, rest: [] };
     const budget = avail - 92;
     const vis = [], rest = [];

@@ -873,6 +873,28 @@ class Component extends DCLogic {
         if (node && node.parentElement) this.navRO.observe(node.parentElement);
       }, 0);
     }
+    // MEASURE BEFORE THE FIRST PAINT, not a tick after it. componentDidMount
+    // runs after the DOM is in place and before the browser paints, so a
+    // setState here re-renders without a frame ever reaching the screen.
+    //
+    // Deferring this to setTimeout(...,0) yielded the frame, and navLayout()
+    // reads navW === 0 as "not measured" and renders the ACTIVE VIEW PLUS
+    // "More" — a real folded layout derived from a measurement that had not
+    // been taken. Measured on 2026-08-25 in the parity container: exactly one
+    // frame of `Overview|More`, then 119 frames of the full nine-view strip.
+    //
+    // That is the defect this repository refuses by name everywhere else: an
+    // unmeasured value presented as a verdict. It is also the exact contract
+    // the guarding test is NAMED for — "desktop navigation measures its
+    // available width before folding views" — which could not see the
+    // violation because it only asserts the settled state.
+    //
+    // It cost a red ship gate twice. `dashboard-visual-contract`'s
+    // openDashboardView asks isVisible() and then clicks "More"; on a slower
+    // host the re-render lands between the two and the button it is clicking
+    // is detached from the DOM. The timer stays as a fallback for the case
+    // where the strip is not laid out yet and clientWidth reads 0.
+    this.measureNav();
     this.navMeasureTimer = setTimeout(this.measureNav, 0);
     // Escape unwinds one layer at a time. ArtifactDetail owns its document
     // overlay and Modal owns root overlays; this listener owns only view-local
