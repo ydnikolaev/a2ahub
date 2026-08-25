@@ -1,0 +1,111 @@
+schema: release-notes/v1
+version: 0.25.5
+released: "2026-08-25"
+headline: the public exchange map reads its own vocabulary again
+changes:
+- id: RN-02505-0
+  kind: fix
+  roadmap:
+    visibility: shipped
+    why: >
+      Every relation label on the site's exchange map read `Unknown value`.
+      A reader met a diagram whose lines all said the catalogue did not know
+      them, on the page that exists to show the protocol explaining itself.
+  impact: normal
+  subject: exchange-map labels resolve instead of reading Unknown value
+  detail: >
+    The map resolves each label through `A2A_VOCABULARY_RESOLVER`, which is
+    installed by loading the `VocabularyResolver` component. Only the local
+    dashboard imported it, so on every public page the global was absent and
+    the map fell through to its own fallback string. The homepage also stopped
+    carrying the `vocabulary` catalogue in its runtime payload, so an installed
+    resolver would have had nothing to read either. Both are fixed, on the
+    home page, the changelog and the dashboard example.
+
+    The catalogue is 96 entries against a tight page budget, so a page may now
+    narrow it to the families its own component graph resolves — the homepage
+    resolves one — and the `unknown` fallback always survives, so a real miss
+    still reads as a miss.
+
+    Two tests derive the requirement rather than restate it: one walks each
+    page's component graph and fails when a page that consumes the resolver
+    does not install it, the other recomputes the families a page resolves and
+    fails when the declaration disagrees. The changelog page was found by the
+    first of them, not by hand.
+  affects:
+  - site
+  action:
+    scope: none
+    why: >
+      Nothing to do. The change is entirely inside the published site.
+- id: RN-02505-1
+  kind: fix
+  roadmap:
+    visibility: shipped
+    why: >
+      The map drew one space where the page's own copy describes two systems
+      exchanging work across a shared boundary, so the illustration argued
+      against the sentence above it.
+  impact: low
+  subject: the exchange map draws both demo spaces
+  detail: >
+    The map's space filter has named `risk-payments` since the site first
+    shipped, and no space, fixture or test anywhere in the repository has ever
+    defined that id. The second demo space is `customer-ops`. With the filter
+    corrected the map draws both, and its overview counts follow: two readable
+    spaces, ten contract lines, twelve open lanes.
+  affects:
+  - site
+  action:
+    scope: none
+    why: >
+      Nothing to do. The change is entirely inside the published site.
+- id: RN-02505-2
+  kind: feat
+  roadmap:
+    visibility: shipped
+    why: >
+      The home page's copy was rewritten in place by the copy SSOT the first
+      time it synchronised, which flattened the emphasis the hero carried and
+      replaced the headline. Nothing failed, because flattened prose renders.
+  impact: low
+  subject: the home page recovers its hero emphasis and says what the product does today
+  detail: >
+    Emphasis is now declared alongside the copy and applied after escaping, so
+    a copy field stays a plain string for the page description and the Markdown
+    and llms projections that read it, and a highlight that matches nothing, or
+    matches twice, is a hard error rather than a silent wrong-place wrap.
+
+    The section prose was rewritten against what the binary does today. Each
+    section sits above a table, diagram or state machine that already proves
+    the mechanism, so the prose says why a reader would care and lets the
+    figure carry the detail.
+  affects:
+  - site
+  action:
+    scope: none
+    why: >
+      Nothing to do. The change is entirely inside the published site.
+- id: RN-02505-3
+  kind: policy
+  roadmap:
+    visibility: shipped
+    why: >
+      This release was proved by the presentation-only tier, and a reader is
+      owed the name of what that tier does not run.
+  impact: low
+  subject: this release was proved without the full GitHub live matrix
+  detail: >
+    The exact public candidate changes no executable or protocol behaviour: the
+    diff is the site and one test file. It was proved by full `make check`,
+    the renderer and workflow checks, the release preflight and the candidate
+    leak proof.
+
+    The full GitHub live matrix was NOT run for this release. The last release
+    proved by that full baseline is v0.25.4.
+  affects:
+  - site
+  action:
+    scope: none
+    why: >
+      Nothing to do. Recorded so the omission is readable rather than assumed.
