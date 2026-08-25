@@ -29,6 +29,66 @@ const escapeHTML = (value) => String(value)
   .replaceAll('<', '&lt;')
   .replaceAll('>', '&gt;');
 
+// Emphasis is design vocabulary, not copy, so site.json names a tone and this
+// script owns the style string. A copy field stays a plain string for every
+// other consumer — `description={site.home.lead}` in index.astro and the
+// markdown/llms projections in generate-content.mjs read the same value.
+const PILL_TONES = {
+  teal: 'background:var(--teal-tint); color:var(--teal-strong-ink);',
+  healthy: 'background:var(--healthy-tint); color:var(--healthy-strong);',
+  attention: 'background:var(--attention-tint); color:var(--attention-strong);',
+};
+const LEAD_TONES = {
+  plain: '',
+  teal: ' style="color:var(--teal-strong-ink);"',
+  healthy: ' style="color:var(--healthy-strong);"',
+  attention: ' style="color:var(--attention-strong);"',
+};
+const renderEmphasis = ({ style, tone }, text) => {
+  if (style === 'pill') {
+    if (!PILL_TONES[tone]) throw new Error(`home copy: unknown pill tone ${tone}`);
+    return `<span style="display:inline-block; padding:1px 7px; border-radius:6px; ${PILL_TONES[tone]} font-weight:600;">${text}</span>`;
+  }
+  if (style === 'lead') {
+    if (LEAD_TONES[tone] === undefined) throw new Error(`home copy: unknown lead tone ${tone}`);
+    return `<strong${LEAD_TONES[tone]}>${text}</strong>`;
+  }
+  throw new Error(`home copy: unknown emphasis style ${style}`);
+};
+
+// A highlight addresses its text by substring, so an ambiguous or absent match
+// is a silent wrong-place wrap. Both are hard errors, the same shape as the
+// marker throws above: the mechanism guards itself or it is not worth having.
+const highlights = site.homeHighlights ?? {};
+for (const key of Object.keys(highlights)) {
+  if (!(key in values)) throw new Error(`home copy: highlight targets unknown field ${key}`);
+}
+const emphasize = (key, escaped) => {
+  const spans = highlights[key];
+  if (!spans?.length) return escaped;
+  const hits = spans.map((span) => {
+    const needle = escapeHTML(span.text);
+    const at = escaped.indexOf(needle);
+    if (at < 0) throw new Error(`home copy: highlight "${span.text}" is not in ${key}`);
+    if (escaped.indexOf(needle, at + needle.length) >= 0) {
+      throw new Error(`home copy: highlight "${span.text}" is ambiguous in ${key}`);
+    }
+    return { at, end: at + needle.length, span, needle };
+  }).sort((a, b) => a.at - b.at);
+  for (let i = 1; i < hits.length; i += 1) {
+    if (hits[i].at < hits[i - 1].end) {
+      throw new Error(`home copy: highlights overlap in ${key}`);
+    }
+  }
+  let out = '';
+  let cursor = 0;
+  for (const hit of hits) {
+    out += escaped.slice(cursor, hit.at) + renderEmphasis(hit.span, hit.needle);
+    cursor = hit.end;
+  }
+  return out + escaped.slice(cursor);
+};
+
 let next = source;
 for (const [key, value] of Object.entries(values)) {
   const start = `<!-- A2A_HOME_COPY:${key}:START -->`;
@@ -39,7 +99,7 @@ for (const [key, value] of Object.entries(values)) {
   if (next.indexOf(start, from + start.length) >= 0 || next.indexOf(end, to + end.length) >= 0) {
     throw new Error(`home copy: markers duplicated for ${key}`);
   }
-  next = `${next.slice(0, from + start.length)}${escapeHTML(value)}${next.slice(to)}`;
+  next = `${next.slice(0, from + start.length)}${emphasize(key, escapeHTML(value))}${next.slice(to)}`;
 }
 
 if (check && next !== source) {

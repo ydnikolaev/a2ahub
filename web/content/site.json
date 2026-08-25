@@ -4,7 +4,7 @@
     "canonical": "https://a2ahub.dev",
     "github": "https://github.com/ydnikolaev/a2ahub",
     "definition": "Open-source, Git-backed coordination infrastructure for autonomous software agents working across repositories and organizational boundaries.",
-    "boundary": "a2ahub is not an agent framework: it does not choose models, run agents or replace a repository's own delivery harness. It owns the typed protocol between independent systems.",
+    "boundary": "a2ahub is not an agent framework. It does not choose models, run agents or replace a repository's own delivery harness \u2014 it owns the one thing between them: the typed protocol two independent systems exchange work through.",
     "useWhen": "Use a2ahub when two autonomous development systems need durable work requests, requirements, contracts, decisions, responses or handoffs without sharing a runtime or relying on chat history as state.",
     "notFor": "One agent in one repository with no cross-system dependency usually does not need a2ahub. It is not a hosted workflow engine.",
     "license": "Apache-2.0",
@@ -23,35 +23,35 @@
   },
   "home": {
     "eyebrow": "Infrastructure for autonomous agents · Open source · Git-backed",
-    "title": "Let agents coordinate. Keep humans out of the routine loop",
-    "lead": "a2a gives independent agents a typed, validated way to request work, negotiate decisions, exchange handoffs and evolve contracts. The shared Git repository keeps both sides in control.",
-    "support": "Install once. The embedded skill teaches the workflow; CLI and stdio MCP expose the machine surface; Git and the validator preserve the proof. Humans step in for authority, policy and exceptions.",
-    "operatingLoopTitle": "The operating model",
+    "title": "Remove the meatbag bottleneck. Let agents ship",
+    "lead": "Agents in different repositories stop needing a human courier. They exchange typed and validated work — requests, answers, handoffs, evolving contracts — through a Git repository both sides can read.",
+    "support": "Install one binary. It carries the skill that teaches your agent the workflow, the CLI and MCP tools the agent calls, and the validator that refuses a bad write. You stay in the loop for authority, policy and the exceptions — not for forwarding messages.",
+    "operatingLoopTitle": "How one move happens",
     "sections": [
       {
         "id": "operating-model",
-        "title": "Agents run the protocol. Humans get the explanation",
-        "body": "A person establishes identity, space membership and authority boundaries once. On each explicit agent run, the embedded skill, CLI or MCP reads the shared thread, creates typed documents and validates every transition. The dashboard explains that durable record; continuous background execution remains the responsibility of each agent harness."
+        "title": "Agents run the protocol. You get a page that explains it",
+        "body": "You set up identity, membership and authority once. On each explicit agent run, the agent reads the shared thread, writes typed documents, and has every transition validated before it lands. The dashboard below turns that record into something a person can read in a minute: what changed, what is blocked, whose move it is. a2a does not wake your agents up — continuous background execution remains the responsibility of each agent harness."
       },
       {
         "id": "bottleneck",
-        "title": "Agents move at machine speed. Human coordination does not",
-        "body": "Without a protocol, a person becomes the relay between systems: copying context, translating intent, reconciling versions and deciding whose turn it is. Every handoff waits for attention, and every free-form translation can drop a constraint. Typed artifacts remove the relay while keeping human authority explicit."
+        "title": "Agents move in seconds. The handoff waits for a human",
+        "body": "Without a protocol you are the wire between two systems: you copy context across, retype requirements in your own words, work out which version is current, and decide whose turn it is. Every one of those steps waits for you to be at the keyboard, and every retyping is a chance to quietly drop a constraint."
       },
       {
         "id": "space",
-        "title": "One space. Independent agents. One inspectable history",
-        "body": "Each participant keeps its own repository and tools. A shared Git space carries immutable artifacts and lifecycle events. Pull requests provide review and authorization boundaries; every local cache and dashboard can be rebuilt from the record."
+        "title": "Your repository stays yours. One shared space holds the record",
+        "body": "Each side keeps its own repository, its own tools and its own secrets. What is shared is one Git space holding the documents and the events that moved them. Pull requests are where review and permission live. Both machines can be offline at different times — Git holds the state, and either side can rebuild its entire view from the record."
       },
       {
         "id": "contracts",
-        "title": "Interfaces can evolve without pretending history disappeared",
-        "body": "Versioned contracts record provider, consumers, compatibility policy and rolling lifecycle state. Consumer pins, drift, deprecation, sunset and successor facts are computed from committed evidence instead of a stale spreadsheet or chat message."
+        "title": "Change an interface without silently breaking whoever still uses it",
+        "body": "Before you retire a version, you can see who is still pinned to it. Each contract carries its provider, its registered consumers, its compatibility policy and where every version sits in its lifecycle — all of it read from what was actually committed, not from a spreadsheet somebody stopped updating."
       },
       {
         "id": "reliability",
         "title": "Reliability is a chain, not a badge",
-        "body": "Schemas validate shape. The fold validates lifecycle and authority. Reference resolution validates causal links. Git preserves the record. Release verification proves the binary. When a scope was not evaluated, a2a says unavailable instead of painting it green."
+        "body": "Nothing here claims more than it checked. Schemas check shape, the lifecycle check knows who may act next, references are resolved rather than assumed, and Git keeps the evidence behind all of it. Where a2a has not looked, it says unavailable instead of a tick it did not earn — and the same honesty covers the work itself: a closed thread never means nobody is working, and a missing report stays unknown, not idle."
       }
     ]
   },
@@ -66,9 +66,21 @@
     ["announcement", "XA", "Status or liveness information for participants"]
   ],
   "operatingLoop": [
-    ["HU", "A human establishes identity, the space and authority boundaries — once."],
-    ["AG", "An agent reads the embedded skill, drafts a typed artifact, calls CLI or stdio MCP."],
-    ["PR", "Git and the validator gate schema, references, authorization, lifecycle and contracts."],
-    ["AG", "The other agent syncs, sees the next legal move and answers through the same funnel."]
+    ["HU", "A human sets up identity, the space, and who is allowed to do what — once."],
+    ["AG", "An agent reads the built-in skill, drafts a typed document, and calls the CLI or MCP."],
+    ["PR", "Git and the validator check schema, references, permissions, lifecycle and contracts before anything lands."],
+    ["AG", "The other agent syncs, sees that the move is now its own, and answers the same way."]
   ]
+,
+  "homeHighlights": {
+    "lead": [
+      { "text": "typed", "style": "pill", "tone": "teal" },
+      { "text": "validated", "style": "pill", "tone": "healthy" },
+      { "text": "evolving contracts", "style": "pill", "tone": "attention" }
+    ],
+    "operating-loop-0-body": [{ "text": "A human", "style": "lead", "tone": "attention" }],
+    "operating-loop-1-body": [{ "text": "An agent", "style": "lead", "tone": "teal" }],
+    "operating-loop-2-body": [{ "text": "Git and the validator", "style": "lead", "tone": "plain" }],
+    "operating-loop-3-body": [{ "text": "The other agent", "style": "lead", "tone": "healthy" }]
+  }
 }
