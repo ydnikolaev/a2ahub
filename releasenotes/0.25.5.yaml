@@ -86,6 +86,36 @@ changes:
     scope: none
     why: >
       Nothing to do. The change is entirely inside the published site.
+- id: RN-02505-4
+  kind: fix
+  roadmap:
+    visibility: shipped
+    why: >
+      The dashboard's view strip rendered from a width nobody had measured, so
+      every load began with the navigation collapsed to a single view and a
+      "More" button before snapping open. One frame, every load, since the
+      strip was written.
+  impact: low
+  subject: the dashboard navigation no longer flashes a collapsed strip on load
+  detail: >
+    `navW` starts at 0, meaning not measured, and the layout read that 0 as a
+    real width — returning the maximally folded strip until the first
+    measurement replaced it a tick later. Measured in the parity container:
+    exactly one frame of `Overview | More`, then the full nine-view strip.
+
+    Folding is now a consequence of a measurement. With no width yet the strip
+    shows every view, and the first measurement folds it if it must. At a
+    standard desktop width the navigation is stable from the first frame.
+
+    Found because it made a browser test time out on a slower host while
+    passing in seconds on a developer machine — the same race read from two
+    sides, in a release that changes nothing else about this surface.
+  affects:
+  - dashboard
+  action:
+    scope: none
+    why: >
+      Nothing to do. The fix is inside the dashboard a2a renders locally.
 - id: RN-02505-3
   kind: policy
   roadmap:
