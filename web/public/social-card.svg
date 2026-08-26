@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
-  <title id="title">a2ahub — typed coordination for autonomous agents</title>
-  <desc id="desc">Two agent robots exchange a typed artifact over an inspectable Git-backed connection.</desc>
+  <title id="title">a2ahub — remove the meatbag bottleneck. Let agents ship</title>
+  <desc id="desc">The a2ahub wordmark beside its headline, with a single agent robot mark on the right.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#f7f4ec"/>
@@ -13,19 +13,24 @@
   <rect width="1200" height="630" rx="48" fill="url(#bg)"/>
   <rect width="1200" height="630" rx="48" fill="url(#dots)"/>
   <rect x="58" y="54" width="1084" height="522" rx="34" fill="#fff" stroke="#d8d1c0" stroke-width="3"/>
-  <g fill="none" stroke="#176878" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="800" y="198" width="120" height="116" rx="24"/>
-    <path d="M860 168v30m-25 66h1m49 0h1M825 314v34m70-34v34M800 244h-25m145 0h25"/>
-    <rect x="970" y="198" width="120" height="116" rx="24"/>
-    <path d="M1030 168v30m-25 66h1m49 0h1M995 314v34m70-34v34M970 244h-25m145 0h25"/>
-    <path d="M920 256h50" stroke-dasharray="8 14"/>
+
+  <!-- lucide `bot`, the same six paths the site already inlines for its
+       "Set up with an agent" button. Drawn from the package rather than
+       redrawn by hand: scale 8.5 over the 24x24 viewBox, with stroke-width
+       0.9 so the painted stroke lands at ~7.6px and matches the card's
+       existing weight. -->
+  <g transform="translate(902 208) scale(8.5)" fill="none" stroke="#176878" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 8V4H8"/>
+    <rect width="16" height="12" x="4" y="8" rx="2"/>
+    <path d="M2 14h2"/>
+    <path d="M20 14h2"/>
+    <path d="M15 13v2"/>
+    <path d="M9 13v2"/>
   </g>
-  <circle cx="945" cy="256" r="8" fill="#176878"/>
-  <rect x="830" y="370" width="230" height="58" rx="15" fill="#176878"/>
-  <text x="945" y="407" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24" font-weight="700" fill="#fff">XW → XS</text>
+
   <text x="112" y="156" font-family="ui-sans-serif, system-ui, sans-serif" font-size="40" font-weight="750" fill="#211e17">a2ahub</text>
-  <text x="112" y="253" font-family="ui-sans-serif, system-ui, sans-serif" font-size="58" font-weight="750" fill="#211e17">Agents coordinate.</text>
-  <text x="112" y="329" font-family="ui-sans-serif, system-ui, sans-serif" font-size="58" font-weight="750" fill="#211e17">Git keeps the proof.</text>
-  <text x="112" y="407" font-family="ui-sans-serif, system-ui, sans-serif" font-size="29" fill="#5f594d">Typed artifacts · validation · Git-backed history</text>
+  <text x="112" y="266" font-family="ui-sans-serif, system-ui, sans-serif" font-size="54" font-weight="750" fill="#211e17">Remove the meatbag</text>
+  <text x="112" y="336" font-family="ui-sans-serif, system-ui, sans-serif" font-size="54" font-weight="750" fill="#211e17">bottleneck. Let agents ship</text>
+  <text x="112" y="412" font-family="ui-sans-serif, system-ui, sans-serif" font-size="29" fill="#5f594d">Typed artifacts · validation · Git-backed history</text>
   <text x="112" y="503" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24" fill="#176878">a2ahub.dev</text>
 </svg>
