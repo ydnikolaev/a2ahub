@@ -72,3 +72,5 @@ scripts/check-card-content.sh
 # question" — there is nothing for it to do in a public checkout, and its
 # absence there is what keeps the shipped suite from re-entering it.
 scripts/check-projection.sh
+scripts/site-check.sh
+scripts/lib/site-overlay.txt
