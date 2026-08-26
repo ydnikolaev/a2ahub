@@ -49,7 +49,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: flaky-scan check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install
+.PHONY: site-check site-check-teeth flaky-scan check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -608,6 +608,17 @@ ci-parity-audit: ## Refuse when a CI command is executed by no local step and ca
 
 ci-parity-docker: ## The same suite under ubuntu + GNU userland, where every non-notifier CI job actually runs.
 	@bash scripts/ci-parity-docker.sh
+
+# lane-inputs: NEVER
+# lane-reason: it fetches `public/main` to define the overlay it judges, so it
+#   needs the network and a configured public remote — no diff may select it.
+#   It is the SITE PUBLISH's own gate, reached by its own target and by
+#   `publish-to-public.sh --site`, never by a commit lane.
+site-check: ## THE SITE GATE — the derived lane over the overlay diff, gitleaks, and the site built inside the overlay. Writes .a2a/site-gate/<sha>.json.
+	@bash scripts/site-check.sh
+
+site-check-teeth: ## site-check's own self-tests.
+	@bash scripts/site-check.sh --teeth
 
 # The gates' own teeth are reachable from a diff, and until 2026-08-12 they
 # were not. check-convention.md said "`make lane` selects it for you"; it did

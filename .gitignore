@@ -41,6 +41,7 @@ scripts/*
 !scripts/dev-install.sh
 !scripts/e2e-authoring-smoke.sh
 !scripts/classify-guard.sh
+!scripts/site-check.sh
 !scripts/release-preflight.sh
 !scripts/check-flaky-tests.sh
 !scripts/check-release-notes-freshness.sh
@@ -116,6 +117,7 @@ scripts/lib/*
 !scripts/lib/ci-usage-window.json
 !scripts/lib/gate-lib.sh
 !scripts/lib/strip-set.txt
+!scripts/lib/site-overlay.txt
 !scripts/tests/
 scripts/tests/*
 !scripts/tests/check_contract_carried_set_test.sh
