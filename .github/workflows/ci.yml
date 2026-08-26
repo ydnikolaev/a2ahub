@@ -451,6 +451,26 @@ jobs:
         run: npm ci
         working-directory: web
 
+      # AND THE BROWSER, which is the third thing this job needed and the last.
+      #
+      # Enumerated from the script chain rather than discovered one push at a
+      # time, which is how the first two were found and is not a method:
+      #   check:quality -> check (prebuild, unit, build, dist budgets)
+      #                 -> check:a11y      -> `playwright test`
+      #                 -> check:lighthouse -> audit-lighthouse.mjs, which under
+      #                    CI launches `chromium.executablePath()` — the SAME
+      #                    Playwright browser, not a system Chrome.
+      # So one browser satisfies both, and nothing else in the chain reaches
+      # outside Node. The parity container is the reference and installs exactly
+      # this one binary for exactly this purpose.
+      #
+      # Without it `web-quality` reports UNMEASURED — correctly, and the message
+      # says so: "this exit code is about the machine, not about the site".
+      - name: Install the Playwright browser (the lane can derive web-quality)
+        if: needs.changes.outputs.web == 'true'
+        run: npx playwright install --with-deps chromium
+        working-directory: web
+
       - name: make lane-run-strict
         env:
           LANE_FILES: ${{ needs.changes.outputs.files }}
