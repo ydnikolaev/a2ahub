@@ -504,10 +504,27 @@ run_teeth() {
   else
     echo "ci-changes --teeth: rare workflow has one resolver-owned path authority and one rare_web browser condition"
   fi
+  # WHAT THIS GUARDS is the invariant stated at the top of this file — "no
+  # workflow YAML owns a competing `paths` decision" — not a headcount.
+  #
+  # It counted the comparisons and demanded EXACTLY ONE, which was accurate
+  # while exactly one job consumed the signal and became wrong the moment a
+  # second legitimately did: on 2026-08-26 the `lane` job gained a Node setup
+  # gated on the same output, because the lane can derive `web-quality` and had
+  # no Node to run it with. Two consumers of one exported output do not create a
+  # competing authority; a `paths:` filter in this workflow would.
+  #
+  # So the proxy is loosened to "at least one" and the property it stood for is
+  # asserted directly and for the first time: this workflow must own no web path
+  # decision of its own. Comments are stripped before that read — the lane job's
+  # own explanation names the globs it does not own.
+  ci_workflow_code="$(sed 's/#.*$//' "$ci_workflow")"
   if ! grep -Fq 'web: ${{ steps.resolve.outputs.web }}' "$ci_workflow" ||
      ! grep -Fq 'needs: changes' "$ci_workflow" ||
-     [ "$(grep -Fc "if: needs.changes.outputs.web == 'true'" "$ci_workflow")" -ne 1 ]; then
-    echo "ci-changes --teeth: FAIL — ordinary CI web job must consume the exported web output through one comparison" >&2
+     [ "$(grep -Fc "if: needs.changes.outputs.web == 'true'" "$ci_workflow")" -lt 1 ] ||
+     grep -Fq "${WEB_PREFIX}**" <<<"$ci_workflow_code" ||
+     grep -Fq "$DASHBOARD_TEMPLATE" <<<"$ci_workflow_code"; then
+    echo "ci-changes --teeth: FAIL — the ordinary CI workflow must consume the resolver-owned web output and own no web path decision of its own" >&2
     teeth_fail=1
   else
     echo "ci-changes --teeth: ordinary CI web job consumes only the resolver-owned web output"
