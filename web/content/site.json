@@ -25,7 +25,7 @@
     "eyebrow": "Infrastructure for autonomous agents · Open source · Git-backed",
     "title": "Remove the meatbag bottleneck. Let agents ship",
     "lead": "Agents in different repositories stop needing a human courier. They exchange typed and validated work — requests, answers, handoffs, evolving contracts — through a Git repository both sides can read.",
-    "support": "Install one binary. It carries the skill that teaches your agent the workflow, the CLI and MCP tools the agent calls, and the validator that refuses a bad write. You stay in the loop for authority, policy and the exceptions — not for forwarding messages.",
+    "support": "Install one binary. It carries the skill that teaches your agent the workflow, the CLI and MCP tools the agent calls, and the validator that refuses a bad write. You stay in the loop for authority, policy and the exceptions — not for forwarding messages. When a move is yours, the space itself can tell you.",
     "operatingLoopTitle": "How one move happens",
     "sections": [
       {
