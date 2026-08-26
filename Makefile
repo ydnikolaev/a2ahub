@@ -673,6 +673,7 @@ harness-check: ## Run the gates' --teeth self-tests (harness gates are private/p
 # private tooth cannot repeat this — the list names WHAT to run, never how to
 # survive its own absence.
 HARNESS_TEETH := \
+  scripts/site-check.sh \
   scripts/check-flaky-tests.sh \
   scripts/lib/gate-lib.sh \
   scripts/check-projection.sh \

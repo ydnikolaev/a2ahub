@@ -419,6 +419,38 @@ jobs:
       - name: Resolve module inputs
         run: go mod download
 
+      # THE LANE CAN DERIVE `web-quality`, AND UNTIL 2026-08-26 IT COULD NOT RUN IT.
+      #
+      # `web-quality` declares `web/**` and `ui/**`, so any change under those
+      # paths routed to the lane tier selects it — and this job had no Node and
+      # no `web/node_modules`, so the phase died on
+      # `ERR_MODULE_NOT_FOUND: Cannot find package 'marked'` out of
+      # generate-content.mjs. Not a wrong verdict, but an unreadable one: the
+      # reader meets a Node stack trace where a gate should say what it judged.
+      #
+      # It stayed invisible because no push to `main` had ever taken the lane
+      # route WITH a web change: a release routes to `check`, which installs
+      # Node itself. The first site publish (2026-08-26, public `1aab4ce`)
+      # produced exactly that shape and this job failed on its first encounter
+      # with it.
+      #
+      # Conditioned on the same signal the `web` job uses, so a Go-only lane
+      # does not pay an `npm ci` it has no phase for. The fetch-depth note at
+      # the top of this job states the principle: give the gate what it needs
+      # rather than teach it to lie.
+      - name: Set up Node (the lane can derive web-quality)
+        if: needs.changes.outputs.web == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies (the lane can derive web-quality)
+        if: needs.changes.outputs.web == 'true'
+        run: npm ci
+        working-directory: web
+
       - name: make lane-run-strict
         env:
           LANE_FILES: ${{ needs.changes.outputs.files }}
