@@ -60,4 +60,42 @@ checks:
     not_space_specific: true
     no_sensitive_content: true
     duplicates_checked: true
-status: new
+resolution: |-
+    Accepted, and the value is the RECURRENCE rather than the message.
+    CONFIRMED against the code on 2026-08-27: internal/cli/cmd_validate_ci.go:103-106
+    reads space.yaml at the repository root and, on any error, prints
+    `validate --ci: cannot read space.yaml: %v` and exits 1. The message is
+    the os.ReadFile error verbatim. Nothing in it names spaces, mirrors, or
+    the cwd precondition, and skill/a2ahub/reference/commands.md carries no
+    such precondition on its `validate` line either — so neither the refusal
+    nor the reference corrects the reading.
+
+    THE RECURRENCE CLAIM IS TRUE AND IS THE POINT. fb-20260802-10d983
+    (friction, shipped in v0.19.8) is the same class in the same words — "the
+    current error describes a filesystem, not the state the caller is in" —
+    raised against verify-export before its first publish, fixed there, and
+    now reappearing untouched in a sibling verb. fb-20260820-a3f169, shipped
+    in v0.24.0 six days ago, is a third instance from a third direction: a verb
+    reading the one file that proves the checkout and saying the wrong thing
+    about its absence. Three point fixes and no rule.
+
+    SO THE ROUTE IS A ROW, NOT A THIRD POINT FIX. What the row has to decide
+    is what the invariant even is — "a refusal names the caller's state, not a
+    path" is not mechanically checkable as written, and the honest options
+    differ in cost: a gate over the refusal strings a verb can emit, a shared
+    helper every cwd-precondition verb must route through (which is what
+    notify setup's notifyReadSpaceManifest already is, for one file), or a
+    narrower rule about os.ReadFile errors reaching a user unwrapped. Picking
+    one is design work, and doing it as a fix to this one message would be the
+    fourth point fix.
+
+    The report's two secondary notes are carried into the row rather than
+    dropped: `--space <id>`, which would remove the cd entirely and make the
+    verb usable from where a producer stands; and scoping a `--mode=v3-full-repo`
+    walk to the caller's own system, since a participant gating on it today
+    reddens on another participant's broken artifact — a verdict they cannot
+    act on.
+
+    REFS NAMES docs/backlog.md, so CHECK-C is silent on this row — see
+    fb-20260827-bc1f13's resolution for the mechanism.
+status: accepted

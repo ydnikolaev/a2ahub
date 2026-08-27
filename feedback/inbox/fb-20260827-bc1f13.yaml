@@ -60,4 +60,43 @@ checks:
     not_space_specific: true
     no_sensitive_content: true
     duplicates_checked: true
-status: new
+resolution: |-
+    Accepted. CONFIRMED against the code at HEAD on 2026-08-27, every claim
+    re-checked rather than transcribed from the report or from the intake
+    pass's own note.
+
+    runVerifyExport (internal/cli/cmd_contract.go:1738-1747) prints Added,
+    Removed and Changed and then the digest-mismatch line on stderr;
+    `result.Diff.FrontmatterChanged` is never read. The field is not merely
+    uncomputed — it is computed, carried through the adapter
+    (cmd/a2a/contract_p6_wiring.go:713 sets it on the verify-export result,
+    the same as :706 does for diff) and given a `json:"frontmatter_changed"`
+    tag (internal/cli/cmd_contract_p6.go:69). runDiff prints it at
+    cmd_contract.go:1316, which is the loop to copy. The flag set declares
+    only `--local`, so there is no `--json` and no route to the field at all;
+    `contract diff` has one (encodeContractJSON at :1305).
+
+    The report's own proposal is the fix, and it is one loop over a value
+    already in hand. Two things it names should not be dropped in the doing:
+    the `--json` parity, so the structured result the MCP surface already
+    returns is reachable from the CLI; and a teeth-style test that a
+    descriptor-only difference produces at least one named line on stdout —
+    the current silence is indistinguishable from "no delta found", which is
+    what made a real mismatch read as a tooling failure.
+
+    ROUTED to /quick-fix rather than into a phase: no active phase claims
+    verify-export, and the two phases that mention it (agent-ops P3, P11) are
+    both done. The docs/backlog.md row carries it until the loop runs.
+
+    REFS NAMES docs/backlog.md AND THAT MAKES ONE GATE QUIET, stated rather
+    than left to be discovered. check-feedback-corpus.sh's CHECK-C joins a
+    ledger row's refs to a tracker phase only for a ref shaped
+    docs/features/<section>/<slug>/specs/<file>; a docs/backlog.md ref is
+    silently skipped, so nothing will force this row's verdict to move when
+    the fix lands. The row must be closed by hand, or re-pointed at a spec if
+    one is ever written.
+
+    This is the RENDERING half of fb-20260827-a84550, as that record says.
+    Shipping this one does not close that one: it makes an unsatisfiable
+    comparison explain itself, which is worth having on its own.
+status: accepted

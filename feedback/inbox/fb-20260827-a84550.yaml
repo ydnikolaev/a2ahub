@@ -71,4 +71,57 @@ checks:
     not_space_specific: true
     no_sensitive_content: true
     duplicates_checked: true
-status: new
+resolution: |-
+    Accepted, MAJOR. CONFIRMED against the code on 2026-08-27, including the
+    one claim the intake pass explicitly had not checked.
+
+    THE yaml.Marshal CLAIM IS TRUE. finalizePublicationDescriptor
+    (internal/contract/publication_plan.go:698-707) does
+    setYAMLScalar(root, "schema"), setYAMLScalar(root, "version"),
+    setYAMLScalar(generated, "source_digest"), then yaml.Marshal(root) — the
+    descriptor is re-emitted, never carried. So the published contract.md
+    differs from every candidate that produced it, in the version field and in
+    whatever the marshaller does to indentation.
+
+    THE OTHER HALF ALSO HOLDS, and it is what closes the two invariants
+    against each other. verifyExportLocalDigest (cmd/a2a/contract_p6_wiring.go:533-537)
+    passes core.Descriptor.Raw into BuildCarriedSet for ProfileContractSetV2,
+    so the descriptor BYTES are inside the compared digest. Meanwhile
+    schemas/templates/v2/contract.md mandates `version: 0.0.0` in the
+    candidate. A candidate that satisfies publish therefore cannot satisfy
+    verify-export, by construction — the verb loops/contract-change.md §8.4
+    names for "my published export still matches my code" is unsatisfiable for
+    every tree a producer can hold, and the operator sees a bare digest pair
+    with no named file (which is fb-20260827-bc1f13).
+
+    The report's own proposal is the strongest part of it and is already
+    computable on both sides: the published descriptor asserts
+    generated_from.source_digest, and the BARE form `verify-export --local
+    <dir> <XC-id>` — shipped in v0.19.8 for fb-20260806-eb224e — computes
+    export-source-v1 over a local candidate. Comparing those two compares
+    exactly the set publish does NOT rewrite. Whichever shape is chosen
+    (redefine the versioned form, add --against-published, write the finalized
+    descriptor back to staging, or take the publisher-owned fields out of the
+    compared digest), the documentation half is not optional:
+    reference/contract-versions.md must say that the descriptor is
+    re-serialized at publish and that export-source-v1 excludes artifacts/**.
+
+    ROUTED to its own /discover, PAIRED WITH fb-20260827-455fca rather than
+    split from it. That call was deliberately left open by the intake handoff
+    and is made here after reading both records in full: 455fca names this
+    report as the comparison its aggregate verb should perform and says
+    outright that without this fix the aggregate form would inherit an
+    unsatisfiable check. They are the correctness half and the surface half of
+    one question — "can a producer ask whether their published contracts still
+    match their code" — and designing the surface against a broken comparison
+    is how the broken comparison gets frozen into a second verb.
+
+    NOT into no-silent-yes-2026-08. That epic's AC-0 names six forks, its
+    tracker pins phases=0/6, and none of its twelve rows touch
+    internal/contract's export or digest machinery. A seventh phase would be a
+    different epic with the same thesis.
+
+    REFS NAMES docs/backlog.md, so CHECK-C is silent on this row — see
+    fb-20260827-bc1f13's resolution for the mechanism. Re-point it at the spec
+    the /discover produces, and the staleness gate starts working again.
+status: accepted

@@ -65,3 +65,16 @@ read at each site.
 - fb-20260812-ee6dcd (bug -> shipped in v0.20.0): doctor reports a healthy space while its default branch is failing CI
 - fb-20260812-755a23 (friction -> shipped in v0.21.0): a one-file feedback record costs eleven CI jobs, including a macOS build
 - fb-20260818-76f29d (bug -> accepted): verify --verdict indexes an unseen list and only range-checks it
+
+## 2026-08-27 Triage
+
+- fb-20260820-02f576 (bug -> shipped in v0.24.0): notify-reusable still go-installs a2a, retired the same day in validate
+- fb-20260820-72a4a1 (bug -> shipped in v0.24.0): an unset number input is 0, not empty, so every space push fails on --limit 0
+- fb-20260820-166de0 (bug -> shipped in v0.24.0): a2a update's skill refresh writes only the version stamp, and doctor passes it
+- fb-20260820-a3f169 (bug -> shipped in v0.24.0): notify setup reads the one file that proves the checkout, and only at the end
+- fb-20260820-d1e370 (bug -> shipped in v0.24.0): submit carries a declared companion that validate --ci rejects, unseen locally
+- fb-20260820-0cb8c8 (protocol -> shipped in v0.24.0): an observed consumer should inform retire and deprecate without registering
+- fb-20260827-bc1f13 (bug -> accepted): verify-export hides the only file that can explain its digest mismatch
+- fb-20260827-a84550 (bug -> accepted): verify-export against a staged candidate can never match its published version
+- fb-20260827-455fca (feature -> accepted): no verb answers whether a producer's published contracts still match its code
+- fb-20260827-4b121a (friction -> accepted): validate --ci outside a space names a missing file, not the caller's state

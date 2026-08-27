@@ -43,5 +43,61 @@ checks:
     not_space_specific: true
     no_sensitive_content: true
     duplicates_checked: true
-status: new
+resolution: |-
+    Shipped in v0.24.0 (RN-02400-3), judge-the-thing-2026-08 P3
+    (specs/03-observed-consumption.md, commit 760f5196), and the code cites
+    this record by id. RE-VERIFIED against the code on 2026-08-27 rather than
+    read off the release note.
+
+    THE THIRD OPTION IS THE ONE THAT SHIPPED — not auto-register, not leave
+    the producer blind, but make the producer's DECISION see it, which is the
+    contribution this record made. `cache.FindObservedConsumers`
+    (internal/cache/registered_consumers.go:543) asks FindUnadoptedConsumption
+    from the PRODUCER's side and names this record as its reason.
+    `validate.RetirePrecondition` gained `Observed []ObservedConsumer`
+    (internal/validate/policy_retire.go:117) that CheckRetirePrecondition
+    reads NOTHING from — the inertness is asserted over every branch by
+    policy_retire_observed_test.go, so the "informs, gates nothing" property
+    the record insisted on is a test, not an intention.
+    `ObservedConsumptionNotice` (:212) renders the line the record asked for
+    almost verbatim — "N declared consumer(s), M observed and undeclared" with
+    each system and its distinct-package count — and `contract retire` prints
+    it (internal/cli/cmd_contract.go:1028). Both surfaces carry it (§8
+    criterion 7, the epic's AC5), so it is not CLI-only.
+
+    Proposal (2) landed from the CONSUMER's side rather than by seeding
+    `deprecate`'s default `to:`, and reaches the same end the record wanted:
+    an observed-but-undeclared consumer with a live deprecation announcement
+    now gets a computed next move naming both exits (internal/cache/inbox.go:75-79,
+    internal/pendency's ObservedConsumptionUndeclared). With no announcement
+    present, observed consumption changes nothing anywhere.
+
+    NOT SHIPPED, named so the omission is visible rather than implied. Both
+    are rows in docs/backlog.md.
+
+    (3) THE PRODUCER-SIDE DOCTOR ROW. `a2a doctor`'s only caller is still the
+    CONSUMER direction — cache.FindUnadoptedConsumption(dir, cfg.System) at
+    internal/cli/cmd_doctor.go:2173, "I consume and never declared it". "Someone
+    consumes MINE and never declared it" has no doctor row; FindObservedConsumers
+    is reached only by the interactive, human-gated `contract retire`, so a
+    producer who never retires never learns.
+
+    (4) THE VERSION IS STILL DROPPED. splitPinnedContractID(doc.Contract)
+    discards it at internal/cache/registered_consumers.go:485, and neither
+    UnadoptedConsumption (:311) nor ObservedConsumer (:538) carries a version
+    field. Retire is per-version, so the notice still says "consumes
+    something" where this record asked for "consumes 1.0.0".
+
+    ONE THING THIS VERDICT SETTLES BEYOND THE RECORD, because a live decision
+    rests on it. The no-silent-yes consilium's D11 was reopened on 2026-08-27
+    (commit 53013a0e) on the premise that the signal is "built, and read by no
+    gate", verified by a grep showing internal/validate references
+    FindUnadoptedConsumption zero times. The grep is literally true and the
+    conclusion does not follow: internal/validate never imports internal/cache
+    by design — internal/cli resolves the fact from the mirror and passes it in
+    as RetirePrecondition.Observed. D11's question ("should a verify-passed
+    delivery inform a retire gate without becoming a registration") was
+    answered in v0.24.0, six days before it was reopened, in this record's own
+    favour.
+status: shipped
 # resolution is hub-mutated only; MUST be absent at submit — do not add it.

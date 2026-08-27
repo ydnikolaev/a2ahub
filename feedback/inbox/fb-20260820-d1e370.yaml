@@ -67,4 +67,35 @@ checks:
     not_space_specific: true
     no_sensitive_content: true
     duplicates_checked: true
-status: new
+resolution: |-
+    Shipped in v0.24.0 (RN-02400-6), judge-the-thing-2026-08 P9
+    (specs/09-submit-validates-what-it-carries.md, commit d321f47c).
+    RE-VERIFIED against the code on 2026-08-27.
+
+    The fix is ONE PREDICATE, which is what the report demanded and the shape
+    it said fb-20260812-d31acb had chosen and applied too narrowly.
+    `space.CarriedClass` (internal/space/carried_class.go:40) decides what one
+    space-relative path IS, once, and its doc comment cites this record by id.
+    It replaced four path-family predicates that were answering one question
+    between them in four idioms — the submit validator asking "is this a
+    contract baseline path", `validate --ci` asking "does it end in .md" — and
+    `IsDataPackageReadmePath` became one case of it rather than the only one,
+    exactly as proposed.
+
+    Both readers consult it now: `a2a submit` classifies every carried path
+    against the descriptor's own inventory, carried in the SAME commit, in
+    both directions (internal/cli/cmd_submit.go:622-632), and `validate --ci`
+    reaches the same decision through `space.ClassifyCarried`
+    (internal/cli/cmd_validate_ci.go:1203-1215, with :206 naming this record).
+    So the two surfaces cannot disagree about
+    `<system>/provides/<slug>/artifacts/CHANGELOG.md` again.
+
+    The cheap half the report offered as a fallback shipped too, and did not
+    need to be the whole fix: RN-02400-6's own subject is "submit validates
+    every file it carries, and the space's check judges the same set" — the
+    dead-on-arrival PR is refused locally, in a second.
+
+    The third option the report told us to reject — telling authors to put
+    frontmatter in a changelog — was not taken. The carried bytes still equal
+    the producer's own release tree.
+status: shipped

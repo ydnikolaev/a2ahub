@@ -43,5 +43,33 @@ checks:
     not_space_specific: true
     no_sensitive_content: true
     duplicates_checked: true
-status: new
+resolution: |-
+    Shipped in v0.24.0 (RN-02400-0), judge-the-thing-2026-08 P7
+    (specs/07-an-unset-input-is-unset.md, commit b0eb0802). RE-VERIFIED
+    against the workflow on 2026-08-27.
+
+    The type moved, which is the half that makes the comment true rather than
+    aspirational: `limit` is `type: string` with an explicit `default: ""`
+    (a2a-notify-reusable.yml:49-61), and the comment now states WHY — only a
+    string has an empty member that can mean "the operator set nothing". The
+    guard tests positivity in two stages, not emptiness: an empty LIMIT is
+    skipped, a positive integer is forwarded, and anything else non-empty
+    (`0`, negative, non-numeric) is refused before `a2a` is invoked. The
+    two-stage shape is deliberate — a collapsed `[ "$LIMIT" -gt 0 ]` would
+    kill the golden empty path under `set -euo pipefail`. Validation is
+    hoisted above the range-mode branch, so `limit: 0` is refused under
+    `--all` too, which the report's reproduction did not reach.
+
+    The report's second half shipped with it and is cited in the code as "the
+    report's second half": exit-code attribution. A 2 now prints an
+    `::error::` naming the notify workflow — "this is the notify workflow's
+    own input validation, not this space's content" — while a 1 leaves the
+    CLI's own stderr unchanged. A space owner reading the run can now tell
+    which of the two is wrong, which is what the record said it could not.
+
+    The class is closed, not just this input: the notify-workflow gate gained
+    a fifth invariant reading BOTH reusable workflows — a `required: false`
+    input over a non-string type must carry a default, and its description may
+    not claim emptiness over a type that has no empty member.
+status: shipped
 # resolution is hub-mutated only; MUST be absent at submit — do not add it.

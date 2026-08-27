@@ -10,17 +10,6 @@ items:
       refs:
         - docs/features/archive/operational-confidence-2026-08/README.md
       date: "2026-08-02"
-    # refs deliberately cites releasenotes/0.23.0.yaml, NOT
-    # docs/features/archive/defects-fix-2026-08/specs/03-a-criterion-has-a-name.md
-    # even though that spec is the actual fix and its phase (P3) is `done`.
-    # check-feedback-corpus.sh's stale-verdict refusal (CHECK-C) would fire on
-    # a specs/ ref pointing at a done phase, and it would be WRONG here: P3
-    # being done is not the same fact as the record's own carrying release
-    # being cut. releasenotes/0.23.0.yaml reads `released: unreleased`
-    # (one-answer-2026-08 P6's own sentinel) — the code is merged and tested,
-    # the release has not shipped, so `accepted` (not `shipped`) is the
-    # honest verdict until a release note naming a real tagged version cites
-    # this id. See the record's own `resolution:` for the full re-verification.
     - id: fb-20260818-76f29d
       kind: bug
       severity: major
@@ -30,3 +19,39 @@ items:
       refs:
         - releasenotes/0.23.0.yaml
       date: "2026-08-20"
+    - id: fb-20260827-bc1f13
+      kind: bug
+      severity: minor
+      title: verify-export hides the only file that can explain its digest mismatch
+      verdict: accepted
+      route: quick-fix
+      refs:
+        - docs/backlog.md
+      date: "2026-08-27"
+    - id: fb-20260827-a84550
+      kind: bug
+      severity: major
+      title: verify-export against a staged candidate can never match its published version
+      verdict: accepted
+      route: discover
+      refs:
+        - docs/backlog.md
+      date: "2026-08-27"
+    - id: fb-20260827-455fca
+      kind: feature
+      severity: minor
+      title: no verb answers whether a producer's published contracts still match its code
+      verdict: accepted
+      route: discover
+      refs:
+        - docs/backlog.md
+      date: "2026-08-27"
+    - id: fb-20260827-4b121a
+      kind: friction
+      severity: minor
+      title: validate --ci outside a space names a missing file, not the caller's state
+      verdict: accepted
+      route: backlog
+      refs:
+        - docs/backlog.md
+      date: "2026-08-27"

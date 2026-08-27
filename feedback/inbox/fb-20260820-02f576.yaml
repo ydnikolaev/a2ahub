@@ -43,5 +43,34 @@ checks:
     not_space_specific: true
     no_sensitive_content: true
     duplicates_checked: true
-status: new
+resolution: |-
+    Shipped in v0.24.0 (RN-02400-8), judge-the-thing-2026-08 P8
+    (specs/08-notify-installs-the-signed-binary.md, commit 4784ab73).
+    RE-VERIFIED against the code on 2026-08-27, not transcribed from the
+    release note: a2a-notify-reusable.yml's `Install a2a` step downloads the
+    release asset into $RUNNER_TEMP and installs cosign
+    (sigstore/cosign-installer, pinned by SHA); `go install` does not appear
+    anywhere in the file, and the `a2a-ref` input's own description now reads
+    "A published release tag whose signed a2a-linux-amd64 asset this job
+    downloads and verifies" — the retired mechanism is out of the prose too,
+    which the report asked for by name.
+
+    The report's real ask was the CLASS, not the instance, and that landed at
+    exactly the narrowness it specified: the gate refuses the literal
+    `go install github.com/ydnikolaev/a2ahub/cmd/a2a@` and deliberately NOT
+    `go install` in general, so a2a-validate-reusable.yml's local-path dogfood
+    install stays green (scripts/check-notify-workflow.sh:161, and its own
+    comment states that reasoning).
+
+    One difference from the proposal, stated rather than glossed: the rule
+    lives in `check-notify-workflow.sh` (the `notify-workflow` target), not in
+    `workflow-lint` as suggested. The report's reason for choosing
+    workflow-lint — its lane-inputs already cover .github/workflows/** — holds
+    for the target that got it too, and the notify pair now has one gate
+    rather than a rule split across two.
+
+    The third note also closed: notify had no dogfood branch, so an empty
+    `a2a-ref` was meaningless there. It is now a NAMED refusal — exit 2 before
+    any network call, rather than a 404 three retries later.
+status: shipped
 # resolution is hub-mutated only; MUST be absent at submit — do not add it.

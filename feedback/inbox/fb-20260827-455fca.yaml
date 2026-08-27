@@ -62,4 +62,41 @@ checks:
     not_space_specific: true
     no_sensitive_content: true
     duplicates_checked: true
-status: new
+resolution: |-
+    Accepted. CONFIRMED against the code on 2026-08-27: `contract`'s
+    subcommand switch (internal/cli/cmd_contract.go:385-405) offers new,
+    preflight, publish, materialize, check, deprecate, retire, diff,
+    verify-export, adopt and activate — there is no verify-published and no
+    `--all`, and verify-export's flag set takes only `--local` plus one exact
+    `<id>[@version]` positional. So the report's "per-contract only, requires
+    the version to be known in advance" is exactly what the surface is.
+
+    THE PROPERTY TO KEEP IS THE FIRST ONE THE REPORT LISTS, and it is worth
+    more than the verb: a run that examined zero contracts must REFUSE, not
+    pass. A gate whose denominator can silently go to zero is the failure this
+    whole record is downstream of — a moved path shape would otherwise read as
+    a clean bill of health forever. The other two are the same discipline:
+    fail closed on an absent or stale mirror, naming `a2a sync`; and let the
+    producer name the local subject per contract, because a code-generating
+    producer's truth lives in a tracked release tree and .a2a/staging is
+    neither tracked nor stable across a publish.
+
+    The evidence that a consumer wrote 137 lines of bash plus 128 lines of
+    self-test to obtain this is the argument, and its defects are the
+    specification: it sed-parsed `system:` and the first `- id:` out of
+    .a2a/config.yaml (so a repository connected to two spaces silently checks
+    one), it dropped the version assertion entirely (so a republish at a
+    different version with identical schemas would pass), and it hand-coded
+    a2a's own layout mapping (release fixtures/manifest.json versus published
+    artifacts/fixture-manifest.json). Every one of those is knowledge the tool
+    holds and the consumer should not.
+
+    ROUTED to a /discover PAIRED WITH fb-20260827-a84550 — see that record's
+    resolution for the reasoning. In short: this record names that one as the
+    comparison it should perform, and says itself that without it the
+    aggregate form inherits an unsatisfiable check. Designing this surface
+    first would freeze the broken comparison into a second verb.
+
+    REFS NAMES docs/backlog.md, so CHECK-C is silent on this row — see
+    fb-20260827-bc1f13's resolution for the mechanism.
+status: accepted

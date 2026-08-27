@@ -44,5 +44,32 @@ checks:
     not_space_specific: true
     no_sensitive_content: true
     duplicates_checked: true
-status: new
+resolution: |-
+    Shipped in v0.24.0 (RN-02400-1) across judge-the-thing-2026-08 P4 and P5
+    (specs/04-update-refreshes-with-the-new-binary.md, commit 0386f0e9;
+    specs/05-doctor-judges-the-tree.md, commit 7d0f09e8). Both halves the
+    report separated were fixed as separate phases, which is the split it
+    asked for.
+
+    RE-VERIFIED: `refreshInstalledSkill` execs the just-swapped NEW binary's
+    own `skill install` (internal/cli/cmd_update.go:86, :418), through the
+    same postSwapRunner seam `printPostUpdateDigest` twenty lines above it was
+    already using — so the refresh writes what the installed binary embeds,
+    not what the running one does.
+
+    THE RELEASE NOTE IS HARSHER THAN THE REPORT, and the difference is worth
+    keeping. The report measured "wrote only PROVENANCE.md, leaving 3 stale
+    files and 1 missing". The mechanism is worse: `a2a update` runs as the OLD
+    binary, the installer begins by REMOVING the existing tree, so the refresh
+    actively rewrote the skill to the previous version's content under the new
+    version's stamp. The defect dates to 2026-07-23; v0.23.0 only made it
+    visible by adding a reference page the older tree lacks.
+
+    Doctor's half landed as proposed — a CONTENT check. `skill manual current`
+    compares the installed tree against the binary's own embedded one and
+    names what is missing, modified or unexpected. The report's framing
+    ("a stamp check is exactly the shape that reports PASS about a tree it
+    never read") understates it: before this the check could not FAIL in any
+    branch, which is why a downgraded tree looked healthy for a month.
+status: shipped
 # resolution is hub-mutated only; MUST be absent at submit — do not add it.

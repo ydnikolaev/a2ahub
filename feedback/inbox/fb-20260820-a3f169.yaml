@@ -44,5 +44,40 @@ checks:
     not_space_specific: true
     no_sensitive_content: true
     duplicates_checked: true
-status: new
+resolution: |-
+    Shipped in v0.24.0 (RN-02400-5), judge-the-thing-2026-08 P6
+    (specs/06-notify-setup-proves-its-checkout.md, commit 65ab950b).
+    RE-VERIFIED against the code on 2026-08-27.
+
+    The fix is the one the report named: read the file at the TOP and refuse
+    there. `notifyReadSpaceManifest` (internal/cli/cmd_notify_setup.go:683) is
+    now the ONE reader of space.yaml, and the report's own §8 criterion for
+    that — `os.ReadFile(filepath.Join(…, "space.yaml"))` appearing exactly
+    once in the file — is what the phase asserted. The two failure modes are
+    distinguished, which the record asked for and the old code conflated:
+    "this checkout is not a space — no space.yaml here" (:710) versus
+    "space.yaml here is not parseable" (:716). The benign misreading is gone;
+    the surviving no-route message (:930) is reachable only after the guard
+    has already proved the checkout, and a space with a parseable manifest and
+    an empty notification_routes still exits 0 — the guard did not turn a
+    benign state into a refusal.
+
+    Both paths the report separated are closed at their strongest form. The
+    criteria assert the NEGATIVE directly rather than asserting a better
+    message: from a non-space cwd the string `gh secret set` appears in
+    neither stdout nor stderr, `promptToken` and `ghSecretSet` are unreachable
+    on the interactive path, and the git remote is never resolved at all —
+    verified with a stub that calls t.Fatal. The honest degradation the report
+    pointed at for contrast is preserved: on a space checkout with no origin,
+    `--non-interactive` still prints the `<owner>/<repo>` placeholder and
+    exits 1.
+
+    Two verbs, one file, one reading now: setup and verify return the same
+    verdict for the same directory because one function decides it.
+
+    The optional cross-check the report offered — WARN on a mismatch against
+    the connected space's repo_url in .a2a/config.yaml — was NOT taken, and
+    did not need to be: the guard settles the checkout without config.yaml at
+    all, which is the property the report itself preferred.
+status: shipped
 # resolution is hub-mutated only; MUST be absent at submit — do not add it.
