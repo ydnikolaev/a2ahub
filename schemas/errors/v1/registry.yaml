@@ -654,6 +654,66 @@ entries:
       backlog.md.
     path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
 
+
+  - code: LFC-005
+    class: lifecycle
+    title: Supersede's successor does not satisfy the transition's declared precondition
+    applies_to: >-
+      internal/fold's two decision-supersede rows (table.go — from
+      `rejected` and from `approved`), whose §3.4.4 requirement is a
+      SPECIFIC actor ("author of the successor" / "new approved decision
+      only") and which shipped as `Role: RoleAny` under scenario names that
+      said so out loud: `successor-authorship-unverifiable` and
+      `new-approved-decision-only-unverifiable`. The protocol GRANTED the
+      act because it could not check the precondition —
+      no-silent-yes-2026-08/P6 (D7/D9, US-1). Raised by
+      internal/validate.checkLifecycle on VerdictUnauthorizedActor for a
+      supersede transition, once the successor's caller-resolved facts
+      reach the seam.
+      REUSED for BOTH branches — the successor resolved and failing the
+      precondition, AND the successor not resolvable at all — per POL-024's
+      own 2026-08-27 precedent: D9 asks UNMEASURED to ride "alongside an
+      ORDINARY reject", not to found a second reject code. The
+      unresolvable branch is always paired with LFC-006, which explains WHY
+      it could not be judged; the resolved-and-failing branch carries
+      LFC-005 alone.
+    severity: reject
+    mode_scope: v3-pr
+    mode_scope_reason: >-
+      ADR-011 D3, the same argument POL-024's own row makes. What this rule
+      judges is a SUPERSEDE EVENT already committed to history, and no verb
+      un-supersedes: a decision retired before this rule existed has no
+      in-protocol repair, so a v3-full-repo audit could only punish, never
+      let anyone fix it. The pre-write gate is where the refusal can still
+      change an outcome.
+
+  - code: LFC-006
+    class: lifecycle
+    title: The supersede successor's precondition could not be evaluated (D9)
+    applies_to: >-
+      internal/validate.checkLifecycle (lifecycle.go) — D9's UNMEASURED half
+      of the capability-miss pair (DECISIONS.md § D9, "UNMEASURED is a
+      SEVERITY, not a fourth verdict"), always emitted ALONGSIDE LFC-005 on
+      the identical finding, never alone. Fires when the Resolver cannot
+      resolve the successor artifact named by the supersede event's refs at
+      all, so the precondition is unevaluated rather than failed.
+      D9's own rule states the direction: on fold's two supersede rows
+      today's behaviour is a GRANT, so absence must emit a refusal plus
+      UNMEASURED — never a pass. Exempt from obligations 1 (prose) and 4
+      (driven) BY CLASS, per this registry's own `severity:` field comment
+      and check-error-codes.sh's obligation-4 header; D9 forecloses
+      UNMEASURED ever blocking a write, so it is not "a refusal" in either
+      obligation's own sense.
+    severity: unmeasured
+    mode_scope: both
+    mode_scope_reason: >-
+      DELIBERATELY NOT suppressed at v3-full-repo, the same asymmetry
+      POL-026's own row records against its POL-024 pairing. LFC-006 can
+      never itself block (D9), so keeping it visible in the post-merge audit
+      surfaces "this could not be checked" as an advisory even where the
+      reject half that WOULD have blocked a fresh write is correctly scoped
+      to v3-pr for an already-merged artifact.
+
   - code: POL-001
     class: policy
     title: Content matches a forbidden secret/credential pattern
@@ -1177,3 +1237,53 @@ entries:
       rewrites its `delivers[]` — so at full-repo the rule could only
       punish. It also could only punish WRONGLY: the package that was
       unlanded at write time is merged by the time any audit reads it.
+
+  - code: REF-025
+    class: referential
+    title: Artifact id is present in no connected space
+    emitted_by: internal/cache
+    applies_to: >-
+      the ONE cross-space id-resolution rule no-silent-yes-2026-08/P2a moves
+      DOWN into internal/cache per ADR-019 — today stated twice, in
+      cmd/a2a/wire.go's resolveTargetSpaceRef and internal/mcp/wire.go's
+      SpaceOfArtifacts, the latter's own comment citing the former by name
+      (the sixth ADR-019 instance, spec 02 §8 AC 8). The CLI copy FALLS BACK
+      to cfg.Spaces[0] when no mirror holds `<id>.md`, so an id in the
+      SECOND connected space silently resolves to the FIRST and the verb
+      reports "artifact not found" — true of the space it reached and false
+      of the space that holds the id. This code replaces that phrase: it
+      names the id AND the spaces searched, so a refusal says which spaces
+      were actually looked in.
+    severity: reject
+    mode_scope: v3-pr
+    mode_scope_reason: >-
+      ADR-011 D3. This is a WRITE-TIME resolution refusal — it decides which
+      space a verb acts on before anything is authored, and never runs
+      post-merge: a merged artifact is by construction in the space that
+      holds it, so a full-repo audit has nothing to resolve and could only
+      manufacture a failure against content that was correct when written.
+    path_exempt: >-
+      UNDRIVABLE BY THE HARNESS, not undeclared — and the distinction is this
+      code's whole point. REF-025 fires only when an id is in NO connected
+      space, which is unreachable below TWO connected spaces: its own
+      applies_to scopes the defect to "the SECOND connected space", and
+      cmd/a2a/wire.go's resolveTargetSpaceRef bypasses the walk entirely at
+      `len(cfg.Spaces) <= 1`. No tier in this repo can connect two spaces —
+      internal/livee2e's checkout model connects exactly one (manifest id
+      "livee2e") against one hardcoded DefaultRepo, and SystemA/SystemB are
+      two PARTICIPANTS inside it, not two spaces. Filed 2026-08-27 in
+      docs/backlog.md ("internal/e2e and internal/livee2e can each connect
+      exactly ONE space") with the fix named: a second-origin fixture
+      capability in internal/e2e/txtar_test.go's Setup.
+      This waiver EXISTS RATHER THAN A PATH on purpose. Obligation 4 parses
+      Refusal{Code:} LITERALS and never executes the matrix (see
+      docs/validator-backlog.md, 2026-08-27), so a declared path naming this
+      code would have COUNTED AS DRIVEN while provably never running —
+      manufacturing the exact number no-silent-yes-2026-08's own AC-3
+      promised not to move, inside the epic whose thesis is that a green
+      answer must mean something. Two implementers in a row declined to write
+      it. The behaviour is proven at unit tier with watched-failing mutation
+      evidence in internal/cache/spaceresolve_test.go and cmd/a2a/wire_test.go;
+      what is missing is acceptance-tier coverage, and this row says so rather
+      than pretending otherwise. Retiring it is one line once a second space
+      is fixture-able.

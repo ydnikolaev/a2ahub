@@ -65,6 +65,12 @@ scripts/check-skill-citations.sh
 scripts/check-spec-verify-refs.sh
 scripts/check-dashboard-props.sh
 scripts/check-card-content.sh
+# ADR-019's detection half (no-silent-yes-2026-08 P1, 2026-08-27). PRIVATE by the
+# same argument as its neighbours above and by its own Makefile recipe, which was
+# written presence-gated from the start ("skip — absent (public checkout)").
+# It went into NEITHER list when it landed, so classify-guard refused the first
+# lane that ran after it — the gate catching an unclassified path, working.
+scripts/check-cross-surface-citations.sh
 
 # The projection gate itself (release-loop-2026-08 P3). Private for the same
 # reason the publisher is: it materialises a public projection of THIS tree
