@@ -361,17 +361,80 @@ func resolveGitDir(dir string) (string, error) {
 	return gitDir, nil
 }
 
-// remoteHeadBranch resolves the remote's default branch, falling back to
-// §4.2's normative "main" when the remote publishes no HEAD (a bare fixture
-// origin often does not).
+// remoteHeadBranch resolves the remote's default branch for LOCAL MIRROR
+// HYGIENE (checkoutRemoteHeadWithin's own working-tree checkout), falling
+// back to §4.2's former normative "main" when the remote publishes no HEAD
+// (a bare fixture origin often does not). This fallback is deliberately kept
+// exactly as it always was: checkoutRemoteHeadWithin never pushes — it only
+// moves a cache's working tree — so guessing wrong here costs at most a
+// stale/misplaced local checkout, never a push at a branch nobody named.
+// See ResolveBaseBranch below for the WRITE-FUNNEL sibling that may not make
+// the same guess.
 func remoteHeadBranch(ctx context.Context, dir string) string {
-	ref, err := runGitOutput(ctx, dir, nil, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
-	if err == nil {
-		if _, branch, found := cutLast(ref, "/"); found && branch != "" {
-			return branch
-		}
+	if branch, ok := resolveRemoteHeadBranch(ctx, dir); ok {
+		return branch
 	}
 	return "main"
+}
+
+// resolveRemoteHeadBranch is remoteHeadBranch's and ResolveBaseBranch's
+// shared read: dir's remote-tracking refs/remotes/origin/HEAD, as an
+// ALREADY-FETCHED mirror sees it (no network call here — the caller's own
+// CloneOrFetch already ran the fetch). ok is false whenever the remote
+// publishes no resolvable HEAD, whatever the reason (a genuinely empty
+// origin, a HEAD symref pointing at a branch that was never pushed, or a
+// transport that simply never advertised one) — this function does not
+// distinguish among those; it only reports RESOLVED vs COULD-NOT-RESOLVE and
+// lets each caller decide what COULD-NOT-RESOLVE means for it.
+func resolveRemoteHeadBranch(ctx context.Context, dir string) (branch string, ok bool) {
+	ref, err := runGitOutput(ctx, dir, nil, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+	if err != nil {
+		return "", false
+	}
+	_, branch, found := cutLast(ref, "/")
+	if !found || branch == "" {
+		return "", false
+	}
+	return branch, true
+}
+
+// ResolveBaseBranch resolves dir's remote's default branch for the WRITE
+// FUNNEL (no-silent-yes-2026-08 P2b): the same refs/remotes/origin/HEAD read
+// remoteHeadBranch performs, but returning COULD-NOT-RESOLVE as a typed,
+// registered refusal (NoDefaultBranchError, REF-026) instead of guessing
+// "main". D2 (DECISIONS.md) chose to DERIVE a space's base branch from this
+// ref rather than mint a manifest key, precisely so one fact has one source;
+// this is what that choice costs — a remote that answers with nothing has no
+// answer to derive, and a caller about to PUSH must not silently guess one
+// (that is the exact defect no-silent-yes-2026-08 exists to end: a space
+// whose real default branch is "master" would otherwise get pushed at "main"
+// unasked, which is how `a2a submit` was unusable for such a team at all).
+//
+// dir must already be a fetched mirror (the caller's own CloneOrFetch runs
+// first); this performs no network call of its own.
+func ResolveBaseBranch(ctx context.Context, dir string) (string, error) {
+	branch, ok := resolveRemoteHeadBranch(ctx, dir)
+	if !ok {
+		return "", &NoDefaultBranchError{Dir: dir}
+	}
+	return branch, nil
+}
+
+// NoDefaultBranchError is ResolveBaseBranch's refusal when dir's mirror
+// carries no resolvable refs/remotes/origin/HEAD — REF-026
+// (schemas/errors/v1/registry.yaml, emitted_by: internal/space). Dir is the
+// local mirror directory that was read; this package knows no other identity
+// for the space than the mirror it was asked about, so a caller that wants
+// the space's own id in a message wraps this error with it.
+type NoDefaultBranchError struct {
+	Dir string
+}
+
+func (e *NoDefaultBranchError) Error() string {
+	return fmt.Sprintf(
+		"space: REF-026: the remote mirrored at %s publishes no default branch "+
+			"(refs/remotes/origin/HEAD) — refusing to guess a push target",
+		e.Dir)
 }
 
 // cutLast splits s at its LAST occurrence of sep.

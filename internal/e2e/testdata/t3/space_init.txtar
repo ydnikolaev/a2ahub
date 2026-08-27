@@ -82,6 +82,109 @@ exec a2a validate --ci --mode=v3-full-repo
 stdout '"valid": true'
 cd ..
 
+# no-silent-yes-2026-08 P2b, AC 5: a space whose remote's DEFAULT branch is
+# "master" (never "main") gets DERIVED as its push target — never silently
+# guessed at "main". Built directly against a bare origin rather than through
+# `a2a space init` above: that command only ever scaffolds a LOCAL tree with
+# no remote of its own, so it cannot express the shape under test here, which
+# is the REMOTE's own refs/remotes/origin/HEAD. mirror_test.go's
+# resolveBaseBranchOriginOnBranch and internal/mcp/wire_test.go's
+# mcpWireOriginOnBranch build the identical shape for this same phase's
+# Go-level proofs; this is its T3, through-the-real-binary counterpart.
+env A2A_TOKEN_MASTER_SPACE=master-space-token
+
+# The origin lives under remotes/ rather than bare in $WORK — parseGitHubRepo
+# (and its doctor twin doctorRepoOwnerName) split a repo URL on "/" into
+# owner/name and refuse a single, slash-free path component, so a bare-in-
+# $WORK origin would refuse LOCALLY before ever reaching the funnel's own
+# host call, which is not the boundary this stanza means to reach.
+mkdir remotes
+exec git init --bare -q -b master remotes/master-origin.git
+exec git -C remotes/master-origin.git config receive.autogc false
+
+exec git init -q -b master master-seed
+cp master-space.yaml master-seed/space.yaml
+exec git -C master-seed add space.yaml
+exec git -C master-seed commit -q -m seed
+exec git -C master-seed remote add origin ../remotes/master-origin.git
+exec git -C master-seed push -q origin master
+
+exec a2a connect remotes/master-origin.git
+stdout 'registered space "master-space"'
+
+# AC-2 (epic discoverability instrument): `a2a doctor` names the DERIVED
+# branch before any submit is attempted — "master-space: master", never
+# "main" and never REF-026's own refusal text (a remote that resolves has
+# nothing to refuse). This is DIRECT textual proof of derivation through the
+# real binary, and doubles as the through-the-binary proof of AC-2 that
+# cmd_doctor_test.go's own two new unit tests (fake host, no real exec)
+# cannot give by themselves.
+#
+# `!` (nonzero exit) is real, not defensive: master-space's mirror carries
+# only the space.yaml this stanza pushed above, so the UNRELATED "CI
+# presence" row FAILs for it (no .github/workflows/a2a-validate.yml) — a
+# space-scaffolding fact, not a base-branch one. "default branch healthy"
+# itself still PASSes; the assertion below reads that row's own detail.
+! exec a2a doctor
+stdout 'master-space: master'
+! stdout 'REF-026'
+
+mkdir .a2a/staging
+cp master-question.md .a2a/staging/master-question.md
+
+# The write funnel reaches PAST base-branch resolution here: CloneOrFetch,
+# ResolveBaseBranch (which would refuse REF-026 right at this line if it
+# could not derive "master" from the mirror just cloned above), loadManifest
+# and credential resolution all succeed — and only then meets this tier's own
+# known ceiling (txtar_test.go's own Setup comment): A2A_GITHUB_API is pinned
+# to a local 403-only denial fixture, so the funnel's first real host call is
+# refused by the fixture, never by this space's base branch. A full `a2a
+# submit` SUCCESS needs a real (or fake-but-permissive) GitHub host, which
+# this tier deliberately does not wire — so this is the honest T3 ceiling for
+# AC 5: proven derivation and proven reach past it, not a faked write. Two
+# earlier waves already found this same ceiling and correctly declined to
+# fake past it; this stanza asserts exactly what is real: FindPRByHeadBranch
+# is the funnel's own FIRST host call (funnel.go step 0, before any
+# commit/push git action), so seeing it fail on the fixture's 403 is direct
+# proof every step before it — including ResolveBaseBranch — succeeded.
+! exec a2a submit .a2a/staging/master-question.md
+stderr 'FindPRByHeadBranch'
+stderr 'status 403'
+! stderr 'REF-026'
+
+-- master-space.yaml --
+schema: space/v1
+space: master-space
+min_binary_version: 0.0.0
+participants:
+  - system: axon
+    section: axon
+    status: active
+    owners: [axon-bot]
+  - system: beta
+    section: beta
+    status: active
+    owners: [beta-bot]
+
+-- master-question.md --
+---
+schema: envelope/v1
+id: XQ-axon-20260828-9f21
+type: question
+title: A question in the master-default space
+space: master-space
+from: axon
+to: [beta]
+thread: thread:axon-20260828-9f21
+actor: {kind: agent, name: bot}
+created: 2026-08-28T10:00:00Z
+category: clarification
+priority: p3
+blocking: true
+classification: internal
+---
+body
+
 -- unedited-space.yaml --
 schema: space/v1
 space: replace-with-space-id

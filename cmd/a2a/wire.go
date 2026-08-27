@@ -44,10 +44,7 @@ import (
 // a network call. SubmitCommand.Run repeats the refusal as defense-in-depth
 // for the direct-construction (test) path.
 
-const (
-	githubAPIBaseURL  = "https://api.github.com"
-	defaultBaseBranch = "main"
-)
+const githubAPIBaseURL = "https://api.github.com"
 
 // githubAPIEnv overrides the REST/GraphQL root. Two callers, one knob:
 // GitHub Enterprise (whose API lives on the customer's own host — the same
@@ -1150,10 +1147,28 @@ func resolveLifecycleDepsWithPolicy(ctx context.Context, p paths, args []string,
 		return lifecycleDeps{}, failf(stderr, "a2a: %v", err)
 	}
 	mirrorDir := space.ResolveMirrorLocation(p.projectRoot, ref, machine)
+	// baseBranch is derived ONLY when this invocation just fetched the
+	// mirror (syncMirror), and left "" otherwise — never guessed from a
+	// mirror that might not even exist locally yet. Of resolveLifecycleDeps
+	// WithPolicy's five call sites, exactly one hands syncMirror=false while
+	// needsCredential=true (resolveContractDeps' "publish" action): P6
+	// publish builds its OWN space.SubmitRequest directly
+	// (contract_p6_wiring.go's publicationRequest, never reading
+	// deps.hostCfg.BaseBranch at all), so leaving baseBranch unresolved
+	// there costs nothing. Every other write path (resolveLifecycleDeps
+	// itself, contract deprecate/retire/adopt, data deliver/verify,
+	// attach) hands syncMirror=true, so the derivation below always runs
+	// for them.
+	var baseBranch string
 	if syncMirror {
 		if err := space.CloneOrFetch(ctx, mirrorDir, ref.RepoURL, readCredential(ctx, ref.ID, machine)); err != nil {
 			return lifecycleDeps{}, failf(stderr, "a2a: mirror sync failed: %v", err)
 		}
+		resolved, err := space.ResolveBaseBranch(ctx, mirrorDir)
+		if err != nil {
+			return lifecycleDeps{}, failf(stderr, "a2a: space %q: %v", ref.ID, err)
+		}
+		baseBranch = resolved
 	}
 	manifest, err := loadManifest(mirrorDir)
 	if err != nil {
@@ -1181,7 +1196,7 @@ func resolveLifecycleDepsWithPolicy(ctx context.Context, p paths, args []string,
 	funnel := space.NewWriteFunnel(h, validator, funnelBinaryVersion())
 	hostCfg := cli.SubmitHostConfig{
 		RemoteURL: ref.RepoURL, Repo: host.Repo{Owner: owner, Name: name},
-		BaseBranch: defaultBaseBranch, Credential: cred,
+		BaseBranch: baseBranch, Credential: cred,
 		CommitAuthorName: cfg.System, CommitAuthorEmail: cfg.System + "@a2a.local",
 	}
 	return lifecycleDeps{
@@ -1356,6 +1371,14 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 	if err := space.CloneOrFetch(ctx, mirrorDir, ref.RepoURL, readCredential(ctx, ref.ID, machine)); err != nil {
 		return failf(stderr, "a2a submit: mirror sync failed: %v", err)
 	}
+	// Derived from the mirror's own refs/remotes/origin/HEAD, just fetched
+	// above — never a hardcoded "main" (no-silent-yes-2026-08 P2b). A remote
+	// that publishes no HEAD refuses REF-026 here rather than silently
+	// submitting at a branch nobody named.
+	baseBranch, err := space.ResolveBaseBranch(ctx, mirrorDir)
+	if err != nil {
+		return failf(stderr, "a2a submit: space %q: %v", ref.ID, err)
+	}
 	manifest, err := loadManifest(mirrorDir)
 	if err != nil {
 		return failf(stderr, "a2a submit: %v", err)
@@ -1383,7 +1406,7 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 	hostCfg := cli.SubmitHostConfig{
 		RemoteURL:         ref.RepoURL,
 		Repo:              host.Repo{Owner: owner, Name: name},
-		BaseBranch:        defaultBaseBranch,
+		BaseBranch:        baseBranch,
 		Credential:        cred,
 		CommitAuthorName:  cfg.System,
 		CommitAuthorEmail: cfg.System + "@a2a.local",
@@ -1397,8 +1420,8 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 const canonicalFeedbackRepo = "https://github.com/ydnikolaev/a2ahub"
 
 // feedbackBaseBranch is where inbound reports LAND, and it is deliberately a
-// second constant rather than a new value for defaultBaseBranch
-// (agent-ops-2026-07 P15 §3.1, ADR-010 decision 3).
+// second constant rather than a new value for the shared space base-branch
+// setting (agent-ops-2026-07 P15 §3.1, ADR-010 decision 3).
 //
 // THE DEFECT IT CLOSES. Public `main` was two things at once: the feedback hub
 // of record — the default submit target for every shipped binary, with status
@@ -1409,12 +1432,17 @@ const canonicalFeedbackRepo = "https://github.com/ydnikolaev/a2ahub"
 // second back. A record submitted after that publish merged in 23 seconds. The
 // difference was entirely whether a release happened while it was open.
 //
-// WHY NOT REPOINT THE SHARED CONSTANT. `defaultBaseBranch` is declared twice
-// (here and internal/mcp/wire.go) and read six times, and three of those reads
-// are SPACE operations — `lifecycle`, `submit`, `space update`. Repointing it
-// would move where every space pull request targets, which is a different
-// change with a different blast radius. The review's "~5-line change" priced
-// one constant where there are two distinct concerns.
+// WHY NOT REPOINT THE SHARED CONSTANT. At the time this decision was made,
+// the space base branch was a single literal declared twice (here and
+// internal/mcp/wire.go) and read six times, three of those reads being SPACE
+// operations — `lifecycle`, `submit`, `space update`. Repointing it would
+// move where every space pull request targets, which is a different change
+// with a different blast radius. The review's "~5-line change" priced one
+// constant where there are two distinct concerns. (no-silent-yes-2026-08 P2b
+// later DELETED that shared literal entirely and derives each space's own
+// base branch from its mirror instead — feedbackBaseBranch's own reasoning
+// for staying separate is unaffected: the feedback hub is not a space, and
+// still has no per-remote branch of its own to derive.)
 //
 // The REPOSITORY does not move, only the branch: a repository move would break
 // every binary in the field and is what the rejected options required.
@@ -1626,6 +1654,12 @@ func wireSpaceUpdate(ctx context.Context, cmd *cli.SpaceCommand, args []string) 
 	if err := space.CloneOrFetch(ctx, mirrorDir, ref.RepoURL, readCredential(ctx, ref.ID, machine)); err != nil {
 		return fmt.Errorf("a2a space update: mirror sync failed: %w", err)
 	}
+	// Derived from the mirror's own refs/remotes/origin/HEAD, just fetched
+	// above (no-silent-yes-2026-08 P2b) — never a hardcoded "main".
+	baseBranch, err := space.ResolveBaseBranch(ctx, mirrorDir)
+	if err != nil {
+		return fmt.Errorf("a2a space update: space %q: %w", ref.ID, err)
+	}
 	cred, err := resolveCredential(ctx, ref.ID, machine)
 	if err != nil {
 		return fmt.Errorf("a2a space update: %w", err)
@@ -1648,7 +1682,7 @@ func wireSpaceUpdate(ctx context.Context, cmd *cli.SpaceCommand, args []string) 
 	cmd.HostCfg = cli.SubmitHostConfig{
 		RemoteURL:         ref.RepoURL,
 		Repo:              host.Repo{Owner: owner, Name: name},
-		BaseBranch:        defaultBaseBranch,
+		BaseBranch:        baseBranch,
 		Credential:        cred,
 		CommitAuthorName:  cfg.System,
 		CommitAuthorEmail: cfg.System + "@a2a.local",

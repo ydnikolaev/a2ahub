@@ -1179,18 +1179,6 @@ func (c *DoctorCommand) doctorCheckStuckGreenPRs(ctx context.Context, cfg space.
 	return true, ""
 }
 
-// doctorDefaultBaseBranch is the space base branch this check reads when
-// nothing more specific is configured. space.Ref (ProjectConfig's connected-
-// space entry) carries no per-space base-branch override — see this check's
-// reported product finding — so there is no dynamic source to read here.
-// This literal mirrors the existing fallback this package already uses at
-// cmd_lifecycle.go, cmd_space.go and cmd_submit.go (each defaults to "main"
-// when SubmitHostConfig.BaseBranch is unset) and cmd/a2a/wire.go's own
-// defaultBaseBranch constant, all of which encode spec §4.2's normative
-// default — this is not a new literal, it is that same convention named
-// once more, in the one file of this package that had not yet needed it.
-const doctorDefaultBaseBranch = "main"
-
 // doctorCheckDefaultBranchHealthy is R4c (fb-20260812-ee6dcd; ADR-011
 // Consequences: "a validator whose own verdict nothing surfaces has stopped
 // being a gate and become a log entry"). `a2a doctor` used to answer
@@ -1201,6 +1189,30 @@ const doctorDefaultBaseBranch = "main"
 // that verdict directly, over host.RefStatusReader — the same required-check
 // read doctorCheckStuckGreenPRs performs, merely scoped to a branch instead
 // of a PR (see RefStatusReader's doc comment in internal/host/host.go).
+//
+// The branch itself is DERIVED per space (no-silent-yes-2026-08 P2b), from
+// c.resolveMirror(...)'s own refs/remotes/origin/HEAD via
+// space.ResolveBaseBranch — never the hardcoded "main" this check used to
+// probe unconditionally, which for a master-default space silently checked
+// a ref that could never match ("default branch healthy" would then have
+// stayed permanently UNVERIFIABLE, and said nothing about it). When the
+// branch cannot be derived (mirror never synced, or the remote genuinely
+// publishes no HEAD) this check falls back to probing "main" exactly as it
+// always did, rather than refusing to check anything — this is a READ-ONLY
+// advisory over a GitHub Checks-API ref, never a push, so ResolveBaseBranch's
+// own doc comment licenses exactly this caller to keep the old best-effort
+// guess (see mirror.go's remoteHeadBranch, the same convention for mirror
+// hygiene's own read-only checkout). The discoverability note below is
+// honest about which of the two happened: a derived branch is named
+// outright, an undetermined one says so instead of asserting "main" as fact.
+//
+// This IS ALSO the epic's own discoverability instrument (AC-2): every
+// connected space's branch (derived, or the best-effort guess) is named in
+// the returned detail regardless of outcome, so a joining team reads the
+// answer BEFORE its first submit — including when this build wires no
+// RefStatusReader at all (the trap: that capability gate used to return
+// before any per-space work ran, which would have made the note invisible on
+// exactly the build this discoverability instrument most needs to reach).
 //
 // Outcomes, matching doctorCheckAutoMerge/doctorCheckStuckGreenPRs' shape:
 //   - zero connected spaces -> PASS, empty detail (vacuously nothing to check).
@@ -1230,12 +1242,20 @@ func (c *DoctorCommand) doctorCheckDefaultBranchHealthy(ctx context.Context, cfg
 		return true, ""
 	}
 	reader, isReader := c.h.(host.RefStatusReader)
-	if !isReader {
-		return true, " · default-branch health unverified: this build wires no ref status reader"
-	}
 
-	var unhealthy, pending, unverifiable []string
+	var unhealthy, pending, unverifiable, branchNotes []string
 	for _, ref := range cfg.Spaces {
+		branch, branchErr := space.ResolveBaseBranch(ctx, c.resolveMirror(c.projectRoot, ref, machine))
+		if branchErr != nil {
+			branch = "main"
+			branchNotes = append(branchNotes, ref.ID+`: base branch could not be determined (checked "main")`)
+		} else {
+			branchNotes = append(branchNotes, ref.ID+": "+branch)
+		}
+
+		if !isReader {
+			continue
+		}
 		owner, name, err := doctorRepoOwnerName(ref.RepoURL)
 		if err != nil {
 			unverifiable = append(unverifiable, ref.ID)
@@ -1247,7 +1267,7 @@ func (c *DoctorCommand) doctorCheckDefaultBranchHealthy(ctx context.Context, cfg
 			continue
 		}
 		status, err := reader.RefCheckStatus(ctx, host.RefStatusRequest{
-			Repo: host.Repo{Owner: owner, Name: name}, Ref: doctorDefaultBaseBranch, Credential: credential,
+			Repo: host.Repo{Owner: owner, Name: name}, Ref: branch, Credential: credential,
 		})
 		if err != nil {
 			unverifiable = append(unverifiable, ref.ID)
@@ -1269,7 +1289,7 @@ func (c *DoctorCommand) doctorCheckDefaultBranchHealthy(ctx context.Context, cfg
 		case "failure", "timed_out", "cancelled", "action_required":
 			line := fmt.Sprintf(
 				"%s: default branch %q's required check (%s) concluded %q",
-				ref.ID, doctorDefaultBaseBranch, status.Name, status.Conclusion,
+				ref.ID, branch, status.Name, status.Conclusion,
 			)
 			// status.URL is empty whenever GitHub's check-runs response
 			// carried none (or the run predates html_url in the fixture) —
@@ -1288,11 +1308,19 @@ func (c *DoctorCommand) doctorCheckDefaultBranchHealthy(ctx context.Context, cfg
 	sort.Strings(unhealthy)
 	sort.Strings(pending)
 	sort.Strings(unverifiable)
+	sort.Strings(branchNotes)
+	var branchSuffix string
+	if len(branchNotes) > 0 {
+		branchSuffix = " · base branch: " + strings.Join(branchNotes, "; ")
+	}
 	if len(unhealthy) > 0 {
 		// A space whose default branch is genuinely red is the failure, even
 		// if a sibling space could not be read — the actionable half wins,
 		// same precedence doctorCheckAutoMerge/doctorCheckStuckGreenPRs use.
-		return false, strings.Join(unhealthy, "; ")
+		return false, strings.Join(unhealthy, "; ") + branchSuffix
+	}
+	if !isReader {
+		return true, " · default-branch health unverified: this build wires no ref status reader" + branchSuffix
 	}
 	var advisories []string
 	if len(pending) > 0 {
@@ -1302,7 +1330,10 @@ func (c *DoctorCommand) doctorCheckDefaultBranchHealthy(ctx context.Context, cfg
 		advisories = append(advisories, "default-branch health unverified for "+strings.Join(unverifiable, ", "))
 	}
 	if len(advisories) > 0 {
-		return true, " · " + strings.Join(advisories, "; ")
+		return true, " · " + strings.Join(advisories, "; ") + branchSuffix
+	}
+	if branchSuffix != "" {
+		return true, branchSuffix
 	}
 	return true, ""
 }

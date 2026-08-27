@@ -2168,6 +2168,94 @@ func TestDoctorCheckDefaultBranchHealthyFAILDegradesWithoutRunURL(t *testing.T) 
 	}
 }
 
+// doctorMirrorOnBranch builds a real local git mirror (bare origin + clone)
+// whose refs/remotes/origin/HEAD resolves to branch — the fixture
+// doctorCheckDefaultBranchHealthy's own base-branch derivation
+// (no-silent-yes-2026-08 P2b, space.ResolveBaseBranch) needs, which none of
+// this file's other "mirror" fixtures provide (they are plain directories
+// seeded with hand-written files, no .git at all).
+func doctorMirrorOnBranch(t *testing.T, branch string) string {
+	t.Helper()
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	contractGitRun(t, "", "init", "--bare", "-q", "-b", branch, origin)
+
+	seed := t.TempDir()
+	contractGitRun(t, "", "init", "-q", "-b", branch, seed)
+	if err := os.WriteFile(filepath.Join(seed, "f.txt"), []byte("seed\n"), 0o644); err != nil {
+		t.Fatalf("write seed file: %v", err)
+	}
+	contractGitRun(t, seed, "add", "-A")
+	contractGitRun(t, seed, "commit", "-q", "-m", "seed")
+	contractGitRun(t, seed, "remote", "add", "origin", origin)
+	contractGitRun(t, seed, "push", "-q", "origin", branch)
+
+	clone := filepath.Join(t.TempDir(), "clone")
+	contractGitRun(t, "", "clone", "-q", origin, clone)
+	return clone
+}
+
+// TestDoctorCheckDefaultBranchHealthyDerivesNonMainBranchAndProbesIt is this
+// phase's own acceptance: a space whose remote default is "master" makes
+// this check PROBE "master" — never the "main" it always checked before —
+// and NAME "master" in the discoverability detail (epic AC-2).
+func TestDoctorCheckDefaultBranchHealthyDerivesNonMainBranchAndProbesIt(t *testing.T) {
+	t.Parallel()
+	mirror := doctorMirrorOnBranch(t, "master")
+	cfg := space.ProjectConfig{Spaces: []space.Ref{{
+		ID: "getvisa", RepoURL: "https://github.com/acme/getvisa.git",
+	}}}
+
+	var gotRef string
+	fake := host.NewFakeHost()
+	fake.RefCheckStatusFunc = func(_ context.Context, req host.RefStatusRequest) (host.CheckStatusResult, error) {
+		gotRef = req.Ref
+		return host.CheckStatusResult{State: "completed", Conclusion: "success", Name: "a2a-validate"}, nil
+	}
+	cmd := newTestDoctorCommand()
+	cmd.h = fake
+	cmd.resolveMirror = func(string, space.Ref, space.MachineConfig) string { return mirror }
+	cmd.resolveCredential = func(context.Context, string, space.CredentialReference) (host.Credential, error) {
+		return host.Credential{Token: "tok"}, nil
+	}
+
+	ok, detail := cmd.doctorCheckDefaultBranchHealthy(context.Background(), cfg, space.MachineConfig{})
+	if !ok {
+		t.Fatalf("want PASS, got FAIL: %s", detail)
+	}
+	if gotRef != "master" {
+		t.Fatalf("RefCheckStatus was asked about Ref=%q, want the DERIVED %q, never the old hardcoded \"main\"", gotRef, "master")
+	}
+	if !strings.Contains(detail, "getvisa: master") {
+		t.Fatalf("detail = %q, want it to name the derived base branch (AC-2 discoverability: \"a2a doctor\" names the branch it will push to)", detail)
+	}
+}
+
+// TestDoctorCheckDefaultBranchHealthyNamesBranchEvenWithNoRefStatusReader is
+// the trap this phase's own brief named explicitly: the discoverability
+// instrument (AC-2) must survive the "this build wires no ref status
+// reader" early return, which used to skip ALL per-space work — a build
+// with no reader is exactly the build most likely to be a fresh join, where
+// naming the push target matters most.
+func TestDoctorCheckDefaultBranchHealthyNamesBranchEvenWithNoRefStatusReader(t *testing.T) {
+	t.Parallel()
+	mirror := doctorMirrorOnBranch(t, "master")
+	cfg := space.ProjectConfig{Spaces: []space.Ref{{
+		ID: "getvisa", RepoURL: "https://github.com/acme/getvisa.git",
+	}}}
+
+	cmd := newTestDoctorCommand()
+	cmd.h = doctorHostWithoutRefReader{Host: host.NewFakeHost()}
+	cmd.resolveMirror = func(string, space.Ref, space.MachineConfig) string { return mirror }
+
+	ok, detail := cmd.doctorCheckDefaultBranchHealthy(context.Background(), cfg, space.MachineConfig{})
+	if !ok {
+		t.Fatalf("want advisory PASS, got FAIL: %s", detail)
+	}
+	if !strings.Contains(detail, "getvisa: master") {
+		t.Fatalf("detail = %q, want the derived base branch named even when this build wires no ref status reader", detail)
+	}
+}
+
 // --- doctorUnadoptedConsumptionRows (defects-fix-2026-08 P6) ---
 //
 // These write the same on-disk shape internal/cache's own registered_

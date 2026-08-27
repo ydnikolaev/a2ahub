@@ -1287,3 +1287,28 @@ entries:
       what is missing is acceptance-tier coverage, and this row says so rather
       than pretending otherwise. Retiring it is one line once a second space
       is fixture-able.
+  - code: REF-026
+    class: referential
+    title: A space's remote publishes no default branch
+    emitted_by: internal/space
+    applies_to: >-
+      internal/space's write funnel, once no-silent-yes-2026-08/P2b DELETES both
+      `defaultBaseBranch = "main"` declarations (cmd/a2a/wire.go, internal/mcp/
+      wire.go) and derives a space's base branch from its own mirror's
+      `refs/remotes/origin/HEAD` via remoteHeadBranch (mirror.go). D2 (DECISIONS.md)
+      chose derivation over a manifest key precisely so ONE fact has ONE source;
+      this code is what that choice costs — a remote that publishes no HEAD has no
+      answer to derive, and the funnel must say so rather than fall back to the
+      literal it just stopped trusting.
+      A silent fallback to "main" is the exact shape this epic exists to end: it
+      would take a space whose default branch is genuinely something else and push
+      at a branch nobody named, which is how `a2a submit` was unusable for a team
+      on `master` in the first place.
+    severity: reject
+    mode_scope: v3-pr
+    mode_scope_reason: >-
+      ADR-011 D3. This is a WRITE-TIME funnel refusal about the REMOTE's own
+      current configuration, resolved immediately before a push and never
+      re-derived post-merge: a merged PR is proof its base branch existed, so a
+      full-repo audit has nothing to resolve and could only manufacture a failure
+      against a push that plainly succeeded.

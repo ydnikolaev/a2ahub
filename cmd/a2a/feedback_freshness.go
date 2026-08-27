@@ -173,12 +173,14 @@ func feedbackHubIsGitWorkTree(ctx context.Context, hubRoot string) (bool, error)
 // hub be reached" share one proven argv rather than drifting (§11 wave D2).
 // The branch is feedbackBaseBranch (wire.go), NOT the literal "main" it was
 // until P15 M2. This site is worth a sentence because the spec's own
-// enumeration missed it: G3 counted READS OF THE CONSTANT `defaultBaseBranch`
-// and found six, and this one hard-coded the string instead — so a
-// constant-only repoint would have left `a2a feedback triage` computing its
-// freshness verdict against a branch that no longer receives reports, and
-// printing "inbox clean" on the strength of it. A hand-maintained enumeration
-// of call sites has the same failure mode as any other hand-maintained list.
+// enumeration missed it: G3 counted READS OF the space base-branch setting
+// (a constant at the time, since deleted by no-silent-yes-2026-08 P2b — a
+// space's base branch is now DERIVED per space instead) and found six, and
+// this one hard-coded the string instead — so a repoint of that setting
+// alone would have left `a2a feedback triage` computing its freshness
+// verdict against a branch that no longer receives reports, and printing
+// "inbox clean" on the strength of it. A hand-maintained enumeration of call
+// sites has the same failure mode as any other hand-maintained list.
 func feedbackFetchHubInbox(ctx context.Context, hubRoot, hubURL string) error {
 	cmd := exec.CommandContext(ctx, "git", "-C", hubRoot, "fetch", "--no-tags", "--depth=1", hubURL, feedbackBaseBranch)
 	var stderr bytes.Buffer

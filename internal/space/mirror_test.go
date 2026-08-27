@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
@@ -238,5 +241,164 @@ func TestCheckoutRemoteHeadCtxCancelWhileWaitingReturnsPromptly(t *testing.T) {
 	}
 	if elapsed >= indexLockWaitBudget {
 		t.Fatalf("did not honour ctx cancellation: elapsed=%s want < %s", elapsed, indexLockWaitBudget)
+	}
+}
+
+// ── ResolveBaseBranch (no-silent-yes-2026-08 P2b) ──────────────────────────
+
+// resolveBaseBranchGitRun runs `git <args...>` with cwd=dir, hardened
+// against git's own background maintenance (gitfixture.Args) — this file's
+// own fixtures build bare origins directly rather than through
+// testkit/spacefixture, which only ever seeds a "main"-branch origin and
+// cannot express either shape ResolveBaseBranch needs to distinguish.
+func resolveBaseBranchGitRun(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", gitfixture.Args(args...)...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=a2a-fixture", "GIT_AUTHOR_EMAIL=fixture@a2ahub.invalid",
+		"GIT_COMMITTER_NAME=a2a-fixture", "GIT_COMMITTER_EMAIL=fixture@a2ahub.invalid",
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v (dir=%s): %v\n%s", args, dir, err, out)
+	}
+}
+
+// resolveBaseBranchEmptyOrigin creates a bare origin with NO branch ever
+// created and NO commit ever pushed — verified empirically (this phase's own
+// brief) that such an origin's clone resolves no
+// refs/remotes/origin/HEAD at all: `git symbolic-ref --short
+// refs/remotes/origin/HEAD` fails with "not a symbolic ref", exit 128. This
+// is the "a remote publishes no HEAD" shape ResolveBaseBranch must refuse.
+func resolveBaseBranchEmptyOrigin(t *testing.T) string {
+	t.Helper()
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	if err := os.MkdirAll(origin, 0o755); err != nil {
+		t.Fatalf("mkdir origin: %v", err)
+	}
+	resolveBaseBranchGitRun(t, origin, "init", "--bare", "-q")
+	gitfixture.HardenRepo(t, origin)
+	return origin
+}
+
+// resolveBaseBranchOriginOnBranch creates a bare origin whose default branch
+// is branch (never "main"), with one commit pushed to it — verified
+// empirically that a plain `git clone` of such an origin resolves
+// refs/remotes/origin/HEAD to "origin/<branch>".
+func resolveBaseBranchOriginOnBranch(t *testing.T, branch string) string {
+	t.Helper()
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	if err := os.MkdirAll(origin, 0o755); err != nil {
+		t.Fatalf("mkdir origin: %v", err)
+	}
+	resolveBaseBranchGitRun(t, origin, "init", "--bare", "-q", "-b", branch)
+	gitfixture.HardenRepo(t, origin)
+
+	seed := filepath.Join(t.TempDir(), "seed")
+	if err := os.MkdirAll(seed, 0o755); err != nil {
+		t.Fatalf("mkdir seed: %v", err)
+	}
+	resolveBaseBranchGitRun(t, seed, "init", "-q", "-b", branch)
+	if err := os.WriteFile(filepath.Join(seed, "f.txt"), []byte("seed\n"), 0o644); err != nil {
+		t.Fatalf("write seed file: %v", err)
+	}
+	resolveBaseBranchGitRun(t, seed, "add", "-A")
+	resolveBaseBranchGitRun(t, seed, "commit", "-q", "-m", "seed")
+	resolveBaseBranchGitRun(t, seed, "remote", "add", "origin", origin)
+	resolveBaseBranchGitRun(t, seed, "push", "-q", "origin", branch)
+	return origin
+}
+
+// TestResolveBaseBranchNoRemoteHeadRefusesREF026 is this phase's own
+// acceptance: a remote publishing no refs/remotes/origin/HEAD must be
+// REFUSED by name (REF-026), never silently pushed at "main" — the exact
+// defect this phase exists to end.
+func TestResolveBaseBranchNoRemoteHeadRefusesREF026(t *testing.T) {
+	t.Parallel()
+
+	origin := resolveBaseBranchEmptyOrigin(t)
+	dest := filepath.Join(t.TempDir(), "mirror")
+	if err := CloneOrFetch(context.Background(), dest, origin, host.Credential{}); err != nil {
+		t.Fatalf("CloneOrFetch (empty origin, first clone never calls checkoutRemoteHead): %v", err)
+	}
+
+	_, err := ResolveBaseBranch(context.Background(), dest)
+	if err == nil {
+		t.Fatal("ResolveBaseBranch = nil error, want a refusal — an unresolvable remote HEAD must never resolve silently")
+	}
+	var noHead *NoDefaultBranchError
+	if !errors.As(err, &noHead) {
+		t.Fatalf("ResolveBaseBranch error = %v (%T), want *NoDefaultBranchError", err, err)
+	}
+	if !strings.Contains(err.Error(), "REF-026") {
+		t.Fatalf("error = %q, want it to name REF-026 (schemas/errors/v1/registry.yaml)", err.Error())
+	}
+	if strings.Contains(err.Error(), `"main"`) {
+		t.Fatalf("error = %q, must never itself suggest \"main\" as a fallback", err.Error())
+	}
+	_ = noHead
+}
+
+// TestResolveBaseBranchNonMainDefaultResolves is this phase's own
+// acceptance: a space whose remote default is "master" gets "master" as its
+// derived branch — not the literal "main" no-silent-yes-2026-08 exists to
+// stop trusting.
+func TestResolveBaseBranchNonMainDefaultResolves(t *testing.T) {
+	t.Parallel()
+
+	origin := resolveBaseBranchOriginOnBranch(t, "master")
+	dest := filepath.Join(t.TempDir(), "mirror")
+	if err := CloneOrFetch(context.Background(), dest, origin, host.Credential{}); err != nil {
+		t.Fatalf("CloneOrFetch: %v", err)
+	}
+
+	branch, err := ResolveBaseBranch(context.Background(), dest)
+	if err != nil {
+		t.Fatalf("ResolveBaseBranch: %v", err)
+	}
+	if branch != "master" {
+		t.Fatalf("ResolveBaseBranch = %q, want %q", branch, "master")
+	}
+}
+
+// TestResolveBaseBranchMainDefaultResolves is the control: an ordinary
+// "main"-default origin (testkit/spacefixture's own shape) still resolves
+// correctly — the derivation is not somehow biased against the common case.
+func TestResolveBaseBranchMainDefaultResolves(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	dest := filepath.Join(t.TempDir(), "mirror")
+	if err := CloneOrFetch(context.Background(), dest, fx.RemoteURL(), host.Credential{}); err != nil {
+		t.Fatalf("CloneOrFetch: %v", err)
+	}
+
+	branch, err := ResolveBaseBranch(context.Background(), dest)
+	if err != nil {
+		t.Fatalf("ResolveBaseBranch: %v", err)
+	}
+	if branch != "main" {
+		t.Fatalf("ResolveBaseBranch = %q, want %q", branch, "main")
+	}
+}
+
+// TestRemoteHeadBranchStillFallsBackToMain is checkoutRemoteHeadWithin's own
+// regression: mirror hygiene's private resolver is UNCHANGED behaviour —
+// still "main" on an unresolvable HEAD, never REF-026 (mirror.go's own doc
+// comment: checkoutRemoteHeadWithin never pushes, so guessing wrong here
+// costs at most a stale local checkout, not a push at a branch nobody
+// named).
+func TestRemoteHeadBranchStillFallsBackToMain(t *testing.T) {
+	t.Parallel()
+
+	origin := resolveBaseBranchEmptyOrigin(t)
+	dest := filepath.Join(t.TempDir(), "mirror")
+	if err := CloneOrFetch(context.Background(), dest, origin, host.Credential{}); err != nil {
+		t.Fatalf("CloneOrFetch: %v", err)
+	}
+
+	if got := remoteHeadBranch(context.Background(), dest); got != "main" {
+		t.Fatalf("remoteHeadBranch = %q, want the unchanged %q fallback", got, "main")
 	}
 }

@@ -31,10 +31,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/validate"
 )
 
-const (
-	githubAPIBaseURL  = "https://api.github.com"
-	defaultBaseBranch = "main"
-)
+const githubAPIBaseURL = "https://api.github.com"
 
 // githubAPIEnv / githubAPIBase mirror cmd/a2a's own resolver — the MCP
 // surface wires the same host against the same knob (GitHub Enterprise, and
@@ -460,6 +457,14 @@ func buildWriteDepsForSpace(ctx context.Context, cfg space.ProjectConfig, machin
 	if err := space.CloneOrFetch(ctx, mirrorDir, ref.RepoURL, readMirrorCredential(ctx, ref.ID, machine)); err != nil {
 		return WriteDeps{}, SubmitDeps{}, NewDeps{}, fmt.Errorf("mirror sync failed: %w", err)
 	}
+	// Derived from the mirror's own refs/remotes/origin/HEAD, just fetched
+	// above (no-silent-yes-2026-08 P2b) — never a hardcoded "main". A remote
+	// that publishes no HEAD refuses REF-026 here rather than silently
+	// writing at a branch nobody named.
+	baseBranch, err := space.ResolveBaseBranch(ctx, mirrorDir)
+	if err != nil {
+		return WriteDeps{}, SubmitDeps{}, NewDeps{}, fmt.Errorf("space %q: %w", ref.ID, err)
+	}
 	manifestRaw, err := os.ReadFile(filepath.Join(mirrorDir, "space.yaml"))
 	if err != nil {
 		return WriteDeps{}, SubmitDeps{}, NewDeps{}, fmt.Errorf("read space.yaml: %w", err)
@@ -499,7 +504,7 @@ func buildWriteDepsForSpace(ctx context.Context, cfg space.ProjectConfig, machin
 
 	hostCfg := SubmitHostConfig{
 		RemoteURL: ref.RepoURL, Repo: host.Repo{Owner: owner, Name: name},
-		BaseBranch: defaultBaseBranch, Credential: cred,
+		BaseBranch: baseBranch, Credential: cred,
 		CommitAuthorName: cfg.System, CommitAuthorEmail: cfg.System + "@a2a.local",
 	}
 	write := WriteDeps{

@@ -603,6 +603,110 @@ func TestBuildWriteDepsTwoSpacesYieldDistinctMirrorDirsAndResolveSpace(t *testin
 	}
 }
 
+// mcpWireBareOrigin creates a bare origin with NO branch ever created and NO
+// commit ever pushed — verified empirically (no-silent-yes-2026-08 P2b's own
+// brief) that such an origin's clone resolves no refs/remotes/origin/HEAD at
+// all. This is the "a remote publishes no HEAD" shape ResolveBaseBranch (and
+// therefore buildWriteDepsForSpace) must refuse with REF-026.
+func mcpWireBareOrigin(t *testing.T) string {
+	t.Helper()
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	runGitTest(t, "", "init", "--bare", "-q", origin)
+	gitfixture.HardenRepo(t, origin)
+	return origin
+}
+
+// mcpWireOriginOnBranch creates a bare origin whose default branch is
+// branch (never "main"), with one commit pushed to it — verified
+// empirically that a plain `git clone` of such an origin resolves
+// refs/remotes/origin/HEAD to "origin/<branch>".
+func mcpWireOriginOnBranch(t *testing.T, branch string) string {
+	t.Helper()
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	runGitTest(t, "", "init", "--bare", "-q", "-b", branch, origin)
+	gitfixture.HardenRepo(t, origin)
+
+	seed := t.TempDir()
+	runGitTest(t, "", "init", "-q", "-b", branch, seed)
+	// A structurally-valid space.Manifest (see fixValidManifest's own doc
+	// comment) — buildWriteDepsForSpace parses space.yaml right after
+	// resolving the base branch, so a seed with none never reaches this
+	// test's own assertion.
+	manifest := "schema: space/v1\nspace: fixture-space\nmin_binary_version: \"0.19.0\"\nparticipants:\n" +
+		"  - system: beta\n    org: fixture\n    section: beta\n    owners: [beta-bot]\n    status: active\n    joined: \"2026-01-01\"\n"
+	if err := os.WriteFile(filepath.Join(seed, "space.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write seed manifest: %v", err)
+	}
+	runGitTest(t, seed, "add", "-A")
+	runGitTest(t, seed, "-c", "user.name=fixture", "-c", "user.email=fixture@a2ahub.invalid", "commit", "-q", "-m", "seed")
+	runGitTest(t, seed, "remote", "add", "origin", origin)
+	runGitTest(t, seed, "push", "-q", "origin", branch)
+	return origin
+}
+
+// TestBuildWriteDepsForSpaceRefusesREF026WhenRemotePublishesNoHead is this
+// phase's own acceptance: a remote publishing no refs/remotes/origin/HEAD
+// must be REFUSED by name (REF-026), never silently built with the write
+// funnel pointed at "main" — the exact defect no-silent-yes-2026-08 exists
+// to end. This is ALSO the reachability proof check-error-codes.sh's
+// obligation 2 requires: REF-026 firing through a real production entry
+// point (buildWriteDeps, one of this phase's four repointed write-funnel
+// sites), not only from internal/space's own unit tests.
+//
+// reason: mutates process env through the production credential seam.
+func TestBuildWriteDepsForSpaceRefusesREF026WhenRemotePublishesNoHead(t *testing.T) {
+	t.Setenv("A2A_TOKEN_SPACE_ONE", "test-token-one")
+
+	origin := mcpWireBareOrigin(t)
+	cfg := space.ProjectConfig{System: "beta", Spaces: []space.Ref{
+		{ID: "space-one", RepoURL: origin},
+	}}
+	machine := space.MachineConfig{Credentials: map[string]string{
+		"space-one": "env:A2A_TOKEN_SPACE_ONE",
+	}}
+	projectRoot := t.TempDir()
+	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
+
+	_, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test")
+	if err == nil {
+		t.Fatal("buildWriteDeps = nil error, want a REF-026 refusal — an unresolvable remote HEAD must never silently build write deps pointed at \"main\"")
+	}
+	if !strings.Contains(err.Error(), "REF-026") {
+		t.Fatalf("error = %q, want it to name REF-026 (schemas/errors/v1/registry.yaml)", err.Error())
+	}
+	if strings.Contains(err.Error(), `"main"`) {
+		t.Fatalf("error = %q, must never itself suggest \"main\" as a fallback", err.Error())
+	}
+}
+
+// TestBuildWriteDepsForSpaceDerivesNonMainBaseBranch is this phase's own
+// acceptance: a space whose remote default is "master" gets "master" as its
+// derived HostCfg.BaseBranch — not the literal "main" no-silent-yes-2026-08
+// exists to stop trusting.
+//
+// reason: mutates process env through the production credential seam.
+func TestBuildWriteDepsForSpaceDerivesNonMainBaseBranch(t *testing.T) {
+	t.Setenv("A2A_TOKEN_SPACE_ONE", "test-token-one")
+
+	origin := mcpWireOriginOnBranch(t, "master")
+	cfg := space.ProjectConfig{System: "beta", Spaces: []space.Ref{
+		{ID: "space-one", RepoURL: origin},
+	}}
+	machine := space.MachineConfig{Credentials: map[string]string{
+		"space-one": "env:A2A_TOKEN_SPACE_ONE",
+	}}
+	projectRoot := t.TempDir()
+	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
+
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test")
+	if err != nil {
+		t.Fatalf("buildWriteDeps: %v", err)
+	}
+	if write.HostCfg.BaseBranch != "master" {
+		t.Fatalf("HostCfg.BaseBranch = %q, want %q", write.HostCfg.BaseBranch, "master")
+	}
+}
+
 // TestBuildWriteDepsFailingSpaceSurfacesErrorOnlyWhenResolved is the P7
 // per-space-error contract: a space that fails to build must not cost the
 // session anything else — the failure is stored and returned only when
