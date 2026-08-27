@@ -33,7 +33,7 @@ items:
       severity: major
       title: verify-export against a staged candidate can never match its published version
       verdict: accepted
-      route: discover
+      route: backlog
       refs:
         - docs/backlog.md
       date: "2026-08-27"
@@ -42,7 +42,7 @@ items:
       severity: minor
       title: no verb answers whether a producer's published contracts still match its code
       verdict: accepted
-      route: discover
+      route: backlog
       refs:
         - docs/backlog.md
       date: "2026-08-27"
