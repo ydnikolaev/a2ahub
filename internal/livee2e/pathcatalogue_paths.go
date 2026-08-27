@@ -1263,6 +1263,39 @@ func decisionPaths() []Path {
 		},
 	}
 
+	approvedSupersededByApprovedSuccessor := Path{
+		ID:           "decision-approved-superseded-by-approved-successor",
+		Precondition: partialQuorumThenApproved.ID,
+		Intent: "the OTHER half of decisionRows()'s `approved | supersede | superseded | new " +
+			"approved decision only` row (§3.4.4): approvedSuperseded (above) proves the " +
+			"REFUSAL — a successor resolved but never approved — and no-silent-yes-2026-08 " +
+			"P6's own PreconditionSuccessorApproved (table.go) leaves that precise gap " +
+			"provably reachable rather than structural, so a waiver in " +
+			"uncoveredTransitions() would misclassify it. This path LANDS the triple: the " +
+			"successor is minted in the ACTING checkout (SystemA, driveLandedSuccessorDraft) " +
+			"exactly as approvedSuperseded's own does, but then carried to a REAL quorum of " +
+			"its own two RequiredApprovers (SystemB, then SystemA — the same order " +
+			"partialQuorumThenApproved above already exercises) — internal/cli/" +
+			"cmd_lifecycle_test.go's own TestSupersedeDecisionRegressionFix/" +
+			"approved_by_successor_with_real_quorum_across_sections_succeeds is this exact " +
+			"scenario proven through the funnel directly: MirrorResolver.Successor carries " +
+			"RequiredApprovers into the folded successor envelope and reads committed " +
+			"history across EVERY participant's own section, so quorumReached (fold.go) sees " +
+			"the successor's own real approve pair and PreconditionSuccessorApproved is " +
+			"genuinely SATISFIED. `supersede` therefore SUCCEEDS here, unlike " +
+			"approvedSuperseded's sibling refusal — the only difference between the two " +
+			"paths is whether the successor's own quorum was ever driven.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindDecision, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("decision", fold.StateSuperseded),
+					AbsentFromOpenItems("decision"),
+				},
+			},
+		},
+	}
+
 	rejected := Path{
 		ID: "decision-lifecycle-rejected",
 		Intent: "reject is Role Approver with NO quorum gate (decisionRows(): a single " +
@@ -1373,7 +1406,7 @@ func decisionPaths() []Path {
 		},
 	}
 
-	return []Path{partialQuorumThenApproved, approvedSuperseded, rejected, rejectedSuperseded, proposedWithdrawn}
+	return []Path{partialQuorumThenApproved, approvedSuperseded, approvedSupersededByApprovedSuccessor, rejected, rejectedSuperseded, proposedWithdrawn}
 }
 
 // --- Family 10 — supersede (P11 W3e Deliverable 1): the author abandoning

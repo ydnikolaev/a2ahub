@@ -1558,6 +1558,62 @@ func runPathDecisionApprovedSuperseded(ctx context.Context, t *testing.T, h *har
 	return ids
 }
 
+// driveApprovedSuccessorQuorum extends driveLandedSuccessorDraft's own raw-
+// fixture pattern (this file's own doc comment on that function: a
+// supporting fixture, not a step of the path under test, so no predicate is
+// ever asserted about it) one stage further — from a landed `proposed`
+// successor to a genuinely `approved` one. It drives the successor's own
+// two RequiredApprovers (draftFieldArgs: every drafted decision defaults to
+// required_approvers=[actor, peer]) through a REAL quorum, B then A, the
+// same order runPathDecisionPartialQuorumThenApproved above already
+// exercises over the PREDECESSOR — reused here rather than duplicated a
+// second shape, since the mechanics (approve, land, sync) are identical
+// regardless of which decision is being approved.
+//
+// Raw actor.Run + pullForBranch + happyLandAndSync, exactly like
+// driveLandedSuccessorDraft — never driveSimpleVerb, which would check the
+// CALLING path's own Steps[stepIdx] predicates against an approve event
+// the path never declares (the successor's approvals are fixture, not the
+// declared journey).
+func driveApprovedSuccessorQuorum(ctx context.Context, t *testing.T, h *harness, pathID, successorID string) {
+	t.Helper()
+	syncBoth(ctx, t, h)
+	for _, approver := range []*checkout{h.B, h.A} {
+		if _, stderr, err := approver.Run(ctx, "approve", successorID); err != nil {
+			t.Fatalf("path %s: a2a approve %s (successor decision quorum, %s): %v: %s", pathID, successorID, approver.System, err, strings.TrimSpace(stderr))
+		}
+		pr, err := h.pullForBranch(ctx, space.BranchName(approver.System, "approve", successorID))
+		if err != nil {
+			t.Fatalf("path %s: resolve PR for approve %s (successor decision quorum, %s): %v", pathID, successorID, approver.System, err)
+		}
+		if err := happyLandAndSync(ctx, h, approver, pr.Number); err != nil {
+			t.Fatalf("path %s: land+sync approve PR #%d (successor decision quorum, %s): %v", pathID, pr.Number, approver.System, err)
+		}
+		syncBoth(ctx, t, h)
+	}
+}
+
+// runPathDecisionApprovedSupersededByApprovedSuccessor is
+// runPathDecisionApprovedSuperseded's positive-control sibling: the same
+// successor-in-acting-checkout fixture, carried all the way to a real
+// approve quorum (driveApprovedSuccessorQuorum) before `supersede` is
+// driven, so PreconditionSuccessorApproved (table.go, no-silent-yes-2026-08
+// P6) is genuinely satisfied and the act SUCCEEDS — landing
+// (decision, approved, supersede), the triple approvedSuperseded's own
+// refusal leaves un-exercised.
+func runPathDecisionApprovedSupersededByApprovedSuccessor(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "decision-approved-superseded-by-approved-successor")
+	ids := runPathDecisionPartialQuorumThenApproved(ctx, t, h, runTag)
+	a := h.A
+
+	syncBoth(ctx, t, h)
+	successorID := driveLandedSuccessorDraft(ctx, t, h, a, path.ID, 0)
+	driveApprovedSuccessorQuorum(ctx, t, h, path.ID, successorID)
+	driveSimpleVerb(ctx, t, h, a, path, 0, fold.TSupersede, ids["decision"], ids, "--refs", successorID)
+	return ids
+}
+
 // runPathDecisionRejected drives reject — Role Approver with NO quorum
 // gate (decisionRows(): a single approver's reject moves `proposed`
 // straight to `rejected`, unlike approve's own dynamic quorum row) — a
@@ -2586,6 +2642,7 @@ var driverForPath = map[string]func(ctx context.Context, t *testing.T, h *harnes
 	"requirement-withdrawn-from-acknowledged":                  runPathRequirementWithdrawnFromAcknowledged,
 	"decision-lifecycle-partial-quorum-then-approved":          runPathDecisionPartialQuorumThenApproved,
 	"decision-approved-superseded":                             runPathDecisionApprovedSuperseded,
+	"decision-approved-superseded-by-approved-successor":       runPathDecisionApprovedSupersededByApprovedSuccessor,
 	"decision-proposed-withdrawn":                              runPathDecisionProposedWithdrawn,
 	"decision-lifecycle-rejected":                              runPathDecisionRejected,
 	"decision-rejected-superseded":                             runPathDecisionRejectedSuperseded,

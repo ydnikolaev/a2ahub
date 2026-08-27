@@ -64,6 +64,7 @@ func drivenPathIDs() []string {
 		"requirement-withdrawn-from-acknowledged",
 		"decision-lifecycle-partial-quorum-then-approved",
 		"decision-approved-superseded",
+		"decision-approved-superseded-by-approved-successor",
 		// P8's resting-state gate named {decision, withdrawn} as entered by
 		// no path — added by P1 and never driven. It rides the SAME generic
 		// per-kind verb dispatch its siblings above already use
