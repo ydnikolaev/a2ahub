@@ -38,6 +38,18 @@ cp anonymous-actor.md .a2a/staging/anonymous-actor.md
 ! exec a2a validate --all
 stdout 'SCH-009'
 
+# no-silent-yes-2026-08/P3, US-1's own canonical example: `needed_by:
+# "next tuesday"` is a declared `format: date` field that internal/schema
+# now actually asserts (previously "declared and never asserted" — spec
+# 03-a-label-becomes-a-refusal.md §T2), so this refuses at V1 with a
+# registered SCH- code rather than validating clean. It must also never
+# surface as "unmapped schema-class keyword ... schema/registry drift" —
+# internal/validate/schema_class.go's own "format" arm names SCH-012 for
+# exactly this keyword, the same discipline SCH-009 above pins for actor.
+cp bad-needed-by.md .a2a/staging/bad-needed-by.md
+! exec a2a validate --all
+stdout 'SCH-012'
+
 -- anonymous-actor.md --
 ---
 schema: envelope/v1
@@ -56,3 +68,27 @@ blocking: true
 classification: internal
 ---
 This document exists only to guard SCH-009 at the executable CLI boundary.
+
+-- bad-needed-by.md --
+---
+schema: envelope/v1
+id: XW-axon-20260827-n3d8
+type: work_request
+title: Replay the C0 ingest transport protocol fixture and report divergences
+space: fixture-space
+from: axon
+to: [beta]
+thread: thread:axon-20260827-n3d9
+actor: {kind: agent, name: codex}
+created: 2026-08-01T09:15:00Z
+category: investigation
+priority: p3
+blocking: false
+interim_behavior: "Reviewer waits; no interim workaround exists."
+needed_by: "next tuesday"
+acceptance_criteria:
+  - "Divergences and ambiguities against the C0 transport spec are reported, not silent."
+expected_response: {shape: "XS naming replayed-count/total and any divergence found."}
+classification: internal
+---
+This document exists only to guard SCH-012 at the executable CLI boundary.

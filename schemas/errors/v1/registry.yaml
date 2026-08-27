@@ -25,12 +25,31 @@
 # copies has to be authoritative; this is that copy, matching the choice
 # already made for {code, class, title, applies_to}.
 #
-#   severity: reject|warning — MUST agree with the `Severity: Severity*`
-#     literal nearest this code's `Code: "..."` in internal/validate/*.go
-#     (non-test), scanned in that order; check-error-codes.sh reds on
-#     disagreement. Every schema-class code (SCH-*) is uniformly `reject`
-#     (internal/validate/schema_class.go:36 hardcodes it for the whole
-#     class — there is no per-code literal to disagree with).
+#   severity: reject|warning|unmeasured — MUST agree with the `Severity:
+#     Severity*` literal nearest this code's `Code: "..."` in
+#     internal/validate/*.go (non-test), scanned in that order;
+#     check-error-codes.sh reds on disagreement. Every schema-class code
+#     (SCH-*) is uniformly `reject` (internal/validate/schema_class.go:36
+#     hardcodes it for the whole class — there is no per-code literal to
+#     disagree with).
+#
+#     `unmeasured` is D9's own third value (no-silent-yes-2026-08/P3,
+#     DECISIONS.md § D9 — "UNMEASURED is a SEVERITY, not a fourth verdict"),
+#     minted 2026-08-27: a code raised when a rule could not be evaluated at
+#     all (a capability miss, an unresolvable participant list), carried
+#     alongside an ordinary `reject` wherever the unchecked rule would
+#     otherwise silently grant. It can never itself flip `valid` to false
+#     (internal/validate/result.go's own isReject, flipped from an
+#     exclude-list to an allow-list for exactly this reason) and is
+#     therefore, DELIBERATELY, out of scope for obligations 1 (prose) and 4
+#     (driven) BY CLASS — the same class-level carve-out `warning` already
+#     has for both: a rule that can never block is not "a refusal" in either
+#     obligation's own sense (obligation 1's own wording is "a reject-
+#     severity code ships with prose"; obligation 4's is "a `severity:
+#     reject` code is named by a `Refusal{Code:}` literal"). Neither
+#     obligation is reworded to say so a second time — this note is the
+#     decision, and scripts/check-error-codes.sh's own obligation-1/4
+#     header comments cross-reference it rather than duplicating it.
 #   mode_scope: v3-pr|v3-full-repo|both — which of `validate --ci`'s two
 #     invocation modes this code may return a verdict in (ADR-011 D3,
 #     docs/decisions.md). `both` is the default; `v3-pr` and
@@ -221,6 +240,36 @@ entries:
     class: schema
     title: Array declared unique contains a duplicate entry
     applies_to: any schemas/** schema with uniqueItems (including announcement/v2 work.waiting_on)
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      schema-shape checks re-derive from schemas/published-v1.sha256's frozen
+      bytes on every run — the same rule set every existing document was
+      authored against, so a full-repo re-check cannot manufacture a new
+      failure against content that already satisfied it.
+    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
+    path_exempt: every conformance path submits a well-formed draft by construction, so no declared path provokes a JSON-Schema violation today. NOT exempt by class — obligation 2's by-class argument is about unit-test bypass and does not transfer to path-driving; a path that submitted a malformed draft WOULD trip this code. One member of the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument.
+
+  - code: SCH-012
+    class: schema
+    title: Declared date/date-time value does not parse as one
+    applies_to: >-
+      envelope/v1 and envelope/v2 base.schema.json's `created` (format:
+      date-time), `needed_by`/`valid_until` (format: date), and
+      `expected_response.by` (format: date) — no-silent-yes-2026-08/P3
+      (D9/D3, US-1): AssertFormat is enabled 2026-08-27
+      (internal/schema/corpus.go), after this code was registered, per the
+      forced ordering internal/schema/keyword_test.go's
+      TestFormatIsAnnotationOnly documents (enabling assertion with no
+      matching code hard-errors ValidateDraft instead of reporting a
+      violation).
+    severity: reject
+    mode_scope: both
+    mode_scope_reason: >-
+      schema-shape checks re-derive from schemas/published-v1.sha256's frozen
+      bytes on every run — the same rule set every existing document was
+      authored against, so a full-repo re-check cannot manufacture a new
+      failure against content that already satisfied it.
 
   # --- P3 (internal/schema + internal/validate) additions below ---
   # referential/lifecycle/policy rows this phase adds per spec 02 Open Q2
@@ -231,16 +280,10 @@ entries:
   # lifecycle.go, policy.go, engine.go loads/mirrors it, never leads it) —
   # cited by internal/validate's own test corpus (golden fixtures +
   # dedicated unit tests), not by schemas/**/fixtures/invalid/ sidecars
-  # (that corpus is schema-class only, P2-owned).
-    severity: reject
-    mode_scope: both
-    mode_scope_reason: >-
-      schema-shape checks re-derive from schemas/published-v1.sha256's frozen
-      bytes on every run — the same rule set every existing document was
-      authored against, so a full-repo re-check cannot manufacture a new
-      failure against content that already satisfied it.
-    prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
-    path_exempt: every conformance path submits a well-formed draft by construction, so no declared path provokes a JSON-Schema violation today. NOT exempt by class — obligation 2's by-class argument is about unit-test bypass and does not transfer to path-driving; a path that submitted a malformed draft WOULD trip this code. One member of the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument.
+  # (that corpus is schema-class only, P2-owned). SCH-012 above is the ONE
+  # schema-class exception: it is P3's own code (the format assertion has
+  # no runtime context to wait for), placed beside SCH-001..SCH-011 rather
+  # than here so the SCH- sequence stays contiguous and readable.
 
   - code: REF-001
     class: referential
@@ -1003,6 +1046,91 @@ entries:
       A warning refuses nothing, so ADR-011 D3's "no rule judges immutable
       history" does not bind it — surfacing the smell on a merged descriptor
       costs nobody an edit they cannot make.
+
+  - code: POL-024
+    class: policy
+    title: A restricted-classification artifact addresses fewer systems than the space's own active participants
+    applies_to: >-
+      internal/validate.checkClassificationBilateral (classification.go) —
+      envelope classification: restricted (base.schema.json), checked
+      against the manifest's ACTIVE participants[] via the Resolver's own
+      optional ActiveParticipantLister capability. no-silent-yes-2026-08/P3
+      stage 2 (spec 03 §8 AC 4/5, plan/10-security.md:60 "the validator
+      enforces 'restricted ⇒ bilateral space'", D3: closes a plan-vs-code
+      mismatch rather than minting a new maximum-classification key — see
+      DECISIONS.md § D3 for the withdrawn key's own name). Fires when the
+      space's ACTIVE participants exceed {from} ∪ to — AND, since
+      2026-08-27, when the Resolver cannot even enumerate the space's
+      ACTIVE participants at all (DECISIONS.md § D9's own capability-miss
+      branch, spec 03 §8 AC 13): D9's text asks UNMEASURED to ride
+      "alongside an ordinary reject", not to found a second reject code, so
+      a capability miss REUSES this same code rather than the wave-1
+      POL-025 this stage minted and then retired (see this file's own
+      history for that code — deleted 2026-08-27, unreachable through a
+      correctly-wired binary the moment it shipped). A capability-miss
+      firing of POL-024 is always paired with POL-026 (severity:
+      unmeasured), which is what explains WHY the audience could not be
+      confirmed; an audience-exceeds firing carries POL-024 alone.
+    severity: reject
+    mode_scope: v3-pr
+    mode_scope_reason: >-
+      ADR-011 D3, the SAME argument REF-017/REF-023/POL-022 already make,
+      corrected from this row's own first draft (which read the derivation
+      as "always current" and missed what it JUDGES): the ARTIFACT carrying
+      classification: restricted is the immutable thing, not the
+      participant list. A restricted artifact merged into a space before
+      this rule existed — or before a third system joined — has no
+      in-protocol repair: committed frontmatter cannot be edited, and no
+      verb un-shows history to a system that already has it via git. A
+      v3-full-repo audit re-judging it could only punish, never let anyone
+      fix it, exactly REF-017's own "committed history is immutable and no
+      verb retracts a closed exchange."
+    reachability_exempt: >-
+      reachability debt, DECLARED not closed (no-silent-yes-2026-08/P3
+      stage 2, 2026-08-27): this stage's own allowlist grants
+      internal/cli/cmd_space.go and three unrelated test files only (the
+      D8 sentinel rename) — no internal/cli/**_test.go, internal/mcp/**_
+      test.go or internal/e2e/**_test.go file in scope names this code.
+      POL-021's own waiver is the precedent for this shape: the gate stays
+      green and BLOCKS the next code from joining this list; the debt is
+      counted, not hidden.
+
+  - code: POL-026
+    class: policy
+    title: The restricted-classification bilateral check could not be evaluated (D9)
+    applies_to: >-
+      internal/validate.checkClassificationBilateral (classification.go) —
+      D9's own UNMEASURED half of the capability-miss pair (DECISIONS.md
+      § D9, "UNMEASURED is a SEVERITY, not a fourth verdict"), always
+      emitted alongside POL-024 (REUSED, not a second reject code minted
+      for this branch — see POL-024's own applies_to for the 2026-08-27
+      fold of the wave-1 POL-025 literal back into this pair) on the
+      identical finding, never alone. Exempt from obligations 1 (prose) and
+      4 (driven) BY CLASS — see this registry's own `severity:` field
+      comment above; D9 forecloses UNMEASURED ever blocking a write, so it
+      is not "a refusal" in either obligation's own sense.
+    severity: unmeasured
+    mode_scope: both
+    mode_scope_reason: >-
+      DELIBERATELY NOT suppressed at v3-full-repo, unlike its own POL-024
+      pairing (mode_scope: v3-pr) — the same asymmetry POL-017's own
+      registry row already documents for REF-017's sibling case ("POL-017
+      is DELIBERATELY NOT suppressed: it is a warning (never flips Valid),
+      so the full-repo audit still surfaces the smell without refusing
+      anything immutable"). POL-026 can never itself block (D9), so keeping
+      it visible at v3-full-repo costs nothing an immutable-history concern
+      would object to — it surfaces "this could not be checked" as an
+      advisory even where the reject half that WOULD have blocked a fresh
+      write is correctly suppressed for an already-merged artifact.
+    reachability_exempt: >-
+      reachability debt, DECLARED not closed (no-silent-yes-2026-08/P3
+      stage 2, 2026-08-27): obligation 2 (reachability) carries no
+      severity carve-out (only obligations 1 and 4 exempt `unmeasured` BY
+      CLASS — see this registry's own `severity:` comment), so this code
+      needs its own written waiver even though it can never itself refuse
+      anything. No internal/cli/**_test.go,
+      internal/mcp/**_test.go or internal/e2e/**_test.go file in this
+      stage's own allowlist names it.
 
   - code: REF-023
     class: referential

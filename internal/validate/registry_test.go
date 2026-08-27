@@ -31,6 +31,25 @@ func (f *fakeResolver) System(system string) (member, left bool) {
 	return f.member[system], f.left[system]
 }
 
+// registryClosureParticipantResolver is this file's own minimal Resolver
+// that ALSO implements ActiveParticipantLister (classification.go) —
+// exercising POL-024's own audience-exceeds branch needs a resolver that
+// CAN answer the question; fakeResolver above deliberately cannot, which
+// is what proves POL-025/POL-026's capability-miss branch instead.
+type registryClosureParticipantResolver struct {
+	active []string
+}
+
+func (registryClosureParticipantResolver) KnownArtifact(string) bool         { return true }
+func (registryClosureParticipantResolver) Digest(string) (string, bool)      { return "", false }
+func (registryClosureParticipantResolver) System(string) (member, left bool) { return true, false }
+func (r *registryClosureParticipantResolver) ActiveParticipants() ([]string, bool) {
+	return r.active, true
+}
+
+var _ Resolver = (*registryClosureParticipantResolver)(nil)
+var _ ActiveParticipantLister = (*registryClosureParticipantResolver)(nil)
+
 // fakeLegality is a hand-written mock for LegalityChecker: it always
 // returns the configured verdict, regardless of the candidate.
 type fakeLegality struct {
@@ -114,6 +133,23 @@ func TestRegistryClosure(t *testing.T) {
 	record(checkAddressees(envelope{To: []any{"unknown-system"}}, resolver))
 	// REF-006 (left branch): to includes a system marked left.
 	record(checkAddressees(envelope{To: []any{"seomatrix"}}, resolver))
+
+	// POL-024 (no-silent-yes-2026-08/P3 stage 2, spec 03 §8 AC 4/5): a
+	// restricted artifact whose space's ACTIVE participants exceed
+	// {from} ∪ to.
+	record(checkClassificationBilateral(
+		envelope{Classification: "restricted", From: "axon", To: []any{"seomatrix"}},
+		&registryClosureParticipantResolver{active: []string{"axon", "seomatrix", "getvisa"}},
+	))
+	// POL-025 + POL-026 (D9's first consumer, spec 03 §8 AC 13): the
+	// participant list cannot be resolved at all — `resolver` above
+	// (fakeResolver) does not implement ActiveParticipantLister, exactly
+	// the capability-miss shape no production Resolver closes yet.
+	record(checkClassificationBilateral(
+		envelope{Classification: "restricted", From: "axon", To: []any{"seomatrix"}},
+		resolver,
+	))
+
 	// REF-009: resolvable parent and child disagree on thread.
 	record(checkFork(envelope{Parent: "XC-axon-ingest", Thread: "thread:axon-20260731-bbbb"}, &fakeThreadResolver{
 		known:   map[string]bool{"XC-axon-ingest": true},

@@ -1211,6 +1211,24 @@ func activeParticipants(manifest space.Manifest, exclude string) []string {
 	return out
 }
 
+// ActiveParticipants is the exported form of activeParticipants, with no
+// system excluded — the derivation internal/validate's ActiveParticipantLister
+// capability needs (no-silent-yes-2026-08/P3 stage 2 fix wave, ADR-019): both
+// internal/cli/adapters.go's and internal/mcp/adapters.go's own MirrorResolver
+// call THIS one function rather than each computing the manifest walk
+// independently, which is the exact defect ADR-019 (docs/decisions.md,
+// 2026-08-27) was written for.
+//
+// checkClassificationBilateral (internal/validate/classification.go) builds
+// its own allowed-set with env.From already included before ever consulting
+// this list, so excluding one system here would change nothing it observes —
+// this wrapper deliberately returns every active participant, unfiltered,
+// rather than re-exposing the exclude parameter for a caller that has no use
+// for it.
+func ActiveParticipants(manifest space.Manifest) []string {
+	return activeParticipants(manifest, "")
+}
+
 // leftParticipants returns the manifest systems whose membership status is
 // `left` — the caller-resolved FACT behind pendency.Input.LeftParticipants
 // (CC-062). It is the same read internal/validate does when it builds

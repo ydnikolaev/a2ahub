@@ -23,7 +23,9 @@ func TestFullShippedLegacyCorpusMatchesDigestTreeFS(t *testing.T) {
 	// That is the pin working: it counts what ships, not what any one consumer
 	// meant to change, and a fixture added for the validator's benefit is still
 	// bytes a published contract tree has to account for.
-	const wantLegacyCorpusFiles = 73
+	const wantLegacyCorpusFiles = 75 // 73 -> 75 on 2026-08-27: no-silent-yes P3 added the SCH-012
+	// invalid-fixture pair (XW-axon-invalid-needed-by-not-a-date.md + its .expect.yaml),
+	// which TestAC401_2_FixtureRegistryClosure requires for every class:schema code.
 	schemasRoot := filepath.Join("..", "..", "schemas")
 	digestRoot := t.TempDir()
 	var candidates []CandidateFile

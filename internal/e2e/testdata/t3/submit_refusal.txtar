@@ -8,6 +8,28 @@ cp foreign.md .a2a/staging/foreign.md
 ! exec a2a submit .a2a/staging/foreign.md
 stderr 'CC-002'
 
+# no-silent-yes-2026-08/P3 stage 2 (spec 03 §8 AC 4/13, DECISIONS.md § D9):
+# a `classification: restricted` artifact is refused LOCALLY too, before
+# any network call — like CC-002 above, this is a resolver-independent-of-
+# the-host check, reached once the local mirror clone (already populated
+# by this suite's own Setup) resolves. This fixture space carries THREE
+# ACTIVE participants (axon/beta/gamma, fixOriginManifest) and the draft is
+# from=axon/to=[beta], so gamma sits outside {from} u to — AC 4's own
+# audience-exceeds scenario, for real.
+#
+# THIS ASSERTION CHANGED ON 2026-08-27 AND THE CHANGE IS THE POINT. It was
+# written naming POL-025 (D9's capability-miss half) because at the time no
+# concrete Resolver implemented ActiveParticipantLister, so `restricted`
+# refused on the capability miss BEFORE the audience comparison it means to
+# exercise was ever reached. The wave-1 fix wired that capability into both
+# internal/cli's and internal/mcp's MirrorResolver, so the comparison is now
+# reached and this path refuses with POL-024 — the true audience-exceeds rule
+# plan/10-security.md §10.4 already declared normative and the validator did
+# not enforce. The gate found the change; nobody had to remember to come back.
+cp restricted.md .a2a/staging/restricted.md
+! exec a2a submit .a2a/staging/restricted.md
+stderr 'POL-024'
+
 -- foreign.md --
 ---
 schema: envelope/v1
@@ -24,5 +46,24 @@ category: clarification
 priority: p3
 blocking: true
 classification: internal
+---
+body
+
+-- restricted.md --
+---
+schema: envelope/v1
+id: XQ-axon-20260827-c1a1
+type: question
+title: A restricted question
+space: fixture-space
+from: axon
+to: [beta]
+thread: thread:axon-20260827-c1a1
+actor: {kind: agent, name: bot}
+created: 2026-08-27T10:00:00Z
+category: clarification
+priority: p3
+blocking: true
+classification: restricted
 ---
 body

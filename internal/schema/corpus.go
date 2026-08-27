@@ -3,7 +3,10 @@ package schema
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/ydnikolaev/a2ahub/schemas"
@@ -107,21 +110,45 @@ type Corpus struct {
 func Load() (*Corpus, error) {
 	const op = "Load"
 
-	c := jsonschema.NewCompiler()
-	// AssertFormat is deliberately NOT called: draft 2020-12 treats
-	// "format" as annotation-only unless the implementation opts into
-	// assertion, and this registry has no code for a format failure
-	// (schemas/errors/v1/registry.yaml's SCH- rows cover required/enum/
-	// forbidden-field/cardinality/conditional-required/type/pattern/
-	// interim_behavior only — no "date/date-time format" row, and this
-	// phase may not author a new SCH- row, only P2 does). Turning format
-	// assertion on without a matching code would surface as an
-	// unmappable violation in internal/validate's schema_class.go
-	// mapper — confirmed by a probe: a bad `created` value produced a
-	// hard error out of ValidateDraft instead of a reported violation.
-	// If format enforcement is wanted later, it needs a P2-authored
-	// SCH- row first; until then this corpus stays consistent with what
-	// the registry actually catalogues.
+	// TWO compilers, not one (no-silent-yes-2026-08/P3 stage 1, spec 03 §8
+	// AC1-3, DECISIONS.md § D3/§ D9). AssertFormat is a single bool on
+	// *jsonschema.Compiler — compiler-WIDE, with no per-schema or
+	// per-family scope — so calling it on the one shared compiler this
+	// function used to build would have turned format assertion on for
+	// EVERY corpus family, not just envelope's four date fields the brief
+	// names (`created`, `needed_by`, `valid_until`,
+	// `expected_response.by`). Confirmed empirically, not assumed: a
+	// single-compiler version of this change reds
+	// schemas/release-notes/v1/fixtures/valid/release-notes-unreleased.yaml
+	// — `released: unreleased` is a DELIBERATE non-date sentinel
+	// scripts/check-release-record.sh accepts for a version authored ahead
+	// of its own git tag (the fixture's own comment says so), and it is a
+	// shipped, currently-valid document this phase's own scope (the four
+	// envelope fields) never asked to touch. So envelopeCompiler carries
+	// AssertFormat; everyCompiler (every other family: event, manifest,
+	// consumes, release-notes, known-issues, data-package,
+	// verification-report) does not, exactly as before this phase.
+	//
+	// The order AssertFormat is turned on in was FORCED, not chosen:
+	// enabling assertion BEFORE a registry code existed for a format
+	// failure produced an UNMAPPABLE violation that hard-errored out of
+	// internal/validate's ValidateDraft instead of surfacing as a reported
+	// violation — confirmed empirically (internal/schema/keyword_test.go's
+	// TestFormatIsAnnotationOnly used to pin exactly that absence; it now
+	// pins the opposite, a reported "format" FieldViolation). SCH-012
+	// (schemas/errors/v1/registry.yaml) was registered FIRST so
+	// internal/validate/schema_class.go's mapper has a code to attach —
+	// see that file's own comment for the one piece of this ordering P3
+	// stage 1's allowlist could not reach (reported as a deviation).
+	envelopeCompiler := jsonschema.NewCompiler()
+	envelopeCompiler.AssertFormat()
+	everyCompiler := jsonschema.NewCompiler()
+	compilerFor := func(family string) *jsonschema.Compiler {
+		if family == familyEnvelope {
+			return envelopeCompiler
+		}
+		return everyCompiler
+	}
 
 	baseProps := make(map[int]map[string]bool)
 	for _, definition := range corpusDefinitions {
@@ -132,7 +159,7 @@ func Load() (*Corpus, error) {
 		if err != nil {
 			return nil, &Error{Op: op, Input: definition.path, Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
 		}
-		if err := c.AddResource(resourceURLPrefix+definition.path, doc); err != nil {
+		if err := compilerFor(definition.key.family).AddResource(resourceURLPrefix+definition.path, doc); err != nil {
 			return nil, &Error{Op: op, Input: definition.path, Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
 		}
 		if definition.key.family == familyEnvelope && definition.key.typ == typeBase {
@@ -146,6 +173,7 @@ func Load() (*Corpus, error) {
 			return nil, &Error{Op: op, Input: definition.path, Err: fmt.Errorf("%w: duplicate corpus key %+v", ErrCorpusLoad, definition.key)}
 		}
 
+		c := compilerFor(definition.key.family)
 		var sch *jsonschema.Schema
 		var err error
 		if definition.refTarget {
@@ -273,7 +301,90 @@ func (c *Corpus) ValidateEnvelope(typ, version string, instance any) ([]FieldVio
 		}
 		return nil, &Error{Op: op, Input: typ, Err: ErrUnknownType}
 	}
-	return extractFieldViolations(sch.Validate(instance), c.baseProps[n]), nil
+	fvs := extractFieldViolations(sch.Validate(instance), c.baseProps[n])
+	return dropPlaceholderFormatViolations(fvs, instance), nil
+}
+
+// dropPlaceholderFormatViolations removes `format` violations whose value is
+// still, verbatim, a template's own placeholder token (`<...>`).
+//
+// It lives HERE, beside the assertion it qualifies, because TWO consumers
+// need the same answer — internal/validate's V1/V2 engine and
+// internal/template's own TestRenderEveryTypeSchemaValid — and ADR-019
+// (2026-08-27) makes a package below both the default for exactly that.
+// It was written in internal/validate first and moved down within the hour,
+// when the second consumer appeared. That is the ADR working on the commit
+// that introduced it.
+//
+// THE RULE, and the collision that forced it. Enabling format assertion
+// (no-silent-yes-2026-08 P3) collided with a decision this repo had already
+// taken: internal/validate/placeholder.go's POL-010 is deliberately V2-ONLY —
+// an unfilled placeholder is legal while a document is a draft and refused at
+// the boundary where the draft becomes a shared record. Two shipped templates
+// carry `needed_by: <YYYY-MM-DD>`, and POL-010's own corpus test asserts BY
+// NAME that it reaches that field.
+//
+// Without this, `a2a new work_request` drafts a document its own binary
+// immediately calls invalid, and a rendered template stops being
+// schema-valid. The tempting fix — comment `needed_by` out of the templates —
+// passes every test that existed at the time and silently DELETES a real
+// POL-010 refusal: it trades a format check for a lost placeholder check,
+// which is the exact silent acceptance the epic that enabled format assertion
+// exists to abolish. Only POL-010'"'"'s own reach test catches it.
+//
+// So: a placeholder is not a format violation. POL-010 owns placeholders, at
+// V2, alone. A value that is NOT placeholder-shaped — `needed_by: "next
+// tuesday"` — still fails format at every tier, which is the point.
+func dropPlaceholderFormatViolations(fvs []FieldViolation, instance any) []FieldViolation {
+	if len(fvs) == 0 {
+		return fvs
+	}
+	out := fvs[:0:0]
+	for _, fv := range fvs {
+		if fv.Keyword == "format" && valueAtPathIsPlaceholder(instance, fv.Path) {
+			continue
+		}
+		out = append(out, fv)
+	}
+	return out
+}
+
+// placeholderToken matches a frontmatter scalar that is still, verbatim, a
+// template placeholder. Deliberately the SAME shape internal/validate/
+// placeholder.go'"'"'s own placeholderPattern uses; that package walks the whole
+// instance to REPORT them as POL-010, this one only asks about one path.
+var placeholderToken = regexp.MustCompile(`^<.*>$`)
+
+// valueAtPathIsPlaceholder resolves a dot-joined FieldViolation.Path against
+// the decoded instance and reports whether the value there is a placeholder
+// token. A path that does not resolve, or resolves to a non-string, is not a
+// placeholder — fail closed, so an unresolvable path never suppresses a real
+// violation.
+func valueAtPathIsPlaceholder(instance any, path string) bool {
+	if path == "" {
+		return false
+	}
+	node := instance
+	for _, seg := range strings.Split(path, ".") {
+		switch n := node.(type) {
+		case map[string]any:
+			v, ok := n[seg]
+			if !ok {
+				return false
+			}
+			node = v
+		case []any:
+			i, err := strconv.Atoi(seg)
+			if err != nil || i < 0 || i >= len(n) {
+				return false
+			}
+			node = n[i]
+		default:
+			return false
+		}
+	}
+	s, ok := node.(string)
+	return ok && placeholderToken.MatchString(s)
 }
 
 // ValidateEvent / ValidateManifest / ValidateConsumes: same contract as

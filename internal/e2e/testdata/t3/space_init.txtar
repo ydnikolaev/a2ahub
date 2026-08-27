@@ -48,3 +48,45 @@ stdout '"valid": true'
 cd ..
 ! exec a2a space init acme-space
 stderr 'not empty'
+
+# no-silent-yes-2026-08/P3 stage 2 (D8, spec 03 §8 AC 6/14): the renamed
+# sentinel now matches the id grammar's own ordinary branch, so `a2a space
+# init` must refuse OUTRIGHT when the given space id equals the sentinel
+# — writing a live-looking tree that still carries the template's own
+# placeholder as its literal identity would be worse than the old,
+# schema-refused shape, not better.
+! exec a2a space init replace-with-space-id
+stderr 'sentinel'
+! exists replace-with-space-id
+
+# sentinel-refused-as-live-space / sentinel-accepted-in-template-ci (spec
+# 03 §8 AC 6/7): the UNEDITED space.yaml — sentinel intact, exactly as
+# committed at space-template/space.yaml (min_binary_version lowered to
+# 0.0.0 here so this fixture's own floor check never depends on which
+# release this suite happens to stamp; the identity value under test,
+# `space: replace-with-space-id`, is untouched) — swapped into the
+# already-scaffolded acme-space tree (every OTHER file there is already
+# proven to validate above; only the identity value differs here) STILL
+# PASSES `a2a validate --ci`. This is AC 7, not a contradiction of AC 6
+# above: D8's sentinel mechanism is a RENAME, not a schema-level ban —
+# `replace-with-space-id` is, structurally, an ordinary conforming id, and
+# the refusal AC 6 exercises lives in `a2a space init`'s own guard (this
+# file's own stanza above), never in `a2a validate`. Tier stated honestly
+# at T3, not T6: the real T6 evidence is space-template/.github/workflows/
+# a2a-validate.yml running in a live space repo, which no gate in this
+# repository can reach; this script runs what that workflow calls, it does
+# not prove the workflow ran.
+cp unedited-space.yaml acme-space/space.yaml
+cd acme-space
+exec a2a validate --ci --mode=v3-full-repo
+stdout '"valid": true'
+cd ..
+
+-- unedited-space.yaml --
+schema: space/v1
+space: replace-with-space-id
+min_binary_version: 0.0.0
+gates: default
+participants: []
+notification_routes: []
+vendored: []

@@ -194,6 +194,20 @@ func (c *SpaceCommand) runInit(_ context.Context, args []string, stdio IO) int {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space init <space-id> [--dir <path>]")
 		return 2
 	}
+	// D8 (no-silent-yes-2026-08/P3 stage 2, spec 03 §8 AC 6/14): the
+	// renamed sentinel now matches the id grammar's own ordinary
+	// [a-z0-9]+(-[a-z0-9]+)* branch, so bytes.ReplaceAll in
+	// spaceApplySubstitutions can no longer distinguish "the caller typed
+	// the template's own placeholder" from "the caller genuinely wants a
+	// space named that" — a scaffold built from spaceID ==
+	// spaceIDSentinel would write a schema-VALID space.yaml that still
+	// carries the scaffolding sentinel as its literal `space:` value.
+	// Refuse it here, before any file is written, rather than emit a
+	// template that only LOOKS like a real space.
+	if spaceID == string(spaceIDSentinel) {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space init: refusing to scaffold — %q is the template's own scaffolding sentinel, not a real space id\n", spaceID)
+		return 1
+	}
 	target := *dirFlag
 	if target == "" {
 		target = "./" + spaceID
@@ -282,7 +296,30 @@ func spaceCleanVersion(raw string) (string, error) {
 
 // spaceIDSentinel is the space.yaml placeholder `a2a space init` replaces
 // with the given space id.
-var spaceIDSentinel = []byte("REPLACE_WITH_SPACE_ID")
+//
+// no-silent-yes-2026-08/P3 stage 2 (D8, spec 03 §8 AC 14): RENAMED to the
+// conforming "replace-with-space-id" from an OLD, screaming-snake-case
+// spelling (this file's own git history carries the prior byte value; it
+// is deliberately not quoted here — this stage's own acceptance check
+// greps for it, under this directory, expecting NOTHING).
+// schemas/manifest/v1/space.schema.json:14's own description explains why
+// the old spelling needed a dedicated alternation in the frozen id
+// pattern: that file's authoring scope did not include this one, so
+// renaming the sentinel to a conforming value was not an option from
+// there. D8 overrides that from the side that DOES own this file: the
+// renamed value matches the pattern's ordinary SECOND branch
+// ([a-z0-9]+(-[a-z0-9]+)*) like any real space id, so the frozen schema
+// needs no value-level exemption at all — the alternation's FIRST branch
+// stays in the frozen bytes (git diff schemas/manifest/v1/space.schema.json
+// is EMPTY, AC 14) but is no longer load-bearing: nothing in the product
+// depends on it any more.
+//
+// Renaming the SPELLING changes NO environment variable name — verified,
+// not assumed: internal/space.CredentialEnvVar (credential.go:31) maps
+// every `-` to `_` before uppercasing, so the old and new spellings both
+// render to the identical "A2A_TOKEN_" + the uppercased, underscored
+// sentinel.
+var spaceIDSentinel = []byte("replace-with-space-id")
 
 // spaceMinVersionPattern targets space.yaml's `min_binary_version: <ver>`
 // value (whatever the template currently bakes in), leaving the rest of the

@@ -494,6 +494,48 @@ func driveCreateAndFirstTransition(ctx context.Context, t *testing.T, h *harness
 	return sub
 }
 
+// driveRefusedCreateAndSubmit realizes a path's own (Kind,TCreate) step via
+// `a2a new <kind>` — which LANDS, exactly like driveCreateAndFirstTransition's
+// own create leg — followed by an `a2a submit <id>` the real binary MUST
+// REFUSE (submitIdx's own Step.Refused, checked the same way
+// driveRefusedSimpleVerb/driveRefusedContractRetire check theirs: a non-zero
+// exit whose combined output names step.Refused.Code is the ONLY pass). No
+// PR is ever pulled — a V2 schema-class refusal fires before the write
+// funnel is reached, same pre-write ordering every other refused-step driver
+// in this file already relies on.
+//
+// no-silent-yes-2026-08/P3 stage 1's own use (pathcatalogue_format.go,
+// "work-request-bad-needed-by-format-refused"): draftExtra carries the
+// malformed field (`--field needed_by=next tuesday`), so `a2a new` succeeds
+// (it authors the file, it does not validate it — cmd_new.go calls no
+// validator) and the refusal is `a2a submit`'s own V2 ValidateForSubmit
+// call, exactly like every other refused step in this file being a REAL
+// act through the REAL binary, never a seeded raw prior.
+func driveRefusedCreateAndSubmit(ctx context.Context, t *testing.T, h *harness, actor *checkout, path Path, createIdx, submitIdx int, kind, localName string, ids pathIDs, draftExtra ...string) {
+	t.Helper()
+	step := path.Steps[submitIdx]
+	if step.Refused == nil {
+		t.Fatalf("path %s step %d: driveRefusedCreateAndSubmit called on a step with no Refused expectation", path.ID, submitIdx)
+	}
+	if step.Refused.Code == "" {
+		t.Fatalf("path %s step %d: declared Refused.Code is empty — a refusal must name the exact expected code", path.ID, submitIdx)
+	}
+
+	id, _, err := actor.Draft(ctx, kind, draftExtra...)
+	if err != nil {
+		t.Fatalf("path %s step %d: a2a new %s (%s): %v", path.ID, createIdx, kind, actor.System, err)
+	}
+	ids[localName] = id
+	checkStepPredicates(ctx, t, h, actor, path.ID, createIdx, path.Steps[createIdx], ids)
+
+	if _, err := h.submitDrafted(ctx, actor, id); err == nil {
+		t.Fatalf("path %s step %d: a2a submit %s (%s): expected a REFUSAL naming %s, got success", path.ID, submitIdx, id, actor.System, step.Refused.Code)
+	} else if !strings.Contains(err.Error(), step.Refused.Code) {
+		t.Fatalf("path %s step %d: a2a submit %s (%s): refused as expected but combined output does not name %s: %v", path.ID, submitIdx, id, actor.System, step.Refused.Code, err)
+	}
+	checkStepPredicates(ctx, t, h, actor, path.ID, submitIdx, step, ids)
+}
+
 // driveSimpleVerb drives one OP-211 batch verb against targetID, lands +
 // syncs its own PR (resolved from the deterministic BranchName(system,
 // verb, id) — every simple verb this file drives resolves that way, per
@@ -1720,6 +1762,37 @@ func runDepartedCounterpartyPaths(ctx context.Context, t *testing.T, h *harness)
 	}
 }
 
+// runClassificationBilateralPaths drives pathdrivability.go's own
+// classificationBilateralDedicatedSpacePathIDs, one t.Run subtest per id,
+// against h — a harness whose OWN space (never one of the ordinary
+// round-robin path-space harnesses runConformancePaths splits
+// drivenPathIDs() across) carries a THIRD, always-active, never-addressed
+// participant added at genesis (provision_live.go's
+// AddInertParticipantGenesis, logic_runner_live_test.go's own
+// classificationHarness). Deliberately its own small dispatch loop, the
+// same shape runDepartedCounterpartyPaths above uses and for the identical
+// reason: this one id is EXCLUDED from runConformancePaths' own split
+// (classificationBilateralDedicatedSpacePathIDs()'s own doc comment
+// explains why sharing a space would be wrong), so the two loops must never
+// silently reconverge into driving the same id twice or, worse, driving it
+// against the wrong harness.
+func runClassificationBilateralPaths(ctx context.Context, t *testing.T, h *harness) {
+	t.Helper()
+	for _, id := range classificationBilateralDedicatedSpacePathIDs() {
+		id := id
+		t.Run(id, func(t *testing.T) {
+			defer func() {
+				_, _, _ = h.A.Run(ctx, "sync")
+			}()
+			driver, ok := driverForPath[id]
+			if !ok {
+				t.Fatalf("pathdriver: %q is in classificationBilateralDedicatedSpacePathIDs() but has no entry in driverForPath", id)
+			}
+			driver(ctx, t, h, id)
+		})
+	}
+}
+
 // --- Family 10 — supersede (P11 W3e Deliverable 1) -----------------------
 
 // driveSupersedeWithPlaceholderRef drives `a2a supersede --refs <placeholder> <targetID>`
@@ -2378,6 +2451,53 @@ func runPathWorkRequestMultiResponseReconciliation(ctx context.Context, t *testi
 	return ids
 }
 
+// runPathWorkRequestBadNeededByFormatRefused drives no-silent-yes-2026-08/P3
+// stage 1's own declared path (pathcatalogue_format.go): a work_request
+// drafted with a malformed `needed_by` is refused at `a2a submit`, naming
+// SCH-012 — see that path's own Intent for the honest limitation (this
+// reds until internal/validate/schema_class.go's format-keyword mapping
+// lands, which is outside this stage's own allowlist).
+func runPathWorkRequestBadNeededByFormatRefused(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "work-request-bad-needed-by-format-refused")
+	ids := pathIDs{}
+	a := h.A
+
+	if _, stderr, err := a.Run(ctx, "sync"); err != nil {
+		t.Fatalf("path %s: a2a sync (%s) before draft: %v: %s", path.ID, a.System, err, strings.TrimSpace(stderr))
+	}
+
+	driveRefusedCreateAndSubmit(ctx, t, h, a, path, 0, 1, "work_request", "work-request", ids,
+		"--field", "needed_by=next tuesday")
+	return ids
+}
+
+// runPathRestrictedClassificationExceedsBilateralRefused drives
+// no-silent-yes-2026-08/P3 stage 2's own declared path
+// (pathcatalogue_classification.go): a question drafted with
+// classification=restricted is refused at `a2a submit`, naming POL-024 —
+// genuinely driven against h, a dedicated space carrying a THIRD,
+// always-active, never-addressed participant added at genesis
+// (provision_live.go's AddInertParticipantGenesis,
+// logic_runner_live_test.go's own classificationHarness), so the space's
+// own active membership {alpha, bravo, charlie} genuinely exceeds a
+// from=alpha/to=[bravo] submission's own {from} ∪ to. See that path's own
+// Intent for the full finding.
+func runPathRestrictedClassificationExceedsBilateralRefused(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "restricted-classification-exceeds-bilateral-refused")
+	ids := pathIDs{}
+	a := h.A
+
+	if _, stderr, err := a.Run(ctx, "sync"); err != nil {
+		t.Fatalf("path %s: a2a sync (%s) before draft: %v: %s", path.ID, a.System, err, strings.TrimSpace(stderr))
+	}
+
+	driveRefusedCreateAndSubmit(ctx, t, h, a, path, 0, 1, "question", "question", ids,
+		"--field", "classification=restricted")
+	return ids
+}
+
 // driverForPath maps a drivenPathIDs() entry to the function that drives it
 // STANDALONE (its own runTag == its own path id). A path missing here would
 // panic runConformancePaths rather than silently not run — deliberate: this
@@ -2466,6 +2586,8 @@ var driverForPath = map[string]func(ctx context.Context, t *testing.T, h *harnes
 	"work-request-lifecycle-disputed-sender-owes":              runPathWorkRequestDisputedSenderOwes,
 	"question-multi-response-reconciliation":                   runPathQuestionMultiResponseReconciliation,
 	"work-request-multi-response-reconciliation":               runPathWorkRequestMultiResponseReconciliation,
+	"work-request-bad-needed-by-format-refused":                runPathWorkRequestBadNeededByFormatRefused,
+	"restricted-classification-exceeds-bilateral-refused":      runPathRestrictedClassificationExceedsBilateralRefused,
 
 	// Family 15 — the departed counterparty (P8 wave 30B). Present in this
 	// map for the SAME reason every other entry is (mustPath/runPathGroup's
@@ -2524,22 +2646,26 @@ func runConformancePaths(ctx context.Context, t *testing.T, harnesses []*harness
 	// group's contents stay predictable from the declaration order when
 	// reading a failure.
 	//
-	// departedCounterpartyPathIDs() (pathdrivability.go) is SUBTRACTED
-	// before splitting — those three ids are driven separately, by
-	// runDepartedCounterpartyPaths against its own dedicated
-	// genesis-departed harness, never one of THESE ordinary ones (that
-	// function's own doc comment says why sharing a space would silently
-	// depart a counterparty every other path here still assumes is
-	// active). They stay IN drivenPathIDs() itself (the union gate,
-	// pathdrivability_test.go, is honest that they ARE driven) — only this
-	// split excludes them.
-	departed := map[string]bool{}
+	// departedCounterpartyPathIDs() and classificationBilateralDedicated-
+	// SpacePathIDs() (pathdrivability.go) are SUBTRACTED before splitting —
+	// those ids are driven separately, against their own dedicated
+	// harnesses (runDepartedCounterpartyPaths / runClassificationBilateralPaths),
+	// never one of THESE ordinary ones (each function's own doc comment
+	// says why sharing a space would be wrong — a silently departed
+	// counterparty, or a silently exceeded bilateral audience, every OTHER
+	// path here still assumes is not the case). They stay IN drivenPathIDs()
+	// itself (the union gate, pathdrivability_test.go, is honest that they
+	// ARE driven) — only this split excludes them.
+	excluded := map[string]bool{}
 	for _, id := range departedCounterpartyPathIDs() {
-		departed[id] = true
+		excluded[id] = true
+	}
+	for _, id := range classificationBilateralDedicatedSpacePathIDs() {
+		excluded[id] = true
 	}
 	var regular []string
 	for _, id := range drivenPathIDs() {
-		if !departed[id] {
+		if !excluded[id] {
 			regular = append(regular, id)
 		}
 	}

@@ -837,7 +837,7 @@ func doctorScaffoldingTemplateFS() fstest.MapFS {
 	return fstest.MapFS{
 		"space.yaml": &fstest.MapFile{Data: []byte(
 			"schema: manifest/v1\n" +
-				"space: REPLACE_WITH_SPACE_ID\n" +
+				"space: replace-with-space-id\n" +
 				"min_binary_version: 0.1.0\n" +
 				"participants: []\n",
 		)},

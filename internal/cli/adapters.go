@@ -658,6 +658,30 @@ var _ validate.ParentCriteriaIDs = (*MirrorResolver)(nil)
 // files, can substitute for this.
 var _ validate.ParentCriteriaCounter = (*MirrorResolver)(nil)
 
+// ActiveParticipants implements validate.ActiveParticipantLister (no-silent-
+// yes-2026-08/P3 stage 2 fix wave): the space's own ACTIVE manifest
+// participant systems, delegated to internal/cache.ActiveParticipants —
+// the SAME derivation internal/cache's own pendency-input assembly
+// (threadview.go's resolveVerdict) already uses, not a second, independently
+// computed copy (ADR-019, docs/decisions.md).
+//
+// r.manifest is this resolver's own already-parsed space.yaml (constructed
+// once in NewMirrorResolver, no further I/O) — never re-read here — so ok is
+// unconditionally true: a manifest already held in memory cannot fail to
+// enumerate. Unlike ensureIndex's mirror walk, there is no lazy, possibly-
+// failing step behind this method for ok=false to report.
+func (r *MirrorResolver) ActiveParticipants() (systems []string, ok bool) {
+	return cache.ActiveParticipants(r.manifest), true
+}
+
+// var _ validate.ActiveParticipantLister = (*MirrorResolver)(nil) is
+// ParentCriteriaCounter's own type-level-gate pattern (adapters.go:473's live
+// shape, copied): it fails to COMPILE if ActiveParticipantLister is ever
+// removed or its signature drifts, which is what turns a future silent
+// degradation back to "every classification: restricted submission refuses"
+// into a build error instead — ADR-019's own detection half requires it.
+var _ validate.ActiveParticipantLister = (*MirrorResolver)(nil)
+
 // ParentOf implements validate.ResponseParentResolver (P6 wave C's REF-019,
 // internal/validate/verdicts.go): it reports a RESPONSE artifact's own
 // `parent` field, so checkVerdictIndexRange can hop from a `verify` event's

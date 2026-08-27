@@ -38,6 +38,8 @@ func ConformancePaths() []Path {
 	out = append(out, remainingBlockUnblockPaths()...)
 	out = append(out, granularityPaths()...)
 	out = append(out, departedCounterpartyPaths()...)
+	out = append(out, formatAssertionPaths()...)
+	out = append(out, classificationBilateralPaths()...)
 	return out
 }
 

@@ -139,6 +139,54 @@ func SetParticipantStatus(spaceYAML, system, status string) (patched string, alr
 	return strings.Join(lines, "\n"), false, nil
 }
 
+// ErrParticipantsBlockNotFound is returned by AddParticipant when spaceYAML
+// carries no already-rendered `participants:` block (PatchSpaceParticipants's
+// own genesis output shape) to append to. Distinct from
+// ErrParticipantsPlaceholderNotFound: that one names the PRE-render
+// `participants: []` placeholder `a2a space init` scaffolds; this one names
+// the POST-render block AddParticipant itself requires — a document that has
+// never been through PatchSpaceParticipants has no row shape to append
+// another row after.
+var ErrParticipantsBlockNotFound = errors.New("livee2e: no rendered participants block found in space.yaml")
+
+// spaceParticipantsBlockPattern matches an ALREADY-RENDERED `participants:`
+// block — the exact `  - {system: ..., ...}` row shape PatchSpaceParticipants
+// itself renders above — from its header line through its last row, or
+// through the bare header alone when the block carries zero rows
+// (PatchSpaceParticipants(..., nil)'s own output).
+var spaceParticipantsBlockPattern = regexp.MustCompile(`(?m)^participants:\n(?:  - \{[^\n]*\}\n)*`)
+
+// AddParticipant appends ONE new row to an already-rendered `participants:`
+// block, leaving every existing row untouched — PatchSpaceParticipants' own
+// APPEND counterpart, for a caller that must add a participant to a space
+// PAST genesis (a second call to PatchSpaceParticipants cannot do this: it
+// only ever matches the pre-render `participants: []` placeholder, which a
+// genesis render has already consumed).
+//
+// Unlike SetParticipantStatus (which flips an EXISTING row and is therefore
+// naturally idempotent — "already at this status" has a clear meaning),
+// AddParticipant has no such notion: calling it twice for the same system
+// would render two rows naming the same system, which
+// checkManifestPolicy's own duplicate-system check (internal/validate/
+// manifest.go) is what would catch — this function does not deduplicate, so
+// a caller that might run more than once must guard that itself (today's
+// one caller, provision_live.go's AddInertParticipantGenesis, runs it
+// exactly once per harness).
+//
+// Returns ErrParticipantsBlockNotFound when spaceYAML carries no rendered
+// block to append to.
+func AddParticipant(spaceYAML string, p Participant) (string, error) {
+	loc := spaceParticipantsBlockPattern.FindStringIndex(spaceYAML)
+	if loc == nil {
+		return "", ErrParticipantsBlockNotFound
+	}
+	row := fmt.Sprintf(
+		"  - {system: %s, org: %s, section: %s, owners: [%s], status: active, joined: %s}\n",
+		p.System, p.Org, p.Section, p.Owner, p.Joined,
+	)
+	return spaceYAML[:loc[1]] + row + spaceYAML[loc[1]:], nil
+}
+
 // RenderCODEOWNERS renders the trust-root-only CODEOWNERS file reset.sh
 // writes: /space.yaml, /CODEOWNERS and /.github/** are gated to a single
 // code owner because they define WHO may write, so they cannot be governed

@@ -978,9 +978,21 @@ func spaceManifestInstanceViolations(t *testing.T, id string) []schema.FieldViol
 // the pattern must accept every space id actually in use across the repo
 // (this phase's sweep) — a real space (getvisa), the live-e2e ids
 // (livee2e, live-e2e-space), the spacefixture default (fixture-space), and
-// the scaffolding sentinel itself (REPLACE_WITH_SPACE_ID, carved into the
-// pattern rather than the template being renamed — see this phase's
-// reported deviation and the pattern's own `description`).
+// the scaffolding sentinel itself (replace-with-space-id). It ALREADY did,
+// even before D8 (no-silent-yes-2026-08/P3 stage 2): the pattern's frozen
+// alternation (schemas/manifest/v1/space.schema.json:15 — its FIRST branch
+// is the old, screaming-snake-case sentinel spelling, kept out of THIS
+// comment's own bytes because this stage's own acceptance check greps for
+// it under internal/cli/, expecting NOTHING; its SECOND branch is
+// [a-z0-9]+(-[a-z0-9]+)*) accepts "replace-with-space-id" through that
+// ordinary SECOND branch, the same one
+// any real hyphenated id matches — the string just happened to share no
+// bytes with the FIRST branch's literal, which is what made the old,
+// screaming-snake-case spelling need that carve-out at all. D8 renamed
+// space-template/space.yaml's own value to this conforming spelling
+// (cmd_space.go's spaceIDSentinel), so the first branch is now dead rather
+// than load-bearing — this test's own assertion was already proving the
+// SECOND branch would accept it, unchanged by the rename.
 func TestSpaceSchemaPatternAcceptsEveryIDInUse(t *testing.T) {
 	t.Parallel()
 	for _, id := range []string{
@@ -989,7 +1001,7 @@ func TestSpaceSchemaPatternAcceptsEveryIDInUse(t *testing.T) {
 		"livee2e",
 		"live-e2e-space",
 		"fixture-space",
-		"REPLACE_WITH_SPACE_ID",
+		"replace-with-space-id",
 	} {
 		if v := spaceManifestInstanceViolations(t, id); len(v) != 0 {
 			t.Errorf("id %q: expected the schema to ACCEPT it, got violations: %+v", id, v)

@@ -284,6 +284,94 @@ func SetParticipantStatusMidPath(ctx context.Context, remoteURL, work, system, s
 	return nil
 }
 
+// systemCharlie is the third, always-inert participant
+// restricted-classification-exceeds-bilateral-refused needs
+// (pathcatalogue_classification.go's own Intent): a system nobody ever
+// authenticates as, addresses, or acts as — it exists purely so this
+// catalogue's own two-system harness topology (catalogue.go's SystemA/
+// SystemB) has a THIRD active participant to exceed {from} ∪ to against.
+const systemCharlie = "charlie"
+
+// inertParticipantOwner is systemCharlie's own `owners:` entry — a
+// synthetic, never-authenticated login. checkManifestPolicy's own "active
+// participant must name at least one owner" (internal/validate/manifest.go)
+// is a STRUCTURAL requirement on the manifest shape, not a check that the
+// login resolves to a real identity; nothing in this tier ever
+// authenticates as systemCharlie, and the harness's two real checkouts
+// (h.A/h.B, harness_live.go) are wired only to the provisioner/participant
+// logins PatchSpaceParticipants already rendered at genesis.
+const inertParticipantOwner = "logic-charlie"
+
+// AddInertParticipantGenesis durably adds systemCharlie to h's space —
+// nobody ever addresses it, acts as it, or names it in `to`/
+// `required_approvers` (pathcatalogue_classification.go's own Intent: "A
+// third participant needs NO GitHub identity"), so it trips none of
+// REF-006's already-active guards Family 15's own SetParticipantStatusMidPath
+// has to route around. Clone+edit+commit+push against the space's CURRENT
+// history — the SAME shape SetParticipantStatusMidPath already uses (never
+// through `a2a`, which has no verb for adding a participant either),
+// applied here to scaffold.go's AddParticipant instead of
+// SetParticipantStatus.
+//
+// Called exactly once, immediately after newLogicHarness returns and before
+// this harness's own first submission (logic_runner_live_test.go) — GENESIS
+// for every driver that runs against this harness afterward, even though it
+// lands one commit after provisionLocalSpace's own genesis commit (outside
+// this brief's allowlist, so it cannot be folded into that commit
+// directly). Unlike Family 15's mid-path departure, this is never called
+// again later in a path — there is nothing to make idempotent, and
+// AddParticipant's own doc comment says why calling it twice would be
+// wrong (a duplicate-system row, caught by checkManifestPolicy).
+//
+// work is a scratch directory this call owns exclusively for its own
+// throwaway clone — callers must give it a fresh one (t.TempDir()), never
+// reuse a checkout's own working directory (SetParticipantStatusMidPath's
+// own doc comment gives the identical instruction).
+func AddInertParticipantGenesis(ctx context.Context, remoteURL, work, org string) error {
+	dir := filepath.Join(work, "add-participant")
+	if err := runCmd(ctx, "git", "clone", "-q", remoteURL, dir); err != nil {
+		return fmt.Errorf("livee2e: AddInertParticipantGenesis: clone %s: %w", remoteURL, err)
+	}
+	manifestPath := filepath.Join(dir, "space.yaml")
+	raw, err := os.ReadFile(manifestPath) //nolint:gosec // reason: manifestPath is rooted beneath this call's own scratch clone.
+	if err != nil {
+		return fmt.Errorf("livee2e: AddInertParticipantGenesis: read space.yaml: %w", err)
+	}
+	patched, err := AddParticipant(string(raw), Participant{
+		System:  systemCharlie,
+		Org:     org,
+		Section: systemCharlie + "/",
+		Owner:   inertParticipantOwner,
+		Joined:  time.Now().UTC().Format("2006-01-02"),
+	})
+	if err != nil {
+		return fmt.Errorf("livee2e: AddInertParticipantGenesis: %w", err)
+	}
+	if err := os.WriteFile(manifestPath, []byte(patched), 0o644); err != nil { //nolint:gosec // reason: manifestPath is rooted beneath this call's own scratch clone.
+		return fmt.Errorf("livee2e: AddInertParticipantGenesis: write space.yaml: %w", err)
+	}
+
+	steps := [][]string{
+		{"-C", dir, "config", "user.name", "a2a live-e2e"},
+		{"-C", dir, "config", "user.email", "live-e2e@a2ahub.invalid"},
+		{"-C", dir, "add", "space.yaml"},
+		{"-C", dir, "commit", "-q", "-m", "chore: add inert third participant (test-only, no GitHub identity)"},
+	}
+	for _, args := range steps {
+		if err := runCmd(ctx, "git", args...); err != nil {
+			return fmt.Errorf("livee2e: AddInertParticipantGenesis: git %s: %w", strings.Join(args, " "), err)
+		}
+	}
+	// Plain, non-force push — same reasoning as SetParticipantStatusMidPath's
+	// own: this clone was just made from remoteURL's own current HEAD, and
+	// nothing else has written to it yet (this call runs before this
+	// harness's first submission), so a fast-forward is always possible.
+	if err := runCmd(ctx, "git", "-C", dir, "push", "-q", "origin", "HEAD:main"); err != nil {
+		return fmt.Errorf("livee2e: AddInertParticipantGenesis: push: %w", err)
+	}
+	return nil
+}
+
 // gitCommitScaffold init/adds/commits the freshly scaffolded tree, mirroring
 // reset.sh's own git invocation (a bare `git init -b main` + one commit —
 // this is a throwaway working tree, never a real history).

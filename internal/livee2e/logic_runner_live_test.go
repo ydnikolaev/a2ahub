@@ -241,6 +241,51 @@ func TestLogicMatrix(t *testing.T) {
 		runDepartedCounterpartyPaths(ctx, t, departedHarness)
 	})
 
+	// no-silent-yes-2026-08 wave 1 — a SIXTH, dedicated space for
+	// restricted-classification-exceeds-bilateral-refused
+	// (pathdriver_live.go's runClassificationBilateralPaths,
+	// pathcatalogue_classification.go's own Intent). Never one of the
+	// pathHarnesses above and never departedHarness: this catalogue's
+	// ordinary two-system topology (catalogue.go's SystemA/SystemB) has no
+	// THIRD active participant for a `restricted` submission's own audience
+	// to exceed — a from=A/to=[B] submission's own {from} ∪ to already
+	// equals the space's entire active membership there. This harness gets
+	// one added durably, at genesis, before its first submission
+	// (provision_live.go's AddInertParticipantGenesis) — a system nobody
+	// ever authenticates as, addresses, or acts as, so it trips none of
+	// REF-006's guards and needs no per-driver restoration the way Family
+	// 15's mid-path departure does.
+	//
+	// Its own dedicated space for the same reason Family 15's is: the
+	// manifest edit is durable, so sharing it with any other path's harness
+	// would change what THAT path's own "bilateral" assumption means
+	// (pathdrivability.go's classificationBilateralDedicatedSpacePathIDs()).
+	classificationHarness, classificationCleanup, classificationErr := newLogicHarness(ctx, t)
+	t.Cleanup(func() {
+		if cleanupErr := classificationCleanup(); cleanupErr != nil {
+			t.Errorf("restricted-classification harness cleanup failed: %v", cleanupErr)
+		}
+	})
+	if classificationErr != nil {
+		t.Fatalf("newLogicHarness (restricted-classification, third participant): %v", classificationErr)
+	}
+	if err := classificationHarness.Seam.Validate(); err != nil {
+		t.Fatalf("restricted-classification harness seam did not validate: %v", err)
+	}
+	if classificationHarness.Seam.IsRealGitHub() {
+		t.Fatalf("restricted-classification harness seam reports real GitHub — refusing to drive a write against it: %+v", classificationHarness.Seam)
+	}
+	// Added ONCE, immediately after construction and before this harness's
+	// own first submission — GENESIS for every driver that runs against it
+	// afterward (AddInertParticipantGenesis's own doc comment).
+	if err := AddInertParticipantGenesis(ctx, classificationHarness.Seam.CloneURL(), t.TempDir(), classificationHarness.Org); err != nil {
+		t.Fatalf("restricted-classification harness: add inert third participant: %v", err)
+	}
+	t.Run("restricted-classification", func(t *testing.T) {
+		t.Parallel()
+		runClassificationBilateralPaths(ctx, t, classificationHarness)
+	})
+
 	run := NewRunFor(logicOrg, logicRepo, Catalogue())
 	run.Tier = TierLogic
 	run.Preflight = h.Pre

@@ -46,6 +46,15 @@ const (
 // to false. This is this phase's own refinement of the §7 contract (the
 // spec explicitly allows implementor field refinement) — every OTHER
 // consumer of this shape (P6, P9/hub) must honor it identically (D-011).
+//
+// no-silent-yes-2026-08/P3 (D9, DECISIONS.md § D9) adds SeverityUnmeasured,
+// the epic's keystone vocabulary: a violation raised when a rule COULD NOT
+// be checked (a capability miss, an unresolvable participant list — D9's
+// own examples), carried and printed alongside an ordinary reject wherever
+// the unchecked rule would otherwise silently grant. It is never a fourth
+// Verdict value and never a new exit code — D9 explicitly forecloses
+// "UNMEASURED can never itself block a write" — so isReject (below) must
+// treat it exactly like SeverityWarning for Result.Valid purposes.
 type Severity string
 
 const (
@@ -55,6 +64,12 @@ const (
 	// SeverityWarning flags a violation without failing validation
 	// (unpinned refs §3.8, G5 override attempts §5.5).
 	SeverityWarning Severity = "warning"
+	// SeverityUnmeasured (D9) flags that a rule could not be evaluated at
+	// all — never a block by itself. A capability miss (P3's own first
+	// consumer) pairs it with a SeverityReject violation explaining the
+	// refusal; SeverityUnmeasured alone must never flip Result.Valid to
+	// false (isReject below, and this package's own test for exactly that).
+	SeverityUnmeasured Severity = "unmeasured"
 )
 
 // Violation is one machine-readable finding, per spec 03 §7. The json tags
@@ -139,8 +154,19 @@ type ConsistencyFlag struct {
 }
 
 // isReject reports whether v should flip Result.Valid to false.
+//
+// D9 (no-silent-yes-2026-08/P3, DECISIONS.md § D9): this is an ALLOW-list —
+// only SeverityReject blocks — not the EXCLUDE-list ("!= SeverityWarning")
+// it used to be. The exclude-list shape made every unrecognised (including
+// future) severity block by default, which is exactly what D9 forecloses
+// for SeverityUnmeasured ("UNMEASURED can never itself block a write").
+// This is a deliberate behaviour change on a shared function: a Violation
+// carrying a severity this package does not (yet) recognise used to flip
+// Result.Valid to false and no longer does — see TestIsReject_UnrecognisedSeverityNoLongerBlocks
+// in result_severity_test.go, which pins the change explicitly rather than
+// leaving it to be rediscovered.
 func (v Violation) isReject() bool {
-	return v.Severity != SeverityWarning
+	return v.Severity == SeverityReject
 }
 
 // Result is the JSON output shape shared by ValidateDraft (V1),

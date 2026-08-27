@@ -407,6 +407,16 @@ func (r *MirrorResolver) System(system string) (member bool, left bool) {
 	return false, false
 }
 
+// ActiveParticipants implements validate.ActiveParticipantLister (no-silent-
+// yes-2026-08/P3 stage 2 fix wave): mirrors internal/cli's own MirrorResolver
+// method (adapters.go), delegated to the SAME internal/cache.ActiveParticipants
+// derivation — not a second, independently computed copy (ADR-019, docs/
+// decisions.md). r.manifest is already-parsed, in-memory space.yaml, so ok is
+// unconditionally true.
+func (r *MirrorResolver) ActiveParticipants() (systems []string, ok bool) {
+	return cache.ActiveParticipants(r.manifest), true
+}
+
 // Skipped reports every mirror file this resolver's own index build could
 // not decode — internal/cache.SkippedFile, unchanged and unextended (§9,
 // out of scope). SubmitValidatorAdapter.ValidateSubmit reads this (via the
@@ -471,6 +481,14 @@ func (r *MirrorResolver) AcceptanceCriteriaCount(parentID string) (count int, ok
 // person reading code rather than a test going red. This guard turns the
 // next removal into a compile error instead.
 var _ validate.ParentCriteriaCounter = (*MirrorResolver)(nil)
+
+// var _ validate.ActiveParticipantLister = (*MirrorResolver)(nil) is
+// AcceptanceCriteriaCount's own type-level-gate pattern, applied to this
+// capability — mirrors internal/cli/adapters.go's identical guard. ADR-019's
+// own detection half requires it: it turns a future silent degradation back
+// to "every classification: restricted submission refuses" into a build
+// error instead of a runtime capability miss nobody notices.
+var _ validate.ActiveParticipantLister = (*MirrorResolver)(nil)
 
 // AcceptanceCriteriaIDs implements validate.ParentCriteriaIDs
 // (defects-fix-2026-08 P4). It is the SAME read as AcceptanceCriteriaCount

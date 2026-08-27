@@ -16,7 +16,7 @@ import (
 // matches. Kept here as a literal string per the brief rather than under
 // testdata/.
 const realSpaceYAMLFragment = `schema: space/v1
-space: REPLACE_WITH_SPACE_ID
+space: replace-with-space-id
 min_binary_version: 0.7.0             # write FLOOR (D-013/CC-085): the funnel
                                       # rejects a writer older than this. A
                                       # SEPARATE axis from the CI validator
@@ -56,7 +56,7 @@ func TestPatchSpaceParticipantsRoundTrip(t *testing.T) {
 	// Every other field must survive untouched.
 	for _, want := range []string{
 		"schema: space/v1",
-		"space: REPLACE_WITH_SPACE_ID",
+		"space: replace-with-space-id",
 		"notification_routes: []",
 		"vendored: []",
 	} {
@@ -167,6 +167,90 @@ func TestSetParticipantStatusNotFound(t *testing.T) {
 	_, _, err = SetParticipantStatus(seeded, "charlie", "left")
 	if !errors.Is(err, ErrParticipantRowNotFound) {
 		t.Fatalf("err = %v, want ErrParticipantRowNotFound", err)
+	}
+}
+
+// TestAddParticipantAppendsNewRowLeavingOthersUntouched proves the
+// restricted-classification-exceeds-bilateral-refused path's own primitive
+// (provision_live.go's AddInertParticipantGenesis): appending a THIRD row to
+// an already-rendered two-row participants: block leaves both existing rows
+// byte-for-byte untouched and renders the new row in the SAME inline-mapping
+// shape PatchSpaceParticipants itself uses.
+func TestAddParticipantAppendsNewRowLeavingOthersUntouched(t *testing.T) {
+	t.Parallel()
+
+	ps := []Participant{
+		{System: "alpha", Org: "a2ahub-live-e2e", Section: "alpha/", Owner: "some-login-a", Joined: "2026-07-24"},
+		{System: "bravo", Org: "a2ahub-live-e2e", Section: "bravo/", Owner: "some-login-b", Joined: "2026-07-24"},
+	}
+	seeded, err := PatchSpaceParticipants(realSpaceYAMLFragment, ps)
+	if err != nil {
+		t.Fatalf("PatchSpaceParticipants: %v", err)
+	}
+
+	got, err := AddParticipant(seeded, Participant{
+		System: "charlie", Org: "a2ahub-live-e2e", Section: "charlie/", Owner: "some-login-c", Joined: "2026-08-27",
+	})
+	if err != nil {
+		t.Fatalf("AddParticipant: %v", err)
+	}
+
+	wantLines := []string{
+		"  - {system: alpha, org: a2ahub-live-e2e, section: alpha/, owners: [some-login-a], status: active, joined: 2026-07-24}",
+		"  - {system: bravo, org: a2ahub-live-e2e, section: bravo/, owners: [some-login-b], status: active, joined: 2026-07-24}",
+		"  - {system: charlie, org: a2ahub-live-e2e, section: charlie/, owners: [some-login-c], status: active, joined: 2026-08-27}",
+	}
+	for _, ln := range wantLines {
+		if !strings.Contains(got, ln) {
+			t.Fatalf("expected line %q in output:\n%s", ln, got)
+		}
+	}
+	// Every other field must survive untouched, same as
+	// PatchSpaceParticipants' own round trip.
+	for _, want := range []string{
+		"schema: space/v1",
+		"space: replace-with-space-id",
+		"notification_routes: []",
+		"vendored: []",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected %q to survive AddParticipant, got:\n%s", want, got)
+		}
+	}
+}
+
+// TestAddParticipantOntoEmptyBlockAppendsFirstRow proves AddParticipant
+// handles a zero-row `participants:` block (PatchSpaceParticipants(...,
+// nil)'s own output) rather than only ever a pre-populated one.
+func TestAddParticipantOntoEmptyBlockAppendsFirstRow(t *testing.T) {
+	t.Parallel()
+
+	seeded, err := PatchSpaceParticipants(realSpaceYAMLFragment, nil)
+	if err != nil {
+		t.Fatalf("PatchSpaceParticipants: %v", err)
+	}
+
+	got, err := AddParticipant(seeded, Participant{
+		System: "alpha", Org: "org", Section: "alpha/", Owner: "login", Joined: "2026-08-27",
+	})
+	if err != nil {
+		t.Fatalf("AddParticipant: %v", err)
+	}
+	if !strings.Contains(got, "  - {system: alpha, org: org, section: alpha/, owners: [login], status: active, joined: 2026-08-27}") {
+		t.Fatalf("expected the new row, got:\n%s", got)
+	}
+}
+
+// TestAddParticipantNotFound proves AddParticipant fails loudly, never
+// silently, against a document with no rendered participants: block at all.
+func TestAddParticipantNotFound(t *testing.T) {
+	t.Parallel()
+
+	_, err := AddParticipant("schema: space/v1\nno participants block here\n", Participant{
+		System: "alpha", Org: "org", Section: "alpha/", Owner: "login", Joined: "2026-08-27",
+	})
+	if !errors.Is(err, ErrParticipantsBlockNotFound) {
+		t.Fatalf("err = %v, want ErrParticipantsBlockNotFound", err)
 	}
 }
 

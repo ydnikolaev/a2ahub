@@ -557,6 +557,126 @@ func TestSubmitValidatorAdapterValid(t *testing.T) {
 	}
 }
 
+// TestSubmitValidatorAdapterRestrictedClassificationBilateralAccepted is
+// this fix wave's own regression proof (no-silent-yes-2026-08/P3 stage 2
+// FIX B). Before MirrorResolver implemented validate.ActiveParticipantLister,
+// EVERY classification: restricted submission refused on the capability miss
+// regardless of whether the space was genuinely bilateral —
+// D9's fail-safe philosophy working as designed, but a live regression for a
+// space that legitimately uses restricted today. A restricted artifact whose
+// space's ACTIVE participants are exactly {from} ∪ to must be ACCEPTED once
+// the capability is wired, not refused for a capability the resolver now has.
+func TestSubmitValidatorAdapterRestrictedClassificationBilateralAccepted(t *testing.T) {
+	t.Parallel()
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	engine := validate.New(corpus)
+	manifest := space.Manifest{Participants: []space.Participant{
+		{System: "axon", Status: "active"}, {System: "other", Status: "active"},
+	}}
+	legality := cli.NewLegalityAdapter(t.TempDir(), "axon", manifest)
+	resolver := cli.NewMirrorResolver(t.TempDir(), manifest)
+	adapter := cli.NewSubmitValidatorAdapter(engine, "axon", resolver, legality)
+
+	artifactContent := []byte("---\n" +
+		"schema: envelope/v1\n" +
+		"id: XQ-axon-20260721-k3f9\n" +
+		"type: question\n" +
+		"title: t\n" +
+		"space: fixture-space\n" +
+		"from: axon\n" +
+		"to: [other]\n" +
+		"thread: " + cliFixtureThread + "\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"category: clarification\n" +
+		"priority: p3\n" +
+		"blocking: true\n" +
+		"classification: restricted\n" +
+		"---\nbody\n")
+	eventContent := []byte("schema: event/v1\nevent: 01J8QYK2Z3ABCDEFGHJKMNPQRZ\nspace: fixture-space\n" +
+		"subject: XQ-axon-20260721-k3f9\ntransition: submit\nactor: {kind: agent, name: bot, system: axon}\n" +
+		"at: 2026-07-21T10:00:00Z\n")
+
+	files := []space.FileWrite{
+		{Path: "axon/exchanges/XQ-axon-20260721-k3f9.md", Content: artifactContent},
+		{Path: "axon/events/2026/01J8QYK2Z3ABCDEFGHJKMNPQRZ.yaml", Content: eventContent},
+	}
+
+	if err := adapter.ValidateSubmit(context.Background(), files); err != nil {
+		t.Fatalf("ValidateSubmit: %v — a restricted artifact whose space's ACTIVE participants are exactly {from} ∪ to must be accepted", err)
+	}
+}
+
+// TestSubmitValidatorAdapterRestrictedClassificationExceedsBilateralRefused
+// is POL-024's own live proof, distinguishing a REAL bilateral violation from
+// the capability-miss refusal the sibling test above closes: the same
+// resolver now CAN enumerate active participants, and when the space's
+// active membership genuinely exceeds {from} ∪ to, POL-024 fires ALONE —
+// without POL-026, the "could not check" explanation, which must NOT appear
+// once the capability is wired.
+//
+// The capability miss now emits POL-024 + POL-026 rather than a code of its
+// own: the wave-1 POL-025 was a SECOND reject code for one rule, which D9
+// never asked for ("printed as an explanation alongside an ORDINARY reject").
+// It was deleted, not renamed — see internal/validate/classification.go.
+func TestSubmitValidatorAdapterRestrictedClassificationExceedsBilateralRefused(t *testing.T) {
+	t.Parallel()
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	engine := validate.New(corpus)
+	manifest := space.Manifest{Participants: []space.Participant{
+		{System: "axon", Status: "active"}, {System: "other", Status: "active"}, {System: "third", Status: "active"},
+	}}
+	legality := cli.NewLegalityAdapter(t.TempDir(), "axon", manifest)
+	resolver := cli.NewMirrorResolver(t.TempDir(), manifest)
+	adapter := cli.NewSubmitValidatorAdapter(engine, "axon", resolver, legality)
+
+	artifactContent := []byte("---\n" +
+		"schema: envelope/v1\n" +
+		"id: XQ-axon-20260721-k4g0\n" +
+		"type: question\n" +
+		"title: t\n" +
+		"space: fixture-space\n" +
+		"from: axon\n" +
+		"to: [other]\n" +
+		"thread: " + cliFixtureThread + "\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"category: clarification\n" +
+		"priority: p3\n" +
+		"blocking: true\n" +
+		"classification: restricted\n" +
+		"---\nbody\n")
+	eventContent := []byte("schema: event/v1\nevent: 01J8QYK2Z3ABCDEFGHJKMNPQS0\nspace: fixture-space\n" +
+		"subject: XQ-axon-20260721-k4g0\ntransition: submit\nactor: {kind: agent, name: bot, system: axon}\n" +
+		"at: 2026-07-21T10:00:00Z\n")
+
+	files := []space.FileWrite{
+		{Path: "axon/exchanges/XQ-axon-20260721-k4g0.md", Content: artifactContent},
+		{Path: "axon/events/2026/01J8QYK2Z3ABCDEFGHJKMNPQS0.yaml", Content: eventContent},
+	}
+
+	err = adapter.ValidateSubmit(context.Background(), files)
+	if err == nil {
+		t.Fatal("ValidateSubmit: expected POL-024 for a restricted artifact whose space's active participants ({axon, other, third}) exceed {from} ∪ to ({axon, other}), got nil")
+	}
+	var violationErr *cli.ViolationError
+	if !errors.As(err, &violationErr) {
+		t.Fatalf("expected a *cli.ViolationError, got %T: %v", err, err)
+	}
+	if !p1HasViolationCode(violationErr.Violations, "POL-024") {
+		t.Fatalf("ValidateSubmit refused, but not with POL-024: %+v", violationErr.Violations)
+	}
+	if p1HasViolationCode(violationErr.Violations, "POL-025") || p1HasViolationCode(violationErr.Violations, "POL-026") {
+		t.Fatalf("ValidateSubmit fired POL-025/POL-026 (capability miss) even though MirrorResolver now implements ActiveParticipantLister: %+v", violationErr.Violations)
+	}
+}
+
 func TestSubmitValidatorAdapterInvalidReturnsViolations(t *testing.T) {
 	t.Parallel()
 	corpus, err := schema.Load()

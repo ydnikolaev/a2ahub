@@ -114,6 +114,14 @@ func (e *Engine) ValidateForSubmit(d Draft, events []CandidateEvent, ctx LocalCo
 	violations = append(violations, checkAuthz(env, ctx.OwnSystem)...)
 	violations = append(violations, checkAddressees(env, ctx.Resolver)...)
 
+	// no-silent-yes-2026-08/P3 stage 2 (spec 03 §8 AC 4/5/13): §10.4's
+	// "restricted ⇒ bilateral space" rule, checked against ctx.Resolver's
+	// own optional ActiveParticipantLister capability (classification.go).
+	// Placed beside checkAddressees deliberately: both read env.To against
+	// the manifest's own participant facts through ctx.Resolver, and
+	// neither needs events/instance.
+	violations = append(violations, checkClassificationBilateral(env, ctx.Resolver)...)
+
 	// P6 incompleteness (incompleteness.go): AC1's unmet[]-index-range
 	// guard and AC8's residue guard. Both are cross-artifact checks that
 	// need `events` and/or `ctx.Resolver`, so — unlike P4's possession

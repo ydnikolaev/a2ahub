@@ -1127,3 +1127,43 @@ func TestThreadView_NoDataDeliverablesLeavesDeliveriesNil(t *testing.T) {
 		t.Fatalf("JSON = %s, want no \"deliveries\" key at all when there is nothing to carry", raw)
 	}
 }
+
+// TestActiveParticipantsReturnsEveryActiveSystemUnfiltered is the exported
+// wrapper's own regression proof (no-silent-yes-2026-08/P3 stage 2 fix
+// wave, ADR-019): internal/validate.ActiveParticipantLister needs the
+// space's FULL active membership, not the exclude-one-system shape
+// activeParticipants (unexported, this file's sibling function) was built
+// for — so ActiveParticipants must exclude nothing, drop `left` participants,
+// and be indifferent to `from`/`exclude` entirely.
+func TestActiveParticipantsReturnsEveryActiveSystemUnfiltered(t *testing.T) {
+	t.Parallel()
+	manifest := space.Manifest{Participants: []space.Participant{
+		{System: "axon", Status: "active"},
+		{System: "seomatrix", Status: "active"},
+		{System: "beta", Status: "left"},
+	}}
+
+	got := ActiveParticipants(manifest)
+
+	want := map[string]bool{"axon": true, "seomatrix": true}
+	if len(got) != len(want) {
+		t.Fatalf("ActiveParticipants = %v, want exactly %d active systems ({axon, seomatrix}), got %d", got, len(want), len(got))
+	}
+	for _, s := range got {
+		if !want[s] {
+			t.Fatalf("ActiveParticipants = %v, contains %q which is not an ACTIVE manifest participant", got, s)
+		}
+	}
+	for s := range want {
+		found := false
+		for _, g := range got {
+			if g == s {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("ActiveParticipants = %v, missing active system %q", got, s)
+		}
+	}
+}

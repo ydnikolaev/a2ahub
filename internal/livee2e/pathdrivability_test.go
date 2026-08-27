@@ -54,3 +54,55 @@ func TestPathDrivabilityCoversEveryPath(t *testing.T) {
 		t.Errorf("%d ConformancePaths() id(s) are neither driven nor declared undrivable: %v", len(missing), missing)
 	}
 }
+
+// TestDedicatedSpacePathIDsAreDrivenAndReal holds the invariant the
+// dedicated-harness lists exist for: an id that runConformancePaths SUBTRACTS
+// from its round-robin split must still be a real, driven path — otherwise
+// subtracting it silently removes it from the matrix altogether, and the
+// matrix goes green by not running it.
+//
+// This is the untagged consumer classificationBilateralDedicatedSpacePathIDs()
+// needs, exactly as pathdrivability_test.go is already drivenPathIDs()' own.
+// It is NOT a lint appeasement: the same shape covers departedCounterpartyPathIDs(),
+// and the failure it guards — a subtracted id nothing else runs — is precisely
+// how a conformance path stops being evidence without anyone noticing.
+func TestDedicatedSpacePathIDsAreDrivenAndReal(t *testing.T) {
+	t.Parallel()
+
+	real := map[string]bool{}
+	for _, p := range ConformancePaths() {
+		real[p.ID] = true
+	}
+	driven := map[string]bool{}
+	for _, id := range drivenPathIDs() {
+		driven[id] = true
+	}
+
+	lists := map[string][]string{
+		"classificationBilateralDedicatedSpacePathIDs": classificationBilateralDedicatedSpacePathIDs(),
+		"departedCounterpartyPathIDs":                  departedCounterpartyPathIDs(),
+	}
+
+	seen := map[string]string{}
+	for name, ids := range lists {
+		if len(ids) == 0 {
+			t.Errorf("%s() is empty — a dedicated-harness list with no ids means "+
+				"runConformancePaths subtracts nothing and the harness stands up for no path", name)
+		}
+		for _, id := range ids {
+			if !real[id] {
+				t.Errorf("%s() names %q, which ConformancePaths() does not have", name, id)
+			}
+			if !driven[id] {
+				t.Errorf("%s() names %q, which drivenPathIDs() does NOT list — "+
+					"runConformancePaths would subtract it from the split and nothing "+
+					"would run it, so the matrix greens by skipping it", name, id)
+			}
+			if prev, dup := seen[id]; dup {
+				t.Errorf("%q is in BOTH %s() and %s() — two harnesses would each "+
+					"claim to run it", id, prev, name)
+			}
+			seen[id] = name
+		}
+	}
+}

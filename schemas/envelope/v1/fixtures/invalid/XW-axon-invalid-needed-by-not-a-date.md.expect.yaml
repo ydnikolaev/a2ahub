@@ -1,0 +1,2 @@
+code: SCH-012
+note: "`needed_by: \"next tuesday\"` fails base.schema.json's `format: date` assertion (no-silent-yes-2026-08/P3, US-1)."

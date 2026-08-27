@@ -4,11 +4,15 @@
 > individual artifact, how it is ordered, how "whose move is it" is computed,
 > and how far a read surface can be trusted — whether the view is current,
 > whether your own write is in it, and where a record's claim is compared
-> against what the space actually resolves to.
+> against what the space actually resolves to; also two refusals a submit can
+> hit before any of that: a malformed declared date (`SCH-012`) and
+> `classification: restricted` on a space that is not bilateral (`POL-024`,
+> paired with `POL-026` when the check itself could not be run).
 >
 > **Read it when:** you are trying to establish the state of one piece of
-> work, you need to know which side owes the next act, or you are about to act
-> on something a read surface did NOT show you.
+> work, you need to know which side owes the next act, you are about to act
+> on something a read surface did NOT show you, or `a2a submit` refused you
+> with one of the codes above.
 >
 > **Not here:** the loop that acts on the answer
 > ([loops/receive.md](../loops/receive.md),
@@ -306,3 +310,68 @@ What this changes for an author, concretely:
 - **A space whose history already carries one goes red at the next full-repo
   run.** That history was ambiguous before the check existed; the refusal is
   what makes it visible, not what made it wrong.
+
+## A declared date that is not a real date (`SCH-012`)
+
+`envelope/v1` and `envelope/v2`'s base schema declare four date-shaped
+fields: `created` (an RFC-3339 timestamp), `needed_by`/`valid_until`, and
+`expected_response.by` (both plain ISO-8601 dates). Before this rule, the
+schema's `format` keyword on those fields was annotation-only — present in
+the document, checked by nothing — so a string that merely *looked* like a
+date validated even if it could not parse as one. `SCH-012` is that gap
+closed: the value must now parse as the format it declares, not just match
+its shape.
+
+**What actually trips it, in practice:**
+
+- **A template placeholder left in place.** The authoring templates ship
+  `needed_by: <YYYY-MM-DD>` as a literal, hand-editable placeholder — a
+  string, not a date. Forgetting to replace it is the single most common way
+  to meet this refusal; `<YYYY-MM-DD>` fails to parse as a date for the same
+  reason `banana` would.
+- **A calendar date that does not exist** — `2026-02-30`, a 13th month, an
+  hour past 23. The shape (`YYYY-MM-DD`) is right; the value it names is not
+  a day that ever happens.
+- **A timestamp missing its zone or its `T`/`Z` markers** on `created`,
+  which needs a full RFC-3339 instant, not a bare calendar date.
+
+**What to do:** fix the value to a real, parseable date in the field's own
+format — `created` as a full RFC-3339 UTC timestamp (`2026-08-27T13:00:00Z`),
+`needed_by`/`valid_until`/`expected_response.by` as a plain `YYYY-MM-DD`.
+There is no way to opt out: a `severity: reject` code refuses the whole
+submission, so nothing is staged or written on the way to it.
+
+## Classification: restricted requires a bilateral space (`POL-024`, `POL-026`)
+
+`classification: restricted` is a promise about who may ever see the
+artifact: the space's own ACTIVE participants must not exceed `{from} ∪ to`
+— the sender plus whoever it is addressed to, and nobody else currently in
+the space. `POL-024` is that promise checked at submit time, against the
+space manifest's own participant list (`checkClassificationBilateral`,
+`internal/validate/classification.go`).
+
+**`POL-024` fires alone** when the space carries at least one ACTIVE
+participant outside `{from} ∪ to` on a `restricted` artifact. The fix is one
+of: narrow `to` to actually cover everyone active in the space, or
+reclassify the artifact (`classification: internal` is the ordinary
+default) if it does not truly need to be kept from a third participant. A
+`to: all` broadcast is read as "the space's own full active membership" and
+is therefore never itself flagged by this rule — which is a narrower
+guarantee than it sounds: a broadcast is, in substance, the *least*
+restricted audience a message can have, so `restricted` paired with
+`to: all` is not a second safety net, just an untested combination as far
+as `POL-024` is concerned.
+
+**`POL-024` fires again, paired with `POL-026` (unmeasured)**, on a
+different condition: the checker could not even ASK who the space's active
+participants are, because the caller it is running inside has no way to
+enumerate them. This is never silent — a `restricted` artifact this tool
+cannot check is refused (the SAME `POL-024`, the rule's own code, not a
+second code minted for this branch) rather than waved through, and
+`POL-026` rides beside it to say *why* — "this could not be checked", not
+"this failed a check". There is no author-side fix for this pairing:
+nothing about the document is wrong. If you meet it, the caller you
+submitted through is missing a capability that this tool's own shipped
+adapters (`a2a submit`, the MCP `a2a_submit` tool) already carry — retry
+from an up-to-date `a2a` binary, or escalate to your operator
+([loops/escalation.md](../loops/escalation.md)) if it persists.

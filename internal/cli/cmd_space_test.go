@@ -60,8 +60,8 @@ func TestSpaceEmbedSentinelsPresent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read space.yaml: %v", err)
 	}
-	if !strings.Contains(string(spaceYAML), "REPLACE_WITH_SPACE_ID") {
-		t.Error("space.yaml no longer carries the REPLACE_WITH_SPACE_ID sentinel")
+	if !strings.Contains(string(spaceYAML), "replace-with-space-id") {
+		t.Error("space.yaml no longer carries the replace-with-space-id sentinel")
 	}
 	if !strings.Contains(string(spaceYAML), "min_binary_version:") {
 		t.Error("space.yaml no longer carries a min_binary_version: field")
@@ -203,8 +203,8 @@ func TestSpaceInitScaffolds(t *testing.T) {
 		if !strings.Contains(string(spaceYAML), "space: getvisa") {
 			t.Errorf("scaffolded space.yaml does not carry space: getvisa:\n%s", spaceYAML)
 		}
-		if strings.Contains(string(spaceYAML), "REPLACE_WITH_SPACE_ID") {
-			t.Errorf("scaffolded space.yaml still carries the REPLACE_WITH_SPACE_ID sentinel:\n%s", spaceYAML)
+		if strings.Contains(string(spaceYAML), "replace-with-space-id") {
+			t.Errorf("scaffolded space.yaml still carries the replace-with-space-id sentinel:\n%s", spaceYAML)
 		}
 	})
 
@@ -249,6 +249,55 @@ func TestSpaceInitScaffolds(t *testing.T) {
 		}
 		if _, err := os.Stat(filepath.Join(target, "space.yaml")); !os.IsNotExist(err) {
 			t.Error("expected space.yaml NOT to be written into a refused non-empty target dir")
+		}
+	})
+
+	// D8 (no-silent-yes-2026-08/P3 stage 2, spec 03 §8 AC 6/14): once the
+	// sentinel is renamed to the conforming "replace-with-space-id", that
+	// exact string ALSO parses as an ordinary (if unlikely) real space id
+	// — bytes.ReplaceAll alone can no longer tell "the caller typed the
+	// placeholder" apart from "the caller wants a space literally named
+	// that". `a2a space init` must refuse rather than silently scaffold a
+	// template that still carries its own sentinel.
+	t.Run("space id equal to the sentinel refuses to scaffold", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		target := filepath.Join(dir, "out")
+		cmd := cli.NewSpaceCommand(spacetemplate.Files, "1.2.3")
+
+		io, out, errOut := newSpaceIO()
+		code := cmd.Run(context.Background(), []string{"init", "replace-with-space-id", "--dir", target}, io)
+		if code == 0 {
+			t.Fatalf("Run: code = 0, want non-zero for spaceID == the sentinel; stdout=%s", out.String())
+		}
+		if !strings.Contains(errOut.String(), "sentinel") {
+			t.Errorf("expected stderr to name the sentinel, got: %s", errOut.String())
+		}
+		if _, err := os.Stat(target); !os.IsNotExist(err) {
+			t.Errorf("expected nothing written when spaceID == the sentinel; target stat err = %v", err)
+		}
+	})
+
+	// A space id that merely CONTAINS the sentinel as a substring (rather
+	// than equalling it) is an ordinary, legal id — spec 03 §6's own edge
+	// case ("a space whose id merely CONTAINS the sentinel substring").
+	t.Run("space id containing the sentinel as a substring is legal", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		target := filepath.Join(dir, "out")
+		cmd := cli.NewSpaceCommand(spacetemplate.Files, "1.2.3")
+
+		io, out, errOut := newSpaceIO()
+		code := cmd.Run(context.Background(), []string{"init", "my-replace-with-space-id-fork", "--dir", target}, io)
+		if code != 0 {
+			t.Fatalf("Run: code = %d, want 0 for an id merely CONTAINING the sentinel; stdout=%s stderr=%s", code, out.String(), errOut.String())
+		}
+		spaceYAML, err := os.ReadFile(filepath.Join(target, "space.yaml"))
+		if err != nil {
+			t.Fatalf("read scaffolded space.yaml: %v", err)
+		}
+		if !strings.Contains(string(spaceYAML), "space: my-replace-with-space-id-fork") {
+			t.Errorf("scaffolded space.yaml does not carry the full id:\n%s", spaceYAML)
 		}
 	})
 }
@@ -346,7 +395,7 @@ func spaceUpdateTemplateFS() fstest.MapFS {
 		// (spaceUpdateFloor).
 		"space.yaml": &fstest.MapFile{Data: []byte(
 			"schema: manifest/v1\n" +
-				"space: REPLACE_WITH_SPACE_ID\n" +
+				"space: replace-with-space-id\n" +
 				"min_binary_version: 0.4.0\n" +
 				"participants: []\n",
 		)},

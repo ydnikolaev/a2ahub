@@ -31,7 +31,15 @@
 #                    with prose or it does not ship"). `severity: warning`
 #                    codes are exempt BY CLASS, not by a per-row exemption:
 #                    D4's own sentence is about reject codes only, and nothing
-#                    in T5 or ADR-011 extends it to warnings.
+#                    in T5 or ADR-011 extends it to warnings. `severity:
+#                    unmeasured` codes (D9, no-silent-yes-2026-08/P3, minted
+#                    2026-08-27) are exempt BY CLASS for the identical
+#                    reason: D9 forecloses UNMEASURED ever blocking a write
+#                    ("UNMEASURED can never itself block a write"), so it is
+#                    not a refusal either, and D4's sentence still names
+#                    reject only. Decided deliberately and written down at
+#                    registry.yaml's own `severity:` field comment — this is
+#                    the gate's mirror of that decision, not a second one.
 #   2. reachability — the code's own string appears in a test file OUTSIDE
 #                    internal/validate — internal/cli/**_test.go,
 #                    internal/mcp/**_test.go or internal/e2e/**_test.go —
@@ -69,7 +77,13 @@
 #                    non-test, whole tree). `severity: warning` codes are
 #                    out of scope BY CLASS, the same class-level reasoning
 #                    obligation 1 uses for ADR-011 D4: a warning is not a
-#                    refusal.
+#                    refusal. `severity: unmeasured` codes (D9,
+#                    no-silent-yes-2026-08/P3) are out of scope BY CLASS for
+#                    the same reason: D9's own foreclosure ("UNMEASURED can
+#                    never itself block a write") means it is not a refusal
+#                    either, so a code raised at that severity never carries
+#                    a `path_exempt` and is never counted toward — or
+#                    against — the burn-down this obligation prints.
 #
 #                    This is NOT obligation 2 again, and the difference is
 #                    the whole point. Obligation 2 is satisfied by the
@@ -507,8 +521,8 @@ check_obligations() { # $1 = registry file, $2 = source root, $3 = catalogue roo
       continue
     fi
     case "$severity" in
-      reject | warning) ;;
-      *) gate_fail "check-error-codes: $code declares an unrecognized severity '$severity' — want reject|warning" ;;
+      reject | warning | unmeasured) ;;
+      *) gate_fail "check-error-codes: $code declares an unrecognized severity '$severity' — want reject|warning|unmeasured" ;;
     esac
     case "$mode_scope" in
       v3-pr | v3-full-repo | both) ;;
@@ -773,6 +787,54 @@ EOF
   printf 'REF-903 documented here.\n' > "$root/skill/loop.md"
   teeth_expect "AC3: reject code scoped both with no reason" red \
     "REF-903 is severity:reject scoped mode_scope:both with no mode_scope_reason" "$reg" "$root" || return 1
+
+  # ── severity vocabulary (no-silent-yes-2026-08/P3, D9) ──────────────────
+  #
+  # D9 mints `unmeasured` as the registry's third severity value. Two cases:
+  # an unrecognized FOURTH value still reds naming both the code and the
+  # now-three-member wanted set, and `unmeasured` itself is accepted with NO
+  # side effect on obligations 1/4 — a code at that severity carries no
+  # prose and drives no path and still greens, the same class-level
+  # exemption `severity: warning` already has (o4-j below proves the
+  # warning half; this proves the unmeasured half).
+
+  # sev-a: a FOURTH, unrecognized severity value reds, naming the code and
+  # the updated wanted set — proves the vocabulary teaches exactly
+  # reject|warning|unmeasured, not "anything now goes".
+  d="$work/sev-unrecognized"; write_fixture_tree "$d/root"; root="$d/root"; reg="$d/registry.yaml"
+  cat > "$reg" <<'EOF'
+entries:
+  - code: REF-930
+    class: referential
+    title: fixture
+    applies_to: fixture
+    severity: bogus-fourth-value
+    mode_scope: v3-pr
+    emitted_by: internal/space
+    reachability_exempt: fixture — this case is about the severity vocabulary, not reachability
+EOF
+  teeth_expect "sev: a fourth, unrecognized severity value reds naming the code" red \
+    "REF-930 declares an unrecognized severity 'bogus-fourth-value' — want reject|warning|unmeasured" \
+    "$reg" "$root" || return 1
+
+  # sev-b: `severity: unmeasured` itself is accepted by the vocabulary check
+  # AND stands obligations 1/4 down (D9's own foreclosure: it can never
+  # block, so it is not "a refusal" either) — no prose anywhere under
+  # skill/, no driven path, no path_exempt, and the row still greens.
+  d="$work/sev-unmeasured"; write_fixture_tree "$d/root"; root="$d/root"; reg="$d/registry.yaml"
+  cat > "$reg" <<'EOF'
+entries:
+  - code: REF-931
+    class: referential
+    title: fixture
+    applies_to: fixture
+    severity: unmeasured
+    mode_scope: v3-pr
+    emitted_by: internal/space
+    reachability_exempt: fixture — this case is about the severity vocabulary, not reachability
+EOF
+  teeth_expect "sev: severity:unmeasured is accepted and stands obligations 1/4 down, with no prose and no driven path" green \
+    "" "$reg" "$root" || return 1
 
   # AC4: a legitimately exempt code, reason stated, passes green — same
   # fixture as AC1 (no production-path test) but with reachability_exempt

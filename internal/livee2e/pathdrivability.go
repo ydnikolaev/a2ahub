@@ -123,6 +123,38 @@ func drivenPathIDs() []string {
 		"work-request-lifecycle-disputed-sender-owes",
 		"question-multi-response-reconciliation",
 		"work-request-multi-response-reconciliation",
+		// no-silent-yes-2026-08/P3 stage 1 (spec 03 §8 AC1/AC3, DECISIONS.md
+		// § D3): the SCH-012 format-assertion refusal — see
+		// pathcatalogue_format.go's own Intent for the honest limitation
+		// (this path reds under -tags=livee2e until
+		// internal/validate/schema_class.go's format-keyword mapping lands,
+		// which is outside this stage's own allowlist).
+		"work-request-bad-needed-by-format-refused",
+		// no-silent-yes-2026-08/P3 stage 2 (spec 03 §8 AC 4/5, DECISIONS.md
+		// § D3/§ D9): the restricted-classification bilateral rule's own
+		// audience-exceeds refusal — see pathcatalogue_classification.go's
+		// own Intent. This wave's capability-miss twin (formerly
+		// "restricted-classification-capability-miss-refused", POL-025) is
+		// GONE, not merely renamed: both concrete Resolvers
+		// (internal/cli's and internal/mcp's MirrorResolver) implement
+		// ActiveParticipantLister for real now, so a capability miss is a
+		// defensive branch no correctly-wired binary can reach — there is
+		// no honest way to declare a path that PROVOKES it, so none is
+		// declared (see classification.go's own package doc for the fold).
+		// GENUINELY DRIVEN, not merely declared: this catalogue's ordinary
+		// two-system harness topology (catalogue.go's SystemA/SystemB) has
+		// no THIRD active participant to exceed {from} ∪ to against, so
+		// this path runs over its OWN dedicated space
+		// (logic_runner_live_test.go's classificationHarness) carrying a
+		// third, always-active, never-addressed participant added at
+		// GENESIS (provision_live.go's AddInertParticipantGenesis,
+		// scaffold.go's AddParticipant) — the same durable-manifest-edit-
+		// onto-a-dedicated-space shape Family 15's SetParticipantStatusMidPath
+		// uses for its own three ids.
+		// classificationBilateralDedicatedSpacePathIDs() below is what
+		// excludes this id from runConformancePaths' ordinary round-robin
+		// split, exactly as departedCounterpartyPathIDs() does for Family 15.
+		"restricted-classification-exceeds-bilateral-refused",
 	}
 	out = append(out, departedCounterpartyPathIDs()...)
 	return out
@@ -150,6 +182,25 @@ func departedCounterpartyPathIDs() []string {
 		"decision-proposed-withdrawn-by-author-after-approvers-left",
 		"decision-proposed-superseded-by-author-after-approvers-left",
 		"handoff-submitted-superseded-by-producer-after-receiver-left",
+	}
+}
+
+// classificationBilateralDedicatedSpacePathIDs is
+// restricted-classification-exceeds-bilateral-refused's own one-id set —
+// genuinely driven (it stays IN drivenPathIDs() above), but never through
+// runConformancePaths' ordinary round-robin split: the path needs a THIRD,
+// always-active participant nobody ever addresses, added ONCE at genesis to
+// a space dedicated to this path alone (provision_live.go's
+// AddInertParticipantGenesis, logic_runner_live_test.go's own
+// classificationHarness) — sharing that participant with any other path's
+// harness would durably change what THAT path's own "bilateral" assumption
+// means, exactly the reasoning departedCounterpartyPathIDs() gives for its
+// own three ids. Kept as its own named function (one id today) so
+// runConformancePaths can subtract it before splitting without drifting
+// from departedCounterpartyPathIDs()'s own separate exclusion.
+func classificationBilateralDedicatedSpacePathIDs() []string {
+	return []string{
+		"restricted-classification-exceeds-bilateral-refused",
 	}
 }
 

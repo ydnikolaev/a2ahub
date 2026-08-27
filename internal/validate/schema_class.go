@@ -100,15 +100,17 @@ func schemaCode(fv schema.FieldViolation) (code, ccRef string, err error) {
 		return "SCH-010", "", nil
 	case "uniqueItems":
 		return "SCH-011", "", nil
+	case "format":
+		// no-silent-yes-2026-08/P3 stage 2: internal/schema's Load now
+		// enables AssertFormat on the envelope family (corpus.go), so a
+		// malformed `created`/`needed_by`/`valid_until`/
+		// `expected_response.by` value reaches this function as a real
+		// "format" FieldViolation instead of never occurring. SCH-012
+		// (schemas/errors/v1/registry.yaml) is the registered code for
+		// exactly this — registered ahead of AssertFormat being turned on
+		// (that file's own comment records the forced ordering).
+		return "SCH-012", "", nil
 	}
-	// NOTE on "format": internal/schema's Load deliberately does NOT
-	// enable format assertion (see its doc comment) precisely because no
-	// SCH- code exists for a format failure and this phase may not
-	// author a new one — so a "format" keyword should never reach this
-	// function at runtime. If it ever does (a future schema.Load change
-	// re-enables AssertFormat), this intentionally falls through to the
-	// unmapped-keyword error below rather than silently inventing a
-	// code.
 	return "", "", fmt.Errorf(
 		"validate: unmapped schema-class keyword %q at path %q (schemaPointer %q) — schema/registry drift, not a runtime content error",
 		fv.Keyword, fv.Path, fv.SchemaPointer,
