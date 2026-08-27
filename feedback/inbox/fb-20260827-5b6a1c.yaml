@@ -1,0 +1,34 @@
+
+feedback: v1
+id: fb-20260827-5b6a1c
+kind: friction
+severity: minor
+title: a verb usage names its flags, never its workflow, so a loop page is unreachable
+summary: |-
+    An agent's moment of not-knowing has one surface: it types `a2a <verb>` with no args and reads what comes back. That output names flags and is silent about workflow — it ANSWERS the shallow question and leaves the real one unasked, so the agent proceeds confidently.
+    
+    I had to correct a published contract's route path. I ran `a2a contract`, then `a2a contract publish`, read both usage lines, and went straight to executing. I never opened loops/contract-change.md, which documents this exact task and says plainly that the mirror is a cache and staging is the workspace. I did not decide to skip it — the CLI answered every time, so no gap was ever felt.
+    
+    The docs were installed, current and correct. What is missing is a route FROM the surface I touched TO the page I needed. No verb prints a doc page either: `a2a skill` installs and links but cannot show, so reading requires already knowing the file path — exactly what an unread agent does not know.
+context:
+    a2a_version: 0.25.4
+    os_arch: darwin/arm64
+    surface: skill
+    command: "a2a contract publish"
+proposal: |-
+    Three tiers; the first is what I would ship, and it is one line per verb.
+    
+    1. EVERY USAGE LINE NAMES ITS WORKFLOW. `usage: a2a contract publish ...` gains a second line: `workflow: a2a docs contract-change`. That is the intervention point, because the usage line is the ONE surface an agent hits at the exact moment it does not know. Changes no behaviour, costs a string per verb.
+    
+    2. AN `a2a docs <topic>` VERB. The corpus already exists — docs-manifest.json carries `loop_corpus` and `sections` — and nothing exposes it. Today a page is reachable only by knowing its path. This also makes (1) a live pointer rather than a dead one.
+    
+    3. FOR A VERB THAT HAS A LOOP, print its first paragraph on a bare invocation instead of only the flags. Covers the agent that does not know a workflow exists at all.
+    
+    What I would NOT do: a refusal or a confirmation prompt. The problem is not that agents ignore warnings — nothing told me there was anything to read. A pointer suffices, because an agent reads what the tool prints.
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
