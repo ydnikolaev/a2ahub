@@ -342,6 +342,174 @@ func TestApproveRejectAlwaysGateMarker(t *testing.T) {
 	})
 }
 
+// TestSupersedeDecisionRegressionFix closes wave 2b's own regression (that
+// wave's report): before that fix, `lifecycleEvaluateCandidate`
+// (cmd_lifecycle.go) reached fold's nil-facts EvaluateCandidate wrapper for
+// EVERY `a2a supersede` call, so both decision-supersede rows (table.go) —
+// which declare a SuccessorPrecondition — refused UNCONDITIONALLY for
+// every actor, including a legitimate one with a satisfying successor. It
+// now resolves real SuccessorFacts via MirrorResolver.Successor (the SAME
+// capability the SUBMIT path's resolveSuccessorEnvelope already uses) and
+// calls fold.EvaluateCandidateWithSuccessor directly.
+//
+// The `rejected` row (PreconditionSuccessorAuthor) is exercised with both a
+// satisfying AND a non-satisfying successor, proving the fix resolves REAL
+// facts rather than granting unconditionally (the same failure mode from
+// the opposite direction) — wave 2b's own acceptance demonstration ("a
+// legitimate actor with a satisfying successor is NOT refused").
+//
+// The `approved` row (PreconditionSuccessorApproved) used to have NO
+// satisfying case here — wave 2b's own report's product finding, and
+// this epic's own defect INVERTED: MirrorResolver.Successor
+// (internal/cli/adapters.go) folded the successor through a synthetic
+// `fold.Envelope{ID, Kind, From}` that never carried RequiredApprovers, so
+// quorumReached (internal/fold/fold.go) was always false and StateApproved
+// (set at exactly that one gated line) could never be reached through this
+// resolver — regardless of how many real approve events the successor
+// actually carried. Wave 2c (D-1: RequiredApprovers now reaches the folded
+// envelope; D-2: the committed-history read now spans every participant's
+// own section, not just the successor id's own home system's) fixes both
+// halves — see approved_by_successor_with_real_quorum_across_sections_
+// succeeds below, this epic's own acceptance proof "on BOTH surfaces"
+// (internal/mcp/adapters_test.go carries the resolver-level twin).
+func TestSupersedeDecisionRegressionFix(t *testing.T) {
+	t.Parallel()
+
+	t.Run("rejected_by_successor_author_succeeds", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		predecessorID := "XD-axon-20260721-f001"
+		successorID := "XD-axon-20260721-f002"
+		writeDecisionArtifact(t, mirrorDir, predecessorID, []string{"beta", "gamma"})
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, predecessorID, "propose", "axon")
+		writeLifecycleEvent(t, mirrorDir, "beta", 1, predecessorID, "reject", "beta")
+		// writeDecisionArtifact always writes `from: axon` — matches the
+		// acting actor below, satisfying §3.4.4's "author of the
+		// successor" (PreconditionSuccessorAuthor, table.go).
+		writeDecisionArtifact(t, mirrorDir, successorID, []string{"beta", "gamma"})
+
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewSupersedeCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		if code := cmd.Run(context.Background(), []string{"--refs", successorID, predecessorID}, io); code != 0 {
+			t.Fatalf("code = %d, want 0 (legitimate actor, satisfying successor must NOT be refused); stderr=%s", code, errOut.String())
+		}
+		if len(fake.calls) != 1 {
+			t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+		}
+	})
+
+	t.Run("rejected_by_mismatched_successor_author_still_refused", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		predecessorID := "XD-axon-20260721-f003"
+		successorID := "XD-axon-20260721-f004"
+		writeDecisionArtifact(t, mirrorDir, predecessorID, []string{"beta", "gamma"})
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, predecessorID, "propose", "axon")
+		writeLifecycleEvent(t, mirrorDir, "beta", 1, predecessorID, "reject", "beta")
+		// Successor is authored by axon (writeDecisionArtifact's own fixed
+		// `from:`), but the ACTING actor below is gamma — the precondition
+		// requires the successor's own author to equal the ACTING actor, so
+		// this must still refuse: the fix resolves real facts, it does not
+		// grant unconditionally.
+		writeDecisionArtifact(t, mirrorDir, successorID, []string{"beta", "gamma"})
+
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewSupersedeCommand(fake, mirrorDir, "fixture-space", "gamma", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		if code := cmd.Run(context.Background(), []string{"--refs", successorID, predecessorID}, io); code == 0 {
+			t.Fatal("expected a non-zero exit (successor authored by axon, acting actor is gamma)")
+		}
+		// Wave 2c, D-3: the successor WAS resolved (it exists in this
+		// mirror) but the author precondition failed, so this is now
+		// LFC-005 ALONE — never LFC-002 (that mislabel is exactly what D-3
+		// closes) and never paired with LFC-006 (that pairing is reserved
+		// for an UNRESOLVED successor, see unresolvable_successor_is_
+		// LFC005_plus_LFC006 below).
+		if !strings.Contains(errOut.String(), "LFC-005") {
+			t.Fatalf("expected the refusal to name LFC-005; got %q", errOut.String())
+		}
+		if strings.Contains(errOut.String(), "LFC-006") {
+			t.Fatalf("expected NO LFC-006 (the successor WAS resolved, just failed the precondition); got %q", errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatalf("expected the write funnel NEVER to be called; got %d call(s)", len(fake.calls))
+		}
+	})
+
+	// approved_by_successor_with_real_quorum_across_sections_succeeds is
+	// D-1+D-2's own proof through the FULL verb (this wave's report, the
+	// whole point of the wave — this epic's own defect INVERTED, now
+	// closed): before wave 2c this exact scenario refused unconditionally
+	// (MirrorResolver.Successor could never resolve `approved` — see this
+	// function's own doc comment). It now succeeds.
+	t.Run("approved_by_successor_with_real_quorum_across_sections_succeeds", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		predecessorID := "XD-axon-20260721-f005"
+		successorID := "XD-axon-20260721-f006"
+		writeDecisionArtifact(t, mirrorDir, predecessorID, []string{"beta", "gamma"})
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, predecessorID, "propose", "axon")
+		writeLifecycleEvent(t, mirrorDir, "beta", 1, predecessorID, "approve", "beta")
+		writeLifecycleEvent(t, mirrorDir, "gamma", 2, predecessorID, "approve", "gamma")
+
+		// The successor carries a REAL, full-quorum approve history — every
+		// required_approver has approved — with both approve events
+		// committed under the APPROVING participant's OWN section (beta's,
+		// gamma's), never the successor id's own home system's section
+		// (axon's): D-2's own shape. RequiredApprovers now reaches the
+		// folded envelope (D-1), so quorumReached (fold.go) sees a real
+		// quorum and StateApproved is reached through this resolver.
+		writeDecisionArtifact(t, mirrorDir, successorID, []string{"beta", "gamma"})
+		writeLifecycleEvent(t, mirrorDir, "axon", 3, successorID, "propose", "axon")
+		writeLifecycleEvent(t, mirrorDir, "beta", 4, successorID, "approve", "beta")
+		writeLifecycleEvent(t, mirrorDir, "gamma", 5, successorID, "approve", "gamma")
+
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewSupersedeCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		if code := cmd.Run(context.Background(), []string{"--refs", successorID, predecessorID}, io); code != 0 {
+			t.Fatalf("code = %d, want 0 (successor genuinely resolves as approved); stderr=%s", code, errOut.String())
+		}
+		if len(fake.calls) != 1 {
+			t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+		}
+	})
+
+	// unresolvable_successor_is_LFC005_plus_LFC006 is D-3's own OTHER half,
+	// through the verb: a successor id this resolver's own index can never
+	// contain (D9's own "unresolved" case, types.go) refuses LFC-005 WITH
+	// an LFC-006 advisory alongside it — never LFC-002, and never LFC-005
+	// alone (that shape is reserved for a RESOLVED-but-failing successor,
+	// see rejected_by_mismatched_successor_author_still_refused above).
+	t.Run("unresolvable_successor_is_LFC005_plus_LFC006", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		predecessorID := "XD-axon-20260721-f007"
+		writeDecisionArtifact(t, mirrorDir, predecessorID, []string{"beta", "gamma"})
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, predecessorID, "propose", "axon")
+		writeLifecycleEvent(t, mirrorDir, "beta", 1, predecessorID, "reject", "beta")
+		// No successor artifact written at all: refs names an id this
+		// resolver's own index can never contain.
+
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewSupersedeCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		if code := cmd.Run(context.Background(), []string{"--refs", "XD-axon-20260721-gh57", predecessorID}, io); code == 0 {
+			t.Fatal("expected a non-zero exit (successor entirely unresolvable)")
+		}
+		if !strings.Contains(errOut.String(), "LFC-005") {
+			t.Fatalf("expected the refusal to name LFC-005; got %q", errOut.String())
+		}
+		if !strings.Contains(errOut.String(), "LFC-006") {
+			t.Fatalf("expected the refusal to ALSO name LFC-006 (unresolved successor); got %q", errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatalf("expected the write funnel NEVER to be called; got %d call(s)", len(fake.calls))
+		}
+	})
+}
+
 // respondFlow drives RespondCommand for one parent and materializes its
 // output onto mirrorDir, returning the minted response id (parsed back out
 // of the recorded funnel call's file paths). extraArgs is appended

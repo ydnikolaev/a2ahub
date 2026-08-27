@@ -15,9 +15,15 @@ import (
 // asking "is any transition legal from here" finds one and stays green on the
 // exact cell this phase exists to catch. RoleAny is membership-only: it says
 // any member MAY act, never that anyone is expected to, and that row's own
-// Scenario explains why the fold cannot do better
-// (`new-approved-decision-only-unverifiable` — the authorship rule lives on an
-// artifact that does not exist yet).
+// Precondition (no-silent-yes-2026-08/P6, types.go's SuccessorPrecondition)
+// now states, checkably, the real §3.4.4 requirement the fold defers to a
+// caller-resolved successor artifact fact rather than expressing through
+// Role — see TestRoleAnyRowsAreGenuinelyRoleAgnostic below for the test
+// that keeps this true rather than merely read. (This row's Scenario used
+// to admit, in its own name, that the fold could not check the successor's
+// authorship — see AC 3's own repo-wide grep for the exact retired string,
+// not quoted verbatim here on purpose; the Precondition mechanism ends
+// that confession.)
 //
 // A state whose only exits are RoleAny is a state where the protocol offers a
 // move and names nobody to make it. That is the freeze, whether or not a
@@ -126,6 +132,64 @@ func TestTotalityGateHasNoAllowlist(t *testing.T) {
 	// list here that nothing keeps honest.
 	if got := len(RestingStates()); got < 40 {
 		t.Fatalf("RestingStates() yields %d pairs — suspiciously few; a shrunken universe is how a totality gate goes quietly green", got)
+	}
+}
+
+// TestRoleAnyRowsAreGenuinelyRoleAgnostic is no-silent-yes-2026-08/P6's
+// AC 4 (US-4): "I want RoleAny to mean 'any role is legal' and never 'I
+// could not check', so that a permission is not a confession." Asserted
+// BEHAVIORALLY against the real CheckCandidate, not by reading a Scenario
+// string for a confession-shaped substring — a string-sniff stays green
+// through the exact drift this gate exists to catch: a future row could
+// carry an uncheckable requirement under a Scenario that says nothing
+// about it. AC 3's own repo-wide grep for the exact retired Scenario
+// string (not repeated verbatim in this file, on purpose — see this
+// package's own AC 3 note elsewhere) is the narrow, literal half of this
+// obligation; this is the general one.
+//
+// The derivation, over `rows` and nothing else (TestTotalityGateHasNoAllowlist's
+// own discipline, extended to this axis): for every row with Role ==
+// RoleAny, two arbitrary member actors — neither matching env.From, env.To
+// nor env.RequiredApprovers — must BOTH get VerdictLegal from
+// CheckCandidate. That is what "any role is legal" actually means, proven
+// rather than read.
+//
+// A row that ALSO declares a Precondition (types.go's
+// SuccessorPrecondition) is EXCLUDED from that requirement, not silently
+// passed: it is not genuinely role-agnostic — Role waives only the
+// envelope-level system match, and the row's own declared, checkable
+// Precondition is what carries the real §3.4.4 requirement now (exercised
+// by legality_test.go's and legality_candidate_test.go's own
+// successor-precondition cases, never by this file). That is the
+// difference between "any role is legal" (this test) and "I check
+// elsewhere, and say so" (a Precondition) — both honest; only the THIRD
+// shape, a RoleAny row that quietly refuses an arbitrary member for a
+// reason nothing declares, is what this test exists to catch.
+func TestRoleAnyRowsAreGenuinelyRoleAgnostic(t *testing.T) {
+	t.Parallel()
+
+	for i, r := range rows {
+		if r.Role != RoleAny {
+			continue
+		}
+		if r.Precondition != PreconditionNone {
+			continue
+		}
+
+		env := rowEnv(r.Kind)
+		prior := Result{Kind: r.Kind, State: r.From}
+
+		for _, outsider := range []string{"outsider-one", "outsider-two"} {
+			actor := Actor{System: outsider}
+			verdict := CheckCandidate(r.Kind, prior, r.Transition, "", env, actor, MembershipMember)
+			if verdict != VerdictLegal {
+				t.Fatalf("row %d (%s/%s/%s, Scenario=%q): Role is RoleAny but a member actor %q "+
+					"outside From/To/RequiredApprovers got %q, want legal — either this row is not "+
+					"genuinely role-agnostic (it needs a declared Precondition, table.go) or "+
+					"CheckCandidate's RoleAny handling regressed",
+					i, r.Kind, r.From, r.Transition, r.Scenario, outsider, verdict)
+			}
+		}
 	}
 }
 

@@ -10,7 +10,8 @@
 >
 > **Not here:** no longer wanting the EXCHANGE itself — `a2a cancel` / `a2a
 > withdraw` in [loops/send.md](../loops/send.md); retiring an INTERFACE
-> ([contract-versions.md](contract-versions.md)).
+> ([contract-versions.md](contract-versions.md)); replacing a DECISION that
+> was rejected or approved — `a2a supersede`, below.
 
 > **The rule this demonstrates**: `retire` is for an INTERFACE — it waits
 > for every registered consumer to acknowledge, because a contract version
@@ -28,6 +29,29 @@ exchange did its job; what's wrong is a downstream, already-rendered value
 that was never itself sent as an exchange. Cancelling or withdrawing the
 request that originally produced that datum does nothing to the wrong value
 still live on the surface — reach for this page instead.
+
+## Not this either: superseding a decision (LFC-005)
+
+A `decision` is not a datum on a rendered surface, so it never goes through
+this page — but it has its own "replace something already recorded" verb,
+`a2a supersede <decision-id> --refs <successor-id>`, and it is refused
+(**LFC-005**) unless the successor satisfies §3.4.4's own precondition:
+
+- superseding a **rejected** decision: the supersede event's own actor must
+  be the **author of the successor decision** — the fold checks this
+  against the successor artifact's own `from`, not the predecessor's.
+- superseding an **approved** decision: the named successor must itself be
+  an **approved decision** — any actor may act, but an unapproved or
+  unresolvable successor refuses.
+
+If the successor cannot be resolved at all (an unparseable ref, a
+successor no local mirror knows about), the refusal still fires — LFC-005
+never grants on "I could not check" — and an accompanying **LFC-006**
+(severity: unmeasured, never itself blocking) names that the precondition
+was unevaluated rather than evaluated-and-failed. The refusal message
+names the fix directly: point `--refs` at a successor that is either
+authored by you (superseding a rejection) or already approved (superseding
+an approval).
 
 ## Why an `x_` block and not a new `category`
 

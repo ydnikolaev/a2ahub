@@ -184,6 +184,24 @@ func TestPreWriteAgreesWithApplyOnEveryRow(t *testing.T) {
 		if r.Transition == TVerify || r.Transition == TDispute {
 			continue
 		}
+		// no-silent-yes-2026-08/P6: the two decision-supersede rows now
+		// carry a declared Precondition (table.go) CheckCandidate cannot
+		// resolve without caller-supplied SuccessorFacts — and this
+		// harness, like every OTHER caller of the no-facts CheckCandidate
+		// wrapper (evaluate.go's EvaluateCandidate chief among them),
+		// supplies none, so it refuses uniformly (D9's own rule). Apply's
+		// post-write behaviour on these two rows is UNCHANGED — a
+		// deliberate scope decision documented on the row itself, not an
+		// oversight — so pre/post now deliberately DISAGREE here, which is
+		// exactly what this test otherwise exists to forbid. Skipped for
+		// the same reason contract-version rows are: a real, DOCUMENTED
+		// divergence with its own coverage (legality_test.go and
+		// legality_candidate_test.go's own successor-precondition cases),
+		// not the silent broadcast-ack-class mirror bug this test guards
+		// against for every other row.
+		if r.Precondition != PreconditionNone {
+			continue
+		}
 
 		t.Run(rowName(i, r), func(t *testing.T) {
 			t.Parallel()

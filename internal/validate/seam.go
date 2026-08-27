@@ -48,6 +48,103 @@ type CandidateEvent struct {
 	// concrete LegalityChecker threads this through to internal/fold's
 	// per-version legality primitive; validate itself never inspects it.
 	Version string
+	// Envelope carries the SUBJECT artifact's own create/envelope facts
+	// (§5.2.2) a LegalityChecker needs to resolve role checks — the same
+	// facts fold.Envelope carries, in this package's own vocabulary (plain
+	// strings, no internal/fold import: this type's own doc comment states
+	// the same rule fold's richer event type is kept out for).
+	//
+	// no-silent-yes-2026-08/P6, US-3: this REPLACES the RegisterEnvelope
+	// side-channel both internal/mcp's and internal/cli's own
+	// LegalityAdapter used to carry (a `map[string]fold.Envelope` plus a
+	// mutex, populated by a SEPARATE method call before ValidateForSubmit)
+	// — a call site could omit that call entirely, and CheckLegality then
+	// errored at RUNTIME ("no envelope registered for subject"). Carrying
+	// the envelope ON the CandidateEvent itself, at the SAME construction
+	// site that builds every other field, makes a forgotten envelope a
+	// STRUCTURAL fact about the literal a reviewer/vet sees immediately,
+	// not a separate statement two lines away that is easy to omit.
+	Envelope Envelope
+	// SuccessorEnvelope carries the caller-resolved facts about a
+	// decision-supersede candidate's own SUCCESSOR artifact — the two
+	// facts internal/fold's own declared row preconditions check (D7/D9,
+	// no-silent-yes-2026-08/P6). nil means UNRESOLVED, never "resolved and
+	// blank" (the same distinction internal/fold's own SuccessorFacts doc
+	// comment states one layer down) — checkLifecycle (lifecycle.go) reads
+	// this field directly to decide whether an LFC-005 refusal also pairs
+	// with LFC-006, and a concrete LegalityChecker (internal/mcp's and
+	// internal/cli's own LegalityAdapter) converts it into internal/fold's
+	// own SuccessorFacts shape before calling
+	// fold.CheckCandidateWithSuccessor. Meaningful only for a decision
+	// `supersede` transition; every other transition leaves it nil, and
+	// checkLifecycle never inspects it for any other transition.
+	SuccessorEnvelope *SuccessorEnvelope
+}
+
+// Envelope is validate's own minimal, caller-resolved projection of an
+// artifact's create/envelope facts (§5.2.2) — the same shape fold.Envelope
+// carries, in this package's own plain-string vocabulary (no internal/fold
+// import, CandidateEvent's own doc comment). A concrete LegalityChecker
+// converts this into fold's own Envelope type before calling
+// fold.CheckCandidateWithSuccessor/fold.CheckLegality.
+type Envelope struct {
+	// ID is the artifact's own id.
+	ID string
+	// Kind is the artifact's §3.1 object type, as fold.Kind's own string
+	// vocabulary (e.g. "decision") — no fold.Kind import to name it with.
+	Kind string
+	// From is the owner / requester / author / producing system.
+	From string
+	// To is the exchange target(s); §D-027 — to[0] is authoritative for
+	// exchanges.
+	To []string
+	// RequiredApprovers is the decision-only required-approver set.
+	RequiredApprovers []string
+}
+
+// SuccessorEnvelope is validate's own minimal, caller-resolved projection
+// of a decision-supersede candidate event's successor artifact — plain
+// strings only, this package's own vocabulary, deliberately NOT internal/
+// fold's SuccessorFacts type: validate must not import internal/fold
+// (CandidateEvent's own doc comment states the same rule for fold's richer
+// event type). A concrete LegalityChecker is the one place that converts
+// this shape into fold's own.
+type SuccessorEnvelope struct {
+	// Author is the successor artifact's own envelope `from` (§5.2.2).
+	Author string
+	// State is the successor artifact's own current folded lifecycle
+	// state, as a plain string (internal/fold's State vocabulary, e.g.
+	// "approved" — this package carries no fold.State import to name it
+	// with).
+	State string
+}
+
+// SuccessorResolver is validate's own consumer-side optional upgrade to
+// Resolver — the SAME pattern ParentCriteriaCounter (incompleteness.go)
+// and ActiveParticipantLister (classification.go) establish: an optional
+// capability a concrete Resolver MAY also implement, type-asserted by a
+// caller rather than added to the Resolver interface itself (Resolver's
+// own doc comment: "deliberately NOT widened for optional, rule-specific
+// facts a Resolver may also be able to answer"). It answers the one fact
+// CandidateEvent.SuccessorEnvelope needs: the author and current folded
+// state of the artifact a decision-supersede event's own `refs[].ref`
+// names as its successor (§3.4.4; internal/validate/supersession.go's own
+// SupersedeLink doc comment: "the real link lives on the supersede EVENT's
+// refs[].ref", the `supersedes` envelope field being dead).
+//
+// A concrete Resolver that does not implement this interface cannot be
+// asked — the caller (a concrete LegalityChecker's own construction site)
+// leaves CandidateEvent.SuccessorEnvelope nil, which D9's own rule (fold's
+// SuccessorPrecondition doc comment) reads as UNRESOLVED, never a resolved
+// grant: ADR-019's second half forbids a capability miss from reading as a
+// resolved negative OR positive.
+type SuccessorResolver interface {
+	// Successor resolves successorID's own author (envelope `from`) and
+	// current folded lifecycle state, and whether successorID could be
+	// resolved as a known, folded artifact at all. ok=false covers every
+	// "cannot resolve" case alike (successorID absent, unparseable, or its
+	// own history unfoldable) — never a synthesized author/state.
+	Successor(successorID string) (author, state string, ok bool)
 }
 
 // LegalityChecker is the consumer-side seam onto internal/fold's

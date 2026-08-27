@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -84,6 +85,84 @@ func TestCommittedEvents_NoEventsDirReturnsEmptyNotError(t *testing.T) {
 	events, err := CommittedEvents(t.TempDir(), "axon", "XQ-axon-20260721-k3f9")
 	if err != nil {
 		t.Fatalf("CommittedEvents: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("events = %+v, want none", events)
+	}
+}
+
+// TestCommittedEventsAllSections_ReadsEveryParticipantSection proves D-2's
+// own fix: an event committed under a DIFFERENT participant's own section
+// than the subject's home system is still found — the exact gap
+// CommittedEvents (single-section, caller-supplied system) cannot close.
+func TestCommittedEventsAllSections_ReadsEveryParticipantSection(t *testing.T) {
+	t.Parallel()
+	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "beta"}, fixtureParticipant{System: "gamma"})
+	base := time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC)
+	const subject = "XD-axon-20260827-s001"
+
+	// Committed under axon's OWN section (the subject's own home system).
+	fx.commitEvent("axon", fxULID(1), map[string]any{
+		"subject": subject, "transition": "propose",
+		"actor": map[string]any{"kind": "agent", "name": "bot", "system": "axon"},
+		"at":    fxAt(base),
+	})
+	// Committed under beta's and gamma's OWN sections — neither is the
+	// subject's own home system. CommittedEvents(mirrorDir, "axon", subject)
+	// alone would never see these two.
+	fx.commitEvent("beta", fxULID(2), map[string]any{
+		"subject": subject, "transition": "approve",
+		"actor": map[string]any{"kind": "agent", "name": "bot", "system": "beta"},
+		"at":    fxAt(base.Add(time.Minute)),
+	})
+	fx.commitEvent("gamma", fxULID(3), map[string]any{
+		"subject": subject, "transition": "approve",
+		"actor": map[string]any{"kind": "agent", "name": "bot", "system": "gamma"},
+		"at":    fxAt(base.Add(2 * time.Minute)),
+	})
+	// A different subject, also committed elsewhere, must NOT leak in.
+	fx.commitEvent("beta", fxULID(4), map[string]any{
+		"subject": "XD-axon-20260827-OTHER", "transition": "propose",
+		"actor": map[string]any{"kind": "agent", "name": "bot", "system": "beta"},
+		"at":    fxAt(base.Add(3 * time.Minute)),
+	})
+
+	events, err := CommittedEventsAllSections(fx.dir, subject)
+	if err != nil {
+		t.Fatalf("CommittedEventsAllSections: %v", err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("len(events) = %d, want 3 (propose + 2 cross-section approves); got %+v", len(events), events)
+	}
+	var transitions []string
+	for _, e := range events {
+		if e.Subject != subject {
+			t.Fatalf("event carries subject %q, want %q: %+v", e.Subject, subject, e)
+		}
+		transitions = append(transitions, e.Transition)
+	}
+	wantSystems := map[string]bool{"axon": true, "beta": true, "gamma": true}
+	for _, e := range events {
+		if !wantSystems[e.Actor.System] {
+			t.Fatalf("unexpected actor.system %q in %+v", e.Actor.System, e)
+		}
+		delete(wantSystems, e.Actor.System)
+	}
+	if len(wantSystems) != 0 {
+		t.Fatalf("missing events from section(s): %+v (got transitions %v)", wantSystems, transitions)
+	}
+}
+
+// TestCommittedEventsAllSections_AbsentMirrorDirReturnsEmptyNotError
+// mirrors CommittedEvents' own degradation rule (TestCommittedEvents_
+// NoEventsDirReturnsEmptyNotError), generalized one level up: a mirrorDir
+// that does not exist at all is a zero history and a nil error, never a
+// caller-visible failure.
+func TestCommittedEventsAllSections_AbsentMirrorDirReturnsEmptyNotError(t *testing.T) {
+	t.Parallel()
+	events, err := CommittedEventsAllSections(filepath.Join(t.TempDir(), "does-not-exist"), "XD-axon-20260827-s001")
+	if err != nil {
+		t.Fatalf("CommittedEventsAllSections: %v", err)
 	}
 	if len(events) != 0 {
 		t.Fatalf("events = %+v, want none", events)

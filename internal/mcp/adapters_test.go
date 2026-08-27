@@ -850,3 +850,298 @@ func mcpCodeLinesOnly(src string) string {
 	}
 	return strings.Join(out, "\n")
 }
+
+// --- no-silent-yes-2026-08/P6: successor precondition -------------------
+
+// TestAdaptersFileCarriesNoRegisterEnvelopeMethod is AC 5's own regression
+// guard, mirroring TestAdaptersFileCarriesNoAcceptanceCriteriaDecode's
+// structural-gate shape and internal/cli/adapters_test.go's identical test
+// of the same name: US-3 makes a forgotten envelope a compile-time-visible
+// zero-valued struct field, not a runtime error from a separate
+// registration method a caller could skip — a future edit re-adding that
+// method (under any name containing this identifier) would resurrect the
+// exact side-channel this phase removed.
+func TestAdaptersFileCarriesNoRegisterEnvelopeMethod(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile("adapters.go")
+	if err != nil {
+		t.Fatalf("read adapters.go: %v", err)
+	}
+	const banned = "Register" + "Envelope" // split so this guard's own source never matches its own check
+	if strings.Contains(string(raw), banned) {
+		t.Fatalf("internal/mcp/adapters.go still carries a %s method/reference — the envelope side-channel must stay removed (US-3)", banned)
+	}
+}
+
+// writeDecisionArtifactMCP seeds a committed `decision` under mirrorDir's
+// space-level decisions/ directory (§4.2's multi-party PlacementSpaceLevel
+// shape — no owning system section), authored by from, requiring approvals
+// from every id in approvers.
+func writeDecisionArtifactMCP(t *testing.T, mirrorDir, id, from string, approvers []string) {
+	t.Helper()
+	content := "---\n" +
+		"schema: envelope/v1\n" +
+		"id: " + id + "\n" +
+		"type: decision\n" +
+		"title: t\n" +
+		"space: fixture-space\n" +
+		"from: " + from + "\n" +
+		"to: [" + strings.Join(approvers, ", ") + "]\n" +
+		"thread: " + testFixtureThread + "\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-08-27T10:00:00Z\n" +
+		"priority: p3\n" +
+		"blocking: true\n" +
+		"classification: internal\n" +
+		"required_approvers: [" + strings.Join(approvers, ", ") + "]\n" +
+		"---\nbody\n"
+	writeMirrorFile(t, mirrorDir, "decisions/"+id+".md", content)
+}
+
+// TestMirrorResolverSuccessorResolvesAuthorAndFoldedState is D7/D9's SOURCE
+// half, driven directly against the concrete Resolver: given a committed
+// decision artifact plus its own committed `propose` event, Successor
+// resolves its envelope `from` (author) and its current folded lifecycle
+// state — the two facts internal/fold's own declared decision-supersede
+// row preconditions check.
+func TestMirrorResolverSuccessorResolvesAuthorAndFoldedState(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	const id = "XD-axon-20260827-s001"
+	writeDecisionArtifactMCP(t, mirrorDir, id, "axon", []string{"beta"})
+	writeLifecycleEvent(t, mirrorDir, "axon", 1, id, "propose", "axon")
+
+	r := NewMirrorResolver(mirrorDir, testManifest())
+	author, state, ok := r.Successor(id)
+	if !ok {
+		t.Fatalf("Successor(%q): ok = false, want true", id)
+	}
+	if author != "axon" {
+		t.Fatalf("author = %q, want axon", author)
+	}
+	if state != "proposed" {
+		t.Fatalf("state = %q, want proposed (one committed propose event)", state)
+	}
+}
+
+// TestMirrorResolverSuccessorUnknownIDDegrades pins the "cannot resolve"
+// discipline every other optional-capability method in this file follows:
+// never a synthesized author/state, always ok=false.
+func TestMirrorResolverSuccessorUnknownIDDegrades(t *testing.T) {
+	t.Parallel()
+	r := NewMirrorResolver(t.TempDir(), testManifest())
+	if _, _, ok := r.Successor("XD-axon-unknown"); ok {
+		t.Fatal("Successor on an unindexed id: ok = true, want false")
+	}
+}
+
+// TestMirrorResolverSuccessorResolvesApprovedAcrossSections is D-1+D-2's
+// own proof on the MCP surface (this wave's report, "on BOTH surfaces" —
+// the whole point of the wave): a successor decision carrying a REAL
+// `required_approvers` list and a FULL quorum of `approve` events resolves
+// as `approved` through MirrorResolver.Successor — even though every
+// approve event is committed under the APPROVING participant's OWN
+// section (beta's, gamma's), never the successor id's own home system's
+// section (axon's). Mirrors internal/cli/adapters_test.go's own identical
+// proof — see that test's own doc comment for why D-1 and D-2 each alone
+// already block this exact, realistic scenario.
+func TestMirrorResolverSuccessorResolvesApprovedAcrossSections(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	const id = "XD-axon-20260827-q001"
+	writeDecisionArtifactMCP(t, mirrorDir, id, "axon", []string{"beta", "gamma"})
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, id, "propose", "axon")
+	// Both approve events land under the APPROVING participant's OWN
+	// section, never axon's (the successor id's own home system) — the
+	// exact D-2 shape a single-section read cannot see.
+	writeLifecycleEvent(t, mirrorDir, "beta", 1, id, "approve", "beta")
+	writeLifecycleEvent(t, mirrorDir, "gamma", 2, id, "approve", "gamma")
+
+	r := NewMirrorResolver(mirrorDir, space.Manifest{Participants: []space.Participant{
+		{System: "axon", Status: "active"}, {System: "beta", Status: "active"}, {System: "gamma", Status: "active"},
+	}})
+	author, state, ok := r.Successor(id)
+	if !ok {
+		t.Fatalf("Successor(%q): ok = false, want true", id)
+	}
+	if author != "axon" {
+		t.Fatalf("author = %q, want axon", author)
+	}
+	if state != "approved" {
+		t.Fatalf("state = %q, want approved — D-1: RequiredApprovers must reach the folded envelope; "+
+			"D-2: both approve events must resolve despite living under OTHER participants' own sections", state)
+	}
+}
+
+// TestResolveSuccessorEnvelope is resolveSuccessorEnvelope's own direct
+// unit coverage — this package's internal test (package mcp) reaches the
+// unexported function directly, so every branch that leaves the result
+// UNRESOLVED (nil) is pinned by name rather than only observed indirectly
+// through a full ValidateSubmit call.
+func TestResolveSuccessorEnvelope(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	const successorID = "XD-axon-20260827-t001"
+	writeDecisionArtifactMCP(t, mirrorDir, successorID, "axon", []string{"beta"})
+	resolver := NewMirrorResolver(mirrorDir, testManifest())
+
+	cases := []struct {
+		name       string
+		resolver   validate.Resolver
+		kind       string
+		transition string
+		refs       []string
+		wantNil    bool
+	}{
+		{name: "non_supersede_transition_stays_nil", resolver: resolver, kind: "decision", transition: "reject", refs: []string{successorID}, wantNil: true},
+		{name: "non_decision_kind_stays_nil", resolver: resolver, kind: "work_request", transition: "supersede", refs: []string{successorID}, wantNil: true},
+		{name: "no_refs_stays_nil", resolver: resolver, kind: "decision", transition: "supersede", refs: nil, wantNil: true},
+		{name: "resolver_lacks_capability_stays_nil", resolver: &fakeResolverNoSuccessor{}, kind: "decision", transition: "supersede", refs: []string{successorID}, wantNil: true},
+		{name: "unresolvable_id_stays_nil", resolver: resolver, kind: "decision", transition: "supersede", refs: []string{"XD-axon-unknown"}, wantNil: true},
+		{name: "resolvable_populates", resolver: resolver, kind: "decision", transition: "supersede", refs: []string{successorID}, wantNil: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := resolveSuccessorEnvelope(tc.resolver, tc.kind, tc.transition, tc.refs)
+			if tc.wantNil && got != nil {
+				t.Fatalf("got %+v, want nil", got)
+			}
+			if !tc.wantNil {
+				if got == nil {
+					t.Fatal("got nil, want a populated *validate.SuccessorEnvelope")
+				}
+				if got.Author != "axon" {
+					t.Fatalf("Author = %q, want axon", got.Author)
+				}
+			}
+		})
+	}
+}
+
+// fakeResolverNoSuccessor implements validate.Resolver only — never
+// validate.SuccessorResolver — proving resolveSuccessorEnvelope degrades
+// to nil rather than panicking on a type assertion when a caller's own
+// Resolver lacks the capability.
+type fakeResolverNoSuccessor struct{}
+
+func (fakeResolverNoSuccessor) KnownArtifact(string) bool    { return false }
+func (fakeResolverNoSuccessor) Digest(string) (string, bool) { return "", false }
+func (fakeResolverNoSuccessor) System(string) (bool, bool)   { return false, false }
+
+var _ validate.Resolver = fakeResolverNoSuccessor{}
+
+// TestLegalityAdapterDecisionSupersedeSuccessorPrecondition is no-silent-
+// yes-2026-08/P6's own consumer-side proof, driven directly against the
+// REAL adapter: a rejected decision's supersede must be authored by the
+// successor's own author; an approved decision's supersede must name an
+// approved successor. Both rows: UNRESOLVED successor facts (nil
+// SuccessorEnvelope) refuse, never a silent grant.
+func TestLegalityAdapterDecisionSupersedeSuccessorPrecondition(t *testing.T) {
+	t.Parallel()
+	manifest := testManifest()
+
+	t.Run("rejected_requires_successor_author", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		const id = "XD-axon-20260827-r001"
+		writeLifecycleEvent(t, mirrorDir, "axon", 1, id, "propose", "axon")
+		writeLifecycleEvent(t, mirrorDir, "axon", 2, id, "reject", "beta")
+		a := NewLegalityAdapter(mirrorDir, "axon", manifest)
+		env := validate.Envelope{ID: id, Kind: "decision", From: "axon", RequiredApprovers: []string{"beta"}}
+
+		t.Run("unresolved_successor_refuses", func(t *testing.T) {
+			t.Parallel()
+			verdict, err := a.CheckLegality(validate.CandidateEvent{
+				Subject: id, Transition: "supersede", Envelope: env,
+				Actor: validate.Actor{Kind: "agent", Name: "bot", System: "axon"},
+			})
+			if err != nil {
+				t.Fatalf("CheckLegality: %v", err)
+			}
+			if verdict != validate.VerdictUnauthorizedActor {
+				t.Fatalf("verdict = %v, want VerdictUnauthorizedActor", verdict)
+			}
+		})
+		t.Run("resolved_matching_author_grants", func(t *testing.T) {
+			t.Parallel()
+			verdict, err := a.CheckLegality(validate.CandidateEvent{
+				Subject: id, Transition: "supersede", Envelope: env,
+				Actor:             validate.Actor{Kind: "agent", Name: "bot", System: "axon"},
+				SuccessorEnvelope: &validate.SuccessorEnvelope{Author: "axon", State: "draft"},
+			})
+			if err != nil {
+				t.Fatalf("CheckLegality: %v", err)
+			}
+			if verdict != validate.VerdictLegal {
+				t.Fatalf("verdict = %v, want VerdictLegal", verdict)
+			}
+		})
+		t.Run("resolved_nonmatching_author_refuses", func(t *testing.T) {
+			t.Parallel()
+			verdict, err := a.CheckLegality(validate.CandidateEvent{
+				Subject: id, Transition: "supersede", Envelope: env,
+				Actor:             validate.Actor{Kind: "agent", Name: "bot", System: "axon"},
+				SuccessorEnvelope: &validate.SuccessorEnvelope{Author: "beta", State: "draft"},
+			})
+			if err != nil {
+				t.Fatalf("CheckLegality: %v", err)
+			}
+			if verdict != validate.VerdictUnauthorizedActor {
+				t.Fatalf("verdict = %v, want VerdictUnauthorizedActor", verdict)
+			}
+		})
+	})
+
+	t.Run("approved_requires_successor_approved", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		const id = "XD-axon-20260827-a001"
+		writeLifecycleEvent(t, mirrorDir, "axon", 1, id, "propose", "axon")
+		writeLifecycleEvent(t, mirrorDir, "axon", 2, id, "approve", "beta")
+		a := NewLegalityAdapter(mirrorDir, "axon", manifest)
+		env := validate.Envelope{ID: id, Kind: "decision", From: "axon", RequiredApprovers: []string{"beta"}}
+
+		t.Run("unresolved_successor_refuses", func(t *testing.T) {
+			t.Parallel()
+			verdict, err := a.CheckLegality(validate.CandidateEvent{
+				Subject: id, Transition: "supersede", Envelope: env,
+				Actor: validate.Actor{Kind: "agent", Name: "bot", System: "axon"},
+			})
+			if err != nil {
+				t.Fatalf("CheckLegality: %v", err)
+			}
+			if verdict != validate.VerdictUnauthorizedActor {
+				t.Fatalf("verdict = %v, want VerdictUnauthorizedActor", verdict)
+			}
+		})
+		t.Run("resolved_approved_successor_grants", func(t *testing.T) {
+			t.Parallel()
+			verdict, err := a.CheckLegality(validate.CandidateEvent{
+				Subject: id, Transition: "supersede", Envelope: env,
+				Actor:             validate.Actor{Kind: "agent", Name: "bot", System: "axon"},
+				SuccessorEnvelope: &validate.SuccessorEnvelope{Author: "irrelevant", State: "approved"},
+			})
+			if err != nil {
+				t.Fatalf("CheckLegality: %v", err)
+			}
+			if verdict != validate.VerdictLegal {
+				t.Fatalf("verdict = %v, want VerdictLegal", verdict)
+			}
+		})
+		t.Run("resolved_unapproved_successor_refuses", func(t *testing.T) {
+			t.Parallel()
+			verdict, err := a.CheckLegality(validate.CandidateEvent{
+				Subject: id, Transition: "supersede", Envelope: env,
+				Actor:             validate.Actor{Kind: "agent", Name: "bot", System: "axon"},
+				SuccessorEnvelope: &validate.SuccessorEnvelope{Author: "irrelevant", State: "proposed"},
+			})
+			if err != nil {
+				t.Fatalf("CheckLegality: %v", err)
+			}
+			if verdict != validate.VerdictUnauthorizedActor {
+				t.Fatalf("verdict = %v, want VerdictUnauthorizedActor", verdict)
+			}
+		})
+	})
+}

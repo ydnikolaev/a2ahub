@@ -1495,24 +1495,66 @@ func runPathDecisionPartialQuorumThenApproved(ctx context.Context, t *testing.T,
 	return ids
 }
 
+// driveLandedSuccessorDraft mints a throwaway `decision` draft in actor's
+// OWN checkout, submits it (a decision's own first committed event is
+// `propose`, §3.4.4), lands + syncs its PR, and returns the minted id —
+// the fixture both decision-supersede successor drivers below need,
+// factored out here rather than duplicated a second time.
+//
+// This is deliberately NOT driveCreateAndFirstTransition (this file's own
+// predecessor-decision helper): that helper calls checkStepPredicates
+// against path.Steps[createIdx]/[firstIdx], which requires the PATH's own
+// declared journey to carry steps for the successor's create+propose too.
+// The successor here is a supporting fixture, not a step of the path
+// under test — no predicate is ever asserted about it, matching how a
+// bare placeholder was minted before this wave (this wave's report,
+// D-1/D-2/D-3: the placeholder itself was never the problem; where it was
+// minted was).
+//
+// Landing (not merely drafting) is load-bearing, discovered this wave:
+// `a2a new` writes into `.a2a/staging/`, a directory
+// MirrorResolver.ensureIndex (internal/cli/adapters.go) never walks — only
+// `.a2a/cache/mirrors/<space>/` is indexed. A bare, unsubmitted draft is
+// therefore UNRESOLVABLE from ANY checkout, including its own author's,
+// regardless of this wave's own resolver fix — the brief's own literal
+// "draft the successor in the acting checkout" wording undersold what
+// resolvability actually requires; this driver mints the fact the
+// wording was reaching for.
+func driveLandedSuccessorDraft(ctx context.Context, t *testing.T, h *harness, actor *checkout, pathID string, stepIdx int) string {
+	t.Helper()
+	id, _, err := actor.Draft(ctx, "decision")
+	if err != nil {
+		t.Fatalf("path %s step %d: mint a successor decision draft for --refs (%s): %v", pathID, stepIdx, actor.System, err)
+	}
+	sub, err := h.submitDrafted(ctx, actor, id)
+	if err != nil {
+		t.Fatalf("path %s step %d: a2a submit %s (successor decision, %s): %v", pathID, stepIdx, id, actor.System, err)
+	}
+	if err := happyLandAndSync(ctx, h, actor, sub.PRNumber); err != nil {
+		t.Fatalf("path %s step %d: land+sync successor decision submit PR #%d: %v", pathID, stepIdx, sub.PRNumber, err)
+	}
+	return id
+}
+
 // runPathDecisionApprovedSuperseded drives decisionRows()'s own escape
-// hatch from `approved` (Role Any — table.go's own documented
-// successor-authorship-unverifiable deviation). refs is a well-formed
-// placeholder successor id only — fold/the CLI validate no cross-artifact
-// existence for `--refs` (same pattern as the data loop's own
-// successor/blocker placeholders).
+// hatch from `approved` (Role Any — table.go's own documented deviation:
+// this row's OWN envelope, the PREDECESSOR's, cannot itself carry the
+// successor's state). The successor is landed in the ACTING checkout
+// (SystemA) via driveLandedSuccessorDraft — RESOLVABLE from A's own
+// mirror, reaching `proposed` (a decision's own first committed event,
+// §3.4.4) — but never APPROVED: the PreconditionSuccessorApproved row's
+// own precondition is genuinely UNSATISFIED (resolved-but-failing, spec
+// 06 AC 1/AC 9(b) — never the UNRESOLVED case, which pairs an LFC-006
+// advisory alongside LFC-005).
 func runPathDecisionApprovedSuperseded(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
 	t.Helper()
 	path := mustPath(t, "decision-approved-superseded")
 	ids := runPathDecisionPartialQuorumThenApproved(ctx, t, h, runTag)
-	a, b := h.A, h.B
+	a := h.A
 
 	syncBoth(ctx, t, h)
-	placeholderSuccessorID, _, err := b.Draft(ctx, "decision")
-	if err != nil {
-		t.Fatalf("path %s step 0: mint a placeholder successor decision draft for --refs (%s): %v", path.ID, b.System, err)
-	}
-	driveSimpleVerb(ctx, t, h, a, path, 0, fold.TSupersede, ids["decision"], ids, "--refs", placeholderSuccessorID)
+	successorID := driveLandedSuccessorDraft(ctx, t, h, a, path.ID, 0)
+	driveRefusedSimpleVerb(ctx, t, h, a, path, 0, fold.TSupersede, ids["decision"], ids, "--refs", successorID)
 	return ids
 }
 
@@ -1541,19 +1583,22 @@ func runPathDecisionRejected(ctx context.Context, t *testing.T, h *harness, runT
 // runPathDecisionRejectedSuperseded drives decisionRows()'s own escape
 // hatch from `rejected` (Role Any, same documented deviation as the
 // approved branch) — internal/pendency's own row: "settled; the revision
-// is a NEW XD on the thread, not a move owed on this one".
+// is a NEW XD on the thread, not a move owed on this one". A POSITIVE
+// control (this wave's report): the successor is landed in the ACTING
+// checkout (SystemA) via driveLandedSuccessorDraft, mirroring
+// internal/cli/cmd_lifecycle_test.go's own green
+// TestSupersedeDecisionRegressionFix/rejected_by_successor_author_succeeds
+// — its author (SystemA) equals the acting system driving `supersede`
+// below, so PreconditionSuccessorAuthor is satisfied and the act SUCCEEDS.
 func runPathDecisionRejectedSuperseded(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
 	t.Helper()
 	path := mustPath(t, "decision-rejected-superseded")
 	ids := runPathDecisionRejected(ctx, t, h, runTag)
-	a, b := h.A, h.B
+	a := h.A
 
 	syncBoth(ctx, t, h)
-	placeholderSuccessorID, _, err := b.Draft(ctx, "decision")
-	if err != nil {
-		t.Fatalf("path %s step 0: mint a placeholder successor decision draft for --refs (%s): %v", path.ID, b.System, err)
-	}
-	driveSimpleVerb(ctx, t, h, a, path, 0, fold.TSupersede, ids["decision"], ids, "--refs", placeholderSuccessorID)
+	successorID := driveLandedSuccessorDraft(ctx, t, h, a, path.ID, 0)
+	driveSimpleVerb(ctx, t, h, a, path, 0, fold.TSupersede, ids["decision"], ids, "--refs", successorID)
 	return ids
 }
 

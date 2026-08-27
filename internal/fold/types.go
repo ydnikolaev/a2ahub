@@ -111,6 +111,64 @@ const (
 	RoleAny Role = "any"
 )
 
+// SuccessorPrecondition names a declared, checkable requirement a supersede
+// row's own §3.4.4 rule states about the SUCCESSOR artifact — a sibling
+// artifact this transition's own envelope cannot answer (env describes the
+// PREDECESSOR being superseded, never the artifact replacing it). Every row
+// carries PreconditionNone except the two decision-supersede rows
+// (table.go), which used to encode this requirement as `Role: RoleAny`
+// under a Scenario name that admitted, in its own words, the precondition
+// could not be checked — the confession US-4 exists to end
+// (no-silent-yes-2026-08/P6; see AC 3's own repo-wide grep for the exact
+// retired string, deliberately not quoted verbatim here so this comment
+// does not itself keep that grep from ever going clean).
+//
+// CheckCandidateWithSuccessor resolves a row's Precondition against
+// caller-supplied SuccessorFacts; CheckCandidate/CheckLegality (unchanged
+// signatures, both existing callers this phase must not break —
+// internal/fold/evaluate.go's EvaluateCandidate chief among them) supply no
+// facts, so a Precondition-bearing row REFUSES uniformly at every call site
+// that cannot resolve the successor — the D9 rule spec 06 §11's
+// 2026-08-27 amendment states generally: "an optional caller-resolved fact
+// may fail OPEN only where today's behaviour is a refusal or a neutral.
+// Where today's behaviour is a GRANT — as on fold's two RoleAny supersede
+// rows — absence emits a refusal ... instead." Only a caller that resolves
+// the successor and passes it explicitly (internal/mcp's and internal/cli's
+// LegalityAdapter, backed by internal/validate's own resolved
+// CandidateEvent.SuccessorEnvelope) can ever grant these two rows.
+type SuccessorPrecondition string
+
+const (
+	// PreconditionNone means the row states no successor-artifact
+	// requirement — every row except the two named above. Role alone
+	// decides these, exactly as before this phase.
+	PreconditionNone SuccessorPrecondition = ""
+	// PreconditionSuccessorAuthor requires the acting actor's own system to
+	// equal the successor artifact's own author (envelope `from`) — §3.4.4
+	// "rejected | supersede (refs successor decision) | superseded | author
+	// of the successor".
+	PreconditionSuccessorAuthor SuccessorPrecondition = "successor-author"
+	// PreconditionSuccessorApproved requires the successor artifact's own
+	// folded lifecycle State to be StateApproved — §3.4.4 "approved |
+	// supersede | superseded | new approved decision only".
+	PreconditionSuccessorApproved SuccessorPrecondition = "successor-approved"
+)
+
+// SuccessorFacts is the fold-owned, caller-resolved projection of the
+// successor artifact a Precondition-bearing row checks — plain strings plus
+// this package's own State, no richer shape: fold imports ONLY
+// internal/artifact (ADR-001) and must not reach upward for an envelope
+// type "internal/validate resolves the successor from" would otherwise
+// require. A nil *SuccessorFacts means "unresolved" (never "resolved and
+// blank") — see CheckCandidateWithSuccessor's own doc comment for how that
+// distinction is used.
+type SuccessorFacts struct {
+	// Author is the successor artifact's own envelope `from` (§5.2.2).
+	Author string
+	// State is the successor artifact's own folded lifecycle State.
+	State State
+}
+
 // FlagKind is the shared non-fatal protocol-violation enum (3.5 rules
 // 2/3/5) — one type for every flag class fold ever raises on an
 // already-committed event; it never errors or panics on these.

@@ -127,6 +127,96 @@ func TestCheckCandidateContractVersionPath(t *testing.T) {
 	})
 }
 
+// TestCheckCandidateWithSuccessorDecisionSupersedePreconditions is
+// no-silent-yes-2026-08/P6's AC 9(a): fold's own half of D9's general
+// rule, driven directly against CheckCandidateWithSuccessor rather than
+// through internal/validate's checkLifecycle (that pairing is
+// internal/validate/lifecycle_test.go's own AC 9(b)).
+//
+// Both decision-supersede rows (table.go): UNRESOLVED successor facts
+// (nil) refuse — VerdictUnauthorizedActor, never a silent grant, the D9
+// rule stated generally in types.go's SuccessorPrecondition doc comment —
+// and RESOLVED facts satisfying the row's own declared Precondition grant.
+func TestCheckCandidateWithSuccessorDecisionSupersedePreconditions(t *testing.T) {
+	t.Parallel()
+
+	t.Run("rejected_requires_successor_author", func(t *testing.T) {
+		t.Parallel()
+		env := rowEnv(KindDecision)
+		prior := Result{Kind: KindDecision, State: StateRejected}
+		actor := Actor{System: "codex"}
+
+		t.Run("unresolved_successor_refuses", func(t *testing.T) {
+			t.Parallel()
+			if got := CheckCandidateWithSuccessor(KindDecision, prior, TSupersede, "", env, actor, MembershipMember, nil); got != VerdictUnauthorizedActor {
+				t.Fatalf("got %q, want unauthorized-actor", got)
+			}
+		})
+		t.Run("resolved_matching_author_grants", func(t *testing.T) {
+			t.Parallel()
+			facts := &SuccessorFacts{Author: "codex", State: StateDraft}
+			if got := CheckCandidateWithSuccessor(KindDecision, prior, TSupersede, "", env, actor, MembershipMember, facts); got != VerdictLegal {
+				t.Fatalf("got %q, want legal", got)
+			}
+		})
+		t.Run("resolved_nonmatching_author_refuses", func(t *testing.T) {
+			t.Parallel()
+			facts := &SuccessorFacts{Author: "someone-else", State: StateDraft}
+			if got := CheckCandidateWithSuccessor(KindDecision, prior, TSupersede, "", env, actor, MembershipMember, facts); got != VerdictUnauthorizedActor {
+				t.Fatalf("got %q, want unauthorized-actor", got)
+			}
+		})
+	})
+
+	t.Run("approved_requires_successor_approved", func(t *testing.T) {
+		t.Parallel()
+		env := rowEnv(KindDecision)
+		prior := Result{Kind: KindDecision, State: StateApproved}
+		// The actor's own identity is irrelevant to THIS row's precondition
+		// (§3.4.4: "new approved decision only" names the SUCCESSOR's own
+		// state, not who acts) — any member.
+		actor := Actor{System: "any-member"}
+
+		t.Run("unresolved_successor_refuses", func(t *testing.T) {
+			t.Parallel()
+			if got := CheckCandidateWithSuccessor(KindDecision, prior, TSupersede, "", env, actor, MembershipMember, nil); got != VerdictUnauthorizedActor {
+				t.Fatalf("got %q, want unauthorized-actor", got)
+			}
+		})
+		t.Run("resolved_approved_successor_grants", func(t *testing.T) {
+			t.Parallel()
+			facts := &SuccessorFacts{Author: "irrelevant", State: StateApproved}
+			if got := CheckCandidateWithSuccessor(KindDecision, prior, TSupersede, "", env, actor, MembershipMember, facts); got != VerdictLegal {
+				t.Fatalf("got %q, want legal", got)
+			}
+		})
+		t.Run("resolved_unapproved_successor_refuses", func(t *testing.T) {
+			t.Parallel()
+			facts := &SuccessorFacts{Author: "irrelevant", State: StateProposed}
+			if got := CheckCandidateWithSuccessor(KindDecision, prior, TSupersede, "", env, actor, MembershipMember, facts); got != VerdictUnauthorizedActor {
+				t.Fatalf("got %q, want unauthorized-actor", got)
+			}
+		})
+	})
+
+	// CheckLegality and the no-facts CheckCandidate wrapper both delegate
+	// to CheckCandidateWithSuccessor(..., nil) — proving they refuse
+	// UNIFORMLY, never a second, more lenient reading for a caller this
+	// phase's allowlist could not extend with a real successor (see
+	// CheckCandidate's own doc comment).
+	t.Run("no_facts_wrappers_refuse_uniformly", func(t *testing.T) {
+		t.Parallel()
+		env := rowEnv(KindDecision)
+		actor := Actor{System: "codex"}
+		if got := CheckLegality(KindDecision, StateRejected, TSupersede, env, actor, MembershipMember); got != VerdictUnauthorizedActor {
+			t.Fatalf("CheckLegality: got %q, want unauthorized-actor", got)
+		}
+		if got := CheckCandidate(KindDecision, Result{Kind: KindDecision, State: StateApproved}, TSupersede, "", env, actor, MembershipMember); got != VerdictUnauthorizedActor {
+			t.Fatalf("CheckCandidate: got %q, want unauthorized-actor", got)
+		}
+	})
+}
+
 // TestCheckCandidateAgreesWithApplyOnLegality is this package's own
 // pre/post agreement idiom (legality_test.go's
 // TestCheckLegalityBroadcastAck/pre_write_and_post_write_agree): the

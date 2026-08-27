@@ -1226,14 +1226,37 @@ func decisionPaths() []Path {
 	approvedSuperseded := Path{
 		ID:           "decision-approved-superseded",
 		Precondition: partialQuorumThenApproved.ID,
-		Intent: "supersede is decisionRows()'s own escape hatch from `approved` (Role Any — " +
-			"fold cannot verify successor-authorship from the predecessor's own envelope " +
-			"facts alone, table.go's own documented deviation).",
+		Intent: "supersede is decisionRows()'s own escape hatch from `approved` — Role Any " +
+			"(this row's OWN envelope, the PREDECESSOR's, cannot itself carry the successor's " +
+			"state), gated by a DECLARED SuccessorPrecondition (table.go's " +
+			"PreconditionSuccessorApproved, no-silent-yes-2026-08/P6): §3.4.4 'approved | " +
+			"supersede | superseded | new approved decision only'. Wave 2b's own regression " +
+			"(internal/cli's lifecycleEvaluateCandidate resolving real SuccessorFacts via " +
+			"MirrorResolver.Successor and calling fold.EvaluateCandidateWithSuccessor) is " +
+			"fixed, and wave 2c closes the DEAD-TRANSITION half wave 2b's own fix left behind " +
+			"(this wave's report, D-1/D-2): MirrorResolver.Successor now carries " +
+			"RequiredApprovers into the folded successor envelope and reads committed history " +
+			"across EVERY participant's own section, not just the successor id's own home " +
+			"system's — so `approved` is genuinely reachable through this resolver now. THIS " +
+			"path still refuses, on purpose: runPathDecisionApprovedSuperseded " +
+			"(pathdriver_live.go) lands the successor in the ACTING checkout (SystemA, via " +
+			"driveLandedSuccessorDraft — submitted and synced, reaching `proposed`, so it IS " +
+			"resolvable from A's own mirror) but is never APPROVED — the " +
+			"precondition is RESOLVED and genuinely UNSATISFIED (spec 06 AC 1, AC 9(b)'s own " +
+			"'resolved-but-unapproved case yields LFC-005 alone' — never paired with the " +
+			"LFC-006 advisory, which is reserved for an UNRESOLVABLE successor). D-3 (this " +
+			"wave) gives the local gate (cmd_lifecycle.go's verdictRefusalMessage) the same " +
+			"discrimination internal/validate's checkLifecycle already had, so the verb itself " +
+			"now names LFC-005, not the mislabeled LFC-002 wave 2b's own regression left in " +
+			"place — internal/cli/cmd_lifecycle_test.go's own " +
+			"TestSupersedeDecisionRegressionFix/rejected_by_mismatched_successor_author_still_" +
+			"refused proves the same discrimination at the CLI layer.",
 		Steps: []Step{
 			{
 				Actor: SystemA, Kind: fold.KindDecision, Transition: fold.TSupersede,
+				Refused: &Refusal{Code: "LFC-005"},
 				Predicates: []Predicate{
-					FoldedState("decision", fold.StateSuperseded),
+					FoldedState("decision", fold.StateApproved),
 					AbsentFromOpenItems("decision"),
 				},
 			},
@@ -1274,10 +1297,29 @@ func decisionPaths() []Path {
 	rejectedSuperseded := Path{
 		ID:           "decision-rejected-superseded",
 		Precondition: rejected.ID,
-		Intent: "supersede is decisionRows()'s own escape hatch from `rejected` too (Role " +
-			"Any, same documented deviation as the approved branch) — the revision is a " +
-			"NEW XD superseding this one, per internal/pendency's own " +
-			"`rejected: settled; the revision is a NEW XD on the thread` row.",
+		Intent: "supersede is decisionRows()'s own escape hatch from `rejected` too — Role " +
+			"Any, gated by a DECLARED SuccessorPrecondition (table.go's " +
+			"PreconditionSuccessorAuthor, no-silent-yes-2026-08/P6): §3.4.4 'rejected | " +
+			"supersede (refs successor decision) | superseded | author of the successor'; " +
+			"the revision is a NEW XD superseding this one, per internal/pendency's own " +
+			"`rejected: settled; the revision is a NEW XD on the thread` row. A POSITIVE " +
+			"control (this wave's report): wave 2b fixed lifecycleEvaluateCandidate to " +
+			"resolve real SuccessorFacts and call fold.EvaluateCandidateWithSuccessor — " +
+			"internal/cli/cmd_lifecycle_test.go's own " +
+			"TestSupersedeDecisionRegressionFix/rejected_by_successor_author_succeeds proves " +
+			"a legitimate actor with a satisfying successor is NOT refused — but this path " +
+			"itself stayed refused, for a driver-fixture reason ONLY: " +
+			"runPathDecisionRejectedSuperseded (pathdriver_live.go) used to mint the " +
+			"successor as a bare draft in SystemB's OWN checkout while SystemA (the actor " +
+			"below) drives `supersede`, which is unresolvable from SystemA's own mirror " +
+			"regardless (MirrorResolver.ensureIndex walks `.a2a/cache/mirrors/<space>/`, " +
+			"never `.a2a/staging/`, where `a2a new` writes — a fact this wave's report names " +
+			"explicitly, since the brief's own 'draft the successor' wording undersold what " +
+			"resolvability requires). This wave's fix: driveLandedSuccessorDraft mints the " +
+			"successor in the ACTING checkout (SystemA) AND lands it (submit + merge + sync), " +
+			"so it is genuinely resolvable from A's own mirror, authored by A — " +
+			"PreconditionSuccessorAuthor is satisfied and the act now SUCCEEDS on a driven " +
+			"path, keeping FoldedState(\"decision\", StateSuperseded).",
 		Steps: []Step{
 			{
 				Actor: SystemA, Kind: fold.KindDecision, Transition: fold.TSupersede,

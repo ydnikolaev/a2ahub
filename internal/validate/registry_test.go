@@ -236,6 +236,31 @@ func TestRegistryClosure(t *testing.T) {
 		t.Fatalf("checkLifecycle: %v", err)
 	}
 	record(lfc2)
+	// LFC-005 (resolved-and-failing branch, alone) / LFC-006 (paired with
+	// LFC-005, unresolved branch) — no-silent-yes-2026-08/P6, D7/D9's own
+	// registry rows (schemas/errors/v1/registry.yaml). Both branches are a
+	// decision-supersede candidate whose LegalityChecker returned
+	// VerdictUnauthorizedActor; the two calls differ ONLY in whether
+	// SuccessorEnvelope is resolved — lifecycle_test.go carries the fuller
+	// behavioural coverage for the pair, this call proves both codes are
+	// reachable through checkLifecycle for registry-closure purposes.
+	lfc5, err := checkLifecycle([]CandidateEvent{{
+		Subject: "XD-axon-20260827-d001", Transition: "supersede",
+		Envelope:          Envelope{Kind: "decision"},
+		SuccessorEnvelope: &SuccessorEnvelope{Author: "someone-else", State: "draft"},
+	}}, &fakeLegality{verdict: VerdictUnauthorizedActor})
+	if err != nil {
+		t.Fatalf("checkLifecycle: %v", err)
+	}
+	record(lfc5)
+	lfc6, err := checkLifecycle([]CandidateEvent{{
+		Subject: "XD-axon-20260827-d002", Transition: "supersede",
+		Envelope: Envelope{Kind: "decision"},
+	}}, &fakeLegality{verdict: VerdictUnauthorizedActor})
+	if err != nil {
+		t.Fatalf("checkLifecycle: %v", err)
+	}
+	record(lfc6)
 	// LFC-003: once the lead activates the reserved live-registry row, keep it
 	// tied to the real contextual receipt emitter rather than marking it by
 	// declaration. Before that atomic registry+fixture integration, the row is

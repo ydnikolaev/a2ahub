@@ -39,6 +39,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/operation"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
+	"github.com/ydnikolaev/a2ahub/internal/validate"
 	"github.com/ydnikolaev/a2ahub/internal/version"
 	"gopkg.in/yaml.v3"
 )
@@ -967,14 +968,33 @@ func lifecycleMembership(manifest space.Manifest) fold.MembershipView {
 // to guess around: contractVersionVerdict refuses a version-less publish
 // outright once any version is recorded (fold/contract.go), so a caller
 // must resolve its own version BEFORE calling this — never after.
-func lifecycleEvaluateCandidate(mirrorDir string, manifest space.Manifest, id string, candidate fold.Event) (fold.CandidateEvaluation, fold.Envelope, error) {
+// refs is the batch's own §5.2.2 `refs[].ref` values (lifecycleRefsFromFlag)
+// — nil for every OP-211 caller but LifecycleCommand.Run's own supersede
+// row, threaded through so this function can resolve the SUCCESSOR facts a
+// decision-supersede row's declared Precondition checks (table.go), the
+// same way SubmitValidatorAdapter's resolveSuccessorEnvelope (adapters.go)
+// already does for the SUBMIT path — never a second, independently typed
+// successor reader (this phase's own non-negotiable). See
+// lifecycleResolveSuccessorFacts' own doc comment for the resolution rule.
+//
+// The returned *fold.SuccessorFacts is the SAME value this function
+// already resolves internally and passes to
+// fold.EvaluateCandidateWithSuccessor — surfaced to the caller (wave 2c,
+// D-3) so a refusal on a decision-supersede candidate can discriminate
+// "successor resolved, precondition failed" (LFC-005 alone) from
+// "successor unresolvable" (LFC-005 paired with an LFC-006 advisory),
+// mirroring internal/validate's own checkLifecycle discrimination
+// (`ev.SuccessorEnvelope == nil`) at this package's own local gate. nil
+// for every non-supersede/non-decision/ref-less call, exactly as
+// lifecycleResolveSuccessorFacts' own doc comment already documents.
+func lifecycleEvaluateCandidate(mirrorDir string, manifest space.Manifest, id string, candidate fold.Event, refs []lifecycleRefEntry) (fold.CandidateEvaluation, fold.Envelope, *fold.SuccessorFacts, error) {
 	env, _, err := lifecycleLoadEnvelope(mirrorDir, id)
 	if err != nil {
-		return fold.CandidateEvaluation{}, fold.Envelope{}, err
+		return fold.CandidateEvaluation{}, fold.Envelope{}, nil, err
 	}
 	all, err := lifecycleReadAllEvents(mirrorDir)
 	if err != nil {
-		return fold.CandidateEvaluation{}, env, err
+		return fold.CandidateEvaluation{}, env, nil, err
 	}
 	events := lifecycleFoldEvents(all, id)
 	membership := lifecycleMembership(manifest)
@@ -987,7 +1007,43 @@ func lifecycleEvaluateCandidate(mirrorDir string, manifest space.Manifest, id st
 		prior = fold.Fold(env.Kind, env, events, membership)
 	}
 	candidate.Subject = id
-	return fold.EvaluateCandidate(env.Kind, prior, candidate, env, membership), env, nil
+	successor := lifecycleResolveSuccessorFacts(mirrorDir, manifest, env.Kind, candidate.Transition, refs)
+	return fold.EvaluateCandidateWithSuccessor(env.Kind, prior, candidate, env, membership, successor), env, successor, nil
+}
+
+// lifecycleResolveSuccessorFacts resolves the caller-supplied facts about
+// the SUCCESSOR artifact a decision-supersede row's declared
+// SuccessorPrecondition checks (table.go, fold.CheckCandidateWithSuccessor)
+// — the CLI's own pre-write UX gate's read of the SAME capability
+// internal/validate's SUBMIT path already uses via resolveSuccessorEnvelope
+// (adapters.go): MirrorResolver.Successor (validate.SuccessorResolver),
+// never a second successor reader (this phase's own non-negotiable — see
+// this phase's report for why an off-limits-file duplicate was rejected).
+//
+// Gated exactly like resolveSuccessorEnvelope: only a decision's own
+// supersede transition, with at least one ref, ever resolves — every other
+// transition/kind/ref-less call returns nil (unresolved). Every row but
+// the two decision-supersede rows carries PreconditionNone and never
+// consults this value regardless (preconditionTable, table.go), so this
+// gate is a cost optimization (skip the mirror read) rather than a
+// correctness requirement — CheckCandidateWithSuccessor's own dispatch
+// already ignores successor facts for a PreconditionNone row.
+//
+// A nil return (successorID absent from THIS caller's own local mirror,
+// unparsable, or the resolver call failing) is D9's own "unresolved"
+// case (types.go's SuccessorPrecondition doc comment) — CheckCandidateWith
+// Successor refuses a Precondition-bearing row uniformly rather than
+// silently granting on a resolution failure.
+func lifecycleResolveSuccessorFacts(mirrorDir string, manifest space.Manifest, kind fold.Kind, transition string, refs []lifecycleRefEntry) *fold.SuccessorFacts {
+	if transition != fold.TSupersede || kind != fold.KindDecision || len(refs) == 0 {
+		return nil
+	}
+	resolver := NewMirrorResolver(mirrorDir, manifest)
+	author, state, ok := resolver.Successor(refs[0].Ref)
+	if !ok {
+		return nil
+	}
+	return &fold.SuccessorFacts{Author: author, State: fold.State(state)}
 }
 
 // lifecycleEvaluateResponseCandidate is the verify/dispute pre-write
@@ -1166,6 +1222,54 @@ func verdictRefusalMessage(id string, verdict fold.Verdict) string {
 	default:
 		return fmt.Sprintf("%s: refused: unknown verdict %v", id, verdict)
 	}
+}
+
+// decisionSupersedeRefusalMessage renders the LFC-005 (optionally paired
+// with an LFC-006 advisory) local-refusal message for a decision
+// `supersede` candidate that CheckCandidateWithSuccessor refused as
+// VerdictUnauthorizedActor (wave 2c, D-3 — this wave's own report).
+//
+// verdictRefusalMessage's own generic VerdictUnauthorizedActor branch
+// mislabels this LFC-002 — the code this epic minted (LFC-005/LFC-006,
+// internal/validate/lifecycle.go) was reachable only through the SUBMIT
+// validation path (checkLifecycle), never through the verb a human or
+// agent actually runs. This function is the CLI's own local gate learning
+// the SAME discrimination checkLifecycle already applies:
+// isDecisionSupersedeCandidate's own coarse test (transition ==
+// "supersede" && kind == "decision" — table.go's THIRD decision-supersede
+// row is included too: a plain wrong-owner refusal on a `proposed`
+// decision's supersede relabels to LFC-005 as well, exactly the
+// coarseness isDecisionSupersedeCandidate's own doc comment already
+// records as known and deliberate, not a new one minted here). The
+// discrimination itself lives at this function's own call site
+// (LifecycleCommand.Run, below); this function only renders the two
+// strings, reused VERBATIM from decisionSupersedePreconditionViolation/
+// decisionSupersedeUnresolvedViolation (internal/validate/lifecycle.go,
+// off this phase's allowlist) rather than a second, independently phrased
+// refusal for the same rule.
+//
+// successorResolved mirrors checkLifecycle's own `ev.SuccessorEnvelope ==
+// nil` test (D9's own rule, types.go): false means the successor could
+// not be resolved AT ALL (never a synthesized resolution), which pairs
+// the LFC-006 UNMEASURED advisory alongside LFC-005 — never alone,
+// exactly as decisionSupersedeUnresolvedViolation's own doc comment
+// requires. true means the successor WAS resolved and the precondition
+// still failed — LFC-005 alone.
+//
+// The message names WHAT WOULD MAKE THE SUPERSEDE LEGAL (spec 06's own
+// discoverability instrument, epic AC-2): an approved successor, or one
+// the acting system authored.
+func decisionSupersedeRefusalMessage(id string, successorResolved bool) string {
+	// The wording is validate's, not this file's: ADR-019's move-down applied
+	// to the refusal TEXT, because the text is part of the rule (spec 06's
+	// discoverability instrument — the message names what would make the
+	// supersede legal). internal/mcp/eventdoc.go references the same two
+	// constants, so the two surfaces cannot drift by editing one.
+	message := fmt.Sprintf("%s: refused: %s (LFC-005)", id, validate.DecisionSupersedePreconditionMessage)
+	if !successorResolved {
+		message += "; " + validate.DecisionSupersedeUnresolvedMessage + " (LFC-006)"
+	}
+	return message
 }
 
 // --- shared verb plumbing (constructor DI) -------------------------------
@@ -1633,15 +1737,24 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 	var files []space.FileWrite
 	parsedRefs := lifecycleRefsFromFlag(*refs)
 	for idx, id := range ids {
-		evaluation, _, err := lifecycleEvaluateCandidate(c.deps.mirrorDir, c.deps.manifest, id, fold.Event{
+		evaluation, env, successor, err := lifecycleEvaluateCandidate(c.deps.mirrorDir, c.deps.manifest, id, fold.Event{
 			Transition: c.spec.Transition, Actor: actor,
-		})
+		}, parsedRefs)
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "%s: %s: %v\n", c.spec.Verb, id, err)
 			return 1
 		}
 		if evaluation.Verdict != fold.VerdictLegal {
-			_, _ = fmt.Fprintf(stdio.Stderr, "%s: %s\n", c.spec.Verb, c.deps.refusalMessage(id, evaluation.Verdict))
+			message := c.deps.refusalMessage(id, evaluation.Verdict)
+			// D-3 (wave 2c): the ONE local gate that resolves real
+			// SuccessorFacts (lifecycleEvaluateCandidate, above) learns the
+			// SAME decision-supersede discrimination checkLifecycle already
+			// applies — see decisionSupersedeRefusalMessage's own doc
+			// comment for the exact coarseness this reuses.
+			if evaluation.Verdict == fold.VerdictUnauthorizedActor && c.spec.Transition == fold.TSupersede && env.Kind == fold.KindDecision {
+				message = decisionSupersedeRefusalMessage(id, successor != nil)
+			}
+			_, _ = fmt.Fprintf(stdio.Stderr, "%s: %s\n", c.spec.Verb, message)
 			return 1
 		}
 		eventRefs := parsedRefs
@@ -2118,9 +2231,9 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			_, _ = fmt.Fprintf(stdio.Stderr, "respond: cannot mint response id: %v\n", err)
 			return 1
 		}
-		evaluation, _, err := lifecycleEvaluateCandidate(c.deps.mirrorDir, c.deps.manifest, parentID, fold.Event{
+		evaluation, _, _, err := lifecycleEvaluateCandidate(c.deps.mirrorDir, c.deps.manifest, parentID, fold.Event{
 			Transition: fold.TRespond, ResponseID: responseID, Actor: actor,
-		})
+		}, nil)
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "respond: %s: %v\n", parentID, err)
 			return 1
@@ -2874,9 +2987,9 @@ func (c *NoteCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 	var files []space.FileWrite
 	for _, id := range ids {
-		evaluation, _, err := lifecycleEvaluateCandidate(c.deps.mirrorDir, c.deps.manifest, id, fold.Event{
+		evaluation, _, _, err := lifecycleEvaluateCandidate(c.deps.mirrorDir, c.deps.manifest, id, fold.Event{
 			Transition: fold.TNote, Actor: actor,
-		})
+		}, nil)
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "note: %s: %v\n", id, err)
 			return 1

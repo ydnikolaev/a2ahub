@@ -65,6 +65,56 @@ func CommittedEvents(mirrorDir, system, subject string) ([]fold.Event, error) {
 	return history.Events, nil
 }
 
+// CommittedEventsAllSections is CommittedEvents' cross-section sibling
+// (no-silent-yes-2026-08 wave 2c, D-2): CommittedEvents reads exactly ONE
+// participant's own <system>/events/ section, keyed by a caller-supplied
+// system — the right read when the caller already knows which section a
+// subject's own history is committed under (LegalityAdapter's own local
+// history, keyed by the acting system). MirrorResolver.Successor's own
+// need is different: an `approve` event on a successor decision is
+// authored by (and therefore committed under) ANY approving participant's
+// own section, never necessarily the successor id's own home system's
+// section — the subject's home system and an event's own committing
+// system are two different facts, and CommittedEvents alone cannot see
+// past that. This reads mirrorDir/*/events/<year>/*.yaml — every
+// participant's own section — and filters by subject, the SAME shape
+// internal/cli's own lifecycleReadAllEvents (cmd_lifecycle.go) already
+// applies for the verb path's own primary-artifact fold; this is that
+// same all-sections read, moved down so BOTH internal/cli's and
+// internal/mcp's MirrorResolver.Successor share ONE implementation
+// (ADR-019) rather than each carrying a third, narrower copy.
+//
+// Composed from CommittedEventsWithEvidence per top-level directory entry
+// rather than a second, independent decode loop: every per-file bounded-
+// read/decode/error rule stays defined in exactly one place. A top-level
+// entry that is not a real participant section (or carries no events/ dir
+// at all) contributes zero events and no error, by the SAME "absent
+// events/ directory is a zero history" rule CommittedEventsWithEvidence
+// already documents — generalized one level up, so an absent mirrorDir
+// itself is a zero history and a nil error too, never a caller-visible
+// distinction from "no participant sections yet".
+func CommittedEventsAllSections(mirrorDir, subject string) ([]fold.Event, error) {
+	entries, err := os.ReadDir(mirrorDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var events []fold.Event
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		history, err := CommittedEventsWithEvidence(mirrorDir, entry.Name(), subject)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, history.Events...)
+	}
+	return events, nil
+}
+
 // CommittedEventsWithEvidence reads every committed event/v1 YAML file under
 // mirrorDir/system/events/<year>/*.yaml and returns the subject-filtered fold
 // inputs plus a provenance sidecar keyed by event ULID. Receipt state is also

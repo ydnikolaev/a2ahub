@@ -73,6 +73,17 @@ type Row struct {
 	Role       Role
 	Scenario   string
 
+	// Precondition names a declared, checkable requirement about the
+	// SUCCESSOR artifact this row's own §3.4.4 rule states — PreconditionNone
+	// for every row except the two decision-supersede rows below. See
+	// SuccessorPrecondition's own doc comment (types.go) for the full
+	// mechanism and why Role stays RoleAny on those two rows rather than
+	// changing to express this: Apply's post-write behaviour is UNCHANGED
+	// by this phase (a documented scope decision, not an oversight — see
+	// those rows' own comments), and Apply/LegalNext both read Role, never
+	// this field.
+	Precondition SuccessorPrecondition
+
 	// Outcomes are the concrete states this row can actually produce when
 	// To is the StateDynamic sentinel. Non-empty EXACTLY when To is
 	// StateDynamic (asserted, both directions, by table_test.go) — so the
@@ -232,41 +243,68 @@ func decisionRows() []Row {
 		// exists to end.
 		{Kind: KindDecision, From: StateProposed, Transition: TWithdraw, To: StateWithdrawn, Role: RoleOwner},
 		{Kind: KindDecision, From: StateProposed, Transition: TSupersede, To: StateSuperseded, Role: RoleOwner},
-		// Fold cannot verify "author of the successor decision" or "new
-		// approved decision only" from the PREDECESSOR's own envelope
-		// facts (that authorship lives on a different, not-yet-existing
-		// artifact) — encoded as membership-only (RoleAny). Deviation,
-		// documented in the phase report.
+		// no-silent-yes-2026-08/P6 (D7/D9, spec 06 §11's 2026-08-27 blocks):
+		// these two rows used to encode "author of the successor decision"
+		// / "new approved decision only" as membership-only (RoleAny) under
+		// a Scenario literally admitting, in its own name, that the
+		// precondition could not be checked — the protocol GRANTED the act
+		// BECAUSE it could not verify it (see AC 3's repo-wide grep for the
+		// exact retired string; not quoted verbatim here on purpose — see
+		// this row's own Scenario field, below, for what replaced it).
+		// That confession is gone:
+		// Role stays RoleAny (still literally true — this row's OWN
+		// envelope, the PREDECESSOR's, waives no system match beyond
+		// membership; see below for why it cannot change), and the real
+		// §3.4.4 requirement is now a DECLARED Precondition,
+		// SuccessorPrecondition-typed (types.go), resolved by
+		// CheckCandidateWithSuccessor (legality.go) against caller-supplied
+		// SuccessorFacts.
 		//
-		// backlog.md:866 names this a real enforcement gap, deliberately
-		// NOT closed here: it carries a CONSILIUM-INPUT marker (the
-		// agent-to-agent architecture review owns the decision, alongside
-		// the sibling gap two rows down in the same backlog file —
-		// backlog.md:870, CandidateEvent carries no envelope). The two are
-		// the same shape: this row's Scenario names WHAT is unverifiable;
-		// backlog.md:870 names WHY, one layer down the call stack.
+		// Why Role does not change to express this. Two consequences follow
+		// from keeping it RoleAny, both deliberate scope decisions, not
+		// oversights:
 		//
-		// What would close it, named so a future implementor does not have
-		// to re-derive it: CheckLegality/CheckCandidate resolve every OTHER
-		// role from THIS artifact's own envelope, reached through
-		// internal/validate.CandidateEvent (see backlog.md:870 and
-		// internal/validate/seam.go's LegalityAdapter/RegisterEnvelope). A
-		// successor's authorship and approval state live on a SIBLING
-		// artifact that, at legality-check time, has not been committed yet
-		// — CandidateEvent has no field for "the envelope of the artifact
-		// this event's own successor_id will name" because there is no such
-		// artifact to point at. Closing this gap needs a caller-resolved
-		// fact threaded in the same way pendency.Input.ExtraAddressees is:
-		// CandidateEvent (or a sibling type built for this one check) would
-		// need an optional SuccessorEnvelope field, populated by the
-		// caller — internal/validate, which CAN read the successor
-		// artifact's committed bytes before authorizing the supersede event
-		// that references it — and the row's Role would resolve against
-		// that fact instead of RoleAny. Left to CONSILIUM because widening
-		// CandidateEvent's shape is a decision about the pre-write legality
-		// seam generally (backlog.md:870), not about this one row alone.
-		{Kind: KindDecision, From: StateRejected, Transition: TSupersede, To: StateSuperseded, Role: RoleAny, Scenario: "successor-authorship-unverifiable"},
-		{Kind: KindDecision, From: StateApproved, Transition: TSupersede, To: StateSuperseded, Role: RoleAny, Scenario: "new-approved-decision-only-unverifiable"},
+		//  1. Apply's post-write behaviour is UNCHANGED — Apply/LegalNext
+		//     read Row.Role via transitionTable/roleTable, never this row's
+		//     Precondition, so a COMMITTED supersede event from an
+		//     unapproved/unauthored successor still folds and still applies
+		//     with no flag, exactly as before this phase. Resolving a
+		//     successor post-write would mean threading SuccessorFacts
+		//     through Fold/Apply's whole call chain from internal/cache —
+		//     every fold caller, larger than this seam.
+		//  2. internal/fold.EvaluateCandidate (evaluate.go, off this
+		//     phase's allowlist) calls CheckCandidate — the NO-FACTS
+		//     wrapper below — with no way to supply SuccessorFacts, so any
+		//     caller still reaching these two rows through EvaluateCandidate
+		//     sees them refuse UNCONDITIONALLY, for any actor, resolved
+		//     successor or not. This is the uniform-refuse rule D9 states
+		//     generally (see SuccessorPrecondition's own doc comment): an
+		//     unresolved fact may never read as a resolved grant.
+		//
+		//     UPDATED wave 2c (no-silent-yes-2026-08's own report, D-3):
+		//     internal/cli's own lifecycleEvaluateCandidate
+		//     (cmd_lifecycle.go) is NOT one of those unconditional-refusal
+		//     callers any more — it resolves real SuccessorFacts via
+		//     MirrorResolver.Successor (the SAME capability the SUBMIT
+		//     path's resolveSuccessorEnvelope already used) and calls
+		//     EvaluateCandidateWithSuccessor directly, making it a SECOND
+		//     grantor for these rows beside internal/mcp/adapters.go's and
+		//     internal/cli/adapters.go's own LegalityAdapter (backed by
+		//     internal/validate's resolved CandidateEvent.SuccessorEnvelope,
+		//     the SUBMIT path's own grantor). Both can grant these rows
+		//     today; a caller that still goes through EvaluateCandidate with
+		//     no resolved successor (internal/mcp's own pre-write UX gates,
+		//     eventdoc.go, unchanged by this wave) is the only one that
+		//     still cannot.
+		//
+		// Left to CheckCandidate to enforce (not encoded a second way on
+		// the row, e.g. a new Role) per legality.go's own recorded lesson
+		// at :88-98: broadcast-ack's rule once shipped in two places, the
+		// two readings disagreed, and every `a2a ack` on an announcement
+		// was refused while the fold stood ready to apply the very event no
+		// verb could author. One rule, one place.
+		{Kind: KindDecision, From: StateRejected, Transition: TSupersede, To: StateSuperseded, Role: RoleAny, Scenario: "successor-author-required", Precondition: PreconditionSuccessorAuthor},
+		{Kind: KindDecision, From: StateApproved, Transition: TSupersede, To: StateSuperseded, Role: RoleAny, Scenario: "successor-approved-required", Precondition: PreconditionSuccessorApproved},
 	}
 }
 
@@ -413,6 +451,34 @@ func buildRoleTable() map[tableKey]Role {
 			continue
 		}
 		m[key] = r.Role
+	}
+	return m
+}
+
+// preconditionTable is roleTable's own sibling for the ONE other fact a
+// row can declare about a caller-resolved successor artifact
+// (SuccessorPrecondition, types.go) — single-sourced from the SAME `rows`
+// slice, keyed the SAME way, so a row's declared precondition can never
+// read one way in the table and another way in a hand-duplicated switch
+// (legality.go:88-98's own recorded lesson, restated for this new axis).
+// A key absent here means PreconditionNone — CheckCandidateWithSuccessor
+// treats a missing entry exactly like an explicit PreconditionNone row.
+var preconditionTable = buildPreconditionTable()
+
+func buildPreconditionTable() map[tableKey]SuccessorPrecondition {
+	m := make(map[tableKey]SuccessorPrecondition, len(rows))
+	for _, r := range rows {
+		if r.Precondition == PreconditionNone {
+			continue
+		}
+		key := tableKey{Kind: r.Kind, From: r.From, Transition: r.Transition}
+		if existing, ok := m[key]; ok && existing != r.Precondition {
+			// Same class of programmer error buildRoleTable panics on: two
+			// rows sharing a (kind, from, transition) key must agree on
+			// every fact the table carries about it, precondition included.
+			panic("fold: rows disagree about the successor precondition for " + string(r.Kind) + "/" + string(r.From) + "/" + r.Transition + ": " + string(existing) + " vs " + string(r.Precondition))
+		}
+		m[key] = r.Precondition
 	}
 	return m
 }

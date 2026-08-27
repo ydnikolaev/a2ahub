@@ -40,6 +40,7 @@ import (
 	"io"
 	"os"
 	"os/user"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -190,6 +191,15 @@ type mirrorEvent struct {
 		Name   string `yaml:"name"`
 		System string `yaml:"system"`
 	} `yaml:"actor"`
+	// Refs is the event's own §5.2.2 `refs[]` — decoded here specifically
+	// for a decision-supersede event's own successor linkage (§3.4.4:
+	// "rejected | supersede (refs successor decision)"; internal/validate/
+	// supersession.go's own SupersedeLink doc comment: "the real link
+	// lives on the supersede EVENT's refs[].ref"). Unused by every other
+	// transition this adapter reads.
+	Refs []struct {
+		Ref string `yaml:"ref"`
+	} `yaml:"refs"`
 }
 
 // --- LegalityAdapter (validate.LegalityChecker) -------------------------
@@ -198,18 +208,27 @@ type mirrorEvent struct {
 // wires: it folds a candidate event's subject against events already
 // committed to the connected space's mirror clone on disk (internal/space
 // layout + internal/fold), mirroring internal/cli's own P6 adapter.
+//
+// no-silent-yes-2026-08/P6, US-3: this adapter used to carry a
+// `map[string]fold.Envelope` side-channel for the candidate's own SUBJECT
+// envelope, filled by a SEPARATE exported method a caller had to remember
+// to call before ValidateForSubmit — CheckLegality errored at RUNTIME when
+// that call was skipped ("no envelope registered for subject").
+// validate.CandidateEvent now carries its own Envelope field (seam.go),
+// populated at the SAME construction site that builds every other field of
+// the candidate (SubmitValidatorAdapter.ValidateSubmit, below) — a
+// forgotten envelope is now a zero-valued struct field visible right
+// there, not a missing statement two lines away. The map, its mutex and
+// that separate registration method are gone.
 type LegalityAdapter struct {
 	mirrorDir string
 	system    string
 	manifest  space.Manifest
-
-	mu        sync.Mutex
-	envelopes map[string]fold.Envelope
 }
 
 // NewLegalityAdapter constructs a LegalityAdapter.
 func NewLegalityAdapter(mirrorDir, system string, manifest space.Manifest) *LegalityAdapter {
-	return &LegalityAdapter{mirrorDir: mirrorDir, system: system, manifest: manifest, envelopes: map[string]fold.Envelope{}}
+	return &LegalityAdapter{mirrorDir: mirrorDir, system: system, manifest: manifest}
 }
 
 // MirrorDir is the space checkout this adapter reads. It is exported so a
@@ -217,21 +236,11 @@ func NewLegalityAdapter(mirrorDir, system string, manifest space.Manifest) *Lega
 // already exists, rather than inferring absence from one batch's contents.
 func (a *LegalityAdapter) MirrorDir() string { return a.mirrorDir }
 
-// RegisterEnvelope makes subject's envelope facts available to a
-// subsequent CheckLegality(candidate) call for that same subject.
-func (a *LegalityAdapter) RegisterEnvelope(subject string, env fold.Envelope) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.envelopes[subject] = env
-}
-
 // CheckLegality implements validate.LegalityChecker.
 func (a *LegalityAdapter) CheckLegality(candidate validate.CandidateEvent) (validate.Verdict, error) {
-	a.mu.Lock()
-	env, ok := a.envelopes[candidate.Subject]
-	a.mu.Unlock()
-	if !ok {
-		return 0, fmt.Errorf("mcp: LegalityAdapter.CheckLegality: no envelope registered for subject %q (RegisterEnvelope must run before ValidateForSubmit)", candidate.Subject)
+	env := fold.Envelope{
+		ID: candidate.Subject, Kind: fold.Kind(candidate.Envelope.Kind), From: candidate.Envelope.From,
+		To: candidate.Envelope.To, RequiredApprovers: candidate.Envelope.RequiredApprovers,
 	}
 
 	events, err := a.committedEvents(candidate.Subject)
@@ -248,9 +257,24 @@ func (a *LegalityAdapter) CheckLegality(candidate validate.CandidateEvent) (vali
 	}
 
 	actorStatus := a.membershipView(candidate.Actor.System)
-	verdict := fold.CheckCandidate(env.Kind, prior, candidate.Transition, candidate.Version, env, fold.Actor{
+	// successorFacts converts candidate.SuccessorEnvelope (validate's own
+	// plain-string vocabulary, seam.go) into internal/fold's own
+	// SuccessorFacts shape — the ONE place this conversion happens, per
+	// fold.CheckCandidateWithSuccessor's own doc comment on why validate
+	// must not import internal/fold's richer types directly. nil stays
+	// nil (unresolved), never coerced into a zero-valued "resolved" struct
+	// — see fold.SuccessorFacts' own doc comment for why that distinction
+	// is load-bearing (D9's own rule).
+	var successorFacts *fold.SuccessorFacts
+	if candidate.SuccessorEnvelope != nil {
+		successorFacts = &fold.SuccessorFacts{
+			Author: candidate.SuccessorEnvelope.Author,
+			State:  fold.State(candidate.SuccessorEnvelope.State),
+		}
+	}
+	verdict := fold.CheckCandidateWithSuccessor(env.Kind, prior, candidate.Transition, candidate.Version, env, fold.Actor{
 		Kind: candidate.Actor.Kind, Name: candidate.Actor.Name, System: candidate.Actor.System,
-	}, actorStatus)
+	}, actorStatus, successorFacts)
 
 	return mapFoldVerdict(verdict), nil
 }
@@ -490,6 +514,108 @@ var _ validate.ParentCriteriaCounter = (*MirrorResolver)(nil)
 // error instead of a runtime capability miss nobody notices.
 var _ validate.ActiveParticipantLister = (*MirrorResolver)(nil)
 
+// Successor implements validate.SuccessorResolver (no-silent-yes-2026-08/
+// P6, D7/D9; extended wave 2c, D-1/D-2 — this wave's own report): it
+// resolves successorID's own envelope `from` (author), `required_
+// approvers` (decision only — the fact quorum arithmetic needs, D-1) and
+// current folded lifecycle state — the facts internal/fold's own declared
+// decision-supersede row preconditions check (table.go's
+// SuccessorPrecondition). Before wave 2c this method decoded `from` alone
+// and folded through a synthetic fold.Envelope with no RequiredApprovers,
+// so quorumReached (fold.go) was always false and StateApproved
+// (PreconditionSuccessorApproved's own target) was unreachable through
+// this resolver by construction, no matter how many real approve events a
+// successor actually carried — that gap is D-1.
+//
+// successorID is parsed with internal/artifact.ParseID purely as a
+// validity guard now (an id that does not round-trip the §3.3 id grammar
+// cannot name a real committed artifact, so ok=false covers it alike) —
+// its System field is NOT used to scope the committed-history read: D-2's
+// own fix. An `approve` event on a successor decision is committed under
+// the APPROVING participant's own section, not necessarily the successor
+// id's own home system's section — the subject's home system and an
+// event's own committing system are two different facts, and the
+// prior single-section cache.CommittedEvents(mirrorDir, id.System, ...)
+// read could see the successor's own entry event but never a real
+// approve authored by anyone else. cache.CommittedEventsAllSections
+// (mirrorDir/*/events/<year>/*.yaml, every participant's own section,
+// subject-filtered) closes that: D-1 and D-2 compound, and either alone
+// already blocked a realistic decision from ever resolving `approved`
+// through this resolver.
+//
+// The author/kind/required_approvers read (this resolver's own index
+// gives Path, Thread, Digest only — never envelope fields) mirrors
+// AcceptanceCriteriaCount's own established shape one layer up (bounded
+// read -> ParseFrontmatter -> minimal YAML probe), rather than growing a
+// fifth internal/cache function this phase's allowlist does not reach.
+//
+// ok=false covers every "cannot resolve" case alike — successorID absent
+// from this resolver's own index, its file failing to
+// read/parse/decode/parse-as-an-id, or its committed history failing to
+// read — never a synthesized author/state (AcceptanceCriteriaCount's own
+// "cannot check" discipline, applied to this fact).
+func (r *MirrorResolver) Successor(successorID string) (author, state string, ok bool) {
+	r.ensureIndex()
+	entry, found := r.index[successorID]
+	if !found {
+		return "", "", false
+	}
+	raw, err := readBoundedFile(filepath.Join(r.mirrorDir, entry.Path), maxMirrorEventBytes)
+	if err != nil {
+		return "", "", false
+	}
+	fm, err := artifact.ParseFrontmatter(raw)
+	if err != nil {
+		return "", "", false
+	}
+	var probe struct {
+		Type              string   `yaml:"type"`
+		From              string   `yaml:"from"`
+		RequiredApprovers []string `yaml:"required_approvers"`
+	}
+	if err := yaml.Unmarshal(fm.YAML, &probe); err != nil {
+		return "", "", false
+	}
+	if _, err := artifact.ParseID(successorID); err != nil {
+		return "", "", false
+	}
+	events, err := cache.CommittedEventsAllSections(r.mirrorDir, successorID)
+	if err != nil {
+		return "", "", false
+	}
+	kind := fold.Kind(probe.Type)
+	prior := fold.NewResult(kind)
+	if len(events) > 0 {
+		env := fold.Envelope{ID: successorID, Kind: kind, From: probe.From, RequiredApprovers: probe.RequiredApprovers}
+		prior = fold.Fold(kind, env, events, mirrorMembershipView(r.manifest))
+	}
+	return probe.From, string(prior.State), true
+}
+
+// var _ validate.SuccessorResolver = (*MirrorResolver)(nil) is
+// AcceptanceCriteriaCount's own type-level-gate pattern, applied to this
+// capability.
+var _ validate.SuccessorResolver = (*MirrorResolver)(nil)
+
+// mirrorMembershipView builds a fold.MembershipView closure over manifest —
+// the SAME membership-status logic LegalityAdapter.membershipView applies
+// to a single already-held manifest field, factored out here so
+// MirrorResolver's own Successor method (which has no LegalityAdapter to
+// borrow from) does not carry a second, independently-typed copy of it.
+func mirrorMembershipView(manifest space.Manifest) fold.MembershipView {
+	return func(system string) fold.MembershipStatus {
+		for _, p := range manifest.Participants {
+			if p.System == system {
+				if p.Status == "left" {
+					return fold.MembershipLeft
+				}
+				return fold.MembershipMember
+			}
+		}
+		return fold.MembershipUnknown
+	}
+}
+
 // AcceptanceCriteriaIDs implements validate.ParentCriteriaIDs
 // (defects-fix-2026-08 P4). It is the SAME read as AcceptanceCriteriaCount
 // above, one field deeper: the ids an id-addressed parent declares, so
@@ -724,15 +850,28 @@ func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space
 
 		var candidates []validate.CandidateEvent
 		if ev, ok := events[probe.ID]; ok {
-			v.legality.RegisterEnvelope(probe.ID, fold.Envelope{
-				ID: probe.ID, Kind: fold.Kind(probe.Type), From: probe.From,
+			// no-silent-yes-2026-08/P6, US-3: the SUBJECT's own envelope is
+			// carried ON the candidate now (validate.CandidateEvent.Envelope,
+			// seam.go) rather than registered through a separate side-channel
+			// method call — see LegalityAdapter's own doc comment for the
+			// full rationale.
+			candidateEnv := validate.Envelope{
+				ID: probe.ID, Kind: probe.Type, From: probe.From,
 				To: toStringSlice(probe.To), RequiredApprovers: probe.RequiredApprovers,
-			})
+			}
+			var refs []string
+			for _, r := range ev.Refs {
+				refs = append(refs, r.Ref)
+			}
 			candidates = []validate.CandidateEvent{{
 				Subject:    ev.Subject,
 				Transition: ev.Transition,
 				Actor:      validate.Actor{Kind: ev.Actor.Kind, Name: ev.Actor.Name, System: ev.Actor.System},
 				Version:    ev.Version,
+				Envelope:   candidateEnv,
+				// SuccessorEnvelope (D7/D9): the SOURCE half — resolveSuccessorEnvelope's
+				// own doc comment covers when this stays nil.
+				SuccessorEnvelope: resolveSuccessorEnvelope(v.resolver, probe.Type, ev.Transition, refs),
 			}}
 		}
 
@@ -757,6 +896,36 @@ func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space
 		return verr
 	}
 	return nil
+}
+
+// resolveSuccessorEnvelope is D7/D9's SOURCE half (no-silent-yes-2026-08/
+// P6): an optional consumer-side capability (validate.SuccessorResolver)
+// type-asserted off the SAME resolver value ctx.Resolver will later see —
+// the EXACT pattern seam.go's own doc comment establishes for
+// ParentCriteriaCounter/ActiveParticipantLister, applied here at the
+// candidate-construction site rather than inside internal/validate itself
+// (that package does no I/O; this adapter already does, for the same
+// candidate's own committed history).
+//
+// refs is the supersede event's own §5.2.2 `refs[].ref` values (§3.4.4:
+// "rejected | supersede (refs successor decision)" — the successor's id).
+// Every one of these leaves the result nil (UNRESOLVED, which D9's rule
+// reads as "refuse", never a resolved grant): a non-supersede transition,
+// a non-decision kind, no refs at all, a resolver without the capability,
+// or a resolver that cannot resolve THIS particular id.
+func resolveSuccessorEnvelope(resolver validate.Resolver, kind, transition string, refs []string) *validate.SuccessorEnvelope {
+	if transition != "supersede" || kind != "decision" || len(refs) == 0 {
+		return nil
+	}
+	successorResolver, capable := resolver.(validate.SuccessorResolver)
+	if !capable {
+		return nil
+	}
+	author, state, ok := successorResolver.Successor(refs[0])
+	if !ok {
+		return nil
+	}
+	return &validate.SuccessorEnvelope{Author: author, State: state}
 }
 
 // toStringSlice normalizes an envelope `to` field into a []string.

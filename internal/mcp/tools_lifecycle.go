@@ -195,16 +195,35 @@ func newLifecycleHandler(spec lifecycleVerbSpec, deps WriteDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("%s: %w", spec.Verb, err)
 		}
 
+		// parsedRefs (D-3, mirroring internal/cli's LifecycleCommand.Run):
+		// resolved ONCE, before the batch loop, and reused for BOTH
+		// evaluateCandidateWithRefs' own successor resolution (the supersede
+		// row's only consumer, evaluateCandidateWithRefs/
+		// resolveSuccessorFacts) and the event's own `refs[]` field below —
+		// never parsed a second time.
+		parsedRefs := refsFromList(in.Refs)
+
 		var files []space.FileWrite
 		for _, id := range in.IDs {
-			evaluation, _, err := evaluateCandidate(deps.MirrorDir, deps.Manifest, id, fold.Event{
+			evaluation, env, successor, err := evaluateCandidateWithRefs(deps.MirrorDir, deps.Manifest, id, fold.Event{
 				Transition: spec.Transition, Actor: actor,
-			})
+			}, parsedRefs)
 			if err != nil {
 				return nil, "", fmt.Errorf("%s: %s: %w", spec.Verb, id, err)
 			}
 			if evaluation.Verdict != fold.VerdictLegal {
-				return nil, "", fmt.Errorf("%s: %w", spec.Verb, verdictError(id, evaluation.Verdict))
+				// D-3 (wave 2c-mcp): the ONE local gate that resolves real
+				// SuccessorFacts (evaluateCandidateWithRefs, above) learns
+				// the SAME decision-supersede discrimination checkLifecycle
+				// already applies — see decisionSupersedeRefusalError's own
+				// doc comment for the exact coarseness this reuses (mirrors
+				// internal/cli's LifecycleCommand.Run's own identical
+				// call-site check verbatim).
+				verdictErr := verdictError(id, evaluation.Verdict)
+				if evaluation.Verdict == fold.VerdictUnauthorizedActor && spec.Transition == fold.TSupersede && env.Kind == fold.KindDecision {
+					verdictErr = decisionSupersedeRefusalError(id, successor != nil)
+				}
+				return nil, "", fmt.Errorf("%s: %w", spec.Verb, verdictErr)
 			}
 			_, probe, err := loadEnvelope(deps.MirrorDir, id)
 			if err != nil {
@@ -232,7 +251,7 @@ func newLifecycleHandler(spec lifecycleVerbSpec, deps WriteDeps) HandlerFunc {
 				ev.ReasonCode = in.ReasonCode
 			}
 			if len(in.Refs) > 0 {
-				ev.Refs = refsFromList(in.Refs)
+				ev.Refs = parsedRefs
 			}
 			if in.Findings != "" {
 				ev.Note = in.Findings

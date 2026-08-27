@@ -13,6 +13,7 @@ import (
 
 	"fmt"
 	"github.com/ydnikolaev/a2ahub/internal/template"
+	"github.com/ydnikolaev/a2ahub/internal/validate"
 	"io"
 	"path/filepath"
 	"sort"
@@ -250,22 +251,60 @@ func membership(manifest space.Manifest) fold.MembershipView {
 	}
 }
 
-// evaluateCandidate is the generic (non-response-scoped) pre-write evaluator
-// every write tool except verify/dispute uses. It is the package's one bridge
-// from committed envelope/history/membership inputs to fold.EvaluateCandidate;
-// callers serialize only the returned receipt, never derive state themselves.
+// evaluateCandidate is the generic (non-response-scoped, no-successor-facts)
+// pre-write evaluator most write tools use. It is this package's one bridge
+// from committed envelope/history/membership inputs to fold.EvaluateCandidate
+// for every caller that has no successor refs to resolve — tools_contract.go's
+// deprecate/retire evaluations (off this wave's allowlist) still call this
+// EXACT 3-return-value shape, so it stays evaluateCandidateWithRefs' own
+// thin nil-refs wrapper rather than changing shape out from under those
+// callers. callers serialize only the returned receipt, never derive state
+// themselves.
 //
 // candidate.Version is "" for every non-contract-version transition; a
 // contract publish/deprecate/retire caller supplies the version the candidate
 // event itself names, resolved before calling this.
 func evaluateCandidate(mirrorDir string, manifest space.Manifest, id string, candidate fold.Event) (fold.CandidateEvaluation, fold.Envelope, error) {
+	evaluation, env, _, err := evaluateCandidateWithRefs(mirrorDir, manifest, id, candidate, nil)
+	return evaluation, env, err
+}
+
+// evaluateCandidateWithRefs is evaluateCandidate, extended (no-silent-yes-
+// 2026-08/wave 2d — the CLI write surface gained the same extension in wave
+// 2b) to accept the batch's own §5.2.2 `refs[].ref` values and resolve
+// the SUCCESSOR facts a decision-supersede row's declared Precondition
+// checks (internal/fold/table.go), via fold.EvaluateCandidateWithSuccessor
+// rather than the nil-successor fold.EvaluateCandidate wrapper. Used ONLY by
+// the generic table-driven verb handler (newLifecycleHandler,
+// tools_lifecycle.go), the ONE write path whose spec.Transition can equal
+// TSupersede on a decision — the same way the CLI write surface's own
+// generic pre-write evaluator already does, via that package's own
+// MirrorResolver.Successor —
+// never a second, independently typed successor reader.
+//
+// Before this fix, every caller on this surface reached fold's
+// nil-successor EvaluateCandidate wrapper unconditionally, so both
+// decision-supersede rows refused UNCONDITIONALLY for every actor through
+// the MCP tool surface — the defect this closes (see resolveSuccessorFacts'
+// own doc comment for the resolution rule).
+//
+// The returned *fold.SuccessorFacts is the SAME value this function already
+// resolves internally and passes to fold.EvaluateCandidateWithSuccessor —
+// surfaced to the caller so a refusal on a decision-supersede candidate can
+// discriminate "successor resolved, precondition failed" (LFC-005 alone)
+// from "successor unresolvable" (LFC-005 paired with an LFC-006 advisory),
+// mirroring internal/validate's own checkLifecycle discrimination
+// (`ev.SuccessorEnvelope == nil`). nil for every non-supersede/non-decision/
+// ref-less call (refs is nil for every caller today except the generic
+// handler's own supersede row).
+func evaluateCandidateWithRefs(mirrorDir string, manifest space.Manifest, id string, candidate fold.Event, refs []refEntry) (fold.CandidateEvaluation, fold.Envelope, *fold.SuccessorFacts, error) {
 	env, _, err := loadEnvelope(mirrorDir, id)
 	if err != nil {
-		return fold.CandidateEvaluation{}, fold.Envelope{}, err
+		return fold.CandidateEvaluation{}, fold.Envelope{}, nil, err
 	}
 	all, err := readAllEvents(mirrorDir)
 	if err != nil {
-		return fold.CandidateEvaluation{}, env, err
+		return fold.CandidateEvaluation{}, env, nil, err
 	}
 	events := foldEvents(all, id)
 	memb := membership(manifest)
@@ -275,7 +314,44 @@ func evaluateCandidate(mirrorDir string, manifest space.Manifest, id string, can
 		prior = fold.Fold(env.Kind, env, events, memb)
 	}
 	candidate.Subject = id
-	return fold.EvaluateCandidate(env.Kind, prior, candidate, env, memb), env, nil
+	successor := resolveSuccessorFacts(mirrorDir, manifest, env.Kind, candidate.Transition, refs)
+	return fold.EvaluateCandidateWithSuccessor(env.Kind, prior, candidate, env, memb, successor), env, successor, nil
+}
+
+// resolveSuccessorFacts resolves the caller-supplied facts about the
+// SUCCESSOR artifact a decision-supersede row's declared
+// SuccessorPrecondition checks (internal/fold/table.go,
+// fold.CheckCandidateWithSuccessor) — this package's own
+// MirrorResolver.Successor (validate.SuccessorResolver), the SAME capability
+// the SUBMIT path's resolveSuccessorEnvelope (adapters.go) already uses,
+// never a second successor reader. The CLI write surface carries the
+// structurally identical helper over its own resolver — ADR-001
+// forbids internal/mcp importing internal/cli, so this is this package's own
+// copy of the same gate.
+//
+// Gated exactly like internal/cli's own gate: only a decision's own
+// supersede transition, with at least one ref, ever resolves — every other
+// transition/kind/ref-less call returns nil (unresolved). Every row but the
+// two decision-supersede rows carries PreconditionNone and never consults
+// this value regardless (preconditionTable, table.go), so this gate is a
+// cost optimization (skip the mirror read) rather than a correctness
+// requirement.
+//
+// A nil return (successorID absent from THIS caller's own local mirror,
+// unparsable, or the resolver call failing) is D9's own "unresolved" case
+// (fold/types.go's SuccessorPrecondition doc comment) —
+// CheckCandidateWithSuccessor refuses a Precondition-bearing row uniformly
+// rather than silently granting on a resolution failure.
+func resolveSuccessorFacts(mirrorDir string, manifest space.Manifest, kind fold.Kind, transition string, refs []refEntry) *fold.SuccessorFacts {
+	if transition != fold.TSupersede || kind != fold.KindDecision || len(refs) == 0 {
+		return nil
+	}
+	resolver := NewMirrorResolver(mirrorDir, manifest)
+	author, state, ok := resolver.Successor(refs[0].Ref)
+	if !ok {
+		return nil
+	}
+	return &fold.SuccessorFacts{Author: author, State: fold.State(state)}
 }
 
 // evaluateResponseCandidate is the verify/dispute pre-write evaluator. The
@@ -353,7 +429,27 @@ func resolveResponseID(mirrorDir string, target, refsHint string) (string, error
 }
 
 // verdictError renders a registry-code-carrying refusal error for a
-// non-legal fold.Verdict (mirrors internal/cli's verdictRefusalMessage).
+// non-legal fold.Verdict; the CLI write surface carries its own twin.
+// UNCHANGED signature: tools_contract.go's/tools_submit.go's callers (off
+// this wave's allowlist) still call this exact 2-arg shape, and none of
+// their own transitions can ever be a decision's own supersede (the ONE
+// case that needs LFC-005/LFC-006 instead — see
+// decisionSupersedeRefusalError, below), so widening this signature to
+// thread that discrimination through every caller would only add dead
+// parameters to callers that could never use them. The generic table-driven
+// verb handler (newLifecycleHandler, tools_lifecycle.go) — the ONE write
+// path whose own transition can equal TSupersede on a decision — instead
+// applies the SAME discrimination checkLifecycle already applies
+// (isDecisionSupersedeCandidate's own coarse test: transition ==
+// "supersede" && kind == "decision") AT ITS OWN CALL SITE, calling
+// decisionSupersedeRefusalError directly instead of this function. The CLI
+// write surface's own verb runner does the identical thing with its own
+// twins: the generic renderer there is equally unaware of the
+// decision-supersede case, and the same call-site check substitutes.
+//
+// The comments here named those CLI functions by symbol until 2026-08-27,
+// which is the documentation convention ADR-019 exists to end — caught by
+// ADR-019's own gate, on the wave that wrote them.
 func verdictError(id string, verdict fold.Verdict) error {
 	switch verdict {
 	case fold.VerdictIllegalTransition:
@@ -363,6 +459,58 @@ func verdictError(id string, verdict fold.Verdict) error {
 	default:
 		return fmt.Errorf("%s: refused: unknown verdict %v", id, verdict)
 	}
+}
+
+// decisionSupersedeRefusalError renders the LFC-005 (optionally paired with
+// an LFC-006 advisory) refusal for a decision `supersede` candidate that
+// CheckCandidateWithSuccessor refused as VerdictUnauthorizedActor — the
+// generic table-driven verb handler's own call-site substitute for
+// verdictError's generic LFC-002, exactly when evaluation.Verdict ==
+// VerdictUnauthorizedActor && spec.Transition == fold.TSupersede && env.Kind
+// == fold.KindDecision (newLifecycleHandler, tools_lifecycle.go — mirrors
+// internal/cli's LifecycleCommand.Run's own identical call-site check).
+//
+// The wording is NOT this package's. It is
+// validate.DecisionSupersedePreconditionMessage and
+// validate.DecisionSupersedeUnresolvedMessage — one home, below both write
+// surfaces, which both already import. AC 6 requires the two surfaces to
+// produce the SAME refusal message, and referencing one symbol is how that
+// stops depending on two people typing the same sentence.
+//
+// This comment said the opposite for one wave: three byte-identical copies
+// existed (here, internal/cli, internal/validate) because validate's own
+// builders were unexported and internal/mcp may not import internal/cli
+// (ADR-001). That was reported rather than hidden, and then fixed — ADR-019's
+// move-down, applied to the refusal TEXT, because the text is part of the
+// rule: spec 06's discoverability instrument requires the message to name
+// what would make the supersede legal.
+//
+// The merge silently disarmed the test that had been holding the copies in
+// agreement — cmd/a2a's byte-equality parity suite can only see drift while
+// the copies are independent. internal/validate/supersede_message_test.go is
+// the replacement, and it asserts what the message must TEACH rather than
+// that two copies match. See docs/decisions.md's ADR-019 amendment.
+//
+// successorResolved mirrors checkLifecycle's own `ev.SuccessorEnvelope ==
+// nil` test (D9's own rule): false means the successor could not be
+// resolved AT ALL (never a synthesized resolution), which pairs the LFC-006
+// UNMEASURED advisory alongside LFC-005 — never alone. true means the
+// successor WAS resolved and the precondition still failed — LFC-005 alone.
+//
+// The message names WHAT WOULD MAKE THE SUPERSEDE LEGAL (spec 06's own
+// discoverability instrument, epic AC-2): an approved successor, or one the
+// acting system authored.
+func decisionSupersedeRefusalError(id string, successorResolved bool) error {
+	// The wording is validate's, not this file's: ADR-019's move-down applied
+	// to the refusal TEXT, because the text is part of the rule (spec 06's
+	// discoverability instrument — the message names what would make the
+	// supersede legal). internal/mcp/eventdoc.go references the same two
+	// constants, so the two surfaces cannot drift by editing one.
+	message := fmt.Sprintf("%s: refused: %s (LFC-005)", id, validate.DecisionSupersedePreconditionMessage)
+	if !successorResolved {
+		message += "; " + validate.DecisionSupersedeUnresolvedMessage + " (LFC-006)"
+	}
+	return fmt.Errorf("%s", message)
 }
 
 // --- shared write-verb plumbing (constructor DI) -------------------------

@@ -18,7 +18,6 @@ import (
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
-	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
@@ -46,12 +45,14 @@ func residueHasCode(vs []validate.Violation, code string) bool {
 // was silently dropped from that draft's candidate list and LFC-004 could
 // never fire in production.
 //
-// The parent's own envelope is pre-registered with legality.RegisterEnvelope
-// — this test's own emulation of the lead-level follow-up this brief's
-// report names (adapters.go's ValidateSubmit has no way to look up an
-// unrelated parent's envelope facts; a real future caller that co-submits
-// this shape must do the same registration cmd_submit.go already does for
-// a draft's own id, adapters.go:296-299's documented pattern).
+// The parent's own candidate carries a ZERO-VALUE Envelope (no-silent-
+// yes-2026-08/P6, US-3: adapters.go's ValidateSubmit has no way to look up
+// an unrelated parent's envelope facts, documented on that widening's own
+// comment) — checkResidue (LFC-004) never reads Envelope at all, so this
+// is inert against THIS test's own assertion; it only means the widened
+// close candidate's OWN legality verdict (a separate check, LFC-001/002)
+// is not meaningful here, which this test does not assert against either
+// way.
 func TestSubmitValidatorAdapter_LFC004_ClosingParentWithUnmetCriterionRefuses(t *testing.T) {
 	t.Parallel()
 	corpus, err := schema.Load()
@@ -70,13 +71,6 @@ func TestSubmitValidatorAdapter_LFC004_ClosingParentWithUnmetCriterionRefuses(t 
 
 	const responseID = "XS-axon-20260809-lfc04"
 	const parentID = "XW-axon-20260801-close1"
-
-	// The parent's envelope facts, pre-registered so CheckLegality's own
-	// "no envelope registered for subject" guard (adapters.go) does not
-	// fire for the close candidate — see this test's own doc comment.
-	legality.RegisterEnvelope(parentID, fold.Envelope{
-		ID: parentID, Kind: fold.KindWorkRequest, From: "seomatrix", To: []string{"axon"},
-	})
 
 	responseContent := []byte("---\n" +
 		"schema: envelope/v2\n" +

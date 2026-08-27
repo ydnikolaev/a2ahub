@@ -2667,3 +2667,146 @@ func TestEquivLifecycleRefusalTextParity(t *testing.T) {
 		}
 	})
 }
+
+// TestEquivDecisionSupersedeRefusalTextParity is no-silent-yes-2026-08/P6's
+// AC 6, now closed on BOTH halves: CLI and MCP must produce the SAME
+// refusal text for the same illegal decision supersede — not merely the
+// same STRUCTURE (B38's own finding, TestEquivLifecycleRefusalTextParity's
+// own doc comment above), and not merely a shared SUBSTRING either.
+//
+// Before wave 2c-mcp (this wave), internal/mcp's own pre-write UX gate
+// (eventdoc.go's evaluateCandidate) called fold.EvaluateCandidate — the
+// NO-successor-facts wrapper — unconditionally, so a decision `supersede`
+// refused UNIFORMLY on this surface (D9's own rule) but stayed labelled
+// "(LFC-002)" rather than "(LFC-005)"/"(LFC-006)": internal/cli's own half
+// had already learned the LFC-005/LFC-006 discrimination (wave 2c,
+// cmd_lifecycle.go's decisionSupersedeRefusalMessage), so the two surfaces'
+// wording had DIVERGED — this test's own prior revision asserted only the
+// shared substring both COULD still produce, which is exactly the
+// "structure, not text" gap AC 6 exists to close.
+//
+// internal/mcp/eventdoc.go's evaluateCandidateWithRefs now resolves real
+// *fold.SuccessorFacts via this package's own MirrorResolver.Successor (the
+// SAME capability the SUBMIT path's resolveSuccessorEnvelope already used)
+// and calls fold.EvaluateCandidateWithSuccessor directly; the generic
+// table-driven verb handler (newLifecycleHandler, tools_lifecycle.go)
+// applies the SAME decision-supersede discrimination internal/cli's
+// LifecycleCommand.Run applies at its own call site, rendering the refusal
+// via decisionSupersedeRefusalError — reused VERBATIM from internal/cli's
+// decisionSupersedeRefusalMessage's own wording (see that function's own
+// doc comment for why this is now a THIRD byte-identical copy of the
+// string rather than a shared call: internal/validate's own message-
+// building functions are unexported, and internal/mcp may not import
+// internal/cli, ADR-001 — an ADR-019 finding, this wave's own report).
+//
+// Two sub-cases exercise BOTH halves of D9's UNMEASURED pairing rule,
+// asserting the FULL refusal text — not a substring — is byte-identical
+// between the two surfaces (modulo CLI's trailing newline, which
+// cli.Command.Run's own Fprintf always appends and MCP's returned error
+// never carries):
+//   - the successor IS resolved but fails its declared precondition
+//     (LFC-005 alone, never paired with LFC-006);
+//   - the successor CANNOT be resolved at all (LFC-005 paired with an
+//     LFC-006 advisory, never LFC-005 alone).
+func TestEquivDecisionSupersedeRefusalTextParity(t *testing.T) {
+	t.Parallel()
+
+	// runCase drives the SAME decision-supersede candidate through both
+	// surfaces and returns each one's own full refusal text (CLI's own
+	// stderr line, trailing newline trimmed; MCP's returned error's own
+	// Error() string) — assertion is the caller's, so each sub-case can
+	// name what it additionally checks (the LFC-006 pairing, or its
+	// absence) beyond the shared byte-identity requirement.
+	runCase := func(t *testing.T, id, successorID, cliOwnSystem, mcpOwnSystem string, seed func(t *testing.T, mirrorDir string)) (cliText, mcpText string) {
+		t.Helper()
+
+		cliDir, cliFunnel, _ := newEquivMirror(t, cliOwnSystem)
+		seed(t, cliDir)
+		cliCmd := cli.NewSupersedeCommand(cliFunnel, cliDir, "fixture-space", cliOwnSystem, equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
+		io, _, cliErr := equivIO()
+		if code := cliCmd.Run(context.Background(), []string{"--refs", successorID, id}, io); code == 0 {
+			t.Fatal("supersede: CLI accepted a decision-supersede this case's own successor precondition must refuse")
+		}
+
+		mcpDir, mcpFunnel, _ := newEquivMirror(t, mcpOwnSystem)
+		seed(t, mcpDir)
+		writeDeps := mcp.WriteDeps{
+			Funnel: mcpFunnel, MirrorDir: mcpDir, SpaceID: "fixture-space", OwnSystem: mcpOwnSystem,
+			Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""), ResolveActor: equivMCPActorResolver("agent", "bot"),
+			Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
+		}
+		registry := mcp.BuildRegistry(nil, writeDeps, "", nil, mcp.NewDeps{})
+		spec, ok := registry.Get("a2a_lifecycle")
+		if !ok {
+			t.Fatal("a2a_lifecycle is not registered")
+		}
+		raw, err := marshalWithAction("supersede", mcp.LifecycleInput{IDs: []string{id}, Refs: []string{successorID}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _, mcpErr := spec.Handler(context.Background(), raw)
+		if mcpErr == nil {
+			t.Fatal("supersede: MCP accepted a decision-supersede this case's own successor precondition must refuse")
+		}
+
+		if len(cliFunnel.calls) != 0 || len(mcpFunnel.calls) != 0 {
+			t.Fatalf("supersede: a local refusal must precede both funnels: CLI=%d MCP=%d", len(cliFunnel.calls), len(mcpFunnel.calls))
+		}
+		return strings.TrimRight(cliErr.String(), "\n"), mcpErr.Error()
+	}
+
+	t.Run("successor_resolved_precondition_fails_is_LFC005_alone", func(t *testing.T) {
+		t.Parallel()
+		const id = "XD-axon-20260827-eq03"
+		const successorID = "XD-axon-20260827-eq04"
+		seed := func(t *testing.T, mirrorDir string) {
+			equivWriteDecision(t, mirrorDir, id, []string{"beta"})
+			equivWriteEvent(t, mirrorDir, "axon", 0, id, "propose", "axon")
+			equivWriteEvent(t, mirrorDir, "axon", 1, id, "reject", "beta")
+			// equivWriteDecision always writes `from: axon` — the successor
+			// IS resolvable (it exists in this mirror), but the ACTING
+			// actor below is beta, so the author precondition fails: the
+			// successor is resolved-and-failing, never unresolved.
+			equivWriteDecision(t, mirrorDir, successorID, []string{"beta"})
+		}
+		cliText, mcpText := runCase(t, id, successorID, "beta", "beta", seed)
+
+		for _, want := range []string{id + ": refused:", "(LFC-005)"} {
+			if !strings.Contains(cliText, want) {
+				t.Fatalf("CLI refusal does not name %q:\n%s", want, cliText)
+			}
+		}
+		if strings.Contains(cliText, "LFC-006") {
+			t.Fatalf("CLI refusal wrongly pairs LFC-006 (successor WAS resolved): %s", cliText)
+		}
+		if strings.Contains(mcpText, "LFC-006") {
+			t.Fatalf("MCP refusal wrongly pairs LFC-006 (successor WAS resolved): %s", mcpText)
+		}
+		if cliText != mcpText {
+			t.Fatalf("supersede refusal text has drifted between surfaces:\nCLI: %s\nMCP: %s", cliText, mcpText)
+		}
+	})
+
+	t.Run("successor_unresolvable_is_LFC005_plus_LFC006", func(t *testing.T) {
+		t.Parallel()
+		const id = "XD-axon-20260827-eq01"
+		const successorID = "XD-axon-20260827-eq02"
+		seed := func(t *testing.T, mirrorDir string) {
+			equivWriteDecision(t, mirrorDir, id, []string{"beta"})
+			equivWriteEvent(t, mirrorDir, "axon", 0, id, "propose", "axon")
+			equivWriteEvent(t, mirrorDir, "axon", 1, id, "reject", "beta")
+			// No successor artifact written at all: refs names an id
+			// neither surface's resolver can ever contain.
+		}
+		cliText, mcpText := runCase(t, id, successorID, "axon", "axon", seed)
+
+		for _, want := range []string{id + ": refused:", "(LFC-005)", "(LFC-006)"} {
+			if !strings.Contains(cliText, want) {
+				t.Fatalf("CLI refusal does not name %q:\n%s", want, cliText)
+			}
+		}
+		if cliText != mcpText {
+			t.Fatalf("supersede refusal text has drifted between surfaces:\nCLI: %s\nMCP: %s", cliText, mcpText)
+		}
+	})
+}

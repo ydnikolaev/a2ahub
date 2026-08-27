@@ -210,15 +210,35 @@ func TestEvaluateCandidatePropertiesAcrossTransitionRows(t *testing.T) {
 
 	for i, row := range rows {
 		kind, env, prior, event := evaluationFixtureForRow(i, row)
-		got := EvaluateCandidate(kind, prior, event, env, alwaysMember)
+
+		// no-silent-yes-2026-08/P6's two decision-supersede rows (table.go)
+		// declare a SuccessorPrecondition: the fixture is legal only once
+		// EvaluateCandidateWithSuccessor is handed facts that satisfy it —
+		// and D9's own rule (types.go) requires the SAME row to refuse,
+		// never silently grant, when no facts are resolved at all
+		// (EvaluateCandidate's nil-facts wrapper). Both halves are asserted
+		// here, not just the satisfied one, so a future change that makes
+		// the unresolved path silently grant again reddens this property
+		// instead of the regression recurring unnoticed.
+		var successor *SuccessorFacts
+		if row.Precondition != PreconditionNone {
+			successor = successorFactsSatisfying(row.Precondition, event.Actor.System)
+
+			unresolved := EvaluateCandidate(kind, prior, event, env, alwaysMember)
+			if unresolved.Verdict != VerdictUnauthorizedActor {
+				t.Fatalf("row %d (%+v): unresolved successor facts must refuse, got %q", i, row, unresolved.Verdict)
+			}
+		}
+
+		got := EvaluateCandidateWithSuccessor(kind, prior, event, env, alwaysMember, successor)
 
 		checkPrior := prior
 		if event.Transition == TVerify || event.Transition == TDispute {
 			checkPrior = Result{Kind: KindResponse, State: prior.Responses[event.Subject]}
 		}
-		wantVerdict := CheckCandidate(kind, checkPrior, event.Transition, event.Version, env, event.Actor, MembershipMember)
+		wantVerdict := CheckCandidateWithSuccessor(kind, checkPrior, event.Transition, event.Version, env, event.Actor, MembershipMember, successor)
 		if got.Verdict != wantVerdict {
-			t.Fatalf("row %d (%+v): Verdict = %q, CheckCandidate = %q", i, row, got.Verdict, wantVerdict)
+			t.Fatalf("row %d (%+v): Verdict = %q, CheckCandidateWithSuccessor = %q", i, row, got.Verdict, wantVerdict)
 		}
 		if got.Verdict != VerdictLegal {
 			t.Fatalf("row %d (%+v): fixture must be legal, got %q", i, row, got.Verdict)
@@ -315,4 +335,26 @@ func evaluationFixtureForRow(i int, row Row) (Kind, Envelope, Result, Event) {
 	}
 
 	return kind, env, prior, event
+}
+
+// successorFactsSatisfying builds the minimal *SuccessorFacts that
+// satisfies precondition for an actor acting as actingSystem — the two
+// decision-supersede rows' own §3.4.4 requirement (table.go), never a
+// generic/loose fixture: PreconditionSuccessorAuthor needs the successor's
+// own author to equal the ACTING actor (State left at a non-approved value
+// on purpose, so this row's own fixture cannot pass by accidentally also
+// satisfying the OTHER row's Approved check); PreconditionSuccessorApproved
+// needs the successor's own folded State to be approved, regardless of
+// actor (Author deliberately left non-matching, same reasoning in
+// reverse). Returns nil for PreconditionNone — no row but these two ever
+// reaches this function with a non-None precondition.
+func successorFactsSatisfying(precondition SuccessorPrecondition, actingSystem string) *SuccessorFacts {
+	switch precondition {
+	case PreconditionSuccessorAuthor:
+		return &SuccessorFacts{Author: actingSystem, State: StateProposed}
+	case PreconditionSuccessorApproved:
+		return &SuccessorFacts{Author: "someone-else", State: StateApproved}
+	default:
+		return nil
+	}
 }

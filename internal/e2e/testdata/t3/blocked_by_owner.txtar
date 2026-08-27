@@ -21,3 +21,106 @@
 # readiness audit found unproven at this tier.
 exec a2a thread thread:beta-20260723-blk1
 stdout 'XW-beta-20260723-blk1\tblocked\twaiting_on=beta\t'
+
+# no-silent-yes-2026-08/P6 (D7/D9, spec 06 §11): supersede-unapproved-successor.
+# A rejected decision's own `supersede` must be refused unless the named
+# successor satisfies §3.4.4's own precondition — fold's two decision-
+# supersede rows (table.go) used to grant this unconditionally
+# (RoleAny, no precondition) and now refuse absent a caller-resolved
+# successor fact (D9's own rule: an unresolved fact may not read as a
+# grant). Seeded directly into the local mirror clone (no origin push,
+# no shared-fixture contamination — see this stanza's own predecessor
+# committing beta/gamma only, never axon, matching
+# blockedByOwnerThread's own discipline above) so this scenario needs no
+# change to the Go-level fixture seeding this phase's allowlist does not
+# reach.
+#
+# UPDATED (wave 2b's own regression fix): internal/cli's own pre-write UX
+# gate for a bare `a2a supersede` (lifecycleEvaluateCandidate,
+# cmd_lifecycle.go) no longer calls fold's no-successor-facts wrapper
+# unconditionally — it now resolves real SuccessorFacts via
+# MirrorResolver.Successor (adapters.go, the SAME capability
+# internal/validate's own SUBMIT path already uses through
+# resolveSuccessorEnvelope) and calls fold.EvaluateCandidateWithSuccessor
+# directly. This scenario's own refusal still fires, for the SAME reason as
+# before: XD-beta-20260827-sc02 is seeded nowhere in this mirror, so
+# MirrorResolver.Successor cannot resolve it (ok=false) — D9's own rule
+# (types.go) reads an unresolved fact as a refusal, never a silent grant.
+#
+# UPDATED AGAIN (wave 2c, D-3, this wave's report): the verb's own local
+# gate now learns the SAME facts-absent/facts-present-and-failing
+# discrimination internal/validate's checkLifecycle already applied at
+# submit-time (this scenario's own successor is UNRESOLVED, never even
+# reaching "present"), so the refusal now names the code this epic actually
+# minted for this rule — LFC-005 — paired with an LFC-006 advisory line
+# naming the successor as unresolved (never silently granted), rather than
+# the mislabeled generic-authorization LFC-002 wave 2b's own regression fix
+# left in place. See internal/cli/cmd_lifecycle.go's own
+# decisionSupersedeRefusalMessage for the exact wording this reuses
+# verbatim from internal/validate/lifecycle.go's own registered strings.
+mkdir -p .a2a/cache/mirrors/fixture-space/decisions
+mkdir -p .a2a/cache/mirrors/fixture-space/axon/events/2020
+cp xd-supersede-predecessor.md .a2a/cache/mirrors/fixture-space/decisions/XD-beta-20260827-rj01.md
+cp xd-supersede-propose.yaml .a2a/cache/mirrors/fixture-space/axon/events/2020/01ARZ3NDEKTSV4RRFFQ69G5FA1.yaml
+cp xd-supersede-reject.yaml .a2a/cache/mirrors/fixture-space/axon/events/2020/01ARZ3NDEKTSV4RRFFQ69G5FA2.yaml
+
+! exec a2a supersede --refs XD-beta-20260827-sc02 XD-beta-20260827-rj01
+stderr 'declared precondition'
+stderr '\(LFC-005\)'
+stderr 'could not be resolved at all'
+stderr '\(LFC-006\)'
+
+# NOT ADDED (this wave's report, deliberate, matching the discipline this
+# file's own predecessor comment names — "two waves have now correctly
+# refused to fake this"): a POSITIVE stanza proving a satisfying successor
+# lets `a2a supersede` SUCCEED. Steps 1-2 of this wave's own fix make the
+# underlying resolution genuinely possible now (proven directly against
+# MirrorResolver.Successor, internal/cli+internal/mcp adapters_test.go, and
+# through the full verb, internal/cli/cmd_lifecycle_test.go's own
+# TestSupersedeDecisionRegressionFix/approved_by_successor_with_real_
+# quorum_across_sections_succeeds) — but NOT through this T3 harness:
+# TestT3Scripts's own Setup (txtar_test.go) pins A2A_GITHUB_API at a
+# 403-only denial stub, never a working fake host (internal/e2e/coverage.go's
+# own words, the `data` catalog row's comment), and every write verb driven
+# in this directory is `! exec` for exactly that reason — a supersede that
+# SUCCEEDS must still reach the write funnel's PR-open call, which this
+# fixture cannot complete. Faking a green write here would prove nothing
+# about the product; the real positive proof lives at the two tiers named
+# above.
+
+-- xd-supersede-predecessor.md --
+---
+schema: envelope/v1
+id: XD-beta-20260827-rj01
+type: decision
+title: replay-scoped decision fixture for the supersede precondition scenario
+space: fixture-space
+from: beta
+to: [gamma]
+thread: thread:beta-20260827-sup1
+actor: {kind: agent, name: bot}
+created: 2026-08-27T09:00:00Z
+priority: p3
+blocking: true
+classification: internal
+required_approvers: [gamma]
+---
+fixture only, never a real proposal.
+
+-- xd-supersede-propose.yaml --
+schema: event/v1
+event: 01ARZ3NDEKTSV4RRFFQ69G5FA1
+space: fixture-space
+subject: XD-beta-20260827-rj01
+transition: propose
+actor: {kind: agent, name: bot, system: beta}
+at: 2020-01-01T00:00:00Z
+
+-- xd-supersede-reject.yaml --
+schema: event/v1
+event: 01ARZ3NDEKTSV4RRFFQ69G5FA2
+space: fixture-space
+subject: XD-beta-20260827-rj01
+transition: reject
+actor: {kind: agent, name: bot, system: gamma}
+at: 2020-01-01T00:01:00Z

@@ -918,6 +918,198 @@ func TestNoteHandlerChecksAuthorizationWithoutStatePrecondition(t *testing.T) {
 	}
 }
 
+// supersedeVerbSpec finds the "supersede" row in LifecycleVerbTable by
+// name rather than a hardcoded index — this file's own existing call sites
+// use LifecycleVerbTable[N] with a trailing verb comment; a lookup avoids
+// silently drifting onto the wrong row if the table is ever reordered.
+func supersedeVerbSpec(t *testing.T) lifecycleVerbSpec {
+	t.Helper()
+	for _, spec := range LifecycleVerbTable {
+		if spec.Verb == "supersede" {
+			return spec
+		}
+	}
+	t.Fatal("LifecycleVerbTable carries no \"supersede\" row")
+	return lifecycleVerbSpec{}
+}
+
+// TestSupersedeDecisionSuccessorPrecondition is the MCP write-tool surface's
+// own regression proof, mirroring internal/cli's
+// TestSupersedeDecisionRegressionFix (cmd_lifecycle_test.go) exactly: before
+// this fix, newLifecycleHandler's own generic table row reached
+// evaluateCandidate (eventdoc.go), which called fold's nil-successor
+// EvaluateCandidate wrapper UNCONDITIONALLY for every `a2a_lifecycle
+// supersede` call — so both decision-supersede rows (internal/fold/table.go)
+// refused for every actor, including one with a genuinely satisfying
+// successor. newLifecycleHandler now resolves refs and calls
+// evaluateCandidateWithRefs, which resolves real *fold.SuccessorFacts via
+// MirrorResolver.Successor (the SAME capability the SUBMIT path's
+// resolveSuccessorEnvelope already used) and calls
+// fold.EvaluateCandidateWithSuccessor directly.
+func TestSupersedeDecisionSuccessorPrecondition(t *testing.T) {
+	t.Parallel()
+
+	t.Run("satisfying_successor_succeeds_through_mcp", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		predecessorID := "XD-axon-20260827-p001"
+		successorID := "XD-axon-20260827-p002"
+		writeDecisionArtifactMCP(t, mirrorDir, predecessorID, "axon", []string{"beta"})
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, predecessorID, "propose", "axon")
+		writeLifecycleEvent(t, mirrorDir, "beta", 1, predecessorID, "reject", "beta")
+		// writeDecisionArtifactMCP's own `from` argument ("axon") matches the
+		// acting actor below, satisfying §3.4.4's "author of the successor"
+		// (PreconditionSuccessorAuthor, internal/fold/table.go) — the exact
+		// case that was structurally unreachable through this surface before
+		// this fix, whatever actor called it.
+		writeDecisionArtifactMCP(t, mirrorDir, successorID, "axon", []string{"beta"})
+
+		fake := &fakeFunnel{}
+		deps := testWriteDeps(mirrorDir, fake)
+		deps.OwnSystem = "axon"
+		handler := newLifecycleHandler(supersedeVerbSpec(t), deps)
+
+		args, err := json.Marshal(LifecycleInput{IDs: []string{predecessorID}, Refs: []string{successorID}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := handler(context.Background(), args); err != nil {
+			t.Fatalf("supersede: unexpected refusal (legitimate actor, satisfying successor must NOT be refused): %v", err)
+		}
+		if len(fake.calls) != 1 {
+			t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+		}
+	})
+
+	t.Run("resolved_but_mismatched_successor_author_is_LFC005_alone", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		predecessorID := "XD-axon-20260827-p003"
+		successorID := "XD-axon-20260827-p004"
+		writeDecisionArtifactMCP(t, mirrorDir, predecessorID, "axon", []string{"beta"})
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, predecessorID, "propose", "axon")
+		writeLifecycleEvent(t, mirrorDir, "beta", 1, predecessorID, "reject", "beta")
+		// Successor is authored by axon, but the ACTING actor below is beta —
+		// the precondition requires the successor's own author to equal the
+		// acting actor, so this must still refuse: the fix resolves real
+		// facts, it does not grant unconditionally.
+		writeDecisionArtifactMCP(t, mirrorDir, successorID, "axon", []string{"beta"})
+
+		fake := &fakeFunnel{}
+		deps := testWriteDeps(mirrorDir, fake)
+		deps.OwnSystem = "beta"
+		handler := newLifecycleHandler(supersedeVerbSpec(t), deps)
+
+		args, err := json.Marshal(LifecycleInput{IDs: []string{predecessorID}, Refs: []string{successorID}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _, err = handler(context.Background(), args)
+		if err == nil {
+			t.Fatal("expected a refusal (successor authored by axon, acting actor is beta)")
+		}
+		// The successor WAS resolved (it exists in this mirror) but the
+		// author precondition failed, so this is LFC-005 ALONE — never
+		// LFC-002 (verdictError's own generic VerdictUnauthorizedActor label,
+		// which this call site's own decision-supersede branch bypasses) and
+		// never paired with LFC-006 (reserved for an UNRESOLVED successor).
+		if !strings.Contains(err.Error(), "LFC-005") {
+			t.Fatalf("expected the refusal to name LFC-005; got %v", err)
+		}
+		if strings.Contains(err.Error(), "LFC-006") {
+			t.Fatalf("expected NO LFC-006 (the successor WAS resolved, just failed the precondition); got %v", err)
+		}
+		if strings.Contains(err.Error(), "LFC-002") {
+			t.Fatalf("expected NO LFC-002 (the generic mislabel this fix closes); got %v", err)
+		}
+		if len(fake.calls) != 0 {
+			t.Fatalf("expected the write funnel NEVER to be called; got %d call(s)", len(fake.calls))
+		}
+	})
+
+	t.Run("unresolvable_successor_is_LFC005_plus_LFC006", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		predecessorID := "XD-axon-20260827-p005"
+		writeDecisionArtifactMCP(t, mirrorDir, predecessorID, "axon", []string{"beta"})
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, predecessorID, "propose", "axon")
+		writeLifecycleEvent(t, mirrorDir, "beta", 1, predecessorID, "reject", "beta")
+		// No successor artifact written at all: refs names an id this
+		// resolver's own index can never contain.
+
+		fake := &fakeFunnel{}
+		deps := testWriteDeps(mirrorDir, fake)
+		deps.OwnSystem = "axon"
+		handler := newLifecycleHandler(supersedeVerbSpec(t), deps)
+
+		args, err := json.Marshal(LifecycleInput{IDs: []string{predecessorID}, Refs: []string{"XD-axon-20260827-gh57"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _, err = handler(context.Background(), args)
+		if err == nil {
+			t.Fatal("expected a refusal (successor entirely unresolvable)")
+		}
+		if !strings.Contains(err.Error(), "LFC-005") {
+			t.Fatalf("expected the refusal to name LFC-005; got %v", err)
+		}
+		if !strings.Contains(err.Error(), "LFC-006") {
+			t.Fatalf("expected the refusal to ALSO name LFC-006 (unresolved successor); got %v", err)
+		}
+		if len(fake.calls) != 0 {
+			t.Fatalf("expected the write funnel NEVER to be called; got %d call(s)", len(fake.calls))
+		}
+	})
+
+	// satisfying_successor_via_approved_state_succeeds is the OTHER
+	// decision-supersede row's own satisfying case — PreconditionSuccessorApproved
+	// (internal/fold/table.go's `{From: StateApproved, ...}` row), never
+	// exercised by the two subtests above (both drive the `rejected` row's
+	// PreconditionSuccessorAuthor, which reads *fold.SuccessorFacts.Author
+	// only). resolveSuccessorFacts (eventdoc.go) also carries `.State`
+	// through into the resolved *fold.SuccessorFacts — this is the one
+	// subtest in this file that can only pass if THAT field survives:
+	// the acting actor (beta) does NOT match the successor's author (axon),
+	// so the author precondition alone would refuse this; it can only
+	// succeed via the successor's OWN folded state resolving `approved`.
+	// Mirrors internal/cli's TestSupersedeDecisionRegressionFix's own
+	// approved_by_successor_with_real_quorum_across_sections_succeeds.
+	t.Run("satisfying_successor_via_approved_state_succeeds", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		predecessorID := "XD-axon-20260827-p006"
+		successorID := "XD-axon-20260827-p007"
+		writeDecisionArtifactMCP(t, mirrorDir, predecessorID, "axon", []string{"beta"})
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, predecessorID, "propose", "axon")
+		// beta is the predecessor's ONLY required_approvers entry, so this
+		// single approve reaches quorum: the predecessor folds to `approved`,
+		// selecting table.go's OTHER decision-supersede row.
+		writeLifecycleEvent(t, mirrorDir, "beta", 1, predecessorID, "approve", "beta")
+
+		writeDecisionArtifactMCP(t, mirrorDir, successorID, "axon", []string{"beta"})
+		writeLifecycleEvent(t, mirrorDir, "axon", 2, successorID, "propose", "axon")
+		writeLifecycleEvent(t, mirrorDir, "beta", 3, successorID, "approve", "beta")
+
+		fake := &fakeFunnel{}
+		deps := testWriteDeps(mirrorDir, fake)
+		// NOT axon (the successor's own author) — this actor can only pass
+		// through the successor's resolved STATE, never its author.
+		deps.OwnSystem = "beta"
+		handler := newLifecycleHandler(supersedeVerbSpec(t), deps)
+
+		args, err := json.Marshal(LifecycleInput{IDs: []string{predecessorID}, Refs: []string{successorID}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := handler(context.Background(), args); err != nil {
+			t.Fatalf("supersede: unexpected refusal (successor genuinely resolves as approved): %v", err)
+		}
+		if len(fake.calls) != 1 {
+			t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+		}
+	})
+}
+
 func TestRefsFromList(t *testing.T) {
 	t.Parallel()
 	out := refsFromList([]string{" a ", "", "b"})
