@@ -78,3 +78,8 @@ read at each site.
 - fb-20260827-a84550 (bug -> accepted): verify-export against a staged candidate can never match its published version
 - fb-20260827-455fca (feature -> accepted): no verb answers whether a producer's published contracts still match its code
 - fb-20260827-4b121a (friction -> accepted): validate --ci outside a space names a missing file, not the caller's state
+
+## 2026-08-27 Triage
+
+- fb-20260827-47069c (bug -> accepted): a no-op version bump publishes the OLD bytes under the NEW number
+- fb-20260827-5b6a1c (friction -> accepted): a verb usage names its flags, never its workflow, so a loop page is unreachable

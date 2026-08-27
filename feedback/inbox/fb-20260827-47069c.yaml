@@ -49,4 +49,12 @@ checks:
     not_space_specific: true
     no_sensitive_content: true
     duplicates_checked: true
-status: new
+resolution: |-
+    Routed to answers-that-hold-2026-08 P2, which owns it: preflight/publish taking
+    the cache mirror as candidate source when no --staging is given. The spec's
+    criteria 1 and 2 are this record's two halves — the refusal naming the staging
+    path it found, on both verbs, before anything irreversible. Left `new` until the
+    spec existed, because an `accepted` verdict requires a ledger row with `refs:`,
+    and CHECK-C only joins a ref shaped docs/features/<section>/<slug>/specs/<file>.
+    Pointing it at docs/backlog.md would have made the staleness gate silent.
+status: accepted

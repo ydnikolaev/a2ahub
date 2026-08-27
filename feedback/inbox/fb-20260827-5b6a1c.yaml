@@ -31,4 +31,10 @@ checks:
     not_space_specific: true
     no_sensitive_content: true
     duplicates_checked: true
-status: new
+resolution: |-
+    Routed to answers-that-hold-2026-08 P8, which owns it: the surface an agent hits
+    at the moment of not-knowing names its flags and never its workflow. P9 is the
+    follow-on that makes the pointer P8 prints resolve from the binary. Same reason
+    for the delay as fb-20260827-47069c: the spec had to exist before a ref could
+    name a home CHECK-C actually joins.
+status: accepted

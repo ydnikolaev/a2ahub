@@ -28,18 +28,33 @@ proposal: |-
     for the set, and whether non-text entries are allowed at all. A contract that
     quietly becomes a binary distribution channel is a different product; a
     contract that cannot carry its own error catalogue is the present problem.
-resolution: >-
-    Still open, deliberately, and now stated where it can be found rather than
-    left implicit. v0.19.6 made the tool SAY it: `a2a template show contract`
-    prints the declared-v2 shape for json-schema at a 0.19.0+ floor, and the
-    refusal now states out loud that an openapi or proto3 contract has NO
-    publishable shape at that floor, because the declared carried set requires a
-    schema and fixtures those formats cannot supply. That release's own note
-    records this id as where the remaining gap is tracked. Giving those formats
-    a publishable carried set is a wire-format decision nobody has priced; the
-    owning work is
-    docs/features/archive/operational-confidence-2026-08/README.md, and the
-    report that first surfaced it beside this one is fb-20260806-3539ac.
+resolution: |-
+    PARTIALLY SHIPPED, and the open half is narrower than this record's summary reads.
+    Corrected 2026-08-27 against the code rather than against the record's own text.
+
+    WHAT SHIPPED. This record's proposal was "a declared artifact set instead of a fixed
+    pair of directories: a manifest beside the schema listing each carried file with a role
+    (schema, api, errors, vocabulary, limits, changelog, example, other), a digest, and
+    whether it is normative." That is `contract-set-v2`, and it ships: the descriptor's
+    closed `artifacts:` inventory carries exactly those roles plus `valid-fixture` and
+    `invalid-fixture`, each with a path, a media type and a normative flag
+    (`internal/contract/types.go`, `rootForRole` mapping the companion roles to
+    `artifacts/`). So "a contract that cannot carry its own error catalogue is the present
+    problem" — this record's own closing line — is NO LONGER TRUE.
+
+    WHAT REMAINS. Only the format half: `schema_format` still admits `openapi-3.x` and
+    `proto3` while the declared carried set requires a schema and fixtures those formats
+    cannot supply, so those contracts have no publishable shape. v0.19.6 made the tool SAY
+    so rather than fail obscurely (`a2a template show contract` states the refusal at a
+    0.19.0+ floor).
+
+    ROUTE CORRECTED. The ref named
+    `docs/features/archive/operational-confidence-2026-08/README.md` — an ARCHIVED epic, so
+    the row claimed an owner that no longer exists, and CHECK-C's staleness join skips a
+    non-spec ref in silence anyway. Re-pointed at `docs/backlog.md` with route `backlog`:
+    no active phase owns the remaining half, and a backlog row that says so beats a ref that
+    names a dead home. Giving openapi and proto3 a publishable carried set is a wire-format
+    decision nobody has priced. Related: fb-20260806-3539ac.
 severity: major
 status: accepted
 summary: |-

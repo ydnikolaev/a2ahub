@@ -41,25 +41,21 @@ checks:
     not_space_specific: true
     no_sensitive_content: true
     duplicates_checked: true
-status: accepted
-resolution: >-
-    Accepted. RE-VERIFIED 2026-08-20 (one-answer-2026-08 P7) against the
-    code, not transcribed from one-answer-2026-08 spec 07 §T4's own table —
-    that table names one-answer-2026-08's own P1-P5 as what would close this,
-    which is WRONG: the fix already exists, shipped by a DIFFERENT epic,
-    `defects-fix-2026-08` P3
-    (docs/features/archive/defects-fix-2026-08/specs/03-a-criterion-has-a-name.md,
-    commit d9287883, tracker status: done). `lifecycleEchoVerdicts`
-    (internal/cli/cmd_lifecycle.go) prints each resolved verdict's binding —
-    criterion text, verdict, cause_owner — before anything is minted, citing
-    this record BY ID in its own doc comment; `lifecycleResolveVerdicts`
-    implements proposal (2), a named-criterion-id token alongside the bare
-    index, and refuses a bare index against an id-declaring parent by name.
-    `TestVerifyEchoesVerdictBindingBeforeMinting`,
-    `TestVerifyEchoesVerdictBindingForIDDeclaringParent` and
-    `TestCloseEchoesVerdictBindingBeforeMinting` all pass on this tree.
-    STAYS `accepted` rather than `shipped`: the carrying release,
-    `releasenotes/0.23.0.yaml`, reads `released: unreleased` (P6's own
-    sentinel, one-answer-2026-08) — the code is merged and tested, the
-    release has not been cut. Move to `shipped` once a release note for a
-    REAL tagged version cites it.
+status: shipped
+resolution: |-
+    SHIPPED. The fix landed in `defects-fix-2026-08` P3, commit d9287883:
+    `lifecycleEchoVerdicts` (internal/cli/cmd_lifecycle.go) prints each resolved verdict's
+    binding — criterion text, verdict, cause_owner — before anything is minted, citing this
+    record by id in its own doc comment, and `lifecycleResolveVerdicts` implements proposal
+    (2), a named-criterion-id token beside the bare index, refusing a bare index against an
+    id-declaring parent by name. Carried by v0.23.0, `releasenotes/0.23.0.yaml`.
+
+    MOVED TO shipped 2026-08-27, and the week-long delay is the part worth recording. This
+    record's own prior resolution set itself a condition — "move to shipped once a release
+    note for a REAL tagged version cites it" — while 0.23.0 still read
+    `released: unreleased`. It now reads `released: "2026-08-20"`, so the release is real;
+    the note does not name this id, which is why nothing ever prompted the move. The corpus
+    gate never required that citation: CHECK 3 accepts a resolving commit for
+    `status: shipped`, and d9287883 resolves. So the record sat `accepted` against a rule it
+    wrote for itself and no gate enforced, while its ledger ref named a release note — a
+    shape CHECK-C's staleness join skips in silence.

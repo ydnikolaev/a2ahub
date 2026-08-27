@@ -6,52 +6,61 @@ items:
       severity: major
       title: schema_format admits OpenAPI and proto but only a schema dir can travel
       verdict: accepted
-      route: phase
+      route: backlog
       refs:
-        - docs/features/archive/operational-confidence-2026-08/README.md
+        - docs/backlog.md
       date: "2026-08-02"
-    - id: fb-20260818-76f29d
-      kind: bug
-      severity: major
-      title: verify --verdict indexes an unseen list and only range-checks it
-      verdict: accepted
-      route: quick-fix
-      refs:
-        - releasenotes/0.23.0.yaml
-      date: "2026-08-20"
     - id: fb-20260827-bc1f13
       kind: bug
       severity: minor
       title: verify-export hides the only file that can explain its digest mismatch
       verdict: accepted
-      route: quick-fix
+      route: phase
       refs:
-        - docs/backlog.md
+        - docs/features/active/answers-that-hold-2026-08/specs/03-the-human-path-says-what-it-knows.md
       date: "2026-08-27"
     - id: fb-20260827-a84550
       kind: bug
       severity: major
       title: verify-export against a staged candidate can never match its published version
       verdict: accepted
-      route: backlog
+      route: phase
       refs:
-        - docs/backlog.md
+        - docs/features/active/answers-that-hold-2026-08/specs/02-published-bytes-a-producer-can-hold.md
       date: "2026-08-27"
     - id: fb-20260827-455fca
       kind: feature
       severity: minor
       title: no verb answers whether a producer's published contracts still match its code
       verdict: accepted
-      route: backlog
+      route: phase
       refs:
-        - docs/backlog.md
+        - docs/features/active/answers-that-hold-2026-08/specs/07-where-do-my-contracts-stand.md
       date: "2026-08-27"
     - id: fb-20260827-4b121a
       kind: friction
       severity: minor
       title: validate --ci outside a space names a missing file, not the caller's state
       verdict: accepted
-      route: backlog
+      route: phase
       refs:
-        - docs/backlog.md
+        - docs/features/active/answers-that-hold-2026-08/specs/04-a-refusal-names-the-caller-state.md
+      date: "2026-08-27"
+    - id: fb-20260827-47069c
+      kind: bug
+      severity: major
+      title: a no-op version bump publishes the OLD bytes under the NEW number
+      verdict: accepted
+      route: phase
+      refs:
+        - docs/features/active/answers-that-hold-2026-08/specs/02-published-bytes-a-producer-can-hold.md
+      date: "2026-08-27"
+    - id: fb-20260827-5b6a1c
+      kind: friction
+      severity: minor
+      title: a verb usage names its flags, never its workflow, so a loop page is unreachable
+      verdict: accepted
+      route: phase
+      refs:
+        - docs/features/active/answers-that-hold-2026-08/specs/08-every-usage-names-its-workflow.md
       date: "2026-08-27"
