@@ -8901,6 +8901,76 @@
             "scope": "none",
             "why": "Nothing to do. Recorded so the omission is readable rather than assumed.\n"
           }
+        }
+      ]
+    },
+    {
+      "version": "0.25.6",
+      "released": "unreleased",
+      "headline": "the tool stops saying yes to what it cannot check",
+      "changes": [
+        {
+          "id": "RN-02506-0",
+          "kind": "fix",
+          "impact": "high",
+          "subject": "a supersede by an unapproved successor is refused instead of granted",
+          "detail": "Superseding an `approved` or `rejected` decision was permitted to any member of the space. The protocol requires a specific actor — the author of the successor, or a successor that is itself approved — and the tool granted the act BECAUSE it could not check that requirement, in a lifecycle table row whose own scenario name said so out loud.\nThe seam now receives the successor's own facts. An unapproved successor is refused with `LFC-005`, naming what would make the supersede legal. A successor that cannot be resolved at all is refused with `LFC-005` AND carries `LFC-006` at severity `unmeasured` — \"could not check\", never a silent pass and never an ordinary failure.\nBoth write surfaces behave identically and produce the same refusal text, now compared byte-for-byte rather than by substring.\n",
+          "affects": [
+            "cli",
+            "mcp"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "Measured before the change: zero supersede events exist across every live space mirror, against a denominator of zero decision artifacts. Nothing in any known space is affected. A supersede that would now be refused was never a supersede anyone performed.\n"
+          }
+        },
+        {
+          "id": "RN-02506-1",
+          "kind": "fix",
+          "impact": "high",
+          "subject": "a write against an id in another connected space reaches that space",
+          "detail": "With two or more connected spaces, a verb whose target id lived in the SECOND space silently acted on the FIRST, and reported \"artifact not found\" — true of the space it reached, false of the space that holds the id.\nResolution now walks the connected spaces and acts on the one that holds the id. An id in none of them is refused with `REF-025`, naming the id AND every space searched, so the message says where the tool actually looked.\nContract ids and data-package ids are committed at paths this walk cannot match and are deliberately routed around it rather than newly refused; that they resolve to the first space in a multi-space project is a separate, pre-existing gap and is not fixed here.\n",
+          "affects": [
+            "cli",
+            "mcp"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "A single-space project behaves exactly as before. Nothing to migrate.\n"
+          }
+        },
+        {
+          "id": "RN-02506-2",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "three labels the documents already declared are now actually checked",
+          "detail": "`format: date` and `format: date-time` were declared on envelope fields and never asserted, so `needed_by: \"next tuesday\"` validated clean. It is now refused with `SCH-012`.\n`classification: restricted` promised a bilateral audience and nothing enforced it; an artifact addressing fewer systems than the space's active participants is refused with `POL-024`, and a resolver that cannot enumerate them emits `POL-026` at severity `unmeasured` alongside — the audience is reported as unconfirmed, never as confirmed.\nThe space scaffolder's placeholder is exempted by VALUE rather than by field, so an unedited template still validates while a real placeholder left in a submitted document does not.\n",
+          "affects": [
+            "cli",
+            "mcp",
+            "schemas"
+          ],
+          "action": {
+            "scope": "local",
+            "why": "A draft carrying a malformed date, or a restricted artifact addressing too few systems, will now be refused at submit where it previously passed. Fix the field the refusal names.\n",
+            "detect": [
+              "a2a validate"
+            ]
+          }
+        },
+        {
+          "id": "RN-02506-3",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "`a2a attach` no longer rewrites a date it was not asked to touch",
+          "detail": "Attaching a document round-tripped the whole frontmatter through a generic decode. An unquoted `needed_by: 2026-12-31` came back as `2026-12-31T00:00:00Z` — a value the field's own declared format rejects — and every other key was reordered alphabetically.\nThe frontmatter is now edited in place: the attached entry is added and nothing else moves. Both the value and the key order are pinned by a test.\n",
+          "affects": [
+            "cli"
+          ],
+          "action": {
+            "scope": "local",
+            "why": "A document already rewritten by an earlier `a2a attach` carries a widened date and reordered keys. Re-editing the field by hand is enough; nothing re-writes it for you.\n"
+          }
         },
         {
           "id": "KI-01900-PROVIDER-TIER-DEFERRED",
