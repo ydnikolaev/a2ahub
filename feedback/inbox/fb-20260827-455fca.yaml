@@ -1,0 +1,65 @@
+feedback: v1
+id: fb-20260827-455fca
+kind: feature
+severity: minor
+title: no verb answers whether a producer's published contracts still match its code
+summary: >-
+  a2a has per-contract inspection verbs but no way to ask, in one call, "is
+  everything my system provides still what my repository produces?" Answering it
+  today means enumerating `<system>/provides/*` by hand, knowing each contract's
+  id AND its exact published version, and invoking verify-export once per
+  contract — none of which is derivable from a command, though all of it is in
+  `.a2a/config.yaml` and the synced mirror. Two consequences show up as soon as
+  a producer tries to gate on it. There is no denominator: a run that examined
+  zero contracts, because the published path shape moved or nothing is published
+  yet, is indistinguishable from a clean pass. And the subject a producer can
+  point at, `.a2a/staging/**`, is gitignored and rewritten by publish, so a green
+  against it says "the space matches the untracked leftover of my last publish",
+  not "the space matches my code". For a producer whose contract is GENERATED,
+  the tracked source of truth is their own release tree, and no verb accepts it.
+context:
+    a2a_version: 0.25.4
+    os_arch: darwin/arm64
+    surface: cli
+    command: a2a contract verify-export --local <dir> <XC-id>@<version>
+    agent: >-
+      Filed after a consumer repository wrote 137 lines of bash plus 128 lines of
+      self-test to obtain this, having concluded a2a offered nothing for it.
+evidence:
+    steps:
+        - "`a2a contracts` lists known contracts, but no verb takes the set of contracts THIS system provides and compares each against the local source."
+        - "verify-export requires an exact `<XC-id>@<version>`; a producer must already know the published version of each of their own contracts to ask whether it drifted."
+        - "The hand-rolled substitute re-derived what a2a already holds: it parsed `system:` and the first `- id:` out of .a2a/config.yaml with sed, so a repository connected to two spaces silently checks one."
+        - "It also dropped the version assertion entirely — it compared schema/ and fixtures/ trees but never contract.md, so a republish at a different version with identical schemas would pass it. a2a's own digest is strictly stronger here."
+        - "It had to hand-code the layout mapping (release `fixtures/manifest.json` vs published `artifacts/fixture-manifest.json`), which is a2a's own convention and not knowledge a consumer should hold."
+        - "Its subject was the tracked release tree, NOT .a2a/staging, precisely because staging is gitignored and cannot be the thing a gate judges."
+    expected: >-
+      One config-driven call reports, for every contract this system provides,
+      whether the published bytes still match the local source — and refuses on an
+      empty denominator instead of passing.
+    actual: >-
+      Per-contract only, requires the version to be known in advance, and the only
+      pointable local tree is untracked and publisher-rewritten.
+proposal: >-
+  Add an aggregate form — `a2a contract verify-published [--json]` or a
+  `verify-export --all` — that reads `system:` and every connected space from
+  `.a2a/config.yaml`, enumerates `<system>/provides/*` in the synced mirror, and
+  reports one row per contract: matched, drifted, or not-published-yet, resolving
+  each version from the published descriptor rather than asking the caller. Three
+  properties matter more than the shape. It must refuse a zero-row run rather
+  than report success, so a moved path shape reads as a failure. It must fail
+  closed on an absent or stale mirror, naming `a2a sync`. And the local subject
+  must be nameable by the producer — a project-relative path per contract, since
+  a code-generating producer keeps their truth in a tracked release tree, and
+  `.a2a/staging` is neither tracked nor stable across a publish. With that, the
+  producer-side gate is one command in their Makefile instead of bash that
+  re-derives a2a's own layout and drifts from it. See fb-20260827-a84550 for the
+  comparison this should perform; without that fix the aggregate form would
+  inherit an unsatisfiable check.
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
