@@ -256,7 +256,7 @@ func membership(manifest space.Manifest) fold.MembershipView {
 // from committed envelope/history/membership inputs to fold.EvaluateCandidate
 // for every caller that has no successor refs to resolve — tools_contract.go's
 // deprecate/retire evaluations (off this wave's allowlist) still call this
-// EXACT 3-return-value shape, so it stays evaluateCandidateWithRefs' own
+// EXACT 3-return-value shape, so it stays evaluateCandidate' own
 // thin nil-refs wrapper rather than changing shape out from under those
 // callers. callers serialize only the returned receipt, never derive state
 // themselves.
@@ -264,14 +264,7 @@ func membership(manifest space.Manifest) fold.MembershipView {
 // candidate.Version is "" for every non-contract-version transition; a
 // contract publish/deprecate/retire caller supplies the version the candidate
 // event itself names, resolved before calling this.
-func evaluateCandidate(mirrorDir string, manifest space.Manifest, id string, candidate fold.Event) (fold.CandidateEvaluation, fold.Envelope, error) {
-	evaluation, env, _, err := evaluateCandidateWithRefs(mirrorDir, manifest, id, candidate, nil)
-	return evaluation, env, err
-}
-
-// evaluateCandidateWithRefs is evaluateCandidate, extended (no-silent-yes-
-// 2026-08/wave 2d — the CLI write surface gained the same extension in wave
-// 2b) to accept the batch's own §5.2.2 `refs[].ref` values and resolve
+// evaluateCandidate accepts the batch's own §5.2.2 `refs[].ref` values and resolve
 // the SUCCESSOR facts a decision-supersede row's declared Precondition
 // checks (internal/fold/table.go), via fold.EvaluateCandidateWithSuccessor
 // rather than the nil-successor fold.EvaluateCandidate wrapper. Used ONLY by
@@ -297,7 +290,7 @@ func evaluateCandidate(mirrorDir string, manifest space.Manifest, id string, can
 // (`ev.SuccessorEnvelope == nil`). nil for every non-supersede/non-decision/
 // ref-less call (refs is nil for every caller today except the generic
 // handler's own supersede row).
-func evaluateCandidateWithRefs(mirrorDir string, manifest space.Manifest, id string, candidate fold.Event, refs []refEntry) (fold.CandidateEvaluation, fold.Envelope, *fold.SuccessorFacts, error) {
+func evaluateCandidate(mirrorDir string, manifest space.Manifest, id string, candidate fold.Event, refs []refEntry) (fold.CandidateEvaluation, fold.Envelope, *fold.SuccessorFacts, error) {
 	env, _, err := loadEnvelope(mirrorDir, id)
 	if err != nil {
 		return fold.CandidateEvaluation{}, fold.Envelope{}, nil, err

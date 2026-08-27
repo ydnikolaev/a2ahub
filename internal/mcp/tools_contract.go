@@ -429,9 +429,9 @@ func newContractDeprecateHandler(deps ContractDeps) HandlerFunc {
 		if len(contractPublishedVersions(allEvents, in.ID)) > 0 {
 			legalityVersion = contractCanonicalVersion(deprecatedVersion)
 		}
-		deprecateEvaluation, _, err := evaluateCandidate(deps.MirrorDir, deps.Manifest, in.ID, fold.Event{
+		deprecateEvaluation, _, _, err := evaluateCandidate(deps.MirrorDir, deps.Manifest, in.ID, fold.Event{
 			Transition: fold.TDeprecate, Version: legalityVersion, Actor: actor,
-		})
+		}, nil)
 		if err != nil {
 			return nil, "", fmt.Errorf("contract deprecate: %s: %w", in.ID, err)
 		}
@@ -626,9 +626,9 @@ func newContractRetireHandler(deps ContractDeps) HandlerFunc {
 		if len(contractPublishedVersions(allEvents, in.ID)) > 0 {
 			legalityVersion = contractCanonicalVersion(retiredVersion)
 		}
-		retireEvaluation, _, err := evaluateCandidate(deps.MirrorDir, deps.Manifest, in.ID, fold.Event{
+		retireEvaluation, _, _, err := evaluateCandidate(deps.MirrorDir, deps.Manifest, in.ID, fold.Event{
 			Transition: fold.TRetire, Version: legalityVersion, Actor: actor,
-		})
+		}, nil)
 		if err != nil {
 			return nil, "", fmt.Errorf("contract retire: %s: %w", in.ID, err)
 		}

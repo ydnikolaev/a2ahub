@@ -197,15 +197,15 @@ func newLifecycleHandler(spec lifecycleVerbSpec, deps WriteDeps) HandlerFunc {
 
 		// parsedRefs (D-3, mirroring internal/cli's LifecycleCommand.Run):
 		// resolved ONCE, before the batch loop, and reused for BOTH
-		// evaluateCandidateWithRefs' own successor resolution (the supersede
-		// row's only consumer, evaluateCandidateWithRefs/
+		// evaluateCandidate' own successor resolution (the supersede
+		// row's only consumer, evaluateCandidate/
 		// resolveSuccessorFacts) and the event's own `refs[]` field below —
 		// never parsed a second time.
 		parsedRefs := refsFromList(in.Refs)
 
 		var files []space.FileWrite
 		for _, id := range in.IDs {
-			evaluation, env, successor, err := evaluateCandidateWithRefs(deps.MirrorDir, deps.Manifest, id, fold.Event{
+			evaluation, env, successor, err := evaluateCandidate(deps.MirrorDir, deps.Manifest, id, fold.Event{
 				Transition: spec.Transition, Actor: actor,
 			}, parsedRefs)
 			if err != nil {
@@ -213,7 +213,7 @@ func newLifecycleHandler(spec lifecycleVerbSpec, deps WriteDeps) HandlerFunc {
 			}
 			if evaluation.Verdict != fold.VerdictLegal {
 				// D-3 (wave 2c-mcp): the ONE local gate that resolves real
-				// SuccessorFacts (evaluateCandidateWithRefs, above) learns
+				// SuccessorFacts (evaluateCandidate, above) learns
 				// the SAME decision-supersede discrimination checkLifecycle
 				// already applies — see decisionSupersedeRefusalError's own
 				// doc comment for the exact coarseness this reuses (mirrors
@@ -899,9 +899,9 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 			if err != nil {
 				return nil, "", fmt.Errorf("respond: cannot mint response id: %w", err)
 			}
-			evaluation, _, err := evaluateCandidate(deps.MirrorDir, deps.Manifest, parentID, fold.Event{
+			evaluation, _, _, err := evaluateCandidate(deps.MirrorDir, deps.Manifest, parentID, fold.Event{
 				Transition: fold.TRespond, ResponseID: responseID, Actor: actor,
-			})
+			}, nil)
 			if err != nil {
 				return nil, "", fmt.Errorf("respond: %s: %w", parentID, err)
 			}
@@ -1466,9 +1466,9 @@ func newNoteHandler(deps WriteDeps) HandlerFunc {
 
 		var files []space.FileWrite
 		for _, id := range in.IDs {
-			evaluation, _, err := evaluateCandidate(deps.MirrorDir, deps.Manifest, id, fold.Event{
+			evaluation, _, _, err := evaluateCandidate(deps.MirrorDir, deps.Manifest, id, fold.Event{
 				Transition: fold.TNote, Actor: actor,
-			})
+			}, nil)
 			if err != nil {
 				return nil, "", fmt.Errorf("note: %s: %w", id, err)
 			}
