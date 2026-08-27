@@ -371,3 +371,102 @@ func TestResolveCredentialAndFeedbackShareTheGHLoginFallback(t *testing.T) {
 		}
 	})
 }
+
+// seedTargetSpaceArtifact writes an "<id>.md" placeholder into ref's own
+// resolved mirror directory (space.ResolveMirrorLocation's default,
+// projectRoot/.a2a/cache/mirrors/<space-id>) — the on-disk shape
+// resolveTargetSpaceRef's walk (via cache.ResolveArtifactSpace) looks for.
+func seedTargetSpaceArtifact(t *testing.T, projectRoot string, ref space.Ref, id string) {
+	t.Helper()
+	dir := filepath.Join(space.ResolveMirrorLocation(projectRoot, ref, space.MachineConfig{}), "exchanges")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, id+".md"), []byte("placeholder\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestResolveTargetSpaceRefFindsSecondSpace is the exact defect REF-025
+// (no-silent-yes-2026-08 P2a) exists for: an id held by the SECOND
+// connected space must resolve to THAT space, never silently to the first.
+func TestResolveTargetSpaceRefFindsSecondSpace(t *testing.T) {
+	projectRoot := t.TempDir()
+	cfg := space.ProjectConfig{System: "beta", Spaces: []space.Ref{
+		{ID: "space-one"}, {ID: "space-two"},
+	}}
+	seedTargetSpaceArtifact(t, projectRoot, cfg.Spaces[1], "XQ-beta-20260827-aaaa")
+
+	ref, err := resolveTargetSpaceRef(cfg, space.MachineConfig{}, projectRoot, "XQ-beta-20260827-aaaa")
+	if err != nil {
+		t.Fatalf("resolveTargetSpaceRef: %v", err)
+	}
+	if ref.ID != "space-two" {
+		t.Fatalf("resolveTargetSpaceRef resolved %q, want space-two", ref.ID)
+	}
+}
+
+// TestResolveTargetSpaceRefRefusesUnknownIDAcrossMultipleSpaces asserts
+// REF-025's own contract: an id in NEITHER connected space refuses by
+// name, naming the id AND both spaces searched — never a silent
+// cfg.Spaces[0] resolution.
+func TestResolveTargetSpaceRefRefusesUnknownIDAcrossMultipleSpaces(t *testing.T) {
+	projectRoot := t.TempDir()
+	cfg := space.ProjectConfig{System: "beta", Spaces: []space.Ref{
+		{ID: "space-one"}, {ID: "space-two"},
+	}}
+
+	_, err := resolveTargetSpaceRef(cfg, space.MachineConfig{}, projectRoot, "XQ-beta-20260827-zzzz")
+	if err == nil {
+		t.Fatal("expected a REF-025 refusal for an id in no connected space")
+	}
+	for _, want := range []string{"REF-025", "XQ-beta-20260827-zzzz", "space-one", "space-two"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("refusal %q does not name %q", err, want)
+		}
+	}
+}
+
+// TestResolveTargetSpaceRefSingleSpaceNeverRefuses is
+// TestWireMirrorIsFreshAfterResolution's (wire_tier_test.go) unit-level
+// pin: with exactly ONE connected space there is no "second space" for
+// REF-025's own defect to describe, so an id the walk cannot currently see
+// (never seeded, or not yet synced into the mirror) must still resolve to
+// the one connected space rather than refuse — resolveLifecycleDepsWithPolicy
+// syncs the RESOLVED space's mirror only AFTER this call returns, so a
+// walk that refused here would make a freshly-published id unreachable
+// even though the space that will hold it is completely unambiguous.
+func TestResolveTargetSpaceRefSingleSpaceNeverRefuses(t *testing.T) {
+	projectRoot := t.TempDir()
+	cfg := space.ProjectConfig{System: "beta", Spaces: []space.Ref{{ID: "only-space"}}}
+
+	ref, err := resolveTargetSpaceRef(cfg, space.MachineConfig{}, projectRoot, "XQ-beta-20260827-unsynced")
+	if err != nil {
+		t.Fatalf("resolveTargetSpaceRef: %v", err)
+	}
+	if ref.ID != "only-space" {
+		t.Fatalf("resolveTargetSpaceRef resolved %q, want only-space", ref.ID)
+	}
+}
+
+// TestResolveTargetSpaceRefContractAndDataPackageIDsBypassTheWalk pins the
+// two id families cache.ResolveArtifactSpace's own doc comment names as
+// never matching "<id>.md" — runContract and `data fetch`/`data verify`
+// reach resolveTargetSpaceRef with one of these even in a multi-space
+// project, and the walk must not refuse REF-025 for either.
+func TestResolveTargetSpaceRefContractAndDataPackageIDsBypassTheWalk(t *testing.T) {
+	projectRoot := t.TempDir()
+	cfg := space.ProjectConfig{System: "beta", Spaces: []space.Ref{
+		{ID: "space-one"}, {ID: "space-two"},
+	}}
+
+	for _, id := range []string{"XC-axon-orders", "DP-axon-20260827-ab12"} {
+		ref, err := resolveTargetSpaceRef(cfg, space.MachineConfig{}, projectRoot, id)
+		if err != nil {
+			t.Fatalf("resolveTargetSpaceRef(%q): %v", id, err)
+		}
+		if ref.ID != "space-one" {
+			t.Fatalf("resolveTargetSpaceRef(%q) = %q, want space-one (cfg.Spaces[0])", id, ref.ID)
+		}
+	}
+}

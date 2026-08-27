@@ -1124,6 +1124,10 @@ func loadMachineConfigForWrite(path string) (space.MachineConfig, error) {
 // connected space — so `contract new`/no-arg verbs still get a valid
 // funnel context they won't necessarily use), and builds the per-space
 // funnel + deps. A non-negative return is a terminal exit code.
+//
+// An id present in NO connected space's mirror is a terminal REF-025
+// refusal (resolveTargetSpaceRef's own doc comment), not a silent
+// fallback to the first connected space.
 func resolveLifecycleDeps(ctx context.Context, p paths, args []string, stderr io.Writer) (lifecycleDeps, int) {
 	return resolveLifecycleDepsWithPolicy(ctx, p, args, stderr, true, true)
 }
@@ -1141,7 +1145,10 @@ func resolveLifecycleDepsWithPolicy(ctx context.Context, p paths, args []string,
 		return lifecycleDeps{}, failf(stderr, "a2a: unreadable machine config (%s): %v", p.machineConfig, err)
 	}
 
-	ref := resolveTargetSpaceRef(cfg, machine, p.projectRoot, firstArtifactID(args))
+	ref, err := resolveTargetSpaceRef(cfg, machine, p.projectRoot, firstArtifactID(args))
+	if err != nil {
+		return lifecycleDeps{}, failf(stderr, "a2a: %v", err)
+	}
 	mirrorDir := space.ResolveMirrorLocation(p.projectRoot, ref, machine)
 	if syncMirror {
 		if err := space.CloneOrFetch(ctx, mirrorDir, ref.RepoURL, readCredential(ctx, ref.ID, machine)); err != nil {
@@ -1184,37 +1191,63 @@ func resolveLifecycleDepsWithPolicy(ctx context.Context, p paths, args []string,
 }
 
 // resolveTargetSpaceRef finds the connected space whose mirror already
-// holds an <id>.md file, else falls back to the first connected space.
-func resolveTargetSpaceRef(cfg space.ProjectConfig, machine space.MachineConfig, projectRoot, id string) space.Ref {
-	if id != "" {
-		for _, ref := range cfg.Spaces {
-			dir := space.ResolveMirrorLocation(projectRoot, ref, machine)
-			if mirrorHoldsArtifact(dir, id) {
-				return ref
-			}
-		}
+// holds an <id>.md file, via internal/cache.ResolveArtifactSpace — the ONE
+// cross-space id-resolution rule internal/mcp/wire.go's SpaceOfArtifacts
+// closure also delegates to (ADR-019's sixth instance, no-silent-yes-2026-08
+// P2a). A non-empty id held by NO connected space's mirror refuses REF-025
+// naming the id and every space searched; it no longer falls back to
+// cfg.Spaces[0], which used to run a write verb against the wrong space
+// whenever the id actually lived in a DIFFERENT connected space.
+//
+// Three cases never reach that walk and keep cfg.Spaces[0] instead — the
+// caller above already refused len(cfg.Spaces) == 0, so indexing it here is
+// safe:
+//
+//   - id == "" — `contract new`/no-arg verbs still need a valid funnel
+//     context they won't necessarily use.
+//   - len(cfg.Spaces) <= 1 — REF-025's own registry text scopes the defect
+//     to "an id in the SECOND connected space silently resolves to the
+//     FIRST"; with one connected space there is no second, so the walk has
+//     nothing to disambiguate. This ALSO matters for freshness:
+//     resolveLifecycleDepsWithPolicy resolves the target space BEFORE
+//     syncing its mirror (only the resolved space's mirror is fetched, not
+//     every connected one), so the walk here sees each mirror as of its
+//     LAST sync, not as of this invocation. A single connected space has no
+//     "wrong space" to fall into regardless of staleness; internal/mcp's
+//     own SpaceOfArtifacts/ResolveSpace closures are installed under the
+//     identical len(cfg.Spaces) > 1 guard (wire.go:376), so this brings the
+//     CLI side to the same discipline rather than inventing a new one.
+//   - a contract id (XC-<slug>) or a data-package id (DP-<system>-...) —
+//     see cache.ResolveArtifactSpace's own doc comment: both are committed
+//     at a path that is never "<id>.md", so the walk cannot find either by
+//     construction. runContract's resolveContractDeps (via
+//     contractTargetArgs) reaches here with an XC id whenever a contract
+//     verb names its target; runData's resolveDataDeps (via
+//     dataTargetArgs) reaches here with a DP id for `data fetch`/`data
+//     verify`. Refusing REF-025 for either would be wrong even for the
+//     space that actually holds the contract/package — resolving those two
+//     verb families' OWN target space correctly (today: not reliably, in a
+//     multi-space project) is a pre-existing gap outside this rule's scope.
+func resolveTargetSpaceRef(cfg space.ProjectConfig, machine space.MachineConfig, projectRoot, id string) (space.Ref, error) {
+	if id == "" || len(cfg.Spaces) <= 1 || bypassesArtifactWalk(id) {
+		return cfg.Spaces[0], nil
 	}
-	return cfg.Spaces[0]
+	return cache.ResolveArtifactSpace(cfg.Spaces, func(ref space.Ref) string {
+		return space.ResolveMirrorLocation(projectRoot, ref, machine)
+	}, id)
 }
 
-func mirrorHoldsArtifact(mirrorDir, id string) bool {
-	var found bool
-	_ = filepath.WalkDir(mirrorDir, func(_ string, d os.DirEntry, err error) error {
-		if err != nil || found {
-			return nil //nolint:nilerr // reason: best-effort walk — mirrorHoldsArtifact already ignores WalkDir's overall error, an inaccessible entry just isn't a match
-		}
-		// Skip the bare `.git` object store — it never holds artifact files
-		// and walking it wastes work that grows with history (matches
-		// internal/cache's own walkers).
-		if d.IsDir() && d.Name() == ".git" {
-			return filepath.SkipDir
-		}
-		if !d.IsDir() && d.Name() == id+".md" {
-			found = true
-		}
-		return nil
-	})
-	return found
+// bypassesArtifactWalk reports whether id belongs to one of the two
+// artifact families whose committed path is never "<id>.md" — see
+// resolveTargetSpaceRef's own doc comment and cache.ResolveArtifactSpace's
+// for why that means bypassing the walk rather than feeding it an id it
+// can never match.
+func bypassesArtifactWalk(id string) bool {
+	parsed, err := artifact.ParseID(id)
+	if err != nil {
+		return false
+	}
+	return parsed.Prefix == "XC" || parsed.Prefix == "DP"
 }
 
 // firstArtifactID returns the first non-flag argument (the artifact id most

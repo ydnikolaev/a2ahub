@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
@@ -86,7 +87,7 @@ func TestProductionDegradedContractSurfaceFailsLegacyWritesClosed(t *testing.T) 
 
 // commitArtifactFile commits and pushes a placeholder file named
 // "<id>.md" onto system's fixture clone — the on-disk shape
-// mirrorHoldsArtifact's walk (and so SpaceOfArtifacts) looks for.
+// cache.ResolveArtifactSpace's walk (and so SpaceOfArtifacts) looks for.
 func commitArtifactFile(t *testing.T, fx *spacefixture.Fixture, system, id string) {
 	t.Helper()
 	dir := fx.Clone(system)
@@ -100,6 +101,22 @@ func commitArtifactFile(t *testing.T, fx *spacefixture.Fixture, system, id strin
 	runGitTest(t, dir, "add", rel)
 	runGitTest(t, dir, "-c", "user.name=fixture", "-c", "user.email=fixture@a2ahub.invalid", "commit", "-m", "add artifact "+id)
 	runGitTest(t, dir, "push", "origin", "HEAD:main")
+}
+
+// mirrorHoldsArtifact is a test-local, single-space probe over
+// cache.ResolveArtifactSpace — this package's own production
+// mirrorHoldsArtifact walk was deleted with SpaceOfArtifacts' delegation to
+// that shared rule (no-silent-yes-2026-08 P2a; wire.go's SpaceOfArtifacts
+// closure calls cache.ResolveArtifactSpace directly and no longer needs a
+// package-level helper of this shape). tools_lifecycle_test.go — off P2a's
+// allowlist — still builds its own two-space WriteDeps fixture by calling
+// this name directly (testTwoSpaceWriteDepsWithSystem), so it stays here
+// rather than being deleted outright: a single-ref ResolveArtifactSpace
+// call with a synthetic id either resolves (mirror holds it) or refuses
+// (mirror does not), and the boolean collapses that either way.
+func mirrorHoldsArtifact(mirrorDir, id string) bool {
+	_, err := cache.ResolveArtifactSpace([]space.Ref{{ID: "probe"}}, func(space.Ref) string { return mirrorDir }, id)
+	return err == nil
 }
 
 func runGitTest(t *testing.T, dir string, args ...string) {
@@ -766,7 +783,10 @@ func TestBuildWriteDepsSpaceOfArtifactsRefusesUnknownID(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a refusal for an id no connected mirror holds")
 	}
-	for _, want := range []string{"space-one", "space-two"} {
+	// REF-025 (schemas/errors/v1/registry.yaml): the refusal names its own
+	// registry code, not just the bare "no connected space's mirror holds"
+	// phrase the pre-P2a version of this closure constructed itself.
+	for _, want := range []string{"REF-025", "XQ-beta-20260817-zzzz", "space-one", "space-two"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("unknown-id error = %v, want it to name %q", err, want)
 		}

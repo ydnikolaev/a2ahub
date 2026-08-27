@@ -416,30 +416,31 @@ func buildWriteDeps(ctx context.Context, cfg space.ProjectConfig, machine space.
 			}
 			return b.submit, nil
 		}
+		// The cross-space id-resolution walk itself is
+		// cache.ResolveArtifactSpace — the ONE rule the CLI surface's own
+		// per-space-target resolution also delegates to now (ADR-019's sixth
+		// instance, no-silent-yes-2026-08 P2a). A batch id NO connected
+		// space's mirror holds refuses REF-025 (schemas/errors/v1/
+		// registry.yaml), naming the id and every space searched, rather
+		// than the bare "no connected space's mirror holds" phrase this
+		// closure used to construct itself.
 		primary.write.SpaceOfArtifacts = func(ids []string) (string, error) {
 			resolvedSpace, resolvedID := "", ""
 			for _, id := range ids {
-				found := ""
-				for _, ref := range cfg.Spaces {
-					dir := space.ResolveMirrorLocation(p.ProjectRoot, ref, machine)
-					if mirrorHoldsArtifact(dir, id) {
-						found = ref.ID
-						break
-					}
-				}
-				if found == "" {
-					return "", fmt.Errorf(
-						"mcp: no connected space's mirror holds %s; connected spaces are %s",
-						id, strings.Join(connected, ", "))
+				ref, err := cache.ResolveArtifactSpace(cfg.Spaces, func(r space.Ref) string {
+					return space.ResolveMirrorLocation(p.ProjectRoot, r, machine)
+				}, id)
+				if err != nil {
+					return "", fmt.Errorf("mcp: %w", err)
 				}
 				if resolvedSpace == "" {
-					resolvedSpace, resolvedID = found, id
+					resolvedSpace, resolvedID = ref.ID, id
 					continue
 				}
-				if found != resolvedSpace {
+				if ref.ID != resolvedSpace {
 					return "", fmt.Errorf(
 						"mcp: batch spans multiple spaces: %s resolves to %q, %s resolves to %q — one call targets one space",
-						resolvedID, resolvedSpace, id, found)
+						resolvedID, resolvedSpace, id, ref.ID)
 				}
 			}
 			return resolvedSpace, nil
@@ -542,41 +543,6 @@ func spaceIDs(refs []space.Ref) []string {
 		ids[i] = ref.ID
 	}
 	return ids
-}
-
-// mirrorHoldsArtifact reports whether mirrorDir contains a file named
-// "<id>.md" anywhere below its root — this package's own copy of
-// cmd/a2a/wire.go's mirrorHoldsArtifact/resolveTargetSpaceRef rule. ADR-001
-// forbids internal/mcp importing internal/cli, and cmd/a2a is a main
-// package neither side can import, so this walk is deliberately duplicated
-// rather than shared.
-//
-// A contract id (XC-<slug>) never matches here: a contract's committed path
-// is <slug>/provides/<name>/contract.md (space.Layout.ProvidesContract), not
-// "<id>.md" — SpaceOfArtifacts refusing to resolve one is therefore by
-// design; the a2a_contract family passes its own explicit "space" input
-// instead of deriving one from ids.
-func mirrorHoldsArtifact(mirrorDir, id string) bool {
-	var found bool
-	_ = filepath.WalkDir(mirrorDir, func(_ string, d os.DirEntry, err error) error {
-		if found {
-			return filepath.SkipAll
-		}
-		if err != nil {
-			return nil //nolint:nilerr // reason: best-effort walk — an inaccessible entry just is not a match, and mirrorHoldsArtifact discards WalkDir's overall error too (same grant as cmd/a2a/wire.go's own copy)
-		}
-		// Skip the bare `.git` object store — it never holds artifact files,
-		// and walking it grows with history (matches cmd/a2a's own walker
-		// and internal/cache's).
-		if d.IsDir() && d.Name() == ".git" {
-			return filepath.SkipDir
-		}
-		if !d.IsDir() && d.Name() == id+".md" {
-			found = true
-		}
-		return nil
-	})
-	return found
 }
 
 // parseGitHubRepo extracts owner/name from a GitHub remote URL — mirrors
