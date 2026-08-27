@@ -105,7 +105,13 @@ type Envelope struct {
 // SuccessorEnvelope is validate's own minimal, caller-resolved projection
 // of a decision-supersede candidate event's successor artifact — plain
 // strings only, this package's own vocabulary, deliberately NOT internal/
-// fold's SuccessorFacts type: validate must not import internal/fold
+// fold's SuccessorFacts type. NOT because the package may not import
+// internal/fold — it does, in eventproducer.go and eventreceipt.go, and
+// ADR-001's matrix grants it. This TYPE keeps validate's own minimal
+// shape for the same consumer-side-ISP reason CandidateEvent and Actor
+// above do: a seam type is what the CONSUMER needs, not what the
+// producer happens to have. (The line said "must not import" until
+// 2026-08-27; read literally it was false about the file it sat in.)
 // (CandidateEvent's own doc comment states the same rule for fold's richer
 // event type). A concrete LegalityChecker is the one place that converts
 // this shape into fold's own.

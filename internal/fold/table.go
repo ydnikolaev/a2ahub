@@ -293,9 +293,17 @@ func decisionRows() []Row {
 		//     internal/validate's resolved CandidateEvent.SuccessorEnvelope,
 		//     the SUBMIT path's own grantor). Both can grant these rows
 		//     today; a caller that still goes through EvaluateCandidate with
-		//     no resolved successor (internal/mcp's own pre-write UX gates,
-		//     eventdoc.go, unchanged by this wave) is the only one that
-		//     still cannot.
+		//     no resolved successor cannot, and correctly refuses.
+		//
+		//     CORRECTED wave 2d, and the correction is the point: this
+		//     comment named internal/mcp's own pre-write gate (eventdoc.go)
+		//     as "the only one that still cannot" — and wave 2d then made
+		//     it resolve real SuccessorFacts too, leaving the sentence
+		//     false for a day. BOTH write surfaces grant these rows from a
+		//     resolved successor now. Found by an audit, not by a gate:
+		//     check-cross-surface-citations reads a comment that NAMES the
+		//     other surface's symbol, and a comment that merely describes
+		//     the other surface's behaviour cites nothing.
 		//
 		// Left to CheckCandidate to enforce (not encoded a second way on
 		// the row, e.g. a new Role) per legality.go's own recorded lesson

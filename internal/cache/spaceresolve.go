@@ -46,9 +46,17 @@ type ArtifactSpaceNotFoundError struct {
 	Searched []string
 }
 
+// Error names the id and every space whose mirror was WALKED — deliberately
+// not "searched". The distinction is this epic's own subject applied to its
+// own refusal: a connected space whose mirror has never been cloned is a
+// directory that does not exist, the walk finds nothing there, and the space
+// is still listed. Saying "searched" would assert that its contents were
+// examined, which is more than the walk established. A caller that reads
+// "walked" and finds its id genuinely absent knows to check whether that
+// mirror is synced — which "searched" would have told it not to bother with.
 func (e *ArtifactSpaceNotFoundError) Error() string {
 	return fmt.Sprintf(
-		"cache: REF-025: artifact %q is not held by any connected space's mirror; spaces searched: %s",
+		"cache: REF-025: artifact %q is not held by any connected space's mirror; spaces walked (a never-cloned mirror is walked and empty, not searched): %s",
 		e.ID, strings.Join(e.Searched, ", "))
 }
 
