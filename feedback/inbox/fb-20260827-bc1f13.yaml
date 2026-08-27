@@ -1,0 +1,63 @@
+feedback: v1
+id: fb-20260827-bc1f13
+kind: bug
+severity: minor
+title: verify-export hides the only file that can explain its digest mismatch
+summary: >-
+  `a2a contract verify-export` reports a digest mismatch and prints nothing that
+  names a file, in the common case where the ONLY differing file is contract.md.
+  Two independent choices produce that. First, the shared snapshot inspector
+  skips the descriptor path when it builds added/removed/changed, and reports
+  descriptor differences in a separate `frontmatterChanged` list — correct, since
+  a frontmatter delta is field-level, not byte-level. Second, verify-export's
+  renderer prints Added, Removed and Changed and then stops; its sibling
+  `contract diff` prints the same three plus a `frontmatter <field>` line for
+  each entry. So the field is computed, carried through the adapter, given a
+  `frontmatter_changed` JSON tag, and then dropped on the floor by the one verb
+  whose failure it explains. The operator gets two opaque sha256 values and no
+  delta. verify-export also has no `--json`, while `contract diff` does, so the
+  structured result the MCP surface returns is unreachable from the CLI — there
+  is no way to see the dropped field at all.
+context:
+    a2a_version: 0.25.4
+    os_arch: darwin/arm64
+    surface: cli
+    command: a2a contract verify-export --local <dir> <XC-id>@<version>
+    agent: >-
+      Reproduced with the released 0.25.4 binary; code references read from the
+      a2ahub tree at c99bf9b5 (dev), so the mechanism is the claim, not the line.
+evidence:
+    steps:
+        - "Run verify-export against a staged candidate whose schema/** and fixtures/** are byte-identical to the published contract and whose contract.md differs only in frontmatter."
+        - "Observed: `contract verify-export: digest mismatch: local=sha256:a2ab345a... want=sha256:b1b588f2...` on stderr, and not one line on stdout."
+        - "diff -rq over the two trees confirms exactly one differing file, contract.md, so there is a real and nameable delta the verb declines to name."
+        - "cmd/a2a/contract_p6_wiring.go inspectContractSnapshots: both loops `continue` on contract.DescriptorPath, then set result.frontmatterChanged = contractFrontmatterChanges(...) from the two descriptors."
+        - "internal/cli/cmd_contract.go runDiff prints Added, Removed, Changed AND `frontmatter %s` for each FrontmatterChanged entry."
+        - "internal/cli/cmd_contract.go runVerifyExport prints Added, Removed, Changed and then the digest-mismatch line. FrontmatterChanged is never read."
+        - "runVerifyExport's flag set declares only --local; there is no --json, so ContractVerifyExportResult.Diff.frontmatter_changed cannot be reached from the CLI by any route."
+    expected: >-
+      A mismatch names what differs. Where the difference is in the descriptor,
+      the frontmatter fields that changed are printed, the same way `contract
+      diff` already prints them.
+    actual: >-
+      Two sha256 values and an empty file list. The one list that would explain
+      the verdict is computed and discarded, and no flag exposes it.
+proposal: >-
+  Copy runDiff's fourth loop into runVerifyExport — `for _, value := range
+  result.Diff.FrontmatterChanged { fmt.Fprintf(stdout, "frontmatter %s\n", value)
+  }`. That is one loop, on a value already in hand, and it turns an unexplainable
+  red into an actionable one. Add `--json` to verify-export for parity with
+  `contract diff`, so the structured result the MCP tool already returns is also
+  reachable from the CLI. Worth a teeth-style test that a descriptor-only
+  difference produces at least one named line on stdout: the current silence is
+  indistinguishable from "no delta found", which is what made this look like a
+  tooling failure rather than a real mismatch. This is the rendering half of
+  fb-20260827-a84550; that report is about there being no satisfiable candidate
+  at all, and stays open even if this one ships.
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
