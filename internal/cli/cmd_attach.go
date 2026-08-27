@@ -327,39 +327,79 @@ var _ Command = (*AttachCommand)(nil)
 // lapse date, which is the false-verdict class this phase exists to remove.
 // The schema carries expires_at now and requires it exactly when retention is
 // a duration; `pinned` carries none, which is what "pinned" means.
+// attachAppendEntry appends one attachment entry to fm's frontmatter,
+// through yaml.Node rather than map[string]any — and the difference is a
+// shipped defect, not a style preference.
+//
+// THE BUG THIS FIXES, found 2026-08-27 by no-silent-yes-2026-08/P3 the moment
+// `format` assertion was switched on. `yaml.Unmarshal` into a
+// `map[string]any` resolves an unquoted `2026-12-31` to a **time.Time**, and
+// marshalling it back writes `2026-12-31T00:00:00Z`. So `a2a attach` silently
+// rewrote `needed_by` — a field the envelope schema declares `format: date` —
+// into a value that violates its own declared format. Nothing refused it,
+// because nothing asserted `format`. Measured on the real binary: the live
+// matrix's `bytes-round-trip` and `bytes-round-trip-corrupted-refused` rows
+// both went red with `SCH-012 needed_by: fails schema validation (format)` at
+// the `a2a submit` AFTER the attach.
+//
+// The map round-trip also **alphabetically reordered the entire frontmatter**,
+// so every attach rewrote fields the author never touched. A yaml.Node walk
+// preserves scalars verbatim and leaves key order alone: this function now
+// changes exactly one key, `attachments`, and nothing else.
 func attachAppendEntry(fm artifact.Frontmatter, attachment datapackage.Attachment, expiresAt string) ([]byte, error) {
-	var doc map[string]any
+	var doc yaml.Node
 	if err := yaml.Unmarshal(fm.YAML, &doc); err != nil {
 		return nil, fmt.Errorf("cannot decode frontmatter: %w", err)
 	}
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("cannot decode frontmatter: not a YAML mapping")
+	}
+	root := doc.Content[0]
 
 	entryRaw, err := yaml.Marshal(attachment)
 	if err != nil {
 		return nil, fmt.Errorf("cannot encode attachment entry: %w", err)
 	}
-	var entry map[string]any
-	if err := yaml.Unmarshal(entryRaw, &entry); err != nil {
+	var entryDoc yaml.Node
+	if err := yaml.Unmarshal(entryRaw, &entryDoc); err != nil {
 		return nil, fmt.Errorf("cannot decode attachment entry: %w", err)
 	}
+	if entryDoc.Kind != yaml.DocumentNode || len(entryDoc.Content) == 0 || entryDoc.Content[0].Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("cannot decode attachment entry: not a YAML mapping")
+	}
+	entry := entryDoc.Content[0]
+
 	// Empty exactly when retention is `pinned`, and the schema refuses the
 	// key in that case — so the conditional here and the conditional there
 	// are the same rule stated twice, which is the point: neither can drift
 	// without the other refusing.
 	if expiresAt != "" {
-		entry["expires_at"] = expiresAt
+		entry.Content = append(entry.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "expires_at"},
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: expiresAt})
 	}
 
-	var attachments []any
-	if raw, ok := doc["attachments"]; ok && raw != nil {
-		list, ok := raw.([]any)
-		if !ok {
-			return nil, fmt.Errorf("attachments is not an array")
+	var seq *yaml.Node
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if root.Content[i].Value == "attachments" {
+			seq = root.Content[i+1]
+			break
 		}
-		attachments = list
 	}
-	doc["attachments"] = append(attachments, entry)
+	switch {
+	case seq == nil:
+		seq = &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+		root.Content = append(root.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "attachments"}, seq)
+	case seq.Tag == "!!null":
+		// `attachments:` with no value — a declared-but-empty list.
+		seq.Kind, seq.Tag, seq.Value = yaml.SequenceNode, "!!seq", ""
+	case seq.Kind != yaml.SequenceNode:
+		return nil, fmt.Errorf("attachments is not an array")
+	}
+	seq.Content = append(seq.Content, entry)
 
-	newYAML, err := yaml.Marshal(doc)
+	newYAML, err := yaml.Marshal(&doc)
 	if err != nil {
 		return nil, fmt.Errorf("cannot encode frontmatter: %w", err)
 	}
