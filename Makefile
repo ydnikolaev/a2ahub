@@ -49,7 +49,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: site-check site-check-teeth flaky-scan check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install
+.PHONY: site-check site-check-teeth flaky-scan check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -60,7 +60,7 @@
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := spec-verify-refs ci-parity-audit frozen-allowlist lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus view-vocabulary dashboard-props card-content pendency-uniqueness notify-workflow notify-secrets error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral runner-economics space-template-baseline-check unmeasured-reach
+REPO_GATES := spec-verify-refs ci-parity-audit frozen-allowlist lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus view-vocabulary dashboard-props card-content pendency-uniqueness notify-workflow notify-secrets error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral runner-economics space-template-baseline-check unmeasured-reach
 
 _print-repo-gates:
 	@echo "$(REPO_GATES)"
@@ -453,6 +453,13 @@ skill-citations: ## Every `a2a <verb>` and error code the shipped skill PROSE ci
 	  echo "skill-citations: skip — scripts/check-skill-citations.sh absent (public checkout)."; \
 	fi
 
+cross-surface-citations: ## ADR-019 (2026-08-27) detection half: a comment in one surface may not cite the other surface's symbol by name — the duplicated-RULE shape no `var _` assertion can catch (presence-gated).
+	@if [ -f scripts/check-cross-surface-citations.sh ]; then \
+	  bash scripts/check-cross-surface-citations.sh; \
+	else \
+	  echo "cross-surface-citations: skip — scripts/check-cross-surface-citations.sh absent (public checkout)."; \
+	fi
+
 # The claim lives HERE, on the tracked recipe, and not in the gate script's own
 # header — because that script is UNTRACKED (`scripts/*` is ignored behind a
 # per-file negation list) and it must stay that way: it greps `docs/features`
@@ -708,6 +715,7 @@ HARNESS_TEETH := \
   scripts/check-feature-lint.sh \
   .agents/scripts/epic_docs_drift.sh \
   scripts/check-skill-citations.sh \
+  scripts/check-cross-surface-citations.sh \
   scripts/check-operational-confidence.sh \
   scripts/check-error-codes.sh \
   scripts/check-lane-declarations.sh \
