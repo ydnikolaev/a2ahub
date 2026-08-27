@@ -1,0 +1,63 @@
+feedback: v1
+id: fb-20260827-4b121a
+kind: friction
+severity: minor
+title: validate --ci outside a space names a missing file, not the caller's state
+summary: >-
+  Run from a participant repository, `a2a validate --ci --mode=v3-full-repo`
+  exits 1 with `validate --ci: cannot read space.yaml: open space.yaml: no such
+  file or directory`. The message describes a filesystem, not the state the
+  caller is in. It does not say that the verb runs against a space-repo checkout,
+  it does not say the caller is not in one, and — the part that costs the most —
+  it does not say that the caller almost certainly HAS one on disk already, at
+  `.a2a/cache/mirrors/<space>/`, put there by `a2a sync`. Read from a participant
+  repo the line is indistinguishable from a broken install, and it was in fact
+  read that way: a producer concluded the command did not exist, and `a2a
+  validate` appears in no Makefile in that repository at all — verified — before
+  they eventually found that `cd .a2a/cache/mirrors/<space> && a2a validate --ci`
+  works fine. The commands
+  reference lists `validate` with no hint of the cwd precondition, so nothing
+  before or after the refusal corrects the reading.
+context:
+    a2a_version: 0.25.4
+    os_arch: darwin/arm64
+    surface: cli
+    command: a2a validate --ci --mode=v3-full-repo
+    agent: >-
+      Reproduced with the released 0.25.4 binary in a participant repository with
+      one connected space and a synced mirror.
+evidence:
+    steps:
+        - "From a participant repository root with a valid .a2a/config.yaml and a synced mirror, run `a2a validate --ci --mode=v3-full-repo`."
+        - "Observed: exit 1, `validate --ci: cannot read space.yaml: open space.yaml: no such file or directory`."
+        - "`cd .a2a/cache/mirrors/<space> && a2a validate --ci --mode=v3-full-repo` -> works, exit 0 on a clean mirror."
+        - "skill/a2ahub/reference/commands.md lists `validate` as `validate a draft (V1/V2)` with no statement that --ci requires a space-repo cwd."
+    expected: >-
+      The refusal names the state: this verb runs inside a space checkout, you are
+      in a participant repository, and your synced mirror is at
+      .a2a/cache/mirrors/<space> — or the verb accepts --space <id> and runs there.
+    actual: >-
+      A missing-file path with no mention of spaces, mirrors, or the required cwd,
+      which reads as "this command does not work here".
+proposal: >-
+  When --ci cannot find ./space.yaml, check whether the cwd is a participant
+  project (a loadable .a2a/config.yaml) and say so: name the verb's precondition,
+  and name the mirror path for each connected space as the checkout to run it in.
+  Better still, accept `--space <id>` and run against that space's synced mirror
+  directly, which removes the cd entirely and makes the verb usable from the
+  place a producer actually stands. Add the cwd precondition to the commands
+  reference's `validate` line either way. Two notes for whoever picks this up.
+  This is the same class as the companion fix already shipped for verify-export
+  in fb-20260802-10d983 — "the current error describes a filesystem, not the
+  state the caller is in" — so it is a recurrence of an accepted defect, not a
+  new opinion. And if `--space` is added, consider scoping the walk to the
+  caller's own system: a participant gating on `--mode=v3-full-repo` today
+  reddens on another participant's broken artifact, which is not a verdict they
+  can act on.
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
