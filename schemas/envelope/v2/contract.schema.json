@@ -95,6 +95,41 @@
         "required": ["name", "state"],
         "additionalProperties": false
       }
+    },
+    "x_identity": {
+      "description": "P5 2026-08-28 (docs/features/active/no-silent-yes-2026-08/specs/05-a-contract-says-what-it-must.md, US-1): the producer's keying rule for the records this contract's carried set describes -- `keys` names the field(s) a consumer must key one logical record on, `dynamic_keys_from` optionally names an axis whose declared values supply additional per-value keys the fixed `keys` list cannot enumerate ahead of time, and `on_redelivery` states whether a redelivered record REPLACES the prior one under the same key (`upsert`) or is treated as a new entry (`append`). Carried under the sanctioned `x_` prefix for the SAME reason as `x_binding`/`x_operational`: this schema is deployed and closes with unevaluatedProperties: false, so an older binary reading a legal document must still accept it. This field absent reads as `undeclared` downstream, distinct from a declared value; that reading is the CALLER's, never this schema's, to make -- a consumer that assumes a keying rule where none was declared is the exact silent-duplication failure this field exists to prevent.",
+      "type": "object",
+      "properties": {
+        "keys": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "The field(s) that together identify one logical record a consumer must key on."
+        },
+        "dynamic_keys_from": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Names an axis whose declared values supply additional per-value keys at runtime, when the key set is not fixed ahead of time."
+        },
+        "on_redelivery": {
+          "type": "string",
+          "enum": ["upsert", "append"],
+          "description": "Whether a redelivered record replaces the prior one under the same key (upsert) or is treated as a new entry (append)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "x_guarantees": {
+      "description": "P5 2026-08-28 (same spec, US-3): the producer's checkable promises about the records this contract describes, drawn from a closed vocabulary -- `required_non_null` (no record carries a null in a field this contract requires) and `deterministic_keys` (the same logical record always keys to the same value) to start -- rather than free-text prose an unlisted value is refused, not silently carried. An empty array is a legal, deliberate claim of no guarantees. This field absent reads as `undeclared` downstream, distinct from a declared empty value; that reading is the CALLER's, never this schema's, to make -- absence is never a promise a consumer may assume.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["required_non_null", "deterministic_keys"]
+      }
+    },
+    "x_schema_location": {
+      "description": "P5 2026-08-28 (same spec, US-4): the repo-relative path to this contract's machine schema, so a consumer can find it without parsing a sentence -- today this is only ever stated in prose (e.g. provides/<slug>/schema/). An absolute path or a path carrying a `..` traversal segment is refused by this field's own pattern. This field absent reads as `undeclared` downstream, distinct from a declared value; that reading is the CALLER's, never this schema's, to make -- absence means the location must still be found in prose, not that no machine schema exists.",
+      "type": "string",
+      "pattern": "^(?:[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*|\\.{3,})(?:/(?:[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*|\\.{3,}))*$"
     }
   },
   "required": ["category", "version", "compat_policy", "schema_format", "artifacts"],

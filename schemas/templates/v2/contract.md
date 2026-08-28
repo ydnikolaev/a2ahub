@@ -5,7 +5,7 @@ type: contract
 title: <human/agent-scannable title, <=120 chars>
 space: <space-id>
 from: <owning-system>
-to: [<consumer-system>]              # standing type: any length, no cardinality rule
+to: [<consumer-system>]              # standing type (D6): any length, or the literal `all` to address the whole space — no cardinality rule either way
 actor: {kind: agent, name: <filled by a2a>, model: <filled by a2a>}   # kind: human|agent
 created: <RFC-3339 UTC, e.g. 2026-07-28T10:00:00Z>
 category: <api|data-feed|vocabulary|event-feed|other>
@@ -40,6 +40,24 @@ compat_policy: default
 #   block here would make every fresh contract author a declaration nobody
 #   made. Cleared by `a2a contract activate`, never by hand-editing this file
 #   after publication (a descriptor is immutable once published).
+# x_identity:                         # OPTIONAL — the producer's own keying rule, so a consumer does not mis-key and silently accumulate duplicates
+#   keys: [<field name>, ...]          # the field(s) that make one record unique
+#   dynamic_keys_from: <field name>     # OPTIONAL — an axis whose VALUES each name an additional per-value key, when keys[] alone under-specifies identity
+#   on_redelivery: <upsert|append>       # what a consumer does when the same key arrives again
+#   Commented, like x_binding above and deliberately: a contract carrying no
+#   x_identity at all reads as `undeclared` downstream (P-1) — distinct from a
+#   declared keying rule — and a live block here would make every fresh
+#   contract author a declaration nobody made.
+# x_guarantees:                       # OPTIONAL — closed, checkable claims this contract makes about its own data, never free-text prose
+#   - <required_non_null|deterministic_keys>
+#   Commented and deliberate, same rule as x_identity: a contract carrying no
+#   x_guarantees at all reads as `undeclared`, never as "no guarantees made" —
+#   that is a declared EMPTY array, a distinct, different state.
+# x_schema_location: <repo-relative path, e.g. provides/<slug>/schema/main.schema.json>
+#   OPTIONAL — where the machine-checkable schema for this contract's payload
+#   lives, so automation does not have to parse a sentence to find it.
+#   Commented and deliberate: absence reads as `undeclared`, not "the schema
+#   is co-located with this file by convention" — see x_binding's note above.
 thread: <thread:system-YYYYMMDD-rand4 — a2a new mints this>
 # refs:
 #   - {ref: "<XC-id>@<version>", note: "<why>"}

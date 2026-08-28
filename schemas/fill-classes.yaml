@@ -333,6 +333,33 @@ unreachable:
   envelope/v2/contract/x_operational[].eta: >-
     Same cause as x_operational[].name: no live `x_operational:` sequence in
     templates/v2/contract.md to hand-edit or descend into.
+  envelope/v2/contract/x_identity: >-
+    no-silent-yes-2026-08 P5. Same cause as x_operational above and the same
+    root cause this file's header names: the append pass writes ONE SCALAR
+    node, so an object-typed field it did not already carry is refused, and
+    templates/v2/contract.md carries `x_identity:` only as commented-out
+    guidance. It is commented DELIBERATELY, for the reason the header already
+    records for x_binding and x_operational: a live block would make every
+    fresh contract declare a keying rule its author never chose, and a keying
+    rule nobody chose is exactly the silent yes this epic exists to remove.
+    Unlike x_binding there is no scalar sentinel branch to reach — x_identity
+    is an object or it is absent, and ABSENT is a real, correct answer.
+  envelope/v2/contract/x_identity.keys: >-
+    Same cause as x_identity above: no live `x_identity:` block in
+    templates/v2/contract.md to descend into or hand-edit.
+  envelope/v2/contract/x_identity.dynamic_keys_from: >-
+    Same cause as x_identity.keys: no live `x_identity:` block to descend into.
+  envelope/v2/contract/x_identity.on_redelivery: >-
+    Same cause as x_identity.keys: no live `x_identity:` block to descend into.
+  envelope/v2/contract/x_guarantees: >-
+    no-silent-yes-2026-08 P5. Array-typed, so the same append-pass root cause
+    as x_operational: one scalar node cannot open a sequence, and
+    templates/v2/contract.md carries `x_guarantees:` as commented guidance for
+    the same P-1 reason. NB `x_schema_location` — the third field this phase
+    adds — is deliberately NOT in this map: it is a plain string, so
+    `a2a new contract --field x_schema_location=provides/<slug>/schema/main.schema.json`
+    is a real, valid authoring act. Measured, not assumed: the reachability
+    gate named the five entries above and did not name that one.
 #
 # ## Out of scope, deliberately
 #
@@ -504,6 +531,18 @@ fields:
     x_operational[].name: AUTHOR
     x_operational[].state: AUTHOR
     x_operational[].eta: AUTHOR
+    # no-silent-yes-2026-08 P5 (specs/05-a-contract-says-what-it-must.md):
+    # x_identity, x_guarantees, x_schema_location. Same reasoning as
+    # x_binding and x_operational above — a keying rule, a guarantee and the
+    # location of a machine schema are intent only the PRODUCER holds; no
+    # byte in the repo mints them and no clock derives them. AUTHOR by this
+    # table's stated default.
+    x_identity: AUTHOR
+    x_identity.keys: AUTHOR
+    x_identity.dynamic_keys_from: AUTHOR
+    x_identity.on_redelivery: AUTHOR
+    x_guarantees: AUTHOR
+    x_schema_location: AUTHOR
   envelope/v2/announcement:
     type: TOOL
     id: TOOL
