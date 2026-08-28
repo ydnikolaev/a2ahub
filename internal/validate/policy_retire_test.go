@@ -154,3 +154,66 @@ func TestCheckRetirePrecondition(t *testing.T) {
 		}
 	})
 }
+
+// TestObservedConsumptionNoticeNamesTheVersion is spec 06 §8 criteria 3/4
+// (answers-that-hold-2026-08): retire is per-version, so the notice must
+// name the version each observed consumer pinned, not just the system.
+func TestObservedConsumptionNoticeNamesTheVersion(t *testing.T) {
+	t.Parallel()
+
+	got := ObservedConsumptionNotice(RetirePrecondition{
+		Observed: []ObservedConsumer{{System: "axon", Version: "1.0.0", Packages: 2}},
+	})
+	if !strings.Contains(got, "1.0.0") {
+		t.Fatalf("notice %q does not name the pinned version", got)
+	}
+	if !strings.Contains(got, "axon (2 packages @ 1.0.0)") {
+		t.Fatalf("notice %q does not render system, count and version together: %q", got, "axon (2 packages @ 1.0.0)")
+	}
+}
+
+// TestObservedConsumptionNoticeReportsTwoVersionsDistinctly is spec 06 §8
+// criterion 5, and the exact case a naive map[string]int keyed by System
+// alone gets wrong: the SAME system pinning TWO different versions of ONE
+// contract must render as two separate entries, never one collapsed count.
+//
+// TEETH: key the notice's own dedup map by System alone (drop Version) and
+// this reds — one of the two versions silently disappears, its own count
+// dropped rather than shown.
+func TestObservedConsumptionNoticeReportsTwoVersionsDistinctly(t *testing.T) {
+	t.Parallel()
+
+	got := ObservedConsumptionNotice(RetirePrecondition{
+		Observed: []ObservedConsumer{
+			{System: "axon", Version: "1.0.0", Packages: 2},
+			{System: "axon", Version: "2.0.0", Packages: 1},
+		},
+	})
+	if !strings.Contains(got, "2 observed and undeclared") {
+		t.Fatalf("notice %q does not count the two (system, version) pairs distinctly: %q", got, "2 observed and undeclared")
+	}
+	if !strings.Contains(got, "axon (2 packages @ 1.0.0)") {
+		t.Fatalf("notice %q is missing the 1.0.0 entry", got)
+	}
+	if !strings.Contains(got, "axon (1 package @ 2.0.0)") {
+		t.Fatalf("notice %q is missing the 2.0.0 entry", got)
+	}
+}
+
+// TestObservedConsumptionNoticeVersionIsOptional pins the empty-Version
+// case (a delivery whose pinned reference carried no `@version` at all):
+// the rendered line must fall back to the pre-version-field shape rather
+// than printing a stray " @ ".
+func TestObservedConsumptionNoticeVersionIsOptional(t *testing.T) {
+	t.Parallel()
+
+	got := ObservedConsumptionNotice(RetirePrecondition{
+		Observed: []ObservedConsumer{{System: "axon", Packages: 1}},
+	})
+	if !strings.Contains(got, "axon (1 package)") {
+		t.Fatalf("notice %q does not render the no-version case as before: %q", got, "axon (1 package)")
+	}
+	if strings.Contains(got, "@") {
+		t.Fatalf("notice %q renders a stray version marker with no version present", got)
+	}
+}

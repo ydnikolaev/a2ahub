@@ -32,7 +32,7 @@ import (
 // observedRetireFixture. It is a literal, not a call to
 // validate.ObservedConsumptionNotice, so that a change to the shared
 // renderer is seen here rather than silently agreed with.
-const wantObservedRetireNotice = "0 declared consumer(s), 1 observed and undeclared: axon (2 packages) — " +
+const wantObservedRetireNotice = "0 declared consumer(s), 1 observed and undeclared: axon (2 packages @ 1.0.0) — " +
 	"their own verify-passed deliveries pin this contract while they declare it nowhere. " +
 	"Observed consumption never blocks retire (§9); it is named so this decision is not made blind. " +
 	"Each of them can exit with `a2a contract adopt` (declare the dependency) or by acknowledging the deprecation — no new verb, either way"
@@ -169,7 +169,7 @@ func TestContractRetireResultCarriesTheObservedNotice(t *testing.T) {
 
 	base := submitResult{Verb: "contract retire", IDs: []string{"XC-seomatrix-regime-corpus"}, State: "merged"}
 	pre := validate.RetirePrecondition{
-		Observed: []validate.ObservedConsumer{{System: "axon", Packages: 2}},
+		Observed: []validate.ObservedConsumer{{System: "axon", Packages: 2, Version: "1.0.0"}},
 	}
 
 	widened := contractRetireWithObserved(base, pre)
@@ -198,8 +198,13 @@ func TestContractRetireResultCarriesTheObservedNotice(t *testing.T) {
 		t.Fatalf("observed_consumers missing or wrong shape — an agent-to-agent surface must be able to branch without parsing prose: %s", raw)
 	}
 	entry, ok := consumers[0].(map[string]any)
-	if !ok || entry["system"] != "axon" || entry["packages"] != float64(2) {
-		t.Fatalf("observed_consumers[0] = %v, want snake_case {system, packages} beside this surface's own pr_url/remaining_action: %s", consumers[0], raw)
+	// `version` is asserted HERE, at the field's own natural home, because the
+	// phase that added it could not reach this file. Retire is PER-VERSION, so
+	// a consumer named without the version it pinned is not actionable — the
+	// whole point of P6. A wire field with no direct assertion is the shape
+	// this epic exists to refuse.
+	if !ok || entry["system"] != "axon" || entry["packages"] != float64(2) || entry["version"] != "1.0.0" {
+		t.Fatalf("observed_consumers[0] = %v, want snake_case {system, packages, version} beside this surface's own pr_url/remaining_action: %s", consumers[0], raw)
 	}
 }
 
@@ -289,7 +294,7 @@ func TestContractRetireHandlerNamesObservedConsumersAndProceeds(t *testing.T) {
 	}
 	for _, want := range []string{
 		"0 declared consumer(s), 1 observed and undeclared",
-		"beta (2 packages)",
+		"beta (2 packages @ 1.0.0)",
 		"never blocks retire",
 		"a2a contract adopt",
 	} {

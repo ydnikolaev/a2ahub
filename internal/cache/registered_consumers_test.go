@@ -487,3 +487,112 @@ func TestFindRegisteredConsumers_MalformedConsumesFailsClosed(t *testing.T) {
 		})
 	}
 }
+
+// --- Phase 06 (answers-that-hold-2026-08): the version is carried, not
+// dropped ---
+//
+// TestFindUnadoptedConsumption_DifferentVersionsReportedDistinctly is §8
+// criterion 5's read half (spec 06): two verify-passed deliveries pinning
+// the SAME contract id at TWO DIFFERENT versions must surface as two
+// DISTINCT UnadoptedConsumption entries, never one row whose Count silently
+// sums across versions — the naive `map[string]int` keyed by bare contract
+// id this criterion warns against.
+//
+// TEETH: key packagesByContract by ContractID alone (drop Version from the
+// grouping key) and this reds with a single collapsed entry.
+func TestFindUnadoptedConsumption_DifferentVersionsReportedDistinctly(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	rcWriteFile(t, mirrorDir, "axon/consumes.yaml", "schema: consumes/v1\nsystem: axon\ndependencies: []\n")
+
+	rcWriteDataPackageManifest(t, mirrorDir, "DP-seomatrix-20260818-p3my", "XC-seomatrix-regime-corpus@1.0.0#aaa111")
+	rcWriteDataPackageManifest(t, mirrorDir, "DP-seomatrix-20260818-n2yp", "XC-seomatrix-regime-corpus@2.0.0#bbb222")
+
+	rcWriteHandoff(t, mirrorDir, "XH-seomatrix-20260817-aaaa", "seomatrix", "axon", "DP-seomatrix-20260818-p3my")
+	rcWriteHandoffLifecycle(t, mirrorDir, "XH-seomatrix-20260817-aaaa", "seomatrix", "axon", true)
+	rcWriteHandoff(t, mirrorDir, "XH-seomatrix-20260817-bbbb", "seomatrix", "axon", "DP-seomatrix-20260818-n2yp")
+	rcWriteHandoffLifecycle(t, mirrorDir, "XH-seomatrix-20260817-bbbb", "seomatrix", "axon", true)
+
+	got, skip, err := FindUnadoptedConsumption(mirrorDir, "axon")
+	if err != nil {
+		t.Fatalf("FindUnadoptedConsumption: %v", err)
+	}
+	if skip != nil {
+		t.Fatalf("want no skip, got %+v", skip)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d entries, want exactly 2 (one per version), never collapsed: %+v", len(got), got)
+	}
+	if got[0].ContractID != "XC-seomatrix-regime-corpus" || got[0].Version != "1.0.0" || got[0].Count != 1 {
+		t.Fatalf("got[0] = %+v, want {XC-seomatrix-regime-corpus 1.0.0 1}", got[0])
+	}
+	if got[1].ContractID != "XC-seomatrix-regime-corpus" || got[1].Version != "2.0.0" || got[1].Count != 1 {
+		t.Fatalf("got[1] = %+v, want {XC-seomatrix-regime-corpus 2.0.0 1}", got[1])
+	}
+}
+
+// TestFindObservedConsumers_DifferentVersionsReportedDistinctly is §8
+// criterion 5's producer-side half: the SAME system pinning two different
+// versions of one contract must appear as two distinct ObservedConsumer
+// entries, one per version, never collapsed into one.
+func TestFindObservedConsumers_DifferentVersionsReportedDistinctly(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	rcWriteFile(t, mirrorDir, "axon/consumes.yaml", "schema: consumes/v1\nsystem: axon\ndependencies: []\n")
+
+	rcWriteDataPackageManifest(t, mirrorDir, "DP-seomatrix-20260818-p3my", "XC-seomatrix-regime-corpus@1.0.0#aaa111")
+	rcWriteDataPackageManifest(t, mirrorDir, "DP-seomatrix-20260818-n2yp", "XC-seomatrix-regime-corpus@2.0.0#bbb222")
+
+	rcWriteHandoff(t, mirrorDir, "XH-seomatrix-20260817-aaaa", "seomatrix", "axon", "DP-seomatrix-20260818-p3my")
+	rcWriteHandoffLifecycle(t, mirrorDir, "XH-seomatrix-20260817-aaaa", "seomatrix", "axon", true)
+	rcWriteHandoff(t, mirrorDir, "XH-seomatrix-20260817-bbbb", "seomatrix", "axon", "DP-seomatrix-20260818-n2yp")
+	rcWriteHandoffLifecycle(t, mirrorDir, "XH-seomatrix-20260817-bbbb", "seomatrix", "axon", true)
+
+	got, err := FindObservedConsumers(mirrorDir, "XC-seomatrix-regime-corpus", ocManifest("axon", "seomatrix"))
+	if err != nil {
+		t.Fatalf("FindObservedConsumers: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d entries, want exactly 2 (one per version), never collapsed: %+v", len(got), got)
+	}
+	for _, want := range []ObservedConsumer{
+		{System: "axon", Version: "1.0.0", Packages: 1},
+		{System: "axon", Version: "2.0.0", Packages: 1},
+	} {
+		found := false
+		for _, g := range got {
+			if g == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("got %+v, want to contain %+v", got, want)
+		}
+	}
+}
+
+// TestFindObservedConsumers_UnreadableRegistryFailsClosedRatherThanFalseReport
+// is §8 criterion 8's boundary on THIS function: FindObservedConsumers opens
+// with FindRegisteredConsumers (the DECLARED half), which fails closed on
+// ANY unparseable consumes.yaml in the mirror (documented at that
+// function's own call site above: "the declared half above still fails
+// closed... because that set is the one the gate itself reads"). This
+// function must propagate that error rather than swallowing it into an
+// empty, falsely-clean observed set — the caller (contractObservedConsumers,
+// and this phase's doctorObservedProducerRows) is the layer that degrades
+// an error to "nothing observed" (FAILS OPEN, by contract, never by
+// silently miscounting here).
+func TestFindObservedConsumers_UnreadableRegistryFailsClosedRatherThanFalseReport(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	rcWriteFile(t, mirrorDir, "axon/consumes.yaml", "consumes: []\n") // placeholder shape, refused by parseConsumesStrict
+
+	rcWriteDataPackageManifest(t, mirrorDir, "DP-seomatrix-20260818-p3my", "XC-seomatrix-regime-corpus@1.0.0#aaa111")
+	rcWriteHandoff(t, mirrorDir, "XH-seomatrix-20260817-aaaa", "seomatrix", "axon", "DP-seomatrix-20260818-p3my")
+	rcWriteHandoffLifecycle(t, mirrorDir, "XH-seomatrix-20260817-aaaa", "seomatrix", "axon", true)
+
+	got, err := FindObservedConsumers(mirrorDir, "XC-seomatrix-regime-corpus", ocManifest("axon", "seomatrix"))
+	if err == nil {
+		t.Fatalf("got (%+v, nil), want a non-nil error — axon's own registry cannot be parsed, and the declared half fails closed rather than silently reporting an empty (falsely clean) observed set", got)
+	}
+}

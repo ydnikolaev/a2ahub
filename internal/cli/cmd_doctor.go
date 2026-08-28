@@ -260,6 +260,13 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		// loop never touches allOK.
 		_, _ = fmt.Fprintf(stdio.Stdout, "consumed contract [%s]: %s: %s\n", row.SpaceID, row.Status, row.Detail)
 	}
+	for _, row := range c.doctorObservedProducerRows(cfg, machine) {
+		// Spec 06 (answers-that-hold-2026-08) US-1/US-2: the producer
+		// direction of the row just above — WARN, never FAIL (AC-7:
+		// observed consumption informs and gates nothing), so this loop
+		// never touches allOK either.
+		_, _ = fmt.Fprintf(stdio.Stdout, "observed consumer [%s]: %s: %s\n", row.SpaceID, row.Status, row.Detail)
+	}
 	for _, row := range c.doctorNotifySelectivityRows(cfg, machine) {
 		// AC-16/17 (answers-that-hold-2026-08 spec 11 §T1, US-6): "doctor
 		// WARNs on a route that matched nothing while qualifying traffic
@@ -2227,7 +2234,27 @@ func (c *DoctorCommand) doctorUnadoptedConsumptionRows(cfg space.ProjectConfig, 
 			})
 			continue
 		}
+		// Phase 06 (answers-that-hold-2026-08) split cache.FindUnadoptedConsumption's
+		// own rows by (contract, version) so the PRODUCER direction
+		// (doctorObservedProducerRows below) can name which version a
+		// consumer pinned (§8 criterion 5). This row is the CONSUMER
+		// direction and never named a version at all — collapsing back to
+		// one row per contract, by SUMMING each version bucket's own
+		// distinct-package count, reproduces byte-for-byte what this loop
+		// printed before that split (§8 criterion 2/AC-2): a package pins
+		// exactly one (contract, version) pair, so it lands in exactly one
+		// bucket and the sum equals the old single per-contract count.
+		totals := map[string]int{}
+		var order []string
 		for _, u := range found {
+			if _, seen := totals[u.ContractID]; !seen {
+				order = append(order, u.ContractID)
+			}
+			totals[u.ContractID] += u.Count
+		}
+		sort.Strings(order)
+		for _, contractID := range order {
+			count := totals[contractID]
 			// word/verb agree together — "1 ... delivery conforms" vs
 			// "2 ... deliveries conform" — a single %s for the noun alone
 			// (delivery/deliveries) left the verb permanently singular
@@ -2235,7 +2262,7 @@ func (c *DoctorCommand) doctorUnadoptedConsumptionRows(cfg space.ProjectConfig, 
 			// this row's format string count==1's own test could not
 			// exercise.
 			word, verb := "delivery", "conforms"
-			if u.Count != 1 {
+			if count != 1 {
 				word, verb = "deliveries", "conform"
 			}
 			rows = append(rows, doctorUnadoptedConsumptionRow{
@@ -2243,9 +2270,113 @@ func (c *DoctorCommand) doctorUnadoptedConsumptionRows(cfg space.ProjectConfig, 
 				doctorVisibilityDecision: doctorVisibilityDecision{
 					Status: doctorVisibilityWARN,
 					Detail: fmt.Sprintf("%d verify-passed %s %s to %s, which is not in this system's own consumes.yaml — run `a2a contract adopt %s`",
-						u.Count, word, verb, u.ContractID, u.ContractID),
+						count, word, verb, contractID, contractID),
 				},
 			})
+		}
+	}
+	return rows
+}
+
+// doctorObservedProducerRow names one system whose OWN committed,
+// verify-passed deliveries show it consuming a contract THIS project's own
+// system PROVIDES, without declaring that dependency anywhere — spec 06's
+// producer direction (answers-that-hold-2026-08, US-1/US-2), the opposite
+// of doctorUnadoptedConsumptionRow above ("what do I consume without
+// adopting" vs "who consumes MINE without telling me").
+type doctorObservedProducerRow struct {
+	SpaceID string
+	doctorVisibilityDecision
+}
+
+// doctorObservedProducerRows is spec 06's THIRD caller of
+// cache.FindObservedConsumers (AC-6: "one scan function, three call
+// sites") — the other two are internal/cli's own contractObservedConsumers
+// (cmd_contract.go, `contract retire`) and internal/mcp's mirrored twin
+// (tools_contract.go, `a2a_contract_retire`). This function writes no
+// second walk of the mirror: it only discovers WHICH contracts to ask about
+// (the contract descriptors this project's own system has published into
+// each connected mirror, <system>/provides/<slug>/contract.md — the same
+// path space.Layout.ProvidesContract/contractReadDescriptor already read
+// this shape from) and then asks the existing scan once per contract.
+//
+// Deliberately calls cache.FindObservedConsumers directly rather than
+// cmd_contract.go's own contractObservedConsumers helper: that helper
+// filters by an already-ACKED-deprecation set, which is the retire/
+// deprecation thread's own fact and has no meaning here — doctor is not
+// mid-retire, so every observed-but-undeclared consumer is worth naming.
+//
+// WARN-only, exactly like doctorUnadoptedConsumptionRows above: this never
+// touches Run's own allOK (spec 06 T1, AC-7 — observed consumption informs
+// and gates nothing). Best-effort throughout, matching the scan's own
+// discipline (§8 criterion 8): an unreadable manifest, an unparseable
+// contract descriptor, or an error from the scan itself (which itself
+// fails closed on an unrelated participant's own malformed consumes.yaml,
+// see cache.FindObservedConsumers) silently EXCLUDES that space or that
+// contract from this advisory rather than reporting anything against it —
+// an undercount, never a false advisory.
+func (c *DoctorCommand) doctorObservedProducerRows(cfg space.ProjectConfig, machine space.MachineConfig) []doctorObservedProducerRow {
+	if cfg.System == "" {
+		return nil
+	}
+	refs := append([]space.Ref(nil), cfg.Spaces...)
+	sort.Slice(refs, func(i, j int) bool { return refs[i].ID < refs[j].ID })
+
+	var rows []doctorObservedProducerRow
+	for _, ref := range refs {
+		dir := c.resolveMirror(c.projectRoot, ref, machine)
+		raw, err := c.readFile(filepath.Join(dir, "space.yaml"))
+		if err != nil {
+			continue // space access/versions already report an unreachable mirror
+		}
+		manifest, err := space.ParseManifest(raw)
+		if err != nil {
+			continue // versions already reports a malformed manifest
+		}
+
+		matches, gerr := filepath.Glob(filepath.Join(dir, cfg.System, "provides", "*", "contract.md"))
+		if gerr != nil || len(matches) == 0 {
+			continue
+		}
+		sort.Strings(matches)
+		for _, m := range matches {
+			rawContract, rerr := c.readFile(m)
+			if rerr != nil {
+				continue // best-effort per contract, same discipline as the scan itself
+			}
+			fm, ferr := artifact.ParseFrontmatter(rawContract)
+			if ferr != nil {
+				continue
+			}
+			var probe struct {
+				ID string `yaml:"id"`
+			}
+			if yaml.Unmarshal(fm.YAML, &probe) != nil || probe.ID == "" {
+				continue
+			}
+
+			observed, oerr := cache.FindObservedConsumers(dir, probe.ID, manifest)
+			if oerr != nil {
+				continue // fails open: an unreadable mirror degrades to "nothing observed", never a FAIL
+			}
+			for _, o := range observed {
+				unit := "package"
+				if o.Packages != 1 {
+					unit = "packages"
+				}
+				versionPart := ""
+				if o.Version != "" {
+					versionPart = " @ " + o.Version
+				}
+				rows = append(rows, doctorObservedProducerRow{
+					SpaceID: ref.ID,
+					doctorVisibilityDecision: doctorVisibilityDecision{
+						Status: doctorVisibilityWARN,
+						Detail: fmt.Sprintf("%s consumes %s%s (%d %s) without declaring it in its own consumes.yaml — its own verify-passed deliveries pin this contract while it registers nowhere",
+							o.System, probe.ID, versionPart, o.Packages, unit),
+					},
+				})
+			}
 		}
 	}
 	return rows

@@ -837,7 +837,7 @@ func contractObservedConsumers(mirrorDir string, manifest space.Manifest, contra
 		if acked[o.System] {
 			continue
 		}
-		out = append(out, validate.ObservedConsumer{System: o.System, Packages: o.Packages})
+		out = append(out, validate.ObservedConsumer{System: o.System, Version: o.Version, Packages: o.Packages})
 	}
 	return out
 }

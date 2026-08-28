@@ -309,16 +309,26 @@ func parseConsumesStrict(raw []byte, path string) (space.Consumes, error) {
 	return registry, nil
 }
 
-// UnadoptedConsumption is one contract ownSystem has verify-passed
-// deliveries against without ever listing in its own consumes.yaml — see
-// FindUnadoptedConsumption's own doc comment. Count is the number of
-// DISTINCT resolved data-package ids (doc.ID) conforming to ContractID,
-// never the number of deliverable OCCURRENCES: the same package referenced
-// by more than one handoff (a resubmission, a broadcast to several
-// targets) must not inflate the count past the number of packages a
-// reader would actually have to look at.
+// UnadoptedConsumption is one (contract, version) pair ownSystem has
+// verify-passed deliveries against without ever listing ContractID in its
+// own consumes.yaml — see FindUnadoptedConsumption's own doc comment.
+// Count is the number of DISTINCT resolved data-package ids (doc.ID)
+// conforming to that exact (ContractID, Version) pair, never the number of
+// deliverable OCCURRENCES: the same package referenced by more than one
+// handoff (a resubmission, a broadcast to several targets) must not
+// inflate the count past the number of packages a reader would actually
+// have to look at.
+//
+// Version is the pinned reference's own version half (data-package.schema.
+// json's pinnedContractRef, "<id>@<version>#<digest>") — kept, not
+// dropped, so that two deliveries pinning the SAME ContractID at DIFFERENT
+// versions surface as two DISTINCT entries here rather than one collapsed
+// count (spec 06 §8 criterion 5). A caller that only cares about the bare
+// contract id (ObservedUndeclaredContracts) is unaffected: it indexes by
+// ContractID alone, and a duplicate key there is already idempotent.
 type UnadoptedConsumption struct {
 	ContractID string
+	Version    string
 	Count      int
 }
 
@@ -432,7 +442,12 @@ func FindUnadoptedConsumption(mirrorDir, ownSystem string) ([]UnadoptedConsumpti
 
 	// packagesByContract dedups by resolved package id (doc.ID), never by
 	// deliverable occurrence — see UnadoptedConsumption's own doc comment.
-	packagesByContract := map[string]map[string]bool{}
+	// Keyed by (contract, version) rather than contract alone so that two
+	// deliveries pinning the same contract at different versions never
+	// collapse into one count (spec 06 §8 criterion 5) — the split this
+	// loop performs on doc.Contract below is the ONLY place that version is
+	// available; dropping it here is the drop this phase closes.
+	packagesByContract := map[unadoptedContractVersion]map[string]bool{}
 	for _, a := range artifacts {
 		if a.Env.Type != string(fold.KindHandoff) {
 			continue
@@ -482,17 +497,18 @@ func FindUnadoptedConsumption(mirrorDir, ownSystem string) ([]UnadoptedConsumpti
 			if !ok {
 				continue
 			}
-			contractID, _ := splitPinnedContractID(doc.Contract)
+			contractID, version := splitPinnedContractID(doc.Contract)
 			if contractID == "" || myDependencies[contractID] {
 				continue
 			}
 			if parsed, perr := artifact.ParseID(contractID); perr == nil && parsed.System == ownSystem {
 				continue
 			}
-			if packagesByContract[contractID] == nil {
-				packagesByContract[contractID] = map[string]bool{}
+			key := unadoptedContractVersion{ContractID: contractID, Version: version}
+			if packagesByContract[key] == nil {
+				packagesByContract[key] = map[string]bool{}
 			}
-			packagesByContract[contractID][doc.ID] = true
+			packagesByContract[key][doc.ID] = true
 		}
 	}
 
@@ -500,11 +516,24 @@ func FindUnadoptedConsumption(mirrorDir, ownSystem string) ([]UnadoptedConsumpti
 		return nil, nil, nil
 	}
 	out := make([]UnadoptedConsumption, 0, len(packagesByContract))
-	for id, packages := range packagesByContract {
-		out = append(out, UnadoptedConsumption{ContractID: id, Count: len(packages)})
+	for key, packages := range packagesByContract {
+		out = append(out, UnadoptedConsumption{ContractID: key.ContractID, Version: key.Version, Count: len(packages)})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ContractID < out[j].ContractID })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ContractID != out[j].ContractID {
+			return out[i].ContractID < out[j].ContractID
+		}
+		return out[i].Version < out[j].Version
+	})
 	return out, nil, nil
+}
+
+// unadoptedContractVersion is FindUnadoptedConsumption's own grouping key —
+// see packagesByContract's doc comment at its declaration above for why the
+// version rides along rather than being dropped.
+type unadoptedContractVersion struct {
+	ContractID string
+	Version    string
 }
 
 // splitPinnedContractID returns the bare contract id from a data-package/v1
@@ -533,10 +562,21 @@ func splitPinnedContractID(ref string) (id, version string) {
 // versus evidence, two different kinds of fact that must not be
 // conflated).
 //
+// Version is the contract version that system's own deliveries pinned —
+// UnadoptedConsumption's own Version, carried through unchanged, because
+// retire is per-version and "consumes something" is not actionable (spec
+// 06 US-2). One system pinning two different versions of the same contract
+// surfaces as two DISTINCT ObservedConsumer entries, never one collapsed
+// count (§8 criterion 5) — FindUnadoptedConsumption already groups by
+// (contract, version) below, so this loop's per-entry append does the
+// right thing without any extra bookkeeping here.
+//
 // Packages is FindUnadoptedConsumption's own distinct-package count for
-// that system, carried through unchanged (see UnadoptedConsumption).
+// that (system, version) pair, carried through unchanged (see
+// UnadoptedConsumption).
 type ObservedConsumer struct {
 	System   string
+	Version  string
 	Packages int
 }
 
@@ -610,10 +650,15 @@ func FindObservedConsumers(mirrorDir, contractID string, manifest space.Manifest
 			if o.ContractID != contractID {
 				continue
 			}
-			out = append(out, ObservedConsumer{System: p.System, Packages: o.Count})
+			out = append(out, ObservedConsumer{System: p.System, Version: o.Version, Packages: o.Count})
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].System < out[j].System })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].System != out[j].System {
+			return out[i].System < out[j].System
+		}
+		return out[i].Version < out[j].Version
+	})
 	return out, nil
 }
 

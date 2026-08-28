@@ -76,7 +76,7 @@ func TestContractRetireNamesObservedConsumersAndProceeds(t *testing.T) {
 	stderr := errOut.String()
 	for _, want := range []string{
 		"0 declared consumer(s), 1 observed and undeclared",
-		"beta (2 packages)",
+		"beta (2 packages @ 1.0.0)",
 		"never blocks retire",
 		"a2a contract adopt",
 	} {

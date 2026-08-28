@@ -66,10 +66,21 @@ type RegisteredConsumer struct {
 type ObservedConsumer struct {
 	// System is the observed consuming system's id.
 	System string `json:"system"`
+	// Version is the contract version that system's own deliveries pinned
+	// (cache.ObservedConsumer's own field, carried through unchanged) —
+	// retire is per-version, so naming the system without it is not
+	// actionable (spec 06 US-2). Deliberately NOT `omitempty`: an empty
+	// string here is a REACHABLE, meaningful value (a delivery whose pinned
+	// reference carried no `@version` at all — cache's own
+	// splitPinnedContractID), and on an agent-to-agent wire that value must
+	// stay indistinguishable from nothing OTHER than an older binary that
+	// never populated this field — omitting it on the empty case would
+	// erase exactly that distinction.
+	Version string `json:"version"`
 	// Packages is the number of DISTINCT data packages that system
-	// verify-passed against this contract — a count of things a reader
-	// would actually have to look at, never of deliverable occurrences
-	// (cache.UnadoptedConsumption's own doc comment).
+	// verify-passed against this contract at this version — a count of
+	// things a reader would actually have to look at, never of deliverable
+	// occurrences (cache.UnadoptedConsumption's own doc comment).
 	Packages int `json:"packages"`
 }
 
@@ -210,27 +221,40 @@ const retireNoticeLimit = 8
 // and it is only true if both halves are counted the same way the gate
 // counts them.
 func ObservedConsumptionNotice(p RetirePrecondition) string {
-	packages := map[string]int{}
-	var systems []string
+	// observedKey is System+Version: a system pinning TWO different
+	// versions of the same contract must render as two distinct entries,
+	// never collapsed into one (spec 06 §8 criterion 5) — the same shape
+	// that would make a naive map[string]int keyed by System alone silently
+	// drop one version's own count.
+	type observedKey struct{ System, Version string }
+	packages := map[observedKey]int{}
+	var keys []observedKey
 	for _, o := range p.Observed {
 		if o.System == "" {
 			continue
 		}
-		if _, seen := packages[o.System]; !seen {
-			systems = append(systems, o.System)
+		key := observedKey{System: o.System, Version: o.Version}
+		if _, seen := packages[key]; !seen {
+			keys = append(keys, key)
 		}
-		// A system named twice is one system: keep the LARGER count rather
-		// than summing, since each entry is already a distinct-package
-		// count for the same (system, contract) pair and summing would
-		// double-count a package a caller resolved twice.
-		if o.Packages > packages[o.System] {
-			packages[o.System] = o.Packages
+		// A (system, version) pair named twice is one entry: keep the
+		// LARGER count rather than summing, since each entry is already a
+		// distinct-package count for the same (system, contract, version)
+		// triple and summing would double-count a package a caller
+		// resolved twice.
+		if o.Packages > packages[key] {
+			packages[key] = o.Packages
 		}
 	}
-	if len(systems) == 0 {
+	if len(keys) == 0 {
 		return ""
 	}
-	sort.Strings(systems)
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].System != keys[j].System {
+			return keys[i].System < keys[j].System
+		}
+		return keys[i].Version < keys[j].Version
+	})
 
 	declared := map[string]bool{}
 	for _, c := range p.Consumers {
@@ -240,24 +264,28 @@ func ObservedConsumptionNotice(p RetirePrecondition) string {
 		declared[c.System] = true
 	}
 
-	shown := systems
+	shown := keys
 	suffix := ""
 	if len(shown) > retireNoticeLimit {
 		shown = shown[:retireNoticeLimit]
-		suffix = fmt.Sprintf(" (+%d more)", len(systems)-retireNoticeLimit)
+		suffix = fmt.Sprintf(" (+%d more)", len(keys)-retireNoticeLimit)
 	}
 	rendered := make([]string, 0, len(shown))
-	for _, s := range shown {
+	for _, k := range shown {
 		unit := "packages"
-		if packages[s] == 1 {
+		if packages[k] == 1 {
 			unit = "package"
 		}
-		rendered = append(rendered, fmt.Sprintf("%s (%d %s)", s, packages[s], unit))
+		versionPart := ""
+		if k.Version != "" {
+			versionPart = " @ " + k.Version
+		}
+		rendered = append(rendered, fmt.Sprintf("%s (%d %s%s)", k.System, packages[k], unit, versionPart))
 	}
 
 	return fmt.Sprintf(
 		"%d declared consumer(s), %d observed and undeclared: %s%s — their own verify-passed deliveries pin this contract while they declare it nowhere. "+
 			"Observed consumption never blocks retire (§9); it is named so this decision is not made blind. "+
 			"Each of them can exit with `a2a contract adopt` (declare the dependency) or by acknowledging the deprecation — no new verb, either way",
-		len(declared), len(systems), strings.Join(rendered, ", "), suffix)
+		len(declared), len(keys), strings.Join(rendered, ", "), suffix)
 }

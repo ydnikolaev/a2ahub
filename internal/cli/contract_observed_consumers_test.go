@@ -28,7 +28,7 @@ import (
 // observedRetireFixture. It is a literal, not a call to
 // validate.ObservedConsumptionNotice, so that a change to the shared
 // renderer is seen here rather than silently agreed with.
-const wantObservedRetireNotice = "0 declared consumer(s), 1 observed and undeclared: axon (2 packages) — " +
+const wantObservedRetireNotice = "0 declared consumer(s), 1 observed and undeclared: axon (2 packages @ 1.0.0) — " +
 	"their own verify-passed deliveries pin this contract while they declare it nowhere. " +
 	"Observed consumption never blocks retire (§9); it is named so this decision is not made blind. " +
 	"Each of them can exit with `a2a contract adopt` (declare the dependency) or by acknowledging the deprecation — no new verb, either way"
