@@ -9022,6 +9022,119 @@
             "scope": "none",
             "why": "Every field is optional and every existing contract stays valid. Nothing to migrate: a contract that declares none of them reads exactly as it did before, which is `undeclared` rather than any default.\n"
           }
+        }
+      ]
+    },
+    {
+      "version": "0.25.7",
+      "released": "2026-08-29",
+      "headline": "every question has one answerer, and the answer is printed",
+      "changes": [
+        {
+          "id": "RN-02507-0",
+          "kind": "feat",
+          "impact": "high",
+          "subject": "a2a adapt — what your repository still owes, not what your binary crossed",
+          "detail": "`a2a whatsnew` answers \"what changed\". Nothing answered \"what have I not done about it yet\", and those two diverge the moment a repository sits still while binaries move.\n`a2a adapt` walks from `adapted_through` in your project's own `.a2a/config.yaml` — not from the version your binary replaced — and prints only what OBLIGES you. A change whose `action.scope` is `none` is context and stays in `whatsnew`. Over the current corpus that is the difference between 172 items and 44.\nThe list is ordered so the first item is always one you can act on alone, and it exits non-zero while anything remains, so a harness can gate on it. `a2a adapt --done` records that you adapted — in the REPOSITORY, so a teammate's agent neither redoes finished work nor skips work it wrongly believes done. It runs every pending `detect:` first and refuses if one still fires; when the pending set carries no `detect:` at all it records AND SAYS the record is unverified, rather than implying a check it did not perform.\n`a2a update` now prints this instead of the raw digest. `a2a whatsnew` is unchanged.\n",
+          "affects": [
+            "cli",
+            "mcp"
+          ],
+          "action": {
+            "scope": "local",
+            "why": "Your repository has no `adapted_through` yet, so the first run walks from the oldest release this binary carries and says so. Run it once, do the work it names, and record it.\n",
+            "detect": [
+              "test -f .a2a/config.yaml \u0026\u0026 ! grep -q '^adapted_through:' .a2a/config.yaml"
+            ],
+            "run": [
+              "a2a adapt"
+            ]
+          }
+        },
+        {
+          "id": "RN-02507-1",
+          "kind": "fix",
+          "impact": "high",
+          "subject": "publishing a contract while a staging tree exists is refused instead of silently taking the mirror",
+          "detail": "`a2a contract publish \u003cid\u003e --bump \u003cb\u003e` with a staging tree present and no `--staging` used to fall back to the landed mirror bytes — publishing the PREVIOUS version's content under the new number, with no indication that the candidate you had staged was ignored.\nIt is now refused, naming the staging path it found and the exact flag to pass. `a2a new contract` writes that tree and nothing removes it, so this reaches any project that has ever drafted the contract locally.\nSeparately, a bump whose mutations touch no normative artifact is refused as well: a version that changes nothing means nothing to a consumer. Pass `--allow-empty-bump` when it is deliberate.\n",
+          "affects": [
+            "cli",
+            "mcp"
+          ],
+          "action": {
+            "scope": "local",
+            "why": "A publish command in your own scripts or CI that passes `--bump` or `--version` without `--staging` will now be refused wherever a staging tree exists. The refusal names the flag to add.\n",
+            "detect": [
+              "grep -rn 'contract publish' --include=Makefile --include=*.sh . 2\u003e/dev/null | grep -v -- '--staging' | grep -q ."
+            ],
+            "run": [
+              "a2a contract publish \u003cid\u003e --bump minor --staging .a2a/staging/\u003csystem\u003e/provides/\u003cslug\u003e"
+            ]
+          }
+        },
+        {
+          "id": "RN-02507-2",
+          "kind": "fix",
+          "impact": "high",
+          "subject": "a response filed as a plain document is refused, and already-stranded threads can be repaired",
+          "detail": "A response whose envelope schema requires `parent` used to land as a file: the document appeared and the parent question learned nothing. The receiving agent was left in a terminal state — verify and dispute both resolved to a state with no legal move — having done nothing wrong.\nThe write funnel now refuses such a write, below both surfaces, so the CLI and the MCP write path cannot diverge on it. The guard is derived from the envelope schemas' own `required` arrays, so a kind that later gains `parent` is covered with no code change.\n`a2a respond --response \u003cRS-id\u003e` adopts an orphan already filed: the parent moves and your existing body is kept.\n",
+          "affects": [
+            "cli",
+            "mcp"
+          ],
+          "action": {
+            "scope": "local",
+            "why": "A thread whose response was filed before this release may already be stranded — the response exists, the parent never moved. Repair it once per affected thread; nothing repairs itself.\n",
+            "detect": [
+              "a2a inbox --json | grep -q '\"kind\":\"response\"'"
+            ],
+            "run": [
+              "a2a respond --response \u003cRS-id\u003e"
+            ]
+          }
+        },
+        {
+          "id": "RN-02507-3",
+          "kind": "feat",
+          "impact": "normal",
+          "subject": "a refusal names where you are standing and what to run from there",
+          "detail": "`a2a validate --ci` outside a space checkout used to name a missing file. It now names the precondition, says the current directory is a participant project rather than a space checkout, and names each connected space's synced mirror as the checkout to run in.\n`--space \u003cid\u003e` removes the directory change entirely: the same validation runs against that space's synced mirror from where you already are. An unknown id is refused naming the ids that ARE connected.\n",
+          "affects": [
+            "cli"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "Additive. The existing invocation behaves as before wherever it already worked; only the refusal text and the new flag are new.\n"
+          }
+        },
+        {
+          "id": "RN-02507-4",
+          "kind": "feat",
+          "impact": "normal",
+          "subject": "doctor tells a producer which VERSION its undeclared consumers pinned",
+          "detail": "`a2a doctor` in a producer's project now reports a system whose committed artifacts show it consuming a contract you provide without declaring it — and names the version that system pinned. Retire is per-version, so \"consumes something\" was not actionable. The retire notice carries the version per observed consumer for the same reason.\nObserved consumption still gates nothing and refuses nothing; it is reported so the decision is not made blind.\n",
+          "affects": [
+            "cli",
+            "mcp"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "A new advisory row on a surface you already read. Nothing to run, nothing refuses differently, and a participant whose registry cannot be parsed is excluded rather than reported against.\n"
+          }
+        },
+        {
+          "id": "RN-02507-5",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "a notify route that can match nothing says so, and an unreadable manifest is refused",
+          "detail": "A notification route selecting on a kind or state the model does not carry used to be silently unsatisfiable. Every `fold.Kind` and `fold.State` is now selectable by a route or carries a written reason, and no second kind/state vocabulary may exist beside the one the fold owns.\nA manifest whose raw bytes do not re-decode is now refused rather than treated as a manifest declaring no selectors — an empty selector list and an unreadable one had been the same answer.\n",
+          "affects": [
+            "cli"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "Routes that were already satisfiable are unaffected. A route that could never match is now visible at render time rather than silently quiet.\n"
+          }
         },
         {
           "id": "KI-01900-PROVIDER-TIER-DEFERRED",
