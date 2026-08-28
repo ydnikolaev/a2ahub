@@ -19,15 +19,6 @@ items:
       refs:
         - docs/features/active/answers-that-hold-2026-08/specs/03-the-human-path-says-what-it-knows.md
       date: "2026-08-27"
-    - id: fb-20260827-a84550
-      kind: bug
-      severity: major
-      title: verify-export against a staged candidate can never match its published version
-      verdict: shipped
-      route: phase
-      refs:
-        - docs/features/active/answers-that-hold-2026-08/specs/02-published-bytes-a-producer-can-hold.md
-      date: "2026-08-27"
     - id: fb-20260827-455fca
       kind: feature
       severity: minor
@@ -45,15 +36,6 @@ items:
       route: phase
       refs:
         - docs/features/active/answers-that-hold-2026-08/specs/04-a-refusal-names-the-caller-state.md
-      date: "2026-08-27"
-    - id: fb-20260827-47069c
-      kind: bug
-      severity: major
-      title: a no-op version bump publishes the OLD bytes under the NEW number
-      verdict: shipped
-      route: phase
-      refs:
-        - docs/features/active/answers-that-hold-2026-08/specs/02-published-bytes-a-producer-can-hold.md
       date: "2026-08-27"
     - id: fb-20260827-5b6a1c
       kind: friction
