@@ -100,6 +100,8 @@ scripts/*
 !scripts/check-notify-secrets.sh
 !scripts/check-notify-selector-coverage.sh
 !scripts/check-mcp-schema-decodable.sh
+!scripts/check-refusal-ratchet.sh
+!scripts/check-release-note-detect.sh
 !scripts/check-error-codes.sh
 !scripts/check-frozen-allowlist.sh
 !scripts/ci-parity.sh
@@ -121,6 +123,8 @@ scripts/lib/*
 !scripts/lib/gate-lib.sh
 !scripts/lib/strip-set.txt
 !scripts/lib/site-overlay.txt
+!scripts/lib/refusal-ratchet-budget.txt
+!scripts/lib/release-note-detect-budget.txt
 !scripts/tests/
 scripts/tests/*
 !scripts/tests/check_contract_carried_set_test.sh

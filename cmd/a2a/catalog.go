@@ -181,6 +181,10 @@ func catalogCLICommand(name string) (cli.Command, bool) {
 		return cli.NewAwaitCommand(nil), true
 	case "whatsnew":
 		return cli.NewWhatsnewCommand(""), true
+	case "adapt":
+		// Metadata-only zero value: Name/Synopsis touch neither the binary
+		// version nor the project config.
+		return cli.NewAdaptCommand("", ""), true
 	case "work":
 		// Metadata-only zero value: Name/Synopsis do not touch dependencies.
 		return &cli.WorkCommand{}, true

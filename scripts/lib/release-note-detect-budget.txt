@@ -1,0 +1,130 @@
+# release-note-detect-budget.txt — P13 US-5's forward-only authoring-gate
+# ratchet (spec docs/features/active/answers-that-hold-2026-08/specs/
+# 13-adapt-from-a-baseline.md §11 second amendment: "detect_exempt: moves
+# into the gate's own scripts/lib/ budget file, keyed by change id").
+#
+# A release-notes change whose action.scope is "local" or "space" must
+# carry a detect: — the ONLY way `a2a adapt --done` can ever verify a
+# recorded obligation rather than trust an agent's word (spec 13
+# §"THE MEASUREMENT" finding 3) — or a row in this file naming it as
+# exempt. scripts/check-release-note-detect.sh reads this file; it does no
+# YAML parsing of its own (internal/notes/detectcheck.go does that, `go
+# run` from the gate — D-7).
+#
+# THE FROZEN CEILING IS NOT THE SPEC'S "40 of 44". That figure was the P13
+# spec's own (0.19.0, 0.25.6] MEASUREMENT window illustration — 44 changes
+# obliged the reader in that one range, 40 of which carried no detect:.
+# Scoping THIS GATE to that same hardcoded window would make "forward-only"
+# mean "forward of one arbitrary old tag" forever, and a 40-entry budget
+# checked against a wider scan reds on arrival — the gate and the ratchet
+# must describe the SAME population. So this gate scans the WHOLE embedded
+# release-notes corpus (every releasenotes/*.yaml), and the real count of
+# scope:local|space changes with no detect: across that whole corpus, on
+# 2026-08-28, is 92 — every id below, one per line, no comment needed per
+# row (the reason is uniform: "authored before this gate existed").
+#
+# AC-14: this number is a printed number that may only shrink. Retrofitting
+# a detect: to any change below and deleting its row here is an ORDINARY
+# commit; the ceiling below moves down in the SAME commit, never up. A row
+# that no longer describes a real violation (a detect: was added, the
+# change no longer exists) must be deleted or the gate reds naming it as
+# stale — the ratchet drains, it does not merely cap.
+#
+# Format: one change id per line. "#" starts a comment; blank lines are
+# ignored. A NEW release-notes change with scope: local|space and no
+# detect: that is not listed here REDS the gate, by id.
+#
+# frozen-ceiling: 92
+
+RN-01000-10
+RN-01000-11
+RN-01000-12
+RN-01000-13
+RN-01000-15
+RN-01000-2
+RN-01000-3
+RN-01000-4
+RN-01000-7
+RN-01000-8
+RN-01100-4
+RN-01200-6
+RN-01300-1
+RN-01300-2
+RN-01300-4
+RN-01300-5
+RN-01300-6
+RN-01300-8
+RN-01500-1
+RN-01500-11
+RN-01500-12
+RN-01500-14
+RN-01500-2
+RN-01500-3
+RN-01500-5
+RN-01500-6
+RN-01501-1
+RN-01502-1
+RN-01600-1
+RN-01600-2
+RN-01600-3
+RN-01600-6
+RN-01801-4
+RN-01906-1
+RN-01906-3
+RN-01907-0
+RN-01908-1
+RN-01908-2
+RN-01909-5
+RN-01910-19
+RN-01910-27
+RN-01910-35
+RN-01910-40
+RN-01910-42
+RN-01910-44
+RN-01910-46
+RN-02000-0
+RN-02000-2
+RN-02100-0
+RN-02100-1
+RN-02200-2
+RN-02300-12
+RN-02300-13
+RN-02300-16
+RN-02300-23
+RN-02300-25
+RN-02300-27
+RN-02300-28
+RN-02300-29
+RN-02300-30
+RN-02300-31
+RN-02300-32
+RN-02300-37
+RN-02300-38
+RN-02300-40
+RN-02400-0
+RN-02400-1
+RN-02400-8
+RN-02500-0
+RN-02500-2
+RN-02502-0
+RN-02503-1
+RN-02506-3
+RN-0600-1
+RN-0700-1
+RN-0700-11
+RN-0700-2
+RN-0700-4
+RN-0700-7
+RN-0700-9
+RN-0800-1
+RN-0800-2
+RN-0800-4
+RN-0800-5
+RN-0800-6b
+RN-0800-7
+RN-0800-9
+RN-0900-1
+RN-0900-2
+RN-0900-5
+RN-0900-6
+RN-0910-1

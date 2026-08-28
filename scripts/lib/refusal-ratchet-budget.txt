@@ -1,0 +1,50 @@
+# scripts/lib/refusal-ratchet-budget.txt — the per-file CEILING on raw
+# `err`-to-stderr passthrough sites in internal/cli, outside
+# internal/cli/refusal_state.go's NewRefusal constructor (answers-that-hold-
+# 2026-08 P4, spec 04). One line per file that carries at least one site:
+# "<count> <basename>". A file's line may only be LOWERED (a site migrated
+# to NewRefusal) or removed (its count reaches 0) — check-refusal-ratchet.sh
+# reds any file whose CURRENT count exceeds the line here, and reds a
+# nonzero-count file that carries no line at all (its budget is implicitly
+# 0). Regenerate with:
+#   bash scripts/check-refusal-ratchet.sh --write
+# then review the diff before committing.
+#
+# THESE NUMBERS ARE MEASURED AGAINST THIS TREE, NOT COPIED FROM A SPEC. Spec
+# 04 quotes ~438/~238/~171/~200 stderr-site counts measured 2026-08-27 under
+# a wider (any-stderr-write) definition; this file's own sink-anchored scan
+# over the tree at generation time produced the numbers below, and a ratchet
+# seeded from someone else's measurement either blocks nothing or blocks
+# everything.
+3 cmd_attach.go
+2 cmd_await.go
+1 cmd_completion.go
+6 cmd_contract_p6.go
+34 cmd_contract.go
+3 cmd_data.go
+3 cmd_doctor.go
+10 cmd_feedback.go
+3 cmd_fetch.go
+7 cmd_html.go
+2 cmd_inbox.go
+24 cmd_init.go
+62 cmd_lifecycle.go
+15 cmd_new.go
+2 cmd_notifications.go
+13 cmd_notify_setup.go
+8 cmd_notify.go
+2 cmd_outbox.go
+4 cmd_search.go
+2 cmd_serve.go
+2 cmd_show.go
+8 cmd_skill.go
+8 cmd_space.go
+2 cmd_statusline.go
+9 cmd_submit.go
+4 cmd_sync.go
+2 cmd_thread.go
+7 cmd_update.go
+5 cmd_validate_ci.go
+1 cmd_version.go
+3 cmd_whatsnew.go
+5 cmd_work.go

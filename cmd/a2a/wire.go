@@ -335,6 +335,18 @@ func buildCommands() map[string]command {
 		// bare major.minor.patch, not the "a2a x.y.z (sha)" stamp.
 		return cli.NewWhatsnewCommand(version).Run(context.Background(), args, stdio(stdout, stderr))
 	}
+	m["adapt"] = func(args []string, stdout, stderr io.Writer) int {
+		// Bare version for the same reason whatsnew takes one — but adapt
+		// ALSO needs the project config, because its baseline
+		// (`adapted_through`) is a property of the REPOSITORY, not of the
+		// machine or the binary. That is the whole distinction the verb
+		// exists to draw, so the path is resolved here rather than defaulted.
+		p, err := resolvePaths()
+		if err != nil {
+			return fail(stderr, err)
+		}
+		return cli.NewAdaptCommand(version, p.projectConfig).Run(context.Background(), args, stdio(stdout, stderr))
+	}
 	m["work"] = func(args []string, stdout, stderr io.Writer) int {
 		p, err := resolvePaths()
 		if err != nil {
