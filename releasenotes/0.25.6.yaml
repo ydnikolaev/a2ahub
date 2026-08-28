@@ -206,6 +206,13 @@ changes:
     breaking-change request in July 2026 for a capability that already shipped.
     The rule is now stated where an author reads it, and the exchange types that
     genuinely must address exactly one system still refuse `all`.
+
+    All three fields, and the `to: all` rule, are carried as commented guidance
+    in the contract template `a2a new contract` scaffolds — so an author meets
+    them while writing the descriptor rather than by finding a reference page.
+    `x_schema_location` is a plain string and can be set at authoring time with
+    `--field`; the other two are an object and an array, so they are filled by
+    uncommenting the block.
   affects:
   - schemas
   - cli
