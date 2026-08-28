@@ -88,7 +88,12 @@ export VERIFY_AGAIN=1
 # runner has. Local `make check` keeps the hub-first behaviour deliberately:
 # reading the published corpus is a real, different question, and the answer
 # to it is a publish-pending WARNING rather than a refusal.
-export A2A_FEEDBACK_CORPUS_ROOT="${A2A_FEEDBACK_CORPUS_ROOT:-$(git rev-parse --show-toplevel)}"
+# NOT exported globally, and the first attempt was: `make harness-check` runs
+# every gate's --teeth against SYNTHETIC fixture trees, and this variable is the
+# FIRST thing resolve_corpus_root honours, so a global export pointed the teeth
+# at the real repository and 30 of them failed at once. Set on the one step that
+# needs it — the `make check` below, which is the step a runner's `check` job
+# actually is.
 
 # gate_unmeasured, and the exit code that separates "I measured it and it is
 # wrong" (1) from "I could not measure it" (3). A composed SHIP gate is the
@@ -880,7 +885,7 @@ suite_members() {
   run_step "bash scripts/ci-changes.sh"                bash scripts/ci-changes.sh
   run_step "bash scripts/ci-skill-drift.sh"            bash scripts/ci-skill-drift.sh
   run_step "bash scripts/dashboard-template-drift.sh"  bash scripts/dashboard-template-drift.sh
-  run_step "make check"                                make check
+  run_step "make check"                                env A2A_FEEDBACK_CORPUS_ROOT="$(git rev-parse --show-toplevel)" make check
   run_step "make harness-check"                        make harness-check
   # A root, shallow or merge HEAD makes `git diff HEAD~1` empty, the derivation
   # then judges NOTHING, and the step greens. verify.sh already implements the
