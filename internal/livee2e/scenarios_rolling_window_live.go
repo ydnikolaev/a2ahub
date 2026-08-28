@@ -207,7 +207,7 @@ func rwDraftContractExcludingPeer(ctx context.Context, h *harness, c *checkout) 
 // its PR, resolving that PR from the command's own JSON — publish is
 // operation-keyed, so its branch cannot be derived from the contract id and
 // differs per target version (see contractPublishPull).
-func rwPublishAndLand(ctx context.Context, h *harness, a *checkout, id, version, step string, useStaging bool) (int, error) {
+func rwPublishAndLand(ctx context.Context, h *harness, a *checkout, id, version, step string, useStaging bool, extra ...string) (int, error) {
 	paths, err := contractPathsForID(id)
 	if err != nil {
 		return 0, fmt.Errorf("%s: resolve staging root: %w", step, err)
@@ -216,7 +216,7 @@ func rwPublishAndLand(ctx context.Context, h *harness, a *checkout, id, version,
 	if useStaging {
 		staging = paths.StagingRoot
 	}
-	_, pr, err := contractPublishPull(ctx, h, a, contractPublishVersionArgs(id, version, staging))
+	_, pr, err := contractPublishPull(ctx, h, a, append(contractPublishVersionArgs(id, version, staging), extra...))
 	if err != nil {
 		return 0, fmt.Errorf("%s: %w", step, err)
 	}
@@ -249,7 +249,33 @@ func rwRollingWindow(ctx context.Context, h *harness) Result {
 	if err != nil {
 		return rwResultFromErr("publish-1.0.0", err, "`a2a contract publish --version 1.0.0` registers the first real published version")
 	}
-	v110PR, err := rwPublishAndLand(ctx, h, a, sub.ID, "1.1.0", "publish-1.1.0", false)
+	// useStaging=true, corrected 2026-08-28 (answers-that-hold P2). This was
+	// the one `false` among this row's four publishes, and it meant "publish
+	// the already-landed bytes from the mirror". Nothing edits the staging
+	// tree between 1.0.0 and 1.1.0 — the 2.x edits below start by REMOVING it
+	// — so both sources carry identical bytes and the narrative ("1.1.0
+	// publishes on the same line", a statement about the version line, not
+	// about the candidate source) is unchanged.
+	//
+	// What changed is that the mirror-only branch is no longer REACHABLE
+	// here. `a2a new contract` left a staging tree, nothing removed it, and
+	// P2's candidate guard now refuses a publication that finds one while no
+	// --staging was given rather than silently falling back to the mirror.
+	// Keeping `false` would have meant asserting a refusal this row does not
+	// describe. The bare form is still exercised where it is still honest:
+	// spec 02 §6 pins "absent with no --staging behaves as today".
+	// --allow-empty-bump, and the flag is the honest word for what this step
+	// has ALWAYS done. 1.1.0 carries byte-identical content to 1.0.0 — the
+	// row's 2.x edits begin below, after this — so it touches no normative
+	// artifact and means nothing to a consumer. That was equally true when
+	// this call took the mirror instead of staging; the difference is that
+	// answers-that-hold P2 now REFUSES a no-op bump rather than publishing
+	// the previous version's bytes under a new number (fb-20260827-47069c),
+	// so a row that had been quietly doing it for its whole life had to say
+	// so. It IS deliberate here: this narrative needs two versions on ONE
+	// line to open the rolling window, and 1.1.0's content is incidental to
+	// every assertion that follows.
+	v110PR, err := rwPublishAndLand(ctx, h, a, sub.ID, "1.1.0", "publish-1.1.0", true, "--allow-empty-bump")
 	if err != nil {
 		return rwResultFromErr("publish-1.1.0", err, "1.1.0 publishes on the same line")
 	}

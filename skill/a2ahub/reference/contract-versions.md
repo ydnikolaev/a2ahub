@@ -266,6 +266,33 @@ a2a contract publish <id> --version 1.6.2     # maintenance on the 1.x line
 a2a contract publish <id> --bump major        # the newest line moves forward
 ```
 
+**Name your staged candidate whenever one exists.** `a2a new contract` writes a
+complete candidate into `.a2a/staging/<system>/provides/<slug>/`, and nothing
+removes it afterwards — that persistence is deliberate, and it is the same tree
+this page tells you to correct a merged descriptor in, above. So the tree is
+usually still there on your second and every later publish, and a publication
+that finds one while you gave no `--staging` is **refused**:
+
+```
+contract publication for <XC-id> found a staging tree at <path> but no
+--staging was given: pass --staging <path> to use it, or remove the stale
+directory if it should not be published
+```
+
+That refusal replaced a silent fallback to the landed mirror bytes, which is
+how an edited candidate could ship the PREVIOUS version's bytes under the new
+number. Both commands above therefore read, in a project that has ever drafted
+this contract locally:
+
+```sh
+a2a contract publish <id> --bump major \
+  --staging .a2a/staging/<system>/provides/<slug>
+```
+
+The bare form stays correct where no such tree exists — a consumer's checkout,
+a fresh clone, or after you have deleted a candidate you do not mean to
+publish. It is not a flag you can set once and forget: it names the bytes.
+
 ## Registering, and why it is the whole basis of this
 
 `a2a contract adopt <XC-id> --major <n>` writes your `consumes.yaml`. Nothing

@@ -707,18 +707,37 @@ func driveDisputeBundle(ctx context.Context, t *testing.T, h *harness, actor *ch
 	checkStepPredicates(ctx, t, h, actor, path.ID, idxParentDispute, path.Steps[idxParentDispute], ids)
 }
 
-// driveContractRepublish drives `a2a contract publish <id> --bump <bump>`
-// on an ALREADY-landed contract (no --staging: contractPublishVersionArgs'
-// own doc comment, "an empty staging path publishes the already-landed
-// contract") — the shape a SECOND publish on a contract first landed via
-// the generic `a2a submit` path (submitFirstTransition) needs, since that
-// first submit consumed the draft and left no local staging tree to point
-// `--staging` at. Returns the real version string the product minted
+// driveContractRepublish drives `a2a contract publish <id> --bump <bump>
+// --staging <the tree a2a new wrote>` on an ALREADY-landed contract, and
+// returns the real version string the product minted
 // (published.Plan.TargetVersion), so a caller that needs to name this
 // version later (deprecate/retire) never has to guess it.
+//
+// CORRECTED 2026-08-28 (answers-that-hold P2). This helper used to omit
+// --staging, on a premise its own comment stated: "that first submit
+// consumed the draft and left no local staging tree to point --staging at".
+// THAT PREMISE IS FALSE and always was. `a2a new contract` writes a complete
+// candidate into .a2a/staging/<system>/provides/<slug>/, nothing on the
+// submit path removes it, and the shipped reference says so by design —
+// skill/a2ahub/reference/contract-versions.md documents that tree as the
+// producer's own staged candidate, the place to correct "a descriptor that
+// already merged ... without a second submit".
+//
+// So the tree survives, and P2's candidate guard (internal/contractwiring/
+// candidate.go) now refuses a publication that finds one while no --staging
+// was given, rather than silently falling back to the mirror and shipping
+// the previous version's bytes under a new number. Passing the tree is the
+// right call here for the same reason the guard exists: these paths mean to
+// publish what they authored, and naming it says so. The bytes are identical
+// either way — nothing edits the tree between `a2a new` and this call — which
+// is exactly why this path could go three phases without noticing.
 func driveContractRepublish(ctx context.Context, t *testing.T, h *harness, actor *checkout, path Path, stepIdx int, contractID, bump string, ids pathIDs) string {
 	t.Helper()
-	published, pr, err := contractPublishPull(ctx, h, actor, []string{"contract", "publish", contractID, "--bump", bump})
+	paths, err := contractPathsForID(contractID)
+	if err != nil {
+		t.Fatalf("path %s step %d: contract paths for %s: %v", path.ID, stepIdx, contractID, err)
+	}
+	published, pr, err := contractPublishPull(ctx, h, actor, []string{"contract", "publish", contractID, "--bump", bump, "--staging", paths.StagingRoot})
 	if err != nil {
 		t.Fatalf("path %s step %d: a2a contract publish %s --bump %s (%s): %v", path.ID, stepIdx, contractID, bump, actor.System, err)
 	}

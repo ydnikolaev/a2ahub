@@ -20,9 +20,17 @@ type liveContractPaths struct {
 }
 
 // contractPublishVersionArgs keeps the two honest publication sources
-// explicit. An empty staging path publishes the already-landed contract; a
-// non-empty path selects a complete materialized candidate (including its own
-// contract.md), never contract-new's transient sidecar directory by accident.
+// explicit. A non-empty path selects a complete materialized candidate
+// (including its own contract.md), never contract-new's transient sidecar
+// directory by accident.
+//
+// An empty staging path publishes the already-landed contract — but ONLY
+// where no staging tree exists for that contract. Since answers-that-hold
+// P2, a publication that finds one while no --staging was given is REFUSED
+// (internal/contractwiring/candidate.go) instead of silently falling back to
+// the mirror, which is how the previous version's bytes shipped under a new
+// number. `a2a new contract` writes such a tree and nothing removes it, so
+// the empty-path branch is reachable only after the tree is gone.
 func contractPublishVersionArgs(contractID, version, staging string) []string {
 	args := []string{"contract", "publish", contractID, "--version", version}
 	if staging != "" {

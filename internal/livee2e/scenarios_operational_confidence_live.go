@@ -768,8 +768,17 @@ func operationalContractPublish(ctx context.Context, oc *operationalConfidenceRu
 	if err := happyLandAndSync(ctx, oc.h, oc.h.A, submitted.PRNumber); err != nil {
 		return proof, VerdictFail, err
 	}
+	// The rewrite is IDEMPOTENT, not a repair. "after submit cleanup" was the
+	// wording here until 2026-08-28, and it named something that does not
+	// happen: measured uncapped, neither `a2a submit` (internal/cli/
+	// cmd_submit.go) nor the write funnel removes anything under .a2a/staging,
+	// and submitDrafted only shells out to the verb. This scenario passed
+	// either way because it rewrites the candidate unconditionally — which is
+	// exactly why the claim survived three phases unchallenged. Kept as a
+	// rewrite so the candidate is known-complete at this point regardless of
+	// what any earlier step left behind.
 	if err := operationalWriteContractCandidate(stage, id, "0.0.0", false); err != nil {
-		return proof, VerdictFail, fmt.Errorf("rebuild complete staging candidate after submit cleanup: %w", err)
+		return proof, VerdictFail, fmt.Errorf("rewrite complete staging candidate before version publication: %w", err)
 	}
 	beforePulls, err := oc.h.runPulls(ctx)
 	if err != nil {
