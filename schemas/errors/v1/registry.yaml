@@ -1312,3 +1312,23 @@ entries:
       re-derived post-merge: a merged PR is proof its base branch existed, so a
       full-repo audit has nothing to resolve and could only manufacture a failure
       against a push that plainly succeeded.
+    path_exempt: >-
+      DRIVABLE BUT NOT YET DRIVEN — and that is a WEAKER claim than REF-025's own
+      waiver two rows up, which is why it is spelled differently rather than
+      copied. REF-025 is unreachable BY CONSTRUCTION: it needs two connected
+      spaces and no tier here can connect two. REF-026 needs only a bare origin
+      that publishes no `refs/remotes/origin/HEAD`, which is a SINGLE-space
+      fixture the conformance harness could build today. Nothing structural is in
+      the way; the fixture simply does not exist.
+      Named precisely so nobody reads this as impossibility: `spacefixture.New`
+      creates its origins with `git init -b main`, which SETS HEAD. What this code
+      needs is one origin created without it (or with its symbolic-ref removed
+      after the fact), a declared path attempting any write against that space,
+      and a `Refusal{Code: "REF-026"}` step. Retiring this waiver is that fixture
+      plus one path — not a harness capability, not a decision.
+      Filed 2026-08-28 by no-silent-yes-2026-08/P2b, which chose to close the
+      phase with the debt COUNTED rather than widen a wave that had already run
+      three times. The behaviour is proven at unit tier with watched-failing
+      mutation evidence in internal/space/mirror_test.go and
+      internal/mcp/wire_test.go; what is missing is conformance-tier coverage,
+      and this row says which kind of missing it is.
