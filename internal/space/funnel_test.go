@@ -2136,3 +2136,64 @@ func TestFunnelThreeSystemsOneMirrorNoCrossedWrite(t *testing.T) {
 		t.Fatal("all three systems were refused — the lock is serialising nothing through")
 	}
 }
+
+// TestSubmitRefusesUnsetBaseBranchRatherThanDefaultingToMain is
+// no-silent-yes-2026-08 P2b's S-1 acceptance: a SubmitRequest that never
+// names a base branch is a caller bug (a caller that skipped
+// space.ResolveBaseBranch before reaching the funnel), refused rather than
+// silently pushed at "main" — the exact defect this phase exists to end,
+// one layer below REF-026 (mirror.go's ResolveBaseBranch/NoDefaultBranchError).
+func TestSubmitRefusesUnsetBaseBranchRatherThanDefaultingToMain(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := newTestSubmitRequest(fx, "axon", l)
+	req.BaseBranch = ""
+
+	fake := host.NewFakeHost()
+	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+
+	if _, err := funnel.Submit(context.Background(), req); !errors.Is(err, ErrPreparedInvalid) {
+		t.Fatalf("Submit with unset BaseBranch error = %v, want ErrPreparedInvalid (refused, not silently defaulted to \"main\")", err)
+	}
+	if len(fake.Pushes) != 0 || len(fake.Opens) != 0 {
+		t.Fatalf("Submit performed a git/host action before refusing an unset BaseBranch: %d pushes, %d opens", len(fake.Pushes), len(fake.Opens))
+	}
+}
+
+// TestCommitOneRefusesUnsetBaseBranchWhenNoExpectedBaseSHA is commitOne's
+// own defence in depth, separate from the PrepareSubmission-level refusal
+// TestSubmitRefusesUnsetBaseBranchRatherThanDefaultingToMain proves: with a
+// real, held mirror lock (so the guard under test is specifically about the
+// base branch, not the lock — see mutationguard_test.go's
+// TestCommitOneRefusesWithoutTheMirrorsOwnLock for that one) and no
+// ExpectedBaseSHA to freeze the parent tree instead, an unset BaseBranch is
+// refused by name rather than silently built into the malformed ref
+// "origin/".
+func TestCommitOneRefusesUnsetBaseBranchWhenNoExpectedBaseSHA(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	dir := fx.Clone("axon")
+	lock, err := AcquireMirrorLock(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("AcquireMirrorLock: %v", err)
+	}
+	defer func() { _ = lock.Release() }()
+
+	f := &WriteFunnel{}
+	req := SubmitRequest{
+		RepoDir:    dir,
+		System:     "axon",
+		Verb:       "submit",
+		ArtifactID: "XQ-axon-20260828-nobasebranch",
+		Files:      []FileWrite{{Path: "axon/exchanges/XQ-axon-20260828-nobasebranch.md", Content: []byte("body\n")}},
+	}
+	if _, _, err := f.commitOne(context.Background(), lock, req, "a2a/axon/submit/XQ-axon-20260828-nobasebranch"); !errors.Is(err, ErrMissingBaseBranch) {
+		t.Fatalf("commitOne with unset BaseBranch and no ExpectedBaseSHA error = %v, want ErrMissingBaseBranch", err)
+	}
+}

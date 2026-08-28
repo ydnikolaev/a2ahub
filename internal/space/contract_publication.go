@@ -804,7 +804,30 @@ func (s *ContractPublicationService) Publish(ctx context.Context, request Contra
 	}
 	mutations = append(mutations, Mutation{Path: event.Path, Operation: MutationWrite, Bytes: append([]byte(nil), event.Content...)})
 
-	submit, preparation, runtime, err := bindContractPublicationSubmission(request, plan, planning, mutations, eventID, s.funnel.binaryVersion)
+	// The base branch is RESOLVED here, from the mirror this same Publish
+	// call already fetched (RefreshContractPublicationMain, above) — never
+	// hardcoded "main" (no-silent-yes-2026-08 P2b/S-3). space.ResolveBaseBranch
+	// (mirror.go) is the one resolver; a space whose real default is "master"
+	// used to have its contract publication pushed at "main" unasked, exactly
+	// the defect this phase exists to end. request.SubmissionRuntime.RepoDir
+	// takes precedence over request.SubmitTemplate.RepoDir, mirroring
+	// bindContractPublicationSubmission's own fallback below for the same
+	// pair of fields (both are always the same mirror in production wiring;
+	// this only matters for a caller — or a test — that sets one and not the
+	// other).
+	mirrorDir := request.SubmissionRuntime.RepoDir
+	if mirrorDir == "" {
+		mirrorDir = request.SubmitTemplate.RepoDir
+	}
+	if mirrorDir == "" {
+		return ContractPublicationResult{}, fmt.Errorf("%w: publication requires a local mirror directory to resolve the base branch", ErrContractPublicationInvalid)
+	}
+	baseBranch, err := ResolveBaseBranch(ctx, mirrorDir)
+	if err != nil {
+		return ContractPublicationResult{}, fmt.Errorf("%w: resolve publication base branch: %w", ErrContractPublicationInvalid, err)
+	}
+
+	submit, preparation, runtime, err := bindContractPublicationSubmission(request, plan, planning, mutations, eventID, s.funnel.binaryVersion, baseBranch)
 	if err != nil {
 		return ContractPublicationResult{}, err
 	}
@@ -1203,7 +1226,7 @@ func publicationEventProducerVersion(raw []byte) (string, bool) {
 	return event.ProducedBy.Version, err == nil && canonical == event.ProducedBy.Version
 }
 
-func bindContractPublicationSubmission(request ContractPublicationRequest, plan contract.PublicationPlan, planning ContractPublicationPlanningContext, mutations []Mutation, eventID string, binaryVersion string) (SubmitRequest, PreparationContext, SubmissionRuntime, error) {
+func bindContractPublicationSubmission(request ContractPublicationRequest, plan contract.PublicationPlan, planning ContractPublicationPlanningContext, mutations []Mutation, eventID string, binaryVersion string, baseBranch string) (SubmitRequest, PreparationContext, SubmissionRuntime, error) {
 	submit := request.SubmitTemplate
 	if len(submit.Files) != 0 || len(submit.Mutations) != 0 || len(submit.ArtifactIDs) != 0 || submit.OperationKey != "" ||
 		submit.ExpectedBaseSHA != "" ||
@@ -1211,8 +1234,19 @@ func bindContractPublicationSubmission(request ContractPublicationRequest, plan 
 		(submit.System != "" && submit.System != request.System) ||
 		(submit.Verb != "" && submit.Verb != "contract-publish") ||
 		(submit.ArtifactID != "" && submit.ArtifactID != request.ContractID) ||
-		(submit.BaseBranch != "" && submit.BaseBranch != "main") || request.SubmissionRuntime.PriorResult.Stage != "" {
+		// Publication owns BaseBranch: a caller may leave it unset (the
+		// common case) or supply the space's own resolved value (a caller
+		// that shares one SubmitRequest template across verbs), but never a
+		// DIFFERENT one. This used to hardcode "main" as the one legal
+		// value, which refused a caller correctly supplying "master" — the
+		// guard's INTENT (publication-owned fields are not caller-set)
+		// survives; only its notion of the one legal value changed, from a
+		// literal to the resolved branch this call was actually given.
+		(submit.BaseBranch != "" && submit.BaseBranch != baseBranch) || request.SubmissionRuntime.PriorResult.Stage != "" {
 		return SubmitRequest{}, PreparationContext{}, SubmissionRuntime{}, fmt.Errorf("%w: submit template contains publication-owned fields", ErrContractPublicationInvalid)
+	}
+	if baseBranch == "" {
+		return SubmitRequest{}, PreparationContext{}, SubmissionRuntime{}, fmt.Errorf("%w: publication base branch was not resolved before binding", ErrContractPublicationInvalid)
 	}
 	if !validRemoteRecoveryOID(planning.BaseCommitSHA) || planning.AuthoringFloor == "" {
 		return SubmitRequest{}, PreparationContext{}, SubmissionRuntime{}, fmt.Errorf("%w: planning context lacks an exact base/floor", ErrContractPublicationInvalid)
@@ -1232,7 +1266,7 @@ func bindContractPublicationSubmission(request ContractPublicationRequest, plan 
 	submit.ArtifactIDs = []string{request.ContractID, eventID}
 	sort.Strings(submit.ArtifactIDs)
 	submit.OperationKey, submit.Mutations = plan.OperationKey, mutations
-	submit.BaseBranch, submit.ExpectedBaseSHA = "main", planning.BaseCommitSHA
+	submit.BaseBranch, submit.ExpectedBaseSHA = baseBranch, planning.BaseCommitSHA
 	submit.MinBinaryVersion = planning.AuthoringFloor
 	targetIdentity := repositoryIdentity(submit.Repo)
 	recovery := &RecoveryV1{

@@ -11,8 +11,6 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/host"
 )
 
-const workDefaultBaseBranch = "main"
-
 // WorkCredentialResolver resolves an invocation-local credential. It is called
 // at most once: the result is memoised after the first call (whether that
 // happens during mirror refresh or inside SubmissionRuntime) so that
@@ -32,7 +30,6 @@ type WorkRuntime struct {
 	mirrorDir  string
 	remoteURL  string
 	repository host.Repo
-	baseBranch string
 	credential WorkCredentialResolver
 	manifest   ManifestValidator
 
@@ -63,13 +60,13 @@ func NewWorkRuntime(
 	return &WorkRuntime{
 		projectID: projectID, spaceID: spaceID, ownSystem: ownSystem,
 		mirrorDir: mirrorDir, remoteURL: remoteURL, repository: repository,
-		baseBranch: workDefaultBaseBranch, credential: credential, manifest: manifest,
+		credential: credential, manifest: manifest,
 	}, nil
 }
 
 // ResolveWorkManifestFloor implements WorkManifestFloorResolver.
 func (r *WorkRuntime) ResolveWorkManifestFloor(ctx context.Context) (WorkManifestFloor, error) {
-	manifest, _, err := r.refresh(ctx)
+	manifest, _, _, err := r.refresh(ctx)
 	if err != nil {
 		return WorkManifestFloor{}, err
 	}
@@ -81,7 +78,7 @@ func (r *WorkRuntime) ResolveWorkManifestFloor(ctx context.Context) (WorkManifes
 
 // ResolveWorkPreparation implements WorkPreparationRuntimeProvider.
 func (r *WorkRuntime) ResolveWorkPreparation(ctx context.Context) (WorkPreparationRuntime, error) {
-	manifest, baseCommit, err := r.refresh(ctx)
+	manifest, baseCommit, baseBranch, err := r.refresh(ctx)
 	if err != nil {
 		return WorkPreparationRuntime{}, err
 	}
@@ -102,7 +99,7 @@ func (r *WorkRuntime) ResolveWorkPreparation(ctx context.Context) (WorkPreparati
 		ProjectID: r.projectID, Space: r.spaceID,
 		MinimumBinaryVersion: manifest.MinBinaryVersion,
 		Repository:           r.repository, RemoteURL: r.remoteURL,
-		BaseBranch: r.baseBranch, BaseCommitSHA: baseCommit,
+		BaseBranch: baseBranch, BaseCommitSHA: baseCommit,
 		ReporterMembership: membership,
 		CommitAuthorName:   r.ownSystem, CommitAuthorEmail: r.ownSystem + "@a2a.local",
 	}, nil
@@ -114,7 +111,7 @@ func (r *WorkRuntime) ResolveWorkPreparation(ctx context.Context) (WorkPreparati
 // resolveOnce, SubmissionRuntime returns the cached value without a second
 // invocation of the resolver.
 func (r *WorkRuntime) SubmissionRuntime(ctx context.Context) (SubmissionRuntime, error) {
-	manifest, _, err := r.refresh(ctx)
+	manifest, _, _, err := r.refresh(ctx)
 	if err != nil {
 		return SubmissionRuntime{}, err
 	}
@@ -161,30 +158,42 @@ func (r *WorkRuntime) readCredential(ctx context.Context) host.Credential {
 	return credential
 }
 
-func (r *WorkRuntime) refresh(ctx context.Context) (Manifest, string, error) {
+// refresh fetches the mirror, resolves its ACTUAL default branch (never a
+// guessed "main" — no-silent-yes-2026-08 P2b/S-2: workDefaultBaseBranch used
+// to hardcode it, which pushed a "master"-default space's durable work at a
+// branch nobody named), then reads the manifest and the base commit against
+// that resolved branch. The resolved branch is not cached across calls:
+// nothing else this function reads is either (the manifest and base commit
+// are re-fetched on every call), so re-resolving here is consistent rather
+// than a new staleness risk.
+func (r *WorkRuntime) refresh(ctx context.Context) (Manifest, string, string, error) {
 	if err := CloneOrFetch(ctx, r.mirrorDir, r.remoteURL, r.readCredential(ctx)); err != nil {
-		return Manifest{}, "", fmt.Errorf("space: refresh work mirror: %w", err)
+		return Manifest{}, "", "", fmt.Errorf("space: refresh work mirror: %w", err)
+	}
+	baseBranch, err := ResolveBaseBranch(ctx, r.mirrorDir)
+	if err != nil {
+		return Manifest{}, "", "", fmt.Errorf("space: resolve work base branch: %w", err)
 	}
 	raw, err := readBounded(filepath.Join(r.mirrorDir, "space.yaml"))
 	if err != nil {
-		return Manifest{}, "", fmt.Errorf("space: read work manifest: %w", err)
+		return Manifest{}, "", "", fmt.Errorf("space: read work manifest: %w", err)
 	}
 	manifest, err := LoadManifest(ctx, raw, r.manifest)
 	if err != nil {
-		return Manifest{}, "", fmt.Errorf("space: validate work manifest: %w", err)
+		return Manifest{}, "", "", fmt.Errorf("space: validate work manifest: %w", err)
 	}
 	if manifest.Space != r.spaceID {
-		return Manifest{}, "", fmt.Errorf("%w: configured %q, manifest %q", ErrWorkAuthoringScopeMismatch, r.spaceID, manifest.Space)
+		return Manifest{}, "", "", fmt.Errorf("%w: configured %q, manifest %q", ErrWorkAuthoringScopeMismatch, r.spaceID, manifest.Space)
 	}
-	baseCommit, err := contractGitResolveCommit(ctx, r.mirrorDir, "origin/"+r.baseBranch)
+	baseCommit, err := contractGitResolveCommit(ctx, r.mirrorDir, "origin/"+baseBranch)
 	if err != nil {
-		return Manifest{}, "", fmt.Errorf("space: resolve work base commit: %w", err)
+		return Manifest{}, "", "", fmt.Errorf("space: resolve work base commit: %w", err)
 	}
 	baseCommit = strings.ToLower(strings.TrimSpace(baseCommit))
 	if !validRemoteRecoveryOID(baseCommit) {
-		return Manifest{}, "", ErrWorkPreparationBaseInvalid
+		return Manifest{}, "", "", ErrWorkPreparationBaseInvalid
 	}
-	return manifest, baseCommit, nil
+	return manifest, baseCommit, baseBranch, nil
 }
 
 var _ WorkManifestFloorResolver = (*WorkRuntime)(nil)

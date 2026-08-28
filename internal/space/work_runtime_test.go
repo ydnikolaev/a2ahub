@@ -108,3 +108,63 @@ func TestNewWorkRuntimeRefusesIncompleteDependencies(t *testing.T) {
 		t.Fatalf("NewWorkRuntime = %+v, %v; want refusal", runtime, err)
 	}
 }
+
+// workRuntimeRenameOriginBranch renames a spacefixture origin's default
+// branch after construction — spacefixture.New only ever seeds "main"
+// (spacefixture.go's own doc), so a test that needs a non-"main" space
+// reuses the fixture's real, schema-shaped space.yaml (spacefixture.go's
+// own comment records what it cost to get that shape right) instead of
+// hand-rolling a second copy of it, and renames the ref directly: git
+// plumbing, no working tree needed since the origin is bare.
+func workRuntimeRenameOriginBranch(t *testing.T, origin, from, to string) {
+	t.Helper()
+	ctx := context.Background()
+	sha, err := runGitOutput(ctx, origin, nil, "rev-parse", "refs/heads/"+from)
+	if err != nil {
+		t.Fatalf("resolve refs/heads/%s: %v", from, err)
+	}
+	if err := runGit(ctx, origin, "update-ref", "refs/heads/"+to, sha); err != nil {
+		t.Fatalf("create refs/heads/%s: %v", to, err)
+	}
+	if err := runGit(ctx, origin, "symbolic-ref", "HEAD", "refs/heads/"+to); err != nil {
+		t.Fatalf("move HEAD to refs/heads/%s: %v", to, err)
+	}
+	if err := runGit(ctx, origin, "update-ref", "-d", "refs/heads/"+from); err != nil {
+		t.Fatalf("delete refs/heads/%s: %v", from, err)
+	}
+}
+
+// TestWorkRuntimeResolvesNonMainDefaultBranch is no-silent-yes-2026-08
+// P2b's S-2 acceptance: workDefaultBaseBranch used to hardcode "main" for
+// EVERY connected space, so durable work on a "master"-default space
+// resolved its preparation/base commit against a branch the space never
+// published. WorkRuntime must derive the branch from the mirror's own
+// remote HEAD (space.ResolveBaseBranch) instead.
+func TestWorkRuntimeResolvesNonMainDefaultBranch(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	workRuntimeRenameOriginBranch(t, fx.OriginDir, "main", "master")
+
+	mirror := filepath.Join(t.TempDir(), "mirror")
+	runtime, err := NewWorkRuntime(
+		"sha256:project", "fixture-space", "axon", mirror, fx.RemoteURL(),
+		host.Repo{Owner: "acme", Name: "fixture-space"},
+		func(context.Context) (host.Credential, error) { return host.Credential{}, nil },
+		&acceptingWorkManifestValidator{},
+	)
+	if err != nil {
+		t.Fatalf("NewWorkRuntime: %v", err)
+	}
+
+	preparation, err := runtime.ResolveWorkPreparation(context.Background())
+	if err != nil {
+		t.Fatalf("ResolveWorkPreparation: %v", err)
+	}
+	if preparation.BaseBranch != "master" {
+		t.Fatalf("BaseBranch = %q, want %q (the space's own resolved default, never a hardcoded \"main\")", preparation.BaseBranch, "master")
+	}
+	if preparation.BaseCommitSHA == "" {
+		t.Fatal("BaseCommitSHA is empty — resolved against the wrong (nonexistent) branch entirely")
+	}
+}

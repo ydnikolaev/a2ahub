@@ -121,6 +121,14 @@ var (
 	ErrExpectedHeadUnavailable = errors.New("space: host did not return the pull request head checked by CI")
 	// ErrSubmitValidatorRequired is part of the public package API.
 	ErrSubmitValidatorRequired = errors.New("space: final submission validator is required at the operational-confidence floor")
+	// ErrMissingBaseBranch is returned when a SubmitRequest reaches a
+	// low-level write step with no BaseBranch named (no-silent-yes-2026-08
+	// P2b/S-1). A caller must resolve the space's actual default branch
+	// (space.ResolveBaseBranch, REF-026) before calling the funnel; an unset
+	// BaseBranch this deep is a caller bug, not something the funnel can
+	// safely guess — the same discipline REF-026 enforces one layer below.
+	// ErrMissingBaseBranch is part of the public package API.
+	ErrMissingBaseBranch = errors.New("space: write request names no base branch")
 )
 
 // FileWrite is one file the write funnel commits — a path (relative to
@@ -956,14 +964,23 @@ func validateBranchSegments(system, verb, artifactID string) error {
 	return nil
 }
 
-// resolvedBaseBranch returns req.BaseBranch, defaulting to §4.2's
-// normative "main" when unset. The one place this default lives, shared by
-// commitOne's checkout start-point and commitIsOnBase's ancestor check so
-// the two can never name a different base out from under each other.
+// resolvedBaseBranch returns req.BaseBranch — never a guessed default
+// (no-silent-yes-2026-08 P2b/S-1). It used to substitute §4.2's former
+// normative "main" for an unset field; on a space whose real default is
+// "master" that pushed at a branch nobody named, the exact defect this
+// phase exists to end. A caller resolves the space's actual base branch
+// (space.ResolveBaseBranch, REF-026) before ever reaching the funnel; this
+// function no longer re-derives or guesses one on its behalf. It remains
+// the one place the field is READ, shared by commitOne's checkout
+// start-point and commitIsOnBase's ancestor check so the two can never name
+// a different base out from under each other. Every caller in this file
+// checks the empty result itself (ErrMissingBaseBranch) rather than
+// building a malformed "origin/" ref from it; PrepareSubmission's own
+// validatePreparedSemantics (prepared.go) independently refuses an empty
+// resolved base branch via validRecoveryBranch, so a write that reaches
+// this point through the funnel's own entry points was already refused
+// before any git action ran.
 func resolvedBaseBranch(req SubmitRequest) string {
-	if req.BaseBranch == "" {
-		return "main"
-	}
 	return req.BaseBranch
 }
 
@@ -989,6 +1006,9 @@ func (f *WriteFunnel) restoreTreeToBase(ctx context.Context, lock *MirrorLock, r
 		return err
 	}
 	base := resolvedBaseBranch(req)
+	if base == "" {
+		return ErrMissingBaseBranch
+	}
 	if err := runGit(ctx, req.RepoDir, "rev-parse", "--verify", "origin/"+base); err != nil {
 		// No remote-tracking base to restore to (a fixture with no origin,
 		// a base that has never been fetched). Leaving the tree where it is
@@ -1008,6 +1028,9 @@ func (f *WriteFunnel) restoreTreeToBase(ctx context.Context, lock *MirrorLock, r
 // duplicate is recoverable, silently dropping a write is not.
 func (f *WriteFunnel) commitIsOnBase(ctx context.Context, req SubmitRequest, sha string) (bool, error) {
 	base := resolvedBaseBranch(req)
+	if base == "" {
+		return false, ErrMissingBaseBranch
+	}
 	if err := runGit(ctx, req.RepoDir, "rev-parse", "--verify", "origin/"+base); err != nil {
 		return false, nil //nolint:nilerr // reason: an unknown base is "not on base", not a failure
 	}
@@ -1375,6 +1398,15 @@ func hasPathPrefix(path, prefix string) bool {
 // shared mirror therefore cannot redirect protocol bytes. The explicit base
 // tree also prevents one writer from inheriting another writer's branch.
 func (f *WriteFunnel) commitOne(ctx context.Context, lock *MirrorLock, req SubmitRequest, branch string) (sha string, fresh bool, err error) {
+	// Checked first and separately from commitTreeFromBase's own identical
+	// guard (redundant, deliberately: mutateTree is a pure precondition
+	// check, not a mutation, so calling it twice costs nothing) so that the
+	// most fundamental precondition — do we even hold this mirror's lock? —
+	// is refused before any field-level validation below it, regardless of
+	// what else about req is incomplete.
+	if err := mutateTree(lock, req.RepoDir); err != nil {
+		return "", false, err
+	}
 	mutations, err := normalizeMutations(req.Files, req.Mutations)
 	if err != nil {
 		return "", false, err
@@ -1398,12 +1430,21 @@ func (f *WriteFunnel) commitOne(ctx context.Context, lock *MirrorLock, req Submi
 	if req.OperationKey != "" && !hasExactCommitTrailer(msg, "A2A-Operation-Key", req.OperationKey) {
 		msg += "\n\nA2A-Operation-Key: " + req.OperationKey
 	}
-	baseRef := "origin/" + resolvedBaseBranch(req)
-	if req.ExpectedBaseSHA != "" {
-		if !validRemoteRecoveryOID(req.ExpectedBaseSHA) {
+	// BaseBranch is read ONLY when ExpectedBaseSHA does not already freeze
+	// the parent tree — a caller that supplies a frozen base has no need to
+	// have named a branch at all (recoverable/prepared writes always do
+	// supply one; see prepared.go's data.baseCommitSHA).
+	baseRef := req.ExpectedBaseSHA
+	if baseRef != "" {
+		if !validRemoteRecoveryOID(baseRef) {
 			return "", false, ErrPreparedInvalid
 		}
-		baseRef = req.ExpectedBaseSHA
+	} else {
+		base := resolvedBaseBranch(req)
+		if base == "" {
+			return "", false, ErrMissingBaseBranch
+		}
+		baseRef = "origin/" + base
 	}
 	return commitTreeFromBase(ctx, lock, treeCommitRequest{
 		RepoDir: req.RepoDir, BaseRef: baseRef,

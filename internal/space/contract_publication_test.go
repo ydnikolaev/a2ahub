@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -393,7 +394,7 @@ func TestContractPublicationSubmissionRequiresUnchangedObservedWriteFloor(t *tes
 				},
 			}
 			submit, preparation, runtime, err := bindContractPublicationSubmission(
-				request, plan, planning, nil, "XE-01K1A2B3C4D5E6F7G8H9J0K1M7", "0.19.0",
+				request, plan, planning, nil, "XE-01K1A2B3C4D5E6F7G8H9J0K1M7", "0.19.0", "main",
 			)
 			if test.wantErr != nil {
 				if !errors.Is(err, test.wantErr) {
@@ -438,7 +439,7 @@ func TestContractPublicationBindsMintedByVersionFromTheRunningBinary(t *testing.
 	}
 
 	_, preparation, _, err := bindContractPublicationSubmission(
-		request, plan, planning, nil, "XE-01K1A2B3C4D5E6F7G8H9J0K1M7", "0.27.4",
+		request, plan, planning, nil, "XE-01K1A2B3C4D5E6F7G8H9J0K1M7", "0.27.4", "main",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -450,13 +451,170 @@ func TestContractPublicationBindsMintedByVersionFromTheRunningBinary(t *testing.
 	// is what proves the value is genuinely threaded through, not a
 	// coincidental constant.
 	_, preparationOther, _, err := bindContractPublicationSubmission(
-		request, plan, planning, nil, "XE-01K1A2B3C4D5E6F7G8H9J0K1M7", "0.19.0",
+		request, plan, planning, nil, "XE-01K1A2B3C4D5E6F7G8H9J0K1M7", "0.19.0", "main",
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if preparationOther.Recovery == nil || preparationOther.Recovery.MintedByVersion != "0.19.0" {
 		t.Fatalf("preparationOther.Recovery = %+v, want MintedByVersion = %q", preparationOther.Recovery, "0.19.0")
+	}
+}
+
+// TestBindContractPublicationSubmissionAcceptsResolvedBaseBranchAndRefusesAnyOther
+// is no-silent-yes-2026-08 P2b's S-3 acceptance for bindContractPublicationSubmission
+// itself: the :1214 guard's INTENT — a caller must not pre-set a
+// publication-owned field — survives, but its notion of the one legal
+// BaseBranch value is now the RESOLVED branch this call was given, never the
+// literal "main". Before this fix a caller correctly supplying "master" was
+// refused for supplying it; now it is accepted, and a caller supplying
+// anything ELSE (including the no-longer-special "main") is still refused.
+func TestBindContractPublicationSubmissionAcceptsResolvedBaseBranchAndRefusesAnyOther(t *testing.T) {
+	t.Parallel()
+
+	_, source := publicationDeclaredCandidate(nil, false)
+	record := publicationRecoveryRecord(
+		"sha256:"+strings.Repeat("b", 64),
+		"op-v1-"+strings.Repeat("c", 64),
+		"op-v1-"+strings.Repeat("d", 64),
+		"explicit:1.0.0",
+		"1.0.0",
+	)
+	plan := publicationRecoveryPlan(record, source)
+	planning := publicationPlanningContext(strings.Repeat("a", 40), "0.19.0")
+	base := ContractPublicationRequest{
+		System: "atlas", ContractID: "XC-atlas-demo", ProducerCompatibility: "0.19.0",
+		SubmitTemplate: SubmitRequest{
+			RepoDir: "/bounded/repo", RemoteURL: "https://example.test/acme/getvisa.git",
+			Repo: host.Repo{Owner: "acme", Name: "getvisa"}, PRBody: "Publish exact contract",
+			MinBinaryVersion: "0.19.0",
+		},
+	}
+
+	// The caller left BaseBranch unset (the common case): the resolved
+	// branch is filled in.
+	unset := base
+	submit, _, _, err := bindContractPublicationSubmission(unset, plan, planning, nil, "XE-01K1A2B3C4D5E6F7G8H9J0K1M7", "0.19.0", "master")
+	if err != nil || submit.BaseBranch != "master" {
+		t.Fatalf("bind with unset base = %+v, err=%v; want BaseBranch filled to the resolved %q", submit, err, "master")
+	}
+
+	// The caller supplied the CORRECT resolved branch explicitly: accepted,
+	// not refused. This is the exact defect S-3 closes — a team on "master"
+	// could not publish a contract at all under the old "main"-only guard.
+	matching := base
+	matching.SubmitTemplate.BaseBranch = "master"
+	submit, _, _, err = bindContractPublicationSubmission(matching, plan, planning, nil, "XE-01K1A2B3C4D5E6F7G8H9J0K1M7", "0.19.0", "master")
+	if err != nil || submit.BaseBranch != "master" {
+		t.Fatalf("bind with matching explicit base = %+v, err=%v; want accepted at %q", submit, err, "master")
+	}
+
+	// The caller supplied a DIFFERENT branch, including the literal "main"
+	// this guard used to treat as the only legal value: still refused —
+	// the guard's intent (publication owns this field) survives.
+	for _, wrong := range []string{"main", "staging"} {
+		mismatched := base
+		mismatched.SubmitTemplate.BaseBranch = wrong
+		if _, _, _, err := bindContractPublicationSubmission(mismatched, plan, planning, nil, "XE-01K1A2B3C4D5E6F7G8H9J0K1M7", "0.19.0", "master"); !errors.Is(err, ErrContractPublicationInvalid) {
+			t.Fatalf("bind with mismatched explicit base %q error = %v, want ErrContractPublicationInvalid", wrong, err)
+		}
+	}
+
+	// The resolved base branch itself was never supplied (an internal
+	// caller bug — Publish must always resolve before binding): refused,
+	// never silently written through as "".
+	if _, _, _, err := bindContractPublicationSubmission(base, plan, planning, nil, "XE-01K1A2B3C4D5E6F7G8H9J0K1M7", "0.19.0", ""); !errors.Is(err, ErrContractPublicationInvalid) {
+		t.Fatalf("bind with unresolved (empty) base branch error = %v, want ErrContractPublicationInvalid", err)
+	}
+}
+
+// contractPublicationRenameOriginBranch renames a spacefixture origin's
+// default branch after construction — spacefixture.New only ever seeds
+// "main" (spacefixture.go's own doc) — via plumbing, no working tree
+// required since the origin is bare.
+func contractPublicationRenameOriginBranch(t *testing.T, origin, from, to string) {
+	t.Helper()
+	ctx := context.Background()
+	sha, err := runGitOutput(ctx, origin, nil, "rev-parse", "refs/heads/"+from)
+	if err != nil {
+		t.Fatalf("resolve refs/heads/%s: %v", from, err)
+	}
+	if err := runGit(ctx, origin, "update-ref", "refs/heads/"+to, sha); err != nil {
+		t.Fatalf("create refs/heads/%s: %v", to, err)
+	}
+	if err := runGit(ctx, origin, "symbolic-ref", "HEAD", "refs/heads/"+to); err != nil {
+		t.Fatalf("move HEAD to refs/heads/%s: %v", to, err)
+	}
+	if err := runGit(ctx, origin, "update-ref", "-d", "refs/heads/"+from); err != nil {
+		t.Fatalf("delete refs/heads/%s: %v", from, err)
+	}
+}
+
+// TestContractPublicationPublishOnMasterDefaultSpaceTargetsMaster is the
+// end-to-end acceptance the brief names explicitly: contract publication on
+// a space whose default branch is "master" must target "master" — the case
+// that was impossible before S-3 (bindContractPublicationSubmission's own
+// guard refused a caller supplying the correct "master", and then
+// overwrote it with the literal "main" unconditionally either way).
+func TestContractPublicationPublishOnMasterDefaultSpaceTargetsMaster(t *testing.T) {
+	t.Parallel()
+
+	fixture := spacefixture.New(t, "atlas")
+	contractPublicationRenameOriginBranch(t, fixture.OriginDir, "main", "master")
+	// A fresh clone of the RENAMED origin, not fixture.Clone("atlas") — that
+	// clone was made before the rename, so its own refs/remotes/origin/HEAD
+	// still points at "main" (a plain `git fetch` never refreshes that
+	// symref; only a fresh clone sets it from the remote's current advert).
+	repo := filepath.Join(t.TempDir(), "atlas-master-mirror")
+	if err := CloneOrFetch(context.Background(), repo, fixture.RemoteURL(), host.Credential{}); err != nil {
+		t.Fatalf("clone renamed origin: %v", err)
+	}
+	base, err := runGitOutput(context.Background(), repo, nil, "rev-parse", "origin/master")
+	if err != nil {
+		t.Fatalf("resolve fixture master: %v", err)
+	}
+
+	order := []string{}
+	reader, source := publicationDeclaredCandidate(&order, false)
+	main := &publicationMainFake{
+		commit: base, order: &order,
+		lookup: ContractPublicationIntentLookup{Matches: []ContractPublicationCompletion{}, Exhaustive: true},
+	}
+	remote := &publicationRemoteFake{
+		order: &order, listing: ContractPublicationHeadListing{Heads: []ContractPublicationHeadProof{}, Exhaustive: true},
+	}
+	planning := &publicationPlanningFake{order: &order, context: publicationPlanningContext(base, "0.19.0")}
+	events := &publicationEventBuilder{order: &order}
+	validator := &publicationSubmitValidator{}
+	h := &publicationRecoveryHost{FakeHost: host.NewFakeHost()}
+	funnel := NewWriteFunnel(h, validator, "0.19.0")
+	service := mustPublicationService(t, main, planning, remote, events, funnel)
+
+	result, err := service.Publish(t.Context(), ContractPublicationRequest{
+		System: "atlas", ContractID: "XC-atlas-demo", Selector: "auto:major",
+		Candidate: reader, CandidateSource: source,
+		SubmitTemplate: SubmitRequest{
+			RepoDir: repo, RemoteURL: fixture.RemoteURL(),
+			Repo:             host.Repo{Owner: "acme", Name: "getvisa"},
+			MinBinaryVersion: "0.19.0",
+			CommitMessage:    "a2a(contract): publish XC-atlas-demo@1.0.0",
+			CommitAuthorName: "a2a-atlas", CommitAuthorEmail: "a2a-atlas@a2ahub.invalid",
+			PRTitle: "Publish XC-atlas-demo@1.0.0", PRBody: "Exact immutable publication",
+		},
+		ProducerCompatibility: "0.19.0",
+	})
+	if err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if result.Status != ContractPublicationSubmitted || result.Plan.PlanDigest == "" || result.Write.CommitSHA == "" {
+		t.Fatalf("result = %+v", result)
+	}
+	if len(h.Opens) != 1 || h.Opens[0].Base != "master" {
+		t.Fatalf("PR opened with %+v, want exactly one open targeting base %q", h.Opens, "master")
+	}
+	parent, err := runGitOutput(context.Background(), repo, nil, "rev-parse", result.Write.CommitSHA+"^")
+	if err != nil || parent != base {
+		t.Fatalf("commit parent = %q, %v; want the resolved master base %q (not a silently guessed \"main\")", parent, err, base)
 	}
 }
 
