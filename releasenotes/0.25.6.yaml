@@ -169,6 +169,20 @@ changes:
   kind: feat
   impact: normal
   subject: a contract can declare its keying rule, its guarantees and where its machine schema lives
+  roadmap:
+    visibility: shipped
+    why: >
+      A consumer integrating against a contract has to know three things the
+      contract could not say: which fields key a record, what the producer
+      guarantees, and where the machine schema lives. All three lived in
+      free-text prose, so a consumer inferred them and nothing could check the
+      inference — and mis-keying is the one that corrupts data silently rather
+      than failing loudly. This is a capability an integrator chooses a tool
+      for, not an internal correction, so it belongs on the public roadmap as
+      shipped. The `to: all` half belongs with it for the opposite reason: it
+      already worked, an external consumer filed a breaking-change request for
+      it in July 2026 because nothing said so, and the roadmap saying it ships
+      is part of the fix.
   detail: >
     Three facts a consumer needs in order to consume a contract correctly could
     only be written as prose, so nothing could check them and a reader had to
