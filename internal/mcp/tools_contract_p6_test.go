@@ -92,6 +92,36 @@ func TestContractP6MCPActionsUseSharedResults(t *testing.T) {
 	}
 }
 
+// TestContractP6MCPAllowEmptyBumpThreads covers AC-4's MCP half: an agent
+// that can only reach MCP must be able to satisfy the empty-bump refusal
+// too (spec T1: "not a refusal it has no way to satisfy"). Both
+// ContractPreflightInput (this package) and ContractPublishInput
+// (tools_contract.go, decoded by newP6ContractPublishHandler which lives
+// here) must decode `allow_empty_bump` and thread it into
+// ContractPublicationRequest.AllowEmptyBump.
+func TestContractP6MCPAllowEmptyBumpThreads(t *testing.T) {
+	t.Parallel()
+	publication := &mcpP6PublicationFake{result: space.ContractPublicationResult{
+		Status: space.ContractPublicationPlanned,
+		Plan:   contract.PublicationPlan{Contract: "XC-axon-orders", TargetVersion: "1.1.0"},
+	}}
+	deps := ContractDeps{Publication: publication}
+
+	if _, _, err := newContractPreflightHandler(deps)(t.Context(), json.RawMessage(`{"id":"XC-axon-orders","bump":"minor","allow_empty_bump":true}`)); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	if !publication.preflight.AllowEmptyBump {
+		t.Fatalf("preflight request = %+v, want AllowEmptyBump=true", publication.preflight)
+	}
+
+	if _, _, err := newP6ContractPublishHandler(deps)(t.Context(), json.RawMessage(`{"id":"XC-axon-orders","version":"1.1.0","allow_empty_bump":true}`)); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	if !publication.publish.AllowEmptyBump {
+		t.Fatalf("publish request = %+v, want AllowEmptyBump=true", publication.publish)
+	}
+}
+
 func TestContractP6MCPMalformedAndPlanConflict(t *testing.T) {
 	t.Parallel()
 	publication := &mcpP6PublicationFake{err: space.ErrContractPublicationPlanChanged}
@@ -122,7 +152,7 @@ func TestContractP6MCPInspectionDelegates(t *testing.T) {
 	t.Parallel()
 	inspection := &mcpP6InspectionFake{
 		diffResult:   ContractDiffResult{Added: []string{"schema/new.json"}, Removed: []string{}, Changed: []string{}},
-		verifyResult: ContractVerifyExportResult{ID: "XC-axon-orders", Matches: true, LocalDigest: "sha256:same", WantDigest: "sha256:same"},
+		verifyResult: ContractVerifyExportResult{ID: "XC-axon-orders", Outcome: "matched", LocalDigest: "sha256:same", WantDigest: "sha256:same"},
 	}
 	deps := ContractDeps{Inspection: inspection}
 	result, _, err := newContractDiffHandler(deps)(t.Context(), json.RawMessage(`{"space":"orders","id":"XC-axon-orders","v1":"1.0.0","v2":"2.0.0"}`))
@@ -130,7 +160,7 @@ func TestContractP6MCPInspectionDelegates(t *testing.T) {
 		t.Fatalf("diff mismatch: result=%+v request=%+v err=%v", result, inspection.diffRequest, err)
 	}
 	result, _, err = newContractVerifyExportHandler(deps)(t.Context(), json.RawMessage(`{"space":"orders","local":"exports/orders","ref":"XC-axon-orders@1.0.0"}`))
-	if err != nil || inspection.verifyRequest.Local != "exports/orders" || inspection.verifyRequest.Space != "orders" || !result.(ContractVerifyExportResult).Matches {
+	if err != nil || inspection.verifyRequest.Local != "exports/orders" || inspection.verifyRequest.Space != "orders" || result.(ContractVerifyExportResult).Outcome != "matched" {
 		t.Fatalf("verify mismatch: result=%+v request=%+v err=%v", result, inspection.verifyRequest, err)
 	}
 }

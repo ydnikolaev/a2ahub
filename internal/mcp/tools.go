@@ -412,6 +412,12 @@ func registerContractTool(r *Registry, newDeps NewDeps, contractDeps ContractDep
 			"bump":        {"string", "preflight/publish only: the semver bump kind to apply"},
 			"staging":     {"string", "preflight/publish only: the staged draft directory to publish from"},
 			"expect_plan": {"string", "publish only: the plan digest this publish must match (idempotency guard)"},
+			// allow_empty_bump: T1's own words — "An agent that can only
+			// reach the MCP surface must not meet a refusal it has no way
+			// to satisfy." decodeStrict()s into ContractPreflightInput
+			// (this package) and ContractPublishInput (tools_contract.go);
+			// both carry the matching field.
+			"allow_empty_bump": {"boolean", "preflight/publish only: acknowledge and proceed past a bump whose mutations touch no normative artifact"},
 			// generated_from_digest is DELIBERATELY ABSENT: ContractPublishInput
 			// carries the field (honoured ⊆ published is a one-directional
 			// AC, so this is not a violation) but newP6ContractPublishHandler

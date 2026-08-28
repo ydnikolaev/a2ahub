@@ -124,14 +124,15 @@ func newMCPContractOperationsFactory(p paths, cfg space.ProjectConfig, machine s
 }
 
 type contractP6PublicationInput struct {
-	id         string
-	version    string
-	bump       string
-	staging    string
-	expectPlan string
-	actorKind  string
-	actorName  string
-	actorModel string
+	id             string
+	version        string
+	bump           string
+	staging        string
+	expectPlan     string
+	allowEmptyBump bool
+	actorKind      string
+	actorName      string
+	actorModel     string
 }
 
 func (c *contractP6Core) preflight(ctx context.Context, input contractP6PublicationInput) (space.ContractPublicationResult, error) {
@@ -231,7 +232,7 @@ func (c *contractP6Core) publicationRequest(ctx context.Context, input contractP
 	request := space.ContractPublicationRequest{
 		System: c.ownSystem, ContractID: input.id, Selector: selector,
 		Candidate: candidate, CandidateSource: source, ExpectPlan: input.expectPlan,
-		ProducerCompatibility: c.binary,
+		ProducerCompatibility: c.binary, AllowEmptyBump: input.allowEmptyBump,
 	}
 	if publishing {
 		request.SubmitTemplate = space.SubmitRequest{
@@ -458,12 +459,34 @@ type contractInspectionResult struct {
 	frontmatterChanged []string
 }
 
+// contractVerifyResult carries the closed three-outcome vocabulary
+// (contract.ExportVerification: matched/drifted/unmeasured) rather than a
+// `matches bool` — two outcomes cannot express three (spec P2 ACs 5/6/17).
+// outcome is always ClassifyExportVerification's return value; nothing
+// computes it a second way.
 type contractVerifyResult struct {
 	id          string
-	matches     bool
+	outcome     contract.ExportVerification
 	localDigest string
 	wantDigest  string
 	diff        contractInspectionResult
+}
+
+// contractExportOutcomeWord is D9's render boundary: it maps
+// contract.ExportUnmeasured onto the SHIPPED validate.SeverityUnmeasured
+// (internal/validate/result.go:72, "UNMEASURED is a SEVERITY, not a fourth
+// verdict") by VALUE rather than minting a bespoke word. The two string
+// values are already identical ("unmeasured" == "unmeasured" —
+// contract.ExportVerification's own doc comment records this), so this
+// function is a proof that the mapping holds, not a translation a second
+// vocabulary could drift from. matched/drifted are contract's own
+// vocabulary — verify-export's own halves, never a validate.Severity — and
+// pass through unchanged.
+func contractExportOutcomeWord(outcome contract.ExportVerification) string {
+	if outcome == contract.ExportUnmeasured {
+		return string(validate.SeverityUnmeasured)
+	}
+	return string(outcome)
 }
 
 func (c *contractP6Core) diff(ctx context.Context, id, v1, v2 string) (contractInspectionResult, error) {
@@ -503,16 +526,37 @@ func (c *contractP6Core) verifyExport(ctx context.Context, local, ref string) (c
 	if err != nil {
 		return contractVerifyResult{}, err
 	}
-	localSnapshot, err := space.ReadContractCandidate(ctx, c.projectRoot, space.ContractCandidateLocation{Path: local, Source: space.ContractCandidateSourceStaging})
+	// AC-13: read the SAME candidate bytes publish would — the mirror
+	// overlaid with staging, through the shared freezePublicationCandidate
+	// helper — rather than staging alone. A partial staging overlay
+	// publish accepts (only the changed file(s) staged, the rest read from
+	// the mirror) was previously refused here on a declared file the
+	// staging-only read could not see.
+	localSnapshot, err := c.readVerifyCandidate(ctx, historical.ContractID, local)
 	if err != nil {
 		return contractVerifyResult{}, err
 	}
-	localDigest := contractLocalSnapshotDigest(localSnapshot, historical.DigestProfile)
 	diff := inspectContractSnapshots(localSnapshot.Files, historical.Files)
-	matches := localDigest == historical.PublishedDigest && contractSnapshotFilesEqual(localSnapshot.Files, historical.Files)
+	projection, err := c.localExportSource(localSnapshot, local)
+	if err != nil {
+		return contractVerifyResult{}, err
+	}
+	generatedFromDeclared := historical.Descriptor.GeneratedFrom != nil
+	want := ""
+	if generatedFromDeclared {
+		want = historical.Descriptor.GeneratedFrom.SourceDigest
+	}
+	// US-3's own comparison (spec §T1, "the comparison, stated precisely"):
+	// the published generated_from.source_digest is the PRODUCER's own
+	// asserted value, already checked by publish before it was written —
+	// comparing the local export-source-v1 digest against it is meaningful
+	// PROVENANCE. Comparing against historical.PublishedDigest (the
+	// publication AGGREGATE, a2a's own value) would be comparing a2a to
+	// a2a, the exact circularity this verb exists to avoid.
+	outcome := contract.ClassifyExportVerification(generatedFromDeclared, want, projection.Digest)
 	return contractVerifyResult{
-		id: historical.ContractID, matches: matches, localDigest: localDigest,
-		wantDigest: historical.PublishedDigest, diff: diff,
+		id: historical.ContractID, outcome: outcome, localDigest: projection.Digest,
+		wantDigest: want, diff: diff,
 	}, nil
 }
 
@@ -525,58 +569,69 @@ func (c *contractP6Core) verifyExportLocalDigest(ctx context.Context, local, ref
 	if err != nil || parsed.Prefix != "XC" || parsed.Class != artifact.ClassStanding {
 		return contractVerifyResult{}, fmt.Errorf("contract reference %q must be an XC-id, or an exact XC-id@canonical-version to compare against published bytes", ref)
 	}
-	snapshot, err := space.ReadContractCandidate(ctx, c.projectRoot, space.ContractCandidateLocation{Path: local, Source: space.ContractCandidateSourceStaging})
+	// AC-13: same candidate-freezing helper as publish (see verifyExport's
+	// identical note above).
+	snapshot, err := c.readVerifyCandidate(ctx, ref, local)
 	if err != nil {
 		return contractVerifyResult{}, err
 	}
-	core := snapshot.CoreSnapshot()
-	descriptor, err := contract.ParseDescriptor(core.Descriptor.Raw)
+	descriptor, err := contract.ParseDescriptor(snapshot.CoreSnapshot().Descriptor.Raw)
 	if err != nil {
 		return contractVerifyResult{}, fmt.Errorf("candidate descriptor at %s cannot be decoded: %w", local, err)
 	}
-	set, issues := contract.BuildCarriedSet(contract.ProfileContractSetV2, core.Descriptor.Raw, descriptor, core.Files)
-	if len(issues) != 0 {
-		return contractVerifyResult{}, fmt.Errorf("candidate at %s is not a valid declared carried set: %s", local, issues[0].Detail)
-	}
-	projection, err := set.ExportSource()
+	projection, err := c.localExportSource(snapshot, local)
 	if err != nil {
 		return contractVerifyResult{}, err
 	}
+	generatedFromDeclared := descriptor.GeneratedFrom != nil
 	want := ""
-	if descriptor.GeneratedFrom != nil {
+	if generatedFromDeclared {
 		want = descriptor.GeneratedFrom.SourceDigest
 	}
+	outcome := contract.ClassifyExportVerification(generatedFromDeclared, want, projection.Digest)
 	return contractVerifyResult{
-		id: ref, matches: want != "" && want == projection.Digest,
-		localDigest: projection.Digest, wantDigest: want,
+		id: ref, outcome: outcome, localDigest: projection.Digest, wantDigest: want,
 	}, nil
 }
 
-func contractLocalSnapshotDigest(snapshot space.ContractCandidateSnapshot, profile contract.DigestProfile) string {
+// readVerifyCandidate is AC-13's one adapter: it delegates to the SAME
+// freezePublicationCandidate publish calls (contractwiring.
+// FreezePublicationCandidate, mirror overlaid with staging), so verify and
+// publish agree on what "the candidate" is. The two snapshot shapes are
+// close but not identical to the plain staging read this replaces — this is
+// the deliberate judgment call spec P2 §"AC-13" names, written once here
+// rather than at each of verifyExport's and verifyExportLocalDigest's two
+// call sites.
+func (c *contractP6Core) readVerifyCandidate(ctx context.Context, contractID, local string) (space.ContractCandidateSnapshot, error) {
+	candidate, _, err := c.freezePublicationCandidate(ctx, contractID, local)
+	if err != nil {
+		return space.ContractCandidateSnapshot{}, err
+	}
+	return candidate.ReadContractPublicationCandidate(ctx)
+}
+
+// localExportSource builds the candidate's carried set under the ONE
+// selected digest profile (AC-9: SelectDigestProfile/DetectInventoryMode,
+// never a hardcoded contract.ProfileContractSetV2) and projects
+// export-source-v1 from it. ExportSource itself already refuses a non-V2
+// set, so a legacy local candidate is refused here rather than silently
+// digested under V2 rules.
+func (c *contractP6Core) localExportSource(snapshot space.ContractCandidateSnapshot, local string) (contract.DigestProjection, error) {
 	core := snapshot.CoreSnapshot()
 	descriptor, err := contract.ParseDescriptor(core.Descriptor.Raw)
 	if err != nil {
-		return "invalid"
+		return contract.DigestProjection{}, fmt.Errorf("candidate descriptor at %s cannot be decoded: %w", local, err)
 	}
-	files := core.Files
-	if profile == contract.ProfileContractTreeV1 {
-		filtered := files[:0:0]
-		for _, file := range files {
-			if strings.HasPrefix(file.Path, "schema/") || strings.HasPrefix(file.Path, "fixtures/") {
-				filtered = append(filtered, file)
-			}
-		}
-		set, issues := contract.BuildCarriedSet(profile, nil, contract.Descriptor{}, filtered)
-		if len(issues) != 0 {
-			return "invalid"
-		}
-		return set.AggregateDigest
+	mode, err := contract.DetectInventoryMode(core.Descriptor.Raw)
+	if err != nil {
+		return contract.DigestProjection{}, fmt.Errorf("candidate descriptor at %s cannot be classified: %w", local, err)
 	}
-	set, issues := contract.BuildCarriedSet(profile, core.Descriptor.Raw, descriptor, files)
+	profile := contract.SelectDigestProfile(mode)
+	set, issues := contract.BuildCarriedSet(profile, core.Descriptor.Raw, descriptor, core.Files)
 	if len(issues) != 0 {
-		return "invalid"
+		return contract.DigestProjection{}, fmt.Errorf("candidate at %s is not a valid declared carried set: %s", local, issues[0].Detail)
 	}
-	return set.AggregateDigest
+	return set.ExportSource()
 }
 
 func inspectContractSnapshots(left, right []space.ContractSnapshotFile) contractInspectionResult {
@@ -616,20 +671,6 @@ func contractSnapshotMap(files []space.ContractSnapshotFile) map[string]space.Co
 		out[file.Path] = file
 	}
 	return out
-}
-
-func contractSnapshotFilesEqual(left, right []space.ContractSnapshotFile) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	leftByPath, rightByPath := contractSnapshotMap(left), contractSnapshotMap(right)
-	for name, leftFile := range leftByPath {
-		rightFile, ok := rightByPath[name]
-		if !ok || leftFile.Mode != rightFile.Mode || !bytes.Equal(leftFile.Raw, rightFile.Raw) {
-			return false
-		}
-	}
-	return true
 }
 
 func contractFrontmatterChanges(leftRaw, rightRaw []byte) []string {
@@ -683,13 +724,14 @@ func contractFrontmatterValue(values map[string]any, key string) string {
 type cliContractP6Adapter struct{ core *contractP6Core }
 
 func (a cliContractP6Adapter) Preflight(ctx context.Context, request cli.ContractPublicationRequest) (space.ContractPublicationResult, error) {
-	return a.core.preflight(ctx, contractP6PublicationInput{id: request.ID, version: request.Version, bump: request.Bump, staging: request.Staging})
+	return a.core.preflight(ctx, contractP6PublicationInput{id: request.ID, version: request.Version, bump: request.Bump, staging: request.Staging, allowEmptyBump: request.AllowEmptyBump})
 }
 
 func (a cliContractP6Adapter) Publish(ctx context.Context, request cli.ContractPublicationRequest) (space.ContractPublicationResult, error) {
 	return a.core.publish(ctx, contractP6PublicationInput{
 		id: request.ID, version: request.Version, bump: request.Bump, staging: request.Staging, expectPlan: request.ExpectPlan,
-		actorKind: request.Actor.Kind, actorName: request.Actor.Name, actorModel: request.Actor.Model,
+		allowEmptyBump: request.AllowEmptyBump,
+		actorKind:      request.Actor.Kind, actorName: request.Actor.Name, actorModel: request.Actor.Model,
 	})
 }
 
@@ -709,7 +751,11 @@ func (a cliContractP6Adapter) DiffContract(ctx context.Context, request cli.Cont
 func (a cliContractP6Adapter) VerifyContractExport(ctx context.Context, request cli.ContractVerifyExportRequest) (cli.ContractVerifyExportResult, error) {
 	result, err := a.core.verifyExport(ctx, request.Local, request.Ref)
 	return cli.ContractVerifyExportResult{
-		ID: result.id, Matches: result.matches, LocalDigest: result.localDigest, WantDigest: result.wantDigest,
+		// Matches is DERIVED from outcome, never a second computation
+		// (spec P2 §9's own trap paragraph: two answerers to one question
+		// is the class this epic exists to close).
+		ID: result.id, Matches: result.outcome == contract.ExportMatched, Outcome: contractExportOutcomeWord(result.outcome),
+		LocalDigest: result.localDigest, WantDigest: result.wantDigest,
 		Diff: cli.ContractDiffResult{Added: result.diff.added, Removed: result.diff.removed, Changed: result.diff.changed, FrontmatterChanged: result.diff.frontmatterChanged},
 	}, err
 }
@@ -717,13 +763,14 @@ func (a cliContractP6Adapter) VerifyContractExport(ctx context.Context, request 
 type mcpContractP6Adapter struct{ core *contractP6Core }
 
 func (a mcpContractP6Adapter) Preflight(ctx context.Context, request mcp.ContractPublicationRequest) (space.ContractPublicationResult, error) {
-	return a.core.preflight(ctx, contractP6PublicationInput{id: request.ID, version: request.Version, bump: request.Bump, staging: request.Staging})
+	return a.core.preflight(ctx, contractP6PublicationInput{id: request.ID, version: request.Version, bump: request.Bump, staging: request.Staging, allowEmptyBump: request.AllowEmptyBump})
 }
 
 func (a mcpContractP6Adapter) Publish(ctx context.Context, request mcp.ContractPublicationRequest) (space.ContractPublicationResult, error) {
 	return a.core.publish(ctx, contractP6PublicationInput{
 		id: request.ID, version: request.Version, bump: request.Bump, staging: request.Staging, expectPlan: request.ExpectPlan,
-		actorKind: request.Actor.Kind, actorName: request.Actor.Name, actorModel: request.Actor.Model,
+		allowEmptyBump: request.AllowEmptyBump,
+		actorKind:      request.Actor.Kind, actorName: request.Actor.Name, actorModel: request.Actor.Model,
 	})
 }
 
@@ -743,7 +790,8 @@ func (a mcpContractP6Adapter) DiffContract(ctx context.Context, request mcp.Cont
 func (a mcpContractP6Adapter) VerifyContractExport(ctx context.Context, request mcp.ContractVerifyExportRequest) (mcp.ContractVerifyExportResult, error) {
 	result, err := a.core.verifyExport(ctx, request.Local, request.Ref)
 	return mcp.ContractVerifyExportResult{
-		ID: result.id, Matches: result.matches, LocalDigest: result.localDigest, WantDigest: result.wantDigest,
+		ID: result.id, Outcome: contractExportOutcomeWord(result.outcome),
+		LocalDigest: result.localDigest, WantDigest: result.wantDigest,
 		Diff: mcp.ContractDiffResult{Added: result.diff.added, Removed: result.diff.removed, Changed: result.diff.changed, FrontmatterChanged: result.diff.frontmatterChanged},
 	}, err
 }

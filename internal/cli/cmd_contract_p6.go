@@ -20,7 +20,11 @@ type ContractPublicationRequest struct {
 	Bump       string
 	Staging    string
 	ExpectPlan string
-	Actor      ActorFlags
+	// AllowEmptyBump is `--allow-empty-bump`: acknowledges a non-first bump
+	// whose mutations touch no normative artifact and proceeds instead of
+	// refusing (P2 AC-3/4).
+	AllowEmptyBump bool
+	Actor          ActorFlags
 }
 
 // ContractPublicationOperations is the consumer-side seam over P6's shared
@@ -75,10 +79,18 @@ type ContractVerifyExportRequest struct {
 	Ref   string
 }
 
-// ContractVerifyExportResult reports whether a local export matches its source.
+// ContractVerifyExportResult reports whether a local export matches its
+// source. Matches is retained for cmd_contract.go's existing plain-text
+// render (wave-2-owned) and for internal/e2e's fixture — it is DERIVED,
+// never a second computation: true iff Outcome == "matched". Outcome
+// carries the full three-outcome vocabulary (contract.ExportVerification,
+// D9-mapped at the render boundary — see cmd/a2a's contractExportOutcomeWord),
+// so a consumer that reads it can distinguish drifted from UNMEASURED,
+// which Matches alone cannot.
 type ContractVerifyExportResult struct {
 	ID          string             `json:"id"`
 	Matches     bool               `json:"matches"`
+	Outcome     string             `json:"outcome"`
 	LocalDigest string             `json:"local_digest"`
 	WantDigest  string             `json:"want_digest"`
 	Diff        ContractDiffResult `json:"diff,omitempty"`
@@ -139,6 +151,7 @@ func parseContractPublicationArgs(verb string, args []string, stdio IO, allowExp
 	bump := fs.String("bump", "", "major|minor|patch")
 	staging := fs.String("staging", "", "contained project-relative candidate directory")
 	expectPlan := fs.String("expect-plan", "", "expected sha256 plan digest")
+	allowEmptyBump := fs.Bool("allow-empty-bump", false, "acknowledge and proceed past a bump whose mutations touch no normative artifact")
 	asJSON := fs.Bool("json", false, "emit JSON")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
 	positionals, err := parseArgsAnyOrder(fs, args)
@@ -163,7 +176,8 @@ func parseContractPublicationArgs(verb string, args []string, stdio IO, allowExp
 	}
 	return ContractPublicationRequest{
 		ID: positionals[0], Version: *version, Bump: *bump, Staging: *staging,
-		ExpectPlan: *expectPlan, Actor: ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel},
+		ExpectPlan: *expectPlan, AllowEmptyBump: *allowEmptyBump,
+		Actor: ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel},
 	}, *asJSON, true
 }
 
@@ -176,6 +190,15 @@ func renderContractPublication(stdio IO, result space.ContractPublicationResult,
 		return 0
 	}
 	_, _ = fmt.Fprintf(stdio.Stdout, "%s %s@%s\nplan %s\n", result.Status, result.Plan.Contract, result.Plan.TargetVersion, result.Plan.PlanDigest)
+	// AC-4: --allow-empty-bump's acknowledgement (contract.Finding{Code:
+	// "empty-bump-acknowledged", ...}, carried on Plan.Warnings) must be
+	// printed when used — under --json it was already visible as part of
+	// the encoded result; the plain-text branch used to print only
+	// status/contract/version/plan-digest and silently dropped every
+	// warning, including this one.
+	for _, warning := range result.Plan.Warnings {
+		_, _ = fmt.Fprintf(stdio.Stdout, "warning %s: %s\n", warning.Code, warning.Message)
+	}
 	return 0
 }
 

@@ -231,9 +231,20 @@ func PresenceFromDir(dir string) func(descriptorPath, rel string) bool {
 // submit does not have — no publication event, no digest profile, no
 // expected digest — and validate.ValidateContractCarriedSet's own
 // proposed-mode floor check demands `event/v2` + `contract-set-v2`, which
-// a first `a2a submit` cannot supply and must not fabricate. Those rules
-// keep running where they already run: `a2a contract preflight`,
-// `a2a contract publish`, and the merge gate. Recorded in spec 09 §11.
+// a first `a2a submit` cannot supply and must not fabricate. Those rules run
+// at `a2a contract preflight` and `a2a contract publish` — both share
+// contract.PlanPublication, which reaches the structural half via
+// contract.ValidateCarriedSet and the provenance half via
+// contract.publicationSourceDigest. Neither is validate.ValidateContractCarriedSet
+// / CarriedSet.VerifyGeneratedSource, the pair this comment used to cite —
+// that pair has zero production callers (P2 spec 02 §11, verified uncapped).
+// The MERGE GATE runs NEITHER half: `a2a validate --ci --mode=v3-full-repo`'s
+// contract path (internal/cli/cmd_validate_ci.go's validateCIContract) calls
+// only CheckContractDescriptorShape, CheckContractPublishable and
+// CheckComputedCompatibility, none of which reads generated_from or
+// source_digest, or builds a carried set. This is not merely unverified: it
+// is verified false, corrected here rather than left asserted. Recorded in
+// spec 09 §11 and P2 spec 02 §11 (2026-08-28 amendment).
 //
 // It is a PROPOSED-WRITE rule. `--ci --mode=v3-full-repo` deliberately does
 // not call it: there the path is already merged and part of an immutable

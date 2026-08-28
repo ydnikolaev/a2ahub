@@ -310,15 +310,24 @@ func contractPublishedVersions(all []eventDoc, id string) []contractSemver {
 type ContractPublishInput struct {
 	// Action is a2a_contract's own discriminator — never read here; see
 	// ContractNewInput's identical field for why it exists.
-	Action              string     `json:"action,omitempty"`
-	Space               string     `json:"space,omitempty"`
-	ID                  string     `json:"id"`
-	Version             string     `json:"version,omitempty"`
-	Bump                string     `json:"bump,omitempty"`
-	Staging             string     `json:"staging,omitempty"`
-	ExpectPlan          string     `json:"expect_plan,omitempty"`
-	GeneratedFromDigest string     `json:"generated_from_digest,omitempty"`
-	Actor               ActorInput `json:"actor,omitempty"`
+	Action              string `json:"action,omitempty"`
+	Space               string `json:"space,omitempty"`
+	ID                  string `json:"id"`
+	Version             string `json:"version,omitempty"`
+	Bump                string `json:"bump,omitempty"`
+	Staging             string `json:"staging,omitempty"`
+	ExpectPlan          string `json:"expect_plan,omitempty"`
+	GeneratedFromDigest string `json:"generated_from_digest,omitempty"`
+	// AllowEmptyBump is the MCP twin of the CLI's `--allow-empty-bump` (P2
+	// AC-3/4, T1: "an agent that can only reach the MCP surface must not
+	// meet a refusal it has no way to satisfy"). Decoded here because
+	// newP6ContractPublishHandler (internal/mcp/tools_contract_p6.go)
+	// decodeStrict()s into THIS struct; a schema property with no matching
+	// field here is a hard decode refusal for every caller who sends it
+	// (DisallowUnknownFields), which is exactly what
+	// scripts/check-mcp-schema-decodable.sh exists to catch.
+	AllowEmptyBump bool       `json:"allow_empty_bump,omitempty"`
+	Actor          ActorInput `json:"actor,omitempty"`
 }
 
 func newContractPublishHandler(deps ContractDeps) HandlerFunc {

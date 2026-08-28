@@ -505,6 +505,11 @@ type ContractPublicationRequest struct {
 	SubmitTemplate        SubmitRequest
 	SubmissionRuntime     SubmissionRuntime
 	ProducerCompatibility string
+	// AllowEmptyBump is the CLI/MCP `--allow-empty-bump` acknowledgement,
+	// threaded unchanged into contract.PublicationInput.AllowEmptyBump (P2
+	// AC-3/4). Zero value (false) keeps the safe default: a non-first bump
+	// whose mutations touch no normative artifact is refused.
+	AllowEmptyBump bool
 }
 
 // ContractPublicationResult is part of the public package API.
@@ -902,7 +907,7 @@ func (s *ContractPublicationService) plan(ctx context.Context, request ContractP
 		Published: planning.Published, CandidateSource: request.CandidateSource,
 		ContractRoot: planning.ContractRoot, SourceDigestAssertion: planning.SourceDigestAssertion,
 		Warnings: planning.Warnings, Violations: planning.Violations,
-		MutationBaseline: planning.MutationBaseline,
+		MutationBaseline: planning.MutationBaseline, AllowEmptyBump: request.AllowEmptyBump,
 	}
 	plan, issues := contract.PlanPublication(input, s.checker)
 	if len(issues) != 0 {

@@ -20,7 +20,11 @@ type ContractPublicationRequest struct {
 	Bump       string
 	Staging    string
 	ExpectPlan string
-	Actor      ActorInput
+	// AllowEmptyBump is the MCP twin of the CLI's `--allow-empty-bump` (P2
+	// AC-3/4): acknowledges a non-first bump whose mutations touch no
+	// normative artifact and proceeds instead of refusing.
+	AllowEmptyBump bool
+	Actor          ActorInput
 }
 
 // ContractPublicationOperations performs publication planning and writes.
@@ -78,10 +82,17 @@ type ContractVerifyExportRequest struct {
 	Ref   string
 }
 
-// ContractVerifyExportResult reports whether an export matches its source.
+// ContractVerifyExportResult reports export-source-v1 verification. Outcome
+// carries the closed three-outcome vocabulary (matched/drifted/unmeasured,
+// contract.ExportVerification, D9-mapped at the render boundary — see
+// cmd/a2a's contractExportOutcomeWord) rather than a `matches` bool: two
+// outcomes cannot express three, and this is the one surface in this wave
+// with no off-limits caller pinning a boolean field, so AC-6's "the word
+// `matches` appears NOWHERE in an unmeasured run's output" holds by
+// construction — the JSON key itself is gone, not just its value.
 type ContractVerifyExportResult struct {
 	ID          string             `json:"id"`
-	Matches     bool               `json:"matches"`
+	Outcome     string             `json:"outcome"`
 	LocalDigest string             `json:"local_digest"`
 	WantDigest  string             `json:"want_digest"`
 	Diff        ContractDiffResult `json:"diff,omitempty"`
@@ -103,6 +114,9 @@ type ContractPreflightInput struct {
 	Version string `json:"version,omitempty"`
 	Bump    string `json:"bump,omitempty"`
 	Staging string `json:"staging,omitempty"`
+	// AllowEmptyBump is the MCP twin of the CLI's `--allow-empty-bump`
+	// (P2 AC-3/4).
+	AllowEmptyBump bool `json:"allow_empty_bump,omitempty"`
 }
 
 // ContractMaterializeInput is a materialize handler's structured MCP input.
@@ -139,7 +153,7 @@ func newContractPreflightHandler(deps ContractDeps) HandlerFunc {
 		if err := validateContractPublicationInput(in.ID, in.Version, in.Bump); err != nil {
 			return nil, "", fmt.Errorf("contract preflight: %w", err)
 		}
-		result, err := deps.Publication.Preflight(ctx, ContractPublicationRequest{Space: in.Space, ID: in.ID, Version: in.Version, Bump: in.Bump, Staging: in.Staging})
+		result, err := deps.Publication.Preflight(ctx, ContractPublicationRequest{Space: in.Space, ID: in.ID, Version: in.Version, Bump: in.Bump, Staging: in.Staging, AllowEmptyBump: in.AllowEmptyBump})
 		if err != nil {
 			return nil, "", fmt.Errorf("contract preflight: %w", err)
 		}
@@ -161,7 +175,7 @@ func newP6ContractPublishHandler(deps ContractDeps) HandlerFunc {
 		}
 		result, err := deps.Publication.Publish(ctx, ContractPublicationRequest{
 			Space: in.Space, ID: in.ID, Version: in.Version, Bump: in.Bump, Staging: in.Staging,
-			ExpectPlan: in.ExpectPlan, Actor: in.Actor,
+			ExpectPlan: in.ExpectPlan, AllowEmptyBump: in.AllowEmptyBump, Actor: in.Actor,
 		})
 		if err != nil {
 			return nil, "", fmt.Errorf("contract publish: %w", err)

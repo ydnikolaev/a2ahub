@@ -112,7 +112,7 @@ func TestContractLifecyclePublishRoundTrip(t *testing.T) {
 
 	// (2) Publish 1.0.0 through the exact assembly contractP6Core.publish
 	// uses, with a fake host standing in for *host.GitHubHost.
-	result, err := contractLifecyclePublish(t, mirrorDir, fx.RemoteURL(), engine, fakeHost, actor, contractID, "1.0.0")
+	result, err := contractLifecyclePublish(t, mirrorDir, fx.RemoteURL(), engine, fakeHost, actor, contractID, "1.0.0", false)
 	if err != nil {
 		t.Fatalf("publish 1.0.0: %v", err)
 	}
@@ -141,7 +141,16 @@ func TestContractLifecyclePublishRoundTrip(t *testing.T) {
 	// (4) Publish 1.1.0. This must resolve 1.0.0 as its compatibility
 	// baseline, which only works if step (3)'s resolve-back proves the
 	// history is actually readable.
-	result2, err := contractLifecyclePublish(t, mirrorDir, fx.RemoteURL(), engine, fakeHost, actor, contractID, "1.1.0")
+	//
+	// 1.1.0 is published over BYTE-IDENTICAL schema/fixtures — that is the
+	// shape this test needs to prove 1.0.0 resolves as the compatibility
+	// baseline, and it is precisely what P2's AC-3 empty-bump guard now
+	// refuses (only contract.md's version/generated_from bytes move,
+	// touching no normative artifact). --allow-empty-bump is P2's own
+	// escape hatch for exactly this declared shape, so this test uses it
+	// rather than manufacturing a real normative mutation that would
+	// change what the test is proving.
+	result2, err := contractLifecyclePublish(t, mirrorDir, fx.RemoteURL(), engine, fakeHost, actor, contractID, "1.1.0", true)
 	if err != nil {
 		t.Fatalf("publish 1.1.0: %v", err)
 	}
@@ -154,6 +163,14 @@ func TestContractLifecyclePublishRoundTrip(t *testing.T) {
 	// just-merged publish history rather than treating 1.1.0 as establishing.
 	if result2.Plan.FirstPublish || result2.Plan.BaselineVersion != "1.0.0" {
 		t.Fatalf("publish 1.1.0 plan = %+v, want FirstPublish=false BaselineVersion=1.0.0", result2.Plan)
+	}
+	// AC-4: --allow-empty-bump's acknowledgement must actually reach the
+	// plan (proves the plumbing this wave adds — contractP6PublicationInput
+	// -> space.ContractPublicationRequest.AllowEmptyBump ->
+	// contract.PublicationInput.AllowEmptyBump — rather than the flag
+	// being silently dropped somewhere along that chain).
+	if !contractLifecycleHasWarning(result2.Plan.Warnings, "empty-bump-acknowledged") {
+		t.Fatalf("publish 1.1.0 plan.warnings = %+v, want an empty-bump-acknowledged warning", result2.Plan.Warnings)
 	}
 	if len(fakeHost.Opens) != 3 {
 		t.Fatalf("expected exactly three OpenPR calls after publishing 1.1.0, got %d", len(fakeHost.Opens))
@@ -219,7 +236,7 @@ func TestContractLifecyclePublishRefusesNonEstablishing(t *testing.T) {
 	contractLifecycleMergeToMain(t, mirrorDir, lastOpenedBranch(fakeHost))
 
 	opensBeforePublish, pushesBeforePublish := len(fakeHost.Opens), len(fakeHost.Pushes)
-	_, err = contractLifecyclePublish(t, mirrorDir, fx.RemoteURL(), engine, fakeHost, actor, contractID, "1.0.0")
+	_, err = contractLifecyclePublish(t, mirrorDir, fx.RemoteURL(), engine, fakeHost, actor, contractID, "1.0.0", false)
 	if !errors.Is(err, space.ErrContractPublicationNotEstablishing) {
 		t.Fatalf("publish 1.0.0 err = %v, want errors.Is(..., space.ErrContractPublicationNotEstablishing)", err)
 	}
@@ -339,6 +356,7 @@ func contractLifecycleDraftAndSubmit(t *testing.T, contractCmd *cli.ContractComm
 func contractLifecyclePublish(
 	t *testing.T, mirrorDir, remoteURL string, engine *validate.Engine,
 	fakeHost *host.FakeHost, actor template.Actor, contractID, targetVersion string,
+	allowEmptyBump bool,
 ) (space.ContractPublicationResult, error) {
 	t.Helper()
 	ctx := context.Background()
@@ -395,6 +413,7 @@ func contractLifecyclePublish(
 	request := space.ContractPublicationRequest{
 		System: contractLifecycleSystem, ContractID: contractID, Selector: "explicit:" + targetVersion,
 		Candidate: candidate, CandidateSource: source, ProducerCompatibility: "0.19.0",
+		AllowEmptyBump: allowEmptyBump,
 		SubmitTemplate: space.SubmitRequest{
 			RepoDir: mirrorDir, RemoteURL: remoteURL, Repo: host.Repo{Owner: "fixture", Name: "space"},
 			MinBinaryVersion: manifest.MinBinaryVersion,
@@ -454,6 +473,17 @@ func (h contractLifecycleRecoveryHost) ReadRemoteRecoveryTreeFiles(ctx context.C
 
 func (h contractLifecycleRecoveryHost) ListRemoteRecoveryTreeFiles(ctx context.Context, repoDir, commit string, prefixes []string) (map[string]host.RemoteTreeFile, error) {
 	return h.git.ListRemoteRecoveryTreeFiles(ctx, repoDir, commit, prefixes)
+}
+
+// contractLifecycleHasWarning reports whether warnings carries a
+// contract.Finding with the given Code.
+func contractLifecycleHasWarning(warnings []contract.Finding, code string) bool {
+	for _, warning := range warnings {
+		if warning.Code == code {
+			return true
+		}
+	}
+	return false
 }
 
 // lastOpenedBranch returns the Head branch of the most recently recorded

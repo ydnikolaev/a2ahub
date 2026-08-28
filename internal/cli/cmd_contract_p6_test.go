@@ -102,6 +102,35 @@ func TestContractP6PreflightAndPublishAreThin(t *testing.T) {
 	}
 }
 
+// TestContractP6AllowEmptyBumpFlagAndTextWarning covers AC-4's two halves on
+// the CLI surface: the flag reaches the request (--allow-empty-bump), and
+// the TEXT render prints the acknowledgement Plan.Warnings carries — not
+// only under --json, where it was already visible as part of the encoded
+// result.
+func TestContractP6AllowEmptyBumpFlagAndTextWarning(t *testing.T) {
+	t.Parallel()
+	result := space.ContractPublicationResult{
+		Status: space.ContractPublicationSubmitted,
+		Plan: contract.PublicationPlan{
+			Contract: "XC-axon-orders", TargetVersion: "1.1.0", PlanDigest: "sha256:plan",
+			Warnings: []contract.Finding{{
+				Code: "empty-bump-acknowledged", Path: "mutations",
+				Message: "--allow-empty-bump acknowledged: this bump's 1 mutation(s) touch no normative artifact",
+			}},
+		},
+	}
+	fake := &p6PublicationFake{result: result}
+	cmd := newP6ContractCommand(t, fake, &p6MaterializeFake{}, &p6CheckFake{})
+
+	code, output, stderr := runP6Contract(t, cmd, "publish", "XC-axon-orders", "--version", "1.1.0", "--allow-empty-bump")
+	if code != 0 || stderr != "" || !fake.publish.AllowEmptyBump {
+		t.Fatalf("publish mismatch: code=%d err=%q req=%+v", code, stderr, fake.publish)
+	}
+	if !strings.Contains(output, "empty-bump-acknowledged") || !strings.Contains(output, "this bump's 1 mutation(s) touch no normative artifact") {
+		t.Fatalf("text render dropped the empty-bump acknowledgement: output=%q", output)
+	}
+}
+
 func TestContractP6MalformedAndPlanConflict(t *testing.T) {
 	t.Parallel()
 	fake := &p6PublicationFake{err: space.ErrContractPublicationPlanChanged}
