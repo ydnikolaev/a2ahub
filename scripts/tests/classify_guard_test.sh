@@ -203,4 +203,58 @@ mkdir -p "$tree/scripts"
 } > "$tree/scripts/check-gosec-scope.sh"
 expect_red "$tree" "has a \`source\` line this check cannot resolve" "check 5: an unresolvable source form refuses"
 
-echo "classify_guard_test: ok — real tree green, baseline fixture green, and 11 seeded violations (tracked DENY file, tracked DENY dir, unclassified entry, whitespace name, DENY missing from .gitignore, public script losing its ! exception, publisher stripping a PUBLIC file by name and by directory, an unreadable STRIP block, a public gate sourcing a private file, an unresolvable source form) all red as designed"
+# ── check 5b: a shipped schema's own CONTENT names a stripped path ──────────
+# P14 (answers-that-hold-2026-08): `schemas/envelope/v2/contract.schema.json`
+# shipped a JSON Schema `description` naming a `docs/` spec path that does not
+# exist in `public/main` — the third edge of the graph check 4 and check 5 own
+# the first two of. Every fixture below carries its own
+# `scripts/lib/strip-set.txt` so STRIP_PATHS is never empty for it (an empty
+# boundary is check 4's own "EMPTY" refusal, a different case).
+tree="$(seed schema-names-stripped-path)"
+mkdir -p "$tree/scripts/lib" "$tree/schemas/envelope/v2"
+printf 'docs/\n' > "$tree/scripts/lib/strip-set.txt"
+cat > "$tree/schemas/envelope/v2/contract.schema.json" <<'JSON'
+{
+  "description": "docs/features/active/some-epic/specs/05-example.md: some rule."
+}
+JSON
+git -C "$tree" add -f scripts/lib/strip-set.txt schemas/envelope/v2/contract.schema.json
+git -C "$tree" commit -qm "ship a schema description naming a stripped path"
+expect_red "$tree" "schemas/envelope/v2/contract.schema.json:2 names docs/features/active/some-epic/specs/05-example.md" "check 5b: a shipped schema names a stripped path"
+
+# The inverse: a description naming a path the publisher does NOT strip stays
+# green — the check judges the path's SHAPE against strip-set.txt, never any
+# path-looking string.
+tree="$(seed schema-names-shipped-path)"
+mkdir -p "$tree/scripts/lib" "$tree/schemas/envelope/v2"
+printf 'docs/\n' > "$tree/scripts/lib/strip-set.txt"
+cat > "$tree/schemas/envelope/v2/contract.schema.json" <<'JSON'
+{
+  "description": "internal/validate/contract.go carries the runtime rule this field states."
+}
+JSON
+git -C "$tree" add -f scripts/lib/strip-set.txt schemas/envelope/v2/contract.schema.json
+git -C "$tree" commit -qm "ship a schema description naming a SHIPPED path"
+expect_green "$tree" "check 5b: a shipped schema naming a SHIPPED path"
+
+# The derivation half (US-3): a row added to strip-set.txt brings a previously
+# GREEN fixture under the check with NO classify-guard.sh edit — the property
+# that makes this worth gating at all rather than a one-time sweep.
+tree="$(seed strip-set-extends-coverage)"
+mkdir -p "$tree/scripts/lib" "$tree/schemas/envelope/v2"
+printf '.agents/\n' > "$tree/scripts/lib/strip-set.txt"
+cat > "$tree/schemas/envelope/v2/contract.schema.json" <<'JSON'
+{
+  "description": "internal-planning/roadmap.md: some rule, stated for now."
+}
+JSON
+git -C "$tree" add -f scripts/lib/strip-set.txt schemas/envelope/v2/contract.schema.json
+git -C "$tree" commit -qm "schema names a path not yet in strip-set.txt"
+expect_green "$tree" "check 5b: a not-yet-stripped path stays green before the row lands"
+
+printf 'internal-planning/\n' >> "$tree/scripts/lib/strip-set.txt"
+git -C "$tree" add -f scripts/lib/strip-set.txt
+git -C "$tree" commit -qm "strip-set.txt gains a row"
+expect_red "$tree" "schemas/envelope/v2/contract.schema.json:2 names internal-planning/roadmap.md" "check 5b: a strip-set.txt row alone brings a previously-green schema under the check"
+
+echo "classify_guard_test: ok — real tree green, baseline fixture green, and 13 seeded violations (tracked DENY file, tracked DENY dir, unclassified entry, whitespace name, DENY missing from .gitignore, public script losing its ! exception, publisher stripping a PUBLIC file by name and by directory, an unreadable STRIP block, a public gate sourcing a private file, an unresolvable source form, a shipped schema naming a stripped path, a strip-set.txt row bringing a previously-green schema under check 5b) all red as designed, alongside 2 seeded schema fixtures (a SHIPPED path, a not-yet-stripped path) proven green"

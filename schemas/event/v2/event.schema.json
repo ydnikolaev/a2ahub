@@ -96,7 +96,7 @@
     },
     "activation": {
       "type": "object",
-      "description": "P5's AC1 discharge (docs/features/active/agent-exchange-2026-08/specs/05-declared-nature.md, 2026-08-10 amendment, importing docs/inbox/agent-exchange-review/04-design-agent-seat.md's Metadata table verbatim): the act that moves a contract's `x_operational[]` items (envelope/v2/contract.schema.json) toward `ready` -- an EVENT, not a descriptor field, because a descriptor is immutable after publication and readiness changes after publication without the interface itself changing. Keyed PER VERSION (`version` below), distinct from `consumes.yaml`'s per-major registration -- readiness is a property of a published version, registration a standing relationship to a major. Conditionally required on `activate` below.",
+      "description": "The act that moves a contract's `x_operational[]` items (envelope/v2/contract.schema.json) toward `ready` -- an EVENT, not a descriptor field, because a descriptor is immutable after publication and readiness changes after publication without the interface itself changing. Keyed PER VERSION (`version` below), distinct from `consumes.yaml`'s per-major registration -- readiness is a property of a published version, registration a standing relationship to a major. Conditionally required on `activate` below.",
       "properties": {
         "version": {
           "type": "string",
@@ -129,7 +129,7 @@
     },
     "verdicts": {
       "type": "array",
-      "description": "P6 wave C (docs/features/active/agent-exchange-2026-08/specs/06-incompleteness.md §7/§11, threat-model.md T5, readiness audit row 25): the verifier's own mirror of a response's `unmet[]` (envelope/v2/response.schema.json) — one entry per judged criterion, indexed into the SAME parent `acceptance_criteria[]` by the same grammar (never restated in prose), so a false verdict has a named author (`cause_owner`) rather than living only in a transition-free note. Conditionally required on `verify`/`close` below. Index-range validation against the parent is internal/validate's job (REF-019), not this schema's — mirroring how `unmet[]`'s own range check (REF-018) lives off envelope/v2/response.schema.json too.",
+      "description": "The verifier's own mirror of a response's `unmet[]` (envelope/v2/response.schema.json) — one entry per judged criterion, indexed into the SAME parent `acceptance_criteria[]` by the same grammar (never restated in prose), so a false verdict has a named author (`cause_owner`) rather than living only in a transition-free note. Conditionally required on `verify`/`close` below. Index-range validation against the parent is internal/validate's job (REF-019), not this schema's — mirroring how `unmet[]`'s own range check (REF-018) lives off envelope/v2/response.schema.json too.",
       "items": {
         "type": "object",
         "properties": {

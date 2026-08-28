@@ -101,6 +101,13 @@ PUBLIC_VALIDATOR_FILES=(
   # itself the drift the derivation exists to remove.
   scripts/check-notify-secrets.sh
   scripts/check-notify-workflow.sh
+  # answers-that-hold-2026-08 P11 and P12. Both read ONLY shipped code —
+  # internal/spacenotify plus the binary's own `__catalog --vocabulary`, and
+  # internal/mcp — so both ship rather than being presence-gated private
+  # gates: a gate whose inputs are public and whose script is not is skipped
+  # in every public checkout, which is the class check 4 exists to refuse.
+  scripts/check-notify-selector-coverage.sh
+  scripts/check-mcp-schema-decodable.sh
   # ci-changes.sh is PUBLIC because `.github/workflows/ci.yml` calls it, and a
   # workflow that is published without the script it invokes is exactly the
   # v0.19.9 defect this list exists to prevent (see publish-to-public.sh's own
@@ -408,6 +415,71 @@ for public_file in "${ALLOW_FILES[@]}"; do
       flag "$public_file sources $dep, which is NOT classified PUBLIC — the gate ships without the file it reads and dies on the candidate's first \`make check\`"
   done < <(grep -E '^[[:space:]]*(source|\.)[[:space:]]' "$public_file")
 done
+
+# ── 5b. A shipped file's own CONTENT must not NAME a path the publisher strips. ──
+#
+# Check 4 above catches a public FILE the publisher strips by name; check 5
+# catches a public file whose `source` DEPENDENCY is private. Neither sees the
+# third edge of the same graph: a public file whose CONTENT points a reader at
+# a path that will not exist for them. `schemas/envelope/v2/contract.schema.json`
+# shipped exactly that — a JSON Schema `description`, embedded via
+# `schemas/embed.go` and published, naming a `docs/` spec path that
+# `git ls-tree public/main docs/` returns nothing for.
+#
+# Scope, measured (answers-that-hold-2026-08 P14 AC-12): the same sweep across
+# the rest of the shipped tree (cmd/, internal/, .github/, feedback/, ...)
+# returns roughly two orders of magnitude more hits than schemas/** does —
+# internal cross-references inside Go test names, backlog trackers, and runbook
+# citations, not documentation handed to an external reader. `schemas/**`'s own
+# `description` fields are a different kind of artifact: they are embedded and
+# read by a consumer of the CONTRACT, not a contributor to this repo. So this
+# check is scoped to schemas/**/*.json, per that measurement — a check whose
+# universe was guessed is exactly the class this epic exists to close. Widening
+# it further is a future phase's decision, made with its own measurement, never
+# by this one's silence.
+#
+# Derived from STRIP_PATHS (read once, at the top of this file) — the SAME read
+# check 4 and PRIVATE_ONLY_FILES already use. No literal `docs/` here: a
+# directory strip becomes a prefix match, a file strip becomes an exact-name
+# match, both built FROM the list, never hand-typed beside it.
+#
+# The three citations inside schemas/feedback/v1/* are exempt, not silently —
+# both files are byte-frozen in schemas/published-v1.sha256 (the P0 ratchet),
+# so a rewrite here would break the pin. That debt is recorded in
+# docs/backlog.md, dated, naming feedback/v2 as the release that lifts it; this
+# check notes it rather than either failing on unfixable debt or hiding it.
+strip_name_pattern=""
+if [ -n "$STRIP_PATHS" ]; then
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    esc="$(printf '%s' "$entry" | sed -e 's/[.[\*^$()+?{}|]/\\&/g')"
+    case "$entry" in
+      */) part="${esc}[A-Za-z0-9._/-]*" ;;   # directory strip: prefix match
+      *)  part="${esc}" ;;                    # file strip: exact-name match
+    esac
+    strip_name_pattern="${strip_name_pattern:+$strip_name_pattern|}$part"
+  done <<< "$STRIP_PATHS"
+fi
+if [ -n "$strip_name_pattern" ]; then
+  frozen_schema_paths=()
+  if [ -f schemas/published-v1.sha256 ]; then
+    while IFS= read -r p; do
+      [ -n "$p" ] || continue
+      frozen_schema_paths+=("$p")
+    done < <(awk '{print $2}' schemas/published-v1.sha256)
+  fi
+  while IFS= read -r schema_file; do
+    [ -f "$schema_file" ] || continue
+    while IFS=: read -r lineno named; do
+      [ -n "$lineno" ] || continue
+      if in_list "$schema_file" "${frozen_schema_paths[@]:-}"; then
+        note "frozen citation (schemas/published-v1.sha256 pins this file's bytes; tracked as debt in docs/backlog.md): $schema_file:$lineno names $named"
+      else
+        flag "$schema_file:$lineno names $named, a path the publisher strips — it 404s for every reader of the published schema  → rewrite the description to say what the field MEANS, not where its rule came from"
+      fi
+    done < <(grep -noE "$strip_name_pattern" "$schema_file" 2>/dev/null || true)
+  done < <(git ls-files -- 'schemas/*.json')
+fi
 
 if [ "$fail" -ne 0 ]; then
   printf '\nclassify-guard: \033[31mFAIL\033[0m — public/private boundary violated (fixes above).\n' >&2
