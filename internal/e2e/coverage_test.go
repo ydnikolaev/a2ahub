@@ -1,6 +1,8 @@
 package e2e
 
 import (
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"sort"
@@ -95,6 +97,70 @@ func TestE2ECoverageParity(t *testing.T) {
 			// evidenceKind already proved Skip is non-empty; declaredTier
 			// already proved no Tier is set.
 		}
+	}
+
+	// (d) answers-that-hold-2026-08 P1 AC-1/2/3/4/5/7: a catalog verb whose
+	// ONLY resolved evidence row constructs a test double
+	// (host.NewFakeHost/host.FakeHost) in place of the production Host —
+	// directly in its named test, or through a same-file helper — fails,
+	// NAMED rather than counted (AC-2). A Txtar row is real-backed by
+	// construction: a txtar script has no Go source to construct a stub in.
+	// Classification is AST-derived (funcReachesStubSeam), never a declared
+	// field (AC-3). A verb whose only rows are Skip carries no evidence at
+	// all and is outside this obligation's scope — check (a) above already
+	// requires its justification.
+	verbHasEvidence := map[string]bool{}
+	verbHasRealEvidence := map[string]bool{}
+	type stubSeamResult struct {
+		stubBacked bool
+		err        error
+	}
+	stubSeamCache := map[string]stubSeamResult{}
+	for _, e := range coverageManifest {
+		kind, err := e.evidenceKind()
+		if err != nil {
+			continue // already reported above
+		}
+		switch kind {
+		case "txtar":
+			verbHasEvidence[e.Verb] = true
+			verbHasRealEvidence[e.Verb] = true
+		case "goTest":
+			verbHasEvidence[e.Verb] = true
+			cached, ok := stubSeamCache[e.GoTest]
+			if !ok {
+				stubBacked, err := resolveGoTestStubSeam(root, e.GoTest)
+				cached = stubSeamResult{stubBacked, err}
+				stubSeamCache[e.GoTest] = cached
+			}
+			if cached.err != nil {
+				t.Errorf("verb %q: GoTest ref %q: stub/real classification failed: %v", e.Verb, e.GoTest, cached.err)
+				continue
+			}
+			if !cached.stubBacked {
+				verbHasRealEvidence[e.Verb] = true
+			}
+		}
+	}
+	named, problems := stubOnlyVerbs(verbHasEvidence, verbHasRealEvidence, stubBackedExemptions)
+	for _, p := range problems {
+		t.Error(p)
+	}
+	// The ratchet, not a pass. `named` is the DERIVED verdict; the budget
+	// records which of those failures were already known. New debt reds, and
+	// so does a stale budget row — the second direction is what makes the
+	// number shrink instead of merely stall. See stubOnlyBudget's comment for
+	// why these 15 are a budget and not an exemption.
+	newDebt, staleBudget := stubOnlyBudgetDrift(named, stubOnlyBudget)
+	if len(newDebt) > 0 {
+		t.Errorf("NEW stub-only catalog verb(s) — their only coverage evidence constructs host.FakeHost/host.NewFakeHost in place of the production Host, and they are not in stubOnlyBudget: %v\n"+
+			"Either give the verb real-tier evidence (a txtar, or a Go test driving the production composition), or — only with a STRUCTURAL reason, never a deferral — add a stubBackedExemptions entry. Growing stubOnlyBudget is not an option: it is a ratchet.", newDebt)
+	}
+	if len(staleBudget) > 0 {
+		t.Errorf("STALE stubOnlyBudget row(s): %v now have real-backed evidence and must be REMOVED from the budget. The ratchet only counts if it shrinks.", staleBudget)
+	}
+	if len(named) > 0 {
+		t.Logf("stub-only catalog verbs (budgeted debt, may not grow — %d): %v", len(named), named)
 	}
 }
 
@@ -337,6 +403,158 @@ func TestE2ECoverageGateCatchesFalseT3TierClaim(t *testing.T) {
 	}
 	if err := resolveGoTestExecSeam(root, "cmd/a2a.TestWorkProductionWiringMutations"); err == nil {
 		t.Fatal("expected a cross-package GoTest ref to FAIL the T3 seam check (its body cannot be searched here), but it passed")
+	}
+}
+
+// TestStubSeamClassificationOneHop is spec P1 (answers-that-hold-2026-08)
+// AC-4's own fixture: a table test over synthetic sources, never the real
+// manifest, proving funcReachesStubSeam classifies (1) a direct construction
+// in the named test's own body, (2) a seam reached only through a same-file
+// helper the named test DOES call (the one-hop case), (3) a body with no
+// seam at all, and (4) spec §6's own named edge case — a seam living in a
+// DIFFERENT top-level helper the named test never calls, which must NOT be
+// credited to it. A fifth case proves a name absent from the fixture is
+// reported as not located, never silently classified false.
+func TestStubSeamClassificationOneHop(t *testing.T) {
+	t.Parallel()
+
+	const src = `package fixture
+
+func TestDirect() {
+	host.NewFakeHost()
+}
+
+func TestOneHop() {
+	setupFake()
+}
+
+func setupFake() {
+	_ = host.FakeHost{}
+}
+
+func TestRealBacked() {
+	doSomethingElse()
+}
+
+func doSomethingElse() {}
+
+func TestNamesAHelperItNeverCalls() {
+	doSomethingElse()
+}
+
+func unrelatedHelperUsingStub() {
+	host.NewFakeHost()
+}
+`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "fixture.go", src, 0)
+	if err != nil {
+		t.Fatalf("parse fixture source: %v", err)
+	}
+
+	cases := []struct {
+		funcName string
+		want     bool
+	}{
+		{"TestDirect", true},
+		{"TestOneHop", true},
+		{"TestRealBacked", false},
+		{"TestNamesAHelperItNeverCalls", false},
+	}
+	for _, c := range cases {
+		found, located := funcReachesStubSeam(file, c.funcName)
+		if !located {
+			t.Fatalf("%s: expected to be located in the fixture, was not", c.funcName)
+		}
+		if found != c.want {
+			t.Errorf("funcReachesStubSeam(fixture, %q) = %v, want %v", c.funcName, found, c.want)
+		}
+	}
+
+	if _, located := funcReachesStubSeam(file, "TestDoesNotExist"); located {
+		t.Fatal("expected TestDoesNotExist to be NOT located in the fixture, but it was")
+	}
+}
+
+// TestE2ECoverageGateStubSeamCrossesPackages proves resolveGoTestStubSeam —
+// unlike resolveGoTestExecSeam — resolves a GoTest ref outside internal/e2e
+// (cmd/a2a, internal/cli both carry manifest rows) and classifies it
+// correctly against the REAL repo tree: a genuinely stub-backed function (it
+// constructs host.NewFakeHost directly), a genuinely real-backed one (no
+// stub anywhere in its own package's test sources), and a nonexistent
+// function name failing resolution outright.
+func TestE2ECoverageGateStubSeamCrossesPackages(t *testing.T) {
+	root := repoRootForTest(t)
+
+	// cmd/a2a.TestDataCoreDeliverTargetsSpaceDefaultBranchNotMain constructs
+	// host.NewFakeHost directly in its own body (data_command_wiring_test.go)
+	// — a genuine cross-package stub-backed case, not a manifest row today.
+	stubBacked, err := resolveGoTestStubSeam(root, "cmd/a2a.TestDataCoreDeliverTargetsSpaceDefaultBranchNotMain")
+	if err != nil {
+		t.Fatalf("resolveGoTestStubSeam(cmd/a2a.TestDataCoreDeliverTargetsSpaceDefaultBranchNotMain): %v", err)
+	}
+	if !stubBacked {
+		t.Error("expected cmd/a2a.TestDataCoreDeliverTargetsSpaceDefaultBranchNotMain to classify stub-backed (it constructs host.NewFakeHost directly), got real-backed")
+	}
+
+	// cmd/a2a.TestWorkProductionWiringMutations drives a real git space with
+	// no internal/host reference anywhere in its file — a genuine
+	// cross-package real-backed case, and a real manifest row today (spec
+	// P1 AC-5's own concern: this classification must not misfire on the
+	// verbs it already covers).
+	realBacked, err := resolveGoTestStubSeam(root, "cmd/a2a.TestWorkProductionWiringMutations")
+	if err != nil {
+		t.Fatalf("resolveGoTestStubSeam(cmd/a2a.TestWorkProductionWiringMutations): %v", err)
+	}
+	if realBacked {
+		t.Error("expected cmd/a2a.TestWorkProductionWiringMutations to classify real-backed (no host.FakeHost anywhere in its file), got stub-backed")
+	}
+
+	if _, err := resolveGoTestStubSeam(root, "internal/e2e.TestDoesNotExistNoReally"); err == nil {
+		t.Fatal("expected a nonexistent function name to FAIL resolution, but it resolved")
+	}
+}
+
+// TestE2ECoverageGateRefusesADeferralShapedExemption is spec P1 AC-7's own
+// "write the refusing fixture" instruction: a pure-function test over
+// stubOnlyVerbs, never the real stubBackedExemptions map, so it exercises
+// the refusal independent of whether today's exemption set happens to be
+// empty.
+func TestE2ECoverageGateRefusesADeferralShapedExemption(t *testing.T) {
+	t.Parallel()
+
+	verbHasEvidence := map[string]bool{"widget": true}
+	verbHasNoRealEvidence := map[string]bool{}
+
+	// A deferral-shaped reason (spec P1's own example) is refused: the verb
+	// stays named AND a problem names the refusal.
+	named, problems := stubOnlyVerbs(verbHasEvidence, verbHasNoRealEvidence,
+		map[string]string{"widget": "covered by a later phase"})
+	if len(named) != 1 || named[0] != "widget" {
+		t.Fatalf("deferral-shaped exemption: named = %v, want [widget] (a refused exemption must not excuse the verb)", named)
+	}
+	if len(problems) != 1 || !strings.Contains(problems[0], "widget") || !strings.Contains(problems[0], "deferral") {
+		t.Fatalf("expected exactly one problem naming widget and \"deferral\", got %v", problems)
+	}
+
+	// A genuinely structural reason is accepted: no name, no problem.
+	named, problems = stubOnlyVerbs(verbHasEvidence, verbHasNoRealEvidence,
+		map[string]string{"widget": "the verb has no production write path to exercise at any tier (spec X §Y)"})
+	if len(named) != 0 || len(problems) != 0 {
+		t.Fatalf("structural exemption: named=%v problems=%v, want both empty", named, problems)
+	}
+
+	// Not a no-op the other way: an unexempted stub-only verb is named, no
+	// problem reported (there is no bad reason to complain about).
+	named, problems = stubOnlyVerbs(verbHasEvidence, verbHasNoRealEvidence, map[string]string{})
+	if len(named) != 1 || named[0] != "widget" || len(problems) != 0 {
+		t.Fatalf("no exemption: named=%v problems=%v, want ([widget], [])", named, problems)
+	}
+
+	// A verb with real-backed evidence is never named, exempted or not.
+	named, problems = stubOnlyVerbs(map[string]bool{"widget": true}, map[string]bool{"widget": true}, nil)
+	if len(named) != 0 || len(problems) != 0 {
+		t.Fatalf("real-backed verb: named=%v problems=%v, want both empty", named, problems)
 	}
 }
 
