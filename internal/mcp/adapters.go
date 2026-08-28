@@ -40,7 +40,6 @@ import (
 	"io"
 	"os"
 	"os/user"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -515,106 +514,30 @@ var _ validate.ParentCriteriaCounter = (*MirrorResolver)(nil)
 var _ validate.ActiveParticipantLister = (*MirrorResolver)(nil)
 
 // Successor implements validate.SuccessorResolver (no-silent-yes-2026-08/
-// P6, D7/D9; extended wave 2c, D-1/D-2 — this wave's own report): it
+// P6, D7/D9; extended wave 2c, D-1/D-2 — that wave's own report): it
 // resolves successorID's own envelope `from` (author), `required_
-// approvers` (decision only — the fact quorum arithmetic needs, D-1) and
-// current folded lifecycle state — the facts internal/fold's own declared
-// decision-supersede row preconditions check (table.go's
-// SuccessorPrecondition). Before wave 2c this method decoded `from` alone
-// and folded through a synthetic fold.Envelope with no RequiredApprovers,
-// so quorumReached (fold.go) was always false and StateApproved
-// (PreconditionSuccessorApproved's own target) was unreachable through
-// this resolver by construction, no matter how many real approve events a
-// successor actually carried — that gap is D-1.
+// approvers`-derived quorum and current folded lifecycle state — the
+// facts internal/fold's own declared decision-supersede row preconditions
+// check (table.go's SuccessorPrecondition).
 //
-// successorID is parsed with internal/artifact.ParseID purely as a
-// validity guard now (an id that does not round-trip the §3.3 id grammar
-// cannot name a real committed artifact, so ok=false covers it alike) —
-// its System field is NOT used to scope the committed-history read: D-2's
-// own fix. An `approve` event on a successor decision is committed under
-// the APPROVING participant's own section, not necessarily the successor
-// id's own home system's section — the subject's home system and an
-// event's own committing system are two different facts, and the
-// prior single-section cache.CommittedEvents(mirrorDir, id.System, ...)
-// read could see the successor's own entry event but never a real
-// approve authored by anyone else. cache.CommittedEventsAllSections
-// (mirrorDir/*/events/<year>/*.yaml, every participant's own section,
-// subject-filtered) closes that: D-1 and D-2 compound, and either alone
-// already blocked a realistic decision from ever resolving `approved`
-// through this resolver.
-//
-// The author/kind/required_approvers read (this resolver's own index
-// gives Path, Thread, Digest only — never envelope fields) mirrors
-// AcceptanceCriteriaCount's own established shape one layer up (bounded
-// read -> ParseFrontmatter -> minimal YAML probe), rather than growing a
-// fifth internal/cache function this phase's allowlist does not reach.
-//
-// ok=false covers every "cannot resolve" case alike — successorID absent
-// from this resolver's own index, its file failing to
-// read/parse/decode/parse-as-an-id, or its committed history failing to
-// read — never a synthesized author/state (AcceptanceCriteriaCount's own
-// "cannot check" discipline, applied to this fact).
+// P6 closeout moved the read/parse/decode/fold substance into
+// internal/cache.SuccessorFacts (see AcceptanceCriteriaCount's own doc
+// comment above for the full move rationale, and SuccessorFacts' own doc
+// comment — successor_facts.go — for D-1/D-2 and every "cannot resolve"
+// case this now covers); this method is now a thin delegation over this
+// resolver's own already-built index, the SAME internal/cache.SuccessorFacts
+// call internal/cli's own MirrorResolver makes — not a second,
+// independently typed copy of the read, and not a second membershipView
+// closure either (ADR-019, docs/decisions.md).
 func (r *MirrorResolver) Successor(successorID string) (author, state string, ok bool) {
 	r.ensureIndex()
-	entry, found := r.index[successorID]
-	if !found {
-		return "", "", false
-	}
-	raw, err := readBoundedFile(filepath.Join(r.mirrorDir, entry.Path), maxMirrorEventBytes)
-	if err != nil {
-		return "", "", false
-	}
-	fm, err := artifact.ParseFrontmatter(raw)
-	if err != nil {
-		return "", "", false
-	}
-	var probe struct {
-		Type              string   `yaml:"type"`
-		From              string   `yaml:"from"`
-		RequiredApprovers []string `yaml:"required_approvers"`
-	}
-	if err := yaml.Unmarshal(fm.YAML, &probe); err != nil {
-		return "", "", false
-	}
-	if _, err := artifact.ParseID(successorID); err != nil {
-		return "", "", false
-	}
-	events, err := cache.CommittedEventsAllSections(r.mirrorDir, successorID)
-	if err != nil {
-		return "", "", false
-	}
-	kind := fold.Kind(probe.Type)
-	prior := fold.NewResult(kind)
-	if len(events) > 0 {
-		env := fold.Envelope{ID: successorID, Kind: kind, From: probe.From, RequiredApprovers: probe.RequiredApprovers}
-		prior = fold.Fold(kind, env, events, mirrorMembershipView(r.manifest))
-	}
-	return probe.From, string(prior.State), true
+	return cache.SuccessorFacts(r.mirrorDir, r.index, r.manifest, successorID)
 }
 
 // var _ validate.SuccessorResolver = (*MirrorResolver)(nil) is
 // AcceptanceCriteriaCount's own type-level-gate pattern, applied to this
 // capability.
 var _ validate.SuccessorResolver = (*MirrorResolver)(nil)
-
-// mirrorMembershipView builds a fold.MembershipView closure over manifest —
-// the SAME membership-status logic LegalityAdapter.membershipView applies
-// to a single already-held manifest field, factored out here so
-// MirrorResolver's own Successor method (which has no LegalityAdapter to
-// borrow from) does not carry a second, independently-typed copy of it.
-func mirrorMembershipView(manifest space.Manifest) fold.MembershipView {
-	return func(system string) fold.MembershipStatus {
-		for _, p := range manifest.Participants {
-			if p.System == system {
-				if p.Status == "left" {
-					return fold.MembershipLeft
-				}
-				return fold.MembershipMember
-			}
-		}
-		return fold.MembershipUnknown
-	}
-}
 
 // AcceptanceCriteriaIDs implements validate.ParentCriteriaIDs
 // (defects-fix-2026-08 P4). It is the SAME read as AcceptanceCriteriaCount

@@ -8973,6 +8973,41 @@
           }
         },
         {
+          "id": "RN-02506-4",
+          "kind": "fix",
+          "impact": "high",
+          "subject": "a space whose default branch is not `main` is no longer pushed to `main`",
+          "detail": "Every space operation that needed a branch used the literal `main`. A space whose remote publishes `master`, `trunk`, or anything else was written to a branch nobody reads — or refused by the remote — and nothing said why.\nThe branch is now DERIVED from the mirror's own `refs/remotes/origin/HEAD`, so the tool pushes where the remote says its default is. No manifest key was added: the answer already existed in the mirror and was being ignored.\nA remote that publishes no HEAD at all is refused with `REF-026` rather than falling back to a guess. `a2a doctor` names the branch it will push to before any write is attempted, and says `base branch could not be determined (checked \"main\")` when it cannot — a report, never an assertion.\n",
+          "affects": [
+            "cli",
+            "mcp"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "A space whose default branch IS `main` behaves exactly as before. A space on another default branch starts working where it previously did not.\n",
+            "detect": [
+              "a2a doctor"
+            ]
+          }
+        },
+        {
+          "id": "RN-02506-5",
+          "kind": "break",
+          "impact": "high",
+          "subject": "an MCP tool call carrying an unknown field is refused instead of silently dropping it",
+          "detail": "Of roughly thirty places the MCP surface decoded a tool's arguments, two refused an unrecognised key and the rest dropped it. A call misspelling `expect_pack` as `expectPack` therefore SUCCEEDED, having done less than it was asked — the success said nothing about whether the request was honoured.\nEvery decode site now refuses an unknown field through one shared helper, naming the key, and every published tool schema carries `additionalProperties: false` so a client can see the rule before tripping it. The two guarantees are different — one closes the wire, the other tells the client — and shipping only one leaves the other surface silent.\nTwo related corrections ride along. Every property of every tool now carries a description, so a field's meaning is read from the tool's own schema rather than inferred from a CLI flag that sometimes differs. And `a2a_exchange` WITHDRAWS the `refs` property no handler ever read; it was advertised and dropped, which is the same defect in its purest form.\n",
+          "affects": [
+            "mcp"
+          ],
+          "action": {
+            "scope": "local",
+            "why": "A harness that relied on extra fields being ignored now gets an error naming the field. That is the point of the change, but it is a behaviour change: a new field must ship in the binary before a client may send it, so client rollout couples to `min_binary_version`.\n",
+            "detect": [
+              "tools/list"
+            ]
+          }
+        },
+        {
           "id": "KI-01900-PROVIDER-TIER-DEFERRED",
           "kind": "known-issue",
           "impact": "normal",

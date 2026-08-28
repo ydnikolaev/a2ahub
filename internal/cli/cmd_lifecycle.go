@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/operation"
@@ -1034,16 +1035,23 @@ func lifecycleEvaluateCandidate(mirrorDir string, manifest space.Manifest, id st
 // case (types.go's SuccessorPrecondition doc comment) — CheckCandidateWith
 // Successor refuses a Precondition-bearing row uniformly rather than
 // silently granting on a resolution failure.
+//
+// ALL OF THAT NOW LIVES IN internal/cache.SuccessorFactsForCandidate, which
+// both write surfaces call — the rule is stated once and read from one
+// place, rather than restated wherever it is needed.
+// MOVED DOWN 2026-08-28 (ADR-019, closeout auditor + the fix wave's own
+// report): the gate itself was duplicated across both write surfaces, one
+// frame outside the read that had just been consolidated. It now delegates
+// to cache.SuccessorFactsForCandidate, which owns the three-clause guard,
+// the index build and the nil-means-unresolved contract — and which carries
+// the full account of the move. This function survives only to unpack THIS
+// surface's own ref-entry type, the one thing that genuinely differed.
 func lifecycleResolveSuccessorFacts(mirrorDir string, manifest space.Manifest, kind fold.Kind, transition string, refs []lifecycleRefEntry) *fold.SuccessorFacts {
-	if transition != fold.TSupersede || kind != fold.KindDecision || len(refs) == 0 {
-		return nil
+	var successorRef string
+	if len(refs) > 0 {
+		successorRef = refs[0].Ref
 	}
-	resolver := NewMirrorResolver(mirrorDir, manifest)
-	author, state, ok := resolver.Successor(refs[0].Ref)
-	if !ok {
-		return nil
-	}
-	return &fold.SuccessorFacts{Author: author, State: fold.State(state)}
+	return cache.SuccessorFactsForCandidate(mirrorDir, manifest, kind, transition, successorRef)
 }
 
 // lifecycleEvaluateResponseCandidate is the verify/dispute pre-write

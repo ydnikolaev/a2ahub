@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -318,13 +319,32 @@ func evaluateCandidate(mirrorDir string, manifest space.Manifest, id string, can
 // fold.CheckCandidateWithSuccessor) — this package's own
 // MirrorResolver.Successor (validate.SuccessorResolver), the SAME capability
 // the SUBMIT path's resolveSuccessorEnvelope (adapters.go) already uses,
-// never a second successor reader. The CLI write surface carries the
-// structurally identical helper over its own resolver — ADR-001
-// forbids internal/mcp importing internal/cli, so this is this package's own
-// copy of the same gate.
+// never a second successor reader.
 //
-// Gated exactly like internal/cli's own gate: only a decision's own
-// supersede transition, with at least one ref, ever resolves — every other
+// MirrorResolver.Successor is itself a thin delegation to
+// internal/cache.SuccessorFacts — the SAME function internal/cli's own
+// MirrorResolver.Successor delegates to, not a second, independently
+// computed copy of the read (ADR-019, docs/decisions.md). Before that move
+// this method's own doc comment reasoned "ADR-001 forbids internal/mcp
+// importing internal/cli, so this is this package's own copy of the same
+// gate" — the exact shape ADR-019 exists to retire: the closeout audit that
+// produced the ADR found the READ (Successor, and the membershipView
+// closure it folded through) byte-identical across both surfaces, with no
+// import-graph reason it had to stay that way once moved DOWN into
+// internal/cache, which both surfaces already import.
+//
+// The GATING logic went down with it, in the same wave and for the same
+// reason. The implementer that moved the READ reported that the gate around
+// it — which transition/kind/refs combination even attempts a resolve — was
+// duplicated across both write surfaces too, and was invisible to the
+// ADR-019 detection gate because neither comment named the other surface.
+// Reporting it rather than silently leaving it is what made the second move
+// possible; both surfaces now call cache.SuccessorFactsForCandidate, whose
+// own doc comment carries the account. What survives on each is ONLY the
+// unpacking of that surface's ref-entry type, the one thing that differed.
+//
+// The rule itself now lives once: only a decision's own supersede
+// transition, with at least one ref, ever resolves — every other
 // transition/kind/ref-less call returns nil (unresolved). Every row but the
 // two decision-supersede rows carries PreconditionNone and never consults
 // this value regardless (preconditionTable, table.go), so this gate is a
@@ -336,16 +356,19 @@ func evaluateCandidate(mirrorDir string, manifest space.Manifest, id string, can
 // (fold/types.go's SuccessorPrecondition doc comment) —
 // CheckCandidateWithSuccessor refuses a Precondition-bearing row uniformly
 // rather than silently granting on a resolution failure.
+// MOVED DOWN 2026-08-28 (ADR-019, closeout auditor + the fix wave's own
+// report): the gate itself was duplicated across both write surfaces, one
+// frame outside the read that had just been consolidated. It now delegates
+// to cache.SuccessorFactsForCandidate, which owns the three-clause guard,
+// the index build and the nil-means-unresolved contract — and which carries
+// the full account of the move. This function survives only to unpack THIS
+// surface's own ref-entry type, the one thing that genuinely differed.
 func resolveSuccessorFacts(mirrorDir string, manifest space.Manifest, kind fold.Kind, transition string, refs []refEntry) *fold.SuccessorFacts {
-	if transition != fold.TSupersede || kind != fold.KindDecision || len(refs) == 0 {
-		return nil
+	var successorRef string
+	if len(refs) > 0 {
+		successorRef = refs[0].Ref
 	}
-	resolver := NewMirrorResolver(mirrorDir, manifest)
-	author, state, ok := resolver.Successor(refs[0].Ref)
-	if !ok {
-		return nil
-	}
-	return &fold.SuccessorFacts{Author: author, State: fold.State(state)}
+	return cache.SuccessorFactsForCandidate(mirrorDir, manifest, kind, transition, successorRef)
 }
 
 // evaluateResponseCandidate is the verify/dispute pre-write evaluator. The
