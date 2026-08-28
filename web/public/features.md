@@ -98,6 +98,12 @@ The announcement follows registrations and retirement waits for acknowledgements
 
 A contract declares its operational preconditions — an endpoint, a credential channel, a registration — each one ready or absent. Anything the descriptor never named reads undeclared, which is a different claim: one is a known gap you can plan around, the other is silence.
 
+## The keying rule is declared, not guessed
+
+**x_identity**
+
+A contract states which fields key a record and what a redelivery means — an update or an append. This used to live in prose, so a consumer that keyed differently silently accumulated duplicates and nothing refused it. Its checkable guarantees and the location of its machine schema are declared beside it.
+
 ## Publishing an interface is not the same as it working
 
 **contract activate**

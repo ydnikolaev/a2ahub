@@ -18,32 +18,34 @@ alive.
 
 ## What it gives you
 
-- **Structured requests instead of loose messages.** Exchange questions,
-  requirements, work requests, decisions, responses, handoffs, and
-  announcements with the fields and acceptance criteria each kind needs.
-- **One readable work chain.** A request, acknowledgement, response, evidence,
-  verification, and decision stay connected. `a2a thread` reconstructs the
-  ordered transcript for either side.
-- **A computed inbox.** `a2a inbox`, `outbox`, and the local HTML dashboard show open work
-  and whose move is next from the shared history—not from somebody's private to-do list.
-- **Durable work visibility.** Agents report what they are implementing, testing,
-  reviewing, or waiting on, separate from protocol completion so a closed thread
-  never means nobody is working, and a missing report stays unknown, not idle.
-- **Reproducible contract versions.** Preflight and publish one immutable carried set,
-  register consumers, compare or materialize an exact historical version, run its declared
-  checks offline, and retire old lines only after the right consumers acknowledge them.
-- **Delivery with a verdict.** Pack a result against a pinned contract version,
-  deliver payload and manifest in one commit, fetch with every digest re-proven,
-  and get a verdict the report derives from its own checks. A human or an
-  already-running agent session still runs each step; nothing does work unasked.
+- **Structured requests instead of loose messages.** Questions, requirements,
+  work requests, decisions, responses, handoffs and announcements, each with the
+  fields and acceptance criteria its kind needs.
+- **One readable work chain.** Request, acknowledgement, response, evidence,
+  verification and decision stay connected, and either side can reconstruct the
+  ordered transcript.
+- **A computed inbox.** Open work and whose move is next, derived from the shared
+  history—not from somebody's private to-do list.
+- **Durable work visibility.** Agents report what they are implementing or
+  waiting on, separately from protocol completion — so a closed thread never
+  means nobody is working, and a missing report stays unknown, not idle.
+- **Reproducible contract versions.** Publish one immutable carried set and
+  materialize any historical version exactly, offline. Old lines retire only
+  after the consumers that registered for them acknowledge it.
+- **Delivery with a verdict.** Deliver a result against a pinned contract
+  version, payload and manifest in one commit, fetched with every digest
+  re-proven — and get a verdict derived from the contract's own declared checks.
+  Nothing does work unasked.
 - **A safe write funnel.** Drafts are validated locally, submitted as pull
   requests, checked again in CI, and merged as an auditable Git commit. Inbound
   artifact text is treated as data, never as instructions.
-- **Local surfaces, and one that reaches you.** Use the CLI or local stdio MCP
-  tools, build a bounded dashboard with `a2a html`, or `a2a serve` for the same
-  projection with refresh events. Enable macOS or VS Code notifications, embed
-  `a2a statusline` in a prompt, or have a space message you on Telegram when a
-  move is yours, sent by its own CI. The server streams no arbitrary files yet.
+- **A refusal instead of a silent yes.** A field it does not recognise, an id it
+  cannot place, a rule it cannot evaluate — each is named and refused rather than
+  accepted and reported as success. An unknown answer is reported as unknown.
+- **Local surfaces, and one that reaches you.** Work through the CLI or local
+  stdio MCP tools, and read the state as a bounded dashboard. When a move is
+  yours, a space can tell you — on your machine, in your editor, or on Telegram,
+  sent by its own CI.
 
 Both machines can be offline at different times. Git holds the durable state,
 and either agent can rebuild its view from the repository.
@@ -84,10 +86,8 @@ dashboard without connecting a real space.
 ## Release confidence
 
 Release candidates are tested against a protected public GitHub space using two
-independent identities. Each exact public candidate must pass the release tier
-selected for its impact: the full declared matrix for shared behavior, a real
-component gate for isolated platform changes, or bounded renderer and preflight
-proof for presentation-only changes. Green proves that scope—not every state.
+independent identities, at a depth chosen for what the release changes. Green
+proves that scope—not every state, and each release's notes say what was not.
 
 ## Documentation
 
