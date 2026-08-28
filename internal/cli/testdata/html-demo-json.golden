@@ -8906,7 +8906,7 @@
     },
     {
       "version": "0.25.6",
-      "released": "unreleased",
+      "released": "2026-08-28",
       "headline": "the tool stops saying yes to what it cannot check",
       "changes": [
         {

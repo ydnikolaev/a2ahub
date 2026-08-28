@@ -1,6 +1,6 @@
 schema: release-notes/v1
 version: 0.25.6
-released: unreleased
+released: "2026-08-28"
 headline: the tool stops saying yes to what it cannot check
 changes:
 - id: RN-02506-0
@@ -165,3 +165,40 @@ changes:
       so client rollout couples to `min_binary_version`.
     detect:
     - tools/list
+- id: RN-02506-6
+  kind: feat
+  impact: normal
+  subject: a contract can declare its keying rule, its guarantees and where its machine schema lives
+  detail: >
+    Three facts a consumer needs in order to consume a contract correctly could
+    only be written as prose, so nothing could check them and a reader had to
+    infer them. They are declared fields now:
+
+    `x_identity` states the producer's own keying rule — which fields key a
+    record, and whether a redelivery upserts or appends. This is the
+    consequential one: a consumer that mis-keys silently accumulates duplicates
+    and nothing anywhere refuses it.
+
+    `x_guarantees` is a closed vocabulary of checkable promises the producer
+    makes about its own data. `x_schema_location` names where the machine schema
+    lives, which until now was a prose convention automation had to guess.
+
+    Each refuses a malformed value by name, and each says in its own description
+    that ABSENT reads as *undeclared* — never as a default, and never as "no
+    guarantees made". That reading belongs to the consumer, not to the schema.
+
+    A contract may also be addressed `to: all`. It always could; the
+    documentation said otherwise, and an external consumer filed a
+    breaking-change request in July 2026 for a capability that already shipped.
+    The rule is now stated where an author reads it, and the exchange types that
+    genuinely must address exactly one system still refuse `all`.
+  affects:
+  - schemas
+  - cli
+  - mcp
+  action:
+    scope: none
+    why: >
+      Every field is optional and every existing contract stays valid. Nothing
+      to migrate: a contract that declares none of them reads exactly as it did
+      before, which is `undeclared` rather than any default.
