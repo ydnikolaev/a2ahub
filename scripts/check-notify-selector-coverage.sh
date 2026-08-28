@@ -35,6 +35,19 @@
 # Usage: bash scripts/check-notify-selector-coverage.sh            # check the real tree
 #        bash scripts/check-notify-selector-coverage.sh --teeth    # self-test on fixtures
 
+# lane-reads-opaque: scan_second_vocabulary reads `done <"$file"` (line ~113),
+# where $file iterates "$root/internal/spacenotify"/*.go — already covered by the
+# internal/spacenotify/** declaration below, but built from a variable the
+# extractor cannot resolve.
+#
+# lane-reads-opaque: --teeth writes and reads its own captured output under a
+# per-run mktemp directory ($TEETH_OUT). Those paths are scratch, never repo
+# paths: nothing under them can change this gate's verdict on a real tree, so
+# they are deliberately NOT lane-inputs. They were literal /tmp/ names until
+# 2026-08-28, which made the classifier ask for six declarations of files that
+# do not exist in the repository — and made two concurrent --teeth runs on one
+# machine clobber each other's output.
+#
 # lane-inputs:
 #   internal/spacenotify/**
 #   internal/fold/**
@@ -173,7 +186,8 @@ run_check() { # $1 = root
 }
 
 run_teeth() {
-  local tmp rc=0
+  local tmp rc=0 TEETH_OUT
+  TEETH_OUT="$(mktemp -d)"
 
   # (a) a fixture spacenotify dir carrying a hand-maintained kind list, and
   # a coverage.go copied verbatim from the real tree (so ONLY the second-
@@ -186,13 +200,13 @@ package spacenotify
 
 var legacyKinds = []string{"contract", "requirement", "question"}
 EOF
-  if run_check "$tmp" >/tmp/notify-selector-coverage-teeth-a.out 2>&1; then
+  if run_check "$tmp" >"$TEETH_OUT/a.out" 2>&1; then
     echo "notify-selector-coverage --teeth: FAILED (a) — a hardcoded kind list stayed green" >&2
-    cat /tmp/notify-selector-coverage-teeth-a.out >&2
+    cat "$TEETH_OUT/a.out" >&2
     rc=1
-  elif ! grep -q "badlist.go" /tmp/notify-selector-coverage-teeth-a.out; then
+  elif ! grep -q "badlist.go" "$TEETH_OUT/a.out"; then
     echo "notify-selector-coverage --teeth: FAILED (a) — reds, but does not name badlist.go" >&2
-    cat /tmp/notify-selector-coverage-teeth-a.out >&2
+    cat "$TEETH_OUT/a.out" >&2
     rc=1
   fi
   rm -rf "$tmp"
@@ -213,25 +227,25 @@ func kindMatches(kind string, want []string) bool {
 	return false
 }
 EOF
-  if run_check "$tmp" >/tmp/notify-selector-coverage-teeth-b.out 2>&1; then
+  if run_check "$tmp" >"$TEETH_OUT/b.out" 2>&1; then
     echo "notify-selector-coverage --teeth: FAILED (b) — a missing written-reason file stayed green" >&2
-    cat /tmp/notify-selector-coverage-teeth-b.out >&2
+    cat "$TEETH_OUT/b.out" >&2
     rc=1
-  elif ! grep -q "coverage.go is missing" /tmp/notify-selector-coverage-teeth-b.out; then
+  elif ! grep -q "coverage.go is missing" "$TEETH_OUT/b.out"; then
     echo "notify-selector-coverage --teeth: FAILED (b) — reds, but does not name the missing file" >&2
-    cat /tmp/notify-selector-coverage-teeth-b.out >&2
+    cat "$TEETH_OUT/b.out" >&2
     rc=1
   fi
   rm -rf "$tmp"
 
   # (c) positive control: the REAL tree passes.
-  if ! run_check "$ROOT" >/tmp/notify-selector-coverage-teeth-c.out 2>&1; then
+  if ! run_check "$ROOT" >"$TEETH_OUT/c.out" 2>&1; then
     echo "notify-selector-coverage --teeth: FAILED (c) — the real tree itself reds" >&2
-    cat /tmp/notify-selector-coverage-teeth-c.out >&2
+    cat "$TEETH_OUT/c.out" >&2
     rc=1
   fi
 
-  rm -f /tmp/notify-selector-coverage-teeth-a.out /tmp/notify-selector-coverage-teeth-b.out /tmp/notify-selector-coverage-teeth-c.out
+  rm -rf "$TEETH_OUT"
   if [ "$rc" -eq 0 ]; then
     echo "notify-selector-coverage --teeth: ok"
   fi
