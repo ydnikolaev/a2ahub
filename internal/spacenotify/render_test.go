@@ -129,7 +129,7 @@ func TestRender_NoCache(t *testing.T) {
 		{Channel: "telegram", Chat: "-100", Events: []string{ClassPublished, ClassBlocking, ClassHumanGate}},
 	}, "axon", "seomatrix")
 
-	msgs, err := Render(context.Background(), fx.dir, manifest, Options{
+	msgs, _, err := Render(context.Background(), fx.dir, manifest, Options{
 		Mode: ModeAll, Limit: 5, Now: time.Now(),
 	})
 	if err != nil {
@@ -160,12 +160,100 @@ func TestRender_EventFilterExcludesOrdinaryPublication(t *testing.T) {
 		{Channel: "telegram", Chat: "-100", Events: []string{ClassHumanGate, ClassBlocking}},
 	}, "axon", "seomatrix")
 
-	msgs, err := Render(context.Background(), fx.dir, manifest, Options{Mode: ModeAll, Limit: 5, Now: time.Now()})
+	msgs, _, err := Render(context.Background(), fx.dir, manifest, Options{Mode: ModeAll, Limit: 5, Now: time.Now()})
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
 	if len(msgs) != 0 {
 		t.Fatalf("len(msgs) = %d, want 0 (published class not in events)", len(msgs))
+	}
+}
+
+// TestRender_Accounting_ZeroKeepIsDistinguishableFromZeroQualifying is
+// ACs 8-9: a route that matched nothing (Qualified > 0, that route's own
+// Kept == 0) must be distinguishable from a run over zero qualifying
+// artifacts at all (Qualified == 0) — both are visible on the returned
+// Accounting, never inferred from an absent line.
+func TestRender_Accounting_ZeroKeepIsDistinguishableFromZeroQualifying(t *testing.T) {
+	t.Parallel()
+
+	// Stanza 1: one qualifying artifact, a route whose events exclude it
+	// (the 2026-08-27 incident's own shape) — Qualified: 1, Kept: 0.
+	fx := newRenderFixture(t, "axon", "seomatrix")
+	fx.commitArtifact("axon/exchanges/XW-axon-20260701-cccc.md", map[string]any{
+		"schema": "envelope/v1", "id": "XW-axon-20260701-cccc", "type": "work_request",
+		"title": "ordinary ask", "space": "fixture-space", "from": "axon",
+		"to": []string{"seomatrix"}, "actor": map[string]any{"kind": "agent", "name": "axon-bot"},
+		"created": time.Now().UTC().Format(time.RFC3339), "priority": "p3", "blocking": false, "classification": "internal",
+	}, "no rush")
+	manifest := manifestWith("fixture-space", []space.NotificationRoute{
+		{Channel: "telegram", Chat: "-100", Events: []string{ClassHumanGate, ClassBlocking}},
+	}, "axon", "seomatrix")
+
+	_, acc, err := Render(context.Background(), fx.dir, manifest, Options{Mode: ModeAll, Limit: 5, Now: time.Now()})
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if acc.Qualified != 1 {
+		t.Fatalf("Qualified = %d, want 1 (one artifact exists and qualifies)", acc.Qualified)
+	}
+	if len(acc.PerRoute) != 1 || acc.PerRoute[0].Kept != 0 {
+		t.Fatalf("PerRoute = %+v, want exactly one route with Kept: 0", acc.PerRoute)
+	}
+
+	// Stanza 2: a genuinely empty space (no artifacts committed at all) —
+	// Qualified: 0. Same route declaration; the SAME PerRoute shape (one
+	// entry, Kept: 0) must still be present, but Qualified now says WHY.
+	emptyFx := newRenderFixture(t, "axon", "seomatrix")
+	emptyManifest := manifestWith("fixture-space", []space.NotificationRoute{
+		{Channel: "telegram", Chat: "-100", Events: []string{ClassHumanGate, ClassBlocking}},
+	}, "axon", "seomatrix")
+	_, emptyAcc, err := Render(context.Background(), emptyFx.dir, emptyManifest, Options{Mode: ModeAll, Limit: 5, Now: time.Now()})
+	if err != nil {
+		t.Fatalf("Render (empty space): %v", err)
+	}
+	if emptyAcc.Qualified != 0 {
+		t.Fatalf("Qualified = %d, want 0 (no artifacts exist at all)", emptyAcc.Qualified)
+	}
+	if len(emptyAcc.PerRoute) != 1 || emptyAcc.PerRoute[0].Kept != 0 {
+		t.Fatalf("PerRoute = %+v, want exactly one route with Kept: 0", emptyAcc.PerRoute)
+	}
+
+	// The two runs' PerRoute shapes are identical (Kept: 0 either way) —
+	// Qualified is the ONLY field distinguishing "matched nothing" from
+	// "nothing to match", which is exactly the property AC-9 asks for.
+	if acc.Qualified == emptyAcc.Qualified {
+		t.Fatalf("both stanzas report Qualified = %d — a zero-keep run is NOT distinguishable from a zero-qualifying run", acc.Qualified)
+	}
+}
+
+// TestRender_Accounting_SelectorNarrowsKeptButNotQualified proves
+// Accounting.Qualified counts candidates BEFORE per-route filtering (mode
+// selection only), while PerRoute.Kept reflects the selector/events
+// narrowing — a route whose selector excludes everything still reports the
+// true (nonzero) Qualified count, not its own Kept count.
+func TestRender_Accounting_SelectorNarrowsKeptButNotQualified(t *testing.T) {
+	t.Parallel()
+	fx := newRenderFixture(t, "axon", "seomatrix")
+	fx.commitArtifact("axon/exchanges/XW-axon-20260701-dddd.md", map[string]any{
+		"schema": "envelope/v1", "id": "XW-axon-20260701-dddd", "type": "work_request",
+		"title": "item", "space": "fixture-space", "from": "axon",
+		"to": []string{"seomatrix"}, "actor": map[string]any{"kind": "agent", "name": "axon-bot"},
+		"created": time.Now().UTC().Format(time.RFC3339), "priority": "p3", "blocking": false, "classification": "internal",
+	}, "body")
+	manifest := manifestWith("fixture-space", []space.NotificationRoute{
+		{Channel: "telegram", Chat: "-100", Events: []string{ClassPublished}},
+	}, "axon", "seomatrix")
+
+	_, acc, err := Render(context.Background(), fx.dir, manifest, Options{Mode: ModeAll, Limit: 5, Now: time.Now()})
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if acc.Qualified != 1 {
+		t.Fatalf("Qualified = %d, want 1", acc.Qualified)
+	}
+	if len(acc.PerRoute) != 1 || acc.PerRoute[0].Kept != 1 {
+		t.Fatalf("PerRoute = %+v, want Kept: 1 (events: [published] keeps the work_request)", acc.PerRoute)
 	}
 }
 
@@ -198,7 +286,7 @@ func TestRender_DigestCoalescingAtLimitBoundary(t *testing.T) {
 				{Channel: "telegram", Chat: "-100", Events: []string{ClassPublished}},
 			}, "axon", "seomatrix")
 
-			msgs, err := Render(context.Background(), fx.dir, manifest, Options{Mode: ModeAll, Limit: 5, Now: time.Now()})
+			msgs, _, err := Render(context.Background(), fx.dir, manifest, Options{Mode: ModeAll, Limit: 5, Now: time.Now()})
 			if err != nil {
 				t.Fatalf("Render: %v", err)
 			}
@@ -240,7 +328,7 @@ func TestRender_OnlyUnknownIDRefusesEverything(t *testing.T) {
 		{Channel: "telegram", Chat: "-100", Events: []string{ClassPublished}},
 	}, "axon", "seomatrix")
 
-	msgs, err := Render(context.Background(), fx.dir, manifest, Options{
+	msgs, _, err := Render(context.Background(), fx.dir, manifest, Options{
 		Mode: ModeOnly, OnlyIDs: []string{"XW-axon-20260701-cccc", "XW-does-not-exist"}, Limit: 5, Now: time.Now(),
 	})
 	if err == nil {
@@ -270,7 +358,7 @@ func TestRender_SecretRefusal(t *testing.T) {
 		{Channel: "telegram", Chat: "-300", Events: []string{ClassPublished}}, // declared secret (default)
 	}, "axon", "seomatrix")
 
-	msgs, err := Render(context.Background(), fx.dir, manifest, Options{Mode: ModeAll, Limit: 5, Now: time.Now()})
+	msgs, _, err := Render(context.Background(), fx.dir, manifest, Options{Mode: ModeAll, Limit: 5, Now: time.Now()})
 	if err == nil {
 		t.Fatalf("want an error naming the route and the secret, got nil (msgs=%+v)", msgs)
 	}
@@ -298,11 +386,11 @@ func TestRender_Deterministic(t *testing.T) {
 	}, "axon", "seomatrix")
 
 	now := time.Now()
-	a, err := Render(context.Background(), fx.dir, manifest, Options{Mode: ModeAll, Limit: 5, Now: now})
+	a, _, err := Render(context.Background(), fx.dir, manifest, Options{Mode: ModeAll, Limit: 5, Now: now})
 	if err != nil {
 		t.Fatalf("Render (a): %v", err)
 	}
-	b, err := Render(context.Background(), fx.dir, manifest, Options{Mode: ModeAll, Limit: 5, Now: now})
+	b, _, err := Render(context.Background(), fx.dir, manifest, Options{Mode: ModeAll, Limit: 5, Now: now})
 	if err != nil {
 		t.Fatalf("Render (b): %v", err)
 	}
@@ -313,6 +401,66 @@ func TestRender_Deterministic(t *testing.T) {
 		if a[i].Artifact == nil || b[i].Artifact == nil || a[i].Artifact.ID != b[i].Artifact.ID {
 			t.Fatalf("order mismatch at %d: %+v vs %+v", i, a[i], b[i])
 		}
+	}
+}
+
+// TestRender_OrderingSurvivesTheWidenedSelector is AC-14, re-run over
+// P11's own widened selector: a route carrying a `kind:` selector
+// (manifest.Raw, decoded via decodeSelectors) must still produce a message
+// per artifact — each artifact still gets exactly ONE class — and the
+// total order (class rank, then deadline, then id) is unchanged from a
+// legacy `events:`-only route.
+func TestRender_OrderingSurvivesTheWidenedSelector(t *testing.T) {
+	t.Parallel()
+	fx := newRenderFixture(t, "axon", "seomatrix")
+	fx.commitArtifact("axon/exchanges/XW-axon-20260701-e001.md", map[string]any{
+		"schema": "envelope/v1", "id": "XW-axon-20260701-e001", "type": "work_request",
+		"title": "blocking one", "space": "fixture-space", "from": "axon",
+		"to": []string{"seomatrix"}, "actor": map[string]any{"kind": "agent", "name": "axon-bot"},
+		"created": time.Now().UTC().Format(time.RFC3339), "priority": "p1", "blocking": false, "classification": "internal",
+	}, "body")
+	fx.commitArtifact("axon/announcements/XA-axon-20260701-e002.md", map[string]any{
+		"schema": "envelope/v1", "id": "XA-axon-20260701-e002", "type": "announcement",
+		"title": "published one", "space": "fixture-space", "from": "axon",
+		"to": []string{"seomatrix"}, "actor": map[string]any{"kind": "agent", "name": "axon-bot"},
+		"created": time.Now().UTC().Format(time.RFC3339), "classification": "internal",
+	}, "body")
+
+	raw := []byte(`
+schema: space/v1
+space: fixture-space
+participants:
+  - {system: axon, status: active}
+  - {system: seomatrix, status: active}
+notification_routes:
+  - channel: telegram
+    chat: "-100"
+    events: [blocking, published]
+    kind: [work_request, announcement]
+`)
+	manifest, err := space.ParseManifest(raw)
+	if err != nil {
+		t.Fatalf("ParseManifest: %v", err)
+	}
+
+	msgs, acc, err := Render(context.Background(), fx.dir, manifest, Options{Mode: ModeAll, Limit: 5, Now: time.Now()})
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("len(msgs) = %d, want 2 (one message per artifact, kind: selector widened rather than narrowed the legacy events match)", len(msgs))
+	}
+	if len(acc.PerRoute) != 1 || acc.PerRoute[0].Kept != 2 {
+		t.Fatalf("PerRoute = %+v, want Kept: 2", acc.PerRoute)
+	}
+	// Total order: blocking (classRank 1) sorts before published
+	// (classRank 2) — the exact rule order.go already applies, unaffected
+	// by the selector widening.
+	if msgs[0].Class != ClassBlocking || msgs[1].Class != ClassPublished {
+		t.Fatalf("order = [%s, %s], want [blocking, published]", msgs[0].Class, msgs[1].Class)
+	}
+	if msgs[0].Artifact.ID != "XW-axon-20260701-e001" || msgs[1].Artifact.ID != "XA-axon-20260701-e002" {
+		t.Fatalf("unexpected artifact ids: %+v", msgs)
 	}
 }
 
@@ -344,7 +492,7 @@ func TestRender_LateAdopterReachesItsOwnRoute(t *testing.T) {
 		{Channel: "telegram", Chat: "-100", For: "latecomer", Events: []string{ClassHumanGate, ClassBlocking, ClassPublished}},
 	}, "axon", "seomatrix", "latecomer")
 
-	msgs, err := Render(context.Background(), fx.dir, manifest, Options{Mode: ModeAll, Limit: 5, Now: time.Now()})
+	msgs, _, err := Render(context.Background(), fx.dir, manifest, Options{Mode: ModeAll, Limit: 5, Now: time.Now()})
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -356,5 +504,131 @@ func TestRender_LateAdopterReachesItsOwnRoute(t *testing.T) {
 		if m.Route.For != "latecomer" {
 			t.Errorf("Route.For = %q, want latecomer", m.Route.For)
 		}
+	}
+}
+
+// TestRender_KindSelectorExcludesViaRealManifestBytes is the negative,
+// NARROWING half TestRender_OrderingSurvivesTheWidenedSelector does not
+// cover: that test's `kind:` list names every kind already present, so it
+// proves the selector does not spuriously DROP anything, but never proves
+// the selector can actually EXCLUDE an artifact `events:` alone would have
+// kept, decoded from real `space.ParseManifest` bytes (manifest.Raw) rather
+// than a hand-built Selector passed directly to selectorMatches
+// (selector_test.go's own unit tests). Both artifacts below reach class
+// `published` (no gate, no priority, no blocking flag) and both satisfy
+// `events: [published]`; only `kind: [announcement]` decides which one the
+// route keeps.
+func TestRender_KindSelectorExcludesViaRealManifestBytes(t *testing.T) {
+	t.Parallel()
+	fx := newRenderFixture(t, "axon", "seomatrix")
+	fx.commitArtifact("axon/exchanges/XW-axon-20260701-g001.md", map[string]any{
+		"schema": "envelope/v1", "id": "XW-axon-20260701-g001", "type": "work_request",
+		"title": "ordinary ask", "space": "fixture-space", "from": "axon",
+		"to": []string{"seomatrix"}, "actor": map[string]any{"kind": "agent", "name": "axon-bot"},
+		"created": time.Now().UTC().Format(time.RFC3339), "priority": "p3", "blocking": false, "classification": "internal",
+	}, "body")
+	fx.commitArtifact("axon/announcements/XA-axon-20260701-g002.md", map[string]any{
+		"schema": "envelope/v1", "id": "XA-axon-20260701-g002", "type": "announcement",
+		"title": "published one", "space": "fixture-space", "from": "axon",
+		"to": []string{"seomatrix"}, "actor": map[string]any{"kind": "agent", "name": "axon-bot"},
+		"created": time.Now().UTC().Format(time.RFC3339), "classification": "internal",
+	}, "body")
+
+	raw := []byte(`
+schema: space/v1
+space: fixture-space
+participants:
+  - {system: axon, status: active}
+  - {system: seomatrix, status: active}
+notification_routes:
+  - channel: telegram
+    chat: "-100"
+    events: [published]
+    kind: [announcement]
+`)
+	manifest, err := space.ParseManifest(raw)
+	if err != nil {
+		t.Fatalf("ParseManifest: %v", err)
+	}
+
+	msgs, acc, err := Render(context.Background(), fx.dir, manifest, Options{Mode: ModeAll, Limit: 5, Now: time.Now()})
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if acc.Qualified != 2 {
+		t.Fatalf("Qualified = %d, want 2 (both artifacts qualify before per-route filtering)", acc.Qualified)
+	}
+	if len(acc.PerRoute) != 1 || acc.PerRoute[0].Kept != 1 {
+		t.Fatalf("PerRoute = %+v, want exactly Kept: 1 — `kind: [announcement]` decoded from real manifest.Raw bytes must EXCLUDE the work_request `events: [published]` alone would have kept", acc.PerRoute)
+	}
+	if len(msgs) != 1 || msgs[0].Artifact == nil || msgs[0].Artifact.ID != "XA-axon-20260701-g002" {
+		t.Fatalf("msgs = %+v, want exactly the announcement XA-axon-20260701-g002", msgs)
+	}
+}
+
+// TestRender_Accounting_NoRoutesDeclared is spec 11 §6's "no routes at all"
+// accounting edge case: a manifest with an empty notification_routes still
+// reports the true Qualified count, with an empty (not nil-vs-populated
+// ambiguous) PerRoute.
+func TestRender_Accounting_NoRoutesDeclared(t *testing.T) {
+	t.Parallel()
+	fx := newRenderFixture(t, "axon", "seomatrix")
+	fx.commitArtifact("axon/exchanges/XW-axon-20260701-h001.md", map[string]any{
+		"schema": "envelope/v1", "id": "XW-axon-20260701-h001", "type": "work_request",
+		"title": "item", "space": "fixture-space", "from": "axon",
+		"to": []string{"seomatrix"}, "actor": map[string]any{"kind": "agent", "name": "axon-bot"},
+		"created": time.Now().UTC().Format(time.RFC3339), "priority": "p3", "blocking": false, "classification": "internal",
+	}, "body")
+	manifest := manifestWith("fixture-space", nil, "axon", "seomatrix")
+
+	msgs, acc, err := Render(context.Background(), fx.dir, manifest, Options{Mode: ModeAll, Limit: 5, Now: time.Now()})
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if acc.Qualified != 1 {
+		t.Fatalf("Qualified = %d, want 1 (the artifact still qualifies; there is simply no route to keep it)", acc.Qualified)
+	}
+	if len(acc.PerRoute) != 0 {
+		t.Fatalf("PerRoute = %+v, want empty (no routes declared)", acc.PerRoute)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("msgs = %+v, want none (no route to emit through)", msgs)
+	}
+}
+
+// TestRender_Accounting_OneRouteKeepsAnotherDoesNot is spec 11 §6's "one
+// route keeping and another not" accounting edge case: two declared routes
+// over the SAME candidate set, one whose `events:` keeps the artifact and
+// one whose `events:` excludes it — PerRoute must report each route's own
+// Kept count independently, in manifest order.
+func TestRender_Accounting_OneRouteKeepsAnotherDoesNot(t *testing.T) {
+	t.Parallel()
+	fx := newRenderFixture(t, "axon", "seomatrix")
+	fx.commitArtifact("axon/exchanges/XW-axon-20260701-h002.md", map[string]any{
+		"schema": "envelope/v1", "id": "XW-axon-20260701-h002", "type": "work_request",
+		"title": "item", "space": "fixture-space", "from": "axon",
+		"to": []string{"seomatrix"}, "actor": map[string]any{"kind": "agent", "name": "axon-bot"},
+		"created": time.Now().UTC().Format(time.RFC3339), "priority": "p3", "blocking": false, "classification": "internal",
+	}, "body")
+	manifest := manifestWith("fixture-space", []space.NotificationRoute{
+		{Channel: "telegram", Chat: "-100", Events: []string{ClassPublished}},
+		{Channel: "telegram", Chat: "-200", Events: []string{ClassHumanGate, ClassBlocking}},
+	}, "axon", "seomatrix")
+
+	_, acc, err := Render(context.Background(), fx.dir, manifest, Options{Mode: ModeAll, Limit: 5, Now: time.Now()})
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if acc.Qualified != 1 {
+		t.Fatalf("Qualified = %d, want 1", acc.Qualified)
+	}
+	if len(acc.PerRoute) != 2 {
+		t.Fatalf("PerRoute = %+v, want exactly 2 entries (one per declared route)", acc.PerRoute)
+	}
+	if acc.PerRoute[0].Kept != 1 {
+		t.Fatalf("PerRoute[0].Kept = %d, want 1 (chat -100's events: [published] keeps the work_request)", acc.PerRoute[0].Kept)
+	}
+	if acc.PerRoute[1].Kept != 0 {
+		t.Fatalf("PerRoute[1].Kept = %d, want 0 (chat -200's events: [human-gate, blocking] excludes an ordinary p3 work_request)", acc.PerRoute[1].Kept)
 	}
 }

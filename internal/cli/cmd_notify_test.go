@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -115,6 +116,73 @@ func TestNotifyRender_NoCache(t *testing.T) {
 	}
 	if len(msgs) != 1 {
 		t.Fatalf("len(msgs) = %d, want 1", len(msgs))
+	}
+}
+
+// TestNotifyRender_AccountingOnStderrStdoutStaysPureJSON is P11 ACs 8-9
+// through the CLI surface: `notify render`'s stdout stays a pure JSON
+// array (so `notify send`'s own strict json.Unmarshal over the whole of
+// stdin never sees an accounting line), while stderr carries the
+// denominator report — the qualifying count, then a kept count per
+// DECLARED route.
+func TestNotifyRender_AccountingOnStderrStdoutStaysPureJSON(t *testing.T) {
+	t.Parallel()
+	dir := notifyFixtureRoot(t)
+	notifyCommitArtifact(t, dir, "axon/exchanges/XW-axon-20260701-a010.md", "XW-axon-20260701-a010")
+
+	var stdout, stderr bytes.Buffer
+	code := runNotifyRender(context.Background(), dir, noopGitChanged, time.Now, []string{"--all"}, IO{Stdout: &stdout, Stderr: &stderr})
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0, stderr=%s", code, stderr.String())
+	}
+
+	// stdout must decode as a message array, and ONLY a message array —
+	// no leading/trailing accounting text mixed in.
+	var msgs []spacenotify.Message
+	if err := json.Unmarshal(stdout.Bytes(), &msgs); err != nil {
+		t.Fatalf("stdout is not valid JSON (accounting must not leak into stdout): %v\n%s", err, stdout.String())
+	}
+
+	if !strings.Contains(stderr.String(), "artifacts qualified: 1") {
+		t.Fatalf("stderr = %q, want it to name the qualifying count (1)", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "-100") {
+		t.Fatalf("stderr = %q, want it to name the route (chat -100)", stderr.String())
+	}
+}
+
+// TestNotifyRender_AccountingNamesZeroKeepRoute is AC-9's own
+// distinguishability, exercised through the CLI: a route whose `events`
+// excludes every qualifying artifact reports `kept: 0` on stderr, over a
+// NONZERO qualifying count — visibly different from a genuinely empty
+// space, which would report `artifacts qualified: 0`.
+func TestNotifyRender_AccountingNamesZeroKeepRoute(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	runNotifyGit(t, dir, "init", "-b", "main", dir)
+	gitfixture.HardenRepo(t, dir)
+	mustNotifyWrite(t, filepath.Join(dir, "space.yaml"),
+		"schema: space/v1\nspace: fixture-space\nparticipants:\n"+
+			"  - system: axon\n    org: fixture\n    section: axon\n    owners: [axon-bot]\n    status: active\n    joined: \"2026-01-01\"\n"+
+			"  - system: seomatrix\n    org: fixture\n    section: seomatrix\n    owners: [seo-bot]\n    status: active\n    joined: \"2026-01-01\"\n"+
+			"notification_routes:\n  - channel: telegram\n    chat: \"-200\"\n    events: [human-gate, blocking]\n")
+	for _, sys := range []string{"axon", "seomatrix"} {
+		mustNotifyMkdirAll(t, filepath.Join(dir, sys, "events", "2026"))
+		mustNotifyWrite(t, filepath.Join(dir, sys, "events", "2026", ".gitkeep"), "")
+	}
+	runNotifyGitCommit(t, dir, "seed")
+	notifyCommitArtifact(t, dir, "axon/exchanges/XW-axon-20260701-a011.md", "XW-axon-20260701-a011")
+
+	var stdout, stderr bytes.Buffer
+	code := runNotifyRender(context.Background(), dir, noopGitChanged, time.Now, []string{"--all"}, IO{Stdout: &stdout, Stderr: &stderr})
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0, stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "artifacts qualified: 1") {
+		t.Fatalf("stderr = %q, want artifacts qualified: 1 (one published-class artifact exists)", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "kept: 0") {
+		t.Fatalf("stderr = %q, want kept: 0 (events: [human-gate, blocking] excludes the published artifact)", stderr.String())
 	}
 }
 

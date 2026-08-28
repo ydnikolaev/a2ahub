@@ -490,9 +490,22 @@ const (
 // notifyProveDelivery is step 7 in full: dispatch the workflow with the
 // `artifacts` input naming a known artifact id (AC-6b), poll until the run
 // appears and completes, then read whether it actually delivered (AC-6).
-func (c *NotifyCommand) notifyProveDelivery(ctx context.Context, ghTok, owner, name, artifactID string) notifyProofResult {
+//
+// root is the space-repo checkout `notify setup` is already running at
+// (spec 11 §11 amendment "unclaimed debt sits in this phase's own
+// footprint"): the dispatch branch is DERIVED via space.ResolveBaseBranch
+// — the same no-silent-yes-2026-08 P2b resolver internal/cli already calls
+// from cmd_doctor.go — rather than the hardcoded notifyDefaultBranch this
+// used to dispatch at unconditionally, which for a master-default space
+// silently proved delivery against a branch that never existed. When the
+// branch cannot be derived (root is not a fetched-enough checkout, or the
+// remote genuinely publishes no HEAD) this falls back to notifyDefaultBranch
+// exactly as cmd_doctor.go's own read-only callers do — never a refusal,
+// since this whole flow is best-effort proof, not a push.
+func (c *NotifyCommand) notifyProveDelivery(ctx context.Context, root, ghTok, owner, name, artifactID string) notifyProofResult {
+	branch := notifyResolveDispatchBranch(ctx, root)
 	since := c.now().Add(-1 * time.Second)
-	if err := c.setupAdapter.DispatchWorkflow(ctx, ghTok, owner, name, notifyDefaultBranch, map[string]string{"artifacts": artifactID}); err != nil {
+	if err := c.setupAdapter.DispatchWorkflow(ctx, ghTok, owner, name, branch, map[string]string{"artifacts": artifactID}); err != nil {
 		return notifyProofResult{Status: notifyProofFailed, Detail: "could not trigger workflow_dispatch: " + err.Error()}
 	}
 
@@ -642,15 +655,34 @@ func notifyCheckSecret(ctx context.Context, list notifyGHSecretListFunc, repo st
 	return false, "missing secret(s) on " + repo + ": " + strings.Join(missing, ", ")
 }
 
+// notifyResolveDispatchBranch derives the branch `notify setup`'s proof
+// dispatch and `notify verify`/doctor's delivery check target — dir's own
+// remote HEAD via space.ResolveBaseBranch — falling back to
+// notifyDefaultBranch ("main") when it cannot be derived, the same
+// best-effort convention cmd_doctor.go's own doctorCheckStuckGreenPRsRefStatus
+// already applies for a read-only advisory over a derived branch: a
+// caller naming the WORKFLOW ("a2a-notify") in its own message rather than
+// reusing ResolveBaseBranch's push-funnel refusal text, which names a
+// write path this flow never takes.
+func notifyResolveDispatchBranch(ctx context.Context, dir string) string {
+	branch, err := space.ResolveBaseBranch(ctx, dir)
+	if err != nil {
+		return notifyDefaultBranch
+	}
+	return branch
+}
+
 // notifyCheckDelivery reports whether the most recent a2a-notify run on
-// notifyDefaultBranch concluded green.
-func notifyCheckDelivery(ctx context.Context, adapter *notifySetupAdapter, token, owner, name string) (bool, string) {
-	run, found, err := adapter.LatestRunOnBranch(ctx, token, owner, name, notifyDefaultBranch)
+// dir's own derived base branch (notifyResolveDispatchBranch, above)
+// concluded green.
+func notifyCheckDelivery(ctx context.Context, adapter *notifySetupAdapter, dir, token, owner, name string) (bool, string) {
+	branch := notifyResolveDispatchBranch(ctx, dir)
+	run, found, err := adapter.LatestRunOnBranch(ctx, token, owner, name, branch)
 	if err != nil {
 		return false, "could not read the last a2a-notify run: " + err.Error()
 	}
 	if !found {
-		return false, "no a2a-notify run has ever completed on " + notifyDefaultBranch
+		return false, "no a2a-notify run has ever completed on " + branch
 	}
 	if run.Status != "completed" {
 		return false, "the last a2a-notify run has not completed yet (" + run.Status + ")"
@@ -786,6 +818,31 @@ func notifyRouteEvents(flagValue string) ([]string, error) {
 	return out, nil
 }
 
+// notifySelectionSummary is AC-15 (spec 11 §T1): states, by name, what a
+// printed route's `events:` selection carries and what it excludes — the
+// three legacy classes (spec 11's own "widening, never a migration") are
+// the only vocabulary `notify setup` prints a route in today, so carries/
+// excludes is exactly `carried` and the complement within
+// {human-gate, blocking, published}.
+func notifySelectionSummary(carried []string) string {
+	all := []string{spacenotify.ClassHumanGate, spacenotify.ClassBlocking, spacenotify.ClassPublished}
+	carriedSet := make(map[string]bool, len(carried))
+	for _, c := range carried {
+		carriedSet[c] = true
+	}
+	var excluded []string
+	for _, c := range all {
+		if !carriedSet[c] {
+			excluded = append(excluded, c)
+		}
+	}
+	excludedText := "nothing"
+	if len(excluded) > 0 {
+		excludedText = strings.Join(excluded, ", ")
+	}
+	return fmt.Sprintf("this route will carry: %s — and will NOT carry: %s", strings.Join(carried, ", "), excludedText)
+}
+
 const notifySetupUsage = "usage: a2a notify setup [--space <id>] [--for <participant>] [--events <list>] [--locale <ru|en>] [--non-interactive]"
 
 func runNotifySetup(ctx context.Context, c *NotifyCommand, root string, args []string, stdio IO) int {
@@ -916,6 +973,10 @@ func runNotifySetup(ctx context.Context, c *NotifyCommand, root string, args []s
 	}
 	_, _ = fmt.Fprintln(stdio.Stdout, "add this route to space.yaml's notification_routes and submit it through the normal write funnel (a reviewable PR):")
 	_, _ = fmt.Fprintf(stdio.Stdout, "  - channel: telegram\n    chat: \"<chat id from above>\"\n    for: %s\n    events: [%s]\n    secret: %s\n", forName, strings.Join(routeEvents, ", "), notifyTelegramSecretName)
+	// AC-15 (spec 11 §T1): "at setup what my selection will and will not
+	// carry, while I am still choosing" — named explicitly, not left for
+	// the operator to infer from the printed `events:` list above.
+	_, _ = fmt.Fprintln(stdio.Stdout, notifySelectionSummary(routeEvents))
 
 	// Step 7: proof, ONLY once the route already exists in the manifest —
 	// "after the route merges" (spec 06 step 7). Before that this
@@ -937,7 +998,7 @@ func runNotifySetup(ctx context.Context, c *NotifyCommand, root string, args []s
 		return 0
 	}
 
-	result := c.notifyProveDelivery(ctx, ghTok, owner, name, artifactID)
+	result := c.notifyProveDelivery(ctx, root, ghTok, owner, name, artifactID)
 	_, _ = fmt.Fprintf(stdio.Stdout, "%s: %s\n", result.Status, result.Detail)
 	if result.RunURL != "" {
 		_, _ = fmt.Fprintln(stdio.Stdout, result.RunURL)
@@ -964,7 +1025,7 @@ func containsScope(scopes []string, scope string) bool {
 // writing a second directory walk (spec 06 step 7's own "why the artifact
 // id is not optional" note; this is the "known artifact" it refers to).
 func notifyKnownArtifactID(ctx context.Context, c *NotifyCommand, root string, manifest space.Manifest) (string, bool) {
-	messages, err := spacenotify.Render(ctx, root, manifest, spacenotify.Options{Mode: spacenotify.ModeAll, Limit: 5, Now: c.now()})
+	messages, _, err := spacenotify.Render(ctx, root, manifest, spacenotify.Options{Mode: spacenotify.ModeAll, Limit: 5, Now: c.now()})
 	if err != nil {
 		return "", false
 	}
@@ -1073,7 +1134,7 @@ func runNotifyVerify(ctx context.Context, c *NotifyCommand, root string, args []
 			report.SecretOK, report.SecretDetail = notifyCheckSecret(ctx, runGHSecretList, report.Repo, manifest)
 			ghTok, ok := c.ghToken(ctx)
 			if ok {
-				report.DeliveryOK, report.DeliveryDetail = notifyCheckDelivery(ctx, c.setupAdapter, ghTok, owner, name)
+				report.DeliveryOK, report.DeliveryDetail = notifyCheckDelivery(ctx, c.setupAdapter, root, ghTok, owner, name)
 			} else {
 				report.DeliveryDetail = "could not read a gh token"
 			}

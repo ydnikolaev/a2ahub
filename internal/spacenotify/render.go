@@ -50,18 +50,25 @@ type Options struct {
 }
 
 // Render turns dir (a space-repo checkout) plus manifest into P3's
-// ordered message array (spec 03's six classification/filtering steps).
+// ordered message array (spec 03's six classification/filtering steps),
+// plus P11's own Accounting (ACs 8-10): how many artifacts qualified
+// before any per-route filtering, and how many each declared route kept.
 // It calls internal/cache.BuildNotifyIndex exactly once — the fold this
 // package performs — and never walks the tree itself.
-func Render(ctx context.Context, dir string, manifest space.Manifest, opts Options) ([]Message, error) {
+func Render(ctx context.Context, dir string, manifest space.Manifest, opts Options) ([]Message, Accounting, error) {
 	// Step 6: refuse before anything is emitted.
 	if err := refuseUndeclaredSecrets(manifest.NotificationRoutes); err != nil {
-		return nil, err
+		return nil, Accounting{}, err
+	}
+
+	selectors, err := decodeSelectors(manifest.Raw, manifest.NotificationRoutes)
+	if err != nil {
+		return nil, Accounting{}, err
 	}
 
 	idx, _, err := cache.BuildNotifyIndex(ctx, manifest.Space, dir, manifest, opts.Now)
 	if err != nil {
-		return nil, fmt.Errorf("notify render: %w", err)
+		return nil, Accounting{}, fmt.Errorf("notify render: %w", err)
 	}
 
 	classified := make([]classifiedArtifact, len(idx))
@@ -73,12 +80,19 @@ func Render(ctx context.Context, dir string, manifest space.Manifest, opts Optio
 
 	candidates, err := selectCandidates(classified, byID, opts)
 	if err != nil {
-		return nil, err
+		return nil, Accounting{}, err
 	}
 
+	accounting := Accounting{Qualified: len(candidates), PerRoute: make([]RouteAccounting, len(manifest.NotificationRoutes))}
+
 	var messages []Message
-	for _, route := range manifest.NotificationRoutes {
-		kept := keepForRoute(candidates, route, opts.Mode == ModeOnly)
+	for i, route := range manifest.NotificationRoutes {
+		sel := Selector{}
+		if i < len(selectors) {
+			sel = selectors[i]
+		}
+		kept := keepForRoute(candidates, route, sel, opts.Mode == ModeOnly)
+		accounting.PerRoute[i] = RouteAccounting{Route: route, Kept: len(kept)}
 		if opts.Mode != ModeOnly && opts.Limit > 0 && len(kept) > opts.Limit {
 			messages = append(messages, buildDigest(route, kept))
 			continue
@@ -88,7 +102,7 @@ func Render(ctx context.Context, dir string, manifest space.Manifest, opts Optio
 		}
 	}
 	sortMessages(messages)
-	return messages, nil
+	return messages, accounting, nil
 }
 
 // classifiedArtifact pairs one projected artifact with its (global,
@@ -139,17 +153,21 @@ func selectCandidates(classified []classifiedArtifact, byID map[string]int, opts
 }
 
 // keepForRoute applies step 4's two conditions (class in route.Events,
-// receiving participant matches route.For) — bypassEvents (ModeOnly) skips
-// the FIRST condition only, per T1's own note: `--only` bypasses the push
-// range, the event filter and step 5's coalescing, but a route's `for`
-// still scopes which channel an artifact reaches.
-func keepForRoute(candidates []classifiedArtifact, route space.NotificationRoute, bypassEvents bool) []classifiedArtifact {
+// receiving participant matches route.For) plus P11's own optional
+// selector dimensions (sel) — bypassEvents (ModeOnly) skips the events
+// condition only, per T1's own note: `--only` bypasses the push range, the
+// event filter and step 5's coalescing, but a route's `for` and its
+// selector still scope which channel an artifact reaches.
+func keepForRoute(candidates []classifiedArtifact, route space.NotificationRoute, sel Selector, bypassEvents bool) []classifiedArtifact {
 	var kept []classifiedArtifact
 	for _, c := range candidates {
 		if !routeMatches(c.fa, route) {
 			continue
 		}
 		if !bypassEvents && !slices.Contains(route.Events, c.class) {
+			continue
+		}
+		if !selectorMatches(c.fa, route, sel) {
 			continue
 		}
 		kept = append(kept, c)

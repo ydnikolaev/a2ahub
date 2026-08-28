@@ -76,6 +76,59 @@ fourth name that is not subscribable:
 | `published` | Ordinary publication. Off by default per route; §11.3 marks this chat-✘ and calls widening to it a decision somebody takes, not a default. |
 | `digest` | **Not subscribable.** The class of the coalesced message `--limit` produces; naming it in a route is refused. |
 
+## Selector dimensions (widening, never a migration)
+
+`events:` alone mixes two axes — *how urgent* and *what happened* — so "every
+contract publish and delivery, but not every ordinary note" is not narrow
+under it; it is **inexpressible**. That is exactly what silenced a real space
+on 2026-08-27: `events: [human-gate, blocking]` excludes `published`, and
+`published` is *every other qualifying artifact*, so the day's own contract
+publishes and announcements landed nowhere.
+
+A route may ADD four optional dimensions on top of `events:`/`for:` — each a
+fact the classifier already computes, never a second class vocabulary. A
+dimension left unset constrains nothing; declaring several ANDs them
+together, and a value inside one dimension is an OR (any one of the named
+values matches).
+
+| Dimension | Selects on | Legal values |
+|---|---|---|
+| `kind` | what the artifact IS | any `fold.Kind` value (`contract`, `requirement`, `question`, `work_request`, `decision`, `handoff`, `response`, `announcement`) — a bare scalar or a list |
+| `state` | the move that just happened | any `fold.State` value that kind can reach (e.g. `published`, `draft`, `submitted`) — a bare scalar or a list |
+| `direction` | whether the artifact concerns THIS route's own `for:` participant | `inbound` (addressed to `for:`), `broadcast`, or `any` (default) — `inbound` with no `for:` set matches nothing, rather than silently widening |
+| `urgency` | the existing predicates, named individually instead of pre-mixed | any of `human-gate`, `p1`, `blocking`, `overdue` — a bare scalar or a list |
+
+An existing `events:`-only route needs no edit: `human-gate` is
+`urgency: human-gate`; `blocking` is `direction: inbound` +
+`urgency: [p1, blocking]`; `published` is the complement — these are PRESETS
+over the same four dimensions, proven byte-identical in membership to the
+legacy classifier, never a parallel vocabulary.
+
+**Fixing the 2026-08-27 shape** without turning `published` on for every
+note:
+
+```yaml
+events: [human-gate, blocking, published]
+kind: [contract, announcement]
+```
+
+This keeps a contract publish and an announcement addressed to a participant,
+and excludes every ordinary requirement/question/work_request note —
+narrower than `published` alone, and expressible for the first time. See
+`space-template/space.yaml`'s own `notification_routes:` comment for the
+same example.
+
+A kind or state the fold model adds later becomes selectable with ZERO code
+change here: both `kind`/`state` are matched by plain string equality
+against the artifact's own already-resolved fact, never against a
+hand-maintained list — `scripts/check-notify-selector-coverage.sh` gates
+that no such list creeps back in.
+
+`render`'s own accounting line (printed to **stderr**, never mixed into
+stdout's JSON array) reports how many artifacts qualified and how many each
+declared route kept — so a route that matches nothing SAYS so, distinct from
+a run over a space with no qualifying traffic at all.
+
 ## What is not wired yet
 
 `a2a_notify` is registered on the MCP surface with the same five actions, so an

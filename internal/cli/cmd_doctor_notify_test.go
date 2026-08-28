@@ -5,11 +5,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 )
 
 // cmd_doctor_notify_test.go exercises the three P6 notify checks (spec 06
@@ -207,4 +209,68 @@ func TestDoctorCheckNotifyDelivery(t *testing.T) {
 			t.Fatalf("detail = %q", detail)
 		}
 	})
+}
+
+// -- P11 (answers-that-hold-2026-08 spec 11) AC-16/17: doctorNotifySelectivityRows --
+//
+// Unlike the three checks above, this one actually READS the space
+// checkout (spacenotify.Render walks real git history through
+// cache.BuildNotifyIndex) rather than parsing a mocked space.yaml string —
+// so these tests point resolveMirror at a REAL fixture built with
+// cmd_notify_test.go's own git-fixture helpers (same package), leaving
+// readFile at NewDoctorCommand's real os.ReadFile default.
+
+// doctorSelectivityFixtureDir builds a real, throwaway space checkout with
+// one narrow route (events: [human-gate, blocking], which excludes
+// ordinary published traffic — the 2026-08-27 incident's own shape).
+func doctorSelectivityFixtureDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	runNotifyGit(t, dir, "init", "-b", "main", dir)
+	gitfixture.HardenRepo(t, dir)
+	mustNotifyWrite(t, filepath.Join(dir, "space.yaml"),
+		"schema: space/v1\nspace: fixture-space\nparticipants:\n"+
+			"  - system: axon\n    org: fixture\n    section: axon\n    owners: [axon-bot]\n    status: active\n    joined: \"2026-01-01\"\n"+
+			"  - system: seomatrix\n    org: fixture\n    section: seomatrix\n    owners: [seo-bot]\n    status: active\n    joined: \"2026-01-01\"\n"+
+			"notification_routes:\n  - channel: telegram\n    chat: \"-100\"\n    events: [human-gate, blocking]\n")
+	for _, sys := range []string{"axon", "seomatrix"} {
+		mustNotifyMkdirAll(t, filepath.Join(dir, sys, "events", "2026"))
+		mustNotifyWrite(t, filepath.Join(dir, sys, "events", "2026", ".gitkeep"), "")
+	}
+	runNotifyGitCommit(t, dir, "seed")
+	return dir
+}
+
+func TestDoctorNotifySelectivity_WarnsOnZeroKeepWithTraffic(t *testing.T) {
+	t.Parallel()
+	dir := doctorSelectivityFixtureDir(t)
+	notifyCommitArtifact(t, dir, "axon/exchanges/XW-axon-20260701-w001.md", "XW-axon-20260701-w001")
+
+	cmd := newTestDoctorCommand()
+	cmd.resolveMirror = func(string, space.Ref, space.MachineConfig) string { return dir }
+	rows := cmd.doctorNotifySelectivityRows(notifyDoctorCfg(), space.MachineConfig{})
+	if len(rows) != 1 {
+		t.Fatalf("rows = %+v, want exactly 1 WARN row", rows)
+	}
+	if rows[0].Status != doctorVisibilityWARN {
+		t.Fatalf("Status = %q, want WARN", rows[0].Status)
+	}
+	if !strings.Contains(rows[0].Detail, "matched NOTHING") || !strings.Contains(rows[0].Detail, "1 artifact") {
+		t.Fatalf("Detail = %q, want it to name the zero-keep route and the qualifying count", rows[0].Detail)
+	}
+}
+
+func TestDoctorNotifySelectivity_QuietSpaceProducesNoWarn(t *testing.T) {
+	t.Parallel()
+	// No artifact committed beyond the seed — a genuinely quiet space
+	// (Accounting.Qualified == 0, AC-17): must produce NO row, even though
+	// the SAME narrow route as the WARN case above is declared.
+	dir := doctorSelectivityFixtureDir(t)
+
+	cmd := newTestDoctorCommand()
+	cmd.resolveMirror = func(string, space.Ref, space.MachineConfig) string { return dir }
+	rows := cmd.doctorNotifySelectivityRows(notifyDoctorCfg(), space.MachineConfig{})
+	if len(rows) != 0 {
+		t.Fatalf("rows = %+v, want none (a genuinely quiet space must not WARN)", rows)
+	}
 }

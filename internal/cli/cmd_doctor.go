@@ -34,6 +34,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/notification"
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/spacenotify"
 	"github.com/ydnikolaev/a2ahub/internal/surface"
 	"github.com/ydnikolaev/a2ahub/internal/version"
 	"gopkg.in/yaml.v3"
@@ -258,6 +259,13 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		// advisory-on-success rule as the visibility rows just above: this
 		// loop never touches allOK.
 		_, _ = fmt.Fprintf(stdio.Stdout, "consumed contract [%s]: %s: %s\n", row.SpaceID, row.Status, row.Detail)
+	}
+	for _, row := range c.doctorNotifySelectivityRows(cfg, machine) {
+		// AC-16/17 (answers-that-hold-2026-08 spec 11 §T1, US-6): "doctor
+		// WARNs on a route that matched nothing while qualifying traffic
+		// existed" — advisory-on-success, same convention as the two rows
+		// above; never touches allOK.
+		_, _ = fmt.Fprintf(stdio.Stdout, "notify selectivity [%s]: %s: %s\n", row.SpaceID, row.Status, row.Detail)
 	}
 
 	if !allOK {
@@ -854,7 +862,7 @@ func (c *DoctorCommand) doctorCheckNotifyDelivery(ctx context.Context, cfg space
 			failures = append(failures, ref.ID+": cannot resolve a credential: "+err.Error())
 			continue
 		}
-		if deliveryOK, detail := notifyCheckDelivery(ctx, c.notifyAdapter, cred.Token, owner, name); !deliveryOK {
+		if deliveryOK, detail := notifyCheckDelivery(ctx, c.notifyAdapter, dir, cred.Token, owner, name); !deliveryOK {
 			ok = false
 			failures = append(failures, ref.ID+": "+detail)
 		}
@@ -2236,6 +2244,69 @@ func (c *DoctorCommand) doctorUnadoptedConsumptionRows(cfg space.ProjectConfig, 
 					Status: doctorVisibilityWARN,
 					Detail: fmt.Sprintf("%d verify-passed %s %s to %s, which is not in this system's own consumes.yaml — run `a2a contract adopt %s`",
 						u.Count, word, verb, u.ContractID, u.ContractID),
+				},
+			})
+		}
+	}
+	return rows
+}
+
+// doctorNotifySelectivityRow names one connected space's own notify-route
+// selectivity advisory (spec 11 §T1, AC-16/17, US-6): the exact WARN/
+// advisory-on-success row shape doctorUnadoptedConsumptionRow already
+// established — same package vocabulary, no import needed.
+type doctorNotifySelectivityRow struct {
+	SpaceID string
+	doctorVisibilityDecision
+}
+
+// doctorNotifySelectivityRows is AC-16/17: WARN on a route that matched
+// NOTHING while the space carried qualifying traffic (Accounting.Qualified
+// > 0, that route's own Kept == 0) — the shape the 2026-08-27 incident
+// actually has. A genuinely quiet space (Qualified == 0) produces no row
+// at all (AC-17): the same distinction spacenotify.Accounting's own doc
+// comment names, read here instead of re-derived.
+//
+// This reuses spacenotify.Render — the SAME projection `notify render`
+// itself calls — over each connected space's own mirror, rather than a
+// second directory walk or a second classify/filter implementation
+// (spec 11's own "existing patterns to reuse"). WARN-only, never touches
+// Run's own allOK, for the identical reason doctorUnadoptedConsumptionRows
+// is WARN-only: a narrowly-scoped route may be exactly what the operator
+// wants, and a FAIL here would turn a deliberate, working configuration
+// into a red doctor run.
+func (c *DoctorCommand) doctorNotifySelectivityRows(cfg space.ProjectConfig, machine space.MachineConfig) []doctorNotifySelectivityRow {
+	if len(cfg.Spaces) == 0 {
+		return nil
+	}
+	refs := append([]space.Ref(nil), cfg.Spaces...)
+	sort.Slice(refs, func(i, j int) bool { return refs[i].ID < refs[j].ID })
+
+	var rows []doctorNotifySelectivityRow
+	for _, ref := range refs {
+		dir := c.resolveMirror(c.projectRoot, ref, machine)
+		raw, err := c.readFile(filepath.Join(dir, "space.yaml"))
+		if err != nil {
+			continue // no mirror yet: doctorCheckSpaceAccess already reports this
+		}
+		manifest, err := space.ParseManifest(raw)
+		if err != nil || len(manifest.NotificationRoutes) == 0 {
+			continue // malformed, or nothing configured: nothing to be selective about
+		}
+		_, acc, err := spacenotify.Render(context.Background(), dir, manifest, spacenotify.Options{Mode: spacenotify.ModeAll, Limit: 5, Now: time.Now()})
+		if err != nil || acc.Qualified == 0 {
+			continue // read-side failure, or a genuinely quiet space (AC-17): no row
+		}
+		for _, ra := range acc.PerRoute {
+			if ra.Kept > 0 {
+				continue
+			}
+			rows = append(rows, doctorNotifySelectivityRow{
+				SpaceID: ref.ID,
+				doctorVisibilityDecision: doctorVisibilityDecision{
+					Status: doctorVisibilityWARN,
+					Detail: fmt.Sprintf("route %s matched NOTHING while %d artifact(s) qualified — check its `events`/`for`/selector narrows what you intend",
+						notifyRouteLabel(ra.Route), acc.Qualified),
 				},
 			})
 		}

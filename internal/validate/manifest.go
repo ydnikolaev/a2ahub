@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"gopkg.in/yaml.v3"
 )
@@ -299,7 +300,49 @@ var knownRouteFields = map[string]bool{
 	"locale":   true,
 	"secret":   true,
 	"renderer": true,
+	// P11 (answers-that-hold-2026-08 spec 11 §T1): the four selector
+	// dimensions a route may additionally declare, ANDed onto `events`/
+	// `for` at render time (internal/spacenotify's own selector.go) —
+	// never a migration, since a route naming none of these behaves
+	// exactly as it did before this phase (AC-7).
+	"kind":      true,
+	"state":     true,
+	"direction": true,
+	"urgency":   true,
 }
+
+// notifySelectorVocabulary derives P11's `kind`/`state` legal value sets
+// from fold.BuildVocabulary() — the SAME derived universe spec 11's own
+// coverage gate asks the binary for (scripts/check-notify-selector-
+// coverage.sh), never a second hand-written list. "Both enumerated
+// universes have exactly one definition in the fold package" (spec 11
+// §T1) — this is that one definition's policy-side reader; the OTHER
+// reader, internal/spacenotify's own selector.go, deliberately reads
+// NEITHER list (AC-13) and matches by raw string equality instead. A kind
+// or state fold adds becomes valid HERE with zero code change, the same
+// property AC-13 gives the render-time selector.
+func notifySelectorVocabulary() (kinds, states map[string]bool) {
+	v := fold.BuildVocabulary()
+	kinds = make(map[string]bool, len(v.States))
+	states = map[string]bool{}
+	for kind, list := range v.States {
+		kinds[kind] = true
+		for _, s := range list {
+			states[s] = true
+		}
+	}
+	return kinds, states
+}
+
+// notifyValidDirection and notifyValidUrgency are P11's own small, closed
+// enums — spec 11 §T1's table names them directly ("inbound to this
+// route's `for:` system · broadcast · any"; "carries a human gate · p1 ·
+// blocking · overdue") and neither is derived from fold, because neither
+// is a fold vocabulary: direction is computed from Addressees/Broadcast,
+// and urgency names the existing predicates individually rather than
+// pre-mixing them into a class.
+var notifyValidDirection = map[string]bool{"inbound": true, "broadcast": true, "any": true}
+var notifyValidUrgency = map[string]bool{"human-gate": true, "p1": true, "blocking": true, "overdue": true}
 
 // chatPattern and secretPattern are moved verbatim from
 // space.schema.json's frozen `chat`/`secret` patterns (P1 §7).
@@ -478,6 +521,28 @@ func checkRouteShape(base string, route map[string]any) ([]Violation, manifestRo
 		}
 	}
 
+	// P11's four selector keys — all optional, all ANDed onto events/for
+	// at render time (internal/spacenotify's own filter.go). kind/state/
+	// urgency accept either a bare scalar or a list, mirroring
+	// spacenotify's own decodeSelectors leniency (toStringSlice) so a
+	// policy-valid route is exactly a Render-accepted one.
+	notifyKinds, notifyStates := notifySelectorVocabulary()
+	if kindRaw, present := route["kind"]; present {
+		violations = append(violations, checkRouteSelectorList(base+".kind", kindRaw, notifyKinds, "a known fold.Kind value")...)
+	}
+	if stateRaw, present := route["state"]; present {
+		violations = append(violations, checkRouteSelectorList(base+".state", stateRaw, notifyStates, "a known fold.State value")...)
+	}
+	if directionRaw, present := route["direction"]; present {
+		direction, ok := directionRaw.(string)
+		if !ok || !notifyValidDirection[direction] {
+			violations = append(violations, routeShapeViolation(base+".direction", `direction must be one of "inbound", "broadcast", "any"`))
+		}
+	}
+	if urgencyRaw, present := route["urgency"]; present {
+		violations = append(violations, checkRouteSelectorList(base+".urgency", urgencyRaw, notifyValidUrgency, "one of human-gate, p1, blocking, overdue")...)
+	}
+
 	if localeRaw, present := route["locale"]; present {
 		locale, ok := localeRaw.(string)
 		if !ok || (locale != "ru" && locale != "en") {
@@ -500,6 +565,42 @@ func checkRouteShape(base string, route map[string]any) ([]Violation, manifestRo
 	}
 
 	return violations, parsed
+}
+
+// checkRouteSelectorList validates one P11 selector key that accepts
+// either a bare scalar (`kind: contract`) or a list
+// (`kind: [contract, announcement]`) — the exact leniency
+// internal/spacenotify's own toStringSlice applies when it decodes the
+// SAME bytes at render time, kept in lockstep here so a policy-valid route
+// is exactly a Render-accepted one. Each named value must be in valid and
+// none may repeat.
+func checkRouteSelectorList(path string, raw any, valid map[string]bool, legalNote string) []Violation {
+	var values []any
+	switch v := raw.(type) {
+	case string:
+		values = []any{v}
+	case []any:
+		values = v
+	default:
+		return []Violation{routeShapeViolation(path, path+" must be a string or an array of strings")}
+	}
+	if len(values) < 1 {
+		return []Violation{routeShapeViolation(path, path+" must not be empty")}
+	}
+	var violations []Violation
+	seen := make(map[string]bool, len(values))
+	for _, item := range values {
+		s, ok := item.(string)
+		switch {
+		case !ok || !valid[s]:
+			violations = append(violations, routeShapeViolation(path, path+" values must each be "+legalNote))
+		case seen[s]:
+			violations = append(violations, routeShapeViolation(path, `duplicate `+path+` value "`+s+`"`))
+		default:
+			seen[s] = true
+		}
+	}
+	return violations
 }
 
 func notificationRouteViolation(path, message string) Violation {

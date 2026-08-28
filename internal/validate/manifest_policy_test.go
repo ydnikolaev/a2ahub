@@ -434,6 +434,124 @@ notification_routes:
   - {channel: telegram, chat: "-100123", events: [published]}
 `,
 		},
+		// -- P11 (answers-that-hold-2026-08 spec 11): the four selector keys.
+		{
+			name: "kind as a list of known fold.Kind values is well-formed",
+			manifest: `
+space: demo
+participants:
+  - {system: axon, section: axon/, owners: [alice], status: active}
+notification_routes:
+  - {channel: telegram, chat: "-100123", events: [published], kind: [contract, announcement]}
+`,
+		},
+		{
+			name: "kind as a bare scalar is well-formed",
+			manifest: `
+space: demo
+participants:
+  - {system: axon, section: axon/, owners: [alice], status: active}
+notification_routes:
+  - {channel: telegram, chat: "-100123", events: [published], kind: contract}
+`,
+		},
+		{
+			name: "kind outside fold's own vocabulary",
+			manifest: `
+space: demo
+participants:
+  - {system: axon, section: axon/, owners: [alice], status: active}
+notification_routes:
+  - {channel: telegram, chat: "-100123", events: [published], kind: [not-a-real-kind]}
+`,
+			wantPaths: []string{"notification_routes.0.kind"},
+		},
+		{
+			name: "duplicate kind value",
+			manifest: `
+space: demo
+participants:
+  - {system: axon, section: axon/, owners: [alice], status: active}
+notification_routes:
+  - {channel: telegram, chat: "-100123", events: [published], kind: [contract, contract]}
+`,
+			wantPaths: []string{"notification_routes.0.kind"},
+		},
+		{
+			name: "state as a list of known fold.State values is well-formed",
+			manifest: `
+space: demo
+participants:
+  - {system: axon, section: axon/, owners: [alice], status: active}
+notification_routes:
+  - {channel: telegram, chat: "-100123", events: [published], state: [published, draft]}
+`,
+		},
+		{
+			name: "state outside fold's own vocabulary",
+			manifest: `
+space: demo
+participants:
+  - {system: axon, section: axon/, owners: [alice], status: active}
+notification_routes:
+  - {channel: telegram, chat: "-100123", events: [published], state: [not-a-real-state]}
+`,
+			wantPaths: []string{"notification_routes.0.state"},
+		},
+		{
+			name: "direction inbound/broadcast/any are each well-formed",
+			manifest: `
+space: demo
+participants:
+  - {system: axon, section: axon/, owners: [alice], status: active}
+notification_routes:
+  - {channel: telegram, chat: "-100123", events: [published], direction: inbound}
+  - {channel: telegram, chat: "-100124", events: [published], direction: broadcast}
+  - {channel: telegram, chat: "-100125", events: [published], direction: any}
+`,
+		},
+		{
+			name: "direction outside its own enum",
+			manifest: `
+space: demo
+participants:
+  - {system: axon, section: axon/, owners: [alice], status: active}
+notification_routes:
+  - {channel: telegram, chat: "-100123", events: [published], direction: sideways}
+`,
+			wantPaths: []string{"notification_routes.0.direction"},
+		},
+		{
+			name: "urgency as a list of the four named predicates is well-formed",
+			manifest: `
+space: demo
+participants:
+  - {system: axon, section: axon/, owners: [alice], status: active}
+notification_routes:
+  - {channel: telegram, chat: "-100123", events: [published], urgency: [human-gate, p1, blocking, overdue]}
+`,
+		},
+		{
+			name: "urgency outside its own enum",
+			manifest: `
+space: demo
+participants:
+  - {system: axon, section: axon/, owners: [alice], status: active}
+notification_routes:
+  - {channel: telegram, chat: "-100123", events: [published], urgency: [p2]}
+`,
+			wantPaths: []string{"notification_routes.0.urgency"},
+		},
+		{
+			name: "all four selector dimensions together, combined with events, is well-formed (AC-4 intersection at the policy layer)",
+			manifest: `
+space: demo
+participants:
+  - {system: axon, section: axon/, owners: [alice], status: active}
+notification_routes:
+  - {channel: telegram, chat: "-100123", for: axon, events: [blocking, published], kind: [contract, announcement], state: [published], direction: inbound, urgency: [p1, blocking]}
+`,
+		},
 	}
 
 	engine := mustEngine(t)

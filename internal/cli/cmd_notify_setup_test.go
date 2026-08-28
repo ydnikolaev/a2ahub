@@ -229,6 +229,54 @@ func TestNotifySetup_TokenNeverLeaksAcrossFullFlow(t *testing.T) {
 	}
 }
 
+// TestNotifySetup_StatesWhatTheSelectionCarriesAndExcludes is AC-15 (spec
+// 11 §T1, US-4): "at setup what my selection will and will not carry,
+// while [the operator is] still choosing" — named explicitly, not left to
+// be inferred from the raw `events:` list.
+func TestNotifySetup_StatesWhatTheSelectionCarriesAndExcludes(t *testing.T) {
+	t.Parallel()
+	dir := newSpaceCheckoutDir(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/repos/acme/space-demo") {
+			_, _ = w.Write([]byte(`{"permissions":{"admin":true}}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := newTestNotifyCommand(t, srv)
+	c.promptToken = func(IO) (redactingToken, error) { return redactingToken{value: notifySentinelToken}, nil }
+	c.ghSecretSet = func(context.Context, string, string, redactingToken) error { return nil }
+
+	var stdout, stderr bytes.Buffer
+	code := runNotifySetup(context.Background(), c, dir, nil, IO{Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader("")})
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	// Default --events: human-gate,blocking (notifyRouteEvents' own
+	// default) — carries those two by name, excludes published by name.
+	if !strings.Contains(stdout.String(), "will carry: human-gate, blocking") {
+		t.Fatalf("stdout does not name what is carried: %q", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "will NOT carry: published") {
+		t.Fatalf("stdout does not name what is excluded: %q", stdout.String())
+	}
+}
+
+// TestNotifySelectionSummary_AllCarriedNamesNothingExcluded is
+// notifySelectionSummary's own unit-level edge case: a route carrying all
+// three legacy classes excludes nothing, and says so by name rather than
+// printing an empty list.
+func TestNotifySelectionSummary_AllCarriedNamesNothingExcluded(t *testing.T) {
+	t.Parallel()
+	got := notifySelectionSummary([]string{"human-gate", "blocking", "published"})
+	if !strings.Contains(got, "will NOT carry: nothing") {
+		t.Fatalf("summary = %q, want it to say NOT carry: nothing", got)
+	}
+}
+
 // TestRedactingToken_NeverFormatsRawValue is the redaction primitive's own
 // receipt: every fmt verb and json.Marshal produce the fixed string, never
 // the value.
@@ -589,7 +637,7 @@ func TestNotifyProveDelivery_ConfiguredWhenDelivered(t *testing.T) {
 	defer srv.Close()
 	c := newTestNotifyCommand(t, srv)
 
-	result := c.notifyProveDelivery(context.Background(), "gh-token", "acme", "space-demo", "XW-1")
+	result := c.notifyProveDelivery(context.Background(), t.TempDir(), "gh-token", "acme", "space-demo", "XW-1")
 	if result.Status != notifyProofConfigured {
 		t.Fatalf("status = %q, want configured; detail=%s", result.Status, result.Detail)
 	}
@@ -606,7 +654,7 @@ func TestNotifyProveDelivery_UnprovenOnEmptyDeliverySet(t *testing.T) {
 	defer srv.Close()
 	c := newTestNotifyCommand(t, srv)
 
-	result := c.notifyProveDelivery(context.Background(), "gh-token", "acme", "space-demo", "XW-1")
+	result := c.notifyProveDelivery(context.Background(), t.TempDir(), "gh-token", "acme", "space-demo", "XW-1")
 	if result.Status != notifyProofUnproven {
 		t.Fatalf("status = %q, want unproven for a green run with nothing delivered; detail=%s", result.Status, result.Detail)
 	}
@@ -625,7 +673,7 @@ func TestNotifyProveDelivery_FailedOnRedConclusion(t *testing.T) {
 	defer srv.Close()
 	c := newTestNotifyCommand(t, srv)
 
-	result := c.notifyProveDelivery(context.Background(), "gh-token", "acme", "space-demo", "XW-1")
+	result := c.notifyProveDelivery(context.Background(), t.TempDir(), "gh-token", "acme", "space-demo", "XW-1")
 	if result.Status != notifyProofFailed {
 		t.Fatalf("status = %q, want failed", result.Status)
 	}
@@ -834,7 +882,7 @@ func TestNotifyCheckDelivery(t *testing.T) {
 	}))
 	defer green.Close()
 	adapter := newNotifySetupAdapter(green.Client(), green.URL)
-	if ok, msg := notifyCheckDelivery(context.Background(), adapter, "t", "acme", "demo"); !ok {
+	if ok, msg := notifyCheckDelivery(context.Background(), adapter, t.TempDir(), "t", "acme", "demo"); !ok {
 		t.Errorf("a green last run must pass: %s", msg)
 	}
 
@@ -843,7 +891,7 @@ func TestNotifyCheckDelivery(t *testing.T) {
 	}))
 	defer red.Close()
 	adapter = newNotifySetupAdapter(red.Client(), red.URL)
-	if ok, _ := notifyCheckDelivery(context.Background(), adapter, "t", "acme", "demo"); ok {
+	if ok, _ := notifyCheckDelivery(context.Background(), adapter, t.TempDir(), "t", "acme", "demo"); ok {
 		t.Error("a failed last run must fail")
 	}
 
@@ -852,7 +900,7 @@ func TestNotifyCheckDelivery(t *testing.T) {
 	}))
 	defer none.Close()
 	adapter = newNotifySetupAdapter(none.Client(), none.URL)
-	if ok, msg := notifyCheckDelivery(context.Background(), adapter, "t", "acme", "demo"); ok {
+	if ok, msg := notifyCheckDelivery(context.Background(), adapter, t.TempDir(), "t", "acme", "demo"); ok {
 		t.Error("no run ever must fail")
 	} else if !strings.Contains(msg, "has ever completed") {
 		t.Errorf("message does not say so: %q", msg)

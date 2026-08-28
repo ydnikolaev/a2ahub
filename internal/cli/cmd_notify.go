@@ -235,7 +235,7 @@ func runNotifyRender(ctx context.Context, root string, git gitChangedFilesFunc, 
 		opts.Changed = changed
 	}
 
-	messages, err := spacenotify.Render(ctx, root, manifest, opts)
+	messages, accounting, err := spacenotify.Render(ctx, root, manifest, opts)
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "a2a notify render: %v\n", err)
 		return 1
@@ -243,6 +243,19 @@ func runNotifyRender(ctx context.Context, root string, git gitChangedFilesFunc, 
 	if messages == nil {
 		messages = []spacenotify.Message{}
 	}
+
+	// P11 (spec 11 ACs 8-10): a per-route accounting line, printed to
+	// STDERR — never mixed into stdout's JSON array. `notify send` reads
+	// stdout, whole, as the message array (runNotifySend's own
+	// io.ReadAll + json.Unmarshal); the reusable CI workflow redirects
+	// only stdout to the file it hands `notify send`
+	// (a2a-notify-reusable.yml: `a2a "${render_args[@]}" >"$rendered"`,
+	// its own comment: "the CLI's own stderr ... is left unchanged") — so
+	// stderr is exactly where a line that must never break that pipe
+	// belongs. This is a DEVIATION from spec 11 AC-9's literal "on
+	// stdout" wording; see this phase's own report for why stdout could
+	// not stay both pure JSON and carry it.
+	printNotifyAccounting(stdio.Stderr, accounting)
 
 	enc := json.NewEncoder(stdio.Stdout)
 	enc.SetIndent("", "  ")
@@ -311,6 +324,49 @@ func runNotifySend(ctx context.Context, client *spacenotify.Client, args []strin
 		}
 	}
 	return 0
+}
+
+// printNotifyAccounting prints P11's own accounting report (spec 11 ACs
+// 8-9): the qualifying-artifact denominator, then one kept-count line per
+// DECLARED route (never omitted for a zero-keep route — see
+// spacenotify.Accounting's own doc comment), each composed through
+// denominatorLine so a zero-keep run is visibly distinct from a
+// zero-qualifying run: the FIRST line already says "0 artifacts qualified"
+// when nothing qualified at all, before any per-route line is even
+// reached.
+func printNotifyAccounting(w io.Writer, accounting spacenotify.Accounting) {
+	_, _ = fmt.Fprintln(w, denominatorLine("notify render: artifacts qualified", accounting.Qualified))
+	for _, ra := range accounting.PerRoute {
+		_, _ = fmt.Fprintln(w, denominatorLine("  route "+notifyRouteLabel(ra.Route)+" kept", ra.Kept))
+	}
+}
+
+// notifyRouteLabel identifies one route for a report line — the same
+// (chat, topic, for) identity internal/validate's own dedup rule already
+// keys routes by, since a notification route carries no separate name.
+func notifyRouteLabel(r space.NotificationRoute) string {
+	label := r.Chat
+	if r.Topic != nil {
+		label += fmt.Sprintf("/%d", *r.Topic)
+	}
+	if r.For != "" {
+		label += " for=" + r.For
+	}
+	return label
+}
+
+// denominatorLine composes P11's own "a run that examined nothing must not
+// look like a clean pass" report line (answers-that-hold-2026-08 spec 11
+// §"Two phases of this epic reached [this] independently"): label followed
+// by n, ALWAYS printed — including when n is 0 — so a caller never has to
+// infer a zero denominator from an absent line. Deliberately generic
+// (label, n) rather than notify-specific: spec 07's own aggregate
+// zero-row report (P7, W3, same internal/cli package) needs the identical
+// shape for "0 contracts published for <system>" and takes this function
+// directly rather than writing a second implementation — the "one helper,
+// two callers" AC-10 asks for.
+func denominatorLine(label string, n int) string {
+	return fmt.Sprintf("%s: %d", label, n)
 }
 
 // splitNonEmpty splits s on sep, trims each part and drops empties — the

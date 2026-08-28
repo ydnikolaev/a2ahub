@@ -25,5 +25,23 @@ gates: default                    # G1-G5 per §3.7; operator refines at space c
 participants: []                  # zero participants at template time (AC-101.1
                                    # green-on-empty) — added one at a time via each
                                    # system's onboarding PR (US-102, §9.2 step 2)
-notification_routes: []           # operator fills in chat/webhook routes at creation
+notification_routes: []           # operator fills in chat/webhook routes at creation.
+                                   #
+                                   # AVOID THE 2026-08-27 INCIDENT (answers-that-hold-2026-08
+                                   # spec 11): a route naming `events: [human-gate, blocking]`
+                                   # alone — this template's OWN `a2a notify setup` default —
+                                   # silently drops every ordinary contract publish and
+                                   # announcement, because `published` is deliberately excluded
+                                   # from that default. Widen with a `kind:` selector instead of
+                                   # turning `published` on for every note:
+                                   #
+                                   #   - channel: telegram
+                                   #     chat: "<chat id from `a2a notify discover`>"
+                                   #     events: [human-gate, blocking, published]
+                                   #     kind: [contract, announcement]
+                                   #
+                                   # This surfaces exactly a contract publish and an
+                                   # announcement addressed to a participant — the day's own
+                                   # traffic — without also selecting every requirement/
+                                   # question/work_request note `published` alone would.
 vendored: []
