@@ -94,7 +94,18 @@ expect_red "$core_profile_route_drift" "internal/contract BuildCarriedSet profil
 template_profile_drift="$WORK/template-profile-drift"
 copy_tree "$template_profile_drift"
 target="$template_profile_drift/schemas/templates/v2/contract.md"
-perl -0pi -e 's/export-source-v1/export-source-v2/' "$target"
+# /g, AND an ABSENCE guard rather than a presence one. The gate's rule here is
+# `strings.Contains(text, "export-source-v1")`, so the mutation must remove EVERY
+# occurrence — a partial removal leaves the gate legitimately green and the tooth
+# reports "stayed green", which reads as a broken GATE when it is a broken FIXTURE.
+# That is exactly what happened on 2026-08-28: answers-that-hold P2 (27529301)
+# gave this template a second mention of the profile, the un-suffixed s/// replaced
+# only the first, and this tooth went red for a reason nothing in its own message
+# pointed at. Note that the seed guards elsewhere in this file assert the NEW token
+# APPEARED — that check would have passed here too, because one occurrence did
+# change. For a Contains-shaped rule the precondition is the OLD token being GONE.
+perl -0pi -e 's/export-source-v1/export-source-v2/g' "$target"
+grep -Fq 'export-source-v1' "$target" && fail "could not fully seed template provenance profile drift: export-source-v1 still present after mutation"
 expect_red "$template_profile_drift" "omits export-source-v1" "template provenance profile drift"
 
 second_builder="$WORK/second-builder"
