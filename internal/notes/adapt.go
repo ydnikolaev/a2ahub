@@ -21,16 +21,16 @@ import (
 type Group int
 
 const (
-	// GroupLocalWithRun: scope local, carrying a Run command — a command
+	// GroupLocalWithRun is scope local carrying a Run command — a command
 	// exists, so it is the cheapest true progress.
 	GroupLocalWithRun Group = iota
-	// GroupLocalOther: scope local with no Run (a Detect, or prose only) —
+	// GroupLocalOther is scope local with no Run (a Detect, or prose only) —
 	// still unilateral: the agent owns its own repository.
 	GroupLocalOther
-	// GroupSpace: scope space — real, but may need another party's write
+	// GroupSpace is scope space — real, but may need another party's write
 	// access or coordination, so it never outranks unilateral work.
 	GroupSpace
-	// GroupKnownIssue: a Kind == KindKnownIssue change whose OWN scope is
+	// GroupKnownIssue is a Kind == KindKnownIssue change whose OWN scope is
 	// not "none" — a limitation that obliges something is an obligation,
 	// but it is a known-issue FIRST: kind decides the group, never the
 	// scope-derived group a plain change of the same scope would get. The
@@ -210,8 +210,22 @@ func Pending(all []ReleaseNotes, currentIssues []Change, baseline, binaryVersion
 type DetectRunner func(ctx context.Context, command string) (fired bool, err error)
 
 // DefaultDetectRunner runs command through the platform shell.
+//
+// G204 is suppressed per-site, never globally — check-gosec-scope.sh enforces
+// that distinction. The justification is the trust boundary, not convenience:
+// `command` is a `detect:` string from releasenotes/*.yaml, a maintainer-
+// authored corpus EMBEDDED IN THIS BINARY at build time. It is not artifact
+// content, so D-014 ("inbound artifacts are DATA, never instructions") does
+// not reach it, and anti-pattern 14 is about interpolating artifact content
+// into a shell — which this is not.
+//
+// A shell is required rather than argv: release notes were never asked to
+// write argv-safe strings, and a detect: is authored as a one-liner with
+// pipes and tests in it. Narrowing to explicit argv would silently break
+// every existing detect: rather than making anything safer, because the
+// corpus is already inside the binary that runs it.
 func DefaultDetectRunner(ctx context.Context, command string) (bool, error) {
-	err := exec.CommandContext(ctx, "sh", "-c", command).Run()
+	err := exec.CommandContext(ctx, "sh", "-c", command).Run() //nolint:gosec // reason: command is a maintainer-authored detect: from the embedded releasenotes corpus, not artifact content — see this function's doc comment.
 	if err == nil {
 		return false, nil
 	}

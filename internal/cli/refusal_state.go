@@ -72,9 +72,16 @@ func (r Refusal) Error() string {
 	return fmt.Sprintf("%s: %s — %s", r.attempted, r.found, r.nextStep)
 }
 
-// Attempted, Found and NextStep expose the three parts individually — a
-// caller that wants to render them on separate lines (or assert on one part
-// in a test) is not forced to parse Error()'s combined string back apart.
+// The three accessors below expose the parts individually, so a caller that
+// renders them on separate lines — or asserts on one part in a test — is not
+// forced to parse Error()'s combined string back apart.
+
+// Attempted returns what the refused operation was trying to do.
 func (r Refusal) Attempted() string { return r.attempted }
-func (r Refusal) Found() string     { return r.found }
-func (r Refusal) NextStep() string  { return r.nextStep }
+
+// Found returns the state the operation actually met.
+func (r Refusal) Found() string { return r.found }
+
+// NextStep returns the action that resolves it, from where the caller stands.
+// It is never empty: NewRefusal refuses to build a Refusal without one.
+func (r Refusal) NextStep() string { return r.nextStep }
