@@ -162,9 +162,19 @@ func decodeSelectors(raw []byte, routes []space.NotificationRoute) ([]Selector, 
 	if err := yaml.Unmarshal(raw, &probe); err != nil {
 		// Malformed YAML at this point would already have failed
 		// space.ParseManifest, which produced `routes` in the first
-		// place — unreachable in practice, but fail closed (no
-		// selectors) rather than guess.
-		return out, nil
+		// place, and Render is the only caller — it hands us the very
+		// manifest that parse produced. So this is unreachable in
+		// practice, and being unreachable is exactly why it is cheap
+		// to REFUSE rather than to swallow: returning `out, nil` here
+		// would hand the caller a full-length slice of zero selectors
+		// that is indistinguishable from a manifest declaring none.
+		// That is the silent yes this phase exists to remove, and the
+		// length-mismatch branch below already refuses its own
+		// structurally identical problem.
+		return nil, fmt.Errorf(
+			"notify render: manifest.Raw does not re-decode as YAML (%w) — refusing to treat an unreadable manifest as one declaring no selectors",
+			err,
+		)
 	}
 	if len(probe.NotificationRoutes) != len(routes) {
 		return nil, fmt.Errorf(

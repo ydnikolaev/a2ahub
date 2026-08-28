@@ -220,8 +220,8 @@ notification_routes:
 	if len(got.State) != 1 || got.State[0] != "published" {
 		t.Fatalf("State = %v, want %v", got.State, want.State)
 	}
-	if got.Direction != "inbound" {
-		t.Fatalf("Direction = %q, want inbound", got.Direction)
+	if got.Direction != want.Direction {
+		t.Fatalf("Direction = %q, want %q", got.Direction, want.Direction)
 	}
 	if len(got.Urgency) != 2 || got.Urgency[0] != "p1" || got.Urgency[1] != "blocking" {
 		t.Fatalf("Urgency = %v, want %v", got.Urgency, want.Urgency)
