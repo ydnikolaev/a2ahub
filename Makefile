@@ -621,11 +621,27 @@ ci-parity-docker: ## The same suite under ubuntu + GNU userland, where every non
 #   needs the network and a configured public remote — no diff may select it.
 #   It is the SITE PUBLISH's own gate, reached by its own target and by
 #   `publish-to-public.sh --site`, never by a commit lane.
-site-check: ## THE SITE GATE — the derived lane over the overlay diff, gitleaks, and the site built inside the overlay. Writes .a2a/site-gate/<sha>.json.
-	@bash scripts/site-check.sh
+#   PRESENCE-GATED, and the guard is not decoration: this script is
+#   PRIVATE_ONLY and the publisher strips it, so `make check` inside a public
+#   projection reaches a declared phase whose script is gone and the lane
+#   derivation's honesty pass REFUSES THE WHOLE LANE rather than that one gate.
+#   Found by `make projection` inside the v0.25.6 ship gate — the first release
+#   cut after this gate was written, and the first time a projection had ever
+#   judged a tree containing it. Same shape and same fix as card-content /
+#   feedback-corpus / skill-citations above.
+site-check: ## THE SITE GATE — the derived lane over the overlay diff, gitleaks, and the site built inside the overlay. Writes .a2a/site-gate/<sha>.json. Private harness gate, presence-gated.
+	@if [ -f scripts/site-check.sh ]; then \
+	  bash scripts/site-check.sh; \
+	else \
+	  echo "site-check: skip — scripts/site-check.sh absent (public checkout)."; \
+	fi
 
-site-check-teeth: ## site-check's own self-tests.
-	@bash scripts/site-check.sh --teeth
+site-check-teeth: ## site-check's own self-tests. Private harness gate, presence-gated.
+	@if [ -f scripts/site-check.sh ]; then \
+	  bash scripts/site-check.sh --teeth; \
+	else \
+	  echo "site-check-teeth: skip — scripts/site-check.sh absent (public checkout)."; \
+	fi
 
 # The gates' own teeth are reachable from a diff, and until 2026-08-12 they
 # were not. check-convention.md said "`make lane` selects it for you"; it did
