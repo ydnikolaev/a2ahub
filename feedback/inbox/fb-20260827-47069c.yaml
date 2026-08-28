@@ -1,60 +1,110 @@
-
 feedback: v1
 id: fb-20260827-47069c
 kind: bug
 severity: major
 title: a no-op version bump publishes the OLD bytes under the NEW number
-summary: |-
-    `contract preflight`/`publish` without `--staging` take the CACHE MIRROR as candidate source. When a producer has staged corrected bytes at the conventional `.a2a/staging/<system>/provides/<slug>/` path, the plan silently carries the PREVIOUS version's bytes and reports success — establishing a new version number over unchanged content. The failure is invisible at every step a caller would check: the command prints `planned <id>@<new-version>`, exits 0, and the plan digest is stable. Nothing says which source it read unless you ask for `--json` and know to look at `candidate_source.kind`. I hit this correcting a doubled path segment a consumer had reported. Had I not compared the plan's artifact digest against my own file by hand, I would have published 1.0.1 carrying the exact defect 1.0.1 exists to fix — and the consumer, whose test pins the literal path, would have stayed green on the old value. `--staging` IS documented in reference/contract-versions.md's example and I missed it; this report is not that the flag is absent. It is that the DEFAULT fails silently and expensively, and that a cheap signal already exists in the plan the tool computes.
+summary: '`contract preflight`/`publish` without `--staging` take the CACHE MIRROR as candidate
+  source. When a producer has staged corrected bytes at the conventional `.a2a/staging/<system>/provides/<slug>/`
+  path, the plan silently carries the PREVIOUS version''s bytes and reports success — establishing
+  a new version number over unchanged content. The failure is invisible at every step a caller
+  would check: the command prints `planned <id>@<new-version>`, exits 0, and the plan digest
+  is stable. Nothing says which source it read unless you ask for `--json` and know to look
+  at `candidate_source.kind`. I hit this correcting a doubled path segment a consumer had
+  reported. Had I not compared the plan''s artifact digest against my own file by hand, I
+  would have published 1.0.1 carrying the exact defect 1.0.1 exists to fix — and the consumer,
+  whose test pins the literal path, would have stayed green on the old value. `--staging`
+  IS documented in reference/contract-versions.md''s example and I missed it; this report
+  is not that the flag is absent. It is that the DEFAULT fails silently and expensively, and
+  that a cheap signal already exists in the plan the tool computes.'
 context:
-    a2a_version: 0.25.4
-    os_arch: darwin/arm64
-    surface: cli
-    command: "a2a contract preflight XC-axon-getvisa-producer-feedback --version 1.0.1"
+  a2a_version: 0.25.4
+  os_arch: darwin/arm64
+  surface: cli
+  command: a2a contract preflight XC-axon-getvisa-producer-feedback --version 1.0.1
 evidence:
-    steps:
-        - "Publish contract XC-<system>-<slug>@1.0.0 normally; it lands in the space."
-        - "Regenerate the contract artifacts locally with a real content change (in my case two OpenAPI path keys losing a doubled version segment)."
-        - "Refresh the staged tree at .a2a/staging/<system>/provides/<slug>/ from the new release — artifacts/openapi.yaml, schema/schema.json, fixtures/**. Verify by hand that the staged bytes differ from 1.0.0."
-        - "Run: a2a contract preflight XC-<system>-<slug> --version 1.0.1"
-        - "Note it prints `planned ...@1.0.1` and a plan digest, exit 0."
-        - "Re-run the SAME preflight after any further staging edit and observe the plan digest is UNCHANGED — the first signal anything is wrong, and only visible if you happen to compare."
-        - "Add --json and read plan.candidate_source.kind: it is the string mirror, and plan.entries[].digest for artifacts/openapi.yaml equals the digest of the PREVIOUS release's file, not the staged one."
-        - "Re-run with --staging .a2a/staging/<system>/provides/<slug> and the same command now reports candidate_source.kind staging, the staged digest, and three artifact mutations instead of one."
-    expected: "Either the staged tree at the conventional path is used, or the command refuses and makes me name the source. A non-first publish that establishes a new version while mutating no normative artifact should at minimum warn."
-    actual: "The mirror is used silently. The plan carries the previous version's artifact bytes, reports `planned @1.0.1`, exits 0, and would have published a new version number over unchanged, known-defective content."
-proposal: |-
-    Two, and the second is the one I would ship.
+  steps:
+  - Publish contract XC-<system>-<slug>@1.0.0 normally; it lands in the space.
+  - Regenerate the contract artifacts locally with a real content change (in my case two OpenAPI
+    path keys losing a doubled version segment).
+  - Refresh the staged tree at .a2a/staging/<system>/provides/<slug>/ from the new release
+    — artifacts/openapi.yaml, schema/schema.json, fixtures/**. Verify by hand that the staged
+    bytes differ from 1.0.0.
+  - 'Run: a2a contract preflight XC-<system>-<slug> --version 1.0.1'
+  - Note it prints `planned ...@1.0.1` and a plan digest, exit 0.
+  - Re-run the SAME preflight after any further staging edit and observe the plan digest is
+    UNCHANGED — the first signal anything is wrong, and only visible if you happen to compare.
+  - 'Add --json and read plan.candidate_source.kind: it is the string mirror, and plan.entries[].digest
+    for artifacts/openapi.yaml equals the digest of the PREVIOUS release''s file, not the
+    staged one.'
+  - Re-run with --staging .a2a/staging/<system>/provides/<slug> and the same command now reports
+    candidate_source.kind staging, the staged digest, and three artifact mutations instead
+    of one.
+  expected: Either the staged tree at the conventional path is used, or the command refuses
+    and makes me name the source. A non-first publish that establishes a new version while
+    mutating no normative artifact should at minimum warn.
+  actual: The mirror is used silently. The plan carries the previous version's artifact bytes,
+    reports `planned @1.0.1`, exits 0, and would have published a new version number over
+    unchanged, known-defective content.
+proposal: 'Two, and the second is the one I would ship.
 
-    1. Auto-detect: if `.a2a/staging/<system>/provides/<slug>/` exists for the contract being
-    published, use it — or refuse and make the caller name the source. The path is derivable
-    from the XC id, and the contract-change loop already tells authors to edit exactly there,
-    so a staged tree is a stated intent, not an accident to ignore.
 
-    2. WARN OR REFUSE ON A NO-OP VERSION BUMP — better, because it catches the class rather
-    than one cause. The planner already computes `mutations`. When a non-first publish
-    establishes a version whose mutations touch no normative artifact (mine was `[write
-    contract.md]` alone), that is almost never intended: a version marks a change in what
-    consumers receive, so a bump changing nothing they receive is either a mistake or
-    something the caller should say out loud (`--allow-empty-bump`). It also catches
-    wrong-directory staging, a stale generator, and a forgotten regeneration.
+  1. Auto-detect: if `.a2a/staging/<system>/provides/<slug>/` exists for the contract being
 
-    Cheapest form if refusing is too strong: print the candidate source and mutation count on
-    every preflight/publish, not only under `--json`. One line — `candidate: mirror (3
-    artifacts unchanged)` — would have stopped me at the first command.
+  published, use it — or refuse and make the caller name the source. The path is derivable
 
+  from the XC id, and the contract-change loop already tells authors to edit exactly there,
+
+  so a staged tree is a stated intent, not an accident to ignore.
+
+
+  2. WARN OR REFUSE ON A NO-OP VERSION BUMP — better, because it catches the class rather
+
+  than one cause. The planner already computes `mutations`. When a non-first publish
+
+  establishes a version whose mutations touch no normative artifact (mine was `[write
+
+  contract.md]` alone), that is almost never intended: a version marks a change in what
+
+  consumers receive, so a bump changing nothing they receive is either a mistake or
+
+  something the caller should say out loud (`--allow-empty-bump`). It also catches
+
+  wrong-directory staging, a stale generator, and a forgotten regeneration.
+
+
+  Cheapest form if refusing is too strong: print the candidate source and mutation count on
+
+  every preflight/publish, not only under `--json`. One line — `candidate: mirror (3
+
+  artifacts unchanged)` — would have stopped me at the first command.'
 checks:
-    docs_consulted: true
-    grounded_in_real_work: true
-    not_space_specific: true
-    no_sensitive_content: true
-    duplicates_checked: true
-resolution: |-
-    Routed to answers-that-hold-2026-08 P2, which owns it: preflight/publish taking
-    the cache mirror as candidate source when no --staging is given. The spec's
-    criteria 1 and 2 are this record's two halves — the refusal naming the staging
-    path it found, on both verbs, before anything irreversible. Left `new` until the
-    spec existed, because an `accepted` verdict requires a ledger row with `refs:`,
-    and CHECK-C only joins a ref shaped docs/features/<section>/<slug>/specs/<file>.
-    Pointing it at docs/backlog.md would have made the staleness gate silent.
-status: accepted
+  docs_consulted: true
+  grounded_in_real_work: true
+  not_space_specific: true
+  no_sensitive_content: true
+  duplicates_checked: true
+resolution: 'Routed to answers-that-hold-2026-08 P2, which owns it: preflight/publish taking
+
+  the cache mirror as candidate source when no --staging is given. The spec''s
+
+  criteria 1 and 2 are this record''s two halves — the refusal naming the staging
+
+  path it found, on both verbs, before anything irreversible. Left `new` until the
+
+  spec existed, because an `accepted` verdict requires a ledger row with `refs:`,
+
+  and CHECK-C only joins a ref shaped docs/features/<section>/<slug>/specs/<file>.
+
+  Pointing it at docs/backlog.md would have made the staleness gate silent.
+
+
+  SHIPPED 2026-08-28 by answers-that-hold-2026-08 P2 (27529301, 939c9c92), taking this record''s
+  proposal 2 because it catches the class rather than one cause: a non-first bump whose mutations
+  touch no normative artifact is REFUSED, naming the count, with --allow-empty-bump as the
+  deliberate escape on both CLI and MCP, preflight and publish. Proposal 1''s cause is closed
+  too — a staging tree present with no --staging is refused, naming the path found and both
+  remedies, rather than silently taking the mirror. ONE OBSERVATION IN THIS RECORD IS NOT
+  CLOSED AND IS NOT THIS PHASE''S: that nothing says which source was read unless you ask
+  for --json and know to look at candidate_source.kind. That is P3''s criterion 3 in the same
+  epic, in P3''s own acceptance table.'
+status: shipped

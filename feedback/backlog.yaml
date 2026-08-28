@@ -23,7 +23,7 @@ items:
       kind: bug
       severity: major
       title: verify-export against a staged candidate can never match its published version
-      verdict: accepted
+      verdict: shipped
       route: phase
       refs:
         - docs/features/active/answers-that-hold-2026-08/specs/02-published-bytes-a-producer-can-hold.md
@@ -50,7 +50,7 @@ items:
       kind: bug
       severity: major
       title: a no-op version bump publishes the OLD bytes under the NEW number
-      verdict: accepted
+      verdict: shipped
       route: phase
       refs:
         - docs/features/active/answers-that-hold-2026-08/specs/02-published-bytes-a-producer-can-hold.md
