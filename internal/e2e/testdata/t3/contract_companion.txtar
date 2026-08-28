@@ -61,6 +61,59 @@ exec a2a validate --all
 stdout '"valid": true'
 ! stdout 'POL-013'
 
+# 4. no-silent-yes-2026-08 P5, ACs 5 and 7 in one stanza, through the BUILT
+#    binary because both claims are about what the shipped schema accepts.
+#
+#    `to: all` on a contract: legal, and D6 moved the PLAN to say so rather
+#    than moving the schema to forbid it (05-schemas.md, 03-domain.md). A
+#    contract is addressed to the SPACE; the next consumer to join is equally
+#    entitled, and `to: [axon]` implied a bilateral scope the artifact does
+#    not have. An external consumer filed a breaking-change request in July
+#    2026 for exactly this, because it shipped and nothing said so.
+#
+#    And all three new `x_` fields at once, well-formed, plus an `x_` key
+#    NOTHING declares. The undeclared key is the load-bearing one: it is what
+#    a binary built BEFORE this phase does with `x_identity`, so its passing
+#    is the evidence that no `min_binary_version` move is owed.
+mkdir .a2a/staging/axon/provides/broadcast-feed/schema
+cp broadcast.md .a2a/staging/XC-axon-broadcast-feed.md
+cp schema.json .a2a/staging/axon/provides/broadcast-feed/schema/broadcast-feed.schema.json
+exec a2a validate --all
+stdout '"valid": true'
+
+-- broadcast.md --
+---
+schema: envelope/v2
+id: XC-axon-broadcast-feed
+type: contract
+title: Broadcast feed
+space: fixture-space
+from: axon
+to: all
+thread: thread:axon-20260828-b7q2
+actor: {kind: agent, name: bot, model: claude-fable-5}
+created: 2026-08-28T10:00:00Z
+category: data-feed
+priority: p3
+blocking: false
+classification: internal
+version: 1.0.0
+schema_format: json-schema-2020-12
+compat_policy: default
+x_identity:
+  keys: [url]
+  on_redelivery: upsert
+x_guarantees: [deterministic_keys]
+x_schema_location: provides/broadcast-feed/schema/broadcast-feed.schema.json
+x_future_nothing_declares: {anything: at all}
+artifacts:
+  - {path: schema/broadcast-feed.schema.json, role: schema, normative: true, media_type: application/schema+json}
+---
+# Broadcast feed
+
+A contract addressed to the whole space, carrying all three P5 fields plus an
+`x_` key nothing declares.
+
 -- contract.md --
 ---
 schema: envelope/v2
