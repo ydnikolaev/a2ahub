@@ -1147,18 +1147,26 @@ func resolveLifecycleDepsWithPolicy(ctx context.Context, p paths, args []string,
 		return lifecycleDeps{}, failf(stderr, "a2a: %v", err)
 	}
 	mirrorDir := space.ResolveMirrorLocation(p.projectRoot, ref, machine)
-	// baseBranch is derived ONLY when this invocation just fetched the
-	// mirror (syncMirror), and left "" otherwise — never guessed from a
-	// mirror that might not even exist locally yet. Of resolveLifecycleDeps
-	// WithPolicy's five call sites, exactly one hands syncMirror=false while
-	// needsCredential=true (resolveContractDeps' "publish" action): P6
-	// publish builds its OWN space.SubmitRequest directly
-	// (contract_p6_wiring.go's publicationRequest, never reading
-	// deps.hostCfg.BaseBranch at all), so leaving baseBranch unresolved
-	// there costs nothing. Every other write path (resolveLifecycleDeps
-	// itself, contract deprecate/retire/adopt, data deliver/verify,
-	// attach) hands syncMirror=true, so the derivation below always runs
-	// for them.
+	// baseBranch is derived from the mirror's OWN refs/remotes/origin/HEAD,
+	// whether or not this invocation just fetched it.
+	//
+	// It used to be derived only under syncMirror, on a stated argument that
+	// the one syncMirror=false write path (contract publish) builds its own
+	// space.SubmitRequest and never reads deps.hostCfg.BaseBranch. That claim
+	// was TRUE of publish and FALSE of the policy: `contract activate` also
+	// arrives with syncMirror=false and DOES reach the submit path, so it met
+	// cmd_submit.go's own "HostCfg.BaseBranch is empty" refusal — the guard
+	// working, on a caller the comment had reasoned away. Found by
+	// TestT3ContractActivateThroughRealBinary, not by re-reading the comment.
+	//
+	// Deriving unconditionally is CHEAP and needs no network: ResolveBaseBranch
+	// is a `git symbolic-ref` against the local mirror, which any earlier sync
+	// already populated. A mirror that does not exist yet simply fails to
+	// resolve, and that is left EMPTY rather than fatal here — a read-only verb
+	// must not be refused for a fact it never uses, and every write path has its
+	// own refusal one layer down (cli's errMissingHostBaseBranch, and the
+	// funnel's own ErrMissingBaseBranch below that). Refusing here would move a
+	// write-time question into every read.
 	var baseBranch string
 	if syncMirror {
 		if err := space.CloneOrFetch(ctx, mirrorDir, ref.RepoURL, readCredential(ctx, ref.ID, machine)); err != nil {
@@ -1168,6 +1176,8 @@ func resolveLifecycleDepsWithPolicy(ctx context.Context, p paths, args []string,
 		if err != nil {
 			return lifecycleDeps{}, failf(stderr, "a2a: space %q: %v", ref.ID, err)
 		}
+		baseBranch = resolved
+	} else if resolved, err := space.ResolveBaseBranch(ctx, mirrorDir); err == nil {
 		baseBranch = resolved
 	}
 	manifest, err := loadManifest(mirrorDir)
