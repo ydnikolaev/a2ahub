@@ -54,6 +54,10 @@ compat_policy: default
 #   x_guarantees at all reads as `undeclared`, never as "no guarantees made" —
 #   that is a declared EMPTY array, a distinct, different state.
 # x_schema_location: <repo-relative path, e.g. provides/<slug>/schema/main.schema.json>
+#   Unlike x_identity and x_guarantees above, this one is a plain string, so
+#   `a2a new contract --field x_schema_location=<path>` sets it at authoring time —
+#   the other two are an object and an array, which the --field append pass cannot
+#   open, so they are hand-edited. Measured by the reachability gate, not assumed.
 #   OPTIONAL — where the machine-checkable schema for this contract's payload
 #   lives, so automation does not have to parse a sentence to find it.
 #   Commented and deliberate: absence reads as `undeclared`, not "the schema

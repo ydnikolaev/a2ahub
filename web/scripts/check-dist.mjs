@@ -224,7 +224,17 @@ const llmsFull = readFileSync(join(dist, 'llms-full.txt'), 'utf8');
 // payload shipped into every page of the site (the newest release's change
 // list, which no consumer reads) and 32 KiB more inside the demo. Those were
 // deleted, not budgeted for. That is what this tripwire is for, and it worked.
-if (Buffer.byteLength(llmsFull) > 700_000) failures.push('llms-full.txt: raw corpus exceeds 700 KB');
+// 750 KB since 2026-08-28, and the tripwire's own question was asked before
+// the number moved: the corpus landed at 700,549 bytes — 549 over, against
+// 1,657 raw bytes of prose added to skill/ in this release. Nothing is
+// embedded twice; the overage IS the new text, and it is text an agent needs:
+// v0.25.6 makes an unknown MCP field a refusal instead of a silent drop, and
+// that change was documented on no page at all until this release. 750 KB is
+// ~7% headroom, which is thinner than the 20% the 600 KB raise bought — the
+// corpus grows with every published release whether or not a word is written,
+// so the next reader of this line should expect to be here again and should
+// ask the duplication question again rather than assuming this answer.
+if (Buffer.byteLength(llmsFull) > 750_000) failures.push('llms-full.txt: raw corpus exceeds 750 KB');
 for (const marker of ['## Bundle provenance', 'Source revision:', 'Source snapshot timestamp:', '## Table of contents', 'Roadmap — non-committed work is labelled']) {
   if (!llmsFull.includes(marker)) failures.push(`llms-full.txt: missing provenance marker ${marker}`);
 }

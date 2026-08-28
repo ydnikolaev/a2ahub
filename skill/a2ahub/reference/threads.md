@@ -324,11 +324,20 @@ its shape.
 
 **What actually trips it, in practice:**
 
-- **A template placeholder left in place.** The authoring templates ship
-  `needed_by: <YYYY-MM-DD>` as a literal, hand-editable placeholder — a
-  string, not a date. Forgetting to replace it is the single most common way
-  to meet this refusal; `<YYYY-MM-DD>` fails to parse as a date for the same
-  reason `banana` would.
+- **A value that reads as a date and is not one** — `needed_by: "next tuesday"`
+  is the canonical case. It is a string in the shape of an intention, and
+  before `SCH-012` it validated clean.
+
+- **NOT a template placeholder.** This is the trap worth stating explicitly,
+  because the obvious guess is wrong: `needed_by: <YYYY-MM-DD>` — the literal
+  placeholder the authoring templates ship — is **exempt from `SCH-012` at
+  every tier**, deliberately. Any value matching `<...>` has its format
+  violation dropped before you ever see it, so an unedited draft does not
+  drown in refusals about fields you have not filled in yet. A placeholder
+  left in place is refused by **`POL-010` instead, and only at submit** —
+  which means `a2a validate` on a draft will NOT catch it. Verified against
+  the binary rather than read off the schema: `<YYYY-MM-DD>` produces no
+  violation, `next tuesday` and `2026-02-30` both produce a `format` one.
 - **A calendar date that does not exist** — `2026-02-30`, a 13th month, an
   hour past 23. The shape (`YYYY-MM-DD`) is right; the value it names is not
   a day that ever happens.
