@@ -108,6 +108,20 @@ PUBLIC_VALIDATOR_FILES=(
   # in every public checkout, which is the class check 4 exists to refuse.
   scripts/check-notify-selector-coverage.sh
   scripts/check-mcp-schema-decodable.sh
+  # answers-that-hold-2026-08 P4/P13. PUBLIC for the same reason the two above
+  # are: their inputs are SHIPPED code (internal/cli/**, releasenotes/**), the
+  # Makefile that names them in REPO_GATES is itself public, and a public
+  # checkout's own `make check` therefore has to be able to run them. A gate
+  # named by a public Makefile whose script is stripped is the v0.19.9 defect
+  # this list exists to prevent.
+  #
+  # Their BUDGET files ship with them, and that is not a detail: each gate
+  # READS its budget, so a public gate with a stripped budget is P14 check 5
+  # exactly — a shipped file naming a path the publisher removes.
+  scripts/check-refusal-ratchet.sh
+  scripts/lib/refusal-ratchet-budget.txt
+  scripts/check-release-note-detect.sh
+  scripts/lib/release-note-detect-budget.txt
   # ci-changes.sh is PUBLIC because `.github/workflows/ci.yml` calls it, and a
   # workflow that is published without the script it invokes is exactly the
   # v0.19.9 defect this list exists to prevent (see publish-to-public.sh's own
