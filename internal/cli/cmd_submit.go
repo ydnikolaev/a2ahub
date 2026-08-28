@@ -120,7 +120,7 @@ func (c *ValidateCommand) Name() string { return "validate" }
 
 // Synopsis implements cli.Command.
 func (c *ValidateCommand) Synopsis() string {
-	return "validate a draft (V1), JSON output: validate <path> | validate --all"
+	return "validate a draft (V1), JSON output: validate <path> | validate --all | validate --ci [--space <id>] (--ci needs a space manifest at cwd: from a participant project, run it inside the connected space's synced mirror, or name the space with --space)"
 }
 
 // Run implements cli.Command. Exit codes: 2 = usage; 1 = one or more
@@ -135,6 +135,7 @@ func (c *ValidateCommand) Run(ctx context.Context, args []string, stdio IO) int 
 	mode := fs.String("mode", "", "CI mode scope: v3-pr | v3-full-repo")
 	base := fs.String("base", "", "CI mode base sha for the v3-pr diff (git diff <base>...HEAD)")
 	author := fs.String("author", "", "CI mode PR author github login for diff-authz (else GITHUB_ACTOR)")
+	spaceID := fs.String("space", "", "CI mode: run against this connected space's synced mirror instead of the cwd")
 	// Wave K fix (live run 6, "thirteen verbs refuse a flag written after
 	// their positional argument"): parseArgsAnyOrder (cli.go), not a bare
 	// fs.Parse(args) — `validate <path> --all` used to leave --all unset
@@ -154,7 +155,50 @@ func (c *ValidateCommand) Run(ctx context.Context, args []string, stdio IO) int 
 		if actor == "" {
 			actor = c.CIGitHubActor
 		}
-		return runValidateCI(ctx, c.engine, ".", gitDiffNameOnly, *mode, *base, actor, stdio)
+		// AC-2: `--space <id>` removes the `cd` entirely. The mirror list
+		// comes from participantConnectedSpaceMirrors, which already resolves
+		// the machine config best-effort — the same one the stateless refusal
+		// below names — so naming a space needs no new wiring, only the flag.
+		root := "."
+		if *spaceID != "" {
+			mirrors := participantConnectedSpaceMirrors(".")
+			found := ""
+			known := make([]string, 0, len(mirrors))
+			for _, m := range mirrors {
+				known = append(known, m.ID)
+				if m.ID == *spaceID {
+					found = m.MirrorDir
+				}
+			}
+			if found == "" {
+				// AC-3: an unknown id names the ids that ARE connected, so the
+				// next step is satisfiable from where the caller stands rather
+				// than being "check your spelling".
+				connected := "no space is connected to this project"
+				if len(known) > 0 {
+					connected = "connected: " + strings.Join(known, ", ")
+				}
+				refusal, rerr := NewRefusal(
+					fmt.Sprintf("validate --ci --space %s", *spaceID),
+					fmt.Sprintf("%s is not a connected space of this project (%s)", *spaceID, connected),
+					"run `a2a connect` to add it, or name one of the ids above",
+				)
+				if rerr != nil {
+					// Unreachable: the next step above is a literal, and
+					// NewRefusal refuses only an EMPTY one. Named as a bug
+					// rather than re-printed with %v — the constructor has
+					// exactly one failure cause and restating it tells the
+					// reader nothing the sentence does not. Same shape
+					// cmd_validate_ci.go:118 and cmd_adapt.go:397 already use.
+					_, _ = fmt.Fprintln(stdio.Stderr, "validate: internal error building a refusal (empty next step) — this is a bug in cmd_submit.go, file one")
+					return 2
+				}
+				_, _ = fmt.Fprintln(stdio.Stderr, refusal)
+				return 2
+			}
+			root = found
+		}
+		return runValidateCI(ctx, c.engine, root, gitDiffNameOnly, *mode, *base, actor, stdio)
 	}
 
 	var paths []string

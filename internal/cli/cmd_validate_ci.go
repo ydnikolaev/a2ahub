@@ -102,7 +102,30 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 
 	raw, err := os.ReadFile(filepath.Join(root, "space.yaml"))
 	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "validate --ci: cannot read space.yaml: %v\n", err)
+		// P4 (answers-that-hold-2026-08, spec 04 §T1/AC-1): the one site this
+		// phase migrates through NewRefusal. Before this, "cannot read
+		// space.yaml: <os error>" read exactly like "this command does not
+		// exist" (spec 04 US-1) — nothing told a participant-repo caller
+		// where it stood or what to run instead. The three parts below are
+		// the precondition, the caller's own state, and the synced mirror
+		// path for EVERY connected space (spec 04 §6: "a repo with two
+		// connected spaces must name both").
+		refusal, rerr := NewRefusal(
+			fmt.Sprintf("validate --ci: read this checkout's own space manifest at %s", filepath.Join(root, "space.yaml")),
+			fmt.Sprintf("this cwd (%s) is a participant project, not a space checkout — %v", root, err),
+			validateCINoManifestNextStep(participantConnectedSpaceMirrors(root)),
+		)
+		if rerr != nil {
+			// Unreachable in practice: validateCINoManifestNextStep never
+			// returns an empty string (see its own doc comment). Kept as a
+			// structural safety net, not a trusted-forever assumption — and
+			// deliberately printing a fixed message rather than rerr itself,
+			// so this branch is never mistaken for a new raw err-to-stderr
+			// site by scripts/check-refusal-ratchet.sh's own sink scan.
+			_, _ = fmt.Fprintln(stdio.Stderr, "validate --ci: internal error building the missing-manifest refusal (empty next step) — this is a bug in cmd_validate_ci.go, file one")
+			return 1
+		}
+		_, _ = fmt.Fprintln(stdio.Stderr, refusal)
 		return 1
 	}
 	manifest, err := space.ParseManifest(raw)
@@ -527,6 +550,107 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 		return 1
 	}
 	return 0
+}
+
+// ---------------------------------------------------------------------
+// P4 (answers-that-hold-2026-08, spec 04): the missing-manifest refusal's
+// own "what to run instead" half — every connected space's synced mirror,
+// read from THIS checkout's own .a2a/config.yaml (space.ProjectConfig), the
+// same file `a2a doctor`/`a2a sync` already read (cmd_doctor.go's own
+// projectConfigPath field). Deliberately self-contained: it reads the
+// FIXED, documented convention paths (space.ProjectConfig at
+// "<root>/.a2a/config.yaml", space.MachineConfig at
+// "~/.config/a2a/config.yaml" — cmd/a2a/wire.go's own `paths` struct
+// literal, not a second convention) rather than adding injected path
+// fields to ValidateCommand, which would require wiring changes in
+// cmd_submit.go and cmd/a2a/wire.go this phase's allowlist does not grant
+// (reported as a deviation: AC-2's `--space <id>` CLI flag needs exactly
+// that wiring and is UNMET by this phase for the same reason).
+// ---------------------------------------------------------------------
+
+// connectedSpaceMirror names one connected space's own synced mirror
+// checkout, resolved the same way space.ResolveMirrorLocation already
+// resolves it for `a2a sync`/`a2a doctor`.
+type connectedSpaceMirror struct {
+	ID        string
+	MirrorDir string
+}
+
+// participantConnectedSpaceMirrors reads root's own .a2a/config.yaml (a
+// participant PROJECT's connected-space list — never a space checkout's
+// own concept) and resolves every entry's synced mirror directory. Returns
+// nil when the file is absent, unparseable, or names no space — all three
+// mean "nothing to redirect to", handled by validateCINoManifestNextStep's
+// own fallback text, never a second error path here.
+func participantConnectedSpaceMirrors(root string) []connectedSpaceMirror {
+	cfg, err := space.LoadProjectConfig(filepath.Join(root, ".a2a", "config.yaml"))
+	if err != nil || len(cfg.Spaces) == 0 {
+		return nil
+	}
+	machine := loadMachineConfigBestEffort()
+	mirrors := make([]connectedSpaceMirror, 0, len(cfg.Spaces))
+	for _, ref := range cfg.Spaces {
+		mirrors = append(mirrors, connectedSpaceMirror{
+			ID:        ref.ID,
+			MirrorDir: space.ResolveMirrorLocation(root, ref, machine),
+		})
+	}
+	return mirrors
+}
+
+// loadMachineConfigBestEffort reads ~/.config/a2a/config.yaml — the exact
+// path cmd/a2a/wire.go's own `paths{}` literal builds
+// (filepath.Join(home, ".config", "a2a", "config.yaml")), not a second
+// convention. Best-effort: a machine with no machine config (or one this
+// process cannot read) still gets a correct project-relative mirror path
+// from space.ResolveMirrorLocation's own zero-value fallback — the same
+// fallback a real connect/sync without a configured mirror_root already
+// relies on.
+func loadMachineConfigBestEffort() space.MachineConfig {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return space.MachineConfig{}
+	}
+	machine, err := space.LoadMachineConfig(filepath.Join(home, ".config", "a2a", "config.yaml"))
+	if err != nil {
+		return space.MachineConfig{}
+	}
+	return machine
+}
+
+// validateCINoManifestNextStep is the missing-manifest refusal's third part.
+// It NEVER returns an empty string — NewRefusal's own construction check
+// depends on that — so the zero-connected-spaces case still names a
+// concrete next action (connect one) rather than a bare "no spaces found".
+func validateCINoManifestNextStep(mirrors []connectedSpaceMirror) string {
+	if len(mirrors) == 0 {
+		return "this checkout has no connected space to redirect to (no .a2a/config.yaml, or it names none) — " +
+			"run `a2a init <space-repo-url>` to connect one, then re-run `a2a validate --ci` inside that space's own synced mirror"
+	}
+	parts := make([]string, 0, len(mirrors))
+	for _, m := range mirrors {
+		parts = append(parts, fmt.Sprintf("space %q: run `a2a validate --ci` inside %s", m.ID, m.MirrorDir))
+	}
+	return "run `a2a validate --ci` inside the connected space's own synced mirror instead of this participant checkout: " + strings.Join(parts, "; ")
+}
+
+// resolveConnectedSpace resolves id against refs (a participant project's
+// own .a2a/config.yaml Spaces list — space.ProjectConfig.Spaces). An
+// unknown id refuses NAMING THE IDS THAT ARE CONNECTED (spec 04 AC-3),
+// never a bare "not found": an agent choosing between spaces needs the
+// legal set in the SAME message that told it its choice was wrong.
+func resolveConnectedSpace(id string, refs []space.Ref) (space.Ref, error) {
+	var known []string
+	for _, ref := range refs {
+		if ref.ID == id {
+			return ref, nil
+		}
+		known = append(known, ref.ID)
+	}
+	if len(known) == 0 {
+		return space.Ref{}, fmt.Errorf("--space %q: this checkout has no connected space at all (empty .a2a/config.yaml Spaces) — run `a2a init <space-repo-url>` first", id)
+	}
+	return space.Ref{}, fmt.Errorf("--space %q: not a connected space here — the connected space(s) are: %s", id, strings.Join(known, ", "))
 }
 
 // validateCIArtifact runs the V2 engine over one changed artifact,

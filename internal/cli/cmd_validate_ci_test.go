@@ -1503,6 +1503,141 @@ func TestValidateCI_MissingManifest(t *testing.T) {
 	}
 }
 
+// TestValidateCI_MissingManifestRefusalNamesConnectedSpaceMirrors is spec 04
+// AC-1: from a participant repo with no space.yaml, the refusal names the
+// precondition (a manifest is required), the caller's own state (this cwd
+// is a participant project), and the synced mirror path for EVERY
+// connected space — "a repo with two connected spaces must name both"
+// (spec 04 §6).
+func TestValidateCI_MissingManifestRefusalNamesConnectedSpaceMirrors(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	root := t.TempDir() // no space.yaml — a participant project checkout
+	if err := os.MkdirAll(filepath.Join(root, ".a2a"), 0o755); err != nil {
+		t.Fatalf("mkdir .a2a: %v", err)
+	}
+	projectConfig := "system: axon\nspaces:\n  - id: getvisa\n    repo_url: https://example.invalid/getvisa.git\n  - id: seomatrix\n    repo_url: https://example.invalid/seomatrix.git\n"
+	if err := os.WriteFile(filepath.Join(root, ".a2a", "config.yaml"), []byte(projectConfig), 0o644); err != nil {
+		t.Fatalf("write .a2a/config.yaml: %v", err)
+	}
+
+	var stderr bytes.Buffer
+	code := runValidateCI(context.Background(), engine, root, fakeGit(), "v3-full-repo", "", "", IO{Stdout: &bytes.Buffer{}, Stderr: &stderr})
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1 (missing manifest); stderr=%s", code, stderr.String())
+	}
+	got := stderr.String()
+
+	// The precondition + the caller's own state.
+	for _, want := range []string{"space.yaml", "participant project", root} {
+		if !strings.Contains(got, want) {
+			t.Errorf("refusal %q does not name %q", got, want)
+		}
+	}
+	// Both connected spaces, each with its own synced mirror path.
+	wantGetvisaMirror := filepath.Join(root, ".a2a", "cache", "mirrors", "getvisa")
+	wantSeomatrixMirror := filepath.Join(root, ".a2a", "cache", "mirrors", "seomatrix")
+	for _, want := range []string{"getvisa", wantGetvisaMirror, "seomatrix", wantSeomatrixMirror} {
+		if !strings.Contains(got, want) {
+			t.Errorf("refusal %q does not name %q (two connected spaces must both be named)", got, want)
+		}
+	}
+}
+
+// TestValidateCI_MissingManifestRefusalNoConnectedSpaceStillNamesNextStep
+// covers the zero-connected-spaces edge: the refusal still names a next
+// step (NewRefusal refuses an empty one at construction) even when there
+// is no mirror to redirect to.
+func TestValidateCI_MissingManifestRefusalNoConnectedSpaceStillNamesNextStep(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	root := t.TempDir() // no space.yaml, no .a2a/config.yaml at all
+
+	var stderr bytes.Buffer
+	code := runValidateCI(context.Background(), engine, root, fakeGit(), "v3-full-repo", "", "", IO{Stdout: &bytes.Buffer{}, Stderr: &stderr})
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1 (missing manifest); stderr=%s", code, stderr.String())
+	}
+	got := stderr.String()
+	if !strings.Contains(got, "a2a init") {
+		t.Errorf("refusal %q does not name a next step for the zero-connected-space case", got)
+	}
+	if strings.TrimSpace(got) == "" {
+		t.Fatal("refusal must not be empty")
+	}
+}
+
+// TestResolveConnectedSpace is spec 04 AC-3: "--space with an unknown id
+// refuses, naming the ids that ARE connected" — a table test over the
+// resolution helper, not an e2e (spec 04's own instruction).
+func TestResolveConnectedSpace(t *testing.T) {
+	t.Parallel()
+	twoSpaces := []space.Ref{{ID: "getvisa"}, {ID: "seomatrix"}}
+
+	cases := []struct {
+		name       string
+		id         string
+		refs       []space.Ref
+		wantFound  bool
+		wantNames  []string // substrings the returned error must contain
+		wantAbsent []string // substrings the returned error must NOT contain
+	}{
+		{
+			name:      "known id resolves with no error",
+			id:        "getvisa",
+			refs:      twoSpaces,
+			wantFound: true,
+		},
+		{
+			name:      "unknown id names both connected ids",
+			id:        "nope",
+			refs:      twoSpaces,
+			wantNames: []string{"nope", "getvisa", "seomatrix"},
+		},
+		{
+			name:      "empty connected-space list names none, points at init",
+			id:        "getvisa",
+			refs:      nil,
+			wantNames: []string{"getvisa", "a2a init"},
+		},
+		{
+			name:       "unknown id among one connected space names only that one",
+			id:         "nope",
+			refs:       []space.Ref{{ID: "getvisa"}},
+			wantNames:  []string{"nope", "getvisa"},
+			wantAbsent: []string{"seomatrix"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ref, err := resolveConnectedSpace(tc.id, tc.refs)
+			if tc.wantFound {
+				if err != nil {
+					t.Fatalf("resolveConnectedSpace(%q, %v) = %v, want nil error", tc.id, tc.refs, err)
+				}
+				if ref.ID != tc.id {
+					t.Fatalf("resolveConnectedSpace(%q, %v).ID = %q, want %q", tc.id, tc.refs, ref.ID, tc.id)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("resolveConnectedSpace(%q, %v) = nil error, want a refusal naming the connected ids", tc.id, tc.refs)
+			}
+			for _, want := range tc.wantNames {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("resolveConnectedSpace(%q, %v) error %q does not name %q", tc.id, tc.refs, err.Error(), want)
+				}
+			}
+			for _, absent := range tc.wantAbsent {
+				if strings.Contains(err.Error(), absent) {
+					t.Errorf("resolveConnectedSpace(%q, %v) error %q wrongly names %q", tc.id, tc.refs, err.Error(), absent)
+				}
+			}
+		})
+	}
+}
+
 // TestValidateCI_ThroughRun exercises the full flag-parse + delegation
 // path: `validate --ci --mode=v3-full-repo` reaching runValidateCI with
 // root = cwd. Not parallel (t.Chdir changes process-global cwd).
