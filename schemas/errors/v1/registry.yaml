@@ -1332,3 +1332,57 @@ entries:
       mutation evidence in internal/space/mirror_test.go and
       internal/mcp/wire_test.go; what is missing is conformance-tier coverage,
       and this row says which kind of missing it is.
+  - code: REF-027
+    class: referential
+    emitted_by: internal/space
+    title: A document naming a parent is submitted with no parent transition
+    applies_to: >-
+      internal/space's write funnel (funnel.go's
+      checkResponseParentTransitionPossession, the SAME seat as REF-024's own
+      possession checks — submitPreparedRequest, before any commit/push git
+      action), so BOTH write surfaces inherit it through funnel.Submit. Fires
+      when a document about to be committed decodes to a `type` whose OWN
+      envelope schema (schemas/envelope/v1|v2/<type>.schema.json's own
+      top-level `required` array — read directly, never a hardcoded kind
+      list, answers-that-hold-2026-08 spec 05 §5/§8 AC-4) names `parent` as
+      required, and no event in the SAME write batch names that document's
+      declared parent as its own `subject`. Today this is `response` alone
+      (schemas/envelope/v1/response.schema.json:21,
+      envelope/v2/response.schema.json); a kind that gains `parent` in its
+      own schema's `required` array is covered the moment that schema ships,
+      with no Go change. `a2a respond` always authors the parent's own
+      `respond` event in the same write as the response it scaffolds and
+      never trips this; `a2a submit` of a lone response draft does — the
+      exact defect fb-20260827-e73c7f reported: today's binary files such a
+      draft and moves nothing on the parent, leaving the receiving agent with
+      no legal next move (US-2).
+    severity: reject
+    mode_scope: v3-pr
+    mode_scope_reason: >-
+      ADR-011 D3. This is a WRITE-TIME funnel refusal about the batch about
+      to be committed; a merged write is proof a parent transition already
+      accompanied it (the write could not have reached origin/main
+      otherwise), so a full-repo audit has nothing left to resolve and could
+      only manufacture a failure against a commit that plainly succeeded.
+    prose_exempt: >-
+      NOT a pre-D4 gap — this code is minted 2026-08-28, after ADR-011 D4.
+      skill/** is off answers-that-hold-2026-08/P5's own allowlist (the phase
+      that minted this code), so its own implementer cannot add the prose
+      obligation asks for. Recorded here so the gap is counted rather than
+      silently closed: the lead adds prose naming REF-027 to
+      skill/a2ahub/troubleshooting.md and
+      skill/a2ahub/reference/authoring/response.md (both already carry
+      REF-024, this code's own neighbour at the same seat), and deletes this
+      `prose_exempt` line in the SAME commit.
+    path_exempt: >-
+      DRIVABLE BUT NOT YET DRIVEN, the same class as REF-026's own waiver
+      three rows up: no structural block, no declared conformance path yet.
+      internal/livee2e is off answers-that-hold-2026-08/P5's own allowlist —
+      the fixture is a plain `a2a submit` of a response draft naming a parent
+      with no accompanying respond event, buildable with today's harness. The
+      behaviour is proven at unit tier (internal/space/parent_guard_test.go,
+      including a fixture-schema table test proving the derivation is
+      generic, AC-4) and at CLI tier
+      (internal/cli/cmd_lifecycle_test.go); what is missing is
+      acceptance-tier coverage naming this code inside the catalogue. Filed
+      2026-08-28 by answers-that-hold-2026-08/P5's own report.

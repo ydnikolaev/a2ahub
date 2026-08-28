@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	gopath "path"
 	"strings"
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/operation"
+	"github.com/ydnikolaev/a2ahub/schemas"
+	"gopkg.in/yaml.v3"
 )
 
 // WriteState is the funnel's own claim about a Submit outcome — the
@@ -642,6 +645,15 @@ func (f *WriteFunnel) submitPreparedRequest(ctx context.Context, req SubmitReque
 	if err := checkSubmitResponseDeliveryPossession(ctx, req.RepoDir, possessionFiles); err != nil {
 		return failWriteResult(op, branch, result, err)
 	}
+	// P5 (answers-that-hold-2026-08) "a move is not a file drop": a
+	// document whose own schema requires `parent` is a MOVE on another
+	// artifact, not a document filed in isolation — refused HERE, the SAME
+	// seat and for the SAME reason as the two possession checks above,
+	// before any commit/push git action (see this guard's own doc comment
+	// below, checkResponseParentTransitionPossession).
+	if err := checkResponseParentTransitionPossession(schemas.FS, possessionFiles); err != nil {
+		return failWriteResult(op, branch, result, err)
+	}
 
 	var openRequest host.OpenPRRequest
 	if prepared != nil && len(prepared.data.recoveryJSON) > 0 {
@@ -746,6 +758,220 @@ func (f *WriteFunnel) submitPreparedRequest(ctx context.Context, req SubmitReque
 		result.Stage = furthestWriteStage(result.Stage, WriteStageMerged)
 	}
 	return completeWriteResult(op, branch, result)
+}
+
+// --- P5 (answers-that-hold-2026-08) parent-transition guard -------------
+//
+// spec 05 "A document that is a move on someone else's artifact cannot be
+// filed as a file": §0.5's corrected premise is that NO path resolves a
+// declared `parent` today — the four internal/validate `env.Parent` sites
+// all SKIP an unresolvable one, REF-003's own `applies_to` excludes it,
+// and the funnel's two existing possession checks never touch it either.
+// So a response submitted as a plain document (`a2a submit`) silently
+// validates clean and moves nothing on the artifact it answers, while
+// `internal/fold/table.go:364`'s own `response draft->submitted` row
+// makes that submit LEGAL by the transition table — the second half of
+// the defect (spec 05 §11's 2026-08-28 amendment: that row STAYS, it is
+// `a2a respond`'s own legal move; the defect is `a2a submit` reaching it
+// WITHOUT the parent's own respond event).
+//
+// This guard closes it at the ONE seat both write surfaces already share
+// — submitPreparedRequest, beside REF-024's own possession checks, before
+// any commit/push git action — so the CLI and the MCP write path cannot
+// diverge on it (US-5). It reuses REF-024's own refusal SHAPE (a sentinel
+// error plus schemas/errors/v1/registry.yaml's `emitted_by: internal/
+// space` row), per spec 05 §11's 2026-08-28 amendment: two independently
+// minted guards at one funnel seat is the exact second-writer failure
+// ADR-019 names, so this is REF-024's neighbour, not a third shape.
+//
+// THE UNIVERSE IS DERIVED, NEVER A HARDCODED KIND LIST (AC-4): a
+// committed document's own `schema` (e.g. "envelope/v2") and `type`
+// (e.g. "response") fields name the exact schemas.FS path this file
+// reads — "<schema>/<type>.schema.json" — and THAT file's own top-level
+// `required` array is checked for "parent" literally, the same fact spec
+// 05 §0.5 points at (schemas/envelope/v1/response.schema.json:21). A kind
+// that gains `parent` in its OWN schema's `required` array is covered the
+// moment that schema ships, with no Go change — proven by
+// parent_guard_test.go's fixture-schema table test. internal/space may
+// not import internal/schema's Corpus for this: Corpus's own
+// FieldViolation collapses every `required` failure to the KEYWORD
+// "required" (internal/schema/violation.go's classifyKeyword), never the
+// missing field's own name, so it cannot answer "does THIS type require
+// parent" without a second, unauthorized change to that package (off this
+// phase's allowlist). Reading the schema's own raw JSON directly is the
+// existing precedent for exactly this class of gap —
+// internal/validate/handoff_sections.go's own top-of-file doc comment
+// reads schemas.FS directly for the identical reason ("derived from the
+// schema, never a hardcoded list") despite docs/decisions.md:34 not
+// listing the root `schemas` package on internal/validate's row either.
+// DEVIATION (see this phase's report): the same question applies to
+// internal/space's own row — recorded there for the lead to resolve.
+//
+// "No parent transition accompanies it" is read off the SAME batch of
+// files about to be committed. `a2a respond` always authors the parent's
+// own `respond` event (an event/vN document — no frontmatter, `subject`
+// naming the parent — cmd_lifecycle.go's RespondCommand.Run) in the SAME
+// write as the response it scaffolds; internal/mcp's own respond tool
+// authors the byte-identical shape (internal/mcp/eventdoc.go's event
+// struct carries the same `subject`/`transition` YAML keys). `a2a submit`
+// of a lone response draft authors only the response file, so the
+// parent's own id never appears as an event `subject` in the batch, and
+// that is what tells the two apart — never a verb name, never a flag.
+var (
+	// ErrResponseParentTransitionMissing refuses a write of a kind whose
+	// own envelope schema requires `parent` (schemas/envelope/v1|v2/
+	// <type>.schema.json's own `required` array) when no event in the
+	// SAME write batch names that document's declared parent as its own
+	// `subject` — REF-027 (schemas/errors/v1/registry.yaml, emitted_by:
+	// internal/space). `a2a respond` always authors both in one write and
+	// never trips this.
+	ErrResponseParentTransitionMissing = errors.New("space: REF-027: this document names a parent that requires a transition, but no parent transition accompanies this write")
+)
+
+// parentGuardEnvelopeProbe reads only the four top-level keys this guard
+// needs out of a committed file's frontmatter — `schema`+`type` name the
+// exact schemas.FS path schemaRequiresParent checks, `id` and `parent`
+// are what the refusal names.
+type parentGuardEnvelopeProbe struct {
+	Schema string `yaml:"schema"`
+	Type   string `yaml:"type"`
+	ID     string `yaml:"id"`
+	Parent string `yaml:"parent"`
+}
+
+// parentGuardSchemaRequired is the minimal shape this guard reads out of
+// one concrete envelope schema file — its own top-level `required` array
+// only, never the compiled *jsonschema.Schema internal/schema builds
+// (this guard needs one keyword's own list, not a validator).
+type parentGuardSchemaRequired struct {
+	Required []string `json:"required"`
+}
+
+// schemaRequiresParent answers "does <schemaVersion>/<typ>.schema.json's
+// own top-level `required` array name parent" by reading THAT FILE,
+// never a hardcoded kind list (AC-4). fsys is schemas.FS in production
+// and a fixture fstest.MapFS in parent_guard_test.go's table test — the
+// same synthetic-schema seam AC-4's own fixture proof needs, so the
+// derivation is provably generic rather than merely reading the real
+// corpus correctly today.
+//
+// A schemaVersion/typ combination with no matching file (an unknown
+// type, a malformed `schema` field, a document this guard cannot
+// classify) answers false, never an error: this guard is not where a
+// malformed declaration is refused — SCH-class validation already owns
+// that — and a document it cannot classify behaves exactly as it does
+// today.
+func schemaRequiresParent(fsys fs.ReadFileFS, schemaVersion, typ string) bool {
+	if schemaVersion == "" || typ == "" {
+		return false
+	}
+	raw, err := fsys.ReadFile(schemaVersion + "/" + typ + ".schema.json")
+	if err != nil {
+		return false
+	}
+	var probe parentGuardSchemaRequired
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return false
+	}
+	for _, r := range probe.Required {
+		if r == "parent" {
+			return true
+		}
+	}
+	return false
+}
+
+// declaredParentRequiringEnvelope decodes raw's frontmatter and reports
+// (id, parent, true) when its own `schema`+`type` resolve to a schema
+// file whose `required` array names `parent`. A file with no frontmatter
+// (an event, a manifest) has nothing to declare — ok=false, the same
+// best-effort convention possession.go's declaredAttachments and
+// delivery_possession.go's declaredResponseDelivery already use.
+func declaredParentRequiringEnvelope(fsys fs.ReadFileFS, raw []byte) (id, parent string, ok bool) {
+	fm, hasFrontmatter := frontmatterOrNone(raw)
+	if !hasFrontmatter {
+		return "", "", false
+	}
+	var probe parentGuardEnvelopeProbe
+	if err := yaml.Unmarshal(fm.YAML, &probe); err != nil {
+		return "", "", false
+	}
+	if !schemaRequiresParent(fsys, probe.Schema, probe.Type) {
+		return "", "", false
+	}
+	return probe.ID, probe.Parent, true
+}
+
+// declaredEventTransitionSubject decodes raw as a bare event document
+// (event/v1 and event/v2 carry NO frontmatter — layout.EventFile writes a
+// plain YAML file; cmd_lifecycle.go's lifecycleEventDoc and internal/
+// mcp's eventdoc.go both marshal the identical `subject`/`transition`
+// shape) and reports the `subject` it names a `transition` against. A
+// file WITH frontmatter is an envelope document, never an event, and is
+// not even attempted here — the two shapes are mutually exclusive by
+// construction, so this never misreads a response draft as an event.
+func declaredEventTransitionSubject(raw []byte) (subject string, ok bool) {
+	if _, hasFrontmatter := frontmatterOrNone(raw); hasFrontmatter {
+		return "", false
+	}
+	var probe struct {
+		Subject    string `yaml:"subject"`
+		Transition string `yaml:"transition"`
+	}
+	if err := yaml.Unmarshal(raw, &probe); err != nil {
+		return "", false
+	}
+	if probe.Subject == "" || probe.Transition == "" {
+		return "", false
+	}
+	return probe.Subject, true
+}
+
+// checkResponseParentTransition is the per-file half: id/parent already
+// resolved (requiresParent is true), transitioned names every id that has
+// an accompanying event in this SAME batch. Separated from the batch scan
+// below the same way checkResponseDeliveryPossession sits below
+// checkSubmitResponseDeliveryPossession — one file's own verdict, wrapped
+// with that file's own path by the caller.
+func checkResponseParentTransition(id, parent string, transitioned map[string]bool) error {
+	if transitioned[parent] {
+		return nil
+	}
+	return fmt.Errorf("%w: %s names parent %s, but no parent transition accompanies this write — "+
+		"carry the existing body forward with `a2a respond %s --body-file <path-to-this-draft>` instead of `a2a submit`; "+
+		"an already-filed orphan is repaired with `a2a respond --response %s`",
+		ErrResponseParentTransitionMissing, id, parent, parent, id)
+}
+
+// checkResponseParentTransitionPossession is submitPreparedRequest's own
+// entry point, the sibling call checkSubmitAttachmentPossession and
+// checkSubmitResponseDeliveryPossession already are: it scans every file
+// about to be committed for a document whose own schema requires
+// `parent`, and refuses the whole write at the first one whose declared
+// parent names no event `subject` in the SAME batch (US-1/AC-1). The
+// carry-forward command AC-2 requires is named in the returned error,
+// together with the parent id read off the document itself.
+//
+// A batch containing no parent-requiring document costs one no-op scan
+// per file, matching checkSubmitAttachmentPossession's own "an artifact
+// declaring none behaves exactly as it does today" property.
+func checkResponseParentTransitionPossession(fsys fs.ReadFileFS, files []FileWrite) error {
+	transitioned := map[string]bool{}
+	for _, file := range files {
+		if subject, ok := declaredEventTransitionSubject(file.Content); ok {
+			transitioned[subject] = true
+		}
+	}
+	for _, file := range files {
+		id, parent, requiresParent := declaredParentRequiringEnvelope(fsys, file.Content)
+		if !requiresParent {
+			continue
+		}
+		if err := checkResponseParentTransition(id, parent, transitioned); err != nil {
+			return fmt.Errorf("%s: %w", file.Path, err)
+		}
+	}
+	return nil
 }
 
 func furthestWriteStage(left, right WriteStage) WriteStage {

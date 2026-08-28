@@ -2036,12 +2036,38 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	fs.Var(&unmetFlags, "unmet", "0-based index into the parent's acceptance_criteria[] this response did NOT satisfy, or its declared criterion id (e.g. ac1) when that array carries ids (repeatable)")
 	standing := fs.String("standing", "", "authoritative|provisional|advisory — whether these values are binding (absent = undeclared, NOT authoritative, per P-1)")
 	blockedByFlag := fs.String("blocked-by", "", "<reason_code>:<owner>:<needs> — what would unblock the unmet criteria (reason_code: split-required|security-concern|out-of-scope|duplicate|other; needs: bytes|judgement|decision)")
+	// --response (answers-that-hold-2026-08 P5, US-2/AC-6/AC-7): the repair
+	// half of the funnel's own REF-027 parent-transition guard. A response
+	// already FILED (committed to origin/main) with no accompanying parent
+	// transition — a thread stranded by a pre-guard binary, or by a write
+	// surface this phase's own guard has not yet reached — is adopted here:
+	// the parent's own `respond` event is authored, and ONLY that; the
+	// response's own file is never re-rendered (AC-6: "the existing body is
+	// kept"). Mutually exclusive with the ordinary NEW-response flow this
+	// command otherwise runs — see the early branch below.
+	responseFlag := fs.String("response", "", "the id of an already-filed orphan response to adopt — repairs a thread stranded by a write with no parent transition; takes no parent-id arguments and no other content flag")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
 	// Wave K fix (see LifecycleCommand.Run's own comment above): any-order
 	// parsing, not a bare fs.Parse(args).
 	parents, err := parseArgsAnyOrder(fs, args)
 	if err != nil {
 		return 2
+	}
+	if *responseFlag != "" {
+		if len(parents) != 0 {
+			_, _ = fmt.Fprintln(stdio.Stderr, "respond: --response repairs an already-filed orphan and takes no parent-id arguments")
+			return 2
+		}
+		resolved, actorErr := c.deps.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
+		if actorErr != nil {
+			return lifecycleRefuse(stdio,
+				"respond --response: resolve the actor performing this repair",
+				actorErr.Error(),
+				"pass --actor-name <name>, or set A2A_ACTOR_NAME",
+			)
+		}
+		actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: c.deps.ownSystem}
+		return c.runResponseRepair(ctx, *responseFlag, actor, resolved, stdio)
 	}
 	if len(parents) == 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a respond --result <answered|delivered|partial|cannot> <parent-id...>")
@@ -2507,6 +2533,157 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 	req := c.deps.buildRequest(ids, files, "respond", false)
 	req.OperationKey = operationKey
+	return c.deps.submit(ctx, req, "respond", ids, stdio)
+}
+
+// lifecycleRefuse builds a three-part Refusal (attempted/found/nextStep,
+// internal/cli/refusal_state.go's NewRefusal — P4, answers-that-hold-2026-08
+// spec 04) and writes it to stdio.Stderr, returning 1 — the shared tail
+// `runResponseRepair`'s own err-to-stderr sites use. nextStep is always a
+// fixed, non-empty literal at every call site here, so NewRefusal's own
+// construction-time refusal is unreachable in practice; the fallback below
+// is a structural safety net (the same shape runValidateCI's own migrated
+// site already uses in cmd_validate_ci.go), never a trusted-forever
+// assumption.
+func lifecycleRefuse(stdio IO, attempted, found, nextStep string) int {
+	refusal, rerr := NewRefusal(attempted, found, nextStep)
+	if rerr != nil {
+		_, _ = fmt.Fprintln(stdio.Stderr, "respond: internal error building a refusal (empty next step) — this is a bug in cmd_lifecycle.go, file one")
+		return 1
+	}
+	_, _ = fmt.Fprintln(stdio.Stderr, refusal)
+	return 1
+}
+
+// runResponseRepair implements `a2a respond --response <id>` (US-2/AC-6/
+// AC-7, answers-that-hold-2026-08 spec 05): adopts an already-filed
+// orphan response — one committed with no accompanying parent
+// transition, the exact shape the write funnel's REF-027 guard now
+// refuses at write time. It authors ONLY the parent's own `respond`
+// event; responseID's own file is never re-rendered or rewritten (AC-6),
+// so the body an author already committed is kept byte for byte.
+//
+// Two edge cases are refused BEFORE any git action:
+//   - responseID names no parent at all (not a response, or a malformed
+//     one) — nothing to adopt.
+//   - responseID already has a committed `respond` event naming it in
+//     `refs[]` — it is not an orphan, and adopting it twice would double-
+//     link one response into a parent's Result.Responses map.
+//
+// Every other legality question (an id whose parent is already answered,
+// closed, or otherwise in a state with no legal `respond` move) is
+// resolved by the SAME fold evaluation the ordinary new-response path
+// above uses (lifecycleEvaluateCandidate) — this function does not
+// re-derive that judgement.
+func (c *RespondCommand) runResponseRepair(ctx context.Context, responseID string, actor fold.Actor, resolved template.Actor, stdio IO) int {
+	now := c.deps.now()
+
+	_, responseProbe, err := lifecycleLoadEnvelope(c.deps.mirrorDir, responseID)
+	if err != nil {
+		return lifecycleRefuse(stdio,
+			fmt.Sprintf("respond --response: load %s's own envelope from this space's synced mirror", responseID),
+			err.Error(),
+			"confirm --response names an existing, already-synced response id, and run `a2a sync` to refresh this space's mirror if it was filed on another machine",
+		)
+	}
+	parentID := responseProbe.Parent
+	if parentID == "" {
+		_, _ = fmt.Fprintf(stdio.Stderr, "respond: %s: names no parent — nothing to adopt\n", responseID)
+		return 1
+	}
+
+	// "an id that is not an orphan" (spec 05 §6 edge case): a response
+	// already linked by a committed respond event is refused here, before
+	// any new event is authored — never silently re-adopted.
+	events, err := lifecycleReadAllEvents(c.deps.mirrorDir)
+	if err != nil {
+		return lifecycleRefuse(stdio,
+			"respond --response: read every committed event from this space's synced mirror",
+			err.Error(),
+			"run `a2a sync` to refresh this space's mirror, then retry",
+		)
+	}
+	for _, ev := range events {
+		if ev.Transition != fold.TRespond {
+			continue
+		}
+		for _, ref := range ev.Refs {
+			if ref.Ref == responseID {
+				_, _ = fmt.Fprintf(stdio.Stderr, "respond: %s: already adopted by a parent transition — not an orphan\n", responseID)
+				return 1
+			}
+		}
+	}
+
+	evaluation, _, _, err := lifecycleEvaluateCandidate(c.deps.mirrorDir, c.deps.manifest, parentID, fold.Event{
+		Transition: fold.TRespond, ResponseID: responseID, Actor: actor,
+	}, nil)
+	if err != nil {
+		return lifecycleRefuse(stdio,
+			fmt.Sprintf("respond --response: evaluate %s's own legality for a respond transition", parentID),
+			err.Error(),
+			"confirm the parent id named by --response's own envelope exists in this space's synced mirror, and run `a2a sync` to refresh it if it was filed elsewhere",
+		)
+	}
+	if evaluation.Verdict != fold.VerdictLegal {
+		_, _ = fmt.Fprintf(stdio.Stderr, "respond: %s\n", c.deps.refusalMessage(parentID, evaluation.Verdict))
+		return 1
+	}
+
+	_, parentProbe, err := lifecycleLoadEnvelope(c.deps.mirrorDir, parentID)
+	if err != nil {
+		return lifecycleRefuse(stdio,
+			fmt.Sprintf("respond --response: load %s's own envelope from this space's synced mirror", parentID),
+			err.Error(),
+			"run `a2a sync` to refresh this space's mirror, then retry",
+		)
+	}
+
+	layout, err := space.NewLayout(c.deps.ownSystem)
+	if err != nil {
+		return lifecycleRefuse(stdio,
+			"respond --response: build this space's own file layout from its manifest system id",
+			err.Error(),
+			"this space's own manifest names an invalid system id — fix `system:` in space.yaml, run `a2a validate` to confirm, then retry",
+		)
+	}
+
+	respondEventID, err := artifact.MintULIDAt(now, c.deps.entropy)
+	if err != nil {
+		return lifecycleRefuse(stdio,
+			"respond --response: mint the repaired respond event's own id",
+			err.Error(),
+			"retry — this machine's entropy source briefly failed to mint a ULID; file it against a2ahub if it persists",
+		)
+	}
+	respondEvent := lifecycleEventDoc{
+		Schema: "event/v1", Event: respondEventID.String(), Space: parentProbe.Space,
+		Subject: parentID, Transition: fold.TRespond, State: lifecycleReceiptState(evaluation),
+		Actor: eventActorFrom(resolved, actor.System),
+		At:    now.UTC().Format(time.RFC3339),
+		Refs:  []lifecycleRefEntry{{Ref: responseID}},
+	}
+	respondRaw, err := yaml.Marshal(respondEvent)
+	if err != nil {
+		return lifecycleRefuse(stdio,
+			"respond --response: encode the repaired respond event as YAML",
+			err.Error(),
+			"this is a defect in a2a itself, not this repository — run `a2a version` for the exact build and file it against a2ahub",
+		)
+	}
+
+	files := []space.FileWrite{
+		{Path: layout.EventFile(now.UTC().Format("2006"), respondEventID.String()), Content: respondRaw},
+	}
+	// ids DELIBERATELY carries no OperationKey (unlike the new-response
+	// flow above): buildRequest's own ArtifactID — parentID+responseID,
+	// sorted — is already a stable, content-derived branch identity for
+	// this exact repair, the same "no separate key needed" shape ack/
+	// accept/decline/block/unblock/cancel/withdraw/supersede already rely
+	// on (only respond/verify/close mint an explicit operation.Key, and
+	// each for its own batching reason none of those apply here).
+	ids := []string{parentID, responseID}
+	req := c.deps.buildRequest(ids, files, "respond", false)
 	return c.deps.submit(ctx, req, "respond", ids, stdio)
 }
 

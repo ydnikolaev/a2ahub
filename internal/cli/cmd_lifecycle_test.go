@@ -3,6 +3,7 @@ package cli_test
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -4104,5 +4105,322 @@ func TestRespondRefusesUnlandedDeliversThroughTheRealFunnel(t *testing.T) {
 	}
 	if len(fakeHost.Opens) != 0 {
 		t.Fatalf("expected zero OpenPR calls on a refused response, got %d", len(fakeHost.Opens))
+	}
+}
+
+// --- P5 (answers-that-hold-2026-08) parent-transition guard, CLI tier ---
+
+// TestSubmitRefusesResponseDraftWithNoParentTransitionThroughTheRealFunnel
+// is US-1/AC-1/AC-2/AC-3 driven through the REAL write funnel from the
+// `a2a submit` surface — the same "real WriteFunnel + FakeHost +
+// spacefixture" idiom TestSubmitEndToEndSingleArtifact and
+// TestRespondRefusesUnlandedDeliversThroughTheRealFunnel already
+// establish (cmd_submit_test.go's own newRealFunnelDeps). `a2a submit`'s
+// own event names the RESPONSE as its event `subject`
+// (cmd_submit.go's buildRequest, submitFirstTransition), never the
+// parent — so internal/space's REF-027 guard fires here exactly as it
+// would through the MCP write path, which authors the byte-identical
+// event shape (US-5: both surfaces reach the SAME funnel seat,
+// funnel.Submit — internal/mcp is off this phase's allowlist, so an
+// MCP-tier test is not added here; this is the CLI half of AC-3).
+func TestSubmitRefusesResponseDraftWithNoParentTransitionThroughTheRealFunnel(t *testing.T) {
+	t.Parallel()
+	funnel, legality, mirrorDir, fx := newRealFunnelDeps(t)
+
+	parentID := "XQ-axon-20260721-k3f9"
+	stagingDir := t.TempDir()
+	responseID := "XS-axon-20260828-sb1a"
+	draft := "---\n" +
+		"schema: envelope/v1\n" +
+		"id: " + responseID + "\n" +
+		"type: response\n" +
+		"title: t\n" +
+		"space: fixture-space\n" +
+		"from: axon\n" +
+		"to: [other]\n" +
+		"thread: " + cliFixtureThread + "\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"priority: p3\n" +
+		"blocking: false\n" +
+		"classification: internal\n" +
+		"parent: " + parentID + "\n" +
+		"result: answered\n" +
+		"---\nbody\n"
+	path := filepath.Join(stagingDir, responseID+".md")
+	if err := os.WriteFile(path, []byte(draft), 0o644); err != nil {
+		t.Fatalf("write draft: %v", err)
+	}
+
+	cmd := cli.NewSubmitCommand(funnel, legality, cli.NewNoopPendingMarker(), mirrorDir, "fixture-space", "axon", stagingDir, fixtureHostConfig(fx))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{path}, io)
+	if code == 0 {
+		t.Fatalf("submit of a lone response draft: code = 0, want a refusal")
+	}
+	msg := errOut.String()
+	for _, want := range []string{"REF-027", parentID, "a2a respond"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("refusal %q does not name %q; got: %s", want, want, msg)
+		}
+	}
+
+	count := gitRevListCount(t, mirrorDir, "main", "a2a/axon/submit/*")
+	if count != 0 {
+		t.Fatalf("expected zero new commits/branches before any git action, found %d", count)
+	}
+}
+
+// TestRespondResponseFlagAdoptsOrphanKeepsBodyAndEnablesVerify is
+// US-2/AC-6/AC-7: an already-filed orphan response — committed with no
+// accompanying parent transition, exactly the pre-guard shape `a2a
+// submit` used to leave behind — is adopted via `a2a respond --response
+// <id>`. Only the parent's own `respond` event is authored (one file,
+// not two); the response's own committed body is never rewritten; and a
+// subsequent `a2a verify` on the thread is legal afterward.
+func TestRespondResponseFlagAdoptsOrphanKeepsBodyAndEnablesVerify(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-rp1a"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+
+	responseID := "XS-beta-20260828-rp1a"
+	orphanBody := "---\n" +
+		"schema: envelope/v2\n" +
+		"id: " + responseID + "\n" +
+		"type: response\n" +
+		"title: t\n" +
+		"space: fixture-space\n" +
+		"from: beta\n" +
+		"to: [axon]\n" +
+		"thread: " + cliFixtureThread + "\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"priority: p3\n" +
+		"blocking: false\n" +
+		"classification: internal\n" +
+		"parent: " + parentID + "\n" +
+		"result: answered\n" +
+		"---\nthe already-authored answer, verbatim.\n"
+	writeMirrorFile(t, mirrorDir, "beta/exchanges/"+responseID+".md", orphanBody)
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--response", responseID}, io)
+	if code != 0 {
+		t.Fatalf("respond --response %s: code = %d, want 0; stderr=%s", responseID, code, errOut.String())
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+	if got := len(fake.calls[0].Files); got != 1 {
+		t.Fatalf("expected exactly ONE file (the parent's own respond event, no response rewrite), got %d: %+v", got, fake.calls[0].Files)
+	}
+	eventContent := string(fake.calls[0].Files[0].Content)
+	if !strings.Contains(eventContent, "subject: "+parentID) || !strings.Contains(eventContent, "transition: respond") || !strings.Contains(eventContent, "ref: "+responseID) {
+		t.Fatalf("expected a respond event naming subject=%s and refs[].ref=%s, got:\n%s", parentID, responseID, eventContent)
+	}
+
+	// AC-6: the existing body is kept — the response's OWN file was never
+	// part of this funnel call, so its on-disk content is untouched.
+	onDisk, err := os.ReadFile(filepath.Join(mirrorDir, "beta/exchanges/"+responseID+".md"))
+	if err != nil {
+		t.Fatalf("read response file: %v", err)
+	}
+	if string(onDisk) != orphanBody {
+		t.Fatalf("response body changed by the repair verb:\nwant: %s\ngot:  %s", orphanBody, onDisk)
+	}
+
+	// Materialize the repair's own event, then prove AC-7: verify is now
+	// legal on the thread.
+	materializeFiles(t, mirrorDir, fake.calls[0])
+	verifyFake := &fakeLifecycleFunnel{}
+	verifyCmd := cli.NewVerifyCommand(verifyFake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	vio, _, verrOut := newIO()
+	vcode := verifyCmd.Run(context.Background(), []string{responseID}, vio)
+	if vcode != 0 {
+		t.Fatalf("verify after repair: code = %d, want 0; stderr=%s", vcode, verrOut.String())
+	}
+}
+
+// TestRespondResponseFlagEnablesDispute is AC-7's other half: dispute is
+// ALSO legal on the thread after the repair (a separate seed from the
+// verify test above — verify and dispute are mutually exclusive outgoing
+// moves from the same post-repair state, so each needs its own fixture).
+func TestRespondResponseFlagEnablesDispute(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-rp2a"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+
+	responseID := "XS-beta-20260828-rp2a"
+	orphanBody := "---\n" +
+		"schema: envelope/v2\n" +
+		"id: " + responseID + "\n" +
+		"type: response\n" +
+		"title: t\n" +
+		"space: fixture-space\n" +
+		"from: beta\n" +
+		"to: [axon]\n" +
+		"thread: " + cliFixtureThread + "\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"priority: p3\n" +
+		"blocking: false\n" +
+		"classification: internal\n" +
+		"parent: " + parentID + "\n" +
+		"result: answered\n" +
+		"---\nbody\n"
+	writeMirrorFile(t, mirrorDir, "beta/exchanges/"+responseID+".md", orphanBody)
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{"--response", responseID}, io); code != 0 {
+		t.Fatalf("respond --response %s: code = %d, want 0; stderr=%s", responseID, code, errOut.String())
+	}
+	materializeFiles(t, mirrorDir, fake.calls[0])
+
+	disputeFake := &fakeLifecycleFunnel{}
+	disputeCmd := cli.NewDisputeCommand(disputeFake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	dio, _, derrOut := newIO()
+	if code := disputeCmd.Run(context.Background(), []string{"--reason", "not satisfactory", responseID}, dio); code != 0 {
+		t.Fatalf("dispute after repair: code = %d, want 0; stderr=%s", code, derrOut.String())
+	}
+}
+
+// TestRespondResponseFlagRefusesWhenNoParentDeclared is the "not an
+// orphan" family's first edge case (spec 05 §6): a response naming no
+// parent at all has nothing to adopt, refused before any git action.
+func TestRespondResponseFlagRefusesWhenNoParentDeclared(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	responseID := "XS-beta-20260828-rp3a"
+	body := "---\nschema: envelope/v2\nid: " + responseID + "\ntype: response\nresult: answered\n---\nbody\n"
+	writeMirrorFile(t, mirrorDir, "beta/exchanges/"+responseID+".md", body)
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--response", responseID}, io)
+	if code == 0 {
+		t.Fatal("expected a non-zero exit for a response naming no parent")
+	}
+	if !strings.Contains(errOut.String(), "names no parent") {
+		t.Fatalf("expected the refusal to name the missing parent, got: %s", errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the write funnel NEVER to be called, got %d", len(fake.calls))
+	}
+}
+
+// TestRespondResponseFlagRefusesAlreadyAdoptedOrphan is the "not an
+// orphan" family's second edge case: a response already linked by a
+// committed respond event is refused, never silently re-adopted (which
+// would double-link one response id into a parent's Result.Responses).
+func TestRespondResponseFlagRefusesAlreadyAdoptedOrphan(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-rp4a"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+
+	responseID := "XS-beta-20260828-rp4a"
+	body := "---\nschema: envelope/v2\nid: " + responseID + "\ntype: response\nparent: " + parentID + "\nresult: answered\n---\nbody\n"
+	writeMirrorFile(t, mirrorDir, "beta/exchanges/"+responseID+".md", body)
+	// A committed respond event already links this exact response.
+	writeMirrorFile(t, mirrorDir, "beta/events/2020/01J8QYK2Z3ABCDEFGHJKMNPQRZ.yaml",
+		"schema: event/v1\nevent: 01J8QYK2Z3ABCDEFGHJKMNPQRZ\nspace: fixture-space\nsubject: "+parentID+"\ntransition: respond\nactor: {kind: agent, name: bot, system: beta}\nat: 2020-01-01T00:00:03Z\nrefs:\n  - ref: "+responseID+"\n")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--response", responseID}, io)
+	if code == 0 {
+		t.Fatal("expected a non-zero exit for an already-adopted orphan")
+	}
+	if !strings.Contains(errOut.String(), "not an orphan") {
+		t.Fatalf("expected the refusal to say this is not an orphan, got: %s", errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the write funnel NEVER to be called, got %d", len(fake.calls))
+	}
+}
+
+// TestRespondResponseFlagRejectsPositionalParents is the flag's own usage
+// guard: --response repairs exactly one already-filed orphan and takes
+// no parent-id arguments — mixing the two silently picking one would be
+// exactly the ambiguity this epic exists to refuse instead of guess.
+func TestRespondResponseFlagRejectsPositionalParents(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--response", "XS-beta-20260828-rp5a", "XQ-axon-20260721-x1"}, io)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2 (usage error)", code)
+	}
+	if !strings.Contains(errOut.String(), "--response") {
+		t.Fatalf("expected the usage error to name --response, got: %s", errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the write funnel NEVER to be called, got %d", len(fake.calls))
+	}
+}
+
+// TestRespondResponseFlagRefusesActorResolutionFailure is the refusal-
+// ratchet migration's (answers-that-hold-2026-08 P4, spec 04) own coverage
+// for --response's actor-resolution site: a three-part refusal (attempted/
+// found/nextStep), not a bare "respond: <err>" passthrough.
+func TestRespondResponseFlagRefusesActorResolutionFailure(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	failingResolver := func(cli.ActorFlags) (template.Actor, error) {
+		return template.Actor{}, errors.New("cannot determine who is acting: pass --actor-name <name>, or set A2A_ACTOR_NAME")
+	}
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), failingResolver)
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--response", "XS-beta-20260828-rp6a"}, io)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	text := errOut.String()
+	if !strings.Contains(text, "resolve the actor") {
+		t.Fatalf("expected the refusal to name what was attempted, got: %s", text)
+	}
+	if !strings.Contains(text, "A2A_ACTOR_NAME") {
+		t.Fatalf("expected the refusal to name its next step, got: %s", text)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the write funnel NEVER to be called, got %d", len(fake.calls))
+	}
+}
+
+// TestRespondResponseFlagRefusesUnloadableResponseID is the refusal-ratchet
+// migration's own coverage for --response's envelope-load site: an id this
+// space's synced mirror does not carry refuses with a next step (`a2a
+// sync`), not a bare "respond: <id>: <err>" passthrough.
+func TestRespondResponseFlagRefusesUnloadableResponseID(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	// No response of this id was ever written under mirrorDir.
+	code := cmd.Run(context.Background(), []string{"--response", "XS-beta-20260828-rp6b"}, io)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	text := errOut.String()
+	if !strings.Contains(text, "XS-beta-20260828-rp6b") {
+		t.Fatalf("expected the refusal to name the id it could not load, got: %s", text)
+	}
+	if !strings.Contains(text, "a2a sync") {
+		t.Fatalf("expected the refusal to name its next step (a2a sync), got: %s", text)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the write funnel NEVER to be called, got %d", len(fake.calls))
 	}
 }
