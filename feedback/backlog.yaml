@@ -28,15 +28,6 @@ items:
       refs:
         - docs/features/active/answers-that-hold-2026-08/specs/07-where-do-my-contracts-stand.md
       date: "2026-08-27"
-    - id: fb-20260827-4b121a
-      kind: friction
-      severity: minor
-      title: validate --ci outside a space names a missing file, not the caller's state
-      verdict: accepted
-      route: phase
-      refs:
-        - docs/features/active/answers-that-hold-2026-08/specs/04-a-refusal-names-the-caller-state.md
-      date: "2026-08-27"
     - id: fb-20260827-5b6a1c
       kind: friction
       severity: minor

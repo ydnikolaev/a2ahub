@@ -98,4 +98,25 @@ resolution: |-
 
     REFS NAMES docs/backlog.md, so CHECK-C is silent on this row — see
     fb-20260827-bc1f13's resolution for the mechanism.
-status: accepted
+
+    SHIPPED 2026-08-29, answers-that-hold-2026-08 P4 (fa3fad8a, a94350b8).
+    The refusal from a participant checkout now names the precondition, says
+    the cwd is a participant project rather than a space checkout, and names
+    each connected space's synced mirror as the checkout to run in. It is
+    built through a constructor whose ARITY makes a next-step-less refusal a
+    COMPILE ERROR — the invariant is in the type system, because no gate can
+    judge whether prose names the caller's state.
+
+    BOTH secondary notes were carried, and one shipped. `--space <id>` is
+    live: it runs the same validation against that space's synced mirror with
+    no cd, and an unknown id refuses through the same constructor, naming the
+    ids that ARE connected. Scoping a --mode=v3-full-repo walk to the caller's
+    own system did NOT ship here — it is a different verb's authorization
+    question, not a refusal-text one, and it stays in docs/backlog.md.
+
+    A ratchet ships with it (scripts/check-refusal-ratchet.sh): no NEW raw
+    err-to-stderr site may appear in internal/cli outside the constructor, and
+    the per-file budget may only shrink. The 171 standing sites are debt with a
+    size, not this phase's obligation. It went red on its own wave against two
+    sibling phases and 14 sites were migrated rather than re-baselined.
+status: shipped
