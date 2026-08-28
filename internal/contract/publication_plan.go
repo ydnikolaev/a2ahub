@@ -227,8 +227,14 @@ type PublicationInput struct {
 	CandidateSource       CandidateSource
 	ContractRoot          string
 	SourceDigestAssertion string
-	Warnings              []Finding
-	Violations            []Finding
+	// AllowEmptyBump acknowledges a non-first bump whose mutations touch no
+	// normative artifact — the CLI's own --allow-empty-bump. Zero value
+	// (false) is the safe default: an empty bump is refused rather than
+	// silently accepted. Ignored on a first publish, which has no
+	// baseline to be "empty" against.
+	AllowEmptyBump bool
+	Warnings       []Finding
+	Violations     []Finding
 }
 
 // PublicationPlan is immutable-by-construction. Exported fields are a detached
@@ -504,6 +510,28 @@ func PlanPublication(input PublicationInput, checker CompatibilityChecker) (Publ
 	operationKey := operation.ContractPublish(input.System, input.ContractID, target)
 	warnings := cloneFindings(input.Warnings)
 	violations := cloneFindings(input.Violations)
+
+	// US-2/AC-3-4: a bump whose only mutation is the descriptor (the
+	// version number, and whatever generated_from.source_digest
+	// finalization touches) means nothing to a consumer — the field the
+	// bump exists to communicate did not move. This is a READ of
+	// Mutations and the per-entry Normative flag the planner already
+	// computed (spec §5's own anti-duplication note), never a second
+	// computation. A FIRST publish has no baseline to be "empty" against
+	// and is exempt by construction.
+	if !firstPublish {
+		if touchesNormative, mutationCount := bumpTouchesNormativeArtifact(entries, mutations); !touchesNormative {
+			if !input.AllowEmptyBump {
+				return PublicationPlan{}, []Issue{{Kind: IssueInvalidPublication, Path: "mutations", Detail: fmt.Sprintf(
+					"this bump's %d mutation(s) (besides %s itself, which every bump changes) touch no normative artifact, and a version bump that changes no normative artifact means nothing to a consumer. Re-run with --allow-empty-bump if this is deliberate.",
+					mutationCount, DescriptorPath)}}
+			}
+			warnings = cloneFindings(append(warnings, Finding{
+				Code: "empty-bump-acknowledged", Path: "mutations",
+				Message: fmt.Sprintf("--allow-empty-bump acknowledged: this bump's %d mutation(s) touch no normative artifact", mutationCount),
+			}))
+		}
+	}
 	if compatibility.PolicyViolation != nil {
 		violations = cloneFindings(append(violations, *compatibility.PolicyViolation))
 	}
@@ -648,6 +676,17 @@ func bumpCanonicalVersion(base, kind string) (string, error) {
 	return fmt.Sprintf("%d.%d.%d", values[0], values[1], values[2]), nil
 }
 
+// publicationSourceDigest is the ONLY export-source-v1 read on the publish
+// path (AC-10/11). It never recomputes the projection from the descriptor's
+// inventory and raw bytes a second time — that used to be two written
+// definitions of one value (spec §11 amendment 2): this legacy `else`
+// branch recomputed the SAME aggregate `contract-tree-v1` itself already
+// digests over `schema/** + fixtures/**`, so a legacy contract's asserted
+// provenance was byte-identical to its publication digest under a different
+// profile name, which the project's own archived spec forbids verbatim. A
+// legacy (non-declared-v2) candidate has no export-source-v1 shape to
+// assert at all now: it is refused instead, naming the same floor and
+// `artifacts:` remedy the planner's other two mode refusals already use.
 func publicationSourceDigest(candidate CandidateIntentSnapshot, assertion string) (DigestProfile, string, []Issue) {
 	descriptor := candidate.Descriptor()
 	if descriptor.GeneratedFrom == nil {
@@ -656,32 +695,21 @@ func publicationSourceDigest(candidate CandidateIntentSnapshot, assertion string
 		}
 		return "", "", nil
 	}
-	digests := make(map[string]string)
-	snapshot := candidate.Snapshot()
-	byPath := make(map[string][]byte, len(snapshot.Files))
-	for _, file := range snapshot.Files {
-		byPath[file.Path] = file.Raw
+	if candidate.InventoryMode() != InventoryDeclaredV2 {
+		return "", "", []Issue{{Kind: IssueInvalidPublication, Path: "generated_from", Detail: fmt.Sprintf(
+			"this candidate publishes as %s over the fixed schema/** + fixtures/** tree, which carries no export-source-v1 provenance: generated_from cannot be asserted here. Remove generated_from, or raise the space's min_binary_version to %s and declare a top-level `artifacts:` inventory to publish as %s with provenance instead.",
+			ProfileContractTreeV1, ContractPublicationFloor, ProfileContractSetV2)}}
 	}
-	if candidate.InventoryMode() == InventoryDeclaredV2 {
-		for _, entry := range descriptor.Artifacts {
-			if entry.Role == RoleSchema || fixtureRole(entry.Role) {
-				digests[entry.Path] = artifact.Digest(byPath[entry.Path])
-			}
-		}
-	} else {
-		for path, raw := range byPath {
-			if insideLegacyRoot(path) {
-				digests[path] = artifact.Digest(raw)
-			}
-		}
+	projection, hasProjection := candidate.ExportSource()
+	if !hasProjection {
+		return "", "", []Issue{{Kind: IssueUnsupportedProfile, Path: "generated_from.source_digest", Detail: "declared-v2 candidate carries no export-source-v1 projection"}}
 	}
-	digest := artifact.CombineDigestPairs(digests)
 	if assertion != "" {
-		if !sha256DigestPattern.MatchString(assertion) || assertion != digest {
-			return "", "", []Issue{{Kind: IssueDigestMismatch, Path: "generated_from.source_digest", Detail: fmt.Sprintf("asserted %s, computed %s using %s", assertion, digest, ProfileExportSourceV1)}}
+		if !sha256DigestPattern.MatchString(assertion) || assertion != projection.Digest {
+			return "", "", []Issue{{Kind: IssueDigestMismatch, Path: "generated_from.source_digest", Detail: fmt.Sprintf("asserted %s, computed %s using %s", assertion, projection.Digest, ProfileExportSourceV1)}}
 		}
 	}
-	return ProfileExportSourceV1, digest, nil
+	return ProfileExportSourceV1, projection.Digest, nil
 }
 
 func finalizePublicationDescriptor(candidate CandidateIntentSnapshot, schema, target, sourceDigest string) ([]byte, []Issue) {
@@ -765,6 +793,35 @@ func legacyPlanRole(path string) string {
 	default:
 		return "fixture"
 	}
+}
+
+// bumpTouchesNormativeArtifact reads Mutations against the per-entry
+// Normative flag on the FINAL Entries — it computes nothing a caller could
+// not already read off the plan, which is why the empty-bump guard is a
+// read and not a second computation (spec §5). The descriptor's own mutation
+// is excluded on purpose: every bump changes the descriptor (at minimum its
+// version:), so counting it would make the guard unsatisfiable rather than
+// meaningful. A delete is always treated as touching a normative artifact
+// regardless of its own entry's flag — publicationMutations only ever
+// deletes a previously-declared contract sidecar, and removing a declared
+// entry is a real content change to the carried set, never a no-op.
+func bumpTouchesNormativeArtifact(entries []PublicationEntry, mutations []PublicationMutation) (touchesNormative bool, mutationCount int) {
+	normative := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		if entry.Path != DescriptorPath && entry.Normative {
+			normative[entry.Path] = true
+		}
+	}
+	for _, mutation := range mutations {
+		if mutation.Path == DescriptorPath {
+			continue
+		}
+		mutationCount++
+		if mutation.Action == MutationDelete || normative[mutation.Path] {
+			touchesNormative = true
+		}
+	}
+	return touchesNormative, mutationCount
 }
 
 func compatibilityExclusions(set CarriedSet) []CompatibilityExclusion {

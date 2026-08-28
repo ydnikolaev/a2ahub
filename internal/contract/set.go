@@ -14,6 +14,26 @@ import (
 
 var mediaTypePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9!#$&^_.+*-]*/[a-z0-9][a-z0-9!#$&^_.+*-]*$`)
 
+// SelectDigestProfile is the one implementation of "which digest profile
+// applies to this candidate" — criterion 9's own requirement, and the trap
+// spec §9 names by construction: two profiles create a new question
+// (publish and verify-export must agree on WHICH one applies), and if each
+// side answers it separately the fix regenerates the exact class of bug
+// this epic exists to close, inside its own fix. It is a pure function of
+// the candidate's own InventoryMode — never the space floor, which governs
+// whether that mode is currently ALLOWED to publish, a compliance question
+// PlanPublication's own floor refusals still own — so both the publisher
+// (BuildCandidateIntent, shared by preflight and publish) and the verifier
+// (verify-export's local-candidate check, which has no floor to read) can
+// call it from the one fact both of them do have.
+// SelectDigestProfile is part of the public package API.
+func SelectDigestProfile(mode InventoryMode) DigestProfile {
+	if mode == InventoryDeclaredV2 {
+		return ProfileContractSetV2
+	}
+	return ProfileContractTreeV1
+}
+
 // BuildCarriedSet is the single pure carried-set builder for every immutable
 // digest profile. descriptorRaw and descriptor are used by contract-set-v2;
 // legacy contract-tree-v1 ignores them and retains the historical fixed
@@ -278,6 +298,53 @@ func (set CarriedSet) ExportSource() (DigestProjection, error) {
 		PerFileDigest: perFile,
 		Digest:        artifact.CombineDigestPairs(perFile),
 	}, nil
+}
+
+// ExportVerification is the closed three-outcome vocabulary for
+// `a2a contract verify-export` (T1, US-3/US-4). Only ExportUnmeasured has a
+// shipped counterpart: its string value ("unmeasured") is deliberately
+// identical to internal/validate's validate.SeverityUnmeasured
+// (internal/validate/result.go:72; D9: "UNMEASURED is a SEVERITY, not a
+// fourth verdict", schemas/errors/v1/registry.yaml:696). ExportMatched and
+// ExportDrifted are NOT Severity values — verify-export's "matched"/
+// "drifted" halves are not a rule outcome D9 speaks to. internal/contract
+// sits BELOW internal/validate and cannot import it, so a caller that can
+// (cmd/a2a) maps ExportUnmeasured onto validate.SeverityUnmeasured by
+// value, and the identical string makes that mapping a no-op rather than a
+// translation a second vocabulary could drift from — it must never mint a
+// bespoke word for the same severity.
+// ExportVerification is part of the public package API.
+type ExportVerification string
+
+const (
+	// ExportMatched is part of the public package API.
+	ExportMatched ExportVerification = "matched"
+	// ExportDrifted is part of the public package API.
+	ExportDrifted ExportVerification = "drifted"
+	// ExportUnmeasured is part of the public package API.
+	ExportUnmeasured ExportVerification = "unmeasured"
+)
+
+// ClassifyExportVerification is the one implementation of verify-export's
+// three-outcome comparison. The obvious two-outcome version is exactly the
+// bug this epic exists to close: a published generated_from.source_digest
+// that the producer never asserted is a2a's OWN unchecked value, and
+// reporting "matched" against it proves only that a2a agrees with itself.
+// generatedFromDeclared is false only when the descriptor carries no
+// generated_from block at all; a block present with an EMPTY
+// wantSourceDigest is a second, distinct unmeasured shape (a descriptor
+// mid-authoring, or a generator that asserts a tool without a digest) and
+// must classify the same way — never as ExportMatched, which an empty
+// string trivially satisfying a naive `==""` comparison would otherwise
+// produce.
+func ClassifyExportVerification(generatedFromDeclared bool, wantSourceDigest, computedSourceDigest string) ExportVerification {
+	if !generatedFromDeclared || wantSourceDigest == "" {
+		return ExportUnmeasured
+	}
+	if wantSourceDigest == computedSourceDigest {
+		return ExportMatched
+	}
+	return ExportDrifted
 }
 
 // VerifyGeneratedSource checks a generated descriptor's recorded assertion

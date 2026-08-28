@@ -216,7 +216,12 @@ func TestContractCompatOfflinePOL007RollingWindow(t *testing.T) {
 		t.Fatalf("origin main does not carry the contract at its §4.2 path:\n%s", got)
 	}
 	provider.mustRun("sync")
-	provider.mustRun("contract", "publish", "--version", "1.0.0", id)
+	// --staging is REQUIRED since 2026-08-28 (answers-that-hold P2): stageContract
+	// leaves a staging candidate here, and publishing with one present but no flag
+	// is now a refusal rather than an implicit pickup. This is the same overlay
+	// publish already used; only the flag is new. See step 4 below, which has
+	// always passed it.
+	provider.mustRun("contract", "publish", "--version", "1.0.0", "--staging", ".a2a/staging/"+provider.system+"/provides/export", id)
 	provider.mustRun("sync")
 
 	// THE PRECONDITION EVERYTHING BELOW RESTS ON (see this test's own doc

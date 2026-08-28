@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/contract"
@@ -113,6 +114,143 @@ func TestFreezePublicationCandidateOverlaysStagingOnMirror(t *testing.T) {
 	}
 	if len(snapshot.Files) != 1 || snapshot.Files[0].Path != "contract.md" || string(snapshot.Files[0].Raw) != stagedDescriptor {
 		t.Fatalf("snapshot files = %+v, want exactly the staged descriptor", snapshot.Files)
+	}
+}
+
+// TestFreezePublicationCandidateRefusesUnflaggedStagingTree covers AC-1/AC-2:
+// a staging tree exists at the conventional `.a2a/staging/<system>/provides/
+// <slug>` location and no --staging was given. The forgotten-flag failure
+// this guards against is silent — the mirror-only candidate freezes and
+// publishes successfully, just not the bytes the operator staged — so the
+// only observable difference is the refusal itself.
+func TestFreezePublicationCandidateRefusesUnflaggedStagingTree(t *testing.T) {
+	t.Parallel()
+
+	mirrorDir := t.TempDir()
+	contractDir := filepath.Join(mirrorDir, "axon", "provides", "orders")
+	if err := os.MkdirAll(contractDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(contractDir, "contract.md"), []byte("descriptor\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	runFixtureGit(t, mirrorDir, "init", "-q")
+	runFixtureGit(t, mirrorDir, "add", "-A")
+	runFixtureGit(t, mirrorDir, "commit", "-q", "-m", "seed candidate")
+
+	projectRoot := t.TempDir()
+	conventional := filepath.Join(projectRoot, ".a2a", "staging", "axon", "provides", "orders")
+	if err := os.MkdirAll(conventional, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(conventional, "contract.md"), []byte("staged\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, _, err := FreezePublicationCandidate(context.Background(), "axon", projectRoot, mirrorDir, "XC-axon-orders", "")
+	if err == nil {
+		t.Fatal("FreezePublicationCandidate did not refuse a present, unflagged staging tree")
+	}
+	if !strings.Contains(err.Error(), ".a2a/staging/axon/provides/orders") || !strings.Contains(err.Error(), "no --staging") {
+		t.Fatalf("refusal %q does not name the staging path it found", err.Error())
+	}
+}
+
+// TestFreezePublicationCandidateRefusesEvenAnEmptyStagingTree covers the
+// spec's own edge case: an EMPTY staging directory still counts as
+// "present" — the guard is existence, not content.
+func TestFreezePublicationCandidateRefusesEvenAnEmptyStagingTree(t *testing.T) {
+	t.Parallel()
+
+	mirrorDir := t.TempDir()
+	contractDir := filepath.Join(mirrorDir, "axon", "provides", "orders")
+	if err := os.MkdirAll(contractDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(contractDir, "contract.md"), []byte("descriptor\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	runFixtureGit(t, mirrorDir, "init", "-q")
+	runFixtureGit(t, mirrorDir, "add", "-A")
+	runFixtureGit(t, mirrorDir, "commit", "-q", "-m", "seed candidate")
+
+	projectRoot := t.TempDir()
+	conventional := filepath.Join(projectRoot, ".a2a", "staging", "axon", "provides", "orders")
+	if err := os.MkdirAll(conventional, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	_, _, err := FreezePublicationCandidate(context.Background(), "axon", projectRoot, mirrorDir, "XC-axon-orders", "")
+	if err == nil {
+		t.Fatal("FreezePublicationCandidate did not refuse a present-but-empty, unflagged staging tree")
+	}
+}
+
+// TestFreezePublicationCandidateIgnoresAFileAtTheConventionalStagingPath
+// covers the spec's other edge case: a FILE (not a directory) at the
+// conventional location is not a staging tree, so it must not trigger the
+// refusal — the freeze proceeds against the mirror exactly as it did before
+// this guard existed.
+func TestFreezePublicationCandidateIgnoresAFileAtTheConventionalStagingPath(t *testing.T) {
+	t.Parallel()
+
+	mirrorDir := t.TempDir()
+	contractDir := filepath.Join(mirrorDir, "axon", "provides", "orders")
+	if err := os.MkdirAll(contractDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(contractDir, "contract.md"), []byte("descriptor\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	runFixtureGit(t, mirrorDir, "init", "-q")
+	runFixtureGit(t, mirrorDir, "add", "-A")
+	runFixtureGit(t, mirrorDir, "commit", "-q", "-m", "seed candidate")
+
+	projectRoot := t.TempDir()
+	parent := filepath.Join(projectRoot, ".a2a", "staging", "axon", "provides")
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(parent, "orders"), []byte("not a directory\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, source, err := FreezePublicationCandidate(context.Background(), "axon", projectRoot, mirrorDir, "XC-axon-orders", "")
+	if err != nil {
+		t.Fatalf("FreezePublicationCandidate refused a file (not a staging tree) at the conventional path: %v", err)
+	}
+	if source.Kind != contract.CandidateSourceMirror {
+		t.Fatalf("source = %+v, want the mirror candidate", source)
+	}
+}
+
+// TestFreezePublicationCandidateAllowsAbsentStagingTree pins the "absent
+// behaves as today" half of AC-1/AC-2's own testing row against a real
+// (non-empty) project root, since the pre-existing coverage above only
+// exercises this with an empty projectRoot string.
+func TestFreezePublicationCandidateAllowsAbsentStagingTree(t *testing.T) {
+	t.Parallel()
+
+	mirrorDir := t.TempDir()
+	contractDir := filepath.Join(mirrorDir, "axon", "provides", "orders")
+	if err := os.MkdirAll(contractDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(contractDir, "contract.md"), []byte("descriptor\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	runFixtureGit(t, mirrorDir, "init", "-q")
+	runFixtureGit(t, mirrorDir, "add", "-A")
+	runFixtureGit(t, mirrorDir, "commit", "-q", "-m", "seed candidate")
+
+	projectRoot := t.TempDir()
+
+	_, source, err := FreezePublicationCandidate(context.Background(), "axon", projectRoot, mirrorDir, "XC-axon-orders", "")
+	if err != nil {
+		t.Fatalf("FreezePublicationCandidate: %v", err)
+	}
+	if source.Kind != contract.CandidateSourceMirror {
+		t.Fatalf("source = %+v, want the mirror candidate", source)
 	}
 }
 

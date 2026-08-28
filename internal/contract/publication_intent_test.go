@@ -94,6 +94,163 @@ artifacts:
 	}
 }
 
+// TestBuildCandidateIntentCarriesExportSourceProjectionForDeclaredV2 pins
+// spec §10's required shape (AC-11): the intent builder computes
+// export-source-v1 once, from the CANDIDATE-side v2 set it already builds
+// and would otherwise discard, and the planner must read that carried value
+// rather than re-deriving a second one. The cross-check against an
+// independently built CarriedSet.ExportSource() over the identical bytes
+// proves the carried value is not a drifted second implementation.
+func TestBuildCandidateIntentCarriesExportSourceProjectionForDeclaredV2(t *testing.T) {
+	t.Parallel()
+
+	raw := declaredIntentDescriptor(`schema: envelope/v2
+id: XC-atlas-demo
+type: contract
+title: Demo contract
+version: 1.0.0
+schema_format: json-schema-2020-12
+compat_policy: default
+artifacts:
+  - {path: schema/order.schema.json, role: schema, normative: true, media_type: application/schema+json}
+  - {path: fixtures/valid/order.json, role: valid-fixture, normative: true, media_type: application/json, conforms_to: schema/order.schema.json}
+  - {path: fixtures/invalid/missing-id.json, role: invalid-fixture, normative: true, media_type: application/json, conforms_to: schema/order.schema.json}
+`, "# Demo\n")
+	snapshot := CandidateSnapshot{
+		Descriptor: CandidateFile{Path: DescriptorPath, Kind: CandidateRegular, Raw: raw},
+		Files:      cloneCandidates(validCandidates()[:3]),
+	}
+	intent, issues := BuildCandidateIntent(snapshot)
+	assertNoIssues(t, issues)
+
+	projection, ok := intent.ExportSource()
+	if !ok {
+		t.Fatal("declared-v2 candidate intent carries no export-source-v1 projection")
+	}
+	if projection.Profile != ProfileExportSourceV1 {
+		t.Fatalf("projection profile = %q, want %q", projection.Profile, ProfileExportSourceV1)
+	}
+
+	descriptor, err := ParseDescriptor(raw)
+	if err != nil {
+		t.Fatalf("ParseDescriptor: %v", err)
+	}
+	set, issues := BuildCarriedSet(ProfileContractSetV2, raw, descriptor, cloneCandidates(validCandidates()[:3]))
+	assertNoIssues(t, issues)
+	want, err := set.ExportSource()
+	if err != nil {
+		t.Fatalf("set.ExportSource(): %v", err)
+	}
+	if projection.Digest != want.Digest {
+		t.Fatalf("carried export-source projection = %q, want %q", projection.Digest, want.Digest)
+	}
+}
+
+// TestBuildCandidateIntentCarriesNoExportSourceProjectionForLegacy pins the
+// other half: a legacy (non-declared-v2) candidate has no export-source-v1
+// shape at all, so the intent carries none — the planner's own refusal for
+// a legacy candidate asserting generated_from (AC-10) depends on this being
+// false rather than a zero-value projection that could be mistaken for one.
+func TestBuildCandidateIntentCarriesNoExportSourceProjectionForLegacy(t *testing.T) {
+	t.Parallel()
+
+	raw := declaredIntentDescriptor(`schema: envelope/v1
+id: XC-atlas-demo
+type: contract
+title: Demo contract
+version: 1.0.0
+schema_format: json-schema-2020-12
+compat_policy: default
+`, "# Demo\n")
+	intent, issues := BuildCandidateIntent(CandidateSnapshot{
+		Descriptor: CandidateFile{Path: DescriptorPath, Kind: CandidateRegular, Raw: raw},
+		Files:      cloneCandidates(validCandidates()[:3]),
+	})
+	assertNoIssues(t, issues)
+	if intent.InventoryMode() != InventoryLegacyFixedV1 {
+		t.Fatalf("inventory mode = %q", intent.InventoryMode())
+	}
+	if _, ok := intent.ExportSource(); ok {
+		t.Fatal("legacy candidate intent carries an export-source-v1 projection, want none")
+	}
+}
+
+// TestDetectInventoryModeMatchesBuildCandidateIntent pins criterion 9: the
+// predicate deciding inventory mode from raw descriptor bytes has exactly
+// one definition, shared by the publisher (BuildCandidateIntent, via the
+// unexported inventoryModeFromSemantic) and DetectInventoryMode (the
+// verifier's entry point, since verify-export's local-candidate check has
+// no CandidateIntentSnapshot of its own to read a mode off). The
+// present-but-EMPTY-list row is the one that would catch a caller using
+// `len(Artifacts) > 0` instead of key presence — that predicate answers
+// "declared-v2" as false here, which is wrong: an explicit `artifacts: []`
+// is still a declared-v2 candidate (BuildCarriedSet's own
+// IssueTooFewEntries is what actually catches the empty inventory, as a
+// content defect rather than a mode question).
+func TestDetectInventoryModeMatchesBuildCandidateIntent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		raw  []byte
+		want InventoryMode
+	}{
+		{
+			name: "artifacts key absent (legacy)",
+			raw: declaredIntentDescriptor(`schema: envelope/v1
+id: XC-atlas-demo
+type: contract
+title: Demo contract
+version: 1.0.0
+schema_format: json-schema-2020-12
+compat_policy: default
+`, "# Demo\n"),
+			want: InventoryLegacyFixedV1,
+		},
+		{
+			name: "artifacts key present and populated (declared-v2)",
+			raw: declaredIntentDescriptor(`schema: envelope/v2
+id: XC-atlas-demo
+type: contract
+title: Demo contract
+version: 1.0.0
+schema_format: json-schema-2020-12
+compat_policy: default
+artifacts:
+  - {path: schema/order.schema.json, role: schema, normative: true, media_type: application/schema+json}
+  - {path: fixtures/valid/order.json, role: valid-fixture, normative: true, media_type: application/json, conforms_to: schema/order.schema.json}
+  - {path: fixtures/invalid/missing-id.json, role: invalid-fixture, normative: true, media_type: application/json, conforms_to: schema/order.schema.json}
+`, "# Demo\n"),
+			want: InventoryDeclaredV2,
+		},
+		{
+			name: "artifacts key present but an empty list (still declared-v2)",
+			raw: declaredIntentDescriptor(`schema: envelope/v2
+id: XC-atlas-demo
+type: contract
+title: Demo contract
+version: 1.0.0
+schema_format: json-schema-2020-12
+compat_policy: default
+artifacts: []
+`, "# Demo\n"),
+			want: InventoryDeclaredV2,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := DetectInventoryMode(test.raw)
+			if err != nil {
+				t.Fatalf("DetectInventoryMode: %v", err)
+			}
+			if got != test.want {
+				t.Fatalf("DetectInventoryMode() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestBuildCandidateIntentIncludesOrderBodyFieldsAndBytes(t *testing.T) {
 	t.Parallel()
 

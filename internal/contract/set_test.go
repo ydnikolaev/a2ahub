@@ -9,6 +9,78 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 )
 
+// TestSelectDigestProfileIsTheOnlyMapping pins criterion 9: the mapping
+// from a candidate's own InventoryMode to its DigestProfile has exactly one
+// definition, and it is a pure function of the mode alone — no floor, no
+// caller-specific branch.
+func TestSelectDigestProfileIsTheOnlyMapping(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		mode InventoryMode
+		want DigestProfile
+	}{
+		{InventoryDeclaredV2, ProfileContractSetV2},
+		{InventoryLegacyFixedV1, ProfileContractTreeV1},
+	}
+	for _, test := range tests {
+		t.Run(string(test.mode), func(t *testing.T) {
+			t.Parallel()
+			if got := SelectDigestProfile(test.mode); got != test.want {
+				t.Fatalf("SelectDigestProfile(%q) = %q, want %q", test.mode, got, test.want)
+			}
+		})
+	}
+}
+
+// TestClassifyExportVerificationThreeDescriptorShapes pins AC-5/6/7: three
+// outcomes, never two, and the word "matched" must never appear for a
+// descriptor that asserted nothing measurable — the circular case (a
+// published value that is a2a's own unchecked computation, not the
+// producer's own assertion) this classifier exists to keep distinguishable
+// from an honest match.
+func TestClassifyExportVerificationThreeDescriptorShapes(t *testing.T) {
+	t.Parallel()
+
+	const computed = "sha256:" + "11111111111111111111111111111111111111111111111111111111111111"
+	tests := []struct {
+		name                  string
+		generatedFromDeclared bool
+		want                  string
+		wantVerification      ExportVerification
+	}{
+		{
+			name: "no generated_from at all", generatedFromDeclared: false, want: "",
+			wantVerification: ExportUnmeasured,
+		},
+		{
+			name: "generated_from present with an empty source_digest", generatedFromDeclared: true, want: "",
+			wantVerification: ExportUnmeasured,
+		},
+		{
+			name: "generated_from asserts the computed digest", generatedFromDeclared: true, want: computed,
+			wantVerification: ExportMatched,
+		},
+		{
+			name: "generated_from asserts a different digest", generatedFromDeclared: true,
+			want:             "sha256:" + "22222222222222222222222222222222222222222222222222222222222222",
+			wantVerification: ExportDrifted,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			got := ClassifyExportVerification(test.generatedFromDeclared, test.want, computed)
+			if got != test.wantVerification {
+				t.Fatalf("ClassifyExportVerification(%v, %q, %q) = %q, want %q", test.generatedFromDeclared, test.want, computed, got, test.wantVerification)
+			}
+			if got == ExportMatched && test.want == "" {
+				t.Fatal("an empty asserted digest must never classify as matched")
+			}
+		})
+	}
+}
+
 func TestBuildCarriedSetV2ExactAndDeterministic(t *testing.T) {
 	t.Parallel()
 	descriptor := validDescriptor()

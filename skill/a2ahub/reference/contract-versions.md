@@ -168,14 +168,48 @@ entries — nothing else:
 - **Out of scope**: the descriptor itself, and every companion under
   `artifacts/`. Editing your changelog does not change the digest; editing a
   fixture does.
-- Each in-scope entry contributes `path → sha256(file bytes)`; the pairs are
-  combined into one digest, so the result is stable under reordering the
+- Each in-scope entry contributes a `(path, per-file value)` pair; the pairs
+  are combined into one digest, so the result is stable under reordering the
   inventory and changes if any declared path or any byte moves.
 
-Emit that value from your generator, and let publication check the agreement.
-`a2a contract verify-export --local <dir> <XC-id>` prints the digest a2a
-computes for a local candidate, which is for CHECKING your implementation —
-not for filling the field in from.
+**The combine, byte-exact — this is what makes a second implementation
+possible:**
+
+```text
+per-file value : "sha256:" + lowercase hex of SHA-256 over the file's RAW
+                 BYTES, exactly as stored. No canonicalization. The
+                 PREFIXED STRING is what is fed to the combine below — not
+                 the raw 32 bytes, not bare hex.
+ordering       : paths sorted BYTEWISE ascending (Go sort.Strings over UTF-8
+                 bytes). Not locale-aware, not case-folded:
+                 "schema/A.json" precedes "schema/b.json".
+separator      : a single NUL byte (0x00) between the path and its per-file
+                 value.
+terminator     : a single LF (0x0A) after EVERY pair, the last one included.
+outer          : "sha256:" + lowercase hex of the SHA-256 over that byte
+                 stream.
+```
+
+Two test vectors, so an implementation written from this prose alone can
+check itself before ever running `a2a`:
+
+| input | digest |
+|---|---|
+| the empty set | `sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `schema/contract.schema.json` = `{"a":1}\n`, `fixtures/valid/one.json` = `{"b":2}\n` | `sha256:8a029c980424e66d5a9b001a413fdca57c012e24f537ac574fde744c008a9389` |
+
+*(Per-file: schema `sha256:e346432021b04179518d9614f3560ccd71354a4ee101ddcb893d6959a9d6301c`,
+fixture `sha256:651b5768de252a9f4d2083046d83f81c31369beb73d14411492b20ea8fd1fcf5`.)*
+
+The empty-set value is a real, well-formed digest — but `export-source-v1`
+over a valid `contract-set-v2` candidate can never actually be empty: the
+descriptor's `schema`, `valid-fixture` and `invalid-fixture` roles are all
+required, so at least three entries are always in scope.
+
+Emit the outer value from your generator, and let publication check the
+agreement. `a2a contract verify-export --local <dir> <XC-id>` prints the
+digest a2a computes for a local candidate, which is for CHECKING your
+implementation — not for filling the field in from.
 
 ## The descriptor's `version:` is not yours to set
 

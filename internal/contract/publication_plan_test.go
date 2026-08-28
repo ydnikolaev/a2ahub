@@ -556,6 +556,30 @@ compat_policy: default
 	}
 }
 
+// plannerLegacySnapshotDeclaringGeneratedFrom builds a legacy (envelope/v1,
+// no `artifacts:`) candidate that nonetheless asserts generated_from — the
+// shape AC-10 refuses. Before this phase the legacy branch silently
+// recomputed the SAME aggregate contract-tree-v1 already digests as
+// "provenance", byte-identical under a different profile name; this
+// candidate is what used to accept that.
+func plannerLegacySnapshotDeclaringGeneratedFrom(id, version, schemaFormat string, generated GeneratedFrom) CandidateSnapshot {
+	raw := declaredIntentDescriptor(`schema: envelope/v1
+id: `+id+`
+type: contract
+title: Planner contract
+version: `+version+`
+schema_format: `+schemaFormat+`
+compat_policy: default
+generated_from:
+  tool: `+generated.Tool+`
+  source_digest: `+generated.SourceDigest+`
+`, "# Planner contract\n")
+	return CandidateSnapshot{
+		Descriptor: CandidateFile{Path: DescriptorPath, Kind: CandidateRegular, Raw: raw},
+		Files:      cloneCandidates(validCandidates()[:3]),
+	}
+}
+
 func publishedDeclared(t *testing.T, version string, snapshot CandidateSnapshot) PublishedContract {
 	t.Helper()
 	descriptor, err := ParseDescriptor(snapshot.Descriptor.Raw)
@@ -627,6 +651,80 @@ func TestPlanPublicationSourceDigestIsCanonicalArtifactDigest(t *testing.T) {
 	}
 }
 
+// TestPlanPublicationRefusesEmptyBump pins AC-3: a non-first bump whose
+// mutations touch no normative artifact is refused, naming the mutation
+// count. The candidate carries byte-identical schema/fixtures to the tree
+// it would overwrite (MutationBaseline), so the only mutation is the
+// descriptor itself — excluded from the count on purpose, since every bump
+// changes the descriptor and counting it would make the guard
+// unsatisfiable.
+func TestPlanPublicationRefusesEmptyBump(t *testing.T) {
+	t.Parallel()
+
+	candidate := mustCandidateIntent(t, plannerDeclaredSnapshot("XC-atlas-demo", "1.0.0", "json-schema-2020-12", nil))
+	baseline := publishedDeclared(t, "1.0.0", plannerDeclaredSnapshot("XC-atlas-demo", "1.0.0", "json-schema-2020-12", nil))
+
+	plan, issues := PlanPublication(PublicationInput{
+		System: "atlas", ContractID: "XC-atlas-demo", Selector: "explicit:1.0.1",
+		AuthoringFloor: "0.19.0", Candidate: candidate,
+		Published: []PublishedContract{baseline}, MutationBaseline: baseline,
+		CandidateSource: CandidateSource{Kind: CandidateSourceMirror, Location: "tree", Fingerprint: artifact.Digest([]byte("tree"))},
+		ContractRoot:    "contracts/atlas/demo",
+	}, &recordingCompatibilityChecker{result: CompatibilityResult{Verdict: CompatibilityCompatible}})
+	if plan.PlanDigest != "" {
+		t.Fatalf("empty bump produced a plan %+v", plan)
+	}
+	found := false
+	for _, issue := range issues {
+		if issue.Kind != IssueInvalidPublication || issue.Path != "mutations" {
+			continue
+		}
+		if !strings.Contains(issue.Detail, "0 mutation(s)") {
+			t.Fatalf("refusal %q does not name the mutation count", issue.Detail)
+		}
+		if !strings.Contains(issue.Detail, "--allow-empty-bump") {
+			t.Fatalf("refusal %q does not name its own remedy", issue.Detail)
+		}
+		found = true
+	}
+	if !found {
+		t.Fatalf("issues = %+v, want an empty-bump refusal naming the mutation count", issues)
+	}
+}
+
+// TestPlanPublicationAllowEmptyBumpProceedsAndAcknowledges pins AC-4:
+// --allow-empty-bump (surfaced here as PublicationInput.AllowEmptyBump)
+// proceeds past the exact refusal TestPlanPublicationRefusesEmptyBump pins,
+// and the plan carries a printable acknowledgement that the flag was used —
+// never a silent pass-through.
+func TestPlanPublicationAllowEmptyBumpProceedsAndAcknowledges(t *testing.T) {
+	t.Parallel()
+
+	candidate := mustCandidateIntent(t, plannerDeclaredSnapshot("XC-atlas-demo", "1.0.0", "json-schema-2020-12", nil))
+	baseline := publishedDeclared(t, "1.0.0", plannerDeclaredSnapshot("XC-atlas-demo", "1.0.0", "json-schema-2020-12", nil))
+
+	plan, issues := PlanPublication(PublicationInput{
+		System: "atlas", ContractID: "XC-atlas-demo", Selector: "explicit:1.0.1",
+		AuthoringFloor: "0.19.0", Candidate: candidate,
+		Published: []PublishedContract{baseline}, MutationBaseline: baseline,
+		CandidateSource: CandidateSource{Kind: CandidateSourceMirror, Location: "tree", Fingerprint: artifact.Digest([]byte("tree"))},
+		ContractRoot:    "contracts/atlas/demo", AllowEmptyBump: true,
+	}, &recordingCompatibilityChecker{result: CompatibilityResult{Verdict: CompatibilityCompatible}})
+	assertNoIssues(t, issues)
+	if plan.PlanDigest == "" {
+		t.Fatal("--allow-empty-bump did not produce a plan")
+	}
+	found := false
+	for _, warning := range plan.Warnings {
+		if warning.Code == "empty-bump-acknowledged" && strings.Contains(warning.Message, "--allow-empty-bump acknowledged") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("plan.Warnings = %+v, want an empty-bump acknowledgement", plan.Warnings)
+	}
+}
+
 func TestPlanPublicationRejectsMismatchedSourceDigestAssertion(t *testing.T) {
 	t.Parallel()
 
@@ -642,6 +740,60 @@ func TestPlanPublicationRejectsMismatchedSourceDigestAssertion(t *testing.T) {
 		t.Fatalf("mismatched source assertion produced plan %q", plan.PlanDigest)
 	}
 	assertIssue(t, issues, IssueDigestMismatch)
+}
+
+// TestPlanPublicationRefusesLegacyCandidateAssertingGeneratedFrom pins
+// AC-10: the planner's legacy export-source-v1 branch is GONE. A legacy
+// candidate (below the contract-set-v2 floor, no `artifacts:` inventory)
+// that declares generated_from is refused rather than silently computing a
+// "provenance" digest that is byte-identical to its own publication
+// aggregate under a different profile name — the refusal names the floor
+// and the `artifacts:` remedy, the same shape the planner's other two mode
+// refusals already use.
+func TestPlanPublicationRefusesLegacyCandidateAssertingGeneratedFrom(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		floor string
+	}{
+		{name: "well below floor", floor: "0.10.0"},
+		{name: "immediately below floor", floor: "0.18.9"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			candidate := mustCandidateIntent(t, plannerLegacySnapshotDeclaringGeneratedFrom(
+				"XC-atlas-demo", "0.0.0", "json-schema-2020-12",
+				GeneratedFrom{Tool: "exporter", SourceDigest: artifact.Digest([]byte("whatever"))},
+			))
+			plan, issues := PlanPublication(PublicationInput{
+				System: "atlas", ContractID: "XC-atlas-demo", Selector: "explicit:1.0.0",
+				AuthoringFloor: test.floor, Candidate: candidate,
+				CandidateSource: CandidateSource{Kind: CandidateSourceMirror, Location: "tree", Fingerprint: artifact.Digest([]byte("tree"))},
+				ContractRoot:    "contracts/atlas/demo",
+			}, nil)
+			if plan.PlanDigest != "" {
+				t.Fatalf("legacy candidate asserting generated_from produced a plan %+v", plan)
+			}
+			found := false
+			for _, issue := range issues {
+				if issue.Kind != IssueInvalidPublication || issue.Path != "generated_from" {
+					continue
+				}
+				if !strings.Contains(issue.Detail, ContractPublicationFloor) {
+					t.Fatalf("refusal %q does not name the floor %q", issue.Detail, ContractPublicationFloor)
+				}
+				if !strings.Contains(issue.Detail, "artifacts:") {
+					t.Fatalf("refusal %q does not name the artifacts: remedy", issue.Detail)
+				}
+				found = true
+			}
+			if !found {
+				t.Fatalf("issues = %+v, want a generated_from refusal naming the floor and artifacts:", issues)
+			}
+		})
+	}
 }
 
 // TestPlanPublicationOverwritesTheTreeOnMainNotTheCompatibilityBaseline pins
@@ -668,6 +820,11 @@ func TestPlanPublicationOverwritesTheTreeOnMainNotTheCompatibilityBaseline(t *te
 	oneOne := publishedDeclared(t, "1.1.0", plannerDeclaredSnapshot("XC-atlas-demo", "1.1.0", "json-schema-2020-12", nil))
 	twoZero := publishedDeclared(t, "2.0.0", plannerDeclaredSnapshot("XC-atlas-demo", "2.0.0", "json-schema-2020-12", nil))
 
+	// This fixture's schema/fixture bytes are identical at every version on
+	// purpose (isolating the mutation-baseline concern below), so the ONLY
+	// mutation is the descriptor — an empty bump by AC-3's own definition.
+	// AllowEmptyBump acknowledges that deliberately; it is orthogonal to
+	// what this test actually pins.
 	plan, issues := PlanPublication(PublicationInput{
 		System: "atlas", ContractID: "XC-atlas-demo", Selector: "explicit:1.2.0",
 		AuthoringFloor: "0.19.0", Candidate: candidate,
@@ -675,6 +832,7 @@ func TestPlanPublicationOverwritesTheTreeOnMainNotTheCompatibilityBaseline(t *te
 		MutationBaseline: twoZero,
 		CandidateSource:  CandidateSource{Kind: CandidateSourceStaging, Location: "staging/contracts/atlas/demo", Fingerprint: "sha256:" + strings.Repeat("3", 64)},
 		ContractRoot:     "contracts/atlas/demo",
+		AllowEmptyBump:   true,
 	}, &recordingCompatibilityChecker{result: CompatibilityResult{Verdict: CompatibilityCompatible}})
 	assertNoIssues(t, issues)
 

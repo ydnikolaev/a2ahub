@@ -139,7 +139,9 @@ func TestContractBinaryRefusalDeprecateUnpublishedVersion(t *testing.T) {
 	draft, id := provider.stageContract("undeprecated", "0.0.0")
 	provider.mustRun("submit", draft)
 	provider.mustRun("sync")
-	provider.mustRun("contract", "publish", "--version", "1.0.0", id)
+	// --staging is REQUIRED since 2026-08-28 (answers-that-hold P2) — see
+	// stageContract: a staging candidate present with no flag is now refused.
+	provider.mustRun("contract", "publish", "--version", "1.0.0", "--staging", ".a2a/staging/"+provider.system+"/provides/undeprecated", id)
 	provider.mustRun("sync")
 
 	stdout, stderr, code := provider.run("contract", "deprecate",

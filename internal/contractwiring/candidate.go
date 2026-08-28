@@ -23,6 +23,25 @@ func FreezePublicationCandidate(ctx context.Context, ownSystem, projectRoot, mir
 	if err != nil || parsed.Prefix != "XC" || parsed.System != ownSystem {
 		return nil, contract.CandidateSource{}, fmt.Errorf("contract publication id %q is not owned by %s", contractID, ownSystem)
 	}
+	// US-1/AC-1-2: a staging tree the operator forgot to point at is the
+	// exact failure this guard exists to catch — silently falling back to
+	// the mirror would ship the previous version's bytes under a new
+	// number. The check reuses OpenContractCandidateReader (the same
+	// symlink-safe, identity-checked path opener the read path already
+	// trusts) rather than a bare os.Stat, so a stray FILE at the
+	// conventional staging path is correctly NOT treated as a staging
+	// tree (opening a non-directory fails) and an EMPTY staging directory
+	// still is (existence, not content, is what a forgotten flag misses).
+	if staging == "" {
+		conventional := path.Join(".a2a", "staging", ownSystem, "provides", parsed.Slug)
+		if reader, openErr := space.OpenContractCandidateReader(projectRoot, space.ContractCandidateLocation{Path: conventional, Source: space.ContractCandidateSourceStaging}); openErr == nil {
+			_ = reader.Close()
+			return nil, contract.CandidateSource{}, fmt.Errorf(
+				"contract publication for %s found a staging tree at %s but no --staging was given: pass --staging %s to use it, or remove the stale directory if it should not be published",
+				contractID, conventional, conventional,
+			)
+		}
+	}
 	layout, err := space.NewLayout(ownSystem)
 	if err != nil {
 		return nil, contract.CandidateSource{}, err

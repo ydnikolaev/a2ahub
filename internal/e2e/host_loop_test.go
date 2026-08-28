@@ -189,6 +189,24 @@ func (r *hostRig) stageContract(slug, version string) (path, id string) {
 	mustWrite(r.t, filepath.Join(fixturesValidDir, slug+".json"), `{"example":"replace-me"}`+"\n")
 	mustWrite(r.t, filepath.Join(fixturesInvalidDir, slug+".json"), "null\n")
 
+	// The staging candidate's OWN descriptor, at the layout `a2a contract
+	// new`'s ScaffoldContractCandidateInStaging produces. Written here
+	// because this rig authors the envelope by hand rather than through the
+	// scaffold, and because `contract preflight|publish --staging <dir>`
+	// reads `<dir>/contract.md` unconditionally
+	// (space.ContractCandidateReader.Read).
+	//
+	// REQUIRED SINCE 2026-08-28 (answers-that-hold P2). Publish already
+	// overlaid this staging tree on the committed mirror candidate; what
+	// changed is that leaving the tree here and NOT passing --staging is now
+	// a REFUSAL rather than an implicit pickup, so every caller of this
+	// helper passes the flag and the flag needs this file. The version is
+	// 0.0.0 for the same reason contractCompatOverlayDescriptor uses it: the
+	// candidate descriptor carries no version of its own, the publish verb's
+	// --version does.
+	mustWrite(r.t, filepath.Join(r.projectDir, ".a2a", "staging", r.system, "provides", slug, "contract.md"),
+		contractCompatOverlayDescriptor(r.system, id))
+
 	return path, id
 }
 
@@ -390,11 +408,11 @@ func TestHostLoopContractFamily(t *testing.T) {
 	// composition. Preflight is read-only: the fake host must observe no PR.
 	provider.mustRun("sync")
 	beforePreflightPRs := len(provider.gh.PRs())
-	preflight := provider.mustRun("contract", "preflight", "--version", "1.0.0", "--json", id)
+	preflight := provider.mustRun("contract", "preflight", "--version", "1.0.0", "--staging", ".a2a/staging/"+provider.system+"/provides/export", "--json", id)
 	if !strings.Contains(preflight, `"target_version":"1.0.0"`) || len(provider.gh.PRs()) != beforePreflightPRs {
 		t.Fatalf("preflight result/host mutation mismatch: stdout=%s PRs before=%d after=%d", preflight, beforePreflightPRs, len(provider.gh.PRs()))
 	}
-	provider.mustRun("contract", "publish", "--version", "1.0.0", id)
+	provider.mustRun("contract", "publish", "--version", "1.0.0", "--staging", ".a2a/staging/"+provider.system+"/provides/export", id)
 	if len(provider.gh.PRs()) != 2 {
 		t.Fatalf("PRs = %d after submit+publish, want 2 (host calls: %v)",
 			len(provider.gh.PRs()), provider.gh.Requests())

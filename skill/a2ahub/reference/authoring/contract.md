@@ -18,6 +18,13 @@ compat_policy: default
 # generated_from:                    # include only for a code-generated contract
 #   tool: "<generator name and version>"
 #   source_digest: "sha256:<export-source-v1 digest>"
+#   Compute source_digest in YOUR OWN generator — a value copied out of a2a's
+#   own refusal proves only that a2a agrees with itself. `a2a contract
+#   publish` is the guard: it refuses a mismatched assertion before writing
+#   anything. `a2a contract verify-export --local <dir> <XC-id>` prints the
+#   export-source-v1 digest a2a computes for a local candidate, which is for
+#   CHECKING your own implementation of the combine, never for filling this
+#   field in from.
 # x_binding:                          # OPTIONAL — what this contract IS and whether it may be adopted or pinned
 #   artifact_class: <author's own vocabulary, e.g. non_binding_review>
 #   compatibility_status: <the claim being made, or "none" to make no claim at all>

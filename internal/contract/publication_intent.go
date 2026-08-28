@@ -29,13 +29,15 @@ const (
 // later consumed by publication planning.
 // CandidateIntentSnapshot is part of the public package API.
 type CandidateIntentSnapshot struct {
-	digest         string
-	canonical      []byte
-	inventoryMode  InventoryMode
-	contractID     string
-	currentVersion string
-	descriptor     Descriptor
-	snapshot       CandidateSnapshot
+	digest          string
+	canonical       []byte
+	inventoryMode   InventoryMode
+	contractID      string
+	currentVersion  string
+	descriptor      Descriptor
+	snapshot        CandidateSnapshot
+	exportSource    DigestProjection
+	hasExportSource bool
 }
 
 // Digest is part of the public package API.
@@ -59,6 +61,21 @@ func (s CandidateIntentSnapshot) CanonicalBytes() []byte { return bytes.Clone(s.
 // Snapshot is part of the public package API.
 func (s CandidateIntentSnapshot) Snapshot() CandidateSnapshot {
 	return cloneCandidateSnapshot(s.snapshot)
+}
+
+// ExportSource returns the export-source-v1 projection this intent carries,
+// computed once here from the CANDIDATE-side declared-v2 carried set at
+// intent-build time — before target version, floor, or finalized
+// source_digest exist. This is spec §10's required shape: computing the
+// projection from the FINALIZED descriptor is circular (the digest would
+// feed the finalized descriptor, and the finalized descriptor feeds the
+// set), so the planner reads this carried value instead of re-deriving one
+// from the descriptor's inventory and raw bytes a second time. The second
+// return is false for a legacy (non-declared-v2) candidate, which has no
+// export-source-v1 projection to carry.
+// ExportSource is part of the public package API.
+func (s CandidateIntentSnapshot) ExportSource() (DigestProjection, bool) {
+	return s.exportSource, s.hasExportSource
 }
 
 type candidateIntentRecord struct {
@@ -115,7 +132,9 @@ func BuildCandidateIntent(input CandidateSnapshot) (CandidateIntentSnapshot, []I
 
 	contractID, _ := semantic["id"].(string)
 	currentVersion, _ := semantic["version"].(string)
-	_, declared := semantic["artifacts"]
+	// The mode predicate reads semantic BEFORE the deletes below remove the
+	// `artifacts` key it inspects.
+	mode := inventoryModeFromSemantic(semantic)
 	delete(semantic, "version")
 	delete(semantic, "artifacts")
 	delete(semantic, "actor")
@@ -130,16 +149,29 @@ func BuildCandidateIntent(input CandidateSnapshot) (CandidateIntentSnapshot, []I
 		}}
 	}
 
-	mode := InventoryLegacyFixedV1
+	profile := SelectDigestProfile(mode)
 	var set CarriedSet
-	if declared {
-		mode = InventoryDeclaredV2
-		set, issues = BuildCarriedSet(ProfileContractSetV2, snapshot.Descriptor.Raw, descriptor, snapshot.Files)
+	if mode == InventoryDeclaredV2 {
+		set, issues = BuildCarriedSet(profile, snapshot.Descriptor.Raw, descriptor, snapshot.Files)
 	} else {
-		set, issues = BuildCarriedSet(ProfileContractTreeV1, nil, Descriptor{}, snapshot.Files)
+		set, issues = BuildCarriedSet(profile, nil, Descriptor{}, snapshot.Files)
 	}
 	if len(issues) != 0 {
 		return CandidateIntentSnapshot{}, issues
+	}
+
+	var exportSource DigestProjection
+	hasExportSource := false
+	if mode == InventoryDeclaredV2 {
+		projection, exportErr := set.ExportSource()
+		if exportErr != nil {
+			return CandidateIntentSnapshot{}, []Issue{{
+				Kind: IssueUnsupportedProfile, Path: "generated_from.source_digest",
+				Detail: exportErr.Error(),
+			}}
+		}
+		exportSource = projection
+		hasExportSource = true
 	}
 
 	entries := make([]candidateIntentEntry, 0, len(set.Entries))
@@ -195,12 +227,14 @@ func BuildCandidateIntent(input CandidateSnapshot) (CandidateIntentSnapshot, []I
 	}
 
 	return CandidateIntentSnapshot{
-		digest:         artifact.Digest(canonical),
-		canonical:      bytes.Clone(canonical),
-		inventoryMode:  mode,
-		contractID:     contractID,
-		currentVersion: currentVersion,
-		descriptor:     cloneDescriptor(descriptor),
+		digest:          artifact.Digest(canonical),
+		canonical:       bytes.Clone(canonical),
+		inventoryMode:   mode,
+		contractID:      contractID,
+		currentVersion:  currentVersion,
+		descriptor:      cloneDescriptor(descriptor),
+		exportSource:    exportSource,
+		hasExportSource: hasExportSource,
 		snapshot: CandidateSnapshot{
 			Descriptor: CandidateFile{
 				Path: DescriptorPath, Kind: CandidateRegular,
@@ -209,6 +243,43 @@ func BuildCandidateIntent(input CandidateSnapshot) (CandidateIntentSnapshot, []I
 			Files: frozenFiles,
 		},
 	}, nil
+}
+
+// inventoryModeFromSemantic is the ONE predicate deciding whether a
+// candidate descriptor is declared-v2 or legacy-fixed-v1: whether the raw
+// frontmatter's `artifacts` KEY is present, never whether its decoded value
+// is non-empty. An explicit `artifacts: []` is still a declared-v2
+// candidate — BuildCarriedSet's own IssueTooFewEntries catches an empty
+// inventory as a content defect, which is a different question from which
+// inventory MODE this is.
+func inventoryModeFromSemantic(semantic map[string]any) InventoryMode {
+	if _, declared := semantic["artifacts"]; declared {
+		return InventoryDeclaredV2
+	}
+	return InventoryLegacyFixedV1
+}
+
+// DetectInventoryMode applies the SAME predicate BuildCandidateIntent uses
+// internally to a caller that holds only raw descriptor bytes and no
+// CandidateIntentSnapshot of its own — criterion 9's second caller
+// (verify-export's local-candidate check has no InventoryMode to read,
+// unlike the publisher, which always builds one through
+// BuildCandidateIntent). This is the one place that predicate lives; a
+// caller re-deriving "declared" some other way (e.g. `len(Artifacts) > 0`,
+// which diverges on an explicit `artifacts: []`) would be a second,
+// possibly-drifted definition of the same question — the exact class this
+// epic exists to close, reintroduced inside its own fix.
+// DetectInventoryMode is part of the public package API.
+func DetectInventoryMode(descriptorRaw []byte) (InventoryMode, error) {
+	fm, err := artifact.ParseFrontmatter(descriptorRaw)
+	if err != nil {
+		return "", fmt.Errorf("contract: descriptor frontmatter cannot be parsed: %w", err)
+	}
+	var semantic map[string]any
+	if err := yaml.Unmarshal(fm.YAML, &semantic); err != nil || semantic == nil {
+		return "", fmt.Errorf("contract: descriptor frontmatter must decode to an object")
+	}
+	return inventoryModeFromSemantic(semantic), nil
 }
 
 func removeGeneratedSourceDigest(descriptor map[string]any) {
