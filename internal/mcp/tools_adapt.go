@@ -34,27 +34,25 @@ package mcp
 // a2a_read/a2a_whatsnew, via the AdaptDeps this file defines below — so it is
 // reachable on every wiring path (no space, degraded write, healthy
 // connected) AND from a bare mcp.BuildRegistry(...) call, which is what
-// cmd/a2a/catalog.go's catalogMCPRows() uses to generate the skill-drift-
-// gated "## MCP tools" catalogue. A caller with no real binaryVersion/
+// cmd/a2a's own catalogue generator uses to produce the skill-drift-gated
+// "## MCP tools" section an agent reads. A caller with no real binaryVersion/
 // projectConfigPath to inject (BuildRegistry's own many test callers) gets
 // AdaptDeps{}'s zero value: notes.Pending then refuses
 // ErrBinaryVersionUnusable for the empty binary version, exactly the
 // refusal a real `dev` build gets — never a silently empty pending list —
 // so the degraded registration is honest rather than a pretend success.
 //
-// Ordering deviation from the CLI, and why: cmd_adapt.go's own adaptSortItems
-// sorts (Group, then within-group by cmd_whatsnew.go's whatsnewImpactOrder) —
-// but internal/mcp/wire.go's own doc comment states this package "does NOT
-// import cmd/a2a or internal/cli" (ADR-001), and whatsnewImpactOrder lives in
-// internal/cli. This tool therefore sorts by Group ONLY (notes.Pending's own
-// field, already in-package) and leaves each group's own encounter order
-// (ascending release order, then each release's own Changes order —
-// notes.Projection.Items' own documented order) as the within-group
-// tie-break, rather than duplicating cmd_whatsnew.go's impact-rank table
-// across the ADR-001 boundary. This mirrors an EXISTING precedent, not a new
-// one: newWhatsnewHandler (tools_whatsnew.go) already returns its selected
-// releases without applying cmd_whatsnew.go's own per-change impact sort
-// either.
+// Ordering is IDENTICAL to the CLI's, and briefly was not. This tool first
+// sorted by Group alone because the within-group impact tie-break lived in
+// the other surface, which ADR-001 forbids importing — and it said so in a
+// comment, which is precisely what check-cross-surface-citations exists to
+// catch: not the divergence, the CONFESSION of it. Two surfaces answering
+// one ordering question differently is this epic's own C3, and writing the
+// reason down does not make it not one.
+//
+// So the rule moved DOWN instead (ADR-019's default): notes.ImpactOrder,
+// which both surfaces already import. Both now sort (Group, ImpactOrder),
+// and a change to the impact vocabulary reaches both by construction.
 import (
 	"context"
 	"encoding/json"
@@ -100,10 +98,10 @@ type AdaptOutput struct {
 }
 
 // newAdaptHandler builds a2a_adapt's handler. load/loadCurrentIssues mirror
-// newWhatsnewHandler's own two injected loaders; loadProjectConfig mirrors
-// AdaptCommand's own field (NewAdaptCommand's default is space.
-// LoadProjectConfig, tolerant of a missing .a2a/config.yaml — "never
-// adapted" is not a fatal error, cmd_adapt.go's own Run comment). binaryVersion
+// newWhatsnewHandler's own two injected loaders; loadProjectConfig defaults to
+// space.LoadProjectConfig, tolerant of a missing .a2a/config.yaml — "never
+// adapted" is a legitimate state, not a fatal error, and the CLI surface
+// treats it the same way. binaryVersion
 // and projectConfigPath are this call's own injected facts (see this file's
 // doc comment for why they are never input-schema fields).
 func newAdaptHandler(
@@ -148,7 +146,12 @@ func newAdaptHandler(
 		}
 
 		items := append([]notes.PendingItem(nil), proj.Items...)
-		sort.SliceStable(items, func(i, j int) bool { return items[i].Group < items[j].Group })
+		sort.SliceStable(items, func(i, j int) bool {
+			if items[i].Group != items[j].Group {
+				return items[i].Group < items[j].Group
+			}
+			return notes.ImpactOrder(items[i].Change.Impact) < notes.ImpactOrder(items[j].Change.Impact)
+		})
 
 		out := AdaptOutput{
 			Baseline:          proj.Baseline,
@@ -169,8 +172,8 @@ func newAdaptHandler(
 
 // AdaptDeps is a2a_adapt's registration-time dependency set: the two facts
 // notes.Pending needs (BinaryVersion, ProjectConfigPath — see this file's own
-// doc comment for why neither is a call argument) plus the three loaders
-// NewAdaptCommand's own field defaults use, injectable so a test can drive a
+// doc comment for why neither is a call argument) plus the three loaders the
+// production defaults use, injectable so a test can drive a
 // fixed corpus/config without touching the embedded FS or the filesystem.
 //
 // The zero value is a legitimate, INTENTIONALLY degraded registration, not an
@@ -190,8 +193,8 @@ type AdaptDeps struct {
 }
 
 // withDefaults fills d's three loaders with their production implementations
-// when unset (NewAdaptCommand's own defaults: notes.Load/
-// notes.LoadCurrentKnownIssues over releasenotes.FS, space.LoadProjectConfig)
+// when unset (notes.Load / notes.LoadCurrentKnownIssues over releasenotes.FS,
+// and space.LoadProjectConfig — the same three the CLI surface defaults to)
 // — mirrors registerSpaceFree's own a2a_whatsnew registration, which
 // constructs the identical two loaders inline rather than through a struct;
 // this one is a struct because AdaptDeps is also BuildRegistryWithOperations'

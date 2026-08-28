@@ -294,8 +294,11 @@ func TestWhatsnewWrapDetailEmpty(t *testing.T) {
 
 func TestWhatsnewImpactOrderUnknownImpactSortsLast(t *testing.T) {
 	t.Parallel()
-	if got := whatsnewImpactOrder("weird"); got != len(whatsnewImpactRank) {
-		t.Fatalf("whatsnewImpactOrder(weird) = %d, want %d (sorts after every known impact)", got, len(whatsnewImpactRank))
+	// 3 is the size of notes' own impact vocabulary (high/normal/low); an
+	// unknown impact ranks after all of them. Asserted as a literal now that
+	// the rank map lives in internal/notes and is not exported.
+	if got := whatsnewImpactOrder("weird"); got != 3 {
+		t.Fatalf("whatsnewImpactOrder(weird) = %d, want 3 (sorts after every known impact)", got)
 	}
 	if whatsnewImpactOrder("low") >= whatsnewImpactOrder("weird") {
 		t.Fatalf("expected an unrecognized impact to sort after low")

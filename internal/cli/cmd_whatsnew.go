@@ -25,14 +25,11 @@ import (
 // low) high-to-normal-to-low for the text digest; an unrecognized impact
 // (never emitted by a schema-valid corpus, but not this command's job to
 // re-validate) sorts last rather than erroring.
-var whatsnewImpactRank = map[string]int{"high": 0, "normal": 1, "low": 2}
-
-func whatsnewImpactOrder(impact string) int {
-	if r, ok := whatsnewImpactRank[impact]; ok {
-		return r
-	}
-	return len(whatsnewImpactRank)
-}
+// whatsnewImpactOrder delegates to notes.ImpactOrder, which owns the rule.
+// It moved down on 2026-08-29 (ADR-019) because internal/mcp needs the same
+// tie-break and may not import this package; this wrapper stays so the
+// call sites here read unchanged.
+func whatsnewImpactOrder(impact string) int { return notes.ImpactOrder(impact) }
 
 // whatsnewDetailWidth is the wrapped-detail line's target column count
 // (indent included).
