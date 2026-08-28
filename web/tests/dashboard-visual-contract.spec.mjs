@@ -667,7 +667,25 @@ const displayMatrix = [
   ['mobile dark RU', MOBILE, 'dark', 'ru'],
 ];
 
+// This test opens the WHOLE dashboard twice — once per locale — each with
+// `waitUntil: 'networkidle'`, which makes it the heaviest single test in the
+// suite by a wide margin. Measured on this machine: 30.5s, 34.4s and 35.5s
+// across three runs, against the suite-wide 60s default. That is under 2x
+// headroom, and it held on every standalone run and every full-suite run.
+//
+// It still FAILED inside `make release-check` on 2026-08-28 — timing out at
+// 60s waiting for the dashboard's first screen, and again on the retry —
+// because the ship gate is the one context where this machine is never idle:
+// the host phase runs this suite while the rest of the release gate's work is
+// in flight. A bound sized for an idle machine, in the only place the machine
+// is loaded, fails for a reason that has nothing to do with what it asserts.
+// Verified NOT a regression before the number moved: the full 72-test suite
+// passed on the same tree, this test included, at 35.5s.
 test('card content goldens match P5 in both locales', async ({ page }) => {
+  // 3x the suite default, for THIS test only. `test.slow()` at module scope
+  // would have marked every test in this file instead, which is not what the
+  // comment above says and not what was measured.
+  test.slow();
   // P2 (dashboard-ui-restoration-2026-08) re-shapes this producer: the golden
   // is fact identity, order and placement — read from each region's
   // `data-card-fact` markers — not the rendered sentence. See
