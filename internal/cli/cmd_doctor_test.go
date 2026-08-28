@@ -22,6 +22,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/skill"
 	"github.com/ydnikolaev/a2ahub/testkit/fakegithub"
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 	"gopkg.in/yaml.v3"
 )
 
@@ -2178,6 +2179,11 @@ func doctorMirrorOnBranch(t *testing.T, branch string) string {
 	t.Helper()
 	origin := filepath.Join(t.TempDir(), "origin.git")
 	contractGitRun(t, "", "init", "--bare", "-q", "-b", branch, origin)
+	// R3 (testkit/gitfixture's own hygiene test): a bare repo that is pushed
+	// to spawns detached maintenance into itself after every receive-pack.
+	// Found by the ship gate's container phase, on a fixture this epic's own
+	// P2b added.
+	gitfixture.HardenRepo(t, origin)
 
 	seed := t.TempDir()
 	contractGitRun(t, "", "init", "-q", "-b", branch, seed)
