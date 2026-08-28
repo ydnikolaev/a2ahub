@@ -196,6 +196,7 @@ covered:
   cmd:verify: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
   cmd:verify-fail: "reference/data-exchange.md#Consumer sequence"
   cmd:verify-pass: "reference/data-exchange.md#Consumer sequence"
+  cmd:adapt: "loops/contract-change.md#§8.4a Consumer loop — \"a contract I depend on changed\""
   cmd:whatsnew: "loops/contract-change.md#§8.4a Consumer loop — \"a contract I depend on changed\""
   cmd:withdraw: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
   cmd:work: "reference/work-reporting.md#Two observations, two authorities"
@@ -216,6 +217,7 @@ covered:
   # inventing search coverage that does not exist.
   tool:a2a_read: "reference/threads.md#Reading one"
   tool:a2a_submit: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  tool:a2a_adapt: "loops/contract-change.md#§8.4a Consumer loop — \"a contract I depend on changed\""
   tool:a2a_whatsnew: "loops/contract-change.md#§8.4a Consumer loop — \"a contract I depend on changed\""
   tool:a2a_work: "reference/work-reporting.md#Two observations, two authorities"
 

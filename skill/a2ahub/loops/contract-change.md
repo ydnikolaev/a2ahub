@@ -268,6 +268,39 @@ sees you, and that deprecation still reaches your inbox.
    deprecation, or retirement changes only when ITS producer runs a
    `contract` verb; the binary and a given contract update on independent
    clocks.
+7. **`a2a adapt` — what your REPOSITORY still owes, which is a different
+   number from what your binary crossed.** `whatsnew` answers "what changed";
+   `adapt` answers "what have I not done about it yet", and those diverge the
+   moment a repository sits still while binaries move. Two clocks: the binary
+   has its version, and the repository has `adapted_through` in its own
+   `.a2a/config.yaml`. `a2a update` used to print a digest since the version
+   it REPLACED — correct for one hop, silently lossy across two. A binary
+   taken 0.19 to 0.25 while nobody adapted the repo leaves every obligation
+   in between behind, and the next update's digest can never show them again.
+
+   So `adapt` walks from `adapted_through`, not from the binary's previous
+   version, and prints only what OBLIGES you — a change whose
+   `action.scope` is `none` is context and stays in `whatsnew`, where
+   context belongs. Over the current corpus that is the difference between
+   172 items and 44. The list is ordered so the first item is always one you
+   can act on alone: local changes carrying a runnable command, then local
+   changes without one, then anything needing another party. It exits
+   non-zero while anything remains, so a harness can gate on it.
+
+   **`a2a adapt --done` records that you adapted**, in the repository rather
+   than on your machine, so a teammate's agent cloning the repo neither
+   redoes finished work nor skips work it wrongly believes done. It runs
+   every `detect:` command in the pending set first and refuses if one still
+   fires, naming the change. When the pending set carries no `detect:` at
+   all, it records AND SAYS the record is unverified — most obligations are
+   prose today, and `--done` will not pretend otherwise.
+
+   Two refusals worth knowing before you meet them. A baseline NEWER than
+   your binary refuses rather than walking backwards, naming both versions —
+   that is a downgrade, and adapt will not guess what you meant. And a
+   binary whose version is not a comparable release, a `dev` build, refuses
+   too: it cannot compute the range, and "nothing to adapt" would be a claim
+   about your repository that nothing had measured.
 
 This describes what the `a2a` TOOL itself guarantees, nothing more — a space
 may layer its own conventions on top (a stricter review step, an extra
