@@ -217,6 +217,38 @@ func TestAckLegalTransitionAndBatch(t *testing.T) {
 	}
 }
 
+// TestAckRefusesEmptyHostBaseBranch is no-silent-yes-2026-08 Group A's own
+// acceptance for lifecycleDeps.submit — the ONE chokepoint shared by every
+// lifecycle verb in this file (5) plus cmd_contract.go's own 4 contract
+// verbs (buildRequest itself cannot refuse without an out-of-allowlist
+// signature change across all 9 callers — see buildRequest's own doc
+// comment). An empty HostCfg.BaseBranch must be refused, naming the field,
+// BEFORE the write funnel is ever called.
+func TestAckRefusesEmptyHostBaseBranch(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	id := "XQ-axon-20260721-c001"
+	writeQuestionArtifact(t, mirrorDir, id, "beta")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, id, "submit", "axon")
+
+	fake := &fakeLifecycleFunnel{}
+	hostCfg := lifecycleHostConfig()
+	hostCfg.BaseBranch = ""
+	cmd := cli.NewAckCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), hostCfg, lifecycleActorResolver("agent", "bot"))
+
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{id}, io)
+	if code == 0 {
+		t.Fatal("expected a non-zero exit for an empty HostCfg.BaseBranch")
+	}
+	if !strings.Contains(errOut.String(), "HostCfg.BaseBranch") {
+		t.Fatalf("expected the refusal to name HostCfg.BaseBranch; got %q", errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the write funnel NEVER to be called; got %d call(s)", len(fake.calls))
+	}
+}
+
 // TestAckIllegalTransitionRefusedLocally is AC-302.1's illegal-transition
 // half: an already-closed question cannot be acknowledged again — refused
 // locally, funnel NEVER called.

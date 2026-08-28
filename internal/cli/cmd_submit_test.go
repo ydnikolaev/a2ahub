@@ -283,6 +283,40 @@ func TestSubmitOwnSystemForeignToIsNotRefused(t *testing.T) {
 	}
 }
 
+// TestSubmitRefusesEmptyHostBaseBranch is no-silent-yes-2026-08 Group A's
+// own acceptance for the CLI side: SubmitCommand.buildRequest used to
+// silently default an empty HostCfg.BaseBranch to "main" (§4.2's former
+// normative default); wave 5b already deleted the equivalent fallback one
+// layer down, in space's own write funnel, so a caller reintroducing it
+// here pushed at a branch nobody named the moment HostCfg.BaseBranch was
+// ever left unresolved. It must now refuse, naming the field, BEFORE the
+// write funnel is ever called.
+func TestSubmitRefusesEmptyHostBaseBranch(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	path := writeQuestionDraft(t, stagingDir, "XQ-axon-20260721-k3f9", "axon", "other")
+
+	mirrorDir := t.TempDir()
+	writeMinimalSpaceYAML(t, mirrorDir)
+	legality := cli.NewLegalityAdapter(mirrorDir, "axon", testManifest())
+	fake := &fakeSubmitFunnel{}
+	hostCfg := testHostConfig()
+	hostCfg.BaseBranch = ""
+	cmd := cli.NewSubmitCommand(fake, legality, cli.NewNoopPendingMarker(), mirrorDir, "fixture-space", "axon", stagingDir, hostCfg)
+
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{path}, io)
+	if code == 0 {
+		t.Fatal("expected a non-zero exit for an empty HostCfg.BaseBranch")
+	}
+	if !strings.Contains(errOut.String(), "HostCfg.BaseBranch") {
+		t.Fatalf("expected the refusal to name HostCfg.BaseBranch; got %q", errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the write funnel NEVER to be called; got %d call(s)", len(fake.calls))
+	}
+}
+
 // writeMinimalSpaceYAML writes a bare space.yaml with only the
 // min_binary_version field this package's submit path reads (CC-085) —
 // deliberately NOT the full space.Manifest shape (testkit/spacefixture's

@@ -977,9 +977,16 @@ func (c *SpaceCommand) runUpdate(ctx context.Context, args []string, stdio IO) i
 		_, _ = fmt.Fprintf(stdio.Stdout, "  %s\n", line)
 	}
 
+	// c.HostCfg.BaseBranch is resolved by the caller (cmd/a2a/wire.go's
+	// resolveLifecycleDepsWithPolicy, via space.ResolveBaseBranch) before
+	// constructing this command — an empty value here is a wiring bug, not
+	// something to guess past with the "main" literal wave 5b already
+	// deleted one layer down, in space's own write funnel
+	// (no-silent-yes-2026-08 Group A).
 	baseBranch := c.HostCfg.BaseBranch
 	if baseBranch == "" {
-		baseBranch = "main"
+		_, _ = fmt.Fprintf(stdio.Stderr, "space update: %v\n", errMissingHostBaseBranch)
+		return 1
 	}
 	for _, line := range spaceUpdateDirectiveLines(c.HostCfg.Repo.Owner, c.HostCfg.Repo.Name, baseBranch) {
 		_, _ = fmt.Fprintf(stdio.Stdout, "space update: %s\n", line)

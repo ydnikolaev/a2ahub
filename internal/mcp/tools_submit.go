@@ -308,7 +308,7 @@ func buildSubmitRequest(deps SubmitDeps, fresh []submitItem) (space.SubmitReques
 
 	baseBranch := deps.HostCfg.BaseBranch
 	if baseBranch == "" {
-		baseBranch = "main"
+		return space.SubmitRequest{}, nil, errMissingHostBaseBranch
 	}
 
 	return space.SubmitRequest{

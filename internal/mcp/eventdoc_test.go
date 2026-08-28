@@ -38,7 +38,10 @@ func TestWriteDepsSubmitPreservesPartialWriteResultOnError(t *testing.T) {
 	}
 	deps := WriteDeps{Funnel: partialResultFunnel{result: partial, err: wantErr}}
 
-	result, err := deps.submit(context.Background(), space.SubmitRequest{}, "ack", []string{"candidate-id"})
+	// BaseBranch is set — this test is about partial-write-result
+	// preservation on a funnel error, not about submit's own empty-branch
+	// refusal (see TestWriteDepsSubmitRefusesEmptyBaseBranch below).
+	result, err := deps.submit(context.Background(), space.SubmitRequest{BaseBranch: "main"}, "ack", []string{"candidate-id"})
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("submit error = %v, want wrapped %v", err, wantErr)
 	}
@@ -62,12 +65,40 @@ func TestWriteDepsSubmitKeepsZeroResultErrorCompatibility(t *testing.T) {
 
 	wantErr := errors.New("validation failed before write")
 	deps := WriteDeps{Funnel: partialResultFunnel{err: wantErr}}
-	result, err := deps.submit(context.Background(), space.SubmitRequest{}, "ack", []string{"candidate-id"})
+	result, err := deps.submit(context.Background(), space.SubmitRequest{BaseBranch: "main"}, "ack", []string{"candidate-id"})
 	if result != nil {
 		t.Fatalf("zero funnel result became structured output: %#v", result)
 	}
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("submit error = %v, want wrapped %v", err, wantErr)
+	}
+}
+
+// TestWriteDepsSubmitRefusesEmptyBaseBranch is no-silent-yes-2026-08 Group
+// A's own acceptance for the mcp side: submit used to let an empty
+// HostCfg.BaseBranch flow through buildRequest as a silently-defaulted
+// "main" (eventdoc.go's own buildRequest); it must now refuse, naming the
+// field, instead.
+//
+// deps.Funnel is deliberately left nil: if the refusal below is ever
+// removed, or reordered to run AFTER d.Funnel.Submit, this call panics on a
+// nil interface rather than merely returning the wrong error — the
+// loudest available proof that the refusal runs BEFORE any git/network
+// call, mirroring space/funnel.go's own "before any git action ran"
+// property for ErrMissingBaseBranch one layer down.
+func TestWriteDepsSubmitRefusesEmptyBaseBranch(t *testing.T) {
+	t.Parallel()
+
+	deps := WriteDeps{}
+	_, err := deps.submit(context.Background(), space.SubmitRequest{}, "ack", []string{"candidate-id"})
+	if err == nil {
+		t.Fatal("submit(BaseBranch empty) = nil error, want a refusal")
+	}
+	if !errors.Is(err, errMissingHostBaseBranch) {
+		t.Fatalf("error = %v, want it to wrap errMissingHostBaseBranch", err)
+	}
+	if !strings.Contains(err.Error(), "HostCfg.BaseBranch") {
+		t.Fatalf("error = %q, want it to name the missing field", err)
 	}
 }
 

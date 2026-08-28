@@ -892,6 +892,27 @@ func splitPinnedContractRef(ref string) (id, canonicalVersion, digest string, er
 
 // --- deliver ---------------------------------------------------------------
 
+// resolveDataBaseBranch resolves c's own connected mirror's default branch
+// — never a hardcoded "main" (no-silent-yes-2026-08 Group B). Every one of
+// space.DeliverDataPackage/DeliverBlob/RecordVerificationReport
+// (internal/space/data_delivery.go, blob_delivery.go) copies
+// req.SubmitTemplate straight through to the funnel with NO BaseBranch
+// validation of its own — unlike contract_publication.go's
+// bindContractPublicationSubmission (wave 5b) — so deliver/deliverBlob/
+// verify below are the only thing standing between a space whose real
+// default branch is "master" and a push at "main" nobody asked for.
+// Mirrors Publish's own single ResolveBaseBranch call
+// (internal/space/contract_publication.go) exactly: resolved from the
+// mirror this dataCore is already wired against, immediately before
+// building the SubmitTemplate that names it. c.mirrorDir must already be a
+// fetched mirror (ResolveBaseBranch's own precondition) — true here the
+// same way it is for every other c.mirrorDir read in this file
+// (loadEnvelope, readAllEvents): wiring fetches it before any dataCore
+// method runs.
+func (c *dataCore) resolveDataBaseBranch(ctx context.Context) (string, error) {
+	return space.ResolveBaseBranch(ctx, c.mirrorDir)
+}
+
 func (c *dataCore) deliver(ctx context.Context, req cli.DataDeliverRequest) (cli.DataResult, error) {
 	// The staging root is read the same way a fetched package is: through
 	// the hardened walker, then against the manifest's own declared
@@ -957,6 +978,10 @@ func (c *dataCore) deliver(ctx context.Context, req cli.DataDeliverRequest) (cli
 		return cli.DataResult{}, fmt.Errorf("data: deliver: encode handoff event: %w", err)
 	}
 
+	baseBranch, err := c.resolveDataBaseBranch(ctx)
+	if err != nil {
+		return cli.DataResult{}, fmt.Errorf("data: deliver: resolve base branch: %w", err)
+	}
 	write, err := space.DeliverDataPackage(ctx, space.DataDeliveryRequest{
 		System: c.ownSystem, PackageID: document.ID,
 		ManifestRaw: manifestRaw, AggregateDigest: document.AggregateDigest, Payload: payload,
@@ -965,7 +990,7 @@ func (c *dataCore) deliver(ctx context.Context, req cli.DataDeliverRequest) (cli
 		ExpectPack: req.ExpectPack,
 		SubmitTemplate: space.SubmitRequest{
 			RepoDir: c.mirrorDir, RemoteURL: c.remoteURL, Repo: c.repository,
-			CommitAuthorName: c.authorName, CommitAuthorEmail: c.authorEmail, BaseBranch: "main",
+			CommitAuthorName: c.authorName, CommitAuthorEmail: c.authorEmail, BaseBranch: baseBranch,
 			CommitMessage: "a2a(data-deliver): " + document.ID,
 			PRTitle:       "Deliver " + document.ID,
 			PRBody:        "Deliver an immutable data package attempt.",
@@ -1002,12 +1027,16 @@ func (c *dataCore) deliverBlob(ctx context.Context, payload map[string][]byte) (
 	if err != nil {
 		return "", space.WriteResult{}, fmt.Errorf("attach: load space manifest: %w", err)
 	}
+	baseBranch, err := c.resolveDataBaseBranch(ctx)
+	if err != nil {
+		return "", space.WriteResult{}, fmt.Errorf("attach: resolve base branch: %w", err)
+	}
 
 	write, err := space.DeliverBlob(ctx, space.BlobWriteRequest{
 		System: c.ownSystem, BlobID: blobID, Payload: payload,
 		SubmitTemplate: space.SubmitRequest{
 			RepoDir: c.mirrorDir, RemoteURL: c.remoteURL, Repo: c.repository,
-			CommitAuthorName: c.authorName, CommitAuthorEmail: c.authorEmail, BaseBranch: "main",
+			CommitAuthorName: c.authorName, CommitAuthorEmail: c.authorEmail, BaseBranch: baseBranch,
 			CommitMessage: "a2a(attach): " + blobID,
 			PRTitle:       "Attach " + blobID,
 			PRBody:        "Attach a content-addressed blob.",
@@ -1267,13 +1296,17 @@ func (c *dataCore) verify(ctx context.Context, req cli.DataVerifyRequest) (cli.D
 		prTitle = "Verify-pass " + handoffID
 		prBody = "Record a passing verification."
 	}
+	baseBranch, err := c.resolveDataBaseBranch(ctx)
+	if err != nil {
+		return result, fmt.Errorf("data: verify: resolve base branch: %w", err)
+	}
 	write, err := space.RecordVerificationReport(ctx, space.DataVerificationRecordRequest{
 		System: c.ownSystem, PackageID: req.PackageID, ReportID: reportID, ReportRaw: reportRaw,
 		HandoffID: handoffID, Transition: transition,
 		EventID: eventID.String(), EventYear: now.UTC().Format("2006"), EventRaw: eventRaw,
 		SubmitTemplate: space.SubmitRequest{
 			RepoDir: c.mirrorDir, RemoteURL: c.remoteURL, Repo: c.repository,
-			CommitAuthorName: c.authorName, CommitAuthorEmail: c.authorEmail, BaseBranch: "main",
+			CommitAuthorName: c.authorName, CommitAuthorEmail: c.authorEmail, BaseBranch: baseBranch,
 			CommitMessage: fmt.Sprintf("a2a(%s): %s", transition, handoffID),
 			PRTitle:       prTitle, PRBody: prBody,
 			Credential: credential, MinBinaryVersion: manifest.MinBinaryVersion,

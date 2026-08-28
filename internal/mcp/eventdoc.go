@@ -11,6 +11,7 @@ package mcp
 import (
 	"context"
 
+	"errors"
 	"fmt"
 	"github.com/ydnikolaev/a2ahub/internal/template"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
@@ -611,17 +612,32 @@ func resolveWriteSpace(deps WriteDeps, spaceID string, ids []string) (WriteDeps,
 	return deps.ResolveSpace("")
 }
 
+// errMissingHostBaseBranch is returned when a write reaches submit (below)
+// with req.BaseBranch empty (no-silent-yes-2026-08 Group A).
+// internal/mcp/wire.go's own buildWriteDepsForSpace resolves this field via
+// space.ResolveBaseBranch (REF-026, schemas/errors/v1/registry.yaml) before
+// constructing WriteDeps/SubmitDeps for any connected space, so an empty
+// field this deep is a wiring bug — not something a caller here may guess
+// past. Wave 5b already deleted the equivalent "main" fallback one layer
+// down, in internal/space's own write funnel (funnel.go's
+// resolvedBaseBranch); this closes the same silent-yes shape at both
+// buildRequest below and tools_submit.go's own buildSubmitRequest, the two
+// mcp callers that had reintroduced it above the funnel.
+var errMissingHostBaseBranch = errors.New("mcp: HostCfg.BaseBranch is empty; resolve it via space.ResolveBaseBranch before wiring this write path")
+
 // buildRequest assembles a space.SubmitRequest for a batch of ids +
 // files, mirroring internal/cli's lifecycleDeps.buildRequest exactly
-// (commit message convention, branch/PR body shape).
+// (commit message convention, branch/PR body shape). It returns
+// d.HostCfg.BaseBranch as-is, never a guessed "main" default — see
+// errMissingHostBaseBranch's own doc comment for why the refusal lives one
+// call later, in submit, rather than here: buildRequest has no OWN error
+// return, and every one of its 9 production callers (tools_contract.go,
+// tools_lifecycle.go) already assumes the single-value shape.
 func (d WriteDeps) buildRequest(ids []string, files []space.FileWrite, verb string, gated bool) space.SubmitRequest {
 	sorted := append([]string(nil), ids...)
 	sort.Strings(sorted)
 	commitMsg := fmt.Sprintf("a2a(%s): %s", verb, strings.Join(sorted, ", "))
 	baseBranch := d.HostCfg.BaseBranch
-	if baseBranch == "" {
-		baseBranch = "main"
-	}
 	var prBody string
 	if gated {
 		prBody = fmt.Sprintf("ADVISORY GATE: %s requires an approving CODEOWNERS review before auto-merge (§3.7 G3).", verb)
@@ -658,8 +674,17 @@ type submitResult struct {
 }
 
 // submit runs req through d.Funnel and shapes the result/error the same
-// way every write tool handler needs.
+// way every write tool handler needs. req.BaseBranch is checked here,
+// naming the field, BEFORE d.Funnel is ever called — this is the ONE place
+// every mcp write path (buildRequest's 9 callers plus buildSubmitRequest)
+// funnels through (d.Funnel.Submit's only call site in this package), so a
+// wiring bug that left HostCfg.BaseBranch empty is refused here rather than
+// silently pushed at a branch nobody named (no-silent-yes-2026-08 Group A;
+// see errMissingHostBaseBranch's own doc comment).
 func (d WriteDeps) submit(ctx context.Context, req space.SubmitRequest, verb string, ids []string) (any, error) {
+	if req.BaseBranch == "" {
+		return nil, fmt.Errorf("%s: %w", verb, errMissingHostBaseBranch)
+	}
 	result, err := d.Funnel.Submit(ctx, req)
 	if err != nil && !hasWriteResult(result) {
 		return nil, fmt.Errorf("%s: %w", verb, err)

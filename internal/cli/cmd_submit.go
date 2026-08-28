@@ -460,6 +460,20 @@ type submitEventDoc struct {
 	At         string           `yaml:"at"`
 }
 
+// errMissingHostBaseBranch is returned when a command built over this
+// package's HostConfig-shaped seam (SubmitCommand, LifecycleCommand's own
+// lifecycleDeps, SpaceCommand) reaches its own SubmitRequest-building step
+// with BaseBranch empty (no-silent-yes-2026-08 Group A). cmd/a2a/wire.go's
+// resolveLifecycleDepsWithPolicy resolves this field via
+// space.ResolveBaseBranch (REF-026, schemas/errors/v1/registry.yaml) before
+// constructing any of these commands, so an empty field this deep is a
+// wiring bug — not something a caller here may guess past. Wave 5b already
+// deleted the equivalent "main" fallback one layer down, in
+// internal/space's own write funnel (funnel.go's resolvedBaseBranch); this
+// closes the same silent-yes shape at every internal/cli caller that had
+// reintroduced it above the funnel.
+var errMissingHostBaseBranch = errors.New("cli: HostCfg.BaseBranch is empty; resolve it via space.ResolveBaseBranch before wiring this command")
+
 // SubmitHostConfig carries the write funnel's per-space host-facing
 // config a SubmitRequest needs beyond the artifact content itself (§4.2
 // D-002): the push/PR target and commit authorship. cmd/a2a resolves
@@ -472,8 +486,16 @@ type SubmitHostConfig struct {
 	// (host.Repo's owner/name shape — distinct from RemoteURL).
 	RemoteURL string
 	Repo      host.Repo
-	// BaseBranch is the PR's target branch — normatively "main" (§4.2); a
-	// zero value defaults to "main" at Run time.
+	// BaseBranch is the PR's target branch — resolved by the caller
+	// (cmd/a2a/wire.go's resolveLifecycleDepsWithPolicy, via
+	// space.ResolveBaseBranch) from the connected space's own mirror
+	// BEFORE constructing a command with this config. A zero value here is
+	// a wiring bug, not something Run guesses past: no-silent-yes-2026-08's
+	// Group A deleted the "main" fallback SubmitCommand.buildRequest used
+	// to substitute for it — the same defect wave 5b already deleted one
+	// layer down, in space's own write funnel (see funnel.go's
+	// resolvedBaseBranch). buildRequest refuses (errMissingHostBaseBranch)
+	// rather than push at a branch nobody named.
 	BaseBranch string
 	Credential host.Credential
 	// CommitAuthorName/Email are the system's machine account (T1.1,
@@ -928,7 +950,7 @@ func (c *SubmitCommand) buildRequest(fresh []submitItem) (space.SubmitRequest, [
 
 	baseBranch := c.hostCfg.BaseBranch
 	if baseBranch == "" {
-		baseBranch = "main"
+		return space.SubmitRequest{}, nil, nil, fmt.Errorf("submit: %w", errMissingHostBaseBranch)
 	}
 
 	sort.Strings(carried)

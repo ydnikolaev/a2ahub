@@ -1335,14 +1335,20 @@ func lifecycleActorFlags(fs *flag.FlagSet) (kind, name, model *string) {
 	return
 }
 
+// buildRequest no longer defaults an empty BaseBranch to "main"
+// (no-silent-yes-2026-08 Group A) — it returns d.hostCfg.BaseBranch as-is,
+// same as space/funnel.go's own resolvedBaseBranch. buildRequest is called
+// from BOTH this file (5 verbs) and cmd_contract.go's own 4 contract
+// verbs, so it cannot itself refuse without breaking every one of those
+// callers' single-value assignment (ADR-001-adjacent: no signature change
+// here can be scoped to only this file's own callers). The refusal lives
+// one call later, in submit below — the ONE place every caller of
+// buildRequest already funnels through before any git/network call runs.
 func (d lifecycleDeps) buildRequest(ids []string, files []space.FileWrite, verb string, gated bool) space.SubmitRequest {
 	sorted := append([]string(nil), ids...)
 	sort.Strings(sorted)
 	commitMsg := fmt.Sprintf("a2a(%s): %s", verb, strings.Join(sorted, ", "))
 	baseBranch := d.hostCfg.BaseBranch
-	if baseBranch == "" {
-		baseBranch = "main"
-	}
 	var prBody string
 	if gated {
 		prBody = fmt.Sprintf("ADVISORY GATE: %s requires an approving CODEOWNERS review before auto-merge (§3.7 G3).", verb)
@@ -1376,6 +1382,16 @@ func (d lifecycleDeps) buildRequest(ids []string, files []space.FileWrite, verb 
 }
 
 func (d lifecycleDeps) submit(ctx context.Context, req space.SubmitRequest, verb string, ids []string, stdio IO) int {
+	// req.BaseBranch reaches here as buildRequest returned it — d.hostCfg's
+	// own field, never guessed (no-silent-yes-2026-08 Group A; see
+	// buildRequest's own doc comment for why the refusal lives here, one
+	// call later, rather than in buildRequest itself). Every one of
+	// cmd_lifecycle.go's own 5 verbs AND cmd_contract.go's 4 contract verbs
+	// funnels through this one method before any git/network call runs.
+	if req.BaseBranch == "" {
+		_, _ = fmt.Fprintf(stdio.Stderr, "%s: %v\n", verb, errMissingHostBaseBranch)
+		return 1
+	}
 	result, err := d.funnel.Submit(ctx, req)
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "%s: %v\n", verb, err)
