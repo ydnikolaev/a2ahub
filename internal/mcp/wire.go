@@ -153,7 +153,7 @@ func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, bui
 		// write tools have nothing to target, so this phase registers
 		// none — mirrors the CLI's own "no connected space" refusal, just
 		// surfaced as an absent tool rather than a runtime error.
-		registerSpaceFree(registry, store)
+		registerSpaceFree(registry, store, AdaptDeps{BinaryVersion: binaryVersion, ProjectConfigPath: p.ProjectConfig})
 		return NewServer(registry, "a2a-mcp", binaryVersion, nil), nil
 	}
 	if len(injectedWork) != 1 {
@@ -208,7 +208,7 @@ func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, bui
 		fmt.Fprintf(os.Stderr,
 			"a2a mcp: write tools unavailable — could not reach the space (%v).\n"+
 				"a2a mcp: serving local read/contract tools over the mirror; re-start once the space is reachable.\n", err)
-		registerSpaceFree(registry, store)
+		registerSpaceFree(registry, store, AdaptDeps{BinaryVersion: binaryVersion, ProjectConfigPath: p.ProjectConfig})
 		registry.Register(workTool)
 		if contractOperations.complete() {
 			ref := cfg.Spaces[0]
@@ -251,7 +251,8 @@ func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, bui
 	if len(cfg.Spaces) > 1 {
 		write.Funnel = ambiguousSpaceFunnel{connected: spaceIDs(cfg.Spaces)}
 	}
-	registry = BuildRegistryWithOperations(store, write, submitDeps, newDeps, contractOperations, dataOperations, workDeps)
+	registry = BuildRegistryWithOperations(store, write, submitDeps, newDeps, contractOperations, dataOperations,
+		AdaptDeps{BinaryVersion: binaryVersion, ProjectConfigPath: p.ProjectConfig}, workDeps)
 	srv := NewServer(registry, "a2a-mcp", binaryVersion, nil)
 
 	// The session refreshes its mirror before every non-contract write/read

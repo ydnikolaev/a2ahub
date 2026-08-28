@@ -154,9 +154,15 @@ func decodeStrict(raw json.RawMessage, out any, tool string, maxBytes int) error
 }
 
 // registerSpaceFree registers every tool that needs NOTHING but the local
-// cache — `a2a_read` and `a2a_whatsnew`. It is the single home for both,
-// called by BuildRegistry and by wire.go's two degraded paths (no space
-// connected yet; the space unreachable at startup).
+// cache — `a2a_read`, `a2a_whatsnew`, and `a2a_adapt`. It is the single home
+// for all three, called by BuildRegistryWithOperations and by wire.go's two
+// degraded paths (no space connected yet; the space unreachable at startup).
+//
+// adapt is registered UNCONDITIONALLY, including with its zero value (every
+// BuildRegistry(...) call site that predates a2a_adapt, e.g.
+// cmd/a2a/catalog.go's catalogue generation and the many isolated registry
+// tests) — see tools_adapt.go's own AdaptDeps doc comment for why a zero
+// value is an honest degraded registration rather than a silent one.
 //
 // One home, because two was a fork and the fork shipped. wire.go used to
 // carry its own `registerReadOnly`, written before P15 folded the six
@@ -173,7 +179,7 @@ func decodeStrict(raw json.RawMessage, out any, tool string, maxBytes int) error
 // The invariant this function exists to make structural: the no-space
 // surface is a strict SUBSET of the connected one, never a different set of
 // names. TestSpaceFreeToolsAreASubsetOfTheConnectedSurface holds it.
-func registerSpaceFree(r *Registry, store *cache.Store) {
+func registerSpaceFree(r *Registry, store *cache.Store, adapt AdaptDeps) {
 	r.Register(ToolSpec{
 		Name:        "a2a_read",
 		Description: "read the local cache: view=inbox|outbox|show|thread|search|contracts",
@@ -203,6 +209,7 @@ func registerSpaceFree(r *Registry, store *cache.Store) {
 			func() ([]notes.Change, error) { return notes.LoadCurrentKnownIssues(releasenotes.FS) },
 		),
 	})
+	registerAdaptTool(r, adapt)
 }
 
 // BuildRegistry assembles the P15 capability-grouped tool set. store backs
@@ -239,7 +246,15 @@ func BuildRegistry(store *cache.Store, write WriteDeps, submitStagingDir string,
 // omission had teeth: wire.go installed the resolver, this function threw it
 // away, and a2a_submit went on refusing every multi-space write while its
 // unit tests — which construct SubmitDeps directly — stayed green.
-func BuildRegistryWithOperations(store *cache.Store, write WriteDeps, submit SubmitDeps, newDeps NewDeps, contractOperations ContractToolOperations, dataOperations DataToolDeps, workDeps ...WorkToolDeps) *Registry {
+//
+// adapt backs a2a_adapt (registerSpaceFree, called below): its own two
+// callers here (BuildRegistryWithContractOperations, wire.go's healthy-
+// connected-space path) are the only ones threading real values; every
+// OTHER BuildRegistry(...) caller passes AdaptDeps{} through
+// BuildRegistryWithContractOperations, which is a deliberate degraded
+// registration, not an omission — see AdaptDeps' own doc comment
+// (tools_adapt.go).
+func BuildRegistryWithOperations(store *cache.Store, write WriteDeps, submit SubmitDeps, newDeps NewDeps, contractOperations ContractToolOperations, dataOperations DataToolDeps, adapt AdaptDeps, workDeps ...WorkToolDeps) *Registry {
 	r := NewRegistry()
 	r.Decorate(updateNoticeDecorator(store))
 	if len(workDeps) > 1 {
@@ -262,8 +277,8 @@ func BuildRegistryWithOperations(store *cache.Store, write WriteDeps, submit Sub
 	submitDeps := submit
 	submitDeps.WriteDeps = write
 
-	// --- a2a_read + a2a_whatsnew (need no space; see registerSpaceFree) --
-	registerSpaceFree(r, store)
+	// --- a2a_read + a2a_whatsnew + a2a_adapt (need no space; see registerSpaceFree) --
+	registerSpaceFree(r, store, adapt)
 	work := unavailableWorkToolDeps()
 	if len(workDeps) == 1 {
 		work = workDeps[0]
@@ -378,12 +393,13 @@ func (o ContractToolOperations) complete() bool {
 // for callers not yet supplying data operations (internal/mcp/wire.go's own
 // call site, fixed-arity, outside this wave's allowlist) — it delegates to
 // BuildRegistryWithOperations with DataToolDeps{} (a2a_data registered
-// degraded). BuildRegistry remains the source-compatible isolated-test
+// degraded) and AdaptDeps{} (a2a_adapt registered degraded — see AdaptDeps'
+// own doc comment). BuildRegistry remains the source-compatible isolated-test
 // constructor.
 func BuildRegistryWithContractOperations(store *cache.Store, write WriteDeps, submitStagingDir string, legality *LegalityAdapter, newDeps NewDeps, contractOperations ContractToolOperations, workDeps ...WorkToolDeps) *Registry {
 	return BuildRegistryWithOperations(store, write,
 		SubmitDeps{WriteDeps: write, StagingDir: submitStagingDir, Legality: legality},
-		newDeps, contractOperations, DataToolDeps{}, workDeps...)
+		newDeps, contractOperations, DataToolDeps{}, AdaptDeps{}, workDeps...)
 }
 
 // registerContractTool keeps the grouped contract surface available when the

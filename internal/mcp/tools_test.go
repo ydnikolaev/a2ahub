@@ -17,18 +17,19 @@ import (
 
 // TestBuildRegistryExpectedToolCount proves BuildRegistry registers
 // exactly the P15 capability-grouped tool set plus P31's standalone
-// a2a_whatsnew, spec 05a's a2a_data, and space-notify-2026-08 P6's
-// a2a_notify: a2a_read + a2a_new + a2a_submit + a2a_lifecycle +
-// a2a_exchange + a2a_contract + a2a_data + a2a_whatsnew + a2a_work +
-// a2a_notify = 10 tools (spec 15 §T1/§8 AC #1, extended P31, extended spec
-// 05a, extended spec 06). BuildRegistry registers a2a_data AND a2a_notify
-// degraded (zero-value DataToolDeps{}/NotifyToolDeps{}, via
-// BuildRegistryWithOperations) even though this constructor takes no
-// data/notify-operations argument — the same "degraded but present"
-// precedent ContractToolOperations{}'s zero value already sets for
-// a2a_contract. cmd/a2a/mcp_parity_test.go is the authoritative
-// capability-parity check against the CLI's own verb set; this is a
-// package-local sanity count.
+// a2a_whatsnew, spec 05a's a2a_data, space-notify-2026-08 P6's a2a_notify,
+// and answers-that-hold-2026-08 P13's a2a_adapt: a2a_read + a2a_new +
+// a2a_submit + a2a_lifecycle + a2a_exchange + a2a_contract + a2a_data +
+// a2a_whatsnew + a2a_work + a2a_notify + a2a_adapt = 11 tools (spec 15
+// §T1/§8 AC #1, extended P31, extended spec 05a, extended spec 06, extended
+// spec 13). BuildRegistry registers a2a_data AND a2a_notify degraded
+// (zero-value DataToolDeps{}/NotifyToolDeps{}, via BuildRegistryWithOperations)
+// even though this constructor takes no data/notify-operations argument —
+// the same "degraded but present" precedent ContractToolOperations{}'s zero
+// value already sets for a2a_contract, and AdaptDeps{}'s zero value now sets
+// for a2a_adapt (see AdaptDeps' own doc comment, tools_adapt.go).
+// cmd/a2a/mcp_parity_test.go is the authoritative capability-parity check
+// against the CLI's own verb set; this is a package-local sanity count.
 func TestBuildRegistryExpectedToolCount(t *testing.T) {
 	t.Parallel()
 	mirrorDir := t.TempDir()
@@ -41,7 +42,7 @@ func TestBuildRegistryExpectedToolCount(t *testing.T) {
 	registry := BuildRegistry(store, write, mirrorDir, legality, newDeps)
 	names := registry.ToolNames()
 	want := []string{
-		"a2a_contract", "a2a_data", "a2a_exchange", "a2a_lifecycle",
+		"a2a_adapt", "a2a_contract", "a2a_data", "a2a_exchange", "a2a_lifecycle",
 		"a2a_new", "a2a_notify", "a2a_read", "a2a_submit", "a2a_whatsnew", "a2a_work",
 	}
 	if len(names) != len(want) {
@@ -111,7 +112,7 @@ func TestBuildRegistryWithOperationsCarriesSubmitResolver(t *testing.T) {
 	}
 
 	r := BuildRegistryWithOperations(nil, WriteDeps{OwnSystem: "beta", ReadFile: os.ReadFile},
-		submit, NewDeps{}, ContractToolOperations{}, DataToolDeps{})
+		submit, NewDeps{}, ContractToolOperations{}, DataToolDeps{}, AdaptDeps{})
 
 	spec, ok := r.Get("a2a_submit")
 	if !ok {

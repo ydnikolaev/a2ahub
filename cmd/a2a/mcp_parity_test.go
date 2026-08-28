@@ -48,8 +48,31 @@ import (
 )
 
 // groupedToolNames is the P15 capability-grouped tool set (spec 15 §T1).
+//
+// a2a_adapt (P13, answers-that-hold-2026-08) belongs here like every other
+// tool, and the two-day story of how it briefly did not is worth keeping.
+//
+// It was first registered ONLY from internal/mcp/wire.go's healthy-connected-
+// space path, because it needs the running binary's version and the project
+// config path and BuildRegistry's callers have neither. This list then had to
+// carve it out — and the carve-out was the defect. The guard below compares
+// emptyRegistry().ToolNames() against this list, so a tool named here is
+// PROVEN to be in the registry a bare BuildRegistry builds. Exempting the new
+// tool from that comparison meant nothing checked whether it was reachable at
+// all, and nothing did: cmd/a2a/catalog.go's catalogMCPRows() builds from the
+// same bare BuildRegistry, so a2a_adapt was invisible in the catalogue an
+// agent READS while this file stayed green.
+//
+// The fix was the registration, not the test: a2a_adapt is now registered
+// unconditionally by registerSpaceFree, and AdaptDeps' zero value is an
+// honest degraded case — no binary version means the handler REFUSES
+// (notes.ErrBinaryVersionUnusable), never an empty pending list. So the tool
+// is in every registry, this list can name it, and the guard is live for it.
+//
+// The rule: a new tool that cannot join this list is a new tool that nothing
+// proves reachable. Change the registration, never this list's membership.
 var groupedToolNames = []string{
-	"a2a_contract", "a2a_data", "a2a_exchange", "a2a_lifecycle",
+	"a2a_adapt", "a2a_contract", "a2a_data", "a2a_exchange", "a2a_lifecycle",
 	"a2a_new", "a2a_notify", "a2a_read", "a2a_submit", "a2a_whatsnew", "a2a_work",
 }
 
@@ -134,6 +157,8 @@ type toolAction struct {
 // bijection's shared key space.
 func (ta toolAction) verb() string {
 	switch ta.tool {
+	case "a2a_adapt":
+		return "adapt"
 	case "a2a_contract":
 		return "contract-" + ta.action
 	case "a2a_data":
@@ -306,10 +331,42 @@ func TestDataSubcommandsMatchMCPDataActions(t *testing.T) {
 	}
 }
 
+// actionFreeToolNames are the action-free MCP tools mcpCapabilityPairs
+// appends BY HAND, below — they have no dispatch enum to derive from (that
+// is what "action-free" means), so nothing but a hand-written literal can
+// name them.
+//
+// A hand-written pair is exactly the shape that let a2a_adapt hide: this
+// file's own bijection check compares (tool, action) NAMES, never asks a
+// registry whether a handler actually exists, so `toolAction{"a2a_adapt",
+// ""}` could sit in the pairs list — and TestMCPParityBijection stay green —
+// while nothing had registered it anywhere reachable. groupedToolNames'
+// own exact-match check against emptyRegistry() would have caught it too,
+// once a2a_adapt was added there, but that check and this hardcoded pairs
+// list are two independent places naming the same tools; keeping only one
+// of them checked against a real registry is how the gap opened. This slice
+// plus the loop below closes it AT THE SPOT the decoy pair is introduced,
+// independent of whether groupedToolNames is kept in sync.
+var actionFreeToolNames = []string{"a2a_new", "a2a_submit", "a2a_whatsnew", "a2a_adapt"}
+
 // mcpCapabilityPairs enumerates every reachable (tool, action) from the
 // grouped registry + mcp's own exported enum slices. It first asserts the
-// registry exposes exactly the 6 grouped tools (a fail here means the
-// enumeration below is stale), then pairs each with its dispatch enum.
+// registry exposes exactly the 11 grouped/action-free tools (a fail here
+// means the enumeration below is stale), then cross-checks the hand-written
+// action-free pairs against that same real registry (actionFreeToolNames'
+// own doc comment explains why that second check is not redundant with the
+// first), then pairs each grouped tool with its dispatch enum.
+//
+// What this proves and what it does not: every name below is a REAL tool a
+// bare mcp.BuildRegistry(...) registers — not merely spelled correctly in
+// this file. It does NOT prove a tool WORKS: BuildRegistry's own zero-value
+// deps can leave a handler permanently refusing by design (AdaptDeps{}'s own
+// doc comment, tools_adapt.go) — that is a deliberate degraded registration,
+// not a defect this check is meant to catch. And it does NOT extend to the
+// grouped tools' own action/view enums below: those are legitimately not
+// registry-derivable one action at a time (a single a2a_lifecycle
+// registration backs all 15 of mcp.LifecycleActions), so tool PRESENCE is as
+// far as either check goes for them.
 func mcpCapabilityPairs(t *testing.T) []toolAction {
 	t.Helper()
 	names := emptyRegistry().ToolNames()
@@ -321,12 +378,25 @@ func mcpCapabilityPairs(t *testing.T) []toolAction {
 			t.Fatalf("registry tool set changed: want %v, got %v", groupedToolNames, names)
 		}
 	}
+	registered := make(map[string]bool, len(names))
+	for _, n := range names {
+		registered[n] = true
+	}
+	for _, name := range actionFreeToolNames {
+		if !registered[name] {
+			t.Fatalf("mcpCapabilityPairs hardcodes toolAction{%q, \"\"} but a real mcp.BuildRegistry(...) registry has no such tool — the pair is a decoy, not a reachable capability", name)
+		}
+	}
 
 	var pairs []toolAction
 	for _, v := range mcp.ReadViews {
 		pairs = append(pairs, toolAction{"a2a_read", v})
 	}
-	pairs = append(pairs, toolAction{"a2a_new", ""}, toolAction{"a2a_submit", ""}, toolAction{"a2a_whatsnew", ""})
+	// Derived from actionFreeToolNames, above, rather than a second literal —
+	// one list naming these four tools, not two that can drift apart.
+	for _, name := range actionFreeToolNames {
+		pairs = append(pairs, toolAction{name, ""})
+	}
 	for _, a := range mcp.LifecycleActions {
 		pairs = append(pairs, toolAction{"a2a_lifecycle", a})
 	}
