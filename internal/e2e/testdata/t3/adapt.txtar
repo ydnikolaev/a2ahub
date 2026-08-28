@@ -1,0 +1,49 @@
+# `a2a adapt`: the pending-obligation projection over the embedded release-note
+# corpus, walked from the REPOSITORY's own adapted_through baseline rather than
+# from the binary's previous version (P13, answers-that-hold-2026-08).
+#
+# This shared t3 binary is stamped -X main.version=0.19.0
+# (main_test.go's harnessStampedVersion = contract.ContractPublicationFloor),
+# which is what makes the three stanzas below stable without pinning a count:
+# the corpus's oldest entry is 0.2.0, so a repo with no baseline has real
+# obligations, and a repo already adapted THROUGH the stamp has none.
+#
+# `adapt` exits NON-ZERO while obligations remain (AC-9) — a reader that
+# always exits 0 is one an agent may ignore — so the first stanza is `! exec`.
+# That is the assertion, not an accident of the fixture.
+#
+# Ordering, group membership, the --done verification half and the JSON shape
+# are covered against an injected corpus by internal/cli/cmd_adapt_test.go and
+# internal/mcp/tools_adapt_test.go. What THIS row buys is the wiring: that the
+# verb is routed, resolves the project config from a real cwd, and renders.
+
+# 1. No project config at all: "never adapted" walks from the oldest embedded
+#    release and SAYS SO, rather than silently reporting nothing.
+! exec a2a adapt
+stdout 'ADAPT THIS REPOSITORY'
+stdout 'never recorded adapted_through'
+stdout 'obligations since'
+
+# 2. A baseline equal to the running binary: nothing is outstanding, and the
+#    verb exits 0. This is the half that proves the exit code carries meaning.
+mkdir .a2a
+cp baseline-current.yaml .a2a/config.yaml
+exec a2a adapt
+stdout 'nothing to adapt'
+
+# 3. A baseline ABOVE the running binary (a downgrade) REFUSES, naming both
+#    clocks, instead of walking backwards (AC-10).
+cp baseline-ahead.yaml .a2a/config.yaml
+! exec a2a adapt
+stderr 'newer than the running binary'
+stderr '0.99.0'
+stderr '0.19.0'
+
+-- baseline-current.yaml --
+system: alpha
+spaces: []
+adapted_through: "0.19.0"
+-- baseline-ahead.yaml --
+system: alpha
+spaces: []
+adapted_through: "0.99.0"

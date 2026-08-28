@@ -389,14 +389,36 @@ func (c *UpdateCommand) refreshManagedNotificationComponents(
 	return results
 }
 
-// printPostUpdateDigest execs the just-swapped NEW binary's own `whatsnew
-// --since <FromVersion>` (never an in-process render — internal/release must
-// not import internal/notes, and this is the exact idiom SelfCheckVersion's
+// printPostUpdateDigest execs the just-swapped NEW binary's own `adapt`
+// (never an in-process render — internal/release must not import
+// internal/notes, and this is the exact idiom SelfCheckVersion's
 // injectable Runner already establishes) and prints its output under a
 // header. Skipped entirely (never printed, never an error) when FromVersion
-// does not parse as a real version (a dev/empty build stamp), the runner
-// errors, or its output is empty/whitespace-only — a missing digest is not a
+// does not parse as a real version (a dev/empty build stamp — the same
+// precondition this function has always used to decide whether a digest is
+// worth asking for at all), the runner could not execute the child AT ALL,
+// or its output is empty/whitespace-only — a missing digest is not a
 // failure of the update that already succeeded.
+//
+// P13 (answers-that-hold-2026-08): this used to run `whatsnew --since
+// <FromVersion>` — the version this UPDATE replaced, the WRONG clock for a
+// repository that skipped adaptation across more than one hop (spec 13
+// §"the two clocks"). `adapt` reads its own baseline from the swapped
+// binary's OWN read of `.a2a/config.yaml`'s `adapted_through` — the
+// REPOSITORY's clock — so no argument here can express it; only the verb
+// changes, not the exec mechanism.
+//
+// `adapt` EXITS NON-ZERO EXACTLY WHEN OBLIGATIONS REMAIN (P13 AC-9) — the
+// common case right after an update, and the moment this digest matters
+// most. `whatsnew` (the verb this replaced) always exited 0, so the old
+// "any error means skip" rule silently discarded the one output this
+// command exists to show. release.Runner's real implementation is
+// `exec.Cmd.Output()`, which still returns stdout on a non-zero exit
+// wrapped in a *exec.ExitError — so ONLY a *exec.ExitError with adapt's own
+// documented exit codes (0 = nothing pending, 1 = obligations remain) is
+// treated as "the child ran"; a usage error (2), an unrecognised error
+// shape, or the child failing to start at all (a stale or missing binary)
+// still suppresses the digest exactly as before.
 func (c *UpdateCommand) printPostUpdateDigest(ctx context.Context, execPath string, res release.ApplyResult, stdio IO) {
 	if _, err := version.OlderThan(res.FromVersion, res.FromVersion); err != nil {
 		return
@@ -405,8 +427,14 @@ func (c *UpdateCommand) printPostUpdateDigest(ctx context.Context, execPath stri
 	if run == nil {
 		run = release.DefaultRunner
 	}
-	out, err := run(ctx, execPath, "whatsnew", "--since", res.FromVersion)
-	if err != nil || strings.TrimSpace(out) == "" {
+	out, err := run(ctx, execPath, "adapt")
+	if err != nil {
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) || (exitErr.ExitCode() != 0 && exitErr.ExitCode() != 1) {
+			return
+		}
+	}
+	if strings.TrimSpace(out) == "" {
 		return
 	}
 	_, _ = fmt.Fprintln(stdio.Stdout, "\n── what changed ──")

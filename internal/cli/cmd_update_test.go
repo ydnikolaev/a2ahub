@@ -437,7 +437,7 @@ func TestUpdateCommand_PostSwapDigest_PrintsUnderHeader(t *testing.T) {
 	if calls[0][0] != execPath {
 		t.Fatalf("whatsnewRunner path = %q, want the swapped exec path %q", calls[0][0], execPath)
 	}
-	if want := []string{"whatsnew", "--since", "0.1.0"}; strings.Join(calls[0][1:], " ") != strings.Join(want, " ") {
+	if want := []string{"adapt"}; strings.Join(calls[0][1:], " ") != strings.Join(want, " ") {
 		t.Fatalf("whatsnewRunner args = %v, want %v", calls[0][1:], want)
 	}
 }

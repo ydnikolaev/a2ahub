@@ -303,6 +303,7 @@ var coverageManifest = []coverageEntry{
 	{Verb: "serve", Txtar: "operational_commands.txtar", Tier: tierT3},
 	{Verb: "skill", Txtar: "ops_skill.txtar", Tier: tierT3},
 	{Verb: "version", Txtar: "ops_version.txtar", Tier: tierT3},
+	{Verb: "adapt", Txtar: "adapt.txtar", Tier: tierT3},
 	{Verb: "whatsnew", Txtar: "whatsnew.txtar", Tier: tierT3},
 
 	// --- Operational work family (OP-224) ------------------------------

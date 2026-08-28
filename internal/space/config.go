@@ -29,6 +29,20 @@ type ProjectConfig struct {
 	System   string `yaml:"system"`
 	Spaces   []Ref  `yaml:"spaces"`
 	SkillDir string `yaml:"skill_dir,omitempty"`
+	// AdaptedThrough is the release-notes version this REPOSITORY was last
+	// adapted to (P13 spec "adapt-from-a-baseline" §"the config field") —
+	// a property of the repo, not of any one binary's own version, so a
+	// teammate's agent cloning this repo sees exactly what is left rather
+	// than redoing or skipping work another agent already recorded. Empty
+	// means "never adapted": `a2a adapt` then walks from the oldest
+	// embedded release note and says so. A baseline strictly NEWER than
+	// the running binary (a downgrade) is refused rather than walked
+	// backwards. A Go struct field ONLY — this file is loaded by plain
+	// non-strict yaml.Unmarshal (LoadProjectConfig, below) and has no JSON
+	// Schema in this repository; the P13 spec's own amendment explains why
+	// one is neither available (the frozen release-notes `action` object)
+	// nor needed (there is no project-config schema at all).
+	AdaptedThrough string `yaml:"adapted_through,omitempty"`
 }
 
 // DefaultSkillDir is the provider-neutral installed-skill home used by old
