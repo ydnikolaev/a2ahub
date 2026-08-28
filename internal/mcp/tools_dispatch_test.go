@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -381,10 +382,35 @@ func TestReadDispatchAppendsUpdateAdvisoryWithoutTouchingStructuredContent(t *te
 	})
 }
 
-// TestGroupedToolsListWeightDropsFromP14Baseline gates spec 15 §8 AC #1's
-// "weight drops materially": the grouped tools/list payload must be well
-// under the P14 baseline of 8481 bytes / ~2120 tokens. The measured size is
-// logged for the phase report.
+// descriptionText matches a published property description's VALUE, so the
+// weight test can separate structure from prose without re-marshalling the
+// registry twice.
+var descriptionText = regexp.MustCompile(`"description":"(\\.|[^"\\])*"`)
+
+// TestGroupedToolsListWeightDropsFromP14Baseline gates the two claims that
+// used to be one number, and separating them is a decision taken 2026-08-28
+// by the operator rather than a loosening.
+//
+// # Why one assertion became two
+//
+// v1-min-2026-07 spec 15 §8 AC #1 said "tools/list weight drops materially
+// from the P14 ~2.1k-token baseline" — grouping the tools had to actually
+// SAVE context, not reshuffle it. That phase measured 8481 B -> 2803 B.
+//
+// no-silent-yes-2026-08 P4 then required every published property to carry a
+// description (spec 04 §8 AC 4), so an agent reads what a field MEANS instead
+// of inferring it from a CLI flag that sometimes differs. Measured: 119
+// properties, 15670 B with descriptions against 5360 B without. The two
+// criteria are structurally incompatible — even EMPTY `"description":""` keys
+// cost 7383 B of the 8481 budget, leaving ~9 characters per property for text
+// that is supposed to explain something.
+//
+// Shrinking descriptions to fit would satisfy "non-empty" while defeating what
+// AC 4 is for, which is this epic's own subject: a declaration read as a
+// verdict. So the budget now measures what it was always ARGUING about —
+// whether grouping saved context — and the descriptions are a SEPARATE,
+// consciously priced line with its own number, so their weight cannot drift
+// without someone moving a constant and saying why.
 func TestGroupedToolsListWeightDropsFromP14Baseline(t *testing.T) {
 	t.Parallel()
 	r := dispatchTestRegistry(t)
@@ -397,9 +423,32 @@ func TestGroupedToolsListWeightDropsFromP14Baseline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal tools/list: %v", err)
 	}
+
+	// The grouping claim, measured the way spec 15 meant it: the structural
+	// weight, with per-property description TEXT removed. `descriptionText`
+	// strips the values and keeps the keys, so this number moves when the
+	// SHAPE changes — a new tool, a new property, a wider enum — and not when
+	// someone writes a better sentence.
+	structural := len(descriptionText.ReplaceAll(payload, []byte(`"description":""`)))
 	const p14Baseline = 8481
-	t.Logf("grouped tools/list weight: %d bytes (~%d tokens); P14 baseline: %d bytes (~2120 tokens)", len(payload), len(payload)/4, p14Baseline)
-	if len(payload) >= p14Baseline {
-		t.Fatalf("grouped tools/list weight %d bytes did not drop below the P14 baseline %d", len(payload), p14Baseline)
+	t.Logf("tools/list: %d B total (~%d tok); structural %d B (~%d tok); P14 baseline %d B (~2120 tok)",
+		len(payload), len(payload)/4, structural, structural/4, p14Baseline)
+	if structural >= p14Baseline {
+		t.Fatalf("structural tools/list weight %d B did not drop below the P14 baseline %d B.\n"+
+			"This is the GROUPING claim (v1-min-2026-07 spec 15 §8 AC #1) and description text is excluded from it.\n"+
+			"A new tool or a wider property set moved it — that is a real regression in what grouping bought.", structural, p14Baseline)
+	}
+
+	// The descriptions' own price, pinned so it cannot drift silently. Raising
+	// this is a normal commit; doing it WITHOUT noticing is what this guards.
+	// Every MCP session pays it once, in context, forever.
+	const descriptionBudget = 12000
+	descriptionWeight := len(payload) - structural
+	t.Logf("description text: %d B (~%d tok) of every session's context", descriptionWeight, descriptionWeight/4)
+	if descriptionWeight > descriptionBudget {
+		t.Fatalf("description text weighs %d B, over the %d B budget.\n"+
+			"Descriptions are worth context (spec 04 AC 4: a field says what it means), which is why this\n"+
+			"budget exists rather than a ban — but it is EVERY agent's context, EVERY session. Either tighten\n"+
+			"the wording or raise this constant deliberately and say why in the commit.", descriptionWeight, descriptionBudget)
 	}
 }

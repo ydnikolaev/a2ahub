@@ -79,6 +79,13 @@ var LifecycleVerbTable = []lifecycleVerbSpec{
 // takes (structured form replaces the CLI's flag parsing, per plan 14
 // Brief item 4): N ids batched into one commit/one PR.
 type LifecycleInput struct {
+	// Action is a2a_lifecycle's own discriminator — never read here (the
+	// handler's behaviour is spec, closed over by newLifecycleDispatch's
+	// per-verb map, not this decoded value); it exists purely so this
+	// struct stays decodable under decodeStrict's DisallowUnknownFields
+	// when newDispatch forwards the full raw args, discriminator included
+	// (tools_dispatch.go's own doc comment).
+	Action     string     `json:"action,omitempty"`
 	IDs        []string   `json:"ids"`
 	Reason     string     `json:"reason,omitempty"`
 	ReasonCode string     `json:"reason_code,omitempty"`
@@ -98,8 +105,8 @@ type LifecycleInput struct {
 func newLifecycleHandler(spec lifecycleVerbSpec, deps WriteDeps) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in LifecycleInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, "", fmt.Errorf("%s: invalid input: %w", spec.Verb, err)
+		if err := decodeStrict(args, &in, spec.Verb, 0); err != nil {
+			return nil, "", err
 		}
 		if len(in.IDs) == 0 {
 			return nil, "", fmt.Errorf("%s: ids is required", spec.Verb)
@@ -298,6 +305,9 @@ func refsFromList(refs []string) []refEntry {
 // below rather than shared — the established idiom this file's own
 // respondSeed/parentThread/thread-conflict duplication already follows.
 type RespondInput struct {
+	// Action is a2a_exchange's own discriminator — never read here; see
+	// LifecycleInput's identical field for why it exists.
+	Action       string              `json:"action,omitempty"`
 	ParentIDs    []string            `json:"parent_ids"`
 	Result       string              `json:"result"`
 	Fields       map[string]string   `json:"fields,omitempty"`
@@ -697,8 +707,8 @@ func respondValidateBlockedBy(blockedBy *RespondBlockedBy) error {
 func newRespondHandler(deps WriteDeps) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in RespondInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, "", fmt.Errorf("respond: invalid input: %w", err)
+		if err := decodeStrict(args, &in, "respond", 0); err != nil {
+			return nil, "", err
 		}
 		if len(in.ParentIDs) == 0 {
 			return nil, "", fmt.Errorf("respond: parent_ids is required")
@@ -1159,9 +1169,19 @@ func respondSeed(parentID, result string, respFields map[string]string, bodyOver
 
 // VerifyInput is a2a_verify's structured input.
 type VerifyInput struct {
-	Targets []string   `json:"targets"`
-	Refs    string     `json:"refs,omitempty"`
-	Actor   ActorInput `json:"actor,omitempty"`
+	// Action is a2a_exchange's own discriminator — never read here; see
+	// LifecycleInput's identical field for why it exists.
+	Action  string   `json:"action,omitempty"`
+	Targets []string `json:"targets"`
+	// Refs disambiguates which of a target's own response candidates
+	// resolveResponseID should resolve — genuinely read (unlike
+	// respond/dispute/note, which carry no such field at all), but no
+	// longer PUBLISHED on a2a_exchange's own schema (spec 04 D4): see
+	// this package's tools.go a2a_exchange registration comment for the
+	// withdrawal and its real, reported cost to this field's own
+	// discoverability.
+	Refs  string     `json:"refs,omitempty"`
+	Actor ActorInput `json:"actor,omitempty"`
 	// Verdicts is P1's own field (one-answer-2026-08 spec 01): the
 	// verifier's per-criterion judgement, resolved ONCE against
 	// targets[0]'s own parent and applied uniformly to every target's
@@ -1175,8 +1195,8 @@ type VerifyInput struct {
 func newVerifyHandler(deps WriteDeps) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in VerifyInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, "", fmt.Errorf("verify: invalid input: %w", err)
+		if err := decodeStrict(args, &in, "verify", 0); err != nil {
+			return nil, "", err
 		}
 		if len(in.Targets) == 0 {
 			return nil, "", fmt.Errorf("verify: targets is required")
@@ -1347,6 +1367,9 @@ func newVerifyHandler(deps WriteDeps) HandlerFunc {
 
 // DisputeInput is a2a_dispute's structured input.
 type DisputeInput struct {
+	// Action is a2a_exchange's own discriminator — never read here; see
+	// LifecycleInput's identical field for why it exists.
+	Action     string     `json:"action,omitempty"`
 	IDs        []string   `json:"ids"`
 	Reason     string     `json:"reason"`
 	ReasonCode string     `json:"reason_code,omitempty"`
@@ -1356,8 +1379,8 @@ type DisputeInput struct {
 func newDisputeHandler(deps WriteDeps) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in DisputeInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, "", fmt.Errorf("dispute: invalid input: %w", err)
+		if err := decodeStrict(args, &in, "dispute", 0); err != nil {
+			return nil, "", err
 		}
 		if len(in.IDs) == 0 || in.Reason == "" {
 			return nil, "", fmt.Errorf("dispute: ids and reason are required")
@@ -1428,16 +1451,19 @@ func newDisputeHandler(deps WriteDeps) HandlerFunc {
 
 // NoteInput is a2a_note's structured input.
 type NoteInput struct {
-	IDs   []string   `json:"ids"`
-	Note  string     `json:"note"`
-	Actor ActorInput `json:"actor,omitempty"`
+	// Action is a2a_exchange's own discriminator — never read here; see
+	// LifecycleInput's identical field for why it exists.
+	Action string     `json:"action,omitempty"`
+	IDs    []string   `json:"ids"`
+	Note   string     `json:"note"`
+	Actor  ActorInput `json:"actor,omitempty"`
 }
 
 func newNoteHandler(deps WriteDeps) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in NoteInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, "", fmt.Errorf("note: invalid input: %w", err)
+		if err := decodeStrict(args, &in, "note", 0); err != nil {
+			return nil, "", err
 		}
 		if len(in.IDs) == 0 || in.Note == "" {
 			return nil, "", fmt.Errorf("note: ids and note are required")

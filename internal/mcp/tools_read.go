@@ -60,7 +60,12 @@ func flattenSkippedFiles(bySpace map[string][]cache.SkippedFile) []cache.Skipped
 
 // InboxInput is a2a_inbox's structured input.
 type InboxInput struct {
-	Actionable bool `json:"actionable,omitempty"`
+	// View is a2a_read's own discriminator — never read here; it exists
+	// purely so this struct stays decodable under decodeStrict's
+	// DisallowUnknownFields when newDispatch forwards the full raw args,
+	// discriminator included (tools_dispatch.go's own doc comment).
+	View       string `json:"view,omitempty"`
+	Actionable bool   `json:"actionable,omitempty"`
 	// Overdue selects the open items addressed to this system whose
 	// needed_by has passed — see internal/cache/overdue.go. Mirrored from
 	// the CLI's own `--overdue` in the same change that added it: a read
@@ -72,10 +77,8 @@ type InboxInput struct {
 func newInboxHandler(store *cache.Store) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in InboxInput
-		if len(args) > 0 {
-			if err := json.Unmarshal(args, &in); err != nil {
-				return nil, "", fmt.Errorf("a2a_inbox: invalid input: %w", err)
-			}
+		if err := decodeStrict(args, &in, "a2a_inbox", 0); err != nil {
+			return nil, "", err
 		}
 		if in.Actionable && in.Overdue {
 			return nil, "", fmt.Errorf(
@@ -111,16 +114,17 @@ func newInboxHandler(store *cache.Store) HandlerFunc {
 
 // OutboxInput is a2a_outbox's structured input.
 type OutboxInput struct {
-	Attention bool `json:"attention,omitempty"`
+	// View is a2a_read's own discriminator — never read here; see
+	// InboxInput's identical field for why it exists.
+	View      string `json:"view,omitempty"`
+	Attention bool   `json:"attention,omitempty"`
 }
 
 func newOutboxHandler(store *cache.Store) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in OutboxInput
-		if len(args) > 0 {
-			if err := json.Unmarshal(args, &in); err != nil {
-				return nil, "", fmt.Errorf("a2a_outbox: invalid input: %w", err)
-			}
+		if err := decodeStrict(args, &in, "a2a_outbox", 0); err != nil {
+			return nil, "", err
 		}
 		items, err := store.Outbox(ctx, in.Attention)
 		if err != nil {
@@ -139,7 +143,10 @@ func newOutboxHandler(store *cache.Store) HandlerFunc {
 
 // ShowInput is a2a_show's structured input.
 type ShowInput struct {
-	Ref string `json:"ref"`
+	// View is a2a_read's own discriminator — never read here; see
+	// InboxInput's identical field for why it exists.
+	View string `json:"view,omitempty"`
+	Ref  string `json:"ref"`
 }
 
 // showOutput is a2a_show's JSON shape — mirrors internal/cli's showOutput
@@ -152,8 +159,8 @@ type showOutput struct {
 func newShowHandler(store *cache.Store) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in ShowInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, "", fmt.Errorf("a2a_show: invalid input: %w", err)
+		if err := decodeStrict(args, &in, "a2a_show", 0); err != nil {
+			return nil, "", err
 		}
 		if in.Ref == "" {
 			return nil, "", fmt.Errorf("a2a_show: ref is required")
@@ -209,6 +216,9 @@ func showV5Warnings(result cache.ShowResult) []validate.Violation {
 // the caller then names which it meant. Without it this surface would hit an
 // unrecoverable error where the CLI prints the fix.
 type ThreadInput struct {
+	// View is a2a_read's own discriminator — never read here; see
+	// InboxInput's identical field for why it exists.
+	View     string `json:"view,omitempty"`
 	ThreadID string `json:"thread_id"`
 	Space    string `json:"space,omitempty"`
 }
@@ -216,8 +226,8 @@ type ThreadInput struct {
 func newThreadHandler(store *cache.Store) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in ThreadInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, "", fmt.Errorf("a2a_thread: invalid input: %w", err)
+		if err := decodeStrict(args, &in, "a2a_thread", 0); err != nil {
+			return nil, "", err
 		}
 		if in.ThreadID == "" {
 			return nil, "", fmt.Errorf("a2a_thread: thread_id is required")
@@ -264,6 +274,9 @@ type threadOutput struct {
 
 // SearchInput is a2a_search's structured input.
 type SearchInput struct {
+	// View is a2a_read's own discriminator — never read here; see
+	// InboxInput's identical field for why it exists.
+	View  string `json:"view,omitempty"`
 	Query string `json:"query"`
 	Type  string `json:"type,omitempty"`
 	Space string `json:"space,omitempty"`
@@ -277,8 +290,8 @@ type SearchInput struct {
 func newSearchHandler(store *cache.Store) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in SearchInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, "", fmt.Errorf("a2a_search: invalid input: %w", err)
+		if err := decodeStrict(args, &in, "a2a_search", 0); err != nil {
+			return nil, "", err
 		}
 		items, err := store.Search(ctx, in.Query, cache.SearchFilters{Type: in.Type, Space: in.Space, State: in.State, Thread: in.Thread})
 		if err != nil {
@@ -298,6 +311,9 @@ func newSearchHandler(store *cache.Store) HandlerFunc {
 
 // ContractsInput is a2a_contracts's structured input.
 type ContractsInput struct {
+	// View is a2a_read's own discriminator — never read here; see
+	// InboxInput's identical field for why it exists.
+	View     string `json:"view,omitempty"`
 	Provider string `json:"provider,omitempty"`
 }
 
@@ -349,10 +365,8 @@ func withUpdateNotice(inner HandlerFunc, store *cache.Store) HandlerFunc {
 func newContractsHandler(store *cache.Store) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in ContractsInput
-		if len(args) > 0 {
-			if err := json.Unmarshal(args, &in); err != nil {
-				return nil, "", fmt.Errorf("a2a_contracts: invalid input: %w", err)
-			}
+		if err := decodeStrict(args, &in, "a2a_contracts", 0); err != nil {
+			return nil, "", err
 		}
 		contracts, err := store.Contracts(ctx, in.Provider)
 		if err != nil {

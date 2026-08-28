@@ -248,6 +248,11 @@ type ContractDeps struct {
 // onto a2a_new's own draft path with type="contract" (mirrors
 // internal/cli's runNew -> P6 NewCommand delegation).
 type ContractNewInput struct {
+	// Action is a2a_contract's own discriminator — never read here; it
+	// exists purely so this struct stays decodable under decodeStrict's
+	// DisallowUnknownFields when newDispatch forwards the full raw args,
+	// discriminator included (tools_dispatch.go's own doc comment).
+	Action string            `json:"action,omitempty"`
 	Slug   string            `json:"slug"`
 	Fields map[string]string `json:"fields,omitempty"`
 	Body   string            `json:"body,omitempty"`
@@ -258,8 +263,8 @@ type ContractNewInput struct {
 func newContractNewHandler(newDeps NewDeps) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in ContractNewInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, "", fmt.Errorf("contract new: invalid input: %w", err)
+		if err := decodeStrict(args, &in, "contract new", 0); err != nil {
+			return nil, "", err
 		}
 		if in.Slug == "" {
 			return nil, "", fmt.Errorf("contract new: slug is required")
@@ -303,6 +308,9 @@ func contractPublishedVersions(all []eventDoc, id string) []contractSemver {
 
 // ContractPublishInput is a2a_contract_publish's structured input.
 type ContractPublishInput struct {
+	// Action is a2a_contract's own discriminator — never read here; see
+	// ContractNewInput's identical field for why it exists.
+	Action              string     `json:"action,omitempty"`
 	Space               string     `json:"space,omitempty"`
 	ID                  string     `json:"id"`
 	Version             string     `json:"version,omitempty"`
@@ -367,6 +375,9 @@ func contractResolveVersionOrRefuse(all []eventDoc, id, explicit, currentVersion
 
 // ContractDeprecateInput is a2a_contract_deprecate's structured input.
 type ContractDeprecateInput struct {
+	// Action is a2a_contract's own discriminator — never read here; see
+	// ContractNewInput's identical field for why it exists.
+	Action    string     `json:"action,omitempty"`
 	Space     string     `json:"space,omitempty"`
 	ID        string     `json:"id"`
 	Version   string     `json:"version,omitempty"`
@@ -378,8 +389,8 @@ type ContractDeprecateInput struct {
 func newContractDeprecateHandler(deps ContractDeps) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in ContractDeprecateInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, "", fmt.Errorf("contract deprecate: invalid input: %w", err)
+		if err := decodeStrict(args, &in, "contract deprecate", 0); err != nil {
+			return nil, "", err
 		}
 		if in.ID == "" || in.Successor == "" || in.Sunset == "" {
 			return nil, "", fmt.Errorf("contract deprecate: id, successor and sunset are required")
@@ -571,6 +582,9 @@ func newContractDeprecateHandler(deps ContractDeps) HandlerFunc {
 
 // ContractRetireInput is a2a_contract_retire's structured input.
 type ContractRetireInput struct {
+	// Action is a2a_contract's own discriminator — never read here; see
+	// ContractNewInput's identical field for why it exists.
+	Action   string     `json:"action,omitempty"`
 	Space    string     `json:"space,omitempty"`
 	ID       string     `json:"id"`
 	Version  string     `json:"version,omitempty"`
@@ -581,8 +595,8 @@ type ContractRetireInput struct {
 func newContractRetireHandler(deps ContractDeps) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in ContractRetireInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, "", fmt.Errorf("contract retire: invalid input: %w", err)
+		if err := decodeStrict(args, &in, "contract retire", 0); err != nil {
+			return nil, "", err
 		}
 		if in.ID == "" {
 			return nil, "", fmt.Errorf("contract retire: id is required")
@@ -899,10 +913,17 @@ func contractDeprecateAddressees(mirrorDir, contractID, from string, fallback []
 
 // ContractDiffInput is a2a_contract_diff's structured (read-only) input.
 type ContractDiffInput struct {
-	Space string `json:"space,omitempty"`
-	ID    string `json:"id"`
-	V1    string `json:"v1"`
-	V2    string `json:"v2"`
+	// Action is a2a_contract's own discriminator — never read here; see
+	// ContractNewInput's identical field for why it exists. NOT part of
+	// ContractDiffRequest below — this struct is built into that one
+	// FIELD BY FIELD (not by a bare struct conversion) specifically so
+	// this input struct's own shape can carry a field ContractDiffRequest
+	// does not.
+	Action string `json:"action,omitempty"`
+	Space  string `json:"space,omitempty"`
+	ID     string `json:"id"`
+	V1     string `json:"v1"`
+	V2     string `json:"v2"`
 }
 
 func newContractDiffHandler(deps ContractDeps) HandlerFunc {
@@ -911,13 +932,13 @@ func newContractDiffHandler(deps ContractDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("contract diff: P6 service is not configured")
 		}
 		var in ContractDiffInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, "", fmt.Errorf("contract diff: invalid input: %w", err)
+		if err := decodeStrict(args, &in, "contract diff", 0); err != nil {
+			return nil, "", err
 		}
 		if in.ID == "" || in.V1 == "" || in.V2 == "" || in.V1 == in.V2 {
 			return nil, "", fmt.Errorf("contract diff: distinct id, v1 and v2 are required")
 		}
-		result, err := deps.Inspection.DiffContract(ctx, ContractDiffRequest(in))
+		result, err := deps.Inspection.DiffContract(ctx, ContractDiffRequest{Space: in.Space, ID: in.ID, V1: in.V1, V2: in.V2})
 		if err != nil {
 			return nil, "", fmt.Errorf("contract diff: %w", err)
 		}
@@ -928,9 +949,14 @@ func newContractDiffHandler(deps ContractDeps) HandlerFunc {
 // ContractVerifyExportInput is a2a_contract_verify_export's structured
 // (read-only) input.
 type ContractVerifyExportInput struct {
-	Space string `json:"space,omitempty"`
-	Local string `json:"local"`
-	Ref   string `json:"ref"`
+	// Action is a2a_contract's own discriminator — never read here; see
+	// ContractDiffInput's identical field/comment for why it exists and
+	// why ContractVerifyExportRequest below is built field by field rather
+	// than by a bare struct conversion.
+	Action string `json:"action,omitempty"`
+	Space  string `json:"space,omitempty"`
+	Local  string `json:"local"`
+	Ref    string `json:"ref"`
 }
 
 func newContractVerifyExportHandler(deps ContractDeps) HandlerFunc {
@@ -939,13 +965,13 @@ func newContractVerifyExportHandler(deps ContractDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("contract verify-export: P6 service is not configured")
 		}
 		var in ContractVerifyExportInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, "", fmt.Errorf("contract verify-export: invalid input: %w", err)
+		if err := decodeStrict(args, &in, "contract verify-export", 0); err != nil {
+			return nil, "", err
 		}
 		if in.Local == "" || in.Ref == "" {
 			return nil, "", fmt.Errorf("contract verify-export: local and ref are required")
 		}
-		result, err := deps.Inspection.VerifyContractExport(ctx, ContractVerifyExportRequest(in))
+		result, err := deps.Inspection.VerifyContractExport(ctx, ContractVerifyExportRequest{Space: in.Space, Local: in.Local, Ref: in.Ref})
 		if err != nil {
 			return nil, "", fmt.Errorf("contract verify-export: %w", err)
 		}
@@ -956,10 +982,13 @@ func newContractVerifyExportHandler(deps ContractDeps) HandlerFunc {
 // ContractAdoptInput is a2a_contract action=adopt's structured input —
 // the MCP twin of `a2a contract adopt` (internal/cli's runAdopt).
 type ContractAdoptInput struct {
-	Space string `json:"space,omitempty"`
-	ID    string `json:"id"`
-	Major int    `json:"major,omitempty"`
-	Note  string `json:"note,omitempty"`
+	// Action is a2a_contract's own discriminator — never read here; see
+	// ContractNewInput's identical field for why it exists.
+	Action string `json:"action,omitempty"`
+	Space  string `json:"space,omitempty"`
+	ID     string `json:"id"`
+	Major  int    `json:"major,omitempty"`
+	Note   string `json:"note,omitempty"`
 }
 
 // newContractAdoptHandler registers this system as a CONSUMER of another
@@ -971,8 +1000,8 @@ type ContractAdoptInput struct {
 func newContractAdoptHandler(deps ContractDeps) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in ContractAdoptInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, "", fmt.Errorf("contract adopt: invalid input: %w", err)
+		if err := decodeStrict(args, &in, "contract adopt", 0); err != nil {
+			return nil, "", err
 		}
 		parsed, perr := artifact.ParseID(in.ID)
 		if perr != nil || parsed.Prefix != "XC" {
@@ -1166,6 +1195,9 @@ func contractActivateEventSchema(floor string) string {
 
 // ContractActivateInput is a2a_contract's action=activate structured input.
 type ContractActivateInput struct {
+	// Action is a2a_contract's own discriminator — never read here; see
+	// ContractNewInput's identical field for why it exists.
+	Action    string     `json:"action,omitempty"`
 	Space     string     `json:"space,omitempty"`
 	ID        string     `json:"id"`
 	Version   string     `json:"version"`
@@ -1210,8 +1242,8 @@ type ContractActivateInput struct {
 func newContractActivateHandler(deps ContractDeps) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in ContractActivateInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, "", fmt.Errorf("contract activate: invalid input: %w", err)
+		if err := decodeStrict(args, &in, "contract activate", 0); err != nil {
+			return nil, "", err
 		}
 		if in.ID == "" || in.Version == "" || len(in.Satisfies) == 0 {
 			return nil, "", fmt.Errorf("contract activate: id, version and satisfies (at least one item) are required")

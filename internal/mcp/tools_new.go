@@ -72,8 +72,8 @@ type newDraftResult struct {
 func newNewHandler(deps NewDeps) HandlerFunc {
 	return func(_ context.Context, args json.RawMessage) (any, string, error) {
 		var in NewInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, "", fmt.Errorf("new: invalid input: %w", err)
+		if err := decodeStrict(args, &in, "new", 0); err != nil {
+			return nil, "", err
 		}
 		if len(in.Items) == 0 {
 			return nil, "", fmt.Errorf("new: items is required")

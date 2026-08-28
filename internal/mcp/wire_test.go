@@ -3,15 +3,18 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
+	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
@@ -748,6 +751,79 @@ func TestBuildWriteDepsFailingSpaceSurfacesErrorOnlyWhenResolved(t *testing.T) {
 
 	if _, err := write.ResolveSpace("space-two"); err == nil {
 		t.Fatal("expected space-two's build failure to surface when space-two is targeted")
+	}
+}
+
+// TestBuildWriteDepsSpaceFetchIsBoundedAndNonPrimaryTimeoutStaysStoredNotFatal
+// is agent-exchange-2026-08 spec 04 AC 6's own proof: a per-space mirror
+// fetch that stalls no longer blocks buildWriteDeps forever, and — mirroring
+// TestBuildWriteDepsFailingSpaceSurfacesErrorOnlyWhenResolved's own contract
+// exactly, immediately above — a NON-PRIMARY space's timeout is stored, not
+// fatal: buildWriteDeps still succeeds over the reachable primary, and the
+// timeout surfaces only once space-two is actually resolved. A stall on the
+// PRIMARY space remains fatal, unchanged from before this bound existed
+// (buildWriteDeps' own primary.err branch, untouched by this phase).
+//
+// The stalling fetch is INJECTED (SetCloneOrFetchForBuildTest) rather than a
+// real unreachable git remote: a real stall would have to actually wait out
+// whatever bound is under test, which defeats a fast, deterministic unit
+// test. SetBuildWriteDepsSpaceTimeoutForTest shrinks the bound itself so
+// this test's own wall-clock cost stays well under a second regardless of
+// the production 30s value.
+func TestBuildWriteDepsSpaceFetchIsBoundedAndNonPrimaryTimeoutStaysStoredNotFatal(t *testing.T) {
+	// reason: t.Setenv below forbids t.Parallel() (AGENTS.md testing rails).
+	t.Setenv("A2A_TOKEN_SPACE_ONE", "test-token-one")
+	t.Setenv("A2A_TOKEN_SPACE_TWO", "test-token-two")
+
+	fxOne := spacefixture.New(t, "beta")
+	fixValidManifest(t, fxOne, "beta")
+
+	// 2s, not 50ms. The stalling fake below blocks until ctx.Done(), so ANY
+	// bound proves it is bounded — but this SAME global timeout also applies to
+	// space-one, whose fetch is a real `git clone` of a local fixture. Under
+	// -race with the package's other tests running, that legitimately exceeds
+	// 50ms, and this test failed roughly half of four consecutive runs with
+	// `signal: killed` on the PRIMARY's clone — the bound killing the thing it
+	// was never about. The elapsed ceiling below (5s) is what actually asserts
+	// boundedness; this constant only has to be a number a local clone always
+	// beats and an infinite stall never does.
+	defer SetBuildWriteDepsSpaceTimeoutForTest(2 * time.Second)()
+
+	const stallingRepoURL = "stall://space-two"
+	defer SetCloneOrFetchForBuildTest(func(ctx context.Context, dir, repoURL string, credential host.Credential) error {
+		if repoURL == stallingRepoURL {
+			<-ctx.Done() // simulate a hung network fetch that never returns on its own
+			return ctx.Err()
+		}
+		return space.CloneOrFetch(ctx, dir, repoURL, credential)
+	})()
+
+	cfg := space.ProjectConfig{System: "beta", Spaces: []space.Ref{
+		{ID: "space-one", RepoURL: fxOne.RemoteURL()},
+		{ID: "space-two", RepoURL: stallingRepoURL},
+	}}
+	machine := space.MachineConfig{Credentials: map[string]string{
+		"space-one": "env:A2A_TOKEN_SPACE_ONE", "space-two": "env:A2A_TOKEN_SPACE_TWO",
+	}}
+	projectRoot := t.TempDir()
+	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
+
+	start := time.Now()
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test")
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("Spaces[0] (space-one) is reachable — buildWriteDeps must not fail: %v", err)
+	}
+	if elapsed > 5*time.Second {
+		t.Fatalf("buildWriteDeps took %v — a stalling non-primary space's fetch was not bounded", elapsed)
+	}
+
+	_, err = write.ResolveSpace("space-two")
+	if err == nil {
+		t.Fatal("expected space-two's bounded-timeout failure to surface when space-two is targeted")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("space-two error = %v, want it to wrap context.DeadlineExceeded", err)
 	}
 }
 

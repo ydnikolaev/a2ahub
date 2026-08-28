@@ -65,8 +65,8 @@ type SubmitInput struct {
 func newSubmitHandler(deps SubmitDeps) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in SubmitInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, "", fmt.Errorf("submit: invalid input: %w", err)
+		if err := decodeStrict(args, &in, "submit", 0); err != nil {
+			return nil, "", err
 		}
 		if len(in.IDs) == 0 {
 			return submitResult{Verb: "submit", IDs: nil, State: "nothing-to-submit"}, "", nil

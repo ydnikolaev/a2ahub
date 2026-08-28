@@ -1,11 +1,9 @@
 package mcp
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
@@ -338,26 +336,16 @@ func workForbidInput(in WorkInput, fields ...string) error {
 	return nil
 }
 
+// decodeWorkInput is a2a_work's own thin wrapper over the package's ONE
+// decode helper (tools.go's decodeStrict, agent-exchange-2026-08 spec 04
+// D4) — this function used to carry its OWN copy of decodeStrict's exact
+// body (DisallowUnknownFields, the size bound, the trailing-JSON-value
+// check); a2a_data's decodeDataInput carried a second, byte-identical copy
+// alongside it. ADR-019 forbids that duplication, so both now call through
+// to the ONE helper; this wrapper survives only because every call site in
+// this file already names it.
 func decodeWorkInput(raw json.RawMessage, out *WorkInput) error {
-	if len(raw) == 0 {
-		raw = json.RawMessage(`{}`)
-	}
-	if len(raw) > maximumWorkToolInput {
-		return fmt.Errorf("a2a_work: input exceeds %d bytes", maximumWorkToolInput)
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(out); err != nil {
-		return fmt.Errorf("a2a_work: invalid input: %w", err)
-	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		if err == nil {
-			return fmt.Errorf("a2a_work: invalid input: multiple JSON values")
-		}
-		return fmt.Errorf("a2a_work: invalid input: %w", err)
-	}
-	return nil
+	return decodeStrict(raw, out, "a2a_work", maximumWorkToolInput)
 }
 
 func workDuration(raw, field string) (time.Duration, error) {
@@ -524,32 +512,44 @@ func workStatusFrom(leases []workreport.Lease) workStatusOutput {
 
 func workToolSchema() json.RawMessage {
 	properties := map[string]any{
-		"action": map[string]any{"type": "string", "enum": WorkActions},
-		"space":  map[string]any{"type": "string"},
-		"thread": map[string]any{"type": "string"}, "subject_ref": map[string]any{"type": "string"},
-		"mode": map[string]any{"type": "string", "enum": workModes}, "summary": map[string]any{"type": "string"},
-		"work_id": map[string]any{"type": "string"}, "session": map[string]any{"type": "string"},
-		"ttl": map[string]any{"type": "string"}, "report_valid_for": map[string]any{"type": "string"},
-		"recipients":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-		"classification": map[string]any{"type": "string"},
+		"action":           map[string]any{"type": "string", "enum": WorkActions, "description": "the work operation to run: start|heartbeat|resume|checkpoint|wait|stop|status"},
+		"space":            map[string]any{"type": "string", "description": "the connected space this call targets"},
+		"thread":           map[string]any{"type": "string", "description": "start only: the thread this work is reported against"},
+		"subject_ref":      map[string]any{"type": "string", "description": "start only: the artifact this work is reported against"},
+		"mode":             map[string]any{"type": "string", "enum": workModes, "description": "start only: this work's own mode classification"},
+		"summary":          map[string]any{"type": "string", "description": "a short human-readable summary of this work/report"},
+		"work_id":          map[string]any{"type": "string", "description": "the work id this call targets (omitted selects this session's own current work)"},
+		"session":          map[string]any{"type": "string", "description": "this agent's own session identifier"},
+		"ttl":              map[string]any{"type": "string", "description": "start/heartbeat only: a Go duration string bounding this work's lease"},
+		"report_valid_for": map[string]any{"type": "string", "description": "checkpoint only: a Go duration string bounding this report's own validity"},
+		"recipients": map[string]any{
+			"type": "array", "description": "checkpoint only: who this report is addressed to",
+			"items": map[string]any{"type": "string"},
+		},
+		"classification": map[string]any{"type": "string", "description": "checkpoint only: this report's own classification"},
 		"actor": map[string]any{
 			"type": "object", "additionalProperties": false,
+			"description": "the identity performing this action, when it differs from this session's default",
 			"properties": map[string]any{
-				"kind": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"},
-				"model": map[string]any{"type": "string"}, "session": map[string]any{"type": "string"},
+				"kind":    map[string]any{"type": "string", "description": "the actor's own kind (e.g. agent, human)"},
+				"name":    map[string]any{"type": "string", "description": "the actor's own display name"},
+				"model":   map[string]any{"type": "string", "description": "the actor's own model identifier, when it is an agent"},
+				"session": map[string]any{"type": "string", "description": "the actor's own session identifier"},
 			},
 		},
 		"waiting_on": map[string]any{
-			"type": "array", "items": map[string]any{
+			"type": "array", "description": "wait only: the dependency/dependencies this work is blocked on",
+			"items": map[string]any{
 				"type": "object", "additionalProperties": false, "required": []string{"kind", "id"},
 				"properties": map[string]any{
-					"kind": map[string]any{"type": "string", "enum": workWaitKinds},
-					"id":   map[string]any{"type": "string"}, "summary": map[string]any{"type": "string"},
+					"kind":    map[string]any{"type": "string", "enum": workWaitKinds, "description": "the dependency's own kind"},
+					"id":      map[string]any{"type": "string", "description": "the dependency's own id"},
+					"summary": map[string]any{"type": "string", "description": "a short human-readable summary of this dependency"},
 				},
 			},
 		},
-		"result":          map[string]any{"type": "string", "enum": []string{"finished", "paused"}},
-		"include_expired": map[string]any{"type": "boolean"},
+		"result":          map[string]any{"type": "string", "enum": []string{"finished", "paused"}, "description": "stop only: whether this work finished or paused"},
+		"include_expired": map[string]any{"type": "boolean", "description": "status only: whether to include expired leases in the result"},
 	}
 	schema := map[string]any{
 		"type": "object", "additionalProperties": false, "required": []string{"action"}, "properties": properties,

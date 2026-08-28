@@ -447,15 +447,71 @@ func buildWriteDeps(ctx context.Context, cfg space.ProjectConfig, machine space.
 	return primary.write, primary.submit, primary.newDeps, nil
 }
 
+// cloneOrFetchForBuild is buildWriteDepsForSpace's own injected mirror-sync
+// primitive — defaults to space.CloneOrFetch; SetCloneOrFetchForBuildTest
+// overrides it so a test can prove buildWriteDepsSpaceTimeout's own bound
+// (agent-exchange-2026-08 spec 04 AC 6) without a real stalling git
+// process. Mirrors internal/cache's own SetCloneOrFetchForTest seam
+// (internal/cache/store.go) — this package's free-function equivalent,
+// since buildWriteDepsForSpace has no long-lived object to hang the
+// override on.
+var cloneOrFetchForBuild = space.CloneOrFetch
+
+// buildWriteDepsSpaceTimeout bounds how long buildWriteDepsForSpace's own
+// mirror sync waits on ANY ONE connected space before giving up (spec 04 AC
+// 6: "the per-space mirror fetch is bounded"). Before this bound existed,
+// buildWriteDeps' own per-space loop (bySpace, above) called this function
+// once per connected space with the caller's UNBOUNDED ctx — a single
+// stalling space, primary or not, blocked session start indefinitely,
+// because the loop populates every space's own bySpace entry before it
+// ever reads primary.err.
+//
+// Sized larger than internal/cache/refresh.go's own perMirrorTimeout (5s):
+// that bound is calibrated for a REFRESH ONLY — SyncIfStale's own doc
+// comment states it never first-clones. This call DOES first-clone, at
+// session start, which can legitimately take much longer than a fetch.
+var buildWriteDepsSpaceTimeout = 30 * time.Second
+
+// SetBuildWriteDepsSpaceTimeoutForTest overrides buildWriteDepsSpaceTimeout
+// for the life of a test — mirrors internal/cache's own
+// SetSyncBudgetsForTest. Returns a restore func; callers defer it.
+func SetBuildWriteDepsSpaceTimeoutForTest(d time.Duration) func() {
+	prev := buildWriteDepsSpaceTimeout
+	buildWriteDepsSpaceTimeout = d
+	return func() { buildWriteDepsSpaceTimeout = prev }
+}
+
+// SetCloneOrFetchForBuildTest overrides cloneOrFetchForBuild for the life of
+// a test. Returns a restore func; callers defer it.
+func SetCloneOrFetchForBuildTest(f func(ctx context.Context, dir, repoURL string, credential host.Credential) error) func() {
+	prev := cloneOrFetchForBuild
+	cloneOrFetchForBuild = f
+	return func() { cloneOrFetchForBuild = prev }
+}
+
 // buildWriteDepsForSpace resolves ONE connected space's mirror (cloning/
 // fetching it if needed), credential, and repo facts, then builds
 // WriteDeps/SubmitDeps/NewDeps over it. engine is built once by
 // buildWriteDeps' caller and shared across every space, rather than
 // reloading the embedded schema corpus once per connected space.
+//
+// The mirror sync itself runs under its OWN context.WithTimeout, derived
+// from ctx (buildWriteDepsSpaceTimeout, above) — bounded per spec 04 AC 6.
+// buildWriteDeps' own bySpace/primary split (unchanged by this) is what
+// keeps a NON-primary space's resulting error stored-not-fatal: a timeout
+// here on a non-primary space becomes exactly the same
+// "space-two: mirror sync failed: ...: context deadline exceeded" shape
+// TestBuildWriteDepsFailingSpaceSurfacesErrorOnlyWhenResolved already pins
+// for an unreachable-origin failure, surfaced only when that space is
+// later resolved. A timeout on the PRIMARY space remains fatal, exactly as
+// an unreachable primary already was before this bound existed.
 func buildWriteDepsForSpace(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig, p Paths, binaryVersion string, ref space.Ref, engine *validate.Engine) (WriteDeps, SubmitDeps, NewDeps, error) {
 	mirrorDir := space.ResolveMirrorLocation(p.ProjectRoot, ref, machine)
-	if err := space.CloneOrFetch(ctx, mirrorDir, ref.RepoURL, readMirrorCredential(ctx, ref.ID, machine)); err != nil {
-		return WriteDeps{}, SubmitDeps{}, NewDeps{}, fmt.Errorf("mirror sync failed: %w", err)
+	fetchCtx, cancel := context.WithTimeout(ctx, buildWriteDepsSpaceTimeout)
+	fetchErr := cloneOrFetchForBuild(fetchCtx, mirrorDir, ref.RepoURL, readMirrorCredential(ctx, ref.ID, machine))
+	cancel()
+	if fetchErr != nil {
+		return WriteDeps{}, SubmitDeps{}, NewDeps{}, fmt.Errorf("mirror sync failed: %w", fetchErr)
 	}
 	// Derived from the mirror's own refs/remotes/origin/HEAD, just fetched
 	// above (no-silent-yes-2026-08 P2b) — never a hardcoded "main". A remote

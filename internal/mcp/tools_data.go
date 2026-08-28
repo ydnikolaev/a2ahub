@@ -10,11 +10,9 @@
 package mcp
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
@@ -410,26 +408,14 @@ func dataForbidInput(in DataInput, fields ...string) error {
 	return nil
 }
 
+// decodeDataInput is a2a_data's own thin wrapper over the package's ONE
+// decode helper (tools.go's decodeStrict, agent-exchange-2026-08 spec 04
+// D4) — see tools_work.go's decodeWorkInput for the full reasoning: this
+// function and that one used to each carry their OWN byte-identical copy
+// of decodeStrict's body, which is exactly the duplication ADR-019
+// forbids. Both now call through to the one helper.
 func decodeDataInput(raw json.RawMessage, out *DataInput) error {
-	if len(raw) == 0 {
-		raw = json.RawMessage(`{}`)
-	}
-	if len(raw) > maximumDataToolInput {
-		return fmt.Errorf("a2a_data: input exceeds %d bytes", maximumDataToolInput)
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(out); err != nil {
-		return fmt.Errorf("a2a_data: invalid input: %w", err)
-	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		if err == nil {
-			return fmt.Errorf("a2a_data: invalid input: multiple JSON values")
-		}
-		return fmt.Errorf("a2a_data: invalid input: %w", err)
-	}
-	return nil
+	return decodeStrict(raw, out, "a2a_data", maximumDataToolInput)
 }
 
 func dataDuration(raw, field string) (time.Duration, error) {
@@ -499,12 +485,27 @@ func dataFetchBlobSummary(result DataFetchBlobResult) string {
 }
 
 func dataToolSchema() json.RawMessage {
-	return groupedSchema("action", DataActions, map[string]string{
-		"space": "string", "contract": "string", "from": "string", "profile": "string",
-		"format": "string", "expires": "string", "fulfills": "string", "supersedes": "string",
-		"max_attempts": "integer", "staging_root": "string", "expect_pack": "string",
-		"package_id": "string", "to": "string", "record": "boolean", "actor": "object",
-		"draft": "string", "role": "string", "conforms_to": "string",
-		"verification": "string", "retention": "string", "ref": "string",
+	return groupedSchema("action", "the data-package action to run: pack|deliver|fetch|verify|attach|fetch-blob", DataActions, map[string]propSpec{
+		"space":        {"string", "the connected space this call targets"},
+		"contract":     {"string", "pack only: the contract ref (id@version) this package's payload conforms to"},
+		"from":         {"string", "pack only: the local path or manifest this package is built from"},
+		"profile":      {"string", "pack only: the named profile controlling what this package includes"},
+		"format":       {"string", "pack only: the package format to produce"},
+		"expires":      {"string", "pack only: a Go duration string after which this package's staged artifact expires"},
+		"fulfills":     {"string", "deliver only: the request id this delivery fulfills"},
+		"supersedes":   {"string", "deliver only: a prior delivery this one supersedes"},
+		"max_attempts": {"integer", "fetch only: the maximum retry attempts before giving up"},
+		"staging_root": {"string", "pack/deliver only: the staging directory root to write into"},
+		"expect_pack":  {"string", "deliver only: the package id this delivery must match (idempotency guard)"},
+		"package_id":   {"string", "deliver/fetch/verify only: the data package id (DP-...) this call targets"},
+		"to":           {"string", "fetch/fetch-blob only: the local destination path to fetch into"},
+		"record":       {"boolean", "verify only: whether to record this verification's own verdict"},
+		"actor":        {"object", "the identity performing this action, when it differs from this session's default"},
+		"draft":        {"string", "attach only: the draft id this attachment belongs to"},
+		"role":         {"string", "attach only: the attachment's own role classification"},
+		"conforms_to":  {"string", "attach only: the schema/contract ref this attachment conforms to"},
+		"verification": {"string", "attach only: this attachment's own verification classification"},
+		"retention":    {"string", "attach only: this attachment's own retention classification"},
+		"ref":          {"string", "fetch-blob only: the blob ref (BL-...) to resolve"},
 	})
 }

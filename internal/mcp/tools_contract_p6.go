@@ -95,6 +95,9 @@ type ContractInspectionOperations interface {
 
 // ContractPreflightInput is a preflight handler's structured MCP input.
 type ContractPreflightInput struct {
+	// Action is a2a_contract's own discriminator — never read here; see
+	// tools_contract.go's ContractNewInput for why it exists.
+	Action  string `json:"action,omitempty"`
 	Space   string `json:"space,omitempty"`
 	ID      string `json:"id"`
 	Version string `json:"version,omitempty"`
@@ -104,13 +107,19 @@ type ContractPreflightInput struct {
 
 // ContractMaterializeInput is a materialize handler's structured MCP input.
 type ContractMaterializeInput struct {
-	Space string `json:"space,omitempty"`
-	Ref   string `json:"ref"`
-	To    string `json:"to"`
+	// Action is a2a_contract's own discriminator — never read here; see
+	// tools_contract.go's ContractNewInput for why it exists.
+	Action string `json:"action,omitempty"`
+	Space  string `json:"space,omitempty"`
+	Ref    string `json:"ref"`
+	To     string `json:"to"`
 }
 
 // ContractCheckInput is a check handler's structured MCP input.
 type ContractCheckInput struct {
+	// Action is a2a_contract's own discriminator — never read here; see
+	// tools_contract.go's ContractNewInput for why it exists.
+	Action  string `json:"action,omitempty"`
 	Space   string `json:"space,omitempty"`
 	Ref     string `json:"ref"`
 	Mode    string `json:"mode"`
@@ -124,8 +133,8 @@ func newContractPreflightHandler(deps ContractDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("contract preflight: P6 service is not configured")
 		}
 		var in ContractPreflightInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, "", fmt.Errorf("contract preflight: invalid input: %w", err)
+		if err := decodeStrict(args, &in, "contract preflight", 0); err != nil {
+			return nil, "", err
 		}
 		if err := validateContractPublicationInput(in.ID, in.Version, in.Bump); err != nil {
 			return nil, "", fmt.Errorf("contract preflight: %w", err)
@@ -141,8 +150,8 @@ func newContractPreflightHandler(deps ContractDeps) HandlerFunc {
 func newP6ContractPublishHandler(deps ContractDeps) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in ContractPublishInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, "", fmt.Errorf("contract publish: invalid input: %w", err)
+		if err := decodeStrict(args, &in, "contract publish", 0); err != nil {
+			return nil, "", err
 		}
 		if err := validateContractPublicationInput(in.ID, in.Version, in.Bump); err != nil {
 			return nil, "", fmt.Errorf("contract publish: %w", err)
@@ -177,8 +186,8 @@ func newContractMaterializeHandler(deps ContractDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("contract materialize: P6 service is not configured")
 		}
 		var in ContractMaterializeInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, "", fmt.Errorf("contract materialize: invalid input: %w", err)
+		if err := decodeStrict(args, &in, "contract materialize", 0); err != nil {
+			return nil, "", err
 		}
 		if !validMCPContractRef(in.Ref) || in.To == "" {
 			return nil, "", fmt.Errorf("contract materialize: ref and to are required")
@@ -197,8 +206,8 @@ func newContractCheckHandler(deps ContractDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("contract check: P6 service is not configured")
 		}
 		var in ContractCheckInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, "", fmt.Errorf("contract check: invalid input: %w", err)
+		if err := decodeStrict(args, &in, "contract check", 0); err != nil {
+			return nil, "", err
 		}
 		suite := in.Mode == string(contract.ConformanceModeSuite)
 		payload := in.Mode == string(contract.ConformanceModePayload)

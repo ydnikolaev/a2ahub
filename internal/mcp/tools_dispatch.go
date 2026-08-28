@@ -3,10 +3,24 @@ package mcp
 // tools_dispatch.go is P15's thin capability-grouping layer. Each grouped
 // tool (a2a_read/a2a_lifecycle/a2a_exchange/a2a_contract) reads a CLOSED
 // action/view discriminator and delegates to the SAME per-verb handler P14
-// already ships — the sub-handler unmarshals its OWN typed input struct and
-// ignores the extra discriminator field (Go json default), so the funnel
-// path stays byte-for-byte identical per verb (spec 15 §T1, plan 15
-// Placement decisions). No per-verb handler body is rewritten here.
+// already ships — passing it the SAME FULL raw args this dispatcher itself
+// received (discriminator included), so the funnel path stays byte-for-byte
+// identical per verb (spec 15 §T1, plan 15 Placement decisions). No
+// per-verb handler body is rewritten here.
+//
+// agent-exchange-2026-08 spec 04: every sub-handler now decodes through
+// decodeStrict (tools.go), which refuses an unknown top-level JSON key.
+// Before that landed, a sub-handler's typed input struct did not declare
+// the discriminator field at all, and plain json.Unmarshal's own default —
+// silently ignore an unrecognized key — is what let it get away with that;
+// this file's own doc comment used to describe that silence as the design
+// ("ignores the extra discriminator field"). Under DisallowUnknownFields
+// that silence becomes a hard refusal, so every grouped-tool input struct
+// now carries its own inert Action/View field purely to stay decodable
+// under the SAME full args this file forwards — the sub-handler still
+// never reads it; LifecycleInput's own spec.Verb (closed over the handler
+// constructor, not decoded from the wire) remains what actually selects
+// behaviour, exactly as before.
 //
 // The exported enum slices below are the SINGLE source both the grouped
 // schema (tools.go) and the capability-parity test (cmd/a2a) read.
@@ -48,10 +62,17 @@ var ContractActions = []string{"new", "preflight", "publish", "materialize", "ch
 
 // newDispatch builds a grouped tool's handler: it reads the discKey
 // discriminator ("action"/"view"), looks up the matching per-verb handler,
-// and calls it with the SAME raw args (the sub-handler ignores the
-// discriminator field). An absent or unknown discriminator is a
-// well-formed error — surfaced by the server as an isError tool result,
-// never a panic and never a JSON-RPC protocol error (spec 15 §6).
+// and calls it with the SAME raw args — the discriminator field travels
+// with them; the sub-handler's own input struct now DECLARES it (an inert
+// field, never read — see this file's own doc comment) purely so
+// decodeStrict's DisallowUnknownFields does not refuse the very key this
+// dispatcher requires. This probe itself stays a permissive
+// map[string]json.RawMessage decode on purpose: strictness has no meaning
+// against a map (every key is "known" by construction), and the real
+// refusal belongs to the sub-handler's own typed decode, one frame in. An
+// absent or unknown discriminator is a well-formed error — surfaced by the
+// server as an isError tool result, never a panic and never a JSON-RPC
+// protocol error (spec 15 §6).
 func newDispatch(tool, discKey string, handlers map[string]HandlerFunc, enum []string) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var probe map[string]json.RawMessage

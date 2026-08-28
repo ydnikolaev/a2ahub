@@ -30,10 +30,8 @@ func newWhatsnewHandler(
 ) HandlerFunc {
 	return func(_ context.Context, args json.RawMessage) (any, string, error) {
 		var in WhatsnewInput
-		if len(args) > 0 {
-			if err := json.Unmarshal(args, &in); err != nil {
-				return nil, "", fmt.Errorf("a2a_whatsnew: invalid input: %w", err)
-			}
+		if err := decodeStrict(args, &in, "a2a_whatsnew", 0); err != nil {
+			return nil, "", err
 		}
 
 		all, err := load()

@@ -109,10 +109,8 @@ type NotifyInput struct {
 func newNotifyHandler(deps NotifyToolDeps) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in NotifyInput
-		if len(args) > 0 {
-			if err := json.Unmarshal(args, &in); err != nil {
-				return nil, "", fmt.Errorf("a2a_notify: invalid input: %w", err)
-			}
+		if err := decodeStrict(args, &in, "a2a_notify", 0); err != nil {
+			return nil, "", err
 		}
 		if !notifyStringIn(in.Action, NotifyActions) {
 			return nil, "", fmt.Errorf("a2a_notify: action is required and must be one of %s", joinNotifyActions())
@@ -153,14 +151,14 @@ func notifyStringIn(value string, values []string) bool {
 
 func notifyToolSchema() json.RawMessage {
 	properties := map[string]any{
-		"action":   map[string]any{"type": "string", "enum": NotifyActions},
-		"space":    map[string]any{"type": "string"},
-		"mode":     map[string]any{"type": "string"},
-		"base":     map[string]any{"type": "string"},
-		"only":     map[string]any{"type": "string"},
-		"limit":    map[string]any{"type": "integer"},
-		"messages": map[string]any{"type": "array"},
-		"dry_run":  map[string]any{"type": "boolean"},
+		"action":   map[string]any{"type": "string", "enum": NotifyActions, "description": "the notify operation to run: render|send|setup|discover|verify"},
+		"space":    map[string]any{"type": "string", "description": "the connected space this call targets"},
+		"mode":     map[string]any{"type": "string", "description": "render only: this notification's own rendering mode"},
+		"base":     map[string]any{"type": "string", "description": "render only: the base ref/branch this render compares against"},
+		"only":     map[string]any{"type": "string", "description": "render only: narrow rendering to one named channel"},
+		"limit":    map[string]any{"type": "integer", "description": "render only: the maximum number of items to render"},
+		"messages": map[string]any{"type": "array", "description": "send only: the rendered message payload to deliver"},
+		"dry_run":  map[string]any{"type": "boolean", "description": "send only: render and validate without actually delivering"},
 	}
 	schema := map[string]any{
 		"type": "object", "additionalProperties": false, "required": []string{"action"}, "properties": properties,

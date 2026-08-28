@@ -15,3 +15,39 @@
 # raised here; see this wave's report and the README's own AC9 line.
 ! exec a2a new question --field migrated_from=x
 stderr 'migrated_from'
+
+# --- MCP half (agent-exchange-2026-08 spec 04 AC 1, D4): a misspelled
+# field on a GROUPED tool's own published action is refused, BY NAME,
+# before any write is attempted — the defect this phase's own goal names
+# ("an agent reads a2a_exchange's own published schema, sends refs, and
+# gets success with the reference silently discarded"). Unlike the CLI
+# scenario above (a fill-class refusal on a KNOWN field), this is the
+# OTHER half spec 04 closes: an UNKNOWN field, on the wire, now refused at
+# decode rather than silently dropped.
+#
+# tools_dispatch.go's newDispatch forwards a tools/call request's FULL raw
+# arguments (discriminator included) to the matching per-action handler
+# unchanged; that handler now decodes through decodeStrict (tools.go),
+# which turns on encoding/json's DisallowUnknownFields. "idss" (a typo for
+# the real "ids" field, LifecycleInput's own json tag) has no home on that
+# struct, so the decode refuses it — before actor resolution, before any
+# mirror read, before the write funnel, and so well before this tier's own
+# A2A_GITHUB_API 403-only denial stub could ever fire (this scenario never
+# reaches a host call at all: the refusal is a decode-time one).
+#
+# `a2a mcp` reads exactly ONE JSON-RPC request from stdin (stdin below) and
+# exits cleanly once stdin hits EOF (internal/mcp/server.go's Serve) —
+# regardless of whether the tools/call inside it succeeded or refused, so
+# this is a bare `exec`, not `! exec`. A handler error is never a JSON-RPC
+# PROTOCOL error (server.go's own contract): it is a well-formed
+# `tools/call` RESULT with `"isError":true` and the error text in its own
+# content block, so the assertion reads stdout's own JSON-RPC response
+# line, not the process exit code.
+stdin mcp_unknown_field.json
+exec a2a mcp
+stdout '"isError":true'
+stdout 'unknown field'
+stdout 'idss'
+
+-- mcp_unknown_field.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"a2a_lifecycle","arguments":{"action":"ack","idss":["XQ-axon-20260101-aaaa"]}}}
