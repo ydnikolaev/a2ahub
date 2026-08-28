@@ -421,7 +421,6 @@ func TestAllDecodeSitesRefuseAnUnknownTopLevelKey(t *testing.T) {
 	}
 
 	for _, site := range sites {
-		site := site
 		t.Run(site.name, func(t *testing.T) {
 			t.Parallel()
 			_, _, err := site.call(context.Background(), json.RawMessage(`{"__mcp_unknown_probe__":true}`))
