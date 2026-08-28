@@ -84,12 +84,18 @@ type ContractVerifyExportRequest struct {
 
 // ContractVerifyExportResult reports export-source-v1 verification. Outcome
 // carries the closed three-outcome vocabulary (matched/drifted/unmeasured,
-// contract.ExportVerification, D9-mapped at the render boundary — see
-// cmd/a2a's contractExportOutcomeWord) rather than a `matches` bool: two
-// outcomes cannot express three, and this is the one surface in this wave
-// with no off-limits caller pinning a boolean field, so AC-6's "the word
-// `matches` appears NOWHERE in an unmeasured run's output" holds by
-// construction — the JSON key itself is gone, not just its value.
+// contract.ExportVerification) rather than a `matches` bool: two outcomes
+// cannot express three, and this is the one surface in this wave with no
+// off-limits caller pinning a boolean field, so AC-6's "the word `matches`
+// appears NOWHERE in an unmeasured run's output" holds by construction —
+// the JSON key itself is gone, not just its value.
+//
+// The unmeasured half is D9-mapped BY VALUE onto validate.SeverityUnmeasured
+// ("UNMEASURED is a SEVERITY, not a fourth verdict"); the rule and the proof
+// that the two string values coincide live with the type itself, in
+// contract.ExportVerification's own doc comment (internal/contract/set.go).
+// This field is whatever that render boundary produced — this surface does
+// not re-derive it, which is why there is no second mapping here to drift.
 type ContractVerifyExportResult struct {
 	ID          string             `json:"id"`
 	Outcome     string             `json:"outcome"`
