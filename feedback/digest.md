@@ -64,7 +64,7 @@ read at each site.
 - fb-20260812-e6d189 (bug -> shipped in v0.20.0): REF-017 retroactively rejects merged artifacts and reddens the default branch
 - fb-20260812-ee6dcd (bug -> shipped in v0.20.0): doctor reports a healthy space while its default branch is failing CI
 - fb-20260812-755a23 (friction -> shipped in v0.21.0): a one-file feedback record costs eleven CI jobs, including a macOS build
-- fb-20260818-76f29d (bug -> accepted): verify --verdict indexes an unseen list and only range-checks it
+- fb-20260818-76f29d (bug -> shipped): verify --verdict indexes an unseen list and only range-checks it
 
 ## 2026-08-27 Triage
 

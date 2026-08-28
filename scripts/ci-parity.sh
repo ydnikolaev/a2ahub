@@ -68,6 +68,28 @@ cd "$ROOT"
 # at the call sites that happen to be remembered.
 export VERIFY_AGAIN=1
 
+# THE RUNNER HAS NO HUB REF, AND THIS MACHINE DOES — which made every local
+# verdict from check-feedback-corpus a statement about a DIFFERENT corpus than
+# the one CI judges. Its resolve_corpus_root prefers a fetched
+# `refs/remotes/public/feedback-hub` over the working tree; a runner has only
+# the tree. So the same commit, the same script and the same container asked
+# two different questions, and a green ship gate coexisted with a red CI run on
+# the SAME SHA (2026-08-28, v0.25.6, 59f15a9b: digest.md's last mention of
+# fb-20260818-76f29d read "accepted" while the tree's own record read
+# "shipped" — invisible here, refused there).
+#
+# Container parity was never the gap. `ci-parity-docker` mounts this repo's
+# .git, hub ref included, so the container inherited the same blind spot: it
+# gives GNU-userland parity, not MACHINE-STATE parity. Naming that distinction
+# is the point — every gate whose source of truth can be a fetched ref rather
+# than a tracked path has this shape, and this is the one that had it.
+#
+# Forced to the tree for the whole composed run, because that is what the
+# runner has. Local `make check` keeps the hub-first behaviour deliberately:
+# reading the published corpus is a real, different question, and the answer
+# to it is a publish-pending WARNING rather than a refusal.
+export A2A_FEEDBACK_CORPUS_ROOT="${A2A_FEEDBACK_CORPUS_ROOT:-$(git rev-parse --show-toplevel)}"
+
 # gate_unmeasured, and the exit code that separates "I measured it and it is
 # wrong" (1) from "I could not measure it" (3). A composed SHIP gate is the
 # worst possible place to blur those two: "Docker is down" and "the tree is
