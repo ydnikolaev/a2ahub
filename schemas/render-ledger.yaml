@@ -72,9 +72,14 @@ human:
   field:contract-verify-published:status: "printed as the row's own trailing status word"
   field:contract-verify-published:detail: "printed in parens after the status when non-empty: ` (<detail>)`"
 json-only:
-  # -- contract-verify-export: the two remaining fields
+  # -- contract-verify-export: the one remaining field.
+  #    `matches` used to be a row here, declared json-only as "a DERIVED
+  #    display convenience". It is no longer a struct field at all: it was
+  #    settable, a fixture set it and left `outcome` empty, and the verb
+  #    reported a mismatch over two identical digests. MarshalJSON computes
+  #    the key from `outcome` now, so nothing can disagree with it and there
+  #    is no independently computed fact left for this ledger to judge.
   field:contract-verify-export:diff: "the container key itself is never printed as literal text; its own fields (added/removed/changed/frontmatter_changed, each covered above) are what the human path actually renders — a container is not itself renderable, only its members are"
-  field:contract-verify-export:matches: "a DERIVED display convenience retained from the pre-three-outcome era (Matches == (Outcome == matched)); Outcome is the authoritative, human-rendered vocabulary (D9, the severity-carrying release's own decision) the CLI actually branches on, and Matches is omitted from --json entirely on an unmeasured result rather than printed as a misleading `false`"
   # -- contract-candidate-source: the container key and the one field with
   # no human-legible meaning
   field:contract-candidate-source:candidate_source: "the container key itself is never printed as literal text; its own kind/location fields (covered above) are what the human path renders"

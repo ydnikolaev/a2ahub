@@ -189,7 +189,7 @@ func TestContractP6InspectionDelegatesWithoutGitOrDigestLogic(t *testing.T) {
 	t.Parallel()
 	inspection := &p6InspectionFake{
 		diffResult:   cli.ContractDiffResult{Added: []string{"schema/new.json"}, Removed: []string{}, Changed: []string{}, FrontmatterChanged: []string{"compat_policy: old -> new"}},
-		verifyResult: cli.ContractVerifyExportResult{ID: "XC-axon-orders", Matches: false, LocalDigest: "sha256:local", WantDigest: "sha256:published", Diff: cli.ContractDiffResult{Changed: []string{"schema/main.json"}}},
+		verifyResult: cli.ContractVerifyExportResult{ID: "XC-axon-orders", Outcome: "drifted", LocalDigest: "sha256:local", WantDigest: "sha256:published", Diff: cli.ContractDiffResult{Changed: []string{"schema/main.json"}}},
 	}
 	cmd := newP6ContractCommand(t, &p6PublicationFake{}, &p6MaterializeFake{}, &p6CheckFake{})
 	cmd.SetP6Inspection(inspection)
@@ -221,14 +221,14 @@ func TestVerifyExportThreeOutcomesAreDistinguishable(t *testing.T) {
 	}{
 		{
 			name:        "matched",
-			result:      cli.ContractVerifyExportResult{ID: "XC-axon-orders", Matches: true, Outcome: "matched", LocalDigest: "sha256:same"},
+			result:      cli.ContractVerifyExportResult{ID: "XC-axon-orders", Outcome: "matched", LocalDigest: "sha256:same"},
 			wantCode:    0,
 			wantOut:     []string{"XC-axon-orders matches (sha256:same)"},
 			wantJSONHas: true,
 		},
 		{
 			name:        "drifted",
-			result:      cli.ContractVerifyExportResult{ID: "XC-axon-orders", Matches: false, Outcome: "drifted", LocalDigest: "sha256:local", WantDigest: "sha256:published", Diff: cli.ContractDiffResult{FrontmatterChanged: []string{"compat_policy: old -> new"}}},
+			result:      cli.ContractVerifyExportResult{ID: "XC-axon-orders", Outcome: "drifted", LocalDigest: "sha256:local", WantDigest: "sha256:published", Diff: cli.ContractDiffResult{FrontmatterChanged: []string{"compat_policy: old -> new"}}},
 			wantCode:    1,
 			wantOut:     []string{"frontmatter compat_policy: old -> new"},
 			wantErr:     []string{"digest mismatch"},
@@ -236,7 +236,7 @@ func TestVerifyExportThreeOutcomesAreDistinguishable(t *testing.T) {
 		},
 		{
 			name:          "unmeasured",
-			result:        cli.ContractVerifyExportResult{ID: "XC-axon-orders", Matches: false, Outcome: "unmeasured", LocalDigest: "sha256:local"},
+			result:        cli.ContractVerifyExportResult{ID: "XC-axon-orders", Outcome: "unmeasured", LocalDigest: "sha256:local"},
 			wantCode:      0,
 			wantOut:       []string{"nothing to compare"},
 			wantOutAbsent: []string{"digest mismatch", "matches"},
@@ -306,7 +306,7 @@ func TestVerifyExportJSONMatchesMCPEncoding(t *testing.T) {
 				Diff: mcp.ContractDiffResult{Changed: []string{"schema/main.json"}, FrontmatterChanged: []string{"compat_policy: old -> new"}},
 			}
 			cliResult := cli.ContractVerifyExportResult{
-				ID: mcpResult.ID, Matches: outcome == "matched", Outcome: mcpResult.Outcome,
+				ID: mcpResult.ID, Outcome: mcpResult.Outcome,
 				LocalDigest: mcpResult.LocalDigest, WantDigest: mcpResult.WantDigest,
 				Diff: cli.ContractDiffResult{Changed: mcpResult.Diff.Changed, FrontmatterChanged: mcpResult.Diff.FrontmatterChanged},
 			}
@@ -458,7 +458,11 @@ func TestRenderLedgerSurfaceDump(t *testing.T) {
 	if !sameStringSet(surfaces["contract-diff"], []string{"added", "changed", "frontmatter_changed", "removed"}) {
 		t.Fatalf("contract-diff = %v, want exactly {added,changed,frontmatter_changed,removed}", surfaces["contract-diff"])
 	}
-	if !containsAllStrings(surfaces["contract-verify-export"], "id", "matches", "outcome", "local_digest", "want_digest", "diff", "added", "removed", "changed", "frontmatter_changed") {
+	// "matches" is deliberately absent: it is no longer a struct field, so
+	// SurfaceKeys cannot see it and the ledger has no row for it. The key
+	// still reaches the wire, computed by MarshalJSON from "outcome" — which
+	// is exactly why it is not a fact this ledger has to judge any more.
+	if !containsAllStrings(surfaces["contract-verify-export"], "id", "outcome", "local_digest", "want_digest", "diff", "added", "removed", "changed", "frontmatter_changed") {
 		t.Fatalf("contract-verify-export missing an expected key: %v", surfaces["contract-verify-export"])
 	}
 	if !sameStringSet(surfaces["contract-candidate-source"], []string{"candidate_source", "fingerprint", "kind", "location"}) {

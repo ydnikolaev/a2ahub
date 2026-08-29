@@ -110,47 +110,59 @@ type ContractVerifyExportRequest struct {
 }
 
 // ContractVerifyExportResult reports whether a local export matches its
-// source. Matches is retained for cmd_contract.go's existing plain-text
-// render (wave-2-owned) and for internal/e2e's fixture — it is DERIVED,
-// never a second computation: true iff Outcome == "matched". Outcome
-// carries the full three-outcome vocabulary (contract.ExportVerification,
-// D9-mapped at the render boundary — see cmd/a2a's contractExportOutcomeWord),
-// so a consumer that reads it can distinguish drifted from UNMEASURED,
-// which Matches alone cannot.
+// source. Outcome carries the full three-outcome vocabulary
+// (contract.ExportVerification, D9-mapped at the render boundary — see
+// cmd/a2a's contractExportOutcomeWord), so a consumer that reads it can
+// distinguish drifted from UNMEASURED.
+//
+// THERE IS NO `Matches` FIELD, and its removal is this epic's own class
+// caught inside the epic. It existed, carried a doc comment calling itself
+// "DERIVED, never a second computation: true iff Outcome == matched", and
+// was a settable struct field anyway — so internal/e2e's fixture set
+// Matches and left Outcome empty, the text render branched on Outcome, and
+// `verify-export` reported "digest mismatch" over two byte-identical
+// digests. Every word of the explanation was true and the field was still
+// a second answerer. No production code ever read it; the `matches` JSON
+// key is now computed at the wire boundary by MarshalJSON, where no caller
+// can disagree with it.
 type ContractVerifyExportResult struct {
 	ID          string             `json:"id"`
-	Matches     bool               `json:"matches"`
 	Outcome     string             `json:"outcome"`
 	LocalDigest string             `json:"local_digest"`
 	WantDigest  string             `json:"want_digest"`
 	Diff        ContractDiffResult `json:"diff,omitempty"`
 }
 
-// MarshalJSON omits "matches" entirely when Outcome is "unmeasured"
+// MarshalJSON adds the derived "matches" key — true iff Outcome is
+// "matched" — and omits it entirely when Outcome is "unmeasured"
 // (answers-that-hold-2026-08 P3 AC-9, carrying spec P2's own AC-6): a run
 // with nothing to compare against must not emit `"matches":false`, which
-// reads identically to a genuine drift a caller can act on. matched/
-// drifted keep the field — Matches stays their derived, retained
-// convenience. Marshaled via a type alias plus a shadowing outer field,
-// never a hand-typed copy of the other four fields: the exact class this
-// phase's render ledger exists to prevent (encoding/json resolves a
-// same-JSON-name conflict in favor of the SHALLOWER field, so the embedded
-// alias's own "matches" is silently replaced, not duplicated).
+// reads identically to a genuine drift a caller can act on.
 //
-// internal/skillcoverage.SurfaceKeys never invokes MarshalJSON (it reads
-// struct tags only — see its own doc comment) — its derived field set for
-// this type still includes "matches" unconditionally, which stays a
-// correct OVER-approximation (a key this type CAN put on the wire, on some
-// outcomes) rather than a wrong one.
+// It is COMPUTED here rather than carried on the struct, which is the
+// difference between a convention and a guard: `matches` is a display
+// convenience retained from the pre-three-outcome era, Outcome is the
+// authoritative vocabulary the CLI actually branches on, and a wire key
+// that restates another field must not be settable independently of it.
+// internal/mcp's own ContractVerifyExportResult never carried the field at
+// all, so this also ends a difference between the two surfaces' shapes.
+//
+// Marshaled via a type alias plus an outer field rather than a hand-typed
+// copy of the other four — the exact class this phase's render ledger
+// exists to prevent.
 func (r ContractVerifyExportResult) MarshalJSON() ([]byte, error) {
 	type alias ContractVerifyExportResult
-	if r.Outcome != "unmeasured" {
-		return json.Marshal(alias(r))
+	if r.Outcome == "unmeasured" {
+		return json.Marshal(struct {
+			alias
+			Matches *bool `json:"matches,omitempty"`
+		}{alias: alias(r)})
 	}
+	matched := r.Outcome == "matched"
 	return json.Marshal(struct {
 		alias
 		Matches *bool `json:"matches,omitempty"`
-	}{alias: alias(r)})
+	}{alias: alias(r), Matches: &matched})
 }
 
 // ContractInspectionOperations provides read-only contract inspection operations.

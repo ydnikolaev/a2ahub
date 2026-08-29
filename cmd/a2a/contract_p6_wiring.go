@@ -751,10 +751,12 @@ func (a cliContractP6Adapter) DiffContract(ctx context.Context, request cli.Cont
 func (a cliContractP6Adapter) VerifyContractExport(ctx context.Context, request cli.ContractVerifyExportRequest) (cli.ContractVerifyExportResult, error) {
 	result, err := a.core.verifyExport(ctx, request.Local, request.Ref)
 	return cli.ContractVerifyExportResult{
-		// Matches is DERIVED from outcome, never a second computation
-		// (spec P2 §9's own trap paragraph: two answerers to one question
-		// is the class this epic exists to close).
-		ID: result.id, Matches: result.outcome == contract.ExportMatched, Outcome: contractExportOutcomeWord(result.outcome),
+		// There is no Matches to set: the JSON key is derived at the wire
+		// boundary by cli.ContractVerifyExportResult's own MarshalJSON.
+		// It USED to be set here, from the same outcome, with a comment
+		// saying it was derived — and a fixture one package over set it
+		// alone and left Outcome empty. See that type's doc comment.
+		ID: result.id, Outcome: contractExportOutcomeWord(result.outcome),
 		LocalDigest: result.localDigest, WantDigest: result.wantDigest,
 		Diff: cli.ContractDiffResult{Added: result.diff.added, Removed: result.diff.removed, Changed: result.diff.changed, FrontmatterChanged: result.diff.frontmatterChanged},
 	}, err

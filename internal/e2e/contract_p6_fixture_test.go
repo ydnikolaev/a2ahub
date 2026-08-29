@@ -230,8 +230,16 @@ func newE2EContractVerifyService(t *testing.T, wantDigest string) *e2eContractP6
 	return &e2eContractP6Services{verifyFn: func(_ context.Context, request cli.ContractVerifyExportRequest) (cli.ContractVerifyExportResult, error) {
 		localDigest := contractComputeDigest(t, request.Local, ".")
 		matches := localDigest == wantDigest
+		// Outcome, not a Matches bool: this fixture used to set the bool
+		// alone and leave Outcome empty, so the verb it stands in for
+		// reported "digest mismatch" over two byte-identical digests. The
+		// field it set no longer exists — see cli.ContractVerifyExportResult.
+		outcome := "drifted"
+		if matches {
+			outcome = "matched"
+		}
 		result := cli.ContractVerifyExportResult{
-			ID: strings.Split(request.Ref, "@")[0], Matches: matches,
+			ID: strings.Split(request.Ref, "@")[0], Outcome: outcome,
 			LocalDigest: localDigest, WantDigest: wantDigest,
 			Diff: cli.ContractDiffResult{Added: []string{}, Removed: []string{}, Changed: []string{}},
 		}
