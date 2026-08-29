@@ -32,6 +32,13 @@ changes:
   affects:
   - cli
   - mcp
+  roadmap:
+    visibility: shipped
+    why: >
+      A new top-level verb an agent has to know exists to use — it answers a
+      question nothing else answers, and a reader who does not know its name
+      cannot discover it from the verb they would otherwise reach for
+      (`whatsnew`, which deliberately keeps printing everything).
   action:
     scope: local
     why: >
@@ -117,6 +124,12 @@ changes:
     unknown id is refused naming the ids that ARE connected.
   affects:
   - cli
+  roadmap:
+    visibility: shipped
+    why: >
+      `--space <id>` is public command surface a producer will reach for from a
+      participant checkout, and it cannot be discovered from the refusal alone
+      by anyone who never hits the refusal.
   action:
     scope: none
     why: >
@@ -138,6 +151,13 @@ changes:
   affects:
   - cli
   - mcp
+  roadmap:
+    visibility: omit
+    why: >
+      Not a capability a reader goes looking for: it is one more advisory row on
+      `doctor`, a surface they already run, with no new verb, flag or argument
+      to learn. A roadmap entry would describe a report line rather than
+      something anyone can decide to use.
   action:
     scope: none
     why: >
