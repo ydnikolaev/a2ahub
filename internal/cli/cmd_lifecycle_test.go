@@ -4128,6 +4128,15 @@ func TestSubmitRefusesResponseDraftWithNoParentTransitionThroughTheRealFunnel(t 
 	funnel, legality, mirrorDir, fx := newRealFunnelDeps(t)
 
 	parentID := "XQ-axon-20260721-k3f9"
+	// The parent must RESOLVE for this test to reach its own subject. It did
+	// not before, and the test passed anyway because nothing checked — an
+	// unresolvable parent produced no finding at all (internal/validate's
+	// checkFork returned nothing, the gap computed-not-listed-2026-08 P7
+	// closed). Now REF-003 rejects first and shadows REF-027, which is correct
+	// behaviour and the wrong assertion to make here: this test is about a
+	// response whose parent EXISTS but carries no transition, so the fixture
+	// has to say so.
+	writeQuestionArtifactWithThread(t, mirrorDir, parentID, "other", cliFixtureThread)
 	stagingDir := t.TempDir()
 	responseID := "XS-axon-20260828-sb1a"
 	draft := "---\n" +
