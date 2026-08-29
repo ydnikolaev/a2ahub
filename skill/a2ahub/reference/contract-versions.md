@@ -200,6 +200,14 @@ DOES refuse, naming the sync to run — that one you can satisfy, and answering
 "everything matches" from a mirror that has not been refreshed is the failure
 this verb exists to prevent.
 
+**The exit code answers "did anything DRIFT", not "was everything checked".**
+`1` means at least one row came back `drifted` (or the run refused outright);
+`2` is usage; `0` is everything else — and "everything else" includes
+`not-published-yet` and `unmeasured` rows. So a gate that only reads `$?` can
+pass on a contract nothing compared. If your gate means "everything I publish
+was checked AND matched", read `--json` and assert `status` is `matched` on
+every row against `total`; the exit code alone will not tell you that.
+
 ### `verify-published --json` field reference
 
 `--json` emits the same aggregate `--surfaces --json` reflects for the
