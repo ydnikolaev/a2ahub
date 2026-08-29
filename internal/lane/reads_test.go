@@ -263,6 +263,18 @@ func TestScanLineForReadsSentenceEndingPeriodIsNotSourceCommand(t *testing.T) {
 	}
 }
 
+func TestScanLineForReadsPossessivePathInProseIsNotSourceCommand(t *testing.T) {
+	// The apostrophe in "internal/space's" opens a single quote, so the
+	// tokenizer folds the rest of the line into one token that contains a
+	// "/" — path-shaped by looksPathLike, prose by every other measure.
+	// Watched failing as a live refusal against scripts/check-error-codes.sh:238
+	// ("phase error-codes reads internal/spaces CarriedFinding is a THIRD").
+	reads, unresolved := scanLineForReads("  # qualifier. internal/space's CarriedFinding is a THIRD", 238)
+	if len(reads) != 0 || len(unresolved) != 0 {
+		t.Fatalf("reads=%+v unresolved=%+v, want none", reads, unresolved)
+	}
+}
+
 func TestScanLineForReadsRealDotSourceStillDetected(t *testing.T) {
 	reads, unresolved := scanLineForReads(`. ./scripts/lib/common.sh`, 1)
 	if len(unresolved) != 0 {

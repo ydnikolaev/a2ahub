@@ -252,7 +252,21 @@ func candidatePaths(cmd string, args []string) []string {
 			if strings.HasPrefix(a, "-") {
 				continue
 			}
-			if looksPathLike(a) {
+			// A candidate carrying WHITESPACE is prose, not a path, and
+			// this is the same English-homograph hazard one case further
+			// out than the paragraph above models. An apostrophe in a
+			// comment ("internal/space's CarriedFinding is a THIRD") opens
+			// a single quote for the tokenizer, which then swallows the
+			// rest of the line into ONE token — a token that contains "/"
+			// and therefore satisfies looksPathLike. The guard's own
+			// rationale stayed true ("no bare English word satisfies it")
+			// and stopped covering the case, because a possessive turns a
+			// word into a PHRASE. This repo has no tracked path with
+			// whitespace in it, and scripts/classify-guard.sh refuses one
+			// by name (its teeth seed exactly that violation), so a
+			// whitespace-bearing candidate cannot be a read this gate
+			// needs to see.
+			if looksPathLike(a) && !strings.ContainsAny(a, " \t") {
 				return []string{a}
 			}
 			return nil
