@@ -96,6 +96,10 @@ changes:
 
     `a2a respond --response <RS-id>` adopts an orphan already filed: the parent
     moves and your existing body is kept.
+
+    The response template says all of this at the `parent:` field, so a draft
+    scaffolded by `a2a new response` carries the guidance where the choice
+    between `a2a respond` and `a2a submit` is actually made.
   affects:
   - cli
   - mcp
