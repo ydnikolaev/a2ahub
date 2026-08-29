@@ -238,16 +238,28 @@ func catalogMCPRows() []catalogMCPRow {
 // inbox_outbox.txtar:7) — a fixture-derived universe would be green and
 // blind, the exact defect this phase exists to remove.
 //
-// "at minimum" (§3.1's own words) is the operative constraint: this is not
-// every JSON-emitting verb in the binary, only the five the spec names.
-// THE RESIDUAL HOLE, stated rather than hidden: reflection over a LISTED
-// set of types cannot see a newly added SURFACE — a new command
-// serializing a new type ships with no ledger row and this flag says
-// nothing about it. Closing that needs BOTH a new entry here AND a new row
-// in schemas/prose-coverage.yaml's own `surfaces:` declaration (that
-// file's header states the other half of this same gap, and the gate it
-// feeds reds if the two ever disagree); adding the type here alone is
-// silent unless that file is updated in the same change.
+// "at minimum" (§3.1's own words) is the operative constraint: the map
+// literal below is not every JSON-emitting verb in the binary, only the
+// five the spec names.
+//
+// THE RESIDUAL HOLE THIS USED TO STATE IS CLOSED, and how it was closed is
+// the point: reflection over a LISTED set of types cannot see a newly
+// added SURFACE, so a new command serializing a new type shipped with no
+// ledger row and this flag said nothing about it — which is precisely what
+// happened to internal/cli's ContractVerifyPublishedResult (P7), a new
+// result type landing straight into the hole the comment here described.
+// A confessed hole is not a guard. So the universe is no longer this
+// literal alone: skillcoverage.WithRegistered folds in every surface that
+// called skillcoverage.Register AT THE POINT its --json arm is defined
+// (internal/cli/cmd_contract_p6.go:41 is the first), and a surface added
+// that way needs no edit here at all.
+//
+// What is still a two-file change is the LEDGER ROW, deliberately: a new
+// surface — registered or listed — must also appear in
+// schemas/prose-coverage.yaml's own `surfaces:` declaration, and the gate
+// that reads both reds when they disagree in EITHER direction. That is the
+// half that makes a capability shipping with no prose visible, and it is
+// meant to cost a human a line.
 //
 // mcp-item reflects cache.Item directly rather than internal/mcp's own
 // wire wrapper (`{"items": [...], "skipped": [...]}`, tools_read.go's
@@ -263,13 +275,13 @@ func catalogMCPRows() []catalogMCPRow {
 // own (skipped is cache.SkippedFile's {path, reason} advisory, not
 // exchange state).
 func catalogSurfaces() map[string][]string {
-	return map[string][]string{
+	return skillcoverage.WithRegistered(map[string][]string{
 		"cli-inbox":  skillcoverage.SurfaceKeys(reflect.TypeOf(cache.Item{})),
 		"cli-outbox": skillcoverage.SurfaceKeys(reflect.TypeOf(cache.Item{})),
 		"cli-thread": skillcoverage.SurfaceKeys(reflect.TypeOf(cache.ThreadResult{})),
 		"cli-show":   skillcoverage.SurfaceKeys(reflect.TypeOf(cache.ShowResult{})),
 		"mcp-item":   skillcoverage.SurfaceKeys(reflect.TypeOf(cache.Item{})),
-	}
+	})
 }
 
 // catalogVocabulary is the DI-root union of the independently owned domain

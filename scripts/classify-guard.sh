@@ -156,6 +156,14 @@ PUBLIC_VALIDATOR_FILES=(
   scripts/tests/check_loop_reachability_test.sh
   scripts/tests/check_loop_coverage_test.sh
   scripts/tests/classify_guard_test.sh
+  # answers-that-hold-2026-08 P3. PUBLIC for the reason the P11/P12 pair above
+  # is: the gate's whole universe is the SHIPPED binary's own
+  # `__catalog --surfaces --json`, its comparand is schemas/render-ledger.yaml
+  # (schemas/ is an ALLOW_DIR, so the budget ships with the gate), and the
+  # Makefile that names it in REPO_GATES is public. A public checkout's
+  # `make check` has to be able to run it.
+  scripts/check-render-ledger.sh
+  scripts/tests/check_render_ledger_test.sh
 )
 ALLOW_FILES=( .gitignore .golangci.yml .goreleaser.yaml .gitleaks.toml .govulncheck-allow.txt Makefile SECURITY.md README.md LICENSE NOTICE go.mod go.sum cc-coverage.yaml scripts/install.sh scripts/dev-install.sh scripts/e2e-authoring-smoke.sh scripts/classify-guard.sh scripts/release-preflight.sh scripts/check-release-notes-freshness.sh scripts/check-flaky-tests.sh scripts/lib/flaky-tests.txt scripts/check-roadmap-release-decisions.sh scripts/check-provider-tier-deferral.sh scripts/check-unmeasured-reach.sh scripts/bump-space-template.sh scripts/check-gosec-scope.sh scripts/check-readme.sh scripts/dashboard-template-drift.sh scripts/check-view-vocabulary.sh scripts/check-pendency-uniqueness.sh scripts/check-loop-coverage.sh scripts/check-human-gates.sh scripts/check-loop-reachability.sh scripts/check-prose-roster.sh scripts/check-prose-coverage.sh scripts/check-operational-confidence.sh scripts/check-error-codes.sh scripts/verify.sh scripts/build-release-cohort.sh scripts/release-postflight.sh scripts/lib/strip-set.txt "${PUBLIC_VALIDATOR_FILES[@]}" )
 DENY_DIRS=( .agents .claude .codex .mate .sporo )   # scripts/ handled below (install.sh + e2e-authoring-smoke.sh are the public exceptions)

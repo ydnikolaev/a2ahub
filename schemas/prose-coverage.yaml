@@ -55,6 +55,7 @@
 # cmd/a2a/catalog.go's own doc comment — the hole is STATED, not silently
 # open on either side.
 surfaces:
+  - cli-contract-verify-published
   - cli-inbox
   - cli-outbox
   - cli-show
@@ -307,6 +308,33 @@ covered:
   field:cli-thread:verdicts: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
   field:cli-thread:waiting_on: "reference/threads.md#Reading one"
   field:cli-thread:why: "loops/first-integration.md#§8.4b First-integration loop — producer half (a NEW contract, through go-live)"
+
+  # -- fields: cli-contract-verify-published (internal/cli's
+  #    ContractVerifyPublishedResult) ---------------------------------------
+  #    THE FIRST SURFACE THAT ARRIVED HERE WITHOUT AN EDIT TO
+  #    cmd/a2a/catalog.go. It is registered at the point its --json arm is
+  #    defined (internal/cli/cmd_contract_p6.go:41) and merged in by
+  #    skillcoverage.WithRegistered — which is exactly why these nine rows
+  #    had to be written by hand in the same commit as that merge: the
+  #    registry closes "a new surface is invisible", this file closes "a new
+  #    surface ships with no prose", and neither substitutes for the other.
+  #    All nine name one heading because one section documents all nine —
+  #    the aggregate's two top-level facts and the seven per-row fields are
+  #    a single thing a reader has to hold at once, not seven scattered
+  #    claims.
+  #
+  #    SEVEN rows, not nine: `id` and `version` are schemas/envelope/v*
+  #    -declared property names, so derive_universe excludes them from every
+  #    surface by key name. The section named below documents them anyway —
+  #    the exclusion is about which ledger owns the row, not about whether
+  #    the field is taught.
+  field:cli-contract-verify-published:detail: "reference/contract-versions.md#`verify-published --json` field reference"
+  field:cli-contract-verify-published:local: "reference/contract-versions.md#`verify-published --json` field reference"
+  field:cli-contract-verify-published:rows: "reference/contract-versions.md#`verify-published --json` field reference"
+  field:cli-contract-verify-published:space_id: "reference/contract-versions.md#`verify-published --json` field reference"
+  field:cli-contract-verify-published:status: "reference/contract-versions.md#`verify-published --json` field reference"
+  field:cli-contract-verify-published:system: "reference/contract-versions.md#`verify-published --json` field reference"
+  field:cli-contract-verify-published:total: "reference/contract-versions.md#`verify-published --json` field reference"
 
   # -- the trust-your-read cluster (P13 H11): how far a reader may
   #    rely on the copy in front of it, and on what a record CLAIMS.
