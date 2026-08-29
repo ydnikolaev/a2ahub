@@ -2,7 +2,6 @@ package html
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"strings"
@@ -34,45 +33,20 @@ type DocSection struct {
 	HTML   string `json:"html"`
 }
 
-// docEntry curates one skill markdown file into a section: its stable id (also
-// the deep-link anchor), its group, its nav title, and its path inside
-// skill.Files. Slice order is the in-group section order.
-type docEntry struct {
-	ID    string `json:"id"`
-	Group string `json:"group"`
-	Title string `json:"title"`
-	File  string `json:"file"`
-}
-
-type docsManifest struct {
-	Schema   string     `json:"schema"`
-	Groups   []string   `json:"groups"`
-	Sections []docEntry `json:"sections"`
-}
-
 // docManifest and DocGroups are loaded from the embedded manifest that also
-// drives the public Astro documentation build. The JSON file is now the curation
-// SSOT; the parity test still proves every embedded Markdown document is listed.
-var embeddedDocsManifest = mustLoadDocsManifest()
+// drives the public Astro documentation build. The JSON file is the curation
+// SSOT; the parity test in docs_test.go still proves every embedded Markdown
+// document is listed.
+//
+// The decode itself lives in skill.LoadDocsManifest, not here. It moved down on
+// 2026-08-29 (answers-that-hold-2026-08 / P9): the CLI's reader verb resolves a
+// topic against the same section list, and two decodes would be two answers to
+// "which sections exist". See skill/manifest.go's own doc for the reasoning.
+var embeddedDocsManifest = skill.EmbeddedDocsManifest()
 var docManifest = embeddedDocsManifest.Sections
 
 // DocGroups lists the documentation navigation groups in manifest order.
 var DocGroups = embeddedDocsManifest.Groups
-
-func mustLoadDocsManifest() docsManifest {
-	b, err := fs.ReadFile(skill.Files, "a2ahub/docs-manifest.json")
-	if err != nil {
-		panic(fmt.Sprintf("html: docs manifest: %v", err))
-	}
-	var manifest docsManifest
-	if err := json.Unmarshal(b, &manifest); err != nil {
-		panic(fmt.Sprintf("html: docs manifest decode: %v", err))
-	}
-	if manifest.Schema != "a2a-docs-manifest/v1" || len(manifest.Groups) == 0 || len(manifest.Sections) == 0 {
-		panic("html: docs manifest: invalid or empty contract")
-	}
-	return manifest
-}
 
 // Docs renders the embedded skill tree into the ordered DocSection list. Pure:
 // reads only skill.Files (no store, no network). GFM so the skill docs' tables
