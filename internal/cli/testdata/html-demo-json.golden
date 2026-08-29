@@ -9173,6 +9173,34 @@
           }
         },
         {
+          "id": "RN-02507-8",
+          "kind": "feat",
+          "impact": "normal",
+          "subject": "a2a contract verify-export --json — the result it already computed, readable",
+          "detail": "`verify-export` computed a structured result and printed a human summary. The result itself was reachable from no terminal: a harness gating on which artifact drifted had to parse prose, or re-derive the comparison itself.\n`--json` emits it. Same comparison, same verdict, same exit code — only the render is new.\n",
+          "affects": [
+            "cli"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "Additive. The existing invocation prints exactly what it printed before.\n"
+          }
+        },
+        {
+          "id": "RN-02507-9",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "a descriptor-only mismatch names the fields that differ instead of printing nothing",
+          "detail": "When a candidate's descriptor differed from the published one but no carried FILE did, the comparison exited non-zero and printed no line naming anything — a refusal whose subject the caller had to guess at, on the one input where guessing is hardest, because the bytes that moved are frontmatter rather than a file you can diff.\nIt now prints one line per changed frontmatter field.\n",
+          "affects": [
+            "cli"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "Output only, on a path that already refused. Nothing that passed before refuses now.\n"
+          }
+        },
+        {
           "id": "KI-01900-PROVIDER-TIER-DEFERRED",
           "kind": "known-issue",
           "impact": "normal",
