@@ -137,6 +137,7 @@ PUBLIC_VALIDATOR_FILES=(
   scripts/ci-parity-entrypoint.sh
   scripts/feedback-intake-policy.sh
   scripts/lib/lane-ungated.txt
+  scripts/lib/lane-opaque-ceiling.txt
   scripts/lib/job-timeouts.tsv
   scripts/lib/ci-usage-window.json
   scripts/lib/gate-lib.sh
