@@ -1,0 +1,99 @@
+schema: render-ledger/v1
+# render-ledger.yaml — answers-that-hold-2026-08 P3 (spec 03 §T1): the
+# render LEDGER, not a disjunction. The obvious rule — "every computed
+# field is reachable from the human path OR from --json" — cannot red on
+# this very class, because the phase that fixes a dropped field is often
+# the SAME phase that adds --json, after which every tagged field
+# satisfies the second disjunct by construction. So each field below is
+# declared `human` (rendered, or its consequence textually distinguishable,
+# on the human path) or `json-only` (deliberately not — WITH A STRUCTURAL
+# REASON) — the shape schemas/prose-coverage.yaml already uses for
+# covered:/declared:, copied here for RENDERED where that one owns TAUGHT,
+# over an independently-derived universe.
+#
+# THE UNIVERSE is NOT `a2a __catalog --surfaces --json`'s own set (that one
+# is schemas/prose-coverage.yaml's — cli-inbox/cli-outbox/cli-thread/
+# cli-show/mcp-item, plus whatever internal/skillcoverage.Register()ed
+# surface cmd/a2a/catalog.go's catalogSurfaces() merges in). This ledger's
+# universe is internal/cli/cmd_contract_p6_test.go's own
+# TestRenderLedgerSurfaceDump — SurfaceKeys applied to exactly the contract
+# result/wrapper types this phase's two live fixes (fb-20260827-bc1f13,
+# fb-20260827-47069c) and its carried P7 amendment govern. Deliberately
+# NOT routed through the shared registry: doing so would also enroll these
+# ~35 fields in schemas/prose-coverage.yaml's universe, reding that gate on
+# rows nobody could add in this phase's allowlist (see
+# cmd_contract_p6.go's own init() doc comment). ContractVerifyPublishedResult
+# IS in the shared registry (it is the ONE surface P7's own new type
+# forced a decision on) and is ALSO reflected here independently, so this
+# ledger's own coverage of it never depends on cmd/a2a/catalog.go having
+# applied the merge yet.
+#
+# scripts/check-render-ledger.sh reads this file; run its own `--teeth`
+# mode to prove a missing row, a deferral-shaped reason, and a stale
+# `surfaces:` declaration all RED.
+surfaces:
+  - contract-diff
+  - contract-verify-export
+  - contract-candidate-source
+  - contract-mutations
+  - contract-verify-published
+human:
+  # -- contract-diff: cmd_contract.go's runDiff (all four) and, since this
+  # phase, runVerifyExport's own copy of the same four-loop shape (§5,
+  # "copy the sibling diff renderer's loop; do not invent a second format").
+  field:contract-diff:added: "printed as `added <path>` by runDiff and (on a non-matched outcome) runVerifyExport"
+  field:contract-diff:removed: "printed as `removed <path>` by runDiff and (on a non-matched outcome) runVerifyExport"
+  field:contract-diff:changed: "printed as `changed <path>` by runDiff and (on a non-matched outcome) runVerifyExport"
+  field:contract-diff:frontmatter_changed: "printed as `frontmatter <field>` by runDiff, and by runVerifyExport since fb-20260827-bc1f13 (previously computed and dropped on the floor)"
+  # -- contract-verify-export
+  field:contract-verify-export:added: "same field as contract-diff:added, reached through ContractVerifyExportResult.Diff"
+  field:contract-verify-export:removed: "same field as contract-diff:removed, reached through ContractVerifyExportResult.Diff"
+  field:contract-verify-export:changed: "same field as contract-diff:changed, reached through ContractVerifyExportResult.Diff"
+  field:contract-verify-export:frontmatter_changed: "same field as contract-diff:frontmatter_changed, reached through ContractVerifyExportResult.Diff"
+  field:contract-verify-export:id: "named in every human line (`<id> matches (...)`, the digest-mismatch line, and the unmeasured line)"
+  field:contract-verify-export:local_digest: "printed in the matched line and as `local=` in both the digest-mismatch and unmeasured lines"
+  field:contract-verify-export:want_digest: "printed as `want=` in the digest-mismatch line"
+  field:contract-verify-export:outcome: "each of its three values selects a DIFFERENT, textually distinct human line — matches / digest mismatch / nothing to compare (AC-9) — never printed as a literal token, but always inferable from which line is shown"
+  # -- contract-candidate-source: fb-20260827-47069c (US-2/AC-3)
+  field:contract-candidate-source:kind: "printed as the `candidate <kind> ...` line's own first word"
+  field:contract-candidate-source:location: "printed as the `candidate <kind> <location> ...` line's own second word when non-empty; the whole line is omitted when location is empty (see renderContractPublication's own guard) rather than printing a blank field"
+  # -- contract-mutations: fb-20260827-47069c (US-2/AC-3) — the count, not
+  # the per-entry detail (see json-only below for why each entry's own
+  # fields stay json-only)
+  field:contract-mutations:mutations: "printed as its own COUNT on the `candidate ... (<n> mutation(s))` line — the array itself, never enumerated entry by entry on the human path"
+  # -- contract-verify-published: P7's own amendment (spec 03 §11,
+  # 2026-08-29) — the exact field set cmd_contract_verify_published.go:73-78
+  # names as this phase's own obligation
+  field:contract-verify-published:system: "printed as `N contracts published for <system>`"
+  field:contract-verify-published:total: "printed as the same line's own N"
+  field:contract-verify-published:id: "folded into the printed `<ref>` (`id` or `id@version`)"
+  field:contract-verify-published:space_id: "printed in the row's own `[<space_id>]` bracket"
+  field:contract-verify-published:version: "folded into the printed `<ref>` (`id@version`) when non-empty; omitted from `<ref>` exactly when Status is not-published-yet, matching Version's own doc comment"
+  field:contract-verify-published:status: "printed as the row's own trailing status word"
+  field:contract-verify-published:detail: "printed in parens after the status when non-empty: ` (<detail>)`"
+json-only:
+  # -- contract-verify-export: the two remaining fields
+  field:contract-verify-export:diff: "the container key itself is never printed as literal text; its own fields (added/removed/changed/frontmatter_changed, each covered above) are what the human path actually renders — a container is not itself renderable, only its members are"
+  field:contract-verify-export:matches: "a DERIVED display convenience retained from the pre-three-outcome era (Matches == (Outcome == matched)); Outcome is the authoritative, human-rendered vocabulary (D9, the severity-carrying release's own decision) the CLI actually branches on, and Matches is omitted from --json entirely on an unmeasured result rather than printed as a misleading `false`"
+  # -- contract-candidate-source: the container key and the one field with
+  # no human-legible meaning
+  field:contract-candidate-source:candidate_source: "the container key itself is never printed as literal text; its own kind/location fields (covered above) are what the human path renders"
+  field:contract-candidate-source:fingerprint: "an internal Git-tree proof value (verifyContractPublicationMirrorTree's own tree OID for a mirror source, the staging location's own hash for a staging source) — not a fact a human deciding whether to proceed reads; printed under --json for provenance tooling to compare exactly"
+  # -- contract-mutations: every per-entry field. The human line renders
+  # only the COUNT (see human: above); enumerating each mutation's own
+  # action/path/digest is per-file detail a human is not expected to read
+  # before deciding whether to proceed, and remains available under --json
+  # for tooling that needs it (contract-set diffing, audit).
+  field:contract-mutations:action: "per-entry detail; the human line renders only the mutation COUNT (see field:contract-mutations:mutations)"
+  field:contract-mutations:path: "per-entry detail; the human line renders only the mutation COUNT (see field:contract-mutations:mutations)"
+  field:contract-mutations:before_digest: "per-entry detail; the human line renders only the mutation COUNT (see field:contract-mutations:mutations)"
+  field:contract-mutations:before_mode: "per-entry detail; the human line renders only the mutation COUNT (see field:contract-mutations:mutations)"
+  field:contract-mutations:after_digest: "per-entry detail; the human line renders only the mutation COUNT (see field:contract-mutations:mutations)"
+  field:contract-mutations:after_mode: "per-entry detail; the human line renders only the mutation COUNT (see field:contract-mutations:mutations)"
+  field:contract-mutations:after_size: "per-entry detail; the human line renders only the mutation COUNT (see field:contract-mutations:mutations)"
+  field:contract-mutations:delete_domain: "per-entry detail; the human line renders only the mutation COUNT (see field:contract-mutations:mutations)"
+  field:contract-mutations:contract_root: "per-entry detail; the human line renders only the mutation COUNT (see field:contract-mutations:mutations)"
+  # -- contract-verify-published: the container key and the one field never
+  # rendered
+  field:contract-verify-published:rows: "the array itself is never printed as one line; each entry's own fields are rendered per-row (see id/space_id/version/status/detail above)"
+  field:contract-verify-published:local: "the per-contract override PATH is caller input echoed back for audit, not a verdict a human line needs to act on — the row's own Status already reflects whether a subject was given (unmeasured when none was); printed under --json only"

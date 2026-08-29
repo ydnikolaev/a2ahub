@@ -5,11 +5,41 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/contract"
+	"github.com/ydnikolaev/a2ahub/internal/skillcoverage"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
+
+// init registers ContractVerifyPublishedResult — defined in the sibling
+// cmd_contract_verify_published.go, same package, no edit to that file
+// needed — with internal/skillcoverage's shared surface registry (spec
+// answers-that-hold-2026-08 03 §11's 2026-08-29 amendment: "THE SECOND
+// TRAP", confirmed live at HEAD: cmd/a2a/catalog.go:265-273's
+// catalogSurfaces() is a hand-written five-entry map, and P7's new result
+// type is registered with NOTHING). skillcoverage.WithRegistered (the ONE
+// line cmd/a2a/catalog.go's own catalogSurfaces() must apply — LEAD-OWNED,
+// this phase only reports the line) merges every Register()ed surface into
+// that map, so a caller of `a2a __catalog --surfaces --json` sees this
+// type's field set the same way it already sees cli-inbox/cli-outbox/
+// cli-thread/cli-show/mcp-item, DERIVED via skillcoverage.SurfaceKeys —
+// never a second, hand-maintained field list.
+//
+// Deliberately the ONLY contract result type registered here: registering
+// ContractDiffResult / ContractVerifyExportResult / space.
+// ContractPublicationResult into this SAME shared registry would also
+// enroll them in schemas/prose-coverage.yaml's binary-derived universe
+// (that file is OFF-LIMITS to this phase — see its own Deviations report),
+// reding that gate on ~30 fields nobody could add prose rows for this wave.
+// Those three surfaces are governed by scripts/check-render-ledger.sh's
+// OWN, independent derivation instead (internal/cli/cmd_contract_p6_test.go's
+// TestRenderLedgerSurfaceDump), which never touches this registry or
+// cmd/a2a/catalog.go at all.
+func init() {
+	skillcoverage.Register("cli-contract-verify-published", reflect.TypeOf(ContractVerifyPublishedResult{}))
+}
 
 // ContractPublicationRequest is the transport-owned, filesystem-free input
 // passed to cmd/a2a's adapter. The adapter selects and freezes the candidate
@@ -94,6 +124,33 @@ type ContractVerifyExportResult struct {
 	LocalDigest string             `json:"local_digest"`
 	WantDigest  string             `json:"want_digest"`
 	Diff        ContractDiffResult `json:"diff,omitempty"`
+}
+
+// MarshalJSON omits "matches" entirely when Outcome is "unmeasured"
+// (answers-that-hold-2026-08 P3 AC-9, carrying spec P2's own AC-6): a run
+// with nothing to compare against must not emit `"matches":false`, which
+// reads identically to a genuine drift a caller can act on. matched/
+// drifted keep the field — Matches stays their derived, retained
+// convenience. Marshaled via a type alias plus a shadowing outer field,
+// never a hand-typed copy of the other four fields: the exact class this
+// phase's render ledger exists to prevent (encoding/json resolves a
+// same-JSON-name conflict in favor of the SHALLOWER field, so the embedded
+// alias's own "matches" is silently replaced, not duplicated).
+//
+// internal/skillcoverage.SurfaceKeys never invokes MarshalJSON (it reads
+// struct tags only — see its own doc comment) — its derived field set for
+// this type still includes "matches" unconditionally, which stays a
+// correct OVER-approximation (a key this type CAN put on the wire, on some
+// outcomes) rather than a wrong one.
+func (r ContractVerifyExportResult) MarshalJSON() ([]byte, error) {
+	type alias ContractVerifyExportResult
+	if r.Outcome != "unmeasured" {
+		return json.Marshal(alias(r))
+	}
+	return json.Marshal(struct {
+		alias
+		Matches *bool `json:"matches,omitempty"`
+	}{alias: alias(r)})
 }
 
 // ContractInspectionOperations provides read-only contract inspection operations.
@@ -190,6 +247,17 @@ func renderContractPublication(stdio IO, result space.ContractPublicationResult,
 		return 0
 	}
 	_, _ = fmt.Fprintf(stdio.Stdout, "%s %s@%s\nplan %s\n", result.Status, result.Plan.Contract, result.Plan.TargetVersion, result.Plan.PlanDigest)
+	// fb-20260827-47069c (US-2/AC-3): both facts were computed already and
+	// reachable only under --json — candidate_source.kind/.location named
+	// which tree the plan actually read, and len(mutations) is the cheap
+	// no-op-bump signal the report's own author asked for by hand. Printed
+	// unconditionally (never behind a flag) so the FIRST command run already
+	// carries the signal, matching the report's own "cheapest form" proposal.
+	if source := result.Plan.CandidateSource; source.Location != "" {
+		_, _ = fmt.Fprintf(stdio.Stdout, "candidate %s %s (%d mutation(s))\n", source.Kind, source.Location, len(result.Plan.Mutations))
+	} else if source.Kind != "" {
+		_, _ = fmt.Fprintf(stdio.Stdout, "candidate %s (%d mutation(s))\n", source.Kind, len(result.Plan.Mutations))
+	}
 	// AC-4: --allow-empty-bump's acknowledgement (contract.Finding{Code:
 	// "empty-bump-acknowledged", ...}, carried on Plan.Warnings) must be
 	// printed when used — under --json it was already visible as part of

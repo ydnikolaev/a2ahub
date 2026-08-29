@@ -137,10 +137,18 @@
 #   internal/validate/**/*.go
 #   internal/cli/**/*.go
 #   internal/mcp/**/*.go
+#   internal/space/**/*.go
 #   internal/e2e/**/*.go
 #   internal/livee2e/**/*.go
 #   !internal/livee2e/**/*_test.go
 #   skill/**
+# answers-that-hold-2026-08 P10, AC-19 (2026-08-28 amendment): internal/mcp
+#   was already declared above but never actually SCANNED by obligation 0
+#   (only by the reachability walk) — the declaration bought nothing until
+#   go_severity_for_code's own default scan order was widened to include
+#   it. internal/space is the NEW half: declared here for the first time,
+#   AND scanned, both required — a severity pinned in either package now
+#   selects this gate.
 # lane-reads-opaque: every real read is behind a function-parameter variable
 #   ($1/$2/$3, built at call time from $GATE_ROOT — no literal path in the
 #   function bodies), the same shape check-operational-confidence.sh's own
@@ -180,35 +188,122 @@ severity_label() { # $1 = SeverityXxx
 }
 
 # go_severity_for_code returns the FIRST "SeverityReject"/"SeverityWarning"
-# literal found within 8 lines after a `Code: "<code>"` literal, scanning
-# internal/validate/*.go then internal/cli/*.go (non-test, sorted, in that
-# order) — the same two directories and order check_history's own rg call
-# uses. Empty output (rc 1) means no Go emission was found at all.
-go_severity_for_code() { # $1 = code, $2 = source root
-  local code="$1" root="$2" f sev
+# literal found within 8 lines after a `Code: "<code>"` literal.
+#
+# With NO $3, it scans the DEFAULT order: internal/validate, internal/cli,
+# internal/mcp, internal/space (non-test, sorted, within each). Extended
+# 2026-08-29 (answers-that-hold-2026-08 P10, AC-15/AC-19) from the original
+# validate-then-cli pair: internal/mcp was already NAMED in this gate's own
+# lane-inputs but never actually READ by obligation 0 — tools_read.go's own
+# REF-004/REF-008 reuse was invisible to correlation even though the
+# directory was declared — and internal/space was declared nowhere. Both
+# gaps were STRUCTURAL (the find never walked there at all), distinct from
+# the emitted_by-redirected case below.
+#
+# With $3 set (a directory relative to $root — the registry's own
+# `emitted_by:` value), it searches ONLY that directory instead of the
+# default order — AC-18's site-redirected correlation. internal/space's
+# CarriedFinding emitters (REF-014, POL-013) exist in BOTH internal/space
+# (the LIVE site) and, for REF-014, a dead internal/validate function with
+# its own stale literal (ValidateContractCarriedSet, zero production
+# callers) — the default validate-first order would silently correlate
+# against the dead site and never reach the live one, which is the exact
+# defect spec 10 §"the fifth pair class" names as "the sharpest" gap. A
+# caller passing emitted_by here gets the site that actually ships,
+# never the default order's first match.
+#
+# Empty output (rc 1) means no Severity-shaped literal was found in the
+# scanned scope — either a genuine construction-only refusal (REF-024's own
+# shape: a `Refusal{Code:...}` literal with no Severity field to vary,
+# obligation 0's own "exempt" branch) or, with no $3, a code this scan
+# still cannot see.
+# go_severity_in_file prints the FIRST "SeverityReject"/"SeverityWarning"
+# literal found within 8 lines after a `Code: "<code>"` literal in ONE
+# file, or nothing (rc 1). The single-file primitive both
+# go_severity_for_code (a directory walk) and
+# check_severity_exception_sites (one declared file per severity_exceptions
+# entry, never a whole directory — REF-004's own cmd_show.go and
+# tools_read.go sit beside OTHER files in their own directories that carry
+# unrelated codes, and a directory-wide search could silently match the
+# wrong one) share, so the matching regex lives in exactly one place.
+go_severity_in_file() { # $1 = code, $2 = file
+  local code="$1" f="$2" sev
+  [ -f "$f" ] || return 1
+  # internal/validate's own files write the bare `SeverityX` literal;
+  # internal/cli/internal/mcp import the package and write
+  # `validate.SeverityX` — both are the same value under a different
+  # qualifier (cmd_validate_ci.go:1251's REF-011 emission is `Severity:
+  # validate.SeverityReject,` — this was watched failing without the
+  # `(validate\.)?` prefix, reporting REF-011 as having no Go emission at
+  # all, before this fix). internal/space's CarriedFinding is a THIRD
+  # shape: a bare lowercase QUOTED STRING (`Severity: "reject"`), never a
+  # validate.Severity* identifier at all — CarriedFinding predates and is
+  # independent of the validate package's own type. Both shapes are
+  # matched by the two alternatives below and normalised to the SAME
+  # "SeverityXxx" form severity_label already expects, so one label
+  # function serves both emitter shapes.
+  sev="$(grep -A8 "Code:[[:space:]]*\"${code}\"" "$f" 2>/dev/null \
+    | grep -m1 -Eo 'Severity:[[:space:]]*(validate\.)?Severity[A-Za-z]+|Severity:[[:space:]]*"(reject|warning|unmeasured)"' \
+    | sed -E 's/^Severity:[[:space:]]*//; s/^validate\.//')"
+  case "$sev" in
+    \"*\")
+      sev="$(printf '%s' "$sev" | tr -d '"')"
+      sev="Severity$(printf '%s' "${sev:0:1}" | tr '[:lower:]' '[:upper:]')${sev:1}"
+      ;;
+  esac
+  [ -n "$sev" ] || return 1
+  printf '%s\n' "$sev"
+}
+
+go_severity_for_code() { # $1 = code, $2 = source root, $3 = optional site dir (relative to root) searched EXCLUSIVELY instead of the default order
+  local code="$1" root="$2" site="${3:-}" f sev
   while IFS= read -r f; do
-    [ -f "$f" ] || continue
-    # internal/validate's own files write the bare `SeverityX` literal;
-    # internal/cli imports the package and writes `validate.SeverityX` —
-    # both are the same value under a different qualifier, so the
-    # `(validate\.)?` prefix is optional, and only the unqualified suffix
-    # is kept for comparison (cmd_validate_ci.go:1251's REF-011 emission is
-    # `Severity: validate.SeverityReject,` — this was watched failing
-    # without the prefix, reporting REF-011 as having no Go emission at
-    # all, before this fix).
-    sev="$(grep -A8 "Code:[[:space:]]*\"${code}\"" "$f" 2>/dev/null \
-      | grep -m1 -o 'Severity:[[:space:]]*\(validate\.\)\?Severity[A-Za-z]*' \
-      | awk '{print $NF}' \
-      | sed 's/^validate\.//')"
-    if [ -n "$sev" ]; then
+    if sev="$(go_severity_in_file "$code" "$f")"; then
       printf '%s\n' "$sev"
       return 0
     fi
   done < <(
-    find "$root/internal/validate" -maxdepth 1 -name '*.go' ! -name '*_test.go' 2>/dev/null | sort
-    find "$root/internal/cli" -maxdepth 1 -name '*.go' ! -name '*_test.go' 2>/dev/null | sort
+    if [ -n "$site" ]; then
+      find "$root/$site" -maxdepth 1 -name '*.go' ! -name '*_test.go' 2>/dev/null | sort
+    else
+      find "$root/internal/validate" -maxdepth 1 -name '*.go' ! -name '*_test.go' 2>/dev/null | sort
+      find "$root/internal/cli" -maxdepth 1 -name '*.go' ! -name '*_test.go' 2>/dev/null | sort
+      find "$root/internal/mcp" -maxdepth 1 -name '*.go' ! -name '*_test.go' 2>/dev/null | sort
+      find "$root/internal/space" -maxdepth 1 -name '*.go' ! -name '*_test.go' 2>/dev/null | sort
+    fi
   )
   return 1
+}
+
+# registry_severity_exception_sites prints one "<site>\t<severity>\t<reason>"
+# line per `severity_exceptions:` entry $2's own code declares — the
+# declared, machine-readable form of a deliberate reuse-at-a-different-
+# severity (REF-004's own V5 downgrade, spec 10 §"the fifth pair class",
+# AC-17). <site> is a single FILE path relative to the source root (e.g.
+# "internal/cli/cmd_show.go"), never a directory: the whole point of this
+# obligation is pinning ONE site's own literal, and a directory can hold
+# other files carrying the SAME code at its canonical severity (silently
+# matching the wrong one is exactly the "first-match-wins" defect this
+# phase's own §"the fifth pair class" names). A block with no entries
+# prints nothing.
+registry_severity_exception_sites() { # $1 = registry file, $2 = code
+  awk -v code="$2" '
+    $0 ~ "^  - code: " code "$" { active=1; next }
+    active && /^  - code: / { active=0 }
+    active && $0 ~ /^    severity_exceptions:/ { in_list=1; next }
+    active && in_list && /^      - site:/ {
+      sub(/^      - site:[[:space:]]*/, ""); site=$0; next
+    }
+    active && in_list && /^        severity:/ {
+      sub(/^        severity:[[:space:]]*/, ""); sev=$0; next
+    }
+    active && in_list && /^        reason:/ {
+      sub(/^        reason:[[:space:]]*/, ""); reason=$0
+      print site "\t" sev "\t" reason
+      next
+    }
+    active && in_list && (/^    [a-z]/ || /^  - code: /) { in_list=0 }
+  ' "$1"
 }
 
 # reachability_ok: class schema is exempt by construction (see header). For
@@ -546,18 +641,67 @@ check_obligations() { # $1 = registry file, $2 = source root, $3 = catalogue roo
     # So the registry is asked who raises the code. A foreign emitter is
     # ANNOUNCED, not silently skipped: an obligation that quietly stops
     # applying is the defect this gate exists to catch, one level up.
+    #
+    # SITE-REDIRECTED correlation (answers-that-hold-2026-08 P10, AC-18),
+    # not a blanket exemption: `emitted_by` naming a directory OTHER than
+    # internal/validate used to mean "nothing to correlate, stand down" for
+    # every code alike. That was right for REF-024/025/026/027 (a plain
+    # `Refusal{Code:...}` with no Severity field to vary at all — go_
+    # severity_for_code genuinely finds nothing there) and WRONG for
+    # REF-014/POL-013: internal/space's own CarriedFinding DOES pin a
+    # varying Severity literal, and the default validate-first scan order
+    # was correlating against a DEAD internal/validate function
+    # (ValidateContractCarriedSet, zero production callers) instead of the
+    # site that actually ships — "the sharpest" gap this gate's own header
+    # names. So `emitted_by` now REDIRECTS the search to its own declared
+    # directory first; only a genuine absence there (the construction-only
+    # shape) falls back to the "exempt" announcement.
     if [ "$class" = "schema" ]; then
       : # schema_class.go hardcodes SeverityReject uniformly for the whole class.
     elif [ "$emitted_by" != "internal/validate" ]; then
-      echo "check-error-codes: obligation 0 exempt — $code (emitted_by:$emitted_by; a refusal raised outside internal/validate carries no Code:/Severity: pair to correlate and no severity variant to drift from — it refuses by construction. Its severity is proven by its emitter's own tests and by the declared path that drives it.)"
+      if sev_actual="$(go_severity_for_code "$code" "$root" "$emitted_by")"; then
+        want="$(severity_label "$sev_actual")"
+        if [ "$want" != "$severity" ]; then
+          gate_fail "check-error-codes: $code declares severity:$severity but the nearest Go literal at its declared emitted_by:$emitted_by site is $sev_actual (severity:$want) — registry and Go disagree"
+        fi
+      else
+        echo "check-error-codes: obligation 0 exempt — $code (emitted_by:$emitted_by; a refusal raised outside internal/validate carries no Code:/Severity: pair to correlate and no severity variant to drift from — it refuses by construction. Its severity is proven by its emitter's own tests and by the declared path that drives it.)"
+      fi
     elif sev_actual="$(go_severity_for_code "$code" "$root")"; then
       want="$(severity_label "$sev_actual")"
       if [ "$want" != "$severity" ]; then
         gate_fail "check-error-codes: $code declares severity:$severity but the nearest Go literal is $sev_actual (severity:$want) — registry and Go disagree"
       fi
     else
-      gate_fail "check-error-codes: $code has no Severity: literal within 8 lines of its Code: literal in internal/validate/*.go or internal/cli/*.go (non-test) — cannot correlate the registry's declared severity against Go"
+      gate_fail "check-error-codes: $code has no Severity: literal within 8 lines of its Code: literal in internal/validate, internal/cli, internal/mcp or internal/space (non-test) — cannot correlate the registry's declared severity against Go"
     fi
+
+    # Obligation 0b: declared severity EXCEPTIONS (spec 10 §"the fifth pair
+    # class", AC-17) — a deliberate reuse of a code at a DIFFERENT severity
+    # (REF-004's own V5 downgrade: reject at its canonical emission,
+    # warning at cmd_show.go/tools_read.go, "V5 never blocks, unlike V2's
+    # reject"). Equality is the wrong assertion for a divergence this repo
+    # decided ON PURPOSE; the assertion here is "equal, or exceptional and
+    # DECLARED" — every declared exception's own site must still carry the
+    # EXACT severity the registry says it does, or the exception itself has
+    # gone stale and is exactly as wrong as a silent disagreement (AC-16:
+    # "an undeclared divergence REDS naming BOTH sites" — this is that
+    # check applied to a DECLARED one, so a rot in the declaration itself
+    # cannot hide behind having once been written down).
+    while IFS=$'\t' read -r ex_site ex_sev ex_reason; do
+      [ -n "$ex_site" ] || continue
+      if [ -z "$ex_reason" ]; then
+        gate_fail "check-error-codes: $code declares a severity_exceptions entry for $ex_site with no reason — an exception must be announced, never silent"
+      fi
+      if ex_actual="$(go_severity_in_file "$code" "$root/$ex_site")"; then
+        ex_actual_label="$(severity_label "$ex_actual")"
+        if [ "$ex_actual_label" != "$ex_sev" ]; then
+          gate_fail "check-error-codes: $code declares a severity_exceptions entry naming $ex_site at severity:$ex_sev, but the Go literal there is $ex_actual (severity:$ex_actual_label) — the declared exception is stale, naming BOTH the registry's own claim and $ex_site's real one"
+        fi
+      else
+        gate_fail "check-error-codes: $code declares a severity_exceptions entry naming $ex_site at severity:$ex_sev, but no Severity: literal for $code exists at $ex_site — a stale or invented exception, naming BOTH the registry's own claim and the site that no longer backs it"
+      fi
+    done < <(registry_severity_exception_sites "$registry" "$code")
 
     # Obligation 3: mode scope. A reject code scoped `both` needs a reason.
     if [ "$severity" = "reject" ] && [ "$mode_scope" = "both" ] && [ -z "$reason" ]; then
@@ -647,7 +791,7 @@ teeth_expect() { # $1 = label, $2 = red|green, $3 = needle, $4 = registry, $5 = 
 # adds on top.
 write_fixture_tree() { # $1 = root
   local root="$1"
-  mkdir -p "$root/internal/validate" "$root/internal/cli" "$root/internal/mcp" "$root/internal/e2e" "$root/skill" "$root/internal/livee2e"
+  mkdir -p "$root/internal/validate" "$root/internal/cli" "$root/internal/mcp" "$root/internal/space" "$root/internal/e2e" "$root/skill" "$root/internal/livee2e"
   : > "$root/skill/.gitkeep"
   write_fixture_catalogue "$root/internal/livee2e"
 }
@@ -1000,6 +1144,196 @@ entries:
 EOF
   teeth_expect "emitted_by declared: obligation 0 stands down and says so" green \
     "" "$d/declared.yaml" "$root" || return 1
+
+  # answers-that-hold-2026-08 P10 (AC-15/16/18/19): emitted_by REDIRECTS a
+  # correlatable severity to its own declared site instead of exempting it
+  # outright — REF-014/POL-013's own shape (internal/space's CarriedFinding
+  # DOES vary), unlike REF-907 above (a construction-only refusal with no
+  # Severity field to vary at all).
+  d="$work/emitted-by-redirect"; write_fixture_tree "$d/root"; root="$d/root"
+  cat > "$root/internal/space/fixture_carried.go" <<'EOF'
+package space
+
+func fixture() {
+	_ = CarriedFinding{
+		Code:     "REF-908",
+		Severity: "reject",
+	}
+}
+EOF
+  cat > "$d/matching.yaml" <<'EOF'
+entries:
+  - code: REF-908
+    class: referential
+    emitted_by: internal/space
+    title: fixture
+    applies_to: fixture
+    severity: reject
+    mode_scope: v3-pr
+    prose_exempt: fixture
+    reachability_exempt: fixture
+    path_exempt: fixture
+EOF
+  teeth_expect "emitted_by redirect: a live CarriedFinding-shaped severity at the declared site correlates" green \
+    "" "$d/matching.yaml" "$root" || return 1
+
+  cat > "$d/mismatched.yaml" <<'EOF'
+entries:
+  - code: REF-908
+    class: referential
+    emitted_by: internal/space
+    title: fixture
+    applies_to: fixture
+    severity: warning
+    mode_scope: v3-pr
+    prose_exempt: fixture
+    reachability_exempt: fixture
+    path_exempt: fixture
+EOF
+  teeth_expect "emitted_by redirect: a mismatch at the declared site reds, naming the site" red \
+    "REF-908 declares severity:warning but the nearest Go literal at its declared emitted_by:internal/space site is SeverityReject" \
+    "$d/mismatched.yaml" "$root" || return 1
+
+  # AC-15/AC-19: the DEFAULT scan order (no emitted_by) now reaches
+  # internal/mcp and internal/space, not only internal/validate/internal/cli
+  # — a planted divergence in EITHER package reds, naming the code, exactly
+  # as one in internal/validate/internal/cli already did before this wave.
+  d="$work/default-scan-widened"; write_fixture_tree "$d/root"; root="$d/root"
+  cat > "$root/internal/mcp/fixture.go" <<'EOF'
+package mcp
+
+func fixture() {
+	_ = validate.Violation{
+		Code:     "REF-909",
+		Severity: validate.SeverityReject,
+	}
+}
+EOF
+  cat > "$d/mcp.yaml" <<'EOF'
+entries:
+  - code: REF-909
+    class: referential
+    title: fixture
+    applies_to: fixture
+    severity: warning
+    mode_scope: v3-pr
+    prose_exempt: fixture
+    reachability_exempt: fixture
+    path_exempt: fixture
+EOF
+  teeth_expect "default scan reaches internal/mcp: a divergence there reds" red \
+    "REF-909 declares severity:warning but the nearest Go literal is SeverityReject" "$d/mcp.yaml" "$root" || return 1
+
+  d="$work/default-scan-widened-space"; write_fixture_tree "$d/root"; root="$d/root"
+  cat > "$root/internal/space/fixture.go" <<'EOF'
+package space
+
+func fixture() {
+	_ = CarriedFinding{
+		Code:     "REF-910",
+		Severity: "warning",
+	}
+}
+EOF
+  cat > "$d/space.yaml" <<'EOF'
+entries:
+  - code: REF-910
+    class: referential
+    title: fixture
+    applies_to: fixture
+    severity: reject
+    mode_scope: v3-pr
+    prose_exempt: fixture
+    reachability_exempt: fixture
+    path_exempt: fixture
+EOF
+  teeth_expect "default scan reaches internal/space: a divergence there reds" red \
+    "REF-910 declares severity:reject but the nearest Go literal is SeverityWarning" "$d/space.yaml" "$root" || return 1
+
+  # AC-17: a declared severity_exceptions entry must still be TRUE. A live
+  # exception passes silently; a stale one (the site's own literal drifted
+  # away from what the registry says it reuses) reds naming the code and
+  # the site; an invented one (no literal at the declared site at all)
+  # reds the same way.
+  d="$work/severity-exceptions"; write_fixture_tree "$d/root"; root="$d/root"
+  cat > "$root/internal/validate/fixture.go" <<'EOF'
+package validate
+
+func fixture() {
+	_ = Violation{
+		Code:     "REF-911",
+		Severity: SeverityReject,
+	}
+}
+EOF
+  cat > "$root/internal/cli/fixture_exception.go" <<'EOF'
+package cli
+
+func fixture() {
+	_ = validate.Violation{
+		Code:     "REF-911",
+		Severity: validate.SeverityWarning,
+	}
+}
+EOF
+  cat > "$d/live.yaml" <<'EOF'
+entries:
+  - code: REF-911
+    class: referential
+    title: fixture
+    applies_to: fixture
+    severity: reject
+    mode_scope: v3-pr
+    prose_exempt: fixture
+    reachability_exempt: fixture
+    path_exempt: fixture
+    severity_exceptions:
+      - site: internal/cli/fixture_exception.go
+        severity: warning
+        reason: fixture — a deliberate downgraded reuse
+EOF
+  teeth_expect "severity_exceptions: a live, matching exception passes silently" green \
+    "" "$d/live.yaml" "$root" || return 1
+
+  cat > "$d/stale.yaml" <<'EOF'
+entries:
+  - code: REF-911
+    class: referential
+    title: fixture
+    applies_to: fixture
+    severity: reject
+    mode_scope: v3-pr
+    prose_exempt: fixture
+    reachability_exempt: fixture
+    path_exempt: fixture
+    severity_exceptions:
+      - site: internal/cli/fixture_exception.go
+        severity: reject
+        reason: fixture — wrongly claims the exception site agrees with the canonical severity
+EOF
+  teeth_expect "severity_exceptions: a stale declared exception reds, naming the site" red \
+    "REF-911 declares a severity_exceptions entry naming internal/cli/fixture_exception.go at severity:reject, but the Go literal there is SeverityWarning" \
+    "$d/stale.yaml" "$root" || return 1
+
+  cat > "$d/invented.yaml" <<'EOF'
+entries:
+  - code: REF-911
+    class: referential
+    title: fixture
+    applies_to: fixture
+    severity: reject
+    mode_scope: v3-pr
+    prose_exempt: fixture
+    reachability_exempt: fixture
+    path_exempt: fixture
+    severity_exceptions:
+      - site: internal/cli/does_not_exist.go
+        severity: warning
+        reason: fixture — names a file that carries no such literal
+EOF
+  teeth_expect "severity_exceptions: an invented exception (no literal at the site) reds" red \
+    "REF-911 declares a severity_exceptions entry naming internal/cli/does_not_exist.go at severity:warning, but no Severity: literal for REF-911 exists at internal/cli/does_not_exist.go" \
+    "$d/invented.yaml" "$root" || return 1
 
   # ── obligation 4 (judge-the-thing-2026-08 spec 11 §6) ──────────────────
   #
@@ -1484,7 +1818,7 @@ EOF
   teeth_expect "o4: a catalogue root that walks to nothing reds" red \
     "obligation 4 found no non-test Go file under" "$reg" "$root" "$d/empty" || return 1
 
-  echo "check-error-codes --teeth: PASS — AC1 (no production-path test), AC2 (reject code absent from skill/**) and AC3 (reject+both with no reason) all red naming the code; AC4's stated-reason exemption and a fully-closed row both green; a registry/Go severity disagreement reds distinctly from the three T5 obligations; and a code declaring emitted_by outside internal/validate stands obligation 0 down, while the SAME row without that declaration still reds. Obligation 4: an undriven reject code, a code named only in Intent PROSE, a code inside an UNDRIVABLE path, a blank waiver and a whitespace-only waiver all red naming the code; a Refused: with no enclosing Path and one inside a Path with no ID hard-fail naming file and line; an ID declared AFTER Steps resolves to its OWN path rather than the driven one before it; a Refusal in a SECOND catalogue file counts; deleting a path's id from drivenPathIDs strands its refusal, while the same catalogue with the id present greens with no waiver; a waiver on an already-driven code reds as a paid debt; a severity:warning code is never judged at all; and a catalogue root that walks to nothing reds instead of greening over every undriven code"
+  echo "check-error-codes --teeth: PASS — AC1 (no production-path test), AC2 (reject code absent from skill/**) and AC3 (reject+both with no reason) all red naming the code; AC4's stated-reason exemption and a fully-closed row both green; a registry/Go severity disagreement reds distinctly from the three T5 obligations; and a code declaring emitted_by outside internal/validate stands obligation 0 down, while the SAME row without that declaration still reds. answers-that-hold-2026-08 P10: emitted_by now REDIRECTS a correlatable severity (internal/space's own CarriedFinding shape) to its own declared site instead of exempting it, and a mismatch there reds naming the site; the DEFAULT scan (no emitted_by) now reaches internal/mcp and internal/space, and a planted divergence in either reds; a declared severity_exceptions entry passes when its own site's literal still agrees, and reds — naming the code and the site — when it is stale or invented. Obligation 4: an undriven reject code, a code named only in Intent PROSE, a code inside an UNDRIVABLE path, a blank waiver and a whitespace-only waiver all red naming the code; a Refused: with no enclosing Path and one inside a Path with no ID hard-fail naming file and line; an ID declared AFTER Steps resolves to its OWN path rather than the driven one before it; a Refusal in a SECOND catalogue file counts; deleting a path's id from drivenPathIDs strands its refusal, while the same catalogue with the id present greens with no waiver; a waiver on an already-driven code reds as a paid debt; a severity:warning code is never judged at all; and a catalogue root that walks to nothing reds instead of greening over every undriven code"
 }
 
 if [ "${1:-}" = "--teeth" ]; then

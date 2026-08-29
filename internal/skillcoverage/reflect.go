@@ -42,12 +42,26 @@ import (
 // A type implementing json.Marshaler is NOT detected or special-cased:
 // SurfaceKeys reads struct tags only, and never invokes MarshalJSON. A
 // type in the graph with a custom marshaler makes this function's answer
-// for that subtree fictional. None of the types cmd/a2a/catalog.go feeds
-// in as of this writing do (verified by hand: `grep -rn "func.*MarshalJSON"
+// for that subtree fictional in the general case — but a CONDITIONAL
+// OMISSION (a key some values never put on the wire, but the type CAN)
+// stays a safe over-approximation rather than a wrong one. None of the
+// types cmd/a2a/catalog.go feeds in as of this writing implement
+// MarshalJSON (verified by hand: `grep -rn "func.*MarshalJSON"
 // internal/cache internal/datapackage internal/provenance
 // internal/workreport internal/fold` finds exactly one, datapackage.Report,
 // which is not reachable from cache.Item, cache.ThreadResult or
-// cache.ShowResult); a caller adding a type that does must re-verify.
+// cache.ShowResult).
+//
+// internal/cli.ContractVerifyExportResult (fed to this function by
+// internal/cli/cmd_contract_p6_test.go's TestRenderLedgerSurfaceDump, the
+// render-ledger gate's own driver — answers-that-hold-2026-08 P3) is the
+// FIRST caller to feed in a type that DOES implement MarshalJSON: it omits
+// "matches" when Outcome is "unmeasured" (AC-9). That is exactly the safe
+// case above — the derived set still includes "matches" unconditionally,
+// which remains correct as "a key this type can emit", never a key it
+// never emits. A caller adding a type whose MarshalJSON RENAMES or ADDS a
+// key (rather than only ever conditionally DROPPING one already covered by
+// a struct tag) must re-verify this reasoning still holds.
 func SurfaceKeys(t reflect.Type) []string {
 	seen := map[string]bool{}
 	walk(t, seen, map[reflect.Type]bool{})

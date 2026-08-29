@@ -131,6 +131,15 @@ declares must have bytes — staged, or already carried by the landed version �
 and a staged file the descriptor does NOT declare is refused rather than
 carried silently.
 
+**`preflight`/`publish` name their candidate source and mutation count on
+every run**, not only under `--json` — `candidate mirror <tree> (3
+mutation(s))` or `candidate staging <path> (1 mutation(s))`, printed right
+after the plan line. This is the cheap signal fb-20260827-47069c asked for
+by hand: a `--staging` you forgot to pass, a stale generator, or a
+no-op bump all show up here as "the wrong candidate kind" or "a mutation
+count that doesn't match what you expected" — before the irreversible
+step, not after comparing a digest by hand.
+
 Each `artifacts:` entry carries a `path`, a `role`, `normative`, a
 `media_type`, and — on `valid-fixture` and `invalid-fixture` entries only — a
 `conforms_to` naming the declared schema entry it validates against. The three
@@ -178,6 +187,30 @@ refusal would leave you with nothing to satisfy. A **stale or absent mirror**
 DOES refuse, naming the sync to run — that one you can satisfy, and answering
 "everything matches" from a mirror that has not been refreshed is the failure
 this verb exists to prevent.
+
+### `verify-published --json` field reference
+
+`--json` emits the same aggregate `--surfaces --json` reflects for the
+render ledger (answers-that-hold-2026-08 P3): a top-level `system` (the
+system whose contracts were checked) and `total` (the row count — printed
+on the human path too, so a zero-contract run is never silently
+indistinguishable from a refusal), plus `rows`, one entry per contract:
+
+- `id` — the contract's own id, folded into the human path's printed
+  `<id>` or `<id>@<version>`.
+- `space_id` — which connected space the row came from, printed in the
+  human path's own `[<space_id>]` bracket.
+- `version` — resolved from the published descriptor, present exactly when
+  `status` is not `not-published-yet`.
+- `status` — one of `matched`, `drifted`, `not-published-yet`, or
+  `unmeasured`, printed as the human line's own trailing word.
+- `local` — the per-contract override path from `--local <XC-id>=<path>`,
+  when one was given. It is not printed on the human path: `status` already
+  reflects whether a subject was supplied (`unmeasured` when none was), and
+  the path itself is caller input useful for audit tooling, not a fact a
+  human deciding whether to proceed needs read back.
+- `detail` — the reason behind an `unmeasured` row, printed on the human
+  path in parens after the status.
 
 The per-contract comparison below is what each row runs; nothing about it is
 re-implemented for the aggregate.
@@ -237,6 +270,17 @@ Emit the outer value from your generator, and let publication check the
 agreement. `a2a contract verify-export --local <dir> <XC-id>` prints the
 digest a2a computes for a local candidate, which is for CHECKING your
 implementation — not for filling the field in from.
+
+**A mismatch always names what differs.** `added`/`removed`/`changed` lines
+cover the exported files; a `frontmatter <field>` line covers a
+descriptor-only difference (a change to `contract.md`'s frontmatter, which
+`export-source-v1` deliberately excludes) — the same line `contract diff`
+already prints. `--json` returns the identical structured result the MCP
+surface does, so a caller with no need for text output has a route to it
+too. And a run with nothing to compare against — no `generated_from.
+source_digest` was ever asserted — says so in its own words and exits 0,
+distinct from both a match and a drift: `matched`/`drifted`/`unmeasured`
+are three different outcomes, not `matches: true|false`.
 
 ## The descriptor's `version:` is not yours to set
 

@@ -94,6 +94,48 @@
 #
 #     Deliberately spelled without its colon in this header, so that the
 #     count above stays exactly the count of REAL waiver rows.
+#
+# REF-024 (2026-08-21) adds `emitted_by`, undocumented here until now.
+#
+#   emitted_by (a package path, e.g. `internal/space`) — the package that
+#     actually raises this code, when it is NOT internal/validate.
+#     check-error-codes.sh's obligation 0 searches THIS directory instead
+#     of its own default validate-then-cli-then-mcp-then-space order — a
+#     REDIRECT, not a blanket exemption: if the named directory carries a
+#     varying `Severity:` literal beside the code's own `Code:` literal
+#     (internal/space's CarriedFinding shape, e.g. REF-014/POL-013), the
+#     gate correlates against IT, exactly as it would against
+#     internal/validate by default. Only a genuine construction-only
+#     refusal — a plain `Refusal{Code:...}`/sentinel error with no Severity
+#     field to vary at all (REF-024/025/026/027's own shape) — makes the
+#     search find nothing, at which point the gate stands obligation 0 down
+#     and announces why rather than silently passing. Absent, the default
+#     order applies and the code is presumed to live in internal/validate.
+#
+# answers-that-hold-2026-08/P10 (2026-08-29) adds `severity_exceptions`.
+#
+#   severity_exceptions (a list of {site, severity, reason}) — a
+#     DELIBERATE reuse of this code at a DIFFERENT severity than its
+#     canonical emission, each entry naming the exact non-test FILE (never
+#     a directory — a directory can hold other files carrying the same
+#     code at its canonical severity) that reuses it, the severity it
+#     reuses it AT, and the reason. check-error-codes.sh's obligation 0b
+#     verifies every declared entry's own file still carries a `Severity:`
+#     literal for this code EQUAL to the declared severity — a stale or
+#     invented exception reds naming both the registry's own claim and the
+#     site that no longer backs it, exactly as an undeclared divergence
+#     would (obligation 0's own "registry and Go disagree").
+#
+#     This exists because equality is the wrong assertion for a divergence
+#     this repo decided ON PURPOSE: REF-004's canonical emission
+#     (internal/validate/referential.go) is `severity: reject`, but
+#     internal/cli/cmd_show.go and internal/mcp/tools_read.go both reuse it
+#     at `warning` for a presentational V5 mirror-staleness advisory ("V5
+#     never blocks, unlike V2's reject") — a fact that used to live ONLY in
+#     a Go doc comment, where no gate could read it. The assertion is now
+#     "equal, or exceptional and DECLARED", derivable from this corpus
+#     rather than trusted from prose (core audit R5, docs/inbox/
+#     core-audit-2026-08/PLAN.md).
 
 entries:
   - code: SCH-001
@@ -346,6 +388,22 @@ entries:
       structural, re-derivable comparison with no rule that could
       retroactively change its answer.
     path_exempt: undriven, counted, and named in the counted debt row dated 2026-08-21 in docs/validator-backlog.md — 50 registered reject codes are driven by no declared conformance path — which holds the full argument. The state is unproven, not known-broken; retiring this row is one line, declare a path that provokes the refusal and delete this waiver.
+    severity_exceptions:
+      - site: internal/cli/cmd_show.go
+        severity: warning
+        reason: >-
+          `showV5Warnings` reuses REF-004 verbatim for `a2a show`'s own V5
+          mirror-staleness advisory — the SAME condition V2 rejects on, at
+          SeverityWarning because "V5 never blocks, unlike V2's reject"
+          (cmd_show.go's own doc comment, lines 158-175). Deliberate,
+          presentational, and unrelated to the canonical reject emission's
+          own correctness.
+      - site: internal/mcp/tools_read.go
+        severity: warning
+        reason: >-
+          the MCP read tools' own equivalent of cmd_show.go's V5 advisory —
+          the identical reuse, at the identical downgraded severity, for
+          the identical reason.
 
   - code: REF-005
     class: referential
@@ -472,6 +530,7 @@ entries:
 
   - code: REF-014
     class: referential
+    emitted_by: internal/space
     title: Declared contract sidecar cannot be resolved as the exact expected regular file
     applies_to: envelope/v2 contract carried-set V2/V3 validation for missing, unsafe-mode, or digest-mismatched descriptor and sidecar bytes
     severity: reject
@@ -899,6 +958,7 @@ entries:
 
   - code: POL-013
     class: policy
+    emitted_by: internal/space
     title: Declared contract carried set is invalid
     applies_to: envelope/v2 contract carried-set V2/V3 validation for profile, role, path, media, bounds, exactness and authoritative-floor failures
     severity: reject

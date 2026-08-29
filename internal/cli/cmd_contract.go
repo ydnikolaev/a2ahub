@@ -1714,7 +1714,25 @@ func contractUpsertDependency(registry space.Consumes, dep space.Dependency) (sp
 }
 
 // runVerifyExport implements `a2a contract verify-export --local <path>
-// <id>[@version]` (AC-1001.1).
+// <id>[@version] [--json]` (AC-1001.1; answers-that-hold-2026-08 P3 US-3).
+//
+// Branches on result.Outcome's closed three-value vocabulary
+// (matched/drifted/unmeasured — contract.ExportVerification, D9-mapped at
+// the cmd/a2a render boundary), never on the retained Matches bool: Matches
+// collapses drifted and unmeasured into the same "false", which used to
+// print the SAME digest-mismatch message on the SAME non-zero exit for a
+// run that had nothing to compare against at all (spec P2's own AC-6,
+// carried here as this phase's AC-9 — D9: SeverityUnmeasured alone must
+// never flip a result to failing, exactly as
+// cmd_contract_verify_published.go's contractVerifyPublishedRun already
+// treats "unmeasured" as non-failing).
+//
+// A descriptor-only difference used to print ZERO lines on a non-zero exit
+// (fb-20260827-bc1f13): the `frontmatter <field>` loop is copied verbatim
+// from runDiff's own fourth loop, printed for BOTH non-matched outcomes —
+// a byte-level export diff can exist even when Outcome is "unmeasured"
+// (no generated_from.source_digest was asserted to compare against, which
+// is a distinct question from "do the exported bytes differ").
 func (c *ContractCommand) runVerifyExport(ctx context.Context, args []string, stdio IO) int {
 	if c.inspection == nil {
 		return contractServiceUnavailable(stdio, "verify-export")
@@ -1722,12 +1740,13 @@ func (c *ContractCommand) runVerifyExport(ctx context.Context, args []string, st
 	fs := flag.NewFlagSet("contract verify-export", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
 	local := fs.String("local", "", "project-relative export path")
+	asJSON := fs.Bool("json", false, "emit JSON")
 	positionals, err := parseArgsAnyOrder(fs, args)
 	if err != nil {
 		return 2
 	}
 	if *local == "" || len(positionals) != 1 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract verify-export --local <project-relative-path> <id>[@version]")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract verify-export --local <project-relative-path> <id>[@version] [--json]")
 		return 2
 	}
 	result, err := c.inspection.VerifyContractExport(ctx, ContractVerifyExportRequest{Local: *local, Ref: positionals[0]})
@@ -1735,7 +1754,10 @@ func (c *ContractCommand) runVerifyExport(ctx context.Context, args []string, st
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract verify-export: %v\n", err)
 		return 1
 	}
-	if result.Matches {
+	if *asJSON {
+		return encodeContractJSON(stdio, result)
+	}
+	if result.Outcome == "matched" {
 		_, _ = fmt.Fprintf(stdio.Stdout, "contract verify-export: %s matches (%s)\n", result.ID, result.LocalDigest)
 		return 0
 	}
@@ -1747,6 +1769,13 @@ func (c *ContractCommand) runVerifyExport(ctx context.Context, args []string, st
 	}
 	for _, value := range result.Diff.Changed {
 		_, _ = fmt.Fprintf(stdio.Stdout, "changed %s\n", value)
+	}
+	for _, value := range result.Diff.FrontmatterChanged {
+		_, _ = fmt.Fprintf(stdio.Stdout, "frontmatter %s\n", value)
+	}
+	if result.Outcome == "unmeasured" {
+		_, _ = fmt.Fprintf(stdio.Stdout, "contract verify-export: %s: no generated_from.source_digest asserted — nothing to compare (local=%s)\n", result.ID, result.LocalDigest)
+		return 0
 	}
 	_, _ = fmt.Fprintf(stdio.Stderr, "contract verify-export: digest mismatch: local=%s want=%s\n", result.LocalDigest, result.WantDigest)
 	return 1
