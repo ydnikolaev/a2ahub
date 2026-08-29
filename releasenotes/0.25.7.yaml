@@ -1,6 +1,6 @@
 schema: release-notes/v1
 version: 0.25.7
-released: unreleased
+released: 2026-08-29
 headline: every question has one answerer, and the answer is printed
 changes:
 - id: RN-02507-0

@@ -5,7 +5,7 @@ issues:
     impact: normal
     subject: "The current releases shipped with their provider-tier verification deferred, by explicit operator authorization"
     detail: >
-      Every release from v0.19.0 through v0.25.6 shipped this way — TWENTY-FOUR
+      Every release from v0.19.0 through v0.25.7 shipped this way — TWENTY-FIVE
       of them, each authorized separately for its own candidate, and the count is
       machine-refused unless the newest record signs for its own position in the
       streak.
@@ -33,7 +33,7 @@ issues:
       token's scope non-reporting driving the preflight path, real concurrent
       writes losing nothing, and the space's own CI carrying no unexplained
       failures. The last full matrix that did prove them ran on 2026-08-05,
-      against a tree earlier than every one of these twenty-four releases.
+      against a tree earlier than every one of these twenty-five releases.
       Read the cost concretely rather than as a formality. v0.19.0 changed the
       contract publication path; v0.19.1 changed the git authentication used by
       every remote call in the write funnel; v0.19.2 and v0.19.3 changed how
@@ -88,6 +88,29 @@ issues:
       harness that relied on the old silence. The base-branch derivation in
       particular has no live proof at all: no tier in this repository can drive a
       real remote whose default branch is not `main`.
+      **v0.25.7 IS the worst case too, and for a second reason v0.25.6 did not
+      carry.** It adds a refusal BELOW both write surfaces — a response whose
+      envelope schema requires `parent` is now refused by the write funnel
+      itself rather than landing as a plain document — so the funnel the
+      deferred rows sit over changed again, one release after it last did. It
+      refuses a `contract publish` that would silently have taken the landed
+      mirror while a staging tree existed, which is the publication path
+      v0.19.0's deferral first named. And it changes `a2a validate --ci`: the
+      out-of-space refusal is rewritten and `--space <id>` is new. That command
+      is verbatim one of the unproven rows — "the shipped Actions workflow
+      actually running `a2a validate --ci`" — so for the second time in this
+      streak (v0.19.6 was the first) the release changes the exact surface a
+      deferred row exists to check.
+
+      Two things bound what that costs. The funnel refusal is derived from the
+      envelope schemas' own `required` arrays and is proven against the same
+      in-process double and the same real local git repositories every other row
+      is; what stays unproven is only whether a REAL provider's merge gate,
+      running the v0.25.7 binary the `a2a-ref` default now pins, behaves as the
+      local proof says. And the deadline this record itself names has now been
+      passed again: `agent-exchange-2026-08` is still `active`, so the tier
+      remains unavailable rather than unscheduled, and the release "after it
+      closes" is once more not this one.
 
       What every release still carries on top of that is the sharpest item any of
       them carries: the `a2a-ref` default in the reusable workflows names the tag
@@ -98,7 +121,7 @@ issues:
       `agent-exchange-2026-08` closes, rather than to an unnamed date: the
       operator's own standing rule forbids the real-GitHub tier while that epic
       is being implemented, so the tier is not merely unscheduled but
-      unavailable. Anything it finds ships as a patch release. TWENTY-FOUR
+      unavailable. Anything it finds ships as a patch release. TWENTY-FIVE
       consecutive deferrals
       over the same surfaces is not improving with repetition, and more than one
       of them passed a date an earlier record had itself named as the deadline;
