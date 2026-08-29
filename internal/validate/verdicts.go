@@ -1,4 +1,4 @@
-// P6 wave C "verdicts[]" (spec docs/features/active/agent-exchange-2026-08/
+// P6 wave C "verdicts[]" (spec docs/features/archive/agent-exchange-2026-08/
 // specs/06-incompleteness.md §7/§11's "the verifier has no word" amendment,
 // threat-model.md T5, readiness audit row 25): the verifier's own mirror of
 // AC1's `unmet[]` — a per-criterion `{index, verdict, cause_owner}` on the

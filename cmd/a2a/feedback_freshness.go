@@ -1,7 +1,7 @@
 package main
 
 // feedback_freshness.go resolves AC3's three-valued freshness verdict for
-// `a2a feedback triage` (docs/features/active/agent-exchange-2026-08/specs/
+// `a2a feedback triage` (docs/features/archive/agent-exchange-2026-08/specs/
 // 09-own-loop.md §8 AC3, §11 wave D2): triage may only print "inbox clean"
 // after resolving the hub of record as CURRENT. Resolution happens HERE —
 // the only place `runFeedback` may fetch, shell out, or reach a remote for

@@ -9,7 +9,7 @@ import (
 )
 
 // terminalcoverage_test.go is AC6's own coverage gate (plan
-// docs/features/active/agent-exchange-2026-08/plans/11-verification.plan.md,
+// docs/features/archive/agent-exchange-2026-08/plans/11-verification.plan.md,
 // "Wave D"): every fold.Kind must have at least one declared Path whose own
 // (per-Kind) FINAL landed step both (a) resolves to a state fold.Terminal
 // declares terminal for that Kind, AND (b) carries the Terminal(...)

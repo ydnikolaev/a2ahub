@@ -1,4 +1,4 @@
-// P5 "declared nature" (spec docs/features/active/agent-exchange-2026-08/
+// P5 "declared nature" (spec docs/features/archive/agent-exchange-2026-08/
 // specs/05-declared-nature.md, AC5/US-3): "As an agent, I want the system
 // to tell me a counterparty cannot receive what I am about to send." §7
 // keys the field as manifest CONFIG: "what this system can receive: file

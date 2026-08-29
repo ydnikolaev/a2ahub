@@ -1,4 +1,4 @@
-// AC4's residual gap (docs/features/active/agent-exchange-2026-08/specs/
+// AC4's residual gap (docs/features/archive/agent-exchange-2026-08/specs/
 // 11-verification.md §3): every verb this epic added or changed must
 // assert at least one refusal at the exec'd-binary tier. The lead measured
 // the family and found `contract activate`, `contract adopt` and

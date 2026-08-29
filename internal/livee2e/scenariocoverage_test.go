@@ -59,7 +59,7 @@ const conformanceScenarioHeading = "## Conformance scenario ids"
 // serves (08-paths.md, "Every scenario in P0-P7"). Relative to this
 // package's own directory, matching completeness.go's own
 // filepath.Join("..", "fold") precedent.
-const conformanceEpicSpecsDir = "../../docs/features/active/agent-exchange-2026-08/specs"
+const conformanceEpicSpecsDir = "../../docs/features/archive/agent-exchange-2026-08/specs"
 
 // scenarioIDPattern matches the catalogue's own id convention
 // (pathcatalogue_paths.go: "decision-approved-superseded",

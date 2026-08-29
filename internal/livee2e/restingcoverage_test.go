@@ -9,7 +9,7 @@ import (
 
 // restingcoverage_test.go is P8's resting-state analogue of
 // pathcoverage_test.go's own transition gate (plan
-// docs/features/active/agent-exchange-2026-08/plans/08-paths.plan.md, D1/D4):
+// docs/features/archive/agent-exchange-2026-08/plans/08-paths.plan.md, D1/D4):
 // every fold.RestingStates() pair must be ENTERED by some declared Path's own
 // Step — reached, not merely defined by the enumerator — or listed in
 // restingStateExemptions() with a reason that names WHY no path can ever

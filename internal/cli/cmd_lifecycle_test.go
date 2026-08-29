@@ -2638,7 +2638,7 @@ func TestVerifyEndToEndAuthorsEventV2ThatPassesSubmitValidation(t *testing.T) {
 
 // --- standalone `a2a close` --verdict / event/v2 authoring (B24) -----------
 //
-// B24 (docs/features/active/agent-exchange-2026-08/epic-backlog.md): the
+// B24 (docs/features/archive/agent-exchange-2026-08/epic-backlog.md): the
 // standalone `a2a close <parent-id>` verb — the shared table-driven
 // LifecycleCommand.Run, NOT VerifyCommand's own D-024 convenience close —
 // used to author event/v1 unconditionally, so the SAME artifact closed via

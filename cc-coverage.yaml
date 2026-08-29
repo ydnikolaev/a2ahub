@@ -1067,7 +1067,7 @@ uncovered:
       monitoring (§6.7). docs/the-plan/plan/15-rollout.md's v1-min re-cut
       moves "hub service (§6 entirely...)" OUT to v2. Searched internal/ for
       "force-push"/"hostile rewrite"/"F-7" outside plan docs: the only hit
-      is docs/features/active/agent-exchange-2026-08/specs/09-own-loop.md's
+      is docs/features/archive/agent-exchange-2026-08/specs/09-own-loop.md's
       force-push, which is a DIFFERENT concept — a2ahub's own
       public-feedback-mirror publish script rewriting ITS OWN repo, not
       detection of a force-push on a CUSTOMER space.

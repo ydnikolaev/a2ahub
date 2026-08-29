@@ -400,7 +400,7 @@ the private tree was green, over `scripts/lib/` being stripped as a directory.
 
 **What this review was, exactly (v0.19.10).** Not a delta read. It was a whole
 phase — **P13 of `agent-exchange-2026-08`**, whose spec, plan and audit are in
-`docs/features/active/agent-exchange-2026-08/`, and whose subject was that no
+`docs/features/archive/agent-exchange-2026-08/`, and whose subject was that no
 gate in this repository reads a sentence for truth.
 
 What it found, in the order it hurts:

@@ -243,7 +243,7 @@ const (
 	// PredicateTerminal asserts an artifact's folded (kind, state) has NO
 	// legal transition out of it for ANY role — internal/fold's own
 	// fold.Terminal question, never a literal state name (AC6, plan
-	// docs/features/active/agent-exchange-2026-08/plans/11-verification.plan.md,
+	// docs/features/archive/agent-exchange-2026-08/plans/11-verification.plan.md,
 	// "Wave D": "the terminal state the DOMAIN declares is the one
 	// observed"). Attached BESIDE a FoldedState predicate on a path's
 	// terminal step, never instead of it — FoldedState pins the SPECIFIC

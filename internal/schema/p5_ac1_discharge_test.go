@@ -1,6 +1,6 @@
 package schema
 
-// P5's AC1 discharge half (docs/features/active/agent-exchange-2026-08/
+// P5's AC1 discharge half (docs/features/archive/agent-exchange-2026-08/
 // specs/05-declared-nature.md, 2026-08-10 amendments): schema-level pins for
 // envelope/v2/contract's `x_operational[]` and event/v2's `activation` +
 // `activate` conditional. Every instance below is a literal Go map — never a

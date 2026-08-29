@@ -7,7 +7,7 @@ import (
 
 // declarationBlockAC3Frontmatter is a RECONSTRUCTION of
 // XW-axon-20260801-vet6's own frontmatter (the artifact quoted verbatim
-// in docs/features/active/agent-exchange-2026-08/specs/05-declared-nature.md
+// in docs/features/archive/agent-exchange-2026-08/specs/05-declared-nature.md
 // "The evidence, quoted"), bumped to envelope/v2 so the artifact's own
 // schema now carries the `binding` field the incident had none of at the
 // time — proving POL-018 fires on the hand-rolled block regardless of

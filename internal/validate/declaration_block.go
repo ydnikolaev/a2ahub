@@ -1,4 +1,4 @@
-// P5 "declared nature" (spec docs/features/active/agent-exchange-2026-08/
+// P5 "declared nature" (spec docs/features/archive/agent-exchange-2026-08/
 // specs/05-declared-nature.md, AC3/US-4): "a maintainer wants an agent's
 // hand-rolled `key = value` block in a body to be refused, since it
 // proves a field is missing." The live evidence is

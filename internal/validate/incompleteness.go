@@ -1,4 +1,4 @@
-// P6 "incompleteness" (spec docs/features/active/agent-exchange-2026-08/
+// P6 "incompleteness" (spec docs/features/archive/agent-exchange-2026-08/
 // specs/06-incompleteness.md, plan .../plans/06-incompleteness.plan.md):
 // the schema already refuses a bare `partial`/`cannot` at the field-shape
 // level (envelope/v2/response.schema.json's `then.anyOf` — SCH-class

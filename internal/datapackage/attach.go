@@ -17,8 +17,8 @@ import (
 // for any of them. Nothing in this file changes the behaviour of any
 // exported symbol elsewhere in the package.
 //
-// Spec: docs/features/active/agent-exchange-2026-08/specs/04-possession.md §7
-// Plan: docs/features/active/agent-exchange-2026-08/plans/04-possession.plan.md wave B
+// Spec: docs/features/archive/agent-exchange-2026-08/specs/04-possession.md §7
+// Plan: docs/features/archive/agent-exchange-2026-08/plans/04-possession.plan.md wave B
 //
 // # A bound this file does NOT add
 //

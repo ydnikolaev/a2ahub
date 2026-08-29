@@ -1,6 +1,6 @@
 // Every fixture in this file whose name says "reconstructed" is a
 // RECONSTRUCTION built from the shape the plan's own D1/D3 prose
-// describes (docs/features/active/agent-exchange-2026-08/plans/
+// describes (docs/features/archive/agent-exchange-2026-08/plans/
 // 06-incompleteness.plan.md, "the fixtures D1 and D3 name are not in this
 // repo" amendment). Neither XS-seomatrix-20260801-p1pf (D1) nor the two
 // 2026-08-01 work_request closes (D3) is a file in this checkout — both

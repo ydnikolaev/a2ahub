@@ -1,4 +1,4 @@
-// P4 "possession" (spec docs/features/active/agent-exchange-2026-08/
+// P4 "possession" (spec docs/features/archive/agent-exchange-2026-08/
 // specs/04-possession.md, plan .../plans/04-possession.plan.md): "a
 // reference an agent cannot resolve is worse than no reference", so an
 // unresolvable one must be impossible to submit rather than merely

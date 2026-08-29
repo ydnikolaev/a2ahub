@@ -1,5 +1,5 @@
 // Wave 33 verification: five flows this epic shipped that no test has ever
-// driven end to end (docs/features/active/agent-exchange-2026-08/
+// driven end to end (docs/features/archive/agent-exchange-2026-08/
 // epic-backlog.md, the wave 33 brief) — `contract activate`'s event/v2
 // shape and fold acceptance, P5 AC1's activation-debt derivation as read
 // by the producer through `a2a inbox --actionable`, `close`/`verify`'s

@@ -198,7 +198,7 @@ func incidentReplays() []incidentReplay {
 			ID:             "silent-partial-names-blocker",
 			Name:           "the silent partial",
 			FixedByPhase:   "P6 AC1/AC2 (specs/06-incompleteness.md)",
-			CorpusEvidence: "docs/features/active/agent-exchange-2026-08/specs/06-incompleteness.md",
+			CorpusEvidence: "docs/features/archive/agent-exchange-2026-08/specs/06-incompleteness.md",
 			// The real committed artifact — XS-seomatrix-20260801-6vr2 —
 			// lives in the same private space as incident 2's vet6 id;
 			// this checkout does not have it cloned, the identical
