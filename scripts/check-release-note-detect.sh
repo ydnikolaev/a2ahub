@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# check-release-note-detect.sh — P13 US-5's forward-only release-note
-# authoring gate (spec docs/features/active/answers-that-hold-2026-08/
-# specs/13-adapt-from-a-baseline.md §"The authoring gate (US-5, ACs
-# 13-14)"): a release-notes change whose action.scope is "local" or
+# check-release-note-detect.sh — the forward-only release-note authoring
+# gate from `answers-that-hold-2026-08` (2026-08, spec "adapt from a
+# baseline", §"The authoring gate"). The RULE, stated here so this header
+# needs no lookup and no path that an archive move can break:
+# a release-notes change whose action.scope is "local" or
 # "space" MUST carry a detect: — how `a2a adapt --done` can ever verify a
 # recorded obligation instead of trusting an agent's word — or a row in
 # scripts/lib/release-note-detect-budget.txt naming it as exempt.

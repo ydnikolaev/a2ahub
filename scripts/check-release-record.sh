@@ -132,13 +132,23 @@ _cut_window_dates() {
 }
 
 # _in_cut_window: is $1 one of the dates a cut in progress may carry?
+# The producer is DRAINED before returning, never short-circuited out of.
+# Returning from inside the loop closes the read end while _cut_window_dates
+# is still writing: its second `date` takes EPIPE, exits non-zero, and the
+# `|| date -u -d yesterday` fallback then runs GNU syntax that BSD date
+# refuses with a four-line usage block on stderr. The VERDICT was always
+# right; the noise appeared only on the happy path (candidate == today),
+# three times per release run, in the gate that decides whether a release
+# record is honest — and it stays on stderr under GITHUB_ACTIONS, where
+# gate-lib.sh has moved everything else to stdout. Found 2026-08-29 cutting
+# v0.25.7. Teeth 3a/3c cover both arms.
 _in_cut_window() {
-  local candidate="$1" day
+  local candidate="$1" day hit=1
   [ -n "$candidate" ] || return 1
   while read -r day; do
-    [ "$candidate" = "$day" ] && return 0
+    [ "$candidate" = "$day" ] && hit=0
   done < <(_cut_window_dates)
-  return 1
+  return "$hit"
 }
 
 _released_field() { # $1 = path

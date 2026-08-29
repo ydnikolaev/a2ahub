@@ -28,9 +28,9 @@
 # file this gate greps rather than re-deriving: NOT under docs/ — line 43
 # of scripts/lib/strip-set.txt removes that tree from every public
 # checkout, and a gate reading a removed path is red locally and silently
-# skips in public (see docs/features/active/answers-that-hold-2026-08/
-# specs/11-a-silent-route-says-so.md §11's own worked example of that
-# mistake, made by a NEIGHBOURING phase).
+# skips in public. `answers-that-hold-2026-08` (2026-08) records a worked
+# example of exactly this mistake, made by a neighbouring phase of the same
+# epic — which is why the rule is restated here instead of pointed at.
 #
 # Usage: bash scripts/check-notify-selector-coverage.sh            # check the real tree
 #        bash scripts/check-notify-selector-coverage.sh --teeth    # self-test on fixtures

@@ -1,7 +1,7 @@
-# release-note-detect-budget.txt — P13 US-5's forward-only authoring-gate
-# ratchet (spec docs/features/active/answers-that-hold-2026-08/specs/
-# 13-adapt-from-a-baseline.md §11 second amendment: "detect_exempt: moves
-# into the gate's own scripts/lib/ budget file, keyed by change id").
+# release-note-detect-budget.txt — the forward-only authoring-gate ratchet
+# from `answers-that-hold-2026-08` (2026-08). The decision it implements,
+# stated rather than cited: `detect_exempt:` does not live in the release
+# note; it moves into this budget file beside the gate, keyed by change id.
 #
 # A release-notes change whose action.scope is "local" or "space" must
 # carry a detect: — the ONLY way `a2a adapt --done` can ever verify a
