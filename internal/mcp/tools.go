@@ -154,9 +154,15 @@ func decodeStrict(raw json.RawMessage, out any, tool string, maxBytes int) error
 }
 
 // registerSpaceFree registers every tool that needs NOTHING but the local
-// cache — `a2a_read`, `a2a_whatsnew`, and `a2a_adapt`. It is the single home
-// for all three, called by BuildRegistryWithOperations and by wire.go's two
-// degraded paths (no space connected yet; the space unreachable at startup).
+// cache — `a2a_read`, `a2a_whatsnew`, `a2a_adapt`, and `a2a_docs`. It is the
+// single home for all four, called by BuildRegistryWithOperations and by
+// wire.go's two degraded paths (no space connected yet; the space
+// unreachable at startup).
+//
+// a2a_docs (P9, answers-that-hold-2026-08) needs even less than its
+// siblings here: no cache, no adapt dependency, nothing but the embedded
+// skill tree (skill.Files) — see tools_docs.go's own doc comment for why it
+// is a paired tool rather than an mcpExcludedVerbs row.
 //
 // adapt is registered UNCONDITIONALLY, including with its zero value (every
 // BuildRegistry(...) call site that predates a2a_adapt, e.g.
@@ -210,6 +216,7 @@ func registerSpaceFree(r *Registry, store *cache.Store, adapt AdaptDeps) {
 		),
 	})
 	registerAdaptTool(r, adapt)
+	registerDocsTool(r)
 }
 
 // BuildRegistry assembles the P15 capability-grouped tool set. store backs
@@ -416,7 +423,7 @@ func registerContractTool(r *Registry, newDeps NewDeps, contractDeps ContractDep
 	// --- a2a_contract (action: the contract sub-verbs) -------------------
 	r.Register(ToolSpec{
 		Name:        "a2a_contract",
-		Description: "contract family: action=new|preflight|publish|materialize|check|deprecate|retire|diff|verify-export|adopt|activate",
+		Description: "contract family: action=new|preflight|publish|materialize|check|deprecate|retire|diff|verify-export|verify-published|adopt|activate",
 		InputSchema: groupedSchema("action", "the contract family sub-verb to run", ContractActions, map[string]propSpec{
 			"space":       {"string", "the connected space this call targets (required once more than one space is connected)"},
 			"slug":        {"string", "new only: the contract's own slug"},
@@ -454,11 +461,19 @@ func registerContractTool(r *Registry, newDeps NewDeps, contractDeps ContractDep
 			"v1":        {"string", "diff only: the first version to diff"},
 			"v2":        {"string", "diff only: the second version to diff"},
 			"local":     {"string", "verify-export only: the local export path to verify"},
-			"ref":       {"string", "materialize/verify-export only: the contract ref (id@version) this call targets"},
-			"actor":     {"object", "the identity performing this action, when it differs from this session's default"},
-			"major":     {"integer", "adopt only: the major version this adoption plan targets"},
-			"note":      {"string", "adopt/activate only: a free-text note attached to this call"},
-			"satisfies": {"array", "activate only: the acceptance criteria this activation satisfies"},
+			// local_subjects is verify-published's per-contract override map,
+			// and it is NOT called `local`. A grouped tool publishes ONE
+			// properties map for every action, so the two actions cannot
+			// disagree about a name's type — `local` is a string above.
+			// Advertising it as an object here would promise a shape
+			// verify-export cannot honour and vice versa; see
+			// ContractVerifyPublishedInput's own doc for the full reasoning.
+			"local_subjects": {"object", "verify-published only: per-contract local subject overrides, {<XC-id>: <project-relative-path>}"},
+			"ref":            {"string", "materialize/verify-export only: the contract ref (id@version) this call targets"},
+			"actor":          {"object", "the identity performing this action, when it differs from this session's default"},
+			"major":          {"integer", "adopt only: the major version this adoption plan targets"},
+			"note":           {"string", "adopt/activate only: a free-text note attached to this call"},
+			"satisfies":      {"array", "activate only: the acceptance criteria this activation satisfies"},
 		}),
 		Handler: handler,
 	})

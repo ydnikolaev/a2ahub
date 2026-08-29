@@ -42,7 +42,7 @@ func TestBuildRegistryExpectedToolCount(t *testing.T) {
 	registry := BuildRegistry(store, write, mirrorDir, legality, newDeps)
 	names := registry.ToolNames()
 	want := []string{
-		"a2a_adapt", "a2a_contract", "a2a_data", "a2a_exchange", "a2a_lifecycle",
+		"a2a_adapt", "a2a_contract", "a2a_data", "a2a_docs", "a2a_exchange", "a2a_lifecycle",
 		"a2a_new", "a2a_notify", "a2a_read", "a2a_submit", "a2a_whatsnew", "a2a_work",
 	}
 	if len(names) != len(want) {
@@ -262,11 +262,45 @@ var toolHonouredInputStructs = map[string][]any{
 	"a2a_contract": {
 		ContractNewInput{}, ContractPublishInput{}, ContractPreflightInput{}, ContractMaterializeInput{},
 		ContractCheckInput{}, ContractDeprecateInput{}, ContractRetireInput{}, ContractDiffInput{},
-		ContractVerifyExportInput{}, ContractAdoptInput{}, ContractActivateInput{},
+		ContractVerifyExportInput{}, ContractVerifyPublishedInput{}, ContractAdoptInput{}, ContractActivateInput{},
 	},
 	"a2a_data":   {DataInput{}},
 	"a2a_work":   {WorkInput{}},
 	"a2a_notify": {NotifyInput{}},
+	// a2a_adapt publishes no properties at all (rawSchema with an empty
+	// propSpec map) and AdaptInput is an empty struct, so its row asserts
+	// nothing today. It is here anyway, because a row that asserts nothing
+	// and a tool that is ABSENT are indistinguishable to the guard below,
+	// and only one of them is safe.
+	"a2a_adapt": {AdaptInput{}},
+	"a2a_docs":  {DocsInput{}},
+}
+
+// TestEveryRegisteredToolHasAnHonouredInputRow closes the hole that let
+// a2a_adapt sit outside toolHonouredInputStructs from the day it shipped
+// (P13, answers-that-hold-2026-08) until P9's wave in the same epic found
+// it. TestPublishedPropertiesAreHonouredBySomeHandler RANGES OVER THE
+// ROSTER, so a tool the roster does not name is not checked — it does not
+// fail, it is simply never asked. The guard was live and the newest tool
+// was outside it.
+//
+// That is the same shape as this epic's own a2a_adapt/groupedToolNames
+// defect one file over (cmd/a2a/mcp_parity_test.go's long comment): a
+// defence with a hand-written membership list silently stops covering
+// whatever is not on the list, and nothing says so. The fix is the same —
+// derive the universe from the registry and REFUSE a missing member,
+// rather than trusting the next author to remember.
+func TestEveryRegisteredToolHasAnHonouredInputRow(t *testing.T) {
+	t.Parallel()
+	r := acSchemaTestRegistry(t)
+	for _, name := range r.ToolNames() {
+		if _, ok := toolHonouredInputStructs[name]; !ok {
+			t.Errorf("tool %s is registered but has no toolHonouredInputStructs row — "+
+				"TestPublishedPropertiesAreHonouredBySomeHandler ranges over that map, so this tool's "+
+				"published schema is checked by NOTHING. Add its decode-site input struct(s); do not "+
+				"skip the tool.", name)
+		}
+	}
 }
 
 // TestPublishedPropertiesAreHonouredBySomeHandler is spec 04 AC 3's own

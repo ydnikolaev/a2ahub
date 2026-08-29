@@ -244,9 +244,12 @@ func TestNewServerFromConfigNoConnectedSpaces(t *testing.T) {
 
 // spaceFreeToolNames is what a session with no usable space must offer:
 // `a2a_read` over the local cache, `a2a_whatsnew` over the embedded release-
-// notes corpus, and `a2a_adapt` over the embedded corpus plus the project's
-// own `.a2a/config.yaml` (P13, answers-that-hold-2026-08: neither input needs
-// a connected space). Sorted, because ToolNames() is.
+// notes corpus, `a2a_adapt` over the embedded corpus plus the project's own
+// `.a2a/config.yaml` (P13, answers-that-hold-2026-08: neither input needs a
+// connected space), and `a2a_docs` over the embedded skill tree alone (P9,
+// same epic — the LEAST space-dependent tool here: it reads embedded bytes
+// and nothing else, which is exactly why it belongs on the degraded surface).
+// Sorted, because ToolNames() is.
 //
 // It used to be six names — `a2a_inbox`, `a2a_outbox`, `a2a_show`,
 // `a2a_thread`, `a2a_search`, `a2a_contracts` — the pre-P15 per-verb read
@@ -255,7 +258,7 @@ func TestNewServerFromConfigNoConnectedSpaces(t *testing.T) {
 // `removed` list asserts those exact names are ABSENT from the connected
 // surface, so the two registries disagreed on what the read tools are
 // CALLED, and the catalogue an agent reads documented only one of them.
-var spaceFreeToolNames = []string{"a2a_adapt", "a2a_read", "a2a_whatsnew"}
+var spaceFreeToolNames = []string{"a2a_adapt", "a2a_docs", "a2a_read", "a2a_whatsnew"}
 
 // assertSpaceFreeSurface checks what a degraded session offers, TWICE, and the
 // second check is the one that catches a new fork.
@@ -537,7 +540,7 @@ func TestNewServerFromConfigUnreachableSpaceStillServesReads(t *testing.T) {
 		t.Fatalf("an unreachable space must not stop the server from starting: %v", err)
 	}
 	names := server.registry.ToolNames()
-	wantDegraded := []string{"a2a_adapt", "a2a_read", "a2a_whatsnew", "a2a_work"}
+	wantDegraded := []string{"a2a_adapt", "a2a_docs", "a2a_read", "a2a_whatsnew", "a2a_work"}
 	if !slices.Equal(names, wantDegraded) {
 		t.Fatalf("unreachable-space surface = %v, want %v", names, wantDegraded)
 	}

@@ -370,12 +370,12 @@ func (c *ContractCommand) Synopsis() string {
 // Run implements cli.Command.
 func (c *ContractCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract <new|preflight|publish|materialize|check|deprecate|retire|diff|verify-export|adopt|activate> ...")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract <new|preflight|publish|materialize|check|deprecate|retire|diff|verify-export|verify-published|adopt|activate> ...")
 		return 2
 	}
 	sub, rest := args[0], args[1:]
 	if IsHelpArg(sub) {
-		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a contract <new|preflight|publish|materialize|check|deprecate|retire|diff|verify-export|adopt|activate> ...")
+		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a contract <new|preflight|publish|materialize|check|deprecate|retire|diff|verify-export|verify-published|adopt|activate> ...")
 		for _, s := range ContractSubcommands() {
 			_, _ = fmt.Fprintf(stdio.Stdout, "  %-14s %s\n", s.Name, s.Synopsis)
 		}
@@ -400,6 +400,8 @@ func (c *ContractCommand) Run(ctx context.Context, args []string, stdio IO) int 
 		return c.runDiff(ctx, rest, stdio)
 	case "verify-export":
 		return c.runVerifyExport(ctx, rest, stdio)
+	case "verify-published":
+		return c.runVerifyPublished(ctx, rest, stdio)
 	case "adopt":
 		return c.runAdopt(ctx, rest, stdio)
 	case "activate":
@@ -438,6 +440,7 @@ func ContractSubcommands() []ContractSubcommand {
 		{Name: "retire", Synopsis: "retire a contract (consumer-ack precondition, --override)"},
 		{Name: "diff", Synopsis: "diff two contract versions (--json)"},
 		{Name: "verify-export", Synopsis: "verify a local export's digest tree (--local)"},
+		{Name: "verify-published", Synopsis: "report whether every published contract this system provides still matches its code (--json, --local <id>=<path>)"},
 		{Name: "adopt", Synopsis: "register this system as a consumer of a contract (writes consumes.yaml)"},
 		{Name: "activate", Synopsis: "declare a published version's operational readiness (--version, --satisfies, event/v2 only)"},
 	}

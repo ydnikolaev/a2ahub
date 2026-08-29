@@ -11,7 +11,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
 	"sort"
@@ -986,6 +989,185 @@ func newContractVerifyExportHandler(deps ContractDeps) HandlerFunc {
 		}
 		return result, "", nil
 	}
+}
+
+// ContractVerifyPublishedRow is one provided contract's verify-published
+// outcome — mirrors internal/cli's own ContractVerifyPublishedRow (ADR-001:
+// internal/mcp never imports internal/cli). Status is never a fourth
+// Verdict (spec 07 §11's own correction, tracking `no-silent-yes-2026-08`
+// D9): matched/drifted/not-published-yet are row-local vocabulary, and
+// "unmeasured" is validate.SeverityUnmeasured carried BY VALUE.
+type ContractVerifyPublishedRow struct {
+	ID string `json:"id"`
+	// Version is the version RESOLVED from the published descriptor
+	// (US-2/AC-2) — empty exactly when Status is "not-published-yet".
+	Version string `json:"version,omitempty"`
+	Status  string `json:"status"`
+	// Local is the project-relative subject this row was checked against —
+	// empty when no override was given for this id (Status is then
+	// "unmeasured", never a silent skip).
+	Local string `json:"local,omitempty"`
+	// Detail carries the reason behind an "unmeasured" row.
+	Detail string `json:"detail,omitempty"`
+}
+
+// ContractVerifyPublishedResult is the full aggregate report (AC-8's
+// --json shape). Total is the run's own DENOMINATOR (US-3/AC-3).
+type ContractVerifyPublishedResult struct {
+	System string                       `json:"system"`
+	Space  string                       `json:"space"`
+	Total  int                          `json:"total"`
+	Rows   []ContractVerifyPublishedRow `json:"rows"`
+}
+
+// ContractVerifyPublishedInput is a2a_contract action=verify-published's
+// structured (read-only, aggregate) input. LocalSubjects mirrors
+// internal/cli's repeatable `--local <id>=<path>` flag as a map — MCP has no
+// repeatable-flag idiom, so one JSON object carries every per-contract
+// override.
+//
+// The JSON key is `local_subjects`, NOT `local`, and the difference is
+// load-bearing rather than cosmetic. a2a_contract is a GROUPED tool:
+// groupedSchema (tools.go) publishes ONE properties map for every action, so
+// two actions cannot disagree about a name's type. `local` is already
+// published as a STRING for action=verify-export ("the local export path to
+// verify"). Decoding the same key as an object here would advertise a shape
+// this action cannot honour — an agent reads the schema, sends the string it
+// was promised, and is refused for obeying it. That is exactly the class
+// this epic's P12 exists to end, and P12's own gate does NOT catch it:
+// check-mcp-schema-decodable.sh compares NAMES (is every declared property
+// decoded?), and `local` is both declared and decoded, so the collision is
+// invisible to it. Filed in docs/validator-backlog.md.
+type ContractVerifyPublishedInput struct {
+	// Action is a2a_contract's own discriminator — never read here; see
+	// ContractNewInput's identical field for why it exists.
+	Action        string            `json:"action,omitempty"`
+	Space         string            `json:"space,omitempty"`
+	LocalSubjects map[string]string `json:"local_subjects,omitempty"`
+}
+
+// newContractVerifyPublishedHandler AGGREGATES P2's comparison — every
+// row's verdict comes from deps.Inspection.VerifyContractExport, the SAME
+// digest logic `contract verify-export`/action=verify-export already run —
+// it is never re-implemented here (spec 07: "the record it comes from is a
+// consumer who wrote 137 lines of bash to substitute for it").
+//
+// Space selection reuses resolveWriteSpace (the SAME per-request `space`
+// resolution deprecate/retire/adopt/activate already use) to find THIS
+// space's own mirror directory for enumeration; deps.Inspection's own
+// per-space routing (its Space field) is independent — mirrors
+// internal/cli's own single-space `runVerifyPublished` limitation exactly:
+// this handler covers ONE resolved space per call. See this phase's
+// Deviations report for the multi-space (every connected space in one
+// call) wiring gap on both surfaces.
+func newContractVerifyPublishedHandler(deps ContractDeps) HandlerFunc {
+	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
+		if deps.Inspection == nil {
+			return nil, "", fmt.Errorf("contract verify-published: P6 service is not configured")
+		}
+		var in ContractVerifyPublishedInput
+		if err := decodeStrict(args, &in, "contract verify-published", 0); err != nil {
+			return nil, "", err
+		}
+
+		resolvedWrite, err := resolveWriteSpace(deps.WriteDeps, in.Space, nil)
+		if err != nil {
+			return nil, "", fmt.Errorf("contract verify-published: %w", err)
+		}
+
+		if _, statErr := os.Stat(resolvedWrite.MirrorDir); statErr != nil {
+			return nil, "", fmt.Errorf("contract verify-published: read this space's synced mirror at %s — run `a2a sync` first: %w", resolvedWrite.MirrorDir, statErr)
+		}
+		if _, headErr := space.ResolveContractPublicationCandidateCommit(ctx, resolvedWrite.MirrorDir); headErr != nil {
+			return nil, "", fmt.Errorf("contract verify-published: resolve this space's mirror HEAD — run `a2a sync` to refresh it (it looks stale or was never synced): %w", headErr)
+		}
+
+		rows, err := contractVerifyPublishedRows(ctx, resolvedWrite.OwnSystem, resolvedWrite.MirrorDir, deps.Inspection, in.Space, in.LocalSubjects)
+		if err != nil {
+			return nil, "", fmt.Errorf("contract verify-published: %w", err)
+		}
+		return ContractVerifyPublishedResult{
+			System: resolvedWrite.OwnSystem, Space: resolvedWrite.SpaceID,
+			Total: len(rows), Rows: rows,
+		}, "", nil
+	}
+}
+
+// contractVerifyPublishedRows enumerates ownSystem's `provides/*` tree in
+// mirrorDir and builds one row per contract descriptor found there — see
+// internal/cli's own contractVerifyPublishedRowsFor for the full rationale
+// (ADR-001: mirrored here, never imported). A descriptor with no recorded
+// `version:` is "not-published-yet" and is never passed to
+// VerifyContractExport, which has no version to compare against.
+func contractVerifyPublishedRows(ctx context.Context, ownSystem, mirrorDir string, inspection ContractInspectionOperations, spaceID string, overrides map[string]string) ([]ContractVerifyPublishedRow, error) {
+	layout, err := space.NewLayout(ownSystem)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(filepath.Join(mirrorDir, ownSystem, "provides"))
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			// Nothing provided yet — a legitimate zero-row state (US-3).
+			return nil, nil
+		}
+		return nil, err
+	}
+	slugs := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if _, statErr := os.Stat(filepath.Join(mirrorDir, layout.ProvidesContract(entry.Name()))); statErr != nil {
+			continue // no contract.md under this slug — not a provided contract
+		}
+		slugs = append(slugs, entry.Name())
+	}
+	sort.Strings(slugs)
+
+	rows := make([]ContractVerifyPublishedRow, 0, len(slugs))
+	for _, slug := range slugs {
+		id, _, ok := space.ContractForPath(layout.ProvidesContract(slug))
+		if !ok {
+			continue
+		}
+		_, probe, _, _, derr := contractReadDescriptor(mirrorDir, id)
+		if derr != nil {
+			return nil, fmt.Errorf("%s: %w", id, derr)
+		}
+
+		row := ContractVerifyPublishedRow{ID: id}
+		if probe.Version == "" {
+			row.Status = "not-published-yet"
+			rows = append(rows, row)
+			continue
+		}
+
+		version := contractCanonicalVersion(probe.Version)
+		row.Version = version
+
+		local, hasLocal := overrides[id]
+		if !hasLocal || local == "" {
+			row.Status = string(validate.SeverityUnmeasured)
+			row.Detail = "no local subject given for " + id + " — set local[\"" + id + "\"]"
+			rows = append(rows, row)
+			continue
+		}
+		row.Local = local
+
+		verify, verifyErr := inspection.VerifyContractExport(ctx, ContractVerifyExportRequest{Space: spaceID, Local: local, Ref: id + "@" + version})
+		if verifyErr != nil {
+			row.Status = string(validate.SeverityUnmeasured)
+			row.Detail = verifyErr.Error()
+			rows = append(rows, row)
+			continue
+		}
+		// verify.Outcome already carries the D9-mapped three-outcome
+		// vocabulary (contract.ExportVerification), passed through
+		// verbatim — never reclassified here.
+		row.Status = verify.Outcome
+		rows = append(rows, row)
+	}
+	return rows, nil
 }
 
 // ContractAdoptInput is a2a_contract action=adopt's structured input —
