@@ -244,6 +244,13 @@ var coverageManifest = []coverageEntry{
 	{Verb: "contract deprecate", GoTest: "internal/e2e.TestContractNewPublishDeprecateDirectConstruction", Tier: tierInProcess},
 	{Verb: "contract deprecate", GoTest: "internal/e2e.TestContractBinaryRefusalDeprecateUnpublishedVersion", Tier: tierT3},
 	{Verb: "contract diff", GoTest: "internal/e2e.TestContractDiffDirectConstruction", Tier: tierInProcess},
+	// verify-published aggregates across EVERY connected space, so its
+	// evidence is in-process: a two-space fixture is a construction the
+	// shared t3 binary's single-space harness cannot stand up. The
+	// multi-space criterion (spec 07 AC-7) is exactly what the second row
+	// drives, through the command's own constructor.
+	{Verb: "contract verify-published", GoTest: "internal/cli.TestContractVerifyPublishedAggregatesRowsAndResolvesVersion", Tier: tierInProcess},
+	{Verb: "contract verify-published", GoTest: "internal/cli.TestContractVerifyPublishedTwoConnectedSpacesChecksBoth", Tier: tierInProcess},
 	{Verb: "contract materialize", GoTest: "internal/e2e.TestHostLoopContractFamily", Tier: tierT3},
 	{Verb: "contract new", GoTest: "internal/e2e.TestContractNewPublishDeprecateDirectConstruction", Tier: tierInProcess},
 	{Verb: "contract preflight", GoTest: "internal/e2e.TestHostLoopContractFamily", Tier: tierT3},
@@ -304,6 +311,7 @@ var coverageManifest = []coverageEntry{
 	{Verb: "skill", Txtar: "ops_skill.txtar", Tier: tierT3},
 	{Verb: "version", Txtar: "ops_version.txtar", Tier: tierT3},
 	{Verb: "adapt", Txtar: "adapt.txtar", Tier: tierT3},
+	{Verb: "docs", Txtar: "docs.txtar", Tier: tierT3},
 	{Verb: "whatsnew", Txtar: "whatsnew.txtar", Tier: tierT3},
 
 	// --- Operational work family (OP-224) ------------------------------

@@ -1,0 +1,37 @@
+# `a2a docs`: the embedded documentation corpus, printed by topic (P9,
+# answers-that-hold-2026-08).
+#
+# What THIS row buys, and it is the criterion the phase is judged at: spec 09's
+# AC-1 and AC-6 both name "a declared path running the built binary in an empty
+# directory", and until this file existed that tier was discharged by hand
+# once, by the lead, in a scratch directory. The in-process tests
+# (internal/cli/cmd_docs_test.go, internal/mcp/tools_docs_test.go) prove the
+# vocabulary derivation, the refusals and the missing-page case against
+# fixture manifests. They cannot prove the verb is ROUTED, or that it needs
+# nothing from the working directory it is standing in.
+#
+# The txtar cwd is a fresh empty directory with no .a2a/ at all. That is not
+# incidental setup — it IS the assertion. The verb reads bytes embedded in the
+# binary and touches nothing else, which is why the agent this verb exists for
+# (working inside another team's repository, with no a2ahub checkout) can call
+# it at all.
+
+# 1. Bare invocation lists the vocabulary, grouped in manifest group order,
+#    and exits 0 with no project, no space and no working tree.
+exec a2a docs
+stdout 'Start:'
+stdout 'getting-started'
+stdout 'Concepts:'
+stdout 'work-loops'
+
+# 2. A named topic prints that section's page.
+exec a2a docs work-loops
+stdout 'loops'
+
+# 3. An unknown topic REFUSES and names the vocabulary it actually holds,
+#    rather than telling the reader to go and find the docs — the whole point
+#    being that they could not find them, which is why they are here.
+! exec a2a docs no-such-topic
+stderr 'no such topic'
+stderr 'getting-started'
+stderr 'work-loops'
