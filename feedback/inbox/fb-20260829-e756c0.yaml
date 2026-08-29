@@ -1,0 +1,57 @@
+
+feedback: v1
+id: fb-20260829-e756c0
+kind: bug
+severity: minor
+title: "verify-published blames the space for a file missing from --local"
+summary: >-
+    `contract verify-published --local <XC-id>=<dir>` reports `unmeasured` with a
+    diagnostic PREFIXED `space:` when the missing file is in the LOCAL subject the
+    caller just named. The space has the file; the pointed-at directory does not.
+    A reader acts on the label, and this one did: I concluded the published tree was
+    broken, wrote that down as a finding, and only recovered it by pointing --local at
+    a directory that does have `contract.md` and watching the same run turn `matched`.
+    Same class as fb-20260827-4b121a, where `validate --ci` named a missing file rather
+    than the caller state that explained it.
+    Second, smaller half: the flag reads as "point me at your source tree" -- the docs
+    say it names "a local subject that is not where the layout expects it" -- but the
+    subject must BE a published-shaped tree, envelope `contract.md` plus carried files.
+    A producer whose generator emits its own layout, and which does not retain the
+    staging tree after publish, cannot use the verb at all, and nothing says so at the
+    point of failure. The refusal names the flag that would measure it, which reads as
+    "you forgot a flag" rather than "your subject is the wrong shape".
+context:
+    a2a_version: 0.25.7
+    os_arch: darwin/arm64
+    surface: cli
+    command: "a2a contract verify-published --local <XC-id>=<a-release-dir-without-contract.md>"
+evidence:
+    steps:
+        - "Publish a contract so the space holds provides/<slug>/contract.md."
+        - "Point --local at a directory that exists but has no envelope contract.md (any generator output whose prose body is not named contract.md)."
+        - "Run `a2a contract verify-published --local <XC-id>=<that-dir>` and read the row."
+        - "Re-run with --local pointing at a tree that DOES contain contract.md; the same contract now reports matched, which isolates the cause to the local subject."
+    expected: >-
+        The diagnostic names the side that failed and the shape it wanted: the local
+        subject at <path> carries no envelope contract.md, so it is not a published-shaped
+        tree. The word `space:` should appear only when the space is what could not be read.
+    actual: >-
+        unmeasured (space: inspect contract file "contract.md": statat contract.md: no
+        such file or directory) -- attributing to the space a file that the space in fact
+        has, and that is missing only from the caller-supplied local subject.
+proposal: >-
+    Two independent changes, the first much the more valuable. (1) Label the failure by
+    side: `local:` when the fault is in the caller-supplied subject, `space:` only when
+    the space could not be read, and name the path that was inspected either way. This
+    is the same fix shape as fb-20260827-4b121a. (2) When a local subject exists but
+    holds no envelope, say so as its own refusal -- "not a published-shaped tree: no
+    contract.md envelope at <path>" -- rather than reusing the generic stat error. That
+    also lets the verb tell a producer, once, that its release layout is not directly
+    comparable, instead of leaving the impression that a flag was forgotten.
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
