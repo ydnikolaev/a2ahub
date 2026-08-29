@@ -60,6 +60,25 @@ var liveTaggedInvocation = regexp.MustCompile(`(?m)^[ \t]*go test \./internal/li
 // as filtered in the first place.
 var logicRunFilterArg = regexp.MustCompile(`-run (?:'([^']*)'|"([^"]*)")`)
 
+// logicSkipFilterArg is logicRunFilterArg's inverse-polarity twin, and it
+// exists because the logic lane stopped being an ALLOWLIST on 2026-08-29.
+//
+// It used to name four tests in `-run`. The tagged tree declares 77, so every
+// tagged test written after that list was authored ran NOWHERE — the build tag
+// keeps them out of `go-test`, and the allowlist kept them out of here. The lane
+// now says `-skip '^TestLiveMatrix$'`: one name excluded, everything else
+// included by construction, which cannot go stale when somebody adds a test.
+//
+// Both forms answer the SAME question and this file must ask it of both, which
+// is the whole reason this variable is not just a copy. The property guarded is
+// "the non-live lane cannot select TestLiveMatrix", and the two forms prove it
+// with opposite polarity: a `-run` pattern proves it by NOT matching that name,
+// a `-skip` pattern by matching it. Reading the flag's spelling instead of its
+// effect is what made (g) below red on a lane that had just become STRICTLY
+// safer — the same "guard reads a proxy for the fact" defect verify.sh's own
+// phase_is_dispatchable comment describes one layer down.
+var logicSkipFilterArg = regexp.MustCompile(`-skip (?:'([^']*)'|"([^"]*)")`)
+
 // shellFunctionBody returns the body lines of a top-level bash function
 // definition shaped `name() {` ... a lone `}` at column 0 — the formatting
 // convention every function in verify.sh already uses. found is false when
@@ -229,14 +248,21 @@ func TestLiveTierIsNotAMergeGate(t *testing.T) {
 	if len(invocations) == 0 {
 		t.Fatal("no `go test ./internal/livee2e/... -tags=livee2e` invocation found in verify.sh — assertions (e)-(i) below would be vacuous")
 	}
+	//
+	// "Unfiltered" means NEITHER `-run` NOR `-skip`, and the second half was
+	// added 2026-08-29 with the lane's move to `-skip`. Counting only `-run`
+	// classified the newly widened logic lane as a second UNFILTERED
+	// invocation — reporting the safest arrangement this lane has ever had as
+	// the precise danger this assertion exists to catch. The question is
+	// whether an invocation is CONSTRAINED, not which flag spells it.
 	var unfiltered []string
 	for _, inv := range invocations {
-		if !strings.Contains(inv, "-run ") {
+		if !strings.Contains(inv, "-run ") && !strings.Contains(inv, "-skip ") {
 			unfiltered = append(unfiltered, inv)
 		}
 	}
 	if len(unfiltered) != 1 {
-		t.Errorf("expected exactly one -tags=livee2e invocation with no -run filter (the live matrix); found %d: %v", len(unfiltered), unfiltered)
+		t.Errorf("expected exactly one -tags=livee2e invocation with no -run/-skip filter (the live matrix); found %d: %v", len(unfiltered), unfiltered)
 	}
 
 	// (f) That one unfiltered invocation must live inside run_live_tests,
@@ -283,18 +309,24 @@ func TestLiveTierIsNotAMergeGate(t *testing.T) {
 		t.Error("run_live_tests's one call site is not inside `if [ \"$MODE\" = live ]; then` — a rewritten guard that still calls it from elsewhere would defeat this test's purpose while every check above kept passing")
 	}
 
-	// (g) At least one -run-filtered invocation must exist — the logic
-	// lane this wave adds. Without one, assertions (h) and (i) below hold
-	// vacuously over an empty set: a `full` mode that dropped the logic
-	// lane entirely would still pass every check in this function.
+	// (g) At least one FILTERED invocation must exist — the logic lane.
+	// Without one, assertions (h) and (i) below hold vacuously over an empty
+	// set: a `full` mode that dropped the logic lane entirely would still
+	// pass every check in this function.
+	//
+	// "Filtered" means `-run` OR `-skip`. It meant `-run` alone until
+	// 2026-08-29, and that spelling-check is what made this assertion FAIL on
+	// a lane that had just been widened from four named tests to the whole
+	// tagged tree minus the live matrix — strictly more coverage, and strictly
+	// the same safety property. See logicSkipFilterArg's comment.
 	var filtered []string
 	for _, inv := range invocations {
-		if strings.Contains(inv, "-run ") {
+		if strings.Contains(inv, "-run ") || strings.Contains(inv, "-skip ") {
 			filtered = append(filtered, inv)
 		}
 	}
 	if len(filtered) == 0 {
-		t.Fatal("no -run-filtered -tags=livee2e invocation found in verify.sh — the logic lane is missing")
+		t.Fatal("no -run- or -skip-filtered -tags=livee2e invocation found in verify.sh — the logic lane is missing")
 	}
 
 	// (h)/(i) Every filtered invocation's -run argument is checked by
@@ -312,9 +344,19 @@ func TestLiveTierIsNotAMergeGate(t *testing.T) {
 	// it silently ran zero tests.
 	sawLogicMatrix := false
 	for _, inv := range filtered {
+		// Which polarity is this invocation written in? A `-skip` lane
+		// EXCLUDES what it names; a `-run` lane SELECTS it. Everything below
+		// is the same two questions asked with the sign flipped, never a
+		// second copy of the logic.
+		flag := "-run"
 		m := logicRunFilterArg.FindStringSubmatch(inv)
 		if m == nil {
-			t.Errorf("invocation carries \"-run \" but no parseable -run argument (checked both quote styles): %s", inv)
+			if m = logicSkipFilterArg.FindStringSubmatch(inv); m != nil {
+				flag = "-skip"
+			}
+		}
+		if m == nil {
+			t.Errorf("invocation carries \"-run \" or \"-skip \" but no parseable argument (checked both quote styles): %s", inv)
 			continue
 		}
 		arg := m[1]
@@ -323,18 +365,32 @@ func TestLiveTierIsNotAMergeGate(t *testing.T) {
 		}
 		filterRe, err := regexp.Compile(arg)
 		if err != nil {
-			t.Errorf("verify.sh's -run filter %q does not compile as a regexp: %v", arg, err)
+			t.Errorf("verify.sh's %s filter %q does not compile as a regexp: %v", flag, arg, err)
 			continue
 		}
-		if filterRe.MatchString("TestLiveMatrix") {
-			t.Errorf("verify.sh's -run filter %q matches TestLiveMatrix — `full`/the inner-loop mode could run the live matrix with no credentials configured", arg)
+		// The property, in both spellings: this lane must not be able to
+		// reach TestLiveMatrix. Compiled and matched rather than string-
+		// compared, because a hand-written "does not mention TestLiveMatrix"
+		// check passes for `Test.*Matrix`, which selects both names.
+		reachesLive := filterRe.MatchString("TestLiveMatrix")
+		if flag == "-skip" {
+			reachesLive = !reachesLive
 		}
-		if filterRe.MatchString("TestLogicMatrix") {
+		if reachesLive {
+			t.Errorf("verify.sh's %s filter %q leaves TestLiveMatrix reachable — `full`/the inner-loop mode could run the live matrix with no credentials configured", flag, arg)
+		}
+		// And the converse, which is what stops a filter that selects nothing
+		// from reporting a green pass over zero tests.
+		reachesLogic := filterRe.MatchString("TestLogicMatrix")
+		if flag == "-skip" {
+			reachesLogic = !reachesLogic
+		}
+		if reachesLogic {
 			sawLogicMatrix = true
 		}
 	}
 	if !sawLogicMatrix {
-		t.Error("no filtered -tags=livee2e invocation's -run matches TestLogicMatrix — the logic lane would build the tagged tree and run nothing, reporting a green pass for a filter that selected zero tests")
+		t.Error("no filtered -tags=livee2e invocation reaches TestLogicMatrix — the logic lane would build the tagged tree and run nothing, reporting a green pass for a filter that selected zero tests")
 	}
 }
 

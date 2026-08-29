@@ -647,7 +647,27 @@ run_logic_tests() {
   # a slower machine. It is a CEILING against a hang, not a budget: if this
   # lane ever legitimately approaches it, the answer is to make the tier
   # faster, not to raise the number again.
-  go test ./internal/livee2e/... -tags=livee2e -race -v -run '^(TestLogicMatrix|TestLogicTierWritesNothingOutsideItsOwnTempDirs|TestNewLogicHarnessLeavesExecutionCandidateZero|TestProvisionLocalSpaceScaffoldsCleanSpace)$' -count=1 -timeout 20m
+  # -skip, NOT a four-name -run allowlist, and the difference was 72 tests.
+  #
+  # Until 2026-08-29 this line named four tests explicitly. The livee2e-tagged
+  # test files declare 77, so an allowlist meant every tagged test written since
+  # the list was authored ran NOWHERE — not here, not in `go-test` (the build
+  # tag excludes them there), not in CI. A test that no lane executes is not a
+  # slower test, it is an absent one, and nothing said so.
+  #
+  # MEASURED before changing it, raced and offline with no credentials: the
+  # previously-unreached set is 321 passing assertions in 23 s, zero failures,
+  # zero skips. 14.2 s of that is TestReadBoundRefusesRatherThanTruncates alone,
+  # which is deliberately slow. So the allowlist was hiding 72 tests to save
+  # twenty-odd seconds against a lane whose matrix already costs ~5 minutes.
+  #
+  # The inversion is the point: an allowlist goes stale silently every time
+  # someone adds a test, and a DENYLIST of one cannot. TestLiveMatrix is the
+  # only thing that must not run here — it is the real-GitHub tier, it needs
+  # credentials, and it calls run.Abort rather than t.Skip when they are absent,
+  # so it cannot be trusted to exclude itself. Everything else in the tag is by
+  # definition offline-capable or it would not have passed this measurement.
+  go test ./internal/livee2e/... -tags=livee2e -race -v -skip '^TestLiveMatrix$' -count=1 -timeout 20m
 }
 
 # phase_is_dispatchable — can run_derived_phase actually execute this name?
