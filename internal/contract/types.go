@@ -29,6 +29,25 @@ const (
 	ProfileExportSourceV1 DigestProfile = "export-source-v1"
 )
 
+// DigestProfiles returns the three registered profiles, in the order they
+// are declared. A caller enumerating them must not re-list the constants:
+// that is the second hand-written list this type exists to prevent — the
+// same argument fold.Outcomes() carries for its own closed vocabulary, and
+// the reason answers-that-hold-2026-08 P10 could not build its
+// digest-profile input axis without it (spec 10, universe 4: "the profile
+// constants in internal/contract").
+//
+// Deliberately NOT derived from a schema, unlike Role: schemas/event/v2's
+// own enum carries only the two EVENT-carried profiles, and
+// export-source-v1 is asserted by a producer's generator rather than
+// written into any envelope. A schema-derived list here would be a
+// confident, specific, wrong answer. TestDigestProfilesMatchTheDeclarations
+// is what keeps this in step instead: it parses this file's own const block,
+// so a fourth profile declared without a row here reds.
+func DigestProfiles() []DigestProfile {
+	return []DigestProfile{ProfileContractTreeV1, ProfileContractSetV2, ProfileExportSourceV1}
+}
+
 // Role is the closed v2 carried-entry vocabulary.
 type Role string
 
