@@ -99,4 +99,22 @@ resolution: |-
 
     REFS NAMES docs/backlog.md, so CHECK-C is silent on this row — see
     fb-20260827-bc1f13's resolution for the mechanism.
-status: accepted
+
+    SHIPPED 2026-08-29 by answers-that-hold-2026-08 P7 (65fc9bed, 5f444e12, a4ece69c),
+    and this record's own proposal is what shipped. `a2a contract verify-published`
+    reports one row per contract this system provides, across every connected space,
+    with the version RESOLVED from the published descriptor rather than passed — the
+    137 lines of bash this record describes had to name it. It AGGREGATES the
+    per-contract comparison `verify-export` already runs; the digest logic is not
+    re-implemented, which was the whole reason to wait for P2.
+
+    Two behaviours differ from what the record asked for, both deliberately. It asked
+    for a REFUSAL on zero contracts; the verb prints its DENOMINATOR instead, because
+    "I have published nothing yet" is a state no caller action can exit and a refusal
+    would leave an agent with nothing to satisfy. A stale or absent mirror DOES refuse,
+    naming `a2a sync`, because that one is satisfiable.
+
+    One gap is open and named rather than hidden: the MCP action resolves ONE space per
+    call where the CLI aggregates all, because ContractDeps exposes no space
+    enumeration. Filed in docs/validator-backlog.md.
+status: shipped
