@@ -647,19 +647,27 @@ run_logic_tests() {
   # a slower machine. It is a CEILING against a hang, not a budget: if this
   # lane ever legitimately approaches it, the answer is to make the tier
   # faster, not to raise the number again.
-  # -skip, NOT a four-name -run allowlist, and the difference was 72 tests.
+  # -skip, NOT a four-name -run allowlist, and the difference was 22 tests.
   #
-  # Until 2026-08-29 this line named four tests explicitly. The livee2e-tagged
-  # test files declare 77, so an allowlist meant every tagged test written since
-  # the list was authored ran NOWHERE — not here, not in `go-test` (the build
-  # tag excludes them there), not in CI. A test that no lane executes is not a
-  # slower test, it is an absent one, and nothing said so.
+  # Until 2026-08-29 this line named four tests explicitly. NINE test files in
+  # this package carry `//go:build livee2e` and they declare 27 tests between
+  # them, so an allowlist of four meant 22 of them ran NOWHERE — not here, not
+  # in `go-test` (the build tag excludes them there), not in CI. A test that no
+  # lane executes is not a slower test, it is an absent one, and nothing said so.
+  #
+  # COUNT IT WITH `go test -list`, NOT WITH grep. A first pass here claimed 77
+  # by grepping every file that MENTIONS `//go:build livee2e`; six of those
+  # mention it in prose — two of them in a sentence saying the file does not
+  # carry the tag — and only nine carry it as a real constraint on line 1.
+  # `go test -tags=livee2e -list '.*'` minus the untagged run is the number, and
+  # it is 27.
   #
   # MEASURED before changing it, raced and offline with no credentials: the
-  # previously-unreached set is 321 passing assertions in 23 s, zero failures,
-  # zero skips. 14.2 s of that is TestReadBoundRefusesRatherThanTruncates alone,
-  # which is deliberately slow. So the allowlist was hiding 72 tests to save
-  # twenty-odd seconds against a lane whose matrix already costs ~5 minutes.
+  # previously-unreached set is 321 passing assertions (subtests included) in
+  # 23 s, zero failures, zero skips. 14.2 s of that is
+  # TestReadBoundRefusesRatherThanTruncates alone, which is deliberately slow.
+  # So the allowlist was hiding 22 tests to save twenty-odd seconds against a
+  # lane whose matrix already costs ~5 minutes.
   #
   # The inversion is the point: an allowlist goes stale silently every time
   # someone adds a test, and a DENYLIST of one cannot. TestLiveMatrix is the

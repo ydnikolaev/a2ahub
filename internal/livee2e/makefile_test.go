@@ -63,11 +63,14 @@ var logicRunFilterArg = regexp.MustCompile(`-run (?:'([^']*)'|"([^"]*)")`)
 // logicSkipFilterArg is logicRunFilterArg's inverse-polarity twin, and it
 // exists because the logic lane stopped being an ALLOWLIST on 2026-08-29.
 //
-// It used to name four tests in `-run`. The tagged tree declares 77, so every
-// tagged test written after that list was authored ran NOWHERE — the build tag
-// keeps them out of `go-test`, and the allowlist kept them out of here. The lane
-// now says `-skip '^TestLiveMatrix$'`: one name excluded, everything else
-// included by construction, which cannot go stale when somebody adds a test.
+// It used to name four tests in `-run`. Nine files here carry the tag and
+// declare 27 tests, so 22 of them ran NOWHERE — the build tag keeps them out of
+// `go-test`, and the allowlist kept them out of here. The lane now says
+// `-skip '^TestLiveMatrix$'`: one name excluded, everything else included by
+// construction, which cannot go stale when somebody adds a test.
+//
+// (27 is `go test -tags=livee2e -list` minus the untagged run. Counting files
+// that MENTION the tag gives 77 and is wrong: six mention it only in prose.)
 //
 // Both forms answer the SAME question and this file must ask it of both, which
 // is the whole reason this variable is not just a copy. The property guarded is
