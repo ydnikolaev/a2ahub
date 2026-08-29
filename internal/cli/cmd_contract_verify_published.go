@@ -105,7 +105,11 @@ type ContractVerifyPublishedSpaceInspector func(ref space.Ref, mirrorDir string)
 // absent — defensive, since contractVerifyPublishedParseArgs already
 // refuses an empty path at parse time.
 func contractVerifyPublishedResolveLocal(overrides map[string]string, id string) (path string, ok bool) {
-	path, ok = overrides[id]
+	// The comma-ok is deliberately NOT read: presence and non-emptiness are
+	// one question here, and a present-but-empty override must resolve the
+	// same as an absent one. Reading both would give the caller two ways to
+	// mean "no subject" and let them disagree.
+	path = overrides[id]
 	if path == "" {
 		return "", false
 	}
