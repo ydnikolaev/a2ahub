@@ -53,6 +53,7 @@ func (c *OutboxCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 	if fs.NArg() != 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a outbox [--attention] [--json] [--exit-code]")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("work-loops"))
 		return 2
 	}
 

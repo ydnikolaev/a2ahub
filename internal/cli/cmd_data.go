@@ -126,11 +126,13 @@ func (c *DataCommand) Synopsis() string {
 func (c *DataCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if len(args) == 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a data <pack|deliver|fetch|verify> ...")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-send"))
 		return 2
 	}
 	sub, rest := args[0], args[1:]
 	if IsHelpArg(sub) {
 		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a data <pack|deliver|fetch|verify> ...")
+		_, _ = fmt.Fprintln(stdio.Stdout, workflowLine("loop-send"))
 		for _, s := range DataSubcommands() {
 			_, _ = fmt.Fprintf(stdio.Stdout, "  %-10s %s\n", s.Name, s.Synopsis)
 		}

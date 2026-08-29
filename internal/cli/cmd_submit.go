@@ -239,6 +239,7 @@ func (c *ValidateCommand) Run(ctx context.Context, args []string, stdio IO) int 
 	} else {
 		if len(positional) != 1 {
 			_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a validate <path> | a2a validate --all")
+			_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-send"))
 			return 2
 		}
 		// A bare staged artifact id (no "/", no ".md" suffix — e.g. what
@@ -786,7 +787,7 @@ func ResolveSubmitTargets(stagingDir string, args []string) ([]string, error) {
 	// fall through to the single-artifact branch's fs.NArg() != 1 refusal.
 	positional, err := parseArgsAnyOrder(fs, args)
 	if err != nil {
-		return nil, &SubmitUsageError{msg: "usage: a2a submit <artifact> | a2a submit --batch <artifact...> | a2a submit --drafts"}
+		return nil, &SubmitUsageError{msg: "usage: a2a submit <artifact> | a2a submit --batch <artifact...> | a2a submit --drafts\n" + workflowLine("loop-send")}
 	}
 	switch {
 	case *drafts:
@@ -806,7 +807,7 @@ func ResolveSubmitTargets(stagingDir string, args []string) ([]string, error) {
 		return targets, nil
 	case *batch:
 		if len(positional) == 0 {
-			return nil, &SubmitUsageError{msg: "usage: a2a submit --batch <artifact...>"}
+			return nil, &SubmitUsageError{msg: "usage: a2a submit --batch <artifact...>\n" + workflowLine("loop-send")}
 		}
 		targets := make([]string, 0, len(positional))
 		for _, a := range positional {
@@ -815,7 +816,7 @@ func ResolveSubmitTargets(stagingDir string, args []string) ([]string, error) {
 		return targets, nil
 	default:
 		if len(positional) != 1 {
-			return nil, &SubmitUsageError{msg: "usage: a2a submit <artifact> | a2a submit --batch <artifact...> | a2a submit --drafts"}
+			return nil, &SubmitUsageError{msg: "usage: a2a submit <artifact> | a2a submit --batch <artifact...> | a2a submit --drafts\n" + workflowLine("loop-send")}
 		}
 		return []string{resolveSubmitTarget(stagingDir, positional[0])}, nil
 	}

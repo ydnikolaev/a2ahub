@@ -95,10 +95,17 @@ func (c *FeedbackCommand) Synopsis() string {
 	return "agent feedback loop: new <kind> [--title] | validate <file> [--ci] | submit <file...> [--all] | status [--json] | triage [--json] [--apply <file>]"
 }
 
+// feedbackTopLevelUsage is the top-level `a2a feedback` usage line, shared
+// by the bare-invocation and unknown-subcommand paths below (answers-that-
+// hold-2026-08 spec 08 T1) so workflowLine("feedback") is written once, not
+// duplicated at each call site.
+const feedbackTopLevelUsage = "usage: a2a feedback <new|validate|submit|status|triage> ..."
+
 // Run implements cli.Command.
 func (c *FeedbackCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a feedback <new|validate|submit|status|triage> ...")
+		_, _ = fmt.Fprintln(stdio.Stderr, feedbackTopLevelUsage)
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("feedback"))
 		return 2
 	}
 	sub, rest := args[0], args[1:]
@@ -115,6 +122,7 @@ func (c *FeedbackCommand) Run(ctx context.Context, args []string, stdio IO) int 
 		return c.runTriage(rest, stdio)
 	default:
 		_, _ = fmt.Fprintf(stdio.Stderr, "feedback: unknown subcommand %q\n", sub)
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("feedback"))
 		return 2
 	}
 }

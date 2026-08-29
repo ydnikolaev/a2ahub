@@ -138,6 +138,7 @@ func (c *SyncCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		statuslineRefresh = true
 	} else if len(args) != 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a sync")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-watch"))
 		return 2
 	}
 	if statuslineRefresh {

@@ -1483,6 +1483,33 @@ var lifecycleVerbTable = []lifecycleVerbSpec{
 	{Verb: "verify-fail", Transition: fold.TVerifyFail, Synopsis: "record a failing handoff verification", RequireFindings: true},
 }
 
+// lifecycleWorkflowLines is answers-that-hold-2026-08 spec 08's mechanism 2
+// (usageworkflow_dump_test.go's own doc comment): LifecycleCommand.Run's
+// usage lines are built with a runtime "usage: a2a %s ..." Sprintf, so there
+// is no per-verb literal for scripts/check-usage-workflow.sh's AST walk to
+// anchor on. A package-level map literal keyed by the verb name — read
+// back by workflowLine's own topic argument being a STRING LITERAL, never a
+// `c.spec.*` field selector the walk could not resolve anyway — is the
+// declaration the walk can attribute directly, one key at a time. A row
+// absent here (approve, block, reject) carries no docs-manifest.json topic
+// set at all (spec AC-3): LifecycleCommand.Run's lookup below is a plain
+// map miss, printing nothing, exactly like every other verb outside the
+// universe.
+var lifecycleWorkflowLines = map[string]string{
+	"ack":         workflowLine("loop-receive"),
+	"accept":      workflowLine("loop-receive"),
+	"decline":     workflowLine("loop-receive"),
+	"start":       workflowLine("loop-receive"),
+	"unblock":     workflowLine("loop-receive"),
+	"cancel":      workflowLine("loop-send"),
+	"close":       workflowLine("loop-send"),
+	"withdraw":    workflowLine("loop-send"),
+	"satisfy":     workflowLine("loop-send"),
+	"verify-pass": workflowLine("loop-send"),
+	"verify-fail": workflowLine("loop-send"),
+	"supersede":   workflowLine("loop-contract-change"),
+}
+
 // LifecycleCommand implements every table-driven OP-211 generic verb: N
 // ids batched into one commit/one PR, V2 legality refusal locally BEFORE
 // the funnel (AC-302.1), the SAME uniform funnel call (no gate parameter —
@@ -1620,20 +1647,30 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 	if err != nil {
 		return 2
 	}
+	// printLifecycleUsage prints msg, then — for a verb lifecycleWorkflowLines
+	// carries (spec 08's mechanism 2, above) — the workflow pointer right
+	// after it, on every one of this Run's four usage-refusal branches so
+	// the pointer is reachable at whichever malformed shape the caller hit.
+	printLifecycleUsage := func(msg string) {
+		_, _ = fmt.Fprintln(stdio.Stderr, msg)
+		if line, ok := lifecycleWorkflowLines[c.spec.Verb]; ok {
+			_, _ = fmt.Fprintln(stdio.Stderr, line)
+		}
+	}
 	if len(ids) == 0 {
-		_, _ = fmt.Fprintf(stdio.Stderr, "usage: a2a %s <id...>\n", c.spec.Verb)
+		printLifecycleUsage(fmt.Sprintf("usage: a2a %s <id...>", c.spec.Verb))
 		return 2
 	}
 	if c.spec.RequireReason && *reason == "" {
-		_, _ = fmt.Fprintf(stdio.Stderr, "usage: a2a %s --reason <text> <id...>\n", c.spec.Verb)
+		printLifecycleUsage(fmt.Sprintf("usage: a2a %s --reason <text> <id...>", c.spec.Verb))
 		return 2
 	}
 	if c.spec.RequireRefs && *refs == "" {
-		_, _ = fmt.Fprintf(stdio.Stderr, "usage: a2a %s --refs <ref,...> <id...>\n", c.spec.Verb)
+		printLifecycleUsage(fmt.Sprintf("usage: a2a %s --refs <ref,...> <id...>", c.spec.Verb))
 		return 2
 	}
 	if c.spec.RequireFindings && *findings == "" {
-		_, _ = fmt.Fprintf(stdio.Stderr, "usage: a2a %s --findings <text> <id...>\n", c.spec.Verb)
+		printLifecycleUsage(fmt.Sprintf("usage: a2a %s --findings <text> <id...>", c.spec.Verb))
 		return 2
 	}
 
@@ -2071,6 +2108,7 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 	if len(parents) == 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a respond --result <answered|delivered|partial|cannot> <parent-id...>")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-receive"))
 		return 2
 	}
 	switch *result {
@@ -2741,6 +2779,7 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 	if len(targets) == 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a verify <response-id|parent-id...> [--refs <response-id>] [--verdict <index>:<verdict>:<cause_owner>]...")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-send"))
 		return 2
 	}
 	verdictTokens, verr := lifecycleParseVerdicts(verdictFlags)
@@ -3061,10 +3100,12 @@ func (c *DisputeCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 	if len(ids) == 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a dispute --reason <text> <response-id>")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-receive"))
 		return 2
 	}
 	if *reason == "" {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a dispute --reason <text> <response-id>")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-receive"))
 		return 2
 	}
 
@@ -3169,6 +3210,7 @@ func (c *NoteCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 	if len(ids) == 0 || *noteText == "" {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a note --note <text> <id...>")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-escalation"))
 		return 2
 	}
 

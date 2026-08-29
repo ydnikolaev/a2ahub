@@ -456,8 +456,14 @@ func notificationsHasEmpty(values []string) bool {
 	return false
 }
 
+// notificationsUsage is the ONE place this verb's usage text is composed
+// (answers-that-hold-2026-08 spec 08 T1): every call site — bare invocation,
+// --help, and the unknown-subcommand refusal — reuses it, so the
+// workflowLine("notifications") call below reaches all three with no second
+// string to keep in sync.
 func notificationsUsage(w interface{ Write([]byte) (int, error) }) {
 	_, _ = fmt.Fprintln(w, "usage: a2a notifications <install|status|test|uninstall|preference|open|claim|ack> ...")
+	_, _ = fmt.Fprintln(w, workflowLine("notifications"))
 }
 
 type notificationsStringList []string

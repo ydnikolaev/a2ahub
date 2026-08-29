@@ -15,6 +15,7 @@ package cli
 import (
 	"context"
 	"flag"
+	"fmt"
 	"io"
 	"strings"
 )
@@ -79,6 +80,24 @@ type IO struct {
 // Both orders stay legal — flags-first callers (including every test
 // written before this was found) are unaffected, because the lifted
 // positionals are concatenated with whatever fs.Args() reports.
+// workflowLine composes the one extra line a verb whose docs-manifest topic
+// shares its own dispatch name (answers-that-hold-2026-08 spec 08 T1: "every
+// verb with a workflow page") prints on a bare or malformed invocation — a
+// pointer at the same topic's `a2a docs <topic>` page.
+//
+// It exists as a NAMED CALL, not an inline literal, because
+// scripts/check-usage-workflow.sh's own extractor is an AST walk that finds
+// every call to this one function and reads its argument (a literal, or an
+// identifier resolved to a package-level `const` — spec 08 AC-6) — never a
+// prefix grep over the file's bytes. A verb file composing this text inline
+// would be invisible to that walk and is exactly the "gate whose regex was
+// inert for weeks" class spec 08 T1 names. Every verb whose usage output
+// should carry this line calls workflowLine with its own topic id; nothing
+// else in this package may spell "workflow: " itself.
+func workflowLine(topic string) string {
+	return fmt.Sprintf("workflow: run `a2a docs %s` for the walkthrough", topic)
+}
+
 func parseArgsAnyOrder(fs *flag.FlagSet, args []string) ([]string, error) {
 	var lifted []string
 	rest := args

@@ -59,6 +59,7 @@ scripts/*
 !scripts/check-dashboard-derivation.sh
 !scripts/check-prose-roster.sh
 !scripts/check-render-ledger.sh
+!scripts/check-usage-workflow.sh
 !scripts/check-prose-coverage.sh
 !scripts/check-projection.sh
 !scripts/release-postflight.sh
@@ -139,6 +140,7 @@ scripts/tests/*
 !scripts/tests/check_loop_coverage_test.sh
 !scripts/tests/classify_guard_test.sh
 !scripts/tests/check_render_ledger_test.sh
+!scripts/tests/check_usage_workflow_test.sh
 !scripts/releasebody/
 # install.sh's regression net (P40 AC-1002.*). A directory, not a file: `scripts/*`
 # excludes the DIRECTORY `scripts/installsh`, and git cannot re-include a file whose

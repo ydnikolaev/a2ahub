@@ -121,12 +121,14 @@ func (c *NewCommand) Synopsis() string {
 func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 	if len(args) == 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a new <type> [--field k=v | k.nested=v]... [--body-file <path>] [--thread <id>] [--slug <slug>]")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-send"))
 		return 2
 	}
 	typ := args[0]
 	if IsHelpArg(typ) {
 		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a new <type> [--field k=v | k.nested=v]... [--body-file <path>] [--thread <id>] [--slug <slug>]")
 		_, _ = fmt.Fprintln(stdio.Stdout, "types: "+strings.Join(newTypeNames(), " | "))
+		_, _ = fmt.Fprintln(stdio.Stdout, workflowLine("loop-send"))
 		return 0
 	}
 	prefixInfo, ok := newTypePrefix[typ]

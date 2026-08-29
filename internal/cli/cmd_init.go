@@ -164,10 +164,14 @@ func (c *InitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 	if *system == "" {
 		_, _ = fmt.Fprintln(stdio.Stderr, "init: --system is required (non-interactive mode never prompts)")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a init --system <id> --space <repo-url>... [--no-skill] [--no-skill-link] [--no-agents-pointer]")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-send"))
 		return 2
 	}
 	if len(spaces) == 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "init: at least one --space is required (non-interactive mode never prompts)")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a init --system <id> --space <repo-url>... [--no-skill] [--no-skill-link] [--no-agents-pointer]")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-send"))
 		return 2
 	}
 

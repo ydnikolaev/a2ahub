@@ -59,6 +59,7 @@ func (c *StatuslineCommand) Run(ctx context.Context, args []string, stdio IO) in
 	}
 	if fs.NArg() != 0 || (*jsonOut && *noPrefix) {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a statusline [--json] [--sample] [--no-prefix]")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-watch"))
 		return 2
 	}
 

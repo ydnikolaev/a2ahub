@@ -135,6 +135,7 @@ func (c *ContractsCommand) Run(ctx context.Context, args []string, stdio IO) int
 	}
 	if fs.NArg() != 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contracts [--provider <sys>] [--json]")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-contract-change"))
 		return 2
 	}
 

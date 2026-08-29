@@ -26,6 +26,16 @@ import (
 
 const htmlDefaultOut = ".a2a/dashboard.html"
 
+// htmlWorkflowLines is spec 08's mechanism 2 (usageworkflow_dump_test.go's
+// own doc comment): HtmlCommand's usage line is built from the runtime
+// `c.name` field (the html/dashboard alias), so there is no per-verb
+// literal for the AST walk to anchor on. Keyed by the catalogue verb name;
+// `dashboard` carries no docs-manifest.json topic set at all (spec AC-3),
+// so it is deliberately absent here rather than mapped to "".
+var htmlWorkflowLines = map[string]string{
+	"html": workflowLine("loop-watch"),
+}
+
 // HtmlCommand implements `a2a html` / `a2a dashboard`. name carries the invoked
 // verb so the usage line and catalog show the right one (they are the same
 // command; `dashboard` is the friendly alias).
@@ -102,6 +112,9 @@ func (c *HtmlCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 	if fs.NArg() != 0 {
 		_, _ = fmt.Fprintf(stdio.Stderr, "usage: a2a %s [--system <id>] [--out <path>] [--json] [--demo] [--no-open] [--focus <space:id>] [--update]\n", c.name)
+		if line, ok := htmlWorkflowLines[c.name]; ok {
+			_, _ = fmt.Fprintln(stdio.Stderr, line)
+		}
 		return 2
 	}
 

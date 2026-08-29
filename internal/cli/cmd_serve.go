@@ -50,6 +50,7 @@ func (c *ServeCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 	if fs.NArg() != 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a serve [--listen 127.0.0.1:8765] [--refresh 2s] [--sync-every 0|duration] [--open=false]")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-watch"))
 		return 2
 	}
 	config := defaults

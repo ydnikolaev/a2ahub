@@ -194,8 +194,8 @@ func TestNotificationsCommand_ExactRefusals(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "no subcommand", want: "usage: a2a notifications <install|status|test|uninstall|preference|open|claim|ack> ...\n"},
-		{name: "unknown subcommand", args: []string{"send"}, want: "notifications: unknown subcommand \"send\"\nusage: a2a notifications <install|status|test|uninstall|preference|open|claim|ack> ...\n"},
+		{name: "no subcommand", want: "usage: a2a notifications <install|status|test|uninstall|preference|open|claim|ack> ...\nworkflow: run `a2a docs notifications` for the walkthrough\n"},
+		{name: "unknown subcommand", args: []string{"send"}, want: "notifications: unknown subcommand \"send\"\nusage: a2a notifications <install|status|test|uninstall|preference|open|claim|ack> ...\nworkflow: run `a2a docs notifications` for the walkthrough\n"},
 		{name: "unknown channel", args: []string{"install", "--channel", "statusline"}, want: "notifications install: --channel must be all, macos, or vscode\n"},
 		{name: "status positional", args: []string{"status", "extra"}, want: "notifications status: unexpected positional arguments\n"},
 		{name: "preference no choice", args: []string{"preference"}, want: "notifications preference: choose exactly one of --remind-in, --never, or --reset\n"},

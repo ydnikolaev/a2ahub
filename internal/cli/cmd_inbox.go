@@ -60,6 +60,7 @@ func (c *InboxCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 	if fs.NArg() != 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a inbox [--actionable|--overdue] [--json] [--exit-code]")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-watch"))
 		return 2
 	}
 	// Two different questions, and combining them would have to mean either

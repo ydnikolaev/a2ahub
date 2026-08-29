@@ -80,6 +80,7 @@ func (c *WhatsnewCommand) Run(_ context.Context, args []string, stdio IO) int {
 	}
 	if fs.NArg() != 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a whatsnew [--since <v>] [--json]")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-contract-change"))
 		return 2
 	}
 

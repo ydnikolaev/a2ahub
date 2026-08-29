@@ -96,6 +96,7 @@ func WorkSubcommands() []string {
 func (c *WorkCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if len(args) == 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a work <start|heartbeat|resume|checkpoint|wait|stop|status> ...")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("work-loops"))
 		return 2
 	}
 	if IsHelpArg(args[0]) {

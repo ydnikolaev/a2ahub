@@ -79,6 +79,7 @@ func (c *ShowCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 	if len(positional) != 1 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a show <ref>")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("work-loops"))
 		return 2
 	}
 	ref := positional[0]

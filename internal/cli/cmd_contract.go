@@ -472,6 +472,7 @@ func (c *ContractCommand) runNew(ctx context.Context, args []string, stdio IO) i
 	}
 	if slug == "" {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract new <slug> | --slug <slug> [--field k=v | k.nested=v]...")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-first-integration"))
 		return 2
 	}
 	delegated := append([]string{"contract", "--slug", slug}, rest...)
@@ -698,6 +699,7 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 	}
 	if len(positional) != 1 || *successor == "" || *sunset == "" {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract deprecate <id> [--version <semver>] --successor <XC-id@version> --sunset <date>")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-contract-change"))
 		return 2
 	}
 	id := positional[0]
@@ -954,6 +956,7 @@ func (c *ContractCommand) runRetire(ctx context.Context, args []string, stdio IO
 	}
 	if len(positional) != 1 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract retire <id> [--version <semver>] [--override]")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-contract-change"))
 		return 2
 	}
 	id := positional[0]
@@ -1297,6 +1300,7 @@ func (c *ContractCommand) runDiff(ctx context.Context, args []string, stdio IO) 
 	}
 	if len(positional) != 3 || positional[1] == positional[2] {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract diff <id> <v1> <v2> [--json]")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-contract-change"))
 		return 2
 	}
 	result, err := c.inspection.DiffContract(ctx, ContractDiffRequest{ID: positional[0], V1: positional[1], V2: positional[2]})
@@ -1351,6 +1355,7 @@ func (c *ContractCommand) runAdopt(ctx context.Context, args []string, stdio IO)
 	}
 	if len(positional) != 1 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract adopt <XC-id> [--major <n>] [--note <text>]")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-first-integration"))
 		return 2
 	}
 	id := positional[0]
@@ -1510,6 +1515,7 @@ func (c *ContractCommand) runActivate(ctx context.Context, args []string, stdio 
 	}
 	if len(positional) != 1 || *targetVersion == "" || len(satisfiesFlags) == 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract activate <XC-id> --version <semver> --satisfies <item> [--satisfies <item>...] [--note <text>]")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-first-integration"))
 		return 2
 	}
 	id := positional[0]
@@ -1747,6 +1753,7 @@ func (c *ContractCommand) runVerifyExport(ctx context.Context, args []string, st
 	}
 	if *local == "" || len(positionals) != 1 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract verify-export --local <project-relative-path> <id>[@version] [--json]")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-contract-change"))
 		return 2
 	}
 	result, err := c.inspection.VerifyContractExport(ctx, ContractVerifyExportRequest{Local: *local, Ref: positionals[0]})

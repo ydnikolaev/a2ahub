@@ -144,6 +144,7 @@ const attachUsage = "usage: a2a attach <draft-id-or-path> --from <file-or-dir> -
 func (c *AttachCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if len(args) != 0 && IsHelpArg(args[0]) {
 		_, _ = fmt.Fprintln(stdio.Stdout, attachUsage)
+		_, _ = fmt.Fprintln(stdio.Stdout, workflowLine("loop-send"))
 		return 0
 	}
 
@@ -161,6 +162,7 @@ func (c *AttachCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 	if len(positionals) != 1 || *from == "" || *verification == "" {
 		_, _ = fmt.Fprintln(stdio.Stderr, attachUsage)
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-send"))
 		return 2
 	}
 

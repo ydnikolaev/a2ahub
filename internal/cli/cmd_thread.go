@@ -59,6 +59,7 @@ func (c *ThreadCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 	if len(positional) != 1 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a thread <thread-id|artifact-id> [--space <id>] [--json]")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("work-loops"))
 		return 2
 	}
 

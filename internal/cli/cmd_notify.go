@@ -139,11 +139,17 @@ func (c *NotifyCommand) Synopsis() string {
 	return "space-side CI notification projection and delivery (SPACE plane — see `a2a notifications` for the local/native plane): render --base <sha>|--all|--only <id,id> [--limit <n>] [--json] — turn a push range into P3's ordered JSON message array; send [--dry-run] — read that array from stdin and deliver it to Telegram, one delivery record per message on stdout; setup [--non-interactive] — walk a human from no bot to a proven, delivering route; discover — list the chats the bot can currently see; verify — read-only route/secret/delivery report"
 }
 
-const notifyUsage = "usage: a2a notify render (--base <sha> | --all | --only <id,id>) [--limit <n>] [--json]\n" +
+// notifyUsage is a var, not a const (answers-that-hold-2026-08 spec 08 T1):
+// its own workflowLine("notify") call is the AST walk's one place to look —
+// every call site below reuses this same var, so the workflow line reaches
+// the bare invocation, the unknown sub-verb refusal, and every sub-verb's
+// own flag-parse-error path with no second string to keep in sync.
+var notifyUsage = "usage: a2a notify render (--base <sha> | --all | --only <id,id>) [--limit <n>] [--json]\n" +
 	"       a2a notify send [--dry-run]\n" +
 	"       a2a notify setup [--space <id>] [--for <participant>] [--events <list>] [--locale <ru|en>] [--non-interactive]\n" +
 	"       a2a notify discover [--timeout <duration>]\n" +
-	"       a2a notify verify [--space <id>]"
+	"       a2a notify verify [--space <id>]\n" +
+	workflowLine("notify")
 
 // Run implements cli.Command.
 func (c *NotifyCommand) Run(ctx context.Context, args []string, stdio IO) int {

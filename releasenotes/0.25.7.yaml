@@ -323,3 +323,41 @@ changes:
     why: >
       Output only, on a path that already refused. Nothing that passed before
       refuses now.
+- id: RN-02507-10
+  kind: feat
+  impact: normal
+  subject: a verb's usage line names the workflow page for that verb
+  detail: >
+    The one surface an agent hits at the moment it does not know something is
+    the usage line it gets back from a bare or malformed invocation. That line
+    named flags and never named a workflow, so it ANSWERED the shallow
+    question and left the real one unasked — the agent proceeded confidently,
+    and no gap was ever felt.
+
+    Every verb that has a workflow page now prints one more line:
+    `workflow: run `a2a docs <topic>` for the walkthrough`. Nothing else
+    changes — same flags, same exit codes, same refusals.
+
+    Which verbs have a page is DERIVED, not listed: a verb qualifies when a
+    page in the shipped docs manifest's loop corpus names it, or when it owns
+    a manifest section of its own. 51 of 68 verbs qualify today. A verb with
+    no page prints no line rather than pointing at something that would not
+    help.
+
+    The topic is a real argument to `a2a docs`, so the pointer resolves from
+    the binary you are already running — a page you can read without knowing
+    a file path, which is exactly what an agent that has not read the docs
+    cannot supply.
+  affects:
+  - cli
+  roadmap:
+    visibility: shipped
+    why: >
+      It changes what every verb prints, and its whole value is being seen by
+      a reader who did not go looking. A roadmap entry is how someone who
+      already knows the CLI learns the pointer now exists.
+  action:
+    scope: none
+    why: >
+      One additional line on usage output. Nothing to run; a harness that
+      matches usage text exactly may see one more line than before.

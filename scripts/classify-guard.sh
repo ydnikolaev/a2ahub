@@ -164,6 +164,13 @@ PUBLIC_VALIDATOR_FILES=(
   # `make check` has to be able to run it.
   scripts/check-render-ledger.sh
   scripts/tests/check_render_ledger_test.sh
+  # answers-that-hold-2026-08 P8, same argument again: the gate's universe is
+  # the shipped binary's own `__catalog`, its comparand is
+  # skill/a2ahub/docs-manifest.json (which ships), and it drives `a2a docs`
+  # to prove each topic it names is accepted. Every input is public, so the
+  # script must be too.
+  scripts/check-usage-workflow.sh
+  scripts/tests/check_usage_workflow_test.sh
 )
 ALLOW_FILES=( .gitignore .golangci.yml .goreleaser.yaml .gitleaks.toml .govulncheck-allow.txt Makefile SECURITY.md README.md LICENSE NOTICE go.mod go.sum cc-coverage.yaml scripts/install.sh scripts/dev-install.sh scripts/e2e-authoring-smoke.sh scripts/classify-guard.sh scripts/release-preflight.sh scripts/check-release-notes-freshness.sh scripts/check-flaky-tests.sh scripts/lib/flaky-tests.txt scripts/check-roadmap-release-decisions.sh scripts/check-provider-tier-deferral.sh scripts/check-unmeasured-reach.sh scripts/bump-space-template.sh scripts/check-gosec-scope.sh scripts/check-readme.sh scripts/dashboard-template-drift.sh scripts/check-view-vocabulary.sh scripts/check-pendency-uniqueness.sh scripts/check-loop-coverage.sh scripts/check-human-gates.sh scripts/check-loop-reachability.sh scripts/check-prose-roster.sh scripts/check-prose-coverage.sh scripts/check-operational-confidence.sh scripts/check-error-codes.sh scripts/verify.sh scripts/build-release-cohort.sh scripts/release-postflight.sh scripts/lib/strip-set.txt "${PUBLIC_VALIDATOR_FILES[@]}" )
 DENY_DIRS=( .agents .claude .codex .mate .sporo )   # scripts/ handled below (install.sh + e2e-authoring-smoke.sh are the public exceptions)

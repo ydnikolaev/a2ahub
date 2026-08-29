@@ -83,6 +83,7 @@ const fetchUsage = "usage: a2a fetch <BL-id> --to <dir> [--json]"
 func (c *FetchCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if len(args) != 0 && IsHelpArg(args[0]) {
 		_, _ = fmt.Fprintln(stdio.Stdout, fetchUsage)
+		_, _ = fmt.Fprintln(stdio.Stdout, workflowLine("loop-send"))
 		return 0
 	}
 	if c.ops == nil {
@@ -99,6 +100,7 @@ func (c *FetchCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 	if len(positionals) != 1 || !validBlobRef(positionals[0]) || *to == "" {
 		_, _ = fmt.Fprintln(stdio.Stderr, fetchUsage)
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-send"))
 		return 2
 	}
 

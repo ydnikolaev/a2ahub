@@ -201,6 +201,18 @@ func (c *ContractCommand) runP6Publish(ctx context.Context, args []string, stdio
 	return renderContractPublication(stdio, result, asJSON)
 }
 
+// contractPublicationWorkflowLines is spec 08's mechanism 2
+// (usageworkflow_dump_test.go's own doc comment): parseContractPublicationArgs
+// is shared by `contract publish` and `contract preflight`, printed with a
+// runtime "usage: a2a contract %s ..." Sprintf, so there is no per-verb
+// literal for the AST walk to anchor on. Keyed by the FULL catalogue verb
+// name (not the bare `verb` parameter parseContractPublicationArgs itself
+// uses) so the walk's attribution matches `a2a __catalog`'s own rows.
+var contractPublicationWorkflowLines = map[string]string{
+	"contract publish":   workflowLine("loop-contract-change"),
+	"contract preflight": workflowLine("loop-contract-change"),
+}
+
 func parseContractPublicationArgs(verb string, args []string, stdio IO, allowExpect bool) (ContractPublicationRequest, bool, bool) {
 	fs := flag.NewFlagSet("contract "+verb, flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
@@ -221,6 +233,9 @@ func parseContractPublicationArgs(verb string, args []string, stdio IO, allowExp
 			_, _ = fmt.Fprint(stdio.Stderr, " [--expect-plan <sha256:...>]")
 		}
 		_, _ = fmt.Fprintln(stdio.Stderr, " [--json]")
+		if line, ok := contractPublicationWorkflowLines["contract "+verb]; ok {
+			_, _ = fmt.Fprintln(stdio.Stderr, line)
+		}
 		return ContractPublicationRequest{}, false, false
 	}
 	if !allowExpect && *expectPlan != "" {
@@ -314,6 +329,7 @@ func (c *ContractCommand) runCheck(ctx context.Context, args []string, stdio IO)
 	}
 	if len(positionals) != 1 || !validContractRef(positionals[0]) || (*payload == "") == !*suite || (*suite && *schemaPath != "") {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract check <XC-id>@<version> (--payload <project-relative-file> [--schema <declared-path>] | --suite) [--json]")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-first-integration"))
 		return 2
 	}
 	result, err := c.check.CheckContract(ctx, ContractCheckRequest{Ref: positionals[0], PayloadPath: *payload, SchemaPath: *schemaPath, Suite: *suite})

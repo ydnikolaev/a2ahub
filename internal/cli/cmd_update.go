@@ -174,6 +174,7 @@ func (c *UpdateCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 	if fs.NArg() != 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a update [--check] [--json] [--yes] [--allow-unsigned]")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-contract-change"))
 		return 2
 	}
 
