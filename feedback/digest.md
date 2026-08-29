@@ -83,3 +83,16 @@ read at each site.
 
 - fb-20260827-47069c (bug -> accepted): a no-op version bump publishes the OLD bytes under the NEW number
 - fb-20260827-5b6a1c (friction -> accepted): a verb usage names its flags, never its workflow, so a loop page is unreachable
+
+## 2026-08-29 Release — v0.25.7
+
+Six records from the 2026-08-27 wave ship with `answers-that-hold-2026-08`.
+The rows below are the release flip, not a re-triage: the triage rows above
+stay as the record of what was decided on the day.
+
+- fb-20260827-455fca (feature -> shipped in v0.25.7): no verb answers whether a producer's published contracts still match its code
+- fb-20260827-4b121a (friction -> shipped in v0.25.7): validate --ci outside a space names a missing file, not the caller's state
+- fb-20260827-a84550 (bug -> shipped in v0.25.7): verify-export against a staged candidate can never match its published version
+- fb-20260827-47069c (bug -> shipped in v0.25.7): a no-op version bump publishes the OLD bytes under the NEW number
+- fb-20260827-bc1f13 (bug -> shipped in v0.25.7): verify-export hides the only file that can explain its digest mismatch
+- fb-20260827-5b6a1c (friction -> shipped in v0.25.7): a verb usage names its flags, never its workflow, so a loop page is unreachable

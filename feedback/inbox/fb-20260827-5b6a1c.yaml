@@ -37,4 +37,26 @@ resolution: |-
     follow-on that makes the pointer P8 prints resolve from the binary. Same reason
     for the delay as fb-20260827-47069c: the spec had to exist before a ref could
     name a home CHECK-C actually joins.
-status: accepted
+
+    SHIPPED in v0.25.7, and BOTH tiers this record asked for shipped, not just
+    the first. Tier 1 is commit 57c4c121: every verb with a workflow page prints
+    `workflow: run `a2a docs <topic>` for the walkthrough` under its usage line —
+    51 of 68 verbs qualify, and which ones is DERIVED (a page in the shipped
+    manifest's loop corpus names the verb, or the verb owns a manifest section),
+    never a hand-kept list, so a verb with no page prints no line rather than
+    pointing at something that would not help. Tier 2 is commit 65fc9bed:
+    `a2a docs` lists the topics and `a2a docs <topic>` prints the page, with the
+    topic ids read from the embedded manifest at run time — which is what makes
+    tier 1's pointer a LIVE one rather than the dead pointer this record warned
+    about. `scripts/check-usage-workflow.sh` holds the pair: a verb the corpus
+    names and whose usage line does not point at it now reds.
+
+    Tier 3 (print a loop's first paragraph on a bare invocation) did NOT ship,
+    and is not filed as owed. The record itself ranks it third and says the
+    pointer suffices "because an agent reads what the tool prints"; with tier 2
+    live, the pointer resolves, so tier 3 would add bytes to every usage line to
+    save one call.
+
+    The record's own "what I would NOT do" was honoured: nothing refuses and
+    nothing prompts. One more line, same flags, same exit codes.
+status: shipped

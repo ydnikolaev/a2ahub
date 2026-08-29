@@ -107,4 +107,17 @@ resolution: |-
     This is the RENDERING half of fb-20260827-a84550, as that record says.
     Shipping this one does not close that one: it makes an unsatisfiable
     comparison explain itself, which is worth having on its own.
-status: accepted
+
+    SHIPPED in v0.25.7. The flip this record's own SUPERSEDED note deferred —
+    "status: stays `accepted` and not `shipped` because the release carrying it
+    (0.25.7) is not cut; the flip belongs to the release, not to the commit" —
+    is this edit, made while cutting that release. The code did not move again;
+    a28e186d is still the commit, RN-02507-8 and RN-02507-9 are the notes, and
+    `reference/contract-versions.md` now documents both halves.
+
+    The hand-close this record predicted was needed did happen, and was NOT
+    remembered: `check-feedback-corpus` refused the release because this record
+    sat `accepted` with no backlog row, which is a different guard from the
+    CHECK-C join it correctly said would stay quiet. So the row was closed by a
+    gate after all — just not the one it named.
+status: shipped
