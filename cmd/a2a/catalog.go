@@ -250,9 +250,13 @@ func catalogMCPRows() []catalogMCPRow {
 // result type landing straight into the hole the comment here described.
 // A confessed hole is not a guard. So the universe is no longer this
 // literal alone: skillcoverage.WithRegistered folds in every surface that
-// called skillcoverage.Register AT THE POINT its --json arm is defined
-// (internal/cli/cmd_contract_p6.go:41 is the first), and a surface added
-// that way needs no edit here at all.
+// enrolled itself where its --json arm is defined — internal/cli's
+// RegisterRenderSurfaces is the first, and the call below is what triggers
+// it. A surface added that way needs no edit here at all. The registration
+// is lazy and idempotent rather than an `init`, because `.golangci.yml`
+// bans init functions and the ban is right; the cost of that is exactly the
+// one visible call, at the DI root, where ordering is a fact rather than an
+// import-graph accident.
 //
 // What is still a two-file change is the LEDGER ROW, deliberately: a new
 // surface — registered or listed — must also appear in
@@ -275,6 +279,7 @@ func catalogMCPRows() []catalogMCPRow {
 // own (skipped is cache.SkippedFile's {path, reason} advisory, not
 // exchange state).
 func catalogSurfaces() map[string][]string {
+	cli.RegisterRenderSurfaces()
 	return skillcoverage.WithRegistered(map[string][]string{
 		"cli-inbox":  skillcoverage.SurfaceKeys(reflect.TypeOf(cache.Item{})),
 		"cli-outbox": skillcoverage.SurfaceKeys(reflect.TypeOf(cache.Item{})),

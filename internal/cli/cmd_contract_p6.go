@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/skillcoverage"
@@ -17,7 +18,7 @@ import (
 // cmd_contract_verify_published.go, same package, no edit to that file
 // needed — with internal/skillcoverage's shared surface registry (spec
 // answers-that-hold-2026-08 03 §11's 2026-08-29 amendment: "THE SECOND
-// TRAP", confirmed live at HEAD: cmd/a2a/catalog.go:265-273's
+// TRAP", confirmed live at HEAD when this was written: cmd/a2a/catalog.go's
 // catalogSurfaces() is a hand-written five-entry map, and P7's new result
 // type is registered with NOTHING). skillcoverage.WithRegistered (the ONE
 // line cmd/a2a/catalog.go's own catalogSurfaces() must apply — LEAD-OWNED,
@@ -37,9 +38,22 @@ import (
 // OWN, independent derivation instead (internal/cli/cmd_contract_p6_test.go's
 // TestRenderLedgerSurfaceDump), which never touches this registry or
 // cmd/a2a/catalog.go at all.
-func init() {
+// NOT an `init`, and the reason is the same one internal/space's
+// registerSpaceGit already carries: `.golangci.yml` bans init functions
+// (gochecknoinits) and the ban is right — implicit ordering with invisible
+// side effects is exactly what a registry populated at import time would be.
+// Lazy, idempotent registration keeps the property that matters ("a --json
+// arm enrolls itself, and catalog.go needs no edit for the next one") while
+// the call that triggers it is visible at the DI root.
+var registerRenderSurfacesOnce = sync.OnceFunc(func() {
 	skillcoverage.Register("cli-contract-verify-published", reflect.TypeOf(ContractVerifyPublishedResult{}))
-}
+})
+
+// RegisterRenderSurfaces enrolls this package's registry-backed --json
+// result types with internal/skillcoverage. cmd/a2a's catalogSurfaces()
+// calls it before reading the registry; it is safe to call any number of
+// times, from any goroutine.
+func RegisterRenderSurfaces() { registerRenderSurfacesOnce() }
 
 // ContractPublicationRequest is the transport-owned, filesystem-free input
 // passed to cmd/a2a's adapter. The adapter selects and freezes the candidate

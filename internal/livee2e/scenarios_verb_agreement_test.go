@@ -206,7 +206,6 @@ func TestActingCheckingReplaysRedOnPreFixFacts(t *testing.T) {
 		"data-package-payload-pol-002",
 		"submit-carries-unvalidated-companion",
 	} {
-		id := id
 		t.Run(id, func(t *testing.T) {
 			r := findVerbAgreementReplay(t, id)
 			if r.Class != pairActingChecking {
@@ -227,7 +226,6 @@ func TestPreviewingActingReplaysRedOnPreFixFacts(t *testing.T) {
 		"contract-baseline-artifacts-arm-missing",
 		"template-show-stale-generation",
 	} {
-		id := id
 		t.Run(id, func(t *testing.T) {
 			r := findVerbAgreementReplay(t, id)
 			if r.Class != pairPreviewingActing {
