@@ -1567,7 +1567,16 @@ teeth() {
     # ══════════════════════════════════════════════════════════════════════════
     tmp13="$(mktemp -d)"
     init_repo "$tmp13"
-    local stale_ref='a72ee625:docs/features/archive/agent-ops-2026-07/audits/v0.23.0-provider-tier-deferral.md'
+    # DO NOT "FIX" THE `active/` IN THIS PATH. It is a HISTORICAL ref — the path
+    # as it existed AT COMMIT a72ee625 — not a path in the working tree. The epic
+    # was archived on 2026-08-29 and a blanket citation sweep rewrote this literal
+    # to `archive/`, which does not exist at that commit; `git cat-file` then said
+    # "exists on disk, but not in 'a72ee625'", the tooth refused as
+    # measurement-failed, and `make harness-check` reddened the ship gate. A path
+    # qualified by a commit is qualified by that commit's tree, and a repo-wide
+    # repoint cannot tell the two apart. This is the only such literal in the
+    # tree (uncapped: `grep -rnE '\b[0-9a-f]{8}:(docs|scripts|internal|cmd|skill)/'`).
+    local stale_ref='a72ee625:docs/features/active/agent-ops-2026-07/audits/v0.23.0-provider-tier-deferral.md'
     local stale_dest="$tmp13/docs/features/x/audits/v0.23.0-provider-tier-deferral.md"
     if ! git -C "$repo_root" cat-file -e "$stale_ref"; then
       echo "provider-tier-deferral --teeth: measurement-failed — cannot replay $stale_ref, so tooth Tb did not run." >&2
