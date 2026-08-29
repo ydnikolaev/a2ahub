@@ -13,7 +13,9 @@
 
 > **The rule this demonstrates**: a producer can already prove their
 > published export matches their code (`generated_from` +
-> `a2a contract verify-export`, §5.3). A consumer has no equivalent — it can
+> `a2a contract verify-export` — see
+> [contract-versions.md](contract-versions.md) § "Proving a generated
+> contract came from your code"). A consumer has no equivalent — it can
 > declare in the space that it depends on a contract (`consumes.yaml`), but
 > nothing local records *where in its own repo* that dependency actually
 > lands. This page is that missing half: a tracked file, in the consumer's

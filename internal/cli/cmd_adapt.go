@@ -11,9 +11,9 @@
 // per this package's established Placement convention (cmd_whatsnew.go,
 // cmd_update.go).
 //
-// NOT WIRED into cmd/a2a/wire.go/catalog.go/help.go — that three-line
-// registration is lead-owned (P13 plan allowlist); this file is
-// constructible and independently unit-testable without it.
+// Wired at cmd/a2a/wire.go's `adapt` entry and listed by catalog.go. This
+// file stays constructible and independently unit-testable without either,
+// which is what let the verb be written before the registration landed.
 package cli
 
 import (

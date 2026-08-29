@@ -18,11 +18,12 @@
 // shared helper, no package var, per this package's established Placement
 // convention (cmd_whatsnew.go, cmd_adapt.go).
 //
-// NOT WIRED into cmd/a2a/wire.go/catalog.go/help.go — that three-line
-// registration is lead-owned (P9 plan allowlist); this file is
-// constructible and independently unit-testable without it. It needs no
-// project config and no connected space: Run reads only the embedded skill
-// tree, so it works unchanged in an empty directory (AC-6).
+// Wired at cmd/a2a/wire.go's `docs` entry — deliberately with no
+// resolvePaths, no project config and no space — and listed by catalog.go.
+// This file stays constructible and independently unit-testable without
+// either. It needs no project config and no connected space: Run reads only
+// the embedded skill tree, so it works unchanged in an empty directory
+// (AC-6).
 package cli
 
 import (

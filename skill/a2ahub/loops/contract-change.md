@@ -296,9 +296,15 @@ sees you, and that deprecation still reaches your inbox.
    than on your machine, so a teammate's agent cloning the repo neither
    redoes finished work nor skips work it wrongly believes done. It runs
    every `detect:` command in the pending set first and refuses if one still
-   fires, naming the change. When the pending set carries no `detect:` at
-   all, it records AND SAYS the record is unverified — most obligations are
-   prose today, and `--done` will not pretend otherwise.
+   fires, naming the change. A detect it could not RUN at all refuses
+   separately, and the two are never conflated: *"still fires"* means the
+   obligation is measurably outstanding, *"could not be run"* means nothing
+   was measured, and a check that cannot be measured is never treated as
+   clean. When the pending set carries no `detect:` at all, it records AND
+   SAYS the record is unverified — most obligations are prose today, and
+   `--done` will not pretend otherwise. If the record itself cannot be
+   written it refuses naming what to confirm: that `.a2a/config.yaml` exists,
+   is valid YAML with a mapping at its root, and is writable.
 
    Two refusals worth knowing before you meet them. A baseline NEWER than
    your binary refuses rather than walking backwards, naming both versions —

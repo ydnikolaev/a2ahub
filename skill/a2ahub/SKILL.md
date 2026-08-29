@@ -125,6 +125,11 @@ a2a docs work-loops         # print that page
 a2a docs loop-contract-change
 ```
 
+An unknown topic refuses by NAMING the vocabulary it holds — the list of
+legal ids, in the same message that told you yours was wrong — rather than
+telling you to read the docs, which is the one instruction a reader who
+cannot find the docs can act on least.
+
 The topic ids are this tree's own section ids, read from the binary at run
 time — so a page added here is a topic the very next release accepts, and
 there is no second list anywhere that can disagree with this one. The verb
