@@ -32,12 +32,26 @@ changes:
 
     Reported from a live space as fb-20260829-e756c0, same class as
     fb-20260827-4b121a.
+
+    ONE CONSEQUENCE BEYOND THE REPORTED VERB, named here rather than discovered.
+    The label is derived from which tree is being read, and the same reader
+    serves `a2a contract publish` and `preflight`. So a failure reading a
+    `--staging` tree now says `local:` as well — the flag differs, the side does
+    not. Both verbs also gain the not-published-shaped refusal when the tree they
+    were pointed at holds no envelope.
   affects:
   - cli
   action:
     scope: none
     why: >
-      Nothing is owed. The verb behaves as before; only its refusal text
-      changes, and it changes to stop misdirecting you. If you previously
-      chased a `space:` diagnostic from `verify-published --local` and found
-      nothing wrong with the published tree, this is why.
+      Nothing is owed. No verb gains or loses a capability; only refusal TEXT
+      changes, and it changes to stop misdirecting you. If you previously chased
+      a `space:` diagnostic from `verify-published --local` and found nothing
+      wrong with the published tree, this is why.
+
+      The one case worth a look: a script that greps these diagnostics for the
+      literal `space:` will stop matching when the fault is on your side — of
+      `verify-published --local` and of `contract publish --staging` alike. That
+      is the bug being fixed, so matching on it was always matching on a lie, but
+      a grep that relied on it will now find nothing rather than find the wrong
+      thing.
