@@ -72,7 +72,7 @@ import (
 // The rule: a new tool that cannot join this list is a new tool that nothing
 // proves reachable. Change the registration, never this list's membership.
 var groupedToolNames = []string{
-	"a2a_adapt", "a2a_contract", "a2a_data", "a2a_exchange", "a2a_lifecycle",
+	"a2a_adapt", "a2a_contract", "a2a_data", "a2a_docs", "a2a_exchange", "a2a_lifecycle",
 	"a2a_new", "a2a_notify", "a2a_read", "a2a_submit", "a2a_whatsnew", "a2a_work",
 }
 
@@ -159,6 +159,12 @@ func (ta toolAction) verb() string {
 	switch ta.tool {
 	case "a2a_adapt":
 		return "adapt"
+	case "a2a_docs":
+		// Action-free, like a2a_adapt directly above: without this case it
+		// falls to the default below and projects to ta.action, which is ""
+		// for an action-free tool — the same class the a2a_data and
+		// a2a_notify cases below document at length.
+		return "docs"
 	case "a2a_contract":
 		return "contract-" + ta.action
 	case "a2a_data":
@@ -347,7 +353,7 @@ func TestDataSubcommandsMatchMCPDataActions(t *testing.T) {
 // of them checked against a real registry is how the gap opened. This slice
 // plus the loop below closes it AT THE SPOT the decoy pair is introduced,
 // independent of whether groupedToolNames is kept in sync.
-var actionFreeToolNames = []string{"a2a_new", "a2a_submit", "a2a_whatsnew", "a2a_adapt"}
+var actionFreeToolNames = []string{"a2a_new", "a2a_submit", "a2a_whatsnew", "a2a_adapt", "a2a_docs"}
 
 // mcpCapabilityPairs enumerates every reachable (tool, action) from the
 // grouped registry + mcp's own exported enum slices. It first asserts the

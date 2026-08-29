@@ -185,6 +185,11 @@ func catalogCLICommand(name string) (cli.Command, bool) {
 		// Metadata-only zero value: Name/Synopsis touch neither the binary
 		// version nor the project config.
 		return cli.NewAdaptCommand("", ""), true
+	case "docs":
+		// The real constructor, not a zero value: NewDocsCommand takes no
+		// arguments at all, because the verb's only input is the embedded
+		// tree. There is nothing to withhold from a metadata-only build.
+		return cli.NewDocsCommand(), true
 	case "work":
 		// Metadata-only zero value: Name/Synopsis do not touch dependencies.
 		return &cli.WorkCommand{}, true

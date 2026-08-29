@@ -347,6 +347,15 @@ func buildCommands() map[string]command {
 		}
 		return cli.NewAdaptCommand(version, p.projectConfig).Run(context.Background(), args, stdio(stdout, stderr))
 	}
+	m["docs"] = func(args []string, stdout, stderr io.Writer) int {
+		// No resolvePaths, no project config, no space — deliberately. The
+		// verb reads the tree embedded in this binary and nothing else, which
+		// is the whole point: an agent in another team's repository can read
+		// a workflow page without a checkout, a config, or a connected space
+		// (spec 09 AC-6). Anything resolved here would be a precondition the
+		// verb does not have.
+		return cli.NewDocsCommand().Run(context.Background(), args, stdio(stdout, stderr))
+	}
 	m["work"] = func(args []string, stdout, stderr io.Writer) int {
 		p, err := resolvePaths()
 		if err != nil {
@@ -804,6 +813,26 @@ func runContract(args []string, stdout, stderr io.Writer) int {
 	cfg, err := space.LoadProjectConfig(p.projectConfig)
 	if err != nil {
 		return failf(stderr, "a2a contract: no project config (run `a2a init` first): %v", err)
+	}
+	// verify-published is intercepted BEFORE resolveContractDeps/
+	// NewContractCommand, and the reason is structural rather than tidy.
+	// ContractCommand is built bound to exactly ONE space, because
+	// resolveContractDeps keys space resolution off an XC artifact id in the
+	// arguments. This verb names no artifact — it asks about EVERY contract
+	// this system provides — so routing it through ContractCommand would
+	// silently answer for one space while printing a total (spec 07 AC-7,
+	// and the aggregate-that-checked-one-space defect the verb exists to
+	// replace).
+	if len(args) != 0 && args[0] == "verify-published" {
+		machine, machineErr := space.LoadMachineConfig(p.machineConfig)
+		if machineErr != nil && !errors.Is(machineErr, os.ErrNotExist) {
+			return failf(stderr, "a2a contract verify-published: read machine config: %v", machineErr)
+		}
+		cmd := cli.NewContractVerifyPublishedCommand(
+			p.projectConfig, p.machineConfig, p.projectRoot,
+			newCLIContractVerifyPublishedInspector(p, cfg, machine),
+		)
+		return cmd.Run(ctx, args[1:], stdio(stdout, stderr))
 	}
 	newCmd := cli.NewNewCommand(p.staging, cfg.System, actorResolver(), connectedSpaceIDs(cfg))
 	deps, code := resolveContractDeps(ctx, p, args, stderr)

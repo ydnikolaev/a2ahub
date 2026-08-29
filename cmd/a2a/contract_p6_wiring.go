@@ -896,3 +896,47 @@ var (
 	_ mcp.ContractInspectionOperations       = mcpContractP6Adapter{}
 	_ mcpContractP6Operations                = mcpContractP6Router{}
 )
+
+// newCLIContractVerifyPublishedInspector builds one read-only inspection
+// capability per connected space for `a2a contract verify-published`
+// (spec 07 AC-7). It exists because ContractCommand is constructed bound to
+// exactly ONE space — resolveContractDeps keys space resolution off an XC
+// artifact id, and this verb names no artifact at all — so the aggregate
+// verb cannot be reached through it without lying about what it checked.
+//
+// The per-space keying is deliberately the SAME shape
+// newMCPContractOperationsFactory already uses for mcpContractP6Router.bySpace:
+// one core per space.Ref, its mirror resolved by space.ResolveMirrorLocation,
+// its credential by resolveCredential. Two surfaces answering one question
+// must not answer it two ways.
+//
+// The actor resolver is wired rather than stubbed even though
+// ContractInspectionOperations is read-only (DiffContract, VerifyContractExport
+// — neither authors an event, so it is never reached). A closure that refuses
+// would encode "this is read-only today" as a runtime crash tomorrow.
+func newCLIContractVerifyPublishedInspector(p paths, cfg space.ProjectConfig, machine space.MachineConfig) cli.ContractVerifyPublishedSpaceInspector {
+	resolve := actorResolver()
+	return func(ref space.Ref, mirrorDir string) (cli.ContractInspectionOperations, error) {
+		engine, err := newEngine()
+		if err != nil {
+			return nil, err
+		}
+		owner, name, err := parseGitHubRepo(ref.RepoURL)
+		if err != nil {
+			return nil, err
+		}
+		core, err := newContractP6Core(
+			p.projectRoot, mirrorDir, ref.RepoURL, ref.ID, cfg.System,
+			host.Repo{Owner: owner, Name: name}, cfg.System, cfg.System+"@a2a.local", funnelBinaryVersion(),
+			engine, host.NewGitHubHost(http.DefaultClient, githubAPIBase()),
+			func(kind, name, model string) (template.Actor, error) {
+				return resolve(cli.ActorFlags{Kind: kind, Name: name, Model: model})
+			},
+			func(ctx context.Context) (host.Credential, error) { return resolveCredential(ctx, ref.ID, machine) },
+		)
+		if err != nil {
+			return nil, err
+		}
+		return cliContractP6Adapter{core: core}, nil
+	}
+}
