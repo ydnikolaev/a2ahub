@@ -54,4 +54,28 @@ checks:
     not_space_specific: true
     no_sensitive_content: true
     duplicates_checked: true
-status: new
+resolution: >-
+    Both halves fixed. The root cause was one function reading BOTH sides with a
+    hardcoded label: internal/space/contract_candidate.go wrote "space: " at
+    every diagnostic in readRootContractFile and its siblings, while the caller's
+    --local subject and the space's own mirror both flow through it. The side was
+    already in scope and unused — ContractCandidateLocation.Source — so the label
+    is now DERIVED from it (contractCandidateSourceLabel: staging -> "local",
+    mirror -> "space") rather than from a second parameter that could disagree.
+    Verified independently that the axes line up: the only three production
+    OpenContractCandidateReader sites are in internal/contractwiring/candidate.go,
+    and `verify-published --local` reaches the staging one through
+    readVerifyCandidate -> freezePublicationCandidate -> FreezePublicationCandidate.
+    So a fault in the caller-supplied directory now reads `local:` and names the
+    inspected path, and `space:` appears only when the space could not be read.
+
+    The second half shipped too: a candidate directory that exists but holds no
+    envelope gets its own refusal (ErrContractCandidateShape — "candidate is not
+    a published-shaped tree: no contract.md envelope at <path>") instead of the
+    generic stat error naming a constant the caller never typed. That is the
+    "you forgot a flag" reading the report called out, and it is the message a
+    producer whose generator emits a different layout now gets.
+
+    Two table-driven tests cover both polarities each, and both were watched RED
+    against a mutation that reverts the label to a hardcoded "space".
+status: accepted

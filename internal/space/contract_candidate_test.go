@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/contract"
@@ -439,6 +440,96 @@ func TestContractCandidateReaderRefusesDeterministicComponentAndLeafSwap(t *test
 			_, err = reader.Read(t.Context())
 			if !swapped || (!errors.Is(err, ErrContractUnsafePath) && !errors.Is(err, ErrContractUnsafeEntry)) {
 				t.Fatalf("swap result = swapped %v, error %v", swapped, err)
+			}
+		})
+	}
+}
+
+// TestReadRootContractFileLabelsDiagnosticBySide covers fb-20260829-e756c0: a
+// missing file read from the caller-supplied local/staging subject must be
+// reported with a "local:" prefix naming the inspected path, and the exact
+// same failure read from the space's own mirror tree must still say
+// "space:". readRootContractFile is the one seam every candidate read in
+// this file funnels through (Read's descriptor read and walkContractDirectory's
+// per-entry read both call it), so this is a direct, non-racy test of the
+// label itself rather than of a filesystem race needed to reach it end to
+// end.
+func TestReadRootContractFileLabelsDiagnosticBySide(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name       string
+		source     ContractCandidateSource
+		wantPrefix string
+	}{
+		{name: "local subject", source: ContractCandidateSourceStaging, wantPrefix: "local: inspect contract file"},
+		{name: "space mirror", source: ContractCandidateSourceMirror, wantPrefix: "space: inspect contract file"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			root, err := os.OpenRoot(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = root.Close() }()
+
+			_, err = readRootContractFile(t.Context(), root, "missing.json", "schema/missing.json", tc.source, nil)
+			if err == nil || !strings.HasPrefix(err.Error(), tc.wantPrefix) {
+				t.Fatalf("readRootContractFile error = %v, want prefix %q", err, tc.wantPrefix)
+			}
+			if !strings.Contains(err.Error(), `"schema/missing.json"`) {
+				t.Fatalf("readRootContractFile error = %v, want the inspected path named", err)
+			}
+		})
+	}
+}
+
+// TestReadContractCandidateRefusesMissingDescriptorAsWrongShape covers the
+// smaller half of fb-20260829-e756c0, on the exact file the record reported
+// (contract.md, not an arbitrary schema file): a candidate directory that
+// EXISTS but holds no contract.md must refuse with ErrContractCandidateShape
+// naming the shape it wanted, not the generic wrapped stat error every other
+// missing file in this package still reports (that message names
+// --local/--staging, which reads as "you forgot a flag" rather than "your
+// subject is the wrong shape"). The label must LEAD the message — the
+// reporter's own failure mode was reading only the leading token — so this
+// asserts HasPrefix, not merely Contains, and covers both sides: a caller's
+// --local subject missing the shape (the reported case) and a broken mirror
+// missing it too (the same refusal, correctly re-labelled "space:").
+func TestReadContractCandidateRefusesMissingDescriptorAsWrongShape(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name       string
+		source     ContractCandidateSource
+		wantPrefix string
+	}{
+		{name: "local subject", source: ContractCandidateSourceStaging, wantPrefix: "local: candidate is not a published-shaped tree"},
+		{name: "space mirror", source: ContractCandidateSourceMirror, wantPrefix: "space: candidate is not a published-shaped tree"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			project := t.TempDir()
+			root := filepath.Join(project, "candidate")
+			if err := os.MkdirAll(root, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			// The directory exists and is non-empty (an unrelated file), so
+			// this is squarely "wrong shape", not "does not exist".
+			writeContractCandidateFile(t, root, "README.txt", "not a contract\n")
+
+			_, err := ReadContractCandidate(t.Context(), project, ContractCandidateLocation{
+				Path: "candidate", Source: tc.source,
+			})
+			if !errors.Is(err, ErrContractCandidateShape) {
+				t.Fatalf("ReadContractCandidate = %v, want ErrContractCandidateShape", err)
+			}
+			if err == nil || !strings.HasPrefix(err.Error(), tc.wantPrefix) {
+				t.Fatalf("ReadContractCandidate error = %v, want prefix %q", err, tc.wantPrefix)
+			}
+			if !strings.Contains(err.Error(), "contract.md") {
+				t.Fatalf("ReadContractCandidate error = %v, want the missing envelope named", err)
 			}
 		})
 	}

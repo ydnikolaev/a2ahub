@@ -38,6 +38,41 @@ const (
 	ContractCandidateSourceStaging ContractCandidateSource = "staging"
 )
 
+// ErrContractCandidateShape means a candidate location was opened, and the
+// directory itself exists, but its root holds no contract.md envelope — the
+// one shape every candidate (mirror or staging) must have before anything
+// downstream can classify it as a contract at all. It is reported instead of
+// the generic wrapped stat error specifically for this one case because the
+// generic message names the flag that would MEASURE a candidate ("no such
+// file or directory"), which an operator reads as "you forgot a flag" —
+// reported against fb-20260829-e756c0, where the reporter's own directory
+// was simply the wrong shape rather than missing entirely. The text carries
+// no "space"/"local" prefix of its own: every caller wraps it behind
+// contractCandidateSourceLabel, so the side always leads the rendered
+// message rather than living inside this shared sentinel.
+// ErrContractCandidateShape is part of the public package API.
+var ErrContractCandidateShape = errors.New("candidate is not a published-shaped tree")
+
+// contractCandidateSourceLabel names which side of a read a diagnostic
+// describes. This is NOT the same axis as "where this candidate physically
+// lives" in the abstract — it happens to line up exactly because the only
+// two production callers of OpenContractCandidateReader with these two
+// Source values are contractwiring.FreezePublicationCandidate's mirrorReader
+// (the space's own tree, read from the Git mirror) and its stagingReader
+// (the directory a caller supplied via --staging or --local, overlaid on
+// top of it). A diagnostic that hardcodes "space:" regardless of which one
+// failed sends an operator chasing a broken PUBLISHED tree when their own
+// --local directory is the one missing a file — reported as fb-20260829-e756c0
+// (same class as fb-20260827-4b121a). Deriving the label from the Source
+// already threaded through every read call, rather than adding a second,
+// possibly-disagreeing parameter, is what keeps the two from drifting apart.
+func contractCandidateSourceLabel(source ContractCandidateSource) string {
+	if source == ContractCandidateSourceStaging {
+		return "local"
+	}
+	return "space"
+}
+
 // ContractCandidateLocation selects one already-existing directory beneath a
 // configured root. Path is always relative to the configured root; callers do
 // not get an absolute-path escape hatch.
@@ -193,7 +228,7 @@ func (r *ContractCandidateReader) Close() error {
 		r.configured = nil
 	}
 	if rootErr != nil || configuredErr != nil {
-		return fmt.Errorf("space: close contract candidate capabilities: %w", errors.Join(rootErr, configuredErr))
+		return fmt.Errorf("%s: close contract candidate capabilities: %w", contractCandidateSourceLabel(r.location.Source), errors.Join(rootErr, configuredErr))
 	}
 	return nil
 }
@@ -228,6 +263,22 @@ func (r *ContractCandidateReader) Read(ctx context.Context) (ContractCandidateSn
 	state := &contractWalkState{source: r.location.Source}
 	descriptor, err := readRootContractFile(ctx, r.root, contract.DescriptorPath, contract.DescriptorPath, r.location.Source, r.hooks.afterLeafLstat)
 	if err != nil {
+		// A missing descriptor at the ROOT of an already-opened candidate
+		// directory (opening it above already proved the directory itself
+		// exists) means the tree is not shaped like a contract at all, not
+		// that a real candidate lost its envelope mid-read. Naming that
+		// directly — instead of surfacing "no such file or directory" for
+		// the constant contract.DescriptorPath the caller never typed —
+		// is what stops a wrong `--local`/`--staging` target from reading
+		// as "you forgot a flag" (fb-20260829-e756c0).
+		if errors.Is(err, os.ErrNotExist) {
+			// The side label leads, matching every other diagnostic in this
+			// file: a reader scanning left to right for "local"/"space" must
+			// not have to reach past a shape word first (fb-20260829-e756c0
+			// was specifically about a buried/misleading leading token).
+			return ContractCandidateSnapshot{}, fmt.Errorf("%s: %w: no %s envelope at %s",
+				contractCandidateSourceLabel(r.location.Source), ErrContractCandidateShape, contract.DescriptorPath, r.location.Path)
+		}
 		return ContractCandidateSnapshot{}, err
 	}
 	state.files = append(state.files, descriptor)
@@ -275,7 +326,7 @@ func walkOptionalContractDirectory(ctx context.Context, parent *os.Root, name st
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("space: inspect contract root %q: %w", name, err)
+		return fmt.Errorf("%s: inspect contract root %q: %w", contractCandidateSourceLabel(state.source), name, err)
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		return fmt.Errorf("%w: %q must be a real directory", ErrContractUnsafeEntry, name)
@@ -305,11 +356,11 @@ func walkContractDirectory(ctx context.Context, dir *os.Root, relative string, d
 	}
 	directoryBefore, err := dir.Stat(".")
 	if err != nil {
-		return fmt.Errorf("space: inspect contract directory %q: %w", relative, err)
+		return fmt.Errorf("%s: inspect contract directory %q: %w", contractCandidateSourceLabel(state.source), relative, err)
 	}
 	listing, err := dir.Open(".")
 	if err != nil {
-		return fmt.Errorf("space: list contract directory %q: %w", relative, err)
+		return fmt.Errorf("%s: list contract directory %q: %w", contractCandidateSourceLabel(state.source), relative, err)
 	}
 	defer func() { _ = listing.Close() }() // reason: preserve the traversal error
 	for {
@@ -329,7 +380,7 @@ func walkContractDirectory(ctx context.Context, dir *os.Root, relative string, d
 			entryPath := path.Join(relative, entry.Name())
 			info, statErr := dir.Lstat(entry.Name())
 			if statErr != nil {
-				return fmt.Errorf("space: inspect contract entry %q: %w", entryPath, statErr)
+				return fmt.Errorf("%s: inspect contract entry %q: %w", contractCandidateSourceLabel(state.source), entryPath, statErr)
 			}
 			if info.Mode()&os.ModeSymlink != 0 {
 				return fmt.Errorf("%w: %q is a symlink", ErrContractUnsafeEntry, entryPath)
@@ -353,7 +404,7 @@ func walkContractDirectory(ctx context.Context, dir *os.Root, relative string, d
 					return walkErr
 				}
 				if closeErr != nil {
-					return fmt.Errorf("space: close contract directory %q: %w", entryPath, closeErr)
+					return fmt.Errorf("%s: close contract directory %q: %w", contractCandidateSourceLabel(state.source), entryPath, closeErr)
 				}
 				continue
 			}
@@ -383,7 +434,7 @@ func walkContractDirectory(ctx context.Context, dir *os.Root, relative string, d
 			return nil
 		}
 		if readErr != nil {
-			return fmt.Errorf("space: list contract directory %q: %w", relative, readErr)
+			return fmt.Errorf("%s: list contract directory %q: %w", contractCandidateSourceLabel(state.source), relative, readErr)
 		}
 	}
 }
@@ -391,7 +442,7 @@ func walkContractDirectory(ctx context.Context, dir *os.Root, relative string, d
 func readRootContractFile(ctx context.Context, root *os.Root, name, relative string, source ContractCandidateSource, afterLstat func(string)) (ContractSnapshotFile, error) {
 	before, err := root.Lstat(name)
 	if err != nil {
-		return ContractSnapshotFile{}, fmt.Errorf("space: inspect contract file %q: %w", relative, err)
+		return ContractSnapshotFile{}, fmt.Errorf("%s: inspect contract file %q: %w", contractCandidateSourceLabel(source), relative, err)
 	}
 	if before.Mode()&os.ModeSymlink != 0 || !before.Mode().IsRegular() {
 		return ContractSnapshotFile{}, fmt.Errorf("%w: %q has mode %s", ErrContractUnsafeEntry, relative, before.Mode())
@@ -414,7 +465,7 @@ func readRootContractFile(ctx context.Context, root *os.Root, name, relative str
 	}()
 	opened, err := file.Stat()
 	if err != nil {
-		return ContractSnapshotFile{}, fmt.Errorf("space: inspect opened contract file %q: %w", relative, err)
+		return ContractSnapshotFile{}, fmt.Errorf("%s: inspect opened contract file %q: %w", contractCandidateSourceLabel(source), relative, err)
 	}
 	afterOpen, err := root.Lstat(name)
 	if err != nil || !opened.Mode().IsRegular() || afterOpen.Mode()&os.ModeSymlink != 0 ||
@@ -423,11 +474,11 @@ func readRootContractFile(ctx context.Context, root *os.Root, name, relative str
 	}
 	raw, err := readContractFileContext(ctx, file, contract.MaxFileBytes)
 	if err != nil {
-		return ContractSnapshotFile{}, fmt.Errorf("space: read contract file %q: %w", relative, err)
+		return ContractSnapshotFile{}, fmt.Errorf("%s: read contract file %q: %w", contractCandidateSourceLabel(source), relative, err)
 	}
 	afterRead, err := file.Stat()
 	if err != nil {
-		return ContractSnapshotFile{}, fmt.Errorf("space: re-inspect opened contract file %q: %w", relative, err)
+		return ContractSnapshotFile{}, fmt.Errorf("%s: re-inspect opened contract file %q: %w", contractCandidateSourceLabel(source), relative, err)
 	}
 	afterPath, err := root.Lstat(name)
 	if err != nil || !afterRead.Mode().IsRegular() || afterPath.Mode()&os.ModeSymlink != 0 ||
@@ -436,7 +487,7 @@ func readRootContractFile(ctx context.Context, root *os.Root, name, relative str
 		return ContractSnapshotFile{}, fmt.Errorf("%w: %q changed while reading", ErrContractUnsafeEntry, relative)
 	}
 	if err := file.Close(); err != nil {
-		return ContractSnapshotFile{}, fmt.Errorf("space: close contract file %q: %w", relative, err)
+		return ContractSnapshotFile{}, fmt.Errorf("%s: close contract file %q: %w", contractCandidateSourceLabel(source), relative, err)
 	}
 	closed = true
 	return ContractSnapshotFile{

@@ -10,3 +10,12 @@ items:
       refs:
         - docs/backlog.md
       date: "2026-08-02"
+    - id: fb-20260829-e756c0
+      kind: bug
+      severity: minor
+      title: verify-published blames the space for a file missing from --local
+      verdict: accepted
+      route: quick-fix
+      refs:
+        - internal/space/contract_candidate.go
+      date: "2026-08-29"
