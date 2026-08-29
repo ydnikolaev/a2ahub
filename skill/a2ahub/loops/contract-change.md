@@ -285,7 +285,12 @@ sees you, and that deprecation still reaches your inbox.
    172 items and 44. The list is ordered so the first item is always one you
    can act on alone: local changes carrying a runnable command, then local
    changes without one, then anything needing another party. It exits
-   non-zero while anything remains, so a harness can gate on it.
+   non-zero while anything remains, so a harness can gate on it. `--json` emits
+   the same pending set with `count`, the baseline it walked from, and
+   `obligations_remain` carrying the SAME verdict the exit code encodes — so a
+   caller never has to infer it from the count. `--done --json` has its own
+   shape, reporting what was recorded, how many obligations were `verified` by
+   a `detect:` run, and whether the record was refused and why.
 
    **`a2a adapt --done` records that you adapted**, in the repository rather
    than on your machine, so a teammate's agent cloning the repo neither

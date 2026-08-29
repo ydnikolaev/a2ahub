@@ -178,7 +178,19 @@ One row per contract, each carrying its own status: `matched`, `drifted`,
 all. The version is resolved from the published descriptor — you do not pass
 one, and passing the wrong one is therefore not a mistake you can make. A local
 subject that is not where the layout expects it is named with `--local
-<XC-id>=<path>`.
+<XC-id>=<path>`, repeatable, once per contract. A contract with no override
+reports `unmeasured` and names the flag that would measure it, rather than
+being silently skipped or quietly compared against a default. An override given
+as an empty path resolves the same as no override at all, so there is one way
+to mean "no subject" rather than two that can disagree.
+
+**On the MCP surface that map is `local_subjects`, an object — NOT `local`.**
+`local` is already published as a STRING for `action=verify-export`, and one
+grouped tool cannot advertise a name at two types. Since v0.25.6 every MCP
+input schema is closed, so sending `local` to `action=verify-published` is
+refused by name rather than quietly ignored. The other asymmetry: the MCP
+action resolves ONE space per call, where the CLI aggregates every connected
+space.
 
 Two behaviours worth knowing before you wire it into a gate. A run that finds
 **zero** contracts prints that denominator rather than refusing: publishing
@@ -363,6 +375,28 @@ a2a contract publish <id> --bump major \
 The bare form stays correct where no such tree exists — a consumer's checkout,
 a fresh clone, or after you have deleted a candidate you do not mean to
 publish. It is not a flag you can set once and forget: it names the bytes.
+
+**A bump that changes nothing is refused too.** A non-first publish whose
+mutations touch no normative artifact — the descriptor, a schema, a fixture —
+is refused rather than minted, because a version that changes nothing means
+nothing to a consumer who has to decide whether to move to it:
+
+```
+this bump's <n> mutation(s) (besides <descriptor> itself, which every bump
+changes) touch no normative artifact, and a version bump that changes no
+normative artifact means nothing to a consumer. Re-run with
+--allow-empty-bump if this is deliberate.
+```
+
+Note what it excludes: the descriptor's own `version:` flip is not evidence of
+a change, because every bump makes it. Pass `--allow-empty-bump` when the empty
+bump is deliberate — it acknowledges the finding and proceeds, and says so on
+the way through (`--allow-empty-bump acknowledged: ...`) rather than going
+quiet. On the MCP surface the same input is `allow_empty_bump`, on
+`preflight` and `publish`. Reach for it only when the version number itself is
+the point (an alignment bump across a family, say); the usual cause of this
+refusal is a publish aimed at the wrong candidate tree, which is the
+`--staging` paragraph above, not this flag.
 
 ## Registering, and why it is the whole basis of this
 

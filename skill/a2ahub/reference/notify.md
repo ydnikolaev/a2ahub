@@ -58,11 +58,20 @@ as an outage will get both wrong.
 
 | Verb | 0 | 1 | 2 |
 |---|---|---|---|
-| `render` | messages printed | a refusal (unknown `--only` id, a route naming an undeclared secret) or an unreadable checkout | usage — no range selector, two of them, or a bad `--limit` |
+| `render` | messages printed | a refusal (unknown `--only` id, a route naming an undeclared secret, a `space.yaml` whose own `notification_routes[]` bytes do not re-decode or re-decode to a different route count) or an unreadable checkout | usage — no range selector, two of them, or a bad `--limit` |
 | `send` | every record sent, or dry-run | **at least one delivery failed** — the others still went | usage, or an invalid message array on stdin |
 | `setup` | the step reached its end | any named error. Two are worth telling apart: **this checkout is not a space** — the step-0 guard, refusing before any repository is named, and the one to act on — and `--non-interactive`'s deliberate refusal to prompt, which is the intended path rather than a fault | usage |
 | `discover` | a chat id was found | no update arrived within `--timeout`, or the API refused | usage |
 | `verify` | all three facts check out | at least one did not | usage |
+
+**Why `render` refuses an unreadable manifest instead of proceeding.** Route
+selectors are re-read from the manifest's own raw bytes, and until v0.25.7 a
+manifest that failed to re-decode was indistinguishable from one declaring no
+selectors — so a corrupt or hand-truncated `space.yaml` silently produced the
+widest possible routing rather than a refusal. It now names which of the two it
+found (`does not re-decode as YAML`, or a route-count mismatch) and stops,
+because attributing a selector to the wrong route is worse than sending
+nothing.
 
 ## Event classes
 

@@ -15,6 +15,71 @@
 
 ## Prose files under review (D-015 hand-maintained set)
 
+### v0.25.7 — six gaps, and every one of them was a flag or a printed line
+
+**This is the release the column exists for.** `answers-that-hold-2026-08`
+ships three new verbs, four new flags, two new doctor advisory families and one
+new funnel refusal. Enumerated against the shipped surface — `internal/cli`'s
+own `fs.Bool`/`fs.String`/`fs.Var` registrations, the sentinels each path can
+return, and `internal/mcp/tools.go`'s parameter names — rather than sampled.
+Six gaps, all fixed in this pass:
+
+1. **`a2a validate --ci --space <id>` (RN-02507-3) was in no hand-maintained
+   page.** It appeared only in the GENERATED `reference/commands.md` synopsis,
+   which this file's own header says is not the place to look for flag syntax.
+   Worse, `troubleshooting.md` said `--space` twice — an exit-code row and a
+   resolution row — as "the v2 admin host-drift diff, explicitly rejected in
+   v1-min". Both are `doctor`'s flag and both sat inside doctor's own sections,
+   so they were correct by position and wrong by wording: an agent grepping the
+   page for the flag it had just been given learned the flag does not exist.
+   Both rows are now scoped to `doctor --space` by name and point at the new
+   `validate --ci` row.
+2. **`--allow-empty-bump` (RN-02507-1) was documented nowhere at all** — not a
+   row, not an example, not a mention. Its refusal ("this bump's N mutation(s)
+   … touch no normative artifact") was equally absent, so the flag existed only
+   as a string in a refusal an agent had no page to look up.
+3. **`local_subjects` was undocumented while `--local` was.** RN-02507-7's own
+   detail calls this asymmetry out: the CLI flag is `--local <XC-id>=<path>`
+   and the MCP input is the `local_subjects` OBJECT, because `local` is already
+   published as a string for `action=verify-export`. Since v0.25.6 every MCP
+   input schema is closed, so an agent carrying the CLI name across to MCP is
+   now refused BY NAME rather than quietly ignored — a gap that got sharper,
+   not softer, because of the previous release.
+4. **Two new doctor advisory families printed lines no row explained.**
+   `observed consumer [<space>]` (RN-02507-4) and `notify selectivity
+   [<space>]` (RN-02507-5) both print on `a2a doctor`, both WARN-only, and
+   `troubleshooting.md`'s checks table carried a row for their older sibling
+   `consumed contract` and none for either of them. The count in the heading
+   was not wrong — the tripwire derives it from the FIXED roster and these are
+   advisories — which is exactly why the machine gate could not see this.
+5. **`a2a adapt --json` and `--done --json` had no shape written down.** The
+   verb was documented; its machine-readable route, including
+   `obligations_remain` carrying the same verdict as the exit code, was not.
+6. **`notify render`'s unreadable-manifest refusal had no exit-code row.** A
+   `space.yaml` whose `notification_routes[]` bytes do not re-decode — or
+   re-decode to a different route count — now refuses rather than being read as
+   "declares no selectors", which is the widest possible routing. The exit-code
+   table listed `render`'s other two refusals and not this one.
+
+**What step 7 checked and found sound**, stated so the six above are not read
+as the whole diff: REF-027 — this release's write-funnel refusal, the sharpest
+thing in it — already carried a complete `troubleshooting.md` row naming the
+batch-not-the-file distinction and the `a2a respond --response <RS-id>` repair.
+`reference/contract-versions.md` already covered the `--staging` refusal,
+`verify-published` with its zero-contracts/stale-mirror asymmetry, the
+`--json` field reference and the descriptor-only `frontmatter <field>` line.
+`loops/receive.md` already routes every response through `a2a respond`, so no
+loop step sends an agent into the new refusal. And no prose page reproduces a
+verb's usage output verbatim, so RN-02507-10's extra `workflow:` line breaks
+nothing that was written down.
+
+**How this pass was run, recorded because it did not go as planned.** Three
+scout agents were dispatched to split the enumeration three ways and none of
+them returned a report. The enumeration above is the lead's own, read directly
+from the CLI files, the MCP tool table and the pages. That is worth a sentence
+because the alternative — waiting, or ticking on a report that never arrived —
+is the failure this column is for.
+
 ### v0.25.5 — no row moves; the release does not touch the agent's surface
 
 **The shipped surface this release changes is the published website.** Step 7's
@@ -100,26 +165,26 @@ not drifted from the plan wording it quotes.
 
 | Prose file | What the reviewer confirms | Reviewed | Reviewer | Date |
 |------------|---------------------------|:--------:|----------|------|
-| `skill/a2ahub/SKILL.md` | Activation modes correct; TOC links every current file (incl. `reference/commands.md`, `reference/authoring/`, `reference/decompose-example.md`, `reference/feedback.md`, `reference/status-announcements.md`, `reference/retraction.md`, `reference/bindings.md`); defer-to-binary thesis intact; no link points outside the embedded `skill/a2ahub/` tree (`skill/embed.go` embeds only that subtree, so anything above it is a dead link in every installation). **v0.19.9**: `reference/actor-identity.md` added to the file table, the D-015 list and `docs-manifest.json` in the same pass — the three marks a new page needs, and the completeness clause below has twice caught a page that got fewer than all three. **v0.25.0**: § "Staying current" was re-read against the shipped surface, not re-ticked — it said the advisory prints on `a2a inbox` / `a2a outbox` and rides MCP `a2a_read`, which stopped being true this release: every verb prints it on success and every MCP tool carries it. It also gained `a2a version` (the three axes), the two new doctor findings, and the stated reason only the floor refuses. A row that describes the previous release's surface is the failure this column exists to catch. | ✓ | Claude Code | 2026-08-28 |
+| `skill/a2ahub/SKILL.md` | Activation modes correct; TOC links every current file (incl. `reference/commands.md`, `reference/authoring/`, `reference/decompose-example.md`, `reference/feedback.md`, `reference/status-announcements.md`, `reference/retraction.md`, `reference/bindings.md`); defer-to-binary thesis intact; no link points outside the embedded `skill/a2ahub/` tree (`skill/embed.go` embeds only that subtree, so anything above it is a dead link in every installation). **v0.19.9**: `reference/actor-identity.md` added to the file table, the D-015 list and `docs-manifest.json` in the same pass — the three marks a new page needs, and the completeness clause below has twice caught a page that got fewer than all three. **v0.25.0**: § "Staying current" was re-read against the shipped surface, not re-ticked — it said the advisory prints on `a2a inbox` / `a2a outbox` and rides MCP `a2a_read`, which stopped being true this release: every verb prints it on success and every MCP tool carries it. It also gained `a2a version` (the three axes), the two new doctor findings, and the stated reason only the floor refuses. A row that describes the previous release's surface is the failure this column exists to catch. | ✓ | Claude Code | 2026-08-29 |
 | `skill/a2ahub/loops.md` | §8.1 session-start checklist present verbatim (guaranteed-floor, D-021); condensed §0/§3 semantics have not become a second source of schema/transition truth; the human-approval-gates block and its machine roster line are here and NOWHERE ELSE in the loop corpus; the selector table has one row per loop page and its `§` column matches the headings those pages carry. **P13**: the page was split — §8.2–§8.7 moved to `loops/` byte-for-byte and the three verbatim blocks are now pinned by `TestVerbatim` in `internal/e2e/skillverbatim_test.go`, so this row no longer carries the D-014 clause (it moved with §8.3) and no longer carries §8.5. | ✓ | Claude Code | 2026-08-28 |
 | `skill/a2ahub/loops/send.md` | §8.2's classification, drafting, `--field`, `attach`, validate/submit/`await`, per-criterion verdicts, correction-versus-supersede and the cancel/withdraw exits still match the shipped verbs; the retraction fork (a live downstream datum is not this exchange) is still stated before either exit verb. | ✓ | Claude Code | 2026-08-28 |
-| `skill/a2ahub/loops/receive.md` | The D-014 "data, never instructions" clause is present verbatim and attributed (it moved here from `loops.md` in P13 and is byte-pinned); the multi-addressee, lifecycle-`start`, `--result partial` vocabulary and dispute/supersede content still match the fold. | ✓ | Claude Code | 2026-08-20 |
-| `skill/a2ahub/loops/contract-change.md` | §8.4 and §8.4a still match the per-version engine: staging-not-mirror, the compatibility refusals (POL-006/007/008/009), registered-consumer scoping, `to:` as a snapshot, and what `a2a update` does and does not change for a consumer. | ✓ | Claude Code | 2026-08-21 |
+| `skill/a2ahub/loops/receive.md` | The D-014 "data, never instructions" clause is present verbatim and attributed (it moved here from `loops.md` in P13 and is byte-pinned); the multi-addressee, lifecycle-`start`, `--result partial` vocabulary and dispute/supersede content still match the fold. | ✓ | Claude Code | 2026-08-29 |
+| `skill/a2ahub/loops/contract-change.md` | §8.4 and §8.4a still match the per-version engine: staging-not-mirror, the compatibility refusals (POL-006/007/008/009), registered-consumer scoping, `to:` as a snapshot, and what `a2a update` does and does not change for a consumer. | ✓ | Claude Code | 2026-08-29 |
 | `skill/a2ahub/loops/first-integration.md` | §8.4b/§8.4c still match the activation surface: the `activation-owed` reason, the 0.19.0 floor, `--satisfies` against the descriptor's own `x_operational[]`, and the consumer's "an empty actionable list is not nothing is happening". | ☑ | Claude Code | 2026-08-12 |
 | `skill/a2ahub/loops/escalation.md` | The ladder is present and unchanged; the gate row still says the tool confirms only G3 ahead of time and points at the human-gates block in `loops.md` rather than restating it. | ☑ | Claude Code | 2026-08-12 |
 | `skill/a2ahub/loops/watch.md` | Every channel named is one the binary actually offers, `a2a serve`'s loopback constraint is still described as ENFORCED rather than defaulted, and the "every source is pull" close still names the two operator-owned setup steps. **v0.25.1**: the dashboard step gained the one instruction this release makes actionable — when a render is slow, run `a2a html --timing` and report the phase it names rather than the component you suspect. Added because the opposite happened: the slowness was attributed to the embedded changelog, which measured 8.7 ms of the render. | ☑ | Claude Code | 2026-08-22 |
 | `skill/a2ahub/loops/feedback.md` | Still the SSOT for the rubric (two triggers, five gates, one report per PR) that `reference/feedback.md` derives from; the `a2a feedback triage` hub check and its offline refusal still match the shipped behaviour. | ☑ | Claude Code | 2026-08-12 |
-| `skill/a2ahub/troubleshooting.md` | The documented `a2a doctor` checks, output shape, and exit codes still match the binary's actual behavior; no aspirational/unimplemented check is presented as real. **v0.19.1**: the `space access` and `credentials` rows were re-read against the changed behaviour, not merely re-ticked — `space access` now runs authenticated and its `Repository not found` failure carries doctor's own classification, and the `credentials` row no longer describes a write-only credential. Both said something that had become wrong, which is the case a completeness check does not catch. **v0.19.2**: the `credentials` row now also names the `cmd:gh auth token` form. The v0.19.1 pass named the mechanism but not the form, and a real operator read it and concluded they had to mint a new token — a row can be accurate and still lead its reader wrong, which is the failure mode this column exists to catch and did not. **v0.25.0**: doctor gained two advisory findings — "no release check has ever run on this machine" and a connected space pinning an older a2ahub template — both reported under the existing `versions` check, neither able to fail it. | ✓ | Claude Code | 2026-08-28 |
+| `skill/a2ahub/troubleshooting.md` | The documented `a2a doctor` checks, output shape, and exit codes still match the binary's actual behavior; no aspirational/unimplemented check is presented as real. **v0.19.1**: the `space access` and `credentials` rows were re-read against the changed behaviour, not merely re-ticked — `space access` now runs authenticated and its `Repository not found` failure carries doctor's own classification, and the `credentials` row no longer describes a write-only credential. Both said something that had become wrong, which is the case a completeness check does not catch. **v0.19.2**: the `credentials` row now also names the `cmd:gh auth token` form. The v0.19.1 pass named the mechanism but not the form, and a real operator read it and concluded they had to mint a new token — a row can be accurate and still lead its reader wrong, which is the failure mode this column exists to catch and did not. **v0.25.0**: doctor gained two advisory findings — "no release check has ever run on this machine" and a connected space pinning an older a2ahub template — both reported under the existing `versions` check, neither able to fail it. | ✓ | Claude Code | 2026-08-29 |
 | `skill/a2ahub/onboarding.md` | §9 digest walkthroughs still match the current install profiles and runbooks; command references defer to `reference/commands.md`. **v0.19.1**: §9.2 step 1 now states that on a private space — which §9.1 creates by default — the participant's credential gates reads, so it must exist before the step 3 `a2a doctor`. **v0.19.2**: that step now also shows the concrete config form, so it is actionable without a second lookup. | ☑ | Claude | 2026-08-05 |
 | `skill/a2ahub/reference/decompose-example.md` | The worked decompose still models one composite need → three single-intent artifacts on one thread; cited fixtures still exist on disk with the stated IDs; the "separate fixtures, not a coordinated trio" deviation is still accurate (or the file was updated when a real trio landed). | ☑ | Codex | 2026-07-31 |
 | `skill/a2ahub/reference/feedback.md` | The feedback channel still matches the shipped verbs and intake behaviour (`a2a feedback new/validate/submit/status`, the quarantined `feedback/inbox/` path, the FB-### codes); what it tells a reporter makes a report actionable rather than merely filed. **Added 2026-07-25**: this file is hand-maintained prose and had no row here, which the row below already declared impossible — the completeness clause was true of the list and false of the tree. | ☑ | Codex | 2026-07-31 |
 | `skill/a2ahub/reference/status-announcements.md` | `period` is still an unconstrained string on `schemas/envelope/v1/announcement.schema.json` (no `format`/`pattern`) and the page still states plainly why it isn't enforced yet; the noted collision with the generated authoring template's `2026-W35` example is still named, not silently resolved by an edit to that generated file. | ☑ | Codex | 2026-07-31 |
 | `skill/a2ahub/reference/work-reporting.md` | Durable checkpoints and machine-local leases remain separate authorities; the provider-neutral start/heartbeat/checkpoint/wait/stop loop matches the shipped CLI/MCP surface; missing or expired evidence is unknown, never idle; unsafe report content remains forbidden. **v0.19.9**: the page stated that a work stream is owned by its original system, actor name and session, without saying that the ownership is ENFORCED — the refusal text and the `--actor-name <the original>` escape were nowhere, and this release changes what `actor.name` resolves to, so a stream held open across the upgrade meets that refusal. | ☑ | Claude Code | 2026-08-07 |
-| `skill/a2ahub/reference/notify.md` | Every flag on all five `a2a notify` sub-verbs still exists with the semantics stated, checked against `internal/cli/cmd_notify.go` and `cmd_notify_setup.go` rather than against `-h` output; the exit-code table still matches each verb's own `Run`; the legal event classes still match `internal/validate`'s route policy AND `internal/spacenotify`'s constants (they are two copies held together only by a test); the two inert flags (`setup --space`, `verify --space`) are still inert and still labelled so; and the "not wired yet" section still describes `a2a_notify`'s real state — **delete that section the release it becomes functional**, because a stale "this does not work" is as harmful as the missing warning was. **Added 2026-08-18**: this page exists because enumerating the notify surface found the whole `send` verb documented nowhere and two shipped defects behind it; `a2a notify` had no reference page while `loops.md` states the convention that a family's flags live in one. | ✓ | Claude Code | 2026-08-21 |
+| `skill/a2ahub/reference/notify.md` | Every flag on all five `a2a notify` sub-verbs still exists with the semantics stated, checked against `internal/cli/cmd_notify.go` and `cmd_notify_setup.go` rather than against `-h` output; the exit-code table still matches each verb's own `Run`; the legal event classes still match `internal/validate`'s route policy AND `internal/spacenotify`'s constants (they are two copies held together only by a test); the two inert flags (`setup --space`, `verify --space`) are still inert and still labelled so; and the "not wired yet" section still describes `a2a_notify`'s real state — **delete that section the release it becomes functional**, because a stale "this does not work" is as harmful as the missing warning was. **Added 2026-08-18**: this page exists because enumerating the notify surface found the whole `send` verb documented nowhere and two shipped defects behind it; `a2a notify` had no reference page while `loops.md` states the convention that a family's flags live in one. | ✓ | Claude Code | 2026-08-29 |
 | `skill/a2ahub/reference/retraction.md` | An `x_retraction` block on a `work_request` still round-trips `valid: true` through `a2a validate` against the shipped schema with no release; the page still states why `x_` was chosen over a new `category` rather than restating it as settled. | ☑ | Codex | 2026-07-31 |
 | `skill/a2ahub/reference/bindings.md` | The file is still described as local-tracked with no space-visible path or aggregate; if the first real deprecation in `getvisa` (conventions spec §10) has happened since the last review, its pass/fail verdict has been recorded in the spec's §11 amendments — not left for this row alone to remember. | ☑ | Codex | 2026-07-31 |
 | `skill/a2ahub/reference/threads.md` | Thread order, open-item/next-move semantics and the space-local boundary match the current read/fold implementation; no prose implies two independent threads can be merged after authoring. **v0.19.9**: the page had told agents that `a2a inbox --actionable` is "this same computation projected onto your own system's inbox". Both surfaces do ask ONE relation, which is worth saying — but `--actionable` also surfaces an urgent item whose next move is the other side's, so a thread settled on you can legitimately appear there. An agent told the two are identical reads that as a contradiction in the tool. | ✓ | Claude Code | 2026-08-28 |
-| `skill/a2ahub/reference/contract-versions.md` | Rolling-window, maintenance-baseline, major-scoped retirement and late-adopter deprecation guidance match the per-version engine and current command surface; the carried-set section names the profile each `min_binary_version` selects, the required roles, the non-JSON-Schema limit, and the `--staging` route for a descriptor that already merged. **Added 2026-08-06**: this page had no carried-set section at all while the publication planner refused on exactly that shape — the omission is what fb-20260806-3539ac cost. | ☑ | Claude Code | 2026-08-06 |
+| `skill/a2ahub/reference/contract-versions.md` | Rolling-window, maintenance-baseline, major-scoped retirement and late-adopter deprecation guidance match the per-version engine and current command surface; the carried-set section names the profile each `min_binary_version` selects, the required roles, the non-JSON-Schema limit, and the `--staging` route for a descriptor that already merged. **Added 2026-08-06**: this page had no carried-set section at all while the publication planner refused on exactly that shape — the omission is what fb-20260806-3539ac cost. | ✓ | Claude Code | 2026-08-29 |
 | `skill/a2ahub/reference/data-exchange.md` | The handoff-arc table matches the fold table, including `rejected → superseded`; the producer and consumer sequences match `runVerify`/`dataRefuse` and the shipped output lines; the response-cannot-claim-a-delivery section still describes the check the write path actually performs. **Added 2026-08-04**: this page shipped in v0.19.0 as a new hand-maintained file with no row here — the same completeness failure the last row of this table already records twice. **P13**: the flag table, the source-directory mapping and the refusal table moved to the two sibling pages below; check those rows, not this one, for them. | ✓ | Claude Code | 2026-08-21 |
 | `skill/a2ahub/reference/data-exchange-flags.md` | Every flag on all four `a2a data` verbs is explained with what it DECIDES, not merely shown in an example; the exit-code contract matches the binary; the source-directory-to-schema mapping matches the packer. | ☑ | Claude Code | 2026-08-12 |
 | `skill/a2ahub/reference/data-exchange-refusals.md` | Every sentinel in `internal/datapackage/errors.go` a caller can reach has a row; the verdict-versus-error `--json` rule matches `runVerify`; the "no flag forces a pass" claim still holds against the code that derives the write direction. | ☑ | Claude Code | 2026-08-12 |
@@ -129,6 +194,26 @@ not drifted from the plan wording it quotes.
 | `skill/RELEASE-CHECKLIST.md` (this file) | The prose-file list is complete — every hand-maintained prose file has a row; no generated `reference/**` file was added here by mistake. **Check it against `SKILL.md`'s own D-015 list, in both directions**: this clause silently held for two releases while `reference/feedback.md` was missing from both. **v0.19.9**: checked by enumerating `skill/a2ahub/**/*.md` minus the generated tree and differencing it against both lists — 15 files, four empty differences. That it took a script to answer honestly is the argument for a gate — a clause that has escaped twice will not be caught by reading harder the third time, and the check is a dozen lines of shell over `skill/a2ahub/**/*.md` minus the generated tree. It is NOT filed in `docs/validator-backlog.md`: that file records itself at 15 open rows against a `wip-limit=8` with no gate enforcing the brake, and says plainly that the honest move there is to drain, not to capture a 16th. So this sits here, in the row it would guard, until someone drains that queue or builds this one. | ☑ | Claude Code | 2026-08-07 |
 
 ## Sign-off
+
+- **Release tag:** `v0.25.7`
+- **Reviewer:** `Claude Code`
+- **Date:** `2026-08-29`
+
+> **Six gaps, and the section above names each one against the surface it came
+> from.** This release ships three new verbs, four new flags and two new doctor
+> advisory families; the enumeration found something missing for five of the
+> six shipped `feat` entries and one of the five `fix` entries. Every gap was a
+> flag or a printed line — never a paragraph that read badly — which is the
+> shape this column keeps finding and the reason "the pages still read
+> correctly" is not an answer to it.
+>
+> **Rows ticked below are only the ones re-read against THIS release's diff** —
+> `troubleshooting.md`, `reference/contract-versions.md`, `reference/notify.md`,
+> `loops/contract-change.md`, `SKILL.md` and `loops/receive.md`. Every other row
+> keeps its earlier date. `reference/authoring/response.md` carries this
+> release's REF-027 guidance and is deliberately NOT ticked: it is GENERATED
+> from `schemas/templates/{v1,v2}/response.md` and byte-diffed by `skill-drift`,
+> so a tick here would assert a hand review of a file nobody may hand-edit.
 
 - **Release tag:** `v0.25.6`
 - **Reviewer:** `Claude Code`
