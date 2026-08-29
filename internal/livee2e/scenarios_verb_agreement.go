@@ -87,11 +87,22 @@ func advertiserLegalityNoteCells(vocab fold.Vocabulary) (evaluated []string, err
 	return evaluated, errs
 }
 
-// declaredPairVerbs collects every verb name this phase's own declared
-// pairs and replay entries actually cite — the classify-or-declare
-// obligation's own "usedVerbs" input (US-5), so a verb referenced by a live
-// or documentary cell but absent from verbCatalogue() is caught rather than
-// silently treated as covered.
+// declaredPairVerbs collects every verb name this phase's REPLAY entries
+// cite — the classify-or-declare obligation's own "usedVerbs" input (US-5),
+// so a verb referenced by a documentary cell but absent from
+// verbCatalogue() is caught rather than silently treated as covered.
+//
+// IT DOES NOT READ THE LIVE CELLS, and this comment used to say it did.
+// The live declared pairs hand-type their verb strings at the call site
+// (scenarios_verb_agreement.go's `"a2a note (advertiser)"`,
+// templateplanner.go's `fmt.Sprintf("a2a template show %s ...", entry.Type)`)
+// and verbCatalogue() hand-types a matching copy; nothing links the two, so
+// renaming either side reds nothing. They agree today by eyeball. Found by
+// this epic's own closeout audit, filed in docs/validator-backlog.md with
+// the reason it is not a one-line fix: the catalogue matches INSTANCE
+// strings, while the template cell GENERATES one per roster entry, so
+// feeding the live literals in would make the catalogue grow with the
+// roster — the shape needs deciding, not patching.
 func declaredPairVerbs() []string {
 	seen := map[string]bool{}
 	var out []string

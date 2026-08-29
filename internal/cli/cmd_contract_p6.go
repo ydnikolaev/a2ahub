@@ -152,13 +152,24 @@ type ContractVerifyExportResult struct {
 // exists to prevent.
 func (r ContractVerifyExportResult) MarshalJSON() ([]byte, error) {
 	type alias ContractVerifyExportResult
-	if r.Outcome == "unmeasured" {
+	// The words are the CONSTANTS' own values, never re-typed literals.
+	// This function decides a wire key from Outcome, and Outcome is filled
+	// at the cmd/a2a render boundary from contract.ExportVerification — so a
+	// bare "matched" here would be a third value-equal definition with no
+	// compiler link to the two that produce it, which is the same class one
+	// level down from the field this function replaced. cmd/a2a's own
+	// contractExportOutcomeWord renders ExportUnmeasured through
+	// validate.SeverityUnmeasured (D9); the two are pinned equal by value in
+	// contract_p6_wiring_test.go, so naming the contract constant here links
+	// to the vocabulary this type actually carries without internal/cli
+	// gaining an edge to internal/validate.
+	if r.Outcome == string(contract.ExportUnmeasured) {
 		return json.Marshal(struct {
 			alias
 			Matches *bool `json:"matches,omitempty"`
 		}{alias: alias(r)})
 	}
-	matched := r.Outcome == "matched"
+	matched := r.Outcome == string(contract.ExportMatched)
 	return json.Marshal(struct {
 		alias
 		Matches *bool `json:"matches,omitempty"`
