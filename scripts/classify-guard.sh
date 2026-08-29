@@ -119,6 +119,9 @@ PUBLIC_VALIDATOR_FILES=(
   # READS its budget, so a public gate with a stripped budget is P14 check 5
   # exactly — a shipped file naming a path the publisher removes.
   scripts/check-refusal-ratchet.sh
+  scripts/check-vocabulary-carriers.sh
+  scripts/check-deadcode-ceiling.sh
+  scripts/check-discard-ceiling.sh
   scripts/lib/refusal-ratchet-budget.txt
   scripts/check-release-note-detect.sh
   scripts/lib/release-note-detect-budget.txt
@@ -138,6 +141,9 @@ PUBLIC_VALIDATOR_FILES=(
   scripts/feedback-intake-policy.sh
   scripts/lib/lane-ungated.txt
   scripts/lib/lane-opaque-ceiling.txt
+  scripts/lib/vocabulary-carrier-ceiling.txt
+  scripts/lib/deadcode-ceiling.txt
+  scripts/lib/discard-ceiling.txt
   scripts/lib/job-timeouts.tsv
   scripts/lib/ci-usage-window.json
   scripts/lib/gate-lib.sh
