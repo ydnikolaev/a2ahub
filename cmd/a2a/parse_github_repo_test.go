@@ -6,7 +6,7 @@ import (
 )
 
 // parse_github_repo_test.go pins AC8's characterization half (agent-ops-2026-07
-// P14 spec docs/features/active/agent-ops-2026-07/specs/14-feedback-one-corpus.md
+// P14 spec docs/features/archive/agent-ops-2026-07/specs/14-feedback-one-corpus.md
 // §3.6, AC8): "The reader seam's local-path defect is resolved or recorded —
 // either parseGitHubRepo handles it with a test, or a docs/validator-backlog.md
 // row names it with the reproduction."

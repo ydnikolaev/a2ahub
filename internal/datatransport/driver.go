@@ -1,5 +1,5 @@
 // Package datatransport is the transport-driver SEAM spec 05a AC-8 asks for
-// (docs/features/active/agent-ops-2026-07/specs/05a-contract-data-exchange-loop.md
+// (docs/features/archive/agent-ops-2026-07/specs/05a-contract-data-exchange-loop.md
 // §4 AC-8, as narrowed by the 2026-08-13 amendment "AC-8 asked for something
 // v1 cannot give"): the Go half only — interface, registry, conformance
 // suite, null driver — with the wire half deliberately deferred to

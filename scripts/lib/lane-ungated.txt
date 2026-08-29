@@ -1,4 +1,4 @@
-# lane-ungated.txt — P12 (docs/features/active/agent-ops-2026-07) D-3/D-6.
+# lane-ungated.txt — P12 (docs/features/archive/agent-ops-2026-07) D-3/D-6.
 #
 # The explicit list of repo paths NO declared gate claims, on purpose. A
 # path lands here only after checking every real declaration and finding

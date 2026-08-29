@@ -14,8 +14,8 @@ import (
 // wrap the answer in its own refusal without a second implementation to
 // drift from the first.
 //
-// Spec: docs/features/active/agent-ops-2026-07/specs/05a-contract-data-exchange-loop.md §5
-// Plan: docs/features/active/agent-ops-2026-07/plans/05a-contract-data-exchange-loop.plan.md D-3
+// Spec: docs/features/archive/agent-ops-2026-07/specs/05a-contract-data-exchange-loop.md §5
+// Plan: docs/features/archive/agent-ops-2026-07/plans/05a-contract-data-exchange-loop.plan.md D-3
 
 // CleanRelativePath reports whether value is a portable, contained,
 // slash-separated relative path: not empty, not ".", not rooted, no

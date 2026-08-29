@@ -79,7 +79,7 @@
 # a third behaviour. Rule 4 (the 60-minute cap) still applies to an
 # unmeasured identity — it needs no measurement, only the declared value.
 #
-# THE .a2a PRUNE LESSON (docs/features/active/agent-ops-2026-07/specs/13-ci-
+# THE .a2a PRUNE LESSON (docs/features/archive/agent-ops-2026-07/specs/13-ci-
 # economics.md, "items found outside this phase that belong to it"):
 # `a2a`'s feedback reader clones the public repo into
 # `.a2a/cache/feedback-repo/<slug>/`, and a gate that walks the repo ROOT

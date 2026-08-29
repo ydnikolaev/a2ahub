@@ -5,7 +5,7 @@ import "testing"
 // TestTransitionRowsUniverse pins the universe size the internal/livee2e
 // path-coverage gate (W3) is checked against — every distinct (Kind, From,
 // Transition) triple this package's rows admit
-// (docs/features/active/agent-ops-2026-07/plans/11-*.plan.md W3/D6). A
+// (docs/features/archive/agent-ops-2026-07/plans/11-*.plan.md W3/D6). A
 // count drift here is a real signal (a table row added/removed/merged),
 // not test noise; the livee2e coverage gate is what should red on a drift
 // that changes the covered set, not this one silently tracking it.

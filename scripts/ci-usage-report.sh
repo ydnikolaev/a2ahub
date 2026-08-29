@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ci-usage-report.sh — turns the ad-hoc measurement behind
-# docs/features/active/agent-ops-2026-07/audits/ci-economics-2026-08-12.md
+# docs/features/archive/agent-ops-2026-07/audits/ci-economics-2026-08-12.md
 # into a committed command (agent-ops-2026-07 P13 §3.9, wave K8).
 #
 # WHY THIS EXISTS. The audit's numbers — 4769 billed-equivalent minutes,

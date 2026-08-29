@@ -7,7 +7,7 @@ import (
 )
 
 // pathgrammar.go declares the conformance-path grammar (plan W3, docs/
-// features/active/agent-ops-2026-07/plans/11-authoring-path-and-seam-
+// features/archive/agent-ops-2026-07/plans/11-authoring-path-and-seam-
 // verification.plan.md, "W3 — the catalogue"). UNTAGGED on purpose,
 // matching catalogue.go's own precedent (see that file's doc comment):
 // declaring the intended coverage in plain code means it is visible,

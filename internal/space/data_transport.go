@@ -12,7 +12,7 @@ import (
 )
 
 // spaceGitDriver is the space-git datatransport.Driver spec 05a AC-8 asks
-// for (docs/features/active/agent-ops-2026-07/specs/05a-contract-data-exchange-loop.md
+// for (docs/features/archive/agent-ops-2026-07/specs/05a-contract-data-exchange-loop.md
 // §4 AC-8, the 2026-08-13 amendments), closing the criterion's Go half end
 // to end: DeliverDataPackage (this file's own sibling) calls Put for the
 // payload+manifest half of one delivery commit, and ResolveDataPackage

@@ -17,7 +17,7 @@
 # checker; that was a declaration bent to fit a tool, which is the failure this
 # phase exists to stop. The extractor was made precise instead.
 #
-# docs/features/active/agent-ops-2026-07/audits/v0.20.0-provider-tier-deferral.md
+# docs/features/archive/agent-ops-2026-07/audits/v0.20.0-provider-tier-deferral.md
 # §"The count is 10 records, and there is at least one release it does not
 # include" found the defect this revision fixes: the gate counted deferral
 # RECORDS, and a release that simply omits the file was invisible to it —
@@ -1567,7 +1567,7 @@ teeth() {
     # ══════════════════════════════════════════════════════════════════════════
     tmp13="$(mktemp -d)"
     init_repo "$tmp13"
-    local stale_ref='a72ee625:docs/features/active/agent-ops-2026-07/audits/v0.23.0-provider-tier-deferral.md'
+    local stale_ref='a72ee625:docs/features/archive/agent-ops-2026-07/audits/v0.23.0-provider-tier-deferral.md'
     local stale_dest="$tmp13/docs/features/x/audits/v0.23.0-provider-tier-deferral.md"
     if ! git -C "$repo_root" cat-file -e "$stale_ref"; then
       echo "provider-tier-deferral --teeth: measurement-failed — cannot replay $stale_ref, so tooth Tb did not run." >&2

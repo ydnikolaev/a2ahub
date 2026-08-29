@@ -4,7 +4,7 @@ import "testing"
 
 // TestSubjectStatesUniverse pins the universe size internal/pendency's I8
 // totality gate is checked against — 35 distinct (Kind, From) pairs today
-// (docs/features/active/agent-ops-2026-07/plans/11-*.plan.md W1). A count
+// (docs/features/archive/agent-ops-2026-07/plans/11-*.plan.md W1). A count
 // drift here is a real signal (a table row added/removed), not test noise;
 // internal/pendency's gate is what should red, not this one silently
 // tracking it.

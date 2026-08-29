@@ -31,8 +31,8 @@ import (
 // internal/contract, and internal/datapackage is not internal/space), so the
 // same care is re-earned here rather than reused.
 //
-// Spec: docs/features/active/agent-ops-2026-07/specs/05a-contract-data-exchange-loop.md §5, §6.4
-// Plan: docs/features/active/agent-ops-2026-07/plans/05a-contract-data-exchange-loop.plan.md D-4, D-5
+// Spec: docs/features/archive/agent-ops-2026-07/specs/05a-contract-data-exchange-loop.md §5, §6.4
+// Plan: docs/features/archive/agent-ops-2026-07/plans/05a-contract-data-exchange-loop.plan.md D-4, D-5
 
 const (
 	// Internal filesystem-shape safety caps, distinct from the configured

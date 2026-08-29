@@ -1,6 +1,6 @@
 // pathcatalogue_paths.go declares the six path families the plan's own
 // "Paths, in the order of what they would have caught" section lists
-// (docs/features/active/agent-ops-2026-07/plans/11-*.plan.md, W3). DATA
+// (docs/features/archive/agent-ops-2026-07/plans/11-*.plan.md, W3). DATA
 // ONLY: no body, no driver — see pathgrammar.go's own package doc.
 //
 // Two acts the domain narrative below implies have NO fold transition at

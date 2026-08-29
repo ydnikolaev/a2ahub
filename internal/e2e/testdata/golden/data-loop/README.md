@@ -1,6 +1,6 @@
 # Data exchange loop — golden fixtures
 
-Spec: `docs/features/active/agent-ops-2026-07/specs/05a-contract-data-exchange-loop.md`
+Spec: `docs/features/archive/agent-ops-2026-07/specs/05a-contract-data-exchange-loop.md`
 §6.6. Test: `internal/e2e/data_golden_test.go` (`TestDataGoldenSequence`).
 
 ## What this is

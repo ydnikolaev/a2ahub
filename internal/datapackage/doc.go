@@ -3,7 +3,7 @@
 // attempt, fetching it back with its digests verified, and judging it into a
 // structured verification report.
 //
-// Spec: docs/features/active/agent-ops-2026-07/specs/05a-contract-data-exchange-loop.md
+// Spec: docs/features/archive/agent-ops-2026-07/specs/05a-contract-data-exchange-loop.md
 //
 // The package owns no transport and no lifecycle. A delivery reaches the space
 // through the existing write funnel, carried by an existing handoff; the fold
