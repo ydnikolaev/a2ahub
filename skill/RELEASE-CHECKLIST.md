@@ -15,14 +15,14 @@
 
 ## Prose files under review (D-015 hand-maintained set)
 
-### v0.25.7 — six gaps, and every one of them was a flag or a printed line
+### v0.25.7 — ten gaps, and every one of them was a flag, a refusal or a printed line
 
 **This is the release the column exists for.** `answers-that-hold-2026-08`
 ships three new verbs, four new flags, two new doctor advisory families and one
 new funnel refusal. Enumerated against the shipped surface — `internal/cli`'s
 own `fs.Bool`/`fs.String`/`fs.Var` registrations, the sentinels each path can
 return, and `internal/mcp/tools.go`'s parameter names — rather than sampled.
-Six gaps, all fixed in this pass:
+Ten gaps, all fixed. Six the lead found first:
 
 1. **`a2a validate --ci --space <id>` (RN-02507-3) was in no hand-maintained
    page.** It appeared only in the GENERATED `reference/commands.md` synopsis,
@@ -73,12 +73,41 @@ loop step sends an agent into the new refusal. And no prose page reproduces a
 verb's usage output verbatim, so RN-02507-10's extra `workflow:` line breaks
 nothing that was written down.
 
-**How this pass was run, recorded because it did not go as planned.** Three
-scout agents were dispatched to split the enumeration three ways and none of
-them returned a report. The enumeration above is the lead's own, read directly
-from the CLI files, the MCP tool table and the pages. That is worth a sentence
-because the alternative — waiting, or ticking on a report that never arrived —
-is the failure this column is for.
+**Four more, found by the scouts, after the lead had already stopped looking:**
+
+7. **`adapt --done` refuses TWICE and the page described one of them.** A
+   detect that STILL FIRES and a detect that COULD NOT BE RUN are different
+   answers — `cmd_adapt.go`'s own doc comment says they must never be
+   conflated, because a check that cannot be measured is never treated as
+   clean — and only the first was written down. Its config-write refusal had
+   no row at all.
+8. **`a2a docs`'s unknown-topic refusal was in the release note and nowhere in
+   the corpus that note describes.** It refuses by naming the vocabulary it
+   holds, which is the one thing a reader who cannot find the docs can act on.
+9. **`bindings.md` pointed at "§5.3".** The section exists — in
+   `docs/the-plan/plan/05-schemas.md`, which `skill/embed.go` does not embed,
+   so the pointer resolves to nothing in every installed skill. The scout
+   reported it as a section that does not exist; it is worse than that, and
+   the correction matters: it exists and is unreachable.
+10. **Two `ContractSubcommands` synopses omitted flags this release added**,
+    while the verb added beside them names both of its own. That is a gap in a
+    GENERATOR, not in a page: `reference/commands.md` is byte-diffed against
+    `a2a __catalog`, so the fix is the literal in `cmd_contract.go` and the
+    page is regenerated.
+
+Also fixed, not a prose gap: `cmd_adapt.go` and `cmd_docs.go` both opened with
+"NOT WIRED into cmd/a2a/wire.go/catalog.go/help.go". Both are wired. A
+dispatch-time note that outlived its dispatch.
+
+**How this pass was run, recorded because the first version of this paragraph
+was wrong.** Three scouts were dispatched to split the enumeration; their
+reports did not arrive, the lead enumerated alone, and this file was written
+saying so. The reports then landed — late, complete, and carrying four gaps the
+lead's own pass had missed, one of which is a defect in a generator rather than
+in a page. Both halves are kept: an enumeration done alone found six, and a
+second reader found four more on the same diff. That ratio is the argument for
+the second reader, and it is not one this column could have made from a green
+verdict.
 
 ### v0.25.5 — no row moves; the release does not touch the agent's surface
 
@@ -199,13 +228,14 @@ not drifted from the plan wording it quotes.
 - **Reviewer:** `Claude Code`
 - **Date:** `2026-08-29`
 
-> **Six gaps, and the section above names each one against the surface it came
+> **Ten gaps, and the section above names each one against the surface it came
 > from.** This release ships three new verbs, four new flags and two new doctor
 > advisory families; the enumeration found something missing for five of the
-> six shipped `feat` entries and one of the five `fix` entries. Every gap was a
-> flag or a printed line — never a paragraph that read badly — which is the
-> shape this column keeps finding and the reason "the pages still read
-> correctly" is not an answer to it.
+> six shipped `feat` entries and two of the five `fix` entries. Every gap was a
+> flag, a refusal or a printed line — never a paragraph that read badly — which
+> is the shape this column keeps finding and the reason "the pages still read
+> correctly" is not an answer to it. Six were found by the lead alone and four
+> more by a second reader on the same diff.
 >
 > **Rows ticked below are only the ones re-read against THIS release's diff** —
 > `troubleshooting.md`, `reference/contract-versions.md`, `reference/notify.md`,
