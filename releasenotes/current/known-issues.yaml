@@ -5,7 +5,7 @@ issues:
     impact: normal
     subject: "The current releases shipped with their provider-tier verification deferred, by explicit operator authorization"
     detail: >
-      Every release from v0.19.0 through v0.25.7 shipped this way — TWENTY-FIVE
+      Every release from v0.19.0 through v0.25.8 shipped this way — TWENTY-SIX
       of them, each authorized separately for its own candidate, and the count is
       machine-refused unless the newest record signs for its own position in the
       streak.
@@ -117,16 +117,24 @@ issues:
       being cut, that IS the binary a space's merge gate runs, and a tag is
       immutable.
 
-      The provider-tier run is deferred to the release after
-      `agent-exchange-2026-08` closes, rather than to an unnamed date: the
-      operator's own standing rule forbids the real-GitHub tier while that epic
-      is being implemented, so the tier is not merely unscheduled but
-      unavailable. Anything it finds ships as a patch release. TWENTY-FIVE
-      consecutive deferrals
-      over the same surfaces is not improving with repetition, and more than one
-      of them passed a date an earlier record had itself named as the deadline;
-      the signed count in the newest deferral record is the honest measure of
-      how long this has been outstanding.
+      THE REASON CHANGED AT v0.25.8, and saying so is the point of this
+      paragraph. Twenty-five records deferred to "the release after
+      `agent-exchange-2026-08` closes", because the operator's standing rule
+      forbade the real-GitHub tier while that epic was being implemented. **That
+      epic closed on 2026-08-29**, so the block is gone and the condition those
+      records named is discharged rather than repeated.
+
+      What defers it now is cost and availability, not a rule: the tier needs
+      credentials only the operator holds and about an hour of wall clock, and
+      it spends real Actions minutes on an account measured that same day at
+      2860 equivalent minutes over fifteen days against a 1500/month budget,
+      with the spending limit not set. Anything the run finds ships as a patch
+      release.
+
+      TWENTY-SIX consecutive deferrals over the same surfaces is not improving
+      with repetition, and more than one of them passed a date an earlier record
+      had itself named as the deadline; the signed count in the newest deferral
+      record is the honest measure of how long this has been outstanding.
     affects: ["a2a submit", "a2a contract publish", "space mirror", "branch protection", "space CI"]
     action:
       scope: none

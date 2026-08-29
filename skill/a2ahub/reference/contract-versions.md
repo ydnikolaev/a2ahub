@@ -184,6 +184,26 @@ being silently skipped or quietly compared against a default. An override given
 as an empty path resolves the same as no override at all, so there is one way
 to mean "no subject" rather than two that can disagree.
 
+**`--local` wants a PUBLISHED-SHAPED tree, not your source tree, and this
+sentence exists because the wording above misled a real reporter
+(fb-20260829-e756c0).** "A local subject that is not where the layout expects
+it" reads as *point me at wherever you generate*. It is not: the directory must
+carry the envelope `contract.md` and the carried files, the same shape a publish
+produces. A producer whose generator emits its own layout — and which does not
+keep the staging tree after publishing — cannot point `--local` at its output
+and has to stage the comparison instead.
+
+Since v0.25.8 the verb says that at the point of failure rather than leaving you
+to infer it: a directory that exists but holds no envelope is refused as
+`not a published-shaped tree: no contract.md envelope at <path>`, instead of a
+generic "no such file or directory" naming a filename you never typed.
+
+**And the refusal now names the SIDE it is talking about.** A fault in the
+subject you supplied is prefixed `local:` and names the path inspected; `space:`
+appears only when the space itself could not be read. Before v0.25.8 both said
+`space:`, which sent the reporter looking for a broken published tree that was
+fine.
+
 **On the MCP surface that map is `local_subjects`, an object — NOT `local`.**
 `local` is already published as a STRING for `action=verify-export`, and one
 grouped tool cannot advertise a name at two types. Since v0.25.6 every MCP

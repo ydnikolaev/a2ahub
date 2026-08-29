@@ -1,0 +1,43 @@
+schema: release-notes/v1
+version: 0.25.8
+released: "2026-08-29"
+headline: a refusal names the side that failed
+changes:
+- id: RN-02508-0
+  kind: fix
+  impact: normal
+  subject: verify-published blamed the space for a file missing from your own --local tree
+  detail: >
+    `a2a contract verify-published --local <XC-id>=<dir>` reported `unmeasured`
+    with a diagnostic prefixed `space:` when the missing file was in the LOCAL
+    subject the caller had just named. The space had the file; the pointed-at
+    directory did not.
+
+    A reader acts on the label, and the reporter did: they concluded the
+    published tree was broken, wrote that down as a finding, and only recovered
+    it by pointing `--local` at a directory that does have `contract.md` and
+    watching the same run turn `matched`.
+
+    One function read both sides and hardcoded one label. The side was already
+    in scope and unused, so the label is now DERIVED from it: a fault in the
+    caller-supplied subject reads `local:` and names the inspected path, and
+    `space:` appears only when the space itself could not be read.
+
+    Second half, from the same report: a local subject that EXISTS but holds no
+    envelope now gets its own refusal — `candidate is not a published-shaped
+    tree: no contract.md envelope at <path>` — instead of a generic stat error
+    naming a constant you never typed. That generic error read as "you forgot a
+    flag" when the real answer was "your subject is the wrong shape", which is
+    what a producer whose generator emits its own layout needs to be told once.
+
+    Reported from a live space as fb-20260829-e756c0, same class as
+    fb-20260827-4b121a.
+  affects:
+  - cli
+  action:
+    scope: none
+    why: >
+      Nothing is owed. The verb behaves as before; only its refusal text
+      changes, and it changes to stop misdirecting you. If you previously
+      chased a `space:` diagnostic from `verify-published --local` and found
+      nothing wrong with the published tree, this is why.
