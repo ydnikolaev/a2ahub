@@ -246,6 +246,19 @@ changes:
     "everything matches" from an unrefreshed mirror is the failure the verb
     exists to prevent.
 
+    Name the local subject a contract is checked against with `--local
+    <XC-id>=<project-relative-path>`, repeatable, once per contract. A contract
+    with no override reports `unmeasured` and SAYS which flag would measure it,
+    rather than being silently skipped or quietly compared against a default —
+    a row you did not ask for must not read as a row that passed. An override
+    given as an empty path resolves the same as no override at all, so there is
+    one way to mean "no subject" rather than two that can disagree.
+
+    On MCP the same map is the `local_subjects` object, NOT `local`: that key is
+    already published as a string for `action=verify-export`, and one grouped
+    tool cannot advertise a name at two types without promising a shape one of
+    its actions cannot honour.
+
     The MCP action resolves one space per call where the CLI aggregates all;
     the gap is recorded rather than hidden.
   affects:
