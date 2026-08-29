@@ -74,9 +74,14 @@ type ContractVerifyPublishedRow struct {
 // shape (AC-8). Total is the run's own DENOMINATOR (US-3/AC-3): printed
 // under --json exactly as under the human path, so a run that examined
 // zero contracts is visibly distinguishable from a clean pass in EITHER
-// render mode. Field set for the render ledger P3 introduces (spec 07 §7 —
-// P3 has not shipped; see this phase's Deviations report): system, total,
-// and every ContractVerifyPublishedRow field above.
+// render mode.
+//
+// P3 HAS SHIPPED, and this type is the surface it was pointed at: every
+// field below plus every ContractVerifyPublishedRow field above carries a
+// row in schemas/render-ledger.yaml, and the type is enrolled in the shared
+// surface registry at cmd_contract_p6.go's own init() — so it also reaches
+// schemas/prose-coverage.yaml through the binary's `__catalog --surfaces`
+// rather than through anyone remembering to list it.
 type ContractVerifyPublishedResult struct {
 	System string                       `json:"system"`
 	Total  int                          `json:"total"`
