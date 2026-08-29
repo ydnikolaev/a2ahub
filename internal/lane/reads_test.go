@@ -35,7 +35,7 @@ func TestHonestyCheckMakefileRecipeToMultiPhaseCorpusScopesPerPhase(t *testing.T
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	refusals, opaque, err := HonestyCheck(dir, decls)
+	refusals, opaque, _, err := HonestyCheck(dir, decls)
 	if err != nil {
 		t.Fatalf("HonestyCheck: %v", err)
 	}
@@ -332,7 +332,7 @@ func TestHonestyCheckSkipsHeredocEmbeddedContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	refusals, opaque, err := HonestyCheck(dir, decls)
+	refusals, opaque, _, err := HonestyCheck(dir, decls)
 	if err != nil {
 		t.Fatalf("HonestyCheck: %v", err)
 	}
@@ -370,7 +370,7 @@ func TestHonestyCheckCleanScriptPasses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	refusals, opaque, err := HonestyCheck(dir, decls)
+	refusals, opaque, _, err := HonestyCheck(dir, decls)
 	if err != nil {
 		t.Fatalf("HonestyCheck: %v", err)
 	}
@@ -392,7 +392,7 @@ func TestHonestyCheckUndeclaredLiteralReadIsADefect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	refusals, _, err := HonestyCheck(dir, decls)
+	refusals, _, _, err := HonestyCheck(dir, decls)
 	if err != nil {
 		t.Fatalf("HonestyCheck: %v", err)
 	}
@@ -417,7 +417,7 @@ func TestHonestyCheckUnresolvedWithoutOpaqueRefuses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	refusals, opaque, err := HonestyCheck(dir, decls)
+	refusals, opaque, _, err := HonestyCheck(dir, decls)
 	if err != nil {
 		t.Fatalf("HonestyCheck: %v", err)
 	}
@@ -443,7 +443,7 @@ func TestHonestyCheckUnresolvedWithOpaquePasses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	refusals, opaque, err := HonestyCheck(dir, decls)
+	refusals, opaque, _, err := HonestyCheck(dir, decls)
 	if err != nil {
 		t.Fatalf("HonestyCheck: %v", err)
 	}
@@ -467,7 +467,7 @@ func TestHonestyCheckVerifyFunctionWrapped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	refusals, _, err := HonestyCheck(dir, decls)
+	refusals, _, _, err := HonestyCheck(dir, decls)
 	if err != nil {
 		t.Fatalf("HonestyCheck: %v", err)
 	}
@@ -492,7 +492,7 @@ func TestHonestyCheckGoArmOnGoRunBareStatement(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	refusals, _, err := HonestyCheck(dir, decls)
+	refusals, _, _, err := HonestyCheck(dir, decls)
 	if err != nil {
 		t.Fatalf("HonestyCheck: %v", err)
 	}
@@ -514,7 +514,7 @@ func TestHonestyCheckMakefileInlineRecipe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	refusals, _, err := HonestyCheck(dir, decls)
+	refusals, _, _, err := HonestyCheck(dir, decls)
 	if err != nil {
 		t.Fatalf("HonestyCheck: %v", err)
 	}
@@ -596,7 +596,7 @@ func TestHonestyCheckSkipsAnAbsentPresenceGatedScript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	refusals, _, err := HonestyCheck(dir, decls)
+	refusals, _, backing, err := HonestyCheck(dir, decls)
 	if err != nil {
 		t.Fatalf("an absent PRESENCE-GATED script must not error the honesty pass: %v", err)
 	}
@@ -608,7 +608,7 @@ func TestHonestyCheckSkipsAnAbsentPresenceGatedScript(t *testing.T) {
 	// declaration was moved onto the recipe in the first place. Without this
 	// half the test would pass while Coverage reported README.md unclaimed,
 	// which is the original defect wearing a different hat.
-	if cov := Coverage(decls, []string{"README.md"}, nil); len(cov) != 0 {
+	if cov := Coverage(decls, []string{"README.md"}, nil, backing); len(cov) != 0 {
 		t.Fatalf("a presence-gated gate's recipe declaration must still claim its paths, got %+v", cov)
 	}
 }
@@ -629,7 +629,7 @@ func TestHonestyCheckStillErrorsOnAnUnguardedMissingScript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if _, _, err := HonestyCheck(dir, decls); err == nil {
+	if _, _, _, err := HonestyCheck(dir, decls); err == nil {
 		t.Fatal("an UNGUARDED recipe naming a missing script must still error — a gate that quietly does nothing is the defect the presence-gate branch must not widen into")
 	}
 }
@@ -648,5 +648,152 @@ func TestRecipeGuardsPresenceMatchesTheSpecificScript(t *testing.T) {
 	}
 	if recipeGuardsPresence(recipe, "scripts/b.sh") {
 		t.Error("a script the recipe runs but does not guard must NOT count as presence-gated")
+	}
+}
+
+// TestHonestyCheckBackingUnbackedGlobVsOpaqueDeclared is P1's own
+// "unbacked-vs-opaque" acceptance case (spec §8 row 5), end to end through
+// the real HonestyCheck/Coverage pipeline. A phase declaring a glob its
+// script never reads produces a PhaseBacking with that pattern unbacked and
+// Opaque false, and Coverage reds the claim. Adding a lane-reads-opaque
+// line elsewhere in the SAME window flips Opaque to true and — per D-9,
+// unaffected by this phase — suppresses the classifier's own "construct it
+// cannot resolve" refusal for the read that directive covers, but the
+// UNRELATED, still-genuinely-unread declared glob stays UNBACKED: Coverage
+// keeps reporting it. Opaque is a debt/ceiling signal (opaqueCount), not a
+// coverage signal — see coverage.go's claimVerdict and PhaseBacking's own
+// doc comment for why laundering was rejected (`projection`'s own `**`
+// directive is the proof case).
+func TestHonestyCheckBackingUnbackedGlobVsOpaqueDeclared(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, "Makefile", "REPO_GATES := release-notes-freshness\n\nrelease-notes-freshness:\n\t@bash scripts/check-release-notes-freshness.sh\n")
+	writeFixture(t, dir, "scripts/check-release-notes-freshness.sh",
+		"#!/usr/bin/env bash\n# lane-inputs:\n#   internal/**\nset -euo pipefail\ngrep -q x \"$EXTRA_PATH\"\n")
+	writeFixture(t, dir, "scripts/verify.sh", minimalVerifySh)
+
+	decls, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	_, _, backing, err := HonestyCheck(dir, decls)
+	if err != nil {
+		t.Fatalf("HonestyCheck: %v", err)
+	}
+	pb := backing["release-notes-freshness"]
+	if pb.Opaque {
+		t.Fatalf("no lane-reads-opaque line is present, Opaque must be false: %+v", pb)
+	}
+	if pb.BackedPatterns["internal/**"] {
+		t.Fatalf("the script never reads internal/**, it must not be backed: %+v", pb)
+	}
+	if refusals := Coverage(decls, []string{"internal/release/trusted_root.json"}, nil, backing); len(refusals) != 1 {
+		t.Fatalf("an unbacked glob must red through Coverage, got %+v", refusals)
+	} else if !strings.Contains(refusals[0].Problem, `phase "release-notes-freshness"`) || !strings.Contains(refusals[0].Problem, "internal/**") {
+		t.Errorf("refusal does not name the phase and the glob: %+v", refusals[0])
+	}
+
+	dir2 := t.TempDir()
+	writeFixture(t, dir2, "Makefile", "REPO_GATES := release-notes-freshness\n\nrelease-notes-freshness:\n\t@bash scripts/check-release-notes-freshness.sh\n")
+	writeFixture(t, dir2, "scripts/check-release-notes-freshness.sh",
+		"#!/usr/bin/env bash\n# lane-inputs:\n#   internal/**\n# lane-reads-opaque: EXTRA_PATH is a manual debug override, not a repo input\nset -euo pipefail\ngrep -q x \"$EXTRA_PATH\"\n")
+	writeFixture(t, dir2, "scripts/verify.sh", minimalVerifySh)
+
+	decls2, err := Load(dir2)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	honestyRefusals2, _, backing2, err := HonestyCheck(dir2, decls2)
+	if err != nil {
+		t.Fatalf("HonestyCheck: %v", err)
+	}
+	if len(honestyRefusals2) != 0 {
+		t.Fatalf("the directive must suppress D-9's own unresolved-construct refusal, got %+v", honestyRefusals2)
+	}
+	if !backing2["release-notes-freshness"].Opaque {
+		t.Fatalf("lane-reads-opaque is present, Opaque must be true: %+v", backing2["release-notes-freshness"])
+	}
+	if refusals := Coverage(decls2, []string{"internal/release/trusted_root.json"}, nil, backing2); len(refusals) != 0 {
+		t.Fatalf("an honest directive is evidence of a read and must back the phase's globs, got %+v", refusals)
+	}
+
+	// The pair above IS the phase's whole predicate, stated twice with one
+	// line of difference between the fixtures. dir has an unresolved read
+	// and says nothing about it: unbacked, and it reds. dir2 has the same
+	// unresolved read and NAMES it: backed, and it passes. What separates
+	// them is not what the script does — it is whether the script's author
+	// was honest about what the classifier cannot see.
+	//
+	// The excused half is bounded by US-5's opaque ceiling rather than by
+	// this predicate; an earlier implementation tried to bound it here
+	// instead, and 176 globs across six phases that all already carried
+	// honest directives were reported as unbacked. See coverage.go's
+	// claimVerdict doc comment.
+	if _, bare := UnbackedClaimSplit(decls2, backing2); bare != 0 {
+		t.Fatalf("a directive-carrying phase contributes to the EXCUSED half, not the unexcused one, got bare=%d", bare)
+	}
+	if excused, _ := UnbackedClaimSplit(decls2, backing2); excused != 1 {
+		t.Fatalf("the unresolved glob is still debt with a size, it is only excused: want excused=1, got %d", excused)
+	}
+	if _, bare := UnbackedClaimSplit(decls, backing); bare != 1 {
+		t.Fatalf("the directive-less phase is the UNEXCUSED half, which is the number P1 drives to zero, got bare=%d", bare)
+	}
+}
+
+// TestUnbackedClaimCountSkipsAlwaysWithNoClaimsAndNever is the acceptance
+// table's "a KindAlways phase with no Claims (never reported); a KindNever
+// phase" edge cases, at the debt-metric level rather than Coverage's
+// per-universe-path level: neither declaration claims any path at all
+// (declarationPatterns returns nil for both), so neither can contribute an
+// unbacked count.
+func TestUnbackedClaimCountSkipsAlwaysWithNoClaimsAndNever(t *testing.T) {
+	decls := []Declaration{
+		{Phase: "classify-guard", Kind: KindAlways, Reason: "reads the whole tracked set"},
+		{Phase: "live-e2e", Kind: KindNever, Reason: "needs network and a real GitHub space"},
+	}
+	if got := UnbackedClaimCount(decls, nil); got != 0 {
+		t.Fatalf("a Claims-less ALWAYS declaration and a NEVER declaration claim nothing, want 0 unbacked, got %d", got)
+	}
+}
+
+// TestUnbackedClaimCountCountsPerGlobAndIsUnaffectedByOpaque pins the
+// metric's own granularity (per declared glob, like opaqueCount is per
+// phase) and confirms Opaque does NOT suppress the DEBT metric — unlike
+// claimVerdict, which does consult it. The two answer different questions
+// and coverage.go's doc comment says which: a directive backs the phase
+// happens to declare. NoSubject (the presence-gated-absent exemption) DOES
+// suppress it, the discriminating case against Opaque.
+func TestUnbackedClaimCountCountsPerGlobAndIsUnaffectedByOpaque(t *testing.T) {
+	decls := []Declaration{
+		{Phase: "release-notes-freshness", Kind: KindScoped, Inputs: []string{"internal/**", "cmd/**", "schemas/**"}},
+	}
+	if got := UnbackedClaimCount(decls, nil); got != 3 {
+		t.Fatalf("three declared globs, none backed, want 3 unbacked, got %d", got)
+	}
+	opaque := map[string]PhaseBacking{"release-notes-freshness": {Opaque: true}}
+	if got := UnbackedClaimCount(decls, opaque); got != 3 {
+		t.Fatalf("Opaque alone must not suppress the count (it is a debt/ceiling signal, not a backing signal), got %d, want 3", got)
+	}
+	noSubject := map[string]PhaseBacking{"release-notes-freshness": {NoSubject: true}}
+	if got := UnbackedClaimCount(decls, noSubject); got != 0 {
+		t.Fatalf("NoSubject (no honesty question, claim survives) must suppress the count, got %d, want 0", got)
+	}
+}
+
+// TestCheckOpaqueCeilingGrowthRedsFallPasses is US-5's own acceptance row
+// (§8 row 10): the ceiling may fall freely or stay level, and reds by name
+// the moment opaqueCount exceeds it.
+func TestCheckOpaqueCeilingGrowthRedsFallPasses(t *testing.T) {
+	if refusals := CheckOpaqueCeiling(43, 44); len(refusals) != 0 {
+		t.Fatalf("a fall must pass silently, got %+v", refusals)
+	}
+	if refusals := CheckOpaqueCeiling(44, 44); len(refusals) != 0 {
+		t.Fatalf("staying exactly AT the ceiling must pass, got %+v", refusals)
+	}
+	refusals := CheckOpaqueCeiling(45, 44)
+	if len(refusals) != 1 {
+		t.Fatalf("growth past the ceiling must red, got %+v", refusals)
+	}
+	if !strings.Contains(refusals[0].Problem, "45") || !strings.Contains(refusals[0].Problem, "44") {
+		t.Errorf("refusal does not name both the new count and the stored ceiling: %+v", refusals[0])
 	}
 }

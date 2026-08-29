@@ -529,6 +529,23 @@ func findOpaqueDirective(lines []string, startLine, endLine int, prefix string) 
 	return false, "", nil
 }
 
+// declarationPatterns returns the path patterns d actually claims coverage
+// for — Inputs for KindScoped, Claims for KindAlways (D-10), and nothing for
+// KindNever or a Claims-less KindAlways (which "claims nothing" the same way
+// Coverage's own doc comment already states). Shared by compareReads
+// (reads-without-a-claim) and backedGlobs (P1's mirror — claims-without-a-
+// read) so the two directions of the same rule cannot drift apart.
+func declarationPatterns(d Declaration) []string {
+	switch d.Kind {
+	case KindScoped:
+		return d.Inputs
+	case KindAlways:
+		return d.Claims
+	default:
+		return nil
+	}
+}
+
 // compareReads checks every literal read this window produced against d's
 // own declared coverage — Inputs for KindScoped, Claims for KindAlways
 // (D-10; an ALWAYS declaration with no Claims has nothing to compare
@@ -536,16 +553,8 @@ func findOpaqueDirective(lines []string, startLine, endLine int, prefix string) 
 // Inputs/Claims at all and is skipped the same way live-e2e is exempt from
 // Coverage.
 func compareReads(relPath string, d Declaration, reads []ReadRef) []Refusal {
-	var patterns []string
-	switch d.Kind {
-	case KindScoped:
-		patterns = d.Inputs
-	case KindAlways:
-		if len(d.Claims) == 0 {
-			return nil
-		}
-		patterns = d.Claims
-	case KindNever:
+	patterns := declarationPatterns(d)
+	if len(patterns) == 0 {
 		return nil
 	}
 
@@ -575,6 +584,91 @@ func unresolvedRefusals(relPath string, d Declaration, unresolved []UnresolvedRe
 		})
 	}
 	return refusals
+}
+
+// PhaseBacking is P1's per-phase evidence for the claims-without-a-read
+// direction (the mirror of D-11's own reads-without-a-claim): which of the
+// phase's own declared patterns (Inputs for KindScoped, Claims for
+// KindAlways) the extractor found at least one literal read covering.
+type PhaseBacking struct {
+	// BackedPatterns holds, as keys, every one of the phase's own declared
+	// patterns that at least one literal ReadRef in its scanned window(s)
+	// satisfied (MatchInputs([]string{pattern}, read.Path)).
+	BackedPatterns map[string]bool
+	// Opaque is true when ANY of the phase's scanned windows declares
+	// `# lane-reads-opaque:` (`//` in a .go file) — D-11's escape hatch.
+	// It is a DEBT/CEILING signal only (HonestyCheck's opaqueCount,
+	// US-5's ratchet): it suppresses D-9's per-line "construct the
+	// classifier cannot resolve" refusal the same way it always has, but it
+	// is deliberately NOT consulted by claimVerdict (coverage.go) and does
+	// NOT back any of the phase's declared globs. A directive that bought
+	// coverage for free would be the "declare everything opaque" hole US-5
+	// exists to close — `projection`'s own `**` directive is the proof: it
+	// covers a genuinely unresolvable read (check-projection.sh's
+	// scripts/lib/strip-set.txt), and that claim stays TRUE, but it must
+	// not launder an unrelated, never-read path under the same `**` into
+	// "covered".
+	Opaque bool
+	// NoSubject is true when the honesty question has no subject at all —
+	// two cases. First, a presence-gated Makefile recipe whose backing
+	// script is legitimately absent (a private harness gate the publisher
+	// strips; honestyForMakePhase's own comment). Second — measured, not
+	// theoretical — a window whose scan produced NEITHER a literal read NOR
+	// an unresolved construct: D-11's extractor is bounded to
+	// grep/cat/find/source/wc/head/tail/sed/awk (plus Go's os.ReadFile/
+	// os.Open), so a script that only invokes `gofmt`, `go vet`, `go test`,
+	// `golangci-lint` and similar produces zero evidence either way — not
+	// because it reads nothing, but because the classifier has no contract
+	// for that command shape. Scoring that identically to a phase whose
+	// reads WERE classified and simply miss the declaration (like
+	// release-notes-freshness) would be a confident, specific, wrong
+	// verdict — measured at 57 corpus phases and 11,754 refusal lines on
+	// the live tree before this field absorbed the case. Either way, a gate
+	// this instrument never got the chance to judge cannot be scored
+	// unbacked for a claim it never had the opportunity to prove, so the
+	// claim counts as backed unconditionally.
+	NoSubject bool
+}
+
+// backedGlobs reports, for each pattern d claims (declarationPatterns),
+// whether reads found in ITS OWN window include at least one literal path
+// that pattern alone covers — the mirror of compareReads: claims-without-a-
+// read instead of reads-without-a-claim. Nil for KindNever or a Claims-less
+// KindAlways (declarationPatterns already returns nil there, and nothing to
+// back means nothing can be reported unbacked either).
+func backedGlobs(d Declaration, reads []ReadRef) map[string]bool {
+	patterns := declarationPatterns(d)
+	if len(patterns) == 0 {
+		return nil
+	}
+	backed := make(map[string]bool, len(patterns))
+	for _, pat := range patterns {
+		for _, r := range reads {
+			if MatchInputs([]string{pat}, r.Path) {
+				backed[pat] = true
+				break
+			}
+		}
+	}
+	return backed
+}
+
+// mergeBacking folds b's patterns/opaque into into — used when a phase's
+// honest window is really TWO windows (honestyForVerifyPhase's shell arm
+// plus an optional Go arm via honestyForGoFile): a pattern backed by EITHER
+// window backs the phase, and a directive declared in EITHER window backs
+// every pattern the same way Opaque already does for a single window.
+func mergeBacking(into PhaseBacking, b map[string]bool, opaque bool) PhaseBacking {
+	if into.BackedPatterns == nil && len(b) > 0 {
+		into.BackedPatterns = make(map[string]bool, len(b))
+	}
+	for pat, ok := range b {
+		if ok {
+			into.BackedPatterns[pat] = true
+		}
+	}
+	into.Opaque = into.Opaque || opaque
+	return into
 }
 
 // heredocStartRe matches a shell heredoc opener at end of line
@@ -618,9 +712,38 @@ func heredocBodyLines(lines []string) map[int]bool {
 // (1-based, inclusive) of the file at relPath, classify every read, check
 // literal reads against d, and turn any unresolved construct into a
 // refusal unless the same window carries lane-reads-opaque.
-func honestyForWindow(relPath string, allLines []string, startLine, endLine int, isGo bool, d Declaration) (refusals []Refusal, opaque bool, err error) {
+//
+// opaque reports whether the window DECLARES lane-reads-opaque at all — not
+// (as an earlier revision read) only when the window also happened to carry
+// an unresolved construct today. P1 needs the directive's PRESENCE as its
+// own backing signal for whatever the phase claims (a declared-but-honestly-
+// unreachable glob is exactly what US-5's escape hatch exists to cover), and
+// a signal gated on "and something unresolved happened to be here too" would
+// silently miss a directive written for a construct that has since been
+// simplified away, or one written pre-emptively. This does widen what
+// counts as an opaque PHASE for HonestyCheck's own opaqueCount (previously:
+// declared AND unresolved>0; now: declared) — a deliberate redefinition, not
+// an oversight; see lanecheck.go's own comment on opaqueCount and this
+// phase's reported deviations.
+//
+// hadEvidence reports whether the window produced ANY read or unresolved
+// construct at all — the signal PhaseBacking.NoSubject (via the caller)
+// widens to cover, beside the presence-gated-absent-script case. D-11's own
+// contract is BOUNDED (grep/cat/find/source/wc/head/tail/sed/awk, plus the
+// Go os.ReadFile/os.Open arm) — a phase whose script only invokes `gofmt`,
+// `go vet`, `go test`, `golangci-lint` and similar produces ZERO reads and
+// ZERO unresolved constructs, not because it reads nothing (it plainly
+// does), but because the classifier has no contract for that command shape
+// at all. Zero reads is therefore ABSENCE OF EVIDENCE, not evidence of a
+// false claim — scoring it identically to release-notes-freshness (which
+// DOES have grep/cat-shaped reads that simply miss its declared glob) would
+// be the "confident, specific, wrong" failure this package's own doc.go
+// warns against. Measured: without this distinction, 57 real corpus phases
+// and 11,754 refusal lines went red on the live tree — go-test, gofmt, vet,
+// golangci-lint among them — none of them a genuine false claim.
+func honestyForWindow(relPath string, allLines []string, startLine, endLine int, isGo bool, d Declaration) (refusals []Refusal, opaque bool, backed map[string]bool, hadEvidence bool, err error) {
 	if startLine < 1 || endLine < startLine || endLine > len(allLines) {
-		return nil, false, fmt.Errorf("honesty check for %q: invalid scan window [%d,%d] in %s (file has %d lines)", d.Phase, startLine, endLine, relPath, len(allLines))
+		return nil, false, nil, false, fmt.Errorf("honesty check for %q: invalid scan window [%d,%d] in %s (file has %d lines)", d.Phase, startLine, endLine, relPath, len(allLines))
 	}
 	prefix := "#"
 	if isGo {
@@ -651,18 +774,16 @@ func honestyForWindow(relPath string, allLines []string, startLine, endLine int,
 
 	declared, _, oerr := findOpaqueDirective(allLines, startLine, endLine, prefix)
 	if oerr != nil {
-		return nil, false, fmt.Errorf("%s: %w", relPath, oerr)
+		return nil, false, nil, false, fmt.Errorf("%s: %w", relPath, oerr)
 	}
 
 	refusals = append(refusals, compareReads(relPath, d, reads)...)
-	if len(unresolved) > 0 {
-		if declared {
-			opaque = true
-		} else {
-			refusals = append(refusals, unresolvedRefusals(relPath, d, unresolved)...)
-		}
+	if len(unresolved) > 0 && !declared {
+		refusals = append(refusals, unresolvedRefusals(relPath, d, unresolved)...)
 	}
-	return refusals, opaque, nil
+	backed = backedGlobs(d, reads)
+	hadEvidence = len(reads) > 0 || len(unresolved) > 0
+	return refusals, declared, backed, hadEvidence, nil
 }
 
 // scriptForRecipe reports the script a Makefile recipe invokes via
@@ -695,10 +816,18 @@ func parseSourceLine(source string) (int, bool) {
 // the whole backing script when the recipe shells to one (readme-lint,
 // classify-guard, ...), or the recipe's own lines when it does not
 // (workflow-lint's inline shell).
-func honestyForMakePhase(root string, doc *makefileDoc, d Declaration) (refusals []Refusal, opaque bool, err error) {
+//
+// hasBacking is false exactly when this arm is punting to a window owned
+// elsewhere (the len(blocks) > 1 branch below, where the verifyPhases loop's
+// honestyForVerifyPhase owns the phase's real window) — the caller must NOT
+// store a PhaseBacking for the phase in that case, or an empty placeholder
+// could shadow the real one depending on iteration order. It is true (with
+// backing.NoSubject set) for a presence-gated absent script — the claim
+// survives the script's absence, the same way Coverage already treats it.
+func honestyForMakePhase(root string, doc *makefileDoc, d Declaration) (refusals []Refusal, opaque bool, backing PhaseBacking, hasBacking bool, err error) {
 	t, ok := doc.Targets[d.Phase]
 	if !ok {
-		return nil, false, nil
+		return nil, false, PhaseBacking{}, false, nil
 	}
 	if script, sok := scriptForRecipe(t.Recipe); sok {
 		raw, rerr := readRepoFile(root, filepath.FromSlash(script))
@@ -724,9 +853,9 @@ func honestyForMakePhase(root string, doc *makefileDoc, d Declaration) (refusals
 			// missing script still errors, because that one is a real defect —
 			// the gate silently does nothing and nobody is told.
 			if isNotExist(rerr) && recipeGuardsPresence(t.Recipe, script) {
-				return nil, false, nil
+				return nil, false, PhaseBacking{NoSubject: true}, true, nil
 			}
-			return nil, false, fmt.Errorf("honesty check for %q: read %s: %w", d.Phase, script, rerr)
+			return nil, false, PhaseBacking{}, false, fmt.Errorf("honesty check for %q: read %s: %w", d.Phase, script, rerr)
 		}
 		lines := strings.Split(string(raw), "\n")
 
@@ -769,20 +898,28 @@ func honestyForMakePhase(root string, doc *makefileDoc, d Declaration) (refusals
 		// branch above gives an absent script.
 		blocks, berr := findLaneBlocks(lines, "#")
 		if berr != nil {
-			return nil, false, fmt.Errorf("honesty check for %q: %s: %w", d.Phase, script, berr)
+			return nil, false, PhaseBacking{}, false, fmt.Errorf("honesty check for %q: %s: %w", d.Phase, script, berr)
 		}
 		if len(blocks) > 1 {
-			return nil, false, nil
+			return nil, false, PhaseBacking{}, false, nil
 		}
-		return honestyForWindow(script, lines, 1, len(lines), false, d)
+		r, declared, backed, hadEvidence, werr := honestyForWindow(script, lines, 1, len(lines), false, d)
+		if werr != nil {
+			return nil, false, PhaseBacking{}, false, werr
+		}
+		return r, declared, PhaseBacking{BackedPatterns: backed, Opaque: declared, NoSubject: !hadEvidence}, true, nil
 	}
 
 	startLine, sok := parseSourceLine(d.Source)
 	if !sok {
-		return nil, false, fmt.Errorf("honesty check for %q: cannot parse declaration source %q", d.Phase, d.Source)
+		return nil, false, PhaseBacking{}, false, fmt.Errorf("honesty check for %q: cannot parse declaration source %q", d.Phase, d.Source)
 	}
 	endLine := t.HeaderIdx + 1 + len(t.Recipe)
-	return honestyForWindow("Makefile", doc.Lines, startLine, endLine, false, d)
+	r, declared, backed, hadEvidence, werr := honestyForWindow("Makefile", doc.Lines, startLine, endLine, false, d)
+	if werr != nil {
+		return nil, false, PhaseBacking{}, false, werr
+	}
+	return r, declared, PhaseBacking{BackedPatterns: backed, Opaque: declared, NoSubject: !hadEvidence}, true, nil
 }
 
 // honestyForVerifyPhase resolves d's scan region for a scripts/verify.sh
@@ -806,15 +943,15 @@ func honestyForMakePhase(root string, doc *makefileDoc, d Declaration) (refusals
 // the one signal that actually distinguishes "this call site opens a
 // function" from "this call site's command token happens to also be a
 // function name elsewhere".
-func honestyForVerifyPhase(root string, lines []string, p Phase, d Declaration) (refusals []Refusal, opaque bool, err error) {
+func honestyForVerifyPhase(root string, lines []string, p Phase, d Declaration) (refusals []Refusal, opaque bool, backing PhaseBacking, err error) {
 	startLine, sok := parseSourceLine(d.Source)
 	if !sok {
-		return nil, false, fmt.Errorf("honesty check for %q: cannot parse declaration source %q", d.Phase, d.Source)
+		return nil, false, PhaseBacking{}, fmt.Errorf("honesty check for %q: cannot parse declaration source %q", d.Phase, d.Source)
 	}
 
 	blocks, berr := findLaneBlocks(lines, "#")
 	if berr != nil {
-		return nil, false, fmt.Errorf("honesty check for %q: scripts/verify.sh: %w", d.Phase, berr)
+		return nil, false, PhaseBacking{}, fmt.Errorf("honesty check for %q: scripts/verify.sh: %w", d.Phase, berr)
 	}
 	var following string
 	foundBlock := false
@@ -825,46 +962,71 @@ func honestyForVerifyPhase(root string, lines []string, p Phase, d Declaration) 
 		}
 	}
 	if !foundBlock {
-		return nil, false, fmt.Errorf("honesty check for %q: no lane-inputs block starts at scripts/verify.sh:%d", d.Phase, startLine)
+		return nil, false, PhaseBacking{}, fmt.Errorf("honesty check for %q: no lane-inputs block starts at scripts/verify.sh:%d", d.Phase, startLine)
 	}
 
 	if m := funcOpenRe.FindStringSubmatch(following); m != nil {
 		_, fnEnd, fok := verifyFunctionBodyLines(lines, m[1])
 		if !fok {
-			return nil, false, fmt.Errorf("honesty check for %q: function %s() not found in scripts/verify.sh", d.Phase, m[1])
+			return nil, false, PhaseBacking{}, fmt.Errorf("honesty check for %q: function %s() not found in scripts/verify.sh", d.Phase, m[1])
 		}
-		return honestyForWindow("scripts/verify.sh", lines, startLine, fnEnd, false, d)
+		r, declared, backed, hadEvidence, werr := honestyForWindow("scripts/verify.sh", lines, startLine, fnEnd, false, d)
+		if werr != nil {
+			return nil, false, PhaseBacking{}, werr
+		}
+		return r, declared, PhaseBacking{BackedPatterns: backed, Opaque: declared, NoSubject: !hadEvidence}, nil
 	}
 
 	callLine, cok := parseSourceLine(p.Source)
 	if !cok {
-		return nil, false, fmt.Errorf("honesty check for %q: cannot parse call site %q", d.Phase, p.Source)
+		return nil, false, PhaseBacking{}, fmt.Errorf("honesty check for %q: cannot parse call site %q", d.Phase, p.Source)
 	}
-	refusals, opaque, err = honestyForWindow("scripts/verify.sh", lines, startLine, callLine, false, d)
+	var backed map[string]bool
+	var hadEvidence bool
+	refusals, opaque, backed, hadEvidence, err = honestyForWindow("scripts/verify.sh", lines, startLine, callLine, false, d)
 	if err != nil {
-		return nil, false, err
+		return nil, false, PhaseBacking{}, err
 	}
+	backing = PhaseBacking{BackedPatterns: backed, Opaque: opaque, NoSubject: !hadEvidence}
 
 	if callLine-1 >= 0 && callLine-1 < len(lines) {
 		if m := goRunFileRe.FindStringSubmatch(lines[callLine-1]); m != nil {
-			goRefusals, goOpaque, gerr := honestyForGoFile(root, m[1], d)
+			goRefusals, goOpaque, goBacked, goHadEvidence, gerr := honestyForGoFile(root, m[1], d)
 			if gerr != nil {
-				return nil, false, gerr
+				return nil, false, PhaseBacking{}, gerr
 			}
 			refusals = append(refusals, goRefusals...)
 			opaque = opaque || goOpaque
+			hadEvidence = hadEvidence || goHadEvidence
+			backing = mergeBacking(backing, goBacked, goOpaque)
+			backing.NoSubject = !hadEvidence
 		}
 	}
-	return refusals, opaque, nil
+	return refusals, opaque, backing, nil
 }
 
 // honestyForGoFile is D-11's Go arm: scan one `go run <file>.go`-named
 // file (whole-file, its own lane-reads-opaque if it needs one) for
 // os.ReadFile/os.Open.
-func honestyForGoFile(root, relPath string, d Declaration) (refusals []Refusal, opaque bool, err error) {
+func honestyForGoFile(root, relPath string, d Declaration) (refusals []Refusal, opaque bool, backed map[string]bool, hadEvidence bool, err error) {
 	raw, rerr := readRepoFile(root, filepath.FromSlash(relPath))
+	if errors.Is(rerr, fs.ErrNotExist) {
+		// The file the call site names is not in THIS tree. That is not a
+		// fault to abort on: it is the same "the honesty question has no
+		// subject" answer honestyForMakePhase already gives an absent
+		// script, and a declaration pointing at a file that does not exist
+		// is Reconcile's finding to report, not this pass's to die on.
+		//
+		// It is load-bearing rather than defensive. `verify.sh --teeth`
+		// scans a deliberately PARTIAL fixture tree, so coverage-policy's
+		// `go run internal/coveragepolicy/covercheck.go` names a file that
+		// fixture does not carry. Aborting there killed the whole honesty
+		// pass, which made `make harness-check` red on a tree whose only
+		// defect was that a fixture is smaller than the repo.
+		return nil, false, nil, false, nil
+	}
 	if rerr != nil {
-		return nil, false, fmt.Errorf("honesty check for %q: read %s: %w", d.Phase, relPath, rerr)
+		return nil, false, nil, false, fmt.Errorf("honesty check for %q: read %s: %w", d.Phase, relPath, rerr)
 	}
 	lines := strings.Split(string(raw), "\n")
 	return honestyForWindow(relPath, lines, 1, len(lines), true, d)
@@ -909,31 +1071,50 @@ func readVerifyLines(root string) ([]string, error) {
 // check the DECLARATION side only — this checks the declaration against
 // the script's own body.
 //
-// opaqueCount is the running total of phases whose backing script(s)
-// needed a lane-reads-opaque line to pass — D-11's "the number is the
-// point": a silently-unclassified read is invisible, a printed count is a
-// debt with a size.
+// opaqueCount is the running total of phases whose backing window(s) carry
+// a lane-reads-opaque directive at all — D-11's "the number is the point":
+// a silently-unclassified read is invisible, a printed count is a debt with
+// a size. P1 widened this from "declared AND an unresolved construct was
+// present in that same window" to "declared" alone (honestyForWindow's own
+// comment has the reasoning) so the SAME predicate backs a phase's declared
+// globs (backing's Opaque field) and feeds this ceiling — a directive that
+// backed a glob for free without ever moving this count would be the
+// "declare everything opaque" hole US-5 exists to close.
+//
+// backing is P1's own addition: per phase, which of its declared patterns
+// the extractor found a literal read for, whether its window(s) declare
+// lane-reads-opaque, and whether the honesty question has no subject at all
+// (a presence-gated Makefile recipe whose script is legitimately absent —
+// PhaseBacking's own doc comment). Coverage and Derive both consult it
+// through the SAME predicate (coverage.go's claimVerdict) so a claim's
+// three-valued verdict cannot disagree between `--verify` and `--derive`.
 //
 // A `go-test-scoped:./pkg/...` declaration is out of this deliverable's
 // contract (per-gate SCRIPT, not per-package tests) and is never reached
-// here — it has no entry in makePhases/verifyPhases at all.
-func HonestyCheck(root string, decls []Declaration) (refusals []Refusal, opaqueCount int, err error) {
+// here — it has no entry in makePhases/verifyPhases at all, and so never
+// gets a backing entry; Coverage/Derive treat a missing entry as "no
+// evidence" (the zero value), which for a go-test-scoped declaration is
+// harmless because Reconcile/Corpus never route real repo paths through it
+// via Coverage's claimers loop the way a Makefile/verify.sh phase's own
+// Inputs would be.
+func HonestyCheck(root string, decls []Declaration) (refusals []Refusal, opaqueCount int, backing map[string]PhaseBacking, err error) {
 	byPhase := map[string]Declaration{}
 	for _, d := range decls {
 		byPhase[d.Phase] = d
 	}
+	backing = map[string]PhaseBacking{}
 
 	makePhases, makeDoc, merr := corpusFromMakefile(root)
 	if merr != nil {
-		return nil, 0, merr
+		return nil, 0, nil, merr
 	}
 	verifyPhases, _, verr := corpusFromVerify(root)
 	if verr != nil {
-		return nil, 0, verr
+		return nil, 0, nil, verr
 	}
 	verifyLines, rerr := readVerifyLines(root)
 	if rerr != nil {
-		return nil, 0, rerr
+		return nil, 0, nil, rerr
 	}
 
 	for _, p := range makePhases {
@@ -941,13 +1122,16 @@ func HonestyCheck(root string, decls []Declaration) (refusals []Refusal, opaqueC
 		if !ok {
 			continue // Reconcile already reports the missing declaration
 		}
-		r, phaseOpaque, herr := honestyForMakePhase(root, makeDoc, d)
+		r, phaseOpaque, phaseBacking, hasBacking, herr := honestyForMakePhase(root, makeDoc, d)
 		if herr != nil {
-			return nil, 0, herr
+			return nil, 0, nil, herr
 		}
 		refusals = append(refusals, r...)
 		if phaseOpaque {
 			opaqueCount++
+		}
+		if hasBacking {
+			backing[p.Name] = phaseBacking
 		}
 	}
 
@@ -956,17 +1140,91 @@ func HonestyCheck(root string, decls []Declaration) (refusals []Refusal, opaqueC
 		if !ok {
 			continue
 		}
-		r, phaseOpaque, herr := honestyForVerifyPhase(root, verifyLines, p, d)
+		r, phaseOpaque, phaseBacking, herr := honestyForVerifyPhase(root, verifyLines, p, d)
 		if herr != nil {
-			return nil, 0, herr
+			return nil, 0, nil, herr
 		}
 		refusals = append(refusals, r...)
 		if phaseOpaque {
 			opaqueCount++
 		}
+		backing[p.Name] = phaseBacking
 	}
 
-	return refusals, opaqueCount, nil
+	return refusals, opaqueCount, backing, nil
+}
+
+// UnbackedClaimCount reports how many (phase, declared-glob) pairs across
+// decls are unbacked (US-2's debt metric, the converse of opaqueCount): a
+// KindScoped Inputs entry or a KindAlways Claims entry the extractor found
+// no literal read for, and whose phase does not have NoSubject (the
+// presence-gated-absent exemption).
+//
+// Deliberately NOT suppressed by Opaque, and this is the one place where
+// that differs from claimVerdict — the two answer different questions.
+// claimVerdict asks "does this claim COUNT AS COVERAGE", and an honest
+// directive is evidence enough. This asks "how many globs has the extractor
+// failed to resolve a read for", which a directive does not change: the
+// construct is still unresolved, it is just excused. That is a debt worth a
+// size, and shrinking it (by narrowing a glob, or by teaching the extractor
+// the construct) is a normal commit.
+//
+// The two halves are reported separately by the caller, because the
+// aggregate hides the number that matters: an unresolved glob whose phase
+// carries NO directive is the class this phase exists to catch, and it must
+// not be averaged into the excused population.
+//
+// Independent of Coverage and the universe on purpose — like opaqueCount,
+// the debt has a size whether or not a currently-tracked repo path happens
+// to exercise the claim today.
+func UnbackedClaimCount(decls []Declaration, backing map[string]PhaseBacking) int {
+	excused, bare := UnbackedClaimSplit(decls, backing)
+	return excused + bare
+}
+
+// UnbackedClaimSplit is UnbackedClaimCount's two halves: excused counts the
+// unresolved globs whose phase carries a lane-reads-opaque directive, bare
+// counts the ones that carry nothing. bare is the number this phase exists
+// to drive to zero; excused is the debt the US-5 ceiling bounds.
+func UnbackedClaimSplit(decls []Declaration, backing map[string]PhaseBacking) (excused, bare int) {
+	for _, d := range decls {
+		patterns := declarationPatterns(d)
+		if len(patterns) == 0 {
+			continue
+		}
+		pb := backing[d.Phase]
+		if pb.NoSubject {
+			continue
+		}
+		for _, pat := range patterns {
+			if pb.BackedPatterns[pat] {
+				continue
+			}
+			if pb.Opaque {
+				excused++
+			} else {
+				bare++
+			}
+		}
+	}
+	return excused, bare
+}
+
+// CheckOpaqueCeiling is US-5's ratchet over opaqueCount, the same shape
+// scripts/check-refusal-ratchet.sh's own per-file budget uses: a fall (or
+// staying level) passes silently, growth past the stored ceiling refuses by
+// name — so the escape hatch this phase adds (a claim counts as backed when
+// its phase declares lane-reads-opaque) cannot be defeated by declaring
+// everything opaque without the debt's size moving somewhere visible.
+func CheckOpaqueCeiling(opaqueCount, ceiling int) []Refusal {
+	if opaqueCount <= ceiling {
+		return nil
+	}
+	return []Refusal{{
+		Subject: "scripts/lib/lane-opaque-ceiling.txt",
+		Problem: fmt.Sprintf("%d phase(s) now declare lane-reads-opaque, ceiling is %d", opaqueCount, ceiling),
+		Fix:     "lower it (resolve a construct to a literal path, or narrow the read) — or, if the growth is deliberate, re-seed with `go run internal/lane/lanecheck.go --write-opaque-ceiling` and review the diff",
+	}}
 }
 
 // narrowFindRoots turns a find invocation's roots plus its -path/-name

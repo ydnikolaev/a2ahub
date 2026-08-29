@@ -1628,6 +1628,11 @@ if [ "$MODE" = projection ]; then
   #   !AGENTS.md
   #   !CLAUDE.md
   # lane-tier: ship
+  # lane-reads-opaque: check-projection.sh reads its path set out of
+  #   scripts/lib/strip-set.txt at runtime, not a literal in this window —
+  #   the extractor cannot resolve it. The ** claim above is still TRUE (the
+  #   fourteen lines of reasoning above it), just unresolvable; this
+  #   directive is P1's "opaque" verdict, not a narrowed glob.
   run_phase projection bash "$ROOT/scripts/check-projection.sh" --all
   exit 0
 fi

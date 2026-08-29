@@ -1,0 +1,18 @@
+# scripts/lib/lane-opaque-ceiling.txt — P1 (computed-not-listed-2026-08)'s
+# ceiling on "lane-reads-opaque" phase-instances across the whole corpus
+# (internal/lane.HonestyCheck's opaqueCount, printed by `make lane-declarations`).
+# One integer, alone on its own line. It may only FALL (a construct resolved
+# to a literal path, or narrowed enough that the extractor resolves it) or
+# stay the same; a tree whose opaqueCount exceeds it reds. The directive
+# this counts suppresses D-9's own per-line unresolved-construct refusal —
+# it does NOT back a phase's declared globs for Coverage's own three-valued
+# verdict (internal/lane/coverage.go's claimVerdict deliberately does not
+# consult PhaseBacking.Opaque, so a directive cannot launder an unread glob
+# into coverage), which is what keeps this ceiling from ever being the
+# escape hatch for THAT defect. It still bounds ITS OWN debt: growth here
+# means more constructs are being waved past the classifier, unresolved.
+#
+# Regenerate with:
+#   go run internal/lane/lanecheck.go --write-opaque-ceiling
+# then review the diff before committing.
+49
