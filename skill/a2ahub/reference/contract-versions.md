@@ -155,6 +155,33 @@ That is a real cost and it is stated here rather than discovered at `validate`.
 
 ## Proving a generated contract came from your code
 
+**For the standing question — "does everything I have published still match my
+code?" — do not run this per contract.** `a2a contract verify-published` asks it
+once, for every contract your system provides, across every space you are
+connected to:
+
+```sh
+a2a contract verify-published
+```
+
+One row per contract, each carrying its own status: `matched`, `drifted`,
+`not-published-yet`, or `unmeasured` when the comparison could not be made at
+all. The version is resolved from the published descriptor — you do not pass
+one, and passing the wrong one is therefore not a mistake you can make. A local
+subject that is not where the layout expects it is named with `--local
+<XC-id>=<path>`.
+
+Two behaviours worth knowing before you wire it into a gate. A run that finds
+**zero** contracts prints that denominator rather than refusing: publishing
+nothing yet is a real state, and it is not one you can exit by any action, so a
+refusal would leave you with nothing to satisfy. A **stale or absent mirror**
+DOES refuse, naming the sync to run — that one you can satisfy, and answering
+"everything matches" from a mirror that has not been refreshed is the failure
+this verb exists to prevent.
+
+The per-contract comparison below is what each row runs; nothing about it is
+re-implemented for the aggregate.
+
 `generated_from.source_digest` asserts the **export-source-v1** digest of the
 contract you are publishing. The profile is defined here so you can compute it
 in your own generator, which is the only way the field means anything: a value

@@ -116,6 +116,23 @@ the requested work.
 
 ## Table of contents
 
+**You do not need this checkout to read any of it.** Every page below is
+embedded in the `a2a` binary, and `a2a docs` prints it:
+
+```sh
+a2a docs                    # list the topics — the id, the group, the title
+a2a docs work-loops         # print that page
+a2a docs loop-contract-change
+```
+
+The topic ids are this tree's own section ids, read from the binary at run
+time — so a page added here is a topic the very next release accepts, and
+there is no second list anywhere that can disagree with this one. The verb
+needs no project, no connected space, and no working directory: it reads
+embedded bytes and nothing else, which is what makes it answerable from
+inside somebody else's repository. Agents on the MCP surface call `a2a_docs`
+with the same topic id and get the same page.
+
 | File | What it carries |
 |------|-----------------|
 | [loops.md](loops.md) | The routing root: condensed §0/§3 semantics (the eight types, state-as-a-fold, the five human approval gates and their machine roster), the §8.1 session-start checklist, and the selector table that routes a situation to its loop page. Start here. |

@@ -146,6 +146,7 @@ covered:
   cmd:cancel: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
   cmd:close: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
   cmd:connect: "onboarding.md#Onboarding a new system into an existing space (§9.2)"
+  cmd:contract verify-published: "reference/contract-versions.md#Proving a generated contract came from your code"
   cmd:disconnect: "onboarding.md#Onboarding a new space, org, or offboarding (§9.2)"
   cmd:await: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
   cmd:contract activate: "loops/first-integration.md#§8.4b First-integration loop — producer half (a NEW contract, through go-live)"
@@ -163,6 +164,7 @@ covered:
   cmd:data: "reference/data-exchange.md#Data exchange — packing, delivering, fetching and verifying a payload"
   cmd:decline: "loops/receive.md#§8.3 Receive loop — \"something arrived for my system\""
   cmd:dispute: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  cmd:docs: "SKILL.md#Table of contents"
   cmd:doctor: "troubleshooting.md#What `a2a doctor` does"
   cmd:feedback: "loops/feedback.md#§8.7 Feedback loop — \"the tool itself got in my way\""
   cmd:fetch: "reference/data-exchange.md#Consumer sequence"
@@ -204,6 +206,7 @@ covered:
   # -- MCP tools: family wrappers over the already-covered CLI verbs -------
   tool:a2a_contract: "loops/contract-change.md#§8.4 Contract-owner loop — \"my interface changed\""
   tool:a2a_data: "reference/data-exchange.md#Data exchange — packing, delivering, fetching and verifying a payload"
+  tool:a2a_docs: "SKILL.md#Table of contents"
   tool:a2a_exchange: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
   tool:a2a_lifecycle: "loops/receive.md#§8.3 Receive loop — \"something arrived for my system\""
   tool:a2a_new: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
