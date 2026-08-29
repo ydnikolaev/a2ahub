@@ -12,7 +12,7 @@
 # each one after actually verifying it (I5) — never bulk-set to true.
 
 feedback: v1
-id: fb-20260818-76f29d
+id: fb-20260818-76f29d # auto-filled: fb-YYYYMMDD-<6 hex>
 kind: bug # bug | feature | docs | friction | protocol
 severity: major # blocker | major | minor
 title: verify --verdict indexes an unseen list and only range-checks it
@@ -41,7 +41,7 @@ checks:
     not_space_specific: true
     no_sensitive_content: true
     duplicates_checked: true
-status: shipped
+# resolution is hub-mutated only; MUST be absent at submit — do not add it.
 resolution: |-
     SHIPPED. The fix landed in `defects-fix-2026-08` P3, commit d9287883:
     `lifecycleEchoVerdicts` (internal/cli/cmd_lifecycle.go) prints each resolved verdict's
@@ -59,3 +59,4 @@ resolution: |-
     `status: shipped`, and d9287883 resolves. So the record sat `accepted` against a rule it
     wrote for itself and no gate enforced, while its ledger ref named a release note — a
     shape CHECK-C's staleness join skips in silence.
+status: shipped

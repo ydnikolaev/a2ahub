@@ -3,180 +3,127 @@ id: fb-20260827-a84550
 kind: bug
 severity: major
 title: verify-export against a staged candidate can never match its published version
-summary: '`a2a contract verify-export --local <staging> <XC-id>@<version>` is the verb the
-  contract-owner loop names for "my published export still matches my code" (loops/contract-change.md
-  §8.4), and no tree a producer can hold makes it green. The versioned form digests the candidate
-  under the published contract''s digest profile; for contract-set-v2 that profile covers
-  the descriptor BYTES. But publish does not carry the candidate''s descriptor through — it
-  stamps `schema`, `version` and `generated_from.source_digest` into the frontmatter and re-serializes
-  the whole mapping through yaml.Marshal, so the published contract.md differs from every
-  candidate that produced it, in the version field and in indentation. The shipped template
-  makes the first difference mandatory ("THE VERSION FIELD IS NOT YOURS TO SET. Leave it at
-  0.0.0"); the second is undocumented — nothing says the authored descriptor is re-emitted,
-  so a generator aiming for byte-parity has no specification to hit. The two invariants are
-  closed against each other: a candidate that satisfies publish cannot satisfy verify-export,
-  and the operator sees a bare digest pair with no named file.'
+summary: >-
+  `a2a contract verify-export --local <staging> <XC-id>@<version>` is the verb
+  the contract-owner loop names for "my published export still matches my code"
+  (loops/contract-change.md §8.4), and no tree a producer can hold makes it
+  green. The versioned form digests the candidate under the published contract's
+  digest profile; for contract-set-v2 that profile covers the descriptor BYTES.
+  But publish does not carry the candidate's descriptor through — it stamps
+  `schema`, `version` and `generated_from.source_digest` into the frontmatter and
+  re-serializes the whole mapping through yaml.Marshal, so the published
+  contract.md differs from every candidate that produced it, in the version field
+  and in indentation. The shipped template makes the first difference mandatory
+  ("THE VERSION FIELD IS NOT YOURS TO SET. Leave it at 0.0.0"); the second is
+  undocumented — nothing says the authored descriptor is re-emitted, so a
+  generator aiming for byte-parity has no specification to hit. The two
+  invariants are closed against each other: a candidate that satisfies publish
+  cannot satisfy verify-export, and the operator sees a bare digest pair with no
+  named file.
 context:
-  a2a_version: 0.25.4
-  os_arch: darwin/arm64
-  surface: cli
-  command: a2a contract verify-export --local .a2a/staging/<system>/provides/<slug> <XC-id>@<version>
-  agent: Reproduced with the released 0.25.4 binary; code references are read from the a2ahub
-    working tree at c99bf9b5 (dev), so line numbers are indicative and the mechanism, not
-    the line, is the claim.
+    a2a_version: 0.25.4
+    os_arch: darwin/arm64
+    surface: cli
+    command: a2a contract verify-export --local .a2a/staging/<system>/provides/<slug> <XC-id>@<version>
+    agent: >-
+      Reproduced with the released 0.25.4 binary; code references are read from
+      the a2ahub working tree at c99bf9b5 (dev), so line numbers are indicative
+      and the mechanism, not the line, is the claim.
 evidence:
-  steps:
-  - 'Publish a contract-set-v2 contract from `.a2a/staging/<system>/provides/<slug>/`, authored
-    from the shipped template (descriptor at version: 0.0.0), then `a2a sync`.'
-  - 'a2a contract verify-export --local .a2a/staging/<system>/provides/<slug> <XC-id>@<published-version>
-    -> exit 1, `digest mismatch: local=sha256:a2ab345a... want=sha256:b1b588f2...`, and ZERO
-    added/removed/changed lines.'
-  - a2a contract verify-export --local .a2a/cache/mirrors/<space>/<system>/provides/<slug>
-    <XC-id>@<published-version> -> exit 0, matches. The published tree is the only tree that
-    matches, which is a tautology, not a check.
-  - 'diff -rq over the two trees -> exactly ONE differing file: contract.md. schema/** and
-    fixtures/** and artifacts/** are byte-identical.'
-  - 'diff over contract.md alone -> `version: 0.0.0` vs the published version, plus 2-space
-    vs 4-space indentation under `generated_from:` and `artifacts:`.'
-  - 'internal/contract/publication_plan.go finalizePublicationDescriptor: setYAMLScalar(root,
-    "schema"/"version"), setYAMLScalar(generated, "source_digest"), then yaml.Marshal(root)
-    — the descriptor is re-emitted, never carried.'
-  - 'cmd/a2a/contract_p6_wiring.go contractLocalSnapshotDigest: for a non-tree-v1 profile
-    it passes core.Descriptor.Raw into BuildCarriedSet, so the descriptor bytes are inside
-    the compared digest.'
-  - 'schemas/templates/v2/contract.md: `version: 0.0.0 # set by \`a2a contract publish\`,
-    never by hand` — so the one field guaranteed to differ is the one the template mandates.'
-  expected: A producer can point verify-export at a tree they actually keep and learn whether
-    the space still serves what their code produces — the question §8.4 says the verb answers.
-  actual: Only the mirror's own published tree compares equal. Every candidate a producer
-    can author differs in contract.md by construction, so the verb reports a digest mismatch
-    on a contract that is in fact undrifted.
-proposal: 'The wanted comparison is already computable and already asserted on both sides
-  — it just has no verb. The PUBLISHED descriptor carries `generated_from.source_digest`,
-  and the bare form `verify-export --local <dir> <XC-id>` (v0.19.8, fb-20260806-eb224e) computes
-  export-source-v1 over a local candidate. In the reproduction above it prints sha256:9a6343af...,
-  exactly what the published descriptor asserts. So the honest post-publish check is: compute
-  export-source-v1 locally and compare it against the PUBLISHED descriptor''s asserted source_digest
-  — schema and fixture entries only, descriptor excluded, precisely the set publish does not
-  rewrite. Make that the meaning of `verify-export --local <dir> <XC-id>@<version>`, whose
-  descriptor-inclusive comparison is unsatisfiable today, or add `--against-published`. Two
-  alternatives also close it: publish writes the finalized descriptor back into staging; or
-  the publisher-owned fields and the serialization leave the compared digest. Whichever is
-  chosen, say in reference/contract-versions.md that the descriptor is re-serialized at publish,
-  and that export-source-v1 excludes `artifacts/**` — a declared companion needs its own comparison.'
+    steps:
+        - "Publish a contract-set-v2 contract from `.a2a/staging/<system>/provides/<slug>/`, authored from the shipped template (descriptor at version: 0.0.0), then `a2a sync`."
+        - "a2a contract verify-export --local .a2a/staging/<system>/provides/<slug> <XC-id>@<published-version> -> exit 1, `digest mismatch: local=sha256:a2ab345a... want=sha256:b1b588f2...`, and ZERO added/removed/changed lines."
+        - "a2a contract verify-export --local .a2a/cache/mirrors/<space>/<system>/provides/<slug> <XC-id>@<published-version> -> exit 0, matches. The published tree is the only tree that matches, which is a tautology, not a check."
+        - "diff -rq over the two trees -> exactly ONE differing file: contract.md. schema/** and fixtures/** and artifacts/** are byte-identical."
+        - "diff over contract.md alone -> `version: 0.0.0` vs the published version, plus 2-space vs 4-space indentation under `generated_from:` and `artifacts:`."
+        - "internal/contract/publication_plan.go finalizePublicationDescriptor: setYAMLScalar(root, \"schema\"/\"version\"), setYAMLScalar(generated, \"source_digest\"), then yaml.Marshal(root) — the descriptor is re-emitted, never carried."
+        - "cmd/a2a/contract_p6_wiring.go contractLocalSnapshotDigest: for a non-tree-v1 profile it passes core.Descriptor.Raw into BuildCarriedSet, so the descriptor bytes are inside the compared digest."
+        - "schemas/templates/v2/contract.md: `version: 0.0.0 # set by \\`a2a contract publish\\`, never by hand` — so the one field guaranteed to differ is the one the template mandates."
+    expected: >-
+      A producer can point verify-export at a tree they actually keep and learn
+      whether the space still serves what their code produces — the question §8.4
+      says the verb answers.
+    actual: >-
+      Only the mirror's own published tree compares equal. Every candidate a
+      producer can author differs in contract.md by construction, so the verb
+      reports a digest mismatch on a contract that is in fact undrifted.
+proposal: >-
+  The wanted comparison is already computable and already asserted on both sides
+  — it just has no verb. The PUBLISHED descriptor carries
+  `generated_from.source_digest`, and the bare form `verify-export --local <dir>
+  <XC-id>` (v0.19.8, fb-20260806-eb224e) computes export-source-v1 over a local
+  candidate. In the reproduction above it prints sha256:9a6343af..., exactly
+  what the published descriptor asserts. So the honest post-publish check is:
+  compute export-source-v1 locally and compare it against the PUBLISHED
+  descriptor's asserted source_digest — schema and fixture entries only,
+  descriptor excluded, precisely the set publish does not rewrite. Make that the
+  meaning of `verify-export --local <dir> <XC-id>@<version>`, whose
+  descriptor-inclusive comparison is unsatisfiable today, or add
+  `--against-published`. Two alternatives also close it: publish writes the
+  finalized descriptor back into staging; or the publisher-owned fields and the
+  serialization leave the compared digest. Whichever is chosen, say in
+  reference/contract-versions.md that the descriptor is re-serialized at publish,
+  and that export-source-v1 excludes `artifacts/**` — a declared companion needs
+  its own comparison.
 checks:
-  docs_consulted: true
-  grounded_in_real_work: true
-  not_space_specific: true
-  no_sensitive_content: true
-  duplicates_checked: true
-resolution: 'Accepted, MAJOR. CONFIRMED against the code on 2026-08-27, including the
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+resolution: |-
+    Accepted, MAJOR. CONFIRMED against the code on 2026-08-27, including the
+    one claim the intake pass explicitly had not checked.
 
-  one claim the intake pass explicitly had not checked.
+    THE yaml.Marshal CLAIM IS TRUE. finalizePublicationDescriptor
+    (internal/contract/publication_plan.go:698-707) does
+    setYAMLScalar(root, "schema"), setYAMLScalar(root, "version"),
+    setYAMLScalar(generated, "source_digest"), then yaml.Marshal(root) — the
+    descriptor is re-emitted, never carried. So the published contract.md
+    differs from every candidate that produced it, in the version field and in
+    whatever the marshaller does to indentation.
 
+    THE OTHER HALF ALSO HOLDS, and it is what closes the two invariants
+    against each other. verifyExportLocalDigest (cmd/a2a/contract_p6_wiring.go:533-537)
+    passes core.Descriptor.Raw into BuildCarriedSet for ProfileContractSetV2,
+    so the descriptor BYTES are inside the compared digest. Meanwhile
+    schemas/templates/v2/contract.md mandates `version: 0.0.0` in the
+    candidate. A candidate that satisfies publish therefore cannot satisfy
+    verify-export, by construction — the verb loops/contract-change.md §8.4
+    names for "my published export still matches my code" is unsatisfiable for
+    every tree a producer can hold, and the operator sees a bare digest pair
+    with no named file (which is fb-20260827-bc1f13).
 
-  THE yaml.Marshal CLAIM IS TRUE. finalizePublicationDescriptor
+    The report's own proposal is the strongest part of it and is already
+    computable on both sides: the published descriptor asserts
+    generated_from.source_digest, and the BARE form `verify-export --local
+    <dir> <XC-id>` — shipped in v0.19.8 for fb-20260806-eb224e — computes
+    export-source-v1 over a local candidate. Comparing those two compares
+    exactly the set publish does NOT rewrite. Whichever shape is chosen
+    (redefine the versioned form, add --against-published, write the finalized
+    descriptor back to staging, or take the publisher-owned fields out of the
+    compared digest), the documentation half is not optional:
+    reference/contract-versions.md must say that the descriptor is
+    re-serialized at publish and that export-source-v1 excludes artifacts/**.
 
-  (internal/contract/publication_plan.go:698-707) does
+    ROUTED to its own /discover, PAIRED WITH fb-20260827-455fca rather than
+    split from it. That call was deliberately left open by the intake handoff
+    and is made here after reading both records in full: 455fca names this
+    report as the comparison its aggregate verb should perform and says
+    outright that without this fix the aggregate form would inherit an
+    unsatisfiable check. They are the correctness half and the surface half of
+    one question — "can a producer ask whether their published contracts still
+    match their code" — and designing the surface against a broken comparison
+    is how the broken comparison gets frozen into a second verb.
 
-  setYAMLScalar(root, "schema"), setYAMLScalar(root, "version"),
+    NOT into no-silent-yes-2026-08. That epic's AC-0 names six forks, its
+    tracker pins phases=0/6, and none of its twelve rows touch
+    internal/contract's export or digest machinery. A seventh phase would be a
+    different epic with the same thesis.
 
-  setYAMLScalar(generated, "source_digest"), then yaml.Marshal(root) — the
+    REFS NAMES docs/backlog.md, so CHECK-C is silent on this row — see
+    fb-20260827-bc1f13's resolution for the mechanism. Re-point it at the spec
+    the /discover produces, and the staleness gate starts working again.
 
-  descriptor is re-emitted, never carried. So the published contract.md
-
-  differs from every candidate that produced it, in the version field and in
-
-  whatever the marshaller does to indentation.
-
-
-  THE OTHER HALF ALSO HOLDS, and it is what closes the two invariants
-
-  against each other. verifyExportLocalDigest (cmd/a2a/contract_p6_wiring.go:533-537)
-
-  passes core.Descriptor.Raw into BuildCarriedSet for ProfileContractSetV2,
-
-  so the descriptor BYTES are inside the compared digest. Meanwhile
-
-  schemas/templates/v2/contract.md mandates `version: 0.0.0` in the
-
-  candidate. A candidate that satisfies publish therefore cannot satisfy
-
-  verify-export, by construction — the verb loops/contract-change.md §8.4
-
-  names for "my published export still matches my code" is unsatisfiable for
-
-  every tree a producer can hold, and the operator sees a bare digest pair
-
-  with no named file (which is fb-20260827-bc1f13).
-
-
-  The report''s own proposal is the strongest part of it and is already
-
-  computable on both sides: the published descriptor asserts
-
-  generated_from.source_digest, and the BARE form `verify-export --local
-
-  <dir> <XC-id>` — shipped in v0.19.8 for fb-20260806-eb224e — computes
-
-  export-source-v1 over a local candidate. Comparing those two compares
-
-  exactly the set publish does NOT rewrite. Whichever shape is chosen
-
-  (redefine the versioned form, add --against-published, write the finalized
-
-  descriptor back to staging, or take the publisher-owned fields out of the
-
-  compared digest), the documentation half is not optional:
-
-  reference/contract-versions.md must say that the descriptor is
-
-  re-serialized at publish and that export-source-v1 excludes artifacts/**.
-
-
-  ROUTED to its own /discover, PAIRED WITH fb-20260827-455fca rather than
-
-  split from it. That call was deliberately left open by the intake handoff
-
-  and is made here after reading both records in full: 455fca names this
-
-  report as the comparison its aggregate verb should perform and says
-
-  outright that without this fix the aggregate form would inherit an
-
-  unsatisfiable check. They are the correctness half and the surface half of
-
-  one question — "can a producer ask whether their published contracts still
-
-  match their code" — and designing the surface against a broken comparison
-
-  is how the broken comparison gets frozen into a second verb.
-
-
-  NOT into no-silent-yes-2026-08. That epic''s AC-0 names six forks, its
-
-  tracker pins phases=0/6, and none of its twelve rows touch
-
-  internal/contract''s export or digest machinery. A seventh phase would be a
-
-  different epic with the same thesis.
-
-
-  REFS NAMES docs/backlog.md, so CHECK-C is silent on this row — see
-
-  fb-20260827-bc1f13''s resolution for the mechanism. Re-point it at the spec
-
-  the /discover produces, and the staleness gate starts working again.
-
-
-  SHIPPED 2026-08-28 by answers-that-hold-2026-08 P2 (27529301, 939c9c92), and this record''s
-  own proposal is what shipped. verify-export no longer digests the descriptor bytes: it classifies
-  the producer''s asserted generated_from.source_digest against a locally computed export-source-v1
-  over declared schema and fixture entries, descriptor excluded — so the version: 0.0.0 the
-  candidate template mandates no longer makes the verb unsatisfiable by construction. verify
-  and publish also now read the SAME candidate bytes (mirror overlaid with staging); TestContractVerifyExportRoundTrip''s
-  partial-overlay stanza drives the exact shape that used to disagree. A contract that asserted
-  nothing reports UNMEASURED rather than a match, because comparing a2a to a2a proves only
-  self-agreement. The sibling this record names, fb-20260827-bc1f13 (a bare digest pair with
-  no named file), is P3''s and remains open.'
+    SHIPPED 2026-08-28 by answers-that-hold-2026-08 P2 (27529301, 939c9c92), and this record's own proposal is what shipped. verify-export no longer digests the descriptor bytes: it classifies the producer's asserted generated_from.source_digest against a locally computed export-source-v1 over declared schema and fixture entries, descriptor excluded — so the version: 0.0.0 the candidate template mandates no longer makes the verb unsatisfiable by construction. verify and publish also now read the SAME candidate bytes (mirror overlaid with staging); TestContractVerifyExportRoundTrip's partial-overlay stanza drives the exact shape that used to disagree. A contract that asserted nothing reports UNMEASURED rather than a match, because comparing a2a to a2a proves only self-agreement. The sibling this record names, fb-20260827-bc1f13 (a bare digest pair with no named file), is P3's and remains open.
 status: shipped
