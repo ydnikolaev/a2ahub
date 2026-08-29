@@ -11,9 +11,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -1093,43 +1091,29 @@ func newContractVerifyPublishedHandler(deps ContractDeps) HandlerFunc {
 	}
 }
 
-// contractVerifyPublishedRows enumerates ownSystem's `provides/*` tree in
-// mirrorDir and builds one row per contract descriptor found there — see
-// internal/cli's own contractVerifyPublishedRowsFor for the full rationale
-// (ADR-001: mirrored here, never imported). A descriptor with no recorded
-// `version:` is "not-published-yet" and is never passed to
-// VerifyContractExport, which has no version to compare against.
+// contractVerifyPublishedRows builds one row per contract this system
+// provides. The ENUMERATION is space.ProvidedContractIDs — the one walk both
+// surfaces run, moved down there when this comment used to say the walk was
+// "mirrored here, never imported". ADR-001 does forbid importing the other
+// surface; ADR-019 says the answer to that is to move the shared rule DOWN,
+// not to keep a documented copy.
+//
+// What is NOT shared, deliberately: the per-row status derivation stays on
+// each surface, because its Detail text is the surface's own remediation
+// ("pass --local <id>=<path>" here is a flag that does not exist on MCP), and
+// sharing it would need an internal/space -> internal/validate edge that
+// internal/space/carried_class.go already records as a refused cycle.
+//
+// A descriptor with no recorded `version:` is "not-published-yet" and is never
+// passed to VerifyContractExport, which would have no version to compare.
 func contractVerifyPublishedRows(ctx context.Context, ownSystem, mirrorDir string, inspection ContractInspectionOperations, spaceID string, overrides map[string]string) ([]ContractVerifyPublishedRow, error) {
-	layout, err := space.NewLayout(ownSystem)
+	ids, err := space.ProvidedContractIDs(ownSystem, mirrorDir)
 	if err != nil {
 		return nil, err
 	}
-	entries, err := os.ReadDir(filepath.Join(mirrorDir, ownSystem, "provides"))
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			// Nothing provided yet — a legitimate zero-row state (US-3).
-			return nil, nil
-		}
-		return nil, err
-	}
-	slugs := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		if _, statErr := os.Stat(filepath.Join(mirrorDir, layout.ProvidesContract(entry.Name()))); statErr != nil {
-			continue // no contract.md under this slug — not a provided contract
-		}
-		slugs = append(slugs, entry.Name())
-	}
-	sort.Strings(slugs)
 
-	rows := make([]ContractVerifyPublishedRow, 0, len(slugs))
-	for _, slug := range slugs {
-		id, _, ok := space.ContractForPath(layout.ProvidesContract(slug))
-		if !ok {
-			continue
-		}
+	rows := make([]ContractVerifyPublishedRow, 0, len(ids))
+	for _, id := range ids {
 		_, probe, _, _, derr := contractReadDescriptor(mirrorDir, id)
 		if derr != nil {
 			return nil, fmt.Errorf("%s: %w", id, derr)

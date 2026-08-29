@@ -39,13 +39,9 @@ package cli
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
-	"io/fs"
 	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -171,38 +167,17 @@ func contractVerifyPublishedRefuse(stdio IO, attempted, found, nextStep string) 
 // version-canonicalizing SSOT the rest of cmd_contract.go uses) and calls
 // sc.inspection.VerifyContractExport — P2's comparison, never re-derived.
 func contractVerifyPublishedRowsFor(ctx context.Context, ownSystem string, sc contractVerifyPublishedSpaceContext, overrides map[string]string) ([]ContractVerifyPublishedRow, error) {
-	layout, err := space.NewLayout(ownSystem)
+	// The enumeration itself is space.ProvidedContractIDs — the ONE walk both
+	// surfaces run. A zero-length result with a nil error is the legitimate
+	// "provides nothing yet" state (US-3); the caller prints the denominator
+	// either way.
+	ids, err := space.ProvidedContractIDs(ownSystem, sc.mirrorDir)
 	if err != nil {
 		return nil, err
 	}
-	entries, err := os.ReadDir(filepath.Join(sc.mirrorDir, ownSystem, "provides"))
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			// Nothing provided yet — a legitimate zero-row state (US-3), not
-			// an error: the caller prints the denominator either way.
-			return nil, nil
-		}
-		return nil, err
-	}
-	slugs := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		descriptorPath := filepath.Join(sc.mirrorDir, layout.ProvidesContract(entry.Name()))
-		if _, statErr := os.Stat(descriptorPath); statErr != nil {
-			continue // no contract.md under this slug — not a provided contract
-		}
-		slugs = append(slugs, entry.Name())
-	}
-	sort.Strings(slugs)
 
-	rows := make([]ContractVerifyPublishedRow, 0, len(slugs))
-	for _, slug := range slugs {
-		id, _, ok := space.ContractForPath(layout.ProvidesContract(slug))
-		if !ok {
-			continue
-		}
+	rows := make([]ContractVerifyPublishedRow, 0, len(ids))
+	for _, id := range ids {
 		_, probe, _, _, derr := contractReadDescriptor(sc.mirrorDir, id)
 		if derr != nil {
 			return nil, fmt.Errorf("%s: %w", id, derr)
