@@ -38,16 +38,67 @@ import (
 // safe to cross generically over every transition, kind and state the
 // vocabulary publishes.
 
+// excludedTransitionCell is one cross-product cell EXCLUDED from the reader
+// agreement assertion because it matches a declaredTransitionException — the
+// cell's own record, carrying the reason forward rather than the cell being
+// silently dropped or left green by accident (spec 10 §11, 2026-08-28
+// amendment: "the cell must carry a written reason, not be quietly dropped
+// or left green").
+type excludedTransitionCell struct {
+	ID     string
+	Reason string
+}
+
 // foldTransitionCells is universe 2's own cross-product. vocab is a
 // PARAMETER — the production caller passes fold.BuildVocabulary()'s real
 // answer; a fixture test (AC-7/AC-14) passes a synthetic Vocabulary
 // carrying a kind, state or transition the real fold package does not yet
 // publish, to prove this function reacts to whatever the vocabulary
 // carries with no edit to this file.
-func foldTransitionCells(vocab fold.Vocabulary) (evaluated []string, errs []error) {
-	inRows := make(map[[3]string]bool)
-	for _, tr := range fold.TransitionRows() {
+//
+// exceptions is declaredTransitionExceptions()'s roster in production —
+// this is the consumer that roster lacked (spec 10 §11, 2026-08-29
+// amendment: "declaredTransitionExceptions() has no consumer... a
+// declaration list that filters nothing is this epic's own class"). Every
+// declared exception is checked against fold.TransitionRows() — the same
+// raw table enumerator this cross-product already crosses against
+// fold.LegalNext — because "legal by the table" (the 2026-08-28 amendment's
+// own wording for why the P5 cell may not simply be deleted) is exactly
+// what TransitionRows() answers.
+//
+// A component-wise check against vocab alone would be WEAKER, and the
+// reason first written here for preferring the triple was wrong, so it is
+// corrected rather than quietly deleted: it claimed vocab.States[kind]
+// carries StateDraft for every kind because RestingStates() adds it
+// unconditionally. It does not — postSubmissionState (internal/fold/fold.go)
+// maps KindResponse to StateSubmitted, and only KindDecision to StateDraft.
+// StateDraft reaches vocab.States[KindResponse] through SubjectStates
+// reading table.go:364's own From, so deleting that row WOULD move the
+// component too, and a component-wise check would have reded here.
+//
+// The triple is still the right check, on the honest argument: half of
+// vocab.Transitions IS global (TSubmit is carried by other kinds' rows), so
+// a component-wise test is vacuous on that axis, and only the (kind, state,
+// transition) TRIPLE expresses what "legal by the table" means. A declared
+// exception whose triple TransitionRows() no longer carries is STALE and
+// reds by name.
+func foldTransitionCells(vocab fold.Vocabulary, exceptions []declaredTransitionException) (evaluated []string, excluded []excludedTransitionCell, errs []error) {
+	rows := fold.TransitionRows()
+	inRows := make(map[[3]string]bool, len(rows))
+	for _, tr := range rows {
 		inRows[[3]string{string(tr.Kind), string(tr.From), tr.Transition}] = true
+	}
+
+	exceptionByCell := make(map[[3]string]declaredTransitionException, len(exceptions))
+	for _, e := range exceptions {
+		cell := [3]string{e.Kind, e.State, e.Transition}
+		if !inRows[cell] {
+			errs = append(errs, fmt.Errorf(
+				"declared transition exception is STALE: %s/%s/%s is no longer legal by fold.TransitionRows() (declared reason: %q) — remove or re-target this exception",
+				e.Kind, e.State, e.Transition, e.Reason))
+			continue
+		}
+		exceptionByCell[cell] = e
 	}
 
 	kinds := make([]string, 0, len(vocab.States))
@@ -66,6 +117,10 @@ func foldTransitionCells(vocab fold.Vocabulary) (evaluated []string, errs []erro
 			for _, transition := range vocab.Transitions {
 				id := fmt.Sprintf("%s/%s/%s", kind, state, transition)
 				evaluated = append(evaluated, id)
+				if e, ok := exceptionByCell[[3]string{kind, state, transition}]; ok {
+					excluded = append(excluded, excludedTransitionCell{ID: id, Reason: e.Reason})
+					continue
+				}
 				verdicts := map[string]bool{
 					"fold.TransitionRows (raw table enumerator)":  inRows[[3]string{kind, state, transition}],
 					"fold.LegalNext (derived per-state accessor)": inLegalNext[transition],
@@ -76,5 +131,5 @@ func foldTransitionCells(vocab fold.Vocabulary) (evaluated []string, errs []erro
 			}
 		}
 	}
-	return evaluated, errs
+	return evaluated, excluded, errs
 }
