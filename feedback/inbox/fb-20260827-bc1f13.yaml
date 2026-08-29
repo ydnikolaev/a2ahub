@@ -88,6 +88,14 @@ resolution: |-
     verify-export, and the two phases that mention it (agent-ops P3, P11) are
     both done. The docs/backlog.md row carries it until the loop runs.
 
+    SUPERSEDED 2026-08-29: answers-that-hold-2026-08's own P3 claimed it after
+    all — that spec's §0.5 cites this record by id, and its AC-1/AC-9 are this
+    fix. Both asks named above shipped in commit a28e186d: verify-export gained
+    --json, and a descriptor-only difference now prints one line per changed
+    frontmatter field instead of zero lines on a non-zero exit. status: stays
+    `accepted` and not `shipped` because the release carrying it (0.25.7) is
+    not cut; the flip belongs to the release, not to the commit.
+
     REFS NAMES docs/backlog.md AND THAT MAKES ONE GATE QUIET, stated rather
     than left to be discovered. check-feedback-corpus.sh's CHECK-C joins a
     ledger row's refs to a tracker phase only for a ref shaped

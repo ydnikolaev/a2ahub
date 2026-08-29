@@ -1424,16 +1424,6 @@ entries:
       accompanied it (the write could not have reached origin/main
       otherwise), so a full-repo audit has nothing left to resolve and could
       only manufacture a failure against a commit that plainly succeeded.
-    prose_exempt: >-
-      NOT a pre-D4 gap — this code is minted 2026-08-28, after ADR-011 D4.
-      skill/** is off answers-that-hold-2026-08/P5's own allowlist (the phase
-      that minted this code), so its own implementer cannot add the prose
-      obligation asks for. Recorded here so the gap is counted rather than
-      silently closed: the lead adds prose naming REF-027 to
-      skill/a2ahub/troubleshooting.md and
-      skill/a2ahub/reference/authoring/response.md (both already carry
-      REF-024, this code's own neighbour at the same seat), and deletes this
-      `prose_exempt` line in the SAME commit.
     path_exempt: >-
       DRIVABLE BUT NOT YET DRIVEN, the same class as REF-026's own waiver
       three rows up: no structural block, no declared conformance path yet.
