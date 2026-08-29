@@ -184,3 +184,86 @@ changes:
     why: >
       Routes that were already satisfiable are unaffected. A route that could
       never match is now visible at render time rather than silently quiet.
+- id: RN-02507-6
+  kind: feat
+  impact: high
+  subject: a2a docs — the workflow page an agent is told to read, printed from the binary
+  detail: >
+    The agent corpus points at a workflow page dozens of times — see the send
+    loop, read the contract-change loop, the escalation ladder covers this.
+    Every one of those was a pointer with no path behind it. The pages already
+    shipped inside the binary; nothing could read them out.
+
+    `a2a docs` lists the topics; `a2a docs <topic>` prints that page. The topic
+    ids ARE the embedded manifest's own section ids, read at run time, so a
+    page added to the tree is a topic the next release accepts and no second
+    list can disagree with it. An unknown topic refuses NAMING the vocabulary
+    it holds, rather than telling you to read the docs.
+
+    It resolves nothing — no project config, no connected space, no working
+    directory — because every precondition it acquired would be a state in
+    which the agent that needs it most cannot call it: the one working inside
+    another team's repository, with no a2ahub checkout. That is also why
+    `a2a_docs` sits on the degraded MCP surface, reachable by a session with no
+    usable space at all.
+  affects:
+  - cli
+  - mcp
+  roadmap:
+    visibility: shipped
+    why: >
+      A new top-level verb whose entire value is being discoverable. An agent
+      that does not know the name cannot reach the pages, which is the exact
+      condition the verb exists to end.
+  action:
+    scope: none
+    why: >
+      Nothing to run and nothing refuses differently. The pages you could
+      already open in a checkout are now also readable without one.
+- id: RN-02507-7
+  kind: feat
+  impact: high
+  subject: a2a contract verify-published — one call for "does everything I publish still match my code"
+  detail: >
+    Answering that question meant running `contract verify-export` once per
+    contract, per space, passing each version by hand — a consumer wrote 137
+    lines of bash to do it, and that script got three things wrong: it
+    hardcoded a path layout a2a already owns, it checked one space, and it
+    asked the caller for the version.
+
+    `a2a contract verify-published` reports one row per contract your system
+    provides, across EVERY connected space, each row carrying `matched`,
+    `drifted`, `not-published-yet`, or `unmeasured` when the comparison could
+    not be made. The version is resolved from the published descriptor, so
+    passing the wrong one is not a mistake you can make. It aggregates the same
+    comparison `verify-export` runs; nothing about the digest logic is
+    re-implemented.
+
+    Two asymmetries worth knowing before you gate on it. A run that finds ZERO
+    contracts prints that denominator rather than refusing — publishing nothing
+    yet is a state no action of yours can exit. A stale or absent mirror DOES
+    refuse, naming `a2a sync`, because that one you can satisfy, and answering
+    "everything matches" from an unrefreshed mirror is the failure the verb
+    exists to prevent.
+
+    The MCP action resolves one space per call where the CLI aggregates all;
+    the gap is recorded rather than hidden.
+  affects:
+  - cli
+  - mcp
+  roadmap:
+    visibility: shipped
+    why: >
+      A new contract subcommand that replaces hand-rolled scripts already in
+      use. A producer running one of those scripts cannot discover the verb
+      from the verb they are currently calling.
+  action:
+    scope: local
+    why: >
+      If you gate on a hand-rolled published-contract check, replace it: the
+      verb resolves the layout, the versions and every connected space itself,
+      and the three things such scripts get wrong are the three it fixes.
+    detect:
+    - grep -rl 'verify-export' --include='*.sh' --include='Makefile' . 2>/dev/null | head -1 | grep -q .
+    run:
+    - a2a contract verify-published
