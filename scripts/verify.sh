@@ -1229,6 +1229,27 @@ case "$MODE" in
 esac
 
 prepare_cache_root
+# A KILLED RUN IS NOT A PASS, and until 2026-08-29 it recorded one.
+#
+# Only EXIT was trapped here. On SIGTERM bash runs the EXIT trap with `$?` set
+# to the last COMPLETED command's status — 0 whenever the phase before the kill
+# succeeded — so finish() appended `verdict: pass` for a run that never reached
+# its last phase. That receipt then made repeat_guard REFUSE the next honest
+# run ("this exact tree already passed it"), so a tree nothing had fully judged
+# both looked proven AND could not be re-judged without VERIFY_AGAIN=1.
+#
+# Observed, not theorised: a `lane-run` terminated inside `_harness-check`,
+# 309 log lines of ~1250 with logic-e2e never reached, recorded
+# `run:lane-run pass` 2.8 min after it started, and the next invocation refused.
+#
+# `exit 143` (128+SIGTERM) makes finish() see a non-zero command_status and
+# record `fail`. `fail` rather than a third verdict is deliberate: D9's rule is
+# that UNMEASURED is a SEVERITY, never a fourth verdict, and this record has
+# exactly one consumer — repeat_guard, which asks only whether the last run was
+# a pass. Recording `fail` is not a claim that the tree is bad; it is the
+# honest statement that this run proved nothing.
+on_signal() { exit 143; }
+trap on_signal TERM INT
 trap finish EXIT
 cd "$ROOT"
 
