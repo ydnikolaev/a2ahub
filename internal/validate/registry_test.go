@@ -210,15 +210,12 @@ func TestRegistryClosure(t *testing.T) {
 			map[string]any{"channel": "telegram", "chat": "-1002034567890", "events": []any{"blocking"}, "frequency": "hourly"},
 		},
 	}))
-	// REF-014: one declared carried file resolves as a symlink rather than
-	// the exact regular bytes promised by the descriptor.
-	ref014Input := validContractInput(V2)
-	ref014Input.Snapshot.Files[0].Kind = "symlink"
-	_, ref014, err := ValidateContractCarriedSet(ref014Input)
-	if err != nil {
-		t.Fatalf("ValidateContractCarriedSet REF-014 probe: %v", err)
-	}
-	record(ref014.Violations)
+	// REF-014 is registry-declared `emitted_by: internal/space`
+	// (internal/space/carried_class.go) — the loop below skips it as a
+	// foreign code, so this package needs no probe for it. It had one only
+	// while internal/validate/contract_carried_set.go (P5,
+	// computed-not-listed-2026-08) also emitted REF-014 with zero
+	// production callers of its own; that file is deleted.
 	// REF-016: a work subject must parse through the canonical thread/artifact
 	// grammar before any repository resolution can accept it.
 	ref016Input := validWorkCheckpointInput()
@@ -314,13 +311,12 @@ func TestRegistryClosure(t *testing.T) {
 		probe.Actor.Model = &emptyModel
 		record(checkFirstPartyActor(probe))
 	}
-	// POL-013: after the authoritative rollout floor, a proposed contract
-	// cannot select the legacy descriptor/event/digest profile.
-	_, pol013, err := ValidateContractCarriedSet(legacyContractInput(V2, ContractCandidateProposed, "0.19.0"))
-	if err != nil {
-		t.Fatalf("ValidateContractCarriedSet POL-013 probe: %v", err)
-	}
-	record(pol013.Violations)
+	// POL-013 is registry-declared `emitted_by: internal/space`
+	// (internal/space/carried_class.go) — the loop below skips it as a
+	// foreign code, so this package needs no probe for it. It had one only
+	// while internal/validate/contract_carried_set.go (P5,
+	// computed-not-listed-2026-08) also emitted POL-013 with zero
+	// production callers of its own; that file is deleted.
 	// POL-014: a declared invalid fixture that validates contradicts the
 	// contract's own executable conformance suite.
 	record(ValidateContractConformance(contract.ConformanceResult{

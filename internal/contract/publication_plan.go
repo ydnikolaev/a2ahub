@@ -78,9 +78,19 @@ type PublicationMutation struct {
 }
 
 // PublicationEntry is part of the public package API.
+//
+// Role carries the same closed vocabulary Entry.Role already types two
+// files away (types.go's `Role Role`) — this field was the plain-`string`
+// carrier the vocabulary-carrier gate names (computed-not-listed-2026-08
+// P3 §8 row 6). Retyping it makes the field a CARRIER of the vocabulary,
+// not a guarantee of it: two of its own writers (publicationEntries'
+// "descriptor" literal and legacyPlanRole's "fixture" default, both below)
+// assign values outside the Role const block, and `type Role string`
+// accepts them without complaint — Go's type system enforces the field's
+// TYPE, never its value set.
 type PublicationEntry struct {
 	Path             string `json:"path"`
-	Role             string `json:"role"`
+	Role             Role   `json:"role"`
 	Normative        bool   `json:"normative"`
 	MediaType        string `json:"media_type"`
 	ConformsTo       string `json:"conforms_to"`
@@ -769,7 +779,7 @@ func publicationEntries(profile DigestProfile, set CarriedSet, finalRaw []byte) 
 		Size: len(finalRaw), Digest: artifact.Digest(finalRaw), IntegrityCovered: profile == ProfileContractSetV2,
 	})
 	for _, entry := range set.Entries {
-		role, normative, mediaType, conformsTo := string(entry.Role), entry.Normative, entry.MediaType, entry.ConformsTo
+		role, normative, mediaType, conformsTo := entry.Role, entry.Normative, entry.MediaType, entry.ConformsTo
 		if profile == ProfileContractTreeV1 {
 			role, normative = legacyPlanRole(entry.Path), true
 		}
@@ -782,14 +792,19 @@ func publicationEntries(profile DigestProfile, set CarriedSet, finalRaw []byte) 
 	return entries
 }
 
-func legacyPlanRole(path string) string {
+// legacyPlanRole returns Role, not string: its default branch ("fixture")
+// is deliberately outside the Role const block, same as
+// publicationEntries' own "descriptor" literal above — see
+// PublicationEntry.Role's doc comment for why that is a carrier-typing
+// choice, not an oversight.
+func legacyPlanRole(path string) Role {
 	switch {
 	case strings.HasPrefix(path, "schema/"):
-		return string(RoleSchema)
+		return RoleSchema
 	case strings.HasPrefix(path, "fixtures/valid/"):
-		return string(RoleValidFixture)
+		return RoleValidFixture
 	case strings.HasPrefix(path, "fixtures/invalid/"):
-		return string(RoleInvalidFixture)
+		return RoleInvalidFixture
 	default:
 		return "fixture"
 	}
@@ -847,7 +862,7 @@ func normativeEntries(set CarriedSet) []Entry {
 	entries := make([]Entry, 0, len(set.Entries))
 	for _, entry := range set.Entries {
 		if set.Profile == ProfileContractTreeV1 {
-			entry.Role = Role(legacyPlanRole(entry.Path))
+			entry.Role = legacyPlanRole(entry.Path)
 			entry.Normative = true
 		}
 		if entry.Normative {

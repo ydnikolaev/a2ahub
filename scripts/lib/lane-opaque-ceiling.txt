@@ -15,4 +15,4 @@
 # Regenerate with:
 #   go run internal/lane/lanecheck.go --write-opaque-ceiling
 # then review the diff before committing.
-49
+52

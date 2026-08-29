@@ -1,0 +1,17 @@
+# scripts/lib/discard-ceiling.txt — the CEILING on undocumented U2
+# error-discard sites (computed-not-listed-2026-08 P8, spec 08). U2 =
+# statement-position `_ = f()` plus a named multi-assign's trailing blank
+# (`raw, _ = f()`) — see scripts/check-discard-ceiling.sh's own header for
+# the full universe definition and why U2 was chosen over U1/U3/U4. A site
+# carrying a `// reason:` (same line or the contiguous comment block above
+# it) is excluded unconditionally — this ceiling counts UNDOCUMENTED sites
+# only, and does not and cannot judge whether a stated reason is correct.
+#
+# One integer, alone on its own line. It may only FALL (a site gains a
+# reason, or is removed) or stay the same; a tree whose undocumented U2
+# count exceeds it reds.
+#
+# Regenerate with:
+#   bash scripts/check-discard-ceiling.sh --write
+# then review the diff before committing.
+154

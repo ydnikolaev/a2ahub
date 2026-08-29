@@ -154,10 +154,9 @@ var canonicalBuilderFunctions = map[string]bool{
 // other side can reproduce, and two aggregate algorithms is precisely how
 // that stops being true.
 var combineDigestAllowlist = map[string]bool{
-	"internal/artifact/digesttree.go":       true,
-	"internal/contract/set.go":              true,
-	"internal/contract/publication_plan.go": true,
-	"internal/datapackage/entryset.go":      true,
+	"internal/artifact/digesttree.go":  true,
+	"internal/contract/set.go":         true,
+	"internal/datapackage/entryset.go": true,
 	// P4's submit-time possession check recomputes an attachment's digest
 	// from the bytes the SPACE resolved, so a reference that resolves to
 	// DIFFERENT bytes is refused rather than accepted. It must combine
@@ -170,11 +169,20 @@ var combineDigestAllowlist = map[string]bool{
 	"internal/space/possession.go": true,
 }
 
+// internal/contract/publication_plan.go carried a grandfathered ceiling of 1
+// here until computed-not-listed-2026-08 P5 (spec 05 §8 AC row 4):
+// 27529301 deleted its only CombineDigestPairs call (the legacy `else`
+// branch that recomputed contract-tree-v1's own aggregate a second time
+// under the export-source-v1 name), and the allowlist/ceiling rows survived
+// the deletion of what they budgeted — a pre-authorised slot for the next
+// duplicate. Both rows are withdrawn rather than lowered to 0: an absent
+// entry refuses ANY call from this file as "outside the allowlist", which is
+// a stronger guard than a ceiling of 0 would be for a file that was never
+// authorised to begin with.
 var combineDigestCallCeiling = map[string]int{
-	"internal/space/possession.go":          1,
-	"internal/artifact/digesttree.go":       1,
-	"internal/contract/set.go":              3,
-	"internal/contract/publication_plan.go": 1,
+	"internal/space/possession.go":    1,
+	"internal/artifact/digesttree.go": 1,
+	"internal/contract/set.go":        3,
 	// BuildEntrySet composes the aggregate for a fresh pack; VerifyEntrySet
 	// recomputes it from entries already verified one by one (L-3's ordering).
 	// digestForPayload (P10, agent-exchange-2026-08) is the third: a blob's

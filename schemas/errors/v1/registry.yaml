@@ -357,14 +357,14 @@ entries:
   - code: REF-003
     class: referential
     title: A ref/id does not resolve against the local artifact cache
-    applies_to: envelope/v1 refs[].ref (§5.7, §3.8, CC-070)
+    applies_to: envelope/v1 refs[].ref (§5.7, §3.8, CC-070), widened computed-not-listed-2026-08 P7 to also cover envelope `parent` (checkFork's own checkParentResolves hook, internal/validate/thread.go — checkRefs itself only ever loops env.Refs, never env.Parent, which is the gap this widening closes; a resolver too absent to even attempt the lookup reports SeverityUnmeasured instead, never a silent clean verdict)
     severity: reject
     mode_scope: both
     mode_scope_reason: >-
-      ref resolution against the local artifact cache re-derives from the
-      CURRENT cache on every run; an artifact that resolved at write time
-      keeps resolving unless the referent itself was removed, which is its
-      own defect to catch, not a retroactive rule change.
+      ref/parent resolution against the local artifact cache re-derives from
+      the CURRENT cache on every run; an artifact that resolved at write
+      time keeps resolving unless the referent itself was removed, which is
+      its own defect to catch, not a retroactive rule change.
     prose_exempt: shipped before ADR-011 D4 (2026-08-12) minted the prose obligation — enforcing it retroactively is D3's own principle ("a rule that can only be satisfied by editing an immutable [decision] must not judge [it retroactively]") turned on this gate's own history; the code needs prose, but check-error-codes.sh is not the forcing function for a pre-existing gap. Tracked as this phase's own reported debt, not silently closed.
     reachability_exempt: >-
       reachability debt, DECLARED not closed (defects-fix-2026-08 P1, wave

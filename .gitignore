@@ -103,6 +103,9 @@ scripts/*
 !scripts/check-notify-selector-coverage.sh
 !scripts/check-mcp-schema-decodable.sh
 !scripts/check-refusal-ratchet.sh
+!scripts/check-deadcode-ceiling.sh
+!scripts/check-discard-ceiling.sh
+!scripts/check-vocabulary-carriers.sh
 !scripts/check-release-note-detect.sh
 !scripts/check-error-codes.sh
 !scripts/check-frozen-allowlist.sh
@@ -121,6 +124,9 @@ scripts/lib/*
 !scripts/lib/flaky-tests.txt
 !scripts/lib/lane-ungated.txt
 !scripts/lib/lane-opaque-ceiling.txt
+!scripts/lib/deadcode-ceiling.txt
+!scripts/lib/discard-ceiling.txt
+!scripts/lib/vocabulary-carrier-ceiling.txt
 !scripts/lib/job-timeouts.tsv
 !scripts/lib/ci-usage-window.json
 !scripts/lib/gate-lib.sh

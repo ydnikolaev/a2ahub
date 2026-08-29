@@ -108,6 +108,34 @@ func TestMatchInputsExclusionOrdering(t *testing.T) {
 	}
 }
 
+func TestSubsumes(t *testing.T) {
+	cases := []struct {
+		name          string
+		broad, narrow string
+		want          bool
+	}{
+		{"identical", "internal/lane/**", "internal/lane/**", true},
+		{"go-test-scoped backs its own scope", "internal/lane/**/*.go", "internal/lane/**/*.go", true},
+		{"whole-tree go scope backs a narrower go scope", "**/*.go", "internal/lane/**/*.go", true},
+		{"a narrower go scope does not back an unrelated tree", "internal/lane/**/*.go", "cmd/**", false},
+		{"a narrower go scope does not back a wider non-go glob", "internal/lane/**/*.go", "internal/lane/**", false},
+		{"single literal file backs itself", "go.mod", "go.mod", true},
+		{"single literal file does not back a different literal", "go.mod", "go.sum", false},
+		{"the epic's own worked example: a variable-built find with a literal tail", "**/active/**/README.md", "docs/features/active/*/README.md", true},
+		{"a literal mismatch in the read's own known segment must not back", "**/archive/**/README.md", "docs/features/active/*/README.md", false},
+		{"a literal filename mismatch must not back", "**/active/**/OTHER.md", "docs/features/active/*/README.md", false},
+		{"narrow's own ** cannot be proven covered by a fixed broad segment", "docs/features/active/*/README.md", "docs/features/active/**/README.md", false},
+		{"empty name is subsumed by a bare **", "**", "", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := Subsumes(c.broad, c.narrow); got != c.want {
+				t.Errorf("Subsumes(%q, %q) = %v, want %v", c.broad, c.narrow, got, c.want)
+			}
+		})
+	}
+}
+
 func TestMatchesAnyGlob(t *testing.T) {
 	cases := []struct {
 		name string

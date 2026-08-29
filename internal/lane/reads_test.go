@@ -346,9 +346,16 @@ func TestHonestyCheckSkipsHeredocEmbeddedContent(t *testing.T) {
 
 // minimalVerifySh gives HonestyCheck fixtures the one thing
 // corpusFromVerify hard-requires (a top-level run_phase call site) without
-// pulling in a second gate's worth of unrelated declarations.
+// pulling in a second gate's worth of unrelated declarations. Its own
+// declared pattern is exactly the ONE glob `gofmt -l .` genuinely reads
+// (matching the live corpus's own gofmt declaration) — P1b's command
+// vocabulary (scopeReadingInvocation) now gives this phase real evidence,
+// so a fixture declaring MORE than that (as an earlier revision did, with
+// a "go.mod" pattern gofmt never touches) would surface as a genuine
+// unbacked claim of its own, unrelated to whatever the test using this
+// fixture means to exercise.
 const minimalVerifySh = "#!/usr/bin/env bash\nset -euo pipefail\n\nrun_phase() { local gate=\"$1\"; shift; \"$@\"; }\n\n" +
-	"# lane-inputs:\n#   **/*.go\n#   go.mod\nrun_gofmt() {\n  gofmt -l .\n}\n\nrun_phase gofmt run_gofmt\n"
+	"# lane-inputs:\n#   **/*.go\nrun_gofmt() {\n  gofmt -l .\n}\n\nrun_phase gofmt run_gofmt\n"
 
 // writeMinimalGate gives a fixture ONE clean, self-contained Makefile gate
 // (readme-lint) so tests that only care about scripts/verify.sh's half of
@@ -795,5 +802,222 @@ func TestCheckOpaqueCeilingGrowthRedsFallPasses(t *testing.T) {
 	}
 	if !strings.Contains(refusals[0].Problem, "45") || !strings.Contains(refusals[0].Problem, "44") {
 		t.Errorf("refusal does not name both the new count and the stored ceiling: %+v", refusals[0])
+	}
+}
+
+// --- P1b: scope-reading-commands (spec 09 §8 row 3) -------------------------
+
+// TestScopeReadingInvocationRecognisesTheFourToolShapes is the
+// "scope-reading-commands" case §8 row 3 asks for directly on the
+// vocabulary function, plus the shapes vet/coverage-policy already carry
+// inline on their run_phase line (no wrapping function needed).
+func TestScopeReadingInvocationRecognisesTheFourToolShapes(t *testing.T) {
+	cases := []struct {
+		name  string
+		line  string
+		globs []string
+	}{
+		{"go test whole tree", "go test ./... -race -covermode=atomic -coverprofile=coverage.out -count=1", []string{"**/*.go", "go.mod", "go.sum"}},
+		{"go vet with a flag before the package arg", "go vet -tags=livee2e ./...", []string{"**/*.go", "go.mod", "go.sum"}},
+		{"gofmt directory arg", "gofmt -l .", []string{"**/*.go"}},
+		{"golangci-lint run", "golangci-lint run ./...", []string{"**/*.go", "go.mod", "go.sum", ".golangci.yml"}},
+		{"go test narrowed to one package", "go test ./internal/lane/...", []string{"internal/lane/**/*.go", "go.mod", "go.sum"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			globs, ok := scopeReadingInvocation(c.line)
+			if !ok {
+				t.Fatalf("scopeReadingInvocation(%q) not recognised, want ok", c.line)
+			}
+			if !reflect.DeepEqual(globs, c.globs) {
+				t.Errorf("scopeReadingInvocation(%q) = %v, want %v", c.line, globs, c.globs)
+			}
+		})
+	}
+}
+
+// TestScopeReadingInvocationUnrecognisedShapesRefuse is the precision-over-
+// recall half: prose mentioning "go test" out of command position, and an
+// invocation shape this vocabulary does not claim, must not be recognised.
+func TestScopeReadingInvocationUnrecognisedShapesRefuse(t *testing.T) {
+	cases := []string{
+		"# see \"go test\" in the README for how this runs",
+		"go build ./cmd/a2a",
+		"go run internal/coveragepolicy/covercheck.go coverage.out",
+	}
+	for _, line := range cases {
+		if globs, ok := scopeReadingInvocation(line); ok {
+			t.Errorf("scopeReadingInvocation(%q) = (%v, true), want ok=false", line, globs)
+		}
+	}
+}
+
+// TestHonestyCheckScopeReadingCommandBacksItsDeclaredScope is §8 row 3 end
+// to end: a phase whose ONLY evidence is a recognised go-test invocation is
+// BACKED (not left to the NoSubject "no evidence" exemption), the same
+// "bare, declaration above the call site, function defined elsewhere" shape
+// scripts/verify.sh's real go-test/gofmt/golangci-lint phases use.
+func TestHonestyCheckScopeReadingCommandBacksItsDeclaredScope(t *testing.T) {
+	dir := t.TempDir()
+	writeMinimalGate(t, dir)
+	writeFixture(t, dir, "scripts/verify.sh",
+		"#!/usr/bin/env bash\nset -euo pipefail\n\nrun_phase() { local gate=\"$1\"; shift; \"$@\"; }\n\n"+
+			"run_go_tests() {\n  go test ./... -race -covermode=atomic -coverprofile=coverage.out -count=1\n}\n\n"+
+			"# lane-inputs:\n#   **/*.go\n#   go.mod\n#   go.sum\nrun_phase go-test run_go_tests\n")
+
+	decls, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	refusals, _, backing, err := HonestyCheck(dir, decls)
+	if err != nil {
+		t.Fatalf("HonestyCheck: %v", err)
+	}
+	if len(refusals) != 0 {
+		t.Fatalf("a recognised go-test invocation must not itself red, got %+v", refusals)
+	}
+	pb := backing["go-test"]
+	if pb.NoSubject {
+		t.Fatalf("go-test has real evidence now, it must not fall back to NoSubject: %+v", pb)
+	}
+	for _, pat := range []string{"**/*.go", "go.mod", "go.sum"} {
+		if !pb.BackedPatterns[pat] {
+			t.Errorf("go-test's own declared pattern %q must be backed by the go-test vocabulary, got %+v", pat, pb.BackedPatterns)
+		}
+	}
+}
+
+// --- P1b: scoped-invocation (spec 09 §8 row 4) ------------------------------
+
+// TestHonestyCheckScopedGoTestDoesNotBackAWiderTree is the "scoped-
+// invocation" case §8 row 4 asks for: `go test ./internal/lane/...` backs
+// its own narrower scope but must NOT back an unrelated declared pattern
+// (cmd/**) a wider `go test ./...` would have covered.
+func TestHonestyCheckScopedGoTestDoesNotBackAWiderTree(t *testing.T) {
+	dir := t.TempDir()
+	writeMinimalGate(t, dir)
+	writeFixture(t, dir, "scripts/verify.sh",
+		"#!/usr/bin/env bash\nset -euo pipefail\n\nrun_phase() { local gate=\"$1\"; shift; \"$@\"; }\n\n"+
+			"run_scoped_check() {\n  go test ./internal/lane/...\n}\n\n"+
+			"# lane-inputs:\n#   internal/lane/**/*.go\n#   cmd/**\nrun_phase lane-scoped run_scoped_check\n")
+
+	decls, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	_, _, backing, err := HonestyCheck(dir, decls)
+	if err != nil {
+		t.Fatalf("HonestyCheck: %v", err)
+	}
+	pb := backing["lane-scoped"]
+	if !pb.BackedPatterns["internal/lane/**/*.go"] {
+		t.Errorf("the phase's own scope must be backed: %+v", pb)
+	}
+	if pb.BackedPatterns["cmd/**"] {
+		t.Errorf("a narrower go test invocation must not back an unrelated tree: %+v", pb)
+	}
+}
+
+// --- P1b: subsumption (spec 09 §8 row 5) ------------------------------------
+
+// TestLiteralTailScope pins the segment transform capability (b) shares
+// with Subsumes: a "$"/backtick-bearing segment becomes an unconstrained
+// "**", every other segment stays literal, and a candidate with no literal
+// content at all refuses (ok=false) rather than claiming a scope it cannot
+// support.
+func TestLiteralTailScope(t *testing.T) {
+	cases := []struct {
+		name      string
+		candidate string
+		pattern   string
+		ok        bool
+	}{
+		{"the epic's own worked example", "$FEAT_DIR/active/**/README.md", "**/active/**/README.md", true},
+		{"a fully opaque single segment has no literal tail", "$EXTRA_PATH", "", false},
+		{"empty candidate", "", "", false},
+		{"a literal path with no variable at all", "docs/features/active/x/README.md", "docs/features/active/x/README.md", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			pat, ok := literalTailScope(c.candidate)
+			if ok != c.ok {
+				t.Fatalf("literalTailScope(%q) ok = %v, want %v", c.candidate, ok, c.ok)
+			}
+			if ok && pat != c.pattern {
+				t.Errorf("literalTailScope(%q) = %q, want %q", c.candidate, pat, c.pattern)
+			}
+		})
+	}
+}
+
+// TestHonestyCheckSubsumedFindBacksItsGlobWithNoDirective is US-3/AC-5/AC-8
+// end to end: `find "$FEAT_DIR/active" -name README.md` (no
+// lane-reads-opaque line at all) backs the declared
+// docs/features/active/*/README.md WITHOUT needing a directive — the read
+// is resolved enough via its own literal parts, so D-9's "cannot resolve"
+// refusal never fires and no directive is required (AC-8: "no longer need
+// a directive").
+func TestHonestyCheckSubsumedFindBacksItsGlobWithNoDirective(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, "Makefile", "REPO_GATES := feature-readmes\n\nfeature-readmes:\n\t@bash scripts/check-feature-readmes.sh\n")
+	writeFixture(t, dir, "scripts/check-feature-readmes.sh",
+		"#!/usr/bin/env bash\n# lane-inputs:\n#   docs/features/active/*/README.md\nset -euo pipefail\n"+
+			"FEAT_DIR=\"$(cd \"$(dirname \"$0\")/../docs/features\" && pwd)\"\n"+
+			"find \"$FEAT_DIR/active\" -name README.md | sort\n")
+	writeFixture(t, dir, "scripts/verify.sh", minimalVerifySh)
+
+	decls, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	refusals, opaqueCount, backing, err := HonestyCheck(dir, decls)
+	if err != nil {
+		t.Fatalf("HonestyCheck: %v", err)
+	}
+	if len(refusals) != 0 {
+		t.Fatalf("a subsumed variable-built read must not need lane-reads-opaque, got %+v", refusals)
+	}
+	pb := backing["feature-readmes"]
+	if pb.Opaque {
+		t.Fatalf("the script carries no lane-reads-opaque line, Opaque must be false: %+v", pb)
+	}
+	if !pb.BackedPatterns["docs/features/active/*/README.md"] {
+		t.Errorf("the declared pattern must be backed via subsumption: %+v", pb)
+	}
+	if opaqueCount != 0 {
+		t.Errorf("subsumption must not be counted as an opaque phase, got opaqueCount=%d", opaqueCount)
+	}
+	if excused, bare := UnbackedClaimSplit(decls, backing); excused != 0 || bare != 0 {
+		t.Errorf("a subsumed glob is genuinely backed, not merely excused: excused=%d bare=%d", excused, bare)
+	}
+}
+
+// TestHonestyCheckLiteralMismatchStillNeedsADirective is the precision-
+// over-recall half of the same case: a read whose own literal segment
+// CONFLICTS with the declared pattern (a different directory name) must
+// not be backed, and — since it is still unresolved and uncovered — still
+// needs lane-reads-opaque like any other out-of-contract construct.
+func TestHonestyCheckLiteralMismatchStillNeedsADirective(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, "Makefile", "REPO_GATES := feature-readmes\n\nfeature-readmes:\n\t@bash scripts/check-feature-readmes.sh\n")
+	writeFixture(t, dir, "scripts/check-feature-readmes.sh",
+		"#!/usr/bin/env bash\n# lane-inputs:\n#   docs/features/active/*/README.md\nset -euo pipefail\n"+
+			"FEAT_DIR=\"$(cd \"$(dirname \"$0\")/../docs/features\" && pwd)\"\n"+
+			"find \"$FEAT_DIR/archive\" -name README.md | sort\n")
+	writeFixture(t, dir, "scripts/verify.sh", minimalVerifySh)
+
+	decls, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	refusals, _, backing, err := HonestyCheck(dir, decls)
+	if err != nil {
+		t.Fatalf("HonestyCheck: %v", err)
+	}
+	if len(refusals) != 1 {
+		t.Fatalf("a literal-segment mismatch must still need lane-reads-opaque, got %+v", refusals)
+	}
+	if backing["feature-readmes"].BackedPatterns["docs/features/active/*/README.md"] {
+		t.Errorf("a read whose literals cannot reach the glob must not back it: %+v", backing["feature-readmes"])
 	}
 }

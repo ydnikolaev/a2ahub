@@ -168,6 +168,13 @@ func TestCheckFork(t *testing.T) {
 		resolver  Resolver
 		wantCode  bool
 		wantEmpty bool
+		// wantRef003 is the severity a REF-003 finding must carry, empty when
+		// none is expected. Added by computed-not-listed-2026-08 P7: two cases
+		// below used to assert wantEmpty and were NAMED "vacuous", one of them
+		// even annotating itself "REF-003's territory, not REF-009's". They
+		// were documenting a silent gap as though it were a contract. It is
+		// closed; they now assert what the gap was hiding.
+		wantRef003 string
 	}{
 		{
 			name: "fork: thread differs from resolved parent's thread",
@@ -219,22 +226,22 @@ func TestCheckFork(t *testing.T) {
 			wantEmpty: true,
 		},
 		{
-			name: "vacuous: parent unresolvable (REF-003's territory, not REF-009's)",
+			name: "parent unresolvable: REF-003 rejects rather than passing in silence",
 			env: envelope{
 				Parent: "XR-axon-does-not-exist",
 				Thread: "thread:seomatrix-20260805-b6n2",
 			},
-			resolver:  baseResolver,
-			wantEmpty: true,
+			resolver:   baseResolver,
+			wantRef003: "reject",
 		},
 		{
-			name: "vacuous: nil resolver",
+			name: "nil resolver: REF-003 is unmeasured, which is not the same as clean",
 			env: envelope{
 				Parent: "XR-axon-country-vocabulary",
 				Thread: "thread:seomatrix-20260805-b6n2",
 			},
-			resolver:  nil,
-			wantEmpty: true,
+			resolver:   nil,
+			wantRef003: "unmeasured",
 		},
 		{
 			name: "vacuous: resolver lacks the ThreadResolver capability",
@@ -251,6 +258,21 @@ func TestCheckFork(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := checkFork(tc.env, tc.resolver)
+			if tc.wantRef003 != "" {
+				var found bool
+				for _, f := range got {
+					if f.Code == "REF-003" {
+						found = true
+						if string(f.Severity) != tc.wantRef003 {
+							t.Fatalf("checkFork(%+v) REF-003 severity = %q, want %q", tc.env, f.Severity, tc.wantRef003)
+						}
+					}
+				}
+				if !found {
+					t.Fatalf("checkFork(%+v) = %+v, want a REF-003 finding", tc.env, got)
+				}
+				return
+			}
 			if tc.wantEmpty {
 				if len(got) != 0 {
 					t.Fatalf("checkFork(%+v) = %+v, want none", tc.env, got)

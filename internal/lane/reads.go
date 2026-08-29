@@ -59,6 +59,15 @@ type ReadRef struct {
 type UnresolvedRead struct {
 	Line int
 	Text string
+	// Candidate is the raw path-shaped token classify() found (quotes
+	// stripped, escapes resolved) when the construct that produced it was
+	// scoped to ONE argument — e.g. narrowFindRoots' own
+	// "$FEAT_DIR/active/**/README.md". P1b's subsumption (glob.go's
+	// Subsumes, capability b) needs this to test the read's LITERAL parts
+	// against a declared pattern; it is empty for the whole-line sentinels
+	// (goRunNonLiteralRe, unmodellableFindLine) and for the bare
+	// unresolvedCandidate marker, which carry no such structure to test.
+	Candidate string
 }
 
 var (
@@ -423,7 +432,15 @@ func scanLineForReads(line string, lineNo int) (reads []ReadRef, unresolved []Un
 			return
 		}
 		if tok == unresolvedCandidate || strings.ContainsAny(tok, "$`") {
-			unresolved = append(unresolved, UnresolvedRead{Line: lineNo, Text: trimmed})
+			// The bare sentinel carries no literal structure at all (D-9's
+			// "I recognise this as a read but cannot model it" marker) —
+			// Candidate stays empty so subsumption never gets a chance to
+			// (wrongly) claim it backs anything.
+			candidate := tok
+			if tok == unresolvedCandidate {
+				candidate = ""
+			}
+			unresolved = append(unresolved, UnresolvedRead{Line: lineNo, Text: trimmed, Candidate: candidate})
 			return
 		}
 		reads = append(reads, ReadRef{Path: strings.TrimPrefix(tok, "./"), Line: lineNo})
@@ -757,6 +774,7 @@ func honestyForWindow(relPath string, allLines []string, startLine, endLine int,
 
 	var reads []ReadRef
 	var unresolved []UnresolvedRead
+	var scopeGlobs []string
 	for i := startLine - 1; i < endLine; i++ {
 		if inHeredoc[i] {
 			continue
@@ -767,6 +785,17 @@ func honestyForWindow(relPath string, allLines []string, startLine, endLine int,
 			r, u = scanGoLineForReads(allLines[i], i+1)
 		} else {
 			r, u = scanLineForReads(allLines[i], i+1)
+			// P1b's command vocabulary (capability a): a line the D-11
+			// read-shaped list cannot classify may still be a RECOGNISED
+			// external-toolchain invocation (go test, gofmt, go vet,
+			// golangci-lint) — evidence of a real read this bounded
+			// tokenizer simply has no contract for. It is scanned
+			// alongside, not instead of, scanLineForReads: a line can carry
+			// both an in-contract read AND (on a later token) a recognised
+			// invocation, and neither should shadow the other.
+			if globs, ok := scopeReadingInvocation(allLines[i]); ok {
+				scopeGlobs = append(scopeGlobs, globs...)
+			}
 		}
 		reads = append(reads, r...)
 		unresolved = append(unresolved, u...)
@@ -777,13 +806,217 @@ func honestyForWindow(relPath string, allLines []string, startLine, endLine int,
 		return nil, false, nil, false, fmt.Errorf("%s: %w", relPath, oerr)
 	}
 
+	// P1b's glob subsumption (capability b): a variable-built unresolved
+	// read whose LITERAL parts plausibly reach only within one of d's own
+	// declared patterns is treated as resolved enough to back that pattern
+	// — and, since the reach is now accounted for, it no longer needs
+	// `lane-reads-opaque` to excuse it (spec 09 AC-8). One that cannot be
+	// proven to reach only within a declared pattern (no literal structure
+	// at all, or a literal segment that conflicts with every declared
+	// pattern) stays in the D-9 "cannot resolve" bucket unchanged —
+	// precision over recall: subsumeUnresolved only ever REMOVES an entry
+	// from unresolved, never invents backing evidence compareReads/D-9
+	// cannot also justify.
+	unresolved, subsumedPatterns := subsumeUnresolved(d, unresolved)
+
 	refusals = append(refusals, compareReads(relPath, d, reads)...)
 	if len(unresolved) > 0 && !declared {
 		refusals = append(refusals, unresolvedRefusals(relPath, d, unresolved)...)
 	}
 	backed = backedGlobs(d, reads)
-	hadEvidence = len(reads) > 0 || len(unresolved) > 0
+	for pat := range subsumedPatterns {
+		if backed == nil {
+			backed = map[string]bool{}
+		}
+		backed[pat] = true
+	}
+	for _, g := range scopeGlobs {
+		for _, pat := range declarationPatterns(d) {
+			if strings.HasPrefix(pat, "!") {
+				continue
+			}
+			if Subsumes(g, pat) {
+				if backed == nil {
+					backed = map[string]bool{}
+				}
+				backed[pat] = true
+			}
+		}
+	}
+	hadEvidence = len(reads) > 0 || len(unresolved) > 0 || len(scopeGlobs) > 0 || len(subsumedPatterns) > 0
 	return refusals, declared, backed, hadEvidence, nil
+}
+
+// subsumeUnresolved is P1b's capability (b) applied to one window's own
+// unresolved list: every UnresolvedRead whose Candidate's literal parts
+// glob.Subsumes some pattern d declares is pulled OUT of the returned
+// unresolved slice (so it stops demanding a lane-reads-opaque directive,
+// AC-8) and that pattern is returned in the backed set. An UnresolvedRead
+// with no Candidate (the whole-line sentinels) or whose literal parts do
+// not reach any declared pattern passes through unchanged.
+func subsumeUnresolved(d Declaration, unresolved []UnresolvedRead) (stillUnresolved []UnresolvedRead, backed map[string]bool) {
+	patterns := declarationPatterns(d)
+	for _, u := range unresolved {
+		pat, ok := literalTailScope(u.Candidate)
+		if !ok {
+			stillUnresolved = append(stillUnresolved, u)
+			continue
+		}
+		matched := false
+		for _, dp := range patterns {
+			if strings.HasPrefix(dp, "!") {
+				continue
+			}
+			if Subsumes(pat, dp) {
+				if backed == nil {
+					backed = map[string]bool{}
+				}
+				backed[dp] = true
+				matched = true
+			}
+		}
+		if !matched {
+			stillUnresolved = append(stillUnresolved, u)
+		}
+	}
+	return stillUnresolved, backed
+}
+
+// literalTailScope turns an UnresolvedRead's raw Candidate (a path-shaped
+// token, quotes stripped, escapes resolved) into a glob: every segment that
+// carries a shell variable or command-substitution marker ("$"/"`")
+// becomes "**" — an unconstrained span, because the classifier does not
+// know how many real path segments the variable expands to, only that none
+// can be ruled out — and every other segment is kept literally. ok is
+// false when candidate is empty or carries no literal segment at all (the
+// bare unresolvedCandidate sentinel, or a token that is ENTIRELY a
+// variable) — there is nothing to test a declared pattern against, so
+// nothing is claimed. Shares glob.go's own segment syntax (splitSegments)
+// rather than a second path grammar.
+func literalTailScope(candidate string) (pattern string, ok bool) {
+	if candidate == "" {
+		return "", false
+	}
+	segs := splitSegments(candidate)
+	hasLiteral := false
+	for i, s := range segs {
+		if strings.ContainsAny(s, "$`") {
+			segs[i] = "**"
+		} else if s != "**" {
+			hasLiteral = true
+		}
+	}
+	if !hasLiteral {
+		return "", false
+	}
+	return strings.Join(segs, "/"), true
+}
+
+// goPackageScope turns a `go test`/`go vet`/`gofmt`/`golangci-lint run`
+// package-or-directory selector into the glob of Go source it denotes.
+// "./..." (or bare "...") and "." mean the whole tree; "./pkg/..." means
+// everything under pkg, recursively. Anything else — a single
+// non-recursive package, an explicit file — is not a shape any invocation
+// in this corpus uses today and is left unrecognised (ok=false) rather
+// than guessed at.
+func goPackageScope(pkg string) (glob string, ok bool) {
+	switch {
+	case pkg == "./..." || pkg == "...":
+		return "**/*.go", true
+	case pkg == ".":
+		return "**/*.go", true
+	case strings.HasSuffix(pkg, "/..."):
+		dir := strings.TrimSuffix(strings.TrimPrefix(pkg, "./"), "/...")
+		if dir == "" {
+			return "**/*.go", true
+		}
+		return dir + "/**/*.go", true
+	}
+	return "", false
+}
+
+// scopeInvocationSplitRe strips the shell punctuation that would otherwise
+// hide a recognised command inside a word — scopeReadingInvocation's own
+// motivating case, `unformatted="$(gofmt -l .)"` (check_gofmt's real body),
+// glues "$(" directly onto "gofmt" with no space, so tokenizeShellLine's
+// quote-aware, argument-precise splitting (built for candidatePaths, which
+// DOES need exact quoting) hides the word inside one opaque quoted token.
+// This vocabulary does not need that precision — only "is this word, by
+// itself, one of four known tool names, followed by a package-shaped
+// operand" — so it trades the shared tokenizer for a coarser one that
+// cannot be fooled by an enclosing command substitution.
+var scopeInvocationSplitRe = regexp.MustCompile("[\"'`$(){}]")
+
+// lastNonFlagToken returns the last token in tokens that does not start
+// with "-" — the package/directory operand every recognised invocation
+// carries exactly one of, regardless of how many flags precede or follow
+// it (`go vet -tags=livee2e ./...`, `go test ./... -race -count=1`).
+func lastNonFlagToken(tokens []string) (tok string, ok bool) {
+	for _, t := range tokens {
+		if strings.HasPrefix(t, "-") {
+			continue
+		}
+		tok, ok = t, true
+	}
+	return tok, ok
+}
+
+// scopeReadingInvocation is P1b's command vocabulary (capability a, spec 09
+// §9): `go test`, `go vet`, `gofmt` and `golangci-lint run` are each a
+// stable, EXTERNAL toolchain command whose own contract IS "read the named
+// package tree", even though D-11's read-shaped command list
+// (grep/cat/find/source/wc/head/tail/sed/awk) has no entry for any of
+// them. It is a hand-typed list DELIBERATELY, and only here: it is over an
+// external, stable toolchain rather than a repo path, so a stale entry
+// costs a loud false UNBACKED (AC-8's ratchet on opaqueCount's sibling
+// metric), never a silent false green the way a stale path allowlist
+// would. ok is false for anything this vocabulary does not recognise —
+// the same refuse-rather-than-guess rule candidatePaths' own per-command
+// shapes already follow. go.mod/go.sum (and, for golangci-lint,
+// .golangci.yml) are included because the tool genuinely reads them to
+// resolve the module and its lint config, not because the declaration
+// happens to list them.
+//
+// It is deliberately looser than scanLineForReads' own atCommandStart
+// discipline — scripts/verify.sh's real `vet` declaration is bare
+// (`run_phase vet go vet -tags=livee2e ./...`), so the actual invocation
+// does not start the line or follow a shell operator, only two ordinary
+// words ("run_phase vet"). Measured against the live corpus: only two
+// lines anywhere in the gate scripts mention a recognised shape in PROSE
+// rather than as a real invocation — check-projection.sh's own comment
+// about `go test ./...` logs (inside projection's scanned window, which
+// already carries its own lane-reads-opaque directive, so a spurious
+// extra backed pattern there changes nothing Coverage decides) and
+// Makefile:45's top-of-file documentation about `go vet ./...` (NOT
+// checked against any directive: it sits in the file's header, before
+// every target, and honestyForMakePhase's per-phase window always starts
+// at that phase's OWN declaration — never at line 1 — so no phase's
+// window can ever reach it).
+func scopeReadingInvocation(line string) (globs []string, ok bool) {
+	fields := strings.Fields(scopeInvocationSplitRe.ReplaceAllString(line, " "))
+	for i, tok := range fields {
+		switch {
+		case tok == "gofmt":
+			if arg, aok := lastNonFlagToken(fields[i+1:]); aok {
+				if scope, sok := goPackageScope(arg); sok {
+					return []string{scope}, true
+				}
+			}
+		case tok == "go" && i+1 < len(fields) && (fields[i+1] == "test" || fields[i+1] == "vet"):
+			if arg, aok := lastNonFlagToken(fields[i+2:]); aok {
+				if scope, sok := goPackageScope(arg); sok {
+					return []string{scope, "go.mod", "go.sum"}, true
+				}
+			}
+		case tok == "golangci-lint" && i+1 < len(fields) && fields[i+1] == "run":
+			if arg, aok := lastNonFlagToken(fields[i+2:]); aok {
+				if scope, sok := goPackageScope(arg); sok {
+					return []string{scope, "go.mod", "go.sum", ".golangci.yml"}, true
+				}
+			}
+		}
+	}
+	return nil, false
 }
 
 // scriptForRecipe reports the script a Makefile recipe invokes via
@@ -1002,7 +1235,69 @@ func honestyForVerifyPhase(root string, lines []string, p Phase, d Declaration) 
 			backing.NoSubject = !hadEvidence
 		}
 	}
+
+	// P1b's second window: this corpus's REAL bare declarations sit right
+	// above the run_phase CALL SITE, not above a "name() {" line — measured
+	// against the live tree (spec 09's own §11 amendment), which is why the
+	// funcOpenRe branch above never actually fires for go-test/gofmt/
+	// golangci-lint despite each being wrapped by a real function
+	// (run_go_tests/check_gofmt/check_lint). Its own real invocation text
+	// (`go test ./...`, `gofmt -l .`, `golangci-lint run ./...`) therefore
+	// never reaches honestyForWindow above, and the vocabulary this phase
+	// adds could never fire either. This closes that gap the SAME way the
+	// Go arm above does — a second, ADDITIONAL window, merged rather than
+	// substituted, so nothing already proven by the bare window is lost.
+	//
+	// It follows the call site's own command token ONLY when doing so is
+	// unambiguous: the token must name a function actually defined in this
+	// file (functions), and no OTHER top-level run_phase call site may use
+	// that same command token for a DIFFERENT phase — the shape
+	// funcOpenRe's own doc comment above describes (a function backing two
+	// phases at once). That comment's specific example does not reproduce
+	// in the live tree — grep finds exactly one top-level call site naming
+	// run_scoped_tests (go-test-scoped's own, line 1494), not two — so the
+	// guard below is currently vacuous in practice. It stays anyway: it is
+	// computed from the file being scanned rather than recalled from a
+	// prior finding, so it keeps holding if a second call site is ever
+	// added.
+	if callLine-1 >= 0 && callLine-1 < len(lines) {
+		if m := runPhaseRe.FindStringSubmatch(lines[callLine-1]); m != nil {
+			cmdTok := strings.Trim(m[2], `"`)
+			if fnStart, fnEnd, fok := wrappingFunctionWindow(lines, d.Phase, cmdTok); fok {
+				fnRefusals, fnOpaque, fnBacked, fnHadEvidence, ferr := honestyForWindow("scripts/verify.sh", lines, fnStart, fnEnd, false, d)
+				if ferr != nil {
+					return nil, false, PhaseBacking{}, ferr
+				}
+				refusals = append(refusals, fnRefusals...)
+				opaque = opaque || fnOpaque
+				hadEvidence = hadEvidence || fnHadEvidence
+				backing = mergeBacking(backing, fnBacked, fnOpaque)
+				backing.NoSubject = !hadEvidence
+			}
+		}
+	}
 	return refusals, opaque, backing, nil
+}
+
+// wrappingFunctionWindow reports the [start, end] (1-based, verifyFunctionBodyLines'
+// own convention) line range of the function cmdTok names, but ONLY when
+// that is unambiguous: cmdTok must be a real "name() {" definition in
+// lines, AND every top-level run_phase call site using cmdTok as its
+// command must name phaseName — the same collision corpusFromVerify's own
+// funcToPhase construction refuses at Load() time (D-2), re-derived here
+// rather than threaded through as a parameter so this proof stays local to
+// the one call it backs.
+func wrappingFunctionWindow(lines []string, phaseName, cmdTok string) (start, end int, ok bool) {
+	callSites, functions, err := scanVerifyPhases(lines)
+	if err != nil || !functions[cmdTok] {
+		return 0, 0, false
+	}
+	for _, cs := range callSites {
+		if cs.Command == cmdTok && cs.Name != phaseName {
+			return 0, 0, false
+		}
+	}
+	return verifyFunctionBodyLines(lines, cmdTok)
 }
 
 // honestyForGoFile is D-11's Go arm: scan one `go run <file>.go`-named

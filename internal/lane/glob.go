@@ -65,6 +65,102 @@ func MatchesAnyGlob(list []string, path string) bool {
 	return false
 }
 
+// Subsumes reports whether every concrete path glob `narrow` can match is
+// also matched by glob `broad` — glob-vs-glob containment, decided
+// syntactically on segments, sharing Match's own "**" (zero or more whole
+// segments) / "*"/"?" (one segment, fnmatch) syntax rather than a second
+// pattern language.
+//
+// P1b's own two capabilities both reduce to this one predicate rather than
+// needing separate logic (spec 09 §5's anti-duplication):
+//
+//   - the scope-reading command vocabulary (reads.go) turns `go test
+//     ./internal/lane/...` into the glob `internal/lane/**/*.go`; a
+//     declared pattern P is backed when Subsumes(thatGlob, P) — the phase
+//     really does read (at least) everything P could ever match. This is
+//     what makes `go test ./internal/lane/...` back `internal/lane/**/*.go`
+//     but not `cmd/**`, and correctly not back `internal/lane/**` either
+//     (that includes non-Go files `go test` never opens).
+//   - a variable-built read's literal parts (reads.go's
+//     literalTailScope) become a glob with each unresolved segment
+//     replaced by "**" (an unconstrained span — the classifier does not
+//     know how many real segments the variable expands to, only that it
+//     cannot rule any out); Subsumes(thatGlob, P) is true exactly when
+//     every literal segment the read DOES carry lines up with P, which is
+//     the "back the globs it can plausibly reach" contract (spec 09 US-3).
+//
+// Undecidable or ambiguous segment pairs (two different non-"*" patterns
+// that are not textually equal, or a bare `narrow` "**" opposite a
+// non-"**" `broad` segment) return false — precision over recall governs
+// throughout: a case this predicate cannot prove sound is never claimed as
+// backing evidence.
+func Subsumes(broad, narrow string) bool {
+	return subsumeSegments(splitSegments(broad), splitSegments(narrow))
+}
+
+// subsumeSegments is Subsumes' recursive core: does every segment sequence
+// `narrow` can produce also satisfy `broad`? It mirrors matchSegments' own
+// "** absorbs a variable number of segments" handling, but on TWO pattern
+// sequences instead of one pattern against one concrete name — so a "**" on
+// either side needs its own case, not just the pattern side's.
+func subsumeSegments(broad, narrow []string) bool {
+	switch {
+	case len(broad) == 0:
+		return len(narrow) == 0
+	case broad[0] == "**":
+		// broad's "**" absorbs zero or more of narrow's own segments,
+		// whatever shape they are (literal, "*"/"?", or narrow's own
+		// "**") — try absorbing zero first (drop broad's "**" and compare
+		// the rest as-is), then try absorbing one more narrow segment and
+		// recursing with broad UNCHANGED (still able to absorb further).
+		// narrow only ever shrinks across the two branches, so this always
+		// terminates on narrow's finite length.
+		if subsumeSegments(broad[1:], narrow) {
+			return true
+		}
+		if len(narrow) > 0 {
+			return subsumeSegments(broad, narrow[1:])
+		}
+		return false
+	case len(narrow) == 0:
+		// broad still has a non-"**" segment pending (literal or "*"/"?")
+		// that DEMANDS a corresponding narrow segment — narrow being
+		// exhausted here means broad cannot be proven to cover it.
+		return false
+	case narrow[0] == "**":
+		// narrow's "**" can expand to an arbitrary number of segments here
+		// (including more than the single slot broad's non-"**" segment
+		// offers) — broad cannot prove it covers every expansion without
+		// its own "**" at this position, already handled above.
+		return false
+	default:
+		if !segmentSubsumes(broad[0], narrow[0]) {
+			return false
+		}
+		return subsumeSegments(broad[1:], narrow[1:])
+	}
+}
+
+// segmentSubsumes decides ONE segment pair: does broad (an fnmatch pattern
+// or literal) cover every string narrow (also a pattern or literal) can
+// produce? "*" trivially covers anything single-segment. A literal narrow
+// is decided soundly via path.Match. Two different patterned (non-"*")
+// segments that are not textually identical are undecidable by this
+// syntactic check and refuse rather than guess.
+func segmentSubsumes(broad, narrow string) bool {
+	if broad == narrow {
+		return true
+	}
+	if broad == "*" {
+		return true
+	}
+	if !strings.ContainsAny(narrow, "*?") {
+		ok, err := path.Match(broad, narrow)
+		return err == nil && ok
+	}
+	return false
+}
+
 func splitSegments(s string) []string {
 	s = strings.Trim(s, "/")
 	if s == "" {

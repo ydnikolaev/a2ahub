@@ -26,6 +26,61 @@ type ThreadResolver interface {
 	ThreadExists(thread string) bool
 }
 
+// checkParentResolves is REF-003 (computed-not-listed-2026-08 P7),
+// WIDENED onto `parent` rather than left to `checkRefs` (referential.go):
+// checkRefs only ever loops env.Refs, and never once reads env.Parent — a
+// response whose `parent` names nothing that exists anywhere validated
+// clean before this fix, because no rule anywhere checked it (spec 07 §0.5
+// "the deferring rule", measured with the built binary). registry.yaml's
+// REF-003 row states this widened scope in its own `applies_to`.
+//
+// This lives in thread.go, called from checkFork's own body, rather than
+// as a fifth call `engine.go:111-112` would need to grow: that call site
+// is the anti-duplication rule this file's own package already follows
+// (§5 "one place to reach, not five"), and it already reaches checkFork on
+// every V2 submission.
+//
+// Two non-reject outcomes, both distinct from "resolves cleanly":
+//   - env.Parent == "" — nothing named, nothing to resolve.
+//   - resolver == nil — genuinely UNMEASURABLE (D9's SeverityUnmeasured,
+//     result.go:67-72), not "resolves to nothing": a caller that supplied
+//     no resolver at all cannot be told apart from one whose resolver
+//     correctly reports absence, and conflating the two would either
+//     silently pass an orphan parent (the old bug) or reject a caller for
+//     its own missing capability (a false reject). This is the "third
+//     state" this phase's own anti-duplication note names: a parent that
+//     cannot be resolved BECAUSE THE RESOLVER IS ABSENT, distinct from one
+//     that resolves to nothing.
+//
+// Otherwise resolver.KnownArtifact(env.Parent) decides: known means
+// nothing to report here (checkFork's own fork comparison continues
+// below); unknown is REF-003, reject.
+func checkParentResolves(env envelope, resolver Resolver) []Violation {
+	if env.Parent == "" {
+		return nil
+	}
+	if resolver == nil {
+		return []Violation{{
+			Code:     "REF-003",
+			Class:    ClassReferential,
+			Path:     "parent",
+			Message:  "parent " + env.Parent + " cannot be checked: no resolver supplied",
+			Severity: SeverityUnmeasured,
+		}}
+	}
+	if resolver.KnownArtifact(env.Parent) {
+		return nil
+	}
+	return []Violation{{
+		Code:     "REF-003",
+		Class:    ClassReferential,
+		Path:     "parent",
+		Message:  "parent " + env.Parent + " does not resolve to a known artifact",
+		CCRef:    "CC-070",
+		Severity: SeverityReject,
+	}}
+}
+
 // checkFork is REF-009 (reject): an artifact that carries `parent` and
 // whose `thread` differs from the parent's `thread`. Plain equality — the
 // anti-fork core of §T2.
@@ -45,9 +100,16 @@ type ThreadResolver interface {
 //     in the corpus the moment this lands. Documented as a deviation.
 //   - resolver is nil, or does not resolve the parent via KnownArtifact
 //     (the same seam REF-003 uses), or does not implement ThreadResolver
-//     — an unresolvable parent is REF-003's rejection to make, not this
-//     rule's; "cannot see the parent" is never itself a REF-009 reject.
+//     — an unresolvable or unmeasurable parent is checkParentResolves'
+//     own REF-003 rejection to make (see above), not this rule's; "cannot
+//     see the parent" is never itself a REF-009 reject. As of this phase,
+//     that deferred rejection actually fires — the sentence used to
+//     describe a promise the tree did not keep (checkRefs never reached
+//     env.Parent); it now does, through this function's own first call.
 func checkFork(env envelope, resolver Resolver) []Violation {
+	if pv := checkParentResolves(env, resolver); len(pv) != 0 {
+		return pv
+	}
 	if env.Parent == "" || env.Thread == "" {
 		return nil
 	}

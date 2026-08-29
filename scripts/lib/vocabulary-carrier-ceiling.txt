@@ -1,0 +1,134 @@
+# scripts/lib/vocabulary-carrier-ceiling.txt — the CEILING on plain-`string`
+# struct fields named for a closed vocabulary derived from
+# schemas/**/*.schema.json (computed-not-listed-2026-08 P3, spec 03). See
+# scripts/check-vocabulary-carriers.sh's own header for the full universe
+# derivation, the kind grouping rule, and the schema<->schema half this
+# does NOT cover.
+#
+# Two kinds of line:
+#   kind-groups: N       one line, the CURRENT count of distinct `kind`
+#                         enum value-sets (grouped by exact frozenset(enum))
+#                         across the corpus. Growing past N reds and names
+#                         the new schema (§8 row 11) — this line may only
+#                         rise after confirming the new group is a real,
+#                         intentional addition, never edited to silence a
+#                         red.
+#   <count> <path>       one line per production Go file (repo-relative)
+#                         carrying at least one plain-string field named for
+#                         a closed vocabulary. A file's line may only be
+#                         LOWERED (a carrier typed) or removed (its count
+#                         reaches 0); an unlisted file's budget is
+#                         implicitly 0.
+#
+# Regenerate with:
+#   bash scripts/check-vocabulary-carriers.sh --write
+# then review the diff before committing.
+#
+# THESE NUMBERS ARE MEASURED AGAINST THIS TREE, NOT COPIED FROM A SPEC —
+# see check-vocabulary-carriers.sh's own header for why this run's total
+# (296 sites across 102 files, kind split 5 ways) differs
+# from spec 03's own quoted 155/9-vs-5 figures, which used a different
+# (and, for 155, not fully reconstructible) method.
+kind-groups: 5
+8 cmd/a2a/data_wiring.go
+1 internal/agentprompt/agentprompt.go
+2 internal/cache/committed_events.go
+11 internal/cache/decode.go
+2 internal/cache/mirror.go
+5 internal/cache/operational.go
+1 internal/cache/successor_facts.go
+10 internal/cache/threadview.go
+11 internal/cache/types.go
+7 internal/cli/adapters.go
+1 internal/cli/cmd_attach.go
+3 internal/cli/cmd_contract.go
+1 internal/cli/cmd_contract_verify_published.go
+5 internal/cli/cmd_lifecycle.go
+1 internal/cli/cmd_new.go
+1 internal/cli/cmd_notify_setup.go
+3 internal/cli/cmd_submit.go
+1 internal/cli/cmd_update.go
+7 internal/cli/cmd_validate_ci.go
+1 internal/cli/cmd_work.go
+1 internal/cli/visibility.go
+2 internal/contract/conformance.go
+1 internal/contract/types.go
+2 internal/contractwiring/publication.go
+1 internal/datapackage/attach.go
+1 internal/datapackage/deliverable.go
+3 internal/datapackage/manifest.go
+2 internal/datapackage/pack.go
+1 internal/feedback/ledger.go
+2 internal/feedback/status.go
+1 internal/feedback/submit.go
+9 internal/feedback/triage.go
+2 internal/feedback/validate.go
+1 internal/fold/legalnext.go
+3 internal/fold/table.go
+1 internal/fold/transitionfree.go
+1 internal/fold/transitionrows.go
+2 internal/fold/types.go
+3 internal/host/github.go
+1 internal/host/remote_tree.go
+2 internal/html/assemble.go
+33 internal/html/model.go
+1 internal/lane/telemetry.go
+4 internal/livee2e/client_live.go
+1 internal/livee2e/mcp_live.go
+1 internal/livee2e/pathgrammar.go
+1 internal/livee2e/refassert.go
+2 internal/livee2e/scenarios_operational_confidence_live.go
+2 internal/livee2e/scenarios_thread_live.go
+2 internal/livee2e/scenarios_verb_agreement.go
+1 internal/livee2e/scenarios_verify_published_live.go
+1 internal/livee2e/spacehealth.go
+2 internal/livee2e/templateplanner.go
+5 internal/mcp/adapters.go
+3 internal/mcp/eventdoc.go
+1 internal/mcp/protocol.go
+1 internal/mcp/tools.go
+4 internal/mcp/tools_contract.go
+1 internal/mcp/tools_contract_p6.go
+2 internal/mcp/tools_data.go
+5 internal/mcp/tools_lifecycle.go
+1 internal/mcp/tools_new.go
+1 internal/mcp/tools_notify.go
+1 internal/mcp/tools_read.go
+2 internal/mcp/tools_submit.go
+5 internal/mcp/tools_work.go
+3 internal/notes/notes.go
+2 internal/notification/operations.go
+5 internal/notification/types.go
+3 internal/operational/types.go
+1 internal/provenance/evidence.go
+3 internal/release/detail.go
+2 internal/schema/fillclasses.go
+1 internal/space/carried_class.go
+1 internal/space/config.go
+1 internal/space/contract_candidate.go
+2 internal/space/contract_git.go
+1 internal/space/contract_history.go
+1 internal/space/contract_publication.go
+1 internal/space/data_delivery.go
+3 internal/space/delivery_possession.go
+2 internal/space/funnel.go
+1 internal/space/manifest.go
+2 internal/space/mutation.go
+1 internal/space/prepared_journal.go
+8 internal/space/work_checkpoint_validator.go
+4 internal/space/work_preparer.go
+3 internal/spacenotify/model.go
+6 internal/spacenotify/render_rich.go
+1 internal/template/contract_scaffold.go
+2 internal/template/template.go
+3 internal/validate/envelope.go
+2 internal/validate/eventproducer.go
+1 internal/validate/manifest.go
+2 internal/validate/publishable.go
+2 internal/validate/result.go
+3 internal/validate/seam.go
+5 internal/validate/work_checkpoint.go
+5 internal/workcheckpoint/validator.go
+1 internal/workreport/codec.go
+2 internal/workreport/coordinator.go
+3 internal/workreport/types.go

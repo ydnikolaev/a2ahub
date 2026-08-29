@@ -25,6 +25,31 @@ compat_policy: default
 #   export-source-v1 digest a2a computes for a local candidate, which is for
 #   CHECKING your own implementation of the combine, never for filling this
 #   field in from.
+#
+#   export-source-v1, in full, so a third party never needs to run a2a as an
+#   oracle to reproduce it:
+#     1. Per-file value: read each declared artifact's raw bytes (the
+#        `schema/`, `fixtures/valid/`, `fixtures/invalid/` files this
+#        descriptor's own `artifacts:` list carries — never contract.md
+#        itself), take SHA-256 over those exact bytes, and encode the sum as
+#        `"sha256:" + lowercase-hex(32 bytes)` — a STRING, the same shape
+#        this field's own value takes. Never raw bytes, never raw hex.
+#     2. Build the (path, per-file-value) pair list: path is the
+#        contract-root-relative, forward-slash-joined path (e.g.
+#        `schema/ingest.schema.json`); per-file-value is the full string
+#        from step 1, prefix included.
+#     3. Sort order: Go byte-lexicographic ascending on the path string
+#        (`sort.Strings` — plain UTF-8 byte comparison, no locale
+#        collation).
+#     4. Combine: over the sorted list, write for each pair
+#        path-bytes + 0x00 (one NUL byte) + per-file-value-bytes + '\n' (one
+#        LF byte) into a single SHA-256 hash, in order.
+#     5. Output encoding: the combined hash is `"sha256:" + lowercase-hex(32
+#        bytes)` — the same `"sha256:" + hex` shape as every per-file value,
+#        applied one more time to the combined sum.
+#   The empty set (no declared artifacts) is a real, well-formed digest: the
+#   combine still runs, over zero pairs, and yields SHA-256's own
+#   empty-input digest, `sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
 # x_binding:                          # OPTIONAL — what this contract IS and whether it may be adopted or pinned
 #   artifact_class: <author's own vocabulary, e.g. non_binding_review>
 #   compatibility_status: <the claim being made, or "none" to make no claim at all>
