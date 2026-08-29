@@ -238,7 +238,7 @@ type lifecycleEventDoc struct {
 	// second commit.
 	Commit string `yaml:"commit,omitempty"`
 	Digest string `yaml:"digest,omitempty"`
-	// Verdicts is P6 wave C's own field (docs/features/active/
+	// Verdicts is P6 wave C's own field (docs/features/archive/
 	// agent-exchange-2026-08/specs/06-incompleteness.md §7/§11's 2026-08-10
 	// "wave C" amendment, threat-model.md T5): the verifier's per-criterion
 	// mirror of a response's `unmet[]`, conditionally required by
@@ -1450,7 +1450,7 @@ type lifecycleVerbSpec struct {
 	RequireRefs       bool
 	RequireFindings   bool
 	GateMarker        bool // ALWAYS advisory-gated (approve/reject, G3)
-	// SupportsVerdicts is B24's own per-row switch (docs/features/active/
+	// SupportsVerdicts is B24's own per-row switch (docs/features/archive/
 	// agent-exchange-2026-08/epic-backlog.md): true on EXACTLY the `close`
 	// row. LifecycleCommand.Run reads it to decide, ONCE per invocation
 	// (never per-id inside the batch loop — "transition-scoped, not applied

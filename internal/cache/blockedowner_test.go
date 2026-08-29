@@ -9,7 +9,7 @@ import (
 )
 
 // TestBlockedOwnerNamesTheBlockerNotTheTarget is P1's US-3, transferred to
-// P6's blocked_by field (2026-08-08 amendment, docs/features/active/
+// P6's blocked_by field (2026-08-08 amendment, docs/features/archive/
 // agent-exchange-2026-08/plans/06-incompleteness.plan.md): a work_request
 // blocked by its own requester must put the pendency verdict's Owners on
 // the requester, never unconditionally on the target — proving the wiring
