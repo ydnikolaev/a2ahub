@@ -56,8 +56,6 @@ type Paths struct {
 	Staging       string
 }
 
-// ResolvePaths resolves Paths from the current working directory and the
-// user's home directory — mirrors cmd/a2a/wire.go's resolvePaths.
 // ProjectRootEnv names the directory `a2a mcp` treats as the project root,
 // overriding the process's working directory.
 //
@@ -80,6 +78,9 @@ type Paths struct {
 // prompts for to this name and no verb, flag or exit code changes.
 const ProjectRootEnv = "A2A_PROJECT_ROOT"
 
+// ResolvePaths resolves Paths from the project root and the user's home
+// directory — mirrors cmd/a2a/wire.go's resolvePaths. The project root is the
+// working directory unless ProjectRootEnv overrides it.
 func ResolvePaths() (Paths, error) {
 	root, err := resolveProjectRoot()
 	if err != nil {
@@ -109,6 +110,12 @@ func resolveProjectRoot() (string, error) {
 	if !filepath.IsAbs(override) {
 		return "", fmt.Errorf("%s must be an absolute path, got %q", ProjectRootEnv, override)
 	}
+	// #nosec G703 -- there is no safe root to constrain this against: the value
+	// IS the project root, an arbitrary directory the operator names in their own
+	// environment at install time, and a2a's whole job is to work inside it. The
+	// taint is the feature. What CAN be checked is checked immediately above and
+	// below — absolute, present, a directory — so a bad value is refused by name
+	// rather than joined into a path nobody typed.
 	info, err := os.Stat(override)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", ProjectRootEnv, err)
