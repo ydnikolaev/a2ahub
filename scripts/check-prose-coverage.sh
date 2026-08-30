@@ -169,8 +169,22 @@ ledger_keys() { # $1 = yaml path, $2 = section ("covered:" or "declared:")
 # collapsing "absent" and "present-but-blank" would misreport a blank
 # `declared:` reason as "no ledger entry" instead of "blank reason" (the
 # check-loop-coverage.sh precedent this function copies).
+# The lookup is deliberately not a pipeline, and the reason is a FLAKY GATE
+# rather than a style preference.
+# `grep -q` exits at the FIRST match. Under this file's `set -o pipefail`
+# (line 52) the pipeline then reports the PRODUCER's status, and the producer
+# is an awk that was still writing when grep closed the pipe: it dies of
+# SIGPIPE (141), so a key that IS present reports absent. Whether it happens
+# is pure scheduling — 0/200 locally on a small ledger, and on GitHub's
+# loaded runners a DIFFERENT random subset of keys every run. It reddened
+# `prose-coverage --teeth` in both repositories' CI on 2026-08-30 while every
+# local container stayed green; tooth (l) below reproduces it deterministically.
+# A here-string cannot fail this way: the producer has already finished, and
+# grep reads a file rather than a pipe.
 ledger_has_key() { # $1 = yaml path, $2 = section, $3 = key
-  ledger_keys "$1" "$2" | grep -qxF "$3"
+  local keys
+  keys="$(ledger_keys "$1" "$2")" || return 1
+  grep -qxF -- "$3" <<<"$keys"
 }
 
 # ledger_value prints the (quote-stripped, `\"`-unescaped) value of one key
@@ -316,9 +330,16 @@ is_deferral_reason() { # $1 = reason text
 # ONE space are stripped — equals anchor byte-for-byte. Matched as a fixed
 # string (grep -F), never a regex: this corpus's headings carry `§`,
 # backticks and parens, exactly the characters a regex would misread.
+# The heading list is CAPTURED before it is matched, for the reason
+# ledger_has_key's own comment gives: piping into `grep -q` under
+# `set -o pipefail` reports a producer killed by SIGPIPE, so an anchor that
+# IS the first heading on a long page can read as absent. Here that would
+# refuse a `covered:` row whose page and heading both exist.
 anchor_exists() { # $1 = md file, $2 = anchor text
   [ -f "$1" ] || return 1
-  grep -E '^#{1,6}[[:space:]]' "$1" | sed -E 's/^#{1,6}[[:space:]]+//' | grep -qxF "$2"
+  local headings
+  headings="$(grep -E '^#{1,6}[[:space:]]' "$1" | sed -E 's/^#{1,6}[[:space:]]+//')" || return 1
+  grep -qxF -- "$2" <<<"$headings"
 }
 
 # schema_declared_fields prints, one per line sorted, the UNION of every
@@ -743,9 +764,15 @@ run_teeth() {
     printf '# fixture\n\n## Fixture Heading\n' >"$tmp/skill/a2ahub/fixture.md"
   }
 
+  # The baseline's output is CAPTURED AND PRINTED on failure. It used to be
+  # thrown at /dev/null, so the one tooth that can fail for a reason outside
+  # the fixture said only "stayed red" and named nothing — hours, on
+  # 2026-08-30, to recover a message the tooth already had in its hands.
   write_good_fixture
-  if ! (run_check "$tmp") >/dev/null 2>&1; then
-    echo "prose-coverage --teeth: FAILED — a fully declared, self-consistent fixture ledger stayed red" >&2
+  local baseline_out
+  if ! baseline_out="$( (run_check "$tmp") 2>&1 )"; then
+    echo "prose-coverage --teeth: FAILED — a fully declared, self-consistent fixture ledger stayed red. What it said:" >&2
+    printf '%s\n' "$baseline_out" >&2
     return 1
   fi
 
@@ -929,6 +956,43 @@ run_teeth() {
   out="$(run_check "$tmp" 2>&1 || true)"
   if ! printf '%s\n' "$out" | grep -qF "$victim_field is listed in more than one declared class"; then
     echo "prose-coverage --teeth: FAILED (k) — a member listed in two declared classes did not red naming it" >&2
+    return 1
+  fi
+
+  # (l) ledger_has_key must find a key that a `grep -q` would match on the
+  # FIRST line of a ledger far larger than a pipe buffer. Written as a
+  # pipeline it cannot: grep exits at that first match, awk takes SIGPIPE
+  # with tens of thousands of lines still unwritten, and `pipefail` reports
+  # the dead producer — the present key reads as absent. 50k rows so the
+  # producer is guaranteed to still be writing; the real corpus is ~260 rows,
+  # fits the buffer, and therefore hides this on every fast machine.
+  local big="$tmp/sigpipe.yaml"
+  {
+    printf 'schema: prose-coverage/v1\n'
+    printf 'declared:\n'
+    seq 1 50000 | sed 's#^#  cmd:fixture-#; s#$#: "a structural fixture reason"#'
+  } >"$big"
+  if ! ledger_has_key "$big" "declared:" "cmd:fixture-1"; then
+    echo "prose-coverage --teeth: FAILED (l) — ledger_has_key reported the FIRST key of a 50000-row ledger absent. That is the SIGPIPE-under-pipefail defect: the lookup must not be a pipeline into \`grep -q\`." >&2
+    return 1
+  fi
+  if ledger_has_key "$big" "declared:" "cmd:fixture-never"; then
+    echo "prose-coverage --teeth: FAILED (l) — ledger_has_key reported an absent key present; the fix must not green everything." >&2
+    return 1
+  fi
+
+  # ...and the same shape in anchor_exists, which reads a PAGE rather than a
+  # ledger. A covered: row naming the first heading of a long page is the
+  # live case: the refusal it would produce ("is not a heading on <page>")
+  # names a heading that is right there.
+  local bigmd="$tmp/sigpipe.md"
+  seq 1 50000 | sed 's|^|## Fixture Heading |' >"$bigmd"
+  if ! anchor_exists "$bigmd" "Fixture Heading 1"; then
+    echo "prose-coverage --teeth: FAILED (l) — anchor_exists reported the FIRST heading of a 50000-heading page absent. Same SIGPIPE-under-pipefail defect: the match must not be a pipeline into \`grep -q\`." >&2
+    return 1
+  fi
+  if anchor_exists "$bigmd" "Fixture Heading absent"; then
+    echo "prose-coverage --teeth: FAILED (l) — anchor_exists reported an absent heading present." >&2
     return 1
   fi
 
