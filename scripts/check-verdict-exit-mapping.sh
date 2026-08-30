@@ -63,21 +63,33 @@
 #   schemas/verdict-exit-codes.yaml
 #   internal/cli/**/*.go
 #   cmd/a2a/wire.go
-#   cmd/a2a/catalog.go
 #
-# lane-reads-opaque: cmd/a2a/catalog.go is named above per spec §7's own
-# mandated lane-inputs line (it is the "SAME dispatch registry a2a
-# __catalog walks" spec §7 cites as precedent for the two-level contract
-# expansion this script performs), but this script does not itself open
-# that file — it re-derives the same buildCommands()/ContractSubcommands()
-# sources catalog.go's own runtime walk reads, statically, so a synthetic
-# `--teeth` fixture can grow the universe without a compiled binary (spec
-# §8 row 12 requires exactly that: the universe must grow from a FIXTURE
-# input, which a compiled catalog walk cannot be pointed at). Declaring the
-# glob costs nothing (over-declaring a lane-input only widens which diffs
-# select this gate) and keeps the header identical to what the brief that
-# produced this file mandated; reported as a deviation in this phase's own
-# report rather than silently dropped.
+# lane-reads-opaque: every read in this gate is parameterised — the registry
+# path, the wire.go path and the cli directory arrive as function arguments
+# ("$1", "$f", "$cli_dir", "$work/registry.yaml"), never as literals. That is
+# not incidental: §8 row 12 requires the computed universe to GROW from a
+# synthetic fixture tree with the gate script itself untouched, which is only
+# possible if the same code can be pointed at a fixture. A teeth-capable gate
+# and a literal-path gate are mutually exclusive here, and the teeth are the
+# thing that proves the derivation works.
+
+# WHY cmd/a2a/catalog.go IS *NOT* DECLARED, though spec §7's mandated
+# lane-inputs line named it. This script never opens that file. It cites
+# catalog.go as PRECEDENT for the two-level contract expansion it performs
+# — catalog.go walks the same buildCommands()/ContractSubcommands() sources
+# at runtime, and this gate re-derives them STATICALLY so a synthetic
+# `--teeth` fixture can grow the universe with no compiled binary (§8 row
+# 12 requires exactly that; a compiled catalog walk cannot be pointed at a
+# fixture tree).
+#
+# The declaration must name what the gate READS, not what it was inspired
+# by. `.claude/rules/check-convention.md` puts it as "as narrow as the gate
+# really reads, no narrower": over-declaring is cheap in seconds but it is
+# still a false claim, and it would make an edit to catalog.go select a
+# gate that cannot judge it. A `# lane-reads-opaque:` directive was the
+# wrong instrument for this and briefly stood here — that directive means
+# "this gate reads a path the extractor cannot resolve", never "I declared
+# an input I do not read".
 
 # shellcheck source=scripts/lib/gate-lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/gate-lib.sh"
@@ -104,7 +116,7 @@ extract_func_body() {
   ' "$file"
 }
 
-# direct_dispatch_verbs <wire.go>: buildCommands()'s own direct
+# direct_dispatch_verbs <wire-path>: buildCommands()'s own direct
 # `m["x"] = ` assignments (never the verbs added via the two `for name,
 # construct := range ...()` loops — those are read separately below, since
 # they use a variable key, not a literal, and would not match this pattern
@@ -115,7 +127,7 @@ direct_dispatch_verbs() {
     | sed -E 's/^m\["//; s/"\][[:space:]]*=$//'
 }
 
-# map_literal_verbs <wire.go> <func-start-regex>: the string keys of a
+# map_literal_verbs <wire-path> <func-start-regex>: the string keys of a
 # top-level `func <name>() map[string]...{ return map[string]...{ "k": ...
 # } }`-shaped function — used for both readVerbs() and lifecycleVerbs(),
 # whose dispatch keys buildCommands() installs via a `for name, construct
@@ -170,7 +182,7 @@ contract_subcommands() {
     | sed -E 's/^\{Name: "//; s/"$//'
 }
 
-# verb_universe <wire.go> <cli-dir>: one verb identity per line, sorted,
+# verb_universe <wire-path> <cli-dir>: one verb identity per line, sorted,
 # de-duplicated, `contract` replaced by its "contract <sub>" expansion.
 verb_universe() {
   local wire="$1" cli_dir="$2" direct read_v lifecycle_v all subs
@@ -241,7 +253,7 @@ registry_mapping_entries() {
 
 # ── verification ─────────────────────────────────────────────────────────
 
-# verify_all <registry> <wire.go> <cli-dir> <root>
+# verify_all <registry> <wire-path> <cli-dir> <root>
 #
 # THREE UNMEASURED ARMS — the inputs this script actually opens (never a
 # fourth for cmd/a2a/catalog.go, which it does not read; see the header's

@@ -21,4 +21,24 @@
 // caller-driven Download/Swap invocation (D-021): NewChecker's background
 // checker closes over a Source only, so it is structurally unable to reach
 // either.
+//
+// THE SIGSTORE TRUSTED ROOT IS A COMPILE-TIME INPUT TO THIS PACKAGE. cosign.go
+// //go:embed-s it, so changing its bytes changes what this package compiles,
+// and this package's own tests are what judge the result (cosign_test.go
+// verifies fully offline against exactly these frozen keys). Declared below
+// for the reason .claude/rules/check-convention.md gives for internal/notes
+// <- releasenotes/**: an invariant that lives only in Go tests has to be
+// reachable from a diff that touches no Go file.
+//
+// Before this declaration the file was CLAIMED by release-notes-freshness's
+// `internal/**` glob and read by nothing — that gate invokes only git
+// subcommands, an inline awk program and shell builtins, so
+// computed-not-listed-2026-08 P1b's proven-empty arm now reports it as an
+// unbacked claimant rather than backing it on zero evidence. A path a gate
+// claims but cannot judge is worse than an unclaimed one, because the claim
+// reads as coverage.
+//
+// lane-inputs:
+//
+//	internal/release/trusted_root.json
 package release

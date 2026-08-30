@@ -15,4 +15,41 @@
 # Regenerate with:
 #   go run internal/lane/lanecheck.go --write-opaque-ceiling
 # then review the diff before committing.
-54
+#
+# ---- 2026-08-30: RESEEDED 54 -> 56 (computed-not-listed-2026-08, waves 5-6) ----
+# THREE MOVEMENTS, and only one of them is debt. The ceiling reds on growth so
+# growth is ARGUED; this is the argument.
+#
+#  +1  scripts/check-verdict-exit-mapping.sh (P4)
+#  +1  scripts/check-harness-roster.sh (P9)
+#      Both gates read every path through a function argument, and NEITHER
+#      COULD DO OTHERWISE. Their acceptance rows require the gate to be
+#      pointed at a SYNTHETIC FIXTURE TREE — P4 §8 row 12 demands the computed
+#      universe grow from a fixture input with the gate script itself
+#      untouched; P9 §6 runs all six refusal cases over fixtures. A gate whose
+#      paths are literals cannot be pointed anywhere, so a teeth-capable gate
+#      and a literal-path gate are mutually exclusive. Every one of this
+#      repo's teeth-capable gates carries this directive for the same reason.
+#
+#      THAT IS A REAL PROPERTY OF THIS CEILING, worth naming rather than
+#      absorbing: it rises by one per new teeth-capable gate, so it is not a
+#      pure debt counter. Adding teeth to an existing gate would also raise
+#      it — which means, read carelessly, this number discourages the exact
+#      thing `make harness-check` exists to encourage. It still bounds
+#      something real (constructs waved past the classifier), so it stays;
+#      but a future phase separating "opaque because parameterised for teeth"
+#      from "opaque because nobody narrowed the read" would be measuring the
+#      debt rather than the sum.
+#
+#   0  scripts/check-verdict-exit-mapping.sh also LOST a directive: it had
+#      used lane-reads-opaque to excuse an input it declared but never
+#      opened (cmd/a2a/catalog.go). That is not what the directive means.
+#      The input was dropped instead — "as narrow as the gate really reads".
+#
+#  +1  epic-drift. NOT A NEW DIRECTIVE. Its directive was already written and
+#      was being SILENTLY IGNORED: P1b's proven-empty arm fixed cross-line
+#      quote tracking that a comment apostrophe could corrupt, and the fix
+#      made an inert directive parse. The count rose because the MEASUREMENT
+#      improved, not because the corpus did — the same class this epic keeps
+#      finding, and the reason a number is never evidence on its own.
+56
