@@ -93,7 +93,7 @@ func (c *InboxCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// comment. inbox is cross-space, so this reports the union across every
 	// connected mirror.
 	if skipped, skErr := c.store.AllSkippedFiles(ctx); skErr == nil {
-		skipAdvisory(stdio, flattenSkipped(skipped), *jsonOut)
+		skipAdvisory(stdio, cache.FlattenSkippedFiles(skipped), *jsonOut)
 	} else {
 		// computed-not-listed-2026-08 P6 AC-8/§8 row 8, through the ONE
 		// shared copy in skipadvisory.go — see skipAdvisoryUnavailable.

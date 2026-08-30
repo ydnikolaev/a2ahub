@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/release"
@@ -86,16 +85,6 @@ type searchSkipStore interface {
 	Search(ctx context.Context, query string, filters cache.SearchFilters) ([]cache.Item, error)
 }
 
-// skippedFilesUnavailableNextStep is this package's own copy of the CLI's
-// skipAdvisoryNextStep (internal/cli/skipadvisory.go) — same wording,
-// deliberately duplicated rather than imported: ADR-001 forbids this
-// package importing internal/cli (flattenSkippedFiles' own doc comment,
-// above, states the same constraint for the sibling helper this pairs
-// with). It is stated about what the READER should do with the output
-// already in front of them, not about repairing the store — the same
-// framing the CLI copy uses.
-const skippedFilesUnavailableNextStep = "treat this listing as possibly incomplete; run `a2a doctor` to see whether the mirror is readable, then re-run this command"
-
 // skippedFilesOrUnmeasured resolves an a2a_read verb's cross-space
 // skipped-file report, replacing the wholesale `bySpace, _ :=` discard the
 // closeout audit found at this file's four AllSkippedFiles call sites
@@ -103,53 +92,30 @@ const skippedFilesUnavailableNextStep = "treat this listing as possibly incomple
 // phase's footprint from P6's deliberately, so the two phases stay
 // file-disjoint). A silently-discarded error here used to drop two facts at
 // once: that the returned item list might be missing rows, and that
-// nothing could find out which — the exact defect P6 already closed on the
-// CLI side (internal/cli/skipadvisory.go's skipAdvisoryUnavailable, whose
-// reasoning this reuses rather than inventing a second one). Unlike the
-// CLI, this surface has no stderr channel to carry an out-of-band advisory
+// nothing could find out which — the exact defect P6 already closed for
+// the other stage-2 surface. The sentence both surfaces say is now ONE
+// function below both of them (cache.SkippedFilesUnavailableMessage), per
+// ADR-019 half 1, so this comment has a definition to point at instead of
+// a sibling package's private symbol. This surface has no stderr channel
+// to carry an out-of-band advisory
 // on: StructuredContent IS the whole structured result (itemsWithSkipped's
 // own doc comment, this file), so the fact rides the returned payload
 // itself, as a validate.SeverityUnmeasured Violation in Warnings.
 // SeverityUnmeasured already exists one layer down
 // (internal/validate/result.go, D9) — this phase does not mint a second
-// name for it. The message carries all three parts skipAdvisoryUnavailable's
-// own doc comment says a bare "%v" discard was missing: the attempted
-// action (verb), the reason (err), and a next step — a symptom with no
-// action is spec 04's own defect.
+// name for it. The message carries all three parts a bare "%v" discard was
+// missing: the attempted action (verb), the reason (err), and a next step —
+// a symptom with no action is spec 04's own defect.
 func skippedFilesOrUnmeasured(ctx context.Context, verb string, store allSkippedFilesReader) ([]cache.SkippedFile, []validate.Violation) {
 	bySpace, err := store.AllSkippedFiles(ctx)
 	if err != nil {
 		return nil, []validate.Violation{{
-			Class: validate.ClassReferential,
-			Message: fmt.Sprintf(
-				"%s: could not determine which files, if any, were skipped: %v — %s",
-				verb, err, skippedFilesUnavailableNextStep),
+			Class:    validate.ClassReferential,
+			Message:  cache.SkippedFilesUnavailableMessage(verb, err),
 			Severity: validate.SeverityUnmeasured,
 		}}
 	}
-	return flattenSkippedFiles(bySpace), nil
-}
-
-// flattenSkippedFiles merges a Store.AllSkippedFiles map into one
-// deterministic slice (space id order, then each space's own already-sorted
-// path order — skipped.go's own doc comment): a2a_inbox/a2a_outbox/
-// a2a_search read across every connected space (cache.AllSkippedFiles' own
-// doc comment), so their StructuredContent needs the union in one stable
-// order, the same way internal/cli's own flattenSkipped
-// (internal/cli/skipadvisory.go) does for the CLI's stderr advisory — kept
-// as its own copy here rather than shared: ADR-001 forbids this package
-// importing internal/cli.
-func flattenSkippedFiles(bySpace map[string][]cache.SkippedFile) []cache.SkippedFile {
-	spaceIDs := make([]string, 0, len(bySpace))
-	for id := range bySpace {
-		spaceIDs = append(spaceIDs, id)
-	}
-	sort.Strings(spaceIDs)
-	var out []cache.SkippedFile
-	for _, id := range spaceIDs {
-		out = append(out, bySpace[id]...)
-	}
-	return out
+	return cache.FlattenSkippedFiles(bySpace), nil
 }
 
 // InboxInput is a2a_inbox's structured input.

@@ -1,8 +1,11 @@
 package cache
 
-import "strings"
-
-import "context"
+import (
+	"context"
+	"fmt"
+	"sort"
+	"strings"
+)
 
 // SkippedFile is one mirror file (artifact or event) that walkArtifacts or
 // walkEvents could not fold into a space's read index — the read-model's
@@ -117,4 +120,72 @@ func FormatSkippedList(skipped []SkippedFile) string {
 		parts = append(parts, sk.Path+" ("+sk.Reason+")")
 	}
 	return strings.Join(parts, ", ")
+}
+
+// FlattenSkippedFiles merges an AllSkippedFiles map into one deterministic
+// slice: space id order, then each space's own already-sorted path order
+// (SkippedFiles' own doc comment). `a2a inbox`, `a2a outbox` and `a2a
+// search` are not space-scoped the way `a2a thread` is (AllSkippedFiles'
+// own doc comment: "a2a inbox is not space-scoped ... it needs the union
+// across every connected mirror"), so their skip report needs one stable
+// order across every connected space rather than SkippedFiles' single-space
+// slice.
+//
+// It lives here, beside FormatSkippedList, because BOTH stage-2 surfaces
+// need it and neither may import the other (ADR-001 as re-scoped by
+// ADR-004). ADR-019 half 1 makes that placement the default rather than the
+// exception: internal/cli and internal/mcp each shipped a byte-identical
+// private copy, each one's doc comment citing the other's by name to
+// explain the duplication — the exact shape ADR-019's detection half
+// refuses. FormatSkippedList had already taken this route for the same pair
+// of callers; this function simply follows the precedent already in this
+// file instead of inventing a second shape.
+func FlattenSkippedFiles(bySpace map[string][]SkippedFile) []SkippedFile {
+	spaceIDs := make([]string, 0, len(bySpace))
+	for id := range bySpace {
+		spaceIDs = append(spaceIDs, id)
+	}
+	sort.Strings(spaceIDs)
+	var out []SkippedFile
+	for _, id := range spaceIDs {
+		out = append(out, bySpace[id]...)
+	}
+	return out
+}
+
+// SkippedFilesUnavailableNextStep is the action a reader can take when the
+// skip report ITSELF could not be produced. It is deliberately about what
+// the READER should do with the output already in front of them, not about
+// repairing the store: the verb has already returned its rows, and the only
+// thing the reader can act on immediately is whether to trust that list.
+//
+// One home, for the ADR-019 reason FlattenSkippedFiles states above — this
+// string shipped verbatim in both stage-2 surfaces, and a next step that
+// names a command (`a2a doctor`) is exactly the vocabulary that must not
+// drift between the two surfaces a caller might reach it through.
+const SkippedFilesUnavailableNextStep = "treat this listing as possibly incomplete; run `a2a doctor` to see whether the mirror is readable, then re-run this command"
+
+// SkippedFilesUnavailableAttempted names the action that failed, in the
+// form a three-part refusal's first part takes: what was being attempted
+// when the skip report could not be computed.
+func SkippedFilesUnavailableAttempted(verb string) string {
+	return verb + ": could not determine which files, if any, were skipped"
+}
+
+// SkippedFilesUnavailableMessage composes the whole advisory: what was
+// attempted, what was found, and what to do next. A symptom with no action
+// is the defect the four per-verb copies this replaced actually shipped
+// ("could not determine which files, if any, were skipped: %v" and nothing
+// more).
+//
+// Two surfaces render it through different machinery — internal/cli builds
+// it with its own NewRefusal (which exists to make an empty next step
+// impossible to construct, and stays in that package by the decision
+// recorded in refusal_state.go's header), internal/mcp carries it as a
+// validate.Violation because its transport has no stderr channel. The
+// SENTENCE is the same on both, and cli's TestSkipAdvisoryUnavailableMatchesTheSharedMessage
+// pins it to this function so the two renderings cannot drift apart in
+// silence.
+func SkippedFilesUnavailableMessage(verb string, err error) string {
+	return fmt.Sprintf("%s: %v — %s", SkippedFilesUnavailableAttempted(verb), err, SkippedFilesUnavailableNextStep)
 }

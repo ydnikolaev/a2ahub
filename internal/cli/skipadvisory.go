@@ -12,7 +12,6 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 )
@@ -74,28 +73,22 @@ func skipAdvisory(stdio IO, skipped []cache.SkippedFile, jsonOut bool) {
 // it emits one JSON object rather than prose, so a consumer parsing this
 // channel meets the shape it already expects from skipAdvisory.
 func skipAdvisoryUnavailable(stdio IO, verb string, err error, jsonOut bool) {
-	attempted := verb + ": could not determine which files, if any, were skipped"
+	attempted := cache.SkippedFilesUnavailableAttempted(verb)
 	if jsonOut {
 		_ = json.NewEncoder(stdio.Stderr).Encode(struct {
 			SkippedUnavailable string `json:"skipped_unavailable"`
 			Reason             string `json:"reason"`
 			NextStep           string `json:"next_step"`
-		}{SkippedUnavailable: verb, Reason: err.Error(), NextStep: skipAdvisoryNextStep})
+		}{SkippedUnavailable: verb, Reason: err.Error(), NextStep: cache.SkippedFilesUnavailableNextStep})
 		return
 	}
-	refusal, rerr := NewRefusal(attempted, err.Error(), skipAdvisoryNextStep)
+	refusal, rerr := NewRefusal(attempted, err.Error(), cache.SkippedFilesUnavailableNextStep)
 	if rerr != nil {
 		_, _ = fmt.Fprintln(stdio.Stderr, verb+": internal problem building the skip-advisory note (empty next step) — this is a bug in "+verb+", not a caller mistake")
 		return
 	}
 	_, _ = fmt.Fprintln(stdio.Stderr, refusal)
 }
-
-// skipAdvisoryNextStep is the action, stated once. It is deliberately about
-// what the READER should do with the output in front of them, not about
-// repairing the store: the verb has already printed its rows, and the only
-// thing the reader can act on immediately is whether to trust the list.
-const skipAdvisoryNextStep = "treat this listing as possibly incomplete; run `a2a doctor` to see whether the mirror is readable, then re-run this command"
 
 // formatSkippedList renders skipped as "path (reason), path (reason), ..."
 // — the item-list fragment shared between skipAdvisory's own "note: N
@@ -107,24 +100,4 @@ const skipAdvisoryNextStep = "treat this listing as possibly incomplete; run `a2
 // doc comment for why conflating the two would misdirect a reader.
 func formatSkippedList(skipped []cache.SkippedFile) string {
 	return cache.FormatSkippedList(skipped)
-}
-
-// flattenSkipped merges a Store.AllSkippedFiles map into one deterministic
-// slice (space id order, then each space's own already-sorted path order —
-// skipped.go's own doc comment) — inbox/outbox/search are not space-scoped
-// the way `a2a thread` is (cache.AllSkippedFiles' own doc comment: "a2a
-// inbox is not space-scoped ... it needs the union across every connected
-// mirror"), so their advisory needs one stable order across every connected
-// space rather than cache.SkippedFiles' single-space slice.
-func flattenSkipped(bySpace map[string][]cache.SkippedFile) []cache.SkippedFile {
-	spaceIDs := make([]string, 0, len(bySpace))
-	for id := range bySpace {
-		spaceIDs = append(spaceIDs, id)
-	}
-	sort.Strings(spaceIDs)
-	var out []cache.SkippedFile
-	for _, id := range spaceIDs {
-		out = append(out, bySpace[id]...)
-	}
-	return out
 }

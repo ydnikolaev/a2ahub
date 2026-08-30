@@ -6,6 +6,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/internal/cache"
 )
 
 // skipadvisory_unavailable_test.go covers computed-not-listed-2026-08 P6
@@ -47,7 +49,7 @@ func TestSkipAdvisoryUnavailableNamesTheReasonAndTheNextStep(t *testing.T) {
 		"inbox",
 		"could not determine which files, if any, were skipped",
 		"mirror index unreadable",
-		skipAdvisoryNextStep,
+		cache.SkippedFilesUnavailableNextStep,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("stderr note is missing %q, got %q", want, got)
@@ -80,7 +82,7 @@ func TestSkipAdvisoryUnavailableEmitsJSONInJSONMode(t *testing.T) {
 	if payload.SkippedUnavailable != "search" || payload.Reason != "boom" {
 		t.Fatalf("payload lost the verb or the reason: %+v", payload)
 	}
-	if payload.NextStep != skipAdvisoryNextStep {
+	if payload.NextStep != cache.SkippedFilesUnavailableNextStep {
 		t.Fatalf("payload's next step drifted from the constant: %q", payload.NextStep)
 	}
 }
@@ -92,7 +94,35 @@ func TestSkipAdvisoryUnavailableEmitsJSONInJSONMode(t *testing.T) {
 // path, so one empty value would silently degrade both.
 func TestSkipAdvisoryNextStepIsNeverEmpty(t *testing.T) {
 	t.Parallel()
-	if strings.TrimSpace(skipAdvisoryNextStep) == "" {
-		t.Fatal("skipAdvisoryNextStep is empty — NewRefusal would refuse to build the note")
+	if strings.TrimSpace(cache.SkippedFilesUnavailableNextStep) == "" {
+		t.Fatal("cache.SkippedFilesUnavailableNextStep is empty — NewRefusal would refuse to build the note")
+	}
+}
+
+// TestSkipAdvisoryUnavailableMatchesTheSharedMessage is the pin
+// cache.SkippedFilesUnavailableMessage's own doc comment names, and it is
+// the reason that sentence could be moved below both stage-2 surfaces
+// without the move becoming a new drift risk.
+//
+// internal/cli and internal/mcp render the advisory through different
+// machinery — a Refusal written to stderr here, a validate.Violation
+// carried in the payload there, because this surface has a stderr channel
+// and that one does not. What must NOT differ is the sentence. Before the
+// ADR-019 move both packages built it from their own private copy of the
+// next step and their own format string, and nothing at all would have
+// noticed one of them being reworded. This asserts the equality a reader of
+// either surface is entitled to assume.
+func TestSkipAdvisoryUnavailableMatchesTheSharedMessage(t *testing.T) {
+	t.Parallel()
+	var stdout, stderr bytes.Buffer
+	stdio := IO{Stdout: &stdout, Stderr: &stderr}
+	err := errors.New("mirror index unreadable")
+
+	skipAdvisoryUnavailable(stdio, "outbox", err, false)
+
+	got := strings.TrimSpace(stderr.String())
+	want := cache.SkippedFilesUnavailableMessage("outbox", err)
+	if got != want {
+		t.Fatalf("cli's rendering has drifted from the shared sentence:\n cli:    %q\n shared: %q", got, want)
 	}
 }
