@@ -155,7 +155,7 @@ changes:
   affects:
   - cli
   action:
-    scope: some
+    scope: local
     why: >
       If you script `a2a contract preflight` and treat exit 0 as "proceed",
       re-read that branch: a violation-carrying candidate now exits 1 there,
