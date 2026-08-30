@@ -62,6 +62,14 @@ docs/
 scripts/check-feature-lint.sh
 scripts/check-feedback-corpus.sh
 scripts/check-skill-citations.sh
+# ...and its own teeth, for the reason the header above already gives about
+# gate-lib.sh: a PUBLIC file that reads a STRIPPED one is the v0.19.9 defect.
+# This one had been untracked entirely since it was written — invisible to git,
+# to classify-guard, and to `make harness-check`'s roster alike — so it reached
+# neither list. Tracked as of 2026-08-30 (computed-not-listed-2026-08 P2's own
+# amendment), and private, because the gate it drives is private. Its sibling
+# teeth under scripts/tests/ are ALLOW-listed public because THEIR gates are.
+scripts/tests/check_skill_citations_test.sh
 scripts/check-spec-verify-refs.sh
 scripts/check-dashboard-props.sh
 scripts/check-card-content.sh
