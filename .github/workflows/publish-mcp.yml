@@ -30,6 +30,14 @@ permissions:
 
 jobs:
   publish:
+    # timeout-minutes: a new job identity, so scripts/lib/job-timeouts.tsv has
+    # no measured p99 for it yet and this is the artefact's stated floor. The
+    # job downloads one small asset, rewrites a JSON file, fetches a publisher
+    # binary and makes one API call — no build, no test suite. The next --p99
+    # regeneration replaces this with a measurement, and it will only ever have
+    # one if a human dispatches this workflow, which is the whole point of it
+    # being disarmed.
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
