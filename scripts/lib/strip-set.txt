@@ -111,6 +111,18 @@ scripts/check-projection.sh
 # and spec 02 §T5 name as the verdict-producer for a tree with no docs/.
 scripts/check-import-rule-coverage.sh
 scripts/check-cross-layer-test-import-ceiling.sh
+# computed-not-listed-2026-08 P9, and its privacy is FORCED rather than chosen.
+# The gate's universe is "which scripts under the declared directories dispatch
+# on --teeth". In a public checkout that set SHRINKS — most of the entries
+# above are stripped — while HARNESS_TEETH ships unstripped and still names
+# them, so every stripped gate would trip the roster's own rostered-absent
+# refusal and redden a public `make check` for a reason spec 11 section 3
+# explicitly disclaims. Its Makefile recipe is presence-gated for the same
+# reason. Its teeth and its excuse file follow it: a PUBLIC file reading a
+# STRIPPED one is the v0.19.9 defect this whole list exists to prevent.
+scripts/check-harness-roster.sh
+scripts/tests/check_harness_roster_test.sh
+scripts/lib/harness-roster-excuses.txt
 scripts/lib/cross-layer-test-import-ceiling.txt
 scripts/site-check.sh
 scripts/lib/site-overlay.txt

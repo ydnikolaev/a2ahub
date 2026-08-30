@@ -49,7 +49,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: site-check site-check-teeth flaky-scan check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install import-rule-coverage cross-layer-test-import-ceiling verdict-exit-mapping
+.PHONY: site-check site-check-teeth flaky-scan check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install import-rule-coverage cross-layer-test-import-ceiling verdict-exit-mapping harness-roster
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -60,7 +60,7 @@
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := spec-verify-refs ci-parity-audit frozen-allowlist lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus view-vocabulary dashboard-props card-content pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral runner-economics space-template-baseline-check unmeasured-reach import-rule-coverage cross-layer-test-import-ceiling verdict-exit-mapping
+REPO_GATES := spec-verify-refs ci-parity-audit frozen-allowlist lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus view-vocabulary dashboard-props card-content pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral runner-economics space-template-baseline-check unmeasured-reach import-rule-coverage cross-layer-test-import-ceiling verdict-exit-mapping harness-roster
 
 _print-repo-gates:
 	@echo "$(REPO_GATES)"
@@ -315,6 +315,13 @@ cross-layer-test-import-ceiling: ## The `!$$test` depguard exemption's reach is 
 	  bash scripts/check-cross-layer-test-import-ceiling.sh; \
 	else \
 	  echo "cross-layer-test-import-ceiling: skip — scripts/check-cross-layer-test-import-ceiling.sh absent (public checkout)."; \
+	fi
+
+harness-roster: ## Every script that dispatches on --teeth is a HARNESS_TEETH member or carries a written excuse (computed-not-listed-2026-08 P9; private harness gate, presence-gated — it audits PRIVATE harness scripts, most of which the publisher strips).
+	@if [ -f scripts/check-harness-roster.sh ]; then \
+	  bash scripts/check-harness-roster.sh; \
+	else \
+	  echo "harness-roster: skip — scripts/check-harness-roster.sh absent (public checkout)."; \
 	fi
 
 release-note-detect: ## A new release-note change declaring scope local|space carries a detect:, or a counted exemption row; the frozen historical ceiling may only shrink (answers-that-hold-2026-08 P13, ACs 13-14).
@@ -739,6 +746,28 @@ harness-check: ## Run the gates' --teeth self-tests (harness gates are private/p
 # fails. Adding a script to either list below inherits the guard, so the next
 # private tooth cannot repeat this — the list names WHAT to run, never how to
 # survive its own absence.
+#
+# STAYS A HAND-TYPED LIST — never derived the way HARNESS_TESTS above now is
+# (computed-not-listed-2026-08 P9 spec 11 §2). A derived membership predicate
+# here can be wrong in the direction that produces a FALSE GREEN: a script
+# that does not actually dispatch on --teeth still exits 0 when run as
+# `bash script --teeth` (it just ignores the flag and runs its ordinary
+# check), so a vacuous tooth is indistinguishable from a passing one —
+# over-inclusion here is a lie, where under-inclusion is only a measurable
+# gap. So this list is instead GATED: `make harness-roster` (scripts/check-
+# harness-roster.sh) computes the same "does this script dispatch on
+# --teeth" universe this comment describes by hand and refuses when a
+# dispatching script is absent from here with no written excuse — the
+# `ci-parity-audit` shape (a set difference, named), never a stored count.
+#
+# Fourteen entries below were added in the SAME commit that shipped that
+# gate, all measured (never copied from a stale doc) and all individually
+# confirmed to pass their own `bash <script> --teeth`: the twelve
+# scripts/check-cross-layer-test-import-ceiling.sh through
+# scripts/ci-parity.sh, plus docs/runbooks/feedback-carry.sh (found only by
+# re-deriving the universe rather than trusting spec 11 §1's own table, per
+# that spec's §11 amendment) and scripts/check-harness-roster.sh itself —
+# the new gate found its own script unrostered on its first real run.
 HARNESS_TEETH := \
   scripts/site-check.sh \
   scripts/check-verdict-exit-mapping.sh \
@@ -784,20 +813,36 @@ HARNESS_TEETH := \
   scripts/check-mcp-schema-decodable.sh \
   scripts/check-refusal-ratchet.sh \
   scripts/check-release-note-detect.sh \
-  scripts/check-prose-roster.sh
+  scripts/check-prose-roster.sh \
+  scripts/check-cross-layer-test-import-ceiling.sh \
+  scripts/check-deadcode-ceiling.sh \
+  scripts/check-discard-ceiling.sh \
+  scripts/check-human-gates.sh \
+  scripts/check-import-rule-coverage.sh \
+  scripts/check-loop-coverage.sh \
+  scripts/check-loop-reachability.sh \
+  scripts/check-prose-coverage.sh \
+  scripts/check-render-ledger.sh \
+  scripts/check-usage-workflow.sh \
+  scripts/check-vocabulary-carriers.sh \
+  scripts/ci-parity.sh \
+  docs/runbooks/feedback-carry.sh \
+  scripts/check-harness-roster.sh
 
-HARNESS_TESTS := \
-  scripts/tests/check_event_writer_receipts_test.sh \
-  scripts/tests/check_verdict_exit_mapping_test.sh \
-  scripts/tests/check_contract_carried_set_test.sh \
-  scripts/tests/check_work_checkpoint_schema_test.sh \
-  scripts/tests/check_operational_projection_single_source_test.sh \
-  scripts/tests/check_localserver_readonly_routes_test.sh \
-  scripts/tests/check_live_e2e_evidence_test.sh \
-  scripts/tests/check_human_gates_test.sh \
-  scripts/tests/check_loop_reachability_test.sh \
-  scripts/tests/check_loop_coverage_test.sh \
-  scripts/tests/classify_guard_test.sh
+# DERIVED, not hand-typed (computed-not-listed-2026-08 P9, AC-1). Every file
+# under scripts/tests/*_test.sh is a teeth test BY CONSTRUCTION — it is what
+# the directory is for, it takes no argument, and it is run as `bash "$$s"`
+# below. A wildcard cannot over-include the way a hand-typed HARNESS_TEETH
+# entry could (see that variable's own header for why THAT one stays a
+# list): there is no shape a file could take under this directory that would
+# make deriving membership from its mere presence wrong. Three files were
+# found missing from the old hand-typed roster the day this was written —
+# check_render_ledger_test.sh, check_skill_citations_test.sh,
+# check_usage_workflow_test.sh — and a fourth was added by hand to BOTH
+# rosters on the same day this spec was filed about exactly that
+# (check_verdict_exit_mapping_test.sh, spec 11 §11's amendment). This line
+# is what makes the next one unnecessary.
+HARNESS_TESTS := $(sort $(wildcard scripts/tests/*_test.sh))
 
 _harness-check: export GITHUB_ACTIONS :=
 _harness-check:
