@@ -156,6 +156,9 @@ changes:
   - cli
   action:
     scope: local
+    detect:
+    - "grep -rn 'contract preflight' -- <your scripts and CI workflows>"
+    - "a2a contract preflight --space <space> --json <candidate>; echo $?"
     why: >
       If you script `a2a contract preflight` and treat exit 0 as "proceed",
       re-read that branch: a violation-carrying candidate now exits 1 there,

@@ -9297,7 +9297,11 @@
           ],
           "action": {
             "scope": "local",
-            "why": "If you script `a2a contract preflight` and treat exit 0 as \"proceed\", re-read that branch: a violation-carrying candidate now exits 1 there, as it always did at `publish`. Nothing you have already published changes. Scripts treating any non-zero as one undifferentiated failure keep working, but 3 now means \"could not measure\", not \"objections\" — worth distinguishing before you retry.\n"
+            "why": "If you script `a2a contract preflight` and treat exit 0 as \"proceed\", re-read that branch: a violation-carrying candidate now exits 1 there, as it always did at `publish`. Nothing you have already published changes. Scripts treating any non-zero as one undifferentiated failure keep working, but 3 now means \"could not measure\", not \"objections\" — worth distinguishing before you retry.\n",
+            "detect": [
+              "grep -rn 'contract preflight' -- \u003cyour scripts and CI workflows\u003e",
+              "a2a contract preflight --space \u003cspace\u003e --json \u003ccandidate\u003e; echo $?"
+            ]
           }
         },
         {
