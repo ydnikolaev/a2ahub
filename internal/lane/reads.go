@@ -626,24 +626,56 @@ type PhaseBacking struct {
 	// not launder an unrelated, never-read path under the same `**` into
 	// "covered".
 	Opaque bool
+	// ProvenEmpty is P1b's third capability (spec 09 §11): true when the
+	// phase's window(s) produced ZERO evidence (no ReadRef, no
+	// UnresolvedRead) AND windowProvenEmpty confirmed every command-start
+	// token in them is accounted for by a non-reading vocabulary — a git
+	// subcommand backed by the object database/index/refs, or a bash
+	// keyword/builtin. Unlike NoSubject below, this is a POSITIVE finding
+	// (the window was fully examined and shown to read nothing), not an
+	// absence of one, so it does NOT exempt the phase's unmatched claims
+	// from the unbacked verdict — see NoSubject's own doc comment for the
+	// three-way split this field completes.
+	//
+	// A window that contains a Go arm (honestyForGoFile) can never set
+	// this: this capability's two vocabularies describe SHELL syntax, and a
+	// Go source file invokes neither, so a Go arm's own contribution is
+	// always treated as "not proven" rather than silently ignored.
+	ProvenEmpty bool
 	// NoSubject is true when the honesty question has no subject at all —
 	// two cases. First, a presence-gated Makefile recipe whose backing
 	// script is legitimately absent (a private harness gate the publisher
-	// strips; honestyForMakePhase's own comment). Second — measured, not
-	// theoretical — a window whose scan produced NEITHER a literal read NOR
-	// an unresolved construct: D-11's extractor is bounded to
-	// grep/cat/find/source/wc/head/tail/sed/awk (plus Go's os.ReadFile/
-	// os.Open), so a script that only invokes `gofmt`, `go vet`, `go test`,
-	// `golangci-lint` and similar produces zero evidence either way — not
-	// because it reads nothing, but because the classifier has no contract
-	// for that command shape. Scoring that identically to a phase whose
-	// reads WERE classified and simply miss the declaration (like
-	// release-notes-freshness) would be a confident, specific, wrong
-	// verdict — measured at 57 corpus phases and 11,754 refusal lines on
-	// the live tree before this field absorbed the case. Either way, a gate
-	// this instrument never got the chance to judge cannot be scored
-	// unbacked for a claim it never had the opportunity to prove, so the
-	// claim counts as backed unconditionally.
+	// strips; honestyForMakePhase's own comment). Second — a window whose
+	// scan produced NEITHER a literal read NOR an unresolved construct AND
+	// windowProvenEmpty could NOT confirm every command in it is
+	// non-reading (ProvenEmpty above is false): D-11's extractor is bounded
+	// to grep/cat/find/source/wc/head/tail/sed/awk (plus Go's
+	// os.ReadFile/os.Open), so a script that only invokes `gofmt`,
+	// `go vet`, `go test`, `golangci-lint` and similar produces zero
+	// evidence either way — not because it reads nothing, but because the
+	// classifier has no contract for that command shape. Scoring that
+	// identically to a phase whose reads WERE classified and simply miss
+	// the declaration (like release-notes-freshness, before P1b's third
+	// capability) would be a confident, specific, wrong verdict — measured
+	// at 57 corpus phases and 11,754 refusal lines on the live tree before
+	// this field absorbed the case. A gate this instrument never got the
+	// chance to judge cannot be scored unbacked for a claim it never had
+	// the opportunity to prove, so the claim counts as backed
+	// unconditionally.
+	//
+	// This is now a genuine three-way split over a zero-evidence window,
+	// not two: BACKED (BackedPatterns[pat], unaffected by any of this),
+	// UNBACKED-PROVEN (ProvenEmpty true, NoSubject false — the window is
+	// proven to read nothing, so an unmatched claim is a genuine false
+	// claim), and UNCLASSIFIED (NoSubject true — zero evidence, but at
+	// least one command the classifier does not recognise is present, so it
+	// cannot rule out an unmodelled read; the claim keeps the benefit of
+	// the doubt). Spec 09 §11 rejected collapsing the last two: keying off
+	// a recognised non-reading command's mere PRESENCE (existential
+	// quantification) is unsound, because a phase with a real hidden read
+	// through an unmodelled tool may also happen to invoke git or sort.
+	// windowProvenEmpty's own universal quantification is what makes
+	// ProvenEmpty sound instead.
 	NoSubject bool
 }
 
@@ -758,9 +790,9 @@ func heredocBodyLines(lines []string) map[int]bool {
 // warns against. Measured: without this distinction, 57 real corpus phases
 // and 11,754 refusal lines went red on the live tree — go-test, gofmt, vet,
 // golangci-lint among them — none of them a genuine false claim.
-func honestyForWindow(relPath string, allLines []string, startLine, endLine int, isGo bool, d Declaration) (refusals []Refusal, opaque bool, backed map[string]bool, hadEvidence bool, err error) {
+func honestyForWindow(relPath string, allLines []string, startLine, endLine int, isGo bool, d Declaration) (refusals []Refusal, opaque bool, backed map[string]bool, hadEvidence bool, provenEmpty bool, err error) {
 	if startLine < 1 || endLine < startLine || endLine > len(allLines) {
-		return nil, false, nil, false, fmt.Errorf("honesty check for %q: invalid scan window [%d,%d] in %s (file has %d lines)", d.Phase, startLine, endLine, relPath, len(allLines))
+		return nil, false, nil, false, false, fmt.Errorf("honesty check for %q: invalid scan window [%d,%d] in %s (file has %d lines)", d.Phase, startLine, endLine, relPath, len(allLines))
 	}
 	prefix := "#"
 	if isGo {
@@ -803,7 +835,7 @@ func honestyForWindow(relPath string, allLines []string, startLine, endLine int,
 
 	declared, _, oerr := findOpaqueDirective(allLines, startLine, endLine, prefix)
 	if oerr != nil {
-		return nil, false, nil, false, fmt.Errorf("%s: %w", relPath, oerr)
+		return nil, false, nil, false, false, fmt.Errorf("%s: %w", relPath, oerr)
 	}
 
 	// P1b's glob subsumption (capability b): a variable-built unresolved
@@ -844,7 +876,15 @@ func honestyForWindow(relPath string, allLines []string, startLine, endLine int,
 		}
 	}
 	hadEvidence = len(reads) > 0 || len(unresolved) > 0 || len(scopeGlobs) > 0 || len(subsumedPatterns) > 0
-	return refusals, declared, backed, hadEvidence, nil
+
+	// P1b's third capability (spec 09 §11): only worth asking when there is
+	// nothing ELSE to go on (hadEvidence false already means either a real
+	// read or a real refusal decides this window) and never for a Go arm —
+	// windowProvenEmpty's own two vocabularies describe shell syntax.
+	if !isGo && !hadEvidence {
+		provenEmpty = windowProvenEmpty(allLines, startLine, endLine, continuationLineSet(allLines), multilineQuoteStartLines(allLines), inHeredoc)
+	}
+	return refusals, declared, backed, hadEvidence, provenEmpty, nil
 }
 
 // subsumeUnresolved is P1b's capability (b) applied to one window's own
@@ -1019,6 +1059,554 @@ func scopeReadingInvocation(line string) (globs []string, ok bool) {
 	return nil, false
 }
 
+// ---------------------------------------------------------------------
+// P1b's third capability (spec 09 §11): proving a window EMPTY.
+//
+// The predicate this whole section models, in one checkable sentence:
+// does this invocation surface working-tree file CONTENT into the
+// script's own logic? D-11's read-shaped commands do (grep/cat/find/...);
+// a git subcommand backed by the object database/index/refs does not — it
+// returns commit metadata, path LISTINGS, or ref/config state, never a
+// blob's bytes — and a bash keyword/builtin manipulates shell state,
+// control flow or its own arguments, never a path operand. A window built
+// ENTIRELY from commands that satisfy this predicate, with no read and no
+// unresolved construct, genuinely reads nothing — PROVEN EMPTY — rather
+// than merely UNCLASSIFIED (zero evidence because the classifier has no
+// contract for the command shape at all, D-11's existing NoSubject case).
+//
+// This is UNIVERSAL quantification over every command-start token in the
+// window, never existential. Spec 09 §11 evaluated and REJECTED treating a
+// recognised non-reading command's mere PRESENCE as proof of emptiness —
+// unsound, because a phase with a real hidden read through an unmodelled
+// tool may also happen to invoke git or sort. One token this section does
+// not recognise, anywhere in the window, and the window stays
+// UNCLASSIFIED — the same precision-over-recall rule every other
+// extractor in this file already follows.
+// ---------------------------------------------------------------------
+
+// gitFlagsWithValue lists top-level git options that consume the NEXT
+// token as their own value ("git -C <dir> log ...") — skipping both is
+// what lets gitSubcommand reach the actual subcommand rather than
+// misreading the option's value as one.
+var gitFlagsWithValue = map[string]bool{
+	"-C": true, "-c": true, "--git-dir": true, "--work-tree": true,
+}
+
+// gitNonReadingSubcommands is a hand-typed ALLOWLIST, deliberately not
+// "every git subcommand" — the same over-an-external-toolchain shape
+// scopeReadingInvocation's own vocabulary already uses, for the same
+// reason: a stale entry costs a loud false UNCLASSIFIED (this list is only
+// ever consulted to PROVE emptiness, never to back a glob — spec 09 §11's
+// first rejected shortcut), never a silent false green.
+//
+// Every member here is verified, not assumed, against this corpus's own
+// real invocations (scripts/, Makefile): "log" is used only with
+// --format=... (commit metadata, never -p/--patch, which would print real
+// diff content); "status"/"tag"/"remote" are used only in --porcelain or
+// -l/get-url form; "add"/"commit"/"init"/"config"/"worktree" write or
+// configure state, they do not surface a blob's bytes back to the script.
+// Excluded ON PURPOSE, because each is used SOMEWHERE in this corpus to
+// print real file/blob content: "show", "cat-file", "grep", "diff"
+// (without --stat/--name-only), "blame" — adding any of them here without
+// separately auditing what the script does with the output would be
+// exactly the over-broad vocabulary spec 09 §11 warns against.
+var gitNonReadingSubcommands = map[string]bool{
+	"log": true, "ls-files": true, "ls-tree": true, "rev-parse": true,
+	"status": true, "branch": true, "tag": true, "remote": true,
+	"config": true, "init": true, "add": true, "commit": true,
+	"worktree": true, "check-ignore": true, "fetch": true, "rm": true,
+	"describe": true, "symbolic-ref": true,
+}
+
+// gitSubcommand returns the first token in args that names git's own
+// subcommand — the first token that is neither a flag nor a flag's own
+// value — or ok=false if args carries only flags (a bare "git --version"
+// or similar, which this vocabulary does not need to recognise).
+func gitSubcommand(args []string) (sub string, ok bool) {
+	skipNext := false
+	for _, a := range args {
+		if skipNext {
+			skipNext = false
+			continue
+		}
+		if strings.HasPrefix(a, "-") {
+			if gitFlagsWithValue[a] {
+				skipNext = true
+			}
+			continue
+		}
+		return a, true
+	}
+	return "", false
+}
+
+// bashBuiltinsAndKeywords is P1b's second vocabulary: shell control-flow
+// keywords and builtins that manipulate shell state, control flow, or
+// their own arguments — never a path operand read for its content.
+var bashBuiltinsAndKeywords = map[string]bool{
+	"if": true, "then": true, "else": true, "elif": true, "fi": true,
+	"for": true, "while": true, "until": true, "do": true, "done": true,
+	"case": true, "esac": true, "in": true, "function": true, "select": true,
+	"echo": true, "printf": true, "read": true, "local": true,
+	"declare": true, "export": true, "return": true, "exit": true,
+	"set": true, "shift": true, "trap": true, "cd": true, "pwd": true,
+	"true": true, "false": true, "break": true, "continue": true,
+	"eval": true, "exec": true, "wait": true, "unset": true,
+	"readonly": true, "type": true, "let": true,
+	"[": true, "[[": true, "test": true,
+	// "!" negates a pipeline's exit status (POSIX's own reserved word) —
+	// it reads nothing itself, so it belongs here as much as any other
+	// keyword. tokensPrecedingNewCommand's own doc comment covers what
+	// comes AFTER it (deliberately widened THERE, unlike scanLineForReads'
+	// shared boundaryTokens, which spec 09 §11 leaves alone on purpose).
+	"!": true,
+}
+
+// otherNonReadingCommands is a small, explicit, hand-typed set of external
+// (non-builtin) tools this corpus actually invokes whose contract is
+// unambiguously "creates", never "reads": mkdir makes a directory, mktemp
+// makes a new empty one. Neither opens an existing path to read its
+// bytes. Not "every external tool" — only the ones this section's own
+// teeth actually need, the same discipline gitNonReadingSubcommands
+// documents above.
+var otherNonReadingCommands = map[string]bool{"mkdir": true, "mktemp": true}
+
+// noOperandOnlyCommands is sort/cut: read-shaped-BY-NAME commands that are
+// confirmed non-reading ONLY when invoked with no non-flag positional
+// operand — "sort |" and "cut -f2-" are pure stdin filters in that exact
+// shape, but "sort file.txt" and "cut -f2 file.txt" read the named file
+// the moment one is given. This is the SAME operand discipline
+// candidatePaths already applies to head/tail (D-11's own contract): safe
+// only for the argument-less call, never merely by command name. "tr" is
+// NOT here — POSIX tr takes no file operand at all (stdin/stdout only), so
+// it is unconditionally safe and lives in bashBuiltinsAndKeywords'
+// sibling, otherNonReadingCommands, would be the wrong place too; it gets
+// its own entry below instead of a third near-identical map.
+var noOperandOnlyCommands = map[string]bool{"sort": true, "cut": true}
+
+// hasNonFlagOperand reports whether args carries any token that is not
+// itself a flag — deliberately blunt (it does not pair a flag with the
+// value it consumes, e.g. sort's "-k 2") because over-reporting "this has
+// an operand" only costs a missed proof, never a false one; the opposite
+// mistake would.
+func hasNonFlagOperand(args []string) bool {
+	for _, a := range args {
+		if !strings.HasPrefix(a, "-") {
+			return true
+		}
+	}
+	return false
+}
+
+// riskyBareWords vetoes ONE of this section's own heuristics — see its
+// call site in lineCommandsRecognized — for the small set of command
+// names whose presence, even in a shape that heuristic would otherwise
+// wave through, must instead go through their OWN precise recognition
+// path (inContractCommands, gitSubcommand) rather than a shortcut.
+var riskyBareWords = map[string]bool{
+	"grep": true, "cat": true, "find": true, "source": true, "wc": true,
+	"head": true, "tail": true, "sed": true, "awk": true,
+	"go": true, "git": true, "gofmt": true, "golangci-lint": true,
+	"show": true, "diff": true, "blame": true, "cat-file": true,
+}
+
+// assignmentTokenRe matches a shell assignment word ("NAME=value",
+// "NAME=" with the value fused on by tokenizeShellLine's own quote
+// handling, "NAME+=value" for append-assignment) at the START of a token
+// — a bare assignment is not a command invocation at all, so it never
+// needs recognition the way a command word does.
+var assignmentTokenRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*\+?=`)
+
+// riskyWordRe backs the whole-line and per-token assignment shortcuts in
+// lineCommandsRecognized (their own call sites have the full reasoning): a
+// whole-word match for any name this package's read-shaped vocabulary
+// (grep/cat/find/source/wc/head/tail/sed/awk), its scope-reading
+// vocabulary (go/gofmt/golangci-lint), or a content-revealing git
+// subcommand this section deliberately excluded (show/diff/blame/
+// cat-file) — deliberately \b-bounded so it matches a real word, not a
+// substring inside an unrelated identifier.
+//
+// "git" ITSELF is deliberately NOT in this list, unlike its sibling
+// riskyBareWords (which vetoes a much NARROWER, exact-token-match shortcut
+// and is safe to keep it in). A bare "git" substring is common and SAFE in
+// a fused assignment this corpus actually ships — release-notes-freshness's
+// own `anchor="$(git -C "$ROOT" log -1 --format=%H -- "$newest")"` and
+// `bad_commit="$(git -C "$tmp" rev-parse --short=12 HEAD)"` are exactly
+// this shape, and vetoing the shortcut on "git" alone forces them through
+// normal tokenization, where the WHOLE fused assignment is one opaque
+// token that can never be recognised (found by this capability's own
+// empirical run against the live tree: it silently cost the motivating
+// example itself). The actual risk "git" could hide — show/diff/blame/
+// cat-file dumping real blob content — is already caught by name, because
+// those four words are independently in THIS list.
+var riskyWordRe = regexp.MustCompile(`\b(?:grep|cat|find|source|wc|head|tail|sed|awk|go|gofmt|golangci-lint|show|diff|blame|cat-file)\b`)
+
+// lineAssignmentStartRe matches a line that OPENS with a shell assignment
+// ("NAME=..." / "NAME+=...", ignoring leading whitespace) — the whole-LINE
+// counterpart to assignmentTokenRe, for lineCommandsRecognized's own
+// shortcut.
+var lineAssignmentStartRe = regexp.MustCompile(`^\s*[A-Za-z_][A-Za-z0-9_]*\+?=`)
+
+// tokensPrecedingNewCommand answers, for THIS section's own atStart
+// (lineCommandsRecognized) only, "does a real command word begin right
+// after this token?" It has two members, deliberately kept apart from
+// scanLineForReads' shared boundaryTokens/atCommandStart:
+//
+//  1. boundaryTokens (isBoundaryToken) narrowed to the subset that
+//     actually STARTS a new command: ; | && || ( ) { } (the
+//     one-line-function-body addition boundaryTokens' own comment
+//     explains). A redirect operator (< > << >> <<<, with or without an
+//     fd prefix like "2>") is a boundary too — it correctly ends an
+//     argument list, isBoundaryToken's own purpose — but the token that
+//     FOLLOWS one is a redirect TARGET (a filename) or an fd number,
+//     never the start of a new command; verified against this corpus's
+//     own real invocations (`printf ... >"$path"`, `done <<< "$out"`)
+//     where an earlier draft misread the redirect target as an
+//     unrecognised command. A bare "&" is excluded too, deliberately: it
+//     means EITHER a background job (a real separator) or the
+//     fd-duplication marker in ">&2" (never one), and this tokenizer
+//     cannot tell the two apart from the token alone — treating it as
+//     non-introducing only ever costs a missed proof opportunity, never
+//     an unsound one.
+//
+//  2. "if"/"elif"/"while"/"until"/"!" — prefix keywords that introduce a
+//     REAL command right after them (`if grep ...; then`, `! grep ...`)
+//     without themselves being a boundary token at all. Spec 09 §11's
+//     own final paragraph names this exact gap in scanLineForReads'
+//     shared atCommandStart/boundaryTokens as deliberately NOT widened
+//     there — 51 previously-invisible reads across the corpus, a change
+//     with its own blast radius this brief does not ask for. That
+//     restraint is right for the EXISTING read extractor (missing an
+//     if-guarded read only means a true claim stays "no evidence",
+//     benign under NoSubject's benefit of the doubt) but is UNSOUND for
+//     this capability specifically: missing an if-guarded command here
+//     means windowProvenEmpty can call a window empty when it actually
+//     contains a real, unaccounted invocation — verified against this
+//     corpus's own roadmap-release-decisions.sh, whose two real, declared-
+//     glob-reading greps are BOTH `if`-guarded and would otherwise have
+//     produced exactly that false accusation. Widening THIS section's own
+//     local set costs nothing scanLineForReads' shared one would (no new
+//     refusal, no changed read count) — it only ever makes windowProvenEmpty
+//     MORE conservative.
+var tokensPrecedingNewCommand = map[string]bool{
+	";": true, "|": true, "&&": true, "||": true,
+	"(": true, ")": true, "{": true, "}": true,
+	"if": true, "elif": true, "while": true, "until": true, "!": true,
+}
+
+// commandArgs collects tokens[start:] up to (not including) the next
+// boundary token — the same argument-list shape candidatePaths' own
+// caller already builds inline in scanLineForReads, factored out here so
+// this section's git/sort/cut recognition can reuse it without
+// duplicating the boundary walk.
+func commandArgs(tokens []string, start int) (args []string, end int) {
+	j := start
+	for j < len(tokens) && !isBoundaryToken(tokens[j]) {
+		args = append(args, tokens[j])
+		j++
+	}
+	return args, j
+}
+
+// stripLineComment returns line truncated at the first unquoted,
+// unescaped "#" — a real shell comment starts there and everything after
+// it is prose, never a command this section needs to recognise. Quote
+// tracking is per-line only (tokenizeShellLine's own documented bound);
+// multilineQuoteStartLines separately excludes a line that OPENS inside a
+// quote carried over from an earlier line, so the two together cover both
+// directions.
+func stripLineComment(line string) string {
+	inSingle, inDouble := false, false
+	runes := []rune(line)
+	for i := 0; i < len(runes); i++ {
+		c := runes[i]
+		switch {
+		case inSingle:
+			if c == '\'' {
+				inSingle = false
+			}
+		case inDouble:
+			switch {
+			case c == '"':
+				inDouble = false
+			case c == '\\' && i+1 < len(runes):
+				i++
+			}
+		case c == '\\' && i+1 < len(runes):
+			i++
+		case c == '\'':
+			inSingle = true
+		case c == '"':
+			inDouble = true
+		case c == '#':
+			return string(runes[:i])
+		}
+	}
+	return line
+}
+
+// trailingBackslashContinues reports whether line ends in an ODD run of
+// backslashes — bash's own line-continuation rule (an escaped backslash,
+// "\\", ends the line for real; the run parity is what tells the two
+// apart). tokenizeShellLine's own doc comment already establishes that
+// this package deliberately does not splice a continued line into the
+// one before it; this is the corollary that follows from that choice: the
+// CONTINUED line's own first token can never be a real command start,
+// because bash would have spliced it onto the previous logical line
+// before parsing either one.
+func trailingBackslashContinues(line string) bool {
+	trimmed := strings.TrimRight(line, " \t")
+	n := 0
+	for i := len(trimmed) - 1; i >= 0 && trimmed[i] == '\\'; i-- {
+		n++
+	}
+	return n%2 == 1
+}
+
+// continuationLineSet returns, for the whole file, the 0-based indices of
+// every line whose immediately preceding line ends in a real line
+// continuation (trailingBackslashContinues) — computed once per file like
+// heredocBodyLines' own whole-file precomputation, and consulted the same
+// way.
+func continuationLineSet(lines []string) map[int]bool {
+	cont := map[int]bool{}
+	for i := 1; i < len(lines); i++ {
+		if trailingBackslashContinues(lines[i-1]) {
+			cont[i] = true
+		}
+	}
+	return cont
+}
+
+// multilineQuoteStartLines returns, for the whole file, the 0-based
+// indices of every line that BEGINS already inside a single- or
+// double-quoted string an EARLIER line opened and did not close — an
+// awk/sed program passed as one quoted argument that itself spans several
+// physical lines (this corpus's own latest_notes_file(), whose awk body's
+// "$2", "&&", "{" are AWK syntax, not shell, and would otherwise be
+// misread as a fresh, unrecognised shell command the moment "&&"
+// tokenizes as a boundary). tokenizeShellLine resets its own quote state
+// on every call — one line at a time, by design, the same documented
+// bound backslash-continuation already accepts — so this precomputation
+// exists specifically to give this section (and only this section; the
+// existing read extractor already tolerates the same lines silently, an
+// unrecognised token there was already scored "no read", never a false
+// one, so touching it would risk something nothing here asks it to)
+// cross-line quote state.
+func multilineQuoteStartLines(lines []string) map[int]bool {
+	startsOpen := map[int]bool{}
+	inSingle, inDouble := false, false
+	for i, line := range lines {
+		if inSingle || inDouble {
+			startsOpen[i] = true
+		}
+		runes := []rune(line)
+		for j := 0; j < len(runes); j++ {
+			c := runes[j]
+			switch {
+			case inSingle:
+				if c == '\'' {
+					inSingle = false
+				}
+			case inDouble:
+				switch {
+				case c == '"':
+					inDouble = false
+				case c == '\\' && j+1 < len(runes):
+					j++
+				}
+			case c == '\\' && j+1 < len(runes):
+				j++
+			case c == '\'':
+				inSingle = true
+			case c == '"':
+				inDouble = true
+			case c == '#':
+				// An UNQUOTED "#" starts a real shell comment to end of
+				// line — everything after it (this corpus's own prose is
+				// full of apostrophes: "it's", "gate's own", "doesn't")
+				// cannot open or close a real shell quote and must not be
+				// walked, or a stray apostrophe in a comment two hundred
+				// lines above corrupts this cross-line quote state for the
+				// rest of the file. Found by this capability's own first
+				// run against the live tree (scripts/verify.sh), which is
+				// exactly the empirical check advisor guidance #2 asked
+				// for: it proved "projection" and three other verify.sh
+				// phases falsely EMPTY before this fix, entirely because
+				// prose apostrophes upstream flipped inSingle.
+				j = len(runes)
+			}
+		}
+	}
+	return startsOpen
+}
+
+// collectFuncNames returns the set of function names ("name() {") defined
+// within lines[startLine-1:endLine] — the SAME window being scanned, never
+// wider. A bare word at a call site matching a name in this set is a
+// locally-defined function call whose own body this same window scan
+// already walks line-by-line; recognising the call site too does not
+// risk missing anything the window would not already have caught via the
+// function's OWN body, because that body sits inside the very same window.
+// A function defined OUTSIDE the window is never added here, so calling
+// one blocks the proof exactly as an unrecognised external command would.
+func collectFuncNames(lines []string, startLine, endLine int) map[string]bool {
+	names := map[string]bool{}
+	for i := startLine - 1; i < endLine && i < len(lines); i++ {
+		if i < 0 {
+			continue
+		}
+		if m := funcOpenRe.FindStringSubmatch(lines[i]); m != nil {
+			names[m[1]] = true
+		}
+	}
+	return names
+}
+
+// lineCommandsRecognized reports whether every command-start token on line
+// is accounted for: already covered by D-11's own read-shaped vocabulary
+// ("."/inContractCommands — this function does not re-derive their
+// evidence, only confirms it need not REFUSE them), a locally-defined
+// function call, an assignment, or one of this section's two confirmed
+// non-reading vocabularies (git, bash builtins/keywords) plus the two
+// small external-tool/no-operand additions above.
+func lineCommandsRecognized(line string, isContinuation bool, funcNames map[string]bool) bool {
+	scanLine := stripLineComment(line)
+	if rest, ok := strings.CutPrefix(scanLine, "\t"); ok {
+		scanLine = strings.TrimLeft(rest, "@-")
+	}
+
+	// A line that OPENS with a shell assignment is not itself invoking
+	// anything at its own start; whatever this section would need to
+	// recognise on its right-hand side is decided by the whole-line
+	// risky-word check, not by re-deriving exact token boundaries. This
+	// exists because tokenizeShellLine's own quote tracking is per-line
+	// and not aware of "$(...)" opening a FRESH quote context — verified
+	// against check-release-notes-freshness.sh's own
+	// `SCRIPT_ABS="$(cd "$(dirname ...)" && pwd)/..."`, a real, legal,
+	// common shape whose nested double quote flips tokenizeShellLine's
+	// flat quote state and fragments the assignment into tokens that do
+	// not start with "NAME=" — the exact shape assignmentTokenRe exists
+	// to recognise, and cannot when the tokenizer itself has already lost
+	// the boundary.
+	if lineAssignmentStartRe.MatchString(scanLine) && !riskyWordRe.MatchString(scanLine) {
+		return true
+	}
+
+	tokens := tokenizeShellLine(scanLine)
+	n := len(tokens)
+
+	atStart := func(i int) bool {
+		if i == 0 {
+			return !isContinuation
+		}
+		return tokensPrecedingNewCommand[tokens[i-1]]
+	}
+
+	for i := 0; i < n; i++ {
+		if !atStart(i) {
+			continue
+		}
+		tok := tokens[i]
+		if tok == "" || isBoundaryToken(tok) {
+			continue
+		}
+		// The SAME riskyWordRe veto the whole-line shortcut above applies —
+		// required here too, not merely redundant with it: a "NAME=$(...)"
+		// assignment with NO nested quote inside its own $(...) tokenizes
+		// as one clean token (no fragmentation), so the whole-line
+		// shortcut's own tokenizer-corruption rationale does not apply,
+		// but a risky command fused inside it ("X=$(grep foo bar.txt)")
+		// is just as real a read as one spelled out on its own line.
+		if assignmentTokenRe.MatchString(tok) && !riskyWordRe.MatchString(tok) {
+			continue
+		}
+		// A bare word directly terminated by "|" or ")" with no argument
+		// in between is, in every shape this corpus actually uses, a case
+		// statement's pattern label (`check)`, `feat: *|`) rather than a
+		// real invocation — riskyBareWords vetoes this shortcut for the
+		// small set of names whose own precise recognition path (right
+		// below) must decide instead, so this can never wave through a
+		// command this section actually knows to distrust.
+		if i+1 < n && (tokens[i+1] == "|" || tokens[i+1] == ")") && !riskyBareWords[tok] {
+			continue
+		}
+		if tok == "." || inContractCommands[tok] {
+			// Trusting "it's in D-11's own vocabulary, scanLineForReads
+			// already modelled it" is only sound when scanLineForReads'
+			// OWN (narrower, shared, deliberately NOT widened here —
+			// tokensPrecedingNewCommand's own doc comment) atCommandStart
+			// would ALSO have reached this exact position: i==0, or the
+			// token before it is a real isBoundaryToken. When it is
+			// reached ONLY via this section's own if/elif/while/until/!
+			// widening, scanLineForReads never saw this invocation at
+			// all — hadEvidence never reflects whatever it reads — so
+			// trusting it here would be trusting evidence nobody
+			// collected (roadmap-release-decisions.sh's own two
+			// `if grep ... "$file"` calls, found by this capability's
+			// own empirical run against the live tree, are exactly this
+			// shape). Independently confirm the call carries NO operand
+			// at all — literal or unresolved — before treating it as
+			// safe; any operand blocks the proof instead.
+			if i == 0 || isBoundaryToken(tokens[i-1]) {
+				continue
+			}
+			args, _ := commandArgs(tokens, i+1)
+			if len(candidatePaths(tok, args)) == 0 {
+				continue
+			}
+			return false
+		}
+		if funcNames[tok] {
+			continue
+		}
+		if bashBuiltinsAndKeywords[tok] || otherNonReadingCommands[tok] || tok == "tr" {
+			continue
+		}
+		if noOperandOnlyCommands[tok] {
+			args, _ := commandArgs(tokens, i+1)
+			if !hasNonFlagOperand(args) {
+				continue
+			}
+			return false
+		}
+		if tok == "git" {
+			args, _ := commandArgs(tokens, i+1)
+			if sub, ok := gitSubcommand(args); ok && gitNonReadingSubcommands[sub] {
+				continue
+			}
+			return false
+		}
+		return false
+	}
+	return true
+}
+
+// windowProvenEmpty is this capability's own top-level predicate: every
+// command-start token in lines[startLine-1:endLine] is accounted for
+// (lineCommandsRecognized), skipping heredoc bodies (inHeredoc, the same
+// precomputation honestyForWindow's own read scan already uses),
+// multi-line-quoted bodies (quoteSkip) and function DEFINITION lines
+// (funcOpenRe — the name there is declared, not invoked). It is never
+// asked to prove a Go window empty; see this section's own header comment
+// for why.
+func windowProvenEmpty(allLines []string, startLine, endLine int, contLines, quoteSkip, inHeredoc map[int]bool) bool {
+	funcNames := collectFuncNames(allLines, startLine, endLine)
+	for i := startLine - 1; i < endLine; i++ {
+		if inHeredoc[i] || quoteSkip[i] {
+			continue
+		}
+		line := allLines[i]
+		if funcOpenRe.MatchString(line) {
+			continue
+		}
+		if !lineCommandsRecognized(line, contLines[i], funcNames) {
+			return false
+		}
+	}
+	return true
+}
+
 // scriptForRecipe reports the script a Makefile recipe invokes via
 // `bash scripts/X.sh`, reusing makefile.go's own bashScriptCallRe rather
 // than a second regex for the same shape.
@@ -1136,11 +1724,11 @@ func honestyForMakePhase(root string, doc *makefileDoc, d Declaration) (refusals
 		if len(blocks) > 1 {
 			return nil, false, PhaseBacking{}, false, nil
 		}
-		r, declared, backed, hadEvidence, werr := honestyForWindow(script, lines, 1, len(lines), false, d)
+		r, declared, backed, hadEvidence, provenEmpty, werr := honestyForWindow(script, lines, 1, len(lines), false, d)
 		if werr != nil {
 			return nil, false, PhaseBacking{}, false, werr
 		}
-		return r, declared, PhaseBacking{BackedPatterns: backed, Opaque: declared, NoSubject: !hadEvidence}, true, nil
+		return r, declared, PhaseBacking{BackedPatterns: backed, Opaque: declared, ProvenEmpty: provenEmpty, NoSubject: !hadEvidence && !provenEmpty}, true, nil
 	}
 
 	startLine, sok := parseSourceLine(d.Source)
@@ -1148,11 +1736,11 @@ func honestyForMakePhase(root string, doc *makefileDoc, d Declaration) (refusals
 		return nil, false, PhaseBacking{}, false, fmt.Errorf("honesty check for %q: cannot parse declaration source %q", d.Phase, d.Source)
 	}
 	endLine := t.HeaderIdx + 1 + len(t.Recipe)
-	r, declared, backed, hadEvidence, werr := honestyForWindow("Makefile", doc.Lines, startLine, endLine, false, d)
+	r, declared, backed, hadEvidence, provenEmpty, werr := honestyForWindow("Makefile", doc.Lines, startLine, endLine, false, d)
 	if werr != nil {
 		return nil, false, PhaseBacking{}, false, werr
 	}
-	return r, declared, PhaseBacking{BackedPatterns: backed, Opaque: declared, NoSubject: !hadEvidence}, true, nil
+	return r, declared, PhaseBacking{BackedPatterns: backed, Opaque: declared, ProvenEmpty: provenEmpty, NoSubject: !hadEvidence && !provenEmpty}, true, nil
 }
 
 // honestyForVerifyPhase resolves d's scan region for a scripts/verify.sh
@@ -1203,11 +1791,11 @@ func honestyForVerifyPhase(root string, lines []string, p Phase, d Declaration) 
 		if !fok {
 			return nil, false, PhaseBacking{}, fmt.Errorf("honesty check for %q: function %s() not found in scripts/verify.sh", d.Phase, m[1])
 		}
-		r, declared, backed, hadEvidence, werr := honestyForWindow("scripts/verify.sh", lines, startLine, fnEnd, false, d)
+		r, declared, backed, hadEvidence, provenEmpty, werr := honestyForWindow("scripts/verify.sh", lines, startLine, fnEnd, false, d)
 		if werr != nil {
 			return nil, false, PhaseBacking{}, werr
 		}
-		return r, declared, PhaseBacking{BackedPatterns: backed, Opaque: declared, NoSubject: !hadEvidence}, nil
+		return r, declared, PhaseBacking{BackedPatterns: backed, Opaque: declared, ProvenEmpty: provenEmpty, NoSubject: !hadEvidence && !provenEmpty}, nil
 	}
 
 	callLine, cok := parseSourceLine(p.Source)
@@ -1215,12 +1803,12 @@ func honestyForVerifyPhase(root string, lines []string, p Phase, d Declaration) 
 		return nil, false, PhaseBacking{}, fmt.Errorf("honesty check for %q: cannot parse call site %q", d.Phase, p.Source)
 	}
 	var backed map[string]bool
-	var hadEvidence bool
-	refusals, opaque, backed, hadEvidence, err = honestyForWindow("scripts/verify.sh", lines, startLine, callLine, false, d)
+	var hadEvidence, provenEmpty bool
+	refusals, opaque, backed, hadEvidence, provenEmpty, err = honestyForWindow("scripts/verify.sh", lines, startLine, callLine, false, d)
 	if err != nil {
 		return nil, false, PhaseBacking{}, err
 	}
-	backing = PhaseBacking{BackedPatterns: backed, Opaque: opaque, NoSubject: !hadEvidence}
+	backing = PhaseBacking{BackedPatterns: backed, Opaque: opaque, ProvenEmpty: provenEmpty, NoSubject: !hadEvidence && !provenEmpty}
 
 	if callLine-1 >= 0 && callLine-1 < len(lines) {
 		if m := goRunFileRe.FindStringSubmatch(lines[callLine-1]); m != nil {
@@ -1231,8 +1819,14 @@ func honestyForVerifyPhase(root string, lines []string, p Phase, d Declaration) 
 			refusals = append(refusals, goRefusals...)
 			opaque = opaque || goOpaque
 			hadEvidence = hadEvidence || goHadEvidence
+			// A Go arm can never itself be proven empty (windowProvenEmpty's
+			// two vocabularies are shell-only, honestyForWindow's own guard
+			// above never sets it for isGo) — so its mere presence here
+			// vetoes the phase-wide claim, the same conservative choice this
+			// capability's own doc comment on PhaseBacking.ProvenEmpty names.
+			backing.ProvenEmpty = false
 			backing = mergeBacking(backing, goBacked, goOpaque)
-			backing.NoSubject = !hadEvidence
+			backing.NoSubject = !hadEvidence && !backing.ProvenEmpty
 		}
 	}
 
@@ -1264,15 +1858,22 @@ func honestyForVerifyPhase(root string, lines []string, p Phase, d Declaration) 
 		if m := runPhaseRe.FindStringSubmatch(lines[callLine-1]); m != nil {
 			cmdTok := strings.Trim(m[2], `"`)
 			if fnStart, fnEnd, fok := wrappingFunctionWindow(lines, d.Phase, cmdTok); fok {
-				fnRefusals, fnOpaque, fnBacked, fnHadEvidence, ferr := honestyForWindow("scripts/verify.sh", lines, fnStart, fnEnd, false, d)
+				fnRefusals, fnOpaque, fnBacked, fnHadEvidence, fnProvenEmpty, ferr := honestyForWindow("scripts/verify.sh", lines, fnStart, fnEnd, false, d)
 				if ferr != nil {
 					return nil, false, PhaseBacking{}, ferr
 				}
 				refusals = append(refusals, fnRefusals...)
 				opaque = opaque || fnOpaque
+				// provenEmpty (the first window's own value, captured above)
+				// ANDs with this second window's: the PHASE is proven empty
+				// only when EVERY window scanned for it is — the same
+				// universal quantification windowProvenEmpty itself applies
+				// within one window, one level up.
+				provenEmpty = provenEmpty && fnProvenEmpty
 				hadEvidence = hadEvidence || fnHadEvidence
+				backing.ProvenEmpty = provenEmpty
 				backing = mergeBacking(backing, fnBacked, fnOpaque)
-				backing.NoSubject = !hadEvidence
+				backing.NoSubject = !hadEvidence && !provenEmpty
 			}
 		}
 	}
@@ -1324,7 +1925,12 @@ func honestyForGoFile(root, relPath string, d Declaration) (refusals []Refusal, 
 		return nil, false, nil, false, fmt.Errorf("honesty check for %q: read %s: %w", d.Phase, relPath, rerr)
 	}
 	lines := strings.Split(string(raw), "\n")
-	return honestyForWindow(relPath, lines, 1, len(lines), true, d)
+	// discards windowProvenEmpty's own value (always false for isGo=true;
+	// see honestyForWindow's own guard) — this arm's signature predates
+	// P1b's third capability and a Go arm can never itself be proven empty,
+	// so there is nothing here for a caller to consult.
+	refusals, opaque, backed, hadEvidence, _, werr := honestyForWindow(relPath, lines, 1, len(lines), true, d)
+	return refusals, opaque, backed, hadEvidence, werr
 }
 
 // verifyFunctionBodyLines finds `name() {` (via verifysh.go's own
@@ -1481,6 +2087,17 @@ func UnbackedClaimCount(decls []Declaration, backing map[string]PhaseBacking) in
 // unresolved globs whose phase carries a lane-reads-opaque directive, bare
 // counts the ones that carry nothing. bare is the number this phase exists
 // to drive to zero; excused is the debt the US-5 ceiling bounds.
+//
+// A "!"-prefixed pattern (an exclusion) is skipped, matching its two
+// neighbours backedGlobs and subsumeUnresolved: neither of them can EVER
+// back an exclusion (Subsumes/MatchInputs are never asked to), so counting
+// one here as unbacked would be counting a claim the extractor was never
+// able to satisfy by construction — not a real debt, a bookkeeping
+// artefact. Before P1b's third capability this was masked for every phase
+// that also carried NoSubject (release-notes-freshness's own four
+// exclusions among them); ProvenEmpty unmasks it the moment NoSubject
+// turns false, so it is fixed here rather than shipped as a surprise
+// inflation of `bare`.
 func UnbackedClaimSplit(decls []Declaration, backing map[string]PhaseBacking) (excused, bare int) {
 	for _, d := range decls {
 		patterns := declarationPatterns(d)
@@ -1492,6 +2109,9 @@ func UnbackedClaimSplit(decls []Declaration, backing map[string]PhaseBacking) (e
 			continue
 		}
 		for _, pat := range patterns {
+			if strings.HasPrefix(pat, "!") {
+				continue
+			}
 			if pb.BackedPatterns[pat] {
 				continue
 			}
