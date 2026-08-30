@@ -35,7 +35,403 @@ linters:
     - nakedret
     - nilerr
     - nolintlint
+    - depguard
   settings:
+    # depguard — ADR-023 (docs/decisions.md) supersedes ADR-001's "May
+    # import" column: this is now the single MACHINE-ENFORCED home for the
+    # internal/ import boundary; ADR-001's column survives as historical
+    # record, renamed to point here. One rule per internal/ package (plus
+    # internal/agentprompt and internal/viewvocab, which ADR-001 never rowed),
+    # `list-mode: strict` (deny unless allowed — an omitted entry is a
+    # refusal, not a gap), `files: ["**/internal/<pkg>/*.go", "!$test"]` so
+    # a package's own test files are exempt (scripts/check-cross-layer-test-
+    # import-ceiling.sh separately ceilings that exemption; see its own
+    # header for why a hand-typed exclusion is not this repo's shape).
+    # $gostd covers the standard library; every other entry is either a
+    # third-party module (mirroring ADR-002's approved set, or named as a
+    # deviation where it is not — see internal-html below) or an exact-
+    # matched (trailing `$`) internal/ package. The `$` suffix is load-
+    # bearing: several package names are string-prefixes of a sibling
+    # (internal/operation ⊂ internal/operational ⊂
+    # internal/operationalsource; internal/contract ⊂
+    # internal/contractwiring; internal/space ⊂ internal/spacenotify) and
+    # depguard's own allow-matching is prefix-based without it.
+    #
+    # This config is the RECONCILED graph, not a transcription of ADR-001's
+    # per-row data — 13 of its 22 internal/ rows had drifted from the code
+    # (6 pure stale grants, pruned below; the rest either name a package
+    # ADR-001 predates, granted here, or reverse a declared edge that the
+    # code never built, corrected here). scripts/check-import-rule-
+    # coverage.sh is the separate, permanent check for the half depguard
+    # cannot see for itself: a rule with no corresponding row, and an allow
+    # entry no file actually uses.
+    depguard:
+      rules:
+        internal-artifact:
+          files:
+            - "**/internal/artifact/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/oklog/ulid/v2
+            - gopkg.in/yaml.v3
+        internal-schema:
+          files:
+            - "**/internal/schema/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/santhosh-tekuri/jsonschema/v6
+            - github.com/santhosh-tekuri/jsonschema/v6/kind
+            - github.com/ydnikolaev/a2ahub/schemas
+            - gopkg.in/yaml.v3
+        internal-fold:
+          files:
+            - "**/internal/fold/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/ydnikolaev/a2ahub/internal/artifact$
+        internal-sensitive:
+          files:
+            - "**/internal/sensitive/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+        internal-validate:
+          files:
+            - "**/internal/validate/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/ydnikolaev/a2ahub/schemas
+            - gopkg.in/yaml.v3
+            - github.com/ydnikolaev/a2ahub/internal/artifact$
+            - github.com/ydnikolaev/a2ahub/internal/contract$
+            - github.com/ydnikolaev/a2ahub/internal/fold$
+            - github.com/ydnikolaev/a2ahub/internal/provenance$
+            - github.com/ydnikolaev/a2ahub/internal/schema$
+            - github.com/ydnikolaev/a2ahub/internal/sensitive$
+            - github.com/ydnikolaev/a2ahub/internal/version$
+        internal-workreport:
+          files:
+            - "**/internal/workreport/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/ydnikolaev/a2ahub/internal/operation$
+            - github.com/ydnikolaev/a2ahub/internal/provenance$
+        internal-operational:
+          files:
+            - "**/internal/operational/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/ydnikolaev/a2ahub/internal/sensitive$
+            - github.com/ydnikolaev/a2ahub/internal/workreport$
+        internal-contract:
+          files:
+            - "**/internal/contract/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - gopkg.in/yaml.v3
+            - github.com/ydnikolaev/a2ahub/internal/artifact$
+            - github.com/ydnikolaev/a2ahub/internal/operation$
+            - github.com/ydnikolaev/a2ahub/internal/version$
+        internal-host:
+          files:
+            - "**/internal/host/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/ydnikolaev/a2ahub/internal/ghauth$
+        internal-space:
+          files:
+            - "**/internal/space/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/ydnikolaev/a2ahub/schemas
+            - golang.org/x/sys/unix
+            - gopkg.in/yaml.v3
+            - github.com/ydnikolaev/a2ahub/internal/artifact$
+            - github.com/ydnikolaev/a2ahub/internal/contract$
+            - github.com/ydnikolaev/a2ahub/internal/datatransport$
+            - github.com/ydnikolaev/a2ahub/internal/fold$
+            - github.com/ydnikolaev/a2ahub/internal/ghauth$
+            - github.com/ydnikolaev/a2ahub/internal/host$
+            - github.com/ydnikolaev/a2ahub/internal/operation$
+            - github.com/ydnikolaev/a2ahub/internal/version$
+            - github.com/ydnikolaev/a2ahub/internal/workreport$
+        internal-datatransport:
+          files:
+            - "**/internal/datatransport/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/ydnikolaev/a2ahub/internal/datapackage$
+        internal-datapackage:
+          files:
+            - "**/internal/datapackage/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - golang.org/x/sys/unix
+            - gopkg.in/yaml.v3
+            - github.com/ydnikolaev/a2ahub/internal/artifact$
+            - github.com/ydnikolaev/a2ahub/internal/schema$
+        internal-cache:
+          files:
+            - "**/internal/cache/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - gopkg.in/yaml.v3
+            - github.com/ydnikolaev/a2ahub/internal/artifact$
+            - github.com/ydnikolaev/a2ahub/internal/avatar$
+            - github.com/ydnikolaev/a2ahub/internal/contract$
+            - github.com/ydnikolaev/a2ahub/internal/datapackage$
+            - github.com/ydnikolaev/a2ahub/internal/fold$
+            - github.com/ydnikolaev/a2ahub/internal/host$
+            - github.com/ydnikolaev/a2ahub/internal/notes$
+            - github.com/ydnikolaev/a2ahub/internal/pendency$
+            - github.com/ydnikolaev/a2ahub/internal/provenance$
+            - github.com/ydnikolaev/a2ahub/internal/release$
+            - github.com/ydnikolaev/a2ahub/internal/schema$
+            - github.com/ydnikolaev/a2ahub/internal/sensitive$
+            - github.com/ydnikolaev/a2ahub/internal/space$
+            - github.com/ydnikolaev/a2ahub/internal/version$
+            - github.com/ydnikolaev/a2ahub/internal/workreport$
+        internal-template:
+          files:
+            - "**/internal/template/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/ydnikolaev/a2ahub/schemas
+            - gopkg.in/yaml.v3
+            - github.com/ydnikolaev/a2ahub/internal/artifact$
+            - github.com/ydnikolaev/a2ahub/internal/schema$
+            - github.com/ydnikolaev/a2ahub/internal/space$
+        internal-notes:
+          files:
+            - "**/internal/notes/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - gopkg.in/yaml.v3
+            - github.com/ydnikolaev/a2ahub/internal/release$
+            - github.com/ydnikolaev/a2ahub/internal/schema$
+            - github.com/ydnikolaev/a2ahub/internal/version$
+        internal-surface:
+          files:
+            - "**/internal/surface/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+        internal-notification:
+          files:
+            - "**/internal/notification/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/ydnikolaev/a2ahub/internal/artifact$
+            - github.com/ydnikolaev/a2ahub/internal/cache$
+            - github.com/ydnikolaev/a2ahub/internal/space$
+        internal-contractwiring:
+          files:
+            - "**/internal/contractwiring/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - gopkg.in/yaml.v3
+            - github.com/ydnikolaev/a2ahub/internal/artifact$
+            - github.com/ydnikolaev/a2ahub/internal/cache$
+            - github.com/ydnikolaev/a2ahub/internal/contract$
+            - github.com/ydnikolaev/a2ahub/internal/fold$
+            - github.com/ydnikolaev/a2ahub/internal/host$
+            - github.com/ydnikolaev/a2ahub/internal/space$
+            - github.com/ydnikolaev/a2ahub/internal/template$
+            - github.com/ydnikolaev/a2ahub/internal/validate$
+        internal-cli:
+          files:
+            - "**/internal/cli/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/ydnikolaev/a2ahub/releasenotes
+            - github.com/ydnikolaev/a2ahub/schemas
+            - github.com/ydnikolaev/a2ahub/skill
+            - gopkg.in/yaml.v3
+            - github.com/ydnikolaev/a2ahub/internal/agentid$
+            - github.com/ydnikolaev/a2ahub/internal/artifact$
+            - github.com/ydnikolaev/a2ahub/internal/cache$
+            - github.com/ydnikolaev/a2ahub/internal/contract$
+            - github.com/ydnikolaev/a2ahub/internal/datapackage$
+            - github.com/ydnikolaev/a2ahub/internal/feedback$
+            - github.com/ydnikolaev/a2ahub/internal/fold$
+            - github.com/ydnikolaev/a2ahub/internal/ghauth$
+            - github.com/ydnikolaev/a2ahub/internal/host$
+            - github.com/ydnikolaev/a2ahub/internal/html$
+            - github.com/ydnikolaev/a2ahub/internal/localserver$
+            - github.com/ydnikolaev/a2ahub/internal/notes$
+            - github.com/ydnikolaev/a2ahub/internal/notification$
+            - github.com/ydnikolaev/a2ahub/internal/operation$
+            - github.com/ydnikolaev/a2ahub/internal/operational$
+            - github.com/ydnikolaev/a2ahub/internal/release$
+            - github.com/ydnikolaev/a2ahub/internal/schema$
+            - github.com/ydnikolaev/a2ahub/internal/skillcoverage$
+            - github.com/ydnikolaev/a2ahub/internal/space$
+            - github.com/ydnikolaev/a2ahub/internal/spacenotify$
+            - github.com/ydnikolaev/a2ahub/internal/surface$
+            - github.com/ydnikolaev/a2ahub/internal/template$
+            - github.com/ydnikolaev/a2ahub/internal/validate$
+            - github.com/ydnikolaev/a2ahub/internal/version$
+            - github.com/ydnikolaev/a2ahub/internal/workcheckpoint$
+            - github.com/ydnikolaev/a2ahub/internal/workreport$
+        internal-mcp:
+          files:
+            - "**/internal/mcp/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/ydnikolaev/a2ahub/releasenotes
+            - github.com/ydnikolaev/a2ahub/skill
+            - gopkg.in/yaml.v3
+            - github.com/ydnikolaev/a2ahub/internal/agentid$
+            - github.com/ydnikolaev/a2ahub/internal/artifact$
+            - github.com/ydnikolaev/a2ahub/internal/cache$
+            - github.com/ydnikolaev/a2ahub/internal/contract$
+            - github.com/ydnikolaev/a2ahub/internal/datapackage$
+            - github.com/ydnikolaev/a2ahub/internal/fold$
+            - github.com/ydnikolaev/a2ahub/internal/host$
+            - github.com/ydnikolaev/a2ahub/internal/notes$
+            - github.com/ydnikolaev/a2ahub/internal/operation$
+            - github.com/ydnikolaev/a2ahub/internal/release$
+            - github.com/ydnikolaev/a2ahub/internal/schema$
+            - github.com/ydnikolaev/a2ahub/internal/space$
+            - github.com/ydnikolaev/a2ahub/internal/template$
+            - github.com/ydnikolaev/a2ahub/internal/validate$
+            - github.com/ydnikolaev/a2ahub/internal/version$
+            - github.com/ydnikolaev/a2ahub/internal/workreport$
+          deny:
+            - pkg: github.com/ydnikolaev/a2ahub/internal/cli$
+              desc: >-
+                ADR-023 supersedes ADR-001's mcp cell: the forbidden package, never an allowed one — see docs/decisions.md
+        internal-html:
+          files:
+            - "**/internal/html/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/ydnikolaev/a2ahub/releasenotes
+            - github.com/ydnikolaev/a2ahub/skill
+            - github.com/yuin/goldmark
+            - github.com/yuin/goldmark/ast
+            - github.com/yuin/goldmark/extension
+            - github.com/yuin/goldmark/parser
+            - github.com/yuin/goldmark/renderer
+            - github.com/yuin/goldmark/text
+            - github.com/yuin/goldmark/util
+            - gopkg.in/yaml.v3
+            - github.com/ydnikolaev/a2ahub/internal/agentprompt$
+            - github.com/ydnikolaev/a2ahub/internal/artifact$
+            - github.com/ydnikolaev/a2ahub/internal/cache$
+            - github.com/ydnikolaev/a2ahub/internal/contract$
+            - github.com/ydnikolaev/a2ahub/internal/datapackage$
+            - github.com/ydnikolaev/a2ahub/internal/fold$
+            - github.com/ydnikolaev/a2ahub/internal/notes$
+            - github.com/ydnikolaev/a2ahub/internal/operational$
+            - github.com/ydnikolaev/a2ahub/internal/provenance$
+            - github.com/ydnikolaev/a2ahub/internal/space$
+            - github.com/ydnikolaev/a2ahub/internal/viewvocab$
+            - github.com/ydnikolaev/a2ahub/internal/workreport$
+        internal-localserver:
+          files:
+            - "**/internal/localserver/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/ydnikolaev/a2ahub/internal/operational$
+        internal-agentprompt:
+          files:
+            - "**/internal/agentprompt/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/ydnikolaev/a2ahub/internal/fold$
+        internal-viewvocab:
+          files:
+            - "**/internal/viewvocab/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+        # The never-built validator-backlog:478 rule, now built: ADR-001's
+        # Rules paragraph states "core packages never import cli/mcp/
+        # localserver" as a RULE, not a per-row fact, and nothing enforced
+        # the DIRECTION before this — internal-cli/internal-mcp/internal-
+        # localserver above each enumerate what THAT package may import,
+        # but say nothing about who may import THEM. The 2026-08-18
+        # internal/contractwiring inversion (three cli.New*Adapter calls
+        # carried down into a package below cli) is what found the hole;
+        # `internal/livee2e/templateplanner.go` was HEAD's one live
+        # instance (fixed by this same phase, now importing internal/
+        # template directly instead). Lax mode (deny-only) rather than a
+        # 19-package enumeration: every internal/ file except cli's, mcp's,
+        # localserver's own and internal/livee2e's build-tagged `_live.go`
+        # scenario drivers (the one legitimate exception — they exist to
+        # drive the real binary in-process under `//go:build livee2e`) is
+        # denied these three imports outright.
+        internal-frontend-boundary:
+          files:
+            - "**/internal/**/*.go"
+            - "!$test"
+            - "!**/internal/cli/**"
+            - "!**/internal/mcp/**"
+            - "!**/internal/localserver/**"
+            - "!**/internal/livee2e/*_live.go"
+          list-mode: lax
+          deny:
+            - pkg: github.com/ydnikolaev/a2ahub/internal/cli$
+              desc: >-
+                core packages never import internal/cli (ADR-001's Rules
+                paragraph; ADR-023 makes it machine-enforced) — DI belongs
+                at cmd/a2a, never below.
+            - pkg: github.com/ydnikolaev/a2ahub/internal/mcp$
+              desc: >-
+                core packages never import internal/mcp (ADR-001's Rules
+                paragraph; ADR-023 makes it machine-enforced).
+            - pkg: github.com/ydnikolaev/a2ahub/internal/localserver$
+              desc: >-
+                core packages never import internal/localserver (ADR-001's
+                Rules paragraph; ADR-023 makes it machine-enforced) —
+                localserver is the sole loopback HTTP exception, never a
+                dependency of something below it.
     govet:
       enable-all: true
       disable: [fieldalignment, shadow]

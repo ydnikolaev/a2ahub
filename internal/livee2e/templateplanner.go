@@ -1,30 +1,37 @@
 package livee2e
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 
-	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
+	"github.com/ydnikolaev/a2ahub/internal/template"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
 )
 
 // templateplanner.go wires universe 3 (answers-that-hold-2026-08 spec 10
 // §"The input universes", row 3) to the previewing->acting assertion shape:
-// the template roster (`a2a template list --json`, the binary's own
-// answer, driven IN-PROCESS via internal/cli — this file is deliberately
-// UNTAGGED, unlike the //go:build livee2e scenario files that already
-// import internal/cli, so it runs on every `go test ./internal/livee2e/...`
-// with no built binary and no per-run `go build`) crossed against the
-// publication PLANNER (validate.CheckContractDescriptorShape — the same
-// floor-aware rule `a2a contract preflight` and the merge gate both run,
-// per its own doc comment: "the space's own publication planner"). Not
-// docs<->template, which internal/e2e's TestAuthoringPagesMatchTheTemplatesTheyDocument
-// already covers (spec 10: "nothing compares template<->planner, which is
-// the pair that defect actually needed").
+// the template roster (`a2a template list --json` / `a2a template show
+// <type>`'s own underlying answer, driven IN-PROCESS via internal/template
+// — the exact functions internal/cli's TemplateCommand.Run itself calls,
+// skipping only the flag-parsing/JSON-encoding layer around them — so this
+// file runs on every `go test ./internal/livee2e/...` with no built binary
+// and no per-run `go build`) crossed against the publication PLANNER
+// (validate.CheckContractDescriptorShape — the same floor-aware rule `a2a
+// contract preflight` and the merge gate both run, per its own doc comment:
+// "the space's own publication planner"). Not docs<->template, which
+// internal/e2e's TestAuthoringPagesMatchTheTemplatesTheyDocument already
+// covers (spec 10: "nothing compares template<->planner, which is the pair
+// that defect actually needed").
+//
+// This file used to drive `a2a template list --json` / `a2a template show`
+// through internal/cli's own TemplateCommand — a real cross-layer import
+// the never-built validator-backlog:478 rule (ADR-001's Rules paragraph:
+// "core packages never import cli") caught once ADR-023 built it
+// (docs/decisions.md). internal/template.Types/AuthoringEnvelopeSchema/
+// ShowGeneration are the identical call sites TemplateCommand.Run reaches
+// for "list"/"show" — this is still the binary's own answer, one layer
+// closer to its source, not a second hand-written roster.
 //
 // Which roster rows carry a planner comparand at all is DERIVED, never a
 // template-name list (AC-14): a row is in scope only if its own preview
@@ -48,35 +55,32 @@ type templateRosterEntry struct {
 	ShowBytes      []byte
 }
 
-// liveTemplateRosterEntries drives `a2a template list --json` and
-// `a2a template show <type>` IN-PROCESS (TemplateCommand.Run, the same
-// entry point internal/cli/cmd_new_test.go's own template tests use) — the
-// binary's own answer, never a second hand-written roster.
-func liveTemplateRosterEntries(ctx context.Context) ([]templateRosterEntry, error) {
-	cmd := cli.NewTemplateCommand()
-
-	var listOut bytes.Buffer
-	if code := cmd.Run(ctx, []string{"list", "--json"}, cli.IO{Stdout: &listOut, Stderr: io.Discard}); code != 0 {
-		return nil, fmt.Errorf("a2a template list --json: exit %d", code)
-	}
-	var rows []struct {
-		Type           string `json:"type"`
-		EnvelopeSchema string `json:"envelope_schema"`
-	}
-	if err := json.Unmarshal(listOut.Bytes(), &rows); err != nil {
-		return nil, fmt.Errorf("a2a template list --json: decode: %w", err)
-	}
-
-	entries := make([]templateRosterEntry, 0, len(rows))
-	for _, row := range rows {
-		var showOut bytes.Buffer
-		if code := cmd.Run(ctx, []string{"show", row.Type}, cli.IO{Stdout: &showOut, Stderr: io.Discard}); code != 0 {
-			return nil, fmt.Errorf("a2a template show %s: exit %d", row.Type, code)
+// liveTemplateRosterEntries drives the same underlying calls `a2a template
+// list --json` / `a2a template show <type>` make (template.Types,
+// template.AuthoringEnvelopeSchema, template.ShowGeneration — internal/cli's
+// TemplateCommand.Run's own call sites) directly, IN-PROCESS — the binary's
+// own answer, never a second hand-written roster, and never a cross-layer
+// import of internal/cli itself (see this file's header).
+//
+// ctx is accepted for symmetry with the rest of this package's production
+// callers, none of which this function's own reads (an embedded FS walk)
+// need to cancel.
+func liveTemplateRosterEntries(_ context.Context) ([]templateRosterEntry, error) {
+	types := template.Types()
+	entries := make([]templateRosterEntry, 0, len(types))
+	for _, typ := range types {
+		envelopeSchema, err := template.AuthoringEnvelopeSchema(typ, validate.IsJSONSchemaFormat)
+		if err != nil {
+			return nil, fmt.Errorf("template.AuthoringEnvelopeSchema(%s): %w", typ, err)
+		}
+		showBytes, err := template.ShowGeneration(typ, "", validate.IsJSONSchemaFormat)
+		if err != nil {
+			return nil, fmt.Errorf("template.ShowGeneration(%s): %w", typ, err)
 		}
 		entries = append(entries, templateRosterEntry{
-			Type:           row.Type,
-			EnvelopeSchema: row.EnvelopeSchema,
-			ShowBytes:      append([]byte(nil), showOut.Bytes()...),
+			Type:           typ,
+			EnvelopeSchema: envelopeSchema,
+			ShowBytes:      append([]byte(nil), showBytes...),
 		})
 	}
 	return entries, nil

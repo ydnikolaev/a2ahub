@@ -106,6 +106,8 @@ scripts/*
 !scripts/check-deadcode-ceiling.sh
 !scripts/check-discard-ceiling.sh
 !scripts/check-vocabulary-carriers.sh
+!scripts/check-cross-layer-test-import-ceiling.sh
+!scripts/check-import-rule-coverage.sh
 !scripts/check-release-note-detect.sh
 !scripts/check-error-codes.sh
 !scripts/check-frozen-allowlist.sh
@@ -127,6 +129,7 @@ scripts/lib/*
 !scripts/lib/deadcode-ceiling.txt
 !scripts/lib/discard-ceiling.txt
 !scripts/lib/vocabulary-carrier-ceiling.txt
+!scripts/lib/cross-layer-test-import-ceiling.txt
 !scripts/lib/job-timeouts.tsv
 !scripts/lib/ci-usage-window.json
 !scripts/lib/gate-lib.sh
@@ -146,6 +149,7 @@ scripts/tests/*
 !scripts/tests/check_loop_reachability_test.sh
 !scripts/tests/check_loop_coverage_test.sh
 !scripts/tests/classify_guard_test.sh
+!scripts/tests/check_skill_citations_test.sh
 !scripts/tests/check_render_ledger_test.sh
 !scripts/tests/check_usage_workflow_test.sh
 !scripts/releasebody/
