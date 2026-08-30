@@ -202,6 +202,12 @@ changes:
     the bundle asks you to pick it at install time. If your host gives the
     server a working directory — Claude Code, Codex, dsh all do — you never
     need this.
+
+    That variable is CHECKED rather than trusted, because its value arrives
+    from a prompt: a relative path, a path that is not there, or a file where a
+    directory belongs is refused BY NAME at startup. The alternative is the
+    failure this paragraph exists to remove — a server that starts and then
+    reports a missing config file under a path you never typed.
   affects:
   - cli
   - mcp
