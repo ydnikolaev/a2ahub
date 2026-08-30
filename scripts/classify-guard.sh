@@ -119,6 +119,12 @@ PUBLIC_VALIDATOR_FILES=(
   # `skill/`'s shipped content. A private gate over public artifacts is
   # skipped in every public checkout, which is the class check 4 refuses.
   scripts/check-plugin-manifests.sh
+  # Its teeth ship with it, per the rule strip-set.txt states for every other
+  # public validator: a tooth is public because ITS GATE is. HARNESS_TEETH
+  # names this file, so stripping it makes `make harness-check` report
+  # rostered-but-absent in every public checkout — the gate-vanishes-in-public
+  # class, one level up.
+  scripts/tests/check_plugin_manifests_test.sh
   scripts/check-mcp-schema-decodable.sh
   # answers-that-hold-2026-08 P4/P13. PUBLIC for the same reason the two above
   # are: their inputs are SHIPPED code (internal/cli/**, releasenotes/**), the
