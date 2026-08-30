@@ -68,6 +68,26 @@ type WorkCommandDeps struct {
 // WorkCommand is the thin `a2a work <action>` transport.
 type WorkCommand struct{ deps WorkCommandDeps }
 
+// work status exit-code vocabulary (P4, computed-not-listed-2026-08 spec 04
+// §"three states"). Two exit-code values cannot carry three states, so
+// "measured, here is a recorded objection" and "the check did not run" get
+// distinct codes rather than sharing the generic error return:
+//   - 0 (unconditional Go zero value): clean — every lease measured, nothing
+//     recorded.
+//   - workStatusExitObjections: MEASURED — at least one lease's pending
+//     shared write carries a recorded LastErrorCode. This is validate's
+//     "objections" state, never "unmeasured".
+//   - workStatusExitUnmeasured: the lease store itself could not be read
+//     (ListWork returned an error), so no lease's state was measured at
+//     all — validate.SeverityUnmeasured's process-level meaning, never read
+//     as "clean" just because the resulting listing is empty. Reported to
+//     the registry author (schemas/verdict-exit-codes.yaml) for
+//     reconciliation; this file does not edit that registry.
+const (
+	workStatusExitObjections = 1
+	workStatusExitUnmeasured = 3
+)
+
 // NewWorkCommand constructs the work command and refuses incomplete DI.
 func NewWorkCommand(deps WorkCommandDeps) (*WorkCommand, error) {
 	if deps.Starter == nil || deps.Progressor == nil || deps.Local == nil || deps.Reader == nil || deps.ResolveActor == nil {
@@ -302,8 +322,14 @@ func (c *WorkCommand) runStatus(ctx context.Context, args []string, stdio IO) in
 		renderWorkStatusHuman(stdio, output)
 	}
 	if err != nil {
+		// The store itself could not be read: no lease was measured, so this
+		// is the distinct "could not measure" exit code, never the same
+		// value a clean run or a recorded objection would use.
 		_, _ = fmt.Fprintf(stdio.Stderr, "work status: %v\n", err)
-		return 1
+		return workStatusExitUnmeasured
+	}
+	if output.hasRecordedError() {
+		return workStatusExitObjections
 	}
 	return 0
 }
@@ -487,6 +513,19 @@ type workStatusShared struct {
 	ErrorCode   string                 `json:"error_code,omitempty"`
 }
 
+// hasRecordedError reports whether any item's pending shared write carries a
+// LastErrorCode — a MEASURED objection (spec 04 row 4: "a pending shared
+// write carrying LastErrorCode must reach... the exit code"), distinct from
+// the case where ListWork itself failed to read the store.
+func (o workStatusOutput) hasRecordedError() bool {
+	for _, item := range o.Items {
+		if item.Pending != nil && item.Pending.LastErrorCode != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func workStatusFrom(leases []workreport.Lease) workStatusOutput {
 	items := make([]workStatusItem, 0, len(leases))
 	for _, lease := range leases {
@@ -523,6 +562,17 @@ func renderWorkStatusHuman(stdio IO, output workStatusOutput) {
 	for _, item := range output.Items {
 		_, _ = fmt.Fprintf(stdio.Stdout, "%s %s mode=%s thread=%s expires_at=%s closing=%t summary=%s\n",
 			item.WorkID, item.Session, item.Mode, item.Thread, item.ExpiresAt.Format(time.RFC3339), item.Closing, item.Summary)
+		if item.Pending != nil {
+			// Row 4: a pending shared write, and its LastErrorCode when
+			// recorded, must reach the human render — never silent on this
+			// path while the JSON path already carries it via
+			// workPendingStatus.
+			_, _ = fmt.Fprintf(stdio.Stdout, "  pending: op=%s action=%s", item.Pending.OperationKey, item.Pending.Action)
+			if item.Pending.LastErrorCode != "" {
+				_, _ = fmt.Fprintf(stdio.Stdout, " last_error_code=%s", item.Pending.LastErrorCode)
+			}
+			_, _ = fmt.Fprintln(stdio.Stdout)
+		}
 	}
 }
 

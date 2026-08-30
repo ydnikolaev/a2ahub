@@ -306,11 +306,28 @@ func ParseVerdicts(raw []byte) ([]Verdict, error) {
 	return doc.Verdicts, nil
 }
 
-// ApplyResult reports what ApplyVerdicts actually did, per id.
+// ApplyResult reports what ApplyVerdicts actually did, per id. Three
+// distinct non-applied outcomes are kept in three distinct fields — never
+// merged into one "skipped" bucket — because they mean different things to
+// the caller (P4, computed-not-listed-2026-08 spec 04 §8 row 3; AGENTS.md
+// anti-pattern table row 22, "a skipped element reads as a rejected one"):
+// Refused is a REAL record the verb declined to re-touch (not a mistake),
+// UnknownID is very often the caller's own typo, and WipLimitHit is a
+// backlog-capacity brake.
 type ApplyResult struct {
-	Applied     []string
-	Skipped     []string // already-triaged (idempotent no-op) or unknown id
-	WipLimitHit []string // accepted verdict refused: feedback/backlog.yaml is at wip_limit
+	Applied []string
+	// Refused names verdicts for an id that DOES exist in the inbox but
+	// whose status is no longer "new" — already triaged by a prior run.
+	// This is ApplyVerdicts' idempotency guarantee working as designed: an
+	// idempotent no-op, never re-mutated or re-digested, and NOT a mistake.
+	Refused []string
+	// UnknownID names verdicts for an id with NO matching inbox record at
+	// all — most often a typo in the verdicts file, and the caller's own
+	// mistake rather than anything ApplyVerdicts declined to do.
+	UnknownID []string
+	// WipLimitHit names "accepted" verdicts refused because
+	// feedback/backlog.yaml is already at wip_limit.
+	WipLimitHit []string
 }
 
 // validVerdictStatuses is the closed set a triage verdict may assign — the
@@ -367,8 +384,12 @@ func ApplyVerdicts(hubRoot string, verdicts []Verdict, now time.Time) (ApplyResu
 
 	for _, v := range verdicts {
 		item, ok := byID[v.ID]
-		if !ok || item.Status != "new" {
-			result.Skipped = append(result.Skipped, v.ID)
+		if !ok {
+			result.UnknownID = append(result.UnknownID, v.ID)
+			continue
+		}
+		if item.Status != "new" {
+			result.Refused = append(result.Refused, v.ID)
 			continue
 		}
 		if v.Status == "accepted" && len(backlog.Items) >= wipLimit {

@@ -390,6 +390,151 @@ func TestContractP6PublicationHumanLineOmitsCandidateWhenUnset(t *testing.T) {
 	}
 }
 
+// TestContractPreflightExitCodeAndGateRender is P4 rows 1 and 2 (spec
+// computed-not-listed-2026-08/04 §8): a violation-carrying plan must exit
+// non-zero (row 1 — internal/space/contract_publication.go's Preflight
+// never read plan.Violations before this fix, while Publish refused the
+// identical plan three lines above the same floor helper); the plain-text
+// render must print plan.Gate when a human decision is required (row 2 —
+// the JSON branch always carried it, the text branch never did); and a plan
+// carrying a Gate with NO violations must still print the gate and exit 0 —
+// the edge case row 2 names explicitly, so the gate line must never be
+// coupled to the violation check.
+func TestContractPreflightExitCodeAndGateRender(t *testing.T) {
+	t.Parallel()
+
+	violations := []contract.Finding{{
+		Code: "POL-007", Path: "fixtures/valid/demo.json",
+		Message: "declared minor bump contradicts computed compatibility",
+	}}
+
+	cases := []struct {
+		name          string
+		result        space.ContractPublicationResult
+		err           error
+		wantCode      int
+		wantOut       []string
+		wantOutAbsent []string
+		wantErr       []string
+	}{
+		{
+			name: "violation-carrying plan exits non-zero",
+			result: space.ContractPublicationResult{
+				Plan: contract.PublicationPlan{Contract: "XC-axon-orders", TargetVersion: "1.0.0", Violations: violations},
+			},
+			err:      &space.ContractPublicationViolationError{Violations: violations},
+			wantCode: 1,
+			wantErr:  []string{"POL-007", "fixtures/valid/demo.json"},
+		},
+		{
+			name: "clean plan exits zero and prints no gate line",
+			result: space.ContractPublicationResult{
+				Status: space.ContractPublicationPlanned,
+				Plan:   contract.PublicationPlan{Contract: "XC-axon-orders", TargetVersion: "1.0.0", PlanDigest: "sha256:plan"},
+			},
+			wantCode:      0,
+			wantOutAbsent: []string{"gate "},
+		},
+		{
+			name: "gate set with no violations prints gate and still exits zero",
+			result: space.ContractPublicationResult{
+				Status: space.ContractPublicationPlanned,
+				Plan: contract.PublicationPlan{
+					Contract: "XC-axon-orders", TargetVersion: "2.0.0", PlanDigest: "sha256:plan",
+					Gate: contract.GateG1,
+				},
+			},
+			wantCode: 0,
+			wantOut:  []string{"gate G1"},
+		},
+	}
+
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			fake := &p6PublicationFake{result: test.result, err: test.err}
+			cmd := newP6ContractCommand(t, fake, &p6MaterializeFake{}, &p6CheckFake{})
+			code, output, stderr := runP6Contract(t, cmd, "preflight", "XC-axon-orders", "--bump", "major")
+			if code != test.wantCode {
+				t.Fatalf("code = %d, want %d (out=%q err=%q)", code, test.wantCode, output, stderr)
+			}
+			for _, want := range test.wantOut {
+				if !strings.Contains(output, want) {
+					t.Fatalf("output = %q, want to contain %q", output, want)
+				}
+			}
+			for _, absent := range test.wantOutAbsent {
+				if strings.Contains(output, absent) {
+					t.Fatalf("output = %q, must not contain %q", output, absent)
+				}
+			}
+			for _, want := range test.wantErr {
+				if !strings.Contains(stderr, want) {
+					t.Fatalf("stderr = %q, want to contain %q", stderr, want)
+				}
+			}
+		})
+	}
+}
+
+// TestContractPreflightVerboseEmitsOnStderrStdoutUnchanged is P4 row 9
+// (spec computed-not-listed-2026-08/04 §8 row 9, US-5): AGENTS.md's
+// Error-flow rule promises "detail behind --verbose" and, before this fix,
+// grep for "verbose" found zero matches tree-wide. --verbose must emit
+// detail on stderr while leaving stdout byte-identical to the non-verbose
+// run — stdout is a pipeline's contract — and it must keep working
+// alongside --json, the edge case the acceptance table names explicitly.
+func TestContractPreflightVerboseEmitsOnStderrStdoutUnchanged(t *testing.T) {
+	t.Parallel()
+
+	result := space.ContractPublicationResult{
+		Status: space.ContractPublicationPlanned,
+		Plan: contract.PublicationPlan{
+			Contract: "XC-axon-orders", TargetVersion: "2.0.0", PlanDigest: "sha256:plan",
+			Gate: contract.GateG1,
+		},
+	}
+
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{name: "plain text", args: []string{"preflight", "XC-axon-orders", "--bump", "major"}},
+		{name: "with --json", args: []string{"preflight", "XC-axon-orders", "--bump", "major", "--json"}},
+	}
+
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			plainFake := &p6PublicationFake{result: result}
+			plainCmd := newP6ContractCommand(t, plainFake, &p6MaterializeFake{}, &p6CheckFake{})
+			plainCode, plainOut, plainErr := runP6Contract(t, plainCmd, test.args...)
+
+			verboseArgs := append(append([]string{}, test.args...), "--verbose")
+			verboseFake := &p6PublicationFake{result: result}
+			verboseCmd := newP6ContractCommand(t, verboseFake, &p6MaterializeFake{}, &p6CheckFake{})
+			verboseCode, verboseOut, verboseErr := runP6Contract(t, verboseCmd, verboseArgs...)
+
+			if plainCode != 0 || verboseCode != 0 {
+				t.Fatalf("exit codes = %d/%d, want both 0", plainCode, verboseCode)
+			}
+			if plainOut != verboseOut {
+				t.Fatalf("stdout differs between plain and --verbose runs: plain=%q verbose=%q", plainOut, verboseOut)
+			}
+			if plainErr != "" {
+				t.Fatalf("plain run wrote to stderr: %q", plainErr)
+			}
+			if verboseErr == "" || !strings.Contains(verboseErr, "verbose:") {
+				t.Fatalf("--verbose run did not emit detail on stderr: %q", verboseErr)
+			}
+			if strings.Contains(verboseOut, "verbose:") {
+				t.Fatalf("verbose detail leaked onto stdout: %q", verboseOut)
+			}
+		})
+	}
+}
+
 // --- render-ledger universe: scripts/check-render-ledger.sh's own driver ---
 //
 // renderLedgerCandidateSourceSurface and renderLedgerMutationsSurface are

@@ -102,3 +102,47 @@ changes:
       messages against the raw `open <path>: <errno>` shape will stop matching.
       The path and the errno are both still in the text, now behind a
       `cli: cannot read <path>: ` prefix.
+- id: RN-02600-3
+  kind: fix
+  impact: high
+  subject: "`a2a contract preflight` exited 0 over a plan `publish` would refuse"
+  detail: >
+    Preflight's whole purpose is previewing the plan `publish` would execute.
+    It never read that plan's violations. Publish refused on exactly that
+    field, three lines above the same helper it shares with preflight — so
+    the two verbs disagreed about the identical candidate, and the one you
+    run FIRST was the one that said yes.
+
+    An agent scripting `a2a contract preflight; echo $?` read a clean exit
+    over content the publish step would then refuse. Preflight now refuses at
+    its own equivalent point, and prints the gate a human decision would be
+    required at, which the plain-text render had been dropping while the JSON
+    branch carried it.
+
+    THIS IS A BEHAVIOUR CHANGE AND IT WILL BE VISIBLE. A candidate carrying
+    violations previously exited 0 from preflight and now exits 1. If a
+    script of yours branches on that exit code, it starts taking the other
+    branch — for candidates it should already have been refusing.
+
+    Alongside it, `a2a work status` and `a2a feedback triage --apply` stop
+    returning 0 over an objection they had already computed, and every
+    JSON-carrying verb now DECLARES its verdict-to-exit-code mapping in
+    `schemas/verdict-exit-codes.yaml`, where a gate checks the declaration
+    against the verb rather than against anyone's memory. `a2a show` still
+    exits 0 over a REF-004 warning — because it declares that, not because
+    nobody looked.
+
+    One verb declares a third code: `a2a work status` exits 3 when the lease
+    store itself could not be read. An empty listing that nothing could
+    measure is not a clean one, and it no longer reports as one.
+  affects:
+  - cli
+  action:
+    scope: some
+    why: >
+      If you script `a2a contract preflight` and treat exit 0 as "proceed",
+      re-read that branch: a violation-carrying candidate now exits 1 there,
+      as it always did at `publish`. Nothing you have already published
+      changes. Scripts treating any non-zero as one undifferentiated failure
+      keep working, but 3 now means "could not measure", not "objections" —
+      worth distinguishing before you retry.

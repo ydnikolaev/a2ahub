@@ -49,7 +49,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: site-check site-check-teeth flaky-scan check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install import-rule-coverage cross-layer-test-import-ceiling
+.PHONY: site-check site-check-teeth flaky-scan check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install import-rule-coverage cross-layer-test-import-ceiling verdict-exit-mapping
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -60,7 +60,7 @@
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := spec-verify-refs ci-parity-audit frozen-allowlist lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus view-vocabulary dashboard-props card-content pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral runner-economics space-template-baseline-check unmeasured-reach import-rule-coverage cross-layer-test-import-ceiling
+REPO_GATES := spec-verify-refs ci-parity-audit frozen-allowlist lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus view-vocabulary dashboard-props card-content pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral runner-economics space-template-baseline-check unmeasured-reach import-rule-coverage cross-layer-test-import-ceiling verdict-exit-mapping
 
 _print-repo-gates:
 	@echo "$(REPO_GATES)"
@@ -293,6 +293,9 @@ refusal-ratchet: ## No NEW raw err-to-stderr site appears in internal/cli outsid
 
 vocabulary-carriers: ## A struct field named for a schema-closed vocabulary and typed plain string reds; the carrier ceiling may only fall (computed-not-listed-2026-08 P3).
 	@bash scripts/check-vocabulary-carriers.sh
+
+verdict-exit-mapping: ## Every JSON-carrying verb declares its verdict->exit-code mapping, and the declaration agrees with the verb (computed-not-listed-2026-08 P4).
+	@bash scripts/check-verdict-exit-mapping.sh
 
 deadcode-ceiling: ## The unreachable-symbol count is a seeded ceiling that may only fall (computed-not-listed-2026-08 P5).
 	@bash scripts/check-deadcode-ceiling.sh
@@ -738,6 +741,7 @@ harness-check: ## Run the gates' --teeth self-tests (harness gates are private/p
 # survive its own absence.
 HARNESS_TEETH := \
   scripts/site-check.sh \
+  scripts/check-verdict-exit-mapping.sh \
   scripts/check-flaky-tests.sh \
   scripts/lib/gate-lib.sh \
   scripts/check-projection.sh \
@@ -784,6 +788,7 @@ HARNESS_TEETH := \
 
 HARNESS_TESTS := \
   scripts/tests/check_event_writer_receipts_test.sh \
+  scripts/tests/check_verdict_exit_mapping_test.sh \
   scripts/tests/check_contract_carried_set_test.sh \
   scripts/tests/check_work_checkpoint_schema_test.sh \
   scripts/tests/check_operational_projection_single_source_test.sh \

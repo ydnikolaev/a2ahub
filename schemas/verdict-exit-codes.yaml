@@ -1,0 +1,629 @@
+# schemas/verdict-exit-codes.yaml — computed-not-listed-2026-08 P4 (spec
+# 04-the-exit-code-declares.md §7): the DECLARATION REGISTRY that lets a
+# caller branching on `a2a`'s exit code tell apart the three states no
+# single exit code can carry alone — clean (measured, nothing found),
+# objections (measured, here they are) and could-not-measure — for every
+# verb this binary dispatches. scripts/check-verdict-exit-mapping.sh
+# verifies every row below against the SAME COMPUTED universe it derives
+# from cmd/a2a/wire.go and a source scan of internal/cli/**/*.go — never a
+# second, hand-picked subset of either (spec §7).
+#
+# SHAPE, copied from schemas/errors/v1/registry.yaml's own severity_exceptions
+# block (a list of per-site entries the gate verifies individually), per this
+# phase's own §5 "existing patterns to reuse" — a DIFFERENT FILE, not an
+# addition to registry.yaml (spec §7 states why: registry.yaml's domain is
+# error-code metadata, this file's domain is a process exit code per verb;
+# spec 07 edits registry.yaml in the same wave for an unrelated change).
+#
+# One entry per VERB IDENTITY:
+#
+#   verb    — the dispatch name, exactly as `a2a <verb>` is invoked. Most
+#             entries are a single buildCommands() key (cmd/a2a/wire.go).
+#             `contract`'s twelve sub-verbs are individually named
+#             "contract <sub>" (cli.ContractSubcommands(), the same
+#             two-level shape cmd/a2a/catalog.go's own catalogCommandRows()
+#             already uses to expand the SAME family) — `contract` itself
+#             never appears as a bare row. `validate --ci` is ONE extra row
+#             beyond the bare `validate` dispatch key, because its own
+#             defining file (internal/cli/cmd_validate_ci.go) carries the
+#             json.NewEncoder(stdio.Stdout) idiom independently of
+#             cmd_submit.go's ValidateCommand.Run (spec §7's own MEDIUM-1
+#             amendment: a flag-presence check alone would miss it, since it
+#             registers no --json flag at all yet emits JSON unconditionally
+#             at cmd_validate_ci.go:543).
+#   site    — the list of source files (repo-relative) whose behaviour this
+#             row declares, or an EMPTY list for a verb this scan found no
+#             json.NewEncoder(stdio.Stdout) call for (a non-JSON-carrying
+#             verb, or a JSON-carrying one intentionally left unattributed
+#             at this landing — see the header note on contract's
+#             materialize/check/diff/verify-export sub-verbs below). Every
+#             file scripts/check-verdict-exit-mapping.sh measures via its
+#             own `json.NewEncoder(stdio.Stdout)` scan of internal/cli/**/*.go
+#             MUST be named by at least one row's `site:` list, or the gate
+#             reds naming the unclaimed file (§8 row 6's own obligation, the
+#             file-side half of "every JSON-carrying verb declares").
+#   mapping — {verdict-class: exit-code}. The vocabulary is EXACTLY the
+#             three states this phase's own §"The three states" table names:
+#             `clean` (0, measured and nothing found), `objections`
+#             (measured, here they are — this binary's existing convention
+#             is 1), `unmeasured` (could not measure at all — D9's own
+#             value, internal/validate/result.go's SeverityUnmeasured,
+#             never a second-minted name for the same thing, carried up to
+#             the process boundary per this phase's own thesis). A row
+#             declaring `clean: 0` needs no literal proof — 0 is the
+#             universal Unix success baseline every verb has by
+#             convention, not a fact this static scan can usefully dispute.
+#             A row declaring a NON-ZERO code for `objections` or
+#             `unmeasured` MUST have that exact integer appear as a literal
+#             `return N` somewhere in its own `site:` files, or the gate
+#             reds naming the verb and the undeclared code (§8 row 7 — "a
+#             declaration disagreeing with the verb's behaviour"). This is
+#             a best-effort, LEXICAL check — a code returned through a
+#             named variable or a shared helper's own return value is
+#             invisible to it, exactly like registry_field's own sibling
+#             obligations in check-error-codes.sh. `usage: 2` (a flag-parse
+#             mistake, not a verdict on measured content) is a real,
+#             pre-existing, near-universal convention across this binary
+#             but is DELIBERATELY OUTSIDE this phase's three-state
+#             vocabulary — it is the caller's own mistake, never a
+#             "verdict", and is not declared here.
+#   reason  — required whenever a row's mapping needs more than "the trivial
+#             case" to make sense (a verb with a real objections/unmeasured
+#             distinction, or a deliberate design decision like `show`'s
+#             OP-209 exit-0-over-a-warning).
+#
+# WHICH ROWS DECLARE `unmeasured`, AND THE MISTAKE THAT NEARLY HID THE ONLY
+# ONE. This header first asserted that NO verb in the binary implements a
+# third exit code, on the evidence of `grep -rn "return 3" internal/cli/*.go`
+# returning nothing. That was false when it was written. `a2a work status`
+# returns 3 when the lease store itself cannot be read — but it returns it as
+# `return workStatusExitUnmeasured`, a named constant (cmd_work.go:80-89,
+# :325-329), so a literal-only grep cannot see it.
+#
+# Two things had to change, and only one of them was this file. The gate's
+# backing check (§8 row 7) now resolves same-file named integer constants as
+# well as literals — see `exit_codes_returned` in
+# scripts/check-verdict-exit-mapping.sh and the reason written above it.
+# Without that, declaring the truth here would have RED the very gate this
+# registry exists to feed, and the pressure would have been to keep the
+# declaration false. A gate that forces a true declaration to be omitted is
+# worse than no gate, and the shape is this epic's own thesis turned on its
+# own tooling: a lexical proxy is not the fact it stands for.
+#
+# Found by the wave-5 drift probe, not by a gate.
+#
+# SEEDED FROM THE COMPUTED SCAN (spec §7's own mandate: "never a hand-picked
+# subset"): every buildCommands() dispatch key (cmd/a2a/wire.go, its three
+# map literals — the direct `m["x"] =` assignments, readVerbs()'s returned
+# map, lifecycleVerbs()'s returned map), `contract` replaced by its twelve
+# ContractSubcommands() rows, plus the one extra `validate --ci` row (see
+# above). DEVIATION FROM §7's OWN PROSE, measured and reported rather than
+# silently reconciled: §7 states "contract's twelve sub-verbs alone live in
+# one file" as the justification for the 23-file/many-verb seed-size
+# arithmetic; measured at landing, TWO contract-family files carry the
+# json.NewEncoder(stdio.Stdout) idiom (cmd_contract_p6.go via its shared
+# encodeContractJSON helper, and cmd_contract_verify_published.go
+# independently), and cmd_contract.go itself — the file defining
+# ContractSubcommands() and most of the family's own Run methods — carries
+# ZERO matches (it calls encodeContractJSON rather than the encoder
+# directly). This registry's own measurement is authoritative over the
+# spec's prose estimate; see this phase's own report for the full account.
+#
+# CONTRACT SUB-VERB ATTRIBUTION IS INTENTIONALLY MINIMAL AT THIS LANDING:
+# `contract materialize`, `check`, `diff`, and `verify-export` also route
+# through cmd_contract_p6.go's encodeContractJSON and are therefore, in
+# truth, JSON-carrying — but this landing declares them with an empty
+# `site:` (the trivial case) rather than attributing cmd_contract_p6.go a
+# third/fourth/fifth time, because Refusal B (every MEASURED file claimed by
+# at least one row) is already satisfied by `contract preflight` and
+# `contract publish`'s own claim on that file, and a fuller per-sub-verb
+# attribution is a correctness improvement a follow-up commit can make
+# without touching the gate. Reported as a deviation, not silently narrowed.
+entries:
+  - verb: adapt
+    site:
+      - internal/cli/cmd_adapt.go
+    mapping:
+      clean: 0
+      objections: 1
+    reason: >-
+      adapt reports whether the repository's adopted-through baseline is
+      current against this binary's embedded whatsnew corpus; a mismatch is
+      an objection, never a measurement failure.
+
+  - verb: attach
+    site:
+      - internal/cli/cmd_attach.go
+    mapping:
+      clean: 0
+      objections: 1
+    reason: >-
+      attach resolves and uploads a blob-shaped attachment; a resolution or
+      upload failure is an objection.
+
+  - verb: data
+    site:
+      - internal/cli/cmd_data.go
+    mapping:
+      clean: 0
+      objections: 1
+    reason: >-
+      data dispatches pack/deliver/fetch/verify; this row covers the
+      top-level dispatch failure surface shared by all four, not a
+      per-sub-verb breakdown.
+
+  - verb: feedback
+    site:
+      - internal/cli/cmd_feedback.go
+    mapping:
+      clean: 0
+      objections: 1
+    reason: >-
+      `feedback triage --apply` used to exit 0 with every verdict refused,
+      and to call three different outcomes "skipped". Both are fixed here. A
+      run that applied nothing is `objections: 1`, and the three non-applied
+      outcomes are now named separately — refused (a real record already
+      triaged, the idempotency guarantee working), unknown-id (no matching
+      record, usually a typo) and wip-limit-hit.
+      All three share this one code DELIBERATELY: each is a MEASURED
+      negative — the verdicts file was read and every inbox record
+      enumerated — so none of them is `unmeasured`. They are distinguished
+      by label, which is the right axis; a third exit code here would claim
+      the check did not run, which is false.
+
+  - verb: fetch
+    site:
+      - internal/cli/cmd_fetch.go
+    mapping:
+      clean: 0
+      objections: 1
+    reason: >-
+      fetch resolves any blob-shaped attachment; a resolution failure is an
+      objection.
+
+  - verb: inbox
+    site:
+      - internal/cli/cmd_inbox.go
+    mapping:
+      clean: 0
+      objections: 1
+    reason: >-
+      inbox's own skip-file advisory is reported on stderr, never flipping
+      the exit code — reading fewer items than exist is not, by itself, an
+      objection this verb raises.
+
+  - verb: new
+    site:
+      - internal/cli/cmd_new.go
+    mapping:
+      clean: 0
+      objections: 1
+    reason: >-
+      new stages a draft artifact; a staging failure is an objection.
+
+  - verb: notifications
+    site:
+      - internal/cli/cmd_notifications.go
+    mapping:
+      clean: 0
+      objections: 1
+    reason: >-
+      the host-native notification surface (OP-223); a controller or
+      channel failure is an objection.
+
+  - verb: notify
+    site:
+      - internal/cli/cmd_notify.go
+      - internal/cli/cmd_notify_setup.go
+    mapping:
+      clean: 0
+      objections: 1
+    reason: >-
+      notify render/setup; a malformed space-repo checkout or setup failure
+      is an objection.
+
+  - verb: outbox
+    site:
+      - internal/cli/cmd_outbox.go
+    mapping:
+      clean: 0
+      objections: 1
+    reason: >-
+      outbox's own skip-file advisory mirrors inbox's — reported, never
+      blocking.
+
+  - verb: search
+    site:
+      - internal/cli/cmd_search.go
+    mapping:
+      clean: 0
+      objections: 1
+    reason: >-
+      a malformed query or unreadable cache is an objection; zero results
+      for a well-formed query is clean.
+
+  - verb: show
+    site:
+      - internal/cli/cmd_show.go
+    mapping:
+      clean: 0
+      objections: 1
+    reason: >-
+      show keeps exit 0 over a REF-004 V5 mirror-staleness warning by
+      design (OP-209, cmd_show.go:159-176) — DECLARED here, not merely
+      silent, which is the whole point of this phase (spec §10: "show is
+      the model here, not the villain"). A genuine resolution failure
+      (unknown id, unreadable cache) is a distinct `objections` case.
+
+  - verb: statusline
+    site:
+      - internal/cli/cmd_statusline.go
+    mapping:
+      clean: 0
+      objections: 1
+    reason: >-
+      statusline returns `result.Exit`, a computed value, so `clean: 0` has
+      no literal `return 0` to check against — this is the universal
+      success-baseline exemption stated in this file's own header, not a
+      gap in this row.
+
+  - verb: thread
+    site:
+      - internal/cli/cmd_thread.go
+    mapping:
+      clean: 0
+      objections: 1
+    reason: >-
+      an unresolvable thread id is an objection.
+
+  - verb: update
+    site:
+      - internal/cli/cmd_update.go
+    mapping:
+      clean: 0
+      objections: 1
+    reason: >-
+      update also returns the literal 10 on one non-JSON branch (a
+      self-update-available signal outside this phase's three-state
+      vocabulary, left undeclared here exactly like `usage: 2` is);
+      a real apply failure is `objections: 1`.
+
+  - verb: validate
+    site:
+      - internal/cli/cmd_submit.go
+    mapping:
+      clean: 0
+      objections: 1
+    reason: >-
+      ValidateCommand.Run is defined in cmd_submit.go (SubmitCommand's own
+      sibling type in the same file) — a schema/referential/lifecycle
+      violation is an objection.
+
+  - verb: version
+    site:
+      - internal/cli/cmd_version.go
+    mapping:
+      clean: 0
+      objections: 1
+    reason: >-
+      no distinguishable objections verdict exists for a build-stamp
+      read (spec §7's own example) — declared anyway per §8 row 6, never
+      silently exempted.
+
+  - verb: whatsnew
+    site:
+      - internal/cli/cmd_whatsnew.go
+    mapping:
+      clean: 0
+      objections: 1
+    reason: >-
+      an unreadable adopted-through baseline is an objection.
+
+  - verb: work
+    site:
+      - internal/cli/cmd_work.go
+    mapping:
+      clean: 0
+      objections: 1
+      unmeasured: 3
+    reason: >-
+      The only row in this registry that declares all three states, and the
+      reason the third one exists. A lease carrying LastErrorCode reaches
+      `objections: 1` and is rendered (cmd_work.go:331-333). A ListWork that
+      FAILS reaches `unmeasured: 3` (cmd_work.go:80-89, :325-329): the lease
+      store could not be read, so no lease's state was measured at all, and
+      the resulting empty listing must never be read as "clean". Both landed
+      in the same commit as this file; the code returns 3 through the named
+      constant workStatusExitUnmeasured, which is why the gate's backing
+      check resolves constants rather than literals alone (see this file's
+      header).
+
+  - verb: validate --ci
+    site:
+      - internal/cli/cmd_validate_ci.go
+    mapping:
+      clean: 0
+      objections: 1
+    reason: >-
+      internal/cli/cmd_validate_ci.go registers NO --json flag
+      (confirmed: no fs.Bool("json", ...) call anywhere in that file) yet
+      emits a fully json-tagged ciReport unconditionally via
+      json.NewEncoder at cmd_validate_ci.go:543 — the exact flag-only-signal
+      drift this epic exists to catch (spec §7 MEDIUM-1). Spec 06 changes
+      what verdict CLASS an unreadable descriptor maps to (toward
+      `unmeasured`); this phase owns only the exit-code declaration, not
+      that classification, so this row does not yet declare `unmeasured`
+      (no `return 3` literal exists in this file today — see this file's
+      own header).
+
+  - verb: contract preflight
+    site:
+      - internal/cli/cmd_contract_p6.go
+    mapping:
+      clean: 0
+      objections: 1
+    reason: >-
+      THE EPIC'S ONE VISIBLE BEHAVIOUR CHANGE, and this row is where it is
+      declared. Preflight used to read plan.Violations nowhere and exit 0
+      over a plan Publish would then refuse — the two verbs disagreed about
+      the same candidate. It now refuses at its own equivalent point
+      (internal/space/contract_publication.go:658-659, mirroring Publish at
+      :801-804), so a non-empty plan.Violations is `objections: 1`. A caller
+      scripting `preflight; echo $?` sees the change; that is the defect
+      being fixed rather than a regression, and releasenotes/0.26.0.yaml
+      says so plainly.
+
+  - verb: contract publish
+    site:
+      - internal/cli/cmd_contract_p6.go
+    mapping:
+      clean: 0
+      objections: 1
+    reason: >-
+      Publish already reads plan.Violations three lines above the same
+      floor helper Preflight skips (Measured Facts, spec §4) — the more
+      mature of the pair, both declared with the same mapping.
+
+  - verb: contract verify-published
+    site:
+      - internal/cli/cmd_contract_verify_published.go
+    mapping:
+      clean: 0
+      objections: 1
+    reason: >-
+      contractVerifyPublishedRun already treats an `unmeasured` Outcome as
+      non-failing (D9: SeverityUnmeasured alone must never flip a result to
+      failing) — folded into `clean: 0` at the exit-code boundary today, not
+      a distinct third code, matching this file's own header note on why no
+      row declares `unmeasured` yet. A genuine digest drift is
+      `objections: 1`.
+
+  - verb: contract new
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: contract materialize
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: contract check
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: contract deprecate
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: contract retire
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: contract diff
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: contract verify-export
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: contract adopt
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: contract activate
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: init
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: template
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: space
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: skill
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: completion
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: connect
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: disconnect
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: sync
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: await
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: doctor
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: docs
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: serve
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: __catalog
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: mcp
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: submit
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: contracts
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: html
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: dashboard
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: ack
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: accept
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: decline
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: start
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: block
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: unblock
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: cancel
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: close
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: withdraw
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: supersede
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: satisfy
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: approve
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: reject
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: verify-pass
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: verify-fail
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: respond
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: verify
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: dispute
+    site: []
+    mapping:
+      clean: 0
+
+  - verb: note
+    site: []
+    mapping:
+      clean: 0

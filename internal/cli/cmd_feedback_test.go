@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/feedback"
@@ -342,6 +343,194 @@ func TestFeedbackTriage_NilResolverRefuses(t *testing.T) {
 	}
 	if !strings.Contains(errOut.String(), "no freshness resolver was configured") {
 		t.Errorf("stderr = %q, want it to say no freshness resolver was configured", errOut.String())
+	}
+}
+
+// writeFeedbackInboxItem writes one feedback/inbox/<id>.yaml fixture. It is
+// this file's own copy of internal/feedback/triage_test.go's unexported
+// writeInboxItem helper — that package is outside this phase's allowlist
+// (internal/cli/cmd_feedback.go, internal/cli/cmd_feedback_test.go only), so
+// the CLI-level fixture cannot import the package-private one.
+func writeFeedbackInboxItem(t *testing.T, hubRoot, id, status string) {
+	t.Helper()
+	dir := filepath.Join(hubRoot, "feedback", "inbox")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	content := "feedback: v1\n" +
+		"id: " + id + "\n" +
+		"kind: bug\n" +
+		"severity: minor\n" +
+		"title: \"triage --apply fixture\"\n" +
+		"summary: \"summary\"\n" +
+		"context:\n  a2a_version: v0.1.1\n  os_arch: darwin/arm64\n  surface: cli\n" +
+		"checks:\n  docs_consulted: true\n  grounded_in_real_work: true\n  not_space_specific: true\n  no_sensitive_content: true\n  duplicates_checked: true\n" +
+		"status: " + status + "\n"
+	if err := os.WriteFile(filepath.Join(dir, id+".yaml"), []byte(content), 0o644); err != nil {
+		t.Fatalf("write inbox item: %v", err)
+	}
+}
+
+func writeFeedbackVerdictsFile(t *testing.T, dir string, verdicts ...feedback.Verdict) string {
+	t.Helper()
+	var b strings.Builder
+	b.WriteString("verdicts:\n")
+	for _, v := range verdicts {
+		fmt.Fprintf(&b, "  - id: %s\n    status: %s\n", v.ID, v.Status)
+	}
+	path := filepath.Join(dir, "verdicts.yaml")
+	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+		t.Fatalf("write verdicts file: %v", err)
+	}
+	return path
+}
+
+// TestFeedbackTriageApply_AllRefusedExitsNonZero is P4 row 3 (spec 04
+// §"three states"), reproduced live by the spec author: `--apply` used to
+// exit 0 even when every named verdict was refused ("feedback triage:
+// applied 0, skipped 1" -> exit 0). A single already-triaged (not status:
+// new) target is a REFUSED verdict, not a typo, and is now rendered under
+// its own "refused" label, distinct from "unknown-id".
+func TestFeedbackTriageApply_AllRefusedExitsNonZero(t *testing.T) {
+	t.Parallel()
+	hubRoot := t.TempDir()
+	writeFeedbackInboxItem(t, hubRoot, "fb-20260801-aaaaaa", "accepted") // not "new" -> refused
+	verdictsPath := writeFeedbackVerdictsFile(t, t.TempDir(), feedback.Verdict{ID: "fb-20260801-aaaaaa", Status: "rejected"})
+
+	cmd := cli.NewFeedbackCommand(nil, nil, "", hubRoot, nil)
+	io, out, _ := newIO()
+	code := cmd.Run(context.Background(), []string{"triage", "--apply", verdictsPath}, io)
+	if code == 0 {
+		t.Fatalf("code = %d, want non-zero when every named verdict is refused", code)
+	}
+	if !strings.Contains(out.String(), "applied 0, refused 1, unknown-id 0, wip-limit-hit 0") {
+		t.Fatalf("stdout = %q, want the counts line naming 0 applied, 1 refused", out.String())
+	}
+	if !strings.Contains(out.String(), "refused: fb-20260801-aaaaaa") {
+		t.Fatalf("stdout = %q, want the refused id named, not only counted", out.String())
+	}
+	if strings.Contains(out.String(), "unknown-id:") {
+		t.Fatalf("stdout = %q, must not print an unknown-id line when there are none", out.String())
+	}
+}
+
+// TestFeedbackTriageApply_UnknownIDAlsoExitsNonZeroAndIsNamed covers the
+// other half of row 3's "typo'd id" case: an id with no matching inbox
+// record at all is a distinct outcome from the refused-not-new case
+// (feedback.ApplyResult.UnknownID vs .Refused), rendered under its own
+// "unknown-id" label — but it must still exit non-zero, for the reason
+// recorded next to feedbackTriageExitObjections' use site in
+// internal/cli/cmd_feedback.go: the check DID run for this id, it just
+// found nothing to apply, which is the same "measured objection" class as
+// a refused-not-new id, not the "check could not run at all" class.
+func TestFeedbackTriageApply_UnknownIDAlsoExitsNonZeroAndIsNamed(t *testing.T) {
+	t.Parallel()
+	hubRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(hubRoot, "feedback", "inbox"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	verdictsPath := writeFeedbackVerdictsFile(t, t.TempDir(), feedback.Verdict{ID: "fb-typo-does-not-exist", Status: "rejected"})
+
+	cmd := cli.NewFeedbackCommand(nil, nil, "", hubRoot, nil)
+	io, out, _ := newIO()
+	code := cmd.Run(context.Background(), []string{"triage", "--apply", verdictsPath}, io)
+	if code == 0 {
+		t.Fatalf("code = %d, want non-zero when the only named verdict is an unknown id", code)
+	}
+	if !strings.Contains(out.String(), "unknown-id: fb-typo-does-not-exist") {
+		t.Fatalf("stdout = %q, want the unknown id named", out.String())
+	}
+	if strings.Contains(out.String(), "refused:") {
+		t.Fatalf("stdout = %q, must not print a refused line when there are none", out.String())
+	}
+}
+
+// TestFeedbackTriageApply_BothRefusedAndUnknownIDInOneRun asserts that when
+// a single apply names both an already-triaged id and an unknown id, both
+// are named under their own distinct label, in one non-zero-exit run — the
+// case the split exists for (spec 04 §8 row 3, AGENTS.md anti-pattern row
+// 22: two values cannot carry three states).
+func TestFeedbackTriageApply_BothRefusedAndUnknownIDInOneRun(t *testing.T) {
+	t.Parallel()
+	hubRoot := t.TempDir()
+	writeFeedbackInboxItem(t, hubRoot, "fb-20260801-aaaaaa", "accepted") // not "new" -> refused
+	verdictsPath := writeFeedbackVerdictsFile(t, t.TempDir(),
+		feedback.Verdict{ID: "fb-20260801-aaaaaa", Status: "rejected"},
+		feedback.Verdict{ID: "fb-typo-does-not-exist", Status: "rejected"},
+	)
+
+	cmd := cli.NewFeedbackCommand(nil, nil, "", hubRoot, nil)
+	io, out, _ := newIO()
+	code := cmd.Run(context.Background(), []string{"triage", "--apply", verdictsPath}, io)
+	if code == 0 {
+		t.Fatalf("code = %d, want non-zero when nothing was applied", code)
+	}
+	if !strings.Contains(out.String(), "refused: fb-20260801-aaaaaa") {
+		t.Fatalf("stdout = %q, want the refused id named", out.String())
+	}
+	if !strings.Contains(out.String(), "unknown-id: fb-typo-does-not-exist") {
+		t.Fatalf("stdout = %q, want the unknown id named", out.String())
+	}
+}
+
+// TestFeedbackTriageApply_SomeAppliedExitsZeroWithRefusedNamed asserts that
+// a mixed run — at least one verdict actually applied — still exits 0
+// (this phase narrows non-zero to the ALL-refused/all-objection case, per
+// row 3), while still naming the id that was refused alongside it.
+func TestFeedbackTriageApply_SomeAppliedExitsZeroWithRefusedNamed(t *testing.T) {
+	t.Parallel()
+	hubRoot := t.TempDir()
+	writeFeedbackInboxItem(t, hubRoot, "fb-20260801-bbbbbb", "new")
+	writeFeedbackInboxItem(t, hubRoot, "fb-20260801-cccccc", "accepted") // refused
+	verdictsPath := writeFeedbackVerdictsFile(t, t.TempDir(),
+		feedback.Verdict{ID: "fb-20260801-bbbbbb", Status: "rejected"},
+		feedback.Verdict{ID: "fb-20260801-cccccc", Status: "rejected"},
+	)
+
+	cmd := cli.NewFeedbackCommand(nil, nil, "", hubRoot, nil)
+	cmd.SetClockForTest(func() time.Time { return time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC) })
+	io, out, _ := newIO()
+	code := cmd.Run(context.Background(), []string{"triage", "--apply", verdictsPath}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0 when at least one verdict applied", code)
+	}
+	if !strings.Contains(out.String(), "refused: fb-20260801-cccccc") {
+		t.Fatalf("stdout = %q, want the refused id named even on a mixed run", out.String())
+	}
+}
+
+// TestFeedbackTriageApply_WipLimitHitAlsoExitsNonZero: an all-wip-limit-hit
+// run is the same class of objection as all-refused (a real verdict that
+// was named and NOT applied), and previously exited 0 through the same
+// gap — this phase's fix (len(Applied)==0 with a non-empty verdict input)
+// covers it too rather than leaving a second silent-0 case behind.
+func TestFeedbackTriageApply_WipLimitHitAlsoExitsNonZero(t *testing.T) {
+	t.Parallel()
+	hubRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(hubRoot, "feedback"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// wip_limit: 0 is not "closed" — ApplyVerdicts treats <= 0 as "unset"
+	// and falls back to defaultWipLimit (triage.go: "if wipLimit <= 0 {
+	// wipLimit = defaultWipLimit }"), so the limit must be reached with a
+	// positive limit already at capacity, mirroring
+	// internal/feedback/triage_test.go's own TestApplyVerdicts_WipLimitHit
+	// fixture shape.
+	backlog := "backlog: v1\nwip_limit: 1\nitems:\n  - id: fb-20260601-cccccc\n    kind: bug\n    severity: major\n    title: already at limit\n    verdict: accepted\n    route: backlog\n    date: \"2026-06-01\"\n"
+	if err := os.WriteFile(filepath.Join(hubRoot, "feedback", "backlog.yaml"), []byte(backlog), 0o644); err != nil {
+		t.Fatalf("write backlog.yaml: %v", err)
+	}
+	writeFeedbackInboxItem(t, hubRoot, "fb-20260801-dddddd", "new")
+	verdictsPath := writeFeedbackVerdictsFile(t, t.TempDir(), feedback.Verdict{ID: "fb-20260801-dddddd", Status: "accepted", Route: "backlog"})
+
+	cmd := cli.NewFeedbackCommand(nil, nil, "", hubRoot, nil)
+	io, out, _ := newIO()
+	code := cmd.Run(context.Background(), []string{"triage", "--apply", verdictsPath}, io)
+	if code == 0 {
+		t.Fatalf("code = %d, want non-zero when every named verdict is blocked at the wip limit", code)
+	}
+	if !strings.Contains(out.String(), "wip-limit-hit: fb-20260801-dddddd") {
+		t.Fatalf("stdout = %q, want the wip-limit-hit id named", out.String())
 	}
 }
 

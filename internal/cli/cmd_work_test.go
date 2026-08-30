@@ -307,6 +307,129 @@ func TestWorkStatusNeverLeaksPrivateLeaseOrJournals(t *testing.T) {
 	}
 }
 
+// TestWorkStatusThreeStates covers P4 row 4 (spec 04 §"three states"): a
+// clean listing exits 0, a lease carrying a recorded Pending.LastErrorCode
+// is a MEASURED objection that reaches both the human render and the exit
+// code (workStatusExitObjections), and a ListWork failure — the store
+// itself could not be read — is the distinct "could not measure" code
+// (workStatusExitUnmeasured), never the same value as either of the other
+// two states.
+func TestWorkStatusThreeStates(t *testing.T) {
+	t.Parallel()
+
+	baseLease := func() workreport.Lease {
+		return workreport.Lease{
+			Identity: workreport.Identity{
+				LeaseKey: "sha256:lease", ProjectID: testWorkProject, Space: "checkout-core",
+				Thread: "thread:t", WorkID: testWorkID,
+				Actor: workreport.Actor{Kind: "agent", Name: "codex", System: "atlas", Session: "s"},
+			},
+			SubjectRef: "XW-atlas-20260803-a001", Mode: workreport.ModeImplementing, Summary: "in progress",
+			StartedAt: time.Now(), RenewedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour),
+		}
+	}
+
+	cases := []struct {
+		name       string
+		leases     []workreport.Lease
+		backendErr error
+		json       bool
+		wantExit   int
+		wantStdout []string // every substring must appear
+	}{
+		{
+			name:     "clean listing exits zero",
+			leases:   []workreport.Lease{baseLease()},
+			wantExit: 0,
+		},
+		{
+			name:     "clean empty listing exits zero",
+			leases:   nil,
+			wantExit: 0,
+			wantStdout: []string{
+				"no local reports; current activity is unknown",
+			},
+		},
+		{
+			name: "lease with LastErrorCode is a measured objection, human render",
+			leases: func() []workreport.Lease {
+				lease := baseLease()
+				lease.Pending = &workreport.PendingOperation{
+					OperationKey: "op-v1-broken", Action: workreport.ActionCheckpoint,
+					LastErrorCode: "publish-rejected",
+				}
+				return []workreport.Lease{lease}
+			}(),
+			wantExit: workStatusExitObjections,
+			wantStdout: []string{
+				"op-v1-broken",
+				"last_error_code=publish-rejected",
+			},
+		},
+		{
+			name: "lease with LastErrorCode is a measured objection, json render",
+			leases: func() []workreport.Lease {
+				lease := baseLease()
+				lease.Pending = &workreport.PendingOperation{
+					OperationKey: "op-v1-broken-json", Action: workreport.ActionCheckpoint,
+					LastErrorCode: "publish-rejected",
+				}
+				return []workreport.Lease{lease}
+			}(),
+			json:     true,
+			wantExit: workStatusExitObjections,
+			wantStdout: []string{
+				`"last_error_code":"publish-rejected"`,
+			},
+		},
+		{
+			name: "pending write with no recorded error stays clean",
+			leases: func() []workreport.Lease {
+				lease := baseLease()
+				lease.Pending = &workreport.PendingOperation{OperationKey: "op-v1-ok", Action: workreport.ActionCheckpoint}
+				return []workreport.Lease{lease}
+			}(),
+			wantExit: 0,
+			wantStdout: []string{
+				"op-v1-ok",
+			},
+		},
+		{
+			name:       "store unreadable is unmeasured, distinct from clean and objections",
+			leases:     nil,
+			backendErr: errors.New("lease store: read failed"),
+			wantExit:   workStatusExitUnmeasured,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			backend := &fakeWorkBackend{leases: tc.leases, err: tc.backendErr}
+			args := []string{"status"}
+			if tc.json {
+				args = append(args, "--json")
+			}
+			exit, stdout, stderr := runWorkCommand(t, testWorkCommand(t, backend), args...)
+			if exit != tc.wantExit {
+				t.Fatalf("exit=%d want %d stdout=%s stderr=%s", exit, tc.wantExit, stdout, stderr)
+			}
+			for _, want := range tc.wantStdout {
+				if !strings.Contains(stdout, want) {
+					t.Fatalf("stdout missing %q: %s", want, stdout)
+				}
+			}
+		})
+	}
+
+	// Distinctness itself, restated as a value assertion rather than three
+	// independent runs: the three codes must never collide, or an agent
+	// branching on the number cannot tell the states apart (US-1/US-2).
+	if workStatusExitObjections == 0 || workStatusExitUnmeasured == 0 || workStatusExitObjections == workStatusExitUnmeasured {
+		t.Fatalf("work status exit codes are not pairwise distinct: clean=0 objections=%d unmeasured=%d", workStatusExitObjections, workStatusExitUnmeasured)
+	}
+}
+
 func TestWorkCommandTreatsInboundTextAsData(t *testing.T) {
 	t.Parallel()
 	backend := &fakeWorkBackend{result: workreport.OperationResult{LocalState: workreport.LocalActive}}

@@ -1329,3 +1329,80 @@ func TestContractPublicationPreflightAndPublishAgreeOnTheExplicitVersionRule(t *
 		})
 	}
 }
+
+// TestContractPublicationPreflightExitsNonZeroOnViolations is P4 row 1
+// (spec computed-not-listed-2026-08/04 §8 row 1): Preflight never read
+// plan.Violations (internal/space/contract_publication.go:635, at HEAD
+// before this fix), while Publish refused the identical plan three lines
+// above the same floor helper. Table-driven against
+// TestContractPublicationRefusesAViolationBeforeTheFunnel's fixture shape so
+// the two verbs' violation handling is asserted from the same planning
+// context, the same way TestContractPublicationPreflightAndPublishAgreeOn
+// TheExplicitVersionRule already does for the floor rule.
+func TestContractPublicationPreflightExitsNonZeroOnViolations(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name       string
+		violations []contract.Finding
+		wantRefuse bool
+	}{
+		{
+			name: "violation-carrying plan refuses",
+			violations: []contract.Finding{{
+				Code: "POL-007", Path: "fixtures/valid/demo.json",
+				Message: "declared minor bump contradicts computed compatibility",
+			}},
+			wantRefuse: true,
+		},
+		{name: "clean plan proceeds", violations: nil, wantRefuse: false},
+	}
+
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			reader, source := publicationDeclaredCandidate(nil, false)
+			planningContext := publicationPlanningContext("", "0.19.0")
+			planningContext.Violations = test.violations
+			planning := &publicationPlanningFake{context: planningContext}
+			service := mustPublicationService(t, &publicationMainFake{}, planning, &publicationRemoteFake{},
+				&publicationEventBuilder{}, NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, "0.19.0"))
+
+			result, err := service.Preflight(t.Context(), ContractPublicationRequest{
+				System: "atlas", ContractID: "XC-atlas-demo", Selector: "auto:major",
+				Candidate: reader, CandidateSource: source,
+			})
+
+			if !test.wantRefuse {
+				if err != nil {
+					t.Fatalf("Preflight: %v", err)
+				}
+				if result.Status != ContractPublicationPlanned {
+					t.Fatalf("result.Status = %q, want Planned", result.Status)
+				}
+				return
+			}
+
+			var refusal *ContractPublicationViolationError
+			if !errors.As(err, &refusal) || !errors.Is(err, ErrContractPublicationInvalid) {
+				t.Fatalf("error = %v, want a violation refusal classified as an invalid publication", err)
+			}
+			if !strings.Contains(err.Error(), "POL-007") ||
+				!strings.Contains(err.Error(), "fixtures/valid/demo.json") ||
+				!strings.Contains(err.Error(), "declared minor bump contradicts computed compatibility") {
+				t.Fatalf("refusal = %q, want the code, the path and the reason", err.Error())
+			}
+			// The plan is still returned, so a caller (the CLI's renderer,
+			// or an agent inspecting the error alongside the result) can
+			// see exactly what was refused without re-planning — the same
+			// contract Publish's own refusal already carries.
+			if len(result.Plan.Violations) != 1 || result.Plan.Violations[0].Code != "POL-007" {
+				t.Fatalf("refused result carries plan violations = %+v", result.Plan.Violations)
+			}
+			if result.Status != "" {
+				t.Fatalf("refused result status = %q, want no status", result.Status)
+			}
+		})
+	}
+}

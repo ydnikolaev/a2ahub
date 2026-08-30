@@ -160,6 +160,12 @@ PUBLIC_VALIDATOR_FILES=(
   scripts/tests/check_operational_projection_single_source_test.sh
   scripts/tests/check_work_checkpoint_schema_test.sh
   scripts/tests/check_human_gates_test.sh
+  # computed-not-listed-2026-08 P4. PUBLIC: every input it reads ships —
+  # schemas/verdict-exit-codes.yaml (schemas/ is an ALLOW_DIR), internal/cli/**
+  # and cmd/a2a/{wire,catalog}.go. A public Makefile names it in REPO_GATES, so
+  # a public checkout's own `make check` has to be able to run it.
+  scripts/check-verdict-exit-mapping.sh
+  scripts/tests/check_verdict_exit_mapping_test.sh
   scripts/tests/check_loop_reachability_test.sh
   scripts/tests/check_loop_coverage_test.sh
   scripts/tests/classify_guard_test.sh

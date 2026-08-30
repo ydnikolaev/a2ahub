@@ -13,6 +13,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/validate"
 )
 
 func testStore(t *testing.T, mirrorDir string) *cache.Store {
@@ -631,5 +632,174 @@ func TestInboxHandler_ActionableAndOverdueRefused(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "different questions") {
 		t.Errorf("error = %v, want it to explain the two questions", err)
+	}
+}
+
+// --- P4 AC-11: an unreadable AllSkippedFiles reports unmeasured, not
+// silence (computed-not-listed-2026-08 P4, §8 row 11) ----------------------
+//
+// failingSkipStore embeds a real *cache.Store — so Overdue/Inbox/Outbox/
+// Search still run against a genuine fixture mirror — and shadows only
+// AllSkippedFiles. This is the same "override one method, keep the rest
+// real" judgement internal/cli/skipadvisory_unavailable_test.go's own
+// header applies, rather than fabricating a *cache.Store whose
+// AllSkippedFiles fails via the real filesystem walk: buildIndex's own
+// walkArtifacts/walkEvents/commitOrder degrade every read failure they can
+// hit to a reported SkippedFile rather than a returned error, by design —
+// there is no filesystem fixture that makes AllSkippedFiles itself return
+// an error without breaking that design.
+type failingSkipStore struct {
+	*cache.Store
+	err error
+}
+
+func (f failingSkipStore) AllSkippedFiles(context.Context) (map[string][]cache.SkippedFile, error) {
+	return nil, f.err
+}
+
+// assertUnmeasuredWarning is the shared assertion every case below uses:
+// exactly one Violation, SeverityUnmeasured, naming the underlying error.
+func assertUnmeasuredWarning(t *testing.T, warnings []validate.Violation) {
+	t.Helper()
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %+v, want exactly one unmeasured violation", warnings)
+	}
+	w := warnings[0]
+	if w.Severity != validate.SeverityUnmeasured {
+		t.Fatalf("severity = %q, want %q", w.Severity, validate.SeverityUnmeasured)
+	}
+	if !strings.Contains(w.Message, "boom") {
+		t.Fatalf("message = %q, want it to name the underlying error", w.Message)
+	}
+}
+
+// TestInboxHandler_AllSkippedFilesUnavailable covers site :191 (the plain
+// a2a_inbox path, tools_read.go).
+func TestInboxHandler_AllSkippedFilesUnavailable(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	id := "XQ-axon-20260721-unmea1"
+	writeQuestionArtifact(t, mirrorDir, id, "beta")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, id, "submit", "axon")
+
+	store := failingSkipStore{Store: testStore(t, mirrorDir), err: errors.New("boom")}
+	handler := newInboxHandler(store)
+
+	result, _, err := handler(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("a2a_inbox: %v", err)
+	}
+	out, ok := result.(itemsWithSkipped)
+	if !ok {
+		t.Fatalf("a2a_inbox returned %T, want itemsWithSkipped", result)
+	}
+	// The item list still renders — an unmeasured skip report must not turn
+	// a working read into a refusal.
+	if len(out.Items) != 1 || out.Items[0].ID != id {
+		t.Fatalf("expected the item list to still render, got %+v", out.Items)
+	}
+	if out.Skipped != nil {
+		t.Fatalf("Skipped = %+v, want nil when the report itself could not be computed", out.Skipped)
+	}
+	assertUnmeasuredWarning(t, out.Warnings)
+}
+
+// TestInboxHandlerOverdue_AllSkippedFilesUnavailable covers site :184 (the
+// `overdue` branch, tools_read.go) — the one site a plain a2a_inbox call
+// (`{}`) never reaches.
+func TestInboxHandlerOverdue_AllSkippedFilesUnavailable(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	store := failingSkipStore{Store: testStore(t, mirrorDir), err: errors.New("boom")}
+	handler := newInboxHandler(store)
+
+	result, _, err := handler(context.Background(), json.RawMessage(`{"overdue":true}`))
+	if err != nil {
+		t.Fatalf("a2a_inbox overdue: %v", err)
+	}
+	out, ok := result.(itemsWithSkipped)
+	if !ok {
+		t.Fatalf("a2a_inbox overdue returned %T, want itemsWithSkipped", result)
+	}
+	assertUnmeasuredWarning(t, out.Warnings)
+}
+
+// TestOutboxHandler_AllSkippedFilesUnavailable covers newOutboxHandler's own
+// AllSkippedFiles call site.
+func TestOutboxHandler_AllSkippedFilesUnavailable(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	store := failingSkipStore{Store: testStore(t, mirrorDir), err: errors.New("boom")}
+	handler := newOutboxHandler(store)
+
+	result, _, err := handler(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("a2a_outbox: %v", err)
+	}
+	out, ok := result.(itemsWithSkipped)
+	if !ok {
+		t.Fatalf("a2a_outbox returned %T, want itemsWithSkipped", result)
+	}
+	assertUnmeasuredWarning(t, out.Warnings)
+}
+
+// TestSearchHandler_AllSkippedFilesUnavailable covers newSearchHandler's own
+// AllSkippedFiles call site.
+func TestSearchHandler_AllSkippedFilesUnavailable(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	id := "XQ-axon-20260721-unmea2"
+	writeQuestionArtifact(t, mirrorDir, id, "beta")
+
+	store := failingSkipStore{Store: testStore(t, mirrorDir), err: errors.New("boom")}
+	handler := newSearchHandler(store)
+
+	args, _ := json.Marshal(SearchInput{Query: id})
+	result, _, err := handler(context.Background(), args)
+	if err != nil {
+		t.Fatalf("a2a_search: %v", err)
+	}
+	out, ok := result.(itemsWithSkipped)
+	if !ok {
+		t.Fatalf("a2a_search returned %T, want itemsWithSkipped", result)
+	}
+	if len(out.Items) != 1 {
+		t.Fatalf("expected the item list to still render, got %+v", out.Items)
+	}
+	assertUnmeasuredWarning(t, out.Warnings)
+}
+
+// TestInboxHandler_WarningsAbsentOnCleanRead is the control case every
+// assertion above needs: a normal store, nothing skipped, no failure.
+// Warnings must be nil/omitted, not merely empty by convention — the P15
+// per-verb StructuredContent byte-identity guarantee (updateNoticeDecorator's
+// own doc comment, tools_read.go) means a handler that always emitted a
+// Warnings entry would still pass every assertion above while breaking that
+// guarantee for the common (clean) case.
+func TestInboxHandler_WarningsAbsentOnCleanRead(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	id := "XQ-axon-20260721-clean1"
+	writeQuestionArtifact(t, mirrorDir, id, "beta")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, id, "submit", "axon")
+
+	handler := newInboxHandler(testStore(t, mirrorDir))
+	result, _, err := handler(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("a2a_inbox: %v", err)
+	}
+	out, ok := result.(itemsWithSkipped)
+	if !ok {
+		t.Fatalf("a2a_inbox returned %T, want itemsWithSkipped", result)
+	}
+	if out.Warnings != nil {
+		t.Fatalf("Warnings = %+v, want nil on a clean read", out.Warnings)
+	}
+	data, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("marshal itemsWithSkipped: %v", err)
+	}
+	if strings.Contains(string(data), `"warnings"`) {
+		t.Fatalf(`expected "warnings" to be omitted by omitempty on a clean read, got %s`, data)
 	}
 }

@@ -66,6 +66,14 @@ func NewFeedbackCommand(drafter *feedback.Drafter, submitter *feedback.Submitter
 	}
 }
 
+// feedbackTriageExitObjections is `feedback triage --apply`'s exit code for
+// a MEASURED objection: at least one verdict was not applied and none was
+// (P4, computed-not-listed-2026-08 spec 04 §"three states" — "every-
+// verdict-refused no longer exits 0"). Distinct from 0 (every named verdict
+// applied). Reported to the registry author (schemas/verdict-exit-codes.yaml)
+// for reconciliation; this file does not edit that registry.
+const feedbackTriageExitObjections = 1
+
 // SetReadFileForTest overrides the injected file reader (test-only DI
 // seam, rails anti-pattern #10 convention).
 func (c *FeedbackCommand) SetReadFileForTest(f func(path string) ([]byte, error)) {
@@ -432,7 +440,42 @@ func (c *FeedbackCommand) runTriage(args []string, stdio IO) int {
 			_, _ = fmt.Fprintf(stdio.Stderr, "feedback triage: %v\n", err)
 			return 1
 		}
-		_, _ = fmt.Fprintf(stdio.Stdout, "feedback triage: applied %d, skipped %d, wip-limit-hit %d\n", len(result.Applied), len(result.Skipped), len(result.WipLimitHit))
+		_, _ = fmt.Fprintf(stdio.Stdout, "feedback triage: applied %d, refused %d, unknown-id %d, wip-limit-hit %d\n",
+			len(result.Applied), len(result.Refused), len(result.UnknownID), len(result.WipLimitHit))
+		// Name the ids, not only the counts — "applied 0, skipped 1" told a
+		// caller nothing about WHICH record was refused, and merged two
+		// different causes under one word (spec 04 row 3: "reports `refused`
+		// distinctly from `skipped`"). feedback.ApplyResult now carries them
+		// in separate fields (internal/feedback/triage.go), and each gets its
+		// own label here: "refused" is a REAL record the verb declined to
+		// re-touch because it is no longer status:new (an idempotent no-op,
+		// not a mistake); "unknown-id" is an id with no matching inbox
+		// record at all — most often the caller's own typo.
+		if len(result.Refused) > 0 {
+			_, _ = fmt.Fprintf(stdio.Stdout, "  refused: %s\n", strings.Join(result.Refused, ", "))
+		}
+		if len(result.UnknownID) > 0 {
+			_, _ = fmt.Fprintf(stdio.Stdout, "  unknown-id: %s\n", strings.Join(result.UnknownID, ", "))
+		}
+		if len(result.WipLimitHit) > 0 {
+			_, _ = fmt.Fprintf(stdio.Stdout, "  wip-limit-hit: %s\n", strings.Join(result.WipLimitHit, ", "))
+		}
+		if len(verdicts) > 0 && len(result.Applied) == 0 {
+			// Every named verdict was refused: a real objection that must
+			// not exit 0 (spec 04 row 3 — "reproduced live": "feedback
+			// triage: applied 0, skipped 1" -> "EXIT: 0"). Deliberately one
+			// exit code (feedbackTriageExitObjections) covers all three
+			// non-applied causes — Refused, UnknownID, WipLimitHit — mixed
+			// or alone: the check DID run for every named id (unlike
+			// workStatusExitUnmeasured in cmd_work.go, which fires when the
+			// check could not run AT ALL), it just did not lead to a
+			// mutation for any of them. An unknown id is the caller's own
+			// mistake rather than a "the store was unreadable" failure, so
+			// it is still a MEASURED objection, not an unmeasured one — same
+			// code as the already-triaged and wip-limit-hit cases. The ids
+			// are still distinguished by label above, just not by exit code.
+			return feedbackTriageExitObjections
+		}
 		return 0
 	}
 

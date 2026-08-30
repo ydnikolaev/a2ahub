@@ -274,7 +274,7 @@ func TestApplyVerdicts_MutatesRoutesDigestsAndIsIdempotent(t *testing.T) {
 
 	// Idempotent: after applying verdicts, both items are no longer
 	// status:new, so triage is clean and a re-apply of the SAME verdicts
-	// is a no-op (skipped, not re-applied/re-digested).
+	// is a no-op (refused, not re-applied/re-digested).
 	report, err := Triage(hubRoot, Freshness{Status: FreshnessNotApplicable})
 	if err != nil {
 		t.Fatalf("Triage: %v", err)
@@ -291,8 +291,8 @@ func TestApplyVerdicts_MutatesRoutesDigestsAndIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ApplyVerdicts (re-run): %v", err)
 	}
-	if len(result2.Applied) != 0 || len(result2.Skipped) != 2 {
-		t.Fatalf("re-run result = %+v, want 0 applied, 2 skipped (already triaged)", result2)
+	if len(result2.Applied) != 0 || len(result2.Refused) != 2 {
+		t.Fatalf("re-run result = %+v, want 0 applied, 2 refused (already triaged)", result2)
 	}
 	digestAfter, err := os.ReadFile(filepath.Join(hubRoot, "feedback", "digest.md"))
 	if err != nil {
@@ -336,7 +336,7 @@ func TestApplyVerdicts_WipLimitHit(t *testing.T) {
 	}
 }
 
-func TestApplyVerdicts_UnknownIDIsSkipped(t *testing.T) {
+func TestApplyVerdicts_UnknownIDIsUnknownID(t *testing.T) {
 	t.Parallel()
 	hubRoot := t.TempDir()
 	seedBacklog(t, hubRoot, 16)
@@ -345,8 +345,38 @@ func TestApplyVerdicts_UnknownIDIsSkipped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ApplyVerdicts: %v", err)
 	}
-	if len(result.Skipped) != 1 || result.Skipped[0] != "fb-nonexistent" {
-		t.Fatalf("Skipped = %+v, want [fb-nonexistent]", result.Skipped)
+	if len(result.UnknownID) != 1 || result.UnknownID[0] != "fb-nonexistent" {
+		t.Fatalf("UnknownID = %+v, want [fb-nonexistent]", result.UnknownID)
+	}
+	if len(result.Refused) != 0 {
+		t.Fatalf("Refused = %+v, want none (an unknown id is never a refused-not-new record)", result.Refused)
+	}
+}
+
+// TestApplyVerdicts_RefusedAndUnknownIDAreDistinct is the split's own
+// regression test: an already-triaged id and an unknown id in the SAME
+// apply must land in different ApplyResult fields, never merged into one
+// bucket (P4, computed-not-listed-2026-08 spec 04 §8 row 3).
+func TestApplyVerdicts_RefusedAndUnknownIDAreDistinct(t *testing.T) {
+	t.Parallel()
+	hubRoot := t.TempDir()
+	writeInboxItem(t, hubRoot, "fb-20260801-aaaaaa", "bug", "already triaged", "accepted")
+
+	result, err := ApplyVerdicts(hubRoot, []Verdict{
+		{ID: "fb-20260801-aaaaaa", Status: "rejected"},
+		{ID: "fb-typo-does-not-exist", Status: "rejected"},
+	}, time.Now())
+	if err != nil {
+		t.Fatalf("ApplyVerdicts: %v", err)
+	}
+	if len(result.Refused) != 1 || result.Refused[0] != "fb-20260801-aaaaaa" {
+		t.Fatalf("Refused = %+v, want [fb-20260801-aaaaaa]", result.Refused)
+	}
+	if len(result.UnknownID) != 1 || result.UnknownID[0] != "fb-typo-does-not-exist" {
+		t.Fatalf("UnknownID = %+v, want [fb-typo-does-not-exist]", result.UnknownID)
+	}
+	if len(result.Applied) != 0 {
+		t.Fatalf("Applied = %+v, want none", result.Applied)
 	}
 }
 

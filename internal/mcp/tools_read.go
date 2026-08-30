@@ -34,6 +34,100 @@ import (
 type itemsWithSkipped struct {
 	Items   []cache.Item        `json:"items"`
 	Skipped []cache.SkippedFile `json:"skipped,omitempty"`
+	// Warnings carries a validate.SeverityUnmeasured Violation when the
+	// cross-space skip report itself could not be computed (Store.
+	// AllSkippedFiles failed) — distinct from Skipped being empty, which
+	// means the report WAS computed and found nothing to report. Without
+	// this field an agent reading an empty Skipped list cannot tell "clean"
+	// from "we could not check" — the exact ambiguity spec 04
+	// (computed-not-listed-2026-08 P4 AC-11/§8 row 11) closes: two exit-code
+	// values cannot carry three states, and on a structured surface with no
+	// exit code the same three states still need a place to live. Populated
+	// by skippedFilesOrUnmeasured, below. omitempty: a clean read (the
+	// common case, unchanged by this phase) keeps this payload byte-identical
+	// to before it, matching the P15 per-verb StructuredContent
+	// byte-identity guarantee (updateNoticeDecorator's own doc comment,
+	// below).
+	Warnings []validate.Violation `json:"warnings,omitempty"`
+}
+
+// allSkippedFilesReader is the narrow seam skippedFilesOrUnmeasured needs —
+// satisfied implicitly by *cache.Store in production, and by a test double
+// that embeds a real *cache.Store and shadows only this one method
+// (tools_read_test.go), the same "override one method, keep the rest real"
+// judgement internal/cli/skipadvisory_unavailable_test.go's own header
+// applies to avoid a test that can only be written by breaking the world.
+type allSkippedFilesReader interface {
+	AllSkippedFiles(ctx context.Context) (map[string][]cache.SkippedFile, error)
+}
+
+// inboxSkipStore is newInboxHandler's own seam — narrowed per this repo's
+// ISP convention (AGENTS.md) to only the methods that handler calls, rather
+// than the full *cache.Store surface. *cache.Store satisfies this
+// implicitly, so newReadDispatch (tools_dispatch.go, off this phase's
+// allowlist) needs no change to keep compiling.
+type inboxSkipStore interface {
+	allSkippedFilesReader
+	Overdue(ctx context.Context) ([]cache.Item, error)
+	Inbox(ctx context.Context, actionableOnly bool) ([]cache.Item, error)
+}
+
+// outboxSkipStore is newOutboxHandler's own seam — see inboxSkipStore's doc
+// comment for why it is narrowed rather than the full *cache.Store.
+type outboxSkipStore interface {
+	allSkippedFilesReader
+	Outbox(ctx context.Context, attentionOnly bool) ([]cache.Item, error)
+}
+
+// searchSkipStore is newSearchHandler's own seam — see inboxSkipStore's doc
+// comment for why it is narrowed rather than the full *cache.Store.
+type searchSkipStore interface {
+	allSkippedFilesReader
+	Search(ctx context.Context, query string, filters cache.SearchFilters) ([]cache.Item, error)
+}
+
+// skippedFilesUnavailableNextStep is this package's own copy of the CLI's
+// skipAdvisoryNextStep (internal/cli/skipadvisory.go) — same wording,
+// deliberately duplicated rather than imported: ADR-001 forbids this
+// package importing internal/cli (flattenSkippedFiles' own doc comment,
+// above, states the same constraint for the sibling helper this pairs
+// with). It is stated about what the READER should do with the output
+// already in front of them, not about repairing the store — the same
+// framing the CLI copy uses.
+const skippedFilesUnavailableNextStep = "treat this listing as possibly incomplete; run `a2a doctor` to see whether the mirror is readable, then re-run this command"
+
+// skippedFilesOrUnmeasured resolves an a2a_read verb's cross-space
+// skipped-file report, replacing the wholesale `bySpace, _ :=` discard the
+// closeout audit found at this file's four AllSkippedFiles call sites
+// (computed-not-listed-2026-08 P4 AC-11/§8 row 11, carried into this
+// phase's footprint from P6's deliberately, so the two phases stay
+// file-disjoint). A silently-discarded error here used to drop two facts at
+// once: that the returned item list might be missing rows, and that
+// nothing could find out which — the exact defect P6 already closed on the
+// CLI side (internal/cli/skipadvisory.go's skipAdvisoryUnavailable, whose
+// reasoning this reuses rather than inventing a second one). Unlike the
+// CLI, this surface has no stderr channel to carry an out-of-band advisory
+// on: StructuredContent IS the whole structured result (itemsWithSkipped's
+// own doc comment, this file), so the fact rides the returned payload
+// itself, as a validate.SeverityUnmeasured Violation in Warnings.
+// SeverityUnmeasured already exists one layer down
+// (internal/validate/result.go, D9) — this phase does not mint a second
+// name for it. The message carries all three parts skipAdvisoryUnavailable's
+// own doc comment says a bare "%v" discard was missing: the attempted
+// action (verb), the reason (err), and a next step — a symptom with no
+// action is spec 04's own defect.
+func skippedFilesOrUnmeasured(ctx context.Context, verb string, store allSkippedFilesReader) ([]cache.SkippedFile, []validate.Violation) {
+	bySpace, err := store.AllSkippedFiles(ctx)
+	if err != nil {
+		return nil, []validate.Violation{{
+			Class: validate.ClassReferential,
+			Message: fmt.Sprintf(
+				"%s: could not determine which files, if any, were skipped: %v — %s",
+				verb, err, skippedFilesUnavailableNextStep),
+			Severity: validate.SeverityUnmeasured,
+		}}
+	}
+	return flattenSkippedFiles(bySpace), nil
 }
 
 // flattenSkippedFiles merges a Store.AllSkippedFiles map into one
@@ -74,7 +168,7 @@ type InboxInput struct {
 	Overdue bool `json:"overdue,omitempty"`
 }
 
-func newInboxHandler(store *cache.Store) HandlerFunc {
+func newInboxHandler(store inboxSkipStore) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in InboxInput
 		if err := decodeStrict(args, &in, "a2a_inbox", 0); err != nil {
@@ -94,8 +188,8 @@ func newInboxHandler(store *cache.Store) HandlerFunc {
 			if items == nil {
 				items = []cache.Item{}
 			}
-			bySpace, _ := store.AllSkippedFiles(ctx)
-			return itemsWithSkipped{Items: items, Skipped: flattenSkippedFiles(bySpace)}, "", nil
+			skipped, warnings := skippedFilesOrUnmeasured(ctx, "a2a_inbox", store)
+			return itemsWithSkipped{Items: items, Skipped: skipped, Warnings: warnings}, "", nil
 		}
 		items, err := store.Inbox(ctx, in.Actionable)
 		if err != nil {
@@ -107,8 +201,8 @@ func newInboxHandler(store *cache.Store) HandlerFunc {
 		// Defect fix (filed 2026-07-26): see itemsWithSkipped's own doc
 		// comment. inbox is cross-space, so this folds in the union across
 		// every connected mirror.
-		bySpace, _ := store.AllSkippedFiles(ctx)
-		return itemsWithSkipped{Items: items, Skipped: flattenSkippedFiles(bySpace)}, "", nil
+		skipped, warnings := skippedFilesOrUnmeasured(ctx, "a2a_inbox", store)
+		return itemsWithSkipped{Items: items, Skipped: skipped, Warnings: warnings}, "", nil
 	}
 }
 
@@ -120,7 +214,7 @@ type OutboxInput struct {
 	Attention bool   `json:"attention,omitempty"`
 }
 
-func newOutboxHandler(store *cache.Store) HandlerFunc {
+func newOutboxHandler(store outboxSkipStore) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in OutboxInput
 		if err := decodeStrict(args, &in, "a2a_outbox", 0); err != nil {
@@ -136,8 +230,8 @@ func newOutboxHandler(store *cache.Store) HandlerFunc {
 		// Defect fix (filed 2026-07-26): see itemsWithSkipped's own doc
 		// comment. outbox is cross-space, so this folds in the union across
 		// every connected mirror.
-		bySpace, _ := store.AllSkippedFiles(ctx)
-		return itemsWithSkipped{Items: items, Skipped: flattenSkippedFiles(bySpace)}, "", nil
+		skipped, warnings := skippedFilesOrUnmeasured(ctx, "a2a_outbox", store)
+		return itemsWithSkipped{Items: items, Skipped: skipped, Warnings: warnings}, "", nil
 	}
 }
 
@@ -287,7 +381,7 @@ type SearchInput struct {
 	Thread string `json:"thread,omitempty"`
 }
 
-func newSearchHandler(store *cache.Store) HandlerFunc {
+func newSearchHandler(store searchSkipStore) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in SearchInput
 		if err := decodeStrict(args, &in, "a2a_search", 0); err != nil {
@@ -304,8 +398,8 @@ func newSearchHandler(store *cache.Store) HandlerFunc {
 		// comment. search is cross-space (in.Space is only a filter on the
 		// fold, not the walk), so this folds in the union across every
 		// connected mirror, same as inbox/outbox above.
-		bySpace, _ := store.AllSkippedFiles(ctx)
-		return itemsWithSkipped{Items: items, Skipped: flattenSkippedFiles(bySpace)}, "", nil
+		skipped, warnings := skippedFilesOrUnmeasured(ctx, "a2a_search", store)
+		return itemsWithSkipped{Items: items, Skipped: skipped, Warnings: warnings}, "", nil
 	}
 }
 

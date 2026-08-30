@@ -644,6 +644,20 @@ func (s *ContractPublicationService) Preflight(ctx context.Context, request Cont
 	if err != nil {
 		return ContractPublicationResult{}, err
 	}
+	// Refused HERE too, for the same reason Publish refuses at its own
+	// equivalent point (below): Preflight's whole stated purpose is
+	// previewing the exact plan Publish would execute, and until this check
+	// existed a self-contradictory plan (a declared bump the computed
+	// compatibility disagrees with) previewed as `Status: Planned` while
+	// Publish, given the identical candidate, refused it outright. An agent
+	// scripting "preflight; echo $?" read a clean exit over content the
+	// publish step would then refuse — the same disagreement-between-
+	// verbs shape TestContractPublicationPreflightAndPublishAgreeOnThe
+	// ExplicitVersionRule already guards for the floor rule, one finding
+	// class over.
+	if len(plan.Violations) != 0 {
+		return ContractPublicationResult{Plan: plan}, &ContractPublicationViolationError{Violations: plan.Violations}
+	}
 	if err := refuseAutoBumpBelowFloor(plan, request); err != nil {
 		return ContractPublicationResult{}, err
 	}
@@ -777,11 +791,13 @@ func (s *ContractPublicationService) Publish(ctx context.Context, request Contra
 	if err != nil {
 		return ContractPublicationResult{}, err
 	}
-	// Refused HERE, and only here: the same planning helper also serves
-	// verifyCompletion, which re-plans a publication that already landed on
-	// main during recovery. Refusing there would make an already-published
-	// contract permanently unrecoverable over a finding its own publication
-	// already carries.
+	// Refused HERE, and never inside verifyCompletion: the same planning
+	// helper also serves verifyCompletion, which re-plans a publication that
+	// already landed on main during recovery. Refusing there would make an
+	// already-published contract permanently unrecoverable over a finding its
+	// own publication already carries. (Preflight, above, refuses at its own
+	// equivalent point for the same reason — the two verbs must agree, not
+	// share one refusal site; verifyCompletion has no Preflight analogue.)
 	if len(plan.Violations) != 0 {
 		return ContractPublicationResult{Plan: plan}, &ContractPublicationViolationError{Violations: plan.Violations}
 	}

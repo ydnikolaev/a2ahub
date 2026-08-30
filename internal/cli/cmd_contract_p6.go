@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"reflect"
 	"strings"
 	"sync"
@@ -213,20 +214,40 @@ func (c *ContractCommand) runPreflight(ctx context.Context, args []string, stdio
 	if c.publication == nil {
 		return contractServiceUnavailable(stdio, "preflight")
 	}
-	req, asJSON, ok := parseContractPublicationArgs("preflight", args, stdio, false)
+	req, asJSON, verbose, ok := parseContractPublicationArgs("preflight", args, stdio, false, true)
 	if !ok {
 		return 2
 	}
 	result, err := c.publication.Preflight(ctx, req)
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract preflight: %v\n", err)
+		if verbose {
+			writeContractPreflightVerboseDetail(stdio.Stderr, result.Plan)
+		}
 		return 1
+	}
+	if verbose {
+		writeContractPreflightVerboseDetail(stdio.Stderr, result.Plan)
 	}
 	return renderContractPublication(stdio, result, asJSON)
 }
 
+// writeContractPreflightVerboseDetail is preflight's --verbose channel
+// (spec computed-not-listed-2026-08 P4 §8 row 9, AGENTS.md's Error-flow
+// rule: "one actionable line + stable exit code on stderr; detail behind
+// --verbose"). It writes ONLY to stderr, never to stdout — stdout is
+// renderContractPublication's own contract (a pipeline reads it, --json
+// included) and --verbose must never perturb it.
+func writeContractPreflightVerboseDetail(w io.Writer, plan contract.PublicationPlan) {
+	_, _ = fmt.Fprintf(w, "verbose: gate=%s compatibility=%s entries=%d mutations=%d warnings=%d violations=%d\n",
+		plan.Gate, plan.Compatibility.Verdict, len(plan.Entries), len(plan.Mutations), len(plan.Warnings), len(plan.Violations))
+	for _, violation := range plan.Violations {
+		_, _ = fmt.Fprintf(w, "verbose: violation %s %s: %s\n", violation.Code, violation.Path, violation.Message)
+	}
+}
+
 func (c *ContractCommand) runP6Publish(ctx context.Context, args []string, stdio IO) int {
-	req, asJSON, ok := parseContractPublicationArgs("publish", args, stdio, true)
+	req, asJSON, _, ok := parseContractPublicationArgs("publish", args, stdio, true, false)
 	if !ok {
 		return 2
 	}
@@ -250,7 +271,12 @@ var contractPublicationWorkflowLines = map[string]string{
 	"contract preflight": workflowLine("loop-contract-change"),
 }
 
-func parseContractPublicationArgs(verb string, args []string, stdio IO, allowExpect bool) (ContractPublicationRequest, bool, bool) {
+// parseContractPublicationArgs is shared by `contract publish` and
+// `contract preflight`. allowVerbose registers `--verbose` only for the verb
+// that is meant to honour it (P4 row 9: preflight, "the verb you are already
+// holding") — the flag is not registered at all for a verb that would parse
+// it and then silently ignore it.
+func parseContractPublicationArgs(verb string, args []string, stdio IO, allowExpect bool, allowVerbose bool) (ContractPublicationRequest, bool, bool, bool) {
 	fs := flag.NewFlagSet("contract "+verb, flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
 	version := fs.String("version", "", "explicit semver")
@@ -259,35 +285,43 @@ func parseContractPublicationArgs(verb string, args []string, stdio IO, allowExp
 	expectPlan := fs.String("expect-plan", "", "expected sha256 plan digest")
 	allowEmptyBump := fs.Bool("allow-empty-bump", false, "acknowledge and proceed past a bump whose mutations touch no normative artifact")
 	asJSON := fs.Bool("json", false, "emit JSON")
+	var verboseFlag *bool
+	if allowVerbose {
+		verboseFlag = fs.Bool("verbose", false, "emit additional detail on stderr")
+	}
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
 	positionals, err := parseArgsAnyOrder(fs, args)
 	if err != nil {
-		return ContractPublicationRequest{}, false, false
+		return ContractPublicationRequest{}, false, false, false
 	}
 	if len(positionals) != 1 || (*version == "") == (*bump == "") {
 		_, _ = fmt.Fprintf(stdio.Stderr, "usage: a2a contract %s <id> [--version <semver>|--bump major|minor|patch] [--staging <dir>]", verb)
 		if allowExpect {
 			_, _ = fmt.Fprint(stdio.Stderr, " [--expect-plan <sha256:...>]")
 		}
+		if allowVerbose {
+			_, _ = fmt.Fprint(stdio.Stderr, " [--verbose]")
+		}
 		_, _ = fmt.Fprintln(stdio.Stderr, " [--json]")
 		if line, ok := contractPublicationWorkflowLines["contract "+verb]; ok {
 			_, _ = fmt.Fprintln(stdio.Stderr, line)
 		}
-		return ContractPublicationRequest{}, false, false
+		return ContractPublicationRequest{}, false, false, false
 	}
 	if !allowExpect && *expectPlan != "" {
 		_, _ = fmt.Fprintln(stdio.Stderr, "contract preflight: --expect-plan is only valid for publish")
-		return ContractPublicationRequest{}, false, false
+		return ContractPublicationRequest{}, false, false, false
 	}
 	if *bump != "" && *bump != "major" && *bump != "minor" && *bump != "patch" {
 		_, _ = fmt.Fprintln(stdio.Stderr, "contract "+verb+": --bump must be major, minor, or patch")
-		return ContractPublicationRequest{}, false, false
+		return ContractPublicationRequest{}, false, false, false
 	}
+	verbose := verboseFlag != nil && *verboseFlag
 	return ContractPublicationRequest{
 		ID: positionals[0], Version: *version, Bump: *bump, Staging: *staging,
 		ExpectPlan: *expectPlan, AllowEmptyBump: *allowEmptyBump,
 		Actor: ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel},
-	}, *asJSON, true
+	}, *asJSON, verbose, true
 }
 
 func renderContractPublication(stdio IO, result space.ContractPublicationResult, asJSON bool) int {
@@ -299,6 +333,19 @@ func renderContractPublication(stdio IO, result space.ContractPublicationResult,
 		return 0
 	}
 	_, _ = fmt.Fprintf(stdio.Stdout, "%s %s@%s\nplan %s\n", result.Status, result.Plan.Contract, result.Plan.TargetVersion, result.Plan.PlanDigest)
+	// P4 row 2 (spec computed-not-listed-2026-08/04, US-3): the JSON branch
+	// above always carried plan.Gate because it serialises the whole struct;
+	// the plain-text branch never printed it, so an operator previewing a
+	// publish on the human path had no way to see that G1/G2 would require a
+	// decision. Printed whenever a gate is in force (GateNone/"" is the
+	// no-decision-required case and stays silent, matching the warnings
+	// block below). Deliberately independent of Plan.Violations: a plan can
+	// carry a gate with NO violations at all (first publish is always G1),
+	// and that combination must still print the gate and exit 0 — coupling
+	// this line to the violation check above would refuse correct work.
+	if gate := result.Plan.Gate; gate != "" && gate != contract.GateNone {
+		_, _ = fmt.Fprintf(stdio.Stdout, "gate %s\n", gate)
+	}
 	// fb-20260827-47069c (US-2/AC-3): both facts were computed already and
 	// reachable only under --json — candidate_source.kind/.location named
 	// which tree the plan actually read, and len(mutations) is the cheap
