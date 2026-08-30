@@ -9234,6 +9234,56 @@
             "scope": "none",
             "why": "Nothing is owed. No verb gains or loses a capability; only refusal TEXT changes, and it changes to stop misdirecting you. If you previously chased a `space:` diagnostic from `verify-published --local` and found nothing wrong with the published tree, this is why.\nThe one case worth a look: a script that greps these diagnostics for the literal `space:` will stop matching when the fault is on your side — of `verify-published --local` and of `contract publish --staging` alike. That is the bug being fixed, so matching on it was always matching on a lie, but a grep that relied on it will now find nothing rather than find the wrong thing.\n"
           }
+        }
+      ]
+    },
+    {
+      "version": "0.26.0",
+      "released": "unreleased",
+      "headline": "what could not be determined is said out loud",
+      "changes": [
+        {
+          "id": "RN-02600-0",
+          "kind": "fix",
+          "impact": "high",
+          "subject": "a credential written as `password=…` went out to Telegram verbatim",
+          "detail": "The outbound notifier redacted a closed set of provider token shapes — an AWS key id, a GitHub PAT, a PEM block, a Slack token and their siblings — and nothing else. The generic assignment shapes a human actually types (`password=abc`, `token: hunter2words`, `secret = s3cr3t`, `api_key: abc123`) were not in that set, so they were forwarded as written.\nThe same strings WERE redacted from the local operational snapshot, which never leaves the machine. Two byte-identical copies of a keyword heuristic lived in `internal/cache` and `internal/operational` guarding the local view, while the one edge that transmits consulted the narrower predicate. The guard was on the wrong side of the boundary.\nThe heuristics now have one home and the outbound edge calls it. \"bearer\" used as an English word does not trigger it — the shape is the assignment (`bearer:`, `bearer=`), not the bare word, so ordinary prose about who bears a cost still goes through.\nONE CONSEQUENCE BEYOND THE OUTBOUND EDGE, named here rather than discovered. This does NOT change what `a2a validate` refuses. That gate's contract is a fixture corpus and it is deliberately narrower: a value shaped like `API_KEY=\u003cyour-key-here\u003e` is a documented placeholder a repository is entitled to commit, and refusing it would break spaces whose own docs show an example. Redacting one benign line on the way out costs a `[redacted]`; refusing one benign line at the gate costs you a commit.\n",
+          "affects": [
+            "cli",
+            "space"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "Nothing is owed, and nothing you already committed becomes invalid. If a notification you sent before this version quoted a config line, assume its value was delivered as written and rotate that credential — the redaction starts here, it is not retroactive.\n"
+          }
+        },
+        {
+          "id": "RN-02600-1",
+          "kind": "feat",
+          "impact": "normal",
+          "subject": "a read verb now says when it could not determine which files it skipped",
+          "detail": "`a2a inbox`, `a2a outbox`, `a2a search` and `a2a thread` already told you when a malformed file dropped out of their output. What they did not tell you was when that report ITSELF could not be produced — the read failed and the failure was dropped, so you lost two facts at once: that the listing might be missing rows, and that nothing could find out which.\nIt now says so on stderr, with what it attempted, what it found, and what to do about it. In `--json` mode it emits one JSON object on the same channel the existing skipped-file advisory already uses, so a consumer parsing stderr meets the shape it expects rather than prose in the middle of a stream.\nstdout is byte-identical either way. A pipeline reading the item array sees exactly what it saw before.\n",
+          "affects": [
+            "cli"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "Nothing is owed. If you script against these verbs and treat any stderr output as failure, note that this is an advisory and the exit code is unchanged — the same rule the existing skipped-file note already follows.\n"
+          }
+        },
+        {
+          "id": "RN-02600-2",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "a failed file read named a path and an errno, but never the command",
+          "detail": "Every bounded file read in the CLI flows through one function, and both of its error returns handed the operating system's own message straight to stderr. You got a path and an errno with no indication of which command was running or which read had failed — and no `cli:` prefix, so it did not even look like it came from this binary.\nThe error is now wrapped with the command surface and the path it was reading. Callers that distinguish \"this file is genuinely absent\" from \"this file could not be read\" still can: the wrap preserves the underlying error, which is what lets `contract verify` keep treating a descriptor deleted in a pull request as nothing-to-check rather than a hard failure.\n",
+          "affects": [
+            "cli"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "Nothing is owed. The one case worth a look: a script matching these messages against the raw `open \u003cpath\u003e: \u003cerrno\u003e` shape will stop matching. The path and the errno are both still in the text, now behind a `cli: cannot read \u003cpath\u003e: ` prefix.\n"
+          }
         },
         {
           "id": "KI-01900-PROVIDER-TIER-DEFERRED",
