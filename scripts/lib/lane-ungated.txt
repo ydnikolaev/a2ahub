@@ -179,3 +179,16 @@ feedback/digest.md
 # again, not an input to any verdict. If a gate ever learns to check that a
 # closed row's claim is still true, this entry gets deleted rather than kept.
 docs/backlog-archive.md
+
+# The install contract's human reading surface (built-not-listed-2026-08 P1).
+# Deliberately ungated, and the reason is the same one that demoted it from
+# being an SSOT: it OWNS nothing. Each of the four facts it restates is owned by
+# a shipping artifact — the binary's dispatch table, skill/embed.go's embed
+# root, internal/space.CredentialEnvVar, and README.md's opening sentence — and
+# `check-plugin-manifests.sh` compares every MANIFEST against those owners, not
+# against this page. So a drift here is caught the moment anyone copies it into
+# a manifest, which is the only path by which it could reach a user.
+# It is also `docs/`, i.e. stripped at publish, so a public gate claiming it
+# would match nothing in every public checkout.
+# Delete this entry if it ever becomes an input to a verdict.
+docs/install-contract.md
