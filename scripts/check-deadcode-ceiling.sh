@@ -343,8 +343,38 @@ case "${1:-}" in
   gate_summary "deadcode-ceiling"
   exit $?
   ;;
+--prime)
+  # THE ONLY MODE THAT USES THE NETWORK, and it exists because the verify
+  # path deliberately does not. `run_deadcode` serves the oracle from a
+  # `file://` view of this machine's module cache; nothing was responsible
+  # for putting it there.
+  #
+  # On a laptop that is invisible: the first run downloads it once and every
+  # run after is warm, and the ci-parity container mounts the host's cache so
+  # it inherits the same luck. A GitHub runner has neither. `actions/setup-go`
+  # keys its cache on go.sum, and the oracle resolves its OWN module graph —
+  # `golang.org/x/telemetry` appears in no go.sum here — so that dependency
+  # was never restored and never fetched.
+  #
+  # It stayed invisible because the gate did the RIGHT thing with a missing
+  # input: UNMEASURED, not a false green. On 2026-08-30 the cached copy aged
+  # out and `make check` went red on every branch at once — a release
+  # candidate, private main, and an unrelated dependabot PR — with nothing in
+  # any diff to explain it.
+  #
+  # CI calls this rather than restating the version: DEADCODE_VERSION has one
+  # home, and a workflow that hardcoded it would drift the moment the pin
+  # moved, which is the failure this repository refuses everywhere else.
+  echo "deadcode-ceiling: priming golang.org/x/tools/cmd/deadcode@$DEADCODE_VERSION into $(go env GOMODCACHE) (needs the network)…"
+  if ! GOFLAGS= GOPROXY="${GOPROXY_PRIME:-https://proxy.golang.org,direct}" \
+      go install "golang.org/x/tools/cmd/deadcode@$DEADCODE_VERSION"; then
+    echo "deadcode-ceiling: --prime FAILED to fetch the oracle; the verify path will report UNMEASURED" >&2
+    exit 1
+  fi
+  echo "deadcode-ceiling: primed."
+  ;;
 *)
-  echo "usage: $0 [--teeth|--write]" >&2
+  echo "usage: $0 [--teeth|--write|--prime]" >&2
   exit 2
   ;;
 esac

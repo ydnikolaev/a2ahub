@@ -109,7 +109,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/gate-lib.sh"
 # here is a decision, not a hiding place: it prints on every audit.
 excused_reason() { # $1 = command
   case "$1" in
-    *"go install"*|*"go mod download"*|*"npm ci"*|*"playwright install"*)
+    *"go install"*|*"go mod download"*|*"npm ci"*|*"playwright install"* \
+    | *"check-deadcode-ceiling.sh --prime"*)
+      # --prime is `go install` wearing the gate's own name: it exists so the
+      # version has ONE home instead of being restated in a workflow. It
+      # fetches the oracle and asserts nothing, and the thing it provisions is
+      # judged by the deadcode-ceiling phase this suite already runs.
       echo "provisioning, not a check" ;;
     echo\ *)
       echo "a workflow's own explanatory echo, not a check" ;;

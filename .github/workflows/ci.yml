@@ -298,6 +298,19 @@ jobs:
       - name: Resolve module inputs
         run: go mod download
 
+      # The deadcode oracle resolves its OWN module graph, so `go mod download`
+      # above never fetches it and setup-go's go.sum-keyed cache never restores
+      # it. The gate reads it offline through a file:// view of the module
+      # cache, which is correct — but nothing was responsible for filling that
+      # cache on a runner, and on 2026-08-30 the cached copy aged out and
+      # `make check` went red on every branch at once with nothing in any diff
+      # to explain it. The gate itself behaved: UNMEASURED, never a false green.
+      #
+      # It calls the script rather than naming a version, because
+      # DEADCODE_VERSION has exactly one home.
+      - name: Prime the deadcode oracle's module cache
+        run: bash scripts/check-deadcode-ceiling.sh --prime
+
       - name: make check
         run: make check
 
@@ -418,6 +431,19 @@ jobs:
 
       - name: Resolve module inputs
         run: go mod download
+
+      # The deadcode oracle resolves its OWN module graph, so `go mod download`
+      # above never fetches it and setup-go's go.sum-keyed cache never restores
+      # it. The gate reads it offline through a file:// view of the module
+      # cache, which is correct — but nothing was responsible for filling that
+      # cache on a runner, and on 2026-08-30 the cached copy aged out and
+      # `make check` went red on every branch at once with nothing in any diff
+      # to explain it. The gate itself behaved: UNMEASURED, never a false green.
+      #
+      # It calls the script rather than naming a version, because
+      # DEADCODE_VERSION has exactly one home.
+      - name: Prime the deadcode oracle's module cache
+        run: bash scripts/check-deadcode-ceiling.sh --prime
 
       # THE LANE CAN DERIVE `web-quality`, AND UNTIL 2026-08-26 IT COULD NOT RUN IT.
       #
