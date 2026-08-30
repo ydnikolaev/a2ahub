@@ -203,7 +203,7 @@ PUBLIC_VALIDATOR_FILES=(
   scripts/check-usage-workflow.sh
   scripts/tests/check_usage_workflow_test.sh
 )
-ALLOW_FILES=( server.json .gitignore .golangci.yml .goreleaser.yaml .gitleaks.toml .govulncheck-allow.txt Makefile SECURITY.md README.md LICENSE NOTICE go.mod go.sum cc-coverage.yaml scripts/install.sh scripts/dev-install.sh scripts/e2e-authoring-smoke.sh scripts/classify-guard.sh scripts/release-preflight.sh scripts/check-release-notes-freshness.sh scripts/check-flaky-tests.sh scripts/lib/flaky-tests.txt scripts/check-roadmap-release-decisions.sh scripts/check-provider-tier-deferral.sh scripts/check-unmeasured-reach.sh scripts/bump-space-template.sh scripts/check-gosec-scope.sh scripts/check-readme.sh scripts/dashboard-template-drift.sh scripts/check-view-vocabulary.sh scripts/check-pendency-uniqueness.sh scripts/check-loop-coverage.sh scripts/check-human-gates.sh scripts/check-loop-reachability.sh scripts/check-prose-roster.sh scripts/check-prose-coverage.sh scripts/check-operational-confidence.sh scripts/check-error-codes.sh scripts/verify.sh scripts/build-release-cohort.sh scripts/build-mcpb.sh scripts/rewrite-server-json.sh scripts/release-postflight.sh scripts/lib/strip-set.txt "${PUBLIC_VALIDATOR_FILES[@]}" )
+ALLOW_FILES=( server.json .gitignore .golangci.yml .goreleaser.yaml .gitleaks.toml .govulncheck-allow.txt Makefile SECURITY.md README.md LICENSE NOTICE go.mod go.sum cc-coverage.yaml scripts/install.sh scripts/dev-install.sh scripts/e2e-authoring-smoke.sh scripts/classify-guard.sh scripts/release-preflight.sh scripts/check-release-notes-freshness.sh scripts/check-flaky-tests.sh scripts/lib/flaky-tests.txt scripts/check-roadmap-release-decisions.sh scripts/check-provider-tier-deferral.sh scripts/check-unmeasured-reach.sh scripts/bump-space-template.sh scripts/check-gosec-scope.sh scripts/check-readme.sh scripts/dashboard-template-drift.sh scripts/check-view-vocabulary.sh scripts/check-pendency-uniqueness.sh scripts/check-loop-coverage.sh scripts/check-human-gates.sh scripts/check-loop-reachability.sh scripts/check-prose-roster.sh scripts/check-prose-coverage.sh scripts/check-operational-confidence.sh scripts/check-error-codes.sh scripts/verify.sh scripts/build-release-cohort.sh scripts/build-mcpb.sh scripts/lib/mcpb-manifest.template.json scripts/rewrite-server-json.sh scripts/release-postflight.sh scripts/lib/strip-set.txt "${PUBLIC_VALIDATOR_FILES[@]}" )
 DENY_DIRS=( .agents .claude .codex .mate .sporo )   # scripts/ handled below (install.sh + e2e-authoring-smoke.sh are the public exceptions)
 DENY_FILES=( AGENTS.md CLAUDE.md )
 PENDING_DIRS=( docs )   # deferred to P6 — tracked today, tolerated by check 1, classified by check 2, exempt from check 3.
@@ -355,6 +355,7 @@ fi
 for f in \
   "scripts/build-release-cohort.sh:the signed cohort manifest builder, called by release.yml" \
   "scripts/build-mcpb.sh:the .mcpb bundle builder, called by release.yml" \
+  "scripts/lib/mcpb-manifest.template.json:the bundle manifest template, READ BY PATH by the public build-mcpb.sh" \
   "scripts/rewrite-server-json.sh:the registry substitution, called by publish-mcp.yml"
 do
   path="${f%%:*}"; why="${f#*:}"

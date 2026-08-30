@@ -158,9 +158,31 @@ excused_reason() { # $1 = command
     | *"npm run package:vsix"* \
     | *'npm version "${GITHUB_REF_NAME#v}"'* \
     | *"scripts/build-release-cohort.sh dist"* \
+    | *"scripts/build-mcpb.sh dist"* \
     | *'SHA256SUMS|*.cosign.bundle) continue ;;'* \
     | *'while IFS= read -r asset; do'*)
       echo "runs only on a version tag, against a real GitHub release — goreleaser build, cosign signing and asset upload need a tag and credentials that do not exist locally. What proves this path is the release runbook's own post-tag verification, not a local re-run." ;;
+
+    # Group 3b — publish-mcp.yml, the MCP Registry listing. DELIBERATELY NOT
+    # ARMED: `workflow_dispatch` only, no tag trigger, so it does not run even
+    # in CI unless a person starts it (docs/runbooks/release.md step 17a says
+    # why — a listing widens who runs a write-capable MCP surface against their
+    # own credential, and that is an operator decision).
+    #
+    # It needs three things no local run has: a PUBLISHED tag whose release
+    # already carries SHA256SUMS, the network, and a registry OIDC identity.
+    # What DOES get proven locally is the only part that can be wrong without
+    # anyone noticing — `scripts/rewrite-server-json.sh` is a plain script,
+    # runnable against a fixture checksum set, and it refuses rather than
+    # emitting a half-substituted document. `check-plugin-manifests.sh` also
+    # asserts, independently of this audit, that the substitution step precedes
+    # the publish call.
+    *"mcp-publisher"* \
+    | *"mcp_publisher"* \
+    | *"rewrite-server-json.sh"* \
+    | *'gh release download "${{ inputs.tag }}"'* \
+    | *"registry/releases/latest/download/mcp-publisher"*)
+      echo "publish-mcp.yml is disarmed (workflow_dispatch only) and needs a published tag, the network and a registry OIDC identity; its one falsifiable part, scripts/rewrite-server-json.sh, is verified against a fixture checksum set and its step ORDER is asserted by check-plugin-manifests.sh" ;;
 
     # Group 4 — feedback-intake.yml, hub intake (~22). Runs on
     # pull_request_target against a feedback file submitted by an incoming
