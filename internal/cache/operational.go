@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -24,11 +23,6 @@ const (
 	maximumOperationalActorModelRunes = 96
 	maximumOperationalSummaryRunes    = 512
 	maximumOperationalWaitIDRunes     = 512
-)
-
-var (
-	operationalCredentialAssignmentPattern = regexp.MustCompile(`(?i)(^|[^a-z0-9])(password|passwd|token|authorization|api[-_]?key|secret)[[:space:]]*[:=]`)
-	operationalBearerCredentialPattern     = regexp.MustCompile(`(?i)(^|[^a-z0-9])bearer([[:space:]]+|[:=])`)
 )
 
 // OperationalEvidence is cache's neutral, one-pass projection input. It
@@ -411,9 +405,19 @@ func safeOperationalText(value string, maximum int) string {
 	return result
 }
 
+// containsOperationalCredential collapsed onto sensitive.ContainsCredentialText
+// alone (computed-not-listed-2026-08 P6 §7): the generic assignment/bearer
+// shapes this used to check via its own operationalCredentialAssignmentPattern/
+// operationalBearerCredentialPattern copies now live in internal/sensitive —
+// a second, byte-identical heuristic here would drift the first time either
+// copy was edited alone.
+//
+// ContainsCredentialText, not ContainsContent: this is a read-model boundary,
+// where over-redacting costs a `[redacted unsafe text]` and under-redacting
+// shows an operator a credential. The artifact-policy seam takes the narrow
+// predicate for the opposite reason — see internal/sensitive/matcher.go.
 func containsOperationalCredential(value string) bool {
-	if sensitive.ContainsContent(value) || operationalCredentialAssignmentPattern.MatchString(value) ||
-		operationalBearerCredentialPattern.MatchString(value) {
+	if sensitive.ContainsCredentialText(value) {
 		return true
 	}
 	tokens := strings.FieldsFunc(strings.ToLower(value), func(r rune) bool {

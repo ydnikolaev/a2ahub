@@ -45,7 +45,7 @@ func boundAndRedact(body []byte) (string, []TruncationReason) {
 		text = string([]rune(text)[:maxDescriptionRunes])
 		truncated = append(truncated, TruncationReason{Code: TruncationDescriptionBounded, Bound: maxDescriptionRunes})
 	}
-	if sensitive.ContainsContent(text) {
+	if sensitive.ContainsCredentialText(text) {
 		text = ""
 		truncated = append(truncated, TruncationReason{Code: TruncationDescriptionRedacted})
 	}

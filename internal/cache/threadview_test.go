@@ -242,10 +242,17 @@ func TestThreadViewWorkHistoryProjectsHostileLegacyTextSafely(t *testing.T) {
 	reportedAt := time.Date(2026, 7, 1, 11, 0, 0, 0, time.UTC)
 	statusID := "XA-axon-20260701-hostile-status"
 	const (
-		unsafeModel       = "password=model-secret"
-		unsafeSession     = "token:super-secret"
-		unsafeSummary     = "api_key=summary-secret"
-		unsafeWaitSummary = "Bearer wait-summary-secret"
+		unsafeModel   = "password=model-secret"
+		unsafeSession = "token:super-secret"
+		unsafeSummary = "api_key=summary-secret"
+		// The HTTP header shape, not a bare "Bearer <word>": computed-not-
+		// listed-2026-08 P6 narrowed the generic bearer heuristic to the
+		// ASSIGNMENT form so "the bearer of good news" stops false-
+		// positiving, and a bare "Bearer wait-summary-secret" is below the
+		// closed bearer-token shape's own 20-char length floor. This is what
+		// a real leak looks like, and it is the same fixture the twin in
+		// operational_test.go already carries.
+		unsafeWaitSummary = "Authorization: Bearer wait-summary-secret"
 		wantSession       = "sha256:360f0b0743ceb50fd947fd94c0137516a7ddc7b52bbc5e9a4e6e855174e63a6a"
 	)
 	fx.commitArtifact("axon/exchanges/"+statusID+".md", map[string]any{

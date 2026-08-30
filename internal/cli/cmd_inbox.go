@@ -94,6 +94,14 @@ func (c *InboxCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// connected mirror.
 	if skipped, skErr := c.store.AllSkippedFiles(ctx); skErr == nil {
 		skipAdvisory(stdio, flattenSkipped(skipped), *jsonOut)
+	} else {
+		// computed-not-listed-2026-08 P6 AC-8/§8 row 8: a failed skip-advisory
+		// read used to be dropped without a word here — the agent lost the
+		// fact that this output might be missing rows AND lost the fact that
+		// it could not even find out. Reported, never silenced; never
+		// dropped: an out-of-band note on stderr, the same channel
+		// skipAdvisory itself uses.
+		_, _ = fmt.Fprintf(stdio.Stderr, "inbox: could not determine which files, if any, were skipped: %v\n", skErr)
 	}
 	// Severity replaces the success code only — never an error. A render
 	// failure (code != 0) must stay distinguishable from "you have items",

@@ -464,16 +464,28 @@ func (a *LegalityAdapter) committedEvents(subject string) ([]fold.Event, error) 
 	return cache.CommittedEvents(a.mirrorDir, a.system, subject)
 }
 
+// readBoundedFile is the SINGLE choke point every verb's bounded reads flow
+// through (adapters.go, cmd_contract.go, cmd_lifecycle.go, cmd_validate_ci.go
+// all call it directly, never os.Open/os.ReadFile of their own). Both error
+// returns below used to be the raw *fs.PathError os.Open/io.ReadAll produce
+// verbatim — "open /Users/.../mirror/.../x.yaml: permission denied" reaching
+// stderr with no "cli:" prefix, no indication of which command or read this
+// even was (computed-not-listed-2026-08 P6 US-2, AC-7). Wrapped with %w
+// (never %v): every caller that distinguishes "genuinely absent" via
+// errors.Is(err, fs.ErrNotExist) — contractReadDescriptor (cmd_contract.go),
+// validateCIContract (cmd_validate_ci.go) — depends on that chain surviving
+// the wrap; a %v here would turn "descriptor deleted in this PR, nothing to
+// check" into a hard, misleading failure.
 func readBoundedFile(path string, max int64) ([]byte, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cli: cannot read %s: %w", path, err)
 	}
 	defer func() { _ = f.Close() }() // reason: read-only fd, close error is not actionable here
 
 	raw, err := io.ReadAll(io.LimitReader(f, max+1))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cli: cannot read %s: %w", path, err)
 	}
 	if int64(len(raw)) > max {
 		return nil, fmt.Errorf("cli: %s exceeds %d byte read bound", path, max)

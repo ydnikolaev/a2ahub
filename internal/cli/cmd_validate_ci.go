@@ -244,7 +244,24 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 			// v3-full-repo's walkArtifacts output flows through here too
 			// (see :122), so the classifier is consulted once for both
 			// rather than twice in two shapes (§11).
-			switch carried := descriptors.classify(p); carried.Class {
+			carried, unmeasuredDescriptor := descriptors.classify(p)
+			if unmeasuredDescriptor {
+				// computed-not-listed-2026-08 P6 AC-6/US-4: an unreadable
+				// descriptor (EACCES, EISDIR, a bad symlink, an I/O error —
+				// never a genuinely absent one, which stays the cheap
+				// CarriedUnclassifiable path below) is SeverityUnmeasured
+				// (D9's own third state, reused rather than a second name
+				// minted for it) — printed as an honest non-answer, the
+				// same idiom this file already uses at :1256/:1287
+				// ("computed nothing, say why"), never silently treated as
+				// a clean companion. It must never flip report.Valid to
+				// false (validate/result.go:70): a rule that could not be
+				// checked is not a rule that failed.
+				_, _ = fmt.Fprintf(stdio.Stderr,
+					"validate --ci: contract descriptor for %s could not be read — unmeasured, not classified as clean\n", p)
+				continue
+			}
+			switch carried.Class {
 			case space.CarriedDeclaredCompanion, space.CarriedUnclassifiable:
 				// Judged by the carried-set rules, never by the artifact
 				// frontmatter policy. `unclassifiable` means the descriptor
@@ -1326,17 +1343,35 @@ func newCIDescriptorReader(root string) *ciDescriptorReader {
 
 // classify is the ONE call site's-eye view of space.ClassifyCarried: it
 // supplies the descriptor bytes and decides nothing itself.
-func (r *ciDescriptorReader) classify(p string) space.Carried {
+//
+// unmeasured reports true when the descriptor could not be read for a
+// reason OTHER than genuine absence (computed-not-listed-2026-08 P6 AC-6,
+// US-4): an fs.ErrNotExist keeps today's cheap, correct behaviour — a
+// deleted-in-this-PR descriptor is not a failure, and space.ClassifyCarried
+// already reads a nil/absent descriptor as CarriedUnclassifiable ("the
+// descriptor's OWN violation is the verdict"). An EACCES, EISDIR, a bad
+// symlink or an I/O error is different in kind: it says nothing about
+// whether the descriptor is valid, so it is neither cached into r.seen (a
+// transient failure must not silence every companion under this contract
+// for the REST of the run, which an unconditional cache would do) nor
+// classified as though it were a measured absence. The caller decides how
+// to surface `unmeasured` — this method's own job stops at not lying about
+// what it could not read.
+func (r *ciDescriptorReader) classify(p string) (carried space.Carried, unmeasured bool) {
 	_, descriptorPath, ok := space.ContractForPath(p)
 	if !ok {
-		return space.ClassifyCarried(p, nil)
+		return space.ClassifyCarried(p, nil), false
 	}
 	raw, cached := r.seen[descriptorPath]
 	if !cached {
-		raw, _ = os.ReadFile(filepath.Join(r.root, filepath.FromSlash(descriptorPath)))
+		read, err := os.ReadFile(filepath.Join(r.root, filepath.FromSlash(descriptorPath)))
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return space.Carried{Path: p, DescriptorPath: descriptorPath}, true
+		}
+		raw = read
 		r.seen[descriptorPath] = raw
 	}
-	return space.ClassifyCarried(p, raw)
+	return space.ClassifyCarried(p, raw), false
 }
 
 // spaceLevelArtifactDir is the one §4.2 directory that holds artifacts

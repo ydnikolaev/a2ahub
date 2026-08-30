@@ -10,9 +10,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -3672,7 +3674,10 @@ func TestSubmitAndValidateCIClassifyTheSameSet(t *testing.T) {
 	descriptors := newCIDescriptorReader(root)
 	ciSet := map[string]space.Carried{}
 	for _, p := range changed {
-		carried := descriptors.classify(p)
+		carried, unmeasured := descriptors.classify(p)
+		if unmeasured {
+			t.Fatalf("classify(%q) reported unmeasured over a real checkout with no read error", p)
+		}
 		if carried.Class == space.CarriedNotAContractPath {
 			continue
 		}
@@ -3738,5 +3743,139 @@ func TestSubmitAndValidateCIClassifyTheSameSet(t *testing.T) {
 	}
 	if !judged {
 		t.Fatalf("`validate --ci` produced no report line for ANY path in the carried set — it classified nothing it was handed; report=%+v", rep.Artifacts)
+	}
+}
+
+// TestCIDescriptorReaderClassifyUnmeasuredOnUnreadableDescriptor is
+// computed-not-listed-2026-08 P6 AC-6 (US-4): an unreadable descriptor (here,
+// EISDIR — contract.md exists as a directory, never as a readable file, so
+// os.ReadFile fails with something OTHER than fs.ErrNotExist) must be
+// reported unmeasured, not silently classified as though the descriptor
+// were absent or clean.
+// TestReadBoundedFileWrapsRawPathErrorButPreservesErrorsIs is computed-not-
+// listed-2026-08 P6 AC-7/US-2: readBoundedFile is the SINGLE choke point
+// every bounded read in this package flows through (adapters.go,
+// cmd_contract.go, cmd_lifecycle.go, cmd_validate_ci.go). Before this
+// phase it returned os.Open/io.ReadAll's raw *fs.PathError verbatim — no
+// "cli:" prefix, no indication of which command or read this even was. The
+// wrap must (a) name the path in a "cli: cannot read ..." sentence, so a
+// bare errno never reaches a caller unexplained, and (b) use %w, not %v, so
+// every caller that branches on errors.Is(err, fs.ErrNotExist) — this
+// file's own validateCIContract, cmd_contract.go's contractReadDescriptor —
+// keeps working: a %v wrap would turn "descriptor deleted in this PR,
+// nothing to check" into a hard, misleading failure.
+func TestReadBoundedFileWrapsRawPathErrorButPreservesErrorsIs(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "does-not-exist.yaml")
+
+	_, err := readBoundedFile(missing, maxMirrorEventBytes)
+	if err == nil {
+		t.Fatal("readBoundedFile over a missing path returned nil error")
+	}
+	if !strings.Contains(err.Error(), "cli: cannot read "+missing) {
+		t.Fatalf("readBoundedFile error = %q, want a \"cli: cannot read <path>\" prefix, not a bare os.PathError", err.Error())
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("readBoundedFile error = %v, want errors.Is(err, fs.ErrNotExist) to still hold after the wrap (%%w, not %%v)", err)
+	}
+
+	// A directory (EISDIR) is the "unreadable, never absent" shape AC-6's
+	// merge-gate fix depends on distinguishing — assert the SAME wrap
+	// applies and errors.Is(err, fs.ErrNotExist) is correctly FALSE for it.
+	dirPath := filepath.Join(dir, "a-directory")
+	if err := os.MkdirAll(dirPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	_, err = readBoundedFile(dirPath, maxMirrorEventBytes)
+	if err == nil {
+		t.Fatal("readBoundedFile over a directory returned nil error")
+	}
+	if !strings.Contains(err.Error(), "cli: cannot read "+dirPath) {
+		t.Fatalf("readBoundedFile error = %q, want a \"cli: cannot read <path>\" prefix", err.Error())
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("readBoundedFile error = %v, errors.Is(err, fs.ErrNotExist) = true, want false — a directory is not absent", err)
+	}
+}
+
+func TestCIDescriptorReaderClassifyUnmeasuredOnUnreadableDescriptor(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	descriptorPath := filepath.Join(root, "axon", "provides", "widget", "contract.md")
+	if err := os.MkdirAll(descriptorPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	companion := "axon/provides/widget/schema/main.schema.json"
+
+	descriptors := newCIDescriptorReader(root)
+	carried, unmeasured := descriptors.classify(companion)
+	if !unmeasured {
+		t.Fatalf("classify(%q) unmeasured = false, want true — contract.md is a directory (EISDIR), not absent", companion)
+	}
+	if carried.Class == space.CarriedUnclassifiable {
+		t.Fatalf("classify(%q) = %+v — an unreadable descriptor must not be classified as a MEASURED, clean unclassifiable companion (AC-6)", companion, carried)
+	}
+}
+
+// TestCIDescriptorReaderClassifyDoesNotCacheAnUnreadableDescriptor is AC-6's
+// second clause: "not cached as an empty classification". A transient read
+// failure must not silence every companion under the same descriptor for
+// the rest of the run — the next classify call, once the descriptor becomes
+// readable, must see it.
+func TestCIDescriptorReaderClassifyDoesNotCacheAnUnreadableDescriptor(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	descriptorPath := filepath.Join(root, "axon", "provides", "widget", "contract.md")
+	if err := os.MkdirAll(descriptorPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	companion := "axon/provides/widget/schema/main.schema.json"
+	descriptors := newCIDescriptorReader(root)
+
+	if _, unmeasured := descriptors.classify(companion); !unmeasured {
+		t.Fatalf("first classify(%q) unmeasured = false, want true", companion)
+	}
+
+	if err := os.RemoveAll(descriptorPath); err != nil {
+		t.Fatalf("RemoveAll: %v", err)
+	}
+	const descriptorBody = "---\nschema: envelope/v1\nid: XC-axon-20260101-widget\ntype: contract\n---\nBody.\n"
+	if err := os.WriteFile(descriptorPath, []byte(descriptorBody), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	carried, unmeasured := descriptors.classify(companion)
+	if unmeasured {
+		t.Fatalf("classify(%q) still unmeasured after the descriptor became readable — the earlier read failure was wrongly cached (AC-6)", companion)
+	}
+	if carried.Class != space.CarriedDeclaredCompanion {
+		t.Fatalf("classify(%q).Class = %q, want %q (legacy envelope/v1 floor, no inventory)", companion, carried.Class, space.CarriedDeclaredCompanion)
+	}
+}
+
+// TestCIDescriptorReaderClassifyKeepsCheapBehaviourForAnAbsentDescriptor is
+// AC-6's own edge case: a genuinely absent descriptor (deleted in this PR,
+// or never published) is NOT a failure — it stays the cheap, cached
+// CarriedUnclassifiable path, unmeasured=false, exactly today's behaviour.
+func TestCIDescriptorReaderClassifyKeepsCheapBehaviourForAnAbsentDescriptor(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	companion := "axon/provides/widget/schema/main.schema.json"
+	descriptors := newCIDescriptorReader(root)
+
+	carried, unmeasured := descriptors.classify(companion)
+	if unmeasured {
+		t.Fatalf("classify(%q) unmeasured = true, want false — a genuinely absent descriptor is not a read failure", companion)
+	}
+	if carried.Class != space.CarriedUnclassifiable {
+		t.Fatalf("classify(%q).Class = %q, want %q", companion, carried.Class, space.CarriedUnclassifiable)
+	}
+
+	// Cached: a second call must not re-stat the filesystem to reach the
+	// same, cheap answer (unchanged behaviour, asserted so a future edit
+	// cannot silently make the absent-descriptor path expensive again).
+	if _, cached := descriptors.seen["axon/provides/widget/contract.md"]; !cached {
+		t.Fatalf("descriptorPath was not cached for a genuinely absent descriptor")
 	}
 }

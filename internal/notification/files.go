@@ -79,10 +79,9 @@ func withFileLock(ctx context.Context, path string, fn func() error) error {
 	timeout := time.NewTimer(750 * time.Millisecond)
 	defer timeout.Stop()
 	for {
-		f, err := os.OpenFile(lock, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		token, err := createFileLock(lock)
 		if err == nil {
-			_ = f.Close()
-			defer func() { _ = os.Remove(lock) }()
+			defer func() { _ = releaseFileLock(lock, token) }()
 			return fn()
 		}
 		if !errors.Is(err, os.ErrExist) {
@@ -105,4 +104,57 @@ func withFileLock(ctx context.Context, path string, fn func() error) error {
 		case <-ticker.C:
 		}
 	}
+}
+
+// createFileLock atomically creates the advisory lock file at path (O_EXCL,
+// same "only one creator wins" primitive as before) and stamps it with a
+// token unique to THIS acquisition, so releaseFileLock can compare before
+// deleting — internal/space/mirrorlock.go's own idiom (its Release doc:
+// "the correctness-critical part — a compare-and-delete"), copied rather
+// than a sixth locking idiom invented here.
+//
+// Fixes computed-not-listed-2026-08 P6 US-3: the FIFTH advisory lock (this
+// one) used to remove unconditionally
+// (`defer func() { _ = os.Remove(lock) }()`), so a holder slower than
+// staleLockAge — after a contender legitimately took the lock over as
+// stale — deleted the NEW legitimate holder's lock out from under it on its
+// own, now-late release. The token is process+time, not pid alone: two
+// sequential acquisitions from the SAME process must still be told apart.
+func createFileLock(path string) (string, error) {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	token := fmt.Sprintf("%d-%d", os.Getpid(), time.Now().UnixNano())
+	if _, err := f.WriteString(token); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+// releaseFileLock removes the lock at path only if it still holds exactly
+// the token this call's own acquisition wrote — never an unconditional
+// delete. A holder that outlives staleLockAge and loses the lock to a
+// takeover therefore cannot reap the new legitimate holder's lock when its
+// own (now stale) release finally runs.
+func releaseFileLock(path, token string) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			// Already gone (taken over as stale, or double-released) —
+			// nothing to do.
+			return nil
+		}
+		return err
+	}
+	if string(raw) != token {
+		// Not ours anymore (superseded by a stale takeover) — leave it for
+		// its real owner.
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }

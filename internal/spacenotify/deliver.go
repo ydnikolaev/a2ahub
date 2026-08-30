@@ -151,7 +151,7 @@ func artifactLabel(msg Message) string {
 // "redact before printing" discipline apiError applies once already.
 func safeErrorText(err error) string {
 	text := err.Error()
-	if sensitive.ContainsContent(text) {
+	if sensitive.ContainsCredentialText(text) {
 		return "[redacted]"
 	}
 	return text

@@ -26,6 +26,53 @@ func TestBoundAndRedact_CredentialShapeIsGone(t *testing.T) {
 	}
 }
 
+// TestBoundAndRedact_OutboundEdgeCatchesGenericCredentialAssignment is
+// computed-not-listed-2026-08 P6 AC-1: the outbound Telegram edge
+// (boundAndRedact, called just before spacenotify hands a message off)
+// refuses a generic `password=`/`token:`/`secret =`/`api_key:`-shaped
+// credential in an artifact body — the exact strings the phase's own §0.5
+// measured-facts row reproduced against HEAD returning ContainsContent=false
+// and reaching Telegram unredacted.
+func TestBoundAndRedact_OutboundEdgeCatchesGenericCredentialAssignment(t *testing.T) {
+	t.Parallel()
+	for _, body := range []string{
+		"password=abc",
+		"token: hunter2words",
+		"secret = s3cr3t",
+		"api_key: abc123",
+	} {
+		got, truncated := boundAndRedact([]byte(body))
+		if got != "" {
+			t.Fatalf("boundAndRedact(%q) description = %q, want redacted to empty", body, got)
+		}
+		if !hasTruncationCode(truncated, TruncationDescriptionRedacted) {
+			t.Fatalf("boundAndRedact(%q) Truncated = %v, want %q recorded", body, truncated, TruncationDescriptionRedacted)
+		}
+	}
+}
+
+// TestBoundAndRedact_RealBearerTokenStillCaughtProseFalsePositiveIsNot is
+// computed-not-listed-2026-08 P6 §6's outbound-redaction edge cases: a real
+// provider token must still be refused, and "bearer" used as an ordinary
+// English word in prose must not false-positive an unrelated artifact body.
+func TestBoundAndRedact_RealBearerTokenStillCaughtProseFalsePositiveIsNot(t *testing.T) {
+	t.Parallel()
+	got, truncated := boundAndRedact([]byte("Authorization: Bearer " + strings.Repeat("a", 24)))
+	if got != "" || !hasTruncationCode(truncated, TruncationDescriptionRedacted) {
+		t.Fatalf("a real bearer token was not redacted: description=%q truncated=%v", got, truncated)
+	}
+
+	for _, body := range []string{
+		"the bearer of good news arrived on Friday",
+		"bearer bonds are a financial instrument from another era",
+	} {
+		got, truncated := boundAndRedact([]byte(body))
+		if got != body {
+			t.Fatalf("boundAndRedact(%q) false-positived on \"bearer\" as an English word: description = %q, truncated = %v", body, got, truncated)
+		}
+	}
+}
+
 func hasTruncationCode(reasons []TruncationReason, code TruncationCode) bool {
 	for _, r := range reasons {
 		if r.Code == code {

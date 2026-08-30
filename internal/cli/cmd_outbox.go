@@ -69,6 +69,10 @@ func (c *OutboxCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// every connected mirror.
 	if skipped, skErr := c.store.AllSkippedFiles(ctx); skErr == nil {
 		skipAdvisory(stdio, flattenSkipped(skipped), *jsonOut)
+	} else {
+		// computed-not-listed-2026-08 P6 AC-8/§8 row 8 — see cmd_inbox.go's
+		// own copy of this comment for the defect this closes.
+		_, _ = fmt.Fprintf(stdio.Stderr, "outbox: could not determine which files, if any, were skipped: %v\n", skErr)
 	}
 	// Severity replaces the success code only — see InboxCommand.Run.
 	if *exitCode && code == 0 {

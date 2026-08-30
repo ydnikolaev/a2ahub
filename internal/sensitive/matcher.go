@@ -64,6 +64,80 @@ var contentPatterns = []contentShape{
 	{"telegram-bot-token", regexp.MustCompile(`[0-9]{6,}:[A-Za-z0-9_-]{30,}`)},
 }
 
+// credentialAssignmentPattern and bearerCredentialPattern are computed-not-
+// listed-2026-08 P6 §7's collapse of the SECOND heuristic that used to be
+// hand-maintained, byte-identical, in both internal/cache (operational.go)
+// and internal/operational (project.go): the internal read-model path caught
+// `password=abc`/`token: x`/`bearer:y` while the OUTBOUND edge's only guard
+// (internal/spacenotify/redact.go) did not — the same literal strings went
+// out to Telegram while being redacted from the local operational snapshot
+// that never leaves the machine. Declared here, ONCE; both internal packages
+// and the outbound edge now call ContainsCredentialText instead of carrying
+// their own copies.
+//
+// They back ContainsCredentialText, NOT ContainsContent, and the split is
+// load-bearing — see ContainsContent's own doc comment for the boundary and
+// for the measurement that forced it apart again.
+//
+// Checked SEPARATELY from the contentPatterns loop above (never added to that
+// slice, so ContentMatchers' projection stays an honest "pure regex, presence
+// alone decides" contract for every entry it DOES carry) — because, unlike
+// the closed provider shapes, matching alone is not enough: `secret: TG_BOT_TOKEN` is a SCHEMA-BLESSED space.yaml key
+// (space/v1's own notification_routes[].secret field, constrained to
+// `^[A-Z][A-Z0-9_]*$` — a real token can never legally live there, which is
+// why POL-001 must not refuse the key itself), while `secret = s3cr3t` is a
+// leak. Both match the SAME keyword+separator shape; only the right-hand
+// SIDE tells them apart. Found empirically: reusing the plain MatchString
+// shape here refused every space.yaml carrying a routed secret at the
+// `validate --ci` merge gate (TestNotifySetupPrintsARouteTheValidatorAccepts,
+// internal/cli) — a real ship-blocker, not a hypothetical one, so the RHS
+// check is load-bearing, not decoration.
+var (
+	credentialAssignmentPattern = regexp.MustCompile(`(?i)(?:^|[^a-z0-9])(?:password|passwd|token|authorization|api[-_]?key|secret)[[:space:]]*[:=][[:space:]]*(\S+)`)
+	// bearerCredentialPattern matches "bearer" used as an ASSIGNMENT
+	// (`bearer:`, `bearer=`) — never bare "bearer" followed by ordinary
+	// prose whitespace.
+	//
+	// DEVIATION from the two pre-collapse copies, which additionally matched
+	// bare `bearer[[:space:]]+` — "the bearer of good news", "bearer bonds
+	// are a financial instrument" both matched under that shape, because
+	// nothing after the whitespace was ever checked. That was tolerable
+	// while this heuristic only ever redacted internal operational text;
+	// moved onto the OUTBOUND edge (spec §6: "a false positive in prose —
+	// 'bearer' as an English word" is a named test requirement here), it
+	// would refuse ordinary artifact prose — and a length-only threshold on
+	// the bare-whitespace shape ("bearer <7+ chars>") was tried and
+	// rejected: it would have caught "wait-summary-secret" but ALSO
+	// "bearer instrument"/"bearer certificate", the exact class of English
+	// prose §6 names. The real "Bearer <token>" HTTP-header shape this
+	// branch existed to catch keeps its coverage unchanged: contentPatterns'
+	// own "bearer-token" entry above (`Bearer\s+[A-Za-z0-9._-]{20,}`)
+	// already matches it whenever the token is a real credential-length
+	// value; this generic pattern's remaining job is the `:`/`=` assignment
+	// shape alone, which has no comparable prose false-positive (nobody
+	// writes "bearer: bonds" or "bearer= good news").
+	bearerCredentialPattern = regexp.MustCompile(`(?i)(?:^|[^a-z0-9])bearer[[:space:]]*[:=]`)
+	// screamingSnakeValuePattern is credentialAssignmentPattern's own RHS
+	// exclusion: a value shaped like an ALL-CAPS identifier (an env-var
+	// NAME, e.g. `TG_BOT_TOKEN`) is a manifest field pointing AT a secret,
+	// never the secret's own value — a real credential is never spelled
+	// this way.
+	screamingSnakeValuePattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
+)
+
+// matchesGenericCredentialAssignment reports whether value contains a
+// `password:`/`token=`/`secret:`-shaped generic assignment WHOSE VALUE is
+// not itself a manifest-field-name shape (screamingSnakeValuePattern) — see
+// credentialAssignmentPattern's own doc comment for why the RHS, not just
+// the keyword, has to decide.
+func matchesGenericCredentialAssignment(value string) bool {
+	m := credentialAssignmentPattern.FindStringSubmatch(value)
+	if m == nil {
+		return false
+	}
+	return !screamingSnakeValuePattern.MatchString(m[1])
+}
+
 var identifierPrefixes = []string{
 	"token:",
 	"password:",
@@ -77,7 +151,27 @@ var identifierPrefixes = []string{
 }
 
 // ContainsContent reports whether bounded arbitrary text contains one of the
-// canonical credential shapes. It performs no decoding or entropy guessing.
+// canonical CLOSED credential shapes — a real provider's own literal token
+// grammar, nothing else. It performs no decoding or entropy guessing, and it
+// applies no keyword heuristic.
+//
+// THIS PREDICATE'S CONTRACT IS THE ARTIFACT-POLICY ONE, and it is owned by a
+// corpus rather than by this comment: schemas/fixtures/secret-corpus/positive
+// must be refused and .../negative must PASS (TestSecretScan). It is what
+// internal/validate's POL-001 seam calls, so widening it refuses artifacts a
+// space is entitled to commit.
+//
+// P6 §7 first collapsed the generic keyword heuristics INTO this function.
+// That was measured wrong the same day and split back out: the corpus's own
+// `negative/placeholder-env-var.md` carries the literal `API_KEY=<your-key-
+// here>`, which is a documented placeholder and matches the generic
+// assignment shape, and TestValidateManifestPolicyRouteShape lost its POL-021
+// verdict to a POL-001 that fired first. A heuristic tuned for an OUTBOUND
+// edge is not free to redefine what a repository may store.
+//
+// Callers that guard a boundary where a false positive costs nothing and a
+// false negative leaks — the outbound notifier, the local read models — want
+// ContainsCredentialText instead. One home, two named boundaries.
 func ContainsContent(value string) bool {
 	for _, shape := range contentPatterns {
 		if shape.pattern.MatchString(value) {
@@ -85,6 +179,31 @@ func ContainsContent(value string) bool {
 		}
 	}
 	return false
+}
+
+// ContainsCredentialText reports whether bounded arbitrary text carries a
+// closed credential shape OR a generic `password: …`/`token = …`/`bearer: …`
+// credential ASSIGNMENT whose right-hand side is not itself a manifest field
+// name.
+//
+// It is ContainsContent's strict sibling and the guard for the boundaries
+// where the asymmetry runs the other way: internal/spacenotify (text leaving
+// the machine for Telegram — space-notify-2026-08 AC-10's `password=abc`)
+// and the internal read models in internal/cache and internal/operational
+// (text rendered back to an operator). Redacting one benign line there costs
+// a `[redacted]`; missing one leaks a credential.
+//
+// The two predicates share this package precisely so the shapes have ONE
+// definition. What differs is not the regex set — it is which boundary is
+// allowed to act on the heuristic half of it.
+func ContainsCredentialText(value string) bool {
+	if ContainsContent(value) {
+		return true
+	}
+	if matchesGenericCredentialAssignment(value) {
+		return true
+	}
+	return bearerCredentialPattern.MatchString(value)
 }
 
 // MatcherShape is one closed credential shape in the matcher set, as data: a

@@ -316,7 +316,7 @@ func apiError(method string, api apiResponse) error {
 	desc := api.Description
 	if desc == "" {
 		desc = fmt.Sprintf("status %d", api.ErrorCode)
-	} else if sensitive.ContainsContent(desc) {
+	} else if sensitive.ContainsCredentialText(desc) {
 		desc = "[redacted]"
 	}
 	return fmt.Errorf("notify send: %s: telegram refused: %s", method, desc)

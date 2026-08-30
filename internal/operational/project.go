@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -19,11 +18,6 @@ const (
 	maximumKeyRunes     = 512
 	maximumTitleRunes   = 512
 	maximumSummaryRunes = 512
-)
-
-var (
-	credentialAssignmentPattern = regexp.MustCompile(`(?i)(^|[^a-z0-9])(password|passwd|token|authorization|api[-_]?key|secret)[[:space:]]*[:=]`)
-	bearerCredentialPattern     = regexp.MustCompile(`(?i)(^|[^a-z0-9])bearer([[:space:]]+|[:=])`)
 )
 
 type projectedWork struct {
@@ -965,11 +959,14 @@ func safeText(value string, maximum int) string {
 	return result
 }
 
+// containsCredentialToken collapsed onto sensitive.ContainsCredentialText
+// alone (computed-not-listed-2026-08 P6 §7): the generic assignment/bearer
+// shapes this used to check via its own credentialAssignmentPattern/
+// bearerCredentialPattern copies now live in internal/sensitive — see
+// internal/cache/operational.go's own containsOperationalCredential,
+// collapsed identically, onto the same strict sibling, for the same reason.
 func containsCredentialToken(value string) bool {
-	if sensitive.ContainsContent(value) {
-		return true
-	}
-	if credentialAssignmentPattern.MatchString(value) || bearerCredentialPattern.MatchString(value) {
+	if sensitive.ContainsCredentialText(value) {
 		return true
 	}
 	tokens := strings.FieldsFunc(strings.ToLower(value), func(r rune) bool {

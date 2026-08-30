@@ -50,7 +50,24 @@ type DeliveryStore struct {
 	Mint     func() (string, error)
 }
 
-// NewDeliveryStore constructs a delivery store rooted in disposable cache.
+// NewDeliveryStore constructs a delivery store rooted at the caller-supplied
+// root — today always os.UserCacheDir() (cmd/a2a/notifications_platform.go,
+// outside this package), a location an operator or the OS can clear at any
+// time.
+//
+// That is NOT a safe assumption (computed-not-listed-2026-08 P6 US-3): a
+// missing state file and a NEVER-created one are indistinguishable to
+// Claim's own baseline logic below (readJSON's os.ErrNotExist is swallowed
+// either way, "The first read establishes the no-history baseline"), so
+// wiping this root after a pending notification was recorded but not yet
+// Ack'd re-baselines it as already-seen on the next Claim and SILENTLY
+// SUPPRESSES it, rather than costing the consumer a mere re-surfacing. This
+// phase (AC-5) found the mechanism but could not repair it inside its own
+// footprint: this package owns no signal that survives a wipe of the one
+// root it is handed, and the caller's choice of root
+// (cmd/a2a/notifications_platform.go) is outside it. A fix needs either a
+// durable marker outside this disposable root or a different caller-side
+// root choice — a lead-level decision, not a comment-only repair.
 func NewDeliveryStore(root string, now func() time.Time) *DeliveryStore {
 	return &DeliveryStore{
 		Root: root, Now: now, LeaseTTL: defaultLeaseTTL,

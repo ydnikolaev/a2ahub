@@ -335,7 +335,17 @@ func TestCredentialRedactionCoversAssignmentsAndAuthorizationHeaders(t *testing.
 	t.Parallel()
 	for _, value := range []string{
 		"password=correct-horse", "PASSWORD : secret", "Authorization: Bearer abc.def",
-		"Bearer abc.def", "api_key=abcd", "token = abcd", "xoxb-not-real",
+		// computed-not-listed-2026-08 P6 §6: a bare "Bearer <value>" with no
+		// `:`/`=` and a value under contentPatterns' own bearer-token length
+		// floor (20 chars) is no longer flagged by the GENERIC bearer
+		// assignment shape — that branch narrowed to stop matching plain
+		// English ("the bearer of good news", "bearer bonds..."), which used
+		// to false-positive on any "bearer" followed by ordinary whitespace.
+		// A REAL bearer token is still caught by the closed provider shape
+		// (sensitive's own "bearer-token" pattern, unchanged), so this
+		// fixture uses a realistic-length token instead of standing in for
+		// the false positive the redesign removes.
+		"Bearer " + strings.Repeat("a", 20), "api_key=abcd", "token = abcd", "xoxb-not-real",
 	} {
 		if got := safeText(value, maximumSummaryRunes); got != "[redacted unsafe text]" {
 			t.Fatalf("safeText(%q) = %q", value, got)
