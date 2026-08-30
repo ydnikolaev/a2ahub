@@ -6,10 +6,20 @@
 **Reliable handoffs between autonomous agents, using a Git repository both
 sides can inspect.**
 
-Two agents can exchange work in chat, but chat is a poor system of record.
-Requests get buried, contracts drift, nobody knows whose move is next, and a
-handoff that worked once is hard to reproduce. a2ahub turns that conversation
-into typed, validated artifacts with an explicit lifecycle.
+## Who this is for
+
+AI-first developers whose systems hand work to each other — your agents and a
+partner's, two teams in one company, or a client and a contractor. The boundary
+changes; the problem does not.
+
+Two agents can exchange work in chat, but chat is a poor system of record:
+requests get buried, contracts drift, nobody knows whose move is next, and a
+handoff that worked once is hard to reproduce.
+
+**A concrete case.** Your agent needs a data export from a partner's agent,
+against an agreed shape. The request, its acceptance criteria, the payload, the
+verdict on whether it met them and the sign-off all land in one Git repository
+both sides can read — with neither company opening a system to the other.
 
 Each system runs the local `a2a` CLI and connects to a GitHub repository called
 a *space*. Changes go through pull requests and the space's validation gate.
@@ -18,37 +28,27 @@ alive.
 
 ## What it gives you
 
-- **Structured requests instead of loose messages.** Questions, requirements,
-  work requests, decisions, responses, handoffs and announcements, each with the
-  fields and acceptance criteria its kind needs.
-- **One readable work chain.** Request, acknowledgement, response, evidence,
-  verification and decision stay connected, and either side can reconstruct the
-  ordered transcript.
-- **A computed inbox.** Open work and whose move is next, derived from the shared
-  history—not from somebody's private to-do list.
-- **Durable work visibility.** Agents report what they are implementing or
-  waiting on, separately from protocol completion — so a closed thread never
-  means nobody is working, and a missing report stays unknown, not idle.
-- **Reproducible contract versions.** Publish one immutable carried set and
-  materialize any historical version exactly, offline. Old lines retire only
-  after the consumers that registered for them acknowledge it.
-- **Delivery with a verdict.** Deliver a result against a pinned contract
-  version, payload and manifest in one commit, fetched with every digest
-  re-proven — and get a verdict derived from the contract's own declared checks.
-  Nothing does work unasked.
+- **Typed artifacts instead of loose messages.** Questions, requirements, work
+  requests, decisions, responses and handoffs, each with the fields its kind
+  needs, connected into one chain either side can replay in order.
+- **A computed inbox.** Open work and whose move is next, derived from shared
+  history rather than a private to-do list. Agents report what they are
+  implementing separately from protocol completion, so a closed thread never
+  means nobody is working — and a missing report stays unknown, not idle.
+- **Contracts you can pin and reproduce.** Publish an immutable carried set,
+  materialize any historical version exactly, offline, and deliver against a
+  pinned version with a verdict derived from the contract's own declared checks.
 - **A safe write funnel.** Drafts are validated locally, submitted as pull
   requests, checked again in CI, and merged as an auditable Git commit. Inbound
   artifact text is treated as data, never as instructions.
-- **A refusal instead of a silent yes.** A field it does not recognise, an id it
-  cannot place, a rule it cannot evaluate — each is named and refused rather than
+- **A refusal instead of a silent yes.** An unrecognised field, an id it cannot
+  place, a rule it cannot evaluate — each is named and refused rather than
   accepted and reported as success. An unknown answer is reported as unknown.
 - **Local surfaces, and one that reaches you.** Work through the CLI or local
-  stdio MCP tools, and read the state as a bounded dashboard. When a move is
-  yours, a space can tell you — on your machine, in your editor, or on Telegram,
-  sent by its own CI.
+  stdio MCP tools, read the state as a bounded dashboard, and let a space tell
+  you when a move is yours — on your machine, in your editor, or on Telegram.
 
-Both machines can be offline at different times. Git holds the durable state,
-and either agent can rebuild its view from the repository.
+Both machines can be offline at different times: Git holds the durable state.
 
 ## How it works
 
