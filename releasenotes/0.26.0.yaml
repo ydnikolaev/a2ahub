@@ -61,8 +61,18 @@ changes:
 
     stdout is byte-identical either way. A pipeline reading the item array sees
     exactly what it saw before.
+
+    THE MCP READ TOOLS SAY IT TOO, and by the same words. `a2a_inbox`,
+    `a2a_outbox` and `a2a_search` had the same wholesale discard, and that
+    surface has no stderr channel to put an advisory on — so the fact rides the
+    structured result itself, as a warning whose severity is `unmeasured`
+    rather than a violation claiming something was found. The sentence, the
+    reason and the next step now have ONE definition below both surfaces
+    instead of a copy on each, with a test pinning them together, so the two
+    cannot drift into telling you different things about the same failure.
   affects:
   - cli
+  - mcp
   roadmap:
     visibility: shipped
     why: >
@@ -135,6 +145,13 @@ changes:
     One verb declares a third code: `a2a work status` exits 3 when the lease
     store itself could not be read. An empty listing that nothing could
     measure is not a clean one, and it no longer reports as one.
+
+    THE REGISTRY'S OWN EXEMPTION HAS A SIZE, and the honest reading of that
+    number is on the record: rows that name no source file are skipped by the
+    check that compares a declaration against the code, so the count of them is
+    seeded as a ceiling that reds if it grows. It is NOT zero, and four
+    `a2a contract` sub-verbs sit inside it with declarations that do not yet
+    match what their code returns. Ship what is measured, and say what is not.
   affects:
   - cli
   action:
