@@ -219,6 +219,44 @@ json_carrying_files() {
 
 registry_all_verbs() { sed -n 's/^  - verb: //p' "$1"; }
 
+# registry_unsited_rows <registry>: how many rows declare an EMPTY site.
+#
+# WHY THIS IS COUNTED AT ALL, and it is this epic's own thesis pointed at this
+# epic's own artifact. verify_all's backing check begins `[ -n "$sites" ] ||
+# continue` — a row with no site is SKIPPED, so its declared mapping is never
+# compared against anything. That is a real exemption, and it was invisible:
+# `contract materialize` declares `{clean: 0}` and its handler
+# (internal/cli/cmd_contract_p6.go, runMaterialize) plainly `return 1`s on a
+# MaterializeContract failure, and nothing reddened.
+#
+# The exemption cannot simply be abolished. Verb-to-file attribution is not
+# reliably derivable — `cmd_validate_ci.go` defines no `<Verb>Command` receiver
+# and `ValidateCommand` lives in `cmd_submit.go` — which is exactly why the
+# universe is every dispatch verb rather than a file-scan subset. So the
+# exemption survives in the only shape this epic permits a survivor: a seeded
+# ceiling that reds on growth, read from `unsited_rows_ceiling:` in the registry
+# itself rather than from a second file nobody would remember to ship.
+#
+# WHAT THIS DOES NOT DO, said plainly so a green run is not over-read: it does
+# not check behaviour AGAINST declaration for a sited row either. The gate
+# verifies every DECLARED code has backing; it does not verify every OBSERVED
+# code is declared, because a site file holds many verbs' handlers and
+# per-handler attribution is a capability this gate does not have. Filed in
+# docs/validator-backlog.md with the measurement.
+registry_unsited_rows() {
+  awk '/^  - verb: /{v=1} /^    site: \[\]/{if (v) {n++; v=0}} END{print n+0}' "$1"
+}
+
+# registry_unsited_ceiling <registry>: the seeded budget, or EMPTY when the key
+# is absent. Empty is UNMEASURED, never 0 — "the file stores nothing" and "the
+# file stores zero" are different facts and only one is a measurement, the same
+# split ceiling_stored/ceiling_count draws in check-cross-layer-test-import-
+# ceiling.sh.
+registry_unsited_ceiling() {
+  sed -n 's/^unsited_rows_ceiling:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$1" | head -1
+}
+
+
 # registry_all_sites <registry>: every declared `site:` path across every
 # row, flattened — Refusal B only needs SOME row to claim a file, never a
 # specific one, so a flat union is the correct shape to check membership
@@ -339,7 +377,15 @@ verify_all() {
 
   local file_count
   file_count="$(printf '%s\n' "$files" | sed '/^$/d' | wc -l | tr -d ' ')"
-  gate_ok "verdict-exit-mapping: $universe_count verb(s) in the computed universe, $file_count json-carrying file(s) measured"
+  local unsited unsited_ceiling
+  unsited="$(registry_unsited_rows "$registry")"
+  unsited_ceiling="$(registry_unsited_ceiling "$registry")"
+  if [ -z "$unsited_ceiling" ]; then
+    gate_unmeasured "verdict-exit-mapping: the registry declares no \`unsited_rows_ceiling:\`, so the number of rows exempt from the backing check could not be judged — an absent ceiling reads as zero and would green over any growth"
+  elif [ "$unsited" -gt "$unsited_ceiling" ]; then
+    gate_fail "verdict-exit-mapping: $unsited row(s) declare an empty site:, ceiling is $unsited_ceiling — a row with no site is SKIPPED by the backing check, so its mapping is never compared against the verb. Give the new row its real site: (and the mapping that site actually supports), or re-seed unsited_rows_ceiling: in the registry and say in its header why the exemption grew"
+  fi
+  gate_ok "verdict-exit-mapping: $universe_count verb(s) in the computed universe, $file_count json-carrying file(s) measured, $unsited row(s) exempt from the backing check (ceiling $unsited_ceiling)"
 }
 
 # ── --teeth ───────────────────────────────────────────────────────────────
@@ -475,6 +521,7 @@ EOF
 
   write_baseline_registry() {
     cat >"$work/registry.yaml" <<'EOF'
+unsited_rows_ceiling: 6
 entries:
   - verb: version
     site:
@@ -578,6 +625,7 @@ EOF
   # declaration is sufficient — no objections/unmeasured key required —
   # as long as it is present.
   cat >"$work/registry_trivial.yaml" <<'EOF'
+unsited_rows_ceiling: 6
 entries:
   - verb: version
     site:
@@ -669,6 +717,28 @@ EOF
     exit 1
   fi
   echo "check-verdict-exit-mapping --teeth: row 7 — a same-file named constant backs its declaration, and a declared-but-never-returned constant does not"
+
+  # ── The exemption must have a SIZE. A row with an empty site: is skipped by
+  # the backing check, so growth in that set is coverage quietly leaving. Both
+  # directions are pinned: the ceiling holding greens, growth past it reds, and
+  # an ABSENT ceiling is unmeasured rather than read as zero (which would green
+  # over any growth at all — the false green this epic keeps finding). ────────
+  write_baseline_registry
+  printf '  - verb: newlyexempt\n    site: []\n    mapping:\n      clean: 0\n' >>"$work/registry.yaml"
+  sed -i.bak 's/^      m\["submit"\].*/&\n\tm["newlyexempt"] = \&NewlyexemptCommand{}/' "$work/cmd/a2a/wire.go" 2>/dev/null || true
+  out="$(teeth_run "$work/registry.yaml" "$work/cmd/a2a/wire.go" "$work/internal/cli" "$work" || true)"
+  if ! printf '%s' "$out" | grep -q "7 row(s) declare an empty site:, ceiling is 6"; then
+    echo "check-verdict-exit-mapping --teeth: FALSE — a new empty-site row must red against the seeded ceiling and name both numbers:" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+
+  write_baseline_registry
+  sed -i.bak '/^unsited_rows_ceiling:/d' "$work/registry.yaml"
+  teeth_expect_unmeasured "a registry with no unsited_rows_ceiling: cannot judge its own exemption, and says so instead of reading the absence as zero" \
+    "declares no" "$work/registry.yaml" "$work/cmd/a2a/wire.go" "$work/internal/cli" "$work" || exit 1
+  echo "check-verdict-exit-mapping --teeth: the empty-site exemption has a size — growth past the seeded ceiling reds naming both numbers, and an absent ceiling is unmeasured"
+  write_baseline_registry
   write_baseline_registry
   write_baseline_registry
 
@@ -680,7 +750,7 @@ EOF
   teeth_expect_unmeasured "a cli dir that is not a directory" \
     "$work/registry.yaml" "$work/cmd/a2a/wire.go" "$work/no-such-dir" "$work" || exit 1
 
-  echo "check-verdict-exit-mapping --teeth: PASS — the baseline fixture greens; a verb added only to a fixture buildCommands() input grows the computed universe and reds for its missing declaration (row 12) without any edit to this gate; an unclaimed JSON-carrying file reds naming the file, distinctly from a disagreeing declaration (row 13); a {clean: 0}-only declaration over an always-zero file passes because it declared (row 8's shape); a declared exit code with no backing reds naming the verb, where backing means a literal OR a same-file named constant actually returned (row 7); and all three unmeasured arms (registry, wire.go, cli dir) say so instead of guessing (row 5's shape)"
+  echo "check-verdict-exit-mapping --teeth: PASS — the baseline fixture greens; a verb added only to a fixture buildCommands() input grows the computed universe and reds for its missing declaration (row 12) without any edit to this gate; an unclaimed JSON-carrying file reds naming the file, distinctly from a disagreeing declaration (row 13); a {clean: 0}-only declaration over an always-zero file passes because it declared (row 8's shape); a declared exit code with no backing reds naming the verb, where backing means a literal OR a same-file named constant actually returned (row 7); the empty-site exemption has a size, so a new row cannot join it silently and an absent ceiling is unmeasured rather than zero; and all three unmeasured arms (registry, wire.go, cli dir) say so instead of guessing (row 5's shape)"
 }
 
 # ── entry point ──────────────────────────────────────────────────────────

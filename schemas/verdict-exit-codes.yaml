@@ -119,6 +119,38 @@
 # `contract publish`'s own claim on that file, and a fuller per-sub-verb
 # attribution is a correctness improvement a follow-up commit can make
 # without touching the gate. Reported as a deviation, not silently narrowed.
+# ---------------------------------------------------------------------------
+# unsited_rows_ceiling — the SIZE of this file's own exemption.
+#
+# A row with `site: []` is SKIPPED by check-verdict-exit-mapping's backing
+# check (`[ -n "$sites" ] || continue`), so its declared mapping is never
+# compared against the verb. That is an exemption, and until 2026-08-30 it had
+# no size and nothing reported it. Found by this epic's own closing coherence
+# audit, not by a gate: `contract materialize` declares `{clean: 0}` while
+# runMaterialize (internal/cli/cmd_contract_p6.go) plainly `return 1`s on a
+# MaterializeContract failure, and the run stayed green.
+#
+# WHY IT IS SEEDED AT TODAY'S NUMBER RATHER THAN LOWER. Every one of these 46
+# rows COULD be given a `site:` — the contract family's handlers are
+# `func (c *ContractCommand) run<Verb>` and map to files mechanically. That
+# would drop this number to near zero and buy nothing: the backing check is
+# FILE-scoped, so a row pointing at cmd_contract.go would be satisfied by any
+# `return 1` anywhere in a 1700-line file holding a dozen other handlers. It
+# would move the number without moving the coverage, which is the exact
+# manoeuvre this epic exists to refuse.
+#
+# THE REAL FIX IS PER-HANDLER ATTRIBUTION — checking that every code a verb's
+# own handler OBSERVABLY returns is declared, rather than only that every
+# declared code is backed somewhere in its file. That is a capability this gate
+# does not have, and it is filed in docs/validator-backlog.md with this
+# measurement rather than pretended away here.
+#
+# So: the exemption survives in the only shape this epic permits a survivor —
+# a seeded ceiling that reds on growth. A NEW verb may not join the exempt set
+# silently. Lowering it is a normal commit; raising it needs a written reason
+# in this header.
+unsited_rows_ceiling: 46
+
 entries:
   - verb: adapt
     site:
