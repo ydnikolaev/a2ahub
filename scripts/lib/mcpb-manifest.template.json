@@ -1,0 +1,50 @@
+{
+  "manifest_version": "0.3",
+  "name": "a2a",
+  "version": "0.0.0",
+  "description": "Reliable handoffs between autonomous agents, using a Git repository both sides can inspect.",
+  "author": {
+    "name": "Yura Nikolaev",
+    "url": "https://github.com/ydnikolaev"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ydnikolaev/a2ahub.git"
+  },
+  "server": {
+    "type": "binary",
+    "entry_point": "server/a2a",
+    "mcp_config": {
+      "command": "server/a2a",
+      "args": [
+        "mcp"
+      ],
+      "env": {
+        "A2A_PROJECT_ROOT": "${user_config.space_root}",
+        "GH_TOKEN": "${user_config.github_token}"
+      }
+    }
+  },
+  "user_config": {
+    "space_root": {
+      "type": "directory",
+      "title": "Your connected space",
+      "description": "The repository a2a works in \u2014 the directory holding .a2a/config.yaml, created by `a2a connect`. Required: unlike an editor, this host launches the server beside the bundle, so it cannot infer which repository you mean.",
+      "required": true
+    },
+    "github_token": {
+      "type": "string",
+      "title": "GitHub credential",
+      "description": "Optional. a2a resolves a GitHub credential locally by running your own gh auth token by default; set this only to scope a different token to this install.",
+      "sensitive": true,
+      "required": false
+    }
+  },
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "linux",
+      "win32"
+    ]
+  }
+}

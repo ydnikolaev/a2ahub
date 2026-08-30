@@ -1,0 +1,58 @@
+# Publishes a2ahub's server.json to the MCP Registry for ONE already-published
+# tag.
+#
+# IT IS NOT ARMED, AND MERGING IT IS NOT PUBLISHING IT. The trigger is
+# `workflow_dispatch` only — no `push: tags`, no `release:` — so nothing runs
+# until an operator starts it by hand and names the tag. That is deliberate and
+# it is a threat-model gate, not caution for its own sake: a registry listing
+# widens the set of people who run a write-capable MCP surface against their own
+# GitHub credential, and the decision to widen it belongs to a person, not to a
+# tag push. The step that arms this file is a separate, reviewed change.
+#
+# The registry freezes what it accepts: a version string must be unique per
+# publication, and metadata cannot be edited afterwards. So the substitution
+# below refuses rather than publishing anything it could not fully resolve —
+# see scripts/rewrite-server-json.sh, which is also what makes the substitution
+# runnable outside CI.
+name: publish-mcp
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The published tag to list (e.g. v0.26.0). Its release must already carry the .mcpb bundles and SHA256SUMS."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Fetch the release's own signed checksum set
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist
+          gh release download "${{ inputs.tag }}" --repo "$GITHUB_REPOSITORY" \
+            --dir dist --pattern SHA256SUMS
+
+      - name: Rewrite version, identifier and fileSha256 for this tag
+        run: ./scripts/rewrite-server-json.sh "${{ inputs.tag }}" dist/SHA256SUMS
+
+      - name: Install the registry publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" \
+            | tar -xz mcp-publisher
+          chmod +x mcp-publisher
+
+      - name: Authenticate with GitHub OIDC
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish
+        run: ./mcp-publisher publish

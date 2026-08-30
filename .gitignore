@@ -114,6 +114,8 @@ scripts/*
 !scripts/check-error-codes.sh
 !scripts/check-frozen-allowlist.sh
 !scripts/check-plugin-manifests.sh
+!scripts/build-mcpb.sh
+!scripts/rewrite-server-json.sh
 !scripts/ci-parity.sh
 !scripts/ci-parity-docker.sh
 !scripts/ci-parity.Dockerfile
@@ -141,6 +143,7 @@ scripts/lib/*
 !scripts/lib/site-overlay.txt
 !scripts/lib/refusal-ratchet-budget.txt
 !scripts/lib/release-note-detect-budget.txt
+!scripts/lib/mcpb-manifest.template.json
 !scripts/tests/
 scripts/tests/*
 !scripts/tests/check_contract_carried_set_test.sh

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ydnikolaev/a2ahub",
+  "description": "Reliable handoffs between autonomous agents, using a Git repository both sides can inspect.",
+  "version": "0.0.0",
+  "repository": {
+    "url": "https://github.com/ydnikolaev/a2ahub",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/ydnikolaev/a2ahub/releases/download/PLACEHOLDER/a2a-darwin-amd64.mcpb",
+      "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "transport": {
+        "type": "stdio"
+      }
+    },
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/ydnikolaev/a2ahub/releases/download/PLACEHOLDER/a2a-darwin-arm64.mcpb",
+      "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "transport": {
+        "type": "stdio"
+      }
+    },
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/ydnikolaev/a2ahub/releases/download/PLACEHOLDER/a2a-linux-amd64.mcpb",
+      "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "transport": {
+        "type": "stdio"
+      }
+    },
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/ydnikolaev/a2ahub/releases/download/PLACEHOLDER/a2a-linux-arm64.mcpb",
+      "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "transport": {
+        "type": "stdio"
+      }
+    },
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/ydnikolaev/a2ahub/releases/download/PLACEHOLDER/a2a-windows-amd64.mcpb",
+      "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "transport": {
+        "type": "stdio"
+      }
+    },
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/ydnikolaev/a2ahub/releases/download/PLACEHOLDER/a2a-windows-arm64.mcpb",
+      "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

@@ -58,8 +58,30 @@ type Paths struct {
 
 // ResolvePaths resolves Paths from the current working directory and the
 // user's home directory — mirrors cmd/a2a/wire.go's resolvePaths.
+// ProjectRootEnv names the directory `a2a mcp` treats as the project root,
+// overriding the process's working directory.
+//
+// EVERY OTHER HOST SUPPLIES A CWD AND NEEDS NOTHING HERE. Claude Code and
+// Codex launch an MCP server with the project as its working directory, and
+// dsh's Cordis patch sets `cwd: process.cwd()` explicitly. An MCPB bundle
+// cannot: the manifest format has no `cwd` field at all — `mcp_config`
+// documents `command`, `args`, `env` and `platform_overrides`, nothing more
+// (anthropics/mcpb MANIFEST.md, read 2026-08-30) — so the host launches the
+// binary beside the unpacked bundle, where no `.a2a/` exists, and the server
+// refuses on its first config read.
+//
+// AN ENV VAR RATHER THAN A FLAG OR AN ARGUMENT, DELIBERATELY. The launch line
+// `a2a mcp` is transcribed into every plugin manifest this repository ships
+// and is compared against the binary's own catalogue by
+// check-plugin-manifests.sh; docs/install-contract.md fact 1 states it takes
+// no arguments. Adding one for a single host's benefit would move the
+// canonical line for all of them. `env` is also exactly where MCPB
+// substitutes `${user_config.KEY}`, so the bundle binds a directory the host
+// prompts for to this name and no verb, flag or exit code changes.
+const ProjectRootEnv = "A2A_PROJECT_ROOT"
+
 func ResolvePaths() (Paths, error) {
-	root, err := os.Getwd()
+	root, err := resolveProjectRoot()
 	if err != nil {
 		return Paths{}, err
 	}
@@ -73,6 +95,28 @@ func ResolvePaths() (Paths, error) {
 		ProjectRoot:   root,
 		Staging:       filepath.Join(root, ".a2a", "staging"),
 	}, nil
+}
+
+// resolveProjectRoot reads ProjectRootEnv and VALIDATES it, because this is a
+// system boundary: the value arrives from a host's install-time prompt. A
+// relative or missing path here would otherwise surface much later as a
+// confusing "no such file" against a path the operator never typed.
+func resolveProjectRoot() (string, error) {
+	override := strings.TrimSpace(os.Getenv(ProjectRootEnv))
+	if override == "" {
+		return os.Getwd()
+	}
+	if !filepath.IsAbs(override) {
+		return "", fmt.Errorf("%s must be an absolute path, got %q", ProjectRootEnv, override)
+	}
+	info, err := os.Stat(override)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", ProjectRootEnv, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("%s is not a directory: %q", ProjectRootEnv, override)
+	}
+	return override, nil
 }
 
 func cacheDirOf(p Paths) string { return filepath.Join(p.ProjectRoot, ".a2a", "cache") }

@@ -172,6 +172,18 @@ jobs:
           cp "releasenotes/${version}.yaml" "dist/release-notes-${version}.yaml"
           scripts/build-release-cohort.sh dist "$version" "$MACOS_TEAM_ID"
 
+          # AFTER the cohort, DELIBERATELY. build-release-cohort.sh globs
+          # dist/a2a-<os>-* and would sweep a .mcpb in as kind:"cli" — a raw
+          # platform binary, which a bundle is not. Declaring a fifth kind is
+          # not the alternative: an unknown kind fails ParseCohort outright
+          # (internal/release/cohort.go), and cohort.go:29 says the document is
+          # "fetched and verified before an OLDER BINARY trusts" a release — so
+          # a new kind would break `a2a update` for every version already
+          # installed. Building here keeps the cohort at the four kinds its own
+          # doc comment claims, while the bundles still land in SHA256SUMS
+          # below, which is cosign-signed and attested.
+          scripts/build-mcpb.sh dist "$version"
+
           : > dist/SHA256SUMS
           while IFS= read -r asset; do
             name="$(basename "$asset")"
@@ -197,7 +209,8 @@ jobs:
             "dist/a2a-notifier-${version}.zip.cosign.bundle" \
             dist/a2ahub-notifications.vsix.cosign.bundle \
             "dist/release-notes-${version}.yaml" \
-            "dist/release-notes-${version}.yaml.cosign.bundle"
+            "dist/release-notes-${version}.yaml.cosign.bundle" \
+            dist/*.mcpb
 
       # The final checksum set now covers the Go binaries, both companions,
       # and the standalone future What’s New asset.

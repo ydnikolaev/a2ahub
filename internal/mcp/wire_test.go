@@ -977,3 +977,64 @@ func TestBuildWriteDepsSpaceOfArtifactsRefusesUnknownID(t *testing.T) {
 		}
 	}
 }
+
+// TestResolveProjectRootHonoursTheOverride covers the one host that cannot
+// supply a working directory.
+//
+// The MCPB manifest format has no `cwd` field, so a bundle host launches the
+// binary beside the unpacked bundle. Without this override the server read
+// `.a2a/config.yaml` out of that directory, found nothing, and died on its
+// first call — a bundle that installs cleanly and never works. The override is
+// validated rather than trusted because the value arrives from an install-time
+// prompt, and a bad one must name itself instead of surfacing later as a
+// missing file the operator never typed.
+func TestResolveProjectRootHonoursTheOverride(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "not-a-dir")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	t.Run("unset falls back to the working directory", func(t *testing.T) {
+		t.Setenv(ProjectRootEnv, "")
+		got, err := resolveProjectRoot()
+		if err != nil {
+			t.Fatalf("resolveProjectRoot: %v", err)
+		}
+		wd, err := os.Getwd()
+		if err != nil {
+			t.Fatalf("getwd: %v", err)
+		}
+		if got != wd {
+			t.Errorf("got %q, want the working directory %q", got, wd)
+		}
+	})
+
+	t.Run("an absolute existing directory is used", func(t *testing.T) {
+		t.Setenv(ProjectRootEnv, dir)
+		got, err := resolveProjectRoot()
+		if err != nil {
+			t.Fatalf("resolveProjectRoot: %v", err)
+		}
+		if got != dir {
+			t.Errorf("got %q, want %q", got, dir)
+		}
+	})
+
+	for name, value := range map[string]string{
+		"a relative path":     "relative/path",
+		"a path that is gone": filepath.Join(dir, "absent"),
+		"a file, not a dir":   file,
+	} {
+		t.Run(name+" is refused by name", func(t *testing.T) {
+			t.Setenv(ProjectRootEnv, value)
+			got, err := resolveProjectRoot()
+			if err == nil {
+				t.Fatalf("resolveProjectRoot() = %q, want an error", got)
+			}
+			if !strings.Contains(err.Error(), ProjectRootEnv) {
+				t.Errorf("error %q does not name %s", err, ProjectRootEnv)
+			}
+		})
+	}
+}
