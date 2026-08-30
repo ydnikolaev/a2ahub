@@ -56,6 +56,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -97,7 +98,7 @@ func wave33SubmitValidator(t *testing.T, mirrorDir, ownSystem string, manifest s
 func wave33Manifest(floor string, systems ...string) space.Manifest {
 	participants := make([]space.Participant, len(systems))
 	for i, s := range systems {
-		participants[i] = space.Participant{System: s, Status: "active"}
+		participants[i] = space.Participant{System: s, Status: fold.MembershipMember}
 	}
 	return space.Manifest{MinBinaryVersion: floor, Participants: participants}
 }

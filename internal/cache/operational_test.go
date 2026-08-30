@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/workreport"
 )
@@ -252,8 +253,8 @@ Implementing ingest.
 	store := NewStore("atlas", t.TempDir(), []SpaceMirror{{
 		SpaceID: "checkout-core", Dir: dir,
 		Manifest: space.Manifest{Space: "checkout-core", Participants: []space.Participant{
-			{System: "atlas", Section: "atlas/", Status: "active"},
-			{System: "checkout", Section: "checkout/", Status: "active"},
+			{System: "atlas", Section: "atlas/", Status: fold.MembershipMember},
+			{System: "checkout", Section: "checkout/", Status: fold.MembershipMember},
 		}},
 	}}, time.Now, 0)
 

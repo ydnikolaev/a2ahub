@@ -303,7 +303,7 @@ func mapFoldVerdict(v fold.Verdict) validate.Verdict {
 func (a *LegalityAdapter) membershipView(system string) fold.MembershipStatus {
 	for _, p := range a.manifest.Participants {
 		if p.System == system {
-			if p.Status == "left" {
+			if p.Status == fold.MembershipLeft {
 				return fold.MembershipLeft
 			}
 			return fold.MembershipMember
@@ -424,7 +424,7 @@ func (r *MirrorResolver) ThreadExists(thread string) bool {
 func (r *MirrorResolver) System(system string) (member bool, left bool) {
 	for _, p := range r.manifest.Participants {
 		if p.System == system {
-			return true, p.Status == "left"
+			return true, p.Status == fold.MembershipLeft
 		}
 	}
 	return false, false

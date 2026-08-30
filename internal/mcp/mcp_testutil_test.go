@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
@@ -36,8 +37,8 @@ func (f *fakeFunnel) Submit(_ context.Context, req space.SubmitRequest) (space.W
 
 func testManifest() space.Manifest {
 	return space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"},
-		{System: "beta", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember},
+		{System: "beta", Status: fold.MembershipMember},
 	}}
 }
 

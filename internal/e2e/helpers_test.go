@@ -28,6 +28,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
@@ -48,9 +49,9 @@ func newIO() (cli.IO, *bytes.Buffer, *bytes.Buffer) {
 // SeoMatrix/Misha's agent, gamma = the content-factory/SoT startup).
 func e2eManifest() space.Manifest {
 	return space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"},
-		{System: "beta", Status: "active"},
-		{System: "gamma", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember},
+		{System: "beta", Status: fold.MembershipMember},
+		{System: "gamma", Status: fold.MembershipMember},
 	}}
 }
 

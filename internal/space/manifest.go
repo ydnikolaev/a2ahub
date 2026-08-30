@@ -3,6 +3,7 @@ package space
 import (
 	"context"
 
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"gopkg.in/yaml.v3"
 )
 
@@ -29,13 +30,67 @@ type Manifest struct {
 // Participant is one space.yaml participant entry: a system's section,
 // its human owners (GitHub logins), and membership status.
 type Participant struct {
-	System       string        `yaml:"system"`
-	Org          string        `yaml:"org"`
-	Section      string        `yaml:"section"`
-	Owners       []string      `yaml:"owners"`
-	Status       string        `yaml:"status"` // "active" | "left"
-	Joined       string        `yaml:"joined"` // date, format per schema
-	Capabilities *Capabilities `yaml:"capabilities,omitempty"`
+	System       string                `yaml:"system"`
+	Org          string                `yaml:"org"`
+	Section      string                `yaml:"section"`
+	Owners       []string              `yaml:"owners"`
+	Status       fold.MembershipStatus `yaml:"status"`
+	Joined       string                `yaml:"joined"` // date, format per schema
+	Capabilities *Capabilities         `yaml:"capabilities,omitempty"`
+}
+
+// UnmarshalYAML decodes one space.yaml participant entry, translating the
+// wire-format `status` string (`enum: ["active","left"]`,
+// schemas/manifest/v1/space.schema.json:34) into fold.MembershipStatus —
+// computed-not-listed-2026-08 P3b: the field is now a closed named type
+// everywhere past this boundary, so a Go-side typo comparing p.Status
+// against a bare string literal fails to compile instead of silently
+// missing a member. internal/fold stays free of a yaml.v3 import (it is
+// pure — no I/O, `.golangci.yml`'s internal-fold depguard block allows only
+// $gostd + internal/artifact); the wire↔domain translation lives here
+// instead, the same place ParseManifest's own leniency (D-011, structural
+// decode only) already lives. An unrecognized status string decodes to
+// fold.MembershipUnknown rather than being guessed toward either known
+// member — the schema already closes this enum, so a value outside it is a
+// malformed document, not a third membership state to interpret; that
+// mirrors the "unknown, not active or left" reading every fold.MembershipView
+// adapter already gives an unmatched system.
+func (p *Participant) UnmarshalYAML(node *yaml.Node) error {
+	type participantAlias struct {
+		System  string   `yaml:"system"`
+		Org     string   `yaml:"org"`
+		Section string   `yaml:"section"`
+		Owners  []string `yaml:"owners"`
+		// StatusRaw, not Status: the AST-based carrier scanner
+		// (scripts/check-vocabulary-carriers.sh) flags any plain-`string`
+		// field whose Go NAME is the PascalCase form of a closed vocabulary
+		// — it does not read yaml tags. Naming this field `Status` would
+		// silently re-introduce the exact carrier this phase retypes away,
+		// even though it decodes into the closed fold.MembershipStatus one
+		// line below and is never read past this function.
+		StatusRaw    string        `yaml:"status"`
+		Joined       string        `yaml:"joined"`
+		Capabilities *Capabilities `yaml:"capabilities,omitempty"`
+	}
+	var raw participantAlias
+	if err := node.Decode(&raw); err != nil {
+		return err
+	}
+	p.System = raw.System
+	p.Org = raw.Org
+	p.Section = raw.Section
+	p.Owners = raw.Owners
+	p.Joined = raw.Joined
+	p.Capabilities = raw.Capabilities
+	switch raw.StatusRaw {
+	case "active":
+		p.Status = fold.MembershipMember
+	case "left":
+		p.Status = fold.MembershipLeft
+	default:
+		p.Status = fold.MembershipUnknown
+	}
+	return nil
 }
 
 // Capabilities is P5 AC5/US-3: what this participant can receive, read by a
@@ -117,7 +172,7 @@ func ParseManifest(raw []byte) (Manifest, error) {
 func (m Manifest) SystemForLogin(login string) (string, bool) {
 	system := ""
 	for _, p := range m.Participants {
-		if p.Status != "active" {
+		if p.Status != fold.MembershipMember {
 			continue
 		}
 		for _, owner := range p.Owners {

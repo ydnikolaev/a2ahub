@@ -944,7 +944,7 @@ func lifecycleMembership(manifest space.Manifest) fold.MembershipView {
 	return func(system string) fold.MembershipStatus {
 		for _, p := range manifest.Participants {
 			if p.System == system {
-				if p.Status == "left" {
+				if p.Status == fold.MembershipLeft {
 					return fold.MembershipLeft
 				}
 				return fold.MembershipMember

@@ -636,7 +636,7 @@ func FindObservedConsumers(mirrorDir, contractID string, manifest space.Manifest
 
 	var out []ObservedConsumer
 	for _, p := range manifest.Participants {
-		if p.System == "" || p.Status == "left" || declared[p.System] {
+		if p.System == "" || p.Status == fold.MembershipLeft || declared[p.System] {
 			continue
 		}
 		observed, skip, ferr := FindUnadoptedConsumption(mirrorDir, p.System)

@@ -268,7 +268,7 @@ func contractPublicationMembership(manifest space.Manifest) fold.MembershipView 
 	return func(system string) fold.MembershipStatus {
 		for _, participant := range manifest.Participants {
 			if participant.System == system {
-				if participant.Status == "left" {
+				if participant.Status == fold.MembershipLeft {
 					return fold.MembershipLeft
 				}
 				return fold.MembershipMember

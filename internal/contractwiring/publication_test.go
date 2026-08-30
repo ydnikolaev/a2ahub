@@ -56,7 +56,7 @@ func TestContractPublicationEventBuilderProducesV1AndV2Receipts(t *testing.T) {
 				now:     func() time.Time { return time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC) },
 				entropy: bytes.NewReader(make([]byte, 16)),
 				loadManifest: func() (space.Manifest, error) {
-					return space.Manifest{Participants: []space.Participant{{System: "axon", Status: "active"}}}, nil
+					return space.Manifest{Participants: []space.Participant{{System: "axon", Status: fold.MembershipMember}}}, nil
 				},
 			}
 			write, err := builder.BuildContractPublicationEvent(t.Context(), plan)

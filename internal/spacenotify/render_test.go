@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 	"gopkg.in/yaml.v3"
@@ -103,7 +104,7 @@ func mustWriteFile(t *testing.T, path, content string) {
 func manifestWith(spaceID string, routes []space.NotificationRoute, systems ...string) space.Manifest {
 	m := space.Manifest{Schema: "space/v1", Space: spaceID}
 	for _, s := range systems {
-		m.Participants = append(m.Participants, space.Participant{System: s, Status: "active"})
+		m.Participants = append(m.Participants, space.Participant{System: s, Status: fold.MembershipMember})
 	}
 	m.NotificationRoutes = routes
 	return m

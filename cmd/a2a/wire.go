@@ -19,6 +19,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/feedback"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
 	"github.com/ydnikolaev/a2ahub/internal/notification"
@@ -693,7 +694,7 @@ func newProjectAvatarRefresher(p paths) (func(context.Context) error, error) {
 		var owners []string
 		for _, mirror := range store.SpaceMirrors() {
 			for _, participant := range mirror.Manifest.Participants {
-				if participant.Status == "active" {
+				if participant.Status == fold.MembershipMember {
 					owners = append(owners, participant.Owners...)
 				}
 			}

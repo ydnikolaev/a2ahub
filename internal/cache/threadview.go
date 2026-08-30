@@ -1204,7 +1204,7 @@ func buildOpenItemsWithVerdicts(sorted []foldedArtifact, byID map[string]foldedA
 func activeParticipants(manifest space.Manifest, exclude string) []string {
 	var out []string
 	for _, p := range manifest.Participants {
-		if p.Status == "active" && p.System != exclude {
+		if p.Status == fold.MembershipMember && p.System != exclude {
 			out = append(out, p.System)
 		}
 	}
@@ -1243,7 +1243,7 @@ func ActiveParticipants(manifest space.Manifest) []string {
 func leftParticipants(manifest space.Manifest) []string {
 	var out []string
 	for _, p := range manifest.Participants {
-		if p.Status == "left" {
+		if p.Status == fold.MembershipLeft {
 			out = append(out, p.System)
 		}
 	}

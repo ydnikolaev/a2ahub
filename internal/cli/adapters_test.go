@@ -59,7 +59,7 @@ func TestLegalityAdapterFreshSubmitIsLegal(t *testing.T) {
 	t.Parallel()
 	mirrorDir := t.TempDir() // empty mirror: no committed history for anything
 
-	manifest := space.Manifest{Participants: []space.Participant{{System: "axon", Status: "active"}}}
+	manifest := space.Manifest{Participants: []space.Participant{{System: "axon", Status: fold.MembershipMember}}}
 	a := cli.NewLegalityAdapter(mirrorDir, "axon", manifest)
 
 	verdict, err := a.CheckLegality(validate.CandidateEvent{
@@ -80,7 +80,7 @@ func TestLegalityAdapterAlreadySubmittedIsIllegal(t *testing.T) {
 	mirrorDir := t.TempDir()
 	writeCommittedEvent(t, mirrorDir, "axon", "2026", "01J8QYK2Z3ABCDEFGHJKMNPQRS", "XQ-axon-20260721-k3f9", fold.TSubmit, "axon")
 
-	manifest := space.Manifest{Participants: []space.Participant{{System: "axon", Status: "active"}}}
+	manifest := space.Manifest{Participants: []space.Participant{{System: "axon", Status: fold.MembershipMember}}}
 	a := cli.NewLegalityAdapter(mirrorDir, "axon", manifest)
 
 	has, err := a.HasCommittedHistory("XQ-axon-20260721-k3f9")
@@ -115,8 +115,8 @@ func TestLegalityAdapterNoteOnSubmittedResponseIsLegal(t *testing.T) {
 	id := "XS-beta-20260801-n0t3"
 
 	manifest := space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"},
-		{System: "beta", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember},
+		{System: "beta", Status: fold.MembershipMember},
 	}}
 	a := cli.NewLegalityAdapter(mirrorDir, "axon", manifest)
 
@@ -137,7 +137,7 @@ func TestLegalityAdapterUnauthorizedActor(t *testing.T) {
 	t.Parallel()
 	mirrorDir := t.TempDir()
 	// No participant entry for "intruder": membership fails closed.
-	manifest := space.Manifest{Participants: []space.Participant{{System: "axon", Status: "active"}}}
+	manifest := space.Manifest{Participants: []space.Participant{{System: "axon", Status: fold.MembershipMember}}}
 	a := cli.NewLegalityAdapter(mirrorDir, "axon", manifest)
 
 	verdict, err := a.CheckLegality(validate.CandidateEvent{
@@ -234,8 +234,8 @@ func TestMirrorResolverKnownArtifactAndDigest(t *testing.T) {
 func TestMirrorResolverSystem(t *testing.T) {
 	t.Parallel()
 	manifest := space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"},
-		{System: "retired-sys", Status: "left"},
+		{System: "axon", Status: fold.MembershipMember},
+		{System: "retired-sys", Status: fold.MembershipLeft},
 	}}
 	r := cli.NewMirrorResolver(t.TempDir(), manifest)
 
@@ -528,7 +528,7 @@ func TestSubmitValidatorAdapterValid(t *testing.T) {
 	}
 	engine := validate.New(corpus)
 	manifest := space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"}, {System: "other", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember}, {System: "other", Status: fold.MembershipMember},
 	}}
 	legality := cli.NewLegalityAdapter(t.TempDir(), "axon", manifest)
 	resolver := cli.NewMirrorResolver(t.TempDir(), manifest)
@@ -581,7 +581,7 @@ func TestSubmitValidatorAdapterRestrictedClassificationBilateralAccepted(t *test
 	}
 	engine := validate.New(corpus)
 	manifest := space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"}, {System: "other", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember}, {System: "other", Status: fold.MembershipMember},
 	}}
 	legality := cli.NewLegalityAdapter(t.TempDir(), "axon", manifest)
 	resolver := cli.NewMirrorResolver(t.TempDir(), manifest)
@@ -637,7 +637,7 @@ func TestSubmitValidatorAdapterRestrictedClassificationExceedsBilateralRefused(t
 	}
 	engine := validate.New(corpus)
 	manifest := space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"}, {System: "other", Status: "active"}, {System: "third", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember}, {System: "other", Status: fold.MembershipMember}, {System: "third", Status: fold.MembershipMember},
 	}}
 	legality := cli.NewLegalityAdapter(t.TempDir(), "axon", manifest)
 	resolver := cli.NewMirrorResolver(t.TempDir(), manifest)
@@ -691,7 +691,7 @@ func TestSubmitValidatorAdapterInvalidReturnsViolations(t *testing.T) {
 		t.Fatalf("schema.Load: %v", err)
 	}
 	engine := validate.New(corpus)
-	manifest := space.Manifest{Participants: []space.Participant{{System: "axon", Status: "active"}}}
+	manifest := space.Manifest{Participants: []space.Participant{{System: "axon", Status: fold.MembershipMember}}}
 	legality := cli.NewLegalityAdapter(t.TempDir(), "axon", manifest)
 	resolver := cli.NewMirrorResolver(t.TempDir(), manifest)
 	adapter := cli.NewSubmitValidatorAdapter(engine, "axon", resolver, legality)
@@ -744,7 +744,7 @@ func TestSubmitValidatorAdapterViolationNamesSkippedFile(t *testing.T) {
 		t.Fatalf("schema.Load: %v", err)
 	}
 	engine := validate.New(corpus)
-	manifest := space.Manifest{Participants: []space.Participant{{System: "axon", Status: "active"}}}
+	manifest := space.Manifest{Participants: []space.Participant{{System: "axon", Status: fold.MembershipMember}}}
 	mirrorDir := t.TempDir()
 
 	badRelPath := "beta/exchanges/XW-beta-20260721-bad.md"
@@ -864,7 +864,7 @@ func p1NewCLIAdapter(t *testing.T, mirrorDir string, manifest space.Manifest) *c
 }
 
 var p1TwoSystemManifest = space.Manifest{Participants: []space.Participant{
-	{System: "axon", Status: "active"}, {System: "beta", Status: "active"},
+	{System: "axon", Status: fold.MembershipMember}, {System: "beta", Status: fold.MembershipMember},
 }}
 
 // TestSubmitValidatorAdapterEventsPartitionRefusesOutOfRangeVerdictIndex is
@@ -1321,7 +1321,7 @@ func TestMirrorResolverSuccessorResolvesAuthorAndFoldedState(t *testing.T) {
 	writeLifecycleEvent(t, mirrorDir, "axon", 1, id, "propose", "axon")
 
 	r := cli.NewMirrorResolver(mirrorDir, space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"}, {System: "beta", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember}, {System: "beta", Status: fold.MembershipMember},
 	}})
 	author, state, ok := r.Successor(id)
 	if !ok {
@@ -1372,7 +1372,7 @@ func TestMirrorResolverSuccessorResolvesApprovedAcrossSections(t *testing.T) {
 	writeLifecycleEvent(t, mirrorDir, "gamma", 2, id, "approve", "gamma")
 
 	r := cli.NewMirrorResolver(mirrorDir, space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"}, {System: "beta", Status: "active"}, {System: "gamma", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember}, {System: "beta", Status: fold.MembershipMember}, {System: "gamma", Status: fold.MembershipMember},
 	}})
 	author, state, ok := r.Successor(id)
 	if !ok {
@@ -1396,7 +1396,7 @@ func TestMirrorResolverSuccessorResolvesApprovedAcrossSections(t *testing.T) {
 func TestLegalityAdapterDecisionSupersedeSuccessorPrecondition(t *testing.T) {
 	t.Parallel()
 	manifest := space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"}, {System: "beta", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember}, {System: "beta", Status: fold.MembershipMember},
 	}}
 
 	t.Run("rejected_requires_successor_author", func(t *testing.T) {
@@ -1519,7 +1519,7 @@ func TestSubmitValidatorAdapterDecisionSupersedeSourcesSuccessorFacts(t *testing
 	}
 	engine := validate.New(corpus)
 	manifest := space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"}, {System: "beta", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember}, {System: "beta", Status: fold.MembershipMember},
 	}}
 
 	newAdapter := func(mirrorDir string) *cli.SubmitValidatorAdapter {

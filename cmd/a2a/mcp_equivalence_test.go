@@ -64,6 +64,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -221,8 +222,8 @@ func (equivNoopValidator) ValidateSubmit(context.Context, []space.FileWrite) err
 
 func equivManifest() space.Manifest {
 	return space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"},
-		{System: "beta", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember},
+		{System: "beta", Status: fold.MembershipMember},
 	}}
 }
 

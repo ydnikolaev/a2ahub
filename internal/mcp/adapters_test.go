@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
@@ -276,7 +277,7 @@ func TestSubmitValidatorAdapterRestrictedClassificationExceedsBilateralRefused(t
 	}
 	engine := validate.New(corpus)
 	manifest := space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"}, {System: "beta", Status: "active"}, {System: "third", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember}, {System: "beta", Status: fold.MembershipMember}, {System: "third", Status: fold.MembershipMember},
 	}}
 	legality := NewLegalityAdapter(t.TempDir(), "axon", manifest)
 	resolver := NewMirrorResolver(t.TempDir(), manifest)
@@ -958,7 +959,7 @@ func TestMirrorResolverSuccessorResolvesApprovedAcrossSections(t *testing.T) {
 	writeLifecycleEvent(t, mirrorDir, "gamma", 2, id, "approve", "gamma")
 
 	r := NewMirrorResolver(mirrorDir, space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"}, {System: "beta", Status: "active"}, {System: "gamma", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember}, {System: "beta", Status: fold.MembershipMember}, {System: "gamma", Status: fold.MembershipMember},
 	}})
 	author, state, ok := r.Successor(id)
 	if !ok {

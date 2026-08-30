@@ -18,8 +18,8 @@ import (
 func TestLifecycleProjectionOpenStates(t *testing.T) {
 	t.Parallel()
 	manifest := space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"},
-		{System: "seomatrix", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember},
+		{System: "seomatrix", Status: fold.MembershipMember},
 	}}
 
 	tests := []struct {
@@ -216,8 +216,8 @@ func TestLifecycleProjectionAnnouncementWaitingOnAcknowledgements(t *testing.T) 
 	t.Parallel()
 
 	manifest := space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"},
-		{System: "seomatrix", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember},
+		{System: "seomatrix", Status: fold.MembershipMember},
 	}}
 	base := foldedArtifact{
 		Env: envelopeProbe{

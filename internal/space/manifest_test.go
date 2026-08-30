@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 )
 
 const validManifestYAML = `
@@ -261,15 +263,15 @@ func TestSystemForLoginFailsClosedForLeftAndAmbiguousOwners(t *testing.T) {
 	t.Parallel()
 
 	left := Manifest{Participants: []Participant{{
-		System: "legacy", Owners: []string{"alice"}, Status: "left",
+		System: "legacy", Owners: []string{"alice"}, Status: fold.MembershipLeft,
 	}}}
 	if system, ok := left.SystemForLogin("alice"); ok || system != "" {
 		t.Fatalf("left SystemForLogin = (%q, %v), want no authority", system, ok)
 	}
 
 	ambiguous := Manifest{Participants: []Participant{
-		{System: "axon", Owners: []string{"alice"}, Status: "active"},
-		{System: "matrix", Owners: []string{"alice"}, Status: "active"},
+		{System: "axon", Owners: []string{"alice"}, Status: fold.MembershipMember},
+		{System: "matrix", Owners: []string{"alice"}, Status: fold.MembershipMember},
 	}}
 	if system, ok := ambiguous.SystemForLogin("alice"); ok || system != "" {
 		t.Fatalf("ambiguous SystemForLogin = (%q, %v), want fail closed", system, ok)

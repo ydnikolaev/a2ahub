@@ -14,6 +14,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -71,9 +72,9 @@ func lifecycleActorResolver(kind, name string) func(cli.ActorFlags) (template.Ac
 
 func lifecycleManifest() space.Manifest {
 	return space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"},
-		{System: "beta", Status: "active"},
-		{System: "gamma", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember},
+		{System: "beta", Status: fold.MembershipMember},
+		{System: "gamma", Status: fold.MembershipMember},
 	}}
 }
 

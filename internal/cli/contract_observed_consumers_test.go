@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
 )
@@ -82,8 +83,8 @@ func observedRetireFixture(t *testing.T) (mirrorDir string, manifest space.Manif
 	manifest = space.Manifest{
 		Schema: "space/v1", Space: "fixture-space", MinBinaryVersion: "0.0.0",
 		Participants: []space.Participant{
-			{System: "axon", Status: "active"},
-			{System: "seomatrix", Status: "active"},
+			{System: "axon", Status: fold.MembershipMember},
+			{System: "seomatrix", Status: fold.MembershipMember},
 		},
 	}
 	return mirrorDir, manifest
@@ -140,7 +141,7 @@ func TestRetirePreconditionIsUnchangedWithoutObservation(t *testing.T) {
 	}
 	manifest := space.Manifest{
 		Schema: "space/v1", Space: "fixture-space",
-		Participants: []space.Participant{{System: "axon", Status: "active"}, {System: "seomatrix", Status: "active"}},
+		Participants: []space.Participant{{System: "axon", Status: fold.MembershipMember}, {System: "seomatrix", Status: fold.MembershipMember}},
 	}
 
 	pre, err := contractBuildRetirePrecondition(mirrorDir, manifest, "XC-seomatrix-regime-corpus", "1.0.0",

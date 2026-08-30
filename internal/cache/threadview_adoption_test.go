@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
@@ -287,7 +288,7 @@ func TestThreadView_UndatedAdoptionSortsLastNotFirst(t *testing.T) {
 	writeThreadArtifact(t, dir, "axon/provides/undatedlast/contract.md", taContractFields(contractID, threadID, "axon", base))
 	taWriteConsumes(t, dir, "thirdsys", contractID, 1, "")
 
-	manifest := space.Manifest{Participants: []space.Participant{{System: "axon", Status: "active"}, {System: "seomatrix", Status: "active"}}}
+	manifest := space.Manifest{Participants: []space.Participant{{System: "axon", Status: fold.MembershipMember}, {System: "seomatrix", Status: fold.MembershipMember}}}
 	store := NewStore("axon", t.TempDir(), []SpaceMirror{{SpaceID: "sp1", Dir: dir, Manifest: manifest}}, time.Now, 0)
 
 	result, err := store.ThreadView(context.Background(), threadID, "")

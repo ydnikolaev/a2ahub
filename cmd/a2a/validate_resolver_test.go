@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
 )
@@ -47,7 +48,7 @@ func TestMirrorResolverFiresREF018InProductionShape(t *testing.T) {
 
 	mirrorDir := t.TempDir()
 	writeParentArtifactForREF018Test(t, mirrorDir, "XW-axon-20260808-p9d3", "acceptance_criteria: [\"a\"]")
-	manifest := space.Manifest{Participants: []space.Participant{{System: "seomatrix", Status: "active"}}}
+	manifest := space.Manifest{Participants: []space.Participant{{System: "seomatrix", Status: fold.MembershipMember}}}
 	resolver := cli.NewMirrorResolver(mirrorDir, manifest)
 
 	raw := []byte("---\n" + responseV2Header("XS-axon-20260808-p9d3", "XW-axon-20260808-p9d3", 5) + "---\nBody.\n")

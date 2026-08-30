@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
@@ -61,8 +62,8 @@ func TestSubmitValidatorAdapter_LFC004_ClosingParentWithUnmetCriterionRefuses(t 
 	}
 	engine := validate.New(corpus)
 	manifest := space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"},
-		{System: "seomatrix", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember},
+		{System: "seomatrix", Status: fold.MembershipMember},
 	}}
 	mirrorDir := t.TempDir()
 	legality := cli.NewLegalityAdapter(mirrorDir, "axon", manifest)
@@ -138,8 +139,8 @@ func TestSubmitValidatorAdapter_LFC004_NoAccompanyingCloseEventIsUnaffected(t *t
 	}
 	engine := validate.New(corpus)
 	manifest := space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"},
-		{System: "seomatrix", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember},
+		{System: "seomatrix", Status: fold.MembershipMember},
 	}}
 	mirrorDir := t.TempDir()
 	legality := cli.NewLegalityAdapter(mirrorDir, "axon", manifest)

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -70,8 +71,8 @@ func writeQuestionDraft(t *testing.T, dir, id, from, to string) string {
 
 func testManifest() space.Manifest {
 	return space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"},
-		{System: "other", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember},
+		{System: "other", Status: fold.MembershipMember},
 	}}
 }
 

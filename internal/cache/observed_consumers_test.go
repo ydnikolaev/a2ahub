@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
@@ -23,7 +24,7 @@ import (
 func ocManifest(systems ...string) space.Manifest {
 	m := space.Manifest{Schema: "space/v1", Space: "fixture-space"}
 	for _, s := range systems {
-		m.Participants = append(m.Participants, space.Participant{System: s, Status: "active"})
+		m.Participants = append(m.Participants, space.Participant{System: s, Status: fold.MembershipMember})
 	}
 	return m
 }
@@ -196,7 +197,7 @@ func TestFindObservedConsumers_LeftParticipantIsExcluded(t *testing.T) {
 	rcWriteHandoffLifecycle(t, mirrorDir, "XH-seomatrix-20260817-aaaa", "seomatrix", "axon", true)
 
 	m := ocManifest("seomatrix")
-	m.Participants = append(m.Participants, space.Participant{System: "axon", Status: "left"})
+	m.Participants = append(m.Participants, space.Participant{System: "axon", Status: fold.MembershipLeft})
 
 	got, err := FindObservedConsumers(mirrorDir, "XC-seomatrix-regime-corpus", m)
 	if err != nil {

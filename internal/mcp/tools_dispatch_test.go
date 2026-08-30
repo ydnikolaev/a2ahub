@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
@@ -242,7 +243,7 @@ func TestReadDispatchAppendsUpdateAdvisoryWithoutTouchingStructuredContent(t *te
 
 	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
 	manifest := space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"}, {System: "beta", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember}, {System: "beta", Status: fold.MembershipMember},
 	}}
 	sm := cache.SpaceMirror{SpaceID: "fixture-space", Dir: mirrorDir, Manifest: manifest}
 	newStore := func(t *testing.T) *cache.Store {

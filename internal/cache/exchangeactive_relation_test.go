@@ -20,7 +20,7 @@ type exchangeSeed struct {
 	from string
 	to   any
 	// status is the manifest membership of every system that appears.
-	status       map[string]string
+	status       map[string]fold.MembershipStatus
 	acks         map[string]bool
 	ackRequested bool
 	// registeredConsumer is P4 Edge 3: `me` consumes the contract this
@@ -58,49 +58,49 @@ type exchangeSeed struct {
 var exchangeSeeds = []exchangeSeed{
 	{
 		name: "sole target left before acking", me: "axon", from: "axon",
-		to: []string{"gammaco"}, status: map[string]string{"axon": "active", "gammaco": "left"},
+		to: []string{"gammaco"}, status: map[string]fold.MembershipStatus{"axon": fold.MembershipMember, "gammaco": fold.MembershipLeft},
 		ackRequested: true, wantActive: true, wantOwners: []string{"axon"},
 		why: "the acknowledge can never land, so the sender owes a cancel-or-re-route decision (CC-062) — that is a live obligation, not a delivered announcement",
 	},
 	{
 		name: "one target left, the other acked", me: "axon", from: "axon",
 		to:     []string{"gammaco", "betaco"},
-		status: map[string]string{"axon": "active", "gammaco": "left", "betaco": "active"},
+		status: map[string]fold.MembershipStatus{"axon": fold.MembershipMember, "gammaco": fold.MembershipLeft, "betaco": fold.MembershipMember},
 		acks:   map[string]bool{"betaco": true}, ackRequested: true, wantActive: true, wantOwners: []string{"axon"},
 		why: "same transfer: the departed target's ack is unreachable and the sender still owes the decision",
 	},
 	{
 		name: "one target left, the other still owes", me: "axon", from: "axon",
 		to:           []string{"gammaco", "betaco"},
-		status:       map[string]string{"axon": "active", "gammaco": "left", "betaco": "active"},
+		status:       map[string]fold.MembershipStatus{"axon": fold.MembershipMember, "gammaco": fold.MembershipLeft, "betaco": fold.MembershipMember},
 		ackRequested: true, wantActive: true, wantOwners: []string{"betaco"},
 		why: "a reachable target has not acknowledged",
 	},
 	{
 		name: "sole target acked, then left", me: "axon", from: "axon",
 		to:     []string{"gammaco"},
-		status: map[string]string{"axon": "active", "gammaco": "left"},
+		status: map[string]fold.MembershipStatus{"axon": fold.MembershipMember, "gammaco": fold.MembershipLeft},
 		acks:   map[string]bool{"gammaco": true}, ackRequested: true, wantActive: false, wantOwners: nil,
 		why: "delivery completed while the target was still a member; leaving afterwards does not reopen it",
 	},
 	{
 		name: "broadcast with a departed non-acker", me: "axon", from: "axon",
 		to:           "all",
-		status:       map[string]string{"axon": "active", "gammaco": "left", "betaco": "active"},
+		status:       map[string]fold.MembershipStatus{"axon": fold.MembershipMember, "gammaco": fold.MembershipLeft, "betaco": fold.MembershipMember},
 		ackRequested: true, wantActive: true, wantOwners: []string{"betaco"},
 		why: "the broadcast expands to ACTIVE participants, and betaco among them has not acknowledged",
 	},
 	{
 		name: "broadcast, every active participant acked", me: "axon", from: "axon",
 		to:     "all",
-		status: map[string]string{"axon": "active", "gammaco": "left", "betaco": "active"},
+		status: map[string]fold.MembershipStatus{"axon": fold.MembershipMember, "gammaco": fold.MembershipLeft, "betaco": fold.MembershipMember},
 		acks:   map[string]bool{"betaco": true}, ackRequested: true, wantActive: false, wantOwners: nil,
 		why: "the departed system is not expected to acknowledge, so delivery is complete",
 	},
 	{
 		name: "late adopter, flagged", me: "seomatrix", from: "axon",
 		to:     []string{"betaco"},
-		status: map[string]string{"axon": "active", "betaco": "active", "seomatrix": "active"},
+		status: map[string]fold.MembershipStatus{"axon": fold.MembershipMember, "betaco": fold.MembershipMember, "seomatrix": fold.MembershipMember},
 		acks:   map[string]bool{"betaco": true}, ackRequested: true, registeredConsumer: true,
 		wantActive: true, wantOwners: []string{"seomatrix"},
 		why: "P4 Edge 3: the registry says seomatrix consumes the deprecated contract, so it is addressed and owes an acknowledge",
@@ -115,7 +115,7 @@ var exchangeSeeds = []exchangeSeed{
 		// refused on that same consumer's missing ack.
 		name: "late adopter, deprecation with no ack_requested", me: "seomatrix", from: "axon",
 		to:     []string{"betaco"},
-		status: map[string]string{"axon": "active", "betaco": "active", "seomatrix": "active"},
+		status: map[string]fold.MembershipStatus{"axon": fold.MembershipMember, "betaco": fold.MembershipMember, "seomatrix": fold.MembershipMember},
 		acks:   map[string]bool{"betaco": true}, ackRequested: false, registeredConsumer: true,
 		wantActive: true, wantOwners: []string{"seomatrix"},
 		why: "the registry-matched half carries no ack_requested qualifier — the consumer owes an acknowledge and must be able to see the announcement",
@@ -129,13 +129,13 @@ var exchangeSeeds = []exchangeSeed{
 	// own domain arrangement.
 	{
 		name: "published contract, no registered consumer", kind: fold.KindContract,
-		me: "axon", from: "axon", status: map[string]string{"axon": "active"},
+		me: "axon", from: "axon", status: map[string]fold.MembershipStatus{"axon": fold.MembershipMember},
 		operationalDebtOwed: false, wantActive: false, wantOwners: nil,
 		why: "contractPublishedRow's onEmpty: alive and settled, neither is a move anyone waits for — it must not linger in the producer's active feed forever",
 	},
 	{
 		name: "published contract, registered consumer owes activation", kind: fold.KindContract,
-		me: "axon", from: "axon", status: map[string]string{"axon": "active"},
+		me: "axon", from: "axon", status: map[string]fold.MembershipStatus{"axon": fold.MembershipMember},
 		operationalDebtOwed: true, wantActive: true, wantOwners: []string{"axon"},
 		why: "a registered consumer makes activation an owed move — the producer's own outbox must still show it as in flight",
 	},
@@ -267,7 +267,7 @@ func TestExchangeSeedsCoverBothHalvesOfTheAckRule(t *testing.T) {
 			flaggedTargets++
 		}
 		for _, status := range s.status {
-			if status == "left" {
+			if status == fold.MembershipLeft {
 				departed++
 				break
 			}

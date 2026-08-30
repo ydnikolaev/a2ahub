@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"gopkg.in/yaml.v3"
 )
@@ -854,7 +855,7 @@ func TestThreadView_UnreadableHistoryDeclaredOrder(t *testing.T) {
 	writeThreadArtifact(t, dir, "axon/exchanges/XW-axon-aaa-second.md",
 		twWorkRequest("XW-axon-aaa-second", "second", "axon", []string{"seomatrix"}, threadID, base.Add(time.Hour)))
 
-	manifest := space.Manifest{Participants: []space.Participant{{System: "axon", Status: "active"}, {System: "seomatrix", Status: "active"}}}
+	manifest := space.Manifest{Participants: []space.Participant{{System: "axon", Status: fold.MembershipMember}, {System: "seomatrix", Status: fold.MembershipMember}}}
 	store := NewStore("axon", t.TempDir(), []SpaceMirror{{SpaceID: "sp1", Dir: dir, Manifest: manifest}}, time.Now, 0)
 
 	result, err := store.ThreadView(context.Background(), threadID, "")
@@ -1145,9 +1146,9 @@ func TestThreadView_NoDataDeliverablesLeavesDeliveriesNil(t *testing.T) {
 func TestActiveParticipantsReturnsEveryActiveSystemUnfiltered(t *testing.T) {
 	t.Parallel()
 	manifest := space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"},
-		{System: "seomatrix", Status: "active"},
-		{System: "beta", Status: "left"},
+		{System: "axon", Status: fold.MembershipMember},
+		{System: "seomatrix", Status: fold.MembershipMember},
+		{System: "beta", Status: fold.MembershipLeft},
 	}}
 
 	got := ActiveParticipants(manifest)

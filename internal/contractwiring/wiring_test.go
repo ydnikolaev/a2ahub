@@ -178,7 +178,7 @@ func TestValidateSubmitCandidateAcceptsExactUnstampedEventAndRejectsDrift(t *tes
 		now:     func() time.Time { return time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC) },
 		entropy: bytes.NewReader(make([]byte, 16)),
 		loadManifest: func() (space.Manifest, error) {
-			return space.Manifest{Participants: []space.Participant{{System: "axon", Status: "active"}}}, nil
+			return space.Manifest{Participants: []space.Participant{{System: "axon", Status: fold.MembershipMember}}}, nil
 		},
 	}
 	write, err := builder.BuildContractPublicationEvent(t.Context(), plan)
@@ -247,8 +247,8 @@ func TestContractPublicationMembership(t *testing.T) {
 	t.Parallel()
 
 	manifest := space.Manifest{Participants: []space.Participant{
-		{System: "beta", Status: "active"},
-		{System: "gamma", Status: "left"},
+		{System: "beta", Status: fold.MembershipMember},
+		{System: "gamma", Status: fold.MembershipLeft},
 	}}
 	view := contractPublicationMembership(manifest)
 

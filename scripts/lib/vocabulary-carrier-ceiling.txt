@@ -26,7 +26,7 @@
 #
 # THESE NUMBERS ARE MEASURED AGAINST THIS TREE, NOT COPIED FROM A SPEC —
 # see check-vocabulary-carriers.sh's own header for why this run's total
-# (296 sites across 102 files, kind split 5 ways) differs
+# (294 sites across 101 files, kind split 5 ways) differs
 # from spec 03's own quoted 155/9-vs-5 figures, which used a different
 # (and, for 155, not fully reconstructible) method.
 kind-groups: 5
@@ -82,7 +82,7 @@ kind-groups: 5
 2 internal/livee2e/scenarios_verb_agreement.go
 1 internal/livee2e/scenarios_verify_published_live.go
 1 internal/livee2e/spacehealth.go
-2 internal/livee2e/templateplanner.go
+1 internal/livee2e/templateplanner.go
 5 internal/mcp/adapters.go
 3 internal/mcp/eventdoc.go
 1 internal/mcp/protocol.go
@@ -112,7 +112,6 @@ kind-groups: 5
 1 internal/space/data_delivery.go
 3 internal/space/delivery_possession.go
 2 internal/space/funnel.go
-1 internal/space/manifest.go
 2 internal/space/mutation.go
 1 internal/space/prepared_journal.go
 8 internal/space/work_checkpoint_validator.go

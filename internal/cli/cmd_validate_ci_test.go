@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/datapackage"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
@@ -3626,7 +3627,7 @@ func TestSubmitAndValidateCIClassifyTheSameSet(t *testing.T) {
 		t.Fatalf("write mirror space.yaml: %v", err)
 	}
 	legality := NewLegalityAdapter(mirrorDir, "axon", space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"}, {System: "seomatrix", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember}, {System: "seomatrix", Status: fold.MembershipMember},
 	}})
 	funnel := &parityFunnel{}
 	cmd := NewSubmitCommand(funnel, legality, NewNoopPendingMarker(), mirrorDir, "fixture-space", "axon", stagingDir,

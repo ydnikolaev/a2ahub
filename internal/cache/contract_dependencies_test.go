@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
@@ -30,8 +31,8 @@ dependencies:
     major: 1
 `)
 	mirrors := []SpaceMirror{{SpaceID: "sp1", Dir: dir, Manifest: space.Manifest{Participants: []space.Participant{
-		{System: "checkout", Section: "checkout", Status: "active"},
-		{System: "provider", Section: "provider", Status: "active"},
+		{System: "checkout", Section: "checkout", Status: fold.MembershipMember},
+		{System: "provider", Section: "provider", Status: fold.MembershipMember},
 	}}}}
 	contracts := []ContractInfo{
 		{Space: "sp1", ID: "XC-provider-current", Provider: "provider", Version: "1.4.0", State: "published", Description: "current contract",

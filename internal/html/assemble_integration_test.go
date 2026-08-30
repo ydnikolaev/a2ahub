@@ -12,6 +12,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/avatar"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/operational"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/workreport"
@@ -35,8 +36,8 @@ func TestAssemble_NodesAndContractEdges(t *testing.T) {
 	}
 
 	manifest := space.Manifest{Space: "getvisa", Participants: []space.Participant{
-		{System: "axon", Section: "axon/", Org: "r22d222", Status: "active", Owners: []string{"ydnikolaev"}},
-		{System: "seomatrix", Section: "seomatrix/", Org: "r22d222", Status: "active", Owners: []string{"xpressmike"}},
+		{System: "axon", Section: "axon/", Org: "r22d222", Status: fold.MembershipMember, Owners: []string{"ydnikolaev"}},
+		{System: "seomatrix", Section: "seomatrix/", Org: "r22d222", Status: fold.MembershipMember, Owners: []string{"xpressmike"}},
 	}, Schema: "space/v1", MinBinaryVersion: "0.12.0"}
 	workflowDir := filepath.Join(dir, ".github", "workflows")
 	if err := os.MkdirAll(workflowDir, 0o755); err != nil {
@@ -124,8 +125,8 @@ func TestContractDependencyMappingCarriesDegradedScan(t *testing.T) {
 		t.Fatal(err)
 	}
 	manifest := space.Manifest{Space: "space-sentinel", Participants: []space.Participant{
-		{System: "atlas", Section: "atlas/", Status: "active"},
-		{System: "checkout", Section: "checkout/", Status: "active"},
+		{System: "atlas", Section: "atlas/", Status: fold.MembershipMember},
+		{System: "checkout", Section: "checkout/", Status: fold.MembershipMember},
 	}}
 	store := cache.NewStore("atlas", t.TempDir(), []cache.SpaceMirror{{SpaceID: manifest.Space, Dir: dir, Manifest: manifest}}, time.Now, 0)
 	data, err := Assemble(t.Context(), store, "atlas", time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC))
@@ -326,8 +327,8 @@ func TestAssemble_Threads(t *testing.T) {
 	}, "solo body")
 
 	manifest := space.Manifest{Space: "getvisa", Participants: []space.Participant{
-		{System: "axon", Section: "axon/", Org: "r22d222", Status: "active", Owners: []string{"ydnikolaev"}},
-		{System: "seomatrix", Section: "seomatrix/", Org: "r22d222", Status: "active", Owners: []string{"xpressmike"}},
+		{System: "axon", Section: "axon/", Org: "r22d222", Status: fold.MembershipMember, Owners: []string{"ydnikolaev"}},
+		{System: "seomatrix", Section: "seomatrix/", Org: "r22d222", Status: fold.MembershipMember, Owners: []string{"xpressmike"}},
 	}}
 	store := cache.NewStore("axon", t.TempDir(),
 		[]cache.SpaceMirror{{SpaceID: "getvisa", Dir: dir, RepoURL: "https://github.com/r22d222/a2a", Manifest: manifest}},

@@ -46,6 +46,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/spacenotify"
@@ -571,7 +572,7 @@ func notifyCheckRoutes(manifest space.Manifest) (bool, string) {
 	}
 	active := make(map[string]bool, len(manifest.Participants))
 	for _, p := range manifest.Participants {
-		if p.Status == "active" {
+		if p.Status == fold.MembershipMember {
 			active[p.System] = true
 		}
 	}

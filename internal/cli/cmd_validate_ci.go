@@ -932,7 +932,7 @@ func artifactIDFromPath(relPath string) string {
 func systemForPath(manifest space.Manifest, p string) (string, bool) {
 	system := ""
 	for _, part := range manifest.Participants {
-		if part.Status != "active" {
+		if part.Status != fold.MembershipMember {
 			continue
 		}
 		sec := strings.TrimSuffix(part.Section, "/")

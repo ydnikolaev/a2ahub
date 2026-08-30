@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
@@ -393,8 +394,8 @@ func TestAssemble_DeliveriesReachThePageFromAFixtureSpace(t *testing.T) {
 	writeDeliveryFixtureManifest(t, dir, "axon", unverifiedPackageID, map[string]any{"attempt": 2})
 
 	manifest := space.Manifest{Space: "getvisa", Participants: []space.Participant{
-		{System: "axon", Section: "axon/", Org: "r22d222", Status: "active", Owners: []string{"ydnikolaev"}},
-		{System: "seomatrix", Section: "seomatrix/", Org: "r22d222", Status: "active", Owners: []string{"xpressmike"}},
+		{System: "axon", Section: "axon/", Org: "r22d222", Status: fold.MembershipMember, Owners: []string{"ydnikolaev"}},
+		{System: "seomatrix", Section: "seomatrix/", Org: "r22d222", Status: fold.MembershipMember, Owners: []string{"xpressmike"}},
 	}}
 	store := cache.NewStore("axon", t.TempDir(),
 		[]cache.SpaceMirror{{SpaceID: "getvisa", Dir: dir, RepoURL: "https://github.com/r22d222/a2a", Manifest: manifest}},

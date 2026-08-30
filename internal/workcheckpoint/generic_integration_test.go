@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
@@ -29,8 +30,8 @@ func TestGenericSubmitMountUsesCanonicalV2PolicyForWorkCandidates(t *testing.T) 
 		t.Fatal(err)
 	}
 	manifest := space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"},
-		{System: "seomatrix", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember},
+		{System: "seomatrix", Status: fold.MembershipMember},
 	}}
 	mirror := t.TempDir()
 	adapter := cli.NewSubmitValidatorAdapter(

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
@@ -17,7 +18,7 @@ import (
 func testStore(t *testing.T, mirrorDir string) *cache.Store {
 	t.Helper()
 	manifest := space.Manifest{Participants: []space.Participant{
-		{System: "axon", Status: "active"}, {System: "beta", Status: "active"},
+		{System: "axon", Status: fold.MembershipMember}, {System: "beta", Status: fold.MembershipMember},
 	}}
 	return cache.NewStore("beta", t.TempDir(), []cache.SpaceMirror{{SpaceID: "fixture-space", Dir: mirrorDir, Manifest: manifest}},
 		func() time.Time { return time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC) }, 0)

@@ -122,14 +122,14 @@ func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache
 			n := nodeIdx[p.System]
 			if n == nil {
 				n = &Node{System: p.System, Self: p.System == self, Org: p.Org,
-					Status: p.Status, Owners: p.Owners, Spaces: []string{}}
+					Status: participantStatusLabel(p.Status), Owners: p.Owners, Spaces: []string{}}
 				nodeIdx[p.System] = n
 			}
 			n.Spaces = append(n.Spaces, m.SpaceID)
 			if n.Org == "" {
 				n.Org = p.Org
 			}
-			if p.Status == "left" { // a "left" anywhere marks the node left
+			if p.Status == fold.MembershipLeft { // a "left" anywhere marks the node left
 				n.Status = "left"
 			}
 		}
@@ -372,6 +372,19 @@ func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache
 	)
 
 	return d, nil
+}
+
+// participantStatusLabel renders a fold.MembershipStatus back to the
+// wire-format label Node.Status carries to the dashboard's JS (`json:
+// "status"`, `active | left`). Node.Status stays a plain string — it is
+// render output for a different consumer (the browser), not a second
+// closed-vocabulary Go carrier — so this is a one-way format conversion,
+// not a second typed vocabulary.
+func participantStatusLabel(status fold.MembershipStatus) string {
+	if status == fold.MembershipLeft {
+		return "left"
+	}
+	return "active"
 }
 
 func mapContractDependencyEdges(edges []cache.ContractDependencyEdge) []ContractEdge {

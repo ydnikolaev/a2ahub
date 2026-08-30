@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
@@ -75,7 +76,7 @@ func writeSuccessorFile(t *testing.T, dir, relPath, content string) {
 func successorManifest(systems ...string) space.Manifest {
 	m := space.Manifest{}
 	for _, s := range systems {
-		m.Participants = append(m.Participants, space.Participant{System: s, Status: "active"})
+		m.Participants = append(m.Participants, space.Participant{System: s, Status: fold.MembershipMember})
 	}
 	return m
 }

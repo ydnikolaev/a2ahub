@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/version"
 )
@@ -119,7 +120,7 @@ func projectContractDependencies(mirrors []SpaceMirror, contracts []ContractInfo
 		return orderedMirrors[i].Dir < orderedMirrors[j].Dir
 	})
 	for _, mirror := range orderedMirrors {
-		statuses := make(map[string]string, len(mirror.Manifest.Participants))
+		statuses := make(map[string]fold.MembershipStatus, len(mirror.Manifest.Participants))
 		participants := append([]space.Participant(nil), mirror.Manifest.Participants...)
 		for _, participant := range participants {
 			statuses[participant.System] = participant.Status
@@ -187,7 +188,7 @@ func projectContractDependencies(mirrors []SpaceMirror, contracts []ContractInfo
 					AvailableMajors: []int{},
 				}
 				contract, found := contractByID[dependencyContractKey{space: mirror.SpaceID, id: dependency.Contract}]
-				if !found || statuses[provider] == "left" {
+				if !found || statuses[provider] == fold.MembershipLeft {
 					edge.Drift = DependencyDriftDangling
 				} else {
 					edge.ProviderVersion = contract.Version

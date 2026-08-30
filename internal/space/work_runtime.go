@@ -87,12 +87,7 @@ func (r *WorkRuntime) ResolveWorkPreparation(ctx context.Context) (WorkPreparati
 		if participant.System != r.ownSystem {
 			continue
 		}
-		switch participant.Status {
-		case "active":
-			membership = fold.MembershipMember
-		case "left":
-			membership = fold.MembershipLeft
-		}
+		membership = participant.Status
 		break
 	}
 	return WorkPreparationRuntime{
