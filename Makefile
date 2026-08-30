@@ -300,11 +300,19 @@ deadcode-ceiling: ## The unreachable-symbol count is a seeded ceiling that may o
 discard-ceiling: ## The undocumented error-discard count is a seeded ceiling that may only fall (computed-not-listed-2026-08 P8).
 	@bash scripts/check-discard-ceiling.sh
 
-import-rule-coverage: ## depguard's two structural blind spots — an ADR-001 row with no rule, an allow entry no file uses (computed-not-listed-2026-08 P2).
-	@bash scripts/check-import-rule-coverage.sh
+import-rule-coverage: ## depguard's two structural blind spots — an ADR-001 row with no rule, an allow entry no file uses (computed-not-listed-2026-08 P2; private harness gate, presence-gated — it reads ADR-001's table in docs/, which the publisher removes).
+	@if [ -f scripts/check-import-rule-coverage.sh ]; then \
+	  bash scripts/check-import-rule-coverage.sh; \
+	else \
+	  echo "import-rule-coverage: skip — scripts/check-import-rule-coverage.sh absent (public checkout)."; \
+	fi
 
-cross-layer-test-import-ceiling: ## The `!$$test` depguard exemption's reach is a seeded ceiling that may only fall (computed-not-listed-2026-08 P2).
-	@bash scripts/check-cross-layer-test-import-ceiling.sh
+cross-layer-test-import-ceiling: ## The `!$$test` depguard exemption's reach is a seeded ceiling that may only fall (computed-not-listed-2026-08 P2; private harness gate, presence-gated — it sources the gate above).
+	@if [ -f scripts/check-cross-layer-test-import-ceiling.sh ]; then \
+	  bash scripts/check-cross-layer-test-import-ceiling.sh; \
+	else \
+	  echo "cross-layer-test-import-ceiling: skip — scripts/check-cross-layer-test-import-ceiling.sh absent (public checkout)."; \
+	fi
 
 release-note-detect: ## A new release-note change declaring scope local|space carries a detect:, or a counted exemption row; the frozen historical ceiling may only shrink (answers-that-hold-2026-08 P13, ACs 13-14).
 	@bash scripts/check-release-note-detect.sh

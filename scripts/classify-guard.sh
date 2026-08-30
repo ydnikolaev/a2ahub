@@ -122,8 +122,6 @@ PUBLIC_VALIDATOR_FILES=(
   scripts/check-vocabulary-carriers.sh
   scripts/check-deadcode-ceiling.sh
   scripts/check-discard-ceiling.sh
-  scripts/check-import-rule-coverage.sh
-  scripts/check-cross-layer-test-import-ceiling.sh
   scripts/lib/refusal-ratchet-budget.txt
   scripts/check-release-note-detect.sh
   scripts/lib/release-note-detect-budget.txt
@@ -146,7 +144,6 @@ PUBLIC_VALIDATOR_FILES=(
   scripts/lib/vocabulary-carrier-ceiling.txt
   scripts/lib/deadcode-ceiling.txt
   scripts/lib/discard-ceiling.txt
-  scripts/lib/cross-layer-test-import-ceiling.txt
   scripts/lib/job-timeouts.tsv
   scripts/lib/ci-usage-window.json
   scripts/lib/gate-lib.sh

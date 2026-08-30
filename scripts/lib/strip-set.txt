@@ -86,5 +86,31 @@ scripts/check-cross-surface-citations.sh
 # question" — there is nothing for it to do in a public checkout, and its
 # absence there is what keeps the shipped suite from re-entering it.
 scripts/check-projection.sh
+
+# computed-not-listed-2026-08 P2's two import-boundary gates, PRIVATE for the
+# reason the header above gives about evidence rather than about the gate.
+#
+# check-import-rule-coverage.sh compares ADR-001's table against the depguard
+# rules, and that table lives in docs/decisions.md — which this list strips
+# wholesale. `make projection` proved it: the gate reported UNMEASURED in the
+# public projection and reddened `make check` in every public checkout, while
+# this tree stayed green. That is the v0.19.9 shape exactly.
+#
+# It could not be half-fixed. check-cross-layer-test-import-ceiling.sh SOURCES
+# it (line 47) for depguard_rule_allow_internal_targets, so shipping one while
+# stripping the other is a public file reading a removed path — the same defect
+# one level down. Its ceiling file goes with it: a private gate's data has no
+# reader in a public tree.
+#
+# WHAT THE PUBLIC TREE LOSES, and why it is acceptable: only the ADR-row half
+# structurally cannot run there. The allow-entry half DOES measure publicly
+# (116 entries, in the same projection run) and the cross-layer ceiling would
+# too. Both concern THIS repository's own .golangci.yml hygiene, which a public
+# checkout does not edit. The BOUNDARY itself is untouched — depguard enforces
+# it in every checkout, which is what README AC-4's own Verification paragraph
+# and spec 02 §T5 name as the verdict-producer for a tree with no docs/.
+scripts/check-import-rule-coverage.sh
+scripts/check-cross-layer-test-import-ceiling.sh
+scripts/lib/cross-layer-test-import-ceiling.txt
 scripts/site-check.sh
 scripts/lib/site-overlay.txt
