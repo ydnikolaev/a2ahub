@@ -166,3 +166,94 @@ changes:
       changes. Scripts treating any non-zero as one undifferentiated failure
       keep working, but 3 now means "could not measure", not "objections" —
       worth distinguishing before you retry.
+- id: RN-02600-4
+  kind: feat
+  impact: normal
+  subject: a2a installs as a plugin, and every release now carries `.mcpb` bundles
+  detail: >
+    Until this version, using a2a with an agent host meant configuring an MCP
+    server by hand, and the instructions for doing so lived in four places that
+    could disagree with each other and with the binary.
+
+    One directory — `plugins/a2ahub/` — is now a plugin for three hosts at
+    once: Claude Code (via `.claude-plugin/plugin.json` and a marketplace
+    catalogue at the repository root), Agent Plugins v1, which Codex prefers
+    over its own format, and Antigravity CLI. The skill tree they install is a
+    symlink to the one that already shipped, so there is no second copy to
+    drift. DeepSeek Harness gets a tier-1 bundle under `integrations/dsh/` with
+    no JavaScript in it.
+
+    Every release also builds six `.mcpb` bundles, one per platform, each a zip
+    holding a manifest and the same binary the release already publishes. A
+    `server.json` describes them for the official MCP Registry.
+
+    THE REGISTRY LISTING IS NOT LIVE, and that is deliberate rather than
+    unfinished. `.github/workflows/publish-mcp.yml` ships disarmed — it runs
+    only when someone starts it by hand — because a listing widens the set of
+    people running a write-capable MCP surface against their own GitHub
+    credential, and that is a decision a person makes once rather than
+    something a tag push performs.
+
+    ONE THING THE BUNDLE NEEDED THAT NOTHING ELSE DID. `a2a mcp` finds your
+    space by looking at the directory it was started in, which every
+    editor-shaped host supplies. The bundle format has no way to say what that
+    directory is, so a bundle host launches the binary next to the bundle,
+    where no space exists. `A2A_PROJECT_ROOT` names the directory instead, and
+    the bundle asks you to pick it at install time. If your host gives the
+    server a working directory — Claude Code, Codex, dsh all do — you never
+    need this.
+  affects:
+  - cli
+  - mcp
+  roadmap:
+    visibility: shipped
+    why: >
+      How a tool is installed is part of what the tool is. These manifests are
+      the difference between "configure an MCP server by hand from a README"
+      and "install it", and the disarmed registry workflow is a public promise
+      about what does NOT happen automatically — both belong on the record
+      rather than only in the diff.
+  action:
+    scope: none
+    why: >
+      Nothing is owed. Existing installations are untouched: the manifests are
+      a new way in, not a replacement for the one you used. If you want the
+      plugin form, install it; if you do not, nothing changes.
+- id: RN-02600-5
+  kind: feat
+  impact: low
+  subject: dsh is a surface a2a knows, and the messages that list surfaces stop being typed out
+  detail: >
+    `internal/surface`'s registry gains a third row, so `a2a skill link
+    --surface dsh` links into `.dsh/skills` and `a2a doctor` recognises a
+    project driven by dsh instead of reporting no agent surface at all. Both
+    facts — that `.dsh/skills` is a project skill root, and that dsh reads
+    `AGENTS.md` as always-on context — were verified against dsh's own source
+    at a pinned commit rather than against its documentation.
+
+    THE MESSAGES THAT NAME THE KNOWN SURFACES CHANGED TEXT, which is the only
+    part of this that can reach a script. Three of them listed "claude, codex"
+    or ".claude/ or .codex/" as literals typed beside the registry, so the
+    moment a third row existed they described a2a as knowing less than it did.
+    They are computed from the registry now, and two tests walk that registry
+    independently of the code that renders it, so a fourth surface cannot leave
+    them stale again.
+  affects:
+  - cli
+  roadmap:
+    visibility: shipped
+    why: >
+      Which agent runtimes a2a can install itself into is a question people ask
+      before adopting it, so the answer belongs in the public record. The
+      derivation matters publicly too: it is the reason the answer will still
+      be right the next time the list grows.
+  action:
+    scope: local
+    detect:
+    - "grep -rn 'known: claude, codex' -- <your scripts and CI workflows>"
+    - "grep -rn '\\.claude/ or \\.codex/' -- <your scripts and CI workflows>"
+    why: >
+      Only if you match on the literal text of `a2a skill link` or `a2a doctor`
+      output. Those two strings now name every known surface rather than two of
+      them, so an exact-match grep stops matching. Exit codes and behaviour are
+      unchanged.

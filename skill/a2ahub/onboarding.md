@@ -24,7 +24,8 @@
 > default. After installing (or via `a2a init`, which does both by default),
 > run `a2a skill link` to place a discovery entry for each agent surface this
 > repo already shows: a `.claude/skills/a2ahub` symlink for Claude Code, a
-> `.codex/skills/a2ahub` symlink for Codex, and so on — pointing back at the
+> `.codex/skills/a2ahub` symlink for Codex, a `.dsh/skills/a2ahub` symlink for
+> DeepSeek Harness, and so on — pointing back at the
 > installed tree. This matters because **Claude Code reads `CLAUDE.md`, not
 > `AGENTS.md`** — the AGENTS.md pointer alone reaches Codex, not Claude Code;
 > the skill link (plus a `CLAUDE.md` pointer `a2a init` also writes when
