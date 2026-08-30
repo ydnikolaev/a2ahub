@@ -1,6 +1,6 @@
 schema: release-notes/v1
 version: 0.26.0
-released: unreleased
+released: "2026-08-30"
 headline: what could not be determined is said out loud
 changes:
 - id: RN-02600-0
