@@ -62,8 +62,19 @@ docs/features/**/epic-backlog.md
 
 # Two integrations with their own toolchains — a Swift package and a VS Code
 # extension with its own npm test suite. Nothing in this repo's make-ABI can
-# build or judge either; `make check` never enters this tree.
-integrations/**
+# build or judge either; `make check` never enters those two trees.
+#
+# integrations/dsh/** IS DELIBERATELY ABSENT and must stay absent. This entry
+# read `integrations/**` until 2026-08-30, when the dsh bundle landed under a
+# gate that genuinely reads it (`check-plugin-manifests.sh` claims
+# `integrations/dsh/**` and globs that directory). A blanket kept here would
+# not have made the tree ungated — it would have HIDDEN a covered path from the
+# coverage self-audit, because `Coverage` skips an ungated match before it ever
+# asks whether a declaration claims the path (internal/lane/coverage.go). The
+# reason above would have stayed on the page while ceasing to be true, which is
+# the stale-blanket shape P12 was written about.
+integrations/macos-notifier/**
+integrations/vscode/**
 
 # The harness the agents LOAD — skills, rules, doctrines, lock files, provider
 # surfaces. Delivered by `mate fleet pull`, never committed here (see

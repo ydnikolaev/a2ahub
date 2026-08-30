@@ -1,0 +1,50 @@
+# dsh tier-1 bundle for a2ahub. No JavaScript ships: `package.json` declares
+# this file under `dsh.bundle.patch`, and `dsh plugin add` merges it into the
+# active profile's layer stack (packages/boot/app-boot's patch composition).
+# This file is a top-level YAML array of Cordis loader patches — an `insert`
+# with no `id` appends new entries to the profile's entry list
+# (`@deepseek-ai/cordis-plugin-include`'s `applyEntryPatches`). The
+# `env`/`cwd` shape below matches dsh's own shipped examples, e.g.
+# `apps/cli/config/examples/mcp-memory/mcp-reference-memory.cordis.yml`.
+#
+# The launch line (docs/install-contract.md fact 1 — a HIDDEN verb, stdio,
+# no arguments), transcribed as `command`/`args` below, not paraphrased:
+#
+#   a2a mcp
+#
+# The credential sentence (docs/install-contract.md fact 3), transcribed
+# verbatim:
+#
+#   a2a resolves a GitHub credential locally: by default it runs your own
+#   `gh auth token`, which never leaves your machine and is neither logged
+#   nor stored. To give it a token scoped to one space instead, export
+#   `A2A_TOKEN_<SPACE_ID>` — an explicit value there outranks the default.
+#
+# dsh's MCP client strips ambient variables whose NAMES look like credentials
+# before spawning a child (`@deepseek-ai/dsh-subprocess`'s
+# `scrubbedParentEnv`, applied in
+# `packages/mcp/mcp-client/src/transport.ts`'s `buildChildEnv`). The default
+# `cmd:gh auth token` reference is a subprocess and is unaffected; the
+# `env:A2A_TOKEN_<SPACE_ID>` override is scrubbed BY NAME and would otherwise
+# never reach the spawned `a2a mcp` process.
+#
+# The `env` entry below is the passthrough that survives the scrub — config
+# values are merged in AFTER the scrub
+# (`{ ...scrubbedParentEnv(), ...extra }`, same file), so an explicit key
+# here always wins. Replace <SPACE_ID> in BOTH the key and the `!!js`
+# expression with your connected space id, uppercased, with every `-`
+# replaced by `_` (the mapping `internal/space.CredentialEnvVar` computes) —
+# e.g. A2A_TOKEN_MY_SPACE for a space id "my-space". This step is only
+# needed if you use the env:A2A_TOKEN_<SPACE_ID> credential reference;
+# cmd:gh auth token (the default) needs no entry here at all.
+- insert:
+    - id: a2ahub
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: a2a
+        transport: stdio
+        command: a2a
+        args: [mcp]
+        cwd: !!js process.cwd()
+        env:
+          A2A_TOKEN_<SPACE_ID>: !!js process.env['A2A_TOKEN_<SPACE_ID>']

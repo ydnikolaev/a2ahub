@@ -20,6 +20,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/surface"
 	"github.com/ydnikolaev/a2ahub/skill"
 	"github.com/ydnikolaev/a2ahub/testkit/fakegithub"
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
@@ -1922,6 +1923,17 @@ func TestDoctorSkillAdvisoryDistinguishesNoSurfaceFromUnlinked(t *testing.T) {
 		}
 		if !strings.Contains(detail, "nothing to link") {
 			t.Errorf("detail = %q, want it to say plainly that there is nothing to link here", detail)
+		}
+		// And it must name the surfaces it actually looked for, derived from
+		// the registry rather than typed. This message read "(.claude/ or
+		// .codex/)" as a literal until 2026-08-30, so the dsh row made it tell
+		// a dsh user that a2a knew nothing a2a already knew. Walking Registry()
+		// here — not the helper that renders it — is what turns a re-hardcoded
+		// list red on the next row instead of in someone's terminal.
+		for _, s := range surface.Registry() {
+			if want := s.MarkerDir() + "/"; !strings.Contains(detail, want) {
+				t.Errorf("detail = %q, does not name known surface marker %q", detail, want)
+			}
 		}
 	})
 

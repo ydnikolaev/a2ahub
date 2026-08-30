@@ -1,0 +1,20 @@
+{
+  "name": "dsh-a2ahub",
+  "version": "0.1.0",
+  "description": "Reliable handoffs between autonomous agents, using a Git repository both sides can inspect.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ydnikolaev/a2ahub.git",
+    "directory": "integrations/dsh"
+  },
+  "private": true,
+  "files": [
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

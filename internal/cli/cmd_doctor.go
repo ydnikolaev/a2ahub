@@ -1526,7 +1526,7 @@ func (c *DoctorCommand) doctorCheckSkillDiscoverable() (bool, string) {
 	// THREE states, not two. This used to collapse the last two, and the
 	// collapsed message named a remedy that cannot work: it said to run
 	// `a2a skill link`, which in a project with no agent surface answers
-	// "no known agent surface detected (.claude/ or .codex/) — nothing to
+	// "no known agent surface detected (<the marker dirs>) — nothing to
 	// link" and leaves the advisory repeating verbatim on the next doctor.
 	//
 	// Found on 2026-07-26 by following the advice and watching nothing change.
@@ -1534,8 +1534,8 @@ func (c *DoctorCommand) doctorCheckSkillDiscoverable() (bool, string) {
 	// that named the wrong author: it sends the reader somewhere that cannot
 	// help, and the reader's next move is to distrust the check.
 	if len(detected) == 0 {
-		return true, " · skill installed; this project shows no agent surface (.claude/ or .codex/), " +
-			"so there is nothing to link — expected for a project no agent drives"
+		return true, fmt.Sprintf(" · skill installed; this project shows no agent surface (%s), "+
+			"so there is nothing to link — expected for a project no agent drives", surface.KnownMarkerDirs())
 	}
 	if linked == 0 {
 		ids := make([]string, 0, len(detected))

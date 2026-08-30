@@ -225,14 +225,14 @@ func (c *SkillCommand) runLink(args []string, stdio IO) int {
 	if explicit {
 		s, ok := surface.ByID(*surfaceID)
 		if !ok {
-			_, _ = fmt.Fprintf(stdio.Stderr, "a2a skill link: unknown surface %q (known: claude, codex)\n", *surfaceID)
+			_, _ = fmt.Fprintf(stdio.Stderr, "a2a skill link: unknown surface %q (known: %s)\n", *surfaceID, surface.KnownIDs())
 			return 2
 		}
 		targets = []surface.Surface{s}
 	} else {
 		targets = surface.Detect(c.ProjectRoot)
 		if len(targets) == 0 {
-			_, _ = fmt.Fprintln(stdio.Stdout, "a2a skill link: no known agent surface detected (.claude/ or .codex/) — nothing to link")
+			_, _ = fmt.Fprintf(stdio.Stdout, "a2a skill link: no known agent surface detected (%s) — nothing to link\n", surface.KnownMarkerDirs())
 			return 0
 		}
 	}

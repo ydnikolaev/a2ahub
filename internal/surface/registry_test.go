@@ -27,11 +27,11 @@ func TestRegistryRowsAreProvenanced(t *testing.T) {
 func TestRegistryDeterministicOrder(t *testing.T) {
 	t.Parallel()
 	rows := Registry()
-	if len(rows) != 2 {
-		t.Fatalf("Registry() = %d rows, want 2", len(rows))
+	if len(rows) != 3 {
+		t.Fatalf("Registry() = %d rows, want 3", len(rows))
 	}
-	if rows[0].ID != "claude" || rows[1].ID != "codex" {
-		t.Fatalf("Registry() order = [%s, %s], want [claude, codex]", rows[0].ID, rows[1].ID)
+	if rows[0].ID != "claude" || rows[1].ID != "codex" || rows[2].ID != "dsh" {
+		t.Fatalf("Registry() order = [%s, %s, %s], want [claude, codex, dsh]", rows[0].ID, rows[1].ID, rows[2].ID)
 	}
 }
 
@@ -69,6 +69,23 @@ func TestRegistryCodexRow(t *testing.T) {
 	}
 }
 
+func TestRegistryDshRow(t *testing.T) {
+	t.Parallel()
+	s, ok := ByID("dsh")
+	if !ok {
+		t.Fatal("ByID(\"dsh\") not found")
+	}
+	if s.SkillsHome != ".dsh/skills" {
+		t.Errorf("SkillsHome = %q, want %q", s.SkillsHome, ".dsh/skills")
+	}
+	if s.ContextFile != "AGENTS.md" {
+		t.Errorf("ContextFile = %q, want %q", s.ContextFile, "AGENTS.md")
+	}
+	if !s.ReadsAgentsMD {
+		t.Error("ReadsAgentsMD = false, want true — dsh reads AGENTS.md")
+	}
+}
+
 func TestByIDUnknown(t *testing.T) {
 	t.Parallel()
 	_, ok := ByID("does-not-exist")
@@ -86,6 +103,10 @@ func TestMarkerDir(t *testing.T) {
 	codex, _ := ByID("codex")
 	if got := codex.MarkerDir(); got != ".codex" {
 		t.Errorf("codex.MarkerDir() = %q, want %q", got, ".codex")
+	}
+	dsh, _ := ByID("dsh")
+	if got := dsh.MarkerDir(); got != ".dsh" {
+		t.Errorf("dsh.MarkerDir() = %q, want %q", got, ".dsh")
 	}
 }
 
@@ -107,6 +128,35 @@ func TestDetectClaudeOnly(t *testing.T) {
 	got := Detect(root)
 	if len(got) != 1 || got[0].ID != "claude" {
 		t.Fatalf("Detect(.claude only) = %v, want [claude]", got)
+	}
+}
+
+// TestDetectDshNotDetectedByBareAgents is the AC-918.2 trap this spec exists
+// to guard: this repository itself holds a bare ".agents/" directory (it is
+// not dsh-specific — the convention is shared), so a dsh row whose
+// SkillsHome were mistakenly ".agents/skills" would report dsh present in
+// every tree that merely follows the convention, including this one.
+// SkillsHome must be ".dsh/skills", whose MarkerDir() is ".dsh" — a marker
+// bare ".agents/" never satisfies.
+func TestDetectDshNotDetectedByBareAgents(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	mustMkdirAll(t, filepath.Join(root, ".agents"))
+	got := Detect(root)
+	for _, s := range got {
+		if s.ID == "dsh" {
+			t.Fatalf("Detect(bare .agents/ only) = %v, want dsh absent (MarkerDir() must not derive from .agents)", got)
+		}
+	}
+}
+
+func TestDetectDshOnly(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	mustMkdirAll(t, filepath.Join(root, ".dsh"))
+	got := Detect(root)
+	if len(got) != 1 || got[0].ID != "dsh" {
+		t.Fatalf("Detect(.dsh only) = %v, want [dsh]", got)
 	}
 }
 
@@ -442,5 +492,37 @@ func TestLinkSymlinkFallbackToStub(t *testing.T) {
 	}
 	if result2.Mode != LinkStub {
 		t.Fatalf("second Link() result.Mode = %q, want %q", result2.Mode, LinkStub)
+	}
+}
+
+// TestKnownListsNameEveryRow walks the registry INDEPENDENTLY of the helpers
+// and demands that each row appear in both rendered lists.
+//
+// It is the guard for a fix, not for a feature. Three user-facing messages —
+// `a2a skill link`'s unknown-surface refusal and its no-surface notice, and
+// doctor's no-surface advisory — restated "claude, codex" and ".claude/ or
+// .codex/" as literals. They were correct until the dsh row landed, and then
+// they told a dsh user that a2a did not know a surface ByID("dsh") already
+// resolved. Deriving the strings fixed those three sites; this test is what
+// stops the next one from being typed out again, because a fourth row makes a
+// re-hardcoded list red here rather than in someone's terminal.
+func TestKnownListsNameEveryRow(t *testing.T) {
+	t.Parallel()
+
+	ids, dirs := KnownIDs(), KnownMarkerDirs()
+	rows := Registry()
+	if len(rows) == 0 {
+		t.Fatal("registry is empty; the lists below would pass vacuously")
+	}
+	for _, s := range rows {
+		if !strings.Contains(ids, s.ID) {
+			t.Errorf("KnownIDs() = %q, missing row %q", ids, s.ID)
+		}
+		if want := s.MarkerDir() + "/"; !strings.Contains(dirs, want) {
+			t.Errorf("KnownMarkerDirs() = %q, missing %q", dirs, want)
+		}
+	}
+	if got := strings.Count(ids, ",") + 1; got != len(rows) {
+		t.Errorf("KnownIDs() = %q lists %d id(s), registry has %d", ids, got, len(rows))
 	}
 }
