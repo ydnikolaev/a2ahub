@@ -246,14 +246,43 @@ shape_pairs() { # $1 = json
 # Returns 1 only when NOTHING is left to scan.
 READABLE_CORPUS=()
 readable_corpus() { # $1 = root, $2 = prose naming what would otherwise be reported
-  local root="$1" what="$2" files=() f unreadable=0 first=""
+  local root="$1" what="$2" files=() f unreadable=0 first="" dirlinks=0 firstlink="" rootabs
   READABLE_CORPUS=()
+  rootabs="$(cd "$root" && pwd -P)"
   mapfile -t files < <(tracked_files "$root")
   if [ "${#files[@]}" -eq 0 ]; then
     gate_unmeasured "notify-secrets: tracked_files returned zero files under $root — refusing rather than $what and reporting green"
     return 1
   fi
   for f in "${files[@]}"; do
+    # A TRACKED SYMLINK POINTING AT A DIRECTORY IS NOT SCANNABLE CONTENT, and
+    # feeding one to grep does not skip that path — grep answers "Is a
+    # directory" on stderr and the shape's whole scan is reported UNMEASURED.
+    # On 2026-08-30 exactly that happened: `plugins/a2ahub/skills/a2ahub` (the
+    # plugin's link to the shipped skill tree) entered the tracked set, and
+    # ALL FOURTEEN credential shapes stopped policing the ENTIRE repository in
+    # one step. The gate said so rather than passing, which is why this was
+    # found at all — but the honest state was "nothing was scanned".
+    #
+    # `find`'s fallback never had this problem: `-type f` excludes a symlink.
+    # The git branch had no equivalent, so the two enumerations disagreed about
+    # what a corpus is.
+    if [ -L "$root/$f" ] && [ -d "$root/$f" ]; then
+      local target=""
+      target="$(cd "$root/$f" 2>/dev/null && pwd -P)" || target=""
+      case "${target:-/dev/null}" in
+        "$rootabs"/* | "$rootabs")
+          # Its contents are tracked in their own right and are scanned as
+          # themselves, so following the link would only scan them twice.
+          dirlinks=$((dirlinks + 1))
+          [ -n "$firstlink" ] || firstlink="$f"
+          ;;
+        *)
+          gate_unmeasured "notify-secrets: tracked symlink $f resolves OUTSIDE this tree (${target:-unresolvable}), so its content is not in the scanned corpus and no shape was checked against it. That is a fact about the MEASUREMENT: point it inside the repository, or exempt it deliberately."
+          ;;
+      esac
+      continue
+    fi
     if [ -r "$root/$f" ]; then
       READABLE_CORPUS+=("$root/$f")
     else
@@ -263,6 +292,9 @@ readable_corpus() { # $1 = root, $2 = prose naming what would otherwise be repor
   done
   if [ "$unreadable" -gt 0 ]; then
     gate_unmeasured "notify-secrets: $unreadable tracked path(s) are absent from the working tree or unreadable (first: $first) — this run did NOT scan them, and that is a fact about the MEASUREMENT, not about the credential shapes. A tracked path missing from disk usually means a rename that went through the plain rename command instead of git's; restore or re-stage it and run this gate again."
+  fi
+  if [ "$dirlinks" -gt 0 ]; then
+    echo "notify-secrets: $dirlinks tracked symlink(s) to directories inside this tree were not scanned as files (first: $firstlink); their targets are tracked paths and are scanned as themselves."
   fi
   [ "${#READABLE_CORPUS[@]}" -gt 0 ]
 }
@@ -639,6 +671,33 @@ run_teeth() {
     "are absent from the working tree or unreadable" "$fixture" "$good_bin" || return 1
   tb_out="$_TEETH_LAST_OUT"
 
+  # A TRACKED SYMLINK TO A DIRECTORY: green, not an aborted scan. This is the
+  # 2026-08-30 defect, where one such link (a plugin's link to the shipped
+  # skill tree) made all fourteen shapes report UNMEASURED over the whole
+  # repository — grep answers "Is a directory" and the shape's scan ends there.
+  # The two arms are separate assertions because they have different remedies:
+  # a link INSIDE the tree is skipped, since its target is tracked and scanned
+  # as itself; a link pointing OUT of the tree is content nothing scanned, and
+  # saying nothing about it would be the silent half of the same bug.
+  fixture="$work/dirlink-inside"; mkdir -p "$fixture/pkg/real"
+  printf 'package real\n\nfunc Hello() string { return "hello" }\n' >"$fixture/pkg/real/hello.go"
+  seed_matcher_go "$fixture" "$tg_token"
+  ( cd "$fixture" && ln -s pkg/real linked )
+  ( cd "$fixture" && git init -q . && git add -A ) >/dev/null 2>&1 || {
+    echo "check-notify-secrets --teeth: could not build the dirlink-inside fixture" >&2; return 1; }
+  teeth_expect "a tracked symlink to a directory inside the tree" green \
+    "were not scanned as files" "$fixture" "$good_bin" || return 1
+
+  fixture="$work/dirlink-outside"; mkdir -p "$fixture/pkg"
+  mkdir -p "$work/elsewhere"
+  printf 'package pkg\n\nfunc Hello() string { return "hello" }\n' >"$fixture/pkg/hello.go"
+  seed_matcher_go "$fixture" "$tg_token"
+  ( cd "$fixture" && ln -s ../elsewhere outward )
+  ( cd "$fixture" && git init -q . && git add -A ) >/dev/null 2>&1 || {
+    echo "check-notify-secrets --teeth: could not build the dirlink-outside fixture" >&2; return 1; }
+  teeth_expect "a tracked symlink resolving outside the tree" unmeasured-red \
+    "resolves OUTSIDE this tree" "$fixture" "$good_bin" || return 1
+
   # ── the pairing, which is the assertion that actually holds the class ──
   # Either half alone proves nothing. "Tb says UNMEASURED" still passes if a
   # real finding grew the same marker; "Ta says the file matches a shape"
@@ -660,7 +719,7 @@ run_teeth() {
     return 1
   fi
 
-  echo "check-notify-secrets --teeth: PASS — not-executable, zero-shape and no-flag-support binaries, an empty tracked-file set, an uncompilable pattern and a tracked path absent from disk all refuse AS UNMEASURED; an unregistered credential-shaped literal and a duplicated telegram regex source both red as findings WITHOUT that marker; the same shape at a registered path greens; and the two verdicts are asserted to differ rather than merely to be red"
+  echo "check-notify-secrets --teeth: PASS — not-executable, zero-shape and no-flag-support binaries, an empty tracked-file set, an uncompilable pattern and a tracked path absent from disk all refuse AS UNMEASURED; an unregistered credential-shaped literal and a duplicated telegram regex source both red as findings WITHOUT that marker; the same shape at a registered path greens; a tracked symlink to a directory inside the tree is SKIPPED and named rather than aborting every shape's scan while one resolving outside the tree refuses; and the two verdicts are asserted to differ rather than merely to be red"
 }
 
 if [ "${1:-}" = "--teeth" ]; then
