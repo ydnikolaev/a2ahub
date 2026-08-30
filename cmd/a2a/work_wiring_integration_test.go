@@ -144,6 +144,7 @@ type productionWorkStatus struct {
 type productionPendingWork struct {
 	Action           workreport.Action `json:"action"`
 	SemanticSequence uint64            `json:"semantic_sequence"`
+	LastErrorCode    string            `json:"last_error_code"`
 }
 
 func runWorkOperation(t *testing.T, wantCode int, args ...string) productionWorkOperation {
@@ -164,14 +165,44 @@ func readWorkStatus(t *testing.T, workID string) productionWorkStatus {
 	t.Helper()
 	var stdout, stderr strings.Builder
 	code := run([]string{"work", "status", "--work-id", workID, "--include-expired", "--json"}, &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("a2a work status: exit=%d\nstdout: %s\nstderr: %s", code, stdout.String(), stderr.String())
-	}
-	var status productionWorkStatus
-	if err := json.Unmarshal([]byte(stdout.String()), &status); err != nil {
-		t.Fatalf("decode work status: %v\nstdout: %s", err, stdout.String())
+	// The payload is decoded BEFORE the exit code is judged, because the
+	// expected code is DERIVED from the payload rather than typed here.
+	// `work status` declares three codes in schemas/verdict-exit-codes.yaml
+	// (clean 0 / objections 1 / unmeasured 3, computed-not-listed-2026-08 P4),
+	// and a lease whose pending operation carries a last_error_code IS an
+	// objection the command already computed — it stopped reporting those as
+	// clean. A hardcoded `!= 0` here would assert the pre-P4 mapping and would
+	// have to be re-typed every time a call site's fixture reaches a new state;
+	// asking the payload cannot go stale that way.
+	status := status0(t, stdout.String())
+	want := workStatusExpectedExitCode(status)
+	if code != want {
+		t.Fatalf("a2a work status: exit=%d want=%d\nstdout: %s\nstderr: %s", code, want, stdout.String(), stderr.String())
 	}
 	return status
+}
+
+// status0 decodes one `a2a work status --json` payload.
+func status0(t *testing.T, stdout string) productionWorkStatus {
+	t.Helper()
+	var status productionWorkStatus
+	if err := json.Unmarshal([]byte(stdout), &status); err != nil {
+		t.Fatalf("decode work status: %v\nstdout: %s", err, stdout)
+	}
+	return status
+}
+
+// workStatusExpectedExitCode states, in one place, the half of `work status`'s
+// declared mapping this test can reach: a listing carrying an objection exits
+// 1, an otherwise clean one exits 0. The `unmeasured` arm (3) needs a lease
+// store that cannot be read, which this fixture never produces.
+func workStatusExpectedExitCode(status productionWorkStatus) int {
+	for _, item := range status.Items {
+		if item.Pending != nil && item.Pending.LastErrorCode != "" {
+			return 1
+		}
+	}
+	return 0
 }
 
 func assertWorkStatus(t *testing.T, workID, session string, mode workreport.Mode, summary string, semantic, heartbeat uint64, pending bool) {
