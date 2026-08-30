@@ -83,9 +83,9 @@ func (c *ThreadCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if skipped, skErr := c.store.SkippedFiles(ctx, result.Space); skErr == nil {
 		skipAdvisory(stdio, skipped, *jsonOut)
 	} else {
-		// computed-not-listed-2026-08 P6 AC-8/§8 row 8 — see cmd_inbox.go's
-		// own copy of this comment for the defect this closes.
-		_, _ = fmt.Fprintf(stdio.Stderr, "thread: could not determine which files, if any, were skipped: %v\n", skErr)
+		// computed-not-listed-2026-08 P6 AC-8/§8 row 8, through the ONE
+		// shared copy in skipadvisory.go — see skipAdvisoryUnavailable.
+		skipAdvisoryUnavailable(stdio, "thread", skErr, *jsonOut)
 	}
 
 	if *jsonOut {

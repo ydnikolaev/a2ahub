@@ -47,6 +47,56 @@ func skipAdvisory(stdio IO, skipped []cache.SkippedFile, jsonOut bool) {
 		len(skipped), formatSkippedList(skipped))
 }
 
+// skipAdvisoryUnavailable is skipAdvisory's OTHER half: what a read verb
+// says when it could not even COMPUTE the advisory. The skipped-file report
+// is best-effort by design, so a failure to read it used to be dropped
+// silently — and the agent then lost two facts at once, that this output
+// might be missing rows and that nothing could find out which
+// (computed-not-listed-2026-08 P6 AC-8/§8 row 8).
+//
+// ONE shared copy across search/inbox/outbox/thread, for the reason
+// skipAdvisory's own doc comment above already gives at length: the wording
+// must stay identical across every verb that can surface it. P6 first
+// shipped four independent copies, one per verb file, each carrying a
+// pointer to the others' comment — which is the drift that argument
+// predicts, written down as a plan.
+//
+// It goes through NewRefusal (refusal_state.go) rather than writing the
+// error straight to stderr, and that is not gate-appeasement: the four
+// copies said "could not determine which files, if any, were skipped: %v"
+// and stopped there. A symptom with no action is spec 04's own defect — the
+// reader is told something is wrong and not what to do about it — and
+// check-refusal-ratchet.sh reddening on the four new raw sinks is that rule
+// working, not obstructing.
+//
+// Stderr only, never stdout: an existing consumer's stdout bytes must stay
+// byte-identical, the same constraint skipAdvisory carries. In --json mode
+// it emits one JSON object rather than prose, so a consumer parsing this
+// channel meets the shape it already expects from skipAdvisory.
+func skipAdvisoryUnavailable(stdio IO, verb string, err error, jsonOut bool) {
+	attempted := verb + ": could not determine which files, if any, were skipped"
+	if jsonOut {
+		_ = json.NewEncoder(stdio.Stderr).Encode(struct {
+			SkippedUnavailable string `json:"skipped_unavailable"`
+			Reason             string `json:"reason"`
+			NextStep           string `json:"next_step"`
+		}{SkippedUnavailable: verb, Reason: err.Error(), NextStep: skipAdvisoryNextStep})
+		return
+	}
+	refusal, rerr := NewRefusal(attempted, err.Error(), skipAdvisoryNextStep)
+	if rerr != nil {
+		_, _ = fmt.Fprintln(stdio.Stderr, verb+": internal problem building the skip-advisory note (empty next step) — this is a bug in "+verb+", not a caller mistake")
+		return
+	}
+	_, _ = fmt.Fprintln(stdio.Stderr, refusal)
+}
+
+// skipAdvisoryNextStep is the action, stated once. It is deliberately about
+// what the READER should do with the output in front of them, not about
+// repairing the store: the verb has already printed its rows, and the only
+// thing the reader can act on immediately is whether to trust the list.
+const skipAdvisoryNextStep = "treat this listing as possibly incomplete; run `a2a doctor` to see whether the mirror is readable, then re-run this command"
+
 // formatSkippedList renders skipped as "path (reason), path (reason), ..."
 // — the item-list fragment shared between skipAdvisory's own "note: N
 // file(s)..." prose above (a read verb's OWN output is missing these rows)
