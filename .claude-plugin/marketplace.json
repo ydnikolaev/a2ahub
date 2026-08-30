@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "a2ahub",
+  "description": "Reliable handoffs between autonomous agents, using a Git repository both sides can inspect.",
+  "owner": {
+    "name": "ydnikolaev"
+  },
+  "plugins": [
+    {
+      "name": "a2ahub",
+      "description": "Reliable handoffs between autonomous agents, using a Git repository both sides can inspect.",
+      "source": "./plugins/a2ahub",
+      "homepage": "https://github.com/ydnikolaev/a2ahub"
+    }
+  ]
+}

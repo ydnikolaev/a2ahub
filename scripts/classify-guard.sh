@@ -90,7 +90,13 @@ fi
 # Every DENY entry MUST also be in .gitignore — check 3 asserts it, so the two can
 # never drift into a leak. PENDING entries are deliberately NOT required to be
 # gitignored (see docs/ above) until they graduate to DENY.
-ALLOW_DIRS=( .github cmd integrations internal schemas skill space-template testkit seeds feedback web ui releasenotes )
+# `.claude-plugin` and `plugins` are PUBLIC and are the point: they are the
+# install surface this repository offers Claude Code, Codex and Antigravity
+# (built-not-listed-2026-08 P4). The CATALOGUE must sit at the repository root
+# — Claude Code requires `.claude-plugin/marketplace.json` there — while the
+# plugin it names lives under `plugins/`, which is why two entries appear here
+# rather than one.
+ALLOW_DIRS=( .github .claude-plugin cmd integrations internal plugins schemas skill space-template testkit seeds feedback web ui releasenotes )
 PUBLIC_VALIDATOR_FILES=(
   scripts/check-dashboard-cards.sh
   scripts/check-dashboard-derivation.sh
@@ -107,6 +113,12 @@ PUBLIC_VALIDATOR_FILES=(
   # gates: a gate whose inputs are public and whose script is not is skipped
   # in every public checkout, which is the class check 4 exists to refuse.
   scripts/check-notify-selector-coverage.sh
+  # built-not-listed-2026-08 P6. PUBLIC because every input ships: the plugin
+  # manifests under `plugins/`, the catalogue at `.claude-plugin/`, and both
+  # canonical sides — the binary built from `cmd/`+`internal/`, and
+  # `skill/`'s shipped content. A private gate over public artifacts is
+  # skipped in every public checkout, which is the class check 4 refuses.
+  scripts/check-plugin-manifests.sh
   scripts/check-mcp-schema-decodable.sh
   # answers-that-hold-2026-08 P4/P13. PUBLIC for the same reason the two above
   # are: their inputs are SHIPPED code (internal/cli/**, releasenotes/**), the
@@ -185,7 +197,7 @@ PUBLIC_VALIDATOR_FILES=(
   scripts/check-usage-workflow.sh
   scripts/tests/check_usage_workflow_test.sh
 )
-ALLOW_FILES=( .gitignore .golangci.yml .goreleaser.yaml .gitleaks.toml .govulncheck-allow.txt Makefile SECURITY.md README.md LICENSE NOTICE go.mod go.sum cc-coverage.yaml scripts/install.sh scripts/dev-install.sh scripts/e2e-authoring-smoke.sh scripts/classify-guard.sh scripts/release-preflight.sh scripts/check-release-notes-freshness.sh scripts/check-flaky-tests.sh scripts/lib/flaky-tests.txt scripts/check-roadmap-release-decisions.sh scripts/check-provider-tier-deferral.sh scripts/check-unmeasured-reach.sh scripts/bump-space-template.sh scripts/check-gosec-scope.sh scripts/check-readme.sh scripts/dashboard-template-drift.sh scripts/check-view-vocabulary.sh scripts/check-pendency-uniqueness.sh scripts/check-loop-coverage.sh scripts/check-human-gates.sh scripts/check-loop-reachability.sh scripts/check-prose-roster.sh scripts/check-prose-coverage.sh scripts/check-operational-confidence.sh scripts/check-error-codes.sh scripts/verify.sh scripts/build-release-cohort.sh scripts/release-postflight.sh scripts/lib/strip-set.txt "${PUBLIC_VALIDATOR_FILES[@]}" )
+ALLOW_FILES=( server.json .gitignore .golangci.yml .goreleaser.yaml .gitleaks.toml .govulncheck-allow.txt Makefile SECURITY.md README.md LICENSE NOTICE go.mod go.sum cc-coverage.yaml scripts/install.sh scripts/dev-install.sh scripts/e2e-authoring-smoke.sh scripts/classify-guard.sh scripts/release-preflight.sh scripts/check-release-notes-freshness.sh scripts/check-flaky-tests.sh scripts/lib/flaky-tests.txt scripts/check-roadmap-release-decisions.sh scripts/check-provider-tier-deferral.sh scripts/check-unmeasured-reach.sh scripts/bump-space-template.sh scripts/check-gosec-scope.sh scripts/check-readme.sh scripts/dashboard-template-drift.sh scripts/check-view-vocabulary.sh scripts/check-pendency-uniqueness.sh scripts/check-loop-coverage.sh scripts/check-human-gates.sh scripts/check-loop-reachability.sh scripts/check-prose-roster.sh scripts/check-prose-coverage.sh scripts/check-operational-confidence.sh scripts/check-error-codes.sh scripts/verify.sh scripts/build-release-cohort.sh scripts/release-postflight.sh scripts/lib/strip-set.txt "${PUBLIC_VALIDATOR_FILES[@]}" )
 DENY_DIRS=( .agents .claude .codex .mate .sporo )   # scripts/ handled below (install.sh + e2e-authoring-smoke.sh are the public exceptions)
 DENY_FILES=( AGENTS.md CLAUDE.md )
 PENDING_DIRS=( docs )   # deferred to P6 — tracked today, tolerated by check 1, classified by check 2, exempt from check 3.

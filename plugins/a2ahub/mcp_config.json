@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "a2a": {
+      "command": "a2a",
+      "args": ["mcp"]
+    }
+  }
+}

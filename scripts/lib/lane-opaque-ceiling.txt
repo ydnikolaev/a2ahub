@@ -52,4 +52,26 @@
 #      made an inert directive parse. The count rose because the MEASUREMENT
 #      improved, not because the corpus did — the same class this epic keeps
 #      finding, and the reason a number is never evidence on its own.
-56
+#
+# ---- 2026-08-30: RESEEDED 56 -> 57 (built-not-listed-2026-08 P6) ----
+#
+#  +1  scripts/check-plugin-manifests.sh. The directive it carries is the
+#      gate-lib self-location every teeth-capable gate in this repository
+#      carries: `source "$(dirname "${BASH_SOURCE[0]}")/lib/gate-lib.sh"`,
+#      which the classifier cannot resolve to a literal. Verified against
+#      scripts/check-usage-workflow.sh:94 and scripts/check-render-ledger.sh,
+#      which declare it in the same words for the same reason.
+#
+#      So this is the +1-per-teeth-capable-gate movement the 2026-08-30 note
+#      above already named as "a real property of this ceiling ... not a pure
+#      debt counter", occurring exactly as predicted. Nothing was waved past
+#      the classifier: the gate's canonical-side reads are deliberately NOT
+#      declared, because they anchor to $GATE_ROOT unconditionally rather than
+#      to a diff's changed set.
+#
+#      THE RESEED TOOL DELETES THIS ENTIRE HEADER. Running
+#      `--write-opaque-ceiling` replaced the argued history with the bare
+#      number `57`; it was restored by hand from a copy taken before the run.
+#      Anyone re-seeding must do the same, or the file stops being the record
+#      its own first paragraph says it is.
+57

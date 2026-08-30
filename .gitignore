@@ -113,6 +113,7 @@ scripts/*
 !scripts/check-release-note-detect.sh
 !scripts/check-error-codes.sh
 !scripts/check-frozen-allowlist.sh
+!scripts/check-plugin-manifests.sh
 !scripts/ci-parity.sh
 !scripts/ci-parity-docker.sh
 !scripts/ci-parity.Dockerfile
@@ -157,6 +158,7 @@ scripts/tests/*
 !scripts/tests/check_usage_workflow_test.sh
 !scripts/tests/check_verdict_exit_mapping_test.sh
 !scripts/tests/check_harness_roster_test.sh
+!scripts/tests/check_plugin_manifests_test.sh
 !scripts/releasebody/
 # install.sh's regression net (P40 AC-1002.*). A directory, not a file: `scripts/*`
 # excludes the DIRECTORY `scripts/installsh`, and git cannot re-include a file whose

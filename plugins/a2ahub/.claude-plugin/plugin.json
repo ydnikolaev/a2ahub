@@ -1,0 +1,19 @@
+{
+  "name": "a2ahub",
+  "version": "0.25.8",
+  "description": "Reliable handoffs between autonomous agents, using a Git repository both sides can inspect.",
+  "author": {
+    "name": "ydnikolaev"
+  },
+  "homepage": "https://github.com/ydnikolaev/a2ahub",
+  "repository": "https://github.com/ydnikolaev/a2ahub",
+  "license": "Apache-2.0",
+  "keywords": [
+    "a2a",
+    "agent-handoff",
+    "mcp",
+    "github",
+    "automation"
+  ],
+  "mcpServers": "./mcp.json"
+}
