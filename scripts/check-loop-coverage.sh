@@ -199,8 +199,20 @@ ledger_value() { # $1 = yaml path, $2 = section ("covered:" or "empty:"), $3 = k
 # and collapsing "absent" and "present-but-blank" into the same signal is
 # exactly how a blank-reason `empty:` row would misreport as "no ledger
 # entry" instead of "blank reason" — right verdict, wrong finding.
+# The lookup is deliberately not a pipeline, and the reason is a FLAKY GATE
+# rather than a style preference — the same fix check-prose-coverage.sh's own
+# ledger_has_key carries, for the same defect. `grep -q` exits at the FIRST
+# match; under this file's `set -o pipefail` the pipeline then reports the
+# PRODUCER's status, and a producer still writing when grep closes the pipe
+# dies of SIGPIPE (141), so a key that IS present reports absent.
+#
+# `-x` WITHOUT `-F` IS PRESERVED EXACTLY. Adding -F here would change what
+# this gate matches (these keys are compared as regexes today), and a silent
+# semantic change smuggled inside a reliability fix is its own defect.
 ledger_has_key() { # $1 = yaml path, $2 = section, $3 = key
-  ledger_keys "$1" "$2" | grep -qx "$3"
+  local keys
+  keys="$(ledger_keys "$1" "$2")" || return 1
+  grep -qx -- "$3" <<<"$keys"
 }
 
 # ledger_keys prints every key declared inside one top-level section of
@@ -249,7 +261,7 @@ check_declared_keys() { # $1=yaml $2=types(nl) $3=originator-phases(nl) $4=count
         gate_fail "loop-coverage: declared key \"$key\" in $section is not shaped type/role/phase"
         continue
       fi
-      if ! printf '%s\n' "$types" | grep -qx "$type"; then
+      if ! grep -qx -- "$type" <<<"$types"; then
         gate_fail "loop-coverage: declared key \"$key\" in $section names type \"$type\", which is not one of the derived envelope types"
         continue
       fi
@@ -261,7 +273,7 @@ check_declared_keys() { # $1=yaml $2=types(nl) $3=originator-phases(nl) $4=count
           continue
           ;;
       esac
-      if ! printf '%s\n' "$rolelist" | grep -qx "$phase"; then
+      if ! grep -qx -- "$phase" <<<"$rolelist"; then
         gate_fail "loop-coverage: declared key \"$key\" in $section names phase \"$phase\", which is not in $role's declared phase list"
       fi
     done < <(ledger_keys "$yaml" "$section")
@@ -366,7 +378,7 @@ run_check() { # $1 = root
         elif [ "$has_cov" -eq 1 ]; then
           type_has_row=1
           cov="$(ledger_value "$yaml" "covered:" "$cell")"
-          if ! printf '%s\n' "$section_ids" | grep -qx "$cov"; then
+          if ! grep -qx -- "$cov" <<<"$section_ids"; then
             gate_fail "loop-coverage: $cell declares covered: \"$cov\", which is not a section heading any of $manifest's loop_corpus files has"
           fi
         elif [ "$has_emp" -eq 1 ]; then
@@ -455,7 +467,7 @@ run_teeth() {
   grep -v "^  $victim/originator/author:" "$tmp/schemas/loop-phases.yaml" >"$tmp/schemas/loop-phases.yaml.new"
   mv "$tmp/schemas/loop-phases.yaml.new" "$tmp/schemas/loop-phases.yaml"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -q "has no ledger entry"; then
+  if ! grep -q -- "has no ledger entry" <<<"$out"; then
     echo "loop-coverage --teeth: FAILED — a cell with no ledger entry did not red with the 'no ledger entry' message" >&2
     return 1
   fi
@@ -469,7 +481,7 @@ run_teeth() {
   sed -i.bak "s#^  $victim/counterparty/receive: \".*\"#  $victim/counterparty/receive: \"\"#" "$tmp/schemas/loop-phases.yaml"
   rm -f "$tmp/schemas/loop-phases.yaml.bak"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -q "blank reason"; then
+  if ! grep -q -- "blank reason" <<<"$out"; then
     echo "loop-coverage --teeth: FAILED — an empty: entry with a blank reason did not red with the 'blank reason' message" >&2
     return 1
   fi
@@ -479,7 +491,7 @@ run_teeth() {
   write_good_fixture
   echo "  $victim/originator/nonexistent-phase: \"§8.1\"" >>"$tmp/schemas/loop-phases.yaml"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -q "names phase \"nonexistent-phase\", which is not in originator's declared phase list"; then
+  if ! grep -q -- "names phase \"nonexistent-phase\", which is not in originator's declared phase list" <<<"$out"; then
     echo "loop-coverage --teeth: FAILED — a ledger key naming an undeclared phase did not red with that message" >&2
     return 1
   fi
@@ -489,7 +501,7 @@ run_teeth() {
   write_good_fixture
   echo "  not-a-real-type/originator/author: \"§8.1\"" >>"$tmp/schemas/loop-phases.yaml"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -q 'names type "not-a-real-type", which is not one of the derived envelope types'; then
+  if ! grep -q -- 'names type "not-a-real-type", which is not one of the derived envelope types' <<<"$out"; then
     echo "loop-coverage --teeth: FAILED — a ledger key naming an undeclared type did not red with that message" >&2
     return 1
   fi
@@ -500,7 +512,7 @@ run_teeth() {
   grep -v "^  $victim/" "$tmp/schemas/loop-phases.yaml" >"$tmp/schemas/loop-phases.yaml.new"
   mv "$tmp/schemas/loop-phases.yaml.new" "$tmp/schemas/loop-phases.yaml"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -q "\"$victim\" has ZERO ledger rows"; then
+  if ! grep -q -- "\"$victim\" has ZERO ledger rows" <<<"$out"; then
     echo "loop-coverage --teeth: FAILED — a type with zero ledger rows did not red with the ZERO-rows message naming it" >&2
     return 1
   fi
@@ -511,7 +523,7 @@ run_teeth() {
   sed -i.bak "s#^  $victim/originator/author: \"§8.1\"#  $victim/originator/author: \"§9.9\"#" "$tmp/schemas/loop-phases.yaml"
   rm -f "$tmp/schemas/loop-phases.yaml.bak"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -q 'declares covered: "§9.9", which is not a section heading'; then
+  if ! grep -q -- 'declares covered: "§9.9", which is not a section heading' <<<"$out"; then
     echo "loop-coverage --teeth: FAILED — a covered: section id absent from loops.md did not red with that message" >&2
     return 1
   fi
@@ -522,7 +534,7 @@ run_teeth() {
   sed -i.bak "s#^  originator: \[author\]#  originator: []#" "$tmp/schemas/loop-phases.yaml"
   rm -f "$tmp/schemas/loop-phases.yaml.bak"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -q "declares an empty phase list for one or both roles"; then
+  if ! grep -q -- "declares an empty phase list for one or both roles" <<<"$out"; then
     echo "loop-coverage --teeth: FAILED — an empty declared phase list did not fail closed with that message" >&2
     return 1
   fi
@@ -537,7 +549,7 @@ run_teeth() {
 " "$tmp/schemas/loop-phases.yaml"
   rm -f "$tmp/schemas/loop-phases.yaml.bak"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -q "is declared BOTH covered and empty"; then
+  if ! grep -q -- "is declared BOTH covered and empty" <<<"$out"; then
     echo "loop-coverage --teeth: FAILED — a cell declared both covered and empty did not red with that message" >&2
     return 1
   fi
@@ -553,7 +565,7 @@ run_teeth() {
     echo '}'
   } >"$tmp/skill/a2ahub/docs-manifest.json"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF 'has no non-empty "loop_corpus" array'; then
+  if ! grep -qF -- 'has no non-empty "loop_corpus" array' <<<"$out"; then
     echo "loop-coverage --teeth: FAILED — a manifest with no loop_corpus array did not red naming the missing key" >&2
     return 1
   fi
@@ -564,7 +576,7 @@ run_teeth() {
   sed -i.bak 's#"loop_corpus": \["a2ahub/loops.md"\]#"loop_corpus": ["a2ahub/nonexistent.md"]#' "$tmp/skill/a2ahub/docs-manifest.json"
   rm -f "$tmp/skill/a2ahub/docs-manifest.json.bak"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF 'names "a2ahub/nonexistent.md", which does not exist'; then
+  if ! grep -qF -- 'names "a2ahub/nonexistent.md", which does not exist' <<<"$out"; then
     echo "loop-coverage --teeth: FAILED — a loop_corpus entry naming a nonexistent file did not red naming it" >&2
     return 1
   fi
@@ -577,12 +589,41 @@ run_teeth() {
   rm -f "$tmp/skill/a2ahub/docs-manifest.json.bak"
   printf '# fixture extra\n\n## §8.1 Duplicate Heading\n' >"$tmp/skill/a2ahub/loops-extra.md"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF 'section id "§8.1" is defined in more than one loop_corpus file'; then
+  if ! grep -qF -- 'section id "§8.1" is defined in more than one loop_corpus file' <<<"$out"; then
     echo "loop-coverage --teeth: FAILED — a section id defined in two corpus files did not red naming the ambiguity" >&2
     return 1
   fi
 
-  echo "loop-coverage --teeth: ok"
+  # (m) ledger_has_key must find a key that a `grep -q` would match on the
+  # FIRST line of a ledger far larger than a pipe buffer. Written as a
+  # pipeline it cannot: grep exits at that first match, awk takes SIGPIPE
+  # with tens of thousands of lines still unwritten, and `pipefail` reports
+  # the dead producer — so a present key reads as absent.
+  #
+  # THIS GATE ALREADY LOST A RELEASE-GATE RUN TO THAT CLASS, on 2026-08-31:
+  # the container suite reported `handoff/counterparty/work` naming a phase
+  # "not in counterparty's declared phase list" while `work` sat second in
+  # that very list, and the same tree was green standalone three times on the
+  # host, three times in the container, and once through a full faithful
+  # harness-check. It was never reproduced on demand — the window is narrow —
+  # so this tooth widens the payload until the window is certain, which is
+  # the only honest way to test a race.
+  local big="$tmp/sigpipe.yaml"
+  {
+    printf 'schema: loop-phases/v1\n'
+    printf 'covered:\n'
+    seq 1 50000 | sed 's#^#  fixture/originator/author-#; s#$#: "§8.1"#'
+  } >"$big"
+  if ! ledger_has_key "$big" "covered:" "fixture/originator/author-1"; then
+    echo "loop-coverage --teeth: FAILED (m) — ledger_has_key reported the FIRST key of a 50000-row ledger absent. That is the SIGPIPE-under-pipefail defect: the lookup must not be a pipeline into \`grep -q\`." >&2
+    return 1
+  fi
+  if ledger_has_key "$big" "covered:" "fixture/originator/author-never"; then
+    echo "loop-coverage --teeth: FAILED (m) — ledger_has_key reported an absent key present; the fix must not green everything." >&2
+    return 1
+  fi
+
+  echo "loop-coverage --teeth: ok (including (m): the first key of a 50000-row ledger is found, an absent one is not)"
 }
 
 if [ "${1:-}" = "--teeth" ]; then
