@@ -77,24 +77,41 @@ jobs:
       # A Release run that was not started by a tag has a head_branch that is
       # a branch name; the precondition script below refuses it by shape
       # rather than this step guessing.
+      # EVERY ${{ }} VALUE REACHES BASH THROUGH `env:`, NEVER THROUGH THE SHELL
+      # BODY. GitHub expands `${{ ... }}` textually BEFORE bash sees the
+      # script, so a value carrying shell metacharacters becomes code rather
+      # than data. Both sources here are attacker-shaped in principle: a
+      # dispatch input is free text, and `head_branch` is a git ref name, which
+      # may legally contain `$`, backticks, `;` and parentheses. An environment
+      # variable is not expression-expanded, so `"$RUN_TAG"` is data whatever
+      # it holds.
       - name: Resolve the tag this run publishes
         id: tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_TAG: ${{ inputs.tag }}
+          RUN_TAG: ${{ github.event.workflow_run.head_branch }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            tag='${{ inputs.tag }}'
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            tag="$DISPATCH_TAG"
             echo "publish-mcp: dispatched by hand for $tag"
           else
-            tag='${{ github.event.workflow_run.head_branch }}'
-            echo "publish-mcp: following Release run ${{ github.event.workflow_run.id }} for $tag"
+            tag="$RUN_TAG"
+            echo "publish-mcp: following Release run $RUN_ID for $tag"
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Fetch the release's own signed checksum set
         env:
           GH_TOKEN: ${{ github.token }}
+          # THIS STEP RUNS BEFORE THE TAG IS VALIDATED — the refusal is the
+          # next step — so it is the FIRST sink the raw value reaches, and the
+          # one an "it is checked by then" argument would miss.
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
           mkdir -p dist
-          gh release download "${{ steps.tag.outputs.tag }}" --repo "$GITHUB_REPOSITORY" \
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
             --dir dist --pattern SHA256SUMS || true
 
       # BOTH PRECONDITIONS LIVE IN A SCRIPT, NOT IN THIS FILE, and that is the
@@ -106,7 +123,9 @@ jobs:
       # The download above deliberately does not fail on its own — the script
       # names a missing checksum set better than `release not found` does.
       - name: Refuse a malformed tag, or a release carrying no bundle
-        run: ./scripts/check-mcp-publish-preconditions.sh "${{ steps.tag.outputs.tag }}" dist/SHA256SUMS
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: ./scripts/check-mcp-publish-preconditions.sh "$TAG" dist/SHA256SUMS
 
       # A version is accepted ONCE. Without this, a re-run — or a second
       # `workflow_run` for the same tag — ends in a red X on a publish the
@@ -117,8 +136,10 @@ jobs:
       # "listed" silently skips a real release.
       - name: Skip if the registry already lists this version
         id: listed
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          version="${{ steps.tag.outputs.tag }}"; version="${version#v}"
+          version="${TAG#v}"
           if ! curl -fsSL --retry 3 \
             "https://registry.modelcontextprotocol.io/v0/servers?search=a2ahub" \
             -o dist/registry.json; then
@@ -137,7 +158,9 @@ jobs:
 
       - name: Rewrite version, identifier and fileSha256 for this tag
         if: steps.listed.outputs.skip != 'true'
-        run: ./scripts/rewrite-server-json.sh "${{ steps.tag.outputs.tag }}" dist/SHA256SUMS
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: ./scripts/rewrite-server-json.sh "$TAG" dist/SHA256SUMS
 
       - name: Install the registry publisher
         if: steps.listed.outputs.skip != 'true'
