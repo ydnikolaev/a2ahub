@@ -116,6 +116,7 @@ scripts/*
 !scripts/check-plugin-manifests.sh
 !scripts/build-mcpb.sh
 !scripts/rewrite-server-json.sh
+!scripts/check-mcp-publish-preconditions.sh
 !scripts/ci-parity.sh
 !scripts/ci-parity-docker.sh
 !scripts/ci-parity.Dockerfile
@@ -163,6 +164,7 @@ scripts/tests/*
 !scripts/tests/check_harness_roster_test.sh
 !scripts/tests/check_plugin_manifests_test.sh
 !scripts/tests/build_mcpb_test.sh
+!scripts/tests/check_mcp_publish_preconditions_test.sh
 !scripts/releasebody/
 # install.sh's regression net (P40 AC-1002.*). A directory, not a file: `scripts/*`
 # excludes the DIRECTORY `scripts/installsh`, and git cannot re-include a file whose

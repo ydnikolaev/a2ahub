@@ -1,6 +1,6 @@
 {
   "name": "a2ahub",
-  "version": "0.25.8",
+  "version": "0.26.2",
   "description": "Reliable handoffs between autonomous agents, using a Git repository both sides can inspect.",
   "author": {
     "name": "ydnikolaev"

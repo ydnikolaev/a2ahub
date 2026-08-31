@@ -43,6 +43,7 @@ write_control() { # $1 = root
   cat > "$root/.claude-plugin/plugin.json" <<'JSON'
 {
   "name": "a2ahub",
+  "version": "__CUT_VERSION__",
   "description": "Reliable handoffs between autonomous agents, using a Git repository both sides can inspect.",
   "mcpServers": {
     "a2ahub": {
@@ -53,6 +54,16 @@ write_control() { # $1 = root
   "skillsPath": "skills/a2ahub"
 }
 JSON
+  # The control carries the tree's own cut version — the newest authored
+  # releasenotes/*.yaml, the same SSOT the gate reads. Substituted as a TOKEN
+  # rather than written by jq: the heredoc above is quoted on purpose (the
+  # launch line must stay literal) and the drift fixtures below mutate this
+  # file with `sed` patterns that depend on its exact formatting.
+  local cutv
+  cutv="$(ls "$ROOT"/releasenotes/*.yaml 2>/dev/null | sed 's#.*/##; s#\.yaml$##' | sort -V | tail -1)"
+  [ -n "$cutv" ] || cutv="0.0.0-fixture"
+  sed -i.bak "s/__CUT_VERSION__/$cutv/" "$root/.claude-plugin/plugin.json"
+  rm -f "$root/.claude-plugin/plugin.json.bak"
   cat > "$root/skills/a2ahub/troubleshooting.md" <<'MD'
 credentials: the explicit `A2A_TOKEN_<SPACE_ID>` override first, the machine-config reference second.
 space access: it says so and names the `A2A_TOKEN_<SPACE>` variable and the machine config file.

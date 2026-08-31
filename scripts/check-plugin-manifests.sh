@@ -135,6 +135,7 @@
 #   server.json
 #   .github/workflows/publish-mcp.yml
 #   skill/**
+#   releasenotes/**
 # skill/** is claimed on purpose, unlike the four canonical readers below:
 # the skill-tree-directory and credential-sentence CHECKED sides read the
 # shipped skill content, and on the real tree that content is reached
@@ -276,6 +277,24 @@ canonical_description() {
   ' "$readme" | tr -s ' ')"
   [ -n "$text" ] || return 1
   printf '%s\n' "$text"
+}
+
+# canonical_cut_version: the newest AUTHORED release-notes version — the
+# version this tree becomes when it is tagged. The same SSOT
+# internal/notes' TestReusableRefDefaultMatchesTheNewestAuthoredVersion
+# already holds the reusable workflows' `a2a-ref` defaults to, reused rather
+# than re-derived: a second definition of "the version being cut" is the
+# drift this check exists to refuse, one level up.
+#
+# Sorted with `sort -V`, never lexicographically — a string compare ranks
+# 0.9.1 above 0.10.0 and this would go quietly green on exactly the skew it
+# is for.
+canonical_cut_version() {
+  local newest
+  newest="$(ls "$GATE_ROOT"/releasenotes/*.yaml 2>/dev/null \
+    | sed 's#.*/##; s#\.yaml$##' | sort -V | tail -1)"
+  [ -n "$newest" ] || return 1
+  printf '%s' "$newest"
 }
 
 # ── Checked side — reads $PLUGIN_MANIFESTS_ROOT (default $GATE_ROOT), the
@@ -572,6 +591,60 @@ check_publish_workflow() { # $1 = scan_root
   fi
 }
 
+# check_version: every manifest that declares a top-level `version` must name
+# the version being cut. NOTHING MAINTAINED plugins/a2ahub/plugin.json's, and
+# it sat at 0.25.8 while the tree was cutting 0.26.2 — four releases stale, in
+# a file that IS the published Agent Plugins v1 declaration.
+#
+# DISCOVERED, not listed: the candidate set is find_manifests' own output, so
+# a manifest added by a future surface is covered the day it lands rather than
+# the day somebody remembers. A manifest with no `version` contributes nothing.
+#
+# Only the TOP-LEVEL version is judged. A nested one belongs to something else
+# (a dependency, a schema, an embedded package) and this gate has no basis to
+# claim it tracks a2a's releases.
+#
+# THE ONE EXEMPTION IS BY DESIGN AND IS NAMED, not silent: server.json's
+# `0.0.0` is a placeholder that scripts/rewrite-server-json.sh substitutes at
+# publish time from the release's own signed SHA256SUMS, and
+# check_publish_workflow above already asserts that substitution happens
+# before `mcp-publisher publish`. Pinning it to the cut version here would
+# make the repository claim a registry row it has not published.
+version_exempt_reason() { # $1 = manifest path relative to scan_root
+  case "$1" in
+    server.json) printf '%s' "a publish-time placeholder substituted by scripts/rewrite-server-json.sh from the release's own SHA256SUMS; check_publish_workflow asserts the substitution" ;;
+    *) return 1 ;;
+  esac
+}
+
+check_version() { # $1 = scan_root, $2 = cut version
+  local scan_root="$1" cut="$2" manifest comparisons=0 exempted=0
+  while IFS= read -r manifest; do
+    [ -n "$manifest" ] || continue
+    manifest_is_json "$manifest" || continue
+    local value
+    value="$(jq -r '.version? // empty | select(type == "string")' "$manifest" 2>/dev/null)"
+    [ -n "$value" ] || continue
+
+    local rel="${manifest#"$scan_root"/}"
+    local reason
+    if reason="$(version_exempt_reason "$rel")"; then
+      exempted=$((exempted + 1))
+      echo "check-plugin-manifests: $rel declares version \"$value\" and is exempt — $reason" >&2
+      continue
+    fi
+
+    comparisons=$((comparisons + 1))
+    if [ "$value" != "$cut" ]; then
+      gate_fail "$manifest: version \"$value\" is not the version being cut, \"$cut\" (the newest authored releasenotes/*.yaml). This file ships as a published manifest, so a stale value here is what a host reads. Fix: set it to \"$cut\" BEFORE tagging, the same timing the reusable workflows' a2a-ref defaults follow."
+    fi
+  done < <(find_manifests "$scan_root")
+
+  if [ "$comparisons" -eq 0 ]; then
+    gate_unmeasured "no manifest under $scan_root declares a top-level \"version\" to compare against the version being cut \"$cut\" ($exempted exempt by name)"
+  fi
+}
+
 # ── Entry points ─────────────────────────────────────────────────────────
 
 run_check() { # $1 = scan_root (default: $PLUGIN_MANIFESTS_ROOT or $GATE_ROOT)
@@ -587,7 +660,10 @@ run_check() { # $1 = scan_root (default: $PLUGIN_MANIFESTS_ROOT or $GATE_ROOT)
     exit $?
   fi
 
-  local launch_line credential_prefix skill_root description
+  local launch_line credential_prefix skill_root description cut_version
+  if ! cut_version="$(canonical_cut_version)"; then
+    gate_unmeasured "could not read the newest authored version from releasenotes/*.yaml"
+  fi
   if ! launch_line="$(canonical_launch_line)"; then
     gate_unmeasured "could not read the binary's own launch line via a2a __catalog"
   fi
@@ -608,6 +684,7 @@ run_check() { # $1 = scan_root (default: $PLUGIN_MANIFESTS_ROOT or $GATE_ROOT)
     check_skill_path "$scan_root" "$skill_root"
   fi
   [ -n "${description:-}" ] && check_description "$scan_root" "$description"
+  [ -n "${cut_version:-}" ] && check_version "$scan_root" "$cut_version"
   check_publish_workflow "$scan_root"
 
   gate_summary "check-plugin-manifests"
@@ -652,6 +729,7 @@ run_teeth() {
     cat > "$1/.claude-plugin/plugin.json" <<'JSON'
 {
   "name": "a2ahub",
+  "version": "__CUT_VERSION__",
   "description": "Reliable handoffs between autonomous agents, using a Git repository both sides can inspect.",
   "mcpServers": {
     "a2ahub": {
@@ -666,6 +744,17 @@ JSON
 credentials: the explicit `A2A_TOKEN_<SPACE_ID>` override first, the machine-config reference second.
 space access: it says so and names the `A2A_TOKEN_<SPACE>` variable and the machine config file.
 MD
+    # The control carries the REAL tree's cut version. It goes in as a TOKEN
+    # the heredoc writes and a `sed` replaces, not as a jq rewrite: jq
+    # reformats the whole document, and three teeth below mutate this file
+    # with `sed` patterns that depend on its exact formatting (T4's
+    # `"args": ["mcp"]` is the one that caught this). Without a version here
+    # check_version finds nothing to compare in any fixture and every tooth
+    # turns UNMEASURED instead of testing what it is for.
+    local cutv
+    cutv="$(canonical_cut_version)" || cutv="0.0.0-fixture"
+    sed -i.bak "s/__CUT_VERSION__/$cutv/" "$1/.claude-plugin/plugin.json"
+    rm -f "$1/.claude-plugin/plugin.json.bak"
   }
 
   # T2 — control: every fact correct → green.
@@ -843,11 +932,45 @@ YAML
   out="$(PLUGIN_MANIFESTS_ROOT="$tmp/goodworkflow" bash "$SCRIPT_ABS" check 2>&1)"; rc=$?
   [ "$rc" -eq 0 ] || bad "T13 (publish-mcp.yml with substitution before publish): wanted exit 0, got $rc: $out"
 
+  # T14 — version drift: a manifest naming a version that is not the one
+  # being cut must red NAMING THE FILE. This is the defect that shipped:
+  # plugins/a2ahub/plugin.json sat at 0.25.8 across four releases because
+  # nothing moved it and nothing looked.
+  mkdir -p "$tmp/badversion"
+  write_control "$tmp/badversion"
+  sed -i.bak 's/"version": "[^"]*"/"version": "0.0.1-stale"/' "$tmp/badversion/.claude-plugin/plugin.json"
+  rm -f "$tmp/badversion/.claude-plugin/plugin.json.bak"
+  out="$(PLUGIN_MANIFESTS_ROOT="$tmp/badversion" bash "$SCRIPT_ABS" check 2>&1)"; rc=$?
+  { [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "0.0.1-stale"; } \
+    || bad "T14 (version drift): wanted a red naming the stale version, got exit $rc: $out"
+
+  # T15 — server.json's placeholder is EXEMPT BY NAME, and the exemption is
+  # printed rather than silent. A fixture carrying only that file must not
+  # red on its version, and must still say the exemption applied.
+  mkdir -p "$tmp/exemptversion"
+  write_control "$tmp/exemptversion"
+  cat > "$tmp/exemptversion/server.json" <<'JSON'
+{ "name": "io.github.example/x", "version": "0.0.0", "packages": [] }
+JSON
+  out="$(PLUGIN_MANIFESTS_ROOT="$tmp/exemptversion" bash "$SCRIPT_ABS" check 2>&1)"; rc=$?
+  { [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q "server.json declares version \"0.0.0\" and is exempt"; } \
+    || bad "T15 (server.json version exempt and named): wanted exit 0 with the exemption printed, got exit $rc: $out"
+
+  # T16 — a manifest with NO version contributes nothing rather than
+  # failing, the same "zero comparisons" rule every other fact follows.
+  mkdir -p "$tmp/noversion"
+  write_control "$tmp/noversion"
+  sed -i.bak '/"version":/d' "$tmp/noversion/.claude-plugin/plugin.json"
+  rm -f "$tmp/noversion/.claude-plugin/plugin.json.bak"
+  out="$(PLUGIN_MANIFESTS_ROOT="$tmp/noversion" bash "$SCRIPT_ABS" check 2>&1)"; rc=$?
+  { [ "$rc" -eq "$GATE_EXIT_UNMEASURED" ] && printf '%s' "$out" | grep -q "declares a top-level \"version\""; } \
+    || bad "T16 (no manifest declares a version): wanted UNMEASURED naming the absent comparison, got exit $rc: $out"
+
   if [ "$failures" -gt 0 ]; then
     echo "check-plugin-manifests --teeth: $failures assertion(s) failed"
     exit 1
   fi
-  echo "✓ check-plugin-manifests --teeth: T1 (empty set UNMEASURED) T2 (control green) T3 (invented verb) T4 (real verb, wrong args) T5 (credential present-but-altered in shipped skill content, <SPACE> spelling) T6 (credential absent from one plugin root, present on another, stays green) T6b (catalogue-only set: zero plugin roots is UNMEASURED for both credential and skill-tree-directory) T7 (skill-path drift, manifest key, additional) T7b (dangling skills symlink, authoritative directory check) T8 (description drift) T9 (unparseable JSON UNMEASURED) T10 (asymmetry: scan-root mutation of credential.go cannot redirect the canonical side) T11 (workflow absent, not checked) T12 (workflow missing substitution) T13 (workflow correct) — all as wanted"
+  echo "✓ check-plugin-manifests --teeth: T1 (empty set UNMEASURED) T2 (control green) T3 (invented verb) T4 (real verb, wrong args) T5 (credential present-but-altered in shipped skill content, <SPACE> spelling) T6 (credential absent from one plugin root, present on another, stays green) T6b (catalogue-only set: zero plugin roots is UNMEASURED for both credential and skill-tree-directory) T7 (skill-path drift, manifest key, additional) T7b (dangling skills symlink, authoritative directory check) T8 (description drift) T9 (unparseable JSON UNMEASURED) T10 (asymmetry: scan-root mutation of credential.go cannot redirect the canonical side) T11 (workflow absent, not checked) T12 (workflow missing substitution) T13 (workflow correct) T14 (version drift reds naming the stale value) T15 (server.json's publish-time placeholder is exempt BY NAME and the exemption is printed) T16 (no versioned manifest is UNMEASURED, not green) — all as wanted"
   exit 0
 }
 
