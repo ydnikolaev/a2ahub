@@ -68,7 +68,7 @@ jobs:
     # spaceNotifyWorkflowRefPattern), so a scaffolded space always pins a tag
     # that contains the file. This is the same bootstrap window
     # a2a-validate.yml itself sat in before its first tag.
-    uses: ydnikolaev/a2ahub/.github/workflows/a2a-notify-reusable.yml@v0.26.2
+    uses: ydnikolaev/a2ahub/.github/workflows/a2a-notify-reusable.yml@v0.26.3
     with:
       # workflow_dispatch-only inputs (requirement 5, spec 05): the push
       # path never sets base/artifacts/dry-run, because `inputs.*` is only
