@@ -9382,6 +9382,30 @@
             "scope": "none",
             "why": "Nothing is owed. This is a repository gate, not the a2a binary; no published behaviour changes.\n"
           }
+        }
+      ]
+    },
+    {
+      "version": "0.26.2",
+      "released": "2026-08-31",
+      "headline": "the bundle build is executed by a gate, not by a tag",
+      "changes": [
+        {
+          "id": "RN-02602-0",
+          "kind": "fix",
+          "impact": "high",
+          "subject": "the release cohort and the `.mcpb` bundle are attached for the first time",
+          "detail": "v0.26.0 and v0.26.1 both shipped without `release-cohort.json` and its signature, without their `release-notes-\u003cversion\u003e.yaml` asset, without the cosign bundles for the notifier zip and the VS Code extension, and without the `.mcpb` bundle. Two different defects in one job, and the second was hidden by the first.\nv0.26.0: `scripts/build-mcpb.sh` was tracked without its executable bit and release.yml invoked it by bare path, so the runner answered `126 Permission denied`. That is now refused by `make workflow-lint`.\nv0.26.1: with the bit restored the script ran for the FIRST TIME EVER and revealed its own defect — the zip runs from inside a staging directory and was handed a dist-relative output path, which resolved against the staging directory. `zip error: Could not create output file`.\nThe root cause behind both is that nothing executed this script. It is reached only by a job that fires on a tag, so its first execution was always going to be on an immutable release. `scripts/tests/build_mcpb_test.sh` now runs it for real — from a different working directory, with a relative dist path, the exact shape release.yml uses and the exact shape that broke — and asserts the bundles are readable zips carrying `server/a2a` (or `server/a2a.exe`), that the manifest's `A2A_PROJECT_ROOT` interpolates a `user_config` key the manifest actually declares and types as a directory, and that an empty or non-directory dist refuses instead of reporting success over nothing.\nThe whole cohort step was additionally rehearsed offline against v0.26.1's real published assets before this release was cut: cohort assembled, all six bundles built, and all six present in the checksum set that cosign signs.\nIf you are on v0.26.0 or v0.26.1 and use the macOS or VS Code companion, upgrade: neither release carries the cohort document those components are resolved and verified through. Both are left exactly as they were cut.\n",
+          "action": {
+            "scope": "local",
+            "why": "v0.26.0 and v0.26.1 cannot resolve the macOS or VS Code companion, because the cohort manifest that binds them is not attached to either release. Everything else about both releases is intact.\n",
+            "detect": [
+              "a2a --version | grep -qE '0\\.26\\.(0|1)'"
+            ],
+            "run": [
+              "a2a update"
+            ]
+          }
         },
         {
           "id": "KI-01900-PROVIDER-TIER-DEFERRED",

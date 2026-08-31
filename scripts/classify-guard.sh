@@ -125,6 +125,7 @@ PUBLIC_VALIDATOR_FILES=(
   # rostered-but-absent in every public checkout — the gate-vanishes-in-public
   # class, one level up.
   scripts/tests/check_plugin_manifests_test.sh
+  scripts/tests/build_mcpb_test.sh
   scripts/check-mcp-schema-decodable.sh
   # answers-that-hold-2026-08 P4/P13. PUBLIC for the same reason the two above
   # are: their inputs are SHIPPED code (internal/cli/**, releasenotes/**), the

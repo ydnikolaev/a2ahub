@@ -21,6 +21,16 @@ set -euo pipefail
 DIST="${1:?usage: build-mcpb.sh DIST VERSION}"
 VERSION="${2:?usage: build-mcpb.sh DIST VERSION}"
 
+# THE ZIP RUNS FROM INSIDE THE STAGING DIRECTORY, so the output path it is
+# handed must be absolute. It was not: `dist/a2a-darwin-amd64.mcpb` resolved
+# against the staging dir, which has no `dist/`, and zip answered "Could not
+# create output file". That is what v0.26.1's cohort job died on — the second
+# consecutive release this one job broke, and the first time this script had
+# ever executed at all, because v0.26.0's run never got past its missing
+# executable bit. `scripts/tests/build_mcpb_test.sh` now runs it for real.
+test -d "$DIST" || { echo "DIST is not a directory: $DIST" >&2; exit 2; }
+DIST_ABS="$(cd "$DIST" && pwd)"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATE="${SCRIPT_DIR}/lib/mcpb-manifest.template.json"
 
@@ -69,8 +79,9 @@ for os in darwin linux windows; do
     fi
 
     out="${DIST}/a2a-${os}-${arch}.mcpb"
-    rm -f "$out"
-    (cd "$bundle_dir" && zip -q -X -r "$out" manifest.json server)
+    out_abs="${DIST_ABS}/a2a-${os}-${arch}.mcpb"
+    rm -f "$out_abs"
+    (cd "$bundle_dir" && zip -q -X -r "$out_abs" manifest.json server)
 
     echo "$out"
     built=$((built + 1))

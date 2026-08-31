@@ -162,6 +162,7 @@ scripts/tests/*
 !scripts/tests/check_verdict_exit_mapping_test.sh
 !scripts/tests/check_harness_roster_test.sh
 !scripts/tests/check_plugin_manifests_test.sh
+!scripts/tests/build_mcpb_test.sh
 !scripts/releasebody/
 # install.sh's regression net (P40 AC-1002.*). A directory, not a file: `scripts/*`
 # excludes the DIRECTORY `scripts/installsh`, and git cannot re-include a file whose
