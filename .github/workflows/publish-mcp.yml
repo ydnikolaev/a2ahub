@@ -48,7 +48,18 @@ jobs:
         run: |
           mkdir -p dist
           gh release download "${{ inputs.tag }}" --repo "$GITHUB_REPOSITORY" \
-            --dir dist --pattern SHA256SUMS
+            --dir dist --pattern SHA256SUMS || true
+
+      # BOTH PRECONDITIONS LIVE IN A SCRIPT, NOT IN THIS FILE, and that is the
+      # lesson v0.26.0 and v0.26.1 paid for: shell that only a tag or a
+      # dispatch ever executes gets its first run in production. This one has
+      # `--teeth` (scripts/tests/check_mcp_publish_preconditions_test.sh) that
+      # assert the exact shapes both failures took.
+      #
+      # The download above deliberately does not fail on its own — the script
+      # names a missing checksum set better than `release not found` does.
+      - name: Refuse a malformed tag, or a release carrying no bundle
+        run: ./scripts/check-mcp-publish-preconditions.sh "${{ inputs.tag }}" dist/SHA256SUMS
 
       - name: Rewrite version, identifier and fileSha256 for this tag
         run: ./scripts/rewrite-server-json.sh "${{ inputs.tag }}" dist/SHA256SUMS

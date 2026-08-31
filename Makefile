@@ -858,7 +858,8 @@ HARNESS_TEETH := \
   scripts/check-vocabulary-carriers.sh \
   scripts/ci-parity.sh \
   docs/runbooks/feedback-carry.sh \
-  scripts/check-harness-roster.sh
+  scripts/check-harness-roster.sh \
+  scripts/check-mcp-publish-preconditions.sh
 
 # DERIVED, not hand-typed (computed-not-listed-2026-08 P9, AC-1). Every file
 # under scripts/tests/*_test.sh is a teeth test BY CONSTRUCTION — it is what

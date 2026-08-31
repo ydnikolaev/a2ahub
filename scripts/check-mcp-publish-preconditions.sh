@@ -18,12 +18,15 @@
 #      package row points at one; v0.26.0 and v0.26.1 were both tagged,
 #      released and carrying none.
 #
-# lane-inputs: this script judges only its ARGUMENTS, never repository state.
-# It is reached by publish-mcp.yml and by its own --teeth; no diff selects it.
-# lane-inputs: NEVER
-# lane-reason: a precondition check over a dispatch input and a downloaded
-#   checksum set — it reads no tracked path, so no change to the repository
-#   can alter its verdict.
+# NO `lane-inputs:` DECLARATION, deliberately, and the sibling precedent is
+# scripts/rewrite-server-json.sh and scripts/build-mcpb.sh — neither carries
+# one either. That block belongs to a GATE PHASE a Makefile recipe invokes;
+# this is release tooling reached by a workflow and by its own --teeth, so
+# declaring `NEVER` makes `make lane` refuse ("declares lane-inputs but no
+# corpus phase's Makefile recipe invokes this script directly"). The file
+# itself is covered: `scripts/**` selects the harness-teeth phase, which runs
+# scripts/tests/check_mcp_publish_preconditions_test.sh, which runs the teeth
+# below.
 set -uo pipefail
 
 usage() {

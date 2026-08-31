@@ -126,6 +126,8 @@ PUBLIC_VALIDATOR_FILES=(
   # class, one level up.
   scripts/tests/check_plugin_manifests_test.sh
   scripts/tests/build_mcpb_test.sh
+  scripts/tests/check_mcp_publish_preconditions_test.sh
+  scripts/check-mcp-publish-preconditions.sh
   scripts/check-mcp-schema-decodable.sh
   # answers-that-hold-2026-08 P4/P13. PUBLIC for the same reason the two above
   # are: their inputs are SHIPPED code (internal/cli/**, releasenotes/**), the
