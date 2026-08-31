@@ -163,11 +163,35 @@ runner-economics: ## No job runs an expensive runner ungated, and no job's timeo
 # lane-inputs:
 #   .github/workflows/**
 #   go.mod
-workflow-lint: ## Every GitHub Action `uses:` must be SHA-pinned (defeats tag-hijack; dependabot still bumps the pins), and no workflow pins a Go toolchain go.mod does not name.
+#   scripts/**
+workflow-lint: ## Every GitHub Action `uses:` must be SHA-pinned (defeats tag-hijack; dependabot still bumps the pins), no workflow pins a Go toolchain go.mod does not name, and a script a workflow RUNS by bare path is executable.
 	@bad=$$(grep -rnE 'uses: +[^ ]+@' .github/workflows 2>/dev/null | grep -vE '@[0-9a-f]{40}([ "#]|$$)' | grep -v 'uses: \./' || true); \
 	if [ -n "$$bad" ]; then echo "workflow-lint: FAIL — unpinned action(s), pin to a full 40-hex SHA (# vX.Y.Z):"; echo "$$bad"; exit 1; fi; \
 	echo "workflow-lint: all actions SHA-pinned."
 	@grep -Fq "if: github.repository == 'ydnikolaev/a2ahub'" .github/workflows/classify-guard.yml || { echo "workflow-lint: FAIL — public classify backstop must skip the private source repository"; exit 1; }
+	@# A script a workflow RUNS BY BARE PATH must be executable IN THE INDEX.
+	@# scripts/build-mcpb.sh was tracked 100644 while release.yml called it
+	@# bare. The cohort job exited 126 "Permission denied" — on the TAG, after
+	@# v0.26.0 was already immutable — so that release shipped with no
+	@# release-cohort.json, no release-notes asset and no .mcpb bundle, which
+	@# was the epic's own deliverable. Nothing local runs a tag-only job, so
+	@# the MODE is the only part of it that is checkable before the tag, and
+	@# checking it is a grep. An interpreter-prefixed call is excluded (a call
+	@# through bash, sh, or the dot builtin needs no bit) and so is a YAML
+	@# path-filter list entry, which invokes nothing.
+	@nx=$$(grep -rhE '(^|[^-])(\./)?scripts/[A-Za-z0-9_./-]+\.sh' .github/workflows/*.yml 2>/dev/null \
+	  | sed -E 's/^[[:space:]]*//' | grep -vE '^- ' \
+	  | grep -oE '(bash|sh|source|\.)?[[:space:]]*(\./)?scripts/[A-Za-z0-9_./-]+\.sh' \
+	  | grep -vE '^(bash|sh|source|\.)[[:space:]]' \
+	  | grep -oE 'scripts/[A-Za-z0-9_./-]+\.sh' | sort -u \
+	  | while read -r f; do \
+	      m=$$(git ls-files -s "$$f" 2>/dev/null | awk '{print $$1}'); \
+	      [ -n "$$m" ] || continue; \
+	      [ "$$m" = "100755" ] || echo "$$f (tracked $$m)"; \
+	    done); \
+	if [ -n "$$nx" ]; then echo "workflow-lint: FAIL — a workflow runs these tracked scripts by bare path, but they are not executable (100755). A bare-path call exits 126 on the runner:"; echo "$$nx"; exit 1; fi; \
+	echo "workflow-lint: every script a workflow runs by bare path is executable."
+
 	@grep -Eq '^  actions: read$$' .github/workflows/codeql.yml || { echo "workflow-lint: FAIL — CodeQL needs actions: read with restrictive workflow permissions"; exit 1; }
 	@# A space repo has no go.mod, so the two REUSABLE workflows name the Go
 	@# toolchain explicitly (`go-version: "X.Y.Z"`) while every repo-local job

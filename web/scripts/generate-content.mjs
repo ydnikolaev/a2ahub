@@ -369,7 +369,14 @@ ${withoutLeadingH1(securitySource).trim()}
 
 Source: ${routeURL('changelog', 'markdown')}
 
-${withoutLeadingH1(changelogMD).trim()}
+The changelog is NOT embedded here. Fetch the canonical Markdown above when
+release history is what you need; every cut also publishes its own signed
+release-notes asset on its GitHub release.
+
+It used to be embedded in full, and it was 386,479 bytes — 51% of this whole
+corpus, across 55 release sections, growing by ~10 KB on every cut whether or
+not a word was written. A bundle that is half changelog is not a documentation
+bundle, and the size tripwire it kept tripping was measuring the wrong thing.
 
 ## Roadmap — non-committed work is labelled
 

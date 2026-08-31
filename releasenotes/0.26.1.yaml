@@ -1,0 +1,98 @@
+schema: release-notes/v1
+version: 0.26.1
+released: "2026-08-31"
+headline: the release cohort and the MCP bundle actually ship
+changes:
+- id: RN-02601-0
+  kind: fix
+  impact: high
+  subject: v0.26.0 shipped without its release cohort, its notes asset and its `.mcpb` bundle
+  detail: >
+    `release.yml`'s cohort job builds the MCP bundle, assembles
+    `release-cohort.json`, signs both and uploads them. It invoked
+    `scripts/build-mcpb.sh` by bare path while that file was tracked without
+    its executable bit, so the runner answered `126 Permission denied` and the
+    job died — after the v0.26.0 tag was already immutable.
+
+    v0.26.0 therefore carries its binaries, archives, SBOMs and per-asset
+    signatures, and is missing four things: `release-cohort.json` and its
+    signature, `release-notes-0.26.0.yaml` and its signature, the cosign
+    bundles for the notifier zip and the VS Code extension, and the `.mcpb`
+    bundle. The practical consequence is that an installed binary cannot
+    resolve the macOS or VS Code companion for v0.26.0 — the cohort document
+    is what it fetches and verifies first — and that the MCP bundle v0.26.0
+    announced is not attached to it.
+
+    v0.26.1 carries all of them. v0.26.0 is left exactly as it was cut: a tag
+    is immutable, and rewriting a published release to hide a bad cut is worse
+    than saying which cut was bad.
+
+    The mode is now gated rather than remembered. `make workflow-lint` refuses
+    a tracked script that a workflow RUNS by bare path unless it is `100755`
+    (`bash x.sh`, `sh x.sh`, `source x.sh` and `- "path"` filters are
+    excluded, since none of them needs the bit). It was verified to red on the
+    exact tree that shipped v0.26.0 and to green on this one.
+  action:
+    scope: local
+    why: >
+      If you are on v0.26.0 and use the macOS or VS Code companion, upgrade:
+      that release carries no cohort manifest, so the companion cannot be
+      resolved or verified from it. Everything else about v0.26.0 is intact.
+    detect:
+    - a2a --version | grep -q '0\.26\.0'
+    run:
+    - a2a update
+- id: RN-02601-1
+  kind: fix
+  impact: normal
+  subject: the agent documentation bundle was half changelog, and the website stopped publishing
+  detail: >
+    `llms-full.txt` embedded the complete changelog — 386,479 bytes across 55
+    release sections, 51% of the whole bundle, growing by roughly 10 KB on
+    every cut whether or not a word was written. That pushed the bundle past
+    its size budget the moment v0.26.0's tag existed, and the Pages deploy
+    refused, so the website did not publish the release.
+
+    The changelog is now a pointer to its canonical Markdown route rather than
+    a copy. Every cut still publishes its own signed release-notes asset on
+    its GitHub release, and the changelog page itself is unchanged. The bundle
+    is 373,739 bytes, and its budget went DOWN — from 750 KB to 450 KB — for
+    the first time since it was written.
+
+    WHY NOTHING CAUGHT IT BEFORE THE TAG, stated because it is the more useful
+    half: the site treats authored release notes as candidates until a
+    matching immutable tag exists, so a version's own section enters the
+    bundle only after the tag. The ship gate runs the very same check and was
+    green on the same bytes minutes earlier. A pre-tag projection is filed as
+    the fix for that class.
+  action:
+    scope: none
+    why: >
+      Nothing is owed. If you consume llms-full.txt and read release history
+      out of it, fetch the changelog Markdown route it now points at instead;
+      the per-release signed notes asset on each GitHub release is unchanged.
+- id: RN-02601-2
+  kind: fix
+  impact: low
+  subject: a gate lookup reported present keys as absent, at random, on busy machines
+  detail: >
+    Two lookups in the prose-coverage gate matched with a pipeline into
+    `grep -q` under `set -o pipefail`. `grep -q` exits at the first match, the
+    pipeline then reports the producer's status, and a producer still writing
+    when the pipe closes dies of SIGPIPE — so a key that is present reads as
+    absent, and whether it does is pure scheduling.
+
+    It was green on every developer machine and in both container userlands,
+    and red on GitHub's loaded runners, naming a different random subset of
+    provably-present keys every run. Both lookups now capture the producer's
+    output and match it with a here-string, and a new tooth reproduces the
+    defect deterministically on a machine where the defect itself is
+    invisible.
+
+    This is a repository gate, not the `a2a` binary: nothing about the
+    product's behaviour changes.
+  action:
+    scope: none
+    why: >
+      Nothing is owed. This is a repository gate, not the a2a binary; no
+      published behaviour changes.

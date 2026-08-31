@@ -234,7 +234,31 @@ const llmsFull = readFileSync(join(dist, 'llms-full.txt'), 'utf8');
 // corpus grows with every published release whether or not a word is written,
 // so the next reader of this line should expect to be here again and should
 // ask the duplication question again rather than assuming this answer.
-if (Buffer.byteLength(llmsFull) > 750_000) failures.push('llms-full.txt: raw corpus exceeds 750 KB');
+// 450 KB since 2026-08-31, and this is the first time this number has gone
+// DOWN. The previous line's instruction — "ask the duplication question again
+// rather than assuming this answer" — was finally answered by deleting the
+// answer's cause instead of buying headroom for it.
+//
+// The corpus came out of v0.26.0's tag at 759,744 bytes against a 750 KB
+// budget. v0.26.0's own release section was 9,807 bytes, so the overage WAS
+// this release's notes; measured duplication was ~7,533 bytes (1.0%), all of
+// it sentences restated across distinct releases, not a doubled embed. The
+// real finding was underneath: the embedded changelog was 386,479 bytes —
+// 51% of the whole bundle, 55 release sections, +~10 KB every cut whether or
+// not a word was written. A documentation bundle that is half changelog is
+// measuring the wrong thing, and a budget raised every release is not a
+// tripwire. The changelog is now a POINTER to its canonical Markdown route,
+// and the bundle is 373,739 bytes: ~20% headroom, and headroom that no longer
+// evaporates on a schedule.
+//
+// ONE PROPERTY OF THIS CHECK IS STILL UNGATED BEFORE A TAG, and it is why
+// v0.26.0 shipped red. The site treats authored release notes as candidates
+// until a matching immutable tag exists, so a version's own section entered
+// the corpus only AFTER the tag: `make release-check` runs `npm run check`
+// and was GREEN on the same bytes that Pages refused minutes later. De-
+// embedding the changelog removes the pressure but not the blind spot; the
+// pre-tag projection that would close it is a docs/validator-backlog.md row.
+if (Buffer.byteLength(llmsFull) > 450_000) failures.push('llms-full.txt: raw corpus exceeds 450 KB');
 for (const marker of ['## Bundle provenance', 'Source revision:', 'Source snapshot timestamp:', '## Table of contents', 'Roadmap — non-committed work is labelled']) {
   if (!llmsFull.includes(marker)) failures.push(`llms-full.txt: missing provenance marker ${marker}`);
 }
