@@ -1,13 +1,34 @@
 # Publishes a2ahub's server.json to the MCP Registry for ONE already-published
 # tag.
 #
-# IT IS NOT ARMED, AND MERGING IT IS NOT PUBLISHING IT. The trigger is
-# `workflow_dispatch` only — no `push: tags`, no `release:` — so nothing runs
-# until an operator starts it by hand and names the tag. That is deliberate and
-# it is a threat-model gate, not caution for its own sake: a registry listing
-# widens the set of people who run a write-capable MCP surface against their own
-# GitHub credential, and the decision to widen it belongs to a person, not to a
-# tag push. The step that arms this file is a separate, reviewed change.
+# ARMED 2026-08-31, AND THE REASON THE DISARM ENDED IS NOT THAT IT STOPPED
+# MATTERING. The original argument — "a registry listing widens the set of
+# people who run a write-capable MCP surface against their own GitHub
+# credential, and the decision to widen it belongs to a person" — is about the
+# decision to BE LISTED AT ALL. That decision was made once, by the operator,
+# and executed by hand on v0.26.3. Publishing the row for the NEXT version is
+# not a new widening; it is keeping an existing listing true.
+#
+# And leaving it manual has its own cost, which is not hypothetical: the
+# registry FREEZES what it accepts. A version is unique per publication and
+# metadata cannot be edited. So a release nobody remembered to publish is not
+# "we will do it later" — it is a registry row that permanently describes an
+# older binary with older digests, and the only remedy is superseding it with
+# a further version. Manual is the option that guarantees drift.
+#
+# WHY `workflow_run` AND NOT `release: published`, which is the obvious choice
+# and is WRONG HERE. goreleaser CREATES the release — so `published` fires —
+# and only afterwards does release.yml's `cohort` job upload SHA256SUMS and the
+# .mcpb bundles this row points at. A `release: published` trigger would arrive
+# before the bundles exist, the precondition below would correctly refuse, and
+# the listing would never happen. Waiting for the whole Release WORKFLOW to
+# finish is what actually guarantees the cohort job is done.
+#
+# The tag comes from `workflow_run.head_branch`, which for a tag-triggered run
+# is the tag name (verified against run 33419805401, head_branch = v0.26.3).
+#
+# `workflow_dispatch` stays, for a re-publish and for a tag this trigger
+# missed.
 #
 # The registry freezes what it accepts: a version string must be unique per
 # publication, and metadata cannot be edited afterwards. So the substitution
@@ -17,10 +38,13 @@
 name: publish-mcp
 
 on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
-        description: "The published tag to list (e.g. v0.26.0). Its release must already carry the .mcpb bundles and SHA256SUMS."
+        description: "The published tag to list (e.g. v0.26.3). Its release must already carry the .mcpb bundles and SHA256SUMS."
         required: true
         type: string
 
@@ -30,6 +54,13 @@ permissions:
 
 jobs:
   publish:
+    # A `workflow_run` fires on completion REGARDLESS of conclusion, so the
+    # success guard is here rather than in the trigger — there is no `types:`
+    # value that means "succeeded". A dispatch has no workflow_run context and
+    # must not be filtered by one.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     # timeout-minutes: a new job identity, so scripts/lib/job-timeouts.tsv has
     # no measured p99 for it yet and this is the artefact's stated floor. The
     # job downloads one small asset, rewrites a JSON file, fetches a publisher
@@ -42,12 +73,28 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      # ONE definition of "which tag", so the two triggers cannot disagree.
+      # A Release run that was not started by a tag has a head_branch that is
+      # a branch name; the precondition script below refuses it by shape
+      # rather than this step guessing.
+      - name: Resolve the tag this run publishes
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag='${{ inputs.tag }}'
+            echo "publish-mcp: dispatched by hand for $tag"
+          else
+            tag='${{ github.event.workflow_run.head_branch }}'
+            echo "publish-mcp: following Release run ${{ github.event.workflow_run.id }} for $tag"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
       - name: Fetch the release's own signed checksum set
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p dist
-          gh release download "${{ inputs.tag }}" --repo "$GITHUB_REPOSITORY" \
+          gh release download "${{ steps.tag.outputs.tag }}" --repo "$GITHUB_REPOSITORY" \
             --dir dist --pattern SHA256SUMS || true
 
       # BOTH PRECONDITIONS LIVE IN A SCRIPT, NOT IN THIS FILE, and that is the
@@ -59,19 +106,50 @@ jobs:
       # The download above deliberately does not fail on its own — the script
       # names a missing checksum set better than `release not found` does.
       - name: Refuse a malformed tag, or a release carrying no bundle
-        run: ./scripts/check-mcp-publish-preconditions.sh "${{ inputs.tag }}" dist/SHA256SUMS
+        run: ./scripts/check-mcp-publish-preconditions.sh "${{ steps.tag.outputs.tag }}" dist/SHA256SUMS
+
+      # A version is accepted ONCE. Without this, a re-run — or a second
+      # `workflow_run` for the same tag — ends in a red X on a publish the
+      # registry was never going to accept. The FETCH is here because it needs
+      # the network; the PREDICATE is in the script, with teeth, and it
+      # refuses rather than answering when the response is absent or
+      # unparseable: guessing "not listed" duplicates a publish, guessing
+      # "listed" silently skips a real release.
+      - name: Skip if the registry already lists this version
+        id: listed
+        run: |
+          version="${{ steps.tag.outputs.tag }}"; version="${version#v}"
+          if ! curl -fsSL --retry 3 \
+            "https://registry.modelcontextprotocol.io/v0/servers?search=a2ahub" \
+            -o dist/registry.json; then
+            echo "::error::UNMEASURED: could not reach the MCP Registry after 3 attempts — WHETHER $version IS ALREADY LISTED WAS NEVER DETERMINED, and nothing was published. This is the fetch, not a finding: publishing blind would either duplicate a version the registry rejects or skip a real release. Re-run this workflow." >&2
+            exit 1
+          fi
+          set +e
+          ./scripts/check-mcp-publish-preconditions.sh --is-published "$version" dist/registry.json
+          rc=$?
+          set -e
+          case "$rc" in
+            0) echo "skip=true"  >> "$GITHUB_OUTPUT" ;;
+            1) echo "skip=false" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$rc" ;;
+          esac
 
       - name: Rewrite version, identifier and fileSha256 for this tag
-        run: ./scripts/rewrite-server-json.sh "${{ inputs.tag }}" dist/SHA256SUMS
+        if: steps.listed.outputs.skip != 'true'
+        run: ./scripts/rewrite-server-json.sh "${{ steps.tag.outputs.tag }}" dist/SHA256SUMS
 
       - name: Install the registry publisher
+        if: steps.listed.outputs.skip != 'true'
         run: |
           curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" \
             | tar -xz mcp-publisher
           chmod +x mcp-publisher
 
       - name: Authenticate with GitHub OIDC
+        if: steps.listed.outputs.skip != 'true'
         run: ./mcp-publisher login github-oidc
 
       - name: Publish
+        if: steps.listed.outputs.skip != 'true'
         run: ./mcp-publisher publish

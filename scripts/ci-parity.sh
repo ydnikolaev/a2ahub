@@ -186,9 +186,15 @@ excused_reason() { # $1 = command
     | *"mcp_publisher"* \
     | *"rewrite-server-json.sh"* \
     | *"check-mcp-publish-preconditions.sh"* \
-    | *'gh release download "${{ inputs.tag }}"'* \
+    | *"registry.modelcontextprotocol.io"* \
+    | *'tag=$tag'* \
+    | *'echo "skip=true"'* \
+    | *'echo "skip=false"'* \
+    | *'exit "$rc"'* \
+    | *'github.event_name }}" = "workflow_dispatch"'* \
+    | *'gh release download "${{ steps.tag.outputs.tag }}"'* \
     | *"registry/releases/latest/download/mcp-publisher"*)
-      echo "publish-mcp.yml is disarmed (workflow_dispatch only) and needs a published tag, the network and a registry OIDC identity; its falsifiable parts are SCRIPTS rather than inline shell — scripts/rewrite-server-json.sh against a fixture checksum set, and scripts/check-mcp-publish-preconditions.sh's own --teeth (wired into harness-check) against both shapes that actually failed: a tag typed without its leading v, and a release carrying no .mcpb — while its step ORDER is asserted by check-plugin-manifests.sh and by that script's own test" ;;
+      echo "publish-mcp.yml follows a SUCCESSFUL Release run (workflow_run) or a hand dispatch, and needs a published tag, the network and a registry OIDC identity — none of which a local run has; its falsifiable parts are SCRIPTS rather than inline shell — scripts/rewrite-server-json.sh against a fixture checksum set, and scripts/check-mcp-publish-preconditions.sh's own --teeth (wired into harness-check) against both shapes that actually failed: a tag typed without its leading v, and a release carrying no .mcpb — while its step ORDER is asserted by check-plugin-manifests.sh and by that script's own test" ;;
 
     # Group 4 — feedback-intake.yml, hub intake (~22). Runs on
     # pull_request_target against a feedback file submitted by an incoming

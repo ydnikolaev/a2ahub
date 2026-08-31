@@ -31,6 +31,7 @@ set -uo pipefail
 
 usage() {
   echo "usage: check-mcp-publish-preconditions.sh <tag> <sha256sums-path>" >&2
+  echo "       check-mcp-publish-preconditions.sh --is-published <version> <registry-json>" >&2
   echo "       check-mcp-publish-preconditions.sh --teeth" >&2
 }
 
@@ -66,6 +67,46 @@ check_bundles() { # $1 = tag, $2 = SHA256SUMS path
     return 1
   fi
   echo "check-mcp-publish-preconditions: $tag is well-formed and carries $n .mcpb bundle(s)."
+}
+
+# is_published answers ONE question over a registry response already on disk:
+# does it already carry this server at this exact version? The FETCH is the
+# caller's job — this file judges arguments only, which is what keeps it
+# runnable and testable with no network (see the header).
+#
+# It exists because the registry accepts a version ONCE. Without it a re-run,
+# or a `workflow_run` that fires twice for the same tag, ends in a red X on a
+# publish that was never going to be accepted and did not need to be attempted.
+# Exit 0 means ALREADY LISTED — the caller should skip, not fail.
+is_published() { # $1 = version (no leading v), $2 = registry json path
+  local version="${1:-}" json="${2:-}"
+  [ -n "$version" ] || { ci_error "--is-published needs a version"; return 2; }
+  if [ ! -r "$json" ]; then
+    ci_error "no readable registry response at \"$json\" — treating the version as NOT listed would risk a duplicate publish, and treating it as listed would silently skip a real one, so this refuses instead."
+    return 2
+  fi
+  # A malformed body is a failed MEASUREMENT, never a verdict in either
+  # direction — the same rule every gate in this repository follows.
+  local found
+  found="$(jq -r --arg v "$version" '
+      [ (.servers // .data // [])[]
+        | (.server // .)
+        | select((.name // "") == "io.github.ydnikolaev/a2ahub")
+        | select((.version // "") == $v) ] | length' "$json" 2>/dev/null)" || {
+    ci_error "could not parse the registry response at \"$json\"; refusing rather than guessing whether $version is already listed."
+    return 2
+  }
+  case "$found" in
+    ''|*[!0-9]*)
+      ci_error "the registry response at \"$json\" did not yield a count; refusing rather than guessing."
+      return 2 ;;
+  esac
+  if [ "$found" -gt 0 ]; then
+    echo "check-mcp-publish-preconditions: the registry already lists io.github.ydnikolaev/a2ahub at $version."
+    return 0
+  fi
+  echo "check-mcp-publish-preconditions: the registry does not yet list $version."
+  return 1
 }
 
 run_teeth() {
@@ -104,15 +145,34 @@ run_teeth() {
   printf 'abc  a2a-linux-amd64.mcpb.cosign.bundle\n' > "$tmp/onlysig"
   if check_bundles v0.26.2 "$tmp/onlysig" >/dev/null 2>&1; then bad "T8: a signature OVER a bundle was counted as the bundle"; fi
 
+  # T9..T13 — the already-listed predicate. Exit 0 means LISTED (skip), 1
+  # means not listed (publish), 2 means it could not tell — and 2 must never
+  # be confused with either, because one direction duplicates a publish the
+  # registry will reject and the other silently skips a real release.
+  printf '{"servers":[{"server":{"name":"io.github.ydnikolaev/a2ahub","version":"0.26.3"}}]}\n' > "$tmp/listed.json"
+  is_published 0.26.3 "$tmp/listed.json" >/dev/null 2>&1 || bad "T9: an already-listed version was not recognised"
+  is_published 0.26.4 "$tmp/listed.json" >/dev/null 2>&1 && bad "T10: an unlisted version was reported as listed"
+  # a different server at the same version must not count as ours
+  printf '{"servers":[{"server":{"name":"io.github.someoneelse/other","version":"0.26.3"}}]}\n' > "$tmp/other.json"
+  is_published 0.26.3 "$tmp/other.json" >/dev/null 2>&1 && bad "T11: another publisher's server at the same version was counted as ours"
+  # unreadable and unparseable are MEASUREMENT failures (2), not verdicts
+  is_published 0.26.3 "$tmp/does-not-exist.json" >/dev/null 2>&1; [ $? -eq 2 ] || bad "T12: an absent registry response did not refuse as a measurement failure"
+  printf 'not json at all\n' > "$tmp/garbage.json"
+  is_published 0.26.3 "$tmp/garbage.json" >/dev/null 2>&1; [ $? -eq 2 ] || bad "T13: an unparseable registry response did not refuse as a measurement failure"
+
   if [ "$failures" -gt 0 ]; then
     echo "check-mcp-publish-preconditions --teeth: $failures assertion(s) failed" >&2
     return 1
   fi
-  echo "check-mcp-publish-preconditions --teeth: ok — a tag without the leading v is refused NAMING the value given (the shape the first real dispatch actually took), a well-formed tag passes, empty/branch/partial forms are refused, a checksum set with a .mcpb passes, one with none reds (v0.26.0's and v0.26.1's exact state), an absent set is refused naming the cohort job, and a signature over a bundle does not count as the bundle"
+  echo "check-mcp-publish-preconditions --teeth: ok — a tag without the leading v is refused NAMING the value given (the shape the first real dispatch actually took), a well-formed tag passes, empty/branch/partial forms are refused, a checksum set with a .mcpb passes, one with none reds (v0.26.0's and v0.26.1's exact state), an absent set is refused naming the cohort job, and a signature over a bundle does not count as the bundle; an already-listed version is recognised, an unlisted one is not, another publisher's server at the same version is not ours, and an absent or unparseable registry response refuses as a MEASUREMENT failure rather than answering in either direction"
 }
 
 case "${1:-}" in
   --teeth) run_teeth; exit $? ;;
+  --is-published)
+    shift
+    [ $# -eq 2 ] || { usage; exit 2; }
+    is_published "$1" "$2"; exit $? ;;
   "") usage; exit 2 ;;
   *)
     [ $# -eq 2 ] || { usage; exit 2; }
