@@ -1,0 +1,66 @@
+schema: release-notes/v1
+version: 0.26.3
+released: "2026-08-31"
+headline: the manifests stop drifting and the registry publish refuses bad input
+changes:
+- id: RN-02603-0
+  kind: fix
+  impact: normal
+  subject: three shipped manifests declared a version that was not the one being released
+  detail: >
+    `plugins/a2ahub/plugin.json` declared 0.25.8 while the repository was
+    cutting 0.26.2 — four releases stale, in the file that IS the published
+    Agent Plugins v1 declaration a host reads. Nothing moved it and nothing
+    looked at it.
+
+    Every shipped manifest now names the version being cut, and the source of
+    truth is the one that already existed: the newest authored
+    `releasenotes/*.yaml` version, which is the same value the reusable
+    validator workflows' `a2a-ref` defaults are already held to. It is read
+    rather than re-derived, because a second definition of "the version being
+    cut" would be this exact drift one level up.
+
+    Three files were stale, not one — the check DISCOVERS manifests instead of
+    listing them, which is what found the second copy at
+    `plugins/a2ahub/.claude-plugin/plugin.json` and `integrations/dsh/package.json`
+    alongside the one that was already known.
+
+    `server.json` is the single exemption and it is printed on every run rather
+    than being silent: its `0.0.0` is a publish-time placeholder substituted
+    from the release's own signed checksum set, and pinning it would make the
+    repository claim a registry row it has not published.
+  action:
+    scope: none
+    why: >
+      Nothing is owed. If you read a plugin manifest's `version` to decide
+      which a2a it pairs with, that value is now true; before this release it
+      could name a version four cuts old.
+- id: RN-02603-1
+  kind: fix
+  impact: low
+  subject: the MCP registry publish names what it refuses instead of dying on it
+  detail: >
+    `publish-mcp.yml` is dispatched by hand with a tag. Given `0.26.2` instead
+    of `v0.26.2` it died on a bare `release not found`, naming neither the
+    value nor the shape it wanted.
+
+    It now refuses two things up front, and both live in a script with its own
+    tests rather than inline in the workflow — because shell that only a tag
+    or a dispatch ever executes gets its first run in production, which is how
+    the two releases before this one shipped incomplete:
+
+    The tag must be shaped `vX.Y.Z`, and this is a refusal rather than a silent
+    normalisation: the leading `v` is part of the tag's identity, while
+    `releasenotes/*.yaml` drop it, and accepting both spellings here would make
+    this the one place they are interchangeable.
+
+    The release's own signed checksum set must name at least one `.mcpb`
+    bundle. Every package row points at one, the registry cannot edit metadata
+    after publication, and v0.26.0 and v0.26.1 were both tagged, released and
+    carrying none — so a row published against either would have been
+    unfixable rather than merely wrong.
+  action:
+    scope: none
+    why: >
+      Nothing is owed — this changes a maintainer-dispatched workflow, not the
+      a2a binary or anything a space runs.
