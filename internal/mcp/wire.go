@@ -49,8 +49,8 @@ func githubAPIBase() string {
 
 // defaultHostOpener is the fallback host.Opener used when cmd/a2a injects none
 // (NewServerFromConfig, and tests): the production opener over this package's
-// own GitHub API base. Production reaches it from buildMCPServer only when no
-// space is connected, where the per-space loop never opens a host. A space
+// own GitHub API base. Production reaches it only when the MCP server starts
+// with no space connected, where the per-space loop never opens a host. A space
 // that needs a different host (a landing check built from internal/cli, which
 // this package cannot import) always arrives through the cmd/a2a-built opener.
 func defaultHostOpener() host.Opener {
