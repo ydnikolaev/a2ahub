@@ -46,7 +46,7 @@ func TestDoctorCheckDefaultBranchHealthy(t *testing.T) {
 	t.Run("no wired ref status reader is an advisory PASS, never a FAIL", func(t *testing.T) {
 		t.Parallel()
 		cmd := newTestDoctorCommand()
-		cmd.h = doctorHostWithoutRefReader{Host: host.NewFakeHost()}
+		cmd.open = host.FixedOpener(doctorHostWithoutRefReader{Host: host.NewFakeHost()})
 		ok, detail := cmd.doctorCheckDefaultBranchHealthy(context.Background(), cfg, space.MachineConfig{})
 		if !ok {
 			t.Fatalf("want advisory PASS, got FAIL: %s", detail)
@@ -63,7 +63,7 @@ func TestDoctorCheckDefaultBranchHealthy(t *testing.T) {
 			return host.CheckStatusResult{State: "completed", Conclusion: "success", Name: "a2a-validate"}, nil
 		}
 		cmd := newTestDoctorCommand()
-		cmd.h = fake
+		cmd.open = host.FixedOpener(fake)
 		cmd.resolveCredential = resolve
 		if ok, detail := cmd.doctorCheckDefaultBranchHealthy(context.Background(), cfg, space.MachineConfig{}); !ok {
 			t.Fatalf("healthy default branch failed: %s", detail)
@@ -77,7 +77,7 @@ func TestDoctorCheckDefaultBranchHealthy(t *testing.T) {
 			return host.CheckStatusResult{State: "completed", Conclusion: "failure", Name: "a2a-validate"}, nil
 		}
 		cmd := newTestDoctorCommand()
-		cmd.h = fake
+		cmd.open = host.FixedOpener(fake)
 		cmd.resolveCredential = resolve
 		ok, detail := cmd.doctorCheckDefaultBranchHealthy(context.Background(), cfg, space.MachineConfig{})
 		if ok {
@@ -98,7 +98,7 @@ func TestDoctorCheckDefaultBranchHealthy(t *testing.T) {
 			return host.CheckStatusResult{State: "completed", Conclusion: "timed_out", Name: "a2a-validate"}, nil
 		}
 		cmd := newTestDoctorCommand()
-		cmd.h = fake
+		cmd.open = host.FixedOpener(fake)
 		cmd.resolveCredential = resolve
 		ok, detail := cmd.doctorCheckDefaultBranchHealthy(context.Background(), cfg, space.MachineConfig{})
 		if ok {
@@ -116,7 +116,7 @@ func TestDoctorCheckDefaultBranchHealthy(t *testing.T) {
 			return host.CheckStatusResult{State: "in_progress", Name: "a2a-validate"}, nil
 		}
 		cmd := newTestDoctorCommand()
-		cmd.h = fake
+		cmd.open = host.FixedOpener(fake)
 		cmd.resolveCredential = resolve
 		ok, detail := cmd.doctorCheckDefaultBranchHealthy(context.Background(), cfg, space.MachineConfig{})
 		if !ok {
@@ -134,7 +134,7 @@ func TestDoctorCheckDefaultBranchHealthy(t *testing.T) {
 			return host.CheckStatusResult{}, errors.New("forbidden")
 		}
 		cmd := newTestDoctorCommand()
-		cmd.h = fake
+		cmd.open = host.FixedOpener(fake)
 		cmd.resolveCredential = resolve
 		ok, detail := cmd.doctorCheckDefaultBranchHealthy(context.Background(), cfg, space.MachineConfig{})
 		if !ok || !strings.Contains(detail, "unverified") || strings.Contains(detail, "forbidden") {
@@ -149,7 +149,7 @@ func TestDoctorCheckDefaultBranchHealthy(t *testing.T) {
 			return host.CheckStatusResult{State: "queued"}, nil // Name == "" — CheckStatus's own "no match" shape
 		}
 		cmd := newTestDoctorCommand()
-		cmd.h = fake
+		cmd.open = host.FixedOpener(fake)
 		cmd.resolveCredential = resolve
 		ok, detail := cmd.doctorCheckDefaultBranchHealthy(context.Background(), cfg, space.MachineConfig{})
 		if !ok || !strings.Contains(detail, "unverified") {
@@ -160,7 +160,7 @@ func TestDoctorCheckDefaultBranchHealthy(t *testing.T) {
 	t.Run("credential resolution failure is unverifiable, not a FAIL", func(t *testing.T) {
 		t.Parallel()
 		cmd := newTestDoctorCommand()
-		cmd.h = host.NewFakeHost()
+		cmd.open = host.FixedOpener(host.NewFakeHost())
 		cmd.resolveCredential = func(context.Context, string, space.CredentialReference) (host.Credential, error) {
 			return host.Credential{}, errors.New("no credential configured")
 		}
@@ -174,7 +174,7 @@ func TestDoctorCheckDefaultBranchHealthy(t *testing.T) {
 		t.Parallel()
 		badCfg := space.ProjectConfig{Spaces: []space.Ref{{ID: "bad", RepoURL: "not-a-url"}}}
 		cmd := newTestDoctorCommand()
-		cmd.h = host.NewFakeHost()
+		cmd.open = host.FixedOpener(host.NewFakeHost())
 		cmd.resolveCredential = resolve
 		ok, detail := cmd.doctorCheckDefaultBranchHealthy(context.Background(), badCfg, space.MachineConfig{})
 		if !ok || !strings.Contains(detail, "unverified") {
@@ -195,7 +195,7 @@ func TestDoctorRunExitsNonZeroOnARedDefaultBranch(t *testing.T) {
 	}
 
 	cmd := newTestDoctorCommand()
-	cmd.h = fake
+	cmd.open = host.FixedOpener(fake)
 	cmd.resolveCredential = func(context.Context, string, space.CredentialReference) (host.Credential, error) {
 		return host.Credential{Token: "tok"}, nil
 	}

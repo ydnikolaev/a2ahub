@@ -25,7 +25,7 @@
 //     machine-config reference resolves, so the fixture exports
 //     A2A_TOKEN_<SPACE> or every case dies before reaching the verb.
 //
-// The local origin works because parseGitHubRepo accepts a filesystem path
+// The local origin works because host.ParseLocator accepts a filesystem path
 // (/tmp/x/origin.git -> owner "x", name "origin"), so dependency resolution
 // completes without a GitHub URL. Writes therefore reach the funnel and the
 // commit; only the HOST call (open PR) has nowhere real to go, which is

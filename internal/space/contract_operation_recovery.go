@@ -24,7 +24,6 @@ type contractPublicationRecoveryHost interface {
 	ListRemoteRecoveryTreeFiles(context.Context, string, string, []string) (map[string]host.RemoteTreeFile, error)
 	FindPRByHeadBranch(context.Context, host.FindPRRequest) (*host.PRInfo, error)
 	OpenPR(context.Context, host.OpenPRRequest) (host.PRInfo, error)
-	EnableAutoMerge(context.Context, host.EnableAutoMergeRequest) (host.MergeMethod, error)
 }
 
 type verifiedContractPublicationHead struct {
@@ -497,7 +496,16 @@ func (r *ContractPublicationRecovery) RepairContractPublicationHead(ctx context.
 		if resultErr != nil || existing.State == "merged" || existing.AutoMergeArmed {
 			return result, resultErr
 		}
-		method, armErr := r.host.EnableAutoMerge(ctx, host.EnableAutoMergeRequest{
+		// Auto-merge is an OPTIONAL capability (ADR-003), asserted here at the
+		// one site that needs it, the way the funnel does: a host that cannot
+		// arm it leaves the matching PR for an operator, never a silent loss.
+		merger, canArm := r.host.(host.AutoMerger)
+		if !canArm {
+			result.State = WriteStateNeedsAttention
+			result.Note = "matching publication PR exists, but this host cannot arm auto-merge"
+			return completeWriteResult("ContractPublicationRepair", record.HeadBranch, result)
+		}
+		method, armErr := merger.EnableAutoMerge(ctx, host.EnableAutoMergeRequest{
 			Repo: r.repository, PRNumber: existing.Number, ExpectedHeadSHA: proof.HeadSHA, Credential: credential,
 		})
 		if armErr != nil {

@@ -132,35 +132,6 @@ func runGitTest(t *testing.T, dir string, args ...string) {
 	}
 }
 
-func TestParseGitHubRepoHTTPS(t *testing.T) {
-	t.Parallel()
-	owner, name, err := parseGitHubRepo("https://github.com/acme/space.git")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if owner != "acme" || name != "space" {
-		t.Fatalf("got %q/%q", owner, name)
-	}
-}
-
-func TestParseGitHubRepoSSH(t *testing.T) {
-	t.Parallel()
-	owner, name, err := parseGitHubRepo("git@github.com:acme/space")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if owner != "acme" || name != "space" {
-		t.Fatalf("got %q/%q", owner, name)
-	}
-}
-
-func TestParseGitHubRepoMalformed(t *testing.T) {
-	t.Parallel()
-	if _, _, err := parseGitHubRepo("not-a-url"); err == nil {
-		t.Fatal("expected an error for a malformed repo URL")
-	}
-}
-
 func TestResolvePaths(t *testing.T) {
 	t.Parallel()
 	p, err := ResolvePaths()
@@ -582,7 +553,7 @@ func TestBuildWriteDepsTwoSpacesYieldDistinctMirrorDirsAndResolveSpace(t *testin
 	projectRoot := t.TempDir()
 	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
 
-	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test")
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test", defaultHostOpener())
 	if err != nil {
 		t.Fatalf("buildWriteDeps: %v", err)
 	}
@@ -675,7 +646,7 @@ func TestBuildWriteDepsForSpaceRefusesREF026WhenRemotePublishesNoHead(t *testing
 	projectRoot := t.TempDir()
 	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
 
-	_, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test")
+	_, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test", defaultHostOpener())
 	if err == nil {
 		t.Fatal("buildWriteDeps = nil error, want a REF-026 refusal — an unresolvable remote HEAD must never silently build write deps pointed at \"main\"")
 	}
@@ -706,7 +677,7 @@ func TestBuildWriteDepsForSpaceDerivesNonMainBaseBranch(t *testing.T) {
 	projectRoot := t.TempDir()
 	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
 
-	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test")
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test", defaultHostOpener())
 	if err != nil {
 		t.Fatalf("buildWriteDeps: %v", err)
 	}
@@ -741,7 +712,7 @@ func TestBuildWriteDepsFailingSpaceSurfacesErrorOnlyWhenResolved(t *testing.T) {
 	projectRoot := t.TempDir()
 	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
 
-	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test")
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test", defaultHostOpener())
 	if err != nil {
 		t.Fatalf("Spaces[0] (space-one) is reachable — buildWriteDeps must not fail: %v", err)
 	}
@@ -814,7 +785,7 @@ func TestBuildWriteDepsSpaceFetchIsBoundedAndNonPrimaryTimeoutStaysStoredNotFata
 	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
 
 	start := time.Now()
-	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test")
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test", defaultHostOpener())
 	elapsed := time.Since(start)
 	if err != nil {
 		t.Fatalf("Spaces[0] (space-one) is reachable — buildWriteDeps must not fail: %v", err)
@@ -859,7 +830,7 @@ func TestBuildWriteDepsResolveSpaceIsNotAliasedByTheAmbiguousFunnelInstall(t *te
 	projectRoot := t.TempDir()
 	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
 
-	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test")
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test", defaultHostOpener())
 	if err != nil {
 		t.Fatalf("buildWriteDeps: %v", err)
 	}
@@ -912,7 +883,7 @@ func TestBuildWriteDepsSpaceOfArtifactsRefusesSplitBatch(t *testing.T) {
 	projectRoot := t.TempDir()
 	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
 
-	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test")
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test", defaultHostOpener())
 	if err != nil {
 		t.Fatalf("buildWriteDeps: %v", err)
 	}
@@ -959,7 +930,7 @@ func TestBuildWriteDepsSpaceOfArtifactsRefusesUnknownID(t *testing.T) {
 	projectRoot := t.TempDir()
 	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
 
-	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test")
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test", defaultHostOpener())
 	if err != nil {
 		t.Fatalf("buildWriteDeps: %v", err)
 	}

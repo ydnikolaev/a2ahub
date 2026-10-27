@@ -440,4 +440,8 @@ type Host interface {
 	// dependency on internal/cache, P7). Returns (nil, nil) when no
 	// matching open/merged PR exists.
 	FindPRByHeadBranch(ctx context.Context, req FindPRRequest) (*PRInfo, error)
+	// Capabilities declares what this host is and requires: a REQUIRED
+	// method, not an optional interface, so a caller never type-asserts a
+	// property and a miss cannot read as a resolved negative (ADR-019).
+	Capabilities() Capabilities
 }

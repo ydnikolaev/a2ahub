@@ -880,7 +880,8 @@ func runNotifySetup(ctx context.Context, c *NotifyCommand, root string, args []s
 	repo := ""
 	var owner, name string
 	if remoteErr == nil {
-		owner, name, _ = doctorRepoOwnerName(remoteURL)
+		loc, _ := host.ParseLocator(remoteURL) // reason: an unparseable remote leaves loc zero; owner/name stay empty and the repo is then asked for interactively or via flags
+		owner, name = loc.Repo.Owner, loc.Repo.Name
 		if owner != "" && name != "" {
 			repo = owner + "/" + name
 		}
@@ -1129,7 +1130,8 @@ func runNotifyVerify(ctx context.Context, c *NotifyCommand, root string, args []
 
 	remoteURL, remoteErr := c.gitRemote(ctx, root)
 	if remoteErr == nil {
-		owner, name, ownerErr := doctorRepoOwnerName(remoteURL)
+		loc, ownerErr := host.ParseLocator(remoteURL)
+		owner, name := loc.Repo.Owner, loc.Repo.Name
 		if ownerErr == nil {
 			report.Repo = owner + "/" + name
 			report.SecretOK, report.SecretDetail = notifyCheckSecret(ctx, runGHSecretList, report.Repo, manifest)

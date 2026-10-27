@@ -166,37 +166,6 @@ func TestFunnelBinaryVersionIsBare(t *testing.T) {
 	}
 }
 
-func TestParseGitHubRepo(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		url, owner, name string
-		wantErr          bool
-	}{
-		{"https://github.com/getvisa/getvisa", "getvisa", "getvisa", false},
-		{"https://github.com/getvisa/getvisa.git", "getvisa", "getvisa", false},
-		{"git@github.com:r22d222/a2a.git", "r22d222", "a2a", false},
-		{"https://github.com/org/repo", "org", "repo", false},
-		{"not-a-url", "", "", true},
-		{"https://github.com/onlyowner", "", "", true},
-	}
-	for _, tc := range cases {
-		owner, name, err := parseGitHubRepo(tc.url)
-		if tc.wantErr {
-			if err == nil {
-				t.Errorf("parseGitHubRepo(%q): want error, got %s/%s", tc.url, owner, name)
-			}
-			continue
-		}
-		if err != nil {
-			t.Errorf("parseGitHubRepo(%q): unexpected error %v", tc.url, err)
-			continue
-		}
-		if owner != tc.owner || name != tc.name {
-			t.Errorf("parseGitHubRepo(%q) = %s/%s, want %s/%s", tc.url, owner, name, tc.owner, tc.name)
-		}
-	}
-}
-
 func TestFindSpace(t *testing.T) {
 	t.Parallel()
 	cfg := space.ProjectConfig{

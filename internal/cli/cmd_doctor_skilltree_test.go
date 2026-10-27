@@ -33,7 +33,7 @@ func mustInstallSkillTree(t *testing.T, target, version string) {
 
 func newSkillTreeDoctorCommand(t *testing.T, root, binaryVersion string) *DoctorCommand {
 	t.Helper()
-	cmd := NewDoctorCommand(host.NewFakeHost(), binaryVersion, "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
+	cmd := NewDoctorCommand(host.FixedOpener(host.NewFakeHost()), binaryVersion, "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
 	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
 	cmd.SkillFiles = skill.Files
 	return cmd
@@ -194,7 +194,7 @@ func TestDoctorCheckSkillManualCurrent_HonestLag_NoteUnchangedAndWalkNeverRuns(t
 		t.Fatal(err)
 	}
 
-	cmd := NewDoctorCommand(host.NewFakeHost(), "0.23.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
+	cmd := NewDoctorCommand(host.FixedOpener(host.NewFakeHost()), "0.23.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
 	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
 	cmd.SkillFiles = doctorSentinelFS{t: t}
 
@@ -224,7 +224,7 @@ func TestDoctorCheckSkillManualCurrent_StampNewerThanBinary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := NewDoctorCommand(host.NewFakeHost(), "0.23.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
+	cmd := NewDoctorCommand(host.FixedOpener(host.NewFakeHost()), "0.23.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
 	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
 	cmd.SkillFiles = doctorSentinelFS{t: t}
 
@@ -430,7 +430,7 @@ func TestDoctorCheckSkillManualCurrent_Unwired(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := NewDoctorCommand(host.NewFakeHost(), "0.23.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
+	cmd := NewDoctorCommand(host.FixedOpener(host.NewFakeHost()), "0.23.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
 	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
 	// cmd.SkillFiles left nil deliberately.
 

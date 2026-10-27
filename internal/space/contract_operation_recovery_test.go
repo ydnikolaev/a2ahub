@@ -43,6 +43,81 @@ func (h contractRecoveryTestHost) EnableAutoMerge(ctx context.Context, request h
 	return h.pr.EnableAutoMerge(ctx, request)
 }
 
+// contractRecoveryNoMergerHost is the recovery host WITHOUT EnableAutoMerge. It
+// forwards explicitly through a NAMED field: embedding contractRecoveryTestHost
+// or *host.FakeHost would promote EnableAutoMerge and make the test pass for
+// the wrong reason.
+type contractRecoveryNoMergerHost struct {
+	inner contractRecoveryTestHost
+}
+
+func (h contractRecoveryNoMergerHost) ListContractPublishHeads(ctx context.Context, repoDir, remoteURL, prefix string, credential host.Credential) (host.RemoteHeadListing, error) {
+	return h.inner.ListContractPublishHeads(ctx, repoDir, remoteURL, prefix, credential)
+}
+func (h contractRecoveryNoMergerHost) ReadRemoteRecoveryCommit(ctx context.Context, repoDir, remoteURL string, repository host.Repo, branch string, credential host.Credential) (host.Repo, string, string, string, string, string, string, map[string]host.RemoteRecoveryChange, bool, error) {
+	return h.inner.ReadRemoteRecoveryCommit(ctx, repoDir, remoteURL, repository, branch, credential)
+}
+func (h contractRecoveryNoMergerHost) ReadRemoteRecoveryTreeFiles(ctx context.Context, repoDir, commit string, paths []string) (map[string]host.RemoteTreeFile, error) {
+	return h.inner.ReadRemoteRecoveryTreeFiles(ctx, repoDir, commit, paths)
+}
+func (h contractRecoveryNoMergerHost) ListRemoteRecoveryTreeFiles(ctx context.Context, repoDir, commit string, prefixes []string) (map[string]host.RemoteTreeFile, error) {
+	return h.inner.ListRemoteRecoveryTreeFiles(ctx, repoDir, commit, prefixes)
+}
+func (h contractRecoveryNoMergerHost) FindPRByHeadBranch(ctx context.Context, request host.FindPRRequest) (*host.PRInfo, error) {
+	return h.inner.FindPRByHeadBranch(ctx, request)
+}
+func (h contractRecoveryNoMergerHost) OpenPR(ctx context.Context, request host.OpenPRRequest) (host.PRInfo, error) {
+	return h.inner.OpenPR(ctx, request)
+}
+
+// The recovery host no longer requires EnableAutoMerge, and the no-merger host
+// really lacks it.
+var (
+	_ contractPublicationRecoveryHost = contractRecoveryNoMergerHost{}
+	_ contractPublicationRecoveryHost = contractRecoveryTestHost{}
+)
+
+// TestContractPublicationRepair_NoAutoMerger proves a host that cannot arm
+// auto-merge no longer fails to compile as the recovery host, and that
+// repairing an open, unarmed publication PR over it returns needs-attention
+// with the named note instead of arming or losing the PR.
+func TestContractPublicationRepair_NoAutoMerger(t *testing.T) {
+	t.Parallel()
+
+	if _, hasMerger := any(contractRecoveryNoMergerHost{}).(host.AutoMerger); hasMerger {
+		t.Fatal("test host must not implement host.AutoMerger")
+	}
+	fakePR := host.NewFakeHost()
+	fixture := newContractRepairFixture(t, contractRecoveryNoMergerHost{inner: contractRecoveryTestHost{git: host.NewGitHubHost(nil, ""), pr: fakePR}})
+	head := fixture.listing.Heads[0]
+	fakePR.FindPRFunc = func(context.Context, host.FindPRRequest) (*host.PRInfo, error) {
+		return &host.PRInfo{
+			Number: 52, URL: "https://example.invalid/pr/52", State: "open",
+			Title: fixture.record.PRTitle, Body: fixture.record.PRBody, BaseBranch: fixture.record.BaseBranch,
+			HeadSHA: head.HeadSHA, AutoMergeArmed: false,
+		}, nil
+	}
+
+	result, err := fixture.recovery.RepairContractPublicationHead(t.Context(), head, SubmissionRuntime{
+		RepoDir: fixture.probe, RemoteURL: fixture.fx.RemoteURL(), TargetIdentity: "acme/space", CurrentSpaceFloor: "0.19.0",
+	})
+	if err != nil {
+		t.Fatalf("repair over a host without auto-merge: %v", err)
+	}
+	if result.State != WriteStateNeedsAttention {
+		t.Errorf("State = %q, want needs-attention", result.State)
+	}
+	if want := "matching publication PR exists, but this host cannot arm auto-merge"; result.Note != want {
+		t.Errorf("Note = %q, want %q", result.Note, want)
+	}
+	if result.PRNumber != 52 {
+		t.Errorf("PRNumber = %d, want the existing PR 52", result.PRNumber)
+	}
+	if len(fakePR.AutoArms) != 0 {
+		t.Errorf("auto-merge was armed %d times over a host that cannot arm", len(fakePR.AutoArms))
+	}
+}
+
 // TestPublicationRecomputeConflictReason unit-tests the pure classifier
 // wired into verifyRecomputedPublication's conflict path in isolation from
 // the git/host fixtures a full probe/repair test needs. Argument order is
@@ -74,8 +149,24 @@ func TestPublicationRecomputeConflictReason(t *testing.T) {
 	}
 }
 
-func TestContractPublicationRecoveryProvesRemoteTreeAndRepairsOnlyPR(t *testing.T) {
-	t.Parallel()
+// contractRepairFixture is a remote publication head that the recovery adapter
+// has probed and minted a repair proof for: listing.Heads[0] is a verified
+// proof whose PR the test then repairs.
+type contractRepairFixture struct {
+	fx       *spacefixture.Fixture
+	source   string
+	probe    string
+	prepared PreparedSubmission
+	record   RecoveryV1
+	recovery *ContractPublicationRecovery
+	listing  ContractPublicationHeadListing
+}
+
+// newContractRepairFixture pushes a complete, valid publication head to the
+// fixture's origin and returns the recovery adapter (over recoveryHost) with
+// its probe already run.
+func newContractRepairFixture(t *testing.T, recoveryHost contractPublicationRecoveryHost) contractRepairFixture {
+	t.Helper()
 	fx := spacefixture.New(t, "axon", "beta")
 	source := fx.Clone("axon")
 	probe := fx.Clone("beta")
@@ -184,8 +275,6 @@ func TestContractPublicationRecoveryProvesRemoteTreeAndRepairsOnlyPR(t *testing.
 	contractTestGit(t, source, "push", "-q", "origin", "HEAD:refs/heads/"+unrelated.HeadBranch)
 	contractTestGit(t, source, "checkout", "-q", "main")
 
-	fakePR := host.NewFakeHost()
-	recoveryHost := contractRecoveryTestHost{git: host.NewGitHubHost(nil, ""), pr: fakePR}
 	recovery, err := NewContractPublicationRecovery(recoveryHost, probe, fx.RemoteURL(), host.Repo{Owner: "acme", Name: "space"}, host.Credential{}, "0.19.0", ContractPublicationRecoveryValidation{
 		ManifestValidator: acceptingPublicationManifestValidator{}, HistoryValidator: contractHistoryValidator(t), Compatibility: publicationCompatibilityChecker{},
 	})
@@ -201,6 +290,15 @@ func TestContractPublicationRecoveryProvesRemoteTreeAndRepairsOnlyPR(t *testing.
 	if !listing.Heads[0].recoveredPlan.Equal(plan) {
 		t.Fatal("remote proof did not retain the exact recomputed publication plan")
 	}
+	return contractRepairFixture{fx: fx, source: source, probe: probe, prepared: prepared, record: record, recovery: recovery, listing: listing}
+}
+
+func TestContractPublicationRecoveryProvesRemoteTreeAndRepairsOnlyPR(t *testing.T) {
+	t.Parallel()
+	fakePR := host.NewFakeHost()
+	recoveryHost := contractRecoveryTestHost{git: host.NewGitHubHost(nil, ""), pr: fakePR}
+	fixture := newContractRepairFixture(t, recoveryHost)
+	fx, source, probe, prepared, record, recovery, listing := fixture.fx, fixture.source, fixture.probe, fixture.prepared, fixture.record, fixture.recovery, fixture.listing
 	fakePR.OpenPRFunc = func(_ context.Context, request host.OpenPRRequest) (host.PRInfo, error) {
 		return host.PRInfo{Number: 41, URL: "https://example.invalid/wrong", State: "open", Title: "changed title", Body: request.Body, BaseBranch: request.Base, HeadSHA: request.ExpectedHeadSHA}, nil
 	}

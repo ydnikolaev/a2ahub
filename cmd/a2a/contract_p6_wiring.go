@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -56,7 +55,7 @@ func newContractP6Core(
 	repository host.Repo,
 	authorName, authorEmail, binary string,
 	engine *validate.Engine,
-	h *host.GitHubHost,
+	h contractwiring.Host,
 	resolveActor func(kind, name, model string) (template.Actor, error),
 	resolveCredential func(context.Context) (host.Credential, error),
 ) (*contractP6Core, error) {
@@ -80,11 +79,15 @@ func newCLIContractP6Core(p paths, deps lifecycleDeps) (*contractP6Core, error) 
 	if err != nil {
 		return nil, err
 	}
+	h, _, err := openContractHost(newHostOpener(), deps.hostCfg.RemoteURL)
+	if err != nil {
+		return nil, err
+	}
 	return newContractP6Core(
 		p.projectRoot, deps.mirrorDir, deps.hostCfg.RemoteURL, deps.spaceID, deps.ownSystem,
 		deps.hostCfg.Repo,
 		deps.hostCfg.CommitAuthorName, deps.hostCfg.CommitAuthorEmail, funnelBinaryVersion(),
-		engine, host.NewGitHubHost(http.DefaultClient, githubAPIBase()),
+		engine, h,
 		func(kind, name, model string) (template.Actor, error) {
 			return deps.resolveActor(cli.ActorFlags{Kind: kind, Name: name, Model: model})
 		},
@@ -92,23 +95,27 @@ func newCLIContractP6Core(p paths, deps lifecycleDeps) (*contractP6Core, error) 
 	)
 }
 
-func newMCPContractOperationsFactory(p paths, cfg space.ProjectConfig, machine space.MachineConfig) mcp.ContractOperationsFactory {
+func newMCPContractOperationsFactory(p paths, cfg space.ProjectConfig, machine space.MachineConfig, open host.Opener) mcp.ContractOperationsFactory {
+	if open == nil {
+		open = newHostOpener() // nil-safe, as internal/mcp's own fallback is
+	}
 	return func(resolveMCPActor mcp.ActorResolver) (mcp.ContractToolOperations, error) {
 		engine, err := newEngine()
 		if err != nil {
 			return mcp.ContractToolOperations{}, err
 		}
 		cores := make(map[string]*contractP6Core, len(cfg.Spaces))
-		github := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
 		for _, ref := range cfg.Spaces {
-			owner, name, parseErr := parseGitHubRepo(ref.RepoURL)
-			if parseErr != nil {
-				return mcp.ContractToolOperations{}, parseErr
+			// One host per connected space: a GitHub space and a local space
+			// in one project each get their own.
+			h, repo, openErr := openContractHost(open, ref.RepoURL)
+			if openErr != nil {
+				return mcp.ContractToolOperations{}, openErr
 			}
 			core, coreErr := newContractP6Core(
 				p.projectRoot, space.ResolveMirrorLocation(p.projectRoot, ref, machine), ref.RepoURL, ref.ID, cfg.System,
-				host.Repo{Owner: owner, Name: name}, cfg.System, cfg.System+"@a2a.local", funnelBinaryVersion(),
-				engine, github,
+				repo, cfg.System, cfg.System+"@a2a.local", funnelBinaryVersion(),
+				engine, h,
 				func(kind, name, model string) (template.Actor, error) {
 					return resolveMCPActor(mcp.ActorInput{Kind: kind, Name: name, Model: model})
 				},
@@ -923,14 +930,14 @@ func newCLIContractVerifyPublishedInspector(p paths, cfg space.ProjectConfig, ma
 		if err != nil {
 			return nil, err
 		}
-		owner, name, err := parseGitHubRepo(ref.RepoURL)
+		h, repo, err := openContractHost(newHostOpener(), ref.RepoURL)
 		if err != nil {
 			return nil, err
 		}
 		core, err := newContractP6Core(
 			p.projectRoot, mirrorDir, ref.RepoURL, ref.ID, cfg.System,
-			host.Repo{Owner: owner, Name: name}, cfg.System, cfg.System+"@a2a.local", funnelBinaryVersion(),
-			engine, host.NewGitHubHost(http.DefaultClient, githubAPIBase()),
+			repo, cfg.System, cfg.System+"@a2a.local", funnelBinaryVersion(),
+			engine, h,
 			func(kind, name, model string) (template.Actor, error) {
 				return resolve(cli.ActorFlags{Kind: kind, Name: name, Model: model})
 			},

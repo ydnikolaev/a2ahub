@@ -47,6 +47,16 @@ func githubAPIBase() string {
 	return githubAPIBaseURL
 }
 
+// defaultHostOpener is the fallback host.Opener used when cmd/a2a injects none
+// (NewServerFromConfig, and tests): the production opener over this package's
+// own GitHub API base. Production reaches it from buildMCPServer only when no
+// space is connected, where the per-space loop never opens a host. A space
+// that needs a different host (a landing check built from internal/cli, which
+// this package cannot import) always arrives through the cmd/a2a-built opener.
+func defaultHostOpener() host.Opener {
+	return host.NewOpener(host.OpenConfig{HTTPClient: http.DefaultClient, GitHubAPIBase: githubAPIBase()})
+}
+
 // Paths bundles the resolved config/staging locations the mcp server
 // needs — mirrors cmd/a2a/wire.go's own paths struct.
 type Paths struct {
@@ -135,7 +145,7 @@ func cacheDirOf(p Paths) string { return filepath.Join(p.ProjectRoot, ".a2a", "c
 // multi-space call; MCP never composes or silently selects a space itself.
 // The result is a ready-to-Serve Server with the full §7.7 tool set.
 func NewServerFromConfig(ctx context.Context, p Paths, binaryVersion string, injectedWork ...WorkToolDeps) (*Server, error) {
-	return newServerFromConfig(ctx, p, binaryVersion, nil, nil, injectedWork...)
+	return newServerFromConfig(ctx, p, binaryVersion, nil, nil, nil, injectedWork...)
 }
 
 // ContractOperationsFactory is cmd/a2a's production composition seam. It is
@@ -164,7 +174,7 @@ type DataOperationsFactory func(ActorResolver) (DataToolDeps, error)
 // NewServerFromConfigWithOperations with a nil data factory, so a2a_data
 // stays degraded exactly as it did before that constructor existed.
 func NewServerFromConfigWithContractOperations(ctx context.Context, p Paths, binaryVersion string, work WorkToolDeps, buildContractOperations ContractOperationsFactory) (*Server, error) {
-	return NewServerFromConfigWithOperations(ctx, p, binaryVersion, work, buildContractOperations, nil)
+	return NewServerFromConfigWithOperations(ctx, p, binaryVersion, work, buildContractOperations, nil, nil)
 }
 
 // NewServerFromConfigWithOperations is the production constructor used by
@@ -172,14 +182,21 @@ func NewServerFromConfigWithContractOperations(ctx context.Context, p Paths, bin
 // contract and data dependencies. P6/data filesystem/Git/domain adapters are
 // composed at cmd/a2a and injected here; internal/mcp owns only transport
 // registration.
-func NewServerFromConfigWithOperations(ctx context.Context, p Paths, binaryVersion string, work WorkToolDeps, buildContractOperations ContractOperationsFactory, buildDataOperations DataOperationsFactory) (*Server, error) {
+//
+// open resolves each connected space's host (one per space); cmd/a2a builds it
+// once and injects it, the way it injects the two factories. A nil open falls
+// back to the package's default GitHub opener.
+func NewServerFromConfigWithOperations(ctx context.Context, p Paths, binaryVersion string, work WorkToolDeps, buildContractOperations ContractOperationsFactory, buildDataOperations DataOperationsFactory, open host.Opener) (*Server, error) {
 	if buildContractOperations == nil {
 		return nil, fmt.Errorf("mcp: production contract dependency factory must be injected by cmd/a2a")
 	}
-	return newServerFromConfig(ctx, p, binaryVersion, buildContractOperations, buildDataOperations, work)
+	return newServerFromConfig(ctx, p, binaryVersion, buildContractOperations, buildDataOperations, open, work)
 }
 
-func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, buildContractOperations ContractOperationsFactory, buildDataOperations DataOperationsFactory, injectedWork ...WorkToolDeps) (*Server, error) {
+func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, buildContractOperations ContractOperationsFactory, buildDataOperations DataOperationsFactory, open host.Opener, injectedWork ...WorkToolDeps) (*Server, error) {
+	if open == nil {
+		open = defaultHostOpener()
+	}
 	cfg, err := space.LoadProjectConfig(p.ProjectConfig)
 	if err != nil {
 		return nil, fmt.Errorf("mcp: load project config: %w", err)
@@ -239,7 +256,7 @@ func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, bui
 		}
 	}
 
-	write, submitDeps, newDeps, err := buildWriteDeps(ctx, cfg, machine, p, binaryVersion)
+	write, submitDeps, newDeps, err := buildWriteDeps(ctx, cfg, machine, p, binaryVersion, open)
 	if err != nil {
 		// An unreachable space must not cost the agent its READ tools.
 		//
@@ -384,7 +401,7 @@ func buildStore(ctx context.Context, cfg space.ProjectConfig, machine space.Mach
 // the caller sees (a DIFFERENT space's build failure is stored and surfaced
 // only if THAT space is later resolved — never at server start, never for
 // the space actually in use).
-func buildWriteDeps(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig, p Paths, binaryVersion string) (WriteDeps, SubmitDeps, NewDeps, error) {
+func buildWriteDeps(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig, p Paths, binaryVersion string, open host.Opener) (WriteDeps, SubmitDeps, NewDeps, error) {
 	corpus, err := schema.Load()
 	if err != nil {
 		return WriteDeps{}, SubmitDeps{}, NewDeps{}, err
@@ -409,7 +426,7 @@ func buildWriteDeps(ctx context.Context, cfg space.ProjectConfig, machine space.
 	}
 	bySpace := make(map[string]spaceBuild, len(cfg.Spaces))
 	for _, ref := range cfg.Spaces {
-		write, submitDeps, newDeps, buildErr := buildWriteDepsForSpace(ctx, cfg, machine, p, binaryVersion, ref, engine)
+		write, submitDeps, newDeps, buildErr := buildWriteDepsForSpace(ctx, cfg, machine, p, binaryVersion, ref, engine, open)
 		bySpace[ref.ID] = spaceBuild{write: write, submit: submitDeps, newDeps: newDeps, err: buildErr}
 	}
 
@@ -557,7 +574,7 @@ func SetCloneOrFetchForBuildTest(f func(ctx context.Context, dir, repoURL string
 // for an unreachable-origin failure, surfaced only when that space is
 // later resolved. A timeout on the PRIMARY space remains fatal, exactly as
 // an unreachable primary already was before this bound existed.
-func buildWriteDepsForSpace(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig, p Paths, binaryVersion string, ref space.Ref, engine *validate.Engine) (WriteDeps, SubmitDeps, NewDeps, error) {
+func buildWriteDepsForSpace(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig, p Paths, binaryVersion string, ref space.Ref, engine *validate.Engine, open host.Opener) (WriteDeps, SubmitDeps, NewDeps, error) {
 	mirrorDir := space.ResolveMirrorLocation(p.ProjectRoot, ref, machine)
 	fetchCtx, cancel := context.WithTimeout(ctx, buildWriteDepsSpaceTimeout)
 	fetchErr := cloneOrFetchForBuild(fetchCtx, mirrorDir, ref.RepoURL, readMirrorCredential(ctx, ref.ID, machine))
@@ -599,7 +616,7 @@ func buildWriteDepsForSpace(ctx context.Context, cfg space.ProjectConfig, machin
 	if err != nil {
 		return WriteDeps{}, SubmitDeps{}, NewDeps{}, err
 	}
-	owner, name, err := parseGitHubRepo(ref.RepoURL)
+	h, repo, err := open(ref.RepoURL)
 	if err != nil {
 		return WriteDeps{}, SubmitDeps{}, NewDeps{}, err
 	}
@@ -607,11 +624,10 @@ func buildWriteDepsForSpace(ctx context.Context, cfg space.ProjectConfig, machin
 	resolver := NewMirrorResolver(mirrorDir, manifest)
 	legality := NewLegalityAdapter(mirrorDir, cfg.System, manifest)
 	validator := NewSubmitValidatorAdapter(engine, cfg.System, resolver, legality)
-	h := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
 	funnel := space.NewWriteFunnel(h, validator, binaryVersion)
 
 	hostCfg := SubmitHostConfig{
-		RemoteURL: ref.RepoURL, Repo: host.Repo{Owner: owner, Name: name},
+		RemoteURL: ref.RepoURL, Repo: repo,
 		BaseBranch: baseBranch, Credential: cred,
 		CommitAuthorName: cfg.System, CommitAuthorEmail: cfg.System + "@a2a.local",
 	}
@@ -656,19 +672,6 @@ func spaceIDs(refs []space.Ref) []string {
 		ids[i] = ref.ID
 	}
 	return ids
-}
-
-// parseGitHubRepo extracts owner/name from a GitHub remote URL — mirrors
-// cmd/a2a/wire.go's parseGitHubRepo.
-func parseGitHubRepo(url string) (owner, name string, err error) {
-	s := strings.TrimSuffix(url, ".git")
-	s = strings.TrimPrefix(s, "https://github.com/")
-	s = strings.TrimPrefix(s, "git@github.com:")
-	parts := strings.Split(s, "/")
-	if len(parts) < 2 || parts[len(parts)-2] == "" || parts[len(parts)-1] == "" {
-		return "", "", fmt.Errorf("cannot parse owner/name from repo URL %q", url)
-	}
-	return parts[len(parts)-2], parts[len(parts)-1], nil
 }
 
 // readMirrorCredential resolves the credential a MIRROR REFRESH should carry

@@ -19,7 +19,7 @@ import (
 // logicOrg/logicRepo are the local tier's own stand-ins for Config.Org/
 // DefaultRepo (harness_live.go, catalogue.go). testkit/fakegithub never
 // validates either string against anything it serves (empirical fact #3 in
-// this wave's brief: cmd/a2a's parseGitHubRepo takes only the last two
+// this wave's brief: host.ParseLocator (cmd/a2a's former parseGitHubRepo) takes only the last two
 // `/`-separated segments of whatever it is handed), so these exist to keep
 // h.Org/h.Repo — and any failure message that names them — legible, never to
 // name a real GitHub location.

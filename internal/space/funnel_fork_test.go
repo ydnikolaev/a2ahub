@@ -188,6 +188,8 @@ func (h hostWithoutFork) OpenPR(ctx context.Context, req host.OpenPRRequest) (ho
 	return h.inner.OpenPR(ctx, req)
 }
 
+func (h hostWithoutFork) Capabilities() host.Capabilities { return h.inner.Capabilities() }
+
 func (h hostWithoutFork) TokenScopes(ctx context.Context, cred host.Credential) ([]string, bool, error) {
 	return h.inner.TokenScopes(ctx, cred)
 }

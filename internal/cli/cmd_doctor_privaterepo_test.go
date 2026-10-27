@@ -103,7 +103,7 @@ func TestDoctorPrivateRepoHint(t *testing.T) {
 
 			cmd := &DoctorCommand{
 				machineConfigPath: "/home/u/.config/a2a/config.yaml",
-				h:                 doctorVisibilityHostFake{Host: host.NewFakeHost(), visibility: tc.visibility, err: tc.visErr},
+				open:              host.FixedOpener(doctorVisibilityHostFake{Host: host.NewFakeHost(), visibility: tc.visibility, err: tc.visErr}),
 			}
 			got := cmd.doctorPrivateRepoHint(context.Background(), ref, tc.credential, tc.err)
 
@@ -129,7 +129,7 @@ func TestDoctorSpaceAccessAttachesTheHintToTheFailingSpace(t *testing.T) {
 
 	cmd := &DoctorCommand{
 		machineConfigPath: "/home/u/.config/a2a/config.yaml",
-		h:                 doctorVisibilityHostFake{Host: host.NewFakeHost(), visibility: host.RepositoryVisibilityPrivate},
+		open:              host.FixedOpener(doctorVisibilityHostFake{Host: host.NewFakeHost(), visibility: host.RepositoryVisibilityPrivate}),
 		resolveMirror:     func(string, space.Ref, space.MachineConfig) string { return t.TempDir() },
 		resolveCredential: func(context.Context, string, space.CredentialReference) (host.Credential, error) {
 			return host.Credential{Token: "test-token"}, nil

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
-	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -59,7 +58,7 @@ func buildWorkCore(p paths, cfg space.ProjectConfig, machine space.MachineConfig
 	if err != nil {
 		return workCore{}, err
 	}
-	owner, name, err := parseGitHubRepo(ref.RepoURL)
+	h, repo, err := newHostOpener()(ref.RepoURL)
 	if err != nil {
 		return workCore{}, err
 	}
@@ -70,7 +69,7 @@ func buildWorkCore(p paths, cfg space.ProjectConfig, machine space.MachineConfig
 	mirrorDir := space.ResolveMirrorLocation(p.projectRoot, ref, machine)
 	runtime, err := space.NewWorkRuntime(
 		projectID, ref.ID, cfg.System, mirrorDir, ref.RepoURL,
-		host.Repo{Owner: owner, Name: name},
+		repo,
 		func(callCtx context.Context) (host.Credential, error) {
 			return resolveCredential(callCtx, ref.ID, machine)
 		},
@@ -114,7 +113,7 @@ func buildWorkCore(p paths, cfg space.ProjectConfig, machine space.MachineConfig
 	if err != nil {
 		return workCore{}, err
 	}
-	funnel := space.NewWriteFunnel(host.NewGitHubHost(http.DefaultClient, githubAPIBase()), submitValidator, version)
+	funnel := space.NewWriteFunnel(h, submitValidator, version)
 	publisher, err := space.NewWorkPublisher(funnel, runtime)
 	if err != nil {
 		return workCore{}, err

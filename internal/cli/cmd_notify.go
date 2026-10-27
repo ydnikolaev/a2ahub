@@ -115,7 +115,7 @@ type NotifyCommand struct {
 
 // NewNotifyCommand constructs the real, wired NotifyCommand.
 func NewNotifyCommand() *NotifyCommand {
-	h := host.NewGitHubHost(http.DefaultClient, notifyGitHubAPIBase())
+	h := host.OpenGitHub(host.OpenConfig{GitHubAPIBase: notifyGitHubAPIBase()})
 	return &NotifyCommand{
 		gitChanged:   gitDiffNameOnly,
 		now:          time.Now,

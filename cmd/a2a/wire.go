@@ -286,12 +286,11 @@ func buildCommands() map[string]command {
 		if err != nil {
 			return fail(stderr, err)
 		}
-		h := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
 		// Pass the BARE dotted version, not versionStamp() ("a2a x.y.z
 		// (sha)") — doctorVersionOlder parses a bare major.minor.patch, so
 		// the full stamp made `a2a doctor` report `versions: FAIL` against
 		// every space that pins min_binary_version (P10 e2e surfaced it).
-		cmd := cli.NewDoctorCommand(h, version, p.projectConfig, p.machineConfig, p.projectRoot)
+		cmd := cli.NewDoctorCommand(newHostOpener(), version, p.projectConfig, p.machineConfig, p.projectRoot)
 		if store, storeErr := buildStore(context.Background(), p); storeErr == nil {
 			cmd.ClassificationSummaryReader = doctorClassificationReader{store: store}
 		}
@@ -518,9 +517,13 @@ func buildMCPServer(ctx context.Context, p mcp.Paths, binaryVersion string) (*mc
 	if workErr != nil {
 		return nil, workErr
 	}
+	// One opener per process, shared by the contract and data factories and the
+	// write dependencies internal/mcp builds per space.
+	opener := newHostOpener()
 	return mcp.NewServerFromConfigWithOperations(ctx, p, binaryVersion, workDeps,
-		newMCPContractOperationsFactory(mainPaths, cfg, machine),
-		newMCPDataOperationsFactory(mainPaths, cfg, machine))
+		newMCPContractOperationsFactory(mainPaths, cfg, machine, opener),
+		newMCPDataOperationsFactory(mainPaths, cfg, machine, opener),
+		opener)
 }
 
 func htmlDemoRequested(args []string) bool {
@@ -681,7 +684,7 @@ func buildStore(ctx context.Context, p paths) (*cache.Store, error) {
 // manifests, extracts active human owners, and hands only GitHub logins to the
 // host-backed disposable cache. No read verb or HTML render reaches network.
 func newProjectAvatarRefresher(p paths) (func(context.Context) error, error) {
-	h := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
+	h := host.OpenGitHub(newHostOpenConfig())
 	avatars, err := avatar.NewCache(cacheDirOf(p), h.FetchAvatar, time.Now)
 	if err != nil {
 		return nil, fmt.Errorf("configure avatar cache: %w", err)
@@ -1093,16 +1096,15 @@ func awaitResolver(p paths) cli.AwaitResolver {
 		if err != nil {
 			return cli.AwaitTarget{}, err
 		}
-		owner, name, err := parseGitHubRepo(selected.ref.RepoURL)
+		h, repo, err := newHostOpener()(selected.ref.RepoURL)
 		if err != nil {
 			return cli.AwaitTarget{}, err
 		}
 		mirrorDir := space.ResolveMirrorLocation(p.projectRoot, selected.ref, machine)
-		h := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
 		awaiter := space.NewAwaiter(h)
 		req := space.AwaitRequest{
 			Branch: selected.marker.Branch,
-			Repo:   host.Repo{Owner: owner, Name: name}, Credential: cred,
+			Repo:   repo, Credential: cred,
 			Refresh: func(refreshCtx context.Context) error {
 				return space.CloneOrFetch(refreshCtx, mirrorDir, selected.ref.RepoURL, cred)
 			},
@@ -1237,17 +1239,16 @@ func resolveLifecycleDepsWithPolicy(ctx context.Context, p paths, args []string,
 			return lifecycleDeps{}, failf(stderr, "a2a: %v", err)
 		}
 	}
-	owner, name, err := parseGitHubRepo(ref.RepoURL)
+	h, repo, err := newHostOpener()(ref.RepoURL)
 	if err != nil {
 		return lifecycleDeps{}, failf(stderr, "a2a: %v", err)
 	}
 	resolver := cli.NewMirrorResolver(mirrorDir, manifest)
 	legality := cli.NewLegalityAdapter(mirrorDir, cfg.System, manifest)
 	validator := cli.NewSubmitValidatorAdapter(engine, cfg.System, resolver, legality)
-	h := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
 	funnel := space.NewWriteFunnel(h, validator, funnelBinaryVersion())
 	hostCfg := cli.SubmitHostConfig{
-		RemoteURL: ref.RepoURL, Repo: host.Repo{Owner: owner, Name: name},
+		RemoteURL: ref.RepoURL, Repo: repo,
 		BaseBranch: baseBranch, Credential: cred,
 		CommitAuthorName: cfg.System, CommitAuthorEmail: cfg.System + "@a2a.local",
 	}
@@ -1444,7 +1445,7 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return failf(stderr, "a2a submit: %v", err)
 	}
-	owner, name, err := parseGitHubRepo(ref.RepoURL)
+	h, repo, err := newHostOpener()(ref.RepoURL)
 	if err != nil {
 		return failf(stderr, "a2a submit: %v", err)
 	}
@@ -1452,12 +1453,11 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 	resolver := cli.NewMirrorResolver(mirrorDir, manifest)
 	legality := cli.NewLegalityAdapter(mirrorDir, cfg.System, manifest)
 	validator := cli.NewSubmitValidatorAdapter(engine, cfg.System, resolver, legality)
-	h := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
 	funnel := space.NewWriteFunnel(h, validator, funnelBinaryVersion())
 
 	hostCfg := cli.SubmitHostConfig{
 		RemoteURL:         ref.RepoURL,
-		Repo:              host.Repo{Owner: owner, Name: name},
+		Repo:              repo,
 		BaseBranch:        baseBranch,
 		Credential:        cred,
 		CommitAuthorName:  cfg.System,
@@ -1558,10 +1558,11 @@ func runFeedback(args []string, stdout, stderr io.Writer) int {
 	if repoURL == "" {
 		repoURL = canonicalFeedbackRepo
 	}
-	owner, name, err := parseGitHubRepo(repoURL)
+	h, repo, err := newHostOpener()(repoURL)
 	if err != nil {
 		return failf(stderr, "a2a feedback: bad feedback repo %q: %v", repoURL, err)
 	}
+	owner, name := repo.Owner, repo.Name
 	var credential host.Credential
 	if len(args) > 0 && args[0] == "submit" && feedbackGitHubRemote(repoURL) {
 		machine, loadErr := loadMachineConfigForWrite(p.machineConfig)
@@ -1574,7 +1575,6 @@ func runFeedback(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	h := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
 	funnel := space.NewWriteFunnel(h, feedback.FinalSubmitValidator{}, funnelBinaryVersion())
 	submitCfg := feedback.SubmitConfig{
 		RemoteURL:         repoURL,
@@ -1601,7 +1601,7 @@ func runFeedback(args []string, stdout, stderr io.Writer) int {
 	// every other verb (new/validate/submit/status, and triage --apply)
 	// pays no network cost. The hub URL is A2A_FEEDBACK_HUB_URL, falling
 	// back to canonicalFeedbackRepo — feedback-sync.sh's own override,
-	// deliberately not A2A_FEEDBACK_REPO (mis-sliced by parseGitHubRepo for
+	// deliberately not A2A_FEEDBACK_REPO (mis-sliced by host.ParseLocator for
 	// a local path, and the wrong seam anyway: the reader above resolves
 	// status over raw.githubusercontent.com, never git).
 	freshnessHubURL := os.Getenv(feedbackHubURLEnv)
@@ -1716,12 +1716,11 @@ func wireSpaceUpdate(ctx context.Context, cmd *cli.SpaceCommand, args []string) 
 	if err != nil {
 		return fmt.Errorf("a2a space update: %w", err)
 	}
-	owner, name, err := parseGitHubRepo(ref.RepoURL)
+	h, repo, err := newHostOpener()(ref.RepoURL)
 	if err != nil {
 		return fmt.Errorf("a2a space update: %w", err)
 	}
 
-	h := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
 	cmd.Funnel = space.NewWriteFunnel(h, cli.SpaceInfraNoValidation{}, funnelBinaryVersion())
 	// The same host doubles as the capability probe: `space update` rewrites
 	// .github/workflows/, which GitHub refuses from a token without the
@@ -1733,7 +1732,7 @@ func wireSpaceUpdate(ctx context.Context, cmd *cli.SpaceCommand, args []string) 
 	cmd.OwnSystem = cfg.System
 	cmd.HostCfg = cli.SubmitHostConfig{
 		RemoteURL:         ref.RepoURL,
-		Repo:              host.Repo{Owner: owner, Name: name},
+		Repo:              repo,
 		BaseBranch:        baseBranch,
 		Credential:        cred,
 		CommitAuthorName:  cfg.System,
@@ -1749,7 +1748,7 @@ func wireSpaceUpdate(ctx context.Context, cmd *cli.SpaceCommand, args []string) 
 	cmd.AwaitPR = func(awaitCtx context.Context, branch string) (space.AwaitResult, error) {
 		return awaiter.Await(awaitCtx, space.AwaitRequest{
 			Branch: branch,
-			Repo:   host.Repo{Owner: owner, Name: name}, Credential: cred,
+			Repo:   repo, Credential: cred,
 			Refresh: func(refreshCtx context.Context) error {
 				return space.CloneOrFetch(refreshCtx, mirrorDir, ref.RepoURL, cred)
 			},
@@ -1845,19 +1844,6 @@ func readCredential(ctx context.Context, spaceID string, machine space.MachineCo
 		return host.Credential{}
 	}
 	return credential
-}
-
-// parseGitHubRepo extracts owner/name from a GitHub remote URL
-// (https://github.com/<owner>/<name>[.git] or git@github.com:<owner>/<name>).
-func parseGitHubRepo(url string) (owner, name string, err error) {
-	s := strings.TrimSuffix(url, ".git")
-	s = strings.TrimPrefix(s, "https://github.com/")
-	s = strings.TrimPrefix(s, "git@github.com:")
-	parts := strings.Split(s, "/")
-	if len(parts) < 2 || parts[len(parts)-2] == "" || parts[len(parts)-1] == "" {
-		return "", "", fmt.Errorf("cannot parse owner/name from repo URL %q", url)
-	}
-	return parts[len(parts)-2], parts[len(parts)-1], nil
 }
 
 func newEngine() (*validate.Engine, error) {

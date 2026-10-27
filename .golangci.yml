@@ -36,6 +36,7 @@ linters:
     - nilerr
     - nolintlint
     - depguard
+    - forbidigo
   settings:
     # depguard — ADR-023 (docs/decisions.md) supersedes ADR-001's "May
     # import" column: this is now the single MACHINE-ENFORCED home for the
@@ -432,6 +433,39 @@ linters:
                 Rules paragraph; ADR-023 makes it machine-enforced) —
                 localserver is the sole loopback HTTP exception, never a
                 dependency of something below it.
+    # forbidigo — one rule, set explicitly (an unset `forbid` list would fall
+    # back to forbidigo's default of refusing fmt.Print*, which this repo does
+    # not want). A space's host is built in exactly one place, host.Open /
+    # host.NewOpener, so adding a host kind is one edit; a direct
+    # host.NewGitHubHost call elsewhere bypasses the locator and the capability
+    # declaration and lets the seam erode silently (local-space-2026-10 P1).
+    # `analyze-types` matches the resolved package, so an import alias cannot
+    # dodge it. Test files, internal/host itself and the operator-initiated
+    # internal/livee2e tier (which exercises the real GitHub host on purpose)
+    # are excluded below.
+    #
+    # host.OpenGitHub is the provider-scoped escape hatch and is forbidden
+    # everywhere except its two sanctioned callers (the avatar refresher in
+    # cmd/a2a/wire.go and internal/cli/cmd_notify.go): golangci v2 exclusions
+    # take path + text, so those two files are excused for that rule's message
+    # only (see the `OpenGitHub is provider-scoped` exclusion below).
+    #
+    # Known limits: a `&host.GitHubHost{}` composite literal is not a call and
+    # is NOT caught; and analyze-types matches by package NAME ("host"), so any
+    # other package named host would match the same patterns.
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^host\.NewGitHubHost$
+          msg: >-
+            build a host through host.Open / host.NewOpener (or host.OpenGitHub
+            for a provider-scoped consumer with no space locator), never
+            host.NewGitHubHost directly — see internal/host/open.go
+        - pattern: ^host\.OpenGitHub$
+          msg: >-
+            OpenGitHub is provider-scoped: only the avatar refresher and
+            notify may call it; every space-addressed host comes from
+            host.Open / host.NewOpener — see internal/host/open.go
     govet:
       enable-all: true
       disable: [fieldalignment, shadow]
@@ -457,6 +491,19 @@ linters:
     rules:
       - path: _test\.go
         linters: [revive]
+      # forbidigo's host.NewGitHubHost rule: tests build a *GitHubHost on
+      # purpose against fake servers; internal/host is the factory itself;
+      # internal/livee2e is the real-GitHub tier (operator-initiated).
+      - path: _test\.go
+        linters: [forbidigo]
+      - path: ^internal/(host|livee2e)/
+        linters: [forbidigo]
+      # forbidigo's host.OpenGitHub rule: exactly the two sanctioned callers,
+      # matched on the rule's own message so they stay subject to the
+      # NewGitHubHost rule above.
+      - path: ^(cmd/a2a/wire\.go|internal/cli/cmd_notify\.go)$
+        linters: [forbidigo]
+        text: OpenGitHub is provider-scoped
       # gosec: the handful of gosec findings inside _test.go are all
       # test-fixture-only (a test computing a path under its own t.TempDir(),
       # seeding math/rand deterministically for a property test, or an

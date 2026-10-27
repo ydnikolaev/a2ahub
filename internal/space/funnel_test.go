@@ -1344,6 +1344,8 @@ func (h hostWithoutMerger) OpenPR(ctx context.Context, req host.OpenPRRequest) (
 	return h.inner.OpenPR(ctx, req)
 }
 
+func (h hostWithoutMerger) Capabilities() host.Capabilities { return h.inner.Capabilities() }
+
 func (h hostWithoutMerger) TokenScopes(ctx context.Context, cred host.Credential) ([]string, bool, error) {
 	return h.inner.TokenScopes(ctx, cred)
 }

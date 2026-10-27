@@ -98,9 +98,9 @@ func withDoctorVisibility(base doctorVisibilityFacts, visibility host.Repository
 func TestDoctorVisibilityUnreadableOmitsProviderDetail(t *testing.T) {
 	t.Parallel()
 	cmd := newTestDoctorCommand()
-	cmd.h = doctorVisibilityHostFake{
+	cmd.open = host.FixedOpener(doctorVisibilityHostFake{
 		Host: host.NewFakeHost(), err: errors.New("raw provider body with secret-token"),
-	}
+	})
 	cmd.ClassificationSummaryReader = doctorClassificationSummaryFake{bySpace: map[string]DoctorClassificationSummary{
 		"getvisa": {Highest: "internal"},
 	}}
@@ -168,7 +168,7 @@ func newDoctorVisibilityRunCommand(t *testing.T, summary DoctorClassificationSum
 	}
 
 	cmd := newTestDoctorCommand()
-	cmd.h = doctorVisibilityHostFake{Host: host.NewFakeHost(), visibility: visibility}
+	cmd.open = host.FixedOpener(doctorVisibilityHostFake{Host: host.NewFakeHost(), visibility: visibility})
 	cmd.ClassificationSummaryReader = doctorClassificationSummaryFake{bySpace: map[string]DoctorClassificationSummary{
 		"getvisa": summary,
 	}}

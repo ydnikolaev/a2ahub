@@ -20,25 +20,23 @@ import (
 )
 
 // Host is the narrow capability this package's own assembly needs from a
-// host.Host implementation: the six host.Host methods space.NewWriteFunnel
-// requires, host.AutoMerger (space.NewContractPublicationRecovery requires
-// EnableAutoMerge unconditionally, not as an optional capability), and the
-// four git-only remote-tree-reading methods
-// space.NewContractPublicationRecovery additionally requires. It is
-// declared here, by the consumer, rather than reused from a wider
-// host.Host-shaped export, because contractP6Core's own single concrete
-// *host.GitHubHost field serves both the funnel and the recovery role and
-// this is the exact intersection both callers need.
+// host.Host implementation: the host.Host methods space.NewWriteFunnel
+// requires and the four git-only remote-tree-reading methods
+// space.NewContractPublicationRecovery additionally requires. host.AutoMerger
+// is deliberately NOT part of it: auto-merge is an optional capability
+// (ADR-003) that the funnel and the publication repair each assert at their
+// own call site and degrade without. It is declared here, by the consumer,
+// rather than reused from a wider host.Host-shaped export, because the
+// contract core's single host value serves both the funnel and the recovery
+// role and this is the exact intersection both callers need.
 //
 // *host.GitHubHost satisfies it in production. Any type embedding
-// *host.FakeHost (which already implements host.Host and host.AutoMerger)
-// plus the four recovery-reader methods — as cmd/a2a's own
-// contractLifecycleRecoveryHost does, forwarding those four to a real
-// *host.GitHubHost against a local filesystem remote — satisfies it in
-// tests.
+// *host.FakeHost (which already implements host.Host) plus the four
+// recovery-reader methods — as cmd/a2a's own contractLifecycleRecoveryHost
+// does, forwarding those four to a real *host.GitHubHost against a local
+// filesystem remote — satisfies it in tests.
 type Host interface {
 	host.Host
-	host.AutoMerger
 	ListContractPublishHeads(ctx context.Context, repoDir, remoteURL, prefix string, credential host.Credential) (host.RemoteHeadListing, error)
 	ReadRemoteRecoveryCommit(ctx context.Context, repoDir, remoteURL string, repository host.Repo, branch string, credential host.Credential) (host.Repo, string, string, string, string, string, string, map[string]host.RemoteRecoveryChange, bool, error)
 	ReadRemoteRecoveryTreeFiles(ctx context.Context, repoDir, commit string, paths []string) (map[string]host.RemoteTreeFile, error)

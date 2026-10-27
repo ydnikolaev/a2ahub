@@ -73,6 +73,11 @@ func NewGitHubHost(client *http.Client, baseURL string) *GitHubHost {
 	return &GitHubHost{Client: client, BaseURL: baseURL}
 }
 
+// Capabilities implements Host.Capabilities: GitHub needs a credential for a
+// write, merges only through its review machinery, authenticates owner
+// logins, lands asynchronously and is never on this machine's disk.
+func (h *GitHubHost) Capabilities() Capabilities { return gitHubCapabilities() }
+
 // PushBranch implements Host.PushBranch via `git push` with explicit argv
 // (never sh -c). The credential, when present, is injected only as a
 // per-invocation `-c http.extraheader=...` git config override — never

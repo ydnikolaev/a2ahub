@@ -16,7 +16,7 @@ import (
 )
 
 // stubRecoveryHost satisfies Host for construction-only tests: it embeds
-// *host.FakeHost (which already implements host.Host and host.AutoMerger)
+// *host.FakeHost (which already implements host.Host)
 // and adds no-op stand-ins for the four recovery-reader methods FakeHost
 // does not implement — sufficient for exercising NewPublicationService's
 // assembly, since none of the constructors it calls perform I/O eagerly.

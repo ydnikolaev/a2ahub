@@ -34,7 +34,7 @@ import (
 const spaceTemplateRoot = "../../space-template"
 
 func newTestDoctorCommand() *DoctorCommand {
-	cmd := NewDoctorCommand(host.NewFakeHost(), "0.1.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", "/unused/project")
+	cmd := NewDoctorCommand(host.FixedOpener(host.NewFakeHost()), "0.1.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", "/unused/project")
 	// Hermetic: NewDoctorCommand's real default (release.CachePath) points at
 	// this machine's actual os.UserCacheDir() update-check.json — tests must
 	// never read that real file. Point at a guaranteed-absent path (spec 19
@@ -637,7 +637,7 @@ func TestDoctorCheckAutoMerge(t *testing.T) {
 		gh.AllowAutoMerge = true
 
 		cmd := newTestDoctorCommand()
-		cmd.h = host.NewGitHubHost(nil, gh.URL)
+		cmd.open = host.FixedOpener(host.NewGitHubHost(nil, gh.URL))
 		cmd.resolveCredential = withToken
 
 		ok, detail := cmd.doctorCheckAutoMerge(context.Background(), cfg, machine)
@@ -652,7 +652,7 @@ func TestDoctorCheckAutoMerge(t *testing.T) {
 		gh.AllowAutoMerge = false
 
 		cmd := newTestDoctorCommand()
-		cmd.h = host.NewGitHubHost(nil, gh.URL)
+		cmd.open = host.FixedOpener(host.NewGitHubHost(nil, gh.URL))
 		cmd.resolveCredential = withToken
 
 		ok, detail := cmd.doctorCheckAutoMerge(context.Background(), cfg, machine)
@@ -685,7 +685,7 @@ func TestDoctorCheckAutoMerge(t *testing.T) {
 		defer srv.Close()
 
 		cmd := newTestDoctorCommand()
-		cmd.h = host.NewGitHubHost(nil, srv.URL)
+		cmd.open = host.FixedOpener(host.NewGitHubHost(nil, srv.URL))
 		cmd.resolveCredential = withToken
 
 		ok, detail := cmd.doctorCheckAutoMerge(context.Background(), cfg, machine)
@@ -738,7 +738,7 @@ func TestDoctorCheckAutoMerge(t *testing.T) {
 		)}
 
 		cmd := newTestDoctorCommand()
-		cmd.h = host.NewGitHubHost(nil, srv.URL)
+		cmd.open = host.FixedOpener(host.NewGitHubHost(nil, srv.URL))
 		cmd.resolveCredential = withToken
 
 		ok, detail := cmd.doctorCheckAutoMerge(context.Background(), twoSpaces, machine)
@@ -779,7 +779,7 @@ func TestDoctorCheckStuckGreenPRs(t *testing.T) {
 			return host.CheckStatusResult{State: "completed", Conclusion: "success"}, nil
 		}
 		cmd := newTestDoctorCommand()
-		cmd.h = fake
+		cmd.open = host.FixedOpener(fake)
 		cmd.resolveCredential = resolve
 
 		ok, detail := cmd.doctorCheckStuckGreenPRs(context.Background(), cfg, space.MachineConfig{})
@@ -806,7 +806,7 @@ func TestDoctorCheckStuckGreenPRs(t *testing.T) {
 			return host.CheckStatusResult{State: "completed", Conclusion: "failure"}, nil
 		}
 		cmd := newTestDoctorCommand()
-		cmd.h = fake
+		cmd.open = host.FixedOpener(fake)
 		cmd.resolveCredential = resolve
 		if ok, detail := cmd.doctorCheckStuckGreenPRs(context.Background(), cfg, space.MachineConfig{}); !ok {
 			t.Fatalf("non-stuck PRs failed: %s", detail)
@@ -820,7 +820,7 @@ func TestDoctorCheckStuckGreenPRs(t *testing.T) {
 			return nil, errors.New("forbidden")
 		}
 		cmd := newTestDoctorCommand()
-		cmd.h = fake
+		cmd.open = host.FixedOpener(fake)
 		cmd.resolveCredential = resolve
 		ok, detail := cmd.doctorCheckStuckGreenPRs(context.Background(), cfg, space.MachineConfig{})
 		if !ok || !strings.Contains(detail, "unverified") || strings.Contains(detail, "forbidden") {
@@ -973,7 +973,7 @@ func TestDoctorCheckScaffoldingCurrent_BehindNamesWhoCanFixByPermission(t *testi
 		cmd.TemplateFiles = doctorScaffoldingTemplateFS()
 		cmd.binaryVersion = "0.5.0"
 		cmd.readFile = behindReadFile
-		cmd.h = host.NewGitHubHost(nil, srv.URL)
+		cmd.open = host.FixedOpener(host.NewGitHubHost(nil, srv.URL))
 		cmd.resolveCredential = withToken
 
 		ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
@@ -1006,7 +1006,7 @@ func TestDoctorCheckScaffoldingCurrent_BehindNamesWhoCanFixByPermission(t *testi
 		cmd.TemplateFiles = doctorScaffoldingTemplateFS()
 		cmd.binaryVersion = "0.5.0"
 		cmd.readFile = behindReadFile
-		cmd.h = host.NewGitHubHost(nil, srv.URL)
+		cmd.open = host.FixedOpener(host.NewGitHubHost(nil, srv.URL))
 		cmd.resolveCredential = withToken
 
 		ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
@@ -1032,7 +1032,7 @@ func TestDoctorCheckScaffoldingCurrent_BehindNamesWhoCanFixByPermission(t *testi
 		cmd.TemplateFiles = doctorScaffoldingTemplateFS()
 		cmd.binaryVersion = "0.5.0"
 		cmd.readFile = behindReadFile
-		cmd.h = host.NewGitHubHost(nil, srv.URL)
+		cmd.open = host.FixedOpener(host.NewGitHubHost(nil, srv.URL))
 		cmd.resolveCredential = withToken
 
 		ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
@@ -1098,7 +1098,7 @@ func TestDoctorCheckStatuslineWiring(t *testing.T) {
 func TestDoctorCheckSkillDiscoverable_NotInstalled(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	cmd := NewDoctorCommand(host.NewFakeHost(), "0.1.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
+	cmd := NewDoctorCommand(host.FixedOpener(host.NewFakeHost()), "0.1.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
 	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
 
 	ok, detail := cmd.doctorCheckSkillDiscoverable()
@@ -1124,7 +1124,7 @@ func TestDoctorCheckSkillDiscoverable_InstalledButUnlinked(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := NewDoctorCommand(host.NewFakeHost(), "0.1.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
+	cmd := NewDoctorCommand(host.FixedOpener(host.NewFakeHost()), "0.1.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
 	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
 
 	ok, detail := cmd.doctorCheckSkillDiscoverable()
@@ -1150,7 +1150,7 @@ func TestDoctorCheckSkillDiscoverable_InstalledAndLinked(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := NewDoctorCommand(host.NewFakeHost(), "0.1.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
+	cmd := NewDoctorCommand(host.FixedOpener(host.NewFakeHost()), "0.1.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
 	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
 
 	ok, detail := cmd.doctorCheckSkillDiscoverable()
@@ -1199,7 +1199,7 @@ func TestDoctorRunUsesCustomSkillDirectoryForBothChecks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := NewDoctorCommand(host.NewFakeHost(), "0.3.0", "/unused/project.yaml", "/unused/machine.yaml", root)
+	cmd := NewDoctorCommand(host.FixedOpener(host.NewFakeHost()), "0.3.0", "/unused/project.yaml", "/unused/machine.yaml", root)
 	cmd.loadProjectConfig = func(string) (space.ProjectConfig, error) {
 		return space.ProjectConfig{SkillDir: "agent/manual"}, nil
 	}
@@ -1230,7 +1230,7 @@ func TestDoctorRunUsesCustomSkillDirectoryForBothChecks(t *testing.T) {
 func TestDoctorCheckSkillManualCurrent_NoInstall(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	cmd := NewDoctorCommand(host.NewFakeHost(), "0.3.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
+	cmd := NewDoctorCommand(host.FixedOpener(host.NewFakeHost()), "0.3.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
 	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
 
 	ok, detail := cmd.doctorCheckSkillManualCurrent()
@@ -1253,7 +1253,7 @@ func TestDoctorCheckSkillManualCurrent_OlderManual_Advisory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := NewDoctorCommand(host.NewFakeHost(), "0.3.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
+	cmd := NewDoctorCommand(host.FixedOpener(host.NewFakeHost()), "0.3.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
 	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
 
 	ok, detail := cmd.doctorCheckSkillManualCurrent()
@@ -1279,7 +1279,7 @@ func TestDoctorCheckSkillManualCurrent_UpToDate_Clean(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := NewDoctorCommand(host.NewFakeHost(), "0.3.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
+	cmd := NewDoctorCommand(host.FixedOpener(host.NewFakeHost()), "0.3.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
 	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
 	cmd.SkillFiles = skill.Files
 
@@ -1314,7 +1314,7 @@ func TestDoctorCheckSkillManualCurrent_UnparseableProvenance_VersionUnknown(t *t
 		t.Fatal(err)
 	}
 
-	cmd := NewDoctorCommand(host.NewFakeHost(), "0.3.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
+	cmd := NewDoctorCommand(host.FixedOpener(host.NewFakeHost()), "0.3.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
 	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
 
 	ok, detail := cmd.doctorCheckSkillManualCurrent()
@@ -1366,7 +1366,7 @@ func TestDoctorCheckSkillManualCurrent_ForeignInstall_NotJudged(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := NewDoctorCommand(host.NewFakeHost(), "0.3.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
+	cmd := NewDoctorCommand(host.FixedOpener(host.NewFakeHost()), "0.3.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
 	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
 	cmd.SkillFiles = doctorSentinelFS{t: t}
 
@@ -1403,7 +1403,7 @@ func TestDoctorSkillManualNamesADevBuildRatherThanSayingVersionUnknown(t *testin
 		t.Fatal(err)
 	}
 
-	cmd := NewDoctorCommand(host.NewFakeHost(), "dev", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
+	cmd := NewDoctorCommand(host.FixedOpener(host.NewFakeHost()), "dev", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
 	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
 
 	ok, detail := cmd.doctorCheckSkillManualCurrent()
@@ -1787,7 +1787,7 @@ func TestDoctorCheckCodeownersResolvable(t *testing.T) {
 		t.Parallel()
 		srv := serve(t, 200, `{"errors":[]}`)
 		cmd := newTestDoctorCommand()
-		cmd.h = host.NewGitHubHost(srv.Client(), srv.URL)
+		cmd.open = host.FixedOpener(host.NewGitHubHost(srv.Client(), srv.URL))
 		cmd.resolveCredential = withToken
 
 		ok, detail := cmd.doctorCheckCodeownersResolvable(context.Background(), cfg, machine)
@@ -1811,7 +1811,7 @@ func TestDoctorCheckCodeownersResolvable(t *testing.T) {
 			 "suggestion":"make sure the team @acme/space-admins exists, is publicly visible, and has write access to the repository"}
 		]}`)
 		cmd := newTestDoctorCommand()
-		cmd.h = host.NewGitHubHost(srv.Client(), srv.URL)
+		cmd.open = host.FixedOpener(host.NewGitHubHost(srv.Client(), srv.URL))
 		cmd.resolveCredential = withToken
 
 		ok, detail := cmd.doctorCheckCodeownersResolvable(context.Background(), cfg, machine)
@@ -1841,7 +1841,7 @@ func TestDoctorCheckCodeownersResolvable(t *testing.T) {
 		t.Parallel()
 		srv := serve(t, 403, `{"message":"Resource not accessible by personal access token"}`)
 		cmd := newTestDoctorCommand()
-		cmd.h = host.NewGitHubHost(srv.Client(), srv.URL)
+		cmd.open = host.FixedOpener(host.NewGitHubHost(srv.Client(), srv.URL))
 		cmd.resolveCredential = withToken
 
 		ok, detail := cmd.doctorCheckCodeownersResolvable(context.Background(), cfg, machine)
@@ -2129,7 +2129,7 @@ func TestDoctorCheckDefaultBranchHealthyFAILIncludesRunURL(t *testing.T) {
 		return host.CheckStatusResult{State: "completed", Conclusion: "failure", Name: "a2a-validate", URL: runURL}, nil
 	}
 	cmd := newTestDoctorCommand()
-	cmd.h = fake
+	cmd.open = host.FixedOpener(fake)
 	cmd.resolveCredential = func(context.Context, string, space.CredentialReference) (host.Credential, error) {
 		return host.Credential{Token: "tok"}, nil
 	}
@@ -2164,7 +2164,7 @@ func TestDoctorCheckDefaultBranchHealthyFAILDegradesWithoutRunURL(t *testing.T) 
 		return host.CheckStatusResult{State: "completed", Conclusion: "failure", Name: "a2a-validate"}, nil // URL deliberately absent
 	}
 	cmd := newTestDoctorCommand()
-	cmd.h = fake
+	cmd.open = host.FixedOpener(fake)
 	cmd.resolveCredential = func(context.Context, string, space.CredentialReference) (host.Credential, error) {
 		return host.Credential{Token: "tok"}, nil
 	}
@@ -2230,7 +2230,7 @@ func TestDoctorCheckDefaultBranchHealthyDerivesNonMainBranchAndProbesIt(t *testi
 		return host.CheckStatusResult{State: "completed", Conclusion: "success", Name: "a2a-validate"}, nil
 	}
 	cmd := newTestDoctorCommand()
-	cmd.h = fake
+	cmd.open = host.FixedOpener(fake)
 	cmd.resolveMirror = func(string, space.Ref, space.MachineConfig) string { return mirror }
 	cmd.resolveCredential = func(context.Context, string, space.CredentialReference) (host.Credential, error) {
 		return host.Credential{Token: "tok"}, nil
@@ -2262,7 +2262,7 @@ func TestDoctorCheckDefaultBranchHealthyNamesBranchEvenWithNoRefStatusReader(t *
 	}}}
 
 	cmd := newTestDoctorCommand()
-	cmd.h = doctorHostWithoutRefReader{Host: host.NewFakeHost()}
+	cmd.open = host.FixedOpener(doctorHostWithoutRefReader{Host: host.NewFakeHost()})
 	cmd.resolveMirror = func(string, space.Ref, space.MachineConfig) string { return mirror }
 
 	ok, detail := cmd.doctorCheckDefaultBranchHealthy(context.Background(), cfg, space.MachineConfig{})

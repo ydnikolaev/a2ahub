@@ -158,7 +158,7 @@ func TestMemoizeCredentialResolverNilInNilOut(t *testing.T) {
 func TestNewDoctorCommandMemoizesCredentialResolver(t *testing.T) {
 	// t.Setenv forbids t.Parallel().
 	t.Setenv("A2A_TOKEN_GETVISA", "first")
-	cmd := NewDoctorCommand(host.NewFakeHost(), "0.1.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", t.TempDir())
+	cmd := NewDoctorCommand(host.FixedOpener(host.NewFakeHost()), "0.1.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", t.TempDir())
 
 	c1, err := cmd.resolveCredential(context.Background(), "A2A_TOKEN_GETVISA", space.CredentialReference{})
 	if err != nil {
@@ -257,7 +257,7 @@ func TestDoctorRunResolvesCredentialOncePerSpaceNotOncePerCheck(t *testing.T) {
 	}
 
 	cmd := newTestDoctorCommand()
-	cmd.h = host.NewGitHubHost(nil, srv.URL)
+	cmd.open = host.FixedOpener(host.NewGitHubHost(nil, srv.URL))
 	cmd.resolveCredential = memoizeCredentialResolver(raw)
 	cmd.lookupGit = func() error { return nil }
 	cmd.binaryVersion = "0.5.0"

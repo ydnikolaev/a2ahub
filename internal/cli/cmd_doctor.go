@@ -26,6 +26,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
@@ -54,8 +55,18 @@ type DoctorCommand struct {
 	projectConfigPath string
 	machineConfigPath string
 	projectRoot       string
-	h                 host.Host
-	skillDir          string
+	// open resolves a connected space's repo URL to its host and owner/name
+	// identity (host.Opener). Doctor opens one host per space.Ref, so a GitHub
+	// space and a local space in one project each get the right host. Nil is
+	// tolerated: every row then sees no host, as a nil host did before.
+	open host.Opener
+	// spaceHosts memoises open per space for the lifetime of this DoctorCommand
+	// (not the process): several rows ask the same space for its host, and
+	// opening may probe (P2). An opener error is cached for that same lifetime,
+	// so a failed open is not retried by a later row.
+	spaceHostsMu sync.Mutex
+	spaceHosts   map[string]doctorSpaceHost
+	skillDir     string
 
 	// TemplateFiles is the embedded space-template/ tree (spacetemplate.Files
 	// — mirrors SpaceCommand.TemplateFiles' own role and doc). Exported and
@@ -123,23 +134,23 @@ type DoctorCommand struct {
 	ClassificationSummaryReader DoctorClassificationSummaryReader
 }
 
-// NewDoctorCommand constructs the basic doctor command. h is the host
-// adapter (injected for parity with the rest of this package's DI
-// convention; the CI-presence check's required-check-config half is NOT
-// implemented against it today — see checkCIPresence's doc comment and this
-// phase's reported deviation). binaryVersion is this build's own version
+// NewDoctorCommand constructs the basic doctor command. open is the host
+// opener (injected for parity with the rest of this package's DI convention;
+// it resolves each connected space's host, one per space; the CI-presence
+// check's required-check-config half is NOT implemented against it today —
+// see checkCIPresence's doc comment and this phase's reported deviation). binaryVersion is this build's own version
 // stamp (§7.3, injected rather than read from a build var so tests control
 // it). projectConfigPath/machineConfigPath are `.a2a/config.yaml` and
 // `~/.config/a2a/config.yaml` (§7.4); projectRoot resolves each connected
 // space's mirror directory (space.ResolveMirrorLocation) when a space's
 // config entry does not carry an absolute mirror location.
-func NewDoctorCommand(h host.Host, binaryVersion, projectConfigPath, machineConfigPath, projectRoot string) *DoctorCommand {
+func NewDoctorCommand(open host.Opener, binaryVersion, projectConfigPath, machineConfigPath, projectRoot string) *DoctorCommand {
 	return &DoctorCommand{
 		binaryVersion:     binaryVersion,
 		projectConfigPath: projectConfigPath,
 		machineConfigPath: machineConfigPath,
 		projectRoot:       projectRoot,
-		h:                 h,
+		open:              open,
 		loadProjectConfig: space.LoadProjectConfig,
 		loadMachineConfig: space.LoadMachineConfig,
 		resolveMirror:     space.ResolveMirrorLocation,
@@ -158,6 +169,46 @@ func NewDoctorCommand(h host.Host, binaryVersion, projectConfigPath, machineConf
 		notifyAdapter:     newNotifySetupAdapter(http.DefaultClient, notifyGitHubAPIBase()),
 		ghSecretList:      runGHSecretList,
 	}
+}
+
+// doctorSpaceHost is one connected space's host, resolved through the injected
+// opener. h is nil when no opener is wired (every optional-capability
+// assertion then misses, as a nil host did before) or when err is set.
+type doctorSpaceHost struct {
+	h    host.Host
+	repo host.Repo
+	err  error
+}
+
+// spaceHost resolves ref's host once per command. A malformed repo URL
+// surfaces as err with the locator's own text (`cannot parse owner/name from
+// repo URL %q`), exactly where the per-row parsers used to report it.
+func (c *DoctorCommand) spaceHost(ref space.Ref) doctorSpaceHost {
+	key := ref.ID + "\x00" + ref.RepoURL
+	c.spaceHostsMu.Lock()
+	defer c.spaceHostsMu.Unlock()
+	if sh, ok := c.spaceHosts[key]; ok {
+		return sh
+	}
+	var sh doctorSpaceHost
+	if c.open == nil {
+		loc, err := host.ParseLocator(ref.RepoURL)
+		sh = doctorSpaceHost{repo: loc.Repo, err: err}
+	} else {
+		h, repo, err := c.open(ref.RepoURL)
+		sh = doctorSpaceHost{h: h, repo: repo, err: err}
+	}
+	if c.spaceHosts == nil {
+		c.spaceHosts = make(map[string]doctorSpaceHost)
+	}
+	c.spaceHosts[key] = sh
+	return sh
+}
+
+// hostAs asserts the optional capability T on h. A nil h never satisfies it.
+func hostAs[T any](h host.Host) (T, bool) {
+	t, ok := h.(T)
+	return t, ok
 }
 
 // Name implements cli.Command.
@@ -469,7 +520,7 @@ func (c *DoctorCommand) doctorCheckCredentials(ctx context.Context, cfg space.Pr
 			failures = append(failures, fmt.Sprintf("%s: %v", ref.ID, err))
 			continue
 		}
-		if note := c.doctorWorkflowScopeNote(ctx, ref.ID, cred); note != "" {
+		if note := c.doctorWorkflowScopeNote(ctx, ref, cred); note != "" {
 			advisories = append(advisories, note)
 		}
 	}
@@ -498,11 +549,12 @@ func (c *DoctorCommand) doctorCheckCredentials(ctx context.Context, cfg space.Pr
 // Silence (a fine-grained PAT or App token, which do not advertise scopes) is
 // reported as nothing at all: an advisory that fires on the most narrowly
 // scoped credentials would train people to ignore it.
-func (c *DoctorCommand) doctorWorkflowScopeNote(ctx context.Context, spaceID string, cred host.Credential) string {
-	if c.h == nil || cred.Token == "" {
+func (c *DoctorCommand) doctorWorkflowScopeNote(ctx context.Context, ref space.Ref, cred host.Credential) string {
+	h := c.spaceHost(ref).h
+	if h == nil || cred.Token == "" {
 		return ""
 	}
-	scopes, reported, err := c.h.TokenScopes(ctx, cred)
+	scopes, reported, err := h.TokenScopes(ctx, cred)
 	if err != nil || !reported {
 		return ""
 	}
@@ -512,7 +564,7 @@ func (c *DoctorCommand) doctorWorkflowScopeNote(ctx context.Context, spaceID str
 		}
 	}
 	return fmt.Sprintf("%s: token has no `workflow` scope — fine for participating (submit/lifecycle/contract never touch .github/), "+
-		"but `a2a space update` would be refused; grant it with `gh auth refresh -h github.com -s workflow` if you own this space", spaceID)
+		"but `a2a space update` would be refused; grant it with `gh auth refresh -h github.com -s workflow` if you own this space", ref.ID)
 }
 
 // doctorCheckSpaceAccess ensures every connected space's mirror clone is
@@ -593,16 +645,16 @@ func (c *DoctorCommand) doctorPrivateRepoHint(
 			"(reuses your existing `gh` login — nothing new to mint)",
 			ref.ID, space.CredentialEnvVar(ref.ID), ref.ID, c.machineConfigPath)
 	}
-	reader, canRead := c.h.(host.RepoVisibilityReader)
+	sh := c.spaceHost(ref)
+	reader, canRead := hostAs[host.RepoVisibilityReader](sh.h)
 	if !canRead {
 		return ""
 	}
-	owner, name, parseErr := doctorRepoOwnerName(ref.RepoURL)
-	if parseErr != nil {
+	if sh.err != nil {
 		return ""
 	}
 	visibility, visibilityErr := reader.RepoVisibility(ctx, host.RepoSettingsRequest{
-		Repo: host.Repo{Owner: owner, Name: name}, Credential: credential,
+		Repo: sh.repo, Credential: credential,
 	})
 	if visibilityErr != nil {
 		return ""
@@ -823,12 +875,13 @@ func (c *DoctorCommand) doctorCheckNotifySecret(ctx context.Context, cfg space.P
 		if err != nil || len(manifest.NotificationRoutes) == 0 {
 			continue
 		}
-		owner, name, err := doctorRepoOwnerName(ref.RepoURL)
+		loc, err := host.ParseLocator(ref.RepoURL)
 		if err != nil {
 			ok = false
 			failures = append(failures, ref.ID+": cannot resolve repo owner/name: "+err.Error())
 			continue
 		}
+		owner, name := loc.Repo.Owner, loc.Repo.Name
 		if secretOK, detail := notifyCheckSecret(ctx, c.ghSecretList, owner+"/"+name, manifest); !secretOK {
 			ok = false
 			failures = append(failures, ref.ID+": "+detail)
@@ -858,12 +911,13 @@ func (c *DoctorCommand) doctorCheckNotifyDelivery(ctx context.Context, cfg space
 		if err != nil || len(manifest.NotificationRoutes) == 0 {
 			continue // no route configured: nothing to check delivery for
 		}
-		owner, name, err := doctorRepoOwnerName(ref.RepoURL)
+		loc, err := host.ParseLocator(ref.RepoURL)
 		if err != nil {
 			ok = false
 			failures = append(failures, ref.ID+": cannot resolve repo owner/name: "+err.Error())
 			continue
 		}
+		owner, name := loc.Repo.Owner, loc.Repo.Name
 		cred, err := c.doctorResolveSpaceCredential(ctx, ref, machine)
 		if err != nil {
 			ok = false
@@ -982,12 +1036,12 @@ func (c *DoctorCommand) doctorCheckScaffoldingCurrent(ctx context.Context, cfg s
 // resolvable credential, or the read itself failed) — the caller must
 // render the neutral form, never guess.
 func (c *DoctorCommand) doctorScaffoldingCanFix(ctx context.Context, ref space.Ref, machine space.MachineConfig) (canFix, known bool) {
-	reader, isReader := c.h.(doctorSpaceScaffoldingReader)
+	sh := c.spaceHost(ref)
+	reader, isReader := hostAs[doctorSpaceScaffoldingReader](sh.h)
 	if !isReader {
 		return false, false
 	}
-	owner, name, err := doctorRepoOwnerName(ref.RepoURL)
-	if err != nil {
+	if sh.err != nil {
 		return false, false
 	}
 	var parsedRef space.CredentialReference
@@ -1001,7 +1055,7 @@ func (c *DoctorCommand) doctorScaffoldingCanFix(ctx context.Context, ref space.R
 		return false, false
 	}
 	perm, err := reader.RepoPermissions(ctx, host.RepoSettingsRequest{
-		Repo:       host.Repo{Owner: owner, Name: name},
+		Repo:       sh.repo,
 		Credential: cred,
 	})
 	if err != nil {
@@ -1062,15 +1116,21 @@ func (c *DoctorCommand) doctorCheckAutoMerge(ctx context.Context, cfg space.Proj
 	// the second is a failure — see this function's doc comment.
 	var unverifiable, broken []string
 
-	reader, isReader := c.h.(doctorRepoSettingsReader)
-	if !isReader {
-		return true, " · auto-merge unverified: this build wires no GitHub repo-settings reader"
-	}
+	// readerless collects the spaces whose host wires no settings reader. When
+	// it is every space the row keeps its single global advisory below; a mix
+	// is reported per space as unverifiable, in the host's own words rather
+	// than blaming the token (see hostLacksNote).
+	var readerless []string
 
 	for _, ref := range cfg.Spaces {
-		owner, name, err := doctorRepoOwnerName(ref.RepoURL)
-		if err != nil {
+		sh := c.spaceHost(ref)
+		if sh.err != nil {
 			unverifiable = append(unverifiable, ref.ID)
+			continue
+		}
+		reader, isReader := hostAs[doctorRepoSettingsReader](sh.h)
+		if !isReader {
+			readerless = append(readerless, ref.ID)
 			continue
 		}
 
@@ -1087,7 +1147,7 @@ func (c *DoctorCommand) doctorCheckAutoMerge(ctx context.Context, cfg space.Proj
 		}
 
 		allowed, err := reader.AutoMergeAllowed(ctx, host.RepoSettingsRequest{
-			Repo:       host.Repo{Owner: owner, Name: name},
+			Repo:       sh.repo,
 			Credential: cred,
 		})
 		if err != nil {
@@ -1102,16 +1162,36 @@ func (c *DoctorCommand) doctorCheckAutoMerge(ctx context.Context, cfg space.Proj
 		}
 	}
 
+	if len(readerless) == len(cfg.Spaces) {
+		return true, " · auto-merge unverified: this build wires no GitHub repo-settings reader"
+	}
 	if len(broken) > 0 {
 		// A space that is genuinely misconfigured is the failure, even if a
 		// sibling space could not be read — the actionable half wins.
 		return false, strings.Join(broken, "; ")
 	}
+	var note string
 	if len(unverifiable) > 0 {
-		return true, fmt.Sprintf(" · auto-merge unverified for %s: the credential cannot read this repo's settings "+
+		note = fmt.Sprintf(" · auto-merge unverified for %s: the credential cannot read this repo's settings "+
 			"(a fine-grained token needs \"Repository metadata: read\")", strings.Join(unverifiable, ", "))
 	}
-	return true, ""
+	return true, note + hostLacksNote("auto-merge", "repo settings", readerless)
+}
+
+// hostLacksNote is the per-space advisory for the spaces whose host does not
+// expose the capability a row reads. It is used only in a MIXED project (some
+// spaces have the reader, some do not): when no space has the reader a row
+// keeps its single global advisory, and blaming the token for a host that
+// simply has no such reader would send the operator to fix the wrong thing.
+// "" when ids is empty.
+func hostLacksNote(row, what string, ids []string) string {
+	if len(ids) == 0 {
+		return ""
+	}
+	sorted := append([]string(nil), ids...)
+	sort.Strings(sorted)
+	return fmt.Sprintf(" · %s unverified for %s: this host does not expose %s; cannot verify",
+		row, strings.Join(sorted, ", "), what)
 }
 
 // doctorResolveSpaceCredential resolves ref's write credential the way every
@@ -1137,18 +1217,22 @@ func (c *DoctorCommand) doctorCheckStuckGreenPRs(ctx context.Context, cfg space.
 	if len(cfg.Spaces) == 0 {
 		return true, ""
 	}
-	lister, ok := c.h.(host.OpenPRLister)
-	if !ok {
-		return true, " · stuck-green state unverified: this build wires no open-PR reader"
-	}
-
 	var stuck, unverifiable []string
+	// listerless collects the spaces whose host wires no open-PR reader; when
+	// it is every space the row keeps the single global advisory below.
+	var listerless []string
 	for _, ref := range cfg.Spaces {
-		owner, name, err := doctorRepoOwnerName(ref.RepoURL)
-		if err != nil {
+		sh := c.spaceHost(ref)
+		if sh.err != nil {
 			unverifiable = append(unverifiable, ref.ID)
 			continue
 		}
+		lister, ok := hostAs[host.OpenPRLister](sh.h)
+		if !ok {
+			listerless = append(listerless, ref.ID)
+			continue
+		}
+		owner, name := sh.repo.Owner, sh.repo.Name
 		credential, err := c.doctorResolveSpaceCredential(ctx, ref, machine)
 		if err != nil {
 			unverifiable = append(unverifiable, ref.ID)
@@ -1164,7 +1248,7 @@ func (c *DoctorCommand) doctorCheckStuckGreenPRs(ctx context.Context, cfg space.
 			if pr.AutoMergeArmed {
 				continue
 			}
-			status, statusErr := c.h.CheckStatus(ctx, host.StatusRequest{
+			status, statusErr := sh.h.CheckStatus(ctx, host.StatusRequest{
 				Repo: repo, PRNumber: pr.Number, Credential: credential,
 			})
 			if statusErr != nil {
@@ -1186,13 +1270,17 @@ func (c *DoctorCommand) doctorCheckStuckGreenPRs(ctx context.Context, cfg space.
 	}
 	sort.Strings(stuck)
 	sort.Strings(unverifiable)
+	if len(listerless) == len(cfg.Spaces) {
+		return true, " · stuck-green state unverified: this build wires no open-PR reader"
+	}
 	if len(stuck) > 0 {
 		return false, strings.Join(stuck, "; ")
 	}
+	var note string
 	if len(unverifiable) > 0 {
-		return true, " · stuck-green state unverified for " + strings.Join(unverifiable, ", ")
+		note = " · stuck-green state unverified for " + strings.Join(unverifiable, ", ")
 	}
-	return true, ""
+	return true, note + hostLacksNote("stuck-green state", "open pull requests", listerless)
 }
 
 // doctorCheckDefaultBranchHealthy is R4c (fb-20260812-ee6dcd; ADR-011
@@ -1257,9 +1345,10 @@ func (c *DoctorCommand) doctorCheckDefaultBranchHealthy(ctx context.Context, cfg
 	if len(cfg.Spaces) == 0 {
 		return true, ""
 	}
-	reader, isReader := c.h.(host.RefStatusReader)
-
 	var unhealthy, pending, unverifiable, branchNotes []string
+	// readerless collects the spaces whose host wires no ref status reader;
+	// when it is every space the row keeps the single global advisory below.
+	var readerless []string
 	for _, ref := range cfg.Spaces {
 		branch, branchErr := space.ResolveBaseBranch(ctx, c.resolveMirror(c.projectRoot, ref, machine))
 		if branchErr != nil {
@@ -1269,12 +1358,14 @@ func (c *DoctorCommand) doctorCheckDefaultBranchHealthy(ctx context.Context, cfg
 			branchNotes = append(branchNotes, ref.ID+": "+branch)
 		}
 
-		if !isReader {
+		sh := c.spaceHost(ref)
+		if sh.err != nil {
+			unverifiable = append(unverifiable, ref.ID)
 			continue
 		}
-		owner, name, err := doctorRepoOwnerName(ref.RepoURL)
-		if err != nil {
-			unverifiable = append(unverifiable, ref.ID)
+		reader, isReader := hostAs[host.RefStatusReader](sh.h)
+		if !isReader {
+			readerless = append(readerless, ref.ID)
 			continue
 		}
 		credential, err := c.doctorResolveSpaceCredential(ctx, ref, machine)
@@ -1283,7 +1374,7 @@ func (c *DoctorCommand) doctorCheckDefaultBranchHealthy(ctx context.Context, cfg
 			continue
 		}
 		status, err := reader.RefCheckStatus(ctx, host.RefStatusRequest{
-			Repo: host.Repo{Owner: owner, Name: name}, Ref: branch, Credential: credential,
+			Repo: sh.repo, Ref: branch, Credential: credential,
 		})
 		if err != nil {
 			unverifiable = append(unverifiable, ref.ID)
@@ -1335,7 +1426,7 @@ func (c *DoctorCommand) doctorCheckDefaultBranchHealthy(ctx context.Context, cfg
 		// same precedence doctorCheckAutoMerge/doctorCheckStuckGreenPRs use.
 		return false, strings.Join(unhealthy, "; ") + branchSuffix
 	}
-	if !isReader {
+	if len(readerless) == len(cfg.Spaces) {
 		return true, " · default-branch health unverified: this build wires no ref status reader" + branchSuffix
 	}
 	var advisories []string
@@ -1344,6 +1435,11 @@ func (c *DoctorCommand) doctorCheckDefaultBranchHealthy(ctx context.Context, cfg
 	}
 	if len(unverifiable) > 0 {
 		advisories = append(advisories, "default-branch health unverified for "+strings.Join(unverifiable, ", "))
+	}
+	if len(readerless) > 0 {
+		// A readerless space is unverifiable, never healthy: in a mixed project
+		// it must not read as PASS-by-omission.
+		advisories = append(advisories, strings.TrimPrefix(hostLacksNote("default-branch health", "ref check status", readerless), " · "))
 	}
 	if len(advisories) > 0 {
 		return true, " · " + strings.Join(advisories, "; ") + branchSuffix
@@ -1397,16 +1493,19 @@ func (c *DoctorCommand) doctorCheckCodeownersResolvable(ctx context.Context, cfg
 	if len(cfg.Spaces) == 0 {
 		return true, ""
 	}
-	reader, isReader := c.h.(doctorCodeownersReader)
-	if !isReader {
-		return true, " · CODEOWNERS unverified: this build wires no GitHub CODEOWNERS reader"
-	}
-
 	var unverifiable, broken []string
+	// readerless collects the spaces whose host wires no CODEOWNERS reader;
+	// when it is every space the row keeps the single global advisory below.
+	var readerless []string
 	for _, ref := range cfg.Spaces {
-		owner, name, err := doctorRepoOwnerName(ref.RepoURL)
-		if err != nil {
+		sh := c.spaceHost(ref)
+		if sh.err != nil {
 			unverifiable = append(unverifiable, ref.ID)
+			continue
+		}
+		reader, isReader := hostAs[doctorCodeownersReader](sh.h)
+		if !isReader {
+			readerless = append(readerless, ref.ID)
 			continue
 		}
 
@@ -1423,7 +1522,7 @@ func (c *DoctorCommand) doctorCheckCodeownersResolvable(ctx context.Context, cfg
 		}
 
 		errs, err := reader.CodeownersErrors(ctx, host.RepoSettingsRequest{
-			Repo:       host.Repo{Owner: owner, Name: name},
+			Repo:       sh.repo,
 			Credential: cred,
 		})
 		if err != nil {
@@ -1452,36 +1551,19 @@ func (c *DoctorCommand) doctorCheckCodeownersResolvable(ctx context.Context, cfg
 			ref.ID, strings.Join(lines, "; ")))
 	}
 
+	if len(readerless) == len(cfg.Spaces) {
+		return true, " · CODEOWNERS unverified: this build wires no GitHub CODEOWNERS reader"
+	}
 	if len(broken) > 0 {
 		return false, strings.Join(broken, "; ")
 	}
+	var note string
 	if len(unverifiable) > 0 {
-		return true, fmt.Sprintf(" · CODEOWNERS unverified for %s: the credential cannot read this repo's "+
+		note = fmt.Sprintf(" · CODEOWNERS unverified for %s: the credential cannot read this repo's "+
 			"CODEOWNERS errors (a fine-grained token needs \"Repository metadata: read\")",
 			strings.Join(unverifiable, ", "))
 	}
-	return true, ""
-}
-
-// doctorRepoOwnerName extracts owner/name from a GitHub remote URL
-// (https://github.com/<owner>/<name>[.git] or git@github.com:<owner>/<name>).
-//
-// This duplicates cmd/a2a/wire.go's parseGitHubRepo byte for byte (see this
-// phase's reported deviation): wire.go lives in package main and is
-// lead-reserved, so it cannot be imported from internal/cli. Deliberately
-// NOT guarded on a "looks like github.com" prefix — it takes the last two
-// path segments regardless of host, so a local-path fixture origin (the
-// fakegithub-backed tests, and any future non-GitHub host) still parses an
-// owner/name pair rather than being silently skipped.
-func doctorRepoOwnerName(url string) (owner, name string, err error) {
-	s := strings.TrimSuffix(url, ".git")
-	s = strings.TrimPrefix(s, "https://github.com/")
-	s = strings.TrimPrefix(s, "git@github.com:")
-	parts := strings.Split(s, "/")
-	if len(parts) < 2 || parts[len(parts)-2] == "" || parts[len(parts)-1] == "" {
-		return "", "", fmt.Errorf("cannot parse owner/name from repo URL %q", url)
-	}
-	return parts[len(parts)-2], parts[len(parts)-1], nil
+	return true, note + hostLacksNote("CODEOWNERS", "CODEOWNERS errors", readerless)
 }
 
 // doctorCheckStatuslineWiring is a presence check only (spec 09 T1: "not

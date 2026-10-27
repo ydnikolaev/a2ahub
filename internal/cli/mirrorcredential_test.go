@@ -88,7 +88,7 @@ func TestMirrorRefreshingCommandsCarryACredentialResolver(t *testing.T) {
 	if got := NewConnectCommand("p", "m", "r").resolveCredential; got == nil {
 		t.Error("connect performs the FIRST clone of a space — including a private one — but wires no credential resolver")
 	}
-	if got := NewDoctorCommand(host.NewFakeHost(), "0.0.0", "p", "m", "r").resolveCredential; got == nil {
+	if got := NewDoctorCommand(host.FixedOpener(host.NewFakeHost()), "0.0.0", "p", "m", "r").resolveCredential; got == nil {
 		t.Error("doctor's space-access check fetches every mirror but wires no credential resolver")
 	}
 }

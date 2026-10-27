@@ -44,7 +44,8 @@ import (
 
 // feedbackHubURLEnv is the override docs/runbooks/feedback-sync.sh itself
 // uses for its own git-level pull — deliberately NOT A2A_FEEDBACK_REPO,
-// which parseGitHubRepo mis-slices for a local-path hub and which the
+// which the since-removed parseGitHubRepo mis-sliced for a local-path hub
+// (host.ParseLocator now owns that parse) and which the
 // status HubReader resolves through raw.githubusercontent.com, never git
 // (own-loop 09 wave D brief).
 const feedbackHubURLEnv = "A2A_FEEDBACK_HUB_URL"

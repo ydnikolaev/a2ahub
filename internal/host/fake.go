@@ -56,6 +56,10 @@ type FakeHost struct {
 	// observable rather than merely "was called".
 	MergePRFunc func(ctx context.Context, req MergePRRequest) (MergeMethod, error)
 
+	// Caps, when set, overrides Capabilities. Default (nil): GitHub's
+	// declared values, so a fake-backed test behaves as a GitHub space.
+	Caps *Capabilities
+
 	// Recorded calls, for test assertions.
 	Pushes   []PushBranchRequest
 	Reads    []RemoteBranchRequest
@@ -70,6 +74,29 @@ type FakeHost struct {
 // NewFakeHost constructs a ready-to-use FakeHost.
 func NewFakeHost() *FakeHost {
 	return &FakeHost{byBranch: make(map[string]PRInfo), ForkLogin: "fork-owner"}
+}
+
+// Capabilities returns Caps when set, else GitHub's declared values.
+func (f *FakeHost) Capabilities() Capabilities {
+	if f.Caps != nil {
+		return *f.Caps
+	}
+	return gitHubCapabilities()
+}
+
+// FixedOpener is a test double Opener: it returns h for every URL, with the
+// owner/name identity taken from ParseLocator (so a malformed URL still
+// errors, as the production opener does). Passing a nil h breaks the
+// Opener contract (nil error means a non-nil Host); do it only in a test that
+// observes the parse error and never uses the host.
+func FixedOpener(h Host) Opener {
+	return func(raw string) (Host, Repo, error) {
+		loc, err := ParseLocator(raw)
+		if err != nil {
+			return nil, Repo{}, err
+		}
+		return h, loc.Repo, nil
+	}
 }
 
 // PushBranch records the request and delegates to PushBranchFunc, or

@@ -27,7 +27,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -64,7 +63,7 @@ type dataCore struct {
 	authorEmail string
 	binary      string
 	engine      *validate.Engine
-	host        *host.GitHubHost
+	host        host.Host
 	funnel      *space.WriteFunnel
 
 	now               func() time.Time
@@ -93,7 +92,7 @@ func newDataCore(
 	repository host.Repo,
 	authorName, authorEmail, binary string,
 	engine *validate.Engine,
-	h *host.GitHubHost,
+	h host.Host,
 	resolveActor func(kind, name, model string) (template.Actor, error),
 	resolveCredential func(context.Context) (host.Credential, error),
 ) (*dataCore, error) {
@@ -127,11 +126,15 @@ func newCLIDataCore(p paths, deps lifecycleDeps) (*dataCore, error) {
 	if err != nil {
 		return nil, err
 	}
+	h, _, err := newHostOpener()(deps.hostCfg.RemoteURL)
+	if err != nil {
+		return nil, err
+	}
 	return newDataCore(
 		p.projectRoot, deps.mirrorDir, p.staging, deps.hostCfg.RemoteURL, deps.spaceID, deps.ownSystem,
 		deps.hostCfg.Repo,
 		deps.hostCfg.CommitAuthorName, deps.hostCfg.CommitAuthorEmail, funnelBinaryVersion(),
-		engine, host.NewGitHubHost(http.DefaultClient, githubAPIBase()),
+		engine, h,
 		func(kind, name, model string) (template.Actor, error) {
 			return deps.resolveActor(cli.ActorFlags{Kind: kind, Name: name, Model: model})
 		},
@@ -1520,23 +1523,27 @@ var _ mcp.DataFetchBlobOperations = mcpDataRouter{}
 // ContractOperationsFactory) and adapted to dataCore's own
 // func(kind, name, model string) (template.Actor, error) seam exactly as
 // the contract factory adapts it.
-func newMCPDataOperationsFactory(p paths, cfg space.ProjectConfig, machine space.MachineConfig) mcp.DataOperationsFactory {
+func newMCPDataOperationsFactory(p paths, cfg space.ProjectConfig, machine space.MachineConfig, open host.Opener) mcp.DataOperationsFactory {
+	if open == nil {
+		open = newHostOpener() // nil-safe, as internal/mcp's own fallback is
+	}
 	return func(resolveMCPActor mcp.ActorResolver) (mcp.DataToolDeps, error) {
 		engine, err := newEngine()
 		if err != nil {
 			return mcp.DataToolDeps{}, err
 		}
 		cores := make(map[string]*dataCore, len(cfg.Spaces))
-		github := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
 		for _, ref := range cfg.Spaces {
-			owner, name, parseErr := parseGitHubRepo(ref.RepoURL)
-			if parseErr != nil {
-				return mcp.DataToolDeps{}, parseErr
+			// One host per connected space: a GitHub space and a local space
+			// in one project each get their own.
+			h, repo, openErr := open(ref.RepoURL)
+			if openErr != nil {
+				return mcp.DataToolDeps{}, openErr
 			}
 			core, coreErr := newDataCore(
 				p.projectRoot, space.ResolveMirrorLocation(p.projectRoot, ref, machine), p.staging, ref.RepoURL, ref.ID, cfg.System,
-				host.Repo{Owner: owner, Name: name}, cfg.System, cfg.System+"@a2a.local", funnelBinaryVersion(),
-				engine, github,
+				repo, cfg.System, cfg.System+"@a2a.local", funnelBinaryVersion(),
+				engine, h,
 				func(kind, name, model string) (template.Actor, error) {
 					return resolveMCPActor(mcp.ActorInput{Kind: kind, Name: name, Model: model})
 				},

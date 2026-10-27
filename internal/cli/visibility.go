@@ -193,7 +193,6 @@ func (c *DoctorCommand) doctorVisibilityRows(ctx context.Context, cfg space.Proj
 	refs := append([]space.Ref(nil), cfg.Spaces...)
 	sort.Slice(refs, func(i, j int) bool { return refs[i].ID < refs[j].ID })
 	rows := make([]doctorVisibilityRow, 0, len(refs))
-	visibilityReader, canReadVisibility := c.h.(host.RepoVisibilityReader)
 
 	for _, ref := range refs {
 		facts := doctorVisibilityFacts{}
@@ -208,9 +207,9 @@ func (c *DoctorCommand) doctorVisibilityRows(ctx context.Context, cfg space.Proj
 			}
 		}
 
-		if canReadVisibility {
-			owner, name, err := doctorRepoOwnerName(ref.RepoURL)
-			if err == nil {
+		sh := c.spaceHost(ref)
+		if visibilityReader, canReadVisibility := hostAs[host.RepoVisibilityReader](sh.h); canReadVisibility {
+			if sh.err == nil {
 				var parsedRef space.CredentialReference
 				if raw, present := machine.Credentials[ref.ID]; present {
 					if parsed, parseErr := space.ParseCredentialReference(raw); parseErr == nil {
@@ -220,7 +219,7 @@ func (c *DoctorCommand) doctorVisibilityRows(ctx context.Context, cfg space.Proj
 				credential, credentialErr := c.resolveCredential(ctx, space.CredentialEnvVar(ref.ID), parsedRef)
 				if credentialErr == nil {
 					visibility, visibilityErr := visibilityReader.RepoVisibility(ctx, host.RepoSettingsRequest{
-						Repo: host.Repo{Owner: owner, Name: name}, Credential: credential,
+						Repo: sh.repo, Credential: credential,
 					})
 					if visibilityErr == nil {
 						facts.Visibility = visibility

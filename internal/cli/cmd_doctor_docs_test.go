@@ -13,7 +13,7 @@ import (
 
 func TestTroubleshootingEnumeratesEveryDoctorCheck(t *testing.T) {
 	t.Parallel()
-	cmd := NewDoctorCommand(host.NewFakeHost(), "0.16.0", "/unused/project.yaml", "/unused/machine.yaml", t.TempDir())
+	cmd := NewDoctorCommand(host.FixedOpener(host.NewFakeHost()), "0.16.0", "/unused/project.yaml", "/unused/machine.yaml", t.TempDir())
 	// A connected space is REQUIRED here, not incidental: with zero spaces
 	// doctorVisibilityRows returns nothing and the eighteenth printed row
 	// (`repository visibility`) never appears, which is exactly how this
