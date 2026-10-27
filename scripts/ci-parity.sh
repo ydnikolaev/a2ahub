@@ -763,7 +763,9 @@ audit() {
   fi
   while IFS= read -r c; do
     [ -n "$c" ] || continue
-    if printf '%s\n' "$executes" | grep -qF -- "$c"; then
+    # A here-string, not a pipe: under pipefail grep's first-match exit can
+    # kill printf mid-write, and a covered command then reads as UNCOVERED.
+    if grep -qF -- "$c" <<<"$executes"; then
       continue
     fi
     local why
