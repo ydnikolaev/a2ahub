@@ -14,7 +14,10 @@ MARKER="$VERIFY_ROOT/.a2ahub-verify-cache-v1"
 GO_CACHE_ROOT="$ROOT/.a2a/cache/go"
 # Pinned tools (`make tools`), also the main checkout's; resolved with it.
 TOOLS_BIN="$ROOT/.a2a/tools/bin"
-MAX_CACHE_KIB=$((2 * 1024 * 1024))
+# Caps from devkit standards/dev-env.md §1: build 5 GB, linter 1 GB. One
+# ceiling's build cache measured 2.36 GB, so a smaller cap starts every run cold.
+MAX_BUILD_CACHE_KIB=$((5 * 1024 * 1024))
+MAX_LINT_CACHE_KIB=$((1024 * 1024))
 TELEMETRY_LIMIT=2000
 
 # ONE VOCABULARY FOR "I COULD NOT MEASURE THIS", not a second spelling.
@@ -334,22 +337,32 @@ trim_telemetry() {
 }
 
 bound_accelerators() {
-  local size_after size_before
-  size_before="$(du -sk "$GO_CACHE_ROOT" "$VERIFY_ROOT" | awk '{s += $1} END {print s}')"
-  [ "$size_before" -le "$MAX_CACHE_KIB" ] && return 0
-
-  echo "verify: accelerator cache is ${size_before} KiB (cap ${MAX_CACHE_KIB} KiB); using tool-native purge."
-  GOCACHE="$GO_CACHE_ROOT/build" go clean -cache
+  bound_cache "$GO_CACHE_ROOT/build" "$MAX_BUILD_CACHE_KIB" \
+    env GOCACHE="$GO_CACHE_ROOT/build" go clean -cache || return 1
   if command -v golangci-lint >/dev/null 2>&1; then
-    GOLANGCI_LINT_CACHE="$VERIFY_ROOT/golangci-lint" golangci-lint cache clean
+    bound_cache "$VERIFY_ROOT/golangci-lint" "$MAX_LINT_CACHE_KIB" \
+      env GOLANGCI_LINT_CACHE="$VERIFY_ROOT/golangci-lint" golangci-lint cache clean || return 1
   fi
+}
 
-  size_after="$(du -sk "$GO_CACHE_ROOT" "$VERIFY_ROOT" | awk '{s += $1} END {print s}')"
-  if [ "$size_after" -gt "$MAX_CACHE_KIB" ]; then
-    fail "$GO_CACHE_ROOT + $VERIFY_ROOT remain ${size_after} KiB after tool-native purge; unknown residue retained, inspect it manually"
+# bound_cache DIR CAP_KIB PURGE... — run the tool's own purge when DIR is over
+# its cap. PURGE names DIR itself, never the exported variable: in CI GOCACHE
+# points at the runner's cache, which is not this one.
+bound_cache() {
+  local dir="$1" cap="$2" size_after size_before
+  shift 2
+  [ -d "$dir" ] || return 0
+  size_before="$(du -sk "$dir" | awk '{print $1}')"
+  [ "$size_before" -le "$cap" ] && return 0
+
+  echo "verify: $dir is ${size_before} KiB (cap ${cap} KiB); using tool-native purge."
+  "$@"
+  size_after="$(du -sk "$dir" | awk '{print $1}')"
+  if [ "$size_after" -gt "$cap" ]; then
+    fail "$dir remains ${size_after} KiB after tool-native purge; unknown residue retained, inspect it manually"
     return 1
   fi
-  echo "verify: accelerator cache trimmed to ${size_after} KiB."
+  echo "verify: $dir trimmed to ${size_after} KiB."
 }
 
 # ── THE REPETITION GUARD (release-cost-2026-08 P2) ───────────────────────────
@@ -832,6 +845,21 @@ run_teeth() {
   if [ "$out" != "$main_fx/.a2a/cache/go/build"$'\n'"$wt_fx/.a2a/cache/verify/bin/a2a"$'\n'"$wt_fx/.a2a/cache/verify/golangci-lint" ]; then
     echo "verify --teeth: FAIL — a worktree must share the main checkout's GOCACHE and keep its own binary and lint cache; got:" >&2
     echo "$out" >&2
+    return 1
+  fi
+
+  # A CACHE OVER ITS CAP IS PURGED BY ITS TOOL; RESIDUE IT CANNOT CLEAR FAILS.
+  local cap_fx
+  cap_fx="$tmp/cap"
+  mkdir -p "$cap_fx"
+  head -c 65536 /dev/zero >"$cap_fx/blob"
+  if ! ( bound_cache "$cap_fx" 32 rm -f "$cap_fx/blob" ) >/dev/null 2>&1 || [ -e "$cap_fx/blob" ]; then
+    echo "verify --teeth: FAIL — a cache over its cap was not purged by the command given." >&2
+    return 1
+  fi
+  head -c 65536 /dev/zero >"$cap_fx/blob"
+  if ( bound_cache "$cap_fx" 32 true ) >/dev/null 2>&1; then
+    echo "verify --teeth: FAIL — a cache still over its cap after the purge was accepted." >&2
     return 1
   fi
 
