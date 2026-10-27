@@ -63,7 +63,6 @@ ifneq ($(GITHUB_ACTIONS),true)
 A2A_MAIN_CHECKOUT := $(patsubst %/.git,%,$(filter %/.git,$(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)))
 ifneq ($(A2A_MAIN_CHECKOUT),)
 export GOCACHE := $(A2A_MAIN_CHECKOUT)/.a2a/cache/go/build
-export GOLANGCI_LINT_CACHE := $(A2A_MAIN_CHECKOUT)/.a2a/cache/go/golangci-lint
 A2A_TOOLS_BIN := $(A2A_MAIN_CHECKOUT)/.a2a/tools/bin
 endif
 A2A_GO_VERSION := $(shell sed -n 's/^go \([0-9][0-9.]*\)$$/\1/p' go.mod 2>/dev/null)

@@ -53,15 +53,21 @@ expected_marker() {
   printf 'a2ahub-verify-cache-v1\nrepo=%s\n' "$ROOT"
 }
 
-# THE GO CACHES BELONG TO THE MAIN CHECKOUT, every worktree shares them.
+# THE GO BUILD CACHE BELONGS TO THE MAIN CHECKOUT, every worktree shares it.
 #
 # A cache per worktree multiplied into a measured 129 GB on this host (devkit
-# dev-env §1), so GOCACHE and the golangci-lint cache live in the main
-# checkout's .a2a/cache/go/, found through `git rev-parse --git-common-dir`.
-# They sit beside VERIFY_ROOT, not inside it, so the Makefile and the dev
-# wrapper can point go at them before any verify run has marked a root. The
-# built CLI and the telemetry stay per checkout in VERIFY_ROOT: a shared
-# bin/a2a would let one worktree overwrite the binary another's e2e tests run.
+# dev-env §1), so GOCACHE lives in the main checkout's .a2a/cache/go/, found
+# through `git rev-parse --git-common-dir`. It sits beside VERIFY_ROOT, not
+# inside it, so the Makefile and the dev wrapper can point go at it before any
+# verify run has marked a root. Go's cache is content-addressed, so sharing it
+# cannot change a verdict.
+#
+# Everything else stays per checkout in VERIFY_ROOT. A shared bin/a2a would let
+# one worktree overwrite the binary another's e2e tests run. And the
+# golangci-lint cache is NOT safe to share: it replays a package's cached
+# issues with the absolute paths of the checkout that first linted it, so the
+# path-anchored exclusions in .golangci.yml stop matching. Shared, it put 76
+# excluded gosec findings from /work into the public projection (2026-10-27).
 main_checkout_root() {
   local common
   common="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || common=""
@@ -108,9 +114,9 @@ prepare_cache_root() {
     expected_marker >"$MARKER"
   fi
 
-  mkdir -p "$GO_CACHE_ROOT/build" "$GO_CACHE_ROOT/golangci-lint" "$VERIFY_ROOT/bin"
+  mkdir -p "$GO_CACHE_ROOT/build" "$VERIFY_ROOT/golangci-lint" "$VERIFY_ROOT/bin"
   configure_go_cache
-  export GOLANGCI_LINT_CACHE="$GO_CACHE_ROOT/golangci-lint"
+  export GOLANGCI_LINT_CACHE="$VERIFY_ROOT/golangci-lint"
   export GOWORK=off
   # Verification consumes the already-resolved module graph and never reaches
   # the network. CI downloads modules in an explicit setup step; a fresh local
@@ -329,18 +335,18 @@ trim_telemetry() {
 
 bound_accelerators() {
   local size_after size_before
-  size_before="$(du -sk "$GO_CACHE_ROOT" | awk '{print $1}')"
+  size_before="$(du -sk "$GO_CACHE_ROOT" "$VERIFY_ROOT" | awk '{s += $1} END {print s}')"
   [ "$size_before" -le "$MAX_CACHE_KIB" ] && return 0
 
   echo "verify: accelerator cache is ${size_before} KiB (cap ${MAX_CACHE_KIB} KiB); using tool-native purge."
   GOCACHE="$GO_CACHE_ROOT/build" go clean -cache
   if command -v golangci-lint >/dev/null 2>&1; then
-    GOLANGCI_LINT_CACHE="$GO_CACHE_ROOT/golangci-lint" golangci-lint cache clean
+    GOLANGCI_LINT_CACHE="$VERIFY_ROOT/golangci-lint" golangci-lint cache clean
   fi
 
-  size_after="$(du -sk "$GO_CACHE_ROOT" | awk '{print $1}')"
+  size_after="$(du -sk "$GO_CACHE_ROOT" "$VERIFY_ROOT" | awk '{s += $1} END {print s}')"
   if [ "$size_after" -gt "$MAX_CACHE_KIB" ]; then
-    fail "$GO_CACHE_ROOT remains ${size_after} KiB after tool-native purge; unknown residue retained, inspect it manually"
+    fail "$GO_CACHE_ROOT + $VERIFY_ROOT remain ${size_after} KiB after tool-native purge; unknown residue retained, inspect it manually"
     return 1
   fi
   echo "verify: accelerator cache trimmed to ${size_after} KiB."
@@ -819,12 +825,12 @@ run_teeth() {
   main_fx="$(cd "$tmp/main" && pwd -P)"
   wt_fx="$(cd "$tmp/wt" && pwd -P)"
   if ! out="$(ROOT="$wt_fx" VERIFY_ROOT="$wt_fx/.a2a/cache/verify" MARKER="$wt_fx/.a2a/cache/verify/.a2ahub-verify-cache-v1" GITHUB_ACTIONS= \
-      prepare_cache_root >/dev/null && printf '%s\n%s\n' "$GOCACHE" "$A2A_VERIFY_BINARY")"; then
+      prepare_cache_root >/dev/null && printf '%s\n%s\n%s\n' "$GOCACHE" "$A2A_VERIFY_BINARY" "$GOLANGCI_LINT_CACHE")"; then
     echo "verify --teeth: FAIL — a worktree's cache roots were not accepted." >&2
     return 1
   fi
-  if [ "$out" != "$main_fx/.a2a/cache/go/build"$'\n'"$wt_fx/.a2a/cache/verify/bin/a2a" ]; then
-    echo "verify --teeth: FAIL — a worktree must share the main checkout's GOCACHE and keep its own binary; got:" >&2
+  if [ "$out" != "$main_fx/.a2a/cache/go/build"$'\n'"$wt_fx/.a2a/cache/verify/bin/a2a"$'\n'"$wt_fx/.a2a/cache/verify/golangci-lint" ]; then
+    echo "verify --teeth: FAIL — a worktree must share the main checkout's GOCACHE and keep its own binary and lint cache; got:" >&2
     echo "$out" >&2
     return 1
   fi
