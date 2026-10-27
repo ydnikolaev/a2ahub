@@ -25,6 +25,9 @@
 .DS_Store
 .history/
 
+# Agent tool scratch (browser artifacts); local only.
+/.artifacts/
+
 # ── publish boundary: private harness ─────────────────────────────────────────
 # SSOT of this list is scripts/classify-guard.sh; the guard asserts the two
 # agree. Harness is delivered by `mate fleet pull`, never committed. docs/

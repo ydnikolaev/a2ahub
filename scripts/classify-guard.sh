@@ -244,7 +244,10 @@ fi
 # snapshots of edited files there). Ephemeral and machine-local like .DS_Store:
 # never tracked, never published, and it reappears the moment anyone edits a
 # file, so classifying it once beats re-deciding it on every red gate.
-IGNORE=( .git a2a bin dist go.work go.work.sum coverage.out .DS_Store .env .a2a .history )
+# .artifacts is an agent tool's scratch tree (an empty .artifacts/browser
+# appeared at the repo root on 2026-10-27, written by no repo code). It is
+# local and ephemeral like .history: never tracked, never published.
+IGNORE=( .git a2a bin dist go.work go.work.sum coverage.out .DS_Store .env .a2a .history .artifacts )
 
 fail=0
 flag() { printf '  \033[31m✗\033[0m %s\n' "$1" >&2; fail=1; }
