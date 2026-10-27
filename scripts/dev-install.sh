@@ -36,6 +36,15 @@ command -v go >/dev/null 2>&1 || { echo "dev-install: Go toolchain not found on 
 
 mkdir -p "$BINDIR"
 
+# Go builds write into the MAIN checkout's cache, never ~/Library/Caches/go-build
+# (the same path the Makefile and scripts/verify.sh use; worktrees share it).
+COMMON="$(git -C "$REPO" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+case "$COMMON" in
+  */.git) GOCACHE="${COMMON%/.git}/.a2a/cache/go/build" ;;
+  *)      GOCACHE="$REPO/.a2a/cache/go/build" ;;
+esac
+export GOCACHE
+
 # Earlier versions of this script installed the wrapper as `a2a`, which shadows
 # the released binary. Retire that one — but ONLY if it is provably our own
 # generated wrapper (marker line), never a real installed binary.
@@ -57,6 +66,8 @@ cat > "$WRAPPER" <<EOF
 # substitution instead of reaching the generated file.)
 set -eu
 REPO="$REPO"
+GOCACHE="$GOCACHE"
+export GOCACHE
 CACHE="\${XDG_CACHE_HOME:-\$HOME/.cache}/a2a-dev"
 BIN="\$CACHE/a2a"
 mkdir -p "\$CACHE"

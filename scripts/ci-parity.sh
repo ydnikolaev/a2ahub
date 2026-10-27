@@ -1022,7 +1022,7 @@ macos_delta() {
 host_only() {
   # CI=true, and the container already sets it (ci-parity.Dockerfile ENV CI=true).
   # The HOST did not, and playwright.config keys three things on it:
-  #   reuseExistingServer: !CI  — a STALE preview server on :4324 is reused, so
+  #   reuseExistingServer: !CI  — a STALE preview server on its port is reused, so
   #                               the visual contract judges an old web/dist
   #   forbidOnly:          CI   — a stray `test.only` greens the whole suite
   #   retries:             CI?1:0

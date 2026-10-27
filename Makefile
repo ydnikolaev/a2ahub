@@ -49,6 +49,20 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
+# EVERY `go` A TARGET RUNS WRITES INTO THE MAIN CHECKOUT'S CACHE, never into
+# ~/Library/Caches/go-build. scripts/verify.sh sets the same paths for the
+# gates it runs; this covers a gate or `make install` typed on its own. A
+# worktree resolves to the main checkout through --git-common-dir, so worktrees
+# share one cache (a cache per worktree once grew to 129 GB on this host).
+# Under GitHub Actions setup-go owns GOCACHE, and verify.sh refuses any other.
+ifneq ($(GITHUB_ACTIONS),true)
+A2A_MAIN_CHECKOUT := $(patsubst %/.git,%,$(filter %/.git,$(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)))
+ifneq ($(A2A_MAIN_CHECKOUT),)
+export GOCACHE := $(A2A_MAIN_CHECKOUT)/.a2a/cache/go/build
+export GOLANGCI_LINT_CACHE := $(A2A_MAIN_CHECKOUT)/.a2a/cache/go/golangci-lint
+endif
+endif
+
 .PHONY: site-check site-check-teeth flaky-scan check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install import-rule-coverage cross-layer-test-import-ceiling verdict-exit-mapping harness-roster plugin-manifests
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the

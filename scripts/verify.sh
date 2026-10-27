@@ -10,6 +10,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 VERIFY_ROOT="$ROOT/.a2a/cache/verify"
 MARKER="$VERIFY_ROOT/.a2ahub-verify-cache-v1"
+# The Go caches' root, shared by every checkout; prepare_cache_root resolves it.
+GO_CACHE_ROOT="$ROOT/.a2a/cache/go"
 MAX_CACHE_KIB=$((2 * 1024 * 1024))
 TELEMETRY_LIMIT=2000
 
@@ -49,9 +51,30 @@ expected_marker() {
   printf 'a2ahub-verify-cache-v1\nrepo=%s\n' "$ROOT"
 }
 
+# THE GO CACHES BELONG TO THE MAIN CHECKOUT, every worktree shares them.
+#
+# A cache per worktree multiplied into a measured 129 GB on this host (devkit
+# dev-env §1), so GOCACHE and the golangci-lint cache live in the main
+# checkout's .a2a/cache/go/, found through `git rev-parse --git-common-dir`.
+# They sit beside VERIFY_ROOT, not inside it, so the Makefile and the dev
+# wrapper can point go at them before any verify run has marked a root. The
+# built CLI and the telemetry stay per checkout in VERIFY_ROOT: a shared
+# bin/a2a would let one worktree overwrite the binary another's e2e tests run.
+main_checkout_root() {
+  local common
+  common="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || common=""
+  if [ "$(basename "$common")" != ".git" ] || [ ! -d "$common" ]; then
+    printf '%s\n' "$ROOT"
+    return 0
+  fi
+  (cd "$(dirname "$common")" && pwd -P)
+}
+
 prepare_cache_root() {
-  local path canonical existing
-  for path in "$ROOT/.a2a" "$ROOT/.a2a/cache" "$VERIFY_ROOT"; do
+  local path canonical existing main
+  main="$(main_checkout_root)"
+  GO_CACHE_ROOT="$main/.a2a/cache/go"
+  for path in "$ROOT/.a2a" "$ROOT/.a2a/cache" "$VERIFY_ROOT" "$main/.a2a" "$main/.a2a/cache" "$GO_CACHE_ROOT"; do
     if [ -L "$path" ]; then
       fail "$path is a symlink; remove it manually before verification (cache ownership must not escape the checkout)"
       return 1
@@ -82,9 +105,9 @@ prepare_cache_root() {
     expected_marker >"$MARKER"
   fi
 
-  mkdir -p "$VERIFY_ROOT/go-build" "$VERIFY_ROOT/golangci-lint" "$VERIFY_ROOT/bin"
+  mkdir -p "$GO_CACHE_ROOT/build" "$GO_CACHE_ROOT/golangci-lint" "$VERIFY_ROOT/bin"
   configure_go_cache
-  export GOLANGCI_LINT_CACHE="$VERIFY_ROOT/golangci-lint"
+  export GOLANGCI_LINT_CACHE="$GO_CACHE_ROOT/golangci-lint"
   export GOWORK=off
   # Verification consumes the already-resolved module graph and never reaches
   # the network. CI downloads modules in an explicit setup step; a fresh local
@@ -108,7 +131,8 @@ configure_verify_binary() {
 configure_go_cache() {
   local expected workspace_root cache_root
   if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
-    export GOCACHE="$VERIFY_ROOT/go-build"
+    export GOCACHE="$GO_CACHE_ROOT/build"
+    echo "verify: GOCACHE=$(go env GOCACHE)"
     return 0
   fi
   if [ -z "${GITHUB_WORKSPACE:-}" ]; then
@@ -288,18 +312,18 @@ trim_telemetry() {
 
 bound_accelerators() {
   local size_after size_before
-  size_before="$(du -sk "$VERIFY_ROOT" | awk '{print $1}')"
+  size_before="$(du -sk "$GO_CACHE_ROOT" | awk '{print $1}')"
   [ "$size_before" -le "$MAX_CACHE_KIB" ] && return 0
 
   echo "verify: accelerator cache is ${size_before} KiB (cap ${MAX_CACHE_KIB} KiB); using tool-native purge."
-  GOCACHE="$VERIFY_ROOT/go-build" go clean -cache
+  GOCACHE="$GO_CACHE_ROOT/build" go clean -cache
   if command -v golangci-lint >/dev/null 2>&1; then
-    GOLANGCI_LINT_CACHE="$VERIFY_ROOT/golangci-lint" golangci-lint cache clean
+    GOLANGCI_LINT_CACHE="$GO_CACHE_ROOT/golangci-lint" golangci-lint cache clean
   fi
 
-  size_after="$(du -sk "$VERIFY_ROOT" | awk '{print $1}')"
+  size_after="$(du -sk "$GO_CACHE_ROOT" | awk '{print $1}')"
   if [ "$size_after" -gt "$MAX_CACHE_KIB" ]; then
-    fail "$VERIFY_ROOT remains ${size_after} KiB after tool-native purge; unknown residue retained, inspect it manually"
+    fail "$GO_CACHE_ROOT remains ${size_after} KiB after tool-native purge; unknown residue retained, inspect it manually"
     return 1
   fi
   echo "verify: accelerator cache trimmed to ${size_after} KiB."
@@ -749,6 +773,25 @@ run_teeth() {
   fi
   if [ ! -f "$fixture_root/.a2a/cache/verify/.a2ahub-verify-cache-v1" ]; then
     echo "verify --teeth: FAIL — accepted cache root has no ownership marker." >&2
+    return 1
+  fi
+
+  # A WORKTREE'S GO CACHE IS THE MAIN CHECKOUT'S; ITS BINARY IS ITS OWN.
+  local main_fx wt_fx
+  mkdir -p "$tmp/main"
+  git -C "$tmp/main" init -q
+  git -C "$tmp/main" -c user.email=teeth@a2ahub -c user.name=teeth commit -q --allow-empty -m init
+  git -C "$tmp/main" worktree add -q --detach "$tmp/wt"
+  main_fx="$(cd "$tmp/main" && pwd -P)"
+  wt_fx="$(cd "$tmp/wt" && pwd -P)"
+  if ! out="$(ROOT="$wt_fx" VERIFY_ROOT="$wt_fx/.a2a/cache/verify" MARKER="$wt_fx/.a2a/cache/verify/.a2ahub-verify-cache-v1" GITHUB_ACTIONS= \
+      prepare_cache_root >/dev/null && printf '%s\n%s\n' "$GOCACHE" "$A2A_VERIFY_BINARY")"; then
+    echo "verify --teeth: FAIL — a worktree's cache roots were not accepted." >&2
+    return 1
+  fi
+  if [ "$out" != "$main_fx/.a2a/cache/go/build"$'\n'"$wt_fx/.a2a/cache/verify/bin/a2a" ]; then
+    echo "verify --teeth: FAIL — a worktree must share the main checkout's GOCACHE and keep its own binary; got:" >&2
+    echo "$out" >&2
     return 1
   fi
 
@@ -1552,6 +1595,7 @@ if [ "$MODE" = harness ]; then
   #   scripts/**
   #   .agents/scripts/**
   #   Makefile
+  #   GNUmakefile
   #   docs/runbooks/publish-to-public.sh
   run_phase harness-teeth make --no-print-directory _harness-check
   exit 0

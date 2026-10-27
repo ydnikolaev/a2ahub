@@ -106,6 +106,8 @@ docker build \
   --build-arg "GOLANGCI_VERSION=$GOLANGCI_VERSION" \
   --build-arg "ACTIONLINT_VERSION=$ACTIONLINT_VERSION" \
   --build-arg "PLAYWRIGHT_VERSION=$PLAYWRIGHT_VERSION" \
+  --label dev.a2ahub.owner=a2ahub \
+  --label dev.a2ahub.stack=test \
   --tag "$IMAGE" \
   scripts
 
@@ -114,11 +116,13 @@ docker build \
 # A crashed daemon can leave the name held by a container `--rm` never got to
 # remove. Reclaim a dead one; refuse a live one rather than killing a run that
 # may be somebody else's.
-if state="$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null)"; then
-  if [ "$state" = "true" ]; then
-    die "a container named $CONTAINER is already running — wait for it, or stop it deliberately."
-  fi
-  docker rm "$CONTAINER" >/dev/null
+if state="$(docker inspect --format '{{.State.Running}} {{index .Config.Labels "dev.a2ahub.owner"}}' "$CONTAINER" 2>/dev/null)"; then
+  case "$state" in
+    true*) die "a container named $CONTAINER is already running — wait for it, or stop it deliberately." ;;
+    "false a2ahub") docker rm "$CONTAINER" >/dev/null ;;
+    *) die "a stopped container named $CONTAINER carries no dev.a2ahub.owner=a2ahub label, so nothing proves this
+       script made it. Inspect it and remove it by hand if it is ours." ;;
+  esac
 fi
 
 # THE GUARD ABOVE PROTECTS THE NAME. THIS ONE PROTECTS THE RESOURCE, and the
@@ -179,8 +183,22 @@ fi
 # gate's fourth real run, 2026-08-21, with BOTH phases green.
 mkdir -p "$ROOT/.a2a/cache/parity-container"
 
+# THE HOST QUEUE'S CONTRACT (~/Developer/_ops/doctrines/heavy-run.md rules 4
+# and 5). `make ci-parity-docker` queues itself through GNUmakefile, and the
+# grant reaches the container: `--cpus` and GOMAXPROCS never exceed
+# HEAVY_RUN_CORES, and `heavy.run` lets the queue charge the container's CPU to
+# this run. Outside the queue (HEAVY_RUN_CORES unset) the container is
+# unbounded, as before. The owner labels are what a cleanup may delete by.
+#
+# Twin runs are not possible here by construction, not by the queue: a
+# worktree's `.git` is a file, so the entrypoint refuses anything but the main
+# checkout, and the shared work volume above allows one container at a time.
 exec docker run --rm -i \
   --name "$CONTAINER" \
+  --label "heavy.run=${HEAVY_RUN_SLOT:-}" \
+  --label dev.a2ahub.owner=a2ahub \
+  --label dev.a2ahub.stack=test \
+  ${HEAVY_RUN_CORES:+--cpus "$HEAVY_RUN_CORES" -e "GOMAXPROCS=$HEAVY_RUN_CORES"} \
   ${PARITY_TTY:+-t} \
   -v "$ROOT:/src:ro" \
   -v "$WORK_VOLUME":/work \

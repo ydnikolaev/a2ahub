@@ -164,6 +164,7 @@ scripts/tests/*
 !scripts/tests/check_harness_roster_test.sh
 !scripts/tests/check_plugin_manifests_test.sh
 !scripts/tests/build_mcpb_test.sh
+!scripts/tests/heavy_queue_shim_test.sh
 !scripts/tests/check_mcp_publish_preconditions_test.sh
 !scripts/releasebody/
 # install.sh's regression net (P40 AC-1002.*). A directory, not a file: `scripts/*`
