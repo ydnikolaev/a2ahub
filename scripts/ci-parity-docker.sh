@@ -183,6 +183,15 @@ fi
 # gate's fourth real run, 2026-08-21, with BOTH phases green.
 mkdir -p "$ROOT/.a2a/cache/parity-container"
 
+# THE LINT CACHE STARTS EMPTY EVERY RUN, because CI's does. actions/setup-go
+# restores GOCACHE and the module cache, never the golangci-lint cache, so a
+# warm one here judges something CI never sees. And it judged it wrong:
+# 2026-10-27 a run on a lint cache the previous run had warmed reported 52
+# SA5011 (`if v == nil { t.Fatalf(...) }`) that a cold cache, the same tree and
+# the host's warm cache all pass. Cause unreduced. An anonymous volume over the
+# bound VERIFY_ROOT gives each run an empty one that `--rm` removes; the cost is
+# ~100 s of lint, measured cold 110 s against warm 11 s.
+
 # THE HOST QUEUE'S CONTRACT (~/Developer/_ops/doctrines/heavy-run.md rules 4
 # and 5). `make ci-parity-docker` queues itself through GNUmakefile, and the
 # grant reaches the container: `--cpus` and GOMAXPROCS never exceed
@@ -203,6 +212,7 @@ exec docker run --rm -i \
   -v "$ROOT:/src:ro" \
   -v "$WORK_VOLUME":/work \
   -v "$ROOT/.a2a/cache/parity-container:/work/.a2a/cache/verify" \
+  -v /work/.a2a/cache/verify/golangci-lint \
   -v a2ahub-parity-state:/parity-state \
   -v a2ahub-parity-gocache:/root/.cache/go-build \
   -v a2ahub-parity-gomod:/root/go/pkg/mod \
