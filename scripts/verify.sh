@@ -12,6 +12,8 @@ VERIFY_ROOT="$ROOT/.a2a/cache/verify"
 MARKER="$VERIFY_ROOT/.a2ahub-verify-cache-v1"
 # The Go caches' root, shared by every checkout; prepare_cache_root resolves it.
 GO_CACHE_ROOT="$ROOT/.a2a/cache/go"
+# Pinned tools (`make tools`), also the main checkout's; resolved with it.
+TOOLS_BIN="$ROOT/.a2a/tools/bin"
 MAX_CACHE_KIB=$((2 * 1024 * 1024))
 TELEMETRY_LIMIT=2000
 
@@ -74,6 +76,7 @@ prepare_cache_root() {
   local path canonical existing main
   main="$(main_checkout_root)"
   GO_CACHE_ROOT="$main/.a2a/cache/go"
+  TOOLS_BIN="$main/.a2a/tools/bin"
   for path in "$ROOT/.a2a" "$ROOT/.a2a/cache" "$VERIFY_ROOT" "$main/.a2a" "$main/.a2a/cache" "$GO_CACHE_ROOT"; do
     if [ -L "$path" ]; then
       fail "$path is a symlink; remove it manually before verification (cache ownership must not escape the checkout)"
@@ -128,11 +131,25 @@ configure_verify_binary() {
   export A2A_VERIFY_BINARY="$VERIFY_ROOT/bin/a2a"
 }
 
+# THE TOOLCHAIN IS go.mod's, NOT THE HOST'S. CI runs the go.mod version
+# (setup-go, go-version-file); a host Go upgraded past it brings a gofmt that
+# formats differently, and on 2026-10-27 brew's go1.27 turned the local
+# ceiling red on a file CI accepts. GOTOOLCHAIN is Go's own pin; under it
+# `go env GOROOT` is the pinned toolchain, which is where check_gofmt takes
+# gofmt from. The pinned linter comes first on PATH for the same reason.
+pin_go_toolchain() {
+  local version
+  version="$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' "$ROOT/go.mod" 2>/dev/null)"
+  [ -n "$version" ] && export GOTOOLCHAIN="go$version"
+  export PATH="$TOOLS_BIN:$PATH"
+}
+
 configure_go_cache() {
   local expected workspace_root cache_root
   if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
+    pin_go_toolchain
     export GOCACHE="$GO_CACHE_ROOT/build"
-    echo "verify: GOCACHE=$(go env GOCACHE)"
+    echo "verify: $(go env GOVERSION) GOCACHE=$(go env GOCACHE)"
     return 0
   fi
   if [ -z "${GITHUB_WORKSPACE:-}" ]; then
@@ -498,7 +515,7 @@ finish() {
 
 check_gofmt() {
   local unformatted
-  unformatted="$(gofmt -l .)"
+  unformatted="$("$(go env GOROOT)/bin/gofmt" -l .)"
   if [ -n "$unformatted" ]; then
     echo "check: gofmt -l found unformatted file(s):" >&2
     printf '%s\n' "$unformatted" >&2
@@ -519,7 +536,24 @@ check_lint() {
     gate_unmeasured "check: .golangci.yml exists but golangci-lint is not on PATH, so THE CODE WAS NOT LINTED. This is not a clean lint and not a finding. Install it, or remove .golangci.yml if the gate is meant to be gone."
     return "$GATE_EXIT_UNMEASURED"
   fi
+  # A different linter is a different verdict: its own rules, and the gofmt of
+  # the Go it was built with. Locally, only the version CI installs may judge.
+  local want have
+  if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
+    want="$(ci_golangci_version)"
+    have="$(golangci-lint version 2>/dev/null | sed -nE 's/.*has version v?([0-9][0-9.]*).*/v\1/p')"
+    if [ -z "$want" ] || [ "$have" != "$want" ]; then
+      gate_unmeasured "check: golangci-lint ${have:-<unknown>} at $(command -v golangci-lint) is not the ${want:-<unreadable>} CI lints with, so THE CODE WAS NOT LINTED the way CI will lint it. Run \`make tools\` (installs CI's pin into $TOOLS_BIN)."
+      return "$GATE_EXIT_UNMEASURED"
+    fi
+  fi
   golangci-lint run ./...
+}
+
+# The golangci-lint version CI installs: the tag in ci.yml's install.sh URL.
+ci_golangci_version() {
+  grep -hoE 'golangci-lint/v[0-9]+(\.[0-9]+)*/install\.sh' "$ROOT/.github/workflows/ci.yml" 2>/dev/null \
+    | sed -E 's#golangci-lint/(v[0-9.]+)/install\.sh#\1#' | sort -u | head -1
 }
 
 run_repo_gates() {
@@ -792,6 +826,20 @@ run_teeth() {
   if [ "$out" != "$main_fx/.a2a/cache/go/build"$'\n'"$wt_fx/.a2a/cache/verify/bin/a2a" ]; then
     echo "verify --teeth: FAIL — a worktree must share the main checkout's GOCACHE and keep its own binary; got:" >&2
     echo "$out" >&2
+    return 1
+  fi
+
+  # A LINTER THAT IS NOT CI'S DOES NOT JUDGE LOCALLY.
+  local lint_fx rc
+  lint_fx="$tmp/lint"
+  mkdir -p "$lint_fx/bin"
+  touch "$lint_fx/.golangci.yml"
+  printf '#!/bin/sh\necho "golangci-lint has version 2.15.0 built with go1.27.2"\n' >"$lint_fx/bin/golangci-lint"
+  chmod +x "$lint_fx/bin/golangci-lint"
+  rc=0
+  (cd "$lint_fx" && PATH="$lint_fx/bin:$PATH" GITHUB_ACTIONS= A2A_UNMEASURED_MARKER= check_lint) >/dev/null 2>&1 || rc=$?
+  if [ "$rc" -ne "$GATE_EXIT_UNMEASURED" ]; then
+    echo "verify --teeth: FAIL — a golangci-lint that is not CI's pin was allowed to judge (exit $rc, want $GATE_EXIT_UNMEASURED)." >&2
     return 1
   fi
 

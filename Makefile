@@ -55,15 +55,24 @@
 # worktree resolves to the main checkout through --git-common-dir, so worktrees
 # share one cache (a cache per worktree once grew to 129 GB on this host).
 # Under GitHub Actions setup-go owns GOCACHE, and verify.sh refuses any other.
+#
+# The toolchain is pinned the same way: GOTOOLCHAIN is go.mod's version, the
+# one CI runs, so a host Go upgraded past it (brew's go1.27, 2026-10-27) does
+# not bring its own gofmt into a gate.
 ifneq ($(GITHUB_ACTIONS),true)
 A2A_MAIN_CHECKOUT := $(patsubst %/.git,%,$(filter %/.git,$(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)))
 ifneq ($(A2A_MAIN_CHECKOUT),)
 export GOCACHE := $(A2A_MAIN_CHECKOUT)/.a2a/cache/go/build
 export GOLANGCI_LINT_CACHE := $(A2A_MAIN_CHECKOUT)/.a2a/cache/go/golangci-lint
+A2A_TOOLS_BIN := $(A2A_MAIN_CHECKOUT)/.a2a/tools/bin
+endif
+A2A_GO_VERSION := $(shell sed -n 's/^go \([0-9][0-9.]*\)$$/\1/p' go.mod 2>/dev/null)
+ifneq ($(A2A_GO_VERSION),)
+export GOTOOLCHAIN := go$(A2A_GO_VERSION)
 endif
 endif
 
-.PHONY: site-check site-check-teeth flaky-scan check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install import-rule-coverage cross-layer-test-import-ceiling verdict-exit-mapping harness-roster plugin-manifests
+.PHONY: site-check site-check-teeth flaky-scan check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install tools import-rule-coverage cross-layer-test-import-ceiling verdict-exit-mapping harness-roster plugin-manifests
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -530,6 +539,13 @@ live-e2e-evidence: ## VG-OC-24 release gate. Usage: make live-e2e-evidence EVIDE
 
 logic-e2e: ## THE LOGIC LANE inner loop: TestLogicMatrix + its 3 siblings (spec 09) — no credentials, no network, no candidate. Also runs inside `make check`; use this to iterate on one scenario without the whole ceiling.
 	@bash scripts/verify.sh logic-e2e
+
+tools: ## Install the golangci-lint CI pins (ci.yml) into the main checkout's .a2a/tools/bin; verify lints only with it. Needs the network.
+	@test -n "$(A2A_TOOLS_BIN)" || { echo "tools: not inside a git checkout" >&2; exit 1; }
+	@v="$$(grep -hoE 'golangci-lint/v[0-9]+(\.[0-9]+)*/install\.sh' .github/workflows/ci.yml | sed -E 's#golangci-lint/(v[0-9.]+)/install\.sh#\1#' | sort -u | head -1)"; \
+	  test -n "$$v" || { echo "tools: ci.yml installs no golangci-lint" >&2; exit 1; }; \
+	  curl -sSfL "https://raw.githubusercontent.com/golangci/golangci-lint/$$v/install.sh" | sh -s -- -b "$(A2A_TOOLS_BIN)" "$$v"
+	@"$(A2A_TOOLS_BIN)/golangci-lint" version
 
 install: ## Put a dev `a2a` on your PATH that always runs THIS source tree (rebuilds when changed).
 	@sh scripts/dev-install.sh
