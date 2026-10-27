@@ -9,7 +9,8 @@
 # new dead code landed, not that the ratchet moved on its own.
 #
 # 22 of the entries at seed time are legitimately-unreachable exported API
-# (14 in internal/host/fake.go's fake host, 5 in
+# (14 in internal/host/fake.go's fake host — 16 since local-space-2026-10 P1
+# added the required FakeHost.Capabilities and the test-only FixedOpener, 5 in
 # internal/datatransport/conformance.go's driver conformance suite, 3
 # Set*ForTest seams) and are deliberately NOT individually allowlisted here
 # — the ceiling holds a NUMBER, not 22 symbol names, because a per-symbol
@@ -22,4 +23,4 @@
 # worklease_lock/permissions/sync_*, *_noreplace_darwin/linux/unsupported)
 # and 23 //go:build livee2e files are invisible to this oracle here — any
 # dead code inside them is not counted by this ceiling.
-83
+85
