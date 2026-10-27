@@ -217,7 +217,10 @@ compare_list() { # $1 = list name, $2 = required (newline list), $3 = actual (ne
     case " $allowed " in
       *" $page "*) continue ;;
     esac
-    if ! printf '%s\n' "$actual" | grep -qxF "$page"; then
+    # A here-string has no producer process to kill when the match ends the
+    # search early; the piped form judged present pages absent on a loaded
+    # host (the container lane, 2026-10-27).
+    if ! grep -qxF "$page" <<<"$actual"; then
       gate_fail "prose-roster: $page is a hand-maintained file on disk but is missing from $name"
     fi
   done <<<"$required"
@@ -225,7 +228,7 @@ compare_list() { # $1 = list name, $2 = required (newline list), $3 = actual (ne
     [ -z "$page" ] && continue
     if is_generated "$page"; then
       gate_fail "prose-roster: $name lists $page, which is a GENERATED page — it is byte-gated by skill-drift, not hand-reviewed, and must not appear in $name"
-    elif ! printf '%s\n' "$required" | grep -qxF "$page"; then
+    elif ! grep -qxF "$page" <<<"$required"; then
       gate_fail "prose-roster: $name lists $page, which is not a hand-maintained file on disk under skill/a2ahub/"
     fi
   done <<<"$actual"
@@ -341,7 +344,7 @@ EOF
   sed -i.bak '/\[alpha.md\](alpha.md)/d' "$tmp/skill/a2ahub/SKILL.md"
   rm -f "$tmp/skill/a2ahub/SKILL.md.bak"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF "alpha.md is a hand-maintained file on disk but is missing from the TOC"; then
+  if ! grep -qF "alpha.md is a hand-maintained file on disk but is missing from the TOC" <<<"$out"; then
     echo "prose-roster --teeth: FAILED — dropping alpha.md from the TOC did not red naming it against the TOC" >&2
     return 1
   fi
@@ -351,7 +354,7 @@ EOF
   sed -i.bak 's/`SKILL.md`, `alpha.md`, /`SKILL.md`, /' "$tmp/skill/a2ahub/SKILL.md"
   rm -f "$tmp/skill/a2ahub/SKILL.md.bak"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF "alpha.md is a hand-maintained file on disk but is missing from the D-015 list"; then
+  if ! grep -qF "alpha.md is a hand-maintained file on disk but is missing from the D-015 list" <<<"$out"; then
     echo "prose-roster --teeth: FAILED — dropping alpha.md from D-015 did not red naming it against the D-015 list" >&2
     return 1
   fi
@@ -361,7 +364,7 @@ EOF
   sed -i.bak '/`skill\/a2ahub\/alpha.md`/d' "$tmp/skill/RELEASE-CHECKLIST.md"
   rm -f "$tmp/skill/RELEASE-CHECKLIST.md.bak"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF "alpha.md is a hand-maintained file on disk but is missing from RELEASE-CHECKLIST.md's review table"; then
+  if ! grep -qF "alpha.md is a hand-maintained file on disk but is missing from RELEASE-CHECKLIST.md's review table" <<<"$out"; then
     echo "prose-roster --teeth: FAILED — dropping alpha.md from the checklist did not red naming it against RELEASE-CHECKLIST.md" >&2
     return 1
   fi
@@ -371,7 +374,7 @@ EOF
   sed -i.bak '/"file":"a2ahub\/alpha.md"/d' "$tmp/skill/a2ahub/docs-manifest.json"
   rm -f "$tmp/skill/a2ahub/docs-manifest.json.bak"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF "alpha.md is a hand-maintained file on disk but is missing from docs-manifest.json"; then
+  if ! grep -qF "alpha.md is a hand-maintained file on disk but is missing from docs-manifest.json" <<<"$out"; then
     echo "prose-roster --teeth: FAILED — dropping alpha.md from docs-manifest.json did not red naming it against docs-manifest.json" >&2
     return 1
   fi
@@ -383,7 +386,7 @@ EOF
   sed -i.bak 's/`reference\/beta.md` — are/`reference\/beta.md`, `reference\/commands.md` — are/' "$tmp/skill/a2ahub/SKILL.md"
   rm -f "$tmp/skill/a2ahub/SKILL.md.bak"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF "the D-015 list (SKILL.md § Sourcing & drift) lists reference/commands.md, which is a GENERATED page"; then
+  if ! grep -qF "the D-015 list (SKILL.md § Sourcing & drift) lists reference/commands.md, which is a GENERATED page" <<<"$out"; then
     echo "prose-roster --teeth: FAILED — adding reference/commands.md to D-015 did not red naming it as generated" >&2
     return 1
   fi
@@ -394,7 +397,7 @@ EOF
   sed -i.bak 's/| `skill\/a2ahub\/alpha.md` | ☑ |/| `skill\/a2ahub\/alpha.md` | ☑ |\n| `skill\/a2ahub\/reference\/commands.md` | ☑ |/' "$tmp/skill/RELEASE-CHECKLIST.md"
   rm -f "$tmp/skill/RELEASE-CHECKLIST.md.bak"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF "RELEASE-CHECKLIST.md's review table lists reference/commands.md, which is a GENERATED page"; then
+  if ! grep -qF "RELEASE-CHECKLIST.md's review table lists reference/commands.md, which is a GENERATED page" <<<"$out"; then
     echo "prose-roster --teeth: FAILED — adding reference/commands.md to the checklist did not red naming it as generated" >&2
     return 1
   fi
@@ -405,7 +408,7 @@ EOF
   sed -i.bak 's#| \[reference/beta.md\](reference/beta.md) | Beta fixture. |#| [reference/beta.md](reference/beta.md) | Beta fixture. |\n| [nowhere.md](nowhere.md) | Ghost fixture. |#' "$tmp/skill/a2ahub/SKILL.md"
   rm -f "$tmp/skill/a2ahub/SKILL.md.bak"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF "the TOC (SKILL.md § Table of contents) lists nowhere.md, which is not a hand-maintained file on disk"; then
+  if ! grep -qF "the TOC (SKILL.md § Table of contents) lists nowhere.md, which is not a hand-maintained file on disk" <<<"$out"; then
     echo "prose-roster --teeth: FAILED — a TOC row naming a nonexistent page did not red naming it as absent from disk" >&2
     return 1
   fi
