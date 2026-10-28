@@ -304,3 +304,97 @@ func TestSubmit_LedgerFailureReturnsConfirmedPROutcome(t *testing.T) {
 		t.Fatalf("ledger failure erased or leaked into confirmed PR outcome: %+v", got)
 	}
 }
+
+// TestSubmitOfAFiledIDSendsOnlyTheFiledBytes is spec 08 §11 "Delivery sends the
+// filed bytes" and US-6 on the hub route: once an id is filed to the local inbox
+// and not yet delivered, Submit and ValidatePath of an EXPLICIT draft path
+// accept it only when its normalized record is byte-for-byte the filed copy. An
+// edited draft is refused with InboxConflictError / ErrorCodeInboxConflict
+// before any network work; a draft that differs only by comments is not a
+// conflict, because the inbox holds the normalized record; and a row whose
+// inbox copy is gone leaves the draft deliverable, which is the remedy
+// `submit --all` prints for exactly that case.
+func TestSubmitOfAFiledIDSendsOnlyTheFiledBytes(t *testing.T) {
+	t.Parallel()
+
+	setup := func(t *testing.T) (inboxRig, string, string, *int) {
+		t.Helper()
+		rig := newInboxRig(t)
+		path := writeInboxDraft(t, "# a skeleton comment the record must not carry\n"+validFeedbackYAML)
+		filed, err := rig.sub.FileToInbox(context.Background(), path)
+		if err != nil {
+			t.Fatalf("FileToInbox: %v", err)
+		}
+		rig.sub.cfg.Credential.Token = "dummy-token"
+		clones := 0
+		rig.sub.SetCloneOrFetchForTest(func(context.Context, string, string, host.Credential) error {
+			clones++
+			return errors.New("test stops at the clone: the pre-network checks passed")
+		})
+		return rig, path, filed.Inbox, &clones
+	}
+
+	t.Run("an edited draft is refused before any network work", func(t *testing.T) {
+		t.Parallel()
+		rig, path, inbox, clones := setup(t)
+		edited := strings.Replace(validFeedbackYAML, "mirror HEAD stays put", "mirror HEAD moved backwards", 1)
+		if err := os.WriteFile(path, []byte(edited), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		var conflict *InboxConflictError
+		if err := rig.sub.ValidatePath(path); !errors.As(err, &conflict) {
+			t.Fatalf("ValidatePath = %v, want *InboxConflictError", err)
+		}
+		if conflict.ID != "fb-20260723-abc123" || conflict.Inbox != inbox || conflict.Path != path {
+			t.Fatalf("conflict = %+v, want id, inbox %q and draft %q", conflict, inbox, path)
+		}
+		result, err := rig.sub.Submit(context.Background(), path)
+		if !errors.As(err, &conflict) {
+			t.Fatalf("Submit = %+v, %v, want *InboxConflictError", result, err)
+		}
+		if result.ErrorCode != ErrorCodeInboxConflict || result.Inbox != inbox || result.PRURL != "" {
+			t.Fatalf("result = %+v, want inbox-conflict naming %q and no PR", result, inbox)
+		}
+		for _, want := range []string{inbox, path, "a2a feedback new"} {
+			if !strings.Contains(result.Error, want) {
+				t.Fatalf("result.Error %q must name %q", result.Error, want)
+			}
+		}
+		if *clones != 0 {
+			t.Fatalf("an inbox conflict reached the clone %d time(s)", *clones)
+		}
+		if got, err := os.ReadFile(inbox); err != nil || string(got) != validFeedbackYAML {
+			t.Fatalf("the filed copy changed: %q, %v", got, err)
+		}
+	})
+
+	t.Run("the unedited, still commented draft is the filed record", func(t *testing.T) {
+		t.Parallel()
+		rig, path, inbox, clones := setup(t)
+		if err := rig.sub.ValidatePath(path); err != nil {
+			t.Fatalf("ValidatePath of the unedited draft = %v, want nil", err)
+		}
+		if err := rig.sub.ValidatePath(inbox); err != nil {
+			t.Fatalf("ValidatePath of the filed copy itself (what --all sends) = %v, want nil", err)
+		}
+		if _, err := rig.sub.Submit(context.Background(), path); err == nil || *clones != 1 {
+			t.Fatalf("Submit = %v after %d clone(s), want it to pass the checks and stop at the clone", err, *clones)
+		}
+	})
+
+	t.Run("a gone inbox copy leaves the draft deliverable", func(t *testing.T) {
+		t.Parallel()
+		rig, path, inbox, _ := setup(t)
+		if err := os.Remove(inbox); err != nil {
+			t.Fatal(err)
+		}
+		edited := strings.Replace(validFeedbackYAML, "mirror HEAD stays put", "mirror HEAD moved backwards", 1)
+		if err := os.WriteFile(path, []byte(edited), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := rig.sub.ValidatePath(path); err != nil {
+			t.Fatalf("ValidatePath with the inbox copy gone = %v, want nil", err)
+		}
+	})
+}

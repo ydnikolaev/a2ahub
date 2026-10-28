@@ -1021,3 +1021,130 @@ func TestFeedbackSynopsis_NamesTheInboxFlag(t *testing.T) {
 		t.Fatalf("Synopsis() = %q, want it to contain %q", got, "submit <file...> [--all] [--inbox]")
 	}
 }
+
+// TestFeedbackSubmit_ExplicitPathOfAFiledIDRefusesAnEditedDraft is spec 08 §11
+// "Delivery sends the filed bytes" and US-6 on the hub route: after an inbox
+// filing and an edit of the draft, an EXPLICIT `submit <draft>` with a
+// credential is refused as inbox-conflict naming both paths, pushes nothing and
+// leaves the ledger row undelivered; re-running it changes nothing; and the
+// filed bytes are still delivered by --all.
+func TestFeedbackSubmit_ExplicitPathOfAFiledIDRefusesAnEditedDraft(t *testing.T) {
+	t.Parallel()
+	rig := newInboxCmdRig(t, nil)
+	const id = "fb-20260728-aaa111"
+	draft := rig.draft(t, id, "filed offline then edited")
+	if code, out, errOut := rig.run("submit", "--inbox", draft); code != 0 {
+		t.Fatalf("inbox filing code=%d stdout=%s stderr=%s", code, out, errOut)
+	}
+	filed := filepath.Join(rig.inboxDir, id+".yaml")
+	if err := os.WriteFile(draft, []byte(feedbackDraftYAML(id, "an edit made after filing")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for run := 1; run <= 2; run++ {
+		code, stdout, stderr := rig.run("submit", draft)
+		if code != 1 || !strings.Contains(stderr, "(inbox-conflict)") || !strings.Contains(stderr, filed) || !strings.Contains(stderr, draft) {
+			t.Fatalf("run %d: code=%d stdout=%q stderr=%q, want exit 1 and an inbox-conflict naming %s and %s", run, code, stdout, stderr, filed, draft)
+		}
+		if len(rig.fakeHost.Pushes) != 0 || len(rig.fakeHost.Opens) != 0 {
+			t.Fatalf("run %d: the edited draft reached the host: pushes=%d opens=%d", run, len(rig.fakeHost.Pushes), len(rig.fakeHost.Opens))
+		}
+		item, err := feedback.FindLedgerItem(rig.ledgerPath, id)
+		if err != nil || item == nil || item.PRURL != "" || item.Inbox != filed {
+			t.Fatalf("run %d: ledger row = %+v, %v, want it undelivered and still pointing at %s", run, item, err, filed)
+		}
+	}
+
+	code, stdout, stderr := rig.run("submit", "--json", draft)
+	var rows []feedback.SubmitResult
+	if code != 1 || json.Unmarshal([]byte(stdout), &rows) != nil || len(rows) != 1 || rows[0].ErrorCode != feedback.ErrorCodeInboxConflict || rows[0].Inbox != filed {
+		t.Fatalf("--json code=%d stdout=%s stderr=%s, want one inbox-conflict row carrying inbox %s", code, stdout, stderr, filed)
+	}
+
+	if code, out, errOut := rig.run("submit", "--all"); code != 0 {
+		t.Fatalf("--all code=%d stdout=%s stderr=%s", code, out, errOut)
+	}
+	if len(rig.fakeHost.Opens) != 1 || !strings.HasSuffix(rig.fakeHost.Opens[0].Title, "filed offline then edited") {
+		t.Fatalf("opens = %+v, want one PR titled from the filed copy", rig.fakeHost.Opens)
+	}
+}
+
+// TestFeedbackSubmit_ExplicitPathOfAFiledIDDeliversTheFiledBytesOnce: an
+// unedited draft of a filed id IS the filed record, so the explicit path
+// delivers it as one PR, the ledger row gains pr_url and keeps inbox, and a
+// second explicit submit is the idempotent "already submitted".
+func TestFeedbackSubmit_ExplicitPathOfAFiledIDDeliversTheFiledBytesOnce(t *testing.T) {
+	t.Parallel()
+	rig := newInboxCmdRig(t, nil)
+	const id = "fb-20260728-aaa111"
+	draft := rig.draft(t, id, "filed offline then delivered by path")
+	if code, out, errOut := rig.run("submit", "--inbox", draft); code != 0 {
+		t.Fatalf("inbox filing code=%d stdout=%s stderr=%s", code, out, errOut)
+	}
+
+	code, stdout, stderr := rig.run("submit", draft)
+	if code != 0 || len(rig.fakeHost.Opens) != 1 || !strings.HasSuffix(rig.fakeHost.Opens[0].Title, "filed offline then delivered by path") {
+		t.Fatalf("code=%d opens=%+v stdout=%s stderr=%s, want one PR", code, rig.fakeHost.Opens, stdout, stderr)
+	}
+	item, err := feedback.FindLedgerItem(rig.ledgerPath, id)
+	if err != nil || item == nil || item.PRURL == "" || item.Inbox != filepath.Join(rig.inboxDir, id+".yaml") {
+		t.Fatalf("ledger row = %+v, %v, want pr_url set and the inbox path kept", item, err)
+	}
+
+	code, stdout, stderr = rig.run("submit", draft)
+	if code != 0 || !strings.Contains(stdout, "already submitted") || len(rig.fakeHost.Opens) != 1 {
+		t.Fatalf("second submit code=%d stdout=%q stderr=%q opens=%d, want the idempotent no-op", code, stdout, stderr, len(rig.fakeHost.Opens))
+	}
+}
+
+// TestFeedbackSubmit_BatchWithAnInboxConflictOpensNothing: the conflict is part
+// of the batch pre-check, so a batch holding one conflicting draft opens no PR
+// for the valid one beside it.
+func TestFeedbackSubmit_BatchWithAnInboxConflictOpensNothing(t *testing.T) {
+	t.Parallel()
+	rig := newInboxCmdRig(t, nil)
+	const id = "fb-20260728-aaa111"
+	conflicting := rig.draft(t, id, "filed offline then edited")
+	if code, out, errOut := rig.run("submit", "--inbox", conflicting); code != 0 {
+		t.Fatalf("inbox filing code=%d stdout=%s stderr=%s", code, out, errOut)
+	}
+	if err := os.WriteFile(conflicting, []byte(feedbackDraftYAML(id, "an edit made after filing")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	valid := rig.draft(t, "fb-20260728-bbb222", "a fresh report beside it")
+
+	code, stdout, stderr := rig.run("submit", "--json", conflicting, valid)
+	var rows []feedback.SubmitResult
+	if code != 1 || json.Unmarshal([]byte(stdout), &rows) != nil || len(rows) != 2 {
+		t.Fatalf("code=%d stdout=%s stderr=%s, want exit 1 and two rows", code, stdout, stderr)
+	}
+	if rows[0].ErrorCode != feedback.ErrorCodeInboxConflict || rows[1].ErrorCode != feedback.ErrorCodeBatchRefused {
+		t.Fatalf("rows = %+v, want inbox-conflict then batch-validation-refused", rows)
+	}
+	if len(rig.fakeHost.Pushes) != 0 || len(rig.fakeHost.Opens) != 0 {
+		t.Fatalf("a batch with a conflict reached the host: pushes=%d opens=%d", len(rig.fakeHost.Pushes), len(rig.fakeHost.Opens))
+	}
+}
+
+// TestFeedbackSubmit_ExplicitPathDeliversTheDraftWhenTheInboxCopyIsGone: --all
+// refuses a row whose inbox copy is gone and says "submit the draft
+// explicitly"; that remedy must work.
+func TestFeedbackSubmit_ExplicitPathDeliversTheDraftWhenTheInboxCopyIsGone(t *testing.T) {
+	t.Parallel()
+	rig := newInboxCmdRig(t, nil)
+	const id = "fb-20260728-aaa111"
+	draft := rig.draft(t, id, "filed offline then its copy was deleted")
+	if code, out, errOut := rig.run("submit", "--inbox", draft); code != 0 {
+		t.Fatalf("inbox filing code=%d stdout=%s stderr=%s", code, out, errOut)
+	}
+	if err := os.Remove(filepath.Join(rig.inboxDir, id+".yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(draft, []byte(feedbackDraftYAML(id, "the draft is now the only copy")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := rig.run("submit", draft)
+	if code != 0 || len(rig.fakeHost.Opens) != 1 || !strings.HasSuffix(rig.fakeHost.Opens[0].Title, "the draft is now the only copy") {
+		t.Fatalf("code=%d opens=%+v stdout=%s stderr=%s, want the draft delivered", code, rig.fakeHost.Opens, stdout, stderr)
+	}
+}

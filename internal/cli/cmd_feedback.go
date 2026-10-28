@@ -10,6 +10,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -290,6 +291,16 @@ func (c *FeedbackCommand) runSubmit(ctx context.Context, args []string, stdio IO
 		if validationErr := validatePath(path); validationErr != nil {
 			results[i].ErrorCode = feedback.ErrorCodeValidation
 			results[i].Error = validationErr.Error()
+			// A draft of an id already filed to the local inbox, with a
+			// different body, is the same inbox-conflict the inbox route
+			// reports (spec 08 §11, US-6), refused here before any PR opens.
+			var conflict *feedback.InboxConflictError
+			if errors.As(validationErr, &conflict) {
+				results[i].ID = conflict.ID
+				results[i].Inbox = conflict.Inbox
+				results[i].RemainingAction = space.RemainingActionNone
+				results[i].ErrorCode = feedback.ErrorCodeInboxConflict
+			}
 			validationFailed = true
 		}
 	}

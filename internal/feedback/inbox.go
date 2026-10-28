@@ -110,6 +110,63 @@ func (s *Submitter) FileToInbox(ctx context.Context, path string) (SubmitResult,
 	return result, nil
 }
 
+// InboxConflictError is the hub route's refusal of a draft whose id is already
+// filed to the local inbox, not yet delivered, with a different record than the
+// draft's (spec 08 §11 "Delivery sends the filed bytes", US-6). It is the same
+// verdict FileToInbox reaches on the inbox route, so one draft gets one answer
+// whichever route a submit takes. The CLI reports it as ErrorCodeInboxConflict.
+type InboxConflictError struct {
+	// ID is the report id the draft and the filed copy share.
+	ID string
+	// Inbox is the filed copy's absolute path, as the ledger recorded it.
+	Inbox string
+	// Path is the draft that differs from it.
+	Path string
+}
+
+func (e *InboxConflictError) Error() string {
+	return fmt.Sprintf(
+		"%s is already in the local inbox as %s with different content than %s; a changed body under a filed id is a different report: file it with a new `a2a feedback new`",
+		e.ID, e.Inbox, e.Path)
+}
+
+// checkFiledCopy keeps one id to one body on the hub route. When the ledger
+// says record's id was filed to the local inbox and has no PR yet, record must
+// be byte-for-byte the filed copy, otherwise this is an *InboxConflictError.
+// Byte equality makes "deliver the draft" and "deliver the filed copy" the same
+// bytes, so delivery always sends what was filed, and `--all` (which hands this
+// the filed copy itself) passes trivially. Both sides are normalized records, so
+// a draft that differs only by its skeleton comments is not a conflict.
+//
+// A row with a PR takes the idempotent re-run path unchanged, and an id with no
+// row is an ordinary first submit. A row whose inbox copy is gone is NOT a
+// conflict: `submit --all` refuses that row and tells the agent to submit the
+// draft explicitly, so this explicit route has to accept the draft.
+func (s *Submitter) checkFiledCopy(op, path string, record []byte) error {
+	var probe submitProbe
+	if err := yaml.Unmarshal(record, &probe); err != nil {
+		return fmt.Errorf("feedback: %s: %w", op, err)
+	}
+	row, err := FindLedgerItem(s.ledgerPath, probe.ID)
+	if err != nil {
+		return fmt.Errorf("feedback: %s: %w", op, err)
+	}
+	if row == nil || row.PRURL != "" || row.Inbox == "" {
+		return nil
+	}
+	filed, err := readBounded(filepath.Dir(row.Inbox), filepath.Base(row.Inbox), maxFeedbackBytes)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("feedback: %s: read the filed copy of %s: %w", op, probe.ID, err)
+	}
+	if !bytes.Equal(filed, record) {
+		return &InboxConflictError{ID: probe.ID, Inbox: row.Inbox, Path: path}
+	}
+	return nil
+}
+
 func inboxWriteFailure(path, id string, err error) (SubmitResult, error) {
 	return SubmitResult{ID: id, InputPath: path, ErrorCode: ErrorCodeInboxWrite, Error: err.Error()}, err
 }

@@ -2,6 +2,7 @@ package feedback
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -221,6 +222,20 @@ func (s *Submitter) Submit(ctx context.Context, path string) (SubmitResult, erro
 	if err := s.requireCredential(); err != nil {
 		return SubmitResult{}, err
 	}
+	// One id, one body (spec 08 §11): an id already filed to the local inbox is
+	// delivered only as the bytes that were filed. Checked before the clone, so
+	// a refusal reaches no network.
+	if err := s.checkFiledCopy(op, path, record); err != nil {
+		var conflict *InboxConflictError
+		if errors.As(err, &conflict) {
+			return SubmitResult{
+				ID: conflict.ID, InputPath: path, Inbox: conflict.Inbox,
+				Stage: space.WriteStageNone, RemainingAction: space.RemainingActionNone,
+				ErrorCode: ErrorCodeInboxConflict, Error: conflict.Error(),
+			}, err
+		}
+		return SubmitResult{}, err
+	}
 
 	var probe submitProbe
 	if err := yaml.Unmarshal(record, &probe); err != nil {
@@ -321,10 +336,16 @@ func mapSubmitResult(path, id string, result space.WriteResult) SubmitResult {
 func (s *Submitter) ValidatePath(path string) error {
 	// The same bytes Submit would send, so a batch pre-check and the write it
 	// gates cannot reach different verdicts.
-	if _, err := s.readValidRecord("Submit", path); err != nil {
+	record, err := s.readValidRecord("Submit", path)
+	if err != nil {
 		return err
 	}
-	return s.requireCredential()
+	if err := s.requireCredential(); err != nil {
+		return err
+	}
+	// The inbox-conflict refusal is part of the pre-check, so a batch holding
+	// one conflicting draft opens no PR for the others.
+	return s.checkFiledCopy("Submit", path, record)
 }
 
 // readValidRecord is the draft-to-record boundary every submit route shares:
