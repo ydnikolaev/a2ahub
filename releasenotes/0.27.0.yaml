@@ -22,8 +22,8 @@ changes:
     order, so the space receives the same events, in the same order, as the
     single-step chain would write; no schema, fold or lifecycle rule
     changed. A re-run after an interruption resumes from the first step not
-    yet recorded instead of writing a step twice, and a step that waits on a
-    pending merge gives up after `--timeout`.
+    yet recorded instead of writing a step twice, and each wait on a pending
+    merge gives up after `--timeout`.
 
     The `a2a_data` MCP tool accepts the same three: `action: request`, and a
     `for` field on `deliver` and `verify`.
@@ -39,26 +39,33 @@ changes:
       difference a reader of the roadmap would notice.
 - id: RN-02700-1
   kind: feat
-  impact: low
-  subject: a space can be a bare git repository on disk, with writes landed at once by compare-and-swap
+  impact: normal
+  subject: a space can be a bare git repository on this machine, with no GitHub
   detail: >
-    The groundwork for spaces with no GitHub. A local host lands a validated
-    write as a merge commit on the space's default branch with a
-    compare-and-swap on the branch ref, so two writers racing for one space
-    never overwrite each other: the loser re-reads and retries or reports the
-    contention. A pre-receive hook in the bare repository refuses a push that
-    did not come through that path, so a plain `git push` cannot bypass
-    validation.
+    `a2a space init <id> --local` creates a space as a bare git repository,
+    by default under `$HOME/.local/share/a2a`, or wherever `--dir` points.
+    `a2a connect` and `a2a init --space` accept its path, ask for no GitHub
+    credential, and point at the new `a2a space join`, which writes this
+    system's participant row and section in one write. Every write verb then
+    works against it as it does against a GitHub space.
 
-    Nothing selects this host yet. Creating a local space and connecting a
-    project to it arrive with `a2a space init --local`, which is not in this
-    build.
+    A local space lands a validated write at once, as a merge commit on its
+    default branch, with a compare-and-swap on the branch ref, so two writers
+    racing for one space never overwrite each other. A pre-receive hook
+    refuses a push that did not come through that path, so a plain
+    `git push` cannot bypass validation. `a2a doctor` checks the hook, the
+    git version (2.38 or newer), the history shape and that the directory is
+    writable, and reports the GitHub-only checks as not applicable.
+
+    The space's `gates:` setting (confirm or autonomous) is not enforced yet
+    in this build.
   action:
     scope: none
     why: >
-      Nothing is owed. Spaces on GitHub behave exactly as before.
+      Nothing is owed. Spaces on GitHub behave exactly as before, and a local
+      space is opt-in.
   roadmap:
-    visibility: omit
+    visibility: shipped
     why: >
-      Groundwork with no command that reaches it yet; the roadmap entry belongs
-      to the release that ships `a2a space init --local`.
+      An operator with several repositories can now exchange contracts and
+      data between them with no GitHub account.
