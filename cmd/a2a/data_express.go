@@ -47,6 +47,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
@@ -545,6 +546,11 @@ func expressReadDoc(path string) (expressDoc, error) {
 	if err != nil {
 		return expressDoc{}, fmt.Errorf("data: cannot read %s: %w", path, err)
 	}
+	return expressParseDoc(raw, path)
+}
+
+// expressParseDoc decodes the envelope in raw; path only names it in errors.
+func expressParseDoc(raw []byte, path string) (expressDoc, error) {
 	fm, err := artifact.ParseFrontmatter(raw)
 	if err != nil {
 		return expressDoc{}, fmt.Errorf("data: %s: %w", path, err)
@@ -668,41 +674,65 @@ func (c *dataCore) expressSnapshot(wrID string) (expressSnapshot, error) {
 	if err != nil {
 		return expressSnapshot{}, fmt.Errorf("data: list exchanges: %w", err)
 	}
+	// Only the request's producer answers it. An exchange document in any other
+	// system's section is not "another handoff of this request", whatever its
+	// `fulfills` or `parent` claims: the flow judges, closes over and disputes
+	// what it counts, so counting a third party's file hands it the verdict.
+	producer := snap.producer()
 	for _, path := range exchanges {
 		base := filepath.Base(path)
+		prefix := ""
 		switch {
 		case strings.HasPrefix(base, "XH-"):
-			// A handoff the flow cannot read is not "a handoff of another request":
-			// skipping it would let a re-run deliver a second package over it.
-			h, err := expressReadDoc(path)
-			if err != nil {
-				return expressSnapshot{}, err
-			}
-			if !containsString(h.Fulfills, wrID) {
+			prefix = "XH"
+		case strings.HasPrefix(base, "XS-"):
+			prefix = "XS"
+		default:
+			continue
+		}
+		section := filepath.Base(filepath.Dir(filepath.Dir(path)))
+		if producer == "" || section != producer {
+			continue
+		}
+		// A producer's file the flow cannot read is not "a handoff of another
+		// request": skipping it would let a re-run deliver a second package over it.
+		doc, err := expressReadDoc(path)
+		if err != nil {
+			return expressSnapshot{}, err
+		}
+		if doc.From != producer {
+			continue
+		}
+		switch prefix {
+		case "XH":
+			if !containsString(doc.Fulfills, wrID) {
 				continue
 			}
-			env := fold.Envelope{ID: h.ID, Kind: fold.KindHandoff, From: h.From, To: dataToStrings(h.To)}
-			events := expressFoldEvents(all, h.ID)
-			handoff := expressHandoff{id: h.ID, state: fold.Fold(fold.KindHandoff, env, events, membership).State}
+			if err := expressCheckExchangeID(doc.ID, prefix, producer, path); err != nil {
+				return expressSnapshot{}, err
+			}
+			env := fold.Envelope{ID: doc.ID, Kind: fold.KindHandoff, From: doc.From, To: dataToStrings(doc.To)}
+			events := expressFoldEvents(all, doc.ID)
+			handoff := expressHandoff{id: doc.ID, state: fold.Fold(fold.KindHandoff, env, events, membership).State}
 			if len(events) > 0 {
 				handoff.first = events[0].ULID
 			}
-			for _, d := range h.Deliverables {
+			for _, d := range doc.Deliverables {
 				if d.Kind == datapackage.DeliverableKindData {
 					handoff.packageID = d.Ref
 				}
 			}
 			snap.handoffs = append(snap.handoffs, handoff)
-		case strings.HasPrefix(base, "XS-"):
-			resp, err := expressReadDoc(path)
-			if err != nil {
-				return expressSnapshot{}, err
-			}
-			if resp.Parent != wrID {
+		case "XS":
+			if doc.Parent != wrID {
 				continue
 			}
-			r := expressResponse{id: resp.ID, delivers: resp.Delivers, state: wrResult.Responses[resp.ID]}
-			for _, ref := range resp.Refs {
+			// The id becomes an argument of the shipped dispute verb.
+			if err := expressCheckExchangeID(doc.ID, prefix, producer, path); err != nil {
+				return expressSnapshot{}, err
+			}
+			r := expressResponse{id: doc.ID, delivers: doc.Delivers, state: wrResult.Responses[doc.ID]}
+			for _, ref := range doc.Refs {
 				r.refs = append(r.refs, ref.Ref)
 			}
 			snap.responses = append(snap.responses, r)
@@ -710,6 +740,18 @@ func (c *dataCore) expressSnapshot(wrID string) (expressSnapshot, error) {
 	}
 	sort.Slice(snap.handoffs, func(i, j int) bool { return snap.handoffs[i].first < snap.handoffs[j].first })
 	return snap, nil
+}
+
+// expressCheckExchangeID refuses an exchange document whose id is not the
+// <prefix> id of its own file in system's section. The ids the snapshot returns
+// are later used as arguments of other verbs and as paths of pending markers,
+// so a malformed one stops the flow here, naming the file.
+func expressCheckExchangeID(id, prefix, system, path string) error {
+	parsed, err := artifact.ParseID(id)
+	if err != nil || parsed.Prefix != prefix || parsed.System != system || filepath.Base(path) != id+".md" {
+		return fmt.Errorf("data: %s: its id %q is not a %s id of %s matching the file name", path, id, prefix, system)
+	}
+	return nil
 }
 
 func containsString(list []string, want string) bool {
@@ -721,17 +763,64 @@ func containsString(list []string, want string) bool {
 	return false
 }
 
-// expressContractRef finds the one XC@version a request pins. A request that
-// pins none, or several, needs the caller to name it.
-func expressContractRef(doc expressDoc, explicit string) (string, error) {
+// expressContractKey is "<XC-id>@<canonical version>" of a contract ref, the
+// digest dropped: the identity two refs to the same contract version share. A
+// ref that does not parse (a prerelease spelling, no version) has no key, so it
+// never equals anything.
+func expressContractKey(ref string) string {
+	id, canonical, _, err := splitPinnedContractRef(ref)
+	if err != nil {
+		return ""
+	}
+	return id + "@" + canonical
+}
+
+// expressPinnedContracts are the XC@version refs a request pins.
+func expressPinnedContracts(doc expressDoc) []string {
 	var pinned []string
 	for _, ref := range doc.Refs {
 		if strings.HasPrefix(ref.Ref, "XC-") && strings.Contains(ref.Ref, "@") {
 			pinned = append(pinned, ref.Ref)
 		}
 	}
+	return pinned
+}
+
+// expressBindContract refuses a contract ref (a manifest's, or the one a pack
+// was asked for) that is none of the refs the request pins. A pin carrying a
+// digest binds the digest too.
+func expressBindContract(requestID string, pinned []string, got string) error {
+	key := expressContractKey(got)
+	_, _, gotDigest, _ := splitPinnedContractRef(got)
+	for _, pin := range pinned {
+		if key == "" || expressContractKey(pin) != key {
+			continue
+		}
+		if _, _, digest, _ := splitPinnedContractRef(pin); digest != "" && gotDigest != digest {
+			continue
+		}
+		return nil
+	}
+	return fmt.Errorf("data: %s pins %s, but the contract is %s: the data is not judged or delivered against a contract the request did not ask for", requestID, strings.Join(pinned, ", "), got)
+}
+
+// expressContractRef finds the XC@version a request pins. A request that pins
+// none needs the caller to name it; one that pins several needs the caller to
+// choose one of them. A caller-named ref that is not a pinned one is refused,
+// never preferred: preferring it packs the producer's data against a contract
+// the consumer did not ask for.
+func expressContractRef(doc expressDoc, explicit string) (string, error) {
+	pinned := expressPinnedContracts(doc)
 	if explicit != "" {
-		return explicit, nil
+		if len(pinned) == 0 {
+			return explicit, nil
+		}
+		for _, pin := range pinned {
+			if expressBindContract(doc.ID, []string{pin}, explicit) == nil {
+				return pin, nil
+			}
+		}
+		return "", expressBindContract(doc.ID, pinned, explicit)
 	}
 	if len(pinned) != 1 {
 		return "", fmt.Errorf("data: %s pins %d contract ref(s) (%s): pass --contract <XC-id>@<version> to choose", doc.ID, len(pinned), strings.Join(pinned, ", "))
@@ -958,12 +1047,32 @@ func (r *expressRun) deliverFor(ctx context.Context, req cli.DataDeliverForReque
 		packageID = document.ID
 		r.result.Package = packageID
 
+		// Whatever path produced the package (a fresh pack, a staged resume), it is
+		// delivered only if it was packed against the contract the request pins.
+		if err := expressBindContract(req.For, []string{contractRef}, document.Contract); err != nil {
+			r.add(cli.DataStep{Step: "deliver", Subject: packageID, Transition: fold.TSubmit, Outcome: expressRefused, Note: err.Error()})
+			return err
+		}
+
 		delivered, deliverErr := c.deliver(ctx, cli.DataDeliverRequest{
 			StagingRoot: root, Fulfills: req.For, ExpectPack: document.AggregateDigest, Actor: r.actor,
 		})
 		// The handoff the delivery's PR carries, which is not necessarily the id
-		// deliver just minted: see deliveredHandoffID.
-		handoffID = deliveredHandoffID(delivered)
+		// deliver just minted: see deliveredHandoffID. The minted id is kept for
+		// display on a write that did not land; nothing is built on it.
+		handoffID = delivered.HandoffID
+		if deliverErr == nil && delivered.Write != nil {
+			switch delivered.Write.State {
+			case space.WriteStateMerged, space.WriteStateAlreadyMerged, space.WriteStatePendingMerge, space.WriteStateAlreadyOpen:
+				carried, err := c.deliveredHandoffID(ctx, req.For, delivered)
+				if err != nil {
+					r.add(cli.DataStep{Step: "deliver", Subject: handoffID, Transition: fold.TSubmit, Outcome: expressRefused, Write: delivered.Write, Note: err.Error()})
+					r.result.Handoff = ""
+					return err
+				}
+				handoffID = carried
+			}
+		}
 		step := cli.DataStep{Step: "deliver", Subject: handoffID, Transition: fold.TSubmit}
 		if err := r.settleCore(ctx, step, delivered.Write, deliverErr, []string{handoffID}); err != nil {
 			r.result.Handoff = handoffID
@@ -1008,21 +1117,82 @@ func (r *expressRun) supersedeWith(ctx context.Context, rejectedID, replacementI
 	return r.runInner(ctx, "supersede", rejectedID, fold.TSupersede, r.verbBuilder("supersede"), argv)
 }
 
+// expressTreeReader reads blobs of an exact commit from the local object store.
+// Both production hosts embed the git plumbing that provides it.
+type expressTreeReader interface {
+	ReadRemoteRecoveryTreeFiles(ctx context.Context, repoDir, commitSHA string, paths []string) (map[string]host.RemoteTreeFile, error)
+}
+
 // deliveredHandoffID is the handoff a delivery's write actually carries.
 // dataCore.deliver mints a fresh XH id on every call, but the write is keyed on
 // the package alone, so a re-run while the first delivery's PR is still open
 // converges on that PR and the id deliver minted is never committed. The write's
-// ArtifactIDs name the ids present on the PR (space.WriteResult), so the
-// supersede and the respond must take the handoff from there.
-func deliveredHandoffID(delivered cli.DataResult) string {
-	if delivered.Write != nil {
-		for _, id := range delivered.Write.ArtifactIDs {
-			if strings.HasPrefix(id, "XH-") {
-				return id
-			}
+// ArtifactIDs name the ids present on the PR, so the supersede and the respond
+// take the handoff from there.
+//
+// Those ids are read from the PR's body, which anyone who can open a PR on the
+// deterministic head branch can write; this is not trusted on its own. The id is
+// accepted only when the handoff file exists in the delivery's own commit, is
+// the producer's, delivers this package and fulfils this request. A mismatch is
+// a refusal: the minted id is not substituted, because the PR does not carry it.
+func (c *dataCore) deliveredHandoffID(ctx context.Context, wrID string, delivered cli.DataResult) (string, error) {
+	write := delivered.Write
+	if write == nil || delivered.Manifest == nil {
+		return "", errors.New("data: deliver --for: the delivery returned no write or no package, so the handoff it carries cannot be confirmed")
+	}
+	packageID := delivered.Manifest.ID
+	var handoffID string
+	var packages int
+	for _, id := range write.ArtifactIDs {
+		switch {
+		case id == packageID:
+			packages++
+		case strings.HasPrefix(id, "XH-") && handoffID == "":
+			handoffID = id
+		default:
+			return "", fmt.Errorf("data: deliver --for: the delivery PR %s names artifacts %v, want exactly the package %s and one handoff of %s", write.PRURL, write.ArtifactIDs, packageID, c.ownSystem)
 		}
 	}
-	return delivered.HandoffID
+	if packages != 1 || handoffID == "" {
+		return "", fmt.Errorf("data: deliver --for: the delivery PR %s names artifacts %v, want exactly the package %s and one handoff of %s", write.PRURL, write.ArtifactIDs, packageID, c.ownSystem)
+	}
+	parsed, err := artifact.ParseID(handoffID)
+	if err != nil || parsed.Prefix != "XH" || parsed.System != c.ownSystem {
+		return "", fmt.Errorf("data: deliver --for: the delivery PR %s names handoff %q, which is not a handoff id of %s", write.PRURL, handoffID, c.ownSystem)
+	}
+	rel, err := dataArtifactPath(parsed)
+	if err != nil {
+		return "", err
+	}
+	reader, ok := c.host.(expressTreeReader)
+	if !ok {
+		return "", fmt.Errorf("data: deliver --for: this space's host cannot read the delivery commit, so handoff %s is not confirmed", handoffID)
+	}
+	if write.CommitSHA == "" {
+		return "", fmt.Errorf("data: deliver --for: the delivery of %s reports no commit, so handoff %s is not confirmed", packageID, handoffID)
+	}
+	files, err := reader.ReadRemoteRecoveryTreeFiles(ctx, c.mirrorDir, write.CommitSHA, []string{rel})
+	if err != nil {
+		return "", fmt.Errorf("data: deliver --for: handoff %s is not in the delivery commit %s: %w", handoffID, write.CommitSHA, err)
+	}
+	file, ok := files[rel]
+	if !ok {
+		return "", fmt.Errorf("data: deliver --for: handoff %s is not in the delivery commit %s", handoffID, write.CommitSHA)
+	}
+	doc, err := expressParseDoc(file.Raw, rel+"@"+write.CommitSHA)
+	if err != nil {
+		return "", err
+	}
+	var carriesPackage bool
+	for _, d := range doc.Deliverables {
+		if d.Kind == datapackage.DeliverableKindData && d.Ref == packageID {
+			carriesPackage = true
+		}
+	}
+	if doc.ID != handoffID || doc.From != c.ownSystem || !carriesPackage || !containsString(doc.Fulfills, wrID) {
+		return "", fmt.Errorf("data: deliver --for: handoff %s in the delivery commit %s is not %s's handoff delivering %s for %s", handoffID, write.CommitSHA, c.ownSystem, packageID, wrID)
+	}
+	return handoffID, nil
 }
 
 func dataFirst(list []string, fallback any) string {
@@ -1050,8 +1220,7 @@ func (r *expressRun) packOrResume(ctx context.Context, req cli.DataDeliverForReq
 	if err != nil {
 		return datapackage.Document{}, "", err
 	}
-	pinnedPrefix := id + "@" + canonical
-	staged, err := c.expressStagedCandidates(snap.doc.Thread, pinnedPrefix)
+	staged, err := c.expressStagedCandidates(snap.doc.Thread, id+"@"+canonical)
 	if err != nil {
 		return datapackage.Document{}, "", err
 	}
@@ -1095,8 +1264,9 @@ type expressStagedPackage struct {
 }
 
 // expressStagedCandidates lists the staged packages for this thread and
-// contract that no committed handoff references yet.
-func (c *dataCore) expressStagedCandidates(thread, pinnedPrefix string) ([]expressStagedPackage, error) {
+// contract version (exactly: a prerelease of it is another contract) that no
+// committed handoff references yet.
+func (c *dataCore) expressStagedCandidates(thread, pinnedKey string) ([]expressStagedPackage, error) {
 	manifests, err := filepath.Glob(filepath.Join(c.stagingDir, "data", "*", stagedManifestName))
 	if err != nil {
 		return nil, fmt.Errorf("data: list staged packages: %w", err)
@@ -1111,7 +1281,7 @@ func (c *dataCore) expressStagedCandidates(thread, pinnedPrefix string) ([]expre
 		if err := json.Unmarshal(raw, &document); err != nil {
 			return nil, fmt.Errorf("data: decode staged manifest %s: %w", path, err)
 		}
-		if document.Thread != thread || !strings.HasPrefix(document.Contract, pinnedPrefix) {
+		if document.Thread != thread || expressContractKey(document.Contract) != pinnedKey {
 			continue
 		}
 		delivered, err := c.expressPackageDelivered(document.ID)
@@ -1202,6 +1372,15 @@ func (r *expressRun) verifyFor(ctx context.Context, req cli.DataVerifyForRequest
 	}
 	if response != nil {
 		r.result.Response = response.id
+	}
+
+	// What is judged, and what a close certifies, is the package against the
+	// contract THE REQUEST pinned. The package's manifest names the contract it
+	// was packed against, and verification judges it against that one; bind the
+	// two before anything is fetched, judged or written.
+	if err := c.expressBindPackage(ctx, snap, h.packageID); err != nil {
+		r.add(cli.DataStep{Step: "verify", Subject: h.id, Outcome: expressRefused, Note: err.Error()})
+		return err
 	}
 
 	if req.To != "" {
@@ -1297,6 +1476,28 @@ func (r *expressRun) verifyFor(ctx context.Context, req cli.DataVerifyForRequest
 	}
 	r.result.Next = next
 	return nil
+}
+
+// expressBindPackage refuses a package whose manifest names a contract other
+// than the one the request pins. verify judges a package against the contract
+// its manifest pins and has no way to be told another, so the request's pin is
+// enforced here. A request that pins no contract (the producer names it with
+// deliver --for --contract, spec 05 §3) has nothing to bind to: the package is
+// judged against its own contract, as the full flow's verify does.
+func (c *dataCore) expressBindPackage(ctx context.Context, snap expressSnapshot, packageID string) error {
+	pinned := expressPinnedContracts(snap.doc)
+	if len(pinned) == 0 {
+		return nil
+	}
+	resolved, err := c.resolveDataPackage(ctx, packageID)
+	if err != nil {
+		return err
+	}
+	var document datapackage.Document
+	if err := json.Unmarshal(resolved.ManifestRaw, &document); err != nil {
+		return fmt.Errorf("data: verify --for: decode package manifest %s: %w", packageID, err)
+	}
+	return expressBindContract(snap.id, pinned, document.Contract)
 }
 
 // expressCloseArgs builds close's --verdict arguments. At the event/v2 floor a

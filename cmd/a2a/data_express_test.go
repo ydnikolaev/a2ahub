@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
+	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
@@ -33,6 +35,19 @@ type expressRetryRig struct {
 	// failWait, when set, is what the merge wait returns for a delivery PR
 	// instead of landing it.
 	failWait error
+}
+
+// expressTreeHost is the fake host with the one capability the production hosts
+// add on top of host.Host and the delivery check needs: reading a file out of a
+// commit in the mirror's object store (an exported method of the git mechanics
+// both *host.GitHubHost and *host.LocalHost carry).
+type expressTreeHost struct {
+	*host.FakeHost
+	git *host.GitHubHost
+}
+
+func (h expressTreeHost) ReadRemoteRecoveryTreeFiles(ctx context.Context, repoDir, commit string, paths []string) (map[string]host.RemoteTreeFile, error) {
+	return h.git.ReadRemoteRecoveryTreeFiles(ctx, repoDir, commit, paths)
 }
 
 // expressOldHandoff is the handoff newRecordTestDataCore seeds (it fulfills
@@ -68,6 +83,7 @@ func newExpressRetryRig(t *testing.T) *expressRetryRig {
 	core.ownSystem = "axon"
 	core.authorName, core.authorEmail = "a2a-axon", "a2a-axon@a2ahub.invalid"
 	core.funnel = space.NewWriteFunnel(fake, dataNoopSubmitValidator{}, "99.0.0")
+	core.host = expressTreeHost{FakeHost: fake, git: host.NewGitHubHost(nil, "")}
 	core.loadManifest = func() (space.Manifest, error) {
 		return space.Manifest{MinBinaryVersion: "0.1.0", Participants: []space.Participant{{System: "axon"}, {System: "peer"}}}, nil
 	}
@@ -568,5 +584,573 @@ func TestExpressDisputeCarriesTheCallersActor(t *testing.T) {
 	}
 	if !disputed {
 		t.Fatalf("no dispute was written; inner writes = %v", expressInnerVerbs(funnel))
+	}
+}
+
+// --- P5-fix-2: what the express flow judges is bound to what the request pins ----
+
+// expressWriteExchange commits one exchange document into the mirror's working
+// tree, under system's own section.
+func expressWriteExchange(t *testing.T, mirrorDir, system, id, doc string) string {
+	t.Helper()
+	dir := filepath.Join(mirrorDir, system, "exchanges")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, id+".md")
+	if err := os.WriteFile(path, []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// expressHandoffDoc is a handoff envelope from `from` that fulfills wr and
+// carries packageID as its one data deliverable.
+func expressHandoffDoc(id, from, wr, packageID string) string {
+	return "---\nschema: envelope/v1\nid: " + id + "\ntype: handoff\ntitle: h\nspace: test\nfrom: " + from + "\nto: [peer]\n" +
+		"actor: {kind: agent, name: tester}\ncreated: 2026-08-04T12:00:00Z\npriority: p3\nblocking: false\nclassification: internal\n" +
+		"thread: thread:" + from + "-20260804-bad1\nfulfills: [" + wr + "]\n" +
+		"deliverables:\n  - {name: \"x\", ref: \"" + packageID + "\", kind: data}\nverification: v\nacceptance_criteria: [\"d\"]\nlimitations: []\n---\nbody\n"
+}
+
+// expressResponseDoc is a response envelope from `from` answering parent.
+func expressResponseDoc(id, from, parent, packageID string) string {
+	return "---\nschema: envelope/v1\nid: " + id + "\ntype: response\ntitle: r\nspace: test\nfrom: " + from + "\nto: [peer]\n" +
+		"actor: {kind: agent, name: tester}\ncreated: 2026-08-04T12:00:00Z\nparent: " + parent + "\ndelivers: [" + packageID + "]\n---\nbody\n"
+}
+
+// withParticipants lets the manifest name zeta, the third party of these
+// tests, so a foreign actor's events are folded the way a real member's are.
+func withParticipants(core *dataCore) {
+	core.loadManifest = func() (space.Manifest, error) {
+		return space.Manifest{MinBinaryVersion: contract.ContractPublicationFloor, Participants: []space.Participant{{System: "axon"}, {System: "peer"}, {System: "zeta"}}}, nil
+	}
+}
+
+// TestExpressSnapshotIgnoresAThirdPartysHandoff is the audit's finding 15. A
+// handoff counts only when the request's producer wrote it: any other system can
+// commit a handoff that names the XW in `fulfills`, with a newer event than the
+// producer's, and verify --for --record would judge (and close over) it.
+func TestExpressSnapshotIgnoresAThirdPartysHandoff(t *testing.T) {
+	t.Parallel()
+	const hostileHandoff = "XH-zeta-20260804-bad1"
+	const hostilePackage = "DP-zeta-20260804-0000"
+
+	t.Run("verify --for judges the producer's handoff", func(t *testing.T) {
+		t.Parallel()
+		core, funnel, _, _ := newExpressVerifyRig(t, contract.ContractPublicationFloor, []string{expressVerifyCriterionText})
+		withParticipants(core)
+		expressWriteExchange(t, core.mirrorDir, "zeta", hostileHandoff, expressHandoffDoc(hostileHandoff, "zeta", expressTestWR, hostilePackage))
+		// Newer than the producer's own submit, so it would be the active handoff.
+		writeExpressEvent(t, core.mirrorDir, "zeta", "01K1A2B3C4D5E6F7G8H9J0K1M5", hostileHandoff, "submit")
+
+		result, err := core.verifyFor(context.Background(), cli.DataVerifyForRequest{For: expressTestWR, Record: true})
+		if err != nil {
+			t.Fatalf("verifyFor: %v (steps %v)", err, expressStepSummary(result.Steps))
+		}
+		if result.Handoff != expressOldHandoff || result.Package == hostilePackage {
+			t.Fatalf("verifyFor judged handoff %q package %q, want the producer's %s", result.Handoff, result.Package, expressOldHandoff)
+		}
+		for i, call := range funnel.calls {
+			if body := funnel.content(i); strings.Contains(body, hostileHandoff) || strings.Contains(body, hostilePackage) {
+				t.Fatalf("inner %s write names the third party's artifact:\n%s", call.Verb, body)
+			}
+		}
+	})
+
+	t.Run("a third party's undecodable file does not stop the flow", func(t *testing.T) {
+		t.Parallel()
+		rig := newExpressRetryRig(t)
+		withParticipants(rig.core)
+		expressWriteExchange(t, rig.core.mirrorDir, "zeta", "XH-zeta-20260804-ffff", "no frontmatter at all\n")
+		expressWriteExchange(t, rig.core.mirrorDir, "zeta", "XS-zeta-20260804-ffff", "garbage")
+		snap, err := rig.core.expressSnapshot(expressTestWR)
+		if err != nil {
+			t.Fatalf("expressSnapshot: %v: a file in a section that is not the producer's must not stop the flow", err)
+		}
+		if len(snap.handoffs) != 1 || snap.handoffs[0].id != expressOldHandoff {
+			t.Fatalf("handoffs = %+v, want only %s", snap.handoffs, expressOldHandoff)
+		}
+	})
+
+	t.Run("a file in the producer's section written by another system is ignored", func(t *testing.T) {
+		t.Parallel()
+		rig := newExpressRetryRig(t)
+		withParticipants(rig.core)
+		expressWriteExchange(t, rig.core.mirrorDir, "axon", "XH-axon-20260804-ee11", expressHandoffDoc("XH-axon-20260804-ee11", "zeta", expressTestWR, hostilePackage))
+		writeExpressEvent(t, rig.core.mirrorDir, "zeta", "01K1A2B3C4D5E6F7G8H9J0K1M5", "XH-axon-20260804-ee11", "submit")
+		snap, err := rig.core.expressSnapshot(expressTestWR)
+		if err != nil {
+			t.Fatalf("expressSnapshot: %v", err)
+		}
+		if len(snap.handoffs) != 1 || snap.handoffs[0].id != expressOldHandoff {
+			t.Fatalf("handoffs = %+v, want only %s", snap.handoffs, expressOldHandoff)
+		}
+	})
+
+	t.Run("a producer's handoff with a malformed id stops the snapshot naming its path", func(t *testing.T) {
+		t.Parallel()
+		rig := newExpressRetryRig(t)
+		bad := expressWriteExchange(t, rig.core.mirrorDir, "axon", "XH-axon-20260804-ee00", expressHandoffDoc("--force", "axon", expressTestWR, "DP-axon-20260804-0000"))
+		_, err := rig.core.expressSnapshot(expressTestWR)
+		if err == nil || !strings.Contains(err.Error(), bad) {
+			t.Fatalf("expressSnapshot err = %v, want a stop naming %s", err, bad)
+		}
+	})
+}
+
+// TestExpressDisputeTargetsOnlyTheProducersResponse is the audit's finding 16.
+// A response counts only when the request's producer wrote it; the dispute's
+// target is passed to the shipped dispute verb as an argument, so it must also
+// be an XS id.
+func TestExpressDisputeTargetsOnlyTheProducersResponse(t *testing.T) {
+	t.Parallel()
+	const hostileResponse = "XS-zeta-20260804-bad2"
+
+	t.Run("the dispute names the producer's response", func(t *testing.T) {
+		t.Parallel()
+		core, funnel, _, _ := newExpressVerifyRigWithPayload(t, contract.ContractPublicationFloor, []string{expressVerifyCriterionText}, []byte(`{"ok":false}`))
+		withParticipants(core)
+		// Sorts after axon's section, announces the same package, and is written by a third party.
+		expressWriteExchange(t, core.mirrorDir, "zeta", hostileResponse, expressResponseDoc(hostileResponse, "zeta", expressTestWR, "DP-axon-20260804-ab12"))
+
+		result, err := core.verifyFor(context.Background(), cli.DataVerifyForRequest{For: expressTestWR, Record: true})
+		if err != nil {
+			t.Fatalf("verifyFor: %v (steps %v)", err, expressStepSummary(result.Steps))
+		}
+		var disputed bool
+		for i, call := range funnel.calls {
+			if call.Verb != "dispute" {
+				continue
+			}
+			disputed = true
+			if body := funnel.content(i); !strings.Contains(body, "subject: "+expressTestResponse) || strings.Contains(body, hostileResponse) {
+				t.Fatalf("the dispute does not target %s:\n%s", expressTestResponse, body)
+			}
+		}
+		if !disputed {
+			t.Fatalf("no dispute was written; inner writes = %v", expressInnerVerbs(funnel))
+		}
+		if result.Response != expressTestResponse {
+			t.Fatalf("result.Response = %q, want %s", result.Response, expressTestResponse)
+		}
+	})
+
+	t.Run("a producer's response with a malformed id stops the snapshot naming its path", func(t *testing.T) {
+		t.Parallel()
+		rig := newExpressRetryRig(t)
+		bad := expressWriteExchange(t, rig.core.mirrorDir, "axon", "XS-axon-20260804-ee00", expressResponseDoc("--reason", "axon", expressTestWR, "DP-axon-20260804-0000"))
+		_, err := rig.core.expressSnapshot(expressTestWR)
+		if err == nil || !strings.Contains(err.Error(), bad) {
+			t.Fatalf("expressSnapshot err = %v, want a stop naming %s", err, bad)
+		}
+	})
+}
+
+// TestExpressContractRefBindsToThePin is the audit's finding 17, deliver side.
+// An explicit --contract names a contract the request pins or it is refused:
+// preferring it silently packs the producer's data against a contract the
+// consumer never asked for.
+func TestExpressContractRefBindsToThePin(t *testing.T) {
+	t.Parallel()
+	doc := func(refs ...string) expressDoc {
+		d := expressDoc{ID: expressTestWR}
+		for _, ref := range refs {
+			d.Refs = append(d.Refs, struct {
+				Ref string `yaml:"ref"`
+			}{Ref: ref})
+		}
+		return d
+	}
+	for _, tc := range []struct {
+		name     string
+		doc      expressDoc
+		explicit string
+		want     string
+		wantErr  []string
+	}{
+		{"the one pin", doc("XC-axon-widget@1.0.0"), "", "XC-axon-widget@1.0.0", nil},
+		{"an explicit ref equal to the one pin", doc("XC-axon-widget@1.0.0"), "XC-axon-widget@1.0.0", "XC-axon-widget@1.0.0", nil},
+		{"an explicit ref carrying a digest", doc("XC-axon-widget@1.0.0"), "XC-axon-widget@1.0.0#sha256:" + strings.Repeat("a", 64), "XC-axon-widget@1.0.0", nil},
+		{"an explicit ref of another version", doc("XC-axon-widget@1.0.0"), "XC-axon-widget@2.0.0", "", []string{"XC-axon-widget@2.0.0", "XC-axon-widget@1.0.0"}},
+		{"an explicit ref of another contract", doc("XC-axon-widget@1.0.0"), "XC-other-thing@1.0.0", "", []string{"XC-other-thing@1.0.0", "XC-axon-widget@1.0.0"}},
+		{"no pin: the caller names it", doc(), "XC-axon-widget@1.0.0", "XC-axon-widget@1.0.0", nil},
+		{"no pin and no ref", doc(), "", "", []string{"pins 0"}},
+		{"several pins: the caller chooses one of them", doc("XC-axon-widget@1.0.0", "XC-axon-gadget@1.0.0"), "XC-axon-gadget@1.0.0", "XC-axon-gadget@1.0.0", nil},
+		{"several pins: a ref outside them is refused", doc("XC-axon-widget@1.0.0", "XC-axon-gadget@1.0.0"), "XC-other-thing@1.0.0", "", []string{"XC-other-thing@1.0.0", "XC-axon-widget@1.0.0", "XC-axon-gadget@1.0.0"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := expressContractRef(tc.doc, tc.explicit)
+			if tc.wantErr != nil {
+				if err == nil {
+					t.Fatalf("expressContractRef = %q, nil error, want a refusal naming %v", got, tc.wantErr)
+				}
+				for _, want := range tc.wantErr {
+					if !strings.Contains(err.Error(), want) {
+						t.Fatalf("expressContractRef err = %v, want it to name %q", err, want)
+					}
+				}
+				return
+			}
+			if err != nil || got != tc.want {
+				t.Fatalf("expressContractRef = %q, %v, want %q", got, err, tc.want)
+			}
+		})
+	}
+}
+
+// TestExpressVerifyForBindsThePackageToThePinnedContract is the audit's
+// finding 17, verify side. The package manifest names the contract it was
+// packed against; judging it against that contract and closing the request
+// with ac1 met would certify data the consumer never asked for.
+func TestExpressVerifyForBindsThePackageToThePinnedContract(t *testing.T) {
+	t.Parallel()
+	withManifestContract := func(t *testing.T, core *dataCore, contractRef string) {
+		t.Helper()
+		doc, payload := dataWiringTestDocument(t, []byte(`{"ok":true}`))
+		doc.Contract = contractRef
+		raw, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		core.resolveDataPackage = func(context.Context, string) (space.DataPackageBytes, error) {
+			return space.DataPackageBytes{System: "axon", Root: "axon/data/" + doc.ID, ManifestRaw: raw, Payload: payload}, nil
+		}
+	}
+
+	for _, tc := range []struct {
+		name, packed string
+	}{
+		{"another contract", "XC-other-thing@1.0.0#sha256:" + strings.Repeat("b", 64)},
+		{"another version", "XC-axon-widget@2.0.0#sha256:" + strings.Repeat("b", 64)},
+		{"a prerelease of the pinned version", "XC-axon-widget@1.0.0-rc.1#sha256:" + strings.Repeat("b", 64)},
+	} {
+		for _, record := range []bool{false, true} {
+			name := tc.name + ", judged only"
+			if record {
+				name = tc.name + ", recorded"
+			}
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				core, funnel, fake, _ := newExpressVerifyRig(t, contract.ContractPublicationFloor, []string{expressVerifyCriterionText})
+				withManifestContract(t, core, tc.packed)
+				result, err := core.verifyFor(context.Background(), cli.DataVerifyForRequest{For: expressTestWR, Record: record})
+				if err == nil {
+					t.Fatalf("verifyFor = nil error, want a refusal (steps %v)", expressStepSummary(result.Steps))
+				}
+				for _, want := range []string{tc.packed, "XC-axon-widget@1.0.0"} {
+					if !strings.Contains(err.Error(), want) {
+						t.Fatalf("verifyFor err = %v, want it to name %q", err, want)
+					}
+				}
+				if result.Report != nil || len(funnel.calls) != 0 || len(fake.Pushes) != 0 {
+					t.Fatalf("the package was judged or written before the refusal: report=%v inner=%d pushes=%d", result.Report != nil, len(funnel.calls), len(fake.Pushes))
+				}
+			})
+		}
+	}
+
+	t.Run("the pinned contract at another digest is the same contract", func(t *testing.T) {
+		t.Parallel()
+		core, funnel, _, _ := newExpressVerifyRig(t, contract.ContractPublicationFloor, []string{expressVerifyCriterionText})
+		const packed = "XC-axon-widget@1.0.0#sha256:" + "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+		withManifestContract(t, core, packed)
+		// verify itself re-resolves the contract and compares digests.
+		core.resolveContractSchemas = func(context.Context, string) (map[string][]byte, string, error) {
+			return map[string][]byte{dataWiringTestSchemaPath: []byte(dataWiringTestSchema)}, packed, nil
+		}
+		if result, err := core.verifyFor(context.Background(), cli.DataVerifyForRequest{For: expressTestWR, Record: true}); err != nil {
+			t.Fatalf("verifyFor: %v (steps %v)", err, expressStepSummary(result.Steps))
+		}
+		if len(funnel.calls) != 1 || funnel.calls[0].Verb != "close" {
+			t.Fatalf("inner writes = %v, want the close", expressInnerVerbs(funnel))
+		}
+	})
+
+	t.Run("a request that pins no contract has nothing to bind to: the package is judged against its own", func(t *testing.T) {
+		t.Parallel()
+		core, funnel, _, _ := newExpressVerifyRig(t, contract.ContractPublicationFloor, []string{expressVerifyCriterionText})
+		path := filepath.Join(core.mirrorDir, "peer", "exchanges", expressTestWR+".md")
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		unpinned := strings.Replace(string(raw), "refs:\n  - ref: XC-axon-widget@1.0.0\n", "", 1)
+		if unpinned == string(raw) {
+			t.Fatal("the fixture request carries no pin to remove")
+		}
+		if err := os.WriteFile(path, []byte(unpinned), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if result, err := core.verifyFor(context.Background(), cli.DataVerifyForRequest{For: expressTestWR, Record: true}); err != nil {
+			t.Fatalf("verifyFor: %v (steps %v)", err, expressStepSummary(result.Steps))
+		}
+		if len(funnel.calls) != 1 || funnel.calls[0].Verb != "close" {
+			t.Fatalf("inner writes = %v, want the close", expressInnerVerbs(funnel))
+		}
+	})
+}
+
+// TestExpressDeliverForBindsThePackageToThePinnedContract is the audit's
+// finding 17, deliver side: nothing is delivered whose manifest names another
+// contract than the request pins, whichever way the contract reached the pack.
+func TestExpressDeliverForBindsThePackageToThePinnedContract(t *testing.T) {
+	t.Parallel()
+
+	t.Run("an explicit --contract that differs from the pin is refused before any pack", func(t *testing.T) {
+		t.Parallel()
+		rig := newExpressRetryRig(t)
+		req := rig.req()
+		req.Contract = "XC-axon-widget@2.0.0"
+		_, err := rig.core.deliverFor(context.Background(), req)
+		if err == nil || !strings.Contains(err.Error(), "XC-axon-widget@2.0.0") || !strings.Contains(err.Error(), "XC-axon-widget@1.0.0") {
+			t.Fatalf("deliverFor err = %v, want a refusal naming both refs", err)
+		}
+		matches, _ := filepath.Glob(filepath.Join(rig.core.stagingDir, "data", "*"))
+		if len(matches) != 0 || len(rig.fake.Opens) != 0 || len(rig.funnel.calls) != 0 {
+			t.Fatalf("the flow went on past the refusal: staged=%v opens=%d inner=%d", matches, len(rig.fake.Opens), len(rig.funnel.calls))
+		}
+	})
+
+	t.Run("a package packed against another contract is not delivered", func(t *testing.T) {
+		t.Parallel()
+		rig := newExpressRetryRig(t)
+		schemas := map[string][]byte{dataWiringTestSchemaPath: []byte(dataWiringTestSchema)}
+		// Whatever ref pack asks for, the contract it resolves (and stamps into the
+		// manifest) is version 2.0.0.
+		rig.core.resolveContractSchemas = func(context.Context, string) (map[string][]byte, string, error) {
+			return schemas, "XC-axon-widget@2.0.0#sha256:" + strings.Repeat("a", 64), nil
+		}
+		_, err := rig.core.deliverFor(context.Background(), rig.req())
+		if err == nil || !strings.Contains(err.Error(), "XC-axon-widget@2.0.0") || !strings.Contains(err.Error(), "XC-axon-widget@1.0.0") {
+			t.Fatalf("deliverFor err = %v, want a refusal naming both refs", err)
+		}
+		if len(rig.fake.Opens) != 0 || len(rig.fake.Pushes) != 0 {
+			t.Fatalf("a package of another contract was delivered: opens=%d pushes=%d", len(rig.fake.Opens), len(rig.fake.Pushes))
+		}
+	})
+
+	t.Run("a staged package of a prerelease of the pinned version is not resumed", func(t *testing.T) {
+		t.Parallel()
+		rig := newExpressRetryRig(t)
+		schemas := map[string][]byte{dataWiringTestSchemaPath: []byte(dataWiringTestSchema)}
+		rig.core.resolveContractSchemas = func(context.Context, string) (map[string][]byte, string, error) {
+			return schemas, "XC-axon-widget@1.0.0-rc.1#sha256:" + strings.Repeat("a", 64), nil
+		}
+		packed, err := rig.core.pack(context.Background(), cli.DataPackRequest{
+			ContractRef: "XC-axon-widget@1.0.0-rc.1", From: rig.from, Profile: "synthetic", Format: "json", Fulfills: expressTestWR,
+		})
+		if err != nil {
+			t.Fatalf("pack: %v", err)
+		}
+		staged, err := rig.core.expressStagedCandidates(packed.Manifest.Thread, "XC-axon-widget@1.0.0")
+		if err != nil || len(staged) != 0 {
+			t.Fatalf("expressStagedCandidates = %v, %v, want the rc package left out of the pinned version's candidates", staged, err)
+		}
+	})
+}
+
+// TestExpressDeliverRefusesAForgedHandoffInTheDeliveryPR is the audit's
+// finding 18. When the delivery write converges on a PR that already exists on
+// the deterministic head branch, the artifact ids it reports are read from that
+// PR's body, which anyone who can open a PR can write. A handoff id that the
+// PR's commit does not carry is refused: no supersede, no respond and no wait
+// names it, and the minted id is not substituted.
+func TestExpressDeliverRefusesAForgedHandoffInTheDeliveryPR(t *testing.T) {
+	t.Parallel()
+	rig := newExpressRetryRig(t)
+
+	// Run 1 opens the delivery PR and never sees it merge.
+	rig.failWait = context.DeadlineExceeded
+	first, err := rig.core.deliverFor(context.Background(), rig.req())
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("first deliverFor err = %v, want the unmerged delivery to time out", err)
+	}
+	if len(rig.fake.Opens) != 1 {
+		t.Fatalf("first run opened %d PRs, want 1", len(rig.fake.Opens))
+	}
+	open := rig.fake.Opens[0]
+	if !strings.Contains(open.Body, first.Handoff) {
+		t.Fatalf("the delivery PR body does not name %s:\n%s", first.Handoff, open.Body)
+	}
+
+	// The body of the PR on that branch now names a handoff the commit does not carry.
+	const forged = "XH-axon-20260804-f0f0"
+	real, err := rig.fake.FindPRByHeadBranch(context.Background(), host.FindPRRequest{Repo: open.Repo, Branch: open.Head})
+	if err != nil || real == nil {
+		t.Fatalf("FindPRByHeadBranch = %v, %v, want the open PR", real, err)
+	}
+	forgedPR := *real
+	forgedPR.Body = strings.ReplaceAll(real.Body, first.Handoff, forged)
+	rig.fake.FindPRFunc = func(context.Context, host.FindPRRequest) (*host.PRInfo, error) { return &forgedPR, nil }
+
+	rig.failWait = nil
+	waits := len(rig.waits)
+	second, err := rig.core.deliverFor(context.Background(), rig.req())
+	if err == nil || !strings.Contains(err.Error(), forged) {
+		t.Fatalf("second deliverFor err = %v, want a refusal naming the forged handoff %s (steps %v)", err, forged, expressStepSummary(second.Steps))
+	}
+	if second.Handoff == forged || second.Handoff == first.Handoff {
+		t.Fatalf("second run reports handoff %q: neither the forged id nor the minted one may be adopted", second.Handoff)
+	}
+	if got := rig.verbs(); len(got) != 0 {
+		t.Fatalf("inner writes = %v, want none: nothing may be built on the forged handoff", got)
+	}
+	if len(rig.waits) != waits {
+		t.Fatalf("the run waited on the forged PR: %v", rig.waits[waits:])
+	}
+}
+
+// TestExpressDeliveredHandoffIDIsConfirmedAgainstTheCommit is the audit's
+// finding 18, validator side: the handoff id in the delivery's write is
+// accepted only when the delivery commit carries that handoff, whole.
+func TestExpressDeliveredHandoffIDIsConfirmedAgainstTheCommit(t *testing.T) {
+	t.Parallel()
+	rig := newExpressRetryRig(t)
+	rig.failWait = context.DeadlineExceeded // leave the PR open: the write is what we judge
+	first, err := rig.core.deliverFor(context.Background(), rig.req())
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("deliverFor err = %v, want the unmerged delivery to time out", err)
+	}
+	var write *space.WriteResult
+	for _, step := range first.Steps {
+		if step.Step == "deliver" && step.Write != nil {
+			write = step.Write
+		}
+	}
+	if write == nil || write.CommitSHA == "" {
+		t.Fatalf("no deliver write with a commit in steps %v", expressStepSummary(first.Steps))
+	}
+	handoff := first.Handoff
+	pkg := first.Package
+
+	delivered := func(mutate func(w *space.WriteResult)) cli.DataResult {
+		w := *write
+		w.ArtifactIDs = []string{pkg, handoff}
+		if mutate != nil {
+			mutate(&w)
+		}
+		return cli.DataResult{Manifest: &datapackage.Document{ID: pkg}, Write: &w}
+	}
+
+	// Commits that DO carry a file at the claimed handoff's path, but a file that is
+	// not the producer's handoff for this package: made on detached heads in the
+	// mirror, off the delivery commit, before any subtest reads it.
+	mirror := rig.core.mirrorDir
+	branch := strings.TrimSpace(gitFixtureOutput(t, mirror, "rev-parse", "--abbrev-ref", "HEAD"))
+	forgeCommit := func(id, body string) string {
+		gitFixtureOutput(t, mirror, "checkout", "--quiet", "--detach", write.CommitSHA)
+		rel := filepath.Join("axon", "exchanges", id+".md")
+		if err := os.WriteFile(filepath.Join(mirror, rel), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		gitFixtureOutput(t, mirror, "add", "--", rel)
+		gitFixtureOutput(t, mirror, "commit", "--quiet", "-m", "forged "+id)
+		sha := strings.TrimSpace(gitFixtureOutput(t, mirror, "rev-parse", "HEAD"))
+		gitFixtureOutput(t, mirror, "checkout", "--quiet", branch)
+		return sha
+	}
+	const idMismatch, fromMismatch = "XH-axon-20260804-aa11", "XH-axon-20260804-cc33"
+	idMismatchCommit := forgeCommit(idMismatch, expressHandoffDoc("XH-axon-20260804-bb22", "axon", expressTestWR, pkg))
+	fromMismatchCommit := forgeCommit(fromMismatch, expressHandoffDoc(fromMismatch, "zeta", expressTestWR, pkg))
+
+	t.Run("a file in the commit whose own id is another is refused", func(t *testing.T) {
+		t.Parallel()
+		got, err := rig.core.deliveredHandoffID(context.Background(), expressTestWR, delivered(func(w *space.WriteResult) {
+			w.CommitSHA, w.ArtifactIDs = idMismatchCommit, []string{pkg, idMismatch}
+		}))
+		if err == nil || got != "" || !strings.Contains(err.Error(), idMismatch) {
+			t.Fatalf("deliveredHandoffID = %q, %v, want a refusal naming %s", got, err, idMismatch)
+		}
+	})
+
+	t.Run("a handoff in the commit written by another system is refused", func(t *testing.T) {
+		t.Parallel()
+		got, err := rig.core.deliveredHandoffID(context.Background(), expressTestWR, delivered(func(w *space.WriteResult) {
+			w.CommitSHA, w.ArtifactIDs = fromMismatchCommit, []string{pkg, fromMismatch}
+		}))
+		if err == nil || got != "" || !strings.Contains(err.Error(), fromMismatch) {
+			t.Fatalf("deliveredHandoffID = %q, %v, want a refusal naming %s", got, err, fromMismatch)
+		}
+	})
+
+	t.Run("the handoff in the commit is accepted", func(t *testing.T) {
+		t.Parallel()
+		got, err := rig.core.deliveredHandoffID(context.Background(), expressTestWR, delivered(nil))
+		if err != nil || got != handoff {
+			t.Fatalf("deliveredHandoffID = %q, %v, want %s", got, err, handoff)
+		}
+	})
+
+	for _, tc := range []struct {
+		name     string
+		mutate   func(w *space.WriteResult)
+		wr       string
+		manifest string
+		want     string // a substring of the refusal
+	}{
+		{"a forged id absent from the commit", func(w *space.WriteResult) { w.ArtifactIDs = []string{pkg, "XH-axon-20260804-f0f0"} }, "", "", "XH-axon-20260804-f0f0"},
+		{"the seeded handoff of the earlier attempt", func(w *space.WriteResult) { w.ArtifactIDs = []string{pkg, expressOldHandoff} }, "", "", expressOldHandoff},
+		{"two handoff ids", func(w *space.WriteResult) { w.ArtifactIDs = []string{pkg, handoff, "XH-axon-20260804-f0f0"} }, "", "", "names artifacts"},
+		{"no handoff id", func(w *space.WriteResult) { w.ArtifactIDs = []string{pkg} }, "", "", "names artifacts"},
+		{"no package id", func(w *space.WriteResult) { w.ArtifactIDs = []string{handoff} }, "", "", "names artifacts"},
+		{"an extra id", func(w *space.WriteResult) { w.ArtifactIDs = []string{pkg, handoff, "../../escape"} }, "", "", "names artifacts"},
+		{"a handoff id of another system", func(w *space.WriteResult) { w.ArtifactIDs = []string{pkg, "XH-zeta-20260804-f0f0"} }, "", "", "XH-zeta-20260804-f0f0"},
+		{"a malformed handoff id", func(w *space.WriteResult) { w.ArtifactIDs = []string{pkg, "XH-../x"} }, "", "", "XH-../x"},
+		{"no commit reported", func(w *space.WriteResult) { w.CommitSHA = "" }, "", "", "no commit"},
+		{"a commit that is not in the object store", func(w *space.WriteResult) { w.CommitSHA = strings.Repeat("1", 40) }, "", "", handoff},
+		{"a request the handoff does not fulfil", nil, "XW-peer-20260804-0000", "", "XW-peer-20260804-0000"},
+		{"another package than the handoff delivers", nil, "", "DP-axon-20260804-0000", handoff},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			result := delivered(tc.mutate)
+			if tc.manifest != "" {
+				result.Manifest = &datapackage.Document{ID: tc.manifest}
+				result.Write.ArtifactIDs = []string{tc.manifest, handoff}
+			}
+			wr := expressTestWR
+			if tc.wr != "" {
+				wr = tc.wr
+			}
+			got, err := rig.core.deliveredHandoffID(context.Background(), wr, result)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("deliveredHandoffID = %q, %v, want a refusal naming %q", got, err, tc.want)
+			}
+			if got != "" {
+				t.Fatalf("deliveredHandoffID returned %q beside the refusal", got)
+			}
+		})
+	}
+
+	t.Run("a host that cannot read the commit confirms nothing", func(t *testing.T) {
+		t.Parallel()
+		plain := *rig.core
+		plain.host = rig.fake
+		got, err := plain.deliveredHandoffID(context.Background(), expressTestWR, delivered(nil))
+		if err == nil || got != "" {
+			t.Fatalf("deliveredHandoffID = %q, %v, want a refusal", got, err)
+		}
+	})
+}
+
+// TestExpressBindContractHonoursAPinnedDigest: a pin that carries a digest binds
+// the digest too; one that does not leaves the digest to verification itself.
+func TestExpressBindContractHonoursAPinnedDigest(t *testing.T) {
+	t.Parallel()
+	a := "XC-axon-widget@1.0.0#sha256:" + strings.Repeat("a", 64)
+	b := "XC-axon-widget@1.0.0#sha256:" + strings.Repeat("b", 64)
+	if err := expressBindContract(expressTestWR, []string{a}, a); err != nil {
+		t.Fatalf("same digest: %v", err)
+	}
+	if err := expressBindContract(expressTestWR, []string{"XC-axon-widget@1.0.0"}, b); err != nil {
+		t.Fatalf("a pin without a digest: %v", err)
+	}
+	if err := expressBindContract(expressTestWR, []string{a}, b); err == nil || !strings.Contains(err.Error(), a) || !strings.Contains(err.Error(), b) {
+		t.Fatalf("another digest: err = %v, want a refusal naming both refs", err)
+	}
+	if err := expressBindContract(expressTestWR, []string{a, "XC-axon-widget@1.0.0"}, b); err != nil {
+		t.Fatalf("one of several pins matches: %v", err)
 	}
 }
