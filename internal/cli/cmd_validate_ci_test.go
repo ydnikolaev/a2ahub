@@ -26,6 +26,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
@@ -274,6 +275,146 @@ func TestValidateCIWorkCheckpointMountsV3AgainstBaseAndHead(t *testing.T) {
 	code, report, _ = runCI(t, ciEngine(t), pair.root, fakeGit(pair.artifactPath, pair.eventPath), "v3-pr", pair.base, "axon-bot")
 	if code == 0 || report.Valid {
 		t.Fatalf("unknown work recipient passed canonical validation: %+v", report)
+	}
+}
+
+// TestValidateCILocalLandRefusesWithTheCodesV3PRReports is local-space-2026-10
+// spec 07 row 13: a write the V3 checks refuse is refused by the LOCAL land
+// with the same codes `a2a validate --ci --mode=v3-pr` reports for the same
+// base, head and author. The land is the real one: a marked bare repository,
+// the host Open returns for it, the real V3 land check (NewLandCheck over the
+// real schema corpus), and a head branch pushed the way the funnel pushes one.
+// Nothing here is a hand-built candidate, so it is the host's own call of the
+// check that is under test, not only the check.
+func TestValidateCILocalLandRefusesWithTheCodesV3PRReports(t *testing.T) {
+	t.Parallel()
+
+	// The land author is local:<system>, so the manifest's owner logins are too.
+	manifest := strings.NewReplacer("[ydnikolaev]", "[local:axon]", "[misha-gh]", "[local:seomatrix]").Replace(ciSpaceYAML)
+	ownID := "XQ-axon-20260730-h2k8"
+	otherID := "XQ-seomatrix-20260730-h2k8"
+	ownPath := "axon/exchanges/" + ownID + ".md"
+	otherPath := "seomatrix/exchanges/" + otherID + ".md"
+
+	for _, tc := range []struct {
+		name      string
+		files     map[string]string
+		wantCodes []string // empty: the write must land
+	}{
+		{
+			name:  "a valid write in the author's own section lands",
+			files: map[string]string{ownPath: validQuestion(ownID, "axon", "seomatrix")},
+		},
+		{
+			name:      "a write into another system's section is refused with AUTHZ-001",
+			files:     map[string]string{otherPath: validQuestion(otherID, "seomatrix", "axon")},
+			wantCodes: []string{"AUTHZ-001"},
+		},
+		{
+			name: "a schema-invalid artifact is refused with the schema's code",
+			files: map[string]string{
+				ownPath: strings.Replace(validQuestion(ownID, "axon", "seomatrix"), "priority: p2\n", "", 1),
+			},
+			wantCodes: []string{"SCH-001"},
+		},
+		{
+			// The handoff `a2a data deliver` mints today is exactly this shape,
+			// so on a local space a delivery is refused at the land.
+			name: "a handoff whose five required sections are empty is refused with POL-022",
+			files: map[string]string{
+				"axon/exchanges/XH-axon-20260810-p022.md": strings.Replace(handoffEmptySectionsArtifact("XH-axon-20260810-p022", "axon", "seomatrix"),
+					"limitations: []\n", "fulfills: [XW-seomatrix-20260810-w001]\nacceptance_criteria: [\"The delivery verifies.\"]\nlimitations: []\n", 1),
+			},
+			wantCodes: []string{"POL-022"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+
+			spaceDir := filepath.Join(t.TempDir(), "space.git")
+			if _, err := space.InitLocalSpaceRepo(ctx, spaceDir, []space.FileWrite{
+				{Path: "space.yaml", Content: []byte(manifest)},
+				{Path: "decisions/.gitkeep", Content: []byte{}},
+				{Path: "vendored/.gitkeep", Content: []byte{}},
+			}); err != nil {
+				t.Fatalf("InitLocalSpaceRepo: %v", err)
+			}
+			gitfixture.HardenRepo(t, spaceDir)
+			if err := host.PrepareLocalSpace(ctx, spaceDir, space.LocalSpaceBaseBranch); err != nil {
+				t.Fatalf("PrepareLocalSpace: %v", err)
+			}
+			loc, err := host.ParseLocator(spaceDir)
+			if err != nil {
+				t.Fatalf("ParseLocator: %v", err)
+			}
+			local, err := host.Open(loc, host.OpenConfig{LandCheck: NewLandCheck(ciEngine(t)), LandAuthor: "local:axon"})
+			if err != nil {
+				t.Fatalf("host.Open: %v", err)
+			}
+			if !local.Capabilities().LandsSynchronously {
+				t.Fatalf("host.Open returned a host that does not land synchronously (%T): this is not the local host", local)
+			}
+
+			// A head branch off main, pushed to the space the way a write is.
+			work := filepath.Join(t.TempDir(), "work")
+			ciTestGit(t, filepath.Dir(work), "clone", "-q", spaceDir, work)
+			base := strings.TrimSpace(ciTestGit(t, work, "rev-parse", "HEAD"))
+			for rel, content := range tc.files {
+				abs := filepath.Join(work, filepath.FromSlash(rel))
+				if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			ciTestGit(t, work, "add", "-A")
+			ciTestGit(t, work, "commit", "-q", "-m", "the write under test")
+			head := strings.TrimSpace(ciTestGit(t, work, "rev-parse", "HEAD"))
+			const headBranch = "a2a/axon/row-13"
+			ciTestGit(t, work, "push", "-q", "origin", "HEAD:refs/heads/"+headBranch)
+
+			// The required check's own body, over the same base, head and author.
+			exit, wantCodes := requiredCheckCodes(t, host.LandCandidate{
+				CheckoutDir: work, BaseBranch: "main", BaseSHA: base, MergeSHA: head, HeadSHA: head, Author: "local:axon",
+			})
+			if (len(tc.wantCodes) == 0) != (exit == 0) {
+				t.Fatalf("fixture drifted: validate --ci --mode=v3-pr exit = %d for a write that should %s", exit, map[bool]string{true: "land", false: "be refused"}[len(tc.wantCodes) == 0])
+			}
+			if !slices.Equal(wantCodes, tc.wantCodes) {
+				t.Fatalf("fixture drifted: validate --ci --mode=v3-pr codes = %v, want %v", wantCodes, tc.wantCodes)
+			}
+
+			mainBefore := strings.TrimSpace(ciTestGit(t, work, "ls-remote", "origin", "refs/heads/main"))
+			_, err = local.OpenPR(ctx, host.OpenPRRequest{Head: headBranch, Base: "main", Title: "row 13", Body: "row 13", ExpectedHeadSHA: head})
+			mainAfter := strings.TrimSpace(ciTestGit(t, work, "ls-remote", "origin", "refs/heads/main"))
+
+			if len(tc.wantCodes) == 0 {
+				if err != nil {
+					t.Fatalf("a write the required check accepts was refused by the local land: %v", err)
+				}
+				if mainAfter == mainBefore {
+					t.Fatalf("the local land reported a landed write but main did not move: %s", mainAfter)
+				}
+				return
+			}
+			if !errors.Is(err, host.ErrLandRefused) {
+				t.Fatalf("OpenPR error = %v, want it to satisfy errors.Is(host.ErrLandRefused)", err)
+			}
+			var refusal *host.LandRefusal
+			if !errors.As(err, &refusal) {
+				t.Fatalf("OpenPR error carries no *host.LandRefusal: %v", err)
+			}
+			got := append([]string(nil), refusal.Codes...)
+			slices.Sort(got)
+			if !slices.Equal(got, wantCodes) {
+				t.Fatalf("the local land refused with %v, but validate --ci --mode=v3-pr reports %v for the same base, head and author", got, wantCodes)
+			}
+			if mainAfter != mainBefore {
+				t.Fatalf("a refused write moved main: %s -> %s", mainBefore, mainAfter)
+			}
+		})
 	}
 }
 

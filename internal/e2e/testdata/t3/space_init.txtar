@@ -194,6 +194,228 @@ stderr 'FindPRByHeadBranch'
 stderr 'status 403'
 ! stderr 'REF-026'
 
+# local-space-2026-10 P7-B (spec 07 §6.3, rows 8 to 12): the whole round trip on
+# a local space, through the built binary and nothing else. Two repository
+# directories, two systems, one bare repository with the land guard. The
+# script's setup points A2A_GITHUB_API at a denial fixture and carries a token;
+# a local space needs neither, so both are replaced here: the token variables
+# are emptied, and the API root becomes a closed port, so a write that wrongly
+# reached for GitHub would fail loudly instead of reaching anything. (Emptying
+# A2A_GITHUB_API itself would mean api.github.com, which is the opposite.)
+# The space keeps the DEFAULT gates (`confirm`): no --gates flag below.
+env A2A_GITHUB_API=http://127.0.0.1:1
+env FIXTURE_TOKEN=
+env A2A_TOKEN_MASTER_SPACE=
+cd $WORK
+mkdir loop-a
+mkdir loop-b
+exec a2a space init loop --local --dir spaces/loop.git
+stdout 'created local space loop at '
+
+# A joins before B, and B before anything is addressed to it: a space refuses an
+# unknown recipient (REF-006), so A's contract below can only name beta once
+# beta has joined. A join is a manifest change, G4 under `confirm`, hence
+# --approve.
+cd $WORK/loop-a
+exec a2a init --system axon --space $WORK/spaces/loop.git --no-skill --no-skill-link --no-agents-pointer
+exec a2a connect $WORK/spaces/loop.git
+stdout 'space "loop" already connected'
+! exec a2a space join
+stderr 'G4'
+exec a2a space join --approve
+stdout 'axon joined loop'
+cd $WORK/loop-b
+exec a2a init --system beta --space $WORK/spaces/loop.git --no-skill --no-skill-link --no-agents-pointer
+exec a2a connect $WORK/spaces/loop.git
+exec a2a space join --approve
+stdout 'beta joined loop'
+
+# A scaffolds its contract (the schema and both fixtures come from the
+# scaffold), then the descriptor and the draft are replaced by the archive's
+# copy, whose placeholders are already filled in and which names beta as the
+# consumer.
+cd $WORK/loop-a
+exec a2a contract new export
+cp $WORK/export-contract.md .a2a/staging/XC-axon-export.md
+cp $WORK/export-contract.md .a2a/staging/axon/provides/export/contract.md
+
+# local-confirm-refuses-unapproved (row 12): the contract enters the space
+# through `a2a submit` as a 0.0.0 candidate, which crosses no gate. Its first
+# `a2a contract publish` is G1, and in a confirm space it is refused without
+# --approve with the registry's POL-029, before anything is prepared: not one
+# ref in the space moves, and no branch is left behind.
+exec a2a submit .a2a/staging/XC-axon-export.md
+stdout 'merged it'
+exec a2a sync
+exec git --git-dir=$WORK/spaces/loop.git for-each-ref --format='%(refname) %(objectname)'
+cp stdout $WORK/refs-before-publish.txt
+! exec a2a contract publish --version 1.0.0 --staging .a2a/staging/axon/provides/export XC-axon-export
+stderr 'POL-029: G1 requires --approve in a confirm space'
+exec git --git-dir=$WORK/spaces/loop.git for-each-ref --format='%(refname) %(objectname)'
+cmp stdout $WORK/refs-before-publish.txt
+
+# local-publish-adopt-materialize (row 8): the same publish with --approve
+# lands (the land merge commit records the approval), B adopts the contract and
+# materializes it, and no step waits for a merge or reaches a network.
+exec a2a contract publish --approve --version 1.0.0 --staging .a2a/staging/axon/provides/export XC-axon-export
+stdout 'submitted XC-axon-export@1.0.0'
+stdout 'gate G1'
+exec git --git-dir=$WORK/spaces/loop.git log -1 --first-parent --format=%B main
+stdout 'A2A-Approved-Gates: G1'
+cd $WORK/loop-b
+exec a2a sync
+exec a2a contract adopt XC-axon-export
+stdout 'merged'
+exec git --git-dir=$WORK/spaces/loop.git show main:beta/consumes.yaml
+stdout 'XC-axon-export'
+exec a2a sync
+exec a2a contracts
+stdout 'XC-axon-export\taxon\t1.0.0\tpublished'
+mkdir vendor
+exec a2a contract materialize --to vendor/export --json XC-axon-export@1.0.0
+stdout '"outcome":"materialized"'
+exists vendor/export/contract.md
+exists vendor/export/schema/export.schema.json
+
+# local-concurrent-writes (row 9): each system submits a question to the other,
+# started together in the background. Both must land, and the space's
+# first-parent history must show one merge commit for each. Which one is first
+# is not asserted, only that neither was lost: the host's compare-and-swap
+# retries a lost race on a fresh tip.
+cd $WORK/loop-a
+cp $WORK/q-axon.md .a2a/staging/XQ-axon-20261028-c0a1.md
+cd $WORK/loop-b
+mkdir .a2a/staging
+cp $WORK/q-beta.md .a2a/staging/XQ-beta-20261028-c0b1.md
+cd $WORK/loop-a
+exec a2a submit .a2a/staging/XQ-axon-20261028-c0a1.md &
+cd $WORK/loop-b
+exec a2a submit .a2a/staging/XQ-beta-20261028-c0b1.md &
+wait
+exec git --git-dir=$WORK/spaces/loop.git rev-list --first-parent --merges --count --grep=submit/XQ- main
+stdout '^2$'
+exec git --git-dir=$WORK/spaces/loop.git log --first-parent --merges --format=%s -2 main
+stdout 'submit/XQ-axon-20261028-c0a1'
+stdout 'submit/XQ-beta-20261028-c0b1'
+exec git --git-dir=$WORK/spaces/loop.git ls-tree -r --name-only main
+stdout 'axon/exchanges/XQ-axon-20261028-c0a1.md'
+stdout 'beta/exchanges/XQ-beta-20261028-c0b1.md'
+
+# local-raw-push-refused (row 10): a raw `git push` to the space's main from a
+# clone of a space that has a history by now is refused by the land guard, with
+# the sentence that names the way in, and main does not move. A push to any
+# other ref is not this stanza's business.
+exec git --git-dir=$WORK/spaces/loop.git rev-parse main
+cp stdout $WORK/main-before-raw-push.txt
+cd $WORK
+exec git clone -q spaces/loop.git loop-raw
+exec git -C loop-raw -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m 'around the land'
+! exec git -C loop-raw push origin HEAD:main
+stderr 'this local space lands writes only through a2a'
+exec git --git-dir=$WORK/spaces/loop.git rev-parse main
+cmp stdout $WORK/main-before-raw-push.txt
+
+# local-express-verdict (row 11) is NOT here, on purpose. The express verbs
+# cannot land a delivery on a local space today: `a2a data deliver --for` mints
+# its handoff body as the five required headings with nothing under them
+# (cmd/a2a/data_wiring.go buildHandoffDraft), and the land check, which runs the
+# v3-pr body on this host, refuses it with POL-022 at the deliver step. The
+# GitHub-host express tests never saw it because the fake host runs no V3 check.
+# The stanza is added the day that is fixed; see spec 07 §11.
+
+-- export-contract.md --
+---
+schema: envelope/v2
+id: XC-axon-export
+type: contract
+title: The export contract under test
+space: loop
+from: axon
+to: [beta]
+actor: {kind: agent, name: e2e}
+created: 2026-10-28T16:01:01Z
+category: api
+priority: p3
+blocking: false
+classification: internal
+version: 0.0.0
+schema_format: json-schema-2020-12
+compat_policy: default
+thread: thread:axon-20261028-mwb1
+artifacts:
+    - path: schema/export.schema.json
+      role: schema
+      normative: true
+      media_type: application/schema+json
+    - path: fixtures/valid/export.json
+      role: valid-fixture
+      normative: true
+      media_type: application/json
+      conforms_to: schema/export.schema.json
+    - path: fixtures/invalid/export.json
+      role: invalid-fixture
+      normative: true
+      media_type: application/json
+      conforms_to: schema/export.schema.json
+---
+# Export
+
+One paragraph describing the export in the consumer's terms.
+
+## What it covers
+
+Exports, with no deliberate exclusions.
+
+## Error shape
+
+Failures are HTTP status codes.
+
+## Compatibility intent
+
+Fields may be added; none may be removed.
+
+## Owner and support
+
+axon owns it.
+
+-- q-axon.md --
+---
+schema: envelope/v1
+id: XQ-axon-20261028-c0a1
+type: question
+title: A question from axon while beta writes too
+space: loop
+from: axon
+to: [beta]
+thread: thread:axon-20261028-c0a1
+actor: {kind: agent, name: bot}
+created: 2026-10-28T17:00:00Z
+category: clarification
+priority: p3
+blocking: true
+classification: internal
+---
+body
+
+-- q-beta.md --
+---
+schema: envelope/v1
+id: XQ-beta-20261028-c0b1
+type: question
+title: A question from beta while axon writes too
+space: loop
+from: beta
+to: [axon]
+thread: thread:beta-20261028-c0b1
+actor: {kind: agent, name: bot}
+created: 2026-10-28T17:00:00Z
+category: clarification
+priority: p3
+blocking: true
+classification: internal
+---
+body
+
 -- master-space.yaml --
 schema: space/v1
 space: master-space
