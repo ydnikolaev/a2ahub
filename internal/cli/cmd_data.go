@@ -137,11 +137,19 @@ type DataVerifyForRequest struct {
 	Actor    ActorFlags
 }
 
+// DataTransition names the event transition a composite step wrote or found
+// already written: one of the closed event.schema.json `transition` values,
+// which internal/fold declares as untyped constants (fold.TSubmit,
+// fold.TVerifyPass, ...). The type exists so a step's transition cannot be
+// confused with its step name or outcome; it encodes as the bare string, so
+// --json output is unchanged.
+type DataTransition string
+
 // DataStep is one inner step of a composite verb, in the order it ran.
 type DataStep struct {
 	Step       string             `json:"step"` // ack, accept, pack, deliver, supersede, respond, verify, close, dispute, submit
 	Subject    string             `json:"subject,omitempty"`
-	Transition string             `json:"transition,omitempty"`
+	Transition DataTransition     `json:"transition,omitempty"`
 	Outcome    string             `json:"outcome"` // landed, already-done, pending, refused, stopped
 	Write      *space.WriteResult `json:"write,omitempty"`
 	Note       string             `json:"note,omitempty"` // why a step was refused or stopped
@@ -640,17 +648,37 @@ func renderDataExpress(stdio IO, verb string, result DataExpressResult, callErr 
 	}
 	if asJSON {
 		if err := json.NewEncoder(stdio.Stdout).Encode(result); err != nil {
-			_, _ = fmt.Fprintf(stdio.Stderr, "data %s: encode result: %v\n", verb, err)
-			return 1
+			return dataExpressRefuse(stdio,
+				"data "+verb+": print the --json result",
+				fmt.Sprintf("the result could not be written to stdout: %v", err),
+				"re-run `a2a data "+verb+"` with the same flags (steps already in the space are skipped, nothing is written twice) and read the outcome, or drop --json")
 		}
 	} else {
 		renderDataExpressText(stdio, result)
 	}
 	if callErr != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "data %s: %v\n", verb, callErr)
-		return 1
+		return dataExpressRefuse(stdio,
+			"data "+verb,
+			callErr.Error(),
+			"fix the cause named above, then re-run `a2a data "+verb+"` with the same flags: it resumes from the last landed step (the steps printed above) instead of starting over")
 	}
 	return 0
+}
+
+// dataExpressRefuse writes a three-part Refusal (NewRefusal's attempted /
+// found / nextStep) for a composite verb that stopped and returns 1. Every
+// call site composes its own three parts from the stopped run's state; this
+// only renders them. nextStep is a non-empty literal at every call site, so
+// NewRefusal's own empty-next-step refusal is a structural safety net, not an
+// expected path.
+func dataExpressRefuse(stdio IO, attempted, found, nextStep string) int {
+	refusal, buildFailure := NewRefusal(attempted, found, nextStep)
+	if buildFailure != nil {
+		_, _ = fmt.Fprintln(stdio.Stderr, "data: internal error building a refusal (empty next step) — this is a bug in cmd_data.go, file one")
+		return 1
+	}
+	_, _ = fmt.Fprintln(stdio.Stderr, refusal)
+	return 1
 }
 
 func renderDataExpressText(stdio IO, result DataExpressResult) {

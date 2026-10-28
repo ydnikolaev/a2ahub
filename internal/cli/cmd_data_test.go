@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -589,5 +590,74 @@ func TestDataSubverbHelpAnswersWithoutOperations(t *testing.T) {
 		if code != 0 || strings.Contains(stdout+stderr, "service is not configured") {
 			t.Fatalf("data %s --help: code=%d stdout=%q stderr=%q", sub.Name, code, stdout, stderr)
 		}
+	}
+}
+
+// stoppedExpressArgs is a valid `a2a data request` invocation, for the tests
+// that drive a stopped composite run through renderDataExpress.
+var stoppedExpressArgs = []string{"request", "--producer", "beta", "--contract", "XC-a@1.0.0", "--interim-behavior", "wait"}
+
+// TestDataExpressStoppedRunNamesTheResume: a composite run that landed a step
+// and then stopped keeps exit 1 and prints a three-part refusal -- the verb
+// attempted, the stopping error found, and the re-run that resumes -- after
+// the steps it did land.
+func TestDataExpressStoppedRunNamesTheResume(t *testing.T) {
+	t.Parallel()
+	fake := &fakeExpressOperations{
+		result: cli.DataExpressResult{WorkRequest: "XW-axon-20260804-aaaa", Steps: []cli.DataStep{{Step: "submit", Transition: "submit", Outcome: "landed"}}},
+		err:    errors.New("timed out waiting for the PR to merge"),
+	}
+	code, stdout, stderr := runDataCommand(t, cli.NewDataCommand(fake), stoppedExpressArgs...)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1; stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "submit") || !strings.Contains(stdout, "landed") {
+		t.Errorf("stdout = %q, want the landed step before the refusal", stdout)
+	}
+	const found = "timed out waiting for the PR to merge"
+	if !strings.HasPrefix(stderr, "data request: "+found+" — ") {
+		t.Errorf("stderr = %q, want %q (attempted: found — next step)", stderr, "data request: "+found+" — ...")
+	}
+	if next := "re-run `a2a data request` with the same flags: it resumes from the last landed step"; !strings.Contains(stderr, next) {
+		t.Errorf("stderr = %q, want the next step %q", stderr, next)
+	}
+}
+
+type brokenStdout struct{}
+
+func (brokenStdout) Write([]byte) (int, error) { return 0, errors.New("broken pipe") }
+
+// TestDataExpressJSONEncodeFailureNamesTheNextStep: a --json result that
+// cannot be written is exit 1, and the refusal says the steps are already in
+// the space and which command reads the outcome.
+func TestDataExpressJSONEncodeFailureNamesTheNextStep(t *testing.T) {
+	t.Parallel()
+	fake := &fakeExpressOperations{result: cli.DataExpressResult{WorkRequest: "XW-axon-20260804-aaaa", Steps: []cli.DataStep{{Step: "submit", Outcome: "landed"}}}}
+	var stderr bytes.Buffer
+	args := append(append([]string{}, stoppedExpressArgs...), "--json")
+	code := cli.NewDataCommand(fake).Run(t.Context(), args, cli.IO{Stdin: strings.NewReader(""), Stdout: brokenStdout{}, Stderr: &stderr})
+	if code != 1 {
+		t.Fatalf("code = %d, want 1; stderr=%q", code, stderr.String())
+	}
+	got := stderr.String()
+	if !strings.HasPrefix(got, "data request: print the --json result: the result could not be written to stdout: broken pipe — ") {
+		t.Errorf("stderr = %q, want attempted/found parts naming the broken write", got)
+	}
+	if next := "re-run `a2a data request` with the same flags (steps already in the space are skipped"; !strings.Contains(got, next) {
+		t.Errorf("stderr = %q, want the next step %q", got, next)
+	}
+}
+
+// TestDataStepTransitionEncodesAsTheBareString: DataTransition is a named
+// type for the closed event `transition` vocabulary; the --json step shape
+// must stay byte-identical to the plain-string one.
+func TestDataStepTransitionEncodesAsTheBareString(t *testing.T) {
+	t.Parallel()
+	raw, err := json.Marshal(cli.DataStep{Step: "deliver", Subject: "XW-a", Transition: "submit", Outcome: "landed"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"step":"deliver","subject":"XW-a","transition":"submit","outcome":"landed"}`; string(raw) != want {
+		t.Errorf("DataStep JSON = %s, want %s", raw, want)
 	}
 }

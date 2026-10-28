@@ -212,11 +212,17 @@ type DataVerifyForRequest struct {
 	Actor    ActorInput
 }
 
+// DataTransition names the event transition a composite step wrote or found
+// already written: one of the closed event.schema.json `transition` values.
+// MCP's own copy of cli.DataTransition (ADR-001: no shared Go type); it
+// encodes as the bare string, so the tool result is unchanged.
+type DataTransition string
+
 // DataStep is one inner step of a composite action, in the order it ran.
 type DataStep struct {
 	Step       string             `json:"step"`
 	Subject    string             `json:"subject,omitempty"`
-	Transition string             `json:"transition,omitempty"`
+	Transition DataTransition     `json:"transition,omitempty"`
 	Outcome    string             `json:"outcome"`
 	Write      *space.WriteResult `json:"write,omitempty"`
 	Note       string             `json:"note,omitempty"`

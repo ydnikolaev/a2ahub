@@ -2,6 +2,8 @@ package cli_test
 
 import (
 	"context"
+	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -1462,6 +1464,20 @@ func TestSpaceInitLocalRelativeDirBecomesAbsolute(t *testing.T) {
 	}
 }
 
+// requireNextStep asserts a rendered NewRefusal ("<attempted>: <found> —
+// <nextStep>") carries want as its third part: present, and after the found
+// text, so it cannot be satisfied by the attempted/found parts echoing it.
+func requireNextStep(t *testing.T, rendered, found, want string) {
+	t.Helper()
+	f, n := strings.Index(rendered, found), strings.LastIndex(rendered, want)
+	if f < 0 || n < 0 || n < f {
+		t.Errorf("stderr = %q, want its next step %q after the found part %q", rendered, want, found)
+	}
+	if !strings.Contains(rendered, " — ") {
+		t.Errorf("stderr = %q is not rendered as a three-part refusal (no \" — \" before the next step)", rendered)
+	}
+}
+
 func TestSpaceInitLocalRefusals(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -1470,6 +1486,10 @@ func TestSpaceInitLocalRefusals(t *testing.T) {
 		prep    func(t *testing.T, target string)
 		mutate  func(cmd *cli.SpaceCommand)
 		wantErr string
+		// wantNext, when set, is the instruction the refusal's third part
+		// must carry (the migrated NewRefusal sites): a command the caller
+		// can run, after the refusal's "— " separator.
+		wantNext string
 	}{
 		{
 			name: "the template's own sentinel id",
@@ -1479,10 +1499,11 @@ func TestSpaceInitLocalRefusals(t *testing.T) {
 			wantErr: "sentinel",
 		},
 		{
-			name:    "a dev build",
-			args:    func(target string) []string { return []string{"init", "acme", "--local", "--dir", target} },
-			mutate:  func(cmd *cli.SpaceCommand) { cmd.Version = "dev" },
-			wantErr: "refusing to scaffold",
+			name:     "a dev build",
+			args:     func(target string) []string { return []string{"init", "acme", "--local", "--dir", target} },
+			mutate:   func(cmd *cli.SpaceCommand) { cmd.Version = "dev" },
+			wantErr:  `a2a binary is version "dev"`,
+			wantNext: "install a tagged release of a2a",
 		},
 		{
 			name: "a non-empty foreign target",
@@ -1534,6 +1555,9 @@ func TestSpaceInitLocalRefusals(t *testing.T) {
 			if !strings.Contains(errOut.String(), tc.wantErr) {
 				t.Errorf("stderr = %q, want it to contain %q", errOut.String(), tc.wantErr)
 			}
+			if tc.wantNext != "" {
+				requireNextStep(t, errOut.String(), tc.wantErr, tc.wantNext)
+			}
 			if _, err := os.Stat(filepath.Join(target, "HEAD")); !os.IsNotExist(err) {
 				t.Errorf("a refused init still created a repository at %s (stat err %v)", target, err)
 			}
@@ -1541,6 +1565,31 @@ func TestSpaceInitLocalRefusals(t *testing.T) {
 				t.Errorf("a refused init still created the data root (stat err %v)", err)
 			}
 		})
+	}
+}
+
+// TestSpaceInitLocalUninspectableTargetNamesTheNextStep: a --dir that is a
+// file cannot be listed, so the refusal says what could not be inspected and
+// the command that re-runs it, and nothing is created.
+func TestSpaceInitLocalUninspectableTargetNamesTheNextStep(t *testing.T) {
+	t.Parallel()
+	root := canonicalTempDir(t)
+	target := filepath.Join(root, "acme.git")
+	if err := os.WriteFile(target, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := newLocalSpaceCommand(t, filepath.Join(root, "data"))
+	io, out, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"init", "acme", "--local", "--dir", target}, io); code != 1 {
+		t.Fatalf("code = %d, want 1; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	found := "cannot inspect " + target
+	if !strings.Contains(errOut.String(), found) {
+		t.Errorf("stderr = %q, want its found part to carry %q", errOut.String(), found)
+	}
+	requireNextStep(t, errOut.String(), found, "re-run `a2a space init acme --local --dir <path>`")
+	if _, err := os.Stat(filepath.Join(root, "data")); !os.IsNotExist(err) {
+		t.Errorf("a refused init still created the data root (stat err %v)", err)
 	}
 }
 
@@ -2001,6 +2050,83 @@ func TestSpaceJoinRefusals(t *testing.T) {
 			}
 			if len(funnel.calls) != 0 {
 				t.Errorf("a refused join reached the funnel %d time(s)", len(funnel.calls))
+			}
+		})
+	}
+}
+
+// failingWriter is a stdout that refuses every write.
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("broken pipe") }
+
+// TestSpaceJoinRefusalsNameTheNextStep pins the migrated refusal paths of
+// `space join`: each one prints what was met AND a command the caller runs
+// next, after the found part, with the exit code unchanged.
+func TestSpaceJoinRefusalsNameTheNextStep(t *testing.T) {
+	t.Parallel()
+	active := "schema: space/v1\nspace: acme\nmin_binary_version: 9.9.9\nparticipants:\n" +
+		"  - {system: billing, org: local, section: billing, owners: [local:billing], status: active, joined: 2026-10-01}\n"
+	flowList := "schema: space/v1\nspace: acme\nmin_binary_version: 9.9.9\n" +
+		"participants: [{system: other, org: local, section: other, owners: [local:other], status: active, joined: 2026-10-01}]\n"
+	cases := []struct {
+		name      string
+		manifest  string
+		prep      func(t *testing.T, cmd *cli.SpaceCommand, funnel *fakeSubmitFunnel)
+		args      []string
+		stdout    io.Writer
+		wantFound string
+		wantNext  string
+	}{
+		{name: "an unwired command", manifest: joinTemplateManifest(t, "acme"),
+			prep:      func(_ *testing.T, cmd *cli.SpaceCommand, _ *fakeSubmitFunnel) { cmd.Funnel = nil },
+			args:      []string{"join"},
+			wantFound: "not wired for a connected space", wantNext: "a2a connect <path-to-the-space-repository>"},
+		{name: "a mirror with no space.yaml", manifest: joinTemplateManifest(t, "acme"),
+			prep: func(t *testing.T, cmd *cli.SpaceCommand, _ *fakeSubmitFunnel) {
+				if err := os.Remove(filepath.Join(cmd.MirrorDir, "space.yaml")); err != nil {
+					t.Fatal(err)
+				}
+			},
+			args:      []string{"join"},
+			wantFound: "cannot read the mirror's space.yaml", wantNext: "run `a2a sync` to refresh the mirror"},
+		{name: "a mirror whose space.yaml does not parse", manifest: "participants: [unclosed\n  : : :\n",
+			args:      []string{"join"},
+			wantFound: "the mirror's space.yaml is unreadable", wantNext: "repair space.yaml in the space repository"},
+		{name: "a participants list join cannot edit in place", manifest: flowList,
+			args:      []string{"join"},
+			wantFound: "a form `join` cannot edit in place", wantNext: "add the row for billing by hand"},
+		{name: "a funnel that fails", manifest: joinTemplateManifest(t, "acme"),
+			prep: func(_ *testing.T, _ *cli.SpaceCommand, funnel *fakeSubmitFunnel) {
+				funnel.err = errors.New("push rejected")
+			},
+			args:      []string{"join"},
+			wantFound: "push rejected", wantNext: "`a2a doctor` checks the credential"},
+		{name: "a stdout that cannot take the --json result", manifest: active,
+			args: []string{"join", "--json"}, stdout: failingWriter{},
+			wantFound: "could not be written to stdout", wantNext: "re-run `a2a space join`"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			funnel := &fakeSubmitFunnel{}
+			cmd := joinCommand(t, tc.manifest, funnel)
+			if tc.prep != nil {
+				tc.prep(t, cmd, funnel)
+			}
+			stdio, out, errOut := newSpaceIO()
+			if tc.stdout != nil {
+				stdio.Stdout = tc.stdout
+			}
+			if code := cmd.Run(context.Background(), tc.args, stdio); code != 1 {
+				t.Fatalf("code = %d, want 1; stdout=%s stderr=%s", code, out.String(), errOut.String())
+			}
+			if !strings.Contains(errOut.String(), tc.wantFound) {
+				t.Errorf("stderr = %q, want its found part to carry %q", errOut.String(), tc.wantFound)
+			}
+			requireNextStep(t, errOut.String(), tc.wantFound, tc.wantNext)
+			if !strings.HasPrefix(errOut.String(), "space join") {
+				t.Errorf("stderr = %q, want it to open with the attempted verb", errOut.String())
 			}
 		})
 	}

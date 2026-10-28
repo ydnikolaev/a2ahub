@@ -565,3 +565,17 @@ func TestDataActionsNameRequest(t *testing.T) {
 		t.Fatalf("DataActions = %v, want it to contain request", DataActions)
 	}
 }
+
+// TestDataStepTransitionEncodesAsTheBareString: DataTransition is a named
+// type for the closed event `transition` vocabulary; the tool result's step
+// shape must stay byte-identical to the plain-string one.
+func TestDataStepTransitionEncodesAsTheBareString(t *testing.T) {
+	t.Parallel()
+	raw, err := json.Marshal(DataStep{Step: "verify", Subject: "XW-a", Transition: DataTransition("verify-pass"), Outcome: "landed"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"step":"verify","subject":"XW-a","transition":"verify-pass","outcome":"landed"}`; string(raw) != want {
+		t.Errorf("DataStep JSON = %s, want %s", raw, want)
+	}
+}

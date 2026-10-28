@@ -195,7 +195,7 @@ func (r *expressRun) fail(err error) error {
 	return fmt.Errorf("%w (last landed step: %s)", err, last)
 }
 
-func (r *expressRun) skip(step, subject, transition, note string) {
+func (r *expressRun) skip(step, subject string, transition cli.DataTransition, note string) {
 	r.add(cli.DataStep{Step: step, Subject: subject, Transition: transition, Outcome: expressAlreadyDone, Note: note})
 }
 
@@ -297,7 +297,7 @@ func (r *expressRun) lifecycleCommand(verb string, env expressEnv) (expressComma
 // runs it with its output captured (the express result carries steps, not the
 // inner verbs' prose), and settles the write it made. A nil build means the
 // shipped submit command.
-func (r *expressRun) runInner(ctx context.Context, step, subject, transition string, build func(expressEnv) (expressCommand, error), argv []string) error {
+func (r *expressRun) runInner(ctx context.Context, step, subject string, transition cli.DataTransition, build func(expressEnv) (expressCommand, error), argv []string) error {
 	env, err := r.env(ctx)
 	if err != nil {
 		r.add(cli.DataStep{Step: step, Subject: subject, Transition: transition, Outcome: expressRefused, Note: err.Error()})
@@ -434,14 +434,27 @@ func (r *expressRun) settleCore(ctx context.Context, step cli.DataStep, write *s
 
 // --- reading the mirror -------------------------------------------------------
 
+// expressTransition is an event's `transition` as read off the mirror: one of
+// the closed event.schema.json values, which internal/fold declares as
+// untyped constants (fold.TRespond, ...). Comparing against those constants
+// needs no conversion; handing one to fold.Event or cli.DataStep converts
+// explicitly, which marks the boundary where a mirror string becomes a
+// transition the fold judges.
+type expressTransition string
+
+// expressDeliverableKind is a handoff deliverable's `kind`: one of the closed
+// handoff.schema.json values (code, contract, config, doc, data). The only
+// value this file acts on is datapackage.DeliverableKindData.
+type expressDeliverableKind string
+
 // expressEvent is one committed event with the refs the fold needs to attach
 // response-scoped events to their parent.
 type expressEvent struct {
-	Event      string         `yaml:"event"`
-	Subject    string         `yaml:"subject"`
-	Transition string         `yaml:"transition"`
-	State      string         `yaml:"state"`
-	Actor      dataEventActor `yaml:"actor"`
+	Event      string            `yaml:"event"`
+	Subject    string            `yaml:"subject"`
+	Transition expressTransition `yaml:"transition"`
+	State      string            `yaml:"state"`
+	Actor      dataEventActor    `yaml:"actor"`
 	Refs       []struct {
 		Ref string `yaml:"ref"`
 	} `yaml:"refs"`
@@ -483,7 +496,7 @@ func expressFoldEvents(all []expressEvent, primaryID string) []fold.Event {
 			continue
 		}
 		fe := fold.Event{
-			ULID: ev.Event, Subject: ev.Subject, Transition: ev.Transition, ClaimedState: fold.State(ev.State),
+			ULID: ev.Event, Subject: ev.Subject, Transition: string(ev.Transition), ClaimedState: fold.State(ev.State),
 			Actor: fold.Actor{Kind: ev.Actor.Kind, Name: ev.Actor.Name, System: ev.Actor.System},
 		}
 		if ev.Transition == fold.TRespond && len(ev.Refs) > 0 {
@@ -506,8 +519,8 @@ type expressDoc struct {
 	Fulfills     []string
 	Delivers     []string `yaml:"delivers"`
 	Deliverables []struct {
-		Ref  string `yaml:"ref"`
-		Kind string `yaml:"kind"`
+		Ref  string                 `yaml:"ref"`
+		Kind expressDeliverableKind `yaml:"kind"`
 	} `yaml:"deliverables"`
 	Refs []struct {
 		Ref string `yaml:"ref"`
@@ -675,7 +688,7 @@ func (c *dataCore) expressSnapshot(wrID string) (expressSnapshot, error) {
 				handoff.first = events[0].ULID
 			}
 			for _, d := range h.Deliverables {
-				if d.Kind == "data" {
+				if d.Kind == datapackage.DeliverableKindData {
 					handoff.packageID = d.Ref
 				}
 			}
@@ -1128,7 +1141,7 @@ func (c *dataCore) expressPackageDelivered(packageID string) (bool, error) {
 			return false, err
 		}
 		for _, d := range h.Deliverables {
-			if d.Kind == "data" && d.Ref == packageID {
+			if d.Kind == datapackage.DeliverableKindData && d.Ref == packageID {
 				return true, nil
 			}
 		}
@@ -1250,7 +1263,7 @@ func (r *expressRun) verifyFor(ctx context.Context, req cli.DataVerifyForRequest
 
 	if h.state == fold.StateSubmitted || h.state == fold.StateAcknowledged {
 		recorded, recordErr := c.verify(ctx, cli.DataVerifyRequest{PackageID: h.packageID, Record: true, Actor: r.actor})
-		transition := fold.TVerifyFail
+		transition := cli.DataTransition(fold.TVerifyFail)
 		if pass {
 			transition = fold.TVerifyPass
 		}
@@ -1409,7 +1422,7 @@ func (a mcpDataAdapter) VerifyFor(ctx context.Context, req mcp.DataVerifyForRequ
 func mcpExpressResultOf(result cli.DataExpressResult) mcp.DataExpressResult {
 	steps := make([]mcp.DataStep, 0, len(result.Steps))
 	for _, s := range result.Steps {
-		steps = append(steps, mcp.DataStep{Step: s.Step, Subject: s.Subject, Transition: s.Transition, Outcome: s.Outcome, Write: s.Write, Note: s.Note})
+		steps = append(steps, mcp.DataStep{Step: s.Step, Subject: s.Subject, Transition: mcp.DataTransition(s.Transition), Outcome: s.Outcome, Write: s.Write, Note: s.Note})
 	}
 	return mcp.DataExpressResult{
 		WorkRequest: result.WorkRequest, Handoff: result.Handoff, Package: result.Package, Response: result.Response,

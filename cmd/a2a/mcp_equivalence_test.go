@@ -2826,7 +2826,7 @@ func echoingActor(core *dataCore) {
 func expressTuples(steps []cli.DataStep) []string {
 	out := make([]string, len(steps))
 	for i, s := range steps {
-		out[i] = strings.Join([]string{s.Step, s.Subject, s.Transition, s.Outcome}, "|")
+		out[i] = strings.Join([]string{s.Step, s.Subject, string(s.Transition), s.Outcome}, "|")
 	}
 	return out
 }
@@ -2834,7 +2834,7 @@ func expressTuples(steps []cli.DataStep) []string {
 func expressMCPTuples(steps []mcp.DataStep) []string {
 	out := make([]string, len(steps))
 	for i, s := range steps {
-		out[i] = strings.Join([]string{s.Step, s.Subject, s.Transition, s.Outcome}, "|")
+		out[i] = strings.Join([]string{s.Step, s.Subject, string(s.Transition), s.Outcome}, "|")
 	}
 	return out
 }

@@ -1206,6 +1206,24 @@ func (c *SpaceCommand) spaceLocalFiles(spaceID, version string) ([]space.FileWri
 	return files, nil
 }
 
+// spaceRefuse writes a three-part Refusal (attempted / found / nextStep —
+// NewRefusal, P4 answers-that-hold-2026-08 spec 04) to stdio.Stderr and
+// returns 1. It renders what its caller composed from the caller's own state
+// (the operation, what was met, the command that fixes it); it takes no error
+// and formats none. nextStep is a non-empty literal or expression at every
+// call site, so NewRefusal's empty-next-step refusal is a structural safety
+// net, never an expected path (the shape adaptRefuse / docsRefuse /
+// lifecycleRefuse already use).
+func spaceRefuse(stdio IO, attempted, found, nextStep string) int {
+	refusal, buildFailure := NewRefusal(attempted, found, nextStep)
+	if buildFailure != nil {
+		_, _ = fmt.Fprintln(stdio.Stderr, "space: internal error building a refusal (empty next step) — this is a bug in cmd_space.go, file one")
+		return 1
+	}
+	_, _ = fmt.Fprintln(stdio.Stderr, refusal)
+	return 1
+}
+
 // runInitLocal creates (or, on a re-run, finishes) a local space. Exit codes
 // follow runInit: 1 = refused / failed, 0 = created or already created.
 //
@@ -1218,8 +1236,10 @@ func (c *SpaceCommand) spaceLocalFiles(spaceID, version string) ([]space.FileWri
 func (c *SpaceCommand) runInitLocal(ctx context.Context, spaceID, dir string, stdio IO) int {
 	cleanVersion, err := spaceCleanVersion(c.Version)
 	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "space init: refusing to scaffold — %v\n", err)
-		return 1
+		return spaceRefuse(stdio,
+			"space init --local: refusing to scaffold",
+			fmt.Sprintf("this a2a binary is version %q, not a release version (vX.Y.Z), so it cannot pin the space's scaffolding to a release tag", c.Version),
+			"install a tagged release of a2a (`a2a version` shows the build you are running; `a2a update` fetches the latest release), then re-run `a2a space init "+spaceID+" --local`")
 	}
 	if c.Engine == nil {
 		_, _ = fmt.Fprintln(stdio.Stderr, "space init --local: not wired (no manifest validator) — this build cannot validate the seeded space.yaml")
@@ -1227,8 +1247,10 @@ func (c *SpaceCommand) runInitLocal(ctx context.Context, spaceID, dir string, st
 	}
 	files, err := c.spaceLocalFiles(spaceID, cleanVersion)
 	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "space init: %v\n", err)
-		return 1
+		return spaceRefuse(stdio,
+			"space init --local: build the local space scaffold",
+			err.Error(),
+			"the embedded space template is part of this binary, so this is a build defect rather than your input — run `a2a update` to install a release build and re-run `a2a space init "+spaceID+" --local`; if it persists, report it with `a2a feedback new`")
 	}
 	// Validate before anything touches the disk: the id also becomes a path
 	// segment of the default target, so a malformed id must be refused by the
@@ -1247,14 +1269,18 @@ func (c *SpaceCommand) runInitLocal(ctx context.Context, spaceID, dir string, st
 	}
 	abs, err := initCanonicalPath(target)
 	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "space init: cannot resolve %s: %v\n", target, err)
-		return 1
+		return spaceRefuse(stdio,
+			"space init --local: resolve the target path",
+			fmt.Sprintf("cannot resolve %s: %v", target, err),
+			"pass --dir with a path whose existing parent directories are readable, then re-run `a2a space init "+spaceID+" --local --dir <path>`")
 	}
 
 	nonEmpty, err := spaceDirNonEmpty(abs)
 	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "space init: cannot inspect %s: %v\n", abs, err)
-		return 1
+		return spaceRefuse(stdio,
+			"space init --local: inspect the target directory",
+			fmt.Sprintf("cannot inspect %s: %v", abs, err),
+			"make "+abs+" a readable directory (or remove it), or pass a different --dir, then re-run `a2a space init "+spaceID+" --local --dir <path>`")
 	}
 	if nonEmpty {
 		return c.spaceInitLocalRerun(ctx, spaceID, abs, stdio)
@@ -1268,13 +1294,16 @@ func (c *SpaceCommand) runInitLocal(ctx context.Context, spaceID, dir string, st
 				err = fmt.Errorf("%w (and the partial directory could not be removed: %w)", err, rmErr)
 			}
 		}
-		_, _ = fmt.Fprintf(stdio.Stderr, "space init: %v\n", err)
-		return 1
+		return spaceRefuse(stdio,
+			"space init --local: create the bare repository",
+			err.Error(),
+			"fix the cause named above (is `git` on PATH, is the target writable?), remove "+abs+" if a partial directory remains, then re-run `a2a space init "+spaceID+" --local --dir "+abs+"`")
 	}
 	if err := host.PrepareLocalSpace(ctx, abs, space.LocalSpaceBaseBranch); err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "space init: the repository was created at %s but its land guard could not be installed: %v\n", abs, err)
-		_, _ = fmt.Fprintf(stdio.Stderr, "space init: re-run `a2a space init %s --local --dir %s` to finish — it is safe to repeat\n", spaceID, abs)
-		return 1
+		return spaceRefuse(stdio,
+			"space init --local: install the land guard",
+			fmt.Sprintf("the repository was created at %s but its land guard could not be installed: %v", abs, err),
+			"re-run `a2a space init "+spaceID+" --local --dir "+abs+"` to finish — it is safe to repeat")
 	}
 
 	_, _ = fmt.Fprintf(stdio.Stdout, "space init: created local space %s at %s\n", spaceID, abs)
@@ -1300,8 +1329,10 @@ func (c *SpaceCommand) spaceValidateSeededManifest(files []space.FileWrite, stdi
 	}
 	res, err := c.Engine.ValidateManifest(manifest)
 	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "space init: cannot validate the seeded space.yaml: %v\n", err)
-		return 1
+		return spaceRefuse(stdio,
+			"space init --local: validate the seeded space.yaml",
+			fmt.Sprintf("the manifest validator itself failed: %v", err),
+			"the validator and schema are embedded in this binary, so this is a build defect — run `a2a update` to install a release build and re-run `a2a space init`; if it persists, report it with `a2a feedback new`")
 	}
 	if !res.Valid {
 		_, _ = fmt.Fprintln(stdio.Stderr, "space init: refusing to create — the seeded space.yaml does not validate:")
@@ -1325,8 +1356,10 @@ func (c *SpaceCommand) spaceValidateSeededManifest(files []space.FileWrite, stdi
 func (c *SpaceCommand) spaceInitLocalRerun(ctx context.Context, spaceID, abs string, stdio IO) int {
 	state, err := space.ReadLocalSpaceRepo(ctx, abs)
 	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "space init: cannot inspect %s: %v\n", abs, err)
-		return 1
+		return spaceRefuse(stdio,
+			"space init --local: inspect the existing target",
+			fmt.Sprintf("cannot inspect %s: %v", abs, err),
+			"check that "+abs+" is a readable git repository (`git -C "+abs+" log`), or pass a different --dir, then re-run `a2a space init "+spaceID+" --local --dir <path>`")
 	}
 	marked := false
 	if c.Open != nil {
@@ -1340,8 +1373,10 @@ func (c *SpaceCommand) spaceInitLocalRerun(ctx context.Context, spaceID, abs str
 		return 1
 	}
 	if err := host.PrepareLocalSpace(ctx, abs, space.LocalSpaceBaseBranch); err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "space init: could not install the land guard at %s: %v\n", abs, err)
-		return 1
+		return spaceRefuse(stdio,
+			"space init --local: re-install the land guard",
+			fmt.Sprintf("could not install the land guard at %s: %v", abs, err),
+			"make the repository's hooks directory writable, then re-run `a2a space init "+spaceID+" --local --dir "+abs+"` — it is safe to repeat")
 	}
 	_, _ = fmt.Fprintf(stdio.Stdout, "space init: local space %s already created at %s; guard installed\n", spaceID, abs)
 	return 0
@@ -1360,12 +1395,24 @@ var spaceSystemIDPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // .gitkeep because git tracks files, not directories.
 var spaceJoinSectionDirs = []string{"provides", "requires", "exchanges", "events", "docs"}
 
+// spaceJoinStatus is `space join`'s own outcome vocabulary: the two states
+// its --json result reports. It is not the event/feedback `status` enum.
+type spaceJoinStatus string
+
+const (
+	// spaceJoinJoined is the outcome of a join that wrote the participant row.
+	spaceJoinJoined spaceJoinStatus = "joined"
+	// spaceJoinAlreadyActive is the outcome of a join whose system the
+	// manifest already lists as an active participant (nothing was written).
+	spaceJoinAlreadyActive spaceJoinStatus = "already-active"
+)
+
 // spaceJoinResult is the `--json` shape of a join.
 type spaceJoinResult struct {
-	Status  string `json:"status"` // "joined" | "already-active"
-	System  string `json:"system"`
-	Space   string `json:"space"`
-	Section string `json:"section"`
+	Status  spaceJoinStatus `json:"status"`
+	System  string          `json:"system"`
+	Space   string          `json:"space"`
+	Section string          `json:"section"`
 }
 
 // runJoin implements `a2a space join [--space <id>] [--json]`. Exit codes:
@@ -1384,8 +1431,10 @@ func (c *SpaceCommand) runJoin(ctx context.Context, args []string, stdio IO) int
 		return 2
 	}
 	if err := c.spaceUpdateWired(); err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "space join: %v\n", err)
-		return 1
+		return spaceRefuse(stdio,
+			"space join",
+			err.Error(),
+			"register the local space with `a2a connect <path-to-the-space-repository>` (the path `a2a space init --local` printed), then re-run `a2a space join`")
 	}
 	if *spaceFlag != "" && *spaceFlag != c.SpaceID {
 		_, _ = fmt.Fprintf(stdio.Stderr, "space join: unknown space %q (connected space is %q)\n", *spaceFlag, c.SpaceID)
@@ -1417,13 +1466,17 @@ func (c *SpaceCommand) runJoin(ctx context.Context, args []string, stdio IO) int
 
 	rawManifest, err := readFile(filepath.Join(c.MirrorDir, "space.yaml"))
 	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "space join: cannot read the mirror's space.yaml: %v\n", err)
-		return 1
+		return spaceRefuse(stdio,
+			"space join: read the connected space's manifest",
+			fmt.Sprintf("cannot read the mirror's space.yaml: %v", err),
+			"run `a2a sync` to refresh the mirror (`a2a connect <path-to-the-space-repository>` if the space was never cloned), then re-run `a2a space join`")
 	}
 	manifest, err := space.ParseManifest(rawManifest)
 	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "space join: the mirror's space.yaml is unreadable: %v\n", err)
-		return 1
+		return spaceRefuse(stdio,
+			"space join: parse the connected space's manifest",
+			fmt.Sprintf("the mirror's space.yaml is unreadable: %v", err),
+			"repair space.yaml in the space repository (the parse error above names the problem), run `a2a sync`, then re-run `a2a space join`")
 	}
 	for _, p := range manifest.Participants {
 		if p.System != system {
@@ -1435,7 +1488,7 @@ func (c *SpaceCommand) runJoin(ctx context.Context, args []string, stdio IO) int
 			_, _ = fmt.Fprintf(stdio.Stderr, "space join: %s is listed in %s with a status other than active — reactivating a participant is a manifest decision, not a join\n", system, c.SpaceID)
 			return 1
 		}
-		return c.spaceJoinReport(stdio, *asJSON, "already-active", system)
+		return c.spaceJoinReport(stdio, *asJSON, spaceJoinAlreadyActive, system)
 	}
 
 	now := c.Now
@@ -1446,8 +1499,10 @@ func (c *SpaceCommand) runJoin(ctx context.Context, args []string, stdio IO) int
 		system, system, system, now().UTC().Format("2006-01-02"))
 	updated, err := spaceAddParticipantRow(rawManifest, row)
 	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "space join: %v\n", err)
-		return 1
+		return spaceRefuse(stdio,
+			"space join: add "+system+" to the manifest's participants",
+			err.Error(),
+			"edit space.yaml in the space repository so `participants:` is a block list (or add the row for "+system+" by hand), run `a2a sync`, then re-run `a2a space join`")
 	}
 	files := []space.FileWrite{{Path: "space.yaml", Content: updated}}
 	for _, f := range spaceJoinSectionFiles(system) {
@@ -1479,27 +1534,31 @@ func (c *SpaceCommand) runJoin(ctx context.Context, args []string, stdio IO) int
 		AllowSpaceInfrastructure: true,
 	})
 	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "space join: %v\n", err)
-		return 1
+		return spaceRefuse(stdio,
+			"space join: submit the participant row for "+system,
+			err.Error(),
+			"fix the cause named above (`a2a doctor` checks the credential and the connected space), then re-run `a2a space join` — it is safe to repeat: a join already submitted is reported, not duplicated")
 	}
 	if result.State == space.WriteStateAlreadyOpen || result.State == space.WriteStateAlreadyMerged {
 		_, _ = fmt.Fprintf(stdio.Stdout, "space join: already submitted (PR %s, %s)\n", result.PRURL, result.State)
 		return 0
 	}
-	return c.spaceJoinReport(stdio, *asJSON, "joined", system)
+	return c.spaceJoinReport(stdio, *asJSON, spaceJoinJoined, system)
 }
 
 // spaceJoinReport prints the outcome in the requested shape and returns 0.
-func (c *SpaceCommand) spaceJoinReport(stdio IO, asJSON bool, status, system string) int {
+func (c *SpaceCommand) spaceJoinReport(stdio IO, asJSON bool, status spaceJoinStatus, system string) int {
 	if asJSON {
 		out := spaceJoinResult{Status: status, System: system, Space: c.SpaceID, Section: system + "/"}
 		if err := json.NewEncoder(stdio.Stdout).Encode(out); err != nil {
-			_, _ = fmt.Fprintf(stdio.Stderr, "space join: %v\n", err)
-			return 1
+			return spaceRefuse(stdio,
+				"space join: print the --json result",
+				fmt.Sprintf("the join succeeded but its result could not be written to stdout: %v", err),
+				"nothing needs redoing — re-run `a2a space join` (without --json if stdout cannot take it) to read the outcome: it reports already-active, or the open PR, without writing again")
 		}
 		return 0
 	}
-	if status == "already-active" {
+	if status == spaceJoinAlreadyActive {
 		_, _ = fmt.Fprintf(stdio.Stdout, "space join: %s is already an active participant of %s\n", system, c.SpaceID)
 		return 0
 	}
