@@ -31,8 +31,7 @@ func ConformancePaths() []Path {
 	out = append(out, retirementPaths()...)
 	out = append(out, nonCooperativeCounterpartyPaths()...)
 	out = append(out, requirementPaths()...)
-	out = append(out, excludeIDsFromHost(decisionPaths(), HostKindBareRepo, localLandRefusesDecisionSupersedeWithSuccessor,
-		"decision-approved-superseded-by-approved-successor", "decision-rejected-superseded")...)
+	out = append(out, decisionPaths()...)
 	out = append(out, supersedePaths()...)
 	out = append(out, cancelPaths()...)
 	out = append(out, remainingDeclinePaths()...)
@@ -44,22 +43,6 @@ func ConformancePaths() []Path {
 	out = append(out, confirmSpaceLocalPaths()...)
 	return out
 }
-
-// localLandRefusesDecisionSupersedeWithSuccessor is a PRODUCT DEFECT recorded
-// as an exclusion, not a property of the local host. Observed 2026-10-28:
-// `a2a supersede` of an approved or rejected decision (fold's Role Any rows
-// gated by a successor precondition) passes the CLI's own pre-submit check --
-// the successor is landed and resolvable from the author's mirror -- and is
-// then refused at LAND by the local host's land check, LFC-002 "event's actor
-// is not authorized for this transition". The same two paths pass on the
-// GitHub-shaped host only because the fake never runs the validation engine a
-// real space's CI runs. Whether real GitHub's CI refuses them too was NOT
-// checked here. Delete this exclusion when the land check resolves the
-// successor; the matrix then judges both paths on the local host.
-const localLandRefusesDecisionSupersedeWithSuccessor = "PRODUCT DEFECT: the local host's land check " +
-	"refuses a decision supersede that fold's successor precondition permits (LFC-002 " +
-	"\"event's actor is not authorized for this transition\" at land, after the CLI's own " +
-	"check passed)"
 
 // rawPushNeedsAnOpenDefaultBranch is why the two dedicated-space families do
 // not run on a local space. Both change a participant's status or the member

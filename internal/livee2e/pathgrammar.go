@@ -138,28 +138,6 @@ func excludeFromHost(paths []Path, k HostKind, reason string) []Path {
 	return out
 }
 
-// excludeIDsFromHost is excludeFromHost for the named paths only. An id that
-// names no path in paths is a panic: an exclusion that silently matched nothing
-// would leave the path running where it was declared not to.
-func excludeIDsFromHost(paths []Path, k HostKind, reason string, ids ...string) []Path {
-	want := map[string]bool{}
-	for _, id := range ids {
-		want[id] = true
-	}
-	out := make([]Path, len(paths))
-	for i, p := range paths {
-		if want[p.ID] {
-			delete(want, p.ID)
-			p = excludeFromHost([]Path{p}, k, reason)[0]
-		}
-		out[i] = p
-	}
-	for id := range want {
-		panic(fmt.Sprintf("livee2e: excludeIDsFromHost: %q is not among the paths it was given", id))
-	}
-	return out
-}
-
 // pathHostProblems validates every path's host declaration and returns one
 // sentence per defect. It runs untagged (pathdrivability_test.go), so a bad
 // declaration reds on every commit, not only in the tagged matrix.

@@ -488,10 +488,13 @@ func runV3Check(ctx context.Context, engine *validate.Engine, root string, git g
 		} else {
 			checker := ciBaseLegalityChecker{root: root, manifest: manifest, baseEvents: baseEvents}
 			for _, candidate := range lifecycleCandidates {
-				result, err := engine.ValidateLifecycleCandidates(
-					[]validate.CandidateEvent{lifecycleCandidate(candidate.event)},
-					checker,
-				)
+				event, err := lifecycleCandidate(ctx, root, base, manifest, baseEvents, candidate.event)
+				if err != nil {
+					report.Artifacts[candidate.report] = validateReport{Path: candidate.path, Error: err.Error()}
+					report.Valid = false
+					continue
+				}
+				result, err := engine.ValidateLifecycleCandidates([]validate.CandidateEvent{event}, checker)
 				if err != nil {
 					report.Artifacts[candidate.report] = validateReport{Path: candidate.path, Error: err.Error()}
 					report.Valid = false
