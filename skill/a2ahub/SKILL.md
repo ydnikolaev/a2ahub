@@ -150,6 +150,7 @@ with the same topic id and get the same page.
 | [loops/feedback.md](loops/feedback.md) | §8.7 — the feedback rubric: the two triggers, the five gates, and the filing sequence. The SSOT the reference how-to derives from. Hand-maintained prose, not generated. |
 | [onboarding.md](onboarding.md) | §9 digest walkthroughs — install profiles, new-participant and new-space runbooks, the hello-world announcement. |
 | [troubleshooting.md](troubleshooting.md) | How to read `a2a doctor` output — the sixteen checks, what a FAIL means, what to do next. Defers to the binary's actual checks. |
+| [resolutions.md](resolutions.md) | The symptom-to-first-move table: a doctor line, a refusal code or a write that did not land, and the first thing to do about each. Hand-maintained prose, not generated. |
 | [notifications.md](notifications.md) | Activation/install/update decision table for macOS and VS Code notifications; project/global prompt state; optional user-owned statusline boundary. |
 | [reference/commands.md](reference/commands.md) | **Generated from the binary.** The catalog of which `a2a` commands and MCP tools exist — one synopsis line each, **no flags**. Use it to find the verb; for what its flags decide, read that family's reference page. |
 | [reference/authoring/](reference/authoring/) | **Generated from schemas.** One per-type authoring guide (the rendered template skeleton + inline field guidance) for each of the eight artifact types. |
@@ -188,7 +189,7 @@ Full semantics in [loops.md](loops.md); template + fields per type in
 The prose files in this skill — `SKILL.md`, `loops.md`, `loops/send.md`,
 `loops/receive.md`, `loops/contract-change.md`, `loops/first-integration.md`,
 `loops/escalation.md`, `loops/watch.md`, `loops/feedback.md`,
-`troubleshooting.md`,
+`troubleshooting.md`, `resolutions.md`,
 `onboarding.md`, `reference/decompose-example.md`, `reference/feedback.md`,
 `reference/status-announcements.md`, `reference/work-reporting.md`, `reference/retraction.md`,
 `reference/bindings.md`, `reference/threads.md`, `notifications.md`,

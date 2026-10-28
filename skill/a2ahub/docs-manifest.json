@@ -36,6 +36,7 @@
     {"id":"authoring-handoff","group":"Authoring","title":"Authoring: Handoff","file":"a2ahub/reference/authoring/handoff.md"},
     {"id":"authoring-response","group":"Authoring","title":"Authoring: Response","file":"a2ahub/reference/authoring/response.md"},
     {"id":"authoring-announcement","group":"Authoring","title":"Authoring: Announcement","file":"a2ahub/reference/authoring/announcement.md"},
-    {"id":"troubleshooting","group":"Help","title":"Troubleshooting","file":"a2ahub/troubleshooting.md"}
+    {"id":"troubleshooting","group":"Help","title":"Troubleshooting","file":"a2ahub/troubleshooting.md"},
+    {"id":"resolutions","group":"Help","title":"Common resolutions","file":"a2ahub/resolutions.md"}
   ]
 }

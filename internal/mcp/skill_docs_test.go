@@ -10,7 +10,7 @@ func TestSkillDescribesMCPPreCallFreshness(t *testing.T) {
 	t.Parallel()
 	paths := []string{
 		"../../skill/a2ahub/SKILL.md",
-		"../../skill/a2ahub/troubleshooting.md",
+		"../../skill/a2ahub/resolutions.md",
 	}
 	for _, path := range paths {
 		raw, err := os.ReadFile(path)
