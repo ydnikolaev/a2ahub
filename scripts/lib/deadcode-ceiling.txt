@@ -24,7 +24,9 @@
 # and 23 //go:build livee2e files are invisible to this oracle here — any
 # dead code inside them is not counted by this ceiling.
 #
-# TEMPORARY +2 since local-space-2026-10 P2: host.PrepareLocalSpace and
-# installPreReceiveHook land before their only production caller, P3's
-# `space init --local`. P3 owes this back to 85.
-87
+# local-space-2026-10: P2's temporary +2 (host.PrepareLocalSpace and
+# installPreReceiveHook) was paid back by P3's `space init --local`.
+# TEMPORARY +3 since P4-A (wave 3): validate.CheckGatesForHost,
+# validate.CheckGateApproval and manifestPolicyKeys land before their
+# callers, P4-B's verbs and land check (wave 4). P4-B owes this back to 85.
+88

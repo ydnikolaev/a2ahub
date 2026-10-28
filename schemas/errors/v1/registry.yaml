@@ -1278,6 +1278,14 @@ entries:
       no declared path can provoke this refusal. It is exercised by
       internal/validate's manifest vocabulary tests and the invalid golden
       fixture schemas/manifest/v1/fixtures/invalid/space-gates-unknown-value.yaml.
+    prose_exempt: >-
+      staged rollout (local-space-2026-10, wave 3): P4-A shipped the pure rule
+      and P4-B (wave 4) adds the verbs and the skill prose that name it. P4-B
+      deletes this waiver.
+    reachability_exempt: >-
+      staged rollout (local-space-2026-10, wave 3): no cli, mcp or e2e caller
+      exists until P4-B (wave 4) wires the gate into the verbs and the land
+      check. P4-B deletes this waiver.
 
   - code: POL-028
     class: policy
@@ -1304,6 +1312,14 @@ entries:
       and no conformance path edits the manifest's policy keys (spec 04 §T1.5).
       It is exercised by internal/validate's CheckGatesForHost tests and, once
       the CLI wiring lands, through `validate --ci`.
+    prose_exempt: >-
+      staged rollout (local-space-2026-10, wave 3): P4-A shipped the pure rule
+      and P4-B (wave 4) adds the verbs and the skill prose that name it. P4-B
+      deletes this waiver.
+    reachability_exempt: >-
+      staged rollout (local-space-2026-10, wave 3): no cli, mcp or e2e caller
+      exists until P4-B (wave 4) wires the gate into the verbs and the land
+      check. P4-B deletes this waiver.
 
   - code: POL-029
     class: policy
@@ -1330,6 +1346,14 @@ entries:
       undriven until P7 adds the host dimension to the conformance matrix
       (local-space-2026-10 spec 04 §T1.5): the catalogue has no local-host path
       that can provoke a missing approval. P7 deletes this waiver (its AC 15).
+    prose_exempt: >-
+      staged rollout (local-space-2026-10, wave 3): P4-A shipped the pure rule
+      and P4-B (wave 4) adds the verbs and the skill prose that name it. P4-B
+      deletes this waiver.
+    reachability_exempt: >-
+      staged rollout (local-space-2026-10, wave 3): no cli, mcp or e2e caller
+      exists until P4-B (wave 4) wires the gate into the verbs and the land
+      check. P4-B deletes this waiver.
 
   - code: REF-023
     class: referential
