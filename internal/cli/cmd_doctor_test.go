@@ -326,9 +326,9 @@ func TestDoctorCheckCredentials(t *testing.T) {
 		cmd.resolveCredential = func(context.Context, string, space.CredentialReference) (host.Credential, error) {
 			return host.Credential{Token: "tok"}, nil
 		}
-		ok, detail := cmd.doctorCheckCredentials(context.Background(), cfg, machine)
-		if !ok {
-			t.Fatalf("want pass, got fail: %s", detail)
+		status, detail := cmd.doctorCheckCredentials(context.Background(), cfg, machine)
+		if status != doctorCheckPass {
+			t.Fatalf("want pass, got %s: %s", status, detail)
 		}
 	})
 
@@ -338,9 +338,9 @@ func TestDoctorCheckCredentials(t *testing.T) {
 		cmd.resolveCredential = func(context.Context, string, space.CredentialReference) (host.Credential, error) {
 			return host.Credential{}, errors.New("credential unresolved")
 		}
-		ok, detail := cmd.doctorCheckCredentials(context.Background(), cfg, machine)
-		if ok {
-			t.Fatal("want fail, got pass")
+		status, detail := cmd.doctorCheckCredentials(context.Background(), cfg, machine)
+		if status != doctorCheckFail {
+			t.Fatalf("want fail, got %s", status)
 		}
 		if !strings.Contains(detail, "getvisa") || !strings.Contains(detail, "credential unresolved") {
 			t.Fatalf("detail = %q, want it to name the space and the error", detail)
@@ -359,8 +359,8 @@ func TestDoctorCheckCredentials(t *testing.T) {
 			sawEnvVar = envVar
 			return host.Credential{Token: "tok"}, nil
 		}
-		if ok, detail := cmd.doctorCheckCredentials(context.Background(), cfg, machine); !ok {
-			t.Fatalf("want pass, got fail: %s", detail)
+		if status, detail := cmd.doctorCheckCredentials(context.Background(), cfg, machine); status != doctorCheckPass {
+			t.Fatalf("want pass, got %s: %s", status, detail)
 		}
 		if sawEnvVar != "A2A_TOKEN_GETVISA" {
 			t.Fatalf("explicit env var = %q, want A2A_TOKEN_GETVISA (the same one submit reads)", sawEnvVar)
@@ -370,8 +370,8 @@ func TestDoctorCheckCredentials(t *testing.T) {
 	t.Run("no connected spaces vacuously passes", func(t *testing.T) {
 		t.Parallel()
 		cmd := newTestDoctorCommand()
-		ok, _ := cmd.doctorCheckCredentials(context.Background(), space.ProjectConfig{}, machine)
-		if !ok {
+		status, _ := cmd.doctorCheckCredentials(context.Background(), space.ProjectConfig{}, machine)
+		if status != doctorCheckPass {
 			t.Fatal("want pass with zero connected spaces")
 		}
 	})
@@ -2600,7 +2600,8 @@ func TestDoctorLocalOnlyProjectPrintsNoFailAndEachNotApplicableReason(t *testing
 		want string
 	}{
 		{"credentials", func(c *DoctorCommand) (bool, string) {
-			return c.doctorCheckCredentials(context.Background(), cfg, space.MachineConfig{})
+			status, detail := c.doctorCheckCredentials(context.Background(), cfg, space.MachineConfig{})
+			return status == doctorCheckPass, detail
 		}, "acme: local space, no credential needed"},
 		{"CI presence", func(c *DoctorCommand) (bool, string) {
 			return c.doctorCheckCIPresence(cfg, space.MachineConfig{})
@@ -2752,9 +2753,9 @@ func TestDoctorMixedGitHubAndLocalProjectReportsPerSpace(t *testing.T) {
 	t.Run("credentials row skips the local space and checks the GitHub one", func(t *testing.T) {
 		t.Parallel()
 		cmd := newCmd(fullCapHost{Host: host.NewFakeHost()})
-		ok, detail := cmd.doctorCheckCredentials(context.Background(), cfg, space.MachineConfig{})
-		if !ok {
-			t.Fatalf("unexpected FAIL: %s", detail)
+		status, detail := cmd.doctorCheckCredentials(context.Background(), cfg, space.MachineConfig{})
+		if status != doctorCheckPass {
+			t.Fatalf("unexpected %s: %s", status, detail)
 		}
 		if !strings.Contains(detail, "loc: local space, no credential needed") {
 			t.Errorf("detail %q lacks the local space's n/a", detail)
@@ -2938,6 +2939,35 @@ func TestDoctorLocalLandGuard(t *testing.T) {
 		status, detail := cmd.doctorCheckLocalLandGuard(ctx, space.ProjectConfig{Spaces: []space.Ref{{ID: "acme", RepoURL: "/somewhere/acme.git"}}})
 		if status != doctorCheckFail || !strings.Contains(detail, "git 2.37 is older than 2.38") {
 			t.Fatalf("want FAIL naming the git floor, got status=%s detail=%q", status, detail)
+		}
+	})
+
+	// The hooks directory git actually uses is not the space's own: the guard
+	// is not in force even though the effective hook reads present and
+	// executable, and this case is judged first.
+	t.Run("a hooks directory elsewhere fails first with both repairs", func(t *testing.T) {
+		t.Parallel()
+		cmd := doctorLocalCommand()
+		cmd.open = host.FixedOpener(&localInspectorFake{Host: doctorLocalFake(), inspection: host.LocalSpaceInspection{
+			HooksDirElsewhere: "/etc/git-hooks",
+			HookPresent:       true, HookExecutable: true, HookCurrent: false, Writable: true,
+		}})
+		status, detail := cmd.doctorCheckLocalLandGuard(ctx, space.ProjectConfig{Spaces: []space.Ref{{ID: "acme", RepoURL: "/somewhere/acme.git"}}})
+		if status != doctorCheckFail {
+			t.Fatalf("status = %s, want FAIL (detail %q)", status, detail)
+		}
+		for _, want := range []string{
+			"acme: git runs this space's hooks from /etc/git-hooks",
+			"the land guard is not in force",
+			"a2a space init acme --local --dir /somewhere/acme.git",
+			"git --git-dir=/somewhere/acme.git config core.hooksPath hooks",
+		} {
+			if !strings.Contains(detail, want) {
+				t.Errorf("detail %q lacks %q", detail, want)
+			}
+		}
+		if strings.Contains(detail, "not what this binary installs") {
+			t.Errorf("detail %q reports the hook content instead of the hooks directory", detail)
 		}
 	})
 
@@ -3199,34 +3229,65 @@ func TestDoctorLocalRowsUnverifiedAndSilentCases(t *testing.T) {
 	})
 }
 
-// TestDoctorSpaceAccessNamesALocalSpacesOwnRepair: a local space whose
-// directory cannot be fetched gets the local hint (and no credential probe, no
-// private-repo hint), not the GitHub one.
+// TestDoctorSpaceAccessNamesALocalSpacesOwnRepair drives the PRODUCTION opener
+// (host.NewOpener over a real, marked local space), so every state it judges is
+// one production can reach. A local space whose directory was moved FAILs with
+// the local repair (spec 03 §T1.4) and no fetch or credential; a local space
+// that exists but cannot be fetched gets the same repair and no GitHub hint.
 func TestDoctorSpaceAccessNamesALocalSpacesOwnRepair(t *testing.T) {
 	t.Parallel()
-	const url = "/home/me/.local/share/a2a/spaces/acme.git"
-	cfg := space.ProjectConfig{Spaces: []space.Ref{{ID: "acme", RepoURL: url}}}
-	cmd := newTestDoctorCommand()
-	cmd.open = host.FixedOpener(doctorLocalFake())
-	cmd.resolveCredential = func(context.Context, string, space.CredentialReference) (host.Credential, error) {
-		t.Error("a local space's access check resolved a credential")
-		return host.Credential{}, errors.New("credential resolved")
-	}
-	cmd.cloneOrFetch = func(context.Context, string, string, host.Credential) error {
-		return errors.New("fatal: repository does not exist")
-	}
-	ok, detail := cmd.doctorCheckSpaceAccess(context.Background(), cfg, space.MachineConfig{})
-	if ok {
-		t.Fatalf("an unreadable local space must FAIL, got PASS %q", detail)
-	}
-	for _, want := range []string{"acme: ", "the local space's directory is missing or unreadable", "restore it at " + url, "write journals of in-flight writes"} {
-		if !strings.Contains(detail, want) {
-			t.Errorf("detail %q lacks %q", detail, want)
+
+	assertLocalRepair := func(t *testing.T, ok bool, detail, url string) {
+		t.Helper()
+		if ok {
+			t.Fatalf("an unreadable local space must FAIL, got PASS %q", detail)
+		}
+		for _, want := range []string{"acme: ", "the local space's directory is missing or unreadable", "restore it at " + url, "write journals of in-flight writes"} {
+			if !strings.Contains(detail, want) {
+				t.Errorf("detail %q lacks %q", detail, want)
+			}
+		}
+		if strings.Contains(detail, "private") {
+			t.Errorf("detail %q carries the GitHub private-repository hint", detail)
 		}
 	}
-	if strings.Contains(detail, "private") {
-		t.Errorf("detail %q carries the GitHub private-repository hint", detail)
+	noCredential := func(t *testing.T) credentialResolver {
+		return func(context.Context, string, space.CredentialReference) (host.Credential, error) {
+			t.Error("a local space's access check resolved a credential")
+			return host.Credential{}, errors.New("credential resolved")
+		}
 	}
+
+	t.Run("a moved local space", func(t *testing.T) {
+		t.Parallel()
+		ref, dir := doctorRealLocalSpace(t, "acme")
+		if err := os.Rename(dir, dir+".moved"); err != nil {
+			t.Fatal(err)
+		}
+		cmd := doctorLocalCommand()
+		cmd.resolveCredential = noCredential(t)
+		cmd.cloneOrFetch = func(context.Context, string, string, host.Credential) error {
+			t.Error("a path that does not exist was fetched")
+			return errors.New("fetched")
+		}
+		ok, detail := cmd.doctorCheckSpaceAccess(context.Background(), space.ProjectConfig{Spaces: []space.Ref{ref}}, space.MachineConfig{})
+		assertLocalRepair(t, ok, detail, dir)
+		if !strings.Contains(detail, "does not exist") {
+			t.Errorf("detail %q does not say the path is gone", detail)
+		}
+	})
+
+	t.Run("a local space that cannot be fetched", func(t *testing.T) {
+		t.Parallel()
+		ref, dir := doctorRealLocalSpace(t, "acme")
+		cmd := doctorLocalCommand()
+		cmd.resolveCredential = noCredential(t)
+		cmd.cloneOrFetch = func(context.Context, string, string, host.Credential) error {
+			return errors.New("fatal: could not read from remote repository")
+		}
+		ok, detail := cmd.doctorCheckSpaceAccess(context.Background(), space.ProjectConfig{Spaces: []space.Ref{ref}}, space.MachineConfig{})
+		assertLocalRepair(t, ok, detail, dir)
+	})
 }
 
 // TestDoctorScaffoldingRowComparesALocalSpaceToTheLocalSubset: a mirror that

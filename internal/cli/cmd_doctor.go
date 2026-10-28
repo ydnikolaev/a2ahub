@@ -348,7 +348,7 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		name string
 		run  func() (doctorCheckStatus, string)
 	}{
-		{"credentials", passFail(func() (bool, string) { return c.doctorCheckCredentials(ctx, cfg, machine) })},
+		{"credentials", func() (doctorCheckStatus, string) { return c.doctorCheckCredentials(ctx, cfg, machine) }},
 		{"space access", passFail(func() (bool, string) { return c.doctorCheckSpaceAccess(ctx, cfg, machine) })},
 		{"space identity", passFail(func() (bool, string) { return c.doctorCheckSpaceIdentity(cfg, machine) })},
 		{"participant avatars", passFail(func() (bool, string) { return c.doctorCheckParticipantAvatars(cfg, machine) })},
@@ -606,16 +606,26 @@ func (c *DoctorCommand) doctorCheckNotificationComponents(ctx context.Context) (
 // expired" (plan §9.3 "a2a doctor warns on approaching expiry") is not
 // verifiable against any exported core API yet — this check covers
 // present+readable only.
-func (c *DoctorCommand) doctorCheckCredentials(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
+//
+// A space whose host kind could not be read (host.ErrSpaceKindUnknown: a
+// local space's directory that was moved, or a marker probe that failed) is
+// UNVERIFIED, never asked for a credential: whether it needs one is the host's
+// own declaration, and there is no host to declare it. FAIL outranks
+// UNVERIFIED outranks PASS across spaces.
+func (c *DoctorCommand) doctorCheckCredentials(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig) (doctorCheckStatus, string) {
 	if len(cfg.Spaces) == 0 {
-		return true, ""
+		return doctorCheckPass, ""
 	}
 	ok := true
-	var failures, advisories []string
+	var failures, advisories, unverified []string
 	notApplicable, applicable := c.doctorSplitNotApplicable(cfg.Spaces,
 		func(caps host.Capabilities) bool { return !caps.NeedsCredential },
 		func(ref space.Ref) string { return ref.ID + ": local space, no credential needed" })
 	for _, ref := range applicable {
+		if err := c.spaceHost(ref).err; errors.Is(err, host.ErrSpaceKindUnknown) {
+			unverified = append(unverified, fmt.Sprintf("%s: cannot tell whether this space needs a credential: %v", ref.ID, err))
+			continue
+		}
 		var parsedRef space.CredentialReference
 		if raw, present := machine.Credentials[ref.ID]; present {
 			if parsed, err := space.ParseCredentialReference(raw); err == nil {
@@ -633,7 +643,10 @@ func (c *DoctorCommand) doctorCheckCredentials(ctx context.Context, cfg space.Pr
 		}
 	}
 	if !ok {
-		return false, strings.Join(failures, "; ")
+		return doctorCheckFail, strings.Join(failures, "; ")
+	}
+	if len(unverified) > 0 {
+		return doctorCheckUnverified, strings.Join(unverified, "; ")
 	}
 	// PASS-with-advisory (the `versions` precedent): a missing `workflow`
 	// scope must NOT fail this check. No ordinary participant needs it — every
@@ -644,9 +657,9 @@ func (c *DoctorCommand) doctorCheckCredentials(ctx context.Context, cfg space.Pr
 	// The " · " prefix is the renderer's convention for PASS-with-detail: the
 	// check supplies it, exactly as doctorCheckVersions does.
 	if len(advisories) == 0 {
-		return true, doctorNotApplicableDetail(notApplicable)
+		return doctorCheckPass, doctorNotApplicableDetail(notApplicable)
 	}
-	return true, doctorAppendNotApplicable(" · "+strings.Join(advisories, "; "), notApplicable)
+	return doctorCheckPass, doctorAppendNotApplicable(" · "+strings.Join(advisories, "; "), notApplicable)
 }
 
 // doctorWorkflowScopeNote returns an advisory when the space's credential
@@ -677,6 +690,11 @@ func (c *DoctorCommand) doctorWorkflowScopeNote(ctx context.Context, ref space.R
 
 // doctorCheckSpaceAccess ensures every connected space's mirror clone is
 // fetchable (space.CloneOrFetch clones on first use, fetches thereafter).
+//
+// A space whose path does not exist (host.ErrSpacePathMissing) FAILs without a
+// fetch, with the local space's own repair (spec 03 §T1.4): a path-class space
+// whose directory is gone is a local space that was moved or deleted, and no
+// fetch or credential can reach it.
 func (c *DoctorCommand) doctorCheckSpaceAccess(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
 	if len(cfg.Spaces) == 0 {
 		return true, ""
@@ -684,6 +702,11 @@ func (c *DoctorCommand) doctorCheckSpaceAccess(ctx context.Context, cfg space.Pr
 	ok := true
 	var failures []string
 	for _, ref := range cfg.Spaces {
+		if err := c.spaceHost(ref).err; errors.Is(err, host.ErrSpacePathMissing) {
+			ok = false
+			failures = append(failures, fmt.Sprintf("%s: %v — %s", ref.ID, err, doctorLocalSpaceRepairHint(ref)))
+			continue
+		}
 		dir := c.resolveMirror(c.projectRoot, ref, machine)
 		caps, known := c.doctorDeclaredCaps(ref)
 		onThisMachine := known && caps.OnThisMachine
@@ -702,14 +725,22 @@ func (c *DoctorCommand) doctorCheckSpaceAccess(ctx context.Context, cfg space.Pr
 			// own: a GitHub repository is found again by its URL, a directory
 			// that was moved is not, and a journal written for the old
 			// location can no longer be completed.
-			failure += " — the local space's directory is missing or unreadable; restore it at " + ref.RepoURL +
-				" (a moved local space breaks the write journals of in-flight writes, so finish or discard them before moving it)"
+			failure += " — " + doctorLocalSpaceRepairHint(ref)
 		} else if hint := c.doctorPrivateRepoHint(ctx, ref, credential, err); hint != "" {
 			failure += " — " + hint
 		}
 		failures = append(failures, failure)
 	}
 	return ok, strings.Join(failures, "; ")
+}
+
+// doctorLocalSpaceRepairHint is the space access row's repair for a local space
+// whose directory cannot be read: a GitHub repository is found again by its
+// URL, a directory that was moved is not, and a journal written for the old
+// location can no longer be completed (decision 10).
+func doctorLocalSpaceRepairHint(ref space.Ref) string {
+	return "the local space's directory is missing or unreadable; restore it at " + ref.RepoURL +
+		" (a moved local space breaks the write journals of in-flight writes, so finish or discard them before moving it)"
 }
 
 // gitRepositoryNotFound reports whether a failed git fetch/clone carries
@@ -2808,6 +2839,12 @@ func (c *DoctorCommand) doctorCheckLocalLandGuard(ctx context.Context, cfg space
 	status, detail := c.doctorLocalRow(ctx, cfg, func(ref space.Ref, in host.LocalSpaceInspection) string {
 		repair := "re-run `a2a space init " + ref.ID + " --local --dir " + ref.RepoURL + "` (it installs the hook again)"
 		switch {
+		case in.HooksDirElsewhere != "":
+			// First: whatever is in the space's own hooks/, git runs the
+			// hooks from another directory (a global or system
+			// core.hooksPath), so the guard installed there is not in force.
+			return "git runs this space's hooks from " + in.HooksDirElsewhere + ", not its own hooks/, so the land guard is not in force — " +
+				repair + ", which pins core.hooksPath to the space's own hooks/, or run `git --git-dir=" + ref.RepoURL + " config core.hooksPath hooks`"
 		case !in.HookPresent:
 			return "the pre-receive hook is missing, so a raw `git push` can move the base branch around the land — " + repair
 		case !in.HookExecutable:

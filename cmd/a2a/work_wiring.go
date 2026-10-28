@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -170,8 +171,16 @@ func buildWorkCommand(p paths, cfg space.ProjectConfig, machine space.MachineCon
 
 func buildMCPWorkDeps(p paths, cfg space.ProjectConfig, machine space.MachineConfig) (mcp.WorkToolDeps, error) {
 	bySpace := make(map[string]mcp.WorkToolDeps, len(cfg.Spaces))
+	unopened := map[string]error{}
 	for _, ref := range cfg.Spaces {
 		core, err := buildWorkCore(p, cfg, machine, ref)
+		if errors.Is(err, host.ErrSpaceKindUnknown) {
+			// One moved local space must not stop the session from starting
+			// (the contract and data factories' rule): it answers with its
+			// open error when a request reaches it.
+			unopened[ref.ID] = err
+			continue
+		}
 		if err != nil {
 			return mcp.WorkToolDeps{}, err
 		}
@@ -188,7 +197,7 @@ func buildMCPWorkDeps(p paths, cfg space.ProjectConfig, machine space.MachineCon
 		}
 		bySpace[ref.ID] = deps
 	}
-	if len(bySpace) == 1 {
+	if len(bySpace) == 1 && len(unopened) == 0 {
 		for _, deps := range bySpace {
 			return deps, nil
 		}
@@ -199,7 +208,15 @@ func buildMCPWorkDeps(p paths, cfg space.ProjectConfig, machine space.MachineCon
 	}
 	return mcp.WorkToolDeps{ProjectID: projectID, ResolveSpace: func(id string) (mcp.WorkToolDeps, error) {
 		if id == "" {
-			return mcp.WorkToolDeps{}, fmt.Errorf("a2a_work: space is required when multiple spaces are connected")
+			if len(bySpace)+len(unopened) != 1 {
+				return mcp.WorkToolDeps{}, fmt.Errorf("a2a_work: space is required when multiple spaces are connected")
+			}
+			for only := range unopened {
+				id = only
+			}
+		}
+		if openErr, ok := unopened[id]; ok {
+			return mcp.WorkToolDeps{}, fmt.Errorf("a2a_work: space %q could not be opened: %w", id, openErr)
 		}
 		deps, ok := bySpace[id]
 		if !ok {

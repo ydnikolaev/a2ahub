@@ -105,10 +105,19 @@ func newMCPContractOperationsFactory(p paths, cfg space.ProjectConfig, machine s
 			return mcp.ContractToolOperations{}, err
 		}
 		cores := make(map[string]*contractP6Core, len(cfg.Spaces))
+		unopened := map[string]error{}
 		for _, ref := range cfg.Spaces {
 			// One host per connected space: a GitHub space and a local space
 			// in one project each get their own.
 			h, repo, openErr := openContractHost(open, ref.RepoURL)
+			if errors.Is(openErr, host.ErrSpaceKindUnknown) {
+				// One moved local space must not cost the session every
+				// other space, nor its read tools: an unreachable space
+				// never costs the agent more than itself. The space answers
+				// with its open error when a request names it.
+				unopened[ref.ID] = openErr
+				continue
+			}
 			if openErr != nil {
 				return mcp.ContractToolOperations{}, openErr
 			}
@@ -128,7 +137,7 @@ func newMCPContractOperationsFactory(p paths, cfg space.ProjectConfig, machine s
 			}
 			cores[ref.ID] = core
 		}
-		return contractMCPToolOperations(mcpContractP6Router{bySpace: cores}), nil
+		return contractMCPToolOperations(mcpContractP6Router{bySpace: cores, unopened: unopened}), nil
 	}
 }
 
@@ -811,24 +820,36 @@ func (a mcpContractP6Adapter) VerifyContractExport(ctx context.Context, request 
 
 type mcpContractP6Router struct {
 	bySpace map[string]*contractP6Core
+	// unopened holds the open error of each configured space whose kind
+	// could not be told (host.ErrSpaceKindUnknown: a local space that was
+	// moved, say). Such a space has no core, and a request for it answers
+	// with that error, while every other space keeps working.
+	unopened map[string]error
 }
 
 func (r mcpContractP6Router) coreFor(spaceID string) (*contractP6Core, error) {
 	if spaceID != "" {
+		if openErr, ok := r.unopened[spaceID]; ok {
+			return nil, fmt.Errorf("a2a_contract: space %q could not be opened: %w", spaceID, openErr)
+		}
 		core, ok := r.bySpace[spaceID]
 		if !ok {
 			return nil, fmt.Errorf("a2a_contract: space %q is not connected", spaceID)
 		}
 		return core, nil
 	}
-	if len(r.bySpace) == 0 {
+	switch len(r.bySpace) + len(r.unopened) {
+	case 0:
 		return nil, fmt.Errorf("a2a_contract: no connected space")
-	}
-	if len(r.bySpace) > 1 {
+	case 1:
+	default:
 		return nil, fmt.Errorf("a2a_contract: space is required when multiple spaces are connected")
 	}
 	for _, core := range r.bySpace {
 		return core, nil
+	}
+	for id, openErr := range r.unopened {
+		return nil, fmt.Errorf("a2a_contract: space %q could not be opened: %w", id, openErr)
 	}
 	return nil, fmt.Errorf("a2a_contract: no connected space")
 }

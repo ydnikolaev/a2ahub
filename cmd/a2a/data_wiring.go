@@ -25,6 +25,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -1540,24 +1541,36 @@ var _ mcp.DataFetchBlobOperations = mcpDataAdapter{}
 // spaces refuses, naming the ambiguity, rather than silently picking one.
 type mcpDataRouter struct {
 	bySpace map[string]*dataCore
+	// unopened holds the open error of each configured space whose kind
+	// could not be told (host.ErrSpaceKindUnknown: a local space that was
+	// moved, say). Such a space has no core, and a request for it answers
+	// with that error, while every other space keeps working.
+	unopened map[string]error
 }
 
 func (r mcpDataRouter) coreFor(spaceID string) (*dataCore, error) {
 	if spaceID != "" {
+		if openErr, ok := r.unopened[spaceID]; ok {
+			return nil, fmt.Errorf("a2a_data: space %q could not be opened: %w", spaceID, openErr)
+		}
 		core, ok := r.bySpace[spaceID]
 		if !ok {
 			return nil, fmt.Errorf("a2a_data: space %q is not connected", spaceID)
 		}
 		return core, nil
 	}
-	if len(r.bySpace) == 0 {
+	switch len(r.bySpace) + len(r.unopened) {
+	case 0:
 		return nil, fmt.Errorf("a2a_data: no connected space")
-	}
-	if len(r.bySpace) > 1 {
+	case 1:
+	default:
 		return nil, fmt.Errorf("a2a_data: space is required when multiple spaces are connected")
 	}
 	for _, core := range r.bySpace {
 		return core, nil
+	}
+	for id, openErr := range r.unopened {
+		return nil, fmt.Errorf("a2a_data: space %q could not be opened: %w", id, openErr)
 	}
 	return nil, fmt.Errorf("a2a_data: no connected space")
 }
@@ -1632,10 +1645,19 @@ func newMCPDataOperationsFactory(p paths, cfg space.ProjectConfig, machine space
 			return mcp.DataToolDeps{}, err
 		}
 		cores := make(map[string]*dataCore, len(cfg.Spaces))
+		unopened := map[string]error{}
 		for _, ref := range cfg.Spaces {
 			// One host per connected space: a GitHub space and a local space
 			// in one project each get their own.
 			h, repo, openErr := open(ref.RepoURL)
+			if errors.Is(openErr, host.ErrSpaceKindUnknown) {
+				// One moved local space must not cost the session every
+				// other space, nor its read tools: an unreachable space
+				// never costs the agent more than itself. The space answers
+				// with its open error when a request names it.
+				unopened[ref.ID] = openErr
+				continue
+			}
 			if openErr != nil {
 				return mcp.DataToolDeps{}, openErr
 			}
@@ -1656,6 +1678,6 @@ func newMCPDataOperationsFactory(p paths, cfg space.ProjectConfig, machine space
 			core.cacheDir = cacheDirOf(p)
 			cores[ref.ID] = core
 		}
-		return mcp.DataToolDeps{Operations: mcpDataRouter{bySpace: cores}}, nil
+		return mcp.DataToolDeps{Operations: mcpDataRouter{bySpace: cores, unopened: unopened}}, nil
 	}
 }

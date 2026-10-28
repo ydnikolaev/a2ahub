@@ -97,3 +97,22 @@ stdout 'repository visibility \[lone\]: PASS: n/a: on this machine, never shared
 ! stdout 'FAIL'
 ! stdout 'UNVERIFIED'
 
+
+# local-space-2026-10 W6 (P3 audit MED, spec 03 §T1.4): the same local space,
+# moved away. host.Open used to read a path it could not find as an unmarked
+# GitHub-kind repository, so doctor demanded A2A_TOKEN_LONE, printed git's raw
+# "does not appear to be a git repository" with no local hint, and passed the
+# three local rows and the space policy over a space nobody read. Now space
+# access FAILs with the moved-local-space repair, and every row that needs the
+# host says it could not judge.
+mv spaces/lone.git spaces/lone-moved.git
+! exec a2a doctor
+stdout 'space access: FAIL: lone: .*does not exist.*restore it at .*spaces/lone\.git \(a moved local space breaks the write journals'
+stdout 'credentials: UNVERIFIED: lone: cannot tell whether this space needs a credential'
+stdout 'local land guard: UNVERIFIED: lone: the space''s host could not be opened'
+stdout 'local history shape: UNVERIFIED'
+stdout 'local space writable: UNVERIFIED'
+stdout 'space policy: UNVERIFIED: lone: host not opened'
+! stdout 'A2A_TOKEN_'
+! stdout 'local land guard: PASS'
+! stdout 'space policy: PASS'

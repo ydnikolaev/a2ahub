@@ -2,7 +2,9 @@ package host
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
@@ -13,7 +15,9 @@ import (
 func TestOpen_PathIsGitHubUnlessMarked(t *testing.T) {
 	t.Setenv("A2A_GITHUB_API", "http://env-value.invalid")
 
-	loc, err := ParseLocator("/tmp/x/some-org/some-hub")
+	// An existing repository without the marker: a path that does not exist is
+	// not "unmarked" (TestOpen_PathKindUnknownIsAnErrorNeverGitHub).
+	loc, err := ParseLocator(spacefixture.New(t, "axon").OriginDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,19 +210,80 @@ func TestOpen_MarkedPathIsLocal(t *testing.T) {
 	}
 }
 
-func TestOpen_AnUnmarkedOrMissingPathStaysGitHub(t *testing.T) {
+// TestOpen_PathKindUnknownIsAnErrorNeverGitHub pins the third outcome of a
+// path-class Open: a path whose kind could not be read is an error wrapping
+// ErrSpaceKindUnknown, with no host, never a GitHub host (anti-pattern #22).
+// A missing path also wraps ErrSpacePathMissing; one that exists does not.
+func TestOpen_PathKindUnknownIsAnErrorNeverGitHub(t *testing.T) {
 	t.Parallel()
-	for _, raw := range []string{t.TempDir() + "/o/r", "/definitely/not/here/o/r"} {
-		loc, err := ParseLocator(raw)
+	ctx := context.Background()
+	check := func(context.Context, LandCandidate) (LandVerdict, error) { return LandVerdict{OK: true}, nil }
+
+	// A local space that was moved away: marked, then gone.
+	moved := spacefixture.New(t, "axon").OriginDir
+	if err := PrepareLocalSpace(ctx, moved, "main"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(moved, moved+".moved"); err != nil {
+		t.Fatal(err)
+	}
+	notARepo := t.TempDir()
+
+	cases := []struct {
+		name        string
+		raw         string
+		wantMissing bool
+	}{
+		{"a moved local space", moved, true},
+		{"a moved local space as a file URL", "file://" + moved, true},
+		{"a path that never existed", t.TempDir() + "/o/r", true},
+		{"an existing directory that is not a repository", notARepo, false},
+	}
+	for _, tc := range cases {
+		loc, err := ParseLocator(tc.raw)
 		if err != nil {
 			t.Fatal(err)
 		}
-		h, err := Open(loc, OpenConfig{})
-		if err != nil {
-			t.Fatalf("Open(%q): %v", raw, err)
+		h, err := Open(loc, OpenConfig{LandCheck: check, LandAuthor: "local:axon"})
+		if err == nil || h != nil {
+			t.Fatalf("%s: Open = %T, %v; want an error and no host", tc.name, h, err)
 		}
-		if _, ok := h.(*GitHubHost); !ok {
-			t.Errorf("Open(%q) = %T, want *GitHubHost", raw, h)
+		if !errors.Is(err, ErrSpaceKindUnknown) {
+			t.Errorf("%s: %v does not wrap ErrSpaceKindUnknown", tc.name, err)
 		}
+		if got := errors.Is(err, ErrSpacePathMissing); got != tc.wantMissing {
+			t.Errorf("%s: errors.Is(ErrSpacePathMissing) = %v, want %v (%v)", tc.name, got, tc.wantMissing, err)
+		}
+	}
+
+	// The production Opener carries the same error to its callers.
+	if h, _, err := NewOpener(OpenConfig{LandCheck: check})(moved); err == nil || h != nil || !errors.Is(err, ErrSpacePathMissing) {
+		t.Errorf("NewOpener(moved) = %v, %v; want ErrSpacePathMissing and no host", h, err)
+	}
+}
+
+// reason: mutates process env (t.Setenv PATH) — not run in parallel.
+//
+// TestOpen_AFailedMarkerProbeIsAnErrorNeverGitHub: the marker probe of an
+// existing, marked local space fails because git cannot run. Before the
+// three-outcome probe this read as "unmarked" and opened a *GitHubHost.
+func TestOpen_AFailedMarkerProbeIsAnErrorNeverGitHub(t *testing.T) {
+	ctx := context.Background()
+	dir := spacefixture.New(t, "axon").OriginDir
+	if err := PrepareLocalSpace(ctx, dir, "main"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", t.TempDir()) // no git on PATH from here on
+	loc, err := ParseLocator(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(context.Context, LandCandidate) (LandVerdict, error) { return LandVerdict{OK: true}, nil }
+	h, err := Open(loc, OpenConfig{LandCheck: check})
+	if err == nil || h != nil {
+		t.Fatalf("Open with a failing probe = %T, %v; want an error and no host", h, err)
+	}
+	if !errors.Is(err, ErrSpaceKindUnknown) || errors.Is(err, ErrSpacePathMissing) {
+		t.Errorf("error %v: want ErrSpaceKindUnknown and not ErrSpacePathMissing", err)
 	}
 }

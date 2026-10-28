@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
+	"os"
 	"path/filepath"
+	"strings"
 )
 
 // OpenConfig is everything any host kind needs at construction, supplied by
@@ -31,26 +34,42 @@ type OpenConfig struct {
 // space loc addresses.
 //
 // A URL-class locator is always a *GitHubHost with cfg's client and API base.
-// A path-class locator is a *LocalHost when the repository at the path carries
-// the a2a.host=local marker in its own git config (written only by
-// PrepareLocalSpace), and a *GitHubHost otherwise: an unmarked path stays
-// GitHub-kind because the e2e rig reaches testkit/fakegithub through a
-// local-path repo_url (docs/validator-backlog.md). A marked path with a nil
-// cfg.LandCheck is an error, never an unvalidated host. The environment never
-// participates in the choice.
+// A path-class locator has three outcomes, read from the repository's own git
+// config:
+//
+//   - marked (a2a.host=local, written only by PrepareLocalSpace): a *LocalHost.
+//     A marked path with a nil cfg.LandCheck is an error, never an
+//     unvalidated host.
+//   - a readable repository without the marker: a *GitHubHost. An unmarked
+//     path stays GitHub-kind because the e2e rig reaches testkit/fakegithub
+//     through a local-path repo_url (docs/validator-backlog.md).
+//   - could not tell: an error wrapping ErrSpaceKindUnknown, and no host. A
+//     path that does not exist (a local space that was moved or deleted) also
+//     wraps ErrSpacePathMissing. A failed probe is not a resolved "unmarked"
+//     (AGENTS.md anti-pattern #22): opening it as GitHub would demand a GitHub
+//     credential for a space that needs none and judge it with GitHub's rules.
+//
+// The environment never participates in the choice.
 func Open(loc Locator, cfg OpenConfig) (Host, error) {
 	switch loc.class {
 	case classURL:
 		return OpenGitHub(cfg), nil
 	case classPath:
 		gitDir, err := filepath.Abs(loc.path)
-		if err == nil && openMarked(gitDir) {
-			if cfg.LandCheck == nil {
-				return nil, fmt.Errorf("host: %q is a local space but no land check is configured: %w", loc.Raw, errNoLandCheck)
-			}
-			return newLocalHost(gitDir, cfg.LandCheck, cfg.LandAuthor), nil
+		if err != nil {
+			return nil, fmt.Errorf("host: %q: %w: %w", loc.Raw, ErrSpaceKindUnknown, err)
 		}
-		return OpenGitHub(cfg), nil
+		marked, err := probeMarker(gitDir)
+		if err != nil {
+			return nil, fmt.Errorf("host: %q: %w", loc.Raw, err)
+		}
+		if !marked {
+			return OpenGitHub(cfg), nil
+		}
+		if cfg.LandCheck == nil {
+			return nil, fmt.Errorf("host: %q is a local space but no land check is configured: %w", loc.Raw, errNoLandCheck)
+		}
+		return newLocalHost(gitDir, cfg.LandCheck, cfg.LandAuthor), nil
 	default:
 		return nil, fmt.Errorf("host: unsupported address class %d for %q", loc.class, loc.Raw)
 	}
@@ -59,12 +78,39 @@ func Open(loc Locator, cfg OpenConfig) (Host, error) {
 // errNoLandCheck is why Open refused a marked path.
 var errNoLandCheck = errors.New("a local space cannot be opened without a land check")
 
-// openMarked reads the local-space marker under a bounded context: Open has no
-// context of its own, and the probe is one local git call.
-func openMarked(gitDir string) bool {
+// probeMarker tells Open whether the repository at gitDir is a local space. It
+// reads the same key localMarked reads, in that repository's own config only
+// (--git-dir and --local), under a bounded context: Open has no context of its
+// own, and the probe is one local git call.
+//
+// Unlike localMarked, which PrepareLocalSpace uses to decide whether to write
+// the marker, it keeps "unmarked" apart from "could not read": marked is
+// meaningful only when err is nil. git config --get exits 0 with the value
+// when the key is set and 1 when it is not; every other answer (a path that is
+// missing, a path git does not read as a repository, a timeout, a git that
+// could not run) is an error wrapping ErrSpaceKindUnknown.
+func probeMarker(gitDir string) (marked bool, err error) {
+	if _, statErr := os.Stat(gitDir); statErr != nil {
+		if errors.Is(statErr, fs.ErrNotExist) {
+			return false, fmt.Errorf("%w (%w)", ErrSpacePathMissing, ErrSpaceKindUnknown)
+		}
+		return false, fmt.Errorf("%w: %w", ErrSpaceKindUnknown, statErr)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), markerProbeTimeout)
 	defer cancel()
-	return localMarked(ctx, gitDir)
+	res := runRecoveryGit(ctx, 256, "--git-dir="+gitDir, "config", "--local", "--get", localMarkerKey)
+	switch {
+	case ctx.Err() != nil:
+		return false, fmt.Errorf("%w: %s: the %s marker probe did not finish: %w", ErrSpaceKindUnknown, gitDir, localMarkerKey, ctx.Err())
+	case res.err != nil:
+		return false, fmt.Errorf("%w: %s: the %s marker probe could not run: %w", ErrSpaceKindUnknown, gitDir, localMarkerKey, res.err)
+	case res.exitCode == 0:
+		return strings.TrimSpace(string(res.stdout)) == localMarkerValue, nil
+	case res.exitCode == 1:
+		return false, nil
+	default:
+		return false, fmt.Errorf("%w: %s: git could not read this repository's config (the %s marker probe exited %d)", ErrSpaceKindUnknown, gitDir, localMarkerKey, res.exitCode)
+	}
 }
 
 // OpenGitHub is the provider-scoped constructor, for the two consumers whose

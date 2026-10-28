@@ -1,6 +1,9 @@
 package main
 
 import (
+	"errors"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -73,6 +76,65 @@ func TestMCPOperations_OpenerPerSpace(t *testing.T) {
 			}
 			if len(counter.opened) != 0 {
 				t.Fatalf("opener called for %v with no connected space", counter.opened)
+			}
+		})
+	}
+}
+
+// TestMCPOperations_AMovedLocalSpaceCostsOnlyItself proves a space whose kind
+// the opener cannot tell (a local space whose directory was moved) does not
+// fail the whole factory, which would stop `a2a mcp` from starting and take
+// every other space and the read tools with it. The space answers with its
+// open error when a request names it, or when it is the only space; every
+// other space routes as before.
+func TestMCPOperations_AMovedLocalSpaceCostsOnlyItself(t *testing.T) {
+	t.Parallel()
+
+	moved := filepath.Join(t.TempDir(), "moved.git")
+	cfg := space.ProjectConfig{System: "axon", Spaces: []space.Ref{
+		{ID: "alpha", RepoURL: "https://github.com/acme/alpha"},
+		{ID: "lone", RepoURL: moved},
+	}}
+	only := space.ProjectConfig{System: "axon", Spaces: []space.Ref{{ID: "lone", RepoURL: moved}}}
+	open := host.NewOpener(host.OpenConfig{GitHubAPIBase: "http://opener-test.invalid"})
+	for _, tc := range []struct {
+		name  string
+		route func(t *testing.T, cfg space.ProjectConfig) func(spaceID string) (bool, error)
+	}{
+		{"contract", func(t *testing.T, cfg space.ProjectConfig) func(string) (bool, error) {
+			p := paths{projectRoot: t.TempDir(), staging: t.TempDir()}
+			ops, err := newMCPContractOperationsFactory(p, cfg, space.MachineConfig{}, open)(stubMCPActor)
+			if err != nil {
+				t.Fatalf("factory: %v", err)
+			}
+			router := ops.Publication.(mcpContractP6Router)
+			return func(id string) (bool, error) { core, err := router.coreFor(id); return core != nil, err }
+		}},
+		{"data", func(t *testing.T, cfg space.ProjectConfig) func(string) (bool, error) {
+			p := paths{projectRoot: t.TempDir(), staging: t.TempDir()}
+			deps, err := newMCPDataOperationsFactory(p, cfg, space.MachineConfig{}, open)(stubMCPActor)
+			if err != nil {
+				t.Fatalf("factory: %v", err)
+			}
+			router := deps.Operations.(mcpDataRouter)
+			return func(id string) (bool, error) { core, err := router.coreFor(id); return core != nil, err }
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			route := tc.route(t, cfg)
+			if ok, err := route("alpha"); err != nil || !ok {
+				t.Fatalf("alpha routes to (%v, %v), want its core", ok, err)
+			}
+			if _, err := route("lone"); !errors.Is(err, host.ErrSpacePathMissing) {
+				t.Fatalf("lone routes to %v, want its open error (ErrSpacePathMissing)", err)
+			}
+			if _, err := route(""); err == nil || !strings.Contains(err.Error(), "space is required when multiple spaces are connected") {
+				t.Fatalf("empty route over two configured spaces = %v, want the ambiguity refusal", err)
+			}
+			single := tc.route(t, only)
+			if _, err := single(""); !errors.Is(err, host.ErrSpacePathMissing) {
+				t.Fatalf("empty route over the one moved space = %v, want its open error", err)
 			}
 		})
 	}

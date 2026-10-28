@@ -77,14 +77,29 @@ var (
 	// is recorded.
 	ErrLandConflict = errors.New("host: land conflict")
 
-	// ErrLandContended is returned when the base branch kept moving under the
-	// write for every bounded attempt. The head branch is kept, so a retry
-	// resumes the same write.
+	// ErrLandContended is returned when the refs a land updates kept changing
+	// under the write for every bounded attempt: the base branch moved, or a
+	// ref lock was held (git's "cannot lock ref"). The head branch is kept, so
+	// a retry resumes the same write.
 	ErrLandContended = errors.New("host: land contended")
 
 	// ErrGitTooOld is returned when the installed git cannot do the merge a
 	// land is built on (`git merge-tree --write-tree`, git 2.38 or newer).
 	ErrGitTooOld = errors.New("host: git too old: a local space needs git 2.38 or newer (merge-tree --write-tree)")
+
+	// ErrSpaceKindUnknown is returned by Open for a path-class locator whose
+	// kind it could not tell: the path could not be resolved or read, or the
+	// local-space marker probe failed for a reason other than "this repository
+	// has no marker" (a timeout, a git that could not run, a path git does not
+	// read as a repository). Such a path is never opened as a GitHub host: a
+	// failed read is not a resolved "unmarked" (AGENTS.md anti-pattern #22).
+	ErrSpaceKindUnknown = errors.New("host: cannot tell whether the path is a local space")
+
+	// ErrSpacePathMissing REFINES ErrSpaceKindUnknown: the locator's path does
+	// not exist, which is what a local space that was moved or deleted looks
+	// like. Every ErrSpacePathMissing error also satisfies
+	// errors.Is(err, ErrSpaceKindUnknown).
+	ErrSpacePathMissing = errors.New("host: the space's path does not exist")
 )
 
 // LandRefusal is the verdict behind an ErrLandRefused: the codes the land check
