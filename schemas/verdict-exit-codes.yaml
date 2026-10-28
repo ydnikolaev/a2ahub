@@ -149,7 +149,7 @@
 # a seeded ceiling that reds on growth. A NEW verb may not join the exempt set
 # silently. Lowering it is a normal commit; raising it needs a written reason
 # in this header.
-unsited_rows_ceiling: 46
+unsited_rows_ceiling: 45
 
 entries:
   - verb: adapt
@@ -486,9 +486,15 @@ entries:
       clean: 0
 
   - verb: space
-    site: []
+    site:
+      - internal/cli/cmd_space.go
     mapping:
       clean: 0
+      objections: 1
+    reason: >-
+      space create/init/join/doctor manage the space repository itself;
+      `space join --json` reports the join it made, and a refused or failed
+      write is an objection, never a measurement failure.
 
   - verb: skill
     site: []
