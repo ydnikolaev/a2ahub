@@ -184,7 +184,6 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
-	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"gopkg.in/yaml.v3"
 )
 
@@ -1013,15 +1012,21 @@ type expressStep struct {
 	Outcome    string `json:"outcome"`
 }
 
+// expressReport is the one field of the verdict report these tests judge,
+// read from the binary's --json wire shape rather than the domain type.
+type expressReport struct {
+	Result string `json:"result"`
+}
+
 type expressProbe struct {
-	WorkRequest string              `json:"work_request"`
-	Handoff     string              `json:"handoff"`
-	Package     string              `json:"package"`
-	Response    string              `json:"response"`
-	Report      *datapackage.Report `json:"report"`
-	Steps       []expressStep       `json:"steps"`
-	Next        string              `json:"next"`
-	Error       string              `json:"error"`
+	WorkRequest string         `json:"work_request"`
+	Handoff     string         `json:"handoff"`
+	Package     string         `json:"package"`
+	Response    string         `json:"response"`
+	Report      *expressReport `json:"report"`
+	Steps       []expressStep  `json:"steps"`
+	Next        string         `json:"next"`
+	Error       string         `json:"error"`
 }
 
 // expressRun execs one composite verb with --json and decodes its result. A
@@ -1176,7 +1181,7 @@ func TestDataLoopExpressEqualsFullFlow(t *testing.T) {
 		t.Fatalf("deliver --for result lacks an id: %+v", deliver)
 	}
 	verify := expAxon.expressRun(t, 0, "data", "verify", "--for", expWR, "--record")
-	if verify.Report == nil || verify.Report.Result() != "pass" {
+	if verify.Report == nil || verify.Report.Result != "pass" {
 		t.Fatalf("verify --for --record verdict = %+v, want pass", verify.Report)
 	}
 
@@ -1216,7 +1221,7 @@ func TestDataLoopExpressFailDisputes(t *testing.T) {
 	deliver := expressFailingDelivery(t, beta, contractRef, wrID, "attempt-1")
 
 	verify := axon.expressRun(t, 1, "data", "verify", "--for", wrID, "--record")
-	if verify.Report == nil || verify.Report.Result() != "fail" {
+	if verify.Report == nil || verify.Report.Result != "fail" {
 		t.Fatalf("verify --for --record verdict = %+v, want fail", verify.Report)
 	}
 	if got, want := stepSummary(verify.Steps), []string{"ack:landed", "verify:landed", "dispute:landed"}; !slices.Equal(got, want) {
@@ -1268,7 +1273,7 @@ func TestDataLoopExpressFailThenPass(t *testing.T) {
 	}
 
 	pass := axon.expressRun(t, 0, "data", "verify", "--for", wrID, "--record")
-	if pass.Report == nil || pass.Report.Result() != "pass" {
+	if pass.Report == nil || pass.Report.Result != "pass" {
 		t.Fatalf("attempt-2 verdict = %+v, want pass", pass.Report)
 	}
 	axon.assertState(t, first.Handoff, "superseded")
@@ -1376,7 +1381,7 @@ func TestDataLoopExpressRequestDeliverVerifyRerun(t *testing.T) {
 
 	// Row 3: the consumer's pass closes.
 	verify := axon.expressRun(t, 0, "data", "verify", "--for", wrID, "--record")
-	if verify.Report == nil || verify.Report.Result() != "pass" {
+	if verify.Report == nil || verify.Report.Result != "pass" {
 		t.Fatalf("verify --for --record verdict = %+v, want pass", verify.Report)
 	}
 	if got, want := stepSummary(verify.Steps), []string{"ack:landed", "verify:landed", "close:landed"}; !slices.Equal(got, want) {
