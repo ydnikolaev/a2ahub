@@ -9435,6 +9435,35 @@
             "scope": "none",
             "why": "Nothing is owed — this changes a maintainer-dispatched workflow, not the a2a binary or anything a space runs.\n"
           }
+        }
+      ]
+    },
+    {
+      "version": "0.27.0",
+      "released": "unreleased",
+      "headline": "a space can live on your own disk, and a data handoff can run in three commands",
+      "changes": [
+        {
+          "id": "RN-02700-0",
+          "kind": "feat",
+          "impact": "normal",
+          "subject": "three composite data verbs run a whole handoff, writing exactly the full flow's events",
+          "detail": "A data handoff used to be a chain of single-step commands across two systems: the consumer files a work request, the producer acknowledges, accepts, packs, delivers and responds, and the consumer fetches, verifies, acknowledges and closes or disputes. Each step is still there and still works the same.\n`a2a data request --producer \u003csystem\u003e --contract \u003cXC\u003e@\u003cversion\u003e` files the work request. `a2a data deliver --for \u003cXW\u003e --from \u003cdir\u003e --profile \u003cp\u003e --format \u003cf\u003e` answers it end to end on the producer side. `a2a data verify --for \u003cXW\u003e --record` judges the latest delivery on the consumer side and closes the request on a pass or disputes it on a failure. Each composite verb runs the unchanged single-step verbs in order, so the space receives the same events, in the same order, as the single-step chain would write; no schema, fold or lifecycle rule changed. A re-run after an interruption resumes from the first step not yet recorded instead of writing a step twice, and a step that waits on a pending merge gives up after `--timeout`.\nThe `a2a_data` MCP tool accepts the same three: `action: request`, and a `for` field on `deliver` and `verify`.\n",
+          "action": {
+            "scope": "none",
+            "why": "Nothing is owed. The single-step verbs are unchanged, and the composite verbs are opt-in.\n"
+          }
+        },
+        {
+          "id": "RN-02700-1",
+          "kind": "feat",
+          "impact": "low",
+          "subject": "a space can be a bare git repository on disk, with writes landed at once by compare-and-swap",
+          "detail": "The groundwork for spaces with no GitHub. A local host lands a validated write as a merge commit on the space's default branch with a compare-and-swap on the branch ref, so two writers racing for one space never overwrite each other: the loser re-reads and retries or reports the contention. A pre-receive hook in the bare repository refuses a push that did not come through that path, so a plain `git push` cannot bypass validation.\nNothing selects this host yet. Creating a local space and connecting a project to it arrive with `a2a space init --local`, which is not in this build.\n",
+          "action": {
+            "scope": "none",
+            "why": "Nothing is owed. Spaces on GitHub behave exactly as before.\n"
+          }
         },
         {
           "id": "KI-01900-PROVIDER-TIER-DEFERRED",
