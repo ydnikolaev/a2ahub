@@ -183,6 +183,8 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
+	"github.com/ydnikolaev/a2ahub/internal/datapackage"
+	"gopkg.in/yaml.v3"
 )
 
 // --- shared fixture -------------------------------------------------------
@@ -989,5 +991,402 @@ func TestDataLoopStaleContractDoesNotChangeVerdict(t *testing.T) {
 	// up, so the observation was always empty.
 	if got := out.Report.Observed.ContractSupersededBy; got != republishedRef {
 		t.Errorf("observed.contract_superseded_by = %q, want %q", got, republishedRef)
+	}
+}
+
+// --- P5 express flow (local-space-2026-10 spec 05) -----------------------
+//
+// `a2a data request`, `a2a data deliver --for <XW>` and `a2a data verify
+// --for <XW> --record` are sequencers over the unchanged domain. The
+// stanzas below drive the real binary against the fake host, which merges a
+// write on its own, so every inner step lands before the next one starts.
+
+// expressStep / expressProbe are this file's own narrow decode of the
+// composite verbs' --json result (spec 05 §7), deliberately not the product
+// type: a test that decodes through the type under test cannot notice that
+// type renaming a wire field.
+type expressStep struct {
+	Step       string `json:"step"`
+	Subject    string `json:"subject"`
+	Transition string `json:"transition"`
+	Outcome    string `json:"outcome"`
+}
+
+type expressProbe struct {
+	WorkRequest string              `json:"work_request"`
+	Handoff     string              `json:"handoff"`
+	Package     string              `json:"package"`
+	Response    string              `json:"response"`
+	Report      *datapackage.Report `json:"report"`
+	Steps       []expressStep       `json:"steps"`
+	Next        string              `json:"next"`
+	Error       string              `json:"error"`
+}
+
+// expressRun execs one composite verb with --json and decodes its result. A
+// non-JSON stdout fails the test, because every composite outcome — including
+// a stopped step — is reported as a result.
+func (r *hostRig) expressRun(t *testing.T, wantCode int, args ...string) expressProbe {
+	t.Helper()
+	stdout, stderr, code := r.run(append(args, "--json")...)
+	if code != wantCode {
+		t.Fatalf("a2a %v: exit %d, want %d\nstdout=%s\nstderr=%s", args, code, wantCode, stdout, stderr)
+	}
+	var out expressProbe
+	if err := json.Unmarshal([]byte(stdout), &out); err != nil {
+		t.Fatalf("decode a2a %v result: %v\nstdout=%s\nstderr=%s", args, err, stdout, stderr)
+	}
+	return out
+}
+
+// stepSummary renders steps as "step:outcome" tokens, for exact-sequence
+// assertions that print both sides on a mismatch.
+func stepSummary(steps []expressStep) []string {
+	out := make([]string, len(steps))
+	for i, s := range steps {
+		out[i] = s.Step + ":" + s.Outcome
+	}
+	return out
+}
+
+// expressDeliverArgs is the argv of `data deliver --for`. contract is passed as
+// --contract only when the request does not itself pin exactly one contract
+// ref (the shared fixture's request pins none).
+func (r *hostRig) expressDeliverArgs(wrID, from, contract string) []string {
+	args := []string{"data", "deliver", "--for", wrID, "--from", from, "--profile", "synthetic", "--format", "json", "--expires", "24h"}
+	if contract != "" {
+		args = append(args, "--contract", contract)
+	}
+	return args
+}
+
+// dataLoopSource writes a one-record payload directory under r's project.
+func (r *hostRig) dataLoopSource(t *testing.T, name, payload string) string {
+	t.Helper()
+	dir := filepath.Join(r.projectDir, name)
+	mustMkdirAll(t, dir)
+	mustWrite(t, filepath.Join(dir, "payload.json"), payload+"\n")
+	return dir
+}
+
+// dataLoopHistories reads every committed event off the origin's main branch
+// and returns, per ROLE, the ordered "(transition)@(actor system)" list.
+// Roles are the subject's id prefix plus its ordinal among subjects of that
+// prefix (by first event id), because ids differ between two runs of the same
+// fixture while the roles do not. Ids, timestamps and commit order are
+// deliberately outside what it returns.
+func dataLoopHistories(t *testing.T, remote string) map[string][]string {
+	t.Helper()
+	type eventDoc struct {
+		Subject    string `yaml:"subject"`
+		Transition string `yaml:"transition"`
+		Actor      struct {
+			System string `yaml:"system"`
+		} `yaml:"actor"`
+	}
+	type located struct {
+		ulid string
+		doc  eventDoc
+	}
+	bySubject := map[string][]located{}
+	for _, path := range strings.Fields(gitOutput(t, remote, "ls-tree", "-r", "--name-only", "main")) {
+		if !strings.Contains(path, "/events/") || !strings.HasSuffix(path, ".yaml") {
+			continue
+		}
+		var doc eventDoc
+		if err := yaml.Unmarshal([]byte(gitOutput(t, remote, "show", "main:"+path)), &doc); err != nil {
+			t.Fatalf("decode event %s: %v", path, err)
+		}
+		bySubject[doc.Subject] = append(bySubject[doc.Subject], located{ulid: filepath.Base(path), doc: doc})
+	}
+	type subjectEntry struct {
+		subject string
+		first   string
+		events  []string
+	}
+	byPrefix := map[string][]subjectEntry{}
+	for subject, events := range bySubject {
+		sort.Slice(events, func(i, j int) bool { return events[i].ulid < events[j].ulid })
+		entry := subjectEntry{subject: subject, first: events[0].ulid}
+		for _, e := range events {
+			entry.events = append(entry.events, e.doc.Transition+"@"+e.doc.Actor.System)
+		}
+		prefix := strings.SplitN(subject, "-", 2)[0]
+		byPrefix[prefix] = append(byPrefix[prefix], entry)
+	}
+	roles := map[string][]string{}
+	for prefix, entries := range byPrefix {
+		sort.Slice(entries, func(i, j int) bool { return entries[i].first < entries[j].first })
+		for i, e := range entries {
+			roles[prefix+"#"+strconv.Itoa(i+1)] = e.events
+		}
+	}
+	return roles
+}
+
+// dataLoopFlowRoles are the roles the loop's artifacts play: WR = the
+// work_request (XW) and the handoff (XH). A response (XS) has no event
+// history of its own on a passing run: its respond is an event on the
+// work_request, and only a dispute is an event on the response itself.
+var dataLoopFlowRoles = []string{"XW#1", "XH#1"}
+
+// TestDataLoopExpressEqualsFullFlow is spec 05 §8 row 4, and D-038's claim:
+// the three composite verbs write, per artifact, the same ordered
+// (transition, actor system) list and reach the same folded state as the
+// documented hand-run sequence. The full-flow half drives the DOCUMENTED
+// order explicitly (ack, accept, pack, deliver, ack, verify --record, respond
+// --ref --delivers, close). TestDataLoopFailSupersedePassCloseInboxNeverAccumulates
+// is NOT that sequence: it skips accept, --ref and --delivers.
+//
+// Only the cross-artifact interleaving may differ (spec 05 §11): the express
+// producer responds BEFORE the consumer verifies, the hand-run flow after.
+func TestDataLoopExpressEqualsFullFlow(t *testing.T) {
+	t.Parallel()
+
+	// --- the documented full flow, on its own fixture ---
+	fullAxon, fullBeta, fullContract, fullWR := setupDataLoop(t)
+	fullBeta.mustRun("sync")
+	fullBeta.mustRun("ack", fullWR)
+	fullBeta.mustRun("accept", fullWR)
+	fullFrom := fullBeta.dataLoopSource(t, "src", `{"example":"attempt-1"}`)
+	fullPack, fullStaging := fullBeta.dataLoopPack(t, fullContract, fullFrom, fullWR, "")
+	fullDeliver := fullBeta.dataLoopDeliver(t, fullStaging, fullWR)
+	fullAxon.mustRun("sync")
+	fullAxon.mustRun("ack", fullDeliver.HandoffID)
+	fullAxon.mustRun("data", "verify", fullPack.Manifest.ID, "--record", "--json")
+	fullBeta.mustRun("sync")
+	fullBeta.mustRun("respond", "--result", "delivered", "--ref", fullDeliver.HandoffID, "--delivers", fullPack.Manifest.ID, fullWR)
+	fullAxon.mustRun("sync")
+	fullAxon.mustRun("close", fullWR)
+
+	// --- the express flow, on its own fixture ---
+	expAxon, expBeta, expContract, expWR := setupDataLoop(t)
+	expFrom := expBeta.dataLoopSource(t, "src", `{"example":"attempt-1"}`)
+	deliver := expBeta.expressRun(t, 0, expBeta.expressDeliverArgs(expWR, expFrom, expContract)...)
+	if deliver.Handoff == "" || deliver.Package == "" || deliver.Response == "" {
+		t.Fatalf("deliver --for result lacks an id: %+v", deliver)
+	}
+	verify := expAxon.expressRun(t, 0, "data", "verify", "--for", expWR, "--record")
+	if verify.Report == nil || verify.Report.Result() != "pass" {
+		t.Fatalf("verify --for --record verdict = %+v, want pass", verify.Report)
+	}
+
+	full := dataLoopHistories(t, fullAxon.fx.RemoteURL())
+	express := dataLoopHistories(t, expAxon.fx.RemoteURL())
+	for _, role := range dataLoopFlowRoles {
+		if len(full[role]) == 0 {
+			t.Fatalf("full flow wrote no events for role %s: %v", role, full)
+		}
+		if !slices.Equal(full[role], express[role]) {
+			t.Errorf("role %s: express events = %v, full-flow events = %v", role, express[role], full[role])
+		}
+	}
+	for _, rig := range []struct {
+		name         string
+		axon         *hostRig
+		wr, xh, resp string
+	}{
+		{"full", fullAxon, fullWR, fullDeliver.HandoffID, ""},
+		{"express", expAxon, expWR, deliver.Handoff, deliver.Response},
+	} {
+		rig.axon.assertState(t, rig.wr, "closed")
+		rig.axon.assertState(t, rig.xh, "accepted")
+		if rig.resp != "" {
+			// A passing verify is an event on the handoff, not on the response:
+			// the response stays submitted, exactly as in the hand-run flow.
+			rig.axon.assertState(t, rig.resp, "submitted")
+		}
+	}
+}
+
+// TestDataLoopExpressFailDisputes is spec 05 §8 row 5, the ruling's one named
+// exception: a failing package is judged, recorded as verify-fail and the
+// response is DISPUTED (so the move passes to the producer); no close is
+// written. The re-run is a no-op that names the producer.
+func TestDataLoopExpressFailDisputes(t *testing.T) {
+	t.Parallel()
+	axon, beta, contractRef, wrID := setupDataLoop(t)
+	deliver := expressFailingDelivery(t, beta, contractRef, wrID, "attempt-1")
+
+	verify := axon.expressRun(t, 1, "data", "verify", "--for", wrID, "--record")
+	if verify.Report == nil || verify.Report.Result() != "fail" {
+		t.Fatalf("verify --for --record verdict = %+v, want fail", verify.Report)
+	}
+	if got, want := stepSummary(verify.Steps), []string{"ack:landed", "verify:landed", "dispute:landed"}; !slices.Equal(got, want) {
+		t.Fatalf("fail steps = %v, want %v", got, want)
+	}
+	axon.assertState(t, deliver.Handoff, "rejected")
+	axon.assertState(t, deliver.Response, "disputed")
+	axon.assertState(t, wrID, "in_progress")
+	assertActionable(t, axon, "disputed, producer owes the move")
+	assertActionable(t, beta, "disputed, producer owes the move", wrID)
+
+	history := dataLoopHistories(t, axon.fx.RemoteURL())
+	if slices.Contains(history["XW#1"], "close@axon") {
+		t.Fatalf("a failing verdict closed the work_request: %v", history["XW#1"])
+	}
+
+	// A second run owes nothing: no write, exit 0, and next names the producer.
+	before := gitCommitCount(t, axon.fx.RemoteURL())
+	again := axon.expressRun(t, 0, "data", "verify", "--for", wrID, "--record")
+	if got := gitCommitCount(t, axon.fx.RemoteURL()); got != before {
+		t.Fatalf("second verify --for --record wrote %d commit(s), want none", got-before)
+	}
+	if !strings.Contains(again.Next, "a2a data deliver --for "+wrID) {
+		t.Fatalf("second verify next = %q, want the producer's `a2a data deliver --for %s`", again.Next, wrID)
+	}
+}
+
+// TestDataLoopExpressFailThenPass is spec 05 §8 row 6: after a fail, the
+// producer's `deliver --for` re-packs with --supersedes, delivers attempt 2,
+// supersedes attempt 1 and responds again; the consumer's next `verify --for
+// --record` closes.
+func TestDataLoopExpressFailThenPass(t *testing.T) {
+	t.Parallel()
+	axon, beta, contractRef, wrID := setupDataLoop(t)
+	first := expressFailingDelivery(t, beta, contractRef, wrID, "attempt-1")
+	axon.expressRun(t, 1, "data", "verify", "--for", wrID, "--record")
+
+	from2 := beta.dataLoopSource(t, "attempt2", `{"example":"attempt-2"}`)
+	second := beta.expressRun(t, 0, beta.expressDeliverArgs(wrID, from2, contractRef)...)
+	if second.Handoff == first.Handoff || second.Package == first.Package || second.Response == first.Response {
+		t.Fatalf("retry reused an attempt-1 id: first=%+v second=%+v", first, second)
+	}
+	if got, want := stepSummary(second.Steps), []string{"ack:already-done", "accept:already-done", "pack:landed", "deliver:landed", "supersede:landed", "respond:landed"}; !slices.Equal(got, want) {
+		t.Fatalf("retry steps = %v, want %v", got, want)
+	}
+	packManifest := gitOutput(t, axon.fx.RemoteURL(), "show", "main:beta/data/"+second.Package+"/manifest.json")
+	if !strings.Contains(packManifest, first.Package) {
+		t.Fatalf("attempt-2 manifest does not name %s as superseded:\n%s", first.Package, packManifest)
+	}
+
+	pass := axon.expressRun(t, 0, "data", "verify", "--for", wrID, "--record")
+	if pass.Report == nil || pass.Report.Result() != "pass" {
+		t.Fatalf("attempt-2 verdict = %+v, want pass", pass.Report)
+	}
+	axon.assertState(t, first.Handoff, "superseded")
+	axon.assertState(t, second.Handoff, "accepted")
+	axon.assertState(t, first.Response, "disputed")
+	axon.assertState(t, wrID, "closed")
+	history := dataLoopHistories(t, axon.fx.RemoteURL())
+	responds := 0
+	for _, entry := range history["XW#1"] {
+		if entry == "respond@beta" {
+			responds++
+		}
+	}
+	if responds != 2 {
+		t.Fatalf("work_request history has %d respond@beta events, want 2 (one per attempt): %v", responds, history["XW#1"])
+	}
+}
+
+// expressFailingDelivery makes the consumer's verify fail the way the
+// existing fail scenarios do — a record_count that disagrees with the bytes,
+// which only the consumer-side recount sees — then delivers it through
+// `deliver --for`. The producer hand-packs first, so this also drives the
+// resume path: deliver --for finds the staged package, sees the same bytes in
+// --from, and re-delivers it instead of minting a second one.
+func expressFailingDelivery(t *testing.T, beta *hostRig, contractRef, wrID, payloadName string) expressProbe {
+	t.Helper()
+	from := beta.dataLoopSource(t, payloadName, `{"example":"`+payloadName+`"}`)
+	packed, staging := beta.dataLoopPack(t, contractRef, from, wrID, "")
+	dataLoopCorruptRecordCount(t, staging, "payload.json", 1)
+	deliver := beta.expressRun(t, 0, beta.expressDeliverArgs(wrID, from, contractRef)...)
+	if deliver.Package != packed.Manifest.ID {
+		t.Fatalf("deliver --for minted %s instead of re-delivering the staged %s", deliver.Package, packed.Manifest.ID)
+	}
+	return deliver
+}
+
+// TestDataLoopExpressRequestDeliverVerifyRerun is spec 05 §8 rows 1, 2, 3 and
+// 7 on one timeline: the request shape, the producer sequence, the consumer
+// close, and a re-run of all three writing nothing.
+func TestDataLoopExpressRequestDeliverVerifyRerun(t *testing.T) {
+	t.Parallel()
+	axon, beta, contractRef, _ := setupDataLoop(t)
+	remote := axon.fx.RemoteURL()
+
+	// Row 1: the request.
+	requestArgs := []string{"data", "request", "--producer", "beta", "--contract", contractRef, "--interim-behavior", "beta may continue other work"}
+	request := axon.expressRun(t, 0, requestArgs...)
+	wrID := request.WorkRequest
+	if !strings.HasPrefix(wrID, "XW-axon-") {
+		t.Fatalf("request result work_request = %q, want an XW-axon id", wrID)
+	}
+	if want := "a2a data deliver --for " + wrID; !strings.Contains(request.Next, want) {
+		t.Fatalf("request next = %q, want it to name %q", request.Next, want)
+	}
+	raw := gitOutput(t, remote, "show", "main:axon/exchanges/"+wrID+".md")
+	var front struct {
+		Category string   `yaml:"category"`
+		To       []string `yaml:"to"`
+		Refs     []struct {
+			Ref string `yaml:"ref"`
+		} `yaml:"refs"`
+		AcceptanceCriteria []struct {
+			ID string `yaml:"id"`
+		} `yaml:"acceptance_criteria"`
+	}
+	frontText := strings.SplitN(strings.TrimPrefix(raw, "---\n"), "\n---\n", 2)[0]
+	if err := yaml.Unmarshal([]byte(frontText), &front); err != nil {
+		t.Fatalf("decode landed request frontmatter: %v\n%s", err, raw)
+	}
+	if front.Category != "data" || !slices.Equal(front.To, []string{"beta"}) {
+		t.Fatalf("request category/to = %q/%v, want data/[beta]\n%s", front.Category, front.To, raw)
+	}
+	if len(front.Refs) != 1 || front.Refs[0].Ref != contractRef {
+		t.Fatalf("request refs = %+v, want exactly [{ref: %s}]\n%s", front.Refs, contractRef, raw)
+	}
+	if len(front.AcceptanceCriteria) != 1 || front.AcceptanceCriteria[0].ID != "ac1" {
+		t.Fatalf("request acceptance_criteria = %+v, want exactly [ac1]\n%s", front.AcceptanceCriteria, raw)
+	}
+
+	// Row 2: the producer's sequence, in order.
+	from := beta.dataLoopSource(t, "src", `{"example":"express"}`)
+	deliver := beta.expressRun(t, 0, beta.expressDeliverArgs(wrID, from, "")...)
+	if got, want := stepSummary(deliver.Steps), []string{"ack:landed", "accept:landed", "pack:landed", "deliver:landed", "respond:landed"}; !slices.Equal(got, want) {
+		t.Fatalf("deliver --for steps = %v, want %v", got, want)
+	}
+	history := dataLoopHistories(t, remote)
+	wrEvents := func() []string {
+		for role, events := range history {
+			if strings.HasPrefix(role, "XW#") && slices.Contains(events, "respond@beta") && slices.Contains(events, "submit@axon") {
+				return events
+			}
+		}
+		return nil
+	}()
+	if want := []string{"submit@axon", "acknowledge@beta", "accept@beta", "respond@beta"}; !slices.Equal(wrEvents, want) {
+		t.Fatalf("request work_request events = %v, want %v (history %v)", wrEvents, want, history)
+	}
+	axon.assertState(t, wrID, "responded")
+	responseRaw := gitOutput(t, remote, "show", "main:beta/exchanges/"+deliver.Response+".md")
+	for _, want := range []string{deliver.Package, deliver.Handoff} {
+		if !strings.Contains(responseRaw, want) {
+			t.Fatalf("response %s does not name %s (delivers/refs):\n%s", deliver.Response, want, responseRaw)
+		}
+	}
+
+	// Row 3: the consumer's pass closes.
+	verify := axon.expressRun(t, 0, "data", "verify", "--for", wrID, "--record")
+	if verify.Report == nil || verify.Report.Result() != "pass" {
+		t.Fatalf("verify --for --record verdict = %+v, want pass", verify.Report)
+	}
+	if got, want := stepSummary(verify.Steps), []string{"ack:landed", "verify:landed", "close:landed"}; !slices.Equal(got, want) {
+		t.Fatalf("verify --for steps = %v, want %v", got, want)
+	}
+	axon.assertState(t, deliver.Handoff, "accepted")
+	axon.assertState(t, wrID, "closed")
+
+	// Row 7: a re-run of all three writes nothing and exits 0.
+	before := gitCommitCount(t, remote)
+	again := axon.expressRun(t, 0, requestArgs...)
+	if again.WorkRequest != wrID {
+		t.Fatalf("re-run request minted %q, want the already-landed %q", again.WorkRequest, wrID)
+	}
+	beta.expressRun(t, 0, beta.expressDeliverArgs(wrID, from, "")...)
+	axon.expressRun(t, 0, "data", "verify", "--for", wrID, "--record")
+	if got := gitCommitCount(t, remote); got != before {
+		t.Fatalf("re-running the three verbs after completion wrote %d commit(s), want 0", got-before)
 	}
 }

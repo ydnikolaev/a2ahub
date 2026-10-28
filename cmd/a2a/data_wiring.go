@@ -85,6 +85,19 @@ type dataCore struct {
 	// resolveDataPackage is the same shape of injectable seam behind
 	// space.ResolveDataPackage, defaulted to the real implementation.
 	resolveDataPackage func(ctx context.Context, packageID string) (space.DataPackageBytes, error)
+
+	// cacheDir is the project's .a2a/cache, where the express flow's
+	// pending-merge markers live. Empty means "no marker home": the flow
+	// then runs with no-op markers (a test core that never set it).
+	cacheDir string
+
+	// The express flow's seams (data_express.go), nil in production and
+	// defaulted lazily there. A test injects them to script a funnel state
+	// (pending-merge, needs-attention), the merge wait, and the mirror
+	// refresh that the fake host cannot produce on its own.
+	refreshMirror func(ctx context.Context) error
+	expressFunnel func(manifest space.Manifest) (expressSubmitter, error)
+	awaitMerge    func(ctx context.Context, req space.AwaitRequest) (space.AwaitResult, error)
 }
 
 func newDataCore(
@@ -126,11 +139,11 @@ func newCLIDataCore(p paths, deps lifecycleDeps) (*dataCore, error) {
 	if err != nil {
 		return nil, err
 	}
-	h, _, err := newHostOpener()(deps.hostCfg.RemoteURL)
+	h, _, err := newHostOpenerFor(deps.ownSystem)(deps.hostCfg.RemoteURL)
 	if err != nil {
 		return nil, err
 	}
-	return newDataCore(
+	core, err := newDataCore(
 		p.projectRoot, deps.mirrorDir, p.staging, deps.hostCfg.RemoteURL, deps.spaceID, deps.ownSystem,
 		deps.hostCfg.Repo,
 		deps.hostCfg.CommitAuthorName, deps.hostCfg.CommitAuthorEmail, funnelBinaryVersion(),
@@ -140,6 +153,11 @@ func newCLIDataCore(p paths, deps lifecycleDeps) (*dataCore, error) {
 		},
 		func(context.Context) (host.Credential, error) { return deps.hostCfg.Credential, nil },
 	)
+	if err != nil {
+		return nil, err
+	}
+	core.cacheDir = cacheDirOf(p)
+	return core, nil
 }
 
 // dataNoopSubmitValidator satisfies space.WriteFunnel's SubmitValidator seam
@@ -189,12 +207,12 @@ var dataPrefixKind = map[string]fold.Kind{
 
 // dataEnvelopeProbe is this file's own minimal envelope decode.
 type dataEnvelopeProbe struct {
-	ID                 string   `yaml:"id"`
-	Space              string   `yaml:"space"`
-	From               string   `yaml:"from"`
-	To                 any      `yaml:"to"`
-	Thread             string   `yaml:"thread"`
-	AcceptanceCriteria []string `yaml:"acceptance_criteria"`
+	ID                 string `yaml:"id"`
+	Space              string `yaml:"space"`
+	From               string `yaml:"from"`
+	To                 any    `yaml:"to"`
+	Thread             string `yaml:"thread"`
+	AcceptanceCriteria []any  `yaml:"acceptance_criteria"` // envelope/v1 strings or envelope/v2 {id,text} objects
 }
 
 func dataArtifactPath(parsed artifact.ID) (string, error) {
@@ -254,6 +272,24 @@ func (c *dataCore) loadEnvelope(id string) (fold.Envelope, dataEnvelopeProbe, er
 	}
 	env := fold.Envelope{ID: id, Kind: kind, From: probe.From, To: dataToStrings(probe.To)}
 	return env, probe, nil
+}
+
+// dataCriteriaTexts flattens acceptance_criteria to its texts: a bare string
+// (envelope/v1) is its own text, an {id, text} object (the form `data request`
+// authors) contributes its text.
+func dataCriteriaTexts(items []any) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		switch typed := item.(type) {
+		case string:
+			out = append(out, typed)
+		case map[string]any:
+			if text, ok := typed["text"].(string); ok {
+				out = append(out, text)
+			}
+		}
+	}
+	return out
 }
 
 func dataToStrings(value any) []string {
@@ -412,7 +448,7 @@ type dataHandoffEnvelope struct {
 // synthesized item names the contract conformance the delivery was judged
 // against, so the field is never emitted empty (minItems: 1).
 func (c *dataCore) buildHandoffDraft(handoffID string, actor template.Actor, wrEnv fold.Envelope, wrProbe dataEnvelopeProbe, manifest datapackage.Document) []byte {
-	acceptance := wrProbe.AcceptanceCriteria
+	acceptance := dataCriteriaTexts(wrProbe.AcceptanceCriteria)
 	if len(acceptance) == 0 {
 		acceptance = []string{fmt.Sprintf("Delivered payload conforms to the pinned contract %s.", manifest.Contract)}
 	}
@@ -1525,7 +1561,7 @@ var _ mcp.DataFetchBlobOperations = mcpDataRouter{}
 // the contract factory adapts it.
 func newMCPDataOperationsFactory(p paths, cfg space.ProjectConfig, machine space.MachineConfig, open host.Opener) mcp.DataOperationsFactory {
 	if open == nil {
-		open = newHostOpener() // nil-safe, as internal/mcp's own fallback is
+		open = newHostOpenerFor(cfg.System) // nil-safe, as internal/mcp's own fallback is
 	}
 	return func(resolveMCPActor mcp.ActorResolver) (mcp.DataToolDeps, error) {
 		engine, err := newEngine()
@@ -1552,6 +1588,7 @@ func newMCPDataOperationsFactory(p paths, cfg space.ProjectConfig, machine space
 			if coreErr != nil {
 				return mcp.DataToolDeps{}, coreErr
 			}
+			core.cacheDir = cacheDirOf(p)
 			cores[ref.ID] = core
 		}
 		return mcp.DataToolDeps{Operations: mcpDataRouter{bySpace: cores}}, nil

@@ -4,14 +4,18 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
@@ -821,4 +825,604 @@ func TestDataCoreDeliverBlobAndFetchBlobEndToEnd(t *testing.T) {
 	if _, err := core.fetchBlob(ctx, blobID, filepath.Join(t.TempDir(), "corrupt")); err == nil {
 		t.Fatal("fetchBlob over a corrupted digest sidecar = nil error, want a digest-mismatch refusal")
 	}
+}
+
+// --- express flow (spec 05 §8 rows 8-11 and 13) ------------------------------
+//
+// These drive the real sequencer over a real git mirror, with the one thing
+// the fake host cannot do made scriptable: what each inner write returns
+// (expressScriptedFunnel) and what waiting for a pending merge does. A write
+// that "merges" is applied to the mirror's working tree, so the next step
+// reads the state the previous one landed, exactly as the production refresh
+// would show it.
+
+// expressScriptedFunnel is the inner verbs' funnel: it records every request,
+// answers with the state the test scripted for that call (merged unless said
+// otherwise), and applies a merged write's files to the mirror.
+type expressScriptedFunnel struct {
+	mu     sync.Mutex
+	states []space.WriteState
+	calls  []space.SubmitRequest
+	queued map[string]space.SubmitRequest
+}
+
+func (f *expressScriptedFunnel) Submit(_ context.Context, req space.SubmitRequest) (space.WriteResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	i := len(f.calls)
+	f.calls = append(f.calls, req)
+	state := space.WriteStateMerged
+	if i < len(f.states) {
+		state = f.states[i]
+	}
+	result := space.WriteResult{
+		Branch: fmt.Sprintf("a2a/%s/%s-%d", req.System, req.ArtifactID, i), PRNumber: i + 1,
+		PRURL: fmt.Sprintf("https://example.invalid/pr/%d", i+1), State: state, ArtifactIDs: req.ArtifactIDs,
+		Note: "scripted",
+	}
+	switch state {
+	case space.WriteStateMerged:
+		result.Stage = space.WriteStageMerged
+		expressApplyToMirror(req)
+	case space.WriteStatePendingMerge:
+		result.Stage = space.WriteStageAutoMergeArmed
+		if f.queued == nil {
+			f.queued = map[string]space.SubmitRequest{}
+		}
+		f.queued[result.Branch] = req
+	default:
+		result.Stage = space.WriteStagePRCreated
+	}
+	return result, nil
+}
+
+// land merges a queued pending write, as the awaited PR merging would.
+func (f *expressScriptedFunnel) land(branch string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if req, ok := f.queued[branch]; ok {
+		expressApplyToMirror(req)
+		delete(f.queued, branch)
+	}
+}
+
+func expressApplyToMirror(req space.SubmitRequest) {
+	write := func(path string, content []byte) {
+		full := filepath.Join(req.RepoDir, path)
+		_ = os.MkdirAll(filepath.Dir(full), 0o755)
+		_ = os.WriteFile(full, content, 0o644)
+	}
+	for _, file := range req.Files {
+		write(file.Path, file.Content)
+	}
+	for _, m := range req.Mutations {
+		if m.Operation == space.MutationWrite {
+			write(m.Path, m.Bytes)
+		}
+	}
+}
+
+// paths lists every path the recorded writes prepared.
+func (f *expressScriptedFunnel) paths() []string {
+	var out []string
+	for _, req := range f.calls {
+		for _, file := range req.Files {
+			out = append(out, file.Path)
+		}
+		for _, m := range req.Mutations {
+			out = append(out, m.Path)
+		}
+	}
+	return out
+}
+
+// content returns the concatenated bytes of every file the call prepared.
+func (f *expressScriptedFunnel) content(call int) string {
+	var b strings.Builder
+	for _, file := range f.calls[call].Files {
+		b.Write(file.Content)
+	}
+	for _, m := range f.calls[call].Mutations {
+		b.Write(m.Bytes)
+	}
+	return b.String()
+}
+
+type expressWaitLog struct {
+	mu       sync.Mutex
+	branches []string
+}
+
+// installExpressSeams points the core's express seams at the scripted funnel:
+// the mirror refresh is a no-op (writes are applied on merge), and waiting
+// for a pending merge lands the awaited branch, or fails with waitErr.
+func installExpressSeams(core *dataCore, funnel *expressScriptedFunnel, waitErr error) *expressWaitLog {
+	log := &expressWaitLog{}
+	core.refreshMirror = func(context.Context) error { return nil }
+	core.expressFunnel = func(space.Manifest) (expressSubmitter, error) { return funnel, nil }
+	core.awaitMerge = func(_ context.Context, req space.AwaitRequest) (space.AwaitResult, error) {
+		log.mu.Lock()
+		log.branches = append(log.branches, req.Branch)
+		log.mu.Unlock()
+		if waitErr != nil {
+			return space.AwaitResult{}, waitErr
+		}
+		funnel.land(req.Branch)
+		return space.AwaitResult{PRURL: "merged"}, nil
+	}
+	return log
+}
+
+type expressSeedEvent struct {
+	system, transition, subject string
+	refs                        []string
+}
+
+// seedExpressEvents commits events into the mirror's working tree in order.
+func seedExpressEvents(t *testing.T, mirrorDir string, events ...expressSeedEvent) {
+	t.Helper()
+	for i, ev := range events {
+		ulid := fmt.Sprintf("01K1A2B3C4D5E6F7G8H9J0%04d", i+1)
+		dir := filepath.Join(mirrorDir, ev.system, "events", "2026")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		doc := "schema: event/v1\nevent: " + ulid + "\nspace: test\nsubject: " + ev.subject + "\ntransition: " + ev.transition +
+			"\nactor: {kind: agent, name: tester, system: " + ev.system + "}\nat: 2026-08-04T12:00:00Z\n"
+		if len(ev.refs) > 0 {
+			doc += "refs:\n"
+			for _, ref := range ev.refs {
+				doc += "  - ref: " + ref + "\n"
+			}
+		}
+		if err := os.WriteFile(filepath.Join(dir, ulid+".yaml"), []byte(doc), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// seedExpressWorkRequest writes the committed work_request from consumer to
+// producer (envelope/v2, so its criteria carry ids), its response, and the
+// submit/ack/accept/respond history that folds it to `responded`.
+func seedExpressWorkRequest(t *testing.T, mirrorDir, consumer, producer, wrID, responseID, packageID string, criteria []string) {
+	t.Helper()
+	dir := filepath.Join(mirrorDir, consumer, "exchanges")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var ac strings.Builder
+	for i, text := range criteria {
+		fmt.Fprintf(&ac, "  - id: ac%d\n    text: %q\n", i+1, text)
+	}
+	wr := "---\nschema: envelope/v2\nid: " + wrID + "\ntype: work_request\ntitle: t\nspace: test\nfrom: " + consumer +
+		"\nto: [" + producer + "]\nactor: {kind: agent, name: tester}\ncreated: 2026-08-04T12:00:00Z\ncategory: data\npriority: p3\n" +
+		"blocking: false\ninterim_behavior: x\nneeded_by: 2026-08-06\nthread: thread:" + consumer + "-20260804-ab12\n" +
+		"acceptance_criteria:\n" + ac.String() + "refs:\n  - ref: XC-axon-widget@1.0.0\n---\nbody\n"
+	if err := os.WriteFile(filepath.Join(dir, wrID+".md"), []byte(wr), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pdir := filepath.Join(mirrorDir, producer, "exchanges")
+	if err := os.MkdirAll(pdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	resp := "---\nschema: envelope/v1\nid: " + responseID + "\ntype: response\ntitle: r\nspace: test\nfrom: " + producer +
+		"\nto: [" + consumer + "]\nactor: {kind: agent, name: tester}\ncreated: 2026-08-04T12:00:00Z\nparent: " + wrID +
+		"\ndelivers: [" + packageID + "]\n---\nbody\n"
+	if err := os.WriteFile(filepath.Join(pdir, responseID+".md"), []byte(resp), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	seedExpressEvents(t, mirrorDir,
+		expressSeedEvent{system: consumer, transition: "submit", subject: wrID},
+		expressSeedEvent{system: producer, transition: "acknowledge", subject: wrID},
+		expressSeedEvent{system: producer, transition: "accept", subject: wrID},
+		expressSeedEvent{system: producer, transition: "respond", subject: wrID, refs: []string{responseID}},
+	)
+}
+
+const (
+	expressTestWR       = "XW-peer-20260804-ab12"
+	expressTestResponse = "XS-axon-20260804-ef56"
+)
+
+// newExpressVerifyRig is the consumer's side of a finished delivery: the
+// record-test core (own system "peer", the handoff's target), the work_request
+// and its response seeded, and the express seams scripted.
+func newExpressVerifyRig(t *testing.T, floor string, criteria []string) (*dataCore, *expressScriptedFunnel, *host.FakeHost, *expressWaitLog) {
+	t.Helper()
+	core, doc, fake := newRecordTestDataCore(t, []byte(`{"ok":true}`))
+	core.spaceID = "test"
+	core.stagingDir = t.TempDir()
+	// The record write goes through the real funnel, whose own gate refuses a
+	// binary older than the space's floor; this rig plays a current binary.
+	core.funnel = space.NewWriteFunnel(fake, dataNoopSubmitValidator{}, "99.0.0")
+	core.loadManifest = func() (space.Manifest, error) {
+		return space.Manifest{MinBinaryVersion: floor, Participants: []space.Participant{{System: "axon"}, {System: "peer"}}}, nil
+	}
+	seedExpressWorkRequest(t, core.mirrorDir, "peer", "axon", expressTestWR, expressTestResponse, doc.ID, criteria)
+	funnel := &expressScriptedFunnel{}
+	log := installExpressSeams(core, funnel, nil)
+	return core, funnel, fake, log
+}
+
+func expressStepSummary(steps []cli.DataStep) []string {
+	out := make([]string, len(steps))
+	for i, s := range steps {
+		out[i] = s.Step + ":" + s.Outcome
+	}
+	return out
+}
+
+// TestExpressVerifyDerivesTheVerdictByFloor is spec 05 §8 row 10: at the
+// event/v2 floor a passing record closes with the one verdict the
+// verification proves, criterion ac1 met by the producer; below the floor the
+// close carries no verdicts.
+func TestExpressVerifyDerivesTheVerdictByFloor(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name         string
+		floor        string
+		wantVerdicts bool
+	}{
+		{"at the floor", contract.ContractPublicationFloor, true},
+		{"below the floor", "0.1.0", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			core, funnel, _, _ := newExpressVerifyRig(t, tc.floor, []string{expressVerifyCriterionText})
+			result, err := core.verifyFor(context.Background(), cli.DataVerifyForRequest{For: expressTestWR, Record: true})
+			if err != nil {
+				t.Fatalf("verifyFor: %v (steps %v)", err, expressStepSummary(result.Steps))
+			}
+			if len(funnel.calls) != 1 || funnel.calls[0].Verb != "close" {
+				t.Fatalf("inner writes = %v, want exactly one close", funnel.calls)
+			}
+			closeBody := funnel.content(0)
+			hasVerdicts := strings.Contains(closeBody, "verdicts:")
+			if hasVerdicts != tc.wantVerdicts {
+				t.Fatalf("close event verdicts present = %v, want %v:\n%s", hasVerdicts, tc.wantVerdicts, closeBody)
+			}
+			if tc.wantVerdicts {
+				for _, want := range []string{"criterion: ac1", "verdict: met", "cause_owner: axon"} {
+					if !strings.Contains(closeBody, want) {
+						t.Fatalf("close event lacks %q:\n%s", want, closeBody)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestExpressVerifyExtraCriteriaNeedCallerVerdicts is spec 05 §8 row 11: at
+// the floor a request carrying ac2 closes only with the caller's verdict for
+// it. Without one the verb refuses BEFORE its first write, naming ac2; below
+// the floor a caller verdict is refused too, because the event cannot carry it.
+func TestExpressVerifyExtraCriteriaNeedCallerVerdicts(t *testing.T) {
+	t.Parallel()
+	criteria := []string{expressVerifyCriterionText, "rows reconcile with billing"}
+
+	t.Run("refused before any write, naming ac2", func(t *testing.T) {
+		t.Parallel()
+		core, funnel, fake, _ := newExpressVerifyRig(t, contract.ContractPublicationFloor, criteria)
+		result, err := core.verifyFor(context.Background(), cli.DataVerifyForRequest{For: expressTestWR, Record: true})
+		if err == nil || !strings.Contains(err.Error(), "ac2") {
+			t.Fatalf("verifyFor err = %v, want a refusal naming ac2", err)
+		}
+		if len(funnel.calls) != 0 || len(fake.Pushes) != 0 || len(result.Steps) != 0 {
+			t.Fatalf("a write happened before the refusal: inner=%d pushes=%d steps=%v", len(funnel.calls), len(fake.Pushes), result.Steps)
+		}
+	})
+
+	t.Run("closes with the caller verdict for ac2", func(t *testing.T) {
+		t.Parallel()
+		core, funnel, _, _ := newExpressVerifyRig(t, contract.ContractPublicationFloor, criteria)
+		_, err := core.verifyFor(context.Background(), cli.DataVerifyForRequest{
+			For: expressTestWR, Record: true, Verdicts: []string{"ac2:unmet:axon"},
+		})
+		if err != nil {
+			t.Fatalf("verifyFor: %v", err)
+		}
+		closeBody := funnel.content(len(funnel.calls) - 1)
+		for _, want := range []string{"criterion: ac1", "verdict: met", "criterion: ac2", "verdict: unmet"} {
+			if !strings.Contains(closeBody, want) {
+				t.Fatalf("close event lacks %q:\n%s", want, closeBody)
+			}
+		}
+	})
+
+	t.Run("caller verdict below the floor is refused before any write", func(t *testing.T) {
+		t.Parallel()
+		core, funnel, fake, _ := newExpressVerifyRig(t, "0.1.0", criteria)
+		_, err := core.verifyFor(context.Background(), cli.DataVerifyForRequest{
+			For: expressTestWR, Record: true, Verdicts: []string{"ac2:met:axon"},
+		})
+		if err == nil || !strings.Contains(err.Error(), "event/v2") {
+			t.Fatalf("verifyFor err = %v, want a refusal naming the event/v2 floor", err)
+		}
+		if len(funnel.calls) != 0 || len(fake.Pushes) != 0 {
+			t.Fatalf("a write happened before the refusal: inner=%d pushes=%d", len(funnel.calls), len(fake.Pushes))
+		}
+	})
+}
+
+// TestExpressSequencesByWriteState is spec 05 §8 row 9: a pending-merge inner
+// write is waited on, on that write's own branch, before the next write; a
+// timeout stops the run naming the last landed step with no further write; a
+// needs-attention write stops it before the next one.
+func TestExpressSequencesByWriteState(t *testing.T) {
+	t.Parallel()
+	// The seeded handoff of newRecordTestDataCore fulfills expressTestWR, so the
+	// producer scenarios use a request nothing has been delivered against.
+	const producerWR = "XW-peer-20260804-cd99"
+	producerRig := func(t *testing.T, states []space.WriteState, waitErr error) (*dataCore, *expressScriptedFunnel, *expressWaitLog) {
+		t.Helper()
+		core, _, _ := newRecordTestDataCore(t, []byte(`{"ok":true}`))
+		core.ownSystem = "axon" // the producer: the work_request is addressed to axon
+		core.authorName, core.authorEmail = "a2a-axon", "a2a-axon@a2ahub.invalid"
+		core.spaceID = "test"
+		core.stagingDir = t.TempDir()
+		core.loadManifest = func() (space.Manifest, error) {
+			return space.Manifest{MinBinaryVersion: "0.1.0", Participants: []space.Participant{{System: "axon"}, {System: "peer"}}}, nil
+		}
+		// A request that was only submitted: ack and accept are both owed.
+		dir := filepath.Join(core.mirrorDir, "peer", "exchanges")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		wr := "---\nschema: envelope/v1\nid: " + producerWR + "\ntype: work_request\ntitle: t\nspace: test\nfrom: peer\nto: [axon]\n" +
+			"actor: {kind: agent, name: tester}\ncreated: 2026-08-04T12:00:00Z\ncategory: data\npriority: p3\nblocking: false\n" +
+			"interim_behavior: x\nneeded_by: 2026-08-06\nthread: thread:peer-20260804-ab12\nacceptance_criteria: [\"c\"]\n" +
+			"refs:\n  - ref: XC-axon-widget@1.0.0\n---\nbody\n"
+		if err := os.WriteFile(filepath.Join(dir, producerWR+".md"), []byte(wr), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		seedExpressEvents(t, core.mirrorDir, expressSeedEvent{system: "peer", transition: "submit", subject: producerWR})
+		funnel := &expressScriptedFunnel{states: states}
+		return core, funnel, installExpressSeams(core, funnel, waitErr)
+	}
+	deliverReq := func(dir string) cli.DataDeliverForRequest {
+		return cli.DataDeliverForRequest{For: producerWR, From: dir, Profile: "synthetic", Format: "json", Timeout: time.Minute}
+	}
+
+	t.Run("pending-merge is awaited on its own branch before the next write", func(t *testing.T) {
+		t.Parallel()
+		core, funnel, log := producerRig(t, []space.WriteState{space.WriteStatePendingMerge, space.WriteStateNeedsAttention}, nil)
+		core.awaitMerge = func(ctx context.Context, req space.AwaitRequest) (space.AwaitResult, error) {
+			if got := len(funnel.calls); got != 1 {
+				t.Errorf("waited with %d inner write(s) made, want exactly the ack before the wait", got)
+			}
+			return func() (space.AwaitResult, error) {
+				log.mu.Lock()
+				log.branches = append(log.branches, req.Branch)
+				log.mu.Unlock()
+				funnel.land(req.Branch)
+				return space.AwaitResult{PRURL: "merged"}, nil
+			}()
+		}
+		result, err := core.deliverFor(context.Background(), deliverReq(t.TempDir()))
+		if err == nil || !strings.Contains(err.Error(), "last landed step: ack "+producerWR) {
+			t.Fatalf("deliverFor err = %v, want the needs-attention accept to stop the run naming the landed ack", err)
+		}
+		if got, want := expressStepSummary(result.Steps), []string{"ack:landed", "accept:stopped"}; strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("steps = %v, want %v", got, want)
+		}
+		if len(funnel.calls) != 2 {
+			t.Fatalf("inner writes = %d, want 2 (ack, then the accept that needs attention) and nothing after", len(funnel.calls))
+		}
+		wantBranch := fmt.Sprintf("a2a/axon/%s-0", funnel.calls[0].ArtifactID)
+		if len(log.branches) != 1 || log.branches[0] != wantBranch {
+			t.Fatalf("awaited branches = %v, want [%s]", log.branches, wantBranch)
+		}
+	})
+
+	t.Run("a timed-out wait names the last landed step and writes nothing more", func(t *testing.T) {
+		t.Parallel()
+		core, funnel, _ := producerRig(t, []space.WriteState{space.WriteStatePendingMerge}, context.DeadlineExceeded)
+		result, err := core.deliverFor(context.Background(), deliverReq(t.TempDir()))
+		if err == nil || !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "not merged within") || !strings.Contains(err.Error(), "last landed step: none") {
+			t.Fatalf("deliverFor err = %v, want the timeout naming the unmerged PR and that no step had landed", err)
+		}
+		if got, want := expressStepSummary(result.Steps), []string{"ack:stopped"}; strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("steps = %v, want %v", got, want)
+		}
+		if len(funnel.calls) != 1 {
+			t.Fatalf("inner writes = %d, want 1: nothing may follow a timed-out wait", len(funnel.calls))
+		}
+	})
+}
+
+// TestExpressWritesOnlyUnderTheInvokingSystemsSection is spec 05 §8 row 13:
+// every path the composite verbs prepare for a write lies under
+// <invoking system>/. The shipped write funnel refuses a path outside the
+// section on its own; this proves the sequencer never prepares one, over the
+// request, the producer's ack and accept, and the consumer's close.
+func TestExpressWritesOnlyUnderTheInvokingSystemsSection(t *testing.T) {
+	t.Parallel()
+	assertUnder := func(t *testing.T, system string, funnel *expressScriptedFunnel) {
+		t.Helper()
+		paths := funnel.paths()
+		if len(paths) == 0 {
+			t.Fatal("no write was prepared; the assertion would pass vacuously")
+		}
+		for _, path := range paths {
+			if !strings.HasPrefix(path, system+"/") {
+				t.Errorf("%s prepared %q, outside its own section %s/", system, path, system)
+			}
+		}
+	}
+
+	t.Run("consumer close", func(t *testing.T) {
+		t.Parallel()
+		core, funnel, _, _ := newExpressVerifyRig(t, contract.ContractPublicationFloor, []string{expressVerifyCriterionText})
+		if _, err := core.verifyFor(context.Background(), cli.DataVerifyForRequest{For: expressTestWR, Record: true}); err != nil {
+			t.Fatalf("verifyFor: %v", err)
+		}
+		assertUnder(t, "peer", funnel)
+	})
+
+	t.Run("consumer request", func(t *testing.T) {
+		t.Parallel()
+		core, _, _ := newRecordTestDataCore(t, []byte(`{"ok":true}`))
+		core.spaceID = "test"
+		core.stagingDir = t.TempDir()
+		core.loadManifest = func() (space.Manifest, error) {
+			return space.Manifest{MinBinaryVersion: "0.1.0", Participants: []space.Participant{{System: "axon"}, {System: "peer"}}}, nil
+		}
+		funnel := &expressScriptedFunnel{}
+		installExpressSeams(core, funnel, nil)
+		result, err := core.request(context.Background(), cli.DataRequestRequest{
+			Producer: "axon", Contract: "XC-axon-widget@1.0.0", InterimBehavior: "keep working",
+		})
+		if err != nil {
+			t.Fatalf("request: %v (steps %v)", err, expressStepSummary(result.Steps))
+		}
+		assertUnder(t, "peer", funnel)
+	})
+
+	t.Run("producer ack and accept", func(t *testing.T) {
+		t.Parallel()
+		core, _, _ := newRecordTestDataCore(t, []byte(`{"ok":true}`))
+		core.ownSystem = "axon"
+		core.spaceID = "test"
+		core.stagingDir = t.TempDir()
+		core.loadManifest = func() (space.Manifest, error) {
+			return space.Manifest{MinBinaryVersion: "0.1.0", Participants: []space.Participant{{System: "axon"}, {System: "peer"}}}, nil
+		}
+		dir := filepath.Join(core.mirrorDir, "peer", "exchanges")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		const freshWR = "XW-peer-20260804-cd99"
+		wr := "---\nschema: envelope/v1\nid: " + freshWR + "\ntype: work_request\ntitle: t\nspace: test\nfrom: peer\nto: [axon]\n" +
+			"actor: {kind: agent, name: tester}\ncreated: 2026-08-04T12:00:00Z\ncategory: data\npriority: p3\nblocking: false\n" +
+			"interim_behavior: x\nneeded_by: 2026-08-06\nthread: thread:peer-20260804-ab12\nacceptance_criteria: [\"c\"]\n" +
+			"refs:\n  - ref: XC-axon-widget@1.0.0\n---\nbody\n"
+		if err := os.WriteFile(filepath.Join(dir, freshWR+".md"), []byte(wr), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		seedExpressEvents(t, core.mirrorDir, expressSeedEvent{system: "peer", transition: "submit", subject: freshWR})
+		funnel := &expressScriptedFunnel{states: []space.WriteState{space.WriteStateMerged, space.WriteStateMerged}}
+		installExpressSeams(core, funnel, nil)
+		// The pack step cannot run (--from does not exist), after ack and accept landed.
+		_, err := core.deliverFor(context.Background(), cli.DataDeliverForRequest{
+			For: freshWR, From: filepath.Join(t.TempDir(), "absent"), Profile: "synthetic", Format: "json",
+		})
+		if err == nil {
+			t.Fatal("deliverFor = nil error, want the pack of a missing --from to fail")
+		}
+		if len(funnel.calls) != 2 {
+			t.Fatalf("inner writes = %d, want ack and accept", len(funnel.calls))
+		}
+		assertUnder(t, "axon", funnel)
+	})
+}
+
+// TestExpressDeliverResumesAfterPack is spec 05 §8 row 8: a run interrupted
+// after pack and before deliver is re-run against the same --from, and the
+// staged package is re-delivered (same DP id, its aggregate digest bound)
+// instead of a second one being minted. A staged package whose bytes differ
+// from --from is refused, naming its staging root, and so is an ambiguous
+// pair of staged packages.
+func TestExpressDeliverResumesAfterPack(t *testing.T) {
+	t.Parallel()
+	setup := func(t *testing.T) (*dataCore, expressSnapshot, string) {
+		t.Helper()
+		from := t.TempDir()
+		if err := os.WriteFile(filepath.Join(from, "orders.json"), []byte(`{"ok":true}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		core, doc, _ := newRecordTestDataCore(t, []byte(`{"ok":true}`))
+		core.stagingDir = t.TempDir()
+		core.spaceID = "test"
+		core.ownSystem = "axon"
+		schemas := map[string][]byte{dataWiringTestSchemaPath: []byte(dataWiringTestSchema)}
+		core.resolveContractSchemas = func(context.Context, string) (map[string][]byte, string, error) {
+			return schemas, doc.Contract, nil
+		}
+		seedExpressWorkRequest(t, core.mirrorDir, "peer", "axon", expressTestWR, expressTestResponse, "DP-axon-20260804-0000", []string{"c"})
+		snap, err := core.expressSnapshot(expressTestWR)
+		if err != nil {
+			t.Fatalf("snapshot: %v", err)
+		}
+		return core, snap, from
+	}
+	req := func(from string) cli.DataDeliverForRequest {
+		return cli.DataDeliverForRequest{For: expressTestWR, From: from, Profile: datapackage.DataProfileSynthetic, Format: datapackage.FormatJSON}
+	}
+	const contractRef = "XC-axon-widget@1.0.0"
+
+	t.Run("same bytes re-deliver the staged package", func(t *testing.T) {
+		t.Parallel()
+		core, snap, from := setup(t)
+		first := core.newExpressRun(cli.ActorFlags{}, 0)
+		doc1, root1, err := first.packOrResume(context.Background(), req(from), snap, contractRef, "")
+		if err != nil {
+			t.Fatalf("first packOrResume: %v", err)
+		}
+		// The run died here: pack landed on disk, deliver never ran.
+		second := core.newExpressRun(cli.ActorFlags{}, 0)
+		doc2, root2, err := second.packOrResume(context.Background(), req(from), snap, contractRef, "")
+		if err != nil {
+			t.Fatalf("second packOrResume: %v", err)
+		}
+		if doc2.ID != doc1.ID || root2 != root1 || doc2.AggregateDigest != doc1.AggregateDigest {
+			t.Fatalf("re-run minted %s at %s (digest %s), want the staged %s at %s (digest %s)", doc2.ID, root2, doc2.AggregateDigest, doc1.ID, root1, doc1.AggregateDigest)
+		}
+		matches, _ := filepath.Glob(filepath.Join(core.stagingDir, "data", "*"))
+		if len(matches) != 1 {
+			t.Fatalf("staging holds %d packages after the re-run, want 1: %v", len(matches), matches)
+		}
+		if got := expressStepSummary(second.result.Steps); len(got) != 1 || got[0] != "pack:already-done" {
+			t.Fatalf("re-run steps = %v, want [pack:already-done]", got)
+		}
+	})
+
+	t.Run("different bytes are refused naming the staging root", func(t *testing.T) {
+		t.Parallel()
+		core, snap, from := setup(t)
+		first := core.newExpressRun(cli.ActorFlags{}, 0)
+		_, root1, err := first.packOrResume(context.Background(), req(from), snap, contractRef, "")
+		if err != nil {
+			t.Fatalf("first packOrResume: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(from, "orders.json"), []byte(`{"ok":true,"changed":1}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		second := core.newExpressRun(cli.ActorFlags{}, 0)
+		_, _, err = second.packOrResume(context.Background(), req(from), snap, contractRef, "")
+		if err == nil || !strings.Contains(err.Error(), root1) {
+			t.Fatalf("packOrResume err = %v, want a refusal naming the staging root %s", err, root1)
+		}
+		matches, _ := filepath.Glob(filepath.Join(core.stagingDir, "data", "*"))
+		if len(matches) != 1 {
+			t.Fatalf("a second package was minted despite the refusal: %v", matches)
+		}
+	})
+
+	t.Run("two staged candidates are refused naming both", func(t *testing.T) {
+		t.Parallel()
+		core, snap, from := setup(t)
+		// Two independent packs of the same request, as two crashed runs leave.
+		var roots []string
+		for i := 0; i < 2; i++ {
+			core.now = func() time.Time { return time.Date(2026, 8, 4, 12, i, 0, 0, time.UTC) }
+			core.entropy = rand.Reader
+			packed, err := core.pack(context.Background(), cli.DataPackRequest{
+				ContractRef: contractRef, From: from, Profile: datapackage.DataProfileSynthetic, Format: datapackage.FormatJSON, Fulfills: expressTestWR,
+			})
+			if err != nil {
+				t.Fatalf("pack %d: %v", i, err)
+			}
+			roots = append(roots, packed.StagingRoot)
+		}
+		run := core.newExpressRun(cli.ActorFlags{}, 0)
+		_, _, err := run.packOrResume(context.Background(), req(from), snap, contractRef, "")
+		if err == nil {
+			t.Fatal("packOrResume = nil error, want an ambiguity refusal")
+		}
+		for _, root := range roots {
+			if !strings.Contains(err.Error(), root) {
+				t.Fatalf("err = %v, want it to name %s", err, root)
+			}
+		}
+	})
 }

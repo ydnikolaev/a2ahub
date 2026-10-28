@@ -86,6 +86,16 @@ func catalogCommandRows() []catalogCommandRow {
 			}
 			continue
 		}
+		if name == "data" {
+			// Expanded like `contract`: one row per sub-verb, from the same
+			// cli.DataSubcommands() the MCP parity gate reads. A single flat
+			// `data` row could not name `--for` or `request`, and the catalog
+			// is the file every consumer agent reads for the exact flags.
+			for _, sub := range cli.DataSubcommands() {
+				rows = append(rows, catalogCommandRow{Name: "data " + sub.Name, Synopsis: sub.Synopsis})
+			}
+			continue
+		}
 		if synopsis, ok := catalogHandTypedSynopsis[name]; ok {
 			rows = append(rows, catalogCommandRow{Name: name, Synopsis: synopsis})
 			continue
@@ -163,11 +173,9 @@ func catalogCLICommand(name string) (cli.Command, bool) {
 	case "data":
 		// Nil operations: the catalog/help path only reads Name()+Synopsis()
 		// (DataCommand.Run tolerates nil ops for every sub-verb it never
-		// reaches here). One flat row, mirroring "work"'s own precedent
-		// (WorkCommand{} below) rather than "contract"'s per-sub expansion:
-		// catalog_test.go's expectedCatalogCommandNames() — an independent
-		// second derivation outside this wave's allowlist — special-cases
-		// only "contract", so expanding "data" here would drift against it.
+		// reaches here). catalogCommandRows expands "data" into per-sub rows
+		// before it gets here; this stays for the callers that ask for the
+		// verb itself.
 		return cli.NewDataCommand(nil), true
 	case "doctor":
 		return cli.NewDoctorCommand(nil, "", "", "", ""), true

@@ -2811,3 +2811,144 @@ func TestEquivDecisionSupersedeRefusalTextParity(t *testing.T) {
 		}
 	})
 }
+
+// --- express data verbs (spec 05 §8 row 15) -------------------------------------
+
+// echoingActor makes a core's actor resolver return the identity it is asked
+// for, so an assertion can tell WHOSE actor an event carries.
+func echoingActor(core *dataCore) {
+	core.resolveActor = func(kind, name, model string) (template.Actor, error) {
+		return template.Actor{Kind: kind, Name: name, Model: model}, nil
+	}
+}
+
+// expressTuple is a step reduced to what must agree across the two surfaces.
+func expressTuples(steps []cli.DataStep) []string {
+	out := make([]string, len(steps))
+	for i, s := range steps {
+		out[i] = strings.Join([]string{s.Step, s.Subject, s.Transition, s.Outcome}, "|")
+	}
+	return out
+}
+
+func expressMCPTuples(steps []mcp.DataStep) []string {
+	out := make([]string, len(steps))
+	for i, s := range steps {
+		out[i] = strings.Join([]string{s.Step, s.Subject, s.Transition, s.Outcome}, "|")
+	}
+	return out
+}
+
+// expressInnerVerbs lists the verb of every inner write the sequencer handed
+// its funnel, in order.
+func expressInnerVerbs(f *expressScriptedFunnel) []string {
+	out := make([]string, len(f.calls))
+	for i, c := range f.calls {
+		out[i] = c.Verb
+	}
+	return out
+}
+
+// TestMCPEquivalenceExpressDataVerbs drives the same composite verb through
+// the CLI adapter and the MCP adapter over identical fixtures and requires
+// the same inner write sequence and the same steps[], with the MCP caller's
+// own actor on every inner event, including the one the record write makes
+// through the data core's funnel.
+func TestMCPEquivalenceExpressDataVerbs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("verify --for --record", func(t *testing.T) {
+		t.Parallel()
+		cliCore, cliFunnel, _, _ := newExpressVerifyRig(t, contract.ContractPublicationFloor, []string{expressVerifyCriterionText})
+		mcpCore, mcpFunnel, _, _ := newExpressVerifyRig(t, contract.ContractPublicationFloor, []string{expressVerifyCriterionText})
+		echoingActor(cliCore)
+		echoingActor(mcpCore)
+
+		cliResult, cliErr := cliDataAdapter{core: cliCore}.VerifyFor(context.Background(), cli.DataVerifyForRequest{
+			For: expressTestWR, Record: true, Actor: cli.ActorFlags{Kind: "agent", Name: "cli-caller"},
+		})
+		mcpResult, mcpErr := mcpDataAdapter{core: mcpCore}.VerifyFor(context.Background(), mcp.DataVerifyForRequest{
+			For: expressTestWR, Record: true, Actor: mcp.ActorInput{Kind: "agent", Name: "mcp-caller"},
+		})
+		if cliErr != nil || mcpErr != nil {
+			t.Fatalf("errors: cli=%v mcp=%v", cliErr, mcpErr)
+		}
+		if got, want := expressMCPTuples(mcpResult.Steps), expressTuples(cliResult.Steps); strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Fatalf("steps differ:\nmcp: %v\ncli: %v", got, want)
+		}
+		if got, want := expressInnerVerbs(mcpFunnel), expressInnerVerbs(cliFunnel); strings.Join(got, ",") != strings.Join(want, ",") || len(want) == 0 {
+			t.Fatalf("inner writes differ: mcp=%v cli=%v", got, want)
+		}
+		for i := range mcpFunnel.calls {
+			if !strings.Contains(mcpFunnel.content(i), "name: mcp-caller") || strings.Contains(mcpFunnel.content(i), "cli-caller") {
+				t.Fatalf("inner write %d (%s) does not carry the MCP caller's actor:\n%s", i, mcpFunnel.calls[i].Verb, mcpFunnel.content(i))
+			}
+		}
+		// The record write goes through the data core's own funnel, not the
+		// scripted one: read its committed event off its branch.
+		var record *space.WriteResult
+		for _, step := range mcpResult.Steps {
+			if step.Step == "verify" {
+				record = step.Write
+			}
+		}
+		if record == nil {
+			t.Fatalf("no verify step with a write in %+v", mcpResult.Steps)
+		}
+		changed := gitFixtureOutput(t, mcpCore.mirrorDir, "diff", "--name-only", "main", record.Branch)
+		var eventPath string
+		for _, line := range strings.Split(strings.TrimSpace(changed), "\n") {
+			if strings.Contains(line, "/events/") {
+				eventPath = line
+			}
+		}
+		if eventPath == "" {
+			t.Fatalf("the record write committed no event: %q", changed)
+		}
+		if body := gitFixtureOutput(t, mcpCore.mirrorDir, "show", record.Branch+":"+eventPath); !strings.Contains(body, "name: mcp-caller") {
+			t.Fatalf("the record event does not carry the MCP caller's actor:\n%s", body)
+		}
+	})
+
+	t.Run("request", func(t *testing.T) {
+		t.Parallel()
+		build := func() (*dataCore, *expressScriptedFunnel) {
+			core, _, _ := newRecordTestDataCore(t, []byte(`{"ok":true}`))
+			core.spaceID = "test"
+			core.stagingDir = t.TempDir()
+			core.loadManifest = func() (space.Manifest, error) {
+				return space.Manifest{MinBinaryVersion: "0.1.0", Participants: []space.Participant{{System: "axon"}, {System: "peer"}}}, nil
+			}
+			echoingActor(core)
+			funnel := &expressScriptedFunnel{}
+			installExpressSeams(core, funnel, nil)
+			return core, funnel
+		}
+		cliCore, cliFunnel := build()
+		mcpCore, mcpFunnel := build()
+
+		cliResult, cliErr := cliDataAdapter{core: cliCore}.Request(context.Background(), cli.DataRequestRequest{
+			Producer: "axon", Contract: "XC-axon-widget@1.0.0", InterimBehavior: "keep working", Actor: cli.ActorFlags{Kind: "agent", Name: "cli-caller"},
+		})
+		mcpResult, mcpErr := mcpDataAdapter{core: mcpCore}.Request(context.Background(), mcp.DataRequestRequest{
+			Producer: "axon", Contract: "XC-axon-widget@1.0.0", InterimBehavior: "keep working", Actor: mcp.ActorInput{Kind: "agent", Name: "mcp-caller"},
+		})
+		if cliErr != nil || mcpErr != nil {
+			t.Fatalf("errors: cli=%v mcp=%v", cliErr, mcpErr)
+		}
+		if got, want := expressMCPTuples(mcpResult.Steps), expressTuples(cliResult.Steps); strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Fatalf("steps differ:\nmcp: %v\ncli: %v", got, want)
+		}
+		if got, want := expressInnerVerbs(mcpFunnel), expressInnerVerbs(cliFunnel); strings.Join(got, ",") != strings.Join(want, ",") || len(want) == 0 {
+			t.Fatalf("inner writes differ: mcp=%v cli=%v", got, want)
+		}
+		if mcpResult.WorkRequest != cliResult.WorkRequest || mcpResult.Next != cliResult.Next {
+			t.Fatalf("results differ: mcp=%+v cli=%+v", mcpResult, cliResult)
+		}
+		for i := range mcpFunnel.calls {
+			if !strings.Contains(mcpFunnel.content(i), "name: mcp-caller") {
+				t.Fatalf("inner write %d does not carry the MCP caller's actor:\n%s", i, mcpFunnel.content(i))
+			}
+		}
+	})
+}

@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/internal/cli"
 )
 
 // TestHelpForEveryVerbNeedsNoConfig is the standing gate over the DX defect
@@ -42,6 +44,37 @@ func TestHelpForEveryVerbNeedsNoConfig(t *testing.T) {
 				if strings.Contains(strings.ToLower(stdout.String()+stderr.String()), forbidden) {
 					t.Fatalf("`a2a %s --help` leaked a setup error (%q): stdout=%q stderr=%q", verb, forbidden, stdout.String(), stderr.String())
 				}
+			}
+		})
+	}
+}
+
+// TestDataSubverbHelpNeedsNoConfig is spec 05 §8 row 17: `a2a data <sub> --help`
+// for every DataSubcommands() entry explains itself from a directory with no
+// project config. The verb-level test above stops at `data --help`; the
+// sub-verb is where the service-not-configured refusal used to answer, and
+// where the express flags (--for, --producer) must be named.
+func TestDataSubverbHelpNeedsNoConfig(t *testing.T) {
+	// Not parallel: t.Chdir mutates process state.
+	t.Chdir(t.TempDir())
+
+	mustName := map[string]string{"deliver": "--for", "verify": "--for", "request": "--producer"}
+	for _, sub := range cli.DataSubcommands() {
+		t.Run(sub.Name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run([]string{"data", sub.Name, "--help"}, &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("`a2a data %s --help` exit = %d, want 0; stdout=%q stderr=%q", sub.Name, code, stdout.String(), stderr.String())
+			}
+			out := stdout.String() + stderr.String()
+			if strings.Contains(out, "service is not configured") {
+				t.Fatalf("`a2a data %s --help` answered with the missing-service refusal: %q", sub.Name, out)
+			}
+			if !strings.Contains(stdout.String(), "a2a data "+sub.Name) {
+				t.Errorf("`a2a data %s --help` usage does not name its own verb: %q", sub.Name, stdout.String())
+			}
+			if flag, ok := mustName[sub.Name]; ok && !strings.Contains(stdout.String(), flag) {
+				t.Errorf("`a2a data %s --help` usage does not name %s: %q", sub.Name, flag, stdout.String())
 			}
 		})
 	}

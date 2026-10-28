@@ -1039,10 +1039,10 @@ func runFetch(args []string, stdout, stderr io.Writer) int {
 // needsCredential is false, and it pins an EXACT already-published
 // <XC-id>@<version>, so syncMirror is also false (mirrors contract
 // preflight/publish's own "read/preflight operations never fetch at all").
-// `deliver` and `verify` can each drive a write (deliver always; verify
-// only under --record, decided too late for this earlier per-verb policy
-// pass, so the safe upper bound is chosen) — both sync the mirror and
-// resolve a credential, exactly like the plain OP-211 lifecycle verbs
+// `deliver`, `verify` and `request` can each drive a write (deliver and
+// request always; verify only under --record, decided too late for this
+// earlier per-verb policy pass, so the safe upper bound is chosen) — all
+// three sync the mirror and resolve a credential, exactly like the plain OP-211 lifecycle verbs
 // (resolveLifecycleDeps's own default). `fetch` is read-only but wants a
 // fresh mirror (a package delivered moments ago must be visible), so it
 // syncs without needing a credential.
@@ -1051,9 +1051,15 @@ func resolveDataDeps(ctx context.Context, p paths, args []string, stderr io.Writ
 	if len(args) != 0 {
 		action = args[0]
 	}
-	syncMirror := action != "pack"
-	needsCredential := action == "deliver" || action == "verify"
+	syncMirror, needsCredential := dataDepsPolicy(action)
 	return resolveLifecycleDepsWithPolicy(ctx, p, dataTargetArgs(args), stderr, syncMirror, needsCredential)
+}
+
+// dataDepsPolicy is resolveDataDeps' per-sub-verb policy, split out so a
+// table test pins it: no e2e rig sees a missing credential, because the
+// fake host accepts an empty one.
+func dataDepsPolicy(action string) (syncMirror, needsCredential bool) {
+	return action != "pack", action == "deliver" || action == "verify" || action == "request"
 }
 
 func awaitResolver(p paths) cli.AwaitResolver {

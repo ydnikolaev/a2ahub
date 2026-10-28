@@ -41,6 +41,12 @@ func expectedCatalogCommandNames() []string {
 			}
 			continue
 		}
+		if name == "data" {
+			for _, sub := range cli.DataSubcommands() {
+				out = append(out, "data "+sub.Name)
+			}
+			continue
+		}
 		out = append(out, name)
 	}
 	sort.Strings(out)
@@ -186,6 +192,43 @@ func TestEveryCatalogNameIsDispatchable(t *testing.T) {
 			"token is not a buildCommands() key is a command that answers `unknown command`. "+
 			"A sub-verb is an ARGUMENT of its parent verb, so it is joined with a space, never a hyphen.",
 			strings.Join(broken, "\n  "))
+	}
+}
+
+// TestCatalogExpandsDataIntoSubVerbRows is spec 05 §8 row 17: `data` is one
+// dispatch key but five catalog rows, because a single row could name neither
+// `request` nor the `--for` forms the express flow added. The catalog is the
+// file a consumer agent reads for exact flags, so each row must carry them.
+func TestCatalogExpandsDataIntoSubVerbRows(t *testing.T) {
+	t.Parallel()
+
+	byName := map[string]string{}
+	for _, r := range catalogCommandRows() {
+		byName[r.Name] = r.Synopsis
+		if r.Name == "data" {
+			t.Errorf("the flat `data` row survived: %q", r.Synopsis)
+		}
+		if strings.HasPrefix(r.Name, "data ") && strings.Contains(r.Synopsis, "--pass") {
+			t.Errorf("%q still advertises the retired --pass flag: %q", r.Name, r.Synopsis)
+		}
+	}
+	for sub, want := range map[string][]string{
+		"pack":    {"--contract"},
+		"deliver": {"--for"},
+		"fetch":   {"--to"},
+		"verify":  {"--for", "--record"},
+		"request": {"--producer", "--contract"},
+	} {
+		synopsis, ok := byName["data "+sub]
+		if !ok {
+			t.Errorf("catalog has no `data %s` row", sub)
+			continue
+		}
+		for _, flag := range want {
+			if !strings.Contains(synopsis, flag) {
+				t.Errorf("`data %s` synopsis %q does not name %s", sub, synopsis, flag)
+			}
+		}
 	}
 }
 

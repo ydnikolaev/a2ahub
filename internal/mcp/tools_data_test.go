@@ -409,3 +409,155 @@ func TestDataToolFetchBlobRefusalIsForwarded(t *testing.T) {
 		t.Fatalf("fetch-blob refusal not forwarded: %v", callErr)
 	}
 }
+
+// fakeMCPExpressBackend adds the composite capability to the data fake.
+type fakeMCPExpressBackend struct {
+	fakeMCPDataBackend
+	requestReq    DataRequestRequest
+	deliverForReq DataDeliverForRequest
+	verifyForReq  DataVerifyForRequest
+	express       DataExpressResult
+}
+
+func (f *fakeMCPExpressBackend) Request(_ context.Context, req DataRequestRequest) (DataExpressResult, error) {
+	f.calls = append(f.calls, "request")
+	f.requestReq = req
+	return f.express, f.err
+}
+
+func (f *fakeMCPExpressBackend) DeliverFor(_ context.Context, req DataDeliverForRequest) (DataExpressResult, error) {
+	f.calls = append(f.calls, "deliver-for")
+	f.deliverForReq = req
+	return f.express, f.err
+}
+
+func (f *fakeMCPExpressBackend) VerifyFor(_ context.Context, req DataVerifyForRequest) (DataExpressResult, error) {
+	f.calls = append(f.calls, "verify-for")
+	f.verifyForReq = req
+	return f.express, f.err
+}
+
+var _ DataExpressOperations = (*fakeMCPExpressBackend)(nil)
+
+func testExpressDataTool(t *testing.T, backend *fakeMCPExpressBackend) ToolSpec {
+	t.Helper()
+	spec, err := NewDataTool(DataToolDeps{Operations: backend})
+	if err != nil {
+		t.Fatalf("NewDataTool: %v", err)
+	}
+	return spec
+}
+
+// TestDataToolRoutesExpressActions is spec 05 §8 row 14, routing half:
+// action=request and the `for` form of deliver and verify reach the composite
+// capability with every field carried, and never the single-step operations.
+func TestDataToolRoutesExpressActions(t *testing.T) {
+	t.Parallel()
+	backend := &fakeMCPExpressBackend{express: DataExpressResult{WorkRequest: "XW-axon-20260804-aaaa", Next: "run deliver"}}
+	spec := testExpressDataTool(t, backend)
+	actor := ActorInput{Kind: "agent", Name: "mcp-caller", Model: "m"}
+
+	_, body, err := callDataTool(t, spec, DataInput{
+		Action: "request", Space: "fixture-space", Producer: "beta", Contract: "XC-axon-orders@1.0.0",
+		InterimBehavior: "wait", Title: "Orders", NeededBy: "2026-10-30", AcceptanceCriteria: []string{"extra"},
+		Timeout: "30s", Actor: actor,
+	})
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	if !strings.Contains(body, "next: run deliver") {
+		t.Fatalf("request summary lacks the next command: %q", body)
+	}
+	gotReq := backend.requestReq
+	if gotReq.Space != "fixture-space" || gotReq.Producer != "beta" || gotReq.Contract != "XC-axon-orders@1.0.0" ||
+		gotReq.InterimBehavior != "wait" || gotReq.Title != "Orders" || gotReq.NeededBy != "2026-10-30" ||
+		len(gotReq.AcceptanceCriteria) != 1 || gotReq.Timeout != 30*time.Second || gotReq.Actor != actor {
+		t.Fatalf("request not carried: %+v", gotReq)
+	}
+
+	if _, _, err := callDataTool(t, spec, DataInput{
+		Action: "deliver", For: "XW-axon-20260804-aaaa", From: "d", Profile: "synthetic", Format: "json",
+		Contract: "XC-axon-orders@1.0.0", MaxAttempts: 2, Expires: "48h", Actor: actor,
+	}); err != nil {
+		t.Fatalf("deliver for: %v", err)
+	}
+	gotDel := backend.deliverForReq
+	if gotDel.For != "XW-axon-20260804-aaaa" || gotDel.From != "d" || gotDel.Profile != "synthetic" || gotDel.Format != "json" ||
+		gotDel.Contract != "XC-axon-orders@1.0.0" || gotDel.MaxAttempts != 2 || gotDel.Expires != 48*time.Hour || gotDel.Actor != actor {
+		t.Fatalf("deliver for not carried: %+v", gotDel)
+	}
+
+	if _, _, err := callDataTool(t, spec, DataInput{
+		Action: "verify", For: "XW-axon-20260804-aaaa", Record: true, To: "vendor", Verdicts: []string{"ac2:met:beta"}, Reason: "r", Actor: actor,
+	}); err != nil {
+		t.Fatalf("verify for: %v", err)
+	}
+	gotVer := backend.verifyForReq
+	if gotVer.For != "XW-axon-20260804-aaaa" || !gotVer.Record || gotVer.To != "vendor" || len(gotVer.Verdicts) != 1 || gotVer.Reason != "r" || gotVer.Actor != actor {
+		t.Fatalf("verify for not carried: %+v", gotVer)
+	}
+
+	if want := []string{"request", "deliver-for", "verify-for"}; strings.Join(backend.calls, ",") != strings.Join(want, ",") {
+		t.Fatalf("calls = %v, want %v (and none of the single-step operations)", backend.calls, want)
+	}
+}
+
+// TestDataToolExpressFieldDiscipline is spec 05 §8 row 14, refusal half: `for`
+// is exclusive with the fields it derives, request takes none of the
+// deliver/verify fields, and the express-only fields are refused on every
+// other action rather than ignored.
+func TestDataToolExpressFieldDiscipline(t *testing.T) {
+	t.Parallel()
+	const wr = "XW-axon-20260804-aaaa"
+	for name, input := range map[string]DataInput{
+		"deliver for + staging_root":     {Action: "deliver", For: wr, From: "d", Profile: "synthetic", Format: "json", StagingRoot: "s"},
+		"deliver for + fulfills":         {Action: "deliver", For: wr, From: "d", Profile: "synthetic", Format: "json", Fulfills: wr},
+		"deliver for + supersedes":       {Action: "deliver", For: wr, From: "d", Profile: "synthetic", Format: "json", Supersedes: "DP-a-20260804-aaaa"},
+		"verify for + package_id":        {Action: "verify", For: wr, PackageID: "DP-a-20260804-aaaa"},
+		"request + for":                  {Action: "request", Producer: "beta", Contract: "XC-a@1.0.0", InterimBehavior: "w", For: wr},
+		"request + package_id":           {Action: "request", Producer: "beta", Contract: "XC-a@1.0.0", InterimBehavior: "w", PackageID: "DP-a-20260804-aaaa"},
+		"plain deliver + producer":       {Action: "deliver", StagingRoot: "s", Fulfills: wr, Producer: "beta"},
+		"plain verify + verdicts":        {Action: "verify", PackageID: "DP-a-20260804-aaaa", Verdicts: []string{"0:met:beta"}},
+		"plain verify + for-only reason": {Action: "verify", PackageID: "DP-a-20260804-aaaa", Reason: "r"},
+		"pack + for":                     {Action: "pack", Contract: "XC-a@1.0.0", From: "d", Profile: "synthetic", Format: "json", For: wr},
+		"fetch + timeout":                {Action: "fetch", PackageID: "DP-a-20260804-aaaa", To: "d", Timeout: "1m"},
+		"deliver for missing from":       {Action: "deliver", For: wr, Profile: "synthetic", Format: "json"},
+		"request missing producer":       {Action: "request", Contract: "XC-a@1.0.0", InterimBehavior: "w"},
+		"request missing interim":        {Action: "request", Producer: "beta", Contract: "XC-a@1.0.0"},
+		"request bad timeout":            {Action: "request", Producer: "beta", Contract: "XC-a@1.0.0", InterimBehavior: "w", Timeout: "soon"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			backend := &fakeMCPExpressBackend{}
+			if _, _, err := callDataTool(t, testExpressDataTool(t, backend), input); err == nil || len(backend.calls) != 0 {
+				t.Fatalf("accepted %+v: calls=%v err=%v", input, backend.calls, err)
+			}
+		})
+	}
+}
+
+// TestDataToolExpressNeedsTheCapability: a backend that cannot run the
+// composites refuses them as unconfigured; it does not fall back to the
+// single-step action the caller did not ask for.
+func TestDataToolExpressNeedsTheCapability(t *testing.T) {
+	t.Parallel()
+	backend := &fakeMCPDataBackend{}
+	for _, input := range []DataInput{
+		{Action: "request", Producer: "beta", Contract: "XC-a@1.0.0", InterimBehavior: "w"},
+		{Action: "deliver", For: "XW-axon-20260804-aaaa", From: "d", Profile: "synthetic", Format: "json"},
+		{Action: "verify", For: "XW-axon-20260804-aaaa"},
+	} {
+		_, _, err := callDataTool(t, testDataTool(t, backend), input)
+		if err == nil || !strings.Contains(err.Error(), "service is not configured") || len(backend.calls) != 0 {
+			t.Fatalf("input %+v: err=%v calls=%v, want an unconfigured refusal and no call", input, err, backend.calls)
+		}
+	}
+}
+
+// TestDataActionsNameRequest pins the closed action enum's express member.
+func TestDataActionsNameRequest(t *testing.T) {
+	t.Parallel()
+	if !workStringIn("request", DataActions) {
+		t.Fatalf("DataActions = %v, want it to contain request", DataActions)
+	}
+}

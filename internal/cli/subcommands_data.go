@@ -26,8 +26,9 @@ type DataSubcommand struct {
 func DataSubcommands() []DataSubcommand {
 	return []DataSubcommand{
 		{Name: "pack", Synopsis: "pack a local directory against an exact contract version, write-free (--contract, --from, --profile, --format, --expires)"},
-		{Name: "deliver", Synopsis: "deliver a packed staging root as one commit: payload + manifest + handoff (--fulfills, --supersedes, --expect-pack)"},
+		{Name: "deliver", Synopsis: "deliver a packed staging root as one commit: payload + manifest + handoff (--fulfills, --supersedes, --expect-pack), or with --for <XW> answer a request end to end: ack, accept, pack, deliver, respond (--for, --from, --profile, --format)"},
 		{Name: "fetch", Synopsis: "fetch and install a package by id, digest-verified before any byte is written (--to)"},
-		{Name: "verify", Synopsis: "re-verify a fetched package against its pinned contract and write a verification report (--pass)"},
+		{Name: "verify", Synopsis: "re-verify a fetched package against its pinned contract and write a verification report (--record), or with --for <XW> judge the latest handoff and with --record also ack, verify and close or dispute (--for, --record, --verdict)"},
+		{Name: "request", Synopsis: "ask a producer for data conforming to a pinned contract: one submitted work_request (--producer, --contract, --interim-behavior, --acceptance-criterion)"},
 	}
 }

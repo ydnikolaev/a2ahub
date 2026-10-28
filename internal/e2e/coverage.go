@@ -264,36 +264,31 @@ var coverageManifest = []coverageEntry{
 	{Verb: "contract retire", GoTest: "internal/e2e.TestHostLoopContractFamily", Tier: tierT3},
 	{Verb: "contract verify-export", GoTest: "internal/e2e.TestContractVerifyExportLocalDirectConstruction", Tier: tierInProcess},
 
-	// --- Data (spec 05a T1): pack|deliver|fetch|verify fold into ONE
-	// catalog verb, "data" — unlike `contract`, DataCommand's sub-verbs are
-	// NOT expanded into "data <sub>" catalog rows (catalog.go's own
-	// catalogCLICommand mirrors `work`'s single-row precedent here, not
-	// `contract`'s per-sub expansion), so cli.DataSubcommands() names are
-	// not this manifest's verb keys. `pack` never syncs the mirror or
-	// resolves a credential (cmd/a2a/wire.go's resolveDataDeps: it is
-	// write-free by design, its own synopsis says so), so a pinned
-	// <XC-id>@<version> this space never published refuses LOCALLY
-	// (internal/space.ErrContractNotPublished), exec-able against the local
-	// fixture before any GitHub host is ever reached. `deliver` and
-	// `verify --pass` can each drive a write and so are unreachable from
-	// TestT3Scripts's own fixture specifically (its Setup points
-	// A2A_GITHUB_API at a 403-only denial stub, not a working fake host —
-	// see txtar_test.go's own doc comment, corrected this wave, for the
-	// general write-path picture) — covered instead by cmd/a2a's own
-	// direct-construction dataCore tests (data_wiring_test.go).
-	{Verb: "data", Txtar: "data_pack_refusal.txtar", Tier: tierT3},
-	{Verb: "data", GoTest: "cmd/a2a.TestDataCorePackEndToEnd", Tier: tierInProcess},
-	// The two-party host-rig loop (spec 05a §6.3): pack, deliver (one
-	// commit, idempotent re-run), fetch (clean + divergent destination),
-	// verify (judge-only and --record, both directions), and the
-	// fail->supersede->pass->close loop against a real fake-host merge —
-	// exercise no earlier row here reaches, since data_wiring_test.go's
-	// own rows are direct-construction, never through the funnel. Its own
-	// body never spells the exec seam directly — it drives every step
-	// through setupDataLoop's *hostRig, whose newHostRig call lives in this
-	// SAME file (data_loop_test.go), which is exactly the one-hop case
-	// resolveGoTestExecSeam's same-file helper resolution exists for.
-	{Verb: "data", GoTest: "internal/e2e.TestDataLoopFailSupersedePassCloseInboxNeverAccumulates", Tier: tierT3},
+	// --- Data (spec 05a T1, spec 05 express): one row per catalog sub-verb.
+	// local-space-2026-10 P5 expanded `a2a data` into "data pack|deliver|
+	// fetch|verify|request" catalog rows (contract's per-sub precedent), so
+	// each sub-verb is a manifest key of its own. `pack` never syncs the
+	// mirror or resolves a credential (cmd/a2a/wire.go's resolveDataDeps: it
+	// is write-free by design), so a pinned <XC-id>@<version> this space
+	// never published refuses LOCALLY (internal/space.ErrContractNotPublished),
+	// exec-able against TestT3Scripts's fixture. Every write-driving sub-verb
+	// is unreachable from that fixture (its Setup points A2A_GITHUB_API at a
+	// 403-only denial stub), so the T3 rows below are the two-party host-rig
+	// loop (spec 05a §6.3) in data_loop_test.go: every step runs through
+	// setupDataLoop's *hostRig, whose newHostRig call lives in that SAME
+	// file — the one-hop case resolveGoTestExecSeam's same-file helper
+	// resolution exists for. The Express tests drive the composite modes
+	// (request, deliver --for, verify --for --record) against the same rig.
+	{Verb: "data pack", Txtar: "data_pack_refusal.txtar", Tier: tierT3},
+	{Verb: "data pack", GoTest: "cmd/a2a.TestDataCorePackEndToEnd", Tier: tierInProcess},
+	{Verb: "data pack", GoTest: "internal/e2e.TestDataLoopPackDeliverOneCommit", Tier: tierT3},
+	{Verb: "data deliver", GoTest: "internal/e2e.TestDataLoopPackDeliverOneCommit", Tier: tierT3},
+	{Verb: "data deliver", GoTest: "internal/e2e.TestDataLoopExpressEqualsFullFlow", Tier: tierT3},
+	{Verb: "data fetch", GoTest: "internal/e2e.TestDataLoopFetchIntoCleanDirectory", Tier: tierT3},
+	{Verb: "data verify", GoTest: "internal/e2e.TestDataLoopFailSupersedePassCloseInboxNeverAccumulates", Tier: tierT3},
+	{Verb: "data verify", GoTest: "internal/e2e.TestDataLoopExpressFailDisputes", Tier: tierT3},
+	{Verb: "data request", GoTest: "internal/e2e.TestDataLoopExpressEqualsFullFlow", Tier: tierT3},
+	{Verb: "data request", GoTest: "internal/e2e.TestDataLoopExpressRequestDeliverVerifyRerun", Tier: tierT3},
 
 	// --- Ops & delivery --------------------------------------------------
 	{Verb: "completion", Txtar: "ops_completion.txtar", Tier: tierT3},

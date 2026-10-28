@@ -426,3 +426,168 @@ func TestDataDeliverRefusesSupersedesRatherThanIgnoringIt(t *testing.T) {
 		t.Fatalf("deliver reached the core despite refusing: %+v", fake.deliverReq)
 	}
 }
+
+// fakeExpressOperations adds the optional express capability to the fake so
+// the for-mode tests can see which calls reach the core.
+type fakeExpressOperations struct {
+	fakeDataOperations
+	requestReq    cli.DataRequestRequest
+	deliverForReq cli.DataDeliverForRequest
+	verifyForReq  cli.DataVerifyForRequest
+	calls         int
+	result        cli.DataExpressResult
+	err           error
+}
+
+func (f *fakeExpressOperations) Request(_ context.Context, req cli.DataRequestRequest) (cli.DataExpressResult, error) {
+	f.calls++
+	f.requestReq = req
+	return f.result, f.err
+}
+
+func (f *fakeExpressOperations) DeliverFor(_ context.Context, req cli.DataDeliverForRequest) (cli.DataExpressResult, error) {
+	f.calls++
+	f.deliverForReq = req
+	return f.result, f.err
+}
+
+func (f *fakeExpressOperations) VerifyFor(_ context.Context, req cli.DataVerifyForRequest) (cli.DataExpressResult, error) {
+	f.calls++
+	f.verifyForReq = req
+	return f.result, f.err
+}
+
+var _ cli.DataExpressOperations = (*fakeExpressOperations)(nil)
+
+// TestDataForModeExclusivity is spec 05 §8 row 12: --for derives the staging
+// root, the work_request and the supersession chain, so combining it with
+// any of them is a usage error (exit 2) that names the conflicting flag, and
+// never reaches the core.
+func TestDataForModeExclusivity(t *testing.T) {
+	t.Parallel()
+	deliverFor := []string{"deliver", "--for", "XW-axon-20260804-aaaa", "--from", "d", "--profile", "synthetic", "--format", "json"}
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"deliver with a positional staging root", append(append([]string{}, deliverFor...), "staging/root"), "positional staging root"},
+		{"deliver with --fulfills", append(append([]string{}, deliverFor...), "--fulfills", "XW-axon-20260804-aaaa"), "--fulfills"},
+		{"deliver with --supersedes", append(append([]string{}, deliverFor...), "--supersedes", "DP-axon-20260803-zz99"), "--supersedes"},
+		{"deliver with --expect-pack", append(append([]string{}, deliverFor...), "--expect-pack", "sha256:abc"), "--expect-pack"},
+		{"verify with a positional package id", []string{"verify", "--for", "XW-axon-20260804-aaaa", "DP-axon-20260803-zz99"}, "positional package id"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fake := &fakeExpressOperations{}
+			code, _, stderr := runDataCommand(t, cli.NewDataCommand(fake), tc.args...)
+			if code != 2 || !strings.Contains(stderr, tc.want) {
+				t.Fatalf("args %v: got code=%d stderr=%q, want exit 2 naming %q", tc.args, code, stderr, tc.want)
+			}
+			if fake.calls != 0 {
+				t.Fatalf("args %v reached the express core %d time(s)", tc.args, fake.calls)
+			}
+		})
+	}
+}
+
+// TestDataExpressOnlyFlagsNeedFor: a flag only the composite reads must not be
+// silently ignored in the plain form.
+func TestDataExpressOnlyFlagsNeedFor(t *testing.T) {
+	t.Parallel()
+	for _, args := range [][]string{
+		{"deliver", "staging/root", "--fulfills", "XW-axon-20260804-aaaa", "--from", "d"},
+		{"verify", "DP-axon-20260803-zz99", "--verdict", "0:met:beta"},
+		{"verify", "DP-axon-20260803-zz99", "--reason", "x"},
+	} {
+		fake := &fakeExpressOperations{}
+		code, _, stderr := runDataCommand(t, cli.NewDataCommand(fake), args...)
+		if code != 2 || !strings.Contains(stderr, "only valid with --for") || fake.calls != 0 {
+			t.Fatalf("args %v: code=%d calls=%d stderr=%q, want exit 2 'only valid with --for' and no call", args, code, fake.calls, stderr)
+		}
+	}
+}
+
+// TestDataForModeRoutesToTheExpressCore: the composite forms reach the
+// express capability with every flag carried, and a core that lacks the
+// capability is a service-unavailable refusal, not a silent fall-back to the
+// single-step verb.
+func TestDataForModeRoutesToTheExpressCore(t *testing.T) {
+	t.Parallel()
+	fake := &fakeExpressOperations{result: cli.DataExpressResult{WorkRequest: "XW-axon-20260804-aaaa", Steps: []cli.DataStep{{Step: "ack", Outcome: "landed"}}}}
+	cmd := cli.NewDataCommand(fake)
+
+	code, out, stderr := runDataCommand(t, cmd, "deliver", "--for", "XW-axon-20260804-aaaa", "--from", "d", "--profile", "synthetic", "--format", "ndjson", "--contract", "XC-a@1.0.0", "--json")
+	if code != 0 {
+		t.Fatalf("deliver --for: code=%d stderr=%q", code, stderr)
+	}
+	if got := fake.deliverForReq; got.For != "XW-axon-20260804-aaaa" || got.From != "d" || got.Profile != "synthetic" || got.Format != "ndjson" || got.Contract != "XC-a@1.0.0" {
+		t.Fatalf("DeliverFor request = %+v", got)
+	}
+	if !strings.Contains(out, `"step":"ack"`) && !strings.Contains(out, `"step": "ack"`) {
+		t.Fatalf("--json output lacks the steps: %q", out)
+	}
+
+	code, _, stderr = runDataCommand(t, cmd, "verify", "--for", "XW-axon-20260804-aaaa", "--record", "--verdict", "ac2:met:beta", "--verdict", "ac3:unmet:axon", "--reason", "because")
+	if code != 0 {
+		t.Fatalf("verify --for: code=%d stderr=%q", code, stderr)
+	}
+	if got := fake.verifyForReq; !got.Record || got.For != "XW-axon-20260804-aaaa" || len(got.Verdicts) != 2 || got.Verdicts[1] != "ac3:unmet:axon" || got.Reason != "because" {
+		t.Fatalf("VerifyFor request = %+v", got)
+	}
+
+	code, _, stderr = runDataCommand(t, cmd, "request", "--producer", "beta", "--contract", "XC-a@1.0.0", "--interim-behavior", "wait", "--acceptance-criterion", "extra one", "--acceptance-criterion", "extra two")
+	if code != 0 {
+		t.Fatalf("request: code=%d stderr=%q", code, stderr)
+	}
+	if got := fake.requestReq; got.Producer != "beta" || got.Contract != "XC-a@1.0.0" || got.InterimBehavior != "wait" || len(got.AcceptanceCriteria) != 2 {
+		t.Fatalf("Request request = %+v", got)
+	}
+
+	// A core without the capability refuses instead of running the plain verb.
+	plain := cli.NewDataCommand(&fakeDataOperations{})
+	code, _, stderr = runDataCommand(t, plain, "deliver", "--for", "XW-axon-20260804-aaaa", "--from", "d", "--profile", "synthetic", "--format", "json")
+	if code != 1 || !strings.Contains(stderr, "service is not configured") {
+		t.Fatalf("deliver --for over a plain core: code=%d stderr=%q, want a service-unavailable refusal", code, stderr)
+	}
+}
+
+// TestDataVerifyForFailingReportExitsOne: the composite keeps verify's exit
+// contract, a failing verdict is exit 1 even though the dispute was written.
+func TestDataVerifyForFailingReportExitsOne(t *testing.T) {
+	t.Parallel()
+	fake := &fakeExpressOperations{result: cli.DataExpressResult{WorkRequest: "XW-axon-20260804-aaaa", Report: sampleFailingReport()}}
+	code, _, stderr := runDataCommand(t, cli.NewDataCommand(fake), "verify", "--for", "XW-axon-20260804-aaaa", "--record")
+	if code != 1 {
+		t.Fatalf("verify --for with a failing report: code=%d stderr=%q, want 1", code, stderr)
+	}
+}
+
+// TestDataSubcommandsPinnedList is spec 05 §8 row 16: the sub-verb list is
+// pinned, so adding or dropping one is a decision made here, and the parity
+// test in cmd/a2a then forces mcp.DataActions to follow.
+func TestDataSubcommandsPinnedList(t *testing.T) {
+	t.Parallel()
+	var got []string
+	for _, sub := range cli.DataSubcommands() {
+		got = append(got, sub.Name)
+	}
+	want := []string{"pack", "deliver", "fetch", "verify", "request"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("DataSubcommands() = %v, want the pinned %v", got, want)
+	}
+}
+
+// TestDataSubverbHelpAnswersWithoutOperations: --help is documentation and
+// must not need the service the verbs run against.
+func TestDataSubverbHelpAnswersWithoutOperations(t *testing.T) {
+	t.Parallel()
+	cmd := cli.NewDataCommand(nil)
+	for _, sub := range cli.DataSubcommands() {
+		code, stdout, stderr := runDataCommand(t, cmd, sub.Name, "--help")
+		if code != 0 || strings.Contains(stdout+stderr, "service is not configured") {
+			t.Fatalf("data %s --help: code=%d stdout=%q stderr=%q", sub.Name, code, stdout, stderr)
+		}
+	}
+}

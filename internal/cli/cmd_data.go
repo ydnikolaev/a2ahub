@@ -98,10 +98,88 @@ type DataOperations interface {
 	Verify(ctx context.Context, req DataVerifyRequest) (DataResult, error)
 }
 
+// DataRequestRequest is "a2a data request" resolved input (spec 05 T1): the
+// consumer asks a named producer for data conforming to one pinned contract.
+type DataRequestRequest struct {
+	Producer           string
+	Contract           string // <XC-id>@<version>
+	Title              string // empty = the core's default
+	NeededBy           string // YYYY-MM-DD, empty = the template's own rule
+	InterimBehavior    string
+	AcceptanceCriteria []string // extra criteria, ac2..acN; ac1 is always the verify criterion
+	Timeout            time.Duration
+	Actor              ActorFlags
+}
+
+// DataDeliverForRequest is "a2a data deliver --for" resolved input: the
+// producer answers one work_request end to end.
+type DataDeliverForRequest struct {
+	For         string // the XW work_request
+	From        string
+	Profile     string
+	Format      string
+	Contract    string // only when the request does not carry exactly one XC@ver ref
+	Expires     time.Duration
+	MaxAttempts int
+	Timeout     time.Duration
+	Actor       ActorFlags
+}
+
+// DataVerifyForRequest is "a2a data verify --for" resolved input: the
+// consumer judges (and with Record, closes or disputes) one work_request.
+type DataVerifyForRequest struct {
+	For      string // the XW work_request
+	Record   bool
+	To       string   // optional fetch destination
+	Verdicts []string // <idx-or-id>:<verdict>:<cause_owner>, passed through to close
+	Reason   string   // overrides the derived dispute reason
+	Timeout  time.Duration
+	Actor    ActorFlags
+}
+
+// DataStep is one inner step of a composite verb, in the order it ran.
+type DataStep struct {
+	Step       string             `json:"step"` // ack, accept, pack, deliver, supersede, respond, verify, close, dispute, submit
+	Subject    string             `json:"subject,omitempty"`
+	Transition string             `json:"transition,omitempty"`
+	Outcome    string             `json:"outcome"` // landed, already-done, pending, refused, stopped
+	Write      *space.WriteResult `json:"write,omitempty"`
+	Note       string             `json:"note,omitempty"` // why a step was refused or stopped
+}
+
+// DataExpressResult is what the three composite verbs return. Next is the
+// command the OTHER party runs, or empty when nothing is owed.
+type DataExpressResult struct {
+	WorkRequest string              `json:"work_request,omitempty"`
+	Handoff     string              `json:"handoff,omitempty"`
+	Package     string              `json:"package,omitempty"`
+	Response    string              `json:"response,omitempty"`
+	Report      *datapackage.Report `json:"report,omitempty"` // verify --for only
+	Steps       []DataStep          `json:"steps"`
+	Next        string              `json:"next,omitempty"`
+	// Error is the stopped step's own error, set by the command from the
+	// operation's error so a --json caller sees the steps AND the reason.
+	Error string `json:"error,omitempty"`
+}
+
+// DataExpressOperations is the composite verbs' own capability, kept
+// separate from DataOperations (the mcp.DataAttachOperations idiom): the
+// existing DataOperations implementations and their fakes keep compiling,
+// and a command whose ops lack it reports "not configured".
+type DataExpressOperations interface {
+	Request(ctx context.Context, req DataRequestRequest) (DataExpressResult, error)
+	DeliverFor(ctx context.Context, req DataDeliverForRequest) (DataExpressResult, error)
+	VerifyFor(ctx context.Context, req DataVerifyForRequest) (DataExpressResult, error)
+}
+
+// DefaultDataExpressTimeout bounds one composite invocation's waiting on
+// pending merges.
+const DefaultDataExpressTimeout = 10 * time.Minute
+
 // --- DataCommand ------------------------------------------------------
 
-// DataCommand implements `a2a data <pack|deliver|fetch|verify>` (spec 05a
-// T1).
+// DataCommand implements `a2a data <pack|deliver|fetch|verify|request>`
+// (spec 05a T1, spec 05 T1).
 type DataCommand struct {
 	ops DataOperations
 }
@@ -119,19 +197,19 @@ func (c *DataCommand) Name() string { return "data" }
 
 // Synopsis implements cli.Command.
 func (c *DataCommand) Synopsis() string {
-	return "contract data exchange loop: pack | deliver | fetch | verify"
+	return "contract data exchange loop: pack | deliver | fetch | verify | request"
 }
 
 // Run implements cli.Command.
 func (c *DataCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a data <pack|deliver|fetch|verify> ...")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a data <pack|deliver|fetch|verify|request> ...")
 		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-send"))
 		return 2
 	}
 	sub, rest := args[0], args[1:]
 	if IsHelpArg(sub) {
-		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a data <pack|deliver|fetch|verify> ...")
+		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a data <pack|deliver|fetch|verify|request> ...")
 		_, _ = fmt.Fprintln(stdio.Stdout, workflowLine("loop-send"))
 		for _, s := range DataSubcommands() {
 			_, _ = fmt.Fprintf(stdio.Stdout, "  %-10s %s\n", s.Name, s.Synopsis)
@@ -147,6 +225,8 @@ func (c *DataCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return c.runFetch(ctx, rest, stdio)
 	case "verify":
 		return c.runVerify(ctx, rest, stdio)
+	case "request":
+		return c.runRequest(ctx, rest, stdio)
 	default:
 		_, _ = fmt.Fprintf(stdio.Stderr, "data: unknown subcommand %q\n", sub)
 		return 2
@@ -187,9 +267,6 @@ const DefaultDataPackExpiry = 168 * time.Hour
 // therefore added here so every seam field has a way to be set from the
 // CLI.
 func (c *DataCommand) runPack(ctx context.Context, args []string, stdio IO) int {
-	if c.ops == nil {
-		return dataServiceUnavailable(stdio, "pack")
-	}
 	fs := flag.NewFlagSet("data pack", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
 	contractRef := fs.String("contract", "", "pinned <XC-id>@<version>")
@@ -201,6 +278,12 @@ func (c *DataCommand) runPack(ctx context.Context, args []string, stdio IO) int 
 	supersedes := fs.String("supersedes", "", "prior package id this attempt supersedes, empty for a first attempt")
 	maxAttempts := fs.Int("max-attempts", 0, "attempt ceiling; 0 = unset, nothing refused (L-1)")
 	asJSON := fs.Bool("json", false, "emit JSON")
+	if dataHelpRequested(args) {
+		return printDataHelp(fs, stdio, dataPackUsage)
+	}
+	if c.ops == nil {
+		return dataServiceUnavailable(stdio, "pack")
+	}
 	positionals, err := parseArgsAnyOrder(fs, args)
 	if err != nil {
 		return 2
@@ -218,7 +301,7 @@ func (c *DataCommand) runPack(ctx context.Context, args []string, stdio IO) int 
 	// usage error here would swallow that naming (ADR-001 "thin frontend,
 	// zero business rules").
 	if len(positionals) != 0 || *contractRef == "" || *from == "" || *profile == "" || *format == "" {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a data pack --contract <XC-id>@<version> --from <dir> --profile synthetic|sanitized --format json|ndjson [--expires <duration>] [--fulfills <id>] [--supersedes <package-id>] [--max-attempts <n>] [--json]")
+		_, _ = fmt.Fprintln(stdio.Stderr, dataPackUsage)
 		return 2
 	}
 	result, err := c.ops.Pack(ctx, DataPackRequest{
@@ -236,22 +319,77 @@ func (c *DataCommand) runPack(ctx context.Context, args []string, stdio IO) int 
 }
 
 // runDeliver implements `a2a data deliver <packed-staging-root> --fulfills
-// <request-id> [--supersedes <package-id>] [--expect-pack <digest>]
-// [--json]`.
+// <request-id> [--expect-pack <digest>] [--json]` and, behind --for, the
+// producer composite `a2a data deliver --for <XW-id> --from <dir> ...`.
 func (c *DataCommand) runDeliver(ctx context.Context, args []string, stdio IO) int {
-	if c.ops == nil {
-		return dataServiceUnavailable(stdio, "deliver")
-	}
 	fs := flag.NewFlagSet("data deliver", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
 	fulfills := fs.String("fulfills", "", "the work_request this delivery answers")
 	supersedes := fs.String("supersedes", "", "prior package id this attempt supersedes")
 	expectPack := fs.String("expect-pack", "", "expected aggregate digest, empty to skip the binding")
 	asJSON := fs.Bool("json", false, "emit JSON")
+	forID := fs.String("for", "", "answer this work_request end to end: ack, accept, pack, deliver, respond (selects the composite mode)")
+	from := fs.String("from", "", "with --for: local source directory to pack")
+	profile := fs.String("profile", "", "with --for: synthetic|sanitized")
+	format := fs.String("format", "", "with --for: json|ndjson")
+	contractRef := fs.String("contract", "", "with --for: <XC-id>@<version>, only when the request does not carry exactly one contract ref")
+	expires := fs.Duration("expires", DefaultDataPackExpiry, "with --for: how long the packed attempt remains fetchable")
+	maxAttempts := fs.Int("max-attempts", 0, "with --for: attempt ceiling; 0 = unset, nothing refused")
+	timeout := fs.Duration("timeout", DefaultDataExpressTimeout, "with --for: how long to wait for a pending merge")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
+	if dataHelpRequested(args) {
+		return printDataHelp(fs, stdio, dataDeliverUsage)
+	}
+	if c.ops == nil {
+		return dataServiceUnavailable(stdio, "deliver")
+	}
 	positionals, err := parseArgsAnyOrder(fs, args)
 	if err != nil {
 		return 2
+	}
+	set := dataFlagsSet(fs)
+	if *forID != "" {
+		// --for derives the staging root, the work_request and the
+		// supersession chain; accepting any of them beside it would let a
+		// caller believe it had overridden what the verb derives.
+		switch {
+		case len(positionals) != 0:
+			_, _ = fmt.Fprintf(stdio.Stderr, "data deliver: --for conflicts with the positional staging root %q: --for packs and delivers by itself\n", positionals[0])
+			return 2
+		case set["fulfills"]:
+			_, _ = fmt.Fprintln(stdio.Stderr, "data deliver: --for conflicts with --fulfills: --for names the work_request and derives the rest")
+			return 2
+		case set["supersedes"]:
+			_, _ = fmt.Fprintln(stdio.Stderr, "data deliver: --for conflicts with --supersedes: --for supersedes the rejected attempt by itself")
+			return 2
+		case set["expect-pack"]:
+			_, _ = fmt.Fprintln(stdio.Stderr, "data deliver: --for conflicts with --expect-pack: --for binds the staged package's digest by itself")
+			return 2
+		}
+		if *from == "" || *profile == "" || *format == "" {
+			_, _ = fmt.Fprintln(stdio.Stderr, dataDeliverForUsage)
+			return 2
+		}
+		if *expires <= 0 || *timeout <= 0 {
+			_, _ = fmt.Fprintln(stdio.Stderr, "data deliver: --expires and --timeout must be positive durations")
+			return 2
+		}
+		express, ok := c.ops.(DataExpressOperations)
+		if !ok {
+			return dataServiceUnavailable(stdio, "deliver --for")
+		}
+		result, callErr := express.DeliverFor(ctx, DataDeliverForRequest{
+			For: *forID, From: *from, Profile: *profile, Format: *format, Contract: *contractRef,
+			Expires: *expires, MaxAttempts: *maxAttempts, Timeout: *timeout,
+			Actor: ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel},
+		})
+		return renderDataExpress(stdio, "deliver", result, callErr, *asJSON)
+	}
+	for _, name := range []string{"from", "profile", "format", "contract", "expires", "max-attempts", "timeout"} {
+		if set[name] {
+			_, _ = fmt.Fprintf(stdio.Stderr, "data deliver: --%s is only valid with --for\n", name)
+			return 2
+		}
 	}
 	if len(positionals) != 1 || *fulfills == "" {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a data deliver <packed-staging-root> --fulfills <request-id> [--expect-pack <digest>] [--json]")
@@ -285,19 +423,22 @@ func (c *DataCommand) runDeliver(ctx context.Context, args []string, stdio IO) i
 // runFetch implements `a2a data fetch <DP-package-id> --to <dir>
 // [--json]`.
 func (c *DataCommand) runFetch(ctx context.Context, args []string, stdio IO) int {
-	if c.ops == nil {
-		return dataServiceUnavailable(stdio, "fetch")
-	}
 	fs := flag.NewFlagSet("data fetch", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
 	to := fs.String("to", "", "destination directory")
 	asJSON := fs.Bool("json", false, "emit JSON")
+	if dataHelpRequested(args) {
+		return printDataHelp(fs, stdio, dataFetchUsage)
+	}
+	if c.ops == nil {
+		return dataServiceUnavailable(stdio, "fetch")
+	}
 	positionals, err := parseArgsAnyOrder(fs, args)
 	if err != nil {
 		return 2
 	}
 	if len(positionals) != 1 || !validDataPackageRef(positionals[0]) || *to == "" {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a data fetch <DP-package-id> --to <dir> [--json]")
+		_, _ = fmt.Fprintln(stdio.Stderr, dataFetchUsage)
 		return 2
 	}
 	result, err := c.ops.Fetch(ctx, DataFetchRequest{PackageID: positionals[0], Destination: *to})
@@ -312,24 +453,64 @@ func (c *DataCommand) runFetch(ctx context.Context, args []string, stdio IO) int
 }
 
 // runVerify implements `a2a data verify <DP-package-id> [--record]
-// [--json]`.
+// [--json]` and, behind --for, the consumer composite `a2a data verify --for
+// <XW-id> [--record] ...`.
 //
 // There is deliberately no --pass flag (spec 05a plan D-12): alone, verify
 // judges and prints, writing nothing; --record performs the ONE funnel
 // write, and its direction is derived from the report's own result by the
 // core, never chosen here.
 func (c *DataCommand) runVerify(ctx context.Context, args []string, stdio IO) int {
-	if c.ops == nil {
-		return dataServiceUnavailable(stdio, "verify")
-	}
 	fs := flag.NewFlagSet("data verify", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
 	record := fs.Bool("record", false, "perform ONE funnel write carrying the report and the lifecycle event; direction is derived from the report's own result, never chosen")
 	asJSON := fs.Bool("json", false, "emit JSON")
+	forID := fs.String("for", "", "judge the latest handoff answering this work_request; with --record also ack, verify and close or dispute (selects the composite mode)")
+	to := fs.String("to", "", "with --for: fetch the package into this directory")
+	var verdicts newStringList
+	fs.Var(&verdicts, "verdict", "with --for: <index-or-criterion-id>:<met|unmet|not_warranted|not_exercised>:<cause_owner>, passed through to close (repeatable)")
+	reason := fs.String("reason", "", "with --for: overrides the dispute reason derived from the failing findings")
+	timeout := fs.Duration("timeout", DefaultDataExpressTimeout, "with --for: how long to wait for a pending merge")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
+	if dataHelpRequested(args) {
+		return printDataHelp(fs, stdio, dataVerifyUsage)
+	}
+	if c.ops == nil {
+		return dataServiceUnavailable(stdio, "verify")
+	}
 	positionals, err := parseArgsAnyOrder(fs, args)
 	if err != nil {
 		return 2
+	}
+	set := dataFlagsSet(fs)
+	if *forID != "" {
+		if len(positionals) != 0 {
+			_, _ = fmt.Fprintf(stdio.Stderr, "data verify: --for conflicts with the positional package id %q: --for finds the latest handoff by itself\n", positionals[0])
+			return 2
+		}
+		if *timeout <= 0 {
+			_, _ = fmt.Fprintln(stdio.Stderr, "data verify: --timeout must be a positive duration")
+			return 2
+		}
+		express, ok := c.ops.(DataExpressOperations)
+		if !ok {
+			return dataServiceUnavailable(stdio, "verify --for")
+		}
+		result, callErr := express.VerifyFor(ctx, DataVerifyForRequest{
+			For: *forID, Record: *record, To: *to, Verdicts: []string(verdicts), Reason: *reason, Timeout: *timeout,
+			Actor: ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel},
+		})
+		code := renderDataExpress(stdio, "verify", result, callErr, *asJSON)
+		if code == 0 && result.Report != nil && result.Report.Result() != datapackage.ResultPass {
+			return 1
+		}
+		return code
+	}
+	for _, name := range []string{"to", "verdict", "reason", "timeout"} {
+		if set[name] {
+			_, _ = fmt.Fprintf(stdio.Stderr, "data verify: --%s is only valid with --for\n", name)
+			return 2
+		}
 	}
 	if len(positionals) != 1 || !validDataPackageRef(positionals[0]) {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a data verify <DP-package-id> [--record] [--json]")
@@ -355,7 +536,141 @@ func (c *DataCommand) runVerify(ctx context.Context, args []string, stdio IO) in
 	return 0
 }
 
+// runRequest implements `a2a data request --producer <system> --contract
+// <XC-id>@<version> --interim-behavior <text> [--title <text>] [--needed-by
+// <YYYY-MM-DD>] [--acceptance-criterion <text>]... [--timeout <duration>]
+// [--json]`: the consumer's one-command ask (spec 05 T1).
+func (c *DataCommand) runRequest(ctx context.Context, args []string, stdio IO) int {
+	fs := flag.NewFlagSet("data request", flag.ContinueOnError)
+	fs.SetOutput(stdio.Stderr)
+	producer := fs.String("producer", "", "the system asked to deliver the data (required)")
+	contractRef := fs.String("contract", "", "pinned <XC-id>@<version> the data must conform to (required)")
+	interim := fs.String("interim-behavior", "", "what the consumer does while it waits (required)")
+	title := fs.String("title", "", "request title (default: Data conforming to <XC>@<version>)")
+	neededBy := fs.String("needed-by", "", "YYYY-MM-DD the data is needed by (default: the template's own rule)")
+	var criteria newStringList
+	fs.Var(&criteria, "acceptance-criterion", "extra acceptance criterion text (repeatable); ac1 is always \"the delivered package passes a2a data verify\"")
+	timeout := fs.Duration("timeout", DefaultDataExpressTimeout, "how long to wait for a pending merge")
+	asJSON := fs.Bool("json", false, "emit JSON")
+	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
+	if dataHelpRequested(args) {
+		return printDataHelp(fs, stdio, dataRequestUsage)
+	}
+	if c.ops == nil {
+		return dataServiceUnavailable(stdio, "request")
+	}
+	positionals, err := parseArgsAnyOrder(fs, args)
+	if err != nil {
+		return 2
+	}
+	if len(positionals) != 0 || *producer == "" || *contractRef == "" || *interim == "" || *timeout <= 0 {
+		_, _ = fmt.Fprintln(stdio.Stderr, dataRequestUsage)
+		return 2
+	}
+	express, ok := c.ops.(DataExpressOperations)
+	if !ok {
+		return dataServiceUnavailable(stdio, "request")
+	}
+	result, callErr := express.Request(ctx, DataRequestRequest{
+		Producer: *producer, Contract: *contractRef, Title: *title, NeededBy: *neededBy,
+		InterimBehavior: *interim, AcceptanceCriteria: []string(criteria), Timeout: *timeout,
+		Actor: ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel},
+	})
+	return renderDataExpress(stdio, "request", result, callErr, *asJSON)
+}
+
 // --- shared helpers ---------------------------------------------------
+
+// The per-sub-verb usage lines. Help prints them on stdout, a usage error
+// prints the same text on stderr, so the two can never describe different
+// grammars.
+const (
+	dataPackUsage       = "usage: a2a data pack --contract <XC-id>@<version> --from <dir> --profile synthetic|sanitized --format json|ndjson [--expires <duration>] [--fulfills <id>] [--supersedes <package-id>] [--max-attempts <n>] [--json]"
+	dataDeliverForUsage = "usage: a2a data deliver --for <XW-id> --from <dir> --profile synthetic|sanitized --format json|ndjson [--contract <XC-id>@<version>] [--expires <duration>] [--max-attempts <n>] [--timeout <duration>] [--json]"
+	dataDeliverUsage    = "usage: a2a data deliver <packed-staging-root> --fulfills <request-id> [--expect-pack <digest>] [--json]\n       " + "a2a data deliver --for <XW-id> --from <dir> --profile synthetic|sanitized --format json|ndjson [--contract <XC-id>@<version>] [--expires <duration>] [--max-attempts <n>] [--timeout <duration>] [--json]"
+	dataFetchUsage      = "usage: a2a data fetch <DP-package-id> --to <dir> [--json]"
+	dataVerifyUsage     = "usage: a2a data verify <DP-package-id> [--record] [--json]\n       " + "a2a data verify --for <XW-id> [--record] [--to <dir>] [--verdict <idx-or-id>:<verdict>:<cause_owner>]... [--reason <text>] [--timeout <duration>] [--json]"
+	dataRequestUsage    = "usage: a2a data request --producer <system> --contract <XC-id>@<version> --interim-behavior <text> [--title <text>] [--needed-by <YYYY-MM-DD>] [--acceptance-criterion <text>]... [--timeout <duration>] [--json]"
+)
+
+// dataHelpRequested reports a help token before any `--` terminator. Help is
+// answered before the operations check and before flag parsing: a sub-verb's
+// usage is documentation and must never need a configured project.
+func dataHelpRequested(args []string) bool {
+	for _, a := range args {
+		if a == "--" {
+			return false
+		}
+		if IsHelpArg(a) {
+			return true
+		}
+	}
+	return false
+}
+
+// printDataHelp prints a sub-verb's usage and flag defaults on stdout and
+// exits 0.
+func printDataHelp(fs *flag.FlagSet, stdio IO, usage string) int {
+	_, _ = fmt.Fprintln(stdio.Stdout, usage)
+	fs.SetOutput(stdio.Stdout)
+	fs.PrintDefaults()
+	return 0
+}
+
+// dataFlagsSet reports which flags the caller actually passed, by name.
+func dataFlagsSet(fs *flag.FlagSet) map[string]bool {
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	return set
+}
+
+// renderDataExpress renders a composite verb's result in text or --json and
+// returns its exit code: 0 when the operation completed or nothing is owed,
+// 1 when a step was refused or stopped. A failing verdict is not an error —
+// the caller maps it to exit 1 from the report.
+func renderDataExpress(stdio IO, verb string, result DataExpressResult, callErr error, asJSON bool) int {
+	if callErr != nil {
+		result.Error = callErr.Error()
+		if len(result.Steps) == 0 && result.WorkRequest == "" {
+			return dataRefuse(stdio, verb, callErr, asJSON)
+		}
+	}
+	if result.Steps == nil {
+		result.Steps = []DataStep{}
+	}
+	if asJSON {
+		if err := json.NewEncoder(stdio.Stdout).Encode(result); err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "data %s: encode result: %v\n", verb, err)
+			return 1
+		}
+	} else {
+		renderDataExpressText(stdio, result)
+	}
+	if callErr != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "data %s: %v\n", verb, callErr)
+		return 1
+	}
+	return 0
+}
+
+func renderDataExpressText(stdio IO, result DataExpressResult) {
+	for _, step := range result.Steps {
+		line := fmt.Sprintf("%-9s %-14s %s", step.Step, step.Outcome, step.Subject)
+		if step.Write != nil && step.Write.PRURL != "" {
+			line += " " + step.Write.PRURL
+		}
+		if step.Note != "" {
+			line += " (" + step.Note + ")"
+		}
+		_, _ = fmt.Fprintln(stdio.Stdout, strings.TrimRight(line, " "))
+	}
+	if result.Report != nil {
+		_, _ = fmt.Fprintf(stdio.Stdout, "%s verify %s: %s (%d checks)\n", result.Report.ID, result.Report.Package.ID, result.Report.Result(), len(result.Report.Checks))
+	}
+	if result.Next != "" {
+		_, _ = fmt.Fprintf(stdio.Stdout, "next: %s\n", result.Next)
+	}
+}
 
 func dataServiceUnavailable(stdio IO, verb string) int {
 	_, _ = fmt.Fprintf(stdio.Stderr, "data %s: service is not configured\n", verb)

@@ -50,6 +50,9 @@ func TestDataTargetArgsSelectsOnlyRoutingTarget(t *testing.T) {
 		{name: "verify routes on the positional package id", args: []string{"verify", "DP-axon-20260804-ab12"}, want: []string{"DP-axon-20260804-ab12"}},
 		{name: "verify with --record still routes on the positional package id", args: []string{"verify", "DP-axon-20260804-ab12", "--record"}, want: []string{"DP-axon-20260804-ab12"}},
 		{name: "verify with --record --json still routes", args: []string{"verify", "DP-axon-20260804-ab12", "--record", "--json"}, want: []string{"DP-axon-20260804-ab12"}},
+		{name: "deliver --for routes on the work_request", args: []string{"deliver", "--for", "XW-axon-20260804-ef56", "--from", "XW-beta-wrong", "--profile", "synthetic", "--format", "json", "--timeout", "2m"}, want: []string{"XW-axon-20260804-ef56"}},
+		{name: "verify --for routes on the work_request", args: []string{"verify", "--for", "XW-axon-20260804-ef56", "--record", "--to", "vendor/orders", "--verdict", "ac1:met:producer", "--reason", "x"}, want: []string{"XW-axon-20260804-ef56"}},
+		{name: "request routes on --contract", args: []string{"request", "--producer", "beta", "--contract", "XC-axon-orders@1.0.0", "--interim-behavior", "wait", "--acceptance-criterion", "XC-beta-wrong", "--title", "t", "--needed-by", "2026-11-01"}, want: []string{"XC-axon-orders"}},
 		{name: "pack subcommand only", args: []string{"pack"}},
 	}
 	for _, test := range tests {
@@ -190,5 +193,34 @@ func TestDataCoreDeliverTargetsSpaceDefaultBranchNotMain(t *testing.T) {
 	}
 	if fake.Opens[0].Base != "master" {
 		t.Fatalf("PR base = %q, want %q (the space's own resolved default branch, never a hardcoded \"main\")", fake.Opens[0].Base, "master")
+	}
+}
+
+// TestDataDepsPolicyResolvesACredentialForEveryWritingVerb pins
+// resolveDataDeps' policy. `request` was missing from it once: the express
+// flow then hid the gap behind a lazy credential lookup, and every e2e rig
+// stayed green because the fake host accepts an empty credential.
+func TestDataDepsPolicyResolvesACredentialForEveryWritingVerb(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		action                        string
+		wantSync, wantNeedsCredential bool
+	}{
+		{action: "pack", wantSync: false, wantNeedsCredential: false},
+		{action: "deliver", wantSync: true, wantNeedsCredential: true},
+		{action: "fetch", wantSync: true, wantNeedsCredential: false},
+		{action: "verify", wantSync: true, wantNeedsCredential: true},
+		{action: "request", wantSync: true, wantNeedsCredential: true},
+	}
+	for _, test := range tests {
+		t.Run(test.action, func(t *testing.T) {
+			t.Parallel()
+			gotSync, gotNeeds := dataDepsPolicy(test.action)
+			if gotSync != test.wantSync || gotNeeds != test.wantNeedsCredential {
+				t.Fatalf("dataDepsPolicy(%q) = (sync %v, credential %v), want (sync %v, credential %v)",
+					test.action, gotSync, gotNeeds, test.wantSync, test.wantNeedsCredential)
+			}
+		})
 	}
 }

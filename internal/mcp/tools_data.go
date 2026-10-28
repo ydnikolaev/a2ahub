@@ -46,7 +46,10 @@ const (
 // (a2a_data, attach), and TestDataSubcommandsMatchMCPDataActions needs to
 // stop asserting a bare DeepEqual against the full list) — reported to the
 // lead rather than worked around here.
-var DataActions = []string{"pack", "deliver", "fetch", "verify", "attach", "fetch-blob"}
+//
+// "request" (the express flow's consumer ask) is a real `data` sub-verb, so it
+// follows verify, in the order the CLI's sub-verb list gives it.
+var DataActions = []string{"pack", "deliver", "fetch", "verify", "request", "attach", "fetch-blob"}
 
 // DataPackRequest is a2a_data action=pack's resolved input.
 type DataPackRequest struct {
@@ -167,6 +170,83 @@ type DataFetchBlobOperations interface {
 	FetchBlob(context.Context, DataFetchBlobRequest) (DataFetchBlobResult, error)
 }
 
+// DataRequestRequest is a2a_data action=request's resolved input — MCP's own
+// copy of the express flow's consumer ask (ADR-001: no shared Go type).
+type DataRequestRequest struct {
+	Space              string
+	Producer           string
+	Contract           string
+	Title              string
+	NeededBy           string
+	InterimBehavior    string
+	AcceptanceCriteria []string
+	Timeout            time.Duration
+	Actor              ActorInput
+}
+
+// DataDeliverForRequest is a2a_data action=deliver with `for` set: the
+// producer answers one work_request end to end.
+type DataDeliverForRequest struct {
+	Space       string
+	For         string
+	From        string
+	Profile     string
+	Format      string
+	Contract    string
+	Expires     time.Duration
+	MaxAttempts int
+	Timeout     time.Duration
+	Actor       ActorInput
+}
+
+// DataVerifyForRequest is a2a_data action=verify with `for` set: the consumer
+// judges, and with Record closes or disputes, one work_request.
+type DataVerifyForRequest struct {
+	Space    string
+	For      string
+	Record   bool
+	To       string
+	Verdicts []string
+	Reason   string
+	Timeout  time.Duration
+	Actor    ActorInput
+}
+
+// DataStep is one inner step of a composite action, in the order it ran.
+type DataStep struct {
+	Step       string             `json:"step"`
+	Subject    string             `json:"subject,omitempty"`
+	Transition string             `json:"transition,omitempty"`
+	Outcome    string             `json:"outcome"`
+	Write      *space.WriteResult `json:"write,omitempty"`
+	Note       string             `json:"note,omitempty"`
+}
+
+// DataExpressResult is what the composite actions return: the ids they
+// produced, every inner step in order, and the command the OTHER party runs
+// next (empty when nothing is owed).
+type DataExpressResult struct {
+	WorkRequest string              `json:"work_request,omitempty"`
+	Handoff     string              `json:"handoff,omitempty"`
+	Package     string              `json:"package,omitempty"`
+	Response    string              `json:"response,omitempty"`
+	Report      *datapackage.Report `json:"report,omitempty"`
+	Steps       []DataStep          `json:"steps"`
+	Next        string              `json:"next,omitempty"`
+	Error       string              `json:"error,omitempty"`
+}
+
+// DataExpressOperations is the composite actions' own optional capability,
+// kept SEPARATE from DataOperations for the reason DataAttachOperations is:
+// widening the required method set would break every existing implementation.
+// newDataHandler type-asserts it at call time and reports "not configured"
+// when the concrete ops value does not implement it.
+type DataExpressOperations interface {
+	Request(context.Context, DataRequestRequest) (DataExpressResult, error)
+	DeliverFor(context.Context, DataDeliverForRequest) (DataExpressResult, error)
+	VerifyFor(context.Context, DataVerifyForRequest) (DataExpressResult, error)
+}
+
 // DataResult mirrors cli.DataResult's own wire shape field-for-field —
 // internal/datapackage.Document/Report reused verbatim, never re-typed.
 type DataResult struct {
@@ -239,6 +319,19 @@ type DataInput struct {
 	To          string     `json:"to,omitempty"`
 	Record      bool       `json:"record,omitempty"`
 	Actor       ActorInput `json:"actor,omitempty"`
+	// For selects the express (composite) mode of deliver and verify: the
+	// work_request id the call answers. Producer/Title/NeededBy/
+	// InterimBehavior/AcceptanceCriteria are action=request's own fields;
+	// Verdicts/Reason/Timeout belong to the composite modes.
+	For                string   `json:"for,omitempty"`
+	Producer           string   `json:"producer,omitempty"`
+	Title              string   `json:"title,omitempty"`
+	NeededBy           string   `json:"needed_by,omitempty"`
+	InterimBehavior    string   `json:"interim_behavior,omitempty"`
+	AcceptanceCriteria []string `json:"acceptance_criteria,omitempty"`
+	Verdicts           []string `json:"verdicts,omitempty"`
+	Reason             string   `json:"reason,omitempty"`
+	Timeout            string   `json:"timeout,omitempty"`
 	// Draft/Role/ConformsTo/Verification/Retention are action=attach's own
 	// fields (mirrors cli.AttachCommand's own flags: draft, --role,
 	// --conforms-to, --verification, --retention).
@@ -270,7 +363,7 @@ func newDataHandler(deps DataToolDeps) HandlerFunc {
 
 		switch in.Action {
 		case "pack":
-			if err := dataForbidInput(in, "staging_root", "expect_pack", "package_id", "to", "record", "draft", "role", "conforms_to", "verification", "retention", "ref"); err != nil {
+			if err := dataForbidInput(in, "staging_root", "expect_pack", "package_id", "to", "record", "draft", "role", "conforms_to", "verification", "retention", "ref", "for", "producer", "title", "needed_by", "interim_behavior", "acceptance_criteria", "verdicts", "reason", "timeout"); err != nil {
 				return nil, "", err
 			}
 			if in.Contract == "" || in.From == "" || in.Profile == "" || in.Format == "" {
@@ -286,7 +379,10 @@ func newDataHandler(deps DataToolDeps) HandlerFunc {
 			})
 			return result, dataSummary("pack", result), callErr
 		case "deliver":
-			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "max_attempts", "package_id", "to", "record", "draft", "role", "conforms_to", "verification", "retention", "ref"); err != nil {
+			if in.For != "" {
+				return dataDeliverFor(ctx, deps, in)
+			}
+			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "max_attempts", "package_id", "to", "record", "draft", "role", "conforms_to", "verification", "retention", "ref", "producer", "title", "needed_by", "interim_behavior", "acceptance_criteria", "verdicts", "reason", "timeout"); err != nil {
 				return nil, "", err
 			}
 			if in.StagingRoot == "" || in.Fulfills == "" {
@@ -298,7 +394,7 @@ func newDataHandler(deps DataToolDeps) HandlerFunc {
 			})
 			return result, dataSummary("deliver", result), callErr
 		case "fetch":
-			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "record", "actor", "draft", "role", "conforms_to", "verification", "retention", "ref"); err != nil {
+			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "record", "actor", "draft", "role", "conforms_to", "verification", "retention", "ref", "for", "producer", "title", "needed_by", "interim_behavior", "acceptance_criteria", "verdicts", "reason", "timeout"); err != nil {
 				return nil, "", err
 			}
 			if in.PackageID == "" || in.To == "" {
@@ -307,7 +403,10 @@ func newDataHandler(deps DataToolDeps) HandlerFunc {
 			result, callErr := deps.Operations.Fetch(ctx, DataFetchRequest{Space: in.Space, PackageID: in.PackageID, Destination: in.To})
 			return result, dataSummary("fetch", result), callErr
 		case "verify":
-			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "to", "draft", "role", "conforms_to", "verification", "retention", "ref"); err != nil {
+			if in.For != "" {
+				return dataVerifyFor(ctx, deps, in)
+			}
+			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "to", "draft", "role", "conforms_to", "verification", "retention", "ref", "producer", "title", "needed_by", "interim_behavior", "acceptance_criteria", "verdicts", "reason", "timeout"); err != nil {
 				return nil, "", err
 			}
 			if in.PackageID == "" {
@@ -315,8 +414,28 @@ func newDataHandler(deps DataToolDeps) HandlerFunc {
 			}
 			result, callErr := deps.Operations.Verify(ctx, DataVerifyRequest{Space: in.Space, PackageID: in.PackageID, Record: in.Record, Actor: in.Actor})
 			return result, dataSummary("verify", result), callErr
+		case "request":
+			if err := dataForbidInput(in, "from", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "package_id", "to", "record", "draft", "role", "conforms_to", "verification", "retention", "ref", "for", "verdicts", "reason"); err != nil {
+				return nil, "", err
+			}
+			if in.Producer == "" || in.Contract == "" || in.InterimBehavior == "" {
+				return nil, "", fmt.Errorf("a2a_data request: producer, contract and interim_behavior are required")
+			}
+			timeout, err := dataTimeout(in.Timeout)
+			if err != nil {
+				return nil, "", err
+			}
+			express, ok := deps.Operations.(DataExpressOperations)
+			if !ok {
+				return nil, "", fmt.Errorf("a2a_data request: service is not configured")
+			}
+			result, callErr := express.Request(ctx, DataRequestRequest{
+				Space: in.Space, Producer: in.Producer, Contract: in.Contract, Title: in.Title, NeededBy: in.NeededBy,
+				InterimBehavior: in.InterimBehavior, AcceptanceCriteria: in.AcceptanceCriteria, Timeout: timeout, Actor: in.Actor,
+			})
+			return result, dataExpressSummary("request", result), callErr
 		case "attach":
-			if err := dataForbidInput(in, "contract", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "package_id", "to", "record", "actor", "ref"); err != nil {
+			if err := dataForbidInput(in, "contract", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "package_id", "to", "record", "actor", "ref", "for", "producer", "title", "needed_by", "interim_behavior", "acceptance_criteria", "verdicts", "reason", "timeout"); err != nil {
 				return nil, "", err
 			}
 			if in.Draft == "" || in.From == "" || in.Verification == "" {
@@ -332,7 +451,7 @@ func newDataHandler(deps DataToolDeps) HandlerFunc {
 			})
 			return result, dataAttachSummary(result), callErr
 		case "fetch-blob":
-			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "package_id", "record", "actor", "draft", "role", "conforms_to", "verification", "retention"); err != nil {
+			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "package_id", "record", "actor", "draft", "role", "conforms_to", "verification", "retention", "for", "producer", "title", "needed_by", "interim_behavior", "acceptance_criteria", "verdicts", "reason", "timeout"); err != nil {
 				return nil, "", err
 			}
 			if in.Ref == "" || in.To == "" {
@@ -348,6 +467,92 @@ func newDataHandler(deps DataToolDeps) HandlerFunc {
 			panic("unreachable closed a2a_data action")
 		}
 	}
+}
+
+// dataDeliverFor is action=deliver's express mode (`for` set): `for` derives
+// the staging root, the request being fulfilled and the supersession chain, so
+// accepting any of them beside it would let a caller believe it had overridden
+// what the action derives.
+func dataDeliverFor(ctx context.Context, deps DataToolDeps, in DataInput) (any, string, error) {
+	if err := dataForbidInput(in, "staging_root", "fulfills", "supersedes", "expect_pack", "package_id", "to", "record", "draft", "role", "conforms_to", "verification", "retention", "ref", "producer", "title", "needed_by", "interim_behavior", "acceptance_criteria", "verdicts", "reason"); err != nil {
+		return nil, "", err
+	}
+	if in.From == "" || in.Profile == "" || in.Format == "" {
+		return nil, "", fmt.Errorf("a2a_data deliver: with for, from, profile and format are required")
+	}
+	expires, err := dataDuration(in.Expires, "expires")
+	if err != nil {
+		return nil, "", err
+	}
+	timeout, err := dataTimeout(in.Timeout)
+	if err != nil {
+		return nil, "", err
+	}
+	express, ok := deps.Operations.(DataExpressOperations)
+	if !ok {
+		return nil, "", fmt.Errorf("a2a_data deliver: service is not configured")
+	}
+	result, callErr := express.DeliverFor(ctx, DataDeliverForRequest{
+		Space: in.Space, For: in.For, From: in.From, Profile: in.Profile, Format: in.Format, Contract: in.Contract,
+		Expires: expires, MaxAttempts: in.MaxAttempts, Timeout: timeout, Actor: in.Actor,
+	})
+	return result, dataExpressSummary("deliver", result), callErr
+}
+
+// dataVerifyFor is action=verify's express mode (`for` set): `for` finds the
+// latest handoff itself, so a package id beside it is refused.
+func dataVerifyFor(ctx context.Context, deps DataToolDeps, in DataInput) (any, string, error) {
+	if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "package_id", "draft", "role", "conforms_to", "verification", "retention", "ref", "producer", "title", "needed_by", "interim_behavior", "acceptance_criteria"); err != nil {
+		return nil, "", err
+	}
+	timeout, err := dataTimeout(in.Timeout)
+	if err != nil {
+		return nil, "", err
+	}
+	express, ok := deps.Operations.(DataExpressOperations)
+	if !ok {
+		return nil, "", fmt.Errorf("a2a_data verify: service is not configured")
+	}
+	result, callErr := express.VerifyFor(ctx, DataVerifyForRequest{
+		Space: in.Space, For: in.For, Record: in.Record, To: in.To, Verdicts: in.Verdicts, Reason: in.Reason, Timeout: timeout, Actor: in.Actor,
+	})
+	return result, dataExpressSummary("verify", result), callErr
+}
+
+// dataTimeout parses the composite actions' wait bound; empty means the
+// operation's own default (zero).
+func dataTimeout(raw string) (time.Duration, error) {
+	value, err := dataDuration(raw, "timeout")
+	if err != nil {
+		return 0, err
+	}
+	if value < 0 {
+		return 0, fmt.Errorf("a2a_data: timeout must be a positive Go duration")
+	}
+	return value, nil
+}
+
+// dataExpressSummary is the composite actions' one-line body: one line per
+// inner step, then the report verdict and the command the other party runs.
+func dataExpressSummary(action string, result DataExpressResult) string {
+	var lines []string
+	for _, step := range result.Steps {
+		line := step.Step + " " + step.Outcome
+		if step.Subject != "" {
+			line += " " + step.Subject
+		}
+		lines = append(lines, line)
+	}
+	if result.Report != nil {
+		lines = append(lines, fmt.Sprintf("%s verify %s: %s", result.Report.ID, result.Report.Package.ID, result.Report.Result()))
+	}
+	if result.Next != "" {
+		lines = append(lines, "next: "+result.Next)
+	}
+	if len(lines) == 0 {
+		return action
+	}
+	return strings.Join(lines, "\n")
 }
 
 // dataForbidInput mirrors workForbidInput's own idiom (tools_work.go): a
@@ -398,6 +603,24 @@ func dataForbidInput(in DataInput, fields ...string) error {
 			present = in.Retention != ""
 		case "ref":
 			present = in.Ref != ""
+		case "for":
+			present = in.For != ""
+		case "producer":
+			present = in.Producer != ""
+		case "title":
+			present = in.Title != ""
+		case "needed_by":
+			present = in.NeededBy != ""
+		case "interim_behavior":
+			present = in.InterimBehavior != ""
+		case "acceptance_criteria":
+			present = len(in.AcceptanceCriteria) != 0
+		case "verdicts":
+			present = len(in.Verdicts) != 0
+		case "reason":
+			present = in.Reason != ""
+		case "timeout":
+			present = in.Timeout != ""
 		default:
 			panic("unknown a2a_data forbidden field " + field)
 		}
@@ -485,27 +708,36 @@ func dataFetchBlobSummary(result DataFetchBlobResult) string {
 }
 
 func dataToolSchema() json.RawMessage {
-	return groupedSchema("action", "the data-package action to run: pack|deliver|fetch|verify|attach|fetch-blob", DataActions, map[string]propSpec{
-		"space":        {"string", "the connected space this call targets"},
-		"contract":     {"string", "pack only: the contract ref (id@version) this package's payload conforms to"},
-		"from":         {"string", "pack only: the local path or manifest this package is built from"},
-		"profile":      {"string", "pack only: the named profile controlling what this package includes"},
-		"format":       {"string", "pack only: the package format to produce"},
-		"expires":      {"string", "pack only: a Go duration string after which this package's staged artifact expires"},
-		"fulfills":     {"string", "deliver only: the request id this delivery fulfills"},
-		"supersedes":   {"string", "deliver only: a prior delivery this one supersedes"},
-		"max_attempts": {"integer", "fetch only: the maximum retry attempts before giving up"},
-		"staging_root": {"string", "pack/deliver only: the staging directory root to write into"},
-		"expect_pack":  {"string", "deliver only: the package id this delivery must match (idempotency guard)"},
-		"package_id":   {"string", "deliver/fetch/verify only: the data package id (DP-...) this call targets"},
-		"to":           {"string", "fetch/fetch-blob only: the local destination path to fetch into"},
-		"record":       {"boolean", "verify only: whether to record this verification's own verdict"},
-		"actor":        {"object", "the identity performing this action, when it differs from this session's default"},
-		"draft":        {"string", "attach only: the draft id this attachment belongs to"},
-		"role":         {"string", "attach only: the attachment's own role classification"},
-		"conforms_to":  {"string", "attach only: the schema/contract ref this attachment conforms to"},
-		"verification": {"string", "attach only: this attachment's own verification classification"},
-		"retention":    {"string", "attach only: this attachment's own retention classification"},
-		"ref":          {"string", "fetch-blob only: the blob ref (BL-...) to resolve"},
+	return groupedSchema("action", "the data-package action to run: "+strings.Join(DataActions, "|"), DataActions, map[string]propSpec{
+		"space":               {"string", "the connected space this call targets"},
+		"contract":            {"string", "pack only: the contract ref (id@version) this package's payload conforms to"},
+		"from":                {"string", "pack only: the local path or manifest this package is built from"},
+		"profile":             {"string", "pack only: the named profile controlling what this package includes"},
+		"format":              {"string", "pack only: the package format to produce"},
+		"expires":             {"string", "pack only: a Go duration string after which this package's staged artifact expires"},
+		"fulfills":            {"string", "deliver only: the request id this delivery fulfills"},
+		"supersedes":          {"string", "deliver only: a prior delivery this one supersedes"},
+		"max_attempts":        {"integer", "fetch only: the maximum retry attempts before giving up"},
+		"staging_root":        {"string", "pack/deliver only: the staging directory root to write into"},
+		"expect_pack":         {"string", "deliver only: the package id this delivery must match (idempotency guard)"},
+		"package_id":          {"string", "deliver/fetch/verify only: the data package id (DP-...) this call targets"},
+		"to":                  {"string", "fetch/fetch-blob only: the local destination path to fetch into"},
+		"record":              {"boolean", "verify only: whether to record this verification's own verdict"},
+		"actor":               {"object", "the identity performing this action, when it differs from this session's default"},
+		"draft":               {"string", "attach only: the draft id this attachment belongs to"},
+		"role":                {"string", "attach only: the attachment's own role classification"},
+		"conforms_to":         {"string", "attach only: the schema/contract ref this attachment conforms to"},
+		"verification":        {"string", "attach only: this attachment's own verification classification"},
+		"retention":           {"string", "attach only: this attachment's own retention classification"},
+		"ref":                 {"string", "fetch-blob only: the blob ref (BL-...) to resolve"},
+		"for":                 {"string", "deliver/verify only: the work_request id (XW-...) to answer end to end; selects the express mode"},
+		"producer":            {"string", "request only: the system asked to deliver the data"},
+		"title":               {"string", "request only: the request title (default derived from the contract ref)"},
+		"needed_by":           {"string", "request only: YYYY-MM-DD the data is needed by"},
+		"interim_behavior":    {"string", "request only: what the consumer does while it waits"},
+		"acceptance_criteria": {"array", "request only: extra acceptance criterion texts; ac1 is always the verify criterion"},
+		"verdicts":            {"array", "verify with for only: <index-or-criterion-id>:<met|unmet|not_warranted|not_exercised>:<cause_owner> entries passed through to close"},
+		"reason":              {"string", "verify with for only: overrides the derived dispute reason"},
+		"timeout":             {"string", "request, and deliver/verify with for: a Go duration bounding the wait for a pending merge"},
 	})
 }
