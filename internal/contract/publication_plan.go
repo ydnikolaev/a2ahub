@@ -305,12 +305,12 @@ func ParseFlowSetting(raw any) (FlowSetting, bool) {
 type GatesMode string
 
 const (
-	// GatesModeReview: the host reviews writes (a pull request and CODEOWNERS),
+	// GatesModeReview means the host reviews writes (a pull request and CODEOWNERS),
 	// so no `--approve` exists and none is asked for.
 	GatesModeReview GatesMode = "review"
-	// GatesModeConfirm: a gated write needs the caller's explicit approval.
+	// GatesModeConfirm means a gated write needs the caller's explicit approval.
 	GatesModeConfirm GatesMode = "confirm"
-	// GatesModeAutonomous: no human gate stops a write.
+	// GatesModeAutonomous means no human gate stops a write.
 	GatesModeAutonomous GatesMode = "autonomous"
 )
 

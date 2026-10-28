@@ -1265,7 +1265,7 @@ func (c *SpaceCommand) runInitLocal(ctx context.Context, spaceID, dir string, st
 	if _, err := space.InitLocalSpaceRepo(ctx, abs, files); err != nil {
 		if !existed {
 			if rmErr := os.RemoveAll(abs); rmErr != nil {
-				err = fmt.Errorf("%w (and the partial directory could not be removed: %v)", err, rmErr)
+				err = fmt.Errorf("%w (and the partial directory could not be removed: %w)", err, rmErr)
 			}
 		}
 		_, _ = fmt.Fprintf(stdio.Stderr, "space init: %v\n", err)

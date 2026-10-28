@@ -815,7 +815,7 @@ func (r *expressRun) request(ctx context.Context, req cli.DataRequestRequest) er
 		return fmt.Errorf("data: request: create staging directory: %w", err)
 	}
 	path := filepath.Join(c.stagingDir, id+".md")
-	if err := os.WriteFile(path, draft, 0o644); err != nil { //nolint:gosec // reason: a staged draft is not secret
+	if err := os.WriteFile(path, draft, 0o644); err != nil {
 		return fmt.Errorf("data: request: write %s: %w", path, err)
 	}
 
