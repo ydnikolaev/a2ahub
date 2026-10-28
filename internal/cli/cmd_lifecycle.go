@@ -805,7 +805,7 @@ func lifecycleUnmetsBindUniformly(bindings []lifecycleUnmetParentBinding) error 
 	return nil
 }
 
-// lifecycleEventSchema mirrors internal/contract/publication_plan.go's own
+// LifecycleEventSchema mirrors internal/contract/publication_plan.go's own
 // authoring-floor split (PlanPublication, lines 396-403): a space whose
 // `min_binary_version` (floor) is at or above contract.ContractPublicationFloor
 // authors event/v2; below it, event/v1 — the SAME floor and the SAME
@@ -819,7 +819,10 @@ func lifecycleUnmetsBindUniformly(bindings []lifecycleUnmetParentBinding) error 
 // 'cannot verify', never as 'not older'"), and it is the conservative choice
 // here too: event/v1 is always legal, while a floor this binary cannot
 // verify has no business being trusted to author the newer, stricter shape.
-func lifecycleEventSchema(floor string) string {
+//
+// Exported so the express data flow (cmd/a2a) derives its close verdicts from
+// this one rule instead of a copy of it.
+func LifecycleEventSchema(floor string) string {
 	belowFloor, err := version.OlderThan(floor, contract.ContractPublicationFloor)
 	if err != nil || belowFloor {
 		return "event/v1"
@@ -1675,7 +1678,7 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 	}
 
 	// verdicts/eventSchema (B24): parsed and floor-gated with the SAME
-	// lifecycleParseVerdicts/lifecycleEventSchema machinery
+	// lifecycleParseVerdicts/LifecycleEventSchema machinery
 	// VerifyCommand.Run uses — one guarantee, one implementation, reached
 	// here rather than re-derived. Every other row leaves c.spec.SupportsVerdicts
 	// false, so verdicts stays nil, eventSchema stays fixed at "event/v1",
@@ -1703,7 +1706,7 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 			_, _ = fmt.Fprintf(stdio.Stderr, "%s: %v\n", c.spec.Verb, verr)
 			return 2
 		}
-		eventSchema = lifecycleEventSchema(c.deps.manifest.MinBinaryVersion)
+		eventSchema = LifecycleEventSchema(c.deps.manifest.MinBinaryVersion)
 		if len(verdictTokens) > 0 && eventSchema != "event/v2" {
 			_, _ = fmt.Fprintf(stdio.Stderr,
 				"%s: --verdict requires this space's min_binary_version to be at or above %s (event/v2); this space's floor is %q\n",
@@ -2790,13 +2793,13 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 	// eventSchema is floor-gated the SAME way internal/contract/
 	// publication_plan.go gates envelope/v2 contract publication — see
-	// lifecycleEventSchema's own doc comment. `verdicts[]` only exists on
+	// LifecycleEventSchema's own doc comment. `verdicts[]` only exists on
 	// event/v2, so a space below the floor cannot honour --verdict at all;
 	// refusing here (rather than silently dropping the caller's judgements)
 	// names the real condition, the same discipline this file's other
 	// floor-gated refusal (publication_plan.go's own message) already
 	// follows.
-	eventSchema := lifecycleEventSchema(c.deps.manifest.MinBinaryVersion)
+	eventSchema := LifecycleEventSchema(c.deps.manifest.MinBinaryVersion)
 	if len(verdictTokens) > 0 && eventSchema != "event/v2" {
 		_, _ = fmt.Fprintf(stdio.Stderr,
 			"verify: --verdict requires this space's min_binary_version to be at or above %s (event/v2); this space's floor is %q\n",

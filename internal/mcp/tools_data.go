@@ -520,13 +520,14 @@ func dataVerifyFor(ctx context.Context, deps DataToolDeps, in DataInput) (any, s
 }
 
 // dataTimeout parses the composite actions' wait bound; empty means the
-// operation's own default (zero).
+// operation's own default (zero). An explicit value must be positive: "0s"
+// is refused rather than silently read as the default.
 func dataTimeout(raw string) (time.Duration, error) {
 	value, err := dataDuration(raw, "timeout")
 	if err != nil {
 		return 0, err
 	}
-	if value < 0 {
+	if raw != "" && value <= 0 {
 		return 0, fmt.Errorf("a2a_data: timeout must be a positive Go duration")
 	}
 	return value, nil
@@ -738,6 +739,6 @@ func dataToolSchema() json.RawMessage {
 		"acceptance_criteria": {"array", "request only: extra acceptance criterion texts; ac1 is always the verify criterion"},
 		"verdicts":            {"array", "verify with for only: <index-or-criterion-id>:<met|unmet|not_warranted|not_exercised>:<cause_owner> entries passed through to close"},
 		"reason":              {"string", "verify with for only: overrides the derived dispute reason"},
-		"timeout":             {"string", "request, and deliver/verify with for: a Go duration bounding the wait for a pending merge"},
+		"timeout":             {"string", "request, and deliver/verify with for: a positive Go duration bounding each wait for a pending merge"},
 	})
 }

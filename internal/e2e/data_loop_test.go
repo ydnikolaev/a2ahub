@@ -175,6 +175,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -1140,6 +1141,10 @@ var dataLoopFlowRoles = []string{"XW#1", "XH#1"}
 //
 // Only the cross-artifact interleaving may differ (spec 05 §11): the express
 // producer responds BEFORE the consumer verifies, the hand-run flow after.
+// dataLoopResponseIDPattern finds the response id `respond` prints in its
+// "opened PR <url> for XW, XS" line.
+var dataLoopResponseIDPattern = regexp.MustCompile(`XS-[A-Za-z0-9_-]+`)
+
 func TestDataLoopExpressEqualsFullFlow(t *testing.T) {
 	t.Parallel()
 
@@ -1155,7 +1160,11 @@ func TestDataLoopExpressEqualsFullFlow(t *testing.T) {
 	fullAxon.mustRun("ack", fullDeliver.HandoffID)
 	fullAxon.mustRun("data", "verify", fullPack.Manifest.ID, "--record", "--json")
 	fullBeta.mustRun("sync")
-	fullBeta.mustRun("respond", "--result", "delivered", "--ref", fullDeliver.HandoffID, "--delivers", fullPack.Manifest.ID, fullWR)
+	fullRespond := fullBeta.mustRun("respond", "--result", "delivered", "--ref", fullDeliver.HandoffID, "--delivers", fullPack.Manifest.ID, fullWR)
+	fullResponse := dataLoopResponseIDPattern.FindString(fullRespond)
+	if fullResponse == "" {
+		t.Fatalf("respond output names no response id (want an %s): %q", dataLoopResponseIDPattern, fullRespond)
+	}
 	fullAxon.mustRun("sync")
 	fullAxon.mustRun("close", fullWR)
 
@@ -1186,16 +1195,14 @@ func TestDataLoopExpressEqualsFullFlow(t *testing.T) {
 		axon         *hostRig
 		wr, xh, resp string
 	}{
-		{"full", fullAxon, fullWR, fullDeliver.HandoffID, ""},
+		{"full", fullAxon, fullWR, fullDeliver.HandoffID, fullResponse},
 		{"express", expAxon, expWR, deliver.Handoff, deliver.Response},
 	} {
 		rig.axon.assertState(t, rig.wr, "closed")
 		rig.axon.assertState(t, rig.xh, "accepted")
-		if rig.resp != "" {
-			// A passing verify is an event on the handoff, not on the response:
-			// the response stays submitted, exactly as in the hand-run flow.
-			rig.axon.assertState(t, rig.resp, "submitted")
-		}
+		// A passing verify is an event on the handoff, not on the response:
+		// the response stays submitted, exactly as in the hand-run flow.
+		rig.axon.assertState(t, rig.resp, "submitted")
 	}
 }
 

@@ -840,6 +840,10 @@ func TestDataCoreDeliverBlobAndFetchBlobEndToEnd(t *testing.T) {
 // answers with the state the test scripted for that call (merged unless said
 // otherwise), and applies a merged write's files to the mirror.
 type expressScriptedFunnel struct {
+	// t fails the test when applying a merged write to the mirror fails, so a
+	// scripted "merge" that did not land cannot read as a flow bug. Set by
+	// installExpressSeams.
+	t      testing.TB
 	mu     sync.Mutex
 	states []space.WriteState
 	calls  []space.SubmitRequest
@@ -863,7 +867,7 @@ func (f *expressScriptedFunnel) Submit(_ context.Context, req space.SubmitReques
 	switch state {
 	case space.WriteStateMerged:
 		result.Stage = space.WriteStageMerged
-		expressApplyToMirror(req)
+		expressApplyToMirror(f.t, req)
 	case space.WriteStatePendingMerge:
 		result.Stage = space.WriteStageAutoMergeArmed
 		if f.queued == nil {
@@ -876,21 +880,29 @@ func (f *expressScriptedFunnel) Submit(_ context.Context, req space.SubmitReques
 	return result, nil
 }
 
-// land merges a queued pending write, as the awaited PR merging would.
-func (f *expressScriptedFunnel) land(branch string) {
+// land merges a queued pending write, as the awaited PR merging would, and
+// reports whether the branch was one of this funnel's.
+func (f *expressScriptedFunnel) land(branch string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if req, ok := f.queued[branch]; ok {
-		expressApplyToMirror(req)
+	req, ok := f.queued[branch]
+	if ok {
+		expressApplyToMirror(f.t, req)
 		delete(f.queued, branch)
 	}
+	return ok
 }
 
-func expressApplyToMirror(req space.SubmitRequest) {
+func expressApplyToMirror(t testing.TB, req space.SubmitRequest) {
+	t.Helper()
 	write := func(path string, content []byte) {
 		full := filepath.Join(req.RepoDir, path)
-		_ = os.MkdirAll(filepath.Dir(full), 0o755)
-		_ = os.WriteFile(full, content, 0o644)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatalf("apply a scripted merge: create %s: %v", filepath.Dir(full), err)
+		}
+		if err := os.WriteFile(full, content, 0o644); err != nil {
+			t.Fatalf("apply a scripted merge: write %s: %v", full, err)
+		}
 	}
 	for _, file := range req.Files {
 		write(file.Path, file.Content)
@@ -936,7 +948,9 @@ type expressWaitLog struct {
 // installExpressSeams points the core's express seams at the scripted funnel:
 // the mirror refresh is a no-op (writes are applied on merge), and waiting
 // for a pending merge lands the awaited branch, or fails with waitErr.
-func installExpressSeams(core *dataCore, funnel *expressScriptedFunnel, waitErr error) *expressWaitLog {
+func installExpressSeams(t testing.TB, core *dataCore, funnel *expressScriptedFunnel, waitErr error) *expressWaitLog {
+	t.Helper()
+	funnel.t = t
 	log := &expressWaitLog{}
 	core.refreshMirror = func(context.Context) error { return nil }
 	core.expressFunnel = func(space.Manifest) (expressSubmitter, error) { return funnel, nil }
@@ -961,8 +975,17 @@ type expressSeedEvent struct {
 // seedExpressEvents commits events into the mirror's working tree in order.
 func seedExpressEvents(t *testing.T, mirrorDir string, events ...expressSeedEvent) {
 	t.Helper()
+	seedExpressEventsFrom(t, mirrorDir, 0, events...)
+}
+
+// seedExpressEventsFrom is seedExpressEvents with the ULID counter starting
+// after offset, so a second seeding into the same mirror does not overwrite the
+// first one's files. Every seeded ULID sorts before any ULID the code under test
+// mints from the test clock, so seeded history always precedes minted history.
+func seedExpressEventsFrom(t *testing.T, mirrorDir string, offset int, events ...expressSeedEvent) {
+	t.Helper()
 	for i, ev := range events {
-		ulid := fmt.Sprintf("01K1A2B3C4D5E6F7G8H9J0%04d", i+1)
+		ulid := fmt.Sprintf("01K1A2B3C4D5E6F7G8H9J0%04d", offset+i+1)
 		dir := filepath.Join(mirrorDir, ev.system, "events", "2026")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
@@ -1029,7 +1052,14 @@ const (
 // and its response seeded, and the express seams scripted.
 func newExpressVerifyRig(t *testing.T, floor string, criteria []string) (*dataCore, *expressScriptedFunnel, *host.FakeHost, *expressWaitLog) {
 	t.Helper()
-	core, doc, fake := newRecordTestDataCore(t, []byte(`{"ok":true}`))
+	return newExpressVerifyRigWithPayload(t, floor, criteria, []byte(`{"ok":true}`))
+}
+
+// newExpressVerifyRigWithPayload is newExpressVerifyRig over a package whose one
+// entry holds payload, so a rig can judge to fail as well as to pass.
+func newExpressVerifyRigWithPayload(t *testing.T, floor string, criteria []string, payload []byte) (*dataCore, *expressScriptedFunnel, *host.FakeHost, *expressWaitLog) {
+	t.Helper()
+	core, doc, fake := newRecordTestDataCore(t, payload)
 	core.spaceID = "test"
 	core.stagingDir = t.TempDir()
 	// The record write goes through the real funnel, whose own gate refuses a
@@ -1040,7 +1070,7 @@ func newExpressVerifyRig(t *testing.T, floor string, criteria []string) (*dataCo
 	}
 	seedExpressWorkRequest(t, core.mirrorDir, "peer", "axon", expressTestWR, expressTestResponse, doc.ID, criteria)
 	funnel := &expressScriptedFunnel{}
-	log := installExpressSeams(core, funnel, nil)
+	log := installExpressSeams(t, core, funnel, nil)
 	return core, funnel, fake, log
 }
 
@@ -1177,7 +1207,7 @@ func TestExpressSequencesByWriteState(t *testing.T) {
 		}
 		seedExpressEvents(t, core.mirrorDir, expressSeedEvent{system: "peer", transition: "submit", subject: producerWR})
 		funnel := &expressScriptedFunnel{states: states}
-		return core, funnel, installExpressSeams(core, funnel, waitErr)
+		return core, funnel, installExpressSeams(t, core, funnel, waitErr)
 	}
 	deliverReq := func(dir string) cli.DataDeliverForRequest {
 		return cli.DataDeliverForRequest{For: producerWR, From: dir, Profile: "synthetic", Format: "json", Timeout: time.Minute}
@@ -1268,7 +1298,7 @@ func TestExpressWritesOnlyUnderTheInvokingSystemsSection(t *testing.T) {
 			return space.Manifest{MinBinaryVersion: "0.1.0", Participants: []space.Participant{{System: "axon"}, {System: "peer"}}}, nil
 		}
 		funnel := &expressScriptedFunnel{}
-		installExpressSeams(core, funnel, nil)
+		installExpressSeams(t, core, funnel, nil)
 		result, err := core.request(context.Background(), cli.DataRequestRequest{
 			Producer: "axon", Contract: "XC-axon-widget@1.0.0", InterimBehavior: "keep working",
 		})
@@ -1301,7 +1331,7 @@ func TestExpressWritesOnlyUnderTheInvokingSystemsSection(t *testing.T) {
 		}
 		seedExpressEvents(t, core.mirrorDir, expressSeedEvent{system: "peer", transition: "submit", subject: freshWR})
 		funnel := &expressScriptedFunnel{states: []space.WriteState{space.WriteStateMerged, space.WriteStateMerged}}
-		installExpressSeams(core, funnel, nil)
+		installExpressSeams(t, core, funnel, nil)
 		// The pack step cannot run (--from does not exist), after ack and accept landed.
 		_, err := core.deliverFor(context.Background(), cli.DataDeliverForRequest{
 			For: freshWR, From: filepath.Join(t.TempDir(), "absent"), Profile: "synthetic", Format: "json",

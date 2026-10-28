@@ -2910,6 +2910,78 @@ func TestMCPEquivalenceExpressDataVerbs(t *testing.T) {
 		}
 	})
 
+	// The producer's composite is driven as a RETRY (attempt 1 rejected), so
+	// both surfaces run ack/accept/pack/deliver/supersede/respond and the
+	// deliver write goes through the data core's own funnel.
+	t.Run("deliver --for", func(t *testing.T) {
+		t.Parallel()
+		cliRig := newExpressRetryRig(t)
+		mcpRig := newExpressRetryRig(t)
+		echoingActor(cliRig.core)
+		echoingActor(mcpRig.core)
+
+		cliReq, mcpReq := cliRig.req(), mcpRig.req()
+		cliResult, cliErr := cliDataAdapter{core: cliRig.core}.DeliverFor(context.Background(), cli.DataDeliverForRequest{
+			For: cliReq.For, From: cliReq.From, Profile: cliReq.Profile, Format: cliReq.Format, Contract: cliReq.Contract,
+			Actor: cli.ActorFlags{Kind: "agent", Name: "cli-caller"},
+		})
+		mcpResult, mcpErr := mcpDataAdapter{core: mcpRig.core}.DeliverFor(context.Background(), mcp.DataDeliverForRequest{
+			For: mcpReq.For, From: mcpReq.From, Profile: mcpReq.Profile, Format: mcpReq.Format, Contract: mcpReq.Contract,
+			Actor: mcp.ActorInput{Kind: "agent", Name: "mcp-caller"},
+		})
+		if cliErr != nil || mcpErr != nil {
+			t.Fatalf("errors: cli=%v mcp=%v", cliErr, mcpErr)
+		}
+		// Subjects of the minted ids (package, handoff, response) differ per
+		// core, so the tuples agree on step, transition and outcome.
+		shape := func(tuples []string) string {
+			out := make([]string, len(tuples))
+			for i, tuple := range tuples {
+				parts := strings.Split(tuple, "|")
+				out[i] = parts[0] + "|" + parts[2] + "|" + parts[3]
+			}
+			return strings.Join(out, "\n")
+		}
+		if got, want := shape(expressMCPTuples(mcpResult.Steps)), shape(expressTuples(cliResult.Steps)); got != want || !strings.Contains(want, "deliver|") {
+			t.Fatalf("steps differ:\nmcp: %s\ncli: %s", got, want)
+		}
+		if got, want := expressInnerVerbs(mcpRig.funnel), expressInnerVerbs(cliRig.funnel); strings.Join(got, ",") != "supersede,respond" || strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("inner writes differ: mcp=%v cli=%v, want supersede,respond on both", got, want)
+		}
+		if mcpResult.Next != cliResult.Next || mcpResult.WorkRequest != cliResult.WorkRequest {
+			t.Fatalf("results differ: mcp=%+v cli=%+v", mcpResult, cliResult)
+		}
+		for i := range mcpRig.funnel.calls {
+			if !strings.Contains(mcpRig.funnel.content(i), "name: mcp-caller") || strings.Contains(mcpRig.funnel.content(i), "cli-caller") {
+				t.Fatalf("inner write %d (%s) does not carry the MCP caller's actor:\n%s", i, mcpRig.funnel.calls[i].Verb, mcpRig.funnel.content(i))
+			}
+		}
+		// The deliver write goes through the data core's own funnel: read the
+		// committed handoff event off its branch.
+		var deliver *space.WriteResult
+		for _, step := range mcpResult.Steps {
+			if step.Step == "deliver" {
+				deliver = step.Write
+			}
+		}
+		if deliver == nil {
+			t.Fatalf("no deliver step with a write in %+v", mcpResult.Steps)
+		}
+		changed := gitFixtureOutput(t, mcpRig.core.mirrorDir, "diff", "--name-only", "main", deliver.Branch)
+		var eventPath string
+		for _, line := range strings.Split(strings.TrimSpace(changed), "\n") {
+			if strings.Contains(line, "/events/") {
+				eventPath = line
+			}
+		}
+		if eventPath == "" {
+			t.Fatalf("the deliver write committed no event: %q", changed)
+		}
+		if body := gitFixtureOutput(t, mcpRig.core.mirrorDir, "show", deliver.Branch+":"+eventPath); !strings.Contains(body, "name: mcp-caller") {
+			t.Fatalf("the deliver event does not carry the MCP caller's actor:\n%s", body)
+		}
+	})
+
 	t.Run("request", func(t *testing.T) {
 		t.Parallel()
 		build := func() (*dataCore, *expressScriptedFunnel) {
@@ -2921,7 +2993,7 @@ func TestMCPEquivalenceExpressDataVerbs(t *testing.T) {
 			}
 			echoingActor(core)
 			funnel := &expressScriptedFunnel{}
-			installExpressSeams(core, funnel, nil)
+			installExpressSeams(t, core, funnel, nil)
 			return core, funnel
 		}
 		cliCore, cliFunnel := build()

@@ -335,7 +335,7 @@ func (c *DataCommand) runDeliver(ctx context.Context, args []string, stdio IO) i
 	contractRef := fs.String("contract", "", "with --for: <XC-id>@<version>, only when the request does not carry exactly one contract ref")
 	expires := fs.Duration("expires", DefaultDataPackExpiry, "with --for: how long the packed attempt remains fetchable")
 	maxAttempts := fs.Int("max-attempts", 0, "with --for: attempt ceiling; 0 = unset, nothing refused")
-	timeout := fs.Duration("timeout", DefaultDataExpressTimeout, "with --for: how long to wait for a pending merge")
+	timeout := fs.Duration("timeout", DefaultDataExpressTimeout, "with --for: how long EACH wait for a pending merge may take (it bounds every step's wait, not the whole invocation)")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
 	if dataHelpRequested(args) {
 		return printDataHelp(fs, stdio, dataDeliverUsage)
@@ -470,7 +470,7 @@ func (c *DataCommand) runVerify(ctx context.Context, args []string, stdio IO) in
 	var verdicts newStringList
 	fs.Var(&verdicts, "verdict", "with --for: <index-or-criterion-id>:<met|unmet|not_warranted|not_exercised>:<cause_owner>, passed through to close (repeatable)")
 	reason := fs.String("reason", "", "with --for: overrides the dispute reason derived from the failing findings")
-	timeout := fs.Duration("timeout", DefaultDataExpressTimeout, "with --for: how long to wait for a pending merge")
+	timeout := fs.Duration("timeout", DefaultDataExpressTimeout, "with --for: how long EACH wait for a pending merge may take (it bounds every step's wait, not the whole invocation)")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
 	if dataHelpRequested(args) {
 		return printDataHelp(fs, stdio, dataVerifyUsage)
@@ -550,7 +550,7 @@ func (c *DataCommand) runRequest(ctx context.Context, args []string, stdio IO) i
 	neededBy := fs.String("needed-by", "", "YYYY-MM-DD the data is needed by (default: the template's own rule)")
 	var criteria newStringList
 	fs.Var(&criteria, "acceptance-criterion", "extra acceptance criterion text (repeatable); ac1 is always \"the delivered package passes a2a data verify\"")
-	timeout := fs.Duration("timeout", DefaultDataExpressTimeout, "how long to wait for a pending merge")
+	timeout := fs.Duration("timeout", DefaultDataExpressTimeout, "how long EACH wait for a pending merge may take (it bounds every step's wait, not the whole invocation)")
 	asJSON := fs.Bool("json", false, "emit JSON")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
 	if dataHelpRequested(args) {

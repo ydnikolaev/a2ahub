@@ -525,6 +525,10 @@ func TestDataToolExpressFieldDiscipline(t *testing.T) {
 		"request missing producer":       {Action: "request", Contract: "XC-a@1.0.0", InterimBehavior: "w"},
 		"request missing interim":        {Action: "request", Producer: "beta", Contract: "XC-a@1.0.0"},
 		"request bad timeout":            {Action: "request", Producer: "beta", Contract: "XC-a@1.0.0", InterimBehavior: "w", Timeout: "soon"},
+		"request zero timeout":           {Action: "request", Producer: "beta", Contract: "XC-a@1.0.0", InterimBehavior: "w", Timeout: "0s"},
+		"request negative timeout":       {Action: "request", Producer: "beta", Contract: "XC-a@1.0.0", InterimBehavior: "w", Timeout: "-5m"},
+		"deliver for zero timeout":       {Action: "deliver", For: wr, From: "d", Profile: "synthetic", Format: "json", Timeout: "0s"},
+		"verify for zero timeout":        {Action: "verify", For: wr, Record: true, Timeout: "0"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

@@ -1538,10 +1538,10 @@ func (c *ContractCommand) runActivate(ctx context.Context, args []string, stdio 
 		return 1
 	}
 
-	// Refusal 1 — the floor. lifecycleEventSchema mirrors internal/contract/
+	// Refusal 1 — the floor. LifecycleEventSchema mirrors internal/contract/
 	// publication_plan.go's own authoring-floor split, the SAME reuse
 	// `verify --verdict` already makes of it.
-	eventSchema := lifecycleEventSchema(c.deps.manifest.MinBinaryVersion)
+	eventSchema := LifecycleEventSchema(c.deps.manifest.MinBinaryVersion)
 	if eventSchema != "event/v2" {
 		_, _ = fmt.Fprintf(stdio.Stderr,
 			"contract activate: requires this space's min_binary_version to be at or above %s (event/v2, `activation` has no event/v1 shape); this space's floor is %q\n",

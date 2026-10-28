@@ -45,14 +45,12 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
-	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
-	semver "github.com/ydnikolaev/a2ahub/internal/version"
 	"gopkg.in/yaml.v3"
 )
 
@@ -160,19 +158,6 @@ func (c *dataCore) clearMarkers(ids []string) error {
 	return nil
 }
 
-// expressEventSchema is cmd_lifecycle.go's lifecycleEventSchema, copied
-// because that function is unexported in internal/cli: a space whose floor is
-// at or above the contract publication floor authors event/v2 (the only shape
-// that carries close's verdicts[]); an unparseable or absent floor fails
-// closed to event/v1.
-func expressEventSchema(floor string) string {
-	below, err := semver.OlderThan(floor, contract.ContractPublicationFloor)
-	if err != nil || below {
-		return "event/v1"
-	}
-	return "event/v2"
-}
-
 // --- the run -----------------------------------------------------------------
 
 // expressRun is one composite invocation: its accumulating result and the
@@ -193,16 +178,17 @@ func (c *dataCore) newExpressRun(actor cli.ActorFlags, timeout time.Duration) *e
 
 func (r *expressRun) add(step cli.DataStep) { r.result.Steps = append(r.result.Steps, step) }
 
-// fail names the furthest step this invocation landed on a stopping error, so
-// a caller (or an agent reading the message) knows where to resume from
-// without reading the steps[] too.
+// fail names the furthest step in the space on a stopping error, so a caller
+// (or an agent reading the message) knows where to resume from without reading
+// the steps[] too. A step the mirror already showed done counts: it is as
+// landed as one this invocation wrote.
 func (r *expressRun) fail(err error) error {
 	if err == nil {
 		return nil
 	}
 	last := "none"
 	for _, step := range r.result.Steps {
-		if step.Outcome == expressLanded {
+		if step.Outcome == expressLanded || step.Outcome == expressAlreadyDone {
 			last = strings.TrimSpace(step.Step + " " + step.Subject)
 		}
 	}
@@ -243,6 +229,24 @@ func (r *expressRun) env(ctx context.Context) (expressEnv, error) {
 		legality: cli.NewLegalityAdapter(c.mirrorDir, c.ownSystem, manifest),
 		pending:  c.pendingMarker(),
 	}, nil
+}
+
+// The shipped verbs parse with parseArgsAnyOrder: positionals LEADING the
+// arguments are lifted, then the flag package stops at the first positional it
+// meets. So an argv is either "<positionals> <flags...>" or "<flags...>
+// <positional>"; mixing flags, a positional, then more flags reads the trailing
+// flags as extra positionals. The helpers below build the two shapes.
+
+// idThenFlags is "<id> <flags...> <actor flags...>", for a verb whose only
+// positional leads.
+func (r *expressRun) idThenFlags(id string, flags ...string) []string {
+	return append(append([]string{id}, flags...), r.actorFlags()...)
+}
+
+// flagsThenID is "<flags...> <actor flags...> <id>", for a verb whose flags
+// already precede its positional.
+func (r *expressRun) flagsThenID(id string, flags ...string) []string {
+	return append(append(append([]string{}, flags...), r.actorFlags()...), id)
 }
 
 func (r *expressRun) actorFlags() []string {
@@ -401,6 +405,16 @@ func (r *expressRun) settleCore(ctx context.Context, step cli.DataStep, write *s
 		r.add(step)
 		return fmt.Errorf("data: %s %s: %w", step.Step, step.Subject, callErr)
 	}
+	// A write that came back with an error never landed a step, whatever state
+	// it reports beside it: a closed-unmerged PR is reported already-open WITH an
+	// error, and the standalone verb exits 1 on it. Stop; do not mark it pending
+	// or wait on it.
+	if callErr != nil {
+		step.Write = write
+		step.Outcome, step.Note = expressStopped, callErr.Error()
+		r.add(step)
+		return fmt.Errorf("data: %s %s: %w", step.Step, step.Subject, callErr)
+	}
 	switch write.State {
 	case space.WriteStatePendingMerge, space.WriteStateAlreadyOpen:
 		ids := markerIDs
@@ -414,13 +428,6 @@ func (r *expressRun) settleCore(ctx context.Context, step cli.DataStep, write *s
 				return fmt.Errorf("data: %s %s: %w", step.Step, step.Subject, err)
 			}
 		}
-	}
-	if callErr != nil && write.State != space.WriteStateMerged && write.State != space.WriteStateAlreadyMerged &&
-		write.State != space.WriteStatePendingMerge && write.State != space.WriteStateAlreadyOpen {
-		step.Write = write
-		step.Outcome, step.Note = expressStopped, callErr.Error()
-		r.add(step)
-		return fmt.Errorf("data: %s %s: %w", step.Step, step.Subject, callErr)
 	}
 	return r.settle(ctx, step, *write, markerIDs)
 }
@@ -536,9 +543,10 @@ func expressReadDoc(path string) (expressDoc, error) {
 	var fulfills struct {
 		Fulfills any `yaml:"fulfills"`
 	}
-	if err := yaml.Unmarshal(fm.YAML, &fulfills); err == nil {
-		doc.Fulfills = dataToStrings(fulfills.Fulfills)
+	if err := yaml.Unmarshal(fm.YAML, &fulfills); err != nil {
+		return expressDoc{}, fmt.Errorf("data: %s: cannot decode fulfills: %w", path, err)
 	}
+	doc.Fulfills = dataToStrings(fulfills.Fulfills)
 	return doc, nil
 }
 
@@ -651,8 +659,13 @@ func (c *dataCore) expressSnapshot(wrID string) (expressSnapshot, error) {
 		base := filepath.Base(path)
 		switch {
 		case strings.HasPrefix(base, "XH-"):
+			// A handoff the flow cannot read is not "a handoff of another request":
+			// skipping it would let a re-run deliver a second package over it.
 			h, err := expressReadDoc(path)
-			if err != nil || !containsString(h.Fulfills, wrID) {
+			if err != nil {
+				return expressSnapshot{}, err
+			}
+			if !containsString(h.Fulfills, wrID) {
 				continue
 			}
 			env := fold.Envelope{ID: h.ID, Kind: fold.KindHandoff, From: h.From, To: dataToStrings(h.To)}
@@ -669,7 +682,10 @@ func (c *dataCore) expressSnapshot(wrID string) (expressSnapshot, error) {
 			snap.handoffs = append(snap.handoffs, handoff)
 		case strings.HasPrefix(base, "XS-"):
 			resp, err := expressReadDoc(path)
-			if err != nil || resp.Parent != wrID {
+			if err != nil {
+				return expressSnapshot{}, err
+			}
+			if resp.Parent != wrID {
 				continue
 			}
 			r := expressResponse{id: resp.ID, delivers: resp.Delivers, state: wrResult.Responses[resp.ID]}
@@ -886,14 +902,14 @@ func (r *expressRun) deliverFor(ctx context.Context, req cli.DataDeliverForReque
 
 	// Acknowledge and accept: owed only while the request has not got that far.
 	if snap.state == fold.StateSubmitted {
-		if err := r.runInner(ctx, "ack", req.For, fold.TAcknowledge, r.verbBuilder("ack"), append([]string{req.For}, r.actorFlags()...)); err != nil {
+		if err := r.runInner(ctx, "ack", req.For, fold.TAcknowledge, r.verbBuilder("ack"), r.idThenFlags(req.For)); err != nil {
 			return err
 		}
 	} else {
 		r.skip("ack", req.For, fold.TAcknowledge, "")
 	}
 	if snap.state == fold.StateSubmitted || snap.state == fold.StateAcknowledged {
-		if err := r.runInner(ctx, "accept", req.For, fold.TAccept, r.verbBuilder("accept"), append([]string{req.For}, r.actorFlags()...)); err != nil {
+		if err := r.runInner(ctx, "accept", req.For, fold.TAccept, r.verbBuilder("accept"), r.idThenFlags(req.For)); err != nil {
 			return err
 		}
 	} else {
@@ -905,6 +921,18 @@ func (r *expressRun) deliverFor(ctx context.Context, req cli.DataDeliverForReque
 		handoffID, packageID = active.id, active.packageID
 		r.skip("pack", packageID, "", "")
 		r.skip("deliver", handoffID, fold.TSubmit, "")
+		// A run that died after this handoff landed and before the one it
+		// replaced was superseded leaves that one rejected and unsuperseded, which
+		// pendency keeps in the producer's inbox as an obligation. Finish it
+		// here, before the respond (spec 05 §8 row 6).
+		for _, old := range snap.handoffs {
+			if old.id != active.id && old.state == fold.StateRejected {
+				if err := r.supersedeWith(ctx, old.id, handoffID); err != nil {
+					r.result.Handoff, r.result.Package = handoffID, packageID
+					return err
+				}
+			}
+		}
 	} else {
 		supersedes := ""
 		if retry {
@@ -920,15 +948,16 @@ func (r *expressRun) deliverFor(ctx context.Context, req cli.DataDeliverForReque
 		delivered, deliverErr := c.deliver(ctx, cli.DataDeliverRequest{
 			StagingRoot: root, Fulfills: req.For, ExpectPack: document.AggregateDigest, Actor: r.actor,
 		})
-		handoffID = delivered.HandoffID
+		// The handoff the delivery's PR carries, which is not necessarily the id
+		// deliver just minted: see deliveredHandoffID.
+		handoffID = deliveredHandoffID(delivered)
 		step := cli.DataStep{Step: "deliver", Subject: handoffID, Transition: fold.TSubmit}
 		if err := r.settleCore(ctx, step, delivered.Write, deliverErr, []string{handoffID}); err != nil {
 			r.result.Handoff = handoffID
 			return err
 		}
 		if retry {
-			argv := append([]string{active.id, "--refs", handoffID}, r.actorFlags()...)
-			if err := r.runInner(ctx, "supersede", active.id, fold.TSupersede, r.verbBuilder("supersede"), argv); err != nil {
+			if err := r.supersedeWith(ctx, active.id, handoffID); err != nil {
 				r.result.Handoff = handoffID
 				return err
 			}
@@ -945,7 +974,7 @@ func (r *expressRun) deliverFor(ctx context.Context, req cli.DataDeliverForReque
 		r.result.Response = existing.id
 		r.skip("respond", existing.id, fold.TRespond, "")
 	} else {
-		argv := append([]string{"--result", "delivered", "--ref", handoffID, "--delivers", packageID, req.For}, r.actorFlags()...)
+		argv := r.flagsThenID(req.For, "--result", "delivered", "--ref", handoffID, "--delivers", packageID)
 		if err := r.runInner(ctx, "respond", req.For, fold.TRespond, r.verbBuilder("respond"), argv); err != nil {
 			return err
 		}
@@ -957,6 +986,30 @@ func (r *expressRun) deliverFor(ctx context.Context, req cli.DataDeliverForReque
 	}
 	r.result.Next = fmt.Sprintf("%s runs: a2a data verify --for %s --record", dataFirst(dataToStrings(snap.doc.From), snap.doc.From), req.For)
 	return nil
+}
+
+// supersedeWith runs the shipped supersede verb on a rejected handoff, naming
+// the one that replaces it.
+func (r *expressRun) supersedeWith(ctx context.Context, rejectedID, replacementID string) error {
+	argv := r.idThenFlags(rejectedID, "--refs", replacementID)
+	return r.runInner(ctx, "supersede", rejectedID, fold.TSupersede, r.verbBuilder("supersede"), argv)
+}
+
+// deliveredHandoffID is the handoff a delivery's write actually carries.
+// dataCore.deliver mints a fresh XH id on every call, but the write is keyed on
+// the package alone, so a re-run while the first delivery's PR is still open
+// converges on that PR and the id deliver minted is never committed. The write's
+// ArtifactIDs name the ids present on the PR (space.WriteResult), so the
+// supersede and the respond must take the handoff from there.
+func deliveredHandoffID(delivered cli.DataResult) string {
+	if delivered.Write != nil {
+		for _, id := range delivered.Write.ArtifactIDs {
+			if strings.HasPrefix(id, "XH-") {
+				return id
+			}
+		}
+	}
+	return delivered.HandoffID
 }
 
 func dataFirst(list []string, fallback any) string {
@@ -1042,18 +1095,45 @@ func (c *dataCore) expressStagedCandidates(thread, pinnedPrefix string) ([]expre
 			return nil, fmt.Errorf("data: read staged manifest %s: %w", path, err)
 		}
 		var document datapackage.Document
-		if json.Unmarshal(raw, &document) != nil {
-			continue
+		if err := json.Unmarshal(raw, &document); err != nil {
+			return nil, fmt.Errorf("data: decode staged manifest %s: %w", path, err)
 		}
 		if document.Thread != thread || !strings.HasPrefix(document.Contract, pinnedPrefix) {
 			continue
 		}
-		if _, err := c.findHandoffForPackage(document.ID); err == nil {
-			continue // already delivered
+		delivered, err := c.expressPackageDelivered(document.ID)
+		if err != nil {
+			return nil, err
+		}
+		if delivered {
+			continue
 		}
 		out = append(out, expressStagedPackage{root: filepath.Dir(path), document: document})
 	}
 	return out, nil
+}
+
+// expressPackageDelivered reports whether a committed handoff carries the
+// package. Unlike findHandoffForPackage, which answers "no handoff" for a handoff
+// it could not read, a handoff that cannot be read or decoded is an error here:
+// "not delivered" must mean every handoff was read and none carries the package.
+func (c *dataCore) expressPackageDelivered(packageID string) (bool, error) {
+	matches, err := filepath.Glob(filepath.Join(c.mirrorDir, "*", "exchanges", "XH-*.md"))
+	if err != nil {
+		return false, fmt.Errorf("data: list committed handoffs: %w", err)
+	}
+	for _, path := range matches {
+		h, err := expressReadDoc(path)
+		if err != nil {
+			return false, err
+		}
+		for _, d := range h.Deliverables {
+			if d.Kind == "data" && d.Ref == packageID {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 // expressAggregateOf is the aggregate digest of the bytes under dir, computed
@@ -1132,6 +1212,19 @@ func (r *expressRun) verifyFor(ctx context.Context, req cli.DataVerifyForRequest
 	}
 	pass := datapackage.VerifyPass(*report) == nil
 
+	// Once the handoff is accepted or rejected the verdict is on record, and the
+	// close or dispute below must follow it. A fresh verification that now
+	// disagrees is refused, not obeyed: it would close over a rejected handoff or
+	// dispute an accepted one.
+	if (h.state == fold.StateAccepted && !pass) || (h.state == fold.StateRejected && pass) {
+		fresh := "fail"
+		if pass {
+			fresh = "pass"
+		}
+		return fmt.Errorf("data: verify --for: handoff %s is recorded %s, but %s now verifies to %s: the verdict changed between runs, so nothing is closed or disputed; re-check the package and the contract pin",
+			h.id, h.state, h.packageID, fresh)
+	}
+
 	// Everything that can be refused is refused BEFORE the first write.
 	var closeArgs []string
 	if pass {
@@ -1147,7 +1240,7 @@ func (r *expressRun) verifyFor(ctx context.Context, req cli.DataVerifyForRequest
 	}
 
 	if h.state == fold.StateSubmitted {
-		argv := append([]string{h.id}, r.actorFlags()...)
+		argv := r.idThenFlags(h.id)
 		if err := r.runInner(ctx, "ack", h.id, fold.TAcknowledge, r.verbBuilder("ack"), argv); err != nil {
 			return err
 		}
@@ -1177,7 +1270,7 @@ func (r *expressRun) verifyFor(ctx context.Context, req cli.DataVerifyForRequest
 			r.skip("close", req.For, fold.TClose, "")
 			return nil
 		}
-		argv := append(append([]string{req.For}, closeArgs...), r.actorFlags()...)
+		argv := r.idThenFlags(req.For, closeArgs...)
 		return r.runInner(ctx, "close", req.For, fold.TClose, r.verbBuilder("close"), argv)
 	}
 
@@ -1185,7 +1278,7 @@ func (r *expressRun) verifyFor(ctx context.Context, req cli.DataVerifyForRequest
 	if reason == "" {
 		reason = expressDisputeReason(h.packageID, r.result.Report)
 	}
-	argv := append([]string{"--reason", reason, response.id}, r.actorFlags()...)
+	argv := r.flagsThenID(response.id, "--reason", reason)
 	if err := r.runInner(ctx, "dispute", response.id, fold.TDispute, r.verbBuilder("dispute"), argv); err != nil {
 		return err
 	}
@@ -1202,7 +1295,7 @@ func (r *expressRun) verifyFor(ctx context.Context, req cli.DataVerifyForRequest
 // the floor close carries no verdicts, and a caller's --verdict is refused
 // before anything is written.
 func expressCloseArgs(snap expressSnapshot, callerVerdicts []string) ([]string, error) {
-	if expressEventSchema(snap.floor) != "event/v2" {
+	if cli.LifecycleEventSchema(snap.floor) != "event/v2" {
 		if len(callerVerdicts) > 0 {
 			return nil, fmt.Errorf("data: verify --for: --verdict needs a space at the event/v2 floor; this space's min_binary_version %q is below it", snap.floor)
 		}
