@@ -61,8 +61,13 @@ changes:
     or `space join` refuses, the message says what it tried, what it found and
     the command to run next.
 
-    The space's `gates:` setting (confirm or autonomous) is not enforced yet
-    in this build.
+    A local space has no pull-request review, so its `gates:` setting decides
+    who may land a gated write. Under `confirm`, the default, a first contract
+    publish, a breaking version, an approve or reject, and a change to
+    `space.yaml` each need `--approve`, and the landed commit records the gate
+    it passed. Under `autonomous` they land without it. A classification or
+    secret refusal stays a refusal in both modes. `a2a space set gates` and
+    `a2a space set flow` change the setting, and `a2a doctor` shows it.
   action:
     scope: none
     why: >
@@ -73,3 +78,26 @@ changes:
     why: >
       An operator with several repositories can now exchange contracts and
       data between them with no GitHub account.
+- id: RN-02700-2
+  kind: feat
+  impact: normal
+  subject: feedback can be filed with no GitHub credential and delivered later
+  detail: >
+    With no GitHub credential, or with `--inbox`, `a2a feedback submit` files
+    the validated report offline into this machine's inbox,
+    `$HOME/.local/share/a2a/feedback/inbox/`, in the hub's own format.
+    `a2a feedback status` says the report is in the local inbox, with no
+    network read, and a later `a2a feedback submit --all` on a machine with a
+    credential delivers every filed report once, from the bytes that were
+    filed. A malformed credential setting is still refused rather than hidden
+    behind a local filing.
+  action:
+    scope: none
+    why: >
+      Nothing is owed. With a working credential, submit behaves exactly as
+      before.
+  roadmap:
+    visibility: shipped
+    why: >
+      An agent working against a local space no longer drops an a2a defect
+      because it has no token to report it with.
