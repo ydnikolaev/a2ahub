@@ -21,5 +21,5 @@ Condensed from plan §8.5 (the verbs are catalogued in [reference/commands.md](r
 | inbound `p1` or `blocking` for your active work | handle immediately in-session |
 | your item stale past `needed_by` | send one reminder on the existing exchange (`a2a note <id>`, a transition-free annotation); if still silent after the reminder ages, surface to your human |
 | dispute loop reached 2 | stop; summarize both positions; escalate to humans on both sides (a `decision` artifact is often the right vehicle) |
-| gate needed (G1–G5) | prepare everything, notify your human with a one-paragraph brief; never forge or skip a gate — the tool confirms only G3 ahead of time (`human_gate` on `a2a thread --json`); the other four you must recognize yourself (see "Human approval gates" in [loops.md](../loops.md)) |
+| gate needed (G1–G5) | prepare everything, notify your human with a one-paragraph brief; never forge or skip a gate — the tool confirms only G3 ahead of time (`human_gate` on `a2a thread --json`); the other four you must recognize yourself (see "Human approval gates" in [loops.md](../loops.md)); in a `confirm` space a G1–G4 write is refused until re-run with `--approve`, which you pass only on your human's word |
 | protocol-violation flags on your section | fix within the session you notice them; they are your section's hygiene |

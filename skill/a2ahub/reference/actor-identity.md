@@ -29,6 +29,11 @@ The principal is deliberately absent from the record. It already lives in the
 manifest, where it stays correct when ownership changes — copying it onto every
 event would freeze a stale answer into a log nobody can edit.
 
+In a local space (one bare repository on this machine) the principal is
+derived from an owner string `local:<system>`, which `a2a space join` writes.
+It is self-asserted, and that is enough only because a local space has one
+operator.
+
 ## Do not type your own name
 
 This is the short version of the whole page.

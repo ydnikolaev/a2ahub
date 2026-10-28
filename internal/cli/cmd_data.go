@@ -346,7 +346,7 @@ func (c *DataCommand) runDeliver(ctx context.Context, args []string, stdio IO) i
 	timeout := fs.Duration("timeout", DefaultDataExpressTimeout, "with --for: how long EACH wait for a pending merge may take (it bounds every step's wait, not the whole invocation)")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
 	if dataHelpRequested(args) {
-		return printDataHelp(fs, stdio, dataDeliverUsage+"\n"+workflowLine("loop-receive"))
+		return printDataHelp(fs, stdio, dataDeliverUsage+"\n"+workflowLine("loop-receive")+"\n"+workflowLine("loop-express"))
 	}
 	if c.ops == nil {
 		return dataServiceUnavailable(stdio, "deliver")
@@ -376,6 +376,7 @@ func (c *DataCommand) runDeliver(ctx context.Context, args []string, stdio IO) i
 		}
 		if *from == "" || *profile == "" || *format == "" {
 			_, _ = fmt.Fprintln(stdio.Stderr, dataDeliverForUsage)
+			_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-express"))
 			return 2
 		}
 		if *expires <= 0 || *timeout <= 0 {
@@ -481,7 +482,7 @@ func (c *DataCommand) runVerify(ctx context.Context, args []string, stdio IO) in
 	timeout := fs.Duration("timeout", DefaultDataExpressTimeout, "with --for: how long EACH wait for a pending merge may take (it bounds every step's wait, not the whole invocation)")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
 	if dataHelpRequested(args) {
-		return printDataHelp(fs, stdio, dataVerifyUsage+"\n"+workflowLine("loop-send"))
+		return printDataHelp(fs, stdio, dataVerifyUsage+"\n"+workflowLine("loop-send")+"\n"+workflowLine("loop-express"))
 	}
 	if c.ops == nil {
 		return dataServiceUnavailable(stdio, "verify")
@@ -522,6 +523,7 @@ func (c *DataCommand) runVerify(ctx context.Context, args []string, stdio IO) in
 	}
 	if len(positionals) != 1 || !validDataPackageRef(positionals[0]) {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a data verify <DP-package-id> [--record] [--json]")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-express"))
 		return 2
 	}
 	result, err := c.ops.Verify(ctx, DataVerifyRequest{
@@ -562,7 +564,7 @@ func (c *DataCommand) runRequest(ctx context.Context, args []string, stdio IO) i
 	asJSON := fs.Bool("json", false, "emit JSON")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
 	if dataHelpRequested(args) {
-		return printDataHelp(fs, stdio, dataRequestUsage)
+		return printDataHelp(fs, stdio, dataRequestUsage+"\n"+workflowLine("loop-express"))
 	}
 	if c.ops == nil {
 		return dataServiceUnavailable(stdio, "request")
@@ -573,6 +575,7 @@ func (c *DataCommand) runRequest(ctx context.Context, args []string, stdio IO) i
 	}
 	if len(positionals) != 0 || *producer == "" || *contractRef == "" || *interim == "" || *timeout <= 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, dataRequestUsage)
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-express"))
 		return 2
 	}
 	express, ok := c.ops.(DataExpressOperations)

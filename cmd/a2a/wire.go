@@ -143,6 +143,7 @@ func buildCommands() map[string]command {
 		if p, err := resolvePaths(); err == nil {
 			if store, err := buildStore(context.Background(), p); err == nil {
 				cmd.Store = store
+				cmd.Capabilities = versionSpaceCapabilities(store.SpaceMirrors(), newHostOpener())
 			}
 		}
 		return cmd.Run(context.Background(), args, stdio(stdout, stderr))
@@ -732,6 +733,29 @@ func buildStore(ctx context.Context, p paths) (*cache.Store, error) {
 	// inbox / outbox render it; statusline's stale-trigger fires the checker).
 	cache.ConfigureUpdateNotice(store, version, machine.Defaults)
 	return store, nil
+}
+
+// versionSpaceCapabilities is `a2a version`'s capability lookup (local-space-
+// 2026-10 spec 06 §T4.1): the host the space's own locator opens to, asked
+// what it declares. It opens the space's repo_url, never its mirror: the
+// local-space marker lives in the space repository's git config, and a mirror
+// is a clone without it. Opening reaches no network (a GitHub host is built
+// statically; a path is probed with one local git call), and a space this
+// project does not connect is an error, which the report renders as unknown.
+func versionSpaceCapabilities(mirrors []cache.SpaceMirror, open host.Opener) func(context.Context, string) (host.Capabilities, error) {
+	return func(_ context.Context, spaceID string) (host.Capabilities, error) {
+		for _, m := range mirrors {
+			if m.SpaceID != spaceID {
+				continue
+			}
+			h, _, err := open(m.RepoURL)
+			if err != nil {
+				return host.Capabilities{}, fmt.Errorf("open space %q: %w", spaceID, err)
+			}
+			return h.Capabilities(), nil
+		}
+		return host.Capabilities{}, fmt.Errorf("space %q is not connected to this project", spaceID)
+	}
 }
 
 // newProjectAvatarRefresher composes the consented `a2a sync` network step.

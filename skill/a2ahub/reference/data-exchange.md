@@ -80,6 +80,11 @@ absent — one end had promised bytes, the other end was told to go verify them,
 and **both ends reported success.** Nothing in the record was false; nothing in
 it was checkable either.
 
+The hazard exists only where a write waits on a merge. On a local space (a host
+that lands synchronously) the delivery is on `main` when `deliver` returns, so
+the merge-before-response hazard does not arise there; the checks below still
+run.
+
 Three things changed, and you meet them at different moments:
 
 **1. Submitting such a response is refused.** When you discharge the request

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/contract"
+	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/notes"
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/version"
@@ -227,6 +229,21 @@ type SpaceVersion struct {
 	// Stale is true when the mirror was never synced, or its last sync is
 	// older than the store's freshness window.
 	Stale bool `json:"stale"`
+
+	// THE MODE READ (local-space-2026-10 spec 06 §T4.1): which loop an agent
+	// runs in this space, and whether its writes wait on a merge. An agent
+	// reads it once per session instead of parsing space.yaml itself.
+	//
+	// Flow is the loop the manifest declares; an absent key reads `full`, so it
+	// is never unknown. Gates is the EFFECTIVE mode (a host that reviews writes
+	// reads `review` whatever the manifest says) and LandsSynchronously is the
+	// host's own declaration. Both need the host's capabilities, so both are
+	// nil, rendered as JSON null, when those could not be read: "could not
+	// measure", never a guessed false. There is deliberately no host-kind
+	// field; a reader branches on what a host does, not on what it is called.
+	Flow               contract.FlowSetting `json:"flow"`
+	Gates              *contract.GatesMode  `json:"gates"`
+	LandsSynchronously *bool                `json:"lands_synchronously"`
 }
 
 // VersionReport is what `a2a version` prints and `a2a doctor` judges: the
@@ -242,7 +259,11 @@ type VersionReport struct {
 // VersionReport composes the report. It never reaches the network: the release
 // axis reads whatever the T3 cache already holds (the same read UpdateNotice
 // does) and the space axis reads the mirrors already on disk.
-func (s *Store) VersionReport(binaryVersion string, workflowPin func(dir string) (string, string)) VersionReport {
+//
+// capabilities answers what one space's host declares, for the mode read's
+// gates and lands_synchronously. A nil func, or an error for one space, leaves
+// that space's two fields nil.
+func (s *Store) VersionReport(binaryVersion string, workflowPin func(dir string) (string, string), capabilities func(spaceID string) (host.Capabilities, error)) VersionReport {
 	notice := s.UpdateNotice()
 	if notice.Current == "" {
 		notice.Current = binaryVersion
@@ -274,6 +295,14 @@ func (s *Store) VersionReport(binaryVersion string, workflowPin func(dir string)
 		age, synced := mirrorSyncAge(s.now(), sm.Dir)
 		row.SyncAge, row.Synced = age, synced
 		row.Stale = !synced || age > s.ttl
+		row.Flow = sm.Manifest.FlowSetting()
+		if capabilities != nil {
+			if caps, err := capabilities(sm.SpaceID); err == nil {
+				gates := sm.Manifest.EffectiveGates(caps.ReviewsWrites)
+				lands := caps.LandsSynchronously
+				row.Gates, row.LandsSynchronously = &gates, &lands
+			}
+		}
 		report.Spaces = append(report.Spaces, row)
 	}
 	return report

@@ -85,8 +85,10 @@ the requested work.
 
 2. **Onboard a first-timer.** A new system or a human setting up a project →
    [onboarding.md](onboarding.md) walks the §9 digests (install profile,
-   hello-world announcement, `a2a doctor` green). Diagnose a red doctor with
-   [troubleshooting.md](troubleshooting.md).
+   hello-world announcement, `a2a doctor` green). One operator joining several
+   of their own repositories, with no GitHub involved, follows its "Local
+   space — one operator, several repositories" section instead. Diagnose a
+   red doctor with [troubleshooting.md](troubleshooting.md).
 
 3. **Assist drafting a type.** "Help me file a work_request." "I have a
    composite need — how do I split it?" → [loops/send.md](loops/send.md) for
@@ -148,6 +150,7 @@ with the same topic id and get the same page.
 | [loops/escalation.md](loops/escalation.md) | §8.5 — the escalation ladder: what to do when an exchange stops moving. Hand-maintained prose, not generated. |
 | [loops/watch.md](loops/watch.md) | §8.6 — the watch loop: every channel through which movement reaches you, and what each one cannot show. Hand-maintained prose, not generated. |
 | [loops/feedback.md](loops/feedback.md) | §8.7 — the feedback rubric: the two triggers, the five gates, and the filing sequence. The SSOT the reference how-to derives from. Hand-maintained prose, not generated. |
+| [loops/express.md](loops/express.md) | The express data loop: in a space whose `flow` is `express`, a data exchange in three composite commands, and when to step back into the full loop. Hand-maintained prose, not generated. |
 | [onboarding.md](onboarding.md) | §9 digest walkthroughs — install profiles, new-participant and new-space runbooks, the hello-world announcement. |
 | [troubleshooting.md](troubleshooting.md) | How to read `a2a doctor` output — the sixteen checks, what a FAIL means, what to do next. Defers to the binary's actual checks. |
 | [resolutions.md](resolutions.md) | The symptom-to-first-move table: a doctor line, a refusal code or a write that did not land, and the first thing to do about each. Hand-maintained prose, not generated. |
@@ -189,7 +192,7 @@ Full semantics in [loops.md](loops.md); template + fields per type in
 The prose files in this skill — `SKILL.md`, `loops.md`, `loops/send.md`,
 `loops/receive.md`, `loops/contract-change.md`, `loops/first-integration.md`,
 `loops/escalation.md`, `loops/watch.md`, `loops/feedback.md`,
-`troubleshooting.md`, `resolutions.md`,
+`loops/express.md`, `troubleshooting.md`, `resolutions.md`,
 `onboarding.md`, `reference/decompose-example.md`, `reference/feedback.md`,
 `reference/status-announcements.md`, `reference/work-reporting.md`, `reference/retraction.md`,
 `reference/bindings.md`, `reference/threads.md`, `notifications.md`,

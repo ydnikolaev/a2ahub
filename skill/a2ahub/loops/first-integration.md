@@ -36,7 +36,8 @@ this half with §8.4c — neither role's steps make sense without the other's.
    claim than an honest `absent`.
 2. **G1, then publish.** Prepare the brief for your human (see "Human approval
    gates" in [loops.md](../loops.md)); `a2a contract publish` commits the descriptor and
-   the publish event. This is not the end of your obligation on this
+   the publish event. In a `confirm` space the publish is refused until you
+   re-run it with `--approve`, and only on your human's word. This is not the end of your obligation on this
    contract — step 3 is a standing one.
 3. **You now carry a conditional debt, and it fires without your action.**
    The moment ANY system runs `a2a contract adopt` against your published
@@ -66,7 +67,8 @@ this half with §8.4c — neither role's steps make sense without the other's.
    this into the OTHER party's stale item on the escalation ladder (§8.5) —
    not a way to avoid the debt.
 
-**Human gate:** G1 at first publish (existing, unchanged). Activation itself
+**Human gate:** G1 at first publish (existing, unchanged; in a `confirm`
+space it is the publish's `--approve`). Activation itself
 is agent-legal; provisioning is operator work by the KIND of the still-`absent`
 item (endpoint/credential-channel are infrastructure by definition), never a
 gate the tool itself enforces.

@@ -3,6 +3,7 @@ package cli_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
@@ -289,5 +291,153 @@ func TestVersionCommand_StaleMirrorSaysSyncNotSpaceUpdate(t *testing.T) {
 	}
 	if strings.Contains(got, "a2a space update    —") {
 		t.Errorf("a stale mirror must not recommend acting on a snapshot:\n%s", got)
+	}
+}
+
+// modeStore is two connected spaces for the mode read (local-space-2026-10
+// spec 06 §T4.1): "local" declares gates: confirm and flow: express, "remote"
+// declares neither.
+func modeStore(t *testing.T, now time.Time) *cache.Store {
+	t.Helper()
+	localDir, localManifest := versionFixture(t, "0.23.0", "")
+	localManifest.Gates, localManifest.Flow = "confirm", "express"
+	remoteDir, remoteManifest := versionFixture(t, "0.23.0", "")
+	return versionStore(t, "", now, []cache.SpaceMirror{
+		{SpaceID: "local", Dir: localDir, Manifest: localManifest},
+		{SpaceID: "remote", Dir: remoteDir, Manifest: remoteManifest},
+	})
+}
+
+// modeLookup answers what each host declares: "local" lands synchronously and
+// reviews nothing, "remote" is GitHub-shaped, and "broken" cannot be opened.
+func modeLookup(_ context.Context, spaceID string) (host.Capabilities, error) {
+	switch spaceID {
+	case "local":
+		return host.Capabilities{LandsSynchronously: true, OnThisMachine: true, OwnerIdentitySelfAsserted: true}, nil
+	case "remote":
+		return host.Capabilities{NeedsCredential: true, ReviewsWrites: true}, nil
+	default:
+		return host.Capabilities{}, errors.New("cannot open the space")
+	}
+}
+
+// versionJSONSpaces runs `version --json` and returns each space entry as the
+// raw JSON object a reader decodes, so an absent key, a null and false are
+// three different answers.
+func versionJSONSpaces(t *testing.T, cmd *cli.VersionCommand) map[string]map[string]any {
+	t.Helper()
+	io, out, _ := newIO()
+	if code := cmd.Run(context.Background(), []string{"--json"}, io); code != 0 {
+		t.Fatalf("version --json: code = %d", code)
+	}
+	var report struct {
+		Spaces []map[string]any `json:"spaces"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &report); err != nil {
+		t.Fatalf("json.Unmarshal: %v (stdout=%s)", err, out.String())
+	}
+	byID := map[string]map[string]any{}
+	for _, sp := range report.Spaces {
+		id, _ := sp["id"].(string)
+		byID[id] = sp
+	}
+	return byID
+}
+
+// TestVersionCommand_JSONReportsEachSpaceMode is spec 06 §8 row 11, in
+// process: each space entry carries flow, the EFFECTIVE gates and the host's
+// declared lands_synchronously, and no entry names the host.
+func TestVersionCommand_JSONReportsEachSpaceMode(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	cmd := &cli.VersionCommand{Stamp: "a2a 0.27.0 (abc1234)", BinaryVersion: "0.27.0", Store: modeStore(t, now), Now: func() time.Time { return now }, Capabilities: modeLookup}
+	spaces := versionJSONSpaces(t, cmd)
+
+	want := map[string]map[string]any{
+		"local":  {"flow": "express", "gates": "confirm", "lands_synchronously": true},
+		"remote": {"flow": "full", "gates": "review", "lands_synchronously": false},
+	}
+	for id, fields := range want {
+		sp, ok := spaces[id]
+		if !ok {
+			t.Fatalf("no entry for space %q in %v", id, spaces)
+		}
+		for key, wantValue := range fields {
+			if got, present := sp[key]; !present || got != wantValue {
+				t.Errorf("space %q: %s = %#v (present %v), want %#v", id, key, got, present, wantValue)
+			}
+		}
+		if _, named := sp["host"]; named {
+			t.Errorf("space %q carries a host key; an agent branches on lands_synchronously, never on a host name: %v", id, sp)
+		}
+	}
+}
+
+// TestVersionCommand_UnmeasuredModeIsNullNeverFalse: with no capability lookup
+// (or one that fails) gates and lands_synchronously are null, "could not
+// measure", while flow is read from the manifest alone and stays known.
+func TestVersionCommand_UnmeasuredModeIsNullNeverFalse(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	failing := func(context.Context, string) (host.Capabilities, error) {
+		return host.Capabilities{}, errors.New("cannot open the space")
+	}
+	for name, lookup := range map[string]func(context.Context, string) (host.Capabilities, error){"nil lookup": nil, "failing lookup": failing} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cmd := &cli.VersionCommand{Stamp: "a2a 0.27.0 (abc1234)", BinaryVersion: "0.27.0", Store: modeStore(t, now), Now: func() time.Time { return now }, Capabilities: lookup}
+			sp := versionJSONSpaces(t, cmd)["local"]
+			for _, key := range []string{"gates", "lands_synchronously"} {
+				if got, present := sp[key]; !present || got != nil {
+					t.Errorf("%s = %#v (present %v), want null", key, got, present)
+				}
+			}
+			if got := sp["flow"]; got != "express" {
+				t.Errorf("flow = %#v, want \"express\" (the manifest alone answers it)", got)
+			}
+		})
+	}
+}
+
+// TestVersionCommand_TextNamesEachSpaceMode: the human report carries the same
+// three facts, one line per space, on stderr (stdout stays the frozen stamp).
+func TestVersionCommand_TextNamesEachSpaceMode(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	cmd := &cli.VersionCommand{Stamp: "a2a 0.27.0 (abc1234)", BinaryVersion: "0.27.0", Store: modeStore(t, now), Now: func() time.Time { return now }, Capabilities: modeLookup}
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), nil, io); code != 0 {
+		t.Fatalf("code = %d", code)
+	}
+	requireFrozenStampOnStdout(t, out.String(), cmd.Stamp)
+	got := errOut.String()
+	for _, want := range []string{"gates confirm, flow express, lands synchronously", "gates review, flow full, waits on a merge"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("stderr lacks %q:\n%s", want, got)
+		}
+	}
+
+	cmd.Capabilities = nil
+	io, _, errOut = newIO()
+	if code := cmd.Run(context.Background(), nil, io); code != 0 {
+		t.Fatalf("code = %d", code)
+	}
+	if want := "gates UNKNOWN, flow express, landing UNKNOWN"; !strings.Contains(errOut.String(), want) {
+		t.Errorf("an unmeasured mode must say so, never guess; stderr lacks %q:\n%s", want, errOut.String())
+	}
+}
+
+// TestVersionCommand_UsageNamesTheWorkLoops is spec 06 §8 row 5, in process:
+// `loops.md` names `a2a version` as the session-start mode read, so a wrong
+// invocation points at that page.
+func TestVersionCommand_UsageNamesTheWorkLoops(t *testing.T) {
+	t.Parallel()
+	cmd := &cli.VersionCommand{Stamp: "a2a 0.27.0 (abc1234)", BinaryVersion: "0.27.0"}
+	io, _, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{"--no-such-flag"}, io); code != 2 {
+		t.Fatalf("code = %d, want 2", code)
+	}
+	if want := "workflow: run `a2a docs work-loops` for the walkthrough"; !strings.Contains(errOut.String(), want) {
+		t.Errorf("stderr lacks %q:\n%s", want, errOut.String())
 	}
 }

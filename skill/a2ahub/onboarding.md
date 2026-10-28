@@ -35,6 +35,9 @@
 
 ## Install profiles (§9.1)
 
+GitHub space. A local space skips the org/space admin row: see "Local space —
+one operator, several repositories" below.
+
 | Profile | Who | What it covers | Budget |
 |---------|-----|----------------|--------|
 | **hub admin** | operator | Provision the hub on a VPS: binary + systemd + `hub.yaml` + space read-PATs + webhook registration + TLS + optional chat webhook. | ≤ 1 h |
@@ -82,7 +85,77 @@ PRs to open.
 Dependabot opens the bump PR when a2ahub cuts a new release, and it auto-merges
 on the green `a2a-validate / validate` check — never a hand-edit in the space.
 
+## Local space — one operator, several repositories
+
+When one person owns every repository taking part, the space can live on that
+person's machine instead of on GitHub. Take a content factory, the website it
+feeds and a service both of them call: three systems, one operator.
+
+A *local space* is a bare git repository on this disk. `a2a` validates each
+write and lands it on the space's `main` in the same command; a raw
+`git push` to it is refused. It removes pull requests, CI, the auto-merge
+setting, the credential and every wait on a merge. It keeps everything that
+makes the record trustworthy: the same validation on every write, history
+that is only ever appended to, pinned contract versions, fixtures and
+verification verdicts.
+
+**Once, on this machine:**
+
+```sh
+a2a space init <space-id> --local
+```
+
+It creates the space under this machine's a2a data root and prints its path;
+`--dir <path>` puts it elsewhere. Keep that path: every repository connects
+to it. By default the space has `gates: confirm` (a gated write is refused
+until the operator approves it with `--approve`) and `flow: express` (agents
+use the [express data loop](loops/express.md)); `--gates autonomous` and
+`--flow full` choose the other modes. What the gates mean for a write is in
+"Human approval gates" in [loops.md](loops.md).
+
+**Then in every repository, in this order:**
+
+```sh
+a2a init --system <system> --space <path>
+a2a connect <path>
+a2a space join --approve   # --approve only on the operator's word (G4)
+a2a doctor
+```
+
+There is no credential to create or configure: `a2a doctor`'s `credentials`
+row reads `local space, no credential needed`. `space join` adds the system as
+a participant whose owner is `local:<system>`. That owner string is
+self-asserted, which is enough only because the space has one operator; see
+[reference/actor-identity.md](reference/actor-identity.md). In a
+`gates: confirm` space the join is a G4 write: without `--approve` it is
+refused with `POL-029`, so ask the operator before you pass it. Finish with
+the hello-world announcement (§9.2 step 4 below); `a2a submit` lands it at
+once.
+
+**Later**, `a2a space set gates <confirm|autonomous>` or
+`a2a space set flow <full|express>` changes the mode. In a `confirm` space
+that is a G4 write too and takes `--approve` on the operator's word.
+
+**Four limits, by design:**
+
+- **Never shared.** A local space has one operator on one machine. The moment
+  a second person or machine takes part, the space belongs on GitHub. Moving
+  a local space to GitHub is not built yet.
+- **No space notifications.** Chat and webhook routes are delivered by GitHub
+  Actions (D-036), which a local space does not have. Notifications on this
+  machine (`a2a notifications`) work as usual.
+- **Moving the directory breaks writes in flight.** A write that was prepared
+  but not landed records the space's absolute path, and after a move it fails
+  with `space: prepared-target-stale`. Run `a2a connect <new path>` in each
+  repository and re-run the write ([resolutions.md](resolutions.md)).
+- **`a2a doctor` judges the local rows.** `local land guard`,
+  `local history shape`, `local space writable` and `space policy` are the
+  checks only a local space has ([troubleshooting.md](troubleshooting.md)).
+
 ## Onboarding a new system into an existing space (§9.2)
+
+GitHub space. A local space skips steps 1–2: see "Local space — one operator,
+several repositories" above.
 
 Guide the participant through these steps in order:
 
@@ -110,6 +183,9 @@ Guide the participant through these steps in order:
 ## Onboarding a new space, org, or offboarding (§9.2)
 
 ### Creating a space from zero
+
+GitHub space. A local space skips this section: see "Local space — one
+operator, several repositories" above.
 
 `a2a space init <space-id> [--dir <path>]` writes the tree — the manifest with
 `space:` and `min_binary_version` filled, the CI caller with the
@@ -166,6 +242,9 @@ six paths — `provides/ requires/ exchanges/ events/ docs/` plus a
 `consumes.yaml` that starts as `schema: consumes/v1`, `system: <name>`,
 `dependencies: []`. The template ships none of these: a space with no
 participants is deliberately valid so CI is green on the empty repo.
+
+GitHub space, from here through the auto-merge bullet. A local space skips
+them: see "Local space — one operator, several repositories" above.
 
 **Verify from a participant's checkout, not from yours**: `a2a connect <url>`
 then `a2a doctor`. A green doctor does not prove branch protection is armed —
@@ -248,6 +327,10 @@ here replaces or silently edits it) — it is a recommendation you apply.
 
 ### 2. Give the loop a clock, in your own repository
 
+GitHub space. A local space skips this step: a scheduled Actions runner cannot
+reach a space on the operator's disk, so there the session-start hook of step
+1 is the automation.
+
 A schedule on your side, never a push from the space:
 
 ```yaml
@@ -328,7 +411,8 @@ send loop in [loops.md](loops.md) §8.2:
    on a shared thread; see [reference/decompose-example.md](reference/decompose-example.md).
 2. Draft with `a2a new <type>` using the matching
    [authoring guide](reference/authoring/).
-3. `a2a validate`, then `a2a submit` — submission opens a PR; tell your human.
+3. `a2a validate`, then `a2a submit` — submission opens a PR on a GitHub
+   space and lands at once on a local space; tell your human.
 4. Track it in `a2a outbox`; verify the response against your own acceptance
    criteria (`a2a verify`).
 

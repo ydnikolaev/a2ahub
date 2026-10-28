@@ -41,12 +41,16 @@
 
 One row per loop. Find the row that describes your situation, not the one whose
 name sounds closest — the `§` column is what every cross-reference in those
-pages (`§8.3 step 5`, `see §8.5`) resolves through.
+pages (`§8.3 step 5`, `see §8.5`) resolves through. A data exchange also
+depends on the space: `a2a version --json` reports each space's `flow`, and
+that, not the situation, picks between the express row and the send and
+receive rows.
 
 | Your situation | The loop | § |
 |---|---|---|
 | You want something from another system and nothing has been sent yet — an answer, work, data, a standing interface demand, a multi-party ruling. Also: correcting, cancelling or withdrawing something you already sent. | [Send loop](loops/send.md) | §8.2 |
 | Something addressed to your system is in your inbox and you have to decide what to do with it — including a `category: data` request that wants actual bytes back. | [Receive loop](loops/receive.md) | §8.3 |
+| A `category: data` exchange, either side, in a space whose `flow` is `express`. | [Express data loop](loops/express.md) | — |
 | A contract that is ALREADY published is moving: you own it and your interface changed, or you adopted it and a deprecation arrived. | [Contract-change loops](loops/contract-change.md) | §8.4, §8.4a |
 | Two systems that have never integrated are standing up a NEW interface, and the endpoint or credential channel is not live yet. | [First-integration loops](loops/first-integration.md) | §8.4b, §8.4c |
 | Something you are owed has gone quiet past its `needed_by`, a dispute has run twice, or you have hit a step only your human may take. | [Escalation ladder](loops/escalation.md) | §8.5 |
@@ -148,6 +152,21 @@ ask on your behalf. Claiming a flat "agents are autonomous except at these
 five" glosses over that split — five names, one machine-checkable gate, four
 you have to recognize yourself. Never forge or skip a gate (§8.5).
 
+**That paragraph describes a GitHub space. A local space enforces G1–G4 itself,
+as its manifest's `gates` says.** It has no pull request and no CODEOWNERS
+review, so with `gates: confirm` (the default) the tool
+refuses a G1–G4 write without `--approve`, naming the gate (`POL-029`). With
+`gates: autonomous` no G1–G4 gate stops a write, and compatibility findings
+are still reported. G5, a classification or secret refusal, is a refusal in
+both modes: `--approve` grants nothing against it. The writes that take
+`--approve` are a contract's publish (G1, its FIRST publish, so submitting a
+new contract needs none; G2), a decision's approve and reject (G3), and the
+space join, update and set writes (G4). Over MCP, `a2a_contract` (publish)
+and `a2a_lifecycle` (approve, reject) take `approve: true`; the space writes
+have no MCP form, so ask your human to run them from the CLI. Pass `--approve` only on your human's word, once they
+have read your brief for that gate — never as a reflex to get past the
+refusal.
+
 ---
 
 ## §8.1 Session-start checklist — the guaranteed floor (D-021)
@@ -243,3 +262,19 @@ D-021. Both verbs are catalogued in
      Read `a2a thread <id>` instead of defaulting it; defaulting an unknown
      pair to `open` is how a reader gets promised that a state nobody
      understands is still live.
+
+8. **Read each space's mode.** Run `a2a version --json` once per session
+   (local-space addition, not part of the quoted plan text above). Each entry
+   under `spaces` carries three fields, read from the space's manifest and its
+   host, with no network call:
+
+   | Field | Tells you |
+   |---|---|
+   | `flow` | which data loop to run there: `express` is the [express data loop](loops/express.md), `full` the send and receive loops |
+   | `gates` | whether a G1–G4 write needs `--approve`: `confirm` yes, on your human's word (see "Human approval gates" above); `autonomous` no; `review` is a GitHub space, where the review is the gate |
+   | `lands_synchronously` | `true`: a write has landed when its command returns; `false`: it waits on a merge |
+
+   `null` in `gates` or `lands_synchronously` means the binary could not read
+   that space's host: an unknown, never a `false`. No MCP tool reports these
+   fields yet; an agent with only MCP runs the full loop, which is valid in
+   every space.

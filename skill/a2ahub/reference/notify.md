@@ -17,7 +17,9 @@
 
 `a2a notifications` (plural) is the LOCAL plane — macOS and VS Code toasts on
 your own machine. `a2a notify` (singular) is the SPACE plane — the space's own
-CI messaging a human on Telegram. This page is only the second.
+CI messaging a human on Telegram. This page is only the second. A local space
+(one bare repository on this machine) has no space plane, because delivery
+runs on GitHub Actions; the local plane works there unchanged.
 
 ## The five verbs
 

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/version"
 )
@@ -48,15 +49,25 @@ type VersionCommand struct {
 	// Now is injected (rails: no buried clock) so the "checked N ago" phrase
 	// is testable.
 	Now func() time.Time
+	// Capabilities answers what the host of one connected space declares
+	// (local-space-2026-10 spec 06 §T4.1). It feeds the per-space `gates` and
+	// `lands_synchronously` of the mode read and opens no network connection.
+	// Nil (outside a project) or an error leaves both unmeasured: null in
+	// --json and UNKNOWN in text, never a guessed false.
+	Capabilities func(ctx context.Context, spaceID string) (host.Capabilities, error)
 }
 
 // Run renders the report. Exit codes: 0 always — this is a report, not a
 // gate. `a2a doctor` is where these facts become findings that can red.
-func (c *VersionCommand) Run(_ context.Context, args []string, stdio IO) int {
+func (c *VersionCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	fs := flag.NewFlagSet("version", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
 	jsonOut := fs.Bool("json", false, "emit the report as JSON")
 	if err := fs.Parse(args); err != nil {
+		// loops.md names `a2a version --json` as the session-start mode read,
+		// so a wrong invocation points at that page (spec 06 §T4.1).
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a version [--json]")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("work-loops"))
 		return 2
 	}
 
@@ -71,7 +82,11 @@ func (c *VersionCommand) Run(_ context.Context, args []string, stdio IO) int {
 		return 0
 	}
 
-	report := c.Store.VersionReport(c.BinaryVersion, spaceWorkflowPin)
+	var capabilities func(spaceID string) (host.Capabilities, error)
+	if c.Capabilities != nil {
+		capabilities = func(spaceID string) (host.Capabilities, error) { return c.Capabilities(ctx, spaceID) }
+	}
+	report := c.Store.VersionReport(c.BinaryVersion, spaceWorkflowPin, capabilities)
 	if *jsonOut {
 		return c.emitJSON(stdio, report)
 	}
@@ -145,6 +160,7 @@ func (c *VersionCommand) render(stdio IO, report cache.VersionReport) {
 		}
 		for _, sp := range report.Spaces {
 			_, _ = fmt.Fprintf(out, "  %-*s  %s   %s   %s\n", width, sp.ID, floorPhrase(sp), templatePhrase(sp), mirrorPhrase(sp))
+			_, _ = fmt.Fprintf(out, "  %-*s  %s\n", width, "", modePhrase(sp))
 		}
 	}
 
@@ -177,6 +193,25 @@ func (c *VersionCommand) render(stdio IO, report cache.VersionReport) {
 			_, _ = fmt.Fprintf(out, "  %s\n", a)
 		}
 	}
+}
+
+// modePhrase is the mode read in words, on its own line under the space's
+// row: the gates a write meets, the loop the space declares, and whether a
+// write waits on a merge. A fact the host's capabilities could not answer
+// says UNKNOWN; it is never rendered as the GitHub default.
+func modePhrase(sp cache.SpaceVersion) string {
+	gates := "gates UNKNOWN"
+	if sp.Gates != nil {
+		gates = "gates " + string(*sp.Gates)
+	}
+	landing := "landing UNKNOWN"
+	if sp.LandsSynchronously != nil {
+		landing = "waits on a merge"
+		if *sp.LandsSynchronously {
+			landing = "lands synchronously"
+		}
+	}
+	return fmt.Sprintf("%s, flow %s, %s", gates, sp.Flow, landing)
 }
 
 // mirrorPhrase is the fourth column, and it exists because the other three are

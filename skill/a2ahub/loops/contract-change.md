@@ -37,7 +37,9 @@
      first, so an edit you make there is discarded before the next command
      reads it — silently, because the command is not doing anything wrong.
      Edit staging.
-2. Version per §5.4. A breaking change is a new major: your human passes G2, a
+2. Version per §5.4. A breaking change is a new major: your human passes G2
+   (in a `confirm` space, by you re-running the publish with `--approve` on
+   their word — see "Human approval gates" in [loops.md](../loops.md)), a
    `deprecation` announcement with `ack_requested` goes to registered
    consumers, and the old version gets a sunset.
    - **A silent breaking change is caught, and here is exactly how far that

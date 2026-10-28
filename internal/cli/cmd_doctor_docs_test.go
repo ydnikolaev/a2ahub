@@ -3,7 +3,9 @@ package cli
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -153,5 +155,55 @@ func TestTroubleshootingEnumeratesEveryDoctorCheck(t *testing.T) {
 	// file without anything noticing.
 	if !strings.Contains(doc, "All "+word+" fixed checks") {
 		t.Errorf("troubleshooting's summary sentence must read \"All %s fixed checks\" — the binary emits %d", word, len(fixedNames))
+	}
+}
+
+// TestResolutionsQuoteTheLocalHostRefusals pins the three local-space rows of
+// skill/a2ahub/resolutions.md to the strings the binary actually prints, read
+// from their exports: a rewording in host or space reds here instead of
+// leaving a row that quotes a message nobody sees.
+func TestResolutionsQuoteTheLocalHostRefusals(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile("../../skill/a2ahub/resolutions.md")
+	if err != nil {
+		t.Fatalf("read resolutions.md: %v", err)
+	}
+	doc := string(raw)
+	// The printed land failure wraps the sentinel in a *host.Error, whose
+	// Error() strips the sentinel's own "host: " prefix; the row must quote
+	// that printed form, not the sentinel text.
+	contended := (&host.Error{Op: "OpenPR", Input: "<head>", Err: host.ErrLandContended}).Error() + ":"
+	for name, want := range map[string]string{
+		"raw push refused":      fmt.Sprintf(host.PreReceiveRefusal, "refs/heads/main"),
+		"land contended":        contended,
+		"prepared target stale": space.ErrPreparedTargetStale.Error(),
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("%s: resolutions.md does not quote %q", name, want)
+		}
+	}
+}
+
+// TestOnboardingLocalSpaceNeverSendsTheAgentToGitHub holds the negative half
+// of the local-space onboarding section: it teaches a path with no pull
+// request and no gh, so a sentence instructing either is a regression.
+func TestOnboardingLocalSpaceNeverSendsTheAgentToGitHub(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile("../../skill/a2ahub/onboarding.md")
+	if err != nil {
+		t.Fatalf("read onboarding.md: %v", err)
+	}
+	const heading = "## Local space — one operator, several repositories"
+	_, rest, found := strings.Cut(string(raw), heading)
+	if !found {
+		t.Fatalf("onboarding.md has no %q section", heading)
+	}
+	section, _, _ := strings.Cut(rest, "\n## ")
+	if regexp.MustCompile(`\bgh\b`).MatchString(section) {
+		t.Errorf("local-space section names gh: %q", section)
+	}
+	prInstruction := regexp.MustCompile(`(?i)\b(open|create|merge|review|approve)\w*\s+(a\s+|the\s+|its\s+|your\s+)?(PR|pull request)`)
+	if m := prInstruction.FindString(section); m != "" {
+		t.Errorf("local-space section instructs a pull-request act: %q", m)
 	}
 }

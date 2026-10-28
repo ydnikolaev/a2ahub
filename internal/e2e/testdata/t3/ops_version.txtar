@@ -4,3 +4,25 @@
 # fallback).
 exec a2a version
 stdout 'a2a '$A2A_STAMPED_VERSION_RE' \('
+
+# local-space-2026-10 spec 06 AC5 (version-usage-names-work-loops): loops.md
+# names `a2a version --json` as the session-start mode read, so a wrong
+# invocation points at that page.
+! exec a2a version --no-such-flag
+stderr 'workflow: run `a2a docs work-loops` for the walkthrough'
+
+# AC11 (version-json-space-mode): a project connected to one local space
+# created with the defaults (gates confirm, flow express) reads that space's
+# mode from the binary, through the host's own declared capabilities. No
+# entry names the host: an agent branches on lands_synchronously.
+rm -r .a2a
+exec a2a space init acme --local --dir spaces/acme.git
+exec a2a connect spaces/acme.git
+exec a2a version --json
+stdout '"id": "acme"'
+stdout '"gates": "confirm"'
+stdout '"flow": "express"'
+stdout '"lands_synchronously": true'
+! stdout '"host"'
+exec a2a version
+stderr 'gates confirm, flow express, lands synchronously'

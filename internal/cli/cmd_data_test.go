@@ -661,3 +661,37 @@ func TestDataStepTransitionEncodesAsTheBareString(t *testing.T) {
 		t.Errorf("DataStep JSON = %s, want %s", raw, want)
 	}
 }
+
+// TestDataExpressUsageNamesTheExpressLoop is local-space-2026-10 spec 06 §8
+// row 12: loops/express.md names `a2a data request`, `a2a data deliver --for`
+// and `a2a data verify --for`, so each of the three, invoked wrongly, points
+// at that page as well as (for deliver and verify) the full loop it already
+// served.
+func TestDataExpressUsageNamesTheExpressLoop(t *testing.T) {
+	t.Parallel()
+	express := "workflow: run `a2a docs loop-express` for the walkthrough"
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"request without its required flags", []string{"request", "--producer", "beta"}},
+		{"deliver --for without --from", []string{"deliver", "--for", "XW-axon-20260804-aaaa", "--profile", "synthetic", "--format", "json"}},
+		{"verify with neither a package id nor --for", []string{"verify"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fake := &fakeExpressOperations{}
+			code, _, stderr := runDataCommand(t, cli.NewDataCommand(fake), tc.args...)
+			if code != 2 || !strings.Contains(stderr, express) {
+				t.Fatalf("args %v: code=%d stderr=%q, want exit 2 naming %q", tc.args, code, stderr, express)
+			}
+		})
+	}
+	for _, sub := range []string{"request", "deliver", "verify"} {
+		code, stdout, _ := runDataCommand(t, cli.NewDataCommand(nil), sub, "--help")
+		if code != 0 || !strings.Contains(stdout, express) {
+			t.Fatalf("data %s --help: code=%d stdout=%q, want %q", sub, code, stdout, express)
+		}
+	}
+}

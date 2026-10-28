@@ -35,3 +35,64 @@ stdout 'loops'
 stderr 'no such topic'
 stderr 'getting-started'
 stderr 'work-loops'
+
+# local-space-2026-10 spec 06 §8. Each stanza below prints a page through the
+# built binary, from this same empty directory, and asserts the local-space
+# text an agent acts on.
+
+# AC1 (getting-started-local-space): the onboarding page carries the local
+# path, in P3's grammar, with the `local:` owner form and no credential. That
+# the section instructs no `gh` and no pull request is asserted in process
+# (internal/cli/cmd_doctor_docs_test.go), where the section can be cut out.
+exec a2a docs getting-started
+stdout '## Local space — one operator, several repositories'
+stdout 'a2a space init <space-id> --local'
+stdout 'a2a connect <path>'
+stdout 'local:<system>'
+stdout 'no credential'
+
+# AC2 (loop-express-topic): the express loop is its own page, naming the three
+# composite verbs, with --record on the verify step.
+exec a2a docs loop-express
+stdout 'a2a data request'
+stdout 'a2a data deliver --for'
+stdout 'a2a data verify --for <XW-id> --record'
+
+# AC3 (work-loops-routes-express): the routing table sends an express space's
+# data exchange to that page, and names `flow` as what selects it.
+exec a2a docs work-loops
+stdout '\[Express data loop\]\(loops/express.md\)'
+stdout 'whose `flow` is `express`'
+
+# AC4 (session-start-names-mode-read): a numbered session-start step, outside
+# the quoted plan block (whose lines start with "> "), tells the agent to read
+# the mode once and names the three fields.
+stdout '^8\. \*\*Read each space''s mode\.\*\* Run `a2a version --json`'
+stdout '`flow`'
+stdout '`gates`'
+stdout '`lands_synchronously`'
+
+# AC8 (work-loops-gates-qualifier): the human-gate paragraph says a confirm
+# local space refuses a gated write without --approve, and that --approve is
+# passed only on the human's word.
+stdout 'refuses a G1–G4 write without `--approve`'
+stdout 'only on your human''s word'
+
+# AC9 (loop-send-await-local): `a2a await` has nothing to wait for on a host
+# that lands writes synchronously.
+exec a2a docs loop-send
+stdout 'nothing to wait for'
+
+# AC10 (identity-and-exchange-local-qualifiers).
+exec a2a docs actor-identity
+stdout 'owner string `local:<system>`'
+exec a2a docs data-exchange
+stdout 'the merge-before-response hazard does not arise'
+
+# AC6 (troubleshooting-local-rows): the three local-only resolution rows. The
+# "Common resolutions" table moved to its own page before this phase (spec 06
+# §11, from the wave-4 lane), so the topic is `resolutions`.
+exec a2a docs resolutions
+stdout 'refusing refs/heads/main: this local space lands writes only through a2a'
+stdout 'land contended'
+stdout 'space: prepared-target-stale'
