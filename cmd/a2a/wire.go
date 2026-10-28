@@ -95,6 +95,26 @@ func cacheDirOf(p paths) string {
 	return filepath.Join(p.projectRoot, ".a2a", "cache")
 }
 
+// a2aDataRootIn is the machine data root under home: where this machine keeps
+// what belongs to no project (notification components, local spaces). It is
+// spelled here and nowhere else; every consumer takes it from a2aDataRoot (or
+// from this, when it already holds the home directory it was handed).
+func a2aDataRootIn(home string) string {
+	return filepath.Join(home, ".local", "share", "a2a")
+}
+
+// a2aDataRoot is the machine data root, `$HOME/.local/share/a2a`. It is the
+// ONE definition: `a2a space init --local` injects it into the space command
+// (internal/cli never reads the home directory itself), and
+// notificationComponentRoot builds on the same value.
+func a2aDataRoot() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return a2aDataRootIn(home), nil
+}
+
 // stdio builds the injected stream set from the dispatch writers.
 func stdio(stdout, stderr io.Writer) cli.IO {
 	return cli.IO{Stdin: os.Stdin, Stdout: stdout, Stderr: stderr}
@@ -146,6 +166,9 @@ func buildCommands() map[string]command {
 		cmd.SkillTarget = filepath.Join(p.projectRoot, ".a2ahub", "skill")
 		cmd.ProjectRoot = p.projectRoot
 		cmd.Version = version
+		// A space whose host needs no credential (a space on this machine)
+		// gets no credential reference in the machine-config skeleton.
+		cmd.Open = newHostOpener()
 		return cmd.Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["template"] = func(args []string, stdout, stderr io.Writer) int {
@@ -163,9 +186,27 @@ func buildCommands() map[string]command {
 		// so it needs the same resolution submit does — done only for that
 		// sub-verb, and reporting the real error rather than degrading to
 		// the command's own "not wired" message.
-		if len(args) > 0 && args[0] == "update" {
-			if err := wireSpaceUpdate(context.Background(), cmd, args[1:]); err != nil {
-				return fail(stderr, err)
+		if len(args) > 0 {
+			switch args[0] {
+			case "init":
+				// `--local` creates a space on this machine: it validates the
+				// seeded manifest with the product's engine, looks up whether
+				// an existing repository is already marked through the same
+				// opener doctor uses (no system needed to read a marker), and
+				// takes its default location from the machine data root.
+				engine, err := newEngine()
+				if err != nil {
+					return fail(stderr, err)
+				}
+				cmd.Engine = engine
+				cmd.Open = newHostOpener()
+				if root, err := a2aDataRoot(); err == nil {
+					cmd.DataRoot = root
+				}
+			case "update", "join":
+				if err := wireSpaceWrite(context.Background(), cmd, args[0], args[1:]); err != nil {
+					return fail(stderr, err)
+				}
 			}
 		}
 		return cmd.Run(context.Background(), args, stdio(stdout, stderr))
@@ -212,7 +253,12 @@ func buildCommands() map[string]command {
 		if err != nil {
 			return fail(stderr, err)
 		}
-		return cli.NewConnectCommand(p.projectConfig, p.machineConfig, p.projectRoot).Run(context.Background(), args, stdio(stdout, stderr))
+		cmd := cli.NewConnectCommand(p.projectConfig, p.machineConfig, p.projectRoot)
+		// The opened host decides whether connect seeds a credential and
+		// whether it points the caller at `a2a space join`; the project's own
+		// system is only read by the join hint, so the opener needs none.
+		cmd.Open = newHostOpener()
+		return cmd.Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["disconnect"] = func(args []string, stdout, stderr io.Writer) int {
 		p, err := resolvePaths()
@@ -1098,11 +1144,13 @@ func awaitResolver(p paths) cli.AwaitResolver {
 			return cli.AwaitTarget{}, fmt.Errorf("pending write for %s is ambiguous across %d spaces", artifactID, len(matches))
 		}
 		selected := matches[0]
-		cred, err := resolveCredential(ctx, selected.ref.ID, machine)
+		// The host is opened BEFORE the credential is resolved: whether a
+		// credential is needed at all is a capability the opened host declares.
+		h, repo, err := newHostOpenerFor(cfg.System)(selected.ref.RepoURL)
 		if err != nil {
 			return cli.AwaitTarget{}, err
 		}
-		h, repo, err := newHostOpenerFor(cfg.System)(selected.ref.RepoURL)
+		cred, err := resolveWriteCredential(ctx, h, true, selected.ref.ID, machine)
 		if err != nil {
 			return cli.AwaitTarget{}, err
 		}
@@ -1238,14 +1286,13 @@ func resolveLifecycleDepsWithPolicy(ctx context.Context, p paths, args []string,
 	if err != nil {
 		return lifecycleDeps{}, fail(stderr, err)
 	}
-	var cred host.Credential
-	if needsCredential {
-		cred, err = resolveCredential(ctx, ref.ID, machine)
-		if err != nil {
-			return lifecycleDeps{}, failf(stderr, "a2a: %v", err)
-		}
-	}
 	h, repo, err := newHostOpenerFor(cfg.System)(ref.RepoURL)
+	if err != nil {
+		return lifecycleDeps{}, failf(stderr, "a2a: %v", err)
+	}
+	// Opened first, so the verb's own policy (needsCredential) and the host's
+	// declared NeedsCredential are decided together, in one place.
+	cred, err := resolveWriteCredential(ctx, h, needsCredential, ref.ID, machine)
 	if err != nil {
 		return lifecycleDeps{}, failf(stderr, "a2a: %v", err)
 	}
@@ -1447,11 +1494,11 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	cred, err := resolveCredential(ctx, ref.ID, machine)
+	h, repo, err := newHostOpenerFor(cfg.System)(ref.RepoURL)
 	if err != nil {
 		return failf(stderr, "a2a submit: %v", err)
 	}
-	h, repo, err := newHostOpenerFor(cfg.System)(ref.RepoURL)
+	cred, err := resolveWriteCredential(ctx, h, true, ref.ID, machine)
 	if err != nil {
 		return failf(stderr, "a2a submit: %v", err)
 	}
@@ -1666,21 +1713,23 @@ func readEnvelopeFacts(path string) (envelopeFacts, error) {
 	return envelopeFacts{from: from, space: sp}, nil
 }
 
-// wireSpaceUpdate resolves the connected space `a2a space update` acts on and
-// fills the command's update-only DI (spec 35). It mirrors runSubmit's own
+// wireSpaceWrite resolves the connected space `a2a space update` or `a2a space
+// join` acts on (verb names which, for the error text) and fills the command's
+// connected-space DI (spec 35; join is local-space-2026-10 spec 03). It mirrors runSubmit's own
 // resolution — project config, machine config, mirror clone, credential, repo
 // — minus everything artifact-shaped: this write carries no envelope, so
 // there is no staging dir, no legality adapter and no V2 artifact validator
 // (see cli.SpaceInfraNoValidation for why the funnel gets a no-op validator
 // here, and what bounds the write instead).
-func wireSpaceUpdate(ctx context.Context, cmd *cli.SpaceCommand, args []string) error {
+func wireSpaceWrite(ctx context.Context, cmd *cli.SpaceCommand, verb string, args []string) error {
+	prefix := "a2a space " + verb
 	p, err := resolvePaths()
 	if err != nil {
 		return err
 	}
 	cfg, err := space.LoadProjectConfig(p.projectConfig)
 	if err != nil {
-		return fmt.Errorf("a2a space update: no project config (run `a2a init` first): %w", err)
+		return fmt.Errorf(prefix+": no project config (run `a2a init` first): %w", err)
 	}
 
 	// The space is picked here, not in internal/cli — that package never
@@ -1693,38 +1742,38 @@ func wireSpaceUpdate(ctx context.Context, cmd *cli.SpaceCommand, args []string) 
 	case wanted != "":
 		found, ok := findSpace(cfg, wanted)
 		if !ok {
-			return fmt.Errorf("a2a space update: %q is not a connected space (run `a2a connect`)", wanted)
+			return fmt.Errorf("%s: %q is not a connected space (run `a2a connect`)", prefix, wanted)
 		}
 		ref = found
 	case len(cfg.Spaces) == 1:
 		ref = cfg.Spaces[0]
 	case len(cfg.Spaces) == 0:
-		return fmt.Errorf("a2a space update: no connected space (run `a2a connect` first)")
+		return fmt.Errorf("%s: no connected space (run `a2a connect` first)", prefix)
 	default:
-		return fmt.Errorf("a2a space update: %d connected spaces — name one with --space <id>", len(cfg.Spaces))
+		return fmt.Errorf("%s: %d connected spaces — name one with --space <id>", prefix, len(cfg.Spaces))
 	}
 
 	machine, err := loadMachineConfigForWrite(p.machineConfig)
 	if err != nil {
-		return fmt.Errorf("a2a space update: unreadable machine config (%s): %w", p.machineConfig, err)
+		return fmt.Errorf("%s: unreadable machine config (%s): %w", prefix, p.machineConfig, err)
 	}
 	mirrorDir := space.ResolveMirrorLocation(p.projectRoot, ref, machine)
 	if err := space.CloneOrFetch(ctx, mirrorDir, ref.RepoURL, readCredential(ctx, ref.ID, machine)); err != nil {
-		return fmt.Errorf("a2a space update: mirror sync failed: %w", err)
+		return fmt.Errorf("%s: mirror sync failed: %w", prefix, err)
 	}
 	// Derived from the mirror's own refs/remotes/origin/HEAD, just fetched
 	// above (no-silent-yes-2026-08 P2b) — never a hardcoded "main".
 	baseBranch, err := space.ResolveBaseBranch(ctx, mirrorDir)
 	if err != nil {
-		return fmt.Errorf("a2a space update: space %q: %w", ref.ID, err)
-	}
-	cred, err := resolveCredential(ctx, ref.ID, machine)
-	if err != nil {
-		return fmt.Errorf("a2a space update: %w", err)
+		return fmt.Errorf("%s: space %q: %w", prefix, ref.ID, err)
 	}
 	h, repo, err := newHostOpenerFor(cfg.System)(ref.RepoURL)
 	if err != nil {
-		return fmt.Errorf("a2a space update: %w", err)
+		return fmt.Errorf("%s: %w", prefix, err)
+	}
+	cred, err := resolveWriteCredential(ctx, h, true, ref.ID, machine)
+	if err != nil {
+		return fmt.Errorf("%s: %w", prefix, err)
 	}
 
 	cmd.Funnel = space.NewWriteFunnel(h, cli.SpaceInfraNoValidation{}, funnelBinaryVersion())
@@ -1733,6 +1782,10 @@ func wireSpaceUpdate(ctx context.Context, cmd *cli.SpaceCommand, args []string) 
 	// `workflow` scope — checked BEFORE the plan is printed, not after the
 	// push is rejected.
 	cmd.Scopes = h
+	// The capabilities the command branches on (join needs
+	// OwnerIdentitySelfAsserted; update plans the local subset for a host on
+	// this machine) are the OPENED host's declared ones.
+	cmd.Caps = h.Capabilities()
 	cmd.MirrorDir = mirrorDir
 	cmd.SpaceID = ref.ID
 	cmd.OwnSystem = cfg.System
@@ -1832,6 +1885,21 @@ func resolveCredential(ctx context.Context, spaceID string, machine space.Machin
 	return space.ResolveWriteCredential(ctx, space.CredentialEnvVar(spaceID), ref)
 }
 
+// resolveWriteCredential is the ONE place a write site decides whether it needs
+// a credential, and it decides from the OPENED host: a host whose declared
+// Capabilities().NeedsCredential is false (a space on this machine) gets the
+// empty credential with no error, and neither resolveCredential nor its
+// `gh auth token` probe runs. wanted is the verb's own policy (a read-shaped
+// sub-verb passes false); a site with no such policy passes true. Every eager
+// write site calls this after opening its host and never calls
+// resolveCredential directly.
+func resolveWriteCredential(ctx context.Context, h host.Host, wanted bool, spaceID string, machine space.MachineConfig) (host.Credential, error) {
+	if !wanted || !h.Capabilities().NeedsCredential {
+		return host.Credential{}, nil
+	}
+	return resolveCredential(ctx, spaceID, machine)
+}
+
 // readCredential is resolveCredential for a MIRROR REFRESH: same precedence,
 // but an unresolvable credential yields the empty one instead of an error.
 //
@@ -1841,8 +1909,8 @@ func resolveCredential(ctx context.Context, spaceID string, machine space.Machin
 // a PRIVATE space readable; where it is absent, git says so in the remote's
 // own words and `a2a doctor` translates that into the actionable sentence.
 //
-// Every write path keeps calling resolveCredential and keeps failing loudly —
-// a write with no credential cannot succeed, and pretending otherwise would
+// Every write path keeps going through resolveWriteCredential and keeps failing
+// loudly where its host needs a credential — a write with no credential cannot succeed, and pretending otherwise would
 // only move the error somewhere less informative.
 func readCredential(ctx context.Context, spaceID string, machine space.MachineConfig) host.Credential {
 	credential, err := resolveCredential(ctx, spaceID, machine)

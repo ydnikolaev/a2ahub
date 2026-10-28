@@ -1009,3 +1009,59 @@ func TestResolveProjectRootHonoursTheOverride(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildWriteDepsForSpaceSkipsTheCredentialForAHostThatNeedsNone is the
+// no-credential write path's MCP half: a space whose opened host declares
+// NeedsCredential false builds its write deps with no token anywhere, while
+// the same machine against a host that does need one still refuses with the
+// resolver's own error. The host is opened before the credential is looked up,
+// which is what lets the host's declaration decide.
+//
+// reason: mutates process env (PATH, HOME, the token variables) so no ambient
+// credential can resolve.
+func TestBuildWriteDepsForSpaceSkipsTheCredentialForAHostThatNeedsNone(t *testing.T) {
+	// reason: t.Setenv below forbids t.Parallel() (AGENTS.md testing rails).
+	t.Setenv("A2A_TOKEN_SPACE_ONE", "")
+	origin := mcpWireOriginOnBranch(t, "main")
+	// PATH holds git alone: the mirror clone needs it, and no `gh` on PATH
+	// means no ambient token can resolve.
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	if err := os.Symlink(gitPath, filepath.Join(bin, "git")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+
+	build := func(t *testing.T, caps host.Capabilities) (WriteDeps, error) {
+		t.Helper()
+		cfg := space.ProjectConfig{System: "beta", Spaces: []space.Ref{{ID: "space-one", RepoURL: origin}}}
+		projectRoot := t.TempDir()
+		p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
+		open := host.FixedOpener(&host.FakeHost{Caps: &caps})
+		write, _, _, buildErr := buildWriteDeps(context.Background(), cfg, space.MachineConfig{}, p, "0.0.1-test", open)
+		return write, buildErr
+	}
+
+	t.Run("no credential needed", func(t *testing.T) {
+		caps := host.Capabilities{NeedsCredential: false}
+		write, err := build(t, caps)
+		if err != nil {
+			t.Fatalf("buildWriteDepsForSpace on a host needing no credential = %v, want success", err)
+		}
+		if write.HostCfg.Credential != (host.Credential{}) {
+			t.Fatalf("credential = %+v, want the empty credential", write.HostCfg.Credential)
+		}
+	})
+	t.Run("credential needed", func(t *testing.T) {
+		caps := host.Capabilities{NeedsCredential: true}
+		if _, err := build(t, caps); err == nil {
+			t.Fatal("buildWriteDepsForSpace on a host that needs a credential, with none resolvable = nil error, want the resolver's refusal")
+		}
+	})
+}

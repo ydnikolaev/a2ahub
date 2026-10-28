@@ -3,6 +3,7 @@ package cli_test
 import (
 	"bytes"
 	"context"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
@@ -1019,5 +1021,288 @@ func TestSpaceSchemaPatternRejectsInvalidShapes(t *testing.T) {
 		if v := spaceManifestInstanceViolations(t, id); len(v) == 0 {
 			t.Errorf("id %q: expected the schema to REJECT it, got no violations", id)
 		}
+	}
+}
+
+// makeLocalSpace creates a marked local space through the real command and
+// returns its canonical directory.
+func makeLocalSpace(t *testing.T, root, id string) string {
+	t.Helper()
+	target := filepath.Join(root, id+".git")
+	cmd := newLocalSpaceCommand(t, filepath.Join(root, "data"))
+	io, out, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"init", id, "--local", "--dir", target}, io); code != 0 {
+		t.Fatalf("space init --local: code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	return target
+}
+
+// writeProjectConfig seeds a project's .a2a/config.yaml with just a system id.
+func writeProjectConfig(t *testing.T, path, system string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("system: "+system+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// connectLocal connects project (a fresh temp project) to locator through a
+// ConnectCommand wired with the production-shaped opener, and returns the repo
+// URL it persisted plus what it printed.
+func connectLocal(t *testing.T, locator, system string) (repoURL, stdout string, cfgPath string) {
+	t.Helper()
+	project := t.TempDir()
+	cfgPath = filepath.Join(project, ".a2a", "config.yaml")
+	machinePath := filepath.Join(project, "machine.yaml")
+	writeProjectConfig(t, cfgPath, system)
+	cmd := cli.NewConnectCommand(cfgPath, machinePath, project)
+	cmd.Open = localSpaceOpener()
+	cmd.SetDefaultCredentialRefForTest(func(context.Context, string) string {
+		t.Error("the credential probe ran for a local space")
+		return ""
+	})
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{locator}, io); code != 0 {
+		t.Fatalf("connect %s: code = %d; stdout=%s stderr=%s", locator, code, out.String(), errOut.String())
+	}
+	cfg, err := space.LoadProjectConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadProjectConfig: %v", err)
+	}
+	if len(cfg.Spaces) != 1 {
+		t.Fatalf("Spaces = %+v, want one connected space", cfg.Spaces)
+	}
+	return cfg.Spaces[0].RepoURL, out.String(), cfgPath
+}
+
+// TestConnectPersistsOneCanonicalLocatorForALocalSpace is AC5 in-process: a
+// symlinked path, a path with a trailing slash and a relative path to the same
+// local space all persist the one canonical string.
+//
+// reason: the relative-path case changes the working directory.
+func TestConnectPersistsOneCanonicalLocatorForALocalSpace(t *testing.T) {
+	root := canonicalTempDir(t)
+	target := makeLocalSpace(t, root, "acme")
+	link := filepath.Join(root, "link.git")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, locator := range map[string]string{
+		"canonical":      target,
+		"symlink":        link,
+		"trailing slash": target + "/",
+	} {
+		if got, _, _ := connectLocal(t, locator, "billing"); got != target {
+			t.Errorf("%s: persisted %q, want the canonical %q", name, got, target)
+		}
+	}
+
+	t.Chdir(root)
+	if got, _, _ := connectLocal(t, "./acme.git", "billing"); got != target {
+		t.Errorf("relative: persisted %q, want the canonical %q", got, target)
+	}
+}
+
+// TestConnectLeavesAnUnmarkedPathSpelledAsGiven is the other half of the
+// canonicalization rule: only a space on this machine is rewritten. A bare path
+// nobody marked stays GitHub-kind (P1), and a spelling an earlier version
+// wrote must keep matching.
+func TestConnectLeavesAnUnmarkedPathSpelledAsGiven(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "axon")
+	root := t.TempDir()
+	link := filepath.Join(root, "link.git")
+	if err := os.Symlink(fx.RemoteURL(), link); err != nil {
+		t.Fatal(err)
+	}
+	project := t.TempDir()
+	cfgPath := filepath.Join(project, ".a2a", "config.yaml")
+	cmd := cli.NewConnectCommand(cfgPath, filepath.Join(project, "machine.yaml"), project)
+	cmd.Open = localSpaceOpener()
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{link}, io); code != 0 {
+		t.Fatalf("connect: code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	cfg, err := space.LoadProjectConfig(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Spaces) != 1 || cfg.Spaces[0].RepoURL != link {
+		t.Fatalf("Spaces = %+v, want the given spelling %q kept", cfg.Spaces, link)
+	}
+}
+
+// TestConnectToALocalSpaceSeedsNoCredentialAndWritesNothingIntoTheRepo is AC6
+// (connect half) plus the connect-writes-nothing rule: with a machine config
+// that has no entry for the space, the credential probe never runs and no entry
+// appears, and the bare repository is byte-identical afterwards.
+func TestConnectToALocalSpaceSeedsNoCredentialAndWritesNothingIntoTheRepo(t *testing.T) {
+	t.Parallel()
+	root := canonicalTempDir(t)
+	target := makeLocalSpace(t, root, "acme")
+	before := snapshotTree(t, target)
+
+	project := t.TempDir()
+	cfgPath := filepath.Join(project, ".a2a", "config.yaml")
+	machinePath := filepath.Join(project, "machine.yaml")
+	machineBefore := "# machine\nmirror_root: " + filepath.Join(project, "mirrors") + "\n"
+	if err := os.WriteFile(machinePath, []byte(machineBefore), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := cli.NewConnectCommand(cfgPath, machinePath, project)
+	cmd.Open = localSpaceOpener()
+	cmd.SetDefaultCredentialRefForTest(func(context.Context, string) string {
+		t.Error("DefaultCredentialReference probe ran for a local space")
+		return "cmd:gh auth token"
+	})
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{target}, io); code != 0 {
+		t.Fatalf("connect: code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	machineAfter, err := os.ReadFile(machinePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(machineAfter) != machineBefore {
+		t.Errorf("machine config changed:\n%s", machineAfter)
+	}
+	if strings.Contains(out.String(), "credential") {
+		t.Errorf("stdout = %q, want no credential line for a local space", out.String())
+	}
+	if after := snapshotTree(t, target); after != before {
+		t.Errorf("connect changed the bare repository:\n--- before ---\n%s\n--- after ---\n%s", before, after)
+	}
+}
+
+// snapshotTree is every file under dir with its mode and content, in path
+// order: two equal snapshots mean nothing was written, created, removed or
+// re-permissioned.
+func snapshotTree(t *testing.T, dir string) string {
+	t.Helper()
+	var b strings.Builder
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(dir, p)
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		b.WriteString(rel + " " + info.Mode().String())
+		if !d.IsDir() {
+			raw, readErr := os.ReadFile(p)
+			if readErr != nil {
+				return readErr
+			}
+			b.WriteString(" " + string(raw))
+		}
+		b.WriteString("\n")
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
+}
+
+// TestConnectPointsAtJoinOnlyUntilTheSystemIsAnActiveParticipant is the hint
+// rule: a host with a self-asserted owner identity gets
+// `connect: next: a2a space join` while this system is not an active
+// participant, and a GitHub-kind space never gets it.
+func TestConnectPointsAtJoinOnlyUntilTheSystemIsAnActiveParticipant(t *testing.T) {
+	t.Parallel()
+	root := canonicalTempDir(t)
+	target := makeLocalSpace(t, root, "acme")
+
+	if _, out, _ := connectLocal(t, target, "billing"); !strings.Contains(out, "connect: next: a2a space join\n") {
+		t.Errorf("stdout = %q, want the join hint for a system that is not a participant", out)
+	}
+
+	// A space whose manifest already lists billing as active: no hint.
+	member := filepath.Join(root, "member.git")
+	manifest := joinTemplateManifest(t, "member")
+	manifest = strings.Replace(manifest, "participants: []",
+		"participants:\n  - {system: billing, org: local, section: billing, owners: [\"local:billing\"], status: active, joined: \"2026-10-28\"}", 1)
+	if !strings.Contains(manifest, "system: billing") {
+		t.Fatalf("template manifest has no `participants: []` to replace:\n%s", manifest)
+	}
+	if _, err := space.InitLocalSpaceRepo(context.Background(), member, []space.FileWrite{{Path: "space.yaml", Content: []byte(manifest)}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := host.PrepareLocalSpace(context.Background(), member, space.LocalSpaceBaseBranch); err != nil {
+		t.Fatal(err)
+	}
+	if _, out, _ := connectLocal(t, member, "billing"); strings.Contains(out, "space join") {
+		t.Errorf("stdout = %q, want no join hint for an active participant", out)
+	}
+
+	// A GitHub-kind space (an unmarked bare repository) never gets the hint.
+	fx := spacefixture.New(t, "axon")
+	project := t.TempDir()
+	cfgPath := filepath.Join(project, ".a2a", "config.yaml")
+	writeProjectConfig(t, cfgPath, "billing")
+	cmd := cli.NewConnectCommand(cfgPath, filepath.Join(project, "machine.yaml"), project)
+	cmd.Open = localSpaceOpener()
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{fx.RemoteURL()}, io); code != 0 {
+		t.Fatalf("connect: code = %d; stderr=%s", code, errOut.String())
+	}
+	if strings.Contains(out.String(), "space join") {
+		t.Errorf("stdout = %q, want no join hint for a GitHub-kind space", out.String())
+	}
+}
+
+// TestInitSeedsNoCredentialForALocalSpace is AC6 (init half): `init --space
+// <local path>` persists the canonical locator and seeds no credential entry,
+// the probe is never called for it, and a GitHub URL beside it is still seeded.
+func TestInitSeedsNoCredentialForALocalSpace(t *testing.T) {
+	t.Parallel()
+	root := canonicalTempDir(t)
+	target := makeLocalSpace(t, root, "acme")
+	link := filepath.Join(root, "link.git")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	project := t.TempDir()
+	cfgPath := filepath.Join(project, ".a2a", "config.yaml")
+	machinePath := filepath.Join(project, "machine", "config.yaml")
+	cmd := cli.NewInitCommand(cfgPath)
+	cmd.MachineConfigPath = machinePath
+	cmd.Open = localSpaceOpener()
+	var probed []string
+	cmd.SetDefaultCredentialRefForTest(func(_ context.Context, id string) string {
+		probed = append(probed, id)
+		return "env:A2A_TOKEN_" + strings.ToUpper(id)
+	})
+	io, out, errOut := newIO()
+	args := []string{"--system", "billing", "--space", link, "--space", "https://example.invalid/org/getvisa.git", "--no-skill", "--no-skill-link", "--no-agents-pointer"}
+	if code := cmd.Run(context.Background(), args, io); code != 0 {
+		t.Fatalf("init: code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+
+	cfg, err := space.LoadProjectConfig(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Spaces) != 2 || cfg.Spaces[0].RepoURL != target || cfg.Spaces[1].RepoURL != "https://example.invalid/org/getvisa.git" {
+		t.Fatalf("Spaces = %+v, want the canonical local path then the URL as given", cfg.Spaces)
+	}
+	machine, err := space.LoadMachineConfig(machinePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, seeded := machine.Credentials["acme"]; seeded {
+		t.Errorf("Credentials = %v, want no entry for the local space", machine.Credentials)
+	}
+	if machine.Credentials["getvisa"] != "env:A2A_TOKEN_GETVISA" {
+		t.Errorf("Credentials = %v, want the GitHub space still seeded", machine.Credentials)
+	}
+	if len(probed) != 1 || probed[0] != "getvisa" {
+		t.Errorf("credential probe ran for %v, want only [getvisa]", probed)
 	}
 }

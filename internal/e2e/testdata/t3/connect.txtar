@@ -10,3 +10,24 @@ exists .a2a/cache/mirrors/origin/space.yaml
 
 exec a2a connect $ORIGIN
 stdout 'already connected'
+
+# local-space-2026-10 P3 AC5 (local-path-canonical): the same local space,
+# spelled as a relative path and through a symlink, persists ONE identical
+# canonical repo_url. Two spellings of one directory used to register as two
+# spaces (and mint two machine-config credential entries).
+exec a2a space init canon --local --dir spaces/canon.git
+symlink via-link.git -> spaces/canon.git
+rm -r .a2a
+exec a2a connect spaces/canon.git
+stdout 'registered space "canon"'
+cp .a2a/config.yaml first-config.yaml
+rm -r .a2a
+exec a2a connect via-link.git
+stdout 'registered space "canon"'
+cmp .a2a/config.yaml first-config.yaml
+grep 'repo_url: /.*canon\.git' .a2a/config.yaml
+! grep 'via-link' .a2a/config.yaml
+
+# AC6 through the binary: no credential entry is written for a local space.
+! grep 'canon' home/.config/a2a/config.yaml
+

@@ -206,6 +206,11 @@ var mutationGuardExemptFuncs = map[string]string{
 	// mutateTree IS the guard; its "subcommand" mentions are in its own
 	// doc-adjacent error text, not a git call.
 	"mutateTree": "the guard itself",
+	// InitLocalSpaceRepo writes into a bare repository it has just created,
+	// which is no mirror and holds no lock. Its one ref write is a
+	// compare-and-swap against the all-zero OID, so a concurrent init of the
+	// same directory loses cleanly instead of overwriting.
+	"InitLocalSpaceRepo": "creates a new bare repository, not a mirror; its ref write is a CAS against the zero OID",
 }
 
 func TestNoUnguardedMutationSite(t *testing.T) {

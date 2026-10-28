@@ -71,7 +71,7 @@ func buildWorkCore(p paths, cfg space.ProjectConfig, machine space.MachineConfig
 		projectID, ref.ID, cfg.System, mirrorDir, ref.RepoURL,
 		repo,
 		func(callCtx context.Context) (host.Credential, error) {
-			return resolveCredential(callCtx, ref.ID, machine)
+			return resolveWriteCredential(callCtx, h, true, ref.ID, machine)
 		},
 		workManifestEngine{engine: engine},
 	)

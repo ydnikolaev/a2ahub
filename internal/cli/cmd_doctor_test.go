@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -2534,4 +2535,719 @@ func TestDoctorDoesNotClaimUnmeasuredWhenAcheckExists(t *testing.T) {
 	if strings.Contains(stdout.String(), "no release check has ever run") {
 		t.Fatalf("a machine WITH a check must not be told nobody looked; stdout=%q", stdout.String())
 	}
+}
+
+// --- local-space rows (local-space-2026-10 spec 03, AC11-AC15) ------------
+
+// doctorLocalCaps is what a local space's host declares: no credential, no
+// review, self-asserted owners, an immediate land, on this disk.
+func doctorLocalCaps() *host.Capabilities {
+	return &host.Capabilities{
+		NeedsCredential:           false,
+		ReviewsWrites:             false,
+		OwnerIdentitySelfAsserted: true,
+		LandsSynchronously:        true,
+		OnThisMachine:             true,
+	}
+}
+
+// doctorLocalFake is a fake host declaring the local column of the capability
+// table; it has no optional reader, as the real local host has no GitHub one.
+func doctorLocalFake() *host.FakeHost {
+	fh := host.NewFakeHost()
+	fh.Caps = doctorLocalCaps()
+	return fh
+}
+
+// doctorOpenByURL opens each connected space's own host by its repo_url.
+func doctorOpenByURL(byURL map[string]host.Host) host.Opener {
+	return func(raw string) (host.Host, host.Repo, error) {
+		return host.FixedOpener(byURL[raw])(raw)
+	}
+}
+
+// TestDoctorLocalOnlyProjectPrintsNoFailAndEachNotApplicableReason is AC11 at
+// the unit tier: on a project connected only to a local space, every row the
+// GitHub machinery owns passes and says why it does not apply. The credential
+// resolver, the avatar probe and the secret lister all fail the test if asked,
+// so a row that merely happens to pass because it was lenient does not count.
+func TestDoctorLocalOnlyProjectPrintsNoFailAndEachNotApplicableReason(t *testing.T) {
+	t.Parallel()
+	const url = "/home/me/.local/share/a2a/spaces/acme.git"
+	cfg := space.ProjectConfig{System: "axon", Spaces: []space.Ref{{ID: "acme", RepoURL: url}}}
+
+	newCmd := func() *DoctorCommand {
+		cmd := newTestDoctorCommand()
+		cmd.open = doctorOpenByURL(map[string]host.Host{url: doctorLocalFake()})
+		cmd.resolveCredential = func(context.Context, string, space.CredentialReference) (host.Credential, error) {
+			t.Error("a local space must never have a credential resolved")
+			return host.Credential{}, errors.New("credential resolved for a local space")
+		}
+		cmd.ParticipantAvatarStatus = func(string) (bool, bool) {
+			t.Error("a local space must never be asked for an avatar")
+			return false, false
+		}
+		cmd.ghSecretList = func(context.Context, string) ([]string, error) {
+			t.Error("a local space must never have its Actions secrets listed")
+			return nil, errors.New("secret listed for a local space")
+		}
+		return cmd
+	}
+
+	rows := []struct {
+		name string
+		run  func(*DoctorCommand) (bool, string)
+		want string
+	}{
+		{"credentials", func(c *DoctorCommand) (bool, string) {
+			return c.doctorCheckCredentials(context.Background(), cfg, space.MachineConfig{})
+		}, "acme: local space, no credential needed"},
+		{"CI presence", func(c *DoctorCommand) (bool, string) {
+			return c.doctorCheckCIPresence(cfg, space.MachineConfig{})
+		}, "acme: validated at land, no CI workflow"},
+		{"auto-merge", func(c *DoctorCommand) (bool, string) {
+			return c.doctorCheckAutoMerge(context.Background(), cfg, space.MachineConfig{})
+		}, "acme: lands synchronously"},
+		{"stuck green", func(c *DoctorCommand) (bool, string) {
+			return c.doctorCheckStuckGreenPRs(context.Background(), cfg, space.MachineConfig{})
+		}, "acme: no pull requests"},
+		{"default branch", func(c *DoctorCommand) (bool, string) {
+			return c.doctorCheckDefaultBranchHealthy(context.Background(), cfg, space.MachineConfig{})
+		}, "moves only by a validated land"},
+		{"codeowners", func(c *DoctorCommand) (bool, string) {
+			return c.doctorCheckCodeownersResolvable(context.Background(), cfg, space.MachineConfig{})
+		}, "acme: owners are local:axon, no CODEOWNERS"},
+		{"avatars", func(c *DoctorCommand) (bool, string) {
+			return c.doctorCheckParticipantAvatars(cfg, space.MachineConfig{})
+		}, "acme: local owners render as initials"},
+		{"notify secret", func(c *DoctorCommand) (bool, string) {
+			return c.doctorCheckNotifySecret(context.Background(), cfg, space.MachineConfig{})
+		}, "acme: no notification delivery on a local space"},
+		{"notify delivery", func(c *DoctorCommand) (bool, string) {
+			return c.doctorCheckNotifyDelivery(context.Background(), cfg, space.MachineConfig{})
+		}, "acme: no notification delivery on a local space"},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			ok, detail := row.run(newCmd())
+			if !ok {
+				t.Fatalf("a local-only project must not FAIL this row: %s", detail)
+			}
+			if !strings.Contains(detail, row.want) {
+				t.Errorf("detail %q does not name the n/a reason %q", detail, row.want)
+			}
+			// The global "no reader / probe not wired" advisories describe a
+			// GitHub space this build cannot read; a local space is not one.
+			for _, advisory := range []string{"unverified", "not wired", "wires no"} {
+				if strings.Contains(detail, advisory) {
+					t.Errorf("detail %q carries the advisory %q although every space is not applicable", detail, advisory)
+				}
+			}
+		})
+	}
+}
+
+// TestDoctorMixedGitHubAndLocalProjectReportsPerSpace is AC12: one row names
+// the GitHub space's own answer and the local space's n/a together, and a
+// local space is never counted as a space whose host lacks the reader.
+func TestDoctorMixedGitHubAndLocalProjectReportsPerSpace(t *testing.T) {
+	t.Parallel()
+	const (
+		ghURL    = "https://github.com/acme/hub"
+		localURL = "/home/me/.local/share/a2a/spaces/loc.git"
+	)
+	cfg := space.ProjectConfig{System: "axon", Spaces: []space.Ref{
+		{ID: "hub", RepoURL: ghURL},
+		{ID: "loc", RepoURL: localURL},
+	}}
+	newCmd := func(gh host.Host) *DoctorCommand {
+		cmd := newTestDoctorCommand()
+		cmd.open = doctorOpenByURL(map[string]host.Host{ghURL: gh, localURL: doctorLocalFake()})
+		cmd.resolveCredential = func(_ context.Context, envVar string, _ space.CredentialReference) (host.Credential, error) {
+			if strings.Contains(envVar, "LOC") {
+				t.Errorf("the local space had a credential resolved (%s)", envVar)
+			}
+			return host.Credential{Token: "t"}, nil
+		}
+		return cmd
+	}
+
+	t.Run("healthy GitHub space and n/a local space share the row", func(t *testing.T) {
+		t.Parallel()
+		cmd := newCmd(fullCapHost{Host: host.NewFakeHost()})
+		ok, detail := cmd.doctorCheckAutoMerge(context.Background(), cfg, space.MachineConfig{})
+		if !ok {
+			t.Fatalf("unexpected FAIL: %s", detail)
+		}
+		if !strings.Contains(detail, "loc: lands synchronously") {
+			t.Errorf("detail %q lacks the local space's n/a", detail)
+		}
+		if strings.Contains(detail, "hub: lands synchronously") || strings.Contains(detail, "unverified") {
+			t.Errorf("detail %q misreports the GitHub space, which has its reader and is checkable", detail)
+		}
+	})
+
+	t.Run("a broken GitHub space fails the row and the local space does not", func(t *testing.T) {
+		t.Parallel()
+		cmd := newCmd(autoMergeOffHost{Host: host.NewFakeHost()})
+		ok, detail := cmd.doctorCheckAutoMerge(context.Background(), cfg, space.MachineConfig{})
+		if ok {
+			t.Fatalf("auto-merge disabled on the GitHub space must fail the row, got PASS %q", detail)
+		}
+		if !strings.Contains(detail, "hub: auto-merge is disabled") {
+			t.Errorf("detail %q does not name the GitHub space's own state", detail)
+		}
+		if strings.Contains(detail, "loc") {
+			t.Errorf("detail %q blames the local space", detail)
+		}
+	})
+
+	t.Run("a readerless GitHub space keeps the global advisory beside the local n/a", func(t *testing.T) {
+		t.Parallel()
+		// The only APPLICABLE space has no reader, so the row says so once; the
+		// local space is not counted as a second readerless one (which would
+		// turn the global advisory into a per-space "unverified for" list).
+		cmd := newCmd(bareHost{inner: host.NewFakeHost()})
+		ok, detail := cmd.doctorCheckAutoMerge(context.Background(), cfg, space.MachineConfig{})
+		if !ok {
+			t.Fatalf("unexpected FAIL: %s", detail)
+		}
+		for _, want := range []string{"auto-merge unverified: this build wires no GitHub repo-settings reader", "loc: lands synchronously"} {
+			if !strings.Contains(detail, want) {
+				t.Errorf("detail %q lacks %q", detail, want)
+			}
+		}
+		if strings.Contains(detail, "unverified for") {
+			t.Errorf("detail %q counts the local space as readerless", detail)
+		}
+	})
+
+	t.Run("one readerless and one readable GitHub space beside a local one", func(t *testing.T) {
+		t.Parallel()
+		const bareURL = "https://github.com/acme/bare"
+		three := space.ProjectConfig{System: "axon", Spaces: []space.Ref{
+			{ID: "hub", RepoURL: ghURL},
+			{ID: "bare", RepoURL: bareURL},
+			{ID: "loc", RepoURL: localURL},
+		}}
+		cmd := newCmd(fullCapHost{Host: host.NewFakeHost()})
+		cmd.open = doctorOpenByURL(map[string]host.Host{
+			ghURL: fullCapHost{Host: host.NewFakeHost()}, bareURL: bareHost{inner: host.NewFakeHost()}, localURL: doctorLocalFake(),
+		})
+		ok, detail := cmd.doctorCheckAutoMerge(context.Background(), three, space.MachineConfig{})
+		if !ok {
+			t.Fatalf("unexpected FAIL: %s", detail)
+		}
+		for _, want := range []string{"auto-merge unverified for bare: this host does not expose repo settings", "loc: lands synchronously"} {
+			if !strings.Contains(detail, want) {
+				t.Errorf("detail %q lacks %q", detail, want)
+			}
+		}
+		if strings.Contains(detail, "for bare, loc") || strings.Contains(detail, "for hub") {
+			t.Errorf("detail %q misclassifies a space", detail)
+		}
+	})
+
+	t.Run("credentials row skips the local space and checks the GitHub one", func(t *testing.T) {
+		t.Parallel()
+		cmd := newCmd(fullCapHost{Host: host.NewFakeHost()})
+		ok, detail := cmd.doctorCheckCredentials(context.Background(), cfg, space.MachineConfig{})
+		if !ok {
+			t.Fatalf("unexpected FAIL: %s", detail)
+		}
+		if !strings.Contains(detail, "loc: local space, no credential needed") {
+			t.Errorf("detail %q lacks the local space's n/a", detail)
+		}
+	})
+}
+
+// autoMergeOffHost is a GitHub-shaped host whose repository has auto-merge off.
+type autoMergeOffHost struct {
+	host.Host
+}
+
+func (autoMergeOffHost) AutoMergeAllowed(context.Context, host.RepoSettingsRequest) (bool, error) {
+	return false, nil
+}
+
+// doctorRealLocalSpace creates a real guarded local space under a fresh
+// directory and returns its ref and path. The opener marks it local through
+// the same host.Open production uses, with a land check that never runs here.
+func doctorRealLocalSpace(t *testing.T, id string) (space.Ref, string) {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), id+".git")
+	manifest := []byte("schema: manifest/v1\nspace: " + id + "\nmin_binary_version: 0.1.0\nparticipants: []\n")
+	files := []space.FileWrite{
+		{Path: "space.yaml", Content: manifest},
+		{Path: "decisions/.gitkeep", Content: []byte{}},
+		{Path: "vendored/.gitkeep", Content: []byte{}},
+	}
+	ctx := context.Background()
+	if _, err := space.InitLocalSpaceRepo(ctx, dir, files); err != nil {
+		t.Fatalf("InitLocalSpaceRepo: %v", err)
+	}
+	if err := host.PrepareLocalSpace(ctx, dir, space.LocalSpaceBaseBranch); err != nil {
+		t.Fatalf("PrepareLocalSpace: %v", err)
+	}
+	return space.Ref{ID: id, RepoURL: dir}, dir
+}
+
+func doctorLocalOpener() host.Opener {
+	return host.NewOpener(host.OpenConfig{
+		LandCheck: func(context.Context, host.LandCandidate) (host.LandVerdict, error) {
+			return host.LandVerdict{OK: true}, nil
+		},
+	})
+}
+
+// doctorLocalCommand is a doctor over real local spaces with a git that
+// satisfies the floor, so a test that is not about the version never depends on
+// the git installed on the machine running it.
+func doctorLocalCommand() *DoctorCommand {
+	cmd := newTestDoctorCommand()
+	cmd.open = doctorLocalOpener()
+	cmd.gitVersion = func(context.Context) (string, error) { return "git version 2.39.3 (Apple Git-146)\n", nil }
+	return cmd
+}
+
+// doctorGit runs one git command against a bare repository with a fixed
+// identity and fails the test on any error.
+func doctorGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"--git-dir=" + dir}, args...)...)
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.invalid",
+		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.invalid")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// TestDoctorLocalLandGuard is AC13: the row FAILs for a missing, non-executable
+// or edited hook, PASSes after the installer re-runs, and FAILs on a git older
+// than 2.38.
+func TestDoctorLocalLandGuard(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	t.Run("a freshly guarded space passes with no note", func(t *testing.T) {
+		t.Parallel()
+		ref, _ := doctorRealLocalSpace(t, "acme")
+		cmd := doctorLocalCommand()
+		ok, detail := cmd.doctorCheckLocalLandGuard(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
+		if !ok || detail != "" {
+			t.Fatalf("want a plain PASS, got ok=%v detail=%q", ok, detail)
+		}
+	})
+
+	breakages := []struct {
+		name string
+		brk  func(t *testing.T, hook string)
+		want string
+	}{
+		{"missing", func(t *testing.T, hook string) {
+			if err := os.Remove(hook); err != nil {
+				t.Fatal(err)
+			}
+		}, "the pre-receive hook is missing"},
+		{"not executable", func(t *testing.T, hook string) {
+			if err := os.Chmod(hook, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}, "the pre-receive hook is not executable"},
+		{"edited", func(t *testing.T, hook string) {
+			if err := os.WriteFile(hook, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}, "not what this binary installs"},
+	}
+	for _, tc := range breakages {
+		t.Run(tc.name+" hook fails and the installer repairs it", func(t *testing.T) {
+			t.Parallel()
+			ref, dir := doctorRealLocalSpace(t, "acme")
+			cfg := space.ProjectConfig{Spaces: []space.Ref{ref}}
+			tc.brk(t, filepath.Join(dir, "hooks", "pre-receive"))
+
+			cmd := doctorLocalCommand()
+			ok, detail := cmd.doctorCheckLocalLandGuard(ctx, cfg)
+			if ok {
+				t.Fatalf("want FAIL, got PASS %q", detail)
+			}
+			for _, want := range []string{"acme: ", tc.want, "a2a space init acme --local --dir " + dir} {
+				if !strings.Contains(detail, want) {
+					t.Errorf("detail %q lacks %q", detail, want)
+				}
+			}
+
+			// The repair the detail names: the installer, run again.
+			if err := host.PrepareLocalSpace(ctx, dir, space.LocalSpaceBaseBranch); err != nil {
+				t.Fatalf("re-running the installer: %v", err)
+			}
+			again := doctorLocalCommand() // a fresh command: the inspection is memoised per command
+			if ok, detail := again.doctorCheckLocalLandGuard(ctx, cfg); !ok || detail != "" {
+				t.Fatalf("after the installer re-ran want a plain PASS, got ok=%v detail=%q", ok, detail)
+			}
+		})
+	}
+
+	versions := []struct {
+		name    string
+		line    string
+		err     error
+		wantOK  bool
+		wantSub string
+	}{
+		{"2.37 fails", "git version 2.37.9\n", nil, false, "git 2.37 is older than 2.38"},
+		{"1.9 fails", "git version 1.9.1\n", nil, false, "git 1.9 is older than 2.38"},
+		{"2.38 passes", "git version 2.38.0\n", nil, true, ""},
+		{"2.50 passes", "git version 2.50.1 (Apple Git-155)\n", nil, true, ""},
+		{"3.0 passes", "git version 3.0.0\n", nil, true, ""},
+		{"unparseable is unverified, not a pass", "no version here\n", nil, true, "git version unverified"},
+		{"a failing git is unverified, not a pass", "", errors.New("exec: git: not found"), true, "git version unverified"},
+	}
+	for _, tc := range versions {
+		t.Run("git "+tc.name, func(t *testing.T) {
+			t.Parallel()
+			ref, _ := doctorRealLocalSpace(t, "acme")
+			cmd := doctorLocalCommand()
+			cmd.gitVersion = func(context.Context) (string, error) { return tc.line, tc.err }
+			ok, detail := cmd.doctorCheckLocalLandGuard(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v, want %v (detail %q)", ok, tc.wantOK, detail)
+			}
+			if !strings.Contains(detail, tc.wantSub) {
+				t.Errorf("detail %q lacks %q", detail, tc.wantSub)
+			}
+		})
+	}
+}
+
+// TestDoctorLocalHistoryShape is AC14: a one-parent commit on main FAILs the
+// row; a history of land merges passes; and a forged two-parent merge is NOT
+// caught, because the row is shape-only.
+func TestDoctorLocalHistoryShape(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	tipTree := func(t *testing.T, dir string) string {
+		return doctorGit(t, dir, "rev-parse", "refs/heads/main^{tree}")
+	}
+
+	t.Run("the root commit alone passes", func(t *testing.T) {
+		t.Parallel()
+		ref, _ := doctorRealLocalSpace(t, "acme")
+		ok, detail := doctorLocalCommand().doctorCheckLocalHistoryShape(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
+		if !ok || detail != "" {
+			t.Fatalf("want a plain PASS, got ok=%v detail=%q", ok, detail)
+		}
+	})
+
+	t.Run("a one-parent commit placed with update-ref fails", func(t *testing.T) {
+		t.Parallel()
+		ref, dir := doctorRealLocalSpace(t, "acme")
+		root := doctorGit(t, dir, "rev-parse", "refs/heads/main")
+		forged := doctorGit(t, dir, "commit-tree", tipTree(t, dir), "-p", root, "-m", "sneaked past the land")
+		doctorGit(t, dir, "update-ref", "refs/heads/main", forged)
+
+		ok, detail := doctorLocalCommand().doctorCheckLocalHistoryShape(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
+		if ok {
+			t.Fatalf("want FAIL, got PASS %q", detail)
+		}
+		for _, want := range []string{"acme: ", "1 commit(s) on the base branch were not made by a land", forged, "--git-dir=" + dir} {
+			if !strings.Contains(detail, want) {
+				t.Errorf("detail %q lacks %q", detail, want)
+			}
+		}
+	})
+
+	t.Run("a history of land merges passes", func(t *testing.T) {
+		t.Parallel()
+		ref, dir := doctorRealLocalSpace(t, "acme")
+		tip := doctorGit(t, dir, "rev-parse", "refs/heads/main")
+		for i := 0; i < 2; i++ {
+			side := doctorGit(t, dir, "commit-tree", tipTree(t, dir), "-p", tip, "-m", "head branch")
+			tip = doctorGit(t, dir, "commit-tree", tipTree(t, dir), "-p", tip, "-p", side, "-m", "land")
+			doctorGit(t, dir, "update-ref", "refs/heads/main", tip)
+		}
+		ok, detail := doctorLocalCommand().doctorCheckLocalHistoryShape(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
+		if !ok || detail != "" {
+			t.Fatalf("want a plain PASS over land merges, got ok=%v detail=%q", ok, detail)
+		}
+	})
+
+	t.Run("a forged two-parent merge is not caught: the row is shape-only", func(t *testing.T) {
+		t.Parallel()
+		ref, dir := doctorRealLocalSpace(t, "acme")
+		root := doctorGit(t, dir, "rev-parse", "refs/heads/main")
+		side := doctorGit(t, dir, "commit-tree", tipTree(t, dir), "-p", root, "-m", "never a pull request")
+		forged := doctorGit(t, dir, "commit-tree", tipTree(t, dir), "-p", root, "-p", side, "-m", "forged merge")
+		doctorGit(t, dir, "update-ref", "refs/heads/main", forged)
+		ok, detail := doctorLocalCommand().doctorCheckLocalHistoryShape(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
+		if !ok || detail != "" {
+			t.Fatalf("a two-parent merge has the shape of a land; want PASS, got ok=%v detail=%q", ok, detail)
+		}
+	})
+}
+
+// TestDoctorLocalSpaceWritable is AC15: a repository whose refs/ this user
+// cannot write FAILs the row, naming the directory and the cause.
+func TestDoctorLocalSpaceWritable(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	t.Run("a writable space passes with no note", func(t *testing.T) {
+		t.Parallel()
+		ref, _ := doctorRealLocalSpace(t, "acme")
+		ok, detail := doctorLocalCommand().doctorCheckLocalSpaceWritable(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
+		if !ok || detail != "" {
+			t.Fatalf("want a plain PASS, got ok=%v detail=%q", ok, detail)
+		}
+	})
+
+	t.Run("a read-only refs/ fails", func(t *testing.T) {
+		t.Parallel()
+		ref, dir := doctorRealLocalSpace(t, "acme")
+		refs := filepath.Join(dir, "refs")
+		if os.Geteuid() == 0 {
+			// root writes through a read-only directory; a refs/ that is gone
+			// is the same refusal to the probe.
+			moved := refs + ".moved"
+			if err := os.Rename(refs, moved); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Rename(moved, refs) })
+		} else {
+			if err := os.Chmod(refs, 0o555); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(refs, 0o755) })
+		}
+		ok, detail := doctorLocalCommand().doctorCheckLocalSpaceWritable(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
+		if ok {
+			t.Fatalf("want FAIL, got PASS %q", detail)
+		}
+		for _, want := range []string{"acme: ", "this user cannot write the repository", "refs/", dir} {
+			if !strings.Contains(detail, want) {
+				t.Errorf("detail %q lacks %q", detail, want)
+			}
+		}
+	})
+}
+
+// localInspectorFake is a local-declaring host whose inspection is scripted, so
+// the unverified paths of the three rows are reachable without a broken repo.
+type localInspectorFake struct {
+	host.Host
+	inspection host.LocalSpaceInspection
+	err        error
+	calls      int
+}
+
+func (f *localInspectorFake) InspectLocalSpace(context.Context) (host.LocalSpaceInspection, error) {
+	f.calls++
+	return f.inspection, f.err
+}
+
+// TestDoctorLocalRowsUnverifiedAndSilentCases pins what the three local rows
+// say when they cannot judge, and that they say nothing for a space that is not
+// a local one: an unjudged space is never a pass in disguise nor a FAIL.
+func TestDoctorLocalRowsUnverifiedAndSilentCases(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	rows := []struct {
+		name string
+		run  func(*DoctorCommand, space.ProjectConfig) (bool, string)
+	}{
+		{"local land guard", func(c *DoctorCommand, cfg space.ProjectConfig) (bool, string) {
+			return c.doctorCheckLocalLandGuard(ctx, cfg)
+		}},
+		{"local history shape", func(c *DoctorCommand, cfg space.ProjectConfig) (bool, string) {
+			return c.doctorCheckLocalHistoryShape(ctx, cfg)
+		}},
+		{"local space writable", func(c *DoctorCommand, cfg space.ProjectConfig) (bool, string) {
+			return c.doctorCheckLocalSpaceWritable(ctx, cfg)
+		}},
+	}
+	cfg := space.ProjectConfig{Spaces: []space.Ref{{ID: "acme", RepoURL: "/somewhere/acme.git"}}}
+
+	for _, row := range rows {
+		t.Run(row.name+"/an inspector error is unverified", func(t *testing.T) {
+			t.Parallel()
+			cmd := doctorLocalCommand()
+			fake := &localInspectorFake{Host: doctorLocalFake(), err: errors.New("HEAD is detached")}
+			cmd.open = host.FixedOpener(fake)
+			ok, detail := row.run(cmd, cfg)
+			if !ok {
+				t.Fatalf("an uninspectable space must not FAIL: %s", detail)
+			}
+			for _, want := range []string{row.name + " unverified for acme", "HEAD is detached"} {
+				if !strings.Contains(detail, want) {
+					t.Errorf("detail %q lacks %q", detail, want)
+				}
+			}
+		})
+		t.Run(row.name+"/a host with no inspector is unverified", func(t *testing.T) {
+			t.Parallel()
+			cmd := doctorLocalCommand()
+			cmd.open = host.FixedOpener(doctorLocalFake()) // declares local, implements no inspector
+			ok, detail := row.run(cmd, cfg)
+			if !ok || !strings.Contains(detail, row.name+" unverified for acme: this host cannot be inspected") {
+				t.Fatalf("want an unverified PASS, got ok=%v detail=%q", ok, detail)
+			}
+		})
+		t.Run(row.name+"/an open failure is unverified", func(t *testing.T) {
+			t.Parallel()
+			cmd := doctorLocalCommand()
+			cmd.open = func(string) (host.Host, host.Repo, error) { return nil, host.Repo{}, errors.New("not a repository") }
+			ok, detail := row.run(cmd, cfg)
+			if !ok || !strings.Contains(detail, row.name+" unverified for acme: the space's host could not be opened: not a repository") {
+				t.Fatalf("want an unverified PASS, got ok=%v detail=%q", ok, detail)
+			}
+		})
+		t.Run(row.name+"/no host wired is unverified", func(t *testing.T) {
+			t.Parallel()
+			cmd := doctorLocalCommand()
+			cmd.open = nil
+			ok, detail := row.run(cmd, cfg)
+			if !ok || !strings.Contains(detail, row.name+" unverified for acme") {
+				t.Fatalf("want an unverified PASS, got ok=%v detail=%q", ok, detail)
+			}
+		})
+		t.Run(row.name+"/a GitHub space is silent and never inspected", func(t *testing.T) {
+			t.Parallel()
+			gh := &localInspectorFake{Host: host.NewFakeHost(), err: errors.New("must not be inspected")}
+			cmd := doctorLocalCommand()
+			cmd.open = host.FixedOpener(gh)
+			ok, detail := row.run(cmd, space.ProjectConfig{Spaces: []space.Ref{{ID: "hub", RepoURL: "https://github.com/acme/hub"}}})
+			if !ok || detail != "" {
+				t.Fatalf("want a silent PASS, got ok=%v detail=%q", ok, detail)
+			}
+			if gh.calls != 0 {
+				t.Errorf("a GitHub space was inspected %d time(s)", gh.calls)
+			}
+		})
+		t.Run(row.name+"/no spaces is a silent pass", func(t *testing.T) {
+			t.Parallel()
+			ok, detail := row.run(doctorLocalCommand(), space.ProjectConfig{})
+			if !ok || detail != "" {
+				t.Fatalf("want a silent PASS, got ok=%v detail=%q", ok, detail)
+			}
+		})
+	}
+
+	t.Run("the three rows share one inspection per space", func(t *testing.T) {
+		t.Parallel()
+		cmd := doctorLocalCommand()
+		fake := &localInspectorFake{Host: doctorLocalFake(), inspection: host.LocalSpaceInspection{
+			HookPresent: true, HookExecutable: true, HookCurrent: true, Writable: true,
+		}}
+		cmd.open = host.FixedOpener(fake)
+		for _, row := range rows {
+			if ok, detail := row.run(cmd, cfg); !ok || detail != "" {
+				t.Fatalf("%s: want a plain PASS, got ok=%v detail=%q", row.name, ok, detail)
+			}
+		}
+		if fake.calls != 1 {
+			t.Errorf("InspectLocalSpace ran %d times for three rows, want 1", fake.calls)
+		}
+	})
+
+	t.Run("the unreadable-writable detail falls back to a stated reason", func(t *testing.T) {
+		t.Parallel()
+		cmd := doctorLocalCommand()
+		cmd.open = host.FixedOpener(&localInspectorFake{Host: doctorLocalFake()}) // Writable false, no detail
+		ok, detail := cmd.doctorCheckLocalSpaceWritable(ctx, cfg)
+		if ok || !strings.Contains(detail, "no reason reported") {
+			t.Fatalf("want a FAIL with a stated reason, got ok=%v detail=%q", ok, detail)
+		}
+	})
+}
+
+// TestDoctorSpaceAccessNamesALocalSpacesOwnRepair: a local space whose
+// directory cannot be fetched gets the local hint (and no credential probe, no
+// private-repo hint), not the GitHub one.
+func TestDoctorSpaceAccessNamesALocalSpacesOwnRepair(t *testing.T) {
+	t.Parallel()
+	const url = "/home/me/.local/share/a2a/spaces/acme.git"
+	cfg := space.ProjectConfig{Spaces: []space.Ref{{ID: "acme", RepoURL: url}}}
+	cmd := newTestDoctorCommand()
+	cmd.open = host.FixedOpener(doctorLocalFake())
+	cmd.resolveCredential = func(context.Context, string, space.CredentialReference) (host.Credential, error) {
+		t.Error("a local space's access check resolved a credential")
+		return host.Credential{}, errors.New("credential resolved")
+	}
+	cmd.cloneOrFetch = func(context.Context, string, string, host.Credential) error {
+		return errors.New("fatal: repository does not exist")
+	}
+	ok, detail := cmd.doctorCheckSpaceAccess(context.Background(), cfg, space.MachineConfig{})
+	if ok {
+		t.Fatalf("an unreadable local space must FAIL, got PASS %q", detail)
+	}
+	for _, want := range []string{"acme: ", "the local space's directory is missing or unreadable", "restore it at " + url, "write journals of in-flight writes"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("detail %q lacks %q", detail, want)
+		}
+	}
+	if strings.Contains(detail, "private") {
+		t.Errorf("detail %q carries the GitHub private-repository hint", detail)
+	}
+}
+
+// TestDoctorScaffoldingRowComparesALocalSpaceToTheLocalSubset: a mirror that
+// holds exactly what `space init --local` seeds is current (the infrastructure
+// a GitHub space carries is not expected of it), and a stale floor is named
+// with the local repair and no permission read.
+func TestDoctorScaffoldingRowComparesALocalSpaceToTheLocalSubset(t *testing.T) {
+	t.Parallel()
+	const url = "/home/me/.local/share/a2a/spaces/acme.git"
+	cfg := space.ProjectConfig{Spaces: []space.Ref{{ID: "acme", RepoURL: url}}}
+	newCmd := func(mirrorFloor string) *DoctorCommand {
+		cmd := newTestDoctorCommand()
+		cmd.TemplateFiles = doctorScaffoldingTemplateFS()
+		cmd.binaryVersion = "0.5.0"
+		cmd.open = host.FixedOpener(doctorLocalFake())
+		cmd.readFile = doctorScaffoldingMirrorReadFile(map[string]string{
+			"space.yaml": "schema: manifest/v1\nspace: acme\nmin_binary_version: " + mirrorFloor + "\nparticipants: []\n",
+		})
+		return cmd
+	}
+
+	t.Run("a mirror with only the local subset is current", func(t *testing.T) {
+		t.Parallel()
+		ok, detail := newCmd("0.1.0").doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
+		if !ok || detail != "" {
+			t.Fatalf("want a plain PASS, got ok=%v detail=%q", ok, detail)
+		}
+	})
+
+	t.Run("a stale floor is behind, with the local repair", func(t *testing.T) {
+		t.Parallel()
+		ok, detail := newCmd("0.0.1").doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
+		if !ok {
+			t.Fatalf("behind is advisory, never FAIL: %s", detail)
+		}
+		for _, want := range []string{"acme: scaffolding is behind the current template", "run `a2a space update`"} {
+			if !strings.Contains(detail, want) {
+				t.Errorf("detail %q lacks %q", detail, want)
+			}
+		}
+		for _, banned := range []string{"ask the space admin", "could not be determined"} {
+			if strings.Contains(detail, banned) {
+				t.Errorf("detail %q carries %q for a space on this machine", detail, banned)
+			}
+		}
+	})
+
+	t.Run("the same mirror under a GitHub host is behind (the local subset is what excuses it)", func(t *testing.T) {
+		t.Parallel()
+		cmd := newCmd("0.1.0")
+		cmd.open = host.FixedOpener(host.NewFakeHost())
+		ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
+		if !ok || !strings.Contains(detail, "behind the current template") {
+			t.Fatalf("want an advisory 'behind' for a GitHub-shaped space, got ok=%v detail=%q", ok, detail)
+		}
+	})
 }

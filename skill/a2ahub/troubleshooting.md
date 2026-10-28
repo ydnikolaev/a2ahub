@@ -46,22 +46,26 @@ skill manual current: PASS · no skill installed
 notify-routes: PASS · no notification routes configured for this space
 notify-secret: PASS · no route names a secret, so none is required
 notify-delivery: PASS · no a2a-notify run recorded yet for this space
+local land guard: PASS
+local history shape: PASS
+local space writable: PASS
 repository visibility [getvisa]: PASS: no observed mismatch
 ```
 
-All twenty-one fixed checks, in the order the binary prints them, followed by
+All twenty-four fixed checks, in the order the binary prints them, followed by
 one `repository visibility` row per connected space (this project has one,
-`getvisa`) — that row is not one of the fixed twenty-one and always prints
+`getvisa`) — that row is not one of the fixed twenty-four and always prints
 LAST, after every one of them. **A `PASS` carrying a note is a pass** — do
 not report it as a problem.
 
-Sixteen rows can print `PASS · <note>`:
+Twenty rows can print `PASS · <note>`:
 
-> The count said **twelve** until 2026-08-28 and the table under it listed fifteen. It is now sixteen, `default branch healthy` having joined with this release. Counted, not eyeballed.
+> The count said **twelve** until 2026-08-28 and the table under it listed fifteen. It was then sixteen, `default branch healthy` having joined. It is now twenty: `CI presence` can print a note because a local space is n/a there, and the three local-space rows below join. Counted, not eyeballed.
 
 | Row | When it carries a note |
 |---|---|
-| `credentials` | the token resolves but advertises no `workflow` scope |
+| `credentials` | the token resolves but advertises no `workflow` scope, or a space is local and needs no credential (`<id>: local space, no credential needed`) |
+| `CI presence` | a space is local, so its writes are validated at land and it carries no CI workflow (`<id>: validated at land, no CI workflow`) |
 | `default branch healthy` | always, whenever any space is connected — it appends each connected space's own derived base branch, or names that it could not be determined |
 | `versions` | a newer release is available (never a failure — the floor is a separate check) |
 | `participant avatars` | one or more active participant owners have no validated image in the disposable local cache |
@@ -77,6 +81,7 @@ Sixteen rows can print `PASS · <note>`:
 | `notify-routes` | a route in `space.yaml` is malformed, or names a participant the manifest does not list |
 | `notify-secret` | a route names a secret the space repo does not hold — presence only; doctor never reads a secret's value |
 | `notify-delivery` | the last `a2a-notify` run on `main` failed, or there has never been one |
+| `local land guard`, `local history shape`, `local space writable` | a local space could not be inspected (the note is `<row> unverified for <id>: <reason>`), or git's version could not be read |
 
 The three `notify-*` rows are the SPACE plane — the chat notifications a space's
 own CI sends. `notification components` just above them is the LOCAL plane
@@ -109,9 +114,9 @@ violated).
 | `1` | One or more checks failed, OR the local project/machine config could not be loaded (in which case doctor prints a `doctor: cannot load … config` line to stderr before exiting). |
 | `2` | Usage error — including **`doctor --space`**, which is the v2 admin host-drift diff and is explicitly rejected in v1-min (doctor prints `doctor: --space: v1-min: not available`). Doctor's flag only — `a2a validate --ci --space <id>` is a real flag on another verb. |
 
-## The twenty-one checks
+## The twenty-four checks
 
-`doctor` prints a fixed set of exactly twenty-one checks — that fixed count is
+`doctor` prints a fixed set of exactly twenty-four checks — that fixed count is
 what this heading names, and it is why the count and the heading are kept in
 lockstep by the test guarding this file. That lockstep was NOT holding: this
 heading still said "seventeen" on 2026-08-18 while the sentence forty lines up
@@ -121,21 +126,21 @@ written. An expectation spelled as a literal cannot notice that the thing it
 describes has moved; it can only notice somebody editing the doc without
 editing the test, which is the opposite of its job. The number is now DERIVED
 from the binary's own roster, and the summary sentence — which had no assertion
-at all — is checked too. **Each of the twenty-one
+at all — is checked too. **Each of the twenty-four
 runs once per PROJECT, not once per connected space**: when a check must reason about
 several connected spaces, it folds any per-space detail into a single line
 (`space access` and `credentials`, for example, join per-space failures with
 `; `). They print in the order below, top to bottom, matching `doctor`'s own
 output.
 
-The table carries a twenty-second row, `repository visibility`, because it is
-real output you will see — but it is NOT one of the fixed twenty-one and shares
+The table carries a twenty-fifth row, `repository visibility`, because it is
+real output you will see — but it is NOT one of the fixed twenty-four and shares
 neither their order nor their cardinality. It prints ONE row PER CONNECTED
 SPACE, after every fixed check, so it is always LAST in the output and absent
 entirely from a project with no connected spaces. Its printed name carries
 the space id (`repository visibility [getvisa]`), which no other row does.
 
-**So the table below is in output order, all twenty-two rows** — read it top to
+**So the table below is in output order, all twenty-five rows** — read it top to
 bottom and you are reading `doctor`'s own sequence. That is worth stating
 because it has now been false TWICE. The first time, until 2026-08-12, this row
 sat eighth in the table under a sentence promising output order while the
@@ -169,6 +174,9 @@ tripwire now asserts the ORDER, not only the membership and the count.
 | **notify-routes** | Every `notification_routes[]` entry in the space's `space.yaml` is well-formed and names a participant the manifest actually lists. | A route is malformed, or its `for:` names a system absent from `participants[]`. The space's own PR gate refuses both (POL-021 / REF-022), so this row failing means a route reached `main` before the rule existed, or the manifest changed under it. Fix the route in `space.yaml` through the normal write funnel. |
 | **notify-secret** | Every secret a route names exists on the space repo. **Presence only — doctor never reads a secret's value.** | A route names a secret the repo does not hold, so its messages cannot be sent. Run `a2a notify setup`, or set it directly with `gh secret set <NAME> --repo <space-repo>`. A route with no secret configured is not an error until it has one to lose. |
 | **notify-delivery** | The most recent `a2a-notify` run on `main` concluded green. | The last run failed, or there has never been one. A failed run is the honest state a silent channel would hide — read it with `gh run list --workflow a2a-notify.yml --repo <space-repo>`. "Never run" is normal for a space that has just configured its first route and not yet pushed. |
+| **local land guard** | For every connected LOCAL space: its `pre-receive` hook is installed, executable and byte-for-byte what this binary installs, **and** the installed git is at least 2.38 (read from `git --version`). A project with no local space reads a plain `PASS`. | The hook is what stops a raw `git push` from moving the base branch around the validated land, so a missing, non-executable, edited or symlinked hook leaves the space unguarded. Re-run `a2a space init <id> --local --dir <path>` (the line names both); it is idempotent and installs the hook again without touching history. A git older than 2.38 makes an installed hook useless: upgrade git. A PASS carrying `· … unverified` means the space or the git version could not be read — the answer is unknown, not good. |
+| **local history shape** | For every connected local space: after the root commit, every commit on the base branch's first-parent chain is a two-parent land. | A one-parent commit on the base branch means something moved it around the funnel (a raw push, or a hand-run `git update-ref`). The detail names the newest such commits. **The row is shape-only**: a two-parent merge forged by hand is not caught, because nothing cross-checks a merge against its pull-request record. |
+| **local space writable** | For every connected local space: this user can create files under the bare repository's `refs/` and `objects/`. | A land writes there, so a repository this user cannot write fails every write to it midway. The detail names what blocked the probe; fix the ownership or permissions of the directory. |
 | **repository visibility** | Whether the space repo's GitHub visibility matches what the material inside it is classified as. Visibility is read from the host; classification comes from the artifacts themselves. | **This row never FAILs — it PASSes or reports UNVERIFIED**, because visibility is evidence, never write authority. A **WARN** on a PUBLIC repo means it carries higher-classified material than `public`: that is the one reading to act on, and the fix is the repository's visibility or the material's classification, not this row. On a **private or internal** repo carrying nothing `restricted`, it PASSes as "no observed mismatch". On a private repo that DOES carry `restricted` material it PASSes only when a bilateral proof source is named; otherwise it reports UNVERIFIED with "repository privacy alone does not prove intended pairwise audience" — which is **not a problem to fix**. It says the honest thing: a private repo proves the audience is small, never that it is the specific pair the material was restricted to. An UNVERIFIED reading "visibility could not be verified" means the credential could not read repo metadata (a fine-grained token needs `Repository metadata: read`), so the answer is unknown rather than bad. |
 | **consumed contract** | Whether this system verify-passed any data-package delivery — a handoff deliverable of kind `data`, accepted (verify-passed) — pinning a contract absent from its own `consumes.yaml` (P6, defects-fix-2026-08, `docs/inbox/defects/07-the-consumer-registered-nowhere.md`: a real space had verify-passed four such handoffs while its own `dependencies:` sat `[]`). | **This row never FAILs, and prints nothing at all when there is nothing to report** — detection only, never a gate: `a2a doctor`'s exit code and `contract retire`'s own precondition (D-022) are both unaffected by it. A **WARN** names the contract, the number of distinct verify-passed packages conforming to it, and the exact fix — `a2a contract adopt <XC-id>` — because consuming without adopting is a real risk (the retire gate and the deprecation notice cannot protect a dependency nobody registered) but not necessarily a mistake: the operator may have reasons. An **UNVERIFIED** means this system's own `consumes.yaml` exists but could not be read as a real `consumes/v1` registry, so the advisory is skipped rather than risking a false "unadopted" claim against a registration it simply could not parse. A contract this system publishes itself is never named here — a producer is never counted as its own unadopted consumer. |
 | **observed consumer** | The PRODUCER direction of the row above, new in v0.25.7: a system whose committed artifacts show it consuming a contract THIS system provides without declaring it — **and the version it pinned**. Retire is per-version, so "something consumes this" was not actionable alone. | **Never FAILs; prints nothing when there is nothing to report.** A **WARN** names the system, the contract, the version and how many verify-passed packages back it. It gates nothing — it exists so a retire decision is not made blind. Deliberately an UNDERCOUNT: a participant whose registry or descriptor cannot be parsed is EXCLUDED rather than reported against. |

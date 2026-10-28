@@ -224,3 +224,60 @@ func TestDataDepsPolicyResolvesACredentialForEveryWritingVerb(t *testing.T) {
 		})
 	}
 }
+
+// TestWriteCredentialIsTheVerbPolicyAndTheHostDeclaration pins the combined
+// decision every eager write site makes: a credential is resolved only when
+// the verb wants one (dataDepsPolicy) AND the opened host's declared
+// Capabilities().NeedsCredential is true. The two rows that resolve use the
+// documented explicit-variable precedence, so the answer is the variable's
+// token and no GitHub CLI probe is involved; the unresolvable row proves the
+// GitHub-shaped host still refuses loudly.
+//
+// reason: mutates process env (the token variable, PATH, HOME), which forbids
+// t.Parallel().
+func TestWriteCredentialIsTheVerbPolicyAndTheHostDeclaration(t *testing.T) {
+	t.Setenv("PATH", t.TempDir()) // no `gh` anywhere on PATH
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+	machine := space.MachineConfig{}
+
+	hostWith := func(needs bool) host.Host {
+		caps := host.Capabilities{NeedsCredential: needs}
+		return &host.FakeHost{Caps: &caps}
+	}
+
+	// Every action of the data-deps policy keeps its own wish: only the verbs
+	// that need a credential today may resolve one, and only on a host that
+	// needs one.
+	for _, action := range []string{"pack", "deliver", "fetch", "verify", "request"} {
+		_, wanted := dataDepsPolicy(action)
+		t.Run(action+"/local host never resolves", func(t *testing.T) {
+			t.Setenv("A2A_TOKEN_LOCAL_SPACE", "must-not-be-read")
+			got, err := resolveWriteCredential(context.Background(), hostWith(false), wanted, "local-space", machine)
+			if err != nil || got != (host.Credential{}) {
+				t.Fatalf("local host, verb %q: got (%+v, %v), want the empty credential and no error", action, got, err)
+			}
+		})
+		t.Run(action+"/github host follows the verb", func(t *testing.T) {
+			t.Setenv("A2A_TOKEN_GITHUB_SPACE", "tok-123")
+			got, err := resolveWriteCredential(context.Background(), hostWith(true), wanted, "github-space", machine)
+			if err != nil {
+				t.Fatalf("github host, verb %q: %v", action, err)
+			}
+			if wanted && got.Token != "tok-123" {
+				t.Fatalf("github host, verb %q wants a credential: token = %q, want tok-123", action, got.Token)
+			}
+			if !wanted && got != (host.Credential{}) {
+				t.Fatalf("github host, verb %q wants none: got %+v, want the empty credential", action, got)
+			}
+		})
+	}
+
+	t.Run("github host without a credential still refuses", func(t *testing.T) {
+		_, err := resolveWriteCredential(context.Background(), hostWith(true), true, "no-token-space", machine)
+		if err == nil || !strings.Contains(err.Error(), "credential unresolved") {
+			t.Fatalf("err = %v, want it to contain %q", err, "credential unresolved")
+		}
+	})
+}

@@ -90,8 +90,8 @@ func TestTroubleshootingEnumeratesEveryDoctorCheck(t *testing.T) {
 		fixedNames[rosterName] = true
 		printedOrder = append(printedOrder, rosterName)
 	}
-	if len(fixedNames) != 21 {
-		t.Fatalf("doctor emitted %d fixed checks (%v), want 21; update the documented count and this tripwire together", len(fixedNames), fixedNames)
+	if len(fixedNames) != 24 {
+		t.Fatalf("doctor emitted %d fixed checks (%v), want 24; update the documented count and this tripwire together", len(fixedNames), fixedNames)
 	}
 
 	// The doc's rows, in the order the doc lists them, filtered to the fixed

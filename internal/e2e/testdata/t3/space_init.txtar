@@ -82,6 +82,48 @@ exec a2a validate --ci --mode=v3-full-repo
 stdout '"valid": true'
 cd ..
 
+# local-space-2026-10 P3 AC1 (local-bare-repo): `--local` creates a BARE
+# repository, not a tree to push. Its `main` is ONE root commit holding
+# exactly the three files a local space needs, and none of the GitHub
+# machinery (.github/, CODEOWNERS, BRANCH-PROTECTION.md, README.md): nothing
+# on this machine would read them, and CODEOWNERS would name owners that are
+# not logins.
+exec a2a space init acme --local --dir spaces/acme.git
+stdout 'created local space acme at '
+exec git --git-dir=spaces/acme.git rev-parse --is-bare-repository
+stdout '^true$'
+exec git --git-dir=spaces/acme.git rev-list --count main
+stdout '^1$'
+exec git --git-dir=spaces/acme.git ls-tree -r --name-only main
+cmp stdout local-tree.txt
+
+# AC2 (local-push-refused): the guard is armed once the root commit exists,
+# so a raw `git push` to main from a clone is refused with the sentence that
+# names the way in, while the root commit made before the hook is intact.
+exec git clone -q spaces/acme.git clone1
+exec git -C clone1 -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m 'around the land'
+! exec git -C clone1 push origin HEAD:main
+stderr 'this local space lands writes only through a2a'
+exec git --git-dir=spaces/acme.git rev-list --count main
+stdout '^1$'
+
+# The re-run is the repair verb, and is a no-op on a finished space (AC18).
+exec a2a space init acme --local --dir spaces/acme.git
+stdout 'already created'
+exec git --git-dir=spaces/acme.git rev-list --count main
+stdout '^1$'
+
+# AC17 (github-default-after-local): the local branch did not leak into the
+# default one. The same work dir, the GitHub form, after the local one: nine
+# files and the ordered GitHub steps are unchanged.
+exec a2a space init acme
+stdout 'wrote 9 files'
+stdout 'IN THIS ORDER'
+stdout 'push BEFORE arming protection'
+exists acme/.github/workflows/a2a-validate.yml
+exists acme/CODEOWNERS
+exists acme/README.md
+
 # no-silent-yes-2026-08 P2b, AC 5: a space whose remote's DEFAULT branch is
 # "master" (never "main") gets DERIVED as its push target — never silently
 # guessed at "main". Built directly against a bare origin rather than through
@@ -193,3 +235,8 @@ gates: default
 participants: []
 notification_routes: []
 vendored: []
+
+-- local-tree.txt --
+decisions/.gitkeep
+space.yaml
+vendored/.gitkeep

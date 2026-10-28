@@ -464,3 +464,122 @@ func TestHostLoopContractFamily(t *testing.T) {
 		t.Errorf("the refusal is not the consumer-ack precondition:\nstdout: %s\nstderr: %s", stdout, stderr)
 	}
 }
+
+// credentialFreeRun execs the built binary the way a machine with no
+// credential at all would: HOME is the given one, PATH holds git and nothing
+// else (so no `gh` to ask for a token), and no token variable of any kind
+// survives from the outer environment. The API root is a closed port, so a
+// write that wrongly reaches for GitHub fails loudly instead of succeeding
+// against something.
+func credentialFreeRun(t *testing.T, dir, home string, args ...string) (stdout, stderr string, code int) {
+	t.Helper()
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatalf("git is required: %v", err)
+	}
+	bin := t.TempDir()
+	if err := os.Symlink(gitPath, filepath.Join(bin, "git")); err != nil {
+		t.Fatal(err)
+	}
+	var env []string
+	for _, kv := range os.Environ() {
+		name, _, _ := strings.Cut(kv, "=")
+		if strings.HasPrefix(name, "A2A_TOKEN_") || name == "GH_TOKEN" || name == "GITHUB_TOKEN" ||
+			name == "PATH" || name == "HOME" || name == "A2A_GITHUB_API" {
+			continue
+		}
+		env = append(env, kv)
+	}
+	env = append(env, "HOME="+home, "PATH="+bin, "A2A_GITHUB_API=http://127.0.0.1:1")
+
+	cmd := exec.Command(filepath.Join(binDir, "a2a"), args...)
+	cmd.Dir = dir
+	cmd.Env = env
+	var out, errBuf bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errBuf
+	if err := cmd.Run(); err != nil {
+		exitErr := &exec.ExitError{}
+		if !errors.As(err, &exitErr) {
+			t.Fatalf("exec a2a %v: %v", args, err)
+		}
+		code = exitErr.ExitCode()
+	}
+	return out.String(), errBuf.String(), code
+}
+
+// TestHostLoopSubmitCredentialPolicy is local-space-2026-10 P3 AC7: a write to
+// a LOCAL space needs no credential at all (none configured, no A2A_TOKEN_*, no
+// `gh` on PATH), while the same write to a GitHub space on the same machine
+// still stops at `space: credential unresolved`. The second half is what keeps
+// the first honest: a skip that applied to every host would pass the first
+// subtest too.
+func TestHostLoopSubmitCredentialPolicy(t *testing.T) {
+	t.Parallel()
+
+	t.Run("local-write-without-credential", func(t *testing.T) {
+		t.Parallel()
+		project, home := t.TempDir(), t.TempDir()
+		mustMkdirAll(t, filepath.Join(project, ".a2a", "staging"))
+		mustWrite(t, filepath.Join(project, ".a2a", "config.yaml"), "system: axon\nspaces: []\n")
+		spaceDir := filepath.Join(t.TempDir(), "lone.git")
+
+		mustRunFree := func(args ...string) string {
+			t.Helper()
+			stdout, stderr, code := credentialFreeRun(t, project, home, args...)
+			if code != 0 {
+				t.Fatalf("a2a %v: exit %d\nstdout: %s\nstderr: %s", args, code, stdout, stderr)
+			}
+			return stdout
+		}
+		mustRunFree("space", "init", "lone", "--local", "--dir", spaceDir)
+		mustRunFree("connect", spaceDir)
+		mustRunFree("space", "join")
+
+		id := "XQ-axon-20260723-0a01"
+		path := filepath.Join(project, ".a2a", "staging", id+".md")
+		mustWrite(t, path, "---\n"+
+			"schema: envelope/v1\n"+
+			"id: "+id+"\n"+
+			"type: question\n"+
+			"title: does a local write need a credential\n"+
+			"space: lone\n"+
+			"from: axon\n"+
+			"to: [axon]\n"+
+			"thread: thread:axon-20260723-0a01\n"+
+			"actor: {kind: agent, name: e2e}\n"+
+			"created: 2026-07-23T10:00:00Z\n"+
+			"category: clarification\n"+
+			"priority: p3\n"+
+			"blocking: true\n"+
+			"classification: internal\n"+
+			"---\n"+
+			"body\n")
+		mustRunFree("submit", path)
+
+		if got := gitOutput(t, spaceDir, "ls-tree", "-r", "--name-only", "main"); !strings.Contains(got, id) {
+			t.Errorf("the local space's main does not carry %s after the submit:\n%s", id, got)
+		}
+		if _, err := os.Stat(filepath.Join(home, ".config", "a2a", "config.yaml")); err == nil {
+			raw, readErr := os.ReadFile(filepath.Join(home, ".config", "a2a", "config.yaml"))
+			if readErr != nil || strings.Contains(string(raw), "lone") {
+				t.Errorf("a credential entry was written for the local space: %q (%v)", raw, readErr)
+			}
+		}
+	})
+
+	t.Run("github-space-still-needs-a-credential", func(t *testing.T) {
+		t.Parallel()
+		r := newHostRig(t, "axon", "axon", "beta")
+		// No credential reference and, via credentialFreeRun, no token and no gh.
+		mustWrite(t, filepath.Join(r.homeDir, ".config", "a2a", "config.yaml"), "credentials: {}\n")
+		path := r.stageQuestion("XQ-axon-20260723-0a02", "beta")
+
+		stdout, stderr, code := credentialFreeRun(t, r.projectDir, r.homeDir, "submit", path)
+		if code == 0 {
+			t.Fatalf("a GitHub space accepted a write with no credential\nstdout: %s", stdout)
+		}
+		if !strings.Contains(stderr, "space: credential unresolved") {
+			t.Errorf("stderr does not say the credential is unresolved:\n%s", stderr)
+		}
+	})
+}

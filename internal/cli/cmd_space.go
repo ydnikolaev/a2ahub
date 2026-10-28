@@ -1,5 +1,7 @@
-// `a2a space init` — self-service space scaffolding (spec 33 §12) — and
-// `a2a space update` — template-drift migration (spec 35). This file's
+// `a2a space init` — self-service space scaffolding (spec 33 §12) —
+// `a2a space update` — template-drift migration (spec 35) — and, for a space
+// that lives on this machine (local-space-2026-10 spec 03), `a2a space init
+// --local` and `a2a space join`. This file's
 // only package-level symbols are SpaceCommand + its NewSpaceCommand
 // constructor plus file-private, uniquely-named helpers (space* prefix) —
 // no shared helper, no package var, matching cmd_contract.go's own
@@ -9,6 +11,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -17,14 +20,17 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/validate"
 	"github.com/ydnikolaev/a2ahub/internal/version"
 )
 
-// SpaceCommand implements `a2a space <init|update>` (mirrors the `contract`
-// group's dispatch shape, cmd_contract.go).
+// SpaceCommand implements `a2a space <init|update|join>` (mirrors the
+// `contract` group's dispatch shape, cmd_contract.go).
 type SpaceCommand struct {
 	// TemplateFiles is the embedded space-template/ tree (spacetemplate.Files,
 	// DI'd from wire.go — this package never imports space-template
@@ -95,6 +101,39 @@ type SpaceCommand struct {
 	// so a test can simulate the mirror's on-disk content without a real
 	// filesystem. NewSpaceCommand defaults it to os.ReadFile.
 	readFile func(path string) ([]byte, error)
+
+	// --- local-space DI (local-space-2026-10 spec 03) -----------------
+	//
+	// All nil/zero-able, like everything above: a command built without them
+	// behaves exactly as it did before `--local` existed, and each local verb
+	// refuses by name (never nil-panics) when the field it needs is unwired.
+
+	// DataRoot is the machine data root (`$HOME/.local/share/a2a`), injected
+	// from cmd/a2a where it is defined once. This package never reads the
+	// home directory itself. `space init --local` with no `--dir` creates
+	// the space at <DataRoot>/spaces/<space-id>.git.
+	DataRoot string
+	// Engine validates the seeded manifest of a new local space before it is
+	// committed (`*validate.Engine` satisfies it). Nil refuses `--local`.
+	Engine spaceManifestValidator
+	// Open resolves a locator to the host that serves it. `space init --local`
+	// uses it to read whether an existing repository is already marked as a
+	// local space (a declared OnThisMachine); nil reads as "not marked".
+	Open host.Opener
+	// Caps is the connected space's declared host capabilities, set by the
+	// wiring from the host it opened for `update` and `join`. The zero value
+	// declares nothing, so `join` (which needs OwnerIdentitySelfAsserted)
+	// refuses on an unwired command and `update` keeps its GitHub behaviour.
+	Caps host.Capabilities
+	// Now is the clock `join` stamps `joined:` with; nil means time.Now. A
+	// seam so a test can assert the exact manifest bytes.
+	Now func() time.Time
+}
+
+// spaceManifestValidator is this file's consumer-side seam over the manifest
+// validator (rails ISP/DI); *validate.Engine satisfies it structurally.
+type spaceManifestValidator interface {
+	ValidateManifest(raw []byte) (validate.Result, error)
 }
 
 // NewSpaceCommand constructs the space command. templateFiles is the
@@ -114,18 +153,18 @@ func (c *SpaceCommand) Name() string { return "space" }
 
 // Synopsis implements cli.Command.
 func (c *SpaceCommand) Synopsis() string {
-	return "space scaffolding: init <space-id> [--dir <path>] | update [--space <id>] [--dry-run] [--wait] — write/migrate a space tree from the embedded template"
+	return "space scaffolding: init <space-id> [--local] [--dir <path>] | update [--space <id>] [--dry-run] [--wait] | join [--space <id>] [--json] — write/migrate a space tree from the embedded template, or create a local space and join it"
 }
 
 // Run implements cli.Command.
 func (c *SpaceCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space <init|update> ...")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space <init|update|join> ...")
 		return 2
 	}
 	sub, rest := args[0], args[1:]
 	if IsHelpArg(sub) {
-		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a space <init|update> ...")
+		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a space <init|update|join> ...")
 		for _, s := range SpaceSubcommands() {
 			_, _ = fmt.Fprintf(stdio.Stdout, "  %-14s %s\n", s.Name, s.Synopsis)
 		}
@@ -136,6 +175,8 @@ func (c *SpaceCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return c.runInit(ctx, rest, stdio)
 	case "update":
 		return c.runUpdate(ctx, rest, stdio)
+	case "join":
+		return c.runJoin(ctx, rest, stdio)
 	default:
 		_, _ = fmt.Fprintf(stdio.Stderr, "space: unknown subcommand %q\n", sub)
 		return 2
@@ -163,13 +204,15 @@ func SpaceSubcommands() []SpaceSubcommand {
 	return []SpaceSubcommand{
 		{Name: "init", Synopsis: "scaffold a new space repo tree from the embedded template"},
 		{Name: "update", Synopsis: "diff the connected space's scaffolding against the embedded template and open a PR (spec 35)"},
+		{Name: "join", Synopsis: "add this project's system to a connected local space as an active participant, in one validated write"},
 	}
 }
 
-// runInit implements `a2a space init <space-id> [--dir <path>]` (spec 33
-// §12). Exit codes: 2 = usage error; 1 = version guard / non-empty target /
-// write failure; 0 = success.
-func (c *SpaceCommand) runInit(_ context.Context, args []string, stdio IO) int {
+// runInit implements `a2a space init <space-id> [--local] [--dir <path>]`
+// (spec 33 §12; `--local` is local-space-2026-10 spec 03 §T1.1). Exit codes:
+// 2 = usage error; 1 = version guard / non-empty target / write failure;
+// 0 = success.
+func (c *SpaceCommand) runInit(ctx context.Context, args []string, stdio IO) int {
 	// The space-id is lifted out BEFORE flag.Parse, so both orders work —
 	// Go's flag package stops at the first non-flag token, which would
 	// otherwise make `init <space-id> --dir <path>` silently leave --dir
@@ -177,7 +220,8 @@ func (c *SpaceCommand) runInit(_ context.Context, args []string, stdio IO) int {
 	// cmd_contract.go).
 	fset := flag.NewFlagSet("space init", flag.ContinueOnError)
 	fset.SetOutput(stdio.Stderr)
-	dirFlag := fset.String("dir", "", "target directory (default ./<space-id>)")
+	dirFlag := fset.String("dir", "", "target directory (default ./<space-id>; with --local, <data-root>/spaces/<space-id>.git)")
+	localFlag := fset.Bool("local", false, "create a local space: a bare repository on this machine with a land guard, instead of a tree to push to GitHub")
 
 	var spaceID string
 	rest := args
@@ -191,7 +235,7 @@ func (c *SpaceCommand) runInit(_ context.Context, args []string, stdio IO) int {
 		spaceID = fset.Arg(0)
 	}
 	if spaceID == "" || fset.NArg() > 1 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space init <space-id> [--dir <path>]")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space init <space-id> [--local] [--dir <path>]")
 		return 2
 	}
 	// D8 (no-silent-yes-2026-08/P3 stage 2, spec 03 §8 AC 6/14): the
@@ -207,6 +251,9 @@ func (c *SpaceCommand) runInit(_ context.Context, args []string, stdio IO) int {
 	if spaceID == string(spaceIDSentinel) {
 		_, _ = fmt.Fprintf(stdio.Stderr, "space init: refusing to scaffold — %q is the template's own scaffolding sentinel, not a real space id\n", spaceID)
 		return 1
+	}
+	if *localFlag {
+		return c.runInitLocal(ctx, spaceID, *dirFlag, stdio)
 	}
 	target := *dirFlag
 	if target == "" {
@@ -676,7 +723,7 @@ func spaceUpdateFloor(current, templateFloor string) (next string, changed bool,
 // itself). This wrapper's own behaviour is unchanged — same inputs, same
 // readFile default, same output — the lift is byte-identical.
 func (c *SpaceCommand) spaceComputeUpdatePlan(spaceID, version string) (spaceUpdatePlan, error) {
-	return spaceComputeUpdatePlanFor(c.TemplateFiles, c.MirrorDir, spaceID, version, c.readFile)
+	return spaceComputeUpdatePlanFor(c.TemplateFiles, c.MirrorDir, spaceID, version, c.readFile, c.Caps.OnThisMachine)
 }
 
 // spaceComputeUpdatePlanFor is the package-level drift computation shared by
@@ -689,7 +736,13 @@ func (c *SpaceCommand) spaceComputeUpdatePlan(spaceID, version string) (spaceUpd
 // doctor's own read-only check — never needs a real filesystem. It performs
 // NO write — pure diff, safe for --dry-run, a real run, and doctor's
 // read-only row alike.
-func spaceComputeUpdatePlanFor(templateFiles fs.FS, mirrorDir, spaceID, version string, readFile func(string) ([]byte, error)) (spaceUpdatePlan, error) {
+//
+// local selects the scaffolding a space on this machine carries
+// (spaceLocalSubsetPath): the template paths outside it are not part of that
+// space at all, so they are skipped silently instead of being proposed or
+// reported as "not propagated". Both callers derive it from the opened host's
+// declared OnThisMachine, never from a host kind.
+func spaceComputeUpdatePlanFor(templateFiles fs.FS, mirrorDir, spaceID, version string, readFile func(string) ([]byte, error), local bool) (spaceUpdatePlan, error) {
 	if readFile == nil {
 		readFile = os.ReadFile
 	}
@@ -700,6 +753,9 @@ func spaceComputeUpdatePlanFor(templateFiles fs.FS, mirrorDir, spaceID, version 
 			return err
 		}
 		if d.IsDir() {
+			return nil
+		}
+		if local && !spaceLocalSubsetPath(p) {
 			return nil
 		}
 		templateData, rerr := fs.ReadFile(templateFiles, p)
@@ -719,7 +775,12 @@ func spaceComputeUpdatePlanFor(templateFiles fs.FS, mirrorDir, spaceID, version 
 				// contradiction in this command's own configuration.
 				return fmt.Errorf("disposition table lists %s, which is not a space-infrastructure path the funnel can carry", p)
 			}
-			plan.skipped = append(plan.skipped, p)
+			// A space on this machine keeps decisions/ and vendored/ from its
+			// root commit; the funnel cannot rewrite them, and they are not
+			// "outside what this command may write" news to its operator.
+			if !local {
+				plan.skipped = append(plan.skipped, p)
+			}
 			return nil
 		}
 
@@ -934,7 +995,11 @@ func (c *SpaceCommand) runUpdate(ctx context.Context, args []string, stdio IO) i
 	// a raw git push rejection — which reads as "it worked, then broke".
 	// --dry-run still shows the plan (that is what it is for) but says the
 	// run would be refused, so the scope is learned BEFORE it matters.
-	scopeRefusal, scopeNote := c.spaceCheckWorkflowScope(ctx)
+	// A space on this machine has no workflow files and no token to probe.
+	var scopeRefusal, scopeNote string
+	if !c.Caps.OnThisMachine {
+		scopeRefusal, scopeNote = c.spaceCheckWorkflowScope(ctx)
+	}
 	if scopeNote != "" {
 		_, _ = fmt.Fprintf(stdio.Stdout, "space update: %s\n", scopeNote)
 	}
@@ -988,8 +1053,12 @@ func (c *SpaceCommand) runUpdate(ctx context.Context, args []string, stdio IO) i
 		_, _ = fmt.Fprintf(stdio.Stderr, "space update: %v\n", errMissingHostBaseBranch)
 		return 1
 	}
-	for _, line := range spaceUpdateDirectiveLines(c.HostCfg.Repo.Owner, c.HostCfg.Repo.Name, baseBranch) {
-		_, _ = fmt.Fprintf(stdio.Stdout, "space update: %s\n", line)
+	// The two directives are GitHub branch-protection steps; a space on this
+	// machine has neither a protection setting nor a `gh` repo to name.
+	if !c.Caps.OnThisMachine {
+		for _, line := range spaceUpdateDirectiveLines(c.HostCfg.Repo.Owner, c.HostCfg.Repo.Name, baseBranch) {
+			_, _ = fmt.Fprintf(stdio.Stdout, "space update: %s\n", line)
+		}
 	}
 
 	if *dryRun {
@@ -1001,6 +1070,10 @@ func (c *SpaceCommand) runUpdate(ctx context.Context, args []string, stdio IO) i
 	}
 
 	commitMsg := "a2a(space-update): sync scaffolding with the embedded template"
+	prBody := spaceUpdatePRBody(c.HostCfg.Repo.Owner, c.HostCfg.Repo.Name, baseBranch)
+	if c.Caps.OnThisMachine {
+		prBody = "a2a space update: sync this space's scaffolding with the current embedded template.\n"
+	}
 	req := space.SubmitRequest{
 		RepoDir:                  c.MirrorDir,
 		System:                   c.OwnSystem,
@@ -1014,7 +1087,7 @@ func (c *SpaceCommand) runUpdate(ctx context.Context, args []string, stdio IO) i
 		Repo:                     c.HostCfg.Repo,
 		BaseBranch:               baseBranch,
 		PRTitle:                  commitMsg,
-		PRBody:                   spaceUpdatePRBody(c.HostCfg.Repo.Owner, c.HostCfg.Repo.Name, baseBranch),
+		PRBody:                   prBody,
 		Credential:               c.HostCfg.Credential,
 		MinBinaryVersion:         plan.currentFloor,
 		AllowSpaceInfrastructure: true,
@@ -1085,4 +1158,459 @@ func spaceUpdateNextStep(stdio IO) {
 	_, _ = fmt.Fprintln(stdio.Stdout, "space update:   after it merges, run `a2a sync` — the local mirror is what")
 	_, _ = fmt.Fprintln(stdio.Stdout, "space update:   `a2a version`, `a2a doctor` and the dashboard read, and it does")
 	_, _ = fmt.Fprintln(stdio.Stdout, "space update:   not move on its own. `a2a space update --wait` does both for you.")
+}
+
+// --- `a2a space init --local` (local-space-2026-10 spec 03 §T1.1) --------
+
+// spaceLocalSubsetPath reports whether an embedded template path belongs to a
+// space that lives on this machine: every path the funnel does NOT treat as
+// space infrastructure (decisions/, vendored/), plus space.yaml, minus the
+// template's own README.md. It is the ONE definition `space init --local`,
+// `space update` (spaceComputeUpdatePlanFor's local mode) and doctor's
+// scaffolding row all read, so the three can never disagree about what a
+// local space is supposed to contain. Nothing lists files by hand except the
+// README.md exclusion: it documents the TEMPLATE, which `space init` already
+// tells the operator to delete.
+func spaceLocalSubsetPath(p string) bool {
+	if p == "README.md" {
+		return false
+	}
+	return p == "space.yaml" || !space.IsInfrastructurePath(p)
+}
+
+// spaceLocalFiles renders the local subset of the embedded template for
+// spaceID: the same substitutions `space init` applies, over the paths
+// spaceLocalSubsetPath keeps. Order is the template walk's (lexical).
+func (c *SpaceCommand) spaceLocalFiles(spaceID, version string) ([]space.FileWrite, error) {
+	if c.TemplateFiles == nil {
+		return nil, fmt.Errorf("not wired: no embedded space template")
+	}
+	var files []space.FileWrite
+	err := fs.WalkDir(c.TemplateFiles, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !spaceLocalSubsetPath(p) {
+			return nil
+		}
+		data, rerr := fs.ReadFile(c.TemplateFiles, p)
+		if rerr != nil {
+			return fmt.Errorf("cannot read embedded %s: %w", p, rerr)
+		}
+		files = append(files, space.FileWrite{Path: p, Content: spaceApplySubstitutions(p, data, spaceID, version)})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
+// runInitLocal creates (or, on a re-run, finishes) a local space. Exit codes
+// follow runInit: 1 = refused / failed, 0 = created or already created.
+//
+// The order is the point. The bare repository and its ONE root commit come
+// first, and the marker plus the pre-receive guard come LAST
+// (host.PrepareLocalSpace): the guard refuses a push to main, so arming it
+// first would refuse the bootstrap itself. A crash between the two leaves an
+// unmarked repository with one root commit declaring this space's id, which
+// the re-run branch recognises and completes.
+func (c *SpaceCommand) runInitLocal(ctx context.Context, spaceID, dir string, stdio IO) int {
+	cleanVersion, err := spaceCleanVersion(c.Version)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space init: refusing to scaffold — %v\n", err)
+		return 1
+	}
+	if c.Engine == nil {
+		_, _ = fmt.Fprintln(stdio.Stderr, "space init --local: not wired (no manifest validator) — this build cannot validate the seeded space.yaml")
+		return 1
+	}
+	files, err := c.spaceLocalFiles(spaceID, cleanVersion)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space init: %v\n", err)
+		return 1
+	}
+	// Validate before anything touches the disk: the id also becomes a path
+	// segment of the default target, so a malformed id must be refused by the
+	// manifest schema first, not by the filesystem.
+	if code := c.spaceValidateSeededManifest(files, stdio); code != 0 {
+		return code
+	}
+
+	target := dir
+	if target == "" {
+		if c.DataRoot == "" {
+			_, _ = fmt.Fprintln(stdio.Stderr, "space init --local: not wired (no data root) — pass --dir <path>")
+			return 1
+		}
+		target = filepath.Join(c.DataRoot, "spaces", spaceID+".git")
+	}
+	abs, err := initCanonicalPath(target)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space init: cannot resolve %s: %v\n", target, err)
+		return 1
+	}
+
+	nonEmpty, err := spaceDirNonEmpty(abs)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space init: cannot inspect %s: %v\n", abs, err)
+		return 1
+	}
+	if nonEmpty {
+		return c.spaceInitLocalRerun(ctx, spaceID, abs, stdio)
+	}
+
+	_, mkErr := os.Stat(abs)
+	existed := mkErr == nil
+	if _, err := space.InitLocalSpaceRepo(ctx, abs, files); err != nil {
+		if !existed {
+			if rmErr := os.RemoveAll(abs); rmErr != nil {
+				err = fmt.Errorf("%w (and the partial directory could not be removed: %v)", err, rmErr)
+			}
+		}
+		_, _ = fmt.Fprintf(stdio.Stderr, "space init: %v\n", err)
+		return 1
+	}
+	if err := host.PrepareLocalSpace(ctx, abs, space.LocalSpaceBaseBranch); err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space init: the repository was created at %s but its land guard could not be installed: %v\n", abs, err)
+		_, _ = fmt.Fprintf(stdio.Stderr, "space init: re-run `a2a space init %s --local --dir %s` to finish — it is safe to repeat\n", spaceID, abs)
+		return 1
+	}
+
+	_, _ = fmt.Fprintf(stdio.Stdout, "space init: created local space %s at %s\n", spaceID, abs)
+	_, _ = fmt.Fprintln(stdio.Stdout, "space init: next steps, IN THIS ORDER:")
+	_, _ = fmt.Fprintf(stdio.Stdout, "  1. from each participant repo: a2a connect %s\n", abs)
+	_, _ = fmt.Fprintln(stdio.Stdout, "  2. from the same repo: a2a space join")
+	return 0
+}
+
+// spaceValidateSeededManifest validates the rendered space.yaml of a new local
+// space with the injected engine; a manifest that does not validate clean is a
+// bug in the template or the id, and is refused before any file is written.
+func (c *SpaceCommand) spaceValidateSeededManifest(files []space.FileWrite, stdio IO) int {
+	var manifest []byte
+	for _, f := range files {
+		if f.Path == "space.yaml" {
+			manifest = f.Content
+		}
+	}
+	if manifest == nil {
+		_, _ = fmt.Fprintln(stdio.Stderr, "space init: the embedded template has no space.yaml")
+		return 1
+	}
+	res, err := c.Engine.ValidateManifest(manifest)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space init: cannot validate the seeded space.yaml: %v\n", err)
+		return 1
+	}
+	if !res.Valid {
+		_, _ = fmt.Fprintln(stdio.Stderr, "space init: refusing to create — the seeded space.yaml does not validate:")
+		for _, v := range res.Violations {
+			_, _ = fmt.Fprintf(stdio.Stderr, "  %s %s: %s\n", v.Code, v.Path, v.Message)
+		}
+		return 1
+	}
+	return 0
+}
+
+// spaceInitLocalRerun is the re-run branch (AGENTS.md idempotency): the target
+// is non-empty, so it is either this space's own local repository, which only
+// needs its guard (re)installed, or somebody else's directory, which is
+// refused exactly as `space init` refuses any non-empty target.
+//
+// "Own" is read from the repository, never assumed: a bare repository whose
+// main declares spaceID in space.yaml AND that is either marked local (it was
+// completed, possibly with an edited hook) or is still the single root commit
+// InitLocalSpaceRepo wrote (it crashed before the guard). Nothing is committed.
+func (c *SpaceCommand) spaceInitLocalRerun(ctx context.Context, spaceID, abs string, stdio IO) int {
+	state, err := space.ReadLocalSpaceRepo(ctx, abs)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space init: cannot inspect %s: %v\n", abs, err)
+		return 1
+	}
+	marked := false
+	if c.Open != nil {
+		if h, _, openErr := c.Open(abs); openErr == nil && h != nil {
+			marked = h.Capabilities().OnThisMachine
+		}
+	}
+	own := state.IsBareRepo && state.SpaceID == spaceID && (marked || state.RootOnly)
+	if !own {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space init: %s already exists and is not empty — remove it or pass a different --dir\n", abs)
+		return 1
+	}
+	if err := host.PrepareLocalSpace(ctx, abs, space.LocalSpaceBaseBranch); err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space init: could not install the land guard at %s: %v\n", abs, err)
+		return 1
+	}
+	_, _ = fmt.Fprintf(stdio.Stdout, "space init: local space %s already created at %s; guard installed\n", spaceID, abs)
+	return 0
+}
+
+// --- `a2a space join` (local-space-2026-10 spec 03 §T1.2) ----------------
+
+// spaceSystemIDPattern is the shape a system id must have to be written into a
+// manifest row and a path segment by `join` — the same lowercase-slug grammar
+// every id in this product uses. The id comes from the project's own config;
+// this is the boundary where it becomes YAML text and a directory name.
+var spaceSystemIDPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
+// spaceJoinSectionDirs are the five section directories a participant owns
+// (onboarding.md §9.2; testkit/spacefixture's seed tree), each created with a
+// .gitkeep because git tracks files, not directories.
+var spaceJoinSectionDirs = []string{"provides", "requires", "exchanges", "events", "docs"}
+
+// spaceJoinResult is the `--json` shape of a join.
+type spaceJoinResult struct {
+	Status  string `json:"status"` // "joined" | "already-active"
+	System  string `json:"system"`
+	Space   string `json:"space"`
+	Section string `json:"section"`
+}
+
+// runJoin implements `a2a space join [--space <id>] [--json]`. Exit codes:
+// 2 = usage error; 1 = not wired / refused / write failure; 0 = joined or
+// already an active participant.
+func (c *SpaceCommand) runJoin(ctx context.Context, args []string, stdio IO) int {
+	fset := flag.NewFlagSet("space join", flag.ContinueOnError)
+	fset.SetOutput(stdio.Stderr)
+	spaceFlag := fset.String("space", "", "space id (defaults to the connected space)")
+	asJSON := fset.Bool("json", false, "print the result as JSON")
+	if err := fset.Parse(args); err != nil {
+		return 2
+	}
+	if fset.NArg() > 0 {
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space join [--space <id>] [--json]")
+		return 2
+	}
+	if err := c.spaceUpdateWired(); err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space join: %v\n", err)
+		return 1
+	}
+	if *spaceFlag != "" && *spaceFlag != c.SpaceID {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space join: unknown space %q (connected space is %q)\n", *spaceFlag, c.SpaceID)
+		return 1
+	}
+	// A host that does not let a participant assert its own identity (GitHub:
+	// an owner is a real login the binary cannot mint) is joined through the
+	// space's onboarding manifest PR, never by this verb. Read from the
+	// declared capability; the zero value (an unwired command) declares
+	// nothing and so refuses.
+	if !c.Caps.OwnerIdentitySelfAsserted {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space join: %s does not let a system assert its own identity — add %s through the space's onboarding manifest PR (skill onboarding.md, §9.2)\n", c.SpaceID, c.OwnSystem)
+		return 1
+	}
+	system := c.OwnSystem
+	if !spaceSystemIDPattern.MatchString(system) {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space join: system id %q is not a valid system id\n", system)
+		return 1
+	}
+	baseBranch := c.HostCfg.BaseBranch
+	if baseBranch == "" {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space join: %v\n", errMissingHostBaseBranch)
+		return 1
+	}
+	readFile := c.readFile
+	if readFile == nil {
+		readFile = os.ReadFile
+	}
+
+	rawManifest, err := readFile(filepath.Join(c.MirrorDir, "space.yaml"))
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space join: cannot read the mirror's space.yaml: %v\n", err)
+		return 1
+	}
+	manifest, err := space.ParseManifest(rawManifest)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space join: the mirror's space.yaml is unreadable: %v\n", err)
+		return 1
+	}
+	for _, p := range manifest.Participants {
+		if p.System != system {
+			continue
+		}
+		if p.Status != fold.MembershipMember {
+			// Re-activating a participant who left is a decision about the
+			// space, made in its manifest; a join must not undo it silently.
+			_, _ = fmt.Fprintf(stdio.Stderr, "space join: %s is listed in %s with a status other than active — reactivating a participant is a manifest decision, not a join\n", system, c.SpaceID)
+			return 1
+		}
+		return c.spaceJoinReport(stdio, *asJSON, "already-active", system)
+	}
+
+	now := c.Now
+	if now == nil {
+		now = time.Now
+	}
+	row := fmt.Sprintf("{system: %s, org: local, section: %s, owners: [local:%s], status: active, joined: %s}",
+		system, system, system, now().UTC().Format("2006-01-02"))
+	updated, err := spaceAddParticipantRow(rawManifest, row)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space join: %v\n", err)
+		return 1
+	}
+	files := []space.FileWrite{{Path: "space.yaml", Content: updated}}
+	for _, f := range spaceJoinSectionFiles(system) {
+		// A path the mirror already carries is the section's own content;
+		// the join never overwrites it.
+		if _, statErr := readFile(filepath.Join(c.MirrorDir, filepath.FromSlash(f.Path))); statErr == nil {
+			continue
+		}
+		files = append(files, f)
+	}
+
+	commitMsg := "a2a(space-join): add " + system + " as a participant"
+	result, err := c.Funnel.Submit(ctx, space.SubmitRequest{
+		RepoDir:                  c.MirrorDir,
+		System:                   system,
+		Verb:                     "space-join",
+		ArtifactID:               "participant",
+		Files:                    files,
+		CommitMessage:            commitMsg,
+		CommitAuthorName:         c.HostCfg.CommitAuthorName,
+		CommitAuthorEmail:        c.HostCfg.CommitAuthorEmail,
+		RemoteURL:                c.HostCfg.RemoteURL,
+		Repo:                     c.HostCfg.Repo,
+		BaseBranch:               baseBranch,
+		PRTitle:                  commitMsg,
+		PRBody:                   "a2a space join: add " + system + " to this space's participants, with its section scaffold, in one write.\n",
+		Credential:               c.HostCfg.Credential,
+		MinBinaryVersion:         manifest.MinBinaryVersion,
+		AllowSpaceInfrastructure: true,
+	})
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space join: %v\n", err)
+		return 1
+	}
+	if result.State == space.WriteStateAlreadyOpen || result.State == space.WriteStateAlreadyMerged {
+		_, _ = fmt.Fprintf(stdio.Stdout, "space join: already submitted (PR %s, %s)\n", result.PRURL, result.State)
+		return 0
+	}
+	return c.spaceJoinReport(stdio, *asJSON, "joined", system)
+}
+
+// spaceJoinReport prints the outcome in the requested shape and returns 0.
+func (c *SpaceCommand) spaceJoinReport(stdio IO, asJSON bool, status, system string) int {
+	if asJSON {
+		out := spaceJoinResult{Status: status, System: system, Space: c.SpaceID, Section: system + "/"}
+		if err := json.NewEncoder(stdio.Stdout).Encode(out); err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "space join: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if status == "already-active" {
+		_, _ = fmt.Fprintf(stdio.Stdout, "space join: %s is already an active participant of %s\n", system, c.SpaceID)
+		return 0
+	}
+	_, _ = fmt.Fprintf(stdio.Stdout, "space join: %s joined %s (section %s/)\n", system, c.SpaceID, system)
+	return 0
+}
+
+// spaceJoinSectionFiles is the section scaffold a join writes beside the
+// manifest row: five .gitkeep directories and an empty consumes registry, the
+// shape testkit/spacefixture seeds and onboarding.md §9.2 describes.
+func spaceJoinSectionFiles(system string) []space.FileWrite {
+	files := make([]space.FileWrite, 0, len(spaceJoinSectionDirs)+1)
+	for _, dir := range spaceJoinSectionDirs {
+		files = append(files, space.FileWrite{Path: system + "/" + dir + "/.gitkeep", Content: []byte{}})
+	}
+	files = append(files, space.FileWrite{
+		Path:    system + "/consumes.yaml",
+		Content: []byte("schema: consumes/v1\nsystem: " + system + "\ndependencies: []\n"),
+	})
+	return files
+}
+
+// spaceAddParticipantRow appends one flow-style participant row (without its
+// leading "- ") to space.yaml's `participants:` list by text surgery, never a
+// marshal round trip: the manifest is the space's own file, and re-encoding it
+// would drop the template's comments and key order (the discipline
+// insertCredentialEntry follows for the machine config).
+//
+// Two shapes are edited in place: the template's `participants: []` (converted
+// to block form; its trailing comment and any comment lines that continue it
+// stay where they are, and the row lands after them) and an existing block
+// list (the row lands after its last item, in the list's own indentation).
+// Anything else — a non-empty flow list, an anchor — is refused with a message
+// rather than guessed at.
+func spaceAddParticipantRow(raw []byte, row string) ([]byte, error) {
+	lines := strings.Split(string(raw), "\n")
+	hdr := -1
+	for i, l := range lines {
+		if strings.HasPrefix(l, "participants:") {
+			hdr = i
+			break
+		}
+	}
+	if hdr < 0 {
+		return nil, fmt.Errorf("space.yaml has no top-level `participants:` key — fix the manifest before joining")
+	}
+	rest := strings.TrimPrefix(lines[hdr], "participants:")
+	value := rest
+	if i := strings.Index(rest, "#"); i >= 0 {
+		value = rest[:i]
+	}
+	value = strings.TrimSpace(value)
+
+	switch value {
+	case "[]":
+		// Drop the brackets and keep the comment exactly where it was.
+		lines[hdr] = strings.TrimRight("participants:"+strings.Replace(rest, "[]", "", 1), " ")
+	case "":
+		// Already block form (or a bare key).
+	default:
+		return nil, fmt.Errorf("space.yaml's `participants:` is %q, a form `join` cannot edit in place — add the row by hand", value)
+	}
+
+	// Walk the block that follows the header: item lines are indented or start
+	// with "- "; comment-only and blank lines pass through. The row goes after
+	// the last item, or, when there is none, after the comment run that
+	// continues the header.
+	indent := "  "
+	last := -1
+	commentRunEnd := hdr
+	inRun := true
+	firstItem := true
+	for j := hdr + 1; j < len(lines); j++ {
+		l := lines[j]
+		t := strings.TrimSpace(l)
+		switch {
+		case t == "":
+			inRun = false
+		case strings.HasPrefix(t, "#"):
+			if inRun {
+				commentRunEnd = j
+			}
+		case strings.HasPrefix(l, " ") || strings.HasPrefix(l, "\t") || strings.HasPrefix(l, "- ") || l == "-":
+			inRun = false
+			last = j
+			if firstItem && strings.HasPrefix(t, "-") {
+				indent = l[:len(l)-len(strings.TrimLeft(l, " \t"))]
+				firstItem = false
+			}
+		default:
+			j = len(lines) // the next top-level key ends the block
+		}
+	}
+	at := commentRunEnd
+	if last >= 0 {
+		at = last
+	}
+	out := make([]string, 0, len(lines)+1)
+	out = append(out, lines[:at+1]...)
+	out = append(out, indent+"- "+row)
+	out = append(out, lines[at+1:]...)
+	updated := []byte(strings.Join(out, "\n"))
+
+	// The edit must read back as exactly the manifest plus one participant.
+	before, err := space.ParseManifest(raw)
+	if err != nil {
+		return nil, fmt.Errorf("space.yaml is unreadable: %w", err)
+	}
+	after, err := space.ParseManifest(updated)
+	if err != nil || len(after.Participants) != len(before.Participants)+1 {
+		return nil, fmt.Errorf("could not add the participant row to space.yaml in place — add it by hand")
+	}
+	return updated, nil
 }

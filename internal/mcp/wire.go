@@ -599,26 +599,32 @@ func buildWriteDepsForSpace(ctx context.Context, cfg space.ProjectConfig, machin
 		return WriteDeps{}, SubmitDeps{}, NewDeps{}, fmt.Errorf("parse manifest: %w", err)
 	}
 
-	// The machine-config reference is OPTIONAL: the explicit
-	// A2A_TOKEN_<SPACE_ID> override is precedence step (a) and must be
-	// sufficient on its own (same contract as cmd/a2a's own
-	// resolveCredential — an unresolvable credential then reports what it
-	// checked, rather than pre-empting the check).
-	var credRef space.CredentialReference
-	if credRefStr, ok := machine.Credentials[ref.ID]; ok {
-		parsed, perr := space.ParseCredentialReference(credRefStr)
-		if perr != nil {
-			return WriteDeps{}, SubmitDeps{}, NewDeps{}, perr
-		}
-		credRef = parsed
-	}
-	cred, err := space.ResolveWriteCredential(ctx, space.CredentialEnvVar(ref.ID), credRef)
-	if err != nil {
-		return WriteDeps{}, SubmitDeps{}, NewDeps{}, err
-	}
+	// The host is opened FIRST: whether a write needs a credential at all is
+	// the host's own declaration, and a host that needs none (a space on this
+	// machine) must not be made to resolve one.
 	h, repo, err := open(ref.RepoURL)
 	if err != nil {
 		return WriteDeps{}, SubmitDeps{}, NewDeps{}, err
+	}
+	var cred host.Credential
+	if h.Capabilities().NeedsCredential {
+		// The machine-config reference is OPTIONAL: the explicit
+		// A2A_TOKEN_<SPACE_ID> override is precedence step (a) and must be
+		// sufficient on its own (same contract as cmd/a2a's own
+		// resolveCredential — an unresolvable credential then reports what it
+		// checked, rather than pre-empting the check).
+		var credRef space.CredentialReference
+		if credRefStr, ok := machine.Credentials[ref.ID]; ok {
+			parsed, perr := space.ParseCredentialReference(credRefStr)
+			if perr != nil {
+				return WriteDeps{}, SubmitDeps{}, NewDeps{}, perr
+			}
+			credRef = parsed
+		}
+		cred, err = space.ResolveWriteCredential(ctx, space.CredentialEnvVar(ref.ID), credRef)
+		if err != nil {
+			return WriteDeps{}, SubmitDeps{}, NewDeps{}, err
+		}
 	}
 
 	resolver := NewMirrorResolver(mirrorDir, manifest)

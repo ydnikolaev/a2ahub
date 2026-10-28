@@ -17,11 +17,103 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/surface"
 	"gopkg.in/yaml.v3"
 )
+
+// initCanonicalPath returns p as an absolute path with symlinks resolved. The
+// deepest EXISTING ancestor is resolved with EvalSymlinks and the missing tail
+// is appended unchanged, so a path that does not exist yet (a local space about
+// to be created) canonicalizes to exactly where it will exist. For an existing
+// path this is filepath.EvalSymlinks(filepath.Abs(p)).
+//
+// It is the one spelling `space init --local`, `connect` and `init --space`
+// persist for a local space: the write journal keys a scheme-less remote on its
+// absolute path (internal/space/prepared.go), so `/var/...` against
+// `/private/var/...` on macOS, a relative path from another cwd, or a trailing
+// slash would otherwise name the same repository three ways.
+func initCanonicalPath(p string) (string, error) {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	head, tail := abs, ""
+	for {
+		resolved, rerr := filepath.EvalSymlinks(head)
+		if rerr == nil {
+			return filepath.Join(resolved, tail), nil
+		}
+		if !errors.Is(rerr, fs.ErrNotExist) {
+			return "", rerr
+		}
+		parent := filepath.Dir(head)
+		if parent == head {
+			return "", rerr
+		}
+		tail = filepath.Join(filepath.Base(head), tail)
+		head = parent
+	}
+}
+
+// initLocalLocator returns the spelling `connect` and `init --space` persist for
+// a space locator. A locator that addresses a directory on this machine (an
+// absolute path, or a relative one that names an existing directory) is
+// canonicalized with initCanonicalPath; a URL (anything with a scheme), an
+// scp-style address, a path that does not exist, or a path that cannot be
+// resolved is returned exactly as given. A relative path is made absolute BEFORE
+// the host is opened because the host classifies only an absolute path as a
+// path.
+func initLocalLocator(raw string) string {
+	if raw == "" || strings.Contains(raw, "://") {
+		return raw
+	}
+	if colon := strings.IndexByte(raw, ':'); colon >= 0 && (strings.IndexByte(raw, '/') < 0 || colon < strings.IndexByte(raw, '/')) {
+		return raw // scp-style git address: user@host:owner/name
+	}
+	if !filepath.IsAbs(raw) {
+		info, err := os.Stat(raw)
+		if err != nil || !info.IsDir() {
+			return raw
+		}
+	}
+	canonical, err := initCanonicalPath(raw)
+	if err != nil {
+		return raw
+	}
+	return canonical
+}
+
+// initOpenLocator opens the host for a space locator and returns the spelling
+// to persist along with it. A locator that is a space on this machine (the
+// opened host declares OnThisMachine) is persisted canonicalized; every other
+// locator is persisted exactly as given, because rewriting the spelling of a
+// GitHub-kind space would make `connect` stop recognising an entry an earlier
+// version wrote. The host is nil when no opener is wired or the locator cannot
+// be opened, and the decisions that read it then keep today's behaviour.
+func initOpenLocator(open host.Opener, raw string) (string, host.Host) {
+	if open == nil {
+		return raw, nil
+	}
+	if canonical := initLocalLocator(raw); canonical != raw {
+		if h, _, err := open(canonical); err == nil && h != nil && h.Capabilities().OnThisMachine {
+			return canonical, h
+		}
+	}
+	h, _, err := open(raw)
+	if err != nil {
+		return raw, nil
+	}
+	return raw, h
+}
+
+// initHostNeedsCredential is true unless h declares that it needs none; a nil
+// host (nothing wired, or an address that would not open) keeps seeding one.
+func initHostNeedsCredential(h host.Host) bool {
+	return h == nil || h.Capabilities().NeedsCredential
+}
 
 // initAgentsPointerStart/End delimit the a2ahub pointer block in AGENTS.md.
 // The start marker is the idempotency key: a re-run that finds it makes no
@@ -111,6 +203,11 @@ type InitCommand struct {
 	// (catalog/test path), the step is a no-op.
 	ClaudeMdPath string
 
+	// Open resolves a space locator to its host, so a space whose host needs no
+	// credential (a space on this machine) gets no credential reference seeded.
+	// Nil (catalog and tests) keeps seeding one for every space.
+	Open host.Opener
+
 	// writeFile/loadProjectConfig are DI seams (rails, mirrors
 	// DoctorCommand's own convention) so tests never touch a real
 	// .a2a/config.yaml path. defaultCredentialRef is the same kind of seam
@@ -176,8 +273,13 @@ func (c *InitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 
 	refs := make([]space.Ref, 0, len(spaces))
+	noCredential := make(map[string]struct{}) // locators whose host needs none
 	for _, s := range spaces {
-		refs = append(refs, space.Ref{ID: initSpaceIDFromURL(s), RepoURL: s})
+		locator, h := initOpenLocator(c.Open, s)
+		refs = append(refs, space.Ref{ID: initSpaceIDFromURL(locator), RepoURL: locator})
+		if !initHostNeedsCredential(h) {
+			noCredential[locator] = struct{}{}
+		}
 	}
 	cfg := space.ProjectConfig{System: *system, Spaces: refs}
 	existing, hasExisting := c.loadExisting()
@@ -191,7 +293,7 @@ func (c *InitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// FIX B runs before the idempotent short-circuit so a repeat `a2a
 	// init` still ensures/hints the machine config (e.g. an operator who
 	// deleted it after a first run).
-	if code := c.ensureMachineConfig(ctx, refs, stdio); code != 0 {
+	if code := c.ensureMachineConfig(ctx, refs, noCredential, stdio); code != 0 {
 		return code
 	}
 
@@ -274,7 +376,7 @@ func (c *InitCommand) loadExisting() (space.ProjectConfig, bool) {
 // own comments and entries) — it only gets the hint printed. Every
 // connected space's exact credential env var is printed either way, so a
 // repeat `a2a init` still re-surfaces it.
-func (c *InitCommand) ensureMachineConfig(ctx context.Context, refs []space.Ref, stdio IO) int {
+func (c *InitCommand) ensureMachineConfig(ctx context.Context, refs []space.Ref, noCredential map[string]struct{}, stdio IO) int {
 	if c.MachineConfigPath == "" {
 		return 0
 	}
@@ -304,9 +406,18 @@ func (c *InitCommand) ensureMachineConfig(ctx context.Context, refs []space.Ref,
 		var raw []byte
 		raw = append(raw, "# a2a machine config — personal, per-machine credential REFERENCES only (never commit this file; §7.4).\n"...)
 		raw = append(raw, skeleton...)
-		raw = append(raw, "credentials:\n"...)
+		// A space whose host needs no credential gets no reference, and the
+		// probe behind credentialRef is not called for it.
+		var entries []byte
 		for _, ref := range refs {
-			raw = append(raw, "  "+ref.ID+": "+c.credentialRef(ctx, ref.ID)+"\n"...)
+			if _, none := noCredential[ref.RepoURL]; none {
+				continue
+			}
+			entries = append(entries, "  "+ref.ID+": "+c.credentialRef(ctx, ref.ID)+"\n"...)
+		}
+		if len(entries) > 0 {
+			raw = append(raw, "credentials:\n"...)
+			raw = append(raw, entries...)
 		}
 
 		if err := os.MkdirAll(filepath.Dir(c.MachineConfigPath), 0o755); err != nil {
@@ -548,6 +659,12 @@ type ConnectCommand struct {
 	writeFile         func(path string, data []byte, perm os.FileMode) error
 	readFile          func(path string) ([]byte, error)
 
+	// Open resolves a space locator to its host: a host that needs no
+	// credential gets no credential entry and no credential on the mirror
+	// refresh, and a host whose owner identity is self-asserted is pointed at
+	// `a2a space join`. Nil (catalog and tests) is today's behaviour.
+	Open host.Opener
+
 	// defaultCredentialRef is the same probe seam InitCommand carries (nil
 	// = internal/space's real one).
 	defaultCredentialRef func(ctx context.Context, spaceID string) string
@@ -597,8 +714,14 @@ func (c *ConnectCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a connect <space-repo>")
 		return 2
 	}
-	repoURL := args[0]
+	// The host is opened once, up front: its declared capabilities decide
+	// whether a credential is involved at all and whether the join hint
+	// applies, and a space on this machine is persisted canonicalized. A
+	// locator the opener cannot open leaves spaceHost nil and every decision at
+	// today's behaviour.
+	repoURL, spaceHost := initOpenLocator(c.Open, args[0])
 	urlID := initSpaceIDFromURL(repoURL)
+	needsCredential := initHostNeedsCredential(spaceHost)
 
 	cfg, _ := c.loadProjectConfig(c.projectConfigPath) // absent config is fine — connect can be the first write
 	machine, _ := c.loadMachineConfig(c.machineConfigPath)
@@ -626,7 +749,10 @@ func (c *ConnectCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// to export before this line can succeed. If the manifest later disagrees
 	// about the id, ensureCredentialEntry below re-keys the entry; the clone
 	// has already happened by then and only ever needed read access.
-	credential := mirrorCredential(ctx, c.resolveCredential, urlID, machine)
+	var credential host.Credential
+	if needsCredential {
+		credential = mirrorCredential(ctx, c.resolveCredential, urlID, machine)
+	}
 	if err := c.cloneOrFetch(ctx, dir, repoURL, credential); err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "connect: cannot establish mirror for %s: %v\n", urlID, err)
 		return 1
@@ -641,7 +767,20 @@ func (c *ConnectCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// its URL-derived guess; when the manifest disagrees, that entry is
 	// keyed to a space that does not exist and every write reds until an
 	// operator notices and hand-edits the YAML.
-	c.ensureCredentialEntry(ctx, machine, id, stdio)
+	if needsCredential {
+		c.ensureCredentialEntry(ctx, machine, id, stdio)
+	}
+	// Only the opened host's own declaration makes the join hint apply, and
+	// only for a system that is not already an active participant.
+	joinHint := func() {
+		if spaceHost == nil || !spaceHost.Capabilities().OwnerIdentitySelfAsserted || cfg.System == "" {
+			return
+		}
+		if connectIsActiveParticipant(dir, cfg.System) {
+			return
+		}
+		_, _ = fmt.Fprintln(stdio.Stdout, "connect: next: a2a space join")
+	}
 
 	// An entry registered under a DIFFERENT id for this same repo URL is a
 	// stale id, not a second space: `a2a init -space <url>` has to guess the
@@ -687,6 +826,7 @@ func (c *ConnectCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			}
 		}
 		_, _ = fmt.Fprintf(stdio.Stdout, "connect: space %q already connected; mirror refreshed\n", id)
+		joinHint()
 		return 0
 	}
 
@@ -708,11 +848,34 @@ func (c *ConnectCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			return 1
 		}
 		_, _ = fmt.Fprintf(stdio.Stdout, "connect: registered space %q and cloned its mirror\n", id)
+		joinHint()
 		return 0
 	}
 
 	_, _ = fmt.Fprintf(stdio.Stdout, "connect: space %q already connected; mirror refreshed\n", id)
+	joinHint()
 	return 0
+}
+
+// connectIsActiveParticipant reports whether system is an active participant of
+// the space whose mirror is at dir. A mirror that cannot be read or parsed
+// answers false: the hint is a pointer, and a pointer to the next step is the
+// safe thing to print when the state cannot be read.
+func connectIsActiveParticipant(dir, system string) bool {
+	raw, err := os.ReadFile(filepath.Join(dir, "space.yaml"))
+	if err != nil {
+		return false
+	}
+	manifest, err := space.ParseManifest(raw)
+	if err != nil {
+		return false
+	}
+	for _, p := range manifest.Participants {
+		if p.System == system && p.Status == fold.MembershipMember {
+			return true
+		}
+	}
+	return false
 }
 
 // ensureCredentialEntry adds `<id>: <reference>` to an EXISTING machine
@@ -735,9 +898,11 @@ func (c *ConnectCommand) ensureCredentialEntry(ctx context.Context, machine spac
 		return // no machine config yet — `a2a init` seeds it, hint below still applies
 	}
 
-	ref := space.DefaultCredentialReference(ctx, id)
+	var ref string
 	if c.defaultCredentialRef != nil {
 		ref = c.defaultCredentialRef(ctx, id)
+	} else {
+		ref = space.DefaultCredentialReference(ctx, id)
 	}
 	updated, ok := insertCredentialEntry(raw, id, ref)
 	if !ok {

@@ -1583,7 +1583,9 @@ func newMCPDataOperationsFactory(p paths, cfg space.ProjectConfig, machine space
 				func(kind, name, model string) (template.Actor, error) {
 					return resolveMCPActor(mcp.ActorInput{Kind: kind, Name: name, Model: model})
 				},
-				func(ctx context.Context) (host.Credential, error) { return resolveCredential(ctx, ref.ID, machine) },
+				func(ctx context.Context) (host.Credential, error) {
+					return resolveWriteCredential(ctx, h, true, ref.ID, machine)
+				},
 			)
 			if coreErr != nil {
 				return mcp.DataToolDeps{}, coreErr

@@ -66,7 +66,10 @@ type DoctorCommand struct {
 	// so a failed open is not retried by a later row.
 	spaceHostsMu sync.Mutex
 	spaceHosts   map[string]doctorSpaceHost
-	skillDir     string
+	// inspections memoises a local space's inspection for the lifetime of this
+	// command: the three local rows each need it and it runs git.
+	inspections map[string]doctorLocalInspection
+	skillDir    string
 
 	// TemplateFiles is the embedded space-template/ tree (spacetemplate.Files
 	// — mirrors SpaceCommand.TemplateFiles' own role and doc). Exported and
@@ -105,6 +108,9 @@ type DoctorCommand struct {
 	resolveCredential func(ctx context.Context, explicitEnvVar string, ref space.CredentialReference) (host.Credential, error)
 	readFile          func(path string) ([]byte, error)
 	lookupGit         func() error
+	// gitVersion reports the installed git's `git --version` line, for the
+	// local land guard row's floor check (nil = run `git --version`).
+	gitVersion func(ctx context.Context) (string, error)
 	// cachePath resolves the spec 19 T3 update-check cache location for the
 	// "versions" check's advisory half (doctorCheckVersions): defaults to
 	// release.CachePath; tests override it to point at a seeded temp cache.
@@ -211,6 +217,60 @@ func hostAs[T any](h host.Host) (T, bool) {
 	return t, ok
 }
 
+// doctorDeclaredCaps returns the capabilities ref's host DECLARES. known is
+// false when the space has no host (no opener wired, a malformed repo_url, an
+// open error), and Capabilities() is never called on a nil host. A row that can
+// be n/a reads this and nothing else to decide: n/a comes only from a declared
+// value, never from a missing optional method.
+func (c *DoctorCommand) doctorDeclaredCaps(ref space.Ref) (caps host.Capabilities, known bool) {
+	sh := c.spaceHost(ref)
+	if sh.err != nil || sh.h == nil {
+		return host.Capabilities{}, false
+	}
+	return sh.h.Capabilities(), true
+}
+
+// doctorSplitNotApplicable partitions refs into the spaces a row does not apply
+// to (their host DECLARES a capability that makes it n/a) and the spaces it
+// still has to judge. notes carries one reason per n/a space, in refs' order.
+// A space with no host is never n/a: it stays in applicable and the row lists it
+// unverifiable, as before.
+//
+// Every row that can be n/a loops over applicable instead of cfg.Spaces and
+// compares its readerless count to len(applicable), so an n/a space is excluded
+// from both sides of that comparison.
+func (c *DoctorCommand) doctorSplitNotApplicable(refs []space.Ref, notApplicable func(host.Capabilities) bool, reason func(space.Ref) string) (notes []string, applicable []space.Ref) {
+	for _, ref := range refs {
+		if caps, known := c.doctorDeclaredCaps(ref); known && notApplicable(caps) {
+			notes = append(notes, reason(ref))
+			continue
+		}
+		applicable = append(applicable, ref)
+	}
+	return notes, applicable
+}
+
+// doctorNotApplicableDetail renders n/a reasons as a PASS detail in the " · "
+// convention every advisory-on-success row uses; "" when there are none.
+func doctorNotApplicableDetail(notes []string) string {
+	if len(notes) == 0 {
+		return ""
+	}
+	return " · " + strings.Join(notes, "; ")
+}
+
+// doctorAppendNotApplicable adds n/a reasons to a PASS detail a row already
+// built (which is "" or starts with " · ").
+func doctorAppendNotApplicable(detail string, notes []string) string {
+	if len(notes) == 0 {
+		return detail
+	}
+	if detail == "" {
+		return doctorNotApplicableDetail(notes)
+	}
+	return detail + "; " + strings.Join(notes, "; ")
+}
+
 // Name implements cli.Command.
 func (c *DoctorCommand) Name() string { return "doctor" }
 
@@ -283,6 +343,9 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		{"notify-routes", func() (bool, string) { return c.doctorCheckNotifyRoutes(cfg, machine) }},
 		{"notify-secret", func() (bool, string) { return c.doctorCheckNotifySecret(ctx, cfg, machine) }},
 		{"notify-delivery", func() (bool, string) { return c.doctorCheckNotifyDelivery(ctx, cfg, machine) }},
+		{"local land guard", func() (bool, string) { return c.doctorCheckLocalLandGuard(ctx, cfg) }},
+		{"local history shape", func() (bool, string) { return c.doctorCheckLocalHistoryShape(ctx, cfg) }},
+		{"local space writable", func() (bool, string) { return c.doctorCheckLocalSpaceWritable(ctx, cfg) }},
 	}
 
 	allOK := true
@@ -342,12 +405,21 @@ func (c *DoctorCommand) doctorCheckParticipantAvatars(cfg space.ProjectConfig, m
 	if len(cfg.Spaces) == 0 {
 		return true, ""
 	}
+	// A space whose owner identity is self-asserted has no login to fetch a
+	// picture for: its owners render as initials, and the "correct them in
+	// space.yaml" advisory below is never printed for them.
+	notApplicable, applicable := c.doctorSplitNotApplicable(cfg.Spaces,
+		func(caps host.Capabilities) bool { return caps.OwnerIdentitySelfAsserted },
+		func(ref space.Ref) string { return ref.ID + ": local owners render as initials" })
+	if len(applicable) == 0 {
+		return true, doctorNotApplicableDetail(notApplicable)
+	}
 	if c.ParticipantAvatarStatus == nil {
-		return true, " · local participant avatar probe not wired"
+		return true, doctorAppendNotApplicable(" · local participant avatar probe not wired", notApplicable)
 	}
 	missing := make(map[string][]string)
 	unsupported := make(map[string]map[string]string)
-	for _, ref := range cfg.Spaces {
+	for _, ref := range applicable {
 		dir := c.resolveMirror(c.projectRoot, ref, machine)
 		raw, err := c.readFile(filepath.Join(dir, "space.yaml"))
 		if err != nil {
@@ -399,7 +471,7 @@ func (c *DoctorCommand) doctorCheckParticipantAvatars(cfg space.ProjectConfig, m
 		}
 	}
 	if len(missing) == 0 && len(unsupported) == 0 {
-		return true, ""
+		return true, doctorNotApplicableDetail(notApplicable)
 	}
 	formatOwners := func(bySpace map[string][]string) string {
 		spaceIDs := make([]string, 0, len(bySpace))
@@ -431,7 +503,7 @@ func (c *DoctorCommand) doctorCheckParticipantAvatars(cfg space.ProjectConfig, m
 	if len(unsupported) > 0 {
 		notes = append(notes, "owner identifiers cannot be fetched from GitHub ("+formatUnsupported(unsupported)+") — correct them in space.yaml")
 	}
-	return true, " · " + strings.Join(notes, "; ") + "; initials remain available meanwhile"
+	return true, doctorAppendNotApplicable(" · "+strings.Join(notes, "; ")+"; initials remain available meanwhile", notApplicable)
 }
 
 func (c *DoctorCommand) doctorCheckNotificationComponents(ctx context.Context) (bool, string) {
@@ -507,7 +579,10 @@ func (c *DoctorCommand) doctorCheckCredentials(ctx context.Context, cfg space.Pr
 	}
 	ok := true
 	var failures, advisories []string
-	for _, ref := range cfg.Spaces {
+	notApplicable, applicable := c.doctorSplitNotApplicable(cfg.Spaces,
+		func(caps host.Capabilities) bool { return !caps.NeedsCredential },
+		func(ref space.Ref) string { return ref.ID + ": local space, no credential needed" })
+	for _, ref := range applicable {
 		var parsedRef space.CredentialReference
 		if raw, present := machine.Credentials[ref.ID]; present {
 			if parsed, err := space.ParseCredentialReference(raw); err == nil {
@@ -536,9 +611,9 @@ func (c *DoctorCommand) doctorCheckCredentials(ctx context.Context, cfg space.Pr
 	// The " · " prefix is the renderer's convention for PASS-with-detail: the
 	// check supplies it, exactly as doctorCheckVersions does.
 	if len(advisories) == 0 {
-		return true, ""
+		return true, doctorNotApplicableDetail(notApplicable)
 	}
-	return true, " · " + strings.Join(advisories, "; ")
+	return true, doctorAppendNotApplicable(" · "+strings.Join(advisories, "; "), notApplicable)
 }
 
 // doctorWorkflowScopeNote returns an advisory when the space's credential
@@ -577,14 +652,26 @@ func (c *DoctorCommand) doctorCheckSpaceAccess(ctx context.Context, cfg space.Pr
 	var failures []string
 	for _, ref := range cfg.Spaces {
 		dir := c.resolveMirror(c.projectRoot, ref, machine)
-		credential := mirrorCredential(ctx, c.resolveCredential, ref.ID, machine)
+		caps, known := c.doctorDeclaredCaps(ref)
+		onThisMachine := known && caps.OnThisMachine
+		var credential host.Credential
+		if !known || caps.NeedsCredential {
+			credential = mirrorCredential(ctx, c.resolveCredential, ref.ID, machine)
+		}
 		err := c.cloneOrFetch(ctx, dir, ref.RepoURL, credential)
 		if err == nil {
 			continue
 		}
 		ok = false
 		failure := fmt.Sprintf("%s: %v", ref.ID, err)
-		if hint := c.doctorPrivateRepoHint(ctx, ref, credential, err); hint != "" {
+		if onThisMachine {
+			// The same fetch, against a path. The hint is the local space's
+			// own: a GitHub repository is found again by its URL, a directory
+			// that was moved is not, and a journal written for the old
+			// location can no longer be completed.
+			failure += " — the local space's directory is missing or unreadable; restore it at " + ref.RepoURL +
+				" (a moved local space breaks the write journals of in-flight writes, so finish or discard them before moving it)"
+		} else if hint := c.doctorPrivateRepoHint(ctx, ref, credential, err); hint != "" {
 			failure += " — " + hint
 		}
 		failures = append(failures, failure)
@@ -815,14 +902,20 @@ func (c *DoctorCommand) doctorCheckCIPresence(cfg space.ProjectConfig, machine s
 	}
 	ok := true
 	var failures []string
-	for _, ref := range cfg.Spaces {
+	notApplicable, applicable := c.doctorSplitNotApplicable(cfg.Spaces,
+		func(caps host.Capabilities) bool { return !caps.ReviewsWrites },
+		func(ref space.Ref) string { return ref.ID + ": validated at land, no CI workflow" })
+	for _, ref := range applicable {
 		dir := c.resolveMirror(c.projectRoot, ref, machine)
 		if _, err := c.readFile(filepath.Join(dir, ".github", "workflows", "a2a-validate.yml")); err != nil {
 			ok = false
 			failures = append(failures, fmt.Sprintf("%s: missing .github/workflows/a2a-validate.yml: %v", ref.ID, err))
 		}
 	}
-	return ok, strings.Join(failures, "; ")
+	if !ok {
+		return false, strings.Join(failures, "; ")
+	}
+	return true, doctorNotApplicableDetail(notApplicable)
 }
 
 // doctorCheckNotifyRoutes is P6's first notify check (spec 06 doctor
@@ -860,12 +953,20 @@ func (c *DoctorCommand) doctorCheckNotifyRoutes(cfg space.ProjectConfig, machine
 // route names exists on the space repo — presence via `gh secret list`,
 // NEVER the value.
 func (c *DoctorCommand) doctorCheckNotifySecret(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
-	if len(cfg.Spaces) == 0 || c.ghSecretList == nil {
+	if len(cfg.Spaces) == 0 {
 		return true, ""
+	}
+	// n/a is decided first: a local space has no Actions secret to list, and
+	// that is true whether or not this build wires the lister.
+	notApplicable, applicable := c.doctorSplitNotApplicable(cfg.Spaces,
+		func(caps host.Capabilities) bool { return caps.OnThisMachine },
+		func(ref space.Ref) string { return ref.ID + ": no notification delivery on a local space" })
+	if c.ghSecretList == nil {
+		return true, doctorNotApplicableDetail(notApplicable)
 	}
 	ok := true
 	var failures []string
-	for _, ref := range cfg.Spaces {
+	for _, ref := range applicable {
 		dir := c.resolveMirror(c.projectRoot, ref, machine)
 		raw, err := c.readFile(filepath.Join(dir, "space.yaml"))
 		if err != nil {
@@ -887,7 +988,10 @@ func (c *DoctorCommand) doctorCheckNotifySecret(ctx context.Context, cfg space.P
 			failures = append(failures, ref.ID+": "+detail)
 		}
 	}
-	return ok, strings.Join(failures, "; ")
+	if !ok {
+		return false, strings.Join(failures, "; ")
+	}
+	return true, doctorNotApplicableDetail(notApplicable)
 }
 
 // doctorCheckNotifyDelivery is P6's third notify check: the most recent
@@ -896,12 +1000,18 @@ func (c *DoctorCommand) doctorCheckNotifySecret(ctx context.Context, cfg space.P
 // doctorCheckDefaultBranchHealthy already resolve — a read-only use of it,
 // never a second credential source.
 func (c *DoctorCommand) doctorCheckNotifyDelivery(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
-	if len(cfg.Spaces) == 0 || c.notifyAdapter == nil {
+	if len(cfg.Spaces) == 0 {
 		return true, ""
+	}
+	notApplicable, applicable := c.doctorSplitNotApplicable(cfg.Spaces,
+		func(caps host.Capabilities) bool { return caps.OnThisMachine },
+		func(ref space.Ref) string { return ref.ID + ": no notification delivery on a local space" })
+	if c.notifyAdapter == nil {
+		return true, doctorNotApplicableDetail(notApplicable)
 	}
 	ok := true
 	var failures []string
-	for _, ref := range cfg.Spaces {
+	for _, ref := range applicable {
 		dir := c.resolveMirror(c.projectRoot, ref, machine)
 		raw, err := c.readFile(filepath.Join(dir, "space.yaml"))
 		if err != nil {
@@ -929,7 +1039,10 @@ func (c *DoctorCommand) doctorCheckNotifyDelivery(ctx context.Context, cfg space
 			failures = append(failures, ref.ID+": "+detail)
 		}
 	}
-	return ok, strings.Join(failures, "; ")
+	if !ok {
+		return false, strings.Join(failures, "; ")
+	}
+	return true, doctorNotApplicableDetail(notApplicable)
 }
 
 // doctorSpaceScaffoldingReader is the consumer-side capability (rails:
@@ -997,7 +1110,11 @@ func (c *DoctorCommand) doctorCheckScaffoldingCurrent(ctx context.Context, cfg s
 			continue
 		}
 		dir := c.resolveMirror(c.projectRoot, ref, machine)
-		plan, err := spaceComputeUpdatePlanFor(c.TemplateFiles, dir, ref.ID, cleanVersion, c.readFile)
+		// A space on this machine is compared against the local subset of the
+		// template (what `space init --local` seeds), not the whole tree.
+		caps, known := c.doctorDeclaredCaps(ref)
+		local := known && caps.OnThisMachine
+		plan, err := spaceComputeUpdatePlanFor(c.TemplateFiles, dir, ref.ID, cleanVersion, c.readFile, local)
 		if err != nil {
 			notes = append(notes, fmt.Sprintf("%s: scaffolding drift could not be checked (mirror unreadable or manifest malformed)", ref.ID))
 			continue
@@ -1012,6 +1129,10 @@ func (c *DoctorCommand) doctorCheckScaffoldingCurrent(ctx context.Context, cfg s
 
 		var whoNote string
 		switch canFix, known := c.doctorScaffoldingCanFix(ctx, ref, machine); {
+		case local:
+			// No RepoPermissions read: the repository is on this machine, and
+			// whoever runs doctor here is the one who would run the update.
+			whoNote = "run `a2a space update`"
 		case !known:
 			whoNote = "who can fix it could not be determined (repository permissions unreadable)"
 		case canFix:
@@ -1122,7 +1243,10 @@ func (c *DoctorCommand) doctorCheckAutoMerge(ctx context.Context, cfg space.Proj
 	// than blaming the token (see hostLacksNote).
 	var readerless []string
 
-	for _, ref := range cfg.Spaces {
+	notApplicable, applicable := c.doctorSplitNotApplicable(cfg.Spaces,
+		func(caps host.Capabilities) bool { return caps.LandsSynchronously },
+		func(ref space.Ref) string { return ref.ID + ": lands synchronously" })
+	for _, ref := range applicable {
 		sh := c.spaceHost(ref)
 		if sh.err != nil {
 			unverifiable = append(unverifiable, ref.ID)
@@ -1162,8 +1286,8 @@ func (c *DoctorCommand) doctorCheckAutoMerge(ctx context.Context, cfg space.Proj
 		}
 	}
 
-	if len(readerless) == len(cfg.Spaces) {
-		return true, " · auto-merge unverified: this build wires no GitHub repo-settings reader"
+	if len(applicable) > 0 && len(readerless) == len(applicable) {
+		return true, doctorAppendNotApplicable(" · auto-merge unverified: this build wires no GitHub repo-settings reader", notApplicable)
 	}
 	if len(broken) > 0 {
 		// A space that is genuinely misconfigured is the failure, even if a
@@ -1175,7 +1299,7 @@ func (c *DoctorCommand) doctorCheckAutoMerge(ctx context.Context, cfg space.Proj
 		note = fmt.Sprintf(" · auto-merge unverified for %s: the credential cannot read this repo's settings "+
 			"(a fine-grained token needs \"Repository metadata: read\")", strings.Join(unverifiable, ", "))
 	}
-	return true, note + hostLacksNote("auto-merge", "repo settings", readerless)
+	return true, doctorAppendNotApplicable(note+hostLacksNote("auto-merge", "repo settings", readerless), notApplicable)
 }
 
 // hostLacksNote is the per-space advisory for the spaces whose host does not
@@ -1221,7 +1345,10 @@ func (c *DoctorCommand) doctorCheckStuckGreenPRs(ctx context.Context, cfg space.
 	// listerless collects the spaces whose host wires no open-PR reader; when
 	// it is every space the row keeps the single global advisory below.
 	var listerless []string
-	for _, ref := range cfg.Spaces {
+	notApplicable, applicable := c.doctorSplitNotApplicable(cfg.Spaces,
+		func(caps host.Capabilities) bool { return caps.LandsSynchronously },
+		func(ref space.Ref) string { return ref.ID + ": no pull requests" })
+	for _, ref := range applicable {
 		sh := c.spaceHost(ref)
 		if sh.err != nil {
 			unverifiable = append(unverifiable, ref.ID)
@@ -1270,8 +1397,8 @@ func (c *DoctorCommand) doctorCheckStuckGreenPRs(ctx context.Context, cfg space.
 	}
 	sort.Strings(stuck)
 	sort.Strings(unverifiable)
-	if len(listerless) == len(cfg.Spaces) {
-		return true, " · stuck-green state unverified: this build wires no open-PR reader"
+	if len(applicable) > 0 && len(listerless) == len(applicable) {
+		return true, doctorAppendNotApplicable(" · stuck-green state unverified: this build wires no open-PR reader", notApplicable)
 	}
 	if len(stuck) > 0 {
 		return false, strings.Join(stuck, "; ")
@@ -1280,7 +1407,7 @@ func (c *DoctorCommand) doctorCheckStuckGreenPRs(ctx context.Context, cfg space.
 	if len(unverifiable) > 0 {
 		note = " · stuck-green state unverified for " + strings.Join(unverifiable, ", ")
 	}
-	return true, note + hostLacksNote("stuck-green state", "open pull requests", listerless)
+	return true, doctorAppendNotApplicable(note+hostLacksNote("stuck-green state", "open pull requests", listerless), notApplicable)
 }
 
 // doctorCheckDefaultBranchHealthy is R4c (fb-20260812-ee6dcd; ADR-011
@@ -1349,6 +1476,11 @@ func (c *DoctorCommand) doctorCheckDefaultBranchHealthy(ctx context.Context, cfg
 	// readerless collects the spaces whose host wires no ref status reader;
 	// when it is every space the row keeps the single global advisory below.
 	var readerless []string
+	// notApplicable collects the spaces whose branch moves only by a validated
+	// land: their branch is still resolved and named below, but there is no
+	// required-check run to read, so the check-status read is skipped.
+	var notApplicable []string
+	applicable := 0
 	for _, ref := range cfg.Spaces {
 		branch, branchErr := space.ResolveBaseBranch(ctx, c.resolveMirror(c.projectRoot, ref, machine))
 		if branchErr != nil {
@@ -1358,6 +1490,11 @@ func (c *DoctorCommand) doctorCheckDefaultBranchHealthy(ctx context.Context, cfg
 			branchNotes = append(branchNotes, ref.ID+": "+branch)
 		}
 
+		if caps, known := c.doctorDeclaredCaps(ref); known && caps.LandsSynchronously {
+			notApplicable = append(notApplicable, ref.ID+": "+branch+" moves only by a validated land")
+			continue
+		}
+		applicable++
 		sh := c.spaceHost(ref)
 		if sh.err != nil {
 			unverifiable = append(unverifiable, ref.ID)
@@ -1426,8 +1563,8 @@ func (c *DoctorCommand) doctorCheckDefaultBranchHealthy(ctx context.Context, cfg
 		// same precedence doctorCheckAutoMerge/doctorCheckStuckGreenPRs use.
 		return false, strings.Join(unhealthy, "; ") + branchSuffix
 	}
-	if len(readerless) == len(cfg.Spaces) {
-		return true, " · default-branch health unverified: this build wires no ref status reader" + branchSuffix
+	if applicable > 0 && len(readerless) == applicable {
+		return true, doctorAppendNotApplicable(" · default-branch health unverified: this build wires no ref status reader", notApplicable) + branchSuffix
 	}
 	var advisories []string
 	if len(pending) > 0 {
@@ -1442,12 +1579,9 @@ func (c *DoctorCommand) doctorCheckDefaultBranchHealthy(ctx context.Context, cfg
 		advisories = append(advisories, strings.TrimPrefix(hostLacksNote("default-branch health", "ref check status", readerless), " · "))
 	}
 	if len(advisories) > 0 {
-		return true, " · " + strings.Join(advisories, "; ") + branchSuffix
+		return true, doctorAppendNotApplicable(" · "+strings.Join(advisories, "; "), notApplicable) + branchSuffix
 	}
-	if branchSuffix != "" {
-		return true, branchSuffix
-	}
-	return true, ""
+	return true, doctorAppendNotApplicable(branchSuffix, notApplicable)
 }
 
 // doctorCodeownersReader is the consumer-side capability the CODEOWNERS row
@@ -1497,7 +1631,14 @@ func (c *DoctorCommand) doctorCheckCodeownersResolvable(ctx context.Context, cfg
 	// readerless collects the spaces whose host wires no CODEOWNERS reader;
 	// when it is every space the row keeps the single global advisory below.
 	var readerless []string
-	for _, ref := range cfg.Spaces {
+	owners := "local:<system>"
+	if cfg.System != "" {
+		owners = "local:" + cfg.System
+	}
+	notApplicable, applicable := c.doctorSplitNotApplicable(cfg.Spaces,
+		func(caps host.Capabilities) bool { return !caps.ReviewsWrites },
+		func(ref space.Ref) string { return ref.ID + ": owners are " + owners + ", no CODEOWNERS" })
+	for _, ref := range applicable {
 		sh := c.spaceHost(ref)
 		if sh.err != nil {
 			unverifiable = append(unverifiable, ref.ID)
@@ -1551,8 +1692,8 @@ func (c *DoctorCommand) doctorCheckCodeownersResolvable(ctx context.Context, cfg
 			ref.ID, strings.Join(lines, "; ")))
 	}
 
-	if len(readerless) == len(cfg.Spaces) {
-		return true, " · CODEOWNERS unverified: this build wires no GitHub CODEOWNERS reader"
+	if len(applicable) > 0 && len(readerless) == len(applicable) {
+		return true, doctorAppendNotApplicable(" · CODEOWNERS unverified: this build wires no GitHub CODEOWNERS reader", notApplicable)
 	}
 	if len(broken) > 0 {
 		return false, strings.Join(broken, "; ")
@@ -1563,7 +1704,7 @@ func (c *DoctorCommand) doctorCheckCodeownersResolvable(ctx context.Context, cfg
 			"CODEOWNERS errors (a fine-grained token needs \"Repository metadata: read\")",
 			strings.Join(unverifiable, ", "))
 	}
-	return true, note + hostLacksNote("CODEOWNERS", "CODEOWNERS errors", readerless)
+	return true, doctorAppendNotApplicable(note+hostLacksNote("CODEOWNERS", "CODEOWNERS errors", readerless), notApplicable)
 }
 
 // doctorCheckStatuslineWiring is a presence check only (spec 09 T1: "not
@@ -2526,4 +2667,207 @@ func (c *DoctorCommand) doctorNotifySelectivityRows(cfg space.ProjectConfig, mac
 		}
 	}
 	return rows
+}
+
+// doctorLocalGitFloor is the oldest git a local space's land guard works on:
+// the pre-receive hook relies on behaviour git gained in 2.38.
+var doctorLocalGitFloor = [2]int{2, 38}
+
+// doctorGitVersionPattern picks the major.minor out of `git --version`
+// ("git version 2.39.3 (Apple Git-146)").
+var doctorGitVersionPattern = regexp.MustCompile(`git version (\d+)\.(\d+)`)
+
+// doctorLocalInspection is one local space's inspection, or why there is none.
+// local is false for a space that is not a local space at all (a host that
+// declares it does not land synchronously): the three local rows pass silently
+// for it. unverified carries the reason the space could not be judged.
+type doctorLocalInspection struct {
+	local      bool
+	inspection host.LocalSpaceInspection
+	unverified string
+}
+
+// doctorInspectLocal reads, once per command, what the three local rows judge.
+// A space with no host, a local host that cannot be inspected, and an
+// inspection that errors are all UNVERIFIED with the reason in words; none of
+// them reads as a pass or a fail (ADR-019: a miss is not a resolved negative).
+func (c *DoctorCommand) doctorInspectLocal(ctx context.Context, ref space.Ref) doctorLocalInspection {
+	key := ref.ID + "\x00" + ref.RepoURL
+	c.spaceHostsMu.Lock()
+	if got, ok := c.inspections[key]; ok {
+		c.spaceHostsMu.Unlock()
+		return got
+	}
+	c.spaceHostsMu.Unlock()
+
+	var got doctorLocalInspection
+	sh := c.spaceHost(ref)
+	switch {
+	case sh.err != nil:
+		got.unverified = "the space's host could not be opened: " + sh.err.Error()
+	case sh.h == nil:
+		got.unverified = "no host is wired for this space"
+	case !sh.h.Capabilities().LandsSynchronously:
+		// Not a local space: nothing to inspect, and nothing to say.
+	default:
+		got.local = true
+		inspector, ok := hostAs[host.LocalSpaceInspector](sh.h)
+		if !ok {
+			got.unverified = "this host cannot be inspected"
+			break
+		}
+		inspection, err := inspector.InspectLocalSpace(ctx)
+		if err != nil {
+			got.unverified = err.Error()
+			break
+		}
+		got.inspection = inspection
+	}
+
+	c.spaceHostsMu.Lock()
+	defer c.spaceHostsMu.Unlock()
+	if c.inspections == nil {
+		c.inspections = make(map[string]doctorLocalInspection)
+	}
+	c.inspections[key] = got
+	return got
+}
+
+// doctorLocalRow runs judge over every connected space's inspection and renders
+// the row: a FAIL joins every space's finding, otherwise a PASS carrying one
+// "unverified" advisory per space that could not be judged. A project with no
+// local space prints a plain PASS.
+func (c *DoctorCommand) doctorLocalRow(ctx context.Context, cfg space.ProjectConfig, row string, judge func(ref space.Ref, in host.LocalSpaceInspection) string) (bool, string) {
+	var failures, unverified []string
+	for _, ref := range cfg.Spaces {
+		got := c.doctorInspectLocal(ctx, ref)
+		switch {
+		case got.unverified != "":
+			unverified = append(unverified, ref.ID+": "+got.unverified)
+		case got.local:
+			if finding := judge(ref, got.inspection); finding != "" {
+				failures = append(failures, ref.ID+": "+finding)
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return false, strings.Join(failures, "; ")
+	}
+	if len(unverified) > 0 {
+		return true, " · " + row + " unverified for " + strings.Join(unverified, "; ")
+	}
+	return true, ""
+}
+
+// doctorCheckLocalLandGuard is the first of the three local-space rows: the
+// pre-receive hook is what stops a raw `git push` from moving a local space's
+// base branch around the validated land, so a missing, non-executable or edited
+// hook is the one state in which the local space has no guard at all. It is a
+// FAIL, and its repair is the same command that created the guard.
+//
+// The installed git is checked here too, against `git --version`: the hook's
+// behaviour needs git 2.38, and a git older than that makes a perfectly
+// installed hook useless. An unparseable version is unverified, never a pass.
+func (c *DoctorCommand) doctorCheckLocalLandGuard(ctx context.Context, cfg space.ProjectConfig) (bool, string) {
+	ok, detail := c.doctorLocalRow(ctx, cfg, "local land guard", func(ref space.Ref, in host.LocalSpaceInspection) string {
+		repair := "re-run `a2a space init " + ref.ID + " --local --dir " + ref.RepoURL + "` (it installs the hook again)"
+		switch {
+		case !in.HookPresent:
+			return "the pre-receive hook is missing, so a raw `git push` can move the base branch around the land — " + repair
+		case !in.HookExecutable:
+			return "the pre-receive hook is not executable, so git skips it — " + repair
+		case !in.HookCurrent:
+			return "the pre-receive hook is not what this binary installs (edited, replaced or a symlink) — " + repair
+		}
+		return ""
+	})
+	if !ok {
+		return false, detail
+	}
+	// The floor only matters when there is a local space to guard.
+	hasLocal := false
+	for _, ref := range cfg.Spaces {
+		if c.doctorInspectLocal(ctx, ref).local {
+			hasLocal = true
+			break
+		}
+	}
+	if !hasLocal {
+		return true, detail
+	}
+	versionOK, versionDetail := c.doctorCheckGitFloor(ctx)
+	if !versionOK {
+		return false, versionDetail
+	}
+	if versionDetail != "" {
+		if detail == "" {
+			return true, versionDetail
+		}
+		return true, detail + "; " + strings.TrimPrefix(versionDetail, " · ")
+	}
+	return true, detail
+}
+
+// doctorCheckGitFloor reads `git --version` and holds it to doctorLocalGitFloor.
+func (c *DoctorCommand) doctorCheckGitFloor(ctx context.Context) (bool, string) {
+	read := c.gitVersion
+	if read == nil {
+		read = func(ctx context.Context) (string, error) {
+			out, err := exec.CommandContext(ctx, "git", "--version").Output()
+			return string(out), err
+		}
+	}
+	line, err := read(ctx)
+	if err != nil {
+		return true, " · git version unverified: `git --version` failed: " + err.Error()
+	}
+	m := doctorGitVersionPattern.FindStringSubmatch(line)
+	if m == nil {
+		return true, fmt.Sprintf(" · git version unverified: cannot read a version from %q", strings.TrimSpace(line))
+	}
+	var major, minor int
+	if _, scanErr := fmt.Sscanf(m[1]+" "+m[2], "%d %d", &major, &minor); scanErr != nil {
+		return true, fmt.Sprintf(" · git version unverified: cannot read a version from %q", strings.TrimSpace(line))
+	}
+	if major < doctorLocalGitFloor[0] || (major == doctorLocalGitFloor[0] && minor < doctorLocalGitFloor[1]) {
+		return false, fmt.Sprintf("git %d.%d is older than %d.%d, which a local space's land guard needs — upgrade git",
+			major, minor, doctorLocalGitFloor[0], doctorLocalGitFloor[1])
+	}
+	return true, ""
+}
+
+// doctorCheckLocalHistoryShape is the second local-space row: after the root
+// commit, every first-parent commit on the base branch should be a two-parent
+// land. A commit that is not means something moved the branch around the funnel.
+// It is shape-only: a two-parent merge forged with `git update-ref` is not
+// caught, because nothing here cross-checks a merge against its pull-request
+// record.
+func (c *DoctorCommand) doctorCheckLocalHistoryShape(ctx context.Context, cfg space.ProjectConfig) (bool, string) {
+	return c.doctorLocalRow(ctx, cfg, "local history shape", func(ref space.Ref, in host.LocalSpaceInspection) string {
+		if len(in.MainNonLandCommits) == 0 {
+			return ""
+		}
+		shown := in.MainNonLandCommits
+		if len(shown) > 3 {
+			shown = shown[:3]
+		}
+		return fmt.Sprintf("%d commit(s) on the base branch were not made by a land (newest: %s) — something moved the branch around the funnel; "+
+			"inspect `git --git-dir=%s log --first-parent`", len(in.MainNonLandCommits), strings.Join(shown, ", "), ref.RepoURL)
+	})
+}
+
+// doctorCheckLocalSpaceWritable is the third local-space row: a land writes
+// under refs/ and objects/, so a repository this user cannot write is a space
+// every write to which fails midway.
+func (c *DoctorCommand) doctorCheckLocalSpaceWritable(ctx context.Context, cfg space.ProjectConfig) (bool, string) {
+	return c.doctorLocalRow(ctx, cfg, "local space writable", func(ref space.Ref, in host.LocalSpaceInspection) string {
+		if in.Writable {
+			return ""
+		}
+		detail := in.WritableDetail
+		if detail == "" {
+			detail = "no reason reported"
+		}
+		return fmt.Sprintf("this user cannot write the repository (%s) — fix the ownership or permissions of %s", detail, ref.RepoURL)
+	})
 }

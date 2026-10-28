@@ -61,3 +61,26 @@ rm .a2ahub/skill/reference/notify.md
 ! exec a2a doctor
 stdout 'skill manual current: FAIL:'
 stdout 'reference/notify.md'
+
+# local-space-2026-10 P3 AC11 (local-space-rows): on a project connected ONLY
+# to a local space, the rows the GitHub machinery owns print no FAIL and each
+# says why it does not apply, and the three local rows pass over a space that
+# was just created.
+exec a2a skill install
+exec a2a space init lone --local --dir spaces/lone.git
+rm -r .a2a
+exec a2a connect spaces/lone.git
+exec a2a doctor
+stdout 'credentials: PASS · lone: local space, no credential needed'
+stdout 'CI presence: PASS · lone: validated at land, no CI workflow'
+stdout 'auto-merge enabled: PASS · lone: lands synchronously'
+stdout 'stuck green PRs: PASS · lone: no pull requests'
+stdout 'codeowners resolvable: PASS · lone: owners are local:'
+stdout 'participant avatars: PASS · lone: local owners render as initials'
+stdout 'notify-secret: PASS · lone: no notification delivery on a local space'
+stdout 'notify-delivery: PASS · lone: no notification delivery on a local space'
+stdout 'local land guard: PASS'
+stdout 'local history shape: PASS'
+stdout 'local space writable: PASS'
+! stdout 'FAIL'
+

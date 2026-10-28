@@ -4,14 +4,18 @@ import (
 	"context"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/validate"
 	spacetemplate "github.com/ydnikolaev/a2ahub/space-template"
 )
 
@@ -333,8 +337,8 @@ func TestSpaceInitResidualStepsNameAutoMerge(t *testing.T) {
 func TestSpaceSubcommandsMatchesDispatch(t *testing.T) {
 	t.Parallel()
 	subs := cli.SpaceSubcommands()
-	if len(subs) != 2 || subs[0].Name != "init" || subs[1].Name != "update" {
-		t.Fatalf("SpaceSubcommands() = %+v, want exactly two rows named \"init\", \"update\"", subs)
+	if len(subs) != 3 || subs[0].Name != "init" || subs[1].Name != "update" || subs[2].Name != "join" {
+		t.Fatalf("SpaceSubcommands() = %+v, want exactly three rows named \"init\", \"update\", \"join\"", subs)
 	}
 	for _, s := range subs {
 		if s.Synopsis == "" {
@@ -1284,6 +1288,736 @@ func TestSpaceUpdateNamesTheStepThatClosesTheLoop(t *testing.T) {
 	for _, want := range []string{"changed nothing in the space yet", "a2a sync", "--wait"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("stdout does not mention %q:\n%s", want, out.String())
+		}
+	}
+}
+
+// --- `a2a space init --local` (local-space-2026-10 spec 03) --------------
+
+// localSpaceOpener is the production opener's shape for a path: a marked
+// repository opens as a local host, an unmarked one as a GitHub-kind host. The
+// land check is a stub because these tests never land.
+func localSpaceOpener() host.Opener {
+	return host.NewOpener(host.OpenConfig{
+		LandCheck: func(context.Context, host.LandCandidate) (host.LandVerdict, error) {
+			return host.LandVerdict{OK: true}, nil
+		},
+	})
+}
+
+// newLocalSpaceCommand wires `space init --local` the way cmd/a2a does: the
+// real embedded template, the real manifest engine, an injected data root and
+// the production-shaped opener.
+func newLocalSpaceCommand(t *testing.T, dataRoot string) *cli.SpaceCommand {
+	t.Helper()
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	cmd := cli.NewSpaceCommand(spacetemplate.Files, "9.9.9")
+	cmd.DataRoot = dataRoot
+	cmd.Engine = validate.New(corpus)
+	cmd.Open = localSpaceOpener()
+	return cmd
+}
+
+func spaceGit(t *testing.T, gitDir string, args ...string) string {
+	t.Helper()
+	out, err := exec.Command("git", append([]string{"--git-dir=" + gitDir}, args...)...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// canonicalTempDir is t.TempDir() with symlinks resolved (macOS /var is a
+// symlink to /private/var), which is the spelling the command prints.
+func canonicalTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestSpaceInitLocalCreatesAGuardedBareRepoWithOnlyTheLocalSubset(t *testing.T) {
+	t.Parallel()
+	root := canonicalTempDir(t)
+	target := filepath.Join(root, "acme.git")
+	cmd := newLocalSpaceCommand(t, filepath.Join(root, "data"))
+
+	io, out, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"init", "acme", "--local", "--dir", target}, io); code != 0 {
+		t.Fatalf("Run: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+
+	if want := "space init: created local space acme at " + target + "\n"; !strings.HasPrefix(out.String(), want) {
+		t.Errorf("stdout = %q, want it to start with %q", out.String(), want)
+	}
+	// The next steps are named in order: connect from each repo, THEN join.
+	connectAt := strings.Index(out.String(), "a2a connect "+target)
+	joinAt := strings.Index(out.String(), "a2a space join")
+	if connectAt < 0 || joinAt < 0 || connectAt > joinAt {
+		t.Errorf("stdout = %q, want `a2a connect %s` before `a2a space join`", out.String(), target)
+	}
+
+	tree := spaceGit(t, target, "ls-tree", "-r", "--name-only", "main")
+	if want := "decisions/.gitkeep\nspace.yaml\nvendored/.gitkeep"; tree != want {
+		t.Errorf("main's tree = %q, want exactly the local subset %q", tree, want)
+	}
+	if got := spaceGit(t, target, "rev-list", "--count", "main"); got != "1" {
+		t.Errorf("main has %s commits, want one root commit", got)
+	}
+	if got := spaceGit(t, target, "symbolic-ref", "HEAD"); got != "refs/heads/main" {
+		t.Errorf("HEAD = %q, want refs/heads/main", got)
+	}
+	if got := spaceGit(t, target, "show", "main:space.yaml"); !strings.Contains(got, "space: acme") ||
+		!strings.Contains(got, "min_binary_version: 9.9.9") || strings.Contains(got, "replace-with-space-id") {
+		t.Errorf("seeded space.yaml was not rendered for this space and binary:\n%s", got)
+	}
+
+	// The guard is armed: the opener now sees a local host, and the inspector
+	// reports the hook present, executable and current.
+	h, _, err := localSpaceOpener()(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !h.Capabilities().OnThisMachine {
+		t.Fatal("the new space did not open as a local host: the marker was not written")
+	}
+	insp, ok := h.(host.LocalSpaceInspector)
+	if !ok {
+		t.Fatal("a local host does not implement host.LocalSpaceInspector")
+	}
+	got, err := insp.InspectLocalSpace(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.HookPresent || !got.HookExecutable || !got.HookCurrent || len(got.MainNonLandCommits) != 0 {
+		t.Errorf("inspection = %+v, want a present, executable, current hook and a clean history", got)
+	}
+}
+
+func TestSpaceInitLocalDefaultTargetIsUnderTheInjectedDataRoot(t *testing.T) {
+	t.Parallel()
+	root := canonicalTempDir(t)
+	dataRoot := filepath.Join(root, "not", "yet", "created")
+	cmd := newLocalSpaceCommand(t, dataRoot)
+
+	io, out, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"init", "acme", "--local"}, io); code != 0 {
+		t.Fatalf("Run: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	want := filepath.Join(dataRoot, "spaces", "acme.git")
+	if !filepath.IsAbs(want) || !strings.HasPrefix(out.String(), "space init: created local space acme at "+want+"\n") {
+		t.Errorf("stdout = %q, want the absolute default target %q", out.String(), want)
+	}
+	if got := spaceGit(t, want, "rev-list", "--count", "main"); got != "1" {
+		t.Errorf("the default target is not the new space (main has %s commits)", got)
+	}
+}
+
+func TestSpaceInitLocalCanonicalizesTheTarget(t *testing.T) {
+	t.Parallel()
+	root := canonicalTempDir(t)
+	real := filepath.Join(root, "real")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	cmd := newLocalSpaceCommand(t, filepath.Join(root, "data"))
+
+	io, out, errOut := newSpaceIO()
+	// A target under a symlinked parent, spelled with a trailing slash.
+	if code := cmd.Run(context.Background(), []string{"init", "acme", "--local", "--dir", filepath.Join(link, "sub", "acme.git") + "/"}, io); code != 0 {
+		t.Fatalf("Run: code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	want := filepath.Join(real, "sub", "acme.git")
+	if !strings.Contains(out.String(), " at "+want+"\n") {
+		t.Errorf("stdout = %q, want the symlink-resolved path %q", out.String(), want)
+	}
+	if got := spaceGit(t, want, "rev-list", "--count", "main"); got != "1" {
+		t.Errorf("the space was not created at the resolved path (main has %s commits)", got)
+	}
+}
+
+// TestSpaceInitLocalRelativeDirBecomesAbsolute is deliberately NOT parallel and
+// not a subtest of a parallel test: t.Chdir changes the process working
+// directory, which a test running beside it would observe.
+func TestSpaceInitLocalRelativeDirBecomesAbsolute(t *testing.T) {
+	root := canonicalTempDir(t)
+	cmd := newLocalSpaceCommand(t, filepath.Join(root, "data"))
+	t.Chdir(root)
+	io, out, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"init", "rel", "--local", "--dir", "rel.git"}, io); code != 0 {
+		t.Fatalf("Run: code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if want := "created local space rel at " + filepath.Join(root, "rel.git") + "\n"; !strings.Contains(out.String(), want) {
+		t.Errorf("stdout = %q, want it to contain %q", out.String(), want)
+	}
+}
+
+func TestSpaceInitLocalRefusals(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		args    func(target string) []string
+		prep    func(t *testing.T, target string)
+		mutate  func(cmd *cli.SpaceCommand)
+		wantErr string
+	}{
+		{
+			name: "the template's own sentinel id",
+			args: func(target string) []string {
+				return []string{"init", "replace-with-space-id", "--local", "--dir", target}
+			},
+			wantErr: "sentinel",
+		},
+		{
+			name:    "a dev build",
+			args:    func(target string) []string { return []string{"init", "acme", "--local", "--dir", target} },
+			mutate:  func(cmd *cli.SpaceCommand) { cmd.Version = "dev" },
+			wantErr: "refusing to scaffold",
+		},
+		{
+			name: "a non-empty foreign target",
+			args: func(target string) []string { return []string{"init", "acme", "--local", "--dir", target} },
+			prep: func(t *testing.T, target string) {
+				if err := os.MkdirAll(target, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(target, "mine.txt"), []byte("x"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantErr: "already exists and is not empty",
+		},
+		{
+			name:    "an id the manifest schema rejects",
+			args:    func(target string) []string { return []string{"init", "Not_A_Valid_Id", "--local", "--dir", target} },
+			wantErr: "does not validate",
+		},
+		{
+			name:    "no manifest engine wired",
+			args:    func(target string) []string { return []string{"init", "acme", "--local", "--dir", target} },
+			mutate:  func(cmd *cli.SpaceCommand) { cmd.Engine = nil },
+			wantErr: "not wired",
+		},
+		{
+			name:    "no data root and no --dir",
+			args:    func(string) []string { return []string{"init", "acme", "--local"} },
+			mutate:  func(cmd *cli.SpaceCommand) { cmd.DataRoot = "" },
+			wantErr: "not wired",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := canonicalTempDir(t)
+			target := filepath.Join(root, "acme.git")
+			if tc.prep != nil {
+				tc.prep(t, target)
+			}
+			cmd := newLocalSpaceCommand(t, filepath.Join(root, "data"))
+			if tc.mutate != nil {
+				tc.mutate(cmd)
+			}
+			io, out, errOut := newSpaceIO()
+			if code := cmd.Run(context.Background(), tc.args(target), io); code != 1 {
+				t.Fatalf("Run: code = %d, want 1; stdout=%s stderr=%s", code, out.String(), errOut.String())
+			}
+			if !strings.Contains(errOut.String(), tc.wantErr) {
+				t.Errorf("stderr = %q, want it to contain %q", errOut.String(), tc.wantErr)
+			}
+			if _, err := os.Stat(filepath.Join(target, "HEAD")); !os.IsNotExist(err) {
+				t.Errorf("a refused init still created a repository at %s (stat err %v)", target, err)
+			}
+			if _, err := os.Stat(filepath.Join(root, "data")); !os.IsNotExist(err) {
+				t.Errorf("a refused init still created the data root (stat err %v)", err)
+			}
+		})
+	}
+}
+
+// TestSpaceInitLocalRerun is the init-rerun case table (AC18): the verb is
+// re-runnable because a crash between the root commit and the guard leaves an
+// unguarded main that nothing else can repair.
+func TestSpaceInitLocalRerun(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	runInit := func(t *testing.T, id, target string) (int, string, string) {
+		t.Helper()
+		cmd := newLocalSpaceCommand(t, filepath.Join(filepath.Dir(target), "data"))
+		io, out, errOut := newSpaceIO()
+		code := cmd.Run(ctx, []string{"init", id, "--local", "--dir", target}, io)
+		return code, out.String(), errOut.String()
+	}
+	inspect := func(t *testing.T, target string) host.LocalSpaceInspection {
+		t.Helper()
+		h, _, err := localSpaceOpener()(target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		insp, ok := h.(host.LocalSpaceInspector)
+		if !ok {
+			t.Fatalf("%T is not a local space inspector: the repository is not marked", h)
+		}
+		got, err := insp.InspectLocalSpace(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	t.Run("a completed space is left as it is and its edited hook is restored", func(t *testing.T) {
+		t.Parallel()
+		target := filepath.Join(canonicalTempDir(t), "acme.git")
+		if code, out, errOut := runInit(t, "acme", target); code != 0 {
+			t.Fatalf("first run: code = %d; %s%s", code, out, errOut)
+		}
+		before := spaceGit(t, target, "rev-parse", "main")
+		hook := filepath.Join(target, "hooks", "pre-receive")
+		if err := os.WriteFile(hook, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if inspect(t, target).HookCurrent {
+			t.Fatal("setup: the edited hook still reads as current")
+		}
+
+		code, out, errOut := runInit(t, "acme", target)
+		if code != 0 {
+			t.Fatalf("re-run: code = %d; stdout=%s stderr=%s", code, out, errOut)
+		}
+		if want := "space init: local space acme already created at " + target + "; guard installed\n"; out != want {
+			t.Errorf("stdout = %q, want %q", out, want)
+		}
+		if after := spaceGit(t, target, "rev-parse", "main"); after != before {
+			t.Errorf("main moved %s -> %s: a re-run must add no commit", before, after)
+		}
+		if got := inspect(t, target); !got.HookPresent || !got.HookExecutable || !got.HookCurrent {
+			t.Errorf("inspection after re-run = %+v, want the hook restored", got)
+		}
+	})
+
+	t.Run("a repository left after the root commit gets its marker and hook", func(t *testing.T) {
+		t.Parallel()
+		target := filepath.Join(canonicalTempDir(t), "acme.git")
+		if _, err := space.InitLocalSpaceRepo(ctx, target, []space.FileWrite{
+			{Path: "space.yaml", Content: []byte("schema: space/v1\nspace: acme\nmin_binary_version: 9.9.9\nparticipants: []\n")},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if h, _, err := localSpaceOpener()(target); err != nil || h.Capabilities().OnThisMachine {
+			t.Fatalf("setup: the half-created repository already reads as local (err %v)", err)
+		}
+		root := spaceGit(t, target, "rev-parse", "main")
+
+		code, out, errOut := runInit(t, "acme", target)
+		if code != 0 {
+			t.Fatalf("re-run: code = %d; stdout=%s stderr=%s", code, out, errOut)
+		}
+		if !strings.Contains(out, "already created at "+target+"; guard installed") {
+			t.Errorf("stdout = %q, want the already-created line", out)
+		}
+		if got := spaceGit(t, target, "rev-parse", "main"); got != root {
+			t.Errorf("main moved: a re-run must add no commit")
+		}
+		if got := inspect(t, target); !got.HookCurrent {
+			t.Errorf("inspection = %+v, want the hook installed", got)
+		}
+	})
+
+	t.Run("a target whose space.yaml declares another id is refused", func(t *testing.T) {
+		t.Parallel()
+		target := filepath.Join(canonicalTempDir(t), "acme.git")
+		if code, out, errOut := runInit(t, "acme", target); code != 0 {
+			t.Fatalf("first run: code = %d; %s%s", code, out, errOut)
+		}
+		code, _, errOut := runInit(t, "other", target)
+		if code != 1 || !strings.Contains(errOut, "already exists and is not empty") {
+			t.Fatalf("code = %d, stderr = %q; want 1 and the non-empty refusal", code, errOut)
+		}
+	})
+
+	t.Run("an unmarked repository with history beyond the root is refused", func(t *testing.T) {
+		t.Parallel()
+		target := filepath.Join(canonicalTempDir(t), "acme.git")
+		root, err := space.InitLocalSpaceRepo(ctx, target, []space.FileWrite{
+			{Path: "space.yaml", Content: []byte("schema: space/v1\nspace: acme\nmin_binary_version: 9.9.9\nparticipants: []\n")},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tree := spaceGit(t, target, "rev-parse", root+"^{tree}")
+		child := exec.Command("git", "--git-dir="+target, "commit-tree", tree, "-p", root, "-m", "x")
+		child.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		sha, err := child.Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		spaceGit(t, target, "update-ref", "refs/heads/main", strings.TrimSpace(string(sha)))
+
+		code, _, errOut := runInit(t, "acme", target)
+		if code != 1 || !strings.Contains(errOut, "already exists and is not empty") {
+			t.Fatalf("code = %d, stderr = %q; want a refusal: this directory is not provably the half-created space", code, errOut)
+		}
+		if _, err := os.Stat(filepath.Join(target, "hooks", "pre-receive")); !os.IsNotExist(err) {
+			t.Errorf("a refused re-run still installed a hook (stat err %v)", err)
+		}
+	})
+}
+
+// TestSpaceInitWithoutLocalIsUnchanged pins that the local branch did not leak
+// into the default one (US-8): nine files and the GitHub steps.
+func TestSpaceInitWithoutLocalIsUnchanged(t *testing.T) {
+	t.Parallel()
+	target := filepath.Join(t.TempDir(), "out")
+	cmd := newLocalSpaceCommand(t, t.TempDir())
+	io, out, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"init", "acme", "--dir", target}, io); code != 0 {
+		t.Fatalf("code = %d; %s%s", code, out.String(), errOut.String())
+	}
+	if !strings.HasPrefix(out.String(), "space init: wrote 9 files to "+target+"\n") ||
+		!strings.Contains(out.String(), "remaining steps, IN THIS ORDER:") {
+		t.Errorf("stdout = %q, want the GitHub scaffold output", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(target, "HEAD")); !os.IsNotExist(err) {
+		t.Errorf("the default form created a git repository (stat err %v)", err)
+	}
+}
+
+// TestSpaceUpdateLocalPlanProposesNothingForALocalSpace is AC4: the local plan
+// is derived from the same subset `init --local` seeds, so a freshly created
+// local space is already current, while the GitHub plan over the same mirror
+// would want the whole infrastructure tree.
+func TestSpaceUpdateLocalPlanProposesNothingForALocalSpace(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	root := canonicalTempDir(t)
+	bare := filepath.Join(root, "acme.git")
+	cmd := newLocalSpaceCommand(t, filepath.Join(root, "data"))
+	io, out, errOut := newSpaceIO()
+	if code := cmd.Run(ctx, []string{"init", "acme", "--local", "--dir", bare}, io); code != 0 {
+		t.Fatalf("init: code = %d; %s%s", code, out.String(), errOut.String())
+	}
+	mirror := filepath.Join(root, "mirror")
+	if outp, err := exec.Command("git", "clone", "--quiet", bare, mirror).CombinedOutput(); err != nil {
+		t.Fatalf("clone: %v\n%s", err, outp)
+	}
+
+	plan := func(t *testing.T, local bool) (int, string, *fakeSubmitFunnel) {
+		t.Helper()
+		funnel := &fakeSubmitFunnel{}
+		upd := &cli.SpaceCommand{
+			TemplateFiles: spacetemplate.Files, Version: "9.9.9", Funnel: funnel, MirrorDir: mirror,
+			SpaceID: "acme", OwnSystem: "billing", HostCfg: spaceUpdateHostCfg(),
+		}
+		upd.Caps = host.Capabilities{OnThisMachine: local}
+		if local {
+			upd.Scopes = failingScopeChecker{t: t}
+		}
+		io, out, errOut := newSpaceIO()
+		code := upd.Run(ctx, []string{"update", "--dry-run"}, io)
+		return code, out.String() + errOut.String(), funnel
+	}
+
+	code, text, funnel := plan(t, true)
+	if code != 0 || !strings.Contains(text, "already current with the embedded template — nothing to do") {
+		t.Fatalf("local plan: code = %d, output = %s; want zero proposed writes", code, text)
+	}
+	if strings.Contains(text, "not propagated") || len(funnel.calls) != 0 {
+		t.Errorf("local plan reported skipped template paths or reached the funnel: %s", text)
+	}
+
+	code, text, _ = plan(t, false)
+	if code != 0 || strings.Contains(text, "already current") || !strings.Contains(text, "add CODEOWNERS") {
+		t.Fatalf("GitHub plan over the same mirror: code = %d, output = %s; want it to propose the infrastructure tree", code, text)
+	}
+}
+
+// failingScopeChecker fails the test if the token-scope probe is consulted: a
+// space on this machine has no token and no workflow files.
+type failingScopeChecker struct{ t *testing.T }
+
+func (f failingScopeChecker) TokenScopes(context.Context, host.Credential) ([]string, bool, error) {
+	f.t.Helper()
+	f.t.Error("the token-scope probe ran for a space on this machine")
+	return nil, false, nil
+}
+
+func TestSpaceUpdateOnALocalSpacePrintsNoGitHubDirectives(t *testing.T) {
+	t.Parallel()
+	mirror := t.TempDir()
+	spaceUpdateSeedMirror(t, mirror)
+	// The one local-subset path the funnel can carry is space.yaml, whose floor
+	// the seed mirror holds below the template's, so a write is planned.
+	tmpl := fstest.MapFS{
+		"space.yaml":         spaceUpdateTemplateFS()["space.yaml"],
+		"decisions/.gitkeep": &fstest.MapFile{Data: []byte{}},
+		"README.md":          &fstest.MapFile{Data: []byte("# template\n")},
+		"CODEOWNERS":         &fstest.MapFile{Data: []byte("x\n")},
+	}
+	funnel := &fakeSubmitFunnel{}
+	cmd := spaceUpdateFullyWiredCommand(tmpl, mirror, funnel, "9.9.9")
+	cmd.Caps = host.Capabilities{OnThisMachine: true}
+	cmd.Scopes = failingScopeChecker{t: t}
+
+	io, out, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"update"}, io); code != 0 {
+		t.Fatalf("code = %d; %s%s", code, out.String(), errOut.String())
+	}
+	if len(funnel.calls) != 1 {
+		t.Fatalf("funnel calls = %d, want 1 (the mirror's floor is below the template's)", len(funnel.calls))
+	}
+	var paths []string
+	for _, f := range funnel.calls[0].Files {
+		paths = append(paths, f.Path)
+	}
+	if got := strings.Join(paths, ","); got != "space.yaml" {
+		t.Errorf("planned paths = %s, want only the local subset's carryable file", got)
+	}
+	if strings.Contains(out.String(), "not propagated") {
+		t.Errorf("a local update reported template paths as skipped: %s", out.String())
+	}
+	if strings.Contains(out.String(), "gh api") || strings.Contains(out.String(), "branch-protection") ||
+		strings.Contains(funnel.calls[0].PRBody, "gh api") {
+		t.Errorf("a local update printed GitHub-only directives:\n%s\nPR body: %s", out.String(), funnel.calls[0].PRBody)
+	}
+}
+
+// --- `a2a space join` (local-space-2026-10 spec 03 §T1.2) ----------------
+
+// joinTemplateManifest is the embedded template's space.yaml rendered for a
+// space id, exactly as `space init --local` seeds it.
+func joinTemplateManifest(t *testing.T, id string) string {
+	t.Helper()
+	raw, err := fs.ReadFile(spacetemplate.Files, "space.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.ReplaceAll(string(raw), "replace-with-space-id", id)
+}
+
+func joinCommand(t *testing.T, manifest string, funnel *fakeSubmitFunnel) *cli.SpaceCommand {
+	t.Helper()
+	mirror := t.TempDir()
+	writeSpaceMirrorFile(t, mirror, "space.yaml", manifest)
+	cmd := spaceUpdateFullyWiredCommand(fstest.MapFS{}, mirror, funnel, "9.9.9")
+	cmd.SpaceID = "acme"
+	cmd.OwnSystem = "billing"
+	cmd.Caps = host.Capabilities{OwnerIdentitySelfAsserted: true, NeedsCredential: false, OnThisMachine: true, LandsSynchronously: true}
+	cmd.Now = func() time.Time { return time.Date(2026, 10, 28, 23, 59, 0, 0, time.UTC) }
+	return cmd
+}
+
+func TestSpaceJoinWritesOneRequestWithRowAndSection(t *testing.T) {
+	t.Parallel()
+	manifest := joinTemplateManifest(t, "acme")
+	funnel := &fakeSubmitFunnel{}
+	cmd := joinCommand(t, manifest, funnel)
+
+	io, out, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"join"}, io); code != 0 {
+		t.Fatalf("code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if want := "space join: billing joined acme (section billing/)\n"; out.String() != want {
+		t.Errorf("stdout = %q, want %q", out.String(), want)
+	}
+	if len(funnel.calls) != 1 {
+		t.Fatalf("funnel calls = %d, want exactly one write", len(funnel.calls))
+	}
+	req := funnel.calls[0]
+	if !req.AllowSpaceInfrastructure || req.System != "billing" || req.Verb != "space-join" {
+		t.Errorf("request = %+v, want an AllowSpaceInfrastructure space-join write by billing", req)
+	}
+	var paths []string
+	byPath := map[string]string{}
+	for _, f := range req.Files {
+		paths = append(paths, f.Path)
+		byPath[f.Path] = string(f.Content)
+	}
+	want := []string{
+		"space.yaml",
+		"billing/provides/.gitkeep", "billing/requires/.gitkeep", "billing/exchanges/.gitkeep",
+		"billing/events/.gitkeep", "billing/docs/.gitkeep", "billing/consumes.yaml",
+	}
+	if strings.Join(paths, ",") != strings.Join(want, ",") {
+		t.Errorf("file set = %v, want %v", paths, want)
+	}
+	if got, want := byPath["billing/consumes.yaml"], "schema: consumes/v1\nsystem: billing\ndependencies: []\n"; got != want {
+		t.Errorf("consumes.yaml = %q, want %q", got, want)
+	}
+
+	// Manifest bytes: the original with the `[]` flow marker gone from the
+	// header and exactly one row inserted, after the comment lines that
+	// continue the header's comment and before the next key. Every other byte,
+	// every comment included, is untouched.
+	row := "  - {system: billing, org: local, section: billing, owners: [local:billing], status: active, joined: 2026-10-28}"
+	got := byPath["space.yaml"]
+	gotLines := strings.Split(got, "\n")
+	origLines := strings.Split(manifest, "\n")
+	if len(gotLines) != len(origLines)+1 {
+		t.Fatalf("manifest has %d lines, want %d (original + the one row)", len(gotLines), len(origLines)+1)
+	}
+	rowAt := -1
+	for i, l := range gotLines {
+		if l == row {
+			rowAt = i
+		}
+	}
+	if rowAt < 0 {
+		t.Fatalf("the participant row is not in the manifest:\n%s", got)
+	}
+	if !strings.HasPrefix(gotLines[rowAt+1], "notification_routes:") {
+		t.Errorf("the row is followed by %q, want the next top-level key (the header's comment lines must stay above the row)", gotLines[rowAt+1])
+	}
+	rest := append(append([]string(nil), gotLines[:rowAt]...), gotLines[rowAt+1:]...)
+	for i, l := range rest {
+		if strings.HasPrefix(origLines[i], "participants:") {
+			if strings.Contains(l, "[]") || !strings.HasPrefix(l, "participants:") || !strings.Contains(l, "# zero participants at template time") {
+				t.Errorf("header line = %q, want the flow marker gone and the comment kept", l)
+			}
+			continue
+		}
+		if l != origLines[i] {
+			t.Errorf("line %d changed:\n  was  %q\n  now  %q", i+1, origLines[i], l)
+		}
+	}
+	parsed, err := space.ParseManifest([]byte(got))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.Participants) != 1 {
+		t.Fatalf("participants = %+v, want one", parsed.Participants)
+	}
+	p := parsed.Participants[0]
+	if p.System != "billing" || p.Org != "local" || p.Section != "billing" || len(p.Owners) != 1 || p.Owners[0] != "local:billing" || p.Joined != "2026-10-28" {
+		t.Errorf("participant = %+v, want the spec row", p)
+	}
+}
+
+func TestSpaceJoinAppendsToAnExistingList(t *testing.T) {
+	t.Parallel()
+	manifest := "schema: space/v1\nspace: acme\nmin_binary_version: 9.9.9\nparticipants:\n" +
+		"  - {system: orders, org: local, section: orders, owners: [local:orders], status: active, joined: 2026-10-01}\n" +
+		"  # a note between items\n" +
+		"  - system: shipping\n    org: local\n    section: shipping\n    owners: [local:shipping]\n    status: active\n    joined: 2026-10-02\n" +
+		"vendored: []\n"
+	funnel := &fakeSubmitFunnel{}
+	cmd := joinCommand(t, manifest, funnel)
+
+	io, out, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"join"}, io); code != 0 {
+		t.Fatalf("code = %d; %s%s", code, out.String(), errOut.String())
+	}
+	got := string(funnel.calls[0].Files[0].Content)
+	if !strings.Contains(got, "  # a note between items\n") {
+		t.Errorf("the comment between items was lost:\n%s", got)
+	}
+	if !strings.Contains(got, "joined: 2026-10-02\n  - {system: billing") || !strings.HasSuffix(got, "joined: 2026-10-28}\nvendored: []\n") {
+		t.Errorf("the row was not appended after the last existing item:\n%s", got)
+	}
+	parsed, err := space.ParseManifest([]byte(got))
+	if err != nil || len(parsed.Participants) != 3 {
+		t.Fatalf("participants = %+v, err %v; want three", parsed.Participants, err)
+	}
+}
+
+func TestSpaceJoinIsIdempotent(t *testing.T) {
+	t.Parallel()
+	manifest := "schema: space/v1\nspace: acme\nmin_binary_version: 9.9.9\nparticipants:\n" +
+		"  - {system: billing, org: local, section: billing, owners: [local:billing], status: active, joined: 2026-10-01}\n"
+	for _, asJSON := range []bool{false, true} {
+		funnel := &fakeSubmitFunnel{}
+		cmd := joinCommand(t, manifest, funnel)
+		args := []string{"join"}
+		if asJSON {
+			args = append(args, "--json")
+		}
+		io, out, errOut := newSpaceIO()
+		if code := cmd.Run(context.Background(), args, io); code != 0 {
+			t.Fatalf("json=%v: code = %d; %s%s", asJSON, code, out.String(), errOut.String())
+		}
+		if len(funnel.calls) != 0 {
+			t.Errorf("json=%v: an already-active participant reached the funnel %d time(s)", asJSON, len(funnel.calls))
+		}
+		want := "space join: billing is already an active participant of acme\n"
+		if asJSON {
+			want = `{"status":"already-active","system":"billing","space":"acme","section":"billing/"}` + "\n"
+		}
+		if out.String() != want {
+			t.Errorf("json=%v: stdout = %q, want %q", asJSON, out.String(), want)
+		}
+	}
+}
+
+func TestSpaceJoinRefusals(t *testing.T) {
+	t.Parallel()
+	left := "schema: space/v1\nspace: acme\nmin_binary_version: 9.9.9\nparticipants:\n" +
+		"  - {system: billing, org: local, section: billing, owners: [local:billing], status: left, joined: 2026-10-01}\n"
+	cases := []struct {
+		name     string
+		manifest string
+		mutate   func(*cli.SpaceCommand)
+		args     []string
+		wantCode int
+		wantErr  string
+	}{
+		{"a host whose owners are not self-asserted", joinTemplateManifest(t, "acme"),
+			func(c *cli.SpaceCommand) { c.Caps = host.Capabilities{NeedsCredential: true, ReviewsWrites: true} },
+			[]string{"join"}, 1, "onboarding manifest PR"},
+		{"an unwired capability set", joinTemplateManifest(t, "acme"),
+			func(c *cli.SpaceCommand) { c.Caps = host.Capabilities{} },
+			[]string{"join"}, 1, "onboarding manifest PR"},
+		{"a participant who left", left, nil, []string{"join"}, 1, "reactivating a participant is a manifest decision"},
+		{"another space", joinTemplateManifest(t, "acme"), nil, []string{"join", "--space", "other"}, 1, `unknown space "other"`},
+		{"a stray argument", joinTemplateManifest(t, "acme"), nil, []string{"join", "extra"}, 2, "usage: a2a space join"},
+		{"an invalid system id", joinTemplateManifest(t, "acme"),
+			func(c *cli.SpaceCommand) { c.OwnSystem = "Bill ing" },
+			[]string{"join"}, 1, "not a valid system id"},
+		{"an unwired command", joinTemplateManifest(t, "acme"),
+			func(c *cli.SpaceCommand) { c.Funnel = nil },
+			[]string{"join"}, 1, "not wired"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			funnel := &fakeSubmitFunnel{}
+			cmd := joinCommand(t, tc.manifest, funnel)
+			if tc.mutate != nil {
+				tc.mutate(cmd)
+			}
+			io, out, errOut := newSpaceIO()
+			if code := cmd.Run(context.Background(), tc.args, io); code != tc.wantCode {
+				t.Fatalf("code = %d, want %d; stdout=%s stderr=%s", code, tc.wantCode, out.String(), errOut.String())
+			}
+			if !strings.Contains(errOut.String(), tc.wantErr) {
+				t.Errorf("stderr = %q, want it to contain %q", errOut.String(), tc.wantErr)
+			}
+			if len(funnel.calls) != 0 {
+				t.Errorf("a refused join reached the funnel %d time(s)", len(funnel.calls))
+			}
+		})
+	}
+}
+
+func TestSpaceJoinKeepsASectionPathTheMirrorAlreadyHas(t *testing.T) {
+	t.Parallel()
+	funnel := &fakeSubmitFunnel{}
+	cmd := joinCommand(t, joinTemplateManifest(t, "acme"), funnel)
+	writeSpaceMirrorFile(t, cmd.MirrorDir, "billing/consumes.yaml", "schema: consumes/v1\nsystem: billing\ndependencies:\n  - system: orders\n")
+
+	io, out, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"join"}, io); code != 0 {
+		t.Fatalf("code = %d; %s%s", code, out.String(), errOut.String())
+	}
+	for _, f := range funnel.calls[0].Files {
+		if f.Path == "billing/consumes.yaml" {
+			t.Errorf("join overwrote a consumes.yaml the section already had")
 		}
 	}
 }

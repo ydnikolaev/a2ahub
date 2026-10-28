@@ -90,7 +90,7 @@ func notificationComponentRoot(home, productVersion string) string {
 	if configured := os.Getenv("A2A_COMPONENTS_DIR"); configured != "" && productVersion == "dev" {
 		return filepath.Clean(configured)
 	}
-	return filepath.Join(home, ".local", "share", "a2a", "components", productVersion)
+	return filepath.Join(a2aDataRootIn(home), "components", productVersion)
 }
 
 func (m *localComponentManager) Available(ctx context.Context) ([]notification.Channel, error) {
