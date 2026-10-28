@@ -64,8 +64,9 @@ changes:
     A local space has no pull-request review, so its `gates:` setting decides
     who may land a gated write. Under `confirm`, the default, a first contract
     publish, a breaking version, an approve or reject, and a change to
-    `space.yaml` each need `--approve`, and the landed commit records the gate
-    it passed. Under `autonomous` they land without it. A classification or
+    `space.yaml` each need `--approve` (`approve: true` on the MCP
+    `a2a_lifecycle` and `a2a_contract` tools), and the landed commit records
+    the gate it passed. Under `autonomous` they land without it. A classification or
     secret refusal stays a refusal in both modes. `a2a space set gates` and
     `a2a space set flow` change the setting, and `a2a doctor` shows it.
   action:
