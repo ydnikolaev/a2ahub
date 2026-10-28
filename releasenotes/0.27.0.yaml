@@ -129,7 +129,9 @@ changes:
     before the pull request, the same tree the superseded decision is judged
     from. A successor that is approved only inside the same pull request is
     not yet something the space agreed to, so that supersede is refused with
-    LFC-005, and a successor that does not exist is refused with LFC-006.
+    LFC-005. A successor that does not exist is refused with LFC-005 too,
+    with the advisory LFC-006 beside it saying the precondition could not be
+    evaluated.
     Neither is ever reported as LFC-002 again.
   affects: ["a2a validate --ci", "a2a supersede"]
   action:
