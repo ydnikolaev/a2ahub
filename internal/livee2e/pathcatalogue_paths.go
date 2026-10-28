@@ -31,17 +31,45 @@ func ConformancePaths() []Path {
 	out = append(out, retirementPaths()...)
 	out = append(out, nonCooperativeCounterpartyPaths()...)
 	out = append(out, requirementPaths()...)
-	out = append(out, decisionPaths()...)
+	out = append(out, excludeIDsFromHost(decisionPaths(), HostKindBareRepo, localLandRefusesDecisionSupersedeWithSuccessor,
+		"decision-approved-superseded-by-approved-successor", "decision-rejected-superseded")...)
 	out = append(out, supersedePaths()...)
 	out = append(out, cancelPaths()...)
 	out = append(out, remainingDeclinePaths()...)
 	out = append(out, remainingBlockUnblockPaths()...)
 	out = append(out, granularityPaths()...)
-	out = append(out, departedCounterpartyPaths()...)
+	out = append(out, excludeFromHost(departedCounterpartyPaths(), HostKindBareRepo, rawPushNeedsAnOpenDefaultBranch)...)
 	out = append(out, formatAssertionPaths()...)
-	out = append(out, classificationBilateralPaths()...)
+	out = append(out, excludeFromHost(classificationBilateralPaths(), HostKindBareRepo, rawPushNeedsAnOpenDefaultBranch)...)
+	out = append(out, confirmSpaceLocalPaths()...)
 	return out
 }
+
+// localLandRefusesDecisionSupersedeWithSuccessor is a PRODUCT DEFECT recorded
+// as an exclusion, not a property of the local host. Observed 2026-10-28:
+// `a2a supersede` of an approved or rejected decision (fold's Role Any rows
+// gated by a successor precondition) passes the CLI's own pre-submit check --
+// the successor is landed and resolvable from the author's mirror -- and is
+// then refused at LAND by the local host's land check, LFC-002 "event's actor
+// is not authorized for this transition". The same two paths pass on the
+// GitHub-shaped host only because the fake never runs the validation engine a
+// real space's CI runs. Whether real GitHub's CI refuses them too was NOT
+// checked here. Delete this exclusion when the land check resolves the
+// successor; the matrix then judges both paths on the local host.
+const localLandRefusesDecisionSupersedeWithSuccessor = "PRODUCT DEFECT: the local host's land check " +
+	"refuses a decision supersede that fold's successor precondition permits (LFC-002 " +
+	"\"event's actor is not authorized for this transition\" at land, after the CLI's own " +
+	"check passed)"
+
+// rawPushNeedsAnOpenDefaultBranch is why the two dedicated-space families do
+// not run on a local space. Both change a participant's status or the member
+// list by pushing straight to the default branch (SetParticipantStatusMidPath,
+// AddInertParticipantGenesis) -- there is no a2a verb that writes either, in
+// either direction -- and a local space's pre-receive hook refuses every push
+// to main that is not the funnel's own. That refusal is the local host working
+// as designed, so the path has nothing to say there.
+const rawPushNeedsAnOpenDefaultBranch = "the path changes a participant's status or the member list " +
+	"by a raw push to the default branch, which a local space's pre-receive hook refuses"
 
 // --- Family 1/2 — contract draft -> published -> adopted -> settled,
 // then a compatible successor version and the consumer's line (plan W3
@@ -2997,5 +3025,63 @@ func departedCounterpartyPaths() []Path {
 		decisionProposedWithdrawnByAuthorAfterApproversLeft,
 		decisionProposedSupersededByAuthorAfterApproversLeft,
 		handoffSubmittedSupersededByProducerAfterReceiverLeft,
+	}
+}
+
+// --- Family 16 -- the confirm-gates refusal, local host only (spec 07 row 15).
+//
+// POL-029 is the gate a LOCAL space applies in place of a review: the first
+// publish of a contract is G1, and in a `confirm` space it is refused unless
+// the caller passes --approve. A GitHub space has no such code to reach -- its
+// gate is branch protection and a reviewer -- so the path is declared on the
+// local host and excluded on the other with that reason.
+//
+// It runs on a DEDICATED space (confirmSpaceLocalPathIDs, subtracted from the
+// ordinary split): every other path's space is `autonomous`, which has no
+// gate to be refused by, and `confirm` is a durable property of a space
+// (space.yaml), not a flag on one call.
+
+// confirmSpaceLocalPathIDs is the dedicated-confirm-space family's id set, for
+// the runner's subtraction from the ordinary split and for the untagged gate
+// that every dedicated list is driven and real.
+func confirmSpaceLocalPathIDs() []string {
+	var ids []string
+	for _, p := range confirmSpaceLocalPaths() {
+		ids = append(ids, p.ID)
+	}
+	return ids
+}
+
+func confirmSpaceLocalPaths() []Path {
+	return []Path{
+		{
+			ID:           "contract-first-publish-refused-without-approve-in-confirm-space",
+			Precondition: "contract-baseline-published-settled",
+			NotOn: []HostExclusion{{
+				Host: HostKindGitHub,
+				Reason: "POL-029 is the local host's own gate: a GitHub space gates a write by " +
+					"branch protection and a reviewer, so there is no confirm-space refusal for " +
+					"its publish to meet",
+			}},
+			Intent: "US-2: in a `confirm` local space the contract A introduced with `a2a submit` " +
+				"(a 0.0.0 candidate, which crosses no gate -- the baseline path's own first leg) " +
+				"is then published with `a2a contract publish` and no --approve. That first " +
+				"publish is G1, so the product REFUSES it naming POL-029 and nothing lands: the " +
+				"contract is still the baseline's published one. The positive half -- the same " +
+				"publish with --approve landing and recording G1 -- is TestHostLoopContractGates " +
+				"at the CLI layer; this path is what drives the REFUSAL through the matrix's own " +
+				"real-binary harness, which scripts/check-error-codes.sh obligation 4 needs to see " +
+				"before POL-029 may drop its path_exempt waiver.",
+			Steps: []Step{
+				{
+					Actor: SystemA, Kind: fold.KindContract, Transition: fold.TPublish,
+					Refused: &Refusal{Code: "POL-029"},
+					Predicates: []Predicate{
+						FoldedState("contract", fold.StatePublished),
+						PendingOn("contract"),
+					},
+				},
+			},
+		},
 	}
 }

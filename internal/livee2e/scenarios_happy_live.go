@@ -424,7 +424,22 @@ const happyLifecycleTransitionsSlug = "matrix-lifecycle-req"
 // only there once its PR merged AND a sync pulled it down. Submitting and
 // immediately transitioning asks the CLI to act on something that does not
 // exist yet anywhere it can see — the harness's mistake, not the product's.
+//
+// It is the ONE land step, for every host: it asks the seam's host whether a
+// write lands inside the call that made it (Capabilities().LandsSynchronously)
+// and, if so, has nothing to wait for and only syncs. No call site branches on
+// the host itself.
 func happyLandAndSync(ctx context.Context, h *harness, c *checkout, prNumber int) error {
+	caps, err := h.Seam.Capabilities()
+	if err != nil {
+		return fmt.Errorf("reading the seam host's capabilities before landing PR #%d: %w", prNumber, err)
+	}
+	if caps.LandsSynchronously {
+		if _, stderr, syncErr := c.Run(ctx, "sync"); syncErr != nil {
+			return fmt.Errorf("sync after the write of PR #%d landed: %w: %s", prNumber, syncErr, stderr)
+		}
+		return nil
+	}
 	if _, err := h.AwaitCheck(ctx, c, prNumber); err != nil {
 		return fmt.Errorf("waiting for PR #%d's required check: %w", prNumber, err)
 	}

@@ -95,6 +95,35 @@ func provisionLocalSpace(ctx context.Context, bin, work string, pre Preflight) (
 	return origin, nil
 }
 
+// provisionBareRepoSpace brings up a space the way an operator does on a
+// machine with no GitHub: `a2a space init <id> --local` through the built
+// binary, which makes the bare repository, marks it as a local space and
+// installs the land guard (spec 03). Nothing here is hand-built, so the space
+// is what the product calls a local space and not a lookalike: no CODEOWNERS,
+// no participants scaffold, no fake API. Both systems join later, through
+// `a2a space join --approve` (bareRepoCheckoutsJoin in the harness).
+//
+// gates and flow are passed explicitly, never left to the product's defaults
+// (confirm and express): the matrix's paths drive the full write loop and
+// publish contracts, which a confirm space refuses without --approve, so the
+// pool's spaces are autonomous and the one path that is ABOUT the confirm gate
+// gets its own space. home is the HOME the one child process runs under, so
+// the run reaches no machine state of the operator's.
+func provisionBareRepoSpace(ctx context.Context, bin, work, home, gates string) (originDir string, err error) {
+	origin := filepath.Join(work, "origin.git")
+	initer := &checkout{Dir: work, Bin: bin, SpaceSlug: harnessSpaceSlug, APIRoot: bareRepoDeniedAPIRoot, Home: home}
+	if _, stderr, runErr := initer.Run(ctx, "space", "init", harnessSpaceSlug, "--local",
+		"--dir", origin, "--gates", gates, "--flow", "full"); runErr != nil {
+		return "", fmt.Errorf("livee2e: provisionBareRepoSpace: a2a space init --local: %w: %s", runErr, strings.TrimSpace(stderr))
+	}
+	// Every write in this tier lands here; receive-pack's detached post-push
+	// maintenance would otherwise outlive the test.
+	if err := gitfixture.HardenRepoDir(origin); err != nil {
+		return "", fmt.Errorf("livee2e: provisionBareRepoSpace: %w", err)
+	}
+	return origin, nil
+}
+
 // gitShowLogic reads path at ref inside the bare repo at dir (e.g.
 // "main:space.yaml") — a direct, fake-free inspection of what
 // provisionLocalSpace actually wrote, so this file's own pinning test does

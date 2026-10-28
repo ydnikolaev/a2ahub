@@ -6,12 +6,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
@@ -444,6 +447,103 @@ func checkActionable(ctx context.Context, t *testing.T, h *harness, actor *check
 	}
 }
 
+// --- host-agnostic PR plumbing ----------------------------------------
+//
+// The drivers below were written against one host, where a write opens a pull
+// request that a fake API lists and the harness then waits on. A bare-
+// repository space has no API at all: its write lands inside the call, and the
+// record of it is read through the host the product opens for the seam. These
+// four helpers are the only place a driver learns which, so that no driver
+// branches on its own: GitHub-shaped seams take today's code byte for byte,
+// and a synchronous host answers from its own landed record.
+
+// pathPullForBranch resolves the pull request the write on branch opened.
+func pathPullForBranch(ctx context.Context, h *harness, branch string) (PullState, error) {
+	caps, err := h.Seam.Capabilities()
+	if err != nil {
+		return PullState{}, fmt.Errorf("resolve the PR for %s: %w", branch, err)
+	}
+	if !caps.LandsSynchronously {
+		return h.pullForBranch(ctx, branch)
+	}
+	sh, err := h.Seam.OpenHost()
+	if err != nil {
+		return PullState{}, fmt.Errorf("resolve the PR for %s: %w", branch, err)
+	}
+	info, err := sh.FindPRByHeadBranch(ctx, host.FindPRRequest{Branch: branch})
+	if err != nil {
+		return PullState{}, fmt.Errorf("resolve the PR for %s: %w", branch, err)
+	}
+	if info == nil {
+		return PullState{}, fmt.Errorf("%w: %s", ErrNoPRForBranch, branch)
+	}
+	// A synchronous host never leaves a write open: what it records is
+	// already merged, so the state says so and the caller has nothing to wait
+	// on. The merge commit is not part of the host's answer; the land step on
+	// such a host does not look for it.
+	return PullState{
+		Number: info.Number, HeadRef: branch, HeadSHA: info.HeadSHA,
+		Merged: true, State: "closed", Body: info.Body,
+	}, nil
+}
+
+// pathPRNumberFromVerbOutput is prNumberFromVerbOutput for either host. A
+// synchronous host prints its landed record as a locator (`<repo>#land-8`),
+// not a URL ending in a number, and nothing downstream waits on that number
+// there -- happyLandAndSync only syncs -- so it reports 0 rather than parse a
+// grammar the caller has no use for.
+func pathPRNumberFromVerbOutput(h *harness, out string) (int, error) {
+	caps, err := h.Seam.Capabilities()
+	if err != nil {
+		return 0, err
+	}
+	if caps.LandsSynchronously {
+		return 0, nil
+	}
+	return prNumberFromVerbOutput(out)
+}
+
+// pathSubmitDrafted runs `a2a submit <id>` for an authored artifact and
+// resolves the pull request the funnel opened for it (harness.submitDrafted's
+// own tail, over pathPullForBranch).
+func pathSubmitDrafted(ctx context.Context, h *harness, c *checkout, id string) (submitted, error) {
+	branch := space.BranchName(c.System, "submit", id)
+	if _, stderr, err := c.Run(ctx, "submit", id); err != nil {
+		return submitted{ID: id, Branch: branch}, fmt.Errorf("livee2e: a2a submit %s (%s): %w: %s", id, c.System, err, strings.TrimSpace(stderr))
+	}
+	pr, err := pathPullForBranch(ctx, h, branch)
+	if err != nil {
+		return submitted{ID: id, Branch: branch}, err
+	}
+	return submitted{ID: id, Branch: branch, PRNumber: pr.Number, HeadSHA: pr.HeadSHA}, nil
+}
+
+// pathContractPublishPull is contractPublishPull for either host: it runs the
+// publish verb with --json and returns what it reported with the pull request
+// the write opened.
+func pathContractPublishPull(ctx context.Context, h *harness, c *checkout, args []string) (space.ContractPublicationResult, PullState, error) {
+	caps, err := h.Seam.Capabilities()
+	if err != nil {
+		return space.ContractPublicationResult{}, PullState{}, fmt.Errorf("contract publish: %w", err)
+	}
+	if !caps.LandsSynchronously {
+		return contractPublishPull(ctx, h, c, args)
+	}
+	var published space.ContractPublicationResult
+	stdout, stderr, err := c.Run(ctx, append(args, "--json")...)
+	if err != nil {
+		return published, PullState{}, fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr))
+	}
+	if err := json.Unmarshal([]byte(stdout), &published); err != nil {
+		return published, PullState{}, fmt.Errorf("decode contract publish JSON: %w: %s", err, strings.TrimSpace(stdout))
+	}
+	if published.Write.Branch == "" {
+		return published, PullState{}, fmt.Errorf("contract publish reported no branch to resolve the landed write by: %s", strings.TrimSpace(stdout))
+	}
+	pull, err := pathPullForBranch(ctx, h, published.Write.Branch)
+	return published, pull, err
+}
+
 // --- CLI-driving building blocks --------------------------------------
 
 // simpleVerbForTransition maps a fold transition constant to the OP-211 CLI
@@ -483,7 +583,7 @@ func driveCreateAndFirstTransition(ctx context.Context, t *testing.T, h *harness
 	ids[localName] = id
 	checkStepPredicates(ctx, t, h, actor, path.ID, createIdx, path.Steps[createIdx], ids)
 
-	sub, err := h.submitDrafted(ctx, actor, id)
+	sub, err := pathSubmitDrafted(ctx, h, actor, id)
 	if err != nil {
 		t.Fatalf("path %s step %d: a2a submit %s (%s): %v", path.ID, firstIdx, id, actor.System, err)
 	}
@@ -528,7 +628,7 @@ func driveRefusedCreateAndSubmit(ctx context.Context, t *testing.T, h *harness, 
 	ids[localName] = id
 	checkStepPredicates(ctx, t, h, actor, path.ID, createIdx, path.Steps[createIdx], ids)
 
-	if _, err := h.submitDrafted(ctx, actor, id); err == nil {
+	if _, err := pathSubmitDrafted(ctx, h, actor, id); err == nil {
 		t.Fatalf("path %s step %d: a2a submit %s (%s): expected a REFUSAL naming %s, got success", path.ID, submitIdx, id, actor.System, step.Refused.Code)
 	} else if !strings.Contains(err.Error(), step.Refused.Code) {
 		t.Fatalf("path %s step %d: a2a submit %s (%s): refused as expected but combined output does not name %s: %v", path.ID, submitIdx, id, actor.System, step.Refused.Code, err)
@@ -552,7 +652,7 @@ func driveSimpleVerb(ctx context.Context, t *testing.T, h *harness, actor *check
 	if _, stderr, err := actor.Run(ctx, args...); err != nil {
 		t.Fatalf("path %s step %d: a2a %s %s (%s): %v: %s", path.ID, stepIdx, verb, targetID, actor.System, err, strings.TrimSpace(stderr))
 	}
-	pr, err := h.pullForBranch(ctx, space.BranchName(actor.System, verb, targetID))
+	pr, err := pathPullForBranch(ctx, h, space.BranchName(actor.System, verb, targetID))
 	if err != nil {
 		t.Fatalf("path %s step %d: resolve PR for %s %s: %v", path.ID, stepIdx, verb, targetID, err)
 	}
@@ -577,7 +677,7 @@ func driveRespondBundle(ctx context.Context, t *testing.T, h *harness, actor *ch
 	if _, stderr, err := actor.Run(ctx, respondCommandArgs(parentID, result)...); err != nil {
 		t.Fatalf("path %s: a2a respond --result %s %s (%s): %v: %s", path.ID, result, parentID, actor.System, err, strings.TrimSpace(stderr))
 	}
-	pr, err := h.pullForBranch(ctx, respondBranch)
+	pr, err := pathPullForBranch(ctx, h, respondBranch)
 	if err != nil {
 		t.Fatalf("path %s: resolve respond PR for %s: %v", path.ID, parentID, err)
 	}
@@ -586,7 +686,7 @@ func driveRespondBundle(ctx context.Context, t *testing.T, h *harness, actor *ch
 		t.Fatalf("path %s: resolve response id from respond PR #%d: %v", path.ID, pr.Number, err)
 	}
 	ids[responseLocalName] = responseID
-	if err := subfamAwaitGreenAndLand(ctx, h, actor, pr.Number); err != nil {
+	if err := happyLandAndSync(ctx, h, actor, pr.Number); err != nil {
 		t.Fatalf("path %s: land+sync respond PR #%d: %v", path.ID, pr.Number, err)
 	}
 	checkStepPredicates(ctx, t, h, actor, path.ID, idxCreate, path.Steps[idxCreate], ids)
@@ -621,7 +721,7 @@ func driveSecondRespondBundle(ctx context.Context, t *testing.T, h *harness, act
 	if _, stderr, err := actor.Run(ctx, args...); err != nil {
 		t.Fatalf("path %s: a2a respond --result %s --field title=%q %s (%s): %v: %s", path.ID, result, distinguishingTitle, parentID, actor.System, err, strings.TrimSpace(stderr))
 	}
-	pr, err := h.pullForBranch(ctx, respondBranch)
+	pr, err := pathPullForBranch(ctx, h, respondBranch)
 	if err != nil {
 		t.Fatalf("path %s: resolve second respond PR for %s: %v", path.ID, parentID, err)
 	}
@@ -630,7 +730,7 @@ func driveSecondRespondBundle(ctx context.Context, t *testing.T, h *harness, act
 		t.Fatalf("path %s: resolve second response id from respond PR #%d: %v", path.ID, pr.Number, err)
 	}
 	ids[responseLocalName] = responseID
-	if err := subfamAwaitGreenAndLand(ctx, h, actor, pr.Number); err != nil {
+	if err := happyLandAndSync(ctx, h, actor, pr.Number); err != nil {
 		t.Fatalf("path %s: land+sync second respond PR #%d: %v", path.ID, pr.Number, err)
 	}
 	checkStepPredicates(ctx, t, h, actor, path.ID, idxCreate, path.Steps[idxCreate], ids)
@@ -673,7 +773,7 @@ func driveVerifyThenAutoClose(ctx context.Context, t *testing.T, h *harness, act
 	// id, and matchCompositeBranch — which looks a "+"-separated artifact id
 	// up under "a2a/<system>/verify/" — can no longer find it. Reading the
 	// number the command itself printed is independent of the grammar.
-	prNumber, perr := prNumberFromVerbOutput(stdout)
+	prNumber, perr := pathPRNumberFromVerbOutput(h, stdout)
 	if perr != nil {
 		t.Fatalf("path %s step %d: resolve verify PR for %s: %v (stdout=%q)", path.ID, idxVerify, responseID, perr, strings.TrimSpace(stdout))
 	}
@@ -696,7 +796,7 @@ func driveDisputeBundle(ctx context.Context, t *testing.T, h *harness, actor *ch
 	if _, stderr, err := actor.Run(ctx, "dispute", "--reason", "path driver: verification found a discrepancy", responseID); err != nil {
 		t.Fatalf("path %s step %d: a2a dispute %s (%s): %v: %s", path.ID, idxResponseDispute, responseID, actor.System, err, strings.TrimSpace(stderr))
 	}
-	pr, err := h.pullForBranch(ctx, space.BranchName(actor.System, "dispute", responseID))
+	pr, err := pathPullForBranch(ctx, h, space.BranchName(actor.System, "dispute", responseID))
 	if err != nil {
 		t.Fatalf("path %s step %d: resolve dispute PR for %s: %v", path.ID, idxResponseDispute, responseID, err)
 	}
@@ -737,7 +837,7 @@ func driveContractRepublish(ctx context.Context, t *testing.T, h *harness, actor
 	if err != nil {
 		t.Fatalf("path %s step %d: contract paths for %s: %v", path.ID, stepIdx, contractID, err)
 	}
-	published, pr, err := contractPublishPull(ctx, h, actor, []string{"contract", "publish", contractID, "--bump", bump, "--staging", paths.StagingRoot})
+	published, pr, err := pathContractPublishPull(ctx, h, actor, []string{"contract", "publish", contractID, "--bump", bump, "--staging", paths.StagingRoot})
 	if err != nil {
 		t.Fatalf("path %s step %d: a2a contract publish %s --bump %s (%s): %v", path.ID, stepIdx, contractID, bump, actor.System, err)
 	}
@@ -761,7 +861,7 @@ func driveDeprecateBundle(ctx context.Context, t *testing.T, h *harness, actor *
 		"--version", version, "--successor", successor, "--sunset", sunset); err != nil {
 		t.Fatalf("path %s step %d: a2a contract deprecate %s (%s): %v: %s", path.ID, idxDeprecate, contractID, actor.System, err, strings.TrimSpace(stderr))
 	}
-	pr, err := h.pullForBranch(ctx, branch)
+	pr, err := pathPullForBranch(ctx, h, branch)
 	if err != nil {
 		t.Fatalf("path %s step %d: resolve deprecate PR for %s: %v", path.ID, idxDeprecate, contractID, err)
 	}
@@ -787,7 +887,7 @@ func driveContractRetire(ctx context.Context, t *testing.T, h *harness, actor *c
 	if _, stderr, err := actor.Run(ctx, "contract", "retire", contractID, "--version", version); err != nil {
 		t.Fatalf("path %s step %d: a2a contract retire %s (%s): %v: %s", path.ID, stepIdx, contractID, actor.System, err, strings.TrimSpace(stderr))
 	}
-	pr, err := h.pullForBranch(ctx, space.BranchName(actor.System, "contract-retire", contractID))
+	pr, err := pathPullForBranch(ctx, h, space.BranchName(actor.System, "contract-retire", contractID))
 	if err != nil {
 		t.Fatalf("path %s step %d: resolve contract-retire PR for %s: %v", path.ID, stepIdx, contractID, err)
 	}
@@ -1215,7 +1315,7 @@ func runPathContractDeprecateRetire(ctx context.Context, t *testing.T, h *harnes
 	if _, stderr, err := b.Run(ctx, "contract", "adopt", contractID); err != nil {
 		t.Fatalf("path %s: a2a contract adopt %s (%s): %v: %s", path.ID, contractID, b.System, err, strings.TrimSpace(stderr))
 	}
-	adoptPR, err := h.pullForBranch(ctx, space.BranchName(b.System, "contract-adopt", contractID))
+	adoptPR, err := pathPullForBranch(ctx, h, space.BranchName(b.System, "contract-adopt", contractID))
 	if err != nil {
 		t.Fatalf("path %s: resolve contract-adopt PR for %s: %v", path.ID, contractID, err)
 	}
@@ -1240,7 +1340,7 @@ func runPathContractDeprecateRetire(ctx context.Context, t *testing.T, h *harnes
 	if _, stderr, err := b.Run(ctx, "ack", announcementID); err != nil {
 		t.Fatalf("path %s: a2a ack %s (%s): %v: %s", path.ID, announcementID, b.System, err, strings.TrimSpace(stderr))
 	}
-	ackPR, err := h.pullForBranch(ctx, space.BranchName(b.System, "ack", announcementID))
+	ackPR, err := pathPullForBranch(ctx, h, space.BranchName(b.System, "ack", announcementID))
 	if err != nil {
 		t.Fatalf("path %s: resolve ack PR for %s: %v", path.ID, announcementID, err)
 	}
@@ -1274,7 +1374,7 @@ func runPathContractRetireRefusedWithoutAck(ctx context.Context, t *testing.T, h
 	if _, stderr, err := b.Run(ctx, "contract", "adopt", contractID); err != nil {
 		t.Fatalf("path %s: a2a contract adopt %s (%s): %v: %s", path.ID, contractID, b.System, err, strings.TrimSpace(stderr))
 	}
-	adoptPR, err := h.pullForBranch(ctx, space.BranchName(b.System, "contract-adopt", contractID))
+	adoptPR, err := pathPullForBranch(ctx, h, space.BranchName(b.System, "contract-adopt", contractID))
 	if err != nil {
 		t.Fatalf("path %s: resolve contract-adopt PR for %s: %v", path.ID, contractID, err)
 	}
@@ -1295,6 +1395,46 @@ func runPathContractRetireRefusedWithoutAck(ctx context.Context, t *testing.T, h
 	// the whole point of this control.
 	syncBoth(ctx, t, h)
 	driveRefusedContractRetire(ctx, t, h, a, path, 3, contractID, ids["contract-version"], ids)
+	return ids
+}
+
+// driveRefusedContractPublish attempts `a2a contract publish <id> --bump
+// <bump> --staging <root>` with NO --approve and asserts the real binary
+// REFUSES it naming step.Refused.Code -- the paired negative of
+// driveContractRepublish for a space whose gate policy is `confirm`. Same
+// contract as driveRefusedContractRetire: a non-zero exit whose combined output
+// names the code is the only pass, no pull request is looked for (a refused
+// write never reaches the host), and the step's predicates are checked against
+// the state the refusal left unchanged.
+func driveRefusedContractPublish(ctx context.Context, t *testing.T, h *harness, actor *checkout, path Path, stepIdx int, contractID, bump string, ids pathIDs) {
+	t.Helper()
+	step := path.Steps[stepIdx]
+	if step.Refused == nil || step.Refused.Code == "" {
+		t.Fatalf("path %s step %d: driveRefusedContractPublish needs a step declaring the Refused code it expects", path.ID, stepIdx)
+	}
+	paths, err := contractPathsForID(contractID)
+	if err != nil {
+		t.Fatalf("path %s step %d: contract paths for %s: %v", path.ID, stepIdx, contractID, err)
+	}
+	stdout, stderr, err := actor.Run(ctx, "contract", "publish", contractID, "--bump", bump, "--staging", paths.StagingRoot)
+	if err == nil {
+		t.Fatalf("path %s step %d: a2a contract publish %s (%s): expected a REFUSAL naming %s, got success: stdout=%s", path.ID, stepIdx, contractID, actor.System, step.Refused.Code, stdout)
+	}
+	if combined := stdout + stderr; !strings.Contains(combined, step.Refused.Code) {
+		t.Fatalf("path %s step %d: a2a contract publish %s (%s): refused as expected but combined output does not name %s: %s", path.ID, stepIdx, contractID, actor.System, step.Refused.Code, combined)
+	}
+	checkStepPredicates(ctx, t, h, actor, path.ID, stepIdx, step, ids)
+}
+
+// runPathContractFirstPublishRefusedWithoutApprove drives the confirm-space
+// refusal (pathcatalogue_paths.go, Family 16) on the dedicated confirm local
+// harness: the baseline's own replay (create + submit, no gate), then the
+// first publish with no --approve.
+func runPathContractFirstPublishRefusedWithoutApprove(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "contract-first-publish-refused-without-approve-in-confirm-space")
+	ids := runPathContractBaseline(ctx, t, h, runTag)
+	driveRefusedContractPublish(ctx, t, h, h.A, path, 0, ids["contract"], "minor", ids)
 	return ids
 }
 
@@ -1325,7 +1465,7 @@ func driveDeclineFullySync(ctx context.Context, t *testing.T, h *harness, actor 
 	if _, stderr, err := actor.Run(ctx, "decline", "--reason", reason, targetID); err != nil {
 		t.Fatalf("path %s step %d: a2a decline %s (%s): %v: %s", path.ID, stepIdx, targetID, actor.System, err, strings.TrimSpace(stderr))
 	}
-	pr, err := h.pullForBranch(ctx, space.BranchName(actor.System, "decline", targetID))
+	pr, err := pathPullForBranch(ctx, h, space.BranchName(actor.System, "decline", targetID))
 	if err != nil {
 		t.Fatalf("path %s step %d: resolve decline PR for %s: %v", path.ID, stepIdx, targetID, err)
 	}
@@ -1545,7 +1685,7 @@ func driveLandedSuccessorDraft(ctx context.Context, t *testing.T, h *harness, ac
 	if err != nil {
 		t.Fatalf("path %s step %d: mint a successor decision draft for --refs (%s): %v", pathID, stepIdx, actor.System, err)
 	}
-	sub, err := h.submitDrafted(ctx, actor, id)
+	sub, err := pathSubmitDrafted(ctx, h, actor, id)
 	if err != nil {
 		t.Fatalf("path %s step %d: a2a submit %s (successor decision, %s): %v", pathID, stepIdx, id, actor.System, err)
 	}
@@ -1601,7 +1741,7 @@ func driveApprovedSuccessorQuorum(ctx context.Context, t *testing.T, h *harness,
 		if _, stderr, err := approver.Run(ctx, "approve", successorID); err != nil {
 			t.Fatalf("path %s: a2a approve %s (successor decision quorum, %s): %v: %s", pathID, successorID, approver.System, err, strings.TrimSpace(stderr))
 		}
-		pr, err := h.pullForBranch(ctx, space.BranchName(approver.System, "approve", successorID))
+		pr, err := pathPullForBranch(ctx, h, space.BranchName(approver.System, "approve", successorID))
 		if err != nil {
 			t.Fatalf("path %s: resolve PR for approve %s (successor decision quorum, %s): %v", pathID, successorID, approver.System, err)
 		}
@@ -2188,7 +2328,7 @@ func driveCancelFullySync(ctx context.Context, t *testing.T, h *harness, actor *
 	if _, stderr, err := actor.Run(ctx, "cancel", targetID); err != nil {
 		t.Fatalf("path %s step %d: a2a cancel %s (%s): %v: %s", path.ID, stepIdx, targetID, actor.System, err, strings.TrimSpace(stderr))
 	}
-	pr, err := h.pullForBranch(ctx, space.BranchName(actor.System, "cancel", targetID))
+	pr, err := pathPullForBranch(ctx, h, space.BranchName(actor.System, "cancel", targetID))
 	if err != nil {
 		t.Fatalf("path %s step %d: resolve cancel PR for %s: %v", path.ID, stepIdx, targetID, err)
 	}
@@ -2635,80 +2775,81 @@ func runPathRestrictedClassificationExceedsBilateralRefused(ctx context.Context,
 // own entry). Keeping the map total means parking a path is a one-line
 // move of its id, never a driver rewrite.
 var driverForPath = map[string]func(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs{
-	"contract-baseline-published-settled":                      runPathContractBaseline,
-	"contract-successor-compatible-publish":                    runPathContractSuccessor,
-	"question-lifecycle-acknowledged":                          runPathQuestionAcknowledged,
-	"question-close-before-responded-refused":                  runPathQuestionCloseBeforeRespondedRefused,
-	"question-respond-by-the-asker-refused":                    runPathQuestionRespondByAskerRefused,
-	"question-lifecycle-to-responded":                          runPathQuestionToResponded,
-	"question-lifecycle-verified-closed":                       runPathQuestionVerifiedClosed,
-	"question-lifecycle-disputed-responder-owes":               runPathQuestionDisputed,
-	"work-request-lifecycle-accept-start-respond-verify-close": runPathWorkRequestLifecycle,
-	"data-loop-contract-and-request":                           runPathDataLoopSetup,
-	"data-loop-attempt-one-fails":                              runPathDataLoopAttemptOneFails,
-	"data-loop-attempt-two-passes":                             runPathDataLoopAttemptTwoPasses,
-	"data-loop-request-answered-closed":                        runPathDataLoopRequestClosed,
-	"response-delivers-unlanded-package-refused":               runPathResponseDeliversUnlandedRefused,
-	"contract-deprecate-retire-after-sunset":                   runPathContractDeprecateRetire,
-	"contract-retire-refused-without-ack":                      runPathContractRetireRefusedWithoutAck,
-	"question-declined-after-acknowledge":                      runPathQuestionDeclinedAfterAcknowledge,
-	"work-request-declined-from-submitted":                     runPathWorkRequestDeclinedFromSubmitted,
-	"question-block-then-unblock-restores-accepted":            runPathQuestionBlockThenUnblock,
-	"requirement-lifecycle-published-acknowledged":             runPathRequirementPublishedAcknowledged,
-	"requirement-declined-from-published":                      runPathRequirementDeclinedFromPublished,
-	"requirement-declined-from-acknowledged":                   runPathRequirementDeclinedFromAcknowledged,
-	"requirement-withdrawn-from-published":                     runPathRequirementWithdrawnFromPublished,
-	"requirement-withdrawn-from-acknowledged":                  runPathRequirementWithdrawnFromAcknowledged,
-	"decision-lifecycle-partial-quorum-then-approved":          runPathDecisionPartialQuorumThenApproved,
-	"decision-approved-superseded":                             runPathDecisionApprovedSuperseded,
-	"decision-approved-superseded-by-approved-successor":       runPathDecisionApprovedSupersededByApprovedSuccessor,
-	"decision-proposed-withdrawn":                              runPathDecisionProposedWithdrawn,
-	"decision-lifecycle-rejected":                              runPathDecisionRejected,
-	"decision-rejected-superseded":                             runPathDecisionRejectedSuperseded,
-	"question-supersede-from-submitted":                        runPathQuestionSupersedeFromSubmitted,
-	"question-supersede-from-acknowledged":                     runPathQuestionSupersedeFromAcknowledged,
-	"question-supersede-from-accepted":                         runPathQuestionSupersedeFromAccepted,
-	"question-supersede-from-in-progress":                      runPathQuestionSupersedeFromInProgress,
-	"question-supersede-from-blocked":                          runPathQuestionSupersedeFromBlocked,
-	"question-supersede-from-responded":                        runPathQuestionSupersedeFromResponded,
-	"work-request-supersede-from-submitted":                    runPathWorkRequestSupersedeFromSubmitted,
-	"work-request-supersede-from-acknowledged":                 runPathWorkRequestSupersedeFromAcknowledged,
-	"work-request-supersede-from-accepted":                     runPathWorkRequestSupersedeFromAccepted,
-	"work-request-supersede-from-in-progress":                  runPathWorkRequestSupersedeFromInProgress,
-	"work-request-supersede-from-blocked":                      runPathWorkRequestSupersedeFromBlocked,
-	"work-request-supersede-from-responded":                    runPathWorkRequestSupersedeFromResponded,
-	"announcement-supersede-from-published":                    runPathAnnouncementSupersedeFromPublished,
-	"requirement-supersede-from-published":                     runPathRequirementSupersedeFromPublished,
-	"requirement-supersede-from-acknowledged":                  runPathRequirementSupersedeFromAcknowledged,
-	"requirement-supersede-from-declined":                      runPathRequirementSupersedeFromDeclined,
-	"requirement-supersede-from-withdrawn":                     runPathRequirementSupersedeFromWithdrawn,
-	"question-cancel-from-submitted":                           runPathQuestionCancelFromSubmitted,
-	"question-cancel-from-acknowledged":                        runPathQuestionCancelFromAcknowledged,
-	"question-cancel-from-accepted":                            runPathQuestionCancelFromAccepted,
-	"question-cancel-from-in-progress":                         runPathQuestionCancelFromInProgress,
-	"work-request-cancel-from-submitted":                       runPathWorkRequestCancelFromSubmitted,
-	"work-request-cancel-from-acknowledged":                    runPathWorkRequestCancelFromAcknowledged,
-	"work-request-cancel-from-accepted":                        runPathWorkRequestCancelFromAccepted,
-	"work-request-cancel-from-in-progress":                     runPathWorkRequestCancelFromInProgress,
-	"question-declined-from-submitted":                         runPathQuestionDeclinedFromSubmitted,
-	"question-declined-from-accepted":                          runPathQuestionDeclinedFromAccepted,
-	"question-declined-from-in-progress":                       runPathQuestionDeclinedFromInProgress,
-	"work-request-declined-from-acknowledged":                  runPathWorkRequestDeclinedFromAcknowledged,
-	"work-request-declined-from-accepted":                      runPathWorkRequestDeclinedFromAccepted,
-	"work-request-declined-from-in-progress":                   runPathWorkRequestDeclinedFromInProgress,
-	"question-block-then-unblock-restores-acknowledged":        runPathQuestionBlockThenUnblockRestoresAcknowledged,
-	"question-block-then-unblock-restores-in-progress":         runPathQuestionBlockThenUnblockRestoresInProgress,
-	"work-request-block-then-unblock-restores-acknowledged":    runPathWorkRequestBlockThenUnblockRestoresAcknowledged,
-	"work-request-block-then-unblock-restores-accepted":        runPathWorkRequestBlockThenUnblockRestoresAccepted,
-	"work-request-block-then-unblock-restores-in-progress":     runPathWorkRequestBlockThenUnblockRestoresInProgress,
-	"question-lifecycle-accept-start-respond":                  runPathQuestionAcceptStartRespond,
-	"question-lifecycle-accepted-respond-direct":               runPathQuestionAcceptedRespondDirect,
-	"work-request-accepted-respond-direct":                     runPathWorkRequestAcceptedRespondDirect,
-	"work-request-lifecycle-disputed-sender-owes":              runPathWorkRequestDisputedSenderOwes,
-	"question-multi-response-reconciliation":                   runPathQuestionMultiResponseReconciliation,
-	"work-request-multi-response-reconciliation":               runPathWorkRequestMultiResponseReconciliation,
-	"work-request-bad-needed-by-format-refused":                runPathWorkRequestBadNeededByFormatRefused,
-	"restricted-classification-exceeds-bilateral-refused":      runPathRestrictedClassificationExceedsBilateralRefused,
+	"contract-baseline-published-settled":                             runPathContractBaseline,
+	"contract-successor-compatible-publish":                           runPathContractSuccessor,
+	"question-lifecycle-acknowledged":                                 runPathQuestionAcknowledged,
+	"question-close-before-responded-refused":                         runPathQuestionCloseBeforeRespondedRefused,
+	"question-respond-by-the-asker-refused":                           runPathQuestionRespondByAskerRefused,
+	"question-lifecycle-to-responded":                                 runPathQuestionToResponded,
+	"question-lifecycle-verified-closed":                              runPathQuestionVerifiedClosed,
+	"question-lifecycle-disputed-responder-owes":                      runPathQuestionDisputed,
+	"work-request-lifecycle-accept-start-respond-verify-close":        runPathWorkRequestLifecycle,
+	"data-loop-contract-and-request":                                  runPathDataLoopSetup,
+	"data-loop-attempt-one-fails":                                     runPathDataLoopAttemptOneFails,
+	"data-loop-attempt-two-passes":                                    runPathDataLoopAttemptTwoPasses,
+	"data-loop-request-answered-closed":                               runPathDataLoopRequestClosed,
+	"response-delivers-unlanded-package-refused":                      runPathResponseDeliversUnlandedRefused,
+	"contract-deprecate-retire-after-sunset":                          runPathContractDeprecateRetire,
+	"contract-retire-refused-without-ack":                             runPathContractRetireRefusedWithoutAck,
+	"contract-first-publish-refused-without-approve-in-confirm-space": runPathContractFirstPublishRefusedWithoutApprove,
+	"question-declined-after-acknowledge":                             runPathQuestionDeclinedAfterAcknowledge,
+	"work-request-declined-from-submitted":                            runPathWorkRequestDeclinedFromSubmitted,
+	"question-block-then-unblock-restores-accepted":                   runPathQuestionBlockThenUnblock,
+	"requirement-lifecycle-published-acknowledged":                    runPathRequirementPublishedAcknowledged,
+	"requirement-declined-from-published":                             runPathRequirementDeclinedFromPublished,
+	"requirement-declined-from-acknowledged":                          runPathRequirementDeclinedFromAcknowledged,
+	"requirement-withdrawn-from-published":                            runPathRequirementWithdrawnFromPublished,
+	"requirement-withdrawn-from-acknowledged":                         runPathRequirementWithdrawnFromAcknowledged,
+	"decision-lifecycle-partial-quorum-then-approved":                 runPathDecisionPartialQuorumThenApproved,
+	"decision-approved-superseded":                                    runPathDecisionApprovedSuperseded,
+	"decision-approved-superseded-by-approved-successor":              runPathDecisionApprovedSupersededByApprovedSuccessor,
+	"decision-proposed-withdrawn":                                     runPathDecisionProposedWithdrawn,
+	"decision-lifecycle-rejected":                                     runPathDecisionRejected,
+	"decision-rejected-superseded":                                    runPathDecisionRejectedSuperseded,
+	"question-supersede-from-submitted":                               runPathQuestionSupersedeFromSubmitted,
+	"question-supersede-from-acknowledged":                            runPathQuestionSupersedeFromAcknowledged,
+	"question-supersede-from-accepted":                                runPathQuestionSupersedeFromAccepted,
+	"question-supersede-from-in-progress":                             runPathQuestionSupersedeFromInProgress,
+	"question-supersede-from-blocked":                                 runPathQuestionSupersedeFromBlocked,
+	"question-supersede-from-responded":                               runPathQuestionSupersedeFromResponded,
+	"work-request-supersede-from-submitted":                           runPathWorkRequestSupersedeFromSubmitted,
+	"work-request-supersede-from-acknowledged":                        runPathWorkRequestSupersedeFromAcknowledged,
+	"work-request-supersede-from-accepted":                            runPathWorkRequestSupersedeFromAccepted,
+	"work-request-supersede-from-in-progress":                         runPathWorkRequestSupersedeFromInProgress,
+	"work-request-supersede-from-blocked":                             runPathWorkRequestSupersedeFromBlocked,
+	"work-request-supersede-from-responded":                           runPathWorkRequestSupersedeFromResponded,
+	"announcement-supersede-from-published":                           runPathAnnouncementSupersedeFromPublished,
+	"requirement-supersede-from-published":                            runPathRequirementSupersedeFromPublished,
+	"requirement-supersede-from-acknowledged":                         runPathRequirementSupersedeFromAcknowledged,
+	"requirement-supersede-from-declined":                             runPathRequirementSupersedeFromDeclined,
+	"requirement-supersede-from-withdrawn":                            runPathRequirementSupersedeFromWithdrawn,
+	"question-cancel-from-submitted":                                  runPathQuestionCancelFromSubmitted,
+	"question-cancel-from-acknowledged":                               runPathQuestionCancelFromAcknowledged,
+	"question-cancel-from-accepted":                                   runPathQuestionCancelFromAccepted,
+	"question-cancel-from-in-progress":                                runPathQuestionCancelFromInProgress,
+	"work-request-cancel-from-submitted":                              runPathWorkRequestCancelFromSubmitted,
+	"work-request-cancel-from-acknowledged":                           runPathWorkRequestCancelFromAcknowledged,
+	"work-request-cancel-from-accepted":                               runPathWorkRequestCancelFromAccepted,
+	"work-request-cancel-from-in-progress":                            runPathWorkRequestCancelFromInProgress,
+	"question-declined-from-submitted":                                runPathQuestionDeclinedFromSubmitted,
+	"question-declined-from-accepted":                                 runPathQuestionDeclinedFromAccepted,
+	"question-declined-from-in-progress":                              runPathQuestionDeclinedFromInProgress,
+	"work-request-declined-from-acknowledged":                         runPathWorkRequestDeclinedFromAcknowledged,
+	"work-request-declined-from-accepted":                             runPathWorkRequestDeclinedFromAccepted,
+	"work-request-declined-from-in-progress":                          runPathWorkRequestDeclinedFromInProgress,
+	"question-block-then-unblock-restores-acknowledged":               runPathQuestionBlockThenUnblockRestoresAcknowledged,
+	"question-block-then-unblock-restores-in-progress":                runPathQuestionBlockThenUnblockRestoresInProgress,
+	"work-request-block-then-unblock-restores-acknowledged":           runPathWorkRequestBlockThenUnblockRestoresAcknowledged,
+	"work-request-block-then-unblock-restores-accepted":               runPathWorkRequestBlockThenUnblockRestoresAccepted,
+	"work-request-block-then-unblock-restores-in-progress":            runPathWorkRequestBlockThenUnblockRestoresInProgress,
+	"question-lifecycle-accept-start-respond":                         runPathQuestionAcceptStartRespond,
+	"question-lifecycle-accepted-respond-direct":                      runPathQuestionAcceptedRespondDirect,
+	"work-request-accepted-respond-direct":                            runPathWorkRequestAcceptedRespondDirect,
+	"work-request-lifecycle-disputed-sender-owes":                     runPathWorkRequestDisputedSenderOwes,
+	"question-multi-response-reconciliation":                          runPathQuestionMultiResponseReconciliation,
+	"work-request-multi-response-reconciliation":                      runPathWorkRequestMultiResponseReconciliation,
+	"work-request-bad-needed-by-format-refused":                       runPathWorkRequestBadNeededByFormatRefused,
+	"restricted-classification-exceeds-bilateral-refused":             runPathRestrictedClassificationExceedsBilateralRefused,
 
 	// Family 15 — the departed counterparty (P8 wave 30B). Present in this
 	// map for the SAME reason every other entry is (mustPath/runPathGroup's
@@ -2743,7 +2884,7 @@ var driverForPath = map[string]func(ctx context.Context, t *testing.T, h *harnes
 //
 // h is the SAME harness TestLogicMatrix already built via newLogicHarness —
 // no second rig (D1).
-func runConformancePaths(ctx context.Context, t *testing.T, harnesses []*harness) {
+func runConformancePaths(ctx context.Context, t *testing.T, kind HostKind, harnesses []*harness, sem chan struct{}, folds *hostFoldLog) {
 	t.Helper()
 	if len(harnesses) == 0 {
 		t.Fatal("runConformancePaths: no harness supplied — nothing could be driven, and a green result would mean nothing")
@@ -2767,28 +2908,56 @@ func runConformancePaths(ctx context.Context, t *testing.T, harnesses []*harness
 	// group's contents stay predictable from the declaration order when
 	// reading a failure.
 	//
-	// departedCounterpartyPathIDs() and classificationBilateralDedicated-
-	// SpacePathIDs() (pathdrivability.go) are SUBTRACTED before splitting —
-	// those ids are driven separately, against their own dedicated
-	// harnesses (runDepartedCounterpartyPaths / runClassificationBilateralPaths),
-	// never one of THESE ordinary ones (each function's own doc comment
-	// says why sharing a space would be wrong — a silently departed
-	// counterparty, or a silently exceeded bilateral audience, every OTHER
-	// path here still assumes is not the case). They stay IN drivenPathIDs()
-	// itself (the union gate, pathdrivability_test.go, is honest that they
-	// ARE driven) — only this split excludes them.
+	// departedCounterpartyPathIDs(), classificationBilateralDedicated-
+	// SpacePathIDs() and confirmSpaceLocalPathIDs() (pathdrivability.go,
+	// pathcatalogue_paths.go) are SUBTRACTED before splitting — those ids are
+	// driven separately, against their own dedicated harnesses
+	// (runDepartedCounterpartyPaths / runClassificationBilateralPaths / the
+	// confirm-gates local space), never one of THESE ordinary ones (each
+	// function's own doc comment says why sharing a space would be wrong — a
+	// silently departed counterparty, a silently exceeded bilateral audience,
+	// or a gate policy no other path's space has). They stay IN
+	// drivenPathIDs() itself (the union gate, pathdrivability_test.go, is
+	// honest that they ARE driven) — only this split excludes them.
+	//
+	// Host dimension (spec 07 §6.2): the same split runs once per host kind
+	// the caller supplies harnesses for. A path that declares itself NOT on
+	// that host (Path.NotOn) is left out of the split and REPORTED, with the
+	// reason, through t.Logf — never t.Skip, which would be a green that ran
+	// nothing. Local groups are named local-group-N so `-v` lists each path
+	// once per host it runs on, and a one-row `-run` can pick either.
+	//
+	// sem bounds how many groups run at once ACROSS both hosts, so the
+	// pathSpaces knob (A2A_LOGIC_PATH_SPACES=1 included) still means what it
+	// meant before a second host existed.
 	excluded := map[string]bool{}
-	for _, id := range departedCounterpartyPathIDs() {
-		excluded[id] = true
+	for _, ids := range [][]string{
+		departedCounterpartyPathIDs(),
+		classificationBilateralDedicatedSpacePathIDs(),
+		confirmSpaceLocalPathIDs(),
+	} {
+		for _, id := range ids {
+			excluded[id] = true
+		}
 	}
-	for _, id := range classificationBilateralDedicatedSpacePathIDs() {
-		excluded[id] = true
+	declared, err := pathsByID(ConformancePaths())
+	if err != nil {
+		t.Fatalf("runConformancePaths: pathsByID: %v", err)
 	}
 	var regular []string
 	for _, id := range drivenPathIDs() {
-		if !excluded[id] {
-			regular = append(regular, id)
+		if excluded[id] {
+			continue
 		}
+		if p := declared[id]; !p.RunsOn(kind) {
+			t.Logf("path %q is not run on the %s host: %s", id, kind, p.ExclusionReason(kind))
+			continue
+		}
+		regular = append(regular, id)
+	}
+	prefix := "group"
+	if kind != HostKindGitHub {
+		prefix = "local-group"
 	}
 	groups := splitPathIDs(regular, len(harnesses))
 	for i, ids := range groups {
@@ -2796,10 +2965,13 @@ func runConformancePaths(ctx context.Context, t *testing.T, harnesses []*harness
 			continue
 		}
 		h := harnesses[i]
-		ids := ids
-		t.Run(fmt.Sprintf("group-%d", i+1), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s-%d", prefix, i+1), func(t *testing.T) {
 			t.Parallel()
-			runPathGroup(ctx, t, h, ids)
+			if sem != nil {
+				sem <- struct{}{}
+				defer func() { <-sem }()
+			}
+			runPathGroup(ctx, t, kind, h, ids, folds)
 		})
 	}
 }
@@ -2832,7 +3004,7 @@ func splitPathIDs(ids []string, n int) [][]string {
 // paths inside a group are never concurrent with each other: they share a
 // space and each resets both checkouts when it returns, which is exactly the
 // coupling P10 W1 removed BETWEEN suites and must not reintroduce WITHIN one.
-func runPathGroup(ctx context.Context, t *testing.T, h *harness, ids []string) {
+func runPathGroup(ctx context.Context, t *testing.T, kind HostKind, h *harness, ids []string, folds *hostFoldLog) {
 	t.Helper()
 	for _, id := range ids {
 		id := id
@@ -2855,7 +3027,292 @@ func runPathGroup(ctx context.Context, t *testing.T, h *harness, ids []string) {
 			if !ok {
 				t.Fatalf("pathdriver: %q is in drivenPathIDs() but has no entry in driverForPath", id)
 			}
-			driver(ctx, t, h, id)
+			ids := driver(ctx, t, h, id)
+			// A path that already failed has no end state worth comparing
+			// across hosts: its red is the finding, a diff would only bury it.
+			if folds != nil && !t.Failed() {
+				folds.record(ctx, t, kind, h, id, ids)
+			}
 		})
 	}
+}
+
+// --- host fold comparison (spec 07 §6.2) --------------------------------
+//
+// The matrix runs the same paths on a GitHub-shaped space and on a local one.
+// Each path's verdicts already assert what the product SHOULD show; this is the
+// second, independent claim: that both hosts show the SAME thing. After a path
+// succeeds, every artifact it named is read back through `a2a thread --json`
+// from system A (after both checkouts sync) and normalised; the TestLogicMatrix
+// cleanup then compares the two hosts' projections path by path. A fold that
+// differs by host is a host leaking into semantics, which no per-host
+// predicate can see.
+
+// normalisedThreadFields are the fields whose VALUE legitimately differs
+// between two spaces that did the same thing, so the comparison replaces them
+// with a fixed marker. This list is deliberately a reviewed constant: adding a
+// field to it is a decision about what "the same fold" means, and a diff that
+// only a new entry would hide is a finding to report, not a list to grow.
+// Artifact ids are handled separately, by their symbolic name in the path
+// (they carry a per-run slug); everything else is compared verbatim.
+//
+// Found by running one path on both hosts and diffing the raw output (the only
+// differences were these): timestamps and event ULIDs are minted per run;
+// `thread` is a random-suffixed id minted when the thread opens; and `seq` is
+// the entry's position in its SPACE's whole history, which counts whatever the
+// host's own provisioning and every earlier path of that group wrote, so two
+// spaces that did identical work disagree on it by construction. Transcript
+// order is still compared, as commit groups (see normalizeThreadJSON); only the
+// raw counter is masked.
+// Identity (`from`, `actor.system`, `state_by`) did NOT differ between hosts
+// and is deliberately not on this list.
+var normalisedThreadFields = map[string]string{
+	"at":          "<time>",
+	"event_ulid":  "<event>",
+	"state_event": "<event>",
+	"state_since": "<time>",
+	"ulid":        "<event>",
+	"seq":         "<seq>",
+	"thread":      "<thread>",
+}
+
+// normalizeThreadJSON canonicalises one `a2a thread --json` document for a
+// cross-host comparison: normalisedThreadFields replaced, every artifact id
+// the path named replaced by its symbolic name, keys sorted, indented.
+//
+// The transcript gets one more step, because it is the only ordered list whose
+// order is partly arbitrary by design. Entries are ordered by the commit that
+// landed them (`seq`), and two events landed by ONE commit are ordered by their
+// ULID, which artifact.MintULID documents as "an intra-commit tiebreak only"
+// and draws from crypto/rand: two minted in the same millisecond order at
+// random. The first two-host run showed exactly that, in every path whose one
+// write carries two events (a deprecate bundle, a verify+close). So `seq` is
+// replaced by its dense rank among this thread's own entries, and entries that
+// share a seq are put in a content order before comparing. What stays compared:
+// which entries exist, which commit group each is in, and the order BETWEEN
+// groups -- everything the product promises.
+func normalizeThreadJSON(raw string, ids pathIDs) (string, error) {
+	var doc any
+	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+		return "", fmt.Errorf("decode thread JSON: %w", err)
+	}
+	var seqs []float64
+	if top, ok := doc.(map[string]any); ok {
+		if entries, ok := top["transcript"].([]any); ok {
+			for _, e := range entries {
+				if m, ok := e.(map[string]any); ok {
+					if n, ok := m["seq"].(float64); ok {
+						seqs = append(seqs, n)
+						continue
+					}
+				}
+				seqs = append(seqs, 0)
+			}
+		}
+	}
+	doc = normalizeThreadValue(doc)
+	if top, ok := doc.(map[string]any); ok {
+		if entries, ok := top["transcript"].([]any); ok && len(entries) == len(seqs) {
+			top["transcript"] = rankTranscript(entries, seqs, ids)
+		}
+	}
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("encode thread JSON: %w", err)
+	}
+	return replaceArtifactIDs(string(out), ids), nil
+}
+
+// rankTranscript orders entries by (seq, content) and rewrites each entry's
+// masked seq as its dense rank. entries were already normalised, so their
+// content keys carry no per-run value.
+func rankTranscript(entries []any, seqs []float64, ids pathIDs) []any {
+	type ranked struct {
+		seq   float64
+		key   string
+		entry any
+	}
+	items := make([]ranked, len(entries))
+	for i, e := range entries {
+		key, _ := json.Marshal(e)
+		items[i] = ranked{seq: seqs[i], key: replaceArtifactIDs(string(key), ids), entry: e}
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].seq != items[j].seq {
+			return items[i].seq < items[j].seq
+		}
+		return items[i].key < items[j].key
+	})
+	out := make([]any, len(items))
+	rank := 0
+	for i, it := range items {
+		if i == 0 || it.seq != items[i-1].seq {
+			rank++
+		}
+		if m, ok := it.entry.(map[string]any); ok {
+			m["seq"] = fmt.Sprintf("<commit %d>", rank)
+		}
+		out[i] = it.entry
+	}
+	return out
+}
+
+// replaceArtifactIDs substitutes each id a path named with {name}, longest id
+// first: an id that is a prefix of another (a contract id and its `@version`
+// pin) must not eat the longer one's head.
+func replaceArtifactIDs(text string, ids pathIDs) string {
+	names := make([]string, 0, len(ids))
+	for name := range ids {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		if li, lj := len(ids[names[i]]), len(ids[names[j]]); li != lj {
+			return li > lj
+		}
+		return names[i] < names[j]
+	})
+	for _, name := range names {
+		if ids[name] != "" {
+			text = strings.ReplaceAll(text, ids[name], "{"+name+"}")
+		}
+	}
+	return text
+}
+
+func normalizeThreadValue(v any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		for k, child := range x {
+			if marker, ok := normalisedThreadFields[k]; ok {
+				x[k] = marker
+				continue
+			}
+			x[k] = normalizeThreadValue(child)
+		}
+		return x
+	case []any:
+		for i := range x {
+			x[i] = normalizeThreadValue(x[i])
+		}
+		return x
+	default:
+		return v
+	}
+}
+
+// artifactIDShape is the shape of an artifact id (`XQ-alpha-...`): the values
+// of a path's pathIDs that name something `a2a thread` can be asked about.
+var artifactIDShape = regexp.MustCompile(`^X[A-Z]-`)
+
+// projectPathThreads reads, from system A after both checkouts sync, the
+// normalised thread of every artifact the path named, keyed by its symbolic
+// name.
+func projectPathThreads(ctx context.Context, h *harness, ids pathIDs) (map[string]string, error) {
+	for _, c := range []*checkout{h.A, h.B} {
+		if _, stderr, err := c.Run(ctx, "sync"); err != nil {
+			return nil, fmt.Errorf("a2a sync (%s): %w: %s", c.System, err, strings.TrimSpace(stderr))
+		}
+	}
+	out := make(map[string]string, len(ids))
+	for name, id := range ids {
+		// pathIDs also carries non-artifact facts a driver wants to hand to
+		// a later leg (a published version, "0.1.0"): not a thread to read.
+		if !artifactIDShape.MatchString(id) {
+			continue
+		}
+		stdout, stderr, err := h.A.Run(ctx, "thread", id, "--json")
+		if err != nil {
+			// A draft a refused submit left behind is in no mirror and has no
+			// thread, on either host alike: that absence is itself the fact
+			// to compare, and anything else going wrong is a real failure.
+			if strings.Contains(stderr, "artifact not found") {
+				out[name] = "<not in the space>"
+				continue
+			}
+			return nil, fmt.Errorf("a2a thread %s (%s): %w: %s", id, h.A.System, err, strings.TrimSpace(stderr))
+		}
+		norm, err := normalizeThreadJSON(stdout, ids)
+		if err != nil {
+			return nil, fmt.Errorf("thread %s: %w", name, err)
+		}
+		out[name] = norm
+	}
+	return out, nil
+}
+
+// hostFoldLog collects each host's per-path projections as the groups run
+// (concurrently) and compares them once every group has finished.
+type hostFoldLog struct {
+	mu   sync.Mutex
+	seen map[string]map[HostKind]map[string]string
+}
+
+func newHostFoldLog() *hostFoldLog {
+	return &hostFoldLog{seen: map[string]map[HostKind]map[string]string{}}
+}
+
+// record projects the path's artifacts on h and stores them under kind. A
+// projection that cannot be read is a failure of the path, not a quiet gap.
+func (l *hostFoldLog) record(ctx context.Context, t *testing.T, kind HostKind, h *harness, pathID string, ids pathIDs) {
+	t.Helper()
+	projection, err := projectPathThreads(ctx, h, ids)
+	if err != nil {
+		t.Errorf("path %s: reading its fold back for the host comparison (%s): %v", pathID, kind, err)
+		return
+	}
+	l.add(kind, pathID, projection)
+}
+
+func (l *hostFoldLog) add(kind HostKind, pathID string, projection map[string]string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.seen[pathID] == nil {
+		l.seen[pathID] = map[HostKind]map[string]string{}
+	}
+	l.seen[pathID][kind] = projection
+}
+
+// compare returns one entry per divergence between the two hosts' projections
+// of a path they BOTH ran, and the ids that ran on one host only. A path that
+// ran on one host is never reported as agreeing: it is named, so a reader sees
+// what was not compared.
+func (l *hostFoldLog) compare() (divergences, oneHostOnly []string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	pathIDs := make([]string, 0, len(l.seen))
+	for id := range l.seen {
+		pathIDs = append(pathIDs, id)
+	}
+	sort.Strings(pathIDs)
+	for _, id := range pathIDs {
+		gh, hasGH := l.seen[id][HostKindGitHub]
+		local, hasLocal := l.seen[id][HostKindBareRepo]
+		if !hasGH || !hasLocal {
+			oneHostOnly = append(oneHostOnly, id)
+			continue
+		}
+		names := map[string]bool{}
+		for n := range gh {
+			names[n] = true
+		}
+		for n := range local {
+			names[n] = true
+		}
+		sorted := make([]string, 0, len(names))
+		for n := range names {
+			sorted = append(sorted, n)
+		}
+		sort.Strings(sorted)
+		for _, n := range sorted {
+			g, okG := gh[n]
+			b, okB := local[n]
+			switch {
+			case !okG || !okB:
+				divergences = append(divergences, fmt.Sprintf("path %s: artifact %q was projected on one host only", id, n))
+			case g != b:
+				divergences = append(divergences, fmt.Sprintf("path %s: artifact %q folds differently by host\n--- github\n%s\n--- bare-repo\n%s", id, n, g, b))
+			}
+		}
+	}
+	return divergences, oneHostOnly
 }

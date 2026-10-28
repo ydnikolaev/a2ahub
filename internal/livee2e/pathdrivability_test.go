@@ -1,6 +1,9 @@
 package livee2e
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestPathDrivabilityCoversEveryPath is the union gate pathdrivability.go's
 // own doc comment promises: every ConformancePaths() id is either in
@@ -81,6 +84,7 @@ func TestDedicatedSpacePathIDsAreDrivenAndReal(t *testing.T) {
 	lists := map[string][]string{
 		"classificationBilateralDedicatedSpacePathIDs": classificationBilateralDedicatedSpacePathIDs(),
 		"departedCounterpartyPathIDs":                  departedCounterpartyPathIDs(),
+		"confirmSpaceLocalPathIDs":                     confirmSpaceLocalPathIDs(),
 	}
 
 	seen := map[string]string{}
@@ -104,5 +108,78 @@ func TestDedicatedSpacePathIDsAreDrivenAndReal(t *testing.T) {
 			}
 			seen[id] = name
 		}
+	}
+}
+
+// TestPathHostDeclarationsAreSound runs the host-declaration checker over the
+// real catalogue, and requires the two dedicated-space families that push raw
+// to a local space's default branch to say so: an undeclared one would be
+// stood up on a host whose pre-receive hook refuses its first step, and the
+// failure would read as a product bug.
+func TestPathHostDeclarationsAreSound(t *testing.T) {
+	t.Parallel()
+
+	paths := ConformancePaths()
+	for _, problem := range pathHostProblems(paths) {
+		t.Error(problem)
+	}
+
+	byID := map[string]Path{}
+	for _, p := range paths {
+		byID[p.ID] = p
+	}
+	for name, ids := range map[string][]string{
+		"departedCounterpartyPathIDs":                  departedCounterpartyPathIDs(),
+		"classificationBilateralDedicatedSpacePathIDs": classificationBilateralDedicatedSpacePathIDs(),
+	} {
+		for _, id := range ids {
+			if byID[id].RunsOn(HostKindBareRepo) {
+				t.Errorf("%s() lists %q, which declares no exclusion on the bare-repo host: "+
+					"it pushes raw to the default branch, which a local space refuses", name, id)
+			}
+		}
+	}
+	for _, id := range confirmSpaceLocalPathIDs() {
+		if byID[id].RunsOn(HostKindGitHub) {
+			t.Errorf("%q needs a confirm-gates local space but declares no exclusion on GitHub", id)
+		}
+	}
+}
+
+// TestPathHostProblemsSeededDefects proves the checker has teeth: each defect
+// it claims to refuse, planted in a catalogue of its own, is named.
+func TestPathHostProblemsSeededDefects(t *testing.T) {
+	t.Parallel()
+
+	why := "a fact about the host"
+	cases := []struct {
+		name  string
+		paths []Path
+		want  string
+	}{
+		{"an empty reason", []Path{{ID: "p", NotOn: []HostExclusion{{Host: HostKindBareRepo, Reason: " \t"}}}}, "with no reason"},
+		{"an unknown host", []Path{{ID: "p", NotOn: []HostExclusion{{Host: HostKind(9), Reason: why}}}}, "unknown host unknown(9)"},
+		{"a repeated host", []Path{{ID: "p", NotOn: []HostExclusion{{Host: HostKindBareRepo, Reason: why}, {Host: HostKindBareRepo, Reason: why}}}}, "twice"},
+		{"excluded everywhere", []Path{{ID: "p", NotOn: []HostExclusion{{Host: HostKindBareRepo, Reason: why}, {Host: HostKindGitHub, Reason: why}}}}, "excluded on every host"},
+		{"a precondition the host does not run", []Path{
+			{ID: "pre", NotOn: []HostExclusion{{Host: HostKindBareRepo, Reason: why}}},
+			{ID: "post", Precondition: "pre"},
+		}, `runs on host bare-repo but its precondition "pre" does not`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := strings.Join(pathHostProblems(tc.paths), "\n")
+			if !strings.Contains(got, tc.want) {
+				t.Fatalf("pathHostProblems = %q, want a problem containing %q", got, tc.want)
+			}
+		})
+	}
+
+	if got := pathHostProblems([]Path{
+		{ID: "pre"},
+		{ID: "post", Precondition: "pre", NotOn: []HostExclusion{{Host: HostKindBareRepo, Reason: why}}},
+	}); len(got) != 0 {
+		t.Fatalf("a path excluded on a host its precondition still runs on is sound, got %v", got)
 	}
 }

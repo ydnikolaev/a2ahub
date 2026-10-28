@@ -2,6 +2,8 @@ package livee2e
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 )
@@ -77,6 +79,132 @@ type Path struct {
 	// declared path today needs a decision's approvals recovered across a
 	// chain boundary.
 	RequiredApprovers []string
+	// NotOn lists the hosts this path does NOT run on, each with the reason
+	// the HOST (never the test) makes it unrunnable there. The zero value --
+	// no exclusions -- declares a path that runs on every host the matrix
+	// stands up, which is what every path was before a second host existed.
+	//
+	// A path left off a host silently would be the matrix going green by not
+	// running it, so the declaration is the only way out and carries its own
+	// proof: pathHostProblems refuses an empty reason, an unknown or repeated
+	// host, a path excluded everywhere, and a path that runs on a host its own
+	// Precondition does not.
+	NotOn []HostExclusion
+}
+
+// HostExclusion is one host a Path does not run on, and why.
+type HostExclusion struct {
+	// Host is the kind of host the path is not run against.
+	Host HostKind
+	// Reason is the fact about that host which makes the path meaningless or
+	// impossible there -- a sentence a reviewer can check against the host's
+	// own behaviour, not "flaky" or "not yet".
+	Reason string
+}
+
+// RunsOn reports whether the path is run against a host of kind k.
+func (p Path) RunsOn(k HostKind) bool {
+	_, excluded := p.exclusion(k)
+	return !excluded
+}
+
+// ExclusionReason returns why the path is not run on k, or "" when it is.
+func (p Path) ExclusionReason(k HostKind) string {
+	e, _ := p.exclusion(k)
+	return e.Reason
+}
+
+func (p Path) exclusion(k HostKind) (HostExclusion, bool) {
+	for _, e := range p.NotOn {
+		if e.Host == k {
+			return e, true
+		}
+	}
+	return HostExclusion{}, false
+}
+
+// allHostKinds is every host the matrix can stand a space up on.
+func allHostKinds() []HostKind { return []HostKind{HostKindGitHub, HostKindBareRepo} }
+
+// excludeFromHost returns paths with an exclusion on k appended to each. It is
+// how a family whose steps need something one host cannot give (a raw push to
+// the default branch, say) declares so ONCE, rather than per path.
+func excludeFromHost(paths []Path, k HostKind, reason string) []Path {
+	out := make([]Path, len(paths))
+	for i, p := range paths {
+		p.NotOn = append(append([]HostExclusion(nil), p.NotOn...), HostExclusion{Host: k, Reason: reason})
+		out[i] = p
+	}
+	return out
+}
+
+// excludeIDsFromHost is excludeFromHost for the named paths only. An id that
+// names no path in paths is a panic: an exclusion that silently matched nothing
+// would leave the path running where it was declared not to.
+func excludeIDsFromHost(paths []Path, k HostKind, reason string, ids ...string) []Path {
+	want := map[string]bool{}
+	for _, id := range ids {
+		want[id] = true
+	}
+	out := make([]Path, len(paths))
+	for i, p := range paths {
+		if want[p.ID] {
+			delete(want, p.ID)
+			p = excludeFromHost([]Path{p}, k, reason)[0]
+		}
+		out[i] = p
+	}
+	for id := range want {
+		panic(fmt.Sprintf("livee2e: excludeIDsFromHost: %q is not among the paths it was given", id))
+	}
+	return out
+}
+
+// pathHostProblems validates every path's host declaration and returns one
+// sentence per defect. It runs untagged (pathdrivability_test.go), so a bad
+// declaration reds on every commit, not only in the tagged matrix.
+func pathHostProblems(paths []Path) []string {
+	byID := make(map[string]Path, len(paths))
+	for _, p := range paths {
+		byID[p.ID] = p
+	}
+	var problems []string
+	for _, p := range paths {
+		seen := map[HostKind]bool{}
+		for _, e := range p.NotOn {
+			switch {
+			case !slices.Contains(allHostKinds(), e.Host):
+				problems = append(problems, fmt.Sprintf("path %q excludes the unknown host %s", p.ID, e.Host))
+			case strings.TrimSpace(e.Reason) == "":
+				problems = append(problems, fmt.Sprintf("path %q excludes host %s with no reason", p.ID, e.Host))
+			case seen[e.Host]:
+				problems = append(problems, fmt.Sprintf("path %q excludes host %s twice", p.ID, e.Host))
+			}
+			seen[e.Host] = true
+		}
+		runs := 0
+		for _, k := range allHostKinds() {
+			if p.RunsOn(k) {
+				runs++
+			}
+		}
+		if runs == 0 {
+			problems = append(problems, fmt.Sprintf("path %q is excluded on every host, so no host runs it", p.ID))
+		}
+		if p.Precondition == "" {
+			continue
+		}
+		pre, ok := byID[p.Precondition]
+		if !ok {
+			continue // an unresolvable precondition is the grammar's own gate, not this one
+		}
+		for _, k := range allHostKinds() {
+			if p.RunsOn(k) && !pre.RunsOn(k) {
+				problems = append(problems, fmt.Sprintf("path %q runs on host %s but its precondition %q does not: the replay chain would break there", p.ID, k, pre.ID))
+			}
+		}
+	}
+	return problems
 }
 
 // Step is one path leg: an actor drives one (Kind, Transition) forward,

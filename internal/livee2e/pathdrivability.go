@@ -158,6 +158,7 @@ func drivenPathIDs() []string {
 		"restricted-classification-exceeds-bilateral-refused",
 	}
 	out = append(out, departedCounterpartyPathIDs()...)
+	out = append(out, confirmSpaceLocalPathIDs()...)
 	return out
 }
 

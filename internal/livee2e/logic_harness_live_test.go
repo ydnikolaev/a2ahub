@@ -255,6 +255,109 @@ func newLogicHarness(ctx context.Context, t *testing.T) (*harness, func() error,
 	return h, cleanup, nil
 }
 
+// bareRepoDeniedAPIRoot is the A2A_GITHUB_API every child process of a
+// bare-repository checkout runs under: a loopback port nothing listens on. The
+// seam has no API root, but a checkout's APIRoot field cannot be empty, because
+// empty strips the variable back to its default, which is the real
+// api.github.com. A local space makes no GitHub call, so any that happens is a
+// bug the harness must surface as a refused connection, never as a request to
+// the real service.
+const bareRepoDeniedAPIRoot = "http://127.0.0.1:1"
+
+// newBareRepoLogicHarness is newLogicHarness's sibling for the OTHER host: a
+// space made by `a2a space init --local` over a bare repository, with no fake
+// GitHub, no API root and no credential, and the same *harness type every path
+// driver takes. gates is the space's policy (autonomous for the pool, confirm
+// for the path that is about the confirm gate).
+//
+// The host dimension of the logic matrix (spec 07 §6.2) runs the SAME declared
+// paths through this harness, so what differs from newLogicHarness is only
+// what the host is: Prov and Part stay nil, because nothing here may call an
+// API, and the seam is validated as a bare-repository seam whose host the
+// product itself reports as synchronous.
+func newBareRepoLogicHarness(ctx context.Context, t *testing.T, gates string) (*harness, func() error, error) {
+	t.Helper()
+	noop := func() error { return nil }
+
+	work, err := os.MkdirTemp("", "livee2e-bare-*")
+	if err != nil {
+		return nil, noop, fmt.Errorf("livee2e: newBareRepoLogicHarness: %w", err)
+	}
+	cleanup := func() error {
+		if err := os.RemoveAll(work); err != nil {
+			return fmt.Errorf("livee2e: newBareRepoLogicHarness: remove workspace %s: %w", work, err)
+		}
+		return nil
+	}
+
+	bin, err := buildLogicBinary(ctx, work)
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("livee2e: newBareRepoLogicHarness: %w", err)
+	}
+
+	homeInit, homeA, homeB := filepath.Join(work, "home-init"), filepath.Join(work, "home-A"), filepath.Join(work, "home-B")
+	for _, dir := range []string{homeInit, homeA, homeB} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, cleanup, fmt.Errorf("livee2e: newBareRepoLogicHarness: mkdir %s: %w", dir, err)
+		}
+	}
+
+	origin, err := provisionBareRepoSpace(ctx, bin, work, homeInit, gates)
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("livee2e: newBareRepoLogicHarness: %w: %w", ErrProvisionFailed, err)
+	}
+
+	seam := newBareRepoHostSeam(origin)
+	if err := seam.Validate(); err != nil {
+		return nil, cleanup, fmt.Errorf("livee2e: newBareRepoLogicHarness: %w", err)
+	}
+	if seam.IsRealGitHub() {
+		return nil, cleanup, fmt.Errorf("livee2e: newBareRepoLogicHarness: seam unexpectedly reports real GitHub — refusing before the first write")
+	}
+	// The product, not this harness, says what the host is: a repository that
+	// `space init --local` did not mark would open as a GitHub host and the
+	// land step would wait for a check that never comes.
+	caps, err := seam.Capabilities()
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("livee2e: newBareRepoLogicHarness: %w", err)
+	}
+	if !caps.LandsSynchronously || caps.NeedsCredential {
+		return nil, cleanup, fmt.Errorf("livee2e: newBareRepoLogicHarness: the host opened over %s declares %+v, not a synchronous credential-free local space", origin, caps)
+	}
+
+	h := &harness{
+		Cfg:       Config{Org: logicOrg},
+		Org:       logicOrg,
+		Repo:      logicRepo,
+		SpaceSlug: harnessSpaceSlug,
+		Tier:      TierLogic,
+		Seam:      seam,
+		Bin:       bin,
+	}
+	h.A = &checkout{
+		Dir: filepath.Join(work, "A"), System: systemAlpha,
+		Bin: bin, SpaceSlug: harnessSpaceSlug, Peer: systemBravo,
+		APIRoot: bareRepoDeniedAPIRoot, Home: homeA,
+	}
+	h.B = &checkout{
+		Dir: filepath.Join(work, "B"), System: systemBravo,
+		Bin: bin, SpaceSlug: harnessSpaceSlug, Peer: systemAlpha,
+		APIRoot: bareRepoDeniedAPIRoot, Home: homeB,
+	}
+	for _, c := range []*checkout{h.A, h.B} {
+		if err := setupCheckout(ctx, c, seam.WebRoot); err != nil {
+			return h, cleanup, fmt.Errorf("livee2e: newBareRepoLogicHarness: checkout %s: %w", c.System, err)
+		}
+		// A repository is not a participant until it joins, and a join is a
+		// manifest change that a confirm space gates (G4), so it carries the
+		// operator's --approve in either mode.
+		if _, stderr, err := c.Run(ctx, "space", "join", "--approve"); err != nil {
+			return h, cleanup, fmt.Errorf("livee2e: newBareRepoLogicHarness: a2a space join (%s): %w: %s", c.System, err, strings.TrimSpace(stderr))
+		}
+	}
+	return h, cleanup, nil
+}
+
 // TestNewLogicHarnessLeavesExecutionCandidateZero pins D-4/D-5's structural
 // guarantee: TestLiveMatrix (runner_live_test.go) writes a P7 evidence
 // bundle only when run.ExecutionCandidate.SourceSHA != "". That is a
@@ -282,5 +385,45 @@ func TestNewLogicHarnessLeavesExecutionCandidateZero(t *testing.T) {
 	}
 	if h.ExecutionCandidate != (CandidateAttestation{}) {
 		t.Errorf("ExecutionCandidate = %+v, want the zero value", h.ExecutionCandidate)
+	}
+}
+
+// TestNewBareRepoLogicHarnessLandsASubmitWithNoAPI is the smoke test of the
+// second host: through the built binary, a submit from A on a space made by
+// `space init --local` lands in the same call (no PR to wait on, no check to
+// poll), B syncs and reads it, and no GitHub API root exists anywhere in the
+// seam or the checkouts' environment beyond the denied sentinel.
+func TestNewBareRepoLogicHarnessLandsASubmitWithNoAPI(t *testing.T) {
+	ctx := t.Context()
+
+	h, cleanup, err := newBareRepoLogicHarness(ctx, t, "autonomous")
+	defer func() {
+		if cleanupErr := cleanup(); cleanupErr != nil {
+			t.Errorf("newBareRepoLogicHarness cleanup failed: %v", cleanupErr)
+		}
+	}()
+	if err != nil {
+		t.Fatalf("newBareRepoLogicHarness: %v", err)
+	}
+	if h.Seam.APIRoot != "" {
+		t.Errorf("seam APIRoot = %q, want none", h.Seam.APIRoot)
+	}
+
+	id, _, err := h.A.Draft(ctx, "announcement")
+	if err != nil {
+		t.Fatalf("a2a new announcement (A): %v", err)
+	}
+	if _, stderr, err := h.A.Run(ctx, "submit", id); err != nil {
+		t.Fatalf("a2a submit %s (A): %v: %s", id, err, stderr)
+	}
+	if _, stderr, err := h.B.Run(ctx, "sync"); err != nil {
+		t.Fatalf("a2a sync (B): %v: %s", err, stderr)
+	}
+	stdout, stderr, err := h.B.Run(ctx, "show", id, "--json")
+	if err != nil {
+		t.Fatalf("a2a show %s (B) after the submit landed: %v: %s", id, err, stderr)
+	}
+	if !strings.Contains(stdout, id) {
+		t.Errorf("a2a show %s (B) does not name the artifact:\n%s", id, stdout)
 	}
 }

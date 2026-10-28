@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -191,7 +192,64 @@ func TestLogicMatrix(t *testing.T) {
 		pathHarnesses = append(pathHarnesses, ph)
 	}
 	t.Logf("conformance paths: %d space(s)", len(pathHarnesses))
-	runConformancePaths(ctx, t, pathHarnesses)
+
+	// Spec 07 §6.2 — the host dimension. The same paths run a second time on a
+	// LOCAL space (a bare repository, no API, no token), in groups named
+	// local-group-N; a path that declares itself not on a host is reported with
+	// its reason instead (runConformancePaths). One semaphore bounds the groups
+	// of BOTH hosts to pathSpaces, so A2A_LOGIC_PATH_SPACES=1 stays serial.
+	//
+	// Built here, on the test goroutine, for the same reason the GitHub ones
+	// are, and with t.Cleanup for the same one.
+	localHarnesses := make([]*harness, 0, pathSpaces)
+	for i := 0; i < pathSpaces; i++ {
+		lh, lhCleanup, lhErr := newBareRepoLogicHarness(ctx, t, "autonomous")
+		t.Cleanup(func() {
+			if cleanupErr := lhCleanup(); cleanupErr != nil {
+				t.Errorf("local conformance-path harness %d cleanup failed: %v", i+1, cleanupErr)
+			}
+		})
+		if lhErr != nil {
+			t.Fatalf("newBareRepoLogicHarness (conformance paths, local space %d): %v", i+1, lhErr)
+		}
+		localHarnesses = append(localHarnesses, lh)
+	}
+	t.Logf("conformance paths: %d local space(s)", len(localHarnesses))
+
+	// Registered BEFORE any group starts and run when TestLogicMatrix is done,
+	// parallel subtests included: the comparison needs every group's
+	// projections, and a deferred call here would run before they exist.
+	folds := newHostFoldLog()
+	t.Cleanup(func() {
+		divergences, oneHostOnly := folds.compare()
+		for _, id := range oneHostOnly {
+			t.Logf("host fold comparison: path %q ran on one host only, so it was not compared", id)
+		}
+		for _, d := range divergences {
+			t.Errorf("host fold comparison: %s", d)
+		}
+	})
+
+	sem := make(chan struct{}, pathSpaces)
+	runConformancePaths(ctx, t, HostKindGitHub, pathHarnesses, sem, folds)
+	runConformancePaths(ctx, t, HostKindBareRepo, localHarnesses, sem, folds)
+
+	// The confirm-gates family (pathcatalogue_paths.go, Family 16) needs a
+	// local space whose gate policy is `confirm`; every pool space above is
+	// `autonomous`, which has no gate to refuse anything.
+	confirmHarness, confirmCleanup, confirmErr := newBareRepoLogicHarness(ctx, t, "confirm")
+	t.Cleanup(func() {
+		if cleanupErr := confirmCleanup(); cleanupErr != nil {
+			t.Errorf("confirm-gates local harness cleanup failed: %v", cleanupErr)
+		}
+	})
+	if confirmErr != nil {
+		t.Fatalf("newBareRepoLogicHarness (confirm gates): %v", confirmErr)
+	}
+	t.Run("local-confirm", func(t *testing.T) {
+		t.Parallel()
+		runPathGroup(ctx, t, HostKindBareRepo, confirmHarness, confirmSpaceLocalPathIDs(), nil)
+	})
 
 	// P8 wave 31 (correcting wave 30B) — a FIFTH, dedicated space for
 	// Family 15's own three departed-counterparty paths
@@ -482,4 +540,125 @@ func TestLogicTierWritesNothingOutsideItsOwnTempDirs(t *testing.T) {
 	if newNames := newDirNames(beforeConfig, snapshotDirNames(t, configDir)); len(newNames) > 0 {
 		t.Errorf("logic run wrote into the operator's real machine config dir %s: new entries %v", configDir, newNames)
 	}
+}
+
+// threadDoc is a minimal `a2a thread --json` document for the host fold
+// comparison's self-test: one contract, its published state, and a transcript
+// of the given events. Everything a host legitimately mints per space -- the
+// id, the thread suffix, timestamps, event ULIDs, the history position -- is a
+// parameter, so a test can make two "hosts" differ in exactly those and nothing
+// else.
+func threadDoc(id, thread, stamp, ulid string, seq int, events ...string) string {
+	transcript := fmt.Sprintf(`{"seq":%d,"kind":"artifact","at":%q,"artifact":{"id":%q,"type":"contract"}}`, seq, stamp, id)
+	for i, transition := range events {
+		transcript += fmt.Sprintf(`,{"seq":%d,"kind":"event","at":%q,"event":{"ulid":%q,"subject":%q,"transition":%q}}`,
+			seq+i+1, stamp, fmt.Sprintf("%s%d", ulid, i), id, transition)
+	}
+	return fmt.Sprintf(`{"thread":%q,"resolved_from":%q,"artifacts":[{"id":%q,"state":"published"}],`+
+		`"open_items":[{"id":%q,"state_event":%q,"state_since":%q}],"transcript":[%s]}`,
+		thread, id, id, id, ulid, stamp, transcript)
+}
+
+// TestHostFoldLogComparesWhatTheHostsDidNotWhatTheyMinted proves the cross-host
+// comparison has both edges. Two hosts that did the same thing and differ only
+// in what each mints per space (ids, thread suffix, timestamps, ULIDs, history
+// position) must compare equal; a host that skipped an event, or folded a
+// different state, must not -- and a path run on one host only must be named,
+// never counted as agreeing.
+func TestHostFoldLogComparesWhatTheHostsDidNotWhatTheyMinted(t *testing.T) {
+	t.Parallel()
+
+	project := func(t *testing.T, id, thread, stamp, ulid string, seq int, events ...string) map[string]string {
+		t.Helper()
+		ids := pathIDs{"contract": id}
+		norm, err := normalizeThreadJSON(threadDoc(id, thread, stamp, ulid, seq, events...), ids)
+		if err != nil {
+			t.Fatalf("normalizeThreadJSON: %v", err)
+		}
+		return map[string]string{"contract": norm}
+	}
+	github := func(t *testing.T, events ...string) map[string]string {
+		return project(t, "XC-alpha-aaaa", "thread:alpha-20261028-aaaa", "2026-10-28T10:00:00Z", "01AAAAAAAA", 1, events...)
+	}
+	local := func(t *testing.T, events ...string) map[string]string {
+		return project(t, "XC-alpha-zzzz", "thread:alpha-20261028-zzzz", "2026-10-28T11:30:07Z", "01ZZZZZZZZ", 9, events...)
+	}
+
+	t.Run("the same fold under different minted values is no divergence", func(t *testing.T) {
+		t.Parallel()
+		log := newHostFoldLog()
+		log.add(HostKindGitHub, "p", github(t, "publish", "deprecate"))
+		log.add(HostKindBareRepo, "p", local(t, "publish", "deprecate"))
+		if div, one := log.compare(); len(div) != 0 || len(one) != 0 {
+			t.Fatalf("compare() = divergences %v, one-host %v; want none -- the normalised fields did not absorb what a space mints", div, one)
+		}
+	})
+
+	t.Run("a host that skipped an event diverges", func(t *testing.T) {
+		t.Parallel()
+		log := newHostFoldLog()
+		log.add(HostKindGitHub, "p", github(t, "publish", "deprecate"))
+		log.add(HostKindBareRepo, "p", local(t, "publish")) // the local host never landed the deprecate
+		div, _ := log.compare()
+		if len(div) != 1 || !strings.Contains(div[0], `path p: artifact "contract" folds differently by host`) {
+			t.Fatalf("compare() divergences = %v, want exactly one naming path p and artifact \"contract\"", div)
+		}
+	})
+
+	// Two events landed by ONE commit share a seq and are ordered by ULID,
+	// which is random within a millisecond (artifact.MintULID: "an intra-commit
+	// tiebreak only"). The comparison must absorb that order and nothing else.
+	twoEvents := func(t *testing.T, seqFirst, seqSecond int, first, second string) map[string]string {
+		t.Helper()
+		ids := pathIDs{"contract": "XC-alpha-aaaa"}
+		event := func(seq int, transition string) string {
+			return fmt.Sprintf(`{"seq":%d,"kind":"event","at":"t","event":{"ulid":"u","subject":"XC-alpha-aaaa","transition":%q}}`, seq, transition)
+		}
+		doc := fmt.Sprintf(`{"thread":"th","transcript":[%s,%s]}`, event(seqFirst, first), event(seqSecond, second))
+		norm, err := normalizeThreadJSON(doc, ids)
+		if err != nil {
+			t.Fatalf("normalizeThreadJSON: %v", err)
+		}
+		return map[string]string{"contract": norm}
+	}
+
+	t.Run("two events of one commit in a different order is no divergence", func(t *testing.T) {
+		t.Parallel()
+		log := newHostFoldLog()
+		log.add(HostKindGitHub, "p", twoEvents(t, 4, 4, "publish", "deprecate"))
+		log.add(HostKindBareRepo, "p", twoEvents(t, 12, 12, "deprecate", "publish"))
+		if div, _ := log.compare(); len(div) != 0 {
+			t.Fatalf("compare() = %v, want none: an intra-commit ULID tiebreak is not a host difference", div)
+		}
+	})
+
+	t.Run("the same two events in a different order across commits diverge", func(t *testing.T) {
+		t.Parallel()
+		log := newHostFoldLog()
+		log.add(HostKindGitHub, "p", twoEvents(t, 4, 5, "publish", "deprecate"))
+		log.add(HostKindBareRepo, "p", twoEvents(t, 12, 13, "deprecate", "publish"))
+		if div, _ := log.compare(); len(div) != 1 {
+			t.Fatalf("compare() = %v, want one divergence: the order BETWEEN commits is a promise", div)
+		}
+	})
+
+	t.Run("one commit on one host and two on the other diverge", func(t *testing.T) {
+		t.Parallel()
+		log := newHostFoldLog()
+		log.add(HostKindGitHub, "p", twoEvents(t, 4, 4, "deprecate", "publish"))
+		log.add(HostKindBareRepo, "p", twoEvents(t, 12, 13, "deprecate", "publish"))
+		if div, _ := log.compare(); len(div) != 1 {
+			t.Fatalf("compare() = %v, want one divergence: which events a write landed together is a fact", div)
+		}
+	})
+
+	t.Run("a path that ran on one host is named, not counted as agreeing", func(t *testing.T) {
+		t.Parallel()
+		log := newHostFoldLog()
+		log.add(HostKindBareRepo, "only-local", local(t, "publish"))
+		div, one := log.compare()
+		if len(div) != 0 || len(one) != 1 || one[0] != "only-local" {
+			t.Fatalf("compare() = divergences %v, one-host %v; want no divergence and only-local named", div, one)
+		}
+	})
 }
