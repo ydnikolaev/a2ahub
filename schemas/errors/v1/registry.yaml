@@ -1326,10 +1326,6 @@ entries:
       lands on, never already-landed history: a write that landed under
       `autonomous` carries no trailer and a later `confirm` must not
       retroactively refuse it.
-    path_exempt: >-
-      undriven until P7 adds the host dimension to the conformance matrix
-      (local-space-2026-10 spec 04 §T1.5): the catalogue has no local-host path
-      that can provoke a missing approval. P7 deletes this waiver (its AC 15).
 
   - code: REF-023
     class: referential

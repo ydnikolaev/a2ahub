@@ -517,8 +517,11 @@ catalogue_refusal_declarations() { # $1 = catalogue root
 
 # catalogue_driven_path_ids prints every path id the catalogue declares as
 # actually driven: drivenPathIDs() plus departedCounterpartyPathIDs()
-# (Family 15's own three, driven through their own runner), MINUS every id
-# undrivablePaths() names.
+# (Family 15's own three, driven through their own runner), plus the ID:
+# of every Path literal in confirmSpaceLocalPaths() (the dedicated
+# confirm-space family: drivenPathIDs() appends its ids through a call, not
+# a literal, and its own runner drives it on a bare-repo host), MINUS every
+# id undrivablePaths() names.
 #
 # The subtraction is inert on today's real tree — neither undrivable entry
 # declares a Refused step — and it is read and tested anyway: a declared
@@ -539,15 +542,17 @@ catalogue_driven_path_ids() { # $1 = catalogue root
           if (b == 0) return ""
           return substr(r, 1, b - 1)
         }
-        FNR == 1 { indriven = 0; inundrivable = 0 }
+        FNR == 1 { indriven = 0; inundrivable = 0; indedicated = 0 }
         /^func drivenPathIDs\(\)/ { indriven = 1; next }
         /^func departedCounterpartyPathIDs\(\)/ { indriven = 1; next }
+        /^func confirmSpaceLocalPaths\(\)/ { indedicated = 1; next }
         /^func undrivablePaths\(\)/ { inundrivable = 1; next }
-        (indriven || inundrivable) && /^}/ { indriven = 0; inundrivable = 0; next }
+        (indriven || inundrivable || indedicated) && /^}/ { indriven = 0; inundrivable = 0; indedicated = 0; next }
         {
           line = $0
           sub(/\/\/.*$/, "", line)
           if (indriven && line ~ /^[ \t]*"[^"]*",?[ \t]*$/) { print "D\t" qval(line); next }
+          if (indedicated && line ~ /(^|[^A-Za-z0-9_])ID:[ \t]*"[^"]*"/) { print "D\t" qval(substr(line, index(line, "ID:"))); next }
           if (inundrivable && line ~ /(^|[^A-Za-z0-9_])ID:[ \t]*"[^"]*"/) { print "U\t" qval(substr(line, index(line, "ID:"))); next }
         }
       ' "$f"
@@ -1673,6 +1678,60 @@ entries:
 EOF
   teeth_expect "o4: a Refusal in a second catalogue file counts as driven" green \
     "" "$reg" "$root" || return 1
+
+  # o4-g2: the dedicated confirm-space family is driven by its own runner,
+  # and drivenPathIDs() reaches it through confirmSpaceLocalPathIDs() — a
+  # call, not a literal. Its Path literals' ID: fields are the evidence.
+  # The pair proves the read is of THAT function, not of any ID: anywhere.
+  d="$work/o4-confirm"; write_fixture_tree "$d/root"; root="$d/root"; reg="$d/registry.yaml"
+  cat > "$root/internal/livee2e/pathcatalogue_paths.go" <<'EOF'
+package livee2e
+
+func confirmSpaceLocalPaths() []Path {
+	return []Path{
+		{
+			ID: "fixture-confirm-path",
+			Steps: []Step{
+				{Actor: SystemA, Refused: &Refusal{Code: "REF-916"}},
+			},
+		},
+	}
+}
+EOF
+  cat > "$root/internal/livee2e/pathdrivability.go" <<'EOF'
+package livee2e
+
+func drivenPathIDs() []string {
+	out := []string{}
+	out = append(out, confirmSpaceLocalPathIDs()...)
+	return out
+}
+
+func undrivablePaths() []undrivablePath {
+	return []undrivablePath{}
+}
+EOF
+  cat > "$reg" <<'EOF'
+entries:
+  - code: REF-916
+    class: referential
+    title: fixture
+    applies_to: fixture
+    severity: reject
+    mode_scope: v3-pr
+    emitted_by: internal/space
+    prose_exempt: fixture
+    reachability_exempt: fixture
+EOF
+  teeth_expect "o4: a Refusal in the confirm-space family counts as driven" green \
+    "" "$reg" "$root" || return 1
+
+  sed 's/^func confirmSpaceLocalPaths()/func someOtherFamilyPaths()/' \
+    "$root/internal/livee2e/pathcatalogue_paths.go" > "$d/renamed.go"
+  mv "$d/renamed.go" "$root/internal/livee2e/pathcatalogue_paths.go"
+  teeth_expect "o4: the same Refusal outside the confirm-space family is not driven" red \
+    "REF-916 (severity:reject) is named by no Refusal{Code:} literal in a driven conformance path" \
+    "$reg" "$root" || return 1
 
   # o4-h (AC9): the SAME catalogue, green then red, with one id deleted from
   # drivenPathIDs() — a refusal must not be able to go inert by someone
