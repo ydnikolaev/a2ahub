@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -29,7 +30,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/version"
 )
 
-// SpaceCommand implements `a2a space <init|update|join>` (mirrors the
+// SpaceCommand implements `a2a space <init|update|join|set>` (mirrors the
 // `contract` group's dispatch shape, cmd_contract.go).
 type SpaceCommand struct {
 	// TemplateFiles is the embedded space-template/ tree (spacetemplate.Files,
@@ -153,18 +154,18 @@ func (c *SpaceCommand) Name() string { return "space" }
 
 // Synopsis implements cli.Command.
 func (c *SpaceCommand) Synopsis() string {
-	return "space scaffolding: init <space-id> [--local] [--dir <path>] | update [--space <id>] [--dry-run] [--wait] | join [--space <id>] [--json] — write/migrate a space tree from the embedded template, or create a local space and join it"
+	return "space scaffolding: init <space-id> [--local] [--gates <confirm|autonomous>] [--flow <full|express>] [--dir <path>] | update [--space <id>] [--dry-run] [--wait] [--approve] | join [--space <id>] [--approve] [--json] | set <gates|flow> <value> [--space <id>] [--approve] — write/migrate a space tree from the embedded template, or create a local space, join it and set its policy"
 }
 
 // Run implements cli.Command.
 func (c *SpaceCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space <init|update|join> ...")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space <init|update|join|set> ...")
 		return 2
 	}
 	sub, rest := args[0], args[1:]
 	if IsHelpArg(sub) {
-		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a space <init|update|join> ...")
+		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a space <init|update|join|set> ...")
 		for _, s := range SpaceSubcommands() {
 			_, _ = fmt.Fprintf(stdio.Stdout, "  %-14s %s\n", s.Name, s.Synopsis)
 		}
@@ -177,6 +178,8 @@ func (c *SpaceCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return c.runUpdate(ctx, rest, stdio)
 	case "join":
 		return c.runJoin(ctx, rest, stdio)
+	case "set":
+		return c.runSet(ctx, rest, stdio)
 	default:
 		_, _ = fmt.Fprintf(stdio.Stderr, "space: unknown subcommand %q\n", sub)
 		return 2
@@ -205,6 +208,7 @@ func SpaceSubcommands() []SpaceSubcommand {
 		{Name: "init", Synopsis: "scaffold a new space repo tree from the embedded template"},
 		{Name: "update", Synopsis: "diff the connected space's scaffolding against the embedded template and open a PR (spec 35)"},
 		{Name: "join", Synopsis: "add this project's system to a connected local space as an active participant, in one validated write"},
+		{Name: "set", Synopsis: "set the space's gates or flow policy in space.yaml, in one validated write (a manifest change, so it needs --approve in a confirm space)"},
 	}
 }
 
@@ -222,6 +226,8 @@ func (c *SpaceCommand) runInit(ctx context.Context, args []string, stdio IO) int
 	fset.SetOutput(stdio.Stderr)
 	dirFlag := fset.String("dir", "", "target directory (default ./<space-id>; with --local, <data-root>/spaces/<space-id>.git)")
 	localFlag := fset.Bool("local", false, "create a local space: a bare repository on this machine with a land guard, instead of a tree to push to GitHub")
+	gatesFlag := fset.String("gates", spaceInitDefaultGates, "with --local: who approves a gated write: confirm (an explicit --approve) or autonomous (no stop)")
+	flowFlag := fset.String("flow", spaceInitDefaultFlow, "with --local: the write loop the space declares: full or express")
 
 	var spaceID string
 	rest := args
@@ -235,8 +241,22 @@ func (c *SpaceCommand) runInit(ctx context.Context, args []string, stdio IO) int
 		spaceID = fset.Arg(0)
 	}
 	if spaceID == "" || fset.NArg() > 1 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space init <space-id> [--local] [--dir <path>]")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space init <space-id> [--local] [--gates <confirm|autonomous>] [--flow <full|express>] [--dir <path>]")
 		return 2
+	}
+	if !*localFlag {
+		// A policy flag on a tree that is pushed to GitHub would be accepted and
+		// ignored, and an ignored flag reads as a choice made.
+		var stray []string
+		fset.Visit(func(f *flag.Flag) {
+			if f.Name == "gates" || f.Name == "flow" {
+				stray = append(stray, "--"+f.Name)
+			}
+		})
+		if len(stray) > 0 {
+			_, _ = fmt.Fprintf(stdio.Stderr, "space init: %s only applies with --local: the GitHub tree keeps the template's policy lines, change them in space.yaml before pushing\n", strings.Join(stray, " and "))
+			return 2
+		}
 	}
 	// D8 (no-silent-yes-2026-08/P3 stage 2, spec 03 §8 AC 6/14): the
 	// renamed sentinel now matches the id grammar's own ordinary
@@ -253,7 +273,7 @@ func (c *SpaceCommand) runInit(ctx context.Context, args []string, stdio IO) int
 		return 1
 	}
 	if *localFlag {
-		return c.runInitLocal(ctx, spaceID, *dirFlag, stdio)
+		return c.runInitLocal(ctx, spaceID, *dirFlag, *gatesFlag, *flowFlag, stdio)
 	}
 	target := *dirFlag
 	if target == "" {
@@ -965,12 +985,16 @@ func (c *SpaceCommand) runUpdate(ctx context.Context, args []string, stdio IO) i
 	spaceFlag := fset.String("space", "", "space id (defaults to the connected space)")
 	dryRun := fset.Bool("dry-run", false, "print the scaffolding diff without writing or pushing")
 	wait := fset.Bool("wait", false, "after opening the PR, poll until it merges and then refresh the local mirror")
+	approve := fset.Bool("approve", false, "approve the manifest change (G4) this update makes (confirm spaces)")
 	if err := fset.Parse(args); err != nil {
 		return 2
 	}
 	if fset.NArg() > 0 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space update [--space <id>] [--dry-run] [--wait]")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space update [--space <id>] [--dry-run] [--wait] [--approve]")
 		return 2
+	}
+	if code, refused := gateApproveHasNoEffect(stdio, "space update", *approve, c.Caps.ReviewsWrites); refused {
+		return code
 	}
 	if *wait && *dryRun {
 		_, _ = fmt.Fprintln(stdio.Stderr, "space update: --wait and --dry-run are contradictory: a dry run opens no PR to wait for")
@@ -1069,6 +1093,22 @@ func (c *SpaceCommand) runUpdate(ctx context.Context, args []string, stdio IO) i
 		return 0
 	}
 
+	// G4: an update whose changed set carries space.yaml (the floor bump) is a
+	// manifest change. Judged under the mode the mirror's tip declares, before
+	// any branch or journal entry exists.
+	var approvedGates []string
+	if spaceWritesManifest(plan.writes) {
+		_, tip, code := c.spaceTipManifest(stdio, "space update")
+		if code != 0 {
+			return code
+		}
+		approved, gateCode, refused := gateJudgeWrite(stdio, "space update", tip.EffectiveGates(c.Caps.ReviewsWrites), []string{spaceGateManifest}, *approve)
+		if refused {
+			return gateCode
+		}
+		approvedGates = approved
+	}
+
 	commitMsg := "a2a(space-update): sync scaffolding with the embedded template"
 	prBody := spaceUpdatePRBody(c.HostCfg.Repo.Owner, c.HostCfg.Repo.Name, baseBranch)
 	if c.Caps.OnThisMachine {
@@ -1091,6 +1131,7 @@ func (c *SpaceCommand) runUpdate(ctx context.Context, args []string, stdio IO) i
 		Credential:               c.HostCfg.Credential,
 		MinBinaryVersion:         plan.currentFloor,
 		AllowSpaceInfrastructure: true,
+		ApprovedGates:            approvedGates,
 	}
 
 	result, err := c.Funnel.Submit(ctx, req)
@@ -1233,7 +1274,7 @@ func spaceRefuse(stdio IO, attempted, found, nextStep string) int {
 // first would refuse the bootstrap itself. A crash between the two leaves an
 // unmarked repository with one root commit declaring this space's id, which
 // the re-run branch recognises and completes.
-func (c *SpaceCommand) runInitLocal(ctx context.Context, spaceID, dir string, stdio IO) int {
+func (c *SpaceCommand) runInitLocal(ctx context.Context, spaceID, dir, gates, flow string, stdio IO) int {
 	cleanVersion, err := spaceCleanVersion(c.Version)
 	if err != nil {
 		return spaceRefuse(stdio,
@@ -1252,10 +1293,24 @@ func (c *SpaceCommand) runInitLocal(ctx context.Context, spaceID, dir string, st
 			err.Error(),
 			"the embedded space template is part of this binary, so this is a build defect rather than your input — run `a2a update` to install a release build and re-run `a2a space init "+spaceID+" --local`; if it persists, report it with `a2a feedback new`")
 	}
+	// The explicit policy replaces the template's `gates: default` line and
+	// adds the `flow:` line. The template file itself is unchanged: a GitHub
+	// space keeps `default`, because there the host already reviews.
+	files, err = spaceSeedPolicy(files, gates, flow)
+	if err != nil {
+		return spaceRefuse(stdio,
+			"space init --local: write the space's policy into space.yaml",
+			err.Error(),
+			"the embedded space template is part of this binary, so this is a build defect rather than your input — run `a2a update` to install a release build and re-run `a2a space init "+spaceID+" --local`")
+	}
 	// Validate before anything touches the disk: the id also becomes a path
 	// segment of the default target, so a malformed id must be refused by the
-	// manifest schema first, not by the filesystem.
+	// manifest schema first, not by the filesystem. The same pass is where a
+	// value outside the vocabulary (POL-027) is refused.
 	if code := c.spaceValidateSeededManifest(files, stdio); code != 0 {
+		return code
+	}
+	if code := c.spaceCheckPolicyForLocalHost(files, stdio); code != 0 {
 		return code
 	}
 
@@ -1311,6 +1366,65 @@ func (c *SpaceCommand) runInitLocal(ctx context.Context, spaceID, dir string, st
 	_, _ = fmt.Fprintf(stdio.Stdout, "  1. from each participant repo: a2a connect %s\n", abs)
 	_, _ = fmt.Fprintln(stdio.Stdout, "  2. from the same repo: a2a space join")
 	return 0
+}
+
+// Defaults of `space init --local`'s policy flags (spec local-space-2026-10/04
+// §T1 and §11): a gated write needs an explicit --approve, and a local space
+// scaffolds the short write loop.
+const (
+	spaceInitDefaultGates = "confirm"
+	spaceInitDefaultFlow  = "express"
+)
+
+// spaceSeedPolicy sets gates and flow in the rendered space.yaml among files,
+// through the same comment-preserving edit `space set` uses.
+func spaceSeedPolicy(files []space.FileWrite, gates, flow string) ([]space.FileWrite, error) {
+	out := make([]space.FileWrite, len(files))
+	copy(out, files)
+	for i, f := range out {
+		if f.Path != "space.yaml" {
+			continue
+		}
+		content := f.Content
+		for _, kv := range [][2]string{{"gates", gates}, {"flow", flow}} {
+			edited, err := spaceSetManifestKey(content, kv[0], kv[1])
+			if err != nil {
+				return nil, err
+			}
+			content = edited
+		}
+		out[i].Content = content
+	}
+	return out, nil
+}
+
+// spaceCheckPolicyForLocalHost refuses a seeded manifest the host cannot
+// honour before the repository exists: the same CheckGatesForHost every
+// manifest writer runs, fed the command's declared capability. `init --local`
+// opens no host (the repository does not exist yet), so the wiring leaves Caps
+// at its zero value, which declares that nothing reviews writes: a space that
+// lives on this machine has no pull request to review in.
+func (c *SpaceCommand) spaceCheckPolicyForLocalHost(files []space.FileWrite, stdio IO) int {
+	for _, f := range files {
+		if f.Path != "space.yaml" {
+			continue
+		}
+		return spaceRefuseViolations(stdio, "space init --local", validate.CheckGatesForHost(f.Content, c.Caps.ReviewsWrites))
+	}
+	return 0
+}
+
+// spaceRefuseViolations prints one three-part refusal per violation and
+// returns 1, or returns 0 for an empty list.
+func spaceRefuseViolations(stdio IO, attempted string, violations []validate.Violation) int {
+	if len(violations) == 0 {
+		return 0
+	}
+	for _, v := range violations {
+		spaceRefuse(stdio, attempted, v.Code+": "+v.Message,
+			"fix the value named above (gates: default, confirm or autonomous; flow: full or express), then re-run the command")
+	}
+	return 1
 }
 
 // spaceValidateSeededManifest validates the rendered space.yaml of a new local
@@ -1423,12 +1537,16 @@ func (c *SpaceCommand) runJoin(ctx context.Context, args []string, stdio IO) int
 	fset.SetOutput(stdio.Stderr)
 	spaceFlag := fset.String("space", "", "space id (defaults to the connected space)")
 	asJSON := fset.Bool("json", false, "print the result as JSON")
+	approve := fset.Bool("approve", false, "approve the manifest change (G4) this join makes (confirm spaces)")
 	if err := fset.Parse(args); err != nil {
 		return 2
 	}
 	if fset.NArg() > 0 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space join [--space <id>] [--json]")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space join [--space <id>] [--approve] [--json]")
 		return 2
+	}
+	if code, refused := gateApproveHasNoEffect(stdio, "space join", *approve, c.Caps.ReviewsWrites); refused {
+		return code
 	}
 	if err := c.spaceUpdateWired(); err != nil {
 		return spaceRefuse(stdio,
@@ -1514,6 +1632,13 @@ func (c *SpaceCommand) runJoin(ctx context.Context, args []string, stdio IO) int
 		files = append(files, f)
 	}
 
+	// G4: a join always rewrites space.yaml. The mode is the mirror's tip's,
+	// which is the manifest this very command just parsed.
+	approvedGates, gateCode, refused := gateJudgeWrite(stdio, "space join", manifest.EffectiveGates(c.Caps.ReviewsWrites), []string{spaceGateManifest}, *approve)
+	if refused {
+		return gateCode
+	}
+
 	commitMsg := "a2a(space-join): add " + system + " as a participant"
 	result, err := c.Funnel.Submit(ctx, space.SubmitRequest{
 		RepoDir:                  c.MirrorDir,
@@ -1532,6 +1657,7 @@ func (c *SpaceCommand) runJoin(ctx context.Context, args []string, stdio IO) int
 		Credential:               c.HostCfg.Credential,
 		MinBinaryVersion:         manifest.MinBinaryVersion,
 		AllowSpaceInfrastructure: true,
+		ApprovedGates:            approvedGates,
 	})
 	if err != nil {
 		return spaceRefuse(stdio,
@@ -1544,6 +1670,256 @@ func (c *SpaceCommand) runJoin(ctx context.Context, args []string, stdio IO) int
 		return 0
 	}
 	return c.spaceJoinReport(stdio, *asJSON, spaceJoinJoined, system)
+}
+
+// --- `a2a space set` (local-space-2026-10 spec 04 §T1) -------------------
+
+// spaceGateManifest is the gate a manifest change sits behind (spec 04 §T1.2,
+// G4). It is the gate's id as the trailer records it, not a vocabulary word of
+// this file.
+const spaceGateManifest = "G4"
+
+// spaceWritesManifest reports whether a write's changed set includes
+// space.yaml, the only input G4 reads.
+func spaceWritesManifest(files []space.FileWrite) bool {
+	for _, f := range files {
+		if f.Path == "space.yaml" {
+			return true
+		}
+	}
+	return false
+}
+
+// spaceTipManifest reads and parses the mirror's space.yaml, the manifest of
+// the tip a write is judged against, and returns its raw bytes for the one
+// caller that edits them.
+func (c *SpaceCommand) spaceTipManifest(stdio IO, verb string) ([]byte, space.Manifest, int) {
+	readFile := c.readFile
+	if readFile == nil {
+		readFile = os.ReadFile
+	}
+	raw, err := readFile(filepath.Join(c.MirrorDir, "space.yaml"))
+	if err != nil {
+		return nil, space.Manifest{}, spaceRefuse(stdio,
+			verb+": read the connected space's manifest",
+			fmt.Sprintf("cannot read the mirror's space.yaml: %v", err),
+			"run `a2a sync` to refresh the mirror (`a2a connect <path-to-the-space-repository>` if the space was never cloned), then re-run `a2a "+verb+"`")
+	}
+	manifest, err := space.ParseManifest(raw)
+	if err != nil {
+		return nil, space.Manifest{}, spaceRefuse(stdio,
+			verb+": parse the connected space's manifest",
+			fmt.Sprintf("the mirror's space.yaml is unreadable: %v", err),
+			"repair space.yaml in the space repository (the parse error above names the problem), run `a2a sync`, then re-run `a2a "+verb+"`")
+	}
+	return raw, manifest, 0
+}
+
+// runSet implements `a2a space set <gates|flow> <value> [--space <id>]
+// [--approve]`. Exit codes: 2 = usage; 1 = refused / not wired / write
+// failure; 0 = set, or already that value.
+//
+// The order is the contract. An unchanged value is answered before anything
+// else is judged (nothing is written, so nothing needs approving); then the
+// vocabulary (POL-027, from the engine that owns it), then whether the host
+// can honour the value (POL-028), and only then the approval, judged under
+// the TIP's mode, never the candidate's: a write that flips confirm to
+// autonomous is a G4 write in a confirm space and needs --approve itself.
+func (c *SpaceCommand) runSet(ctx context.Context, args []string, stdio IO) int {
+	fset := flag.NewFlagSet("space set", flag.ContinueOnError)
+	fset.SetOutput(stdio.Stderr)
+	spaceFlag := fset.String("space", "", "space id (defaults to the connected space)")
+	approve := fset.Bool("approve", false, "approve the manifest change (G4) this write makes (confirm spaces)")
+	positionals, err := parseArgsAnyOrder(fset, args)
+	if err != nil {
+		return 2
+	}
+	if len(positionals) != 2 || (positionals[0] != "gates" && positionals[0] != "flow") {
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space set <gates|flow> <value> [--space <id>] [--approve]")
+		return 2
+	}
+	key, value := positionals[0], positionals[1]
+	if code, refused := gateApproveHasNoEffect(stdio, "space set", *approve, c.Caps.ReviewsWrites); refused {
+		return code
+	}
+	if wiredErr := c.spaceUpdateWired(); wiredErr != nil {
+		return spaceRefuse(stdio,
+			"space set",
+			wiredErr.Error(),
+			"register the space with `a2a connect <url-or-path-of-the-space-repository>`, then re-run `a2a space set "+key+" "+value+"`")
+	}
+	if *spaceFlag != "" && *spaceFlag != c.SpaceID {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space set: unknown space %q (connected space is %q)\n", *spaceFlag, c.SpaceID)
+		return 1
+	}
+	baseBranch := c.HostCfg.BaseBranch
+	if baseBranch == "" {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space set: %v\n", errMissingHostBaseBranch)
+		return 1
+	}
+	raw, tip, code := c.spaceTipManifest(stdio, "space set")
+	if code != 0 {
+		return code
+	}
+
+	current := spacePolicyValue(tip, key)
+	if current.valid && current.text == value {
+		_, _ = fmt.Fprintf(stdio.Stdout, "space set: %s already %s\n", key, value)
+		return 0
+	}
+
+	candidate, editErr := spaceSetManifestKey(raw, key, value)
+	if editErr != nil {
+		return spaceRefuse(stdio,
+			"space set "+key+" "+value,
+			editErr.Error(),
+			"edit space.yaml in the space repository by hand (`"+key+": "+value+"` as a top-level line), run `a2a sync`, then re-run `a2a space set "+key+" "+value+"`")
+	}
+	if c.Engine == nil {
+		_, _ = fmt.Fprintln(stdio.Stderr, "space set: not wired (no manifest validator) — this build cannot validate the edited space.yaml")
+		return 1
+	}
+	res, validateErr := c.Engine.ValidateManifest(candidate)
+	if validateErr != nil {
+		return spaceRefuse(stdio,
+			"space set: validate the edited space.yaml",
+			fmt.Sprintf("the manifest validator itself failed: %v", validateErr),
+			"the validator and schema are embedded in this binary, so this is a build defect — run `a2a update` to install a release build and re-run `a2a space set "+key+" "+value+"`; if it persists, report it with `a2a feedback new`")
+	}
+	if !res.Valid {
+		violations := make([]validate.Violation, 0, len(res.Violations))
+		violations = append(violations, res.Violations...)
+		return spaceRefuseViolations(stdio, "space set "+key+" "+value, violations)
+	}
+	if code := spaceRefuseViolations(stdio, "space set "+key+" "+value, validate.CheckGatesForHost(candidate, c.Caps.ReviewsWrites)); code != 0 {
+		return code
+	}
+	approvedGates, gateCode, refused := gateJudgeWrite(stdio, "space set", tip.EffectiveGates(c.Caps.ReviewsWrites), []string{spaceGateManifest}, *approve)
+	if refused {
+		return gateCode
+	}
+
+	commitMsg := "a2a(space-set): set " + key + " to " + value
+	result, submitErr := c.Funnel.Submit(ctx, space.SubmitRequest{
+		RepoDir:                  c.MirrorDir,
+		System:                   c.OwnSystem,
+		Verb:                     "space-set",
+		ArtifactID:               key,
+		Files:                    []space.FileWrite{{Path: "space.yaml", Content: candidate}},
+		CommitMessage:            commitMsg,
+		CommitAuthorName:         c.HostCfg.CommitAuthorName,
+		CommitAuthorEmail:        c.HostCfg.CommitAuthorEmail,
+		RemoteURL:                c.HostCfg.RemoteURL,
+		Repo:                     c.HostCfg.Repo,
+		BaseBranch:               baseBranch,
+		PRTitle:                  commitMsg,
+		PRBody:                   "a2a space set: set `" + key + "` to `" + value + "` in this space's manifest.\n",
+		Credential:               c.HostCfg.Credential,
+		MinBinaryVersion:         tip.MinBinaryVersion,
+		AllowSpaceInfrastructure: true,
+		ApprovedGates:            approvedGates,
+	})
+	if submitErr != nil {
+		return spaceRefuse(stdio,
+			"space set: submit the "+key+" change",
+			submitErr.Error(),
+			"fix the cause named above (`a2a doctor` checks the credential and the connected space), then re-run `a2a space set "+key+" "+value+"` — it is safe to repeat")
+	}
+	if result.State == space.WriteStateAlreadyOpen || result.State == space.WriteStateAlreadyMerged {
+		_, _ = fmt.Fprintf(stdio.Stdout, "space set: already submitted (PR %s, %s)\n", result.PRURL, result.State)
+		return 0
+	}
+	_, _ = fmt.Fprintf(stdio.Stdout, "space set: %s %s -> %s\n", key, current.text, value)
+	return 0
+}
+
+// spacePolicy is one policy key's value as the manifest declares it: its text
+// and whether that text is inside the vocabulary.
+type spacePolicy struct {
+	text  string
+	valid bool
+}
+
+// spacePolicyValue reads `gates` or `flow` from a parsed manifest through the
+// vocabulary's own parser (contract.ParseGatesSetting / ParseFlowSetting), so
+// an absent key reads as its default and a value outside the vocabulary is
+// reported as invalid with the text it carried.
+func spacePolicyValue(m space.Manifest, key string) spacePolicy {
+	if key == "gates" {
+		if setting, ok := contract.ParseGatesSetting(m.Gates); ok {
+			return spacePolicy{text: string(setting), valid: true}
+		}
+		return spacePolicy{text: fmt.Sprint(m.Gates)}
+	}
+	if setting, ok := contract.ParseFlowSetting(m.Flow); ok {
+		return spacePolicy{text: string(setting), valid: true}
+	}
+	return spacePolicy{text: fmt.Sprint(m.Flow)}
+}
+
+// spaceSetManifestKey sets one top-level scalar key in space.yaml by text
+// surgery, never a marshal round trip: the manifest is the space's own file and
+// re-encoding it would drop the template's comments and key order (the
+// discipline spaceAddParticipantRow follows). An existing line keeps its
+// trailing comment, at its column when the new value fits; an absent key is
+// appended as a last line. A key whose value is not a plain scalar is refused
+// rather than guessed at, and the edit must read back as the new value.
+func spaceSetManifestKey(raw []byte, key, value string) ([]byte, error) {
+	lines := strings.Split(string(raw), "\n")
+	prefix := key + ":"
+	at := -1
+	for i, l := range lines {
+		if strings.HasPrefix(l, prefix) {
+			at = i
+			break
+		}
+	}
+	if at >= 0 {
+		rest := strings.TrimPrefix(lines[at], prefix)
+		body, comment := rest, ""
+		if i := strings.Index(rest, "#"); i >= 0 {
+			body, comment = rest[:i], rest[i:]
+		}
+		old := strings.TrimSpace(body)
+		if old == "" || strings.ContainsAny(old[:1], "[{&*|>!") {
+			return nil, fmt.Errorf("space.yaml's `%s:` is %q, a form `space set` cannot edit in place", key, old)
+		}
+		line := prefix + " " + value
+		if comment != "" {
+			pad := len(prefix) + len(body) - len(line)
+			if pad < 1 {
+				pad = 1
+			}
+			line += strings.Repeat(" ", pad) + comment
+		}
+		lines[at] = line
+	} else {
+		if n := len(lines); n > 0 && lines[n-1] == "" {
+			lines = lines[:n-1]
+		}
+		lines = append(lines, prefix+" "+value, "")
+	}
+	updated := []byte(strings.Join(lines, "\n"))
+	after, err := space.ParseManifest(updated)
+	if err != nil {
+		return nil, fmt.Errorf("the edited space.yaml does not parse: %w", err)
+	}
+	before, err := space.ParseManifest(raw)
+	if err != nil {
+		return nil, fmt.Errorf("space.yaml is unreadable: %w", err)
+	}
+	if got := fmt.Sprint(spaceRawPolicy(after, key)); got != value || len(after.Participants) != len(before.Participants) {
+		return nil, fmt.Errorf("could not set `%s:` in space.yaml in place", key)
+	}
+	return updated, nil
+}
+
+// spaceRawPolicy is a manifest's undecoded policy value for key.
+func spaceRawPolicy(m space.Manifest, key string) any {
+	if key == "gates" {
+		return m.Gates
+	}
+	return m.Flow
 }
 
 // spaceJoinReport prints the outcome in the requested shape and returns 0.

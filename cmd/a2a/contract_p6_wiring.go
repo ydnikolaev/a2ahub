@@ -142,6 +142,7 @@ type contractP6PublicationInput struct {
 	actorKind      string
 	actorName      string
 	actorModel     string
+	approvedGates  []string
 }
 
 func (c *contractP6Core) preflight(ctx context.Context, input contractP6PublicationInput) (space.ContractPublicationResult, error) {
@@ -249,7 +250,7 @@ func (c *contractP6Core) publicationRequest(ctx context.Context, input contractP
 			CommitMessage:    "a2a(contract-publish): " + input.id,
 			CommitAuthorName: c.authorName, CommitAuthorEmail: c.authorEmail,
 			PRTitle: "Publish " + input.id, PRBody: "Publish an exact immutable contract version.",
-			Credential: credential,
+			Credential: credential, ApprovedGates: input.approvedGates,
 		}
 		request.SubmissionRuntime = space.SubmissionRuntime{
 			RepoDir: c.mirrorDir, RemoteURL: c.remoteURL, Credential: credential,
@@ -739,8 +740,8 @@ func (a cliContractP6Adapter) Preflight(ctx context.Context, request cli.Contrac
 func (a cliContractP6Adapter) Publish(ctx context.Context, request cli.ContractPublicationRequest) (space.ContractPublicationResult, error) {
 	return a.core.publish(ctx, contractP6PublicationInput{
 		id: request.ID, version: request.Version, bump: request.Bump, staging: request.Staging, expectPlan: request.ExpectPlan,
-		allowEmptyBump: request.AllowEmptyBump,
-		actorKind:      request.Actor.Kind, actorName: request.Actor.Name, actorModel: request.Actor.Model,
+		allowEmptyBump: request.AllowEmptyBump, approvedGates: request.ApprovedGates,
+		actorKind: request.Actor.Kind, actorName: request.Actor.Name, actorModel: request.Actor.Model,
 	})
 }
 

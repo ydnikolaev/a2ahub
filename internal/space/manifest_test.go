@@ -430,3 +430,55 @@ func TestManifestPolicyKeysAreLenientOnRead(t *testing.T) {
 		}
 	}
 }
+
+// TestParseManifestReadsPolicyKeysThroughTheSharedDecoder is spec 04 section 10
+// (P4-B carries item 8). A merge key hands `gates: autonomous` to a plain struct
+// decode while a node walk (the write-time validator's reader) sees no `gates`
+// key. ParseManifest must not follow the merge: the land check reads the TIP
+// through it, so a manifest that merges `autonomous` in would otherwise switch
+// the approval requirement off. Both sides agree, and the write is refused.
+func TestParseManifestReadsPolicyKeysThroughTheSharedDecoder(t *testing.T) {
+	t.Parallel()
+
+	const mergedAutonomous = `
+schema: space/v1
+space: demo
+min_binary_version: 0.1.0
+base: &b {gates: autonomous, flow: express}
+<<: *b
+participants: []
+vendored: []
+`
+	m, err := ParseManifest([]byte(mergedAutonomous))
+	if err != nil {
+		t.Fatalf("ParseManifest: %v, want the bytes to parse (the refusal is the validator's)", err)
+	}
+	if got := m.EffectiveGates(false); got != contract.GatesModeConfirm {
+		t.Fatalf("EffectiveGates(false) = %q, want %q: a merge key must not supply the gates value", got, contract.GatesModeConfirm)
+	}
+	if got := m.FlowSetting(); got != contract.FlowSettingFull {
+		t.Fatalf("FlowSetting() = %q, want %q: a merge key must not supply the flow value", got, contract.FlowSettingFull)
+	}
+
+	// An alias into the value is the same disagreement and reads as unset too.
+	aliased := "schema: space/v1\nspace: demo\ng: &g autonomous\ngates: *g\n"
+	m, err = ParseManifest([]byte(aliased))
+	if err != nil {
+		t.Fatalf("ParseManifest(alias): %v", err)
+	}
+	if got := m.EffectiveGates(false); got != contract.GatesModeConfirm {
+		t.Fatalf("alias: EffectiveGates(false) = %q, want %q", got, contract.GatesModeConfirm)
+	}
+
+	// The plain form still reads, so the fail-closed branch is not a blanket nil.
+	plain, err := ParseManifest([]byte("schema: space/v1\nspace: demo\ngates: autonomous\nflow: express\n"))
+	if err != nil {
+		t.Fatalf("ParseManifest(plain): %v", err)
+	}
+	if got := plain.EffectiveGates(false); got != contract.GatesModeAutonomous {
+		t.Fatalf("plain: EffectiveGates(false) = %q, want %q", got, contract.GatesModeAutonomous)
+	}
+	if got := plain.FlowSetting(); got != contract.FlowSettingExpress {
+		t.Fatalf("plain: FlowSetting() = %q, want %q", got, contract.FlowSettingExpress)
+	}
+}

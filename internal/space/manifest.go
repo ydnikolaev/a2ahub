@@ -192,6 +192,19 @@ func ParseManifest(raw []byte) (Manifest, error) {
 	if err := yaml.Unmarshal(raw, &m); err != nil {
 		return Manifest{}, &Error{Op: op, Err: ErrManifestInvalid}
 	}
+	// `gates` and `flow` are read again through the one decoder the write-time
+	// validator uses (contract.DecodeManifestPolicyKeys), because the struct
+	// decode above follows YAML merge keys and aliases and that decoder refuses
+	// them. A form the two readers could disagree on reads as unset here, which is
+	// the strictest reading (confirm on a local host, review on a reviewed one,
+	// flow full), while the validator refuses the same bytes as POL-027 at the
+	// write. ParseManifest still returns no error: whether the bytes may land is
+	// the validator's verdict, not this parse's.
+	if keys, err := contract.DecodeManifestPolicyKeys(raw); err == nil {
+		m.Gates, m.Flow = keys.Gates, keys.Flow
+	} else {
+		m.Gates, m.Flow = nil, nil
+	}
 	m.Raw = raw
 	return m, nil
 }

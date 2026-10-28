@@ -5,7 +5,6 @@ import (
 	"slices"
 
 	"github.com/ydnikolaev/a2ahub/internal/contract"
-	"github.com/ydnikolaev/a2ahub/internal/schema"
 )
 
 // This file is the pure half of the gates-and-flow policy (local-space-2026-10
@@ -20,18 +19,6 @@ import (
 // import, so the write-side check and the read-side effective mode cannot
 // disagree about which words are legal.
 
-// manifestPolicyKeys decodes the two policy keys out of raw space.yaml bytes.
-// ok is false when raw is not YAML or not a mapping: POL-002 belongs to
-// ValidateManifest and these checks stay silent about a document they cannot
-// read.
-func manifestPolicyKeys(raw []byte) (gates, flow any, ok bool) {
-	instance, err := schema.DecodeYAMLInstance(raw)
-	if err != nil {
-		return nil, nil, false
-	}
-	return policyKeysOf(instance)
-}
-
 func policyKeysOf(instance any) (gates, flow any, ok bool) {
 	document, isMapping := instance.(map[string]any)
 	if !isMapping {
@@ -41,7 +28,8 @@ func policyKeysOf(instance any) (gates, flow any, ok bool) {
 }
 
 // checkGatesFlowVocabulary is POL-027: `gates` or `flow` carries a value
-// outside its vocabulary, or a value that is not a string. An absent key, or an
+// outside its vocabulary, or a value that is not a string. Its argument is a
+// mapping holding the two raw policy values (contract.ManifestPolicyKeys). An absent key, or an
 // explicit null, is the key's default and is clean.
 //
 // It runs from ValidateManifest only, never from checkManifestPolicy: the
@@ -93,11 +81,15 @@ func CheckGatesForHost(raw []byte, hostReviews bool) []Violation {
 	if !hostReviews {
 		return nil
 	}
-	gates, _, ok := manifestPolicyKeys(raw)
-	if !ok {
+	// The decoder is contract.DecodeManifestPolicyKeys, the same one the land-time
+	// reader (space.ParseManifest) goes through. A manifest it cannot read, or
+	// reads two ways (a merge key, an alias into `gates`), yields no POL-028 here:
+	// ValidateManifest refuses the ambiguous form as POL-027 on the same write.
+	keys, err := contract.DecodeManifestPolicyKeys(raw)
+	if err != nil {
 		return nil
 	}
-	setting, legal := contract.ParseGatesSetting(gates)
+	setting, legal := contract.ParseGatesSetting(keys.Gates)
 	if !legal || setting != contract.GatesSettingAutonomous {
 		return nil
 	}
@@ -151,4 +143,19 @@ func CheckGateApproval(mode contract.GatesMode, required, approved []string) []V
 		})
 	}
 	return violations
+}
+
+// ambiguousPolicyKeysViolation is POL-027 for a space.yaml whose `gates` or
+// `flow` key can be read two ways (contract.ErrManifestPolicyKeysAmbiguous): a
+// top-level merge key, a duplicated key, or an alias reaching either value. The
+// write is refused so the bytes that land never depend on which YAML reader
+// meets them.
+func ambiguousPolicyKeysViolation(err error) Violation {
+	return Violation{
+		Code:     "POL-027",
+		Class:    ClassPolicy,
+		Path:     "gates",
+		Message:  "gates and flow must be written as plain keys: " + err.Error() + "; remove the merge key, duplicate key or alias",
+		Severity: SeverityReject,
+	}
 }

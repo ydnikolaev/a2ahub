@@ -842,3 +842,40 @@ func mustValidateManifest(t *testing.T, engine *Engine, raw []byte) []Violation 
 	}
 	return result.Violations
 }
+
+// TestValidateManifestRefusesAmbiguousPolicyKeys is spec 04 section 10 (P4-B
+// carries item 8): a merge key, a duplicated key or an alias reaching `gates`
+// or `flow` is a POL-027 at the write, because a struct decode and a node walk
+// read those forms differently. The merge case is the one that matters: a
+// struct decode would hand the merged `gates: autonomous` to a reader while a
+// node walk saw no `gates` key at all.
+func TestValidateManifestRefusesAmbiguousPolicyKeys(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		extra string
+	}{
+		{name: "merge key supplying gates", extra: "base: &b {gates: autonomous}\n<<: *b"},
+		{name: "merge key list", extra: "a: &a {gates: autonomous}\nb: &b {flow: express}\n<<: [*a, *b]"},
+		{name: "alias as the gates value", extra: "g: &g autonomous\ngates: *g"},
+		{name: "alias nested in flow", extra: "f: &f express\nflow: [*f]"},
+	}
+	engine := mustEngine(t)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			result, err := engine.ValidateManifest([]byte(manifestWithPolicyKeys(test.extra)))
+			if err != nil {
+				t.Fatalf("ValidateManifest: %v", err)
+			}
+			if result.Valid {
+				t.Fatalf("manifest %q: Valid = true, want a refusal", test.extra)
+			}
+			if !slices.Contains(violationCodes(result.Violations), "POL-027") {
+				t.Fatalf("manifest %q: codes = %v, want POL-027 among them", test.extra, violationCodes(result.Violations))
+			}
+		})
+	}
+}

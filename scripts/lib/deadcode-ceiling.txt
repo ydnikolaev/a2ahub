@@ -26,7 +26,7 @@
 #
 # local-space-2026-10: P2's temporary +2 (host.PrepareLocalSpace and
 # installPreReceiveHook) was paid back by P3's `space init --local`.
-# TEMPORARY +3 since P4-A (wave 3): validate.CheckGatesForHost,
-# validate.CheckGateApproval and manifestPolicyKeys land before their
-# callers, P4-B's verbs and land check (wave 4). P4-B owes this back to 85.
-88
+# P4-A's temporary +3 (validate.CheckGatesForHost, CheckGateApproval and
+# manifestPolicyKeys landing before their callers) was paid back by P4-B's
+# verbs and land check in wave 4.
+85

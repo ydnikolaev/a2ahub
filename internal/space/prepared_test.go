@@ -426,6 +426,54 @@ func TestPreparedJournalRevalidatesSectionAfterChecksumRewrite(t *testing.T) {
 	}
 }
 
+// TestPreparedJournalDigestCoversTheCommitMessageBase is spec 04 section T1.3
+// "Resume": the prepared digest covers commit_message_base (preparedDataDigest
+// puts CommitMessageBase into its payload), so a journal whose message base was
+// edited, with or without an approval trailer, is refused on decode with the
+// digest mismatch instead of resuming a write under text nobody prepared.
+func TestPreparedJournalDigestCoversTheCommitMessageBase(t *testing.T) {
+	t.Parallel()
+
+	for _, gates := range [][]string{nil, {"G1"}} {
+		fx := spacefixture.New(t, "atlas")
+		layout, err := NewLayout("atlas")
+		if err != nil {
+			t.Fatalf("NewLayout: %v", err)
+		}
+		req := newTestSubmitRequest(fx, "atlas", layout)
+		req.MinBinaryVersion = "0.19.0"
+		req.ApprovedGates = gates
+		prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").PrepareSubmission(
+			context.Background(), req, testPreparationContext("0.19.0"),
+		)
+		if err != nil {
+			t.Fatalf("PrepareSubmission(gates=%v): %v", gates, err)
+		}
+		raw, err := EncodePreparedSubmissionJournal(prepared)
+		if err != nil {
+			t.Fatalf("EncodePreparedSubmissionJournal: %v", err)
+		}
+		var wire preparedJournalV1
+		if err := json.Unmarshal(raw, &wire); err != nil {
+			t.Fatalf("json.Unmarshal: %v", err)
+		}
+		if wire.Payload.CommitMessageBase == "" {
+			t.Fatalf("gates=%v: the journal carries no commit_message_base to tamper with", gates)
+		}
+		wire.Payload.CommitMessageBase = "edited: " + wire.Payload.CommitMessageBase
+		var forged bytes.Buffer
+		encoder := json.NewEncoder(&forged)
+		encoder.SetEscapeHTML(false)
+		if err := encoder.Encode(wire); err != nil {
+			t.Fatalf("encode forged journal: %v", err)
+		}
+		_, err = DecodePreparedSubmissionJournal(bytes.TrimSuffix(forged.Bytes(), []byte("\n")))
+		if !errors.Is(err, ErrPreparedDigestMismatch) {
+			t.Errorf("gates=%v: edited commit_message_base error = %v, want ErrPreparedDigestMismatch", gates, err)
+		}
+	}
+}
+
 func TestSubmitPreparedDoesNotReevaluateFrozenBytesAgainstMutableValidator(t *testing.T) {
 	t.Parallel()
 

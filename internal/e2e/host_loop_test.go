@@ -2,11 +2,13 @@ package e2e
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -533,7 +535,9 @@ func TestHostLoopSubmitCredentialPolicy(t *testing.T) {
 		}
 		mustRunFree("space", "init", "lone", "--local", "--dir", spaceDir)
 		mustRunFree("connect", spaceDir)
-		mustRunFree("space", "join")
+		// The new space is a confirm space, and joining it is a manifest change
+		// (G4): the operator running this test approves it.
+		mustRunFree("space", "join", "--approve")
 
 		id := "XQ-axon-20260723-0a01"
 		path := filepath.Join(project, ".a2a", "staging", id+".md")
@@ -582,4 +586,241 @@ func TestHostLoopSubmitCredentialPolicy(t *testing.T) {
 			t.Errorf("stderr does not say the credential is unresolved:\n%s", stderr)
 		}
 	})
+}
+
+// localGateRig is a project connected to a NEW space on this machine (a bare
+// repository with the land guard), which is the only host that does not review
+// writes and so the only one where `gates` decides anything. Its binary runs
+// carry no credential at all.
+type localGateRig struct {
+	*hostRig
+	spaceDir string
+	gates    string
+}
+
+// newLocalGateRig creates the space, connects and joins it as "axon", and
+// remembers the gates setting the test is about. The space is created
+// autonomous whatever that setting is, and stageAndSubmitContract moves it to
+// the wanted mode once the contract is in: a confirm space refuses the SUBMIT
+// of a new contract descriptor itself (the land check counts a descriptor the
+// tip lacks as G1, and `submit` has no --approve), so the confirm cases could
+// not otherwise get a contract into the space to publish.
+func newLocalGateRig(t *testing.T, gates string) *localGateRig {
+	t.Helper()
+	r := &hostRig{
+		t: t, projectDir: t.TempDir(), homeDir: t.TempDir(),
+		spaceID: hostRigSpaceID, system: "axon",
+	}
+	mustMkdirAll(t, filepath.Join(r.projectDir, ".a2a", "staging"))
+	mustWrite(t, filepath.Join(r.projectDir, ".a2a", "config.yaml"), "system: axon\nspaces: []\n")
+	g := &localGateRig{hostRig: r, spaceDir: filepath.Join(t.TempDir(), "gates.git"), gates: gates}
+	g.mustFree("space", "init", hostRigSpaceID, "--local", "--dir", g.spaceDir, "--gates", "autonomous")
+	g.mustFree("connect", g.spaceDir)
+	// A join is a manifest change (G4), approved here by the operator running
+	// the test: this rig is about the publish that follows, not the join.
+	g.mustFree("space", "join", "--approve")
+
+	// The contract under test is addressed to beta, and a space refuses an
+	// unknown recipient, so beta joins through its own project.
+	betaProject, betaHome := t.TempDir(), t.TempDir()
+	mustMkdirAll(t, filepath.Join(betaProject, ".a2a", "staging"))
+	mustWrite(t, filepath.Join(betaProject, ".a2a", "config.yaml"), "system: beta\nspaces: []\n")
+	for _, args := range [][]string{{"connect", g.spaceDir}, {"space", "join", "--approve"}} {
+		if stdout, stderr, code := credentialFreeRun(t, betaProject, betaHome, args...); code != 0 {
+			t.Fatalf("beta a2a %v: exit %d\nstdout: %s\nstderr: %s", args, code, stdout, stderr)
+		}
+	}
+	return g
+}
+
+func (g *localGateRig) free(args ...string) (stdout, stderr string, code int) {
+	g.t.Helper()
+	return credentialFreeRun(g.t, g.projectDir, g.homeDir, args...)
+}
+
+func (g *localGateRig) mustFree(args ...string) string {
+	g.t.Helper()
+	stdout, stderr, code := g.free(args...)
+	if code != 0 {
+		g.t.Fatalf("a2a %v: exit %d\nstdout: %s\nstderr: %s", args, code, stdout, stderr)
+	}
+	return stdout
+}
+
+// stageAndSubmitContract scaffolds the export contract with `contract new`
+// (a current-floor space publishes contracts only in the declared-v2 shape,
+// which the scaffold writes), fills the placeholders a draft cannot be
+// validated with, submits it, moves the space to the gates setting under test
+// and returns the contract id and the --staging argument its publish uses.
+func (g *localGateRig) stageAndSubmitContract() (id, stagingArg string) {
+	g.t.Helper()
+	g.mustFree("contract", "new", "export")
+	id = "XC-" + g.system + "-export"
+	draft := filepath.Join(g.projectDir, ".a2a", "staging", id+".md")
+	staging := filepath.Join(g.projectDir, ".a2a", "staging", g.system, "provides", "export")
+	fill := strings.NewReplacer(
+		"<human/agent-scannable title, <=120 chars>", "the export contract under test",
+		"[<consumer-system>]", "[beta]",
+		"<api|data-feed|vocabulary|event-feed|other>", "api",
+	)
+	for _, f := range []string{draft, filepath.Join(staging, "contract.md")} {
+		mustWrite(g.t, f, fill.Replace(mustReadFile(g.t, f)))
+	}
+	g.mustFree("submit", draft)
+	if g.gates != "autonomous" {
+		g.mustFree("space", "set", "gates", g.gates)
+	}
+	g.mustFree("sync")
+	return id, ".a2a/staging/" + g.system + "/provides/export"
+}
+
+// mainHeadMessage is the full message of the commit at the tip of the local
+// space's main, first-parent: the land merge commit when the host lands by a
+// merge.
+func (g *localGateRig) mainHeadMessage() string {
+	g.t.Helper()
+	return gitOutput(g.t, g.spaceDir, "log", "-1", "--first-parent", "--format=%B", "main")
+}
+
+// refsSnapshot lists every ref and the commit it points at, to prove that a
+// refused write prepared no branch and moved nothing.
+func (g *localGateRig) refsSnapshot() string {
+	g.t.Helper()
+	return gitOutput(g.t, g.spaceDir, "for-each-ref", "--format=%(refname) %(objectname)")
+}
+
+// TestHostLoopContractGates is local-space-2026-10 spec 04 AC5, AC7 and AC8
+// end to end through the built binary, against a real local space: the first
+// publish of a contract sits behind G1, a confirm space refuses it without
+// --approve before anything is prepared, the same publish WITH --approve
+// (AC6) lands and records G1 in the land merge commit, an autonomous space
+// lands it unrecorded, and the floor under that mode does not move.
+func TestHostLoopContractGates(t *testing.T) {
+	t.Parallel()
+
+	t.Run("confirm-g1-refused", func(t *testing.T) {
+		t.Parallel()
+		g := newLocalGateRig(t, "confirm")
+		id, staging := g.stageAndSubmitContract()
+		before := g.refsSnapshot()
+
+		stdout, stderr, code := g.free("contract", "publish", "--version", "1.0.0", "--staging", staging, id)
+		if code != 1 {
+			t.Fatalf("publish exit = %d, want 1\nstdout: %s\nstderr: %s", code, stdout, stderr)
+		}
+		if !strings.Contains(stderr, "POL-029: G1 requires --approve in a confirm space") {
+			t.Fatalf("stderr does not name the missing G1 approval:\n%s", stderr)
+		}
+		if after := g.refsSnapshot(); after != before {
+			t.Fatalf("a refused publish moved or created refs:\nbefore:\n%s\nafter:\n%s", before, after)
+		}
+	})
+
+	t.Run("confirm-g1-approved-recorded", func(t *testing.T) {
+		t.Parallel()
+		g := newLocalGateRig(t, "confirm")
+		id, staging := g.stageAndSubmitContract()
+
+		// --approve before the id: the target scan must know it is a boolean.
+		g.mustFree("contract", "publish", "--approve", "--version", "1.0.0", "--staging", staging, id)
+		if got := g.mainHeadMessage(); !strings.Contains(got, "A2A-Approved-Gates: G1") {
+			t.Fatalf("the land merge commit on main does not record the approval:\n%s", got)
+		}
+	})
+
+	t.Run("autonomous-g1-lands", func(t *testing.T) {
+		t.Parallel()
+		g := newLocalGateRig(t, "autonomous")
+		id, staging := g.stageAndSubmitContract()
+
+		stdout := g.mustFree("contract", "publish", "--version", "1.0.0", "--staging", staging, id)
+		if !strings.Contains(stdout, "gate G1") {
+			t.Fatalf("an autonomous publish does not still print its gate:\n%s", stdout)
+		}
+		got := g.mainHeadMessage()
+		if !strings.Contains(got, "Publish "+id) {
+			t.Fatalf("main's tip is not the publish's land merge, so the trailer check below judges nothing:\n%s", got)
+		}
+		if strings.Contains(got, "A2A-Approved-Gates") {
+			t.Fatalf("an autonomous publish recorded an approval nobody gave:\n%s", got)
+		}
+	})
+
+	t.Run("autonomous-floor", func(t *testing.T) {
+		t.Parallel()
+		g := newLocalGateRig(t, "autonomous")
+		id, staging := g.stageAndSubmitContract()
+		g.mustFree("contract", "publish", "--version", "1.0.0", "--staging", staging, id)
+		g.mustFree("sync")
+
+		// A breaking change declared as a minor version is still a
+		// publication violation, whatever the space's gates say.
+		root := filepath.Join(g.projectDir, filepath.FromSlash(staging))
+		mustMkdirAll(t, filepath.Join(root, "schema"))
+		mustWrite(t, filepath.Join(root, "schema", "export.schema.json"),
+			`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"example":{"type":"integer"}},"additionalProperties":true}`+"\n")
+		stdout, stderr, code := g.free("contract", "publish", "--version", "1.1.0", "--staging", staging, id)
+		if code == 0 || !strings.Contains(stdout+stderr, "POL-007") {
+			t.Fatalf("a breaking change declared minor was not refused with POL-007 (exit %d)\nstdout: %s\nstderr: %s", code, stdout, stderr)
+		}
+
+		// A token-shaped secret is still POL-001. The token is assembled at run
+		// time so this file carries no credential-shaped literal.
+		secret := "gh" + "p_" + strings.Repeat("a1B2", 9)
+		leaky := "XQ-axon-20260723-0a09"
+		leakyPath := g.stageQuestion(leaky, "axon")
+		mustWrite(t, leakyPath, mustReadFile(t, leakyPath)+"the token is "+secret+"\n")
+		stdout, stderr, code = g.free("submit", leakyPath)
+		if code == 0 || !strings.Contains(stdout+stderr, "POL-001") {
+			t.Fatalf("a token-shaped secret was not refused with POL-001 (exit %d)\nstdout: %s\nstderr: %s", code, stdout, stderr)
+		}
+
+		// A write into another system's section is still AUTHZ-001: the V3
+		// check that every landing runs, handed a checkout whose head touches
+		// beta/.
+		checkout := filepath.Join(t.TempDir(), "checkout")
+		gitRun(t, filepath.Dir(checkout), "clone", g.spaceDir, checkout)
+		base := strings.TrimSpace(gitOutput(t, checkout, "rev-parse", "HEAD"))
+		mustMkdirAll(t, filepath.Join(checkout, "beta", "docs"))
+		mustWrite(t, filepath.Join(checkout, "beta", "docs", "cross.txt"), "axon wrote here\n")
+		gitRun(t, checkout, "add", "beta/docs/cross.txt")
+		gitRun(t, checkout, "commit", "-m", "cross-section write")
+		// `local:axon` is the owner login `space join` records for axon.
+		code, authz, ciStderr := validateCIAuthz(t, checkout, base, "local:axon")
+		if code == 0 || !slices.Contains(authz, "AUTHZ-001") {
+			t.Fatalf("a write into another system's section was not refused with AUTHZ-001 (exit %d)\ndiff_authz codes: %v\nstderr: %s", code, authz, ciStderr)
+		}
+	})
+}
+
+// validateCIAuthz runs `a2a validate --ci --mode=v3-pr` over a checkout and
+// returns its exit code and the codes of the report's diff_authz_violations,
+// which the package's shared report decoder does not carry.
+func validateCIAuthz(t *testing.T, dir, base, author string) (code int, codes []string, stderr string) {
+	t.Helper()
+	cmd := exec.Command(filepath.Join(binDir, "a2a"), "validate", "--ci", "--mode=v3-pr", "--base="+base, "--author="+author)
+	cmd.Dir = dir
+	var out, errBuf bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errBuf
+	if err := cmd.Run(); err != nil {
+		exitErr := &exec.ExitError{}
+		if !errors.As(err, &exitErr) {
+			t.Fatalf("exec a2a validate --ci: %v", err)
+		}
+		code = exitErr.ExitCode()
+	}
+	var report struct {
+		DiffAuthz []struct {
+			Code string `json:"code"`
+		} `json:"diff_authz_violations"`
+	}
+	if out.Len() > 0 {
+		if err := json.Unmarshal(out.Bytes(), &report); err != nil {
+			t.Fatalf("decode ci report: %v\nstdout=%s\nstderr=%s", err, out.String(), errBuf.String())
+		}
+	}
+	for _, v := range report.DiffAuthz {
+		codes = append(codes, v.Code)
+	}
+	return code, codes, errBuf.String()
 }

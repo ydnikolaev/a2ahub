@@ -10,33 +10,6 @@ import (
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
 
-// finalParagraphApprovalLines is a TEST-ONLY restatement of the scan P2's
-// merge-commit trailer copy applies (internal/host's approvedGatesTrailers):
-// the lines of the message's final paragraph that open with the approval
-// trailer's token and a colon. It is not production code. Spec 04 §T1.3 asks
-// for the host's own scan to be exported and shared with the land check; until
-// that export lands (internal/host is outside this wave), a test that wants to
-// ask "would the land copy see it" has to restate the rule, and it is one place
-// to delete when the shared scan exists.
-func finalParagraphApprovalLines(message string) []string {
-	lines := strings.Split(message, "\n")
-	end := len(lines)
-	for end > 0 && strings.TrimSpace(lines[end-1]) == "" {
-		end--
-	}
-	start := end
-	for start > 0 && strings.TrimSpace(lines[start-1]) != "" {
-		start--
-	}
-	var out []string
-	for _, line := range lines[start:end] {
-		if strings.HasPrefix(line, host.TrailerApprovedGates+":") {
-			out = append(out, line)
-		}
-	}
-	return out
-}
-
 const testOperationKey = "op-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 func approvalRequest(t *testing.T, fx *spacefixture.Fixture) SubmitRequest {
@@ -103,7 +76,7 @@ func TestApprovedGatesTrailerIsAppendedFromTheTypedField(t *testing.T) {
 	if got != wantMessage {
 		t.Fatalf("committed message = %q, want %q", got, wantMessage)
 	}
-	if lines := finalParagraphApprovalLines(got); len(lines) != 1 || lines[0] != "A2A-Approved-Gates: G1,G4" {
+	if lines := host.ApprovedGatesTrailers(got); len(lines) != 1 || lines[0] != "A2A-Approved-Gates: G1,G4" {
 		t.Fatalf("final-paragraph approval lines = %q, want exactly [A2A-Approved-Gates: G1,G4]", lines)
 	}
 }
@@ -131,7 +104,7 @@ func TestApprovedGatesTrailerStaysInTheFinalParagraphWithOtherFunnelTrailers(t *
 		if got != want {
 			t.Fatalf("committed message = %q, want %q", got, want)
 		}
-		if lines := finalParagraphApprovalLines(got); len(lines) != 1 {
+		if lines := host.ApprovedGatesTrailers(got); len(lines) != 1 {
 			t.Fatalf("final-paragraph approval lines = %q, want the approval trailer in the final paragraph", lines)
 		}
 	})
@@ -140,7 +113,7 @@ func TestApprovedGatesTrailerStaysInTheFinalParagraphWithOtherFunnelTrailers(t *
 		t.Parallel()
 		prepared := testRemoteRecoveryPreparedWithGates(t, []string{"G2", "G1"})
 		message := prepared.data.commitMessage
-		lines := finalParagraphApprovalLines(message)
+		lines := host.ApprovedGatesTrailers(message)
 		if len(lines) != 1 || lines[0] != "A2A-Approved-Gates: G1,G2" {
 			t.Fatalf("final-paragraph approval lines = %q, want [A2A-Approved-Gates: G1,G2] in %q", lines, message)
 		}
@@ -225,7 +198,7 @@ func TestNoApprovedGatesLeavesTheCommitMessageAndDigestUntouched(t *testing.T) {
 	if got := commitMessageOf(t, fx, result.Branch); got != req.CommitMessage {
 		t.Fatalf("committed message = %q, want today's %q", got, req.CommitMessage)
 	}
-	if lines := finalParagraphApprovalLines(commitMessageOf(t, fx, result.Branch)); len(lines) != 0 {
+	if lines := host.ApprovedGatesTrailers(commitMessageOf(t, fx, result.Branch)); len(lines) != 0 {
 		t.Fatalf("approval lines = %q, want none when nothing was approved", lines)
 	}
 }

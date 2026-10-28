@@ -36,6 +36,7 @@ func TestContractTargetArgsSelectsOnlyXCArtifact(t *testing.T) {
 		{name: "destination value cannot masquerade", args: []string{"materialize", "--to", "XC-beta-wrong", "XC-axon-orders@1.2.3"}, want: []string{"XC-axon-orders"}},
 		{name: "local value cannot masquerade", args: []string{"verify-export", "--local", "XC-beta-wrong", "XC-axon-orders@1.2.3"}, want: []string{"XC-axon-orders"}},
 		{name: "equals flag value cannot masquerade", args: []string{"publish", "--staging=XC-beta-wrong", "XC-axon-orders", "--version=1.2.3"}, want: []string{"XC-axon-orders"}},
+		{name: "approve is a boolean, not a value", args: []string{"publish", "--approve", "--version", "1.0.0", "XC-axon-export"}, want: []string{"XC-axon-export"}},
 		{name: "new slug is not target", args: []string{"new", "orders"}},
 		{name: "subcommand only", args: []string{"diff"}},
 	}

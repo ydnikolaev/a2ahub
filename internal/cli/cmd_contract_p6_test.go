@@ -13,6 +13,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
+	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
 	"github.com/ydnikolaev/a2ahub/internal/skillcoverage"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -23,15 +24,22 @@ type p6PublicationFake struct {
 	publish   cli.ContractPublicationRequest
 	result    space.ContractPublicationResult
 	err       error
+	// preflights and publishes count the calls, so a test can prove that a
+	// refused write never reached Publish and that a reviewed host never paid
+	// for a Preflight it did not need.
+	preflights int
+	publishes  int
 }
 
 func (f *p6PublicationFake) Preflight(_ context.Context, request cli.ContractPublicationRequest) (space.ContractPublicationResult, error) {
 	f.preflight = request
+	f.preflights++
 	return f.result, f.err
 }
 
 func (f *p6PublicationFake) Publish(_ context.Context, request cli.ContractPublicationRequest) (space.ContractPublicationResult, error) {
 	f.publish = request
+	f.publishes++
 	return f.result, f.err
 }
 
@@ -653,4 +661,126 @@ func containsAllStrings(haystack []string, wants ...string) bool {
 		}
 	}
 	return true
+}
+
+// newP6GateCommand builds the contract command over a manifest and the
+// capabilities of the host it was opened on, the two facts the publish gate
+// reads.
+func newP6GateCommand(t *testing.T, publication cli.ContractPublicationOperations, manifest space.Manifest, caps host.Capabilities) *cli.ContractCommand {
+	t.Helper()
+	cmd := cli.NewContractCommand(nil, &fakeLifecycleFunnel{}, t.TempDir(), "fixture-space", "axon", manifest, lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	cmd.SetP6Operations(publication, &p6MaterializeFake{}, &p6CheckFake{})
+	cmd.SetHostCapabilities(caps)
+	return cmd
+}
+
+func p6GatedResult(gate contract.PublicationGate) space.ContractPublicationResult {
+	return space.ContractPublicationResult{
+		Status: space.ContractPublicationSubmitted,
+		Plan:   contract.PublicationPlan{Contract: "XC-axon-orders", TargetVersion: "1.0.0", PlanDigest: "sha256:plan", Gate: gate},
+	}
+}
+
+// TestContractP6PublishGateApproval is spec 04 AC5, AC6 (the writer half), AC7
+// and AC15 at the CLI tier: in a confirm space on a host that does not review
+// writes, a publish behind G1 or G2 is refused before Publish is called unless
+// --approve names it, and records exactly the gate it computed; autonomous
+// lands it ungated and records nothing; a host that reviews writes keeps the
+// publish it always had and refuses --approve with exit 2.
+func TestContractP6PublishGateApproval(t *testing.T) {
+	t.Parallel()
+	autonomous := lifecycleManifest()
+	autonomous.Gates = "autonomous"
+	reviewed := host.Capabilities{ReviewsWrites: true}
+
+	cases := []struct {
+		name          string
+		manifest      space.Manifest
+		caps          host.Capabilities
+		gate          contract.PublicationGate
+		args          []string
+		wantCode      int
+		wantStderr    string
+		wantStdout    string
+		wantPublishes int
+		wantPreflight int
+		wantApproved  []string
+	}{
+		{name: "confirm G1 without --approve is refused before Publish", manifest: lifecycleManifest(), caps: localHostCaps(), gate: contract.GateG1,
+			wantCode: 1, wantStderr: "POL-029: G1 requires --approve in a confirm space", wantPreflight: 1},
+		{name: "confirm G2 without --approve names G2", manifest: lifecycleManifest(), caps: localHostCaps(), gate: contract.GateG2,
+			wantCode: 1, wantStderr: "POL-029: G2 requires --approve in a confirm space", wantPreflight: 1},
+		{name: "confirm G1 with --approve publishes and records G1", manifest: lifecycleManifest(), caps: localHostCaps(), gate: contract.GateG1,
+			args: []string{"--approve"}, wantPublishes: 1, wantPreflight: 1, wantApproved: []string{"G1"}, wantStdout: "gate G1"},
+		{name: "confirm G2 with --approve records G2", manifest: lifecycleManifest(), caps: localHostCaps(), gate: contract.GateG2,
+			args: []string{"--approve"}, wantPublishes: 1, wantPreflight: 1, wantApproved: []string{"G2"}},
+		{name: "confirm with no gate in force needs no approval", manifest: lifecycleManifest(), caps: localHostCaps(), gate: contract.GateNone,
+			wantPublishes: 1, wantPreflight: 1},
+		{name: "confirm with no gate in force records nothing even with --approve", manifest: lifecycleManifest(), caps: localHostCaps(), gate: contract.GateNone,
+			args: []string{"--approve"}, wantPublishes: 1, wantPreflight: 1},
+		{name: "autonomous G1 lands without --approve, prints the gate, records nothing", manifest: autonomous, caps: localHostCaps(), gate: contract.GateG1,
+			wantPublishes: 1, wantStdout: "gate G1"},
+		{name: "a reviewed host publishes as before, with no extra preflight", manifest: lifecycleManifest(), caps: reviewed, gate: contract.GateG1,
+			wantPublishes: 1, wantStdout: "gate G1"},
+		{name: "a reviewed host refuses --approve with exit 2 before anything runs", manifest: lifecycleManifest(), caps: reviewed, gate: contract.GateG1,
+			args: []string{"--approve"}, wantCode: 2,
+			wantStderr: "--approve has no effect here: this space's host reviews gated writes in a pull request"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fake := &p6PublicationFake{result: p6GatedResult(tc.gate)}
+			cmd := newP6GateCommand(t, fake, tc.manifest, tc.caps)
+			args := append([]string{"publish", "XC-axon-orders", "--version", "1.0.0"}, tc.args...)
+			code, stdout, stderr := runP6Contract(t, cmd, args...)
+			if code != tc.wantCode {
+				t.Fatalf("code = %d, want %d; stdout=%q stderr=%q", code, tc.wantCode, stdout, stderr)
+			}
+			if tc.wantStderr != "" && !strings.Contains(stderr, tc.wantStderr) {
+				t.Fatalf("stderr = %q, want it to contain %q", stderr, tc.wantStderr)
+			}
+			if tc.wantStdout != "" && !strings.Contains(stdout, tc.wantStdout) {
+				t.Fatalf("stdout = %q, want it to contain %q", stdout, tc.wantStdout)
+			}
+			if fake.publishes != tc.wantPublishes || fake.preflights != tc.wantPreflight {
+				t.Fatalf("publishes=%d preflights=%d, want %d and %d", fake.publishes, fake.preflights, tc.wantPublishes, tc.wantPreflight)
+			}
+			if tc.wantPublishes == 1 && !reflect.DeepEqual(fake.publish.ApprovedGates, tc.wantApproved) {
+				t.Fatalf("ApprovedGates = %v, want %v", fake.publish.ApprovedGates, tc.wantApproved)
+			}
+		})
+	}
+}
+
+// TestContractP6PreflightNamesTheGateItWouldNeed is spec 04 §T1's preflight row:
+// the gate is not an objection (exit 0), and in a confirm space the line says
+// what the publish will ask for.
+func TestContractP6PreflightNamesTheGateItWouldNeed(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name     string
+		manifest func() space.Manifest
+		caps     host.Capabilities
+		want     bool
+	}{
+		{"confirm local", lifecycleManifest, localHostCaps(), true},
+		{"autonomous local", func() space.Manifest { m := lifecycleManifest(); m.Gates = "autonomous"; return m }, localHostCaps(), false},
+		{"reviewed host", lifecycleManifest, host.Capabilities{ReviewsWrites: true}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fake := &p6PublicationFake{result: p6GatedResult(contract.GateG1)}
+			cmd := newP6GateCommand(t, fake, tc.manifest(), tc.caps)
+			code, stdout, stderr := runP6Contract(t, cmd, "preflight", "XC-axon-orders", "--version", "1.0.0")
+			if code != 0 || stderr != "" {
+				t.Fatalf("code=%d stderr=%q", code, stderr)
+			}
+			if !strings.Contains(stdout, "gate G1\n") {
+				t.Fatalf("stdout = %q, want the unchanged gate G1 line", stdout)
+			}
+			if got := strings.Contains(stdout, "gate G1 needs --approve in this space"); got != tc.want {
+				t.Fatalf("needs-approve line present = %v, want %v; stdout=%q", got, tc.want, stdout)
+			}
+		})
+	}
 }

@@ -203,7 +203,16 @@ func buildCommands() map[string]command {
 				if root, err := a2aDataRoot(); err == nil {
 					cmd.DataRoot = root
 				}
-			case "update", "join":
+			case "update", "join", "set":
+				if args[0] == "set" {
+					// `set` validates its edited manifest with the product's
+					// engine before preparing the write (POL-027).
+					engine, err := newEngine()
+					if err != nil {
+						return fail(stderr, err)
+					}
+					cmd.Engine = engine
+				}
 				if err := wireSpaceWrite(context.Background(), cmd, args[0], args[1:]); err != nil {
 					return fail(stderr, err)
 				}
@@ -762,6 +771,10 @@ type lifecycleDeps struct {
 	manifest     space.Manifest
 	hostCfg      cli.SubmitHostConfig
 	resolveActor func(cli.ActorFlags) (template.Actor, error)
+	// caps is the opened host's declared capabilities. The gated writers read
+	// ReviewsWrites from it (never a host name) to decide whether a write needs
+	// the caller's --approve.
+	caps host.Capabilities
 }
 
 // lifecycleConstructor builds a cli.Command from the resolved deps.
@@ -851,6 +864,9 @@ func runLifecycle(args []string, stdout, stderr io.Writer, construct lifecycleCo
 	if markerAware, ok := cmd.(interface{ SetPendingMarker(cli.PendingMarker) }); ok {
 		markerAware.SetPendingMarker(cli.NewCacheBackedPendingMarker(cacheDirOf(p)))
 	}
+	if capsAware, ok := cmd.(interface{ SetHostCapabilities(host.Capabilities) }); ok {
+		capsAware.SetHostCapabilities(deps.caps)
+	}
 	return cmd.Run(ctx, args, stdio(stdout, stderr))
 }
 
@@ -898,6 +914,7 @@ func runContract(args []string, stdout, stderr io.Writer) int {
 	cmd.SetP6Operations(operations, operations, operations)
 	cmd.SetP6Inspection(operations)
 	cmd.SetPendingMarker(cli.NewCacheBackedPendingMarker(cacheDirOf(p)))
+	cmd.SetHostCapabilities(deps.caps)
 	return cmd.Run(ctx, args, stdio(stdout, stderr))
 }
 
@@ -980,8 +997,12 @@ func contractTargetFlagGrammar(action string) (valueFlags, booleanFlags map[stri
 	actorFlags := []string{"actor-kind", "actor-name", "actor-model"}
 
 	switch action {
-	case "preflight", "publish":
+	case "preflight":
 		return values(append(actorFlags, "version", "bump", "staging", "expect-plan")...), booleans("json"), true
+	case "publish":
+		// --approve is a boolean: unknown here, the target scan would return
+		// nil and route the publish to the first connected space.
+		return values(append(actorFlags, "version", "bump", "staging", "expect-plan")...), booleans("json", "approve"), true
 	case "materialize":
 		return values("to"), booleans("json"), true
 	case "check":
@@ -1308,6 +1329,7 @@ func resolveLifecycleDepsWithPolicy(ctx context.Context, p paths, args []string,
 	return lifecycleDeps{
 		funnel: funnel, mirrorDir: mirrorDir, spaceID: ref.ID, ownSystem: cfg.System,
 		manifest: manifest, hostCfg: hostCfg, resolveActor: actorResolver(),
+		caps: h.Capabilities(),
 	}, -1
 }
 

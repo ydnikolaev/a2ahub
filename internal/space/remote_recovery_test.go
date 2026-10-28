@@ -318,6 +318,89 @@ func TestProbePreparedRemoteRecoveryRejectsNonExactChangedPathSet(t *testing.T) 
 	}
 }
 
+// TestRecoveryCommitMessageBaseRecoversAnApprovedPublish is spec 04 section T1.3
+// "Trailer" and section 10 "P4-B carries" item 2: a publish approved for a gate
+// puts the funnel's approval line in the recovery trailers' final paragraph, so
+// the lost-journal recovery has to peel exactly that one line and hand it back
+// as part of the message base, or it fails closed with
+// publication-commit-message-base on every approved publish.
+func TestRecoveryCommitMessageBaseRecoversAnApprovedPublish(t *testing.T) {
+	t.Parallel()
+
+	record, err := DecodeRecoveryV1(testRemoteRecoveryPrepared(t).data.recoveryJSON)
+	if err != nil {
+		t.Fatalf("DecodeRecoveryV1: %v", err)
+	}
+	encoded, digest, err := EncodeRecoveryV1Trailer(record)
+	if err != nil {
+		t.Fatalf("EncodeRecoveryV1Trailer: %v", err)
+	}
+	const approval = "A2A-Approved-Gates: "
+	tests := []struct {
+		name   string
+		base   string
+		wantOK bool
+		forged bool
+	}{
+		{name: "no message and no approval", base: "", wantOK: true},
+		{name: "a message without approval", base: "a2a(contract): publish", wantOK: true},
+		{name: "a multi-paragraph message without approval", base: "title\n\nbody paragraph", wantOK: true},
+		{name: "approval G1", base: "a2a(contract): publish\n\n" + approval + "G1", wantOK: true},
+		{name: "approval G1 to G4 after a body", base: "title\n\nbody\n\n" + approval + "G1,G2,G3,G4", wantOK: true},
+		{name: "approval under the default title", base: "a2a: submit XC-atlas-demo\n\n" + approval + "G2", wantOK: true},
+		{name: "approval gates out of order are a forgery", base: "title\n\n" + approval + "G2,G1", forged: true},
+		{name: "approval outside G1-G4 is a forgery", base: "title\n\n" + approval + "G5", forged: true},
+		{name: "two approval lines are a forgery", base: "title\n\n" + approval + "G1\n" + approval + "G2", forged: true},
+		{name: "approval with trailing space is a forgery", base: "title\n\n" + approval + "G1 ", forged: true},
+		{name: "approval glued to the body without a blank line is a forgery", base: "title\n" + approval + "G1", forged: true},
+		{name: "approval alone is not a message", base: approval + "G1", forged: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			canonical := appendRecoveryTrailers(tt.base, record, encoded, digest)
+			if tt.forged {
+				// A forged line is one a hand-edited commit put directly above the
+				// recovery trailers; the funnel itself never writes these forms.
+				canonical = tt.base + "\n" + appendRecoveryTrailers("", record, encoded, digest)
+			}
+			got, ok := recoveryCommitMessageBase(canonical)
+			if tt.forged {
+				if ok {
+					t.Fatalf("base %q: recoveryCommitMessageBase = (%q, true), want it to fail closed", tt.base, got)
+				}
+				return
+			}
+			if !ok || got != tt.base {
+				t.Fatalf("base %q: recoveryCommitMessageBase = (%q, %v), want (%q, true)", tt.base, got, ok, tt.base)
+			}
+		})
+	}
+
+	// The real chain: an approved prepared publish, its message as the remote
+	// read returns it, the same parse and peel recovery runs, and the prepared
+	// digest recomputed from the recovered message base. The last comparison is
+	// the step that answers publication-prepared-digest-recompute.
+	prepared := testRemoteRecoveryPreparedWithGates(t, []string{"G1"})
+	_, canonical, err := parseRemoteRecoveryTrailers(prepared.data.commitMessage + "\n")
+	if err != nil {
+		t.Fatalf("parseRemoteRecoveryTrailers: %v", err)
+	}
+	base, ok := recoveryCommitMessageBase(canonical)
+	if !ok {
+		t.Fatalf("recoveryCommitMessageBase failed closed for an approved publish; message base %q", prepared.data.commitMessageBase)
+	}
+	if base != prepared.data.commitMessageBase {
+		t.Fatalf("recovered message base = %q, want the prepared one %q", base, prepared.data.commitMessageBase)
+	}
+	recovered := prepared.data
+	recovered.commitMessageBase = base
+	digestOfRecovered, err := preparedDataDigest(recovered)
+	if err != nil || digestOfRecovered != prepared.Digest() {
+		t.Fatalf("digest of the recovered data = %q (%v), want the prepared digest %q", digestOfRecovered, err, prepared.Digest())
+	}
+}
+
 func TestVerifyRemoteRecoveryTreeRequiresAnExplicitDeleteChange(t *testing.T) {
 	t.Parallel()
 

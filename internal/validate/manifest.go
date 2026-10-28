@@ -1,12 +1,14 @@
 package validate
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"gopkg.in/yaml.v3"
@@ -90,7 +92,7 @@ func (e *Engine) ValidateManifest(raw []byte) (Result, error) {
 	// vocabulary rule placed there would red an unrelated PR over an old odd
 	// `gates` or `flow` value. This path runs only when space.yaml itself
 	// changes (local-space-2026-10 spec 04 §T1.1, AC 1 and 2).
-	violations = append(violations, checkGatesFlowVocabulary(instance)...)
+	violations = append(violations, policyKeyViolations(raw)...)
 	// Rule 4 (space-notify-2026-08 P1): the manifest's raw bytes carry no
 	// Telegram bot-token shape anywhere — not in a route, not in a
 	// comment, not in a stray key. Reuses POL-001/scanForSecrets rather
@@ -100,6 +102,21 @@ func (e *Engine) ValidateManifest(raw []byte) (Result, error) {
 	// space.yaml's own raw bytes.
 	violations = append(violations, scanForSecrets(raw)...)
 	return newResult(V2, probe.Space, violations), nil
+}
+
+// policyKeyViolations reads `gates` and `flow` through the one shared decoder
+// (contract.DecodeManifestPolicyKeys) and returns POL-027 for an ambiguous form
+// or an out-of-vocabulary value. A document the decoder cannot read yields
+// nothing: POL-002 already belongs to the structural path.
+func policyKeyViolations(raw []byte) []Violation {
+	keys, err := contract.DecodeManifestPolicyKeys(raw)
+	switch {
+	case errors.Is(err, contract.ErrManifestPolicyKeysAmbiguous):
+		return []Violation{ambiguousPolicyKeysViolation(err)}
+	case err != nil:
+		return nil
+	}
+	return checkGatesFlowVocabulary(map[string]any{"gates": keys.Gates, "flow": keys.Flow})
 }
 
 // ValidateManifestPolicy runs the authority-map half of manifest validation

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -374,6 +375,104 @@ func TestApproveRejectAlwaysGateMarker(t *testing.T) {
 			t.Fatal("expected reject to always carry an advisory G3 gate marker in PRBody")
 		}
 	})
+}
+
+// localHostCaps is the capability set of a host that does not review writes (a
+// local space): the gates are the caller's --approve, not a pull request.
+func localHostCaps() host.Capabilities {
+	return host.Capabilities{ReviewsWrites: false, OnThisMachine: true, OwnerIdentitySelfAsserted: true}
+}
+
+// TestApproveRejectG3Approval is spec 04 AC12 and the G3 half of AC7/AC15: on a
+// host that does not review writes, `approve` and `reject` are G3 and need
+// --approve in a confirm space, are ungated in an autonomous one, and on a host
+// that reviews writes --approve is refused rather than ignored.
+func TestApproveRejectG3Approval(t *testing.T) {
+	t.Parallel()
+
+	confirmManifest := lifecycleManifest()
+	autonomousManifest := lifecycleManifest()
+	autonomousManifest.Gates = "autonomous"
+
+	cases := []struct {
+		name         string
+		verb         string
+		manifest     space.Manifest
+		caps         host.Capabilities
+		args         []string
+		wantCode     int
+		wantStderr   string
+		wantFunnel   int
+		wantApproved []string
+	}{
+		{name: "approve confirm without --approve is refused naming G3", verb: "approve", manifest: confirmManifest, caps: localHostCaps(),
+			wantCode: 1, wantStderr: "POL-029: G3 requires --approve in a confirm space"},
+		{name: "approve confirm with --approve lands and records G3", verb: "approve", manifest: confirmManifest, caps: localHostCaps(),
+			args: []string{"--approve"}, wantFunnel: 1, wantApproved: []string{"G3"}},
+		{name: "reject confirm without --approve is refused naming G3", verb: "reject", manifest: confirmManifest, caps: localHostCaps(),
+			args: []string{"--reason", "scope creep"}, wantCode: 1, wantStderr: "POL-029: G3 requires --approve in a confirm space"},
+		{name: "reject confirm with --approve lands and records G3", verb: "reject", manifest: confirmManifest, caps: localHostCaps(),
+			args: []string{"--reason", "scope creep", "--approve"}, wantFunnel: 1, wantApproved: []string{"G3"}},
+		{name: "approve autonomous lands without --approve and records nothing", verb: "approve", manifest: autonomousManifest, caps: localHostCaps(),
+			wantFunnel: 1},
+		{name: "approve autonomous with --approve typed still records nothing", verb: "approve", manifest: autonomousManifest, caps: localHostCaps(),
+			args: []string{"--approve"}, wantFunnel: 1},
+		{name: "approve on a reviewed host behaves as before", verb: "approve", manifest: confirmManifest, caps: host.Capabilities{ReviewsWrites: true},
+			wantFunnel: 1},
+		{name: "approve on a reviewed host with --approve exits 2", verb: "approve", manifest: confirmManifest, caps: host.Capabilities{ReviewsWrites: true},
+			args: []string{"--approve"}, wantCode: 2,
+			wantStderr: "--approve has no effect here: this space's host reviews gated writes in a pull request"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mirrorDir := t.TempDir()
+			id := "XD-axon-20260721-e001"
+			writeDecisionArtifact(t, mirrorDir, id, []string{"beta", "gamma"})
+			writeLifecycleEvent(t, mirrorDir, "axon", 0, id, "propose", "axon")
+
+			fake := &fakeLifecycleFunnel{}
+			var cmd *cli.LifecycleCommand
+			if tc.verb == "approve" {
+				cmd = cli.NewApproveCommand(fake, mirrorDir, "fixture-space", "beta", tc.manifest, lifecycleHostConfig(), lifecycleActorResolver("human", "owner"))
+			} else {
+				cmd = cli.NewRejectCommand(fake, mirrorDir, "fixture-space", "beta", tc.manifest, lifecycleHostConfig(), lifecycleActorResolver("human", "owner"))
+			}
+			cmd.SetHostCapabilities(tc.caps)
+			io, _, errOut := newIO()
+			code := cmd.Run(context.Background(), append(append([]string{}, tc.args...), id), io)
+			if code != tc.wantCode {
+				t.Fatalf("code = %d, want %d; stderr=%s", code, tc.wantCode, errOut.String())
+			}
+			if tc.wantStderr != "" && !strings.Contains(errOut.String(), tc.wantStderr) {
+				t.Fatalf("stderr = %q, want it to contain %q", errOut.String(), tc.wantStderr)
+			}
+			if len(fake.calls) != tc.wantFunnel {
+				t.Fatalf("funnel calls = %d, want %d (a refusal must precede any write)", len(fake.calls), tc.wantFunnel)
+			}
+			if tc.wantFunnel == 1 && !slices.Equal(fake.calls[0].ApprovedGates, tc.wantApproved) {
+				t.Fatalf("ApprovedGates = %v, want %v", fake.calls[0].ApprovedGates, tc.wantApproved)
+			}
+		})
+	}
+}
+
+// TestAckRefusesApproveFlag pins that --approve exists only on the verbs whose
+// transition sits behind a human gate: a flag a verb cannot act on is not
+// registered, so it is refused as undefined rather than read as an approval.
+func TestAckRefusesApproveFlag(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeQuestionArtifact(t, mirrorDir, "XQ-axon-20260721-a001", "beta")
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewAckCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, _ := newIO()
+	if code := cmd.Run(context.Background(), []string{"--approve", "XQ-axon-20260721-a001"}, io); code != 2 {
+		t.Fatalf("ack --approve code = %d, want 2", code)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("funnel calls = %d, want 0", len(fake.calls))
+	}
 }
 
 // TestSupersedeDecisionRegressionFix closes wave 2b's own regression (that

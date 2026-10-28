@@ -126,3 +126,20 @@ func TestApprovableGatesCoverFoldsHumanGates(t *testing.T) {
 		}
 	}
 }
+
+// TestCheckGatesForHostIgnoresAmbiguousForms pins that POL-028 reads through
+// the shared decoder: a merge key or an alias supplying `autonomous` is not
+// interpreted here (ValidateManifest refuses it as POL-027 on the same write),
+// so the two readers never disagree about what the bytes say.
+func TestCheckGatesForHostIgnoresAmbiguousForms(t *testing.T) {
+	t.Parallel()
+
+	for _, manifest := range []string{
+		"space: demo\nbase: &b {gates: autonomous}\n<<: *b\n",
+		"space: demo\ng: &g autonomous\ngates: *g\n",
+	} {
+		if got := CheckGatesForHost([]byte(manifest), true); len(got) != 0 {
+			t.Fatalf("CheckGatesForHost(%q, true) = %+v, want none: the form is ambiguous and POL-027's", manifest, got)
+		}
+	}
+}

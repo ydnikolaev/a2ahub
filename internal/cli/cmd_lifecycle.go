@@ -37,6 +37,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/operation"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
@@ -1298,6 +1299,13 @@ type lifecycleDeps struct {
 	hostCfg      SubmitHostConfig
 	resolveActor func(ActorFlags) (template.Actor, error)
 	pending      PendingMarker
+	// hostReviews is the opened host's declared Capabilities().ReviewsWrites
+	// (spec 04 §T1.1), the one fact that decides whether a gated write needs
+	// the caller's --approve (a host that does not review) or the host's own
+	// pull-request review (one that does). Its constructor default is true, the
+	// GitHub shape every command had before the gates existed, so a command
+	// built without SetHostCapabilities behaves exactly as it did.
+	hostReviews bool
 
 	now      func() time.Time
 	entropy  io.Reader
@@ -1308,9 +1316,13 @@ func newLifecycleDeps(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem stri
 	return lifecycleDeps{
 		funnel: funnel, mirrorDir: mirrorDir, spaceID: spaceID, ownSystem: ownSystem,
 		manifest: manifest, hostCfg: hostCfg, resolveActor: resolveActor,
-		pending: NewNoopPendingMarker(),
-		now:     time.Now, entropy: rand.Reader, readFile: os.ReadFile,
+		pending: NewNoopPendingMarker(), hostReviews: true,
+		now: time.Now, entropy: rand.Reader, readFile: os.ReadFile,
 	}
+}
+
+func (d *lifecycleDeps) setHostCapabilities(caps host.Capabilities) {
+	d.hostReviews = caps.ReviewsWrites
 }
 
 func (d *lifecycleDeps) setPendingMarker(pending PendingMarker) {
@@ -1334,6 +1346,74 @@ func (d lifecycleDeps) refusalMessage(id string, verdict fold.Verdict) string {
 		return message
 	}
 	return fmt.Sprintf("%s; previous write is pending-merge (PR %s); run `a2a await %s` and retry", message, pending.PRURL, id)
+}
+
+// --- human gates (local-space-2026-10 spec 04 §T1.3) --------------------
+//
+// The three helpers below are the WRITER half of the gates: a surface that
+// writes behind a gate asks them before it prepares anything. They are shared
+// by approve/reject, `contract publish` and the `space` writers, which is why
+// they carry no lifecycle prefix. The rule they apply is validate's
+// (CheckGateApproval); what the gate IS, and which gates a write sits behind,
+// is the caller's to compute from the rule's owners (contract.PublicationGateFor
+// through the plan, fold.HumanGate for a transition, G4 for a manifest write).
+
+// gateRefuse renders a three-part refusal (NewRefusal) and returns code. A
+// builder failure is the same internal-error line every sibling helper prints.
+func gateRefuse(stdio IO, code int, verb, found, nextStep string) int {
+	refusal, buildFailure := NewRefusal(verb, found, nextStep)
+	if buildFailure != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "%s: internal error building a refusal (empty next step) - this is a bug in the gate helper, file one\n", verb)
+		return 1
+	}
+	_, _ = fmt.Fprintln(stdio.Stderr, refusal)
+	return code
+}
+
+// gateApproveHasNoEffect is spec 04 §T1's "any of the above on a reviewed
+// host": --approve on a host that reviews gated writes exits 2, because a flag
+// that is silently ignored reads as an approval given. hostReviews is the
+// host's declared Capabilities().ReviewsWrites, never a host name. The second
+// return reports whether the flag was refused.
+func gateApproveHasNoEffect(stdio IO, verb string, approve, hostReviews bool) (code int, refused bool) {
+	if !approve || !hostReviews {
+		return 0, false
+	}
+	return gateRefuse(stdio, 2, verb,
+		"--approve has no effect here: this space's host reviews gated writes in a pull request",
+		"drop --approve; the pull request's review is the gate for this write"), true
+}
+
+// gateJudgeWrite applies validate.CheckGateApproval to one write. mode is the
+// EFFECTIVE mode read from the tip manifest, required the gates the caller
+// computed for this write, approve whether --approve was given. It returns the
+// gates to record on the write's SubmitRequest.ApprovedGates (the required
+// gates, only when --approve was given in a confirm space, nil otherwise) and
+// refused = true with
+// the exit code when a required gate lacks approval: one POL-029 line per gate,
+// printed before anything is prepared. The line is built from the violation's
+// own code and message, so the MCP surface, which builds it the same way, says
+// the same words.
+func gateJudgeWrite(stdio IO, verb string, mode contract.GatesMode, required []string, approve bool) (approved []string, code int, refused bool) {
+	var given []string
+	if approve {
+		given = required
+	}
+	if violations := validate.CheckGateApproval(mode, required, given); len(violations) > 0 {
+		for _, v := range violations {
+			gateRefuse(stdio, 1, verb, v.Code+": "+v.Message,
+				"re-run with --approve if you, the operator, approve this write ("+strings.Join(v.Subjects, ", ")+")")
+		}
+		return nil, 1, true
+	}
+	// Only a confirm space records an approval: under autonomous (and under
+	// review) nobody was asked, so the commit carries no trailer even when
+	// --approve was typed.
+	if !approve || mode != contract.GatesModeConfirm {
+		return nil, 0, false
+	}
+	canonical, _ := contract.CanonicalApprovedGates(required)
+	return canonical, 0, false
 }
 
 // lifecycleActorFlags registers the §7.4 explicit-actor-override flags
@@ -1527,6 +1607,13 @@ func (c *LifecycleCommand) SetPendingMarker(pending PendingMarker) {
 	c.deps.setPendingMarker(pending)
 }
 
+// SetHostCapabilities wires the opened host's declared capabilities: the
+// gated verbs (approve, reject) read ReviewsWrites to decide whether the write
+// needs the caller's --approve.
+func (c *LifecycleCommand) SetHostCapabilities(caps host.Capabilities) {
+	c.deps.setHostCapabilities(caps)
+}
+
 // newLifecycleCommand is every generic-verb NewXCommand constructor's
 // shared body (table-driven, §9 Future-proofing — one place to extend
 // when a new §3.4 transition needs an OP-211 verb).
@@ -1638,6 +1725,15 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 	if c.spec.SupportsVerdicts {
 		fs.Var(&verdictFlags, "verdict", "<index-or-criterion-id>:verdict:cause_owner verdict entry — index is 0-based into the parent's acceptance_criteria[], or its declared criterion id (e.g. ac1) when that array carries ids (repeatable; verdict is met|unmet|not_warranted|not_exercised)")
 	}
+	// --approve (spec 04 §T1): registered ONLY on a verb whose transition sits
+	// behind a human gate (fold.HumanGate: approve and reject, G3), for the same
+	// reason --verdict is registered only on close: a flag a verb cannot act on
+	// would read as an approval given.
+	humanGate := fold.HumanGate(c.spec.Transition)
+	var approveFlag *bool
+	if humanGate != "" {
+		approveFlag = fs.Bool("approve", false, "approve this "+humanGate+"-gated write (needed in a confirm space on a host that does not review writes)")
+	}
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
 	// Wave K fix (live run 6, "thirteen verbs refuse a flag written after
 	// their positional argument"): parseArgsAnyOrder, not a bare
@@ -1650,6 +1746,7 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 	if err != nil {
 		return 2
 	}
+	approve := approveFlag != nil && *approveFlag
 	// printLifecycleUsage prints msg, then — for a verb lifecycleWorkflowLines
 	// carries (spec 08's mechanism 2, above) — the workflow pointer right
 	// after it, on every one of this Run's four usage-refusal branches so
@@ -1675,6 +1772,9 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 	if c.spec.RequireFindings && *findings == "" {
 		printLifecycleUsage(fmt.Sprintf("usage: a2a %s --findings <text> <id...>", c.spec.Verb))
 		return 2
+	}
+	if code, refused := gateApproveHasNoEffect(stdio, c.spec.Verb, approve, c.deps.hostReviews); refused {
+		return code
 	}
 
 	// verdicts/eventSchema (B24): parsed and floor-gated with the SAME
@@ -1880,8 +1980,25 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 		files = append(files, space.FileWrite{Path: layout.EventFile(now.UTC().Format("2006"), eventID.String()), Content: raw})
 	}
 
+	// The gate is judged after the local legality evaluation (which prepares
+	// nothing) and before the funnel: a refusal leaves no branch, journal entry
+	// or commit behind. required is fold.HumanGate's answer for this transition,
+	// the one table of always-gated verbs; the mode is read from the manifest
+	// the command was built over, the tip as of the last sync.
+	var approved []string
+	if humanGate != "" {
+		mode := c.deps.manifest.EffectiveGates(c.deps.hostReviews)
+		var code int
+		var refused bool
+		approved, code, refused = gateJudgeWrite(stdio, c.spec.Verb, mode, []string{humanGate}, approve)
+		if refused {
+			return code
+		}
+	}
+
 	req := c.deps.buildRequest(ids, files, c.spec.Verb, c.spec.GateMarker)
 	req.OperationKey = operationKey
+	req.ApprovedGates = approved
 	return c.deps.submit(ctx, req, c.spec.Verb, ids, stdio)
 }
 

@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/ydnikolaev/a2ahub/internal/contract"
+	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/skillcoverage"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
@@ -70,6 +71,12 @@ type ContractPublicationRequest struct {
 	// refusing (P2 AC-3/4).
 	AllowEmptyBump bool
 	Actor          ActorFlags
+	// ApprovedGates is the gates the operator approved with --approve, in
+	// canonical order; empty when none was given or none is in force. Only
+	// `contract publish` sets it, and only after the writer judged the plan's
+	// gate under the space's mode (spec local-space-2026-10/04 AC6), so the
+	// adapter that builds the SubmitRequest copies it and decides nothing.
+	ApprovedGates []string
 }
 
 // ContractPublicationOperations is the consumer-side seam over P6's shared
@@ -205,6 +212,12 @@ func (c *ContractCommand) SetP6Operations(publication ContractPublicationOperati
 	c.check = check
 }
 
+// SetHostCapabilities wires the opened host's declared capabilities: publish
+// reads ReviewsWrites to decide whether a gated publish needs --approve.
+func (c *ContractCommand) SetHostCapabilities(caps host.Capabilities) {
+	c.deps.setHostCapabilities(caps)
+}
+
 // SetP6Inspection wires the optional read-only P6 inspection service.
 func (c *ContractCommand) SetP6Inspection(inspection ContractInspectionOperations) {
 	c.inspection = inspection
@@ -214,10 +227,11 @@ func (c *ContractCommand) runPreflight(ctx context.Context, args []string, stdio
 	if c.publication == nil {
 		return contractServiceUnavailable(stdio, "preflight")
 	}
-	req, asJSON, verbose, ok := parseContractPublicationArgs("preflight", args, stdio, false, true)
+	req, flags, ok := parseContractPublicationArgs("preflight", args, stdio, false, true, false)
 	if !ok {
 		return 2
 	}
+	asJSON, verbose := flags.json, flags.verbose
 	result, err := c.publication.Preflight(ctx, req)
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract preflight: %v\n", err)
@@ -229,7 +243,24 @@ func (c *ContractCommand) runPreflight(ctx context.Context, args []string, stdio
 	if verbose {
 		writeContractPreflightVerboseDetail(stdio.Stderr, result.Plan)
 	}
-	return renderContractPublication(stdio, result, asJSON)
+	code := renderContractPublication(stdio, result, asJSON)
+	// Spec 04 §T1: in a confirm space the gate line says what the publish will
+	// ask for. Plain text only (stdout is the JSON document under --json), and
+	// the exit stays 0: the gate is not an objection.
+	if !asJSON && code == 0 && c.publishGateNeedsApproval(result.Plan) {
+		_, _ = fmt.Fprintf(stdio.Stdout, "gate %s needs --approve in this space\n", result.Plan.Gate)
+	}
+	return code
+}
+
+// publishGateNeedsApproval reports whether plan's gate is in force and this
+// space, read at the mirror's tip under the opened host's capabilities, is in
+// confirm mode, the one mode where a publish behind a gate needs --approve.
+func (c *ContractCommand) publishGateNeedsApproval(plan contract.PublicationPlan) bool {
+	if plan.Gate == "" || plan.Gate == contract.GateNone {
+		return false
+	}
+	return c.deps.manifest.EffectiveGates(c.deps.hostReviews) == contract.GatesModeConfirm
 }
 
 // writeContractPreflightVerboseDetail is preflight's --verbose channel
@@ -247,14 +278,41 @@ func writeContractPreflightVerboseDetail(w io.Writer, plan contract.PublicationP
 }
 
 func (c *ContractCommand) runP6Publish(ctx context.Context, args []string, stdio IO) int {
-	req, asJSON, _, ok := parseContractPublicationArgs("publish", args, stdio, true, false)
+	req, flags, ok := parseContractPublicationArgs("publish", args, stdio, true, false, true)
 	if !ok {
 		return 2
 	}
-	result, err := c.publication.Publish(ctx, req)
-	if err != nil {
+	asJSON := flags.json
+	if code, refused := gateApproveHasNoEffect(stdio, "contract publish", flags.approve, c.deps.hostReviews); refused {
+		return code
+	}
+	// Only a confirm space asks anything of the operator here. Review (a host
+	// that reviews writes) and autonomous leave the publish exactly as it was:
+	// the pull request, or nobody, is the gate, and the plan prints its gate
+	// line either way. The extra Preflight is therefore paid only where its
+	// answer is the thing being judged.
+	failed := func(err error) int {
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %v\n", err)
 		return 1
+	}
+	if c.deps.manifest.EffectiveGates(c.deps.hostReviews) == contract.GatesModeConfirm {
+		planned, err := c.publication.Preflight(ctx, req)
+		if err != nil {
+			return failed(err)
+		}
+		var required []string
+		if gate := planned.Plan.Gate; gate != "" && gate != contract.GateNone {
+			required = []string{string(gate)}
+		}
+		approved, code, refused := gateJudgeWrite(stdio, "contract publish", contract.GatesModeConfirm, required, flags.approve)
+		if refused {
+			return code
+		}
+		req.ApprovedGates = approved
+	}
+	result, err := c.publication.Publish(ctx, req)
+	if err != nil {
+		return failed(err)
 	}
 	return renderContractPublication(stdio, result, asJSON)
 }
@@ -276,7 +334,7 @@ var contractPublicationWorkflowLines = map[string]string{
 // that is meant to honour it (P4 row 9: preflight, "the verb you are already
 // holding") — the flag is not registered at all for a verb that would parse
 // it and then silently ignore it.
-func parseContractPublicationArgs(verb string, args []string, stdio IO, allowExpect bool, allowVerbose bool) (ContractPublicationRequest, bool, bool, bool) {
+func parseContractPublicationArgs(verb string, args []string, stdio IO, allowExpect, allowVerbose, allowApprove bool) (ContractPublicationRequest, contractPublicationFlags, bool) {
 	fs := flag.NewFlagSet("contract "+verb, flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
 	version := fs.String("version", "", "explicit semver")
@@ -285,14 +343,17 @@ func parseContractPublicationArgs(verb string, args []string, stdio IO, allowExp
 	expectPlan := fs.String("expect-plan", "", "expected sha256 plan digest")
 	allowEmptyBump := fs.Bool("allow-empty-bump", false, "acknowledge and proceed past a bump whose mutations touch no normative artifact")
 	asJSON := fs.Bool("json", false, "emit JSON")
-	var verboseFlag *bool
+	var verboseFlag, approveFlag *bool
 	if allowVerbose {
 		verboseFlag = fs.Bool("verbose", false, "emit additional detail on stderr")
+	}
+	if allowApprove {
+		approveFlag = fs.Bool("approve", false, "approve the gate this publish sits behind (confirm spaces)")
 	}
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
 	positionals, err := parseArgsAnyOrder(fs, args)
 	if err != nil {
-		return ContractPublicationRequest{}, false, false, false
+		return ContractPublicationRequest{}, contractPublicationFlags{}, false
 	}
 	if len(positionals) != 1 || (*version == "") == (*bump == "") {
 		_, _ = fmt.Fprintf(stdio.Stderr, "usage: a2a contract %s <id> [--version <semver>|--bump major|minor|patch] [--staging <dir>]", verb)
@@ -302,26 +363,39 @@ func parseContractPublicationArgs(verb string, args []string, stdio IO, allowExp
 		if allowVerbose {
 			_, _ = fmt.Fprint(stdio.Stderr, " [--verbose]")
 		}
+		if allowApprove {
+			_, _ = fmt.Fprint(stdio.Stderr, " [--approve]")
+		}
 		_, _ = fmt.Fprintln(stdio.Stderr, " [--json]")
 		if line, ok := contractPublicationWorkflowLines["contract "+verb]; ok {
 			_, _ = fmt.Fprintln(stdio.Stderr, line)
 		}
-		return ContractPublicationRequest{}, false, false, false
+		return ContractPublicationRequest{}, contractPublicationFlags{}, false
 	}
 	if !allowExpect && *expectPlan != "" {
 		_, _ = fmt.Fprintln(stdio.Stderr, "contract preflight: --expect-plan is only valid for publish")
-		return ContractPublicationRequest{}, false, false, false
+		return ContractPublicationRequest{}, contractPublicationFlags{}, false
 	}
 	if *bump != "" && *bump != "major" && *bump != "minor" && *bump != "patch" {
 		_, _ = fmt.Fprintln(stdio.Stderr, "contract "+verb+": --bump must be major, minor, or patch")
-		return ContractPublicationRequest{}, false, false, false
+		return ContractPublicationRequest{}, contractPublicationFlags{}, false
 	}
-	verbose := verboseFlag != nil && *verboseFlag
+	flags := contractPublicationFlags{
+		json:    *asJSON,
+		verbose: verboseFlag != nil && *verboseFlag,
+		approve: approveFlag != nil && *approveFlag,
+	}
 	return ContractPublicationRequest{
 		ID: positionals[0], Version: *version, Bump: *bump, Staging: *staging,
 		ExpectPlan: *expectPlan, AllowEmptyBump: *allowEmptyBump,
 		Actor: ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel},
-	}, *asJSON, verbose, true
+	}, flags, true
+}
+
+// contractPublicationFlags carries the parsed switches that are not part of
+// the request the adapter receives.
+type contractPublicationFlags struct {
+	json, verbose, approve bool
 }
 
 func renderContractPublication(stdio IO, result space.ContractPublicationResult, asJSON bool) int {

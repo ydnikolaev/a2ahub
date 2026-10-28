@@ -205,6 +205,16 @@ func parseRemoteRecoveryTrailers(message string) (remoteRecoveryTrailers, string
 	}, canonical, nil
 }
 
+// recoveryCommitMessageBase peels the seven recovery trailers off a canonical
+// recovery commit message and returns the message base they were appended to.
+//
+// An approved write (spec 04 section T1.3) has the funnel's approval line as
+// the first line of the same final paragraph, joined to the recovery trailers by
+// appendRecoveryTrailers with no blank line between them, so the base ends in
+// that line. It is peeled only when the message above the trailers ends in
+// exactly the canonical form splitApprovedGatesTrailer accepts (a blank line,
+// then one sorted G1-G4 line); any other line sitting directly above the
+// trailers, a forged or reordered approval included, still fails closed.
 func recoveryCommitMessageBase(canonical string) (string, bool) {
 	lines := strings.Split(canonical, "\n")
 	const trailerCount = 7
@@ -215,10 +225,14 @@ func recoveryCommitMessageBase(canonical string) (string, bool) {
 	if start == 0 {
 		return "", true
 	}
-	if lines[start-1] != "" {
-		return "", false
+	if lines[start-1] == "" {
+		return strings.Join(lines[:start-1], "\n"), true
 	}
-	return strings.Join(lines[:start-1], "\n"), true
+	base := strings.Join(lines[:start], "\n")
+	if _, _, approved := splitApprovedGatesTrailer(base); approved {
+		return base, true
+	}
+	return "", false
 }
 
 func verifyRemoteRecoveryMetadata(

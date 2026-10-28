@@ -84,6 +84,18 @@ type ciAuthzViolation struct {
 // else the config-layer-injected GITHUB_ACTOR) — this package never reads
 // the environment itself (config & secrets rail).
 func runValidateCI(ctx context.Context, engine *validate.Engine, root string, git gitChangedFilesFunc, mode, base, author string, stdio IO) int {
+	// `validate --ci` runs on a pull request, so the host it judges for is a
+	// host that reviews writes (spec 04 section T1.3).
+	return runV3Check(ctx, engine, root, git, mode, base, author, true, stdio)
+}
+
+// runV3Check is the whole `--ci` verdict with the one host fact it cannot
+// derive made explicit: hostReviews is the host's declared
+// Capabilities().ReviewsWrites. `validate --ci` passes true (POL-028 refuses
+// `gates: autonomous` on a manifest-changing pull request); the local host's land
+// check passes false, because a local host does not review writes and
+// `autonomous` is legal there. Everything else is runValidateCI's, unchanged.
+func runV3Check(ctx context.Context, engine *validate.Engine, root string, git gitChangedFilesFunc, mode, base, author string, hostReviews bool, stdio IO) int {
 	switch mode {
 	case "v3-pr":
 		if base == "" {
@@ -516,14 +528,28 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 	// whole space that skips the file governing the space is not an audit —
 	// and a full-repo scan has no merge to block, so there is no tripwire
 	// concern to trade against.
+	var manifestReport *validateReport
 	if mode == "v3-full-repo" || manifestChanged(changed) {
 		rep, ok := validateCIManifest(engine, root)
 		if rep != nil {
-			report.Artifacts = append(report.Artifacts, *rep)
+			manifestReport = rep
 			if !ok {
 				report.Valid = false
 			}
 		}
+	}
+	// POL-028 (spec 04 section T1.3): `gates: autonomous` on a host that reviews
+	// writes. v3-pr only, and only when this change carries the manifest: the
+	// registry scopes it to v3-pr, and a manifest this change did not touch is not
+	// this change's business (the same reasoning as the block above).
+	if mode == "v3-pr" && manifestChanged(changed) {
+		if hostViolations := validate.CheckGatesForHost(raw, hostReviews); len(hostViolations) > 0 {
+			manifestReport = withManifestViolations(manifestReport, hostViolations)
+			report.Valid = false
+		}
+	}
+	if manifestReport != nil {
+		report.Artifacts = append(report.Artifacts, *manifestReport)
 	}
 
 	// Per-contract compat + publishability verdict (spec 37 §2 T2/T3,
@@ -1079,6 +1105,25 @@ func validateCIManifest(engine *validate.Engine, root string) (*validateReport, 
 	}
 	r := result
 	return &validateReport{Path: relPath, Result: &r}, result.Valid
+}
+
+// withManifestViolations folds extra violations into the space.yaml report
+// entry, creating the entry when schema validation produced none (or failed
+// with an error and no Result), so summarizeCIReport and the printed JSON see
+// the violations either way.
+func withManifestViolations(rep *validateReport, extra []validate.Violation) *validateReport {
+	if rep == nil {
+		rep = &validateReport{Path: "space.yaml"}
+	}
+	if rep.Result == nil {
+		rep.Result = &validate.Result{InvocationPoint: validate.V3, Valid: false, Violations: extra}
+		return rep
+	}
+	merged := *rep.Result
+	merged.Valid = false
+	merged.Violations = append(append([]validate.Violation{}, merged.Violations...), extra...)
+	rep.Result = &merged
+	return rep
 }
 
 // isConsumesRegistry reports whether a space-relative path is a system's

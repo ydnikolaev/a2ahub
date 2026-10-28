@@ -406,16 +406,23 @@ func mergeMessage(number int, req OpenPRRequest, headMessage string) string {
 	if req.Title != "" {
 		b.WriteString("\n" + req.Title + "\n")
 	}
-	if lines := approvedGatesTrailers(headMessage); len(lines) > 0 {
+	if lines := ApprovedGatesTrailers(headMessage); len(lines) > 0 {
 		b.WriteString("\n" + strings.Join(lines, "\n") + "\n")
 	}
 	return b.String()
 }
 
-// approvedGatesTrailers returns, byte for byte, the lines of the message's
+// ApprovedGatesTrailers returns, byte for byte, the lines of the message's
 // final paragraph (its trailer block) that open with the approval trailer's
 // token and a colon. The host copies them and interprets none of them.
-func approvedGatesTrailers(message string) []string {
+//
+// It is exported because it is the ONE parse rule for the approval trailer: the
+// land copy above and the land check (spec 04 section T1.3) both read the
+// trailer through it, so the approval a check accepts is exactly the approval
+// that reaches the base branch's history, and a line in an earlier paragraph is
+// never accepted by one and ignored by the other.
+// ApprovedGatesTrailers is part of the public package API.
+func ApprovedGatesTrailers(message string) []string {
 	lines := strings.Split(message, "\n")
 	end := len(lines)
 	for end > 0 && strings.TrimSpace(lines[end-1]) == "" {

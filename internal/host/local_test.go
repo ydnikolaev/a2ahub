@@ -841,6 +841,43 @@ func TestLocalHost_MergeCarriesApprovedGatesTrailer(t *testing.T) {
 	}
 }
 
+// TestApprovedGatesTrailers_ExportedScan pins the one parse rule the land copy
+// (mergeMessage) and the land check (spec 04 section T1.3) share: the lines of the
+// message's FINAL paragraph that open with the approval trailer's token and a
+// colon, byte for byte.
+func TestApprovedGatesTrailers_ExportedScan(t *testing.T) {
+	t.Parallel()
+	const trailer = TrailerApprovedGates
+	cases := []struct {
+		name    string
+		message string
+		want    []string
+	}{
+		{"final paragraph line", "feat: x\n\nbody\n\n" + trailer + ": G1\n", []string{trailer + ": G1"}},
+		{"joined with other trailers, approval first", "feat: x\n\n" + trailer + ": G1,G2\nA2A-Operation-Key: k\n", []string{trailer + ": G1,G2"}},
+		{"two lines are both returned in order", "x\n\n" + trailer + ": G1\n" + trailer + ": G2\n", []string{trailer + ": G1", trailer + ": G2"}},
+		{"trailing blank lines are ignored", "x\n\n" + trailer + ": G4\n\n\n", []string{trailer + ": G4"}},
+		{"an earlier paragraph is never read", trailer + ": G1\n\nlater paragraph\n", nil},
+		{"a forged mid-message line is never read", "x\n\n" + trailer + ": G1\n\nsigned\n", nil},
+		{"a similar token is not the trailer", "x\n\n" + trailer + "-Extra: G1\nX-" + trailer + ": G1\n", nil},
+		{"empty message", "", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := ApprovedGatesTrailers(tc.message)
+			if len(got) != len(tc.want) {
+				t.Fatalf("ApprovedGatesTrailers(%q) = %q, want %q", tc.message, got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("line %d = %q, want %q", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
 // ---- AC13 -----------------------------------------------------------------
 
 func TestLocalHost_EmptyLandAuthorRefusesBeforeWrite(t *testing.T) {

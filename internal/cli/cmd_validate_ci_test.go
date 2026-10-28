@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -3879,4 +3880,115 @@ func TestCIDescriptorReaderClassifyKeepsCheapBehaviourForAnAbsentDescriptor(t *t
 	if _, cached := descriptors.seen["axon/provides/widget/contract.md"]; !cached {
 		t.Fatalf("descriptorPath was not cached for a genuinely absent descriptor")
 	}
+}
+
+// ciV3Check drives runV3Check, the verdict runValidateCI wraps with the host
+// fact made explicit.
+func ciV3Check(t *testing.T, engine *validate.Engine, root string, git gitChangedFilesFunc, hostReviews bool) (int, ciReport, string) {
+	t.Helper()
+	var out, errBuf bytes.Buffer
+	code := runV3Check(context.Background(), engine, root, git, "v3-pr", "deadbeef", "ydnikolaev", hostReviews, IO{Stdout: &out, Stderr: &errBuf})
+	var rep ciReport
+	if out.Len() > 0 {
+		if err := json.Unmarshal(out.Bytes(), &rep); err != nil {
+			t.Fatalf("decode ci report: %v\nstdout: %s", err, out.String())
+		}
+	}
+	return code, rep, errBuf.String()
+}
+
+func ciManifestReportCodes(rep ciReport) []string {
+	var codes []string
+	for _, a := range rep.Artifacts {
+		if a.Path != "space.yaml" || a.Result == nil {
+			continue
+		}
+		for _, v := range a.Result.Violations {
+			codes = append(codes, v.Code)
+		}
+	}
+	return codes
+}
+
+// TestValidateCI_AutonomousIsRefusedOnAReviewedHost is spec 04 AC 3 and AC 21:
+// a pull request that changes space.yaml to `gates: autonomous` is POL-028 under
+// `validate --ci` (a host that reviews writes), while the same bytes through the
+// local host's check (hostReviews=false) are clean, and a pull request that does
+// not touch the manifest never meets the rule.
+func TestValidateCI_AutonomousIsRefusedOnAReviewedHost(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	autonomous := strings.Replace(ciSpaceYAML, "min_binary_version: 0.1.0\n", "min_binary_version: 0.1.0\ngates: autonomous\n", 1)
+	if autonomous == ciSpaceYAML {
+		t.Fatal("test fixture did not gain a gates key")
+	}
+
+	t.Run("validate --ci wrapper refuses it", func(t *testing.T) {
+		t.Parallel()
+		root := ciRepo(t, autonomous, nil)
+		code, rep, errOut := runCI(t, engine, root, fakeGit("space.yaml"), "v3-pr", "deadbeef", "ydnikolaev")
+		if code != 1 || rep.Valid {
+			t.Fatalf("exit = %d, valid = %v, stderr = %s; want exit 1 and an invalid report", code, rep.Valid, errOut)
+		}
+		if got := ciManifestReportCodes(rep); !slices.Equal(got, []string{"POL-028"}) {
+			t.Fatalf("space.yaml violation codes = %v, want [POL-028]", got)
+		}
+	})
+
+	t.Run("a host that does not review writes accepts it", func(t *testing.T) {
+		t.Parallel()
+		root := ciRepo(t, autonomous, nil)
+		code, rep, errOut := ciV3Check(t, engine, root, fakeGit("space.yaml"), false)
+		if code != 0 || !rep.Valid {
+			t.Fatalf("exit = %d, valid = %v, stderr = %s, report = %+v; want a clean pass", code, rep.Valid, errOut, rep)
+		}
+		if got := ciManifestReportCodes(rep); len(got) != 0 {
+			t.Fatalf("space.yaml violation codes = %v, want none", got)
+		}
+	})
+
+	t.Run("a pull request that does not change the manifest never meets the rule", func(t *testing.T) {
+		t.Parallel()
+		rel := "axon/exchanges/XQ-axon-20260730-q9p2.md"
+		root := ciRepo(t, autonomous, map[string]string{rel: validQuestion("XQ-axon-20260730-q9p2", "axon", "seomatrix")})
+		code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "ydnikolaev")
+		if code != 0 || !rep.Valid {
+			t.Fatalf("exit = %d, valid = %v, stderr = %s, report = %+v; want a clean pass", code, rep.Valid, errOut, rep)
+		}
+	})
+}
+
+// TestWithManifestViolations pins how the host-rule violations join the
+// space.yaml report entry: onto an existing result without touching the
+// original, and as a fresh invalid result when schema validation left the entry
+// with an error and no result (summarizeCIReport must still see the code).
+func TestWithManifestViolations(t *testing.T) {
+	t.Parallel()
+	extra := []validate.Violation{{Code: "POL-028", Path: "gates", Severity: validate.SeverityReject}}
+
+	t.Run("onto an existing valid result", func(t *testing.T) {
+		t.Parallel()
+		original := &validate.Result{Valid: true, Violations: []validate.Violation{}}
+		got := withManifestViolations(&validateReport{Path: "space.yaml", Result: original}, extra)
+		if got.Result == nil || got.Result.Valid || len(got.Result.Violations) != 1 || got.Result.Violations[0].Code != "POL-028" {
+			t.Fatalf("result = %+v, want one invalid POL-028 result", got.Result)
+		}
+		if !original.Valid || len(original.Violations) != 0 {
+			t.Fatalf("the original result was mutated: %+v", original)
+		}
+	})
+	t.Run("onto an entry that has an error and no result", func(t *testing.T) {
+		t.Parallel()
+		got := withManifestViolations(&validateReport{Path: "space.yaml", Error: "schema exploded"}, extra)
+		if got.Error != "schema exploded" || got.Result == nil || got.Result.Valid || len(got.Result.Violations) != 1 {
+			t.Fatalf("entry = %+v, want the error kept and one invalid POL-028 result", got)
+		}
+	})
+	t.Run("with no entry at all", func(t *testing.T) {
+		t.Parallel()
+		got := withManifestViolations(nil, extra)
+		if got == nil || got.Path != "space.yaml" || got.Result == nil || len(got.Result.Violations) != 1 {
+			t.Fatalf("entry = %+v, want a new space.yaml entry carrying POL-028", got)
+		}
+	})
 }

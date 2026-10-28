@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -340,8 +342,8 @@ func TestSpaceInitResidualStepsNameAutoMerge(t *testing.T) {
 func TestSpaceSubcommandsMatchesDispatch(t *testing.T) {
 	t.Parallel()
 	subs := cli.SpaceSubcommands()
-	if len(subs) != 3 || subs[0].Name != "init" || subs[1].Name != "update" || subs[2].Name != "join" {
-		t.Fatalf("SpaceSubcommands() = %+v, want exactly three rows named \"init\", \"update\", \"join\"", subs)
+	if len(subs) != 4 || subs[0].Name != "init" || subs[1].Name != "update" || subs[2].Name != "join" || subs[3].Name != "set" {
+		t.Fatalf("SpaceSubcommands() = %+v, want exactly four rows named \"init\", \"update\", \"join\", \"set\"", subs)
 	}
 	for _, s := range subs {
 		if s.Synopsis == "" {
@@ -445,6 +447,10 @@ func spaceUpdateFullyWiredCommand(tmpl fstest.MapFS, mirrorDir string, funnel *f
 		SpaceID:       "getvisa",
 		OwnSystem:     "a2a-hub",
 		HostCfg:       spaceUpdateHostCfg(),
+		// The baseline is a GitHub space: its host declares that it reviews
+		// gated writes in a pull request, so a manifest change needs no
+		// --approve. A test of a space that lives on this machine overrides it.
+		Caps: host.Capabilities{ReviewsWrites: true},
 	}
 }
 
@@ -1817,7 +1823,7 @@ func TestSpaceUpdateOnALocalSpacePrintsNoGitHubDirectives(t *testing.T) {
 	cmd.Scopes = failingScopeChecker{t: t}
 
 	io, out, errOut := newSpaceIO()
-	if code := cmd.Run(context.Background(), []string{"update"}, io); code != 0 {
+	if code := cmd.Run(context.Background(), []string{"update", "--approve"}, io); code != 0 {
 		t.Fatalf("code = %d; %s%s", code, out.String(), errOut.String())
 	}
 	if len(funnel.calls) != 1 {
@@ -1871,7 +1877,7 @@ func TestSpaceJoinWritesOneRequestWithRowAndSection(t *testing.T) {
 	cmd := joinCommand(t, manifest, funnel)
 
 	io, out, errOut := newSpaceIO()
-	if code := cmd.Run(context.Background(), []string{"join"}, io); code != 0 {
+	if code := cmd.Run(context.Background(), []string{"join", "--approve"}, io); code != 0 {
 		t.Fatalf("code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
 	}
 	if want := "space join: billing joined acme (section billing/)\n"; out.String() != want {
@@ -1961,7 +1967,7 @@ func TestSpaceJoinAppendsToAnExistingList(t *testing.T) {
 	cmd := joinCommand(t, manifest, funnel)
 
 	io, out, errOut := newSpaceIO()
-	if code := cmd.Run(context.Background(), []string{"join"}, io); code != 0 {
+	if code := cmd.Run(context.Background(), []string{"join", "--approve"}, io); code != 0 {
 		t.Fatalf("code = %d; %s%s", code, out.String(), errOut.String())
 	}
 	got := string(funnel.calls[0].Files[0].Content)
@@ -2100,7 +2106,7 @@ func TestSpaceJoinRefusalsNameTheNextStep(t *testing.T) {
 			prep: func(_ *testing.T, _ *cli.SpaceCommand, funnel *fakeSubmitFunnel) {
 				funnel.err = errors.New("push rejected")
 			},
-			args:      []string{"join"},
+			args:      []string{"join", "--approve"},
 			wantFound: "push rejected", wantNext: "`a2a doctor` checks the credential"},
 		{name: "a stdout that cannot take the --json result", manifest: active,
 			args: []string{"join", "--json"}, stdout: failingWriter{},
@@ -2139,7 +2145,7 @@ func TestSpaceJoinKeepsASectionPathTheMirrorAlreadyHas(t *testing.T) {
 	writeSpaceMirrorFile(t, cmd.MirrorDir, "billing/consumes.yaml", "schema: consumes/v1\nsystem: billing\ndependencies:\n  - system: orders\n")
 
 	io, out, errOut := newSpaceIO()
-	if code := cmd.Run(context.Background(), []string{"join"}, io); code != 0 {
+	if code := cmd.Run(context.Background(), []string{"join", "--approve"}, io); code != 0 {
 		t.Fatalf("code = %d; %s%s", code, out.String(), errOut.String())
 	}
 	for _, f := range funnel.calls[0].Files {
@@ -2147,4 +2153,367 @@ func TestSpaceJoinKeepsASectionPathTheMirrorAlreadyHas(t *testing.T) {
 			t.Errorf("join overwrote a consumes.yaml the section already had")
 		}
 	}
+}
+
+// --- gates and flow policy (local-space-2026-10 spec 04 §T1) --------------
+
+var (
+	spaceLocalCaps    = host.Capabilities{OwnerIdentitySelfAsserted: true, OnThisMachine: true, LandsSynchronously: true}
+	spaceReviewedCaps = host.Capabilities{ReviewsWrites: true, NeedsCredential: true, OwnerIdentitySelfAsserted: true}
+)
+
+// policyManifest is the embedded template's space.yaml with its `gates:` line
+// replaced by lines, so a test chooses the mode the tip declares.
+func policyManifest(t *testing.T, lines string) string {
+	t.Helper()
+	m := joinTemplateManifest(t, "acme")
+	const def = "gates: default"
+	if !strings.Contains(m, def) {
+		t.Fatalf("template space.yaml no longer has a %q line:\n%s", def, m)
+	}
+	return strings.Replace(m, def, lines, 1)
+}
+
+// policyCommand is `space set` / `join` / `update` wired the way cmd/a2a wires
+// them: the real manifest engine, a mirror carrying manifest, and the host's
+// declared capabilities.
+func policyCommand(t *testing.T, manifest string, caps host.Capabilities, funnel *fakeSubmitFunnel) *cli.SpaceCommand {
+	t.Helper()
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	cmd := joinCommand(t, manifest, funnel)
+	cmd.Engine = validate.New(corpus)
+	cmd.Caps = caps
+	return cmd
+}
+
+// runSpace runs one space sub-verb and returns its exit code and both streams.
+func runSpace(t *testing.T, cmd *cli.SpaceCommand, args ...string) (int, string, string) {
+	t.Helper()
+	stdio, out, errOut := newSpaceIO()
+	code := cmd.Run(context.Background(), args, stdio)
+	return code, out.String(), errOut.String()
+}
+
+// TestSpaceSetWritesTheKeyAndJudgesG4UnderTheTipsMode is spec 04 AC10 and the
+// `space set` row of §T1: the edit keeps the line's comment, a change is a G4
+// write refused without --approve in a confirm space (even the flip to
+// autonomous, judged under the TIP's mode), and the approval is recorded on the
+// request as exactly G4.
+func TestSpaceSetWritesTheKeyAndJudgesG4UnderTheTipsMode(t *testing.T) {
+	t.Parallel()
+	confirm := policyManifest(t, "gates: confirm")
+	autonomous := policyManifest(t, "gates: autonomous")
+	cases := []struct {
+		name         string
+		manifest     string
+		caps         host.Capabilities
+		args         []string
+		wantCode     int
+		wantStdout   string
+		wantStderr   string
+		wantCalls    int
+		wantApproved []string
+		wantLine     string
+	}{
+		{name: "the flip to autonomous is itself refused without --approve", manifest: confirm, caps: spaceLocalCaps,
+			args: []string{"set", "gates", "autonomous"}, wantCode: 1, wantStderr: "POL-029: G4 requires --approve in a confirm space"},
+		{name: "the flip to autonomous with --approve lands and records G4", manifest: confirm, caps: spaceLocalCaps,
+			args: []string{"set", "gates", "autonomous", "--approve"}, wantStdout: "space set: gates confirm -> autonomous\n",
+			wantCalls: 1, wantApproved: []string{"G4"}, wantLine: "gates: autonomous"},
+		{name: "--approve before the key parses the same", manifest: confirm, caps: spaceLocalCaps,
+			args: []string{"set", "--approve", "gates", "autonomous"}, wantStdout: "space set: gates confirm -> autonomous\n",
+			wantCalls: 1, wantApproved: []string{"G4"}},
+		{name: "a template default reads as confirm on a local host", manifest: policyManifest(t, "gates: default"), caps: spaceLocalCaps,
+			args: []string{"set", "flow", "full"}, wantStdout: "space set: flow already full\n"},
+		{name: "a template default on a local host is judged as confirm", manifest: policyManifest(t, "gates: default"), caps: spaceLocalCaps,
+			args: []string{"set", "flow", "express"}, wantCode: 1, wantStderr: "POL-029: G4 requires --approve in a confirm space"},
+		{name: "under autonomous a manifest change lands without --approve and records nothing", manifest: autonomous, caps: spaceLocalCaps,
+			args: []string{"set", "gates", "confirm"}, wantStdout: "space set: gates autonomous -> confirm\n", wantCalls: 1},
+		{name: "an absent flow key is added", manifest: autonomous, caps: spaceLocalCaps,
+			args: []string{"set", "flow", "express"}, wantStdout: "space set: flow full -> express\n", wantCalls: 1, wantLine: "flow: express"},
+		{name: "an unchanged value exits 0 and writes nothing, even without --approve", manifest: confirm, caps: spaceLocalCaps,
+			args: []string{"set", "gates", "confirm"}, wantStdout: "space set: gates already confirm\n"},
+		{name: "an absent key is already its default", manifest: confirm, caps: spaceLocalCaps,
+			args: []string{"set", "flow", "full"}, wantStdout: "space set: flow already full\n"},
+		{name: "a reviewed host changes the manifest as before, with no approval", manifest: policyManifest(t, "gates: default"), caps: spaceReviewedCaps,
+			args: []string{"set", "flow", "express"}, wantStdout: "space set: flow full -> express\n", wantCalls: 1},
+		{name: "a reviewed host refuses --approve with exit 2", manifest: confirm, caps: spaceReviewedCaps,
+			args: []string{"set", "flow", "express", "--approve"}, wantCode: 2,
+			wantStderr: "--approve has no effect here: this space's host reviews gated writes in a pull request"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			funnel := &fakeSubmitFunnel{}
+			cmd := policyCommand(t, tc.manifest, tc.caps, funnel)
+			code, stdout, stderr := runSpace(t, cmd, tc.args...)
+			if code != tc.wantCode {
+				t.Fatalf("code = %d, want %d; stdout=%q stderr=%q", code, tc.wantCode, stdout, stderr)
+			}
+			if tc.wantStdout != "" && stdout != tc.wantStdout {
+				t.Fatalf("stdout = %q, want %q", stdout, tc.wantStdout)
+			}
+			if tc.wantStderr != "" && !strings.Contains(stderr, tc.wantStderr) {
+				t.Fatalf("stderr = %q, want it to contain %q", stderr, tc.wantStderr)
+			}
+			if len(funnel.calls) != tc.wantCalls {
+				t.Fatalf("funnel calls = %d, want %d", len(funnel.calls), tc.wantCalls)
+			}
+			if tc.wantCalls == 0 {
+				return
+			}
+			req := funnel.calls[0]
+			if !slices.Equal(req.ApprovedGates, tc.wantApproved) {
+				t.Fatalf("ApprovedGates = %v, want %v", req.ApprovedGates, tc.wantApproved)
+			}
+			if len(req.Files) != 1 || req.Files[0].Path != "space.yaml" || !req.AllowSpaceInfrastructure {
+				t.Fatalf("request = %+v, want one space.yaml write marked as space infrastructure", req)
+			}
+			if tc.wantLine != "" && !strings.Contains(string(req.Files[0].Content), tc.wantLine) {
+				t.Fatalf("written space.yaml lacks %q:\n%s", tc.wantLine, req.Files[0].Content)
+			}
+		})
+	}
+}
+
+// TestSpaceSetKeepsTheTemplateComments is the "comment-preserving" half of the
+// space set row: only the value changes, and the template's trailing comment
+// stays on the same line.
+func TestSpaceSetKeepsTheTemplateComments(t *testing.T) {
+	t.Parallel()
+	funnel := &fakeSubmitFunnel{}
+	cmd := policyCommand(t, policyManifest(t, "gates: autonomous"), spaceLocalCaps, funnel)
+	if code, _, stderr := runSpace(t, cmd, "set", "gates", "confirm"); code != 0 {
+		t.Fatalf("code = %d: %s", code, stderr)
+	}
+	want := strings.Replace(policyManifest(t, "gates: autonomous"), "gates: autonomous", "gates: confirm   ", 1)
+	got := string(funnel.calls[0].Files[0].Content)
+	// Everything but the edited line is byte-identical to the tip.
+	gotLines, wantLines := strings.Split(got, "\n"), strings.Split(want, "\n")
+	if len(gotLines) != len(wantLines) {
+		t.Fatalf("line count %d != %d:\n%s", len(gotLines), len(wantLines), got)
+	}
+	for i := range gotLines {
+		if strings.HasPrefix(gotLines[i], "gates:") {
+			if !strings.HasPrefix(gotLines[i], "gates: confirm") || !strings.Contains(gotLines[i], "# G1-G5 per §3.7") {
+				t.Fatalf("gates line = %q, want the new value with the template's comment kept", gotLines[i])
+			}
+			continue
+		}
+		if gotLines[i] != wantLines[i] {
+			t.Fatalf("line %d changed: %q -> %q", i+1, wantLines[i], gotLines[i])
+		}
+	}
+}
+
+// TestSpaceSetRefusesWhatTheManifestWriterMayNotWrite is spec 04's reachability
+// for POL-027 and POL-028 at the cli tier: a value outside the vocabulary is
+// refused by the engine that owns the vocabulary, and `autonomous` is refused
+// on a host that reviews writes, both before any write is prepared and neither
+// needing --approve.
+func TestSpaceSetRefusesWhatTheManifestWriterMayNotWrite(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		caps     host.Capabilities
+		manifest string
+		args     []string
+		wantCode int
+		want     string
+	}{
+		{name: "gates outside its vocabulary (POL-027)", caps: spaceLocalCaps, manifest: policyManifest(t, "gates: confirm"),
+			args: []string{"set", "gates", "sometimes"}, wantCode: 1, want: "POL-027"},
+		{name: "flow outside its vocabulary (POL-027)", caps: spaceLocalCaps, manifest: policyManifest(t, "gates: autonomous"),
+			args: []string{"set", "flow", "turbo"}, wantCode: 1, want: "POL-027"},
+		{name: "autonomous on a host that reviews writes (POL-028)", caps: spaceReviewedCaps, manifest: policyManifest(t, "gates: default"),
+			args: []string{"set", "gates", "autonomous"}, wantCode: 1, want: "POL-028"},
+		{name: "an unknown key is a usage error", caps: spaceLocalCaps, manifest: policyManifest(t, "gates: confirm"),
+			args: []string{"set", "min_binary_version", "9.9.9"}, wantCode: 2, want: "usage: a2a space set <gates|flow> <value>"},
+		{name: "a missing value is a usage error", caps: spaceLocalCaps, manifest: policyManifest(t, "gates: confirm"),
+			args: []string{"set", "gates"}, wantCode: 2, want: "usage: a2a space set <gates|flow> <value>"},
+		{name: "another space is refused", caps: spaceLocalCaps, manifest: policyManifest(t, "gates: confirm"),
+			args: []string{"set", "gates", "autonomous", "--space", "other"}, wantCode: 1, want: `unknown space "other"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			funnel := &fakeSubmitFunnel{}
+			cmd := policyCommand(t, tc.manifest, tc.caps, funnel)
+			code, stdout, stderr := runSpace(t, cmd, tc.args...)
+			if code != tc.wantCode || !strings.Contains(stderr, tc.want) {
+				t.Fatalf("code = %d stderr = %q stdout = %q, want code %d naming %q", code, stderr, stdout, tc.wantCode, tc.want)
+			}
+			if len(funnel.calls) != 0 {
+				t.Fatalf("a refused set reached the funnel: %+v", funnel.calls)
+			}
+		})
+	}
+}
+
+// TestSpaceJoinAndUpdateAreG4WritesInAConfirmSpace is spec 04 AC13 and the
+// join/update row of §T1: a write whose changed set includes space.yaml is
+// refused without --approve in a confirm space, records exactly G4 with it,
+// lands ungated and unrecorded under autonomous, and a write that leaves
+// space.yaml alone is not a G4 write.
+func TestSpaceJoinAndUpdateAreG4WritesInAConfirmSpace(t *testing.T) {
+	t.Parallel()
+	confirm := policyManifest(t, "gates: confirm")
+	autonomous := policyManifest(t, "gates: autonomous")
+	cases := []struct {
+		name         string
+		manifest     string
+		caps         host.Capabilities
+		args         []string
+		wantCode     int
+		wantStderr   string
+		wantCalls    int
+		wantApproved []string
+	}{
+		{name: "join in a confirm space is refused without --approve", manifest: confirm, caps: spaceLocalCaps,
+			args: []string{"join"}, wantCode: 1, wantStderr: "POL-029: G4 requires --approve in a confirm space"},
+		{name: "join with --approve lands and records G4", manifest: confirm, caps: spaceLocalCaps,
+			args: []string{"join", "--approve"}, wantCalls: 1, wantApproved: []string{"G4"}},
+		{name: "join under autonomous lands and records nothing", manifest: autonomous, caps: spaceLocalCaps,
+			args: []string{"join"}, wantCalls: 1},
+		{name: "join under autonomous with --approve records nothing", manifest: autonomous, caps: spaceLocalCaps,
+			args: []string{"join", "--approve"}, wantCalls: 1},
+		{name: "join with --approve on a reviewed host exits 2", manifest: confirm, caps: spaceReviewedCaps,
+			args: []string{"join", "--approve"}, wantCode: 2, wantStderr: "--approve has no effect here: this space's host reviews gated writes in a pull request"},
+		{name: "update that bumps the floor is refused without --approve", manifest: confirm, caps: spaceLocalCaps,
+			args: []string{"update"}, wantCode: 1, wantStderr: "POL-029: G4 requires --approve in a confirm space"},
+		{name: "update that bumps the floor with --approve records G4", manifest: confirm, caps: spaceLocalCaps,
+			args: []string{"update", "--approve"}, wantCalls: 1, wantApproved: []string{"G4"}},
+		{name: "update on a reviewed host lands as before", manifest: confirm, caps: spaceReviewedCaps,
+			args: []string{"update"}, wantCalls: 1},
+		{name: "update with --approve on a reviewed host exits 2", manifest: confirm, caps: spaceReviewedCaps,
+			args: []string{"update", "--approve"}, wantCode: 2, wantStderr: "--approve has no effect here: this space's host reviews gated writes in a pull request"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			funnel := &fakeSubmitFunnel{}
+			cmd := policyCommand(t, tc.manifest, tc.caps, funnel)
+			if tc.args[0] == "update" {
+				// The mirror's floor is below the template's, so the plan
+				// carries space.yaml (the floor bump).
+				writeSpaceMirrorFile(t, cmd.MirrorDir, "space.yaml", regexp.MustCompile(`(?m)^min_binary_version: *\S+`).ReplaceAllString(tc.manifest, "min_binary_version: 0.0.1"))
+				cmd.TemplateFiles = spacetemplate.Files
+			}
+			code, stdout, stderr := runSpace(t, cmd, tc.args...)
+			if code != tc.wantCode {
+				t.Fatalf("code = %d, want %d; stdout=%q stderr=%q", code, tc.wantCode, stdout, stderr)
+			}
+			if tc.wantStderr != "" && !strings.Contains(stderr, tc.wantStderr) {
+				t.Fatalf("stderr = %q, want it to contain %q", stderr, tc.wantStderr)
+			}
+			if len(funnel.calls) != tc.wantCalls {
+				t.Fatalf("funnel calls = %d, want %d", len(funnel.calls), tc.wantCalls)
+			}
+			if tc.wantCalls == 1 && !slices.Equal(funnel.calls[0].ApprovedGates, tc.wantApproved) {
+				t.Fatalf("ApprovedGates = %v, want %v", funnel.calls[0].ApprovedGates, tc.wantApproved)
+			}
+		})
+	}
+}
+
+// TestSpaceUpdateThatLeavesTheManifestAloneIsNotG4 pins the other half of the
+// G4 condition: only a changed set that includes space.yaml is gated.
+func TestSpaceUpdateThatLeavesTheManifestAloneIsNotG4(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	spaceUpdateSeedMirror(t, mirrorDir)
+	writeSpaceMirrorFile(t, mirrorDir, "space.yaml",
+		"schema: manifest/v1\nspace: getvisa\nmin_binary_version: 5.0.0\nparticipants: []\n")
+	funnel := &fakeSubmitFunnel{}
+	cmd := spaceUpdateFullyWiredCommand(spaceUpdateTemplateFS(), mirrorDir, funnel, "9.9.9")
+	cmd.Caps = host.Capabilities{} // a confirm space: the mirror declares no gates
+	code, stdout, stderr := runSpace(t, cmd, "update")
+	if code != 0 || len(funnel.calls) != 1 {
+		t.Fatalf("code=%d calls=%d stdout=%q stderr=%q, want a landed write that never touched space.yaml", code, len(funnel.calls), stdout, stderr)
+	}
+	if len(funnel.calls[0].ApprovedGates) != 0 {
+		t.Fatalf("ApprovedGates = %v, want none for a write without G4", funnel.calls[0].ApprovedGates)
+	}
+}
+
+// TestSpaceInitLocalWritesTheExplicitPolicy is the `init --local` row of §T1:
+// the explicit gates and flow replace the template's `gates: default` line
+// (flow defaults to express), a value outside the vocabulary is refused before
+// the repository exists, and the policy flags mean nothing without --local.
+func TestSpaceInitLocalWritesTheExplicitPolicy(t *testing.T) {
+	t.Parallel()
+	read := func(t *testing.T, dir string) string {
+		t.Helper()
+		return spaceGit(t, dir, "show", "main:space.yaml")
+	}
+	cases := []struct {
+		name      string
+		args      []string
+		wantGates string
+		wantFlow  string
+	}{
+		{name: "defaults", args: nil, wantGates: "gates: confirm", wantFlow: "flow: express"},
+		{name: "explicit autonomous and full", args: []string{"--gates", "autonomous", "--flow", "full"}, wantGates: "gates: autonomous", wantFlow: "flow: full"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dataRoot := canonicalTempDir(t)
+			cmd := newLocalSpaceCommand(t, dataRoot)
+			stdio, _, errOut := newSpaceIO()
+			args := append([]string{"init", "acme", "--local"}, tc.args...)
+			if code := cmd.Run(context.Background(), args, stdio); code != 0 {
+				t.Fatalf("code = %d: %s", code, errOut.String())
+			}
+			got := read(t, filepath.Join(dataRoot, "spaces", "acme.git"))
+			for _, want := range []string{tc.wantGates, tc.wantFlow} {
+				if !strings.Contains(got, want) {
+					t.Fatalf("seeded space.yaml lacks %q:\n%s", want, got)
+				}
+			}
+			if strings.Contains(got, "gates: default") {
+				t.Fatalf("the template's default line survived:\n%s", got)
+			}
+		})
+	}
+
+	t.Run("a value outside the vocabulary is refused before anything is created", func(t *testing.T) {
+		t.Parallel()
+		dataRoot := canonicalTempDir(t)
+		cmd := newLocalSpaceCommand(t, dataRoot)
+		stdio, _, errOut := newSpaceIO()
+		code := cmd.Run(context.Background(), []string{"init", "acme", "--local", "--gates", "sometimes"}, stdio)
+		if code != 1 || !strings.Contains(errOut.String(), "POL-027") {
+			t.Fatalf("code = %d stderr = %q, want 1 naming POL-027", code, errOut.String())
+		}
+		if _, err := os.Stat(filepath.Join(dataRoot, "spaces", "acme.git")); err == nil {
+			t.Fatal("a refused init created the repository")
+		}
+	})
+	t.Run("a host that reviews writes refuses autonomous before the repository exists", func(t *testing.T) {
+		t.Parallel()
+		dataRoot := canonicalTempDir(t)
+		cmd := newLocalSpaceCommand(t, dataRoot)
+		cmd.Caps = host.Capabilities{ReviewsWrites: true}
+		stdio, _, errOut := newSpaceIO()
+		code := cmd.Run(context.Background(), []string{"init", "acme", "--local", "--gates", "autonomous"}, stdio)
+		if code != 1 || !strings.Contains(errOut.String(), "POL-028") {
+			t.Fatalf("code = %d stderr = %q, want 1 naming POL-028", code, errOut.String())
+		}
+		if _, err := os.Stat(filepath.Join(dataRoot, "spaces", "acme.git")); err == nil {
+			t.Fatal("a refused init created the repository")
+		}
+	})
+	t.Run("the policy flags are refused without --local", func(t *testing.T) {
+		t.Parallel()
+		cmd := newLocalSpaceCommand(t, canonicalTempDir(t))
+		stdio, _, errOut := newSpaceIO()
+		code := cmd.Run(context.Background(), []string{"init", "acme", "--gates", "autonomous", "--dir", filepath.Join(t.TempDir(), "x")}, stdio)
+		if code != 2 || !strings.Contains(errOut.String(), "--gates only applies with --local") {
+			t.Fatalf("code = %d stderr = %q, want 2 naming --gates", code, errOut.String())
+		}
+	})
 }
