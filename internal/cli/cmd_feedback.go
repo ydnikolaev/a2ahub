@@ -41,6 +41,13 @@ type FeedbackCommand struct {
 	// zero value.
 	resolveFreshness func() feedback.Freshness
 
+	// inboxReason is why the wiring chose the local inbox for `submit` before
+	// any flag was read (today: "no GitHub credential"). Empty means the hub
+	// route unless --inbox is given. It is set post-construction, like the
+	// freshness resolver, so NewFeedbackCommand's arity stays what
+	// cmd/a2a/catalog.go calls.
+	inboxReason string
+
 	now      func() time.Time
 	readFile func(path string) ([]byte, error)
 }
@@ -95,12 +102,24 @@ func (c *FeedbackCommand) SetFreshnessResolver(resolve func() feedback.Freshness
 	c.resolveFreshness = resolve
 }
 
+// inboxReasonFlag is the reason line printed when the caller asked for the
+// local inbox with --inbox.
+const inboxReasonFlag = "--inbox"
+
+// SetInboxFallback makes `submit` file to the machine's local inbox instead of
+// the hub, and names why in the result line (production: cmd/a2a's
+// feedbackInboxFallback found no GitHub credential, local-space-2026-10 spec 08
+// §T1.1 row 3). Not test-only: cmd/a2a calls it, and an empty reason leaves the
+// hub route. --inbox on the command line takes precedence over this reason
+// (row 2 before row 3). This command never resolves a credential itself.
+func (c *FeedbackCommand) SetInboxFallback(reason string) { c.inboxReason = reason }
+
 // Name implements cli.Command.
 func (c *FeedbackCommand) Name() string { return "feedback" }
 
 // Synopsis implements cli.Command.
 func (c *FeedbackCommand) Synopsis() string {
-	return "agent feedback loop: new <kind> [--title] | validate <file> [--ci] | submit <file...> [--all] | status [--json] | triage [--json] [--apply <file>]"
+	return "agent feedback loop: new <kind> [--title] | validate <file> [--ci] | submit <file...> [--all] [--inbox] | status [--json] | triage [--json] [--apply <file>]"
 }
 
 // feedbackTopLevelUsage is the top-level `a2a feedback` usage line, shared
@@ -213,27 +232,42 @@ func (c *FeedbackCommand) runValidate(args []string, stdio IO) int {
 	return 0
 }
 
-// runSubmit implements `a2a feedback submit <file...> [--all]`.
+// runSubmit implements `a2a feedback submit <file...> [--all] [--inbox]`.
+//
+// The route is chosen once, before the batch pre-check: the local inbox when
+// --inbox is given or the wiring found no credential (SetInboxFallback), the
+// hub otherwise. A network failure never changes the route (spec 08 §T1.1).
 func (c *FeedbackCommand) runSubmit(ctx context.Context, args []string, stdio IO) int {
 	fs := flag.NewFlagSet("feedback submit", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
-	all := fs.Bool("all", false, "submit every unledgered feedback draft")
+	all := fs.Bool("all", false, "submit every undelivered feedback draft")
+	inbox := fs.Bool("inbox", false, "file the validated report to this machine's local inbox instead of the hub (offline)")
 	jsonOutput := fs.Bool("json", false, "emit one JSON outcome per selected input")
 	paths, err := parseArgsAnyOrder(fs, args)
 	if err != nil {
 		return 2
 	}
 	if (*all && len(paths) != 0) || (!*all && len(paths) == 0) {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a feedback submit <file...> [--all] [--json]")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a feedback submit <file...> [--all] [--inbox] [--json]")
 		return 2
 	}
+	reason := c.inboxReason
+	if *inbox {
+		reason = inboxReasonFlag
+	}
+	validatePath := c.submitter.ValidatePath
+	if reason != "" {
+		validatePath = c.submitter.ValidateInboxPath
+	}
+
+	var gone []feedback.SubmitResult
 	if *all {
-		paths, err = c.unledgeredDrafts()
+		paths, gone, err = c.undeliveredReports()
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "feedback submit: %v\n", err)
 			return 1
 		}
-		if len(paths) == 0 {
+		if len(paths) == 0 && len(gone) == 0 {
 			if *jsonOutput {
 				_, _ = fmt.Fprintln(stdio.Stdout, "[]")
 			} else {
@@ -247,32 +281,41 @@ func (c *FeedbackCommand) runSubmit(ctx context.Context, args []string, stdio IO
 	// Batch atomicity ends at the first external write, so validate the whole
 	// selected set first. A bad final file must never leave earlier PRs open.
 	results := make([]feedback.SubmitResult, len(paths))
-	validationFailed := false
+	validationFailed := len(gone) != 0
 	for i, path := range paths {
 		results[i] = feedback.SubmitResult{
 			InputPath: path, Stage: space.WriteStageNone,
 			RemainingAction: space.RemainingActionRetryPush,
 		}
-		if validationErr := c.submitter.ValidatePath(path); validationErr != nil {
+		if validationErr := validatePath(path); validationErr != nil {
 			results[i].ErrorCode = feedback.ErrorCodeValidation
 			results[i].Error = validationErr.Error()
 			validationFailed = true
 		}
 	}
 	if validationFailed {
-		for i := range results {
-			if results[i].ErrorCode == "" {
-				results[i].ErrorCode = feedback.ErrorCodeBatchRefused
-				results[i].Error = "not submitted because another selected input failed validation"
+		refused := make([]feedback.SubmitResult, 0, len(results)+len(gone))
+		refused = append(append(refused, results...), gone...)
+		sort.SliceStable(refused, func(i, j int) bool { return refused[i].InputPath < refused[j].InputPath })
+		for i := range refused {
+			if refused[i].ErrorCode == "" {
+				refused[i].ErrorCode = feedback.ErrorCodeBatchRefused
+				refused[i].Error = "not submitted because another selected input failed validation"
 			}
 		}
-		c.renderSubmitResults(results, *jsonOutput, stdio)
+		c.renderSubmitResults(refused, *jsonOutput, reason, stdio)
 		return 1
 	}
 
 	failed := false
 	for i, path := range paths {
-		result, err := c.submitter.Submit(ctx, path)
+		var result feedback.SubmitResult
+		var err error
+		if reason != "" {
+			result, err = c.submitter.FileToInbox(ctx, path)
+		} else {
+			result, err = c.submitter.Submit(ctx, path)
+		}
 		result.InputPath = path
 		if err != nil {
 			if result.ErrorCode == "" {
@@ -283,14 +326,14 @@ func (c *FeedbackCommand) runSubmit(ctx context.Context, args []string, stdio IO
 		}
 		results[i] = result
 	}
-	c.renderSubmitResults(results, *jsonOutput, stdio)
+	c.renderSubmitResults(results, *jsonOutput, reason, stdio)
 	if failed {
 		return 1
 	}
 	return 0
 }
 
-func (c *FeedbackCommand) renderSubmitResults(results []feedback.SubmitResult, jsonOutput bool, stdio IO) {
+func (c *FeedbackCommand) renderSubmitResults(results []feedback.SubmitResult, jsonOutput bool, inboxReason string, stdio IO) {
 	if jsonOutput {
 		enc := json.NewEncoder(stdio.Stdout)
 		enc.SetEscapeHTML(false)
@@ -298,6 +341,13 @@ func (c *FeedbackCommand) renderSubmitResults(results []feedback.SubmitResult, j
 		return
 	}
 	for _, result := range results {
+		if result.Inbox != "" && result.ErrorCode != feedback.ErrorCodeInboxConflict {
+			if result.InboxExisting {
+				_, _ = fmt.Fprintf(stdio.Stdout, "feedback submit: %s is already in the local inbox %s\n", result.ID, result.Inbox)
+			} else {
+				_, _ = fmt.Fprintf(stdio.Stdout, "feedback submit: filed %s to the local inbox %s (%s); deliver it later with a2a feedback submit --all once a GitHub credential is set\n", result.ID, result.Inbox, inboxReason)
+			}
+		}
 		if result.PRURL != "" {
 			switch result.State {
 			case space.WriteStateAlreadyOpen, space.WriteStateAlreadyMerged:
@@ -316,29 +366,52 @@ func (c *FeedbackCommand) renderSubmitResults(results []feedback.SubmitResult, j
 	}
 }
 
-func (c *FeedbackCommand) unledgeredDrafts() ([]string, error) {
+// undeliveredReports selects what `submit --all` sends: the drafts with no
+// ledger row (or a row with neither a PR nor an inbox copy), and the inbox COPY
+// of every report filed to the local inbox and not yet delivered, so delivery
+// sends the bytes that were filed rather than a draft edited since. A row whose
+// inbox copy is gone is returned as a failed result instead, never replaced by
+// the draft.
+func (c *FeedbackCommand) undeliveredReports() (selected []string, gone []feedback.SubmitResult, err error) {
 	dir := filepath.Dir(c.ledgerPath)
-	paths, err := filepath.Glob(filepath.Join(dir, "fb-*.yaml"))
+	drafts, err := filepath.Glob(filepath.Join(dir, "fb-*.yaml"))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	items, err := feedback.ReadLedger(c.ledgerPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	filed := make(map[string]bool, len(items))
+	rows := make(map[string]feedback.LedgerItem, len(items))
 	for _, item := range items {
-		filed[item.ID] = true
+		rows[item.ID] = item
 	}
-	var selected []string
-	for _, path := range paths {
+	for _, path := range drafts {
 		id := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-		if !filed[id] {
+		if row, ok := rows[id]; !ok || (row.PRURL == "" && row.Inbox == "") {
 			selected = append(selected, path)
 		}
 	}
+	for _, item := range items {
+		if item.PRURL != "" || item.Inbox == "" {
+			continue
+		}
+		if _, statErr := os.Stat(item.Inbox); statErr != nil {
+			if !os.IsNotExist(statErr) {
+				return nil, nil, statErr
+			}
+			gone = append(gone, feedback.SubmitResult{
+				ID: item.ID, InputPath: item.Inbox, Stage: space.WriteStageNone,
+				RemainingAction: space.RemainingActionRetryPush,
+				ErrorCode:       feedback.ErrorCodeInboxWrite,
+				Error:           fmt.Sprintf("inbox copy %s is gone; submit the draft explicitly", item.Inbox),
+			})
+			continue
+		}
+		selected = append(selected, item.Inbox)
+	}
 	sort.Strings(selected)
-	return selected, nil
+	return selected, gone, nil
 }
 
 // runStatus implements `a2a feedback status [--json]`.
@@ -381,7 +454,11 @@ func (c *FeedbackCommand) runStatus(args []string, stdio IO) int {
 		if res == "" {
 			res = "-"
 		}
-		_, _ = fmt.Fprintf(stdio.Stdout, "%s\t%s\t%s\t%s\t%s\t%s\n", r.ID, r.Kind, r.Title, r.PRURL, r.HubStatus, res)
+		pr := r.PRURL
+		if pr == "" {
+			pr = "-" // filed to the local inbox, not yet a PR
+		}
+		_, _ = fmt.Fprintf(stdio.Stdout, "%s\t%s\t%s\t%s\t%s\t%s\n", r.ID, r.Kind, r.Title, pr, r.HubStatus, res)
 	}
 	return 0
 }

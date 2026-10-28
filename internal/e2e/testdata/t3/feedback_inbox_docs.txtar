@@ -1,0 +1,28 @@
+# local-space-2026-10 spec 08 AC14: the built binary prints the local feedback
+# inbox's agent-facing text. `docs.txtar` is P6's; this file is P8's.
+#
+# `a2a docs` prints bytes embedded in the binary, so this proves the pages an
+# agent reads in the field say where an offline report goes, how to ask for it,
+# how it is delivered, and what `duplicates_checked` means with no network.
+
+# 1. The loop page: the inbox path, --inbox, delivery by a later `submit --all`,
+#    and the offline duplicates_checked wording.
+exec a2a docs loop-feedback
+stdout '~/.local/share/a2a/feedback/inbox/<id>.yaml'
+stdout '--inbox'
+stdout 'a2a feedback submit --all'
+stdout 'not on the hub'
+stdout 'a2a feedback status'
+stdout 'local inbox'
+stdout 'local-inbox'
+stdout 'Offline'
+stdout 'dedupe candidates'
+
+# 2. The reference page: the inbox bytes are published unchanged on delivery,
+#    and it is not a private channel.
+exec a2a docs feedback
+stdout 'published'
+stdout 'unchanged'
+stdout 'not a private channel'
+stdout 'exactly once'
+stdout '~/.local/share/a2a/feedback/inbox/<id>.yaml'

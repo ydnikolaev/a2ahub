@@ -1,6 +1,7 @@
 package feedback
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -98,5 +99,62 @@ func TestDefaultHubReader_HappyAndNotFound(t *testing.T) {
 
 	if _, err := reader("fb-nonexistent"); err == nil {
 		t.Fatal("expected an error for a 404 response, got nil")
+	}
+}
+
+// TestStatusRowInboxKeyOmittedOnHubRows is spec 08 AC5's status half: a hub
+// row encodes with no Inbox key, exactly as before, and an inbox row has it.
+func TestStatusRowInboxKeyOmittedOnHubRows(t *testing.T) {
+	t.Parallel()
+
+	hub, err := json.Marshal(StatusRow{ID: "fb-20260701-aaaaaa", Kind: "bug", Title: "t1", PRURL: "https://example.invalid/pr/1", HubStatus: "new"})
+	if err != nil {
+		t.Fatalf("marshal hub row: %v", err)
+	}
+	if strings.Contains(string(hub), "Inbox") {
+		t.Fatalf("a hub-route status row must encode with no Inbox key, got %s", hub)
+	}
+
+	local, err := json.Marshal(StatusRow{ID: "fb-20260701-aaaaaa", HubStatus: "local-inbox", Inbox: "/data/inbox/fb-20260701-aaaaaa.yaml"})
+	if err != nil {
+		t.Fatalf("marshal inbox row: %v", err)
+	}
+	if !strings.Contains(string(local), `"Inbox":"/data/inbox/fb-20260701-aaaaaa.yaml"`) {
+		t.Fatalf("an inbox status row must carry the Inbox key, got %s", local)
+	}
+}
+
+// TestStatusLocalInboxSkipsHubRead is spec 08 AC9: a row filed to the local
+// inbox and not yet delivered reports local-inbox and the inbox path, and the
+// hub reader is never called for it, so status stays offline for those rows.
+func TestStatusLocalInboxSkipsHubRead(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "ledger.yaml")
+	const inboxID, hubID = "fb-20260701-aaaaaa", "fb-20260702-bbbbbb"
+	if err := AppendLedger(path, LedgerItem{ID: inboxID, Kind: "bug", Title: "offline", Inbox: "/data/inbox/" + inboxID + ".yaml", Filed: "2026-07-23T00:00:00Z"}); err != nil {
+		t.Fatalf("AppendLedger: %v", err)
+	}
+	if err := AppendLedger(path, LedgerItem{ID: hubID, Kind: "bug", Title: "online", PRURL: "https://example.invalid/pr/2", Filed: "2026-07-23T00:00:01Z"}); err != nil {
+		t.Fatalf("AppendLedger: %v", err)
+	}
+
+	reader := func(id string) ([]byte, error) {
+		if id == inboxID {
+			t.Errorf("the hub reader was called for %s, an undelivered inbox row", id)
+		}
+		return []byte("status: new\n"), nil
+	}
+	rows, err := Status(path, reader)
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("len(rows) = %d, want 2: %+v", len(rows), rows)
+	}
+	if rows[0].HubStatus != "local-inbox" || rows[0].Inbox != "/data/inbox/"+inboxID+".yaml" || rows[0].PRURL != "" {
+		t.Fatalf("inbox row = %+v, want HubStatus local-inbox, the inbox path and no PR", rows[0])
+	}
+	if rows[1].HubStatus != "new" || rows[1].Inbox != "" {
+		t.Fatalf("hub row = %+v, want the hub's status and no Inbox", rows[1])
 	}
 }

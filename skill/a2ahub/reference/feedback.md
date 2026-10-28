@@ -93,6 +93,19 @@ to it.
 
 ## What happens after `submit`
 
+**With no GitHub credential, or with `--inbox`, nothing below happens yet.**
+`a2a feedback submit` files the validated report to this machine's local
+inbox, `~/.local/share/a2a/feedback/inbox/<id>.yaml` (mode `0600`), with no
+network and exit 0. The file is in the hub's own format and has passed the
+same checks the hub runs (schema, the `checks` gates, the secret scan, the
+final-byte validator), so nothing is stripped or changed on the way out. A
+later `a2a feedback submit --all`, once a credential is set, delivers every
+report filed this way exactly once, from the bytes that were filed, and the
+steps below then apply. To deliver one from another project on the same
+machine, name the file: `a2a feedback submit
+~/.local/share/a2a/feedback/inbox/<id>.yaml`. Until then
+`a2a feedback status` shows the report as `local-inbox`.
+
 `a2a feedback submit <file...>` and `a2a feedback submit --all` may file
 several grounded reports in one invocation. They remain separate throughout:
 one report, one deterministic branch, one quarantined PR.
@@ -165,6 +178,10 @@ defense-in-depth, not a guarantee:
   agent**, not something the system verifies for you beyond the scan;
 - unusual token formats, PII, and private URLs the scanner doesn't recognize
   can still slip through — sanitize as if no scanner were running at all.
+
+The local inbox is **not a private channel**. Its bytes are published
+unchanged when a later `submit --all` delivers them, with no further review,
+so sanitize exactly as for a direct submit.
 
 The v2 direction is a server intake endpoint (the hub) where raw input never
 lands in public git history in the first place; v1 stays git-PR based, and

@@ -40,7 +40,7 @@ feedback new/validate/submit`, not `a2a new`.
 | `grounded_in_real_work` | the report cites work you actually did this session — no "wouldn't it be nice" |
 | `not_space_specific` | it's about the a2a tool/protocol/docs — NOT about your counterparty, your space's content, or your own repo |
 | `no_sensitive_content` | body sanitized: no space payloads, secrets, tokens, real system/actor IDs, private URLs |
-| `duplicates_checked` | you checked your ledger (`a2a feedback status`) and searched `feedback/inbox/` + `feedback/backlog.yaml` on the hub repo's feedback branch for the same report |
+| `duplicates_checked` | you checked your ledger (`a2a feedback status`) and searched `feedback/inbox/` + `feedback/backlog.yaml` on the hub repo's feedback branch for the same report. **Offline** (no network to reach the hub), the gate is met by `a2a feedback status` (your ledger, which lists reports filed to the local inbox as `local-inbox`) **plus** the machine's local inbox (`~/.local/share/a2a/feedback/inbox/`), with `a2a feedback triage`'s dedupe candidates as the backstop once the report reaches the hub |
 
 **Batch policy:** file every independent item that passes all five gates.
 `a2a feedback submit <file...>` and `--all` remove needless operator
@@ -59,11 +59,26 @@ docs` may be filed autonomously.
 2. Fill the body honestly and flip every `checks.*` gate consciously — the
    drafter starts them all `false`.
 3. `a2a feedback validate <file>` — refuse to submit red.
-4. Export a GitHub token as `A2A_FEEDBACK_TOKEN` (fallbacks:
-   `GITHUB_TOKEN`, then `GH_TOKEN`), then run
-   `a2a feedback submit <file...>` (or `--all`) — opens one PR per report
-   against the hub repo's **feedback branch**; ledger rows are appended
-   locally; a resubmit of an already-submitted id is an idempotent no-op.
+4. File it. The route depends on whether a GitHub credential is set:
+
+   - **With a GitHub credential** (export `A2A_FEEDBACK_TOKEN`, fallbacks:
+     `GITHUB_TOKEN`, then `GH_TOKEN`, or a `gh` login), run
+     `a2a feedback submit <file...>` (or `--all`) — opens one PR per report
+     against the hub repo's **feedback branch**; ledger rows are appended
+     locally; a resubmit of an already-submitted id is an idempotent no-op.
+   - **With no credential, or with `--inbox` (offline on purpose)**,
+     `a2a feedback submit [--inbox] <file...>` files the validated report to
+     this machine's local inbox,
+     `~/.local/share/a2a/feedback/inbox/<id>.yaml`, records it in the ledger
+     and exits 0. Nothing reaches the network. The report is **not on the hub
+     yet**: a later `a2a feedback submit --all`, once a credential is set,
+     delivers it exactly once, from the bytes that were filed (an edit to the
+     draft afterwards is not sent). The file is in the hub's own format, so you
+     never hunt for a token you do not need. Re-running `submit` on the same
+     draft is a no-op; an edited draft under an already-filed id is refused
+     (`inbox-conflict`): file the changed report with a new `a2a feedback new`.
+     A failed hub write is **not** retried into the inbox: if you mean to stay
+     offline, re-run with `--inbox`.
 
    **The branch is not the repository's default branch, and that is
    deliberate.** The default branch is a publication: every release rewrites
@@ -74,7 +89,9 @@ docs` may be filed autonomously.
    report by hand, look there rather than on the default branch.
 5. Later, check what happened: `a2a feedback status` reports the hub-side
    `status`/`resolution` for everything you've filed — this is also how
-   `duplicates_checked` gets fed honestly next time (see §8.1 step 4).
+   `duplicates_checked` gets fed honestly next time (see §8.1 step 4). A
+   report filed to the local inbox shows as `local-inbox` (and `-` as its PR)
+   until it is delivered; `status` does not read the network for those rows.
 6. Reading the queue itself, if you are the one triaging:
    `a2a feedback triage` lists every `status: new` report with its dedupe
    candidates beside it, and `--apply <file>` records a verdict.

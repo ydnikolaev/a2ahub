@@ -18,7 +18,15 @@ type StatusRow struct {
 	PRURL      string
 	HubStatus  string // "unknown" on a hub-reader error (§T1: network errors degrade, exit 0)
 	Resolution string
+	// Inbox is the local-inbox path of a report filed there and not yet
+	// delivered; HubStatus is then statusLocalInbox and the hub was not read.
+	// Omitted from JSON otherwise, so hub rows encode as they always did.
+	Inbox string `json:"Inbox,omitempty"`
 }
+
+// statusLocalInbox is the HubStatus of a report filed to the machine's local
+// inbox and not yet delivered to the hub.
+const statusLocalInbox = "local-inbox"
 
 // HubReader resolves id's current committed hub-side content
 // (feedback/inbox/<id>.yaml as it stands on the hub repo's default
@@ -44,6 +52,14 @@ func Status(ledgerPath string, reader HubReader) ([]StatusRow, error) {
 	rows := make([]StatusRow, 0, len(items))
 	for _, it := range items {
 		row := StatusRow{ID: it.ID, Kind: it.Kind, Title: it.Title, PRURL: it.PRURL, HubStatus: "unknown"}
+		if it.Inbox != "" && it.PRURL == "" {
+			// Filed locally and not delivered: the hub has nothing to say about
+			// it, so status stays offline for this row.
+			row.HubStatus = statusLocalInbox
+			row.Inbox = it.Inbox
+			rows = append(rows, row)
+			continue
+		}
 		raw, rerr := reader(it.ID)
 		if rerr == nil {
 			var probe hubStatusProbe

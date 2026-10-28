@@ -19,6 +19,12 @@ type LedgerItem struct {
 	Kind  string `yaml:"kind"`
 	Title string `yaml:"title"`
 	PRURL string `yaml:"pr_url"`
+	// Inbox is the absolute path of the local-inbox copy this report was filed
+	// to when no hub write was possible (local-space-2026-10 spec 08 D-039).
+	// Empty on every row the hub route writes, so those rows' bytes are what
+	// they were before the inbox existed. A row with Inbox set and an empty
+	// PRURL is filed locally and not yet delivered.
+	Inbox string `yaml:"inbox,omitempty"`
 	Filed string `yaml:"filed"` // RFC3339
 }
 
@@ -67,7 +73,10 @@ func FindLedgerItem(path, id string) (*LedgerItem, error) {
 // AppendLedger appends item to path's ledger (read-modify-write). It is
 // idempotent per id: if a row with item.ID already exists, AppendLedger
 // is a no-op (submit.go's own idempotent-resubmit contract relies on
-// this).
+// this), with ONE exception: a stored row with an empty pr_url (a report filed
+// to the local inbox) gains item.PRURL when the report is later delivered.
+// inbox and filed are kept. Before the local inbox no row had an empty
+// pr_url, so this branch cannot change a ledger written earlier.
 func AppendLedger(path string, item LedgerItem) (err error) {
 	const op = "AppendLedger"
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -87,12 +96,21 @@ func AppendLedger(path string, item LedgerItem) (err error) {
 	if err != nil {
 		return err
 	}
-	for _, it := range items {
-		if it.ID == item.ID {
+	found := false
+	for i, it := range items {
+		if it.ID != item.ID {
+			continue
+		}
+		if it.PRURL != "" || item.PRURL == "" {
 			return nil
 		}
+		items[i].PRURL = item.PRURL
+		found = true
+		break
 	}
-	items = append(items, item)
+	if !found {
+		items = append(items, item)
+	}
 	out, merr := yaml.Marshal(ledgerDoc{Items: items})
 	if merr != nil {
 		return fmt.Errorf("feedback: %s: %w", op, merr)

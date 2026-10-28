@@ -42,6 +42,13 @@ type SubmitConfig struct {
 	Credential        host.Credential
 	CommitAuthorName  string
 	CommitAuthorEmail string
+
+	// InboxDir is the machine's local feedback inbox, `<data-root>/feedback/
+	// inbox`, where FileToInbox files a validated report when no hub write is
+	// possible (local-space-2026-10 spec 08, D-039). cmd/a2a derives it from the
+	// one data-root helper; this package never spells the path. Empty means the
+	// data root could not be placed, and the inbox route refuses.
+	InboxDir string
 }
 
 // SubmitResult is what Submit returns to its CLI caller.
@@ -57,12 +64,20 @@ type SubmitResult struct {
 	MergeMethod     host.MergeMethod      `json:"merge_method,omitempty"`
 	Note            string                `json:"note,omitempty"`
 	LedgerRecorded  bool                  `json:"ledger_recorded"`
-	ErrorCode       string                `json:"error_code,omitempty"`
-	Error           string                `json:"error,omitempty"`
+	// Inbox is the absolute path of the local-inbox file a report was filed
+	// to. Omitted on the hub route, so hub results encode as they always did.
+	Inbox     string `json:"inbox,omitempty"`
+	ErrorCode string `json:"error_code,omitempty"`
+	Error     string `json:"error,omitempty"`
 
 	// AlreadyOpen is retained for one compatibility cycle. New callers branch
 	// on State and RemainingAction and never reconstruct them from this bit.
 	AlreadyOpen bool `json:"-"`
+
+	// InboxExisting is true when FileToInbox found the same bytes already in
+	// the local inbox: the call filed nothing new. It is a rendering signal for
+	// the CLI; the --json row carries the same fact in Note.
+	InboxExisting bool `json:"-"`
 }
 
 const (
@@ -76,6 +91,12 @@ const (
 	ErrorCodeSharedWrite = "shared-write"
 	// ErrorCodeLocalLedger reports failure to update the local acknowledgement ledger.
 	ErrorCodeLocalLedger = "local-ledger"
+	// ErrorCodeInboxConflict reports a draft whose id is already in the local
+	// inbox with different bytes: a different report under a filed id.
+	ErrorCodeInboxConflict = "inbox-conflict"
+	// ErrorCodeInboxWrite reports that the local inbox could not be used: no data
+	// root, a failed write or link, or an inbox copy that is gone.
+	ErrorCodeInboxWrite = "inbox-write"
 )
 
 // LedgerRecordError means the shared write reached a confirmed PR, but the
@@ -108,6 +129,10 @@ type Submitter struct {
 	appendLedger func(path string, item LedgerItem) error
 	cloneOrFetch func(ctx context.Context, dir, repoURL string, credential host.Credential) error
 	mirrorDir    func(projectRoot, slug string) string
+	// link creates the local inbox's final file name without replacing one
+	// (os.Link). It is a field only so a test can inject the failure the
+	// atomic-write contract is judged by; no production caller replaces it.
+	link func(oldname, newname string) error
 }
 
 // NewSubmitter constructs a Submitter. funnel must not be nil (rails
@@ -123,6 +148,7 @@ func NewSubmitter(funnel Funnel, ledgerPath, projectRoot, slug string, cfg Submi
 		appendLedger: AppendLedger,
 		cloneOrFetch: space.CloneOrFetch,
 		mirrorDir:    defaultMirrorDir,
+		link:         os.Link,
 	}
 }
 
@@ -176,27 +202,23 @@ type submitProbe struct {
 func (s *Submitter) Submit(ctx context.Context, path string) (SubmitResult, error) {
 	const op = "Submit"
 
-	raw, err := s.readFile(path)
-	if err != nil {
-		return SubmitResult{}, fmt.Errorf("feedback: %s: %w", op, err)
-	}
-
 	// THE LIFECYCLE BOUNDARY, and the one place it can be enforced. A draft
 	// is a form and may carry the skeleton's instructions; a submitted record
 	// is evidence and may not. Every submit route — `a2a feedback submit
 	// <file>`, `--all`, and any future caller, including an MCP tool if one is
-	// ever added — funnels through this function, so the guarantee cannot be
-	// reached around. Placing it in internal/cli would forfeit exactly that.
+	// ever added — reads, normalizes and validates through readValidRecord
+	// (Submit and FileToInbox both call it), so the guarantee cannot be reached
+	// around. Placing it in internal/cli would forfeit exactly that.
 	//
-	// VALIDATE THE BYTES YOU SEND: everything below reads `record`, never
-	// `raw`. Today the two carry the same values by construction; a validator
-	// that judged a different document from the one that ships would be this
-	// epic's own defect, one layer down.
-	record, err := s.normalize(raw)
+	// VALIDATE THE BYTES YOU SEND: everything below reads `record`, never the
+	// raw draft. Today the two carry the same values by construction; a
+	// validator that judged a different document from the one that ships would
+	// be this epic's own defect, one layer down.
+	record, err := s.readValidRecord(op, path)
 	if err != nil {
-		return SubmitResult{}, fmt.Errorf("feedback: %s: %w", op, err)
+		return SubmitResult{}, err
 	}
-	if err := s.validateRaw(record); err != nil {
+	if err := s.requireCredential(); err != nil {
 		return SubmitResult{}, err
 	}
 
@@ -297,24 +319,38 @@ func mapSubmitResult(path, id string, result space.WriteResult) SubmitResult {
 // committing, pushing, opening a PR, or appending the ledger. The CLI uses it
 // to validate an entire batch before the first item writes.
 func (s *Submitter) ValidatePath(path string) error {
-	raw, err := s.readFile(path)
-	if err != nil {
-		return fmt.Errorf("feedback: Submit: %w", err)
-	}
 	// The same bytes Submit would send, so a batch pre-check and the write it
 	// gates cannot reach different verdicts.
-	record, err := s.normalize(raw)
-	if err != nil {
-		return fmt.Errorf("feedback: Submit: %w", err)
+	if _, err := s.readValidRecord("Submit", path); err != nil {
+		return err
 	}
-	return s.validateRaw(record)
+	return s.requireCredential()
 }
 
-func (s *Submitter) validateRaw(raw []byte) error {
-	report := Validate(raw, Options{})
-	if !report.Valid {
-		return &ValidationRefusedError{Violations: report.Violations}
+// readValidRecord is the draft-to-record boundary every submit route shares:
+// read path, strip the draft's comments (normalizeRecord), and run the report
+// checks on the normalized record. It deliberately holds NO credential check,
+// because the hub route needs one and the local-inbox route must not have one:
+// Submit and ValidatePath add requireCredential, FileToInbox and
+// ValidateInboxPath do not. op names the entry point in the error text.
+func (s *Submitter) readValidRecord(op, path string) ([]byte, error) {
+	raw, err := s.readFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("feedback: %s: %w", op, err)
 	}
+	record, err := s.normalize(raw)
+	if err != nil {
+		return nil, fmt.Errorf("feedback: %s: %w", op, err)
+	}
+	if report := Validate(record, Options{}); !report.Valid {
+		return nil, &ValidationRefusedError{Violations: report.Violations}
+	}
+	return record, nil
+}
+
+// requireCredential is the hub route's pre-write refusal: a GitHub target with
+// no token cannot be written to.
+func (s *Submitter) requireCredential() error {
 	if githubRemote(s.cfg.RemoteURL) && s.cfg.Credential.Token == "" {
 		return fmt.Errorf(
 			"feedback: Submit: GitHub credential is required before any write; log in with `gh auth login`, or set A2A_FEEDBACK_TOKEN (or GITHUB_TOKEN / GH_TOKEN)",

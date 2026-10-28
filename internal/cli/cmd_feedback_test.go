@@ -735,3 +735,289 @@ func TestFeedbackSubmit_ValidatesWholeBatchBeforeFirstWrite(t *testing.T) {
 		t.Fatalf("invalid batch wrote before full validation: pushes=%d opens=%d", len(fakeHost.Pushes), len(fakeHost.Opens))
 	}
 }
+
+// inboxCmdRig is a feedback command over a hub fixture AND a local inbox, so
+// one rig can take either route: --inbox (or SetInboxFallback) files locally,
+// and a plain submit reaches the fake host.
+type inboxCmdRig struct {
+	cmd         *cli.FeedbackCommand
+	fakeHost    *host.FakeHost
+	ledgerPath  string
+	inboxDir    string
+	feedbackDir string
+}
+
+func newInboxCmdRig(t *testing.T, hubReader feedback.HubReader) inboxCmdRig {
+	t.Helper()
+	fx := spacefixture.New(t, "feedback")
+	fakeHost := host.NewFakeHost()
+	projectRoot := t.TempDir()
+	feedbackDir := filepath.Join(projectRoot, ".a2a", "feedback")
+	if err := os.MkdirAll(feedbackDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ledgerPath := filepath.Join(feedbackDir, "ledger.yaml")
+	inboxDir := filepath.Join(t.TempDir(), "data", "feedback", "inbox")
+	submitter := feedback.NewSubmitter(space.NewWriteFunnel(fakeHost, nil, "0.13.0"), ledgerPath, projectRoot, "test-repo", feedback.SubmitConfig{
+		RemoteURL: fx.RemoteURL(), Repo: host.Repo{Owner: "a2ahub", Name: "a2ahub"}, BaseBranch: "main", InboxDir: inboxDir,
+	})
+	submitter.SetMirrorDirForTest(func(string, string) string { return fx.Clone("feedback") })
+	submitter.SetCloneOrFetchForTest(func(context.Context, string, string, host.Credential) error { return nil })
+	return inboxCmdRig{
+		cmd:      cli.NewFeedbackCommand(nil, submitter, ledgerPath, "", hubReader),
+		fakeHost: fakeHost, ledgerPath: ledgerPath, inboxDir: inboxDir, feedbackDir: feedbackDir,
+	}
+}
+
+func (r inboxCmdRig) draft(t *testing.T, id, title string) string {
+	t.Helper()
+	path := filepath.Join(r.feedbackDir, id+".yaml")
+	if err := os.WriteFile(path, []byte(feedbackDraftYAML(id, title)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func (r inboxCmdRig) run(args ...string) (code int, stdout, stderr string) {
+	io, out, errOut := newIO()
+	code = r.cmd.Run(context.Background(), args, io)
+	return code, out.String(), errOut.String()
+}
+
+// TestFeedbackSubmit_InboxFlagFilesLocallyAndSaysSo pins §T1's result lines:
+// --inbox files to the local inbox with reason `--inbox`, reaches no host, and
+// a re-run says the report is already there, both exiting 0.
+func TestFeedbackSubmit_InboxFlagFilesLocallyAndSaysSo(t *testing.T) {
+	t.Parallel()
+	rig := newInboxCmdRig(t, nil)
+	const id = "fb-20260728-aaa111"
+	draft := rig.draft(t, id, "an offline report on purpose")
+	filed := filepath.Join(rig.inboxDir, id+".yaml")
+
+	code, stdout, stderr := rig.run("submit", "--inbox", draft)
+	want := "feedback submit: filed " + id + " to the local inbox " + filed + " (--inbox); deliver it later with a2a feedback submit --all once a GitHub credential is set\n"
+	if code != 0 || stdout != want {
+		t.Fatalf("code=%d stdout=%q stderr=%q, want exit 0 and %q", code, stdout, stderr, want)
+	}
+	if len(rig.fakeHost.Pushes) != 0 || len(rig.fakeHost.Opens) != 0 {
+		t.Fatalf("--inbox reached the host: pushes=%d opens=%d", len(rig.fakeHost.Pushes), len(rig.fakeHost.Opens))
+	}
+
+	code, stdout, stderr = rig.run("submit", draft, "--inbox")
+	want = "feedback submit: " + id + " is already in the local inbox " + filed + "\n"
+	if code != 0 || stdout != want {
+		t.Fatalf("re-run code=%d stdout=%q stderr=%q, want exit 0 and %q", code, stdout, stderr, want)
+	}
+}
+
+// TestFeedbackSubmit_InboxFallbackReasonIsTheWiringsReason: with the fallback
+// the wiring detected (no credential) and no flag, the route is the inbox and
+// the line names that reason; with both, the flag's reason wins (§T1.1 row 2
+// precedes row 3).
+func TestFeedbackSubmit_InboxFallbackReasonIsTheWiringsReason(t *testing.T) {
+	t.Parallel()
+	rig := newInboxCmdRig(t, nil)
+	rig.cmd.SetInboxFallback("no GitHub credential")
+	draft := rig.draft(t, "fb-20260728-aaa111", "an offline report by necessity")
+
+	code, stdout, stderr := rig.run("submit", draft)
+	if code != 0 || !strings.Contains(stdout, "(no GitHub credential); deliver it later") {
+		t.Fatalf("code=%d stdout=%q stderr=%q, want a filing with reason `no GitHub credential`", code, stdout, stderr)
+	}
+	other := rig.draft(t, "fb-20260728-bbb222", "an offline report that also asks for it")
+	code, stdout, stderr = rig.run("submit", "--inbox", other)
+	if code != 0 || !strings.Contains(stdout, "(--inbox); deliver it later") {
+		t.Fatalf("code=%d stdout=%q stderr=%q, want reason `--inbox` to win", code, stdout, stderr)
+	}
+	if len(rig.fakeHost.Opens) != 0 {
+		t.Fatalf("the inbox route reached the host: opens=%d", len(rig.fakeHost.Opens))
+	}
+}
+
+// TestFeedbackSubmit_InboxJSONRowCarriesInbox: the --json row gains `inbox` on
+// the inbox route; a hub-route row encodes with no such key.
+func TestFeedbackSubmit_InboxJSONRowCarriesInbox(t *testing.T) {
+	t.Parallel()
+	rig := newInboxCmdRig(t, nil)
+	local := rig.draft(t, "fb-20260728-aaa111", "an offline report in json")
+	code, stdout, stderr := rig.run("submit", "--inbox", "--json", local)
+	if code != 0 {
+		t.Fatalf("code=%d stdout=%s stderr=%s", code, stdout, stderr)
+	}
+	var rows []map[string]any
+	if err := json.Unmarshal([]byte(stdout), &rows); err != nil || len(rows) != 1 {
+		t.Fatalf("--json output %q is not one row: %v", stdout, err)
+	}
+	if got := rows[0]["inbox"]; got != filepath.Join(rig.inboxDir, "fb-20260728-aaa111.yaml") {
+		t.Fatalf("row inbox = %v, want the filed path; row=%v", got, rows[0])
+	}
+
+	hub := rig.draft(t, "fb-20260728-bbb222", "a hub report in json")
+	code, stdout, stderr = rig.run("submit", "--json", hub)
+	if code != 0 {
+		t.Fatalf("hub route code=%d stdout=%s stderr=%s", code, stdout, stderr)
+	}
+	if strings.Contains(stdout, `"inbox"`) {
+		t.Fatalf("a hub-route --json row must carry no inbox key, got %s", stdout)
+	}
+}
+
+// TestFeedbackSubmit_InboxBatchRefusedFilesNothing is spec 08 AC12: on the
+// inbox route, one invalid draft files nothing; every result carries
+// `validation` or `batch-validation-refused`, and the inbox stays empty.
+func TestFeedbackSubmit_InboxBatchRefusedFilesNothing(t *testing.T) {
+	t.Parallel()
+	rig := newInboxCmdRig(t, nil)
+	valid := rig.draft(t, "fb-20260728-aaa111", "valid but batch-refused")
+	invalid := filepath.Join(rig.feedbackDir, "fb-20260728-bbb222.yaml")
+	if err := os.WriteFile(invalid, []byte("feedback: v1\nkind: bug\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := rig.run("submit", "--inbox", "--json", valid, invalid)
+	if code != 1 {
+		t.Fatalf("code=%d, want 1; stdout=%s stderr=%s", code, stdout, stderr)
+	}
+	var results []feedback.SubmitResult
+	if err := json.Unmarshal([]byte(stdout), &results); err != nil || len(results) != 2 {
+		t.Fatalf("results = %q, %v, want two rows", stdout, err)
+	}
+	if results[0].ErrorCode != feedback.ErrorCodeBatchRefused || results[1].ErrorCode != feedback.ErrorCodeValidation {
+		t.Fatalf("results = %+v, want batch-validation-refused then validation", results)
+	}
+	if entries, err := os.ReadDir(rig.inboxDir); !os.IsNotExist(err) && len(entries) != 0 {
+		t.Fatalf("inbox holds %v after a refused batch, want nothing (err=%v)", entries, err)
+	}
+	if items, err := feedback.ReadLedger(rig.ledgerPath); err != nil || len(items) != 0 {
+		t.Fatalf("ledger = %+v, %v, want no rows", items, err)
+	}
+}
+
+// TestFeedbackSubmit_AllDeliversTheInboxCopyOnce is the in-process half of spec
+// 08 AC10: after an inbox filing and an edit of the draft, `submit --all` on
+// the hub route opens one PR from the inbox copy, the ledger row gains pr_url
+// and keeps inbox, and a second --all selects nothing.
+func TestFeedbackSubmit_AllDeliversTheInboxCopyOnce(t *testing.T) {
+	t.Parallel()
+	rig := newInboxCmdRig(t, nil)
+	const id = "fb-20260728-aaa111"
+	draft := rig.draft(t, id, "filed offline then delivered")
+	if code, out, errOut := rig.run("submit", "--inbox", draft); code != 0 {
+		t.Fatalf("inbox filing code=%d stdout=%s stderr=%s", code, out, errOut)
+	}
+	if err := os.WriteFile(draft, []byte(feedbackDraftYAML(id, "an edit made after filing")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := rig.run("submit", "--all")
+	if code != 0 {
+		t.Fatalf("--all code=%d stdout=%s stderr=%s", code, stdout, stderr)
+	}
+	if len(rig.fakeHost.Opens) != 1 || !strings.HasSuffix(rig.fakeHost.Opens[0].Title, "filed offline then delivered") {
+		t.Fatalf("opens = %+v, want one PR titled from the INBOX copy, not the edited draft", rig.fakeHost.Opens)
+	}
+	item, err := feedback.FindLedgerItem(rig.ledgerPath, id)
+	if err != nil || item == nil || item.PRURL == "" || item.Inbox != filepath.Join(rig.inboxDir, id+".yaml") {
+		t.Fatalf("ledger row = %+v, %v, want pr_url set and the inbox path kept", item, err)
+	}
+
+	code, stdout, _ = rig.run("submit", "--all")
+	if code != 0 || !strings.Contains(stdout, "no unsubmitted drafts") || len(rig.fakeHost.Opens) != 1 {
+		t.Fatalf("second --all code=%d stdout=%q opens=%d, want a no-op", code, stdout, len(rig.fakeHost.Opens))
+	}
+}
+
+// TestFeedbackSubmit_AllOnTheInboxRouteRefilesIdempotently: without a
+// credential, --all re-files the same inbox bytes and reports them as already
+// filed, exit 0 (§T1.3 "Delivery idempotency").
+func TestFeedbackSubmit_AllOnTheInboxRouteRefilesIdempotently(t *testing.T) {
+	t.Parallel()
+	rig := newInboxCmdRig(t, nil)
+	rig.cmd.SetInboxFallback("no GitHub credential")
+	const id = "fb-20260728-aaa111"
+	draft := rig.draft(t, id, "filed offline and still offline")
+	if code, out, errOut := rig.run("submit", draft); code != 0 {
+		t.Fatalf("inbox filing code=%d stdout=%s stderr=%s", code, out, errOut)
+	}
+	code, stdout, stderr := rig.run("submit", "--all")
+	if code != 0 || !strings.Contains(stdout, id+" is already in the local inbox") {
+		t.Fatalf("--all code=%d stdout=%q stderr=%q, want exit 0 and `already in the local inbox`", code, stdout, stderr)
+	}
+}
+
+// TestFeedbackSubmit_AllReportsAMissingInboxCopy is spec 08 AC11: a ledger row
+// filed to the inbox whose copy has been deleted is reported by its path, exits
+// 1 and opens no PR, and the draft is NOT silently used instead.
+func TestFeedbackSubmit_AllReportsAMissingInboxCopy(t *testing.T) {
+	t.Parallel()
+	rig := newInboxCmdRig(t, nil)
+	const id = "fb-20260728-aaa111"
+	draft := rig.draft(t, id, "filed offline then its copy was deleted")
+	if code, out, errOut := rig.run("submit", "--inbox", draft); code != 0 {
+		t.Fatalf("inbox filing code=%d stdout=%s stderr=%s", code, out, errOut)
+	}
+	copyPath := filepath.Join(rig.inboxDir, id+".yaml")
+	if err := os.Remove(copyPath); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := rig.run("submit", "--all")
+	if code != 1 || !strings.Contains(stderr, "inbox copy "+copyPath+" is gone; submit the draft explicitly") {
+		t.Fatalf("--all code=%d stdout=%q stderr=%q, want exit 1 naming `inbox copy %s is gone`", code, stdout, stderr, copyPath)
+	}
+	if len(rig.fakeHost.Pushes) != 0 || len(rig.fakeHost.Opens) != 0 {
+		t.Fatalf("a missing inbox copy fell back to the draft: pushes=%d opens=%d", len(rig.fakeHost.Pushes), len(rig.fakeHost.Opens))
+	}
+}
+
+// TestFeedbackSubmit_AllSelectsAnUndeliveredRowWithoutAnInboxCopy: a row with
+// no pr_url and no inbox path (not written by any release) is undelivered, so
+// its draft is selected like an unledgered one.
+func TestFeedbackSubmit_AllSelectsAnUndeliveredRowWithoutAnInboxCopy(t *testing.T) {
+	t.Parallel()
+	rig := newInboxCmdRig(t, nil)
+	const id = "fb-20260728-aaa111"
+	rig.draft(t, id, "a row without a pr and without an inbox")
+	if err := feedback.AppendLedger(rig.ledgerPath, feedback.LedgerItem{ID: id, Kind: "bug", Title: "x", Filed: "2026-10-28T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, errOut := rig.run("submit", "--all"); code != 0 || len(rig.fakeHost.Opens) != 1 {
+		t.Fatalf("--all code=%d opens=%d stdout=%s stderr=%s, want the draft submitted once", code, len(rig.fakeHost.Opens), out, errOut)
+	}
+}
+
+// TestFeedbackStatus_LocalInboxRowPrintsDashAndSkipsTheHub is the CLI half of
+// spec 08 AC9: an undelivered inbox row prints `-` in the PR column and
+// `local-inbox` as the hub status, and the hub reader is never called for it.
+func TestFeedbackStatus_LocalInboxRowPrintsDashAndSkipsTheHub(t *testing.T) {
+	t.Parallel()
+	const id = "fb-20260728-aaa111"
+	rig := newInboxCmdRig(t, func(got string) ([]byte, error) {
+		t.Errorf("the hub reader was called for %s", got)
+		return nil, nil
+	})
+	if err := feedback.AppendLedger(rig.ledgerPath, feedback.LedgerItem{ID: id, Kind: "bug", Title: "offline", Inbox: "/data/inbox/" + id + ".yaml", Filed: "2026-10-28T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := rig.run("status")
+	want := id + "\tbug\toffline\t-\tlocal-inbox\t-\n"
+	if code != 0 || stdout != want {
+		t.Fatalf("status code=%d stdout=%q stderr=%q, want %q", code, stdout, stderr, want)
+	}
+	code, stdout, _ = rig.run("status", "--json")
+	if code != 0 || !strings.Contains(stdout, `"Inbox": "/data/inbox/`+id+`.yaml"`) {
+		t.Fatalf("status --json code=%d stdout=%s, want the Inbox key", code, stdout)
+	}
+}
+
+// TestFeedbackSynopsis_NamesTheInboxFlag is spec 08 AC15's in-process half: the
+// catalog row's synopsis (reference/commands.md is generated from it) names
+// the new flag.
+func TestFeedbackSynopsis_NamesTheInboxFlag(t *testing.T) {
+	t.Parallel()
+	got := cli.NewFeedbackCommand(nil, nil, "", "", nil).Synopsis()
+	if !strings.Contains(got, "submit <file...> [--all] [--inbox]") {
+		t.Fatalf("Synopsis() = %q, want it to contain %q", got, "submit <file...> [--all] [--inbox]")
+	}
+}

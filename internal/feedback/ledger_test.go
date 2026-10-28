@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestReadLedger_MissingFile(t *testing.T) {
@@ -155,5 +158,71 @@ func TestAppendLedger_AppendAndIdempotent(t *testing.T) {
 	}
 	if missing != nil {
 		t.Fatalf("FindLedgerItem for an unknown id = %+v, want nil", missing)
+	}
+}
+
+// TestLedgerInboxKeyOmittedOnHubRows is spec 08 AC5's ledger half: a row the
+// hub route writes carries no `inbox:` key, so its bytes are what they were
+// before the local inbox existed, and a row filed to the inbox carries it.
+func TestLedgerInboxKeyOmittedOnHubRows(t *testing.T) {
+	t.Parallel()
+
+	hub, err := yaml.Marshal(ledgerDoc{Items: []LedgerItem{{ID: "fb-20260701-aaaaaa", Kind: "bug", Title: "t1", PRURL: "https://example.invalid/pr/1", Filed: "2026-07-23T00:00:00Z"}}})
+	if err != nil {
+		t.Fatalf("marshal hub row: %v", err)
+	}
+	if strings.Contains(string(hub), "inbox") {
+		t.Fatalf("a hub-route row must carry no inbox key, got:\n%s", hub)
+	}
+
+	filed, err := yaml.Marshal(ledgerDoc{Items: []LedgerItem{{ID: "fb-20260701-aaaaaa", Kind: "bug", Title: "t1", Inbox: "/data/feedback/inbox/fb-20260701-aaaaaa.yaml", Filed: "2026-07-23T00:00:00Z"}}})
+	if err != nil {
+		t.Fatalf("marshal inbox row: %v", err)
+	}
+	if !strings.Contains(string(filed), "inbox: /data/feedback/inbox/fb-20260701-aaaaaa.yaml") {
+		t.Fatalf("an inbox-filed row must carry its inbox path, got:\n%s", filed)
+	}
+}
+
+// TestAppendLedger_DeliveredLaterSetsPRURLOnce pins §T1.3's one update: an
+// inbox row (empty pr_url) gains the PR URL when the report is delivered, keeps
+// its inbox path and filed time, and is a no-op from then on.
+func TestAppendLedger_DeliveredLaterSetsPRURLOnce(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), ".a2a", "feedback", "ledger.yaml")
+	inboxRow := LedgerItem{ID: "fb-20260701-aaaaaa", Kind: "bug", Title: "t1", Inbox: "/data/inbox/fb-20260701-aaaaaa.yaml", Filed: "2026-07-23T00:00:00Z"}
+	if err := AppendLedger(path, inboxRow); err != nil {
+		t.Fatalf("AppendLedger (inbox): %v", err)
+	}
+	// Filing the same report to the inbox again changes nothing.
+	if err := AppendLedger(path, inboxRow); err != nil {
+		t.Fatalf("AppendLedger (inbox again): %v", err)
+	}
+
+	delivered := LedgerItem{ID: inboxRow.ID, Kind: "bug", Title: "t1", PRURL: "https://example.invalid/pr/1", Filed: "2026-08-01T00:00:00Z"}
+	if err := AppendLedger(path, delivered); err != nil {
+		t.Fatalf("AppendLedger (delivered): %v", err)
+	}
+	items, err := ReadLedger(path)
+	if err != nil {
+		t.Fatalf("ReadLedger: %v", err)
+	}
+	want := LedgerItem{ID: inboxRow.ID, Kind: "bug", Title: "t1", PRURL: "https://example.invalid/pr/1", Inbox: inboxRow.Inbox, Filed: inboxRow.Filed}
+	if len(items) != 1 || items[0] != want {
+		t.Fatalf("ledger = %+v, want exactly %+v", items, want)
+	}
+
+	// A different PR URL later must not rewrite a delivered row.
+	other := delivered
+	other.PRURL = "https://example.invalid/pr/2"
+	if err := AppendLedger(path, other); err != nil {
+		t.Fatalf("AppendLedger (other): %v", err)
+	}
+	items, err = ReadLedger(path)
+	if err != nil {
+		t.Fatalf("ReadLedger: %v", err)
+	}
+	if len(items) != 1 || items[0] != want {
+		t.Fatalf("a delivered row was rewritten: ledger = %+v, want %+v", items, want)
 	}
 }

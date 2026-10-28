@@ -1622,6 +1622,11 @@ func runFeedback(args []string, stdout, stderr io.Writer) int {
 	ctx := context.Background()
 	p, err := resolvePaths()
 	if err != nil {
+		if _, homeErr := os.UserHomeDir(); homeErr != nil {
+			// The machine config, the data root and the local feedback inbox
+			// (<data-root>/feedback/inbox) all live under HOME, so name them.
+			return failf(stderr, "a2a feedback: %v: the machine config and the data root ($HOME/.local/share/a2a, which holds the local feedback inbox) are placed under HOME; set HOME and re-run", err)
+		}
 		return fail(stderr, err)
 	}
 	feedbackDir := filepath.Join(p.projectRoot, ".a2a", "feedback")
@@ -1639,14 +1644,23 @@ func runFeedback(args []string, stdout, stderr io.Writer) int {
 	}
 	owner, name := repo.Owner, repo.Name
 	var credential host.Credential
-	if len(args) > 0 && args[0] == "submit" && feedbackGitHubRemote(repoURL) {
+	var inboxReason string
+	githubTarget := feedbackGitHubRemote(repoURL)
+	if len(args) > 0 && args[0] == "submit" && githubTarget {
 		machine, loadErr := loadMachineConfigForWrite(p.machineConfig)
 		if loadErr != nil {
 			return failf(stderr, "a2a feedback: unreadable machine config (%s): %v", p.machineConfig, loadErr)
 		}
-		credential, err = resolveFeedbackCredential(ctx, machine)
-		if err != nil {
-			return failf(stderr, "a2a feedback: credential: %v", err)
+		var credErr error
+		credential, credErr = resolveFeedbackCredential(ctx, machine)
+		// No credential is not a failure here (D-039): submit files the report
+		// to the machine's local inbox. Anything else (a malformed
+		// `credentials.feedback`, say) still exits 1, because a broken setting
+		// is not "no credential".
+		var fatal error
+		inboxReason, fatal = feedbackInboxFallback(githubTarget, credErr)
+		if fatal != nil {
+			return failf(stderr, "a2a feedback: credential: %v", fatal)
 		}
 	}
 
@@ -1658,6 +1672,12 @@ func runFeedback(args []string, stdout, stderr io.Writer) int {
 		Credential:        credential,
 		CommitAuthorName:  "a2a-feedback",
 		CommitAuthorEmail: "a2a-feedback@a2a.local",
+	}
+	// The machine's local feedback inbox, beside the local spaces (D-039). An
+	// unplaceable data root leaves InboxDir empty: only the inbox route needs
+	// it, and that route refuses with a message that names the data root.
+	if root, rootErr := a2aDataRoot(); rootErr == nil {
+		submitCfg.InboxDir = filepath.Join(root, "feedback", "inbox")
 	}
 	submitter := feedback.NewSubmitter(funnel, ledgerPath, p.projectRoot, owner+"-"+name, submitCfg)
 
@@ -1689,7 +1709,49 @@ func runFeedback(args []string, stdout, stderr io.Writer) int {
 
 	cmd := cli.NewFeedbackCommand(drafter, submitter, ledgerPath, hubRoot, hubReader)
 	cmd.SetFreshnessResolver(resolveFreshness)
+	cmd.SetInboxFallback(inboxReason)
 	return cmd.Run(ctx, args, stdio(stdout, stderr))
+}
+
+// feedbackInboxFallback decides what a failed feedback credential resolution
+// means for `a2a feedback submit` (spec 08 §T1.1 rows 1, 3 and 4). It is pure:
+// it takes what runFeedback already knows and returns one of three verdicts.
+//
+//   - reason non-empty: the target is GitHub and the credential is simply
+//     missing, so submit files to the machine's local inbox (D-039's trigger).
+//   - fatal non-nil: the credential failed for any other reason, so submit
+//     refuses with today's message. A malformed `credentials.feedback` is a
+//     broken setting, not "no credential", and filing locally would hide it.
+//   - both empty: the hub route, unchanged (a credential resolved, or the target
+//     is not GitHub and resolves none).
+//
+// resolveFeedbackCredential joins the errors of every source it tried, and
+// errors.Is reports a join true if ANY leaf matches. "No credential" therefore
+// holds only when EVERY leaf is the unresolved sentinel; one leaf that is
+// anything else makes the whole failure fatal.
+func feedbackInboxFallback(githubTarget bool, credErr error) (reason string, fatal error) {
+	if credErr == nil || !githubTarget {
+		return "", nil
+	}
+	if !everyLeafIsUnresolved(credErr) {
+		return "", credErr
+	}
+	return "no GitHub credential", nil
+}
+
+// everyLeafIsUnresolved reports whether every leaf of err's tree (through
+// errors.Join and multi-%w wraps) is space.ErrCredentialUnresolved.
+func everyLeafIsUnresolved(err error) bool {
+	if multi, ok := err.(interface{ Unwrap() []error }); ok {
+		leaves := multi.Unwrap()
+		for _, leaf := range leaves {
+			if !everyLeafIsUnresolved(leaf) {
+				return false
+			}
+		}
+		return len(leaves) > 0
+	}
+	return errors.Is(err, space.ErrCredentialUnresolved)
 }
 
 // feedbackGitHubRemote mirrors the feedback package's credential boundary
