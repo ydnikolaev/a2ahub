@@ -279,7 +279,7 @@ func (c *DataCommand) runPack(ctx context.Context, args []string, stdio IO) int 
 	maxAttempts := fs.Int("max-attempts", 0, "attempt ceiling; 0 = unset, nothing refused (L-1)")
 	asJSON := fs.Bool("json", false, "emit JSON")
 	if dataHelpRequested(args) {
-		return printDataHelp(fs, stdio, dataPackUsage)
+		return printDataHelp(fs, stdio, dataPackUsage+"\n"+workflowLine("loop-receive"))
 	}
 	if c.ops == nil {
 		return dataServiceUnavailable(stdio, "pack")
@@ -338,7 +338,7 @@ func (c *DataCommand) runDeliver(ctx context.Context, args []string, stdio IO) i
 	timeout := fs.Duration("timeout", DefaultDataExpressTimeout, "with --for: how long EACH wait for a pending merge may take (it bounds every step's wait, not the whole invocation)")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
 	if dataHelpRequested(args) {
-		return printDataHelp(fs, stdio, dataDeliverUsage)
+		return printDataHelp(fs, stdio, dataDeliverUsage+"\n"+workflowLine("loop-receive"))
 	}
 	if c.ops == nil {
 		return dataServiceUnavailable(stdio, "deliver")
@@ -473,7 +473,7 @@ func (c *DataCommand) runVerify(ctx context.Context, args []string, stdio IO) in
 	timeout := fs.Duration("timeout", DefaultDataExpressTimeout, "with --for: how long EACH wait for a pending merge may take (it bounds every step's wait, not the whole invocation)")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
 	if dataHelpRequested(args) {
-		return printDataHelp(fs, stdio, dataVerifyUsage)
+		return printDataHelp(fs, stdio, dataVerifyUsage+"\n"+workflowLine("loop-send"))
 	}
 	if c.ops == nil {
 		return dataServiceUnavailable(stdio, "verify")
