@@ -99,7 +99,7 @@ run_check() { # $1 = releasenotes-shaped dir, $2 = budget file, $3 = gate name
   local unlisted=""
   while IFS= read -r id; do
     [ -n "$id" ] || continue
-    if ! printf '%s\n' "$listed" | grep -qxF "$id"; then
+    if ! grep -qxF "$id" <<<"$listed"; then
       unlisted="$unlisted $id"
     fi
   done <<<"$violations"
@@ -110,7 +110,7 @@ run_check() { # $1 = releasenotes-shaped dir, $2 = budget file, $3 = gate name
   local stale=""
   while IFS= read -r id; do
     [ -n "$id" ] || continue
-    if ! printf '%s\n' "$violations" | grep -qxF "$id"; then
+    if ! grep -qxF "$id" <<<"$violations"; then
       stale="$stale $id"
     fi
   done <<<"$listed"
