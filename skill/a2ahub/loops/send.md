@@ -148,8 +148,8 @@
    answer: track, don't block. On a host that lands synchronously
    (`lands_synchronously: true` in `a2a version --json`, a local space) there
    is no PR: the write is on `main` when `a2a submit` returns, so there is
-   nothing to wait for and `a2a await` returns at once with "no pending write
-   recorded".
+   nothing to wait for and `a2a await` exits 1 at once with "no pending write
+   recorded" — the expected answer here, not a failed write.
 5. **Track, don't poll:** the item appears in your outbox with folded state;
    the statusline surfaces movement. If `needed_by` passes silently, escalate
    per 8.5.
