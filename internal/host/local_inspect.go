@@ -14,13 +14,24 @@ import (
 // anything other than a land has moved the base branch, and whether this
 // process can write the repository.
 type LocalSpaceInspection struct {
-	// HookPresent: hooks/pre-receive exists as a file.
+	// HookPresent: the pre-receive hook git would run for a push exists as a
+	// file. That is <hooks dir>/pre-receive, where the hooks directory is the
+	// one git resolves for the space (core.hooksPath from any config level,
+	// else $GIT_DIR/hooks), so a hook in the space's own hooks/ that git does
+	// not run is not present.
 	HookPresent bool
 	// HookExecutable: it has an executable bit (git skips a hook that has none).
 	HookExecutable bool
-	// HookCurrent: it is executable and equal, byte for byte, to what
+	// HookCurrent: git runs hooks from the space's own hooks/ directory, and
+	// the hook there is executable and equal, byte for byte, to what
 	// PrepareLocalSpace writes.
 	HookCurrent bool
+	// HooksDirElsewhere is the directory git runs the space's hooks from when
+	// that is not the space's own hooks/ (a global or system core.hooksPath,
+	// say); "" when it is. When set, the guard is not in force whatever is in
+	// hooks/, and PrepareLocalSpace (or `git --git-dir=<space> config
+	// core.hooksPath hooks`) puts it back.
+	HooksDirElsewhere string
 	// MainNonLandCommits lists, newest first, every commit on the base
 	// branch's first-parent chain after the root that is not a two-parent land
 	// merge: a sign that something moved the branch around the land.
@@ -49,17 +60,57 @@ func (h *LocalHost) InspectLocalSpace(ctx context.Context) (LocalSpaceInspection
 		return LocalSpaceInspection{}, err
 	}
 	var out LocalSpaceInspection
-	hookPath := filepath.Join(h.dir, "hooks", preReceiveHookName)
+	hookPath, err := h.effectiveHookPath(ctx, op)
+	if err != nil {
+		return LocalSpaceInspection{}, err
+	}
+	ownDir := filepath.Join(h.dir, "hooks")
+	if !sameDir(filepath.Dir(hookPath), ownDir) {
+		out.HooksDirElsewhere = filepath.Dir(hookPath)
+	}
 	if info, statErr := os.Stat(hookPath); statErr == nil && info.Mode().IsRegular() {
 		out.HookPresent = true
 		out.HookExecutable = info.Mode().Perm()&0o111 != 0
-		out.HookCurrent = hookIsCurrent(hookPath, []byte(preReceiveHook(base)))
+		out.HookCurrent = out.HooksDirElsewhere == "" && hookIsCurrent(hookPath, []byte(preReceiveHook(base)))
 	}
 	if out.MainNonLandCommits, err = h.nonLandCommits(ctx, op, base); err != nil {
 		return LocalSpaceInspection{}, err
 	}
 	out.Writable, out.WritableDetail = h.probeWritable()
 	return out, nil
+}
+
+// effectiveHookPath asks git where it would look for the space's pre-receive
+// hook: `rev-parse --git-path` applies core.hooksPath from every config level
+// (and its ~ expansion) the way receive-pack does. A relative answer is
+// relative to the directory hooks run in, which for a bare repository is the
+// repository itself, so it is joined onto h.dir rather than this process's
+// working directory.
+func (h *LocalHost) effectiveHookPath(ctx context.Context, op string) (string, error) {
+	res := h.run(ctx, 4096, "rev-parse", "--git-path", "hooks/"+preReceiveHookName)
+	if res.err != nil || res.exitCode != 0 {
+		return "", localGitError(op, "resolve the hooks directory", res)
+	}
+	path := strings.TrimSpace(string(res.stdout))
+	if path == "" {
+		return "", &Error{Op: op, Err: fmt.Errorf("%w: resolve the hooks directory: git printed no path", errLocalGit)}
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(h.dir, path)
+	}
+	return filepath.Clean(path), nil
+}
+
+// sameDir reports whether a and b name one directory: the same inode when both
+// can be stat'ed (so /var and /private/var on macOS agree), else equal cleaned
+// paths.
+func sameDir(a, b string) bool {
+	ai, aErr := os.Stat(a)
+	bi, bErr := os.Stat(b)
+	if aErr == nil && bErr == nil {
+		return os.SameFile(ai, bi)
+	}
+	return filepath.Clean(a) == filepath.Clean(b)
 }
 
 // baseBranch reads the branch HEAD names; "" when HEAD is not a branch ref.

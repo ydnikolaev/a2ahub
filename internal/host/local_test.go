@@ -1386,3 +1386,176 @@ func TestPreReceiveRefusal_IsSafeToEmbedInTheHook(t *testing.T) {
 		t.Errorf("hook does not embed the refusal verbatim:\n%s", hook)
 	}
 }
+
+// ---- core.hooksPath -------------------------------------------------------
+
+// globalHooksPathEnv writes a global git config that sends every repository's
+// hooks to a fresh empty directory, the common "global hooks dir" setup, and
+// returns the environment that makes ONE git invocation read it (no system
+// config, so the machine's own cannot interfere) and that directory. It is
+// passed per command, never set on the process, so parallel tests do not see it.
+func globalHooksPathEnv(t *testing.T) (env []string, hooksDir string) {
+	t.Helper()
+	tmp := t.TempDir()
+	hooksDir = filepath.Join(tmp, "global-hooks")
+	if err := os.Mkdir(hooksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(tmp, "gitconfig")
+	if err := os.WriteFile(cfg, []byte("[core]\n\thooksPath = "+hooksDir+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env = []string{"GIT_CONFIG_GLOBAL=" + cfg, "GIT_CONFIG_NOSYSTEM=1"}
+	// The test proves nothing if the environment does not take effect.
+	if out, err := gitTry("", env, "config", "--global", "--get", "core.hooksPath"); err != nil || strings.TrimSpace(out) != hooksDir {
+		t.Fatalf("the global config is not read: %q, %v", out, err)
+	}
+	return env, hooksDir
+}
+
+// unsetOwnHooksPath removes core.hooksPath from the space's own config, which
+// is how a space prepared before PrepareLocalSpace wrote it looks.
+func unsetOwnHooksPath(t *testing.T, origin string) {
+	t.Helper()
+	if _, set := bareTry(origin, "config", "--local", "--get-all", "core.hooksPath"); set {
+		bare(t, origin, "config", "--local", "--unset-all", "core.hooksPath")
+	}
+}
+
+// gitExecWithEnv is a gitExecFunc that runs git with env added to this
+// process's environment, so a test can give the host's own git calls a global
+// config without setting it on the (parallel) test process.
+func gitExecWithEnv(env []string) gitExecFunc {
+	return func(ctx context.Context, stdin []byte, _ int, args ...string) recoveryGitResult {
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Env = append(os.Environ(), env...)
+		if stdin != nil {
+			cmd.Stdin = bytes.NewReader(stdin)
+		}
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		err := cmd.Run()
+		var exitErr *exec.ExitError
+		switch {
+		case err == nil:
+			return recoveryGitResult{stdout: stdout.Bytes(), stderr: stderr.Bytes()}
+		case errors.As(err, &exitErr):
+			return recoveryGitResult{stdout: stdout.Bytes(), stderr: stderr.Bytes(), exitCode: exitErr.ExitCode()}
+		default:
+			return recoveryGitResult{exitCode: -1, err: err}
+		}
+	}
+}
+
+// A global core.hooksPath sends git past $GIT_DIR/hooks, so without the space's
+// own core.hooksPath a raw push to main lands unvalidated. PrepareLocalSpace
+// writes that entry, and the same push is then refused.
+func TestPrepareLocalSpace_GlobalHooksPathCannotBypassTheGuard(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	r := newLocalRig(t)
+	clone := r.clone("axon")
+	env, _ := globalHooksPathEnv(t)
+	gitOut(t, clone, "checkout", "-q", "main")
+
+	// The bypass, reproduced on a space without its own core.hooksPath.
+	unsetOwnHooksPath(t, r.origin)
+	commitInDir(t, clone, "axon/docs/bypass.md", "bypass\n")
+	if out, err := gitTry(clone, env, "push", r.origin, "HEAD:refs/heads/main"); err != nil {
+		t.Fatalf("precondition: without its own core.hooksPath the push should bypass the hook, but it was refused: %v\n%s", err, out)
+	}
+	if got, want := bare(t, r.origin, "rev-parse", "refs/heads/main"), gitOut(t, clone, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("precondition: the bypassing push did not move main (%s, want %s)", got, want)
+	}
+
+	if err := PrepareLocalSpace(ctx, r.origin, "main"); err != nil {
+		t.Fatalf("PrepareLocalSpace: %v", err)
+	}
+
+	// A new commit: re-pushing the landed one would be an "up to date" no-op.
+	commitInDir(t, clone, "axon/docs/guarded.md", "guarded\n")
+	mainBefore := bare(t, r.origin, "rev-parse", "refs/heads/main")
+	out, err := gitTry(clone, env, "push", r.origin, "HEAD:refs/heads/main")
+	if err == nil {
+		t.Fatalf("after PrepareLocalSpace a push to main under a global core.hooksPath landed:\n%s", out)
+	}
+	if want := fmt.Sprintf(PreReceiveRefusal, "refs/heads/main"); !strings.Contains(out, want) {
+		t.Errorf("the push was not refused by the hook:\n%s", out)
+	}
+	if got := bare(t, r.origin, "rev-parse", "refs/heads/main"); got != mainBefore {
+		t.Error("a refused push moved main")
+	}
+	if got, ok := bareTry(r.origin, "config", "--local", "--get-all", "core.hooksPath"); !ok || got != "hooks" {
+		t.Errorf("own core.hooksPath = %q (read ok: %v), want exactly one %q", got, ok, "hooks")
+	}
+
+	// Idempotent: a re-run keeps exactly one entry, and restores one pointed elsewhere.
+	bare(t, r.origin, "config", "--local", "core.hooksPath", t.TempDir())
+	for range 2 {
+		if err := PrepareLocalSpace(ctx, r.origin, "main"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, ok := bareTry(r.origin, "config", "--local", "--get-all", "core.hooksPath"); !ok || got != "hooks" {
+		t.Errorf("after re-runs own core.hooksPath = %q (read ok: %v), want exactly one %q", got, ok, "hooks")
+	}
+}
+
+// The doctor's land-guard row reads the inspection; it must judge the hooks
+// directory git actually runs, not only the bytes of the space's own hook.
+func TestLocalHost_InspectJudgesTheEffectiveHooksDir(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	r := newLocalRig(t)
+	h := r.host(t, nil, "local:axon")
+	env, globalDir := globalHooksPathEnv(t)
+	h.exec = gitExecWithEnv(env)
+	inspect := func(stage string) LocalSpaceInspection {
+		t.Helper()
+		got, err := h.InspectLocalSpace(ctx)
+		if err != nil {
+			t.Fatalf("%s: InspectLocalSpace: %v", stage, err)
+		}
+		return got
+	}
+
+	// Prepared: the space's own core.hooksPath beats the global one.
+	if got := inspect("prepared"); !got.HookPresent || !got.HookExecutable || !got.HookCurrent || got.HooksDirElsewhere != "" {
+		t.Fatalf("a prepared space under a global core.hooksPath inspects as %+v", got)
+	}
+
+	// No own entry: git runs the global directory, which has no pre-receive,
+	// so the guard is not in force although hooks/pre-receive is current.
+	unsetOwnHooksPath(t, r.origin)
+	got := inspect("global override")
+	if got.HookPresent || got.HookCurrent || !sameDir(got.HooksDirElsewhere, globalDir) {
+		t.Errorf("a space whose hooks git runs from %s inspects as %+v", globalDir, got)
+	}
+
+	// A hooks directory elsewhere holding the very same hook is still not the
+	// space's own, so it is not current.
+	other := t.TempDir()
+	if err := os.WriteFile(filepath.Join(other, preReceiveHookName), []byte(preReceiveHook("main")), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bare(t, r.origin, "config", "--local", "core.hooksPath", other)
+	if got := inspect("own entry elsewhere"); !got.HookPresent || got.HookCurrent || !sameDir(got.HooksDirElsewhere, other) {
+		t.Errorf("a space whose own core.hooksPath is %s inspects as %+v", other, got)
+	}
+
+	// The repair the doctor names (re-running the prepare) puts it back.
+	if err := PrepareLocalSpace(ctx, r.origin, "main"); err != nil {
+		t.Fatal(err)
+	}
+	if got := inspect("repaired"); !got.HookCurrent || got.HooksDirElsewhere != "" {
+		t.Errorf("after PrepareLocalSpace: %+v", got)
+	}
+
+	// A space without its own entry and no override anywhere runs
+	// $GIT_DIR/hooks, which is current.
+	unsetOwnHooksPath(t, r.origin)
+	h.exec = gitExecWithEnv([]string{"GIT_CONFIG_GLOBAL=" + filepath.Join(t.TempDir(), "absent"), "GIT_CONFIG_NOSYSTEM=1"})
+	if got := inspect("no override"); !got.HookCurrent || got.HooksDirElsewhere != "" {
+		t.Errorf("an unpinned space with no override inspects as %+v", got)
+	}
+}

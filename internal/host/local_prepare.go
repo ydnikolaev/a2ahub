@@ -26,6 +26,14 @@ const (
 	// local space; localMarkerValue is its value. host.Open reads it.
 	localMarkerKey   = "a2a.host"
 	localMarkerValue = "local"
+	// hooksPathKey/hooksPathValue pin where git looks for the space's hooks.
+	// A relative core.hooksPath resolves against the directory the hooks run
+	// in, which for a bare repository receiving a push is the repository
+	// itself, so "hooks" is $GIT_DIR/hooks. Written into the space's own
+	// config it outranks a global or system core.hooksPath, which would
+	// otherwise send git to a directory without the pre-receive hook.
+	hooksPathKey   = "core.hooksPath"
+	hooksPathValue = "hooks"
 	// preReceiveHookName is the hook file PrepareLocalSpace owns.
 	preReceiveHookName = "pre-receive"
 	// markerProbeTimeout bounds the one git call Open makes to read the marker.
@@ -33,10 +41,13 @@ const (
 )
 
 // PrepareLocalSpace turns the bare repository at dir into a local space: it
-// writes the a2a.host=local marker into its git config and the pre-receive
-// hook that refuses a push to refs/heads/<base> and to refs/a2a/*. It is
-// idempotent: a re-run rewrites the hook to the current bytes and mode, and is
-// otherwise a no-op (an up-to-date hook is not rewritten).
+// writes the a2a.host=local marker and core.hooksPath=hooks into its own git
+// config, and the pre-receive hook that refuses a push to refs/heads/<base>
+// and to refs/a2a/*. The core.hooksPath entry keeps a global or system
+// core.hooksPath from sending git past the hook. It is idempotent: a re-run
+// restores both config entries and rewrites the hook to the current bytes and
+// mode, and is otherwise a no-op (an up-to-date hook is not rewritten, a
+// config entry already set is not written again).
 //
 // Only `space init --local` calls it. Connecting to a space reads the marker
 // through Open and writes nothing, so an unmarked bare repository is never
@@ -58,6 +69,12 @@ func PrepareLocalSpace(ctx context.Context, dir, base string) error {
 		set := runRecoveryGit(ctx, 1024, "--git-dir="+gitDir, "config", "--local", localMarkerKey, localMarkerValue)
 		if set.err != nil || set.exitCode != 0 {
 			return localGitError(op, "write the "+localMarkerKey+" marker", set)
+		}
+	}
+	if !ownHooksPath(ctx, gitDir) {
+		set := runRecoveryGit(ctx, 1024, "--git-dir="+gitDir, "config", "--local", "--replace-all", hooksPathKey, hooksPathValue)
+		if set.err != nil || set.exitCode != 0 {
+			return localGitError(op, "write "+hooksPathKey+"="+hooksPathValue, set)
 		}
 	}
 	return installPreReceiveHook(op, gitDir, base)
@@ -159,4 +176,12 @@ func safeBaseName(base string) bool {
 func localMarked(ctx context.Context, gitDir string) bool {
 	res := runRecoveryGit(ctx, 256, "--git-dir="+gitDir, "config", "--local", "--get", localMarkerKey)
 	return res.err == nil && res.exitCode == 0 && strings.TrimSpace(string(res.stdout)) == localMarkerValue
+}
+
+// ownHooksPath reports whether the git directory gitDir's own config carries
+// exactly one core.hooksPath, equal to hooksPathValue. Any failure, an unset
+// key or a multi-valued one reads as "not set", so PrepareLocalSpace writes it.
+func ownHooksPath(ctx context.Context, gitDir string) bool {
+	res := runRecoveryGit(ctx, 1024, "--git-dir="+gitDir, "config", "--local", "--get-all", hooksPathKey)
+	return res.err == nil && res.exitCode == 0 && strings.TrimSpace(string(res.stdout)) == hooksPathValue
 }
