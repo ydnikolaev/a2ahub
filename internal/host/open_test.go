@@ -1,8 +1,12 @@
 package host
 
 import (
+	"context"
 	"net/http"
+	"strings"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
 
 // reason: mutates process env (t.Setenv) — not run in parallel.
@@ -125,5 +129,96 @@ func TestCapabilities_GitHubDeclares(t *testing.T) {
 	f.Caps = &override
 	if got := f.Capabilities(); got != override {
 		t.Errorf("FakeHost override = %+v, want %+v", got, override)
+	}
+}
+
+// reason: mutates process env (t.Setenv) — not run in parallel.
+func TestOpen_MarkedPathIsLocal(t *testing.T) {
+	t.Setenv("A2A_GITHUB_API", "http://env-value.invalid")
+	ctx := context.Background()
+	fx := spacefixture.New(t, "axon")
+	check := func(context.Context, LandCandidate) (LandVerdict, error) { return LandVerdict{OK: true}, nil }
+
+	// Unmarked: a bare repository is a GitHub-kind path, whatever the config says.
+	loc, err := ParseLocator(fx.OriginDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := Open(loc, OpenConfig{GitHubAPIBase: "http://cfg-value.invalid", LandCheck: check, LandAuthor: "local:axon"})
+	if err != nil {
+		t.Fatalf("Open(unmarked): %v", err)
+	}
+	if _, ok := h.(*GitHubHost); !ok {
+		t.Fatalf("Open(unmarked) = %T, want *GitHubHost", h)
+	}
+
+	if err := PrepareLocalSpace(ctx, fx.OriginDir, "main"); err != nil {
+		t.Fatal(err)
+	}
+	// Marked, with A2A_GITHUB_API set in the environment: still local.
+	for _, raw := range []string{fx.OriginDir, "file://" + fx.OriginDir} {
+		loc, err := ParseLocator(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h, err := Open(loc, OpenConfig{GitHubAPIBase: "http://cfg-value.invalid", LandCheck: check, LandAuthor: "local:axon"})
+		if err != nil {
+			t.Fatalf("Open(marked %q): %v", raw, err)
+		}
+		lh, ok := h.(*LocalHost)
+		if !ok {
+			t.Fatalf("Open(marked %q) = %T, want *LocalHost", raw, h)
+		}
+		if lh.author != "local:axon" || lh.dir != fx.OriginDir {
+			t.Errorf("LocalHost{author:%q dir:%q}", lh.author, lh.dir)
+		}
+	}
+
+	// Marked with no land check: an error, never an unvalidated host.
+	if h, err := Open(loc, OpenConfig{LandAuthor: "local:axon"}); err == nil || h != nil {
+		t.Fatalf("Open(marked, nil LandCheck) = %v, %v; want an error and no host", h, err)
+	} else if !strings.Contains(err.Error(), "land check") {
+		t.Errorf("the error does not name the missing land check: %v", err)
+	}
+
+	// Marked with a land check and no author: opens, reads, and OpenPR refuses.
+	h, err = Open(loc, OpenConfig{LandCheck: check})
+	if err != nil {
+		t.Fatalf("Open(marked, empty author): %v", err)
+	}
+	lh, ok := h.(*LocalHost)
+	if !ok {
+		t.Fatalf("Open = %T", h)
+	}
+	if caps := lh.Capabilities(); !caps.LandsSynchronously || !caps.OnThisMachine {
+		t.Errorf("Capabilities = %+v", caps)
+	}
+	if _, err := lh.OpenPR(ctx, OpenPRRequest{Head: "a2a/axon/submit/x", Base: "main"}); err == nil {
+		t.Error("OpenPR with no author succeeded")
+	}
+
+	// A URL-class locator never probes: it is GitHub whatever a path may say.
+	urlLoc, _ := ParseLocator("https://github.com/o/r")
+	if h, err := Open(urlLoc, OpenConfig{LandAuthor: "local:axon"}); err != nil {
+		t.Fatal(err)
+	} else if _, ok := h.(*GitHubHost); !ok {
+		t.Errorf("Open(url) = %T", h)
+	}
+}
+
+func TestOpen_AnUnmarkedOrMissingPathStaysGitHub(t *testing.T) {
+	t.Parallel()
+	for _, raw := range []string{t.TempDir() + "/o/r", "/definitely/not/here/o/r"} {
+		loc, err := ParseLocator(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h, err := Open(loc, OpenConfig{})
+		if err != nil {
+			t.Fatalf("Open(%q): %v", raw, err)
+		}
+		if _, ok := h.(*GitHubHost); !ok {
+			t.Errorf("Open(%q) = %T, want *GitHubHost", raw, h)
+		}
 	}
 }

@@ -64,7 +64,49 @@ var (
 	// (merge commit, squash, and rebase all disabled). There is no way to land
 	// the PR, and guessing would be wrong.
 	ErrMergeMethodUnavailable = errors.New("host: repository allows no merge method")
+
+	// ErrLandRefused is returned by a host that lands a write synchronously
+	// when its land check judged the write and refused it. The error also wraps
+	// a *LandRefusal carrying the validator's codes (errors.As). A refused
+	// write leaves nothing behind: no landed record, and the head branch is
+	// deleted, so the corrected retry pushes fresh.
+	ErrLandRefused = errors.New("host: land refused")
+
+	// ErrLandConflict is returned when the head branch cannot be merged into
+	// the base tip without a conflict. The head branch is deleted and nothing
+	// is recorded.
+	ErrLandConflict = errors.New("host: land conflict")
+
+	// ErrLandContended is returned when the base branch kept moving under the
+	// write for every bounded attempt. The head branch is kept, so a retry
+	// resumes the same write.
+	ErrLandContended = errors.New("host: land contended")
+
+	// ErrGitTooOld is returned when the installed git cannot do the merge a
+	// land is built on (`git merge-tree --write-tree`, git 2.38 or newer).
+	ErrGitTooOld = errors.New("host: git too old: a local space needs git 2.38 or newer (merge-tree --write-tree)")
 )
+
+// LandRefusal is the verdict behind an ErrLandRefused: the codes the land check
+// returned and its human report. Obtain it with errors.As.
+type LandRefusal struct {
+	// Codes are the validator's own codes (artifact codes and AUTHZ-001).
+	Codes []string
+	// Detail is the human report the land check produced.
+	Detail string
+}
+
+func (r *LandRefusal) Error() string {
+	codes := strings.Join(r.Codes, ", ")
+	switch {
+	case codes != "" && r.Detail != "":
+		return codes + ": " + r.Detail
+	case codes != "":
+		return codes
+	default:
+		return r.Detail
+	}
+}
 
 // PartialWriteStage is the last externally durable boundary proven by a host
 // operation that later failed. It is host-owned so this package does not

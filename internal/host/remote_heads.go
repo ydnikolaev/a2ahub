@@ -32,7 +32,7 @@ type RemoteHeadListing struct {
 // namespace up to the protocol hard maximum. namespacePrefix is the branch
 // prefix without refs/heads/ and must end in "op-v1-". A 257th head returns a
 // non-exhaustive listing rather than silently truncating to absence.
-func (h *GitHubHost) ListContractPublishHeads(
+func (gitOps) ListContractPublishHeads(
 	ctx context.Context,
 	repoDir string,
 	remoteURL string,

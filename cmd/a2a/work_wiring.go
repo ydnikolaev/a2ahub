@@ -58,7 +58,7 @@ func buildWorkCore(p paths, cfg space.ProjectConfig, machine space.MachineConfig
 	if err != nil {
 		return workCore{}, err
 	}
-	h, repo, err := newHostOpener()(ref.RepoURL)
+	h, repo, err := newHostOpenerFor(cfg.System)(ref.RepoURL)
 	if err != nil {
 		return workCore{}, err
 	}

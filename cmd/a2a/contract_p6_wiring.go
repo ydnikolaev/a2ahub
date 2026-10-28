@@ -79,7 +79,7 @@ func newCLIContractP6Core(p paths, deps lifecycleDeps) (*contractP6Core, error) 
 	if err != nil {
 		return nil, err
 	}
-	h, _, err := openContractHost(newHostOpener(), deps.hostCfg.RemoteURL)
+	h, _, err := openContractHost(newHostOpenerFor(deps.ownSystem), deps.hostCfg.RemoteURL)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +97,7 @@ func newCLIContractP6Core(p paths, deps lifecycleDeps) (*contractP6Core, error) 
 
 func newMCPContractOperationsFactory(p paths, cfg space.ProjectConfig, machine space.MachineConfig, open host.Opener) mcp.ContractOperationsFactory {
 	if open == nil {
-		open = newHostOpener() // nil-safe, as internal/mcp's own fallback is
+		open = newHostOpenerFor(cfg.System) // nil-safe, as internal/mcp's own fallback is
 	}
 	return func(resolveMCPActor mcp.ActorResolver) (mcp.ContractToolOperations, error) {
 		engine, err := newEngine()
@@ -930,7 +930,7 @@ func newCLIContractVerifyPublishedInspector(p paths, cfg space.ProjectConfig, ma
 		if err != nil {
 			return nil, err
 		}
-		h, repo, err := openContractHost(newHostOpener(), ref.RepoURL)
+		h, repo, err := openContractHost(newHostOpenerFor(cfg.System), ref.RepoURL)
 		if err != nil {
 			return nil, err
 		}

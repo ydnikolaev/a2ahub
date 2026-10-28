@@ -102,3 +102,45 @@ func TestOneOpenPRPerHeadBranch_PermissiveFakeReds(t *testing.T) {
 		t.Fatalf("error = %q, want it to name the property (substring %q)", got, wantSubstr)
 	}
 }
+
+// TestOneOpenPRPerHeadBranch_LocalHost runs the property against the local host:
+// a second OpenPR for the same head returns the identical landed PR, and
+// FindPRByHeadBranch resolves that one.
+func TestOneOpenPRPerHeadBranch_LocalHost(t *testing.T) {
+	t.Parallel()
+	r := newLocalRig(t)
+	h := r.host(t, nil, "local:axon")
+	head := "a2a/axon/submit/XQ-axon-1"
+	r.pushHead(t, h, r.clone("axon"), head, "axon/docs/a.md", "a\n", "feat: a\n")
+	req := OpenPRRequest{Repo: testRepo, Head: head, Base: "main", Title: "t", Body: "b"}
+	if err := assertOneOpenPRPerHeadBranch(context.Background(), h, req, FindPRRequest{Repo: testRepo, Branch: head}); err != nil {
+		t.Fatalf("LocalHost fails the head-branch-uniqueness property: %v", err)
+	}
+}
+
+// TestOneOpenPRPerHeadBranch_LocalHostNewHeadOnReusedName is the reuse half of
+// the property: a branch name carries many writes over time, and a new head on a
+// name that already landed must land as a new record, not answer with the old one.
+func TestOneOpenPRPerHeadBranch_LocalHostNewHeadOnReusedName(t *testing.T) {
+	t.Parallel()
+	r := newLocalRig(t)
+	h := r.host(t, nil, "local:axon")
+	head := "a2a/axon/submit/XQ-axon-1"
+	ctx := context.Background()
+	var numbers []int
+	for i, file := range []string{"axon/docs/a.md", "axon/docs/b.md"} {
+		sha := r.pushHead(t, h, r.clone("axon"), head, file, "x\n", "feat: write\n")
+		req := OpenPRRequest{Repo: testRepo, Head: head, Base: "main", Title: fmt.Sprintf("write %d", i), Body: "b"}
+		if err := assertOneOpenPRPerHeadBranch(ctx, h, req, FindPRRequest{Repo: testRepo, Branch: head}); err != nil {
+			t.Fatalf("write %d: %v", i, err)
+		}
+		got, err := h.FindPRByHeadBranch(ctx, FindPRRequest{Repo: testRepo, Branch: head})
+		if err != nil || got == nil || got.HeadSHA != sha || got.Title != req.Title {
+			t.Fatalf("write %d: FindPRByHeadBranch = %+v, %v; want the new write %s", i, got, err, sha)
+		}
+		numbers = append(numbers, got.Number)
+	}
+	if numbers[0] == numbers[1] {
+		t.Errorf("both writes got number %d", numbers[0])
+	}
+}

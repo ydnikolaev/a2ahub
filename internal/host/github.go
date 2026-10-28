@@ -30,6 +30,9 @@ const maxResponseBytes = 1 << 20 // 1 MiB
 // auto-merge, GraphQL — GitHub's auto-merge toggle has no REST endpoint)
 // API over net/http.
 type GitHubHost struct {
+	// gitOps supplies the receiver-free git mechanics (PushBranch,
+	// ReadRemoteBranch and the recovery readers) that LocalHost shares.
+	gitOps
 	// Client performs every HTTP call. Required; NewGitHubHost defaults it
 	// to http.DefaultClient for ergonomics (not a hidden dependency —
 	// there is no domain reason a nil client should be an error here, any
@@ -83,7 +86,7 @@ func (h *GitHubHost) Capabilities() Capabilities { return gitHubCapabilities() }
 // per-invocation `-c http.extraheader=...` git config override — never
 // written to any file, never part of the remote URL that git might echo
 // back in an error message.
-func (h *GitHubHost) PushBranch(ctx context.Context, req PushBranchRequest) (PushBranchResult, error) {
+func (gitOps) PushBranch(ctx context.Context, req PushBranchRequest) (PushBranchResult, error) {
 	const op = "PushBranch"
 	if req.RepoDir == "" || req.LocalRef == "" || req.Branch == "" || req.RemoteURL == "" {
 		return PushBranchResult{}, &Error{Op: op, Err: ErrInvalidRequest}
@@ -121,7 +124,7 @@ func (h *GitHubHost) PushBranch(ctx context.Context, req PushBranchRequest) (Pus
 // It observes exactly one fully-qualified head and returns the SHA later
 // supplied to --force-with-lease; a concurrent remote update therefore makes
 // the subsequent push fail instead of being overwritten.
-func (h *GitHubHost) ReadRemoteBranch(ctx context.Context, req RemoteBranchRequest) (RemoteBranchHead, error) {
+func (gitOps) ReadRemoteBranch(ctx context.Context, req RemoteBranchRequest) (RemoteBranchHead, error) {
 	const op = "ReadRemoteBranch"
 	if req.RepoDir == "" || req.RemoteURL == "" || req.Branch == "" {
 		return RemoteBranchHead{}, &Error{Op: op, Err: ErrInvalidRequest}

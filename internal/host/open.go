@@ -1,8 +1,11 @@
 package host
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
 )
 
 // OpenConfig is everything any host kind needs at construction, supplied by
@@ -13,22 +16,55 @@ type OpenConfig struct {
 	HTTPClient *http.Client
 	// GitHubAPIBase is the REST API root; "" means https://api.github.com.
 	GitHubAPIBase string
+	// LandCheck judges a write before a local space lands it. Open refuses a
+	// local space when it is nil: a marked path never opens as an unvalidated
+	// host. GitHub ignores it.
+	LandCheck LandCheckFunc
+	// LandAuthor is the identity a local land is authored as (local:<system>).
+	// It may be empty: Open still succeeds, so a caller that only reads a local
+	// space's capabilities or inspection needs no system, and OpenPR refuses
+	// before it reads or writes anything.
+	LandAuthor string
 }
 
 // Open is the one space-addressed host constructor: it builds the host for the
 // space loc addresses.
 //
-// In P1 both address classes yield a *GitHubHost with cfg's client and API
-// base; a path-class locator stays GitHub-kind because the e2e rig reaches
-// testkit/fakegithub through a local-path repo_url (docs/validator-backlog.md).
-// The environment never participates in the choice.
+// A URL-class locator is always a *GitHubHost with cfg's client and API base.
+// A path-class locator is a *LocalHost when the repository at the path carries
+// the a2a.host=local marker in its own git config (written only by
+// PrepareLocalSpace), and a *GitHubHost otherwise: an unmarked path stays
+// GitHub-kind because the e2e rig reaches testkit/fakegithub through a
+// local-path repo_url (docs/validator-backlog.md). A marked path with a nil
+// cfg.LandCheck is an error, never an unvalidated host. The environment never
+// participates in the choice.
 func Open(loc Locator, cfg OpenConfig) (Host, error) {
 	switch loc.class {
-	case classURL, classPath:
+	case classURL:
+		return OpenGitHub(cfg), nil
+	case classPath:
+		gitDir, err := filepath.Abs(loc.path)
+		if err == nil && openMarked(gitDir) {
+			if cfg.LandCheck == nil {
+				return nil, fmt.Errorf("host: %q is a local space but no land check is configured: %w", loc.Raw, errNoLandCheck)
+			}
+			return newLocalHost(gitDir, cfg.LandCheck, cfg.LandAuthor), nil
+		}
 		return OpenGitHub(cfg), nil
 	default:
 		return nil, fmt.Errorf("host: unsupported address class %d for %q", loc.class, loc.Raw)
 	}
+}
+
+// errNoLandCheck is why Open refused a marked path.
+var errNoLandCheck = errors.New("a local space cannot be opened without a land check")
+
+// openMarked reads the local-space marker under a bounded context: Open has no
+// context of its own, and the probe is one local git call.
+func openMarked(gitDir string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), markerProbeTimeout)
+	defer cancel()
+	return localMarked(ctx, gitDir)
 }
 
 // OpenGitHub is the provider-scoped constructor, for the two consumers whose

@@ -731,6 +731,13 @@ func (f *WriteFunnel) submitPreparedRequest(ctx context.Context, req SubmitReque
 	state := WriteStateNeedsAttention
 	note := pr.AutoMergeNote
 	switch {
+	case pr.State == "merged":
+		// A host that lands the write inside OpenPR (the local host
+		// validates and merges in the one call) answers with a PR that is
+		// already merged: nothing is open, so there is nothing to arm,
+		// land or wait for. Reporting it as needs-attention would tell the
+		// operator to resolve a PR that no longer exists.
+		state, note = WriteStateMerged, ""
 	case !pr.AutoMergeArmed && host.AutoMergeNoteIsAlreadyClean(pr.AutoMergeNote):
 		merged, mergeMethod, merr := f.tryLandCleanPR(ctx, req, pr.Number)
 		if mergeMethod != "" {

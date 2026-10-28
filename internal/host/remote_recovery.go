@@ -40,7 +40,7 @@ type RemoteRecoveryChange struct {
 // invocation-private ref and returns the complete first-parent change set.
 // It deliberately uses only Git object plumbing: a recovery probe must never
 // observe or mutate a shared worktree.
-func (h *GitHubHost) ReadRemoteRecoveryCommit(
+func (gitOps) ReadRemoteRecoveryCommit(
 	ctx context.Context,
 	repoDir string,
 	remoteURL string,
@@ -328,12 +328,26 @@ func (b *boundedRecoveryBuffer) Write(p []byte) (int, error) {
 }
 
 type recoveryGitResult struct {
-	stdout   []byte
+	stdout []byte
+	// stderr is bounded like stdout. It is never rendered into an error by the
+	// recovery readers (recoveryGitError keeps it out of every message because
+	// it can carry a transient Basic header); it exists for a caller that must
+	// classify a refusal by git's own words, as the local host does for
+	// update-ref.
+	stderr   []byte
 	exitCode int
 	err      error
 }
 
 func runRecoveryGit(ctx context.Context, stdoutLimit int, args ...string) recoveryGitResult {
+	return runRecoveryGitInput(ctx, nil, stdoutLimit, args...)
+}
+
+// runRecoveryGitInput is runRecoveryGit with an optional stdin, for the git
+// plumbing that reads its commands or object body from standard input
+// (update-ref --stdin, hash-object --stdin, commit-tree). Every git call of
+// the local host and of the recovery readers goes through it.
+func runRecoveryGitInput(ctx context.Context, stdin []byte, stdoutLimit int, args ...string) recoveryGitResult {
 	if stdoutLimit < 0 {
 		return recoveryGitResult{exitCode: -1, err: errors.New("negative output bound")}
 	}
@@ -341,18 +355,22 @@ func runRecoveryGit(ctx context.Context, stdoutLimit int, args ...string) recove
 	stderr := &boundedRecoveryBuffer{limit: maxRecoveryGitErrorOutput}
 	//nolint:gosec // executable is fixed; args are explicit Git argv validated by each recovery operation.
 	cmd := exec.CommandContext(ctx, "git", args...)
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	err := cmd.Run()
 	if stdout.overflow || stderr.overflow {
 		return recoveryGitResult{exitCode: -1, err: errors.New("git output exceeded bound")}
 	}
+	captured := append([]byte(nil), stderr.buffer.Bytes()...)
 	if err == nil {
-		return recoveryGitResult{stdout: append([]byte(nil), stdout.buffer.Bytes()...), exitCode: 0}
+		return recoveryGitResult{stdout: append([]byte(nil), stdout.buffer.Bytes()...), stderr: captured, exitCode: 0}
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		return recoveryGitResult{stdout: append([]byte(nil), stdout.buffer.Bytes()...), exitCode: exitErr.ExitCode()}
+		return recoveryGitResult{stdout: append([]byte(nil), stdout.buffer.Bytes()...), stderr: captured, exitCode: exitErr.ExitCode()}
 	}
 	return recoveryGitResult{exitCode: -1, err: err}
 }

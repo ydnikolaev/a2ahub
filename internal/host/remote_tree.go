@@ -19,7 +19,7 @@ type RemoteTreeFile struct {
 
 // ListRemoteRecoveryTreeFiles resolves every regular file below a closed set
 // of Git-tree prefixes at one commit, then reads that exact bounded path set.
-func (h *GitHubHost) ListRemoteRecoveryTreeFiles(ctx context.Context, repoDir, commitSHA string, prefixes []string) (map[string]RemoteTreeFile, error) {
+func (g gitOps) ListRemoteRecoveryTreeFiles(ctx context.Context, repoDir, commitSHA string, prefixes []string) (map[string]RemoteTreeFile, error) {
 	const op = "ListRemoteRecoveryTreeFiles"
 	if strings.TrimSpace(repoDir) == "" || !validRecoveryGitOID(commitSHA) || len(prefixes) == 0 || len(prefixes) > 4 {
 		return nil, recoveryRequestError(op)
@@ -61,12 +61,12 @@ func (h *GitHubHost) ListRemoteRecoveryTreeFiles(ctx context.Context, repoDir, c
 	if len(paths) == 0 {
 		return map[string]RemoteTreeFile{}, nil
 	}
-	return h.ReadRemoteRecoveryTreeFiles(ctx, repoDir, commitSHA, paths)
+	return g.ReadRemoteRecoveryTreeFiles(ctx, repoDir, commitSHA, paths)
 }
 
 // ReadRemoteRecoveryTreeFiles reads a closed, caller-supplied path set from a
 // verified commit without consulting a worktree or network loader.
-func (h *GitHubHost) ReadRemoteRecoveryTreeFiles(ctx context.Context, repoDir, commitSHA string, paths []string) (map[string]RemoteTreeFile, error) {
+func (gitOps) ReadRemoteRecoveryTreeFiles(ctx context.Context, repoDir, commitSHA string, paths []string) (map[string]RemoteTreeFile, error) {
 	const op = "ReadRemoteRecoveryTreeFiles"
 	if strings.TrimSpace(repoDir) == "" || !validRecoveryGitOID(commitSHA) || len(paths) == 0 || len(paths) > maxRecoveryChangedPaths+2 {
 		return nil, recoveryRequestError(op)

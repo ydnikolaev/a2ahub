@@ -2,12 +2,17 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
+	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
 
 func TestResolveFeedbackCredentialPrecedence(t *testing.T) {
@@ -437,5 +442,151 @@ func TestResolveTargetSpaceRefContractAndDataPackageIDsBypassTheWalk(t *testing.
 		if ref.ID != "space-one" {
 			t.Fatalf("resolveTargetSpaceRef(%q) = %q, want space-one (cfg.Spaces[0])", id, ref.ID)
 		}
+	}
+}
+
+// localSpaceRig is a bare space made a local space the way `space init --local`
+// does, whose manifest names "local:<system>" as each system's owner, the login
+// a local land is attributed to.
+type localSpaceRig struct {
+	origin string
+	clones map[string]string
+}
+
+func newLocalSpaceRig(t *testing.T) localSpaceRig {
+	t.Helper()
+	fx := spacefixture.New(t, "axon", "beta")
+	clone := fx.Clones["axon"]
+	manifestPath := filepath.Join(clone, "space.yaml")
+	raw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owned := strings.NewReplacer("axon-bot", "local:axon", "beta-bot", "local:beta").Replace(string(raw))
+	if owned == string(raw) {
+		t.Fatal("the fixture manifest changed: no owner to rename")
+	}
+	if err := os.WriteFile(manifestPath, []byte(owned), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wiringGit(t, clone, "add", "space.yaml")
+	wiringGit(t, clone, "commit", "-q", "-m", "owners are local logins")
+	// Before PrepareLocalSpace installs the hook that refuses a push to main.
+	wiringGit(t, clone, "push", "-q", "origin", "HEAD:refs/heads/main")
+	if err := host.PrepareLocalSpace(context.Background(), fx.OriginDir, "main"); err != nil {
+		t.Fatalf("PrepareLocalSpace: %v", err)
+	}
+	return localSpaceRig{origin: fx.OriginDir, clones: fx.Clones}
+}
+
+func wiringGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", gitfixture.Args(args...)...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=a2a", "GIT_AUTHOR_EMAIL=a@invalid", "GIT_COMMITTER_NAME=a2a", "GIT_COMMITTER_EMAIL=a@invalid")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// push commits file on a fresh branch of the system's clone and pushes it to
+// the local space through the host.
+func (r localSpaceRig) push(t *testing.T, h host.Host, system, branch, file string) {
+	t.Helper()
+	clone := r.clones[system]
+	wiringGit(t, clone, "checkout", "-q", "-B", branch, "main")
+	full := filepath.Join(clone, file)
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte("note\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wiringGit(t, clone, "add", file)
+	wiringGit(t, clone, "commit", "-q", "-m", "write "+file)
+	if _, err := h.PushBranch(context.Background(), host.PushBranchRequest{RepoDir: clone, LocalRef: "HEAD", Branch: branch, RemoteURL: r.origin}); err != nil {
+		t.Fatalf("PushBranch: %v", err)
+	}
+}
+
+func (r localSpaceRig) mainTip(t *testing.T) string {
+	t.Helper()
+	return wiringGit(t, r.origin, "rev-parse", "refs/heads/main")
+}
+
+// TestNewHostOpenerFor_LocalLandRunsTheRealCheck proves the production wiring
+// of a local land end to end: the opener built for a system attributes the land
+// to "local:<system>", the lazy check builds the real engine and runs the
+// required check's body, and a write into the caller's own section lands while
+// a write into another system's section is refused with AUTHZ-001.
+func TestNewHostOpenerFor_LocalLandRunsTheRealCheck(t *testing.T) {
+	t.Setenv("A2A_GITHUB_API", "")
+	r := newLocalSpaceRig(t)
+	repo := host.Repo{Owner: "local", Name: "space"}
+	open := newHostOpenerFor("axon")
+	h, _, err := open(r.origin)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if _, ok := h.(*host.LocalHost); !ok {
+		t.Fatalf("host = %T, want *host.LocalHost for a marked path", h)
+	}
+
+	t.Run("own section lands", func(t *testing.T) {
+		before := r.mainTip(t)
+		r.push(t, h, "axon", "a2a/axon/submit/own", "axon/docs/own.txt")
+		pr, err := h.OpenPR(context.Background(), host.OpenPRRequest{Repo: repo, Head: "a2a/axon/submit/own", Base: "main", Title: "own", Body: "b"})
+		if err != nil {
+			t.Fatalf("OpenPR: %v", err)
+		}
+		if pr.State != "merged" {
+			t.Fatalf("State = %q, want merged", pr.State)
+		}
+		if after := r.mainTip(t); after == before {
+			t.Fatal("main did not move")
+		}
+		author := wiringGit(t, r.origin, "log", "-1", "--format=%an", "refs/heads/main")
+		if author != "local:axon" {
+			t.Fatalf("merge author = %q, want local:axon", author)
+		}
+	})
+
+	t.Run("another system's section is refused with AUTHZ-001", func(t *testing.T) {
+		before := r.mainTip(t)
+		r.push(t, h, "axon", "a2a/axon/submit/cross", "beta/docs/cross.txt")
+		_, err := h.OpenPR(context.Background(), host.OpenPRRequest{Repo: repo, Head: "a2a/axon/submit/cross", Base: "main", Title: "cross", Body: "b"})
+		var refusal *host.LandRefusal
+		if !errors.Is(err, host.ErrLandRefused) || !errors.As(err, &refusal) {
+			t.Fatalf("OpenPR error = %v, want ErrLandRefused carrying a LandRefusal", err)
+		}
+		if len(refusal.Codes) != 1 || refusal.Codes[0] != "AUTHZ-001" {
+			t.Fatalf("refusal codes = %v, want [AUTHZ-001]", refusal.Codes)
+		}
+		if after := r.mainTip(t); after != before {
+			t.Fatal("main moved on a refused write")
+		}
+	})
+}
+
+// TestNewHostOpener_HasNoSystemToLandUnder pins the two callers that keep the
+// argument-free opener (the doctor and the feedback hub): they can open a local
+// space, but a land through it is refused before anything is written.
+func TestNewHostOpener_HasNoSystemToLandUnder(t *testing.T) {
+	t.Setenv("A2A_GITHUB_API", "")
+	r := newLocalSpaceRig(t)
+	h, _, err := newHostOpener()(r.origin)
+	if err != nil {
+		t.Fatalf("a marked path must open for the doctor: %v", err)
+	}
+	r.push(t, h, "axon", "a2a/axon/submit/nosys", "axon/docs/nosys.txt")
+	before := r.mainTip(t)
+	_, err = h.OpenPR(context.Background(), host.OpenPRRequest{Repo: host.Repo{Owner: "local", Name: "space"}, Head: "a2a/axon/submit/nosys", Base: "main", Title: "t", Body: "b"})
+	if err == nil || !strings.Contains(err.Error(), "no system is configured") {
+		t.Fatalf("OpenPR = %v, want an error naming the missing system", err)
+	}
+	if after := r.mainTip(t); after != before {
+		t.Fatal("main moved on a land with no system")
 	}
 }

@@ -519,7 +519,7 @@ func buildMCPServer(ctx context.Context, p mcp.Paths, binaryVersion string) (*mc
 	}
 	// One opener per process, shared by the contract and data factories and the
 	// write dependencies internal/mcp builds per space.
-	opener := newHostOpener()
+	opener := newHostOpenerFor(cfg.System)
 	return mcp.NewServerFromConfigWithOperations(ctx, p, binaryVersion, workDeps,
 		newMCPContractOperationsFactory(mainPaths, cfg, machine, opener),
 		newMCPDataOperationsFactory(mainPaths, cfg, machine, opener),
@@ -1096,7 +1096,7 @@ func awaitResolver(p paths) cli.AwaitResolver {
 		if err != nil {
 			return cli.AwaitTarget{}, err
 		}
-		h, repo, err := newHostOpener()(selected.ref.RepoURL)
+		h, repo, err := newHostOpenerFor(cfg.System)(selected.ref.RepoURL)
 		if err != nil {
 			return cli.AwaitTarget{}, err
 		}
@@ -1239,7 +1239,7 @@ func resolveLifecycleDepsWithPolicy(ctx context.Context, p paths, args []string,
 			return lifecycleDeps{}, failf(stderr, "a2a: %v", err)
 		}
 	}
-	h, repo, err := newHostOpener()(ref.RepoURL)
+	h, repo, err := newHostOpenerFor(cfg.System)(ref.RepoURL)
 	if err != nil {
 		return lifecycleDeps{}, failf(stderr, "a2a: %v", err)
 	}
@@ -1445,7 +1445,7 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return failf(stderr, "a2a submit: %v", err)
 	}
-	h, repo, err := newHostOpener()(ref.RepoURL)
+	h, repo, err := newHostOpenerFor(cfg.System)(ref.RepoURL)
 	if err != nil {
 		return failf(stderr, "a2a submit: %v", err)
 	}
@@ -1716,7 +1716,7 @@ func wireSpaceUpdate(ctx context.Context, cmd *cli.SpaceCommand, args []string) 
 	if err != nil {
 		return fmt.Errorf("a2a space update: %w", err)
 	}
-	h, repo, err := newHostOpener()(ref.RepoURL)
+	h, repo, err := newHostOpenerFor(cfg.System)(ref.RepoURL)
 	if err != nil {
 		return fmt.Errorf("a2a space update: %w", err)
 	}
