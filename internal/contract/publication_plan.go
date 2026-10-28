@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -199,6 +200,161 @@ const (
 	// GateG2 is part of the public package API.
 	GateG2 PublicationGate = "G2"
 )
+
+// PublicationGateFor is the one definition of the G1/G2 human-gate rule (spec 04
+// §T1.2). A contract with no published baseline is G1. One whose baseline
+// version has a different major version than the target, or whose computed
+// compatibility verdict is breaking, is G2. Anything else carries no gate.
+//
+// The planner calls it with the verdict it computed; the local land check calls
+// it with the verdict validate.CheckComputedCompatibility already computes
+// there, so the two sides cannot disagree about which gate a write sits behind.
+// breaking is the computed verdict being CompatibilityBreaking, not the declared
+// bump: a minor bump over breaking content is a publication violation reported
+// elsewhere, never G2.
+//
+// baseline and target are well-formed semantic versions; a caller that has not
+// validated them first must do so, the same precondition the planner has.
+// PublicationGateFor is part of the public package API.
+func PublicationGateFor(hasBaseline bool, baseline, target string, breaking bool) PublicationGate {
+	if !hasBaseline {
+		return GateG1
+	}
+	if majorOf(baseline) != majorOf(target) || breaking {
+		return GateG2
+	}
+	return GateNone
+}
+
+// GatesSetting is the vocabulary of a space manifest's `gates` key (spec 04
+// §T1.1). It is policy, not schema: space.schema.json is byte-frozen and leaves
+// the key untyped.
+//
+// The vocabulary lives in this package, beside PublicationGate, because it is
+// read by two packages that may not import each other (internal/validate checks
+// it at the write, internal/space reads it for the effective mode) and this is
+// the one package both are allowed to import. Defining it twice would let the
+// write-side check accept a word the read side then fails closed on.
+// GatesSetting is part of the public package API.
+type GatesSetting string
+
+const (
+	// GatesSettingDefault is today's behaviour on the host: CODEOWNERS review
+	// where a host reviews writes, `confirm` where it does not.
+	GatesSettingDefault GatesSetting = "default"
+	// GatesSettingConfirm needs an explicit approval for a gated write.
+	GatesSettingConfirm GatesSetting = "confirm"
+	// GatesSettingAutonomous lets a gated write land with no human stop. It is
+	// honoured only where the host does not review writes.
+	GatesSettingAutonomous GatesSetting = "autonomous"
+)
+
+// ParseGatesSetting reads a decoded `gates` value. An absent key (nil) is
+// `default`; any other value that is not one of the three words, including a
+// non-string, is out of vocabulary (ok is false).
+// ParseGatesSetting is part of the public package API.
+func ParseGatesSetting(raw any) (GatesSetting, bool) {
+	if raw == nil {
+		return GatesSettingDefault, true
+	}
+	word, isString := raw.(string)
+	if !isString {
+		return "", false
+	}
+	switch setting := GatesSetting(word); setting {
+	case GatesSettingDefault, GatesSettingConfirm, GatesSettingAutonomous:
+		return setting, true
+	}
+	return "", false
+}
+
+// FlowSetting is the vocabulary of a space manifest's `flow` key (spec 04
+// §T1.1): which write loop the space declares. Absent means `full`.
+// FlowSetting is part of the public package API.
+type FlowSetting string
+
+const (
+	// FlowSettingFull is the five-step request, deliver, verify loop.
+	FlowSettingFull FlowSetting = "full"
+	// FlowSettingExpress is the composite data-flow verbs.
+	FlowSettingExpress FlowSetting = "express"
+)
+
+// ParseFlowSetting reads a decoded `flow` value the way ParseGatesSetting reads
+// `gates`: nil is `full`, a non-string or an unknown word is out of vocabulary.
+// ParseFlowSetting is part of the public package API.
+func ParseFlowSetting(raw any) (FlowSetting, bool) {
+	if raw == nil {
+		return FlowSettingFull, true
+	}
+	word, isString := raw.(string)
+	if !isString {
+		return "", false
+	}
+	switch setting := FlowSetting(word); setting {
+	case FlowSettingFull, FlowSettingExpress:
+		return setting, true
+	}
+	return "", false
+}
+
+// GatesMode is the EFFECTIVE gate mode of a space for one host: what a write
+// actually has to satisfy. It differs from GatesSetting, which is what the
+// manifest says.
+// GatesMode is part of the public package API.
+type GatesMode string
+
+const (
+	// GatesModeReview: the host reviews writes (a pull request and CODEOWNERS),
+	// so no `--approve` exists and none is asked for.
+	GatesModeReview GatesMode = "review"
+	// GatesModeConfirm: a gated write needs the caller's explicit approval.
+	GatesModeConfirm GatesMode = "confirm"
+	// GatesModeAutonomous: no human gate stops a write.
+	GatesModeAutonomous GatesMode = "autonomous"
+)
+
+// EffectiveGatesMode is spec 04 §T1.1's host table. reviewsWrites is the host's
+// declared Capabilities().ReviewsWrites, never a host name. A host that reviews
+// writes is always `review`: `autonomous` is ignored there (and doctor FAILs the
+// manifest), and `confirm` adds nothing because the host already confirms.
+// Where the host does not review, `autonomous` is honoured only when the
+// manifest says exactly that; absent, `default`, `confirm` and any
+// out-of-vocabulary value read as `confirm`, so a misread never falls open.
+// EffectiveGatesMode is part of the public package API.
+func EffectiveGatesMode(raw any, reviewsWrites bool) GatesMode {
+	if reviewsWrites {
+		return GatesModeReview
+	}
+	if setting, ok := ParseGatesSetting(raw); ok && setting == GatesSettingAutonomous {
+		return GatesModeAutonomous
+	}
+	return GatesModeConfirm
+}
+
+// approvableGates is the closed set a write may carry approval for (spec 04
+// §T1.2), already in canonical order. G5 (classification) is not approvable:
+// no override exists on any host.
+var approvableGates = []string{"G1", "G2", "G3", "G4"}
+
+// CanonicalApprovedGates returns ids sorted and without repeats, which is the
+// form the funnel's approval trailer carries. ok is false when any id is not an
+// approvable gate (G1-G4), including G5.
+// CanonicalApprovedGates is part of the public package API.
+func CanonicalApprovedGates(ids []string) ([]string, bool) {
+	for _, id := range ids {
+		if !slices.Contains(approvableGates, id) {
+			return nil, false
+		}
+	}
+	var out []string
+	for _, want := range approvableGates {
+		if slices.Contains(ids, want) {
+			out = append(out, want)
+		}
+	}
+	return out, true
+}
 
 // PublishedContract is caller-resolved historical input. DescriptorRaw is
 // required for legacy snapshots because contract-tree-v1 deliberately excludes
@@ -483,12 +639,7 @@ func PlanPublication(input PublicationInput, checker CompatibilityChecker) (Publ
 		}
 	}
 
-	gate := GateNone
-	if !hasBaseline {
-		gate = GateG1
-	} else if majorOf(baseline) != majorOf(target) || compatibility.Verdict == CompatibilityBreaking {
-		gate = GateG2
-	}
+	gate := PublicationGateFor(hasBaseline, baseline, target, compatibility.Verdict == CompatibilityBreaking)
 
 	// The mutation baseline answers "what am I about to overwrite", which is a
 	// question about the TREE ON MAIN — never about which version is the

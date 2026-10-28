@@ -233,6 +233,23 @@ type SubmitRequest struct {
 	// "space infrastructure" means rather than silently disagreeing. The one
 	// caller that sets it is spec 35's `a2a space update` migration path.
 	AllowSpaceInfrastructure bool
+
+	// ApprovedGates names the human gates (G1-G4) the caller approved for THIS
+	// write, set by a surface only when the caller passed `--approve`/`approve`
+	// and only to the gates that surface computed (local-space-2026-10 spec 04
+	// §T1.3). PrepareSubmission and Submit append them to the commit message as
+	// `A2A-Approved-Gates: G1,G4` (sorted, no repeats) in the message's FINAL
+	// paragraph, which is the only place the local land copies it from. Empty is
+	// the default and changes nothing: the message, the prepared digest and the
+	// journal are byte-identical to a write that never had the field.
+	//
+	// The trailer is funnel-owned. Caller text that carries it in CommitMessage
+	// is refused with ErrPreparedInvalid, and so is an id outside G1-G4 (G5,
+	// classification, is never approvable). A prepared write carries the trailer
+	// in its frozen message base, so a resumed write keeps the approval it was
+	// prepared with. Only the prepare/submit path reads this field; a prepared
+	// write submitted later takes its approval from the frozen message.
+	ApprovedGates []string
 }
 
 // WriteResult is what Submit returns: the contract P7's cache persistence
@@ -1658,10 +1675,10 @@ func (f *WriteFunnel) commitOne(ctx context.Context, lock *MirrorLock, req Submi
 	}
 	msg := req.CommitMessage
 	if msg == "" {
-		msg = "a2a: submit " + req.ArtifactID
+		msg = defaultCommitMessage(req.ArtifactID)
 	}
 	if req.OperationKey != "" && !hasExactCommitTrailer(msg, "A2A-Operation-Key", req.OperationKey) {
-		msg += "\n\nA2A-Operation-Key: " + req.OperationKey
+		msg = appendFinalTrailer(msg, "A2A-Operation-Key: "+req.OperationKey)
 	}
 	// BaseBranch is read ONLY when ExpectedBaseSHA does not already freeze
 	// the parent tree — a caller that supplies a frozen base has no need to

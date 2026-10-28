@@ -3,6 +3,7 @@ package space
 import (
 	"context"
 
+	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"gopkg.in/yaml.v3"
 )
@@ -20,11 +21,44 @@ type Manifest struct {
 	Vendored           []string            `yaml:"vendored,omitempty"`
 	NotificationRoutes []NotificationRoute `yaml:"notification_routes,omitempty"`
 
+	// Gates and Flow are the raw `gates` and `flow` policy keys
+	// (local-space-2026-10 spec 04 §T1.1). They decode as `any`, not string:
+	// space.schema.json is byte-frozen and leaves both open, so nothing upstream
+	// guarantees a scalar, and a typed target would make yaml.Unmarshal fail the
+	// WHOLE manifest on a structured value and take every read verb with it.
+	// Read them through EffectiveGates and FlowSetting, which own the
+	// vocabulary and the fail-closed rule; the verdict on a bad value is
+	// internal/validate's, at the write that introduces it.
+	Gates any `yaml:"gates,omitempty"`
+	Flow  any `yaml:"flow,omitempty"`
+
 	// Raw holds the exact bytes ParseManifest was given, so a caller can
 	// hand them, unmodified, to a ManifestValidator seam that needs the
 	// full (possibly schema-permissive, §Open Q1) document rather than
 	// just this struct's typed subset.
 	Raw []byte `yaml:"-"`
+}
+
+// EffectiveGates is what a write to this space has to satisfy on a host whose
+// declared Capabilities().ReviewsWrites is reviewsWrites (spec 04 §T1.1): review
+// on a host that reviews writes, otherwise confirm or autonomous. `autonomous`
+// is honoured only where the host does not review; an unknown or non-string
+// value fails closed to confirm. The caller passes the declared capability of a
+// host that exists; a space with no host has no effective mode, and doctor
+// reports it unverified instead of calling this.
+// EffectiveGates is part of the public package API.
+func (m Manifest) EffectiveGates(reviewsWrites bool) contract.GatesMode {
+	return contract.EffectiveGatesMode(m.Gates, reviewsWrites)
+}
+
+// FlowSetting is the write loop the space declares (spec 04 §T1.1). Absent, and
+// any value outside the vocabulary, read as `full`: the read side never refuses.
+// FlowSetting is part of the public package API.
+func (m Manifest) FlowSetting() contract.FlowSetting {
+	if flow, ok := contract.ParseFlowSetting(m.Flow); ok {
+		return flow
+	}
+	return contract.FlowSettingFull
 }
 
 // Participant is one space.yaml participant entry: a system's section,

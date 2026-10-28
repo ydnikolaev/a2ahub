@@ -1,0 +1,2 @@
+code: POL-027
+note: 'gates carries "sometimes", outside the vocabulary default, confirm, autonomous (local-space-2026-10 spec 04 T1.1); internal/validate/gates.go checkGatesFlowVocabulary. Policy, not schema, because space.schema.json is byte-frozen and leaves `gates` untyped.'

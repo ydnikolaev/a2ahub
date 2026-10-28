@@ -487,6 +487,13 @@ func TestRegistryClosure(t *testing.T) {
 		record(violations)
 	}
 
+	// POL-027, POL-028 and POL-029 (local-space-2026-10 spec 04): the
+	// gates/flow vocabulary, `autonomous` on a reviewing host, and a gated write
+	// in a confirm space with no approval. Each is driven through its own check.
+	record(checkGatesFlowVocabulary(map[string]any{"gates": "sometimes"}))
+	record(CheckGatesForHost([]byte("gates: autonomous\n"), true))
+	record(CheckGateApproval(contract.GatesModeConfirm, []string{"G1"}, nil))
+
 	// This loop's premise is that every referential/lifecycle/policy code is a
 	// validate.Violation this package raises. That was true by accident until
 	// 2026-08-21 — there was one emitter, so nobody had to say so — and

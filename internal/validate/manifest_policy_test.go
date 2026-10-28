@@ -2,6 +2,7 @@ package validate
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"testing"
 )
@@ -705,4 +706,139 @@ func assertHasPOL001(t *testing.T, result Result) {
 		}
 	}
 	t.Fatalf("violations = %+v, want a POL-001 secret-shape violation", result.Violations)
+}
+
+// manifestWithPolicyKeys builds an otherwise schema-valid manifest carrying the
+// given extra top-level lines, so the only finding in play is the one under
+// test and never an unrelated SCH-001.
+func manifestWithPolicyKeys(extra string) string {
+	return `
+schema: space/v1
+space: demo
+min_binary_version: 0.1.0
+` + extra + `
+participants:
+  - {system: axon, org: yura, section: axon/, owners: [alice], status: active, joined: 2026-07-28}
+vendored: []
+`
+}
+
+// TestValidateManifestGatesFlowVocabulary is local-space-2026-10 spec 04 AC 1:
+// every legal value of `gates` and `flow`, and absence, validates clean, and
+// each out-of-vocabulary shape (an unknown word, a mapping, a list, a number, a
+// wrong case) is exactly one POL-027 naming the offending key.
+func TestValidateManifestGatesFlowVocabulary(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		extra    string
+		wantPath string // "" means the manifest must be valid
+	}{
+		{name: "both absent", extra: ""},
+		{name: "gates default", extra: "gates: default"},
+		{name: "gates confirm", extra: "gates: confirm"},
+		{name: "gates autonomous", extra: "gates: autonomous"},
+		{name: "flow full", extra: "flow: full"},
+		{name: "flow express", extra: "flow: express"},
+		{name: "all four together", extra: "gates: confirm\nflow: express"},
+		{name: "gates unknown word", extra: "gates: sometimes", wantPath: "gates"},
+		{name: "gates wrong case", extra: "gates: Confirm", wantPath: "gates"},
+		{name: "gates mapping", extra: "gates: {G1: confirm}", wantPath: "gates"},
+		{name: "gates list", extra: "gates: [confirm]", wantPath: "gates"},
+		{name: "gates number", extra: "gates: 3", wantPath: "gates"},
+		{name: "flow unknown word", extra: "flow: fast", wantPath: "flow"},
+		{name: "flow mapping", extra: "flow: {mode: express}", wantPath: "flow"},
+		{name: "flow number", extra: "flow: 1", wantPath: "flow"},
+	}
+
+	engine := mustEngine(t)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			result, err := engine.ValidateManifest([]byte(manifestWithPolicyKeys(test.extra)))
+			if err != nil {
+				t.Fatalf("ValidateManifest: %v", err)
+			}
+			if test.wantPath == "" {
+				if !result.Valid || len(result.Violations) != 0 {
+					t.Fatalf("manifest %q: Valid = %v, violations = %+v, want a clean result", test.extra, result.Valid, result.Violations)
+				}
+				return
+			}
+			if result.Valid {
+				t.Fatalf("manifest %q: Valid = true, want POL-027", test.extra)
+			}
+			if len(result.Violations) != 1 {
+				t.Fatalf("manifest %q: violations = %+v, want exactly one POL-027", test.extra, result.Violations)
+			}
+			got := result.Violations[0]
+			if got.Code != "POL-027" || got.Class != ClassPolicy || got.Severity != SeverityReject || got.Path != test.wantPath {
+				t.Fatalf("manifest %q: violation = %+v, want POL-027 / policy / reject / path %q", test.extra, got, test.wantPath)
+			}
+		})
+	}
+}
+
+// TestValidateManifestGatesFlowVocabularyIsNotAnEveryPRRule is AC 2: the same
+// bytes give POL-027 from ValidateManifest (which runs only when space.yaml
+// changes) and nothing from ValidateManifestPolicy (which V3 runs on every
+// pull request), so an old odd value never reds an unrelated PR.
+func TestValidateManifestGatesFlowVocabularyIsNotAnEveryPRRule(t *testing.T) {
+	t.Parallel()
+
+	engine := mustEngine(t)
+	for _, extra := range []string{"gates: sometimes", "flow: fast", "gates: {G1: autonomous}"} {
+		raw := []byte(manifestWithPolicyKeys(extra))
+
+		full, err := engine.ValidateManifest(raw)
+		if err != nil {
+			t.Fatalf("ValidateManifest(%q): %v", extra, err)
+		}
+		if got := violationCodes(full.Violations); !slices.Equal(got, []string{"POL-027"}) {
+			t.Fatalf("ValidateManifest(%q) codes = %v, want [POL-027]", extra, got)
+		}
+
+		policy, err := engine.ValidateManifestPolicy(raw)
+		if err != nil {
+			t.Fatalf("ValidateManifestPolicy(%q): %v", extra, err)
+		}
+		if !policy.Valid || len(policy.Violations) != 0 {
+			t.Fatalf("ValidateManifestPolicy(%q) = %+v, want clean: an old odd value must not red an unrelated PR", extra, policy)
+		}
+	}
+}
+
+// TestShippedManifestFixturesStayClean pins US-5: every existing GitHub
+// space carries `gates: default`, which the new vocabulary must accept, and the
+// valid golden fixture for the local policy keys must validate end to end.
+func TestShippedManifestFixturesStayClean(t *testing.T) {
+	t.Parallel()
+
+	engine := mustEngine(t)
+	for _, path := range []string{
+		"../../schemas/manifest/v1/fixtures/valid/space.yaml",
+		"../../schemas/manifest/v1/fixtures/valid/space-local-policy.yaml",
+		"../../space-template/space.yaml",
+	} {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		for _, violation := range mustValidateManifest(t, engine, raw) {
+			if violation.Code == "POL-027" || violation.Code == "POL-028" {
+				t.Errorf("%s: %+v, want no gates/flow finding", path, violation)
+			}
+		}
+	}
+}
+
+func mustValidateManifest(t *testing.T, engine *Engine, raw []byte) []Violation {
+	t.Helper()
+	result, err := engine.ValidateManifest(raw)
+	if err != nil {
+		t.Fatalf("ValidateManifest: %v", err)
+	}
+	return result.Violations
 }

@@ -3,6 +3,10 @@ package contract
 import (
 	"bytes"
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -860,5 +864,217 @@ func TestPlanPublicationOverwritesTheTreeOnMainNotTheCompatibilityBaseline(t *te
 	}
 	if !found {
 		t.Fatal("plan carries no descriptor mutation")
+	}
+}
+
+// TestPublicationGateForRule pins the G1/G2 rule (spec 04 §T1.2): no baseline
+// is G1; a baseline with a different major version, or a breaking verdict, is
+// G2; anything else carries no gate. A minor bump over breaking content is a
+// publication violation elsewhere, never G2.
+func TestPublicationGateForRule(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		hasBaseline bool
+		baseline    string
+		target      string
+		breaking    bool
+		want        PublicationGate
+	}{
+		{name: "first publish", hasBaseline: false, target: "1.0.0", want: GateG1},
+		{name: "first publish ignores the verdict", hasBaseline: false, target: "1.0.0", breaking: true, want: GateG1},
+		{name: "major bump", hasBaseline: true, baseline: "1.4.2", target: "2.0.0", want: GateG2},
+		{name: "major bump downward", hasBaseline: true, baseline: "2.0.0", target: "1.9.0", want: GateG2},
+		{name: "breaking verdict inside one major", hasBaseline: true, baseline: "1.0.0", target: "1.1.0", breaking: true, want: GateG2},
+		{name: "minor bump", hasBaseline: true, baseline: "1.0.0", target: "1.1.0", want: GateNone},
+		{name: "patch bump", hasBaseline: true, baseline: "1.0.0", target: "1.0.1", want: GateNone},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := PublicationGateFor(tt.hasBaseline, tt.baseline, tt.target, tt.breaking); got != tt.want {
+				t.Fatalf("PublicationGateFor(%v, %q, %q, %v) = %q, want %q",
+					tt.hasBaseline, tt.baseline, tt.target, tt.breaking, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestPublicationGateRuleIsDefinedOnce is the no-second-gate-rule guard
+// (spec 04 AC 17), modelled on cli's TestValidateCIAndContractHaveNoSecondCompatCopy.
+// The planner and the land check must read G1/G2 from one function, so in this
+// package's non-test source the only function body that may name GateG1, GateG2
+// or call majorOf is PublicationGateFor itself; the planner must CALL it.
+//
+// TEETH: paste `gate = GateG2` (or a majorOf comparison) into any other
+// function and the negative half reds; delete the PlanPublication call to
+// PublicationGateFor and the positive half reds while the negative stays green.
+func TestPublicationGateRuleIsDefinedOnce(t *testing.T) {
+	t.Parallel()
+
+	fset := token.NewFileSet()
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read package directory: %v", err)
+	}
+	plannerCalls := false
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				ident, ok := n.(*ast.Ident)
+				if !ok {
+					return true
+				}
+				switch ident.Name {
+				case "PublicationGateFor":
+					if fn.Name.Name == "PlanPublication" {
+						plannerCalls = true
+					}
+				case "GateG1", "GateG2", "majorOf":
+					if fn.Name.Name != "PublicationGateFor" {
+						t.Errorf("%s: func %s names %s; the G1/G2 rule belongs to PublicationGateFor alone",
+							fset.Position(ident.Pos()), fn.Name.Name, ident.Name)
+					}
+				}
+				return true
+			})
+		}
+	}
+	if !plannerCalls {
+		t.Fatal("PlanPublication does not call PublicationGateFor: the planner has its own copy of the gate rule")
+	}
+}
+
+// TestGatesPolicyVocabulary pins spec 04 §T1.1: the legal values of `gates`
+// and `flow`, absence as the default, and a non-string as out of vocabulary.
+func TestGatesPolicyVocabulary(t *testing.T) {
+	t.Parallel()
+
+	gates := []struct {
+		name   string
+		raw    any
+		want   GatesSetting
+		wantOK bool
+	}{
+		{"absent", nil, GatesSettingDefault, true},
+		{"default", "default", GatesSettingDefault, true},
+		{"confirm", "confirm", GatesSettingConfirm, true},
+		{"autonomous", "autonomous", GatesSettingAutonomous, true},
+		{"unknown word", "sometimes", "", false},
+		{"wrong case", "Confirm", "", false},
+		{"empty string", "", "", false},
+		{"number", 3, "", false},
+		{"list", []any{"confirm"}, "", false},
+		{"mapping", map[string]any{"G1": "confirm"}, "", false},
+	}
+	for _, tt := range gates {
+		t.Run("gates/"+tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := ParseGatesSetting(tt.raw)
+			if got != tt.want || ok != tt.wantOK {
+				t.Fatalf("ParseGatesSetting(%#v) = (%q, %v), want (%q, %v)", tt.raw, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+	flows := []struct {
+		name   string
+		raw    any
+		want   FlowSetting
+		wantOK bool
+	}{
+		{"absent", nil, FlowSettingFull, true},
+		{"full", "full", FlowSettingFull, true},
+		{"express", "express", FlowSettingExpress, true},
+		{"unknown word", "fast", "", false},
+		{"number", 1, "", false},
+		{"mapping", map[string]any{}, "", false},
+	}
+	for _, tt := range flows {
+		t.Run("flow/"+tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := ParseFlowSetting(tt.raw)
+			if got != tt.want || ok != tt.wantOK {
+				t.Fatalf("ParseFlowSetting(%#v) = (%q, %v), want (%q, %v)", tt.raw, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}
+
+// TestEffectiveGatesModeTable is spec 04 §T1.1's host table, cell by cell, with
+// the read side's fail-closed rule: an out-of-vocabulary value reads as confirm
+// where the host does not review, and `autonomous` is honoured only there.
+func TestEffectiveGatesModeTable(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		raw           any
+		reviewsWrites bool
+		want          GatesMode
+	}{
+		{"reviewed host, absent", nil, true, GatesModeReview},
+		{"reviewed host, default", "default", true, GatesModeReview},
+		{"reviewed host, confirm", "confirm", true, GatesModeReview},
+		{"reviewed host, autonomous is ignored", "autonomous", true, GatesModeReview},
+		{"reviewed host, unknown", "sometimes", true, GatesModeReview},
+		{"local host, absent", nil, false, GatesModeConfirm},
+		{"local host, default", "default", false, GatesModeConfirm},
+		{"local host, confirm", "confirm", false, GatesModeConfirm},
+		{"local host, autonomous", "autonomous", false, GatesModeAutonomous},
+		{"local host, unknown fails closed", "sometimes", false, GatesModeConfirm},
+		{"local host, non-string fails closed", []any{"autonomous"}, false, GatesModeConfirm},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := EffectiveGatesMode(tt.raw, tt.reviewsWrites); got != tt.want {
+				t.Fatalf("EffectiveGatesMode(%#v, reviewsWrites=%v) = %q, want %q", tt.raw, tt.reviewsWrites, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCanonicalApprovedGates pins the approvable set (G1-G4; G5 is not
+// approvable) and the canonical form the trailer carries: sorted, no repeats.
+func TestCanonicalApprovedGates(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		in     []string
+		want   []string
+		wantOK bool
+	}{
+		{"empty", nil, nil, true},
+		{"one", []string{"G1"}, []string{"G1"}, true},
+		{"sorted and deduplicated", []string{"G4", "G1", "G4", "G2"}, []string{"G1", "G2", "G4"}, true},
+		{"all four", []string{"G3", "G2", "G4", "G1"}, []string{"G1", "G2", "G3", "G4"}, true},
+		{"G5 is not approvable", []string{"G1", "G5"}, nil, false},
+		{"unknown id", []string{"G9"}, nil, false},
+		{"empty id", []string{""}, nil, false},
+		{"lowercase", []string{"g1"}, nil, false},
+		{"comma smuggled in", []string{"G1,G2"}, nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := CanonicalApprovedGates(tt.in)
+			if ok != tt.wantOK || !slices.Equal(got, tt.want) {
+				t.Fatalf("CanonicalApprovedGates(%q) = (%q, %v), want (%q, %v)", tt.in, got, ok, tt.want, tt.wantOK)
+			}
+		})
 	}
 }

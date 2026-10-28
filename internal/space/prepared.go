@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/operation"
 	"github.com/ydnikolaev/a2ahub/internal/version"
@@ -248,6 +249,8 @@ func (f *WriteFunnel) PrepareSubmission(ctx context.Context, candidate SubmitReq
 	if candidate.OperationKey != "" {
 		prBody = appendOperationMetadata(prBody, candidate.OperationKey, artifactIDs)
 	}
+	approvedGates, _ := contract.CanonicalApprovedGates(candidate.ApprovedGates)
+	messageBase := withApprovedGatesTrailer(candidate.CommitMessage, candidate.ArtifactID, approvedGates)
 	data := preparedSubmissionData{
 		version: preparedVersion, targetIdentity: preparation.TargetIdentity,
 		observedSpaceFloor: preparation.ObservedSpaceFloor, featureFloor: preparation.FeatureFloor,
@@ -255,8 +258,8 @@ func (f *WriteFunnel) PrepareSubmission(ctx context.Context, candidate SubmitReq
 		producerCompatibility: preparation.ProducerCompatibility,
 		system:                candidate.System, verb: candidate.Verb, artifactID: candidate.ArtifactID,
 		artifactIDs: artifactIDs, operationKey: candidate.OperationKey,
-		mutations: cloneMutations(mutations), commitMessageBase: candidate.CommitMessage,
-		commitMessage: candidate.CommitMessage, commitAuthorName: candidate.CommitAuthorName,
+		mutations: cloneMutations(mutations), commitMessageBase: messageBase,
+		commitMessage: messageBase, commitAuthorName: candidate.CommitAuthorName,
 		commitAuthorEmail: candidate.CommitAuthorEmail, repository: candidate.Repo,
 		headBranch: branch, baseBranch: baseBranch, baseCommitSHA: preparation.BaseCommitSHA,
 		prTitle: candidate.PRTitle, prBody: prBody,
@@ -465,12 +468,16 @@ func validatePreparedRequest(candidate SubmitRequest, preparation PreparationCon
 			return "", fmt.Errorf("%w: %s", ErrWrongSection, mutation.Path)
 		}
 	}
+	if _, ok := contract.CanonicalApprovedGates(candidate.ApprovedGates); !ok {
+		return "", fmt.Errorf("%w: approved gates %q are not all approvable gates (G1-G4)", ErrPreparedInvalid, candidate.ApprovedGates)
+	}
 	for _, line := range strings.Split(candidate.CommitMessage, "\n") {
 		trimmed := strings.TrimSpace(line)
 		for _, name := range []string{
 			"A2A-Operation-Key:", "A2A-Plan-Digest:", "A2A-Target:",
 			"A2A-Prepared-Digest:", "A2A-Recovery-Version:",
 			"A2A-Recovery-Digest:", "A2A-Recovery-v1:",
+			approvedGatesTrailerName + ":",
 		} {
 			if strings.HasPrefix(trimmed, name) {
 				return "", fmt.Errorf("%w: caller supplied reserved trailer %s", ErrPreparedInvalid, name)
@@ -640,10 +647,18 @@ func applyStampedWrites(mutations []Mutation, stamped []FileWrite) {
 func repositoryIdentity(repository host.Repo) string { return repository.Owner + "/" + repository.Name }
 
 func validatePreparedSemantics(data preparedSubmissionData) error {
+	// The frozen message base carries the funnel's own approval trailer, which
+	// the reservation in validatePreparedRequest refuses in CALLER text. Judge
+	// the caller's part of the message: peel the trailer the funnel added, and
+	// anything that still names it (a forged or malformed line) is refused.
+	callerMessage := data.commitMessageBase
+	if body, _, ok := splitApprovedGatesTrailer(callerMessage); ok {
+		callerMessage = body
+	}
 	candidate := SubmitRequest{
 		System: data.system, Verb: data.verb, ArtifactID: data.artifactID,
 		ArtifactIDs: append([]string(nil), data.artifactIDs...), OperationKey: data.operationKey,
-		Mutations: cloneMutations(data.mutations), CommitMessage: data.commitMessageBase,
+		Mutations: cloneMutations(data.mutations), CommitMessage: callerMessage,
 		CommitAuthorName: data.commitAuthorName, CommitAuthorEmail: data.commitAuthorEmail,
 		Repo: data.repository, BaseBranch: data.baseBranch, PRTitle: data.prTitle,
 		MinBinaryVersion: data.observedSpaceFloor, AllowForkFallback: data.allowForkFallback,
@@ -740,5 +755,94 @@ func appendRecoveryTrailers(base string, record RecoveryV1, encoded, digest stri
 	if base == "" {
 		return strings.Join(trailers, "\n")
 	}
+	if head, ok := approvalBlockHead(base); ok {
+		return head + "\n" + strings.Join(trailers, "\n")
+	}
 	return strings.TrimRight(base, "\n") + "\n\n" + strings.Join(trailers, "\n")
+}
+
+// approvedGatesTrailerName is the approval trailer's token. It is P2's constant,
+// host.TrailerApprovedGates, never a second literal: the land copy and the land
+// check key on that spelling.
+const approvedGatesTrailerName = host.TrailerApprovedGates
+
+// approvedGatesLine renders the trailer for a canonical gate list.
+func approvedGatesLine(gates []string) string {
+	return approvedGatesTrailerName + ": " + strings.Join(gates, ",")
+}
+
+// defaultCommitMessage is the title a write gets when its caller supplied none.
+func defaultCommitMessage(artifactID string) string { return "a2a: submit " + artifactID }
+
+// withApprovedGatesTrailer returns message with the approval trailer as its
+// final paragraph, after a blank line (spec 04 §T1.3: the land copies the
+// trailer from the final paragraph only). gates must already be canonical
+// (contract.CanonicalApprovedGates). With no gates it returns message untouched,
+// so an unapproved write keeps today's exact bytes. A caller who supplied no
+// message gets the funnel's default title: the trailer alone is not a message.
+func withApprovedGatesTrailer(message, artifactID string, gates []string) string {
+	if len(gates) == 0 {
+		return message
+	}
+	if message == "" {
+		message = defaultCommitMessage(artifactID)
+	}
+	return strings.TrimRight(message, "\n") + "\n\n" + approvedGatesLine(gates)
+}
+
+// splitApprovedGatesTrailer undoes withApprovedGatesTrailer: it returns the
+// message without the funnel's trailer paragraph and the gates it named. ok is
+// false unless the message ends in exactly the canonical form the funnel writes
+// (a blank line, then one `A2A-Approved-Gates: ` line with a sorted,
+// repeat-free list of G1-G4), so a hand-edited or forged trailer is never
+// peeled and stays visible to the reservation check.
+func splitApprovedGatesTrailer(message string) (body string, gates []string, ok bool) {
+	split := strings.LastIndex(message, "\n\n")
+	if split < 0 {
+		return message, nil, false
+	}
+	tail := message[split+2:]
+	list, found := strings.CutPrefix(tail, approvedGatesTrailerName+": ")
+	if !found || strings.Contains(list, "\n") {
+		return message, nil, false
+	}
+	gates, valid := contract.CanonicalApprovedGates(strings.Split(list, ","))
+	if !valid || len(gates) == 0 || approvedGatesLine(gates) != tail {
+		return message, nil, false
+	}
+	return message[:split], gates, true
+}
+
+// approvalBlockHead reports whether message's final paragraph is the funnel's
+// approval trailer alone, and returns the message with trailing newlines
+// removed when it is. Callers that append further trailers use it to join them
+// to that paragraph with a single newline: a blank line in between would push
+// the approval out of the final paragraph and the land would drop it.
+func approvalBlockHead(message string) (string, bool) {
+	head := strings.TrimRight(message, "\n")
+	lines := strings.Split(head, "\n")
+	start := len(lines)
+	for start > 0 && strings.TrimSpace(lines[start-1]) != "" {
+		start--
+	}
+	paragraph := lines[start:]
+	if len(paragraph) == 0 {
+		return "", false
+	}
+	for _, line := range paragraph {
+		if !strings.HasPrefix(line, approvedGatesTrailerName+":") {
+			return "", false
+		}
+	}
+	return head, true
+}
+
+// appendFinalTrailer attaches one trailer line to message the way the funnel
+// always has, as a paragraph of its own, except that when the message already
+// ends in the approval trailer it joins that paragraph instead.
+func appendFinalTrailer(message, line string) string {
+	if head, ok := approvalBlockHead(message); ok {
+		return head + "\n" + line
+	}
+	return message + "\n\n" + line
 }

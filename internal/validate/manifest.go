@@ -85,6 +85,12 @@ func (e *Engine) ValidateManifest(raw []byte) (Result, error) {
 		return Result{}, &Error{Op: op, Err: merr}
 	}
 	violations = append(violations, checkManifestPolicy(probe)...)
+	// POL-027 lives here and NOT in checkManifestPolicy: that function is shared
+	// with ValidateManifestPolicy, which V3 runs on every pull request, so a
+	// vocabulary rule placed there would red an unrelated PR over an old odd
+	// `gates` or `flow` value. This path runs only when space.yaml itself
+	// changes (local-space-2026-10 spec 04 §T1.1, AC 1 and 2).
+	violations = append(violations, checkGatesFlowVocabulary(instance)...)
 	// Rule 4 (space-notify-2026-08 P1): the manifest's raw bytes carry no
 	// Telegram bot-token shape anywhere — not in a route, not in a
 	// comment, not in a stray key. Reuses POL-001/scanForSecrets rather

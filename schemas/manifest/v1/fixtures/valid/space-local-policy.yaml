@@ -1,0 +1,13 @@
+schema: space/v1
+space: localdemo
+min_binary_version: 0.1.0
+gates: autonomous                 # a local space may relax the human gates; validation is never relaxed
+flow: express
+participants:
+  - system: axon
+    org: yura
+    section: axon/
+    owners: [ydnikolaev]
+    status: active
+    joined: 2026-10-28
+vendored: []

@@ -3,8 +3,11 @@ package space
 import (
 	"context"
 	"errors"
+	"os"
+	"strings"
 	"testing"
 
+	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 )
 
@@ -332,3 +335,98 @@ func TestLoadManifestParseFailureShortCircuitsValidator(t *testing.T) {
 }
 
 var _ ManifestValidator = (*fakeManifestValidator)(nil)
+
+// TestManifestEffectiveGates is local-space-2026-10 spec 04 AC 4: the shipped
+// template's `gates: default` reads as `review` on a host that reviews writes
+// and as `confirm` on one that does not; an unknown value fails closed to
+// `confirm` locally; and `autonomous` is honoured only locally.
+func TestManifestEffectiveGates(t *testing.T) {
+	t.Parallel()
+
+	template, err := os.ReadFile("../../space-template/space.yaml")
+	if err != nil {
+		t.Fatalf("read the shipped template: %v", err)
+	}
+
+	tests := []struct {
+		name          string
+		yaml          string
+		reviewsWrites bool
+		want          contract.GatesMode
+	}{
+		{"shipped template on a reviewed host", string(template), true, contract.GatesModeReview},
+		{"shipped template on a local host", string(template), false, contract.GatesModeConfirm},
+		{"absent on a local host", "space: demo\n", false, contract.GatesModeConfirm},
+		{"absent on a reviewed host", "space: demo\n", true, contract.GatesModeReview},
+		{"confirm on a local host", "gates: confirm\n", false, contract.GatesModeConfirm},
+		{"autonomous on a local host", "gates: autonomous\n", false, contract.GatesModeAutonomous},
+		{"autonomous on a reviewed host is ignored", "gates: autonomous\n", true, contract.GatesModeReview},
+		{"unknown word fails closed locally", "gates: sometimes\n", false, contract.GatesModeConfirm},
+		{"mapping fails closed locally", "gates: {G1: autonomous}\n", false, contract.GatesModeConfirm},
+		{"list fails closed locally", "gates: [autonomous]\n", false, contract.GatesModeConfirm},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m, err := ParseManifest([]byte(tt.yaml))
+			if err != nil {
+				t.Fatalf("ParseManifest must stay lenient about the policy keys' shape: %v", err)
+			}
+			if got := m.EffectiveGates(tt.reviewsWrites); got != tt.want {
+				t.Fatalf("EffectiveGates(reviewsWrites=%v) = %q, want %q", tt.reviewsWrites, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestManifestFlowSetting: absent and unknown read as `full` (the read side
+// never refuses, spec 04 §T1.1); `express` is read only when declared.
+func TestManifestFlowSetting(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		yaml string
+		want contract.FlowSetting
+	}{
+		{"absent", "space: demo\n", contract.FlowSettingFull},
+		{"full", "flow: full\n", contract.FlowSettingFull},
+		{"express", "flow: express\n", contract.FlowSettingExpress},
+		{"unknown word", "flow: fast\n", contract.FlowSettingFull},
+		{"mapping", "flow: {mode: express}\n", contract.FlowSettingFull},
+		{"number", "flow: 1\n", contract.FlowSettingFull},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m, err := ParseManifest([]byte(tt.yaml))
+			if err != nil {
+				t.Fatalf("ParseManifest: %v", err)
+			}
+			if got := m.FlowSetting(); got != tt.want {
+				t.Fatalf("FlowSetting() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestManifestPolicyKeysAreLenientOnRead: a typed decode target would make
+// yaml.Unmarshal fail on a structured `gates` and take every read verb down
+// with it. The policy keys decode as `any`; the verdict is validate's.
+func TestManifestPolicyKeysAreLenientOnRead(t *testing.T) {
+	t.Parallel()
+
+	for _, doc := range []string{
+		validManifestYAML + "flow: {a: 1}\n",
+		strings.Replace(validManifestYAML, "gates: default", "gates: {G1: confirm}", 1),
+		strings.Replace(validManifestYAML, "gates: default", "gates: [confirm, autonomous]", 1),
+	} {
+		m, err := ParseManifest([]byte(doc))
+		if err != nil {
+			t.Fatalf("ParseManifest(%q) = %v, want a manifest that still reads", doc, err)
+		}
+		if m.Space != "getvisa" || len(m.Participants) != 2 {
+			t.Fatalf("manifest = %+v, want the rest of the document intact", m)
+		}
+	}
+}

@@ -1252,6 +1252,85 @@ entries:
       internal/mcp/**_test.go or internal/e2e/**_test.go file in this
       stage's own allowlist names it.
 
+  - code: POL-027
+    class: policy
+    title: A manifest's `gates` or `flow` carries a value outside its vocabulary
+    applies_to: >-
+      internal/validate.checkGatesFlowVocabulary, run from
+      (*Engine).ValidateManifest only (local-space-2026-10 spec 04 §T1.1, AC 1).
+      `gates` is one of default, confirm, autonomous; `flow` is one of full,
+      express; an absent key is the key's default. An unknown word, a mapping, a
+      list, a number or a wrong-case word is refused at the write that
+      introduces it, naming the key. Policy, not schema:
+      schemas/manifest/v1/space.schema.json is byte-frozen (anti-pattern #21)
+      and leaves `gates` untyped. Deliberately NOT run from
+      ValidateManifestPolicy, which V3 runs on every pull request, so an old odd
+      value never reds an unrelated PR (AC 2); the read side fails closed
+      instead (an unknown `gates` reads as confirm, an unknown `flow` as full).
+    severity: reject
+    mode_scope: v3-pr
+    mode_scope_reason: >-
+      ADR-011 D3. It judges a proposed manifest change, never already-landed
+      history: a merged space.yaml is immutable and a post-merge audit could
+      only punish a value that was accepted when it was written.
+    path_exempt: >-
+      no conformance path edits the manifest's policy keys (spec 04 §T1.5), so
+      no declared path can provoke this refusal. It is exercised by
+      internal/validate's manifest vocabulary tests and the invalid golden
+      fixture schemas/manifest/v1/fixtures/invalid/space-gates-unknown-value.yaml.
+
+  - code: POL-028
+    class: policy
+    title: '`gates: autonomous` on a host that reviews writes'
+    applies_to: >-
+      internal/validate.CheckGatesForHost, run where ValidateManifest runs (a
+      manifest-changing write) and never from ValidateManifestPolicy
+      (local-space-2026-10 spec 04 §T1.3). The host fact arrives as a boolean
+      from Capabilities().ReviewsWrites, never a host name: `validate --ci`
+      supplies true, the local land check false, and `space set` / `space init
+      --local` the capability of the host they are about to write to. On a host
+      that reviews writes the pull-request review is the gate, so a manifest
+      that switches the gates off is refused at the write; on read an
+      `autonomous` there is ignored and doctor FAILs it. A promoted space
+      therefore cannot carry its local relaxation over silently.
+    severity: reject
+    mode_scope: v3-pr
+    mode_scope_reason: >-
+      ADR-011 D3. It judges a proposed manifest change, never already-landed
+      history; a manifest merged before this code existed is reported by doctor,
+      not retroactively refused.
+    path_exempt: >-
+      no static fixture can carry it, because the host is not in the document,
+      and no conformance path edits the manifest's policy keys (spec 04 §T1.5).
+      It is exercised by internal/validate's CheckGatesForHost tests and, once
+      the CLI wiring lands, through `validate --ci`.
+
+  - code: POL-029
+    class: policy
+    title: A gated write in a confirm space carries no approval for that gate
+    applies_to: >-
+      internal/validate.CheckGateApproval (local-space-2026-10 spec 04 §T1.3),
+      called by the writer to refuse early (`a2a contract publish`, `approve`,
+      `reject`, `space join`, `space update`, `space set`) and by the local land
+      check to enforce, both through the same pure rules. A write needs one
+      approval per gate it sits behind: G1 a first contract publish, G2 a
+      breaking or major version, G3 an approve or reject of a decision, G4 a
+      change to space.yaml. The approval is the caller's `--approve`, recorded
+      in the A2A-Approved-Gates commit trailer; `autonomous` and a reviewing
+      host ask for none. G5 (classification) is never approvable and keeps its
+      own refusals in both modes.
+    severity: reject
+    mode_scope: v3-pr
+    mode_scope_reason: >-
+      ADR-011 D3. It judges a proposed change against the mode on the tip it
+      lands on, never already-landed history: a write that landed under
+      `autonomous` carries no trailer and a later `confirm` must not
+      retroactively refuse it.
+    path_exempt: >-
+      undriven until P7 adds the host dimension to the conformance matrix
+      (local-space-2026-10 spec 04 §T1.5): the catalogue has no local-host path
+      that can provoke a missing approval. P7 deletes this waiver (its AC 15).
+
   - code: REF-023
     class: referential
     title: verdicts[] does not name every criterion the parent declares
