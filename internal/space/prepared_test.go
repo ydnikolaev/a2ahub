@@ -162,6 +162,46 @@ func TestPreparedJournalRoundTripSubmitsExactFrozenRequest(t *testing.T) {
 	}
 }
 
+// An empty file is a write of zero bytes, not an absent write: every copy the
+// prepared path makes must keep it non-nil, or the mutation validator refuses
+// it as malformed (`a2a space join` writes empty .gitkeep placeholders).
+func TestPreparedSubmissionKeepsAnEmptyFileAWrite(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	layout, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := newTestSubmitRequest(fx, "axon", layout)
+	req.MinBinaryVersion = "0.19.0"
+	req.ArtifactIDs = []string{req.ArtifactID}
+	req.Files = append(req.Files, FileWrite{Path: "axon/provides/.gitkeep", Content: []byte{}})
+	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").PrepareSubmission(
+		context.Background(), req, testPreparationContext("0.19.0"),
+	)
+	if err != nil {
+		t.Fatalf("PrepareSubmission: %v", err)
+	}
+	// Submit the in-memory value: a journal round trip decodes an empty
+	// payload as non-nil and would hide the defect.
+	result, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").SubmitPrepared(
+		context.Background(), prepared, SubmissionRuntime{
+			RepoDir: fx.Clone("axon"), RemoteURL: fx.RemoteURL(), TargetIdentity: "acme/getvisa",
+			CurrentSpaceFloor: "0.19.0",
+		})
+	if err != nil {
+		t.Fatalf("SubmitPrepared: %v", err)
+	}
+	size, err := runGitOutput(context.Background(), fx.Clone("axon"), nil, "cat-file", "-s", result.Branch+":axon/provides/.gitkeep")
+	if err != nil {
+		t.Fatalf("git cat-file: %v", err)
+	}
+	if strings.TrimSpace(size) != "0" {
+		t.Fatalf("committed .gitkeep size = %q, want 0", size)
+	}
+}
+
 func equalJournalableMutations(left, right []Mutation) bool {
 	if len(left) != len(right) {
 		return false

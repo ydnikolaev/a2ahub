@@ -617,7 +617,7 @@ func cloneMutations(mutations []Mutation) []Mutation {
 func cloneFiles(files []FileWrite) []FileWrite {
 	out := make([]FileWrite, len(files))
 	for i := range files {
-		out[i] = FileWrite{Path: files[i].Path, Content: append([]byte(nil), files[i].Content...)}
+		out[i] = FileWrite{Path: files[i].Path, Content: bytes.Clone(files[i].Content)}
 	}
 	return out
 }
@@ -626,7 +626,7 @@ func mutationWrites(mutations []Mutation) []FileWrite {
 	files := make([]FileWrite, 0, len(mutations))
 	for _, mutation := range mutations {
 		if mutation.Operation == MutationWrite {
-			files = append(files, FileWrite{Path: mutation.Path, Content: append([]byte(nil), mutation.Bytes...)})
+			files = append(files, FileWrite{Path: mutation.Path, Content: bytes.Clone(mutation.Bytes)})
 		}
 	}
 	return files
@@ -639,7 +639,9 @@ func applyStampedWrites(mutations []Mutation, stamped []FileWrite) {
 	}
 	for i := range mutations {
 		if mutations[i].Operation == MutationWrite {
-			mutations[i].Bytes = append([]byte(nil), byPath[mutations[i].Path]...)
+			// bytes.Clone keeps an empty file empty; append onto nil would make it
+			// nil, which the mutation validator refuses as a malformed write.
+			mutations[i].Bytes = bytes.Clone(byPath[mutations[i].Path])
 		}
 	}
 }
