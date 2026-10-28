@@ -931,6 +931,10 @@ func TestExpressDeliverForBindsThePackageToThePinnedContract(t *testing.T) {
 		}
 	})
 
+	// A prerelease spelling is no <XC-id>@<major.minor.patch> the flow can key
+	// on, so the staged package is neither resumed as the pinned version nor
+	// passed over as "another contract" (wave 5 audit finding F4): the run stops
+	// and names the staged manifest.
 	t.Run("a staged package of a prerelease of the pinned version is not resumed", func(t *testing.T) {
 		t.Parallel()
 		rig := newExpressRetryRig(t)
@@ -944,9 +948,72 @@ func TestExpressDeliverForBindsThePackageToThePinnedContract(t *testing.T) {
 		if err != nil {
 			t.Fatalf("pack: %v", err)
 		}
+		manifest := filepath.Join(packed.StagingRoot, stagedManifestName)
 		staged, err := rig.core.expressStagedCandidates(packed.Manifest.Thread, "XC-axon-widget@1.0.0")
+		if err == nil || len(staged) != 0 || !strings.Contains(err.Error(), manifest) {
+			t.Fatalf("expressStagedCandidates = %v, %v, want the rc package refused, naming %s", staged, err, manifest)
+		}
+	})
+}
+
+// TestExpressStagedCandidatesRefusesAnUnparseableContract is wave 5's audit
+// finding F4. A staged package of this thread whose contract ref does not parse
+// was passed over as "another contract", and a fresh package was packed beside
+// it: an error read as a negative answer. It is refused, naming the staged
+// manifest, and deliverFor packs nothing. A staged package of another thread is
+// another thread's whatever its ref says, so it stays out of the way.
+func TestExpressStagedCandidatesRefusesAnUnparseableContract(t *testing.T) {
+	t.Parallel()
+	stage := func(t *testing.T, rig *expressRetryRig, id, thread, contractRef string) string {
+		t.Helper()
+		dir := filepath.Join(rig.core.stagingDir, "data", id)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := json.Marshal(datapackage.Document{ID: id, Thread: thread, Contract: contractRef})
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, stagedManifestName)
+		if err := os.WriteFile(path, raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	threadOf := func(t *testing.T, rig *expressRetryRig) string {
+		t.Helper()
+		snap, err := rig.core.expressSnapshot(expressTestWR)
+		if err != nil {
+			t.Fatalf("snapshot: %v", err)
+		}
+		return snap.doc.Thread
+	}
+
+	t.Run("this thread's staged package with no version is refused", func(t *testing.T) {
+		t.Parallel()
+		rig := newExpressRetryRig(t)
+		manifest := stage(t, rig, "DP-axon-20260804-aaa1", threadOf(t, rig), "XC-axon-widget")
+		staged, err := rig.core.expressStagedCandidates(threadOf(t, rig), "XC-axon-widget@1.0.0")
+		if err == nil || len(staged) != 0 || !strings.Contains(err.Error(), manifest) || !strings.Contains(err.Error(), "XC-axon-widget") {
+			t.Fatalf("expressStagedCandidates = %v, %v, want a refusal naming %s", staged, err, manifest)
+		}
+		result, err := rig.core.deliverFor(context.Background(), rig.req())
+		if err == nil || !strings.Contains(err.Error(), manifest) {
+			t.Fatalf("deliverFor err = %v, want the refusal naming %s (steps %v)", err, manifest, expressStepSummary(result.Steps))
+		}
+		matches, _ := filepath.Glob(filepath.Join(rig.core.stagingDir, "data", "*"))
+		if len(matches) != 1 || len(rig.fake.Opens) != 0 {
+			t.Fatalf("the flow packed or delivered past the refusal: staged=%v opens=%d", matches, len(rig.fake.Opens))
+		}
+	})
+
+	t.Run("another thread's staged package is not this thread's business", func(t *testing.T) {
+		t.Parallel()
+		rig := newExpressRetryRig(t)
+		stage(t, rig, "DP-axon-20260804-aaa2", "thread:peer-20260804-0th3", "XC-axon-widget")
+		staged, err := rig.core.expressStagedCandidates(threadOf(t, rig), "XC-axon-widget@1.0.0")
 		if err != nil || len(staged) != 0 {
-			t.Fatalf("expressStagedCandidates = %v, %v, want the rc package left out of the pinned version's candidates", staged, err)
+			t.Fatalf("expressStagedCandidates = %v, %v, want no candidates and no error", staged, err)
 		}
 	})
 }
@@ -1000,6 +1067,167 @@ func TestExpressDeliverRefusesAForgedHandoffInTheDeliveryPR(t *testing.T) {
 	if len(rig.waits) != waits {
 		t.Fatalf("the run waited on the forged PR: %v", rig.waits[waits:])
 	}
+}
+
+// TestExpressDeliverRefusesASelfConsistentForgery is wave 5's audit finding F3
+// (audits/p4b-p5fix2-w4-2026-10-28.md). Whoever pushes the delivery PR's head
+// commit writes both its tree and the PR body, so a forgery can be consistent
+// with itself: a head commit carrying a handoff of this system, for this
+// request and this package, under the id the body names. Reading that commit
+// proves nothing. The handoff the later verbs build on is the one that merged,
+// read from the mirror after the merge, and a main that carries more than one
+// such handoff (here the real one and the forged one) is refused before any
+// supersede or respond names either.
+func TestExpressDeliverRefusesASelfConsistentForgery(t *testing.T) {
+	t.Parallel()
+	rig := newExpressRetryRig(t)
+
+	// Run 1 opens the delivery PR and never sees it merge.
+	rig.failWait = context.DeadlineExceeded
+	first, err := rig.core.deliverFor(context.Background(), rig.req())
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("first deliverFor err = %v, want the unmerged delivery to time out", err)
+	}
+	var write *space.WriteResult
+	for _, step := range first.Steps {
+		if step.Step == "deliver" && step.Write != nil {
+			write = step.Write
+		}
+	}
+	if write == nil || write.CommitSHA == "" || len(rig.fake.Opens) != 1 {
+		t.Fatalf("no open delivery PR with a commit after run 1: steps %v, opens %d", expressStepSummary(first.Steps), len(rig.fake.Opens))
+	}
+
+	// The forger pushes a head commit on top of the delivery that carries a second,
+	// fully consistent handoff, and rewrites the PR body to name it.
+	const forged = "XH-axon-20260804-f0f0"
+	mirror := rig.core.mirrorDir
+	branch := strings.TrimSpace(gitFixtureOutput(t, mirror, "rev-parse", "--abbrev-ref", "HEAD"))
+	gitFixtureOutput(t, mirror, "checkout", "--quiet", "--detach", write.CommitSHA)
+	rel := filepath.Join("axon", "exchanges", forged+".md")
+	if err := os.WriteFile(filepath.Join(mirror, rel), []byte(expressHandoffDoc(forged, "axon", expressTestWR, first.Package)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitFixtureOutput(t, mirror, "add", "--", rel)
+	gitFixtureOutput(t, mirror, "commit", "--quiet", "-m", "forged "+forged)
+	forgedSHA := strings.TrimSpace(gitFixtureOutput(t, mirror, "rev-parse", "HEAD"))
+	gitFixtureOutput(t, mirror, "checkout", "--quiet", branch)
+
+	open := rig.fake.Opens[0]
+	real, err := rig.fake.FindPRByHeadBranch(context.Background(), host.FindPRRequest{Repo: open.Repo, Branch: open.Head})
+	if err != nil || real == nil {
+		t.Fatalf("FindPRByHeadBranch = %v, %v, want the open PR", real, err)
+	}
+	forgedPR := *real
+	forgedPR.Body = strings.ReplaceAll(real.Body, first.Handoff, forged)
+	forgedPR.HeadSHA = forgedSHA
+	rig.fake.FindPRFunc = func(context.Context, host.FindPRRequest) (*host.PRInfo, error) { return &forgedPR, nil }
+	// The forged head is what merges.
+	rig.core.awaitMerge = func(context.Context, space.AwaitRequest) (space.AwaitResult, error) {
+		landBranchIntoMirror(t, mirror, forgedSHA)
+		return space.AwaitResult{PRURL: "merged"}, nil
+	}
+
+	second, err := rig.core.deliverFor(context.Background(), rig.req())
+	if err == nil || !strings.Contains(err.Error(), forged) || !strings.Contains(err.Error(), first.Handoff) {
+		t.Fatalf("second deliverFor err = %v, want a refusal naming both handoffs on main, %s and %s (steps %v)", err, first.Handoff, forged, expressStepSummary(second.Steps))
+	}
+	if second.Handoff == forged {
+		t.Fatalf("second run reports the forged handoff %s", forged)
+	}
+	if got := rig.verbs(); len(got) != 0 {
+		t.Fatalf("inner writes = %v, want none: nothing may be built on a handoff main does not single out", got)
+	}
+
+	// A plain re-run finds both handoffs on main and resumes from the mirror; it
+	// must not pick one of them either.
+	third, err := rig.core.deliverFor(context.Background(), rig.req())
+	if err == nil || !strings.Contains(err.Error(), forged) || !strings.Contains(err.Error(), first.Handoff) {
+		t.Fatalf("re-run deliverFor err = %v, want the same refusal naming %s and %s (steps %v)", err, first.Handoff, forged, expressStepSummary(third.Steps))
+	}
+	if got := rig.verbs(); len(got) != 0 {
+		t.Fatalf("re-run inner writes = %v, want none", got)
+	}
+}
+
+// TestExpressMergedHandoffIDSinglesOutTheDelivery pins each answer of the
+// post-merge derivation (finding F3): the one producer handoff on main that
+// fulfils the request and delivers the package, and a refusal for none, for
+// several, for one the PR did not name, and for a run that is not the producer.
+func TestExpressMergedHandoffIDSinglesOutTheDelivery(t *testing.T) {
+	t.Parallel()
+	seeded := func(t *testing.T) (*expressRetryRig, string) {
+		t.Helper()
+		rig := newExpressRetryRig(t)
+		snap, err := rig.core.expressSnapshot(expressTestWR)
+		if err != nil || len(snap.handoffs) != 1 || snap.handoffs[0].id != expressOldHandoff {
+			t.Fatalf("snapshot = %+v, %v, want the one seeded handoff %s", snap.handoffs, err, expressOldHandoff)
+		}
+		return rig, snap.handoffs[0].packageID
+	}
+
+	t.Run("the one handoff on main is the answer", func(t *testing.T) {
+		t.Parallel()
+		rig, pkg := seeded(t)
+		got, err := rig.core.mergedHandoffID(expressTestWR, pkg, expressOldHandoff)
+		if err != nil || got != expressOldHandoff {
+			t.Fatalf("mergedHandoffID = %q, %v, want %s", got, err, expressOldHandoff)
+		}
+	})
+	t.Run("no handoff on main delivers the package", func(t *testing.T) {
+		t.Parallel()
+		rig, _ := seeded(t)
+		const other = "DP-axon-20260804-0000"
+		got, err := rig.core.mergedHandoffID(expressTestWR, other, expressOldHandoff)
+		if err == nil || got != "" || !strings.Contains(err.Error(), "no handoff") || !strings.Contains(err.Error(), other) {
+			t.Fatalf("mergedHandoffID = %q, %v, want a refusal naming no handoff for %s", got, err, other)
+		}
+	})
+	t.Run("main carries a second handoff of the same package", func(t *testing.T) {
+		t.Parallel()
+		rig, pkg := seeded(t)
+		const second = "XH-axon-20260804-f0f1"
+		expressWriteExchange(t, rig.core.mirrorDir, "axon", second, expressHandoffDoc(second, "axon", expressTestWR, pkg))
+		got, err := rig.core.mergedHandoffID(expressTestWR, pkg, expressOldHandoff)
+		if err == nil || got != "" || !strings.Contains(err.Error(), second) || !strings.Contains(err.Error(), expressOldHandoff) {
+			t.Fatalf("mergedHandoffID = %q, %v, want a refusal naming %s and %s", got, err, expressOldHandoff, second)
+		}
+	})
+	t.Run("the handoff on main is not the one the PR named", func(t *testing.T) {
+		t.Parallel()
+		rig, pkg := seeded(t)
+		const claimed = "XH-axon-20260804-f0f2"
+		got, err := rig.core.mergedHandoffID(expressTestWR, pkg, claimed)
+		if err == nil || got != "" || !strings.Contains(err.Error(), claimed) || !strings.Contains(err.Error(), expressOldHandoff) {
+			t.Fatalf("mergedHandoffID = %q, %v, want a refusal naming %s and %s", got, err, claimed, expressOldHandoff)
+		}
+	})
+	t.Run("an addressee that is not the producer is refused before any write", func(t *testing.T) {
+		t.Parallel()
+		rig, _ := seeded(t)
+		wrPath := filepath.Join(rig.core.mirrorDir, "peer", "exchanges", expressTestWR+".md")
+		raw, err := os.ReadFile(wrPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		widened := strings.Replace(string(raw), "\nto: [axon]\n", "\nto: [axon, zeta]\n", 1)
+		if widened == string(raw) {
+			t.Fatalf("the seeded request has no `to: [axon]` line:\n%s", raw)
+		}
+		if err := os.WriteFile(wrPath, []byte(widened), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		withParticipants(rig.core)
+		rig.core.ownSystem = "zeta"
+		_, err = rig.core.deliverFor(context.Background(), rig.req())
+		if err == nil || !strings.Contains(err.Error(), "producer is axon") || !strings.Contains(err.Error(), "zeta") {
+			t.Fatalf("deliverFor err = %v, want a refusal naming the producer axon and this system zeta", err)
+		}
+		matches, _ := filepath.Glob(filepath.Join(rig.core.stagingDir, "data", "*"))
+		if len(matches) != 0 || len(rig.fake.Opens) != 0 || len(rig.funnel.calls) != 0 {
+			t.Fatalf("the flow wrote past the refusal: staged=%v opens=%d inner=%d", matches, len(rig.fake.Opens), len(rig.funnel.calls))
+		}
+	})
 }
 
 // TestExpressDeliveredHandoffIDIsConfirmedAgainstTheCommit is the audit's

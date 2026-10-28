@@ -477,8 +477,71 @@ func (c *dataCore) buildHandoffDraft(handoffID string, actor template.Actor, wrE
 	var body strings.Builder
 	body.WriteString("---\n")
 	body.Write(raw)
-	body.WriteString("---\n## Context\n## What was built\n## How to verify\n## How to operate\n## Limitations & next steps\n")
+	body.WriteString("---\n")
+	body.WriteString(handoffDraftBody(wrEnv, manifest))
 	return []byte(body.String())
+}
+
+// handoffDraftBody writes the five §16.2 sections of a delivery's handoff from
+// what the delivery itself knows: the request it fulfils, the package and its
+// contract, the files and their roles, the commands the consumer runs, and the
+// expiry. POL-022 refuses a section with nothing under it at the land, and a
+// local space's land runs that check on every write (as a GitHub space's
+// required check does), so empty headings make every delivery unlandable.
+// Every line is a fact of this package or a command that acts on it; nothing
+// here is a placeholder for a person to fill in, because nobody edits the body
+// between pack and land.
+func handoffDraftBody(wrEnv fold.Envelope, manifest datapackage.Document) string {
+	var b strings.Builder
+	line := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
+
+	line("## Context")
+	line("")
+	line("This handoff delivers data package `%s` to %s in answer to %s `%s`.", manifest.ID, wrEnv.From, strings.ReplaceAll(string(wrEnv.Kind), "_", " "), wrEnv.ID)
+	line("The package was packed against contract `%s` and is attempt %d.", manifest.Contract, manifest.Attempt)
+	if manifest.Supersedes != "" {
+		line("It replaces package `%s`, which an earlier verification did not accept.", manifest.Supersedes)
+	}
+	line("")
+
+	line("## What was built")
+	line("")
+	line("Package `%s`: %s data, format %s, %d record(s), %d byte(s), aggregate digest `%s`, stored in this space at `%s`.",
+		manifest.ID, manifest.DataProfile, manifest.Format, manifest.RecordCount, manifest.SizeBytes, manifest.AggregateDigest, manifest.Locator)
+	line("Its files:")
+	line("")
+	for _, entry := range manifest.Entries {
+		if entry.ConformsTo != "" {
+			line("- `%s`: %s, %s, conforms to `%s`", entry.Path, entry.Role, entry.MediaType, entry.ConformsTo)
+		} else {
+			line("- `%s`: %s, %s", entry.Path, entry.Role, entry.MediaType)
+		}
+	}
+	line("")
+
+	line("## How to verify")
+	line("")
+	if wrEnv.Kind == fold.KindWorkRequest {
+		line("Run `a2a data verify --for %s --record`: it fetches the package, re-checks every file's digest, judges each file against `%s`, and records the verdict on this handoff.", wrEnv.ID, manifest.Contract)
+	}
+	line("Run `a2a data verify %s` to run the same checks without recording a verdict.", manifest.ID)
+	line("")
+
+	line("## How to operate")
+	line("")
+	line("Run `a2a data fetch %s --to <dir>` to copy the files listed above into a directory; each one is checked against its digest on the way.", manifest.ID)
+	line("Read each dataset file as the contract schema named beside it in the list above. The package expires at %s; `a2a data fetch` refuses it after that.", manifest.ExpiresAt)
+	line("")
+
+	line("## Limitations & next steps")
+	line("")
+	line("The package holds %s data and is readable until %s.", manifest.DataProfile, manifest.ExpiresAt)
+	if wrEnv.Kind == fold.KindWorkRequest {
+		line("If verification fails, the producer delivers the next attempt with `a2a data deliver --for %s`, which supersedes this handoff.", wrEnv.ID)
+	} else {
+		line("If verification fails, the producer packs and delivers a new attempt that supersedes package `%s`.", manifest.ID)
+	}
+	return b.String()
 }
 
 // --- pack -----------------------------------------------------------------

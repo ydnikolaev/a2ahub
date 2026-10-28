@@ -21,6 +21,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
+	"github.com/ydnikolaev/a2ahub/internal/validate"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 	"gopkg.in/yaml.v3"
 )
@@ -1455,4 +1456,81 @@ func TestExpressDeliverResumesAfterPack(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestBuildHandoffDraftPassesTheLandsSectionCheck is the local-space wave-5
+// finding D1. A local space's land check runs the v3-pr V2 body checks on every
+// file a write carries, so a delivery whose minted handoff has the five §16.2
+// headings and nothing under them is refused with POL-022 at `a2a data deliver`.
+// The draft is run through the same engine call the land check makes
+// (validate.Engine.ValidateForSubmit, internal/cli/cmd_validate_ci.go), and each
+// section must say something this delivery specifically knows.
+func TestBuildHandoffDraftPassesTheLandsSectionCheck(t *testing.T) {
+	t.Parallel()
+	rig := newExpressRetryRig(t)
+	core := rig.core
+	wrEnv, wrProbe, err := core.loadEnvelope(expressTestWR)
+	if err != nil {
+		t.Fatalf("loadEnvelope: %v", err)
+	}
+	document, _ := dataWiringTestDocument(t, []byte(`{"ok":true}`))
+	handoffID, err := artifact.MintExchangeIDAt("XH", core.ownSystem, core.now(), rand.Reader)
+	if err != nil {
+		t.Fatalf("mint handoff id: %v", err)
+	}
+	draft := core.buildHandoffDraft(handoffID, template.Actor{Kind: "agent", Name: "tester"}, wrEnv, wrProbe, document)
+
+	engine, err := newEngine()
+	if err != nil {
+		t.Fatalf("newEngine: %v", err)
+	}
+	manifest, err := core.loadManifest()
+	if err != nil {
+		t.Fatalf("loadManifest: %v", err)
+	}
+	result, err := engine.ValidateForSubmit(
+		validate.Draft{Path: core.ownSystem + "/exchanges/" + handoffID + ".md", Raw: draft},
+		nil,
+		validate.LocalContext{OwnSystem: core.ownSystem, Resolver: cli.NewMirrorResolver(core.mirrorDir, manifest)},
+	)
+	if err != nil {
+		t.Fatalf("ValidateForSubmit: %v", err)
+	}
+	for _, v := range result.Violations {
+		if v.Code == "POL-022" {
+			t.Fatalf("the minted handoff is refused by the land's section check: %s (subjects %v)\n%s", v.Message, v.Subjects, draft)
+		}
+	}
+
+	// What each section must carry: a fact of this delivery, not a placeholder.
+	fm, err := artifact.ParseFrontmatter(draft)
+	if err != nil {
+		t.Fatalf("parse draft: %v", err)
+	}
+	body := string(fm.Body)
+	sections := map[string][]string{
+		"## Context":                  {expressTestWR, document.ID, document.Contract},
+		"## What was built":           {document.ID, "orders.json", datapackage.RoleDataset, dataWiringTestSchemaPath},
+		"## How to verify":            {"a2a data verify --for " + expressTestWR + " --record", "a2a data verify " + document.ID},
+		"## How to operate":           {"a2a data fetch " + document.ID + " --to", document.ExpiresAt},
+		"## Limitations & next steps": {document.ExpiresAt, "a2a data deliver --for " + expressTestWR},
+	}
+	order := []string{"## Context", "## What was built", "## How to verify", "## How to operate", "## Limitations & next steps"}
+	for i, heading := range order {
+		start := strings.Index(body, heading+"\n")
+		if start < 0 {
+			t.Fatalf("the draft has no %q heading:\n%s", heading, body)
+		}
+		section := body[start+len(heading):]
+		if i+1 < len(order) {
+			if end := strings.Index(section, order[i+1]+"\n"); end >= 0 {
+				section = section[:end]
+			}
+		}
+		for _, want := range sections[heading] {
+			if !strings.Contains(section, want) {
+				t.Errorf("section %q does not name %q:\n%s", heading, want, section)
+			}
+		}
+	}
 }

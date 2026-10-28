@@ -765,14 +765,15 @@ func containsString(list []string, want string) bool {
 
 // expressContractKey is "<XC-id>@<canonical version>" of a contract ref, the
 // digest dropped: the identity two refs to the same contract version share. A
-// ref that does not parse (a prerelease spelling, no version) has no key, so it
-// never equals anything.
-func expressContractKey(ref string) string {
+// ref that does not parse (a prerelease spelling, no version) has no key, and
+// the error says so; a caller decides whether that refuses or fails closed,
+// never that the ref is simply another contract.
+func expressContractKey(ref string) (string, error) {
 	id, canonical, _, err := splitPinnedContractRef(ref)
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return id + "@" + canonical
+	return id + "@" + canonical, nil
 }
 
 // expressPinnedContracts are the XC@version refs a request pins.
@@ -790,10 +791,13 @@ func expressPinnedContracts(doc expressDoc) []string {
 // was asked for) that is none of the refs the request pins. A pin carrying a
 // digest binds the digest too.
 func expressBindContract(requestID string, pinned []string, got string) error {
-	key := expressContractKey(got)
+	// An unparseable ref (got's or a pin's) binds nothing, so it fails closed
+	// into the refusal below.
+	key, keyErr := expressContractKey(got)
 	_, _, gotDigest, _ := splitPinnedContractRef(got)
 	for _, pin := range pinned {
-		if key == "" || expressContractKey(pin) != key {
+		pinKey, pinErr := expressContractKey(pin)
+		if keyErr != nil || pinErr != nil || pinKey != key {
 			continue
 		}
 		if _, _, digest, _ := splitPinnedContractRef(pin); digest != "" && gotDigest != digest {
@@ -983,6 +987,12 @@ func (r *expressRun) deliverFor(ctx context.Context, req cli.DataDeliverForReque
 	if !containsString(dataToStrings(snap.doc.To), c.ownSystem) {
 		return fmt.Errorf("data: deliver --for: %s is addressed to %v, not to this system (%s)", req.For, dataToStrings(snap.doc.To), c.ownSystem)
 	}
+	// The flow reads handoffs and responses from the producer's section only
+	// (expressSnapshot), so a delivery by any other addressee would land and then
+	// be invisible to every later step. Refuse before any write.
+	if producer := snap.producer(); producer != c.ownSystem {
+		return fmt.Errorf("data: deliver --for: %s's producer is %s, its first addressee; this system (%s) cannot deliver for it", req.For, producer, c.ownSystem)
+	}
 	switch snap.state {
 	case fold.StateClosed:
 		r.result.Handoff, r.result.Package = "", ""
@@ -1020,7 +1030,13 @@ func (r *expressRun) deliverFor(ctx context.Context, req cli.DataDeliverForReque
 
 	var handoffID, packageID string
 	if active != nil && !retry {
-		handoffID, packageID = active.id, active.packageID
+		// Resuming from the mirror is resuming from main, and main must single
+		// out the handoff of this package just as it must after a fresh delivery.
+		merged, err := c.mergedHandoffID(req.For, active.packageID, active.id)
+		if err != nil {
+			return err
+		}
+		handoffID, packageID = merged, active.packageID
 		r.skip("pack", packageID, "", "")
 		r.skip("deliver", handoffID, fold.TSubmit, "")
 		// A run that died after this handoff landed and before the one it
@@ -1078,6 +1094,14 @@ func (r *expressRun) deliverFor(ctx context.Context, req cli.DataDeliverForReque
 			r.result.Handoff = handoffID
 			return err
 		}
+		// The write has merged and the mirror shows main: the handoff every later
+		// verb names is the one main carries, never the one the PR claimed.
+		merged, err := c.mergedHandoffID(req.For, packageID, handoffID)
+		if err != nil {
+			r.result.Handoff = ""
+			return err
+		}
+		handoffID = merged
 		if retry {
 			if err := r.supersedeWith(ctx, active.id, handoffID); err != nil {
 				r.result.Handoff = handoffID
@@ -1123,18 +1147,22 @@ type expressTreeReader interface {
 	ReadRemoteRecoveryTreeFiles(ctx context.Context, repoDir, commitSHA string, paths []string) (map[string]host.RemoteTreeFile, error)
 }
 
-// deliveredHandoffID is the handoff a delivery's write actually carries.
+// deliveredHandoffID is the handoff a delivery's PR claims to carry, checked
+// for agreement with the PR's own head commit before the run waits on it.
 // dataCore.deliver mints a fresh XH id on every call, but the write is keyed on
 // the package alone, so a re-run while the first delivery's PR is still open
 // converges on that PR and the id deliver minted is never committed. The write's
-// ArtifactIDs name the ids present on the PR, so the supersede and the respond
-// take the handoff from there.
+// ArtifactIDs name the ids in the PR's body.
 //
-// Those ids are read from the PR's body, which anyone who can open a PR on the
-// deterministic head branch can write; this is not trusted on its own. The id is
-// accepted only when the handoff file exists in the delivery's own commit, is
-// the producer's, delivers this package and fulfils this request. A mismatch is
-// a refusal: the minted id is not substituted, because the PR does not carry it.
+// What this proves is only that the body and the head commit agree: the claimed
+// handoff file exists in write.CommitSHA, is this system's, delivers this
+// package and fulfils this request. Whoever pushed that commit also wrote it and
+// can write the body, so a forgery that is consistent with itself passes here.
+// The check exists to stop early, without waiting on a PR whose body names
+// something its own commit does not carry. It is not what the later verbs trust:
+// mergedHandoffID re-derives the handoff from main once the write has merged.
+// A mismatch is a refusal; the minted id is not substituted, because the PR does
+// not carry it.
 func (c *dataCore) deliveredHandoffID(ctx context.Context, wrID string, delivered cli.DataResult) (string, error) {
 	write := delivered.Write
 	if write == nil || delivered.Manifest == nil {
@@ -1193,6 +1221,40 @@ func (c *dataCore) deliveredHandoffID(ctx context.Context, wrID string, delivere
 		return "", fmt.Errorf("data: deliver --for: handoff %s in the delivery commit %s is not %s's handoff delivering %s for %s", handoffID, write.CommitSHA, c.ownSystem, packageID, wrID)
 	}
 	return handoffID, nil
+}
+
+// mergedHandoffID is the handoff the supersede, the respond and the verdict
+// build on: read from the mirror after the delivery merged, so from main, never
+// from the PR. It is the one handoff of the request's producer that fulfils wrID
+// and delivers packageID (expressSnapshot reads the producer's section only, and
+// deliverFor refuses to run on any system but the producer). None means the
+// delivery did not land what it claimed; more than one means main does not
+// single out the delivery, and choosing one would be guessing. A merged handoff
+// that is not the one the caller expected (claimed: the id the delivery's PR
+// named, or the active handoff a re-run resumes from) is refused too: the run
+// cannot tell which of the two the consumer was told about. A re-run that
+// resumes from the mirror asks the same question, so it cannot pick one of
+// several either.
+func (c *dataCore) mergedHandoffID(wrID, packageID, claimed string) (string, error) {
+	snap, err := c.expressSnapshot(wrID)
+	if err != nil {
+		return "", err
+	}
+	var found []string
+	for _, h := range snap.handoffs {
+		if h.packageID == packageID {
+			found = append(found, h.id)
+		}
+	}
+	switch {
+	case len(found) == 0:
+		return "", fmt.Errorf("data: deliver --for: the delivery of %s merged, but main carries no handoff of %s delivering it for %s", packageID, c.ownSystem, wrID)
+	case len(found) > 1:
+		return "", fmt.Errorf("data: deliver --for: main carries %d handoffs of %s delivering %s for %s (%s), so it does not single out the delivery and the run does not choose one", len(found), c.ownSystem, packageID, wrID, strings.Join(found, ", "))
+	case found[0] != claimed:
+		return "", fmt.Errorf("data: deliver --for: main carries handoff %s delivering %s for %s, but the delivery PR named %s", found[0], packageID, wrID, claimed)
+	}
+	return found[0], nil
 }
 
 func dataFirst(list []string, fallback any) string {
@@ -1281,7 +1343,14 @@ func (c *dataCore) expressStagedCandidates(thread, pinnedKey string) ([]expressS
 		if err := json.Unmarshal(raw, &document); err != nil {
 			return nil, fmt.Errorf("data: decode staged manifest %s: %w", path, err)
 		}
-		if document.Thread != thread || expressContractKey(document.Contract) != pinnedKey {
+		if document.Thread != thread {
+			continue
+		}
+		key, err := expressContractKey(document.Contract)
+		if err != nil {
+			return nil, fmt.Errorf("data: staged manifest %s: its contract ref cannot be compared with %s: %w; no data-package/v1 manifest carries such a ref, so remove that staged package, then re-run", path, pinnedKey, err)
+		}
+		if key != pinnedKey {
 			continue
 		}
 		delivered, err := c.expressPackageDelivered(document.ID)

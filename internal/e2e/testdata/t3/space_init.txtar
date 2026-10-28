@@ -315,13 +315,49 @@ stderr 'this local space lands writes only through a2a'
 exec git --git-dir=$WORK/spaces/loop.git rev-parse main
 cmp stdout $WORK/main-before-raw-push.txt
 
-# local-express-verdict (row 11) is NOT here, on purpose. The express verbs
-# cannot land a delivery on a local space today: `a2a data deliver --for` mints
-# its handoff body as the five required headings with nothing under them
-# (cmd/a2a/data_wiring.go buildHandoffDraft), and the land check, which runs the
-# v3-pr body on this host, refuses it with POL-022 at the deliver step. The
-# GitHub-host express tests never saw it because the fake host runs no V3 check.
-# The stanza is added the day that is fixed; see spec 07 §11.
+# local-express-verdict (row 11): the express flow's three verbs on a local
+# space. beta asks for data under the export contract it adopted above, axon
+# delivers it with one command, and beta verifies and records the verdict with
+# one more. Each verb returns with its write already on main (no step is left
+# pending on this host), and `a2a thread` then shows the verdict on the very
+# handoff axon delivered, and the request closed. The ids are minted with
+# today's date, so they are read back from each verb's own output into files and
+# handed to the next verb through `sh -c`; a2a is the last command of every
+# `sh -c`, so its exit status is the step's.
+cd $WORK/loop-b
+exec a2a data request --producer axon --contract XC-axon-export@1.0.0 --interim-behavior 'beta reads the previous export until this lands' --json
+stdout '"work_request":"XW-beta-[0-9]{8}-[0-9a-z]{4}"'
+stdout '"step":"submit","subject":"XW-beta-[0-9]{8}-[0-9a-z]{4}","transition":"submit","outcome":"landed"'
+cp stdout $WORK/express-request.json
+exec sh -c 'sed -n "s/.*\"work_request\":\"\(XW-beta-[0-9a-z-]*\)\".*/\1/p" "$WORK/express-request.json" > "$WORK/express-wr.txt"'
+grep '^XW-beta-[0-9]{8}-[0-9a-z]{4}$' $WORK/express-wr.txt
+
+cd $WORK/loop-a
+mkdir $WORK/express-from
+cp .a2a/staging/axon/provides/export/fixtures/valid/export.json $WORK/express-from/export.json
+exec sh -c 'a2a data deliver --for "$(cat "$WORK/express-wr.txt")" --from "$WORK/express-from" --profile synthetic --format json'
+stdout '^ack +landed +XW-beta-'
+stdout '^accept +landed +XW-beta-'
+stdout '^pack +landed +DP-axon-'
+stdout '^deliver +landed +XH-axon-[0-9]{8}-[0-9a-z]{4} '
+stdout '^respond +landed +XW-beta-'
+stdout '^next: beta runs: a2a data verify --for XW-beta-[0-9]{8}-[0-9a-z]{4} --record$'
+! stdout 'pending|stopped|refused'
+cp stdout $WORK/express-deliver.txt
+exec sh -c 'sed -n "s/^deliver  *landed  *\(XH-axon-[0-9a-z-]*\) .*/\1/p" "$WORK/express-deliver.txt" > "$WORK/express-xh.txt"'
+grep '^XH-axon-[0-9]{8}-[0-9a-z]{4}$' $WORK/express-xh.txt
+
+cd $WORK/loop-b
+exec sh -c 'a2a data verify --for "$(cat "$WORK/express-wr.txt")" --record'
+stdout '^ack +landed +XH-axon-'
+stdout '^verify +landed +XH-axon-'
+stdout '^close +landed +XW-beta-'
+stdout '^VR-beta-[0-9]{8}-[0-9a-z]{4} verify DP-axon-[0-9]{8}-[0-9a-z]{4}: pass '
+! stdout 'pending|stopped|refused'
+
+exec sh -c 'a2a thread "$(cat "$WORK/express-wr.txt")" > "$WORK/express-thread.txt"'
+exec sh -c 'grep -F "$(printf "event\tbeta\tverify-pass\t%s" "$(cat "$WORK/express-xh.txt")")" "$WORK/express-thread.txt"'
+exec sh -c 'grep -F "$(printf "event\tbeta\tclose\t%s" "$(cat "$WORK/express-wr.txt")")" "$WORK/express-thread.txt"'
 
 -- export-contract.md --
 ---
