@@ -323,6 +323,13 @@ const landGateApprovalTrailer = "A2A-Approved-Gates"
 // message as the host would hand it to the check.
 func landGateCandidate(t *testing.T, baseFiles, headFiles map[string]string, headMessage string) host.LandCandidate {
 	t.Helper()
+	return landGateCandidateDeleting(t, baseFiles, headFiles, nil, headMessage)
+}
+
+// landGateCandidateDeleting is landGateCandidate whose head commit also removes
+// the deleted paths it names from the tip.
+func landGateCandidateDeleting(t *testing.T, baseFiles, headFiles map[string]string, deleted []string, headMessage string) host.LandCandidate {
+	t.Helper()
 	root := t.TempDir()
 	ciTestGit(t, root, "init", "-q", "-b", "main")
 	writeAll := func(files map[string]string) {
@@ -341,6 +348,9 @@ func landGateCandidate(t *testing.T, baseFiles, headFiles map[string]string, hea
 	ciTestGit(t, root, "commit", "-q", "-m", "base")
 	base := strings.TrimSpace(ciTestGit(t, root, "rev-parse", "HEAD"))
 	writeAll(headFiles)
+	for _, rel := range deleted {
+		ciTestGit(t, root, "rm", "-q", "--", rel)
+	}
 	ciTestGit(t, root, "add", "-A")
 	ciTestGit(t, root, "commit", "-q", "-m", "head")
 	head := strings.TrimSpace(ciTestGit(t, root, "rev-parse", "HEAD"))
@@ -362,6 +372,48 @@ func landContractFiles(version string) map[string]string {
 		ciContractFixturePath:        `{}`,
 		ciContractInvalidFixturePath: `null`,
 	}
+}
+
+// landPublishEvent is a version-bearing publish event for the fixture contract,
+// the record that makes a version PUBLISHED: publication history is publish
+// events, never the descriptor's own version field. It has the shape and the
+// path the publication writer (internal/contractwiring, yaml.Marshal of an
+// event/v2 document at layout.EventFile) commits. ulidSuffix keeps several
+// events in one tip apart.
+func landPublishEvent(ulidSuffix, version string) (string, string) {
+	ulid := "01ARZ3NDEKTSV4RRFFQ69G5FA" + ulidSuffix
+	return "axon/events/2026/" + ulid + ".yaml", "schema: event/v2\n" +
+		"event: " + ulid + "\n" +
+		"space: getvisa\n" +
+		"subject: XC-axon-widget\n" +
+		"transition: publish\n" +
+		"actor:\n    kind: agent\n    name: claude\n    system: axon\n    model: claude-fable-5\n" +
+		"at: \"2026-07-30T14:02:00Z\"\n" +
+		"version: " + version + "\n" +
+		"digest: sha256:" + strings.Repeat("a", 64) + "\n" +
+		"digest_profile: contract-tree-v1\n" +
+		"publication:\n" +
+		"    intent_key: op-v1-" + strings.Repeat("b", 64) + "\n" +
+		"    candidate_intent_digest: sha256:" + strings.Repeat("c", 64) + "\n" +
+		"    version_selector: explicit:" + version + "\n" +
+		"    operation_key: op-v1-" + strings.Repeat("d", 64) + "\n"
+}
+
+// landTip is a tip in a confirm space whose contract descriptor is at
+// descriptorVersion (none when it is empty) and whose history published every
+// version in published.
+func landTip(descriptorVersion string, published ...string) map[string]string {
+	tip := map[string]string{"space.yaml": ciSpaceYAML}
+	if descriptorVersion != "" {
+		for rel, content := range landContractFiles(descriptorVersion) {
+			tip[rel] = content
+		}
+	}
+	for i, v := range published {
+		rel, content := landPublishEvent(string(rune('0'+i)), v)
+		tip[rel] = content
+	}
+	return tip
 }
 
 func approvalTrailer(gates string) string {
@@ -440,16 +492,13 @@ func TestLandCheck_GateApproval_TipManifestDecidesTheMode(t *testing.T) {
 }
 
 // AC 9: a retry after a rival published first. The tip already holds the
-// contract at 1.0.0, so the retried write (1.0.0 -> 2.0.0) is a G2 where the
-// approval it was prepared with covered G1 only. The land check recomputes
-// against the tip and names the missing G2; the approved set that names G2
-// lets it land.
+// contract published at 1.0.0 (its descriptor and its publish event), so the
+// retried write (1.0.0 -> 2.0.0) is a G2 where the approval it was prepared
+// with covered G1 only. The land check recomputes against the tip and names
+// the missing G2; the approved set that names G2 lets it land.
 func TestLandCheck_GateApproval_RetryAfterARivalNeedsTheNewGate(t *testing.T) {
 	t.Parallel()
-	base := map[string]string{"space.yaml": ciSpaceYAML}
-	for rel, content := range landContractFiles("1.0.0") {
-		base[rel] = content
-	}
+	base := landTip("1.0.0", "1.0.0")
 	head := landContractFiles("2.0.0")
 
 	t.Run("G1 alone no longer covers it", func(t *testing.T) {
@@ -495,6 +544,145 @@ func TestLandCheck_GateApproval_SubmittedCandidateIsNoPublication(t *testing.T) 
 		t.Parallel()
 		if verdict := landVerdict(t, landGateCandidate(t, base, landContractFiles("1.0.0"), approvalTrailer("G1"))); !verdict.OK {
 			t.Fatalf("verdict = %+v, want OK: 0.0.0 is no baseline, so 1.0.0 is G1, not G2", verdict)
+		}
+	})
+}
+
+// Audit F1: a submit that sets a published contract's descriptor back to 0.0.0
+// and changes its schema is not a submitted candidate. Something was published
+// before it, so it is a major change from that publication (G2), and a confirm
+// space refuses it without the approval.
+func TestLandCheck_GateApproval_ResetOfAPublishedContractIsG2(t *testing.T) {
+	t.Parallel()
+	head := landContractFiles("0.0.0")
+	head[ciContractSchemaPath] = `{"type":"object","properties":{"id":{"type":"string"}}}`
+
+	t.Run("a submit that resets a published contract needs G2", func(t *testing.T) {
+		t.Parallel()
+		wantRefusedWith(t, landVerdict(t, landGateCandidate(t, landTip("1.0.0", "1.0.0"), head, "submit\n")), "POL-029", "G2")
+	})
+	t.Run("G2 approves the reset", func(t *testing.T) {
+		t.Parallel()
+		if verdict := landVerdict(t, landGateCandidate(t, landTip("1.0.0", "1.0.0"), head, approvalTrailer("G2"))); !verdict.OK {
+			t.Fatalf("verdict = %+v, want OK: the trailer approves G2", verdict)
+		}
+	})
+	t.Run("a resubmit over a candidate that never published needs no gate", func(t *testing.T) {
+		t.Parallel()
+		if verdict := landVerdict(t, landGateCandidate(t, landTip("0.0.0"), head, "submit\n")); !verdict.OK {
+			t.Fatalf("verdict = %+v, want OK: nothing was published before it", verdict)
+		}
+	})
+}
+
+// A write that keeps an already-published version publishes nothing (the
+// planner refuses to plan a target that is already published): editing the
+// contract's files at that version is no gate, on the newest line and on a
+// contract whose history has two lines.
+func TestLandCheck_GateApproval_AnEditAtAPublishedVersionIsNoPublication(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		version   string
+		published []string
+	}{
+		{name: "one published version", version: "1.0.0", published: []string{"1.0.0"}},
+		{name: "the newest of two lines", version: "2.0.0", published: []string{"1.0.0", "2.0.0"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			head := landContractFiles(tc.version)
+			head[ciContractDescriptorPath] = strings.Replace(head[ciContractDescriptorPath], "Body.", "Body, reworded.", 1)
+			if verdict := landVerdict(t, landGateCandidate(t, landTip(tc.version, tc.published...), head, "submit\n")); !verdict.OK {
+				t.Fatalf("verdict = %+v, want OK: %s is already published, so the write publishes nothing", verdict, tc.version)
+			}
+		})
+	}
+}
+
+// Moving the descriptor from the tip's published 2.0.0 back to the published
+// 1.0.0 publishes nothing new but takes 2.0.0 from its consumers, the reset
+// case: G2.
+func TestLandRequiredGates_MovingToAnotherPublishedVersionIsG2(t *testing.T) {
+	t.Parallel()
+	got, err := landRequiredGates(context.Background(),
+		landGateCandidate(t, landTip("2.0.0", "1.0.0", "2.0.0"), landContractFiles("1.0.0"), "submit\n"))
+	if err != nil {
+		t.Fatalf("landRequiredGates: %v", err)
+	}
+	if !reflect.DeepEqual(got, []string{"G2"}) {
+		t.Fatalf("landRequiredGates = %v, want [G2]", got)
+	}
+}
+
+// The published versions are the TIP's: a write that carries its own publish
+// event cannot move the baseline it is judged against. Over a tip that
+// published 1.0.0, a write adding a publish event at 2.0.0 and a descriptor at
+// 2.1.0 is still a major change from 1.0.0. Driven at landRequiredGates so the
+// forged event need not pass the V3 body.
+func TestLandRequiredGates_ABaselineCarriedByTheWriteIsNotTheTips(t *testing.T) {
+	t.Parallel()
+	head := landContractFiles("2.1.0")
+	rel, content := landPublishEvent("9", "2.0.0")
+	head[rel] = content
+	got, err := landRequiredGates(context.Background(), landGateCandidate(t, landTip("1.0.0", "1.0.0"), head, "publish\n"))
+	if err != nil {
+		t.Fatalf("landRequiredGates: %v", err)
+	}
+	if !reflect.DeepEqual(got, []string{"G2"}) {
+		t.Fatalf("landRequiredGates = %v, want [G2]: the baseline is the tip's 1.0.0", got)
+	}
+}
+
+// The land check's own diff carries deletions, but a deleted event records no
+// transition and cannot be read from the checkout: it is no gate and no
+// "could not judge" error.
+func TestLandRequiredGates_ADeletedEventIsNoGate(t *testing.T) {
+	t.Parallel()
+	rel, content := landPublishEvent("0", "1.0.0")
+	tip := map[string]string{"space.yaml": ciSpaceYAML, rel: content}
+	got, err := landRequiredGates(context.Background(), landGateCandidateDeleting(t, tip, nil, []string{rel}, "x\n"))
+	if err != nil {
+		t.Fatalf("landRequiredGates: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("landRequiredGates = %v, want none", got)
+	}
+}
+
+// Audit F6, lead ruling: deleting the descriptor of a contract published at
+// the tip breaks its consumers, so it is G2; deleting a submitted candidate
+// that never published crosses no gate.
+func TestLandCheck_GateApproval_DeletingADescriptor(t *testing.T) {
+	t.Parallel()
+	var contractPaths []string
+	for rel := range landContractFiles("1.0.0") {
+		contractPaths = append(contractPaths, rel)
+	}
+	sort.Strings(contractPaths)
+
+	t.Run("deleting a published contract needs G2", func(t *testing.T) {
+		t.Parallel()
+		c := landGateCandidateDeleting(t, landTip("1.0.0", "1.0.0"), nil, contractPaths, "remove\n")
+		wantRefusedWith(t, landVerdict(t, c), "POL-029", "G2")
+	})
+	t.Run("deleting only the descriptor of a published contract needs G2", func(t *testing.T) {
+		t.Parallel()
+		c := landGateCandidateDeleting(t, landTip("1.0.0", "1.0.0"), nil, []string{ciContractDescriptorPath}, "remove\n")
+		wantRefusedWith(t, landVerdict(t, c), "POL-029", "G2")
+	})
+	t.Run("G2 approves the deletion", func(t *testing.T) {
+		t.Parallel()
+		c := landGateCandidateDeleting(t, landTip("1.0.0", "1.0.0"), nil, contractPaths, approvalTrailer("G2"))
+		if verdict := landVerdict(t, c); !verdict.OK {
+			t.Fatalf("verdict = %+v, want OK: the trailer approves G2", verdict)
+		}
+	})
+	t.Run("deleting a submitted candidate needs no gate", func(t *testing.T) {
+		t.Parallel()
+		c := landGateCandidateDeleting(t, landTip("0.0.0"), nil, contractPaths, "remove\n")
+		if verdict := landVerdict(t, c); !verdict.OK {
+			t.Fatalf("verdict = %+v, want OK: a 0.0.0 candidate published nothing", verdict)
 		}
 	})
 }
@@ -580,38 +768,41 @@ func TestLandRequiredGates_EventsAndManifest(t *testing.T) {
 }
 
 // contract.PublicationGateFor assumes well-formed versions and indexes past a
-// short one, so the land check validates both before calling it.
+// short one, so the land check validates both before calling it. The baseline
+// is the planner's: the highest published version below the target.
 func TestLandPublicationGate_RefusesMalformedVersionsInsteadOfPanicking(t *testing.T) {
 	t.Parallel()
 	good := []struct {
-		hasBaseline      bool
-		baseline, target string
-		want             string
+		published []string
+		target    string
+		want      string
 	}{
-		{false, "", "1.0.0", "G1"},
-		{true, "1.0.0", "2.0.0", "G2"},
-		{true, "1.0.0", "1.2.0", "none"},
+		{nil, "1.0.0", "G1"},
+		{[]string{"1.0.0"}, "2.0.0", "G2"},
+		{[]string{"1.0.0"}, "1.2.0", "none"},
+		{[]string{"1.0.0", "2.0.0"}, "1.2.0", "none"},
+		{[]string{"2.0.0"}, "1.0.0", "G1"},
 	}
 	for _, g := range good {
-		got, err := landPublicationGate(g.hasBaseline, g.baseline, g.target)
+		got, err := landPublicationGate(g.published, g.target)
 		if err != nil || string(got) != g.want {
-			t.Fatalf("landPublicationGate(%v, %q, %q) = (%q, %v), want (%q, nil)", g.hasBaseline, g.baseline, g.target, got, err, g.want)
+			t.Fatalf("landPublicationGate(%q, %q) = (%q, %v), want (%q, nil)", g.published, g.target, got, err, g.want)
 		}
 	}
 	bad := []struct {
-		hasBaseline      bool
-		baseline, target string
+		published []string
+		target    string
 	}{
-		{false, "", "1.0"},
-		{true, "1.0", "2.0.0"},
-		{true, "1.0.0", "2"},
-		{true, "1.0.0", ""},
-		{true, "", "1.0.0"},
-		{true, "1.x.0", "2.0.0"},
+		{nil, "1.0"},
+		{[]string{"1.0"}, "2.0.0"},
+		{[]string{"1.0.0"}, "2"},
+		{[]string{"1.0.0"}, ""},
+		{[]string{""}, "1.0.0"},
+		{[]string{"1.x.0"}, "2.0.0"},
 	}
 	for _, b := range bad {
-		if got, err := landPublicationGate(b.hasBaseline, b.baseline, b.target); err == nil {
-			t.Fatalf("landPublicationGate(%v, %q, %q) = %q, want an error", b.hasBaseline, b.baseline, b.target, got)
+		if got, err := landPublicationGate(b.published, b.target); err == nil {
+			t.Fatalf("landPublicationGate(%q, %q) = %q, want an error", b.published, b.target, got)
 		}
 	}
 }

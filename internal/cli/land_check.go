@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
@@ -16,6 +18,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
+	"github.com/ydnikolaev/a2ahub/internal/version"
 	"gopkg.in/yaml.v3"
 )
 
@@ -99,17 +102,30 @@ func landGateApproval(ctx context.Context, candidate host.LandCandidate) (host.L
 // tip. G1 and G2 are contract.PublicationGateFor's, G3 is fold.HumanGate's, G4 is
 // "the write changes space.yaml". The gate rule itself lives in those two
 // functions; this only gathers their inputs.
+//
+// The diff is the land check's own and includes deletions (landChangedPaths):
+// removing a published contract's descriptor is a gated change, which the
+// V3 body's ACMR diff cannot see.
 func landRequiredGates(ctx context.Context, candidate host.LandCandidate) ([]string, error) {
-	changed, err := gitDiffNameOnly(ctx, candidate.CheckoutDir, candidate.BaseSHA)
+	changes, err := landChangedPaths(ctx, candidate)
 	if err != nil {
 		return nil, err
 	}
+	deletedPaths := map[string]bool{}
+	var changed []string
+	for _, ch := range changes {
+		changed = append(changed, ch.path)
+		if ch.deleted {
+			deletedPaths[ch.path] = true
+		}
+	}
 	var required []string
 	seenContracts := map[string]bool{}
-	for _, p := range changed {
-		if id, _, ok := space.ContractForPath(p); ok && !seenContracts[id] {
+	for _, ch := range changes {
+		p := ch.path
+		if id, descriptorPath, ok := space.ContractForPath(p); ok && !seenContracts[id] {
 			seenContracts[id] = true
-			gate, gerr := landContractGate(ctx, candidate, id)
+			gate, gerr := landContractGate(ctx, candidate, id, deletedPaths[descriptorPath])
 			if gerr != nil {
 				return nil, gerr
 			}
@@ -117,7 +133,9 @@ func landRequiredGates(ctx context.Context, candidate host.LandCandidate) ([]str
 				required = append(required, string(gate))
 			}
 		}
-		if isEventDocument(p) {
+		// A deleted event cannot be read and records no transition; only the
+		// statuses the V3 body judges (ACMR) carry one.
+		if isEventDocument(p) && ch.readable {
 			raw, rerr := readBoundedFile(filepath.Join(candidate.CheckoutDir, filepath.FromSlash(p)), maxMirrorEventBytes)
 			if rerr != nil {
 				return nil, rerr
@@ -137,60 +155,200 @@ func landRequiredGates(ctx context.Context, candidate host.LandCandidate) ([]str
 	return required, nil
 }
 
+// landDiffLimit bounds the land check's own name-status listing of the write.
+const landDiffLimit = 8 << 20
+
+// landChange is one path the write changed against the tip. readable is false
+// for a status the V3 body does not read from disk (a deletion, a type change).
+type landChange struct {
+	path     string
+	deleted  bool
+	readable bool
+}
+
+// landChangedPaths is the write's diff against the tip with deletions
+// included. gitDiffNameOnly, shared with the V3 body, filters to ACMR because a
+// deleted path cannot be read from disk; the gate derivation needs the
+// deletions too. --no-renames reports a moved file as a deletion plus an
+// addition, so moving a descriptor away is judged as removing it.
+func landChangedPaths(ctx context.Context, candidate host.LandCandidate) ([]landChange, error) {
+	raw, err := contractGitBounded(ctx, candidate.CheckoutDir, landDiffLimit,
+		"diff", "--name-status", "--no-renames", "-z", candidate.BaseSHA+"...HEAD")
+	if err != nil {
+		return nil, fmt.Errorf("git diff --name-status %s...HEAD failed: %w", candidate.BaseSHA, err)
+	}
+	trimmed := strings.TrimSuffix(string(raw), "\x00")
+	if trimmed == "" {
+		return nil, nil
+	}
+	fields := strings.Split(trimmed, "\x00")
+	if len(fields)%2 != 0 {
+		return nil, fmt.Errorf("git diff --name-status %s...HEAD: unexpected output", candidate.BaseSHA)
+	}
+	changes := make([]landChange, 0, len(fields)/2)
+	for i := 0; i < len(fields); i += 2 {
+		status, p := fields[i], fields[i+1]
+		if status == "" || p == "" {
+			return nil, fmt.Errorf("git diff --name-status %s...HEAD: unexpected output", candidate.BaseSHA)
+		}
+		changes = append(changes, landChange{
+			path:     p,
+			deleted:  status[0] == 'D',
+			readable: strings.ContainsRune("ACMR", rune(status[0])),
+		})
+	}
+	return changes, nil
+}
+
 // contractUnpublishedVersion is the version a submitted, never-published
 // descriptor carries: the planner bumps from it when nothing is published
 // (internal/contract/publication_plan.go).
 const contractUnpublishedVersion = "0.0.0"
 
-// landContractGate is the G1/G2 gate of one touched contract: the descriptor at
-// the tip is the baseline, the descriptor in the checkout is the target, and
-// contract.PublicationGateFor decides. G1 is the first PUBLISH of a contract
-// (docs/the-plan/plan/03-domain.md §3.7), so a target at
-// contractUnpublishedVersion is a submitted candidate that needs no gate, and a
-// tip at it is no published baseline. breaking is false on purpose: this runs
-// only after the V3 check was clean, and a same-major bump over breaking
-// content is already a violation of that check, while a major bump is G2 on the
-// version alone, so no breaking verdict can change the answer here.
-func landContractGate(ctx context.Context, candidate host.LandCandidate, id string) (contract.PublicationGate, error) {
+// landContractGate is the G1/G2 gate of one touched contract, judged against
+// the tip's PUBLICATION HISTORY, the baseline the publication planner reads:
+// the published versions are the tip's publish events (landTipPublishedVersions),
+// never the tip descriptor's version field, which a submit can set back to
+// contractUnpublishedVersion. G1 is the first PUBLISH of a contract
+// (docs/the-plan/plan/03-domain.md §3.7).
+//
+//   - The write deleted the descriptor: G2 when the contract was published
+//     before (its consumers lose it), no gate when it never was.
+//   - The descriptor is at contractUnpublishedVersion: a submitted candidate,
+//     no gate when nothing was published before it, and G2 when something was
+//     (it resets a published contract).
+//   - The descriptor is at a version already published: the write publishes
+//     nothing (the planner refuses to plan a published target). An edit at
+//     the tip descriptor's own version is no gate; moving the descriptor to a
+//     different published version takes the tip's version from its consumers,
+//     the reset case, so it is G2.
+//   - Otherwise the planner's own rule: the baseline is the highest published
+//     version below the target (version.Baseline) and
+//     contract.PublicationGateFor decides.
+//
+// breaking is false on purpose: this runs only after the V3 check was clean,
+// and a same-major bump over breaking content is already a violation of that
+// check, while a major bump is G2 on the version alone.
+func landContractGate(ctx context.Context, candidate host.LandCandidate, id string, descriptorDeleted bool) (contract.PublicationGate, error) {
+	published, err := landTipPublishedVersions(ctx, candidate, id)
+	if err != nil {
+		return contract.GateNone, fmt.Errorf("contract %s: cannot read the tip's publication history: %w", id, err)
+	}
+	if descriptorDeleted {
+		return landGateIfPublished(published), nil
+	}
 	_, target, relPath, _, err := contractReadDescriptor(candidate.CheckoutDir, id)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return contract.GateNone, nil // deleted by the write: nothing publishes
+			return contract.GateNone, nil // no descriptor on either side: nothing publishes
 		}
 		return contract.GateNone, err
 	}
 	if target.Version == contractUnpublishedVersion {
-		return contract.GateNone, nil
+		return landGateIfPublished(published), nil
 	}
+	if slices.Contains(published, contractCanonicalVersion(target.Version)) {
+		tipVersion, err := landTipDescriptorVersion(ctx, candidate, relPath)
+		if err != nil {
+			return contract.GateNone, fmt.Errorf("contract %s: %w", id, err)
+		}
+		if contractCanonicalVersion(tipVersion) == contractCanonicalVersion(target.Version) {
+			return contract.GateNone, nil
+		}
+		return contract.GateG2, nil
+	}
+	return landPublicationGate(published, target.Version)
+}
+
+// landTipDescriptorVersion is the version field of the contract descriptor at
+// relPath in the tip, or "" when the tip holds no descriptor there.
+func landTipDescriptorVersion(ctx context.Context, candidate host.LandCandidate, relPath string) (string, error) {
 	listing, err := contractGitBounded(ctx, candidate.CheckoutDir, maxMirrorEventBytes, "ls-tree", "--name-only", candidate.BaseSHA, "--", relPath)
 	if err != nil {
-		return contract.GateNone, fmt.Errorf("contract %s: cannot look up the tip's descriptor: %w", id, err)
+		return "", fmt.Errorf("cannot look up the tip's descriptor: %w", err)
 	}
 	if len(bytes.TrimSpace(listing)) == 0 {
-		return landPublicationGate(false, "", target.Version)
+		return "", nil
 	}
-	priorRaw, err := contractGitBounded(ctx, candidate.CheckoutDir, maxMirrorEventBytes, "show", candidate.BaseSHA+":"+relPath)
+	raw, err := contractGitBounded(ctx, candidate.CheckoutDir, maxMirrorEventBytes, "show", candidate.BaseSHA+":"+relPath)
 	if err != nil {
-		return contract.GateNone, fmt.Errorf("contract %s: cannot read the tip's descriptor: %w", id, err)
+		return "", fmt.Errorf("cannot read the tip's descriptor: %w", err)
 	}
-	fm, err := artifact.ParseFrontmatter(priorRaw)
+	fm, err := artifact.ParseFrontmatter(raw)
 	var prior contractDescriptorProbe
 	if err == nil {
 		err = yaml.Unmarshal(fm.YAML, &prior)
 	}
 	if err != nil {
-		return contract.GateNone, fmt.Errorf("contract %s: the tip's descriptor is not parseable: %w", id, err)
+		return "", fmt.Errorf("the tip's descriptor is not parseable: %w", err)
 	}
-	return landPublicationGate(prior.Version != contractUnpublishedVersion, prior.Version, target.Version)
+	return prior.Version, nil
 }
 
-// landPublicationGate validates both versions before it calls
-// contract.PublicationGateFor, which assumes well-formed semantic versions and
-// indexes past a short one. A malformed version is an error here (the write
-// cannot be judged), never a panic and never "no gate".
-func landPublicationGate(hasBaseline bool, baseline, target string) (contract.PublicationGate, error) {
+// landGateIfPublished is the gate of a write that takes a contract back out of
+// publication (a deleted descriptor, or one reset to
+// contractUnpublishedVersion): G2 when anything was published, since every
+// consumer of a published version loses it, and no gate otherwise.
+func landGateIfPublished(published []string) contract.PublicationGate {
+	if len(published) == 0 {
+		return contract.GateNone
+	}
+	return contract.GateG2
+}
+
+// landTipPublishedVersions is the set of versions of contract id published at
+// the tip: the version of every publish event for id in the tip's tree, read
+// through contractPublishedVersions. It reads the tip (BaseSHA), never the
+// checkout, so a write cannot add a publish event to move its own baseline.
+//
+// git grep for the id only narrows which events are parsed; each match is
+// decoded in full. git grep exits 1 when nothing matches, which is the empty
+// set, not an error.
+func landTipPublishedVersions(ctx context.Context, candidate host.LandCandidate, id string) ([]string, error) {
+	listing, err := contractGitBounded(ctx, candidate.CheckoutDir, landDiffLimit,
+		"grep", "-l", "-z", "-F", "-e", id, candidate.BaseSHA, "--", ":(glob)*/events/*/*.yaml")
+	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() == 1 {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var events []lifecycleEventDoc
+	for _, object := range strings.Split(strings.TrimSuffix(string(listing), "\x00"), "\x00") {
+		if object == "" {
+			continue
+		}
+		raw, rerr := contractGitBounded(ctx, candidate.CheckoutDir, maxMirrorEventBytes, "show", object)
+		if rerr != nil {
+			return nil, rerr
+		}
+		var event lifecycleEventDoc
+		if uerr := yaml.Unmarshal(raw, &event); uerr != nil {
+			return nil, fmt.Errorf("event %s is not readable: %w", object, uerr)
+		}
+		events = append(events, event)
+	}
+	var versions []string
+	for _, v := range contractPublishedVersions(events, id) {
+		versions = append(versions, v.String())
+	}
+	return versions, nil
+}
+
+// landPublicationGate is the planner's gate question asked at land: the
+// baseline is version.Baseline over the published versions (the highest one
+// below the target, which is what PlanPublication selects) and
+// contract.PublicationGateFor decides. It validates the target first, since
+// PublicationGateFor indexes past a short version: a malformed version is an
+// error here (the write cannot be judged), never a panic and never "no gate".
+func landPublicationGate(published []string, target string) (contract.PublicationGate, error) {
 	if _, err := contractParseSemver(target); err != nil {
 		return contract.GateNone, fmt.Errorf("the contract's version %q cannot be judged: %w", target, err)
+	}
+	baseline, hasBaseline, err := version.Baseline(published, target)
+	if err != nil {
+		return contract.GateNone, fmt.Errorf("the contract's published versions cannot be compared with %q: %w", target, err)
 	}
 	if hasBaseline {
 		if _, err := contractParseSemver(baseline); err != nil {
