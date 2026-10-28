@@ -55,9 +55,16 @@ changes:
     default branch, with a compare-and-swap on the branch ref, so two writers
     racing for one space never overwrite each other. A pre-receive hook
     refuses a push that did not come through that path, so a plain
-    `git push` cannot bypass validation. `a2a doctor` checks the hook, the
+    `git push` cannot bypass validation. The space pins `core.hooksPath` in
+    its own git config, so a global or system `core.hooksPath` cannot route a
+    push around the hook. `a2a doctor` checks the hook git actually runs, the
     git version (2.38 or newer), the history shape and that the directory is
-    writable, and reports the GitHub-only checks as not applicable. When `space init --local`
+    writable, and reports the GitHub-only checks as not applicable. A local
+    space that was moved or deleted is reported as missing, with where to
+    restore it. It is never mistaken for a GitHub space that wants a token,
+    and `a2a mcp` still starts and serves its read tools. A `repo_url` path that
+    is missing or is not a git repository is refused when the space is
+    opened, instead of being treated as a GitHub space. When `space init --local`
     or `space join` refuses, the message says what it tried, what it found and
     the command to run next.
 
@@ -100,8 +107,12 @@ changes:
     `a2a feedback status` says the report is in the local inbox, with no
     network read, and a later `a2a feedback submit --all` on a machine with a
     credential delivers every filed report once, from the bytes that were
-    filed. A malformed credential setting is still refused rather than hidden
-    behind a local filing.
+    filed. A malformed credential setting, or a `cmd:` credential command
+    that fails or prints nothing, is still refused rather than hidden behind a
+    local filing. The error names the command's exit status and never echoes
+    what it printed. `a2a feedback submit <draft>` of a report already filed
+    to the inbox sends the filed bytes. If the draft was edited since, it is
+    refused with `inbox-conflict`, and a changed report is filed under a new id.
   action:
     scope: none
     why: >
