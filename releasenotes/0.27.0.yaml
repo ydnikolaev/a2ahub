@@ -67,8 +67,18 @@ changes:
     `space.yaml` each need `--approve` (`approve: true` on the MCP
     `a2a_lifecycle` and `a2a_contract` tools), and the landed commit records
     the gate it passed. Under `autonomous` they land without it. A classification or
-    secret refusal stays a refusal in both modes. `a2a space set gates` and
-    `a2a space set flow` change the setting, and `a2a doctor` shows it.
+    secret refusal stays a refusal in both modes. Resetting, deleting or
+    moving the version of a published contract is gated too, and `a2a submit`
+    cannot carry the approval, so under `confirm` such a raw write is refused:
+    retire a contract with `a2a contract retire`, or switch the space to
+    `autonomous` first. `a2a space set gates` and `a2a space set flow` change
+    the setting, and `a2a doctor` shows it. `space init --local` declares the
+    express flow unless `--flow full` says otherwise.
+
+    `a2a version --json` now reports, for each connected space, its `gates`,
+    `flow` and `lands_synchronously`, read from the local mirror with no
+    network call, so an agent can learn at session start how its writes will
+    land. A value it cannot read is `null`, never a guessed `false`.
   action:
     scope: none
     why: >
@@ -102,3 +112,67 @@ changes:
     why: >
       An agent working against a local space no longer drops an a2a defect
       because it has no token to report it with.
+- id: RN-02700-3
+  kind: fix
+  impact: normal
+  subject: superseding an approved or rejected decision was refused at merge
+  detail: >
+    `a2a supersede` of an approved or a rejected decision wrote its event,
+    and the space's required check (`a2a validate --ci`) then refused the
+    pull request with LFC-002, saying the actor was not authorized. The rule
+    for these two transitions also judges the successor decision, and the
+    check never looked it up, so it judged them against no successor and
+    refused every one. The CLI's own pre-write check did look it up, which
+    is why the command itself accepted the write.
+
+    The check now reads the successor from the target branch as it was
+    before the pull request, the same tree the superseded decision is judged
+    from. A successor that is approved only inside the same pull request is
+    not yet something the space agreed to, so that supersede is refused with
+    LFC-005, and a successor that does not exist is refused with LFC-006.
+    Neither is ever reported as LFC-002 again.
+  affects: ["a2a validate --ci", "a2a supersede"]
+  action:
+    scope: space
+    why: >
+      A GitHub space picks the fix up with `a2a space update` after this
+      release, which moves its workflow pin. A pull request already refused
+      this way can be re-run once the pin moves; nothing in it needs an edit.
+    detect: ["a2a space update --dry-run"]
+    run: ["a2a space update"]
+  roadmap:
+    visibility: omit
+    why: >
+      A defect fix in an existing verb; the roadmap names capabilities, not
+      repairs.
+- id: RN-02700-4
+  kind: fix
+  impact: normal
+  subject: a contract reset to 0.0.0 no longer lets a breaking change through as a minor
+  detail: >
+    The required check judged a contract's compatibility against the
+    version in its descriptor at the tip of the target branch. A descriptor
+    reset to 0.0.0, the version a never-published contract carries, made
+    that baseline 0.0.0, so a later write that published 1.1.0 over a
+    published 1.0.0 looked like a major bump and skipped the breaking-change
+    check: a breaking change could land as a minor version.
+
+    The baseline is now the newest version actually published, read from
+    the space's history of publish events, the same reader `a2a contract
+    publish` plans from. A descriptor with no publish event in history is
+    still judged against its own version, as before. `a2a contract publish`
+    also refuses an explicit target version of 0.0.0, which publishes
+    nothing.
+  affects: ["a2a validate --ci", "a2a contract publish"]
+  action:
+    scope: space
+    why: >
+      A GitHub space picks the fix up with `a2a space update` after this
+      release. No artifact already merged is judged again.
+    detect: ["a2a space update --dry-run"]
+    run: ["a2a space update"]
+  roadmap:
+    visibility: omit
+    why: >
+      A defect fix in an existing check; the roadmap names capabilities, not
+      repairs.
