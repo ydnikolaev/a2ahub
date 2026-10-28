@@ -23,4 +23,8 @@
 # worklease_lock/permissions/sync_*, *_noreplace_darwin/linux/unsupported)
 # and 23 //go:build livee2e files are invisible to this oracle here — any
 # dead code inside them is not counted by this ceiling.
-85
+#
+# TEMPORARY +2 since local-space-2026-10 P2: host.PrepareLocalSpace and
+# installPreReceiveHook land before their only production caller, P3's
+# `space init --local`. P3 owes this back to 85.
+87
