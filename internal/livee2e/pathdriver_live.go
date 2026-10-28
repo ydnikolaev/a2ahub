@@ -3134,7 +3134,7 @@ func rankTranscript(entries []any, seqs []float64, ids pathIDs) []any {
 	}
 	items := make([]ranked, len(entries))
 	for i, e := range entries {
-		key, _ := json.Marshal(e)
+		key, _ := json.Marshal(e) // reason: e came out of json.Unmarshal into any, so it re-encodes without error
 		items[i] = ranked{seq: seqs[i], key: replaceArtifactIDs(string(key), ids), entry: e}
 	}
 	sort.SliceStable(items, func(i, j int) bool {

@@ -110,7 +110,7 @@ func (p Path) RunsOn(k HostKind) bool {
 
 // ExclusionReason returns why the path is not run on k, or "" when it is.
 func (p Path) ExclusionReason(k HostKind) string {
-	e, _ := p.exclusion(k)
+	e, _ := p.exclusion(k) // reason: the zero HostExclusion's empty Reason is the not-excluded answer
 	return e.Reason
 }
 
