@@ -352,3 +352,36 @@ intend to start, `a2a accept <XW-id>`.
    ```sh
    a2a close XW-axon-20260804-w001
    ```
+
+## Express flow — the same loop in three commands
+
+The producer and consumer sequences above are the contract. Three composite
+verbs run them for you (D-038). Each one only sequences the existing verbs:
+every event it writes is one you could have written by hand, so the thread
+folds to the same state whichever way it was driven. Which flow a space
+expects is set by its `flow:` key.
+
+| Command | Run by | What it does, in order |
+|---|---|---|
+| `a2a data request --producer <system> --contract <XC-id>@<version> --interim-behavior <text>` | consumer | Submits a `work_request` with `category: data`, addressed to the producer, citing the pinned contract. Its first acceptance criterion is always "the delivered package passes `a2a data verify` against that contract"; `--acceptance-criterion` adds more. Prints the producer's next command. |
+| `a2a data deliver --for <XW-id> --from <dir> --profile <p> --format <f>` | producer | Acknowledges and accepts the request, packs the payload against it, delivers it, supersedes a rejected earlier attempt when there is one, and responds with `--delivers` naming the package. |
+| `a2a data verify --for <XW-id> --record` | consumer | Acknowledges the handoff, verifies the package with `--record`, then closes the request on a pass or disputes the response on a fail. |
+
+- **Re-running resumes.** Every step is decided from the freshly synced
+  mirror, never from memory. After a crash, a timeout or a pending merge,
+  run the same command again: it skips what already landed and never mints
+  a second package for the same bytes.
+- **A stop is a stop.** Where a write waits on a merge, each step waits,
+  and `--timeout` bounds each wait, not the whole command. A write that
+  needs attention, is refused, or outlasts its wait stops the verb: it
+  names the furthest step that landed and exits non-zero.
+- **Without `--record`, `verify --for` only judges** and writes nothing.
+  When there is nothing to verify yet, or the next move is the producer's,
+  it writes nothing, exits `0` and names the producer's
+  `a2a data deliver --for <XW-id>`.
+- **Extra criteria need your verdicts.** A request with more than the first
+  criterion closes only with a `--verdict` for each one; the verb refuses
+  rather than invent a verdict you did not give.
+- **The forms above are unchanged.** `--for` refuses a positional staging
+  root, `--fulfills` or `--supersedes` on `deliver`, and a positional
+  package id on `verify`: it derives all of them itself.
