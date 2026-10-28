@@ -178,7 +178,7 @@ func ResolveWriteCredential(ctx context.Context, explicitEnvVar string, ref Cred
 func commandFailure(err error) string {
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		return exitErr.ProcessState.String()
+		return exitErr.String() // the embedded ProcessState: the status, never Stderr
 	}
 	return err.Error()
 }
