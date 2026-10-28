@@ -746,6 +746,12 @@ func parsePublicationSelector(selector string) (kind, target string, issues []Is
 		if !strictCanonicalVersion(value) {
 			return "", "", []Issue{{Kind: IssueInvalidPublication, Path: "version_selector", Detail: "explicit target must be canonical major.minor.patch"}}
 		}
+		// 0.0.0 is what a submitted, never-published descriptor carries, so
+		// writing it publishes nothing: it resets the contract, and the land
+		// check gates it as one. Planning it would record G1 for that reset.
+		if value == "0.0.0" {
+			return "", "", []Issue{{Kind: IssueInvalidPublication, Path: "version_selector", Detail: "explicit target 0.0.0 is the unpublished version, never a publication"}}
+		}
 		return kind, value, nil
 	}
 	return value, "", nil

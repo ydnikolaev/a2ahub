@@ -38,6 +38,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
+	"github.com/ydnikolaev/a2ahub/internal/version"
 	"github.com/ydnikolaev/a2ahub/internal/workcheckpoint"
 	"github.com/ydnikolaev/a2ahub/schemas"
 	"gopkg.in/yaml.v3"
@@ -1309,28 +1310,14 @@ func validateCIContract(ctx context.Context, root, base, id, descriptorPath, spa
 			return &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: cannot read prior fixtures at base %s: %v", id, base, terr)}, false
 		}
 
-		priorRaw, gerr := contractGitBounded(ctx, root, maxMirrorEventBytes, "show", base+":"+relPath)
+		priorVersion, priorTree, checked, report := ciCompatibilityBaseline(ctx, root, base, id, relPath, relDir, probe.Version, priorTree, stderr)
 		switch {
-		case gerr != nil:
-			// base itself already resolved (contractReadTreeAtSHA above
-			// would have errored otherwise) — so a failing `git show
-			// base:relPath` means the descriptor genuinely does not exist
-			// at base: a FIRST publish in this PR. D-B: nothing to check,
-			// and say so (never silence — "a CI log that says nothing
-			// reads as it passed").
-			_, _ = fmt.Fprintf(stderr, "validate --ci: contract %s: no descriptor found at base %s — first publish in this PR, computed compatibility not checked\n", id, base)
-		default:
-			priorFM, ferr := artifact.ParseFrontmatter(priorRaw)
-			var priorProbe contractDescriptorProbe
-			if ferr == nil {
-				ferr = yaml.Unmarshal(priorFM.YAML, &priorProbe)
-			}
-			if ferr != nil {
-				return &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: prior descriptor at base %s is not parseable: %v", id, base, ferr)}, false
-			}
-			priorSemver, perr := contractParseSemver(priorProbe.Version)
+		case report != nil:
+			return report, false
+		case checked:
+			priorSemver, perr := contractParseSemver(priorVersion)
 			if perr != nil {
-				return &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: prior version %q at base %s is not valid semver: %v", id, priorProbe.Version, base, perr)}, false
+				return &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: prior version %q at base %s is not valid semver: %v", id, priorVersion, base, perr)}, false
 			}
 			newSemver, nerr := contractParseSemver(probe.Version)
 			if nerr != nil {
@@ -1339,7 +1326,7 @@ func validateCIContract(ctx context.Context, root, base, id, descriptorPath, spa
 
 			result := validate.CheckComputedCompatibility(validate.CompatInput{
 				DeclaredBump:  contractInferBumpKind(priorSemver, newSemver),
-				PriorVersion:  priorProbe.Version,
+				PriorVersion:  priorVersion,
 				NewVersion:    probe.Version,
 				NewSchemas:    schemasNew,
 				PriorFixtures: contractFixturesValidOnly(priorTree),
@@ -1369,6 +1356,81 @@ func validateCIContract(ctx context.Context, root, base, id, descriptorPath, spa
 	}
 	res := validate.Result{Valid: valid, ArtifactID: id, InvocationPoint: validate.V2, Violations: violations}
 	return &validateReport{Path: relPath, Result: &res}, valid
+}
+
+// ciCompatibilityBaseline is what validateCIContract's computed-compatibility
+// check compares the contract's new version against: the prior version and
+// the tree holding that version's fixtures. checked is false when there is
+// nothing to compare against (and it has said so on stderr); a non-nil report
+// is an error, never "nothing to compare".
+//
+// The baseline is the PUBLISHED one whenever the publication history at base
+// holds a version below newVersion. That history is read through
+// space.PublishedContractVersionsAt, the walk the publication planner reads;
+// version.Baseline picks the highest published version below newVersion, as
+// PlanPublication does; and the fixtures are the ones that publication
+// carried, read at the commit that added its publish event. The descriptor at
+// base is not the baseline then: after a reset it reads 0.0.0 while 1.0.0
+// stays published, which made 0.0.0 -> 1.1.0 a major bump this check skipped,
+// and on a maintenance line it would judge 1.1.0 against 2.0.0's fixtures.
+// When newVersion is itself published (an edit at a published version, which
+// publishes nothing), the baseline is that version's own publication.
+//
+// When newVersion is not published and no published version lies below it (a
+// contract with no version-bearing publish event, a candidate that never
+// published) the baseline is the descriptor at base and base's own fixtures
+// (baseTree), as before.
+func ciCompatibilityBaseline(ctx context.Context, root, base, id, relPath, relDir, newVersion string, baseTree map[string][]byte, stderr io.Writer) (priorVersion string, priorTree map[string][]byte, checked bool, report *validateReport) {
+	published, err := space.PublishedContractVersionsAt(ctx, root, base, id)
+	if err != nil {
+		return "", nil, false, &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: cannot read its publication history at base %s: %v", id, base, err)}
+	}
+	if len(published) > 0 {
+		versions := make([]string, 0, len(published))
+		commits := make(map[string]string, len(published))
+		for _, p := range published {
+			versions = append(versions, p.Version)
+			commits[p.Version] = p.CommitSHA
+		}
+		baseline, found, berr := version.Baseline(versions, newVersion)
+		if berr != nil {
+			return "", nil, false, &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: version %q cannot be compared with its published versions: %v", id, newVersion, berr)}
+		}
+		// An edit at an already-published version publishes nothing; it is
+		// judged against that version's own publication, never read as a bump
+		// from the version below it.
+		if _, published := commits[contractCanonicalVersion(newVersion)]; published {
+			baseline, found = contractCanonicalVersion(newVersion), true
+		}
+		if found {
+			tree, terr := contractReadTreeAtSHA(ctx, root, commits[baseline], relDir, []string{"fixtures"})
+			if terr != nil {
+				return "", nil, false, &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: cannot read the fixtures published with %s: %v", id, baseline, terr)}
+			}
+			return baseline, tree, true, nil
+		}
+	}
+
+	priorRaw, gerr := contractGitBounded(ctx, root, maxMirrorEventBytes, "show", base+":"+relPath)
+	if gerr != nil {
+		// base itself already resolved (validateCIContract's
+		// contractReadTreeAtSHA would have errored otherwise) — so a failing
+		// `git show base:relPath` means the descriptor genuinely does not
+		// exist at base: a FIRST publish in this PR. D-B: nothing to check,
+		// and say so (never silence — "a CI log that says nothing reads as it
+		// passed").
+		_, _ = fmt.Fprintf(stderr, "validate --ci: contract %s: no descriptor found at base %s — first publish in this PR, computed compatibility not checked\n", id, base)
+		return "", nil, false, nil
+	}
+	priorFM, ferr := artifact.ParseFrontmatter(priorRaw)
+	var priorProbe contractDescriptorProbe
+	if ferr == nil {
+		ferr = yaml.Unmarshal(priorFM.YAML, &priorProbe)
+	}
+	if ferr != nil {
+		return "", nil, false, &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: prior descriptor at base %s is not parseable: %v", id, base, ferr)}
+	}
+	return priorProbe.Version, baseTree, true, nil
 }
 
 // ciDescriptorReader is the checkout-side half of space.ClassifyCarried's

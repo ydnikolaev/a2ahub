@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -155,7 +154,8 @@ func landRequiredGates(ctx context.Context, candidate host.LandCandidate) ([]str
 	return required, nil
 }
 
-// landDiffLimit bounds the land check's own name-status listing of the write.
+// landDiffLimit bounds the land check's own name-status listing of the write
+// (landChangedPaths).
 const landDiffLimit = 8 << 20
 
 // landChange is one path the write changed against the tip. readable is false
@@ -207,9 +207,9 @@ const contractUnpublishedVersion = "0.0.0"
 
 // landContractGate is the G1/G2 gate of one touched contract, judged against
 // the tip's PUBLICATION HISTORY, the baseline the publication planner reads:
-// the published versions are the tip's publish events (landTipPublishedVersions),
-// never the tip descriptor's version field, which a submit can set back to
-// contractUnpublishedVersion. G1 is the first PUBLISH of a contract
+// the published versions are the publish events the tip's history added
+// (landTipPublishedVersions), never the tip descriptor's version field, which
+// a submit can set back to contractUnpublishedVersion. G1 is the first PUBLISH of a contract
 // (docs/the-plan/plan/03-domain.md §3.7).
 //
 //   - The write deleted the descriptor: G2 when the contract was published
@@ -297,41 +297,19 @@ func landGateIfPublished(published []string) contract.PublicationGate {
 }
 
 // landTipPublishedVersions is the set of versions of contract id published at
-// the tip: the version of every publish event for id in the tip's tree, read
-// through contractPublishedVersions. It reads the tip (BaseSHA), never the
+// the tip, read through space.PublishedContractVersionsAt, the walk the
+// publication planner reads its own history through: the publish events the
+// tip's first-parent history added. It reads the tip (BaseSHA), never the
 // checkout, so a write cannot add a publish event to move its own baseline.
-//
-// git grep for the id only narrows which events are parsed; each match is
-// decoded in full. git grep exits 1 when nothing matches, which is the empty
-// set, not an error.
+// host.judge clones the whole space, so that history is in the checkout.
 func landTipPublishedVersions(ctx context.Context, candidate host.LandCandidate, id string) ([]string, error) {
-	listing, err := contractGitBounded(ctx, candidate.CheckoutDir, landDiffLimit,
-		"grep", "-l", "-z", "-F", "-e", id, candidate.BaseSHA, "--", ":(glob)*/events/*/*.yaml")
+	listed, err := space.PublishedContractVersionsAt(ctx, candidate.CheckoutDir, candidate.BaseSHA, id)
 	if err != nil {
-		var exit *exec.ExitError
-		if errors.As(err, &exit) && exit.ExitCode() == 1 {
-			return nil, nil
-		}
 		return nil, err
 	}
-	var events []lifecycleEventDoc
-	for _, object := range strings.Split(strings.TrimSuffix(string(listing), "\x00"), "\x00") {
-		if object == "" {
-			continue
-		}
-		raw, rerr := contractGitBounded(ctx, candidate.CheckoutDir, maxMirrorEventBytes, "show", object)
-		if rerr != nil {
-			return nil, rerr
-		}
-		var event lifecycleEventDoc
-		if uerr := yaml.Unmarshal(raw, &event); uerr != nil {
-			return nil, fmt.Errorf("event %s is not readable: %w", object, uerr)
-		}
-		events = append(events, event)
-	}
-	var versions []string
-	for _, v := range contractPublishedVersions(events, id) {
-		versions = append(versions, v.String())
+	versions := make([]string, 0, len(listed))
+	for _, published := range listed {
+		versions = append(versions, published.Version)
 	}
 	return versions, nil
 }

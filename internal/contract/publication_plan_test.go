@@ -137,6 +137,44 @@ func TestPlanPublicationStrictSemverBeforeBaselineOrChecker(t *testing.T) {
 	}
 }
 
+// TestPlanPublicationRefusesTheUnpublishedMarkerAsATarget pins that 0.0.0, the
+// version a submitted, never-published descriptor carries, is never a
+// publication target. Planned, it would record G1 (no published version lies
+// below it) for a write the land check judges as a reset: G2 when anything was
+// published, no gate when nothing was.
+func TestPlanPublicationRefusesTheUnpublishedMarkerAsATarget(t *testing.T) {
+	t.Parallel()
+
+	candidate := mustCandidateIntent(t, plannerDeclaredSnapshot("XC-atlas-demo", "0.0.0", "json-schema-2020-12", nil))
+	tests := []struct {
+		name      string
+		published []PublishedContract
+	}{
+		{name: "nothing published"},
+		{name: "after a publication", published: []PublishedContract{
+			publishedDeclared(t, "1.0.0", plannerDeclaredSnapshot("XC-atlas-demo", "1.0.0", "json-schema-2020-12", nil)),
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			checker := &recordingCompatibilityChecker{result: CompatibilityResult{Verdict: CompatibilityCompatible}}
+			plan, issues := PlanPublication(PublicationInput{
+				System: "atlas", ContractID: "XC-atlas-demo", Selector: "explicit:0.0.0",
+				AuthoringFloor: "0.19.0", Candidate: candidate, Published: test.published,
+				CandidateSource: CandidateSource{Kind: CandidateSourceMirror, Location: "tree:demo", Fingerprint: "sha256:" + strings.Repeat("1", 64)},
+				ContractRoot:    "contracts/atlas/demo",
+			}, checker)
+			if len(issues) != 1 || issues[0].Kind != IssueInvalidPublication || issues[0].Path != "version_selector" {
+				t.Fatalf("explicit:0.0.0 issues = %+v (gate %q), want one %s issue at version_selector", issues, plan.Gate, IssueInvalidPublication)
+			}
+			if checker.calls != 0 || plan.PlanDigest != "" {
+				t.Fatalf("refused target still planned: checker calls %d, plan digest %q", checker.calls, plan.PlanDigest)
+			}
+		})
+	}
+}
+
 func TestPlanPublicationMaintenanceBaselineAndCompatibility(t *testing.T) {
 	t.Parallel()
 

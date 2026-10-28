@@ -8,6 +8,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -330,10 +331,26 @@ func landGateCandidate(t *testing.T, baseFiles, headFiles map[string]string, hea
 // the deleted paths it names from the tip.
 func landGateCandidateDeleting(t *testing.T, baseFiles, headFiles map[string]string, deleted []string, headMessage string) host.LandCandidate {
 	t.Helper()
+	return landGateCandidateWithHistory(t, []landCommit{{files: baseFiles}}, landCommit{files: headFiles, deleted: deleted}, headMessage)
+}
+
+// landCommit is one commit of a land fixture: the files it writes and the
+// tracked paths it removes.
+type landCommit struct {
+	files   map[string]string
+	deleted []string
+}
+
+// landGateCandidateWithHistory builds a space repo whose tip is the last of
+// the base commits, in order, on one first-parent line, and whose head commit
+// is the write. A test uses it when the tip's TREE and its publication HISTORY
+// differ: a publish event a later commit removed still published its version.
+func landGateCandidateWithHistory(t *testing.T, base []landCommit, head landCommit, headMessage string) host.LandCandidate {
+	t.Helper()
 	root := t.TempDir()
 	ciTestGit(t, root, "init", "-q", "-b", "main")
-	writeAll := func(files map[string]string) {
-		for rel, content := range files {
+	apply := func(c landCommit, message string) string {
+		for rel, content := range c.files {
 			abs := filepath.Join(root, filepath.FromSlash(rel))
 			if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 				t.Fatalf("mkdir %s: %v", rel, err)
@@ -342,20 +359,20 @@ func landGateCandidateDeleting(t *testing.T, baseFiles, headFiles map[string]str
 				t.Fatalf("write %s: %v", rel, err)
 			}
 		}
+		for _, rel := range c.deleted {
+			ciTestGit(t, root, "rm", "-q", "--", rel)
+		}
+		ciTestGit(t, root, "add", "-A")
+		ciTestGit(t, root, "commit", "-q", "--allow-empty", "-m", message)
+		return strings.TrimSpace(ciTestGit(t, root, "rev-parse", "HEAD"))
 	}
-	writeAll(baseFiles)
-	ciTestGit(t, root, "add", "-A")
-	ciTestGit(t, root, "commit", "-q", "-m", "base")
-	base := strings.TrimSpace(ciTestGit(t, root, "rev-parse", "HEAD"))
-	writeAll(headFiles)
-	for _, rel := range deleted {
-		ciTestGit(t, root, "rm", "-q", "--", rel)
+	var tip string
+	for i, c := range base {
+		tip = apply(c, fmt.Sprintf("base %d", i))
 	}
-	ciTestGit(t, root, "add", "-A")
-	ciTestGit(t, root, "commit", "-q", "-m", "head")
-	head := strings.TrimSpace(ciTestGit(t, root, "rev-parse", "HEAD"))
+	headSHA := apply(head, "head")
 	return host.LandCandidate{
-		CheckoutDir: root, BaseBranch: "main", BaseSHA: base, MergeSHA: head, HeadSHA: head,
+		CheckoutDir: root, BaseBranch: "main", BaseSHA: tip, MergeSHA: headSHA, HeadSHA: headSHA,
 		HeadMessage: headMessage, Author: "ydnikolaev",
 	}
 }
@@ -804,5 +821,111 @@ func TestLandPublicationGate_RefusesMalformedVersionsInsteadOfPanicking(t *testi
 		if got, err := landPublicationGate(b.published, b.target); err == nil {
 			t.Fatalf("landPublicationGate(%q, %q) = %q, want an error", b.published, b.target, got)
 		}
+	}
+}
+
+// landContractAt is landContractFiles at version with its schema and its valid
+// fixture replaced.
+func landContractAt(version, schema, validFixture string) map[string]string {
+	files := landContractFiles(version)
+	files[ciContractSchemaPath] = schema
+	files[ciContractFixturePath] = validFixture
+	return files
+}
+
+// landWithEvents is files plus the publish events of the given versions.
+func landWithEvents(files map[string]string, events map[string]string) map[string]string {
+	out := map[string]string{"space.yaml": ciSpaceYAML}
+	for rel, content := range files {
+		out[rel] = content
+	}
+	for suffix, version := range events {
+		rel, content := landPublishEvent(suffix, version)
+		out[rel] = content
+	}
+	return out
+}
+
+// Wave 5b deviation 6: the required check's computed-compatibility half judges
+// a write against the PUBLISHED baseline (the highest published version below
+// the target, version.Baseline over the tip's publication history), never the
+// tip descriptor's version. After a reset to 0.0.0 the descriptor reads 0.0.0
+// while 1.0.0 stays published, so a write to 1.1.0 is a minor bump over 1.0.0:
+// over breaking content it is POL-007, the refusal the planner gives the same
+// publish, and not a "major bump, not checked" that lands with no gate.
+func TestLandCheck_CompatibilityBaselineIsThePublishedOne(t *testing.T) {
+	t.Parallel()
+	const (
+		requiresX = `{"type":"object","properties":{"x":{"type":"string"}},"required":["x"]}`
+		requiresY = `{"type":"object","properties":{"y":{"type":"string"}},"required":["y"]}`
+		requiresZ = `{"type":"object","properties":{"z":{"type":"string"}},"required":["z"]}`
+	)
+
+	t.Run("a breaking minor after a reset is POL-007", func(t *testing.T) {
+		t.Parallel()
+		c := landGateCandidate(t, landTip("0.0.0", "1.0.0"), landContractAt("1.1.0", requiresX, `{"x":"hi"}`), "publish\n")
+		wantRefusedWith(t, landVerdict(t, c), "POL-007", ciContractFixtureRel)
+	})
+
+	// The reset itself changed the schema and its fixture. The published
+	// baseline is 1.0.0's package, so the prior fixtures are the ones its
+	// publication carried, not the reset tree's.
+	t.Run("the prior fixtures are the published baseline's", func(t *testing.T) {
+		t.Parallel()
+		c := landGateCandidateWithHistory(t, []landCommit{
+			{files: landWithEvents(landContractAt("1.0.0", requiresX, `{"x":"hi"}`), map[string]string{"0": "1.0.0"})},
+			{files: landContractAt("0.0.0", requiresY, `{"y":"v"}`)},
+		}, landCommit{files: landContractAt("1.1.0", requiresY, `{"y":"v"}`)}, "publish\n")
+		wantRefusedWith(t, landVerdict(t, c), "POL-007", ciContractFixtureRel)
+	})
+
+	// An edit at an already-published version publishes nothing, so it is
+	// judged against that version's own publication: a schema that breaks
+	// 2.0.0's published fixture is refused, never read as a major bump over
+	// 1.0.0 that the check skips.
+	t.Run("an edit at a published version is judged against that version", func(t *testing.T) {
+		t.Parallel()
+		c := landGateCandidateWithHistory(t, []landCommit{
+			{files: landWithEvents(landContractAt("1.0.0", requiresX, `{"x":"hi"}`), map[string]string{"0": "1.0.0"})},
+			{files: landWithEvents(landContractAt("2.0.0", requiresY, `{"y":"v"}`), map[string]string{"1": "2.0.0"})},
+		}, landCommit{files: landContractAt("2.0.0", requiresZ, `{"z":"w"}`)}, "edit\n")
+		wantRefusedWith(t, landVerdict(t, c), "POL-007", ciContractFixtureRel)
+	})
+
+	// A maintenance publish on the 1.x line is judged against 1.0.0's
+	// fixtures, never the tip's 2.0.0 ones: a schema 1.0.0's fixture still
+	// satisfies lands even though 2.0.0's would not.
+	t.Run("a maintenance minor is judged against its own line", func(t *testing.T) {
+		t.Parallel()
+		c := landGateCandidateWithHistory(t, []landCommit{
+			{files: landWithEvents(landContractAt("1.0.0", requiresX, `{"x":"hi"}`), map[string]string{"0": "1.0.0"})},
+			{files: landWithEvents(landContractAt("2.0.0", requiresY, `{"y":"v"}`), map[string]string{"1": "2.0.0"})},
+		}, landCommit{files: landContractAt("1.1.0", requiresX, `{"x":"hi"}`)}, "publish\n")
+		if verdict := landVerdict(t, c); !verdict.OK {
+			t.Fatalf("verdict = %+v, want OK: 1.1.0 keeps 1.0.0's fixtures valid", verdict)
+		}
+	})
+}
+
+// A publication history the planner refuses (here, 1.0.0 published twice) is
+// a history the compatibility check cannot take a baseline from: the required
+// check reports an error for the contract, never "nothing published, compare
+// against the tip descriptor", and the land check cannot judge the write.
+func TestLandCheck_AnUnreadablePublicationHistoryIsAnError(t *testing.T) {
+	t.Parallel()
+	c := landGateCandidate(t, landTip("1.0.0", "1.0.0", "1.0.0"), landContractFiles("1.1.0"), "publish\n")
+
+	code, rep, errOut := runCI(t, ciEngine(t), c.CheckoutDir, gitDiffNameOnly, "v3-pr", c.BaseSHA, c.Author)
+	var reported string
+	for _, a := range rep.Artifacts {
+		if a.Path == ciContractDescriptorPath {
+			reported = a.Error
+		}
+	}
+	if code != 1 || !strings.Contains(reported, "cannot read its publication history") {
+		t.Fatalf("exit = %d, descriptor error = %q, want exit 1 and a publication-history error; report=%+v stderr=%s", code, reported, rep, errOut)
+	}
+	if verdict, err := NewLandCheck(ciEngine(t))(context.Background(), c); err == nil {
+		t.Fatalf("NewLandCheck = %+v, nil; want a could-not-judge error", verdict)
 	}
 }

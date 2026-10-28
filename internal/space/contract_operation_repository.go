@@ -236,12 +236,69 @@ func (r *ContractPublicationRepository) publicationHistory(ctx context.Context, 
 	return history, nil
 }
 
+// PublishedContractVersion is one version-bearing publication of a contract:
+// the version its publish event names and the first-parent commit that added
+// that event, which is the commit whose tree carries the published package.
+// PublishedContractVersion is part of the public package API.
+type PublishedContractVersion struct {
+	Version   string
+	CommitSHA string
+}
+
+// PublishedContractVersionsAt is the one reader of which versions of a
+// contract are published as of anchor: the version of every publish event for
+// contractID that anchor's first-parent history ADDED, oldest first. It is the
+// walk the publication planner reads its history through
+// (publicationHistoryAt), so a caller that judges a publication's baseline
+// (the local land check, the merge-side compatibility check) sees the same
+// versions the planner does.
+//
+// History, not the tree: an event the tree later dropped still published its
+// version. Events are decoded, never matched as text, so a subject spelled
+// with a YAML escape is still the contract. A versionless publish event (the
+// standing-artifact lifecycle's) publishes no version. A non-canonical or
+// repeated version, or more than maxContractPublicationEstablishments of them,
+// is invalid history and an error, never a shorter list.
+//
+// It lists versions only: it does not validate each publication's snapshot,
+// which publicationHistoryAt does before the planner may use one.
+// PublishedContractVersionsAt is part of the public package API.
+func PublishedContractVersionsAt(ctx context.Context, repoDir, anchor, contractID string) ([]PublishedContractVersion, error) {
+	parsedID, err := artifact.ParseID(contractID)
+	if err != nil || parsedID.Prefix != "XC" || parsedID.Class != artifact.ClassStanding {
+		return nil, fmt.Errorf("%w: %q", ErrContractInvalidReference, contractID)
+	}
+	commit, err := contractGitResolveCommit(ctx, repoDir, anchor)
+	if err != nil {
+		return nil, err
+	}
+	return publishedContractVersionsAt(ctx, repoDir, commit, contractID)
+}
+
 func publicationHistoryAt(ctx context.Context, repoDir, anchor, contractID string, validator ContractHistoryDocumentValidator) ([]HistoricalSnapshot, error) {
+	published, err := publishedContractVersionsAt(ctx, repoDir, anchor, contractID)
+	if err != nil {
+		return nil, err
+	}
+	history := make([]HistoricalSnapshot, 0, len(published))
+	for _, publication := range published {
+		snapshot, err := resolveContractVersionAt(ctx, repoDir, anchor, contractID, publication.Version, validator)
+		if err != nil {
+			return nil, err
+		}
+		history = append(history, snapshot)
+	}
+	return history, nil
+}
+
+// publishedContractVersionsAt is PublishedContractVersionsAt over an anchor
+// that is already a resolved commit.
+func publishedContractVersionsAt(ctx context.Context, repoDir, anchor, contractID string) ([]PublishedContractVersion, error) {
 	commits, err := contractPublishEventHistory(ctx, repoDir, anchor)
 	if err != nil {
 		return nil, err
 	}
-	versions := make([]string, 0)
+	published := make([]PublishedContractVersion, 0)
 	seen := make(map[string]struct{})
 	for _, commit := range commits {
 		parent, err := contractGitFirstParent(ctx, repoDir, commit)
@@ -279,21 +336,13 @@ func publicationHistoryAt(ctx context.Context, repoDir, anchor, contractID strin
 				return nil, fmt.Errorf("%w: duplicate publication version %s", ErrContractHistoryInvalid, event.Version)
 			}
 			seen[event.Version] = struct{}{}
-			versions = append(versions, event.Version)
-			if len(versions) > maxContractPublicationEstablishments {
+			published = append(published, PublishedContractVersion{Version: event.Version, CommitSHA: commit})
+			if len(published) > maxContractPublicationEstablishments {
 				return nil, fmt.Errorf("%w: contract has more than %d publications", ErrContractBoundedResult, maxContractPublicationEstablishments)
 			}
 		}
 	}
-	history := make([]HistoricalSnapshot, 0, len(versions))
-	for _, publishedVersion := range versions {
-		snapshot, err := resolveContractVersionAt(ctx, repoDir, anchor, contractID, publishedVersion, validator)
-		if err != nil {
-			return nil, err
-		}
-		history = append(history, snapshot)
-	}
-	return history, nil
+	return published, nil
 }
 
 // visitContractVersionsAt is the streaming historical read used by projection
