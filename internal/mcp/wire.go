@@ -637,9 +637,10 @@ func buildWriteDepsForSpace(ctx context.Context, cfg space.ProjectConfig, machin
 		BaseBranch: baseBranch, Credential: cred,
 		CommitAuthorName: cfg.System, CommitAuthorEmail: cfg.System + "@a2a.local",
 	}
+	caps := h.Capabilities()
 	write := WriteDeps{
 		Funnel: funnel, MirrorDir: mirrorDir, RepoURL: ref.RepoURL, SpaceID: ref.ID, OwnSystem: cfg.System,
-		Manifest: manifest, HostCfg: hostCfg, ResolveActor: resolveActor,
+		Manifest: manifest, HostCfg: hostCfg, ResolveActor: resolveActor, HostCaps: &caps,
 		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
 	}
 	submitDeps := SubmitDeps{WriteDeps: write, StagingDir: p.Staging, Legality: legality}

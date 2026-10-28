@@ -327,8 +327,14 @@ type ContractPublishInput struct {
 	// field here is a hard decode refusal for every caller who sends it
 	// (DisallowUnknownFields), which is exactly what
 	// scripts/check-mcp-schema-decodable.sh exists to catch.
-	AllowEmptyBump bool       `json:"allow_empty_bump,omitempty"`
-	Actor          ActorInput `json:"actor,omitempty"`
+	AllowEmptyBump bool `json:"allow_empty_bump,omitempty"`
+	// Approve is the operator's approval of the publication gate (spec 04
+	// §T1): in a confirm space a publish that sits behind G1 or G2 is refused
+	// without it. Decoded here for the same reason AllowEmptyBump is — the
+	// schema property needs a field, or decodeStrict refuses every caller who
+	// sends it.
+	Approve bool       `json:"approve,omitempty"`
+	Actor   ActorInput `json:"actor,omitempty"`
 }
 
 func newContractPublishHandler(deps ContractDeps) HandlerFunc {

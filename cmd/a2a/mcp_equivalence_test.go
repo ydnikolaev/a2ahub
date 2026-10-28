@@ -56,6 +56,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -266,6 +267,15 @@ func equivCLIHostConfig(remoteURL string) cli.SubmitHostConfig {
 	}
 }
 
+// equivReviewedHostCaps is the capability declaration of a host that reviews
+// writes (the GitHub column), which is the mode the CLI constructors in this
+// suite default to. A write that judges a gate needs the host's declaration,
+// and a dependency set that names none is refused rather than read as a host
+// that does not review.
+func equivReviewedHostCaps() *host.Capabilities {
+	return &host.Capabilities{NeedsCredential: true, ReviewsWrites: true}
+}
+
 func equivMCPHostConfig(remoteURL string) mcp.SubmitHostConfig {
 	return mcp.SubmitHostConfig{
 		RemoteURL: remoteURL, Repo: host.Repo{Owner: "org", Name: "space"},
@@ -464,6 +474,11 @@ func assertRequestsEquivalent(t *testing.T, verb string, cliReq, mcpReq space.Su
 	}
 	if (cliReq.PRBody == "") != (mcpReq.PRBody == "") {
 		t.Fatalf("%s: PRBody (advisory gate marker) presence mismatch: CLI=%q MCP=%q", verb, cliReq.PRBody, mcpReq.PRBody)
+	}
+	// Spec 04 §T1 row 89: the approved-gates list is part of the write, so
+	// the two surfaces must hand the funnel the same one.
+	if !slices.Equal(cliReq.ApprovedGates, mcpReq.ApprovedGates) {
+		t.Fatalf("%s: ApprovedGates mismatch: CLI=%v MCP=%v", verb, cliReq.ApprovedGates, mcpReq.ApprovedGates)
 	}
 }
 
@@ -906,7 +921,7 @@ func TestEquivGenericLifecycleVerbs(t *testing.T) {
 			tc.seed(t, mcpDir)
 			writeDeps := mcp.WriteDeps{
 				Funnel: mcpFunnel, MirrorDir: mcpDir, SpaceID: "fixture-space", OwnSystem: tc.ownSystem,
-				Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""),
+				Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""), HostCaps: equivReviewedHostCaps(),
 				ResolveActor: equivMCPActorResolver(actorKindFor(tc.verb), actorNameFor(tc.verb)),
 				Now:          time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
 			}
@@ -1760,7 +1775,7 @@ func TestEquivContractPublish(t *testing.T) {
 	stageExtraSchema(t, mcpStaging)
 	writeDeps := mcp.WriteDeps{
 		Funnel: mcpFunnel, MirrorDir: mcpDir, SpaceID: "fixture-space", OwnSystem: "axon",
-		Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""), ResolveActor: equivMCPActorResolver("agent", "bot"),
+		Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""), HostCaps: equivReviewedHostCaps(), ResolveActor: equivMCPActorResolver("agent", "bot"),
 		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
 	}
 	mcpPublication := &equivContractPublicationState{}
@@ -1836,7 +1851,7 @@ func TestEquivContractPublishRefusesBreakingMinorOnBothSurfaces(t *testing.T) {
 	stageBreaking(t, mcpStaging)
 	writeDeps := mcp.WriteDeps{
 		Funnel: mcpFunnel, MirrorDir: mcpDir, SpaceID: "fixture-space", OwnSystem: "axon",
-		Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""), ResolveActor: equivMCPActorResolver("agent", "bot"),
+		Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""), HostCaps: equivReviewedHostCaps(), ResolveActor: equivMCPActorResolver("agent", "bot"),
 		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
 	}
 	registry := mcp.BuildRegistryWithContractOperations(nil, writeDeps, mcpStaging, nil, mcp.NewDeps{}, mcp.ContractToolOperations{
@@ -1908,7 +1923,7 @@ func TestIT09P6FailureCodeParity(t *testing.T) {
 				t.Fatalf("CLI exit=%d want 1; stderr=%s", got, cliErr)
 			}
 
-			registry := mcp.BuildRegistryWithContractOperations(nil, mcp.WriteDeps{}, "", nil, mcp.NewDeps{}, mcp.ContractToolOperations{
+			registry := mcp.BuildRegistryWithContractOperations(nil, mcp.WriteDeps{HostCaps: equivReviewedHostCaps()}, "", nil, mcp.NewDeps{}, mcp.ContractToolOperations{
 				Publication: equivMCPContractPublication{state: mcpPublication},
 				Materialize: equivMCPContractMaterialize{err: mcpMaterializeErr},
 				Check:       equivMCPContractCheck{err: mcpCheckErr},
@@ -3023,4 +3038,282 @@ func TestMCPEquivalenceExpressDataVerbs(t *testing.T) {
 			}
 		}
 	})
+}
+
+// --- spec 04 gate approval parity (AC14) -----------------------------------
+
+// gateParityCase is one (host, manifest, input) point both surfaces are driven
+// through. wantExit is the CLI's exit code; the MCP surface has no exit code,
+// so it must refuse exactly when the CLI does not exit 0.
+type gateParityCase struct {
+	name      string
+	caps      host.Capabilities
+	gates     any
+	approve   bool
+	wantExit  int
+	wantFound string
+	wantGates []string
+}
+
+func gateParityCases() []gateParityCase {
+	local := host.Capabilities{ReviewsWrites: false}
+	reviewed := host.Capabilities{NeedsCredential: true, ReviewsWrites: true}
+	return []gateParityCase{
+		{name: "confirm without approve", caps: local, wantExit: 1, wantFound: "POL-029: %s requires --approve in a confirm space"},
+		{name: "confirm with approve", caps: local, approve: true, wantGates: []string{"%s"}},
+		{name: "autonomous", caps: local, gates: "autonomous"},
+		{name: "autonomous with approve", caps: local, gates: "autonomous", approve: true},
+		{name: "reviewed host", caps: reviewed},
+		{name: "reviewed host with approve", caps: reviewed, approve: true, wantExit: 2,
+			wantFound: "--approve has no effect here: this space's host reviews gated writes in a pull request"},
+	}
+}
+
+// refusalFounds reduces a refusal's text, from either surface, to its "found"
+// parts: the lines are "<verb>: <found> — <next step>", and the next step is
+// the one place the surfaces name their own input (`--approve` or `approve`).
+func refusalFounds(text string) []string {
+	var founds []string
+	for _, line := range strings.Split(strings.TrimSpace(text), "\n") {
+		found, _, _ := strings.Cut(line, " — ")
+		founds = append(founds, found)
+	}
+	return founds
+}
+
+// TestEquivGateApprovalLifecycleParity is spec 04 §T1 rows 52, 89 and 146 and
+// §8 AC14 for approve and reject: for every host and manifest, the CLI and the
+// MCP tool refuse together or write together, with the same found line and the
+// same approved-gates list on the request the funnel receives.
+func TestEquivGateApprovalLifecycleParity(t *testing.T) {
+	t.Parallel()
+	for _, verb := range []string{"approve", "reject"} {
+		for _, tc := range gateParityCases() {
+			t.Run(verb+"/"+tc.name, func(t *testing.T) {
+				t.Parallel()
+				const id = "XD-axon-20260721-g401"
+				seed := func(t *testing.T, dir string) {
+					equivWriteDecision(t, dir, id, []string{"beta"})
+					equivWriteEvent(t, dir, "axon", 0, id, "propose", "axon")
+				}
+				manifest := equivManifest()
+				manifest.Gates = tc.gates
+				cliArgs := []string{id}
+				mcpInput := mcp.LifecycleInput{IDs: []string{id}, Approve: tc.approve}
+				if verb == "reject" {
+					cliArgs = []string{"--reason", "scope creep", id}
+					mcpInput.Reason = "scope creep"
+				}
+				if tc.approve {
+					cliArgs = append([]string{"--approve"}, cliArgs...)
+				}
+
+				cliDir, cliFunnel, _ := newEquivMirror(t, "beta")
+				seed(t, cliDir)
+				var cmd *cli.LifecycleCommand
+				if verb == "approve" {
+					cmd = cli.NewApproveCommand(cliFunnel, cliDir, "fixture-space", "beta", manifest, equivCLIHostConfig(""), equivCLIActorResolver("human", "owner"))
+				} else {
+					cmd = cli.NewRejectCommand(cliFunnel, cliDir, "fixture-space", "beta", manifest, equivCLIHostConfig(""), equivCLIActorResolver("human", "owner"))
+				}
+				cmd.SetHostCapabilities(tc.caps)
+				stdio, _, cliErr := equivIO()
+				if got := cmd.Run(t.Context(), cliArgs, stdio); got != tc.wantExit {
+					t.Fatalf("CLI exit = %d, want %d; stderr=%s", got, tc.wantExit, cliErr)
+				}
+
+				mcpDir, mcpFunnel, _ := newEquivMirror(t, "beta")
+				seed(t, mcpDir)
+				caps := tc.caps
+				registry := mcp.BuildRegistry(nil, mcp.WriteDeps{
+					Funnel: mcpFunnel, MirrorDir: mcpDir, SpaceID: "fixture-space", OwnSystem: "beta",
+					Manifest: manifest, HostCfg: equivMCPHostConfig(""), HostCaps: &caps,
+					ResolveActor: equivMCPActorResolver("human", "owner"),
+					Now:          time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
+				}, "", nil, mcp.NewDeps{})
+				spec, ok := registry.Get("a2a_lifecycle")
+				if !ok {
+					t.Fatal("a2a_lifecycle is not registered")
+				}
+				raw, err := marshalWithAction(verb, mcpInput)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, _, mcpErr := spec.Handler(t.Context(), raw)
+
+				if tc.wantExit != 0 {
+					if mcpErr == nil {
+						t.Fatalf("MCP wrote where the CLI exited %d", tc.wantExit)
+					}
+					want := tc.wantFound
+					if strings.Contains(want, "%s") {
+						want = fmt.Sprintf(want, "G3")
+					}
+					cliFounds, mcpFounds := refusalFounds(cliErr.String()), refusalFounds(mcpErr.Error())
+					if len(cliFounds) != 1 || len(mcpFounds) != 1 {
+						t.Fatalf("want one refusal line per surface; CLI=%q MCP=%q", cliFounds, mcpFounds)
+					}
+					if cliFounds[0] != verb+": "+want || mcpFounds[0] != cliFounds[0] {
+						t.Fatalf("refusal found parts differ:\nCLI: %s\nMCP: %s\nwant %s: %s", cliFounds[0], mcpFounds[0], verb, want)
+					}
+					if len(cliFunnel.calls) != 0 || len(mcpFunnel.calls) != 0 {
+						t.Fatalf("a refusal reached the funnel: CLI=%d MCP=%d", len(cliFunnel.calls), len(mcpFunnel.calls))
+					}
+					return
+				}
+				if mcpErr != nil {
+					t.Fatalf("MCP refused where the CLI wrote: %v", mcpErr)
+				}
+				if len(cliFunnel.calls) != 1 || len(mcpFunnel.calls) != 1 {
+					t.Fatalf("funnel calls: CLI=%d MCP=%d, want 1 each", len(cliFunnel.calls), len(mcpFunnel.calls))
+				}
+				assertRequestsEquivalent(t, verb+"/"+tc.name, cliFunnel.calls[0], mcpFunnel.calls[0])
+				want := make([]string, 0, len(tc.wantGates))
+				for _, g := range tc.wantGates {
+					want = append(want, fmt.Sprintf(g, "G3"))
+				}
+				if !slices.Equal(mcpFunnel.calls[0].ApprovedGates, want) {
+					t.Fatalf("ApprovedGates = %v, want %v", mcpFunnel.calls[0].ApprovedGates, want)
+				}
+			})
+		}
+	}
+}
+
+// equivGatedPublicationState is a publication double both surfaces drive: its
+// plan sits behind gate, and it records how often each seam was reached and
+// which approved-gates list the publish carried.
+type equivGatedPublicationState struct {
+	gate      contract.PublicationGate
+	preflight int
+	publishes int
+	approved  []string
+}
+
+func (s *equivGatedPublicationState) result(id, version string) space.ContractPublicationResult {
+	return space.ContractPublicationResult{
+		Status: space.ContractPublicationPlanned,
+		Plan:   contract.PublicationPlan{Contract: id, TargetVersion: version, PlanDigest: "sha256:" + strings.Repeat("a", 64), Gate: s.gate},
+	}
+}
+
+type equivCLIGatedPublication struct{ state *equivGatedPublicationState }
+
+func (a equivCLIGatedPublication) Preflight(_ context.Context, r cli.ContractPublicationRequest) (space.ContractPublicationResult, error) {
+	a.state.preflight++
+	return a.state.result(r.ID, r.Version), nil
+}
+
+func (a equivCLIGatedPublication) Publish(_ context.Context, r cli.ContractPublicationRequest) (space.ContractPublicationResult, error) {
+	a.state.publishes++
+	a.state.approved = r.ApprovedGates
+	return a.state.result(r.ID, r.Version), nil
+}
+
+type equivMCPGatedPublication struct{ state *equivGatedPublicationState }
+
+func (a equivMCPGatedPublication) Preflight(_ context.Context, r mcp.ContractPublicationRequest) (space.ContractPublicationResult, error) {
+	a.state.preflight++
+	return a.state.result(r.ID, r.Version), nil
+}
+
+func (a equivMCPGatedPublication) Publish(_ context.Context, r mcp.ContractPublicationRequest) (space.ContractPublicationResult, error) {
+	a.state.publishes++
+	a.state.approved = r.ApprovedGates
+	return a.state.result(r.ID, r.Version), nil
+}
+
+// TestEquivGateApprovalContractPublishParity is the same proof for contract
+// publish, for each gate the planner can put a publication behind: both
+// surfaces ask the planner (a preflight) only in a confirm space, refuse with
+// the same found line, and hand the publication seam the same approved list.
+func TestEquivGateApprovalContractPublishParity(t *testing.T) {
+	t.Parallel()
+	const id = "XC-axon-widget"
+	for _, gate := range []contract.PublicationGate{contract.GateG1, contract.GateG2, contract.GateNone} {
+		for _, tc := range gateParityCases() {
+			t.Run(string(gate)+"/"+tc.name, func(t *testing.T) {
+				t.Parallel()
+				manifest := equivManifest()
+				manifest.Gates = tc.gates
+				gated := gate != contract.GateNone
+				// A refusal needs a gate in force: G-none publishes in a confirm
+				// space, so only a reviewed host with approve still refuses.
+				wantExit := tc.wantExit
+				if wantExit == 1 && !gated {
+					wantExit = 0
+				}
+				confirm := !tc.caps.ReviewsWrites && tc.gates != "autonomous"
+
+				cliState, mcpState := &equivGatedPublicationState{gate: gate}, &equivGatedPublicationState{gate: gate}
+				cliCommand := cli.NewContractCommand(cli.NewNewCommand(t.TempDir(), "axon", equivCLIActorResolver("agent", "bot"), nil), &spyFunnel{}, t.TempDir(), "fixture-space", "axon", manifest, equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
+				cliCommand.SetP6Operations(equivCLIGatedPublication{state: cliState}, nil, nil)
+				cliCommand.SetHostCapabilities(tc.caps)
+				cliArgs := []string{"publish", "--version", "1.0.0", id}
+				if tc.approve {
+					cliArgs = []string{"publish", "--approve", "--version", "1.0.0", id}
+				}
+				stdio, _, cliErr := equivIO()
+				if got := cliCommand.Run(t.Context(), cliArgs, stdio); got != wantExit {
+					t.Fatalf("CLI exit = %d, want %d; stderr=%s", got, wantExit, cliErr)
+				}
+
+				caps := tc.caps
+				registry := mcp.BuildRegistryWithContractOperations(nil, mcp.WriteDeps{Manifest: manifest, HostCaps: &caps}, "", nil, mcp.NewDeps{}, mcp.ContractToolOperations{
+					Publication: equivMCPGatedPublication{state: mcpState}, Materialize: equivMCPContractMaterialize{},
+					Check: equivMCPContractCheck{}, Inspection: equivMCPContractInspection{},
+				})
+				spec, ok := registry.Get("a2a_contract")
+				if !ok {
+					t.Fatal("a2a_contract is not registered")
+				}
+				raw, err := marshalWithAction("publish", mcp.ContractPublishInput{ID: id, Version: "1.0.0", Approve: tc.approve})
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, _, mcpErr := spec.Handler(t.Context(), raw)
+
+				if cliState.preflight != mcpState.preflight || cliState.publishes != mcpState.publishes {
+					t.Fatalf("seam calls differ: CLI preflight=%d publish=%d, MCP preflight=%d publish=%d",
+						cliState.preflight, cliState.publishes, mcpState.preflight, mcpState.publishes)
+				}
+				if (cliState.preflight == 1) != confirm {
+					t.Fatalf("preflight calls = %d, want one exactly in a confirm space (confirm=%t)", cliState.preflight, confirm)
+				}
+				if wantExit != 0 {
+					if mcpErr == nil {
+						t.Fatalf("MCP published where the CLI exited %d", wantExit)
+					}
+					want := tc.wantFound
+					if strings.Contains(want, "%s") {
+						want = fmt.Sprintf(want, string(gate))
+					}
+					cliFounds, mcpFounds := refusalFounds(cliErr.String()), refusalFounds(mcpErr.Error())
+					if len(cliFounds) != 1 || len(mcpFounds) != 1 || cliFounds[0] != "contract publish: "+want || mcpFounds[0] != cliFounds[0] {
+						t.Fatalf("refusal found parts differ:\nCLI: %q\nMCP: %q\nwant contract publish: %s", cliFounds, mcpFounds, want)
+					}
+					if cliState.publishes != 0 {
+						t.Fatalf("a refused publish still published %d time(s)", cliState.publishes)
+					}
+					return
+				}
+				if mcpErr != nil {
+					t.Fatalf("MCP refused where the CLI published: %v", mcpErr)
+				}
+				if cliState.publishes != 1 {
+					t.Fatalf("publishes = %d, want 1", cliState.publishes)
+				}
+				if !slices.Equal(cliState.approved, mcpState.approved) {
+					t.Fatalf("approved gates differ: CLI=%v MCP=%v", cliState.approved, mcpState.approved)
+				}
+				var want []string
+				if tc.approve && confirm && gated {
+					want = []string{string(gate)}
+				}
+				if !slices.Equal(mcpState.approved, want) {
+					t.Fatalf("approved gates = %v, want %v", mcpState.approved, want)
+				}
+			})
+		}
+	}
 }

@@ -783,6 +783,7 @@ func (a mcpContractP6Adapter) Publish(ctx context.Context, request mcp.ContractP
 		id: request.ID, version: request.Version, bump: request.Bump, staging: request.Staging, expectPlan: request.ExpectPlan,
 		allowEmptyBump: request.AllowEmptyBump,
 		actorKind:      request.Actor.Kind, actorName: request.Actor.Name, actorModel: request.Actor.Model,
+		approvedGates: request.ApprovedGates,
 	})
 }
 

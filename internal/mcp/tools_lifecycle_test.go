@@ -1901,3 +1901,152 @@ func TestRespondHandlerRefusesUnlandedDeliversThroughTheRealFunnel(t *testing.T)
 		t.Fatalf("expected zero pushes/opens on a refused response, got %d/%d", len(fakeHost.Pushes), len(fakeHost.Opens))
 	}
 }
+
+// gateRow returns the LifecycleVerbTable row for verb.
+func gateRow(t *testing.T, verb string) lifecycleVerbSpec {
+	t.Helper()
+	for _, row := range LifecycleVerbTable {
+		if row.Verb == verb {
+			return row
+		}
+	}
+	t.Fatalf("no lifecycle row for %q", verb)
+	return lifecycleVerbSpec{}
+}
+
+// gateDeps is the write dependency set of a space whose host declares caps and
+// whose manifest carries gates, over a mirror holding one proposed decision the
+// acting system (beta, a human) may approve or reject.
+func gateDeps(t *testing.T, caps *host.Capabilities, gates any) (WriteDeps, *fakeFunnel, string) {
+	t.Helper()
+	mirrorDir := t.TempDir()
+	const id = "XD-axon-20260721-g301"
+	writeDecisionArtifactMCP(t, mirrorDir, id, "axon", []string{"beta"})
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, id, "propose", "axon")
+	fake := &fakeFunnel{}
+	deps := testWriteDeps(mirrorDir, fake)
+	deps.ResolveActor = fixedActorResolver("human", "owner")
+	deps.HostCaps = caps
+	deps.Manifest.Gates = gates
+	return deps, fake, id
+}
+
+// TestLifecycleGateApprovalByMode is spec 04 §T1 (row 52, 89, 146) and AC14's
+// unit tier for a2a_lifecycle approve and reject: the effective mode chosen
+// from the opened host's declared ReviewsWrites and the manifest's gates
+// decides whether a G3 write is refused, recorded, or left alone; the refusal
+// is the core's own POL-029 line, and the approved list is set only when the
+// caller approved and only in a confirm space.
+func TestLifecycleGateApprovalByMode(t *testing.T) {
+	t.Parallel()
+	local := &host.Capabilities{ReviewsWrites: false}
+	reviewed := &host.Capabilities{ReviewsWrites: true}
+	const refusedG3 = "POL-029: G3 requires --approve in a confirm space"
+	const noEffect = "--approve has no effect here: this space's host reviews gated writes in a pull request"
+
+	cases := []struct {
+		name        string
+		verb        string
+		caps        *host.Capabilities
+		gates       any
+		approve     bool
+		wantErr     string
+		wantGates   []string
+		wantFunnels int
+	}{
+		{name: "approve in a confirm space without approve is refused", verb: "approve", caps: local, wantErr: refusedG3},
+		{name: "reject in a confirm space without approve is refused", verb: "reject", caps: local, wantErr: refusedG3},
+		{name: "an explicit confirm is refused too", verb: "approve", caps: local, gates: "confirm", wantErr: refusedG3},
+		{name: "an unknown gates value fails closed to confirm", verb: "approve", caps: local, gates: "maybe", wantErr: refusedG3},
+		{name: "approve with approve records G3", verb: "approve", caps: local, approve: true, wantGates: []string{"G3"}, wantFunnels: 1},
+		{name: "reject with approve records G3", verb: "reject", caps: local, approve: true, wantGates: []string{"G3"}, wantFunnels: 1},
+		{name: "autonomous lets the write through unrecorded", verb: "approve", caps: local, gates: "autonomous", wantFunnels: 1},
+		{name: "autonomous with approve still records nothing", verb: "approve", caps: local, gates: "autonomous", approve: true, wantFunnels: 1},
+		{name: "a reviewed host needs no approve", verb: "approve", caps: reviewed, wantFunnels: 1},
+		{name: "a reviewed host ignores autonomous", verb: "approve", caps: reviewed, gates: "autonomous", wantFunnels: 1},
+		{name: "approve on a reviewed host is refused", verb: "approve", caps: reviewed, approve: true, wantErr: noEffect},
+		{name: "approve on a reviewed host is refused for reject too", verb: "reject", caps: reviewed, approve: true, wantErr: noEffect},
+		{name: "a session that never opened the host cannot judge", verb: "approve", caps: nil, wantErr: "gate mode cannot be judged"},
+		{name: "approve is refused on a host nobody declared", verb: "approve", caps: nil, approve: true, wantErr: "gate mode cannot be judged"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			deps, fake, id := gateDeps(t, tc.caps, tc.gates)
+			in := LifecycleInput{IDs: []string{id}, Approve: tc.approve}
+			if tc.verb == "reject" {
+				in.Reason = "scope creep"
+			}
+			args, _ := json.Marshal(in)
+			_, _, err := newLifecycleHandler(gateRow(t, tc.verb), deps)(context.Background(), args)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("error = %v, want one containing %q", err, tc.wantErr)
+				}
+			} else if err != nil {
+				t.Fatalf("handler returned error: %v", err)
+			}
+			if len(fake.calls) != tc.wantFunnels {
+				t.Fatalf("funnel calls = %d, want %d (a refusal prepares nothing)", len(fake.calls), tc.wantFunnels)
+			}
+			if tc.wantFunnels == 1 && !equalStrings(fake.calls[0].ApprovedGates, tc.wantGates) {
+				t.Fatalf("ApprovedGates = %v, want %v", fake.calls[0].ApprovedGates, tc.wantGates)
+			}
+		})
+	}
+}
+
+// TestLifecycleGateRefusalIsThreePartAndNamesTheGate pins the whole refusal
+// line, not a substring: "<verb>: <found> — <next step>", with the found part
+// the core's POL-029 message and the next step naming the input and the gate.
+func TestLifecycleGateRefusalIsThreePartAndNamesTheGate(t *testing.T) {
+	t.Parallel()
+	deps, fake, id := gateDeps(t, &host.Capabilities{}, nil)
+	args, _ := json.Marshal(LifecycleInput{IDs: []string{id}})
+	_, _, err := newLifecycleHandler(gateRow(t, "approve"), deps)(context.Background(), args)
+	want := "approve: POL-029: G3 requires --approve in a confirm space — re-run with approve: true if you, the operator, approve this write (G3)"
+	if err == nil || err.Error() != want {
+		t.Fatalf("refusal = %v\nwant     %s", err, want)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("a refused approve reached the funnel %d time(s)", len(fake.calls))
+	}
+}
+
+// TestLifecycleApproveInputIsRefusedOnARowWithNoHumanGate: approve is honoured
+// only where fold.HumanGate names a gate, and refused by name everywhere else,
+// the way verdicts is, because an input a verb cannot act on would read as an
+// approval given.
+func TestLifecycleApproveInputIsRefusedOnARowWithNoHumanGate(t *testing.T) {
+	t.Parallel()
+	for _, row := range LifecycleVerbTable {
+		if fold.HumanGate(row.Transition) != "" {
+			continue
+		}
+		t.Run(row.Verb, func(t *testing.T) {
+			t.Parallel()
+			fake := &fakeFunnel{}
+			deps := testWriteDeps(t.TempDir(), fake)
+			deps.HostCaps = &host.Capabilities{}
+			_, _, err := newLifecycleHandler(row, deps)(context.Background(), json.RawMessage(`{"ids":["XQ-axon-20260721-g302"],"approve":true}`))
+			if err == nil || !strings.Contains(err.Error(), row.Verb+": does not support approve") {
+				t.Fatalf("error = %v, want a refusal naming %s and approve", err, row.Verb)
+			}
+			if len(fake.calls) != 0 {
+				t.Fatalf("funnel calls = %d, want 0", len(fake.calls))
+			}
+		})
+	}
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}

@@ -40,7 +40,11 @@
 package e2e
 
 import (
+	"bytes"
 	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -895,6 +899,175 @@ func TestCrossSurfaceOperationalItems(t *testing.T) {
 		}
 		if len(outItem.OperationalItems) != 0 {
 			t.Errorf("outbox: non-contract %q operational_items = %+v, want none", nonContractID, outItem.OperationalItems)
+		}
+	})
+}
+
+// --- AC14: gate approval is one rule on both write surfaces ----------------
+//
+// Spec 04-gates-and-flow-policy.md §T1 (rows 52, 89, 146) and §8 AC14: the CLI
+// and the MCP tool refuse a gated write with the same found line, an approval
+// is recorded only when it was given and only for a gate the surface computed,
+// and `approve` on a host that reviews writes in a pull request is refused by
+// both. Driven through the BUILT binary on both surfaces; the MCP half speaks
+// stdio JSON-RPC to `a2a mcp` the way a real client does.
+
+// csRunMCPTool execs `a2a mcp` in dir with the credential-free environment
+// credentialFreeRun establishes (a local space needs no token and the API root
+// is a closed port, so a write that wrongly reaches for GitHub fails loudly),
+// sends ONE tools/call over stdio and returns the decoded result. It is local
+// because ac5RunMCPTool dereferences a fake GitHub that a local space has not
+// got; the wire types are that file's.
+func csRunMCPTool(t *testing.T, dir, home, toolName string, arguments any) ac5ToolsCallResult {
+	t.Helper()
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatalf("git is required: %v", err)
+	}
+	bin := t.TempDir()
+	if err := os.Symlink(gitPath, filepath.Join(bin, "git")); err != nil {
+		t.Fatal(err)
+	}
+	var env []string
+	for _, kv := range os.Environ() {
+		name, _, _ := strings.Cut(kv, "=")
+		if strings.HasPrefix(name, "A2A_TOKEN_") || name == "GH_TOKEN" || name == "GITHUB_TOKEN" ||
+			name == "PATH" || name == "HOME" || name == "A2A_GITHUB_API" {
+			continue
+		}
+		env = append(env, kv)
+	}
+	env = append(env, "HOME="+home, "PATH="+bin, "A2A_GITHUB_API=http://127.0.0.1:1")
+
+	argsRaw, err := json.Marshal(arguments)
+	if err != nil {
+		t.Fatalf("marshal mcp tool arguments: %v", err)
+	}
+	reqLine, err := json.Marshal(ac5RPCRequest{
+		JSONRPC: "2.0", ID: 1, Method: "tools/call",
+		Params: ac5ToolsCallParams{Name: toolName, Arguments: argsRaw},
+	})
+	if err != nil {
+		t.Fatalf("marshal mcp request: %v", err)
+	}
+	cmd := exec.Command(filepath.Join(binDir, "a2a"), "mcp")
+	cmd.Dir = dir
+	cmd.Env = env
+	cmd.Stdin = bytes.NewReader(append(reqLine, '\n'))
+	var out, errBuf bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errBuf
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("a2a mcp: %v\nstdout=%s\nstderr=%s", err, out.String(), errBuf.String())
+	}
+	var resp ac5RPCResponse
+	if err := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &resp); err != nil {
+		t.Fatalf("decode mcp response: %v\nstdout=%s\nstderr=%s", err, out.String(), errBuf.String())
+	}
+	if resp.Error != nil {
+		t.Fatalf("mcp tools/call %s: JSON-RPC error %d: %s\nstderr=%s", toolName, resp.Error.Code, resp.Error.Message, errBuf.String())
+	}
+	if resp.Result == nil {
+		t.Fatalf("mcp tools/call %s: response carries no result\nstdout=%s", toolName, out.String())
+	}
+	return *resp.Result
+}
+
+// csRefusalFound is the "found" part of a three-part refusal line
+// ("<found> — <next step>"): the part both surfaces must say identically. The
+// next step is the one place each surface names its own input.
+func csRefusalFound(text string) string {
+	found, _, _ := strings.Cut(strings.TrimSpace(text), " — ")
+	return found
+}
+
+func TestCrossSurfaceGateApprovalParity(t *testing.T) {
+	t.Parallel()
+
+	const g1Found = "contract publish: POL-029: G1 requires --approve in a confirm space"
+	const reviewedFound = "contract publish: --approve has no effect here: this space's host reviews gated writes in a pull request"
+
+	t.Run("confirm space refuses an unapproved G1 publish on both surfaces", func(t *testing.T) {
+		t.Parallel()
+		g := newLocalGateRig(t, "confirm")
+		id, staging := g.stageAndSubmitContract()
+		before := g.refsSnapshot()
+
+		_, stderr, code := g.free("contract", "publish", "--version", "1.0.0", "--staging", staging, id)
+		if code != 1 {
+			t.Fatalf("CLI publish exit = %d, want 1\nstderr: %s", code, stderr)
+		}
+		cliFound := csRefusalFound(stderr)
+		if cliFound != g1Found {
+			t.Fatalf("CLI refusal found = %q, want %q", cliFound, g1Found)
+		}
+
+		result := csRunMCPTool(t, g.projectDir, g.homeDir, "a2a_contract", map[string]any{
+			"action": "publish", "id": id, "version": "1.0.0", "staging": staging,
+		})
+		if mcpFound := csRefusalFound(ac5AssertMCPToolFailed(t, "a2a_contract", result)); mcpFound != cliFound {
+			t.Fatalf("MCP refusal found = %q, want the CLI's %q", mcpFound, cliFound)
+		}
+		if after := g.refsSnapshot(); after != before {
+			t.Fatalf("a refused publish moved or created refs:\nbefore:\n%s\nafter:\n%s", before, after)
+		}
+	})
+
+	t.Run("confirm space lands an approved G1 publish through the MCP tool and records it", func(t *testing.T) {
+		t.Parallel()
+		g := newLocalGateRig(t, "confirm")
+		id, staging := g.stageAndSubmitContract()
+
+		result := csRunMCPTool(t, g.projectDir, g.homeDir, "a2a_contract", map[string]any{
+			"action": "publish", "id": id, "version": "1.0.0", "staging": staging, "approve": true,
+		})
+		ac5AssertMCPToolSucceeded(t, "a2a_contract", result)
+		if got := g.mainHeadMessage(); !strings.Contains(got, "A2A-Approved-Gates: G1") {
+			t.Fatalf("the land merge commit on main does not record the MCP approval:\n%s", got)
+		}
+	})
+
+	t.Run("autonomous space lands an unapproved publish with no recorded approval", func(t *testing.T) {
+		t.Parallel()
+		g := newLocalGateRig(t, "autonomous")
+		id, staging := g.stageAndSubmitContract()
+
+		result := csRunMCPTool(t, g.projectDir, g.homeDir, "a2a_contract", map[string]any{
+			"action": "publish", "id": id, "version": "1.0.0", "staging": staging,
+		})
+		ac5AssertMCPToolSucceeded(t, "a2a_contract", result)
+		got := g.mainHeadMessage()
+		if !strings.Contains(got, "Publish "+id) {
+			t.Fatalf("main's tip is not the publish's land merge, so the trailer check below judges nothing:\n%s", got)
+		}
+		if strings.Contains(got, "A2A-Approved-Gates") {
+			t.Fatalf("an autonomous MCP publish recorded an approval nobody gave:\n%s", got)
+		}
+	})
+
+	t.Run("a host that reviews writes refuses approve on both surfaces", func(t *testing.T) {
+		t.Parallel()
+		r := newHostRig(t, "axon", "axon", "beta")
+		r.mustRun("sync")
+		const id = "XC-axon-export"
+		prsBefore := len(r.gh.PRs())
+
+		stdout, stderr, code := r.run("contract", "publish", "--approve", "--version", "1.0.0", id)
+		if code != 2 {
+			t.Fatalf("CLI publish --approve exit = %d, want 2\nstdout: %s\nstderr: %s", code, stdout, stderr)
+		}
+		cliFound := csRefusalFound(stderr)
+		if cliFound != reviewedFound {
+			t.Fatalf("CLI refusal found = %q, want %q", cliFound, reviewedFound)
+		}
+
+		result := r.ac5RunMCPTool("a2a_contract", map[string]any{
+			"action": "publish", "id": id, "version": "1.0.0", "approve": true,
+		})
+		if mcpFound := csRefusalFound(ac5AssertMCPToolFailed(t, "a2a_contract", result)); mcpFound != cliFound {
+			t.Fatalf("MCP refusal found = %q, want the CLI's %q", mcpFound, cliFound)
+		}
+		if got := len(r.gh.PRs()); got != prsBefore {
+			t.Fatalf("a refused approve opened %d pull request(s) on the host", got-prsBefore)
 		}
 	})
 }

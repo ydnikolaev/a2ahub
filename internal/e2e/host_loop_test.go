@@ -601,10 +601,10 @@ type localGateRig struct {
 // newLocalGateRig creates the space, connects and joins it as "axon", and
 // remembers the gates setting the test is about. The space is created
 // autonomous whatever that setting is, and stageAndSubmitContract moves it to
-// the wanted mode once the contract is in: a confirm space refuses the SUBMIT
-// of a new contract descriptor itself (the land check counts a descriptor the
-// tip lacks as G1, and `submit` has no --approve), so the confirm cases could
-// not otherwise get a contract into the space to publish.
+// the wanted mode once the contract is in. Since G1 became the first PUBLISH,
+// a confirm space also accepts the submit of a new 0.0.0 descriptor; the rig
+// keeps the autonomous start so the join and the submit stay out of the
+// gate cases it is about.
 func newLocalGateRig(t *testing.T, gates string) *localGateRig {
 	t.Helper()
 	r := &hostRig{

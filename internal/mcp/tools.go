@@ -317,6 +317,7 @@ func BuildRegistryWithOperations(store *cache.Store, write WriteDeps, submit Sub
 			"findings":    {"string", "verify-fail's own findings narrative"},
 			"actor":       {"object", "the identity performing this transition, when it differs from this session's default"},
 			"verdicts":    {"array", "close/verify-pass's own per-acceptance-criterion verdicts (event/v2 floor-gated)"},
+			"approve":     {"boolean", "approve/reject only: approve this G3-gated write (needed in a confirm space on a host that does not review writes; refused on a host that does)"},
 		}),
 		Handler: newLifecycleDispatch(write),
 	})
@@ -441,6 +442,10 @@ func registerContractTool(r *Registry, newDeps NewDeps, contractDeps ContractDep
 			// (this package) and ContractPublishInput (tools_contract.go);
 			// both carry the matching field.
 			"allow_empty_bump": {"boolean", "preflight/publish only: acknowledge and proceed past a bump whose mutations touch no normative artifact"},
+			// approve: publish only (ContractPublishInput carries the field;
+			// ContractPreflightInput deliberately does not, so a preflight that
+			// sends it is refused rather than read as an approval given).
+			"approve": {"boolean", "publish only: approve the publication gate (G1 or G2) this publish sits behind; needed in a confirm space on a host that does not review writes, refused on a host that does"},
 			// generated_from_digest is DELIBERATELY ABSENT: ContractPublishInput
 			// carries the field (honoured ⊆ published is a one-directional
 			// AC, so this is not a violation) but newP6ContractPublishHandler

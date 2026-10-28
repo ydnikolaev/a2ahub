@@ -23,6 +23,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -565,6 +566,16 @@ type WriteDeps struct {
 	HostCfg      SubmitHostConfig
 	ResolveActor ActorResolver
 
+	// HostCaps is the opened host's declared capabilities for THIS space
+	// (spec 04 §T1.1: the effective gate mode is chosen from the declared
+	// ReviewsWrites, never from a host name). It is a pointer so that a
+	// dependency set that never opened a host reads as "unknown" instead of
+	// as a resolved "this host does not review writes", which would put a
+	// GitHub space into confirm mode (ADR-019). It belongs on WriteDeps, not
+	// on ContractDeps alone, because the capabilities belong to the space a
+	// write resolves to, and a multi-space session resolves one per call.
+	HostCaps *host.Capabilities
+
 	Now      func() time.Time
 	Entropy  io.Reader
 	ReadFile func(path string) ([]byte, error)
@@ -737,4 +748,76 @@ func hasWriteResult(result space.WriteResult) bool {
 		result.CommitSHA != "" || result.State != "" || result.Stage != "" ||
 		len(result.ArtifactIDs) != 0 || result.MergeMethod != "" ||
 		result.RemainingAction != "" || result.Note != "" || result.AutoMergeNote != ""
+}
+
+// errGateHostUnknown is returned when a gate has to be judged but the
+// dependency set never opened the space's host. A missing declaration is not a
+// resolved "this host does not review writes": reading it as one would put a
+// reviewed GitHub space into confirm mode, so the judgement refuses instead.
+var errGateHostUnknown = errors.New("this session never opened the space's host, so the space's gate mode cannot be judged")
+
+// gatesMode is the EFFECTIVE gate mode of the space d is bound to (spec 04
+// §T1.1): the manifest's own setting read through the opened host's declared
+// ReviewsWrites capability, never a host name.
+func (d WriteDeps) gatesMode() (contract.GatesMode, error) {
+	if d.HostCaps == nil {
+		return "", errGateHostUnknown
+	}
+	return d.Manifest.EffectiveGates(d.HostCaps.ReviewsWrites), nil
+}
+
+// gateRefusal renders a three-part refusal, "<verb>: <found> — <next step>",
+// the shape the CLI's refusal renders as well, so the found part reads the same
+// on both surfaces.
+func gateRefusal(verb, found, nextStep string) error {
+	return fmt.Errorf("%s: %s — %s", verb, found, nextStep)
+}
+
+// refuseApproveOnReviewedHost is spec 04 §T1's "any of the above on a reviewed
+// host": an approval given where the host reviews gated writes in a pull
+// request is refused, because an input that is silently ignored reads as an
+// approval given. The found part is the CLI's, word for word.
+func (d WriteDeps) refuseApproveOnReviewedHost(verb string, approve bool) error {
+	if !approve {
+		return nil
+	}
+	if d.HostCaps == nil {
+		return fmt.Errorf("%s: %w", verb, errGateHostUnknown)
+	}
+	if !d.HostCaps.ReviewsWrites {
+		return nil
+	}
+	return gateRefusal(verb,
+		"--approve has no effect here: this space's host reviews gated writes in a pull request",
+		"drop approve; the pull request's review is the gate for this write")
+}
+
+// judgeGateApproval applies validate.CheckGateApproval to one write, the same
+// core rule the CLI applies. mode is the effective mode, required the gates
+// this surface computed for the write, approve whether the caller approved. It
+// returns the gates to record on the SubmitRequest (the required gates, only
+// when approve was given in a confirm space, nil otherwise) or one refusal per
+// missing gate, built from the violation's own code and message so the words
+// are the core's.
+func judgeGateApproval(verb string, mode contract.GatesMode, required []string, approve bool) ([]string, error) {
+	var given []string
+	if approve {
+		given = required
+	}
+	if violations := validate.CheckGateApproval(mode, required, given); len(violations) > 0 {
+		refusals := make([]error, 0, len(violations))
+		for _, v := range violations {
+			refusals = append(refusals, gateRefusal(verb, v.Code+": "+v.Message,
+				"re-run with approve: true if you, the operator, approve this write ("+strings.Join(v.Subjects, ", ")+")"))
+		}
+		return nil, errors.Join(refusals...)
+	}
+	// Only a confirm space records an approval: under autonomous (and under
+	// review) nobody was asked, so the commit carries no trailer even when
+	// approve was given.
+	if !approve || mode != contract.GatesModeConfirm {
+		return nil, nil
+	}
+	canonical, _ := contract.CanonicalApprovedGates(required)
+	return canonical, nil
 }

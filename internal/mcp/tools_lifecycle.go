@@ -98,6 +98,12 @@ type LifecycleInput struct {
 	// internal/cli's structural refusal (--verdict registered on no other
 	// row's FlagSet, so Go's own flag.ContinueOnError refuses it there).
 	Verdicts []VerdictInputEntry `json:"verdicts,omitempty"`
+	// Approve is the operator's approval of a human-gated write (spec 04
+	// §T1), honoured ONLY on a row whose transition sits behind a human gate
+	// (fold.HumanGate: approve and reject, G3) — every other row refuses it by
+	// name for the same reason Verdicts is refused: an input a verb cannot act
+	// on would read as an approval given.
+	Approve bool `json:"approve,omitempty"`
 }
 
 // newLifecycleHandler builds the table-driven generic verb handler for
@@ -107,6 +113,13 @@ func newLifecycleHandler(spec lifecycleVerbSpec, deps WriteDeps) HandlerFunc {
 		var in LifecycleInput
 		if err := decodeStrict(args, &in, spec.Verb, 0); err != nil {
 			return nil, "", err
+		}
+		// approve is refused by name on a row with no human gate before any
+		// usage check, the way an unregistered flag is refused at parse time
+		// ahead of every other check.
+		humanGate := fold.HumanGate(spec.Transition)
+		if in.Approve && humanGate == "" {
+			return nil, "", fmt.Errorf("%s: does not support approve (only approve and reject sit behind a human gate)", spec.Verb)
 		}
 		if len(in.IDs) == 0 {
 			return nil, "", fmt.Errorf("%s: ids is required", spec.Verb)
@@ -136,6 +149,9 @@ func newLifecycleHandler(spec lifecycleVerbSpec, deps WriteDeps) HandlerFunc {
 		deps, err := resolveWriteSpace(deps, "", in.IDs)
 		if err != nil {
 			return nil, "", fmt.Errorf("%s: %w", spec.Verb, err)
+		}
+		if err := deps.refuseApproveOnReviewedHost(spec.Verb, in.Approve); err != nil {
+			return nil, "", err
 		}
 
 		// eventSchema/verdicts (P1, close row only): mirrors
@@ -270,8 +286,27 @@ func newLifecycleHandler(spec lifecycleVerbSpec, deps WriteDeps) HandlerFunc {
 			files = append(files, space.FileWrite{Path: layout.EventFile(now.UTC().Format("2006"), eventID.String()), Content: raw})
 		}
 
+		// The gate is judged after the legality evaluation (which prepares
+		// nothing) and before the funnel, so a refusal leaves no branch,
+		// journal entry or commit behind. required is fold.HumanGate's answer
+		// for this transition, the one table of always-gated verbs; the mode is
+		// the space's manifest read through the opened host's declared
+		// capabilities.
+		var approved []string
+		if humanGate != "" {
+			mode, merr := deps.gatesMode()
+			if merr != nil {
+				return nil, "", fmt.Errorf("%s: %w", spec.Verb, merr)
+			}
+			approved, err = judgeGateApproval(spec.Verb, mode, []string{humanGate}, in.Approve)
+			if err != nil {
+				return nil, "", err
+			}
+		}
+
 		req := deps.buildRequest(in.IDs, files, spec.Verb, spec.GateMarker)
 		req.OperationKey = operationKey
+		req.ApprovedGates = approved
 		result, err := deps.submit(ctx, req, spec.Verb, in.IDs)
 		return result, "", err
 	}

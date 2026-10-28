@@ -25,6 +25,11 @@ type ContractPublicationRequest struct {
 	// normative artifact and proceeds instead of refusing.
 	AllowEmptyBump bool
 	Actor          ActorInput
+	// ApprovedGates is the gates the operator approved with `approve`, in
+	// canonical order: set by the publish handler only when approve was given
+	// in a confirm space, and only to the gates the planner computed for this
+	// publication. The adapter carries it onto the write's SubmitRequest.
+	ApprovedGates []string
 }
 
 // ContractPublicationOperations performs publication planning and writes.
@@ -179,10 +184,43 @@ func newP6ContractPublishHandler(deps ContractDeps) HandlerFunc {
 		if in.GeneratedFromDigest != "" {
 			return nil, "", fmt.Errorf("contract publish: generated_from.source_digest is finalized by the shared publication planner")
 		}
-		result, err := deps.Publication.Publish(ctx, ContractPublicationRequest{
+		// The gate belongs to the space the publish targets, so the target is
+		// resolved BEFORE the mode is read: a multi-space session's primary
+		// WriteDeps describes the wrong space for any other target.
+		write, err := resolveWriteSpace(deps.WriteDeps, in.Space, nil)
+		if err != nil {
+			return nil, "", fmt.Errorf("contract publish: %w", err)
+		}
+		if err := write.refuseApproveOnReviewedHost("contract publish", in.Approve); err != nil {
+			return nil, "", err
+		}
+		request := ContractPublicationRequest{
 			Space: in.Space, ID: in.ID, Version: in.Version, Bump: in.Bump, Staging: in.Staging,
 			ExpectPlan: in.ExpectPlan, AllowEmptyBump: in.AllowEmptyBump, Actor: in.Actor,
-		})
+		}
+		// Only a confirm space asks anything of the operator here. A host that
+		// reviews writes and an autonomous space leave the publish exactly as
+		// it was, so the extra Preflight is paid only where its answer, the
+		// plan's gate, is the thing being judged.
+		mode, err := write.gatesMode()
+		if err != nil {
+			return nil, "", fmt.Errorf("contract publish: %w", err)
+		}
+		if mode == contract.GatesModeConfirm {
+			planned, perr := deps.Publication.Preflight(ctx, request)
+			if perr != nil {
+				return nil, "", fmt.Errorf("contract publish: %w", perr)
+			}
+			var required []string
+			if gate := planned.Plan.Gate; gate != "" && gate != contract.GateNone {
+				required = []string{string(gate)}
+			}
+			request.ApprovedGates, err = judgeGateApproval("contract publish", mode, required, in.Approve)
+			if err != nil {
+				return nil, "", err
+			}
+		}
+		result, err := deps.Publication.Publish(ctx, request)
 		if err != nil {
 			return nil, "", fmt.Errorf("contract publish: %w", err)
 		}

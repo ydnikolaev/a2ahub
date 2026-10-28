@@ -1065,3 +1065,45 @@ func TestBuildWriteDepsForSpaceSkipsTheCredentialForAHostThatNeedsNone(t *testin
 		}
 	})
 }
+
+// TestBuildWriteDepsCarriesEachSpacesOwnHostCapabilities pins spec 04 §T1.1's
+// wiring: the gate mode of a write is chosen from the declared capabilities of
+// the host the write's OWN space opened. A session over a reviewed space and a
+// local one must hand the second space its own declaration, not the primary's,
+// or a write to one would be judged under the other's mode.
+func TestBuildWriteDepsCarriesEachSpacesOwnHostCapabilities(t *testing.T) {
+	t.Parallel()
+	reviewedOrigin := mcpWireOriginOnBranch(t, "main")
+	localOrigin := mcpWireOriginOnBranch(t, "main")
+	reviewed := host.Capabilities{ReviewsWrites: true, LandsSynchronously: false}
+	local := host.Capabilities{ReviewsWrites: false, LandsSynchronously: true, OnThisMachine: true}
+	open := host.Opener(func(raw string) (host.Host, host.Repo, error) {
+		caps := reviewed
+		if raw == localOrigin {
+			caps = local
+		}
+		return host.FixedOpener(&host.FakeHost{Caps: &caps})(raw)
+	})
+
+	cfg := space.ProjectConfig{System: "beta", Spaces: []space.Ref{
+		{ID: "reviewed-space", RepoURL: reviewedOrigin},
+		{ID: "local-space", RepoURL: localOrigin},
+	}}
+	projectRoot := t.TempDir()
+	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
+	// Neither declared host needs a credential, so none is resolved.
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, space.MachineConfig{}, p, "0.0.1-test", open)
+	if err != nil {
+		t.Fatalf("buildWriteDeps: %v", err)
+	}
+	if write.HostCaps == nil || *write.HostCaps != reviewed {
+		t.Fatalf("primary space HostCaps = %+v, want %+v", write.HostCaps, reviewed)
+	}
+	other, err := write.ResolveSpace("local-space")
+	if err != nil {
+		t.Fatalf("ResolveSpace(local-space): %v", err)
+	}
+	if other.HostCaps == nil || *other.HostCaps != local {
+		t.Fatalf("second space HostCaps = %+v, want %+v", other.HostCaps, local)
+	}
+}
