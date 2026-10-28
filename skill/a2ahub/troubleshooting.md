@@ -20,8 +20,9 @@
 ## What `a2a doctor` does
 
 `a2a doctor` runs a fixed set of basic health checks for the local project and
-its connected spaces, printing one line per check. It exits `0` only if every
-check passes.
+its connected spaces, printing one line per check. It exits `0` unless a check
+FAILs: a check that could not tell prints `UNVERIFIED` (below), which is
+advisory and never changes the exit code.
 
 **Output shape.** One line per check:
 
@@ -49,18 +50,19 @@ notify-delivery: PASS · no a2a-notify run recorded yet for this space
 local land guard: PASS
 local history shape: PASS
 local space writable: PASS
+space policy: PASS · getvisa: gates review, flow full
 repository visibility [getvisa]: PASS: no observed mismatch
 ```
 
-All twenty-four fixed checks, in the order the binary prints them, followed by
+All twenty-five fixed checks, in the order the binary prints them, followed by
 one `repository visibility` row per connected space (this project has one,
-`getvisa`) — that row is not one of the fixed twenty-four and always prints
+`getvisa`) — that row is not one of the fixed twenty-five and always prints
 LAST, after every one of them. **A `PASS` carrying a note is a pass** — do
 not report it as a problem.
 
-Twenty rows can print `PASS · <note>`:
+Eighteen rows can print `PASS · <note>`:
 
-> The count said **twelve** until 2026-08-28 and the table under it listed fifteen. It was then sixteen, `default branch healthy` having joined. It is now twenty: `CI presence` can print a note because a local space is n/a there, and the three local-space rows below join. Counted, not eyeballed.
+> The count said **twelve** until 2026-08-28 and the table under it listed fifteen. It was then sixteen, `default branch healthy` having joined. It was twenty once `CI presence` could print a note because a local space is n/a there and the three local-space rows joined. It is now eighteen: those three rows no longer print a note, because a local space they cannot judge is `UNVERIFIED`, not a `PASS` with a caveat (see below), and `space policy` joins. Counted, not eyeballed.
 
 | Row | When it carries a note |
 |---|---|
@@ -81,7 +83,7 @@ Twenty rows can print `PASS · <note>`:
 | `notify-routes` | a route in `space.yaml` is malformed, or names a participant the manifest does not list |
 | `notify-secret` | a route names a secret the space repo does not hold — presence only; doctor never reads a secret's value |
 | `notify-delivery` | the last `a2a-notify` run on `main` failed, or there has never been one |
-| `local land guard`, `local history shape`, `local space writable` | a local space could not be inspected (the note is `<row> unverified for <id>: <reason>`), or git's version could not be read |
+| `space policy` | always, whenever any space is connected — it names each space's gates mode and flow (`<id>: gates <mode>, flow <flow>`) |
 
 The three `notify-*` rows are the SPACE plane — the chat notifications a space's
 own CI sends. `notification components` just above them is the LOCAL plane
@@ -90,7 +92,7 @@ own CI sends. `notification components` just above them is the LOCAL plane
 
 Five of those rows — `participant avatars`, `space scaffolding current`,
 `skill discoverable`, `threads intact` and `skipped mirror files` — can
-**never** FAIL. The other eleven can.
+**never** FAIL. The other thirteen can.
 
 `threads intact` and `skipped mirror files` never FAIL for the same reason and it is worth understanding,
 because it changes what you do about the note: **neither condition is
@@ -106,17 +108,28 @@ A passing check prints `<name>: PASS`. A failing check prints
 concrete reason (for example, which file was unreadable or which version pin was
 violated).
 
+**A third outcome: `<name>: UNVERIFIED: <detail>`.** The check could not tell,
+so it says so instead of passing. It is the same status the `repository
+visibility` rows have always used, it is **advisory** (it does not change the
+exit code), and the detail names the space and why it could not be judged. Four
+fixed rows use it: `local land guard`, `local history shape` and `local space
+writable` (a local space could not be inspected, or `git --version` could not be
+read), and `space policy` (a space whose host could not be opened, or whose
+`space.yaml` could not be read). **Read UNVERIFIED as "unknown", not as "good"
+and not as "broken"**: the question was not answered. Where a `FAIL` and an
+`UNVERIFIED` could both be reported, the `FAIL` wins.
+
 **Exit codes.**
 
 | Code | Meaning |
 |------|---------|
-| `0` | Every check passed. |
+| `0` | Every check passed or was `UNVERIFIED`; none FAILed. |
 | `1` | One or more checks failed, OR the local project/machine config could not be loaded (in which case doctor prints a `doctor: cannot load … config` line to stderr before exiting). |
 | `2` | Usage error — including **`doctor --space`**, which is the v2 admin host-drift diff and is explicitly rejected in v1-min (doctor prints `doctor: --space: v1-min: not available`). Doctor's flag only — `a2a validate --ci --space <id>` is a real flag on another verb. |
 
-## The twenty-four checks
+## The twenty-five checks
 
-`doctor` prints a fixed set of exactly twenty-four checks — that fixed count is
+`doctor` prints a fixed set of exactly twenty-five checks — that fixed count is
 what this heading names, and it is why the count and the heading are kept in
 lockstep by the test guarding this file. That lockstep was NOT holding: this
 heading still said "seventeen" on 2026-08-18 while the sentence forty lines up
@@ -126,21 +139,21 @@ written. An expectation spelled as a literal cannot notice that the thing it
 describes has moved; it can only notice somebody editing the doc without
 editing the test, which is the opposite of its job. The number is now DERIVED
 from the binary's own roster, and the summary sentence — which had no assertion
-at all — is checked too. **Each of the twenty-four
+at all — is checked too. **Each of the twenty-five
 runs once per PROJECT, not once per connected space**: when a check must reason about
 several connected spaces, it folds any per-space detail into a single line
 (`space access` and `credentials`, for example, join per-space failures with
 `; `). They print in the order below, top to bottom, matching `doctor`'s own
 output.
 
-The table carries a twenty-fifth row, `repository visibility`, because it is
-real output you will see — but it is NOT one of the fixed twenty-four and shares
+The table carries a twenty-sixth row, `repository visibility`, because it is
+real output you will see — but it is NOT one of the fixed twenty-five and shares
 neither their order nor their cardinality. It prints ONE row PER CONNECTED
 SPACE, after every fixed check, so it is always LAST in the output and absent
 entirely from a project with no connected spaces. Its printed name carries
 the space id (`repository visibility [getvisa]`), which no other row does.
 
-**So the table below is in output order, all twenty-five rows** — read it top to
+**So the table below is in output order, all twenty-six rows** — read it top to
 bottom and you are reading `doctor`'s own sequence. That is worth stating
 because it has now been false TWICE. The first time, until 2026-08-12, this row
 sat eighth in the table under a sentence promising output order while the
@@ -174,10 +187,11 @@ tripwire now asserts the ORDER, not only the membership and the count.
 | **notify-routes** | Every `notification_routes[]` entry in the space's `space.yaml` is well-formed and names a participant the manifest actually lists. | A route is malformed, or its `for:` names a system absent from `participants[]`. The space's own PR gate refuses both (POL-021 / REF-022), so this row failing means a route reached `main` before the rule existed, or the manifest changed under it. Fix the route in `space.yaml` through the normal write funnel. |
 | **notify-secret** | Every secret a route names exists on the space repo. **Presence only — doctor never reads a secret's value.** | A route names a secret the repo does not hold, so its messages cannot be sent. Run `a2a notify setup`, or set it directly with `gh secret set <NAME> --repo <space-repo>`. A route with no secret configured is not an error until it has one to lose. |
 | **notify-delivery** | The most recent `a2a-notify` run on `main` concluded green. | The last run failed, or there has never been one. A failed run is the honest state a silent channel would hide — read it with `gh run list --workflow a2a-notify.yml --repo <space-repo>`. "Never run" is normal for a space that has just configured its first route and not yet pushed. |
-| **local land guard** | For every connected LOCAL space: its `pre-receive` hook is installed, executable and byte-for-byte what this binary installs, **and** the installed git is at least 2.38 (read from `git --version`). A project with no local space reads a plain `PASS`. | The hook is what stops a raw `git push` from moving the base branch around the validated land, so a missing, non-executable, edited or symlinked hook leaves the space unguarded. Re-run `a2a space init <id> --local --dir <path>` (the line names both); it is idempotent and installs the hook again without touching history. A git older than 2.38 makes an installed hook useless: upgrade git. A PASS carrying `· … unverified` means the space or the git version could not be read — the answer is unknown, not good. |
-| **local history shape** | For every connected local space: after the root commit, every commit on the base branch's first-parent chain is a two-parent land. | A one-parent commit on the base branch means something moved it around the funnel (a raw push, or a hand-run `git update-ref`). The detail names the newest such commits. **The row is shape-only**: a two-parent merge forged by hand is not caught, because nothing cross-checks a merge against its pull-request record. |
-| **local space writable** | For every connected local space: this user can create files under the bare repository's `refs/` and `objects/`. | A land writes there, so a repository this user cannot write fails every write to it midway. The detail names what blocked the probe; fix the ownership or permissions of the directory. |
-| **repository visibility** | Whether the space repo's GitHub visibility matches what the material inside it is classified as. Visibility is read from the host; classification comes from the artifacts themselves. | **This row never FAILs — it PASSes or reports UNVERIFIED**, because visibility is evidence, never write authority. A **WARN** on a PUBLIC repo means it carries higher-classified material than `public`: that is the one reading to act on, and the fix is the repository's visibility or the material's classification, not this row. On a **private or internal** repo carrying nothing `restricted`, it PASSes as "no observed mismatch". On a private repo that DOES carry `restricted` material it PASSes only when a bilateral proof source is named; otherwise it reports UNVERIFIED with "repository privacy alone does not prove intended pairwise audience" — which is **not a problem to fix**. It says the honest thing: a private repo proves the audience is small, never that it is the specific pair the material was restricted to. An UNVERIFIED reading "visibility could not be verified" means the credential could not read repo metadata (a fine-grained token needs `Repository metadata: read`), so the answer is unknown rather than bad. |
+| **local land guard** | For every connected LOCAL space: its `pre-receive` hook is installed, executable and byte-for-byte what this binary installs, **and** the installed git is at least 2.38 (read from `git --version`). A project with no local space reads a plain `PASS`. A local space that cannot be inspected, or a `git --version` that cannot be read, reads `UNVERIFIED`. | The hook is what stops a raw `git push` from moving the base branch around the validated land, so a missing, non-executable, edited or symlinked hook leaves the space unguarded. Re-run `a2a space init <id> --local --dir <path>` (the line names both); it is idempotent and installs the hook again without touching history. A git older than 2.38 makes an installed hook useless: upgrade git. **`UNVERIFIED`** (never a `PASS` with a note) means the space or the git version could not be read — the answer is unknown, not good; the detail names which. A git below 2.38 is a `FAIL` even when the space itself could not be inspected. |
+| **local history shape** | For every connected local space: after the root commit, every commit on the base branch's first-parent chain is a two-parent land. | A one-parent commit on the base branch means something moved it around the funnel (a raw push, or a hand-run `git update-ref`). The detail names the newest such commits. A space that cannot be inspected reads `UNVERIFIED`. **The row is shape-only**: a two-parent merge forged by hand is not caught, because nothing cross-checks a merge against its pull-request record. |
+| **local space writable** | For every connected local space: this user can create files under the bare repository's `refs/` and `objects/`. | A land writes there, so a repository this user cannot write fails every write to it midway. The detail names what blocked the probe; fix the ownership or permissions of the directory. A space that cannot be inspected reads `UNVERIFIED`. |
+| **space policy** | For every connected space: the **gates** mode that is in force for ITS host (`review` on a host that reviews writes, `confirm` or `autonomous` on a local space) and the **flow** (`full` or `express`) its `space.yaml` declares, read through the same reader the write paths use. A project with no connected space reads a plain `PASS`. | A space on a host that reviews writes (GitHub) whose `space.yaml` says `gates: autonomous`. The host's pull-request review is the gate there, so the reader **ignores** the word (the effective mode stays `review`) and a new write that sets it is refused with POL-028 (below); this `FAIL` is how a manifest merged before that rule existed gets seen. Change `gates` to `default` or `confirm` through a reviewed pull request. **`UNVERIFIED`** means the space could not be judged: its host could not be opened (a malformed or unsupported `repo_url`; the detail carries the open error) or its `space.yaml` could not be read or parsed from the mirror. A space with no host is never `PASS`, whatever its manifest says, and `autonomous` is never honoured for it. |
+| **repository visibility** | Whether the space repo's GitHub visibility matches what the material inside it is classified as. Visibility is read from the host; classification comes from the artifacts themselves. | **This row never FAILs — it PASSes or reports UNVERIFIED**, because visibility is evidence, never write authority. A **WARN** on a PUBLIC repo means it carries higher-classified material than `public`: that is the one reading to act on, and the fix is the repository's visibility or the material's classification, not this row. On a **private or internal** repo carrying nothing `restricted`, it PASSes as "no observed mismatch". On a private repo that DOES carry `restricted` material it PASSes only when a bilateral proof source is named; otherwise it reports UNVERIFIED with "repository privacy alone does not prove intended pairwise audience" — which is **not a problem to fix**. It says the honest thing: a private repo proves the audience is small, never that it is the specific pair the material was restricted to. A space on this machine (a local space) is never shared, so there is nothing to compare: it reads `PASS: n/a: on this machine, never shared`. An UNVERIFIED reading "visibility could not be verified" means the credential could not read repo metadata (a fine-grained token needs `Repository metadata: read`), so the answer is unknown rather than bad. |
 | **consumed contract** | Whether this system verify-passed any data-package delivery — a handoff deliverable of kind `data`, accepted (verify-passed) — pinning a contract absent from its own `consumes.yaml` (P6, defects-fix-2026-08, `docs/inbox/defects/07-the-consumer-registered-nowhere.md`: a real space had verify-passed four such handoffs while its own `dependencies:` sat `[]`). | **This row never FAILs, and prints nothing at all when there is nothing to report** — detection only, never a gate: `a2a doctor`'s exit code and `contract retire`'s own precondition (D-022) are both unaffected by it. A **WARN** names the contract, the number of distinct verify-passed packages conforming to it, and the exact fix — `a2a contract adopt <XC-id>` — because consuming without adopting is a real risk (the retire gate and the deprecation notice cannot protect a dependency nobody registered) but not necessarily a mistake: the operator may have reasons. An **UNVERIFIED** means this system's own `consumes.yaml` exists but could not be read as a real `consumes/v1` registry, so the advisory is skipped rather than risking a false "unadopted" claim against a registration it simply could not parse. A contract this system publishes itself is never named here — a producer is never counted as its own unadopted consumer. |
 | **observed consumer** | The PRODUCER direction of the row above, new in v0.25.7: a system whose committed artifacts show it consuming a contract THIS system provides without declaring it — **and the version it pinned**. Retire is per-version, so "something consumes this" was not actionable alone. | **Never FAILs; prints nothing when there is nothing to report.** A **WARN** names the system, the contract, the version and how many verify-passed packages back it. It gates nothing — it exists so a retire decision is not made blind. Deliberately an UNDERCOUNT: a participant whose registry or descriptor cannot be parsed is EXCLUDED rather than reported against. |
 | **notify selectivity** | Whether a configured notification route matched nothing while qualifying traffic existed. New in v0.25.7 alongside the route selector dimensions — see [reference/notify.md](reference/notify.md). | **Never FAILs; prints nothing when there is nothing to report.** A **WARN** reads `route <label> matched NOTHING while N artifact(s) qualified`, the shape that silenced a real space: a route can be valid and still be unsatisfiable. A genuinely quiet space produces no row — nothing qualified, so nothing was missed. |
@@ -225,6 +239,9 @@ covers it.
 | **`a2a submit` said it succeeded, but the artifact is not on `main`** | Expected before v0.8.0 and fixed in it: GitHub declines to arm auto-merge on a pull request that is already mergeable, and the write used to report success over it. Update the binary (`a2a update`); a2a now lands such a request itself once its required check is green. If it persists, the required check is not green — look at the PR. |
 | **`a2a submit` refused with REF-027 "a document naming a parent is submitted with no parent transition"** | You are submitting a document whose own envelope schema REQUIRES `parent` — today that is `response` alone — in a write batch that moves nothing on that parent. The refusal is about the BATCH, not the file: the document is well-formed, and landing it alone is the failure. It would appear, the parent would stay where it was, and the agent waiting on it would be left in a state with no legal move — having done nothing wrong. **The fix is `a2a respond`**, which authors the parent's own `respond` event in the same write and never trips this. If the response is already filed and stranded, `a2a respond --response <RS-id>` adopts it: the parent moves and your existing body is kept. The rule reads each type's own schema `required` array rather than a hardcoded list, so a kind that gains `parent` is covered the moment its schema ships. Scope: this refuses at the write funnel below BOTH surfaces (CLI and MCP inherit it through `funnel.Submit`) and returns no verdict in the post-merge audit — a merged write is itself proof a parent transition accompanied it. |
 | **`a2a submit` refused with POL-010 "still the template's own placeholder value"** | Exactly what it says: a frontmatter field still carries the literal `<…>` the template shipped, and the refusal names the field by its full path. `a2a validate` passes on the same file ON PURPOSE — a draft is allowed to hold its placeholders so you can inspect it; the refusal lands where the draft becomes a shared record. Two ways to clear it, and the message names the one that applies: **fill it** (`a2a new … --field <path>=<value>` — the path may be dotted, e.g. `--field expected_response.shape="yes/no plus the flag that controls it"`), or **delete the line** when the field is genuinely unused (`needed_by` only when no response is expected; `valid_until` / `env_requirements` when inapplicable). A response-bearing cross-system ask gets its autonomous +1/+2-day `needed_by` per [the send loop](loops.md). For a value inside a LIST (`refs`, `deliverables`, `acceptance_criteria`) `--field` cannot reach it — edit the drafted file. |
+| **A write refused with POL-029 "G1 requires --approve in a confirm space"** (G2, G3 or G4 in place of G1) | You wrote into a space whose `gates` mode is `confirm` and the write sits behind a human gate you did not confirm. **Why it is refused:** in a `confirm` space a gated write needs your explicit say-so, recorded with the write; the refusal names the gate (G1 a first contract publish, G2 a breaking or major contract version, G3 `a2a approve` or `a2a reject` on a decision, G4 any change to `space.yaml`, which includes `a2a space join` and `a2a space update`). It is refused before anything is written, so nothing is half-done. **Fix:** re-run the same command with **`--approve`**; the approval is recorded on the commit (`A2A-Approved-Gates`), and you are confirming a human act, so do it only when you mean it. The land check judges the same thing at the end, so a write that bypassed the command and carries no approval is refused there too, and an approval for G1 does not cover a G2 that appeared because a rival published first: re-run, and approve what the new refusal names. **Not this error:** `--approve` has no effect on a space whose host reviews writes (GitHub: the pull-request review is the gate) and the command says so; a space set to `autonomous` asks for no approval; and classification and secret refusals (POL-001 and its peers) are never approvable. The current mode is the `space policy` row of `a2a doctor`. |
+| **A manifest write refused with POL-028 "gates: autonomous is refused on a host that reviews writes"** | You set `gates: autonomous` in a space whose host reviews writes (GitHub). **Why:** on such a host the pull-request review and CODEOWNERS are the gate, so a manifest that switches the gates off is refused at the write, and a space promoted from a local one cannot carry its relaxation over silently. **Fix:** use `default` or `confirm` there; `autonomous` is accepted only in a local space (one on this machine, where there is no reviewer). A manifest that already says `autonomous` on a reviewing host is not refused retroactively: the host ignores the word (the effective mode stays `review`) and `a2a doctor` shows a FAIL on the `space policy` row until you change it. |
+| **A manifest write refused with POL-027 "gates is … ; the legal values are default, confirm or autonomous" (or "flow is … ; the legal values are full or express")** | `gates` or `flow` in `space.yaml` carries a word outside its vocabulary. **The two vocabularies:** `gates` is one of `default`, `confirm`, `autonomous`; `flow` is one of `full`, `express`; an absent key (or an explicit `null`) is the key's default (`default`, `full`). Case matters (`Confirm` is refused), and a number, a list or a mapping is refused too: the message says "a value that is not a string". **Fix:** write one of the legal words, by hand in `space.yaml` or with the command that sets it. This is judged only at the write that introduces the value, never on an unrelated pull request, and on read an unknown `gates` is treated as `confirm` and an unknown `flow` as `full`, so an old odd value is never silently permissive. |
 | **A document I know exists does not appear in `search`/`inbox`/`thread`** | Run `a2a doctor` and read the `skipped mirror files` row. If the file could not be decoded it is missing from every read verb and the verbs now say so on **stderr** (`note: … could not be decoded …`) — check whether you were discarding stderr. `a2a show <id>` still prints such a file, which is why the two can disagree. A skipped file is fixable only by whoever owns its section. |
 | **`a2a validate` / `a2a submit` refused with REF-017 "body names a digest no declared attachment carries"** | Three things are true at once and all three must be, so read which one you can change: the body names a `sha256:` no `attachments[].digest` carries, **and** the body enumerates what reads as a file tree, **and** the envelope declares no attachment at all. This is the "referenced but not received" shape — the artifact promises bytes and carries none. **The fix is `a2a attach`**, not a reworded sentence. A digest named in ordinary prose, with no file list, does **not** refuse: it warns (POL-017), because a pin is not a possession claim. Note the scope: this refuses at the write gate (`a2a validate`, `a2a submit`, `a2a validate --ci` on a pull request) and returns no verdict in the post-merge audit — a rule that could only be satisfied by editing an immutable artifact must not judge history that cannot be repaired. |
 | **`a2a validate` / `a2a submit` refused with POL-022 "handoff body carries N of 5 §16.2 required section(s) with no content"** | A `handoff`'s five body sections (`## Context`, `## What was built`, `## How to verify`, `## How to operate`, `## Limitations & next steps` — the exact headings [`schemas/templates/v1/handoff.md`](../../schemas/templates/v1/handoff.md) ships) are REQUIRED CONTENT per [the-plan §16.2](../../docs/the-plan/plan/16-handoff-directive.md#162-required-content-envelope-extension--body-sections), written for a reader with **no access to your private repo, chats, or history** — not a template's suggestion. The message names every section that is either missing its heading or carries zero non-whitespace text beneath it; the fix is to write that section, not to pad it. There is no length floor: one real sentence, a fenced command block, a bullet list, or a single link all count as content — the rule measures **emptiness**, never quality, so a judgement call ("is this section good enough") is never what refuses. Scope, corrected 2026-08-20 after it was measured rather than read: this refuses at `a2a validate` and at `a2a validate --ci` on a pull request. It does **NOT** refuse at `a2a submit` — on either surface. `SubmitValidatorAdapter.ValidateSubmit` (`internal/cli/adapters.go`, and its `internal/mcp` twin) partitions the outgoing `FileWrite` set into events and drafts and runs the referential checks over DRAFTS only; a `verify`/`close` submission carries event files exclusively, so that loop never executes. `a2a verify` with an incomplete `verdicts[]` therefore exits 0 locally and is refused later, at the merge gate. Filed in `docs/backlog.md` and returns no verdict in the post-merge audit, mirroring REF-017's own reasoning — a merged handoff's body is immutable, and no verb rewrites it. |

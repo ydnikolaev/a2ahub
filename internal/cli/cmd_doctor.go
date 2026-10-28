@@ -31,6 +31,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/notification"
@@ -177,6 +178,30 @@ func NewDoctorCommand(open host.Opener, binaryVersion, projectConfigPath, machin
 	}
 }
 
+// doctorCheckStatus is the outcome of one fixed doctor check. A check that can
+// not tell is UNVERIFIED, a third outcome beside PASS and FAIL: it prints as its
+// own status and does not change the exit code, the way the visibility rows'
+// UNVERIFIED does. Most fixed checks only ever pass or fail and keep their
+// (bool, string) shape behind passFail.
+type doctorCheckStatus string
+
+const (
+	doctorCheckPass       doctorCheckStatus = "PASS"
+	doctorCheckFail       doctorCheckStatus = "FAIL"
+	doctorCheckUnverified doctorCheckStatus = "UNVERIFIED"
+)
+
+// passFail adapts a check that only passes or fails to the three-outcome table.
+func passFail(run func() (bool, string)) func() (doctorCheckStatus, string) {
+	return func() (doctorCheckStatus, string) {
+		ok, detail := run()
+		if !ok {
+			return doctorCheckFail, detail
+		}
+		return doctorCheckPass, detail
+	}
+}
+
 // doctorSpaceHost is one connected space's host, resolved through the injected
 // opener. h is nil when no opener is wired (every optional-capability
 // assertion then misses, as a nil host did before) or when err is set.
@@ -290,7 +315,8 @@ func (c *DoctorCommand) Synopsis() string {
 
 // Run implements cli.Command. Exit codes: 2 = usage error (including the
 // rejected `--space` flag); 1 = one or more checks failed, or the local
-// config could not be loaded; 0 = every check passed.
+// config could not be loaded; 0 = no check failed (an UNVERIFIED check is
+// advisory and does not change the code).
 func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
@@ -320,48 +346,55 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 	checks := []struct {
 		name string
-		run  func() (bool, string)
+		run  func() (doctorCheckStatus, string)
 	}{
-		{"credentials", func() (bool, string) { return c.doctorCheckCredentials(ctx, cfg, machine) }},
-		{"space access", func() (bool, string) { return c.doctorCheckSpaceAccess(ctx, cfg, machine) }},
-		{"space identity", func() (bool, string) { return c.doctorCheckSpaceIdentity(cfg, machine) }},
-		{"participant avatars", func() (bool, string) { return c.doctorCheckParticipantAvatars(cfg, machine) }},
-		{"versions", func() (bool, string) { return c.doctorCheckVersions(cfg, machine) }},
-		{"CI presence", func() (bool, string) { return c.doctorCheckCIPresence(cfg, machine) }},
-		{"space scaffolding current", func() (bool, string) { return c.doctorCheckScaffoldingCurrent(ctx, cfg, machine) }},
-		{"auto-merge enabled", func() (bool, string) { return c.doctorCheckAutoMerge(ctx, cfg, machine) }},
-		{"stuck green PRs", func() (bool, string) { return c.doctorCheckStuckGreenPRs(ctx, cfg, machine) }},
-		{"default branch healthy", func() (bool, string) { return c.doctorCheckDefaultBranchHealthy(ctx, cfg, machine) }},
-		{"codeowners resolvable", func() (bool, string) { return c.doctorCheckCodeownersResolvable(ctx, cfg, machine) }},
-		{"threads intact", func() (bool, string) { return c.doctorCheckThreadsIntact(cfg, machine) }},
-		{"skipped mirror files", func() (bool, string) { return c.doctorCheckSkippedFiles(ctx, cfg, machine) }},
-		{"notification components", func() (bool, string) { return c.doctorCheckNotificationComponents(ctx) }},
-		{"statusline wiring", func() (bool, string) { return c.doctorCheckStatuslineWiring() }},
-		{"skill discoverable", func() (bool, string) { return c.doctorCheckSkillDiscoverable() }},
-		{"skill manual current", func() (bool, string) { return c.doctorCheckSkillManualCurrent() }},
-		{"automation coverage", func() (bool, string) { return c.doctorCheckAutomationCoverage() }},
-		{"notify-routes", func() (bool, string) { return c.doctorCheckNotifyRoutes(cfg, machine) }},
-		{"notify-secret", func() (bool, string) { return c.doctorCheckNotifySecret(ctx, cfg, machine) }},
-		{"notify-delivery", func() (bool, string) { return c.doctorCheckNotifyDelivery(ctx, cfg, machine) }},
-		{"local land guard", func() (bool, string) { return c.doctorCheckLocalLandGuard(ctx, cfg) }},
-		{"local history shape", func() (bool, string) { return c.doctorCheckLocalHistoryShape(ctx, cfg) }},
-		{"local space writable", func() (bool, string) { return c.doctorCheckLocalSpaceWritable(ctx, cfg) }},
+		{"credentials", passFail(func() (bool, string) { return c.doctorCheckCredentials(ctx, cfg, machine) })},
+		{"space access", passFail(func() (bool, string) { return c.doctorCheckSpaceAccess(ctx, cfg, machine) })},
+		{"space identity", passFail(func() (bool, string) { return c.doctorCheckSpaceIdentity(cfg, machine) })},
+		{"participant avatars", passFail(func() (bool, string) { return c.doctorCheckParticipantAvatars(cfg, machine) })},
+		{"versions", passFail(func() (bool, string) { return c.doctorCheckVersions(cfg, machine) })},
+		{"CI presence", passFail(func() (bool, string) { return c.doctorCheckCIPresence(cfg, machine) })},
+		{"space scaffolding current", passFail(func() (bool, string) { return c.doctorCheckScaffoldingCurrent(ctx, cfg, machine) })},
+		{"auto-merge enabled", passFail(func() (bool, string) { return c.doctorCheckAutoMerge(ctx, cfg, machine) })},
+		{"stuck green PRs", passFail(func() (bool, string) { return c.doctorCheckStuckGreenPRs(ctx, cfg, machine) })},
+		{"default branch healthy", passFail(func() (bool, string) { return c.doctorCheckDefaultBranchHealthy(ctx, cfg, machine) })},
+		{"codeowners resolvable", passFail(func() (bool, string) { return c.doctorCheckCodeownersResolvable(ctx, cfg, machine) })},
+		{"threads intact", passFail(func() (bool, string) { return c.doctorCheckThreadsIntact(cfg, machine) })},
+		{"skipped mirror files", passFail(func() (bool, string) { return c.doctorCheckSkippedFiles(ctx, cfg, machine) })},
+		{"notification components", passFail(func() (bool, string) { return c.doctorCheckNotificationComponents(ctx) })},
+		{"statusline wiring", passFail(func() (bool, string) { return c.doctorCheckStatuslineWiring() })},
+		{"skill discoverable", passFail(func() (bool, string) { return c.doctorCheckSkillDiscoverable() })},
+		{"skill manual current", passFail(func() (bool, string) { return c.doctorCheckSkillManualCurrent() })},
+		{"automation coverage", passFail(func() (bool, string) { return c.doctorCheckAutomationCoverage() })},
+		{"notify-routes", passFail(func() (bool, string) { return c.doctorCheckNotifyRoutes(cfg, machine) })},
+		{"notify-secret", passFail(func() (bool, string) { return c.doctorCheckNotifySecret(ctx, cfg, machine) })},
+		{"notify-delivery", passFail(func() (bool, string) { return c.doctorCheckNotifyDelivery(ctx, cfg, machine) })},
+		{"local land guard", func() (doctorCheckStatus, string) { return c.doctorCheckLocalLandGuard(ctx, cfg) }},
+		{"local history shape", func() (doctorCheckStatus, string) { return c.doctorCheckLocalHistoryShape(ctx, cfg) }},
+		{"local space writable", func() (doctorCheckStatus, string) { return c.doctorCheckLocalSpaceWritable(ctx, cfg) }},
+		{"space policy", func() (doctorCheckStatus, string) { return c.doctorCheckSpacePolicy(cfg, machine) }},
 	}
 
 	allOK := true
 	for _, chk := range checks {
-		ok, detail := chk.run()
-		if ok {
+		status, detail := chk.run()
+		switch status {
+		case doctorCheckPass:
 			// detail is normally empty on PASS, EXCEPT "versions", which
 			// carries the spec 19 T4 update-available advisory (already
 			// prefixed " · " by doctorCheckVersions) even when the floor
 			// comparison itself passes — AC #7 requires doctor to actually
 			// REPORT that advisory, not just compute it.
 			_, _ = fmt.Fprintf(stdio.Stdout, "%s: PASS%s\n", chk.name, detail)
-			continue
+		case doctorCheckUnverified:
+			// Advisory, like the visibility rows' UNVERIFIED: the check could
+			// not judge, which is neither a pass nor a failure, so it never
+			// changes the exit code (spec 04 §10 "P4-B carries" item 7).
+			_, _ = fmt.Fprintf(stdio.Stdout, "%s: UNVERIFIED: %s\n", chk.name, detail)
+		default:
+			allOK = false
+			_, _ = fmt.Fprintf(stdio.Stdout, "%s: FAIL: %s\n", chk.name, detail)
 		}
-		allOK = false
-		_, _ = fmt.Fprintf(stdio.Stdout, "%s: FAIL: %s\n", chk.name, detail)
 	}
 	for _, row := range c.doctorVisibilityRows(ctx, cfg, machine) {
 		// P4 §5.2: WARN and UNVERIFIED are advisory-on-success. They are
@@ -2733,11 +2766,12 @@ func (c *DoctorCommand) doctorInspectLocal(ctx context.Context, ref space.Ref) d
 	return got
 }
 
-// doctorLocalRow runs judge over every connected space's inspection and renders
-// the row: a FAIL joins every space's finding, otherwise a PASS carrying one
-// "unverified" advisory per space that could not be judged. A project with no
-// local space prints a plain PASS.
-func (c *DoctorCommand) doctorLocalRow(ctx context.Context, cfg space.ProjectConfig, row string, judge func(ref space.Ref, in host.LocalSpaceInspection) string) (bool, string) {
+// doctorLocalRow runs judge over every connected space's inspection and returns
+// the row's outcome, strongest first: a FAIL joins every failing space's
+// finding; otherwise a space that could not be judged makes the row UNVERIFIED
+// (never a PASS, never a FAIL: ADR-019, a miss is not a resolved negative);
+// otherwise PASS. A project with no local space is a plain PASS.
+func (c *DoctorCommand) doctorLocalRow(ctx context.Context, cfg space.ProjectConfig, judge func(ref space.Ref, in host.LocalSpaceInspection) string) (doctorCheckStatus, string) {
 	var failures, unverified []string
 	for _, ref := range cfg.Spaces {
 		got := c.doctorInspectLocal(ctx, ref)
@@ -2751,12 +2785,12 @@ func (c *DoctorCommand) doctorLocalRow(ctx context.Context, cfg space.ProjectCon
 		}
 	}
 	if len(failures) > 0 {
-		return false, strings.Join(failures, "; ")
+		return doctorCheckFail, strings.Join(failures, "; ")
 	}
 	if len(unverified) > 0 {
-		return true, " · " + row + " unverified for " + strings.Join(unverified, "; ")
+		return doctorCheckUnverified, strings.Join(unverified, "; ")
 	}
-	return true, ""
+	return doctorCheckPass, ""
 }
 
 // doctorCheckLocalLandGuard is the first of the three local-space rows: the
@@ -2767,9 +2801,11 @@ func (c *DoctorCommand) doctorLocalRow(ctx context.Context, cfg space.ProjectCon
 //
 // The installed git is checked here too, against `git --version`: the hook's
 // behaviour needs git 2.38, and a git older than that makes a perfectly
-// installed hook useless. An unparseable version is unverified, never a pass.
-func (c *DoctorCommand) doctorCheckLocalLandGuard(ctx context.Context, cfg space.ProjectConfig) (bool, string) {
-	ok, detail := c.doctorLocalRow(ctx, cfg, "local land guard", func(ref space.Ref, in host.LocalSpaceInspection) string {
+// installed hook useless. A git whose version cannot be read is UNVERIFIED,
+// never a pass; a git that is too old is a FAIL even when the inspection of the
+// space itself was unverified, because the floor does not depend on it.
+func (c *DoctorCommand) doctorCheckLocalLandGuard(ctx context.Context, cfg space.ProjectConfig) (doctorCheckStatus, string) {
+	status, detail := c.doctorLocalRow(ctx, cfg, func(ref space.Ref, in host.LocalSpaceInspection) string {
 		repair := "re-run `a2a space init " + ref.ID + " --local --dir " + ref.RepoURL + "` (it installs the hook again)"
 		switch {
 		case !in.HookPresent:
@@ -2781,8 +2817,8 @@ func (c *DoctorCommand) doctorCheckLocalLandGuard(ctx context.Context, cfg space
 		}
 		return ""
 	})
-	if !ok {
-		return false, detail
+	if status == doctorCheckFail {
+		return status, detail
 	}
 	// The floor only matters when there is a local space to guard.
 	hasLocal := false
@@ -2793,23 +2829,24 @@ func (c *DoctorCommand) doctorCheckLocalLandGuard(ctx context.Context, cfg space
 		}
 	}
 	if !hasLocal {
-		return true, detail
+		return status, detail
 	}
-	versionOK, versionDetail := c.doctorCheckGitFloor(ctx)
-	if !versionOK {
-		return false, versionDetail
-	}
-	if versionDetail != "" {
+	floorStatus, floorDetail := c.doctorCheckGitFloor(ctx)
+	switch floorStatus {
+	case doctorCheckFail:
+		return doctorCheckFail, floorDetail
+	case doctorCheckUnverified:
 		if detail == "" {
-			return true, versionDetail
+			return doctorCheckUnverified, floorDetail
 		}
-		return true, detail + "; " + strings.TrimPrefix(versionDetail, " · ")
+		return doctorCheckUnverified, detail + "; " + floorDetail
 	}
-	return true, detail
+	return status, detail
 }
 
 // doctorCheckGitFloor reads `git --version` and holds it to doctorLocalGitFloor.
-func (c *DoctorCommand) doctorCheckGitFloor(ctx context.Context) (bool, string) {
+// A version it cannot read is UNVERIFIED, not a pass.
+func (c *DoctorCommand) doctorCheckGitFloor(ctx context.Context) (doctorCheckStatus, string) {
 	read := c.gitVersion
 	if read == nil {
 		read = func(ctx context.Context) (string, error) {
@@ -2819,21 +2856,21 @@ func (c *DoctorCommand) doctorCheckGitFloor(ctx context.Context) (bool, string) 
 	}
 	line, err := read(ctx)
 	if err != nil {
-		return true, " · git version unverified: `git --version` failed: " + err.Error()
+		return doctorCheckUnverified, "git version unverified: `git --version` failed: " + err.Error()
 	}
 	m := doctorGitVersionPattern.FindStringSubmatch(line)
 	if m == nil {
-		return true, fmt.Sprintf(" · git version unverified: cannot read a version from %q", strings.TrimSpace(line))
+		return doctorCheckUnverified, fmt.Sprintf("git version unverified: cannot read a version from %q", strings.TrimSpace(line))
 	}
 	var major, minor int
 	if _, scanErr := fmt.Sscanf(m[1]+" "+m[2], "%d %d", &major, &minor); scanErr != nil {
-		return true, fmt.Sprintf(" · git version unverified: cannot read a version from %q", strings.TrimSpace(line))
+		return doctorCheckUnverified, fmt.Sprintf("git version unverified: cannot read a version from %q", strings.TrimSpace(line))
 	}
 	if major < doctorLocalGitFloor[0] || (major == doctorLocalGitFloor[0] && minor < doctorLocalGitFloor[1]) {
-		return false, fmt.Sprintf("git %d.%d is older than %d.%d, which a local space's land guard needs — upgrade git",
+		return doctorCheckFail, fmt.Sprintf("git %d.%d is older than %d.%d, which a local space's land guard needs — upgrade git",
 			major, minor, doctorLocalGitFloor[0], doctorLocalGitFloor[1])
 	}
-	return true, ""
+	return doctorCheckPass, ""
 }
 
 // doctorCheckLocalHistoryShape is the second local-space row: after the root
@@ -2842,8 +2879,8 @@ func (c *DoctorCommand) doctorCheckGitFloor(ctx context.Context) (bool, string) 
 // It is shape-only: a two-parent merge forged with `git update-ref` is not
 // caught, because nothing here cross-checks a merge against its pull-request
 // record.
-func (c *DoctorCommand) doctorCheckLocalHistoryShape(ctx context.Context, cfg space.ProjectConfig) (bool, string) {
-	return c.doctorLocalRow(ctx, cfg, "local history shape", func(ref space.Ref, in host.LocalSpaceInspection) string {
+func (c *DoctorCommand) doctorCheckLocalHistoryShape(ctx context.Context, cfg space.ProjectConfig) (doctorCheckStatus, string) {
+	return c.doctorLocalRow(ctx, cfg, func(ref space.Ref, in host.LocalSpaceInspection) string {
 		if len(in.MainNonLandCommits) == 0 {
 			return ""
 		}
@@ -2859,8 +2896,8 @@ func (c *DoctorCommand) doctorCheckLocalHistoryShape(ctx context.Context, cfg sp
 // doctorCheckLocalSpaceWritable is the third local-space row: a land writes
 // under refs/ and objects/, so a repository this user cannot write is a space
 // every write to which fails midway.
-func (c *DoctorCommand) doctorCheckLocalSpaceWritable(ctx context.Context, cfg space.ProjectConfig) (bool, string) {
-	return c.doctorLocalRow(ctx, cfg, "local space writable", func(ref space.Ref, in host.LocalSpaceInspection) string {
+func (c *DoctorCommand) doctorCheckLocalSpaceWritable(ctx context.Context, cfg space.ProjectConfig) (doctorCheckStatus, string) {
+	return c.doctorLocalRow(ctx, cfg, func(ref space.Ref, in host.LocalSpaceInspection) string {
 		if in.Writable {
 			return ""
 		}
@@ -2870,4 +2907,70 @@ func (c *DoctorCommand) doctorCheckLocalSpaceWritable(ctx context.Context, cfg s
 		}
 		return fmt.Sprintf("this user cannot write the repository (%s) — fix the ownership or permissions of %s", detail, ref.RepoURL)
 	})
+}
+
+// doctorCheckSpacePolicy is the `space policy` row (spec 04 AC18): for every
+// connected space, the gates mode that is in force for ITS host and the flow it
+// declares, both read through space.Manifest's own readers so the mode rule
+// lives in one place.
+//
+// FAIL: a host that reviews writes whose manifest says `gates: autonomous`. The
+// reader ignores it there (the host's review is the gate), POL-028 refuses a new
+// one, and this row is how a manifest merged before that rule existed gets seen.
+//
+// UNVERIFIED: a space doctor cannot judge. The host is read FIRST: a space whose
+// repo_url opens no host is unverified whatever its manifest says, because
+// without a host there is no declared ReviewsWrites to choose a row of the
+// effective-mode table with (never PASS, never the `false` row, never
+// `autonomous` honoured). A mirror whose space.yaml cannot be read or parsed is
+// unverified too: the zero manifest would read as a healthy "review", which no
+// one has checked. FAIL outranks UNVERIFIED outranks PASS across spaces.
+func (c *DoctorCommand) doctorCheckSpacePolicy(cfg space.ProjectConfig, machine space.MachineConfig) (doctorCheckStatus, string) {
+	var parts, failures []string
+	unverified := false
+	for _, ref := range cfg.Spaces {
+		sh := c.spaceHost(ref)
+		if sh.err != nil || sh.h == nil {
+			unverified = true
+			reason := "no host is wired for this space"
+			if sh.err != nil {
+				reason = sh.err.Error()
+			}
+			parts = append(parts, ref.ID+": host not opened: "+reason)
+			continue
+		}
+		raw, err := c.readFile(filepath.Join(c.resolveMirror(c.projectRoot, ref, machine), "space.yaml"))
+		if err != nil {
+			unverified = true
+			parts = append(parts, ref.ID+": space.yaml could not be read from the mirror")
+			continue
+		}
+		manifest, err := space.ParseManifest(raw)
+		if err != nil {
+			unverified = true
+			parts = append(parts, ref.ID+": space.yaml could not be parsed")
+			continue
+		}
+		reviews := sh.h.Capabilities().ReviewsWrites
+		mode := manifest.EffectiveGates(reviews)
+		// What the manifest asks for, whatever the host: the mode a host that
+		// does not review would read. Compared with the host's own answer, this
+		// is the `autonomous` a reviewing host ignores.
+		if reviews && manifest.EffectiveGates(false) == contract.GatesModeAutonomous {
+			failures = append(failures, fmt.Sprintf(
+				"%s: space.yaml says gates: autonomous but this host reviews writes, so it is ignored (effective gates %s) and POL-028 refuses it as a new write — set gates to default or confirm through a reviewed pull request",
+				ref.ID, mode))
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s: gates %s, flow %s", ref.ID, mode, manifest.FlowSetting()))
+	}
+	switch {
+	case len(failures) > 0:
+		return doctorCheckFail, strings.Join(failures, "; ")
+	case unverified:
+		return doctorCheckUnverified, strings.Join(parts, "; ")
+	case len(parts) == 0:
+		return doctorCheckPass, ""
+	}
+	return doctorCheckPass, " · " + strings.Join(parts, "; ")
 }

@@ -34,6 +34,11 @@ stdout 'space scaffolding current: PASS'
 # check exists at all and that its wording is stable.
 stdout 'auto-merge enabled: PASS · auto-merge unverified'
 stdout 'statusline wiring: PASS'
+# local-space-2026-10 P4-B (spec 04 AC18): the `space policy` row names the gates
+# mode in force for the space's host and its flow. The seeded fixture is a
+# GitHub-hosted space, so its effective mode is `review`; the fixture's flow key
+# is absent, which reads as `full`.
+stdout 'space policy: PASS · .*: gates review, flow full'
 
 # `--space` is explicitly rejected (v2, D-030) — never silently ignored.
 ! exec a2a doctor --space
@@ -82,5 +87,13 @@ stdout 'notify-delivery: PASS · lone: no notification delivery on a local space
 stdout 'local land guard: PASS'
 stdout 'local history shape: PASS'
 stdout 'local space writable: PASS'
+# P4-B: a local space's `gates: default` reads as `confirm` (the host reviews
+# nothing); the flow is whatever `space init --local` wrote, so it is not
+# pinned here.
+stdout 'space policy: PASS · lone: gates confirm, flow (full|express)'
+# P4-B (spec 03 §T1.4): a space on this machine is never shared, so repository
+# visibility is n/a for it rather than a GitHub probe that cannot answer.
+stdout 'repository visibility \[lone\]: PASS: n/a: on this machine, never shared'
 ! stdout 'FAIL'
+! stdout 'UNVERIFIED'
 

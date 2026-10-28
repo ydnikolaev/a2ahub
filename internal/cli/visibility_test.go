@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
 // TestDoctorFilterDataPackageReadmeSkips is the predicate-level proof for
@@ -95,4 +96,73 @@ func TestDoctorVisibilityDataPackageReadmeIsNotUNVERIFIED(t *testing.T) {
 	if strings.Contains(stdout.String(), "UNVERIFIED") || strings.Contains(stdout.String(), "classification scan incomplete") {
 		t.Fatalf("stdout still carries the unactionable skip note:\n%s", stdout.String())
 	}
+}
+
+// TestDoctorVisibilityRowsLocalSpaceIsNotApplicable is spec 03 §T1.4: a space on
+// this machine is never shared, so its visibility row is n/a (a PASS saying why)
+// and nothing is read for it. The n/a comes from the host's DECLARED
+// OnThisMachine only; a space with no host stays UNVERIFIED, and a GitHub space
+// is judged exactly as before.
+func TestDoctorVisibilityRowsLocalSpaceIsNotApplicable(t *testing.T) {
+	t.Parallel()
+	const (
+		ghURL    = "https://github.com/acme/hub"
+		localURL = "/home/me/.local/share/a2a/spaces/loc.git"
+	)
+	cfg := space.ProjectConfig{Spaces: []space.Ref{
+		{ID: "hub", RepoURL: ghURL},
+		{ID: "loc", RepoURL: localURL},
+		{ID: "odd", RepoURL: "https://github.com/onlyowner"},
+	}}
+	var credentialsFor, classifiedFor []string
+	cmd := newTestDoctorCommand()
+	cmd.open = func(raw string) (host.Host, host.Repo, error) {
+		switch raw {
+		case ghURL:
+			return doctorVisibilityHostFake{Host: host.NewFakeHost(), visibility: host.RepositoryVisibilityPrivate}, host.Repo{Owner: "acme", Name: "hub"}, nil
+		case localURL:
+			return doctorLocalFake(), host.Repo{Owner: "spaces", Name: "loc"}, nil
+		}
+		return host.NewOpener(host.OpenConfig{})(raw)
+	}
+	cmd.resolveCredential = func(_ context.Context, envVar string, _ space.CredentialReference) (host.Credential, error) {
+		credentialsFor = append(credentialsFor, envVar)
+		return host.Credential{Token: "t"}, nil
+	}
+	cmd.ClassificationSummaryReader = doctorClassificationSummaryRecorder{record: &classifiedFor}
+
+	rows := cmd.doctorVisibilityRows(context.Background(), cfg, space.MachineConfig{})
+	got := map[string]doctorVisibilityDecision{}
+	for _, row := range rows {
+		got[row.SpaceID] = row.doctorVisibilityDecision
+	}
+	if len(rows) != 3 {
+		t.Fatalf("rows = %+v, want one per space", rows)
+	}
+	if want := (doctorVisibilityDecision{Status: doctorVisibilityPASS, Detail: "n/a: on this machine, never shared"}); got["loc"] != want {
+		t.Errorf("local space row = %+v, want %+v", got["loc"], want)
+	}
+	if got["hub"].Status != doctorVisibilityPASS || got["hub"].Detail != "no observed mismatch" {
+		t.Errorf("GitHub space row = %+v, want its own PASS unchanged", got["hub"])
+	}
+	if got["odd"].Status != doctorVisibilityUNVERIFIED {
+		t.Errorf("a space with no host row = %+v, want UNVERIFIED, never n/a", got["odd"])
+	}
+	for _, id := range credentialsFor {
+		if strings.Contains(id, "LOC") {
+			t.Errorf("a credential was resolved for the local space (%s)", id)
+		}
+	}
+	for _, id := range classifiedFor {
+		if id == "loc" {
+			t.Errorf("the local space's classification was read")
+		}
+	}
+}
+
+type doctorClassificationSummaryRecorder struct{ record *[]string }
+
+func (r doctorClassificationSummaryRecorder) ClassificationSummary(_ context.Context, spaceID string) (DoctorClassificationSummary, error) {
+	*r.record = append(*r.record, spaceID)
+	return DoctorClassificationSummary{Highest: "internal"}, nil
 }

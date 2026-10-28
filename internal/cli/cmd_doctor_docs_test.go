@@ -59,9 +59,9 @@ func TestTroubleshootingEnumeratesEveryDoctorCheck(t *testing.T) {
 			continue
 		}
 		// Every check line carries one of these four statuses (repository
-		// visibility never FAILs but can read PASS/WARN/UNVERIFIED; the
-		// fixed seventeen only ever read PASS/FAIL). Filtering on the status
-		// prefix, rather than reusing the old "PASS only" cut, is what lets
+		// visibility never FAILs but can read PASS/WARN/UNVERIFIED; a fixed
+		// check reads PASS/FAIL, and UNVERIFIED where it cannot tell).
+		// Filtering on the status prefix, rather than reusing the old "PASS only" cut, is what lets
 		// this test see checks that fail against the fake host instead of
 		// silently dropping them from the roster.
 		switch {
@@ -90,8 +90,8 @@ func TestTroubleshootingEnumeratesEveryDoctorCheck(t *testing.T) {
 		fixedNames[rosterName] = true
 		printedOrder = append(printedOrder, rosterName)
 	}
-	if len(fixedNames) != 24 {
-		t.Fatalf("doctor emitted %d fixed checks (%v), want 24; update the documented count and this tripwire together", len(fixedNames), fixedNames)
+	if len(fixedNames) != 25 {
+		t.Fatalf("doctor emitted %d fixed checks (%v), want 25; update the documented count and this tripwire together", len(fixedNames), fixedNames)
 	}
 
 	// The doc's rows, in the order the doc lists them, filtered to the fixed

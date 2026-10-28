@@ -2837,9 +2837,9 @@ func TestDoctorLocalLandGuard(t *testing.T) {
 		t.Parallel()
 		ref, _ := doctorRealLocalSpace(t, "acme")
 		cmd := doctorLocalCommand()
-		ok, detail := cmd.doctorCheckLocalLandGuard(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
-		if !ok || detail != "" {
-			t.Fatalf("want a plain PASS, got ok=%v detail=%q", ok, detail)
+		status, detail := cmd.doctorCheckLocalLandGuard(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
+		if status != doctorCheckPass || detail != "" {
+			t.Fatalf("want a plain PASS, got status=%v detail=%q", status, detail)
 		}
 	})
 
@@ -2872,9 +2872,9 @@ func TestDoctorLocalLandGuard(t *testing.T) {
 			tc.brk(t, filepath.Join(dir, "hooks", "pre-receive"))
 
 			cmd := doctorLocalCommand()
-			ok, detail := cmd.doctorCheckLocalLandGuard(ctx, cfg)
-			if ok {
-				t.Fatalf("want FAIL, got PASS %q", detail)
+			status, detail := cmd.doctorCheckLocalLandGuard(ctx, cfg)
+			if status != doctorCheckFail {
+				t.Fatalf("want FAIL, got %s %q", status, detail)
 			}
 			for _, want := range []string{"acme: ", tc.want, "a2a space init acme --local --dir " + dir} {
 				if !strings.Contains(detail, want) {
@@ -2887,26 +2887,26 @@ func TestDoctorLocalLandGuard(t *testing.T) {
 				t.Fatalf("re-running the installer: %v", err)
 			}
 			again := doctorLocalCommand() // a fresh command: the inspection is memoised per command
-			if ok, detail := again.doctorCheckLocalLandGuard(ctx, cfg); !ok || detail != "" {
-				t.Fatalf("after the installer re-ran want a plain PASS, got ok=%v detail=%q", ok, detail)
+			if status, detail := again.doctorCheckLocalLandGuard(ctx, cfg); status != doctorCheckPass || detail != "" {
+				t.Fatalf("after the installer re-ran want a plain PASS, got status=%v detail=%q", status, detail)
 			}
 		})
 	}
 
 	versions := []struct {
-		name    string
-		line    string
-		err     error
-		wantOK  bool
-		wantSub string
+		name       string
+		line       string
+		err        error
+		wantStatus doctorCheckStatus
+		wantSub    string
 	}{
-		{"2.37 fails", "git version 2.37.9\n", nil, false, "git 2.37 is older than 2.38"},
-		{"1.9 fails", "git version 1.9.1\n", nil, false, "git 1.9 is older than 2.38"},
-		{"2.38 passes", "git version 2.38.0\n", nil, true, ""},
-		{"2.50 passes", "git version 2.50.1 (Apple Git-155)\n", nil, true, ""},
-		{"3.0 passes", "git version 3.0.0\n", nil, true, ""},
-		{"unparseable is unverified, not a pass", "no version here\n", nil, true, "git version unverified"},
-		{"a failing git is unverified, not a pass", "", errors.New("exec: git: not found"), true, "git version unverified"},
+		{"2.37 fails", "git version 2.37.9\n", nil, doctorCheckFail, "git 2.37 is older than 2.38"},
+		{"1.9 fails", "git version 1.9.1\n", nil, doctorCheckFail, "git 1.9 is older than 2.38"},
+		{"2.38 passes", "git version 2.38.0\n", nil, doctorCheckPass, ""},
+		{"2.50 passes", "git version 2.50.1 (Apple Git-155)\n", nil, doctorCheckPass, ""},
+		{"3.0 passes", "git version 3.0.0\n", nil, doctorCheckPass, ""},
+		{"unparseable is UNVERIFIED, not a pass", "no version here\n", nil, doctorCheckUnverified, "git version unverified"},
+		{"a failing git is UNVERIFIED, not a pass", "", errors.New("exec: git: not found"), doctorCheckUnverified, "git version unverified"},
 	}
 	for _, tc := range versions {
 		t.Run("git "+tc.name, func(t *testing.T) {
@@ -2914,15 +2914,48 @@ func TestDoctorLocalLandGuard(t *testing.T) {
 			ref, _ := doctorRealLocalSpace(t, "acme")
 			cmd := doctorLocalCommand()
 			cmd.gitVersion = func(context.Context) (string, error) { return tc.line, tc.err }
-			ok, detail := cmd.doctorCheckLocalLandGuard(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
-			if ok != tc.wantOK {
-				t.Fatalf("ok = %v, want %v (detail %q)", ok, tc.wantOK, detail)
+			status, detail := cmd.doctorCheckLocalLandGuard(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
+			if status != tc.wantStatus {
+				t.Fatalf("status = %s, want %s (detail %q)", status, tc.wantStatus, detail)
 			}
 			if !strings.Contains(detail, tc.wantSub) {
 				t.Errorf("detail %q lacks %q", detail, tc.wantSub)
 			}
+			if strings.HasPrefix(detail, " · ") {
+				t.Errorf("detail %q still carries the PASS-note prefix; an UNVERIFIED detail is rendered after \"UNVERIFIED: \"", detail)
+			}
 		})
 	}
+
+	// FAIL outranks UNVERIFIED across the two halves of the row: a space that
+	// cannot be inspected still has a git on this machine, and a git below the
+	// floor is a fact that does not depend on the inspection.
+	t.Run("an old git fails even when the space could not be inspected", func(t *testing.T) {
+		t.Parallel()
+		cmd := doctorLocalCommand()
+		cmd.open = host.FixedOpener(&localInspectorFake{Host: doctorLocalFake(), err: errors.New("HEAD is detached")})
+		cmd.gitVersion = func(context.Context) (string, error) { return "git version 2.37.9\n", nil }
+		status, detail := cmd.doctorCheckLocalLandGuard(ctx, space.ProjectConfig{Spaces: []space.Ref{{ID: "acme", RepoURL: "/somewhere/acme.git"}}})
+		if status != doctorCheckFail || !strings.Contains(detail, "git 2.37 is older than 2.38") {
+			t.Fatalf("want FAIL naming the git floor, got status=%s detail=%q", status, detail)
+		}
+	})
+
+	t.Run("an uninspectable space and an unreadable git are both named", func(t *testing.T) {
+		t.Parallel()
+		cmd := doctorLocalCommand()
+		cmd.open = host.FixedOpener(&localInspectorFake{Host: doctorLocalFake(), err: errors.New("HEAD is detached")})
+		cmd.gitVersion = func(context.Context) (string, error) { return "", errors.New("exec: git: not found") }
+		status, detail := cmd.doctorCheckLocalLandGuard(ctx, space.ProjectConfig{Spaces: []space.Ref{{ID: "acme", RepoURL: "/somewhere/acme.git"}}})
+		if status != doctorCheckUnverified {
+			t.Fatalf("status = %s, want UNVERIFIED (detail %q)", status, detail)
+		}
+		for _, want := range []string{"acme: HEAD is detached", "git version unverified"} {
+			if !strings.Contains(detail, want) {
+				t.Errorf("detail %q lacks %q", detail, want)
+			}
+		}
+	})
 }
 
 // TestDoctorLocalHistoryShape is AC14: a one-parent commit on main FAILs the
@@ -2939,9 +2972,9 @@ func TestDoctorLocalHistoryShape(t *testing.T) {
 	t.Run("the root commit alone passes", func(t *testing.T) {
 		t.Parallel()
 		ref, _ := doctorRealLocalSpace(t, "acme")
-		ok, detail := doctorLocalCommand().doctorCheckLocalHistoryShape(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
-		if !ok || detail != "" {
-			t.Fatalf("want a plain PASS, got ok=%v detail=%q", ok, detail)
+		status, detail := doctorLocalCommand().doctorCheckLocalHistoryShape(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
+		if status != doctorCheckPass || detail != "" {
+			t.Fatalf("want a plain PASS, got status=%v detail=%q", status, detail)
 		}
 	})
 
@@ -2952,9 +2985,9 @@ func TestDoctorLocalHistoryShape(t *testing.T) {
 		forged := doctorGit(t, dir, "commit-tree", tipTree(t, dir), "-p", root, "-m", "sneaked past the land")
 		doctorGit(t, dir, "update-ref", "refs/heads/main", forged)
 
-		ok, detail := doctorLocalCommand().doctorCheckLocalHistoryShape(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
-		if ok {
-			t.Fatalf("want FAIL, got PASS %q", detail)
+		status, detail := doctorLocalCommand().doctorCheckLocalHistoryShape(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
+		if status != doctorCheckFail {
+			t.Fatalf("want FAIL, got %s %q", status, detail)
 		}
 		for _, want := range []string{"acme: ", "1 commit(s) on the base branch were not made by a land", forged, "--git-dir=" + dir} {
 			if !strings.Contains(detail, want) {
@@ -2972,9 +3005,9 @@ func TestDoctorLocalHistoryShape(t *testing.T) {
 			tip = doctorGit(t, dir, "commit-tree", tipTree(t, dir), "-p", tip, "-p", side, "-m", "land")
 			doctorGit(t, dir, "update-ref", "refs/heads/main", tip)
 		}
-		ok, detail := doctorLocalCommand().doctorCheckLocalHistoryShape(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
-		if !ok || detail != "" {
-			t.Fatalf("want a plain PASS over land merges, got ok=%v detail=%q", ok, detail)
+		status, detail := doctorLocalCommand().doctorCheckLocalHistoryShape(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
+		if status != doctorCheckPass || detail != "" {
+			t.Fatalf("want a plain PASS over land merges, got status=%v detail=%q", status, detail)
 		}
 	})
 
@@ -2985,9 +3018,9 @@ func TestDoctorLocalHistoryShape(t *testing.T) {
 		side := doctorGit(t, dir, "commit-tree", tipTree(t, dir), "-p", root, "-m", "never a pull request")
 		forged := doctorGit(t, dir, "commit-tree", tipTree(t, dir), "-p", root, "-p", side, "-m", "forged merge")
 		doctorGit(t, dir, "update-ref", "refs/heads/main", forged)
-		ok, detail := doctorLocalCommand().doctorCheckLocalHistoryShape(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
-		if !ok || detail != "" {
-			t.Fatalf("a two-parent merge has the shape of a land; want PASS, got ok=%v detail=%q", ok, detail)
+		status, detail := doctorLocalCommand().doctorCheckLocalHistoryShape(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
+		if status != doctorCheckPass || detail != "" {
+			t.Fatalf("a two-parent merge has the shape of a land; want PASS, got status=%v detail=%q", status, detail)
 		}
 	})
 }
@@ -3001,9 +3034,9 @@ func TestDoctorLocalSpaceWritable(t *testing.T) {
 	t.Run("a writable space passes with no note", func(t *testing.T) {
 		t.Parallel()
 		ref, _ := doctorRealLocalSpace(t, "acme")
-		ok, detail := doctorLocalCommand().doctorCheckLocalSpaceWritable(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
-		if !ok || detail != "" {
-			t.Fatalf("want a plain PASS, got ok=%v detail=%q", ok, detail)
+		status, detail := doctorLocalCommand().doctorCheckLocalSpaceWritable(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
+		if status != doctorCheckPass || detail != "" {
+			t.Fatalf("want a plain PASS, got status=%v detail=%q", status, detail)
 		}
 	})
 
@@ -3025,9 +3058,9 @@ func TestDoctorLocalSpaceWritable(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = os.Chmod(refs, 0o755) })
 		}
-		ok, detail := doctorLocalCommand().doctorCheckLocalSpaceWritable(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
-		if ok {
-			t.Fatalf("want FAIL, got PASS %q", detail)
+		status, detail := doctorLocalCommand().doctorCheckLocalSpaceWritable(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
+		if status != doctorCheckFail {
+			t.Fatalf("want FAIL, got %s %q", status, detail)
 		}
 		for _, want := range []string{"acme: ", "this user cannot write the repository", "refs/", dir} {
 			if !strings.Contains(detail, want) {
@@ -3059,15 +3092,15 @@ func TestDoctorLocalRowsUnverifiedAndSilentCases(t *testing.T) {
 	ctx := context.Background()
 	rows := []struct {
 		name string
-		run  func(*DoctorCommand, space.ProjectConfig) (bool, string)
+		run  func(*DoctorCommand, space.ProjectConfig) (doctorCheckStatus, string)
 	}{
-		{"local land guard", func(c *DoctorCommand, cfg space.ProjectConfig) (bool, string) {
+		{"local land guard", func(c *DoctorCommand, cfg space.ProjectConfig) (doctorCheckStatus, string) {
 			return c.doctorCheckLocalLandGuard(ctx, cfg)
 		}},
-		{"local history shape", func(c *DoctorCommand, cfg space.ProjectConfig) (bool, string) {
+		{"local history shape", func(c *DoctorCommand, cfg space.ProjectConfig) (doctorCheckStatus, string) {
 			return c.doctorCheckLocalHistoryShape(ctx, cfg)
 		}},
-		{"local space writable", func(c *DoctorCommand, cfg space.ProjectConfig) (bool, string) {
+		{"local space writable", func(c *DoctorCommand, cfg space.ProjectConfig) (doctorCheckStatus, string) {
 			return c.doctorCheckLocalSpaceWritable(ctx, cfg)
 		}},
 	}
@@ -3079,11 +3112,11 @@ func TestDoctorLocalRowsUnverifiedAndSilentCases(t *testing.T) {
 			cmd := doctorLocalCommand()
 			fake := &localInspectorFake{Host: doctorLocalFake(), err: errors.New("HEAD is detached")}
 			cmd.open = host.FixedOpener(fake)
-			ok, detail := row.run(cmd, cfg)
-			if !ok {
-				t.Fatalf("an uninspectable space must not FAIL: %s", detail)
+			status, detail := row.run(cmd, cfg)
+			if status != doctorCheckUnverified {
+				t.Fatalf("an uninspectable space must be UNVERIFIED, got %s: %s", status, detail)
 			}
-			for _, want := range []string{row.name + " unverified for acme", "HEAD is detached"} {
+			for _, want := range []string{"acme: HEAD is detached"} {
 				if !strings.Contains(detail, want) {
 					t.Errorf("detail %q lacks %q", detail, want)
 				}
@@ -3093,27 +3126,27 @@ func TestDoctorLocalRowsUnverifiedAndSilentCases(t *testing.T) {
 			t.Parallel()
 			cmd := doctorLocalCommand()
 			cmd.open = host.FixedOpener(doctorLocalFake()) // declares local, implements no inspector
-			ok, detail := row.run(cmd, cfg)
-			if !ok || !strings.Contains(detail, row.name+" unverified for acme: this host cannot be inspected") {
-				t.Fatalf("want an unverified PASS, got ok=%v detail=%q", ok, detail)
+			status, detail := row.run(cmd, cfg)
+			if status != doctorCheckUnverified || detail != "acme: this host cannot be inspected" {
+				t.Fatalf("want UNVERIFIED naming the space and the reason, got status=%v detail=%q", status, detail)
 			}
 		})
 		t.Run(row.name+"/an open failure is unverified", func(t *testing.T) {
 			t.Parallel()
 			cmd := doctorLocalCommand()
 			cmd.open = func(string) (host.Host, host.Repo, error) { return nil, host.Repo{}, errors.New("not a repository") }
-			ok, detail := row.run(cmd, cfg)
-			if !ok || !strings.Contains(detail, row.name+" unverified for acme: the space's host could not be opened: not a repository") {
-				t.Fatalf("want an unverified PASS, got ok=%v detail=%q", ok, detail)
+			status, detail := row.run(cmd, cfg)
+			if status != doctorCheckUnverified || detail != "acme: the space's host could not be opened: not a repository" {
+				t.Fatalf("want UNVERIFIED naming the open error, got status=%v detail=%q", status, detail)
 			}
 		})
 		t.Run(row.name+"/no host wired is unverified", func(t *testing.T) {
 			t.Parallel()
 			cmd := doctorLocalCommand()
 			cmd.open = nil
-			ok, detail := row.run(cmd, cfg)
-			if !ok || !strings.Contains(detail, row.name+" unverified for acme") {
-				t.Fatalf("want an unverified PASS, got ok=%v detail=%q", ok, detail)
+			status, detail := row.run(cmd, cfg)
+			if status != doctorCheckUnverified || detail != "acme: no host is wired for this space" {
+				t.Fatalf("want UNVERIFIED for a space with no host, got status=%v detail=%q", status, detail)
 			}
 		})
 		t.Run(row.name+"/a GitHub space is silent and never inspected", func(t *testing.T) {
@@ -3121,9 +3154,9 @@ func TestDoctorLocalRowsUnverifiedAndSilentCases(t *testing.T) {
 			gh := &localInspectorFake{Host: host.NewFakeHost(), err: errors.New("must not be inspected")}
 			cmd := doctorLocalCommand()
 			cmd.open = host.FixedOpener(gh)
-			ok, detail := row.run(cmd, space.ProjectConfig{Spaces: []space.Ref{{ID: "hub", RepoURL: "https://github.com/acme/hub"}}})
-			if !ok || detail != "" {
-				t.Fatalf("want a silent PASS, got ok=%v detail=%q", ok, detail)
+			status, detail := row.run(cmd, space.ProjectConfig{Spaces: []space.Ref{{ID: "hub", RepoURL: "https://github.com/acme/hub"}}})
+			if status != doctorCheckPass || detail != "" {
+				t.Fatalf("want a silent PASS, got status=%v detail=%q", status, detail)
 			}
 			if gh.calls != 0 {
 				t.Errorf("a GitHub space was inspected %d time(s)", gh.calls)
@@ -3131,9 +3164,9 @@ func TestDoctorLocalRowsUnverifiedAndSilentCases(t *testing.T) {
 		})
 		t.Run(row.name+"/no spaces is a silent pass", func(t *testing.T) {
 			t.Parallel()
-			ok, detail := row.run(doctorLocalCommand(), space.ProjectConfig{})
-			if !ok || detail != "" {
-				t.Fatalf("want a silent PASS, got ok=%v detail=%q", ok, detail)
+			status, detail := row.run(doctorLocalCommand(), space.ProjectConfig{})
+			if status != doctorCheckPass || detail != "" {
+				t.Fatalf("want a silent PASS, got status=%v detail=%q", status, detail)
 			}
 		})
 	}
@@ -3146,8 +3179,8 @@ func TestDoctorLocalRowsUnverifiedAndSilentCases(t *testing.T) {
 		}}
 		cmd.open = host.FixedOpener(fake)
 		for _, row := range rows {
-			if ok, detail := row.run(cmd, cfg); !ok || detail != "" {
-				t.Fatalf("%s: want a plain PASS, got ok=%v detail=%q", row.name, ok, detail)
+			if status, detail := row.run(cmd, cfg); status != doctorCheckPass || detail != "" {
+				t.Fatalf("%s: want a plain PASS, got status=%v detail=%q", row.name, status, detail)
 			}
 		}
 		if fake.calls != 1 {
@@ -3159,9 +3192,9 @@ func TestDoctorLocalRowsUnverifiedAndSilentCases(t *testing.T) {
 		t.Parallel()
 		cmd := doctorLocalCommand()
 		cmd.open = host.FixedOpener(&localInspectorFake{Host: doctorLocalFake()}) // Writable false, no detail
-		ok, detail := cmd.doctorCheckLocalSpaceWritable(ctx, cfg)
-		if ok || !strings.Contains(detail, "no reason reported") {
-			t.Fatalf("want a FAIL with a stated reason, got ok=%v detail=%q", ok, detail)
+		status, detail := cmd.doctorCheckLocalSpaceWritable(ctx, cfg)
+		if status != doctorCheckFail || !strings.Contains(detail, "no reason reported") {
+			t.Fatalf("want a FAIL with a stated reason, got status=%v detail=%q", status, detail)
 		}
 	})
 }
@@ -3248,6 +3281,223 @@ func TestDoctorScaffoldingRowComparesALocalSpaceToTheLocalSubset(t *testing.T) {
 		ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
 		if !ok || !strings.Contains(detail, "behind the current template") {
 			t.Fatalf("want an advisory 'behind' for a GitHub-shaped space, got ok=%v detail=%q", ok, detail)
+		}
+	})
+}
+
+// doctorPolicyCommand is a doctor whose mirrors are in memory: each space's
+// space.yaml is manifests[id], and a space with no entry has no readable file.
+func doctorPolicyCommand(open host.Opener, manifests map[string]string) *DoctorCommand {
+	cmd := newTestDoctorCommand()
+	cmd.open = open
+	cmd.resolveMirror = func(_ string, ref space.Ref, _ space.MachineConfig) string { return "/mirror/" + ref.ID }
+	cmd.readFile = func(path string) ([]byte, error) {
+		for id, body := range manifests {
+			if path == "/mirror/"+id+"/space.yaml" {
+				return []byte(body), nil
+			}
+		}
+		return nil, fs.ErrNotExist
+	}
+	return cmd
+}
+
+func doctorPolicyManifest(extra string) string {
+	return "schema: manifest/v1\nspace: x\nmin_binary_version: 0.1.0\nparticipants: []\n" + extra
+}
+
+// TestDoctorCheckSpacePolicy is AC18: the row names the effective gates and the
+// flow of every connected space, FAILs on a reviewed host whose manifest says
+// `autonomous`, and reports a space with no host as UNVERIFIED, never PASS, even
+// when its manifest says `autonomous`.
+func TestDoctorCheckSpacePolicy(t *testing.T) {
+	t.Parallel()
+	const (
+		ghURL    = "https://github.com/acme/hub"
+		localURL = "/home/me/.local/share/a2a/spaces/loc.git"
+	)
+	both := space.ProjectConfig{Spaces: []space.Ref{{ID: "hub", RepoURL: ghURL}, {ID: "loc", RepoURL: localURL}}}
+	openBoth := func() host.Opener {
+		return doctorOpenByURL(map[string]host.Host{ghURL: host.NewFakeHost(), localURL: doctorLocalFake()})
+	}
+
+	t.Run("each space shows the gates in force for its host and its flow", func(t *testing.T) {
+		t.Parallel()
+		cmd := doctorPolicyCommand(openBoth(), map[string]string{
+			"hub": doctorPolicyManifest("gates: default\n"),
+			"loc": doctorPolicyManifest("gates: default\nflow: express\n"),
+		})
+		status, detail := cmd.doctorCheckSpacePolicy(both, space.MachineConfig{})
+		want := " · hub: gates review, flow full; loc: gates confirm, flow express"
+		if status != doctorCheckPass || detail != want {
+			t.Fatalf("got status=%s detail=%q, want PASS %q", status, detail, want)
+		}
+	})
+
+	t.Run("a local space honours autonomous", func(t *testing.T) {
+		t.Parallel()
+		cmd := doctorPolicyCommand(openBoth(), map[string]string{
+			"hub": doctorPolicyManifest(""),
+			"loc": doctorPolicyManifest("gates: autonomous\n"),
+		})
+		status, detail := cmd.doctorCheckSpacePolicy(both, space.MachineConfig{})
+		want := " · hub: gates review, flow full; loc: gates autonomous, flow full"
+		if status != doctorCheckPass || detail != want {
+			t.Fatalf("got status=%s detail=%q, want PASS %q", status, detail, want)
+		}
+	})
+
+	t.Run("a reviewed host whose manifest says autonomous FAILs", func(t *testing.T) {
+		t.Parallel()
+		cmd := doctorPolicyCommand(openBoth(), map[string]string{
+			"hub": doctorPolicyManifest("gates: autonomous\n"),
+			"loc": doctorPolicyManifest("gates: autonomous\n"),
+		})
+		status, detail := cmd.doctorCheckSpacePolicy(both, space.MachineConfig{})
+		if status != doctorCheckFail {
+			t.Fatalf("status = %s, want FAIL (detail %q)", status, detail)
+		}
+		for _, want := range []string{"hub: space.yaml says gates: autonomous", "this host reviews writes", "effective gates review", "POL-028"} {
+			if !strings.Contains(detail, want) {
+				t.Errorf("detail %q lacks %q", detail, want)
+			}
+		}
+		if strings.Contains(detail, "loc:") {
+			t.Errorf("the local space, where autonomous is honoured, was named in the FAIL: %q", detail)
+		}
+	})
+
+	t.Run("a malformed repo_url is UNVERIFIED even when the manifest says autonomous", func(t *testing.T) {
+		t.Parallel()
+		cfg := space.ProjectConfig{Spaces: []space.Ref{{ID: "odd", RepoURL: "https://github.com/onlyowner"}}}
+		cmd := doctorPolicyCommand(host.NewOpener(host.OpenConfig{}), map[string]string{"odd": doctorPolicyManifest("gates: autonomous\n")})
+		status, detail := cmd.doctorCheckSpacePolicy(cfg, space.MachineConfig{})
+		if status != doctorCheckUnverified {
+			t.Fatalf("status = %s, want UNVERIFIED (detail %q)", status, detail)
+		}
+		for _, want := range []string{"odd: host not opened", "cannot parse owner/name"} {
+			if !strings.Contains(detail, want) {
+				t.Errorf("detail %q lacks %q", detail, want)
+			}
+		}
+		if strings.Contains(detail, "autonomous") {
+			t.Errorf("an unopened space's manifest was honoured: %q", detail)
+		}
+	})
+
+	t.Run("no opener wired is UNVERIFIED too", func(t *testing.T) {
+		t.Parallel()
+		cmd := doctorPolicyCommand(nil, map[string]string{"hub": doctorPolicyManifest("gates: autonomous\n")})
+		status, detail := cmd.doctorCheckSpacePolicy(space.ProjectConfig{Spaces: []space.Ref{{ID: "hub", RepoURL: ghURL}}}, space.MachineConfig{})
+		if status != doctorCheckUnverified || !strings.Contains(detail, "hub: host not opened") {
+			t.Fatalf("got status=%s detail=%q, want UNVERIFIED naming the unopened host", status, detail)
+		}
+	})
+
+	t.Run("a mirror that cannot be read or parsed is UNVERIFIED, not a healthy review", func(t *testing.T) {
+		t.Parallel()
+		cmd := doctorPolicyCommand(openBoth(), map[string]string{"loc": "schema: [unclosed\n"})
+		status, detail := cmd.doctorCheckSpacePolicy(both, space.MachineConfig{})
+		if status != doctorCheckUnverified {
+			t.Fatalf("status = %s, want UNVERIFIED (detail %q)", status, detail)
+		}
+		for _, want := range []string{"hub: space.yaml could not be read from the mirror", "loc: space.yaml could not be parsed"} {
+			if !strings.Contains(detail, want) {
+				t.Errorf("detail %q lacks %q", detail, want)
+			}
+		}
+	})
+
+	t.Run("a FAIL outranks an UNVERIFIED space", func(t *testing.T) {
+		t.Parallel()
+		cmd := doctorPolicyCommand(openBoth(), map[string]string{"hub": doctorPolicyManifest("gates: autonomous\n")})
+		status, detail := cmd.doctorCheckSpacePolicy(both, space.MachineConfig{})
+		if status != doctorCheckFail || !strings.Contains(detail, "hub: space.yaml says gates: autonomous") {
+			t.Fatalf("got status=%s detail=%q, want the reviewed-host FAIL", status, detail)
+		}
+	})
+
+	t.Run("no spaces is a plain PASS", func(t *testing.T) {
+		t.Parallel()
+		status, detail := doctorPolicyCommand(openBoth(), nil).doctorCheckSpacePolicy(space.ProjectConfig{}, space.MachineConfig{})
+		if status != doctorCheckPass || detail != "" {
+			t.Fatalf("got status=%s detail=%q", status, detail)
+		}
+	})
+}
+
+// TestDoctorRunRendersTheThreeOutcomes pins what the operator reads and the
+// exit code each outcome earns: UNVERIFIED is its own status and, like the
+// visibility rows', advisory; FAIL is not.
+func TestDoctorRunRendersTheThreeOutcomes(t *testing.T) {
+	t.Parallel()
+	run := func(open host.Opener, url, manifest string) (int, string) {
+		cmd := doctorPolicyCommand(open, map[string]string{"hub": manifest})
+		cmd.loadProjectConfig = func(string) (space.ProjectConfig, error) {
+			return space.ProjectConfig{Spaces: []space.Ref{{ID: "hub", RepoURL: url}}}, nil
+		}
+		cmd.loadMachineConfig = func(string) (space.MachineConfig, error) { return space.MachineConfig{}, nil }
+		cmd.resolveCredential = func(context.Context, string, space.CredentialReference) (host.Credential, error) {
+			return host.Credential{Token: "t"}, nil
+		}
+		cmd.cloneOrFetch = func(context.Context, string, string, host.Credential) error { return nil }
+		cmd.lookupGit = func() error { return nil }
+		var stdout, stderr bytes.Buffer
+		code := cmd.Run(context.Background(), nil, IO{Stdout: &stdout, Stderr: &stderr})
+		return code, stdout.String()
+	}
+
+	t.Run("the policy row prints PASS, UNVERIFIED and FAIL in their own words", func(t *testing.T) {
+		t.Parallel()
+		cases := []struct {
+			name     string
+			open     host.Opener
+			url      string
+			manifest string
+			want     string
+		}{
+			{"pass", host.FixedOpener(host.NewFakeHost()), "https://github.com/acme/hub", doctorPolicyManifest(""),
+				"space policy: PASS · hub: gates review, flow full\n"},
+			{"unverified", host.NewOpener(host.OpenConfig{}), "https://github.com/onlyowner", doctorPolicyManifest("gates: autonomous\n"),
+				"space policy: UNVERIFIED: hub: host not opened: cannot parse owner/name from repo URL"},
+			{"fail", host.FixedOpener(host.NewFakeHost()), "https://github.com/acme/hub", doctorPolicyManifest("gates: autonomous\n"),
+				"space policy: FAIL: hub: space.yaml says gates: autonomous"},
+		}
+		for _, tc := range cases {
+			code, out := run(tc.open, tc.url, tc.manifest)
+			if !strings.Contains(out, tc.want) {
+				t.Errorf("%s: stdout lacks %q:\n%s", tc.name, tc.want, out)
+			}
+			// Other rows of this in-memory project fail on their own account;
+			// what is pinned is that the policy row's FAIL, and only it, is
+			// what a nonzero exit can be blamed on in the fail case.
+			if tc.name == "fail" && code != 1 {
+				t.Errorf("fail: exit = %d, want 1", code)
+			}
+		}
+	})
+
+	t.Run("an UNVERIFIED row is advisory: it does not change a green exit code", func(t *testing.T) {
+		t.Parallel()
+		cmd := newDoctorVisibilityRunCommand(t, DoctorClassificationSummary{Highest: "public"}, host.RepositoryVisibilityPublic)
+		var base bytes.Buffer
+		if code := cmd.Run(context.Background(), nil, IO{Stdout: &base, Stderr: &bytes.Buffer{}}); code != 0 {
+			t.Fatalf("the baseline project must be green, exit %d:\n%s", code, base.String())
+		}
+
+		cmd = newDoctorVisibilityRunCommand(t, DoctorClassificationSummary{Highest: "public"}, host.RepositoryVisibilityPublic)
+		cmd.open = host.FixedOpener(&localInspectorFake{Host: doctorLocalFake(), err: errors.New("HEAD is detached")})
+		cmd.gitVersion = func(context.Context) (string, error) { return "git version 2.39.3\n", nil }
+		var stdout, stderr bytes.Buffer
+		code := cmd.Run(context.Background(), nil, IO{Stdout: &stdout, Stderr: &stderr})
+		for _, name := range []string{"local land guard", "local history shape", "local space writable"} {
+			want := name + ": UNVERIFIED: getvisa: HEAD is detached\n"
+			if !strings.Contains(stdout.String(), want) {
+				t.Errorf("stdout lacks %q:\n%s", want, stdout.String())
+			}
+		}
+		if code != 0 {
+			t.Errorf("exit = %d, want 0: UNVERIFIED must not fail doctor:\n%s", code, stdout.String())
 		}
 	})
 }

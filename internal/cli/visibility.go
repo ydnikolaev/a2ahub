@@ -195,6 +195,21 @@ func (c *DoctorCommand) doctorVisibilityRows(ctx context.Context, cfg space.Proj
 	rows := make([]doctorVisibilityRow, 0, len(refs))
 
 	for _, ref := range refs {
+		// A space on this machine is never shared, so there is no repository
+		// visibility to compare with its classification (spec 03 §T1.4). n/a
+		// comes only from the host's DECLARED OnThisMachine; a space with no
+		// host falls through to the unverified decision below. Nothing is read
+		// for it: no credential, no visibility probe, no classification scan.
+		if caps, known := c.doctorDeclaredCaps(ref); known && caps.OnThisMachine {
+			rows = append(rows, doctorVisibilityRow{
+				SpaceID: ref.ID,
+				doctorVisibilityDecision: doctorVisibilityDecision{
+					Status: doctorVisibilityPASS,
+					Detail: "n/a: on this machine, never shared",
+				},
+			})
+			continue
+		}
 		facts := doctorVisibilityFacts{}
 		if c.ClassificationSummaryReader != nil {
 			summary, err := c.ClassificationSummaryReader.ClassificationSummary(ctx, ref.ID)
