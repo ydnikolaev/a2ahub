@@ -245,8 +245,8 @@ type PublishedContractVersion struct {
 	CommitSHA string
 }
 
-// PublishedContractVersionsAt is the one reader of which versions of a
-// contract are published as of anchor: the version of every publish event for
+// PublishedContractVersionsAt reads which versions of a contract are
+// published as of anchor, from history: the version of every publish event for
 // contractID that anchor's first-parent history ADDED, oldest first. It is the
 // walk the publication planner reads its history through
 // (publicationHistoryAt), so a caller that judges a publication's baseline

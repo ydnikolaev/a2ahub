@@ -193,6 +193,43 @@ func TestPublishedContractVersionsAtListsTheEventsHistoryAdded(t *testing.T) {
 	}
 }
 
+// TestPublishedContractVersionsAtAttributesABranchPublishToItsLandMerge pins
+// the shape a local host lands a write in (internal/host/local.go: a merge
+// commit whose first parent is the old tip and whose tree is the branch head's).
+// The merge is TREESAME to its second parent, so a walk that follows the
+// branch's own commits attributes the publish to a commit main never pointed
+// at, and a walk that diffs merges against no parent loses it.
+func TestPublishedContractVersionsAtAttributesABranchPublishToItsLandMerge(t *testing.T) {
+	t.Parallel()
+
+	repo := newContractHistoryRepo(t)
+	oneFiles := map[string]string{"schema/main.schema.json": "schema one"}
+	first := commitContractPublicationAtPath(t, repo, "axon/events/2026/01K1A2B3C4D5E6F7G8H9J0K1M8.yaml", contractV1Descriptor("1.0.0"), oneFiles,
+		contractEventV1WithID("01K1A2B3C4D5E6F7G8H9J0K1M8", "1.0.0", legacyContractDigest(t, oneFiles)))
+
+	contractTestGit(t, repo, "checkout", "-q", "-b", "write")
+	writeContractCandidateFile(t, repo, "axon/data/note.txt", "not an event\n")
+	contractTestGit(t, repo, "add", "--", "axon/data/note.txt")
+	contractTestGit(t, repo, "commit", "-q", "-m", "a non-event file the branch adds")
+	twoFiles := map[string]string{"schema/main.schema.json": "schema two"}
+	writeContractPublicationAtPath(t, repo, "axon/events/2026/01K1A2B3C4D5E6F7G8H9J0K1M9.yaml", contractV1Descriptor("2.0.0"), twoFiles,
+		contractEventV1WithID("01K1A2B3C4D5E6F7G8H9J0K1M9", "2.0.0", legacyContractDigest(t, twoFiles)))
+	contractTestGit(t, repo, "add", "--", contractTestRoot, "axon/events/2026/01K1A2B3C4D5E6F7G8H9J0K1M9.yaml")
+	contractTestGit(t, repo, "commit", "-q", "-m", "publish 2.0.0 on the write branch")
+	head := strings.TrimSpace(contractTestGitOutput(t, repo, "rev-parse", "HEAD"))
+	tree := strings.TrimSpace(contractTestGitOutput(t, repo, "rev-parse", head+"^{tree}"))
+	merge := strings.TrimSpace(contractTestGitOutput(t, repo, "commit-tree", tree, "-p", first, "-p", head, "-m", "land"))
+
+	got, err := PublishedContractVersionsAt(t.Context(), repo, merge, contractTestID)
+	if err != nil {
+		t.Fatalf("PublishedContractVersionsAt: %v", err)
+	}
+	want := []PublishedContractVersion{{Version: "1.0.0", CommitSHA: first}, {Version: "2.0.0", CommitSHA: merge}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("published versions at the land merge = %+v, want %+v (branch head %s)", got, want, head)
+	}
+}
+
 func TestPublishedContractVersionsAtRefusals(t *testing.T) {
 	t.Parallel()
 
