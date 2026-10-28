@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 )
 
 func localInitGit(t *testing.T, dir string, args ...string) string {
@@ -81,7 +83,7 @@ func TestInitLocalSpaceRepoInstallsNoHookAndIgnoresUserTemplates(t *testing.T) {
 func TestInitLocalSpaceRepoIsNotAffectedByAnEnclosingRepository(t *testing.T) {
 	t.Parallel()
 	outer := t.TempDir()
-	if out, err := exec.Command("git", "init", "--quiet", outer).CombinedOutput(); err != nil {
+	if out, err := exec.Command("git", gitfixture.Args("init", "--quiet", outer)...).CombinedOutput(); err != nil {
 		t.Fatalf("git init outer: %v: %s", err, out)
 	}
 	dir := filepath.Join(outer, "inside.git")
@@ -91,7 +93,7 @@ func TestInitLocalSpaceRepoIsNotAffectedByAnEnclosingRepository(t *testing.T) {
 	if got := localInitGit(t, dir, "rev-list", "--count", "main"); got != "1" {
 		t.Fatalf("commit count = %s", got)
 	}
-	if out, err := exec.Command("git", "-C", outer, "rev-parse", "--verify", "--quiet", "HEAD").CombinedOutput(); err == nil {
+	if out, err := exec.Command("git", gitfixture.Args("-C", outer, "rev-parse", "--verify", "--quiet", "HEAD")...).CombinedOutput(); err == nil {
 		t.Fatalf("the enclosing repository gained a commit: %s", out)
 	}
 }
@@ -194,7 +196,7 @@ func TestReadLocalSpaceRepoReadsZeroForForeignDirectories(t *testing.T) {
 	t.Run("directory inside another repository", func(t *testing.T) {
 		t.Parallel()
 		outer := t.TempDir()
-		if out, err := exec.Command("git", "init", "--quiet", outer).CombinedOutput(); err != nil {
+		if out, err := exec.Command("git", gitfixture.Args("init", "--quiet", outer)...).CombinedOutput(); err != nil {
 			t.Fatalf("%v: %s", err, out)
 		}
 		inner := filepath.Join(outer, "sub")
@@ -208,9 +210,10 @@ func TestReadLocalSpaceRepoReadsZeroForForeignDirectories(t *testing.T) {
 	t.Run("bare repository without a base branch", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		if out, err := exec.Command("git", "init", "--bare", "--quiet", dir).CombinedOutput(); err != nil {
+		if out, err := exec.Command("git", gitfixture.Args("init", "--bare", "--quiet", dir)...).CombinedOutput(); err != nil {
 			t.Fatalf("%v: %s", err, out)
 		}
+		gitfixture.HardenRepo(t, dir)
 		got, err := ReadLocalSpaceRepo(ctx, dir)
 		if err != nil {
 			t.Fatal(err)

@@ -2815,7 +2815,7 @@ func doctorLocalCommand() *DoctorCommand {
 // identity and fails the test on any error.
 func doctorGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"--git-dir=" + dir}, args...)...)
+	cmd := exec.Command("git", gitfixture.Args(append([]string{"--git-dir=" + dir}, args...)...)...)
 	cmd.Env = append(os.Environ(),
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.invalid",
 		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.invalid")

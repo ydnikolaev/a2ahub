@@ -17,6 +17,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
 	spacetemplate "github.com/ydnikolaev/a2ahub/space-template"
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 )
 
 // TestSpaceEmbedIncludesDotfiles is the dotfile-embed guard (spec 33 §12
@@ -1323,7 +1324,7 @@ func newLocalSpaceCommand(t *testing.T, dataRoot string) *cli.SpaceCommand {
 
 func spaceGit(t *testing.T, gitDir string, args ...string) string {
 	t.Helper()
-	out, err := exec.Command("git", append([]string{"--git-dir=" + gitDir}, args...)...).CombinedOutput()
+	out, err := exec.Command("git", gitfixture.Args(append([]string{"--git-dir=" + gitDir}, args...)...)...).CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
@@ -1653,7 +1654,7 @@ func TestSpaceInitLocalRerun(t *testing.T) {
 			t.Fatal(err)
 		}
 		tree := spaceGit(t, target, "rev-parse", root+"^{tree}")
-		child := exec.Command("git", "--git-dir="+target, "commit-tree", tree, "-p", root, "-m", "x")
+		child := exec.Command("git", gitfixture.Args("--git-dir="+target, "commit-tree", tree, "-p", root, "-m", "x")...)
 		child.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
 		sha, err := child.Output()
 		if err != nil {
@@ -1705,7 +1706,7 @@ func TestSpaceUpdateLocalPlanProposesNothingForALocalSpace(t *testing.T) {
 		t.Fatalf("init: code = %d; %s%s", code, out.String(), errOut.String())
 	}
 	mirror := filepath.Join(root, "mirror")
-	if outp, err := exec.Command("git", "clone", "--quiet", bare, mirror).CombinedOutput(); err != nil {
+	if outp, err := exec.Command("git", gitfixture.Args("clone", "--quiet", bare, mirror)...).CombinedOutput(); err != nil {
 		t.Fatalf("clone: %v\n%s", err, outp)
 	}
 
