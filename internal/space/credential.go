@@ -2,6 +2,8 @@ package space
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -78,6 +80,13 @@ func ghAuthTokenAvailable(ctx context.Context) bool {
 // actionable error naming exactly what was checked. The resolved secret
 // is never persisted or logged by this function; it is returned once, for
 // immediate use in a host.Host call.
+//
+// Step (b) has two failure shapes, and they are kept apart on purpose. A
+// reference that resolves to nothing because nothing is there (an unset env
+// var, no reference configured) is ErrCredentialUnresolved. A cmd: reference
+// whose command does not start, exits non-zero or prints nothing is
+// ErrCredentialCommandFailed: the setting exists and is broken, and a caller
+// that tolerates "no credential" must not tolerate that (anti-pattern #22).
 func ResolveCredential(ctx context.Context, explicitEnvVar string, ref CredentialReference) (host.Credential, error) {
 	const op = "ResolveCredential"
 
@@ -95,11 +104,22 @@ func ResolveCredential(ctx context.Context, explicitEnvVar string, ref Credentia
 	case "cmd":
 		if len(ref.Argv) > 0 {
 			out, err := exec.CommandContext(ctx, ref.Argv[0], ref.Argv[1:]...).Output()
-			if err == nil {
-				if secret := strings.TrimSpace(string(out)); secret != "" {
-					return host.Credential{Token: secret}, nil
+			if err != nil {
+				return host.Credential{}, &Error{
+					Op:    op,
+					Input: describeChecked(explicitEnvVar, ref),
+					Err:   fmt.Errorf("%w: %s", ErrCredentialCommandFailed, commandFailure(err)),
 				}
 			}
+			secret := strings.TrimSpace(string(out))
+			if secret == "" {
+				return host.Credential{}, &Error{
+					Op:    op,
+					Input: describeChecked(explicitEnvVar, ref),
+					Err:   fmt.Errorf("%w: it exited 0 but printed no credential", ErrCredentialCommandFailed),
+				}
+			}
+			return host.Credential{Token: secret}, nil
 		}
 	}
 
@@ -147,6 +167,20 @@ func ResolveWriteCredential(ctx context.Context, explicitEnvVar string, ref Cred
 		return host.Credential{Token: token}, nil
 	}
 	return host.Credential{}, err
+}
+
+// commandFailure renders why a credential command failed, for the error text.
+// It never includes anything the command printed: its stdout is the secret
+// when it works, and its stderr (which exec.ExitError keeps) is not bounded to
+// be free of one. An exit renders as its status ("exit status 1", or the
+// signal); a command that never started renders as the start error, which
+// names only the configured argv[0].
+func commandFailure(err error) string {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ProcessState.String()
+	}
+	return err.Error()
 }
 
 // describeChecked names exactly what ResolveCredential checked, for the

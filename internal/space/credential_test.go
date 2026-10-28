@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -155,4 +156,66 @@ func TestResolveCredentialMissingFailsLoudNeverLiteralFallback(t *testing.T) {
 	if got.Token != "" {
 		t.Fatalf("Token = %q, want empty (no literal fallback)", got.Token)
 	}
+}
+
+// writeCredentialStub drops an executable shell script named name into a fresh
+// temp dir and returns its absolute path, for a `cmd:` reference to run.
+func writeCredentialStub(t *testing.T, name, script string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+script), 0o755); err != nil {
+		t.Fatalf("write credential stub: %v", err)
+	}
+	return path
+}
+
+// TestResolveCredentialFailingCommandIsNotUnresolved: a configured `cmd:`
+// reference whose command fails is a broken setting, not "nothing configured"
+// (AGENTS.md anti-pattern #22, local-space-2026-10 spec 08 US-4). It carries its
+// own sentinel, which must not match ErrCredentialUnresolved, and it names the
+// failure without echoing anything the command printed (its stdout may be a
+// secret, and its stderr is not bounded to be safe).
+//
+// reason: not parallel: each case writes a script and execs it at once, and a
+// sibling test forking concurrently can inherit the still-open write fd, which
+// on Linux fails the exec with ETXTBSY instead of the exit this test asserts.
+func TestResolveCredentialFailingCommandIsNotUnresolved(t *testing.T) {
+
+	for _, tc := range []struct {
+		name   string
+		script string
+		want   string
+	}{
+		{name: "non-zero exit", script: "echo leaked-stdout-secret\necho leaked-stderr-secret >&2\nexit 3\n", want: "exit status 3"},
+		{name: "empty output", script: "printf '  \\n'\nexit 0\n", want: "printed no credential"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stub := writeCredentialStub(t, "cred", tc.script)
+			got, err := ResolveCredential(context.Background(), "", CredentialReference{Kind: "cmd", Argv: []string{stub, "read"}})
+			if !errors.Is(err, ErrCredentialCommandFailed) {
+				t.Fatalf("ResolveCredential error = %v, want ErrCredentialCommandFailed", err)
+			}
+			if errors.Is(err, ErrCredentialUnresolved) {
+				t.Fatalf("ResolveCredential error = %v also matches ErrCredentialUnresolved; a broken setting must not read as no credential", err)
+			}
+			if got.Token != "" {
+				t.Fatalf("Token = %q, want empty", got.Token)
+			}
+			msg := err.Error()
+			if !strings.Contains(msg, tc.want) || !strings.Contains(msg, stub) {
+				t.Fatalf("error %q does not name the command %s and %q", msg, stub, tc.want)
+			}
+			if strings.Contains(msg, "leaked-") {
+				t.Fatalf("error %q echoes the command's output", msg)
+			}
+		})
+	}
+
+	t.Run("missing executable", func(t *testing.T) {
+		missing := filepath.Join(t.TempDir(), "no-such-credential-helper")
+		_, err := ResolveCredential(context.Background(), "", CredentialReference{Kind: "cmd", Argv: []string{missing}})
+		if !errors.Is(err, ErrCredentialCommandFailed) || errors.Is(err, ErrCredentialUnresolved) {
+			t.Fatalf("ResolveCredential error = %v, want ErrCredentialCommandFailed and not ErrCredentialUnresolved", err)
+		}
+	})
 }

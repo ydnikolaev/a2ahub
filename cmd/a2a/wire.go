@@ -1679,8 +1679,9 @@ func runFeedback(args []string, stdout, stderr io.Writer) int {
 		credential, credErr = resolveFeedbackCredential(ctx, machine)
 		// No credential is not a failure here (D-039): submit files the report
 		// to the machine's local inbox. Anything else (a malformed
-		// `credentials.feedback`, say) still exits 1, because a broken setting
-		// is not "no credential".
+		// `credentials.feedback`, or a configured `cmd:` whose command fails,
+		// space.ErrCredentialCommandFailed) still exits 1, because a broken
+		// setting is not "no credential".
 		var fatal error
 		inboxReason, fatal = feedbackInboxFallback(githubTarget, credErr)
 		if fatal != nil {

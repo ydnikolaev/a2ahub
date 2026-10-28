@@ -52,6 +52,15 @@ var (
 	// (Open Q1 RESOLVED precedence) — never falls back to a literal.
 	ErrCredentialUnresolved = errors.New("space: credential unresolved")
 
+	// ErrCredentialCommandFailed is returned when a configured cmd:<argv...>
+	// reference cannot produce a secret: the command does not start, exits
+	// non-zero, or prints nothing. The setting exists and is broken, which is
+	// not "nothing configured", so it deliberately does NOT wrap
+	// ErrCredentialUnresolved: a caller that treats a missing credential as a
+	// normal case (feedback's local inbox, D-039) must still refuse this one
+	// (AGENTS.md anti-pattern #22, local-space-2026-10 spec 08 US-4).
+	ErrCredentialCommandFailed = errors.New("space: credential command failed")
+
 	// ErrMissingVerb is returned when a SubmitRequest names no verb. The
 	// verb is part of the deterministic branch name, so an unnamed write
 	// would share a branch with every other write on the same artifact —
