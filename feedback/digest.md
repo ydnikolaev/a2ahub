@@ -96,3 +96,7 @@ stay as the record of what was decided on the day.
 - fb-20260827-47069c (bug -> shipped in v0.25.7): a no-op version bump publishes the OLD bytes under the NEW number
 - fb-20260827-bc1f13 (bug -> shipped in v0.25.7): verify-export hides the only file that can explain its digest mismatch
 - fb-20260827-5b6a1c (friction -> shipped in v0.25.7): a verb usage names its flags, never its workflow, so a loop page is unreachable
+
+## 2026-10-29 Triage
+
+- fb-20261029-3e41f0 (feature -> accepted): A blocking wait so an agent session hears a counterparty move without polling

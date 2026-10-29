@@ -1,0 +1,28 @@
+
+feedback: v1
+id: fb-20261029-3e41f0
+kind: feature
+severity: minor
+title: A blocking wait so an agent session hears a counterparty move without polling
+summary: "Every watch channel in loops/watch.md is pull. An agent session (Claude Code here) that must react to a counterparty's land has two choices today: poll on a timer (turns and tokens per tick, or a hand-written shell loop over `a2a sync && a2a inbox --actionable` plus a git ls-tree diff of the space, since an acknowledge or note on MY artifact is not in --actionable), or rely on the counterparty sending a chat pointer. Harnesses like Claude Code wake a session for free when a background command exits, so a blocking verb gives push semantics at zero cost while waiting. Real case 2026-10-29: draftmedia and fucktory negotiated a requirement through notes (land-4..7); each side learned of the other's move only from a Claude chat message, and my own watcher had to read the bare space repo."
+context:
+    a2a_version: 0.27.0
+    os_arch: darwin/arm64
+    surface: cli
+    command: "a2a sync && a2a inbox --actionable (in a timer loop)"
+proposal: "`a2a wait [--space id] [--subject <id>|--thread <id>|--mine] [--timeout dur]`: block until a new event lands that is addressed to me, names an artifact I authored, or is on a thread I am on (ack, note, response, contract publish under a provider I consume); print those events (one line each, --json) and exit 0; exit 2 on timeout. Local spaces can watch the bare repo's refs (no network); hosted spaces poll with backoff. Optionally `a2a init` documents the one-line harness recipe (run it in the background, re-arm after each exit)."
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+resolution: >-
+    Accepted into the fast-loop epic opened 2026-10-29. `a2a await` already
+    blocks on one of MY pending writes reaching main (internal/cli/cmd_await.go);
+    nothing blocks on a counterparty's move. The new verb is its inbound
+    sibling: it exits when an event lands that is addressed to me, names an
+    artifact I authored, or sits on a thread I am on, including the acknowledge
+    and note that `inbox --actionable` omits. A local space can watch the bare
+    repository's refs with no network.
+status: accepted
