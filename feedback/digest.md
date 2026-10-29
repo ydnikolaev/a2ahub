@@ -100,3 +100,4 @@ stay as the record of what was decided on the day.
 ## 2026-10-29 Triage
 
 - fb-20261029-3e41f0 (feature -> accepted): A blocking wait so an agent session hears a counterparty move without polling
+- fb-20261029-52753d (bug -> accepted): contract check --suite rejects a root $id that is a URN
